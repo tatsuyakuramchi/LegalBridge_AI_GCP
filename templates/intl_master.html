@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>INTERNATIONAL LICENSE AGREEMENT - {{CONTRACT_NO}}</title>
+  <style>
+    @page { size: A4; margin: 25mm 20mm 25mm 20mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Times New Roman", Times, serif; font-size: 10pt; line-height: 1.4; color: #000; }
+    h1.doc-title { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 2em; text-transform: uppercase; }
+    .preamble { margin-bottom: 1.5em; }
+    ol.articles { list-style: none; padding: 0; counter-reset: article; }
+    ol.articles > li { counter-increment: article; margin-bottom: 1.2em; }
+    ol.articles > li > .article-title { font-weight: bold; margin-bottom: 0.3em; text-transform: uppercase; }
+    ol.articles > li > .article-title::before { content: "ARTICLE " counter(article) ": "; }
+    ol.items { list-style: none; padding-left: 1.5em; counter-reset: item; }
+    ol.items > li { counter-increment: item; padding-left: 2em; text-indent: -2em; margin-bottom: 0.5em; }
+    ol.items > li::before { content: counter(article) "." counter(item) " "; font-weight: bold; }
+    .signature-block { margin-top: 3em; page-break-inside: avoid; }
+    .signature-row { display: flex; justify-content: space-between; margin-bottom: 2em; }
+    .signature-box { width: 45%; }
+    .sig-line { border-bottom: 1px solid #000; margin: 2em 0 0.5em; }
+    .ph { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1 class="doc-title">INTERNATIONAL LICENSE AGREEMENT</h1>
+  <p class="preamble">This International License Agreement (the "Agreement") is entered into as of <span class="ph">{{EFFECTIVE_DATE}}</span> (the "Effective Date") by and between <span class="ph">{{LICENSOR_NAME}}</span>, a company organized and existing under the laws of <span class="ph">{{LICENSOR_COUNTRY}}</span> ("Licensor") and <span class="ph">Arclight, Inc.</span>, a Japanese corporation ("Licensee").</p>
+  <ol class="articles">
+    <li><div class="article-title">Grant of License</div><ol class="items"><li>Licensor hereby grants to Licensee an exclusive, non-transferable license to translate, publish, and distribute the property titled "<span class="ph">{{PROPERTY_TITLE}}</span>" (the "Property") in the Japanese language within the territory of Japan.</li></ol></li>
+    <li><div class="article-title">Royalties and Payment</div><ol class="items"><li>Licensee shall pay to Licensor a royalty of <span class="ph">{{ROYALTY_RATE}}</span>% of the Net Sales Price of each copy of the Property sold by Licensee.</li><li>Licensee shall pay a non-refundable Advance against royalties in the amount of <span class="ph">{{ADVANCE_AMOUNT}}</span>.</li></ol></li>
+    <li><div class="article-title">Term and Termination</div><ol class="items"><li>This Agreement shall commence on the Effective Date and continue for a period of <span class="ph">{{TERM_YEARS}}</span> years.</li></ol></li>
+    <li><div class="article-title">Governing Law</div><ol class="items"><li>This Agreement shall be governed by and construed in accordance with the laws of <span class="ph">{{GOVERNING_LAW}}</span>.</li></ol></li>
+  </ol>
+  <div class="signature-block">
+    <div class="signature-row">
+      <div class="signature-box">
+        <p><strong>LICENSOR:</strong></p>
+        <p><span class="ph">{{LICENSOR_NAME}}</span></p>
+        <div class="sig-line"></div>
+        <p>By: <span class="ph">{{LICENSOR_REP_NAME}}</span></p>
+        <p>Title: <span class="ph">{{LICENSOR_REP_TITLE}}</span></p>
+      </div>
+      <div class="signature-box">
+        <p><strong>LICENSEE:</strong></p>
+        <p><strong>Arclight, Inc.</strong></p>
+        <div class="sig-line"></div>
+        <p>By: <strong>Masayuki Aoyagi</strong></p>
+        <p>Title: <strong>CEO</strong></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

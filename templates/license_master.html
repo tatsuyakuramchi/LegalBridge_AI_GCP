@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ライセンス基本契約書 - {{CONTRACT_NO}}</title>
+  <style>
+    @page { size: A4; margin: 25mm 20mm 25mm 20mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Noto Serif CJK JP", "IPAMincho", serif; font-size: 10.5pt; line-height: 1.8; color: #000; }
+    h1.doc-title { text-align: center; font-size: 15pt; font-weight: bold; margin-bottom: 2em; text-decoration: underline; }
+    .preamble { margin-bottom: 1.5em; text-indent: 1em; }
+    ol.articles { list-style: none; padding: 0; counter-reset: article; }
+    ol.articles > li { counter-increment: article; margin-bottom: 1.2em; }
+    ol.articles > li > .article-title { font-weight: bold; margin-bottom: 0.3em; }
+    ol.articles > li > .article-title::before { content: "第" counter(article) "条 "; }
+    ol.items { list-style: none; padding-left: 1.5em; counter-reset: item; }
+    ol.items > li { counter-increment: item; padding-left: 2em; text-indent: -2em; margin-bottom: 0.5em; }
+    ol.items > li::before { content: counter(item) "．"; }
+    .signature-block { margin-top: 4em; page-break-inside: avoid; }
+    .party { margin-bottom: 2em; }
+    .ph { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1 class="doc-title">ライセンス基本契約書</h1>
+  <p class="preamble"><span class="ph">{{LICENSOR_NAME}}</span>（以下「甲」という。）と株式会社アークライト（以下「乙」という。）は、甲が権利を保有する著作物のライセンスに関し、以下の通り契約を締結する。</p>
+  <ol class="articles">
+    <li><div class="article-title">目的</div><ol class="items"><li>本契約は、甲が乙に対し、対象物件（以下「本物件」という。）の利用を許諾する際の基本的事項を定めることを目的とする。</li></ol></li>
+    <li><div class="article-title">個別契約</div><ol class="items"><li>具体的な対象物件、ライセンス料、期間等の条件は、別途締結する個別契約または条件書により定める。</li></ol></li>
+    <li><div class="article-title">秘密保持</div><ol class="items"><li>甲および乙は、本契約に関連して知り得た相手方の秘密情報を、第三者に開示してはならない。</li></ol></li>
+  </ol>
+  <div class="signature-block">
+    <p>本契約締結の証として、本書２通を作成し、甲乙記名押印のうえ、各１通を保有する。</p>
+    <p style="text-align: right; margin: 2em 0;"><span class="ph">{{CONTRACT_DATE}}</span></p>
+    <div class="party">
+      <p>甲：<span class="ph">{{LICENSOR_NAME}}</span></p>
+      <p>住所：<span class="ph">{{LICENSOR_ADDRESS}}</span></p>
+    </div>
+    <div class="party">
+      <p>乙：株式会社アークライト</p>
+      <p>住所：東京都千代田区神田小川町1-2 風雲堂ビル2階</p>
+    </div>
+  </div>
+</body>
+</html>

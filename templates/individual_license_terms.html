@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>個別ライセンス条件書 - {{CONTRACT_NO}}</title>
+  <style>
+    @page { size: A4; margin: 25mm 20mm 25mm 20mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Noto Serif CJK JP", "IPAMincho", serif; font-size: 10.5pt; line-height: 1.6; color: #000; }
+    h1.doc-title { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 2em; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 2em; }
+    th, td { border: 1px solid #000; padding: 8px 12px; vertical-align: top; }
+    th { background: #f2f2f2; width: 30%; text-align: left; }
+    .ph { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1 class="doc-title">個別ライセンス条件書</h1>
+  <p style="margin-bottom: 1.5em;">本条件書は、<span class="ph">{{MASTER_AGREEMENT_DATE}}</span>付「ライセンス基本契約書」に基づき、以下の物件に関するライセンス条件を定めるものである。</p>
+  <table>
+    <tr><th>対象物件名</th><td><span class="ph">{{PROPERTY_TITLE}}</span></td></tr>
+    <tr><th>ライセンス期間</th><td><span class="ph">{{LICENSE_START_DATE}}</span> から <span class="ph">{{LICENSE_END_DATE}}</span> まで</td></tr>
+    <tr><th>対価の構成</th><td><span class="ph">{{FEE_STRUCTURE}}</span></td></tr>
+    {{#if (eq FEE_STRUCTURE "SUBSCRIPTION")}}
+    <tr><th>サブスクリプション料金</th><td>月額: <span class="ph">{{MONTHLY_FEE}}</span> 円 / 年額: <span class="ph">{{ANNUAL_FEE}}</span> 円</td></tr>
+    {{/if}}
+    {{#if (eq FEE_STRUCTURE "PERFORMANCE")}}
+    <tr><th>ロイヤリティ率</th><td><span class="ph">{{ROYALTY_RATE}}</span> %</td></tr>
+    <tr><th>最低保証金 (MG)</th><td><span class="ph">{{MG_AMOUNT}}</span> 円</td></tr>
+    <tr><th>計算式 / 基準売上</th><td><span class="ph">{{CALCULATION_FORMULA}}</span> / <span class="ph">{{BASE_SALES}}</span></td></tr>
+    {{/if}}
+    <tr><th>許諾地域</th><td><span class="ph">{{TERRITORY}}</span></td></tr>
+    <tr><th>特記事項</th><td>{{SPECIAL_TERMS}}</td></tr>
+  </table>
+
+  <!-- Variables for form extraction: 
+    {{FEE_STRUCTURE}} {{MONTHLY_FEE}} {{ANNUAL_FEE}} {{ROYALTY_RATE}} {{MG_AMOUNT}} {{CALCULATION_FORMULA}} {{BASE_SALES}}
+  -->
+  <div style="margin-top: 3em; text-align: right;">
+    <p>発行日: <span class="ph">{{ISSUE_DATE}}</span></p>
+    <p style="margin-top: 1em;">株式会社アークライト</p>
+  </div>
+</body>
+</html>

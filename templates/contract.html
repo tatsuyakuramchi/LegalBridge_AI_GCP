@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    body { font-family: "MS Mincho", serif; padding: 60px; line-height: 2; color: #000; }
+    h1 { text-align: center; font-size: 22px; margin-bottom: 50px; }
+    .clause { margin-bottom: 20px; }
+    .clause-title { font-weight: bold; }
+    .footer { margin-top: 60px; }
+    .sign-area { display: flex; justify-content: space-between; margin-top: 40px; }
+  </style>
+</head>
+<body>
+  <h1>秘密保持契約書 (草案)</h1>
+
+  <p>LegalBridge株式会社（以下「甲」という）と、{{details.相手方}}（以下「乙」という）は、{{summary}}（以下「本目的」という）に関し、以下の通り契約を締結する。</p>
+
+  <div class="clause">
+    <span class="clause-title">第１条（秘密情報）</span><br>
+    本契約において秘密情報とは、本目的に関連して一方当事者が相手方に開示した一切の情報をいう。
+  </div>
+
+  <div class="clause">
+    <span class="clause-title">第２条（守秘義務）</span><br>
+    甲および乙は、相手方の事前の書面による承諾なく、秘密情報を第三者に開示してはならない。
+  </div>
+
+  <div class="clause">
+    <span class="clause-title">第３条（有効期間）</span><br>
+    本契約の有効期間は、締結日から{{details.期間}}間とする。
+  </div>
+
+  <p style="margin-top: 40px;">本契約の締結を証するため、本証書２通を作成し、各自記名押印の上、各１通を保有する。</p>
+
+  <div class="footer">
+    <p>{{date}}</p>
+    <div class="sign-area">
+      <div>
+        （甲）<br>
+        東京都千代田区...<br>
+        LegalBridge株式会社<br>
+        代表取締役　印
+      </div>
+      <div>
+        （乙）<br>
+        {{details.相手方住所}}<br>
+        {{details.相手方}}<br>
+        代表取締役　印
+      </div>
+    </div>
+  </div>
+</body>
+</html>
