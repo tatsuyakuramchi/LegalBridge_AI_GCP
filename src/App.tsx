@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Shield, Slack, Database, AlertTriangle, CheckCircle2, RefreshCw, FileText, 
   X, Clock, BarChart3, ListChecks, Settings, Activity, Archive, Building2, 
-  Users, ExternalLink, Lock, Search 
+  Users, ExternalLink, Lock, Search, Download
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -21,23 +21,25 @@ interface StatusData {
 }
 
 const DOCUMENT_TEMPLATES = [
-  { id: "nda", name: "NDA (秘密保持契約書)" },
-  { id: "purchase_order", name: "発注書 (Purchase Order)" },
-  { id: "contract", name: "契約書 (Contract)" },
-  { id: "sales_master_buyer", name: "売買基本契約書 (Buyer)" },
+  { id: "nda", name: "秘密保持契約書 (NDA)" },
+  { id: "purchase_order", name: "物品発注書 (Purchase Order)" },
+  { id: "contract", name: "一般契約書 (Generic Contract)" },
+  { id: "sales_master_buyer", name: "売買基本契約書 [買主用]" },
+  { id: "sales_master_credit", name: "売買基本契約書 [債権保証]" },
+  { id: "sales_master_standard", name: "売買基本契約書 [標準]" },
   { id: "service_master", name: "業務委託基本契約書" },
   { id: "planning_purchase_order", name: "企画発注書 (Planning PO)" },
   { id: "payment_notice", name: "支払通知書 (Payment Notice)" },
   { id: "fee_statement", name: "報酬明細書 (Fee Statement)" },
-  { id: "license_report", name: "ライセンス報告書 (License Report)" },
-  { id: "service_terms", name: "業務委託基本契約約款 (Terms)" },
-  { id: "inspection_certificate", name: "検収書 (Inspection)" },
-  { id: "inspection_certificate_detailed", name: "検収書 (Detailed)" },
+  { id: "license_report", name: "ライセンス報告書 (Report)" },
+  { id: "service_terms", name: "業務委託基本規約 (Terms)" },
+  { id: "inspection_certificate", name: "検収完了書 (Inspection)" },
+  { id: "inspection_certificate_detailed", name: "検収明細付受領書 (Detailed)" },
   { id: "royalty_statement", name: "利用許諾料計算書 (Royalty)" },
   { id: "license_master", name: "ライセンス基本契約書" },
-  { id: "individual_license_terms", name: "個別ライセンス条件書" },
-  { id: "intl_amendment", name: "Amendment (Intl)" },
-  { id: "intl_master", name: "License (Intl Master)" },
+  { id: "individual_license_terms", name: "個別ライセンス利用規約" },
+  { id: "intl_amendment", name: "英文修正合意書 (Amendment)" },
+  { id: "intl_master", name: "国際ライセンス契約 (Intl Master)" },
 ];
 
 const WORKFLOW_TEMPLATES: Record<string, string[]> = {
@@ -67,6 +69,7 @@ export default function App() {
   const [royalties, setRoyalties] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState<"portal" | "deliveries" | "royalties" | "bulk" | "master" | "workflow" | "archive" | "assets">("portal");
   const [workflows, setWorkflows] = useState<any[]>([]);
+  const [workflowSettings, setWorkflowSettings] = useState<any[]>([]);
   const [docArchive, setDocArchive] = useState<any[]>([]);
   const [externalAssets, setExternalAssets] = useState<any[]>([]);
   const [vendors, setVendors] = useState<any[]>([]);
@@ -76,9 +79,44 @@ export default function App() {
   const [staffSearch, setStaffSearch] = useState("");
   const [showStaffPicker, setShowStaffPicker] = useState(false);
   const [csvContent, setCsvContent] = useState<string>("");
-  const [importMode, setImportMode] = useState<"generic" | "publishing">("generic");
+  const [importMode, setImportMode] = useState<"generic" | "publishing" | "vendor" | "staff">("generic");
   const [isImporting, setIsImporting] = useState(false);
+
+  const downloadSampleCsv = (mode: typeof importMode) => {
+    let headers = "";
+    let sampleData = "";
+
+    if (mode === "generic") {
+      headers = "issueKey,itemName,vendorCode,dueDate,amount";
+      sampleData = "PRJ-1234,法務相談：契約書レビュー,V001,2026-05-31,50000";
+    } else if (mode === "publishing") {
+      headers = "SlackID,OrderDate,PaymentDate,VendorCode,VendorName,BookTitle,Summary,Details,UnitPrice,Quantity,TotalAmount,Deadline1,Deadline2,FinalDeadline";
+      sampleData = "U1234567,2026-04-20,2026-05-25,V789,株式会社出版サンプル,サンプルの本,執筆依頼,詳細はこちら,100000,1,100000,2026-04-30,2026-05-15,2026-05-20";
+    } else if (mode === "vendor") {
+      headers = "vendorCode,vendorName,tradeName,penName,vendorSuffix,entityType,withholdingEnabled,aliases,address,phone,email,contactDepartment,contactName,bankName,branchName,accountType,accountNumber,accountHolderKana,isInvoiceIssuer,invoiceRegistrationNumber";
+      sampleData = "V001,株式会社サンプル,,サンプラ君,御中,corporation,FALSE,別名,東京都...,03-0000-0000,info@example.com,営業部,担当者名,サンプル銀行,サンプル支店,普通,1234567,サンプルフリガナ,TRUE,T1234567890123";
+    } else if (mode === "staff") {
+      headers = "slackUserId,staffName,email,phone,department,departmentCode";
+      sampleData = "U01234567,山田 太郎,yamada@example.com,090-0000-0000,法務部,LGD";
+    }
+
+    const blob = new Blob(["\uFEFF" + `${headers}\n${sampleData}`], { type: "text/csv;charset=utf-8;" });
+    const link = document.createElement("a");
+    const url = URL.createObjectURL(blob);
+    link.setAttribute("href", url);
+    link.setAttribute("download", `sample_${mode}.csv`);
+    link.style.visibility = "hidden";
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
   
+  const [appSettings, setAppSettings] = useState<Record<string, any>>({
+    slack_answer_back_user: { template: "" },
+    slack_answer_back_channel: { template: "" }
+  });
+  const [isSavingSettings, setIsSavingSettings] = useState(false);
+
   // Dynamic Document Form
   const [templateFields, setTemplateFields] = useState<string[]>([]);
   const [isRefreshingFields, setIsRefreshingFields] = useState(false);
@@ -90,11 +128,59 @@ export default function App() {
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [showRuleModal, setShowRuleModal] = useState(false);
   const [showAssetModal, setShowAssetModal] = useState(false);
+  const [showWorkflowModal, setShowWorkflowModal] = useState(false);
   
-  const [newVendor, setNewVendor] = useState({ vendor_code: "", vendor_name: "", email: "", address: "", bank_name: "", invoice_registration_number: "" });
-  const [newStaff, setNewStaff] = useState({ slack_user_id: "", staff_name: "", department: "", department_code: "" });
+  const [newVendor, setNewVendor] = useState({ 
+    vendor_code: "", 
+    vendor_name: "", 
+    trade_name: "",
+    pen_name: "",
+    vendor_suffix: "様",
+    entity_type: "individual",
+    withholding_enabled: false,
+    aliases: "",
+    address: "", 
+    phone: "",
+    email: "", 
+    contact_department: "",
+    contact_name: "",
+    master_contract_ref: "",
+    bank_info: "",
+    bank_name: "", 
+    branch_name: "",
+    account_type: "普通",
+    account_number: "",
+    account_holder_kana: "",
+    is_invoice_issuer: false,
+    invoice_registration_number: "" 
+  });
+  const [newStaff, setNewStaff] = useState({ slack_user_id: "", staff_name: "", email: "", phone: "", department: "", department_code: "" });
   const [newRule, setNewRule] = useState({ department: "", approver_slack_id: "", stamp_operator_slack_id: "", manager_slack_id: "", slack_channel_id: "", is_active: true });
   const [newAsset, setNewAsset] = useState({ asset_name: "", asset_type: "contract", counterparty: "", status: "active", file_link: "", start_date: "", end_date: "", backlog_issue_key: "" });
+  const [newWorkflowSetting, setNewWorkflowSetting] = useState({ 
+    issue_type_name: "", 
+    allowed_templates: [], 
+    status_configs: {},
+    variable_mappings: {},
+    next_status_id: null as number | null,
+    document_prefix: "" 
+  });
+  const [backlogIssueTypes, setBacklogIssueTypes] = useState<any[]>([]);
+  const [backlogCustomFields, setBacklogCustomFields] = useState<any[]>([]);
+  const [backlogStatuses, setBacklogStatuses] = useState<any[]>([]);
+  const [workflowWizardStep, setWorkflowWizardStep] = useState(1);
+  const [currentTemplateVars, setCurrentTemplateVars] = useState<string[]>([]);
+  const [selectedStaff, setSelectedStaff] = useState<any>(null);
+
+  const fetchTemplateVars = async (templateId: string) => {
+    try {
+      const res = await fetch(`/api/templates/${templateId}/schema`);
+      const data = await res.json();
+      setCurrentTemplateVars(data.variables || []);
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const fetchStatus = async () => {
     try {
@@ -115,8 +201,10 @@ export default function App() {
   const fetchIssues = async () => {
     try {
       const res = await fetch("/api/backlog/issues");
-      const data = await res.json();
-      setIssues(data);
+      const data = await safeJson(res);
+      if (data) {
+        setIssues(Array.isArray(data) ? data : []);
+      }
     } catch (err) {
       console.error("Failed to fetch issues", err);
     }
@@ -126,8 +214,10 @@ export default function App() {
     try {
       setIsRefreshingFields(true);
       const res = await fetch(`/api/templates/${type}/schema`);
-      const data = await res.json();
-      setTemplateFields(data.variables || []);
+      const data = await safeJson(res);
+      if (data) {
+        setTemplateFields(data.variables || []);
+      }
     } catch (err) {
       console.error("Failed to fetch template schema", err);
     } finally {
@@ -138,6 +228,10 @@ export default function App() {
   const autoFillForm = (issue: any, fields: string[]) => {
     const newFormData: Record<string, string> = { ...formData };
     
+    // Check if we have a workflow setting for this issue type
+    const issueTypeName = issue.issueType?.name;
+    const setting = workflowSettings.find(s => s.issue_type_name === issueTypeName);
+
     // Look for matching Vendor in our master DB
     const matchedVendor = vendors.find(v => 
       issue.summary.includes(v.vendor_name) || 
@@ -153,6 +247,27 @@ export default function App() {
     );
 
     fields.forEach(field => {
+      let valueSet = false;
+
+      // A. Priority: Dynamic Mappings
+      if (setting && setting.variable_mappings?.[field]) {
+        const mapping = setting.variable_mappings[field];
+        if (mapping.source === 'backlog_basic') {
+          newFormData[field] = issue[mapping.field] || "";
+          valueSet = true;
+        } else if (mapping.source === 'backlog_custom') {
+          const cf = issue.customFields?.find((c: any) => String(c.id) === String(mapping.field));
+          newFormData[field] = cf?.value || "";
+          valueSet = true;
+        } else if (mapping.source === 'vendor' && matchedVendor) {
+          newFormData[field] = matchedVendor[mapping.field] || "";
+          valueSet = true;
+        }
+      }
+
+      if (valueSet) return;
+
+      // B. Fallback: Existing Heuristics
       // 1. Direct match with Backlog summary or key
       if (field === "SUMMARY") newFormData[field] = issue.summary;
       if (field === "ISSUE_KEY") newFormData[field] = issue.issueKey;
@@ -189,11 +304,33 @@ export default function App() {
     setFormData(newFormData);
   };
 
+  const safeJson = async (res: Response) => {
+    if (!res) return null;
+    if (res.ok) {
+      try {
+        const text = await res.text();
+        if (!text || text.startsWith("<!doctype")) {
+          if (text.startsWith("<!doctype")) {
+            console.warn(`URL ${res.url} returned HTML Instead of JSON. Check server routes.`);
+          }
+          return null;
+        }
+        return JSON.parse(text);
+      } catch (e) {
+        console.error("JSON parse error for URL:", res.url, e);
+        return null;
+      }
+    }
+    return null;
+  };
+
   const fetchAlerts = async () => {
     try {
       const res = await fetch("/api/management/alerts");
-      const data = await res.json();
-      setAlerts(data.overdue || []);
+      const data = await safeJson(res);
+      if (data) {
+        setAlerts(data.overdue || []);
+      }
     } catch (err) {
       console.error("Failed to fetch alerts", err);
     }
@@ -201,37 +338,48 @@ export default function App() {
 
   const fetchManagementData = async () => {
     try {
-      const [delRes, royRes, venRes, staRes, rulRes, worRes, arcRes, astRes, comRes] = await Promise.all([
-        fetch("/api/management/deliveries"),
-        fetch("/api/management/royalties"),
-        fetch("/api/master/vendors"),
-        fetch("/api/master/staff"),
-        fetch("/api/master/rules"),
-        fetch("/api/management/workflows"),
-        fetch("/api/management/documents"),
-        fetch("/api/management/assets"),
-        fetch("/api/master/company-profile")
-      ]);
-      const [delData, royData, venData, staData, rulData, worData, arcData, astData, comData] = await Promise.all([
-        delRes.json(), 
-        royRes.json(),
-        venRes.json(),
-        staRes.json(),
-        rulRes.json(),
-        worRes.json(),
-        arcRes.json(),
-        astRes.json(),
-        comRes.json()
-      ]);
-      setDeliveries(delData);
-      setRoyalties(royData);
-      setVendors(venData || []);
-      setStaff(staData || []);
-      setRules(rulData || []);
-      setWorkflows(worData || []);
-      setDocArchive(arcData || []);
-      setExternalAssets(astData || []);
-      setCompanyProfile(comData);
+      const endpoints = [
+        "/api/management/deliveries",
+        "/api/management/royalties",
+        "/api/master/vendors",
+        "/api/master/staff",
+        "/api/master/rules",
+        "/api/management/workflows",
+        "/api/management/documents",
+        "/api/management/assets",
+        "/api/master/company-profile",
+        "/api/master/workflow-settings",
+        "/api/backlog/issue-types",
+        "/api/backlog/custom-fields",
+        "/api/backlog/statuses",
+        "/api/master/app-settings"
+      ];
+      
+      const responses = await Promise.all(endpoints.map(url => fetch(url).catch(e => {
+        console.error(`Fetch error for ${url}:`, e);
+        return { ok: false, url } as Response;
+      })));
+      
+      const results = await Promise.all(responses.map(res => safeJson(res)));
+
+      const [
+        delData, royData, venData, staData, rulData, worData, arcData, astData, comData, wfsData, bitData, bcfData, bstData, asData
+      ] = results;
+
+      if (delData) setDeliveries(delData);
+      if (royData) setRoyalties(royData);
+      if (venData) setVendors(venData);
+      if (staData) setStaff(staData);
+      if (rulData) setRules(rulData);
+      if (worData) setWorkflows(worData);
+      if (arcData) setDocArchive(arcData);
+      if (astData) setExternalAssets(astData);
+      if (comData) setCompanyProfile(comData);
+      if (wfsData) setWorkflowSettings(wfsData);
+      if (bitData) setBacklogIssueTypes(bitData);
+      if (bcfData) setBacklogCustomFields(bcfData);
+      if (bstData) setBacklogStatuses(bstData);
+      if (asData) setAppSettings(asData);
     } catch (err) {
       console.error("Failed to fetch management data", err);
     }
@@ -257,11 +405,14 @@ export default function App() {
   };
 
   const handleSelectStaffMember = (s: any) => {
+    setSelectedStaff(s);
     const newFormData = { ...formData };
     templateFields.forEach(field => {
       if (field === "STAFF_NAME" || field === "REQUESTER_NAME" || field === "PERSON_IN_CHARGE") newFormData[field] = s.staff_name;
-      if (field === "DEPARTMENT" || field === "DEPT_NAME") newFormData[field] = s.department;
+      if (field === "DEPARTMENT" || field === "DEPT_NAME" || field === "STAFF_DEPARTMENT") newFormData[field] = s.department;
       if (field === "DEPT_CODE") newFormData[field] = s.department_code;
+      if (field === "STAFF_EMAIL") newFormData[field] = s.email;
+      if (field === "STAFF_PHONE") newFormData[field] = s.phone;
     });
     setFormData(newFormData);
     setShowStaffPicker(false);
@@ -292,6 +443,15 @@ export default function App() {
     const issue = issues.find(i => i.issueKey === selectedIssue);
     if (!issue) return DOCUMENT_TEMPLATES;
 
+    // First check dynamic settings
+    const issueTypeName = issue.issueType?.name;
+    const setting = workflowSettings.find(s => s.issue_type_name === issueTypeName);
+    
+    if (setting && setting.allowed_templates && setting.allowed_templates.length > 0) {
+      return DOCUMENT_TEMPLATES.filter(t => setting.allowed_templates.includes(t.id));
+    }
+
+    // Fallback to existing manual pattern
     const match = issue.summary.match(/【(.*?)】/);
     const workflowKey = match ? match[1] : null;
     
@@ -330,12 +490,31 @@ export default function App() {
           issueKey: selectedIssue,
           templateType: selectedTemplate,
           formData,
-          requesterEmail: "legal@example.com" // Mock
+          requesterEmail: selectedStaff?.email || "legal@example.com"
         })
       });
       const data = await res.json();
       if (data.success) {
         alert(`ドキュメントを作成しました: ${data.driveLink}`);
+        
+        // Post-generation: Update Backlog Status if defined in workflow settings
+        const issue = issues.find(i => i.issueKey === selectedIssue);
+        if (issue) {
+          const setting = workflowSettings.find(s => s.issue_type_name === issue.issueType?.name);
+          if (setting && setting.next_status_id) {
+            try {
+              await fetch(`/api/backlog/issues/${selectedIssue}/status`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ statusId: setting.next_status_id })
+              });
+              console.log(`Updated Backlog issue ${selectedIssue} status to ${setting.next_status_id}`);
+              fetchIssues(); // Refresh issue list to show new status
+            } catch (statusErr) {
+              console.error("Failed to update status auto-magically", statusErr);
+            }
+          }
+        }
       } else {
         throw new Error(data.error);
       }
@@ -445,7 +624,30 @@ export default function App() {
       if (res.ok) {
         setShowVendorModal(false);
         fetchManagementData();
-        setNewVendor({ vendor_code: "", vendor_name: "", email: "", address: "", bank_name: "", invoice_registration_number: "" });
+        setNewVendor({ 
+          vendor_code: "", 
+          vendor_name: "", 
+          trade_name: "",
+          pen_name: "",
+          vendor_suffix: "様",
+          entity_type: "individual",
+          withholding_enabled: false,
+          aliases: "",
+          address: "", 
+          phone: "",
+          email: "", 
+          contact_department: "",
+          contact_name: "",
+          master_contract_ref: "",
+          bank_info: "",
+          bank_name: "", 
+          branch_name: "",
+          account_type: "普通",
+          account_number: "",
+          account_holder_kana: "",
+          is_invoice_issuer: false,
+          invoice_registration_number: "" 
+        });
       }
     } catch (err) {
       console.error(err);
@@ -462,7 +664,7 @@ export default function App() {
       if (res.ok) {
         setShowStaffModal(false);
         fetchManagementData();
-        setNewStaff({ slack_user_id: "", staff_name: "", department: "", department_code: "" });
+        setNewStaff({ slack_user_id: "", staff_name: "", email: "", phone: "", department: "", department_code: "" });
       }
     } catch (err) {
       console.error(err);
@@ -497,6 +699,31 @@ export default function App() {
         setShowAssetModal(false);
         fetchManagementData();
         setNewAsset({ asset_name: "", asset_type: "contract", counterparty: "", status: "active", file_link: "", start_date: "", end_date: "", backlog_issue_key: "" });
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleAddWorkflowSetting = async () => {
+    try {
+      const res = await fetch("/api/master/workflow-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(newWorkflowSetting)
+      });
+      if (res.ok) {
+        setShowWorkflowModal(false);
+        setWorkflowWizardStep(1);
+        fetchManagementData();
+        setNewWorkflowSetting({ 
+          issue_type_name: "", 
+          allowed_templates: [], 
+          status_configs: {},
+          variable_mappings: {},
+          next_status_id: null,
+          document_prefix: ""
+        });
       }
     } catch (err) {
       console.error(err);
@@ -721,19 +948,42 @@ export default function App() {
                         .filter(i => 
                           i.issueKey.toLowerCase().includes(issueSearch.toLowerCase())
                         )
-                        .map((issue) => (
-                        <button
-                          key={issue.id}
-                          onClick={() => setSelectedIssue(issue.issueKey)}
-                          className={`w-full text-left p-3 border ${selectedIssue === issue.issueKey ? 'bg-[#141414] text-white border-[#141414]' : 'border-[#141414]/10 hover:border-[#141414]/40'} transition-colors`}
-                        >
-                          <div className="flex justify-between items-start mb-1">
-                            <span className="font-mono text-[10px] font-bold">{issue.issueKey}</span>
-                            <Badge className="text-[8px] rounded-none h-4">{issue.status.name}</Badge>
-                          </div>
-                          <p className="text-xs font-medium line-clamp-2">{issue.summary}</p>
-                        </button>
-                      ))}
+                        .map((issue) => {
+                          const setting = workflowSettings.find(s => s.issue_type_name === issue.issueType.name);
+                          return (
+                            <button
+                              key={issue.id}
+                              onClick={() => {
+                                setSelectedIssue(issue.issueKey);
+                                // Auto-select first allowed template if available
+                                if (setting && setting.allowed_templates?.length > 0) {
+                                  setSelectedTemplate(setting.allowed_templates[0]);
+                                }
+                              }}
+                              className={`w-full text-left p-3 border group transition-all relative ${selectedIssue === issue.issueKey ? 'bg-[#141414] text-white border-[#141414] shadow-lg translate-x-1' : 'border-gray-100 bg-white hover:border-[#141414]'}`}
+                            >
+                              <div className="flex justify-between items-start mb-1">
+                                <span className={`font-mono text-[10px] font-bold ${selectedIssue === issue.issueKey ? 'text-white' : 'text-[#141414]'}`}>{issue.issueKey}</span>
+                                <Badge style={{ backgroundColor: issue.status.color === 'status-green' ? '#27ae60' : issue.status.color === 'status-yellow' ? '#f1c40f' : '#e67e22' }} className="text-[8px] rounded-none px-1 border-none text-white h-4">
+                                  {issue.status.name}
+                                </Badge>
+                              </div>
+                              <p className="text-[11px] font-bold line-clamp-2 leading-snug">{issue.summary}</p>
+                              <div className="flex items-center gap-1 mt-2">
+                                <span className="text-[8px] opacity-40 uppercase font-mono">{issue.issueType.name}</span>
+                                {setting && (
+                                  <div className="flex items-center gap-1">
+                                    <div className="w-1 h-1 rounded-full bg-blue-500"></div>
+                                    <span className="text-[8px] text-blue-500 font-bold uppercase">Ready</span>
+                                  </div>
+                                )}
+                              </div>
+                              {selectedIssue === issue.issueKey && (
+                                <motion.div layoutId="active-marker" className="absolute left-0 top-0 bottom-0 w-1 bg-blue-400" />
+                              )}
+                            </button>
+                          );
+                        })}
                     </div>
                   )}
                   <button 
@@ -796,9 +1046,9 @@ export default function App() {
                       <div className="relative">
                         <button 
                           onClick={() => setShowStaffPicker(!showStaffPicker)}
-                          className="flex items-center gap-1 px-3 py-1 border border-[#141414] text-[9px] font-mono uppercase tracking-tighter hover:bg-[#141414] hover:text-white transition-colors"
+                          className={`flex items-center gap-1 px-3 py-1 border border-[#141414] text-[9px] font-mono uppercase tracking-tighter hover:bg-[#141414] hover:text-white transition-colors ${selectedStaff ? 'bg-[#141414] text-white' : ''}`}
                         >
-                          <Users className="w-3 h-3" /> Select Staff
+                          <Users className="w-3 h-3" /> {selectedStaff ? selectedStaff.staff_name : "Select Staff"}
                         </button>
                         <AnimatePresence>
                           {showStaffPicker && (
@@ -1262,15 +1512,33 @@ export default function App() {
                 </CardDescription>
               </CardHeader>
               <CardContent className="pt-6 space-y-6">
-                <div className="flex items-center gap-4 mb-4">
-                  <div className="flex items-center gap-2">
-                    <input type="radio" id="gen" checked={importMode === "generic"} onChange={() => setImportMode("generic")} />
-                    <label htmlFor="gen" className="text-xs font-mono uppercase">Generic Mode</label>
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-4 bg-gray-50 p-3 border border-gray-200">
+                  <div className="flex flex-wrap items-center gap-6">
+                    <div className="flex items-center gap-2">
+                      <input type="radio" id="gen" checked={importMode === "generic"} onChange={() => setImportMode("generic")} />
+                      <label htmlFor="gen" className="text-xs font-mono uppercase cursor-pointer">Requests Bulk</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input type="radio" id="pub" checked={importMode === "publishing"} onChange={() => setImportMode("publishing")} />
+                      <label htmlFor="pub" className="text-xs font-mono uppercase cursor-pointer">Publishing (Fixed)</label>
+                    </div>
+                    <div className="flex items-center gap-2 border-l border-gray-300 pl-4">
+                      <input type="radio" id="v_imp" checked={importMode === "vendor"} onChange={() => setImportMode("vendor")} />
+                      <label htmlFor="v_imp" className="text-xs font-mono uppercase cursor-pointer text-blue-700 font-bold">Vendor Master</label>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input type="radio" id="s_imp" checked={importMode === "staff"} onChange={() => setImportMode("staff")} />
+                      <label htmlFor="s_imp" className="text-xs font-mono uppercase cursor-pointer text-blue-700 font-bold">Staff Master</label>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <input type="radio" id="pub" checked={importMode === "publishing"} onChange={() => setImportMode("publishing")} />
-                    <label htmlFor="pub" className="text-xs font-mono uppercase">Publishing Mode (Fixed Headers)</label>
-                  </div>
+                  
+                  <button 
+                    onClick={() => downloadSampleCsv(importMode)}
+                    className="flex items-center gap-2 px-3 py-1 bg-[#141414] text-white text-[10px] font-mono uppercase tracking-widest hover:bg-gray-800 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    Download Sample CSV
+                  </button>
                 </div>
                 
                 <textarea 
@@ -1321,7 +1589,9 @@ export default function App() {
                     <thead>
                       <tr className="border-b border-[#141414] bg-gray-100 font-mono text-[9px] uppercase tracking-wider">
                         <th className="p-3 border-r border-[#141414]">Code</th>
+                        <th className="p-3 border-r border-[#141414]">Type</th>
                         <th className="p-3 border-r border-[#141414]">Vendor Name</th>
+                        <th className="p-3 border-r border-[#141414]">Trade Name</th>
                         <th className="p-3 border-r border-[#141414]">Email</th>
                         <th className="p-3 border-r border-[#141414]">Invoice No</th>
                         <th className="p-3">Actions</th>
@@ -1329,12 +1599,14 @@ export default function App() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {Array.isArray(vendors) && vendors.length === 0 ? (
-                        <tr><td colSpan={5} className="p-8 text-center text-xs opacity-40">No vendors registered.</td></tr>
+                        <tr><td colSpan={7} className="p-8 text-center text-xs opacity-40">No vendors registered.</td></tr>
                       ) : (
                         Array.isArray(vendors) && vendors.map(v => (
                           <tr key={v.id} className="hover:bg-gray-50 transition-colors group">
                             <td className="p-3 border-r border-gray-100 font-mono text-xs">{v.vendor_code}</td>
+                            <td className="p-3 border-r border-gray-100 text-[10px] font-mono uppercase opacity-50">{v.entity_type === 'corporate' ? 'Corp' : 'Indiv'}</td>
                             <td className="p-3 border-r border-gray-100 text-xs font-bold">{v.vendor_name}</td>
+                            <td className="p-3 border-r border-gray-100 text-xs opacity-60">{v.trade_name || "-"}</td>
                             <td className="p-3 border-r border-gray-100 text-xs opacity-60">{v.email || "-"}</td>
                             <td className="p-3 border-r border-gray-100 text-xs font-mono">{v.invoice_registration_number || "-"}</td>
                             <td className="p-3 text-right">
@@ -1368,18 +1640,22 @@ export default function App() {
                         <tr className="border-b border-[#141414] bg-gray-100 font-mono text-[9px] uppercase tracking-wider">
                           <th className="p-3 border-r border-[#141414]">Slack ID</th>
                           <th className="p-3 border-r border-[#141414]">Name</th>
-                          <th className="p-3">Department</th>
+                          <th className="p-3 border-r border-[#141414]">Dept</th>
+                          <th className="p-3 border-r border-[#141414]">Email</th>
+                          <th className="p-3">Phone</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
                         {Array.isArray(staff) && staff.length === 0 ? (
-                          <tr><td colSpan={3} className="p-8 text-center text-xs opacity-40">No staff registered.</td></tr>
+                          <tr><td colSpan={5} className="p-8 text-center text-xs opacity-40">No staff registered.</td></tr>
                         ) : (
                           Array.isArray(staff) && staff.map(s => (
                             <tr key={s.id} className="hover:bg-gray-50 transition-colors">
                               <td className="p-3 border-r border-gray-100 font-mono text-[10px]">{s.slack_user_id}</td>
                               <td className="p-3 border-r border-gray-100 text-xs font-bold">{s.staff_name}</td>
-                              <td className="p-3 text-xs opacity-60">{s.department || "-"}</td>
+                              <td className="p-3 border-r border-gray-100 text-[10px] opacity-60 font-mono">{s.department_code || s.department || "-"}</td>
+                              <td className="p-3 border-r border-gray-100 text-[10px] opacity-60 font-mono">{s.email || "-"}</td>
+                              <td className="p-3 text-[10px] opacity-60 font-mono">{s.phone || "-"}</td>
                             </tr>
                           ))
                         )}
@@ -1427,81 +1703,324 @@ export default function App() {
                     </table>
                   </CardContent>
                 </Card>
+
+                {/* Workflow Configuration Mapping */}
+                <Card className="rounded-none border-[#141414] bg-white shadow-none md:col-span-2">
+                  <CardHeader className="border-b border-[#141414] bg-gray-50 flex flex-row items-center justify-between">
+                    <CardTitle className="font-mono text-sm uppercase tracking-widest flex items-center gap-2">
+                      <Activity className="w-4 h-4" /> Issue Type & Template Mapping
+                    </CardTitle>
+                    <button 
+                      onClick={() => setShowWorkflowModal(true)}
+                      className="px-4 py-1 border border-[#141414] text-[10px] uppercase font-mono hover:bg-[#141414] hover:text-white transition-colors"
+                    >
+                      Manage Mapping
+                    </button>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-[#141414] bg-gray-100 font-mono text-[9px] uppercase tracking-wider">
+                          <th className="p-3 border-r border-[#141414]">Backlog Issue Type</th>
+                          <th className="p-3 border-r border-[#141414]">Allowed Templates</th>
+                          <th className="p-3 border-r border-[#141414]">Prefix</th>
+                          <th className="p-3 border-r border-[#141414]">Auto mapping</th>
+                          <th className="p-3">Next Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {workflowSettings.length === 0 ? (
+                          <tr><td colSpan={5} className="p-8 text-center text-xs opacity-40 italic">Using default WORKFLOW_TEMPLATES constants. Add dynamic overrides here.</td></tr>
+                        ) : (
+                          workflowSettings.map(ws => (
+                            <tr key={ws.id} className="hover:bg-gray-50 transition-colors">
+                              <td className="p-3 border-r border-gray-100 font-bold text-xs">{ws.issue_type_name}</td>
+                              <td className="p-3 border-r border-gray-100">
+                                <div className="flex flex-wrap gap-1">
+                                  {ws.allowed_templates?.map((tid: string) => (
+                                    <Badge key={tid} variant="outline" className="rounded-none text-[8px] uppercase">{DOCUMENT_TEMPLATES.find(t => t.id === tid)?.name || tid}</Badge>
+                                  ))}
+                                </div>
+                              </td>
+                              <td className="p-3 border-r border-gray-100 font-mono text-[10px] font-bold">
+                                {ws.document_prefix || <span className="opacity-30 italic">Default</span>}
+                              </td>
+                              <td className="p-3 border-r border-gray-100 text-[10px] font-mono opacity-60">
+                                {Object.keys(ws.variable_mappings || {}).length} variables mapped
+                              </td>
+                              <td className="p-3 text-[10px] font-mono font-bold">
+                                {ws.next_status_id ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-green-500"></div>
+                                    {backlogStatuses.find(s => s.id === ws.next_status_id)?.name || `ID: ${ws.next_status_id}`}
+                                  </div>
+                                ) : (
+                                  <span className="opacity-30">No change</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </CardContent>
+                </Card>
+
+                {/* Slack Answer Back Settings */}
+                <Card className="rounded-none border-[#141414] bg-white shadow-none md:col-span-2">
+                  <CardHeader className="border-b border-[#141414] bg-gray-50 flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="font-mono text-sm uppercase tracking-widest flex items-center gap-2">
+                        <Slack className="w-4 h-4" /> Slack Answer Back Configuration
+                      </CardTitle>
+                      <CardDescription className="text-[10px] font-mono opacity-50 uppercase mt-1">法務依頼受付時の自動返信テンプレート</CardDescription>
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        try {
+                          setIsSavingSettings(true);
+                          const res = await fetch("/api/master/app-settings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ settings: appSettings })
+                          });
+                          if (res.ok) alert("設定を保存しました。");
+                        } catch (e) {
+                          console.error(e);
+                        } finally {
+                          setIsSavingSettings(false);
+                        }
+                      }}
+                      disabled={isSavingSettings}
+                      className="px-6 py-1 bg-[#141414] text-white text-[10px] uppercase font-mono hover:bg-[#333] transition-colors disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {isSavingSettings && <RefreshCw className="w-3 h-3 animate-spin" />}
+                      Save All Settings
+                    </button>
+                  </CardHeader>
+                  <CardContent className="p-6 space-y-8">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Users className="w-4 h-4 opacity-40" />
+                          <h4 className="text-xs font-bold uppercase tracking-tight">依頼者への返信 (Requester DM)</h4>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono opacity-40 uppercase">Message Template</label>
+                          <textarea 
+                            value={appSettings.slack_answer_back_user?.template || ""}
+                            onChange={(e) => setAppSettings({
+                              ...appSettings, 
+                              slack_answer_back_user: { ...appSettings.slack_answer_back_user, template: e.target.value } 
+                            })}
+                            className="w-full h-48 p-3 border border-gray-200 font-mono text-[11px] focus:ring-0 focus:outline-none focus:border-[#141414] bg-gray-50"
+                            placeholder="依頼者へ送る自動返信文面を入力してください..."
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center gap-2">
+                          <Building2 className="w-4 h-4 opacity-40" />
+                          <h4 className="text-xs font-bold uppercase tracking-tight">法務チャンネルへの通知 (Channel Notice)</h4>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-mono opacity-40 uppercase">Message Template</label>
+                          <textarea 
+                            value={appSettings.slack_answer_back_channel?.template || ""}
+                            onChange={(e) => setAppSettings({
+                              ...appSettings, 
+                              slack_answer_back_channel: { ...appSettings.slack_answer_back_channel, template: e.target.value } 
+                            })}
+                            className="w-full h-48 p-3 border border-gray-200 font-mono text-[11px] focus:ring-0 focus:outline-none focus:border-[#141414] bg-gray-50"
+                            placeholder="法務部署チャンネルへ送る通知文面を入力してください..."
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-gray-50 border border-gray-200 space-y-2">
+                      <div className="flex items-center gap-2 opacity-60">
+                        <Database className="w-3 h-3" />
+                        <span className="text-[10px] font-bold uppercase">使用可能な変数 (Available Placeholders)</span>
+                      </div>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                        {[
+                          { key: "{{requestType}}", label: "依頼種別" },
+                          { key: "{{issueKey}}", label: "Backlog課題キー" },
+                          { key: "{{docNumber}}", label: "文書番号" },
+                          { key: "{{driveLink}}", label: "生成文書リンク" },
+                          { key: "{{user}}", label: "依頼者メンション" },
+                          { key: "{{summary}}", label: "案件名/件名" },
+                          { key: "{{counterparty}}", label: "相手方企業名" }
+                        ].map(ph => (
+                          <div key={ph.key} className="flex flex-col p-2 bg-white border border-gray-100">
+                            <code className="text-[9px] font-bold text-blue-600">{ph.key}</code>
+                            <span className="text-[8px] opacity-40">{ph.label}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             </div>
           </motion.div>
         )}
         {activeTab === "workflow" && (
           <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-8">
-            <Card className="rounded-none border-[#141414] bg-white shadow-none">
-              <CardHeader className="border-b border-[#141414] bg-gray-50 flex flex-row items-center justify-between">
-                <div>
-                  <CardTitle className="font-mono text-sm uppercase tracking-widest">Global Workflow Monitor</CardTitle>
-                  <CardDescription className="text-xs font-serif italic mt-1">Real-time status of all documents and legal requests.</CardDescription>
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+              <div className="lg:col-span-1 space-y-6">
+                <Card className="rounded-none border-[#141414] bg-white shadow-none">
+                  <CardHeader className="border-b border-[#141414] bg-gray-50">
+                    <CardTitle className="font-mono text-xs uppercase tracking-widest">Backlog Overview</CardTitle>
+                  </CardHeader>
+                  <CardContent className="p-4 space-y-4">
+                    <div className="flex justify-between items-center bg-gray-50 p-3 border border-gray-100">
+                      <span className="text-[10px] font-mono uppercase opacity-50">Total Issues</span>
+                      <span className="font-bold text-xl">{issues.length}</span>
+                    </div>
+                    <div className="flex justify-between items-center bg-green-50 p-3 border border-green-100">
+                      <span className="text-[10px] font-mono uppercase text-green-700">Matched Workflows</span>
+                      <span className="font-bold text-xl text-green-800">
+                        {issues.filter(i => workflowSettings.some(s => s.issue_type_name === i.issueType.name)).length}
+                      </span>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="p-4 bg-blue-50 border border-blue-100 space-y-2">
+                  <div className="flex items-center gap-2 text-blue-800">
+                    <Database className="w-4 h-4" />
+                    <span className="font-bold text-[10px] uppercase tracking-widest">Guide</span>
+                  </div>
+                  <p className="text-[10px] text-blue-700 leading-relaxed">
+                    各課題のタイプに応じて、生成可能なドキュメントとステータスの自動遷移が設定されます。
+                    設定は「Master」タブの「Workflow Mapping」から変更可能です。
+                  </p>
                 </div>
-              </CardHeader>
-              <CardContent className="p-0">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="border-b border-[#141414] bg-gray-100 font-mono text-[10px] uppercase tracking-wider">
-                      <th className="p-4">Issue</th>
-                      <th className="p-4">Task / Contract</th>
-                      <th className="p-4">Progress</th>
-                      <th className="p-4">Current Status</th>
-                      <th className="p-4">Updated</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {Array.isArray(workflows) && workflows.length === 0 ? (
-                      <tr><td colSpan={5} className="p-12 text-center text-sm italic opacity-50">No active workflows tracked.</td></tr>
-                    ) : (
-                      Array.isArray(workflows) && workflows.map(w => {
-                        // Calculate a semi-mock progress based on status name for visual effect
-                        const statusWeights: Record<string, number> = {
-                          "文書生成依頼": 10,
-                          "草案": 30,
-                          "内部審査": 50,
-                          "承認済み": 80,
-                          "完了": 100
-                        };
-                        const progress = statusWeights[w.current_status_name] || 0;
-                        
-                        return (
-                          <tr key={w.id} className="hover:bg-gray-50 group">
-                            <td className="p-4">
-                              <div className="font-mono text-xs font-bold leading-tight">{w.backlog_issue_key}</div>
-                              <div className="text-[10px] opacity-40 uppercase font-mono">{w.contract_type}</div>
-                            </td>
-                            <td className="p-4">
-                              <div className="text-sm font-medium">{w.summary || "Untitled Request"}</div>
-                              <div className="text-[10px] opacity-50">{w.counterparty || "Internal"}</div>
-                            </td>
-                            <td className="p-4 w-48">
-                              <div className="w-full h-1 bg-gray-100">
-                                <motion.div 
-                                  initial={{ width: 0 }}
-                                  animate={{ width: `${progress}%` }}
-                                  className={`h-full ${progress === 100 ? 'bg-green-500' : 'bg-[#141414]'}`}
-                                />
-                              </div>
-                              <div className="text-[9px] font-mono mt-1 opacity-50">{progress}% COMPLETE</div>
-                            </td>
-                            <td className="p-4">
-                              <Badge className={`rounded-none text-[8px] uppercase ${progress === 100 ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-800'}`}>
-                                {w.current_status_name}
-                              </Badge>
-                            </td>
-                            <td className="p-4 text-xs font-mono opacity-50">
-                              {new Date(w.updated_at).toLocaleString('ja-JP', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                            </td>
+              </div>
+
+              <div className="lg:col-span-3 space-y-6">
+                <Card className="rounded-none border-[#141414] bg-white shadow-none">
+                  <CardHeader className="border-b border-[#141414] bg-gray-50 flex flex-row items-center justify-between">
+                    <div>
+                      <CardTitle className="font-mono text-sm uppercase tracking-widest">Active Document Workflows</CardTitle>
+                      <CardDescription className="text-xs font-serif italic mt-1 font-bold text-[#141414]">生成された文書の進捗とステータスを監視します</CardDescription>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <table className="w-full text-left border-collapse">
+                      <thead>
+                        <tr className="border-b border-[#141414] bg-gray-100 font-mono text-[10px] uppercase tracking-wider text-gray-400">
+                          <th className="p-4">Issue / Project</th>
+                          <th className="p-4">Progress / Status</th>
+                          <th className="p-4">Updated</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {Array.isArray(workflows) && workflows.length === 0 ? (
+                          <tr><td colSpan={3} className="p-12 text-center text-sm italic opacity-50">No active workflows tracked.</td></tr>
+                        ) : (
+                          Array.isArray(workflows) && workflows.map(w => {
+                            const statusWeights: Record<string, number> = {
+                              "文書生成依頼": 10, "草案": 30, "内部審査": 50, "承認済み": 80, "完了": 100
+                            };
+                            const progress = statusWeights[w.current_status_name] || 0;
+                            return (
+                              <tr key={w.id} className="hover:bg-gray-50 group">
+                                <td className="p-4">
+                                  <div className="font-mono text-xs font-bold leading-tight flex items-center gap-2">
+                                    {w.backlog_issue_key}
+                                    <Badge variant="outline" className="text-[8px] rounded-none px-1 py-0">{w.contract_type}</Badge>
+                                  </div>
+                                  <div className="text-sm font-medium mt-1">{w.summary || "Untitled Request"}</div>
+                                  <div className="text-[10px] opacity-40 uppercase font-mono">{w.counterparty || "Internal"}</div>
+                                </td>
+                                <td className="p-4">
+                                  <div className="flex items-center gap-3">
+                                    <div className="flex-1 min-w-[120px]">
+                                      <div className="w-full h-1 bg-gray-100">
+                                        <motion.div 
+                                          initial={{ width: 0 }}
+                                          animate={{ width: `${progress}%` }}
+                                          className={`h-full ${progress === 100 ? 'bg-green-500' : 'bg-[#141414]'}`}
+                                        />
+                                      </div>
+                                      <div className="text-[9px] font-mono mt-1 opacity-50">{progress}% COMPLETE</div>
+                                    </div>
+                                    <Badge className={`rounded-none text-[9px] uppercase border-[#141414] ${progress === 100 ? 'bg-green-600 text-white' : 'bg-white text-[#141414] border'}`}>
+                                      {w.current_status_name}
+                                    </Badge>
+                                  </div>
+                                </td>
+                                <td className="p-4 text-[10px] font-mono opacity-50">
+                                  {new Date(w.updated_at).toLocaleString('ja-JP', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </CardContent>
+                </Card>
+
+                {/* Backlog Issue List for Reference */}
+                <Card className="rounded-none border-[#141414] bg-white shadow-none">
+                  <CardHeader className="border-b border-[#141414] bg-gray-50">
+                    <CardTitle className="font-mono text-sm uppercase tracking-widest">Backlog Issue List</CardTitle>
+                    <CardDescription className="text-xs">現在のアクティブなBacklog課題一覧です</CardDescription>
+                  </CardHeader>
+                  <CardContent className="p-0">
+                    <div className="max-h-[500px] overflow-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="border-b border-[#141414] bg-gray-100 font-mono text-[9px] uppercase tracking-wider text-gray-400">
+                            <th className="p-3">Key</th>
+                            <th className="p-3">Type</th>
+                            <th className="p-3">Summary</th>
+                            <th className="p-3">Status</th>
+                            <th className="p-3 text-right">Workflow</th>
                           </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </CardContent>
-            </Card>
+                        </thead>
+                        <tbody className="divide-y divide-gray-100">
+                          {issues.map(issue => {
+                            const setting = workflowSettings.find(s => s.issue_type_name === issue.issueType.name);
+                            return (
+                              <tr key={issue.id} className="hover:bg-gray-50 text-[11px]">
+                                <td className="p-3 font-mono font-bold">{issue.issueKey}</td>
+                                <td className="p-3 opacity-60">{issue.issueType.name}</td>
+                                <td className="p-3 font-medium truncate max-w-[300px]">{issue.summary}</td>
+                                <td className="p-3">
+                                  <Badge style={{ backgroundColor: issue.status.color === 'status-green' ? '#27ae60' : issue.status.color === 'status-yellow' ? '#f1c40f' : '#e67300' }} className="text-white text-[8px] rounded-none">
+                                    {issue.status.name}
+                                  </Badge>
+                                </td>
+                                <td className="p-3 text-right">
+                                  {setting ? (
+                                    <div className="flex flex-col items-end gap-1">
+                                      <div className="flex gap-1">
+                                        {setting.allowed_templates?.slice(0, 2).map((tid: string) => (
+                                          <Badge key={tid} variant="outline" className="text-[7px] uppercase h-4 py-0">{tid.split('_')[0]}</Badge>
+                                        ))}
+                                      </div>
+                                      <span className="text-[8px] text-green-600 font-bold uppercase">Configured</span>
+                                    </div>
+                                  ) : (
+                                    <span className="text-[8px] opacity-30 italic">No Rule</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
           </motion.div>
         )}
         {activeTab === "assets" && (
@@ -1663,33 +2182,105 @@ export default function App() {
           )}
           {showVendorModal && (
             <div className="fixed inset-0 bg-[#141414]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white max-w-lg w-full p-8 border border-[#141414]">
+              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }} className="bg-white max-w-2xl w-full p-8 border border-[#141414] max-h-[90vh] overflow-y-auto">
                 <div className="flex justify-between items-center mb-6">
-                  <h3 className="font-mono text-sm uppercase tracking-widest font-bold">Register New Vendor</h3>
+                  <h3 className="font-mono text-sm uppercase tracking-widest font-bold">Register New Vendor (Detailed)</h3>
                   <button onClick={() => setShowVendorModal(false)}><X className="w-5 h-5" /></button>
                 </div>
-                <div className="space-y-4">
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                      <label className="text-[10px] font-mono uppercase opacity-50">Vendor Code</label>
-                      <input value={newVendor.vendor_code} onChange={e => setNewVendor({...newVendor, vendor_code: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="V-001" />
+                <div className="space-y-6">
+                  {/* Basic Info */}
+                  <div className="space-y-4">
+                    <h4 className="font-mono text-[10px] uppercase border-b border-gray-100 pb-1 opacity-40">Identity & Type</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Vendor Code *</label>
+                        <input value={newVendor.vendor_code} onChange={e => setNewVendor({...newVendor, vendor_code: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="V-001" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Entity Type</label>
+                        <select value={newVendor.entity_type} onChange={e => setNewVendor({...newVendor, entity_type: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono">
+                          <option value="individual">個人 (Individual)</option>
+                          <option value="corporate">法人 (Corporate)</option>
+                        </select>
+                      </div>
                     </div>
                     <div className="space-y-1">
-                      <label className="text-[10px] font-mono uppercase opacity-50">Invoice Reg No</label>
-                      <input value={newVendor.invoice_registration_number} onChange={e => setNewVendor({...newVendor, invoice_registration_number: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="T123..." />
+                      <label className="text-[10px] font-mono uppercase opacity-50">Vendor Name (氏名/名称) *</label>
+                      <input value={newVendor.vendor_name} onChange={e => setNewVendor({...newVendor, vendor_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="山田 太郎 / 株式会社サンプル" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Trade Name (屋号)</label>
+                        <input value={newVendor.trade_name} onChange={e => setNewVendor({...newVendor, trade_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Pen Name (ペンネーム)</label>
+                        <input value={newVendor.pen_name} onChange={e => setNewVendor({...newVendor, pen_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                      </div>
                     </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-mono uppercase opacity-50">Vendor Name</label>
-                    <input value={newVendor.vendor_name} onChange={e => setNewVendor({...newVendor, vendor_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="株式会社サンプル" />
+
+                  {/* Contact Info */}
+                  <div className="space-y-4">
+                    <h4 className="font-mono text-[10px] uppercase border-b border-gray-100 pb-1 opacity-40">Contact & Tax</h4>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono uppercase opacity-50">Address</label>
+                      <input value={newVendor.address} onChange={e => setNewVendor({...newVendor, address: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Email</label>
+                        <input value={newVendor.email} onChange={e => setNewVendor({...newVendor, email: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Phone</label>
+                        <input value={newVendor.phone} onChange={e => setNewVendor({...newVendor, phone: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center gap-2">
+                        <input type="checkbox" id="tax_check" checked={newVendor.is_invoice_issuer} onChange={e => setNewVendor({...newVendor, is_invoice_issuer: e.target.checked})} className="w-4 h-4 border-[#141414]" />
+                        <label htmlFor="tax_check" className="text-[10px] font-mono uppercase opacity-50 cursor-pointer">Invoice Issuer</label>
+                      </div>
+                      {newVendor.is_invoice_issuer && (
+                        <div className="space-y-1">
+                          <label className="text-[10px] font-mono uppercase opacity-50">Registration No</label>
+                          <input value={newVendor.invoice_registration_number} onChange={e => setNewVendor({...newVendor, invoice_registration_number: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="T123..." />
+                        </div>
+                      )}
+                    </div>
                   </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-mono uppercase opacity-50">Email Address (for Invoicing)</label>
-                    <input value={newVendor.email} onChange={e => setNewVendor({...newVendor, email: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="billing@sample.com" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-mono uppercase opacity-50">Bank Account Info</label>
-                    <textarea value={newVendor.bank_name} onChange={e => setNewVendor({...newVendor, bank_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" h-20 placeholder="三菱UFJ銀行 〇〇支店 普通 1234567" />
+
+                  {/* Banking */}
+                  <div className="space-y-4">
+                    <h4 className="font-mono text-[10px] uppercase border-b border-gray-100 pb-1 opacity-40">Banking Details</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Bank Name</label>
+                        <input value={newVendor.bank_name} onChange={e => setNewVendor({...newVendor, bank_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Branch Name</label>
+                        <input value={newVendor.branch_name} onChange={e => setNewVendor({...newVendor, branch_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-4">
+                      <div className="space-y-1">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Type</label>
+                        <select value={newVendor.account_type} onChange={e => setNewVendor({...newVendor, account_type: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono">
+                          <option value="普通">普通 (Savings)</option>
+                          <option value="当座">当座 (Current)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1 col-span-2">
+                        <label className="text-[10px] font-mono uppercase opacity-50">Account Number</label>
+                        <input value={newVendor.account_number} onChange={e => setNewVendor({...newVendor, account_number: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                      </div>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono uppercase opacity-50">Holder Kana (名義カナ)</label>
+                      <input value={newVendor.account_holder_kana} onChange={e => setNewVendor({...newVendor, account_holder_kana: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" />
+                    </div>
                   </div>
                 </div>
                 <button onClick={handleAddVendor} className="w-full mt-8 bg-[#141414] text-white py-3 font-mono text-xs uppercase tracking-widest">Add Vendor Master</button>
@@ -1712,6 +2303,14 @@ export default function App() {
                   <div className="space-y-1">
                     <label className="text-[10px] font-mono uppercase opacity-50">Staff Name</label>
                     <input value={newStaff.staff_name} onChange={e => setNewStaff({...newStaff, staff_name: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="山田 太郎" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono uppercase opacity-50">Email Address</label>
+                    <input value={newStaff.email} onChange={e => setNewStaff({...newStaff, email: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="staff@example.com" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-mono uppercase opacity-50">Phone Number</label>
+                    <input value={newStaff.phone} onChange={e => setNewStaff({...newStaff, phone: e.target.value})} className="w-full p-2 border border-[#141414] text-xs font-mono" placeholder="090-0000-0000" />
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
@@ -1759,6 +2358,372 @@ export default function App() {
                   </div>
                 </div>
                 <button onClick={handleAddRule} className="w-full mt-8 bg-[#141414] text-white py-3 font-mono text-xs uppercase tracking-widest">Apply Rule</button>
+              </motion.div>
+            </div>
+          )}
+
+          {showWorkflowModal && (
+            <div className="fixed inset-0 bg-[#141414]/90 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+              <motion.div 
+                initial={{ scale: 0.95, opacity: 0 }} 
+                animate={{ scale: 1, opacity: 1 }} 
+                exit={{ scale: 0.95, opacity: 0 }} 
+                className="bg-white max-w-4xl w-full h-[80vh] flex flex-col border border-[#141414]"
+              >
+                {/* Wizard Header */}
+                <div className="flex justify-between items-center p-6 border-b border-[#141414] bg-gray-50">
+                  <div className="space-y-1">
+                    <h3 className="font-mono text-sm uppercase tracking-widest font-bold">ワークフロー設定ウィザード (Workflow Wizard)</h3>
+                    <div className="flex gap-4">
+                      {[1, 2, 3, 4].map(s => (
+                        <div key={s} className={`flex items-center gap-2 text-[10px] font-mono uppercase ${workflowWizardStep === s ? 'text-[#141414] font-bold' : 'text-gray-400'}`}>
+                          <span className={`w-4 h-4 rounded-full flex items-center justify-center border ${workflowWizardStep === s ? 'border-[#141414] bg-[#141414] text-white' : 'border-gray-300'}`}>{s}</span>
+                          {s === 1 && "Backlog課題"}
+                          {s === 2 && "テンプレート"}
+                          {s === 3 && "自動入力設定"}
+                          {s === 4 && "完了後アクション"}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => { setShowWorkflowModal(false); setWorkflowWizardStep(1); }}><X className="w-5 h-5" /></button>
+                </div>
+
+                <CardContent className="flex-1 overflow-hidden p-0 flex">
+                  {/* Step Content */}
+                  <div className="flex-1 overflow-y-auto p-8">
+                    {workflowWizardStep === 1 && (
+                      <div className="space-y-8 max-w-2xl px-4">
+                        <div className="space-y-3">
+                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none rounded-sm px-2 py-0.5 text-[10px] uppercase font-bold">Step 01: 対象設定</Badge>
+                          <h4 className="font-bold text-2xl tracking-tight">どの種類の「課題」にこのルールを適用しますか？</h4>
+                          <p className="text-sm text-gray-500 leading-relaxed">
+                            Backlogで作成される課題の種類（種別）ごとに、使用できるテンプレートや自動入力のルールを紐付けます。
+                            まずは対象となる「課題種別」を選んでください。
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {backlogIssueTypes.length === 0 ? (
+                            <div className="col-span-full p-8 border-2 border-dashed border-gray-200 rounded-lg text-center">
+                              <RefreshCw className="w-8 h-8 opacity-20 mx-auto mb-2 animate-spin" />
+                              <p className="text-xs opacity-50">Backlogから情報を取得中...</p>
+                            </div>
+                          ) : (
+                            backlogIssueTypes.map(it => (
+                              <button 
+                                key={it.id}
+                                onClick={() => setNewWorkflowSetting({...newWorkflowSetting, issue_type_name: it.name})}
+                                className={`group p-6 border-2 text-left flex flex-col gap-2 transition-all relative overflow-hidden ${newWorkflowSetting.issue_type_name === it.name ? 'border-[#141414] bg-gray-50 shadow-md ring-1 ring-[#141414]' : 'border-gray-100 hover:border-gray-300'}`}
+                              >
+                                <div className="flex justify-between items-center relative z-10">
+                                  <span className={`font-mono text-[10px] tracking-widest uppercase ${newWorkflowSetting.issue_type_name === it.name ? 'text-[#141414]' : 'text-gray-400'}`}>Issue Type</span>
+                                  {newWorkflowSetting.issue_type_name === it.name && <CheckCircle2 className="w-5 h-5 text-[#141414]" />}
+                                </div>
+                                <span className="font-bold text-lg tracking-tight relative z-10">{it.name}</span>
+                                {newWorkflowSetting.issue_type_name === it.name && <div className="absolute right-0 bottom-0 opacity-5 -mb-4 -mr-4"><Building2 className="w-24 h-24" /></div>}
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {workflowWizardStep === 2 && (
+                      <div className="space-y-8 px-4">
+                        <div className="space-y-3">
+                          <Badge className="bg-blue-100 text-blue-700 hover:bg-blue-100 border-none rounded-sm px-2 py-0.5 text-[10px] uppercase font-bold">Step 02: テンプレート選択</Badge>
+                          <h4 className="font-bold text-2xl tracking-tight">「{newWorkflowSetting.issue_type_name}」で使用する雛形を選んでください</h4>
+                          <p className="text-sm text-gray-500 leading-relaxed">
+                            この課題種別が選択された時に、ユーザーが作成できる書類のテンプレートを制限できます。
+                            複数選択することが可能です。
+                          </p>
+                        </div>
+                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                          {DOCUMENT_TEMPLATES.map(t => (
+                            <label 
+                              key={t.id} 
+                              className={`p-5 border-2 cursor-pointer transition-all flex flex-col justify-between h-32 relative overflow-hidden ${newWorkflowSetting.allowed_templates.includes(t.id as never) ? 'border-[#141414] bg-gray-50 shadow-md' : 'border-gray-100 hover:border-gray-300 opacity-60'}`}
+                            >
+                              <div className="flex justify-between items-start relative z-10">
+                                <div className={`p-2 rounded-full ${newWorkflowSetting.allowed_templates.includes(t.id as never) ? 'bg-[#141414] text-white' : 'bg-gray-100 text-gray-400'}`}>
+                                  <FileText className="w-4 h-4" />
+                                </div>
+                                <input 
+                                  type="checkbox" 
+                                  className="w-5 h-5 accent-[#141414] rounded-none"
+                                  checked={newWorkflowSetting.allowed_templates.includes(t.id as never)}
+                                  onChange={(e) => {
+                                    const current = [...newWorkflowSetting.allowed_templates];
+                                    if (e.target.checked) {
+                                      current.push(t.id as never);
+                                      fetchTemplateVars(t.id);
+                                    } else {
+                                      const idx = current.indexOf(t.id as never);
+                                      if (idx > -1) current.splice(idx, 1);
+                                    }
+                                    setNewWorkflowSetting({...newWorkflowSetting, allowed_templates: current});
+                                  }}
+                                />
+                              </div>
+                              <div className="relative z-10 mt-auto">
+                                <span className="text-[11px] font-bold leading-tight block">{t.name}</span>
+                                <span className="text-[9px] font-mono opacity-40 uppercase tracking-tighter">{t.id}</span>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {workflowWizardStep === 3 && (
+                      <div className="flex flex-col h-full space-y-4">
+                        <div className="space-y-1">
+                          <h4 className="font-bold text-lg">3. 項目の自動入力ルールを決めましょう</h4>
+                          <p className="text-xs text-gray-500">テンプレート内の変数を、Backlogのどの項目から取得するか設定します。</p>
+                        </div>
+                        
+                        <div className="flex-1 flex gap-6 overflow-hidden">
+                          {/* Variables List */}
+                          <div className="w-1/2 overflow-y-auto pr-4 space-y-8 pb-10">
+                            {newWorkflowSetting.allowed_templates.map((templateId: string) => {
+                              const template = DOCUMENT_TEMPLATES.find(t => t.id === templateId);
+                              return (
+                                <div key={templateId} className="space-y-4 border-l-2 border-[#141414] pl-6 pb-6">
+                                  <div className="flex items-center justify-between sticky top-0 bg-white z-10 py-2">
+                                    <h5 className="font-mono text-[10px] uppercase font-bold tracking-widest bg-[#141414] text-white inline-block px-2 py-1">
+                                      {template?.name || templateId}
+                                    </h5>
+                                    <button 
+                                      onClick={() => fetchTemplateVars(templateId)}
+                                      className="text-[9px] font-mono underline opacity-50 hover:opacity-100"
+                                    >
+                                      再読み込み
+                                    </button>
+                                  </div>
+                                  
+                                  <div className="grid grid-cols-1 gap-4">
+                                    {currentTemplateVars.map(varName => (
+                                      <div key={varName} className="space-y-2 bg-gray-50 p-4 border border-gray-100 transition-all hover:border-gray-300">
+                                        <div className="flex items-center justify-between">
+                                          <div className="flex items-center gap-2">
+                                            <div className="w-1.5 h-1.5 bg-[#141414] rounded-full"></div>
+                                            <span className="text-xs font-mono font-bold">{varName}</span>
+                                          </div>
+                                          <Badge variant="outline" className="text-[8px] opacity-50">変数</Badge>
+                                        </div>
+                                        
+                                        <div className="grid grid-cols-2 gap-2">
+                                          <div className="space-y-1">
+                                            <label className="text-[8px] font-mono uppercase opacity-40">データ属性 (Source)</label>
+                                            <select 
+                                              value={newWorkflowSetting.variable_mappings[varName]?.source || "manual"}
+                                              onChange={(e) => {
+                                                const mappings = { ...newWorkflowSetting.variable_mappings };
+                                                mappings[varName] = { ...mappings[varName], source: e.target.value };
+                                                setNewWorkflowSetting({...newWorkflowSetting, variable_mappings: mappings});
+                                              }}
+                                              className="w-full p-2 border border-gray-300 text-[10px] font-mono bg-white appearance-none"
+                                            >
+                                              <option value="manual">手入力 (Manual)</option>
+                                              <option value="backlog_basic">Backlog基本項目</option>
+                                              <option value="backlog_custom">Backlogカスタム属性</option>
+                                              <option value="vendor">取引先マスタ (Vendor)</option>
+                                            </select>
+                                          </div>
+
+                                          <div className="space-y-1">
+                                            <label className="text-[8px] font-mono uppercase opacity-40">具体項目 (Field)</label>
+                                            {newWorkflowSetting.variable_mappings[varName]?.source === 'manual' ? (
+                                              <div className="p-2 border border-dashed border-gray-300 text-[10px] opacity-40 bg-gray-100 text-center">
+                                                生成時に指定
+                                              </div>
+                                            ) : (
+                                              <select 
+                                                value={newWorkflowSetting.variable_mappings[varName]?.field || ""}
+                                                onChange={(e) => {
+                                                  const mappings = { ...newWorkflowSetting.variable_mappings };
+                                                  mappings[varName] = { ...mappings[varName], field: e.target.value };
+                                                  setNewWorkflowSetting({...newWorkflowSetting, variable_mappings: mappings});
+                                                }}
+                                                className="w-full p-2 border border-gray-300 text-[10px] font-mono bg-white"
+                                              >
+                                                <option value="">選択...</option>
+                                                {newWorkflowSetting.variable_mappings[varName]?.source === 'backlog_basic' && (
+                                                  <>
+                                                    <option value="summary">件名 (Summary)</option>
+                                                    <option value="description">詳細 (Description)</option>
+                                                    <option value="createdUser">作成者</option>
+                                                  </>
+                                                )}
+                                                {newWorkflowSetting.variable_mappings[varName]?.source === 'backlog_custom' && (
+                                                  backlogCustomFields.map(cf => (
+                                                    <option key={cf.id} value={cf.id}>{cf.name}</option>
+                                                  ))
+                                                )}
+                                                {newWorkflowSetting.variable_mappings[varName]?.source === 'vendor' && (
+                                                  <>
+                                                    <option value="vendor_name">会社名/氏名</option>
+                                                    <option value="address">住所</option>
+                                                    <option value="bank_info">銀行口座情報</option>
+                                                    <option value="invoice_registration_number">インボイス番号</option>
+                                                  </>
+                                                )}
+                                              </select>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Preview Panel */}
+                          <div className="w-1/2 border border-gray-200 bg-gray-100 flex flex-col">
+                            <div className="p-3 bg-white border-b border-gray-200 flex items-center justify-between">
+                              <span className="text-[10px] font-mono font-bold uppercase tracking-widest flex items-center gap-2">
+                                <FileText className="w-3 h-3" /> Template Preview
+                              </span>
+                              <div className="flex gap-1">
+                                <div className="w-2 h-2 rounded-full bg-red-400"></div>
+                                <div className="w-2 h-2 rounded-full bg-yellow-400"></div>
+                                <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                              </div>
+                            </div>
+                            <div className="flex-1 relative bg-white m-4 shadow-sm">
+                              <iframe 
+                                src={newWorkflowSetting.allowed_templates[0] ? `/api/templates/${newWorkflowSetting.allowed_templates[0]}/preview` : "about:blank"}
+                                className="w-full h-full border-none"
+                                title="Template Preview"
+                              />
+                            </div>
+                            <div className="p-4 bg-gray-50 border-t border-gray-200">
+                              <p className="text-[10px] text-gray-500 font-serif italic">
+                                * プレビュー内の英文字 <b>[SAMPLE]</b> の部分は、上記の変数設定に従って自動的に置き換えられます。
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {workflowWizardStep === 4 && (
+                      <div className="space-y-8 max-w-md">
+                        <div className="space-y-2">
+                          <h4 className="font-bold text-lg">4. 文書作成後のアクションを設定します</h4>
+                          <p className="text-xs text-gray-500">書類が完成したら、Backlogの課題をどうしますか？</p>
+                        </div>
+                        
+                        <div className="space-y-6">
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-mono uppercase font-bold tracking-widest text-[#141414]">1. 文書番号の接頭辞 (Document Prefix)</label>
+                            <input 
+                              value={newWorkflowSetting.document_prefix || ""}
+                              onChange={e => setNewWorkflowSetting({...newWorkflowSetting, document_prefix: e.target.value})}
+                              className="w-full p-3 border border-[#141414] font-mono text-xs focus:ring-0 focus:outline-none"
+                              placeholder="例: NDA, PO, CTR..."
+                            />
+                            <p className="text-[9px] text-gray-500">
+                              未入力の場合は、テンプレートの種類に応じたデフォルト（NDA-2026-0001等）が使用されます。
+                            </p>
+                          </div>
+
+                          <div className="space-y-2">
+                            <label className="text-[10px] font-mono uppercase font-bold tracking-widest text-gray-400">2. 課題ステータスの自動変更</label>
+                            <div className="grid grid-cols-1 gap-2">
+                              {backlogStatuses.map(st => (
+                                <button 
+                                  key={st.id}
+                                  onClick={() => setNewWorkflowSetting({...newWorkflowSetting, next_status_id: st.id})}
+                                  className={`p-4 border text-left flex justify-between items-center transition-all ${newWorkflowSetting.next_status_id === st.id ? 'border-[#141414] bg-gray-50 ring-1 ring-[#141414]' : 'border-gray-200 opacity-60'}`}
+                                >
+                                  <div className="flex items-center gap-3">
+                                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: st.color === 'status-green' ? '#27ae60' : st.color === 'status-yellow' ? '#f1c40f' : '#e67e22' }}></div>
+                                    <span className="font-bold text-sm tracking-tight">{st.name}</span>
+                                  </div>
+                                  {newWorkflowSetting.next_status_id === st.id && <CheckCircle2 className="w-4 h-4" />}
+                                </button>
+                              ))}
+                              <button 
+                                onClick={() => setNewWorkflowSetting({...newWorkflowSetting, next_status_id: null})}
+                                className={`p-4 border text-left flex justify-between items-center transition-all ${newWorkflowSetting.next_status_id === null ? 'border-[#141414] bg-gray-50 ring-1 ring-[#141414]' : 'border-gray-200 opacity-60'}`}
+                              >
+                                <span className="font-bold text-sm tracking-tight">ステータスを変更しない</span>
+                                {newWorkflowSetting.next_status_id === null && <CheckCircle2 className="w-4 h-4" />}
+                              </button>
+                            </div>
+                          </div>
+                          
+                          <div className="p-4 bg-orange-50 border border-orange-100 flex gap-4">
+                            <AlertTriangle className="w-5 h-5 text-orange-500 shrink-0" />
+                            <div className="space-y-1">
+                              <p className="text-[10px] font-bold text-orange-800 uppercase">注意点</p>
+                              <p className="text-[10px] text-orange-700 leading-relaxed">
+                                この設定を保存すると、次回から「{newWorkflowSetting.issue_type_name}」の課題で書類を作成した際、
+                                指定したステータスへ自動的に更新されます。
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Template Preview Sidebar (Only for Step 3) */}
+                  {workflowWizardStep === 3 && newWorkflowSetting.allowed_templates.length > 0 && (
+                    <div className="w-1/3 border-l border-[#141414] bg-gray-100 flex flex-col">
+                      <div className="p-4 bg-white border-b border-gray-200 flex justify-between items-center">
+                        <span className="text-[10px] font-mono uppercase font-bold">Template Preview</span>
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 rounded-full bg-red-400"></div>
+                          <div className="w-2 h-2 rounded-full bg-yellow-400"></div>
+                          <div className="w-2 h-2 rounded-full bg-green-400"></div>
+                        </div>
+                      </div>
+                      <div className="flex-1 overflow-auto p-4 flex justify-center bg-gray-200">
+                        <div className="bg-white shadow-lg w-full max-w-[210mm] aspect-[1/1.41] overflow-hidden">
+                          <iframe 
+                            src={`/api/templates/${newWorkflowSetting.allowed_templates[0]}/preview`} 
+                            className="w-[200%] h-[200%] origin-top-left scale-[0.5] border-none"
+                            title="Template Preview"
+                          />
+                        </div>
+                      </div>
+                      <div className="p-4 bg-white text-[9px] font-mono border-t border-gray-200">
+                        <p className="opacity-50">各変数がどこに配置されるか確認できます。自動入力ルールを設定して効率化しましょう。</p>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+
+                {/* Wizard Footer */}
+                <div className="p-6 border-t border-[#141414] bg-gray-50 flex justify-between">
+                  <button 
+                    disabled={workflowWizardStep === 1}
+                    onClick={() => setWorkflowWizardStep(s => s - 1)}
+                    className="px-6 py-2 border border-[#141414] text-[10px] uppercase font-mono hover:bg-white transition-all disabled:opacity-20"
+                  >
+                    戻る (Back)
+                  </button>
+                  {workflowWizardStep < 4 ? (
+                    <button 
+                      disabled={workflowWizardStep === 1 && !newWorkflowSetting.issue_type_name || workflowWizardStep === 2 && newWorkflowSetting.allowed_templates.length === 0}
+                      onClick={() => setWorkflowWizardStep(s => s + 1)}
+                      className="px-12 py-2 bg-[#141414] text-white text-[10px] uppercase font-mono hover:bg-gray-800 transition-all disabled:opacity-50"
+                    >
+                      次へ進む (Next)
+                    </button>
+                  ) : (
+                    <button 
+                      onClick={handleAddWorkflowSetting}
+                      className="px-12 py-2 bg-[#141414] text-white text-[10px] uppercase font-mono hover:bg-gray-800 transition-all"
+                    >
+                      設定を保存する (Save Config)
+                    </button>
+                  )}
+                </div>
               </motion.div>
             </div>
           )}

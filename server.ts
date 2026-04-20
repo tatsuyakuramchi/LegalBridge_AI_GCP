@@ -5,7 +5,8 @@ import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { BacklogService } from "./src/services/backlogService.ts";
-import { DocumentService, DocumentType } from "./src/services/documentService.ts";
+import { DocumentService } from "./src/services/documentService.ts";
+import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { pool, initDb, query, getNextSequenceValue } from "./src/lib/db.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
@@ -18,24 +19,36 @@ initDb();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-async function getNewDocumentNumber(type: string): Promise<string> {
-  const typeCodes: Record<string, string> = {
-    nda: "NDA",
-    purchase_order: "PO",
-    contract: "CTR",
-    inspection_certificate: "INS",
-    royalty_statement: "ROY",
-    payment_notice: "PAY",
-    legal_request: "REQ",
-    service_master: "SRVP",
-    license_master: "LIC",
-    fee_statement: "FEE",
-    asset: "AST",
-    external_contract: "EXT",
-    design: "DSG",
-    spec: "SPC"
-  };
-  const prefix = typeCodes[type] || type.toUpperCase().substring(0, 3);
+async function getNewDocumentNumber(type: string, issueTypeName?: string): Promise<string> {
+  let prefix = "";
+  
+  if (issueTypeName) {
+    const wsResult = await query("SELECT document_prefix FROM workflow_settings WHERE issue_type_name = $1", [issueTypeName]);
+    if (wsResult.rows[0]?.document_prefix) {
+      prefix = wsResult.rows[0].document_prefix;
+    }
+  }
+
+  if (!prefix) {
+    const typeCodes: Record<string, string> = {
+      nda: "NDA",
+      purchase_order: "PO",
+      contract: "CTR",
+      inspection_certificate: "INS",
+      royalty_statement: "ROY",
+      payment_notice: "PAY",
+      legal_request: "REQ",
+      service_master: "SRVP",
+      license_master: "LIC",
+      fee_statement: "FEE",
+      asset: "AST",
+      external_contract: "EXT",
+      design: "DSG",
+      spec: "SPC"
+    };
+    prefix = typeCodes[type] || type.toUpperCase().substring(0, 3);
+  }
+
   const year = new Date().getFullYear();
   const sequenceKey = `${prefix}-${year}`;
   const val = await getNextSequenceValue(sequenceKey);
@@ -45,6 +58,12 @@ async function getNewDocumentNumber(type: string): Promise<string> {
 async function startServer() {
   const app = express();
   const PORT = 3000;
+
+  // Simple request logger
+  app.use((req, res, next) => {
+    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+    next();
+  });
 
   const backlogService = new BacklogService();
   const documentService = new DocumentService();
@@ -75,69 +94,139 @@ async function startServer() {
       logLevel: LogLevel.INFO,
     });
 
+    // --- Slack Helpers ---
+    const getLegalRequestModal = (selectedType: string = "legal_consultation"): any => {
+      const blocks: any[] = [
+        {
+          type: "input",
+          block_id: "request_type_block",
+          label: { type: "plain_text", text: "依頼種別 (Request Type)" },
+          element: {
+            type: "static_select",
+            action_id: "request_type_input",
+            initial_option: {
+              text: { type: "plain_text", text: selectedType === "legal_consultation" ? "法務相談 (legal_consultation)" : 
+                                       selectedType === "nda" ? "秘密保持契約 (nda)" :
+                                       selectedType === "outsourcing" ? "業務委託基本契約 (outsourcing)" :
+                                       selectedType === "license" ? "ライセンス契約 (license)" :
+                                       selectedType === "purchase_order" ? "発注書 (purchase_order)" :
+                                       selectedType === "delivery_request" ? "納品リクエスト (delivery_request)" :
+                                       "利用許諾料計算 (royalty_calculation)" },
+              value: selectedType
+            },
+            placeholder: { type: "plain_text", text: "種別を選択してください" },
+            options: [
+              { text: { type: "plain_text", text: "法務相談 (legal_consultation)" }, value: "legal_consultation" },
+              { text: { type: "plain_text", text: "秘密保持契約 (nda)" }, value: "nda" },
+              { text: { type: "plain_text", text: "業務委託基本契約 (outsourcing)" }, value: "outsourcing" },
+              { text: { type: "plain_text", text: "ライセンス契約 (license)" }, value: "license" },
+              { text: { type: "plain_text", text: "発注書 (purchase_order)" }, value: "purchase_order" },
+              { text: { type: "plain_text", text: "納品リクエスト (delivery_request)" }, value: "delivery_request" },
+              { text: { type: "plain_text", text: "利用許諾料計算 (royalty_calculation)" }, value: "royalty_calculation_sales_report" }
+            ]
+          }
+        },
+        {
+          type: "input",
+          block_id: "summary_block",
+          label: { type: "plain_text", text: "件名" },
+          element: { type: "plain_text_input", action_id: "summary_input", placeholder: { type: "plain_text", text: "例: 秘密保持契約の審査依頼" } }
+        },
+        {
+          type: "input",
+          block_id: "details_block",
+          label: { type: "plain_text", text: "相談・依頼詳細" },
+          element: { type: "plain_text_input", action_id: "details_input", multiline: true }
+        },
+        {
+          type: "input",
+          block_id: "counterparty_block",
+          label: { type: "plain_text", text: "相手方企業名 / 関連キー" },
+          element: { type: "plain_text_input", action_id: "counterparty_input" }
+        }
+      ];
+
+      // Dynamic items for Delivery Request
+      if (selectedType === "delivery_request") {
+        blocks.push(
+          {
+            type: "divider"
+          },
+          {
+            type: "section",
+            text: { type: "mrkdwn", text: "*検収書作成用データ*" }
+          },
+          {
+            type: "input",
+            block_id: "delivery_no_block",
+            label: { type: "plain_text", text: "納品回数 (第 n 回納品)" },
+            element: { type: "plain_text_input", action_id: "delivery_no_input", placeholder: { type: "plain_text", text: "1" }, initial_value: "1" }
+          },
+          {
+            type: "input",
+            block_id: "order_amount_block",
+            label: { type: "plain_text", text: "金額（税抜）" },
+            element: { type: "plain_text_input", action_id: "order_amount_input", placeholder: { type: "plain_text", text: "100000" } }
+          },
+          {
+            type: "input",
+            block_id: "delivery_date_block",
+            label: { type: "plain_text", text: "納品日 (YYYY-MM-DD)" },
+            element: { 
+              type: "datepicker", 
+              action_id: "delivery_date_input", 
+              initial_date: new Date().toISOString().split('T')[0]
+            }
+          },
+          {
+            type: "input",
+            block_id: "inspection_deadline_block",
+            label: { type: "plain_text", text: "検収期限 (YYYY-MM-DD)" },
+            element: { 
+              type: "datepicker", 
+              action_id: "inspection_deadline_input",
+              initial_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+            }
+          }
+        );
+      }
+
+      return {
+        type: "modal",
+        callback_id: "legal_request_modal",
+        title: { type: "plain_text", text: "法務相談・契約審査" },
+        blocks,
+        submit: { type: "plain_text", text: "送信" }
+      };
+    };
+
     // --- Slack Handlers ---
 
     // 1. Command to open modal
-    slackApp.command("/legal", async ({ command, ack, client, body }) => {
+    slackApp.command("/法務依頼", async ({ command, ack, client, body }) => {
       await ack();
       try {
         await client.views.open({
           trigger_id: body.trigger_id,
-          view: {
-            type: "modal",
-            callback_id: "legal_request_modal",
-            title: { type: "plain_text", text: "法務相談・契約審査" },
-            blocks: [
-              {
-                type: "input",
-                block_id: "request_type_block",
-                label: { type: "plain_text", text: "依頼種別 (Request Type)" },
-                element: {
-                  type: "static_select",
-                  action_id: "request_type_input",
-                  placeholder: { type: "plain_text", text: "種別を選択してください" },
-                  options: [
-                    { text: { type: "plain_text", text: "法務相談 (legal_consultation)" }, value: "legal_consultation" },
-                    { text: { type: "plain_text", text: "秘密保持契約 (nda)" }, value: "nda" },
-                    { text: { type: "plain_text", text: "業務委託基本契約 (outsourcing)" }, value: "outsourcing" },
-                    { text: { type: "plain_text", text: "ライセンス契約 (license)" }, value: "license" },
-                    { text: { type: "plain_text", text: "発注書 (purchase_order)" }, value: "purchase_order" },
-                    { text: { type: "plain_text", text: "納品リクエスト (delivery_request)" }, value: "delivery_request" },
-                    { text: { type: "plain_text", text: "利用許諾料計算 (royalty_calculation)" }, value: "royalty_calculation_sales_report" }
-                  ]
-                }
-              },
-              {
-                type: "input",
-                block_id: "summary_block",
-                label: { type: "plain_text", text: "件名" },
-                element: { type: "plain_text_input", action_id: "summary_input", placeholder: { type: "plain_text", text: "例: 秘密保持契約の審査依頼" } }
-              },
-              {
-                type: "input",
-                block_id: "details_block",
-                label: { type: "plain_text", text: "相談・依頼詳細" },
-                element: { type: "plain_text_input", action_id: "details_input", multiline: true }
-              },
-              {
-                type: "input",
-                block_id: "counterparty_block",
-                label: { type: "plain_text", text: "相手方企業名 / 関連キー" },
-                element: { type: "plain_text_input", action_id: "counterparty_input" }
-              },
-              {
-                type: "input",
-                block_id: "delivery_no_block",
-                optional: true,
-                label: { type: "plain_text", text: "納品回数 (分割納品の場合: 1, 2...)" },
-                element: { type: "plain_text_input", action_id: "delivery_no_input", placeholder: { type: "plain_text", text: "1" } }
-              }
-            ],
-            submit: { type: "plain_text", text: "送信" }
-          }
+          view: getLegalRequestModal("legal_consultation")
         });
       } catch (error) {
         console.error("Error opening modal:", error);
+      }
+    });
+
+    // Dynamic update based on selection
+    slackApp.action("request_type_input", async ({ ack, body, client, action }) => {
+      await ack();
+      try {
+        const selectedOption = (action as any).selected_option.value;
+        await client.views.update({
+          view_id: (body as any).view.id,
+          hash: (body as any).view.hash,
+          view: getLegalRequestModal(selectedOption)
+        });
+      } catch (error) {
+        console.error("Error updating view:", error);
       }
     });
 
@@ -150,8 +239,14 @@ async function startServer() {
       const summary = values.summary_block.summary_input.value || "";
       const details = values.details_block.details_input.value || "";
       const counterparty = values.counterparty_block.counterparty_input.value || "";
+      
+      // Delivery specific values
       const deliveryNoRaw = values.delivery_no_block?.delivery_no_input?.value;
       const deliveryNo = deliveryNoRaw ? parseInt(deliveryNoRaw) : null;
+      const orderAmount = values.order_amount_block?.order_amount_input?.value;
+      const deliveryDate = values.delivery_date_block?.delivery_date_input?.selected_date;
+      const inspectionDeadline = values.inspection_deadline_block?.inspection_deadline_input?.selected_date;
+      
       const user = body.user.id;
       
       // Map Slack request type to initial Document Template Type
@@ -188,8 +283,8 @@ async function startServer() {
         // If it's a delivery request, also record it in delivery_events
         if (requestType === "delivery_request") {
           await query(
-            "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline) VALUES ($1, $2, $3, $4)",
-            [issue.issueKey, deliveryNo, "pending", new Date(Date.now() + 14 * 24 * 60 * 60 * 1000)] // Default 14 days deadline
+            "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline, delivered_at, delivered_amount) VALUES ($1, $2, $3, $4, $5, $6)",
+            [issue.issueKey, deliveryNo, "pending", inspectionDeadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), deliveryDate || new Date(), parseFloat(orderAmount || "0")]
           );
         }
 
@@ -211,7 +306,7 @@ async function startServer() {
             );
             const deptChannel = deptRule.rows[0]?.slack_channel_id;
 
-            const docNumber = await getNewDocumentNumber(templateType);
+            const docNumber = await getNewDocumentNumber(templateType, requestType);
 
             // Generate Initial Document based on predicted flow
             const { html, fileName } = await documentService.generateDocument({
@@ -223,9 +318,14 @@ async function startServer() {
               details: {
                 "相談詳細": details,
                 "相手方": counterparty,
+                "counterparty": counterparty,
+                "description": details || displaySummary,
                 "SlackユーザーID": user,
-                "VENDOR_NAME": counterparty, // common alias
+                "VENDOR_NAME": counterparty, 
                 "DELIVERY_NUMBER": deliveryNo ? String(deliveryNo) : "",
+                "deliveryDate": deliveryDate ? new Date(deliveryDate).toLocaleDateString('ja-JP') : "",
+                "inspectionDeadline": inspectionDeadline ? new Date(inspectionDeadline).toLocaleDateString('ja-JP') : "",
+                "orderAmountStr": orderAmount ? new Intl.NumberFormat('ja-JP').format(parseFloat(orderAmount)) : "0",
                 "DOC_NO": docNumber
               }
             }, templateType);
@@ -240,16 +340,43 @@ async function startServer() {
             );
 
             // 1. Notify User (DM)
+            const userSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_user'");
+            const userTemplate = userSettingsResult.rows[0]?.value?.template || 
+              `✅ 法務相談・文書作成の受付が完了しました。\n\n*種別:* {{requestType}}\n*課題キー:* {{issueKey}}\n*文書番号:* {{docNumber}}\n*生成ドキュメント:* {{driveLink}}\n\n法務担当者からの連絡をお待ちください。`;
+
+            const replacePlaceholders = (tmpl: string, data: any) => {
+              return tmpl
+                .replace(/{{requestType}}/g, data.requestType || "")
+                .replace(/{{issueKey}}/g, data.issueKey || "")
+                .replace(/{{docNumber}}/g, data.docNumber || "")
+                .replace(/{{driveLink}}/g, data.driveLink || "")
+                .replace(/{{user}}/g, `<@${data.user}>` || "")
+                .replace(/{{summary}}/g, data.summary || "")
+                .replace(/{{counterparty}}/g, data.counterparty || "");
+            };
+
+            const userMsg = replacePlaceholders(userTemplate, {
+              requestType, issueKey: issue.issueKey, docNumber, driveLink, user, summary, counterparty
+            });
+
             await client.chat.postMessage({
               channel: user,
-              text: `✅ 法務相談・文書作成の受付が完了しました。\n\n*種別:* ${requestType}\n*課題キー:* ${issue.issueKey}\n*文書番号:* ${docNumber}\n*生成ドキュメント (${templateType}):* ${driveLink}\n\n法務担当者からの連絡をお待ちください。`
+              text: userMsg
             });
 
             // 2. Notify Department Channel (if configured)
             if (deptChannel) {
+              const chanSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_channel'");
+              const chanTemplate = chanSettingsResult.rows[0]?.value?.template || 
+                `🆕 *新規依頼受付通知*\n\n<@{{user}}> さんより新規依頼 ({{requestType}}) を受け付けました。\n*課題:* {{issueKey}} ({{summary}})\n*相手方:* {{counterparty}}\n*生成ドキュメント:* {{driveLink}}`;
+
+              const chanMsg = replacePlaceholders(chanTemplate, {
+                requestType, issueKey: issue.issueKey, docNumber, driveLink, user, summary, counterparty
+              });
+
               await client.chat.postMessage({
                 channel: deptChannel,
-                text: `🆕 *新規依頼受付通知*\n\n<@${user}> さんより新規依頼 (${requestType}) を受け付けました。\n*課題:* ${issue.issueKey} (${summary})\n*相手方:* ${counterparty}\n*生成ドキュメント:* ${driveLink}`
+                text: chanMsg
               });
             }
           } catch (err) {
@@ -272,6 +399,11 @@ async function startServer() {
   }
 
   // API Routes
+  // Slack Receiver Middleware (MUST be before any global body paring middleware like express.json())
+  if (receiver) {
+    app.use(receiver.router);
+  }
+
   app.post("/api/webhooks/backlog", express.json(), async (req, res) => {
     // Section 2-2: Webhook Implementation
     const event = req.body;
@@ -313,6 +445,44 @@ async function startServer() {
     try {
       const issues = await backlogService.getIssues();
       res.json(issues);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/backlog/issue-types", async (req, res) => {
+    try {
+      const types = await backlogService.getIssueTypes();
+      res.json(types);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/backlog/custom-fields", async (req, res) => {
+    try {
+      const fields = await backlogService.getCustomFields();
+      res.json(fields);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/backlog/statuses", async (req, res) => {
+    try {
+      const statuses = await backlogService.getStatuses();
+      res.json(statuses);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.patch("/api/backlog/issues/:key/status", express.json(), async (req, res) => {
+    try {
+      const { key } = req.params;
+      const { statusId } = req.body;
+      const result = await backlogService.updateIssueStatus(key, statusId);
+      res.json(result);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
@@ -453,7 +623,9 @@ async function startServer() {
     }
   });
 
-  // --- Master Data APIs ---
+  // Master Data APIs
+  // (Simplified: these already use local express.json())
+  
   app.get("/api/master/company-profile", (req, res) => {
     res.json({
       name: process.env.COMPANY_NAME || "サンプル株式会社",
@@ -461,6 +633,34 @@ async function startServer() {
       representative: process.env.COMPANY_REPRESENTATIVE || "代表取締役 山田 太郎",
       invoice_no: process.env.COMPANY_INVOICE_NO || "T1234567890123"
     });
+  });
+
+  app.get("/api/master/app-settings", async (req, res) => {
+    try {
+      const result = await query("SELECT * FROM app_settings");
+      const settings: Record<string, any> = {};
+      result.rows.forEach(row => {
+        settings[row.key] = row.value;
+      });
+      res.json(settings);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/master/app-settings", express.json(), async (req, res) => {
+    try {
+      const { settings } = req.body;
+      for (const [key, value] of Object.entries(settings)) {
+        await query(
+          "INSERT INTO app_settings (key, value) VALUES ($1, $2) ON CONFLICT (key) DO UPDATE SET value = $2, updated_at = CURRENT_TIMESTAMP",
+          [key, JSON.stringify(value)]
+        );
+      }
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
   });
 
   app.get("/api/master/vendors", async (req, res) => {
@@ -473,15 +673,40 @@ async function startServer() {
   });
 
   app.post("/api/master/vendors", express.json(), async (req, res) => {
-    const { vendor_code, vendor_name, address, email, bank_name, invoice_registration_number } = req.body;
+    const { 
+      vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type, 
+      withholding_enabled, aliases, address, phone, email, contact_department, 
+      contact_name, master_contract_ref, bank_info, bank_name, branch_name, 
+      account_type, account_number, account_holder_kana, is_invoice_issuer, 
+      invoice_registration_number 
+    } = req.body;
     try {
       await query(
-        `INSERT INTO vendors (vendor_code, vendor_name, address, email, bank_name, invoice_registration_number) 
-         VALUES ($1, $2, $3, $4, $5, $6) 
-         ON CONFLICT (vendor_code) DO UPDATE SET 
-         vendor_name = EXCLUDED.vendor_name, address = EXCLUDED.address, email = EXCLUDED.email, 
-         bank_name = EXCLUDED.bank_name, invoice_registration_number = EXCLUDED.invoice_registration_number`,
-        [vendor_code, vendor_name, address, email, bank_name, invoice_registration_number]
+        `INSERT INTO vendors (
+          vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type, 
+          withholding_enabled, aliases, address, phone, email, contact_department, 
+          contact_name, master_contract_ref, bank_info, bank_name, branch_name, 
+          account_type, account_number, account_holder_kana, is_invoice_issuer, 
+          invoice_registration_number
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        ON CONFLICT (vendor_code) DO UPDATE SET 
+          vendor_name = EXCLUDED.vendor_name, trade_name = EXCLUDED.trade_name, pen_name = EXCLUDED.pen_name, 
+          vendor_suffix = EXCLUDED.vendor_suffix, entity_type = EXCLUDED.entity_type, 
+          withholding_enabled = EXCLUDED.withholding_enabled, aliases = EXCLUDED.aliases, 
+          address = EXCLUDED.address, phone = EXCLUDED.phone, email = EXCLUDED.email, 
+          contact_department = EXCLUDED.contact_department, contact_name = EXCLUDED.contact_name, 
+          master_contract_ref = EXCLUDED.master_contract_ref, bank_info = EXCLUDED.bank_info, 
+          bank_name = EXCLUDED.bank_name, branch_name = EXCLUDED.branch_name, 
+          account_type = EXCLUDED.account_type, account_number = EXCLUDED.account_number, 
+          account_holder_kana = EXCLUDED.account_holder_kana, is_invoice_issuer = EXCLUDED.is_invoice_issuer, 
+          invoice_registration_number = EXCLUDED.invoice_registration_number`,
+        [
+          vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type, 
+          withholding_enabled, aliases, address, phone, email, contact_department, 
+          contact_name, master_contract_ref, bank_info, bank_name, branch_name, 
+          account_type, account_number, account_holder_kana, is_invoice_issuer, 
+          invoice_registration_number
+        ]
       );
       res.json({ success: true });
     } catch (error) {
@@ -499,14 +724,15 @@ async function startServer() {
   });
 
   app.post("/api/master/staff", express.json(), async (req, res) => {
-    const { slack_user_id, staff_name, department, department_code } = req.body;
+    const { slack_user_id, staff_name, email, phone, department, department_code } = req.body;
     try {
       await query(
-        `INSERT INTO staff (slack_user_id, staff_name, department, department_code) 
-         VALUES ($1, $2, $3, $4) 
+        `INSERT INTO staff (slack_user_id, staff_name, email, phone, department, department_code) 
+         VALUES ($1, $2, $3, $4, $5, $6) 
          ON CONFLICT (slack_user_id) DO UPDATE SET 
-         staff_name = EXCLUDED.staff_name, department = EXCLUDED.department, department_code = EXCLUDED.department_code`,
-        [slack_user_id, staff_name, department, department_code]
+         staff_name = EXCLUDED.staff_name, email = EXCLUDED.email, phone = EXCLUDED.phone, 
+         department = EXCLUDED.department, department_code = EXCLUDED.department_code`,
+        [slack_user_id, staff_name, email, phone, department, department_code]
       );
       res.json({ success: true });
     } catch (error) {
@@ -658,6 +884,10 @@ async function startServer() {
       let result;
       if (mode === "publishing") {
         result = await csvImportService.importPublishingBulk(req.body);
+      } else if (mode === "vendor") {
+        result = await csvImportService.importVendors(req.body);
+      } else if (mode === "staff") {
+        result = await csvImportService.importStaff(req.body);
       } else {
         result = await csvImportService.importGeneric(req.body);
       }
@@ -677,23 +907,61 @@ async function startServer() {
     }
   });
 
+  app.get("/api/templates/:type/preview", async (req, res) => {
+    try {
+      const { type } = req.params;
+      const variables = documentService.getTemplateVariables(type as any);
+      const dummyDetails: Record<string, string> = {};
+      variables.forEach(v => {
+        dummyDetails[v] = `[${v}]`;
+      });
+      
+      const html = documentService.renderHtml({
+        issueKey: "DEMO-123",
+        summary: "DEMO ISSUE SUMMARY",
+        requester: "DEMO USER",
+        date: new Date().toLocaleDateString("ja-JP"),
+        details: dummyDetails
+      }, type as any);
+      
+      res.send(html);
+    } catch (error) {
+      res.status(500).send(String(error));
+    }
+  });
+
   app.post("/api/documents/generate", express.json(), async (req, res) => {
     const { issueKey, templateType, formData, requesterEmail } = req.body;
 
     try {
-      // 1. Fetch Backlog Issue details (to get the original requester if needed)
+      // 1. Fetch Backlog Issue details
       const issue = await backlogService.getIssue(issueKey);
       
-      const docNumber = await getNewDocumentNumber(templateType);
+      const docNumber = await getNewDocumentNumber(templateType, issue.issueType.name);
 
-      // 2. Generate Document
+      // 2. Fetch Staff Details from Master DB to enrich context
+      let staffInfo: any = {};
+      if (requesterEmail) {
+        const staffResult = await query("SELECT * FROM staff WHERE email = $1 OR slack_user_id = $1 LIMIT 1", [requesterEmail]);
+        if (staffResult.rows.length > 0) {
+          const s = staffResult.rows[0];
+          staffInfo = {
+            STAFF_NAME: s.staff_name,
+            STAFF_DEPARTMENT: s.department,
+            STAFF_EMAIL: s.email,
+            STAFF_PHONE: s.phone
+          };
+        }
+      }
+
+      // 3. Generate Document
       const { html, fileName } = await documentService.generateDocument({
         issueKey,
         documentNumber: docNumber,
         summary: issue.summary,
         requester: requesterEmail || "Legal Department",
         date: new Date().toLocaleDateString("ja-JP"),
-        details: { ...formData, DOC_NO: docNumber }
+        details: { ...staffInfo, ...formData, DOC_NO: docNumber }
       }, templateType);
 
       // 3. Upload to Google Drive
@@ -752,6 +1020,7 @@ async function startServer() {
       res.status(500).json({ error: String(error) });
     }
   });
+
 
   app.post("/api/test-generate", async (req, res) => {
     try {
@@ -821,12 +1090,48 @@ async function startServer() {
     }
   });
 
-  // Slack Receiver Middleware
-  if (receiver) {
-    app.use(receiver.router);
-  }
+  app.get("/api/master/workflow-settings", async (req, res) => {
+    try {
+      const result = await query("SELECT * FROM workflow_settings ORDER BY issue_type_name ASC");
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
 
-  // Vite middleware for development
+  app.post("/api/master/workflow-settings", express.json(), async (req, res) => {
+    const { issue_type_name, allowed_templates, status_configs, variable_mappings, next_status_id, document_prefix } = req.body;
+    try {
+      await query(
+        `INSERT INTO workflow_settings (issue_type_name, allowed_templates, status_configs, variable_mappings, next_status_id, document_prefix) 
+         VALUES ($1, $2, $3, $4, $5, $6) 
+         ON CONFLICT (issue_type_name) DO UPDATE SET 
+         allowed_templates = EXCLUDED.allowed_templates, 
+         status_configs = EXCLUDED.status_configs,
+         variable_mappings = EXCLUDED.variable_mappings,
+         next_status_id = EXCLUDED.next_status_id,
+         document_prefix = EXCLUDED.document_prefix,
+         updated_at = CURRENT_TIMESTAMP`,
+        [
+          issue_type_name, 
+          JSON.stringify(allowed_templates || []), 
+          JSON.stringify(status_configs || {}),
+          JSON.stringify(variable_mappings || {}),
+          next_status_id,
+          document_prefix
+        ]
+      );
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // API Catch-all (must be before Vite/Static middleware)
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route not found: ${req.method} ${req.url}` });
+  });
+
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
       server: { middlewareMode: true },

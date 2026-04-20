@@ -6,7 +6,12 @@
 <style>
   @page { size: A4; margin: 18mm 20mm 20mm 20mm; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  body { font-family: "IPAGothic", "Yu Gothic", sans-serif; font-size: 10pt; color: #1a1a1a; background: #fff; }
+  body {
+    font-family: "IPAGothic", "Yu Gothic", sans-serif;
+    font-size: 10pt;
+    color: #1a1a1a;
+    background: #fff;
+  }
   .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 6px; }
   .doc-title { font-size: 26pt; font-weight: bold; letter-spacing: 1px; color: #111; }
   .doc-meta { text-align: right; font-size: 9pt; color: #222; line-height: 1.8; padding-top: 6px; }
@@ -44,46 +49,107 @@
 </style>
 </head>
 <body>
+
 <div class="top">
   <div class="doc-title">お支払いのご案内</div>
-  <div class="doc-meta">No: {{notice_id}}<br>発行日: {{notice_date}}</div>
+  <div class="doc-meta">
+    No: {{notice_id}}<br>
+    発行日: {{notice_date}}
+  </div>
 </div>
 <hr class="rule">
+
 <div class="parties">
   <div class="recipient">
     <div class="name">{{vendor_name}} {{vendorSuffix}}</div>
-    {{#if vendor_representative_sama}}<div class="reg">{{vendor_representative_sama}}</div>{{/if}}
+    {{#if vendor_representative_sama}}
+    <div class="reg">{{vendor_representative_sama}}</div>
+    {{/if}}
     <div class="reg">登録番号: {{vendor_invoice_num}}</div>
   </div>
   <div class="issuer">
     <div class="co-name">{{SENDER_NAME}}</div>
     {{#if INVOICE_REGISTRATION_NUMBER}}登録番号: {{INVOICE_REGISTRATION_NUMBER}}<br>{{/if}}
-    〒 {{SENDER_ZIP}}<br>{{SENDER_ADDRESS}}<br>担当: {{SENDER_DEPT}}　{{STAFF_NAME}}
+    〒 {{SENDER_ZIP}}<br>
+    {{SENDER_ADDRESS}}<br>
+    担当: {{SENDER_DEPT}}　{{STAFF_NAME}}
   </div>
 </div>
-<p class="intro">平素は格別のご高配を賜り、厚く御礼申し上げます。<br>下記の通り、お支払金額が確定いたしましたのでご案内申し上げます。</p>
+
+<p class="intro">
+  平素は格別のご高配を賜り、厚く御礼申し上げます。<br>
+  下記の通り、お支払金額が確定いたしましたのでご案内申し上げます。
+</p>
+
 <div class="amount-box">
-  <div class="amount-row"><span class="lbl">支払対象額（税込合計）</span><span class="val">¥ {{formatCurrency totalWithTax}}</span></div>
-  {{#if expenseAmount}}<div class="amount-row"><span class="lbl">立替経費</span><span class="val">¥ {{formatCurrency expenseAmount}}</span></div>{{/if}}
-  {{#if withholdingTax}}<div class="amount-row deduction"><span class="lbl">源泉徴収税額（控除）</span><span class="val">▲ ¥ {{formatCurrency withholdingTax}}</span></div>{{/if}}
-  <div class="amount-row grand"><span class="lbl">差引お振込額</span><span class="val">¥ {{formatCurrency paymentAmount}}</span></div>
+  <div class="amount-row">
+    <span class="lbl">支払対象額（税込合計）</span>
+    <span class="val">¥ {{formatCurrency totalWithTax}}</span>
+  </div>
+  {{#if expenseAmount}}
+  <div class="amount-row">
+    <span class="lbl">立替経費</span>
+    <span class="val">¥ {{formatCurrency expenseAmount}}</span>
+  </div>
+  {{/if}}
+  {{#if withholdingTax}}
+  <div class="amount-row deduction">
+    <span class="lbl">源泉徴収税額（控除）</span>
+    <span class="val">▲ ¥ {{formatCurrency withholdingTax}}</span>
+  </div>
+  {{/if}}
+  <div class="amount-row grand">
+    <span class="lbl">差引お振込額</span>
+    <span class="val">¥ {{formatCurrency paymentAmount}}</span>
+  </div>
 </div>
+
 {{#if showWithholdingNote}}
-<div class="notes-box">※ 個人事業主様へのお支払いのため、源泉徴収税額を控除しております。<br>※ 源泉徴収税率: {{withholdingRateLabel}}</div>
+<div class="notes-box">
+  ※ 個人事業主様へのお支払いのため、源泉徴収税額を控除しております。<br>
+  ※ 源泉徴収税率: {{withholdingRateLabel}}
+</div>
 {{/if}}
+
 <hr class="thin-rule">
+
 <table class="breakdown">
-  <thead><tr><th style="width:130px">検収書番号</th><th>案件名</th><th style="width:90px" class="right">金額</th></tr></thead>
+  <thead>
+    <tr>
+      <th style="width:130px">検収書番号</th>
+      <th>案件名</th>
+      <th style="width:90px" class="right">金額</th>
+    </tr>
+  </thead>
   <tbody>
     {{#each items}}
-    <tr><td>{{order_no}}</td><td>{{name}}{{#if detail}}<br><span class="muted">（{{detail}}）</span>{{/if}}</td><td class="right">¥ {{formatCurrency amount}}</td></tr>
+    <tr>
+      <td>{{order_no}}</td>
+      <td>{{name}}
+        {{#if detail}}<br><span class="muted">（{{detail}}）</span>{{/if}}
+      </td>
+      <td class="right">¥ {{formatCurrency amount}}</td>
+    </tr>
     {{/each}}
   </tbody>
-  <tfoot><tr><td colspan="2" class="right">合計（税込）</td><td class="right">¥ {{formatCurrency totalWithTax}}</td></tr></tfoot>
+  <tfoot>
+    <tr>
+      <td colspan="2" class="right">合計（税込）</td>
+      <td class="right">¥ {{formatCurrency totalWithTax}}</td>
+    </tr>
+  </tfoot>
 </table>
+
 <table class="info-table">
-  <tr><td class="lbl">支払予定日</td><td class="val">{{payment_due_date}}</td></tr>
-  <tr><td class="lbl">振込先</td><td class="val">{{BANK_NAME}}　{{BRANCH_NAME}}　{{ACCOUNT_TYPE}}　{{ACCOUNT_NUMBER}}　{{BANK_ACCOUNT_NAME}}</td></tr>
+  <tr>
+    <td class="lbl">支払予定日</td>
+    <td class="val">{{payment_due_date}}</td>
+  </tr>
+  <tr>
+    <td class="lbl">振込先</td>
+    <td class="val">{{BANK_NAME}}　{{BRANCH_NAME}}　{{ACCOUNT_TYPE}}　{{ACCOUNT_NUMBER}}　{{BANK_ACCOUNT_NAME}}</td>
+  </tr>
 </table>
+
 </body>
 </html>

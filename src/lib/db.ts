@@ -69,20 +69,56 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       vendor_code VARCHAR(50) UNIQUE NOT NULL,
       vendor_name VARCHAR(255) NOT NULL,
+      trade_name VARCHAR(255),
+      pen_name VARCHAR(255),
+      vendor_suffix VARCHAR(50),
+      entity_type VARCHAR(50),
+      withholding_enabled BOOLEAN DEFAULT FALSE,
+      aliases TEXT,
       address TEXT,
+      phone VARCHAR(50),
       email VARCHAR(255),
+      contact_department VARCHAR(100),
+      contact_name VARCHAR(100),
+      master_contract_ref TEXT,
+      bank_info TEXT,
       bank_name TEXT,
+      branch_name TEXT,
+      account_type VARCHAR(50),
+      account_number VARCHAR(50),
+      account_holder_kana TEXT,
+      is_invoice_issuer BOOLEAN DEFAULT FALSE,
       invoice_registration_number VARCHAR(50)
     );`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS trade_name VARCHAR(255);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS pen_name VARCHAR(255);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS vendor_suffix VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS entity_type VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS withholding_enabled BOOLEAN DEFAULT FALSE;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS aliases TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS phone VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS contact_department VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS contact_name VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS master_contract_ref TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS bank_info TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS branch_name TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_type VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_number VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_holder_kana TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS is_invoice_issuer BOOLEAN DEFAULT FALSE;`,
 
     // 3. Staff & Workflow Rules
     `CREATE TABLE IF NOT EXISTS staff (
       id SERIAL PRIMARY KEY,
       slack_user_id VARCHAR(50) UNIQUE NOT NULL,
       staff_name VARCHAR(255) NOT NULL,
+      email VARCHAR(255),
+      phone VARCHAR(50),
       department VARCHAR(100),
       department_code VARCHAR(50)
     );`,
+    `ALTER TABLE staff ADD COLUMN IF NOT EXISTS email VARCHAR(255);`,
+    `ALTER TABLE staff ADD COLUMN IF NOT EXISTS phone VARCHAR(50);`,
 
     `CREATE TABLE IF NOT EXISTS department_workflow_rules (
       id SERIAL PRIMARY KEY,
@@ -204,6 +240,24 @@ export async function initDb() {
       stamp_at TIMESTAMP WITH TIME ZONE,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
+    `CREATE TABLE IF NOT EXISTS workflow_settings (
+      id SERIAL PRIMARY KEY,
+      issue_type_name VARCHAR(100) UNIQUE NOT NULL,
+      allowed_templates JSONB DEFAULT '[]',
+      status_configs JSONB DEFAULT '{}', -- e.g. { "完了": { "auto_advance": true } }
+      variable_mappings JSONB DEFAULT '{}', -- { "CONTRACT_DATE": { "source": "backlog", "field": "customField_123" } }
+      next_status_id INTEGER, -- Backlog status ID to move to after generation
+      document_prefix VARCHAR(50), -- Prefix for document numbering
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE TABLE IF NOT EXISTS app_settings (
+      key VARCHAR(100) PRIMARY KEY,
+      value JSONB DEFAULT '{}',
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `ALTER TABLE workflow_settings ADD COLUMN IF NOT EXISTS variable_mappings JSONB DEFAULT '{}';`,
+    `ALTER TABLE workflow_settings ADD COLUMN IF NOT EXISTS next_status_id INTEGER;`,
+    `ALTER TABLE workflow_settings ADD COLUMN IF NOT EXISTS document_prefix VARCHAR(50);`,
     `ALTER TABLE royalty_payments ADD COLUMN IF NOT EXISTS backlog_issue_key VARCHAR(50);`,
     `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS mg_amount DECIMAL(15, 2);`,
     `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS fee_structure VARCHAR(50);`,

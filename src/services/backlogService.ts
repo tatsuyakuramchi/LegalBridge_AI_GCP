@@ -124,4 +124,50 @@ export class BacklogService {
       return [];
     }
   }
+
+  async getIssueTypes(): Promise<any[]> {
+    if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
+    try {
+      const response = await axios.get(this.getUrl(`/projects/${this.projectKey}/issueTypes`));
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching issue types:", error);
+      return [];
+    }
+  }
+
+  async getCustomFields(): Promise<any[]> {
+    if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
+    try {
+      const response = await axios.get(this.getUrl(`/projects/${this.projectKey}/customFields`));
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching custom fields:", error);
+      return [];
+    }
+  }
+
+  async getStatuses(): Promise<any[]> {
+    if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
+    try {
+      const response = await axios.get(this.getUrl(`/projects/${this.projectKey}/statuses`));
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching statuses:", error);
+      return [];
+    }
+  }
+
+  async updateIssueStatus(issueKey: string, statusId: number): Promise<any> {
+    if (!this.apiKey || !this.baseUrl) return null;
+    try {
+      const body = new URLSearchParams();
+      body.append("statusId", statusId.toString());
+      const response = await axios.patch(this.getUrl(`/issues/${issueKey}`), body);
+      return response.data;
+    } catch (error) {
+      console.error(`Error updating issue status for ${issueKey}:`, error);
+      throw error;
+    }
+  }
 }
