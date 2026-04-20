@@ -57,7 +57,7 @@ async function getNewDocumentNumber(type: string, issueTypeName?: string): Promi
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   // Simple request logger
   app.use((req, res, next) => {
