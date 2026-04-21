@@ -1,49 +1,114 @@
 import Papa from "papaparse";
-import { query } from "../lib/db.ts";
+import { query, getNewDocumentNumber } from "../lib/db.ts";
 
 export interface CsvImportResult {
   success: boolean;
   processedCount: number;
   errors: string[];
+  csvOutput?: string;
 }
 
 export class CsvImportService {
   /**
-   * Section 7.2: generic mode
+   * Section 7.2: generic mode (Unified with Inspection)
+   * Returns a CSV pre-filled for the next step (Inspection/Delivery)
    */
   async importGeneric(csvText: string): Promise<CsvImportResult> {
     const parseResult = Papa.parse(csvText, { header: true, skipEmptyLines: true });
     const errors: string[] = [];
     let rowIndex = 0;
     let processedCount = 0;
+    const resultRows: any[] = [];
+
+    const headers = ["issueKey", "orderNumber", "itemName", "vendorCode", "amount", "dueDate", "deliveredAt", "deliveredAmount", "inspectionDeadline", "deliveryNo", "isPartial", "spec", "SlackID", "CHANGE_RECORDS"];
 
     for (const row of parseResult.data as any[]) {
       rowIndex++;
       try {
         const desc = row.desc || row.itemName || row.item_name || row["業務内容"] || row["成果物名"];
-        const vendorCode = row.vendorCode || row.vendor_code || row.registration_number || row["登録番号"];
-        const dueDate = row.dueDate || row.due_date || row.delivery_date || row["納期"] || row["納品日"];
-        const amount = parseFloat((row.amount || row["金額"] || row["税抜金額"] || "0").replace(/,/g, ""));
+        const vendorCode = row.vendorCode || row.vendor_code || row.registration_number || row["登録番号"] || row.VendorCode;
+        const dueDate = row.dueDate || row.due_date || row.delivery_date || row["納期"] || row["納品日"] || row.DueDate;
+        const amountStr = String(row.amount || row["金額"] || row["税抜金額"] || row.Amount || "0").replace(/,/g, "");
+        const amount = parseFloat(amountStr);
+        const slackId = row.SlackID || row.slack_user_id || "";
+        
+        let orderNumber = row.orderNumber || row.ORDER_NO || "";
 
-        if (!desc || !vendorCode || !dueDate) {
-          errors.push(`Row ${rowIndex}: Missing required fields (desc, vendorCode, or dueDate)`);
+        if (!desc || !vendorCode) {
+          errors.push(`Row ${rowIndex}: Missing required fields (desc or vendorCode)`);
           continue;
         }
 
         const issueKey = row.issue_key || row.issueKey || `CSV-GEN-${Date.now()}-${processedCount}`;
         
+        // Auto-generate PO number if it doesn't exist and this looks like a PO import
+        if (!orderNumber) {
+          orderNumber = await getNewDocumentNumber("purchase_order");
+        }
+
+        // 1. Create Legal Request / Order
         await query(
-          "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary, notes) VALUES ($1, $2, $3, $4) ON CONFLICT (backlog_issue_key) DO UPDATE SET counterparty = EXCLUDED.counterparty",
-          [issueKey, vendorCode, desc, JSON.stringify(row)]
+          "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, counterparty, summary, notes) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (backlog_issue_key) DO UPDATE SET counterparty = EXCLUDED.counterparty",
+          [issueKey, slackId, vendorCode, desc, JSON.stringify({ ...row, orderNumber })]
         );
+
+        // 2. Inspection part (optional)
+        const deliveredAt = row.deliveredAt || row.DeliveredAt || row["納品完了日"];
+        const deliveredAmountStr = String(row.deliveredAmount || row.DeliveredAmount || row["今回納品額"] || "").replace(/,/g, "");
+        
+        if (deliveredAt || deliveredAmountStr) {
+          const deliveryNo = row.deliveryNo || row.DeliveryNo || "1";
+          const inspectionDeadline = row.inspectionDeadline || row.InspectionDeadline || deliveredAt;
+          
+          await query(
+            `INSERT INTO delivery_events 
+             (backlog_issue_key, delivery_no, status, delivered_at, delivered_amount, inspection_deadline, note) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET 
+             delivered_at = EXCLUDED.delivered_at, delivered_amount = EXCLUDED.delivered_amount`,
+            [
+              issueKey, 
+              parseInt(deliveryNo), 
+              "pending", 
+              deliveredAt || new Date().toISOString().split('T')[0], 
+              parseFloat(deliveredAmountStr || "0"), 
+              inspectionDeadline,
+              `Bulk imported unified: ${desc}`
+            ]
+          );
+
+          await query(
+            "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
+            [issueKey, "delivery_request", "文書生成依頼"]
+          );
+        }
+
+        resultRows.push({
+          issueKey,
+          orderNumber,
+          itemName: desc,
+          vendorCode,
+          amount,
+          dueDate,
+          deliveredAt: deliveredAt || "",
+          deliveredAmount: deliveredAmountStr || "",
+          inspectionDeadline: row.inspectionDeadline || "",
+          deliveryNo: row.deliveryNo || "1",
+          isPartial: row.isPartial || "FALSE",
+          spec: row.spec || "",
+          SlackID: slackId,
+          CHANGE_RECORDS: row.CHANGE_RECORDS || ""
+        });
 
         processedCount++;
       } catch (err) {
-        errors.push(`Row ${processedCount + 1}: ${String(err)}`);
+        errors.push(`Row ${rowIndex}: ${String(err)}`);
       }
     }
 
-    return { success: errors.length === 0, processedCount, errors };
+    const csvOutput = Papa.unparse({ fields: headers, data: resultRows });
+
+    return { success: errors.length === 0, processedCount, errors, csvOutput };
   }
 
   async importVendors(csvText: string): Promise<CsvImportResult> {
@@ -152,20 +217,23 @@ export class CsvImportService {
   }
 
   /**
-   * Section 7.3: publishing_bulk fixed headers
+   * Section 7.3: publishing_bulk (Unified with Inspection)
+   * SlackID,OrderDate,PaymentDate,VendorCode,VendorName,BookTitle,Summary,Details,UnitPrice,Quantity,TotalAmount,Deadline1,Deadline2,FinalDeadline,deliveredAt,deliveredAmount,inspectionDeadline,deliveryNo
    */
   async importPublishingBulk(csvText: string): Promise<CsvImportResult> {
-    // Section 7.3 says order must match
     const parseResult = Papa.parse(csvText, { header: false, skipEmptyLines: true });
     const errors: string[] = [];
     let processedCount = 0;
+    const resultRows: any[] = [];
+
+    const headers = ["SlackID", "OrderDate", "PaymentDate", "VendorCode", "VendorName", "BookTitle", "Summary", "Details", "UnitPrice", "Quantity", "TotalAmount", "Deadline1", "Deadline2", "FinalDeadline", "deliveredAt", "deliveredAmount", "inspectionDeadline", "deliveryNo", "orderNumber", "CHANGE_RECORDS", "issueKey"];
 
     // Skip header row
     const data = parseResult.data.slice(1);
 
     for (const row of data as any[]) {
       try {
-        const [
+        let [
           staffId, 
           orderDate, 
           paymentDate, 
@@ -179,25 +247,84 @@ export class CsvImportService {
           totalAmount, 
           deadline1, 
           deadline2, 
-          finalDeadline
+          finalDeadline,
+          deliveredAt,
+          deliveredAmount,
+          inspectionDeadline,
+          deliveryNo,
+          orderNumber,
+          changeRecords
         ] = row;
 
-        if (!staffId || !vendorCode || !finalDeadline) {
-          errors.push(`Row ${processedCount + 2}: Missing required fields`);
+        if (!staffId || !vendorCode) {
+          errors.push(`Row ${processedCount + 2}: Missing required fields (SlackID or VendorCode)`);
           continue;
         }
 
         const issueKey = `PUB-${vendorCode}-${Date.now()}-${processedCount}`;
         
+        // Auto-generate PO number if missing
+        if (!orderNumber) {
+          orderNumber = await getNewDocumentNumber("purchase_order");
+        }
+
+        // 1. Create Legal Request record
         const reqResult = await query(
-          "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, summary, notes) VALUES ($1, $2, $3, $4) RETURNING id",
-          [issueKey, staffId, `${vendorName} - ${bookTitle}`, details]
+          "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, summary, notes, counterparty) VALUES ($1, $2, $3, $4, $5) RETURNING id",
+          [issueKey, staffId, `${vendorName} - ${bookTitle}`, details || summary, vendorName]
         );
         
         await query(
           "INSERT INTO order_items (legal_request_id, item_no, vendor_code, description, amount, due_date) VALUES ($1, $2, $3, $4, $5, $6)",
-          [reqResult.rows[0].id, 1, vendorCode, summary, parseFloat(totalAmount || "0"), finalDeadline]
+          [reqResult.rows[0].id, 1, vendorCode, summary, parseFloat(String(totalAmount || "0").replace(/,/g, "")), finalDeadline || orderDate]
         );
+
+        // 2. Inspection part (optional)
+        if (deliveredAt || deliveredAmount) {
+          await query(
+            `INSERT INTO delivery_events 
+             (backlog_issue_key, delivery_no, status, delivered_at, delivered_amount, inspection_deadline, note) 
+             VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+            [
+              issueKey, 
+              deliveryNo ? parseInt(deliveryNo) : 1, 
+              "pending", 
+              deliveredAt || new Date().toISOString().split('T')[0], 
+              parseFloat(String(deliveredAmount || "0").replace(/,/g, "")), 
+              inspectionDeadline || deliveredAt || finalDeadline,
+              `Bulk imported publishing-unified: ${bookTitle}`
+            ]
+          );
+
+          await query(
+            "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
+            [issueKey, "delivery_request", "文書生成依頼"]
+          );
+        }
+
+        resultRows.push([
+          staffId, 
+          orderDate, 
+          paymentDate, 
+          vendorCode, 
+          vendorName, 
+          bookTitle, 
+          summary, 
+          details, 
+          unitPrice, 
+          quantity, 
+          totalAmount, 
+          deadline1, 
+          deadline2, 
+          finalDeadline,
+          deliveredAt || "",
+          deliveredAmount || "",
+          inspectionDeadline || "",
+          deliveryNo || "1",
+          orderNumber,
+          changeRecords || "",
+          issueKey
+        ]);
 
         processedCount++;
       } catch (err) {
@@ -205,6 +332,8 @@ export class CsvImportService {
       }
     }
 
-    return { success: errors.length === 0, processedCount, errors };
+    const csvOutput = Papa.unparse({ fields: headers, data: resultRows });
+
+    return { success: errors.length === 0, processedCount, errors, csvOutput };
   }
 }

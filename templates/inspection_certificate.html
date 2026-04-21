@@ -224,6 +224,7 @@
     {{/each}}
   </div>
   {{/if}}
+  {{! CHANGE_RECORDS }}
 
   <!-- 検収条件・支払条件 -->
   <div class="conditions">
@@ -240,7 +241,7 @@
     <div class="condition-box">
       <h3>■ 発注情報</h3>
       <p>発注日: {{orderDate}}</p>
-      <p>発注番号: {{issueKey}}</p>
+      <p>発注番号: {{ORDER_NO}}</p>
       <p>明細: ①{{itemNo}} / 全{{itemCount}}件中</p>
     </div>
   </div>

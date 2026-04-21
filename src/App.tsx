@@ -77,6 +77,7 @@ export default function App() {
   const [rules, setRules] = useState<any[]>([]);
   const [companyProfile, setCompanyProfile] = useState<any>(null);
   const [staffSearch, setStaffSearch] = useState("");
+  const [vendorCodeSearch, setVendorCodeSearch] = useState("");
   const [showStaffPicker, setShowStaffPicker] = useState(false);
   const [csvContent, setCsvContent] = useState<string>("");
   const [importMode, setImportMode] = useState<"generic" | "publishing" | "vendor" | "staff">("generic");
@@ -87,11 +88,11 @@ export default function App() {
     let sampleData = "";
 
     if (mode === "generic") {
-      headers = "issueKey,itemName,vendorCode,dueDate,amount";
-      sampleData = "PRJ-1234,法務相談：契約書レビュー,V001,2026-05-31,50000";
+      headers = "SlackID,itemName,vendorCode,amount,dueDate,deliveredAt,deliveredAmount,inspectionDeadline,deliveryNo,isPartial,spec,orderNumber,CHANGE_RECORDS";
+      sampleData = "U1234567,ロゴデザイン制作,V456,100000,2026-05-31,2026-04-20,55000,2026-04-30,1,FALSE,AI形式納品,PO-2026-0099,2026-04-10|金額変更|100000|120000|素材追加のため";
     } else if (mode === "publishing") {
-      headers = "SlackID,OrderDate,PaymentDate,VendorCode,VendorName,BookTitle,Summary,Details,UnitPrice,Quantity,TotalAmount,Deadline1,Deadline2,FinalDeadline";
-      sampleData = "U1234567,2026-04-20,2026-05-25,V789,株式会社出版サンプル,サンプルの本,執筆依頼,詳細はこちら,100000,1,100000,2026-04-30,2026-05-15,2026-05-20";
+      headers = "SlackID,OrderDate,PaymentDate,VendorCode,VendorName,BookTitle,Summary,Details,UnitPrice,Quantity,TotalAmount,Deadline1,Deadline2,FinalDeadline,deliveredAt,deliveredAmount,inspectionDeadline,deliveryNo,orderNumber,CHANGE_RECORDS";
+      sampleData = "U1234567,2026-04-20,2026-05-25,V789,株式会社出版サンプル,サンプールの本,執筆依頼,詳細はこちら,100000,1,100000,2026-04-30,2026-05-15,2026-05-20,2026-04-20,50000,2026-05-31,1,PO-2026-0100,2026-04-15|修正依頼|なし|タイトル変更あり|著者要望につき";
     } else if (mode === "vendor") {
       headers = "vendorCode,vendorName,tradeName,penName,vendorSuffix,entityType,withholdingEnabled,aliases,address,phone,email,contactDepartment,contactName,bankName,branchName,accountType,accountNumber,accountHolderKana,isInvoiceIssuer,invoiceRegistrationNumber";
       sampleData = "V001,株式会社サンプル,,サンプラ君,御中,corporation,FALSE,別名,東京都...,03-0000-0000,info@example.com,営業部,担当者名,サンプル銀行,サンプル支店,普通,1234567,サンプルフリガナ,TRUE,T1234567890123";
@@ -419,6 +420,28 @@ export default function App() {
     setStaffSearch("");
   };
 
+  const handleSelectVendorByCode = (vCode: string) => {
+    const v = vendors.find(vendor => vendor.vendor_code === vCode);
+    if (!v) return;
+
+    const newFormData = { ...formData };
+    templateFields.forEach(field => {
+      if (field.includes("VENDOR_NAME") || field === "PARTY_B_NAME" || field === "COMPANY") newFormData[field] = v.vendor_name;
+      if (field.includes("VENDOR_ADDRESS") || field === "PARTY_B_ADDRESS" || field === "ADDRESS") newFormData[field] = v.address;
+      if (field.includes("VENDOR_REP") || field === "PARTY_B_REP" || field === "REPRESENTATIVE") newFormData[field] = v.vendor_rep || v.contact_name || "";
+      if (field === "VENDOR_CODE") newFormData[field] = v.vendor_code;
+      if (field === "BANK_NAME") newFormData[field] = v.bank_name || "";
+      if (field === "BRANCH_NAME") newFormData[field] = v.branch_name || "";
+      if (field === "ACCOUNT_TYPE") newFormData[field] = v.account_type || "";
+      if (field === "ACCOUNT_NUMBER") newFormData[field] = v.account_number || "";
+      if (field === "ACCOUNT_HOLDER_KANA") newFormData[field] = v.account_holder_kana || "";
+      if (field === "REGISTRATION_NUMBER" || field === "INVOICE_NO") newFormData[field] = v.invoice_registration_number || "";
+      if (field === "VENDOR_EMAIL") newFormData[field] = v.email || "";
+      if (field === "VENDOR_PHONE") newFormData[field] = v.phone || "";
+    });
+    setFormData(newFormData);
+  };
+
   const handleFetchContext = async () => {
     if (!selectedIssue || !selectedTemplate) return;
     try {
@@ -527,6 +550,20 @@ export default function App() {
   };
 
   const renderDynamicField = (field: string, values: Record<string, string>, onChange: (v: Record<string, string>) => void) => {
+    // Role Mapping logic
+    const isLicense = selectedTemplate.includes("license");
+    const isPartyA = field.includes("PARTY_A");
+    const isVendor = field.includes("VENDOR");
+    
+    let roleLabel = "";
+    if (isLicense) {
+      if (isVendor) roleLabel = "甲 (Kou)";
+      if (isPartyA) roleLabel = "乙 (Otsu)";
+    } else {
+      if (isPartyA) roleLabel = "甲 (Kou)";
+      if (isVendor) roleLabel = "乙 (Otsu)";
+    }
+
     // Dynamic visibility logic
     const isBankInfo = field.includes("BANK_") || field.includes("ACCOUNT_");
     const paymentMethod = values["PAYMENT_METHOD"] || "";
@@ -543,11 +580,71 @@ export default function App() {
     if (subscriptionFields.includes(field) && feeStructure !== "SUBSCRIPTION") return null;
     if (performanceFields.includes(field) && feeStructure !== "PERFORMANCE") return null;
 
+    const matchedVendor = issues.find(i => i.issueKey === selectedIssue)?.vendor; // Not reliable here, use master vendors
+    
     return (
-      <div key={field} className="space-y-1 mb-4 p-2 border-l-2 border-[#141414]/10 hover:border-[#141414] transition-colors">
-        <label className="tech-label">
-          {field.replace(/_/g, " ")}
-        </label>
+      <div key={field} className="space-y-1 mb-4 p-2 border-l-2 border-[#141414]/10 hover:border-[#141414] transition-colors relative group/field">
+        <div className="flex items-center justify-between">
+          <label className="tech-label">
+            {roleLabel && <span className="mr-2 text-blue-600 bg-blue-50 px-1">{roleLabel}</span>}
+            {field.replace(/_/g, " ")}
+          </label>
+          {(isPartyA || isVendor) && (
+            <div className="flex gap-1 opacity-0 group-hover/field:opacity-100 transition-opacity">
+              <button 
+                onClick={() => {
+                  if (companyProfile) {
+                    const next: Record<string, string> = { ...values };
+                    if (field.includes("NAME") || field === "MY_COMPANY") next[field] = companyProfile.name;
+                    if (field.includes("ADDRESS")) next[field] = companyProfile.address;
+                    if (field.includes("REP")) next[field] = companyProfile.representative;
+                    if (field.includes("EMAIL")) next[field] = companyProfile.email || "";
+                    if (field.includes("PHONE")) next[field] = companyProfile.phone || "";
+                    if (field === "BANK_NAME") next[field] = companyProfile.bank_name || "";
+                    if (field === "BRANCH_NAME") next[field] = companyProfile.branch_name || "";
+                    if (field === "ACCOUNT_TYPE") next[field] = companyProfile.account_type || "";
+                    if (field === "ACCOUNT_NUMBER") next[field] = companyProfile.account_number || "";
+                    if (field === "ACCOUNT_HOLDER_KANA") next[field] = companyProfile.account_holder_kana || "";
+                    if (field === "REGISTRATION_NUMBER" || field === "INVOICE_NO") next[field] = companyProfile.invoice_no || "";
+                    onChange(next);
+                  }
+                }}
+                className="text-[8px] font-mono border border-gray-300 px-1 hover:bg-gray-100"
+              >
+                Self
+              </button>
+              <button 
+                onClick={() => {
+                  const issue = issues.find(i => i.issueKey === selectedIssue);
+                  if (issue) {
+                    const match = vendors.find(v => 
+                      issue.summary.includes(v.vendor_name) || 
+                      issue.description?.includes(v.vendor_name)
+                    );
+                    if (match) {
+                      const next: Record<string, string> = { ...values };
+                      if (field.includes("NAME")) next[field] = match.vendor_name;
+                      if (field.includes("ADDRESS")) next[field] = match.address;
+                      if (field.includes("REP")) next[field] = match.vendor_rep || "";
+                      if (field.includes("EMAIL")) next[field] = match.email || "";
+                      if (field.includes("PHONE")) next[field] = match.phone || "";
+                      if (field === "BANK_NAME") next[field] = match.bank_name || "";
+                      if (field === "BRANCH_NAME") next[field] = match.branch_name || "";
+                      if (field === "ACCOUNT_TYPE") next[field] = match.account_type || "";
+                      if (field === "ACCOUNT_NUMBER") next[field] = match.account_number || "";
+                      if (field === "ACCOUNT_HOLDER_KANA") next[field] = match.account_holder_kana || "";
+                      if (field === "REGISTRATION_NUMBER" || field === "INVOICE_NO") next[field] = match.invoice_registration_number || "";
+                      onChange(next);
+                    }
+                  }
+                }}
+                className="text-[8px] font-mono border border-gray-300 px-1 hover:bg-gray-100"
+              >
+                Vendor
+              </button>
+            </div>
+          )}
+        </div>
         {field === "PAYMENT_METHOD" ? (
           <select
             value={values[field] || ""}
@@ -600,7 +697,21 @@ export default function App() {
       });
       const data = await res.json();
       if (data.success) {
-        alert(`${data.processedCount}件のインポートに成功しました。`);
+        alert(`${data.processedCount}件のインポートに成功しました。結果CSVをダウンロードします。`);
+        
+        // Auto-download result CSV if available
+        if (data.csvOutput) {
+          const blob = new Blob(["\uFEFF" + data.csvOutput], { type: "text/csv;charset=utf-8;" });
+          const link = document.createElement("a");
+          const url = URL.createObjectURL(blob);
+          link.setAttribute("href", url);
+          link.setAttribute("download", `import_results_${importMode}_${new Date().toISOString().split('T')[0]}.csv`);
+          link.style.visibility = "hidden";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+
         setCsvContent("");
         fetchManagementData();
       } else {
@@ -745,6 +856,7 @@ export default function App() {
     }
   }, [selectedTemplate]);
 
+  /* Disable automatic auto-fill to allow manual control as per user request
   useEffect(() => {
     if (selectedIssue && templateFields.length > 0) {
       const issue = issues.find(i => i.issueKey === selectedIssue);
@@ -753,6 +865,7 @@ export default function App() {
       }
     }
   }, [selectedIssue, templateFields, vendors, staff]);
+  */
 
   useEffect(() => {
     fetchStatus();
@@ -1089,16 +1202,100 @@ export default function App() {
                       </div>
                     </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {isRefreshingFields ? (
-                        <div className="md:col-span-2 space-y-4">
-                          <Skeleton className="h-10 w-full" />
-                          <Skeleton className="h-10 w-full" />
-                          <Skeleton className="h-10 w-full" />
+                    <div className="mb-6 p-4 bg-gray-50 border border-[#141414]/10">
+                      <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#141414]/10">
+                        <label className="text-[10px] font-mono font-bold uppercase tracking-widest opacity-60">Form Controls</label>
+                        <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-1">
+                            <input 
+                              type="text"
+                              placeholder="取引入先コードを入力..."
+                              value={vendorCodeSearch}
+                              onChange={(e) => setVendorCodeSearch(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  handleSelectVendorByCode(vendorCodeSearch);
+                                }
+                              }}
+                              className="px-2 py-1 bg-white border border-[#141414]/20 font-mono text-[9px] w-32 focus:outline-none focus:border-[#141414]"
+                            />
+                            <button 
+                              onClick={() => handleSelectVendorByCode(vendorCodeSearch)}
+                              className="px-2 py-1 bg-blue-600 text-white text-[9px] font-mono uppercase tracking-tighter hover:bg-blue-700 transition-colors"
+                            >
+                              Search
+                            </button>
+                          </div>
+                          <div className="h-4 w-[1px] bg-gray-300 mx-1"></div>
+                          <div className="flex gap-2">
+                            <button 
+                            onClick={() => {
+                              const swapped: Record<string, string> = { ...formData };
+                              const partyAKeys = Object.keys(formData).filter(k => k.startsWith("PARTY_A_") || k === "PARTY_A_NAME" || k === "PARTY_A_ADDRESS" || k === "PARTY_A_REP");
+                              const vendorKeys = Object.keys(formData).filter(k => k.startsWith("VENDOR_") || k === "VENDOR_NAME" || k === "VENDOR_ADDRESS" || k === "VENDOR_REP");
+                              
+                              // Create mapping for standard pairs
+                              const pairs = [
+                                ["NAME", "NAME"],
+                                ["ADDRESS", "ADDRESS"],
+                                ["REPRESENTATIVE", "REP"],
+                                ["REP", "REPRESENTATIVE"],
+                                ["EMAIL", "EMAIL"],
+                                ["PHONE", "PHONE"]
+                              ];
+
+                              pairs.forEach(([aSub, vSub]) => {
+                                const aKey = `PARTY_A_${aSub}`;
+                                const vKey = `VENDOR_${vSub}`;
+                                const temp = swapped[aKey];
+                                swapped[aKey] = swapped[vKey];
+                                swapped[vKey] = temp;
+                              });
+
+                              setFormData(swapped);
+                            }}
+                            className="px-3 py-1 border border-[#141414] hover:bg-[#141414] hover:text-white transition-all text-[9px] font-mono uppercase flex items-center gap-1"
+                          >
+                            <RefreshCw className="w-3 h-3" /> Swap Parties (甲乙入替)
+                          </button>
+                          <button 
+                            onClick={() => {
+                              const issue = issues.find(i => i.issueKey === selectedIssue);
+                              if (issue) autoFillForm(issue, templateFields);
+                            }}
+                            className="px-3 py-1 border border-blue-600 text-blue-600 hover:bg-blue-600 hover:text-white transition-all text-[9px] font-mono uppercase"
+                          >
+                            Fill from Backlog
+                          </button>
+                          <button 
+                            onClick={handleAutofillSelf}
+                            className="px-3 py-1 border border-[#141414] hover:bg-[#141414] hover:text-white transition-all text-[9px] font-mono uppercase"
+                          >
+                            Fill Company Info
+                          </button>
+                          <button 
+                            onClick={() => {
+                              const cleared: Record<string, string> = {};
+                              templateFields.forEach(f => cleared[f] = "");
+                              setFormData(cleared);
+                            }}
+                            className="px-3 py-1 border border-destructive text-destructive hover:bg-destructive hover:text-white transition-all text-[9px] font-mono uppercase"
+                          >
+                            Clear Form
+                          </button>
                         </div>
-                      ) : (
-                        <>
-                          {templateFields.map(field => renderDynamicField(field, formData, setFormData))}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {isRefreshingFields ? (
+                          <div className="md:col-span-2 space-y-4">
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-10 w-full" />
+                            <Skeleton className="h-10 w-full" />
+                          </div>
+                        ) : (
+                          <>
+                            {templateFields.map(field => renderDynamicField(field, formData, setFormData))}
                           
                           {/* Management Specific Fields - Keep these as they involve logic outside the template itself */}
                           {selectedTemplate.includes("inspection") && (
@@ -1152,29 +1349,30 @@ export default function App() {
                         </>
                       )}
                     </div>
-
-                    <div className="pt-4 border-t border-[#141414]/10 flex justify-end gap-4">
-                      <button 
-                        onClick={() => handleTestGenerate(selectedTemplate)}
-                        className="px-6 py-2 border border-[#141414] text-xs font-mono uppercase tracking-widest hover:bg-gray-50"
-                      >
-                        Preview HTML
-                      </button>
-                      <button 
-                        onClick={handleGenerateDocument}
-                        disabled={generating}
-                        className="px-8 py-2 bg-[#141414] text-white text-xs font-mono uppercase tracking-widest hover:bg-[#333] disabled:opacity-50 flex items-center gap-2"
-                      >
-                        {generating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
-                        Generate & Notify
-                      </button>
-                    </div>
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        </section>
+
+                  <div className="pt-4 border-t border-[#141414]/10 flex justify-end gap-4">
+                    <button 
+                      onClick={() => handleTestGenerate(selectedTemplate)}
+                      className="px-6 py-2 border border-[#141414] text-xs font-mono uppercase tracking-widest hover:bg-gray-50"
+                    >
+                      Preview HTML
+                    </button>
+                    <button 
+                      onClick={handleGenerateDocument}
+                      disabled={generating}
+                      className="px-8 py-2 bg-[#141414] text-white text-xs font-mono uppercase tracking-widest hover:bg-[#333] disabled:opacity-50 flex items-center gap-2"
+                    >
+                      {generating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <CheckCircle2 className="w-3 h-3" />}
+                      Generate & Notify
+                    </button>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </section>
 
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
         {/* Slack Status */}
@@ -1516,11 +1714,11 @@ export default function App() {
                   <div className="flex flex-wrap items-center gap-6">
                     <div className="flex items-center gap-2">
                       <input type="radio" id="gen" checked={importMode === "generic"} onChange={() => setImportMode("generic")} />
-                      <label htmlFor="gen" className="text-xs font-mono uppercase cursor-pointer">Requests Bulk</label>
+                      <label htmlFor="gen" className="text-xs font-mono uppercase cursor-pointer">Orders & Inspection (Generic)</label>
                     </div>
                     <div className="flex items-center gap-2">
                       <input type="radio" id="pub" checked={importMode === "publishing"} onChange={() => setImportMode("publishing")} />
-                      <label htmlFor="pub" className="text-xs font-mono uppercase cursor-pointer">Publishing (Fixed)</label>
+                      <label htmlFor="pub" className="text-xs font-mono uppercase cursor-pointer">Orders & Inspection (Pub)</label>
                     </div>
                     <div className="flex items-center gap-2 border-l border-gray-300 pl-4">
                       <input type="radio" id="v_imp" checked={importMode === "vendor"} onChange={() => setImportMode("vendor")} />

@@ -8,7 +8,7 @@ import { BacklogService } from "./src/services/backlogService.ts";
 import { DocumentService } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
-import { pool, initDb, query, getNextSequenceValue } from "./src/lib/db.ts";
+import { pool, initDb, query, getNextSequenceValue, getNewDocumentNumber } from "./src/lib/db.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
 
 dotenv.config();
@@ -18,42 +18,6 @@ initDb();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-
-async function getNewDocumentNumber(type: string, issueTypeName?: string): Promise<string> {
-  let prefix = "";
-  
-  if (issueTypeName) {
-    const wsResult = await query("SELECT document_prefix FROM workflow_settings WHERE issue_type_name = $1", [issueTypeName]);
-    if (wsResult.rows[0]?.document_prefix) {
-      prefix = wsResult.rows[0].document_prefix;
-    }
-  }
-
-  if (!prefix) {
-    const typeCodes: Record<string, string> = {
-      nda: "NDA",
-      purchase_order: "PO",
-      contract: "CTR",
-      inspection_certificate: "INS",
-      royalty_statement: "ROY",
-      payment_notice: "PAY",
-      legal_request: "REQ",
-      service_master: "SRVP",
-      license_master: "LIC",
-      fee_statement: "FEE",
-      asset: "AST",
-      external_contract: "EXT",
-      design: "DSG",
-      spec: "SPC"
-    };
-    prefix = typeCodes[type] || type.toUpperCase().substring(0, 3);
-  }
-
-  const year = new Date().getFullYear();
-  const sequenceKey = `${prefix}-${year}`;
-  const val = await getNextSequenceValue(sequenceKey);
-  return `${prefix}-${year}-${val.toString().padStart(4, "0")}`;
-}
 
 async function startServer() {
   const app = express();
@@ -891,6 +855,16 @@ async function startServer() {
       } else {
         result = await csvImportService.importGeneric(req.body);
       }
+
+      // Notify Slack about bulk completion with delivery instructions
+      if (slackApp && result.success && (mode === "publishing" || mode === "generic")) {
+        const channelId = process.env.SLACK_CHANNEL_ID || "C0123456789"; // Fallback or configurable
+        await slackApp.client.chat.postMessage({
+          channel: channelId,
+          text: `📦 一括発注・検収登録が完了しました（件数: ${result.processedCount}件）。\n\n【納品時のご案内】\n納品が発生した際は、ダウンロードされた結果CSVに「納品日（deliveredAt）」と「納品額（deliveredAmount）」を記入し、再度一括インポートを行うことで検収登録が可能です。`,
+        });
+      }
+
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: String(error) });
@@ -939,6 +913,18 @@ async function startServer() {
       
       const docNumber = await getNewDocumentNumber(templateType, issue.issueType.name);
 
+      // --- New: Automated PO Number Lookup for Inspection Certificates ---
+      let parentOrderNumber = "";
+      if (templateType.includes("inspection")) {
+        const poResult = await query(
+          "SELECT document_number FROM documents WHERE issue_key = $1 AND template_type LIKE '%purchase_order%' ORDER BY created_at DESC LIMIT 1",
+          [issueKey]
+        );
+        if (poResult.rows.length > 0) {
+          parentOrderNumber = poResult.rows[0].document_number;
+        }
+      }
+
       // 2. Fetch Staff Details from Master DB to enrich context
       let staffInfo: any = {};
       if (requesterEmail) {
@@ -961,7 +947,17 @@ async function startServer() {
         summary: issue.summary,
         requester: requesterEmail || "Legal Department",
         date: new Date().toLocaleDateString("ja-JP"),
-        details: { ...staffInfo, ...formData, DOC_NO: docNumber }
+        details: { 
+          ...staffInfo, 
+          ...formData, 
+          DOC_NO: docNumber,
+          ORDER_NO: formData.orderNumber || parentOrderNumber || issueKey, // Use provided, then looked up, then fallback
+          hasChangeLogs: !!formData.CHANGE_RECORDS,
+          changeLogs: formData.CHANGE_RECORDS ? formData.CHANGE_RECORDS.split(";").map((log: string) => {
+            const [changedAt, fieldLabel, beforeValue, afterValue, reason] = log.split("|");
+            return { changedAt, fieldLabel, beforeValue, afterValue, reason };
+          }) : []
+        }
       }, templateType);
 
       // 3. Upload to Google Drive

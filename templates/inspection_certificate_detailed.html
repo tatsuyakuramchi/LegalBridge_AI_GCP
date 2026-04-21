@@ -64,10 +64,11 @@
     </tbody>
   </table>
   {{#if hasChangeLogs}}<div class="change-log-section"><div class="change-log-title">⚠️ 変更履歴（当初発注条件からの変更）</div>{{#each changeLogs}}<div class="change-log-row"><span class="change-date">{{this.changedAt}}</span><span class="change-field">{{this.fieldLabel}}</span><span class="change-before">{{this.beforeValue}}</span><span class="change-arrow">→</span><span class="change-after">{{this.afterValue}}</span><span class="change-reason">（理由: {{this.reason}}）</span></div>{{/each}}</div>{{/if}}
+  {{! CHANGE_RECORDS }}
   <div class="conditions">
     <div class="condition-box"><h3>■ 検収条件</h3><p>検収期間: 納品日より <span class="highlight">{{inspectionDays}}日間</span></p><p>検収期限: <span class="highlight">{{inspectionDeadline}}</span></p></div>
     <div class="condition-box"><h3>■ 支払条件</h3><p>{{paymentConditionSummary}}</p><p>支払期日: <span class="highlight">{{paymentDueDate}}</span></p></div>
-    <div class="condition-box"><h3>■ 発注情報</h3><p>発注日: {{orderDate}}</p><p>発注番号: {{issueKey}}</p><p>明細: ①{{itemNo}} / 全{{itemCount}}件中</p></div>
+    <div class="condition-box"><h3>■ 発注情報</h3><p>発注日: {{orderDate}}</p><p>発注番号: {{ORDER_NO}}</p><p>明細: ①{{itemNo}} / 全{{itemCount}}件中</p></div>
   </div>
   <div class="stamp-area"><div class="stamp-box">担当者</div><div class="stamp-box">法務部長</div><div class="stamp-box">取締役</div></div>
   <div class="doc-footer">本書は {{generatedAt}} に LegalBridge により自動生成されました　|　株式会社アークライト 法務部</div>

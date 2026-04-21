@@ -284,3 +284,39 @@ export async function getNextSequenceValue(sequenceKey: string): Promise<number>
   );
   return res.rows[0].current_value;
 }
+
+export async function getNewDocumentNumber(type: string, issueTypeName?: string): Promise<string> {
+  let prefix = "";
+  
+  if (issueTypeName) {
+    const wsResult = await query("SELECT document_prefix FROM workflow_settings WHERE issue_type_name = $1", [issueTypeName]);
+    if (wsResult.rows[0]?.document_prefix) {
+      prefix = wsResult.rows[0].document_prefix;
+    }
+  }
+
+  if (!prefix) {
+    const typeCodes: Record<string, string> = {
+      nda: "NDA",
+      purchase_order: "PO",
+      contract: "CTR",
+      inspection_certificate: "INS",
+      royalty_statement: "ROY",
+      payment_notice: "PAY",
+      legal_request: "REQ",
+      service_master: "SRVP",
+      license_master: "LIC",
+      fee_statement: "FEE",
+      asset: "AST",
+      external_contract: "EXT",
+      design: "DSG",
+      spec: "SPC"
+    };
+    prefix = typeCodes[type] || type.toUpperCase().substring(0, 3);
+  }
+
+  const year = new Date().getFullYear();
+  const sequenceKey = `${prefix}-${year}`;
+  const val = await getNextSequenceValue(sequenceKey);
+  return `${prefix}-${year}-${val.toString().padStart(4, "0")}`;
+}
