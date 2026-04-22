@@ -1,11 +1,13 @@
 import { useEffect, useState } from "react";
+// @ts-ignore
+import { asBlob } from "html-docx-js-typescript";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { 
   Shield, Slack, Database, AlertTriangle, CheckCircle2, RefreshCw, FileText, 
   X, Clock, BarChart3, ListChecks, Settings, Activity, Archive, Building2, 
-  Users, ExternalLink, Lock, Search, Download
+  Users, ExternalLink, Lock, Search, Download, Eye, Plus, Trash2
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
@@ -30,6 +32,7 @@ const DOCUMENT_TEMPLATES = [
   { id: "service_master", name: "業務委託基本契約書" },
   { id: "planning_purchase_order", name: "企画発注書 (Planning PO)" },
   { id: "payment_notice", name: "支払通知書 (Payment Notice)" },
+  { id: "payment_notice_alt", name: "支払通知書 [別形式] (Alt Notice)" },
   { id: "fee_statement", name: "報酬明細書 (Fee Statement)" },
   { id: "license_report", name: "ライセンス報告書 (Report)" },
   { id: "service_terms", name: "業務委託基本規約 (Terms)" },
@@ -49,8 +52,11 @@ const WORKFLOW_TEMPLATES: Record<string, string[]> = {
   license: ["license_master", "individual_license_terms", "intl_master", "intl_amendment", "royalty_statement"],
   purchase_order: ["purchase_order", "planning_purchase_order"],
   delivery_request: ["inspection_certificate", "inspection_certificate_detailed"],
-  royalty_calculation_sales_report: ["royalty_statement", "payment_notice", "fee_statement"],
+  royalty_calculation_sales_report: ["royalty_statement", "payment_notice", "payment_notice_alt", "fee_statement"],
 };
+
+// @ts-ignore
+import html2pdf from "html2pdf.js";
 
 export default function App() {
   const [status, setStatus] = useState<StatusData | null>(null);
@@ -77,7 +83,8 @@ export default function App() {
   const [rules, setRules] = useState<any[]>([]);
   const [companyProfile, setCompanyProfile] = useState<any>(null);
   const [staffSearch, setStaffSearch] = useState("");
-  const [vendorCodeSearch, setVendorCodeSearch] = useState("");
+  const [vendorSearch, setVendorSearch] = useState("");
+  const [showVendorPicker, setShowVendorPicker] = useState(false);
   const [showStaffPicker, setShowStaffPicker] = useState(false);
   const [csvContent, setCsvContent] = useState<string>("");
   const [importMode, setImportMode] = useState<"generic" | "publishing" | "vendor" | "staff">("generic");
@@ -172,6 +179,126 @@ export default function App() {
   const [workflowWizardStep, setWorkflowWizardStep] = useState(1);
   const [currentTemplateVars, setCurrentTemplateVars] = useState<string[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<any>(null);
+  const [activeVendor, setActiveVendor] = useState<any>(null);
+  const [activeAsset, setActiveAsset] = useState<any>(null);
+  const [showAssetPicker, setShowAssetPicker] = useState(false);
+  const [showAssetPickerField, setShowAssetPickerField] = useState("");
+  const [assetSearch, setAssetSearch] = useState("");
+
+  const [isExportingAll, setIsExportingAll] = useState(false);
+
+  const [isExportingMD, setIsExportingMD] = useState(false);
+
+  const handleExportMarkdown = async () => {
+    if (!selectedTemplate) return;
+    setIsExportingMD(true);
+    try {
+      const res = await fetch(`/api/test-generate-markdown?type=${selectedTemplate}`, { method: "POST" });
+      const data = await res.json();
+      if (data.markdown) {
+        const blob = new Blob([data.markdown], { type: "text/markdown;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = data.fileName || `${selectedTemplate}.md`;
+        link.click();
+        URL.revokeObjectURL(url);
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Markdownエクスポートに失敗しました");
+    } finally {
+      setIsExportingMD(false);
+    }
+  };
+
+  const [isExportingAllMD, setIsExportingAllMD] = useState(false);
+
+  const handleExportAllMarkdown = async () => {
+    setIsExportingAllMD(true);
+    try {
+      const templates = DOCUMENT_TEMPLATES;
+      for (const template of templates) {
+        const res = await fetch(`/api/test-generate-markdown?type=${template.id}`, { method: "POST" });
+        const data = await res.json();
+        if (data.markdown) {
+          const blob = new Blob([data.markdown], { type: "text/markdown;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = data.fileName || `${template.id}.md`;
+          link.click();
+          URL.revokeObjectURL(url);
+          await new Promise(resolve => setTimeout(resolve, 300));
+        }
+      }
+      alert("すべてのマークダウンをエクスポートしました");
+    } catch (err) {
+      console.error(err);
+      alert("一括エクスポートに失敗しました");
+    } finally {
+      setIsExportingAllMD(false);
+    }
+  };
+
+  const handleExportAllTemplates = async () => {
+    setIsExportingAll(true);
+    try {
+      // 1. Get List of all templates
+      const templates = DOCUMENT_TEMPLATES;
+      
+      for (const template of templates) {
+        // 2. Fetch sample HTML for each
+        const res = await fetch(`/api/test-generate?type=${template.id}`, { method: "POST" });
+        const data = await res.json();
+        
+        if (data.html) {
+          // 3. Convert HTML to DOCX Blob
+          console.log("Generating DOCX for:", template.id, "HTML length:", data.html.length);
+          
+          if (!data.html || data.html.length < 10) {
+             console.error("HTML content too short for", template.id);
+             continue;
+          }
+
+          try {
+            // asBlob in 0.1.5 is synchronous but await is safe and helps if it's a newer version
+            const docxBlob = await asBlob(data.html, {
+              orientation: "portrait"
+            });
+
+            if (!docxBlob || (docxBlob as Blob).size === 0) {
+               console.error("Generated Blob is empty for", template.id);
+               continue;
+            }
+
+            console.log("Success! Blob size:", (docxBlob as Blob).size);
+
+            // 4. Download as file
+            const url = URL.createObjectURL(docxBlob as Blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = `sample_${template.id}.docx`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+          } catch (blobErr) {
+            console.error("Error during asBlob for", template.id, blobErr);
+          }
+          
+          // Small delay to avoid browser blocking multiple downloads
+          await new Promise(resolve => setTimeout(resolve, 800));
+        }
+      }
+      alert("すべてのテンプレート（サンプル入/Word形式）をダウンロードしました。\nブラウザのダウンロード許可ダイアログが出た場合は「許可」してください。");
+    } catch (err) {
+      console.error(err);
+      alert("ダウンロードに失敗しました");
+    } finally {
+      setIsExportingAll(false);
+    }
+  };
 
   const fetchTemplateVars = async (templateId: string) => {
     try {
@@ -420,15 +547,15 @@ export default function App() {
     setStaffSearch("");
   };
 
-  const handleSelectVendorByCode = (vCode: string) => {
-    const v = vendors.find(vendor => vendor.vendor_code === vCode);
-    if (!v) return;
-
+  const handleSelectVendor = (v: any) => {
+    setActiveVendor(v);
     const newFormData = { ...formData };
     templateFields.forEach(field => {
-      if (field.includes("VENDOR_NAME") || field === "PARTY_B_NAME" || field === "COMPANY") newFormData[field] = v.vendor_name;
-      if (field.includes("VENDOR_ADDRESS") || field === "PARTY_B_ADDRESS" || field === "ADDRESS") newFormData[field] = v.address;
-      if (field.includes("VENDOR_REP") || field === "PARTY_B_REP" || field === "REPRESENTATIVE") newFormData[field] = v.vendor_rep || v.contact_name || "";
+      // Support Japanese Ledger fields
+      if (field.includes("NAME") || field.includes("名称") || field.includes("氏名会社名") || field === "PARTY_B_NAME" || field === "COMPANY") newFormData[field] = v.vendor_name;
+      if (field.includes("ADDRESS") || field.includes("住所") || field === "PARTY_B_ADDRESS" || field === "ADDRESS") newFormData[field] = v.address;
+      if (field.includes("REP") || field.includes("代表者名") || field === "PARTY_B_REP" || field === "REPRESENTATIVE") newFormData[field] = v.vendor_rep || v.contact_name || "";
+      
       if (field === "VENDOR_CODE") newFormData[field] = v.vendor_code;
       if (field === "BANK_NAME") newFormData[field] = v.bank_name || "";
       if (field === "BRANCH_NAME") newFormData[field] = v.branch_name || "";
@@ -440,6 +567,27 @@ export default function App() {
       if (field === "VENDOR_PHONE") newFormData[field] = v.phone || "";
     });
     setFormData(newFormData);
+    setShowVendorPicker(false);
+  };
+
+  const handleSearchVendor = (query: string) => {
+    if (!query) {
+      setShowVendorPicker(true);
+      return;
+    }
+    // Search by code, name, or phone
+    const filtered = vendors.filter(v => 
+      v.vendor_code?.includes(query) || 
+      v.vendor_name?.includes(query) || 
+      v.phone?.includes(query) ||
+      v.trade_name?.includes(query)
+    );
+
+    if (filtered.length === 1) {
+      handleSelectVendor(filtered[0]);
+    } else {
+      setShowVendorPicker(true);
+    }
   };
 
   const handleFetchContext = async () => {
@@ -499,6 +647,72 @@ export default function App() {
     }
   };
 
+  const handleEditDocument = (doc: any) => {
+    setSelectedIssue(doc.issue_key);
+    setSelectedTemplate(doc.template_type);
+    try {
+      const data = typeof doc.form_data === 'string' ? JSON.parse(doc.form_data) : doc.form_data;
+      setFormData(data || {});
+    } catch (e) {
+      console.error("Failed to parse form data", e);
+      setFormData({});
+    }
+    setActiveTab("portal");
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
+  const handlePreview = async () => {
+    if (!selectedTemplate) {
+      alert("テンプレートを選択してください");
+      return;
+    }
+    try {
+      setGenerating(true);
+      const res = await fetch("/api/documents/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          templateType: selectedTemplate,
+          formData,
+          issueKey: selectedIssue,
+          requesterEmail: selectedStaff?.email
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        setPreviewHtml(data.html);
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err) {
+      console.error("Preview failed", err);
+      alert("プレビューの生成に失敗しました");
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  const handleDownloadPdf = () => {
+    if (!previewHtml) return;
+    
+    const element = document.createElement("div");
+    element.innerHTML = previewHtml;
+    // We need to append to document for styles to be calculated by html2pdf sometimes
+    // but html2pdf can also work on a disconnected DOM.
+    // However, the iframe in the preview already has the rendered content.
+    // Instead of raw previewHtml, let's target the formatted HTML.
+    
+    const options = {
+      margin: 0,
+      filename: `Document_${selectedIssue || 'Draft'}.pdf`,
+      image: { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas: { scale: 2, useCORS: true, logging: false },
+      jsPDF: { unit: 'mm' as const, format: 'a4' as const, orientation: 'portrait' as const }
+    };
+
+    html2pdf().set(options).from(element).save();
+  };
+
   const handleGenerateDocument = async () => {
     if (!selectedIssue) {
       alert("課題を選択してください");
@@ -552,26 +766,24 @@ export default function App() {
   const renderDynamicField = (field: string, values: Record<string, string>, onChange: (v: Record<string, string>) => void) => {
     // Role Mapping logic
     const isLicense = selectedTemplate.includes("license");
-    const isPartyA = field.includes("PARTY_A");
-    const isVendor = field.includes("VENDOR");
+    const isPartyA = field.includes("PARTY_A") || field.includes("Licensor");
+    const isVendor = field.includes("VENDOR") || field.includes("PARTY_B") || field.includes("CONTRACTOR") || field.includes("Licensee");
+    const isPaymentInfo = ["BANK", "ACCOUNT", "INVOICE", "REGISTRATION", "BRANCH", "SWIFT", "HOLDER"].some(key => field.toUpperCase().includes(key));
     
     let roleLabel = "";
     if (isLicense) {
       if (isVendor) roleLabel = "甲 (Kou)";
-      if (isPartyA) roleLabel = "乙 (Otsu)";
+      else if (isPartyA) roleLabel = "乙 (Otsu)";
+      else if (isPaymentInfo) roleLabel = "甲 (Kou)"; // Generic payment info belongs to Licensor in license
     } else {
       if (isPartyA) roleLabel = "甲 (Kou)";
-      if (isVendor) roleLabel = "乙 (Otsu)";
+      else if (isVendor) roleLabel = "乙 (Otsu)";
+      else if (isPaymentInfo) roleLabel = "乙 (Otsu)"; // Generic payment info belongs to Contractor in service
     }
 
     // Dynamic visibility logic
-    const isBankInfo = field.includes("BANK_") || field.includes("ACCOUNT_");
     const paymentMethod = values["PAYMENT_METHOD"] || "";
     
-    if (isBankInfo && paymentMethod !== "BANK_TRANSFER") {
-      return null;
-    }
-
     // Fee Structure dependent logic
     const feeStructure = values["FEE_STRUCTURE"] || "";
     const subscriptionFields = ["MONTHLY_FEE", "ANNUAL_FEE", "BILLING_CYCLE", "RENEWAL_TERMS"];
@@ -579,6 +791,7 @@ export default function App() {
 
     if (subscriptionFields.includes(field) && feeStructure !== "SUBSCRIPTION") return null;
     if (performanceFields.includes(field) && feeStructure !== "PERFORMANCE") return null;
+    if (field === "サブライセンシー一覧") return null; // Handle manually
 
     const matchedVendor = issues.find(i => i.issueKey === selectedIssue)?.vendor; // Not reliable here, use master vendors
     
@@ -589,15 +802,15 @@ export default function App() {
             {roleLabel && <span className="mr-2 text-blue-600 bg-blue-50 px-1">{roleLabel}</span>}
             {field.replace(/_/g, " ")}
           </label>
-          {(isPartyA || isVendor) && (
+          {(isPartyA || isVendor || field.includes("名称") || field.includes("住所")) && (
             <div className="flex gap-1 opacity-0 group-hover/field:opacity-100 transition-opacity">
               <button 
                 onClick={() => {
                   if (companyProfile) {
                     const next: Record<string, string> = { ...values };
-                    if (field.includes("NAME") || field === "MY_COMPANY") next[field] = companyProfile.name;
-                    if (field.includes("ADDRESS")) next[field] = companyProfile.address;
-                    if (field.includes("REP")) next[field] = companyProfile.representative;
+                    if (field.includes("NAME") || field.includes("名称") || field.includes("氏名会社名") || field === "MY_COMPANY") next[field] = companyProfile.name;
+                    if (field.includes("ADDRESS") || field.includes("住所")) next[field] = companyProfile.address;
+                    if (field.includes("REP") || field.includes("代表者名")) next[field] = companyProfile.representative;
                     if (field.includes("EMAIL")) next[field] = companyProfile.email || "";
                     if (field.includes("PHONE")) next[field] = companyProfile.phone || "";
                     if (field === "BANK_NAME") next[field] = companyProfile.bank_name || "";
@@ -616,26 +829,26 @@ export default function App() {
               <button 
                 onClick={() => {
                   const issue = issues.find(i => i.issueKey === selectedIssue);
-                  if (issue) {
-                    const match = vendors.find(v => 
-                      issue.summary.includes(v.vendor_name) || 
-                      issue.description?.includes(v.vendor_name)
-                    );
-                    if (match) {
-                      const next: Record<string, string> = { ...values };
-                      if (field.includes("NAME")) next[field] = match.vendor_name;
-                      if (field.includes("ADDRESS")) next[field] = match.address;
-                      if (field.includes("REP")) next[field] = match.vendor_rep || "";
-                      if (field.includes("EMAIL")) next[field] = match.email || "";
-                      if (field.includes("PHONE")) next[field] = match.phone || "";
-                      if (field === "BANK_NAME") next[field] = match.bank_name || "";
-                      if (field === "BRANCH_NAME") next[field] = match.branch_name || "";
-                      if (field === "ACCOUNT_TYPE") next[field] = match.account_type || "";
-                      if (field === "ACCOUNT_NUMBER") next[field] = match.account_number || "";
-                      if (field === "ACCOUNT_HOLDER_KANA") next[field] = match.account_holder_kana || "";
-                      if (field === "REGISTRATION_NUMBER" || field === "INVOICE_NO") next[field] = match.invoice_registration_number || "";
-                      onChange(next);
-                    }
+                  // Prioritize the explicitly searched/selected vendor, fallback to inferred vendor from issue
+                  const match = activeVendor || (issue && vendors.find(v => 
+                    issue.summary?.includes(v.vendor_name) || 
+                    issue.description?.includes(v.vendor_name)
+                  ));
+                  
+                  if (match) {
+                    const next: Record<string, string> = { ...values };
+                    if (field.includes("NAME") || field.includes("名称") || field.includes("氏名会社名")) next[field] = match.vendor_name;
+                    if (field.includes("ADDRESS") || field.includes("住所")) next[field] = match.address;
+                    if (field.includes("REP") || field.includes("代表者名")) next[field] = match.vendor_rep || match.contact_name || "";
+                    if (field.includes("EMAIL")) next[field] = match.email || "";
+                    if (field.includes("PHONE")) next[field] = match.phone || "";
+                    if (field === "BANK_NAME") next[field] = match.bank_name || "";
+                    if (field === "BRANCH_NAME") next[field] = match.branch_name || "";
+                    if (field === "ACCOUNT_TYPE") next[field] = match.account_type || "";
+                    if (field === "ACCOUNT_NUMBER") next[field] = match.account_number || "";
+                    if (field === "ACCOUNT_HOLDER_KANA") next[field] = match.account_holder_kana || "";
+                    if (field === "REGISTRATION_NUMBER" || field === "INVOICE_NO") next[field] = match.invoice_registration_number || "";
+                    onChange(next);
                   }
                 }}
                 className="text-[8px] font-mono border border-gray-300 px-1 hover:bg-gray-100"
@@ -674,9 +887,34 @@ export default function App() {
             className="tech-input min-h-[100px]"
             placeholder={field === "CALCULATION_FORMULA" ? "例: (売上高 - 返品額) × 5%" : `ENTER ${field}...`}
           />
+        ) : (field === "契約書番号" || field === "台帳ID" || field === "基本契約名") ? (
+          <div className="relative">
+            <input 
+              type="text"
+              value={values[field] || ""}
+              onChange={(e) => {
+                const val = e.target.value;
+                onChange({...values, [field]: val});
+              }}
+              className="tech-input pr-10"
+              placeholder={`${field}...`}
+            />
+            <button 
+              type="button"
+              onClick={() => {
+                setShowAssetPickerField(field);
+                setShowAssetPicker(true);
+                setAssetSearch(values[field] || "");
+              }}
+              className="absolute right-1 top-1/2 -translate-y-1/2 p-1 bg-gray-100 hover:bg-blue-100 rounded text-blue-600 transition-colors flex items-center gap-1"
+            >
+              <Search className="w-3 h-3" />
+              <span className="text-[7px] font-bold">SEARCH</span>
+            </button>
+          </div>
         ) : (
           <input 
-            type={field.includes("DATE") ? "text" : "text"}
+            type={(field.includes("日") || field.includes("開始日")) ? "date" : "text"}
             value={values[field] || ""}
             onChange={(e) => onChange({...values, [field]: e.target.value})}
             className="tech-input"
@@ -1120,7 +1358,8 @@ export default function App() {
                     <p className="text-sm font-serif italic">左側のリストから課題を選択してください</p>
                   </div>
                 ) : (
-                  <div className="space-y-6">
+                  <>
+                    <div className="space-y-6">
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <label className="text-[10px] font-mono uppercase opacity-60">Template Type</label>
@@ -1206,25 +1445,80 @@ export default function App() {
                       <div className="flex items-center justify-between mb-4 pb-2 border-b border-[#141414]/10">
                         <label className="text-[10px] font-mono font-bold uppercase tracking-widest opacity-60">Form Controls</label>
                         <div className="flex items-center gap-3">
-                          <div className="flex items-center gap-1">
-                            <input 
-                              type="text"
-                              placeholder="取引入先コードを入力..."
-                              value={vendorCodeSearch}
-                              onChange={(e) => setVendorCodeSearch(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  handleSelectVendorByCode(vendorCodeSearch);
-                                }
-                              }}
-                              className="px-2 py-1 bg-white border border-[#141414]/20 font-mono text-[9px] w-32 focus:outline-none focus:border-[#141414]"
-                            />
-                            <button 
-                              onClick={() => handleSelectVendorByCode(vendorCodeSearch)}
-                              className="px-2 py-1 bg-blue-600 text-white text-[9px] font-mono uppercase tracking-tighter hover:bg-blue-700 transition-colors"
-                            >
-                              Search
-                            </button>
+                          <div className="relative">
+                            {activeVendor && (
+                              <div className="absolute bottom-full left-0 mb-1 w-full flex items-center justify-between p-1 bg-blue-50 border border-blue-200 shadow-sm animate-in fade-in slide-in-from-bottom-1">
+                                <div className="flex items-center gap-1 overflow-hidden">
+                                  <div className="w-1.5 h-1.5 bg-blue-600 shrink-0"></div>
+                                  <span className="text-[8px] font-bold text-blue-800 truncate leading-none">ACTIVE: {activeVendor.vendor_name}</span>
+                                </div>
+                                <button onClick={() => setActiveVendor(null)} className="text-[8px] font-bold text-red-500 hover:text-red-700 ml-1 leading-none">×</button>
+                              </div>
+                            )}
+                            <div className="flex items-center gap-1">
+                              <input 
+                                type="text"
+                                placeholder="名前・コード・電話で検索..."
+                                value={vendorSearch}
+                                onChange={(e) => {
+                                  setVendorSearch(e.target.value);
+                                  setShowVendorPicker(true);
+                                }}
+                                onFocus={() => setShowVendorPicker(true)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    handleSearchVendor(vendorSearch);
+                                  }
+                                }}
+                                className="px-2 py-1 bg-white border border-[#141414]/20 font-mono text-[9px] w-48 focus:outline-none focus:border-[#141414]"
+                              />
+                              <button 
+                                onClick={() => handleSearchVendor(vendorSearch)}
+                                className="px-2 py-1 bg-blue-600 text-white text-[9px] font-mono uppercase tracking-tighter hover:bg-blue-700 transition-colors"
+                              >
+                                Search
+                              </button>
+                            </div>
+                            <AnimatePresence>
+                              {showVendorPicker && (
+                                <motion.div 
+                                  initial={{ opacity: 0, y: 5 }}
+                                  animate={{ opacity: 1, y: 0 }}
+                                  exit={{ opacity: 0, y: 5 }}
+                                  className="absolute left-0 top-full mt-1 z-20 w-80 bg-white border border-[#141414] shadow-xl p-2"
+                                >
+                                  <div className="flex justify-between items-center mb-2 px-1">
+                                    <span className="text-[10px] font-bold opacity-50 uppercase">Vendor Selection</span>
+                                    <button onClick={() => setShowVendorPicker(false)} className="text-[10px] hover:text-red-500">Close</button>
+                                  </div>
+                                  <div className="max-h-64 overflow-y-auto space-y-1">
+                                    {vendors
+                                      .filter(v => 
+                                        !vendorSearch || 
+                                        v.vendor_name?.includes(vendorSearch) || 
+                                        v.vendor_code?.includes(vendorSearch) || 
+                                        v.phone?.includes(vendorSearch) ||
+                                        v.trade_name?.includes(vendorSearch)
+                                      )
+                                      .map(v => (
+                                      <button 
+                                        key={v.id || v.vendor_code}
+                                        onClick={() => handleSelectVendor(v)}
+                                        className="w-full text-left p-2 hover:bg-gray-100 text-[10px] border-b border-gray-50 last:border-0"
+                                      >
+                                        <div className="flex justify-between">
+                                          <p className="font-bold">{v.vendor_name}</p>
+                                          <p className="font-mono opacity-50">{v.vendor_code}</p>
+                                        </div>
+                                        <p className="opacity-50 text-[8px] truncate">{v.address}</p>
+                                        {v.phone && <p className="opacity-50 text-[8px]">TEL: {v.phone}</p>}
+                                      </button>
+                                    ))}
+                                    {vendors.length === 0 && <p className="text-[9px] p-2 opacity-50 italic">No vendor records.</p>}
+                                  </div>
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
                           </div>
                           <div className="h-4 w-[1px] bg-gray-300 mx-1"></div>
                           <div className="flex gap-2">
@@ -1285,17 +1579,329 @@ export default function App() {
                           </button>
                         </div>
                       </div>
+                    </div>
+                  </div>
 
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-8">
                         {isRefreshingFields ? (
-                          <div className="md:col-span-2 space-y-4">
+                          <div className="space-y-4">
                             <Skeleton className="h-10 w-full" />
                             <Skeleton className="h-10 w-full" />
                             <Skeleton className="h-10 w-full" />
                           </div>
                         ) : (
                           <>
-                            {templateFields.map(field => renderDynamicField(field, formData, setFormData))}
+                            {(() => {
+                              const isLicense = selectedTemplate.includes("license");
+                              const kouFields: string[] = [];
+                              const otsuFields: string[] = [];
+                              const commonFields: string[] = [];
+
+                              // Fields that are fixed and don't need UI input
+                              const hideFields = ["JURISDICTION", "COURT", "GOVERNING_LAW"];
+
+                              templateFields.forEach(field => {
+                                if (hideFields.some(h => field.includes(h))) return;
+
+                                const isPartyA = field.includes("PARTY_A") || field.startsWith("MY_") || field.startsWith("ISSUER_") || field.startsWith("COMPANY_");
+                                const isVendor = field.includes("VENDOR") || field.includes("PARTY_B") || field.includes("CONTRACTOR");
+                                const isPaymentInfo = ["BANK", "ACCOUNT", "INVOICE", "REGISTRATION", "BRANCH", "SWIFT", "HOLDER"].some(key => field.toUpperCase().includes(key));
+
+                                // All payment and invoice info moves to Stage 3 (commonFields)
+                                if (isPaymentInfo) {
+                                  commonFields.push(field);
+                                  return;
+                                }
+
+                                if (isLicense) {
+                                  if (isVendor) kouFields.push(field); // Vendor is Kou
+                                  else if (isPartyA) otsuFields.push(field); // PartyA is Otsu
+                                  else commonFields.push(field);
+                                } else {
+                                  if (isPartyA) kouFields.push(field); // PartyA is Kou
+                                  else if (isVendor) otsuFields.push(field); // Vendor is Otsu
+                                  else commonFields.push(field);
+                                }
+                              });
+
+                              return (
+                                <div className="space-y-6">
+                                  {selectedTemplate === "individual_license_terms" ? (
+                                    <div className="space-y-8">
+                                      {/* 0. Meta */}
+                                      <div className="p-4 border border-gray-200 bg-white shadow-sm space-y-4">
+                                        <div className="flex items-center gap-2 pb-2 border-b">
+                                          <Archive className="w-4 h-4" />
+                                          <h3 className="text-xs font-mono font-bold uppercase tracking-widest">0. Document Meta (管理情報)</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                                          {['発行日', '契約書番号', '台帳ID', 'ライセンス種別名', '基本契約名', '許諾開始日', '許諾期間注記'].map(f => renderDynamicField(f, formData, setFormData))}
+                                        </div>
+                                      </div>
+
+                                      {/* 1. Parties */}
+                                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                        <div className="p-4 border border-blue-200 bg-blue-50/5 shadow-sm space-y-3">
+                                          <div className="flex items-center justify-between border-b border-blue-200 pb-1">
+                                            <h3 className="text-[10px] font-mono font-bold uppercase tracking-wider text-blue-900">Licensor (許諾者)</h3>
+                                            <div className="flex gap-1">
+                                              <button 
+                                                onClick={() => {
+                                                  if (companyProfile) {
+                                                    const next = { ...formData };
+                                                    next['Licensor_名称'] = companyProfile.name;
+                                                    next['Licensor_住所'] = companyProfile.address;
+                                                    next['Licensor_氏名会社名'] = companyProfile.name;
+                                                    next['Licensor_代表者名'] = companyProfile.representative;
+                                                    setFormData(next);
+                                                  }
+                                                }}
+                                                className="text-[7px] font-mono border border-blue-300 px-1 hover:bg-blue-600 hover:text-white transition-colors"
+                                              >
+                                                SET SELF
+                                              </button>
+                                              <button 
+                                                onClick={() => {
+                                                  const issue = issues.find(i => i.issueKey === selectedIssue);
+                                                  const match = activeVendor || (issue && vendors.find(v => issue.summary?.includes(v.vendor_name) || issue.description?.includes(v.vendor_name)));
+                                                  if (match) {
+                                                    const next = { ...formData };
+                                                    next['Licensor_名称'] = match.vendor_name;
+                                                    next['Licensor_住所'] = match.address;
+                                                    next['Licensor_氏名会社名'] = match.vendor_name;
+                                                    next['Licensor_代表者名'] = match.vendor_rep || match.contact_name || "";
+                                                    setFormData(next);
+                                                  }
+                                                }}
+                                                className="text-[7px] font-mono border border-blue-300 px-1 hover:bg-blue-600 hover:text-white transition-colors"
+                                              >
+                                                SET VENDOR
+                                              </button>
+                                            </div>
+                                          </div>
+                                          {['Licensor_名称', 'Licensor_住所', 'Licensor_氏名会社名', 'Licensor_代表者名'].map(f => renderDynamicField(f, formData, setFormData))}
+                                        </div>
+                                        <div className="p-4 border border-orange-200 bg-orange-50/5 shadow-sm space-y-3">
+                                          <div className="flex items-center justify-between border-b border-orange-200 pb-1">
+                                            <h3 className="text-[10px] font-mono font-bold uppercase tracking-wider text-orange-900">Licensee (被許諾者)</h3>
+                                            <div className="flex gap-1">
+                                              <button 
+                                                onClick={() => {
+                                                  if (companyProfile) {
+                                                    const next = { ...formData };
+                                                    next['Licensee_名称'] = companyProfile.name;
+                                                    next['Licensee_住所'] = companyProfile.address;
+                                                    next['Licensee_氏名会社名'] = companyProfile.name;
+                                                    next['Licensee_代表者名'] = companyProfile.representative;
+                                                    setFormData(next);
+                                                  }
+                                                }}
+                                                className="text-[7px] font-mono border border-orange-300 px-1 hover:bg-orange-600 hover:text-white transition-colors"
+                                              >
+                                                SET SELF
+                                              </button>
+                                              <button 
+                                                onClick={() => {
+                                                  const issue = issues.find(i => i.issueKey === selectedIssue);
+                                                  const match = activeVendor || (issue && vendors.find(v => issue.summary?.includes(v.vendor_name) || issue.description?.includes(v.vendor_name)));
+                                                  if (match) {
+                                                    const next = { ...formData };
+                                                    next['Licensee_名称'] = match.vendor_name;
+                                                    next['Licensee_住所'] = match.address;
+                                                    next['Licensee_氏名会社名'] = match.vendor_name;
+                                                    next['Licensee_代表者名'] = match.vendor_rep || match.contact_name || "";
+                                                    setFormData(next);
+                                                  }
+                                                }}
+                                                className="text-[7px] font-mono border border-orange-300 px-1 hover:bg-orange-600 hover:text-white transition-colors"
+                                              >
+                                                SET VENDOR
+                                              </button>
+                                            </div>
+                                          </div>
+                                          {['Licensee_名称', 'Licensee_住所', 'Licensee_氏名会社名', 'Licensee_代表者名'].map(f => renderDynamicField(f, formData, setFormData))}
+                                        </div>
+                                      </div>
+
+                                      {/* 2. Grant */}
+                                      <div className="p-4 border border-[#141414]/10 bg-[#141414]/5 space-y-4">
+                                        <div className="flex items-center gap-2 pb-2 border-b border-[#141414]/10">
+                                          <FileText className="w-4 h-4" />
+                                          <h3 className="text-xs font-mono font-bold uppercase tracking-widest">2. Grant Details (許諾内容)</h3>
+                                        </div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          {['原著作物名', '原著作物補記', '対象製品予定名'].map(f => renderDynamicField(f, formData, setFormData))}
+                                        </div>
+                                      </div>
+
+                                      {/* 3. Financials */}
+                                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                        <div className="p-4 border border-amber-200 bg-amber-50/10 space-y-3 text-[10px]">
+                                          <h4 className="font-mono font-bold text-amber-800 uppercase border-b border-amber-200 pb-1">条件 1: 自社販売</h4>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {['金銭条件1_地域言語ラベル', '金銭条件1_計算方式', '金銭条件1_基準価格ラベル', '金銭条件1_計算期間', '金銭条件1_通貨', '金銭条件1_料率'].map(f => renderDynamicField(f, formData, setFormData))}
+                                            <div className="md:col-span-2 space-y-4">
+                                              {renderDynamicField('金銭条件1_計算式', formData, setFormData)}
+                                              {renderDynamicField('金銭条件1_支払条件', formData, setFormData)}
+                                            </div>
+                                          </div>
+                                        </div>
+                                        <div className="p-4 border border-amber-200 bg-amber-50/10 space-y-3 text-[10px]">
+                                          <h4 className="font-mono font-bold text-amber-800 uppercase border-b border-amber-200 pb-1">条件 2: サブライセンス等</h4>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {['金銭条件2_地域言語ラベル', '金銭条件2_計算方式', '金銭条件2_基準価格ラベル', '金銭条件2_計算期間', '金銭条件2_通貨', '金銭条件2_料率'].map(f => renderDynamicField(f, formData, setFormData))}
+                                            <div className="md:col-span-2 space-y-4">
+                                              {renderDynamicField('金銭条件2_計算式', formData, setFormData)}
+                                              {renderDynamicField('金銭条件2_支払条件', formData, setFormData)}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* 3.1 Financials 3 */}
+                                      <div className="p-4 border border-amber-200 bg-amber-50/10 space-y-3 text-[10px]">
+                                        <h4 className="font-mono font-bold text-amber-800 uppercase border-b border-amber-200 pb-1">条件 3: プロダクトアウト条件</h4>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                          {['金銭条件3_地域言語ラベル', '金銭条件3_計算方式', '金銭条件3_基準価格ラベル', '金銭条件3_計算期間', '金銭条件3_通貨', '金銭条件3_料率'].map(f => renderDynamicField(f, formData, setFormData))}
+                                          <div className="md:col-span-2 space-y-4">
+                                            {renderDynamicField('金銭条件3_計算式', formData, setFormData)}
+                                            {renderDynamicField('金銭条件3_支払条件', formData, setFormData)}
+                                          </div>
+                                        </div>
+                                      </div>
+
+                                      {/* 4. Special Provisions */}
+                                      <div className="p-4 border border-red-100 bg-red-50/5">
+                                        <h3 className="text-xs font-mono font-bold uppercase border-b border-red-100 mb-4 pb-1">5. Special Provisions (特記事項)</h3>
+                                        {renderDynamicField('特記事項_本文', formData, setFormData)}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      {kouFields.length > 0 && (
+                                        <div className="space-y-4 p-4 border border-blue-100 bg-blue-50/10 shadow-sm transition-all hover:shadow-md">
+                                          <div className="flex items-center justify-between pb-2 border-b border-blue-200">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-2 h-6 bg-blue-600"></div>
+                                              <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-[#141414]">1. 甲 (Kou) Information</h3>
+                                            </div>
+                                            <span className="text-[10px] font-mono text-blue-600 font-bold px-2 py-0.5 border border-blue-600">PRIMARY ROLE</span>
+                                          </div>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+                                            {kouFields.map(field => renderDynamicField(field, formData, setFormData))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Stage 2: Otsu (乙) Info */}
+                                      {otsuFields.length > 0 && (
+                                        <div className="space-y-4 p-4 border border-orange-100 bg-orange-50/10 shadow-sm transition-all hover:shadow-md">
+                                          <div className="flex items-center justify-between pb-2 border-b border-orange-200">
+                                            <div className="flex items-center gap-2">
+                                              <div className="w-2 h-6 bg-orange-600"></div>
+                                              <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-[#141414]">2. 乙 (Otsu) Information</h3>
+                                            </div>
+                                            <span className="text-[10px] font-mono text-orange-600 font-bold px-2 py-0.5 border border-orange-600">SECONDARY ROLE</span>
+                                          </div>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-1">
+                                            {otsuFields.map(field => renderDynamicField(field, formData, setFormData))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Stage 3: Agreement Details */}
+                                      {commonFields.length > 0 && (
+                                        <div className="space-y-4 p-4 border border-[#141414]/10 bg-gray-50/30 shadow-sm transition-all hover:shadow-md">
+                                          <div className="flex items-center gap-2 pb-2 border-b border-[#141414]/10">
+                                            <div className="w-2 h-6 bg-[#141414]"></div>
+                                            <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-[#141414]">3. Agreement Details & Conditions</h3>
+                                          </div>
+                                          <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+                                            {commonFields.map(field => renderDynamicField(field, formData, setFormData))}
+                                          </div>
+                                        </div>
+                                      )}
+                                    </>
+                                  )}
+
+                                  {/* Stage 4: Sub-licensees (Special for individual_license_terms) */}
+                                  {selectedTemplate === "individual_license_terms" && (
+                                    <div className="space-y-4 p-4 border border-green-100 bg-green-50/10 shadow-sm transition-all hover:shadow-md">
+                                      <div className="flex items-center justify-between pb-2 border-b border-green-200">
+                                        <div className="flex items-center gap-2">
+                                          <div className="w-2 h-6 bg-green-600"></div>
+                                          <h3 className="text-xs font-mono font-bold uppercase tracking-widest text-[#141414]">4. サブライセンシー管理 (Sub-licensees)</h3>
+                                        </div>
+                                        <button 
+                                          onClick={() => {
+                                            const list = [...(formData.サブライセンシー一覧 || [])];
+                                            list.push({ 区分: "", 名称: "", 地域: "", 言語: "", 金銭条件: "", MGAG: "", 料率: "", 締結日: "", 備考: "" });
+                                            setFormData({ ...formData, サブライセンシー一覧: list });
+                                          }}
+                                          className="px-3 py-1 bg-green-600 text-white text-[10px] font-mono uppercase tracking-widest hover:bg-green-700 flex items-center gap-2"
+                                        >
+                                          <Plus className="w-3 h-3" /> Add Sub-licensee
+                                        </button>
+                                      </div>
+
+                                      <div className="space-y-6">
+                                        {(formData.サブライセンシー一覧 || []).length === 0 && (
+                                          <p className="text-[10px] font-mono text-gray-500 italic py-4 text-center border-2 border-dashed border-gray-200">
+                                            サブライセンシーが登録されていません。上のボタンから追加してください。
+                                          </p>
+                                        )}
+                                        {(formData.サブライセンシー一覧 || []).map((item: any, idx: number) => (
+                                          <div key={idx} className="p-3 bg-white border border-green-200 relative group/sub">
+                                            <div className="absolute -right-2 -top-2 z-10">
+                                              <button 
+                                                onClick={() => {
+                                                  const list = [...formData.サブライセンシー一覧];
+                                                  list.splice(idx, 1);
+                                                  setFormData({ ...formData, サブライセンシー一覧: list });
+                                                }}
+                                                className="w-6 h-6 bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover/sub:opacity-100 transition-opacity shadow-lg"
+                                              >
+                                                <Trash2 className="w-3 h-3" />
+                                              </button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                                              {['区分', '名称', '地域', '言語', '金銭条件', 'MGAG', '料率', '締結日'].map(subField => (
+                                                 <div key={subField} className="space-y-0.5">
+                                                   <label className="text-[8px] font-mono uppercase opacity-50">{subField}</label>
+                                                   <input 
+                                                     type={subField === '締結日' ? 'date' : 'text'}
+                                                     value={item[subField] || ""}
+                                                     onChange={(e) => {
+                                                       const list = [...formData.サブライセンシー一覧];
+                                                       list[idx] = { ...list[idx], [subField]: e.target.value };
+                                                       setFormData({ ...formData, サブライセンシー一覧: list });
+                                                     }}
+                                                     className="w-full p-1 border border-gray-100 focus:border-green-400 focus:outline-none text-[10px]"
+                                                   />
+                                                 </div>
+                                              ))}
+                                            </div>
+                                            <div className="mt-2 space-y-0.5">
+                                               <label className="text-[8px] font-mono uppercase opacity-50">備考</label>
+                                               <textarea 
+                                                 value={item.備考 || ""}
+                                                 onChange={(e) => {
+                                                   const list = [...formData.サブライセンシー一覧];
+                                                   list[idx] = { ...list[idx], 備考: e.target.value };
+                                                   setFormData({ ...formData, サブライセンシー一覧: list });
+                                                 }}
+                                                 rows={2}
+                                                 className="w-full p-1 border border-gray-100 focus:border-green-400 focus:outline-none text-[10px]"
+                                               />
+                                            </div>
+                                          </div>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           
                           {/* Management Specific Fields - Keep these as they involve logic outside the template itself */}
                           {selectedTemplate.includes("inspection") && (
@@ -1351,12 +1957,58 @@ export default function App() {
                     </div>
                   </div>
 
-                  <div className="pt-4 border-t border-[#141414]/10 flex justify-end gap-4">
+                  <div className="pt-4 border-t border-[#141414]/10 flex justify-end gap-3 flex-wrap">
                     <button 
-                      onClick={() => handleTestGenerate(selectedTemplate)}
-                      className="px-6 py-2 border border-[#141414] text-xs font-mono uppercase tracking-widest hover:bg-gray-50"
+                      onClick={async () => {
+                        const testHtml = "<html><head><meta charset='UTF-8'></head><body><h1>Google Docs Test - 日本語</h1><p>If you see this, the DOCX conversion is working.</p></body></html>";
+                        try {
+                          const result = await asBlob(testHtml);
+                          const blob = result as Blob;
+                          const url = URL.createObjectURL(blob);
+                          const link = document.createElement("a");
+                          link.href = url;
+                          link.download = "google_docs_test.docx";
+                          link.click();
+                          URL.revokeObjectURL(url);
+                        } catch (e) {
+                          alert("Test failed: " + e);
+                        }
+                      }}
+                      className="px-4 py-2 border border-orange-600 text-orange-600 text-[9px] font-mono uppercase tracking-widest hover:bg-orange-50 flex items-center gap-2"
                     >
-                      Preview HTML
+                      Test Word Export
+                    </button>
+                    <button 
+                      onClick={handleExportMarkdown}
+                      disabled={isExportingMD || !selectedTemplate}
+                      className="px-4 py-2 border border-green-600 text-green-600 text-[9px] font-mono uppercase tracking-widest hover:bg-green-50 flex items-center gap-2"
+                    >
+                      {isExportingMD ? <RefreshCw className="w-3 h-3 animate-spin" /> : <FileText className="w-3 h-3" />}
+                      Export Markdown
+                    </button>
+                    <button 
+                      onClick={handleExportAllMarkdown}
+                      disabled={isExportingAllMD}
+                      className="px-4 py-2 border border-green-800 text-green-800 text-[9px] font-mono uppercase tracking-widest hover:bg-green-50 flex items-center gap-2"
+                    >
+                      {isExportingAllMD ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Archive className="w-3 h-3" />}
+                      Export All MD Samples
+                    </button>
+                    <button 
+                      onClick={handleExportAllTemplates}
+                      disabled={isExportingAll}
+                      className="px-4 py-2 border border-blue-600 text-blue-600 text-[9px] font-mono uppercase tracking-widest hover:bg-blue-50 flex items-center gap-2"
+                    >
+                      {isExportingAll ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                      Export All Samples
+                    </button>
+                    <button 
+                      onClick={handlePreview}
+                      disabled={generating}
+                      className="px-6 py-2 border border-[#141414] text-xs font-mono uppercase tracking-widest hover:bg-gray-50 flex items-center gap-2"
+                    >
+                      {generating ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Eye className="w-3 h-3" />}
+                      Preview PDF/HTML
                     </button>
                     <button 
                       onClick={handleGenerateDocument}
@@ -1367,7 +2019,7 @@ export default function App() {
                       Generate & Notify
                     </button>
                   </div>
-                </div>
+                </>
               )}
             </CardContent>
           </Card>
@@ -2305,15 +2957,23 @@ export default function App() {
                       </p>
                     </CardContent>
                     <div className="absolute bottom-0 left-0 right-0 h-10 bg-[#141414] flex items-center justify-between px-4 translate-y-full group-hover:translate-y-0 transition-transform">
-                      <span className="text-white font-mono text-[9px] uppercase tracking-widest">GWS Stored</span>
-                      <a 
-                        href={doc.drive_link} 
-                        target="_blank" 
-                        rel="noreferrer"
-                        className="text-white hover:underline font-mono text-[9px] uppercase tracking-widest flex items-center gap-1"
-                      >
-                        Open <ExternalLink className="w-3 h-3" />
-                      </a>
+                      <div className="flex gap-4">
+                        <button 
+                          onClick={() => handleEditDocument(doc)}
+                          className="text-white hover:underline font-mono text-[9px] uppercase tracking-widest flex items-center gap-1"
+                        >
+                          Edit <RefreshCw className="w-3 h-3" />
+                        </button>
+                        <a 
+                          href={doc.drive_link} 
+                          target="_blank" 
+                          rel="noreferrer"
+                          className="text-white hover:underline font-mono text-[9px] uppercase tracking-widest flex items-center gap-1"
+                        >
+                          Open <ExternalLink className="w-3 h-3" />
+                        </a>
+                      </div>
+                      <span className="text-white font-mono text-[8px] opacity-40 uppercase truncate max-w-[100px]">{doc.document_number}</span>
                     </div>
                   </Card>
                 ))
@@ -2934,6 +3594,94 @@ export default function App() {
       </footer>
 
       <AnimatePresence>
+        {showAssetPicker && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-[#141414]/90 backdrop-blur-md"
+          >
+            <motion.div 
+              initial={{ scale: 0.95, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white w-full max-w-lg shadow-2xl overflow-hidden flex flex-col border-4 border-[#141414]"
+            >
+              <div className="bg-[#141414] text-white p-4 flex justify-between items-center">
+                <div className="flex items-center gap-3">
+                  <Search className="w-5 h-5 text-blue-400" />
+                  <h3 className="font-mono text-sm uppercase tracking-widest">Select {showAssetPickerField}</h3>
+                </div>
+                <button onClick={() => setShowAssetPicker(false)} className="hover:rotate-90 transition-transform">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                  <div className="relative">
+                    <input 
+                      type="text"
+                      autoFocus
+                      placeholder="Search assets, contracts, orders..."
+                      value={assetSearch}
+                      onChange={(e) => setAssetSearch(e.target.value)}
+                      className="w-full bg-gray-100 border-2 border-transparent focus:border-blue-500 p-4 font-mono text-xs outline-none transition-all"
+                    />
+                    <div className="absolute right-4 top-1/2 -translate-y-1/2 text-[10px] font-mono opacity-30">TYPE TO SEARCH</div>
+                  </div>
+                  
+                  <div className="max-h-[300px] overflow-auto custom-scrollbar border border-gray-100">
+                    {externalAssets
+                      .filter(a => 
+                        !assetSearch || 
+                        a.asset_name?.toLowerCase().includes(assetSearch.toLowerCase()) || 
+                        a.order_number?.toLowerCase().includes(assetSearch.toLowerCase()) ||
+                        a.id_prefix?.toLowerCase().includes(assetSearch.toLowerCase())
+                      )
+                      .map(a => (
+                        <button
+                          key={a.id}
+                          onClick={() => {
+                            const next = { ...formData };
+                            const idValue = a.order_number || a.asset_name || String(a.id);
+                            next[showAssetPickerField] = idValue;
+                            
+                            // Auto-fill Basic Contract Name if searching for Contract Number
+                            if (showAssetPickerField === "契約書番号" || showAssetPickerField === "台帳ID") {
+                              if (a.asset_name && !formData["基本契約名"]) {
+                                next["基本契約名"] = a.asset_name;
+                              }
+                            }
+                            
+                            setFormData(next);
+                            setActiveAsset(a);
+                            setShowAssetPicker(false);
+                          }}
+                          className="w-full p-4 hover:bg-blue-50 border-b border-gray-50 last:border-b-0 text-left transition-colors flex items-center justify-between group"
+                        >
+                          <div className="space-y-1">
+                            <div className="text-xs font-bold font-mono group-hover:text-blue-600 transition-colors">
+                              {a.order_number || "NO_ID"}
+                            </div>
+                            <div className="text-[10px] opacity-60 uppercase">{a.asset_name}</div>
+                          </div>
+                          <div className="text-[10px] font-mono bg-gray-100 px-2 py-1 uppercase">{a.category}</div>
+                        </button>
+                      ))}
+                  </div>
+                </div>
+                
+                <div className="bg-amber-50 p-4 border border-amber-200">
+                  <p className="text-[10px] text-amber-800 leading-relaxed font-mono">
+                    ※ マスタに存在しない場合は、直接入力してください。
+                    検索から選択すると、「基本契約名」などの関連情報も自動補完されます。
+                  </p>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+
         {previewHtml && (
           <motion.div 
             initial={{ opacity: 0 }}
@@ -2947,7 +3695,16 @@ export default function App() {
               className="bg-white w-full max-w-4xl h-full flex flex-col shadow-2xl overflow-hidden"
             >
               <div className="bg-[#141414] text-[#E4E3E0] p-4 flex justify-between items-center">
-                <span className="font-mono text-xs uppercase tracking-widest">Document Preview: LegalRequest_DEMO-123.html</span>
+                <div className="flex items-center gap-4">
+                  <span className="font-mono text-xs uppercase tracking-widest">Document Preview</span>
+                  <button 
+                    onClick={handleDownloadPdf}
+                    className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white text-[10px] font-mono uppercase tracking-wide flex items-center gap-2 transition-colors"
+                  >
+                    <Download className="w-3 h-3" />
+                    Download PDF
+                  </button>
+                </div>
                 <button 
                   onClick={() => setPreviewHtml(null)}
                   className="hover:rotate-90 transition-transform"

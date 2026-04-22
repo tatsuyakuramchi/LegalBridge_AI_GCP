@@ -16,10 +16,35 @@
     ol.items { list-style: none; padding-left: 1.5em; counter-reset: item; }
     ol.items > li { counter-increment: item; padding-left: 2em; text-indent: -2em; margin-bottom: 0.5em; }
     ol.items > li::before { content: counter(article) "." counter(item) " "; font-weight: bold; }
-    .signature-block { margin-top: 3em; page-break-inside: avoid; }
-    .signature-row { display: flex; justify-content: space-between; margin-bottom: 2em; }
-    .signature-box { width: 45%; }
-    .sig-line { border-bottom: 1px solid #000; margin: 2em 0 0.5em; }
+    .signatures {
+      display: flex;
+      justify-content: space-between;
+      gap: 40px;
+      margin-top: 50px;
+      page-break-inside: avoid;
+    }
+    .sig-box {
+      flex: 1;
+      padding: 15px;
+      border: 1px solid #eee;
+    }
+    .sig-box strong {
+      display: block;
+      margin-bottom: 20px;
+      font-size: 11pt;
+      border-bottom: 1px solid #333;
+      padding-bottom: 5px;
+    }
+    .sig-line {
+      border-bottom: 1.5px solid #000;
+      margin: 40px 0 10px;
+      min-height: 1px;
+    }
+    .sig-details p {
+      margin: 5px 0;
+      font-size: 9pt;
+      color: #333;
+    }
     .ph { font-weight: bold; }
   </style>
 </head>
@@ -32,17 +57,20 @@
     <li><div class="article-title">Term and Termination</div><ol class="items"><li>This Agreement shall commence on the Effective Date and continue for a period of <span class="ph">{{TERM_YEARS}}</span> years.</li></ol></li>
     <li><div class="article-title">Governing Law</div><ol class="items"><li>This Agreement shall be governed by and construed in accordance with the laws of <span class="ph">{{GOVERNING_LAW}}</span>.</li></ol></li>
   </ol>
-  <div class="signature-block">
-    <div class="signature-row">
-      <div class="signature-box">
-        <p><strong>LICENSOR:</strong></p>
+
+  <div class="signatures">
+    <div class="sig-box">
+      <strong>LICENSOR</strong>
+      <div class="sig-details">
         <p><span class="ph">{{LICENSOR_NAME}}</span></p>
         <div class="sig-line"></div>
         <p>By: <span class="ph">{{LICENSOR_REP_NAME}}</span></p>
         <p>Title: <span class="ph">{{LICENSOR_REP_TITLE}}</span></p>
       </div>
-      <div class="signature-box">
-        <p><strong>LICENSEE:</strong></p>
+    </div>
+    <div class="sig-box">
+      <strong>LICENSEE</strong>
+      <div class="sig-details">
         <p><strong>Arclight, Inc.</strong></p>
         <div class="sig-line"></div>
         <p>By: <strong>Masayuki Aoyagi</strong></p>

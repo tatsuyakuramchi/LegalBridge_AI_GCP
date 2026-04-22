@@ -41,4 +41,33 @@ export class GoogleDriveService {
       throw error;
     }
   }
+
+  async uploadMarkdown(markdown: string, fileName: string, folderId?: string): Promise<string> {
+    // Cloud Run環境（ADC）または環境変数を自動認識します
+    const folder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    const fileMetadata = {
+      name: fileName.replace(/\.html$/, ""),
+      parents: folder ? [folder] : [],
+      mimeType: "application/vnd.google-apps.document", // Automatically convert to Google Doc
+    };
+
+    const media = {
+      mimeType: "text/markdown",
+      body: Readable.from([markdown]),
+    };
+
+    try {
+      const response = await this.drive.files.create({
+        requestBody: fileMetadata,
+        media: media,
+        fields: "id, webViewLink",
+      });
+
+      return response.data.webViewLink || "";
+    } catch (error) {
+      console.error("Error uploading Markdown to Google Drive:", error);
+      throw error;
+    }
+  }
 }

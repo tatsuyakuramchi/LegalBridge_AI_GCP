@@ -10,6 +10,9 @@ import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { pool, initDb, query, getNextSequenceValue, getNewDocumentNumber } from "./src/lib/db.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
+import TurndownService from 'turndown';
+// @ts-ignore
+import { gfm } from 'turndown-plugin-gfm';
 
 dotenv.config();
 
@@ -22,6 +25,19 @@ const __dirname = path.dirname(__filename);
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 3000;
+
+  const turndownService = new TurndownService({
+    headingStyle: 'atx',
+    codeBlockStyle: 'fenced',
+    hr: '---'
+  });
+  turndownService.use(gfm);
+  
+  // Custom rule to handle Google Docs' distaste for certain structures or to clean up
+  turndownService.addRule('remove-styles', {
+    filter: ['style', 'head', 'meta', 'title'],
+    replacement: () => ''
+  });
 
   // Simple request logger
   app.use((req, res, next) => {
@@ -904,6 +920,32 @@ async function startServer() {
     }
   });
 
+  // --- Live Preview Endpoint ---
+  app.post("/api/documents/preview", express.json(), async (req, res) => {
+    try {
+      const { templateType, formData, issueKey, requesterEmail } = req.body;
+      
+      const issue = issueKey ? (await query("SELECT * FROM backlog_issues WHERE issue_key = $1", [issueKey])).rows[0] : { summary: "Live Preview" };
+      
+      const { html, fileName } = await documentService.generateDocument({
+        issueKey: issueKey || "PREVIEW-000",
+        documentNumber: "PREVIEW-" + Date.now(),
+        summary: issue?.summary || "Live Preview",
+        requester: requesterEmail || "User",
+        date: new Date().toLocaleDateString("ja-JP"),
+        details: { 
+          ...formData,
+          isLivePreview: true
+        }
+      }, templateType);
+
+      res.json({ success: true, html, fileName });
+    } catch (error) {
+      console.error("Preview failed:", error);
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
   app.post("/api/documents/generate", express.json(), async (req, res) => {
     const { issueKey, templateType, formData, requesterEmail } = req.body;
 
@@ -960,7 +1002,7 @@ async function startServer() {
         }
       }, templateType);
 
-      // 3. Upload to Google Drive
+      // 3. Upload to Google Drive (Using HTML for better design fidelity)
       const driveLink = await googleDriveService.uploadHtml(html, fileName);
 
       // 4. Store in DB (PostgreSQL)
@@ -1118,6 +1160,56 @@ async function startServer() {
         ]
       );
       res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/test-generate-markdown", async (req, res) => {
+    try {
+      const type = (req.query.type as any) || "individual_license_terms";
+      
+      let demoData: any = {
+        issueKey: "DEMO-123",
+        summary: "サンプル案件",
+        requester: "AI Studio User",
+        date: new Date().toLocaleDateString("ja-JP"),
+        details: {
+          "発行日": "2026/04/01",
+          "契約書番号": "C-ARC-DOM-LIC-202604001",
+          "台帳ID": "LIC-ARC-DOM-202604001",
+          "ライセンス種別名": "ボードゲーム国内・海外ライセンス",
+          "基本契約名": "ライセンス利用許諾基本契約書（2026/04/01締結）",
+          "licensor名": "高橋 宏佳",
+          "licensee名": "株式会社アークライト",
+          "許諾開始日": "2026/04/01",
+          "許諾期間注記": "基本契約の満了日まで。",
+          "原著作物名": "ボードゲーム『ダブルナイン』",
+          "原著作物補記": "原作および派生作品を含む",
+          "対象製品予定名": "『ダブルナイン』",
+          "素材番号": "LIC-01",
+          "素材名": "原作ボードゲーム",
+          "素材権利者": "高橋 宏佳",
+          "監修者": "高橋 宏佳",
+          "金銭条件1_計算式": "上代 × 5.0% × 製造数",
+          "金銭条件1_料率": "5.0%",
+          "金銭条件1_基準価格ラベル": "上代（MSRP）",
+          "金銭条件1_支払条件": "翌月20日",
+          "特記事項_本文": "特になし",
+          "licensor_住所": "東京都...",
+          "licensor_氏名会社名": "高橋 宏佳",
+          "licensee_住所": "東京都千代田区神田...",
+          "licensee_氏名会社名": "株式会社アークライト",
+          "licensee_代表者名": "代表取締役 金澤 利幸"
+        }
+      };
+
+      const { html } = await documentService.generateDocument(demoData, type);
+      
+      // Convert to Markdown using Turndown
+      const markdown = turndownService.turndown(html);
+
+      res.json({ markdown, fileName: `sample_${type}.md` });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }

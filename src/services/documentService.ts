@@ -117,7 +117,7 @@ export class DocumentService {
 
   getTemplateVariables(type: DocumentType): string[] {
     const templateSource = this.loadTemplate(type);
-    const regex = /\{\{\{?[#\/!]?(?:if|each|unless|with)?\s*([a-zA-Z0-9_.-]+)(?:\s+[a-zA-Z0-9_.-]+)*\s*\}\}\}?/g;
+    const regex = /\{\{\{?[#\/!]?(?:if|each|unless|with)?\s*([^}\s]+)(?:\s+[^}\s]+)*\s*\}\}\}?/g;
     const variables = new Set<string>();
     let match;
     while ((match = regex.exec(templateSource)) !== null) {
