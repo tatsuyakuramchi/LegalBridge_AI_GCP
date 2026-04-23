@@ -155,6 +155,7 @@ export async function initDb() {
       latest_amount DECIMAL(15, 2),
       latest_due_date TIMESTAMP WITH TIME ZONE,
       backlog_issue_key VARCHAR(50) UNIQUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(legal_request_id, item_no)
     );`,
 

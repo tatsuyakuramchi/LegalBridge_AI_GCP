@@ -21,7 +21,9 @@ import {
   Database,
   ChevronRight,
   ShieldCheck,
-  Briefcase
+  Briefcase,
+  ArrowRight,
+  Calendar
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { saveAs } from 'file-saver';
@@ -59,7 +61,14 @@ interface ExternalAsset {
 
 export default function App() {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'create' | 'list'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'search' | 'master' | 'templates'>('create');
+  
+  // Backlog Search
+  const [issueSearchTerm, setIssueSearchTerm] = useState('');
+
+  // Template Management
+  const [templateList, setTemplateList] = useState<string[]>([]);
+  const [templateMetadata, setTemplateMetadata] = useState<any>({});
   
   // Template & Fields
   const [selectedTemplate, setSelectedTemplate] = useState<string>('individual_license_terms');
@@ -89,17 +98,56 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
+  const [caseHistory, setCaseHistory] = useState<any[]>([]);
+
+  // Handle automatic calculations based on formulas
+  useEffect(() => {
+    if (!selectedTemplate || !templateMetadata[selectedTemplate]?.vars) return;
+
+    const vars = templateMetadata[selectedTemplate].vars;
+    let hasChanges = false;
+    const newFormData = { ...formData };
+
+    Object.entries(vars).forEach(([field, meta]: [string, any]) => {
+      if (meta.formula) {
+        try {
+          // Replace placeholders like {field} with actual values
+          let expr = meta.formula.replace(/\{([^}]+)\}/g, (_: string, key: string) => {
+            const val = formData[key] || "0";
+            return String(val).replace(/,/g, ""); 
+          });
+
+          // Basic evaluation using Function (safe for simple math like +, -, *, /)
+          // eslint-disable-next-line no-new-func
+          const result = new Function(`return ${expr}`)();
+          
+          if (result !== undefined && !isNaN(result) && String(result) !== String(formData[field])) {
+            newFormData[field] = String(result);
+            hasChanges = true;
+          }
+        } catch (e) {
+          // Silent fail on formula error during typing
+        }
+      }
+    });
+
+    if (hasChanges) {
+      setFormData(newFormData);
+    }
+  }, [formData, selectedTemplate, templateMetadata]);
 
   // --- Fetch Initial Data ---
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes] = await Promise.all([
+        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes] = await Promise.all([
           fetch('/api/backlog/issues').then(r => r.json()),
           fetch('/api/master/vendors').then(r => r.json()),
           fetch('/api/master/staff').then(r => r.json()),
           fetch('/api/master/company-profile').then(r => r.json()),
-          fetch('/api/management/assets').then(r => r.json())
+          fetch('/api/management/assets').then(r => r.json()),
+          fetch('/api/templates').then(r => r.json()),
+          fetch('/api/templates/config/metadata').then(r => r.json())
         ]);
         
         setIssues(Array.isArray(issuesRes) ? issuesRes : []);
@@ -107,6 +155,8 @@ export default function App() {
         setStaffList(Array.isArray(staffRes) ? staffRes : []);
         setCompanyProfile(profileRes);
         setAssets(Array.isArray(assetsRes) ? assetsRes : []);
+        setTemplateList(Array.isArray(templatesRes) ? templatesRes : []);
+        setTemplateMetadata(metaRes || {});
       } catch (e) {
         console.error("Failed to fetch startup data", e);
       }
@@ -133,30 +183,44 @@ export default function App() {
   }, [selectedTemplate]);
 
   // --- Helpers ---
-  const handleIssueSelect = async (issueKey: string) => {
-    setSelectedIssue(issueKey);
-    const issue = issues.find(i => i.issueKey === issueKey);
-    if (!issue) return;
+  const syncFromDatabase = async (issueKeyToUse?: string) => {
+    const key = issueKeyToUse || selectedIssue;
+    if (!key) {
+      alert("Please select a Backlog ticket first.");
+      return;
+    }
 
+    const issue = issues.find(i => i.issueKey === key);
+    
     try {
-      // Fetch context mapping if the server provides it
-      const res = await fetch(`/api/backlog/issues/${issueKey}/form-context?template=${selectedTemplate}`);
+      const res = await fetch(`/api/backlog/issues/${key}/form-context?template=${selectedTemplate}`);
       const context = await res.json();
       
       setFormData((prev: any) => ({
         ...prev,
-        '基本契約名': issue.summary,
-        'remarks': issue.description,
+        '基本契約名': issue?.summary || prev['基本契約名'],
+        'remarks': issue?.description || prev['remarks'],
         ...context
       }));
     } catch (e) {
       console.warn("Failed to fetch context mapping", e);
-      setFormData((prev: any) => ({
-        ...prev,
-        '基本契約名': issue.summary,
-        'remarks': issue.description
-      }));
+      if (issue) {
+        setFormData((prev: any) => ({
+          ...prev,
+          '基本契約名': issue.summary,
+          'remarks': issue.description
+        }));
+      }
     }
+  };
+
+  const handleIssueSelect = async (issueKey: string) => {
+    setSelectedIssue(issueKey);
+    await syncFromDatabase(issueKey);
+    fetch(`/api/backlog/issues/${issueKey}/history`)
+      .then(r => r.json())
+      .then(d => setCaseHistory(d))
+      .catch(e => console.error("History fetch error:", e));
   };
 
   const handleGenerate = async () => {
@@ -211,8 +275,9 @@ export default function App() {
   };
 
   const renderDynamicField = (field: string) => {
+    const fieldMeta = (templateMetadata[selectedTemplate]?.vars || {})[field] || {};
+    const label = fieldMeta.label || field.replace(/^individual_license_terms_/, '').replace(/_/g, ' ');
     const val = formData[field] || '';
-    const label = field.replace(/^individual_license_terms_/, '').replace(/_/g, ' ');
     
     // Custom logic for specific fields
     const selectOptions: Record<string, string[]> = {
@@ -229,18 +294,32 @@ export default function App() {
       '対象地域': ['日本国内', '全世界', '北米', '欧州'],
       '許諾言語': ['日本語', '英語', '各国語'],
       '販売地域': ['日本国内', '全世界', '北米', '欧州'],
-      '販売言語': ['日本語', '英語', '各国語']
+      '販売言語': ['日本語', '英語', '各国語'],
+      'taxRate': ['10', '8']
     };
 
-    const isDate = field.includes('日') || field.includes('DATE') || field.includes('期限');
-    const isTextarea = field.includes('本文') || field.includes('備考') || field.includes('REMARKS') || field.includes('特記');
+    const isDate = fieldMeta.type === 'date' || field.includes('日') || field.includes('DATE') || field.includes('期限');
+    const isTextarea = fieldMeta.type === 'textarea' || field.includes('本文') || field.includes('備考') || field.includes('REMARKS') || field.includes('特記');
+    const isBoolean = fieldMeta.type === 'boolean' || field.startsWith('is') || field.includes('フラグ');
+    const isNumber = fieldMeta.type === 'number';
 
     return (
       <div key={field} className="space-y-1 group">
         <label className="flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-wider text-[#141414]/50 group-hover:text-blue-600 transition-colors">
           {label}
         </label>
-        {selectOptions[field] ? (
+        {isBoolean ? (
+          <div className="flex items-center gap-4 py-1.5">
+            <button 
+              onClick={() => setFormData({ ...formData, [field]: true })}
+              className={`text-[10px] font-mono px-3 py-1 border transition-all ${val === true ? 'bg-[#141414] text-white' : 'border-[#141414]/10 opacity-50'}`}
+            >TRUE</button>
+            <button 
+              onClick={() => setFormData({ ...formData, [field]: false })}
+              className={`text-[10px] font-mono px-3 py-1 border transition-all ${val === false ? 'bg-[#141414] text-white' : 'border-[#141414]/10 opacity-50'}`}
+            >FALSE</button>
+          </div>
+        ) : selectOptions[field] ? (
           <select 
             value={val}
             onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
@@ -259,7 +338,7 @@ export default function App() {
           />
         ) : (
           <input 
-            type={isDate ? 'date' : 'text'}
+            type={isDate ? 'date' : isNumber ? 'number' : 'text'}
             value={val}
             onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
             className="w-full text-xs font-mono border-b border-[#141414]/20 bg-transparent py-1.5 focus:border-blue-600 focus:outline-none placeholder:text-gray-300"
@@ -293,10 +372,28 @@ export default function App() {
               Creation
             </button>
             <button 
+              onClick={() => setActiveTab('search')}
+              className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'search' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
+            >
+              Backlog Search
+            </button>
+            <button 
               onClick={() => setActiveTab('list')}
               className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'list' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
             >
               Archived
+            </button>
+            <button 
+              onClick={() => setActiveTab('master')}
+              className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'master' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
+            >
+              Master Settings
+            </button>
+            <button 
+              onClick={() => setActiveTab('templates')}
+              className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'templates' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
+            >
+              Templates
             </button>
           </nav>
           <div className="flex items-center gap-3 border-l border-[#141414]/10 pl-6">
@@ -310,10 +407,11 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-8 pt-8">
-        <div className="grid grid-cols-12 gap-10">
-          
-          {/* Side Control Panel */}
-          <aside className="col-span-12 lg:col-span-3 space-y-8">
+        {activeTab === 'create' && (
+          <div className="grid grid-cols-12 gap-10">
+            
+            {/* Side Control Panel */}
+            <aside className="col-span-12 lg:col-span-3 space-y-8">
             <div className="space-y-4">
                <div className="flex items-center gap-2 text-[#141414]/40">
                   <LayoutDashboard className="w-3 h-3" />
@@ -338,38 +436,22 @@ export default function App() {
                       onChange={(e) => setSelectedTemplate(e.target.value)}
                       className="w-full bg-[#141414] border-b border-white/20 py-2 text-xs font-mono focus:outline-none focus:border-blue-400 appearance-none"
                     >
-                      <optgroup label="Core Licenses & Terms">
-                        <option value="individual_license_terms">Indiv. License Terms (個別許諾)</option>
-                        <option value="license_master">License Master (ライセンス原簿)</option>
-                        <option value="license_report">License Report (ライセンス報告書)</option>
-                        <option value="royalty_statement">Royalty Output (利用許諾料計算)</option>
-                      </optgroup>
-                      <optgroup label="Contracts & Agreements">
-                        <option value="contract">Standard Contract (基本契約)</option>
-                        <option value="nda">NDA (秘密保持契約)</option>
-                        <option value="service_master">Service Master (業務委託基本)</option>
-                        <option value="service_terms">Service Terms (業務委託個別)</option>
-                        <option value="intl_master">Intl. Master (海外基本契約)</option>
-                        <option value="intl_amendment">Intl. Amendment (海外変更覚書)</option>
-                      </optgroup>
-                      <optgroup label="Sales & Purchase">
-                        <option value="purchase_order">Purchase Order (発注書)</option>
-                        <option value="planning_purchase_order">Planning PO (企画発注書)</option>
-                        <option value="sales_master_standard">Sales Master (売買基本標準)</option>
-                        <option value="sales_master_buyer">Sales Master Buyer (売買買主)</option>
-                        <option value="sales_master_credit">Sales Master Credit (売買クレジット)</option>
-                      </optgroup>
-                      <optgroup label="Delivery & Payment">
-                        <option value="inspection_certificate">Inspection Cert. (検収書)</option>
-                        <option value="inspection_certificate_detailed">Inspection Detailed (検収書詳細)</option>
-                        <option value="inspection_certificate_v2">Inspection v2 (検収書v2)</option>
-                        <option value="fee_statement">Fee Statement (報酬明細書)</option>
-                        <option value="payment_notice">Payment Notice (支払通知書)</option>
-                        <option value="payment_notice_alt">Payment Notice Alt (支払通知書別案)</option>
-                      </optgroup>
-                      <optgroup label="Others">
-                        <option value="legal_request">Legal Request (法務依頼書)</option>
-                      </optgroup>
+                      <option value="">-- SELECT BLUEPRINT --</option>
+                      {(() => {
+                        const categories = [...new Set(templateList.map(t => templateMetadata[t]?.category || 'General'))];
+                        return categories.map(cat => (
+                          <optgroup key={cat} label={cat}>
+                            {templateList
+                              .filter(t => (templateMetadata[t]?.category || 'General') === cat)
+                              .map(t => (
+                                <option key={t} value={t}>
+                                  {templateMetadata[t]?.label || t.replace(/_/g, ' ')} ({t})
+                                </option>
+                              ))
+                            }
+                          </optgroup>
+                        ));
+                      })()}
                     </select>
                   </div>
                   <button 
@@ -417,6 +499,30 @@ export default function App() {
                  </div>
                </div>
             </div>
+
+            {selectedIssue && caseHistory.length > 0 && (
+              <div className="space-y-4">
+                 <div className="flex items-center gap-2 text-[#141414]/40">
+                    <History className="w-3 h-3" />
+                    <h2 className="text-[10px] font-mono font-bold uppercase tracking-widest">Case Data Stream</h2>
+                 </div>
+                 <div className="relative border-l-2 border-[#141414]/10 pl-4 ml-1 space-y-6">
+                    {caseHistory.map((item, idx) => (
+                      <div key={item.id} className="relative">
+                        <div className="absolute -left-[23px] top-1.5 w-3 h-3 bg-white border-2 border-[#141414] rounded-full z-10" />
+                        <div>
+                           <p className="text-[8px] font-mono opacity-40 uppercase">{new Date(item.date).toLocaleDateString('ja-JP')}</p>
+                           <p className="text-[10px] font-mono font-bold uppercase mt-0.5 leading-tight">{item.label}</p>
+                           <p className="text-[8px] font-mono text-blue-600 uppercase mt-1 truncate max-w-xs">{item.ref}</p>
+                           {item.amount && (
+                             <p className="text-[9px] font-mono text-emerald-600 font-bold">¥{new Intl.NumberFormat('ja-JP').format(item.amount)}</p>
+                           )}
+                        </div>
+                      </div>
+                    ))}
+                 </div>
+              </div>
+            )}
           </aside>
 
           {/* Core Editing Stage */}
@@ -434,6 +540,12 @@ export default function App() {
                    </div>
                  </div>
                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => syncFromDatabase()}
+                      className="px-4 py-1.5 bg-blue-600 text-white text-[9px] font-mono font-bold uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-2 shadow-sm"
+                    >
+                      <Database className="w-3 h-3" /> DB補完 (Sync)
+                    </button>
                     <button 
                       onClick={() => setFormData({ サブライセンシー一覧: [] })}
                       className="px-4 py-1.5 border border-[#141414]/10 text-[9px] font-mono font-bold uppercase tracking-widest hover:bg-red-50 hover:text-red-600 transition-colors"
@@ -464,6 +576,10 @@ export default function App() {
                                      <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">I. Licensor (許諾者)</h3>
                                   </div>
                                   <div className="flex gap-2">
+                                     <button 
+                                       onClick={() => syncFromDatabase()}
+                                       className="text-[8px] font-mono bg-blue-600 text-white px-2 py-0.5 hover:bg-blue-700 transition-all uppercase flex items-center gap-1"
+                                     ><Database className="w-2 h-2" /> DBから補完</button>
                                      <button 
                                        onClick={() => setFormData({
                                          ...formData,
@@ -502,6 +618,10 @@ export default function App() {
                                      <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">II. Licensee (被許諾者)</h3>
                                   </div>
                                   <div className="flex gap-2">
+                                     <button 
+                                       onClick={() => syncFromDatabase()}
+                                       className="text-[8px] font-mono bg-amber-600 text-white px-2 py-0.5 hover:bg-amber-700 transition-all uppercase flex items-center gap-1"
+                                     ><Database className="w-2 h-2" /> DBから補完</button>
                                      <button 
                                        onClick={() => setFormData({
                                          ...formData,
@@ -716,10 +836,151 @@ export default function App() {
                              </div>
                           </div>
                         </>
+                      ) : selectedTemplate === 'inspection_certificate' ? (
+                        <>
+                          {/* Inspection Header Step */}
+                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                               <div className="flex justify-between items-center border-b pb-2">
+                                  <h3 className="text-[10px] font-mono font-bold uppercase">Context & ID</h3>
+                                  <button 
+                                    onClick={() => syncFromDatabase()}
+                                    className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"
+                                  ><Database className="w-2 h-2" /> DBから補完</button>
+                               </div>
+                               {['issueKey', 'itemNo', 'deliveryNo', 'totalDeliveries', 'itemCount', 'orderDate', 'documentDate'].map(renderDynamicField)}
+                               {renderDynamicField('isPartial')}
+                             </div>
+                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                               <h3 className="text-[10px] font-mono font-bold uppercase border-b pb-2">Counterparty (受託者)</h3>
+                               <div className="flex gap-2">
+                                  <button onClick={() => {
+                                    if(activeVendor) setFormData({...formData, counterparty: activeVendor.vendor_name, counterpartyRepresentativeSama: activeVendor.vendor_rep + ' 様', counterpartyTni: activeVendor.trade_name});
+                                  }} className="text-[8px] font-mono border px-2 py-1 uppercase opacity-50 hover:opacity-100 transition-all">From Master</button>
+                               </div>
+                               {['counterparty', 'counterpartyRepresentativeSama', 'counterpartyTni'].map(renderDynamicField)}
+                             </div>
+                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                               <h3 className="text-[10px] font-mono font-bold uppercase border-b pb-2">Internal (検収者)</h3>
+                               <div className="flex gap-2">
+                                  <button onClick={() => {
+                                    if(selectedStaff) setFormData({...formData, inspectorDept: selectedStaff.department, inspectorName: selectedStaff.staff_name});
+                                  }} className="text-[8px] font-mono border px-2 py-1 uppercase opacity-50 hover:opacity-100 transition-all">From Staff Master</button>
+                               </div>
+                               {['inspectorDept', 'inspectorName', 'deliveredAt', 'inspectionCompletedAt', 'paymentDueDate'].map(renderDynamicField)}
+                             </div>
+                          </div>
+
+                          {/* Inspection Content & Financials */}
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                             <div className="p-8 border border-emerald-600/5 bg-emerald-50/5 space-y-6">
+                               <div className="flex justify-between items-center border-b border-emerald-800/10 pb-2">
+                                  <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-800">Deliverable Detail</h3>
+                                  <button 
+                                    onClick={() => syncFromDatabase()}
+                                    className="text-[8px] font-mono bg-emerald-600 text-white px-2 py-0.5 hover:bg-emerald-700 transition-all uppercase flex items-center gap-1"
+                                  ><Database className="w-2 h-2" /> DBから補完</button>
+                               </div>
+                               {['description', 'spec', 'isReducedTax'].map(renderDynamicField)}
+                               <div className="grid grid-cols-2 gap-4">
+                                  {['deliveredAmountStr', 'taxRate', 'taxAmountStr', 'totalAmountStr'].map(renderDynamicField)}
+                               </div>
+                             </div>
+                             <div className="p-8 border border-indigo-600/5 bg-indigo-50/5 space-y-6">
+                               <h3 className="text-[10px] font-mono font-bold uppercase text-indigo-800 border-b border-indigo-800/10 pb-2">Progress & Bank (財務)</h3>
+                               <div className="grid grid-cols-2 gap-4">
+                                  {['inspectedPct', 'inspectedAmountStr', 'totalOrderAmountStr', 'pendingAmountStr'].map(renderDynamicField)}
+                               </div>
+                               {['paymentConditionSummary', 'bankName', 'branchName', 'accountType', 'accountNo', 'accountHolder'].map(renderDynamicField)}
+                             </div>
+                          </div>
+                        </>
+                      ) : selectedTemplate === 'royalty_statement' ? (
+                        <>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                                <div className="flex justify-between items-center border-b pb-2">
+                                   <h3 className="text-[10px] font-mono font-bold uppercase">Work & Contract (原案・契約)</h3>
+                                   <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
+                                </div>
+                                {['ledgerId', 'manufacturingIssueKey', 'licenseIssueKey', 'licensor', 'licensee', 'originalWork'].map(renderDynamicField)}
+                             </div>
+                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                                <div className="flex justify-between items-center border-b pb-2">
+                                   <h3 className="text-[10px] font-mono font-bold uppercase">Manufacturing (製造情報)</h3>
+                                   <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
+                                </div>
+                                {['productName', 'edition', 'completionDate', 'quantity', 'sampleQuantity', 'billableQuantity', 'msrpStr'].map(renderDynamicField)}
+                             </div>
+                          </div>
+                          <div className="p-8 border border-indigo-600/10 bg-indigo-50/5 space-y-6">
+                             <div className="flex justify-between items-center border-b border-indigo-900/10 pb-2">
+                                <h3 className="text-[10px] font-mono font-bold uppercase text-indigo-900">Royalty & MG Calculation (計算明細)</h3>
+                                <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-indigo-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
+                             </div>
+                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+                                <div className="space-y-4">
+                                   {['calcType', 'royaltyRatePct', 'grossRoyaltyStr'].map(renderDynamicField)}
+                                </div>
+                                <div className="space-y-4">
+                                   {['mgAmount', 'mgRemaining', 'actualRoyaltyStr'].map(renderDynamicField)}
+                                </div>
+                                <div className="space-y-4">
+                                   {['taxRate', 'taxAmount', 'totalPaymentStr'].map(renderDynamicField)}
+                                </div>
+                             </div>
+                             <div className="pt-6 border-t border-indigo-900/10 grid grid-cols-1 md:grid-cols-3 gap-8">
+                                {['paymentConditionSummary', 'reportingDeadline', 'paymentDueDate'].map(renderDynamicField)}
+                             </div>
+                          </div>
+                        </>
                       ) : (
-                        /* Standard Template Grid */
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-12 gap-y-10">
-                          {templateFields.map(renderDynamicField)}
+                        /* Standard Template Selection: Grouped by prefix/keywords */
+                        <div className="space-y-12">
+                          {/* We can dynamically group fields for a better UI flow */}
+                          {(() => {
+                            const groups: { [key: string]: string[] } = {
+                              "Basic Context (基本情報)": [],
+                              "License/Grant Info (ライセンス)": [],
+                              "Financial & Payment (金銭)": [],
+                              "Remarks & Extras (その他)": []
+                            };
+                            
+                            templateFields.forEach(f => {
+                              const meta = (templateMetadata[selectedTemplate]?.vars || {})[f] || {};
+                              const group = meta.group;
+                              
+                              if (group && groups[group]) {
+                                groups[group].push(f);
+                              } else if (f.includes('Licensor') || f.includes('Licensee') || f.includes('名称') || f.includes('住所')) {
+                                groups["Basic Context (基本情報)"].push(f);
+                              } else if (f.includes('日') || f.includes('期間') || f.includes('地域') || f.includes('独占')) {
+                                groups["License/Grant Info (ライセンス)"].push(f);
+                              } else if (f.includes('金銭') || f.includes('料率') || f.includes('価格')) {
+                                groups["Financial & Payment (金銭)"].push(f);
+                              } else {
+                                groups["Remarks & Extras (その他)"].push(f);
+                              }
+                            });
+
+                            return Object.entries(groups).map(([title, items]) => items.length > 0 && (
+                              <section key={title} className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+                                <div className="flex items-center justify-between border-b border-[#141414]/10 pb-2">
+                                   <div className="flex items-center gap-3">
+                                      <div className="w-1.5 h-1.5 bg-[#141414]" />
+                                      <h3 className="text-[10px] font-mono font-bold uppercase tracking-wider">{title}</h3>
+                                   </div>
+                                   <button 
+                                      onClick={() => syncFromDatabase()}
+                                      className="text-[8px] font-mono border border-blue-600 text-blue-600 px-2 py-0.5 hover:bg-blue-600 hover:text-white transition-all uppercase flex items-center gap-1"
+                                   ><Database className="w-2 h-2" /> DBから補完</button>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-6">
+                                  {items.map(renderDynamicField)}
+                                </div>
+                              </section>
+                            ));
+                          })()}
                         </div>
                       )}
                     </div>
@@ -765,10 +1026,474 @@ export default function App() {
                </footer>
             </div>
           </section>
-        </div>
+          </div>
+        )}
       </main>
 
-      {/* Repository List Tab (Placeholder) */}
+      {/* Backlog Search Tab */}
+      <AnimatePresence>
+        {activeTab === 'search' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed inset-0 top-[65px] bg-[#FDFDFD] z-40 p-12 overflow-y-auto"
+          >
+             <div className="max-w-6xl mx-auto space-y-8">
+                <div className="flex justify-between items-end border-b border-[#141414]/10 pb-6">
+                   <div>
+                      <h2 className="text-xl font-mono font-bold uppercase tracking-tighter">Backlog Exploration</h2>
+                      <p className="text-xs font-mono text-[#141414]/50 border-l-2 border-[#141414] pl-4 mt-2 uppercase">Real-time synchronization with project management issues.</p>
+                   </div>
+                   <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
+                      <input 
+                        className="bg-gray-100 border-none pl-10 pr-4 py-3 text-xs font-mono w-96 focus:ring-2 ring-[#141414]/5 transition-all uppercase" 
+                        placeholder="SEARCH TICKETS BY KEY OR TITLE..." 
+                        value={issueSearchTerm}
+                        onChange={(e) => setIssueSearchTerm(e.target.value)}
+                      />
+                   </div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                   {issues
+                     .filter(i => 
+                        i.issueKey.toLowerCase().includes(issueSearchTerm.toLowerCase()) || 
+                        i.summary.toLowerCase().includes(issueSearchTerm.toLowerCase())
+                     )
+                     .map(issue => (
+                     <div 
+                       key={issue.issueKey} 
+                       className="p-8 border border-[#141414]/10 bg-white group hover:border-[#141414] transition-all cursor-pointer relative overflow-hidden"
+                       onClick={() => {
+                          handleIssueSelect(issue.issueKey);
+                          setActiveTab('create');
+                       }}
+                     >
+                        <div className="flex justify-between items-start mb-8">
+                           <div className="w-12 h-12 bg-gray-100 flex items-center justify-center group-hover:bg-[#141414] group-hover:text-white transition-all">
+                              <Archive className="w-6 h-6" />
+                           </div>
+                           <span className="text-[10px] font-mono font-bold bg-[#141414]/5 px-3 py-1 uppercase tracking-widest">{issue.issueKey}</span>
+                        </div>
+                        <h4 className="text-lg font-bold leading-tight line-clamp-2 uppercase group-hover:text-blue-600 transition-colors">{issue.summary}</h4>
+                        <div className="mt-6 flex gap-4 opacity-40">
+                           <p className="text-[9px] font-mono uppercase flex items-center gap-1.5"><User className="w-3 h-3" /> {issue.registeredUser || 'SYSTEM'}</p>
+                           <p className="text-[9px] font-mono uppercase flex items-center gap-1.5"><Calendar className="w-3 h-3" /> {new Date().toLocaleDateString('ja-JP')}</p>
+                        </div>
+                        <div className="mt-8 pt-6 border-t border-dashed border-gray-100 flex justify-between items-center group-hover:border-[#141414]/20">
+                           <span className="text-[9px] font-mono uppercase tracking-widest font-bold group-hover:text-[#141414] transition-colors">Select for Document Generation</span>
+                           <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-all -translate-x-4 group-hover:translate-x-0" />
+                        </div>
+                     </div>
+                   ))}
+                </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Master Settings Tab */}
+      <AnimatePresence>
+        {activeTab === 'master' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed inset-0 top-[65px] bg-[#FDFDFD] z-40 p-12 overflow-y-auto"
+          >
+             <div className="max-w-7xl mx-auto space-y-12">
+                <div className="border-b border-[#141414]/10 pb-8 flex justify-between items-end">
+                   <div>
+                      <h2 className="text-2xl font-mono font-bold uppercase tracking-tighter">Master Systems</h2>
+                      <p className="text-xs font-mono text-[#141414]/50 border-l-2 border-[#141414] pl-4 mt-2 uppercase">Configuration of global entities and relationship matrices.</p>
+                   </div>
+                   <div className="flex gap-4">
+                      <button 
+                        onClick={() => {
+                          const fetchData = async () => {
+                            try {
+                              const [vendorsRes, staffRes, assetsRes] = await Promise.all([
+                                fetch('/api/master/vendors').then(r => r.json()),
+                                fetch('/api/master/staff').then(r => r.json()),
+                                fetch('/api/management/assets').then(r => r.json())
+                              ]);
+                              setVendors(vendorsRes);
+                              setStaffList(staffRes);
+                              setAssets(assetsRes);
+                            } catch (e) {
+                              console.error("Manual sync failed", e);
+                            }
+                          };
+                          fetchData();
+                        }}
+                        className="px-6 py-2 bg-[#141414] text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:invert transition-all"
+                      >Bulk Sync All</button>
+                   </div>
+                </div>
+                
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                   {/* Vendor Master */}
+                   <div className="space-y-6">
+                      <div className="flex items-center justify-between border-b border-orange-600/20 pb-3">
+                         <div className="flex items-center gap-3">
+                            <Building2 className="w-4 h-4 text-orange-600" />
+                            <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">External Partners</h3>
+                         </div>
+                         <div className="flex items-center gap-4">
+                            <button 
+                              onClick={() => {
+                                const name = prompt("Name:");
+                                const code = prompt("Vendor Code:");
+                                const trade = prompt("Trade Name:");
+                                if (name && code) {
+                                  fetch('/api/master/vendors', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ vendor_name: name, vendor_code: code, trade_name: trade })
+                                  }).then(() => window.location.reload());
+                                }
+                              }}
+                              className="p-1 hover:bg-orange-50 text-orange-600 rounded-sm"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                            <span className="text-[10px] font-mono opacity-40 font-bold">{vendors.length}</span>
+                         </div>
+                      </div>
+                      <div className="space-y-3">
+                         {vendors.map(v => (
+                           <div key={v.vendor_code} className="p-4 border border-[#141414]/5 bg-white group hover:border-orange-600/30 transition-all hover:shadow-lg">
+                              <p className="text-xs font-bold uppercase mb-1">{v.vendor_name}</p>
+                              <div className="flex justify-between items-end">
+                                 <p className="text-[9px] font-mono text-[#141414]/50 uppercase">{v.vendor_code} | {v.trade_name || 'N/A'}</p>
+                                 <button className="text-[8px] font-mono font-bold uppercase px-2 py-0.5 border border-[#141414]/10 hover:bg-[#141414] hover:text-white transition-all">Details</button>
+                              </div>
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+
+                   {/* Staff Master */}
+                   <div className="space-y-6">
+                      <div className="flex items-center justify-between border-b border-blue-600/20 pb-3">
+                         <div className="flex items-center gap-3">
+                            <User className="w-4 h-4 text-blue-600" />
+                            <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">Human Resources</h3>
+                         </div>
+                         <div className="flex items-center gap-4">
+                            <button 
+                              onClick={() => {
+                                const name = prompt("Name:");
+                                const dept = prompt("Department:");
+                                const slack = prompt("Slack ID:");
+                                if (name && slack) {
+                                  fetch('/api/master/staff', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ staff_name: name, department: dept, slack_user_id: slack })
+                                  }).then(() => window.location.reload());
+                                }
+                              }}
+                              className="p-1 hover:bg-blue-50 text-blue-600 rounded-sm"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                            <span className="text-[10px] font-mono opacity-40 font-bold">{staffList.length}</span>
+                         </div>
+                      </div>
+                      <div className="space-y-3">
+                         {staffList.map(s => (
+                           <div key={s.slack_user_id} className="p-4 border border-[#141414]/5 bg-white group hover:border-blue-600/30 transition-all hover:shadow-lg flex items-center gap-4">
+                              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center font-mono text-[10px] font-bold">{s.staff_name.charAt(0)}</div>
+                              <div className="flex-1">
+                                 <p className="text-xs font-bold uppercase">{s.staff_name}</p>
+                                 <p className="text-[9px] font-mono text-[#141414]/50 uppercase leading-none mt-0.5">{s.department} | @{s.slack_user_id}</p>
+                              </div>
+                           </div>
+                         ))}
+                      </div>
+                   </div>
+
+                   {/* Assets Master */}
+                   <div className="space-y-6">
+                       <div className="flex items-center justify-between border-b border-purple-600/20 pb-3">
+                          <div className="flex items-center gap-3">
+                             <Archive className="w-4 h-4 text-purple-600" />
+                             <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">Legal Assets</h3>
+                          </div>
+                          <span className="text-[10px] font-mono opacity-40 font-bold">{assets.length}</span>
+                       </div>
+                       <div className="space-y-3">
+                          {assets.map(a => (
+                            <div key={a.id} className="p-4 border border-[#141414]/5 bg-white group hover:border-purple-600/30 transition-all hover:shadow-lg">
+                               <div className="flex justify-between items-start mb-2">
+                                  <p className="text-xs font-bold uppercase truncate pr-4">{a.asset_name}</p>
+                                  <span className="text-[8px] font-mono font-bold text-purple-600 uppercase italic whitespace-nowrap">{a.asset_type}</span>
+                               </div>
+                               <p className="text-[9px] font-mono text-[#141414]/50 uppercase mb-2">{a.asset_number} | {a.counterparty}</p>
+                               <div className="w-full bg-gray-50 h-[2px] rounded-full overflow-hidden">
+                                  <div className="bg-purple-600 h-full w-2/3"></div>
+                               </div>
+                            </div>
+                          ))}
+                       </div>
+                    </div>
+                 </div>
+              </div>
+           </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Template Management Tab */}
+      <AnimatePresence>
+        {activeTab === 'templates' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed inset-0 top-[65px] bg-[#FDFDFD] z-40 p-12 overflow-y-auto"
+          >
+             <div className="max-w-7xl mx-auto space-y-12 pb-40">
+                <div className="flex justify-between items-end border-b border-[#141414]/10 pb-8">
+                   <div>
+                      <h2 className="text-2xl font-mono font-bold uppercase tracking-tighter">Blueprint Studio</h2>
+                      <p className="text-xs font-mono text-[#141414]/50 border-l-2 border-[#141414] pl-4 mt-2 uppercase">Custom template architect & variable mapping logic.</p>
+                   </div>
+                   <div className="flex gap-4">
+                      <button 
+                        onClick={() => {
+                          const name = prompt("Enter new template ID (e.g., custom_nda):");
+                          if (name) {
+                            fetch(`/api/templates/${name}`, {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ content: '<h1>New Template</h1>\n<p>Variable: {{myVar}}</p>' })
+                            }).then(() => window.location.reload());
+                          }
+                        }}
+                        className="px-6 py-2 bg-[#141414] text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:invert transition-all flex items-center gap-2"
+                      >
+                        <Plus className="w-3 h-3" /> New Blueprint
+                      </button>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-12 gap-12">
+                   {/* Template List */}
+                   <div className="col-span-4 space-y-4">
+                      <h3 className="text-[10px] font-mono font-bold uppercase text-[#141414]/40 tracking-widest">Available Templates</h3>
+                      <div className="space-y-1">
+                        {templateList.map(t => (
+                          <div 
+                            key={t}
+                            onClick={() => setSelectedTemplate(t)}
+                            className={`p-4 border font-mono text-[11px] cursor-pointer transition-all flex justify-between items-center group ${selectedTemplate === t ? 'bg-[#141414] text-white border-[#141414]' : 'bg-white border-[#141414]/10 hover:border-[#141414]'}`}
+                          >
+                             <div>
+                                <p className="font-bold uppercase">{templateMetadata[t]?.label || t.replace(/_/g, ' ')}</p>
+                                <p className={`text-[8px] uppercase mt-1 ${selectedTemplate === t ? 'text-white/50' : 'text-[#141414]/30'}`}>{t}.html</p>
+                             </div>
+                             <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    if (confirm(`Delete template ${t}?`)) {
+                                      fetch(`/api/templates/${t}`, { method: 'DELETE' })
+                                        .then(() => window.location.reload());
+                                    }
+                                  }}
+                                  className="p-1.5 hover:bg-red-500 hover:text-white rounded-sm text-red-500"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                             </div>
+                          </div>
+                        ))}
+                      </div>
+                   </div>
+
+                   {/* Template Configuration */}
+                   <div className="col-span-8 space-y-10">
+                      {selectedTemplate && (
+                        <>
+                          <div className="p-8 border border-[#141414]/10 bg-white space-y-8">
+                             <div className="flex items-center justify-between border-b border-[#141414]/10 pb-4">
+                                <h3 className="text-sm font-mono font-bold uppercase tracking-tighter">Properties: {selectedTemplate}</h3>
+                                <button 
+                                  onClick={() => {
+                                    fetch('/api/templates/config/metadata', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify(templateMetadata)
+                                    }).then(() => alert("Saved Configuration"));
+                                  }}
+                                  className="px-6 py-2 bg-blue-600 text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-2"
+                                >
+                                  <RefreshCw className="w-3 h-3" /> Save Meta Mapping
+                                </button>
+                             </div>
+
+                             <div className="grid grid-cols-2 gap-8">
+                                <div className="space-y-1.5">
+                                   <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/50 tracking-wider">Display Label</label>
+                                   <input 
+                                     type="text" 
+                                     value={templateMetadata[selectedTemplate]?.label || ''}
+                                     onChange={(e) => setTemplateMetadata({
+                                       ...templateMetadata,
+                                       [selectedTemplate]: { ...templateMetadata[selectedTemplate], label: e.target.value }
+                                     })}
+                                     className="w-full p-2 border border-[#141414]/10 font-mono text-xs focus:border-[#141414] outline-none"
+                                   />
+                                </div>
+                                <div className="space-y-1.5">
+                                   <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/50 tracking-wider">Categorization</label>
+                                   <select 
+                                     value={templateMetadata[selectedTemplate]?.category || 'General'}
+                                     onChange={(e) => setTemplateMetadata({
+                                       ...templateMetadata,
+                                       [selectedTemplate]: { ...templateMetadata[selectedTemplate], category: e.target.value }
+                                     })}
+                                     className="w-full p-2 border border-[#141414]/10 font-mono text-xs focus:border-[#141414] outline-none bg-white"
+                                   >
+                                      <option value="Core Licenses & Terms">Core Licenses & Terms</option>
+                                      <option value="Contracts & Agreements">Contracts & Agreements</option>
+                                      <option value="Sales & Purchase">Sales & Purchase</option>
+                                      <option value="Delivery & Payment">Delivery & Payment</option>
+                                      <option value="General">General / Others</option>
+                                   </select>
+                                </div>
+                             </div>
+
+                             <div className="space-y-4 pt-6">
+                                <h4 className="text-[10px] font-mono font-bold uppercase text-[#141414]/40 border-b pb-2">Dynamic Variable Logic</h4>
+                                <div className="space-y-2">
+                                   {templateFields.map(field => {
+                                      const meta = (templateMetadata[selectedTemplate]?.vars || {})[field] || {};
+                                      return (
+                                        <div key={field} className="grid grid-cols-12 gap-4 items-center p-3 border border-[#141414]/5 bg-white hover:bg-gray-50/50 transition-colors">
+                                           <div className="col-span-2 font-mono text-[10px] font-bold text-blue-600 truncate">{field}</div>
+                                           <div className="col-span-2">
+                                              <input 
+                                                type="text" 
+                                                placeholder="Label Override"
+                                                value={meta.label || ''}
+                                                onChange={(e) => {
+                                                  const newMeta = { ...templateMetadata };
+                                                  newMeta[selectedTemplate] = newMeta[selectedTemplate] || {};
+                                                  newMeta[selectedTemplate].vars = newMeta[selectedTemplate].vars || {};
+                                                  newMeta[selectedTemplate].vars[field] = { ...meta, label: e.target.value };
+                                                  setTemplateMetadata(newMeta);
+                                                }}
+                                                className="w-full p-1.5 border-b font-mono text-[9px] outline-none focus:border-blue-500"
+                                              />
+                                           </div>
+                                           <div className="col-span-2">
+                                              <select 
+                                                value={meta.type || 'text'}
+                                                onChange={(e) => {
+                                                  const newMeta = { ...templateMetadata };
+                                                  newMeta[selectedTemplate] = newMeta[selectedTemplate] || {};
+                                                  newMeta[selectedTemplate].vars = newMeta[selectedTemplate].vars || {};
+                                                  newMeta[selectedTemplate].vars[field] = { ...meta, type: e.target.value };
+                                                  setTemplateMetadata(newMeta);
+                                                }}
+                                                className="w-full p-1.5 bg-gray-50 border-none font-mono text-[9px] outline-none"
+                                              >
+                                                 <option value="text">Text Input</option>
+                                                 <option value="date">Date Picker</option>
+                                                 <option value="textarea">Multi-line Text</option>
+                                                 <option value="boolean">Boolean Toggle</option>
+                                                 <option value="number">Numeric</option>
+                                              </select>
+                                           </div>
+                                           <div className="col-span-2">
+                                              <select 
+                                                value={meta.group || 'Default'}
+                                                onChange={(e) => {
+                                                  const newMeta = { ...templateMetadata };
+                                                  newMeta[selectedTemplate] = newMeta[selectedTemplate] || {};
+                                                  newMeta[selectedTemplate].vars = newMeta[selectedTemplate].vars || {};
+                                                  newMeta[selectedTemplate].vars[field] = { ...meta, group: e.target.value };
+                                                  setTemplateMetadata(newMeta);
+                                                }}
+                                                className="w-full p-1.5 bg-gray-50 border-none font-mono text-[9px] outline-none"
+                                              >
+                                                 <option value="Basic Context (基本情報)">Basic Context</option>
+                                                 <option value="License/Grant Info (ライセンス)">License/Grant</option>
+                                                 <option value="Financial & Payment (金銭)">Financial</option>
+                                                 <option value="Remarks & Extras (その他)">Remarks</option>
+                                              </select>
+                                           </div>
+                                           <div className="col-span-4">
+                                              <input 
+                                                type="text" 
+                                                placeholder="Formula (e.g. {A} * {B})"
+                                                value={meta.formula || ''}
+                                                onChange={(e) => {
+                                                  const newMeta = { ...templateMetadata };
+                                                  newMeta[selectedTemplate] = newMeta[selectedTemplate] || {};
+                                                  newMeta[selectedTemplate].vars = newMeta[selectedTemplate].vars || {};
+                                                  newMeta[selectedTemplate].vars[field] = { ...meta, formula: e.target.value };
+                                                  setTemplateMetadata(newMeta);
+                                                }}
+                                                className="w-full p-1.5 border-b font-mono text-[9px] outline-none focus:border-amber-500 bg-amber-50/20"
+                                              />
+                                           </div>
+                                        </div>
+                                      );
+                                   })}
+                                </div>
+                             </div>
+                          </div>
+
+                          <div className="p-8 border border-amber-600/10 bg-amber-50/5 space-y-4">
+                             <div className="flex items-center gap-2 text-amber-900 border-b border-amber-900/10 pb-2 mb-4">
+                                <FileText className="w-4 h-4" />
+                                <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">Handlebars HTML Layer</h3>
+                             </div>
+                             <p className="text-[8px] font-mono text-amber-900/40 uppercase">Warning: Structural changes will refresh the variable mapping automatically.</p>
+                             <textarea 
+                               className="w-full h-[300px] p-6 bg-[#141414] text-white font-mono text-xs border-none focus:ring-0 leading-relaxed"
+                               spellCheck={false}
+                               placeholder="Loading template content..."
+                               onBlur={(e) => {
+                                  if (confirm("Save HTML content changes?")) {
+                                    fetch(`/api/templates/${selectedTemplate}`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ content: (e.target as any).value })
+                                    }).then(() => {
+                                      // Trigger field refresh
+                                      fetch(`/api/templates/${selectedTemplate}/schema`)
+                                       .then(r => r.json())
+                                       .then(d => setTemplateFields(d.variables || []));
+                                    });
+                                  }
+                               }}
+                               defaultValue={'Loading...'}
+                               key={selectedTemplate}
+                               ref={(el) => {
+                                 if (el && selectedTemplate) {
+                                   fetch(`/api/templates/${selectedTemplate}/preview`)
+                                    .then(r => r.text())
+                                    .then(text => el.value = text);
+                                 }
+                               }}
+                             />
+                          </div>
+                        </>
+                      )}
+                   </div>
+                </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Repository List Tab */}
       <AnimatePresence>
         {activeTab === 'list' && (
           <motion.div 
@@ -905,6 +1630,7 @@ export default function App() {
                     </div>
                  </div>
               </div>
+
             </motion.div>
           </div>
         )}

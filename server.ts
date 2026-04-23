@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import { App, ExpressReceiver, LogLevel } from "@slack/bolt";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { BacklogService } from "./src/services/backlogService.ts";
@@ -750,30 +751,62 @@ async function startServer() {
     const { key } = req.params;
     const { template } = req.query;
     try {
-      const context: Record<string, string> = {};
+      const context: Record<string, string | number | boolean> = {};
 
       if (template === 'inspection_certificate' || template === 'inspection_certificate_detailed' || template === 'inspection_certificate_v2') {
         const deliveryQuery = `
-          SELECT de.*, oi.amount as order_amount, oi.description as item_desc, v.vendor_name, v.vendor_code, lr.summary as order_title
+          SELECT de.*, oi.amount as order_amount, oi.description as item_desc, oi.spec as item_spec, 
+                 v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type, v.account_no, v.account_holder,
+                 lr.summary as order_title, lr.created_at as order_date
           FROM delivery_events de
           LEFT JOIN order_items oi ON de.order_item_id = oi.id
           LEFT JOIN vendors v ON oi.vendor_code = v.vendor_code
           LEFT JOIN legal_requests lr ON de.backlog_issue_key = lr.backlog_issue_key
           WHERE de.backlog_issue_key = $1
+          ORDER BY de.delivery_no DESC LIMIT 1
         `;
         const result = await query(deliveryQuery, [key]);
         if (result.rows.length > 0) {
           const row = result.rows[0];
-          context["CLIENT_NAME"] = row.vendor_name || "";
-          context["COUNTERPARTY"] = row.vendor_name || "";
-          context["ITEM_NAME"] = row.item_desc || "";
-          context["ORDER_TITLE"] = row.order_title || row.item_desc || "";
-          context["AMOUNT"] = String(row.delivered_amount || "");
-          context["DELIVERY_DATE"] = row.delivered_at ? new Date(row.delivered_at).toLocaleDateString('ja-JP') : "";
-          context["INSPECTION_DATE"] = row.delivered_at ? new Date(row.delivered_at).toLocaleDateString('ja-JP') : "";
-          context["INSPECTION_DEADLINE"] = row.inspection_deadline ? new Date(row.inspection_deadline).toLocaleDateString('ja-JP') : "";
-          context["DELIVERY_NO"] = String(row.delivery_no || "1");
-          context["INSPECTION_DAYS"] = "14"; // Default
+          context["issueKey"] = key;
+          context["itemNo"] = String(row.order_item_id || "1");
+          context["deliveryNo"] = String(row.delivery_no || "1");
+          context["totalDeliveries"] = "1"; // Default or lookup
+          context["itemCount"] = "1";
+          context["orderDate"] = row.order_date ? new Date(row.order_date).toLocaleDateString('ja-JP') : "";
+          context["documentDate"] = new Date().toLocaleDateString('ja-JP');
+          context["isPartial"] = (row.delivery_no > 1);
+          
+          context["counterparty"] = row.vendor_name || "";
+          context["counterpartyRepresentativeSama"] = row.vendor_rep ? `${row.vendor_rep} 様` : "";
+          context["counterpartyTni"] = row.trade_name || "";
+          
+          context["inspectorDept"] = "法務部";
+          context["deliveredAt"] = row.delivered_at ? new Date(row.delivered_at).toLocaleDateString('ja-JP') : "";
+          context["inspectionCompletedAt"] = new Date().toLocaleDateString('ja-JP');
+          context["paymentDueDate"] = ""; // Manual or calc
+          
+          context["description"] = row.item_desc || "";
+          context["spec"] = row.item_spec || "";
+          context["isReducedTax"] = false;
+          
+          const amount = row.delivered_amount || 0;
+          context["deliveredAmountStr"] = new Intl.NumberFormat("ja-JP").format(amount);
+          context["taxRate"] = "10";
+          context["taxAmountStr"] = new Intl.NumberFormat("ja-JP").format(Math.floor(amount * 0.1));
+          context["totalAmountStr"] = new Intl.NumberFormat("ja-JP").format(Math.floor(amount * 1.1));
+          
+          context["inspectedPct"] = "100";
+          context["inspectedAmountStr"] = context["totalAmountStr"];
+          context["totalOrderAmountStr"] = new Intl.NumberFormat("ja-JP").format(row.order_amount || 0);
+          context["pendingAmountStr"] = "0";
+
+          context["bankName"] = row.bank_name || "";
+          context["branchName"] = row.branch_name || "";
+          context["accountType"] = row.account_type || "";
+          context["accountNo"] = row.account_no || "";
+          context["accountHolder"] = row.account_holder || "";
+          context["paymentConditionSummary"] = "検収月の翌月末日払い";
         }
       } else if (template === 'royalty_statement' || template === 'individual_license_terms' || template === 'license_master' || template === 'license_report') {
         const royaltyQuery = `
@@ -788,40 +821,69 @@ async function startServer() {
         if (result.rows.length > 0) {
           const row = result.rows[0];
           
-          // Mapping for both conventions (UPPERCASE for legal documents, camelCase for reports/statements)
-          context["LICENSOR_NAME"] = row.licensor || "";
-          context["licensor"] = row.licensor || "";
+          context["Licensor_名称"] = row.licensor || "";
+          context["Licensor_氏名会社名"] = row.licensor || "";
+          context["Licensee_名称"] = "株式会社アークライト";
           
-          context["WORK_TITLE"] = row.original_work || "";
-          context["originalWork"] = row.original_work || "";
-          context["PROPERTY_TITLE"] = row.original_work || "";
-          
-          context["PRODUCT_NAME"] = row.product_name || "";
-          context["productName"] = row.product_name || "";
+          context["原著作物名"] = row.original_work || "";
+          context["対象製品予定名"] = row.product_name || "";
           
           context["MSRP"] = String(row.msrp || "");
-          context["msrpStr"] = row.msrp ? new Intl.NumberFormat("ja-JP").format(row.msrp) : "";
+          context["基準価格"] = String(row.msrp || "");
           
-          context["ROYALTY_RATE"] = String(row.royalty_rate ? (row.royalty_rate * 100).toFixed(2) : "");
-          context["royaltyRatePct"] = row.royalty_rate ? `${(row.royalty_rate * 100).toFixed(1)}%` : "";
-          
-          context["CONTRACT_ID"] = row.ledger_id || "";
-          context["LEDGER_ID"] = row.ledger_id || "";
-          context["ledgerId"] = row.ledger_id || "";
+          context["料率"] = String(row.royalty_rate ? (row.royalty_rate * 100).toFixed(2) : "");
+          context["契約書番号"] = row.contract_number || "";
+          context["台帳ID"] = row.ledger_id || "";
           
           context["MG_AMOUNT"] = String(row.mg_amount || "");
-          context["mgAmount"] = String(row.mg_amount || "");
+          context["MG/AG"] = String(row.mg_amount || "");
           
-          context["PERIOD"] = row.last_period || "";
-          context["period"] = row.last_period || "";
+          context["許諾期間注記"] = row.last_period || "";
           
-          context["FEE_STRUCTURE"] = row.fee_structure || (row.royalty_rate > 0 ? "PERFORMANCE" : "FIXED");
+          context["royaltyRatePct"] = row.royalty_rate ? `${(row.royalty_rate * 100).toFixed(1)}%` : "";
+          context["msrpStr"] = row.msrp ? new Intl.NumberFormat("ja-JP").format(row.msrp) : "";
           
-          if (context["FEE_STRUCTURE"] === "PERFORMANCE") {
-            const formula = `売上高 × ${row.royalty_rate ? (row.royalty_rate * 100).toFixed(1) : "0"}%`;
-            context["CALCULATION_FORMULA"] = formula;
-            context["calculation"] = formula;
-          }
+          const formula = `売上高 × ${row.royalty_rate ? (row.royalty_rate * 100).toFixed(1) : "0"}%`;
+          context["金銭条件1_計算式"] = formula;
+          context["金銭条件1_計算方式"] = row.royalty_rate > 0 ? "ROYALTY" : "FIXED";
+          context["金銭条件1_料率"] = context["料率"];
+
+          // Royalty statement specific variables
+          context["manufacturingIssueKey"] = key;
+          context["licenseIssueKey"] = row.backlog_issue_key || "";
+          context["licensor"] = row.licensor || "";
+          context["licensee"] = "株式会社アークライト";
+          context["originalWork"] = row.original_work || "";
+          context["productName"] = row.product_name || "";
+          context["edition"] = "通常版";
+          context["completionDate"] = row.created_at ? new Date(row.created_at).toLocaleDateString('ja-JP') : "";
+          
+          context["quantity"] = String(row.manufacturing_qty || 0);
+          context["sampleQuantity"] = "0";
+          context["billableQuantity"] = String(row.manufacturing_qty || 0);
+          
+          const msrp = row.msrp || 0;
+          const rate = row.royalty_rate || 0;
+          const gross = Math.floor(msrp * (row.manufacturing_qty || 0) * rate);
+          
+          context["calcType"] = "manufacturing";
+          context["grossRoyaltyStr"] = new Intl.NumberFormat("ja-JP").format(gross);
+          
+          const mg = row.mg_amount || 0;
+          context["mgAmount"] = String(mg);
+          context["mgRemaining"] = String(mg - gross > 0 ? mg - gross : 0);
+          
+          context["actualRoyalty"] = gross - mg > 0 ? gross - mg : 0;
+          context["actualRoyaltyStr"] = new Intl.NumberFormat("ja-JP").format(context["actualRoyalty"] as number);
+          
+          context["taxRate"] = "10";
+          context["taxAmount"] = new Intl.NumberFormat("ja-JP").format(Math.floor((context["actualRoyalty"] as number) * 0.1));
+          context["totalPaymentStr"] = new Intl.NumberFormat("ja-JP").format(Math.floor((context["actualRoyalty"] as number) * 1.1));
+          
+          context["currency"] = "JPY";
+          context["reportingDeadline"] = "";
+          context["paymentDueDate"] = "";
+          context["paymentConditionSummary"] = "四半期報告後の翌月末日払い";
         }
       }
 
@@ -831,10 +893,133 @@ async function startServer() {
     }
   });
 
+  app.get("/api/backlog/issues/:key/history", async (req, res) => {
+    const { key } = req.params;
+    try {
+      const history: any[] = [];
+  
+      // 1. Documents generated
+      const docs = await query("SELECT id, template_type, created_at, document_number FROM documents WHERE issue_key = $1 ORDER BY created_at ASC", [key]);
+      docs.rows.forEach(d => {
+        history.push({
+          id: `doc-${d.id}`,
+          type: 'document',
+          label: `文書作成: ${d.template_type}`,
+          date: d.created_at,
+          ref: d.document_number,
+          details: d
+        });
+      });
+  
+      // 2. Order Items (Purchase Orders)
+      const orders = await query("SELECT * FROM order_items WHERE backlog_issue_key = $1 ORDER BY created_at ASC", [key]);
+      orders.rows.forEach(o => {
+        history.push({
+          id: `order-${o.id}`,
+          type: 'order',
+          label: `発注登録 (アイテム #${o.item_no})`,
+          date: o.created_at,
+          ref: `PO Item #${o.item_no}`,
+          amount: o.amount,
+          details: o
+        });
+      });
+  
+      // 3. Delivery Events (Inspections)
+      const deliveries = await query(`
+        SELECT de.*, oi.item_no 
+        FROM delivery_events de 
+        LEFT JOIN order_items oi ON de.order_item_id = oi.id 
+        WHERE de.backlog_issue_key = $1 OR oi.backlog_issue_key = $2
+        ORDER BY de.created_at ASC
+      `, [key, key]);
+      deliveries.rows.forEach(dev => {
+        history.push({
+          id: `delivery-${dev.id}`,
+          type: 'delivery',
+          label: `検収確認 [${dev.status.toUpperCase()}]`,
+          date: dev.created_at,
+          ref: `納品 #${dev.delivery_no}${dev.item_no ? ` (Item #${dev.item_no})` : ''}`,
+          details: dev
+        });
+      });
+  
+      history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      res.json(history);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   app.get("/api/management/assets", async (req, res) => {
     try {
       const result = await query("SELECT * FROM external_assets ORDER BY created_at DESC");
       res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // --- Template Management Endpoints ---
+  app.get("/api/templates", (req, res) => {
+    try {
+      const templatesDir = path.join(process.cwd(), "templates");
+      const files = fs.readdirSync(templatesDir);
+      const htmlFiles = files
+        .filter(f => f.endsWith(".html"))
+        .map(f => f.replace(".html", ""));
+      res.json(htmlFiles);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/templates/:type", express.json(), (req, res) => {
+    try {
+      const { type } = req.params;
+      const { content } = req.body;
+      const templatesDir = path.join(process.cwd(), "templates");
+      fs.writeFileSync(path.join(templatesDir, `${type}.html`), content, "utf-8");
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.delete("/api/templates/:type", (req, res) => {
+    try {
+      const { type } = req.params;
+      const templatesDir = path.join(process.cwd(), "templates");
+      const filePath = path.join(templatesDir, `${type}.html`);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Template not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/templates/config/metadata", (req, res) => {
+    try {
+      const configPath = path.join(process.cwd(), "templates_config.json");
+      if (fs.existsSync(configPath)) {
+        res.json(JSON.parse(fs.readFileSync(configPath, "utf-8")));
+      } else {
+        res.json({});
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/templates/config/metadata", express.json(), (req, res) => {
+    try {
+      const configPath = path.join(process.cwd(), "templates_config.json");
+      fs.writeFileSync(configPath, JSON.stringify(req.body, null, 2), "utf-8");
+      res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
@@ -1011,6 +1196,24 @@ async function startServer() {
         [docNumber, issueKey, templateType, JSON.stringify(formData), driveLink, requesterEmail || "legal_user"]
       );
 
+      // --- New: Data Relay to Operational Tables ---
+      if (templateType.includes("purchase_order")) {
+        // Extract items from formData if available, or just the main amount
+        await query(
+          "INSERT INTO order_items (backlog_issue_key, description, amount, vendor_code, spec) VALUES ($1, $2, $3, $4, $5)",
+          [issueKey, formData.description || issue.summary, formData.amount || 0, formData.vendorCode || "", formData.spec || ""]
+        );
+      } else if (templateType.includes("inspection")) {
+        // Record a delivery event
+        const orderRes = await query("SELECT id FROM order_items WHERE backlog_issue_key = $1 LIMIT 1", [issueKey]);
+        if (orderRes.rows.length > 0) {
+          await query(
+            "INSERT INTO delivery_events (order_item_id, backlog_issue_key, delivered_amount, delivery_no, delivered_at) VALUES ($1, $2, $3, $4, $5)",
+            [orderRes.rows[0].id, issueKey, formData.deliveredAmount || formData.amount || 0, 1, new Date()]
+          );
+        }
+      }
+
       // Update Workflow Status
       await query(
         "UPDATE issue_workflows SET current_status_name = $1, document_draft = $2, updated_at = CURRENT_TIMESTAMP WHERE backlog_issue_key = $3",
@@ -1018,16 +1221,47 @@ async function startServer() {
       );
 
       // --- New: Automatically sync Lifecycle Events based on technical design ---
-      if (templateType.includes("inspection")) {
+      if (templateType.includes("purchase_order") || templateType === "planning_purchase_order") {
+        // 1. Ensure legal_request exists
+        const lrResult = await query(
+          "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO UPDATE SET counterparty = EXCLUDED.counterparty RETURNING id",
+          [issueKey, formData.VENDOR_NAME || formData.PARTY_B_NAME, issue.summary]
+        );
+        const lrId = lrResult.rows[0].id;
+
+        // 2. Register/Update Order Item
+        const amount = parseFloat((formData.ORDER_AMOUNT || formData.TOTAL_AMOUNT || "0").replace(/,/g, ""));
+        await query(
+          `INSERT INTO order_items (legal_request_id, item_no, vendor_code, description, amount, due_date, backlog_issue_key) 
+           VALUES ($1, $2, $3, $4, $5, $6, $7) 
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET 
+           amount = EXCLUDED.amount, 
+           due_date = EXCLUDED.due_date,
+           description = EXCLUDED.description`,
+          [
+            lrId, 
+            1, 
+            formData.VENDOR_CODE || "UNKNOWN", 
+            formData.summary || issue.summary, 
+            amount, 
+            formData.DELIVERY_DATE || formData.due_date || null,
+            issueKey
+          ]
+        );
+      } else if (templateType.includes("inspection")) {
         // Find or create legal request first
         await query(
           "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
           [issueKey, formData.counterparty || formData.PARTY_B_NAME, issue.summary]
         );
+
+        // Find linking order item if it exists
+        const orderItemResult = await query("SELECT id FROM order_items WHERE backlog_issue_key = $1", [issueKey]);
+        const orderItemId = orderItemResult.rows[0]?.id || null;
         
         await query(
-          "INSERT INTO delivery_events (backlog_issue_key, delivered_at, inspection_deadline, status, note) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (backlog_issue_key) DO UPDATE SET inspection_deadline = EXCLUDED.inspection_deadline, status = EXCLUDED.status",
-          [issueKey, new Date(), formData.inspectionDeadline || null, "pending", formData.REMARKS || ""]
+          "INSERT INTO delivery_events (backlog_issue_key, order_item_id, delivered_at, inspection_deadline, status, note) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (backlog_issue_key) DO UPDATE SET inspection_deadline = EXCLUDED.inspection_deadline, status = EXCLUDED.status",
+          [issueKey, orderItemId, new Date(), formData.inspectionDeadline || null, "pending", formData.REMARKS || ""]
         );
       } else if (templateType === "royalty_statement") {
         await query(
