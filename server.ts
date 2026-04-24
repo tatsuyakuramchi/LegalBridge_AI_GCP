@@ -1422,6 +1422,39 @@ async function startServer() {
     }
   });
 
+  // ── workflow_settings 一括セットアップ（setupBacklogStatuses.ts の出力を受け取る）──
+  app.post("/api/admin/setup-workflow-settings", express.json(), async (req, res) => {
+    const { workflows } = req.body as {
+      workflows: Array<{
+        issue_type_name: string;
+        status_configs: Record<string, any>;
+        document_prefix: string;
+      }>;
+    };
+    if (!workflows?.length) return res.status(400).json({ error: "workflows は必須です" });
+
+    const results: string[] = [];
+    try {
+      for (const wf of workflows) {
+        await query(
+          `INSERT INTO workflow_settings (issue_type_name, status_configs, document_prefix)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (issue_type_name) DO UPDATE SET
+             status_configs  = EXCLUDED.status_configs,
+             document_prefix = EXCLUDED.document_prefix,
+             updated_at      = CURRENT_TIMESTAMP`,
+          [wf.issue_type_name, JSON.stringify(wf.status_configs), wf.document_prefix]
+        );
+        results.push(wf.issue_type_name);
+      }
+      console.log(`✅ workflow_settings 更新: ${results.join(", ")}`);
+      res.json({ success: true, updated: results });
+    } catch (error) {
+      console.error("workflow_settings 更新エラー:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   app.post("/api/test-generate-markdown", async (req, res) => {
     try {
       const type = (req.query.type as any) || "individual_license_terms";
