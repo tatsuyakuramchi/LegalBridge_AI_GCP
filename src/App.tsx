@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   FileText, 
   Search, 
   Plus, 
   Trash2, 
+  HelpCircle,
   Building2, 
   User, 
   Users, 
@@ -23,7 +24,8 @@ import {
   ShieldCheck,
   Briefcase,
   ArrowRight,
-  Calendar
+  Calendar,
+  X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { saveAs } from 'file-saver';
@@ -97,8 +99,45 @@ export default function App() {
   const [assets, setAssets] = useState<ExternalAsset[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
+  const [isPreviewVisible, setIsPreviewVisible] = useState(false);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [caseHistory, setCaseHistory] = useState<any[]>([]);
+  const [templateStatus, setTemplateStatus] = useState<string | null>(null);
+  const [newTemplateId, setNewTemplateId] = useState('');
+  const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [notification, setNotification] = useState<{ message: string, type: 'info' | 'error' | 'success' } | null>(null);
+  const [batchSelection, setBatchSelection] = useState<string[]>([]);
+  const templateTextAreaRef = useRef<HTMLTextAreaElement>(null);
+
+  const showNotification = (message: string, type: 'info' | 'error' | 'success' = 'info') => {
+    setNotification({ message, type });
+    setTimeout(() => setNotification(null), 4000);
+  };
+
+  const commonVariables = [
+    "Licensor_名称", "Licensor_住所", "Licensor_代表者名",
+    "Licensee_名称", "Licensee_住所", "Licensee_代表者名",
+    "契約書番号", "台帳ID", "発行日", "有効期限",
+    "基本契約名", "素材名", "素材番号", "監修者",
+    "金銭条件1_料率", "金銭条件1_計算方式", "金銭条件1_支払条件",
+    "特記事項_本文", "クレジット表示"
+  ];
+
+  const insertVariable = (varName: string) => {
+    const textarea = templateTextAreaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end);
+    const varTag = `{{${varName}}}`;
+    
+    textarea.value = before + varTag + after;
+    textarea.focus();
+    textarea.selectionStart = textarea.selectionEnd = start + varTag.length;
+  };
 
   // Handle automatic calculations based on formulas
   useEffect(() => {
@@ -140,15 +179,28 @@ export default function App() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes] = await Promise.all([
-          fetch('/api/backlog/issues').then(r => r.json()),
-          fetch('/api/master/vendors').then(r => r.json()),
-          fetch('/api/master/staff').then(r => r.json()),
-          fetch('/api/master/company-profile').then(r => r.json()),
-          fetch('/api/management/assets').then(r => r.json()),
-          fetch('/api/templates').then(r => r.json()),
-          fetch('/api/templates/config/metadata').then(r => r.json())
-        ]);
+        const endpoints = [
+          { key: 'issues', url: '/api/backlog/issues' },
+          { key: 'vendors', url: '/api/master/vendors' },
+          { key: 'staff', url: '/api/master/staff' },
+          { key: 'profile', url: '/api/master/company-profile' },
+          { key: 'assets', url: '/api/management/assets' },
+          { key: 'templates', url: '/api/templates' },
+          { key: 'metadata', url: '/api/templates/config/metadata' }
+        ];
+
+        const results = await Promise.all(
+          endpoints.map(async ({ key, url }) => {
+            const res = await fetch(url);
+            if (!res.ok) {
+              console.error(`Failed to fetch ${key} from ${url}: ${res.status} ${res.statusText}`);
+              return null;
+            }
+            return res.json();
+          })
+        );
+
+        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes] = results;
         
         setIssues(Array.isArray(issuesRes) ? issuesRes : []);
         setVendors(Array.isArray(vendorsRes) ? vendorsRes : []);
@@ -158,7 +210,7 @@ export default function App() {
         setTemplateList(Array.isArray(templatesRes) ? templatesRes : []);
         setTemplateMetadata(metaRes || {});
       } catch (e) {
-        console.error("Failed to fetch startup data", e);
+        console.error("Critical error during startup fetch:", e);
       }
     };
     fetchData();
@@ -186,7 +238,7 @@ export default function App() {
   const syncFromDatabase = async (issueKeyToUse?: string) => {
     const key = issueKeyToUse || selectedIssue;
     if (!key) {
-      alert("Please select a Backlog ticket first.");
+      showNotification("Please select a Backlog ticket first.", "error");
       return;
     }
 
@@ -214,6 +266,41 @@ export default function App() {
     }
   };
 
+  const [lastAutoSave, setLastAutoSave] = useState<string | null>(null);
+
+  const getValidationError = (field: string, value: any) => {
+    // Only check if field is likely mandatory
+    if (!value || value === "") return "Empty";
+    return null;
+  };
+
+  // Restore draft on load or issue change
+  useEffect(() => {
+    if (!selectedIssue) return;
+    const saved = localStorage.getItem(`draft_${selectedIssue}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Object.keys(formData).length <= 1) {
+          setFormData(parsed);
+          showNotification(`Draft restored for ${selectedIssue}`, 'success');
+        }
+      } catch (e) {
+        console.error("Draft restore fail", e);
+      }
+    }
+  }, [selectedIssue]);
+
+  // Auto-save on change
+  useEffect(() => {
+    if (!selectedIssue || Object.keys(formData).length <= 1) return;
+    const to = setTimeout(() => {
+      localStorage.setItem(`draft_${selectedIssue}`, JSON.stringify(formData));
+      setLastAutoSave(new Date().toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' }));
+    }, 2000);
+    return () => clearTimeout(to);
+  }, [formData, selectedIssue]);
+
   const handleIssueSelect = async (issueKey: string) => {
     setSelectedIssue(issueKey);
     await syncFromDatabase(issueKey);
@@ -240,15 +327,25 @@ export default function App() {
       if (data.driveLink) {
         window.open(data.driveLink, '_blank');
       } else {
-        alert("Generation completed, but no drive link was returned.");
+        showNotification("Generation completed, but no drive link was returned.", "info");
       }
     } catch (e) {
       console.error("Generation failed", e);
-      alert("Document generation failed. Please check the logs.");
+      showNotification("Document generation failed. Please check the logs.", "error");
     } finally {
       setIsGenerating(false);
     }
   };
+
+  // Live preview effect
+  useEffect(() => {
+    if (isPreviewVisible) {
+      const to = setTimeout(() => {
+        handlePreview();
+      }, 1000);
+      return () => clearTimeout(to);
+    }
+  }, [formData, isPreviewVisible, selectedTemplate]);
 
   const handlePreview = async () => {
     setIsPreviewing(true);
@@ -302,12 +399,19 @@ export default function App() {
     const isTextarea = fieldMeta.type === 'textarea' || field.includes('本文') || field.includes('備考') || field.includes('REMARKS') || field.includes('特記');
     const isBoolean = fieldMeta.type === 'boolean' || field.startsWith('is') || field.includes('フラグ');
     const isNumber = fieldMeta.type === 'number';
+    const error = getValidationError(field, val);
 
     return (
-      <div key={field} className="space-y-1 group">
-        <label className="flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-wider text-[#141414]/50 group-hover:text-blue-600 transition-colors">
-          {label}
-        </label>
+      <div key={field} className="space-y-1 group relative">
+        <div className="flex justify-between items-center">
+          <label className={`flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-wider transition-colors ${error ? 'text-red-500' : 'text-[#141414]/50 group-hover:text-blue-600'}`}>
+            {label} 
+            {error && <span className="text-[7px] bg-red-100 px-1 rounded-full">!</span>}
+          </label>
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
+             <HelpCircle className="w-2.5 h-2.5 text-gray-300 cursor-help" />
+          </div>
+        </div>
         {isBoolean ? (
           <div className="flex items-center gap-4 py-1.5">
             <button 
@@ -323,7 +427,7 @@ export default function App() {
           <select 
             value={val}
             onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-            className="w-full text-xs font-mono border-b border-[#141414]/20 bg-transparent py-1.5 focus:border-blue-600 focus:outline-none appearance-none"
+            className={`w-full text-xs font-mono border-b bg-transparent py-1.5 focus:outline-none appearance-none transition-colors ${error ? 'border-red-300' : 'border-[#141414]/20 focus:border-blue-600'}`}
           >
             <option value="">-- SELECT --</option>
             {selectOptions[field].map(opt => <option key={opt} value={opt}>{opt}</option>)}
@@ -333,7 +437,7 @@ export default function App() {
             value={val}
             onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
             rows={2}
-            className="w-full text-xs font-mono border border-[#141414]/10 bg-white/50 p-2 focus:border-blue-600 focus:outline-none resize-none"
+            className={`w-full text-xs font-mono border bg-white/50 p-2 focus:outline-none resize-none transition-colors ${error ? 'border-red-300' : 'border-[#141414]/10 focus:border-blue-600'}`}
             placeholder={`Enter ${label}...`}
           />
         ) : (
@@ -341,7 +445,7 @@ export default function App() {
             type={isDate ? 'date' : isNumber ? 'number' : 'text'}
             value={val}
             onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-            className="w-full text-xs font-mono border-b border-[#141414]/20 bg-transparent py-1.5 focus:border-blue-600 focus:outline-none placeholder:text-gray-300"
+            className={`w-full text-xs font-mono border-b bg-transparent py-1.5 focus:outline-none placeholder:text-gray-300 transition-colors ${error ? 'border-red-300 underline decoration-red-100' : 'border-[#141414]/20 focus:border-blue-600'}`}
             placeholder={isDate ? '' : `Input ${label}...`}
           />
         )}
@@ -349,7 +453,42 @@ export default function App() {
     );
   };
 
-  // --- Render Sections ---
+  const handleBatchGenerate = async () => {
+    if (batchSelection.length === 0) return;
+    setIsGenerating(true);
+    let successCount = 0;
+    try {
+      for (const key of batchSelection) {
+        setNotification({ message: `Generating for ${key}...`, type: 'info' });
+        // Simulating the flow: sync -> generate
+        // In real use, we'd need a specific template for batch, but here we just use the selected one
+        const searchRes = await fetch(`/api/search/issues?query=${key}`).then(r => r.json());
+        const issue = searchRes.find((i: any) => i.issueKey === key);
+        if (issue) {
+          // Send to generation endpoint using defaults or existing metadata
+          await fetch('/api/documents/generate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ 
+              templateId: selectedTemplate,
+              data: { ...formData, contextTitle: issue.summary, issueKey: key },
+              issueKey: key
+            })
+          });
+          successCount++;
+        }
+      }
+      showNotification(`Batch completed: ${successCount} documents generated.`, 'success');
+      setBatchSelection([]);
+    } catch (e) {
+      console.error("Batch fail", e);
+      showNotification("Batch generation encountered errors.", "error");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  // UI Sections
   return (
     <div className="min-h-screen bg-[#FDFDFD] text-[#141414] selection:bg-[#141414] selection:text-white pb-20">
       {/* Top Navigation Bar */}
@@ -526,8 +665,8 @@ export default function App() {
           </aside>
 
           {/* Core Editing Stage */}
-          <section className="col-span-12 lg:col-span-9 space-y-8">
-            <div className="bg-white border border-[#141414] shadow-[20px_20px_0px_0px_rgba(20,20,20,0.05)] relative">
+          <section className={`${isPreviewVisible ? 'col-span-12' : 'col-span-12 lg:col-span-9'} space-y-8`}>
+            <div className={`bg-white border border-[#141414] shadow-[20px_20px_0px_0px_rgba(20,20,20,0.05)] relative flex flex-col ${isPreviewVisible ? 'h-[800px]' : ''}`}>
                {/* Stage Header */}
                <div className="flex items-center justify-between p-5 border-b border-[#141414]/10 bg-[#FAFAFA]">
                  <div className="flex items-center gap-4">
@@ -540,6 +679,12 @@ export default function App() {
                    </div>
                  </div>
                  <div className="flex gap-3">
+                    <button 
+                      onClick={() => setIsPreviewVisible(!isPreviewVisible)}
+                      className={`px-4 py-1.5 text-[9px] font-mono font-bold uppercase tracking-widest transition-all flex items-center gap-2 shadow-sm ${isPreviewVisible ? 'bg-amber-600 text-white' : 'bg-white border border-[#141414] text-[#141414]'}`}
+                    >
+                      <Eye className="w-3 h-3" /> {isPreviewVisible ? 'CLOSE SIDE PREVIEW' : 'SPLIT PREVIEW'}
+                    </button>
                     <button 
                       onClick={() => syncFromDatabase()}
                       className="px-4 py-1.5 bg-blue-600 text-white text-[9px] font-mono font-bold uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-2 shadow-sm"
@@ -556,8 +701,9 @@ export default function App() {
                </div>
 
                {/* Stage Workflow */}
-               <div className="p-10">
-                  {isRefreshingFields ? (
+               <div className={`flex flex-1 overflow-hidden ${isPreviewVisible ? 'flex-row' : 'flex-col'}`}>
+                  <div className={`p-10 overflow-y-auto custom-scrollbar flex-1 ${isPreviewVisible ? 'max-w-[50%]' : ''}`}>
+                   {isRefreshingFields ? (
                     <div className="space-y-6">
                        {[1,2,3,4,5].map(i => (
                          <div key={i} className="h-6 bg-gray-100 animate-pulse w-full rounded" />
@@ -985,7 +1131,39 @@ export default function App() {
                       )}
                     </div>
                   )}
-               </div>
+                </div>
+
+                {isPreviewVisible && (
+                  <div className="w-1/2 border-l border-[#141414]/10 bg-gray-50 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
+                     <div className="p-4 bg-white border-b border-[#141414]/10 flex justify-between items-center">
+                        <div className="flex items-center gap-2">
+                           <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                           <span className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#141414]/60">Live Logic Preview</span>
+                        </div>
+                        {lastAutoSave && (
+                          <span className="text-[8px] font-mono opacity-40 uppercase">Saved: {lastAutoSave}</span>
+                        )}
+                     </div>
+                     <div className="flex-1 overflow-auto p-10 bg-[#f0f0f0]">
+                        <div className="bg-white shadow-xl mx-auto p-12 min-h-full prose prose-sm max-w-none relative scale-[0.85] origin-top border border-[#141414]/5">
+                           {isPreviewing ? (
+                              <div className="absolute inset-0 bg-white/60 backdrop-blur-[2px] flex items-center justify-center z-10">
+                                 <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
+                              </div>
+                           ) : null}
+                           {previewHtml ? (
+                             <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                           ) : (
+                             <div className="flex flex-col items-center justify-center p-20 opacity-20">
+                                <FileText className="w-20 h-20 mb-4" />
+                                <p className="font-mono text-xs uppercase text-center">Syncing logic with blueprint schema...</p>
+                             </div>
+                           )}
+                        </div>
+                     </div>
+                  </div>
+                )}
+              </div>
 
                {/* Stage Actions */}
                <footer className="p-8 bg-[#F9F9F9] border-t border-[#141414]/10 flex flex-col md:flex-row justify-between items-center gap-8">
@@ -1044,6 +1222,18 @@ export default function App() {
                    <div>
                       <h2 className="text-xl font-mono font-bold uppercase tracking-tighter">Backlog Exploration</h2>
                       <p className="text-xs font-mono text-[#141414]/50 border-l-2 border-[#141414] pl-4 mt-2 uppercase">Real-time synchronization with project management issues.</p>
+                      {batchSelection.length > 0 && (
+                        <div className="mt-4 flex items-center gap-4 animate-in fade-in slide-in-from-left-4">
+                           <span className="text-[10px] font-mono font-bold bg-[#141414] text-white px-3 py-1 uppercase">{batchSelection.length} Selected</span>
+                           <button 
+                             onClick={handleBatchGenerate}
+                             disabled={isGenerating}
+                             className="text-[10px] font-mono font-bold text-blue-600 border border-blue-600 px-4 py-1 hover:bg-blue-600 hover:text-white transition-all uppercase"
+                           >
+                             Batch Generate for {selectedTemplate}
+                           </button>
+                        </div>
+                      )}
                    </div>
                    <div className="relative">
                       <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
@@ -1261,21 +1451,30 @@ export default function App() {
                       <h2 className="text-2xl font-mono font-bold uppercase tracking-tighter">Blueprint Studio</h2>
                       <p className="text-xs font-mono text-[#141414]/50 border-l-2 border-[#141414] pl-4 mt-2 uppercase">Custom template architect & variable mapping logic.</p>
                    </div>
-                   <div className="flex gap-4">
+                   <div className="flex gap-4 items-center">
+                      <input 
+                        type="text"
+                        placeholder="New Template ID (e.g., nda_standard)..."
+                        value={newTemplateId}
+                        onChange={(e) => setNewTemplateId(e.target.value.toLowerCase().replace(/[^a-z0-9_]/g, ''))}
+                        className="bg-gray-100 border border-[#141414]/10 px-3 py-2 text-[10px] font-mono w-60 focus:outline-none focus:border-[#141414] placeholder:italic"
+                      />
                       <button 
+                        disabled={!newTemplateId}
                         onClick={() => {
-                          const name = prompt("Enter new template ID (e.g., custom_nda):");
-                          if (name) {
-                            fetch(`/api/templates/${name}`, {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({ content: '<h1>New Template</h1>\n<p>Variable: {{myVar}}</p>' })
-                            }).then(() => window.location.reload());
-                          }
+                          const name = newTemplateId;
+                          fetch(`/api/templates/${name}`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ content: '<h1>New Template</h1>\n<p>Variable: {{myVar}}</p>' })
+                          }).then(() => {
+                            setNewTemplateId('');
+                            window.location.reload();
+                          });
                         }}
-                        className="px-6 py-2 bg-[#141414] text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:invert transition-all flex items-center gap-2"
+                        className="px-6 py-2 bg-[#141414] text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:invert transition-all flex items-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
                       >
-                        <Plus className="w-3 h-3" /> New Blueprint
+                        <Plus className="w-3 h-3" /> Create Blueprint
                       </button>
                    </div>
                 </div>
@@ -1296,18 +1495,39 @@ export default function App() {
                                 <p className={`text-[8px] uppercase mt-1 ${selectedTemplate === t ? 'text-white/50' : 'text-[#141414]/30'}`}>{t}.html</p>
                              </div>
                              <div className="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <button 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    if (confirm(`Delete template ${t}?`)) {
-                                      fetch(`/api/templates/${t}`, { method: 'DELETE' })
-                                        .then(() => window.location.reload());
-                                    }
-                                  }}
-                                  className="p-1.5 hover:bg-red-500 hover:text-white rounded-sm text-red-500"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                {isDeleting === t ? (
+                                  <div className="flex items-center gap-1">
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        fetch(`/api/templates/${t}`, { method: 'DELETE' })
+                                          .then(() => window.location.reload());
+                                      }}
+                                       className="p-1 px-2 bg-red-600 text-white text-[8px] font-mono uppercase"
+                                    >
+                                      CONFIRM
+                                    </button>
+                                    <button 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setIsDeleting(null);
+                                      }}
+                                       className="p-1 px-2 bg-gray-200 text-gray-600 text-[8px] font-mono uppercase"
+                                    >
+                                      CANCEL
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setIsDeleting(t);
+                                    }}
+                                    className="p-1.5 hover:bg-red-500 hover:text-white rounded-sm text-red-500"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
                              </div>
                           </div>
                         ))}
@@ -1327,7 +1547,7 @@ export default function App() {
                                       method: 'POST',
                                       headers: { 'Content-Type': 'application/json' },
                                       body: JSON.stringify(templateMetadata)
-                                    }).then(() => alert("Saved Configuration"));
+                                    }).then(() => showNotification("Template Configuration Saved", "success"));
                                   }}
                                   className="px-6 py-2 bg-blue-600 text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center gap-2"
                                 >
@@ -1454,35 +1674,107 @@ export default function App() {
                                 <FileText className="w-4 h-4" />
                                 <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">Handlebars HTML Layer</h3>
                              </div>
-                             <p className="text-[8px] font-mono text-amber-900/40 uppercase">Warning: Structural changes will refresh the variable mapping automatically.</p>
-                             <textarea 
-                               className="w-full h-[300px] p-6 bg-[#141414] text-white font-mono text-xs border-none focus:ring-0 leading-relaxed"
-                               spellCheck={false}
-                               placeholder="Loading template content..."
-                               onBlur={(e) => {
-                                  if (confirm("Save HTML content changes?")) {
-                                    fetch(`/api/templates/${selectedTemplate}`, {
-                                      method: 'POST',
-                                      headers: { 'Content-Type': 'application/json' },
-                                      body: JSON.stringify({ content: (e.target as any).value })
-                                    }).then(() => {
-                                      // Trigger field refresh
-                                      fetch(`/api/templates/${selectedTemplate}/schema`)
-                                       .then(r => r.json())
-                                       .then(d => setTemplateFields(d.variables || []));
-                                    });
-                                  }
-                               }}
-                               defaultValue={'Loading...'}
-                               key={selectedTemplate}
-                               ref={(el) => {
-                                 if (el && selectedTemplate) {
-                                   fetch(`/api/templates/${selectedTemplate}/preview`)
-                                    .then(r => r.text())
-                                    .then(text => el.value = text);
-                                 }
-                               }}
-                             />
+                             
+                             <div className="flex gap-6">
+                                <div className="flex-1 space-y-4">
+                                   <p className="text-[8px] font-mono text-amber-900/40 uppercase">Warning: Structural changes will refresh the variable mapping automatically.</p>
+                                   <textarea 
+                                     ref={templateTextAreaRef}
+                                     className="w-full h-[450px] p-6 bg-[#141414] text-white font-mono text-xs border-none focus:ring-0 leading-relaxed rounded-sm"
+                                     spellCheck={false}
+                                     placeholder="Loading template content..."
+                                     onBlur={(e) => {
+                                        const content = (e.target as any).value;
+                                        setTemplateStatus("Saving...");
+                                        fetch(`/api/templates/${selectedTemplate}`, {
+                                          method: 'POST',
+                                          headers: { 'Content-Type': 'application/json' },
+                                          body: JSON.stringify({ content })
+                                        }).then(() => {
+                                          setTemplateStatus("Saved successfully.");
+                                          setTimeout(() => setTemplateStatus(null), 3000);
+                                          // Trigger field refresh
+                                          fetch(`/api/templates/${selectedTemplate}/schema`)
+                                           .then(r => r.json())
+                                           .then(d => setTemplateFields(d.variables || []));
+                                        });
+                                     }}
+                                     defaultValue={'Loading...'}
+                                     key={selectedTemplate}
+                                     onFocus={(e) => {
+                                       if (e.target.value === 'Loading...') {
+                                         fetch(`/api/templates/${selectedTemplate}`)
+                                          .then(r => r.text())
+                                          .then(text => e.target.value = text);
+                                       }
+                                     }}
+                                   />
+                                   {templateStatus && (
+                                     <div className="absolute bottom-4 right-4 bg-amber-600 text-white px-4 py-2 font-mono text-[9px] uppercase tracking-widest animate-pulse">
+                                        {templateStatus}
+                                     </div>
+                                   )}
+                                </div>
+
+                                <div className="w-64 space-y-4">
+                                   <div className="p-4 bg-white border border-amber-600/20 rounded-sm space-y-3 shadow-sm">
+                                      <h4 className="text-[10px] font-mono font-bold uppercase text-amber-900 flex items-center gap-2">
+                                         <Plus className="w-3 h-3" /> Insert Variable
+                                      </h4>
+                                      <p className="text-[8px] font-mono text-gray-400 uppercase leading-tight">Click to inject placeholder into HTML at cursor pos.</p>
+                                      
+                                      <div className="space-y-1 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
+                                         {commonVariables.map(v => (
+                                            <button 
+                                               key={v}
+                                               onClick={() => insertVariable(v)}
+                                               className="w-full text-left px-2 py-1.5 text-[9px] font-mono bg-gray-50 border border-transparent hover:border-amber-600/30 hover:bg-amber-50 transition-all truncate group flex justify-between items-center"
+                                            >
+                                               <span>{v}</span>
+                                               <Plus className="w-2.5 h-2.5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                            </button>
+                                         ))}
+                                         <div className="pt-2 border-t border-gray-100 mt-2">
+                                            <div className="flex gap-1">
+                                               <input 
+                                                  id="custom-var-input"
+                                                  type="text"
+                                                  placeholder="Custom Name..."
+                                                  className="flex-1 p-1.5 text-[9px] font-mono border border-gray-200 focus:outline-none focus:border-amber-600"
+                                                  onKeyDown={(e) => {
+                                                     if (e.key === 'Enter') {
+                                                        const val = (e.target as any).value;
+                                                        if (val) {
+                                                           insertVariable(val);
+                                                           (e.target as any).value = '';
+                                                        }
+                                                     }
+                                                  }}
+                                               />
+                                               <button 
+                                                  onClick={() => {
+                                                     const input = document.getElementById('custom-var-input') as HTMLInputElement;
+                                                     if (input && input.value) {
+                                                        insertVariable(input.value);
+                                                        input.value = '';
+                                                     }
+                                                  }}
+                                                  className="px-2 bg-emerald-600 text-white text-[10px] font-mono"
+                                               >
+                                                  +
+                                               </button>
+                                            </div>
+                                         </div>
+                                      </div>
+                                   </div>
+
+                                   <div className="p-4 border border-blue-600/10 bg-blue-50/20 rounded-sm">
+                                      <p className="text-[8px] font-mono text-blue-800 leading-relaxed uppercase">
+                                         Detected variables will appear in the "Dynamic Variable Logic" section above after saving.
+                                      </p>
+                                   </div>
+                                </div>
+                             </div>
                           </div>
                         </>
                       )}
@@ -1668,6 +1960,29 @@ export default function App() {
             </motion.div>
           </div>
         )}
+      </AnimatePresence>
+      {/* Notification Toast */}
+      <AnimatePresence>
+         {notification && (
+            <motion.div 
+               initial={{ opacity: 0, x: 20 }}
+               animate={{ opacity: 1, x: 0 }}
+               exit={{ opacity: 0, x: 20 }}
+               className={`fixed top-8 right-8 z-[100] px-6 py-4 rounded-sm shadow-2xl border-l-4 font-mono text-[11px] flex items-center gap-4 ${
+                  notification.type === 'success' ? 'bg-white border-emerald-500 text-emerald-900' : 
+                  notification.type === 'error' ? 'bg-red-50 border-red-500 text-red-900' : 
+                  'bg-white border-blue-500 text-blue-900'
+               }`}
+            >
+               <div className="flex-1">
+                  <p className="font-bold uppercase tracking-widest text-[9px] mb-1">{notification.type}</p>
+                  <p>{notification.message}</p>
+               </div>
+               <button onClick={() => setNotification(null)} className="opacity-30 hover:opacity-100">
+                  <X className="w-4 h-4" />
+               </button>
+            </motion.div>
+         )}
       </AnimatePresence>
     </div>
   );

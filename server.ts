@@ -974,6 +974,22 @@ async function startServer() {
     }
   });
 
+  app.get("/api/templates/:type", (req, res) => {
+    try {
+      const { type } = req.params;
+      const templatesDir = path.join(process.cwd(), "templates");
+      const filePath = path.join(templatesDir, `${type}.html`);
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, "utf-8");
+        res.send(content);
+      } else {
+        res.status(404).send("Template not found");
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   app.post("/api/templates/:type", express.json(), (req, res) => {
     try {
       const { type } = req.params;

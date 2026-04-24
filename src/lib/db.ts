@@ -58,6 +58,7 @@ export async function initDb() {
       created_by VARCHAR(255)
     );`,
     `ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_number VARCHAR(100) UNIQUE;`,
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
 
     `CREATE TABLE IF NOT EXISTS document_sequences (
       sequence_key VARCHAR(50) PRIMARY KEY,
