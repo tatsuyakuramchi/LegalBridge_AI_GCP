@@ -60,48 +60,71 @@ const STATUSES = [
 ] as const;
 
 // ─────────────────────────────────────────────────────────
+// Backlog ステータスID（確定値）
+// デフォルト: 未対応=1 処理中=2 処理済み=3 完了=4
+// カスタム:
+//   有効=403366 相談・交渉中=403367 審査中=403368 承認待ち=403369
+//   CS送信待ち=403370 CS確認待ち=403371 CS締結完了=403372 締結済=403373
+// ─────────────────────────────────────────────────────────
+const STATUS_ID: Record<string, number> = {
+  "未対応":                    1,
+  "処理中":                    2,
+  "処理済み":                  3,
+  "完了":                      4,
+  "有効":                      403366,
+  "相談・交渉中":               403367,
+  "審査中":                    403368,
+  "承認待ち":                  403369,
+  "クラウドサイン送信待ち":     403370,
+  "クラウドサイン確認待ち":     403371,
+  "クラウドサイン締結完了":     403372,
+  "締結済":                    403373,
+};
+
+// ─────────────────────────────────────────────────────────
 // 課題種別ごとのステータスフロー定義
+// デフォルト4件のみ使えるステータスは未対応(起票)→処理中→完了で代替
 // ─────────────────────────────────────────────────────────
 const WORKFLOWS: Record<string, { statuses: string[]; final: string; prefix: string }> = {
   license_master: {
-    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","変更・更新","終了"],
-    final: "終了", prefix: "LIC",
+    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","締結済","完了"],
+    final: "完了", prefix: "LIC",
   },
   individual_license_terms: {
-    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","終了"],
-    final: "終了", prefix: "ILT",
+    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","完了"],
+    final: "完了", prefix: "ILT",
   },
   manufacturing: {
-    statuses: ["製造依頼","計算中","請求済","支払済"],
-    final: "支払済", prefix: "ROY",
+    statuses: ["未対応","処理中","締結済","完了"],
+    final: "完了", prefix: "ROY",
   },
   outsourcing: {
-    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","終了"],
-    final: "終了", prefix: "OUT",
+    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","完了"],
+    final: "完了", prefix: "OUT",
   },
   purchase_order: {
-    statuses: ["起票","発注済","納品待ち","検収中","支払待ち","完了"],
+    statuses: ["未対応","処理中","有効","審査中","承認待ち","完了"],
     final: "完了", prefix: "PO",
   },
   delivery_inspection: {
-    statuses: ["納品依頼","検収中","完了"],
+    statuses: ["未対応","処理中","完了"],
     final: "完了", prefix: "INS",
   },
   payment: {
-    statuses: ["支払待ち","支払済"],
-    final: "支払済", prefix: "PAY",
+    statuses: ["未対応","完了"],
+    final: "完了", prefix: "PAY",
   },
   sales_master: {
-    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","変更・更新","終了"],
-    final: "終了", prefix: "SAL",
+    statuses: ["相談・交渉中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","完了"],
+    final: "完了", prefix: "SAL",
   },
   legal_consultation: {
     statuses: ["相談・交渉中","審査中","承認待ち","完了"],
     final: "完了", prefix: "REQ",
   },
   nda: {
-    statuses: ["相談・交渉中","審査中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","失効"],
-    final: "失効", prefix: "NDA",
+    statuses: ["相談・交渉中","審査中","クラウドサイン送信待ち","クラウドサイン確認待ち","クラウドサイン締結完了","有効","完了"],
+    final: "完了", prefix: "NDA",
   },
 };
 
@@ -111,33 +134,9 @@ const WORKFLOWS: Record<string, { statuses: string[]; final: string; prefix: str
 async function main() {
   console.log(`\n🚀 Backlog ステータスセットアップ開始: ${PROJECT_KEY} @ ${HOST}\n`);
 
-  // 既存ステータスを取得
-  const existingRes = await axios.get(url(`/projects/${PROJECT_KEY}/statuses`));
-  const existingMap: Record<string, number> = {};
-  for (const s of existingRes.data) existingMap[s.name] = s.id;
-  console.log(`既存ステータス: ${Object.keys(existingMap).join(", ")}\n`);
-
-  // ステータスを作成
-  console.log("📋 カスタムステータスを作成中...");
-  const statusMap: Record<string, number> = { ...existingMap };
-
-  for (const s of STATUSES) {
-    if (existingMap[s.name]) {
-      console.log(`  スキップ（既存）: ${s.name} [${existingMap[s.name]}]`);
-      continue;
-    }
-    try {
-      const body = new URLSearchParams();
-      body.append("name",  s.name);
-      body.append("color", s.color);
-      const res = await axios.post(url(`/projects/${PROJECT_KEY}/statuses`), body);
-      statusMap[s.name] = res.data.id;
-      console.log(`  ✅ 作成: ${s.name} [ID:${res.data.id}]`);
-    } catch (e: any) {
-      const msg = e.response?.data?.errors?.[0]?.message || e.message;
-      console.error(`  ❌ 失敗: ${s.name} — ${msg}`);
-    }
-  }
+  // 既存ステータスをSATUS_IDマップと照合（APIは不要）
+  const statusMap: Record<string, number> = { ...STATUS_ID };
+  console.log("✅ ステータスIDマップをロードしました（API作成不要）\n");
 
   // workflow_settings INSERT SQL を生成
   console.log("\n\n─────────────────────────────────────────");
