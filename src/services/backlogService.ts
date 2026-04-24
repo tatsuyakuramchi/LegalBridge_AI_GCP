@@ -170,4 +170,44 @@ export class BacklogService {
       throw error;
     }
   }
+
+  async createIssueWithCustomFields(params: {
+    summary: string;
+    description: string;
+    issueTypeId: number;
+    priorityId: number;
+    parentIssueId?: number;
+    customFields: { fieldId: string; value: string }[];
+  }): Promise<any> {
+    if (!this.apiKey || !this.baseUrl) {
+      console.warn("⚠️ Backlog credentials missing. Mocking issue creation.");
+      return { issueKey: `MOCK-${Math.floor(Math.random() * 1000)}`, id: 0 };
+    }
+    try {
+      const projectRes = await axios.get(this.getUrl(`/projects/${this.projectKey}`));
+      const projectId  = projectRes.data.id;
+
+      const body = new URLSearchParams();
+      body.append("projectId",   String(projectId));
+      body.append("summary",     params.summary);
+      body.append("description", params.description);
+      body.append("issueTypeId", String(params.issueTypeId));
+      body.append("priorityId",  String(params.priorityId));
+
+      if (params.parentIssueId) {
+        body.append("parentIssueId", String(params.parentIssueId));
+      }
+
+      for (const cf of params.customFields) {
+        body.append(`customField_${cf.fieldId}`, cf.value);
+      }
+
+      const response = await axios.post(this.getUrl("/issues"), body);
+      console.log(`✅ Backlog issue created: ${response.data.issueKey}`);
+      return response.data;
+    } catch (error) {
+      console.error("Error creating Backlog issue with custom fields:", error);
+      throw error;
+    }
+  }
 }

@@ -6,6 +6,7 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { BacklogService } from "./src/services/backlogService.ts";
+import { MODAL_FIELDS, resolveFieldId, type ModalField } from "./src/config/modalFields.ts";
 import { DocumentService } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
@@ -76,109 +77,116 @@ async function startServer() {
     });
 
     // --- Slack Helpers ---
-    const getLegalRequestModal = (selectedType: string = "legal_consultation"): any => {
-      const blocks: any[] = [
-        {
-          type: "input",
-          block_id: "request_type_block",
-          label: { type: "plain_text", text: "依頼種別 (Request Type)" },
-          element: {
-            type: "static_select",
-            action_id: "request_type_input",
-            initial_option: {
-              text: { type: "plain_text", text: selectedType === "legal_consultation" ? "法務相談 (legal_consultation)" : 
-                                       selectedType === "nda" ? "秘密保持契約 (nda)" :
-                                       selectedType === "outsourcing" ? "業務委託基本契約 (outsourcing)" :
-                                       selectedType === "license" ? "ライセンス契約 (license)" :
-                                       selectedType === "purchase_order" ? "発注書 (purchase_order)" :
-                                       selectedType === "delivery_request" ? "納品リクエスト (delivery_request)" :
-                                       "利用許諾料計算 (royalty_calculation)" },
-              value: selectedType
-            },
-            placeholder: { type: "plain_text", text: "種別を選択してください" },
-            options: [
-              { text: { type: "plain_text", text: "法務相談 (legal_consultation)" }, value: "legal_consultation" },
-              { text: { type: "plain_text", text: "秘密保持契約 (nda)" }, value: "nda" },
-              { text: { type: "plain_text", text: "業務委託基本契約 (outsourcing)" }, value: "outsourcing" },
-              { text: { type: "plain_text", text: "ライセンス契約 (license)" }, value: "license" },
-              { text: { type: "plain_text", text: "発注書 (purchase_order)" }, value: "purchase_order" },
-              { text: { type: "plain_text", text: "納品リクエスト (delivery_request)" }, value: "delivery_request" },
-              { text: { type: "plain_text", text: "利用許諾料計算 (royalty_calculation)" }, value: "royalty_calculation_sales_report" }
-            ]
-          }
-        },
-        {
-          type: "input",
-          block_id: "summary_block",
-          label: { type: "plain_text", text: "件名" },
-          element: { type: "plain_text_input", action_id: "summary_input", placeholder: { type: "plain_text", text: "例: 秘密保持契約の審査依頼" } }
-        },
-        {
-          type: "input",
-          block_id: "details_block",
-          label: { type: "plain_text", text: "相談・依頼詳細" },
-          element: { type: "plain_text_input", action_id: "details_input", multiline: true }
-        },
-        {
-          type: "input",
-          block_id: "counterparty_block",
-          label: { type: "plain_text", text: "相手方企業名 / 関連キー" },
-          element: { type: "plain_text_input", action_id: "counterparty_input" }
-        }
-      ];
-
-      // Dynamic items for Delivery Request
-      if (selectedType === "delivery_request") {
-        blocks.push(
-          {
-            type: "divider"
-          },
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: "*検収書作成用データ*" }
-          },
-          {
-            type: "input",
-            block_id: "delivery_no_block",
-            label: { type: "plain_text", text: "納品回数 (第 n 回納品)" },
-            element: { type: "plain_text_input", action_id: "delivery_no_input", placeholder: { type: "plain_text", text: "1" }, initial_value: "1" }
-          },
-          {
-            type: "input",
-            block_id: "order_amount_block",
-            label: { type: "plain_text", text: "金額（税抜）" },
-            element: { type: "plain_text_input", action_id: "order_amount_input", placeholder: { type: "plain_text", text: "100000" } }
-          },
-          {
-            type: "input",
-            block_id: "delivery_date_block",
-            label: { type: "plain_text", text: "納品日 (YYYY-MM-DD)" },
-            element: { 
-              type: "datepicker", 
-              action_id: "delivery_date_input", 
-              initial_date: new Date().toISOString().split('T')[0]
-            }
-          },
-          {
-            type: "input",
-            block_id: "inspection_deadline_block",
-            label: { type: "plain_text", text: "検収期限 (YYYY-MM-DD)" },
-            element: { 
-              type: "datepicker", 
-              action_id: "inspection_deadline_input",
-              initial_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-            }
-          }
-        );
+    // ── フィールド定義 → Slack Block 変換 ──────────────────
+    const fieldToBlock = (f: ModalField): any => {
+      const block: any = {
+        type: "input",
+        block_id: f.blockId,
+        optional: f.optional ?? false,
+        label: { type: "plain_text", text: f.label },
+      };
+      if (f.type === "text") {
+        block.element = { type: "plain_text_input", action_id: f.actionId,
+          ...(f.placeholder ? { placeholder: { type: "plain_text", text: f.placeholder } } : {}) };
+      } else if (f.type === "textarea") {
+        block.element = { type: "plain_text_input", action_id: f.actionId, multiline: true,
+          ...(f.placeholder ? { placeholder: { type: "plain_text", text: f.placeholder } } : {}) };
+      } else if (f.type === "date") {
+        block.element = { type: "datepicker", action_id: f.actionId,
+          placeholder: { type: "plain_text", text: "日付を選択" } };
+      } else if (f.type === "select") {
+        block.element = { type: "static_select", action_id: f.actionId,
+          placeholder: { type: "plain_text", text: "選択してください" },
+          options: (f.options || []).map((o: any) => ({
+            text: { type: "plain_text", text: o.text }, value: o.value })) };
       }
+      return block;
+    };
+
+    // ── 課題種別の表示名マップ ──────────────────────────────
+    const ISSUE_TYPE_OPTIONS = [
+      { text: "法務相談",                       value: "legal_consultation" },
+      { text: "NDA（秘密保持契約）",            value: "nda" },
+      { text: "ライセンス基本契約",              value: "license_master" },
+      { text: "個別利用許諾条件",                value: "individual_license_terms" },
+      { text: "製造イベント / ロイヤリティ計算", value: "manufacturing" },
+      { text: "業務委託基本契約",                value: "outsourcing" },
+      { text: "発注書 / 企画発注書",             value: "purchase_order" },
+      { text: "納品 / 検収書",                  value: "delivery_inspection" },
+      { text: "支払通知 / 報酬明細書",           value: "payment" },
+      { text: "売買基本契約",                   value: "sales_master" },
+    ];
+
+    // ── モーダル生成（課題種別ごとにフィールドを動的切り替え）──
+    const getLegalRequestModal = (selectedType: string = "legal_consultation"): any => {
+      const fields = MODAL_FIELDS[selectedType] ?? MODAL_FIELDS["legal_consultation"];
+      const selectedLabel = ISSUE_TYPE_OPTIONS.find(o => o.value === selectedType)?.text ?? selectedType;
+
+      const typeBlock = {
+        type: "input",
+        block_id: "request_type_block",
+        label: { type: "plain_text", text: "依頼種別" },
+        element: {
+          type: "static_select",
+          action_id: "request_type_input",
+          initial_option: { text: { type: "plain_text", text: selectedLabel }, value: selectedType },
+          placeholder: { type: "plain_text", text: "種別を選択してください" },
+          options: ISSUE_TYPE_OPTIONS.map(o => ({
+            text: { type: "plain_text", text: o.text }, value: o.value })),
+        },
+      };
 
       return {
         type: "modal",
         callback_id: "legal_request_modal",
-        title: { type: "plain_text", text: "法務相談・契約審査" },
-        blocks,
-        submit: { type: "plain_text", text: "送信" }
+        title: { type: "plain_text", text: "法務 / 契約依頼" },
+        submit: { type: "plain_text", text: "送信" },
+        close:  { type: "plain_text", text: "キャンセル" },
+        blocks: [typeBlock, ...fields.map(fieldToBlock)],
       };
+    };
+
+    // ── モーダル送信値 → Backlog課題パラメータ変換 ──────────
+    const buildBacklogParams = (requestType: string, values: any, user: string) => {
+      const fields = MODAL_FIELDS[requestType] ?? [];
+      const getVal = (blockId: string, actionId: string): string =>
+        values[blockId]?.[actionId]?.value ??
+        values[blockId]?.[actionId]?.selected_date ??
+        values[blockId]?.[actionId]?.selected_option?.value ?? "";
+
+      let summary = "";
+      let parentIssueKey = "";
+      const descParts: string[] = [`依頼者: <@${user}>`];
+      const customFields: { fieldId: string; value: string }[] = [];
+
+      for (const f of fields) {
+        const val = getVal(f.blockId, f.actionId);
+        if (!val) continue;
+        if (f.backlogNativeField === "summary") { summary = val; continue; }
+        if (f.backlogNativeField === "parentIssueId") { parentIssueKey = val; continue; }
+        if (f.backlogFieldEnvKey) {
+          const fieldId = resolveFieldId(f.backlogFieldEnvKey);
+          if (fieldId) customFields.push({ fieldId, value: val });
+        }
+        descParts.push(`${f.label}: ${val}`);
+      }
+
+      const typeEnvMap: Record<string, string> = {
+        legal_consultation: "BACKLOG_ISSUE_TYPE_LEGAL_CONSULTATION",
+        nda:                "BACKLOG_ISSUE_TYPE_NDA",
+        license_master:     "BACKLOG_ISSUE_TYPE_LICENSE_MASTER",
+        individual_license_terms: "BACKLOG_ISSUE_TYPE_INDIVIDUAL_LICENSE",
+        manufacturing:      "BACKLOG_ISSUE_TYPE_MANUFACTURING",
+        outsourcing:        "BACKLOG_ISSUE_TYPE_OUTSOURCING",
+        purchase_order:     "BACKLOG_ISSUE_TYPE_PURCHASE_ORDER",
+        delivery_inspection:"BACKLOG_ISSUE_TYPE_DELIVERY",
+        payment:            "BACKLOG_ISSUE_TYPE_PAYMENT",
+        sales_master:       "BACKLOG_ISSUE_TYPE_SALES_MASTER",
+      };
+      const issueTypeId = parseInt(process.env[typeEnvMap[requestType] ?? ""] ?? "1", 10);
+
+      return { summary: summary || `【${requestType}】新規依頼`, description: descParts.join("\n"),
+               issueTypeId, priorityId: 3, parentIssueKey, customFields };
     };
 
     // --- Slack Handlers ---
@@ -215,63 +223,62 @@ async function startServer() {
     slackApp.view("legal_request_modal", async ({ ack, body, view, client }) => {
       await ack();
       
-      const values = view.state.values;
+      const values      = view.state.values;
       const requestType = values.request_type_block.request_type_input.selected_option?.value || "legal_consultation";
-      const summary = values.summary_block.summary_input.value || "";
-      const details = values.details_block.details_input.value || "";
-      const counterparty = values.counterparty_block.counterparty_input.value || "";
-      
-      // Delivery specific values
-      const deliveryNoRaw = values.delivery_no_block?.delivery_no_input?.value;
-      const deliveryNo = deliveryNoRaw ? parseInt(deliveryNoRaw) : null;
-      const orderAmount = values.order_amount_block?.order_amount_input?.value;
-      const deliveryDate = values.delivery_date_block?.delivery_date_input?.selected_date;
-      const inspectionDeadline = values.inspection_deadline_block?.inspection_deadline_input?.selected_date;
-      
-      const user = body.user.id;
-      
-      // Map Slack request type to initial Document Template Type
+      const user        = body.user.id;
+
+      // 新: modalFields定義からパラメータを構築
+      const params = buildBacklogParams(requestType, values, user);
+
+      // 後方互換用: counterparty / summary を旧変数にも保持
+      const counterparty = values.counterparty_block?.counterparty_input?.value || "";
+      const summary      = params.summary;
+
+      // templateTypeマッピング（既存ロジック維持）
       let templateType: DocumentType = "legal_request";
-      if (requestType === "delivery_request") {
-        templateType = "inspection_certificate";
-      } else if (requestType === "royalty_calculation_sales_report") {
-        templateType = "royalty_statement";
-      } else if (requestType === "purchase_order") {
-        templateType = "purchase_order";
-      } else if (requestType === "nda") {
-        templateType = "nda";
-      }
+      const tmplMap: Record<string, DocumentType> = {
+        delivery_inspection:      "inspection_certificate",
+        manufacturing:            "royalty_statement",
+        purchase_order:           "purchase_order",
+        nda:                      "nda",
+        license_master:           "license_master",
+        individual_license_terms: "individual_license_terms",
+        outsourcing:              "service_master",
+        sales_master:             "sales_master_buyer",
+        payment:                  "payment_notice",
+      };
+      if (tmplMap[requestType]) templateType = tmplMap[requestType];
 
       try {
-        const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
-        
-        // Create Backlog Issue
-        const issue = await backlogService.createIssue({
-          summary: `【${requestType}】${displaySummary}`,
-          description: `依頼タイプ: ${requestType}\n依頼者: <@${user}>\n相手方/キー: ${counterparty}\n納品回次: ${deliveryNo || "通常"}\n\n詳細:\n${details}`,
-          issueTypeId: 1, 
-          priorityId: 3, 
+        // 親課題キー → IDに解決
+        let parentIssueId: number | undefined;
+        if (params.parentIssueKey) {
+          try {
+            const parentIssue = await backlogService.getIssue(params.parentIssueKey.trim());
+            parentIssueId = parentIssue.id;
+          } catch { /* 親課題が見つからなければ無視 */ }
+        }
+
+        // Backlog課題作成（カスタム属性付き）
+        const issue = await backlogService.createIssueWithCustomFields({
+          summary:      params.summary,
+          description:  params.description,
+          issueTypeId:  params.issueTypeId,
+          priorityId:   params.priorityId,
+          parentIssueId,
+          customFields: params.customFields,
         });
 
         // Register in DB
         const lrResult = await query(
           "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-          [issue.issueKey, user, requestType, counterparty, displaySummary, details]
+          [issue.issueKey, user, requestType, counterparty, summary, params.description]
         );
 
-        const legalRequestId = lrResult.rows[0].id;
-
-        // If it's a delivery request, also record it in delivery_events
-        if (requestType === "delivery_request") {
-          await query(
-            "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline, delivered_at, delivered_amount) VALUES ($1, $2, $3, $4, $5, $6)",
-            [issue.issueKey, deliveryNo, "pending", inspectionDeadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), deliveryDate || new Date(), parseFloat(orderAmount || "0")]
-          );
-        }
-
+        // issue_workflows 初期レコード
         await query(
-          "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3)",
-          [issue.issueKey, requestType, "文書生成依頼"]
+          "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
+          [issue.issueKey, requestType, "起票"]
         );
 
         // We do this asynchronously to avoid blocking Slack
