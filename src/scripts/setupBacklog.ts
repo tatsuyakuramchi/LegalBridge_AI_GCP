@@ -35,9 +35,9 @@ const ISSUE_TYPES = [
   { name: "発注書 / 企画発注書",         key: "purchase_order",            color: "#934981" },
   { name: "納品 / 検収書",              key: "delivery_inspection",        color: "#934981" },
   { name: "支払通知 / 報酬明細書",       key: "payment",                   color: "#934981" },
-  { name: "売買基本契約",               key: "sales_master",               color: "#f42858" },
-  { name: "法務相談",                   key: "legal_consultation",         color: "#3b9ddd" },
-  { name: "NDA（秘密保持契約）",        key: "nda",                        color: "#3b9ddd" },
+  { name: "売買基本契約",               key: "sales_master",               color: "#ff3265" },
+  { name: "法務相談",                   key: "legal_consultation",         color: "#2779ca" },
+  { name: "NDA（秘密保持契約）",        key: "nda",                        color: "#2779ca" },
 ] as const;
 
 // ─────────────────────────────────────────────
