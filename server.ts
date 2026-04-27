@@ -553,17 +553,18 @@ ${details}
     console.warn("⚠️ Slack credentials missing. Slack endpoints will not be active.");
   }
 
+  // Slack URL Verification (MUST be before other middlewares that consume the body)
+  app.post("/slack/events", express.json(), (req, res, next) => {
+    if (req.body && req.body.type === "url_verification") {
+      console.log("Slack URL Verification Challenge received:", req.body.challenge);
+      return res.status(200).send(req.body.challenge);
+    }
+    next();
+  });
+
   // API Routes
-  // Slack Receiver Middleware (MUST be before any global body paring middleware like express.json())
+  // Slack Receiver Middleware
   if (receiver) {
-    // Handle Slack URL Verification
-    app.post("/slack/events", express.json(), (req, res, next) => {
-      if (req.body && req.body.type === "url_verification") {
-        console.log("Slack URL Verification Challenge received");
-        return res.status(200).send(req.body.challenge);
-      }
-      next();
-    });
     app.use(receiver.router);
   }
 
