@@ -251,6 +251,103 @@ async function startServer() {
       }
     });
 
+    // 2. Command to search
+    slackApp.command("/法務検索", async ({ command, ack, client, body }) => {
+      await ack();
+      const keyword = command.text.trim();
+      
+      if (!keyword) {
+        await client.chat.postEphemeral({
+          channel: body.channel_id,
+          user: body.user_id,
+          text: "🔍 検索ワードを入力してください。例: `/法務検索 株式会社アークライト` または `/法務検索 検収`"
+        });
+        return;
+      }
+
+      try {
+        // Search in Legal Requests (including inspection/royalty context)
+        const lrResults = await query(
+          `SELECT backlog_issue_key, summary, counterparty, request_type 
+           FROM legal_requests 
+           WHERE summary ILIKE $1 
+              OR counterparty ILIKE $1 
+              OR backlog_issue_key ILIKE $1 
+              OR request_type ILIKE $1
+           ORDER BY created_at DESC LIMIT 8`,
+          [`%${keyword}%`]
+        );
+
+        // Search in Vendors
+        const vendorResults = await query(
+          "SELECT vendor_code, vendor_name, trade_name FROM vendors WHERE vendor_name ILIKE $1 OR vendor_code ILIKE $1 OR trade_name ILIKE $1 LIMIT 5",
+          [`%${keyword}%`]
+        );
+
+        let blocks: any[] = [
+          {
+            type: "header",
+            text: { type: "plain_text", text: `🔎 検索結果: ${keyword}`, emoji: true }
+          }
+        ];
+
+        if (lrResults.rows.length === 0 && vendorResults.rows.length === 0) {
+          blocks.push({
+            type: "section",
+            text: { type: "mrkdwn", text: "該当するデータは見つかりませんでした。別のキーワードでお試しください。" }
+          });
+        }
+
+        if (lrResults.rows.length > 0) {
+          blocks.push({
+             type: "section",
+             text: { type: "mrkdwn", text: "*📁 関連課題 (検収・許諾・その他依頼)*" }
+          });
+          
+          lrResults.rows.forEach(r => {
+            const typeEmoji = r.summary.includes("検収") ? "✅" : (r.summary.includes("許諾") ? "💰" : "📝");
+            blocks.push({
+              type: "section",
+              text: { 
+                type: "mrkdwn", 
+                text: `${typeEmoji} *${r.backlog_issue_key}*: ${r.summary}\n>相手方: ${r.counterparty || '未設定'}` 
+              }
+            });
+          });
+        }
+
+        if (vendorResults.rows.length > 0) {
+          if (lrResults.rows.length > 0) blocks.push({ type: "divider" });
+          blocks.push({
+            type: "section",
+            text: { type: "mrkdwn", text: "*🏢 取引先・パートナーマスター*" }
+          });
+          vendorResults.rows.forEach(v => {
+            blocks.push({
+              type: "section",
+              text: { 
+                type: "mrkdwn", 
+                text: `• \`${v.vendor_code}\` *${v.vendor_name}*\n  _${v.trade_name || ''}_` 
+              }
+            });
+          });
+        }
+
+        await client.chat.postEphemeral({
+          channel: body.channel_id,
+          user: body.user_id,
+          blocks: blocks
+        });
+      } catch (error) {
+        console.error("Error during search:", error);
+        await client.chat.postEphemeral({
+          channel: body.channel_id,
+          user: body.user_id,
+          text: "⚠️ 検索中にエラーが発生しました。システム管理者に連絡してください。"
+        });
+      }
+    });
+
     // Dynamic update based on selection
     slackApp.action("request_type_input", async ({ ack, body, client, action }) => {
       await ack();
@@ -459,6 +556,14 @@ ${details}
   // API Routes
   // Slack Receiver Middleware (MUST be before any global body paring middleware like express.json())
   if (receiver) {
+    // Handle Slack URL Verification
+    app.post("/slack/events", express.json(), (req, res, next) => {
+      if (req.body && req.body.type === "url_verification") {
+        console.log("Slack URL Verification Challenge received");
+        return res.status(200).send(req.body.challenge);
+      }
+      next();
+    });
     app.use(receiver.router);
   }
 
