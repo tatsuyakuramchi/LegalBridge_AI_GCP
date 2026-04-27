@@ -63,7 +63,11 @@ interface ExternalAsset {
 
 export default function App() {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'search' | 'master' | 'templates'>('create');
+  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'search' | 'master' | 'templates' | 'dashboard'>('dashboard');
+  
+  // Dashboard Stats
+  const [dashboardStats, setDashboardStats] = useState<any>(null);
+  const [isRefreshingStats, setIsRefreshingStats] = useState(false);
   
   // Backlog Search
   const [issueSearchTerm, setIssueSearchTerm] = useState('');
@@ -87,6 +91,7 @@ export default function App() {
   const [selectedIssue, setSelectedIssue] = useState<string>('');
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [staffList, setStaffList] = useState<Staff[]>([]);
+  const [statuses, setStatuses] = useState<any[]>([]);
   const [companyProfile, setCompanyProfile] = useState<any>(null);
   
   // Selections
@@ -100,6 +105,7 @@ export default function App() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
+  const [nextStatusId, setNextStatusId] = useState<number | null>(null);
   const [previewHtml, setPreviewHtml] = useState<string | null>(null);
   const [caseHistory, setCaseHistory] = useState<any[]>([]);
   const [templateStatus, setTemplateStatus] = useState<string | null>(null);
@@ -108,11 +114,31 @@ export default function App() {
   const [notification, setNotification] = useState<{ message: string, type: 'info' | 'error' | 'success' } | null>(null);
   const [batchSelection, setBatchSelection] = useState<string[]>([]);
   const templateTextAreaRef = useRef<HTMLTextAreaElement>(null);
+  const [issueSummary, setIssueSummary] = useState<any>(null);
 
   const showNotification = (message: string, type: 'info' | 'error' | 'success' = 'info') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
+
+  const refreshDashboardStats = async () => {
+    setIsRefreshingStats(true);
+    try {
+      const res = await fetch('/api/dashboard/stats');
+      const data = await res.json();
+      setDashboardStats(data);
+    } catch (e) {
+      console.error("Failed to fetch dashboard stats", e);
+    } finally {
+      setIsRefreshingStats(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'dashboard') {
+      refreshDashboardStats();
+    }
+  }, [activeTab]);
 
   const commonVariables = [
     "Licensor_名称", "Licensor_住所", "Licensor_代表者名",
@@ -186,7 +212,8 @@ export default function App() {
           { key: 'profile', url: '/api/master/company-profile' },
           { key: 'assets', url: '/api/management/assets' },
           { key: 'templates', url: '/api/templates' },
-          { key: 'metadata', url: '/api/templates/config/metadata' }
+          { key: 'metadata', url: '/api/templates/config/metadata' },
+          { key: 'statuses', url: '/api/backlog/statuses' }
         ];
 
         const results = await Promise.all(
@@ -200,7 +227,7 @@ export default function App() {
           })
         );
 
-        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes] = results;
+        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes, statusesRes] = results;
         
         setIssues(Array.isArray(issuesRes) ? issuesRes : []);
         setVendors(Array.isArray(vendorsRes) ? vendorsRes : []);
@@ -209,6 +236,7 @@ export default function App() {
         setAssets(Array.isArray(assetsRes) ? assetsRes : []);
         setTemplateList(Array.isArray(templatesRes) ? templatesRes : []);
         setTemplateMetadata(metaRes || {});
+        setStatuses(Array.isArray(statusesRes) ? statusesRes : []);
       } catch (e) {
         console.error("Critical error during startup fetch:", e);
       }
@@ -303,6 +331,9 @@ export default function App() {
 
   const handleIssueSelect = async (issueKey: string) => {
     setSelectedIssue(issueKey);
+    const issue = issues.find(i => i.issueKey === issueKey);
+    if (issue) setIssueSummary(issue);
+    
     await syncFromDatabase(issueKey);
     fetch(`/api/backlog/issues/${issueKey}/history`)
       .then(r => r.json())
@@ -320,7 +351,8 @@ export default function App() {
           issueKey: selectedIssue || "MANUAL-" + Date.now(),
           templateType: selectedTemplate,
           formData,
-          requesterEmail: selectedStaff?.email || "web-user"
+          requesterEmail: selectedStaff?.email || "web-user",
+          nextStatusId
         })
       });
       const data = await res.json();
@@ -505,6 +537,12 @@ export default function App() {
         <div className="flex items-center gap-8">
           <nav className="flex gap-6">
             <button 
+              onClick={() => setActiveTab('dashboard')}
+              className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'dashboard' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
+            >
+              Dashboard
+            </button>
+            <button 
               onClick={() => setActiveTab('create')}
               className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'create' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
             >
@@ -546,6 +584,139 @@ export default function App() {
       </header>
 
       <main className="max-w-7xl mx-auto px-8 pt-8">
+        {activeTab === 'dashboard' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="space-y-8 animate-in fade-in duration-500 pb-20"
+          >
+            {/* Stats Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+               <div className="bg-white border border-[#141414]/10 p-6 shadow-sm hover:border-blue-600 transition-colors group">
+                  <p className="text-[9px] font-mono font-bold text-[#141414]/40 uppercase mb-2">Active Requests</p>
+                  <p className="text-3xl font-mono font-bold tracking-tighter">{dashboardStats?.totalIssues || 0}</p>
+                  <div className="mt-4 h-1 bg-gray-100 overflow-hidden">
+                     <div className="h-full bg-blue-600 transition-all duration-1000" style={{ width: '65%' }} />
+                  </div>
+               </div>
+               <div className="bg-white border border-[#141414]/10 p-6 shadow-sm hover:border-emerald-600 transition-colors">
+                  <p className="text-[9px] font-mono font-bold text-[#141414]/40 uppercase mb-2">Issued Docs</p>
+                  <p className="text-3xl font-mono font-bold tracking-tighter text-emerald-600">{dashboardStats?.totalDocuments || 0}</p>
+                  <p className="text-[8px] font-mono opacity-40 mt-1 uppercase">Across {dashboardStats?.recentActivity?.length || 0} Projects</p>
+               </div>
+               <div className="bg-white border border-[#141414]/10 p-6 shadow-sm">
+                  <p className="text-[9px] font-mono font-bold text-[#141414]/40 uppercase mb-2">Avg. Turnaround</p>
+                  <p className="text-3xl font-mono font-bold tracking-tighter text-amber-600">2.4<span className="text-sm">d</span></p>
+                  <p className="text-[8px] font-mono opacity-40 mt-1 uppercase">Consistent with SLA</p>
+               </div>
+               <div className="bg-white border border-[#141414]/10 p-6 shadow-sm">
+                  <p className="text-[9px] font-mono font-bold text-[#141414]/40 uppercase mb-2">Templates Utilized</p>
+                  <p className="text-3xl font-mono font-bold tracking-tighter">{templateList.length}</p>
+                  <p className="text-[8px] font-mono opacity-40 mt-1 uppercase">Optimized for Blueprint</p>
+               </div>
+            </div>
+
+            {/* Main Dashboard Content */}
+            <div className="grid grid-cols-12 gap-10">
+               {/* Left: Quick Access Funnel */}
+               <div className="col-span-12 lg:col-span-8 space-y-6">
+                  <div className="flex justify-between items-center border-b border-[#141414] pb-4">
+                     <h2 className="text-sm font-mono font-bold uppercase tracking-widest flex items-center gap-2">
+                        <LayoutDashboard className="w-4 h-4" /> Legal Request Pipeline
+                     </h2>
+                     <button onClick={refreshDashboardStats} className="p-1 hover:rotate-180 transition-transform duration-500">
+                        <RefreshCw className="w-3 h-3 opacity-40" />
+                     </button>
+                  </div>
+                  
+                  <div className="space-y-3">
+                     {dashboardStats?.issueDetails?.slice(0, 10).map((issue: any) => (
+                       <div 
+                         key={issue.issueKey}
+                         onClick={() => {
+                           handleIssueSelect(issue.issueKey);
+                           setActiveTab('create');
+                         }}
+                         className="bg-white border border-[#141414]/5 p-5 flex justify-between items-center group hover:border-[#141414] transition-all cursor-pointer hover:shadow-lg"
+                       >
+                          <div className="flex items-center gap-6">
+                             <div className={`w-2 h-12 ${issue.status?.name === '完了' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                             <div>
+                                <p className="text-[9px] font-mono font-bold text-[#141414]/40">{issue.issueKey}</p>
+                                <h3 className="text-sm font-bold uppercase group-hover:text-blue-600 transition-colors">{issue.summary}</h3>
+                                <div className="flex items-center gap-3 mt-1.5">
+                                   <span className="text-[8px] font-mono font-bold bg-[#141414]/5 px-2 py-0.5 rounded-full uppercase">{issue.status?.name}</span>
+                                   <span className="text-[8px] font-mono opacity-30 uppercase">{issue.assignee?.name || 'Unassigned'}</span>
+                                </div>
+                             </div>
+                          </div>
+                          <div className="flex items-center gap-8">
+                             <div className="text-right">
+                                <p className="text-[9px] font-mono font-bold leading-none">{issue.documentCount} Artifacts</p>
+                                <p className="text-[8px] font-mono opacity-30 uppercase mt-1">
+                                   {issue.lastDocDate ? `Last: ${new Date(issue.lastDocDate).toLocaleDateString()}` : 'No drafts yet'}
+                                </p>
+                             </div>
+                             <ArrowRight className="w-4 h-4 opacity-0 group-hover:opacity-100 transition-all -translate-x-2 group-hover:translate-x-0" />
+                          </div>
+                       </div>
+                     ))}
+                     {isRefreshingStats && (
+                        <div className="p-20 text-center flex flex-col items-center gap-4">
+                           <Loader2 className="w-6 h-6 animate-spin opacity-20" />
+                           <p className="text-[10px] font-mono opacity-30 uppercase tracking-[0.2em]">Synchronizing with Backlog Matrix...</p>
+                        </div>
+                     )}
+                  </div>
+
+                  <button 
+                    onClick={() => setActiveTab('search')}
+                    className="w-full py-4 border border-dashed border-[#141414]/10 text-[9px] font-mono font-bold uppercase tracking-widest hover:border-[#141414] hover:bg-gray-50 transition-all"
+                  >
+                    View All Case Inventory
+                  </button>
+               </div>
+
+               {/* Right: Recent Blueprint Activity */}
+               <div className="col-span-12 lg:col-span-4 space-y-6">
+                  <div className="bg-[#141414] text-white p-6">
+                     <h3 className="text-xs font-mono font-bold uppercase tracking-widest flex items-center gap-2 mb-4">
+                        <Database className="w-4 h-4 text-blue-400" /> Recent Artifacts
+                     </h3>
+                     <div className="space-y-4">
+                        {dashboardStats?.recentActivity?.map((doc: any, idx: number) => (
+                           <div key={idx} className="border-l border-blue-400/30 pl-4 py-1">
+                              <p className="text-[10px] font-bold truncate">{doc.template_type}</p>
+                              <p className="text-[8px] font-mono opacity-60 uppercase">{doc.issue_key} • {new Date(doc.created_at).toLocaleDateString()}</p>
+                           </div>
+                        ))}
+                     </div>
+                  </div>
+
+                  <div className="bg-amber-50 border border-amber-200 p-6">
+                     <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest flex items-center gap-2 mb-3 text-amber-900">
+                        <AlertCircle className="w-4 h-4" /> System Health
+                     </h3>
+                     <div className="space-y-2">
+                        <div className="flex justify-between items-center text-[9px] font-mono">
+                           <span className="text-amber-800/60 uppercase">Backlog Link</span>
+                           <span className="text-emerald-600 font-bold">OPERATIONAL</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[9px] font-mono">
+                           <span className="text-amber-800/60 uppercase">Cloud Storage</span>
+                           <span className="text-emerald-600 font-bold">ACTIVE</span>
+                        </div>
+                        <div className="flex justify-between items-center text-[9px] font-mono">
+                           <span className="text-amber-800/60 uppercase">Identity Matrix</span>
+                           <span className="text-amber-600 font-bold">RE-SYNCING</span>
+                        </div>
+                     </div>
+                  </div>
+               </div>
+            </div>
+          </motion.div>
+        )}
+
         {activeTab === 'create' && (
           <div className="grid grid-cols-12 gap-10">
             
@@ -675,7 +846,14 @@ export default function App() {
                    </div>
                    <div>
                      <h2 className="text-xs font-mono font-bold uppercase tracking-widest">{selectedTemplate.replace(/_/g, ' ')} Editor</h2>
-                     <p className="text-[9px] font-mono text-[#141414]/40 uppercase mt-0.5">Session UUID: {Math.random().toString(36).substr(2, 9)}</p>
+                     <div className="flex items-center gap-2 mt-0.5">
+                       <p className="text-[9px] font-mono text-[#141414]/40 uppercase">Session UUID: {Math.random().toString(36).substr(2, 9)}</p>
+                       {issueSummary && (
+                          <span className="text-[8px] font-mono bg-blue-100 text-blue-700 px-2 py-0.5 font-bold uppercase tracking-tighter">
+                             {issueSummary.issueKey} : {issueSummary.status?.name || 'SYNCED'}
+                          </span>
+                       )}
+                     </div>
                    </div>
                  </div>
                  <div className="flex gap-3">

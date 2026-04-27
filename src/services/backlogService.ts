@@ -77,6 +77,44 @@ export class BacklogService {
     }
   }
 
+  /**
+   * Flattens Backlog custom fields into a readable object { [fieldNameOrId]: value }
+   */
+  extractCustomFields(issue: any): Record<string, any> {
+    const fields: Record<string, any> = {
+      issueKey: issue.issueKey,
+      summary: issue.summary,
+      description: issue.description,
+      status: issue.status?.name,
+      issueType: issue.issueType?.name,
+      priority: issue.priority?.name,
+      assignee: issue.assignee?.name,
+      created: issue.created,
+      updated: issue.updated
+    };
+
+    if (issue.customFields && Array.isArray(issue.customFields)) {
+      issue.customFields.forEach((cf: any) => {
+        // Standardize key: sanitized name (e.g. "契約日" -> "契約日") or Id
+        const nameKey = cf.name || `field_${cf.id}`;
+        // Support both name and ID as keys for flexibility
+        fields[nameKey] = cf.value;
+        fields[`cf_${cf.id}`] = cf.value;
+        
+        // Handle select/multiple select values
+        if (cf.fieldTypeId === 5 || cf.fieldTypeId === 6) { // Select or Multi-select
+           if (Array.isArray(cf.value)) {
+             fields[nameKey] = cf.value.map((v: any) => v.name).join(", ");
+           } else if (cf.value && typeof cf.value === 'object') {
+             fields[nameKey] = cf.value.name;
+           }
+        }
+      });
+    }
+
+    return fields;
+  }
+
   async getIssue(issueKey: string): Promise<any> {
     try {
       const response = await axios.get(this.getUrl(`/issues/${issueKey}`));
@@ -167,46 +205,6 @@ export class BacklogService {
       return response.data;
     } catch (error) {
       console.error(`Error updating issue status for ${issueKey}:`, error);
-      throw error;
-    }
-  }
-
-  async createIssueWithCustomFields(params: {
-    summary: string;
-    description: string;
-    issueTypeId: number;
-    priorityId: number;
-    parentIssueId?: number;
-    customFields: { fieldId: string; value: string }[];
-  }): Promise<any> {
-    if (!this.apiKey || !this.baseUrl) {
-      console.warn("⚠️ Backlog credentials missing. Mocking issue creation.");
-      return { issueKey: `MOCK-${Math.floor(Math.random() * 1000)}`, id: 0 };
-    }
-    try {
-      const projectRes = await axios.get(this.getUrl(`/projects/${this.projectKey}`));
-      const projectId  = projectRes.data.id;
-
-      const body = new URLSearchParams();
-      body.append("projectId",   String(projectId));
-      body.append("summary",     params.summary);
-      body.append("description", params.description);
-      body.append("issueTypeId", String(params.issueTypeId));
-      body.append("priorityId",  String(params.priorityId));
-
-      if (params.parentIssueId) {
-        body.append("parentIssueId", String(params.parentIssueId));
-      }
-
-      for (const cf of params.customFields) {
-        body.append(`customField_${cf.fieldId}`, cf.value);
-      }
-
-      const response = await axios.post(this.getUrl("/issues"), body);
-      console.log(`✅ Backlog issue created: ${response.data.issueKey}`);
-      return response.data;
-    } catch (error) {
-      console.error("Error creating Backlog issue with custom fields:", error);
       throw error;
     }
   }
