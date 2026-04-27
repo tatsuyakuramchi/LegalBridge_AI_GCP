@@ -125,6 +125,25 @@ export class BacklogService {
     }
   }
 
+  async getChildIssues(parentIssueId: number): Promise<any[]> {
+    if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
+    try {
+      const projectRes = await axios.get(this.getUrl(`/projects/${this.projectKey}`));
+      const projectId = projectRes.data.id;
+      
+      const response = await axios.get(this.getUrl("/issues"), {
+        params: {
+          "projectId[]": [projectId],
+          "parentIssueId[]": [parentIssueId]
+        }
+      });
+      return response.data;
+    } catch (error) {
+      console.error(`Error fetching child issues for parent ${parentIssueId}:`, error);
+      return [];
+    }
+  }
+
   async getIssues(): Promise<any[]> {
     if (!this.apiKey || !this.baseUrl || !this.projectKey) {
       console.warn("⚠️ Backlog credentials (API_KEY, HOST, or PROJECT_KEY) missing.", {

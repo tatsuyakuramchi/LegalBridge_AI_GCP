@@ -76,7 +76,7 @@ async function startServer() {
     });
 
     // --- Slack Helpers ---
-    const getLegalRequestModal = (selectedType: string = "legal_consultation"): any => {
+    const getLegalRequestModal = (selectedType: string = "legal_consult"): any => {
       const blocks: any[] = [
         {
           type: "input",
@@ -86,24 +86,27 @@ async function startServer() {
             type: "static_select",
             action_id: "request_type_input",
             initial_option: {
-              text: { type: "plain_text", text: selectedType === "legal_consultation" ? "法務相談 (legal_consultation)" : 
+              text: { type: "plain_text", text: selectedType === "legal_consult" ? "法務相談 (legal_consult)" : 
                                        selectedType === "nda" ? "秘密保持契約 (nda)" :
                                        selectedType === "outsourcing" ? "業務委託基本契約 (outsourcing)" :
-                                       selectedType === "license" ? "ライセンス契約 (license)" :
+                                       selectedType === "license_master" ? "ライセンス基本契約 (license_master)" :
+                                       selectedType === "lic_individual" ? "個別利用許諾条件 (lic_individual)" :
                                        selectedType === "purchase_order" ? "発注書 (purchase_order)" :
-                                       selectedType === "delivery_request" ? "納品リクエスト (delivery_request)" :
-                                       "利用許諾料計算 (royalty_calculation)" },
+                                       selectedType === "delivery_inspec" ? "納品 / 検収書 (delivery_inspec)" :
+                                       selectedType === "sales_master" ? "売買基本契約 (sales_master)" :
+                                       "その他" },
               value: selectedType
             },
             placeholder: { type: "plain_text", text: "種別を選択してください" },
             options: [
-              { text: { type: "plain_text", text: "法務相談 (legal_consultation)" }, value: "legal_consultation" },
+              { text: { type: "plain_text", text: "法務相談 (legal_consult)" }, value: "legal_consult" },
               { text: { type: "plain_text", text: "秘密保持契約 (nda)" }, value: "nda" },
               { text: { type: "plain_text", text: "業務委託基本契約 (outsourcing)" }, value: "outsourcing" },
-              { text: { type: "plain_text", text: "ライセンス契約 (license)" }, value: "license" },
+              { text: { type: "plain_text", text: "ライセンス基本契約 (license_master)" }, value: "license_master" },
+              { text: { type: "plain_text", text: "個別利用許諾条件 (lic_individual)" }, value: "lic_individual" },
               { text: { type: "plain_text", text: "発注書 (purchase_order)" }, value: "purchase_order" },
-              { text: { type: "plain_text", text: "納品リクエスト (delivery_request)" }, value: "delivery_request" },
-              { text: { type: "plain_text", text: "利用許諾料計算 (royalty_calculation)" }, value: "royalty_calculation_sales_report" }
+              { text: { type: "plain_text", text: "納品 / 検収書 (delivery_inspec)" }, value: "delivery_inspec" },
+              { text: { type: "plain_text", text: "売買基本契約 (sales_master)" }, value: "sales_master" }
             ]
           }
         },
@@ -115,20 +118,60 @@ async function startServer() {
         },
         {
           type: "input",
-          block_id: "details_block",
-          label: { type: "plain_text", text: "相談・依頼詳細" },
-          element: { type: "plain_text_input", action_id: "details_input", multiline: true }
+          block_id: "deadline_block",
+          label: { type: "plain_text", text: "希望納期（文書作成等）" },
+          element: {
+            type: "datepicker",
+            action_id: "deadline_input",
+            initial_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+          }
+        },
+        {
+          type: "divider"
+        },
+        {
+          type: "section",
+          text: { type: "mrkdwn", text: "*取引先情報 (Counterparty Info)*" }
         },
         {
           type: "input",
           block_id: "counterparty_block",
-          label: { type: "plain_text", text: "相手方企業名 / 関連キー" },
-          element: { type: "plain_text_input", action_id: "counterparty_input" }
+          label: { type: "plain_text", text: "相手方名称" },
+          element: { type: "plain_text_input", action_id: "counterparty_input", placeholder: { type: "plain_text", text: "株式会社〇〇" } }
+        },
+        {
+          type: "input",
+          block_id: "entity_type_block",
+          label: { type: "plain_text", text: "区分" },
+          element: {
+            type: "radio_buttons",
+            action_id: "entity_type_input",
+            initial_option: { text: { type: "plain_text", text: "法人" }, value: "corporate" },
+            options: [
+              { text: { type: "plain_text", text: "法人" }, value: "corporate" },
+              { text: { type: "plain_text", text: "個人" }, value: "individual" }
+            ]
+          }
+        },
+        {
+          type: "input",
+          block_id: "entity_id_block",
+          label: { type: "plain_text", text: "法人番号 / 社内個人コード" },
+          element: { type: "plain_text_input", action_id: "entity_id_input", placeholder: { type: "plain_text", text: "13桁の番号、または社内コード" } }
+        },
+        {
+          type: "divider"
+        },
+        {
+          type: "input",
+          block_id: "details_block",
+          label: { type: "plain_text", text: "相談・依頼詳細" },
+          element: { type: "plain_text_input", action_id: "details_input", multiline: true }
         }
       ];
 
-      // Dynamic items for Delivery Request
-      if (selectedType === "delivery_request") {
+      // Dynamic items for Delivery Request (now mapped to delivery_inspec)
+      if (selectedType === "delivery_inspec") {
         blocks.push(
           {
             type: "divider"
@@ -216,10 +259,13 @@ async function startServer() {
       await ack();
       
       const values = view.state.values;
-      const requestType = values.request_type_block.request_type_input.selected_option?.value || "legal_consultation";
+      const requestType = values.request_type_block.request_type_input.selected_option?.value || "legal_consult";
       const summary = values.summary_block.summary_input.value || "";
+      const deadline = values.deadline_block.deadline_input.selected_date || "";
       const details = values.details_block.details_input.value || "";
       const counterparty = values.counterparty_block.counterparty_input.value || "";
+      const entityType = values.entity_type_block.entity_type_input.selected_option?.value || "corporate";
+      const entityId = values.entity_id_block.entity_id_input.value || "";
       
       // Delivery specific values
       const deliveryNoRaw = values.delivery_no_block?.delivery_no_input?.value;
@@ -232,23 +278,42 @@ async function startServer() {
       
       // Map Slack request type to initial Document Template Type
       let templateType: DocumentType = "legal_request";
-      if (requestType === "delivery_request") {
+      if (requestType === "delivery_inspec") {
         templateType = "inspection_certificate";
-      } else if (requestType === "royalty_calculation_sales_report") {
-        templateType = "royalty_statement";
       } else if (requestType === "purchase_order") {
         templateType = "purchase_order";
       } else if (requestType === "nda") {
         templateType = "nda";
+      } else if (requestType === "license_master") {
+        templateType = "license_master";
+      } else if (requestType === "lic_individual") {
+        templateType = "individual_license_terms";
       }
 
       try {
         const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
         
+        // Detailed description for Backlog
+        const backlogDescription = `
+依頼タイプ: ${requestType}
+希望納期: ${deadline}
+依頼者: <@${user}>
+
+【相手方情報】
+名称: ${counterparty}
+区分: ${entityType === 'corporate' ? '法人' : '個人'}
+番号/コード: ${entityId}
+
+【詳細】
+${details}
+        `.trim();
+
         // Create Backlog Issue
+        // Note: For now we use the first available type ID. 
+        // In a real system we would fetch the ID for the name 'requestType'.
         const issue = await backlogService.createIssue({
           summary: `【${requestType}】${displaySummary}`,
-          description: `依頼タイプ: ${requestType}\n依頼者: <@${user}>\n相手方/キー: ${counterparty}\n納品回次: ${deliveryNo || "通常"}\n\n詳細:\n${details}`,
+          description: backlogDescription,
           issueTypeId: 1, 
           priorityId: 3, 
         });
@@ -402,6 +467,27 @@ async function startServer() {
           "UPDATE issue_workflows SET current_status_name = $1 WHERE backlog_issue_key = $2",
           [newStatus, issueKey]
         );
+
+        // --- Parent-Child Link Logic ---
+        // If an issue is completed, check its parent to see if it can also be completed.
+        if (newStatus === "完了" || event.content.status.id === 4) {
+          try {
+            const issue = await backlogService.getIssue(issueKey);
+            if (issue.parentIssueId) {
+              const children = await backlogService.getChildIssues(issue.parentIssueId);
+              const allCompleted = children.every(child => child.status.name === "完了" || child.status.id === 4);
+              
+              if (allCompleted) {
+                // Update parent to 完了
+                const parentIssue = await backlogService.getIssue(issue.parentIssueId.toString()); // If it's a number, convert to string just in case
+                await backlogService.updateIssueStatus(parentIssue.issueKey, 4);
+                console.log(`✅ Parent issue ${parentIssue.issueKey} auto-completed because all children are finished.`);
+              }
+            }
+          } catch (e) {
+            console.warn("Parent-child sync failed:", e);
+          }
+        }
       }
       res.json({ ok: true });
     } catch (error) {
@@ -1189,7 +1275,7 @@ async function startServer() {
   });
 
   app.post("/api/documents/generate", express.json(), async (req, res) => {
-    const { issueKey, templateType, formData, requesterEmail, nextStatusId } = req.body;
+    let { issueKey, templateType, formData, requesterEmail, nextStatusId } = req.body;
 
     try {
       // 1. Fetch Backlog Issue details
@@ -1197,7 +1283,16 @@ async function startServer() {
       
       const docNumber = await getNewDocumentNumber(templateType, issue.issueType.name);
 
-      // --- New: Update Backlog Status if requested ---
+      // --- New: Update Backlog Status if requested or configured ---
+      if (!nextStatusId) {
+        // Look up from workflow_settings
+        const wsResult = await query("SELECT next_status_id FROM workflow_settings WHERE issue_type_name = $1", [issue.issueType.name]);
+        if (wsResult.rows[0]?.next_status_id) {
+          nextStatusId = wsResult.rows[0].next_status_id;
+          console.log(`📡 Auto-Advance: Found next_status_id ${nextStatusId} for issue type ${issue.issueType.name}`);
+        }
+      }
+
       if (nextStatusId) {
         try {
           await backlogService.updateIssueStatus(issueKey, nextStatusId);

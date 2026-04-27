@@ -263,6 +263,20 @@ export async function initDb() {
     `ALTER TABLE royalty_payments ADD COLUMN IF NOT EXISTS backlog_issue_key VARCHAR(50);`,
     `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS mg_amount DECIMAL(15, 2);`,
     `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS fee_structure VARCHAR(50);`,
+
+    // 8. Seed Workflow Settings based on design images
+    `INSERT INTO workflow_settings (issue_type_name, document_prefix) VALUES 
+      ('license_master', 'LIC'),
+      ('lic_individual', 'ILT'),
+      ('manufacturing', 'ROY'),
+      ('outsourcing', 'OUT'),
+      ('purchase_order', 'PO'),
+      ('delivery_inspec', 'INS'),
+      ('payment', 'PAY'),
+      ('sales_master', 'SAL'),
+      ('legal_consult', 'REQ'),
+      ('nda', 'NDA')
+    ON CONFLICT (issue_type_name) DO UPDATE SET document_prefix = EXCLUDED.document_prefix;`
   ];
 
   try {
@@ -303,18 +317,25 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       purchase_order: "PO",
       contract: "CTR",
       inspection_certificate: "INS",
+      inspection_certificate_v2: "INS",
       royalty_statement: "ROY",
       payment_notice: "PAY",
       legal_request: "REQ",
       service_master: "SRVP",
       license_master: "LIC",
+      lic_individual: "ILT",
+      manufacturing: "ROY",
+      outsourcing: "OUT",
+      delivery_inspec: "INS",
+      sales_master: "SAL",
+      legal_consult: "REQ",
       fee_statement: "FEE",
       asset: "AST",
       external_contract: "EXT",
       design: "DSG",
       spec: "SPC"
     };
-    prefix = typeCodes[type] || type.toUpperCase().substring(0, 3);
+    prefix = typeCodes[type] || (issueTypeName ? typeCodes[issueTypeName] : null) || type.toUpperCase().substring(0, 3);
   }
 
   const year = new Date().getFullYear();
