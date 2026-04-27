@@ -12,6 +12,8 @@ import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { pool, initDb, query, getNextSequenceValue, getNewDocumentNumber } from "./src/lib/db.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
 import TurndownService from 'turndown';
+import multer from 'multer';
+import { Readable } from "stream";
 // @ts-ignore
 import { gfm } from 'turndown-plugin-gfm';
 
@@ -46,14 +48,24 @@ async function startServer() {
     next();
   });
 
-  const backlogService = new BacklogService();
+  const settingsResult = await query("SELECT * FROM app_settings");
+  const dbSettings: Record<string, any> = {};
+  settingsResult.rows.forEach(r => dbSettings[r.key] = r.value);
+
+  const backlogService = new BacklogService({
+    host: dbSettings.BACKLOG_HOST || process.env.BACKLOG_HOST,
+    apiKey: dbSettings.BACKLOG_API_KEY || process.env.BACKLOG_API_KEY,
+    projectKey: dbSettings.BACKLOG_PROJECT_KEY || process.env.BACKLOG_PROJECT_KEY
+  });
   const documentService = new DocumentService();
   const googleDriveService = new GoogleDriveService();
   const csvImportService = new CsvImportService();
 
+  const upload = multer({ storage: multer.memoryStorage() });
+
   // Slack Setup
-  const slackBotToken = process.env.SLACK_BOT_TOKEN;
-  const slackSigningSecret = process.env.SLACK_SIGNING_SECRET;
+  const slackBotToken = dbSettings.SLACK_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
+  const slackSigningSecret = dbSettings.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET;
 
   let slackApp: App | null = null;
   let receiver: ExpressReceiver | null = null;
@@ -693,13 +705,21 @@ ${details}
   // Master Data APIs
   // (Simplified: these already use local express.json())
   
-  app.get("/api/master/company-profile", (req, res) => {
-    res.json({
-      name: process.env.COMPANY_NAME || "サンプル株式会社",
-      address: process.env.COMPANY_ADDRESS || "東京都千代田区丸の内1-1-1",
-      representative: process.env.COMPANY_REPRESENTATIVE || "代表取締役 山田 太郎",
-      invoice_no: process.env.COMPANY_INVOICE_NO || "T1234567890123"
-    });
+  app.get("/api/master/company-profile", async (req, res) => {
+    try {
+      const result = await query("SELECT * FROM app_settings WHERE key IN ('COMPANY_NAME', 'COMPANY_ADDRESS', 'COMPANY_REPRESENTATIVE', 'COMPANY_INVOICE_NO')");
+      const settings: Record<string, string> = {};
+      result.rows.forEach(r => settings[r.key] = r.value);
+
+      res.json({
+        name: settings.COMPANY_NAME || process.env.COMPANY_NAME || "サンプル株式会社",
+        address: settings.COMPANY_ADDRESS || process.env.COMPANY_ADDRESS || "東京都千代田区丸の内1-1-1",
+        representative: settings.COMPANY_REPRESENTATIVE || process.env.COMPANY_REPRESENTATIVE || "代表取締役 山田 太郎",
+        invoice_no: settings.COMPANY_INVOICE_NO || process.env.COMPANY_INVOICE_NO || "T1234567890123"
+      });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
   });
 
   app.get("/api/master/app-settings", async (req, res) => {
@@ -735,6 +755,37 @@ ${details}
       const result = await query("SELECT * FROM vendors ORDER BY id ASC");
       res.json(result.rows);
     } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/master/vendors/:code", async (req, res) => {
+    try {
+      const { code } = req.params;
+      const result = await query("SELECT * FROM vendors WHERE vendor_code = $1", [code]);
+      if (result.rows.length === 0) {
+        return res.status(404).json({ error: "Vendor not found" });
+      }
+      res.json(result.rows[0]);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/master/vendors/upload-change-request", upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ error: "No file uploaded" });
+      }
+      const vendorCode = req.body.vendor_code;
+      const fileName = `変更届_${vendorCode}_${Date.now()}_${req.file.originalname}`;
+      
+      const stream = Readable.from(req.file.buffer);
+      const driveLink = await googleDriveService.uploadFile(stream, fileName, req.file.mimetype);
+      
+      res.json({ success: true, driveLink });
+    } catch (error) {
+      console.error("Upload error:", error);
       res.status(500).json({ error: String(error) });
     }
   });

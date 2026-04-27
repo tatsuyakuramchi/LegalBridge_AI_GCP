@@ -25,6 +25,9 @@ import {
   Briefcase,
   ArrowRight,
   Calendar,
+  Settings,
+  Upload,
+  Link,
   X
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
@@ -63,7 +66,7 @@ interface ExternalAsset {
 
 export default function App() {
   // Navigation
-  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'search' | 'master' | 'templates' | 'dashboard'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'create' | 'list' | 'search' | 'master' | 'templates' | 'dashboard' | 'settings'>('dashboard');
   
   // Dashboard Stats
   const [dashboardStats, setDashboardStats] = useState<any>(null);
@@ -97,11 +100,19 @@ export default function App() {
   // Selections
   const [activeVendor, setActiveVendor] = useState<Vendor | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
+  const [vendorSearch, setVendorSearch] = useState('');
+  const [selectedVendorDetail, setSelectedVendorDetail] = useState<any>(null);
+  const [isEditingVendor, setIsEditingVendor] = useState(false);
+  const [selectedStaffDetail, setSelectedStaffDetail] = useState<any>(null);
+  const [isEditingStaff, setIsEditingStaff] = useState(false);
+  const [isUploadingChangeRequest, setIsUploadingChangeRequest] = useState(false);
+  const [appSettings, setAppSettings] = useState<any>({});
   
   // UI State
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
   const [assetSearch, setAssetSearch] = useState('');
   const [assets, setAssets] = useState<ExternalAsset[]>([]);
+  const [workflowRules, setWorkflowRules] = useState<any[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isPreviewVisible, setIsPreviewVisible] = useState(false);
@@ -116,12 +127,49 @@ export default function App() {
   const templateTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const [issueSummary, setIssueSummary] = useState<any>(null);
 
+  useEffect(() => {
+    fetch('/api/master/app-settings')
+      .then(r => r.json())
+      .then(d => setAppSettings(d))
+      .catch(e => console.error("Failed to load settings", e));
+  }, []);
+
   const showNotification = (message: string, type: 'info' | 'error' | 'success' = 'info') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 4000);
   };
 
-  const refreshDashboardStats = async () => {
+   const [editingRule, setEditingRule] = useState<any>(null);
+
+   const refreshWorkflowRules = async () => {
+     try {
+       const res = await fetch('/api/master/rules');
+       const data = await res.json();
+       setWorkflowRules(Array.isArray(data) ? data : []);
+     } catch (e) {
+       console.error("Failed to fetch workflow rules", e);
+     }
+   };
+
+   const saveWorkflowRule = async (rule: any) => {
+      try {
+        const res = await fetch('/api/master/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(rule)
+        });
+        if (res.ok) {
+          showNotification("Routing rule updated successfully", "success");
+          refreshWorkflowRules();
+          setEditingRule(null);
+        } else {
+          showNotification("Failed to update rule", "error");
+        }
+      } catch (e) {
+        showNotification("Server error while updating rule", "error");
+      }
+   };
+   const refreshDashboardStats = async () => {
     setIsRefreshingStats(true);
     try {
       const res = await fetch('/api/dashboard/stats');
@@ -213,7 +261,8 @@ export default function App() {
           { key: 'assets', url: '/api/management/assets' },
           { key: 'templates', url: '/api/templates' },
           { key: 'metadata', url: '/api/templates/config/metadata' },
-          { key: 'statuses', url: '/api/backlog/statuses' }
+          { key: 'statuses', url: '/api/backlog/statuses' },
+          { key: 'workflowRules', url: '/api/master/rules' }
         ];
 
         const results = await Promise.all(
@@ -227,7 +276,7 @@ export default function App() {
           })
         );
 
-        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes, statusesRes] = results;
+        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes, statusesRes, rulesRes] = results;
         
         setIssues(Array.isArray(issuesRes) ? issuesRes : []);
         setVendors(Array.isArray(vendorsRes) ? vendorsRes : []);
@@ -237,6 +286,7 @@ export default function App() {
         setTemplateList(Array.isArray(templatesRes) ? templatesRes : []);
         setTemplateMetadata(metaRes || {});
         setStatuses(Array.isArray(statusesRes) ? statusesRes : []);
+        setWorkflowRules(Array.isArray(rulesRes) ? rulesRes : []);
       } catch (e) {
         console.error("Critical error during startup fetch:", e);
       }
@@ -571,6 +621,12 @@ export default function App() {
               className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'templates' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
             >
               Templates
+            </button>
+            <button 
+              onClick={() => setActiveTab('settings')}
+              className={`text-[10px] font-mono font-bold uppercase tracking-wider transition-all border-b-2 py-1 ${activeTab === 'settings' ? 'border-[#141414] text-[#141414]' : 'border-transparent text-[#141414]/40 hover:text-[#141414]'}`}
+            >
+              Settings
             </button>
           </nav>
           <div className="flex items-center gap-3 border-l border-[#141414]/10 pl-6">
@@ -1482,14 +1538,16 @@ export default function App() {
                         onClick={() => {
                           const fetchData = async () => {
                             try {
-                              const [vendorsRes, staffRes, assetsRes] = await Promise.all([
+                              const [vendorsRes, staffRes, assetsRes, rulesRes] = await Promise.all([
                                 fetch('/api/master/vendors').then(r => r.json()),
                                 fetch('/api/master/staff').then(r => r.json()),
-                                fetch('/api/management/assets').then(r => r.json())
+                                fetch('/api/management/assets').then(r => r.json()),
+                                fetch('/api/master/rules').then(r => r.json())
                               ]);
                               setVendors(vendorsRes);
                               setStaffList(staffRes);
                               setAssets(assetsRes);
+                              setWorkflowRules(rulesRes);
                             } catch (e) {
                               console.error("Manual sync failed", e);
                             }
@@ -1501,7 +1559,7 @@ export default function App() {
                    </div>
                 </div>
                 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                    {/* Vendor Master */}
                    <div className="space-y-6">
                       <div className="flex items-center justify-between border-b border-orange-600/20 pb-3">
@@ -1530,13 +1588,41 @@ export default function App() {
                             <span className="text-[10px] font-mono opacity-40 font-bold">{vendors.length}</span>
                          </div>
                       </div>
+
+                      <div className="relative">
+                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                         <input 
+                           type="text" 
+                           placeholder="SEARCH PARTNERS..."
+                           value={vendorSearch}
+                           onChange={(e) => setVendorSearch(e.target.value)}
+                           className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-transparent focus:bg-white focus:border-orange-600/30 text-[10px] font-mono outline-none transition-all"
+                         />
+                      </div>
+
                       <div className="space-y-3">
-                         {vendors.map(v => (
+                         {vendors
+                           .filter(v => 
+                             v.vendor_name.toLowerCase().includes(vendorSearch.toLowerCase()) || 
+                             v.vendor_code.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+                             (v.trade_name && v.trade_name.toLowerCase().includes(vendorSearch.toLowerCase()))
+                           )
+                           .map(v => (
                            <div key={v.vendor_code} className="p-4 border border-[#141414]/5 bg-white group hover:border-orange-600/30 transition-all hover:shadow-lg">
                               <p className="text-xs font-bold uppercase mb-1">{v.vendor_name}</p>
                               <div className="flex justify-between items-end">
                                  <p className="text-[9px] font-mono text-[#141414]/50 uppercase">{v.vendor_code} | {v.trade_name || 'N/A'}</p>
-                                 <button className="text-[8px] font-mono font-bold uppercase px-2 py-0.5 border border-[#141414]/10 hover:bg-[#141414] hover:text-white transition-all">Details</button>
+                                 <button 
+                                   onClick={() => {
+                                     fetch(`/api/master/vendors/${v.vendor_code}`)
+                                       .then(r => r.json())
+                                       .then(d => {
+                                         setSelectedVendorDetail(d);
+                                         setIsEditingVendor(false);
+                                       });
+                                   }}
+                                   className="text-[8px] font-mono font-bold uppercase px-2 py-0.5 border border-[#141414]/10 hover:bg-[#141414] hover:text-white transition-all"
+                                 >Details</button>
                               </div>
                            </div>
                          ))}
@@ -1573,14 +1659,165 @@ export default function App() {
                       </div>
                       <div className="space-y-3">
                          {staffList.map(s => (
-                           <div key={s.slack_user_id} className="p-4 border border-[#141414]/5 bg-white group hover:border-blue-600/30 transition-all hover:shadow-lg flex items-center gap-4">
+                           <div 
+                             key={s.slack_user_id} 
+                             onClick={() => setSelectedStaffDetail(s)}
+                             className="p-4 border border-[#141414]/5 bg-white group hover:border-blue-600/30 transition-all hover:shadow-lg flex items-center gap-4 cursor-pointer"
+                           >
                               <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center font-mono text-[10px] font-bold">{s.staff_name.charAt(0)}</div>
                               <div className="flex-1">
                                  <p className="text-xs font-bold uppercase">{s.staff_name}</p>
-                                 <p className="text-[9px] font-mono text-[#141414]/50 uppercase leading-none mt-0.5">{s.department} | @{s.slack_user_id}</p>
+                                 <p className="text-[9px] font-mono text-[#141414]/50 uppercase leading-none mt-0.5">{s.department} {s.department_code && `(${s.department_code})`} | @{s.slack_user_id}</p>
                               </div>
                            </div>
                          ))}
+                      </div>
+                   </div>
+
+                   {/* Routing Master */}
+                   <div className="space-y-6">
+                      <div className="flex items-center justify-between border-b border-emerald-600/20 pb-3">
+                         <div className="flex items-center gap-3">
+                            <GitBranch className="w-4 h-4 text-emerald-600" />
+                            <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">ルーティング設定</h3>
+                         </div>
+                         <div className="flex items-center gap-4">
+                            <button 
+                              onClick={() => {
+                                setEditingRule({ department: "", approver_slack_id: "", stamp_operator_slack_id: "", manager_slack_id: "", slack_channel_id: "", is_active: true });
+                              }}
+                              className="p-1 hover:bg-emerald-50 text-emerald-600 rounded-sm"
+                            >
+                              <Plus className="w-4 h-4" />
+                            </button>
+                            <span className="text-[10px] font-mono opacity-40 font-bold">{workflowRules.length}</span>
+                         </div>
+                      </div>
+                      <div className="space-y-3">
+                         {workflowRules.map(rule => (
+                           <div key={rule.department} className="p-4 border border-[#141414]/5 bg-white group hover:border-emerald-600/30 transition-all hover:shadow-lg">
+                              {editingRule?.department === rule.department ? (
+                                <div className="space-y-3">
+                                   <div>
+                                      <label className="text-[8px] font-mono opacity-40 uppercase">部署名</label>
+                                      <input 
+                                        disabled
+                                        value={rule.department}
+                                        className="w-full text-xs font-mono border-b p-1 bg-gray-50"
+                                      />
+                                   </div>
+                                   <div>
+                                      <label className="text-[8px] font-mono opacity-40 uppercase">不備承認者 (Slack ID)</label>
+                                      <input 
+                                        value={editingRule.approver_slack_id}
+                                        onChange={e => setEditingRule({...editingRule, approver_slack_id: e.target.value})}
+                                        className="w-full text-xs font-mono border-b p-1 focus:border-emerald-600 outline-none"
+                                        placeholder="U12345678"
+                                      />
+                                   </div>
+                                   <div>
+                                      <label className="text-[8px] font-mono opacity-40 uppercase">押印・送付担当 (Slack ID)</label>
+                                      <input 
+                                        value={editingRule.stamp_operator_slack_id}
+                                        onChange={e => setEditingRule({...editingRule, stamp_operator_slack_id: e.target.value})}
+                                        className="w-full text-xs font-mono border-b p-1 focus:border-emerald-600 outline-none"
+                                        placeholder="U12345678"
+                                      />
+                                   </div>
+                                   <div>
+                                      <label className="text-[8px] font-mono opacity-40 uppercase">管理者 (Slack ID)</label>
+                                      <input 
+                                        value={editingRule.manager_slack_id}
+                                        onChange={e => setEditingRule({...editingRule, manager_slack_id: e.target.value})}
+                                        className="w-full text-xs font-mono border-b p-1 focus:border-emerald-600 outline-none"
+                                        placeholder="U12345678"
+                                      />
+                                   </div>
+                                   <div>
+                                      <label className="text-[8px] font-mono opacity-40 uppercase">返信先チャンネル ID</label>
+                                      <input 
+                                        value={editingRule.slack_channel_id}
+                                        onChange={e => setEditingRule({...editingRule, slack_channel_id: e.target.value})}
+                                        className="w-full text-xs font-mono border-b p-1 focus:border-emerald-600 outline-none"
+                                        placeholder="C012345678"
+                                      />
+                                   </div>
+                                   <div className="flex gap-2 pt-2">
+                                      <button 
+                                        onClick={() => saveWorkflowRule(editingRule)}
+                                        className="flex-1 py-1 bg-emerald-600 text-white text-[9px] font-mono font-bold uppercase"
+                                      >保存</button>
+                                      <button 
+                                        onClick={() => setEditingRule(null)}
+                                        className="flex-1 py-1 bg-gray-100 text-gray-600 text-[9px] font-mono font-bold uppercase"
+                                      >取消</button>
+                                   </div>
+                                </div>
+                              ) : (
+                                <>
+                                  <div className="flex justify-between items-start mb-2">
+                                     <p className="text-xs font-bold uppercase">{rule.department}</p>
+                                     <div className={`w-1.5 h-1.5 rounded-full ${rule.is_active ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+                                  </div>
+                                  <div className="space-y-1">
+                                     <div className="flex justify-between text-[9px] font-mono">
+                                        <span className="opacity-40 uppercase">承認者</span>
+                                        <span className="font-bold">@{rule.approver_slack_id || '未設定'}</span>
+                                     </div>
+                                     <div className="flex justify-between text-[9px] font-mono">
+                                        <span className="opacity-40 uppercase">押印担当</span>
+                                        <span className="font-bold">@{rule.stamp_operator_slack_id || '未設定'}</span>
+                                     </div>
+                                     <div className="flex flex-col gap-0.5 mt-2 pt-2 border-t border-dashed border-gray-100">
+                                        <span className="text-[8px] font-mono opacity-40 uppercase">返信先 (チャンネル ID)</span>
+                                        <span className="text-[10px] font-mono font-bold text-blue-600">{rule.slack_channel_id || 'デフォルト'}</span>
+                                     </div>
+                                  </div>
+                                  <div className="mt-4 flex justify-end">
+                                     <button 
+                                       onClick={() => setEditingRule(rule)}
+                                       className="text-[8px] font-mono font-bold uppercase px-2 py-1 border border-[#141414]/10 hover:bg-[#141414] hover:text-white transition-all shadow-sm"
+                                     >設定編集</button>
+                                  </div>
+                                </>
+                              )}
+                           </div>
+                         ))}
+                         {editingRule && !workflowRules.find(r => r.department === editingRule.department) && (
+                            <div className="p-4 border border-emerald-600 bg-white shadow-xl">
+                               <div className="space-y-3">
+                                  <div>
+                                     <label className="text-[8px] font-mono opacity-40 uppercase">新規部署名</label>
+                                     <input 
+                                       value={editingRule.department}
+                                       onChange={e => setEditingRule({...editingRule, department: e.target.value})}
+                                       className="w-full text-xs font-mono border-b p-1 focus:border-emerald-600 outline-none"
+                                       placeholder="部署名を入力..."
+                                       autoFocus
+                                     />
+                                  </div>
+                                  <div>
+                                      <label className="text-[8px] font-mono opacity-40 uppercase">承認者 (Slack ID)</label>
+                                      <input 
+                                        value={editingRule.approver_slack_id}
+                                        onChange={e => setEditingRule({...editingRule, approver_slack_id: e.target.value})}
+                                        className="w-full text-xs font-mono border-b p-1 focus:border-emerald-600 outline-none"
+                                        placeholder="U12345678"
+                                      />
+                                  </div>
+                                  <div className="flex gap-2 pt-2">
+                                     <button 
+                                       onClick={() => saveWorkflowRule(editingRule)}
+                                       className="flex-1 py-1 bg-emerald-600 text-white text-[9px] font-mono font-bold uppercase"
+                                     >作成</button>
+                                     <button 
+                                       onClick={() => setEditingRule(null)}
+                                       className="flex-1 py-1 bg-gray-100 text-gray-600 text-[9px] font-mono font-bold uppercase"
+                                     >取消</button>
+                                  </div>
+                               </div>
+                            </div>
+                         )}
                       </div>
                    </div>
 
@@ -2012,6 +2249,219 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Settings Tab */}
+      <AnimatePresence>
+        {activeTab === 'settings' && (
+          <motion.div 
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 10 }}
+            className="fixed inset-0 top-[65px] bg-[#FDFDFD] z-40 p-12 overflow-y-auto"
+          >
+             <div className="max-w-4xl mx-auto space-y-12">
+                <div className="border-b border-[#141414]/10 pb-8 text-center">
+                   <h2 className="text-3xl font-mono font-bold uppercase tracking-tighter">System Configuration</h2>
+                   <p className="text-xs font-mono text-[#141414]/40 mt-2">ENVIRONMENT VARIABLES & APP-WIDE LOGIC OVERRIDES</p>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-12">
+                   <div className="space-y-8">
+                      <section className="p-6 border border-[#141414]/10 bg-white space-y-6">
+                        <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-3">
+                           <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                           <h3 className="text-xs font-mono font-bold uppercase">Company Identity</h3>
+                        </div>
+                        <div className="space-y-4">
+                           <div className="space-y-1">
+                              <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">Legal Name</label>
+                              <input 
+                                value={appSettings.COMPANY_NAME || companyProfile?.name || ""} 
+                                onChange={e => setAppSettings({...appSettings, COMPANY_NAME: e.target.value})}
+                                className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-[#141414]"
+                              />
+                           </div>
+                           <div className="space-y-1">
+                              <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">Primary Address</label>
+                              <textarea 
+                                value={appSettings.COMPANY_ADDRESS || companyProfile?.address || ""} 
+                                rows={2}
+                                onChange={e => setAppSettings({...appSettings, COMPANY_ADDRESS: e.target.value})}
+                                className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-[#141414] resize-none"
+                              />
+                           </div>
+                           <div className="space-y-1">
+                              <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">Representative</label>
+                              <input 
+                                value={appSettings.COMPANY_REPRESENTATIVE || companyProfile?.representative || ""} 
+                                onChange={e => setAppSettings({...appSettings, COMPANY_REPRESENTATIVE: e.target.value})}
+                                className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-[#141414]"
+                              />
+                           </div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            fetch('/api/master/app-settings', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ settings: appSettings })
+                            }).then(() => {
+                              showNotification("Company Identity Synchronized", "success");
+                              // Refresh profile
+                              fetch('/api/master/company-profile').then(r => r.json()).then(p => setCompanyProfile(p));
+                            });
+                          }}
+                          className="w-full py-2 bg-[#141414] text-white font-mono text-[10px] font-bold uppercase tracking-widest hover:invert transition-all"
+                        >Update Identity</button>
+                      </section>
+
+                      <section className="p-6 border border-[#141414]/10 bg-white space-y-6">
+                        <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-3">
+                           <GitBranch className="w-4 h-4 text-blue-600" />
+                           <h3 className="text-xs font-mono font-bold uppercase">Backlog Integration</h3>
+                        </div>
+                        <div className="space-y-4">
+                           <div className="p-3 bg-blue-50 border border-blue-100 rounded-sm">
+                              <p className="text-[9px] font-mono text-blue-800 uppercase flex items-center gap-2">
+                                <CheckCircle2 className="w-3 h-3" /> Status: {appSettings.BACKLOG_API_KEY ? "Configured" : "Env Only"}
+                              </p>
+                           </div>
+                           <div className="space-y-3">
+                              <div className="space-y-1">
+                                 <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">API Key</label>
+                                 <input 
+                                   type="password" 
+                                   value={appSettings.BACKLOG_API_KEY || ""} 
+                                   onChange={e => setAppSettings({...appSettings, BACKLOG_API_KEY: e.target.value})}
+                                   placeholder="Your Backlog API Key"
+                                   className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500"
+                                 />
+                              </div>
+                              <div className="space-y-1">
+                                 <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">Space Host</label>
+                                 <input 
+                                   value={appSettings.BACKLOG_HOST || ""} 
+                                   onChange={e => setAppSettings({...appSettings, BACKLOG_HOST: e.target.value})}
+                                   placeholder="example.backlog.com"
+                                   className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500"
+                                 />
+                              </div>
+                              <div className="space-y-1">
+                                 <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">Project Key</label>
+                                 <input 
+                                   value={appSettings.BACKLOG_PROJECT_KEY || ""} 
+                                   onChange={e => setAppSettings({...appSettings, BACKLOG_PROJECT_KEY: e.target.value})}
+                                   placeholder="LEGAL"
+                                   className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500"
+                                 />
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  fetch('/api/master/app-settings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ settings: appSettings })
+                                  }).then(() => showNotification("Backlog Settings Saved", "success"));
+                                }}
+                                className="w-full py-2 bg-blue-600 text-white font-mono text-[9px] font-bold uppercase tracking-widest hover:bg-blue-700 transition-all mt-2"
+                              >Apply Settings</button>
+                           </div>
+                        </div>
+                      </section>
+                   </div>
+
+                   <div className="space-y-8">
+                      <section className="p-6 border border-[#141414]/10 bg-white space-y-6">
+                        <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-3">
+                           <Users className="w-4 h-4 text-blue-400" />
+                           <h3 className="text-xs font-mono font-bold uppercase">Slack Bot Workspace</h3>
+                        </div>
+                        <div className="space-y-4">
+                           <div className="p-3 bg-blue-50 border border-blue-100 rounded-sm">
+                              <p className="text-[9px] font-mono text-blue-800 uppercase flex items-center gap-2">
+                                <CheckCircle2 className="w-3 h-3" /> Status: {appSettings.SLACK_BOT_TOKEN ? "Configured" : "Env Only"}
+                              </p>
+                           </div>
+                           <div className="space-y-3">
+                              <div className="space-y-1">
+                                 <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">Bot Token</label>
+                                 <input 
+                                   type="password" 
+                                   value={appSettings.SLACK_BOT_TOKEN || ""} 
+                                   onChange={e => setAppSettings({...appSettings, SLACK_BOT_TOKEN: e.target.value})}
+                                   placeholder="xoxb-..."
+                                   className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500"
+                                 />
+                              </div>
+                              <div className="space-y-1">
+                                 <label className="text-[9px] font-mono font-bold text-[#141414]/50 uppercase">Signing Secret</label>
+                                 <input 
+                                   type="password" 
+                                   value={appSettings.SLACK_SIGNING_SECRET || ""} 
+                                   onChange={e => setAppSettings({...appSettings, SLACK_SIGNING_SECRET: e.target.value})}
+                                   className="w-full text-xs font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500"
+                                 />
+                              </div>
+                           </div>
+                           <div className="space-y-2 pt-4 border-t border-dashed">
+                              <p className="text-[9px] font-mono font-bold uppercase">Reply Templates</p>
+                              <div className="space-y-4">
+                                 <div className="space-y-1">
+                                    <label className="text-[8px] font-mono text-gray-400">User Reception (DM)</label>
+                                    <textarea 
+                                      value={appSettings['slack_answer_back_user']?.template || ''}
+                                      onChange={(e) => setAppSettings({
+                                        ...appSettings,
+                                        slack_answer_back_user: { ...appSettings['slack_answer_back_user'], template: e.target.value }
+                                      })}
+                                      className="w-full text-[10px] font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500 h-20 resize-none"
+                                    />
+                                 </div>
+                                 <div className="space-y-1">
+                                    <label className="text-[8px] font-mono text-gray-400">Channel Notification</label>
+                                    <textarea 
+                                      value={appSettings['slack_answer_back_channel']?.template || ''}
+                                      onChange={(e) => setAppSettings({
+                                        ...appSettings,
+                                        slack_answer_back_channel: { ...appSettings['slack_answer_back_channel'], template: e.target.value }
+                                      })}
+                                      className="w-full text-[10px] font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500 h-20 resize-none"
+                                    />
+                                 </div>
+                              </div>
+                              <button 
+                                onClick={() => {
+                                  fetch('/api/master/app-settings', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ settings: appSettings })
+                                  }).then(() => showNotification("Slack Templates Persisted", "success"));
+                                }}
+                                className="w-full py-2 border border-blue-600 text-blue-600 font-mono text-[9px] font-bold uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all"
+                              >Save Templates</button>
+                           </div>
+                        </div>
+                      </section>
+
+                      <section className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                         <div className="flex items-center gap-2 border-b border-[#141414]/10 pb-3">
+                            <Database className="w-4 h-4 text-purple-600" />
+                            <h3 className="text-xs font-mono font-bold uppercase">Database Hygiene</h3>
+                         </div>
+                         <p className="text-[10px] font-mono text-gray-400 uppercase italic leading-relaxed">
+                            WARNING: Data reconciliation is automatic, but manual overrides can lead to relational inconsistencies.
+                         </p>
+                         <div className="grid grid-cols-2 gap-4">
+                            <button className="py-2 border border-[#141414]/20 text-[9px] font-mono font-bold uppercase hover:bg-red-500 hover:text-white hover:border-red-500 transition-all">Clear Session</button>
+                            <button className="py-2 border border-[#141414]/20 text-[9px] font-mono font-bold uppercase hover:bg-orange-500 hover:text-white hover:border-orange-500 transition-all">Sync Assets</button>
+                         </div>
+                      </section>
+                   </div>
+                </div>
+             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Asset Picker Overlay */}
       <AnimatePresence>
         {isAssetPickerOpen && (
@@ -2101,6 +2551,340 @@ export default function App() {
                  </div>
               </div>
 
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Staff Detail Modal */}
+      <AnimatePresence>
+        {selectedStaffDetail && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => {
+                setSelectedStaffDetail(null);
+                setIsEditingStaff(false);
+              }}
+              className="absolute inset-0 bg-[#FDFDFD]/95 backdrop-blur-xl"
+            />
+            <motion.div 
+              initial={{ scale: 0.98, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.98, opacity: 0 }}
+              className="relative w-full max-w-4xl max-h-[90vh] bg-white border border-[#141414] shadow-2xl z-10 flex flex-col overflow-hidden"
+            >
+              <div className="p-4 bg-[#141414] text-white flex justify-between items-center">
+                 <div className="flex items-center gap-3">
+                    <User className="w-5 h-5 text-blue-400" />
+                    <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">Internal Staff Identity</h3>
+                 </div>
+                 <button onClick={() => {
+                    setSelectedStaffDetail(null);
+                    setIsEditingStaff(false);
+                 }} className="hover:rotate-90 transition-transform">
+                    <Plus className="w-5 h-5 rotate-45" />
+                 </button>
+              </div>
+              
+              <div className="flex-1 overflow-auto p-12 bg-gray-50/50">
+                 <div className="grid grid-cols-12 gap-12">
+                    <div className="col-span-4 space-y-8">
+                       <div className="text-center p-8 bg-white border border-[#141414]/10 rounded-sm">
+                          <div className="w-20 h-20 bg-blue-600 text-white text-3xl font-mono flex items-center justify-center mx-auto mb-6">
+                             {selectedStaffDetail.staff_name.charAt(0)}
+                          </div>
+                          <h4 className="text-lg font-mono font-bold uppercase truncate">{selectedStaffDetail.staff_name}</h4>
+                          <p className="text-[10px] font-mono text-blue-600 font-bold mt-1">@{selectedStaffDetail.slack_user_id}</p>
+                       </div>
+                    </div>
+
+                    <div className="col-span-8 space-y-10 bg-white p-8 border border-[#141414]/10">
+                       <div className="flex justify-between items-center border-b border-[#141414]/10 pb-4">
+                          <h5 className="text-[11px] font-mono font-bold uppercase tracking-widest text-[#141414]/60">Member Profile</h5>
+                          <button 
+                            onClick={() => setIsEditingStaff(!isEditingStaff)}
+                            className="text-[10px] font-mono font-bold uppercase px-4 py-1 border border-[#141414]/20 hover:bg-[#141414] hover:text-white transition-all"
+                          >
+                             {isEditingStaff ? "CANCEL EDIT" : "EDIT PROFILE"}
+                          </button>
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-y-8 gap-x-12">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">氏名 / Name</label>
+                            {isEditingStaff ? (
+                               <input value={selectedStaffDetail.staff_name} onChange={e => setSelectedStaffDetail({...selectedStaffDetail, staff_name: e.target.value})} className="w-full text-xs font-mono p-2 border border-blue-200 focus:outline-none" />
+                            ) : (
+                               <p className="text-xs font-mono uppercase font-bold">{selectedStaffDetail.staff_name}</p>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">部署名 / Department</label>
+                            {isEditingStaff ? (
+                               <input value={selectedStaffDetail.department} onChange={e => setSelectedStaffDetail({...selectedStaffDetail, department: e.target.value})} className="w-full text-xs font-mono p-2 border border-blue-200 focus:outline-none" />
+                            ) : (
+                               <p className="text-xs font-mono uppercase font-bold">{selectedStaffDetail.department || 'GLOBAL'}</p>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">部署コード / Dept Code</label>
+                            {isEditingStaff ? (
+                               <input value={selectedStaffDetail.department_code} maxLength={3} onChange={e => setSelectedStaffDetail({...selectedStaffDetail, department_code: e.target.value.toUpperCase()})} className="w-full text-xs font-mono p-2 border border-blue-200 focus:outline-none" placeholder="e.g. DOM" />
+                            ) : (
+                               <p className="text-[10px] font-mono uppercase font-bold text-blue-600">{selectedStaffDetail.department_code || '---'}</p>
+                            )}
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">メールアドレス / Email</label>
+                            {isEditingStaff ? (
+                               <input value={selectedStaffDetail.email} onChange={e => setSelectedStaffDetail({...selectedStaffDetail, email: e.target.value})} className="w-full text-xs font-mono p-2 border border-blue-200 focus:outline-none" />
+                            ) : (
+                               <p className="text-[10px] font-mono font-bold">{selectedStaffDetail.email || 'NO_ALIAS'}</p>
+                            )}
+                          </div>
+                       </div>
+
+                       {isEditingStaff && (
+                          <div className="flex gap-4 pt-4 border-t border-gray-100">
+                             <button 
+                               onClick={() => {
+                                  fetch('/api/master/staff', {
+                                     method: 'POST',
+                                     headers: { 'Content-Type': 'application/json' },
+                                     body: JSON.stringify(selectedStaffDetail)
+                                  }).then(r => {
+                                     if(r.ok) {
+                                        showNotification("Profile Synchronized", "success");
+                                        setIsEditingStaff(false);
+                                        // Refresh basic list
+                                        fetch('/api/master/staff').then(res => res.json()).then(data => setStaffList(data));
+                                     }
+                                  });
+                               }}
+                               className="px-8 py-3 bg-[#141414] text-white font-mono text-[10px] font-bold uppercase tracking-widest hover:invert transition-all"
+                             >
+                                SYNC TO MASTER DB
+                             </button>
+                             <button 
+                               onClick={() => setIsEditingStaff(false)}
+                               className="px-8 py-3 bg-gray-100 text-gray-600 font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-all"
+                             >
+                                REJECT
+                             </button>
+                          </div>
+                       )}
+                    </div>
+                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Vendor Detail Modal */}
+      <AnimatePresence>
+        {selectedVendorDetail && (
+          <div className="fixed inset-0 z-[120] flex items-center justify-center p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-[#FDFDFD]/95 backdrop-blur-xl"
+              onClick={() => setSelectedVendorDetail(null)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.98 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.98 }}
+              className="w-full max-w-4xl max-h-[90vh] bg-white border border-[#141414] shadow-2xl z-10 flex flex-col overflow-hidden"
+            >
+              <div className="p-4 bg-[#141414] text-white flex justify-between items-center">
+                 <div className="flex items-center gap-3">
+                    <Building2 className="w-5 h-5 text-orange-400" />
+                    <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">Partner Identity Detail</h3>
+                 </div>
+                 <button onClick={() => setSelectedVendorDetail(null)} className="hover:rotate-90 transition-transform">
+                    <Plus className="w-5 h-5 rotate-45" />
+                 </button>
+              </div>
+              
+              <div className="flex-1 overflow-y-auto p-12 bg-gray-50/50">
+                 <div className="grid grid-cols-12 gap-12">
+                    <div className="col-span-4 space-y-8">
+                       <div className="text-center p-8 bg-white border border-[#141414]/10 rounded-sm">
+                          <div className="w-20 h-20 bg-[#141414] text-white text-3xl font-mono flex items-center justify-center mx-auto mb-6">
+                             {selectedVendorDetail.vendor_name.charAt(0)}
+                          </div>
+                          <h4 className="text-lg font-mono font-bold uppercase truncate">{selectedVendorDetail.vendor_name}</h4>
+                          <p className="text-[10px] font-mono text-orange-600 font-bold mt-1">{selectedVendorDetail.vendor_code}</p>
+                       </div>
+
+                       <div className="p-6 bg-orange-50 border border-orange-100 space-y-4">
+                          <h5 className="text-[9px] font-mono font-bold uppercase text-orange-900 border-b border-orange-200 pb-2 flex items-center gap-2">
+                             <Upload className="w-3 h-3" /> 変更届の登録 (Upload Change Request)
+                          </h5>
+                          <p className="text-[8px] font-mono text-orange-800 leading-relaxed uppercase">
+                             Googleドライブに保管された変更通知文書を紐付けます。
+                          </p>
+                          <div className="space-y-2">
+                             <input 
+                                type="file" 
+                                id="change-request-v" 
+                                className="hidden" 
+                                onChange={async (e) => {
+                                  const file = e.target.files?.[0];
+                                  if (!file) return;
+                                  
+                                  const formDataUpload = new FormData();
+                                  formDataUpload.append('file', file);
+                                  formDataUpload.append('vendor_code', selectedVendorDetail.vendor_code);
+                                  
+                                  setIsUploadingChangeRequest(true);
+                                  try {
+                                    const res = await fetch('/api/master/vendors/upload-change-request', {
+                                      method: 'POST',
+                                      body: formDataUpload
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      showNotification("Change request uploaded to Google Drive", "success");
+                                      // Potentially update vendor record with the link
+                                      setSelectedVendorDetail({ ...selectedVendorDetail, last_change_request_link: data.driveLink });
+                                    }
+                                  } catch (err) {
+                                    showNotification("Upload failed", "error");
+                                  } finally {
+                                    setIsUploadingChangeRequest(false);
+                                  }
+                                }}
+                             />
+                             <button 
+                                onClick={() => document.getElementById('change-request-v')?.click()}
+                                disabled={isUploadingChangeRequest}
+                                className="w-full py-2 bg-orange-600 text-white font-mono text-[9px] font-bold uppercase tracking-widest flex items-center justify-center gap-2 hover:bg-orange-700 transition-all disabled:opacity-50"
+                             >
+                                {isUploadingChangeRequest ? <Loader2 className="w-3 h-3 animate-spin" /> : <Upload className="w-3 h-3" />}
+                                UPLOAD TO DRIVE
+                             </button>
+                             {selectedVendorDetail.last_change_request_link && (
+                               <a 
+                                 href={selectedVendorDetail.last_change_request_link} 
+                                 target="_blank" 
+                                 rel="noreferrer"
+                                 className="block text-center py-1 text-[9px] font-mono text-blue-600 underline uppercase truncate"
+                               >
+                                 VIEW LATEST ATTACHMENT
+                               </a>
+                             )}
+                          </div>
+                       </div>
+                    </div>
+
+                    <div className="col-span-8 space-y-8 bg-white p-8 border border-[#141414]/10">
+                       <div className="flex justify-between items-center border-b border-[#141414]/10 pb-4">
+                          <h4 className="text-xs font-mono font-bold uppercase tracking-widest">Identity Parameters</h4>
+                          <button 
+                            onClick={() => setIsEditingVendor(!isEditingVendor)}
+                            className="text-[10px] font-mono font-bold uppercase px-4 py-1 border border-[#141414]/20 hover:bg-[#141414] hover:text-white transition-all"
+                          >
+                             {isEditingVendor ? "CANCEL EDIT" : "EDIT PROFILE"}
+                          </button>
+                       </div>
+
+                       <div className="grid grid-cols-2 gap-8">
+                          <div className="space-y-4">
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Trade Name / Alias</label>
+                                {isEditingVendor ? (
+                                   <input value={selectedVendorDetail.trade_name} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, trade_name: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
+                                ) : (
+                                   <p className="text-xs font-mono uppercase font-bold">{selectedVendorDetail.trade_name || 'NOT DEFINED'}</p>
+                                )}
+                             </div>
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Entity Type</label>
+                                {isEditingVendor ? (
+                                   <select value={selectedVendorDetail.entity_type} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, entity_type: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200">
+                                      <option value="corporate">法人 (Corporate)</option>
+                                      <option value="individual">個人 (Individual)</option>
+                                   </select>
+                                ) : (
+                                   <p className="text-xs font-mono uppercase">{selectedVendorDetail.entity_type === 'corporate' ? '法人' : '個人'}</p>
+                                )}
+                             </div>
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Tax Registration No.</label>
+                                {isEditingVendor ? (
+                                   <input value={selectedVendorDetail.invoice_registration_number} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, invoice_registration_number: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
+                                ) : (
+                                   <p className="text-[10px] font-mono uppercase font-bold">{selectedVendorDetail.invoice_registration_number || 'T--'}</p>
+                                )}
+                             </div>
+                          </div>
+
+                          <div className="space-y-4 border-l border-gray-50 pl-8">
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Contact Information</label>
+                                <div className="space-y-2 mt-2">
+                                   <div className="flex items-center gap-2 text-xs font-mono">
+                                      <span className="opacity-40 uppercase">Email:</span>
+                                      {isEditingVendor ? (
+                                         <input value={selectedVendorDetail.email} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, email: e.target.value})} className="flex-1 text-[10px] p-1 border" />
+                                      ) : (
+                                         <span>{selectedVendorDetail.email || 'N/A'}</span>
+                                      )}
+                                   </div>
+                                   <div className="flex items-center gap-2 text-xs font-mono">
+                                      <span className="opacity-40 uppercase">Rep:</span>
+                                      {isEditingVendor ? (
+                                         <input value={selectedVendorDetail.contact_name} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, contact_name: e.target.value})} className="flex-1 text-[10px] p-1 border" />
+                                      ) : (
+                                         <span>{selectedVendorDetail.contact_name || 'N/A'}</span>
+                                      )}
+                                   </div>
+                                </div>
+                             </div>
+                             <div className="space-y-1 pt-4 border-t border-gray-50 mt-4">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Financial Node</label>
+                                <p className="text-[10px] font-mono uppercase mt-1">{selectedVendorDetail.bank_name} {selectedVendorDetail.branch_name}</p>
+                                <p className="text-[10px] font-mono mt-0.5">{selectedVendorDetail.account_type || '普通'} {selectedVendorDetail.account_number}</p>
+                             </div>
+                          </div>
+                       </div>
+                       
+                       {isEditingVendor && (
+                          <div className="pt-8 border-t border-gray-100 flex gap-4">
+                             <button 
+                                onClick={() => {
+                                   fetch('/api/master/vendors', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify(selectedVendorDetail)
+                                   }).then(() => {
+                                      showNotification("Identity parameters synchronized", "success");
+                                      setIsEditingVendor(false);
+                                      // Refresh vendors list
+                                      fetch('/api/master/vendors').then(r => r.json()).then(d => setVendors(d));
+                                   });
+                                }}
+                                className="flex-1 py-3 bg-emerald-600 text-white font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-emerald-700 transition-all"
+                             >
+                                COMMIT CHANGES
+                             </button>
+                             <button 
+                                onClick={() => setIsEditingVendor(false)}
+                                className="px-8 py-3 bg-gray-100 text-gray-600 font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-all"
+                             >
+                                REJECT
+                             </button>
+                          </div>
+                       )}
+                    </div>
+                 </div>
+              </div>
             </motion.div>
           </div>
         )}

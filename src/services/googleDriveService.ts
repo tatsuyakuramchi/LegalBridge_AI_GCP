@@ -70,4 +70,31 @@ export class GoogleDriveService {
       throw error;
     }
   }
+
+  async uploadFile(stream: Readable, fileName: string, mimeType: string, folderId?: string): Promise<string> {
+    const folder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    const fileMetadata = {
+      name: fileName,
+      parents: folder ? [folder] : [],
+    };
+
+    const media = {
+      mimeType: mimeType,
+      body: stream,
+    };
+
+    try {
+      const response = await this.drive.files.create({
+        requestBody: fileMetadata,
+        media: media,
+        fields: "id, webViewLink",
+      });
+
+      return response.data.webViewLink || "";
+    } catch (error) {
+      console.error("Error uploading file to Google Drive:", error);
+      throw error;
+    }
+  }
 }

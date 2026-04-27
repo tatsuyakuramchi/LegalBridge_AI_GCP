@@ -13,14 +13,14 @@ export class BacklogService {
   private apiKey: string;
   private projectKey: string;
 
-  constructor() {
-    let host = process.env.BACKLOG_HOST || "";
+  constructor(config?: { host?: string; apiKey?: string; projectKey?: string }) {
+    let host = config?.host || process.env.BACKLOG_HOST || "";
     // Remove https:// or http:// if present
     host = host.replace(/^https?:\/\//, "").replace(/\/$/, "");
     
     this.baseUrl = host ? `https://${host}/api/v2` : "";
-    this.apiKey = process.env.BACKLOG_API_KEY || "";
-    this.projectKey = process.env.BACKLOG_PROJECT_KEY || "";
+    this.apiKey = config?.apiKey || process.env.BACKLOG_API_KEY || "";
+    this.projectKey = config?.projectKey || process.env.BACKLOG_PROJECT_KEY || "";
   }
 
   private getUrl(path: string) {
