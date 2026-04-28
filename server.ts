@@ -31,6 +31,39 @@ dotenv.config();
     const PORT = Number(process.env.PORT) || 3000;
     console.log("🚀 Starting server...");
 
+    const settingsResult = await query("SELECT * FROM app_settings");
+    const dbSettings: Record<string, any> = {};
+    settingsResult.rows.forEach(r => dbSettings[r.key] = r.value);
+    console.log("✅ Settings loaded");
+
+    // Slack Setup
+    const slackBotToken = dbSettings.SLACK_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
+    const slackSigningSecret = dbSettings.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET;
+
+    let slackApp: App | null = null;
+    let receiver: ExpressReceiver | null = null;
+
+    if (slackBotToken && slackSigningSecret) {
+      receiver = new ExpressReceiver({
+        signingSecret: slackSigningSecret,
+        endpoints: {
+          commands: "/slack/commands",
+          actions: "/slack/interactions",
+          events: "/slack/events",
+        },
+        processBeforeResponse: true, // Try setting this to true to ensure ack is sent
+      });
+
+      slackApp = new App({
+        token: slackBotToken,
+        receiver,
+        logLevel: LogLevel.INFO,
+      });
+
+      // Mount Slack Receiver FIRST, before any other middleware
+      app.use(receiver.router);
+    }
+
     const turndownService = new TurndownService({
       headingStyle: 'atx',
       codeBlockStyle: 'fenced',
@@ -53,10 +86,6 @@ dotenv.config();
     });
 
     console.log("⏳ Fetching app settings...");
-    const settingsResult = await query("SELECT * FROM app_settings");
-    const dbSettings: Record<string, any> = {};
-    settingsResult.rows.forEach(r => dbSettings[r.key] = r.value);
-    console.log("✅ Settings loaded");
 
   const backlogService = new BacklogService({
     host: dbSettings.BACKLOG_HOST || process.env.BACKLOG_HOST,
@@ -65,36 +94,13 @@ dotenv.config();
   });
   const documentService = new DocumentService();
   const googleDriveService = new GoogleDriveService();
-  const csvImportService = new CsvImportService();
+    const csvImportService = new CsvImportService();
 
-  const upload = multer({ storage: multer.memoryStorage() });
+    const upload = multer({ storage: multer.memoryStorage() });
 
-  // Slack Setup
-  const slackBotToken = dbSettings.SLACK_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
-  const slackSigningSecret = dbSettings.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET;
-
-  let slackApp: App | null = null;
-  let receiver: ExpressReceiver | null = null;
-
-  if (slackBotToken && slackSigningSecret) {
-    receiver = new ExpressReceiver({
-      signingSecret: slackSigningSecret,
-      endpoints: {
-        commands: "/slack/commands",
-        actions: "/slack/interactions",
-        events: "/slack/events",
-      },
-      processBeforeResponse: false,
-    });
-
-    slackApp = new App({
-      token: slackBotToken,
-      receiver,
-      logLevel: LogLevel.INFO,
-    });
-
-    // --- Slack Helpers ---
-    const getLegalRequestModal = (selectedType: string = "legal_consult"): any => {
+    if (slackApp && receiver) {
+      // --- Slack Helpers ---
+      const getLegalRequestModal = (selectedType: string = "legal_consult"): any => {
       const blocks: any[] = [
         {
           type: "input",
@@ -602,15 +608,10 @@ ${details}
     });
 
     console.log("🚀 Slack Bolt app initialized with LegalBridge handlers");
-  } else {
-    console.warn("⚠️ Slack credentials missing. Slack endpoints will not be active.");
   }
 
   // API Routes
-  // Slack Receiver Middleware
-  if (receiver) {
-    app.use(receiver.router);
-  }
+  // Note: Slack Receiver is already mounted above
 
   // Error handling for Slack
   if (slackApp) {
