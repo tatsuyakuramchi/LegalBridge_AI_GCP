@@ -465,9 +465,43 @@ export default function App() {
     }
   };
 
-  const renderDynamicField = (field: string) => {
+  const renderPartySection = (prefix: string) => {
+    const isIndividual = formData[`${prefix}_is_individual`] === true;
+    
+    // Mapping for different templates
+    const nameField = selectedTemplate === 'individual_license_terms' ? `${prefix}_名称` : prefix.toLowerCase();
+    const repField = selectedTemplate === 'individual_license_terms' ? `${prefix}_代表者名` : `${prefix.toLowerCase()}_rep`;
+    const addressField = `${prefix}_住所`;
+
+    return (
+      <div className="space-y-4">
+        <div className="flex bg-gray-100/50 p-1 rounded-sm gap-1">
+          <button 
+            onClick={() => setFormData({ ...formData, [`${prefix}_is_individual`]: false })}
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-[9px] font-mono font-bold transition-all ${!isIndividual ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <Building2 className="w-3.5 h-3.5" /> 法人
+          </button>
+          <button 
+            onClick={() => setFormData({ ...formData, [`${prefix}_is_individual`]: true })}
+            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-[9px] font-mono font-bold transition-all ${isIndividual ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
+          >
+            <User className="w-3.5 h-3.5" /> 個人
+          </button>
+        </div>
+        
+        <div className="space-y-4">
+          {renderDynamicField(nameField, isIndividual ? '氏名' : '会社名')}
+          {!isIndividual && renderDynamicField(repField, '代表者名')}
+          {selectedTemplate === 'individual_license_terms' && renderDynamicField(addressField)}
+        </div>
+      </div>
+    );
+  };
+
+  const renderDynamicField = (field: string, customLabel?: string) => {
     const fieldMeta = (templateMetadata[selectedTemplate]?.vars || {})[field] || {};
-    const label = fieldMeta.label || field.replace(/^individual_license_terms_/, '').replace(/_/g, ' ');
+    const label = customLabel || fieldMeta.label || field.replace(/^individual_license_terms_/, '').replace(/_/g, ' ');
     const val = formData[field] || '';
     
     // Custom logic for specific fields
@@ -1031,7 +1065,7 @@ export default function App() {
                                   </div>
                                </div>
                                <div className="grid grid-cols-1 gap-4">
-                                  {['Licensor_名称', 'Licensor_住所', 'Licensor_氏名会社名', 'Licensor_代表者名'].map(renderDynamicField)}
+                                  {renderPartySection('Licensor')}
                                </div>
                             </div>
 
@@ -1073,7 +1107,7 @@ export default function App() {
                                   </div>
                                </div>
                                <div className="grid grid-cols-1 gap-4">
-                                  {['Licensee_名称', 'Licensee_住所', 'Licensee_氏名会社名', 'Licensee_代表者名'].map(renderDynamicField)}
+                                  {renderPartySection('Licensee')}
                                </div>
                             </div>
                           </div>
@@ -1377,7 +1411,12 @@ export default function App() {
                                       <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
                                    </div>
                                 </div>
-                                {['ledgerId', 'manufacturingIssueKey', 'licenseIssueKey', 'licensor', 'licensee', 'originalWork'].map(renderDynamicField)}
+                                <div className="space-y-4">
+                                   {['ledgerId', 'manufacturingIssueKey', 'licenseIssueKey'].map(renderDynamicField)}
+                                   {renderPartySection('licensor')}
+                                   {renderPartySection('licensee')}
+                                   {renderDynamicField('originalWork')}
+                                </div>
                              </div>
                              <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
                                 <div className="flex justify-between items-center border-b pb-2">
