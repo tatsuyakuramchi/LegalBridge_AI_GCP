@@ -33,10 +33,27 @@
       
       "BANK_NAME": { "label": "Bank Name", "group": "Financial & Payment (金銭)" },
       "BRANCH_NAME": { "label": "Branch Name", "group": "Financial & Payment (金銭)" },
+      "SWIFT_BIC": { "label": "SWIFT/BIC", "group": "Financial & Payment (金銭)" },
+      "IBAN": { "label": "IBAN", "group": "Financial & Payment (金銭)" },
+      "INTERMEDIARY_BANK": { "label": "Intermediary Bank", "group": "Financial & Payment (金銭)" },
       "ACCOUNT_TYPE": { "label": "Account Type", "group": "Financial & Payment (金銭)" },
       "ACCOUNT_NUMBER": { "label": "Account Number", "group": "Financial & Payment (金銭)" },
       "ACCOUNT_HOLDER": { "label": "Account Holder", "group": "Financial & Payment (金銭)" },
-      "SWIFT_BIC": { "label": "SWIFT/BIC", "group": "Financial & Payment (金銭)" }
+      "ACCOUNT_HOLDER_LOCAL": { "label": "Account Holder (Local Script)", "group": "Financial & Payment (金銭)" },
+      "TAX_REGISTRATION_NO": { "label": "Tax Reg No.", "group": "Financial & Payment (金銭)" },
+      "TRANSFER_FEE_CODE": { "label": "Bank Fee Code (OUR/SHA/BEN)", "group": "Financial & Payment (金銭)" },
+      
+      "ITEM_NAME": { "label": "Item Name (Single)", "group": "Services & Deliverables" },
+      "PAYMENT_METHOD": { "label": "Payment Method (Single)", "group": "Services & Deliverables" },
+
+      "ACCEPT_METHOD": { "label": "Acceptance Method", "group": "Acceptance & Signature", "type": "textarea" },
+      "ACCEPT_REPLY_DUE_DATE": { "label": "Acceptance Deadline", "group": "Acceptance & Signature", "type": "date" },
+      "SHOW_SIGN_SECTION": { "label": "Show Signature Box", "group": "Acceptance & Signature", "type": "boolean" },
+      "CONTRACTOR_ACCEPT_DATE": { "label": "Acceptance Date (Manual)", "group": "Acceptance & Signature", "type": "date" },
+
+      "TERMS_VERSION_DATE": { "label": "Terms Version Date", "group": "Legal Clauses" },
+      "NDA_SURVIVAL_YEARS": { "label": "Confidentiality Survival (Years)", "group": "Legal Clauses", "type": "number" },
+      "LATE_PAYMENT_RATE": { "label": "Late Payment Interest Rate", "group": "Legal Clauses" }
     }
   },
   "purchase_order": {
