@@ -50,6 +50,7 @@ export async function initDb() {
     `CREATE TABLE IF NOT EXISTS documents (
       id SERIAL PRIMARY KEY,
       document_number VARCHAR(100) UNIQUE,
+      legacy_document_number VARCHAR(100),
       issue_key VARCHAR(50) NOT NULL,
       template_type VARCHAR(50) NOT NULL,
       form_data JSONB NOT NULL,
@@ -58,11 +59,14 @@ export async function initDb() {
       created_by VARCHAR(255)
     );`,
     `ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_number VARCHAR(100) UNIQUE;`,
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS legacy_document_number VARCHAR(100);`,
     `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
 
     `CREATE TABLE IF NOT EXISTS document_sequences (
-      sequence_key VARCHAR(50) PRIMARY KEY,
-      current_value INTEGER DEFAULT 0
+      kind VARCHAR(50) NOT NULL,
+      year INTEGER NOT NULL,
+      current_value INTEGER DEFAULT 0,
+      PRIMARY KEY (kind, year)
     );`,
 
     // 2. Vendors
@@ -180,6 +184,8 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
       ledger_id VARCHAR(50) UNIQUE NOT NULL,
+      ledger_number VARCHAR(100),
+      contract_number VARCHAR(100),
       licensor VARCHAR(255),
       original_work TEXT,
       royalty_rate DECIMAL(5, 4),
@@ -190,6 +196,8 @@ export async function initDb() {
       linked_asset_id INTEGER, -- Link to external_assets
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS ledger_number VARCHAR(100);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS contract_number VARCHAR(100);`,
     `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
     `CREATE TABLE IF NOT EXISTS manufacturing_events (
@@ -293,14 +301,14 @@ export async function initDb() {
   }
 }
 
-export async function getNextSequenceValue(sequenceKey: string): Promise<number> {
+export async function getNextSequenceValue(kind: string, year: number): Promise<number> {
   const res = await query(
-    `INSERT INTO document_sequences (sequence_key, current_value)
-     VALUES ($1, 1)
-     ON CONFLICT (sequence_key)
+    `INSERT INTO document_sequences (kind, year, current_value)
+     VALUES ($1, $2, 1)
+     ON CONFLICT (kind, year)
      DO UPDATE SET current_value = document_sequences.current_value + 1
      RETURNING current_value`,
-    [sequenceKey]
+    [kind, year]
   );
   return res.rows[0].current_value;
 }
@@ -320,30 +328,27 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       nda: "NDA",
       purchase_order: "PO",
       contract: "CTR",
+      external_contract: "ARC",
       inspection_certificate: "INS",
       inspection_certificate_v2: "INS",
       royalty_statement: "ROY",
       payment_notice: "PAY",
       legal_request: "REQ",
-      service_master: "SRVP",
       license_master: "LIC",
       lic_individual: "ILT",
-      manufacturing: "ROY",
+      manufacturing: "MFG",
       outsourcing: "OUT",
       delivery_inspec: "INS",
       sales_master: "SAL",
       legal_consult: "REQ",
-      fee_statement: "FEE",
-      asset: "AST",
-      external_contract: "EXT",
-      design: "DSG",
-      spec: "SPC"
     };
     prefix = typeCodes[type] || (issueTypeName ? typeCodes[issueTypeName] : null) || type.toUpperCase().substring(0, 3);
   }
 
   const year = new Date().getFullYear();
-  const sequenceKey = `${prefix}-${year}`;
-  const val = await getNextSequenceValue(sequenceKey);
-  return `${prefix}-${year}-${val.toString().padStart(4, "0")}`;
+  const val = await getNextSequenceValue(prefix, year);
+  // Implementation of specific Method A format: AL-[PREFIX]-[YEAR]-[SERIAL]
+  // Using 'AL' as a fixed organizational prefix if appropriate, or just the derived prefix.
+  // The user mentioned prefix/year/serial logic.
+  return `AL-${prefix}-${year}-${val.toString().padStart(4, "0")}`;
 }

@@ -287,6 +287,7 @@ async function startServer() {
 
     // Modal submission for search
     slackApp.view("legal_search_modal", async ({ ack, body, view, client }) => {
+      // 1. Acknowledge the view_submission request immediately to avoid timeout
       await ack();
       
       const keyword = view.state.values.keyword_block.keyword_input.value || "";
@@ -294,33 +295,35 @@ async function startServer() {
       
       if (!keyword) return;
 
-      try {
-        // Search in Legal Requests (including inspection/royalty context)
-        const lrResults = await query(
-          `SELECT backlog_issue_key, summary, counterparty, request_type 
-           FROM legal_requests 
-           WHERE summary ILIKE $1 
-              OR counterparty ILIKE $1 
-              OR backlog_issue_key ILIKE $1 
-              OR request_type ILIKE $1
-           ORDER BY created_at DESC LIMIT 8`,
-          [`%${keyword}%`]
-        );
+      // 2. Perform search asynchronously in the background
+      (async () => {
+        try {
+          // Search in Legal Requests (including inspection/royalty context)
+          const lrResults = await query(
+            `SELECT backlog_issue_key, summary, counterparty, request_type 
+             FROM legal_requests 
+             WHERE summary ILIKE $1 
+                OR counterparty ILIKE $1 
+                OR backlog_issue_key ILIKE $1 
+                OR request_type ILIKE $1
+             ORDER BY created_at DESC LIMIT 8`,
+            [`%${keyword}%`]
+          );
 
-        // Search in Vendors
-        const vendorResults = await query(
-          "SELECT vendor_code, vendor_name, trade_name FROM vendors WHERE vendor_name ILIKE $1 OR vendor_code ILIKE $1 OR trade_name ILIKE $1 LIMIT 5",
-          [`%${keyword}%`]
-        );
+          // Search in Vendors
+          const vendorResults = await query(
+            "SELECT vendor_code, vendor_name, trade_name FROM vendors WHERE vendor_name ILIKE $1 OR vendor_code ILIKE $1 OR trade_name ILIKE $1 LIMIT 5",
+            [`%${keyword}%`]
+          );
 
-        let blocks: any[] = [
-          {
-            type: "header",
-            text: { type: "plain_text", text: `🔎 検索結果: ${keyword}`, emoji: true }
-          }
-        ];
+          let blocks: any[] = [
+            {
+              type: "header",
+              text: { type: "plain_text", text: `🔎 検索結果: ${keyword}`, emoji: true }
+            }
+          ];
 
-        if (lrResults.rows.length === 0 && vendorResults.rows.length === 0) {
+          if (lrResults.rows.length === 0 && vendorResults.rows.length === 0) {
           blocks.push({
             type: "section",
             text: { type: "mrkdwn", text: "該当するデータは見つかりませんでした。別のキーワードでお試しください。" }
@@ -362,19 +365,18 @@ async function startServer() {
           });
         }
 
-        await client.views.open({
-          trigger_id: (body as any).trigger_id,
-          view: {
-            type: "modal",
-            title: { type: "plain_text", text: "法務検索結果" },
-            blocks: blocks,
-            close: { type: "plain_text", text: "閉じる" }
-          }
+        // Send results via DM to the user
+        await client.chat.postMessage({
+          channel: user,
+          blocks: blocks,
+          text: `🔍 検索結果: ${keyword}`
         });
+
       } catch (error) {
         console.error("Error during Slack search:", error);
       }
-    });
+    })();
+  });
 
     // Dynamic update based on selection
     slackApp.action("request_type_input", async ({ ack, body, client, action }) => {
@@ -977,6 +979,18 @@ ${details}
     try {
       const result = await query("SELECT * FROM staff ORDER BY id ASC");
       res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // --- Numbering Service ---
+  app.get("/api/numbering/next", async (req, res) => {
+    const { type, issueTypeName } = req.query;
+    try {
+      // Note: Calling this will increment the sequence!
+      const number = await getNewDocumentNumber(String(type), issueTypeName ? String(issueTypeName) : undefined);
+      res.json({ number });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
@@ -1589,6 +1603,22 @@ ${details}
         [docNumber, issueKey, templateType, JSON.stringify(formData), driveLink, requesterEmail || "legal_user"]
       );
 
+      // --- New: Also register as an External Asset for linking/tracking ---
+      await query(
+        `INSERT INTO external_assets 
+         (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (asset_number) DO UPDATE SET file_link = EXCLUDED.file_link`,
+        [
+          docNumber, 
+          issue.summary, 
+          templateType.includes("purchase_order") ? "individual" : "contract", 
+          formData.VENDOR_NAME || formData.PARTY_B_NAME || "Internal",
+          driveLink,
+          issueKey
+        ]
+      );
+
       // --- New: Data Relay to Operational Tables ---
       if (templateType.includes("purchase_order")) {
         // Extract items from formData if available, or just the main amount
@@ -1655,6 +1685,23 @@ ${details}
         await query(
           "INSERT INTO delivery_events (backlog_issue_key, order_item_id, delivered_at, inspection_deadline, status, note) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (backlog_issue_key) DO UPDATE SET inspection_deadline = EXCLUDED.inspection_deadline, status = EXCLUDED.status",
           [issueKey, orderItemId, new Date(), formData.inspectionDeadline || null, "pending", formData.REMARKS || ""]
+        );
+      } else if (templateType === "license_master") {
+        // Create/Update License Ledger
+        await query(
+          `INSERT INTO license_contracts (backlog_issue_key, ledger_id, ledger_number, licensor, original_work)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+           ledger_number = EXCLUDED.ledger_number,
+           licensor = EXCLUDED.licensor,
+           original_work = EXCLUDED.original_work`,
+          [issueKey, formData.ledgerId || docNumber, docNumber, formData.LICENSOR_NAME || formData.PARTY_B_NAME, formData.WORK_TITLE]
+        );
+      } else if (templateType === "lic_individual") {
+        // Update License Contract with its specific number
+        await query(
+          `UPDATE license_contracts SET contract_number = $1 WHERE backlog_issue_key = $2`,
+          [docNumber, issueKey]
         );
       } else if (templateType === "royalty_statement") {
         await query(

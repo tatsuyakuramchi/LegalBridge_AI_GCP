@@ -499,9 +499,10 @@ export default function App() {
     );
   };
 
-  const renderDynamicField = (field: string, customLabel?: string) => {
+  const renderDynamicField = (field: string, customLabel?: any) => {
+    const actualLabel = typeof customLabel === 'string' ? customLabel : undefined;
     const fieldMeta = (templateMetadata[selectedTemplate]?.vars || {})[field] || {};
-    const label = customLabel || fieldMeta.label || field.replace(/^individual_license_terms_/, '').replace(/_/g, ' ');
+    const label = actualLabel || fieldMeta.label || field.replace(/^individual_license_terms_/, '').replace(/_/g, ' ');
     const val = formData[field] || '';
     
     // Custom logic for specific fields
