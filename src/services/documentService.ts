@@ -32,6 +32,7 @@ export type DocumentType =
   | "inspection_certificate_v2"
   | "intl_amendment"
   | "intl_master"
+  | "intl_purchase_order"
   | "individual_license_terms"
   | "license_master";
 

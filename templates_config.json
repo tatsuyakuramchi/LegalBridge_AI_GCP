@@ -1,0 +1,52 @@
+{
+  "intl_purchase_order": {
+    "label": "Overseas Purchase Order",
+    "category": "International",
+    "vars": {
+      "OF_NO": { "label": "Order Form No.", "group": "Basic Context (基本情報)" },
+      "OF_DATE": { "label": "Issue Date", "group": "Basic Context (基本情報)", "type": "date" },
+      "CURRENCY": { "label": "Currency", "group": "Basic Context (基本情報)" },
+      "PROJECT_TITLE": { "label": "Project Title", "group": "Basic Context (基本情報)" },
+      
+      "CONTRACTOR_NAME": { "label": "Contractor Name", "group": "Basic Context (基本情報)" },
+      "CONTRACTOR_ADDRESS": { "label": "Contractor Address", "group": "Basic Context (基本情報)", "type": "textarea" },
+      "CONTRACTOR_COUNTRY": { "label": "Contractor Country", "group": "Basic Context (基本情報)" },
+      "CONTRACTOR_EMAIL": { "label": "Contractor E-mail", "group": "Basic Context (基本情報)" },
+      
+      "COMPANY_NAME": { "label": "Company Name", "group": "Basic Context (基本情報)" },
+      "COMPANY_ADDRESS": { "label": "Company Address", "group": "Basic Context (基本情報)", "type": "textarea" },
+      "COMPANY_REP": { "label": "Company Rep.", "group": "Basic Context (基本情報)" },
+      
+      "STAFF_NAME": { "label": "Contact Staff", "group": "Basic Context (基本情報)" },
+      "STAFF_DEPARTMENT": { "label": "Staff Dept.", "group": "Basic Context (基本情報)" },
+      "STAFF_PHONE": { "label": "Staff Phone", "group": "Basic Context (基本情報)" },
+      "STAFF_EMAIL": { "label": "Staff E-mail", "group": "Basic Context (基本情報)" },
+      
+      "grandTotalFees": { "label": "Total Fees", "group": "Financial & Payment (金銭)", "type": "number" },
+      "summaryCompletionDate": { "label": "Completion Date", "group": "License/Grant Info (ライセンス)", "type": "date" },
+      "summaryPaymentDate": { "label": "Payment Due Date", "group": "Financial & Payment (金銭)", "type": "date" },
+      
+      "SPECIAL_TERMS": { "label": "Special Terms", "group": "Remarks & Extras (その他)", "type": "textarea" },
+      "REMARKS": { "label": "Remarks", "group": "Remarks & Extras (その他)", "type": "textarea" },
+      "GOVERNING_LAW": { "label": "Governing Law", "group": "Remarks & Extras (その他)" },
+      "DISPUTE_RESOLUTION": { "label": "Dispute Resolution", "group": "Remarks & Extras (その他)" },
+      
+      "BANK_NAME": { "label": "Bank Name", "group": "Financial & Payment (金銭)" },
+      "BRANCH_NAME": { "label": "Branch Name", "group": "Financial & Payment (金銭)" },
+      "ACCOUNT_TYPE": { "label": "Account Type", "group": "Financial & Payment (金銭)" },
+      "ACCOUNT_NUMBER": { "label": "Account Number", "group": "Financial & Payment (金銭)" },
+      "ACCOUNT_HOLDER": { "label": "Account Holder", "group": "Financial & Payment (金銭)" },
+      "SWIFT_BIC": { "label": "SWIFT/BIC", "group": "Financial & Payment (金銭)" }
+    }
+  },
+  "purchase_order": {
+    "label": "発注書 (国内)",
+    "category": "Domestic",
+    "vars": {
+      "ORDER_NO": { "label": "発注番号", "group": "Basic Context (基本情報)" },
+      "VENDOR_NAME": { "label": "発注先名称", "group": "Basic Context (基本情報)" },
+      "PROJECT_TITLE": { "label": "件名", "group": "Basic Context (基本情報)" },
+      "grandTotalExTax": { "label": "合計金額 (税抜)", "group": "Financial & Payment (金銭)", "type": "number" }
+    }
+  }
+}

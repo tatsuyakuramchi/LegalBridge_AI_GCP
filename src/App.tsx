@@ -469,6 +469,7 @@ export default function App() {
       '金銭条件1_通貨': ['JPY', 'USD', 'EUR', 'CNY'],
       '金銭条件2_通貨': ['JPY', 'USD', 'EUR', 'CNY'],
       '金銭条件3_通貨': ['JPY', 'USD', 'EUR', 'CNY'],
+      'CURRENCY': ['JPY', 'USD', 'EUR', 'CNY', 'GBP', 'AUD', 'CAD', 'CHF'],
       '独占性': ['独占', '非独占'],
       '対象地域': ['日本国内', '全世界', '北米', '欧州'],
       '許諾言語': ['日本語', '英語', '各国語'],

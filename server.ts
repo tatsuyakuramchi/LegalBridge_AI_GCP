@@ -333,10 +333,14 @@ async function startServer() {
           });
         }
 
-        await client.chat.postEphemeral({
-          channel: body.channel_id,
-          user: body.user_id,
-          blocks: blocks
+        await client.views.open({
+          trigger_id: (body as any).trigger_id,
+          view: {
+            type: "modal",
+            title: { type: "plain_text", text: "法務検索結果" },
+            blocks: blocks,
+            close: { type: "plain_text", text: "閉じる" }
+          }
         });
       } catch (error) {
         console.error("Error during search:", error);
@@ -1092,12 +1096,14 @@ ${details}
           context["accountHolder"] = row.account_holder || "";
           context["paymentConditionSummary"] = "検収月の翌月末日払い";
         }
-      } else if (template === 'royalty_statement' || template === 'individual_license_terms' || template === 'license_master' || template === 'license_report') {
+      } else if (template === 'royalty_statement' || template === 'individual_license_terms' || template === 'license_master' || template === 'license_report' || template === 'intl_purchase_order') {
         const royaltyQuery = `
-          SELECT lc.*, rp.total_amount as last_payment_amount, rp.period as last_period, me.product_name, me.msrp
+          SELECT lc.*, rp.total_amount as last_payment_amount, rp.period as last_period, me.product_name, me.msrp,
+                 v.vendor_name, v.address as vendor_address, v.email as vendor_email, v.contact_name as vendor_contact
           FROM license_contracts lc
           LEFT JOIN royalty_payments rp ON lc.id = rp.license_contract_id
           LEFT JOIN manufacturing_events me ON lc.id = me.license_contract_id
+          LEFT JOIN vendors v ON lc.vendor_code = v.vendor_code
           WHERE lc.backlog_issue_key = $1 OR rp.backlog_issue_key = $1
           ORDER BY rp.created_at DESC, me.created_at DESC LIMIT 1
         `;
@@ -1108,6 +1114,15 @@ ${details}
           context["Licensor_名称"] = row.licensor || "";
           context["Licensor_氏名会社名"] = row.licensor || "";
           context["Licensee_名称"] = "株式会社アークライト";
+          
+          // Overseas PO mappings
+          context["CONTRACTOR_NAME"] = row.vendor_name || row.licensor || "";
+          context["CONTRACTOR_ADDRESS"] = row.vendor_address || "";
+          context["CONTRACTOR_EMAIL"] = row.vendor_email || "";
+          context["PROJECT_TITLE"] = row.product_name || "";
+          context["OF_NO"] = row.contract_number || key;
+          context["OF_DATE"] = new Date().toLocaleDateString('ja-JP');
+          context["CURRENCY"] = "USD"; // Default for international
           
           context["原著作物名"] = row.original_work || "";
           context["対象製品予定名"] = row.product_name || "";
