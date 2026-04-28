@@ -19,38 +19,44 @@ import { gfm } from 'turndown-plugin-gfm';
 
 dotenv.config();
 
-// Initialize PostgreSQL
-initDb();
+  // Initialize PostgreSQL
+  await initDb();
+  console.log("✅ Database initialized");
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = path.dirname(__filename);
 
-async function startServer() {
-  const app = express();
-  const PORT = Number(process.env.PORT) || 3000;
+  async function startServer() {
+    const app = express();
+    const PORT = Number(process.env.PORT) || 3000;
+    console.log("🚀 Starting server...");
 
-  const turndownService = new TurndownService({
-    headingStyle: 'atx',
-    codeBlockStyle: 'fenced',
-    hr: '---'
-  });
-  turndownService.use(gfm);
-  
-  // Custom rule to handle Google Docs' distaste for certain structures or to clean up
-  turndownService.addRule('remove-styles', {
-    filter: ['style', 'head', 'meta', 'title'],
-    replacement: () => ''
-  });
+    const turndownService = new TurndownService({
+      headingStyle: 'atx',
+      codeBlockStyle: 'fenced',
+      hr: '---'
+    });
+    turndownService.use(gfm);
+    
+    // Custom rule to handle Google Docs' distaste for certain structures or to clean up
+    turndownService.addRule('remove-styles', {
+      filter: ['style', 'head', 'meta', 'title'],
+      replacement: () => ''
+    });
 
-  // Simple request logger
-  app.use((req, res, next) => {
-    console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-    next();
-  });
+    // Simple request logger
+    app.use((req, res, next) => {
+      if (!req.url.startsWith('/dist') && !req.url.startsWith('/assets')) {
+         console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+      }
+      next();
+    });
 
-  const settingsResult = await query("SELECT * FROM app_settings");
-  const dbSettings: Record<string, any> = {};
-  settingsResult.rows.forEach(r => dbSettings[r.key] = r.value);
+    console.log("⏳ Fetching app settings...");
+    const settingsResult = await query("SELECT * FROM app_settings");
+    const dbSettings: Record<string, any> = {};
+    settingsResult.rows.forEach(r => dbSettings[r.key] = r.value);
+    console.log("✅ Settings loaded");
 
   const backlogService = new BacklogService({
     host: dbSettings.BACKLOG_HOST || process.env.BACKLOG_HOST,
@@ -262,27 +268,32 @@ async function startServer() {
     // 1. Command to open modal
     slackApp.command("/法務依頼", async ({ command, ack, client, body }) => {
       await ack();
-      try {
-        await client.views.open({
-          trigger_id: body.trigger_id,
-          view: getLegalRequestModal("legal_consult")
-        });
-      } catch (error) {
-        console.error("Error opening modal:", error);
-      }
+      // Execute UI opening in background to ensure ack returns immediately
+      (async () => {
+        try {
+          await client.views.open({
+            trigger_id: body.trigger_id,
+            view: getLegalRequestModal("legal_consult")
+          });
+        } catch (error) {
+          console.error("Error opening /法務依頼 modal:", error);
+        }
+      })();
     });
 
     // 2. Command to search
     slackApp.command("/法務検索", async ({ command, ack, client, body }) => {
       await ack();
-      try {
-        await client.views.open({
-          trigger_id: body.trigger_id,
-          view: getLegalSearchModal()
-        });
-      } catch (error) {
-        console.error("Error opening search modal:", error);
-      }
+      (async () => {
+        try {
+          await client.views.open({
+            trigger_id: body.trigger_id,
+            view: getLegalSearchModal()
+          });
+        } catch (error) {
+          console.error("Error opening /法務検索 modal:", error);
+        }
+      })();
     });
 
     // Modal submission for search
@@ -381,16 +392,18 @@ async function startServer() {
     // Dynamic update based on selection
     slackApp.action("request_type_input", async ({ ack, body, client, action }) => {
       await ack();
-      try {
-        const selectedOption = (action as any).selected_option.value;
-        await client.views.update({
-          view_id: (body as any).view.id,
-          hash: (body as any).view.hash,
-          view: getLegalRequestModal(selectedOption)
-        });
-      } catch (error) {
-        console.error("Error updating view:", error);
-      }
+      (async () => {
+        try {
+          const selectedOption = (action as any).selected_option.value;
+          await client.views.update({
+            view_id: (body as any).view.id,
+            hash: (body as any).view.hash,
+            view: getLegalRequestModal(selectedOption)
+          });
+        } catch (error) {
+          console.error("Error updating view:", error);
+        }
+      })();
     });
 
     // 2. Modal submission
