@@ -162,6 +162,7 @@
     <div class="doc-meta">
       <div class="doc-number">{{issueKey}}-{{itemNo}}-{{deliveryNo}}</div>
       <div>発注課題: {{issueKey}} ／ 明細: ①{{itemNo}}</div>
+      {{#if linked_po_number}}<div>関連発注書: {{linked_po_number}}</div>{{/if}}
       <div>発行日: {{documentDate}}</div>
     </div>
   </div>

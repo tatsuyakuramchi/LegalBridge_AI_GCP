@@ -1044,12 +1044,14 @@ ${details}
       if (template === 'inspection_certificate' || template === 'inspection_certificate_detailed' || template === 'inspection_certificate_v2') {
         const deliveryQuery = `
           SELECT de.*, oi.amount as order_amount, oi.description as item_desc, oi.spec as item_spec, 
-                 v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type, v.account_no, v.account_holder,
-                 lr.summary as order_title, lr.created_at as order_date
+                 v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type, v.account_number, v.account_holder_kana as account_holder,
+                 lr.summary as order_title, lr.created_at as order_date,
+                 ea.asset_number as linked_po_number, ea.file_link as linked_po_link
           FROM delivery_events de
           LEFT JOIN order_items oi ON de.order_item_id = oi.id
           LEFT JOIN vendors v ON oi.vendor_code = v.vendor_code
           LEFT JOIN legal_requests lr ON de.backlog_issue_key = lr.backlog_issue_key
+          LEFT JOIN external_assets ea ON de.linked_asset_id = ea.id
           WHERE de.backlog_issue_key = $1
           ORDER BY de.delivery_no DESC LIMIT 1
         `;
@@ -1092,18 +1094,22 @@ ${details}
           context["bankName"] = row.bank_name || "";
           context["branchName"] = row.branch_name || "";
           context["accountType"] = row.account_type || "";
-          context["accountNo"] = row.account_no || "";
+          context["accountNo"] = row.account_number || "";
           context["accountHolder"] = row.account_holder || "";
+          context["linked_po_number"] = row.linked_po_number || "";
+          context["linked_po_link"] = row.linked_po_link || "";
           context["paymentConditionSummary"] = "検収月の翌月末日払い";
         }
       } else if (template === 'royalty_statement' || template === 'individual_license_terms' || template === 'license_master' || template === 'license_report' || template === 'intl_purchase_order') {
         const royaltyQuery = `
           SELECT lc.*, rp.total_amount as last_payment_amount, rp.period as last_period, me.product_name, me.msrp,
-                 v.vendor_name, v.address as vendor_address, v.email as vendor_email, v.contact_name as vendor_contact
+                 v.vendor_name, v.address as vendor_address, v.email as vendor_email, v.contact_name as vendor_contact,
+                 ea.asset_number as linked_terms_number, ea.file_link as linked_terms_link
           FROM license_contracts lc
           LEFT JOIN royalty_payments rp ON lc.id = rp.license_contract_id
           LEFT JOIN manufacturing_events me ON lc.id = me.license_contract_id
-          LEFT JOIN vendors v ON lc.vendor_code = v.vendor_code
+          LEFT JOIN vendors v ON (lc.licensor = v.vendor_name)
+          LEFT JOIN external_assets ea ON lc.linked_asset_id = ea.id
           WHERE lc.backlog_issue_key = $1 OR rp.backlog_issue_key = $1
           ORDER BY rp.created_at DESC, me.created_at DESC LIMIT 1
         `;
@@ -1141,6 +1147,8 @@ ${details}
           
           context["royaltyRatePct"] = row.royalty_rate ? `${(row.royalty_rate * 100).toFixed(1)}%` : "";
           context["msrpStr"] = row.msrp ? new Intl.NumberFormat("ja-JP").format(row.msrp) : "";
+          context["linked_terms_number"] = row.linked_terms_number || "";
+          context["linked_terms_link"] = row.linked_terms_link || "";
           
           const formula = `売上高 × ${row.royalty_rate ? (row.royalty_rate * 100).toFixed(1) : "0"}%`;
           context["金銭条件1_計算式"] = formula;
@@ -1245,6 +1253,20 @@ ${details}
   
       history.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
       res.json(history);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/management/link-asset", express.json(), async (req, res) => {
+    const { type, issueKey, assetId } = req.body;
+    try {
+      if (type === 'delivery') {
+        await query("UPDATE delivery_events SET linked_asset_id = $1 WHERE backlog_issue_key = $2", [assetId, issueKey]);
+      } else if (type === 'contract') {
+        await query("UPDATE license_contracts SET linked_asset_id = $1 WHERE backlog_issue_key = $2", [assetId, issueKey]);
+      }
+      res.json({ status: "ok" });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }

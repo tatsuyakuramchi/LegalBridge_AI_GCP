@@ -110,6 +110,18 @@ export default function App() {
   
   // UI State
   const [isAssetPickerOpen, setIsAssetPickerOpen] = useState(false);
+  const [assetPickerCallback, setAssetPickerCallback] = useState<((asset: ExternalAsset) => void) | null>(null);
+  const [isRegisterAssetOpen, setIsRegisterAssetOpen] = useState(false);
+  const [newAssetData, setNewAssetData] = useState<any>({
+    asset_name: '',
+    asset_type: 'contract',
+    counterparty: '',
+    status: 'active',
+    file_link: '',
+    start_date: '',
+    end_date: '',
+    backlog_issue_key: ''
+  });
   const [assetSearch, setAssetSearch] = useState('');
   const [assets, setAssets] = useState<ExternalAsset[]>([]);
   const [workflowRules, setWorkflowRules] = useState<any[]>([]);
@@ -568,6 +580,37 @@ export default function App() {
       showNotification("Batch generation encountered errors.", "error");
     } finally {
       setIsGenerating(false);
+    }
+  };
+
+  const handleRegisterAsset = async () => {
+    try {
+      const res = await fetch('/api/management/assets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newAssetData)
+      });
+      if (res.ok) {
+        showNotification("Asset registered successfully", "success");
+        setIsRegisterAssetOpen(false);
+        // Refresh assets list
+        const assetsRes = await fetch('/api/management/assets').then(r => r.json());
+        setAssets(assetsRes);
+        setNewAssetData({
+          asset_name: '',
+          asset_type: 'contract',
+          counterparty: '',
+          status: 'active',
+          file_link: '',
+          start_date: '',
+          end_date: '',
+          backlog_issue_key: ''
+        });
+      } else {
+        showNotification("Failed to register asset", "error");
+      }
+    } catch (e) {
+      showNotification("Error connecting to server", "error");
     }
   };
 
@@ -1256,11 +1299,36 @@ export default function App() {
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                              <div className="p-8 border border-emerald-600/5 bg-emerald-50/5 space-y-6">
                                <div className="flex justify-between items-center border-b border-emerald-800/10 pb-2">
-                                  <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-800">Deliverable Detail</h3>
-                                  <button 
-                                    onClick={() => syncFromDatabase()}
-                                    className="text-[8px] font-mono bg-emerald-600 text-white px-2 py-0.5 hover:bg-emerald-700 transition-all uppercase flex items-center gap-1"
-                                  ><Database className="w-2 h-2" /> DBから補完</button>
+                                  <div className="flex items-center gap-2">
+                                     <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-800">Deliverable Detail</h3>
+                                     {formData.linked_po_number && (
+                                        <span className="text-[8px] font-mono bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
+                                           <Link className="w-2 h-2" /> {formData.linked_po_number}
+                                        </span>
+                                     )}
+                                  </div>
+                                  <div className="flex gap-2">
+                                     <button 
+                                       onClick={() => {
+                                          setAssetPickerCallback((asset) => {
+                                             fetch('/api/management/link-asset', {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ type: 'delivery', issueKey: formData.issueKey, assetId: asset.id })
+                                             }).then(() => {
+                                                showNotification("Associated with PO: " + asset.asset_number, "success");
+                                                setFormData({...formData, linked_po_number: asset.asset_number, linked_po_link: asset.file_link});
+                                             });
+                                          });
+                                          setIsAssetPickerOpen(true);
+                                       }}
+                                       className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-0.5 hover:bg-emerald-600 hover:text-white transition-all uppercase flex items-center gap-1"
+                                     ><Link className="w-2 h-2" /> PO紐付</button>
+                                     <button 
+                                       onClick={() => syncFromDatabase()}
+                                       className="text-[8px] font-mono bg-emerald-600 text-white px-2 py-0.5 hover:bg-emerald-700 transition-all uppercase flex items-center gap-1"
+                                     ><Database className="w-2 h-2" /> DBから補完</button>
+                                  </div>
                                </div>
                                {['description', 'spec', 'isReducedTax'].map(renderDynamicField)}
                                <div className="grid grid-cols-2 gap-4">
@@ -1281,8 +1349,33 @@ export default function App() {
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                              <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
                                 <div className="flex justify-between items-center border-b pb-2">
-                                   <h3 className="text-[10px] font-mono font-bold uppercase">Work & Contract (原案・契約)</h3>
-                                   <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
+                                   <div className="flex items-center gap-2">
+                                      <h3 className="text-[10px] font-mono font-bold uppercase">Work & Contract (原案・契約)</h3>
+                                      {formData.linked_terms_number && (
+                                         <span className="text-[8px] font-mono bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 flex items-center gap-1">
+                                            <Link className="w-2 h-2" /> {formData.linked_terms_number}
+                                         </span>
+                                      )}
+                                   </div>
+                                   <div className="flex gap-2">
+                                      <button 
+                                         onClick={() => {
+                                            setAssetPickerCallback((asset) => {
+                                               fetch('/api/management/link-asset', {
+                                                  method: 'POST',
+                                                  headers: { 'Content-Type': 'application/json' },
+                                                  body: JSON.stringify({ type: 'contract', issueKey: formData.manufacturingIssueKey || formData.licenseIssueKey || formData.issueKey, assetId: asset.id })
+                                               }).then(() => {
+                                                  showNotification("Associated with Terms: " + asset.asset_number, "success");
+                                                  setFormData({...formData, linked_terms_number: asset.asset_number, linked_terms_link: asset.file_link});
+                                               });
+                                            });
+                                            setIsAssetPickerOpen(true);
+                                         }}
+                                         className="text-[8px] font-mono border border-blue-600 text-blue-600 px-2 py-1 uppercase flex items-center gap-1"
+                                      ><Link className="w-2 h-2" /> 個別紐付</button>
+                                      <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
+                                   </div>
                                 </div>
                                 {['ledgerId', 'manufacturingIssueKey', 'licenseIssueKey', 'licensor', 'licensee', 'originalWork'].map(renderDynamicField)}
                              </div>
@@ -2221,6 +2314,12 @@ export default function App() {
                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#141414]/30" />
                          <input className="bg-gray-100 border-none pl-10 pr-4 py-2 text-xs font-mono w-64" placeholder="FILTER ARCHIVE..." />
                       </div>
+                      <button 
+                        onClick={() => setIsRegisterAssetOpen(true)}
+                        className="px-6 py-2 bg-[#141414] text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:invert transition-all flex items-center gap-2"
+                      >
+                        <Plus className="w-3 h-3" /> Register Concluded Doc
+                      </button>
                    </div>
                 </div>
                 
@@ -2465,6 +2564,136 @@ export default function App() {
 
       {/* Asset Picker Overlay */}
       <AnimatePresence>
+        {isRegisterAssetOpen && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center px-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-[#FDFDFD]/90 backdrop-blur-md"
+              onClick={() => setIsRegisterAssetOpen(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.98, y: 10 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.98, y: 10 }}
+              className="w-full max-w-xl bg-white border-2 border-[#141414] shadow-[20px_20px_0px_0px_rgba(20,20,20,0.05)] z-10 overflow-hidden"
+            >
+              <div className="px-6 py-4 bg-[#141414] text-white flex items-center justify-between">
+                 <div className="flex items-center gap-3">
+                    <Archive className="w-5 h-5 text-purple-400" />
+                    <h3 className="text-xs font-mono font-bold uppercase tracking-widest">Register Concluded Document</h3>
+                 </div>
+                 <button onClick={() => setIsRegisterAssetOpen(false)} className="hover:rotate-90 transition-transform">
+                   <X className="w-5 h-5" />
+                 </button>
+              </div>
+              <div className="p-8 space-y-6">
+                 <div className="space-y-4">
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/40">Document Name / Title</label>
+                       <input 
+                         type="text"
+                         className="w-full bg-gray-50 p-2 text-xs font-mono border-b border-transparent focus:border-purple-600 outline-none"
+                         placeholder="e.g. Master Service Agreement - Acme Corp"
+                         value={newAssetData.asset_name}
+                         onChange={(e) => setNewAssetData({...newAssetData, asset_name: e.target.value})}
+                       />
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-1">
+                          <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/40">Document Type</label>
+                          <select 
+                            className="w-full bg-gray-50 p-2 text-xs font-mono border-b border-transparent focus:border-purple-600 outline-none"
+                            value={newAssetData.asset_type}
+                            onChange={(e) => setNewAssetData({...newAssetData, asset_type: e.target.value})}
+                          >
+                             <option value="contract">Basic Contract (基本契約書)</option>
+                             <option value="individual">Individual Terms (個別契約/発注)</option>
+                             <option value="nda">NDA (秘密保持契約書)</option>
+                             <option value="memorandum">Memorandum (覚書)</option>
+                             <option value="other">Other (その他)</option>
+                          </select>
+                       </div>
+                       <div className="space-y-1">
+                          <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/40">Counterparty</label>
+                          <input 
+                            type="text"
+                            className="w-full bg-gray-50 p-2 text-xs font-mono border-b border-transparent focus:border-purple-600 outline-none"
+                            placeholder="Counterparty name"
+                            value={newAssetData.counterparty}
+                            onChange={(e) => setNewAssetData({...newAssetData, counterparty: e.target.value})}
+                          />
+                       </div>
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/40">Cloud Drive Link (URL)</label>
+                       <div className="flex gap-2">
+                          <Link className="w-4 h-4 mt-2 text-[#141414]/20" />
+                          <input 
+                            type="text"
+                            className="flex-1 bg-gray-50 p-2 text-xs font-mono border-b border-transparent focus:border-purple-600 outline-none"
+                            placeholder="https://drive.google.com/..."
+                            value={newAssetData.file_link}
+                            onChange={(e) => setNewAssetData({...newAssetData, file_link: e.target.value})}
+                          />
+                       </div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                       <div className="space-y-1">
+                          <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/40">Execution Date (開始日)</label>
+                          <input 
+                            type="date"
+                            className="w-full bg-gray-50 p-2 text-xs font-mono border-b border-transparent focus:border-purple-600 outline-none"
+                            value={newAssetData.start_date}
+                            onChange={(e) => setNewAssetData({...newAssetData, start_date: e.target.value})}
+                          />
+                       </div>
+                       <div className="space-y-1">
+                          <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/40">Expiry Date (終了日)</label>
+                          <input 
+                            type="date"
+                            className="w-full bg-gray-50 p-2 text-xs font-mono border-b border-transparent focus:border-purple-600 outline-none"
+                            value={newAssetData.end_date}
+                            onChange={(e) => setNewAssetData({...newAssetData, end_date: e.target.value})}
+                          />
+                       </div>
+                    </div>
+                    <div className="space-y-1">
+                       <label className="text-[9px] font-mono font-bold uppercase text-[#141414]/40">Linked Backlog Key (Optional)</label>
+                       <input 
+                         type="text"
+                         className="w-full bg-gray-50 p-2 text-xs font-mono border-b border-transparent focus:border-purple-600 outline-none"
+                         placeholder="PROJ-123"
+                         value={newAssetData.backlog_issue_key}
+                         onChange={(e) => setNewAssetData({...newAssetData, backlog_issue_key: e.target.value})}
+                       />
+                    </div>
+                 </div>
+                 
+                 <div className="pt-4 flex gap-4">
+                    <button 
+                      onClick={handleRegisterAsset}
+                      disabled={!newAssetData.asset_name || !newAssetData.counterparty}
+                      className="flex-1 py-3 bg-[#141414] text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-purple-700 transition-all disabled:opacity-30"
+                    >
+                      Confirm Registration
+                    </button>
+                    <button 
+                      onClick={() => setIsRegisterAssetOpen(false)}
+                      className="px-6 py-3 border border-[#141414]/10 text-[10px] font-mono font-bold uppercase tracking-widest hover:bg-gray-50 transition-all"
+                    >
+                      Cancel
+                    </button>
+                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Asset Picker Overlay */}
+      <AnimatePresence>
         {isAssetPickerOpen && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center px-6">
             <motion.div 
@@ -2524,6 +2753,12 @@ export default function App() {
                               <div className="text-right">
                                  <button 
                                    onClick={() => {
+                                     if (assetPickerCallback) {
+                                       assetPickerCallback(asset);
+                                       setAssetPickerCallback(null);
+                                       setIsAssetPickerOpen(false);
+                                       return;
+                                     }
                                      // Logic for multi-field autofill
                                      const update: any = {};
                                      if (asset.asset_type === 'contract' || asset.asset_number.startsWith('AL-') || asset.asset_number.startsWith('C-')) {

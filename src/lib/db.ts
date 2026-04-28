@@ -170,8 +170,10 @@ export async function initDb() {
       inspection_deadline TIMESTAMP WITH TIME ZONE,
       status VARCHAR(20) DEFAULT 'pending', -- pending, completed, overdue
       note TEXT,
+      linked_asset_id INTEGER, -- Link to external_assets
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
+    `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
     // 5. Licensing & Royalties
     `CREATE TABLE IF NOT EXISTS license_contracts (
@@ -185,8 +187,10 @@ export async function initDb() {
       fee_structure VARCHAR(50),
       payment_cycle VARCHAR(50),
       license_start_date DATE,
+      linked_asset_id INTEGER, -- Link to external_assets
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
     `CREATE TABLE IF NOT EXISTS manufacturing_events (
       id SERIAL PRIMARY KEY,
