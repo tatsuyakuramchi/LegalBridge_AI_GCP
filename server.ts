@@ -395,6 +395,7 @@ async function startServer() {
 
     // 2. Modal submission
     slackApp.view("legal_request_modal", async ({ ack, body, view, client }) => {
+      // 1. Acknowledge immediately to avoid timeout
       await ack();
       
       const values = view.state.values;
@@ -429,11 +430,13 @@ async function startServer() {
         templateType = "individual_license_terms";
       }
 
-      try {
-        const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
-        
-        // Detailed description for Backlog
-        const backlogDescription = `
+      // 2. Process everything else in the background
+      (async () => {
+        try {
+          const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
+          
+          // Detailed description for Backlog
+          const backlogDescription = `
 依頼タイプ: ${requestType}
 希望納期: ${deadline}
 依頼者: <@${user}>
@@ -445,137 +448,144 @@ async function startServer() {
 
 【詳細】
 ${details}
-        `.trim();
+          `.trim();
 
-        // Create Backlog Issue
-        // Note: For now we use the first available type ID. 
-        // In a real system we would fetch the ID for the name 'requestType'.
-        const issue = await backlogService.createIssue({
-          summary: `【${requestType}】${displaySummary}`,
-          description: backlogDescription,
-          issueTypeId: 1, 
-          priorityId: 3, 
-        });
-
-        // Register in DB
-        const lrResult = await query(
-          "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-          [issue.issueKey, user, requestType, counterparty, displaySummary, details]
-        );
-
-        const legalRequestId = lrResult.rows[0].id;
-
-        // If it's a delivery request, also record it in delivery_events
-        if (requestType === "delivery_request") {
-          await query(
-            "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline, delivered_at, delivered_amount) VALUES ($1, $2, $3, $4, $5, $6)",
-            [issue.issueKey, deliveryNo, "pending", inspectionDeadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000), deliveryDate || new Date(), parseFloat(orderAmount || "0")]
-          );
-        }
-
-        await query(
-          "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3)",
-          [issue.issueKey, requestType, "文書生成依頼"]
-        );
-
-        // We do this asynchronously to avoid blocking Slack
-        (async () => {
+          // Create Backlog Issue
+          // Fetch Issue Types to avoid hardcoding ID 1
+          let issueTypeId = 1;
           try {
-            // Find target channel
-            const deptRule = await query(
-              `SELECT r.slack_channel_id 
-               FROM staff s 
-               JOIN department_workflow_rules r ON s.department = r.department 
-               WHERE s.slack_user_id = $1`,
-              [user]
-            );
-            const deptChannel = deptRule.rows[0]?.slack_channel_id;
+            const types = await backlogService.getIssueTypes();
+            if (types && types.length > 0) {
+              // Prefer a type named 'Task' or '依頼' or similar, else first
+              const preferred = types.find((t: any) => t.name.includes("依頼") || t.name === "Task") || types[0];
+              issueTypeId = preferred.id;
+            }
+          } catch (e) {
+            console.warn("Failed to fetch issue types, falling back to ID 1", e);
+          }
 
-            const docNumber = await getNewDocumentNumber(templateType, requestType);
+          const issue = await backlogService.createIssue({
+            summary: `【${requestType}】${displaySummary}`,
+            description: backlogDescription,
+            issueTypeId: issueTypeId, 
+            priorityId: 3, 
+          });
 
-            // Generate Initial Document based on predicted flow
-            const { html, fileName } = await documentService.generateDocument({
-              issueKey: issue.issueKey,
-              documentNumber: docNumber,
-              summary: displaySummary,
-              requester: body.user.name || user,
-              date: new Date().toLocaleDateString("ja-JP"),
-              details: {
-                "相談詳細": details,
-                "相手方": counterparty,
-                "counterparty": counterparty,
-                "description": details || displaySummary,
-                "SlackユーザーID": user,
-                "VENDOR_NAME": counterparty, 
-                "DELIVERY_NUMBER": deliveryNo ? String(deliveryNo) : "",
-                "deliveryDate": deliveryDate ? new Date(deliveryDate).toLocaleDateString('ja-JP') : "",
-                "inspectionDeadline": inspectionDeadline ? new Date(inspectionDeadline).toLocaleDateString('ja-JP') : "",
-                "orderAmountStr": orderAmount ? new Intl.NumberFormat('ja-JP').format(parseFloat(orderAmount)) : "0",
-                "DOC_NO": docNumber
-              }
-            }, templateType);
+          // Register in DB
+          const lrResult = await query(
+            "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+            [issue.issueKey, user, requestType, counterparty, displaySummary, details]
+          );
 
-            // Upload to Google Drive
-            const driveLink = await googleDriveService.uploadHtml(html, fileName);
+          const legalRequestId = lrResult.rows[0].id;
 
-            // Audit Log
+          // If it's a delivery request, also record it in delivery_events
+          if (requestType === "delivery_inspec") {
             await query(
-              "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
-              [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
+              "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline, delivered_at, delivered_amount) VALUES ($1, $2, $3, $4, $5, $6)",
+              [issue.issueKey, deliveryNo, "pending", inspectionDeadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), deliveryDate || new Date().toISOString(), parseFloat(orderAmount || "0")]
             );
+          }
 
-            // 1. Notify User (DM)
-            const userSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_user'");
-            const userTemplate = userSettingsResult.rows[0]?.value?.template || 
-              `✅ 法務相談・文書作成の受付が完了しました。\n\n*種別:* {{requestType}}\n*課題キー:* {{issueKey}}\n*文書番号:* {{docNumber}}\n*生成ドキュメント:* {{driveLink}}\n\n法務担当者からの連絡をお待ちください。`;
+          await query(
+            "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3)",
+            [issue.issueKey, requestType, "文書生成依頼"]
+          );
 
-            const replacePlaceholders = (tmpl: string, data: any) => {
-              return tmpl
-                .replace(/{{requestType}}/g, data.requestType || "")
-                .replace(/{{issueKey}}/g, data.issueKey || "")
-                .replace(/{{docNumber}}/g, data.docNumber || "")
-                .replace(/{{driveLink}}/g, data.driveLink || "")
-                .replace(/{{user}}/g, `<@${data.user}>` || "")
-                .replace(/{{summary}}/g, data.summary || "")
-                .replace(/{{counterparty}}/g, data.counterparty || "");
-            };
+          // Find target channel
+          const deptRule = await query(
+            `SELECT r.slack_channel_id 
+             FROM staff s 
+             JOIN department_workflow_rules r ON s.department = r.department 
+             WHERE s.slack_user_id = $1`,
+            [user]
+          );
+          const deptChannel = deptRule.rows[0]?.slack_channel_id;
 
-            const userMsg = replacePlaceholders(userTemplate, {
+          const docNumber = await getNewDocumentNumber(templateType, requestType);
+
+          // Generate Initial Document based on predicted flow
+          const { html, fileName } = await documentService.generateDocument({
+            issueKey: issue.issueKey,
+            documentNumber: docNumber,
+            summary: displaySummary,
+            requester: body.user.name || user,
+            date: new Date().toLocaleDateString("ja-JP"),
+            details: {
+              "相談詳細": details,
+              "相手方": counterparty,
+              "counterparty": counterparty,
+              "description": details || displaySummary,
+              "SlackユーザーID": user,
+              "VENDOR_NAME": counterparty, 
+              "DELIVERY_NUMBER": deliveryNo ? String(deliveryNo) : "",
+              "deliveryDate": deliveryDate ? new Date(deliveryDate).toLocaleDateString('ja-JP') : "",
+              "inspectionDeadline": inspectionDeadline ? new Date(inspectionDeadline).toLocaleDateString('ja-JP') : "",
+              "orderAmountStr": orderAmount ? new Intl.NumberFormat('ja-JP').format(parseFloat(orderAmount)) : "0",
+              "DOC_NO": docNumber
+            }
+          }, templateType);
+
+          // Upload to Google Drive
+          const driveLink = await googleDriveService.uploadHtml(html, fileName);
+
+          // Audit Log
+          await query(
+            "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
+            [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
+          );
+
+          // 1. Notify User (DM)
+          const userSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_user'");
+          const userTemplate = userSettingsResult.rows[0]?.value?.template || 
+            `✅ 法務相談・文書作成の受付が完了しました。\n\n*種別:* {{requestType}}\n*課題キー:* {{issueKey}}\n*文書番号:* {{docNumber}}\n*生成ドキュメント:* {{driveLink}}\n\n法務担当者からの連絡をお待ちください。`;
+
+          const replacePlaceholders = (tmpl: string, data: any) => {
+            return tmpl
+              .replace(/{{requestType}}/g, data.requestType || "")
+              .replace(/{{issueKey}}/g, data.issueKey || "")
+              .replace(/{{docNumber}}/g, data.docNumber || "")
+              .replace(/{{driveLink}}/g, data.driveLink || "")
+              .replace(/{{user}}/g, `<@${data.user}>` || "")
+              .replace(/{{summary}}/g, data.summary || "")
+              .replace(/{{counterparty}}/g, data.counterparty || "");
+          };
+
+          const userMsg = replacePlaceholders(userTemplate, {
+            requestType, issueKey: issue.issueKey, docNumber, driveLink, user, summary, counterparty
+          });
+
+          await client.chat.postMessage({
+            channel: user,
+            text: userMsg
+          });
+
+          // 2. Notify Department Channel (if configured)
+          if (deptChannel) {
+            const chanSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_channel'");
+            const chanTemplate = chanSettingsResult.rows[0]?.value?.template || 
+              `🆕 *新規依頼受付通知*\n\n<@{{user}}> さんより新規依頼 ({{requestType}}) を受け付けました。\n*課題:* {{issueKey}} ({{summary}})\n*相手方:* {{counterparty}}\n*生成ドキュメント:* {{driveLink}}`;
+
+            const chanMsg = replacePlaceholders(chanTemplate, {
               requestType, issueKey: issue.issueKey, docNumber, driveLink, user, summary, counterparty
             });
 
             await client.chat.postMessage({
-              channel: user,
-              text: userMsg
-            });
-
-            // 2. Notify Department Channel (if configured)
-            if (deptChannel) {
-              const chanSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_channel'");
-              const chanTemplate = chanSettingsResult.rows[0]?.value?.template || 
-                `🆕 *新規依頼受付通知*\n\n<@{{user}}> さんより新規依頼 ({{requestType}}) を受け付けました。\n*課題:* {{issueKey}} ({{summary}})\n*相手方:* {{counterparty}}\n*生成ドキュメント:* {{driveLink}}`;
-
-              const chanMsg = replacePlaceholders(chanTemplate, {
-                requestType, issueKey: issue.issueKey, docNumber, driveLink, user, summary, counterparty
-              });
-
-              await client.chat.postMessage({
-                channel: deptChannel,
-                text: chanMsg
-              });
-            }
-          } catch (err) {
-            console.error("Background processing failed:", err);
-            await client.chat.postMessage({
-              channel: user,
-              text: `⚠️ 相談は受け付けましたが、初期ドキュメントの生成に失敗しました。\n課題キー: ${issue.issueKey}`
+              channel: deptChannel,
+              text: chanMsg
             });
           }
-        })();
-
-      } catch (error) {
-        console.error("Error handling modal submission:", error);
-      }
+        } catch (error) {
+          console.error("Error handling modal submission background process:", error);
+          // Try to let user know it failed
+          try {
+             await client.chat.postMessage({
+               channel: user,
+               text: `⚠️ 依頼の処理中にエラーが発生しました。法務担当者へ直接お問い合わせください。\n内容: ${String(error)}`
+             });
+          } catch (e) {}
+        }
+      })();
     });
 
     console.log("🚀 Slack Bolt app initialized with LegalBridge handlers");

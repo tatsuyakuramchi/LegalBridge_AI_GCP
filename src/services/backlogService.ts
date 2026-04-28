@@ -12,6 +12,7 @@ export class BacklogService {
   private baseUrl: string;
   private apiKey: string;
   private projectKey: string;
+  private cachedProjectId: number | null = null;
 
   constructor(config?: { host?: string; apiKey?: string; projectKey?: string }) {
     let host = config?.host || process.env.BACKLOG_HOST || "";
@@ -27,6 +28,13 @@ export class BacklogService {
     return `${this.baseUrl}${path}?apiKey=${this.apiKey}`;
   }
 
+  private async getProjectId(): Promise<number> {
+    if (this.cachedProjectId) return this.cachedProjectId;
+    const projectRes = await axios.get(this.getUrl(`/projects/${this.projectKey}`));
+    this.cachedProjectId = projectRes.data.id;
+    return this.cachedProjectId!;
+  }
+
   async createIssue(params: BacklogIssueParams): Promise<any> {
     if (!this.apiKey || !this.baseUrl) {
       console.warn("⚠️ Backlog credentials missing. Mocking issue creation.");
@@ -34,9 +42,8 @@ export class BacklogService {
     }
 
     try {
-      // Get Project ID first
-      const projectRes = await axios.get(this.getUrl(`/projects/${this.projectKey}`));
-      const projectId = projectRes.data.id;
+      // Get Project ID (cached)
+      const projectId = await this.getProjectId();
 
       const body = new URLSearchParams();
       body.append("projectId", projectId.toString());
