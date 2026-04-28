@@ -2556,6 +2556,42 @@ export default function App() {
                                     />
                                  </div>
                                  <div className="space-y-1">
+                                    <label className="text-[8px] font-mono text-gray-400">Overdue Alert Alarm</label>
+                                    <textarea 
+                                      value={appSettings['slack_overdue_alert']?.template || ''}
+                                      onChange={(e) => setAppSettings({
+                                        ...appSettings,
+                                        slack_overdue_alert: { ...appSettings['slack_overdue_alert'] || {}, template: e.target.value }
+                                      })}
+                                      className="w-full text-[10px] font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500 h-20 resize-none"
+                                    />
+                                    <p className="text-[8px] font-mono text-gray-400 italic">Available: {"{{mention}}, {{issueKey}}, {{summary}}, {{counterparty}}, {{deadline}}"}</p>
+                                 </div>
+                                 <div className="space-y-1">
+                                    <label className="text-[8px] font-mono text-gray-400">Document Generated Notification</label>
+                                    <textarea 
+                                      value={appSettings['slack_document_generated']?.template || ''}
+                                      onChange={(e) => setAppSettings({
+                                        ...appSettings,
+                                        slack_document_generated: { ...appSettings['slack_document_generated'] || {}, template: e.target.value }
+                                      })}
+                                      className="w-full text-[10px] font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500 h-20 resize-none"
+                                    />
+                                    <p className="text-[8px] font-mono text-gray-400 italic">Available: {"{{issueKey}}, {{summary}}, {{type}}, {{link}}"}</p>
+                                 </div>
+                                 <div className="space-y-1">
+                                    <label className="text-[8px] font-mono text-gray-400">Bulk Import Done Notification</label>
+                                    <textarea 
+                                      value={appSettings['slack_bulk_import_done']?.template || ''}
+                                      onChange={(e) => setAppSettings({
+                                        ...appSettings,
+                                        slack_bulk_import_done: { ...appSettings['slack_bulk_import_done'] || {}, template: e.target.value }
+                                      })}
+                                      className="w-full text-[10px] font-mono p-2 bg-gray-50 border-none focus:ring-1 focus:ring-blue-500 h-20 resize-none"
+                                    />
+                                    <p className="text-[8px] font-mono text-gray-400 italic">Available: {"{{processedCount}}"}</p>
+                                 </div>
+                                 <div className="space-y-1">
                                     <label className="text-[8px] font-mono text-gray-400">Channel Notification</label>
                                     <textarea 
                                       value={appSettings['slack_answer_back_channel']?.template || ''}

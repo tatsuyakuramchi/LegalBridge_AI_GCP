@@ -236,6 +236,27 @@ async function startServer() {
       };
     };
 
+    const getLegalSearchModal = (): any => {
+      return {
+        type: "modal",
+        callback_id: "legal_search_modal",
+        title: { type: "plain_text", text: "法務検索 (Legal Search)" },
+        blocks: [
+          {
+            type: "input",
+            block_id: "keyword_block",
+            label: { type: "plain_text", text: "検索キーワード" },
+            element: {
+              type: "plain_text_input",
+              action_id: "keyword_input",
+              placeholder: { type: "plain_text", text: "件名、取引先名、Backlogキーなどを入力" }
+            }
+          }
+        ],
+        submit: { type: "plain_text", text: "検索" }
+      };
+    };
+
     // --- Slack Handlers ---
 
     // 1. Command to open modal
@@ -254,16 +275,24 @@ async function startServer() {
     // 2. Command to search
     slackApp.command("/法務検索", async ({ command, ack, client, body }) => {
       await ack();
-      const keyword = command.text.trim();
-      
-      if (!keyword) {
-        await client.chat.postEphemeral({
-          channel: body.channel_id,
-          user: body.user_id,
-          text: "🔍 検索ワードを入力してください。例: `/法務検索 株式会社アークライト` または `/法務検索 検収`"
+      try {
+        await client.views.open({
+          trigger_id: body.trigger_id,
+          view: getLegalSearchModal()
         });
-        return;
+      } catch (error) {
+        console.error("Error opening search modal:", error);
       }
+    });
+
+    // Modal submission for search
+    slackApp.view("legal_search_modal", async ({ ack, body, view, client }) => {
+      await ack();
+      
+      const keyword = view.state.values.keyword_block.keyword_input.value || "";
+      const user = body.user.id;
+      
+      if (!keyword) return;
 
       try {
         // Search in Legal Requests (including inspection/royalty context)
@@ -343,12 +372,7 @@ async function startServer() {
           }
         });
       } catch (error) {
-        console.error("Error during search:", error);
-        await client.chat.postEphemeral({
-          channel: body.channel_id,
-          user: body.user_id,
-          text: "⚠️ 検索中にエラーが発生しました。システム管理者に連絡してください。"
-        });
+        console.error("Error during Slack search:", error);
       }
     });
 
@@ -701,7 +725,16 @@ ${details}
           const mention = item.staff_slack_id ? `<@${item.staff_slack_id}> ` : "";
           const targetChannel = item.slack_channel_id || process.env.SLACK_NOTIFY_CHANNEL || "general";
           
-          const message = `⚠️ *【検収期限超過アラート】*\n\n${mention}*課題:* ${item.backlog_issue_key} (${item.summary})\n*相手方:* ${item.counterparty}\n*期限:* ${new Date(item.inspection_deadline).toLocaleDateString("ja-JP")}\n\n至急、検収状況を確認してください。`;
+          const settingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_overdue_alert'");
+          const template = settingsResult.rows[0]?.value?.template || 
+            `⚠️ *【検収期限超過アラート】*\n\n{{mention}}*課題:* {{issueKey}} ({{summary}})\n*相手方:* {{counterparty}}\n*期限:* {{deadline}}\n\n至急、検収状況を確認してください。`;
+          
+          const message = template
+            .replace(/{{mention}}/g, mention)
+            .replace(/{{issueKey}}/g, item.backlog_issue_key || "")
+            .replace(/{{summary}}/g, item.summary || "")
+            .replace(/{{counterparty}}/g, item.counterparty || "")
+            .replace(/{{deadline}}/g, new Date(item.inspection_deadline).toLocaleDateString("ja-JP"));
           
           await slackApp.client.chat.postMessage({
             channel: targetChannel,
@@ -1394,10 +1427,17 @@ ${details}
 
       // Notify Slack about bulk completion with delivery instructions
       if (slackApp && result.success && (mode === "publishing" || mode === "generic")) {
-        const channelId = process.env.SLACK_CHANNEL_ID || "C0123456789"; // Fallback or configurable
+        const channelId = process.env.SLACK_CHANNEL_ID || "C0123456789"; 
+        
+        const settingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_bulk_import_done'");
+        const template = settingsResult.rows[0]?.value?.template || 
+          `📦 一括発注・検収登録が完了しました（件数: {{processedCount}}件）。\n\n【納品時のご案内】\n納品が発生した際は、ダウンロードされた結果CSVに「納品日（deliveredAt）」と「納品額（deliveredAmount）」を記入し、再度一括インポートを行うことで検収登録が可能です。`;
+
+        const msg = template.replace(/{{processedCount}}/g, String(result.processedCount));
+
         await slackApp.client.chat.postMessage({
           channel: channelId,
-          text: `📦 一括発注・検収登録が完了しました（件数: ${result.processedCount}件）。\n\n【納品時のご案内】\n納品が発生した際は、ダウンロードされた結果CSVに「納品日（deliveredAt）」と「納品額（deliveredAmount）」を記入し、再度一括インポートを行うことで検収登録が可能です。`,
+          text: msg,
         });
       }
 
@@ -1625,9 +1665,15 @@ ${details}
 
       // 5. Notify via Slack
       if (slackApp) {
-        // Try to find the user in Slack by email or use a default channel
-        // For now, we'll post to the general channel or a specific one if configured
-        const message = `📄 *ドキュメントが作成されました*\n\n*課題:* ${issueKey} (${issue.summary})\n*タイプ:* ${templateType}\n*リンク:* ${driveLink}`;
+        const settingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_document_generated'");
+        const template = settingsResult.rows[0]?.value?.template || 
+          `📄 *ドキュメントが作成されました*\n\n*課題:* {{issueKey}} ({{summary}})\n*タイプ:* {{type}}\n*リンク:* {{link}}`;
+
+        const message = template
+          .replace(/{{issueKey}}/g, issueKey)
+          .replace(/{{summary}}/g, issue.summary || "")
+          .replace(/{{type}}/g, templateType)
+          .replace(/{{link}}/g, driveLink);
         
         // If we have the original requester's Slack ID from the Backlog description (we saved it earlier)
         const slackIdMatch = issue.description.match(/<@([A-Z0-9]+)>/);
