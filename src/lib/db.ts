@@ -68,6 +68,11 @@ export async function initDb() {
       current_value INTEGER DEFAULT 0,
       PRIMARY KEY (kind, year)
     );`,
+    `ALTER TABLE document_sequences ADD COLUMN IF NOT EXISTS kind VARCHAR(50);`,
+    `ALTER TABLE document_sequences ADD COLUMN IF NOT EXISTS year INTEGER;`,
+    // Drop the old sequence_key if it exists after migration if necessary, 
+    // but the most important thing is to make sure columns exist for the new primary key.
+    // If the table already existed without being partitioned by year, we might need to recreate it.
 
     // 2. Vendors
     `CREATE TABLE IF NOT EXISTS vendors (
