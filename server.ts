@@ -9,6 +9,7 @@ import { BacklogService } from "./src/services/backlogService.ts";
 import { DocumentService } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
+import { ExcelService } from "./src/services/excelService.ts";
 import { pool, initDb, query, getNextSequenceValue, getNewDocumentNumber } from "./src/lib/db.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
 import TurndownService from 'turndown';
@@ -36,6 +37,14 @@ dotenv.config();
     settingsResult.rows.forEach(r => dbSettings[r.key] = r.value);
     console.log("✅ Settings loaded");
 
+    // Simple request logger
+    app.use((req, res, next) => {
+      if (!req.url.startsWith('/dist') && !req.url.startsWith('/assets')) {
+         console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+      }
+      next();
+    });
+
     // Slack Setup
     const slackBotToken = dbSettings.SLACK_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
     const slackSigningSecret = dbSettings.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET;
@@ -51,7 +60,7 @@ dotenv.config();
           actions: "/slack/interactions",
           events: "/slack/events",
         },
-        processBeforeResponse: true, // Try setting this to true to ensure ack is sent
+        processBeforeResponse: false, 
       });
 
       slackApp = new App({
@@ -60,7 +69,7 @@ dotenv.config();
         logLevel: LogLevel.INFO,
       });
 
-      // Mount Slack Receiver FIRST, before any other middleware
+      // Mount Slack Receiver
       app.use(receiver.router);
     }
 
@@ -77,14 +86,6 @@ dotenv.config();
       replacement: () => ''
     });
 
-    // Simple request logger
-    app.use((req, res, next) => {
-      if (!req.url.startsWith('/dist') && !req.url.startsWith('/assets')) {
-         console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-      }
-      next();
-    });
-
     console.log("⏳ Fetching app settings...");
 
   const backlogService = new BacklogService({
@@ -95,6 +96,7 @@ dotenv.config();
   const documentService = new DocumentService();
   const googleDriveService = new GoogleDriveService();
     const csvImportService = new CsvImportService();
+    const excelService = new ExcelService();
 
     const upload = multer({ storage: multer.memoryStorage() });
 
@@ -304,8 +306,10 @@ dotenv.config();
 
     // Modal submission for search
     slackApp.view("legal_search_modal", async ({ ack, body, view, client }) => {
+      console.log(`🔍 Received search request from user ${body.user.id}`);
       // 1. Acknowledge the view_submission request immediately to avoid timeout
       await ack();
+      console.log("   ✅ Acknowledged search request");
       
       const keyword = view.state.values.keyword_block.keyword_input.value || "";
       const user = body.user.id;
@@ -414,8 +418,10 @@ dotenv.config();
 
     // 2. Modal submission
     slackApp.view("legal_request_modal", async ({ ack, body, view, client }) => {
+      console.log(`📩 Received request modal submission from user ${body.user.id}`);
       // 1. Acknowledge immediately to avoid timeout
       await ack();
+      console.log("   ✅ Acknowledged request modal submission");
       
       const values = view.state.values;
       const requestType = values.request_type_block.request_type_input.selected_option?.value || "legal_consult";
@@ -1541,6 +1547,20 @@ ${details}
     } catch (error) {
       console.error("Preview failed:", error);
       res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.post("/api/documents/export-excel", express.json(), async (req, res) => {
+    try {
+      const data = req.body;
+      const buffer = excelService.generateInspectionExcel(data);
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', `attachment; filename=inspection_${Date.now()}.xlsx`);
+      res.send(buffer);
+    } catch (error) {
+      console.error("Excel export error:", error);
+      res.status(500).json({ error: String(error) });
     }
   });
 

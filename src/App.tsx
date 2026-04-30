@@ -431,6 +431,57 @@ export default function App() {
     }
   };
 
+  const handleExportExcel = async () => {
+    setIsGenerating(true);
+    try {
+      // Prepare multi-item data for Excel
+      const excelItems = [];
+      for (let i = 1; i <= 5; i++) {
+        excelItems.push({
+          content: formData[`支払内容（${i}）`] || "",
+          unit_price: Number(formData[`単価（${i}）`] || 0),
+          quantity: Number(formData[`数量（${i}）`] || 0),
+          amount: Number(formData[`金額（${i}）`] || 0),
+          delivery_date: formData[`納品日（${i}）`] || ""
+        });
+      }
+
+      const excelData = {
+        summary: formData.件名 || issueSummary?.summary || "",
+        payment_date: formData.支払日 || "",
+        department: formData.部署 || formData.inspectorDept || "",
+        vendor_code: formData.取引先コード || activeVendor?.vendor_code || "",
+        name: formData.氏名 || formData.counterparty || "",
+        name_kana: formData['氏名（カナ）'] || "",
+        items: excelItems,
+        reimbursement: Number(formData.立替金 || 0),
+        subtotal: Number(formData.小計 || 0),
+        withholding_tax: Number(formData.源泉税 || 0),
+        after_tax: Number(formData.税引後 || 0),
+        net_transfer_amount: Number(formData.差引振込額 || 0)
+      };
+
+      const res = await fetch('/api/documents/export-excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(excelData)
+      });
+      
+      if (res.ok) {
+        const blob = await res.blob();
+        saveAs(blob, `inspection_${selectedIssue || 'export'}.xlsx`);
+        showNotification("Excel export successful", "success");
+      } else {
+        showNotification("Excel export failed", "error");
+      }
+    } catch (e) {
+      console.error("Excel export error:", e);
+      showNotification("Excel export failed", "error");
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   // Live preview effect
   useEffect(() => {
     if (isPreviewVisible) {
@@ -1378,6 +1429,35 @@ export default function App() {
                                {['paymentConditionSummary', 'bankName', 'branchName', 'accountType', 'accountNo', 'accountHolder'].map(renderDynamicField)}
                              </div>
                           </div>
+                           {/* Excel Export Multi-Item Data */}
+                           <div className="mt-8 p-8 border border-blue-600/10 bg-blue-50/5 space-y-6">
+                              <div className="flex justify-between items-center border-b border-blue-800/10 pb-2">
+                                <h3 className="text-[10px] font-mono font-bold uppercase text-blue-800">Excel Export Data (多項目検収用)</h3>
+                                <div className="text-[8px] font-mono opacity-50 uppercase">Only used for Excel Export</div>
+                              </div>
+                              
+                              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
+                                {['件名', '支払日', '部署', '取引先コード', '氏名', '氏名（カナ）'].map(f => renderDynamicField(f))}
+                                {['立替金', '小計', '源泉税', '税引後', '差引振込額'].map(f => renderDynamicField(f))}
+                              </div>
+
+                              <div className="space-y-2 mt-6">
+                                {[1, 2, 3, 4, 5].map(i => (
+                                  <div key={i} className="p-4 bg-white border border-[#141414]/5 rounded-sm">
+                                    <div className="flex items-center gap-2 mb-3">
+                                      <span className="text-[9px] font-mono font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">ITEM {i}</span>
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+                                      {renderDynamicField(`支払内容（${i}）`, `内容 ${i}`)}
+                                      {renderDynamicField(`単価（${i}）`, `単価 ${i}`)}
+                                      {renderDynamicField(`数量（${i}）`, `数量 ${i}`)}
+                                      {renderDynamicField(`金額（${i}）`, `金額 ${i}`)}
+                                      {renderDynamicField(`納品日（${i}）`, `納品日 ${i}`)}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                           </div>
                         </>
                       ) : selectedTemplate === 'royalty_statement' ? (
                         <>
@@ -1560,6 +1640,16 @@ export default function App() {
                        {isPreviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4 group-hover:scale-110 transition-transform" />}
                        Preview Stage
                      </button>
+                     {selectedTemplate === 'inspection_certificate' && (
+                        <button 
+                          onClick={handleExportExcel}
+                          disabled={isGenerating}
+                          className="flex-1 md:flex-none px-10 py-3.5 border border-blue-600 text-blue-600 text-[11px] font-mono font-bold uppercase tracking-widest hover:bg-blue-600 hover:text-white transition-all flex items-center justify-center gap-2 group"
+                        >
+                          <Download className="w-4 h-4 group-hover:bounce transition-transform" />
+                          Export Excel
+                        </button>
+                     )}
                      <button 
                        onClick={handleGenerate}
                        disabled={isGenerating}
