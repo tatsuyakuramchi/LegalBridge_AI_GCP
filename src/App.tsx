@@ -41,6 +41,14 @@ interface Vendor {
   address?: string;
   contact_name?: string;
   vendor_rep?: string;
+  bank_name?: string;
+  branch_name?: string;
+  account_type?: string;
+  account_number?: string;
+  account_holder_kana?: string;
+  entity_type?: string;
+  invoice_registration_number?: string;
+  email?: string;
 }
 
 interface Staff {
@@ -105,6 +113,18 @@ export default function App() {
   const [isEditingVendor, setIsEditingVendor] = useState(false);
   const [selectedStaffDetail, setSelectedStaffDetail] = useState<any>(null);
   const [isEditingStaff, setIsEditingStaff] = useState(false);
+  const [isRegisteringVendor, setIsRegisteringVendor] = useState(false);
+  const [newVendorData, setNewVendorData] = useState({
+    vendor_name: '',
+    vendor_code: '',
+    trade_name: ''
+  });
+  const [isRegisteringStaff, setIsRegisteringStaff] = useState(false);
+  const [newStaffData, setNewStaffData] = useState({
+    staff_name: '',
+    department: '',
+    slack_user_id: ''
+  });
   const [isUploadingChangeRequest, setIsUploadingChangeRequest] = useState(false);
   const [appSettings, setAppSettings] = useState<any>({});
   
@@ -1346,118 +1366,152 @@ export default function App() {
                              </div>
                           </div>
                         </>
-                      ) : selectedTemplate === 'inspection_certificate' ? (
+                      ) : selectedTemplate.startsWith('inspection_certificate') ? (
                         <>
                           {/* Inspection Header Step */}
                           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                               <div className="flex justify-between items-center border-b pb-2">
-                                  <h3 className="text-[10px] font-mono font-bold uppercase">Context & ID</h3>
-                                  <button 
-                                    onClick={() => syncFromDatabase()}
-                                    className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"
-                                  ><Database className="w-2 h-2" /> DBから補完</button>
-                               </div>
-                               {['issueKey', 'itemNo', 'deliveryNo', 'totalDeliveries', 'itemCount', 'orderDate', 'documentDate'].map(renderDynamicField)}
-                               {renderDynamicField('isPartial')}
-                             </div>
-                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                               <h3 className="text-[10px] font-mono font-bold uppercase border-b pb-2">Counterparty (受託者)</h3>
-                               <div className="flex gap-2">
-                                  <button onClick={() => {
-                                    if(activeVendor) setFormData({...formData, counterparty: activeVendor.vendor_name, counterpartyRepresentativeSama: activeVendor.vendor_rep + ' 様', counterpartyTni: activeVendor.trade_name});
-                                  }} className="text-[8px] font-mono border px-2 py-1 uppercase opacity-50 hover:opacity-100 transition-all">From Master</button>
-                               </div>
-                               {['counterparty', 'counterpartyRepresentativeSama', 'counterpartyTni'].map(renderDynamicField)}
-                             </div>
-                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                               <h3 className="text-[10px] font-mono font-bold uppercase border-b pb-2">Internal (検収者)</h3>
-                               <div className="flex gap-2">
-                                  <button onClick={() => {
-                                    if(selectedStaff) setFormData({...formData, inspectorDept: selectedStaff.department, inspectorName: selectedStaff.staff_name});
-                                  }} className="text-[8px] font-mono border px-2 py-1 uppercase opacity-50 hover:opacity-100 transition-all">From Staff Master</button>
-                               </div>
-                               {['inspectorDept', 'inspectorName', 'deliveredAt', 'inspectionCompletedAt', 'paymentDueDate'].map(renderDynamicField)}
-                             </div>
+                            <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                              <div className="flex justify-between items-center border-b pb-2">
+                                <h3 className="text-[10px] font-mono font-bold uppercase text-blue-600">Context & Basic (基本情報)</h3>
+                                <button 
+                                  onClick={() => syncFromDatabase()}
+                                  className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1 hover:bg-blue-700 transition-all"
+                                ><Database className="w-2 h-2" /> DBから補完</button>
+                              </div>
+                              <div className="space-y-4">
+                                {renderDynamicField('issueKey', '発注番号 (Issue Key)')}
+                                <div className="grid grid-cols-2 gap-4">
+                                  {renderDynamicField('itemNo', '明細番号')}
+                                  {renderDynamicField('itemCount', '総明細数')}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  {renderDynamicField('deliveryNo', '今回の納品回数')}
+                                  {renderDynamicField('totalDeliveries', '総予定回数')}
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                  {renderDynamicField('orderDate', '発注日')}
+                                  {renderDynamicField('documentDate', '発行日 (検収書)')}
+                                </div>
+                                {renderDynamicField('isPartial', '分割納品フラグ')}
+                              </div>
+                            </div>
+                            
+                            <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                              <div className="flex justify-between items-center border-b pb-2">
+                                <h3 className="text-[10px] font-mono font-bold uppercase text-orange-600">Counterparty (受託者情報)</h3>
+                                <button onClick={() => {
+                                  if(activeVendor) setFormData({...formData, counterparty: activeVendor.vendor_name, counterpartyRepresentativeSama: (activeVendor.vendor_rep || activeVendor.contact_name) + ' 様', counterpartyTni: activeVendor.invoice_registration_number});
+                                }} className="text-[8px] font-mono border border-orange-600 text-orange-600 px-2 py-1 uppercase hover:bg-orange-600 hover:text-white transition-all">マスターから反映</button>
+                              </div>
+                              <div className="space-y-4">
+                                {renderDynamicField('counterparty', '受託者名')}
+                                {renderDynamicField('counterpartyRepresentativeSama', '代表者名 (＋様)')}
+                                {renderDynamicField('counterpartyTni', 'インボイス登録番号 (T-No)')}
+                              </div>
+                            </div>
+
+                            <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
+                              <div className="flex justify-between items-center border-b pb-2">
+                                <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-600">Internal (検収者情報)</h3>
+                                <button onClick={() => {
+                                  if(selectedStaff) setFormData({...formData, inspectorDept: selectedStaff.department, inspectorName: selectedStaff.staff_name});
+                                }} className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-1 uppercase hover:bg-emerald-600 hover:text-white transition-all">スタッフから反映</button>
+                              </div>
+                              <div className="space-y-4">
+                                {renderDynamicField('inspectorDept', '検収者部署')}
+                                {renderDynamicField('inspectorName', '検収者名')}
+                                <div className="pt-2 border-t border-dashed border-gray-100 space-y-4">
+                                  {renderDynamicField('deliveredAt', '実納品日 (年月日)')}
+                                  {renderDynamicField('inspectionCompletedAt', '検収完了日')}
+                                  {renderDynamicField('paymentDueDate', '支払期日')}
+                                </div>
+                              </div>
+                            </div>
                           </div>
 
                           {/* Inspection Content & Financials */}
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                             <div className="p-8 border border-emerald-600/5 bg-emerald-50/5 space-y-6">
-                               <div className="flex justify-between items-center border-b border-emerald-800/10 pb-2">
-                                  <div className="flex items-center gap-2">
-                                     <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-800">Deliverable Detail</h3>
-                                     {formData.linked_po_number && (
-                                        <span className="text-[8px] font-mono bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-200 flex items-center gap-1">
-                                           <Link className="w-2 h-2" /> {formData.linked_po_number}
-                                        </span>
-                                     )}
-                                  </div>
-                                  <div className="flex gap-2">
-                                     <button 
-                                       onClick={() => {
-                                          setAssetPickerCallback((asset) => {
-                                             fetch('/api/management/link-asset', {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ type: 'delivery', issueKey: formData.issueKey, assetId: asset.id })
-                                             }).then(() => {
-                                                showNotification("Associated with PO: " + asset.asset_number, "success");
-                                                setFormData({...formData, linked_po_number: asset.asset_number, linked_po_link: asset.file_link});
-                                             });
-                                          });
-                                          setIsAssetPickerOpen(true);
-                                       }}
-                                       className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-0.5 hover:bg-emerald-600 hover:text-white transition-all uppercase flex items-center gap-1"
-                                     ><Link className="w-2 h-2" /> PO紐付</button>
-                                     <button 
-                                       onClick={() => syncFromDatabase()}
-                                       className="text-[8px] font-mono bg-emerald-600 text-white px-2 py-0.5 hover:bg-emerald-700 transition-all uppercase flex items-center gap-1"
-                                     ><Database className="w-2 h-2" /> DBから補完</button>
-                                  </div>
-                               </div>
-                               {['description', 'spec', 'isReducedTax'].map(renderDynamicField)}
-                               <div className="grid grid-cols-2 gap-4">
-                                  {['deliveredAmountStr', 'taxRate', 'taxAmountStr', 'totalAmountStr'].map(renderDynamicField)}
-                               </div>
-                             </div>
-                             <div className="p-8 border border-indigo-600/5 bg-indigo-50/5 space-y-6">
-                               <h3 className="text-[10px] font-mono font-bold uppercase text-indigo-800 border-b border-indigo-800/10 pb-2">Progress & Bank (財務)</h3>
-                               <div className="grid grid-cols-2 gap-4">
-                                  {['inspectedPct', 'inspectedAmountStr', 'totalOrderAmountStr', 'pendingAmountStr'].map(renderDynamicField)}
-                               </div>
-                               {['paymentConditionSummary', 'bankName', 'branchName', 'accountType', 'accountNo', 'accountHolder'].map(renderDynamicField)}
-                             </div>
+                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+                            <div className="p-8 border border-emerald-600/5 bg-emerald-50/5 space-y-6">
+                              <div className="flex justify-between items-center border-b border-emerald-800/10 pb-2">
+                                <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-800">Deliverable Detail (納品明細)</h3>
+                                <button 
+                                  onClick={() => {
+                                    setAssetPickerCallback((asset) => {
+                                      fetch('/api/management/link-asset', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({ type: 'delivery', issueKey: formData.issueKey, assetId: asset.id })
+                                      }).then(() => {
+                                        showNotification("Associated with PO: " + asset.asset_number, "success");
+                                        setFormData({...formData, linked_po_number: asset.asset_number, linked_po_link: asset.file_link});
+                                      });
+                                    });
+                                    setIsAssetPickerOpen(true);
+                                  }}
+                                  className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-0.5 hover:bg-emerald-600 hover:text-white transition-all uppercase flex items-center gap-1"
+                                ><Link className="w-2 h-2" /> PO紐付</button>
+                              </div>
+                              <div className="space-y-4">
+                                {renderDynamicField('description', '成果物・業務内容 (商品名等)')}
+                                {renderDynamicField('spec', '仕様・内容詳細')}
+                                <div className="grid grid-cols-2 gap-6 bg-white/50 p-4 rounded-sm border border-emerald-600/10">
+                                  {renderDynamicField('deliveredAmountStr', '支払対価 (税抜・数値)')}
+                                  {renderDynamicField('taxRate', '消費税率 (%)')}
+                                  {renderDynamicField('taxAmountStr', '消費税額')}
+                                  {renderDynamicField('totalAmountStr', '合計検収金額 (税込)')}
+                                </div>
+                                {renderDynamicField('isReducedTax', '軽減税率対象 (8%)')}
+                              </div>
+                            </div>
+                            
+                            <div className="p-8 border border-indigo-600/5 bg-indigo-50/5 space-y-6">
+                              <h3 className="text-[10px] font-mono font-bold uppercase text-indigo-800 border-b border-indigo-800/10 pb-2">Financial & Progress (進捗・財務)</h3>
+                              <div className="grid grid-cols-2 gap-4">
+                                {renderDynamicField('inspectedPct', '納品進捗率 (%)')}
+                                {renderDynamicField('inspectedAmountStr', '検収済累計額')}
+                                {renderDynamicField('totalOrderAmountStr', '将来を含む発注総額')}
+                                {renderDynamicField('pendingAmountStr', '残高 (未検収分)')}
+                              </div>
+                              <div className="space-y-4 pt-4 border-t border-indigo-800/5">
+                                {renderDynamicField('paymentConditionSummary', '支払条件 (月末締翌月末等)')}
+                                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
+                                  {renderDynamicField('bankName', '銀行名')}
+                                  {renderDynamicField('branchName', '支店名')}
+                                  {renderDynamicField('accountType', '預金種別')}
+                                  {renderDynamicField('accountNo', '口座番号')}
+                                </div>
+                                {renderDynamicField('accountHolder', '口座名義 (カタカナ推奨)')}
+                              </div>
+                            </div>
                           </div>
-                           {/* Excel Export Multi-Item Data */}
-                           <div className="mt-8 p-8 border border-blue-600/10 bg-blue-50/5 space-y-6">
-                              <div className="flex justify-between items-center border-b border-blue-800/10 pb-2">
-                                <h3 className="text-[10px] font-mono font-bold uppercase text-blue-800">Excel Export Data (多項目検収用)</h3>
-                                <div className="text-[8px] font-mono opacity-50 uppercase">Only used for Excel Export</div>
-                              </div>
-                              
-                              <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
-                                {['件名', '支払日', '部署', '取引先コード', '氏名', '氏名（カナ）'].map(f => renderDynamicField(f))}
-                                {['立替金', '小計', '源泉税', '税引後', '差引振込額'].map(f => renderDynamicField(f))}
-                              </div>
 
-                              <div className="space-y-2 mt-6">
-                                {[1, 2, 3, 4, 5].map(i => (
-                                  <div key={i} className="p-4 bg-white border border-[#141414]/5 rounded-sm">
-                                    <div className="flex items-center gap-2 mb-3">
-                                      <span className="text-[9px] font-mono font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">ITEM {i}</span>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-                                      {renderDynamicField(`支払内容（${i}）`, `内容 ${i}`)}
-                                      {renderDynamicField(`単価（${i}）`, `単価 ${i}`)}
-                                      {renderDynamicField(`数量（${i}）`, `数量 ${i}`)}
-                                      {renderDynamicField(`金額（${i}）`, `金額 ${i}`)}
-                                      {renderDynamicField(`納品日（${i}）`, `納品日 ${i}`)}
-                                    </div>
+                          {/* Excel Export Multi-Item Data */}
+                          <div className="mt-8 p-8 border border-blue-600/10 bg-blue-50/5 space-y-6">
+                            <div className="flex justify-between items-center border-b border-blue-800/10 pb-2">
+                              <h3 className="text-[10px] font-mono font-bold uppercase text-blue-800">Excel Export Data (多項目検収用)</h3>
+                              <div className="text-[8px] font-mono opacity-50 uppercase">Only used for Excel Export</div>
+                            </div>
+                            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
+                              {['件名', '支払日', '部署', '取引先コード', '氏名', '氏名（カナ）'].map(f => renderDynamicField(f))}
+                              {['立替金', '小計', '源泉税', '税引後', '差引振込額'].map(f => renderDynamicField(f))}
+                            </div>
+                            <div className="space-y-2 mt-6">
+                              {[1, 2, 3, 4, 5].map(i => (
+                                <div key={i} className="p-4 bg-white border border-[#141414]/5 rounded-sm">
+                                  <div className="flex items-center gap-2 mb-3">
+                                    <span className="text-[9px] font-mono font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">ITEM {i}</span>
                                   </div>
-                                ))}
-                              </div>
-                           </div>
+                                  <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
+                                    {renderDynamicField(`支払内容（${i}）`, `内容 ${i}`)}
+                                    {renderDynamicField(`単価（${i}）`, `単価 ${i}`)}
+                                    {renderDynamicField(`数量（${i}）`, `数量 ${i}`)}
+                                    {renderDynamicField(`金額（${i}）`, `金額 ${i}`)}
+                                    {renderDynamicField(`納品日（${i}）`, `納品日 ${i}`)}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
                         </>
                       ) : selectedTemplate === 'royalty_statement' ? (
                         <>
@@ -1640,7 +1694,7 @@ export default function App() {
                        {isPreviewing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Eye className="w-4 h-4 group-hover:scale-110 transition-transform" />}
                        Preview Stage
                      </button>
-                     {selectedTemplate === 'inspection_certificate' && (
+                     {selectedTemplate.startsWith('inspection_certificate') && (
                         <button 
                           onClick={handleExportExcel}
                           disabled={isGenerating}
@@ -1794,16 +1848,8 @@ export default function App() {
                          <div className="flex items-center gap-4">
                             <button 
                               onClick={() => {
-                                const name = prompt("Name:");
-                                const code = prompt("Vendor Code:");
-                                const trade = prompt("Trade Name:");
-                                if (name && code) {
-                                  fetch('/api/master/vendors', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ vendor_name: name, vendor_code: code, trade_name: trade })
-                                  }).then(() => window.location.reload());
-                                }
+                                setNewVendorData({ vendor_name: '', vendor_code: '', trade_name: '' });
+                                setIsRegisteringVendor(true);
                               }}
                               className="p-1 hover:bg-orange-50 text-orange-600 rounded-sm"
                             >
@@ -1863,16 +1909,8 @@ export default function App() {
                          <div className="flex items-center gap-4">
                             <button 
                               onClick={() => {
-                                const name = prompt("Name:");
-                                const dept = prompt("Department:");
-                                const slack = prompt("Slack ID:");
-                                if (name && slack) {
-                                  fetch('/api/master/staff', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({ staff_name: name, department: dept, slack_user_id: slack })
-                                  }).then(() => window.location.reload());
-                                }
+                                setNewStaffData({ staff_name: '', department: '', slack_user_id: '' });
+                                setIsRegisteringStaff(true);
                               }}
                               className="p-1 hover:bg-blue-50 text-blue-600 rounded-sm"
                             >
@@ -3088,7 +3126,179 @@ export default function App() {
 
       {/* Vendor Detail Modal */}
       <AnimatePresence>
-        {selectedVendorDetail && (
+        {/* Staff Registration Modal */}
+       <AnimatePresence>
+         {isRegisteringStaff && (
+           <div className="fixed inset-0 z-[130] flex items-center justify-center p-8">
+             <motion.div 
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               className="absolute inset-0 bg-[#141414]/90 backdrop-blur-sm"
+               onClick={() => setIsRegisteringStaff(false)}
+             />
+             <motion.div 
+               initial={{ opacity: 0, y: 20 }}
+               animate={{ opacity: 1, y: 0 }}
+               exit={{ opacity: 0, y: 20 }}
+               className="w-full max-w-lg bg-white p-8 rounded-sm shadow-2xl z-10"
+             >
+                <div className="flex justify-between items-center mb-8 border-b border-[#141414]/10 pb-4">
+                  <h3 className="text-xs font-mono font-bold uppercase tracking-widest">Enroll New Staff Member</h3>
+                  <button onClick={() => setIsRegisteringStaff(false)}><Plus className="w-5 h-5 rotate-45" /></button>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Full Name (必須)</label>
+                    <input 
+                      autoFocus
+                      value={newStaffData.staff_name}
+                      onChange={e => setNewStaffData({...newStaffData, staff_name: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-blue-600 outline-none transition-all"
+                      placeholder="e.g. 倉持 達也"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Slack User ID (必須)</label>
+                    <input 
+                      value={newStaffData.slack_user_id}
+                      onChange={e => setNewStaffData({...newStaffData, slack_user_id: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-blue-600 outline-none transition-all"
+                      placeholder="e.g. U0123456789"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Department</label>
+                    <input 
+                      value={newStaffData.department}
+                      onChange={e => setNewStaffData({...newStaffData, department: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-blue-600 outline-none transition-all"
+                      placeholder="e.g. 制作部"
+                    />
+                  </div>
+                  <button 
+                    onClick={async () => {
+                      if (!newStaffData.staff_name || !newStaffData.slack_user_id) {
+                        showNotification("Name and Slack ID are required", "error");
+                        return;
+                      }
+                      try {
+                        const res = await fetch('/api/master/staff', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(newStaffData)
+                        });
+                        if (res.ok) {
+                          showNotification("Staff enrolled successfully", "success");
+                          setIsRegisteringStaff(false);
+                          // Refresh staff list
+                          const sData = await fetch('/api/master/staff').then(r => r.json());
+                          setStaffList(sData);
+                        } else {
+                          const err = await res.json();
+                          showNotification("Enrollment failed: " + (err.error || "Unknown error"), "error");
+                        }
+                      } catch (e) {
+                        showNotification("Network error during enrollment", "error");
+                      }
+                    }}
+                    className="w-full py-4 bg-blue-600 text-white font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-blue-700 transition-all"
+                  >
+                    CONFIRM ENROLLMENT
+                  </button>
+                </div>
+             </motion.div>
+           </div>
+         )}
+       </AnimatePresence>
+
+       {/* Registration Modal */}
+       <AnimatePresence>
+         {isRegisteringVendor && (
+           <div className="fixed inset-0 z-[130] flex items-center justify-center p-8">
+             <motion.div 
+               initial={{ opacity: 0 }}
+               animate={{ opacity: 1 }}
+               exit={{ opacity: 0 }}
+               className="absolute inset-0 bg-[#141414]/90 backdrop-blur-sm"
+               onClick={() => setIsRegisteringVendor(false)}
+             />
+             <motion.div 
+               initial={{ opacity: 0, y: 20 }}
+               animate={{ opacity: 1, y: 0 }}
+               exit={{ opacity: 0, y: 20 }}
+               className="w-full max-w-lg bg-white p-8 rounded-sm shadow-2xl z-10"
+             >
+                <div className="flex justify-between items-center mb-8 border-b border-[#141414]/10 pb-4">
+                  <h3 className="text-xs font-mono font-bold uppercase tracking-widest">Register New Partner</h3>
+                  <button onClick={() => setIsRegisteringVendor(false)}><Plus className="w-5 h-5 rotate-45" /></button>
+                </div>
+                <div className="space-y-6">
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Official Name (必須)</label>
+                    <input 
+                      autoFocus
+                      value={newVendorData.vendor_name}
+                      onChange={e => setNewVendorData({...newVendorData, vendor_name: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                      placeholder="e.g. 株式会社アークライト"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Vendor Code (必須)</label>
+                    <input 
+                      value={newVendorData.vendor_code}
+                      onChange={e => setNewVendorData({...newVendorData, vendor_code: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                      placeholder="e.g. V-0001"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Trade Name / Alias</label>
+                    <input 
+                      value={newVendorData.trade_name}
+                      onChange={e => setNewVendorData({...newVendorData, trade_name: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                      placeholder="e.g. ARCLIGHT"
+                    />
+                  </div>
+                  <button 
+                    onClick={async () => {
+                      if (!newVendorData.vendor_name || !newVendorData.vendor_code) {
+                        showNotification("Name and Code are required", "error");
+                        return;
+                      }
+                      try {
+                        const res = await fetch('/api/master/vendors', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify(newVendorData)
+                        });
+                        if (res.ok) {
+                          showNotification("Partner registered successfully", "success");
+                          setIsRegisteringVendor(false);
+                          // Refresh vendors
+                          const vData = await fetch('/api/master/vendors').then(r => r.json());
+                          setVendors(vData);
+                        } else {
+                          const err = await res.json();
+                          showNotification("Registration failed: " + (err.error || "Unknown error"), "error");
+                        }
+                      } catch (e) {
+                        showNotification("Network error during registration", "error");
+                      }
+                    }}
+                    className="w-full py-4 bg-orange-600 text-white font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-orange-700 transition-all"
+                  >
+                    CONFIRM REGISTRATION
+                  </button>
+                </div>
+             </motion.div>
+           </div>
+         )}
+       </AnimatePresence>
+
+       {selectedVendorDetail && (
           <div className="fixed inset-0 z-[120] flex items-center justify-center p-8">
             <motion.div 
               initial={{ opacity: 0 }}
@@ -3220,9 +3430,25 @@ export default function App() {
                              <div className="space-y-1">
                                 <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Tax Registration No.</label>
                                 {isEditingVendor ? (
-                                   <input value={selectedVendorDetail.invoice_registration_number} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, invoice_registration_number: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
+                                   <input value={selectedVendorDetail.invoice_registration_number || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, invoice_registration_number: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
                                 ) : (
                                    <p className="text-[10px] font-mono uppercase font-bold">{selectedVendorDetail.invoice_registration_number || 'T--'}</p>
+                                )}
+                             </div>
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Address</label>
+                                {isEditingVendor ? (
+                                   <input value={selectedVendorDetail.address || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, address: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
+                                ) : (
+                                   <p className="text-[10px] font-mono uppercase">{selectedVendorDetail.address || 'N/A'}</p>
+                                )}
+                             </div>
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Phone</label>
+                                {isEditingVendor ? (
+                                   <input value={selectedVendorDetail.phone || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, phone: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
+                                ) : (
+                                   <p className="text-[10px] font-mono uppercase">{selectedVendorDetail.phone || 'N/A'}</p>
                                 )}
                              </div>
                           </div>
@@ -3232,27 +3458,61 @@ export default function App() {
                                 <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Contact Information</label>
                                 <div className="space-y-2 mt-2">
                                    <div className="flex items-center gap-2 text-xs font-mono">
-                                      <span className="opacity-40 uppercase">Email:</span>
+                                      <span className="opacity-40 uppercase w-16 text-[9px]">Email:</span>
                                       {isEditingVendor ? (
-                                         <input value={selectedVendorDetail.email} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, email: e.target.value})} className="flex-1 text-[10px] p-1 border" />
+                                         <input value={selectedVendorDetail.email || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, email: e.target.value})} className="flex-1 text-[10px] p-1 border border-gray-200" placeholder="Email" />
                                       ) : (
                                          <span>{selectedVendorDetail.email || 'N/A'}</span>
                                       )}
                                    </div>
                                    <div className="flex items-center gap-2 text-xs font-mono">
-                                      <span className="opacity-40 uppercase">Rep:</span>
+                                      <span className="opacity-40 uppercase w-16 text-[9px]">Rep:</span>
                                       {isEditingVendor ? (
-                                         <input value={selectedVendorDetail.contact_name} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, contact_name: e.target.value})} className="flex-1 text-[10px] p-1 border" />
+                                         <input value={selectedVendorDetail.contact_name || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, contact_name: e.target.value})} className="flex-1 text-[10px] p-1 border border-gray-200" placeholder="Rep Name" />
                                       ) : (
                                          <span>{selectedVendorDetail.contact_name || 'N/A'}</span>
+                                      )}
+                                   </div>
+                                   <div className="flex items-center gap-2 text-xs font-mono">
+                                      <span className="opacity-40 uppercase w-16 text-[9px]">Formal:</span>
+                                      {isEditingVendor ? (
+                                         <input value={selectedVendorDetail.vendor_rep || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, vendor_rep: e.target.value})} className="flex-1 text-[10px] p-1 border border-gray-200" placeholder="Formal Rep Title/Name" />
+                                      ) : (
+                                         <span>{selectedVendorDetail.vendor_rep || 'N/A'}</span>
                                       )}
                                    </div>
                                 </div>
                              </div>
                              <div className="space-y-1 pt-4 border-t border-gray-50 mt-4">
-                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Financial Node</label>
-                                <p className="text-[10px] font-mono uppercase mt-1">{selectedVendorDetail.bank_name} {selectedVendorDetail.branch_name}</p>
-                                <p className="text-[10px] font-mono mt-0.5">{selectedVendorDetail.account_type || '普通'} {selectedVendorDetail.account_number}</p>
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Financial Node (Bank)</label>
+                                {isEditingVendor ? (
+                                  <div className="space-y-2 mt-2">
+                                    <div className="flex gap-2">
+                                      <input value={selectedVendorDetail.bank_name || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, bank_name: e.target.value})} className="flex-1 text-[10px] p-1 border border-gray-200" placeholder="Bank Name" />
+                                      <input value={selectedVendorDetail.branch_name || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, branch_name: e.target.value})} className="flex-1 text-[10px] p-1 border border-gray-200" placeholder="Branch Name" />
+                                    </div>
+                                    <div className="flex gap-2">
+                                      <select value={selectedVendorDetail.account_type || '普通'} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, account_type: e.target.value})} className="w-24 text-[10px] p-1 border border-gray-200">
+                                         <option value="普通">普通</option>
+                                         <option value="当座">当座</option>
+                                      </select>
+                                      <input value={selectedVendorDetail.account_number || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, account_number: e.target.value})} className="flex-1 text-[10px] p-1 border border-gray-200" placeholder="Account Number" />
+                                    </div>
+                                    <input value={selectedVendorDetail.account_holder_kana || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, account_holder_kana: e.target.value})} className="w-full text-[10px] p-1 border border-gray-200" placeholder="Account Holder (Kana)" />
+                                  </div>
+                                ) : (
+                                  <>
+                                    <p className="text-[10px] font-mono uppercase mt-1">
+                                      {selectedVendorDetail.bank_name} {selectedVendorDetail.branch_name}
+                                    </p>
+                                    <p className="text-[10px] font-mono mt-0.5">
+                                      {selectedVendorDetail.account_type || '普通'} {selectedVendorDetail.account_number}
+                                    </p>
+                                    <p className="text-[9px] font-mono text-gray-400 mt-0.5">
+                                      {selectedVendorDetail.account_holder_kana || 'No Name Data'}
+                                    </p>
+                                  </>
+                                )}
                              </div>
                           </div>
                        </div>
