@@ -89,6 +89,7 @@ export default function App() {
   
   // Template & Fields
   const [selectedTemplate, setSelectedTemplate] = useState<string>('individual_license_terms');
+  const [templateSearch, setTemplateSearch] = useState('');
   const [templateFields, setTemplateFields] = useState<string[]>([]);
   const [isRefreshingFields, setIsRefreshingFields] = useState(false);
   
@@ -947,6 +948,16 @@ export default function App() {
                   </div>
                   <div className="space-y-1.5">
                     <label className="text-[8px] font-mono uppercase opacity-50 block">Output Blueprint</label>
+                    <div className="relative group">
+                       <input 
+                         type="text"
+                         placeholder="FILTER BLUEPRINTS..."
+                         value={templateSearch}
+                         onChange={(e) => setTemplateSearch(e.target.value)}
+                         className="w-full bg-[#141414] border-b border-white/10 py-1 text-[10px] font-mono focus:outline-none focus:border-blue-400 placeholder:opacity-30 mb-2"
+                       />
+                       <Search className="absolute right-0 top-1 w-3 h-3 text-white/20 group-focus-within:text-blue-400" />
+                    </div>
                     <select 
                       value={selectedTemplate}
                       onChange={(e) => setSelectedTemplate(e.target.value)}
@@ -954,10 +965,14 @@ export default function App() {
                     >
                       <option value="">-- SELECT BLUEPRINT --</option>
                       {(() => {
-                        const categories = [...new Set(templateList.map(t => templateMetadata[t]?.category || 'General'))];
+                        const filteredList = templateList.filter(t => {
+                          const label = templateMetadata[t]?.label || t;
+                          return label.toLowerCase().includes(templateSearch.toLowerCase()) || t.toLowerCase().includes(templateSearch.toLowerCase());
+                        });
+                        const categories = [...new Set(filteredList.map(t => templateMetadata[t]?.category || 'General'))];
                         return categories.map(cat => (
                           <optgroup key={cat} label={cat}>
-                            {templateList
+                            {filteredList
                               .filter(t => (templateMetadata[t]?.category || 'General') === cat)
                               .map(t => (
                                 <option key={t} value={t}>
@@ -2159,9 +2174,26 @@ export default function App() {
                 <div className="grid grid-cols-12 gap-12">
                    {/* Template List */}
                    <div className="col-span-4 space-y-4">
-                      <h3 className="text-[10px] font-mono font-bold uppercase text-[#141414]/40 tracking-widest">Available Templates</h3>
+                      <div className="flex justify-between items-center">
+                         <h3 className="text-[10px] font-mono font-bold uppercase text-[#141414]/40 tracking-widest">Available Templates</h3>
+                         <div className="relative">
+                            <input 
+                              type="text"
+                              placeholder="SEARCH..."
+                              value={templateSearch}
+                              onChange={(e) => setTemplateSearch(e.target.value)}
+                              className="bg-transparent border-b border-[#141414]/10 text-[9px] font-mono focus:outline-none focus:border-[#141414] w-32 pb-1"
+                            />
+                            <Search className="absolute right-0 top-0.5 w-2.5 h-2.5 text-[#141414]/20" />
+                         </div>
+                      </div>
                       <div className="space-y-1">
-                        {templateList.map(t => (
+                        {templateList
+                          .filter(t => {
+                            const label = templateMetadata[t]?.label || t;
+                            return label.toLowerCase().includes(templateSearch.toLowerCase()) || t.toLowerCase().includes(templateSearch.toLowerCase());
+                          })
+                          .map(t => (
                           <div 
                             key={t}
                             onClick={() => setSelectedTemplate(t)}
