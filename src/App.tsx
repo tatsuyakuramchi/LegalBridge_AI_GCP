@@ -33,6 +33,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { saveAs } from 'file-saver';
 
+import { DocumentForm } from './components/document/DocumentForm';
+
 // --- Types ---
 interface Vendor {
   vendor_code: string;
@@ -86,6 +88,7 @@ export default function App() {
   // Template Management
   const [templateList, setTemplateList] = useState<string[]>([]);
   const [templateMetadata, setTemplateMetadata] = useState<any>({});
+  const [isMatrixView, setIsMatrixView] = useState(false);
   
   // Template & Fields
   const [selectedTemplate, setSelectedTemplate] = useState<string>('individual_license_terms');
@@ -110,6 +113,7 @@ export default function App() {
   const [activeVendor, setActiveVendor] = useState<Vendor | null>(null);
   const [selectedStaff, setSelectedStaff] = useState<Staff | null>(null);
   const [vendorSearch, setVendorSearch] = useState('');
+  const [staffSearch, setStaffSearch] = useState('');
   const [selectedVendorDetail, setSelectedVendorDetail] = useState<any>(null);
   const [isEditingVendor, setIsEditingVendor] = useState(false);
   const [selectedStaffDetail, setSelectedStaffDetail] = useState<any>(null);
@@ -160,6 +164,28 @@ export default function App() {
   const templateTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const [issueSummary, setIssueSummary] = useState<any>(null);
 
+  // --- Template Editor Helpers ---
+  const commonVariables = [
+    'Licensor_名称', 'Licensor_住所', 'Licensor_氏名会社名', 'Licensor_代表者名',
+    'Licensee_名称', 'Licensee_住所', 'Licensee_氏名会社名', 'Licensee_代表者名',
+    '発行日', '契約書番号', '台帳ID', '許諾開始日', '許諾期間注記',
+    '監修者', 'クレジット表示', '素材番号', '素材名', '特記事項_本文'
+  ];
+
+  const insertVariable = (varName: string) => {
+    if (!templateTextAreaRef.current) return;
+    const textarea = templateTextAreaRef.current;
+    const start = textarea.selectionStart;
+    const end = textarea.selectionEnd;
+    const text = textarea.value;
+    const before = text.substring(0, start);
+    const after = text.substring(end, text.length);
+    const placeholder = `{{${varName}}}`;
+    textarea.value = before + placeholder + after;
+    textarea.selectionStart = textarea.selectionEnd = start + placeholder.length;
+    textarea.focus();
+  };
+
   useEffect(() => {
     fetch('/api/master/app-settings')
       .then(r => r.json())
@@ -207,6 +233,9 @@ export default function App() {
     try {
       const res = await fetch('/api/dashboard/stats');
       const data = await res.json();
+      if (data && Array.isArray(data.issueDetails)) {
+        data.issueDetails = [...new Set(data.issueDetails.map((i: any) => i.issueKey))].map(key => data.issueDetails.find((i: any) => i.issueKey === key));
+      }
       setDashboardStats(data);
     } catch (e) {
       console.error("Failed to fetch dashboard stats", e);
@@ -220,67 +249,6 @@ export default function App() {
       refreshDashboardStats();
     }
   }, [activeTab]);
-
-  const commonVariables = [
-    "Licensor_名称", "Licensor_住所", "Licensor_代表者名",
-    "Licensee_名称", "Licensee_住所", "Licensee_代表者名",
-    "契約書番号", "台帳ID", "発行日", "有効期限",
-    "基本契約名", "素材名", "素材番号", "監修者",
-    "金銭条件1_料率", "金銭条件1_計算方式", "金銭条件1_支払条件",
-    "特記事項_本文", "クレジット表示"
-  ];
-
-  const insertVariable = (varName: string) => {
-    const textarea = templateTextAreaRef.current;
-    if (!textarea) return;
-
-    const start = textarea.selectionStart;
-    const end = textarea.selectionEnd;
-    const text = textarea.value;
-    const before = text.substring(0, start);
-    const after = text.substring(end);
-    const varTag = `{{${varName}}}`;
-    
-    textarea.value = before + varTag + after;
-    textarea.focus();
-    textarea.selectionStart = textarea.selectionEnd = start + varTag.length;
-  };
-
-  // Handle automatic calculations based on formulas
-  useEffect(() => {
-    if (!selectedTemplate || !templateMetadata[selectedTemplate]?.vars) return;
-
-    const vars = templateMetadata[selectedTemplate].vars;
-    let hasChanges = false;
-    const newFormData = { ...formData };
-
-    Object.entries(vars).forEach(([field, meta]: [string, any]) => {
-      if (meta.formula) {
-        try {
-          // Replace placeholders like {field} with actual values
-          let expr = meta.formula.replace(/\{([^}]+)\}/g, (_: string, key: string) => {
-            const val = formData[key] || "0";
-            return String(val).replace(/,/g, ""); 
-          });
-
-          // Basic evaluation using Function (safe for simple math like +, -, *, /)
-          // eslint-disable-next-line no-new-func
-          const result = new Function(`return ${expr}`)();
-          
-          if (result !== undefined && !isNaN(result) && String(result) !== String(formData[field])) {
-            newFormData[field] = String(result);
-            hasChanges = true;
-          }
-        } catch (e) {
-          // Silent fail on formula error during typing
-        }
-      }
-    });
-
-    if (hasChanges) {
-      setFormData(newFormData);
-    }
-  }, [formData, selectedTemplate, templateMetadata]);
 
   // --- Fetch Initial Data ---
   useEffect(() => {
@@ -311,12 +279,12 @@ export default function App() {
 
         const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes, statusesRes, rulesRes] = results;
         
-        setIssues(Array.isArray(issuesRes) ? issuesRes : []);
-        setVendors(Array.isArray(vendorsRes) ? vendorsRes : []);
-        setStaffList(Array.isArray(staffRes) ? staffRes : []);
+        setIssues(Array.isArray(issuesRes) ? [...new Set(issuesRes.map((i: any) => i.issueKey))].map(key => issuesRes.find((i: any) => i.issueKey === key)) : []);
+        setVendors(Array.isArray(vendorsRes) ? [...new Set(vendorsRes.map(v => v.vendor_code))].map(code => vendorsRes.find(v => v.vendor_code === code)) as Vendor[] : []);
+        setStaffList(Array.isArray(staffRes) ? [...new Set(staffRes.map(s => s.slack_user_id))].map(id => staffRes.find(s => s.slack_user_id === id)) as Staff[] : []);
         setCompanyProfile(profileRes);
-        setAssets(Array.isArray(assetsRes) ? assetsRes : []);
-        setTemplateList(Array.isArray(templatesRes) ? templatesRes : []);
+        setAssets(Array.isArray(assetsRes) ? [...new Set(assetsRes.map((a: any) => a.id))].map(id => assetsRes.find((a: any) => a.id === id)) : []);
+        setTemplateList(Array.isArray(templatesRes) ? [...new Set(templatesRes as string[])] : []);
         setTemplateMetadata(metaRes || {});
         setStatuses(Array.isArray(statusesRes) ? statusesRes : []);
         setWorkflowRules(Array.isArray(rulesRes) ? rulesRes : []);
@@ -335,7 +303,7 @@ export default function App() {
       try {
         const res = await fetch(`/api/templates/${selectedTemplate}/schema`);
         const data = await res.json();
-        setTemplateFields(data.variables || []);
+        setTemplateFields([...new Set((data.variables || []) as string[])]);
       } catch (e) {
         console.error("Failed to fetch template schema", e);
       } finally {
@@ -537,124 +505,6 @@ export default function App() {
     }
   };
 
-  const renderPartySection = (prefix: string) => {
-    const isIndividual = formData[`${prefix}_is_individual`] === true;
-    
-    // Mapping for different templates
-    const nameField = selectedTemplate === 'individual_license_terms' ? `${prefix}_名称` : prefix.toLowerCase();
-    const repField = selectedTemplate === 'individual_license_terms' ? `${prefix}_代表者名` : `${prefix.toLowerCase()}_rep`;
-    const addressField = `${prefix}_住所`;
-
-    return (
-      <div className="space-y-4">
-        <div className="flex bg-gray-100/50 p-1 rounded-sm gap-1">
-          <button 
-            onClick={() => setFormData({ ...formData, [`${prefix}_is_individual`]: false })}
-            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-[9px] font-mono font-bold transition-all ${!isIndividual ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-          >
-            <Building2 className="w-3.5 h-3.5" /> 法人
-          </button>
-          <button 
-            onClick={() => setFormData({ ...formData, [`${prefix}_is_individual`]: true })}
-            className={`flex-1 flex items-center justify-center gap-2 py-1.5 text-[9px] font-mono font-bold transition-all ${isIndividual ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-400 hover:text-gray-600'}`}
-          >
-            <User className="w-3.5 h-3.5" /> 個人
-          </button>
-        </div>
-        
-        <div className="space-y-4">
-          {renderDynamicField(nameField, isIndividual ? '氏名' : '会社名')}
-          {!isIndividual && renderDynamicField(repField, '代表者名')}
-          {selectedTemplate === 'individual_license_terms' && renderDynamicField(addressField)}
-        </div>
-      </div>
-    );
-  };
-
-  const renderDynamicField = (field: string, customLabel?: any) => {
-    const actualLabel = typeof customLabel === 'string' ? customLabel : undefined;
-    const fieldMeta = (templateMetadata[selectedTemplate]?.vars || {})[field] || {};
-    const label = actualLabel || fieldMeta.label || field.replace(/^individual_license_terms_/, '').replace(/_/g, ' ');
-    const val = formData[field] || '';
-    
-    // Custom logic for specific fields
-    const selectOptions: Record<string, string[]> = {
-      '金銭条件1_計算方式': ['FIXED', 'SUBSCRIPTION', 'ROYALTY'],
-      '金銭条件2_計算方式': ['FIXED', 'SUBSCRIPTION', 'ROYALTY'],
-      '金銭条件3_計算方式': ['FIXED', 'SUBSCRIPTION', 'ROYALTY'],
-      '金銭条件1_計算期間': ['製造時', '月次', '四半期', '半年', '年次'],
-      '金銭条件2_計算期間': ['製造時', '月次', '四半期', '半年', '年次'],
-      '金銭条件3_計算期間': ['製造時', '月次', '四半期', '半年', '年次'],
-      '金銭条件1_通貨': ['JPY', 'USD', 'EUR', 'CNY'],
-      '金銭条件2_通貨': ['JPY', 'USD', 'EUR', 'CNY'],
-      '金銭条件3_通貨': ['JPY', 'USD', 'EUR', 'CNY'],
-      'CURRENCY': ['JPY', 'USD', 'EUR', 'CNY', 'GBP', 'AUD', 'CAD', 'CHF'],
-      '独占性': ['独占', '非独占'],
-      '対象地域': ['日本国内', '全世界', '北米', '欧州'],
-      '許諾言語': ['日本語', '英語', '各国語'],
-      '販売地域': ['日本国内', '全世界', '北米', '欧州'],
-      '販売言語': ['日本語', '英語', '各国語'],
-      'taxRate': ['10', '8']
-    };
-
-    const isDate = fieldMeta.type === 'date' || field.includes('日') || field.includes('DATE') || field.includes('期限');
-    const isTextarea = fieldMeta.type === 'textarea' || field.includes('本文') || field.includes('備考') || field.includes('REMARKS') || field.includes('特記');
-    const isBoolean = fieldMeta.type === 'boolean' || field.startsWith('is') || field.includes('フラグ');
-    const isNumber = fieldMeta.type === 'number';
-    const error = getValidationError(field, val);
-
-    return (
-      <div key={field} className="space-y-1 group relative">
-        <div className="flex justify-between items-center">
-          <label className={`flex items-center gap-1.5 text-[9px] font-mono font-bold uppercase tracking-wider transition-colors ${error ? 'text-red-500' : 'text-[#141414]/50 group-hover:text-blue-600'}`}>
-            {label} 
-            {error && <span className="text-[7px] bg-red-100 px-1 rounded-full">!</span>}
-          </label>
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-2">
-             <HelpCircle className="w-2.5 h-2.5 text-gray-300 cursor-help" />
-          </div>
-        </div>
-        {isBoolean ? (
-          <div className="flex items-center gap-4 py-1.5">
-            <button 
-              onClick={() => setFormData({ ...formData, [field]: true })}
-              className={`text-[10px] font-mono px-3 py-1 border transition-all ${val === true ? 'bg-[#141414] text-white' : 'border-[#141414]/10 opacity-50'}`}
-            >TRUE</button>
-            <button 
-              onClick={() => setFormData({ ...formData, [field]: false })}
-              className={`text-[10px] font-mono px-3 py-1 border transition-all ${val === false ? 'bg-[#141414] text-white' : 'border-[#141414]/10 opacity-50'}`}
-            >FALSE</button>
-          </div>
-        ) : selectOptions[field] ? (
-          <select 
-            value={val}
-            onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-            className={`w-full text-xs font-mono border-b bg-transparent py-1.5 focus:outline-none appearance-none transition-colors ${error ? 'border-red-300' : 'border-[#141414]/20 focus:border-blue-600'}`}
-          >
-            <option value="">-- SELECT --</option>
-            {selectOptions[field].map(opt => <option key={opt} value={opt}>{opt}</option>)}
-          </select>
-        ) : isTextarea ? (
-          <textarea 
-            value={val}
-            onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-            rows={2}
-            className={`w-full text-xs font-mono border bg-white/50 p-2 focus:outline-none resize-none transition-colors ${error ? 'border-red-300' : 'border-[#141414]/10 focus:border-blue-600'}`}
-            placeholder={`Enter ${label}...`}
-          />
-        ) : (
-          <input 
-            type={isDate ? 'date' : isNumber ? 'number' : 'text'}
-            value={val}
-            onChange={(e) => setFormData({ ...formData, [field]: e.target.value })}
-            className={`w-full text-xs font-mono border-b bg-transparent py-1.5 focus:outline-none placeholder:text-gray-300 transition-colors ${error ? 'border-red-300 underline decoration-red-100' : 'border-[#141414]/20 focus:border-blue-600'}`}
-            placeholder={isDate ? '' : `Input ${label}...`}
-          />
-        )}
-      </div>
-    );
-  };
-
   const handleBatchGenerate = async () => {
     if (batchSelection.length === 0) return;
     setIsGenerating(true);
@@ -702,7 +552,8 @@ export default function App() {
         setIsRegisterAssetOpen(false);
         // Refresh assets list
         const assetsRes = await fetch('/api/management/assets').then(r => r.json());
-        setAssets(assetsRes);
+        const uniqueAssets = Array.isArray(assetsRes) ? [...new Set(assetsRes.map((a: any) => a.id))].map(id => assetsRes.find((a: any) => a.id === id)) : [];
+        setAssets(uniqueAssets);
         setNewAssetData({
           asset_name: '',
           asset_type: 'contract',
@@ -1005,13 +856,28 @@ export default function App() {
                        <span className="text-[8px] font-mono font-bold uppercase text-[#141414]/40 group-hover:text-[#141414]">Internal Staff</span>
                        <Briefcase className="w-2.5 h-2.5 text-[#141414]/20" />
                     </div>
+                    <div className="relative mb-2">
+                       <input 
+                         type="text"
+                         placeholder="Search staff..."
+                         value={staffSearch}
+                         onChange={(e) => setStaffSearch(e.target.value)}
+                         className="w-full text-[9px] font-mono border-b border-[#141414]/10 py-1 bg-transparent focus:outline-none focus:border-blue-400 placeholder:opacity-30"
+                       />
+                       <Search className="absolute right-0 top-1.5 w-2.5 h-2.5 text-[#141414]/20" />
+                    </div>
                     <select 
                       value={selectedStaff?.slack_user_id || ''}
                       onChange={(e) => setSelectedStaff(staffList.find(s => s.slack_user_id === e.target.value) || null)}
                       className="w-full text-xs font-mono border-none focus:ring-0 bg-transparent p-0"
                     >
                       <option value="">-- STAFF DB --</option>
-                      {staffList.map(s => <option key={s.slack_user_id} value={s.slack_user_id}>{s.staff_name} ({s.department})</option>)}
+                      {staffList
+                        .filter(s => 
+                          s.staff_name.toLowerCase().includes(staffSearch.toLowerCase()) || 
+                          (s.department && s.department.toLowerCase().includes(staffSearch.toLowerCase()))
+                        )
+                        .map(s => <option key={s.slack_user_id} value={s.slack_user_id}>{s.staff_name} ({s.department})</option>)}
                     </select>
                  </div>
                  <div className="bg-white border border-[#141414]/10 p-4 hover:border-[#141414]/40 transition-all group shadow-sm">
@@ -1019,13 +885,28 @@ export default function App() {
                        <span className="text-[8px] font-mono font-bold uppercase text-[#141414]/40 group-hover:text-[#141414]">External Partner</span>
                        <Building2 className="w-2.5 h-2.5 text-[#141414]/20" />
                     </div>
+                    <div className="relative mb-2">
+                       <input 
+                         type="text"
+                         placeholder="Search vendor..."
+                         value={vendorSearch}
+                         onChange={(e) => setVendorSearch(e.target.value)}
+                         className="w-full text-[9px] font-mono border-b border-[#141414]/10 py-1 bg-transparent focus:outline-none focus:border-blue-400 placeholder:opacity-30"
+                       />
+                       <Search className="absolute right-0 top-1.5 w-2.5 h-2.5 text-[#141414]/20" />
+                    </div>
                     <select 
                       value={activeVendor?.vendor_code || ''}
                       onChange={(e) => setActiveVendor(vendors.find(v => v.vendor_code === e.target.value) || null)}
                       className="w-full text-xs font-mono border-none focus:ring-0 bg-transparent p-0"
                     >
                       <option value="">-- VENDOR DB --</option>
-                      {vendors.map(v => <option key={v.vendor_code} value={v.vendor_code}>{v.vendor_name}</option>)}
+                      {vendors
+                        .filter(v => 
+                          v.vendor_name.toLowerCase().includes(vendorSearch.toLowerCase()) || 
+                          v.vendor_code.toLowerCase().includes(vendorSearch.toLowerCase())
+                        )
+                        .map(v => <option key={v.vendor_code} value={v.vendor_code}>{v.vendor_name}</option>)}
                     </select>
                  </div>
                </div>
@@ -1039,7 +920,7 @@ export default function App() {
                  </div>
                  <div className="relative border-l-2 border-[#141414]/10 pl-4 ml-1 space-y-6">
                     {caseHistory.map((item, idx) => (
-                      <div key={item.id} className="relative">
+                      <div key={item.id || idx} className="relative">
                         <div className="absolute -left-[23px] top-1.5 w-3 h-3 bg-white border-2 border-[#141414] rounded-full z-10" />
                         <div>
                            <p className="text-[8px] font-mono opacity-40 uppercase">{new Date(item.date).toLocaleDateString('ja-JP')}</p>
@@ -1102,555 +983,30 @@ export default function App() {
                {/* Stage Workflow */}
                <div className={`flex flex-1 overflow-hidden ${isPreviewVisible ? 'flex-row' : 'flex-col'}`}>
                   <div className={`p-10 overflow-y-auto custom-scrollbar flex-1 ${isPreviewVisible ? 'max-w-[50%]' : ''}`}>
-                   {isRefreshingFields ? (
-                    <div className="space-y-6">
-                       {[1,2,3,4,5].map(i => (
-                         <div key={i} className="h-6 bg-gray-100 animate-pulse w-full rounded" />
-                       ))}
-                    </div>
-                  ) : (
-                    <div className="space-y-12">
-                      {selectedTemplate === 'individual_license_terms' ? (
-                        <>
-                          {/* Step 1: Legal Entities */}
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-                            <div className="p-6 border border-blue-600/10 bg-blue-50/10 space-y-6 rounded-sm">
-                               <div className="flex items-center justify-between border-b border-blue-600/10 pb-3">
-                                  <div className="flex items-center gap-2.5">
-                                     <Building2 className="w-4 h-4 text-blue-600" />
-                                     <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">I. Licensor (許諾者)</h3>
-                                  </div>
-                                  <div className="flex gap-2">
-                                     <button 
-                                       onClick={() => syncFromDatabase()}
-                                       className="text-[8px] font-mono bg-blue-600 text-white px-2 py-0.5 hover:bg-blue-700 transition-all uppercase flex items-center gap-1"
-                                     ><Database className="w-2 h-2" /> DBから補完</button>
-                                     <button 
-                                       onClick={() => setFormData({
-                                         ...formData,
-                                         'Licensor_名称': companyProfile?.name,
-                                         'Licensor_住所': companyProfile?.address,
-                                         'Licensor_氏名会社名': companyProfile?.name,
-                                         'Licensor_代表者名': companyProfile?.representative
-                                       })}
-                                       className="text-[8px] font-mono border border-blue-600/20 px-2 py-0.5 hover:bg-blue-600 hover:text-white transition-all uppercase"
-                                     >Self</button>
-                                     <button 
-                                       onClick={() => {
-                                         if (activeVendor) {
-                                           setFormData({
-                                             ...formData,
-                                             'Licensor_名称': activeVendor.vendor_name,
-                                             'Licensor_住所': activeVendor.address,
-                                             'Licensor_氏名会社名': activeVendor.vendor_name,
-                                             'Licensor_代表者名': activeVendor.vendor_rep || activeVendor.contact_name
-                                           });
-                                         }
-                                       }}
-                                       className="text-[8px] font-mono border border-blue-600/20 px-2 py-0.5 hover:bg-blue-600 hover:text-white transition-all uppercase"
-                                     >Partner</button>
-                                  </div>
-                               </div>
-                               <div className="grid grid-cols-1 gap-4">
-                                  {renderPartySection('Licensor')}
-                               </div>
-                            </div>
-
-                            <div className="p-6 border border-amber-600/10 bg-amber-50/10 space-y-6 rounded-sm">
-                               <div className="flex items-center justify-between border-b border-amber-600/10 pb-3">
-                                  <div className="flex items-center gap-2.5">
-                                     <User className="w-4 h-4 text-amber-600" />
-                                     <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">II. Licensee (被許諾者)</h3>
-                                  </div>
-                                  <div className="flex gap-2">
-                                     <button 
-                                       onClick={() => syncFromDatabase()}
-                                       className="text-[8px] font-mono bg-amber-600 text-white px-2 py-0.5 hover:bg-amber-700 transition-all uppercase flex items-center gap-1"
-                                     ><Database className="w-2 h-2" /> DBから補完</button>
-                                     <button 
-                                       onClick={() => setFormData({
-                                         ...formData,
-                                         'Licensee_名称': companyProfile?.name,
-                                         'Licensee_住所': companyProfile?.address,
-                                         'Licensee_氏名会社名': companyProfile?.name,
-                                         'Licensee_代表者名': companyProfile?.representative
-                                       })}
-                                       className="text-[8px] font-mono border border-amber-600/20 px-2 py-0.5 hover:bg-amber-600 hover:text-white transition-all uppercase"
-                                     >Self</button>
-                                     <button 
-                                       onClick={() => {
-                                         if (activeVendor) {
-                                           setFormData({
-                                             ...formData,
-                                             'Licensee_名称': activeVendor.vendor_name,
-                                             'Licensee_住所': activeVendor.address,
-                                             'Licensee_氏名会社名': activeVendor.vendor_name,
-                                             'Licensee_代表者名': activeVendor.vendor_rep || activeVendor.contact_name
-                                           });
-                                         }
-                                       }}
-                                       className="text-[8px] font-mono border border-amber-600/20 px-2 py-0.5 hover:bg-amber-600 hover:text-white transition-all uppercase"
-                                     >Partner</button>
-                                  </div>
-                               </div>
-                               <div className="grid grid-cols-1 gap-4">
-                                  {renderPartySection('Licensee')}
-                               </div>
-                            </div>
-                          </div>
-
-                          {/* Step 2: Product & Supervision */}
-                          <div className="p-8 border border-emerald-600/10 bg-emerald-50/10 space-y-6">
-                              <div className="flex items-center justify-between border-b border-emerald-600/10 pb-3">
-                                 <div className="flex items-center gap-2.5">
-                                   <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                                   <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest">III. Product Assets (対象素材・監修)</h3>
-                                 </div>
-                                 <button 
-                                   onClick={() => {
-                                     if (selectedStaff) {
-                                       setFormData((p:any) => ({
-                                         ...p,
-                                         '監修者': selectedStaff.staff_name,
-                                         'クレジット表示': `© Arclight / ${selectedStaff.staff_name}`
-                                       }));
-                                     }
-                                   }}
-                                   className="text-[8px] font-mono border border-emerald-600/20 px-4 py-1 hover:bg-emerald-600 hover:text-white transition-all"
-                                 >Sync Selected Staff Info</button>
-                              </div>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                                {['監修者', 'クレジット表示', '素材番号', '素材名', '素材権利者'].map(renderDynamicField)}
-                              </div>
-                          </div>
-
-                          {/* Step 3: Financial & Core Terms */}
-                          <div className="space-y-10">
-                            <div className="p-8 border border-[#141414]/10 bg-white space-y-8">
-                               <div className="flex items-center gap-3 border-b pb-3 border-[#141414]/5">
-                                  <Scale className="w-4 h-4 text-[#141414]/40" />
-                                  <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#141414]">IV. Agreement Foundations (固有の情報)</h3>
-                               </div>
-                               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                                 {['発行日', '契約書番号', '台帳ID', 'ライセンス種別名', '基本契約名', '許諾開始日', '許諾期間注記', '原著作物名', '原著作物補記', '対象製品予定名', '独占性', '対象地域', '許諾言語'].map(renderDynamicField)}
-                               </div>
-                            </div>
-
-                            {/* Financial Modules */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                               <div className="p-6 border border-indigo-600/10 bg-indigo-50/10 space-y-6">
-                                  <h4 className="text-[10px] font-mono font-bold uppercase text-indigo-900 border-b border-indigo-900/10 pb-2">3.1 Financial Condition: Domestic (自社)</h4>
-                                  <div className="space-y-4">
-                                     {['金銭条件1_計算方式', '金銭条件1_基準価格ラベル', '金銭条件1_計算期間', '金銭条件1_通貨', '金銭条件1_料率'].map(renderDynamicField)}
-                                     <div className="pt-4 border-t border-indigo-900/10 space-y-4">
-                                        {renderDynamicField('金銭条件1_計算式')}
-                                        {renderDynamicField('金銭条件1_支払条件')}
-                                     </div>
-                                  </div>
-                               </div>
-                               <div className="p-6 border border-cyan-600/10 bg-cyan-50/10 space-y-6">
-                                  <h4 className="text-[10px] font-mono font-bold uppercase text-cyan-900 border-b border-cyan-900/10 pb-2">3.2 Financial Condition: Sub-License (サブ)</h4>
-                                  <div className="space-y-4">
-                                     {['金銭条件2_計算方式', '金銭条件2_基準価格ラベル', '金銭条件2_計算期間', '金銭条件2_通貨', '金銭条件2_料率'].map(renderDynamicField)}
-                                     <div className="pt-4 border-t border-cyan-900/10 space-y-4">
-                                        {renderDynamicField('金銭条件2_計算式')}
-                                        {renderDynamicField('金銭条件2_支払条件')}
-                                     </div>
-                                  </div>
-                               </div>
-                            </div>
-                          </div>
-
-                          {/* Step 4: Final Provisions */}
-                          <div className="p-8 border border-red-600/10 bg-red-50/5">
-                             <div className="flex items-center gap-3 border-b border-red-100 pb-3 mb-6">
-                                <AlertCircle className="w-4 h-4 text-red-600" />
-                                <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#141414]">V. Special Exceptions & Remarks (特記事項)</h3>
-                             </div>
-                             {renderDynamicField('特記事項_本文')}
-                          </div>
-
-                          {/* Sub-licensee Multi-Item Context */}
-                          <div className="p-8 border border-[#141414]/10 bg-[#FAFAFA] space-y-8">
-                             <div className="flex items-center justify-between border-b border-[#141414]/10 pb-3">
-                                <div className="flex items-center gap-3">
-                                   <GitBranch className="w-4 h-4 text-[#141414]/60" />
-                                   <h3 className="text-[10px] font-mono font-bold uppercase tracking-widest text-[#141414]">VI. Entity Relations (サブライセンシー一覧)</h3>
-                                </div>
-                                <button 
-                                  onClick={() => {
-                                    const newList = [...(formData.サブライセンシー一覧 || [])];
-                                    newList.push({ id: Date.now(), 区分: '製造販売', 名称: '', 地域: '', 言語: '', 金銭条件: '', MGAG: '', 料率: '', 備考: '' });
-                                    setFormData({...formData, サブライセンシー一覧: newList });
-                                  }}
-                                  className="px-5 py-2 bg-[#141414] text-white text-[10px] font-mono uppercase tracking-widest hover:invert transition-all flex items-center gap-2"
-                                >
-                                  <Plus className="w-3.5 h-3.5" /> Append Entity
-                                </button>
-                             </div>
-                             
-                             <div className="grid grid-cols-1 gap-6">
-                               {(formData.サブライセンシー一覧 || []).map((item: any, idx: number) => (
-                                 <div key={item.id} className="bg-white border border-[#141414]/10 p-6 shadow-sm relative group">
-                                    <button 
-                                      onClick={() => {
-                                        const newList = [...formData.サブライセンシー一覧];
-                                        newList.splice(idx, 1);
-                                        setFormData({...formData, サブライセンシー一覧: newList });
-                                      }}
-                                      className="absolute -right-3 -top-3 w-7 h-7 bg-red-600 text-white rounded-full flex items-center justify-center shadow-xl opacity-0 hover:scale-110 group-hover:opacity-100 transition-all z-10"
-                                    >
-                                      <Trash2 className="w-3.5 h-3.5" />
-                                    </button>
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6 pb-6 border-b border-dashed border-gray-100">
-                                       <div className="space-y-1.5">
-                                          <label className="text-[8px] font-mono uppercase opacity-40">Classification</label>
-                                          <select 
-                                            value={item.区分} 
-                                            onChange={(e) => {
-                                              const newList = [...formData.サブライセンシー一覧];
-                                              newList[idx].区分 = e.target.value;
-                                              setFormData({...formData, サブライセンシー一覧: newList});
-                                            }}
-                                            className="w-full text-xs font-mono border-b border-[#141414]/20 py-2 bg-transparent focus:outline-none"
-                                          >
-                                            <option value="製造販売">製造販売</option>
-                                            <option value="翻訳出版">翻訳出版</option>
-                                            <option value="デジタル">デジタル</option>
-                                          </select>
-                                       </div>
-                                       <div className="md:col-span-2 space-y-1.5">
-                                          <label className="text-[8px] font-mono uppercase opacity-40">Partner 名称</label>
-                                          <input 
-                                            type="text"
-                                            value={item.名称}
-                                            onChange={(e) => {
-                                              const newList = [...formData.サブライセンシー一覧];
-                                              newList[idx].名称 = e.target.value;
-                                              setFormData({...formData, サブライセンシー一覧: newList});
-                                            }}
-                                            className="w-full text-xs font-mono border-b border-[#141414]/20 py-2 bg-transparent focus:outline-none placeholder:text-gray-200"
-                                            placeholder="Enter Legal Name..."
-                                          />
-                                       </div>
-                                       <div className="space-y-1.5">
-                                          <label className="text-[8px] font-mono uppercase opacity-40">Region / Lang</label>
-                                          <div className="flex gap-2">
-                                            <input 
-                                              type="text" value={item.地域}
-                                              onChange={(e) => {
-                                                const newList = [...formData.サブライセンシー一覧];
-                                                newList[idx].地域 = e.target.value;
-                                                setFormData({...formData, サブライセンシー一覧: newList});
-                                              }}
-                                              className="w-1/2 text-xs font-mono border-b border-[#141414]/20 py-2 bg-transparent focus:outline-none"
-                                              placeholder="Region"
-                                            />
-                                            <input 
-                                              type="text" value={item.言語}
-                                              onChange={(e) => {
-                                                const newList = [...formData.サブライセンシー一覧];
-                                                newList[idx].言語 = e.target.value;
-                                                setFormData({...formData, サブライセンシー一覧: newList});
-                                              }}
-                                              className="w-1/2 text-xs font-mono border-b border-[#141414]/20 py-2 bg-transparent focus:outline-none"
-                                              placeholder="Lang"
-                                            />
-                                          </div>
-                                       </div>
-                                    </div>
-                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                                       {['金銭条件', 'MGAG', '料率', '備考'].map(subField => (
-                                          <div key={subField} className="space-y-1.5">
-                                             <label className="text-[8px] font-mono uppercase opacity-40">{subField}</label>
-                                             <input 
-                                               type="text"
-                                               value={item[subField]}
-                                               onChange={(e) => {
-                                                 const newList = [...formData.サブライセンシー一覧];
-                                                 newList[idx][subField] = e.target.value;
-                                                 setFormData({...formData, サブライセンシー一覧: newList});
-                                               }}
-                                               className="w-full text-xs font-mono border-b border-[#141414]/20 py-2 bg-transparent focus:outline-none"
-                                             />
-                                          </div>
-                                       ))}
-                                    </div>
-                                 </div>
-                               ))}
-                             </div>
-                          </div>
-                        </>
-                      ) : selectedTemplate.startsWith('inspection_certificate') ? (
-                        <>
-                          {/* Inspection Header Step */}
-                          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                            <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                              <div className="flex justify-between items-center border-b pb-2">
-                                <h3 className="text-[10px] font-mono font-bold uppercase text-blue-600">Context & Basic (基本情報)</h3>
-                                <button 
-                                  onClick={() => syncFromDatabase()}
-                                  className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1 hover:bg-blue-700 transition-all"
-                                ><Database className="w-2 h-2" /> DBから補完</button>
-                              </div>
-                              <div className="space-y-4">
-                                {renderDynamicField('issueKey', '発注番号 (Issue Key)')}
-                                <div className="grid grid-cols-2 gap-4">
-                                  {renderDynamicField('itemNo', '明細番号')}
-                                  {renderDynamicField('itemCount', '総明細数')}
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                  {renderDynamicField('deliveryNo', '今回の納品回数')}
-                                  {renderDynamicField('totalDeliveries', '総予定回数')}
-                                </div>
-                                <div className="grid grid-cols-2 gap-4">
-                                  {renderDynamicField('orderDate', '発注日')}
-                                  {renderDynamicField('documentDate', '発行日 (検収書)')}
-                                </div>
-                                {renderDynamicField('isPartial', '分割納品フラグ')}
-                              </div>
-                            </div>
-                            
-                            <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                              <div className="flex justify-between items-center border-b pb-2">
-                                <h3 className="text-[10px] font-mono font-bold uppercase text-orange-600">Counterparty (受託者情報)</h3>
-                                <button onClick={() => {
-                                  if(activeVendor) setFormData({...formData, counterparty: activeVendor.vendor_name, counterpartyRepresentativeSama: (activeVendor.vendor_rep || activeVendor.contact_name) + ' 様', counterpartyTni: activeVendor.invoice_registration_number});
-                                }} className="text-[8px] font-mono border border-orange-600 text-orange-600 px-2 py-1 uppercase hover:bg-orange-600 hover:text-white transition-all">マスターから反映</button>
-                              </div>
-                              <div className="space-y-4">
-                                {renderDynamicField('counterparty', '受託者名')}
-                                {renderDynamicField('counterpartyRepresentativeSama', '代表者名 (＋様)')}
-                                {renderDynamicField('counterpartyTni', 'インボイス登録番号 (T-No)')}
-                              </div>
-                            </div>
-
-                            <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                              <div className="flex justify-between items-center border-b pb-2">
-                                <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-600">Internal (検収者情報)</h3>
-                                <button onClick={() => {
-                                  if(selectedStaff) setFormData({...formData, inspectorDept: selectedStaff.department, inspectorName: selectedStaff.staff_name});
-                                }} className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-1 uppercase hover:bg-emerald-600 hover:text-white transition-all">スタッフから反映</button>
-                              </div>
-                              <div className="space-y-4">
-                                {renderDynamicField('inspectorDept', '検収者部署')}
-                                {renderDynamicField('inspectorName', '検収者名')}
-                                <div className="pt-2 border-t border-dashed border-gray-100 space-y-4">
-                                  {renderDynamicField('deliveredAt', '実納品日 (年月日)')}
-                                  {renderDynamicField('inspectionCompletedAt', '検収完了日')}
-                                  {renderDynamicField('paymentDueDate', '支払期日')}
-                                </div>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Inspection Content & Financials */}
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
-                            <div className="p-8 border border-emerald-600/5 bg-emerald-50/5 space-y-6">
-                              <div className="flex justify-between items-center border-b border-emerald-800/10 pb-2">
-                                <h3 className="text-[10px] font-mono font-bold uppercase text-emerald-800">Deliverable Detail (納品明細)</h3>
-                                <button 
-                                  onClick={() => {
-                                    setAssetPickerCallback((asset) => {
-                                      fetch('/api/management/link-asset', {
-                                        method: 'POST',
-                                        headers: { 'Content-Type': 'application/json' },
-                                        body: JSON.stringify({ type: 'delivery', issueKey: formData.issueKey, assetId: asset.id })
-                                      }).then(() => {
-                                        showNotification("Associated with PO: " + asset.asset_number, "success");
-                                        setFormData({...formData, linked_po_number: asset.asset_number, linked_po_link: asset.file_link});
-                                      });
-                                    });
-                                    setIsAssetPickerOpen(true);
-                                  }}
-                                  className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-0.5 hover:bg-emerald-600 hover:text-white transition-all uppercase flex items-center gap-1"
-                                ><Link className="w-2 h-2" /> PO紐付</button>
-                              </div>
-                              <div className="space-y-4">
-                                {renderDynamicField('description', '成果物・業務内容 (商品名等)')}
-                                {renderDynamicField('spec', '仕様・内容詳細')}
-                                <div className="grid grid-cols-2 gap-6 bg-white/50 p-4 rounded-sm border border-emerald-600/10">
-                                  {renderDynamicField('deliveredAmountStr', '支払対価 (税抜・数値)')}
-                                  {renderDynamicField('taxRate', '消費税率 (%)')}
-                                  {renderDynamicField('taxAmountStr', '消費税額')}
-                                  {renderDynamicField('totalAmountStr', '合計検収金額 (税込)')}
-                                </div>
-                                {renderDynamicField('isReducedTax', '軽減税率対象 (8%)')}
-                              </div>
-                            </div>
-                            
-                            <div className="p-8 border border-indigo-600/5 bg-indigo-50/5 space-y-6">
-                              <h3 className="text-[10px] font-mono font-bold uppercase text-indigo-800 border-b border-indigo-800/10 pb-2">Financial & Progress (進捗・財務)</h3>
-                              <div className="grid grid-cols-2 gap-4">
-                                {renderDynamicField('inspectedPct', '納品進捗率 (%)')}
-                                {renderDynamicField('inspectedAmountStr', '検収済累計額')}
-                                {renderDynamicField('totalOrderAmountStr', '将来を含む発注総額')}
-                                {renderDynamicField('pendingAmountStr', '残高 (未検収分)')}
-                              </div>
-                              <div className="space-y-4 pt-4 border-t border-indigo-800/5">
-                                {renderDynamicField('paymentConditionSummary', '支払条件 (月末締翌月末等)')}
-                                <div className="grid grid-cols-2 gap-x-4 gap-y-2">
-                                  {renderDynamicField('bankName', '銀行名')}
-                                  {renderDynamicField('branchName', '支店名')}
-                                  {renderDynamicField('accountType', '預金種別')}
-                                  {renderDynamicField('accountNo', '口座番号')}
-                                </div>
-                                {renderDynamicField('accountHolder', '口座名義 (カタカナ推奨)')}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Excel Export Multi-Item Data */}
-                          <div className="mt-8 p-8 border border-blue-600/10 bg-blue-50/5 space-y-6">
-                            <div className="flex justify-between items-center border-b border-blue-800/10 pb-2">
-                              <h3 className="text-[10px] font-mono font-bold uppercase text-blue-800">Excel Export Data (多項目検収用)</h3>
-                              <div className="text-[8px] font-mono opacity-50 uppercase">Only used for Excel Export</div>
-                            </div>
-                            <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-6">
-                              {['件名', '支払日', '部署', '取引先コード', '氏名', '氏名（カナ）'].map(f => renderDynamicField(f))}
-                              {['立替金', '小計', '源泉税', '税引後', '差引振込額'].map(f => renderDynamicField(f))}
-                            </div>
-                            <div className="space-y-2 mt-6">
-                              {[1, 2, 3, 4, 5].map(i => (
-                                <div key={i} className="p-4 bg-white border border-[#141414]/5 rounded-sm">
-                                  <div className="flex items-center gap-2 mb-3">
-                                    <span className="text-[9px] font-mono font-bold bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">ITEM {i}</span>
-                                  </div>
-                                  <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
-                                    {renderDynamicField(`支払内容（${i}）`, `内容 ${i}`)}
-                                    {renderDynamicField(`単価（${i}）`, `単価 ${i}`)}
-                                    {renderDynamicField(`数量（${i}）`, `数量 ${i}`)}
-                                    {renderDynamicField(`金額（${i}）`, `金額 ${i}`)}
-                                    {renderDynamicField(`納品日（${i}）`, `納品日 ${i}`)}
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        </>
-                      ) : selectedTemplate === 'royalty_statement' ? (
-                        <>
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                                <div className="flex justify-between items-center border-b pb-2">
-                                   <div className="flex items-center gap-2">
-                                      <h3 className="text-[10px] font-mono font-bold uppercase">Work & Contract (原案・契約)</h3>
-                                      {formData.linked_terms_number && (
-                                         <span className="text-[8px] font-mono bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full border border-blue-100 flex items-center gap-1">
-                                            <Link className="w-2 h-2" /> {formData.linked_terms_number}
-                                         </span>
-                                      )}
-                                   </div>
-                                   <div className="flex gap-2">
-                                      <button 
-                                         onClick={() => {
-                                            setAssetPickerCallback((asset) => {
-                                               fetch('/api/management/link-asset', {
-                                                  method: 'POST',
-                                                  headers: { 'Content-Type': 'application/json' },
-                                                  body: JSON.stringify({ type: 'contract', issueKey: formData.manufacturingIssueKey || formData.licenseIssueKey || formData.issueKey, assetId: asset.id })
-                                               }).then(() => {
-                                                  showNotification("Associated with Terms: " + asset.asset_number, "success");
-                                                  setFormData({...formData, linked_terms_number: asset.asset_number, linked_terms_link: asset.file_link});
-                                               });
-                                            });
-                                            setIsAssetPickerOpen(true);
-                                         }}
-                                         className="text-[8px] font-mono border border-blue-600 text-blue-600 px-2 py-1 uppercase flex items-center gap-1"
-                                      ><Link className="w-2 h-2" /> 個別紐付</button>
-                                      <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
-                                   </div>
-                                </div>
-                                <div className="space-y-4">
-                                   {['ledgerId', 'manufacturingIssueKey', 'licenseIssueKey'].map(renderDynamicField)}
-                                   {renderPartySection('licensor')}
-                                   {renderPartySection('licensee')}
-                                   {renderDynamicField('originalWork')}
-                                </div>
-                             </div>
-                             <div className="p-6 border border-[#141414]/10 bg-white space-y-4">
-                                <div className="flex justify-between items-center border-b pb-2">
-                                   <h3 className="text-[10px] font-mono font-bold uppercase">Manufacturing (製造情報)</h3>
-                                   <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
-                                </div>
-                                {['productName', 'edition', 'completionDate', 'quantity', 'sampleQuantity', 'billableQuantity', 'msrpStr'].map(renderDynamicField)}
-                             </div>
-                          </div>
-                          <div className="p-8 border border-indigo-600/10 bg-indigo-50/5 space-y-6">
-                             <div className="flex justify-between items-center border-b border-indigo-900/10 pb-2">
-                                <h3 className="text-[10px] font-mono font-bold uppercase text-indigo-900">Royalty & MG Calculation (計算明細)</h3>
-                                <button onClick={() => syncFromDatabase()} className="text-[8px] font-mono bg-indigo-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> DBから補完</button>
-                             </div>
-                             <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-                                <div className="space-y-4">
-                                   {['calcType', 'royaltyRatePct', 'grossRoyaltyStr'].map(renderDynamicField)}
-                                </div>
-                                <div className="space-y-4">
-                                   {['mgAmount', 'mgRemaining', 'actualRoyaltyStr'].map(renderDynamicField)}
-                                </div>
-                                <div className="space-y-4">
-                                   {['taxRate', 'taxAmount', 'totalPaymentStr'].map(renderDynamicField)}
-                                </div>
-                             </div>
-                             <div className="pt-6 border-t border-indigo-900/10 grid grid-cols-1 md:grid-cols-3 gap-8">
-                                {['paymentConditionSummary', 'reportingDeadline', 'paymentDueDate'].map(renderDynamicField)}
-                             </div>
-                          </div>
-                        </>
-                      ) : (
-                        /* Standard Template Selection: Grouped by prefix/keywords */
-                        <div className="space-y-12">
-                          {/* We can dynamically group fields for a better UI flow */}
-                          {(() => {
-                            const groups: { [key: string]: string[] } = {
-                              "Basic Context (基本情報)": [],
-                              "License/Grant Info (ライセンス)": [],
-                              "Financial & Payment (金銭)": [],
-                              "Remarks & Extras (その他)": []
-                            };
-                            
-                            templateFields.forEach(f => {
-                              const meta = (templateMetadata[selectedTemplate]?.vars || {})[f] || {};
-                              const group = meta.group;
-                              
-                              if (group && groups[group]) {
-                                groups[group].push(f);
-                              } else if (f.includes('Licensor') || f.includes('Licensee') || f.includes('名称') || f.includes('住所')) {
-                                groups["Basic Context (基本情報)"].push(f);
-                              } else if (f.includes('日') || f.includes('期間') || f.includes('地域') || f.includes('独占')) {
-                                groups["License/Grant Info (ライセンス)"].push(f);
-                              } else if (f.includes('金銭') || f.includes('料率') || f.includes('価格')) {
-                                groups["Financial & Payment (金銭)"].push(f);
-                              } else {
-                                groups["Remarks & Extras (その他)"].push(f);
-                              }
-                            });
-
-                            return Object.entries(groups).map(([title, items]) => items.length > 0 && (
-                              <section key={title} className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
-                                <div className="flex items-center justify-between border-b border-[#141414]/10 pb-2">
-                                   <div className="flex items-center gap-3">
-                                      <div className="w-1.5 h-1.5 bg-[#141414]" />
-                                      <h3 className="text-[10px] font-mono font-bold uppercase tracking-wider">{title}</h3>
-                                   </div>
-                                   <button 
-                                      onClick={() => syncFromDatabase()}
-                                      className="text-[8px] font-mono border border-blue-600 text-blue-600 px-2 py-0.5 hover:bg-blue-600 hover:text-white transition-all uppercase flex items-center gap-1"
-                                   ><Database className="w-2 h-2" /> DBから補完</button>
-                                </div>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-x-10 gap-y-6">
-                                  {items.map(renderDynamicField)}
-                                </div>
-                              </section>
-                            ));
-                          })()}
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
-
-                {isPreviewVisible && (
+                    {isRefreshingFields ? (
+                      <div className="space-y-6">
+                        {[1, 2, 3, 4, 5].map((i) => (
+                          <div key={i} className="h-6 bg-gray-100 animate-pulse w-full rounded" />
+                        ))}
+                      </div>
+                    ) : (
+                      <DocumentForm
+                        templateId={selectedTemplate}
+                        metadata={templateMetadata[selectedTemplate] || { vars: {} }}
+                        formData={formData}
+                        setFormData={setFormData}
+                        onSync={() => syncFromDatabase()}
+                        onLinkAsset={(cb) => {
+                          setAssetPickerCallback(() => cb);
+                          setIsAssetPickerOpen(true);
+                        }}
+                        companyProfile={companyProfile}
+                        activeVendor={activeVendor}
+                        selectedStaff={selectedStaff}
+                      />
+                    )}
+                  </div>
+                 {isPreviewVisible && (
                   <div className="w-1/2 border-l border-[#141414]/10 bg-gray-50 flex flex-col overflow-hidden animate-in slide-in-from-right duration-300">
                      <div className="p-4 bg-white border-b border-[#141414]/10 flex justify-between items-center">
                         <div className="flex items-center gap-2">
@@ -1971,8 +1327,8 @@ export default function App() {
                          </div>
                       </div>
                       <div className="space-y-3">
-                         {workflowRules.map(rule => (
-                           <div key={rule.department} className="p-4 border border-[#141414]/5 bg-white group hover:border-emerald-600/30 transition-all hover:shadow-lg">
+                         {workflowRules.map((rule, ruleIdx) => (
+                           <div key={rule.department || ruleIdx} className="p-4 border border-[#141414]/5 bg-white group hover:border-emerald-600/30 transition-all hover:shadow-lg">
                               {editingRule?.department === rule.department ? (
                                 <div className="space-y-3">
                                    <div>
@@ -2144,6 +1500,12 @@ export default function App() {
                       <p className="text-xs font-mono text-[#141414]/50 border-l-2 border-[#141414] pl-4 mt-2 uppercase">Custom template architect & variable mapping logic.</p>
                    </div>
                    <div className="flex gap-4 items-center">
+                      <button 
+                        onClick={() => setIsMatrixView(!isMatrixView)}
+                        className={`px-6 py-2 border border-[#141414] text-[10px] font-mono font-bold uppercase tracking-widest transition-all ${isMatrixView ? 'bg-[#141414] text-white' : 'hover:bg-gray-100'}`}
+                      >
+                        {isMatrixView ? 'Back to Editor' : 'Compare Templates (Matrix)'}
+                      </button>
                       <input 
                         type="text"
                         placeholder="New Template ID (e.g., nda_standard)..."
@@ -2171,7 +1533,49 @@ export default function App() {
                    </div>
                 </div>
 
-                <div className="grid grid-cols-12 gap-12">
+                {isMatrixView ? (
+                  <div className="bg-white border border-[#141414]/10 overflow-hidden">
+                    <div className="overflow-x-auto">
+                      <table className="w-full border-collapse">
+                        <thead>
+                          <tr className="bg-gray-50 border-b border-[#141414]/10">
+                            <th className="p-4 text-left font-mono text-[10px] uppercase border-r border-[#141414]/10 sticky left-0 bg-gray-50 z-10 w-64">Variable ID / Input Field</th>
+                            {templateList.map(t => (
+                              <th key={t} className="p-4 text-center font-mono text-[9px] uppercase border-r border-[#141414]/10 min-w-[120px]">
+                                {templateMetadata[t]?.label || t}
+                              </th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-[#141414]/5">
+                          {Array.from(new Set(templateList.flatMap(t => Object.keys(templateMetadata[t]?.vars || {})))).sort().map(field => (
+                            <tr key={field} className="hover:bg-gray-50/50 group">
+                              <td className="p-3 font-mono text-[9px] font-bold text-blue-600 border-r border-[#141414]/10 sticky left-0 bg-white group-hover:bg-gray-50 z-10">
+                                {field}
+                              </td>
+                              {templateList.map(t => {
+                                const varMeta = (templateMetadata[t]?.vars || {})[field];
+                                return (
+                                  <td key={t} className="p-3 text-center border-r border-[#141414]/10">
+                                    {varMeta ? (
+                                      <div className="flex flex-col items-center gap-1">
+                                        <CheckCircle2 className="w-4 h-4 text-emerald-500" />
+                                        <span className="text-[7px] font-mono text-gray-400 block truncate max-w-[100px]">{varMeta.label}</span>
+                                      </div>
+                                    ) : (
+                                      <span className="text-gray-200">--</span>
+                                    )}
+                                  </td>
+                                );
+                              })}
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-12 gap-12">
                    {/* Template List */}
                    <div className="col-span-4 space-y-4">
                       <div className="flex justify-between items-center">
@@ -2489,9 +1893,10 @@ export default function App() {
                       )}
                    </div>
                 </div>
-             </div>
-          </motion.div>
-        )}
+             )}
+          </div>
+       </motion.div>
+    )}
       </AnimatePresence>
 
       {/* Repository List Tab */}

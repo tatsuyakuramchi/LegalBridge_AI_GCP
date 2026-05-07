@@ -54,24 +54,37 @@ export class BacklogService {
 
       // Section 1-1: Mapping custom fields from environment variables
       const fieldMapping: Record<string, string | undefined> = {
-        contractDate: process.env.BACKLOG_FIELD_CONTRACT_DATE,
-        contractPeriod: process.env.BACKLOG_FIELD_CONTRACT_PERIOD,
-        remarks: process.env.BACKLOG_FIELD_REMARKS,
-        contractNo: process.env.BACKLOG_FIELD_CONTRACT_NO,
-        projectTitle: process.env.BACKLOG_FIELD_PROJECT_TITLE,
-        counterparty: process.env.BACKLOG_FIELD_COUNTERPARTY || process.env.BACKLOG_FIELD_PARTY_B_NAME,
-        deadline: process.env.BACKLOG_FIELD_DEADLINE || process.env.BACKLOG_FIELD_FINAL_DEADLINE,
+        counterparty: process.env.BACKLOG_FIELD_COUNTERPARTY || "取引先名称",
+        dept: process.env.BACKLOG_FIELD_DEPT || "依頼部署",
+        draftUrl: process.env.BACKLOG_FIELD_DRAFT_URL || "ドラフトURL",
+        signMethod: process.env.BACKLOG_FIELD_SIGN_METHOD || "締結方法",
+        targetDate: process.env.BACKLOG_FIELD_TARGET_DATE || "締結予定日",
+        deadline: process.env.BACKLOG_FIELD_DEADLINE || "希望納期",
+        remarks: process.env.BACKLOG_FIELD_REMARKS || "備考",
+        docNumber: process.env.BACKLOG_FIELD_DOC_NUMBER || "文書番号",
       };
 
       // Add custom fields if any
+      const customFields = await this.getCustomFields();
+      
       Object.keys(params).forEach(key => {
         if (!["summary", "description", "issueTypeId", "priorityId"].includes(key)) {
-          const fieldId = fieldMapping[key];
-          if (fieldId) {
-            body.append(`customField_${fieldId}`, params[key]);
+          const mappingValue = fieldMapping[key];
+          
+          // Try to find the field by mapping (either ID or Name)
+          const field = customFields.find(f => 
+            f.id.toString() === mappingValue || 
+            f.name === mappingValue ||
+            f.name === key
+          );
+
+          if (field) {
+            body.append(`customField_${field.id}`, params[key]);
+          } else if (key.startsWith('customField_')) {
+             body.append(key, params[key]);
           } else {
-            // Fallback for direct IDs or other fields
-            body.append(key, params[key]);
+             // Fallback for native backlog fields or direct append
+             body.append(key, params[key]);
           }
         }
       });
@@ -219,6 +232,49 @@ export class BacklogService {
     } catch (error) {
       console.error("Error fetching statuses:", error);
       return [];
+    }
+  }
+
+  async updateIssue(issueKey: string, params: Record<string, any>): Promise<any> {
+    if (!this.apiKey || !this.baseUrl) return null;
+    try {
+      const body = new URLSearchParams();
+      
+      const fieldMapping: Record<string, string | undefined> = {
+        counterparty: process.env.BACKLOG_FIELD_COUNTERPARTY || "取引先名称",
+        dept: process.env.BACKLOG_FIELD_DEPT || "依頼部署",
+        draftUrl: process.env.BACKLOG_FIELD_DRAFT_URL || "ドラフトURL",
+        signMethod: process.env.BACKLOG_FIELD_SIGN_METHOD || "締結方法",
+        targetDate: process.env.BACKLOG_FIELD_TARGET_DATE || "締結予定日",
+        deadline: process.env.BACKLOG_FIELD_DEADLINE || "希望納期",
+        remarks: process.env.BACKLOG_FIELD_REMARKS || "備考",
+        docNumber: process.env.BACKLOG_FIELD_DOC_NUMBER || "文書番号",
+      };
+
+      const customFields = await this.getCustomFields();
+
+      Object.keys(params).forEach(key => {
+        const mappingValue = fieldMapping[key];
+        const field = customFields.find(f => 
+          f.id.toString() === mappingValue || 
+          f.name === mappingValue ||
+          f.name === key
+        );
+
+        if (field) {
+          body.append(`customField_${field.id}`, params[key]);
+        } else if (key.startsWith('customField_')) {
+          body.append(key, params[key]);
+        } else if (["summary", "description", "statusId", "priorityId", "assigneeId", "milestoneId", "categoryId", "versionId"].includes(key)) {
+          body.append(key, params[key]);
+        }
+      });
+
+      const response = await axios.patch(this.getUrl(`/issues/${issueKey}`), body);
+      return response.data;
+    } catch (error) {
+      console.error(`Error updating Backlog issue ${issueKey}:`, error);
+      throw error;
     }
   }
 

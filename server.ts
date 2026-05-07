@@ -106,6 +106,12 @@ dotenv.config();
       const blocks: any[] = [
         {
           type: "input",
+          block_id: "dept_block",
+          label: { type: "plain_text", text: "依頼部署" },
+          element: { type: "plain_text_input", action_id: "dept_input", placeholder: { type: "plain_text", text: "〇〇事業部" } }
+        },
+        {
+          type: "input",
           block_id: "request_type_block",
           label: { type: "plain_text", text: "依頼種別 (Request Type)" },
           element: {
@@ -424,6 +430,7 @@ dotenv.config();
       console.log("   ✅ Acknowledged request modal submission");
       
       const values = view.state.values;
+      const dept = values.dept_block.dept_input.value || "";
       const requestType = values.request_type_block.request_type_input.selected_option?.value || "legal_consult";
       const summary = values.summary_block.summary_input.value || "";
       const deadline = values.deadline_block.deadline_input.selected_date || "";
@@ -481,9 +488,16 @@ ${details}
           try {
             const types = await backlogService.getIssueTypes();
             if (types && types.length > 0) {
-              // Prefer a type named 'Task' or '依頼' or similar, else first
-              const preferred = types.find((t: any) => t.name.includes("依頼") || t.name === "Task") || types[0];
-              issueTypeId = preferred.id;
+              // Map based on requestType
+              let targetTypeName = "事務手続"; // Default
+              if (requestType === "legal_consult") {
+                targetTypeName = "法務相談";
+              } else if (["contract", "nda", "license_master", "lic_individual", "sales_master", "purchase_order"].includes(requestType)) {
+                targetTypeName = "契約審査";
+              }
+              
+              const matchedType = types.find((t: any) => t.name === targetTypeName);
+              issueTypeId = matchedType ? matchedType.id : types[0].id;
             }
           } catch (e) {
             console.warn("Failed to fetch issue types, falling back to ID 1", e);
@@ -493,7 +507,12 @@ ${details}
             summary: `【${requestType}】${displaySummary}`,
             description: backlogDescription,
             issueTypeId: issueTypeId, 
-            priorityId: 3, 
+            priorityId: 3,
+            // Map Slack data to new Custom Fields
+            counterparty: counterparty,
+            dept: dept, // 依頼部署
+            deadline: deadline, // 希望納期
+            remarks: details, // 備考
           });
 
           // Register in DB
@@ -1686,6 +1705,18 @@ ${details}
         "UPDATE issue_workflows SET current_status_name = $1, document_draft = $2, updated_at = CURRENT_TIMESTAMP WHERE backlog_issue_key = $3",
         ["草案", driveLink, issueKey]
       );
+
+      // --- New: Update Backlog with Document Number ---
+      try {
+        await backlogService.updateIssue(issueKey, {
+          docNumber: docNumber,
+          // Optional: Append to summary for better searchability if desired
+          // summary: `[${docNumber}] ${issue.summary}` 
+        });
+        console.log(`✅ Backlog issue ${issueKey} updated with Document Number: ${docNumber}`);
+      } catch (backlogError) {
+        console.warn(`⚠️ Failed to update Backlog issue ${issueKey} with document number:`, backlogError);
+      }
 
       // --- New: Automatically sync Lifecycle Events based on technical design ---
       if (templateType.includes("purchase_order") || templateType === "planning_purchase_order") {

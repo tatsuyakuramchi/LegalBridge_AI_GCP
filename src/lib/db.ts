@@ -351,9 +351,10 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
   }
 
   const year = new Date().getFullYear();
-  const val = await getNextSequenceValue(prefix, year);
-  // Implementation of specific Method A format: AL-[PREFIX]-[YEAR]-[SERIAL]
-  // Using 'AL' as a fixed organizational prefix if appropriate, or just the derived prefix.
-  // The user mentioned prefix/year/serial logic.
-  return `AL-${prefix}-${year}-${val.toString().padStart(4, "0")}`;
+  // Using a unified sequence kind 'ARC' for the general document numbering to ensure global uniqueness if requested,
+  // or sticking to the specific prefix if we want per-type sequences.
+  // Given the request for "ARC-" prefix, we will use 'ARC' as the sequence kind.
+  const val = await getNextSequenceValue('ARC', year);
+  
+  return `ARC-${year}-${val.toString().padStart(4, "0")}`;
 }
