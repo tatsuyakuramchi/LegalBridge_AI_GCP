@@ -66,7 +66,9 @@ async function run() {
     const newIssueTypes = [
       { name: '契約審査', color: '#e30000' }, 
       { name: '法務相談', color: '#2779ca' },
-      { name: '事務手続', color: '#666665' }
+      { name: '事務手続', color: '#666665' },
+      { name: '納品・検収', color: '#7ea800' },
+      { name: '利用許諾計算', color: '#ff9200' }
     ];
     for (const it of newIssueTypes) {
       const body = new URLSearchParams();
@@ -143,11 +145,41 @@ async function run() {
       await new Promise(r => setTimeout(r, 600));
     }
 
+    // 7. Setup Categories
+    console.log("\n📁 [Phase 6] Setting up Categories...");
+    const currentCategoriesRes = await axios.get(getUrl(`/projects/${projectId}/categories`));
+    for (const cat of currentCategoriesRes.data) {
+      try {
+        await axios.delete(getUrl(`/projects/${projectId}/categories/${cat.id}`));
+        console.log(`   - Deleted Category: ${cat.name}`);
+      } catch (e) {
+        console.warn(`   ! Could not delete category ${cat.name}`);
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+
+    const newCategories = [
+      '契約', '発注', '納品', '売買', 'ライセンス', '通知書'
+    ];
+
+    for (const catName of newCategories) {
+      try {
+        const body = new URLSearchParams();
+        body.append('name', catName);
+        const res = await axios.post(getUrl(`/projects/${projectId}/categories`), body);
+        console.log(`   + Created Category: ${catName} (ID: ${res.data.id})`);
+      } catch (e) {
+        console.warn(`   ! Could not create category ${catName}`);
+      }
+      await new Promise(r => setTimeout(r, 300));
+    }
+
     console.log("\n✨ Backlog Refresh Complete!");
     console.log("--------------------------------------------------");
     console.log("The following structure is now active:");
-    console.log("- Types: 契約審査, 法務相談, 事務手続");
+    console.log("- Types: 契約審査, 法務相談, 事務手続, 納品・検収, 利用許諾計算");
     console.log("- Fields: 取引先名称, 依頼部署, ドラフトURL, 締結方法, 締結予定日, 備考");
+    console.log("- Categories: 契約, 発注, 納品, 売買, ライセンス, 通知書");
     console.log("- Statuses (if supported): 法務審査中, 相手方確認中, 社内承認中, 締結手続中");
     console.log("--------------------------------------------------");
 

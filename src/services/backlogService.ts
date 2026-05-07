@@ -224,6 +224,17 @@ export class BacklogService {
     }
   }
 
+  async getCategories(): Promise<any[]> {
+    if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
+    try {
+      const response = await axios.get(this.getUrl(`/projects/${this.projectKey}/categories`));
+      return response.data;
+    } catch (error) {
+      console.error("Error fetching categories:", error);
+      return [];
+    }
+  }
+
   async getStatuses(): Promise<any[]> {
     if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
     try {

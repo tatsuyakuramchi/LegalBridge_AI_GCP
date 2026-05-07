@@ -34,6 +34,7 @@ export type DocumentType =
   | "intl_master"
   | "intl_purchase_order"
   | "individual_license_terms"
+  | "license_calculation_sheet"
   | "license_master";
 
 export class DocumentService {

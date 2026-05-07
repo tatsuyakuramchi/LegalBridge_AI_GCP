@@ -234,7 +234,7 @@ export default function App() {
       const res = await fetch('/api/dashboard/stats');
       const data = await res.json();
       if (data && Array.isArray(data.issueDetails)) {
-        data.issueDetails = [...new Set(data.issueDetails.map((i: any) => i.issueKey))].map(key => data.issueDetails.find((i: any) => i.issueKey === key));
+        data.issueDetails = Array.from(new Map(data.issueDetails.filter((i: any) => i && i.issueKey).map((i: any) => [i.issueKey, i])).values());
       }
       setDashboardStats(data);
     } catch (e) {
@@ -688,9 +688,9 @@ export default function App() {
                   </div>
                   
                   <div className="space-y-3">
-                     {dashboardStats?.issueDetails?.slice(0, 10).map((issue: any) => (
+                     {dashboardStats?.issueDetails?.slice(0, 10).map((issue: any, idx: number) => (
                        <div 
-                         key={issue.issueKey}
+                         key={issue.issueKey || `stats-issue-${idx}`}
                          onClick={() => {
                            handleIssueSelect(issue.issueKey);
                            setActiveTab('create');
@@ -743,7 +743,7 @@ export default function App() {
                      </h3>
                      <div className="space-y-4">
                         {dashboardStats?.recentActivity?.map((doc: any, idx: number) => (
-                           <div key={idx} className="border-l border-blue-400/30 pl-4 py-1">
+                           <div key={doc.id || doc.issue_key || `activity-${idx}`} className="border-l border-blue-400/30 pl-4 py-1">
                               <p className="text-[10px] font-bold truncate">{doc.template_type}</p>
                               <p className="text-[8px] font-mono opacity-60 uppercase">{doc.issue_key} • {new Date(doc.created_at).toLocaleDateString()}</p>
                            </div>
@@ -794,7 +794,7 @@ export default function App() {
                       className="w-full bg-[#141414] border-b border-white/20 py-2 text-xs font-mono focus:outline-none focus:border-blue-400 appearance-none"
                     >
                       <option value="">-- ALL ACTIVE TICKETS --</option>
-                      {issues.map(i => <option key={i.issueKey} value={i.issueKey}>[{i.issueKey}] {i.summary}</option>)}
+                      {issues.map((i, idx) => <option key={i.issueKey || `issue-${idx}`} value={i.issueKey}>[{i.issueKey}] {i.summary}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -821,12 +821,12 @@ export default function App() {
                           return label.toLowerCase().includes(templateSearch.toLowerCase()) || t.toLowerCase().includes(templateSearch.toLowerCase());
                         });
                         const categories = [...new Set(filteredList.map(t => templateMetadata[t]?.category || 'General'))];
-                        return categories.map(cat => (
-                          <optgroup key={cat} label={cat}>
+                        return categories.map((cat, catIdx) => (
+                          <optgroup key={cat || `cat-${catIdx}`} label={cat}>
                             {filteredList
                               .filter(t => (templateMetadata[t]?.category || 'General') === cat)
-                              .map(t => (
-                                <option key={t} value={t}>
+                              .map((t, tIdx) => (
+                                <option key={t || `template-opt-${tIdx}`} value={t}>
                                   {templateMetadata[t]?.label || t.replace(/_/g, ' ')} ({t})
                                 </option>
                               ))
@@ -877,7 +877,7 @@ export default function App() {
                           s.staff_name.toLowerCase().includes(staffSearch.toLowerCase()) || 
                           (s.department && s.department.toLowerCase().includes(staffSearch.toLowerCase()))
                         )
-                        .map(s => <option key={s.slack_user_id} value={s.slack_user_id}>{s.staff_name} ({s.department})</option>)}
+                        .map((s, idx) => <option key={s.slack_user_id || `staff-opt-${idx}`} value={s.slack_user_id}>{s.staff_name} ({s.department})</option>)}
                     </select>
                  </div>
                  <div className="bg-white border border-[#141414]/10 p-4 hover:border-[#141414]/40 transition-all group shadow-sm">
@@ -906,7 +906,7 @@ export default function App() {
                           v.vendor_name.toLowerCase().includes(vendorSearch.toLowerCase()) || 
                           v.vendor_code.toLowerCase().includes(vendorSearch.toLowerCase())
                         )
-                        .map(v => <option key={v.vendor_code} value={v.vendor_code}>{v.vendor_name}</option>)}
+                        .map((v, idx) => <option key={v.vendor_code || `vendor-opt-${idx}`} value={v.vendor_code}>{v.vendor_name}</option>)}
                     </select>
                  </div>
                </div>
@@ -920,7 +920,7 @@ export default function App() {
                  </div>
                  <div className="relative border-l-2 border-[#141414]/10 pl-4 ml-1 space-y-6">
                     {caseHistory.map((item, idx) => (
-                      <div key={item.id || idx} className="relative">
+                      <div key={`${item.id}-${idx}`} className="relative">
                         <div className="absolute -left-[23px] top-1.5 w-3 h-3 bg-white border-2 border-[#141414] rounded-full z-10" />
                         <div>
                            <p className="text-[8px] font-mono opacity-40 uppercase">{new Date(item.date).toLocaleDateString('ja-JP')}</p>
@@ -1135,9 +1135,9 @@ export default function App() {
                         i.issueKey.toLowerCase().includes(issueSearchTerm.toLowerCase()) || 
                         i.summary.toLowerCase().includes(issueSearchTerm.toLowerCase())
                      )
-                     .map(issue => (
+                     .map((issue, idx) => (
                      <div 
-                       key={issue.issueKey} 
+                       key={issue.issueKey || `issue-search-${idx}`}
                        className="p-8 border border-[#141414]/10 bg-white group hover:border-[#141414] transition-all cursor-pointer relative overflow-hidden"
                        onClick={() => {
                           handleIssueSelect(issue.issueKey);
@@ -1248,8 +1248,8 @@ export default function App() {
                              v.vendor_code.toLowerCase().includes(vendorSearch.toLowerCase()) ||
                              (v.trade_name && v.trade_name.toLowerCase().includes(vendorSearch.toLowerCase()))
                            )
-                           .map(v => (
-                           <div key={v.vendor_code} className="p-4 border border-[#141414]/5 bg-white group hover:border-orange-600/30 transition-all hover:shadow-lg">
+                           .map((v, idx) => (
+                           <div key={v.vendor_code || `vendor-${idx}`} className="p-4 border border-[#141414]/5 bg-white group hover:border-orange-600/30 transition-all hover:shadow-lg">
                               <p className="text-xs font-bold uppercase mb-1">{v.vendor_name}</p>
                               <div className="flex justify-between items-end">
                                  <p className="text-[9px] font-mono text-[#141414]/50 uppercase">{v.vendor_code} | {v.trade_name || 'N/A'}</p>
@@ -1291,9 +1291,9 @@ export default function App() {
                          </div>
                       </div>
                       <div className="space-y-3">
-                         {staffList.map(s => (
+                         {staffList.map((s, idx) => (
                            <div 
-                             key={s.slack_user_id} 
+                             key={s.slack_user_id || `staff-list-${idx}`} 
                              onClick={() => setSelectedStaffDetail(s)}
                              className="p-4 border border-[#141414]/5 bg-white group hover:border-blue-600/30 transition-all hover:shadow-lg flex items-center gap-4 cursor-pointer"
                            >
@@ -1328,7 +1328,7 @@ export default function App() {
                       </div>
                       <div className="space-y-3">
                          {workflowRules.map((rule, ruleIdx) => (
-                           <div key={rule.department || ruleIdx} className="p-4 border border-[#141414]/5 bg-white group hover:border-emerald-600/30 transition-all hover:shadow-lg">
+                           <div key={`workflow-${rule.department || ruleIdx}-${ruleIdx}`} className="p-4 border border-[#141414]/5 bg-white group hover:border-emerald-600/30 transition-all hover:shadow-lg">
                               {editingRule?.department === rule.department ? (
                                 <div className="space-y-3">
                                    <div>
@@ -1464,8 +1464,8 @@ export default function App() {
                           <span className="text-[10px] font-mono opacity-40 font-bold">{assets.length}</span>
                        </div>
                        <div className="space-y-3">
-                          {assets.map(a => (
-                            <div key={a.id} className="p-4 border border-[#141414]/5 bg-white group hover:border-purple-600/30 transition-all hover:shadow-lg">
+                          {assets.map((a, idx) => (
+                            <div key={a.id || `asset-list-${idx}`} className="p-4 border border-[#141414]/5 bg-white group hover:border-purple-600/30 transition-all hover:shadow-lg">
                                <div className="flex justify-between items-start mb-2">
                                   <p className="text-xs font-bold uppercase truncate pr-4">{a.asset_name}</p>
                                   <span className="text-[8px] font-mono font-bold text-purple-600 uppercase italic whitespace-nowrap">{a.asset_type}</span>
@@ -1540,23 +1540,23 @@ export default function App() {
                         <thead>
                           <tr className="bg-gray-50 border-b border-[#141414]/10">
                             <th className="p-4 text-left font-mono text-[10px] uppercase border-r border-[#141414]/10 sticky left-0 bg-gray-50 z-10 w-64">Variable ID / Input Field</th>
-                            {templateList.map(t => (
-                              <th key={t} className="p-4 text-center font-mono text-[9px] uppercase border-r border-[#141414]/10 min-w-[120px]">
+                            {templateList.map((t, idx) => (
+                              <th key={t || `template-header-${idx}`} className="p-4 text-center font-mono text-[9px] uppercase border-r border-[#141414]/10 min-w-[120px]">
                                 {templateMetadata[t]?.label || t}
                               </th>
                             ))}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-[#141414]/5">
-                          {Array.from(new Set(templateList.flatMap(t => Object.keys(templateMetadata[t]?.vars || {})))).sort().map(field => (
-                            <tr key={field} className="hover:bg-gray-50/50 group">
+                          {Array.from(new Set(templateList.flatMap(t => Object.keys(templateMetadata[t]?.vars || {})))).sort().map((field, fIdx) => (
+                            <tr key={field || `field-row-${fIdx}`} className="hover:bg-gray-50/50 group">
                               <td className="p-3 font-mono text-[9px] font-bold text-blue-600 border-r border-[#141414]/10 sticky left-0 bg-white group-hover:bg-gray-50 z-10">
                                 {field}
                               </td>
-                              {templateList.map(t => {
+                              {templateList.map((t, tIdx) => {
                                 const varMeta = (templateMetadata[t]?.vars || {})[field];
                                 return (
-                                  <td key={t} className="p-3 text-center border-r border-[#141414]/10">
+                                  <td key={t || `matrix-cell-${field}-${tIdx}`} className="p-3 text-center border-r border-[#141414]/10">
                                     {varMeta ? (
                                       <div className="flex flex-col items-center gap-1">
                                         <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -1597,9 +1597,9 @@ export default function App() {
                             const label = templateMetadata[t]?.label || t;
                             return label.toLowerCase().includes(templateSearch.toLowerCase()) || t.toLowerCase().includes(templateSearch.toLowerCase());
                           })
-                          .map(t => (
+                          .map((t, idx) => (
                           <div 
-                            key={t}
+                            key={t || `template-sidebar-${idx}`}
                             onClick={() => setSelectedTemplate(t)}
                             className={`p-4 border font-mono text-[11px] cursor-pointer transition-all flex justify-between items-center group ${selectedTemplate === t ? 'bg-[#141414] text-white border-[#141414]' : 'bg-white border-[#141414]/10 hover:border-[#141414]'}`}
                           >
@@ -1929,8 +1929,8 @@ export default function App() {
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                   {assets.map(asset => (
-                     <div key={asset.id} className="p-6 border border-[#141414]/10 bg-white group hover:border-[#141414] transition-all cursor-pointer">
+                   {assets.map((asset, idx) => (
+                     <div key={asset.id || `asset-grid-${idx}`} className="p-6 border border-[#141414]/10 bg-white group hover:border-[#141414] transition-all cursor-pointer">
                         <div className="flex justify-between items-start mb-6">
                            <div className="w-10 h-10 bg-gray-100 flex items-center justify-center group-hover:bg-[#141414] group-hover:text-white transition-all">
                               <Archive className="w-5 h-5" />
@@ -2381,8 +2381,8 @@ export default function App() {
                     <div className="max-h-[400px] overflow-y-auto divide-y divide-gray-50">
                        {assets
                          .filter(a => a.asset_number.includes(assetSearch) || a.asset_name.toLowerCase().includes(assetSearch.toLowerCase()) || a.counterparty.toLowerCase().includes(assetSearch.toLowerCase()))
-                         .map(asset => (
-                           <div key={asset.id} className="grid grid-cols-4 p-4 text-[11px] items-center hover:bg-blue-50/50 group transition-colors">
+                         .map((asset, idx) => (
+                           <div key={asset.id || `asset-picker-${idx}`} className="grid grid-cols-4 p-4 text-[11px] items-center hover:bg-blue-50/50 group transition-colors">
                               <div className="font-bold flex items-center gap-3">
                                  <Archive className={`w-4 h-4 ${asset.asset_type === 'ledger' ? 'text-blue-500' : 'text-indigo-500'}`} />
                                  <span className="font-mono tracking-tighter">{asset.asset_number}</span>

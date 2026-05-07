@@ -81,7 +81,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({ formData, se
       
       <div className="grid grid-cols-1 gap-6">
         {list.map((item: any, idx: number) => (
-          <div key={item.id} className="bg-white border border-[#141414]/10 p-6 shadow-sm relative group">
+          <div key={item.id || `sublicensee-${idx}`} className="bg-white border border-[#141414]/10 p-6 shadow-sm relative group">
             <button 
               onClick={() => removeItem(idx)}
               className="absolute -right-3 -top-3 w-7 h-7 bg-red-600 text-white rounded-full flex items-center justify-center shadow-xl opacity-0 hover:scale-110 group-hover:opacity-100 transition-all z-10"

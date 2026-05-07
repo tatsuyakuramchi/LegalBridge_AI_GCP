@@ -12,6 +12,7 @@ import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { ExcelService } from "./src/services/excelService.ts";
 import { pool, initDb, query, getNextSequenceValue, getNewDocumentNumber } from "./src/lib/db.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
+import * as contractCheckService from "./src/services/contractCheckService.ts";
 import TurndownService from 'turndown';
 import multer from 'multer';
 import { Readable } from "stream";
@@ -20,15 +21,18 @@ import { gfm } from 'turndown-plugin-gfm';
 
 dotenv.config();
 
+async function startServer() {
   // Initialize PostgreSQL
-  await initDb();
-  console.log("✅ Database initialized");
+  try {
+    await initDb();
+    console.log("✅ Database initialized");
+  } catch (dbErr) {
+    console.error("❌ Database initialization failed:", dbErr);
+  }
 
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
-
-  async function startServer() {
-    const app = express();
+  const app = express();
     const PORT = Number(process.env.PORT) || 3000;
     console.log("🚀 Starting server...");
 
@@ -125,6 +129,7 @@ dotenv.config();
                                        selectedType === "lic_individual" ? "個別利用許諾条件 (lic_individual)" :
                                        selectedType === "purchase_order" ? "発注書 (purchase_order)" :
                                        selectedType === "delivery_inspec" ? "納品 / 検収書 (delivery_inspec)" :
+                                       selectedType === "license_calc" ? "利用許諾計算リクエスト (license_calc)" :
                                        selectedType === "sales_master" ? "売買基本契約 (sales_master)" :
                                        "その他" },
               value: selectedType
@@ -138,6 +143,7 @@ dotenv.config();
               { text: { type: "plain_text", text: "個別利用許諾条件 (lic_individual)" }, value: "lic_individual" },
               { text: { type: "plain_text", text: "発注書 (purchase_order)" }, value: "purchase_order" },
               { text: { type: "plain_text", text: "納品 / 検収書 (delivery_inspec)" }, value: "delivery_inspec" },
+              { text: { type: "plain_text", text: "利用許諾計算リクエスト (license_calc)" }, value: "license_calc" },
               { text: { type: "plain_text", text: "売買基本契約 (sales_master)" }, value: "sales_master" }
             ]
           }
@@ -460,6 +466,8 @@ dotenv.config();
         templateType = "license_master";
       } else if (requestType === "lic_individual") {
         templateType = "individual_license_terms";
+      } else if (requestType === "license_calc") {
+        templateType = "license_calculation_sheet";
       }
 
       // 2. Process everything else in the background
@@ -485,25 +493,57 @@ ${details}
           // Create Backlog Issue
           // Fetch Issue Types to avoid hardcoding ID 1
           let issueTypeId = 1;
+          let categoryId: number | undefined = undefined;
+
           try {
-            const types = await backlogService.getIssueTypes();
+            const [types, categories] = await Promise.all([
+              backlogService.getIssueTypes(),
+              backlogService.getCategories()
+            ]);
+
+            // 1. Map Issue Type
             if (types && types.length > 0) {
               // Map based on requestType
               let targetTypeName = "事務手続"; // Default
               if (requestType === "legal_consult") {
                 targetTypeName = "法務相談";
-              } else if (["contract", "nda", "license_master", "lic_individual", "sales_master", "purchase_order"].includes(requestType)) {
+              } else if (["contract", "nda", "outsourcing", "license_master", "lic_individual", "sales_master", "purchase_order"].includes(requestType)) {
                 targetTypeName = "契約審査";
+              } else if (requestType === "delivery_inspec") {
+                targetTypeName = "納品・検収";
+              } else if (requestType === "license_calc") {
+                targetTypeName = "利用許諾計算";
               }
               
               const matchedType = types.find((t: any) => t.name === targetTypeName);
               issueTypeId = matchedType ? matchedType.id : types[0].id;
             }
+
+            // 2. Map Category
+            if (categories && categories.length > 0) {
+              let targetCategoryName = "通知書"; // Default fallback
+              if (["nda", "contract", "outsourcing", "license_master", "lic_individual"].includes(requestType)) {
+                targetCategoryName = "契約";
+              } else if (requestType === "purchase_order") {
+                targetCategoryName = "発注";
+              } else if (requestType === "delivery_inspec") {
+                targetCategoryName = "納品";
+              } else if (requestType === "sales_master") {
+                targetCategoryName = "売買";
+              } else if (requestType === "license_calc") {
+                targetCategoryName = "ライセンス";
+              }
+              
+              const matchedCategory = categories.find((c: any) => c.name === targetCategoryName);
+              if (matchedCategory) {
+                categoryId = matchedCategory.id;
+              }
+            }
           } catch (e) {
-            console.warn("Failed to fetch issue types, falling back to ID 1", e);
+            console.warn("Failed to fetch issue types or categories, falling back", e);
           }
 
-          const issue = await backlogService.createIssue({
+          const issueParams: any = {
             summary: `【${requestType}】${displaySummary}`,
             description: backlogDescription,
             issueTypeId: issueTypeId, 
@@ -513,7 +553,14 @@ ${details}
             dept: dept, // 依頼部署
             deadline: deadline, // 希望納期
             remarks: details, // 備考
-          });
+          };
+
+          // Backlog expects multiple categories as categoryId[]
+          if (categoryId) {
+            issueParams["categoryId[]"] = categoryId;
+          }
+
+          const issue = await backlogService.createIssue(issueParams);
 
           // Register in DB
           const lrResult = await query(
@@ -701,6 +748,47 @@ ${details}
       updatedAt: new Date().toISOString(),
       warnings: !slackApp ? ["Slack credentials missing"] : [],
     });
+  });
+
+  // --- Contract Check API (for GAS Frontend) ---
+  function requirePortalSecret(req: express.Request, res: express.Response, next: express.NextFunction) {
+    const expected = process.env.LB_PORTAL_SECRET;
+    const actual = req.headers["x-lb-portal-secret"];
+
+    if (!expected) {
+      console.warn("⚠️ LB_PORTAL_SECRET is not set. Contract check API is unprotected.");
+      return next();
+    }
+
+    if (actual !== expected) {
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+
+    return next();
+  }
+
+  app.get("/api/contract-check/purposes", requirePortalSecret, async (req, res) => {
+    try {
+      const purposes = await contractCheckService.getContractPurposes();
+      res.json({ ok: true, purposes });
+    } catch (error) {
+      console.error("Error fetching purposes:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.post("/api/contract-check/search", requirePortalSecret, express.json(), async (req, res) => {
+    try {
+      const input = req.body;
+      if (!input || !input.counterpartyName) {
+        return res.status(400).json({ ok: false, error: "Missing counterpartyName in request body" });
+      }
+      const result = await contractCheckService.searchContractStatus(input);
+      res.json(result);
+    } catch (error) {
+      console.error("Error searching contract status:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
   });
 
   app.get("/api/backlog/issues", async (req, res) => {
