@@ -1573,7 +1573,7 @@ ${details}
     }
   });
 
-  app.post("/api/management/import-csv", express.text(), async (req, res) => {
+  app.post("/api/management/import-csv", express.text({ limit: '50mb' }), async (req, res) => {
     const { mode } = req.query;
     try {
       let result;
