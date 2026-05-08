@@ -1249,7 +1249,7 @@ export default function App() {
                              (v.trade_name && v.trade_name.toLowerCase().includes(vendorSearch.toLowerCase()))
                            )
                            .map((v, idx) => (
-                           <div key={v.vendor_code || `vendor-${idx}`} className="p-4 border border-[#141414]/5 bg-white group hover:border-orange-600/30 transition-all hover:shadow-lg">
+                           <div key={`vendor-${v.vendor_code || idx}-${idx}`} className="p-4 border border-[#141414]/5 bg-white group hover:border-orange-600/30 transition-all hover:shadow-lg">
                               <p className="text-xs font-bold uppercase mb-1">{v.vendor_name}</p>
                               <div className="flex justify-between items-end">
                                  <p className="text-[9px] font-mono text-[#141414]/50 uppercase">{v.vendor_code} | {v.trade_name || 'N/A'}</p>
@@ -1293,7 +1293,7 @@ export default function App() {
                       <div className="space-y-3">
                          {staffList.map((s, idx) => (
                            <div 
-                             key={s.slack_user_id || `staff-list-${idx}`} 
+                             key={`staff-list-${s.slack_user_id || idx}-${idx}`} 
                              onClick={() => setSelectedStaffDetail(s)}
                              className="p-4 border border-[#141414]/5 bg-white group hover:border-blue-600/30 transition-all hover:shadow-lg flex items-center gap-4 cursor-pointer"
                            >
@@ -1465,7 +1465,7 @@ export default function App() {
                        </div>
                        <div className="space-y-3">
                           {assets.map((a, idx) => (
-                            <div key={a.id || `asset-list-${idx}`} className="p-4 border border-[#141414]/5 bg-white group hover:border-purple-600/30 transition-all hover:shadow-lg">
+                            <div key={`asset-list-${a.id || idx}-${idx}`} className="p-4 border border-[#141414]/5 bg-white group hover:border-purple-600/30 transition-all hover:shadow-lg">
                                <div className="flex justify-between items-start mb-2">
                                   <p className="text-xs font-bold uppercase truncate pr-4">{a.asset_name}</p>
                                   <span className="text-[8px] font-mono font-bold text-purple-600 uppercase italic whitespace-nowrap">{a.asset_type}</span>
@@ -1599,7 +1599,7 @@ export default function App() {
                           })
                           .map((t, idx) => (
                           <div 
-                            key={t || `template-sidebar-${idx}`}
+                            key={`template-sidebar-${t || idx}-${idx}`}
                             onClick={() => setSelectedTemplate(t)}
                             className={`p-4 border font-mono text-[11px] cursor-pointer transition-all flex justify-between items-center group ${selectedTemplate === t ? 'bg-[#141414] text-white border-[#141414]' : 'bg-white border-[#141414]/10 hover:border-[#141414]'}`}
                           >
@@ -1703,10 +1703,10 @@ export default function App() {
                              <div className="space-y-4 pt-6">
                                 <h4 className="text-[10px] font-mono font-bold uppercase text-[#141414]/40 border-b pb-2">Dynamic Variable Logic</h4>
                                 <div className="space-y-2">
-                                   {templateFields.map(field => {
+                                   {templateFields.map((field, idx) => {
                                       const meta = (templateMetadata[selectedTemplate]?.vars || {})[field] || {};
                                       return (
-                                        <div key={field} className="grid grid-cols-12 gap-4 items-center p-3 border border-[#141414]/5 bg-white hover:bg-gray-50/50 transition-colors">
+                                        <div key={`${field}-${idx}`} className="grid grid-cols-12 gap-4 items-center p-3 border border-[#141414]/5 bg-white hover:bg-gray-50/50 transition-colors">
                                            <div className="col-span-2 font-mono text-[10px] font-bold text-blue-600 truncate">{field}</div>
                                            <div className="col-span-2">
                                               <input 
@@ -1837,9 +1837,9 @@ export default function App() {
                                       <p className="text-[8px] font-mono text-gray-400 uppercase leading-tight">Click to inject placeholder into HTML at cursor pos.</p>
                                       
                                       <div className="space-y-1 max-h-[350px] overflow-y-auto pr-2 custom-scrollbar">
-                                         {commonVariables.map(v => (
+                                         {commonVariables.map((v, idx) => (
                                             <button 
-                                               key={v}
+                                               key={`${v}-${idx}`}
                                                onClick={() => insertVariable(v)}
                                                className="w-full text-left px-2 py-1.5 text-[9px] font-mono bg-gray-50 border border-transparent hover:border-amber-600/30 hover:bg-amber-50 transition-all truncate group flex justify-between items-center"
                                             >
@@ -1930,7 +1930,7 @@ export default function App() {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                    {assets.map((asset, idx) => (
-                     <div key={asset.id || `asset-grid-${idx}`} className="p-6 border border-[#141414]/10 bg-white group hover:border-[#141414] transition-all cursor-pointer">
+                     <div key={`asset-grid-${asset.id || idx}-${idx}`} className="p-6 border border-[#141414]/10 bg-white group hover:border-[#141414] transition-all cursor-pointer">
                         <div className="flex justify-between items-start mb-6">
                            <div className="w-10 h-10 bg-gray-100 flex items-center justify-center group-hover:bg-[#141414] group-hover:text-white transition-all">
                               <Archive className="w-5 h-5" />
@@ -2382,7 +2382,7 @@ export default function App() {
                        {assets
                          .filter(a => a.asset_number.includes(assetSearch) || a.asset_name.toLowerCase().includes(assetSearch.toLowerCase()) || a.counterparty.toLowerCase().includes(assetSearch.toLowerCase()))
                          .map((asset, idx) => (
-                           <div key={asset.id || `asset-picker-${idx}`} className="grid grid-cols-4 p-4 text-[11px] items-center hover:bg-blue-50/50 group transition-colors">
+                           <div key={`asset-picker-${asset.id || idx}-${idx}`} className="grid grid-cols-4 p-4 text-[11px] items-center hover:bg-blue-50/50 group transition-colors">
                               <div className="font-bold flex items-center gap-3">
                                  <Archive className={`w-4 h-4 ${asset.asset_type === 'ledger' ? 'text-blue-500' : 'text-indigo-500'}`} />
                                  <span className="font-mono tracking-tighter">{asset.asset_number}</span>
