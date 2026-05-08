@@ -1810,7 +1810,7 @@ export default function App() {
                       <div className="flex items-center justify-between border-b border-orange-600/20 pb-3">
                          <div className="flex items-center gap-3">
                             <Building2 className="w-4 h-4 text-orange-600" />
-                            <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">External Partners</h3>
+                            <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">取引先マスター (External Partners)</h3>
                          </div>
                          <div className="flex items-center gap-4">
                             <button 
@@ -1871,7 +1871,7 @@ export default function App() {
                       <div className="flex items-center justify-between border-b border-blue-600/20 pb-3">
                          <div className="flex items-center gap-3">
                             <User className="w-4 h-4 text-blue-600" />
-                            <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">Human Resources</h3>
+                            <h3 className="text-[11px] font-mono font-bold uppercase tracking-widest">担当者マスター (Human Resources / Staff)</h3>
                          </div>
                          <div className="flex items-center gap-4">
                             <button 
@@ -1886,8 +1886,25 @@ export default function App() {
                             <span className="text-[10px] font-mono opacity-40 font-bold">{staffList.length}</span>
                          </div>
                       </div>
+                      <div className="relative mb-3">
+                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                         <input 
+                           type="text" 
+                           placeholder="担当者名・部署名で検索..."
+                           value={staffSearch}
+                           onChange={(e) => setStaffSearch(e.target.value)}
+                           className="w-full pl-9 pr-4 py-2 bg-gray-50 border border-transparent focus:bg-white focus:border-blue-600/30 text-[10px] font-mono outline-none transition-all"
+                         />
+                      </div>
+
                       <div className="space-y-3">
-                         {staffList.map((s, idx) => (
+                         {staffList
+                           .filter(s => 
+                             !staffSearch ||
+                             s.staff_name.toLowerCase().includes(staffSearch.toLowerCase()) || 
+                             (s.department && s.department.toLowerCase().includes(staffSearch.toLowerCase()))
+                           )
+                           .map((s, idx) => (
                            <div 
                              key={`staff-list-${s.slack_user_id || idx}-${idx}`} 
                              onClick={() => setSelectedStaffDetail(s)}
@@ -3685,6 +3702,100 @@ export default function App() {
                                 )}
                              </div>
                           </div>
+                       </div>
+
+                       <div className="pt-8 border-t border-gray-100 mt-8 space-y-4">
+                          <div className="flex justify-between items-center">
+                             <h5 className="text-xs font-mono font-bold uppercase tracking-widest text-gray-800 flex items-center gap-2">
+                                <Building2 className="w-3.5 h-3.5 text-blue-600" />
+                                紐づく契約文書一覧 (Associated Contract Documents)
+                             </h5>
+                             <button 
+                               onClick={() => {
+                                 setNewContractData({
+                                   vendor_id: selectedVendorDetail.id || '',
+                                   record_type: 'master_contract',
+                                   contract_category: 'service',
+                                   contract_type: 'service_basic',
+                                   contract_title: '',
+                                   document_number: '',
+                                   contract_status: 'executed',
+                                   effective_date: '',
+                                   expiration_date: '',
+                                   auto_renewal: false,
+                                   original_work: '',
+                                   product_name: '',
+                                   work_name: '',
+                                   media: '',
+                                   territory: '',
+                                   language: '',
+                                   document_url: '',
+                                   condition_number: ''
+                                 });
+                                 setIsCreatingContract(true);
+                                 setIsEditingContract(false);
+                                 setSelectedVendorDetail(null);
+                                 showNotification("新規契約書の作成フォームを開きました。取引先は自動指定されています。", "success");
+                               }}
+                               className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[9px] font-mono font-bold uppercase tracking-wider rounded-sm flex items-center gap-1 shadow-sm transition-all"
+                             >
+                                <Plus className="w-2.5 h-2.5" /> 新規契約書を紐付ける
+                             </button>
+                          </div>
+                          
+                          {contracts.filter(c => String(c.vendor_id) === String(selectedVendorDetail.id)).length === 0 ? (
+                             <div className="p-4 border border-dashed border-gray-200 text-center text-gray-400 text-[10px] font-mono rounded-sm">
+                                この取引先に紐づく有効な契約・利用可能範囲マスターデータはありません。
+                             </div>
+                          ) : (
+                             <div className="border border-gray-100 rounded-sm divide-y divide-gray-50 bg-gray-50/20 max-h-60 overflow-y-auto">
+                                {contracts
+                                  .filter(c => String(c.vendor_id) === String(selectedVendorDetail.id))
+                                  .map((c, idx) => (
+                                   <div key={`vendor-contract-${c.id || idx}`} className="p-3 text-xs font-mono flex justify-between items-center hover:bg-gray-50 transition-all">
+                                      <div className="space-y-1 max-w-[70%]">
+                                         <div className="font-bold text-gray-800 flex items-center gap-2">
+                                            <span className="text-[10px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-bold uppercase">{c.record_type}</span>
+                                            <span className="truncate">{c.contract_title}</span>
+                                         </div>
+                                         <div className="text-[10px] text-gray-400 flex items-center gap-3">
+                                            <span>文書番号: {c.document_number || 'N/A'}</span>
+                                            <span>期限: {c.expiration_date ? c.expiration_date.substring(0, 10) : '無期限'}</span>
+                                            <span className={c.auto_renewal ? 'text-green-600 font-bold' : ''}>
+                                               {c.auto_renewal ? '自動更新あり' : '自動更新なし'}
+                                            </span>
+                                         </div>
+                                      </div>
+                                      <div className="flex gap-2">
+                                         {c.document_url && (
+                                            <a 
+                                              href={c.document_url} 
+                                              target="_blank" 
+                                              rel="noreferrer"
+                                              className="p-1 border border-gray-200 hover:bg-gray-100 bg-white text-gray-600 rounded-md transition-all shadow-sm"
+                                              title="原本を開く"
+                                            >
+                                               <ExternalLink className="w-3.5 h-3.5" />
+                                            </a>
+                                         )}
+                                         <button 
+                                           onClick={() => {
+                                             setSelectedContract(c);
+                                             setIsEditingContract(true);
+                                             setIsCreatingContract(false);
+                                             setSelectedVendorDetail(null);
+                                             showNotification("契約書の編集フォームを開きました。", "info");
+                                           }}
+                                           className="p-1 border border-gray-200 hover:bg-gray-100 bg-white text-blue-600 rounded-md transition-all shadow-sm"
+                                           title="編集"
+                                         >
+                                            <Edit2 className="w-3.5 h-3.5" />
+                                         </button>
+                                      </div>
+                                   </div>
+                                ))}
+                             </div>
+                          )}
                        </div>
                        
                        {isEditingVendor && (
