@@ -1088,16 +1088,27 @@ ${details}
           invoice_registration_number
         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
         ON CONFLICT (vendor_code) DO UPDATE SET 
-          vendor_name = EXCLUDED.vendor_name, trade_name = EXCLUDED.trade_name, pen_name = EXCLUDED.pen_name, 
-          vendor_suffix = EXCLUDED.vendor_suffix, entity_type = EXCLUDED.entity_type, 
-          withholding_enabled = EXCLUDED.withholding_enabled, aliases = EXCLUDED.aliases, 
-          address = EXCLUDED.address, phone = EXCLUDED.phone, email = EXCLUDED.email, 
-          contact_department = EXCLUDED.contact_department, contact_name = EXCLUDED.contact_name, 
-          master_contract_ref = EXCLUDED.master_contract_ref, bank_info = EXCLUDED.bank_info, 
-          bank_name = EXCLUDED.bank_name, branch_name = EXCLUDED.branch_name, 
-          account_type = EXCLUDED.account_type, account_number = EXCLUDED.account_number, 
-          account_holder_kana = EXCLUDED.account_holder_kana, is_invoice_issuer = EXCLUDED.is_invoice_issuer, 
-          invoice_registration_number = EXCLUDED.invoice_registration_number`,
+          vendor_name = CASE WHEN vendors.vendor_name IS NULL OR vendors.vendor_name = '' THEN EXCLUDED.vendor_name ELSE vendors.vendor_name END,
+          trade_name = CASE WHEN vendors.trade_name IS NULL OR vendors.trade_name = '' THEN EXCLUDED.trade_name ELSE vendors.trade_name END,
+          pen_name = CASE WHEN vendors.pen_name IS NULL OR vendors.pen_name = '' THEN EXCLUDED.pen_name ELSE vendors.pen_name END,
+          vendor_suffix = CASE WHEN vendors.vendor_suffix IS NULL OR vendors.vendor_suffix = '' THEN EXCLUDED.vendor_suffix ELSE vendors.vendor_suffix END,
+          entity_type = CASE WHEN vendors.entity_type IS NULL OR vendors.entity_type = '' THEN EXCLUDED.entity_type ELSE vendors.entity_type END,
+          withholding_enabled = CASE WHEN vendors.withholding_enabled IS NULL THEN EXCLUDED.withholding_enabled ELSE vendors.withholding_enabled END,
+          aliases = CASE WHEN vendors.aliases IS NULL OR vendors.aliases = '' THEN EXCLUDED.aliases ELSE vendors.aliases END,
+          address = CASE WHEN vendors.address IS NULL OR vendors.address = '' THEN EXCLUDED.address ELSE vendors.address END,
+          phone = CASE WHEN vendors.phone IS NULL OR vendors.phone = '' THEN EXCLUDED.phone ELSE vendors.phone END,
+          email = CASE WHEN vendors.email IS NULL OR vendors.email = '' THEN EXCLUDED.email ELSE vendors.email END,
+          contact_department = CASE WHEN vendors.contact_department IS NULL OR vendors.contact_department = '' THEN EXCLUDED.contact_department ELSE vendors.contact_department END,
+          contact_name = CASE WHEN vendors.contact_name IS NULL OR vendors.contact_name = '' THEN EXCLUDED.contact_name ELSE vendors.contact_name END,
+          master_contract_ref = CASE WHEN vendors.master_contract_ref IS NULL OR vendors.master_contract_ref = '' THEN EXCLUDED.master_contract_ref ELSE vendors.master_contract_ref END,
+          bank_info = CASE WHEN vendors.bank_info IS NULL OR vendors.bank_info = '' THEN EXCLUDED.bank_info ELSE vendors.bank_info END,
+          bank_name = CASE WHEN vendors.bank_name IS NULL OR vendors.bank_name = '' THEN EXCLUDED.bank_name ELSE vendors.bank_name END,
+          branch_name = CASE WHEN vendors.branch_name IS NULL OR vendors.branch_name = '' THEN EXCLUDED.branch_name ELSE vendors.branch_name END,
+          account_type = CASE WHEN vendors.account_type IS NULL OR vendors.account_type = '' THEN EXCLUDED.account_type ELSE vendors.account_type END,
+          account_number = CASE WHEN vendors.account_number IS NULL OR vendors.account_number = '' THEN EXCLUDED.account_number ELSE vendors.account_number END,
+          account_holder_kana = CASE WHEN vendors.account_holder_kana IS NULL OR vendors.account_holder_kana = '' THEN EXCLUDED.account_holder_kana ELSE vendors.account_holder_kana END,
+          is_invoice_issuer = CASE WHEN vendors.is_invoice_issuer IS NULL THEN EXCLUDED.is_invoice_issuer ELSE vendors.is_invoice_issuer END,
+          invoice_registration_number = CASE WHEN vendors.invoice_registration_number IS NULL OR vendors.invoice_registration_number = '' THEN EXCLUDED.invoice_registration_number ELSE vendors.invoice_registration_number END`,
         [
           vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type, 
           withholding_enabled, aliases, address, phone, email, contact_department, 
@@ -1572,6 +1583,8 @@ ${details}
         result = await csvImportService.importVendors(req.body);
       } else if (mode === "staff") {
         result = await csvImportService.importStaff(req.body);
+      } else if (mode === "contract") {
+        result = await csvImportService.importContracts(req.body);
       } else {
         result = await csvImportService.importGeneric(req.body);
       }

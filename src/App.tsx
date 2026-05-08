@@ -122,7 +122,18 @@ export default function App() {
   const [newVendorData, setNewVendorData] = useState({
     vendor_name: '',
     vendor_code: '',
-    trade_name: ''
+    trade_name: '',
+    pen_name: '',
+    entity_type: 'corporate',
+    contact_name: '',
+    address: '',
+    bank_name: '',
+    branch_name: '',
+    account_type: '普通',
+    account_number: '',
+    account_holder_kana: '',
+    is_invoice_issuer: false,
+    invoice_registration_number: ''
   });
   const [isRegisteringStaff, setIsRegisteringStaff] = useState(false);
   const [newStaffData, setNewStaffData] = useState({
@@ -159,10 +170,78 @@ export default function App() {
   const [templateStatus, setTemplateStatus] = useState<string | null>(null);
   const [newTemplateId, setNewTemplateId] = useState('');
   const [isDeleting, setIsDeleting] = useState<string | null>(null);
+  const [isCsvImportOpen, setIsCsvImportOpen] = useState(false);
+  const [csvImportMode, setCsvImportMode] = useState<'vendor' | 'contract'>('vendor');
+  const [csvText, setCsvText] = useState('');
+  const [csvResult, setCsvResult] = useState<{ success: boolean; processedCount: number; errors: string[] } | null>(null);
+  const [isCsvImporting, setIsCsvImporting] = useState(false);
   const [notification, setNotification] = useState<{ message: string, type: 'info' | 'error' | 'success' } | null>(null);
   const [batchSelection, setBatchSelection] = useState<string[]>([]);
   const templateTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const [issueSummary, setIssueSummary] = useState<any>(null);
+
+  const handleCsvImport = async () => {
+    if (!csvText.trim()) {
+      showNotification("Please select a file or copy-paste CSV content first.", "error");
+      return;
+    }
+    setIsCsvImporting(true);
+    setCsvResult(null);
+    try {
+      const res = await fetch(`/api/management/import-csv?mode=${csvImportMode}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: csvText
+      });
+      if (!res.ok) {
+        throw new Error(await res.text());
+      }
+      const data = await res.json();
+      setCsvResult(data);
+      if (data.success) {
+        showNotification(`${data.processedCount} rows successfully processed!`, "success");
+        const vendorsRes = await fetch('/api/master/vendors').then(r => r.json());
+        setVendors(vendorsRes);
+        const assetsRes = await fetch('/api/management/assets').then(r => r.json());
+        setAssets(assetsRes);
+      } else {
+        showNotification(`CSV processed with ${data.errors?.length || 0} errors.`, "error");
+      }
+    } catch (e) {
+      console.error(e);
+      showNotification(String(e), "error");
+    } finally {
+      setIsCsvImporting(false);
+    }
+  };
+
+  const downloadCsvTemplate = (mode: 'contract' | 'vendor') => {
+    let headers = '';
+    let rowExample = '';
+    let filename = '';
+
+    if (mode === 'contract') {
+      headers = 'vendorCode,vendorName,entityType,contactName,penName,tradeName,address,contractTitle,documentNumber,effectiveDate,expirationDate,contractCategory,contractType,originalWork,productName,territory,language,documentUrl,bankName,branchName,accountType,accountNumber,accountHolderKana,isInvoiceIssuer,invoiceRegistrationNumber';
+      rowExample = 'VND-001,アークライト,corporate,鈴木 一郎,アークライト太郎,アークライト,東京都千代田区神田,基本業務委託契約書,DOC-999,2026-04-01,2027-03-31,service,service_basic,ボードゲーム原著,ボドゲ製品A,日本,日本語,https://drive.google.com/doc,三菱UFJ銀行,本店,普通,1234567,ｶ)ｱｰｸﾗｲﾄ,TRUE,T1234567890123';
+      filename = 'contracts_bulk_import_template.csv';
+    } else {
+      headers = 'vendor_code,vendor_name,trade_name,pen_name,entity_type,contact_name,address,bank_name,branch_name,account_type,account_number,account_holder_kana,is_invoice_issuer,invoice_registration_number';
+      rowExample = 'VND-001,株式会社アークライト,アークライト,アークライト太郎,corporate,鈴木 一郎,東京都千代田区神田,三菱UFJ銀行,本店,普通,1234567,ｶ)ｱｰｸﾗｲﾄ,TRUE,T1234567890123';
+      filename = 'vendors_import_template.csv';
+    }
+
+    const csvContent = `${headers}\n${rowExample}`;
+    const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showNotification("CSVテンプレートをダウンロードしました", "success");
+  };
 
   // --- Template Editor Helpers ---
   const commonVariables = [
@@ -690,7 +769,7 @@ export default function App() {
                   <div className="space-y-3">
                      {dashboardStats?.issueDetails?.slice(0, 10).map((issue: any, idx: number) => (
                        <div 
-                         key={issue.issueKey || `stats-issue-${idx}`}
+                         key={`stats-issue-${issue.issueKey || idx}-${idx}`}
                          onClick={() => {
                            handleIssueSelect(issue.issueKey);
                            setActiveTab('create');
@@ -794,7 +873,7 @@ export default function App() {
                       className="w-full bg-[#141414] border-b border-white/20 py-2 text-xs font-mono focus:outline-none focus:border-blue-400 appearance-none"
                     >
                       <option value="">-- ALL ACTIVE TICKETS --</option>
-                      {issues.map((i, idx) => <option key={i.issueKey || `issue-${idx}`} value={i.issueKey}>[{i.issueKey}] {i.summary}</option>)}
+                      {issues.map((i, idx) => <option key={`issue-opt-${i.issueKey || idx}-${idx}`} value={i.issueKey}>[{i.issueKey}] {i.summary}</option>)}
                     </select>
                   </div>
                   <div className="space-y-1.5">
@@ -826,7 +905,7 @@ export default function App() {
                             {filteredList
                               .filter(t => (templateMetadata[t]?.category || 'General') === cat)
                               .map((t, tIdx) => (
-                                <option key={t || `template-opt-${tIdx}`} value={t}>
+                                <option key={`template-opt-${t || tIdx}-${tIdx}`} value={t}>
                                   {templateMetadata[t]?.label || t.replace(/_/g, ' ')} ({t})
                                 </option>
                               ))
@@ -877,7 +956,7 @@ export default function App() {
                           s.staff_name.toLowerCase().includes(staffSearch.toLowerCase()) || 
                           (s.department && s.department.toLowerCase().includes(staffSearch.toLowerCase()))
                         )
-                        .map((s, idx) => <option key={s.slack_user_id || `staff-opt-${idx}`} value={s.slack_user_id}>{s.staff_name} ({s.department})</option>)}
+                        .map((s, idx) => <option key={`staff-opt-${s.slack_user_id || idx}-${idx}`} value={s.slack_user_id}>{s.staff_name} ({s.department})</option>)}
                     </select>
                  </div>
                  <div className="bg-white border border-[#141414]/10 p-4 hover:border-[#141414]/40 transition-all group shadow-sm">
@@ -906,7 +985,7 @@ export default function App() {
                           v.vendor_name.toLowerCase().includes(vendorSearch.toLowerCase()) || 
                           v.vendor_code.toLowerCase().includes(vendorSearch.toLowerCase())
                         )
-                        .map((v, idx) => <option key={v.vendor_code || `vendor-opt-${idx}`} value={v.vendor_code}>{v.vendor_name}</option>)}
+                        .map((v, idx) => <option key={`vendor-opt-${v.vendor_code || idx}-${idx}`} value={v.vendor_code}>{v.vendor_name}</option>)}
                     </select>
                  </div>
                </div>
@@ -1137,7 +1216,7 @@ export default function App() {
                      )
                      .map((issue, idx) => (
                      <div 
-                       key={issue.issueKey || `issue-search-${idx}`}
+                       key={`issue-search-${issue.issueKey || idx}-${idx}`}
                        className="p-8 border border-[#141414]/10 bg-white group hover:border-[#141414] transition-all cursor-pointer relative overflow-hidden"
                        onClick={() => {
                           handleIssueSelect(issue.issueKey);
@@ -1205,6 +1284,17 @@ export default function App() {
                         }}
                         className="px-6 py-2 bg-[#141414] text-white text-[10px] font-mono font-bold uppercase tracking-widest hover:invert transition-all"
                       >Bulk Sync All</button>
+                      <button 
+                        onClick={() => {
+                          setCsvImportMode('contract');
+                          setCsvText('');
+                          setCsvResult(null);
+                          setIsCsvImportOpen(true);
+                        }}
+                        className="px-6 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[10px] font-mono font-bold uppercase tracking-widest transition-all flex items-center gap-2"
+                      >
+                        <Upload className="w-3.5 h-3.5" /> CSV Bulk Import (一括登録)
+                      </button>
                    </div>
                 </div>
                 
@@ -1549,7 +1639,7 @@ export default function App() {
                         </thead>
                         <tbody className="divide-y divide-[#141414]/5">
                           {Array.from(new Set(templateList.flatMap(t => Object.keys(templateMetadata[t]?.vars || {})))).sort().map((field, fIdx) => (
-                            <tr key={field || `field-row-${fIdx}`} className="hover:bg-gray-50/50 group">
+                            <tr key={`field-row-${field || fIdx}-${fIdx}`} className="hover:bg-gray-50/50 group">
                               <td className="p-3 font-mono text-[9px] font-bold text-blue-600 border-r border-[#141414]/10 sticky left-0 bg-white group-hover:bg-gray-50 z-10">
                                 {field}
                               </td>
@@ -2691,13 +2781,139 @@ export default function App() {
                     />
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Trade Name / Alias</label>
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Trade Name / Alias (法人名称/略称)</label>
                     <input 
                       value={newVendorData.trade_name}
                       onChange={e => setNewVendorData({...newVendorData, trade_name: e.target.value})}
                       className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
                       placeholder="e.g. ARCLIGHT"
                     />
+                  </div>
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Pen Name (屋号 / ペンネーム)</label>
+                    <input 
+                      value={newVendorData.pen_name}
+                      onChange={e => setNewVendorData({...newVendorData, pen_name: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                      placeholder="e.g. アークライト太郎"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Entity Type (エンティティ種別)</label>
+                      <select 
+                        value={newVendorData.entity_type}
+                        onChange={e => setNewVendorData({...newVendorData, entity_type: e.target.value})}
+                        className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all bg-white"
+                      >
+                        <option value="corporate">法人 (Corporate)</option>
+                        <option value="individual">個人 (Individual)</option>
+                        <option value="other">その他 (Other)</option>
+                      </select>
+                    </div>
+                    <div className="space-y-2">
+                      <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Representative / Contact Person (代表者名)</label>
+                      <input 
+                        value={newVendorData.contact_name}
+                        onChange={e => setNewVendorData({...newVendorData, contact_name: e.target.value})}
+                        className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                        placeholder="e.g. 鈴木 一郎"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Address (住所 / 所在地)</label>
+                    <input 
+                      value={newVendorData.address}
+                      onChange={e => setNewVendorData({...newVendorData, address: e.target.value})}
+                      className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                      placeholder="e.g. 東京都千代田区神田..."
+                    />
+                  </div>
+
+                  {/* 口座情報 (オプション) */}
+                  <div className="space-y-4 pt-2 border-t border-[#141414]/5">
+                    <h4 className="text-[10px] font-mono font-bold uppercase text-orange-600">Bank Account Info (口座情報)</h4>
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Bank Name (金融機関名)</label>
+                        <input 
+                          value={newVendorData.bank_name || ''}
+                          onChange={e => setNewVendorData({...newVendorData, bank_name: e.target.value})}
+                          className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                          placeholder="e.g. 三菱UFJ銀行"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Branch Name (支店名)</label>
+                        <input 
+                          value={newVendorData.branch_name || ''}
+                          onChange={e => setNewVendorData({...newVendorData, branch_name: e.target.value})}
+                          className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                          placeholder="e.g. 本店"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Account Type (口座種別)</label>
+                        <select 
+                          value={newVendorData.account_type || '普通'}
+                          onChange={e => setNewVendorData({...newVendorData, account_type: e.target.value})}
+                          className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all bg-white"
+                        >
+                          <option value="普通">普通預金 (Savings)</option>
+                          <option value="当座">当座預金 (Current)</option>
+                        </select>
+                      </div>
+                      <div className="space-y-2">
+                        <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Account Number (口座番号)</label>
+                        <input 
+                          value={newVendorData.account_number || ''}
+                          onChange={e => setNewVendorData({...newVendorData, account_number: e.target.value})}
+                          className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                          placeholder="e.g. 1234567"
+                        />
+                      </div>
+                      <div className="space-y-2 col-span-2">
+                        <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Account Holder (名義人カナ - 半角カタカナ)</label>
+                        <input 
+                          value={newVendorData.account_holder_kana || ''}
+                          onChange={e => setNewVendorData({...newVendorData, account_holder_kana: e.target.value})}
+                          className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                          placeholder="e.g. ｶ)ｱｰｸﾗｲﾄ"
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* インボイス情報 */}
+                  <div className="space-y-4 pt-2 border-t border-[#141414]/5">
+                    <h4 className="text-[10px] font-mono font-bold uppercase text-orange-600">Invoice Registration (インボイス・税務情報)</h4>
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-3 py-1">
+                        <input 
+                          type="checkbox"
+                          id="is_invoice_issuer"
+                          checked={newVendorData.is_invoice_issuer || false}
+                          onChange={e => setNewVendorData({...newVendorData, is_invoice_issuer: e.target.checked})}
+                          className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+                        />
+                        <label htmlFor="is_invoice_issuer" className="text-xs font-mono font-medium text-gray-700 select-none cursor-pointer">
+                          適格請求書発行事業者 (Registered Invoice Issuer)
+                        </label>
+                      </div>
+                      {(newVendorData.is_invoice_issuer || false) && (
+                        <div className="space-y-2">
+                          <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Invoice Registration Number (インボイス登録番号)</label>
+                          <input 
+                            value={newVendorData.invoice_registration_number || ''}
+                            onChange={e => setNewVendorData({...newVendorData, invoice_registration_number: e.target.value})}
+                            className="w-full text-xs font-mono p-3 border border-[#141414]/10 focus:border-orange-600 outline-none transition-all"
+                            placeholder="e.g. T1234567890123"
+                          />
+                        </div>
+                      )}
+                    </div>
                   </div>
                   <button 
                     onClick={async () => {
@@ -2848,9 +3064,17 @@ export default function App() {
                              <div className="space-y-1">
                                 <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Trade Name / Alias</label>
                                 {isEditingVendor ? (
-                                   <input value={selectedVendorDetail.trade_name} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, trade_name: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
+                                   <input value={selectedVendorDetail.trade_name || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, trade_name: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
                                 ) : (
                                    <p className="text-xs font-mono uppercase font-bold">{selectedVendorDetail.trade_name || 'NOT DEFINED'}</p>
+                                )}
+                             </div>
+                             <div className="space-y-1">
+                                <label className="text-[9px] font-mono font-bold text-gray-400 uppercase">Pen Name / Artist Name</label>
+                                {isEditingVendor ? (
+                                   <input value={selectedVendorDetail.pen_name || ''} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, pen_name: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200" />
+                                ) : (
+                                   <p className="text-xs font-mono uppercase font-bold">{selectedVendorDetail.pen_name || 'NOT DEFINED'}</p>
                                 )}
                              </div>
                              <div className="space-y-1">
@@ -2859,9 +3083,12 @@ export default function App() {
                                    <select value={selectedVendorDetail.entity_type} onChange={e => setSelectedVendorDetail({...selectedVendorDetail, entity_type: e.target.value})} className="w-full text-xs font-mono p-2 border border-gray-200">
                                       <option value="corporate">法人 (Corporate)</option>
                                       <option value="individual">個人 (Individual)</option>
+                                      <option value="other">その他 (Other)</option>
                                    </select>
                                 ) : (
-                                   <p className="text-xs font-mono uppercase">{selectedVendorDetail.entity_type === 'corporate' ? '法人' : '個人'}</p>
+                                   <p className="text-xs font-mono uppercase">
+                                     {selectedVendorDetail.entity_type === 'corporate' ? '法人' : selectedVendorDetail.entity_type === 'individual' ? '個人' : 'その他'}
+                                   </p>
                                 )}
                              </div>
                              <div className="space-y-1">
@@ -3022,6 +3249,195 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* CSV Import Modal */}
+      <AnimatePresence>
+        {isCsvImportOpen && (
+          <div className="fixed inset-0 z-[130] flex items-center justify-center p-8">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              className="absolute inset-0 bg-[#141414]/90 backdrop-blur-sm"
+              onClick={() => setIsCsvImportOpen(false)}
+            />
+            <motion.div 
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 20 }}
+              className="w-full max-w-3xl bg-white p-8 rounded-sm shadow-2xl z-10 max-h-[90vh] overflow-y-auto custom-scrollbar"
+            >
+              <div className="flex justify-between items-center mb-6 border-b border-[#141414]/10 pb-4">
+                <div>
+                  <h3 className="text-xs font-mono font-bold uppercase tracking-widest flex items-center gap-2">
+                    <Database className="w-4 h-4 text-blue-600" /> CSV Bulk Import Manager
+                  </h3>
+                  <p className="text-[10px] font-mono text-gray-400 mt-1 uppercase">Import and link vendors and contract capabilities simultaneously.</p>
+                </div>
+                <button onClick={() => setIsCsvImportOpen(false)}><Plus className="w-5 h-5 rotate-45" /></button>
+              </div>
+
+              {/* Mode Tabs */}
+              <div className="flex border-b border-[#141414]/10 mb-6 font-mono text-[10px] font-bold">
+                <button 
+                  id="csv-tab-contract"
+                  onClick={() => {
+                    setCsvImportMode('contract');
+                    setCsvResult(null);
+                  }}
+                  className={`flex-1 py-3 text-center border-b-2 uppercase tracking-wider transition-all ${csvImportMode === 'contract' ? 'border-blue-600 text-blue-600' : 'border-transparent text-gray-400 hover:text-gray-900'}`}
+                >
+                  Vendor & Contract Combined (同時一括登録)
+                </button>
+                <button 
+                  id="csv-tab-vendor"
+                  onClick={() => {
+                    setCsvImportMode('vendor');
+                    setCsvResult(null);
+                  }}
+                  className={`flex-1 py-3 text-center border-b-2 uppercase tracking-wider transition-all ${csvImportMode === 'vendor' ? 'border-orange-600 text-orange-600' : 'border-transparent text-gray-400 hover:text-gray-900'}`}
+                >
+                  Vendor Only (取引先のみ一括登録)
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {/* Info and Template Section */}
+                <div className="p-4 bg-gray-50 border border-[#141414]/5 space-y-3">
+                  <div className="flex justify-between items-center border-b border-[#141414]/10 pb-2">
+                    <h4 className="text-[10px] font-mono font-bold uppercase text-gray-600">CSV Template Guidelines</h4>
+                    <button
+                      onClick={() => downloadCsvTemplate(csvImportMode)}
+                      className="px-3 py-1.5 bg-[#141414] text-white hover:invert text-[9px] font-mono font-bold uppercase tracking-wider transition-all flex items-center gap-1.5 rounded-sm"
+                    >
+                      <Download className="w-3 h-3" /> テンプレートCSVダウンロード
+                    </button>
+                  </div>
+                  {csvImportMode === 'contract' ? (
+                    <div className="space-y-2 text-[10px] font-mono text-gray-500 leading-relaxed">
+                      <p>Auto-registers vendors if their code and name don't exist, and creates the contracts linked to them. If the vendor already exists, any empty fields (like bank details or invoice numbers) will be populated with the provided CSV values.</p>
+                      <p className="font-bold text-gray-700">Headers (ヘッダー名):</p>
+                      <div className="bg-white p-2 border border-gray-200 overflow-x-auto text-[9px] select-all whitespace-nowrap text-orange-600">
+                        vendorCode,vendorName,entityType,contactName,penName,tradeName,address,contractTitle,documentNumber,effectiveDate,expirationDate,contractCategory,contractType,originalWork,productName,territory,language,documentUrl,bankName,branchName,accountType,accountNumber,accountHolderKana,isInvoiceIssuer,invoiceRegistrationNumber
+                      </div>
+                      <p className="font-bold text-gray-700">Example Row:</p>
+                      <div className="bg-white p-2 border border-gray-200 overflow-x-auto text-[9px] select-all whitespace-nowrap">
+                        VND-001,アークライト,corporate,鈴木 一郎,アークライト太郎,アークライト,東京都千代田区神田,基本業務委託契約書,DOC-999,2026-04-01,2027-03-31,service,service_basic,ボードゲーム原著,ボドゲ製品A,日本,日本語,https://drive.google.com/doc,三菱UFJ銀行,本店,普通,1234567,ｶ)ｱｰｸﾗｲﾄ,TRUE,T1234567890123
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2 text-[10px] font-mono text-gray-500 leading-relaxed">
+                      <p>Registers or updates primary vendor master codes and entities in the system database. Empty fields in the CSV will be skipped of blank overwriting to preserve existing database values.</p>
+                      <p className="font-bold text-gray-700">Headers (ヘッダー名):</p>
+                      <div className="bg-white p-2 border border-gray-200 overflow-x-auto text-[9px] select-all whitespace-nowrap text-orange-600">
+                        vendor_code,vendor_name,trade_name,pen_name,entity_type,contact_name,address,bank_name,branch_name,account_type,account_number,account_holder_kana,is_invoice_issuer,invoice_registration_number
+                      </div>
+                      <p className="font-bold text-gray-700">Example Row:</p>
+                      <div className="bg-white p-2 border border-gray-200 overflow-x-auto text-[9px] select-all whitespace-nowrap">
+                        VND-001,株式会社アークライト,アークライト,アークライト太郎,corporate,鈴木 一郎,東京都千代田区神田,三菱UFJ銀行,本店,普通,1234567,ｶ)ｱｰｸﾗｲﾄ,TRUE,T1234567890123
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* File Upload / Drag-and-Drop Area & Touch target */}
+                <div 
+                  id="csv-dropzone"
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const file = e.dataTransfer.files[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (evt) => {
+                        if (evt.target?.result) setCsvText(evt.target.result as string);
+                      };
+                      reader.readAsText(file);
+                      showNotification(`Loaded file: ${file.name}`, "success");
+                    }
+                  }}
+                  className="border-2 border-dashed border-[#141414]/20 p-8 text-center hover:border-blue-500 transition-colors cursor-pointer group rounded-sm"
+                  onClick={() => document.getElementById('csv-file-input')?.click()}
+                >
+                  <Upload className="w-8 h-8 text-gray-400 mx-auto mb-3 group-hover:text-blue-500 transition-colors" />
+                  <p className="text-xs font-mono font-bold uppercase text-gray-700">Drag & Drop CSV File Here</p>
+                  <p className="text-[9px] font-mono text-gray-400 mt-1 uppercase">Or click to select from your device</p>
+                  <input 
+                    id="csv-file-input"
+                    type="file" 
+                    accept=".csv" 
+                    className="hidden" 
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (evt) => {
+                          if (evt.target?.result) setCsvText(evt.target.result as string);
+                        };
+                        reader.readAsText(file);
+                        showNotification(`Loaded file: ${file.name}`, "success");
+                      }
+                    }}
+                  />
+                </div>
+
+                {/* Raw CSV Edit Textarea */}
+                <div className="space-y-2">
+                  <label className="text-[9px] font-mono font-bold uppercase text-gray-500">Raw CSV Editor / Preview</label>
+                  <textarea 
+                    id="csv-text-editor"
+                    value={csvText}
+                    onChange={(e) => setCsvText(e.target.value)}
+                    rows={8}
+                    placeholder="Alternatively, copy and paste CSV text directly here..."
+                    className="w-full font-mono text-[10px] p-4 border border-[#141414]/10 focus:border-blue-600 outline-none transition-all placeholder:opacity-40"
+                  />
+                </div>
+
+                {/* Import Result Feedback */}
+                {csvResult && (
+                  <div className={`p-5 rounded-sm border ${csvResult.success ? 'bg-emerald-50 border-emerald-500 text-emerald-900' : 'bg-amber-50 border-amber-500 text-amber-900'} font-mono text-[11px] space-y-3`}>
+                    <div className="flex justify-between items-center font-bold">
+                      <span className="uppercase tracking-widest text-[10px]">Processing Outcome</span>
+                      <span>{csvResult.processedCount} rows processed</span>
+                    </div>
+                    {csvResult.errors && csvResult.errors.length > 0 && (
+                      <div className="space-y-1.5 pt-2 border-t border-amber-200">
+                        <p className="font-bold text-red-700 uppercase tracking-widest text-[9px]">Errors ({csvResult.errors.length}):</p>
+                        <div className="max-h-[120px] overflow-auto text-[9px] font-mono text-red-600 space-y-1 bg-white/40 p-2 custom-scrollbar">
+                          {csvResult.errors.map((err, idx) => (
+                            <p key={`csv-err-${idx}`}>• {err}</p>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Footer Actions */}
+                <div className="flex gap-4 pt-4 border-t border-gray-100">
+                  <button 
+                    id="csv-import-submit-btn"
+                    onClick={handleCsvImport}
+                    disabled={isCsvImporting || !csvText.trim()}
+                    className="flex-1 py-3 bg-blue-600 text-white font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-blue-700 transition-all flex items-center justify-center gap-2 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed"
+                  >
+                    {isCsvImporting ? "Processing Bulk Import..." : "Import and Register Information"}
+                  </button>
+                  <button 
+                    id="csv-import-close-btn"
+                    onClick={() => setIsCsvImportOpen(false)}
+                    className="px-8 py-3 bg-gray-100 text-gray-600 font-mono text-[10px] font-bold uppercase tracking-widest hover:bg-gray-200 transition-all"
+                  >
+                    Cancel / Close
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Notification Toast */}
       <AnimatePresence>
          {notification && (
