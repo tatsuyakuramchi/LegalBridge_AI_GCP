@@ -770,7 +770,7 @@ ${details}
   app.get("/api/contract-check/purposes", requirePortalSecret, async (req, res) => {
     try {
       const purposes = await contractCheckService.getContractPurposes();
-      res.json({ ok: true, purposes });
+      res.json(purposes);
     } catch (error) {
       console.error("Error fetching purposes:", error);
       res.status(500).json({ ok: false, error: String(error) });

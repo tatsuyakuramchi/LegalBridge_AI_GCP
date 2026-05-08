@@ -8,7 +8,7 @@ export interface ContractCheckInput {
   territory?: string;
   language?: string;
   memo?: string;
-  additionalFlags: {
+  additionalFlags?: {
     usesIp: boolean;
     includesSublicense: boolean;
     includesOverseas: boolean;
@@ -49,7 +49,7 @@ export async function findVendorByName(counterpartyName: string) {
      OR trade_name ILIKE $1 
      OR pen_name ILIKE $1 
      OR aliases ILIKE $1 
-     OR vendor_code = $1 
+     OR vendor_code ILIKE $1 
      LIMIT 1`,
     [counterpartyName]
   );
@@ -249,6 +249,15 @@ function buildPurposeResult(input: ContractCheckInput, masterContracts: any, pur
     reasonSummary: ""
   };
 
+  const flags = input.additionalFlags || {
+    usesIp: false,
+    includesSublicense: false,
+    includesOverseas: false,
+    includesEbook: false,
+    includesVideoGame: false,
+    unusualPaymentTerms: false
+  };
+
   if (purpose.purpose_code.startsWith('service_')) {
     if (masterContracts.service.exists) {
       res.judgmentLabel = "発注書で進行可能";
@@ -264,7 +273,7 @@ function buildPurposeResult(input: ContractCheckInput, masterContracts: any, pur
       res.judgmentLabel = "個別利用許諾条件書で確認";
       res.reasonSummary = "ライセンス利用許諾基本契約が締結済みです。基本契約の範囲内であることを確認の上、個別利用許諾条件書（または発注書）を作成してください。";
       
-      if (input.additionalFlags.includesSublicense || input.additionalFlags.includesOverseas) {
+      if (flags.includesSublicense || flags.includesOverseas) {
         res.legalReviewRequired = true;
         res.judgmentLabel = "再許諾・海外展開を含むため、法務確認を推奨";
         res.reasonSummary += " ただし、再許諾や海外展開が含まれる場合は基本契約の許諾範囲を超える可能性があるため、法務確認が必要です。";
@@ -284,7 +293,7 @@ function buildPurposeResult(input: ContractCheckInput, masterContracts: any, pur
       res.reasonSummary = "映像化・ゲーム化等の権利処理は複雑なため、必ず法務担当者へ相談してください。";
     } else {
       res.judgmentLabel = "出版契約書の作成が必要";
-      res.reasonSummary = "出版許諾基本契約がある場合でも、出版契約は個別案件ごとの調整事項が多いため、原則として契約書案の法務レビューを受けてください。";
+      res.reasonSummary = "出版許諾基本契約がある場合でも、出版契約は個別案件ごとの調整事項が多いため、原則として契約書案 of 法務レビューを受けてください。";
     }
   } else if (purpose.purpose_code === 'mixed_service_license') {
     res.legalReviewRequired = true;
@@ -324,6 +333,15 @@ export async function logContractDecision(input: ContractCheckInput, vendor: any
   const capabilityIds: number[] = [];
   // Normally we would track which rows were matched, but for now we just log
   
+  const flags = input.additionalFlags || {
+    usesIp: false,
+    includesSublicense: false,
+    includesOverseas: false,
+    includesEbook: false,
+    includesVideoGame: false,
+    unusualPaymentTerms: false
+  };
+
   try {
     await query(
       `INSERT INTO contract_decision_logs 
@@ -337,7 +355,7 @@ export async function logContractDecision(input: ContractCheckInput, vendor: any
         input.productName,
         input.territory,
         input.language,
-        JSON.stringify(input.additionalFlags),
+        JSON.stringify(flags),
         JSON.stringify(result)
       ]
     );
