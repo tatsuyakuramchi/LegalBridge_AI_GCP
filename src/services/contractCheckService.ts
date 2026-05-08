@@ -63,44 +63,54 @@ export async function findVendorsByName(counterpartyName: string, limit: number 
   const normalized = normalizeName(counterpartyName);
   if (!normalized) return [];
 
-  const exact = await query(
-    `SELECT *
-       FROM vendors
-      WHERE vendor_name ILIKE $1
-         OR trade_name ILIKE $1
-         OR pen_name ILIKE $1
-         OR aliases ILIKE $1
-         OR vendor_code ILIKE $1
-      ORDER BY vendor_name ASC, id ASC
-      LIMIT $2`,
-    [counterpartyName, limit]
-  );
-
-  if (exact.rows.length > 0) {
-    return dedupeVendorsById(exact.rows).slice(0, limit);
-  }
-
+  const exactValue = counterpartyName;
   const rawLike = `%${counterpartyName}%`;
   const normalizedLike = `%${normalized}%`;
 
-  const partial = await query(
+  const res = await query(
     `SELECT *
-       FROM vendors
-      WHERE vendor_name ILIKE $1
-         OR trade_name ILIKE $1
-         OR pen_name ILIKE $1
-         OR aliases ILIKE $1
-         OR vendor_code ILIKE $1
-         OR vendor_name ILIKE $2
-         OR trade_name ILIKE $2
-         OR pen_name ILIKE $2
-         OR aliases ILIKE $2
-      ORDER BY vendor_name ASC, id ASC
-      LIMIT $3`,
-    [rawLike, normalizedLike, limit]
+       FROM (
+         SELECT
+           v.*,
+           CASE
+             WHEN v.vendor_name ILIKE $1 THEN 0
+             WHEN v.trade_name ILIKE $1 THEN 0
+             WHEN v.pen_name ILIKE $1 THEN 0
+             WHEN v.aliases ILIKE $1 THEN 0
+             WHEN v.vendor_code ILIKE $1 THEN 0
+             WHEN v.vendor_name ILIKE $2 THEN 1
+             WHEN v.trade_name ILIKE $2 THEN 1
+             WHEN v.pen_name ILIKE $2 THEN 1
+             WHEN v.aliases ILIKE $2 THEN 1
+             WHEN v.vendor_code ILIKE $2 THEN 1
+             WHEN v.vendor_name ILIKE $3 THEN 2
+             WHEN v.trade_name ILIKE $3 THEN 2
+             WHEN v.pen_name ILIKE $3 THEN 2
+             WHEN v.aliases ILIKE $3 THEN 2
+             ELSE 9
+           END AS match_priority
+         FROM vendors v
+         WHERE v.vendor_name ILIKE $1
+            OR v.trade_name ILIKE $1
+            OR v.pen_name ILIKE $1
+            OR v.aliases ILIKE $1
+            OR v.vendor_code ILIKE $1
+            OR v.vendor_name ILIKE $2
+            OR v.trade_name ILIKE $2
+            OR v.pen_name ILIKE $2
+            OR v.aliases ILIKE $2
+            OR v.vendor_code ILIKE $2
+            OR v.vendor_name ILIKE $3
+            OR v.trade_name ILIKE $3
+            OR v.pen_name ILIKE $3
+            OR v.aliases ILIKE $3
+       ) matched
+      ORDER BY match_priority ASC, vendor_name ASC, id ASC
+      LIMIT $4`,
+    [exactValue, rawLike, normalizedLike, limit]
   );
 
-  return dedupeVendorsById(partial.rows).slice(0, limit);
+  return dedupeVendorsById(res.rows).slice(0, limit);
 }
 
 export async function findVendorByName(counterpartyName: string) {
@@ -432,3 +442,4 @@ export async function logContractDecision(input: ContractCheckInput, vendor: any
     console.error('Failed to log contract decision:', err);
   }
 }
+
