@@ -403,6 +403,7 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_capabilities_type ON contract_capabilities(contract_type);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_record_type ON contract_capabilities(record_type);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_purposes ON contract_capabilities USING GIN(purpose_codes);`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_capabilities_doc_num ON contract_capabilities(document_number) WHERE document_number IS NOT NULL;`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,

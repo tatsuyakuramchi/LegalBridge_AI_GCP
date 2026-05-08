@@ -1132,6 +1132,100 @@ ${details}
     }
   });
 
+  // --- Contract Capabilities Master Endpoints ---
+  app.get("/api/master/contracts", async (req, res) => {
+    try {
+      const result = await query(
+        `SELECT cc.*, v.vendor_name 
+         FROM contract_capabilities cc
+         LEFT JOIN vendors v ON cc.vendor_id = v.id 
+         ORDER BY cc.id DESC`
+      );
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/master/contracts", express.json(), async (req, res) => {
+    const {
+      vendor_id, record_type, contract_category, contract_type, contract_title,
+      document_number, contract_status, effective_date, expiration_date, auto_renewal,
+      original_work, product_name, work_name, media, territory, language, document_url, condition_number
+    } = req.body;
+    try {
+      const result = await query(
+        `INSERT INTO contract_capabilities (
+          vendor_id, record_type, contract_category, contract_type, contract_title,
+          document_number, contract_status, effective_date, expiration_date, auto_renewal,
+          original_work, product_name, work_name, media, territory, language, document_url, condition_number
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+        RETURNING id`,
+        [
+          vendor_id || null, record_type || 'master_contract', contract_category || 'service', contract_type || 'service_basic', contract_title,
+          document_number, contract_status || 'executed', effective_date || null, expiration_date || null, auto_renewal || false,
+          original_work || '', product_name || '', work_name || '', media || '', territory || '', language || '', document_url || '', condition_number || ''
+        ]
+      );
+      res.json({ success: true, id: result.rows[0].id });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.put("/api/master/contracts/:id", express.json(), async (req, res) => {
+    const { id } = req.params;
+    const {
+      vendor_id, record_type, contract_category, contract_type, contract_title,
+      document_number, contract_status, effective_date, expiration_date, auto_renewal,
+      original_work, product_name, work_name, media, territory, language, document_url, condition_number
+    } = req.body;
+    try {
+      await query(
+        `UPDATE contract_capabilities SET
+          vendor_id = $1,
+          record_type = $2,
+          contract_category = $3,
+          contract_type = $4,
+          contract_title = $5,
+          document_number = $6,
+          contract_status = $7,
+          effective_date = $8,
+          expiration_date = $9,
+          auto_renewal = $10,
+          original_work = $11,
+          product_name = $12,
+          work_name = $13,
+          media = $14,
+          territory = $15,
+          language = $16,
+          document_url = $17,
+          condition_number = $18,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = $19`,
+        [
+          vendor_id || null, record_type, contract_category, contract_type, contract_title,
+          document_number, contract_status, effective_date || null, expiration_date || null, auto_renewal,
+          original_work || '', product_name || '', work_name || '', media || '', territory || '', language || '', document_url || '', condition_number || '',
+          id
+        ]
+      );
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.delete("/api/master/contracts/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      await query("DELETE FROM contract_capabilities WHERE id = $1", [id]);
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   // --- Numbering Service ---
   app.get("/api/numbering/next", async (req, res) => {
     const { type, issueTypeName } = req.query;
@@ -1782,6 +1876,75 @@ ${details}
           issueKey
         ]
       );
+
+      // --- New: Add to contract_capabilities table ---
+      try {
+        let vendorId = null;
+        const vendorCode = formData.VENDOR_CODE || formData.vendorCode || "";
+        const vendorName = formData.VENDOR_NAME || formData.PARTY_B_NAME || formData.partyBName || "";
+        if (vendorCode || vendorName) {
+          const vRes = await query("SELECT id FROM vendors WHERE vendor_code = $1 OR vendor_name = $2 LIMIT 1", [vendorCode, vendorName]);
+          if (vRes.rows.length > 0) {
+            vendorId = vRes.rows[0].id;
+          }
+        }
+
+        let recordType = 'master_contract';
+        if (templateType.includes('license') || templateType.includes('royalty') || templateType.includes('fee_statement')) {
+          recordType = 'license_condition';
+        } else if (templateType.includes('purchase_order') || templateType.includes('inspection')) {
+          recordType = 'individual_contract';
+        }
+
+        await query(
+          `INSERT INTO contract_capabilities (
+            vendor_id, record_type, contract_category, contract_type, contract_title,
+            document_number, contract_status, effective_date, expiration_date, auto_renewal,
+            original_work, product_name, work_name, media, territory, language, document_url, source_system
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          ON CONFLICT (document_number) DO UPDATE SET 
+            vendor_id = EXCLUDED.vendor_id,
+            record_type = EXCLUDED.record_type,
+            contract_category = EXCLUDED.contract_category,
+            contract_type = EXCLUDED.contract_type,
+            contract_title = EXCLUDED.contract_title,
+            contract_status = EXCLUDED.contract_status,
+            effective_date = EXCLUDED.effective_date,
+            expiration_date = EXCLUDED.expiration_date,
+            auto_renewal = EXCLUDED.auto_renewal,
+            original_work = EXCLUDED.original_work,
+            product_name = EXCLUDED.product_name,
+            work_name = EXCLUDED.work_name,
+            media = EXCLUDED.media,
+            territory = EXCLUDED.territory,
+            language = EXCLUDED.language,
+            document_url = EXCLUDED.document_url,
+            updated_at = CURRENT_TIMESTAMP`,
+          [
+            vendorId,
+            recordType,
+            templateType.includes('license') ? 'license' : 'service',
+            templateType,
+            formData.CONTRACT_TITLE || formData.contract_title || issue.summary,
+            docNumber,
+            'executed',
+            formData.EFFECTIVE_DATE || formData.effectiveDate || null,
+            formData.EXPIRATION_DATE || formData.expirationDate || null,
+            formData.AUTO_RENEWAL === 'true' || formData.AUTO_RENEWAL === true || false,
+            formData.ORIGINAL_WORK || formData.originalWork || '',
+            formData.PRODUCT_NAME || formData.productName || '',
+            formData.WORK_NAME || formData.workName || '',
+            formData.MEDIA || formData.media || '',
+            formData.TERRITORY || formData.territory || '',
+            formData.LANGUAGE || formData.language || '',
+            driveLink,
+            'App Document Generator'
+          ]
+        );
+        console.log(`✅ Sync to contract_capabilities successful for: ${docNumber}`);
+      } catch (ccErr) {
+        console.warn(`⚠️ Failed to sync generated document to contract_capabilities:`, ccErr);
+      }
 
       // --- New: Data Relay to Operational Tables ---
       if (templateType.includes("purchase_order")) {

@@ -28,7 +28,9 @@ import {
   Settings,
   Upload,
   Link,
-  X
+  X,
+  ExternalLink,
+  Edit2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { saveAs } from 'file-saver';
@@ -180,6 +182,33 @@ export default function App() {
   const templateTextAreaRef = useRef<HTMLTextAreaElement>(null);
   const [issueSummary, setIssueSummary] = useState<any>(null);
 
+  // Contracts Master State Variables
+  const [contracts, setContracts] = useState<any[]>([]);
+  const [contractSearch, setContractSearch] = useState('');
+  const [selectedContract, setSelectedContract] = useState<any>(null);
+  const [isEditingContract, setIsEditingContract] = useState(false);
+  const [isCreatingContract, setIsCreatingContract] = useState(false);
+  const [newContractData, setNewContractData] = useState<any>({
+    vendor_id: '',
+    record_type: 'master_contract',
+    contract_category: 'service',
+    contract_type: 'service_basic',
+    contract_title: '',
+    document_number: '',
+    contract_status: 'executed',
+    effective_date: '',
+    expiration_date: '',
+    auto_renewal: false,
+    original_work: '',
+    product_name: '',
+    work_name: '',
+    media: '',
+    territory: '',
+    language: '',
+    document_url: '',
+    condition_number: ''
+  });
+
   const handleCsvImport = async () => {
     if (!csvText.trim()) {
       showNotification("Please select a file or copy-paste CSV content first.", "error");
@@ -307,6 +336,48 @@ export default function App() {
         showNotification("Server error while updating rule", "error");
       }
    };
+  const saveContract = async (contract: any) => {
+    try {
+      const isEdit = !!contract.id;
+      const url = isEdit ? `/api/master/contracts/${contract.id}` : '/api/master/contracts';
+      const method = isEdit ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contract)
+      });
+      if (res.ok) {
+        showNotification(isEdit ? "契約書情報を更新しました" : "契約書情報を追加しました", "success");
+        await refreshContracts();
+        setIsEditingContract(false);
+        setIsCreatingContract(false);
+        setSelectedContract(null);
+      } else {
+        const err = await res.json();
+        showNotification(`エラーが発生しました: ${err.error || 'Unknown Error'}`, "error");
+      }
+    } catch (e) {
+      showNotification("サーバー接続中にエラーが発生しました", "error");
+    }
+  };
+
+  const deleteContract = async (id: number) => {
+    if (!window.confirm("この契約書情報を本当に削除しますか？")) return;
+    try {
+      const res = await fetch(`/api/master/contracts/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        showNotification("契約書情報を削除しました", "success");
+        await refreshContracts();
+        setSelectedContract(null);
+        setIsEditingContract(false);
+      } else {
+        showNotification("削除に失敗しました", "error");
+      }
+    } catch (e) {
+      showNotification("サーバーエラーが発生しました", "error");
+    }
+  };
+
    const refreshDashboardStats = async () => {
     setIsRefreshingStats(true);
     try {
@@ -329,6 +400,16 @@ export default function App() {
     }
   }, [activeTab]);
 
+  const refreshContracts = async () => {
+    try {
+      const res = await fetch('/api/master/contracts');
+      const data = await res.json();
+      setContracts(Array.isArray(data) ? data : []);
+    } catch (e) {
+      console.error("Failed to fetch contracts", e);
+    }
+  };
+
   // --- Fetch Initial Data ---
   useEffect(() => {
     const fetchData = async () => {
@@ -342,7 +423,8 @@ export default function App() {
           { key: 'templates', url: '/api/templates' },
           { key: 'metadata', url: '/api/templates/config/metadata' },
           { key: 'statuses', url: '/api/backlog/statuses' },
-          { key: 'workflowRules', url: '/api/master/rules' }
+          { key: 'workflowRules', url: '/api/master/rules' },
+          { key: 'contracts', url: '/api/master/contracts' }
         ];
 
         const results = await Promise.all(
@@ -356,7 +438,7 @@ export default function App() {
           })
         );
 
-        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes, statusesRes, rulesRes] = results;
+        const [issuesRes, vendorsRes, staffRes, profileRes, assetsRes, templatesRes, metaRes, statusesRes, rulesRes, contractsRes] = results;
         
         setIssues(Array.isArray(issuesRes) ? [...new Set(issuesRes.map((i: any) => i.issueKey))].map(key => issuesRes.find((i: any) => i.issueKey === key)) : []);
         setVendors(Array.isArray(vendorsRes) ? [...new Set(vendorsRes.map(v => v.vendor_code))].map(code => vendorsRes.find(v => v.vendor_code === code)) as Vendor[] : []);
@@ -367,6 +449,7 @@ export default function App() {
         setTemplateMetadata(metaRes || {});
         setStatuses(Array.isArray(statusesRes) ? statusesRes : []);
         setWorkflowRules(Array.isArray(rulesRes) ? rulesRes : []);
+        setContracts(Array.isArray(contractsRes) ? contractsRes : []);
       } catch (e) {
         console.error("Critical error during startup fetch:", e);
       }
@@ -1266,16 +1349,18 @@ export default function App() {
                         onClick={() => {
                           const fetchData = async () => {
                             try {
-                              const [vendorsRes, staffRes, assetsRes, rulesRes] = await Promise.all([
+                              const [vendorsRes, staffRes, assetsRes, rulesRes, contractsRes] = await Promise.all([
                                 fetch('/api/master/vendors').then(r => r.json()),
                                 fetch('/api/master/staff').then(r => r.json()),
                                 fetch('/api/management/assets').then(r => r.json()),
-                                fetch('/api/master/rules').then(r => r.json())
+                                fetch('/api/master/rules').then(r => r.json()),
+                                fetch('/api/master/contracts').then(r => r.json())
                               ]);
                               setVendors(vendorsRes);
                               setStaffList(staffRes);
                               setAssets(assetsRes);
                               setWorkflowRules(rulesRes);
+                              setContracts(contractsRes);
                             } catch (e) {
                               console.error("Manual sync failed", e);
                             }
@@ -1298,6 +1383,427 @@ export default function App() {
                    </div>
                 </div>
                 
+                  {/* Contract capabilities & Record Management */}
+                  <div className="border border-[#141414]/10 p-6 bg-white rounded-sm space-y-6">
+                     <div className="flex justify-between items-end border-b border-blue-600/20 pb-4">
+                        <div>
+                           <div className="flex items-center gap-3">
+                              <Building2 className="w-5 h-5 text-blue-600" />
+                              <h3 className="text-lg font-mono font-bold uppercase tracking-wider">契約・利用可能範囲マスター (Contract Matrix)</h3>
+                           </div>
+                           <p className="text-xs font-mono text-[#141414]/50 mt-1 uppercase">Manage relational contract scopes, rights capabilities, media permissions, and renewal tracking.</p>
+                        </div>
+                        <div className="flex gap-3">
+                           <button 
+                             onClick={() => {
+                               setNewContractData({
+                                 vendor_id: vendors[0]?.id || '',
+                                 record_type: 'master_contract',
+                                 contract_category: 'service',
+                                 contract_type: 'service_basic',
+                                 contract_title: '',
+                                 document_number: '',
+                                 contract_status: 'executed',
+                                 effective_date: '',
+                                 expiration_date: '',
+                                 auto_renewal: false,
+                                 original_work: '',
+                                 product_name: '',
+                                 work_name: '',
+                                 media: '',
+                                 territory: '',
+                                 language: '',
+                                 document_url: '',
+                                 condition_number: ''
+                               });
+                               setIsCreatingContract(true);
+                               setIsEditingContract(false);
+                             }}
+                             className="px-4 py-1.5 bg-blue-600 text-white text-[10px] font-mono font-bold uppercase tracking-wider hover:bg-blue-700 transition-all flex items-center gap-1.5 rounded-sm shadow-sm"
+                           >
+                             <Plus className="w-3.5 h-3.5" /> 契約情報を手動追加
+                           </button>
+                        </div>
+                     </div>
+
+                     {/* Handlers for Editing & Creating */}
+                     {(isCreatingContract || isEditingContract) && (
+                        <div className="p-6 border border-[#141414]/10 bg-gray-50/50 space-y-6 rounded-sm">
+                           <h4 className="text-xs font-mono font-bold uppercase tracking-widest text-[#141414]">
+                              {isCreatingContract ? '新規契約情報の登録' : '契約情報の編集更新'}
+                           </h4>
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">取引先 (Vendors)*</label>
+                                 <select 
+                                   value={isCreatingContract ? newContractData.vendor_id : selectedContract.vendor_id || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, vendor_id: val});
+                                     else setSelectedContract({...selectedContract, vendor_id: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                 >
+                                   <option value="">-- 取引先を選択 --</option>
+                                   {vendors.map(v => (
+                                      <option key={`opt-vendor-${v.id}`} value={v.id}>{v.vendor_name} ({v.vendor_code})</option>
+                                   ))}
+                                 </select>
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">レコードタイプ (Record Type)</label>
+                                 <select 
+                                   value={isCreatingContract ? newContractData.record_type : selectedContract.record_type} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, record_type: val});
+                                     else setSelectedContract({...selectedContract, record_type: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                 >
+                                   <option value="master_contract">基本契約 (master_contract)</option>
+                                   <option value="license_condition">個別ライセンス (license_condition)</option>
+                                   <option value="individual_contract">個別契約 (individual_contract)</option>
+                                 </select>
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">契約カテゴリー (Category)</label>
+                                 <select 
+                                   value={isCreatingContract ? newContractData.contract_category : selectedContract.contract_category} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, contract_category: val});
+                                     else setSelectedContract({...selectedContract, contract_category: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                 >
+                                   <option value="service">業務委託・サービス (service)</option>
+                                   <option value="license">ライセンス・知的財産 (license)</option>
+                                   <option value="publication">出版関連 (publication)</option>
+                                 </select>
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">契約書名 (Contract Title)*</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.contract_title : selectedContract.contract_title || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, contract_title: val});
+                                     else setSelectedContract({...selectedContract, contract_title: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="例：基本システム開発業務委託契約書"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">管理番号 / 文書番号 (Document Number)</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.document_number : selectedContract.document_number || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, document_number: val});
+                                     else setSelectedContract({...selectedContract, document_number: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="例：DOC-2026-0001"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">ステータス (Status)</label>
+                                 <select 
+                                   value={isCreatingContract ? newContractData.contract_status : selectedContract.contract_status} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, contract_status: val});
+                                     else setSelectedContract({...selectedContract, contract_status: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                 >
+                                   <option value="executed">締結済 (executed)</option>
+                                   <option value="draft">草案・作成中 (draft)</option>
+                                   <option value="expired">満了 (expired)</option>
+                                   <option value="terminated">解約済 (terminated)</option>
+                                 </select>
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">発効日 (Effective Date)</label>
+                                 <input 
+                                   type="date"
+                                   value={isCreatingContract ? newContractData.effective_date : (selectedContract.effective_date ? selectedContract.effective_date.substring(0, 10) : '')} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, effective_date: val});
+                                     else setSelectedContract({...selectedContract, effective_date: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">満了日 (Expiration Date)</label>
+                                 <input 
+                                   type="date"
+                                   value={isCreatingContract ? newContractData.expiration_date : (selectedContract.expiration_date ? selectedContract.expiration_date.substring(0, 10) : '')} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, expiration_date: val});
+                                     else setSelectedContract({...selectedContract, expiration_date: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                 />
+                              </div>
+
+                              <div className="flex items-center gap-2 pt-6">
+                                 <input 
+                                   type="checkbox"
+                                   id="auto_renewal_chk"
+                                   checked={isCreatingContract ? newContractData.auto_renewal : selectedContract.auto_renewal} 
+                                   onChange={e => {
+                                     const val = e.target.checked;
+                                     if (isCreatingContract) setNewContractData({...newContractData, auto_renewal: val});
+                                     else setSelectedContract({...selectedContract, auto_renewal: val});
+                                   }}
+                                   className="w-4 h-4 rounded border-gray-200 text-blue-600 focus:ring-blue-500"
+                                 />
+                                 <label htmlFor="auto_renewal_chk" className="text-xs font-mono font-bold uppercase cursor-pointer">自動更新あり (Auto Renewal)</label>
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">作品名 / 原作 (Original Work)</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.original_work : selectedContract.original_work || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, original_work: val});
+                                     else setSelectedContract({...selectedContract, original_work: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="例：三国志原作"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">該当製品名・展開物 (Product Name)</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.product_name : selectedContract.product_name || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, product_name: val});
+                                     else setSelectedContract({...selectedContract, product_name: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="例：アーク三国志カードゲーム"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">対象メディア・媒体 (Media)</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.media : selectedContract.media || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, media: val});
+                                     else setSelectedContract({...selectedContract, media: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="例：紙媒体, デジタル, モバイルアプリ"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">対象地域 (Territory)</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.territory : selectedContract.territory || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, territory: val});
+                                     else setSelectedContract({...selectedContract, territory: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="例：日本国内、全世界"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">対象言語 (Language)</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.language : selectedContract.language || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, language: val});
+                                     else setSelectedContract({...selectedContract, language: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="例：日本語, 英語"
+                                 />
+                              </div>
+
+                              <div>
+                                 <label className="text-[9px] font-mono opacity-50 uppercase font-bold">文書の格納URL (Document Link)</label>
+                                 <input 
+                                   value={isCreatingContract ? newContractData.document_url : selectedContract.document_url || ''} 
+                                   onChange={e => {
+                                     const val = e.target.value;
+                                     if (isCreatingContract) setNewContractData({...newContractData, document_url: val});
+                                     else setSelectedContract({...selectedContract, document_url: val});
+                                   }}
+                                   className="w-full text-xs font-mono p-2 border border-gray-200 bg-white"
+                                   placeholder="https://drive.google.com/..."
+                                 />
+                              </div>
+                           </div>
+
+                           <div className="flex gap-4 pt-4 border-t border-gray-100">
+                              <button 
+                                onClick={() => {
+                                  if (isCreatingContract) saveContract(newContractData);
+                                  else saveContract(selectedContract);
+                                }}
+                                className="px-6 py-2 bg-blue-600 text-white text-[10px] font-mono font-bold uppercase hover:bg-blue-700 rounded-sm"
+                              >保存して同期</button>
+                              <button 
+                                onClick={() => {
+                                  setIsCreatingContract(false);
+                                  setIsEditingContract(false);
+                                  setSelectedContract(null);
+                                }}
+                                className="px-6 py-2 bg-gray-100 text-gray-600 text-[10px] font-mono font-bold uppercase hover:bg-gray-200 rounded-sm"
+                              >キャンセル</button>
+                           </div>
+                        </div>
+                     )}
+
+                     {/* Filters Bar */}
+                     <div className="flex gap-4 items-center">
+                        <div className="relative flex-1">
+                           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                           <input 
+                             type="text" 
+                             placeholder="契約タイトル、取引先、原作、管理番号で契約情報を検索..."
+                             value={contractSearch}
+                             onChange={e => setContractSearch(e.target.value)}
+                             className="w-full pl-10 pr-4 py-2.5 bg-gray-50 border border-gray-200 text-xs font-mono outline-none focus:bg-white focus:border-blue-600/30 transition-all rounded-sm shadow-sm"
+                           />
+                        </div>
+                     </div>
+
+                     {/* Contracts Grid Table */}
+                     <div className="border border-[#141414]/10 rounded-sm overflow-hidden bg-white shadow-sm overflow-x-auto">
+                        <table className="w-full text-left border-collapse min-w-[1000px]">
+                           <thead>
+                              <tr className="bg-gray-50 border-b border-gray-100 text-[9px] font-mono font-bold text-[#141414]/60 uppercase tracking-widest">
+                                 <th className="p-4">契約タイトル / 管理番号</th>
+                                 <th className="p-4">取引先パートナー</th>
+                                 <th className="p-4">レコード区分 / カテゴリ</th>
+                                 <th className="p-4">ライセンス・スコープ制限範囲</th>
+                                 <th className="p-4">有効期限 / 更新設定</th>
+                                 <th className="p-4">データソース</th>
+                                 <th className="p-4 text-right">コントロール</th>
+                              </tr>
+                           </thead>
+                           <tbody className="divide-y divide-gray-100 text-xs font-mono leading-relaxed">
+                              {contracts
+                                 .filter(c => {
+                                    const q = contractSearch.toLowerCase();
+                                    return (
+                                       (c.contract_title && c.contract_title.toLowerCase().includes(q)) ||
+                                       (c.vendor_name && c.vendor_name.toLowerCase().includes(q)) ||
+                                       (c.document_number && c.document_number.toLowerCase().includes(q)) ||
+                                       (c.original_work && c.original_work.toLowerCase().includes(q)) ||
+                                       (c.product_name && c.product_name.toLowerCase().includes(q))
+                                    );
+                                 })
+                                 .map(c => (
+                                    <tr key={`contract-row-${c.id}`} className="hover:bg-gray-50/50 transition-all">
+                                       <td className="p-4 max-w-sm">
+                                          <div className="font-bold text-[#141414] truncate">{c.contract_title}</div>
+                                          <div className="text-[10px] text-[#141414]/50 mt-1 flex items-center gap-2 font-mono">
+                                             <span className="bg-gray-100 px-1.5 py-0.5 rounded-sm">{c.document_number || 'N/A'}</span>
+                                             <span className={`px-1 rounded-sm uppercase text-[8px] font-bold ${c.contract_status === 'executed' ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'}`}>
+                                                {c.contract_status === 'executed' ? '締結済' : c.contract_status || '締結済'}
+                                             </span>
+                                          </div>
+                                       </td>
+                                       <td className="p-4">
+                                          <div className="font-bold text-gray-800">{c.vendor_name || '未設定'}</div>
+                                       </td>
+                                       <td className="p-4 text-[10px]">
+                                          <span className="bg-blue-50 text-blue-700 px-2 py-0.5 rounded-sm font-bold block w-fit mb-1">{c.record_type}</span>
+                                          <span className="bg-purple-50 text-purple-700 px-2 py-0.5 rounded-sm font-bold block w-fit">{c.contract_category}</span>
+                                       </td>
+                                       <td className="p-4 text-[10px] space-y-1 text-gray-600">
+                                          {c.original_work && <div><span className="opacity-50">作品:</span><span className="font-bold"> {c.original_work}</span></div>}
+                                          {c.product_name && <div><span className="opacity-50">媒体/製品:</span> {c.product_name}</div>}
+                                          {c.media && <div><span className="opacity-50">チャンネル:</span> {c.media}</div>}
+                                          {c.territory && <div><span className="opacity-50">地域:</span> {c.territory}</div>}
+                                          {c.language && <div><span className="opacity-50">言語:</span> {c.language}</div>}
+                                       </td>
+                                       <td className="p-4 text-[10px]">
+                                          <div className="text-gray-800">
+                                             {c.effective_date ? c.effective_date.substring(0, 10) : '未設定'} 〜 
+                                             <span className="font-bold"> {c.expiration_date ? c.expiration_date.substring(0, 10) : '無期限'}</span>
+                                          </div>
+                                          <div className="text-gray-400 mt-1 flex items-center gap-1.5">
+                                             <span className={`w-1.5 h-1.5 rounded-full ${c.auto_renewal ? 'bg-green-500' : 'bg-gray-300'}`} />
+                                             {c.auto_renewal ? '自動更新あり' : '自動更新なし'}
+                                          </div>
+                                       </td>
+                                       <td className="p-4 text-[10px] text-gray-400">
+                                          {c.source_system || 'CSVインポート'}
+                                       </td>
+                                       <td className="p-4 text-right">
+                                          <div className="flex gap-2 justify-end">
+                                             {c.document_url && (
+                                                <a 
+                                                  href={c.document_url} 
+                                                  target="_blank" 
+                                                  rel="noreferrer"
+                                                  className="p-1 border border-gray-200 hover:bg-gray-100 text-[#141414]/70 rounded-md transition-all shadow-sm"
+                                                  title="契約書原本を開く"
+                                                >
+                                                   <ExternalLink className="w-3.5 h-3.5" />
+                                                </a>
+                                             )}
+                                             <button 
+                                               onClick={() => {
+                                                 setSelectedContract(c);
+                                                 setIsEditingContract(true);
+                                                 setIsCreatingContract(false);
+                                               }}
+                                               className="p-1 border border-gray-200 hover:bg-gray-100 text-blue-600 rounded-md transition-all shadow-sm"
+                                               title="編集"
+                                             >
+                                                <Edit2 className="w-3.5 h-3.5" />
+                                             </button>
+                                             <button 
+                                               onClick={() => deleteContract(c.id)}
+                                               className="p-1 border border-gray-200 hover:bg-gray-100 text-red-600 rounded-md transition-all shadow-sm"
+                                               title="削除"
+                                             >
+                                                <Trash2 className="w-3.5 h-3.5" />
+                                             </button>
+                                          </div>
+                                       </td>
+                                    </tr>
+                                 ))}
+                              {contracts.length === 0 && (
+                                 <tr>
+                                    <td colSpan={7} className="p-12 text-center text-gray-400">
+                                       登録された契約書・作成文書情報がありません
+                                    </td>
+                                 </tr>
+                              )}
+                           </tbody>
+                        </table>
+                     </div>
+                  </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-8">
                    {/* Vendor Master */}
                    <div className="space-y-6">
