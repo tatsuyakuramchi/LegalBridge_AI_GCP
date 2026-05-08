@@ -2247,8 +2247,46 @@ ${details}
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
+
+    // Hashed build assets carry their content hash in the filename, so they
+    // are safe to cache aggressively.
+    app.use(
+      "/assets",
+      express.static(path.join(distPath, "assets"), {
+        maxAge: "1y",
+        immutable: true,
+      })
+    );
+
+    // Other static files (favicons, manifest, etc.). Skip index.html so the
+    // SPA fallback below owns it and can set its own cache headers.
+    app.use(
+      express.static(distPath, {
+        index: false,
+        setHeaders: (res, filePath) => {
+          if (filePath.endsWith(".html")) {
+            res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+          }
+        },
+      })
+    );
+
+    // Defensively clean up any service worker registered by a previous
+    // deployment. If a client requests `/sw.js` (or similar) and we no
+    // longer ship one, return a no-op script that immediately unregisters
+    // itself, so users stuck on a stale cached worker recover automatically.
+    app.get(["/sw.js", "/service-worker.js", "/serviceworker.js"], (_req, res) => {
+      res.setHeader("Content-Type", "application/javascript");
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.send("self.addEventListener('install',()=>{self.skipWaiting()});self.addEventListener('activate',e=>{e.waitUntil(self.registration.unregister().then(()=>self.clients.matchAll()).then(cs=>cs.forEach(c=>c.navigate(c.url))))});");
+    });
+
+    // SPA fallback. Never cache index.html — every navigation must revalidate
+    // so that a freshly deployed bundle is picked up immediately.
+    app.get("*", (_req, res) => {
+      res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+      res.setHeader("Expires", "0");
       res.sendFile(path.join(distPath, "index.html"));
     });
   }
