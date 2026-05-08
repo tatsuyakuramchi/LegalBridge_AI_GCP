@@ -1,0 +1,224 @@
+import * as React from "react"
+import { Search, Plus, Archive as ArchiveIcon, ChevronRight, ExternalLink } from "lucide-react"
+
+import { useAppData } from "@/src/context/AppDataContext"
+import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog"
+import { Label } from "@/components/ui/label"
+import { NativeSelect } from "@/components/ui/native-select"
+
+export function ArchivePage() {
+  const { assets, setAssets, showNotification } = useAppData()
+  const [search, setSearch] = React.useState("")
+  const [openRegister, setOpenRegister] = React.useState(false)
+  const [form, setForm] = React.useState<any>({
+    asset_name: "",
+    asset_type: "contract",
+    counterparty: "",
+    status: "active",
+    file_link: "",
+    start_date: "",
+    end_date: "",
+    backlog_issue_key: "",
+  })
+
+  const filtered = assets.filter(
+    (a) =>
+      a.asset_name?.toLowerCase().includes(search.toLowerCase()) ||
+      a.asset_number?.toLowerCase().includes(search.toLowerCase()) ||
+      a.counterparty?.toLowerCase().includes(search.toLowerCase())
+  )
+
+  const submit = async () => {
+    try {
+      const res = await fetch("/api/management/assets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      })
+      if (res.ok) {
+        showNotification("Asset registered.", "success")
+        const list = await fetch("/api/management/assets").then((r) => r.json())
+        setAssets(Array.isArray(list) ? list : [])
+        setOpenRegister(false)
+        setForm({
+          asset_name: "",
+          asset_type: "contract",
+          counterparty: "",
+          status: "active",
+          file_link: "",
+          start_date: "",
+          end_date: "",
+          backlog_issue_key: "",
+        })
+      } else {
+        showNotification("Failed to register asset.", "error")
+      }
+    } catch (e) {
+      showNotification("Server error.", "error")
+    }
+  }
+
+  return (
+    <div className="px-6 py-6 max-w-[1400px] mx-auto space-y-6">
+      <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
+        <div>
+          <p className="retro-tag mb-1.5">ARC · LEDGER</p>
+          <h2 className="text-2xl font-mono font-bold tracking-tight">
+            Archive
+          </h2>
+          <p className="text-xs font-mono text-muted-foreground mt-1.5">
+            Immutable record of all legal artifacts generated through Arcs OS.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <div className="relative w-72">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Filter archive…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
+          <Button onClick={() => setOpenRegister(true)}>
+            <Plus />
+            Register
+          </Button>
+        </div>
+      </header>
+
+      {filtered.length === 0 ? (
+        <div className="p-16 text-center border border-dashed border-border rounded-md">
+          <ArchiveIcon className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
+          <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
+            No archived assets yet.
+          </p>
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filtered.map((asset, idx) => (
+            <Card
+              key={`asset-${asset.id || idx}`}
+              className="group hover:border-foreground transition-all"
+            >
+              <CardContent className="px-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex h-8 w-8 items-center justify-center bg-muted rounded-sm">
+                    <ArchiveIcon className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <Badge variant="outline">{asset.asset_type}</Badge>
+                </div>
+                <div>
+                  <p className="text-sm font-mono font-bold truncate">
+                    {asset.asset_name}
+                  </p>
+                  <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground mt-1">
+                    Ref · {asset.asset_number}
+                  </p>
+                  <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    With · {asset.counterparty}
+                  </p>
+                </div>
+                <div className="pt-2 border-t border-dashed border-border flex items-center justify-between">
+                  <Badge variant="success">Secured</Badge>
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Register dialog */}
+      <Dialog open={openRegister} onOpenChange={setOpenRegister}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Register Concluded Asset</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <Label>Name</Label>
+                <Input
+                  value={form.asset_name}
+                  onChange={(e) => setForm({ ...form, asset_name: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Type</Label>
+                <NativeSelect
+                  value={form.asset_type}
+                  onChange={(e) => setForm({ ...form, asset_type: e.target.value })}
+                >
+                  <option value="contract">contract</option>
+                  <option value="ledger">ledger</option>
+                  <option value="other">other</option>
+                </NativeSelect>
+              </div>
+              <div className="space-y-1">
+                <Label>Counterparty</Label>
+                <Input
+                  value={form.counterparty}
+                  onChange={(e) => setForm({ ...form, counterparty: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Backlog issue key</Label>
+                <Input
+                  value={form.backlog_issue_key}
+                  onChange={(e) =>
+                    setForm({ ...form, backlog_issue_key: e.target.value })
+                  }
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>Start date</Label>
+                <Input
+                  type="date"
+                  value={form.start_date}
+                  onChange={(e) => setForm({ ...form, start_date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1">
+                <Label>End date</Label>
+                <Input
+                  type="date"
+                  value={form.end_date}
+                  onChange={(e) => setForm({ ...form, end_date: e.target.value })}
+                />
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label>File link</Label>
+                <Input
+                  value={form.file_link}
+                  onChange={(e) => setForm({ ...form, file_link: e.target.value })}
+                />
+              </div>
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpenRegister(false)}>
+              Cancel
+            </Button>
+            <Button onClick={submit}>
+              <ExternalLink />
+              Register
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

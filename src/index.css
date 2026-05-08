@@ -2,12 +2,23 @@
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
 @import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Arcs Legal OS — Retro-Future Design System
+ *
+ * Inspired by terminal CRTs, late-80s/early-90s engineering UIs, and
+ * the analog precision of telex/ledger printouts. The default (light)
+ * mode is "paper terminal": warm off-white with phosphor-amber accents.
+ * Dark mode is "CRT": near-black with green/amber phosphor highlights.
+ */
+
 @theme inline {
-  --font-sans: 'Geist Variable', sans-serif;
-  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', 'Hiragino Sans', system-ui, sans-serif;
+  --font-mono: 'Geist Mono Variable', 'JetBrains Mono', 'Menlo', monospace;
+  --font-heading: var(--font-mono);
 
   --color-background: var(--background);
   --color-foreground: var(--foreground);
@@ -29,80 +40,203 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
 
+  --color-phosphor: var(--phosphor);
+  --color-phosphor-foreground: var(--phosphor-foreground);
+  --color-amber: var(--amber);
+  --color-amber-foreground: var(--amber-foreground);
+  --color-cyan: var(--cyan);
+  --color-grid: var(--grid);
+
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
 }
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 222.2 84% 4.9%;
-  --card: 0 0% 100%;
-  --card-foreground: 222.2 84% 4.9%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 222.2 84% 4.9%;
-  --primary: 222.2 47.4% 11.2%;
-  --primary-foreground: 210 40% 98%;
-  --secondary: 210 40% 96.1%;
-  --secondary-foreground: 222.2 47.4% 11.2%;
-  --muted: 210 40% 96.1%;
-  --muted-foreground: 215.4 16.3% 46.9%;
-  --accent: 210 40% 96.1%;
-  --accent-foreground: 222.2 47.4% 11.2%;
-  --destructive: 0 84.2% 60.2%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 214.3 31.8% 91.4%;
-  --input: 214.3 31.8% 91.4%;
-  --ring: 222.2 84% 4.9%;
-  --radius: 0.5rem;
+  /* Paper terminal — warm off-white with amber phosphor */
+  --background: 40 40% 97%;
+  --foreground: 30 20% 12%;
+  --card: 40 30% 99%;
+  --card-foreground: 30 20% 12%;
+  --popover: 40 30% 99%;
+  --popover-foreground: 30 20% 12%;
+  --primary: 30 20% 12%;
+  --primary-foreground: 40 40% 97%;
+  --secondary: 36 25% 92%;
+  --secondary-foreground: 30 20% 18%;
+  --muted: 36 20% 94%;
+  --muted-foreground: 30 8% 42%;
+  --accent: 36 25% 88%;
+  --accent-foreground: 30 20% 18%;
+  --destructive: 8 70% 45%;
+  --destructive-foreground: 40 40% 97%;
+  --border: 30 12% 80%;
+  --input: 30 12% 84%;
+  --ring: 30 30% 30%;
+
+  --phosphor: 28 95% 45%;          /* amber phosphor */
+  --phosphor-foreground: 40 40% 97%;
+  --amber: 35 95% 50%;
+  --amber-foreground: 30 20% 12%;
+  --cyan: 195 70% 38%;
+  --grid: 30 15% 88%;
+
+  --radius: 0.25rem;
 }
 
 .dark {
-  --background: 222.2 84% 4.9%;
-  --foreground: 210 40% 98%;
-  --card: 222.2 84% 4.9%;
-  --card-foreground: 210 40% 98%;
-  --popover: 222.2 84% 4.9%;
-  --popover-foreground: 210 40% 98%;
-  --primary: 210 40% 98%;
-  --primary-foreground: 222.2 47.4% 11.2%;
-  --secondary: 217.2 32.6% 17.5%;
-  --secondary-foreground: 210 40% 98%;
-  --muted: 217.2 32.6% 17.5%;
-  --muted-foreground: 215 20.2% 65.1%;
-  --accent: 217.2 32.6% 17.5%;
-  --accent-foreground: 210 40% 98%;
-  --destructive: 0 62.8% 30.6%;
-  --destructive-foreground: 210 40% 98%;
-  --border: 217.2 32.6% 17.5%;
-  --input: 217.2 32.6% 17.5%;
-  --ring: 212.7 26.8% 83.9%;
+  /* CRT terminal — near-black with green phosphor */
+  --background: 220 18% 6%;
+  --foreground: 130 30% 88%;
+  --card: 220 16% 9%;
+  --card-foreground: 130 30% 88%;
+  --popover: 220 16% 9%;
+  --popover-foreground: 130 30% 88%;
+  --primary: 130 60% 55%;
+  --primary-foreground: 220 20% 6%;
+  --secondary: 220 14% 14%;
+  --secondary-foreground: 130 25% 85%;
+  --muted: 220 14% 12%;
+  --muted-foreground: 130 12% 62%;
+  --accent: 220 14% 16%;
+  --accent-foreground: 130 30% 88%;
+  --destructive: 0 75% 55%;
+  --destructive-foreground: 220 20% 6%;
+  --border: 220 14% 20%;
+  --input: 220 14% 18%;
+  --ring: 130 60% 55%;
+
+  --phosphor: 130 80% 55%;
+  --phosphor-foreground: 220 20% 6%;
+  --amber: 35 95% 60%;
+  --amber-foreground: 220 20% 6%;
+  --cyan: 195 80% 60%;
+  --grid: 220 14% 14%;
 }
 
 @layer utilities {
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
+  .scrollbar-hide::-webkit-scrollbar { display: none; }
+  .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+
+  /* CRT scanlines — extremely subtle, applied to the body in dark mode */
+  .scanlines {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 2px,
+      hsl(var(--foreground) / 0.025) 2px,
+      hsl(var(--foreground) / 0.025) 3px
+    );
   }
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
+  .scanlines-strong {
+    background-image: repeating-linear-gradient(
+      to bottom,
+      transparent 0,
+      transparent 2px,
+      hsl(var(--foreground) / 0.06) 2px,
+      hsl(var(--foreground) / 0.06) 3px
+    );
   }
+  /* Soft engineering grid */
+  .grid-paper {
+    background-image:
+      linear-gradient(to right, hsl(var(--grid) / 0.7) 1px, transparent 1px),
+      linear-gradient(to bottom, hsl(var(--grid) / 0.7) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  /* Phosphor glow text */
+  .glow-phosphor {
+    text-shadow: 0 0 6px hsl(var(--phosphor) / 0.5),
+                 0 0 14px hsl(var(--phosphor) / 0.2);
+  }
+  .glow-soft {
+    text-shadow: 0 0 8px hsl(var(--foreground) / 0.18);
+  }
+
+  .tab-mono { font-variant-numeric: tabular-nums; }
+
+  /* Decorative ASCII-style corner brackets, applied via ::before/::after */
+  .bracketed {
+    position: relative;
+  }
+  .bracketed::before,
+  .bracketed::after {
+    content: "";
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    border: 1px solid currentColor;
+    opacity: 0.6;
+  }
+  .bracketed::before {
+    top: -1px; left: -1px;
+    border-right: none; border-bottom: none;
+  }
+  .bracketed::after {
+    bottom: -1px; right: -1px;
+    border-left: none; border-top: none;
+  }
+
+  /* Animated blinking caret/dot, used for "live" indicators */
+  @keyframes blink {
+    0%, 49% { opacity: 1; }
+    50%, 100% { opacity: 0.15; }
+  }
+  .blink { animation: blink 1.2s steps(2, end) infinite; }
+
+  @keyframes ticker {
+    0% { transform: translateX(0); }
+    100% { transform: translateX(-50%); }
+  }
+  .ticker { animation: ticker 60s linear infinite; }
+
+  /* Custom scrollbars to match terminal feel */
+  .custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; }
+  .custom-scrollbar::-webkit-scrollbar-track { background: hsl(var(--muted)); }
+  .custom-scrollbar::-webkit-scrollbar-thumb { background: hsl(var(--border)); border-radius: 0; }
+  .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: hsl(var(--muted-foreground)); }
 }
 
 @layer base {
-  * {
-    @apply border-border;
-  }
+  * { @apply border-border; }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
+    font-feature-settings: "ss01", "cv11";
   }
+  ::selection { background: hsl(var(--phosphor) / 0.85); color: hsl(var(--phosphor-foreground)); }
+
+  /* Default heading rhythm */
+  h1, h2, h3, h4, h5, h6 { @apply font-heading tracking-tight; }
 }
 
 @layer components {
+  /* Legacy classes kept for back-compat with existing form components */
   .tech-input {
-    @apply w-full p-2 bg-[#fcfcfc] border border-[#141414]/20 rounded-none text-sm font-mono focus:outline-none focus:border-[#141414] transition-all;
+    @apply w-full px-2.5 py-1.5 bg-card border border-input rounded-none text-sm font-mono focus:outline-none focus:border-foreground focus:ring-1 focus:ring-foreground transition-all;
   }
   .tech-label {
-    @apply text-[9px] font-mono uppercase tracking-widest opacity-50 block mb-1;
+    @apply text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground block mb-1;
+  }
+
+  /* Section header with retro tag */
+  .retro-tag {
+    @apply inline-flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground;
+  }
+  .retro-tag::before {
+    content: "▍";
+    color: hsl(var(--phosphor));
+  }
+
+  /* Decorative rule */
+  .retro-rule {
+    @apply relative;
+    background-image: repeating-linear-gradient(
+      to right,
+      hsl(var(--border)) 0,
+      hsl(var(--border)) 4px,
+      transparent 4px,
+      transparent 8px
+    );
+    height: 1px;
   }
 }
