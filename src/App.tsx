@@ -743,7 +743,7 @@ export default function App() {
                      </h3>
                      <div className="space-y-4">
                         {dashboardStats?.recentActivity?.map((doc: any, idx: number) => (
-                           <div key={doc.id || doc.issue_key || `activity-${idx}`} className="border-l border-blue-400/30 pl-4 py-1">
+                           <div key={doc.id || `activity-${doc.issue_key || idx}-${idx}`} className="border-l border-blue-400/30 pl-4 py-1">
                               <p className="text-[10px] font-bold truncate">{doc.template_type}</p>
                               <p className="text-[8px] font-mono opacity-60 uppercase">{doc.issue_key} • {new Date(doc.created_at).toLocaleDateString()}</p>
                            </div>
@@ -1541,7 +1541,7 @@ export default function App() {
                           <tr className="bg-gray-50 border-b border-[#141414]/10">
                             <th className="p-4 text-left font-mono text-[10px] uppercase border-r border-[#141414]/10 sticky left-0 bg-gray-50 z-10 w-64">Variable ID / Input Field</th>
                             {templateList.map((t, idx) => (
-                              <th key={t || `template-header-${idx}`} className="p-4 text-center font-mono text-[9px] uppercase border-r border-[#141414]/10 min-w-[120px]">
+                              <th key={`template-header-${t || idx}-${idx}`} className="p-4 text-center font-mono text-[9px] uppercase border-r border-[#141414]/10 min-w-[120px]">
                                 {templateMetadata[t]?.label || t}
                               </th>
                             ))}
@@ -1556,7 +1556,7 @@ export default function App() {
                               {templateList.map((t, tIdx) => {
                                 const varMeta = (templateMetadata[t]?.vars || {})[field];
                                 return (
-                                  <td key={t || `matrix-cell-${field}-${tIdx}`} className="p-3 text-center border-r border-[#141414]/10">
+                                  <td key={`matrix-cell-${field}-${t || tIdx}-${tIdx}`} className="p-3 text-center border-r border-[#141414]/10">
                                     {varMeta ? (
                                       <div className="flex flex-col items-center gap-1">
                                         <CheckCircle2 className="w-4 h-4 text-emerald-500" />
