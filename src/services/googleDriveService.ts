@@ -5,8 +5,8 @@ export class GoogleDriveService {
   private drive;
 
   constructor() {
-    this.drive = google.drive({ 
-      version: "v3", 
+    this.drive = google.drive({
+      version: "v3",
       auth: new google.auth.GoogleAuth({
         scopes: ["https://www.googleapis.com/auth/drive.file"],
       })
@@ -33,6 +33,12 @@ export class GoogleDriveService {
         requestBody: fileMetadata,
         media: media,
         fields: "id, webViewLink",
+        // Required when GOOGLE_DRIVE_FOLDER_ID points at a folder inside a
+        // Shared Drive. Service accounts have zero personal-Drive quota,
+        // so writing to "My Drive" always 403s with
+        // `The user's Drive storage quota has been exceeded.` Setting
+        // supportsAllDrives + a Shared-Drive folder id sidesteps that.
+        supportsAllDrives: true,
       });
 
       return response.data.webViewLink || "";
@@ -62,6 +68,7 @@ export class GoogleDriveService {
         requestBody: fileMetadata,
         media: media,
         fields: "id, webViewLink",
+        supportsAllDrives: true,
       });
 
       return response.data.webViewLink || "";
@@ -89,6 +96,7 @@ export class GoogleDriveService {
         requestBody: fileMetadata,
         media: media,
         fields: "id, webViewLink",
+        supportsAllDrives: true,
       });
 
       return response.data.webViewLink || "";
@@ -98,3 +106,4 @@ export class GoogleDriveService {
     }
   }
 }
+
