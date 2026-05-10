@@ -1,6 +1,6 @@
 import express from "express";
 import { createServer as createViteServer } from "vite";
-import { App, ExpressReceiver, LogLevel } from "@slack/bolt";
+import { WebClient } from "@slack/web-api";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
@@ -50,32 +50,17 @@ async function startServer() {
     });
 
     // Slack Setup
+    //
+    // Slack Bolt (slash commands + interactivity) has been moved out of this
+    // service into a Google Apps Script gateway. Cloud Run now only needs an
+    // outbound Web API client for posting notification messages
+    // (overdue alerts, document-generated, bulk-import-done, etc.) and
+    // exposes an internal HTTP endpoint that GAS calls back into.
     const slackBotToken = dbSettings.SLACK_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
-    const slackSigningSecret = dbSettings.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET;
 
-    let slackApp: App | null = null;
-    let receiver: ExpressReceiver | null = null;
-
-    if (slackBotToken && slackSigningSecret) {
-      receiver = new ExpressReceiver({
-        signingSecret: slackSigningSecret,
-        endpoints: {
-          commands: "/slack/commands",
-          actions: "/slack/interactions",
-          events: "/slack/events",
-        },
-        processBeforeResponse: false, 
-      });
-
-      slackApp = new App({
-        token: slackBotToken,
-        receiver,
-        logLevel: LogLevel.INFO,
-      });
-
-      // Mount Slack Receiver
-      app.use(receiver.router);
-    }
+    const slackWebClient: WebClient | null = slackBotToken
+      ? new WebClient(slackBotToken)
+      : null;
 
     const turndownService = new TurndownService({
       headingStyle: 'atx',
@@ -104,593 +89,317 @@ async function startServer() {
 
     const upload = multer({ storage: multer.memoryStorage() });
 
-    if (slackApp && receiver) {
-      // --- Slack Helpers ---
-      const getLegalRequestModal = (selectedType: string = "legal_consult"): any => {
-      const blocks: any[] = [
-        {
-          type: "input",
-          block_id: "dept_block",
-          label: { type: "plain_text", text: "依頼部署" },
-          element: { type: "plain_text_input", action_id: "dept_input", placeholder: { type: "plain_text", text: "〇〇事業部" } }
-        },
-        {
-          type: "input",
-          block_id: "request_type_block",
-          label: { type: "plain_text", text: "依頼種別 (Request Type)" },
-          element: {
-            type: "static_select",
-            action_id: "request_type_input",
-            initial_option: {
-              text: { type: "plain_text", text: selectedType === "legal_consult" ? "法務相談 (legal_consult)" : 
-                                       selectedType === "nda" ? "秘密保持契約 (nda)" :
-                                       selectedType === "outsourcing" ? "業務委託基本契約 (outsourcing)" :
-                                       selectedType === "license_master" ? "ライセンス基本契約 (license_master)" :
-                                       selectedType === "lic_individual" ? "個別利用許諾条件 (lic_individual)" :
-                                       selectedType === "purchase_order" ? "発注書 (purchase_order)" :
-                                       selectedType === "delivery_inspec" ? "納品 / 検収書 (delivery_inspec)" :
-                                       selectedType === "license_calc" ? "利用許諾計算リクエスト (license_calc)" :
-                                       selectedType === "sales_master" ? "売買基本契約 (sales_master)" :
-                                       "その他" },
-              value: selectedType
-            },
-            placeholder: { type: "plain_text", text: "種別を選択してください" },
-            options: [
-              { text: { type: "plain_text", text: "法務相談 (legal_consult)" }, value: "legal_consult" },
-              { text: { type: "plain_text", text: "秘密保持契約 (nda)" }, value: "nda" },
-              { text: { type: "plain_text", text: "業務委託基本契約 (outsourcing)" }, value: "outsourcing" },
-              { text: { type: "plain_text", text: "ライセンス基本契約 (license_master)" }, value: "license_master" },
-              { text: { type: "plain_text", text: "個別利用許諾条件 (lic_individual)" }, value: "lic_individual" },
-              { text: { type: "plain_text", text: "発注書 (purchase_order)" }, value: "purchase_order" },
-              { text: { type: "plain_text", text: "納品 / 検収書 (delivery_inspec)" }, value: "delivery_inspec" },
-              { text: { type: "plain_text", text: "利用許諾計算リクエスト (license_calc)" }, value: "license_calc" },
-              { text: { type: "plain_text", text: "売買基本契約 (sales_master)" }, value: "sales_master" }
-            ]
-          }
-        },
-        {
-          type: "input",
-          block_id: "summary_block",
-          label: { type: "plain_text", text: "件名" },
-          element: { type: "plain_text_input", action_id: "summary_input", placeholder: { type: "plain_text", text: "例: 秘密保持契約の審査依頼" } }
-        },
-        {
-          type: "input",
-          block_id: "deadline_block",
-          label: { type: "plain_text", text: "希望納期（文書作成等）" },
-          element: {
-            type: "datepicker",
-            action_id: "deadline_input",
-            initial_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-          }
-        },
-        {
-          type: "divider"
-        },
-        {
-          type: "section",
-          text: { type: "mrkdwn", text: "*取引先情報 (Counterparty Info)*" }
-        },
-        {
-          type: "input",
-          block_id: "counterparty_block",
-          label: { type: "plain_text", text: "相手方名称" },
-          element: { type: "plain_text_input", action_id: "counterparty_input", placeholder: { type: "plain_text", text: "株式会社〇〇" } }
-        },
-        {
-          type: "input",
-          block_id: "entity_type_block",
-          label: { type: "plain_text", text: "区分" },
-          element: {
-            type: "radio_buttons",
-            action_id: "entity_type_input",
-            initial_option: { text: { type: "plain_text", text: "法人" }, value: "corporate" },
-            options: [
-              { text: { type: "plain_text", text: "法人" }, value: "corporate" },
-              { text: { type: "plain_text", text: "個人" }, value: "individual" }
-            ]
-          }
-        },
-        {
-          type: "input",
-          block_id: "entity_id_block",
-          label: { type: "plain_text", text: "法人番号 / 社内個人コード" },
-          element: { type: "plain_text_input", action_id: "entity_id_input", placeholder: { type: "plain_text", text: "13桁の番号、または社内コード" } }
-        },
-        {
-          type: "divider"
-        },
-        {
-          type: "input",
-          block_id: "details_block",
-          label: { type: "plain_text", text: "相談・依頼詳細" },
-          element: { type: "plain_text_input", action_id: "details_input", multiline: true }
-        }
-      ];
+  // ----------------------------------------------------------------------
+  // Legal request intake
+  // ----------------------------------------------------------------------
+  //
+  // The Slack-side flow (slash command, modal, view_submission) lives in
+  // the GAS gateway under `gas/Code.gs`. After the user submits the
+  // legal-request modal, GAS POSTs the parsed values into the internal
+  // endpoint defined below. This keeps Cloud Run free of Slack Bolt and
+  // its signing-secret / Express-receiver coupling, while preserving the
+  // exact post-submission processing (Backlog issue creation, DB writes,
+  // initial document generation, Drive upload, Slack notifications).
+  //
+  // Future automatic-document-generation will likely be triggered by the
+  // Backlog webhook (`type=1`, see /api/webhooks/backlog) instead of being
+  // started inline here, so the Slack DM/channel notifications below stay
+  // owned by this entry point.
 
-      // Dynamic items for Delivery Request (now mapped to delivery_inspec)
-      if (selectedType === "delivery_inspec") {
-        blocks.push(
-          {
-            type: "divider"
-          },
-          {
-            type: "section",
-            text: { type: "mrkdwn", text: "*検収書作成用データ*" }
-          },
-          {
-            type: "input",
-            block_id: "delivery_no_block",
-            label: { type: "plain_text", text: "納品回数 (第 n 回納品)" },
-            element: { type: "plain_text_input", action_id: "delivery_no_input", placeholder: { type: "plain_text", text: "1" }, initial_value: "1" }
-          },
-          {
-            type: "input",
-            block_id: "order_amount_block",
-            label: { type: "plain_text", text: "金額（税抜）" },
-            element: { type: "plain_text_input", action_id: "order_amount_input", placeholder: { type: "plain_text", text: "100000" } }
-          },
-          {
-            type: "input",
-            block_id: "delivery_date_block",
-            label: { type: "plain_text", text: "納品日 (YYYY-MM-DD)" },
-            element: { 
-              type: "datepicker", 
-              action_id: "delivery_date_input", 
-              initial_date: new Date().toISOString().split('T')[0]
-            }
-          },
-          {
-            type: "input",
-            block_id: "inspection_deadline_block",
-            label: { type: "plain_text", text: "検収期限 (YYYY-MM-DD)" },
-            element: { 
-              type: "datepicker", 
-              action_id: "inspection_deadline_input",
-              initial_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-            }
-          }
-        );
-      }
+  interface LegalRequestSubmission {
+    slack_user_id: string;
+    slack_user_name?: string;
+    dept: string;
+    request_type: string;
+    summary: string;
+    deadline?: string;
+    details?: string;
+    counterparty?: string;
+    entity_type?: "corporate" | "individual";
+    entity_id?: string;
+    delivery_no?: number | null;
+    order_amount?: string | null;
+    delivery_date?: string | null;
+    inspection_deadline?: string | null;
+  }
 
-      return {
-        type: "modal",
-        callback_id: "legal_request_modal",
-        title: { type: "plain_text", text: "法務相談・契約審査" },
-        blocks,
-        submit: { type: "plain_text", text: "送信" }
-      };
-    };
+  const replaceSlackPlaceholders = (tmpl: string, data: any): string => {
+    return tmpl
+      .replace(/{{requestType}}/g, data.requestType || "")
+      .replace(/{{issueKey}}/g, data.issueKey || "")
+      .replace(/{{docNumber}}/g, data.docNumber || "")
+      .replace(/{{driveLink}}/g, data.driveLink || "")
+      .replace(/{{user}}/g, data.user ? `<@${data.user}>` : "")
+      .replace(/{{summary}}/g, data.summary || "")
+      .replace(/{{counterparty}}/g, data.counterparty || "");
+  };
 
-    const getLegalSearchModal = (): any => {
-      return {
-        type: "modal",
-        callback_id: "legal_search_modal",
-        title: { type: "plain_text", text: "法務検索 (Legal Search)" },
-        blocks: [
-          {
-            type: "input",
-            block_id: "keyword_block",
-            label: { type: "plain_text", text: "検索キーワード" },
-            element: {
-              type: "plain_text_input",
-              action_id: "keyword_input",
-              placeholder: { type: "plain_text", text: "件名、取引先名、Backlogキーなどを入力" }
-            }
-          }
-        ],
-        submit: { type: "plain_text", text: "検索" }
-      };
-    };
+  async function processLegalRequestSubmission(
+    input: LegalRequestSubmission
+  ): Promise<{ issueKey: string; docNumber: string; driveLink: string }> {
+    const {
+      slack_user_id: user,
+      slack_user_name: userName,
+      dept,
+      request_type: requestType,
+      summary,
+      deadline = "",
+      details = "",
+      counterparty = "",
+      entity_type: entityType = "corporate",
+      entity_id: entityId = "",
+      delivery_no: deliveryNo = null,
+      order_amount: orderAmount = null,
+      delivery_date: deliveryDate = null,
+      inspection_deadline: inspectionDeadline = null,
+    } = input;
 
-    // --- Slack Handlers ---
+    let templateType: DocumentType = "legal_request";
+    if (requestType === "delivery_inspec") templateType = "inspection_certificate";
+    else if (requestType === "purchase_order") templateType = "purchase_order";
+    else if (requestType === "nda") templateType = "nda";
+    else if (requestType === "license_master") templateType = "license_master";
+    else if (requestType === "lic_individual") templateType = "individual_license_terms";
+    else if (requestType === "license_calc") templateType = "license_calculation_sheet";
 
-    // 1. Command to open modal
-    slackApp.command("/法務依頼", async ({ command, ack, client, body }) => {
-      await ack();
-      // Execute UI opening in background to ensure ack returns immediately
-      (async () => {
-        try {
-          await client.views.open({
-            trigger_id: body.trigger_id,
-            view: getLegalRequestModal("legal_consult")
-          });
-        } catch (error) {
-          console.error("Error opening /法務依頼 modal:", error);
-        }
-      })();
-    });
+    const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
 
-    // 2. Command to search
-    slackApp.command("/法務検索", async ({ command, ack, client, body }) => {
-      await ack();
-      (async () => {
-        try {
-          await client.views.open({
-            trigger_id: body.trigger_id,
-            view: getLegalSearchModal()
-          });
-        } catch (error) {
-          console.error("Error opening /法務検索 modal:", error);
-        }
-      })();
-    });
-
-    // Modal submission for search
-    slackApp.view("legal_search_modal", async ({ ack, body, view, client }) => {
-      console.log(`🔍 Received search request from user ${body.user.id}`);
-      // 1. Acknowledge the view_submission request immediately to avoid timeout
-      await ack();
-      console.log("   ✅ Acknowledged search request");
-      
-      const keyword = view.state.values.keyword_block.keyword_input.value || "";
-      const user = body.user.id;
-      
-      if (!keyword) return;
-
-      // 2. Perform search asynchronously in the background
-      (async () => {
-        try {
-          // Search in Legal Requests (including inspection/royalty context)
-          const lrResults = await query(
-            `SELECT backlog_issue_key, summary, counterparty, request_type 
-             FROM legal_requests 
-             WHERE summary ILIKE $1 
-                OR counterparty ILIKE $1 
-                OR backlog_issue_key ILIKE $1 
-                OR request_type ILIKE $1
-             ORDER BY created_at DESC LIMIT 8`,
-            [`%${keyword}%`]
-          );
-
-          // Search in Vendors
-          const vendorResults = await query(
-            "SELECT vendor_code, vendor_name, trade_name FROM vendors WHERE vendor_name ILIKE $1 OR vendor_code ILIKE $1 OR trade_name ILIKE $1 LIMIT 5",
-            [`%${keyword}%`]
-          );
-
-          let blocks: any[] = [
-            {
-              type: "header",
-              text: { type: "plain_text", text: `🔎 検索結果: ${keyword}`, emoji: true }
-            }
-          ];
-
-          if (lrResults.rows.length === 0 && vendorResults.rows.length === 0) {
-          blocks.push({
-            type: "section",
-            text: { type: "mrkdwn", text: "該当するデータは見つかりませんでした。別のキーワードでお試しください。" }
-          });
-        }
-
-        if (lrResults.rows.length > 0) {
-          blocks.push({
-             type: "section",
-             text: { type: "mrkdwn", text: "*📁 関連課題 (検収・許諾・その他依頼)*" }
-          });
-          
-          lrResults.rows.forEach(r => {
-            const typeEmoji = r.summary.includes("検収") ? "✅" : (r.summary.includes("許諾") ? "💰" : "📝");
-            blocks.push({
-              type: "section",
-              text: { 
-                type: "mrkdwn", 
-                text: `${typeEmoji} *${r.backlog_issue_key}*: ${r.summary}\n>相手方: ${r.counterparty || '未設定'}` 
-              }
-            });
-          });
-        }
-
-        if (vendorResults.rows.length > 0) {
-          if (lrResults.rows.length > 0) blocks.push({ type: "divider" });
-          blocks.push({
-            type: "section",
-            text: { type: "mrkdwn", text: "*🏢 取引先・パートナーマスター*" }
-          });
-          vendorResults.rows.forEach(v => {
-            blocks.push({
-              type: "section",
-              text: { 
-                type: "mrkdwn", 
-                text: `• \`${v.vendor_code}\` *${v.vendor_name}*\n  _${v.trade_name || ''}_` 
-              }
-            });
-          });
-        }
-
-        // Send results via DM to the user
-        await client.chat.postMessage({
-          channel: user,
-          blocks: blocks,
-          text: `🔍 検索結果: ${keyword}`
-        });
-
-      } catch (error) {
-        console.error("Error during Slack search:", error);
-      }
-    })();
-  });
-
-    // Dynamic update based on selection
-    slackApp.action("request_type_input", async ({ ack, body, client, action }) => {
-      await ack();
-      (async () => {
-        try {
-          const selectedOption = (action as any).selected_option.value;
-          await client.views.update({
-            view_id: (body as any).view.id,
-            hash: (body as any).view.hash,
-            view: getLegalRequestModal(selectedOption)
-          });
-        } catch (error) {
-          console.error("Error updating view:", error);
-        }
-      })();
-    });
-
-    // 2. Modal submission
-    slackApp.view("legal_request_modal", async ({ ack, body, view, client }) => {
-      console.log(`📩 Received request modal submission from user ${body.user.id}`);
-      // 1. Acknowledge immediately to avoid timeout
-      await ack();
-      console.log("   ✅ Acknowledged request modal submission");
-      
-      const values = view.state.values;
-      const dept = values.dept_block.dept_input.value || "";
-      const requestType = values.request_type_block.request_type_input.selected_option?.value || "legal_consult";
-      const summary = values.summary_block.summary_input.value || "";
-      const deadline = values.deadline_block.deadline_input.selected_date || "";
-      const details = values.details_block.details_input.value || "";
-      const counterparty = values.counterparty_block.counterparty_input.value || "";
-      const entityType = values.entity_type_block.entity_type_input.selected_option?.value || "corporate";
-      const entityId = values.entity_id_block.entity_id_input.value || "";
-      
-      // Delivery specific values
-      const deliveryNoRaw = values.delivery_no_block?.delivery_no_input?.value;
-      const deliveryNo = deliveryNoRaw ? parseInt(deliveryNoRaw) : null;
-      const orderAmount = values.order_amount_block?.order_amount_input?.value;
-      const deliveryDate = values.delivery_date_block?.delivery_date_input?.selected_date;
-      const inspectionDeadline = values.inspection_deadline_block?.inspection_deadline_input?.selected_date;
-      
-      const user = body.user.id;
-      
-      // Map Slack request type to initial Document Template Type
-      let templateType: DocumentType = "legal_request";
-      if (requestType === "delivery_inspec") {
-        templateType = "inspection_certificate";
-      } else if (requestType === "purchase_order") {
-        templateType = "purchase_order";
-      } else if (requestType === "nda") {
-        templateType = "nda";
-      } else if (requestType === "license_master") {
-        templateType = "license_master";
-      } else if (requestType === "lic_individual") {
-        templateType = "individual_license_terms";
-      } else if (requestType === "license_calc") {
-        templateType = "license_calculation_sheet";
-      }
-
-      // 2. Process everything else in the background
-      (async () => {
-        try {
-          const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
-          
-          // Detailed description for Backlog
-          const backlogDescription = `
+    const backlogDescription = `
 依頼タイプ: ${requestType}
 希望納期: ${deadline}
 依頼者: <@${user}>
 
 【相手方情報】
 名称: ${counterparty}
-区分: ${entityType === 'corporate' ? '法人' : '個人'}
+区分: ${entityType === "corporate" ? "法人" : "個人"}
 番号/コード: ${entityId}
 
 【詳細】
 ${details}
-          `.trim();
+    `.trim();
 
-          // Create Backlog Issue
-          // Fetch Issue Types to avoid hardcoding ID 1
-          let issueTypeId = 1;
-          let categoryId: number | undefined = undefined;
+    let issueTypeId = 1;
+    let categoryId: number | undefined = undefined;
+    try {
+      const [types, categories] = await Promise.all([
+        backlogService.getIssueTypes(),
+        backlogService.getCategories(),
+      ]);
 
-          try {
-            const [types, categories] = await Promise.all([
-              backlogService.getIssueTypes(),
-              backlogService.getCategories()
-            ]);
+      if (types && types.length > 0) {
+        let targetTypeName = "事務手続";
+        if (requestType === "legal_consult") targetTypeName = "法務相談";
+        else if (
+          ["contract", "nda", "outsourcing", "license_master", "lic_individual", "sales_master", "purchase_order"].includes(
+            requestType
+          )
+        )
+          targetTypeName = "契約審査";
+        else if (requestType === "delivery_inspec") targetTypeName = "納品・検収";
+        else if (requestType === "license_calc") targetTypeName = "利用許諾計算";
 
-            // 1. Map Issue Type
-            if (types && types.length > 0) {
-              // Map based on requestType
-              let targetTypeName = "事務手続"; // Default
-              if (requestType === "legal_consult") {
-                targetTypeName = "法務相談";
-              } else if (["contract", "nda", "outsourcing", "license_master", "lic_individual", "sales_master", "purchase_order"].includes(requestType)) {
-                targetTypeName = "契約審査";
-              } else if (requestType === "delivery_inspec") {
-                targetTypeName = "納品・検収";
-              } else if (requestType === "license_calc") {
-                targetTypeName = "利用許諾計算";
-              }
-              
-              const matchedType = types.find((t: any) => t.name === targetTypeName);
-              issueTypeId = matchedType ? matchedType.id : types[0].id;
-            }
+        const matchedType = types.find((t: any) => t.name === targetTypeName);
+        issueTypeId = matchedType ? matchedType.id : types[0].id;
+      }
 
-            // 2. Map Category
-            if (categories && categories.length > 0) {
-              let targetCategoryName = "通知書"; // Default fallback
-              if (["nda", "contract", "outsourcing", "license_master", "lic_individual"].includes(requestType)) {
-                targetCategoryName = "契約";
-              } else if (requestType === "purchase_order") {
-                targetCategoryName = "発注";
-              } else if (requestType === "delivery_inspec") {
-                targetCategoryName = "納品";
-              } else if (requestType === "sales_master") {
-                targetCategoryName = "売買";
-              } else if (requestType === "license_calc") {
-                targetCategoryName = "ライセンス";
-              }
-              
-              const matchedCategory = categories.find((c: any) => c.name === targetCategoryName);
-              if (matchedCategory) {
-                categoryId = matchedCategory.id;
-              }
-            }
-          } catch (e) {
-            console.warn("Failed to fetch issue types or categories, falling back", e);
-          }
+      if (categories && categories.length > 0) {
+        let targetCategoryName = "通知書";
+        if (["nda", "contract", "outsourcing", "license_master", "lic_individual"].includes(requestType))
+          targetCategoryName = "契約";
+        else if (requestType === "purchase_order") targetCategoryName = "発注";
+        else if (requestType === "delivery_inspec") targetCategoryName = "納品";
+        else if (requestType === "sales_master") targetCategoryName = "売買";
+        else if (requestType === "license_calc") targetCategoryName = "ライセンス";
 
-          const issueParams: any = {
-            summary: `【${requestType}】${displaySummary}`,
-            description: backlogDescription,
-            issueTypeId: issueTypeId, 
-            priorityId: 3,
-            // Map Slack data to new Custom Fields
-            counterparty: counterparty,
-            dept: dept, // 依頼部署
-            deadline: deadline, // 希望納期
-            remarks: details, // 備考
-          };
+        const matchedCategory = categories.find((c: any) => c.name === targetCategoryName);
+        if (matchedCategory) categoryId = matchedCategory.id;
+      }
+    } catch (e) {
+      console.warn("Failed to fetch issue types or categories, falling back", e);
+    }
 
-          // Backlog expects multiple categories as categoryId[]
-          if (categoryId) {
-            issueParams["categoryId[]"] = categoryId;
-          }
+    const issueParams: any = {
+      summary: `【${requestType}】${displaySummary}`,
+      description: backlogDescription,
+      issueTypeId,
+      priorityId: 3,
+      counterparty,
+      dept,
+      deadline,
+      remarks: details,
+    };
+    if (categoryId) issueParams["categoryId[]"] = categoryId;
 
-          const issue = await backlogService.createIssue(issueParams);
+    const issue = await backlogService.createIssue(issueParams);
 
-          // Register in DB
-          const lrResult = await query(
-            "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
-            [issue.issueKey, user, requestType, counterparty, displaySummary, details]
-          );
+    await query(
+      "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+      [issue.issueKey, user, requestType, counterparty, displaySummary, details]
+    );
 
-          const legalRequestId = lrResult.rows[0].id;
+    if (requestType === "delivery_inspec") {
+      await query(
+        "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline, delivered_at, delivered_amount) VALUES ($1, $2, $3, $4, $5, $6)",
+        [
+          issue.issueKey,
+          deliveryNo,
+          "pending",
+          inspectionDeadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
+          deliveryDate || new Date().toISOString(),
+          parseFloat(orderAmount || "0"),
+        ]
+      );
+    }
 
-          // If it's a delivery request, also record it in delivery_events
-          if (requestType === "delivery_inspec") {
-            await query(
-              "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline, delivered_at, delivered_amount) VALUES ($1, $2, $3, $4, $5, $6)",
-              [issue.issueKey, deliveryNo, "pending", inspectionDeadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(), deliveryDate || new Date().toISOString(), parseFloat(orderAmount || "0")]
-            );
-          }
+    await query(
+      "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3)",
+      [issue.issueKey, requestType, "文書生成依頼"]
+    );
 
-          await query(
-            "INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name) VALUES ($1, $2, $3)",
-            [issue.issueKey, requestType, "文書生成依頼"]
-          );
+    const deptRule = await query(
+      `SELECT r.slack_channel_id
+         FROM staff s
+         JOIN department_workflow_rules r ON s.department = r.department
+         WHERE s.slack_user_id = $1`,
+      [user]
+    );
+    const deptChannel = deptRule.rows[0]?.slack_channel_id;
 
-          // Find target channel
-          const deptRule = await query(
-            `SELECT r.slack_channel_id 
-             FROM staff s 
-             JOIN department_workflow_rules r ON s.department = r.department 
-             WHERE s.slack_user_id = $1`,
-            [user]
-          );
-          const deptChannel = deptRule.rows[0]?.slack_channel_id;
+    const docNumber = await getNewDocumentNumber(templateType, requestType);
 
-          const docNumber = await getNewDocumentNumber(templateType, requestType);
+    const { html, fileName } = await documentService.generateDocument(
+      {
+        issueKey: issue.issueKey,
+        documentNumber: docNumber,
+        summary: displaySummary,
+        requester: userName || user,
+        date: new Date().toLocaleDateString("ja-JP"),
+        details: {
+          相談詳細: details,
+          相手方: counterparty,
+          counterparty,
+          description: details || displaySummary,
+          SlackユーザーID: user,
+          VENDOR_NAME: counterparty,
+          DELIVERY_NUMBER: deliveryNo ? String(deliveryNo) : "",
+          deliveryDate: deliveryDate ? new Date(deliveryDate).toLocaleDateString("ja-JP") : "",
+          inspectionDeadline: inspectionDeadline
+            ? new Date(inspectionDeadline).toLocaleDateString("ja-JP")
+            : "",
+          orderAmountStr: orderAmount
+            ? new Intl.NumberFormat("ja-JP").format(parseFloat(orderAmount))
+            : "0",
+          DOC_NO: docNumber,
+        },
+      },
+      templateType
+    );
 
-          // Generate Initial Document based on predicted flow
-          const { html, fileName } = await documentService.generateDocument({
+    const driveLink = await googleDriveService.uploadHtml(html, fileName);
+
+    await query(
+      "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
+      [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
+    );
+
+    if (slackWebClient) {
+      try {
+        const userSettingsResult = await query(
+          "SELECT value FROM app_settings WHERE key = 'slack_answer_back_user'"
+        );
+        const userTemplate =
+          userSettingsResult.rows[0]?.value?.template ||
+          `✅ 法務相談・文書作成の受付が完了しました。\n\n*種別:* {{requestType}}\n*課題キー:* {{issueKey}}\n*文書番号:* {{docNumber}}\n*生成ドキュメント:* {{driveLink}}\n\n法務担当者からの連絡をお待ちください。`;
+
+        await slackWebClient.chat.postMessage({
+          channel: user,
+          text: replaceSlackPlaceholders(userTemplate, {
+            requestType,
             issueKey: issue.issueKey,
-            documentNumber: docNumber,
-            summary: displaySummary,
-            requester: body.user.name || user,
-            date: new Date().toLocaleDateString("ja-JP"),
-            details: {
-              "相談詳細": details,
-              "相手方": counterparty,
-              "counterparty": counterparty,
-              "description": details || displaySummary,
-              "SlackユーザーID": user,
-              "VENDOR_NAME": counterparty, 
-              "DELIVERY_NUMBER": deliveryNo ? String(deliveryNo) : "",
-              "deliveryDate": deliveryDate ? new Date(deliveryDate).toLocaleDateString('ja-JP') : "",
-              "inspectionDeadline": inspectionDeadline ? new Date(inspectionDeadline).toLocaleDateString('ja-JP') : "",
-              "orderAmountStr": orderAmount ? new Intl.NumberFormat('ja-JP').format(parseFloat(orderAmount)) : "0",
-              "DOC_NO": docNumber
-            }
-          }, templateType);
+            docNumber,
+            driveLink,
+            user,
+            summary,
+            counterparty,
+          }),
+        });
 
-          // Upload to Google Drive
-          const driveLink = await googleDriveService.uploadHtml(html, fileName);
-
-          // Audit Log
-          await query(
-            "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
-            [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
+        if (deptChannel) {
+          const chanSettingsResult = await query(
+            "SELECT value FROM app_settings WHERE key = 'slack_answer_back_channel'"
           );
+          const chanTemplate =
+            chanSettingsResult.rows[0]?.value?.template ||
+            `🆕 *新規依頼受付通知*\n\n<@{{user}}> さんより新規依頼 ({{requestType}}) を受け付けました。\n*課題:* {{issueKey}} ({{summary}})\n*相手方:* {{counterparty}}\n*生成ドキュメント:* {{driveLink}}`;
 
-          // 1. Notify User (DM)
-          const userSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_user'");
-          const userTemplate = userSettingsResult.rows[0]?.value?.template || 
-            `✅ 法務相談・文書作成の受付が完了しました。\n\n*種別:* {{requestType}}\n*課題キー:* {{issueKey}}\n*文書番号:* {{docNumber}}\n*生成ドキュメント:* {{driveLink}}\n\n法務担当者からの連絡をお待ちください。`;
-
-          const replacePlaceholders = (tmpl: string, data: any) => {
-            return tmpl
-              .replace(/{{requestType}}/g, data.requestType || "")
-              .replace(/{{issueKey}}/g, data.issueKey || "")
-              .replace(/{{docNumber}}/g, data.docNumber || "")
-              .replace(/{{driveLink}}/g, data.driveLink || "")
-              .replace(/{{user}}/g, `<@${data.user}>` || "")
-              .replace(/{{summary}}/g, data.summary || "")
-              .replace(/{{counterparty}}/g, data.counterparty || "");
-          };
-
-          const userMsg = replacePlaceholders(userTemplate, {
-            requestType, issueKey: issue.issueKey, docNumber, driveLink, user, summary, counterparty
+          await slackWebClient.chat.postMessage({
+            channel: deptChannel,
+            text: replaceSlackPlaceholders(chanTemplate, {
+              requestType,
+              issueKey: issue.issueKey,
+              docNumber,
+              driveLink,
+              user,
+              summary,
+              counterparty,
+            }),
           });
-
-          await client.chat.postMessage({
-            channel: user,
-            text: userMsg
-          });
-
-          // 2. Notify Department Channel (if configured)
-          if (deptChannel) {
-            const chanSettingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_answer_back_channel'");
-            const chanTemplate = chanSettingsResult.rows[0]?.value?.template || 
-              `🆕 *新規依頼受付通知*\n\n<@{{user}}> さんより新規依頼 ({{requestType}}) を受け付けました。\n*課題:* {{issueKey}} ({{summary}})\n*相手方:* {{counterparty}}\n*生成ドキュメント:* {{driveLink}}`;
-
-            const chanMsg = replacePlaceholders(chanTemplate, {
-              requestType, issueKey: issue.issueKey, docNumber, driveLink, user, summary, counterparty
-            });
-
-            await client.chat.postMessage({
-              channel: deptChannel,
-              text: chanMsg
-            });
-          }
-        } catch (error) {
-          console.error("Error handling modal submission background process:", error);
-          // Try to let user know it failed
-          try {
-             await client.chat.postMessage({
-               channel: user,
-               text: `⚠️ 依頼の処理中にエラーが発生しました。法務担当者へ直接お問い合わせください。\n内容: ${String(error)}`
-             });
-          } catch (e) {}
         }
-      })();
-    });
+      } catch (e) {
+        console.warn("Slack notification failed (non-fatal):", e);
+      }
+    }
 
-    console.log("🚀 Slack Bolt app initialized with LegalBridge handlers");
+    return { issueKey: issue.issueKey, docNumber, driveLink };
   }
 
-  // API Routes
-  // Note: Slack Receiver is already mounted above
+  // Internal API: called from the GAS Slack gateway after view_submission.
+  app.post("/api/internal/slack/legal-request", express.json(), async (req, res) => {
+    try {
+      const input = req.body as LegalRequestSubmission;
+      if (!input || !input.slack_user_id || !input.summary || !input.request_type) {
+        res.status(400).json({
+          ok: false,
+          error: "missing required fields (slack_user_id, summary, request_type)",
+        });
+        return;
+      }
+      const result = await processLegalRequestSubmission(input);
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      console.error("Legal-request intake failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
 
-  // Error handling for Slack
-  if (slackApp) {
-    slackApp.error(async (error) => {
-      console.error("Slack Bolt Error:", error);
-    });
-  }
+  // Search API: GAS calls this to power the /法務検索 slash command.
+  app.get("/api/search/issues", async (req, res) => {
+    const keyword = String(req.query.query || "").trim();
+    if (!keyword) {
+      res.json({ legalRequests: [], vendors: [] });
+      return;
+    }
+    try {
+      const lr = await query(
+        `SELECT backlog_issue_key, summary, counterparty, request_type
+           FROM legal_requests
+          WHERE summary ILIKE $1
+             OR counterparty ILIKE $1
+             OR backlog_issue_key ILIKE $1
+             OR request_type ILIKE $1
+          ORDER BY created_at DESC LIMIT 8`,
+        [`%${keyword}%`]
+      );
+      const vendors = await query(
+        "SELECT vendor_code, vendor_name, trade_name FROM vendors WHERE vendor_name ILIKE $1 OR vendor_code ILIKE $1 OR trade_name ILIKE $1 LIMIT 5",
+        [`%${keyword}%`]
+      );
+      res.json({ legalRequests: lr.rows, vendors: vendors.rows });
+    } catch (error) {
+      console.error("Search failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
 
   app.post("/api/webhooks/backlog", express.json(), async (req, res) => {
     // Section 2-2: Webhook Implementation
@@ -699,7 +408,40 @@ ${details}
     
     try {
       if (event.type === 1) { // Issue Created
-        // Logic for auto-processing
+        // When Backlog notifies us that a new issue has been created we
+        // mark the matching legal_requests row's workflow as "受付済み"
+        // so that the admin UI dashboard reflects that the request has
+        // moved past the GAS-initiated intake stage.
+        //
+        // Future enhancement: this is also the natural place to trigger
+        // automatic document generation for issue types that have a
+        // deterministic blueprint (e.g. NDA, standard purchase orders).
+        // We deliberately keep that flow disabled for now so manual
+        // review in the admin UI remains the source of truth.
+        try {
+          if (event.project?.projectKey && event.content?.key_id) {
+            const issueKey = `${event.project.projectKey}-${event.content.key_id}`;
+            const lr = await query(
+              "SELECT id FROM legal_requests WHERE backlog_issue_key = $1",
+              [issueKey]
+            );
+            if (lr.rowCount && lr.rowCount > 0) {
+              await query(
+                `UPDATE issue_workflows
+                    SET current_status_name = $1
+                  WHERE backlog_issue_key = $2`,
+                ["受付済み", issueKey]
+              );
+              console.log(`✅ Marked workflow as 受付済み for ${issueKey}`);
+            } else {
+              console.log(
+                `ℹ️ Backlog issue ${issueKey} created externally (no matching legal_requests row); skipping workflow update.`
+              );
+            }
+          }
+        } catch (e) {
+          console.warn("Failed to update workflow on issue-created webhook:", e);
+        }
       } else if (event.type === 2) { // Issue Updated
         const issueKey = `${event.project.projectKey}-${event.content.key_id}`;
         const newStatus = event.content.status.name;
@@ -740,13 +482,13 @@ ${details}
 
   app.get("/api/status", (req, res) => {
     res.json({
-      status: slackApp ? "active" : "degraded",
-      slackReady: !!slackApp,
+      status: slackWebClient ? "active" : "degraded",
+      slackReady: !!slackWebClient,
       backlogReady: !!(process.env.BACKLOG_API_KEY && process.env.BACKLOG_HOST),
       backlogHost: process.env.BACKLOG_HOST || null,
       backlogProjectKey: process.env.BACKLOG_PROJECT_KEY || null,
       updatedAt: new Date().toISOString(),
-      warnings: !slackApp ? ["Slack credentials missing"] : [],
+      warnings: !slackWebClient ? ["Slack credentials missing"] : [],
     });
   });
 
@@ -860,7 +602,7 @@ ${details}
       );
 
       for (const item of overdueDeliveries.rows) {
-        if (slackApp) {
+        if (slackWebClient) {
           const mention = item.staff_slack_id ? `<@${item.staff_slack_id}> ` : "";
           const targetChannel = item.slack_channel_id || process.env.SLACK_NOTIFY_CHANNEL || "general";
           
@@ -875,7 +617,7 @@ ${details}
             .replace(/{{counterparty}}/g, item.counterparty || "")
             .replace(/{{deadline}}/g, new Date(item.inspection_deadline).toLocaleDateString("ja-JP"));
           
-          await slackApp.client.chat.postMessage({
+          await slackWebClient.chat.postMessage({
             channel: targetChannel,
             text: message
           });
@@ -1684,7 +1426,7 @@ ${details}
       }
 
       // Notify Slack about bulk completion with delivery instructions
-      if (slackApp && result.success && (mode === "publishing" || mode === "generic")) {
+      if (slackWebClient && result.success && (mode === "publishing" || mode === "generic")) {
         const channelId = process.env.SLACK_CHANNEL_ID || "C0123456789"; 
         
         const settingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_bulk_import_done'");
@@ -1693,7 +1435,7 @@ ${details}
 
         const msg = template.replace(/{{processedCount}}/g, String(result.processedCount));
 
-        await slackApp.client.chat.postMessage({
+        await slackWebClient.chat.postMessage({
           channel: channelId,
           text: msg,
         });
@@ -2050,7 +1792,7 @@ ${details}
       }
 
       // 5. Notify via Slack
-      if (slackApp) {
+      if (slackWebClient) {
         const settingsResult = await query("SELECT value FROM app_settings WHERE key = 'slack_document_generated'");
         const template = settingsResult.rows[0]?.value?.template || 
           `📄 *ドキュメントが作成されました*\n\n*課題:* {{issueKey}} ({{summary}})\n*タイプ:* {{type}}\n*リンク:* {{link}}`;
@@ -2065,7 +1807,7 @@ ${details}
         const slackIdMatch = issue.description.match(/<@([A-Z0-9]+)>/);
         const targetChannel = slackIdMatch ? slackIdMatch[1] : (process.env.SLACK_NOTIFY_CHANNEL || "general");
 
-        await slackApp.client.chat.postMessage({
+        await slackWebClient.chat.postMessage({
           channel: targetChannel,
           text: message
         });
