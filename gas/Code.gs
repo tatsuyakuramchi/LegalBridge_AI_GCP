@@ -539,3 +539,29 @@ function verifySlackSignature(_e) {
   // Implementation deferred — see doPost comment.
   return true;
 }
+
+// -----------------------------------------------------------------------
+//  Warm-up trigger
+//
+//  Slack enforces a hard 3-second deadline on every slash-command and
+//  interactivity request. A cold Apps Script V8 runtime can take 2–5
+//  seconds to spin up, which is enough to blow that budget and cause
+//  Slack to surface "アプリが応答しなかったため、…は失敗しました".
+//
+//  To keep the runtime hot, install a time-driven trigger that calls
+//  `keepWarm` every minute (Apps Script Editor → Triggers → Add trigger
+//  → Function: keepWarm, Event source: Time-driven, Type: Minutes timer,
+//  Interval: Every minute). The body is a no-op — just touching the
+//  runtime keeps the V8 instance resident.
+//
+//  Apps Script's per-day execution quota is generous (~6 hours of CPU
+//  for consumer accounts, ~6 hours/day for Workspace), so a 1-minute
+//  no-op trigger is well within limits.
+// -----------------------------------------------------------------------
+
+function keepWarm() {
+  // Intentionally minimal: returning a small string is enough to exercise
+  // the V8 runtime and reset Apps Script's idle timer.
+  return 'ok';
+}
+

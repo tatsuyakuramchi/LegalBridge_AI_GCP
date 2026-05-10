@@ -99,6 +99,37 @@ are called by GAS only. If you want to lock them down further, you can:
   attach an identity token to the `UrlFetchApp` request, **or**
 - Add a shared secret header that `Code.gs` sends and `server.ts` checks.
 
+## 6. Keep the runtime warm (REQUIRED for Slack)
+
+Slack enforces a **3-second hard timeout** on every slash command and
+interactivity request. A cold Apps Script runtime takes 2–5 seconds to
+spin up, which blows that budget and produces:
+
+> アプリが応答しなかったため、*/法務依頼* は失敗しました。
+
+To prevent this, install a 1-minute time-driven trigger that calls the
+no-op `keepWarm()` function defined in `Code.gs`:
+
+1. Apps Script Editor → left sidebar **「トリガー (Triggers)」**
+2. Bottom-right **「+ トリガーを追加」**
+3. Configure:
+   | Field | Value |
+   | --- | --- |
+   | 実行する関数 | `keepWarm` |
+   | デプロイ時に実行 | `Head` |
+   | イベントのソース | `時間主導型` |
+   | 時間ベースのトリガーのタイプ | `分タイマー` |
+   | 時間の間隔 | **`1 分おき`** |
+4. **保存**
+
+After saving, the runtime will be exercised once per minute, eliminating
+cold-start latency. You can confirm it's running via Apps Script's
+**「実行数 (Executions)」** sidebar — a `keepWarm` row should appear every
+minute with `Status: 完了` and `Duration: <100 ms`.
+
+Apps Script's daily execution quota easily covers this (60 invocations/hour
+× ~50 ms each is well under the 6-hour CPU budget).
+
 ## Signature verification (optional, deferred)
 
 Slack signs every request with `v0:<timestamp>:<raw_body>` using
@@ -127,11 +158,14 @@ Watch logs in Apps Script via **Executions** in the left sidebar.
 
 ## Troubleshooting
 
-- **Slash command times out (`This app didn't respond`)**: GAS cold-start
-  exceeded Slack's 3-second budget. Re-running usually succeeds. If it
-  persists, check **Executions** for a stuck execution and shorten the
-  ack path (`runSearchAndReply_`, `forwardLegalRequest_` already run after
-  `jsonResponse_`).
+- **「アプリが応答しなかったため、…は失敗しました」 / `This app didn't respond`**:
+  GAS cold-start exceeded Slack's 3-second budget. **Make sure the
+  `keepWarm` 1-minute trigger is installed (see § 6 above)** — without
+  it the first hit after a few minutes of idle will time out almost
+  every time. Confirm via Apps Script's **「実行数 (Executions)」** that
+  `keepWarm` is running every minute. If it stops or shows errors, the
+  trigger may have been disabled (e.g. by an unexpected exception);
+  re-add it.
 - **`401 invalid_auth` from Slack**: bad/rotated `SLACK_BOT_TOKEN`. Update
   the script property — no redeploy needed.
 - **`HTTP 4xx` from Cloud Run**: `CLOUD_RUN_BASE_URL` typo, or Cloud Run
