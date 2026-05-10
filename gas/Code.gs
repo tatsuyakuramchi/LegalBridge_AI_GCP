@@ -345,20 +345,55 @@ function parseLegalRequestSubmission_(payload) {
 function getLegalRequestModal_(selectedType) {
   selectedType = selectedType || 'legal_consult';
 
-  const typeLabels = {
-    legal_consult: '法務相談 (legal_consult)',
-    nda: '秘密保持契約 (nda)',
-    outsourcing: '業務委託基本契約 (outsourcing)',
-    license_master: 'ライセンス基本契約 (license_master)',
-    lic_individual: '個別利用許諾条件 (lic_individual)',
-    purchase_order: '発注書 (purchase_order)',
-    delivery_inspec: '納品 / 検収書 (delivery_inspec)',
-    license_calc: '利用許諾計算リクエスト (license_calc)',
-    sales_master: '売買基本契約 (sales_master)',
-  };
+  // Three top-level intake categories. Each category groups one or more
+  // concrete request types so the user picks "what kind of work do I
+  // want" first ("法務相談 / 文書作成 / 支払書類作成") and then the
+  // specific document inside that category. The leaf `value` is what
+  // gets sent to Cloud Run as `request_type`, so server.ts processing
+  // (template selection, Backlog issue type, DB writes) stays unchanged.
+  const REQUEST_GROUPS = [
+    {
+      label: '法務相談',
+      options: [{ value: 'legal_consult', text: '法務相談' }],
+    },
+    {
+      label: '文書作成',
+      options: [
+        { value: 'nda', text: '秘密保持契約 (NDA)' },
+        { value: 'outsourcing', text: '業務委託基本契約' },
+        { value: 'license_master', text: 'ライセンス基本契約' },
+        { value: 'lic_individual', text: '個別利用許諾条件' },
+        { value: 'sales_master', text: '売買基本契約' },
+        { value: 'purchase_order', text: '発注書' },
+      ],
+    },
+    {
+      label: '支払書類作成',
+      options: [
+        { value: 'delivery_inspec', text: '納品 / 検収書' },
+        { value: 'license_calc', text: '利用許諾計算書' },
+      ],
+    },
+  ];
 
-  const requestTypeOptions = Object.keys(typeLabels).map(function (key) {
-    return { text: { type: 'plain_text', text: typeLabels[key] }, value: key };
+  // Lookup so we can build the `initial_option` for the select.
+  let initialLabel = '法務相談';
+  REQUEST_GROUPS.forEach(function (g) {
+    g.options.forEach(function (o) {
+      if (o.value === selectedType) initialLabel = o.text;
+    });
+  });
+
+  const optionGroups = REQUEST_GROUPS.map(function (g) {
+    return {
+      label: { type: 'plain_text', text: g.label },
+      options: g.options.map(function (o) {
+        return {
+          text: { type: 'plain_text', text: o.text },
+          value: o.value,
+        };
+      }),
+    };
   });
 
   const blocks = [
@@ -375,20 +410,17 @@ function getLegalRequestModal_(selectedType) {
     {
       type: 'input',
       block_id: 'request_type_block',
-      label: { type: 'plain_text', text: '依頼種別 (Request Type)' },
+      label: { type: 'plain_text', text: '依頼種別' },
       dispatch_action: true,
       element: {
         type: 'static_select',
         action_id: 'request_type_input',
         initial_option: {
-          text: {
-            type: 'plain_text',
-            text: typeLabels[selectedType] || typeLabels.legal_consult,
-          },
+          text: { type: 'plain_text', text: initialLabel },
           value: selectedType,
         },
         placeholder: { type: 'plain_text', text: '種別を選択してください' },
-        options: requestTypeOptions,
+        option_groups: optionGroups,
       },
     },
     {
