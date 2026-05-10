@@ -82,3 +82,24 @@ steps:
       - --timeout
       - "300"
       - --quiet
+
+  # 4. Force the freshly deployed revision to take 100% of traffic.
+  #
+  #    `gcloud run deploy` only auto-promotes when the service is currently
+  #    set to "always serve LATEST". On this service, traffic was historically
+  #    pinned to a specific revision (00015-mvl), so without this step new
+  #    revisions stayed at 0% and the deploy looked successful but the live
+  #    URL kept serving the old code. Running update-traffic --to-latest
+  #    after every successful deploy makes the pipeline self-healing.
+  - id: promote
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - "${_SERVICE_NAME}"
+      - --region
+      - "${_REGION}"
+      - --to-latest
+      - --quiet
