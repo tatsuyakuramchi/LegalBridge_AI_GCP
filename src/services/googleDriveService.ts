@@ -1,13 +1,38 @@
 import { google } from "googleapis";
 import { Readable } from "stream";
+import * as fs from "node:fs";
 
 export class GoogleDriveService {
   private drive;
 
   constructor() {
-    this.drive = google.drive({ 
-      version: "v3", 
+    // Authentication priority:
+    //   1. GOOGLE_SERVICE_ACCOUNT_KEY_PATH — explicit path to a JSON key
+    //      file (typically mounted from Secret Manager at
+    //      /secrets/gws-service-account.json). Used when the Cloud Run
+    //      runtime SA does not have Drive access and a dedicated
+    //      Workspace-bound SA is provisioned for Drive operations.
+    //   2. GOOGLE_APPLICATION_CREDENTIALS — standard ADC variable,
+    //      respected automatically by GoogleAuth.
+    //   3. Cloud Run / GCE metadata server — the runtime SA.
+    //
+    // We only fall through to (2)/(3) when the path in (1) actually
+    // exists on disk. Otherwise googleapis tries to open the missing
+    // file and raises ENOENT on every Drive call, masking the real
+    // upload failure. ADC is always a usable fallback (with whatever
+    // permissions the runtime SA has).
+    const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
+    const keyFileUsable = !!keyFile && fs.existsSync(keyFile);
+    if (keyFile && !keyFileUsable) {
+      console.warn(
+        `[GoogleDriveService] GOOGLE_SERVICE_ACCOUNT_KEY_PATH=${keyFile} ` +
+          `is set but the file is missing on disk. Falling back to ADC.`
+      );
+    }
+    this.drive = google.drive({
+      version: "v3",
       auth: new google.auth.GoogleAuth({
+        ...(keyFileUsable ? { keyFile } : {}),
         scopes: ["https://www.googleapis.com/auth/drive.file"],
       })
     });
@@ -33,6 +58,12 @@ export class GoogleDriveService {
         requestBody: fileMetadata,
         media: media,
         fields: "id, webViewLink",
+        // Required when GOOGLE_DRIVE_FOLDER_ID points at a folder inside a
+        // Shared Drive. Service accounts have zero personal-Drive quota,
+        // so writing to "My Drive" always 403s with
+        // `The user's Drive storage quota has been exceeded.` Setting
+        // supportsAllDrives + a Shared-Drive folder id sidesteps that.
+        supportsAllDrives: true,
       });
 
       return response.data.webViewLink || "";
@@ -62,6 +93,7 @@ export class GoogleDriveService {
         requestBody: fileMetadata,
         media: media,
         fields: "id, webViewLink",
+        supportsAllDrives: true,
       });
 
       return response.data.webViewLink || "";
@@ -89,6 +121,7 @@ export class GoogleDriveService {
         requestBody: fileMetadata,
         media: media,
         fields: "id, webViewLink",
+        supportsAllDrives: true,
       });
 
       return response.data.webViewLink || "";
@@ -98,3 +131,4 @@ export class GoogleDriveService {
     }
   }
 }
+

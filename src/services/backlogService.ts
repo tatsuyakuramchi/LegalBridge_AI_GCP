@@ -41,11 +41,13 @@ export class BacklogService {
       return { issueKey: `MOCK-${Math.floor(Math.random() * 1000)}` };
     }
 
+    // Declared outside the try so the catch handler can include the
+    // exact request body in the error log when Backlog 4xx's.
+    const body = new URLSearchParams();
     try {
       // Get Project ID (cached)
       const projectId = await this.getProjectId();
 
-      const body = new URLSearchParams();
       body.append("projectId", projectId.toString());
       body.append("summary", params.summary);
       body.append("description", params.description);
@@ -64,35 +66,105 @@ export class BacklogService {
         docNumber: process.env.BACKLOG_FIELD_DOC_NUMBER || "文書番号",
       };
 
-      // Add custom fields if any
+      // Backlog's native top-level POST parameters that may also be
+      // passed straight through (e.g. assigneeId, categoryId[], dueDate).
+      // Anything not in this allow-list and not a recognised customField
+      // gets logged-and-skipped rather than appended raw, otherwise
+      // Backlog rejects the whole request with
+      //   error.unknownParameter : <key>
+      const NATIVE_FIELDS = new Set([
+        "parentIssueId",
+        "startDate",
+        "dueDate",
+        "estimatedHours",
+        "actualHours",
+        "categoryId",
+        "categoryId[]",
+        "versionId",
+        "versionId[]",
+        "milestoneId",
+        "milestoneId[]",
+        "assigneeId",
+        "notifiedUserId",
+        "notifiedUserId[]",
+        "attachmentId",
+        "attachmentId[]",
+        "resolutionId",
+        "statusId",
+      ]);
+
+      // Custom-field lookup is opportunistic — if env supplies a numeric
+      // field id directly (e.g. BACKLOG_FIELD_COUNTERPARTY=622801) we use
+      // it without needing the API round-trip, which also means we stay
+      // resilient when getCustomFields() returns a stale or empty list.
       const customFields = await this.getCustomFields();
-      
-      Object.keys(params).forEach(key => {
-        if (!["summary", "description", "issueTypeId", "priorityId"].includes(key)) {
-          const mappingValue = fieldMapping[key];
-          
-          // Try to find the field by mapping (either ID or Name)
-          const field = customFields.find(f => 
-            f.id.toString() === mappingValue || 
+
+      Object.keys(params).forEach((key) => {
+        if (["summary", "description", "issueTypeId", "priorityId"].includes(key)) return;
+
+        const mappingValue = fieldMapping[key];
+        const value = params[key];
+
+        // 1. Env-supplied numeric custom-field id wins.
+        if (mappingValue && /^\d+$/.test(mappingValue)) {
+          body.append(`customField_${mappingValue}`, value);
+          return;
+        }
+
+        // 2. Fall back to discovering the field by name via /customFields.
+        const field = customFields.find(
+          (f: any) =>
+            f.id.toString() === mappingValue ||
             f.name === mappingValue ||
             f.name === key
-          );
-
-          if (field) {
-            body.append(`customField_${field.id}`, params[key]);
-          } else if (key.startsWith('customField_')) {
-             body.append(key, params[key]);
-          } else {
-             // Fallback for native backlog fields or direct append
-             body.append(key, params[key]);
-          }
+        );
+        if (field) {
+          body.append(`customField_${field.id}`, value);
+          return;
         }
+
+        // 3. Already-shaped customField_<id> keys pass through verbatim.
+        if (key.startsWith("customField_")) {
+          body.append(key, value);
+          return;
+        }
+
+        // 4. Native Backlog top-level fields pass through.
+        if (NATIVE_FIELDS.has(key)) {
+          body.append(key, value);
+          return;
+        }
+
+        // 5. Anything else gets dropped with a warning so the request
+        //    does not 400 on an unknown parameter, but operators can
+        //    spot mapping gaps via Cloud Logging.
+        console.warn(`[Backlog] Skipping unmapped parameter "${key}" (no env mapping, no matching customField).`);
       });
 
       const response = await axios.post(this.getUrl("/issues"), body);
       return response.data;
-    } catch (error) {
-      console.error("Error creating Backlog issue:", error);
+    } catch (error: any) {
+      // Backlog returns a JSON body that pinpoints why a 400 was raised
+      // (e.g. `errors: [{ message: "..." , code: 7, moreInfo: "" }]`).
+      // Axios buries that in `error.response.data`, so log it explicitly
+      // and re-throw with the actionable text so the Slack DM the user
+      // receives carries the real reason instead of a generic
+      // "Request failed with status code 400".
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      console.error(
+        `Error creating Backlog issue (status=${status}):`,
+        typeof data === "object" ? JSON.stringify(data) : data,
+        "\n--- request body ---\n",
+        body.toString()
+      );
+
+      if (data?.errors && Array.isArray(data.errors)) {
+        const reasons = data.errors
+          .map((e: any) => `${e.message}${e.moreInfo ? ` (${e.moreInfo})` : ""}`)
+          .join("; ");
+        throw new Error(`Backlog ${status}: ${reasons}`);
+      }
       throw error;
     }
   }

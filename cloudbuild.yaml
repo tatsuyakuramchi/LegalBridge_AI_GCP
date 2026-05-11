@@ -1,0 +1,105 @@
+# Cloud Build pipeline for LegalBridge Admin UI
+#
+# Triggered by: pushes to a configured branch (set up in Cloud Build → Triggers).
+# Pipeline:
+#   1. Build a linux/amd64 Docker image, tag with the short commit SHA + "latest".
+#   2. Push both tags to Artifact Registry.
+#   3. Deploy the new image to Cloud Run, preserving existing env vars and secrets.
+#
+# Substitutions (override per-trigger if needed):
+#   _REGION       — Cloud Run / Artifact Registry region
+#   _REPO         — Artifact Registry repository name
+#   _SERVICE_NAME — Cloud Run service name
+
+substitutions:
+  _REGION: asia-northeast1
+  _REPO: legalbridge
+  _SERVICE_NAME: legalbridge-admin-ui
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+images:
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+
+steps:
+  # 1. Build the image (linux/amd64 — matches Cloud Run runtime).
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform
+      - linux/amd64
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+      - .
+
+  # 2. Push both tags. (Cloud Build auto-pushes images listed under `images:`,
+  #    but doing it explicitly here gives clearer logs and ordering.)
+  - id: push-sha
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+
+  - id: push-latest
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+
+  # 3. Deploy to Cloud Run. We do NOT pass --set-env-vars here so that
+  #    Cloud Run keeps the existing env vars and secret bindings (DATABASE_URL,
+  #    BACKLOG_API_KEY, SLACK_*, GEMINI_API_KEY, etc.) untouched.
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - "${_SERVICE_NAME}"
+      - --image
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - --region
+      - "${_REGION}"
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --port
+      - "8080"
+      - --memory
+      - 512Mi
+      - --cpu
+      - "1"
+      - --min-instances
+      - "0"
+      - --max-instances
+      - "5"
+      - --timeout
+      - "300"
+      - --quiet
+
+  # 4. Force the freshly deployed revision to take 100% of traffic.
+  #
+  #    `gcloud run deploy` only auto-promotes when the service is currently
+  #    set to "always serve LATEST". On this service, traffic was historically
+  #    pinned to a specific revision (00015-mvl), so without this step new
+  #    revisions stayed at 0% and the deploy looked successful but the live
+  #    URL kept serving the old code. Running update-traffic --to-latest
+  #    after every successful deploy makes the pipeline self-healing.
+  - id: promote
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - "${_SERVICE_NAME}"
+      - --region
+      - "${_REGION}"
+      - --to-latest
+      - --quiet
