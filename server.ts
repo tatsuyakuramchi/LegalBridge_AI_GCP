@@ -354,22 +354,53 @@ ${details}
   }
 
   // Internal API: called from the GAS Slack gateway after view_submission.
-  app.post("/api/internal/slack/legal-request", express.json(), async (req, res) => {
-    try {
-      const input = req.body as LegalRequestSubmission;
-      if (!input || !input.slack_user_id || !input.summary || !input.request_type) {
-        res.status(400).json({
-          ok: false,
-          error: "missing required fields (slack_user_id, summary, request_type)",
-        });
-        return;
-      }
-      const result = await processLegalRequestSubmission(input);
-      res.json({ ok: true, ...result });
-    } catch (error) {
-      console.error("Legal-request intake failed:", error);
-      res.status(500).json({ ok: false, error: String(error) });
+  //
+  // Slack enforces a hard 3-second deadline on view_submission acks. GAS
+  // calls UrlFetchApp synchronously, so the whole chain
+  //   Slack → GAS → Cloud Run → GAS → Slack
+  // has to finish inside that window or Slack surfaces
+  // "アプリが応答しなかった" to the user. The actual processing here
+  // (Backlog API + DB writes + Drive upload + Slack DM) takes 5–7
+  // seconds, so we ack the GAS request immediately with 202 and let
+  // the heavy work run in the background. If the background job
+  // throws we DM the requesting user so the failure is still visible.
+  app.post("/api/internal/slack/legal-request", express.json(), (req, res) => {
+    const input = req.body as LegalRequestSubmission;
+    if (!input || !input.slack_user_id || !input.summary || !input.request_type) {
+      res.status(400).json({
+        ok: false,
+        error: "missing required fields (slack_user_id, summary, request_type)",
+      });
+      return;
     }
+
+    // Ack immediately so GAS's UrlFetchApp returns before Slack's 3s
+    // timeout. Cloud Run keeps the container CPU active for a short
+    // while after the response so the .catch() below still runs to
+    // completion in practice (typical processing ~7s).
+    res.status(202).json({ ok: true, accepted: true });
+
+    processLegalRequestSubmission(input)
+      .then((result) => {
+        console.log(
+          `Legal-request intake completed: issueKey=${result.issueKey} docNumber=${result.docNumber}`
+        );
+      })
+      .catch(async (err) => {
+        console.error("Legal-request intake failed (async):", err);
+        if (slackWebClient && input.slack_user_id) {
+          try {
+            await slackWebClient.chat.postMessage({
+              channel: input.slack_user_id,
+              text:
+                `⚠️ 法務依頼の処理中にエラーが発生しました。法務担当者へ直接ご連絡ください。\n\n` +
+                `*エラー詳細:*\n\`\`\`\n${String(err).slice(0, 1500)}\n\`\`\``,
+            });
+          } catch (slackErr) {
+            console.warn("Failed to send error DM:", slackErr);
+          }
+        }
+      });
   });
 
   // Search API: GAS calls this to power the /法務検索 slash command.
