@@ -11,7 +11,8 @@ endpoints:
 | `/法務依頼` slash command | `views.open` directly via Slack Web API |
 | Modal `legal_request_modal` submit | `POST /api/internal/slack/legal-request` |
 | Modal `request_type_input` change | `views.update` directly via Slack Web API |
-| `/法務検索` slash command | `GET /api/search/issues?query=…` |
+| `/法務検索` slash command | opens the search modal directly via Slack Web API |
+| Modal `legal_search_modal` submit | Backlog `/api/v2/issues` + Cloud Run `/api/contract-check/search` IN PARALLEL via `UrlFetchApp.fetchAll` |
 
 This split lets us decommission the `legalbridge-slack-gateway` Cloud Run
 service entirely — Slack talks to the GAS web app, GAS talks to the
@@ -37,50 +38,25 @@ add:
 | Key | Value | Used by |
 | --- | --- | --- |
 | `SLACK_BOT_TOKEN` | `xoxb-...` (the bot user token of the LegalBridge Slack app — `chat:write`, `commands`, `views:read/write` scopes) | All Slack actions |
-| `CLOUD_RUN_BASE_URL` | `https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app` (no trailing slash) | `/法務依頼` only (POST to internal API) |
+| `CLOUD_RUN_BASE_URL` | `https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app` (no trailing slash) | `/法務依頼` POST + `/法務検索` contract-status lookup |
+| `LB_PORTAL_SECRET` | Shared secret used by `X-LB-PORTAL-SECRET` header on Cloud Run portal endpoints (same value as Contract-Status GAS) | `/法務検索` contract-status lookup |
 | `BACKLOG_HOST` | `arclight.backlog.com` | `/法務検索` direct Backlog calls |
 | `BACKLOG_API_KEY` | The Backlog personal API key | `/法務検索` direct Backlog calls |
 | `BACKLOG_PROJECT_KEY` | `LEGAL` | `/法務検索` direct Backlog calls |
-| `CONTRACT_STATUS_WEBAPP_URL` | `https://script.google.com/macros/s/AKfy.../exec` (Contract-Status GAS deployment URL) | `/法務検索` one-stop contract lookup |
 | `SLACK_SIGNING_SECRET` | *(optional, currently unused — see "Signature verification" below)* | reserved |
 
-> **Contract-Status integration**: the `/法務検索` modal fans out to
-> both Backlog (issues) and a separate Apps Script project that owns
-> the取引先契約状況確認 UI. That project must expose a JSON endpoint
-> alongside its existing HTML page. Drop the following snippet into
-> its `doGet`:
->
-> ```js
-> function doGet(e) {
->   e = e || {};
->   var params = e.parameter || {};
->   if (params.api === 'searchContractStatus') {
->     var payload = {
->       counterpartyName: params.counterpartyName || '',
->       purposeCode:     params.purposeCode     || '',
->       workName:        params.workName        || '',
->       productName:     params.productName     || '',
->       territory:       params.territory       || '',
->       language:        params.language        || '',
->     };
->     if (params.vendorId) payload.vendorId = Number(params.vendorId);
->     var result;
->     try { result = searchContractStatus(payload); }
->     catch (err) { result = { ok: false, error: String(err) }; }
->     return ContentService
->       .createTextOutput(JSON.stringify(result))
->       .setMimeType(ContentService.MimeType.JSON);
->   }
->   return HtmlService.createTemplateFromFile('index')
->     .evaluate()
->     .setTitle('取引先契約状況確認');
-> }
-> ```
->
-> Deploy the Contract-Status project as a Web App with access set to
-> "Anyone" (or "Anyone within <domain>" if your Workspace policy
-> requires it), then paste the resulting `/exec` URL into the
-> `CONTRACT_STATUS_WEBAPP_URL` script property here.
+> **Architecture note (2026-05)**: contract-status lookups previously hopped
+> through the Contract-Status GAS Web App (`CONTRACT_STATUS_WEBAPP_URL`),
+> which itself proxied to Cloud Run. That double hop routinely pushed
+> `/法務検索` past Slack's 3-second budget (observed: 7.5s end-to-end). The
+> Slack Gateway now calls Cloud Run's `/api/contract-check/search`
+> directly, eliminating one GAS-to-GAS hop. `CONTRACT_STATUS_WEBAPP_URL`
+> is no longer required.
+
+> **Contract-Status integration**: the `/法務検索` modal fans out to both
+> Backlog (issues) and Cloud Run's `/api/contract-check/search` endpoint.
+> The Contract-Status GAS Web App is no longer in the request path — see
+> the architecture note above.
 
 These are read at runtime via `PropertiesService.getScriptProperties()`,
 so you can rotate any token / key without redeploying.

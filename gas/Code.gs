@@ -594,6 +594,12 @@ function queryContractStatusSync_(counterpartyName) {
  * UrlFetchApp.fetchAll. Used by the `/法務検索` view_submission handler
  * to stay inside Slack's 3-second budget.
  *
+ * The contract-status side calls Cloud Run's /api/contract-check/search
+ * DIRECTLY (bypassing the Contract-Status GAS proxy) to eliminate an
+ * extra GAS-to-GAS hop that added 1-2 seconds and routinely pushed the
+ * total over the 3-second budget. Cloud Run is the same service that
+ * Contract-Status GAS used to forward to.
+ *
  * Returns: { backlog: <backlogData|{__error}>, contract: <contractData|{__error}> }
  */
 function querySearchInParallel_(keyword) {
@@ -601,7 +607,8 @@ function querySearchInParallel_(keyword) {
   var host = scriptProperty_('BACKLOG_HOST');
   var apiKey = scriptProperty_('BACKLOG_API_KEY');
   var projectKey = scriptProperty_('BACKLOG_PROJECT_KEY');
-  var contractUrl = scriptProperty_('CONTRACT_STATUS_WEBAPP_URL');
+  var cloudRunUrl = scriptProperty_('CLOUD_RUN_BASE_URL');
+  var portalSecret = scriptProperty_('LB_PORTAL_SECRET');
 
   var backlogConfigError = null;
   var backlogIssuesUrl = null;
@@ -652,20 +659,29 @@ function querySearchInParallel_(keyword) {
     }
   }
 
-  // --- 2. Build Contract-Status request URL ---
+  // --- 2. Build Cloud Run /api/contract-check/search request ---
   var contractConfigError = null;
-  var contractFetchUrl = null;
-  if (!contractUrl) {
+  var contractRequest = null;
+  if (!cloudRunUrl) {
+    contractConfigError = {
+      __error: 'CLOUD_RUN_BASE_URL がスクリプトプロパティに設定されていません。',
+    };
+  } else if (!portalSecret) {
     contractConfigError = {
       __error:
-        'CONTRACT_STATUS_WEBAPP_URL がスクリプトプロパティに設定されていません。',
+        'LB_PORTAL_SECRET がスクリプトプロパティに設定されていません。' +
+        ' Contract-Status GAS で使われているものと同じ値を設定してください。',
     };
   } else {
-    contractFetchUrl =
-      contractUrl +
-      (contractUrl.indexOf('?') >= 0 ? '&' : '?') +
-      'api=searchContractStatus' +
-      '&counterpartyName=' + encodeURIComponent(keyword);
+    var trimmedBase = String(cloudRunUrl).replace(/\/+$/, '');
+    contractRequest = {
+      url: trimmedBase + '/api/contract-check/search',
+      method: 'post',
+      contentType: 'application/json',
+      muteHttpExceptions: true,
+      headers: { 'X-LB-PORTAL-SECRET': portalSecret },
+      payload: JSON.stringify({ counterpartyName: keyword }),
+    };
   }
 
   // --- 3. Run reachable calls in parallel ---
@@ -675,13 +691,8 @@ function querySearchInParallel_(keyword) {
     requests.push({ url: backlogIssuesUrl, method: 'get', muteHttpExceptions: true });
     tags.push('backlog');
   }
-  if (contractFetchUrl) {
-    requests.push({
-      url: contractFetchUrl,
-      method: 'get',
-      muteHttpExceptions: true,
-      followRedirects: true,
-    });
+  if (contractRequest) {
+    requests.push(contractRequest);
     tags.push('contract');
   }
 
@@ -730,11 +741,10 @@ function querySearchInParallel_(keyword) {
       }
     } else if (tags[i] === 'contract') {
       if (code >= 300) {
-        var hint = code === 302
-          ? ' Contract-Status GAS の「アクセスできるユーザー」を「全員」にし、URL末尾が /exec か確認してください。'
-          : ' Web App の公開設定 / URL を確認してください。';
         contractData = {
-          __error: '契約状況 API がエラーを返しました (HTTP ' + code + ').' + hint,
+          __error:
+            'Cloud Run /api/contract-check/search がエラーを返しました (HTTP ' + code + ').' +
+            ' CLOUD_RUN_BASE_URL と LB_PORTAL_SECRET を確認してください。',
         };
         continue;
       }
@@ -742,8 +752,7 @@ function querySearchInParallel_(keyword) {
         contractData = JSON.parse(res.getContentText());
       } catch (parseErr) {
         contractData = {
-          __error:
-            '契約状況 API が JSON を返しませんでした。Contract-Status GAS の doGet を更新してください。',
+          __error: 'Cloud Run /api/contract-check/search が JSON を返しませんでした。',
         };
       }
     }
