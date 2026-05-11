@@ -412,12 +412,12 @@ ${details}
     }
     try {
       const lr = await query(
-        `SELECT backlog_issue_key, summary, counterparty, request_type
+        `SELECT backlog_issue_key, summary, counterparty, contract_type AS request_type
            FROM legal_requests
           WHERE summary ILIKE $1
              OR counterparty ILIKE $1
              OR backlog_issue_key ILIKE $1
-             OR request_type ILIKE $1
+             OR contract_type ILIKE $1
           ORDER BY created_at DESC LIMIT 8`,
         [`%${keyword}%`]
       );
