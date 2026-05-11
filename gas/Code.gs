@@ -68,19 +68,12 @@ function handleSlashCommand_(params) {
   }
 
   if (command === '/法務検索') {
-    const keyword = (params.text || '').trim();
-    if (!keyword) {
-      return jsonResponse_({
-        response_type: 'ephemeral',
-        text: 'キーワードを指定してください。例: `/法務検索 NDA`',
-      });
-    }
-    // Run search asynchronously and DM the result back to the user.
-    runSearchAndReply_(keyword, userId);
-    return jsonResponse_({
-      response_type: 'ephemeral',
-      text: `🔎 *${keyword}* を検索しています… 結果は DM にお送りします。`,
-    });
+    // Open the modal so the user can refine their search inline.
+    // If keyword text was provided alongside the slash command
+    // (`/法務検索 NDA`), pre-fill it as the initial value.
+    var initialKeyword = (params.text || '').trim();
+    openView_(triggerId, getLegalSearchModal_(initialKeyword));
+    return jsonResponse_({ response_type: 'ephemeral', text: '検索フォームを開いています…' });
   }
 
   return jsonResponse_({
@@ -409,6 +402,60 @@ function parseLegalRequestSubmission_(payload) {
 // -----------------------------------------------------------------------
 //  Modal block builders
 // -----------------------------------------------------------------------
+
+/**
+ * Modal for /法務検索. Submitting it dispatches a `view_submission`
+ * with callback_id `legal_search_modal`, which is handled in
+ * handleInteractivity_ and forwarded to runSearchAndReply_.
+ *
+ * @param {string} [initialKeyword] Optional value the user already
+ *   typed alongside the slash command (e.g. `/法務検索 NDA`).
+ */
+function getLegalSearchModal_(initialKeyword) {
+  var keywordElement = {
+    type: 'plain_text_input',
+    action_id: 'keyword_input',
+    placeholder: {
+      type: 'plain_text',
+      text: '件名、取引先名、Backlog キー、依頼種別など',
+    },
+  };
+  if (initialKeyword) {
+    keywordElement.initial_value = initialKeyword;
+  }
+
+  return {
+    type: 'modal',
+    callback_id: 'legal_search_modal',
+    title: { type: 'plain_text', text: '法務検索' },
+    submit: { type: 'plain_text', text: '検索' },
+    close: { type: 'plain_text', text: '閉じる' },
+    blocks: [
+      {
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: 'キーワードを入力して *検索* を押してください。結果は DM に届きます。',
+        },
+      },
+      {
+        type: 'input',
+        block_id: 'keyword_block',
+        label: { type: 'plain_text', text: '検索キーワード' },
+        element: keywordElement,
+      },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: '🔎 過去の法務依頼 (legal_requests) と取引先マスター (vendors) を横断検索します。部分一致 / 大文字小文字を区別しません。',
+          },
+        ],
+      },
+    ],
+  };
+}
 
 function getLegalRequestModal_(selectedType) {
   selectedType = selectedType || 'legal_consult';
