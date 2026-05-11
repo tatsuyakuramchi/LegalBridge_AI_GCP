@@ -114,8 +114,18 @@ function handleInteractivity_(payload) {
 
     if (callbackId === 'legal_request_modal') {
       const submission = parseLegalRequestSubmission_(payload);
-      // Forward to Cloud Run asynchronously. We MUST ack within 3 seconds
-      // so we kick the call off and return an empty 200 immediately.
+
+      // 1. Send an immediate acknowledgement DM to the submitter so they
+      //    have visible feedback the moment the modal closes — even if
+      //    Slack shows a transient "didn't respond" toast because of a
+      //    GAS / Cloud Run cold start. The real completion DM (with the
+      //    Backlog issue key + Drive link) is dispatched from Cloud Run
+      //    a few seconds later by processLegalRequestSubmission().
+      sendIntakeAckDm_(submission);
+
+      // 2. Forward to Cloud Run. The endpoint now returns 202 in <100ms
+      //    and processes asynchronously, so this call no longer blocks
+      //    the Slack ack window.
       forwardLegalRequest_(submission);
       return jsonResponse_({ response_action: 'clear' });
     }
@@ -291,6 +301,64 @@ function notifyUserOfError_(userId, message) {
   slackPost_('chat.postMessage', {
     channel: userId,
     text: `⚠️ ${message}`,
+  });
+}
+
+/**
+ * Posts an immediate "we got your submission" DM to the requester right
+ * after the modal closes. This makes the intake feel responsive even
+ * though the heavy work (Backlog issue, DB writes, Drive upload,
+ * completion DM) still runs in the background on Cloud Run.
+ */
+function sendIntakeAckDm_(submission) {
+  if (!submission || !submission.slack_user_id) return;
+
+  const REQUEST_TYPE_LABELS = {
+    legal_consult: '法務相談',
+    nda: '秘密保持契約 (NDA)',
+    outsourcing: '業務委託基本契約',
+    license_master: 'ライセンス基本契約',
+    lic_individual: '個別利用許諾条件',
+    sales_master: '売買基本契約',
+    purchase_order: '発注書',
+    delivery_inspec: '納品 / 検収書',
+    license_calc: '利用許諾計算書',
+  };
+  var typeLabel = REQUEST_TYPE_LABELS[submission.request_type] || submission.request_type;
+
+  var fields = [
+    { type: 'mrkdwn', text: '*種別*\n' + typeLabel },
+    { type: 'mrkdwn', text: '*件名*\n' + (submission.summary || '(未入力)') },
+  ];
+  if (submission.counterparty) {
+    fields.push({ type: 'mrkdwn', text: '*相手方*\n' + submission.counterparty });
+  }
+  if (submission.deadline) {
+    fields.push({ type: 'mrkdwn', text: '*希望納期*\n' + submission.deadline });
+  }
+  if (submission.dept) {
+    fields.push({ type: 'mrkdwn', text: '*依頼部署*\n' + submission.dept });
+  }
+
+  slackPost_('chat.postMessage', {
+    channel: submission.slack_user_id,
+    text: '📥 法務依頼を受け付けました。処理結果は完了次第このスレッドに届きます。',
+    blocks: [
+      {
+        type: 'header',
+        text: { type: 'plain_text', text: '📥 法務依頼を受け付けました', emoji: true },
+      },
+      { type: 'section', fields: fields },
+      {
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: '🔄 Backlog 課題作成・文書生成を処理中です。完了次第、課題キーと生成ドキュメントのリンクを別 DM でお送りします（通常 5〜10 秒）。',
+          },
+        ],
+      },
+    ],
   });
 }
 
