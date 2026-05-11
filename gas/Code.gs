@@ -158,20 +158,20 @@ function handleInteractivity_(payload) {
         });
       }
 
-      // One-stop search: fan out to both data sources synchronously
-      // (UrlFetchApp is sync, but both are small JSON round trips so
-      // the combined latency stays inside Slack's 3-second budget,
-      // typically ~300–600 ms total when warm).
+      // One-stop search: fan out to both data sources IN PARALLEL via
+      // UrlFetchApp.fetchAll so the total wait is max(backlog, contract)
+      // rather than the sum. This keeps us inside Slack's 3-second
+      // view_submission budget even when Contract-Status is mid-warm.
       //
-      //   1. Backlog issues (this hub's own UrlFetchApp call)
-      //   2. Contract status (separate GAS Web App, see
-      //      queryContractStatusSync_ docs)
+      //   1. Backlog issues
+      //   2. Contract status (separate GAS Web App)
       //
       // Either side may return { __error } — we render them
       // independently inside the results modal so a partial failure
       // doesn't hide the other section.
-      const backlogData = querySearchSync_(keyword);
-      const contractData = queryContractStatusSync_(keyword);
+      const parallelResults = querySearchInParallel_(keyword);
+      const backlogData = parallelResults.backlog;
+      const contractData = parallelResults.contract;
       return jsonResponse_({
         response_action: 'update',
         view: getSearchResultsModal_(keyword, {
@@ -587,6 +587,169 @@ function queryContractStatusSync_(counterpartyName) {
     console.error('queryContractStatusSync_ failed:', err);
     return { __error: '契約状況 API への接続に失敗: ' + String(err) };
   }
+}
+
+/**
+ * Runs Backlog search and Contract-Status lookup IN PARALLEL via
+ * UrlFetchApp.fetchAll. Used by the `/法務検索` view_submission handler
+ * to stay inside Slack's 3-second budget.
+ *
+ * Returns: { backlog: <backlogData|{__error}>, contract: <contractData|{__error}> }
+ */
+function querySearchInParallel_(keyword) {
+  // --- 1. Resolve Backlog config + project ID (cached) ---
+  var host = scriptProperty_('BACKLOG_HOST');
+  var apiKey = scriptProperty_('BACKLOG_API_KEY');
+  var projectKey = scriptProperty_('BACKLOG_PROJECT_KEY');
+  var contractUrl = scriptProperty_('CONTRACT_STATUS_WEBAPP_URL');
+
+  var backlogConfigError = null;
+  var backlogIssuesUrl = null;
+  if (!host || !apiKey || !projectKey) {
+    backlogConfigError = {
+      __error:
+        'Backlog 認証情報が GAS のスクリプトプロパティに揃っていません。' +
+        ' (BACKLOG_HOST / BACKLOG_API_KEY / BACKLOG_PROJECT_KEY)',
+    };
+  } else {
+    try {
+      var cache = CacheService.getScriptCache();
+      var cacheKey = 'backlog_pid_' + projectKey;
+      var projectId = cache.get(cacheKey);
+      if (!projectId) {
+        // One-time synchronous round trip on first call; cached for 1h
+        // so steady-state cost is zero.
+        var projectRes = UrlFetchApp.fetch(
+          'https://' + host + '/api/v2/projects/' + encodeURIComponent(projectKey) +
+            '?apiKey=' + encodeURIComponent(apiKey),
+          { method: 'get', muteHttpExceptions: true }
+        );
+        if (projectRes.getResponseCode() >= 300) {
+          backlogConfigError = {
+            __error:
+              'Backlog プロジェクト解決に失敗 (HTTP ' +
+              projectRes.getResponseCode() + ')',
+          };
+        } else {
+          projectId = String(JSON.parse(projectRes.getContentText()).id);
+          cache.put(cacheKey, projectId, 3600);
+        }
+      }
+      if (projectId) {
+        var params = [
+          'apiKey=' + encodeURIComponent(apiKey),
+          'projectId[]=' + projectId,
+          'keyword=' + encodeURIComponent(keyword),
+          'count=20',
+          'sort=updated',
+          'order=desc',
+        ].join('&');
+        backlogIssuesUrl = 'https://' + host + '/api/v2/issues?' + params;
+      }
+    } catch (err) {
+      console.error('Backlog setup failed:', err);
+      backlogConfigError = { __error: 'Backlog 設定エラー: ' + String(err) };
+    }
+  }
+
+  // --- 2. Build Contract-Status request URL ---
+  var contractConfigError = null;
+  var contractFetchUrl = null;
+  if (!contractUrl) {
+    contractConfigError = {
+      __error:
+        'CONTRACT_STATUS_WEBAPP_URL がスクリプトプロパティに設定されていません。',
+    };
+  } else {
+    contractFetchUrl =
+      contractUrl +
+      (contractUrl.indexOf('?') >= 0 ? '&' : '?') +
+      'api=searchContractStatus' +
+      '&counterpartyName=' + encodeURIComponent(keyword);
+  }
+
+  // --- 3. Run reachable calls in parallel ---
+  var requests = [];
+  var tags = []; // parallel array: tags[i] is which call produced responses[i]
+  if (backlogIssuesUrl) {
+    requests.push({ url: backlogIssuesUrl, method: 'get', muteHttpExceptions: true });
+    tags.push('backlog');
+  }
+  if (contractFetchUrl) {
+    requests.push({
+      url: contractFetchUrl,
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: true,
+    });
+    tags.push('contract');
+  }
+
+  var responses = [];
+  if (requests.length > 0) {
+    try {
+      responses = UrlFetchApp.fetchAll(requests);
+    } catch (err) {
+      console.error('fetchAll failed:', err);
+      // Both calls effectively failed.
+      return {
+        backlog: backlogConfigError || { __error: 'API 並列呼び出しエラー: ' + String(err) },
+        contract: contractConfigError || { __error: 'API 並列呼び出しエラー: ' + String(err) },
+      };
+    }
+  }
+
+  // --- 4. Parse responses ---
+  var backlogData = backlogConfigError;
+  var contractData = contractConfigError;
+
+  for (var i = 0; i < responses.length; i++) {
+    var res = responses[i];
+    var code = res.getResponseCode();
+    if (tags[i] === 'backlog') {
+      if (code >= 300) {
+        backlogData = { __error: 'Backlog 課題検索に失敗 (HTTP ' + code + ')' };
+        continue;
+      }
+      try {
+        var raw = JSON.parse(res.getContentText());
+        var backlogIssues = (Array.isArray(raw) ? raw : []).map(function (issue) {
+          return {
+            issueKey: issue.issueKey,
+            summary: issue.summary,
+            status: issue.status && issue.status.name,
+            issueType: issue.issueType && issue.issueType.name,
+            assigneeName: issue.assignee && issue.assignee.name,
+            updated: issue.updated,
+            url: 'https://' + host + '/view/' + issue.issueKey,
+          };
+        });
+        backlogData = { backlogIssues: backlogIssues };
+      } catch (parseErr) {
+        backlogData = { __error: 'Backlog レスポンスのパースに失敗: ' + String(parseErr) };
+      }
+    } else if (tags[i] === 'contract') {
+      if (code >= 300) {
+        var hint = code === 302
+          ? ' Contract-Status GAS の「アクセスできるユーザー」を「全員」にし、URL末尾が /exec か確認してください。'
+          : ' Web App の公開設定 / URL を確認してください。';
+        contractData = {
+          __error: '契約状況 API がエラーを返しました (HTTP ' + code + ').' + hint,
+        };
+        continue;
+      }
+      try {
+        contractData = JSON.parse(res.getContentText());
+      } catch (parseErr) {
+        contractData = {
+          __error:
+            '契約状況 API が JSON を返しませんでした。Contract-Status GAS の doGet を更新してください。',
+        };
+      }
+    }
+  }
+
+  return { backlog: backlogData, contract: contractData };
 }
 
 function buildSearchResultBlocks_(keyword, data) {
