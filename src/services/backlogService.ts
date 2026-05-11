@@ -41,11 +41,13 @@ export class BacklogService {
       return { issueKey: `MOCK-${Math.floor(Math.random() * 1000)}` };
     }
 
+    // Declared outside the try so the catch handler can include the
+    // exact request body in the error log when Backlog 4xx's.
+    const body = new URLSearchParams();
     try {
       // Get Project ID (cached)
       const projectId = await this.getProjectId();
 
-      const body = new URLSearchParams();
       body.append("projectId", projectId.toString());
       body.append("summary", params.summary);
       body.append("description", params.description);
@@ -91,8 +93,28 @@ export class BacklogService {
 
       const response = await axios.post(this.getUrl("/issues"), body);
       return response.data;
-    } catch (error) {
-      console.error("Error creating Backlog issue:", error);
+    } catch (error: any) {
+      // Backlog returns a JSON body that pinpoints why a 400 was raised
+      // (e.g. `errors: [{ message: "..." , code: 7, moreInfo: "" }]`).
+      // Axios buries that in `error.response.data`, so log it explicitly
+      // and re-throw with the actionable text so the Slack DM the user
+      // receives carries the real reason instead of a generic
+      // "Request failed with status code 400".
+      const status = error?.response?.status;
+      const data = error?.response?.data;
+      console.error(
+        `Error creating Backlog issue (status=${status}):`,
+        typeof data === "object" ? JSON.stringify(data) : data,
+        "\n--- request body ---\n",
+        body.toString()
+      );
+
+      if (data?.errors && Array.isArray(data.errors)) {
+        const reasons = data.errors
+          .map((e: any) => `${e.message}${e.moreInfo ? ` (${e.moreInfo})` : ""}`)
+          .join("; ");
+        throw new Error(`Backlog ${status}: ${reasons}`);
+      }
       throw error;
     }
   }
