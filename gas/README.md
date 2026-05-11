@@ -34,14 +34,25 @@ remaining LegalBridge Cloud Run service.
 In the Apps Script editor open **Project Settings → Script Properties** and
 add:
 
-| Key | Value |
-| --- | --- |
-| `SLACK_BOT_TOKEN` | `xoxb-...` (the bot user token of the LegalBridge Slack app — `chat:write`, `commands`, `views:read/write` scopes) |
-| `CLOUD_RUN_BASE_URL` | `https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app` (no trailing slash) |
-| `SLACK_SIGNING_SECRET` | *(optional, currently unused — see "Signature verification" below)* |
+| Key | Value | Used by |
+| --- | --- | --- |
+| `SLACK_BOT_TOKEN` | `xoxb-...` (the bot user token of the LegalBridge Slack app — `chat:write`, `commands`, `views:read/write` scopes) | All Slack actions |
+| `CLOUD_RUN_BASE_URL` | `https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app` (no trailing slash) | `/法務依頼` only (POST to internal API) |
+| `BACKLOG_HOST` | `arclight.backlog.com` | `/法務検索` direct Backlog calls |
+| `BACKLOG_API_KEY` | The Backlog personal API key | `/法務検索` direct Backlog calls |
+| `BACKLOG_PROJECT_KEY` | `LEGAL` | `/法務検索` direct Backlog calls |
+| `SLACK_SIGNING_SECRET` | *(optional, currently unused — see "Signature verification" below)* | reserved |
 
 These are read at runtime via `PropertiesService.getScriptProperties()`,
-so you can rotate the bot token without redeploying.
+so you can rotate any token / key without redeploying.
+
+> **Why does `/法務検索` need its own Backlog credentials in GAS?**
+> The search flow used to hop through Cloud Run, but it now calls
+> `https://<BACKLOG_HOST>/api/v2/issues?keyword=…` directly via
+> `UrlFetchApp`. That keeps the entire search path inside GAS, so
+> Cloud Run is only on the `/法務依頼` intake path. Use the *same*
+> Backlog API key that Cloud Run uses, or a separate one with at
+> least read access to the LEGAL project.
 
 ## 3. Deploy as a Web App
 

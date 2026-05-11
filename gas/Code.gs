@@ -232,30 +232,95 @@ function runSearchAndReply_(keyword, userId) {
 }
 
 /**
- * Synchronously queries /api/search/issues. Returns a parsed JSON
- * payload `{ legalRequests: [...], vendors: [...] }`, or
- * `{ __error: 'description' }` if the call failed. We never throw so
- * the caller can render an error-shaped results modal within Slack's
- * 3-second view ack window.
+ * Synchronously searches Backlog for issues matching the keyword.
+ * Calls Backlog's REST API directly via UrlFetchApp — no Cloud Run
+ * hop — so the entire /法務検索 flow lives inside GAS.
+ *
+ * Required script properties:
+ *   BACKLOG_HOST         arclight.backlog.com
+ *   BACKLOG_API_KEY      …
+ *   BACKLOG_PROJECT_KEY  LEGAL
+ *
+ * Returns:
+ *   { backlogIssues: [...] }
+ *   { __error: 'description' } on failure (never throws so the
+ *   caller can render the message inline in the results modal).
  */
 function querySearchSync_(keyword) {
-  const baseUrl = scriptProperty_('CLOUD_RUN_BASE_URL');
-  if (!baseUrl) {
-    return { __error: 'CLOUD_RUN_BASE_URL が設定されていません。スクリプトプロパティを確認してください。' };
+  const host = scriptProperty_('BACKLOG_HOST');
+  const apiKey = scriptProperty_('BACKLOG_API_KEY');
+  const projectKey = scriptProperty_('BACKLOG_PROJECT_KEY');
+
+  if (!host || !apiKey || !projectKey) {
+    return {
+      __error:
+        'Backlog 認証情報が GAS のスクリプトプロパティに揃っていません。' +
+        ' (BACKLOG_HOST / BACKLOG_API_KEY / BACKLOG_PROJECT_KEY)',
+    };
   }
+
   try {
-    const res = UrlFetchApp.fetch(
-      `${baseUrl}/api/search/issues?query=${encodeURIComponent(keyword)}`,
+    // 1. Resolve project ID from project key (cached in CacheService
+    //    so we skip the round-trip after the first call).
+    const cache = CacheService.getScriptCache();
+    const cacheKey = 'backlog_pid_' + projectKey;
+    var projectId = cache.get(cacheKey);
+    if (!projectId) {
+      const projectRes = UrlFetchApp.fetch(
+        'https://' + host + '/api/v2/projects/' + encodeURIComponent(projectKey) +
+          '?apiKey=' + encodeURIComponent(apiKey),
+        { method: 'get', muteHttpExceptions: true }
+      );
+      if (projectRes.getResponseCode() >= 300) {
+        return {
+          __error:
+            'Backlog プロジェクト解決に失敗 (HTTP ' +
+            projectRes.getResponseCode() + ')',
+        };
+      }
+      projectId = String(JSON.parse(projectRes.getContentText()).id);
+      cache.put(cacheKey, projectId, 3600); // 1h
+    }
+
+    // 2. Issue search. Backlog supports `keyword` for free-text match
+    //    against summary + description + comments.
+    const params = [
+      'apiKey=' + encodeURIComponent(apiKey),
+      'projectId[]=' + projectId,
+      'keyword=' + encodeURIComponent(keyword),
+      'count=20',
+      'sort=updated',
+      'order=desc',
+    ].join('&');
+
+    const issuesRes = UrlFetchApp.fetch(
+      'https://' + host + '/api/v2/issues?' + params,
       { method: 'get', muteHttpExceptions: true }
     );
-    const code = res.getResponseCode();
-    if (code >= 300) {
-      return { __error: `検索 API がエラーを返しました (HTTP ${code})。` };
+    if (issuesRes.getResponseCode() >= 300) {
+      return {
+        __error:
+          'Backlog 課題検索に失敗 (HTTP ' + issuesRes.getResponseCode() + ')',
+      };
     }
-    return JSON.parse(res.getContentText());
+
+    const raw = JSON.parse(issuesRes.getContentText());
+    // Flatten the parts of each issue we render in the modal.
+    const backlogIssues = (Array.isArray(raw) ? raw : []).map(function (i) {
+      return {
+        issueKey: i.issueKey,
+        summary: i.summary,
+        status: i.status && i.status.name,
+        issueType: i.issueType && i.issueType.name,
+        assigneeName: i.assignee && i.assignee.name,
+        updated: i.updated,
+        url: 'https://' + host + '/view/' + i.issueKey,
+      };
+    });
+    return { backlogIssues: backlogIssues };
   } catch (err) {
     console.error('querySearchSync_ failed:', err);
-    return { __error: '検索 API への接続に失敗しました: ' + String(err) };
+    return { __error: 'Backlog API 呼び出し中にエラー: ' + String(err) };
   }
 }
 
@@ -520,12 +585,13 @@ function getLegalSearchModal_(initialKeyword) {
 
 /**
  * Builds the modal that replaces the search input modal once the user
- * submits. Lists matching legal_requests and vendors and offers a
- * "もう一度検索" button that swaps the view back to the search input.
+ * submits. Lists matching Backlog issues (queried directly from GAS,
+ * no Cloud Run hop) and offers a "もう一度検索" button that swaps the
+ * view back to the search input.
  *
  * @param {string} keyword The keyword the user submitted.
- * @param {object} data Payload from /api/search/issues, possibly with
- *   `__error` set if the fetch failed.
+ * @param {object} data Payload from querySearchSync_, either
+ *   { backlogIssues: [...] } or { __error: 'description' }.
  */
 function getSearchResultsModal_(keyword, data) {
   var blocks = [
@@ -545,59 +611,59 @@ function getSearchResultsModal_(keyword, data) {
       },
     });
   } else {
-    var lr = (data && data.legalRequests) || [];
-    var vendors = (data && data.vendors) || [];
+    var issues = (data && data.backlogIssues) || [];
 
-    if (lr.length === 0 && vendors.length === 0) {
+    if (issues.length === 0) {
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '該当するデータは見つかりませんでした。別のキーワードでお試しください。',
+          text: '該当する Backlog 課題は見つかりませんでした。別のキーワードでお試しください。',
         },
       });
     } else {
-      if (lr.length > 0) {
-        blocks.push({
-          type: 'section',
-          text: { type: 'mrkdwn', text: '*📁 関連課題*' },
-        });
-        lr.slice(0, 8).forEach(function (r) {
-          var emoji =
-            r.summary && r.summary.indexOf('検収') >= 0
-              ? '✅'
-              : r.summary && r.summary.indexOf('許諾') >= 0
-              ? '💰'
-              : '📝';
-          blocks.push({
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text:
-                emoji +
-                ' *' + (r.backlog_issue_key || '—') + '*: ' + (r.summary || '') +
-                '\n>相手方: ' + (r.counterparty || '未設定'),
-            },
-          });
-        });
-      }
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '*📋 Backlog 課題 (' + issues.length + ' 件)*',
+        },
+      });
 
-      if (vendors.length > 0) {
-        if (lr.length > 0) blocks.push({ type: 'divider' });
+      // Slack modals top out around 100 blocks; cap displayed issues to
+      // keep the view readable.
+      var DISPLAY_LIMIT = 15;
+      var shown = issues.slice(0, DISPLAY_LIMIT);
+      shown.forEach(function (i) {
+        var typeBadge = i.issueType ? '`' + i.issueType + '` ' : '';
+        var statusBadge = i.status ? ' · ' + i.status : '';
+        var assignee = i.assigneeName ? '\n>担当: ' + i.assigneeName : '';
+        var updated = i.updated
+          ? '\n>更新: ' + (i.updated.substring ? i.updated.substring(0, 10) : i.updated)
+          : '';
         blocks.push({
           type: 'section',
-          text: { type: 'mrkdwn', text: '*🏢 取引先マスター*' },
+          text: {
+            type: 'mrkdwn',
+            text:
+              typeBadge +
+              '<' + i.url + '|*' + (i.issueKey || '—') + '*> ' +
+              (i.summary || '') + statusBadge + assignee + updated,
+          },
         });
-        vendors.slice(0, 5).forEach(function (v) {
-          blocks.push({
-            type: 'section',
-            text: {
+      });
+
+      if (issues.length > DISPLAY_LIMIT) {
+        blocks.push({
+          type: 'context',
+          elements: [
+            {
               type: 'mrkdwn',
               text:
-                '• `' + (v.vendor_code || '') + '` *' + (v.vendor_name || '') + '*' +
-                (v.trade_name ? '\n  _' + v.trade_name + '_' : ''),
+                '他 ' + (issues.length - DISPLAY_LIMIT) +
+                ' 件があります。キーワードを絞り込んで再検索してください。',
             },
-          });
+          ],
         });
       }
     }
