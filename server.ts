@@ -121,7 +121,41 @@ async function startServer() {
     order_amount?: string | null;
     delivery_date?: string | null;
     inspection_deadline?: string | null;
+    // When set, skip Backlog issue creation and treat this submission
+    // as the post-creation pipeline for an already-existing issue
+    // (e.g. one created by the GAS gateway directly or surfaced by a
+    // Backlog webhook). Both keys are required to short-circuit:
+    //   existing_issue_key — "LEGAL-123"
+    //   existing_issue_id  — numeric Backlog id, used for parent linking
+    existing_issue_key?: string;
+    existing_issue_id?: number;
   }
+
+  // Backlog Issue Type name → internal `request_type` key. Used by the
+  // Backlog webhook handler so it can run the same template / DB / DM
+  // pipeline as the Slack intake path even when the issue was created
+  // directly via the Backlog API. Unknown types fall back to
+  // `legal_consult`, which renders the generic `legal_request` template.
+  const ISSUE_TYPE_TO_REQUEST_TYPE: Record<string, string> = {
+    "法務相談": "legal_consult",
+    "NDA": "nda",
+    "業務委託基本契約": "outsourcing",
+    "ライセンス契約": "license_master",
+    "個別利用許諾条件": "lic_individual",
+    "売買契約（当社買手）": "sales_master",
+    "売買契約（当社売手・標準）": "sales_master",
+    "売買契約（当社売手・保証金掛け売り）": "sales_master",
+    "発注書": "purchase_order",
+    "企画発注書": "purchase_order",
+    "出版発注書": "purchase_order",
+    "納品リクエスト": "delivery_inspec",
+    "製造案件": "delivery_inspec",
+    "売上報告案件": "license_calc",
+    "海外IP契約（基本契約）": "license_master",
+    "海外IP契約（変更合意）": "license_master",
+    "契約審査": "outsourcing",
+    "事務手続": "legal_consult",
+  };
 
   const replaceSlackPlaceholders = (tmpl: string, data: any): string => {
     return tmpl
@@ -230,7 +264,13 @@ ${details}
     };
     if (categoryId) issueParams["categoryId[]"] = categoryId;
 
-    const issue = await backlogService.createIssue(issueParams);
+    // If the caller already has a Backlog issue (e.g. created directly
+    // by the GAS gateway or surfaced via Backlog webhook) we skip the
+    // create call and just run the post-creation pipeline against it.
+    const issue =
+      input.existing_issue_key
+        ? { issueKey: input.existing_issue_key, id: input.existing_issue_id }
+        : await backlogService.createIssue(issueParams);
 
     await query(
       "INSERT INTO legal_requests (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, notes) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
@@ -439,19 +479,26 @@ ${details}
     
     try {
       if (event.type === 1) { // Issue Created
-        // When Backlog notifies us that a new issue has been created we
-        // mark the matching legal_requests row's workflow as "受付済み"
-        // so that the admin UI dashboard reflects that the request has
-        // moved past the GAS-initiated intake stage.
+        // ────────────────────────────────────────────────────────────
+        // Architecture:
+        //   Slack → GAS → Backlog (issue created) → this webhook →
+        //   Cloud Run runs the full document pipeline (DB write,
+        //   template render, Drive upload, Slack DM).
         //
-        // Future enhancement: this is also the natural place to trigger
-        // automatic document generation for issue types that have a
-        // deterministic blueprint (e.g. NDA, standard purchase orders).
-        // We deliberately keep that flow disabled for now so manual
-        // review in the admin UI remains the source of truth.
+        // Both the legacy Slack→Cloud Run intake (POST
+        // /api/internal/slack/legal-request) and the new GAS-direct
+        // path end up here, so we dedupe via legal_requests.
+        // ────────────────────────────────────────────────────────────
         try {
-          if (event.project?.projectKey && event.content?.key_id) {
+          if (!event.project?.projectKey || !event.content?.key_id) {
+            console.warn("Webhook type=1 missing projectKey or key_id; skipping.");
+          } else {
             const issueKey = `${event.project.projectKey}-${event.content.key_id}`;
+
+            // Dedupe: if legal_requests already has this issue, it
+            // means the Slack-direct intake path created it AND
+            // already ran the pipeline. We only need to update the
+            // workflow status.
             const lr = await query(
               "SELECT id FROM legal_requests WHERE backlog_issue_key = $1",
               [issueKey]
@@ -463,15 +510,80 @@ ${details}
                   WHERE backlog_issue_key = $2`,
                 ["受付済み", issueKey]
               );
-              console.log(`✅ Marked workflow as 受付済み for ${issueKey}`);
+              console.log(`✅ ${issueKey}: pipeline already ran via Slack intake; marked 受付済み.`);
             } else {
-              console.log(
-                `ℹ️ Backlog issue ${issueKey} created externally (no matching legal_requests row); skipping workflow update.`
-              );
+              // Brand-new issue (likely created by GAS direct API call
+              // or by a human in Backlog UI). Run the full pipeline.
+              const content = event.content;
+              const typeName = content.issueType?.name || "";
+              const requestType = ISSUE_TYPE_TO_REQUEST_TYPE[typeName] || "legal_consult";
+
+              // Extract custom fields by id. Field ids come from env
+              // (BACKLOG_FIELD_*). We resolve the value defensively
+              // because Backlog returns customFields as an array.
+              const cfMap: Record<string, any> = {};
+              if (Array.isArray(content.customFields)) {
+                content.customFields.forEach((cf: any) => {
+                  if (cf && cf.id != null) cfMap[String(cf.id)] = cf.value;
+                });
+              }
+              const cfBy = (envKey: string) => {
+                const id = process.env[envKey];
+                if (!id) return "";
+                const v = cfMap[id];
+                if (v == null) return "";
+                if (typeof v === "object" && v.name) return v.name;
+                return String(v);
+              };
+
+              const summary = content.summary || "";
+              const description = content.description || "";
+
+              // Slack user id is embedded as `<@U…>` in the description
+              // by the GAS intake flow. If absent (issue created from
+              // Backlog UI) we leave slack_user_id empty and skip the
+              // DM step.
+              const slackMatch = description.match(/<@([A-Z0-9]+)>/);
+              const slackUserId = slackMatch ? slackMatch[1] : "";
+
+              const input: LegalRequestSubmission = {
+                slack_user_id: slackUserId,
+                slack_user_name: event.createdUser?.name || "",
+                dept: cfBy("BACKLOG_FIELD_DEPT") || "",
+                request_type: requestType,
+                summary: summary,
+                deadline: cfBy("BACKLOG_FIELD_DEADLINE"),
+                details: description,
+                counterparty: cfBy("BACKLOG_FIELD_COUNTERPARTY"),
+                entity_type: "corporate",
+                entity_id: "",
+                existing_issue_key: issueKey,
+                existing_issue_id: content.id,
+              };
+
+              try {
+                const result = await processLegalRequestSubmission(input);
+                console.log(
+                  `✅ Webhook pipeline completed for ${issueKey}: docNumber=${result.docNumber}`
+                );
+              } catch (pipelineErr) {
+                console.error(
+                  `❌ Webhook pipeline failed for ${issueKey}:`,
+                  pipelineErr
+                );
+                if (slackWebClient && slackUserId) {
+                  try {
+                    await slackWebClient.chat.postMessage({
+                      channel: slackUserId,
+                      text: `⚠️ ${issueKey} の文書生成中にエラーが発生しました。法務担当者へ直接ご連絡ください。\n\n*エラー詳細:*\n\`\`\`\n${String(pipelineErr).slice(0, 1500)}\n\`\`\``,
+                    });
+                  } catch (_) {}
+                }
+              }
             }
           }
         } catch (e) {
-          console.warn("Failed to update workflow on issue-created webhook:", e);
+          console.warn("Failed to process issue-created webhook:", e);
         }
       } else if (event.type === 2) { // Issue Updated
         const issueKey = `${event.project.projectKey}-${event.content.key_id}`;

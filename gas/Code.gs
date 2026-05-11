@@ -118,18 +118,26 @@ function handleInteractivity_(payload) {
     if (callbackId === 'legal_request_modal') {
       const submission = parseLegalRequestSubmission_(payload);
 
-      // 1. Send an immediate acknowledgement DM to the submitter so they
-      //    have visible feedback the moment the modal closes — even if
-      //    Slack shows a transient "didn't respond" toast because of a
-      //    GAS / Cloud Run cold start. The real completion DM (with the
-      //    Backlog issue key + Drive link) is dispatched from Cloud Run
-      //    a few seconds later by processLegalRequestSubmission().
+      // 1. Send an immediate acknowledgement DM so the submitter has
+      //    visible feedback the moment the modal closes, even if a
+      //    GAS cold start makes Slack show "didn't respond".
       sendIntakeAckDm_(submission);
 
-      // 2. Forward to Cloud Run. The endpoint now returns 202 in <100ms
-      //    and processes asynchronously, so this call no longer blocks
-      //    the Slack ack window.
-      forwardLegalRequest_(submission);
+      // 2. Create the Backlog issue directly from GAS. The Backlog
+      //    type=1 webhook will hand off to Cloud Run which writes to
+      //    the DB, renders the document, uploads to Drive, and posts
+      //    the ✅ 完了 DM with the link.
+      const created = createBacklogIssue_(submission);
+      if (created && created.__error) {
+        notifyUserOfError_(submission.slack_user_id, created.__error);
+      } else if (created && created.issueKey) {
+        slackPost_('chat.postMessage', {
+          channel: submission.slack_user_id,
+          text:
+            '✅ Backlog 課題を作成しました: *' + created.issueKey + '*\n' +
+            '文書生成が完了次第、別 DM でリンクをお送りします。',
+        });
+      }
       return jsonResponse_({ response_action: 'clear' });
     }
 
@@ -246,6 +254,178 @@ function runSearchAndReply_(keyword, userId) {
  *   { __error: 'description' } on failure (never throws so the
  *   caller can render the message inline in the results modal).
  */
+
+// -----------------------------------------------------------------------
+//  Backlog: direct issue creation (replaces the Cloud Run intake hop)
+// -----------------------------------------------------------------------
+
+// Map the user's `/法務依頼` modal request_type onto a Backlog Issue
+// Type name. The Backlog side is configured with these exact names —
+// see the BACKLOG_ISSUE_TYPE_* env vars on Cloud Run. Unmapped types
+// fall back to "法務相談".
+var REQUEST_TYPE_TO_BACKLOG_TYPE = {
+  legal_consult: '法務相談',
+  nda: 'NDA',
+  outsourcing: '業務委託基本契約',
+  license_master: 'ライセンス契約',
+  lic_individual: '個別利用許諾条件',
+  sales_master: '売買契約（当社買手）',
+  purchase_order: '発注書',
+  delivery_inspec: '納品リクエスト',
+  license_calc: '売上報告案件',
+};
+
+/** Resolve and cache the numeric Backlog project id. */
+function resolveBacklogProjectId_(host, apiKey, projectKey) {
+  var cache = CacheService.getScriptCache();
+  var key = 'backlog_pid_' + projectKey;
+  var cached = cache.get(key);
+  if (cached) return cached;
+  var res = UrlFetchApp.fetch(
+    'https://' + host + '/api/v2/projects/' + encodeURIComponent(projectKey) +
+      '?apiKey=' + encodeURIComponent(apiKey),
+    { method: 'get', muteHttpExceptions: true }
+  );
+  if (res.getResponseCode() >= 300) {
+    throw new Error('Backlog プロジェクト解決失敗 (HTTP ' + res.getResponseCode() + ')');
+  }
+  var pid = String(JSON.parse(res.getContentText()).id);
+  cache.put(key, pid, 3600);
+  return pid;
+}
+
+/** Resolve and cache issue type id by name within the project. */
+function resolveBacklogIssueTypeId_(host, apiKey, projectKey, typeName) {
+  var cache = CacheService.getScriptCache();
+  var key = 'backlog_itid_' + projectKey + '_' + typeName;
+  var cached = cache.get(key);
+  if (cached) return cached;
+  var res = UrlFetchApp.fetch(
+    'https://' + host + '/api/v2/projects/' + encodeURIComponent(projectKey) +
+      '/issueTypes?apiKey=' + encodeURIComponent(apiKey),
+    { method: 'get', muteHttpExceptions: true }
+  );
+  if (res.getResponseCode() >= 300) {
+    throw new Error('Backlog 課題タイプ取得失敗 (HTTP ' + res.getResponseCode() + ')');
+  }
+  var types = JSON.parse(res.getContentText());
+  for (var i = 0; i < types.length; i++) {
+    if (types[i].name === typeName) {
+      var id = String(types[i].id);
+      cache.put(key, id, 3600);
+      return id;
+    }
+  }
+  // Fallback to first type id if the configured name is missing.
+  if (types.length > 0) {
+    var fb = String(types[0].id);
+    console.warn('Issue type "' + typeName + '" not found, falling back to ' + types[0].name);
+    return fb;
+  }
+  throw new Error('プロジェクトに課題タイプが定義されていません');
+}
+
+/**
+ * Creates a Backlog issue for a `/法務依頼` modal submission.
+ *
+ * The Cloud Run side picks the issue up via the Backlog `type=1`
+ * webhook and runs the document-generation pipeline (DB write,
+ * template render, Drive upload, ✅ 完了 DM). GAS only needs to send
+ * the 📥 受付 DM and the issueKey back to the user.
+ *
+ * Returns { issueKey, issueId } on success, or
+ * { __error: '…' } on failure (never throws).
+ */
+function createBacklogIssue_(submission) {
+  var host = scriptProperty_('BACKLOG_HOST');
+  var apiKey = scriptProperty_('BACKLOG_API_KEY');
+  var projectKey = scriptProperty_('BACKLOG_PROJECT_KEY');
+  if (!host || !apiKey || !projectKey) {
+    return {
+      __error:
+        'Backlog 認証情報が GAS のスクリプトプロパティに揃っていません。' +
+        ' (BACKLOG_HOST / BACKLOG_API_KEY / BACKLOG_PROJECT_KEY)',
+    };
+  }
+
+  try {
+    var projectId = resolveBacklogProjectId_(host, apiKey, projectKey);
+
+    // Map request_type to issue type name → id.
+    var typeName = REQUEST_TYPE_TO_BACKLOG_TYPE[submission.request_type] || '法務相談';
+    var issueTypeId = resolveBacklogIssueTypeId_(host, apiKey, projectKey, typeName);
+
+    // Compose the description so the Cloud Run webhook can extract the
+    // Slack user id (regex `<@U…>`), the dept, and the raw user input
+    // back out and feed them into processLegalRequestSubmission.
+    var deliveryNote = submission.delivery_no
+      ? ' (第' + submission.delivery_no + '回納品)'
+      : '';
+    var displaySummary = (submission.summary || '') + deliveryNote;
+    var description =
+      '依頼タイプ: ' + submission.request_type + '\n' +
+      '希望納期: ' + (submission.deadline || '') + '\n' +
+      '依頼者: <@' + submission.slack_user_id + '>\n\n' +
+      '【相手方情報】\n' +
+      '名称: ' + (submission.counterparty || '') + '\n' +
+      '区分: ' + (submission.entity_type === 'individual' ? '個人' : '法人') + '\n' +
+      '番号/コード: ' + (submission.entity_id || '') + '\n\n' +
+      '【詳細】\n' +
+      (submission.details || '');
+
+    var body = [
+      'projectId=' + encodeURIComponent(projectId),
+      'summary=' + encodeURIComponent('【' + submission.request_type + '】' + displaySummary),
+      'description=' + encodeURIComponent(description),
+      'issueTypeId=' + encodeURIComponent(issueTypeId),
+      'priorityId=3',
+    ];
+
+    // Custom field id mapping mirrors Cloud Run's env. These ids are
+    // stable per Backlog project so we hard-code them here. If they
+    // change, update this list and the matching Cloud Run env vars.
+    var CF = {
+      counterparty: '622801',
+      deadline: '622802',
+      remarks: '622803',
+    };
+    if (submission.counterparty) {
+      body.push('customField_' + CF.counterparty + '=' + encodeURIComponent(submission.counterparty));
+    }
+    if (submission.deadline) {
+      body.push('customField_' + CF.deadline + '=' + encodeURIComponent(submission.deadline));
+    }
+    if (submission.details) {
+      body.push('customField_' + CF.remarks + '=' + encodeURIComponent(submission.details));
+    }
+
+    var res = UrlFetchApp.fetch(
+      'https://' + host + '/api/v2/issues?apiKey=' + encodeURIComponent(apiKey),
+      {
+        method: 'post',
+        contentType: 'application/x-www-form-urlencoded',
+        muteHttpExceptions: true,
+        payload: body.join('&'),
+      }
+    );
+    var code = res.getResponseCode();
+    var text = res.getContentText();
+    if (code >= 300) {
+      console.error('Backlog createIssue failed:', code, text);
+      return {
+        __error:
+          'Backlog 課題作成失敗 (HTTP ' + code + '): ' +
+          text.substring(0, 400),
+      };
+    }
+    var data = JSON.parse(text);
+    return { issueKey: data.issueKey, issueId: data.id };
+  } catch (err) {
+    console.error('createBacklogIssue_ failed:', err);
+    return { __error: '課題作成中にエラー: ' + String(err) };
+  }
+}
+
 function querySearchSync_(keyword) {
   const host = scriptProperty_('BACKLOG_HOST');
   const apiKey = scriptProperty_('BACKLOG_API_KEY');
