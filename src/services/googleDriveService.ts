@@ -5,9 +5,27 @@ export class GoogleDriveService {
   private drive;
 
   constructor() {
+    // Authentication priority:
+    //   1. GOOGLE_SERVICE_ACCOUNT_KEY_PATH — explicit path to a JSON key
+    //      file (typically mounted from Secret Manager at
+    //      /secrets/gws-service-account.json). Use this when the
+    //      Cloud Run runtime SA does not have Drive access and a
+    //      dedicated Workspace-bound SA is provisioned for Drive
+    //      operations.
+    //   2. GOOGLE_APPLICATION_CREDENTIALS — standard ADC variable,
+    //      respected automatically by GoogleAuth.
+    //   3. Cloud Run / GCE metadata server — the runtime SA.
+    //
+    // Without (1) and (2), uploads run as the runtime SA, which on
+    // Cloud Run is the project's compute default SA and has *zero*
+    // personal-Drive storage. That triggers
+    //   GaxiosError: The user's Drive storage quota has been exceeded.
+    // even when the target folder lives inside a Shared Drive.
+    const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
     this.drive = google.drive({
       version: "v3",
       auth: new google.auth.GoogleAuth({
+        ...(keyFile ? { keyFile } : {}),
         scopes: ["https://www.googleapis.com/auth/drive.file"],
       })
     });
