@@ -158,15 +158,26 @@ function handleInteractivity_(payload) {
         });
       }
 
-      // Synchronously hit Cloud Run /api/search/issues. The query is a
-      // small SELECT against indexed columns and typically returns in
-      // <200ms, which keeps us well inside Slack's 3-second view ack
-      // budget. Use response_action: 'update' to swap the input modal
-      // for the results view; the user never leaves the modal flow.
-      const data = querySearchSync_(keyword);
+      // One-stop search: fan out to both data sources synchronously
+      // (UrlFetchApp is sync, but both are small JSON round trips so
+      // the combined latency stays inside Slack's 3-second budget,
+      // typically ~300–600 ms total when warm).
+      //
+      //   1. Backlog issues (this hub's own UrlFetchApp call)
+      //   2. Contract status (separate GAS Web App, see
+      //      queryContractStatusSync_ docs)
+      //
+      // Either side may return { __error } — we render them
+      // independently inside the results modal so a partial failure
+      // doesn't hide the other section.
+      const backlogData = querySearchSync_(keyword);
+      const contractData = queryContractStatusSync_(keyword);
       return jsonResponse_({
         response_action: 'update',
-        view: getSearchResultsModal_(keyword, data),
+        view: getSearchResultsModal_(keyword, {
+          backlog: backlogData,
+          contract: contractData,
+        }),
       });
     }
   }
@@ -504,6 +515,80 @@ function querySearchSync_(keyword) {
   }
 }
 
+/**
+ * Synchronously calls the Contract-Status GAS Web App's JSON endpoint.
+ *
+ * That Web App is a separate Apps Script project (originally a
+ * browser-only HTML/`google.script.run` UI). To make its DB lookup
+ * reachable from this Slack hub it needs a small `doGet` shim:
+ *
+ *   function doGet(e) {
+ *     if (e.parameter.api === 'searchContractStatus') {
+ *       const payload = {
+ *         counterpartyName: e.parameter.counterpartyName || '',
+ *         purposeCode:     e.parameter.purposeCode     || '',
+ *         workName:        e.parameter.workName        || '',
+ *         productName:     e.parameter.productName     || '',
+ *         territory:       e.parameter.territory       || '',
+ *         language:        e.parameter.language        || '',
+ *       };
+ *       const result = searchContractStatus(payload);
+ *       return ContentService
+ *         .createTextOutput(JSON.stringify(result))
+ *         .setMimeType(ContentService.MimeType.JSON);
+ *     }
+ *     return HtmlService.createTemplateFromFile('index').evaluate();
+ *   }
+ *
+ * Required script property in this Slack hub:
+ *   CONTRACT_STATUS_WEBAPP_URL
+ *
+ * Returns the parsed JSON payload, or { __error: '…' } on failure.
+ */
+function queryContractStatusSync_(counterpartyName) {
+  var baseUrl = scriptProperty_('CONTRACT_STATUS_WEBAPP_URL');
+  if (!baseUrl) {
+    return {
+      __error:
+        'CONTRACT_STATUS_WEBAPP_URL がスクリプトプロパティに設定されていません。',
+    };
+  }
+  try {
+    var url =
+      baseUrl +
+      (baseUrl.indexOf('?') >= 0 ? '&' : '?') +
+      'api=searchContractStatus' +
+      '&counterpartyName=' + encodeURIComponent(counterpartyName);
+    var res = UrlFetchApp.fetch(url, {
+      method: 'get',
+      muteHttpExceptions: true,
+      followRedirects: true,
+    });
+    var code = res.getResponseCode();
+    if (code >= 300) {
+      return {
+        __error:
+          '契約状況 API がエラーを返しました (HTTP ' + code + ').' +
+          ' Web App の公開設定 / URL を確認してください。',
+      };
+    }
+    var body = res.getContentText();
+    try {
+      return JSON.parse(body);
+    } catch (_parseErr) {
+      // The Web App returned HTML (likely because the doGet wasn't
+      // updated to handle ?api=searchContractStatus).
+      return {
+        __error:
+          '契約状況 API が JSON を返しませんでした。Contract-Status GAS の doGet を更新してください。',
+      };
+    }
+  } catch (err) {
+    console.error('queryContractStatusSync_ failed:', err);
+    return { __error: '契約状況 API への接続に失敗: ' + String(err) };
+  }
+}
+
 function buildSearchResultBlocks_(keyword, data) {
   const blocks = [
     {
@@ -770,10 +855,14 @@ function getLegalSearchModal_(initialKeyword) {
  * view back to the search input.
  *
  * @param {string} keyword The keyword the user submitted.
- * @param {object} data Payload from querySearchSync_, either
- *   { backlogIssues: [...] } or { __error: 'description' }.
+ * @param {object} data { backlog: <queryResult>, contract: <queryResult> }
+ *   Each side carries either its data shape or { __error: '…' }.
  */
 function getSearchResultsModal_(keyword, data) {
+  data = data || {};
+  var backlogPayload = data.backlog || {};
+  var contractPayload = data.contract || {};
+
   var blocks = [
     {
       type: 'section',
@@ -782,76 +871,23 @@ function getSearchResultsModal_(keyword, data) {
     { type: 'divider' },
   ];
 
-  if (data && data.__error) {
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: '⚠️ ' + data.__error,
-      },
-    });
-  } else {
-    var issues = (data && data.backlogIssues) || [];
+  // ── Section 1: Backlog 課題 ────────────────────────────────────
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '*📋 Backlog 課題*' },
+  });
+  appendBacklogIssuesBlocks_(blocks, backlogPayload);
 
-    if (issues.length === 0) {
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '該当する Backlog 課題は見つかりませんでした。別のキーワードでお試しください。',
-        },
-      });
-    } else {
-      blocks.push({
-        type: 'section',
-        text: {
-          type: 'mrkdwn',
-          text: '*📋 Backlog 課題 (' + issues.length + ' 件)*',
-        },
-      });
+  blocks.push({ type: 'divider' });
 
-      // Slack modals top out around 100 blocks; cap displayed issues to
-      // keep the view readable.
-      var DISPLAY_LIMIT = 15;
-      var shown = issues.slice(0, DISPLAY_LIMIT);
-      shown.forEach(function (i) {
-        var typeBadge = i.issueType ? '`' + i.issueType + '` ' : '';
-        var statusBadge = i.status ? ' · ' + i.status : '';
-        var assignee = i.assigneeName ? '\n>担当: ' + i.assigneeName : '';
-        var updated = i.updated
-          ? '\n>更新: ' + (i.updated.substring ? i.updated.substring(0, 10) : i.updated)
-          : '';
-        blocks.push({
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text:
-              typeBadge +
-              '<' + i.url + '|*' + (i.issueKey || '—') + '*> ' +
-              (i.summary || '') + statusBadge + assignee + updated,
-          },
-        });
-      });
+  // ── Section 2: 契約状況 (Contract-Status GAS) ─────────────────
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '*📑 契約状況*' },
+  });
+  appendContractStatusBlocks_(blocks, contractPayload);
 
-      if (issues.length > DISPLAY_LIMIT) {
-        blocks.push({
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text:
-                '他 ' + (issues.length - DISPLAY_LIMIT) +
-                ' 件があります。キーワードを絞り込んで再検索してください。',
-            },
-          ],
-        });
-      }
-    }
-  }
-
-  // Action row: "もう一度検索" button. action_id is matched in
-  // handleInteractivity_ and swaps the view back to the empty
-  // search modal.
+  // ── Footer actions ────────────────────────────────────────────
   blocks.push({ type: 'divider' });
   blocks.push({
     type: 'actions',
@@ -872,6 +908,182 @@ function getSearchResultsModal_(keyword, data) {
     close: { type: 'plain_text', text: '閉じる' },
     blocks: blocks,
   };
+}
+
+/** Appends Backlog issue rows (or an empty/error notice) to blocks. */
+function appendBacklogIssuesBlocks_(blocks, payload) {
+  if (payload && payload.__error) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '⚠️ ' + payload.__error },
+    });
+    return;
+  }
+  var issues = (payload && payload.backlogIssues) || [];
+  if (issues.length === 0) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '該当する Backlog 課題は見つかりませんでした。' },
+    });
+    return;
+  }
+  var DISPLAY_LIMIT = 10;
+  issues.slice(0, DISPLAY_LIMIT).forEach(function (i) {
+    var typeBadge = i.issueType ? '`' + i.issueType + '` ' : '';
+    var statusBadge = i.status ? ' · ' + i.status : '';
+    var assignee = i.assigneeName ? '\n>担当: ' + i.assigneeName : '';
+    var updated = i.updated
+      ? '\n>更新: ' + (i.updated.substring ? i.updated.substring(0, 10) : i.updated)
+      : '';
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text:
+          typeBadge +
+          '<' + i.url + '|*' + (i.issueKey || '—') + '*> ' +
+          (i.summary || '') + statusBadge + assignee + updated,
+      },
+    });
+  });
+  if (issues.length > DISPLAY_LIMIT) {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text: '他 ' + (issues.length - DISPLAY_LIMIT) + ' 件の Backlog 課題があります。',
+        },
+      ],
+    });
+  }
+}
+
+/** Appends contract-status summary blocks. */
+function appendContractStatusBlocks_(blocks, payload) {
+  if (payload && payload.__error) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '⚠️ ' + payload.__error },
+    });
+    return;
+  }
+
+  // Backend may return either a single result or a multi-candidate list.
+  var candidates = [];
+  if (payload && Array.isArray(payload.results)) candidates = payload.results;
+  else if (payload && Array.isArray(payload.matches)) candidates = payload.matches;
+  else if (payload && Array.isArray(payload.candidates)) candidates = payload.candidates;
+  else if (payload && Array.isArray(payload.vendorCandidates)) candidates = payload.vendorCandidates;
+  else if (payload && (payload.multiple === true)) candidates = [];
+
+  // Single hit (or summary-shaped) → render the detail.
+  if (
+    candidates.length === 0 &&
+    payload &&
+    (payload.counterparty || payload.masterContracts)
+  ) {
+    appendSingleContractDetail_(blocks, payload);
+    return;
+  }
+
+  // Multiple candidates → render a compact list.
+  if (candidates.length > 0) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '複数の候補が見つかりました (' + candidates.length + ' 件)。詳細は Web で確認してください。',
+      },
+    });
+    var LIMIT = 5;
+    candidates.slice(0, LIMIT).forEach(function (c) {
+      var cp = c.counterparty || c.vendor || c;
+      var name = cp.vendorName || cp.vendor_name || cp.counterpartyName || cp.name || '-';
+      var code = cp.vendorCode || cp.vendor_code || '-';
+      var masters = c.masterContracts || {};
+      var pills = [];
+      pills.push('業務委託 ' + (masters.service && masters.service.exists ? '✅' : '—'));
+      pills.push('ライセンス ' + (masters.license && masters.license.exists ? '✅' : '—'));
+      pills.push('出版 ' + (masters.publication && masters.publication.exists ? '✅' : '—'));
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '• *' + name + '* (`' + code + '`)\n>' + pills.join(' · '),
+        },
+      });
+    });
+    if (candidates.length > LIMIT) {
+      blocks.push({
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: '他 ' + (candidates.length - LIMIT) + ' 件あります。',
+          },
+        ],
+      });
+    }
+    return;
+  }
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '取引先マスタに登録された契約が見つかりませんでした。' },
+  });
+}
+
+/** Renders a single counterparty's contract status. */
+function appendSingleContractDetail_(blocks, payload) {
+  var cp = payload.counterparty || {};
+  var masters = payload.masterContracts || {};
+  var name = cp.vendorName || cp.counterpartyName || '-';
+  var code = cp.vendorCode || '-';
+
+  blocks.push({
+    type: 'section',
+    text: {
+      type: 'mrkdwn',
+      text: '*' + name + '* (`' + code + '`)',
+    },
+  });
+
+  // Master contract pills (one line, easy to scan).
+  var pillLines = [
+    '業務委託基本契約: ' + masterStatusLabel_(masters.service),
+    'ライセンス基本契約: ' + masterStatusLabel_(masters.license),
+    '出版基本契約: ' + masterStatusLabel_(masters.publication),
+  ];
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '>' + pillLines.join('\n>') },
+  });
+
+  var licCount = Array.isArray(payload.licenseConditions)
+    ? payload.licenseConditions.length
+    : 0;
+  var pubCount = Array.isArray(payload.publicationConditions)
+    ? payload.publicationConditions.length
+    : 0;
+  if (licCount || pubCount) {
+    blocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text:
+            'ライセンス個別条件: ' + licCount + ' 件 · 出版個別条件: ' + pubCount + ' 件',
+        },
+      ],
+    });
+  }
+}
+
+function masterStatusLabel_(master) {
+  if (!master || !master.exists) return '— 未締結';
+  var num = master.documentNumber ? ' (' + master.documentNumber + ')' : '';
+  return '✅ 締結済' + num;
 }
 
 function getLegalRequestModal_(selectedType) {
