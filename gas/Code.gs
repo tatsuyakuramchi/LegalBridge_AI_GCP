@@ -98,6 +98,16 @@ function handleInteractivity_(payload) {
         view: getLegalRequestModal_(selected),
       });
     }
+
+    // "もう一度検索" button inside the results modal → swap back to the
+    // empty search modal so the user can refine the keyword.
+    if (action && action.action_id === 'legal_search_again') {
+      slackPost_('views.update', {
+        view_id: payload.view.id,
+        hash: payload.view.hash,
+        view: getLegalSearchModal_(''),
+      });
+    }
     return jsonResponse_({ ok: true });
   }
 
@@ -128,8 +138,28 @@ function handleInteractivity_(payload) {
         (payload.view.state.values.keyword_block &&
           payload.view.state.values.keyword_block.keyword_input.value) ||
         '';
-      runSearchAndReply_(keyword, payload.user.id);
-      return jsonResponse_({ response_action: 'clear' });
+
+      // Empty keyword → show a validation error inside the modal so the
+      // user can correct it without losing context.
+      if (!keyword.trim()) {
+        return jsonResponse_({
+          response_action: 'errors',
+          errors: {
+            keyword_block: 'キーワードを入力してください。',
+          },
+        });
+      }
+
+      // Synchronously hit Cloud Run /api/search/issues. The query is a
+      // small SELECT against indexed columns and typically returns in
+      // <200ms, which keeps us well inside Slack's 3-second view ack
+      // budget. Use response_action: 'update' to swap the input modal
+      // for the results view; the user never leaves the modal flow.
+      const data = querySearchSync_(keyword);
+      return jsonResponse_({
+        response_action: 'update',
+        view: getSearchResultsModal_(keyword, data),
+      });
     }
   }
 
@@ -171,6 +201,9 @@ function forwardLegalRequest_(submission) {
 }
 
 function runSearchAndReply_(keyword, userId) {
+  // Kept as a DM-based fallback. The active code path is now the
+  // in-modal results view rendered by getSearchResultsModal_, but this
+  // remains useful if we ever surface search outside of a modal flow.
   const baseUrl = scriptProperty_('CLOUD_RUN_BASE_URL');
   if (!baseUrl) {
     notifyUserOfError_(userId, 'サーバ未設定のため検索できませんでした。');
@@ -195,6 +228,34 @@ function runSearchAndReply_(keyword, userId) {
   } catch (err) {
     console.error('Search failed:', err);
     notifyUserOfError_(userId, '検索中にエラーが発生しました。');
+  }
+}
+
+/**
+ * Synchronously queries /api/search/issues. Returns a parsed JSON
+ * payload `{ legalRequests: [...], vendors: [...] }`, or
+ * `{ __error: 'description' }` if the call failed. We never throw so
+ * the caller can render an error-shaped results modal within Slack's
+ * 3-second view ack window.
+ */
+function querySearchSync_(keyword) {
+  const baseUrl = scriptProperty_('CLOUD_RUN_BASE_URL');
+  if (!baseUrl) {
+    return { __error: 'CLOUD_RUN_BASE_URL が設定されていません。スクリプトプロパティを確認してください。' };
+  }
+  try {
+    const res = UrlFetchApp.fetch(
+      `${baseUrl}/api/search/issues?query=${encodeURIComponent(keyword)}`,
+      { method: 'get', muteHttpExceptions: true }
+    );
+    const code = res.getResponseCode();
+    if (code >= 300) {
+      return { __error: `検索 API がエラーを返しました (HTTP ${code})。` };
+    }
+    return JSON.parse(res.getContentText());
+  } catch (err) {
+    console.error('querySearchSync_ failed:', err);
+    return { __error: '検索 API への接続に失敗しました: ' + String(err) };
   }
 }
 
@@ -454,6 +515,116 @@ function getLegalSearchModal_(initialKeyword) {
         ],
       },
     ],
+  };
+}
+
+/**
+ * Builds the modal that replaces the search input modal once the user
+ * submits. Lists matching legal_requests and vendors and offers a
+ * "もう一度検索" button that swaps the view back to the search input.
+ *
+ * @param {string} keyword The keyword the user submitted.
+ * @param {object} data Payload from /api/search/issues, possibly with
+ *   `__error` set if the fetch failed.
+ */
+function getSearchResultsModal_(keyword, data) {
+  var blocks = [
+    {
+      type: 'section',
+      text: { type: 'mrkdwn', text: '*🔎 検索結果: `' + keyword + '`*' },
+    },
+    { type: 'divider' },
+  ];
+
+  if (data && data.__error) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '⚠️ ' + data.__error,
+      },
+    });
+  } else {
+    var lr = (data && data.legalRequests) || [];
+    var vendors = (data && data.vendors) || [];
+
+    if (lr.length === 0 && vendors.length === 0) {
+      blocks.push({
+        type: 'section',
+        text: {
+          type: 'mrkdwn',
+          text: '該当するデータは見つかりませんでした。別のキーワードでお試しください。',
+        },
+      });
+    } else {
+      if (lr.length > 0) {
+        blocks.push({
+          type: 'section',
+          text: { type: 'mrkdwn', text: '*📁 関連課題*' },
+        });
+        lr.slice(0, 8).forEach(function (r) {
+          var emoji =
+            r.summary && r.summary.indexOf('検収') >= 0
+              ? '✅'
+              : r.summary && r.summary.indexOf('許諾') >= 0
+              ? '💰'
+              : '📝';
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text:
+                emoji +
+                ' *' + (r.backlog_issue_key || '—') + '*: ' + (r.summary || '') +
+                '\n>相手方: ' + (r.counterparty || '未設定'),
+            },
+          });
+        });
+      }
+
+      if (vendors.length > 0) {
+        if (lr.length > 0) blocks.push({ type: 'divider' });
+        blocks.push({
+          type: 'section',
+          text: { type: 'mrkdwn', text: '*🏢 取引先マスター*' },
+        });
+        vendors.slice(0, 5).forEach(function (v) {
+          blocks.push({
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text:
+                '• `' + (v.vendor_code || '') + '` *' + (v.vendor_name || '') + '*' +
+                (v.trade_name ? '\n  _' + v.trade_name + '_' : ''),
+            },
+          });
+        });
+      }
+    }
+  }
+
+  // Action row: "もう一度検索" button. action_id is matched in
+  // handleInteractivity_ and swaps the view back to the empty
+  // search modal.
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'actions',
+    elements: [
+      {
+        type: 'button',
+        action_id: 'legal_search_again',
+        text: { type: 'plain_text', text: '🔁 もう一度検索する' },
+        style: 'primary',
+      },
+    ],
+  });
+
+  return {
+    type: 'modal',
+    callback_id: 'legal_search_results',
+    title: { type: 'plain_text', text: '法務検索: 結果' },
+    close: { type: 'plain_text', text: '閉じる' },
+    blocks: blocks,
   };
 }
 
