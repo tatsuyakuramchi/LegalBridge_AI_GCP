@@ -1,50 +1,39 @@
-# Build stage
-FROM node:22-slim AS builder
+# legalbridge-admin-ui — slim static host (Phase 2f-2)
+#
+# Two-stage build:
+#   1. Build the React bundle with Vite (needs full dev deps).
+#   2. Run a thin Express host that serves the bundle from /app/dist
+#      and returns 410 Gone for any /api/* request (apiRouter dispatches
+#      everything client-side to legalbridge-search-api / -document-worker).
 
+# ── Build stage ────────────────────────────────────────────────────────
+FROM node:22-slim AS builder
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
-
-# Install all dependencies
 RUN npm install
 
-# Copy source code
 COPY . .
-
-# Build the frontend assets
 RUN npm run build
 
-# Production stage
+# ── Production stage ──────────────────────────────────────────────────
 FROM node:22-slim
-
 WORKDIR /app
 
-# Copy package files
 COPY package*.json ./
-
-# Install only production dependencies
 RUN npm install --omit=dev
 
-# Copy the built frontend
-COPY --from=builder /app/dist ./dist
-
-# Copy the server and source code (since we run server.ts directly)
-COPY --from=builder /app/server.ts ./
-COPY --from=builder /app/src ./src
-COPY --from=builder /app/lib ./lib
-COPY --from=builder /app/templates ./templates
-
-# Node needs tsx to run .ts files if we aren't compiling to JS
-# But we can also use Node 22's native (experimental) TS support or just install tsx
+# tsx is needed because server.ts runs directly (no JS transpile step).
 RUN npm install tsx
 
-# Set production environment
+# Static assets + thin server. We deliberately do NOT copy src/,
+# templates/, or lib/ — none of them are needed at runtime now that
+# the API routes live in services/api and services/worker.
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server.ts ./
+
 ENV NODE_ENV=production
 ENV PORT=8080
-
-# Expose the port
 EXPOSE 8080
 
-# Start the server using tsx to handle .ts imports correctly in ESM
 CMD ["npx", "tsx", "server.ts"]
