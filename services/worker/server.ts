@@ -1403,7 +1403,53 @@ ${details}
     let { issueKey, templateType, formData, requesterEmail, nextStatusId } = req.body;
 
     try {
-      const issue = await backlogService.getIssue(issueKey);
+      // Admin UI が「Backlog 課題なし」で発行する仮キー (MANUAL-<ts>) は
+      // Backlog 側に存在しない。getIssue で 404 になるため、合成 issue で
+      // フォールバックする。同様に updateIssueStatus もスキップ。
+      // テンプレ種別から issueType.name を推定 (workflow_settings 検索用)。
+      const isManualIssue =
+        typeof issueKey === "string" && issueKey.startsWith("MANUAL-");
+
+      let issue: any;
+      if (isManualIssue) {
+        const inferredTypeName =
+          templateType === "individual_license_terms"
+            ? "個別利用許諾条件"
+            : templateType === "license_master"
+              ? "ライセンスマスター"
+              : templateType === "purchase_order"
+                ? "発注書"
+                : templateType.startsWith("inspection_certificate")
+                  ? "検収書"
+                  : templateType === "royalty_statement"
+                    ? "利用許諾料計算書"
+                    : "Document";
+        issue = {
+          issueKey,
+          summary: formData?.summary || formData?.PROJECT_TITLE || issueKey,
+          issueType: { name: inferredTypeName },
+          description: "",
+        };
+      } else {
+        try {
+          issue = await backlogService.getIssue(issueKey);
+        } catch (e: any) {
+          // Backlog 上に存在しない / 権限がない場合は MANUAL- 同様に
+          // 続行可能にする (PDF 生成は副次的な Backlog 連携の有無に
+          // 依らず実行できるべき)。
+          console.warn(
+            `Backlog getIssue failed for ${issueKey} (continuing with synthetic issue):`,
+            e?.message || e
+          );
+          issue = {
+            issueKey,
+            summary: formData?.summary || formData?.PROJECT_TITLE || issueKey,
+            issueType: { name: "Document" },
+            description: "",
+          };
+        }
+      }
+
       const docNumber = await getNewDocumentNumber(templateType, issue.issueType.name);
 
       // Auto-advance Backlog status if a next_status_id is configured.
@@ -1419,7 +1465,7 @@ ${details}
           );
         }
       }
-      if (nextStatusId) {
+      if (nextStatusId && !isManualIssue) {
         try {
           await backlogService.updateIssueStatus(issueKey, nextStatusId);
         } catch (statusError) {
