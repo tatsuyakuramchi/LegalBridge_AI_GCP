@@ -500,98 +500,153 @@
         <div class="section-title">金銭条件（Financial Terms）</div>
       </div>
 
-      <!-- 金銭条件 1 -->
-      <div class="finance-panel">
-        <div class="finance-header">金銭条件 1：自社製造・直接販売（{{金銭条件1_地域言語ラベル}}）</div>
-        <div class="formula-box">
-          <div class="formula-label">計算式 / Formula</div>
-          <div class="formula-value">{{金銭条件1_計算式}}</div>
+      {{!--
+        Phase 7f: financial_conditions[] が存在すれば配列ループで N 件
+        描画する (FinancialConditionTable の出力に対応)。
+        後方互換: 配列が無いときは従来の 1〜3 固定 block を出す。
+        --}}
+      {{#if financial_conditions.length}}
+        {{#each financial_conditions}}
+        <div class="finance-panel">
+          <div class="finance-header">
+            金銭条件 {{condition_no}}{{#if region_language_label}}（{{region_language_label}}）{{/if}}
+          </div>
+          {{#if formula_text}}
+          <div class="formula-box">
+            <div class="formula-label">計算式 / Formula</div>
+            <div class="formula-value">{{formula_text}}</div>
+          </div>
+          {{/if}}
+          <div class="finance-details">
+            <div class="detail-item">
+              <div class="sig-label">計算方式</div>
+              <div class="sig-value" style="font-weight:700">{{or calc_method "—"}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">料率 (Royalty Rate)</div>
+              <div class="sig-value" style="font-weight:700">{{formatPct rate_pct}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">基準価格 (Base Price)</div>
+              <div class="sig-value">{{or base_price_label "—"}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">期間/通貨</div>
+              <div class="sig-value">{{or calc_period "—"}} / {{or currency "JPY"}}</div>
+            </div>
+          </div>
+          {{#if mg_amount}}
+          {{#if (gt mg_amount 0)}}
+          <div class="detail-item" style="margin-top:6px">
+            <div class="sig-label">MG (Minimum Guarantee)</div>
+            <div class="sig-value" style="font-weight:700">{{formatYen mg_amount}}</div>
+          </div>
+          {{/if}}
+          {{/if}}
+          {{#if payment_terms}}
+          <div class="payment-terms">
+            <div style="font-weight:bold; color:#856404; font-size:7.5pt; margin-bottom:2px">支払条件 (Payment Terms)</div>
+            <div>{{payment_terms}}</div>
+          </div>
+          {{/if}}
         </div>
-        <div class="finance-details">
-          <div class="detail-item">
-            <div class="sig-label">計算方式</div>
-            <div class="sig-value" style="font-weight:700">{{金銭条件1_計算方式}}</div>
+        {{/each}}
+      {{else}}
+        <!-- Legacy fallback (flat 金銭条件N_*) -->
+        <div class="finance-panel">
+          <div class="finance-header">金銭条件 1：自社製造・直接販売（{{金銭条件1_地域言語ラベル}}）</div>
+          <div class="formula-box">
+            <div class="formula-label">計算式 / Formula</div>
+            <div class="formula-value">{{金銭条件1_計算式}}</div>
           </div>
-          <div class="detail-item">
-            <div class="sig-label">料率 (Royalty Rate)</div>
-            <div class="sig-value" style="font-weight:700">{{金銭条件1_料率}}</div>
+          <div class="finance-details">
+            <div class="detail-item">
+              <div class="sig-label">計算方式</div>
+              <div class="sig-value" style="font-weight:700">{{金銭条件1_計算方式}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">料率 (Royalty Rate)</div>
+              <div class="sig-value" style="font-weight:700">{{金銭条件1_料率}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">基準価格 (Base Price)</div>
+              <div class="sig-value">{{金銭条件1_基準価格ラベル}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">期間/通貨</div>
+              <div class="sig-value">{{金銭条件1_計算期間}} / {{金銭条件1_通貨}}</div>
+            </div>
           </div>
-          <div class="detail-item">
-            <div class="sig-label">基準価格 (Base Price)</div>
-            <div class="sig-value">{{金銭条件1_基準価格ラベル}}</div>
-          </div>
-          <div class="detail-item">
-            <div class="sig-label">期間/通貨</div>
-            <div class="sig-value">{{金銭条件1_計算期間}} / {{金銭条件1_通貨}}</div>
+          <div class="payment-terms">
+            <div style="font-weight:bold; color:#856404; font-size:7.5pt; margin-bottom:2px">支払条件 (Payment Terms)</div>
+            <div>{{金銭条件1_支払条件}}</div>
           </div>
         </div>
-        <div class="payment-terms">
-          <div style="font-weight:bold; color:#856404; font-size:7.5pt; margin-bottom:2px">支払条件 (Payment Terms)</div>
-          <div>{{金銭条件1_支払条件}}</div>
-        </div>
-      </div>
 
-      <!-- 金銭条件 2 -->
-      <div class="finance-panel">
-        <div class="finance-header">金銭条件 2：サブライセンス等（{{金銭条件2_地域言語ラベル}}）</div>
-        <div class="formula-box">
-          <div class="formula-label">計算式 / Formula</div>
-          <div class="formula-value">{{金銭条件2_計算式}}</div>
+        {{#if 金銭条件2_計算方式}}
+        <div class="finance-panel">
+          <div class="finance-header">金銭条件 2：サブライセンス等（{{金銭条件2_地域言語ラベル}}）</div>
+          <div class="formula-box">
+            <div class="formula-label">計算式 / Formula</div>
+            <div class="formula-value">{{金銭条件2_計算式}}</div>
+          </div>
+          <div class="finance-details">
+            <div class="detail-item">
+              <div class="sig-label">計算方式</div>
+              <div class="sig-value" style="font-weight:700">{{金銭条件2_計算方式}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">料率 (Royalty Rate)</div>
+              <div class="sig-value" style="font-weight:700">{{金銭条件2_料率}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">基準価格 (Base Price)</div>
+              <div class="sig-value">{{金銭条件2_基準価格ラベル}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">期間/通貨</div>
+              <div class="sig-value">{{金銭条件2_計算期間}} / {{金銭条件2_通貨}}</div>
+            </div>
+          </div>
+          <div class="payment-terms">
+            <div style="font-weight:bold; color:#856404; font-size:7.5pt; margin-bottom:2px">支払条件 (Payment Terms)</div>
+            <div>{{金銭条件2_支払条件}}</div>
+          </div>
         </div>
-        <div class="finance-details">
-          <div class="detail-item">
-            <div class="sig-label">計算方式</div>
-            <div class="sig-value" style="font-weight:700">{{金銭条件2_計算方式}}</div>
-          </div>
-          <div class="detail-item">
-            <div class="sig-label">料率 (Royalty Rate)</div>
-            <div class="sig-value" style="font-weight:700">{{金銭条件2_料率}}</div>
-          </div>
-          <div class="detail-item">
-            <div class="sig-label">基準価格 (Base Price)</div>
-            <div class="sig-value">{{金銭条件2_基準価格ラベル}}</div>
-          </div>
-          <div class="detail-item">
-            <div class="sig-label">期間/通貨</div>
-            <div class="sig-value">{{金銭条件2_計算期間}} / {{金銭条件2_通貨}}</div>
-          </div>
-        </div>
-        <div class="payment-terms">
-          <div style="font-weight:bold; color:#856404; font-size:7.5pt; margin-bottom:2px">支払条件 (Payment Terms)</div>
-          <div>{{金銭条件2_支払条件}}</div>
-        </div>
-      </div>
+        {{/if}}
 
-      <!-- 金銭条件 3 -->
-      <div class="finance-panel">
-        <div class="finance-header">金銭条件 3：プロダクトアウト条件（{{金銭条件3_地域言語ラベル}}）</div>
-        <div class="formula-box">
-          <div class="formula-label">計算式 / Formula</div>
-          <div class="formula-value">{{金銭条件3_計算式}}</div>
+        {{#if 金銭条件3_計算方式}}
+        <div class="finance-panel">
+          <div class="finance-header">金銭条件 3：プロダクトアウト条件（{{金銭条件3_地域言語ラベル}}）</div>
+          <div class="formula-box">
+            <div class="formula-label">計算式 / Formula</div>
+            <div class="formula-value">{{金銭条件3_計算式}}</div>
+          </div>
+          <div class="finance-details">
+            <div class="detail-item">
+              <div class="sig-label">計算方式</div>
+              <div class="sig-value" style="font-weight:700">{{金銭条件3_計算方式}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">料率 (Royalty Rate)</div>
+              <div class="sig-value" style="font-weight:700">{{金銭条件3_料率}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">基準価格 (Base Price)</div>
+              <div class="sig-value">{{金銭条件3_基準価格ラベル}}</div>
+            </div>
+            <div class="detail-item">
+              <div class="sig-label">期間/通貨</div>
+              <div class="sig-value">{{金銭条件3_計算期間}} / {{金銭条件3_通貨}}</div>
+            </div>
+          </div>
+          <div class="payment-terms">
+            <div style="font-weight:bold; color:#856404; font-size:7.5pt; margin-bottom:2px">支払条件 (Payment Terms)</div>
+            <div>{{金銭条件3_支払条件}}</div>
+          </div>
         </div>
-        <div class="finance-details">
-          <div class="detail-item">
-            <div class="sig-label">計算方式</div>
-            <div class="sig-value" style="font-weight:700">{{金銭条件3_計算方式}}</div>
-          </div>
-          <div class="detail-item">
-            <div class="sig-label">料率 (Royalty Rate)</div>
-            <div class="sig-value" style="font-weight:700">{{金銭条件3_料率}}</div>
-          </div>
-          <div class="detail-item">
-            <div class="sig-label">基準価格 (Base Price)</div>
-            <div class="sig-value">{{金銭条件3_基準価格ラベル}}</div>
-          </div>
-          <div class="detail-item">
-            <div class="sig-label">期間/通貨</div>
-            <div class="sig-value">{{金銭条件3_計算期間}} / {{金銭条件3_通貨}}</div>
-          </div>
-        </div>
-        <div class="payment-terms">
-          <div style="font-weight:bold; color:#856404; font-size:7.5pt; margin-bottom:2px">支払条件 (Payment Terms)</div>
-          <div>{{金銭条件3_支払条件}}</div>
-        </div>
-      </div>
+        {{/if}}
+      {{/if}}
     </section>
 
     <!-- Section 4 -->

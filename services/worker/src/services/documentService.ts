@@ -79,6 +79,47 @@ export class DocumentService {
     Handlebars.registerHelper("add", (a, b) => {
       return Number(a) + Number(b);
     });
+
+    // 6. Multiplication (e.g. unit_price × quantity = amount)
+    Handlebars.registerHelper("multiply", (a, b) => {
+      return (Number(a) || 0) * (Number(b) || 0);
+    });
+
+    // 7. 1-based index (use inside {{#each}} as {{index1 @index}})
+    Handlebars.registerHelper("index1", (idx) => Number(idx) + 1);
+
+    // 8. Percent formatting (e.g. 5.0 -> "5.0 %")
+    //    Strips trailing zeros after decimal point for visual hygiene.
+    Handlebars.registerHelper("formatPct", (value) => {
+      if (value === null || value === undefined || value === "") return "";
+      const num = Number(value);
+      if (!Number.isFinite(num)) return String(value);
+      return num.toFixed(4).replace(/\.?0+$/, "") + " %";
+    });
+
+    // 9. Yen with mark (e.g. 1234 -> "¥ 1,234")
+    Handlebars.registerHelper("formatYen", (value) => {
+      if (value === null || value === undefined || value === "") return "¥ 0";
+      const num = Number(value);
+      if (!Number.isFinite(num)) return "¥ 0";
+      return "¥ " + new Intl.NumberFormat("ja-JP").format(Math.floor(num));
+    });
+
+    // 10. Default value (e.g. {{or value "—"}} renders "—" when falsy)
+    Handlebars.registerHelper("or", (a, b) => (a ? a : b));
+
+    // 11. Greater-than for {{#if (gt remaining 0)}} style guards.
+    Handlebars.registerHelper("gt", (a, b) => Number(a) > Number(b));
+    Handlebars.registerHelper("lt", (a, b) => Number(a) < Number(b));
+
+    // 12. Joined list helper for arrays of strings or {{value: ...}} objects.
+    Handlebars.registerHelper("join", (arr, sep) => {
+      if (!Array.isArray(arr)) return "";
+      return arr.map((v) => (typeof v === "object" ? v.value || v.label : v)).join(sep || ", ");
+    });
+
+    // 13. Length helper — useful for {{#if (gt (length items) 0)}}.
+    Handlebars.registerHelper("length", (arr) => (Array.isArray(arr) ? arr.length : 0));
   }
 
   private loadTemplate(type: DocumentType): string {

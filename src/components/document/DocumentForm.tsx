@@ -13,6 +13,7 @@ import {
   FinancialConditionTable,
   type FinancialCondition,
 } from './FinancialConditionTable';
+import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -1262,12 +1263,137 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderGroup('IV. 対象作品・製造')}
         </FormSection>
 
+        {/* V. ロイヤリティ計算 — Phase 7e: 右ペインにライブ計算プレビュー。
+            form-context が license_contract_id + financial_conditions[] を
+            プリセットしているとき、ユーザーは
+              ・条件 1〜N の選択 (calc target)
+              ・基準価格 / 数量 / サンプル数量 / 税率
+            の 4 つを動かすだけで、サーバ側 billing.calculateFee の結果が
+            300ms デバウンスで右側に出る。Math.ceil の挙動も含めて UI 上で
+            確定保存前に検証できる。 */}
         <FormSection
           title="V. ロイヤリティ計算"
           variant="indigo"
           icon={<Scale className="w-4 h-4" />}
         >
-          {renderGroup('V. ロイヤリティ計算')}
+          <div className="col-span-full grid grid-cols-1 lg:grid-cols-5 gap-6">
+            {/* 左 3/5: 既存フィールド + condition ピッカー */}
+            <div className="lg:col-span-3 space-y-3">
+              {/* 金銭条件ピッカー — form-context から拾った行を radio で選ぶ */}
+              {Array.isArray(formData.financial_conditions) &&
+              formData.financial_conditions.length > 0 ? (
+                <div className="border border-input rounded-sm p-3 bg-muted/20">
+                  <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+                    計算対象の金銭条件
+                  </div>
+                  <div className="space-y-1.5">
+                    {(
+                      formData.financial_conditions as FinancialCondition[]
+                    ).map((c) => {
+                      const cid = Number(c.id);
+                      const selected =
+                        Number(formData.license_financial_condition_id) === cid;
+                      return (
+                        <label
+                          key={cid || c.condition_no}
+                          className={cn(
+                            'flex items-center gap-2 cursor-pointer text-[11px] font-mono p-1.5 rounded-sm',
+                            selected
+                              ? 'bg-foreground text-background'
+                              : 'hover:bg-muted/40'
+                          )}
+                        >
+                          <input
+                            type="radio"
+                            name="license_financial_condition_id"
+                            checked={selected}
+                            onChange={() =>
+                              setFormData({
+                                ...formData,
+                                license_financial_condition_id: cid,
+                                // 料率もこの条件で上書き (HTML テンプレ用 legacy)
+                                料率:
+                                  c.rate_pct !== undefined
+                                    ? String(c.rate_pct)
+                                    : formData.料率,
+                              })
+                            }
+                            className="cursor-pointer"
+                          />
+                          <span className="font-bold">条件 {c.condition_no}</span>
+                          <span className="opacity-70">
+                            {c.calc_method || '—'}
+                          </span>
+                          <span className="opacity-70">
+                            {c.rate_pct !== undefined ? `${c.rate_pct}%` : ''}
+                          </span>
+                          {c.mg_amount && c.mg_amount > 0 ? (
+                            <span className="opacity-70">
+                              MG {Number(c.mg_amount).toLocaleString('ja-JP')}
+                            </span>
+                          ) : null}
+                          {c.region_language_label && (
+                            <span className="opacity-60 ml-auto text-[9px]">
+                              {c.region_language_label}
+                            </span>
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : formData.license_contract_id ? (
+                <div className="text-[10px] font-mono text-muted-foreground italic">
+                  ライセンス契約 ID は紐付き済ですが、金銭条件が未登録です。
+                  先に「個別利用許諾条件書」を作成してください。
+                </div>
+              ) : null}
+
+              {renderGroup('V. ロイヤリティ計算')}
+            </div>
+
+            {/* 右 2/5: ライブ計算プレビュー */}
+            <div className="lg:col-span-2">
+              <RoyaltyPreviewPanel
+                licenseContractId={Number(formData.license_contract_id)}
+                licenseFinancialConditionId={Number(
+                  formData.license_financial_condition_id
+                )}
+                unitPrice={Number(formData.基準価格 || formData.MSRP || 0)}
+                quantity={Number(formData.quantity || 0)}
+                sampleQuantity={Number(formData.sampleQuantity || 0)}
+                taxRate={Number(formData.taxRate || 10)}
+                onPreview={(p) => {
+                  if (!p) return;
+                  // Preview 結果をフォームの「合計」系フィールドに同期。
+                  // 確定保存前にユーザーが目視する数字がサーバと一致するように。
+                  // 注: setFormData は functional updater 非対応のため
+                  // closure の formData を読む。fetch 中に別フィールドが
+                  // 編集された場合は最新の合計値が上書きされるが、ユーザーは
+                  // 入力継続で再計算が走るので実害は小さい。
+                  setFormData({
+                    ...formData,
+                    billableQuantity: String(p.billable_quantity),
+                    grossRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
+                      p.gross_royalty_ex_tax
+                    ),
+                    mgAmount: String(p.mg_amount),
+                    mgRemaining: String(p.mg_remaining),
+                    actualRoyalty: p.actual_royalty_ex_tax,
+                    actualRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
+                      p.actual_royalty_ex_tax
+                    ),
+                    taxAmount: new Intl.NumberFormat('ja-JP').format(
+                      p.tax_amount
+                    ),
+                    totalPaymentStr: new Intl.NumberFormat('ja-JP').format(
+                      p.total_payment_inc_tax
+                    ),
+                  });
+                }}
+              />
+            </div>
+          </div>
         </FormSection>
 
         <FormSection title="VI. 金銭・支払" variant="cyan">

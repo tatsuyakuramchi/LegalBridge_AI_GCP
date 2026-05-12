@@ -504,11 +504,16 @@ async function startServer() {
         }
       }
 
-      // Phase 7d: 個別利用許諾条件書なら license_financial_conditions を
-      // FinancialConditionTable がそのまま使える shape で同梱する。
+      // Phase 7d/7e: 個別利用許諾条件書 & 利用許諾料計算書の両方で
+      // license_financial_conditions を構造化 rows として同梱する。
+      // - individual_license_terms: FinancialConditionTable の編集ソース
+      // - royalty_statement: 計算対象の condition を選ぶドロップダウン用
       // 既存の {{金銭条件1_*}} flat field 群は上の royaltyQuery 分岐で
-      // 既に埋まっているので、ここはあくまで「新しい統合表」用の追加情報。
-      if (template === "individual_license_terms") {
+      // 既に埋まっているので、こちらは追加情報。
+      if (
+        template === "individual_license_terms" ||
+        template === "royalty_statement"
+      ) {
         try {
           const lc = await query(
             `SELECT id FROM license_contracts WHERE backlog_issue_key = $1`,

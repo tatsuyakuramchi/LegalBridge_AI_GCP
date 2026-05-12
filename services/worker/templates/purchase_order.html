@@ -304,17 +304,20 @@
       {{#if items}}
       {{#each items}}
       <tr>
-        <td class="center">{{add @index 1}}</td>
+        <td class="center">{{or line_no (index1 @index)}}</td>
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
+          {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
           {{#if detailText}}<div class="item-spec-block">{{detailText}}</div>{{/if}}
         </td>
-        <td class="center"><span class="pay-method-badge">{{payment_method_display}}</span></td>
+        <td class="center">
+          <span class="pay-method-badge">{{or payment_method_display payment_method}}</span>
+        </td>
         <td class="center">{{payment_date}}</td>
-        <td class="right">{{qty}}</td>
-        <td class="right">¥ {{formatCurrency unitPrice}}</td>
-        <td class="right">¥ {{formatCurrency amount}}</td>
+        <td class="right">{{or quantity qty}}</td>
+        <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
+        <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
       </tr>
       {{/each}}
       {{else}}
