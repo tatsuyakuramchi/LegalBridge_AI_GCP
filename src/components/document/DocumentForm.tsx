@@ -500,6 +500,254 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
   }
 
+  // Specialized License Master (Phase 3b-4)
+  //
+  // VENDOR_* in the template == ライセンサー / PARTY_A_* == ライセンシー.
+  // The default mapping (Vendor=取引先, PARTY_A=自社) covers inbound
+  // licensing; the swap buttons cover the inverted case. Bank info on
+  // a license master is the licensor's royalty receive account, so it
+  // auto-fills from the active vendor's bank columns when [取引先] is
+  // clicked on that section.
+  if (templateId === 'license_master') {
+    const fillVendorFromSelf = () =>
+      setFormData({
+        ...formData,
+        VENDOR_NAME: companyProfile?.name || '',
+        VENDOR_ADDRESS: companyProfile?.address || '',
+        VENDOR_REP: companyProfile?.representative || '',
+      });
+
+    const fillVendorFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        VENDOR_NAME: activeVendor.vendor_name || '',
+        VENDOR_ADDRESS: activeVendor.address || '',
+        VENDOR_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        VENDOR_PHONE: activeVendor.phone || '',
+        VENDOR_EMAIL: activeVendor.email || '',
+        // Bank info commonly follows the licensor on a license master
+        BANK_NAME: activeVendor.bank_name || '',
+        BRANCH_NAME: activeVendor.branch_name || '',
+        ACCOUNT_TYPE: activeVendor.account_type || '',
+        ACCOUNT_NUMBER: activeVendor.account_number || '',
+        ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
+        IS_INVOICE_ISSUER: !!activeVendor.is_invoice_issuer,
+        invoiceRegistrationDisplay: activeVendor.invoice_registration_number
+          ? `T${activeVendor.invoice_registration_number}`
+          : '',
+      });
+    };
+
+    const fillPartyAFromSelf = () =>
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: companyProfile?.name || '',
+        PARTY_A_ADDRESS: companyProfile?.address || '',
+        PARTY_A_REP: companyProfile?.representative || '',
+      });
+
+    const fillPartyAFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: activeVendor.vendor_name || '',
+        PARTY_A_ADDRESS: activeVendor.address || '',
+        PARTY_A_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+      });
+    };
+
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
+    return (
+      <div className="space-y-10">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          )}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <FormSection title="I. ヘッダ" variant="default" icon={<Briefcase className="w-4 h-4" />}>
+          {renderGroup('I. ヘッダ')}
+        </FormSection>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <FormSection
+            title="II. ライセンサー (許諾者)"
+            variant="blue"
+            icon={<Building2 className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillVendorFromSelf, !companyProfile)}
+                {sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('II. ライセンサー (許諾者)')}
+          </FormSection>
+
+          <FormSection
+            title="III. ライセンシー (被許諾者)"
+            variant="amber"
+            icon={<User className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillPartyAFromSelf, !companyProfile)}
+                {sideButton('取引先', fillPartyAFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('III. ライセンシー (被許諾者)')}
+          </FormSection>
+        </div>
+
+        <FormSection
+          title="IV. 振込先口座 (ロイヤリティ送金先)"
+          variant="emerald"
+          headerActions={sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+        >
+          {renderGroup('IV. 振込先口座 (ロイヤリティ送金先)')}
+        </FormSection>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ V. 備考 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">{renderGroup('V. 備考 (任意)')}</div>
+        </details>
+      </div>
+    );
+  }
+
+  // Specialized Service Master (業務委託基本契約書, Phase 3b-4)
+  //
+  // 甲 (Arclight) is hard-coded inside the template HTML, so only 乙
+  // (the contractor) has form variables. One section, [取引先] button
+  // does the entire fill.
+  if (templateId === 'service_master') {
+    const fillPartyBFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        PARTY_B_NAME: activeVendor.vendor_name || '',
+        PARTY_B_ADDRESS: activeVendor.address || '',
+        PARTY_B_REPRESENTATIVE: activeVendor.vendor_rep || activeVendor.contact_name || '',
+      });
+    };
+
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
+    return (
+      <div className="space-y-10">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          )}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="px-4 py-2 rounded-sm bg-muted/50 text-[10px] font-mono text-muted-foreground">
+          甲 (発注者) は「株式会社アークライト」がテンプレート内に固定されています。
+          以下は 乙 (受託者) の情報のみ入力してください。
+        </div>
+
+        <FormSection title="I. ヘッダ" variant="default" icon={<Briefcase className="w-4 h-4" />}>
+          {renderGroup('I. ヘッダ')}
+        </FormSection>
+
+        <FormSection
+          title="II. 乙 (受託者)"
+          variant="amber"
+          icon={<Building2 className="w-4 h-4" />}
+          headerActions={
+            <button
+              type="button"
+              onClick={fillPartyBFromPartner}
+              disabled={!activeVendor}
+              className={cn(
+                'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+                !activeVendor
+                  ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+                  : 'border-foreground/30 text-foreground hover:bg-muted'
+              )}
+              title={!activeVendor ? '上部で取引先を選択してください' : undefined}
+            >
+              取引先
+            </button>
+          }
+        >
+          {renderGroup('II. 乙 (受託者)')}
+        </FormSection>
+      </div>
+    );
+  }
+
   // Specialized Inspection Form
   if (templateId.startsWith('inspection_certificate')) {
     return (
