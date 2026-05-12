@@ -1670,7 +1670,332 @@ ${details}
   });
 
   /**
-   * 利用許諾料計算書を preview。MG 消化と税の試算を返す。
+   * 過去の「ライセンス基本契約書」(license_master) を DB に登録。
+   * 個別利用許諾条件書の親 (ledger 単位) として後続の個別契約から
+   * ledger_id 経由で参照される。財務条件は伴わない (個別側で持つ)。
+   *
+   * body: {
+   *   issue_key?, contract_number?, ledger_id?, drive_link?,
+   *   basic_contract_name?, issue_date?,
+   *   licensor_*, licensee_*, original_work?, license_start_date?,
+   *   license_period_note?, supervisor?, credit_display?, remarks?,
+   *   effective_date?, expiration_date?, auto_renewal?,
+   *   form_data?: any
+   * }
+   */
+  app.post("/api/imports/license-master", express.json(), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const issueKey =
+        body.issue_key && String(body.issue_key).trim().length > 0
+          ? String(body.issue_key).trim()
+          : `IMPORT-${Date.now()}`;
+      const contractNumber =
+        body.contract_number && String(body.contract_number).trim().length > 0
+          ? String(body.contract_number).trim()
+          : await getNewDocumentNumber("license_master", "ライセンス基本契約");
+      const ledgerId =
+        body.ledger_id && String(body.ledger_id).trim().length > 0
+          ? String(body.ledger_id).trim()
+          : contractNumber;
+
+      // 1. license_contracts ヘッダ (financial_conditions なし)
+      const lcRes = await query(
+        `INSERT INTO license_contracts (
+           backlog_issue_key, ledger_id, ledger_number, contract_number,
+           licensor, original_work,
+           basic_contract_name, issue_date,
+           licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
+           licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
+           product_name_predicted,
+           license_start_date, license_period_note,
+           supervisor, credit_display, remarks
+         )
+         VALUES (
+           $1, $2, $3, $4, $5, $6,
+           $7, $8,
+           $9, $10, $11, $12,
+           $13, $14, $15, $16,
+           $17, $18, $19, $20, $21, $22
+         )
+         ON CONFLICT (backlog_issue_key) DO UPDATE SET
+           ledger_id                = COALESCE(NULLIF(EXCLUDED.ledger_id, ''), license_contracts.ledger_id),
+           ledger_number            = COALESCE(NULLIF(EXCLUDED.ledger_number, ''), license_contracts.ledger_number),
+           contract_number          = EXCLUDED.contract_number,
+           basic_contract_name      = COALESCE(NULLIF(EXCLUDED.basic_contract_name, ''), license_contracts.basic_contract_name),
+           issue_date               = COALESCE(EXCLUDED.issue_date, license_contracts.issue_date),
+           licensor                 = COALESCE(NULLIF(EXCLUDED.licensor, ''), license_contracts.licensor),
+           original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), license_contracts.original_work),
+           licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), license_contracts.licensor_name),
+           licensor_address         = COALESCE(NULLIF(EXCLUDED.licensor_address, ''), license_contracts.licensor_address),
+           licensor_rep             = COALESCE(NULLIF(EXCLUDED.licensor_rep, ''), license_contracts.licensor_rep),
+           licensor_is_corporation  = EXCLUDED.licensor_is_corporation,
+           licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), license_contracts.licensee_name),
+           licensee_address         = COALESCE(NULLIF(EXCLUDED.licensee_address, ''), license_contracts.licensee_address),
+           licensee_rep             = COALESCE(NULLIF(EXCLUDED.licensee_rep, ''), license_contracts.licensee_rep),
+           licensee_is_corporation  = EXCLUDED.licensee_is_corporation,
+           product_name_predicted   = COALESCE(NULLIF(EXCLUDED.product_name_predicted, ''), license_contracts.product_name_predicted),
+           license_start_date       = COALESCE(EXCLUDED.license_start_date, license_contracts.license_start_date),
+           license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), license_contracts.license_period_note),
+           supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), license_contracts.supervisor),
+           credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), license_contracts.credit_display),
+           remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), license_contracts.remarks)
+         RETURNING id`,
+        [
+          issueKey,
+          ledgerId,
+          contractNumber,
+          contractNumber,
+          body.licensor_name || "",
+          body.original_work || "",
+          body.basic_contract_name || "",
+          body.issue_date || null,
+          body.licensor_name || "",
+          body.licensor_address || "",
+          body.licensor_rep || "",
+          !!body.licensor_is_corporation,
+          body.licensee_name || "",
+          body.licensee_address || "",
+          body.licensee_rep || "",
+          !!body.licensee_is_corporation,
+          body.product_name_predicted || "",
+          body.license_start_date || null,
+          body.license_period_note || "",
+          body.supervisor || "",
+          body.credit_display || "",
+          body.remarks || "",
+        ]
+      );
+      const lcId = Number(lcRes.rows[0].id);
+
+      // 2. documents 履歴
+      await query(
+        `INSERT INTO documents (
+           document_number, issue_key, template_type, form_data,
+           drive_link, created_by
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (document_number) DO UPDATE SET
+           form_data  = EXCLUDED.form_data,
+           drive_link = EXCLUDED.drive_link`,
+        [
+          contractNumber,
+          issueKey,
+          "license_master",
+          JSON.stringify({
+            ...(body.form_data || {}),
+            __imported: true,
+            __ledger_id: ledgerId,
+          }),
+          body.drive_link || "",
+          "import",
+        ]
+      );
+
+      // 3. contract_capabilities (master_contract / license) — 法務検索の対象
+      await query(
+        `INSERT INTO contract_capabilities (
+           record_type, contract_category, contract_type, contract_title,
+           document_number, contract_status, effective_date, expiration_date,
+           auto_renewal, original_work, document_url, source_system
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (document_number) DO UPDATE SET
+           record_type      = EXCLUDED.record_type,
+           contract_category = EXCLUDED.contract_category,
+           contract_type    = EXCLUDED.contract_type,
+           contract_title   = EXCLUDED.contract_title,
+           effective_date   = EXCLUDED.effective_date,
+           expiration_date  = EXCLUDED.expiration_date,
+           auto_renewal     = EXCLUDED.auto_renewal,
+           original_work    = EXCLUDED.original_work,
+           document_url     = EXCLUDED.document_url,
+           updated_at       = CURRENT_TIMESTAMP`,
+        [
+          "master_contract",
+          "license",
+          "license_master",
+          body.basic_contract_name ||
+            body.original_work ||
+            contractNumber,
+          contractNumber,
+          "executed",
+          body.effective_date || body.license_start_date || null,
+          body.expiration_date || null,
+          !!body.auto_renewal,
+          body.original_work || "",
+          body.drive_link || "",
+          "Import (Past Document)",
+        ]
+      );
+
+      // 4. external_assets
+      if (body.drive_link) {
+        await query(
+          `INSERT INTO external_assets
+           (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (asset_number) DO UPDATE SET
+             file_link = EXCLUDED.file_link,
+             counterparty = EXCLUDED.counterparty`,
+          [
+            contractNumber,
+            body.basic_contract_name || body.original_work || contractNumber,
+            "contract",
+            body.licensor_name || "Imported",
+            body.drive_link,
+            issueKey,
+          ]
+        );
+      }
+
+      res.json({
+        ok: true,
+        license_contract_id: lcId,
+        issue_key: issueKey,
+        contract_number: contractNumber,
+        ledger_id: ledgerId,
+      });
+    } catch (error) {
+      console.error("/api/imports/license-master failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 過去の「業務委託基本契約書」(service_master) を DB に登録。
+   * 個別 PO の親 (master_contract) として contract_capabilities に
+   * 入る。発注書 / 検収書のような明細を伴う伝票ではないので、
+   * order_items 等には書き込まない。
+   *
+   * body: {
+   *   issue_key?, contract_number?, drive_link?,
+   *   contract_title?, effective_date?, expiration_date?, auto_renewal?,
+   *   vendor_code?, vendor_name?,
+   *   party_a_name?, party_a_address?, party_a_rep?,
+   *   party_b_name?, party_b_address?, party_b_rep?,
+   *   remarks?, form_data?: any
+   * }
+   */
+  app.post("/api/imports/service-master", express.json(), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const issueKey =
+        body.issue_key && String(body.issue_key).trim().length > 0
+          ? String(body.issue_key).trim()
+          : `IMPORT-${Date.now()}`;
+      const contractNumber =
+        body.contract_number && String(body.contract_number).trim().length > 0
+          ? String(body.contract_number).trim()
+          : await getNewDocumentNumber("service_master", "業務委託基本契約");
+
+      // 1. vendor lookup
+      let vendorId: number | null = null;
+      if (body.vendor_code || body.vendor_name) {
+        const vRes = await query(
+          "SELECT id FROM vendors WHERE vendor_code = $1 OR vendor_name = $2 LIMIT 1",
+          [body.vendor_code || "", body.vendor_name || ""]
+        );
+        if (vRes.rows.length > 0) {
+          vendorId = Number(vRes.rows[0].id);
+        }
+      }
+
+      // 2. contract_capabilities (master_contract / service)
+      await query(
+        `INSERT INTO contract_capabilities (
+           vendor_id, record_type, contract_category, contract_type, contract_title,
+           document_number, contract_status, effective_date, expiration_date,
+           auto_renewal, document_url, source_system
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ON CONFLICT (document_number) DO UPDATE SET
+           vendor_id        = EXCLUDED.vendor_id,
+           record_type      = EXCLUDED.record_type,
+           contract_category = EXCLUDED.contract_category,
+           contract_type    = EXCLUDED.contract_type,
+           contract_title   = EXCLUDED.contract_title,
+           effective_date   = EXCLUDED.effective_date,
+           expiration_date  = EXCLUDED.expiration_date,
+           auto_renewal     = EXCLUDED.auto_renewal,
+           document_url     = EXCLUDED.document_url,
+           updated_at       = CURRENT_TIMESTAMP`,
+        [
+          vendorId,
+          "master_contract",
+          "service",
+          "service_master",
+          body.contract_title || contractNumber,
+          contractNumber,
+          "executed",
+          body.effective_date || null,
+          body.expiration_date || null,
+          !!body.auto_renewal,
+          body.drive_link || "",
+          "Import (Past Document)",
+        ]
+      );
+
+      // 3. documents 履歴
+      await query(
+        `INSERT INTO documents (
+           document_number, issue_key, template_type, form_data,
+           drive_link, created_by
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (document_number) DO UPDATE SET
+           form_data  = EXCLUDED.form_data,
+           drive_link = EXCLUDED.drive_link`,
+        [
+          contractNumber,
+          issueKey,
+          "service_master",
+          JSON.stringify({
+            ...(body.form_data || {}),
+            __imported: true,
+            party_a_name: body.party_a_name,
+            party_a_address: body.party_a_address,
+            party_a_rep: body.party_a_rep,
+            party_b_name: body.party_b_name,
+            party_b_address: body.party_b_address,
+            party_b_rep: body.party_b_rep,
+            remarks: body.remarks,
+          }),
+          body.drive_link || "",
+          "import",
+        ]
+      );
+
+      // 4. external_assets
+      if (body.drive_link) {
+        await query(
+          `INSERT INTO external_assets
+           (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (asset_number) DO UPDATE SET
+             file_link = EXCLUDED.file_link,
+             counterparty = EXCLUDED.counterparty`,
+          [
+            contractNumber,
+            body.contract_title || contractNumber,
+            "contract",
+            body.vendor_name || body.party_b_name || "Imported",
+            body.drive_link,
+            issueKey,
+          ]
+        );
+      }
+
+      res.json({
+        ok: true,
+        issue_key: issueKey,
+        contract_number: contractNumber,
+        vendor_id: vendorId,
+      });
+    } catch (error) {
+      console.error("/api/imports/service-master failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 利用許諾料計算書を preview。MG 消化と試算を返す。
    * フロントは数量・サンプル数を変更するたびにこれを叩いて
    * リアルタイム計算表示する。
    */

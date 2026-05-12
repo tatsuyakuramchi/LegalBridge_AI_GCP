@@ -40,7 +40,11 @@ import {
   type FinancialCondition,
 } from "@/src/components/document/FinancialConditionTable"
 
-type Tab = "purchase_order" | "individual_license_terms"
+type Tab =
+  | "purchase_order"
+  | "individual_license_terms"
+  | "license_master"
+  | "service_master"
 
 const Section: React.FC<{
   title: string
@@ -801,6 +805,799 @@ const LicenseImportForm: React.FC<{
 }
 
 // ---------------------------------------------------------------------
+// ライセンス基本契約書インポートフォーム
+// ---------------------------------------------------------------------
+
+const initialLicenseMasterForm = {
+  issue_key: "",
+  contract_number: "",
+  ledger_id: "",
+  drive_link: "",
+  basic_contract_name: "",
+  issue_date: "",
+  licensor_name: "",
+  licensor_address: "",
+  licensor_rep: "",
+  licensor_is_corporation: true,
+  licensee_name: "",
+  licensee_address: "",
+  licensee_rep: "",
+  licensee_is_corporation: true,
+  original_work: "",
+  product_name_predicted: "",
+  license_start_date: "",
+  license_period_note: "",
+  effective_date: "",
+  expiration_date: "",
+  auto_renewal: false,
+  supervisor: "",
+  credit_display: "",
+  remarks: "",
+}
+
+const LicenseMasterImportForm: React.FC<{
+  vendors: any[]
+  companyProfile: any
+  showNotification: (m: string, t?: "info" | "success" | "error") => void
+}> = ({ vendors, companyProfile, showNotification }) => {
+  const [form, setForm] = React.useState({ ...initialLicenseMasterForm })
+  const [submitting, setSubmitting] = React.useState(false)
+  const [result, setResult] = React.useState<any>(null)
+
+  const requiredOk = !!(
+    form.licensor_name &&
+    form.licensee_name &&
+    (form.basic_contract_name || form.original_work)
+  )
+
+  const fillFromVendor = (code: string, target: "licensor" | "licensee") => {
+    const v = vendors.find((x) => x.vendor_code === code)
+    if (!v) return
+    const corp =
+      (v.entity_type || "").toLowerCase() === "corporate" ||
+      v.entity_type === "法人"
+    if (target === "licensor") {
+      setForm({
+        ...form,
+        licensor_name: v.vendor_name || "",
+        licensor_address: v.address || "",
+        licensor_rep: v.vendor_rep || v.contact_name || "",
+        licensor_is_corporation: corp,
+      })
+    } else {
+      setForm({
+        ...form,
+        licensee_name: v.vendor_name || "",
+        licensee_address: v.address || "",
+        licensee_rep: v.vendor_rep || v.contact_name || "",
+        licensee_is_corporation: corp,
+      })
+    }
+  }
+
+  const fillFromSelf = (target: "licensor" | "licensee") => {
+    if (!companyProfile) return
+    if (target === "licensor") {
+      setForm({
+        ...form,
+        licensor_name: companyProfile.name || "",
+        licensor_address: companyProfile.address || "",
+        licensor_rep: companyProfile.representative || "",
+        licensor_is_corporation: true,
+      })
+    } else {
+      setForm({
+        ...form,
+        licensee_name: companyProfile.name || "",
+        licensee_address: companyProfile.address || "",
+        licensee_rep: companyProfile.representative || "",
+        licensee_is_corporation: true,
+      })
+    }
+  }
+
+  const submit = async () => {
+    if (!requiredOk) {
+      showNotification("必須項目を埋めてください", "error")
+      return
+    }
+    setSubmitting(true)
+    setResult(null)
+    try {
+      const res = await fetch("/api/imports/license-master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      setResult(data)
+      showNotification(
+        `ライセンス基本契約書を登録しました (${data.contract_number})`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(`登録失敗: ${e?.message || e}`, "error")
+      setResult({ ok: false, error: String(e?.message || e) })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3 px-4 py-2 rounded-sm border text-[11px] font-mono",
+          requiredOk
+            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+            : "bg-amber-50 border-amber-200 text-amber-800"
+        )}
+      >
+        {requiredOk ? (
+          <>✓ 登録可能 (Licensor / Licensee / 基本契約名 or 原著作物)</>
+        ) : (
+          <>必須: Licensor / Licensee / 基本契約名 or 原著作物</>
+        )}
+      </div>
+
+      <div className="px-4 py-2 rounded-sm bg-blue-50 border border-blue-200 text-[10px] font-mono text-blue-900">
+        ライセンス「基本」契約書は、個別利用許諾条件書の親 (ledger 単位)
+        として登録されます。後で個別契約を入れる際は、ledger_id「
+        <span className="font-bold">{form.ledger_id || "（自動採番）"}</span>
+        」を指定してください。
+      </div>
+
+      {/* I. ヘッダ */}
+      <Section title="I. ヘッダ" icon={<Briefcase className="w-3.5 h-3.5" />}>
+        <Field label="Backlog 課題キー" hint="空欄なら IMPORT-<ts>">
+          <input
+            className={inputClass}
+            value={form.issue_key}
+            onChange={(e) => setForm({ ...form, issue_key: e.target.value })}
+            placeholder="任意"
+          />
+        </Field>
+        <Field label="契約書番号 / 台帳番号" hint="空欄ならサーバ採番">
+          <input
+            className={inputClass}
+            value={form.contract_number}
+            onChange={(e) =>
+              setForm({ ...form, contract_number: e.target.value })
+            }
+            placeholder="例: LIC-MST-2024-001"
+          />
+        </Field>
+        <Field
+          label="台帳 ID (ledger_id)"
+          hint="後続の個別契約からこの ID で参照される。空欄なら契約書番号と同一"
+        >
+          <input
+            className={inputClass}
+            value={form.ledger_id}
+            onChange={(e) => setForm({ ...form, ledger_id: e.target.value })}
+            placeholder="任意"
+          />
+        </Field>
+        <Field label="基本契約名">
+          <input
+            className={inputClass}
+            value={form.basic_contract_name}
+            onChange={(e) =>
+              setForm({ ...form, basic_contract_name: e.target.value })
+            }
+            placeholder="例: ◯◯シリーズ ライセンス基本契約"
+          />
+        </Field>
+        <Field label="締結日">
+          <input
+            type="date"
+            className={inputClass}
+            value={form.issue_date}
+            onChange={(e) => setForm({ ...form, issue_date: e.target.value })}
+          />
+        </Field>
+        <Field label="原本 PDF リンク">
+          <input
+            className={inputClass}
+            value={form.drive_link}
+            onChange={(e) => setForm({ ...form, drive_link: e.target.value })}
+            placeholder="https://drive.google.com/..."
+          />
+        </Field>
+      </Section>
+
+      {/* II/III. Licensor / Licensee */}
+      <Section
+        title="II. Licensor (許諾者)"
+        icon={<Building2 className="w-3.5 h-3.5" />}
+        headerActions={
+          <>
+            <SideButton
+              label="自社"
+              onClick={() => fillFromSelf("licensor")}
+              disabled={!companyProfile}
+            />
+            <select
+              className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) fillFromVendor(e.target.value, "licensor")
+              }}
+            >
+              <option value="">取引先選択...</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.vendor_code}>
+                  {v.vendor_code} {v.vendor_name}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+      >
+        <Field label="名称" required>
+          <input
+            className={inputClass}
+            value={form.licensor_name}
+            onChange={(e) =>
+              setForm({ ...form, licensor_name: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="住所">
+          <input
+            className={inputClass}
+            value={form.licensor_address}
+            onChange={(e) =>
+              setForm({ ...form, licensor_address: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="代表者名">
+          <input
+            className={inputClass}
+            value={form.licensor_rep}
+            onChange={(e) =>
+              setForm({ ...form, licensor_rep: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="法人/個人">
+          <select
+            className={inputClass}
+            value={form.licensor_is_corporation ? "1" : "0"}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                licensor_is_corporation: e.target.value === "1",
+              })
+            }
+          >
+            <option value="1">法人</option>
+            <option value="0">個人</option>
+          </select>
+        </Field>
+      </Section>
+
+      <Section
+        title="III. Licensee (被許諾者)"
+        icon={<User className="w-3.5 h-3.5" />}
+        headerActions={
+          <>
+            <SideButton
+              label="自社"
+              onClick={() => fillFromSelf("licensee")}
+              disabled={!companyProfile}
+            />
+            <select
+              className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
+              value=""
+              onChange={(e) => {
+                if (e.target.value) fillFromVendor(e.target.value, "licensee")
+              }}
+            >
+              <option value="">取引先選択...</option>
+              {vendors.map((v) => (
+                <option key={v.id} value={v.vendor_code}>
+                  {v.vendor_code} {v.vendor_name}
+                </option>
+              ))}
+            </select>
+          </>
+        }
+      >
+        <Field label="名称" required>
+          <input
+            className={inputClass}
+            value={form.licensee_name}
+            onChange={(e) =>
+              setForm({ ...form, licensee_name: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="住所">
+          <input
+            className={inputClass}
+            value={form.licensee_address}
+            onChange={(e) =>
+              setForm({ ...form, licensee_address: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="代表者名">
+          <input
+            className={inputClass}
+            value={form.licensee_rep}
+            onChange={(e) =>
+              setForm({ ...form, licensee_rep: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="法人/個人">
+          <select
+            className={inputClass}
+            value={form.licensee_is_corporation ? "1" : "0"}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                licensee_is_corporation: e.target.value === "1",
+              })
+            }
+          >
+            <option value="1">法人</option>
+            <option value="0">個人</option>
+          </select>
+        </Field>
+      </Section>
+
+      {/* IV. 対象作品 + 有効期間 */}
+      <Section
+        title="IV. 対象作品 / 有効期間"
+        icon={<LinkIcon className="w-3.5 h-3.5" />}
+      >
+        <Field label="原著作物名">
+          <input
+            className={inputClass}
+            value={form.original_work}
+            onChange={(e) =>
+              setForm({ ...form, original_work: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="対象製品 (予定) 名">
+          <input
+            className={inputClass}
+            value={form.product_name_predicted}
+            onChange={(e) =>
+              setForm({ ...form, product_name_predicted: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="効力発生日">
+          <input
+            type="date"
+            className={inputClass}
+            value={form.effective_date}
+            onChange={(e) =>
+              setForm({ ...form, effective_date: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="満了日">
+          <input
+            type="date"
+            className={inputClass}
+            value={form.expiration_date}
+            onChange={(e) =>
+              setForm({ ...form, expiration_date: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="自動更新">
+          <select
+            className={inputClass}
+            value={form.auto_renewal ? "1" : "0"}
+            onChange={(e) =>
+              setForm({ ...form, auto_renewal: e.target.value === "1" })
+            }
+          >
+            <option value="0">なし</option>
+            <option value="1">あり</option>
+          </select>
+        </Field>
+        <Field label="許諾期間注記">
+          <input
+            className={inputClass}
+            value={form.license_period_note}
+            onChange={(e) =>
+              setForm({ ...form, license_period_note: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="監修者">
+          <input
+            className={inputClass}
+            value={form.supervisor}
+            onChange={(e) =>
+              setForm({ ...form, supervisor: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="クレジット表示">
+          <input
+            className={inputClass}
+            value={form.credit_display}
+            onChange={(e) =>
+              setForm({ ...form, credit_display: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="特記事項 / 備考" full>
+          <textarea
+            className={cn(
+              inputClass,
+              "min-h-[60px] border bg-card rounded-sm px-2 py-1"
+            )}
+            value={form.remarks}
+            onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+          />
+        </Field>
+      </Section>
+
+      <div className="flex items-center justify-end gap-3">
+        {result?.ok && (
+          <span className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" />
+            登録完了: {result.contract_number} (ledger_id: {result.ledger_id})
+          </span>
+        )}
+        {result?.error && (
+          <span className="text-[10px] font-mono text-red-700 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {result.error}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!requiredOk || submitting}
+          className={cn(
+            "px-4 py-2 text-[11px] font-mono uppercase tracking-wider rounded-sm transition-colors flex items-center gap-2",
+            requiredOk && !submitting
+              ? "bg-foreground text-background hover:opacity-80"
+              : "bg-muted text-muted-foreground cursor-not-allowed"
+          )}
+        >
+          {submitting ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <FileInput className="w-3 h-3" />
+          )}
+          DB に登録
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------
+// 業務委託基本契約書インポートフォーム
+// ---------------------------------------------------------------------
+
+const initialServiceMasterForm = {
+  issue_key: "",
+  contract_number: "",
+  drive_link: "",
+  contract_title: "",
+  effective_date: "",
+  expiration_date: "",
+  auto_renewal: false,
+  vendor_code: "",
+  vendor_name: "",
+  party_a_name: "",
+  party_a_address: "",
+  party_a_rep: "",
+  party_b_name: "",
+  party_b_address: "",
+  party_b_rep: "",
+  remarks: "",
+}
+
+const ServiceMasterImportForm: React.FC<{
+  vendors: any[]
+  companyProfile: any
+  showNotification: (m: string, t?: "info" | "success" | "error") => void
+}> = ({ vendors, companyProfile, showNotification }) => {
+  const [form, setForm] = React.useState({ ...initialServiceMasterForm })
+  const [submitting, setSubmitting] = React.useState(false)
+  const [result, setResult] = React.useState<any>(null)
+
+  const requiredOk = !!(
+    form.contract_title &&
+    (form.party_a_name || form.party_b_name)
+  )
+
+  const fillPartyAFromSelf = () => {
+    if (!companyProfile) return
+    setForm({
+      ...form,
+      party_a_name: companyProfile.name || "",
+      party_a_address: companyProfile.address || "",
+      party_a_rep: companyProfile.representative || "",
+    })
+  }
+
+  const fillPartyBFromVendor = (code: string) => {
+    const v = vendors.find((x) => x.vendor_code === code)
+    if (!v) return
+    setForm({
+      ...form,
+      vendor_code: v.vendor_code,
+      vendor_name: v.vendor_name || "",
+      party_b_name: v.vendor_name || "",
+      party_b_address: v.address || "",
+      party_b_rep: v.vendor_rep || v.contact_name || "",
+    })
+  }
+
+  const submit = async () => {
+    if (!requiredOk) {
+      showNotification("必須項目を埋めてください", "error")
+      return
+    }
+    setSubmitting(true)
+    setResult(null)
+    try {
+      const res = await fetch("/api/imports/service-master", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      })
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      setResult(data)
+      showNotification(
+        `業務委託基本契約書を登録しました (${data.contract_number})`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(`登録失敗: ${e?.message || e}`, "error")
+      setResult({ ok: false, error: String(e?.message || e) })
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6">
+      <div
+        className={cn(
+          "flex items-center justify-between gap-3 px-4 py-2 rounded-sm border text-[11px] font-mono",
+          requiredOk
+            ? "bg-emerald-50 border-emerald-200 text-emerald-800"
+            : "bg-amber-50 border-amber-200 text-amber-800"
+        )}
+      >
+        {requiredOk ? (
+          <>✓ 登録可能 (契約名 / 甲 or 乙 1 つ以上)</>
+        ) : (
+          <>必須: 契約名 / 甲 or 乙</>
+        )}
+      </div>
+
+      <div className="px-4 py-2 rounded-sm bg-blue-50 border border-blue-200 text-[10px] font-mono text-blue-900">
+        業務委託「基本」契約書は、後続の発注書 / 検収書の親 framework
+        として contract_capabilities に登録されます。法務検索 (Slack
+        /法務検索) の対象にもなります。
+      </div>
+
+      {/* I. ヘッダ */}
+      <Section title="I. ヘッダ" icon={<Briefcase className="w-3.5 h-3.5" />}>
+        <Field label="Backlog 課題キー" hint="空欄なら IMPORT-<ts>">
+          <input
+            className={inputClass}
+            value={form.issue_key}
+            onChange={(e) => setForm({ ...form, issue_key: e.target.value })}
+          />
+        </Field>
+        <Field label="契約書番号" hint="空欄ならサーバ採番">
+          <input
+            className={inputClass}
+            value={form.contract_number}
+            onChange={(e) =>
+              setForm({ ...form, contract_number: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="契約名" required>
+          <input
+            className={inputClass}
+            value={form.contract_title}
+            onChange={(e) =>
+              setForm({ ...form, contract_title: e.target.value })
+            }
+            placeholder="例: 株式会社◯◯ 業務委託基本契約"
+          />
+        </Field>
+        <Field label="原本 PDF リンク">
+          <input
+            className={inputClass}
+            value={form.drive_link}
+            onChange={(e) => setForm({ ...form, drive_link: e.target.value })}
+            placeholder="https://drive.google.com/..."
+          />
+        </Field>
+        <Field label="効力発生日">
+          <input
+            type="date"
+            className={inputClass}
+            value={form.effective_date}
+            onChange={(e) =>
+              setForm({ ...form, effective_date: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="満了日">
+          <input
+            type="date"
+            className={inputClass}
+            value={form.expiration_date}
+            onChange={(e) =>
+              setForm({ ...form, expiration_date: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="自動更新">
+          <select
+            className={inputClass}
+            value={form.auto_renewal ? "1" : "0"}
+            onChange={(e) =>
+              setForm({ ...form, auto_renewal: e.target.value === "1" })
+            }
+          >
+            <option value="0">なし</option>
+            <option value="1">あり</option>
+          </select>
+        </Field>
+      </Section>
+
+      {/* II. 甲 (委託者) */}
+      <Section
+        title="II. 甲 (委託者)"
+        icon={<Building2 className="w-3.5 h-3.5" />}
+        headerActions={
+          <SideButton
+            label="自社"
+            onClick={fillPartyAFromSelf}
+            disabled={!companyProfile}
+          />
+        }
+      >
+        <Field label="名称">
+          <input
+            className={inputClass}
+            value={form.party_a_name}
+            onChange={(e) =>
+              setForm({ ...form, party_a_name: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="住所">
+          <input
+            className={inputClass}
+            value={form.party_a_address}
+            onChange={(e) =>
+              setForm({ ...form, party_a_address: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="代表者名">
+          <input
+            className={inputClass}
+            value={form.party_a_rep}
+            onChange={(e) => setForm({ ...form, party_a_rep: e.target.value })}
+          />
+        </Field>
+      </Section>
+
+      {/* III. 乙 (受託者) */}
+      <Section
+        title="III. 乙 (受託者)"
+        icon={<User className="w-3.5 h-3.5" />}
+        headerActions={
+          <select
+            className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
+            value={form.vendor_code}
+            onChange={(e) => fillPartyBFromVendor(e.target.value)}
+          >
+            <option value="">取引先選択...</option>
+            {vendors.map((v) => (
+              <option key={v.id} value={v.vendor_code}>
+                {v.vendor_code} {v.vendor_name}
+              </option>
+            ))}
+          </select>
+        }
+      >
+        <Field label="名称">
+          <input
+            className={inputClass}
+            value={form.party_b_name}
+            onChange={(e) =>
+              setForm({ ...form, party_b_name: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="住所">
+          <input
+            className={inputClass}
+            value={form.party_b_address}
+            onChange={(e) =>
+              setForm({ ...form, party_b_address: e.target.value })
+            }
+          />
+        </Field>
+        <Field label="代表者名">
+          <input
+            className={inputClass}
+            value={form.party_b_rep}
+            onChange={(e) => setForm({ ...form, party_b_rep: e.target.value })}
+          />
+        </Field>
+        <Field label="備考" full>
+          <textarea
+            className={cn(
+              inputClass,
+              "min-h-[60px] border bg-card rounded-sm px-2 py-1"
+            )}
+            value={form.remarks}
+            onChange={(e) => setForm({ ...form, remarks: e.target.value })}
+          />
+        </Field>
+      </Section>
+
+      <div className="flex items-center justify-end gap-3">
+        {result?.ok && (
+          <span className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+            <CheckCircle2 className="w-3 h-3" />
+            登録完了: {result.contract_number}
+            {result.vendor_id && ` (vendor_id: ${result.vendor_id})`}
+          </span>
+        )}
+        {result?.error && (
+          <span className="text-[10px] font-mono text-red-700 flex items-center gap-1">
+            <AlertCircle className="w-3 h-3" />
+            {result.error}
+          </span>
+        )}
+        <button
+          type="button"
+          onClick={submit}
+          disabled={!requiredOk || submitting}
+          className={cn(
+            "px-4 py-2 text-[11px] font-mono uppercase tracking-wider rounded-sm transition-colors flex items-center gap-2",
+            requiredOk && !submitting
+              ? "bg-foreground text-background hover:opacity-80"
+              : "bg-muted text-muted-foreground cursor-not-allowed"
+          )}
+        >
+          {submitting ? (
+            <Loader2 className="w-3 h-3 animate-spin" />
+          ) : (
+            <FileInput className="w-3 h-3" />
+          )}
+          DB に登録
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------
 // Page shell + tabs
 // ---------------------------------------------------------------------
 
@@ -823,39 +1620,66 @@ export function ImportPage() {
         </p>
       </header>
 
-      <div className="flex gap-2 border-b border-border">
+      <div className="flex flex-wrap gap-2 border-b border-border">
         {(
           [
-            { key: "purchase_order", label: "発注書" },
+            { key: "purchase_order", label: "発注書", group: "個別伝票" },
             {
               key: "individual_license_terms",
               label: "個別利用許諾条件書",
+              group: "個別伝票",
             },
-          ] as { key: Tab; label: string }[]
+            {
+              key: "license_master",
+              label: "ライセンス基本契約書",
+              group: "基本契約",
+            },
+            {
+              key: "service_master",
+              label: "業務委託基本契約書",
+              group: "基本契約",
+            },
+          ] as { key: Tab; label: string; group: string }[]
         ).map((t) => (
           <button
             key={t.key}
             type="button"
             onClick={() => setTab(t.key)}
             className={cn(
-              "px-4 py-2 text-[11px] font-mono uppercase tracking-wider border-b-2 transition-colors",
+              "px-4 py-2 text-[11px] font-mono uppercase tracking-wider border-b-2 transition-colors relative",
               tab === t.key
                 ? "border-foreground text-foreground font-bold"
                 : "border-transparent text-muted-foreground hover:text-foreground"
             )}
+            title={t.group}
           >
             {t.label}
           </button>
         ))}
       </div>
 
-      {tab === "purchase_order" ? (
+      {tab === "purchase_order" && (
         <OrderImportForm
           vendors={vendors || []}
           showNotification={showNotification}
         />
-      ) : (
+      )}
+      {tab === "individual_license_terms" && (
         <LicenseImportForm
+          vendors={vendors || []}
+          companyProfile={companyProfile}
+          showNotification={showNotification}
+        />
+      )}
+      {tab === "license_master" && (
+        <LicenseMasterImportForm
+          vendors={vendors || []}
+          companyProfile={companyProfile}
+          showNotification={showNotification}
+        />
+      )}
+      {tab === "service_master" && (
+        <ServiceMasterImportForm
           vendors={vendors || []}
           companyProfile={companyProfile}
           showNotification={showNotification}
