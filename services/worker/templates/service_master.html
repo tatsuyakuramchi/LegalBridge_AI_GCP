@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>業務委託基本契約書 - {{CONTRACT_NO}}</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 25mm 20mm;
+            @bottom-center {
+                content: "- " counter(page) " -";
+                font-size: 9pt;
+                font-family: "Noto Serif CJK JP", serif;
+            }
+        }
+        
+        body {
+            font-family: "Noto Serif CJK JP", "Yu Mincho", serif;
+            font-size: 10.5pt;
+            line-height: 1.8;
+            color: #000;
+            margin: 0;
+            padding: 0;
+        }
+        
+        h1 {
+            text-align: center;
+            font-size: 16pt;
+            letter-spacing: 0.3em;
+            margin-bottom: 2em;
+            text-decoration: underline;
+            font-weight: bold;
+        }
+        
+        .preamble {
+            margin-bottom: 1.5em;
+            text-indent: 1em;
+        }
+        
+        ol {
+            list-style: none;
+            padding-left: 0;
+            counter-reset: item;
+        }
+        
+        li {
+            margin-bottom: 1.2em;
+        }
+        
+        .article-title {
+            font-weight: bold;
+            margin-bottom: 0.5em;
+            display: block;
+        }
+        
+        .article-title::before {
+            counter-increment: item;
+            content: "第" counter(item) "条 ";
+        }
+        
+        .clause {
+            padding-left: 1.5em;
+            margin-bottom: 0.5em;
+            text-indent: -1.5em;
+        }
+        
+        .sub-clause {
+            padding-left: 3em;
+            margin-bottom: 0.3em;
+            text-indent: -1.5em;
+        }
+        
+        .signature-section {
+            margin-top: 4em;
+            page-break-inside: avoid;
+        }
+        
+        .date {
+            text-align: right;
+            margin-bottom: 2em;
+        }
+        
+        .party {
+            margin-bottom: 2em;
+        }
+        
+        .party-role {
+            font-weight: bold;
+            margin-bottom: 0.5em;
+        }
+        
+        .party-info {
+            padding-left: 1em;
+        }
+        
+        .placeholder {
+            border-bottom: 1px solid #000;
+            display: inline-block;
+            min-width: 150px;
+            padding: 0 5px;
+        }
+        
+        .no-break {
+            page-break-inside: avoid;
+        }
+    </style>
+</head>
+<body>
+    <h1>業務委託基本契約書</h1>
+    
+    <div class="preamble">
+        株式会社アークライト（以下「甲」という。）と<span class="placeholder">{{PARTY_B_NAME}}</span>（以下「乙」という。）は，甲乙間で今後締結される個別の業務委託契約に共通して適用される基本的事項を定めるため，次のとおり業務委託基本契約（以下「本契約」という。）を締結する。
+    </div>
+    
+    <ol>
+        <li>
+            <span class="article-title">（目的）</span>
+            <div class="clause">本契約は，甲が乙に対し，次条に定める業務を委託し，乙がこれを受託することに関する基本的事項を定め，甲乙間の円滑な取引を促進することを目的とする。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（対象業務）</span>
+            <div class="clause">1. 本契約に基づき甲が乙に委託する業務（以下「本業務」という。）の範囲は，別途甲乙間で締結される個別契約において定めるものとする。</div>
+            <div class="clause">2. 甲は乙に対し，本業務の遂行に必要な資料の提供や情報の開示を行い，乙は甲に対し，善良な管理者の注意をもって本業務を遂行するものとする。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（個別契約）</span>
+            <div class="clause">1. 個別の業務委託（以下「個別契約」という。）については，業務の内容，期間，委託料，納品物等の詳細を記載した注文書及び注文請け書の取り交わし，又は甲乙双方が記名押印する書面の締結により成立するものとする。</div>
+            <div class="clause">2. 本契約の規定は個別契約に適用されるものとし，本契約の規定と個別契約の規定が抵触する場合には，個別契約の規定が優先するものとする。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（委託料及び支払方法）</span>
+            <div class="clause">1. 本業務の委託料は個別契約において定める。</div>
+            <div class="clause">2. 甲は乙に対し，個別契約に定める支払条件に従い，乙が指定する銀行口座に振込により委託料を支払うものとする。なお，振込手数料は甲の負担とする。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（納品及び検査）</span>
+            <div class="clause">1. 乙は，個別契約に定める期限までに，指定された方法により納品物を甲に納入するものとする。</div>
+            <div class="clause">2. 甲は，納品物の受領後，速やかに検査を行い，個別契約に定める仕様との適合性を確認するものとする。</div>
+            <div class="clause">3. 検査の結果，不適合が発見された場合，乙は甲の指示に従い，乙の費用負担において修正又は再納入を行うものとする。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（権利の帰属）</span>
+            <div class="clause">1. 本業務の遂行により作成された納品物に関する著作権（著作権法第27条及び第28条の権利を含む。）その他の知的財産権は，委託料の完済をもって，乙から甲に移転するものとする。</div>
+            <div class="clause">2. 乙は甲に対し，当該納品物に関する著作者人格権を行使しないものとする。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（秘密保持）</span>
+            <div class="clause">甲及び乙は，本業務の遂行に際して相手方より開示された機密情報を，相手方の事前の書面による承諾なく第三者に開示又は漏洩してはならない。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（契約期間）</span>
+            <div class="clause">本契約の有効期間は，契約締結日から1年間とする。ただし，期間満了の3ヶ月前までに甲乙いずれからも書面による反対の意思表示がない限り，本契約は同一条件でさらに1年間自動的に更新されるものとし，以後も同様とする。</div>
+        </li>
+        
+        <li>
+            <span class="article-title">（協議解決）</span>
+            <div class="clause">本契約に定めのない事項又は本契約の解釈について疑義が生じたときは，甲乙誠実に協議の上，解決を図るものとする。</div>
+        </li>
+    </ol>
+    
+    <div class="signature-section">
+        <div class="date">
+            <span class="placeholder">{{CONTRACT_DATE}}</span>
+        </div>
+        
+        <div class="party">
+            <div class="party-role">（甲）</div>
+            <div class="party-info">
+                東京都千代田区神田小川町1-2 風雲堂ビル2F<br>
+                株式会社アークライト<br>
+                代表取締役 青柳 昌行
+            </div>
+        </div>
+        
+        <div class="party">
+            <div class="party-role">（乙）</div>
+            <div class="party-info">
+                所在地：<span class="placeholder">{{PARTY_B_ADDRESS}}</span><br>
+                氏名／名称：<span class="placeholder">{{PARTY_B_NAME}}</span><br>
+                代表者：<span class="placeholder">{{PARTY_B_REPRESENTATIVE}}</span>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

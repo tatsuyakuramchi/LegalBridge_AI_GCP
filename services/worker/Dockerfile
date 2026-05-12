@@ -24,6 +24,11 @@ COPY server.ts ./
 COPY src ./src
 COPY tsconfig.json ./
 
+# Copy document templates. DocumentService reads from process.cwd()/templates,
+# so they must land at /app/templates inside the container.
+COPY templates ./templates
+COPY templates_config.json ./
+
 ENV NODE_ENV=production
 ENV PORT=8080
 EXPOSE 8080

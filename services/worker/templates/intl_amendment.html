@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>AMENDMENT TO LICENSE AGREEMENT - {{CONTRACT_NO}}</title>
+  <style>
+    @page { size: A4; margin: 25mm 20mm 25mm 20mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Times New Roman", Times, serif; font-size: 11pt; line-height: 1.5; color: #000; }
+    h1.doc-title { text-align: center; font-size: 14pt; font-weight: bold; margin-bottom: 2em; text-transform: uppercase; }
+    .preamble { margin-bottom: 1.5em; }
+    .section { margin-bottom: 1.5em; }
+    .section-title { font-weight: bold; margin-bottom: 0.5em; }
+    .article { margin-bottom: 1.2em; }
+    .article-title { font-weight: bold; margin-bottom: 0.3em; }
+    .signature-block { margin-top: 3em; page-break-inside: avoid; }
+    .signature-row { display: flex; justify-content: space-between; margin-bottom: 2em; }
+    .signature-box { width: 45%; }
+    .sig-line { border-bottom: 1px solid #000; margin: 2em 0 0.5em; }
+    .ph { font-weight: bold; }
+  </style>
+</head>
+<body>
+  <h1 class="doc-title">AMENDMENT TO LICENSE AGREEMENT</h1>
+  <p class="preamble">This Amendment (the "Amendment") is entered into as of <span class="ph">{{AMENDMENT_DATE}}</span> (the "Effective Date") by and between <span class="ph">{{LICENSOR_NAME}}</span> ("Licensor") and <span class="ph">Arclight, Inc.</span> ("Licensee"). Licensor and Licensee are collectively referred to as the "Parties".</p>
+  <div class="section">
+    <div class="section-title">WITNESSETH:</div>
+    <p>WHEREAS, the Parties entered into a License Agreement dated <span class="ph">{{ORIGINAL_AGREEMENT_DATE}}</span> (the "Agreement") regarding the property titled "<span class="ph">{{PROPERTY_TITLE}}</span>"; and</p>
+    <p>WHEREAS, the Parties now desire to amend the Agreement as set forth herein.</p>
+  </div>
+  <div class="section">
+    <p>NOW, THEREFORE, in consideration of the mutual promises and covenants contained herein, the Parties agree as follows:</p>
+  </div>
+  <div class="article">
+    <div class="article-title">1. AMENDMENTS</div>
+    <p>The Agreement is hereby amended as follows:</p>
+    <div style="margin-top: 1em; padding-left: 1em; border-left: 2px solid #ccc;">
+      {{{AMENDMENT_CONTENT}}}
+    </div>
+  </div>
+  <div class="article">
+    <div class="article-title">2. NO OTHER CHANGES</div>
+    <p>Except as specifically amended by this Amendment, all other terms and conditions of the Agreement shall remain in full force and effect.</p>
+  </div>
+  <div class="article">
+    <div class="article-title">3. GOVERNING LAW</div>
+    <p>This Amendment shall be governed by and construed in accordance with the laws of <span class="ph">{{GOVERNING_LAW}}</span>.</p>
+  </div>
+  <div class="signature-block">
+    <p>IN WITNESS WHEREOF, the Parties have executed this Amendment as of the Effective Date.</p>
+    <div class="signature-row">
+      <div class="signature-box">
+        <p><strong>LICENSOR:</strong></p>
+        <p><span class="ph">{{LICENSOR_NAME}}</span></p>
+        <div class="sig-line"></div>
+        <p>By: <span class="ph">{{LICENSOR_REP_NAME}}</span></p>
+        <p>Title: <span class="ph">{{LICENSOR_REP_TITLE}}</span></p>
+      </div>
+      <div class="signature-box">
+        <p><strong>LICENSEE:</strong></p>
+        <p><strong>Arclight, Inc.</strong></p>
+        <div class="sig-line"></div>
+        <p>By: <strong>Masayuki Aoyagi</strong></p>
+        <p>Title: <strong>CEO</strong></p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
