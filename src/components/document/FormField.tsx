@@ -34,6 +34,12 @@ const SELECT_OPTIONS: Record<string, string[]> = {
 export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, onChange }) => {
   const label = meta.label || id.replace(/_/g, ' ');
   const options = meta.options || SELECT_OPTIONS[id];
+  const placeholder = meta.placeholder;
+  const isRequired = meta.required === true;
+  const isEmpty =
+    value === undefined ||
+    value === null ||
+    (typeof value === 'string' && value.trim() === '');
 
   const isDate =
     meta.type === 'date' ||
@@ -53,7 +59,8 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
     'w-full text-xs font-mono tab-mono bg-transparent transition-colors',
     'border-b border-input py-1.5 focus:outline-none focus:border-foreground',
     'placeholder:text-muted-foreground/60 placeholder:text-[11px]',
-    error && 'border-destructive focus:border-destructive'
+    error && 'border-destructive focus:border-destructive',
+    isRequired && isEmpty && 'border-amber-500/60'
   );
 
   return (
@@ -67,13 +74,31 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           )}
         >
           {label}
+          {isRequired && (
+            <span
+              className="text-amber-600 font-bold leading-none"
+              title="必須項目"
+              aria-label="required"
+            >
+              *
+            </span>
+          )}
           {error && (
             <span className="text-[8px] bg-destructive/15 text-destructive px-1.5 py-px rounded-sm">
               !
             </span>
           )}
         </label>
-        <HelpCircle className="h-2.5 w-2.5 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-help" />
+        {meta.helpText ? (
+          <span
+            className="text-[8px] text-muted-foreground/50 italic ml-2 truncate max-w-[60%] text-right"
+            title={meta.helpText}
+          >
+            {meta.helpText}
+          </span>
+        ) : (
+          <HelpCircle className="h-2.5 w-2.5 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-help" />
+        )}
       </div>
 
       {isBoolean ? (
@@ -127,9 +152,10 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
             'w-full text-xs font-mono bg-card border border-input rounded-sm p-2 resize-none transition-colors',
             'focus:outline-none focus:border-foreground',
             'placeholder:text-muted-foreground/60 placeholder:text-[11px]',
-            error && 'border-destructive'
+            error && 'border-destructive',
+            isRequired && isEmpty && 'border-amber-500/60'
           )}
-          placeholder={`Enter ${label}…`}
+          placeholder={placeholder || `Enter ${label}…`}
         />
       ) : (
         <input
@@ -138,7 +164,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           className={baseInput}
-          placeholder={isDate ? '' : `Input ${label}…`}
+          placeholder={isDate ? '' : (placeholder || `Input ${label}…`)}
         />
       )}
     </div>

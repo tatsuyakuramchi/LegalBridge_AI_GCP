@@ -5,6 +5,28 @@ export interface TemplateVar {
   type?: 'date' | 'textarea' | 'number' | 'boolean' | 'select';
   formula?: string;
   options?: string[];
+
+  /**
+   * If true, the document cannot be generated until this field is
+   * filled. Rendered with an asterisk in the form UI.
+   */
+  required?: boolean;
+
+  /**
+   * Canonical source of this value, e.g. "vendor.vendor_name",
+   * "company.address", "staff.staff_name", "backlog.summary",
+   * "auto.docNumber". Used by the Self/Partner/Staff buttons to know
+   * which DB column populates this field, and surfaced in the UI as
+   * a hint so users understand where data comes from. An empty value
+   * means "free input — no DB autofill".
+   */
+  dbField?: string;
+
+  /** Short placeholder shown inside empty inputs. */
+  placeholder?: string;
+
+  /** One-line guidance shown beneath the field on hover. */
+  helpText?: string;
 }
 
 export interface TemplateMetadata {

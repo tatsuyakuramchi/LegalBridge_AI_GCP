@@ -65,5 +65,70 @@
       "PROJECT_TITLE": { "label": "件名", "group": "Basic Context (基本情報)" },
       "grandTotalExTax": { "label": "合計金額 (税抜)", "group": "Financial & Payment (金銭)", "type": "number" }
     }
+  },
+
+  "individual_license_terms": {
+    "label": "個別利用許諾条件書",
+    "category": "License",
+    "vars": {
+      "発行日": { "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true, "dbField": "auto.today" },
+      "台帳ID": { "label": "台帳ID", "group": "I. ヘッダ", "required": true, "placeholder": "LIC-2026-001" },
+      "契約書番号": { "label": "契約書番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
+      "基本契約名": { "label": "基本契約名", "group": "I. ヘッダ", "type": "textarea", "required": true, "dbField": "backlog.summary", "helpText": "親となるライセンス基本契約の名称" },
+
+      "Licensor_名称": { "label": "Licensor 名称", "group": "II. Licensor (許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
+      "Licensor_住所": { "label": "Licensor 住所", "group": "II. Licensor (許諾者)", "type": "textarea", "required": true },
+      "Licensor_氏名会社名": { "label": "Licensor 氏名/会社名 (PDF表示用)", "group": "II. Licensor (許諾者)", "required": true },
+      "Licensor_代表者名": { "label": "Licensor 代表者名", "group": "II. Licensor (許諾者)", "helpText": "法人の場合のみ" },
+      "LICENSOR_IS_CORPORATION": { "label": "Licensor は法人", "group": "II. Licensor (許諾者)", "type": "boolean" },
+
+      "Licensee_名称": { "label": "Licensee 名称", "group": "III. Licensee (被許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
+      "Licensee_住所": { "label": "Licensee 住所", "group": "III. Licensee (被許諾者)", "type": "textarea", "required": true },
+      "Licensee_氏名会社名": { "label": "Licensee 氏名/会社名 (PDF表示用)", "group": "III. Licensee (被許諾者)", "required": true },
+      "Licensee_代表者名": { "label": "Licensee 代表者名", "group": "III. Licensee (被許諾者)", "helpText": "法人の場合のみ" },
+      "LICENSEE_IS_CORPORATION": { "label": "Licensee は法人", "group": "III. Licensee (被許諾者)", "type": "boolean" },
+
+      "許諾開始日": { "label": "許諾開始日", "group": "IV. 対象作品・期間", "type": "date", "required": true },
+      "許諾期間注記": { "label": "許諾期間 注記", "group": "IV. 対象作品・期間", "type": "textarea", "placeholder": "例: 基本契約の満了日まで" },
+      "原著作物名": { "label": "原著作物名", "group": "IV. 対象作品・期間", "required": true },
+      "原著作物補記": { "label": "原著作物 補記", "group": "IV. 対象作品・期間", "helpText": "例: 原作および派生作品を含む" },
+      "対象製品予定名": { "label": "対象製品（予定）名", "group": "IV. 対象作品・期間", "required": true },
+      "独占性": { "label": "独占性", "group": "IV. 対象作品・期間", "type": "select", "options": ["独占", "非独占"], "required": true },
+
+      "素材番号": { "label": "素材番号", "group": "V. 素材・監修", "placeholder": "LIC-01" },
+      "素材名": { "label": "素材名", "group": "V. 素材・監修" },
+      "素材権利者": { "label": "素材権利者", "group": "V. 素材・監修" },
+      "監修者": { "label": "監修者", "group": "V. 素材・監修", "dbField": "staff.staff_name", "helpText": "[Sync Staff] で選択中の担当者を流し込み" },
+      "クレジット表示": { "label": "クレジット表示", "group": "V. 素材・監修" },
+
+      "金銭条件1_地域言語ラベル": { "label": "金銭条件1 地域・言語ラベル", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 国内・日本語" },
+      "金銭条件1_計算方式": { "label": "計算方式", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "ROYALTY / FIXED 等" },
+      "金銭条件1_料率": { "label": "料率", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 5.0%" },
+      "金銭条件1_基準価格ラベル": { "label": "基準価格ラベル", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 上代（MSRP）" },
+      "金銭条件1_計算期間": { "label": "計算期間", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 四半期" },
+      "金銭条件1_通貨": { "label": "通貨", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "JPY" },
+      "金銭条件1_計算式": { "label": "計算式", "group": "VI. 金銭条件 1 (自社製造)", "type": "textarea", "placeholder": "例: 上代 × 5.0% × 製造数" },
+      "金銭条件1_支払条件": { "label": "支払条件", "group": "VI. 金銭条件 1 (自社製造)" },
+
+      "金銭条件2_地域言語ラベル": { "label": "金銭条件2 地域・言語ラベル", "group": "VII. 金銭条件 2 (サブライセンス, 任意)" },
+      "金銭条件2_計算方式": { "label": "計算方式", "group": "VII. 金銭条件 2 (サブライセンス, 任意)" },
+      "金銭条件2_料率": { "label": "料率", "group": "VII. 金銭条件 2 (サブライセンス, 任意)" },
+      "金銭条件2_基準価格ラベル": { "label": "基準価格ラベル", "group": "VII. 金銭条件 2 (サブライセンス, 任意)" },
+      "金銭条件2_計算期間": { "label": "計算期間", "group": "VII. 金銭条件 2 (サブライセンス, 任意)" },
+      "金銭条件2_通貨": { "label": "通貨", "group": "VII. 金銭条件 2 (サブライセンス, 任意)" },
+      "金銭条件2_計算式": { "label": "計算式", "group": "VII. 金銭条件 2 (サブライセンス, 任意)", "type": "textarea" },
+      "金銭条件2_支払条件": { "label": "支払条件", "group": "VII. 金銭条件 2 (サブライセンス, 任意)" },
+
+      "金銭条件3_地域言語ラベル": { "label": "金銭条件3 地域・言語ラベル", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
+      "金銭条件3_計算方式": { "label": "計算方式", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
+      "金銭条件3_料率": { "label": "料率", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
+      "金銭条件3_基準価格ラベル": { "label": "基準価格ラベル", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
+      "金銭条件3_計算期間": { "label": "計算期間", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
+      "金銭条件3_通貨": { "label": "通貨", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
+      "金銭条件3_計算式": { "label": "計算式", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)", "type": "textarea" },
+      "金銭条件3_支払条件": { "label": "支払条件", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
+
+      "特記事項_本文": { "label": "特記事項", "group": "IX. 特記事項", "type": "textarea", "placeholder": "個別契約に固有の追加条件など" }
+    }
   }
 }

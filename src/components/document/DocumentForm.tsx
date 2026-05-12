@@ -4,7 +4,8 @@ import { FormSection } from './FormSection';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
 import { TemplateMetadata } from './types';
-import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch } from 'lucide-react';
+import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase } from 'lucide-react';
+import { cn } from '@/lib/utils';
 
 interface DocumentFormProps {
   templateId: string;
@@ -55,90 +56,222 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
   };
 
-  // Logic for individual license terms specialized UI
+  // Logic for individual license terms specialized UI.
+  //
+  // Driven by templates_config.json's group metadata so the form layout
+  // stays in sync with the variable definitions. Both Licensor and
+  // Licensee sections expose [自社] and [取引先] buttons because
+  // either party can be Arclight depending on whether the deal is
+  // inbound or outbound licensing.
   if (templateId === 'individual_license_terms') {
+    const isCorporation = (vendor: any) =>
+      (vendor?.entity_type || '').toLowerCase() === 'corporate' ||
+      (vendor?.entity_type || '') === '法人';
+
+    const fillLicensorFromSelf = () =>
+      setFormData({
+        ...formData,
+        Licensor_名称: companyProfile?.name || '',
+        Licensor_住所: companyProfile?.address || '',
+        Licensor_氏名会社名: companyProfile?.name || '',
+        Licensor_代表者名: companyProfile?.representative || '',
+        LICENSOR_IS_CORPORATION: true,
+      });
+
+    const fillLicensorFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        Licensor_名称: activeVendor.vendor_name || '',
+        Licensor_住所: activeVendor.address || '',
+        Licensor_氏名会社名: activeVendor.trade_name || activeVendor.vendor_name || '',
+        Licensor_代表者名: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        LICENSOR_IS_CORPORATION: isCorporation(activeVendor),
+      });
+    };
+
+    const fillLicenseeFromSelf = () =>
+      setFormData({
+        ...formData,
+        Licensee_名称: companyProfile?.name || '',
+        Licensee_住所: companyProfile?.address || '',
+        Licensee_氏名会社名: companyProfile?.name || '',
+        Licensee_代表者名: companyProfile?.representative || '',
+        LICENSEE_IS_CORPORATION: true,
+      });
+
+    const fillLicenseeFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        Licensee_名称: activeVendor.vendor_name || '',
+        Licensee_住所: activeVendor.address || '',
+        Licensee_氏名会社名: activeVendor.trade_name || activeVendor.vendor_name || '',
+        Licensee_代表者名: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        LICENSEE_IS_CORPORATION: isCorporation(activeVendor),
+      });
+    };
+
+    const fillStaffAsSupervisor = () => {
+      if (!selectedStaff) return;
+      setFormData({
+        ...formData,
+        監修者: selectedStaff.staff_name || '',
+        クレジット表示: `© Arclight / ${selectedStaff.staff_name || ''}`,
+      });
+    };
+
+    const sideButton = (
+      label: string,
+      onClick: () => void,
+      disabled: boolean
+    ) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
+    // Required-completion summary (counts unfilled required fields).
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+
+    // Render a group of fields by group name (from templates_config.json).
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
     return (
-      <div className="space-y-12">
+      <div className="space-y-10">
+        {/* Required-progress banner */}
+        <div
+          className={`flex items-center justify-between gap-3 px-4 py-2 rounded-sm border ${
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          }`}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* I. ヘッダ */}
+        <FormSection title="I. ヘッダ" variant="default" icon={<Briefcase className="w-4 h-4" />}>
+          {renderGroup('I. ヘッダ')}
+        </FormSection>
+
+        {/* II/III. Licensor / Licensee — side-swappable parties */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          <FormSection 
-            title="I. Licensor (許諾者)" 
-            variant="blue" 
+          <FormSection
+            title="II. Licensor (許諾者)"
+            variant="blue"
             icon={<Building2 className="w-4 h-4" />}
             headerActions={
               <>
-                <button onClick={onSync} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-0.5 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>
-                <button onClick={() => setFormData({ ...formData, Licensor_名称: companyProfile?.name, Licensor_住所: companyProfile?.address, Licensor_代表者名: companyProfile?.representative })} className="text-[8px] font-mono border border-blue-600/20 px-2 py-0.5 uppercase">Self</button>
+                {sideButton('自社', fillLicensorFromSelf, !companyProfile)}
+                {sideButton('取引先', fillLicensorFromPartner, !activeVendor)}
               </>
             }
           >
-            <div className="col-span-full">
-              <PartySection prefix="Licensor" formData={formData} setFormData={setFormData} renderField={renderField} />
-            </div>
+            {renderGroup('II. Licensor (許諾者)')}
           </FormSection>
 
-          <FormSection 
-            title="II. Licensee (被許諾者)" 
-            variant="amber" 
+          <FormSection
+            title="III. Licensee (被許諾者)"
+            variant="amber"
             icon={<User className="w-4 h-4" />}
             headerActions={
               <>
-                <button onClick={onSync} className="text-[8px] font-mono bg-amber-600 text-white px-2 py-0.5 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>
-                <button 
-                  onClick={() => {
-                    if (activeVendor) {
-                      setFormData({ ...formData, Licensee_名称: activeVendor.vendor_name, Licensee_住所: activeVendor.address, Licensee_代表者名: activeVendor.vendor_rep || activeVendor.contact_name });
-                    }
-                  }} 
-                  className="text-[8px] font-mono border border-amber-600/20 px-2 py-0.5 uppercase"
-                >Partner</button>
+                {sideButton('自社', fillLicenseeFromSelf, !companyProfile)}
+                {sideButton('取引先', fillLicenseeFromPartner, !activeVendor)}
               </>
             }
           >
-            <div className="col-span-full">
-              <PartySection prefix="Licensee" formData={formData} setFormData={setFormData} renderField={renderField} />
-            </div>
+            {renderGroup('III. Licensee (被許諾者)')}
           </FormSection>
         </div>
 
-        <FormSection 
-          title="III. Product Assets (対象素材・監修)" 
-          variant="emerald" 
+        {/* IV. 対象作品・期間 */}
+        <FormSection title="IV. 対象作品・期間" variant="emerald" icon={<Scale className="w-4 h-4" />}>
+          {renderGroup('IV. 対象作品・期間')}
+        </FormSection>
+
+        {/* V. 素材・監修 */}
+        <FormSection
+          title="V. 素材・監修"
+          variant="default"
           icon={<ShieldCheck className="w-4 h-4" />}
-          headerActions={
-            <button onClick={() => {
-              if (selectedStaff) {
-                setFormData({ ...formData, '監修者': selectedStaff.staff_name, 'クレジット表示': `© Arclight / ${selectedStaff.staff_name}` });
-              }
-            }} className="text-[8px] font-mono border border-emerald-600/20 px-4 py-1 uppercase">Sync Staff</button>
-          }
+          headerActions={sideButton(
+            'Sync Staff',
+            fillStaffAsSupervisor,
+            !selectedStaff
+          )}
         >
-          {['監修者', 'クレジット表示', '素材番号', '素材名', '素材権利者'].map(fid => renderField(fid))}
+          {renderGroup('V. 素材・監修')}
         </FormSection>
 
-        <FormSection 
-          title="IV. Agreement Foundations (固有の情報)" 
-          variant="default" 
-          icon={<Scale className="w-4 h-4" />}
-        >
-          {['発行日', '契約書番号', '台帳ID', 'ライセンス種別名', '基本契約名', '許諾開始日', '許諾期間注記', '原著作物名', '原著作物補記', '対象製品予定名', '独占性', '対象地域', '許諾言語'].map(fid => renderField(fid))}
+        {/* VI. 金銭条件 1 — primary, always shown */}
+        <FormSection title="VI. 金銭条件 1 (自社製造)" variant="indigo">
+          {renderGroup('VI. 金銭条件 1 (自社製造)')}
         </FormSection>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-          <FormSection title="3.1 Financial Condition: Domestic (自社)" variant="indigo">
-            {['金銭条件1_計算方式', '金銭条件1_基準価格ラベル', '金銭条件1_計算期間', '金銭条件1_通貨', '金銭条件1_料率', '金銭条件1_計算式', '金銭条件1_支払条件'].map(fid => renderField(fid))}
-          </FormSection>
-          <FormSection title="3.2 Financial Condition: Sub-License (サブ)" variant="cyan">
-            {['金銭条件2_計算方式', '金銭条件2_基準価格ラベル', '金銭条件2_計算期間', '金銭条件2_通貨', '金銭条件2_料率', '金銭条件2_計算式', '金銭条件2_支払条件'].map(fid => renderField(fid))}
-          </FormSection>
-        </div>
-
-        <FormSection title="V. Special Exceptions & Remarks (特記事項)" variant="red" icon={<AlertCircle className="w-4 h-4" />}>
-          <div className="col-span-full">
-            {renderField('特記事項_本文')}
+        {/* VII / VIII — advanced, collapsed by default */}
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VII. 金銭条件 2 (サブライセンス, 任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">
+            {renderGroup('VII. 金銭条件 2 (サブライセンス, 任意)')}
           </div>
-        </FormSection>
+        </details>
 
-        <SubLicenseeTable formData={formData} setFormData={setFormData} />
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VIII. 金銭条件 3 (プロダクトアウト, 任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">
+            {renderGroup('VIII. 金銭条件 3 (プロダクトアウト, 任意)')}
+          </div>
+        </details>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ サブライセンシー一覧 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">
+            <SubLicenseeTable formData={formData} setFormData={setFormData} />
+          </div>
+        </details>
+
+        {/* IX. 特記事項 */}
+        <FormSection title="IX. 特記事項" variant="red" icon={<AlertCircle className="w-4 h-4" />}>
+          <div className="col-span-full">{renderGroup('IX. 特記事項')}</div>
+        </FormSection>
       </div>
     );
   }
