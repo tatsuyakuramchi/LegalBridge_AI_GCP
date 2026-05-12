@@ -1181,6 +1181,136 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
      );
   }
 
+  // Specialized Sales Master Form (売買基本契約書, Phase 3b-6)
+  //
+  // All three variants share the same shape: 甲 (アークライト) is
+  // hard-coded inside the HTML, only PARTY_B (乙=取引先) has form
+  // variables. Variant-specific terms live in their own group (III.):
+  //   - sales_master_buyer:    III. 取引条件        (買手側条件)
+  //   - sales_master_standard: III. 支払・納品条件   (売手側・前払/代引)
+  //   - sales_master_credit:   III. 保証金・掛け売り条件
+  //
+  // The form dispatches by matching the templateId prefix and lets the
+  // metadata's group ordering drive the layout.
+  if (templateId.startsWith('sales_master_')) {
+    const fillPartyBFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        PARTY_B_NAME: activeVendor.vendor_name || '',
+        PARTY_B_ADDRESS: activeVendor.address || '',
+        PARTY_B_REPRESENTATIVE: activeVendor.vendor_rep || activeVendor.contact_name || '',
+      });
+    };
+
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で取引先を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
+    // Variant-specific section III. label/icon resolution.
+    const variantSection = templateId === 'sales_master_buyer'
+      ? { title: 'III. 取引条件', variant: 'indigo' as const }
+      : templateId === 'sales_master_standard'
+        ? { title: 'III. 支払・納品条件', variant: 'indigo' as const }
+        : { title: 'III. 保証金・掛け売り条件', variant: 'indigo' as const };
+
+    // Sub-role label inside the partner section depends on the variant.
+    const partnerRoleLabel = templateId === 'sales_master_buyer'
+      ? '乙 (売主・取引先)'
+      : '乙 (買主・取引先)';
+
+    return (
+      <div className="space-y-10">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          )}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <div className="px-4 py-2 rounded-sm bg-muted/50 text-[10px] font-mono text-muted-foreground">
+          甲 は「株式会社アークライト」がテンプレート内に固定されています。
+          以下は 乙 ({partnerRoleLabel.replace('乙 (', '').replace(')', '')}) の情報のみ入力してください。
+        </div>
+
+        <FormSection
+          title="I. ヘッダ"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          {renderGroup('I. ヘッダ')}
+        </FormSection>
+
+        <FormSection
+          title={`II. ${partnerRoleLabel}`}
+          variant="amber"
+          icon={<Building2 className="w-4 h-4" />}
+          headerActions={sideButton('取引先', fillPartyBFromPartner, !activeVendor)}
+        >
+          {renderGroup(`II. ${partnerRoleLabel}`)}
+        </FormSection>
+
+        <FormSection
+          title={variantSection.title}
+          variant={variantSection.variant}
+          icon={<Scale className="w-4 h-4" />}
+        >
+          {renderGroup(variantSection.title)}
+        </FormSection>
+
+        <FormSection title="IV. 一般条項" variant="blue">
+          {renderGroup('IV. 一般条項')}
+        </FormSection>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ V. 特約 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">{renderGroup('V. 特約 (任意)')}</div>
+        </details>
+      </div>
+    );
+  }
+
   // Default Meta-driven dynamic form
   return (
     <div className="space-y-10">
