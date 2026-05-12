@@ -78,12 +78,17 @@ at the repo root.
 - [x] Phase 2a/b: Scaffolding + service file copies
 - [x] Phase 2c: Read endpoints moved to `services/api/server.ts`
 - [x] Phase 2d-1: Webhook + master writes moved to `services/worker/server.ts`
-- [ ] Phase 2d-2: Document generation, templates, workflow-settings, CSV import (still served by top-level `server.ts`; stubs in worker return HTTP 501)
-- [ ] Phase 2e: Wire Cloud Build triggers on `release/api` / `release/worker`
-- [ ] Phase 2f: Decommission top-level `server.ts`, `Dockerfile`, `cloudbuild.yaml`
+- [x] Phase 2d-2: Document generation, templates, workflow-settings, CSV import migrated (no more HTTP 501 stubs in worker)
+- [x] Phase 2e: Cloud Build triggers wired on `release/api` / `release/worker`
+- [x] `/法務検索` cutover to `legalbridge-search-api` (GAS `CLOUD_RUN_BASE_URL` switched)
+- [x] Backlog webhook cutover to `legalbridge-document-worker`
+- [ ] **Admin UI cutover**: point browser to new services (search-api for reads, document-worker for writes)
+- [ ] Phase 2f: Decommission `legalbridge-admin-ui`, top-level `server.ts`, `Dockerfile`, `cloudbuild.yaml`
 
-Top-level `server.ts` continues to be the production source of truth
-until Phase 2d-2 lands and the new Cloud Run services are validated.
+The new services are now feature-complete and capable of serving every
+route the Admin UI uses. Top-level `server.ts` (legalbridge-admin-ui)
+remains live as a hot fallback until the Admin UI is repointed and
+several days of clean monitoring have passed.
 
 ## Phase 2e: Cloud Build trigger setup
 

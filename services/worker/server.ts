@@ -30,6 +30,9 @@
 import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
+import path from "path";
+import fs from "fs";
+import { Readable } from "stream";
 import { WebClient } from "@slack/web-api";
 import TurndownService from "turndown";
 // @ts-ignore — turndown-plugin-gfm has no types
@@ -39,6 +42,7 @@ import { DocumentService } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { ExcelService } from "./src/services/excelService.ts";
+import { CsvImportService } from "./src/services/csvImportService.ts";
 import {
   initDb,
   query,
@@ -138,6 +142,7 @@ async function startServer() {
   const documentService = new DocumentService();
   const googleDriveService = new GoogleDriveService();
   const excelService = new ExcelService();
+  const csvImportService = new CsvImportService();
 
   // Turndown for /api/test-generate-markdown (HTML → Markdown).
   const turndownService = new TurndownService({
@@ -672,14 +677,26 @@ ${details}
   app.post(
     "/api/master/vendors/upload-change-request",
     upload.single("file"),
-    async (_req, res) => {
-      // Vendor change-request upload is migrated alongside the CSV
-      // importer in Phase 2d-2. This stub returns 501 so the Admin UI
-      // surfaces a clear error rather than hanging.
-      res.status(501).json({
-        ok: false,
-        error: "Vendor change-request upload migration pending (Phase 2d-2).",
-      });
+    async (req, res) => {
+      try {
+        if (!req.file) {
+          return res.status(400).json({ error: "No file uploaded" });
+        }
+        const vendorCode = req.body.vendor_code;
+        const fileName = `変更届_${vendorCode}_${Date.now()}_${req.file.originalname}`;
+
+        const stream = Readable.from(req.file.buffer);
+        const driveLink = await googleDriveService.uploadFile(
+          stream,
+          fileName,
+          req.file.mimetype
+        );
+
+        res.json({ success: true, driveLink });
+      } catch (error) {
+        console.error("Upload error:", error);
+        res.status(500).json({ error: String(error) });
+      }
     }
   );
 
@@ -1334,30 +1351,231 @@ ${details}
   });
 
   // -------------------------------------------------------------------
-  // Phase 2d-2 migration still pending — templates, workflow-settings,
-  // CSV import, vendor change-request upload.
-  // Returns HTTP 501 until batch B + C land in subsequent commits.
+  // /api/templates/* — template file CRUD + schema/preview (Phase 2d-2 batch B)
+  //
+  // Templates live on the container filesystem at /app/templates (copied
+  // in by the Dockerfile). Writes are session-local and disappear with
+  // the revision; this matches admin-ui's behavior. Future work could
+  // migrate templates to GCS or a DB table.
   // -------------------------------------------------------------------
 
-  const phase2d2Pending: express.RequestHandler = (_req, res) => {
-    res.status(501).json({
-      ok: false,
-      error:
-        "This route migration is pending (Phase 2d-2 batch B/C). Continue calling legalbridge-admin-ui until cutover.",
-    });
-  };
+  const templatesDir = path.join(process.cwd(), "templates");
 
-  app.get("/api/templates", phase2d2Pending);
-  app.get("/api/templates/:type", phase2d2Pending);
-  app.post("/api/templates/:type", phase2d2Pending);
-  app.delete("/api/templates/:type", phase2d2Pending);
-  app.get("/api/templates/config/metadata", phase2d2Pending);
-  app.post("/api/templates/config/metadata", phase2d2Pending);
-  app.get("/api/templates/:type/schema", phase2d2Pending);
-  app.get("/api/templates/:type/preview", phase2d2Pending);
-  app.get("/api/master/workflow-settings", phase2d2Pending);
-  app.post("/api/master/workflow-settings", phase2d2Pending);
-  app.post("/api/management/import-csv", phase2d2Pending);
+  app.get("/api/templates", (_req, res) => {
+    try {
+      const files = fs.readdirSync(templatesDir);
+      const htmlFiles = files
+        .filter((f) => f.endsWith(".html"))
+        .map((f) => f.replace(".html", ""));
+      res.json(htmlFiles);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/templates/:type", (req, res) => {
+    try {
+      const { type } = req.params;
+      const filePath = path.join(templatesDir, `${type}.html`);
+      if (fs.existsSync(filePath)) {
+        const content = fs.readFileSync(filePath, "utf-8");
+        res.send(content);
+      } else {
+        res.status(404).send("Template not found");
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/templates/:type", express.json(), (req, res) => {
+    try {
+      const { type } = req.params;
+      const { content } = req.body;
+      fs.writeFileSync(path.join(templatesDir, `${type}.html`), content, "utf-8");
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.delete("/api/templates/:type", (req, res) => {
+    try {
+      const { type } = req.params;
+      const filePath = path.join(templatesDir, `${type}.html`);
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        res.json({ success: true });
+      } else {
+        res.status(404).json({ error: "Template not found" });
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/templates/config/metadata", (_req, res) => {
+    try {
+      const configPath = path.join(process.cwd(), "templates_config.json");
+      if (fs.existsSync(configPath)) {
+        res.json(JSON.parse(fs.readFileSync(configPath, "utf-8")));
+      } else {
+        res.json({});
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/templates/config/metadata", express.json(), (req, res) => {
+    try {
+      const configPath = path.join(process.cwd(), "templates_config.json");
+      fs.writeFileSync(configPath, JSON.stringify(req.body, null, 2), "utf-8");
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/templates/:type/schema", (req, res) => {
+    try {
+      const { type } = req.params;
+      const variables = documentService.getTemplateVariables(type as any);
+      res.json({ variables });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/templates/:type/preview", (req, res) => {
+    try {
+      const { type } = req.params;
+      const variables = documentService.getTemplateVariables(type as any);
+      const dummyDetails: Record<string, string> = {};
+      variables.forEach((v) => {
+        dummyDetails[v] = `[${v}]`;
+      });
+
+      const html = documentService.renderHtml(
+        {
+          issueKey: "DEMO-123",
+          summary: "DEMO ISSUE SUMMARY",
+          requester: "DEMO USER",
+          date: new Date().toLocaleDateString("ja-JP"),
+          details: dummyDetails,
+        },
+        type as any
+      );
+
+      res.send(html);
+    } catch (error) {
+      res.status(500).send(String(error));
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // /api/master/workflow-settings (Phase 2d-2 batch C)
+  // -------------------------------------------------------------------
+
+  app.get("/api/master/workflow-settings", async (_req, res) => {
+    try {
+      const result = await query(
+        "SELECT * FROM workflow_settings ORDER BY issue_type_name ASC"
+      );
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/master/workflow-settings", express.json(), async (req, res) => {
+    const {
+      issue_type_name,
+      allowed_templates,
+      status_configs,
+      variable_mappings,
+      next_status_id,
+      document_prefix,
+    } = req.body;
+    try {
+      await query(
+        `INSERT INTO workflow_settings (issue_type_name, allowed_templates, status_configs, variable_mappings, next_status_id, document_prefix)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (issue_type_name) DO UPDATE SET
+         allowed_templates = EXCLUDED.allowed_templates,
+         status_configs = EXCLUDED.status_configs,
+         variable_mappings = EXCLUDED.variable_mappings,
+         next_status_id = EXCLUDED.next_status_id,
+         document_prefix = EXCLUDED.document_prefix,
+         updated_at = CURRENT_TIMESTAMP`,
+        [
+          issue_type_name,
+          JSON.stringify(allowed_templates || []),
+          JSON.stringify(status_configs || {}),
+          JSON.stringify(variable_mappings || {}),
+          next_status_id,
+          document_prefix,
+        ]
+      );
+      res.json({ success: true });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // /api/management/import-csv (Phase 2d-2 batch C)
+  // -------------------------------------------------------------------
+
+  app.post(
+    "/api/management/import-csv",
+    express.text({ limit: "50mb" }),
+    async (req, res) => {
+      const { mode } = req.query;
+      try {
+        let result;
+        if (mode === "publishing") {
+          result = await csvImportService.importPublishingBulk(req.body);
+        } else if (mode === "vendor") {
+          result = await csvImportService.importVendors(req.body);
+        } else if (mode === "staff") {
+          result = await csvImportService.importStaff(req.body);
+        } else if (mode === "contract") {
+          result = await csvImportService.importContracts(req.body);
+        } else {
+          result = await csvImportService.importGeneric(req.body);
+        }
+
+        // Notify Slack about bulk completion with delivery instructions.
+        if (
+          slackWebClient &&
+          result.success &&
+          (mode === "publishing" || mode === "generic")
+        ) {
+          const channelId = process.env.SLACK_CHANNEL_ID || "C0123456789";
+          const settingsResult = await query(
+            "SELECT value FROM app_settings WHERE key = 'slack_bulk_import_done'"
+          );
+          const template =
+            settingsResult.rows[0]?.value?.template ||
+            `📦 一括発注・検収登録が完了しました（件数: {{processedCount}}件）。\n\n【納品時のご案内】\n納品が発生した際は、ダウンロードされた結果CSVに「納品日（deliveredAt）」と「納品額（deliveredAmount）」を記入し、再度一括インポートを行うことで検収登録が可能です。`;
+          const msg = template.replace(
+            /{{processedCount}}/g,
+            String(result.processedCount)
+          );
+          try {
+            await slackWebClient.chat.postMessage({ channel: channelId, text: msg });
+          } catch (slackErr) {
+            console.warn("Bulk-import Slack notify failed (non-fatal):", slackErr);
+          }
+        }
+
+        res.json(result);
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    }
+  );
 
   app.listen(PORT, () => {
     console.log(`[document-worker] listening on :${PORT}`);
