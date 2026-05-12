@@ -2,21 +2,20 @@
 
 `gas/Code.gs` is the Slack-side entry point for the LegalBridge platform.
 It receives `/法務依頼` and `/法務検索` slash commands plus all interactivity
-payloads (modal submissions, radio-button changes), and forwards the heavy
-lifting to the LegalBridge Cloud Run service via two internal HTTP
-endpoints:
+payloads (modal submissions, radio-button changes).
 
 | Slack action | GAS calls |
 | --- | --- |
 | `/法務依頼` slash command | `views.open` directly via Slack Web API |
-| Modal `legal_request_modal` submit | `POST /api/internal/slack/legal-request` |
+| Modal `legal_request_modal` submit | Backlog `POST /api/v2/issues` directly (no Cloud Run hop). The Backlog `type=1` webhook on the Cloud Run document-worker then handles DB write + document generation. |
 | Modal `request_type_input` change | `views.update` directly via Slack Web API |
 | `/法務検索` slash command | opens the search modal directly via Slack Web API |
 | Modal `legal_search_modal` submit | Backlog `/api/v2/issues` + Cloud Run `/api/contract-check/search` IN PARALLEL via `UrlFetchApp.fetchAll` |
 
-This split lets us decommission the `legalbridge-slack-gateway` Cloud Run
-service entirely — Slack talks to the GAS web app, GAS talks to the
-remaining LegalBridge Cloud Run service.
+The `/法務依頼` intake path lives entirely in GAS so it is unaffected
+by Cloud Run availability or cold starts. The `/法務検索` path delegates
+the contract-status DB lookup to Cloud Run (which is the only service
+with PostgreSQL access).
 
 ---
 
@@ -38,36 +37,28 @@ add:
 | Key | Value | Used by |
 | --- | --- | --- |
 | `SLACK_BOT_TOKEN` | `xoxb-...` (the bot user token of the LegalBridge Slack app — `chat:write`, `commands`, `views:read/write` scopes) | All Slack actions |
-| `CLOUD_RUN_BASE_URL` | `https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app` (no trailing slash) | `/法務依頼` POST + `/法務検索` contract-status lookup |
-| `LB_PORTAL_SECRET` | Shared secret used by `X-LB-PORTAL-SECRET` header on Cloud Run portal endpoints (same value as Contract-Status GAS) | `/法務検索` contract-status lookup |
-| `BACKLOG_HOST` | `arclight.backlog.com` | `/法務検索` direct Backlog calls |
-| `BACKLOG_API_KEY` | The Backlog personal API key | `/法務検索` direct Backlog calls |
-| `BACKLOG_PROJECT_KEY` | `LEGAL` | `/法務検索` direct Backlog calls |
+| `CLOUD_RUN_BASE_URL` | `https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app` (no trailing slash) | `/法務検索` contract-status lookup only |
+| `LB_PORTAL_SECRET` | Shared secret used by `X-LB-PORTAL-SECRET` header on Cloud Run portal endpoints | `/法務検索` contract-status lookup |
+| `BACKLOG_HOST` | `arclight.backlog.com` | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
+| `BACKLOG_API_KEY` | The Backlog personal API key | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
+| `BACKLOG_PROJECT_KEY` | `LEGAL` | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
 | `SLACK_SIGNING_SECRET` | *(optional, currently unused — see "Signature verification" below)* | reserved |
 
 > **Architecture note (2026-05)**: contract-status lookups previously hopped
-> through the Contract-Status GAS Web App (`CONTRACT_STATUS_WEBAPP_URL`),
-> which itself proxied to Cloud Run. That double hop routinely pushed
-> `/法務検索` past Slack's 3-second budget (observed: 7.5s end-to-end). The
-> Slack Gateway now calls Cloud Run's `/api/contract-check/search`
-> directly, eliminating one GAS-to-GAS hop. `CONTRACT_STATUS_WEBAPP_URL`
-> is no longer required.
+> through the Contract-Status GAS Web App, which itself proxied to Cloud Run.
+> That double hop routinely pushed `/法務検索` past Slack's 3-second budget
+> (observed: 7.5s end-to-end). The Slack Gateway now calls Cloud Run's
+> `/api/contract-check/search` directly, eliminating one GAS-to-GAS hop.
 
-> **Contract-Status integration**: the `/法務検索` modal fans out to both
-> Backlog (issues) and Cloud Run's `/api/contract-check/search` endpoint.
-> The Contract-Status GAS Web App is no longer in the request path — see
-> the architecture note above.
+> **`/法務依頼` runs entirely in GAS.** The legal-request modal submit
+> creates the Backlog issue directly via the Backlog REST API (no Cloud
+> Run dependency). Downstream document generation is triggered by
+> Backlog's `type=1` webhook hitting the Cloud Run document-worker —
+> that pipeline is asynchronous, so an outage there does not block
+> Slack-side intake.
 
 These are read at runtime via `PropertiesService.getScriptProperties()`,
 so you can rotate any token / key without redeploying.
-
-> **Why does `/法務検索` need its own Backlog credentials in GAS?**
-> The search flow used to hop through Cloud Run, but it now calls
-> `https://<BACKLOG_HOST>/api/v2/issues?keyword=…` directly via
-> `UrlFetchApp`. That keeps the entire search path inside GAS, so
-> Cloud Run is only on the `/法務依頼` intake path. Use the *same*
-> Backlog API key that Cloud Run uses, or a separate one with at
-> least read access to the LEGAL project.
 
 ## 3. Deploy as a Web App
 
@@ -111,19 +102,22 @@ Reinstall the app to your workspace if you change scopes.
 
 ## 5. Cloud Run side
 
-The companion endpoints exposed by `server.ts`:
+The Slack Gateway calls only one Cloud Run endpoint:
 
 ```http
-POST  /api/internal/slack/legal-request
-GET   /api/search/issues?query=<keyword>
+POST  /api/contract-check/search   (X-LB-PORTAL-SECRET header)
 ```
 
-There is no Slack signature check on the Cloud Run side — the endpoints
-are called by GAS only. If you want to lock them down further, you can:
+Both `/法務依頼` (Backlog issue creation) and the Backlog-side part of
+`/法務検索` are handled directly by GAS via the Backlog REST API and do
+not touch Cloud Run.
+
+The contract-status endpoint is gated by the `X-LB-PORTAL-SECRET`
+shared secret. If you want to lock it down further:
 
 - Restrict ingress on the Cloud Run service to authenticated callers and
   attach an identity token to the `UrlFetchApp` request, **or**
-- Add a shared secret header that `Code.gs` sends and `server.ts` checks.
+- Rotate `LB_PORTAL_SECRET` periodically.
 
 ## 6. Keep the runtime warm (REQUIRED for Slack)
 
@@ -194,8 +188,12 @@ Watch logs in Apps Script via **Executions** in the left sidebar.
   re-add it.
 - **`401 invalid_auth` from Slack**: bad/rotated `SLACK_BOT_TOKEN`. Update
   the script property — no redeploy needed.
-- **`HTTP 4xx` from Cloud Run**: `CLOUD_RUN_BASE_URL` typo, or Cloud Run
-  rejected the payload (bad JSON / missing fields). Inspect the GAS
-  execution log for the response body.
-- **Search returns nothing**: confirm the keyword reaches Cloud Run by
-  hitting `GET /api/search/issues?query=foo` directly with `curl`.
+- **`HTTP 4xx` from Cloud Run on `/法務検索` contract section**:
+  `CLOUD_RUN_BASE_URL` typo or `LB_PORTAL_SECRET` mismatch. Inspect the
+  GAS execution log for the response body.
+- **Backlog issue not created on `/法務依頼` submit**: confirm
+  `BACKLOG_HOST` / `BACKLOG_API_KEY` / `BACKLOG_PROJECT_KEY` are set and
+  the API key has issue-create permission on the LEGAL project. The GAS
+  execution log will surface the Backlog API error body.
+- **Search returns no Backlog issues**: verify the same Backlog
+  credentials, then test with `curl https://<BACKLOG_HOST>/api/v2/issues?apiKey=...&keyword=foo`.
