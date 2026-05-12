@@ -1,0 +1,41 @@
+{
+  "name": "legalbridge-document-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Backlog webhook handler + document generation + master-data writes. Owned by Legal team.",
+  "scripts": {
+    "dev": "tsx server.ts",
+    "start": "tsx server.ts",
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@google/genai": "^1.29.0",
+    "@slack/web-api": "^7.15.1",
+    "axios": "^1.15.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
+    "googleapis": "^171.4.0",
+    "handlebars": "^4.7.9",
+    "html-docx-js-typescript": "^0.1.5",
+    "html-to-docx": "^1.8.0",
+    "multer": "^2.1.1",
+    "papaparse": "^5.5.3",
+    "pg": "^8.20.0",
+    "turndown": "^7.2.4",
+    "turndown-plugin-gfm": "^1.0.2",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/multer": "^2.1.0",
+    "@types/node": "^22.14.0",
+    "@types/papaparse": "^5.5.2",
+    "@types/pg": "^8.20.0",
+    "tsx": "^4.21.0",
+    "typescript": "~5.8.2"
+  }
+}

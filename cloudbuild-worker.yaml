@@ -1,0 +1,94 @@
+# Cloud Build pipeline for legalbridge-document-worker (Cloud Run ②)
+#
+# Trigger: push to `release/worker` branch.
+# Builds and deploys services/worker/ as the legalbridge-document-worker
+# Cloud Run service. Cold-start is acceptable because the entry points
+# are Backlog webhooks (no Slack 3-second constraint) and document
+# generation requests are async.
+#
+# Substitutions (override per-trigger if needed):
+#   _REGION       — Cloud Run / Artifact Registry region
+#   _REPO         — Artifact Registry repository name
+#   _SERVICE_NAME — Cloud Run service name
+
+substitutions:
+  _REGION: asia-northeast1
+  _REPO: legalbridge
+  _SERVICE_NAME: legalbridge-document-worker
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
+
+images:
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform
+      - linux/amd64
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+      - services/worker
+    dir: .
+
+  - id: push-sha
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+
+  - id: push-latest
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
+
+  # Deploy without --set-env-vars so Cloud Run keeps its existing secret
+  # bindings (DATABASE_URL, BACKLOG_*, GOOGLE_*, SLACK_BOT_TOKEN, etc.).
+  - id: deploy
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - "${_SERVICE_NAME}"
+      - --image
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:${SHORT_SHA}"
+      - --region
+      - "${_REGION}"
+      - --platform
+      - managed
+      - --allow-unauthenticated
+      - --port
+      - "8080"
+      - --memory
+      - 1Gi
+      - --cpu
+      - "1"
+      - --min-instances
+      - "0"
+      - --max-instances
+      - "5"
+      - --timeout
+      - "600"
+      - --quiet
+
+  - id: promote
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - services
+      - update-traffic
+      - "${_SERVICE_NAME}"
+      - --region
+      - "${_REGION}"
+      - --to-latest
+      - --quiet
