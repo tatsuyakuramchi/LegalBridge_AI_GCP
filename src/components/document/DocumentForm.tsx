@@ -661,21 +661,79 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
   }
 
-  // Specialized Service Master (業務委託基本契約書, Phase 3b-4)
+  // Specialized Service Master (業務委託基本契約書, Phase 3b-4 v2)
   //
-  // 甲 (Arclight) is hard-coded inside the template HTML, so only 乙
-  // (the contractor) has form variables. One section, [取引先] button
-  // does the entire fill.
+  // The template now ships with explicit 甲 (PARTY_A_*) and 乙 (VENDOR_*)
+  // form variables, banking info, and an invoice block — mirroring the
+  // shape of license_master. Both party sections expose [自社]/[取引先]
+  // buttons because the inbound/outbound case applies here too
+  // (Arclight is normally the 委託者 = 甲 but the swap supports
+  // edge scenarios where roles are inverted).
   if (templateId === 'service_master') {
-    const fillPartyBFromPartner = () => {
+    const fillPartyAFromSelf = () =>
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: companyProfile?.name || '',
+        PARTY_A_ADDRESS: companyProfile?.address || '',
+        PARTY_A_REP: companyProfile?.representative || '',
+      });
+
+    const fillPartyAFromPartner = () => {
       if (!activeVendor) return;
       setFormData({
         ...formData,
-        PARTY_B_NAME: activeVendor.vendor_name || '',
-        PARTY_B_ADDRESS: activeVendor.address || '',
-        PARTY_B_REPRESENTATIVE: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        PARTY_A_NAME: activeVendor.vendor_name || '',
+        PARTY_A_ADDRESS: activeVendor.address || '',
+        PARTY_A_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
       });
     };
+
+    const fillVendorFromSelf = () =>
+      setFormData({
+        ...formData,
+        VENDOR_NAME: companyProfile?.name || '',
+        VENDOR_ADDRESS: companyProfile?.address || '',
+        VENDOR_REP: companyProfile?.representative || '',
+      });
+
+    const fillVendorFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        VENDOR_NAME: activeVendor.vendor_name || '',
+        VENDOR_ADDRESS: activeVendor.address || '',
+        VENDOR_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        VENDOR_PHONE: activeVendor.phone || '',
+        VENDOR_EMAIL: activeVendor.email || '',
+        // Banking commonly belongs to 乙 on a service master
+        BANK_NAME: activeVendor.bank_name || '',
+        BRANCH_NAME: activeVendor.branch_name || '',
+        ACCOUNT_TYPE: activeVendor.account_type || '',
+        ACCOUNT_NUMBER: activeVendor.account_number || '',
+        ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
+        IS_INVOICE_ISSUER: activeVendor.is_invoice_issuer ? '該当' : '非該当',
+        invoiceRegistrationDisplay: activeVendor.invoice_registration_number
+          ? `T${activeVendor.invoice_registration_number}`
+          : '',
+      });
+    };
+
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
 
     const requiredIds = Object.entries(metadata.vars || {})
       .filter(([, m]: [string, any]) => m?.required === true)
@@ -712,38 +770,62 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </div>
 
-        <div className="px-4 py-2 rounded-sm bg-muted/50 text-[10px] font-mono text-muted-foreground">
-          甲 (発注者) は「株式会社アークライト」がテンプレート内に固定されています。
-          以下は 乙 (受託者) の情報のみ入力してください。
+        <FormSection
+          title="I. 契約締結日"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          <div className="grid grid-cols-3 gap-3">{renderGroup('I. 契約締結日')}</div>
+        </FormSection>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <FormSection
+            title="II. 甲 (委託者)"
+            variant="blue"
+            icon={<Building2 className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillPartyAFromSelf, !companyProfile)}
+                {sideButton('取引先', fillPartyAFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('II. 甲 (委託者)')}
+          </FormSection>
+
+          <FormSection
+            title="III. 乙 (受託者)"
+            variant="amber"
+            icon={<User className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillVendorFromSelf, !companyProfile)}
+                {sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('III. 乙 (受託者)')}
+          </FormSection>
         </div>
 
-        <FormSection title="I. ヘッダ" variant="default" icon={<Briefcase className="w-4 h-4" />}>
-          {renderGroup('I. ヘッダ')}
+        <FormSection
+          title="IV. 振込先銀行口座 (乙)"
+          variant="emerald"
+          headerActions={sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+        >
+          {renderGroup('IV. 振込先銀行口座 (乙)')}
         </FormSection>
 
-        <FormSection
-          title="II. 乙 (受託者)"
-          variant="amber"
-          icon={<Building2 className="w-4 h-4" />}
-          headerActions={
-            <button
-              type="button"
-              onClick={fillPartyBFromPartner}
-              disabled={!activeVendor}
-              className={cn(
-                'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
-                !activeVendor
-                  ? 'border-input text-muted-foreground/40 cursor-not-allowed'
-                  : 'border-foreground/30 text-foreground hover:bg-muted'
-              )}
-              title={!activeVendor ? '上部で取引先を選択してください' : undefined}
-            >
-              取引先
-            </button>
-          }
-        >
-          {renderGroup('II. 乙 (受託者)')}
+        <FormSection title="V. インボイス制度関連" variant="indigo">
+          {renderGroup('V. インボイス制度関連')}
         </FormSection>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VI. 特約 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">{renderGroup('VI. 特約 (任意)')}</div>
+        </details>
       </div>
     );
   }
