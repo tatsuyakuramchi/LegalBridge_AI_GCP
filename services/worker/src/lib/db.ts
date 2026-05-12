@@ -169,6 +169,59 @@ export async function initDb() {
     );`,
     `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
 
+    // -----------------------------------------------------------------
+    // Phase 4a: 発注書の税抜・税込・税率を SQL-queryable に
+    //
+    // 既存の order_items.amount は税抜総額として残し、新カラムで
+    // 内訳を持つ。税は Math.ceil で切り上げ (calc.ts 参照)。
+    // -----------------------------------------------------------------
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS amount_ex_tax DECIMAL(15, 2);`,
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_rate INTEGER;`,
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_amount DECIMAL(15, 2);`,
+    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS amount_inc_tax DECIMAL(15, 2);`,
+
+    // Backfill amount_ex_tax from the legacy single-column amount so
+    // the new query surface works for historic rows.
+    `UPDATE order_items
+        SET amount_ex_tax = amount
+      WHERE amount_ex_tax IS NULL AND amount IS NOT NULL;`,
+
+    // -----------------------------------------------------------------
+    // Phase 4a: 発注書の明細レコード (1 PO = N 明細)
+    //
+    // quantity / inspected_quantity は DECIMAL(10, 4) — 部分検収
+    // (例: 0.5 単位) と契約不適合品の割合評価 (acceptance_ratio) に
+    // 対応するため整数では不足。
+    // amount_ex_tax は unit_price × quantity をサーバ側で計算 (calc.ts)。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS order_line_items (
+      id SERIAL PRIMARY KEY,
+      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      item_name TEXT NOT NULL,
+      spec TEXT,
+      unit_price DECIMAL(15, 2),
+      quantity DECIMAL(10, 4),
+      amount_ex_tax DECIMAL(15, 2),
+      payment_method VARCHAR(50),
+      payment_date DATE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(order_item_id, line_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_oli_order_item ON order_line_items(order_item_id);`,
+
+    // Backfill: turn each existing order_items row into a single
+    // line item so the new SUM(line.amount_ex_tax) = header.amount_ex_tax
+    // invariant holds without rewriting historic data manually.
+    `INSERT INTO order_line_items (order_item_id, line_no, item_name, spec, amount_ex_tax)
+     SELECT oi.id, 1, COALESCE(oi.description, ''), '', oi.amount
+       FROM order_items oi
+       LEFT JOIN order_line_items oli
+         ON oli.order_item_id = oi.id AND oli.line_no = 1
+      WHERE oli.id IS NULL
+        AND oi.amount IS NOT NULL;`,
+
     `CREATE TABLE IF NOT EXISTS delivery_events (
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
@@ -183,6 +236,31 @@ export async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
+
+    // -----------------------------------------------------------------
+    // Phase 4a: 検収書の明細レコード (1 検収書 = N 明細)
+    //
+    // acceptance_ratio は 0.0000–1.0000 で品質評価:
+    //   1.0   = 全量検収
+    //   0.5   = 半量評価 (例: 1個納品されたが品質低下で 50% の価値)
+    //   など。
+    // inspected_amount_ex_tax = (unit_price × inspected_quantity)
+    //   × acceptance_ratio をサーバ側で計算する (calc.ts)。
+    // 累計検収 vs 発注額の overflow チェックはサーバ側ガードで実施。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS delivery_line_items (
+      id SERIAL PRIMARY KEY,
+      delivery_event_id INTEGER NOT NULL REFERENCES delivery_events(id) ON DELETE CASCADE,
+      order_line_item_id INTEGER REFERENCES order_line_items(id),
+      inspected_quantity DECIMAL(10, 4),
+      acceptance_ratio DECIMAL(5, 4) DEFAULT 1.0,
+      inspected_amount_ex_tax DECIMAL(15, 2),
+      rejection_reason TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(delivery_event_id, order_line_item_id)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_dli_delivery_event ON delivery_line_items(delivery_event_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_dli_order_line ON delivery_line_items(order_line_item_id);`,
 
     // 5. Licensing & Royalties
     `CREATE TABLE IF NOT EXISTS license_contracts (
