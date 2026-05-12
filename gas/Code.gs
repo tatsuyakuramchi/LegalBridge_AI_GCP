@@ -68,6 +68,27 @@ function handleSlashCommand_(params) {
   }
 
   if (command === '/法務検索') {
+    // Channel allow-list check.
+    // ALLOWED_SEARCH_CHANNEL_IDS is a comma-separated list of channel
+    // IDs (e.g. "C090WRVD1TM,C012345ABCD") set in script properties.
+    // When unset, the command is open to every channel (no-op check).
+    var allowListRaw = scriptProperty_('ALLOWED_SEARCH_CHANNEL_IDS');
+    if (allowListRaw && String(allowListRaw).trim() !== '') {
+      var allowedIds = String(allowListRaw)
+        .split(',')
+        .map(function (s) { return s.trim(); })
+        .filter(function (s) { return s.length > 0; });
+      var incoming = params.channel_id || '';
+      if (allowedIds.indexOf(incoming) === -1) {
+        return jsonResponse_({
+          response_type: 'ephemeral',
+          text:
+            '❌ `/法務検索` はこのチャンネルでは利用できません。\n' +
+            '指定の法務専用チャンネルでお試しください。',
+        });
+      }
+    }
+
     // Open the modal so the user can refine their search inline.
     // If keyword text was provided alongside the slash command
     // (`/法務検索 NDA`), pre-fill it as the initial value.

@@ -42,6 +42,7 @@ add:
 | `BACKLOG_HOST` | `arclight.backlog.com` | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
 | `BACKLOG_API_KEY` | The Backlog personal API key | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
 | `BACKLOG_PROJECT_KEY` | `LEGAL` | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
+| `ALLOWED_SEARCH_CHANNEL_IDS` | *(optional)* Comma-separated Slack channel IDs that may invoke `/法務検索`, e.g. `C090WRVD1TM` or `C090WRVD1TM,C012345ABCD`. When unset, `/法務検索` is open to every channel. | `/法務検索` channel allow-list |
 | `SLACK_SIGNING_SECRET` | *(optional, currently unused — see "Signature verification" below)* | reserved |
 
 > **Architecture note (2026-05)**: contract-status lookups previously hopped
