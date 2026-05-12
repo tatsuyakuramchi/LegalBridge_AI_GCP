@@ -12,6 +12,27 @@ FROM node:22-slim
 
 WORKDIR /app
 
+# -----------------------------------------------------------------------
+# PDF rendering deps:
+#   - chromium: headless browser used by puppeteer-core to print HTML→PDF
+#   - fonts-noto-cjk / fonts-ipafont-*: Japanese fonts. Without these,
+#     all 日本語 in the rendered PDF is replaced by tofu (□).
+# We use puppeteer-core (not puppeteer) and point it at /usr/bin/chromium
+# so we don't double-download the bundled Chromium binary.
+# -----------------------------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      chromium \
+      fonts-noto-cjk \
+      fonts-noto-cjk-extra \
+      fonts-ipafont-gothic \
+      fonts-ipafont-mincho \
+      ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV PUPPETEER_SKIP_DOWNLOAD=true
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
+ENV CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
+
 # Install dependencies first so they're cached across code changes.
 COPY package*.json ./
 RUN npm install --omit=dev

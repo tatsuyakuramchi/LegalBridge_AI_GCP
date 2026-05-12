@@ -358,7 +358,8 @@ ${details}
       templateType
     );
 
-    const driveLink = await googleDriveService.uploadHtml(html, fileName);
+    // Phase 9: PDF レンダリング経由で upload (Backlog webhook 経路)
+    const driveLink = await googleDriveService.uploadPdf(html, fileName);
 
     await query(
       "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
@@ -2384,7 +2385,10 @@ ${details}
         templateType
       );
 
-      const driveLink = await googleDriveService.uploadHtml(html, fileName);
+      // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
+      // 変換させていたが、CSS が大幅に潰れて template と程遠い見栄えに
+      // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
+      const driveLink = await googleDriveService.uploadPdf(html, fileName);
 
       await query(
         "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",

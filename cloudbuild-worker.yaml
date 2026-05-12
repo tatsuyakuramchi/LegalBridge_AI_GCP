@@ -68,10 +68,13 @@ steps:
       - --allow-unauthenticated
       - --port
       - "8080"
+      # Phase 9: PDF レンダリング (Puppeteer + Chromium) 用にメモリを増量。
+      # Chromium のプロセスは 起動時 ~200MB、レンダ中はピーク ~600MB なので
+      # 1Gi だと OOMKilled で 503 を返すケースがあるため 2Gi に。
       - --memory
-      - 1Gi
+      - 2Gi
       - --cpu
-      - "1"
+      - "2"
       - --min-instances
       - "0"
       - --max-instances

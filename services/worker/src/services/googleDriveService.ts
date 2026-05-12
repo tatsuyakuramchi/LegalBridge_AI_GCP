@@ -1,6 +1,7 @@
 import { google } from "googleapis";
 import { Readable } from "stream";
 import * as fs from "node:fs";
+import { renderHtmlToPdf, type RenderPdfOptions } from "./pdfRenderer.ts";
 
 export class GoogleDriveService {
   private drive;
@@ -69,6 +70,49 @@ export class GoogleDriveService {
       return response.data.webViewLink || "";
     } catch (error) {
       console.error("Error uploading to Google Drive:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * HTML を Puppeteer で PDF レンダリングして Drive に upload。
+   * Drive 側では PDF として保存され (Google Docs への変換なし)、
+   * Web View でも開けるし、ダウンロードしてもそのまま .pdf として降りる。
+   *
+   * Phase 9: 従来は uploadHtml が Google Docs 変換していたためレイアウトが
+   * 大幅に崩れ、ダウンロード時 .docx が降ってくる挙動だったが、PDF レンダ
+   * リング後はテンプレ HTML の CSS そのままで出力される。
+   */
+  async uploadPdf(
+    html: string,
+    fileName: string,
+    folderId?: string,
+    renderOptions?: RenderPdfOptions
+  ): Promise<string> {
+    const folder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+
+    const pdfBuffer = await renderHtmlToPdf(html, renderOptions);
+    const pdfName = fileName.replace(/\.(html?|docx?)$/i, "") + ".pdf";
+
+    const fileMetadata = {
+      name: pdfName,
+      parents: folder ? [folder] : [],
+      mimeType: "application/pdf",
+    };
+    const media = {
+      mimeType: "application/pdf",
+      body: Readable.from(pdfBuffer),
+    };
+    try {
+      const response = await this.drive.files.create({
+        requestBody: fileMetadata,
+        media,
+        fields: "id, webViewLink",
+        supportsAllDrives: true,
+      });
+      return response.data.webViewLink || "";
+    } catch (error) {
+      console.error("Error uploading PDF to Google Drive:", error);
       throw error;
     }
   }
