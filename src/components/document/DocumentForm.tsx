@@ -3,8 +3,9 @@ import React, { useMemo } from 'react';
 import { FormSection } from './FormSection';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
+import { LineItemTable, type LineItem } from './LineItemTable';
 import { TemplateMetadata } from './types';
-import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase } from 'lucide-react';
+import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DocumentFormProps {
@@ -463,14 +464,37 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         </div>
 
-        {/* IV. 金額・納期 */}
-        <FormSection title="IV. 金額・納期" variant="indigo" icon={<Scale className="w-4 h-4" />}>
+        {/* IV. 明細 (Phase 7a/7b) — primary path; grandTotalExTax は自動集計 */}
+        <FormSection
+          title="IV. 明細"
+          variant="indigo"
+          icon={<List className="w-4 h-4" />}
+        >
+          <LineItemTable
+            items={Array.isArray(formData.items) ? formData.items : []}
+            onChange={(items: LineItem[]) => {
+              const grandTotal = items.reduce(
+                (sum, it) => sum + (Number(it.amount_ex_tax) || 0),
+                0
+              );
+              setFormData({
+                ...formData,
+                items,
+                grandTotalExTax: grandTotal,
+              });
+            }}
+            showPaymentColumns={true}
+          />
+        </FormSection>
+
+        {/* V. 金額サマリ・納期 */}
+        <FormSection title="V. 金額サマリ・納期" variant="indigo" icon={<Scale className="w-4 h-4" />}>
           {renderGroup('IV. 金額・納期')}
         </FormSection>
 
-        {/* V. 振込先 */}
+        {/* VI. 振込先 */}
         <FormSection
-          title="V. 振込先 (取引先口座)"
+          title="VI. 振込先 (取引先口座)"
           variant="emerald"
           headerActions={sideButton('取引先', fillVendorFromPartner, !activeVendor)}
         >

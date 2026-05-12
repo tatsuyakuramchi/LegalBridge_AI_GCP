@@ -196,6 +196,40 @@ async function startServer() {
         console.warn("Could not fetch full issue details for context mapping", e);
       }
 
+      // Phase 7b: 発注書テンプレなら既存 order_line_items を items[] として
+      // プリセットする (フォーム側の LineItemTable がそのまま使える shape)。
+      if (template === "purchase_order" || template === "planning_purchase_order") {
+        const orderHeader = await query(
+          `SELECT id, amount_ex_tax, tax_rate
+             FROM order_items
+            WHERE backlog_issue_key = $1`,
+          [key]
+        );
+        if (orderHeader.rows.length > 0) {
+          const orderItemId = orderHeader.rows[0].id;
+          context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
+          context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
+          const lines = await query(
+            `SELECT line_no, item_name, spec, unit_price, quantity,
+                    amount_ex_tax, payment_method, payment_date
+               FROM order_line_items
+              WHERE order_item_id = $1
+              ORDER BY line_no ASC`,
+            [orderItemId]
+          );
+          context["items"] = lines.rows.map((r: any) => ({
+            line_no: Number(r.line_no),
+            item_name: r.item_name || "",
+            spec: r.spec || "",
+            unit_price: Number(r.unit_price) || 0,
+            quantity: Number(r.quantity) || 0,
+            amount_ex_tax: Number(r.amount_ex_tax) || 0,
+            payment_method: r.payment_method || "",
+            payment_date: r.payment_date || "",
+          }));
+        }
+      }
+
       if (
         template === "inspection_certificate" ||
         template === "inspection_certificate_detailed" ||

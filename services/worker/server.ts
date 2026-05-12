@@ -1655,13 +1655,14 @@ ${details}
         const amount = parseFloat(
           (formData.ORDER_AMOUNT || formData.TOTAL_AMOUNT || "0").replace(/,/g, "")
         );
-        await query(
+        const orderItemRes = await query(
           `INSERT INTO order_items (legal_request_id, item_no, vendor_code, description, amount, due_date, backlog_issue_key)
            VALUES ($1, $2, $3, $4, $5, $6, $7)
            ON CONFLICT (backlog_issue_key) DO UPDATE SET
            amount = EXCLUDED.amount,
            due_date = EXCLUDED.due_date,
-           description = EXCLUDED.description`,
+           description = EXCLUDED.description
+           RETURNING id`,
           [
             lrId,
             1,
@@ -1672,6 +1673,63 @@ ${details}
             issueKey,
           ]
         );
+        const orderItemId = orderItemRes.rows[0]?.id;
+
+        // Phase 7b: 発注書フォームから items[] が送信されていれば
+        // order_line_items を upsert し, recalculateOrderTotal で
+        // ヘッダ総額を「明細合計」と整合させる。
+        if (orderItemId && Array.isArray(formData.items) && formData.items.length > 0) {
+          const taxRate = Number(formData.taxRate) || 10;
+          const incomingLines = formData.items as Array<any>;
+          const keepNos = incomingLines
+            .map((l, i) => Number(l.line_no) || i + 1)
+            .filter((n) => n > 0);
+
+          if (keepNos.length > 0) {
+            await query(
+              `DELETE FROM order_line_items
+                WHERE order_item_id = $1
+                  AND line_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
+              [orderItemId, ...keepNos]
+            );
+          }
+
+          for (let i = 0; i < incomingLines.length; i++) {
+            const l = incomingLines[i];
+            const lineNo = Number(l.line_no) || i + 1;
+            const unit = Number(l.unit_price) || 0;
+            const qty = Number(l.quantity) || 0;
+            const lineAmt = calculateOrderLineAmount(unit, qty);
+            await query(
+              `INSERT INTO order_line_items (
+                 order_item_id, line_no, item_name, spec,
+                 unit_price, quantity, amount_ex_tax,
+                 payment_method, payment_date, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+               ON CONFLICT (order_item_id, line_no) DO UPDATE SET
+                 item_name      = EXCLUDED.item_name,
+                 spec           = EXCLUDED.spec,
+                 unit_price     = EXCLUDED.unit_price,
+                 quantity       = EXCLUDED.quantity,
+                 amount_ex_tax  = EXCLUDED.amount_ex_tax,
+                 payment_method = EXCLUDED.payment_method,
+                 payment_date   = EXCLUDED.payment_date,
+                 updated_at     = CURRENT_TIMESTAMP`,
+              [
+                orderItemId,
+                lineNo,
+                l.item_name || "",
+                l.spec || "",
+                unit,
+                qty,
+                lineAmt,
+                l.payment_method || null,
+                l.payment_date || null,
+              ]
+            );
+          }
+          await recalculateOrderTotal(orderItemId, taxRate);
+        }
       } else if (templateType.includes("inspection")) {
         await query(
           "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
