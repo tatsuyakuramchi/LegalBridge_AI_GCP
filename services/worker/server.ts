@@ -1457,6 +1457,47 @@ ${details}
         }
       }
 
+      // Phase 7d: individual_license_terms 用に
+      // formData.financial_conditions[] を HTML テンプレートが参照する
+      // legacy flat field {{金銭条件1_料率}}, {{金銭条件1_計算式}} ... に
+      // 展開する。Admin UI 側は FinancialConditionTable で構造化された
+      // rows を持っているが、Handlebars テンプレ自体は古い flat ID で
+      // 書かれているため、ここで橋渡し。
+      if (
+        templateType === "lic_individual" &&
+        Array.isArray(formData.financial_conditions)
+      ) {
+        formData.financial_conditions.forEach((c: any) => {
+          const n = Number(c.condition_no);
+          if (!Number.isFinite(n) || n < 1) return;
+          const prefix = `金銭条件${n}_`;
+          formData[`${prefix}計算方式`] =
+            formData[`${prefix}計算方式`] || c.calc_method || "";
+          formData[`${prefix}料率`] =
+            formData[`${prefix}料率`] ||
+            (c.rate_pct !== undefined && c.rate_pct !== null
+              ? String(c.rate_pct)
+              : "");
+          formData[`${prefix}基準価格`] =
+            formData[`${prefix}基準価格`] || c.base_price_label || "";
+          formData[`${prefix}計算期間`] =
+            formData[`${prefix}計算期間`] || c.calc_period || "";
+          formData[`${prefix}通貨`] =
+            formData[`${prefix}通貨`] || c.currency || "";
+          formData[`${prefix}計算式`] =
+            formData[`${prefix}計算式`] || c.formula_text || "";
+          formData[`${prefix}支払条件`] =
+            formData[`${prefix}支払条件`] || c.payment_terms || "";
+          formData[`${prefix}MG`] =
+            formData[`${prefix}MG`] ||
+            (c.mg_amount !== undefined && c.mg_amount !== null
+              ? String(c.mg_amount)
+              : "");
+          formData[`${prefix}地域言語`] =
+            formData[`${prefix}地域言語`] || c.region_language_label || "";
+        });
+      }
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey,
@@ -1851,10 +1892,141 @@ ${details}
           ]
         );
       } else if (templateType === "lic_individual") {
-        await query(
-          `UPDATE license_contracts SET contract_number = $1 WHERE backlog_issue_key = $2`,
-          [docNumber, issueKey]
+        // Phase 7d: license_contracts ヘッダを upsert
+        // (License Master が先に走っていなくても個別条件書から開始可)。
+        // ledger_id は NOT NULL UNIQUE なので、新規時は docNumber を使う
+        // (License Master が走っていれば既存値が温存される)。
+        // license_contracts.updated_at が無いスキーマでも安全なように
+        // updated_at は外している。
+        const lcUpsert = await query(
+          `INSERT INTO license_contracts (
+             backlog_issue_key, ledger_id, ledger_number, contract_number,
+             licensor, original_work,
+             licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
+             licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
+             product_name_predicted,
+             license_start_date, license_period_note,
+             supervisor, credit_display, remarks
+           )
+           VALUES (
+             $1, $2, $3, $4,
+             $5, $6,
+             $7, $8, $9, $10,
+             $11, $12, $13, $14,
+             $15,
+             $16, $17,
+             $18, $19, $20
+           )
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+             contract_number          = EXCLUDED.contract_number,
+             ledger_number            = COALESCE(NULLIF(EXCLUDED.ledger_number, ''), license_contracts.ledger_number),
+             licensor                 = COALESCE(NULLIF(EXCLUDED.licensor, ''), license_contracts.licensor),
+             original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), license_contracts.original_work),
+             licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), license_contracts.licensor_name),
+             licensor_address         = COALESCE(NULLIF(EXCLUDED.licensor_address, ''), license_contracts.licensor_address),
+             licensor_rep             = COALESCE(NULLIF(EXCLUDED.licensor_rep, ''), license_contracts.licensor_rep),
+             licensor_is_corporation  = EXCLUDED.licensor_is_corporation,
+             licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), license_contracts.licensee_name),
+             licensee_address         = COALESCE(NULLIF(EXCLUDED.licensee_address, ''), license_contracts.licensee_address),
+             licensee_rep             = COALESCE(NULLIF(EXCLUDED.licensee_rep, ''), license_contracts.licensee_rep),
+             licensee_is_corporation  = EXCLUDED.licensee_is_corporation,
+             product_name_predicted   = COALESCE(NULLIF(EXCLUDED.product_name_predicted, ''), license_contracts.product_name_predicted),
+             license_start_date       = COALESCE(EXCLUDED.license_start_date, license_contracts.license_start_date),
+             license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), license_contracts.license_period_note),
+             supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), license_contracts.supervisor),
+             credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), license_contracts.credit_display),
+             remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), license_contracts.remarks)
+           RETURNING id`,
+          [
+            issueKey,
+            formData.ledgerId || docNumber, // ledger_id (UNIQUE NOT NULL)
+            docNumber,                      // ledger_number
+            docNumber,                      // contract_number
+            formData.Licensor_名称 || formData.Licensor_氏名会社名 || "", // legacy licensor
+            formData.原著作物名 || "",                                    // legacy original_work
+            formData.Licensor_名称 || formData.Licensor_氏名会社名 || "",
+            formData.Licensor_住所 || "",
+            formData.Licensor_代表者名 || "",
+            !!formData.LICENSOR_IS_CORPORATION,
+            formData.Licensee_名称 || formData.Licensee_氏名会社名 || "",
+            formData.Licensee_住所 || "",
+            formData.Licensee_代表者名 || "",
+            !!formData.LICENSEE_IS_CORPORATION,
+            formData.対象製品予定名 || "",
+            formData.許諾開始日 || null,
+            formData.許諾期間注記 || "",
+            formData.監修者 || "",
+            formData.クレジット表示 || "",
+            formData.特記事項 || formData.remarks || "",
+          ]
         );
+        const lcId = Number(lcUpsert.rows[0]?.id);
+
+        // Phase 7d: financial_conditions[] を license_financial_conditions
+        // に upsert (condition_no をキーに一意)。FinancialConditionTable
+        // で削除された condition は DB からも削除する。
+        if (lcId && Array.isArray(formData.financial_conditions)) {
+          const keepNos = new Set<number>();
+          for (const c of formData.financial_conditions) {
+            const condNo = Number(c?.condition_no);
+            if (!Number.isFinite(condNo) || condNo < 1) continue;
+            keepNos.add(condNo);
+            await query(
+              `INSERT INTO license_financial_conditions (
+                 license_contract_id, condition_no, region_language_label,
+                 calc_method, rate_pct, base_price_label, calc_period,
+                 currency, formula_text, payment_terms, mg_amount
+               )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ON CONFLICT (license_contract_id, condition_no) DO UPDATE SET
+                 region_language_label = EXCLUDED.region_language_label,
+                 calc_method           = EXCLUDED.calc_method,
+                 rate_pct              = EXCLUDED.rate_pct,
+                 base_price_label      = EXCLUDED.base_price_label,
+                 calc_period           = EXCLUDED.calc_period,
+                 currency              = EXCLUDED.currency,
+                 formula_text          = EXCLUDED.formula_text,
+                 payment_terms         = EXCLUDED.payment_terms,
+                 mg_amount             = EXCLUDED.mg_amount,
+                 updated_at            = CURRENT_TIMESTAMP`,
+              [
+                lcId,
+                condNo,
+                c.region_language_label || "",
+                c.calc_method || "",
+                c.rate_pct !== undefined && c.rate_pct !== null
+                  ? Number(c.rate_pct)
+                  : null,
+                c.base_price_label || "",
+                c.calc_period || "",
+                c.currency || "JPY",
+                c.formula_text || "",
+                c.payment_terms || "",
+                c.mg_amount !== undefined && c.mg_amount !== null
+                  ? Number(c.mg_amount)
+                  : 0,
+              ]
+            );
+          }
+          // 表で削除された condition_no を DB からも削除。
+          // ただし royalty_calculations が参照していたら FK で守られるので
+          // ON DELETE は RESTRICT を期待。失敗時は黙って残す。
+          if (keepNos.size > 0) {
+            try {
+              await query(
+                `DELETE FROM license_financial_conditions
+                  WHERE license_contract_id = $1
+                    AND condition_no <> ALL($2::int[])`,
+                [lcId, Array.from(keepNos)]
+              );
+            } catch (delErr) {
+              console.warn(
+                "Could not prune deleted financial conditions (likely FK from royalty_calculations):",
+                delErr
+              );
+            }
+          }
+        }
       } else if (templateType === "royalty_statement") {
         await query(
           "INSERT INTO royalty_payments (backlog_issue_key, total_amount, period, status) VALUES ($1, $2, $3, $4)",

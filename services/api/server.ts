@@ -504,6 +504,47 @@ async function startServer() {
         }
       }
 
+      // Phase 7d: 個別利用許諾条件書なら license_financial_conditions を
+      // FinancialConditionTable がそのまま使える shape で同梱する。
+      // 既存の {{金銭条件1_*}} flat field 群は上の royaltyQuery 分岐で
+      // 既に埋まっているので、ここはあくまで「新しい統合表」用の追加情報。
+      if (template === "individual_license_terms") {
+        try {
+          const lc = await query(
+            `SELECT id FROM license_contracts WHERE backlog_issue_key = $1`,
+            [key]
+          );
+          if (lc.rows.length > 0) {
+            const lcId = lc.rows[0].id;
+            context["license_contract_id"] = lcId;
+            const conds = await query(
+              `SELECT id, condition_no, region_language_label, calc_method,
+                      rate_pct, base_price_label, calc_period, currency,
+                      formula_text, payment_terms, mg_amount
+                 FROM license_financial_conditions
+                WHERE license_contract_id = $1
+                ORDER BY condition_no ASC`,
+              [lcId]
+            );
+            context["financial_conditions"] = conds.rows.map((r: any) => ({
+              id: Number(r.id),
+              condition_no: Number(r.condition_no),
+              region_language_label: r.region_language_label || "",
+              calc_method: r.calc_method || "",
+              rate_pct: r.rate_pct !== null ? Number(r.rate_pct) : undefined,
+              base_price_label: r.base_price_label || "",
+              calc_period: r.calc_period || "",
+              currency: r.currency || "JPY",
+              formula_text: r.formula_text || "",
+              payment_terms: r.payment_terms || "",
+              mg_amount: r.mg_amount !== null ? Number(r.mg_amount) : 0,
+            }));
+          }
+        } catch (lcErr) {
+          console.warn("license_financial_conditions lookup failed:", lcErr);
+        }
+      }
+
       res.json(context);
     } catch (error) {
       res.status(500).json({ error: String(error) });

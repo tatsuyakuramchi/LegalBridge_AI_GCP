@@ -9,8 +9,12 @@ import {
   type OrderLineForInspection,
   type DeliveryLine,
 } from './DeliveryLineItemTable';
+import {
+  FinancialConditionTable,
+  type FinancialCondition,
+} from './FinancialConditionTable';
 import { TemplateMetadata } from './types';
-import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List } from 'lucide-react';
+import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DocumentFormProps {
@@ -241,27 +245,60 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderGroup('V. 素材・監修')}
         </FormSection>
 
-        {/* VI. 金銭条件 1 — primary, always shown */}
-        <FormSection title="VI. 金銭条件 1 (自社製造)" variant="indigo">
-          {renderGroup('VI. 金銭条件 1 (自社製造)')}
+        {/* VI. 金銭条件 — Phase 7d: 統合された FinancialConditionTable。
+            DB の license_financial_conditions と同じ shape の rows を
+            formData.financial_conditions[] に持つ。worker 側は document
+            生成時にこれを (a) HTML テンプレ用 flat field
+            {{金銭条件1_料率}} 等に展開, (b) license_financial_conditions
+            に upsert する。 */}
+        <FormSection
+          title="VI. 金銭条件 (条件 1〜3)"
+          variant="indigo"
+          icon={<Coins className="w-4 h-4" />}
+          headerActions={
+            <span className="text-[9px] font-mono text-muted-foreground italic">
+              条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト (任意で追加可)
+            </span>
+          }
+        >
+          <FinancialConditionTable
+            conditions={
+              Array.isArray(formData.financial_conditions)
+                ? (formData.financial_conditions as FinancialCondition[])
+                : []
+            }
+            onChange={(conditions: FinancialCondition[]) =>
+              setFormData({ ...formData, financial_conditions: conditions })
+            }
+          />
         </FormSection>
 
-        {/* VII / VIII — advanced, collapsed by default */}
+        {/* 旧 VI/VII/VIII の自由入力グループは下位互換のため
+            details で温存。新しい FinancialConditionTable が優先され、
+            こちらは個別微調整 (例: 計算式テキストだけ書きたい等) 用。 */}
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ VII. 金銭条件 2 (サブライセンス, 任意) — クリックして展開
+            ▶ 金銭条件 — レガシー自由入力 (任意, 上の表で書ききれない場合のみ) — クリックして展開
           </summary>
-          <div className="p-4 border-t border-input">
-            {renderGroup('VII. 金銭条件 2 (サブライセンス, 任意)')}
-          </div>
-        </details>
-
-        <details className="group rounded-sm border border-input">
-          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ VIII. 金銭条件 3 (プロダクトアウト, 任意) — クリックして展開
-          </summary>
-          <div className="p-4 border-t border-input">
-            {renderGroup('VIII. 金銭条件 3 (プロダクトアウト, 任意)')}
+          <div className="p-4 border-t border-input space-y-6">
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+                条件 1 (自社製造)
+              </div>
+              {renderGroup('VI. 金銭条件 1 (自社製造)')}
+            </div>
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+                条件 2 (サブライセンス)
+              </div>
+              {renderGroup('VII. 金銭条件 2 (サブライセンス, 任意)')}
+            </div>
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+                条件 3 (プロダクトアウト)
+              </div>
+              {renderGroup('VIII. 金銭条件 3 (プロダクトアウト, 任意)')}
+            </div>
           </div>
         </details>
 
