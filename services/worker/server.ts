@@ -31,10 +31,14 @@ import express from "express";
 import dotenv from "dotenv";
 import multer from "multer";
 import { WebClient } from "@slack/web-api";
+import TurndownService from "turndown";
+// @ts-ignore — turndown-plugin-gfm has no types
+import { gfm } from "turndown-plugin-gfm";
 import { BacklogService } from "./src/services/backlogService.ts";
 import { DocumentService } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
+import { ExcelService } from "./src/services/excelService.ts";
 import {
   initDb,
   query,
@@ -133,6 +137,19 @@ async function startServer() {
   });
   const documentService = new DocumentService();
   const googleDriveService = new GoogleDriveService();
+  const excelService = new ExcelService();
+
+  // Turndown for /api/test-generate-markdown (HTML → Markdown).
+  const turndownService = new TurndownService({
+    headingStyle: "atx",
+    codeBlockStyle: "fenced",
+    hr: "---",
+  });
+  turndownService.use(gfm);
+  turndownService.addRule("remove-styles", {
+    filter: ["style", "head", "meta", "title"],
+    replacement: () => "",
+  });
 
   const upload = multer({ storage: multer.memoryStorage() });
 
@@ -787,24 +804,549 @@ ${details}
   });
 
   // -------------------------------------------------------------------
-  // Phase 2d-2 migration pending — these routes still live in the
-  // top-level server.ts and are served by legalbridge-admin-ui until
-  // we move them here.
+  // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
+  // -------------------------------------------------------------------
+
+  app.post("/api/documents/preview", express.json(), async (req, res) => {
+    try {
+      const { templateType, formData, issueKey, requesterEmail } = req.body;
+
+      const { html, fileName } = await documentService.generateDocument(
+        {
+          issueKey: issueKey || "PREVIEW-000",
+          documentNumber: "PREVIEW-" + Date.now(),
+          summary: "Live Preview",
+          requester: requesterEmail || "User",
+          date: new Date().toLocaleDateString("ja-JP"),
+          details: {
+            ...formData,
+            isLivePreview: true,
+          },
+        },
+        templateType
+      );
+
+      res.json({ success: true, html, fileName });
+    } catch (error) {
+      console.error("Preview failed:", error);
+      res.status(500).json({ success: false, error: (error as Error).message });
+    }
+  });
+
+  app.post("/api/documents/export-excel", express.json(), async (req, res) => {
+    try {
+      const data = req.body;
+      const buffer = excelService.generateInspectionExcel(data);
+
+      res.setHeader(
+        "Content-Type",
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename=inspection_${Date.now()}.xlsx`
+      );
+      res.send(buffer);
+    } catch (error) {
+      console.error("Excel export error:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/documents/generate", express.json(), async (req, res) => {
+    let { issueKey, templateType, formData, requesterEmail, nextStatusId } = req.body;
+
+    try {
+      const issue = await backlogService.getIssue(issueKey);
+      const docNumber = await getNewDocumentNumber(templateType, issue.issueType.name);
+
+      // Auto-advance Backlog status if a next_status_id is configured.
+      if (!nextStatusId) {
+        const wsResult = await query(
+          "SELECT next_status_id FROM workflow_settings WHERE issue_type_name = $1",
+          [issue.issueType.name]
+        );
+        if (wsResult.rows[0]?.next_status_id) {
+          nextStatusId = wsResult.rows[0].next_status_id;
+          console.log(
+            `📡 Auto-Advance: Found next_status_id ${nextStatusId} for issue type ${issue.issueType.name}`
+          );
+        }
+      }
+      if (nextStatusId) {
+        try {
+          await backlogService.updateIssueStatus(issueKey, nextStatusId);
+        } catch (statusError) {
+          console.warn("Failed to update status, continuing...", statusError);
+        }
+      }
+
+      // Auto-discover parent PO number for inspection-certificate templates.
+      let parentOrderNumber = "";
+      if (templateType.includes("inspection")) {
+        const poResult = await query(
+          "SELECT document_number FROM documents WHERE issue_key = $1 AND template_type LIKE '%purchase_order%' ORDER BY created_at DESC LIMIT 1",
+          [issueKey]
+        );
+        if (poResult.rows.length > 0) {
+          parentOrderNumber = poResult.rows[0].document_number;
+        }
+      }
+
+      // Enrich context with staff info if a known requester is supplied.
+      let staffInfo: any = {};
+      if (requesterEmail) {
+        const staffResult = await query(
+          "SELECT * FROM staff WHERE email = $1 OR slack_user_id = $1 LIMIT 1",
+          [requesterEmail]
+        );
+        if (staffResult.rows.length > 0) {
+          const s = staffResult.rows[0];
+          staffInfo = {
+            STAFF_NAME: s.staff_name,
+            STAFF_DEPARTMENT: s.department,
+            STAFF_EMAIL: s.email,
+            STAFF_PHONE: s.phone,
+          };
+        }
+      }
+
+      const { html, fileName } = await documentService.generateDocument(
+        {
+          issueKey,
+          documentNumber: docNumber,
+          summary: issue.summary,
+          requester: requesterEmail || "Legal Department",
+          date: new Date().toLocaleDateString("ja-JP"),
+          details: {
+            ...staffInfo,
+            ...formData,
+            DOC_NO: docNumber,
+            ORDER_NO: formData.orderNumber || parentOrderNumber || issueKey,
+            hasChangeLogs: !!formData.CHANGE_RECORDS,
+            changeLogs: formData.CHANGE_RECORDS
+              ? formData.CHANGE_RECORDS.split(";").map((log: string) => {
+                  const [changedAt, fieldLabel, beforeValue, afterValue, reason] = log.split("|");
+                  return { changedAt, fieldLabel, beforeValue, afterValue, reason };
+                })
+              : [],
+          },
+        },
+        templateType
+      );
+
+      const driveLink = await googleDriveService.uploadHtml(html, fileName);
+
+      await query(
+        "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
+        [
+          docNumber,
+          issueKey,
+          templateType,
+          JSON.stringify(formData),
+          driveLink,
+          requesterEmail || "legal_user",
+        ]
+      );
+
+      await query(
+        `INSERT INTO external_assets
+         (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (asset_number) DO UPDATE SET file_link = EXCLUDED.file_link`,
+        [
+          docNumber,
+          issue.summary,
+          templateType.includes("purchase_order") ? "individual" : "contract",
+          formData.VENDOR_NAME || formData.PARTY_B_NAME || "Internal",
+          driveLink,
+          issueKey,
+        ]
+      );
+
+      // Mirror as a contract_capability row so the contract-check API
+      // surfaces newly-generated docs.
+      try {
+        let vendorId = null;
+        const vendorCode = formData.VENDOR_CODE || formData.vendorCode || "";
+        const vendorName =
+          formData.VENDOR_NAME || formData.PARTY_B_NAME || formData.partyBName || "";
+        if (vendorCode || vendorName) {
+          const vRes = await query(
+            "SELECT id FROM vendors WHERE vendor_code = $1 OR vendor_name = $2 LIMIT 1",
+            [vendorCode, vendorName]
+          );
+          if (vRes.rows.length > 0) {
+            vendorId = vRes.rows[0].id;
+          }
+        }
+
+        let recordType = "master_contract";
+        if (
+          templateType.includes("license") ||
+          templateType.includes("royalty") ||
+          templateType.includes("fee_statement")
+        ) {
+          recordType = "license_condition";
+        } else if (
+          templateType.includes("purchase_order") ||
+          templateType.includes("inspection")
+        ) {
+          recordType = "individual_contract";
+        }
+
+        await query(
+          `INSERT INTO contract_capabilities (
+            vendor_id, record_type, contract_category, contract_type, contract_title,
+            document_number, contract_status, effective_date, expiration_date, auto_renewal,
+            original_work, product_name, work_name, media, territory, language, document_url, source_system
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          ON CONFLICT (document_number) DO UPDATE SET
+            vendor_id = EXCLUDED.vendor_id,
+            record_type = EXCLUDED.record_type,
+            contract_category = EXCLUDED.contract_category,
+            contract_type = EXCLUDED.contract_type,
+            contract_title = EXCLUDED.contract_title,
+            contract_status = EXCLUDED.contract_status,
+            effective_date = EXCLUDED.effective_date,
+            expiration_date = EXCLUDED.expiration_date,
+            auto_renewal = EXCLUDED.auto_renewal,
+            original_work = EXCLUDED.original_work,
+            product_name = EXCLUDED.product_name,
+            work_name = EXCLUDED.work_name,
+            media = EXCLUDED.media,
+            territory = EXCLUDED.territory,
+            language = EXCLUDED.language,
+            document_url = EXCLUDED.document_url,
+            updated_at = CURRENT_TIMESTAMP`,
+          [
+            vendorId,
+            recordType,
+            templateType.includes("license") ? "license" : "service",
+            templateType,
+            formData.CONTRACT_TITLE || formData.contract_title || issue.summary,
+            docNumber,
+            "executed",
+            formData.EFFECTIVE_DATE || formData.effectiveDate || null,
+            formData.EXPIRATION_DATE || formData.expirationDate || null,
+            formData.AUTO_RENEWAL === "true" || formData.AUTO_RENEWAL === true || false,
+            formData.ORIGINAL_WORK || formData.originalWork || "",
+            formData.PRODUCT_NAME || formData.productName || "",
+            formData.WORK_NAME || formData.workName || "",
+            formData.MEDIA || formData.media || "",
+            formData.TERRITORY || formData.territory || "",
+            formData.LANGUAGE || formData.language || "",
+            driveLink,
+            "App Document Generator",
+          ]
+        );
+        console.log(`✅ Sync to contract_capabilities successful for: ${docNumber}`);
+      } catch (ccErr) {
+        console.warn(
+          `⚠️ Failed to sync generated document to contract_capabilities:`,
+          ccErr
+        );
+      }
+
+      // Operational tables: orders / deliveries / license / royalties.
+      if (templateType.includes("purchase_order")) {
+        await query(
+          "INSERT INTO order_items (backlog_issue_key, description, amount, vendor_code, spec) VALUES ($1, $2, $3, $4, $5)",
+          [
+            issueKey,
+            formData.description || issue.summary,
+            formData.amount || 0,
+            formData.vendorCode || "",
+            formData.spec || "",
+          ]
+        );
+      } else if (templateType.includes("inspection")) {
+        const orderRes = await query(
+          "SELECT id FROM order_items WHERE backlog_issue_key = $1 LIMIT 1",
+          [issueKey]
+        );
+        if (orderRes.rows.length > 0) {
+          await query(
+            "INSERT INTO delivery_events (order_item_id, backlog_issue_key, delivered_amount, delivery_no, delivered_at) VALUES ($1, $2, $3, $4, $5)",
+            [
+              orderRes.rows[0].id,
+              issueKey,
+              formData.deliveredAmount || formData.amount || 0,
+              1,
+              new Date(),
+            ]
+          );
+        }
+      }
+
+      await query(
+        "UPDATE issue_workflows SET current_status_name = $1, document_draft = $2, updated_at = CURRENT_TIMESTAMP WHERE backlog_issue_key = $3",
+        ["草案", driveLink, issueKey]
+      );
+
+      try {
+        await backlogService.updateIssue(issueKey, { docNumber });
+        console.log(
+          `✅ Backlog issue ${issueKey} updated with Document Number: ${docNumber}`
+        );
+      } catch (backlogError) {
+        console.warn(
+          `⚠️ Failed to update Backlog issue ${issueKey} with document number:`,
+          backlogError
+        );
+      }
+
+      // Lifecycle event sync (purchase_order / inspection / license / royalty).
+      if (
+        templateType.includes("purchase_order") ||
+        templateType === "planning_purchase_order"
+      ) {
+        const lrResult = await query(
+          "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO UPDATE SET counterparty = EXCLUDED.counterparty RETURNING id",
+          [issueKey, formData.VENDOR_NAME || formData.PARTY_B_NAME, issue.summary]
+        );
+        const lrId = lrResult.rows[0].id;
+        const amount = parseFloat(
+          (formData.ORDER_AMOUNT || formData.TOTAL_AMOUNT || "0").replace(/,/g, "")
+        );
+        await query(
+          `INSERT INTO order_items (legal_request_id, item_no, vendor_code, description, amount, due_date, backlog_issue_key)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+           amount = EXCLUDED.amount,
+           due_date = EXCLUDED.due_date,
+           description = EXCLUDED.description`,
+          [
+            lrId,
+            1,
+            formData.VENDOR_CODE || "UNKNOWN",
+            formData.summary || issue.summary,
+            amount,
+            formData.DELIVERY_DATE || formData.due_date || null,
+            issueKey,
+          ]
+        );
+      } else if (templateType.includes("inspection")) {
+        await query(
+          "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
+          [issueKey, formData.counterparty || formData.PARTY_B_NAME, issue.summary]
+        );
+        const orderItemResult = await query(
+          "SELECT id FROM order_items WHERE backlog_issue_key = $1",
+          [issueKey]
+        );
+        const orderItemId = orderItemResult.rows[0]?.id || null;
+        await query(
+          "INSERT INTO delivery_events (backlog_issue_key, order_item_id, delivered_at, inspection_deadline, status, note) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (backlog_issue_key) DO UPDATE SET inspection_deadline = EXCLUDED.inspection_deadline, status = EXCLUDED.status",
+          [
+            issueKey,
+            orderItemId,
+            new Date(),
+            formData.inspectionDeadline || null,
+            "pending",
+            formData.REMARKS || "",
+          ]
+        );
+      } else if (templateType === "license_master") {
+        await query(
+          `INSERT INTO license_contracts (backlog_issue_key, ledger_id, ledger_number, licensor, original_work)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+           ledger_number = EXCLUDED.ledger_number,
+           licensor = EXCLUDED.licensor,
+           original_work = EXCLUDED.original_work`,
+          [
+            issueKey,
+            formData.ledgerId || docNumber,
+            docNumber,
+            formData.LICENSOR_NAME || formData.PARTY_B_NAME,
+            formData.WORK_TITLE,
+          ]
+        );
+      } else if (templateType === "lic_individual") {
+        await query(
+          `UPDATE license_contracts SET contract_number = $1 WHERE backlog_issue_key = $2`,
+          [docNumber, issueKey]
+        );
+      } else if (templateType === "royalty_statement") {
+        await query(
+          "INSERT INTO royalty_payments (backlog_issue_key, total_amount, period, status) VALUES ($1, $2, $3, $4)",
+          [
+            issueKey,
+            parseFloat((formData.royaltyTotal || "0").replace(/,/g, "")),
+            formData.period || new Date().toISOString().slice(0, 7),
+            "calculated",
+          ]
+        );
+      }
+
+      // Slack notification with the Drive link.
+      if (slackWebClient) {
+        try {
+          const settingsResult = await query(
+            "SELECT value FROM app_settings WHERE key = 'slack_document_generated'"
+          );
+          const template =
+            settingsResult.rows[0]?.value?.template ||
+            `📄 *ドキュメントが作成されました*\n\n*課題:* {{issueKey}} ({{summary}})\n*タイプ:* {{type}}\n*リンク:* {{link}}`;
+
+          const message = template
+            .replace(/{{issueKey}}/g, issueKey)
+            .replace(/{{summary}}/g, issue.summary || "")
+            .replace(/{{type}}/g, templateType)
+            .replace(/{{link}}/g, driveLink);
+
+          const slackIdMatch =
+            issue.description && issue.description.match(/<@([A-Z0-9]+)>/);
+          const targetChannel = slackIdMatch
+            ? slackIdMatch[1]
+            : process.env.SLACK_NOTIFY_CHANNEL || "general";
+
+          await slackWebClient.chat.postMessage({
+            channel: targetChannel,
+            text: message,
+          });
+        } catch (slackErr) {
+          console.warn("Slack notification failed (non-fatal):", slackErr);
+        }
+      }
+
+      res.json({ success: true, driveLink });
+    } catch (error) {
+      console.error("Error in /api/documents/generate:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/test-generate", async (req, res) => {
+    try {
+      const type = (req.query.type as any) || "legal_request";
+
+      let demoData: any = {
+        issueKey: "DEMO-123",
+        summary: "サンプル案件",
+        requester: "AI Studio User",
+        date: new Date().toLocaleDateString("ja-JP"),
+        details: {
+          CONTRACT_NO: "LB-2026-001",
+          CONTRACT_DATE_FORMATTED: "2026年4月16日",
+          PARTY_B_NAME: "サンプル株式会社",
+          PARTY_B_ADDRESS: "東京都千代田区...",
+          PARTY_B_REPRESENTATIVE: "代表取締役 山田 太郎",
+          VENDOR_NAME: "サンプル株式会社",
+          VENDOR_ADDRESS: "東京都千代田区...",
+          ORDER_NO: "PO-2026-001",
+          ORDER_DATE: "2026/04/16",
+          DELIVERY_DATE: "2026/05/31",
+          TOTAL_AMOUNT: "1,100,000",
+          TAX_AMOUNT: "100,000",
+          SUBTOTAL: "1,000,000",
+          PURPOSE: "新規事業開発に関する技術情報の共有",
+          DURATION: "本契約締結日から3年間",
+          GOVERNING_LAW: "日本法",
+          JURISDICTION: "東京地方裁判所",
+        } as any,
+      };
+
+      if (type === "purchase_order") {
+        demoData.summary = "ノートPC 5台セット";
+        demoData.details = {
+          ...demoData.details,
+          VENDOR_NAME: "サンプルOA機器株式会社",
+          ORDER_AMOUNT: "750,000",
+          REMARKS: "納期：2026年5月末日",
+        };
+      } else if (type === "contract") {
+        demoData.summary = "新規事業開発に関する秘密保持契約";
+        demoData.details = {
+          ...demoData.details,
+          PARTY_B_NAME: "株式会社イノベーション・ラボ",
+          PARTY_B_ADDRESS: "大阪府大阪市北区...",
+          DURATION: "3年",
+        };
+      } else if (type === "nda") {
+        demoData.summary = "NDA (秘密保持契約書)";
+      } else if (type === "planning_purchase_order") {
+        demoData.summary = "企画発注書";
+      } else if (type === "payment_notice") {
+        demoData.summary = "支払通知書";
+      } else if (type === "fee_statement") {
+        demoData.summary = "報酬明細書";
+      } else if (type === "license_report") {
+        demoData.summary = "ライセンス報告書";
+      } else if (type === "sales_master_buyer") {
+        demoData.summary = "売買基本契約書（買主側）";
+      }
+
+      demoData.documentNumber = `DEMO-${Date.now()}`;
+      const { html, fileName } = await documentService.generateDocument(demoData, type);
+      res.json({ html, fileName });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/test-generate-markdown", async (req, res) => {
+    try {
+      const type = (req.query.type as any) || "individual_license_terms";
+
+      let demoData: any = {
+        issueKey: "DEMO-123",
+        summary: "サンプル案件",
+        requester: "AI Studio User",
+        date: new Date().toLocaleDateString("ja-JP"),
+        details: {
+          発行日: "2026/04/01",
+          契約書番号: "C-ARC-DOM-LIC-202604001",
+          台帳ID: "LIC-ARC-DOM-202604001",
+          ライセンス種別名: "ボードゲーム国内・海外ライセンス",
+          基本契約名: "ライセンス利用許諾基本契約書（2026/04/01締結）",
+          licensor名: "高橋 宏佳",
+          licensee名: "株式会社アークライト",
+          許諾開始日: "2026/04/01",
+          許諾期間注記: "基本契約の満了日まで。",
+          原著作物名: "ボードゲーム『ダブルナイン』",
+          原著作物補記: "原作および派生作品を含む",
+          対象製品予定名: "『ダブルナイン』",
+          素材番号: "LIC-01",
+          素材名: "原作ボードゲーム",
+          素材権利者: "高橋 宏佳",
+          監修者: "高橋 宏佳",
+          金銭条件1_計算式: "上代 × 5.0% × 製造数",
+          金銭条件1_料率: "5.0%",
+          金銭条件1_基準価格ラベル: "上代（MSRP）",
+          金銭条件1_支払条件: "翌月20日",
+          特記事項_本文: "特になし",
+          licensor_住所: "東京都...",
+          licensor_氏名会社名: "高橋 宏佳",
+          licensee_住所: "東京都千代田区神田...",
+          licensee_氏名会社名: "株式会社アークライト",
+          licensee_代表者名: "代表取締役 金澤 利幸",
+        },
+      };
+
+      const { html } = await documentService.generateDocument(demoData, type);
+      const markdown = turndownService.turndown(html);
+      res.json({ markdown, fileName: `sample_${type}.md` });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // Phase 2d-2 migration still pending — templates, workflow-settings,
+  // CSV import, vendor change-request upload.
+  // Returns HTTP 501 until batch B + C land in subsequent commits.
   // -------------------------------------------------------------------
 
   const phase2d2Pending: express.RequestHandler = (_req, res) => {
     res.status(501).json({
       ok: false,
       error:
-        "This route migration is pending (Phase 2d-2). Continue calling legalbridge-admin-ui until cutover.",
+        "This route migration is pending (Phase 2d-2 batch B/C). Continue calling legalbridge-admin-ui until cutover.",
     });
   };
 
-  app.post("/api/documents/generate", phase2d2Pending);
-  app.post("/api/documents/preview", phase2d2Pending);
-  app.post("/api/documents/export-excel", phase2d2Pending);
-  app.post("/api/test-generate", phase2d2Pending);
-  app.post("/api/test-generate-markdown", phase2d2Pending);
   app.get("/api/templates", phase2d2Pending);
   app.get("/api/templates/:type", phase2d2Pending);
   app.post("/api/templates/:type", phase2d2Pending);
