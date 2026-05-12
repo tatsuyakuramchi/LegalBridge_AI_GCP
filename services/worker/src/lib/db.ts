@@ -283,6 +283,79 @@ export async function initDb() {
     `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS contract_number VARCHAR(100);`,
     `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
+    // -----------------------------------------------------------------
+    // Phase 5a: 個別利用許諾条件書のヘッダ情報を SQL-queryable に
+    //
+    // 既存の license_contracts は最低限の項目しか持たないので、
+    // individual_license_terms テンプレが扱う変数を直接マッピングできる
+    // カラムを追加する。licensor* / licensee* は両当事者の入れ替えに対応
+    // するため両方ともテーブルに持つ。
+    // -----------------------------------------------------------------
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS issue_date DATE;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS basic_contract_name TEXT;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_name VARCHAR(255);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_address TEXT;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_rep VARCHAR(255);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_is_corporation BOOLEAN;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_name VARCHAR(255);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_address TEXT;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_rep VARCHAR(255);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_is_corporation BOOLEAN;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS license_period_note TEXT;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS original_work_note TEXT;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS product_name_predicted TEXT;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS exclusivity VARCHAR(20);`, // 独占/非独占
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS supervisor VARCHAR(255);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS credit_display TEXT;`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS remarks TEXT;`,
+
+    // Backfill: legacy licensor varchar → licensor_name
+    `UPDATE license_contracts
+        SET licensor_name = licensor
+      WHERE licensor_name IS NULL AND licensor IS NOT NULL;`,
+
+    // -----------------------------------------------------------------
+    // Phase 5a: 金銭条件 (1 ライセンス契約 = N 金銭条件)
+    //
+    // individual_license_terms テンプレは 金銭条件1 (自社製造) / 2
+    // (サブライセンス) / 3 (プロダクトアウト) の 3 つの slot を扱う。
+    // 各条件ごとに rate / base_price_label / currency / mg_amount を
+    // 持てるようにする。
+    //
+    // 利用許諾料計算書はこのテーブルの 1 行を指して計算する。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS license_financial_conditions (
+      id SERIAL PRIMARY KEY,
+      license_contract_id INTEGER NOT NULL REFERENCES license_contracts(id) ON DELETE CASCADE,
+      condition_no INTEGER NOT NULL,            -- 1=自社製造, 2=サブライセンス, 3=プロダクトアウト
+      region_language_label TEXT,               -- 例: 国内・日本語
+      calc_method VARCHAR(50),                  -- ROYALTY / FIXED / SUBSCRIPTION
+      rate_pct DECIMAL(7, 4),                   -- 例: 5.0000 (%)
+      base_price_label TEXT,                    -- 例: 上代 (MSRP)
+      calc_period VARCHAR(50),                  -- 例: 四半期 / 月次
+      currency VARCHAR(10) DEFAULT 'JPY',
+      formula_text TEXT,                        -- 例: 上代 × 5.0% × 製造数
+      payment_terms TEXT,
+      mg_amount DECIMAL(15, 2) DEFAULT 0,       -- MG 総額 (この条件単位)
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(license_contract_id, condition_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_lfc_contract ON license_financial_conditions(license_contract_id);`,
+
+    // Backfill: 既存 license_contracts.royalty_rate / mg_amount を
+    // condition_no=1 の自社製造条件として一行立てる。
+    `INSERT INTO license_financial_conditions
+       (license_contract_id, condition_no, calc_method, rate_pct, mg_amount, currency)
+     SELECT lc.id, 1, 'ROYALTY',
+            COALESCE(lc.royalty_rate * 100, 0),
+            COALESCE(lc.mg_amount, 0),
+            'JPY'
+       FROM license_contracts lc
+       LEFT JOIN license_financial_conditions lfc
+         ON lfc.license_contract_id = lc.id AND lfc.condition_no = 1
+      WHERE lfc.id IS NULL;`,
+
     `CREATE TABLE IF NOT EXISTS manufacturing_events (
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
@@ -294,6 +367,18 @@ export async function initDb() {
       total_payment DECIMAL(15, 2),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
+    // Phase 5a: 製造イベントにも単価・サンプル数・課金対象数を追加。
+    `ALTER TABLE manufacturing_events ADD COLUMN IF NOT EXISTS unit_price DECIMAL(15, 2);`,
+    `ALTER TABLE manufacturing_events ADD COLUMN IF NOT EXISTS sample_quantity DECIMAL(10, 4) DEFAULT 0;`,
+    `ALTER TABLE manufacturing_events ADD COLUMN IF NOT EXISTS billable_quantity DECIMAL(10, 4);`,
+    `ALTER TABLE manufacturing_events ADD COLUMN IF NOT EXISTS edition VARCHAR(100);`,
+    // Backfill: legacy quantity を課金対象に、msrp を unit_price に。
+    `UPDATE manufacturing_events
+        SET unit_price = msrp
+      WHERE unit_price IS NULL AND msrp IS NOT NULL;`,
+    `UPDATE manufacturing_events
+        SET billable_quantity = quantity
+      WHERE billable_quantity IS NULL AND quantity IS NOT NULL;`,
 
     `CREATE TABLE IF NOT EXISTS royalty_payments (
       id SERIAL PRIMARY KEY,
@@ -307,6 +392,54 @@ export async function initDb() {
       period VARCHAR(7) NOT NULL, -- YYYY-MM
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
+
+    // -----------------------------------------------------------------
+    // Phase 5a: 利用許諾料計算書 (1 計算書 = 1 行)
+    //
+    // 既存の royalty_payments は支払イベントだけ、MG 消化の履歴や
+    // ロイヤリティ算出根拠 (unit_price × quantity × rate) の内訳は
+    // JSONB の form_data に閉じ込められていた。
+    // このテーブルは「いつ、どの金銭条件で、どれだけ製造して、
+    // MG をいくら消化し、税抜・税込いくら支払う」を SQL レベルで
+    // 追えるようにする。
+    //
+    // MG 消化は累積計算なので、ある期の mg_consumed_this_time は
+    //   max(0, gross_royalty - max(0, mg_amount - SUM(prior mg_consumed)))
+    // で求まる。calc_license.ts (Phase 5b) で実装する。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS royalty_calculations (
+      id SERIAL PRIMARY KEY,
+      backlog_issue_key VARCHAR(50),               -- 計算書の Backlog issue
+      license_contract_id INTEGER REFERENCES license_contracts(id),
+      license_financial_condition_id INTEGER REFERENCES license_financial_conditions(id),
+      manufacturing_event_id INTEGER REFERENCES manufacturing_events(id),
+      calc_type VARCHAR(20),                       -- manufacturing / sales / sublicense
+      unit_price DECIMAL(15, 2),                   -- 基準価格 (MSRP 等)
+      quantity DECIMAL(10, 4),                     -- 製造数 (総数)
+      sample_quantity DECIMAL(10, 4) DEFAULT 0,    -- サンプル数 (不課金)
+      billable_quantity DECIMAL(10, 4),            -- 課金対象数 = quantity - sample
+      rate_pct DECIMAL(7, 4),                      -- 適用料率 (%)
+      gross_royalty_ex_tax DECIMAL(15, 2),         -- 総ロイヤリティ (税抜)
+      mg_amount DECIMAL(15, 2),                    -- 適用 MG 総額 (snapshot)
+      mg_consumed_before DECIMAL(15, 2),           -- 前回までの MG 消化額
+      mg_consumed_this_time DECIMAL(15, 2),        -- 今回 MG 消化額
+      mg_consumed_after DECIMAL(15, 2),            -- 今回後 MG 累計消化額
+      mg_remaining DECIMAL(15, 2),                 -- MG 残額
+      mg_fully_consumed BOOLEAN DEFAULT FALSE,
+      actual_royalty_ex_tax DECIMAL(15, 2),        -- 実支払額 = gross - mg_consumed_this_time
+      tax_rate INTEGER DEFAULT 10,                 -- 10 / 8
+      tax_amount DECIMAL(15, 2),                   -- 切り上げ消費税
+      total_payment_inc_tax DECIMAL(15, 2),
+      currency VARCHAR(10) DEFAULT 'JPY',
+      period VARCHAR(7),                           -- YYYY-MM
+      reporting_deadline DATE,
+      payment_due_date DATE,
+      notes TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_rc_license ON royalty_calculations(license_contract_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_rc_mfg ON royalty_calculations(manufacturing_event_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_rc_period ON royalty_calculations(license_contract_id, period);`,
 
     // 6. Contact Assets / External Documents
     `CREATE TABLE IF NOT EXISTS external_assets (
