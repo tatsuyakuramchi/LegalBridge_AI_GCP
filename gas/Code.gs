@@ -158,26 +158,21 @@ function handleInteractivity_(payload) {
         });
       }
 
-      // One-stop search: fan out to both data sources IN PARALLEL via
-      // UrlFetchApp.fetchAll so the total wait is max(backlog, contract)
-      // rather than the sum. This keeps us inside Slack's 3-second
-      // view_submission budget even when Contract-Status is mid-warm.
+      // Only the contract-status lookup runs synchronously here.
       //
-      //   1. Backlog issues
-      //   2. Contract status (separate GAS Web App)
-      //
-      // Either side may return { __error } — we render them
-      // independently inside the results modal so a partial failure
-      // doesn't hide the other section.
-      const parallelResults = querySearchInParallel_(keyword);
-      const backlogData = parallelResults.backlog;
-      const contractData = parallelResults.contract;
+      // Why not Backlog too? Earlier revisions called Backlog REST in
+      // parallel via UrlFetchApp.fetchAll. Backlog's response time
+      // routinely spiked to 2–4 s (and once to 10 s+) which, combined
+      // with GAS execution variance, pushed `doPost` past Slack's
+      // 3-second view_submission budget and surfaced "Slack に接続で
+      // きません" errors for users. Cloud Run's
+      // /api/contract-check/search is consistently ~300 ms, so we now
+      // call only that and link to Backlog's own search UI for issue
+      // discovery — see getSearchResultsModal_.
+      const contractData = queryContractStatusOnly_(keyword);
       return jsonResponse_({
         response_action: 'update',
-        view: getSearchResultsModal_(keyword, {
-          backlog: backlogData,
-          contract: contractData,
-        }),
+        view: getSearchResultsModal_(keyword, { contract: contractData }),
       });
     }
   }
@@ -357,175 +352,62 @@ function createBacklogIssue_(submission) {
 }
 
 /**
- * Runs Backlog search and Contract-Status lookup IN PARALLEL via
- * UrlFetchApp.fetchAll. Used by the `/法務検索` view_submission handler
- * to stay inside Slack's 3-second budget.
+ * Calls Cloud Run /api/contract-check/search and returns the parsed
+ * response (or { __error: '…' } on failure). Used by the `/法務検索`
+ * view_submission handler.
  *
- * The contract-status side calls Cloud Run's /api/contract-check/search
- * DIRECTLY (bypassing the Contract-Status GAS proxy) to eliminate an
- * extra GAS-to-GAS hop that added 1-2 seconds and routinely pushed the
- * total over the 3-second budget. Cloud Run is the same service that
- * Contract-Status GAS used to forward to.
+ * Backlog REST is intentionally NOT called from this hot path — see
+ * the comment in handleInteractivity_'s legal_search_modal branch for
+ * the rationale. If users need to find related Backlog issues, the
+ * results modal links them to Backlog's own search UI.
  *
- * Returns: { backlog: <backlogData|{__error}>, contract: <contractData|{__error}> }
+ * Returns the Cloud Run JSON payload directly, or { __error: '…' } on
+ * any failure (so the caller can render the error message inline in
+ * the results modal without throwing).
  */
-function querySearchInParallel_(keyword) {
-  // --- 1. Resolve Backlog config + project ID (cached) ---
-  var host = scriptProperty_('BACKLOG_HOST');
-  var apiKey = scriptProperty_('BACKLOG_API_KEY');
-  var projectKey = scriptProperty_('BACKLOG_PROJECT_KEY');
+function queryContractStatusOnly_(keyword) {
   var cloudRunUrl = scriptProperty_('CLOUD_RUN_BASE_URL');
   var portalSecret = scriptProperty_('LB_PORTAL_SECRET');
 
-  var backlogConfigError = null;
-  var backlogIssuesUrl = null;
-  if (!host || !apiKey || !projectKey) {
-    backlogConfigError = {
-      __error:
-        'Backlog 認証情報が GAS のスクリプトプロパティに揃っていません。' +
-        ' (BACKLOG_HOST / BACKLOG_API_KEY / BACKLOG_PROJECT_KEY)',
-    };
-  } else {
-    try {
-      var cache = CacheService.getScriptCache();
-      var cacheKey = 'backlog_pid_' + projectKey;
-      var projectId = cache.get(cacheKey);
-      if (!projectId) {
-        // One-time synchronous round trip on first call; cached for 1h
-        // so steady-state cost is zero.
-        var projectRes = UrlFetchApp.fetch(
-          'https://' + host + '/api/v2/projects/' + encodeURIComponent(projectKey) +
-            '?apiKey=' + encodeURIComponent(apiKey),
-          { method: 'get', muteHttpExceptions: true }
-        );
-        if (projectRes.getResponseCode() >= 300) {
-          backlogConfigError = {
-            __error:
-              'Backlog プロジェクト解決に失敗 (HTTP ' +
-              projectRes.getResponseCode() + ')',
-          };
-        } else {
-          projectId = String(JSON.parse(projectRes.getContentText()).id);
-          cache.put(cacheKey, projectId, 3600);
-        }
-      }
-      if (projectId) {
-        var params = [
-          'apiKey=' + encodeURIComponent(apiKey),
-          'projectId[]=' + projectId,
-          'keyword=' + encodeURIComponent(keyword),
-          'count=20',
-          'sort=updated',
-          'order=desc',
-        ].join('&');
-        backlogIssuesUrl = 'https://' + host + '/api/v2/issues?' + params;
-      }
-    } catch (err) {
-      console.error('Backlog setup failed:', err);
-      backlogConfigError = { __error: 'Backlog 設定エラー: ' + String(err) };
-    }
-  }
-
-  // --- 2. Build Cloud Run /api/contract-check/search request ---
-  var contractConfigError = null;
-  var contractRequest = null;
   if (!cloudRunUrl) {
-    contractConfigError = {
+    return {
       __error: 'CLOUD_RUN_BASE_URL がスクリプトプロパティに設定されていません。',
     };
-  } else if (!portalSecret) {
-    contractConfigError = {
-      __error:
-        'LB_PORTAL_SECRET がスクリプトプロパティに設定されていません。' +
-        ' Contract-Status GAS で使われているものと同じ値を設定してください。',
-    };
-  } else {
-    var trimmedBase = String(cloudRunUrl).replace(/\/+$/, '');
-    contractRequest = {
-      url: trimmedBase + '/api/contract-check/search',
+  }
+  var trimmedBase = String(cloudRunUrl).replace(/\/+$/, '');
+
+  var headers = {};
+  if (portalSecret) {
+    headers['X-LB-PORTAL-SECRET'] = portalSecret;
+  }
+
+  try {
+    var res = UrlFetchApp.fetch(trimmedBase + '/api/contract-check/search', {
       method: 'post',
       contentType: 'application/json',
       muteHttpExceptions: true,
-      headers: { 'X-LB-PORTAL-SECRET': portalSecret },
+      headers: headers,
       payload: JSON.stringify({ counterpartyName: keyword }),
-    };
-  }
-
-  // --- 3. Run reachable calls in parallel ---
-  var requests = [];
-  var tags = []; // parallel array: tags[i] is which call produced responses[i]
-  if (backlogIssuesUrl) {
-    requests.push({ url: backlogIssuesUrl, method: 'get', muteHttpExceptions: true });
-    tags.push('backlog');
-  }
-  if (contractRequest) {
-    requests.push(contractRequest);
-    tags.push('contract');
-  }
-
-  var responses = [];
-  if (requests.length > 0) {
-    try {
-      responses = UrlFetchApp.fetchAll(requests);
-    } catch (err) {
-      console.error('fetchAll failed:', err);
-      // Both calls effectively failed.
+    });
+    var code = res.getResponseCode();
+    if (code >= 300) {
       return {
-        backlog: backlogConfigError || { __error: 'API 並列呼び出しエラー: ' + String(err) },
-        contract: contractConfigError || { __error: 'API 並列呼び出しエラー: ' + String(err) },
+        __error:
+          'Cloud Run /api/contract-check/search がエラーを返しました (HTTP ' + code + ').' +
+          ' CLOUD_RUN_BASE_URL と LB_PORTAL_SECRET を確認してください。',
       };
     }
-  }
-
-  // --- 4. Parse responses ---
-  var backlogData = backlogConfigError;
-  var contractData = contractConfigError;
-
-  for (var i = 0; i < responses.length; i++) {
-    var res = responses[i];
-    var code = res.getResponseCode();
-    if (tags[i] === 'backlog') {
-      if (code >= 300) {
-        backlogData = { __error: 'Backlog 課題検索に失敗 (HTTP ' + code + ')' };
-        continue;
-      }
-      try {
-        var raw = JSON.parse(res.getContentText());
-        var backlogIssues = (Array.isArray(raw) ? raw : []).map(function (issue) {
-          return {
-            issueKey: issue.issueKey,
-            summary: issue.summary,
-            status: issue.status && issue.status.name,
-            issueType: issue.issueType && issue.issueType.name,
-            assigneeName: issue.assignee && issue.assignee.name,
-            updated: issue.updated,
-            url: 'https://' + host + '/view/' + issue.issueKey,
-          };
-        });
-        backlogData = { backlogIssues: backlogIssues };
-      } catch (parseErr) {
-        backlogData = { __error: 'Backlog レスポンスのパースに失敗: ' + String(parseErr) };
-      }
-    } else if (tags[i] === 'contract') {
-      if (code >= 300) {
-        contractData = {
-          __error:
-            'Cloud Run /api/contract-check/search がエラーを返しました (HTTP ' + code + ').' +
-            ' CLOUD_RUN_BASE_URL と LB_PORTAL_SECRET を確認してください。',
-        };
-        continue;
-      }
-      try {
-        contractData = JSON.parse(res.getContentText());
-      } catch (parseErr) {
-        contractData = {
-          __error: 'Cloud Run /api/contract-check/search が JSON を返しませんでした。',
-        };
-      }
+    try {
+      return JSON.parse(res.getContentText());
+    } catch (parseErr) {
+      return {
+        __error: 'Cloud Run /api/contract-check/search が JSON を返しませんでした。',
+      };
     }
+  } catch (err) {
+    console.error('queryContractStatusOnly_ failed:', err);
+    return { __error: '契約状況 API 呼び出し中にエラー: ' + String(err) };
   }
-
-  return { backlog: backlogData, contract: contractData };
 }
 
 // -----------------------------------------------------------------------
@@ -673,8 +555,11 @@ function parseLegalRequestSubmission_(payload) {
 /**
  * Modal for /法務検索. Submitting it dispatches a `view_submission`
  * with callback_id `legal_search_modal`, which is handled in
- * handleInteractivity_ and forwarded to querySearchInParallel_ (Backlog
- * issues + Cloud Run /api/contract-check/search in parallel).
+ * handleInteractivity_ and forwarded to queryContractStatusOnly_ which
+ * calls Cloud Run /api/contract-check/search. Backlog issue search is
+ * surfaced via a deep-link button in the results modal rather than
+ * fetched server-side (avoids Backlog REST's variable latency from
+ * pushing Slack past its 3-second view_submission budget).
  *
  * @param {string} [initialKeyword] Optional value the user already
  *   typed alongside the slash command (e.g. `/法務検索 NDA`).
@@ -727,18 +612,34 @@ function getLegalSearchModal_(initialKeyword) {
 
 /**
  * Builds the modal that replaces the search input modal once the user
- * submits. Lists matching Backlog issues (queried directly from GAS,
- * no Cloud Run hop) and offers a "もう一度検索" button that swaps the
- * view back to the search input.
+ * submits. Renders contract-status information from Cloud Run and
+ * offers two footer actions:
+ *
+ *   - 「🔁 もう一度検索する」 — re-opens the empty search input modal.
+ *   - 「🔗 Backlog で関連課題を検索する」 — external link straight to
+ *     Backlog's search UI with the keyword pre-filled. We avoid
+ *     fetching Backlog issues server-side here because Backlog REST's
+ *     unpredictable latency (sometimes 4–10 s) made the prior
+ *     fetchAll-based design routinely blow Slack's 3-second
+ *     view_submission budget. Outsourcing the issue search to
+ *     Backlog's native UI is both faster and richer for the user.
  *
  * @param {string} keyword The keyword the user submitted.
- * @param {object} data { backlog: <queryResult>, contract: <queryResult> }
- *   Each side carries either its data shape or { __error: '…' }.
+ * @param {object} data { contract: <queryResult> }
+ *   `contract` carries either its data shape or { __error: '…' }.
  */
 function getSearchResultsModal_(keyword, data) {
   data = data || {};
-  var backlogPayload = data.backlog || {};
   var contractPayload = data.contract || {};
+
+  var backlogHost = scriptProperty_('BACKLOG_HOST') || 'arclight.backlog.com';
+  var backlogProject = scriptProperty_('BACKLOG_PROJECT_KEY') || 'LEGAL';
+  // Backlog's web UI accepts a `simpleSearch` query parameter that
+  // populates the omnibar. Encode the keyword once; Slack's button URL
+  // doesn't need additional escaping.
+  var backlogSearchUrl =
+    'https://' + backlogHost + '/find/' + encodeURIComponent(backlogProject) +
+    '?simpleSearch=' + encodeURIComponent(keyword);
 
   var blocks = [
     {
@@ -748,16 +649,7 @@ function getSearchResultsModal_(keyword, data) {
     { type: 'divider' },
   ];
 
-  // ── Section 1: Backlog 課題 ────────────────────────────────────
-  blocks.push({
-    type: 'section',
-    text: { type: 'mrkdwn', text: '*📋 Backlog 課題*' },
-  });
-  appendBacklogIssuesBlocks_(blocks, backlogPayload);
-
-  blocks.push({ type: 'divider' });
-
-  // ── Section 2: 契約状況 (Contract-Status GAS) ─────────────────
+  // ── Contract status (Cloud Run /api/contract-check/search) ────
   blocks.push({
     type: 'section',
     text: { type: 'mrkdwn', text: '*📑 契約状況*' },
@@ -775,6 +667,12 @@ function getSearchResultsModal_(keyword, data) {
         text: { type: 'plain_text', text: '🔁 もう一度検索する' },
         style: 'primary',
       },
+      {
+        type: 'button',
+        action_id: 'legal_search_open_backlog',
+        text: { type: 'plain_text', text: '🔗 Backlog で関連課題を検索' },
+        url: backlogSearchUrl,
+      },
     ],
   });
 
@@ -785,55 +683,6 @@ function getSearchResultsModal_(keyword, data) {
     close: { type: 'plain_text', text: '閉じる' },
     blocks: blocks,
   };
-}
-
-/** Appends Backlog issue rows (or an empty/error notice) to blocks. */
-function appendBacklogIssuesBlocks_(blocks, payload) {
-  if (payload && payload.__error) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: '⚠️ ' + payload.__error },
-    });
-    return;
-  }
-  var issues = (payload && payload.backlogIssues) || [];
-  if (issues.length === 0) {
-    blocks.push({
-      type: 'section',
-      text: { type: 'mrkdwn', text: '該当する Backlog 課題は見つかりませんでした。' },
-    });
-    return;
-  }
-  var DISPLAY_LIMIT = 10;
-  issues.slice(0, DISPLAY_LIMIT).forEach(function (i) {
-    var typeBadge = i.issueType ? '`' + i.issueType + '` ' : '';
-    var statusBadge = i.status ? ' · ' + i.status : '';
-    var assignee = i.assigneeName ? '\n>担当: ' + i.assigneeName : '';
-    var updated = i.updated
-      ? '\n>更新: ' + (i.updated.substring ? i.updated.substring(0, 10) : i.updated)
-      : '';
-    blocks.push({
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text:
-          typeBadge +
-          '<' + i.url + '|*' + (i.issueKey || '—') + '*> ' +
-          (i.summary || '') + statusBadge + assignee + updated,
-      },
-    });
-  });
-  if (issues.length > DISPLAY_LIMIT) {
-    blocks.push({
-      type: 'context',
-      elements: [
-        {
-          type: 'mrkdwn',
-          text: '他 ' + (issues.length - DISPLAY_LIMIT) + ' 件の Backlog 課題があります。',
-        },
-      ],
-    });
-  }
 }
 
 /** Appends contract-status summary blocks. */
