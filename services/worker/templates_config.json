@@ -60,10 +60,55 @@
     "label": "発注書 (国内)",
     "category": "Domestic",
     "vars": {
-      "ORDER_NO": { "label": "発注番号", "group": "Basic Context (基本情報)" },
-      "VENDOR_NAME": { "label": "発注先名称", "group": "Basic Context (基本情報)" },
-      "PROJECT_TITLE": { "label": "件名", "group": "Basic Context (基本情報)" },
-      "grandTotalExTax": { "label": "合計金額 (税抜)", "group": "Financial & Payment (金銭)", "type": "number" }
+      "ORDER_NO": { "label": "発注番号", "group": "I. 発注概要", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
+      "ORDER_DATE_YEAR": { "label": "発行年", "group": "I. 発注概要", "required": true, "placeholder": "2026" },
+      "ORDER_DATE_MONTH": { "label": "発行月", "group": "I. 発注概要", "required": true, "placeholder": "5" },
+      "ORDER_DATE_DAY": { "label": "発行日", "group": "I. 発注概要", "required": true, "placeholder": "12" },
+      "PROJECT_TITLE": { "label": "件名", "group": "I. 発注概要", "required": true, "dbField": "backlog.summary", "placeholder": "例: ノートPC 5台調達" },
+
+      "VENDOR_NAME": { "label": "発注先 名称", "group": "II. 発注先 (取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力" },
+      "VENDOR_SUFFIX": { "label": "敬称", "group": "II. 発注先 (取引先)", "type": "select", "options": ["御中", "様", "殿"], "placeholder": "御中" },
+      "VENDOR_ADDRESS": { "label": "発注先 住所", "group": "II. 発注先 (取引先)", "type": "textarea", "required": true },
+      "VENDOR_REPRESENTATIVE_SAMA": { "label": "代表者名 (＋様)", "group": "II. 発注先 (取引先)", "placeholder": "例: 代表取締役 山田 太郎 様" },
+      "VENDOR_CONTACT_DEPARTMENT": { "label": "担当部署", "group": "II. 発注先 (取引先)" },
+      "VENDOR_CONTACT_NAME": { "label": "担当者名", "group": "II. 発注先 (取引先)" },
+      "VENDOR_EMAIL": { "label": "E-mail", "group": "II. 発注先 (取引先)" },
+
+      "PARTY_A_NAME": { "label": "発注元 名称", "group": "III. 発注元 (自社)", "required": true, "helpText": "[自社] ボタンで自動入力" },
+      "PARTY_A_ADDRESS": { "label": "発注元 住所", "group": "III. 発注元 (自社)", "type": "textarea", "required": true },
+      "PARTY_A_REP": { "label": "発注元 代表者", "group": "III. 発注元 (自社)", "required": true },
+      "STAFF_NAME": { "label": "担当者名", "group": "III. 発注元 (自社)", "dbField": "staff.staff_name", "helpText": "[Sync Staff] で自動入力" },
+      "STAFF_DEPARTMENT": { "label": "担当部署", "group": "III. 発注元 (自社)", "dbField": "staff.department" },
+      "STAFF_PHONE": { "label": "TEL", "group": "III. 発注元 (自社)", "dbField": "staff.phone" },
+      "STAFF_EMAIL": { "label": "E-mail", "group": "III. 発注元 (自社)", "dbField": "staff.email" },
+
+      "grandTotalExTax": { "label": "合計金額 (税抜)", "group": "IV. 金額・納期", "type": "number", "required": true, "placeholder": "1000000" },
+      "summaryDeliveryDate": { "label": "納期", "group": "IV. 金額・納期", "type": "date" },
+      "summaryPaymentTerms": { "label": "支払条件", "group": "IV. 金額・納期", "placeholder": "例: 検収月翌月末日払い" },
+      "ITEM_NAME": { "label": "品目名 (単一明細)", "group": "IV. 金額・納期", "helpText": "明細表を使わない場合の代替" },
+      "PAYMENT_METHOD": { "label": "支払方法 (単一明細)", "group": "IV. 金額・納期" },
+
+      "BANK_NAME": { "label": "金融機関名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.bank_name", "helpText": "[取引先] ボタンで自動入力" },
+      "BRANCH_NAME": { "label": "支店名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.branch_name" },
+      "ACCOUNT_TYPE": { "label": "口座種別", "group": "V. 振込先 (取引先口座)", "type": "select", "options": ["普通", "当座"], "dbField": "vendor.account_type" },
+      "ACCOUNT_NUMBER": { "label": "口座番号", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.account_number" },
+      "ACCOUNT_HOLDER_KANA": { "label": "口座名義 (カナ)", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.account_holder_kana" },
+      "INVOICE_REGISTRATION_NUMBER": { "label": "インボイス登録番号 (T-)", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.invoice_registration_number" },
+      "TRANSFER_FEE_PAYER": { "label": "振込手数料 負担", "group": "V. 振込先 (取引先口座)", "type": "select", "options": ["当社", "取引先"] },
+
+      "SPECIAL_TERMS": { "label": "特約事項", "group": "VI. 特約・備考 (任意)", "type": "textarea" },
+      "REMARKS_FIXED": { "label": "定型備考", "group": "VI. 特約・備考 (任意)", "type": "textarea" },
+      "REMARKS_FREE": { "label": "自由備考", "group": "VI. 特約・備考 (任意)", "type": "textarea" },
+
+      "HAS_BASE_CONTRACT": { "label": "基本契約あり", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
+      "MASTER_CONTRACT_REF": { "label": "基本契約名 / 番号", "group": "VII. 契約・署名 (任意)", "helpText": "基本契約ありの場合に記載" },
+      "SHOW_ORDER_SIGN_SECTION": { "label": "発注署名欄を表示", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
+      "ACCEPT_METHOD": { "label": "承諾方法", "group": "VII. 契約・署名 (任意)", "type": "textarea" },
+      "ACCEPT_REPLY_DUE_DATE": { "label": "承諾返信期限", "group": "VII. 契約・署名 (任意)", "type": "date" },
+      "ACCEPT_BY_PERFORMANCE": { "label": "履行による承諾", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
+      "SHOW_SIGN_SECTION": { "label": "承諾署名欄を表示", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
+      "VENDOR_ACCEPT_DATE": { "label": "受注者承諾日", "group": "VII. 契約・署名 (任意)", "type": "date" },
+      "VENDOR_ACCEPT_NAME": { "label": "受注者署名", "group": "VII. 契約・署名 (任意)" }
     }
   },
 

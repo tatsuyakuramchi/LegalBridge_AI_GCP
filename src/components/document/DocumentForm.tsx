@@ -276,77 +276,226 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
   }
 
-  // Specialized Purchase Order Form
+  // Specialized Purchase Order Form (Phase 3b-2)
+  //
+  // Driven by templates_config.json metadata for purchase_order. Same
+  // shape as the individual_license_terms redesign:
+  //   - Required-progress banner at top
+  //   - Side-swappable Vendor / Issuer sections ([自社]/[取引先] buttons)
+  //   - Bank info auto-fills from active vendor
+  //   - Advanced sections (特約・備考, 契約・署名) collapsed by default
   if (templateId === 'purchase_order') {
+    const isCorporation = (vendor: any) =>
+      (vendor?.entity_type || '').toLowerCase() === 'corporate' ||
+      (vendor?.entity_type || '') === '法人';
+
+    const fillVendorFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        VENDOR_NAME: activeVendor.vendor_name || '',
+        VENDOR_ADDRESS: activeVendor.address || '',
+        VENDOR_REPRESENTATIVE_SAMA: activeVendor.vendor_rep
+          ? `${activeVendor.vendor_rep} 様`
+          : '',
+        VENDOR_CONTACT_DEPARTMENT: activeVendor.contact_department || '',
+        VENDOR_CONTACT_NAME: activeVendor.contact_name || '',
+        VENDOR_EMAIL: activeVendor.email || '',
+        VENDOR_SUFFIX: isCorporation(activeVendor) ? '御中' : '様',
+        // Bank info — common ask, pulled at the same time
+        BANK_NAME: activeVendor.bank_name || '',
+        BRANCH_NAME: activeVendor.branch_name || '',
+        ACCOUNT_TYPE: activeVendor.account_type || '',
+        ACCOUNT_NUMBER: activeVendor.account_number || '',
+        ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
+        INVOICE_REGISTRATION_NUMBER: activeVendor.invoice_registration_number || '',
+      });
+    };
+
+    const fillVendorFromSelf = () =>
+      setFormData({
+        ...formData,
+        VENDOR_NAME: companyProfile?.name || '',
+        VENDOR_ADDRESS: companyProfile?.address || '',
+        VENDOR_REPRESENTATIVE_SAMA: companyProfile?.representative
+          ? `${companyProfile.representative} 様`
+          : '',
+        VENDOR_SUFFIX: '御中',
+      });
+
+    const fillIssuerFromSelf = () =>
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: companyProfile?.name || '',
+        PARTY_A_ADDRESS: companyProfile?.address || '',
+        PARTY_A_REP: companyProfile?.representative || '',
+      });
+
+    const fillIssuerFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: activeVendor.vendor_name || '',
+        PARTY_A_ADDRESS: activeVendor.address || '',
+        PARTY_A_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+      });
+    };
+
+    const fillStaff = () => {
+      if (!selectedStaff) return;
+      setFormData({
+        ...formData,
+        STAFF_NAME: selectedStaff.staff_name || '',
+        STAFF_DEPARTMENT: selectedStaff.department || '',
+        STAFF_PHONE: selectedStaff.phone || '',
+        STAFF_EMAIL: selectedStaff.email || '',
+      });
+    };
+
+    const sideButton = (
+      label: string,
+      onClick: () => void,
+      disabled: boolean
+    ) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
+    // Required-completion summary
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
     return (
-      <div className="space-y-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <FormSection 
-            title="Overview & Vendor (発注概要と宛先)" 
-            variant="blue" 
+      <div className="space-y-10">
+        {/* Required-progress banner */}
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          )}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* I. 発注概要 */}
+        <FormSection
+          title="I. 発注概要"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+          headerActions={
+            <button
+              type="button"
+              onClick={onSync}
+              className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
+              title="Backlog 課題から自動補完"
+            >
+              <Database className="w-2 h-2 inline mr-1" />
+              Backlog Sync
+            </button>
+          }
+        >
+          {renderGroup('I. 発注概要')}
+        </FormSection>
+
+        {/* II/III. Vendor / Issuer — side-swappable parties */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <FormSection
+            title="II. 発注先 (取引先)"
+            variant="amber"
             icon={<Building2 className="w-4 h-4" />}
-            headerActions={<button onClick={onSync} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>}
+            headerActions={
+              <>
+                {sideButton('自社', fillVendorFromSelf, !companyProfile)}
+                {sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+              </>
+            }
           >
-            <div className="col-span-full space-y-4">
-              {renderField('ORDER_NO', '発注番号')}
-              <div className="grid grid-cols-3 gap-2">
-                {renderField('ORDER_DATE_YEAR', '年')}
-                {renderField('ORDER_DATE_MONTH', '月')}
-                {renderField('ORDER_DATE_DAY', '日')}
-              </div>
-              {renderField('PROJECT_TITLE', '件名')}
-              <div className="border-t border-blue-600/10 pt-4">
-                <PartySection prefix="VENDOR" formData={formData} setFormData={setFormData} renderField={renderField} />
-                {renderField('VENDOR_SUFFIX', '敬称 (御中など)')}
-                {renderField('VENDOR_EMAIL', 'E-mail')}
-              </div>
-            </div>
+            {renderGroup('II. 発注先 (取引先)')}
           </FormSection>
 
-          <FormSection 
-            title="Issuer & Summary (発注元と条件要約)" 
-            variant="emerald" 
+          <FormSection
+            title="III. 発注元 (自社)"
+            variant="blue"
             icon={<User className="w-4 h-4" />}
-            headerActions={<button onClick={() => { if(selectedStaff) setFormData({...formData, STAFF_NAME: selectedStaff.staff_name, STAFF_DEPARTMENT: selectedStaff.department, STAFF_EMAIL: selectedStaff.email}); }} className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-1 uppercase">Staff Sync</button>}
+            headerActions={
+              <>
+                {sideButton('自社', fillIssuerFromSelf, !companyProfile)}
+                {sideButton('取引先', fillIssuerFromPartner, !activeVendor)}
+                {sideButton('Sync Staff', fillStaff, !selectedStaff)}
+              </>
+            }
           >
-            <div className="col-span-full space-y-4">
-               {['PARTY_A_NAME', 'PARTY_A_ADDRESS', 'PARTY_A_REP'].map(f => renderField(f))}
-               <div className="border-t border-emerald-600/10 pt-4 grid grid-cols-2 gap-4">
-                  {['STAFF_NAME', 'STAFF_DEPARTMENT', 'STAFF_PHONE', 'STAFF_EMAIL'].map(f => renderField(f))}
-               </div>
-               <div className="border-t border-emerald-600/10 pt-4 bg-gray-50 p-3 rounded">
-                  {renderField('grandTotalExTax', '合計金額 (税抜)')}
-                  {renderField('summaryDeliveryDate', '納期')}
-                  {renderField('summaryPaymentTerms', '支払条件')}
-               </div>
-            </div>
+            {renderGroup('III. 発注元 (自社)')}
           </FormSection>
         </div>
 
-        <FormSection title="Terms & Bank (特約・備考・支払先)" variant="indigo">
-          <div className="col-span-full space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {renderField('SPECIAL_TERMS', '特約事項')}
-              {renderField('REMARKS_FREE', '備考')}
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-indigo-50 p-4 rounded border border-indigo-100">
-              {['BANK_NAME', 'BRANCH_NAME', 'ACCOUNT_TYPE', 'ACCOUNT_NUMBER', 'ACCOUNT_HOLDER_KANA', 'INVOICE_REGISTRATION_NUMBER', 'TRANSFER_FEE_PAYER'].map(f => renderField(f))}
-            </div>
-          </div>
+        {/* IV. 金額・納期 */}
+        <FormSection title="IV. 金額・納期" variant="indigo" icon={<Scale className="w-4 h-4" />}>
+          {renderGroup('IV. 金額・納期')}
         </FormSection>
 
-        <FormSection title="Agreement & Sign Options (契約・署名設定)" variant="default">
-           <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-              <div className="space-y-2">
-                {renderField('HAS_BASE_CONTRACT', '基本契約あり')}
-                {formData.HAS_BASE_CONTRACT && renderField('MASTER_CONTRACT_REF', '基本契約名/番号')}
-              </div>
-              <div className="space-y-2">
-                {renderField('SHOW_ORDER_SIGN_SECTION', '発注署名欄を表示')}
-                {renderField('ACCEPT_METHOD', '承認/受領方法')}
-              </div>
-           </div>
+        {/* V. 振込先 */}
+        <FormSection
+          title="V. 振込先 (取引先口座)"
+          variant="emerald"
+          headerActions={sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+        >
+          {renderGroup('V. 振込先 (取引先口座)')}
         </FormSection>
+
+        {/* VI. 特約・備考 — collapsed */}
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VI. 特約・備考 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">
+            {renderGroup('VI. 特約・備考 (任意)')}
+          </div>
+        </details>
+
+        {/* VII. 契約・署名 — collapsed */}
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VII. 契約・署名 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">
+            {renderGroup('VII. 契約・署名 (任意)')}
+          </div>
+        </details>
       </div>
     );
   }
