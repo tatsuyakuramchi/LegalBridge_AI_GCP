@@ -862,6 +862,80 @@ ${details}
   // -------------------------------------------------------------------
 
   /**
+   * 発注書の一覧。検収書フォームで「親 PO を手動指定」する
+   * ピッカー UI が使う。q (任意) で issue_key / description /
+   * vendor_code を ILIKE で部分一致。
+   *
+   * 返り値には検収累計と残額も含めるので、ピッカー上で
+   * 「残¥XXX」を一目で見せられる。is_imported は IMPORT-* 接頭辞で
+   * 判定したフラグ (UI でラベル区別用)。
+   */
+  app.get("/api/order-items/list", async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const limit = Math.min(Number(req.query.limit) || 50, 200);
+      const rows = await query(
+        `SELECT
+           oi.id,
+           oi.backlog_issue_key,
+           oi.description,
+           oi.amount_ex_tax,
+           oi.vendor_code,
+           oi.tax_rate,
+           oi.due_date,
+           oi.created_at,
+           (SELECT COUNT(*) FROM order_line_items oli
+              WHERE oli.order_item_id = oi.id) AS line_count,
+           (SELECT COALESCE(SUM(dli.inspected_amount_ex_tax), 0)
+              FROM delivery_line_items dli
+              JOIN order_line_items oli ON oli.id = dli.order_line_item_id
+             WHERE oli.order_item_id = oi.id) AS inspected_amount,
+           (SELECT d.document_number FROM documents d
+             WHERE d.issue_key = oi.backlog_issue_key
+               AND d.template_type LIKE '%purchase_order%'
+             ORDER BY d.created_at DESC LIMIT 1) AS document_number,
+           (SELECT ea.file_link FROM external_assets ea
+             WHERE ea.backlog_issue_key = oi.backlog_issue_key
+             ORDER BY ea.created_at DESC LIMIT 1) AS drive_link,
+           (oi.backlog_issue_key LIKE 'IMPORT-%') AS is_imported,
+           (SELECT v.vendor_name FROM vendors v
+             WHERE v.vendor_code = oi.vendor_code LIMIT 1) AS vendor_name
+         FROM order_items oi
+         WHERE COALESCE($1, '') = ''
+            OR oi.backlog_issue_key ILIKE '%' || $1 || '%'
+            OR COALESCE(oi.description, '') ILIKE '%' || $1 || '%'
+            OR COALESCE(oi.vendor_code, '') ILIKE '%' || $1 || '%'
+         ORDER BY oi.created_at DESC
+         LIMIT $2`,
+        [q, limit]
+      );
+      res.json(
+        rows.rows.map((r: any) => ({
+          id: Number(r.id),
+          backlog_issue_key: r.backlog_issue_key,
+          description: r.description || "",
+          amount_ex_tax: Number(r.amount_ex_tax) || 0,
+          vendor_code: r.vendor_code || "",
+          vendor_name: r.vendor_name || "",
+          tax_rate: r.tax_rate != null ? Number(r.tax_rate) : null,
+          due_date: r.due_date,
+          created_at: r.created_at,
+          line_count: Number(r.line_count) || 0,
+          inspected_amount: Number(r.inspected_amount) || 0,
+          remaining_amount:
+            (Number(r.amount_ex_tax) || 0) - (Number(r.inspected_amount) || 0),
+          document_number: r.document_number || "",
+          drive_link: r.drive_link || "",
+          is_imported: !!r.is_imported,
+        }))
+      );
+    } catch (error) {
+      console.error("/api/order-items/list failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
    * PO 全体（ヘッダ + 全明細 + 検収状況サマリ）を取得する。
    * フロント側で発注書を選んだとき、検収書フォームに既存値を
    * 流し込むために使う。

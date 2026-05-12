@@ -14,6 +14,7 @@ import {
   type FinancialCondition,
 } from './FinancialConditionTable';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
+import { ParentPoPicker, type PoLoaded } from './ParentPoPicker';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -1026,6 +1027,37 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             {renderGroup('III. 検収者 (自社)')}
           </FormSection>
         </div>
+
+        {/* Phase 8c: 親 PO ピッカー — Backlog 親子経由で自動発見できない
+            ケース (IMPORT-* PO / 親子未設定) のためのフォールバック手段。
+            form-context が既に親 PO を載せていても、ここで上書き可能。 */}
+        <ParentPoPicker
+          currentKey={formData.parent_po_issue_key}
+          hasParent={
+            Array.isArray(formData.order_lines_for_inspection) &&
+            formData.order_lines_for_inspection.length > 0
+          }
+          onPick={(loaded: PoLoaded) => {
+            setFormData({
+              ...formData,
+              parent_po_id: loaded.order_item_id,
+              parent_po_issue_key: loaded.backlog_issue_key,
+              order_lines_for_inspection: loaded.line_items,
+              // 親を切り替えたら検収入力は一旦リセット (overflow 整合のため)
+              delivery_line_items: [],
+              deliveredAmountStr: "",
+            });
+          }}
+          onClear={() => {
+            setFormData({
+              ...formData,
+              parent_po_id: undefined,
+              parent_po_issue_key: undefined,
+              order_lines_for_inspection: [],
+              delivery_line_items: [],
+            });
+          }}
+        />
 
         {/* Phase 7c: 親 PO の明細別検収テーブル。
             form-context が parent_po_id + order_lines_for_inspection[] を
