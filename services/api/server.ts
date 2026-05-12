@@ -43,6 +43,27 @@ async function startServer() {
     console.warn("⚠️ Could not load app_settings; falling back to env vars only.", err);
   }
 
+  // CORS — the Admin UI is loaded from legalbridge-admin-ui (different
+  // origin) and dispatches /api/* via the apiRouter to this service.
+  // Reflect the request Origin to keep credentials/cookies portable;
+  // fall back to "*" when there is no Origin header (curl, server-side
+  // probes).
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    res.header("Access-Control-Allow-Origin", (origin as string) || "*");
+    res.header("Vary", "Origin");
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type,Authorization,X-LB-PORTAL-SECRET"
+    );
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+  });
+
   // Request logger.
   app.use((req, _res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);

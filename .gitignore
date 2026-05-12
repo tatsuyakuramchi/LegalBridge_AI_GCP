@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+# .env.production carries Vite VITE_* build-time vars (Cloud Run URLs).
+# These end up baked into the public JS bundle anyway, so they're safe
+# to commit and need to be present at build time.
+!.env.production

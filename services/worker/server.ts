@@ -124,6 +124,24 @@ async function startServer() {
     console.warn("⚠️ Could not load app_settings; falling back to env vars only.", err);
   }
 
+  // CORS — Admin UI dispatches mutation routes here across origins.
+  // See services/api/server.ts for the same policy on the read side.
+  app.use((req, res, next) => {
+    const origin = req.headers.origin;
+    res.header("Access-Control-Allow-Origin", (origin as string) || "*");
+    res.header("Vary", "Origin");
+    res.header(
+      "Access-Control-Allow-Methods",
+      "GET,POST,PUT,PATCH,DELETE,OPTIONS"
+    );
+    res.header(
+      "Access-Control-Allow-Headers",
+      "Content-Type,Authorization,X-LB-PORTAL-SECRET"
+    );
+    if (req.method === "OPTIONS") return res.sendStatus(204);
+    next();
+  });
+
   app.use((req, _res, next) => {
     console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
     next();

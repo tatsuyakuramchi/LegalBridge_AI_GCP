@@ -1,3 +1,8 @@
+// IMPORTANT: apiRouter must load BEFORE anything that calls fetch(),
+// so its `window.fetch` monkey-patch is in place when components mount.
+// See src/lib/apiRouter.ts for the routing rules.
+import './lib/apiRouter';
+
 import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
