@@ -145,6 +145,33 @@
     .condition-box h3 { font-size: 8.5pt; font-weight: bold; border-bottom: 1px solid #ddd; margin-bottom: 5px; padding-bottom: 3px; }
     .condition-box .highlight { font-size: 11pt; font-weight: bold; }
 
+    /* みなし同意ブロック */
+    .confirm-box {
+      border: 1px solid #ccc;
+      background: #fafafa;
+      padding: 10px 12px;
+      margin-top: 14px;
+      font-size: 9pt;
+      line-height: 1.6;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+    .confirm-box p { margin: 0 0 6px 0; }
+    .confirm-box p:last-child { margin-bottom: 0; }
+    .confirm-box .proviso {
+      font-size: 8.3pt;
+      color: #555;
+      border-top: 1px dashed #ccc;
+      padding-top: 6px;
+      margin-top: 8px;
+    }
+    .confirm-box .contact {
+      font-size: 8.7pt;
+      margin-top: 8px;
+      padding-top: 6px;
+      border-top: 1px solid #ddd;
+    }
+
   </style>
 </head>
 <body>
@@ -161,15 +188,14 @@
     </div>
     <div class="doc-meta">
       <div class="doc-number">{{issueKey}}-{{itemNo}}-{{deliveryNo}}</div>
-      <div>発注課題: {{issueKey}} ／ 明細: ①{{itemNo}}</div>
-      {{#if linked_po_number}}<div>関連発注書: {{linked_po_number}}</div>{{/if}}
+      <div>発注課題: {{issueKey}} ／ 明細No.: {{itemNo}}</div>
       <div>発行日: {{documentDate}}</div>
     </div>
   </div>
 
-  <!-- 当事者
-       ①作成者: 株式会社アークライト（右ブロック）
-       ②相手方の氏名・名称・登録番号: counterparty + counterpartyRegistrationNo（左ブロック） -->
+  <!-- 当事者ブロック
+       左: 受託者（counterparty + counterpartyRegistrationNo）
+       右: 発注者（株式会社アークライト） -->
   <div class="parties">
     <div class="party-block">
       <div class="party-label">受託者（課税仕入れの相手方）</div>
@@ -211,10 +237,9 @@
   {{/if}}
 
   <!-- 今回納品明細
-       ③課税仕入れの年月日: deliveredAt
-       ④課税仕入れの内容（軽減税率対象の旨）: description + isReducedTaxフラグ（※マーク）
-       ⑤税率ごとの支払対価の額・適用税率: deliveredAmountStr + taxRate
-       ⑥税率ごとの消費税額: taxAmountStr -->
+       適格請求書記載要件（消費税法57条の4）に対応する項目：
+         納品日（課税仕入れの年月日）、成果物・業務内容（軽減税率対象の旨を含む）、
+         支払対価・税率、消費税額 -->
   <div class="section-title">■ 今回の納品内容</div>
   <table style="margin-bottom:4px;">
     <thead>
@@ -222,13 +247,13 @@
         <th style="width:6%">No.</th>
         <th style="width:44%">成果物・業務内容</th>
         <th style="width:20%">仕様</th>
-        <th style="width:15%">納品日 ③</th>
-        <th style="width:15%">支払対価（税抜）⑤</th>
+        <th style="width:15%">納品日</th>
+        <th style="width:15%">支払対価（税抜）</th>
       </tr>
     </thead>
     <tbody>
       <tr>
-        <td class="center">①{{itemNo}}</td>
+        <td class="center">{{itemNo}}</td>
         <td>{{#if isReducedTax}}<span class="reduced-mark">※</span>{{/if}}{{description}}</td>
         <td>{{spec}}</td>
         <td class="center">{{deliveredAt}}</td>
@@ -236,7 +261,7 @@
       </tr>
       <tr>
         <td colspan="4" class="right">
-          消費税（{{taxRate}}%{{#if isReducedTax}}・軽減税率対象{{/if}}）⑥
+          消費税（{{taxRate}}%{{#if isReducedTax}}・軽減税率対象{{/if}}）
         </td>
         <td class="right">¥{{taxAmountStr}}</td>
       </tr>
@@ -284,10 +309,24 @@
       <h3>■ 発注情報</h3>
       <p>発注日: {{orderDate}}</p>
       <p>発注番号: {{issueKey}}</p>
-      <p>明細: ①{{itemNo}} / 全{{itemCount}}件中</p>
+      <p>明細No.: {{itemNo}} / 全{{itemCount}}件中</p>
     </div>
   </div>
 
+
+
+  <!-- みなし同意 -->
+  <div class="section-title">■ 本検収書の内容に関するご確認のお願い</div>
+  <div class="confirm-box">
+    <p>本検収書にご記載の内容（検収対象成果物、仕様、数量、検収日、金額等）についてご確認のうえ、記載事項に相違または異議がある場合は、本書が貴殿に到達した日の翌日（同日が営業日でない場合は翌営業日）から起算して <strong>5営業日以内</strong> に、下記連絡先宛に書面または電子メールにより、その旨および具体的内容をご通知くださいますようお願いいたします。</p>
+    <p>上記期間内に何らのご通知もいただけない場合、本検収書の記載内容（検収日、検収金額、検収対象の範囲を含みます。）について貴殿にご異議がないものとして取り扱わせていただきます。</p>
+    <p class="proviso">※ 本取扱いは、製造委託等に係る中小受託事業者に対する代金の支払の遅延等の防止に関する法律（中小受託取引適正化法）、特定受託事業者に係る取引の適正化等に関する法律その他関連法令に基づき貴殿に認められる権利を制限するものではありません。</p>
+    <div class="contact">
+      <strong>【ご連絡先】</strong><br>
+      株式会社アークライト　{{inspectorDept}}　担当: {{inspectorName}}<br>
+      E-mail: {{inspectorEmail}}
+    </div>
+  </div>
 
 </body>
 </html>

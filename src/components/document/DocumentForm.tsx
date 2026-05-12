@@ -934,6 +934,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ...formData,
         inspectorDept: selectedStaff.department || '',
         inspectorName: selectedStaff.staff_name || '',
+        // Phase 9b: みなし同意ブロックの連絡先用
+        inspectorEmail: selectedStaff.email || '',
       });
     };
 

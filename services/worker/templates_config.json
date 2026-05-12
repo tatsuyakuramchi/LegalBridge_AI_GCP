@@ -192,6 +192,7 @@
 
       "inspectorDept": { "label": "検収者部署", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.department", "helpText": "[Sync Staff] で自動入力" },
       "inspectorName": { "label": "検収者氏名", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.staff_name" },
+      "inspectorEmail": { "label": "検収者メールアドレス", "group": "III. 検収者 (自社)", "dbField": "staff.email", "helpText": "みなし同意ブロックの連絡先に出力。[Sync Staff] で自動入力" },
       "deliveredAt": { "label": "実納品日", "group": "III. 検収者 (自社)", "type": "date", "required": true },
       "inspectionCompletedAt": { "label": "検収完了日", "group": "III. 検収者 (自社)", "type": "date", "required": true },
       "paymentDueDate": { "label": "支払期日", "group": "III. 検収者 (自社)", "type": "date" },
