@@ -777,6 +777,104 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------------
+  // /api/license-contracts/* — read-only mirrors (Phase 5b)
+  // -------------------------------------------------------------------
+
+  app.get("/api/license-contracts/by-issue/:key", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const header = await query(
+        `SELECT id, backlog_issue_key, ledger_id, ledger_number, contract_number,
+                issue_date, basic_contract_name,
+                licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
+                licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
+                license_start_date, license_period_note,
+                original_work, original_work_note, product_name_predicted,
+                exclusivity, supervisor, credit_display, remarks,
+                created_at
+           FROM license_contracts
+          WHERE backlog_issue_key = $1`,
+        [key]
+      );
+      if (header.rows.length === 0) {
+        return res.status(404).json({ error: "License contract not found" });
+      }
+      const lc = header.rows[0];
+
+      const conds = await query(
+        `SELECT id, condition_no, region_language_label, calc_method,
+                rate_pct, base_price_label, calc_period, currency,
+                formula_text, payment_terms, mg_amount,
+                created_at, updated_at
+           FROM license_financial_conditions
+          WHERE license_contract_id = $1
+          ORDER BY condition_no ASC`,
+        [lc.id]
+      );
+
+      // Inline MG status aggregation (read-only DB role 用)。
+      // calc_license.ts の getLicenseMgStatus と等価。
+      const mgStatus: Array<any> = [];
+      for (const c of conds.rows) {
+        const consumedRes = await query(
+          `SELECT COALESCE(SUM(mg_consumed_this_time), 0) AS consumed
+             FROM royalty_calculations
+            WHERE license_contract_id = $1
+              AND license_financial_condition_id = $2`,
+          [lc.id, Number(c.id)]
+        );
+        const consumed = Number(consumedRes.rows[0].consumed) || 0;
+        const mgAmount = Number(c.mg_amount) || 0;
+        mgStatus.push({
+          condition_no: Number(c.condition_no),
+          condition_id: Number(c.id),
+          mg_amount: mgAmount,
+          consumed_total: consumed,
+          remaining: Math.max(0, mgAmount - consumed),
+          fully_consumed: mgAmount > 0 && consumed >= mgAmount,
+        });
+      }
+
+      res.json({
+        license_contract: lc,
+        financial_conditions: conds.rows,
+        mg_status: mgStatus,
+      });
+    } catch (error) {
+      console.error("/api/license-contracts/by-issue failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * ライセンス契約に紐づく利用許諾料計算書の履歴を返す。
+   */
+  app.get("/api/license-contracts/:id/royalty-history", async (req, res) => {
+    try {
+      const lcId = Number(req.params.id);
+      const result = await query(
+        `SELECT id, backlog_issue_key, license_financial_condition_id,
+                manufacturing_event_id, calc_type,
+                unit_price, quantity, sample_quantity, billable_quantity,
+                rate_pct, gross_royalty_ex_tax,
+                mg_amount, mg_consumed_before, mg_consumed_this_time,
+                mg_consumed_after, mg_remaining, mg_fully_consumed,
+                actual_royalty_ex_tax, tax_rate, tax_amount, total_payment_inc_tax,
+                currency, period, reporting_deadline, payment_due_date,
+                notes, created_at
+           FROM royalty_calculations
+          WHERE license_contract_id = $1
+          ORDER BY created_at DESC`,
+        [lcId]
+      );
+      res.json(result.rows);
+    } catch (error) {
+      console.error("/api/license-contracts/:id/royalty-history failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
   // /api/dashboard/*
   // -------------------------------------------------------------------
 

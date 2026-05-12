@@ -56,6 +56,12 @@ import {
   getInspectionAvailability,
   previewInspectionOverflow,
 } from "./src/lib/calc.ts";
+import {
+  calculateGrossRoyalty,
+  applyMgConsumption,
+  previewRoyaltyCalculation,
+  getLicenseMgStatus,
+} from "./src/lib/calc_license.ts";
 
 dotenv.config();
 
@@ -1115,6 +1121,233 @@ ${details}
       }
     }
   );
+
+  // -------------------------------------------------------------------
+  // /api/license-contracts/* + /api/royalty-calculations/* (Phase 5b)
+  //
+  // 個別利用許諾条件書 ↔ 利用許諾料計算書 の連動 API。発注書↔検収書と
+  // 同じ構造:
+  //   - 金銭条件 (= 発注明細) を CRUD する write エンドポイント
+  //   - 計算書を preview / save する MG 消化チェック付きエンドポイント
+  //   - MG ステータスの即時取得
+  // -------------------------------------------------------------------
+
+  /**
+   * ライセンス契約全体 (ヘッダ + 全金銭条件 + MG 消化サマリ) を返す。
+   * 利用許諾料計算書フォームを開くときに叩く。
+   */
+  app.get("/api/license-contracts/by-issue/:key", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const header = await query(
+        `SELECT id, backlog_issue_key, ledger_id, ledger_number, contract_number,
+                issue_date, basic_contract_name,
+                licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
+                licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
+                license_start_date, license_period_note,
+                original_work, original_work_note, product_name_predicted,
+                exclusivity, supervisor, credit_display, remarks,
+                created_at
+           FROM license_contracts
+          WHERE backlog_issue_key = $1`,
+        [key]
+      );
+      if (header.rows.length === 0) {
+        return res.status(404).json({ error: "License contract not found" });
+      }
+      const lc = header.rows[0];
+
+      const conds = await query(
+        `SELECT id, condition_no, region_language_label, calc_method,
+                rate_pct, base_price_label, calc_period, currency,
+                formula_text, payment_terms, mg_amount,
+                created_at, updated_at
+           FROM license_financial_conditions
+          WHERE license_contract_id = $1
+          ORDER BY condition_no ASC`,
+        [lc.id]
+      );
+
+      const mgStatus = await getLicenseMgStatus(lc.id);
+
+      res.json({
+        license_contract: lc,
+        financial_conditions: conds.rows,
+        mg_status: mgStatus,
+      });
+    } catch (error) {
+      console.error("/api/license-contracts/by-issue failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * 金銭条件を一括 upsert (1〜3 件)。
+   * body: { conditions: [{ condition_no, calc_method, rate_pct, ... }] }
+   */
+  app.post(
+    "/api/license-contracts/:id/financial-conditions",
+    express.json(),
+    async (req, res) => {
+      try {
+        const lcId = Number(req.params.id);
+        const conditions: Array<any> = Array.isArray(req.body.conditions)
+          ? req.body.conditions
+          : [];
+
+        const keepNos = conditions
+          .map((c) => Number(c.condition_no))
+          .filter((n) => n > 0);
+        if (keepNos.length > 0) {
+          await query(
+            `DELETE FROM license_financial_conditions
+              WHERE license_contract_id = $1
+                AND condition_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
+            [lcId, ...keepNos]
+          );
+        } else {
+          await query(
+            "DELETE FROM license_financial_conditions WHERE license_contract_id = $1",
+            [lcId]
+          );
+        }
+
+        for (const c of conditions) {
+          await query(
+            `INSERT INTO license_financial_conditions (
+               license_contract_id, condition_no,
+               region_language_label, calc_method, rate_pct,
+               base_price_label, calc_period, currency,
+               formula_text, payment_terms, mg_amount, updated_at
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+             ON CONFLICT (license_contract_id, condition_no) DO UPDATE SET
+               region_language_label = EXCLUDED.region_language_label,
+               calc_method           = EXCLUDED.calc_method,
+               rate_pct              = EXCLUDED.rate_pct,
+               base_price_label      = EXCLUDED.base_price_label,
+               calc_period           = EXCLUDED.calc_period,
+               currency              = EXCLUDED.currency,
+               formula_text          = EXCLUDED.formula_text,
+               payment_terms         = EXCLUDED.payment_terms,
+               mg_amount             = EXCLUDED.mg_amount,
+               updated_at            = CURRENT_TIMESTAMP`,
+            [
+              lcId,
+              Number(c.condition_no),
+              c.region_language_label || null,
+              c.calc_method || null,
+              c.rate_pct != null ? Number(c.rate_pct) : null,
+              c.base_price_label || null,
+              c.calc_period || null,
+              c.currency || "JPY",
+              c.formula_text || null,
+              c.payment_terms || null,
+              c.mg_amount != null ? Number(c.mg_amount) : 0,
+            ]
+          );
+        }
+        res.json({ success: true, count: conditions.length });
+      } catch (error) {
+        console.error(
+          "/api/license-contracts/:id/financial-conditions failed:",
+          error
+        );
+        res.status(500).json({ error: String(error) });
+      }
+    }
+  );
+
+  /**
+   * 利用許諾料計算書を preview。MG 消化と税の試算を返す。
+   * フロントは数量・サンプル数を変更するたびにこれを叩いて
+   * リアルタイム計算表示する。
+   */
+  app.post("/api/royalty-calculations/preview", express.json(), async (req, res) => {
+    try {
+      const result = await previewRoyaltyCalculation({
+        license_contract_id: Number(req.body.license_contract_id),
+        license_financial_condition_id: Number(req.body.license_financial_condition_id),
+        unit_price: Number(req.body.unit_price),
+        quantity: Number(req.body.quantity),
+        sample_quantity: Number(req.body.sample_quantity) || 0,
+        tax_rate: req.body.tax_rate != null ? Number(req.body.tax_rate) : undefined,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error) {
+      console.error("/api/royalty-calculations/preview failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * 利用許諾料計算書を確定保存する。サーバ側で再度 preview を実行し
+   * 結果を royalty_calculations に書き込む (フロント送信値を信用しない)。
+   */
+  app.post("/api/royalty-calculations", express.json(), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const computed = await previewRoyaltyCalculation({
+        license_contract_id: Number(body.license_contract_id),
+        license_financial_condition_id: Number(body.license_financial_condition_id),
+        unit_price: Number(body.unit_price),
+        quantity: Number(body.quantity),
+        sample_quantity: Number(body.sample_quantity) || 0,
+        tax_rate: body.tax_rate != null ? Number(body.tax_rate) : undefined,
+      });
+
+      const result = await query(
+        `INSERT INTO royalty_calculations (
+           backlog_issue_key, license_contract_id, license_financial_condition_id,
+           manufacturing_event_id, calc_type,
+           unit_price, quantity, sample_quantity, billable_quantity,
+           rate_pct, gross_royalty_ex_tax,
+           mg_amount, mg_consumed_before, mg_consumed_this_time,
+           mg_consumed_after, mg_remaining, mg_fully_consumed,
+           actual_royalty_ex_tax, tax_rate, tax_amount, total_payment_inc_tax,
+           currency, period, reporting_deadline, payment_due_date, notes
+         ) VALUES (
+           $1, $2, $3, $4, $5,
+           $6, $7, $8, $9,
+           $10, $11,
+           $12, $13, $14, $15, $16, $17,
+           $18, $19, $20, $21,
+           $22, $23, $24, $25, $26
+         ) RETURNING id`,
+        [
+          body.backlog_issue_key || null,
+          Number(body.license_contract_id),
+          Number(body.license_financial_condition_id),
+          body.manufacturing_event_id ? Number(body.manufacturing_event_id) : null,
+          body.calc_type || "manufacturing",
+          computed.unit_price,
+          computed.quantity,
+          computed.sample_quantity,
+          computed.billable_quantity,
+          computed.rate_pct,
+          computed.gross_royalty_ex_tax,
+          computed.mg_amount,
+          computed.mg_consumed_before,
+          computed.mg_consumed_this_time,
+          computed.mg_consumed_after,
+          computed.mg_remaining,
+          computed.mg_fully_consumed,
+          computed.actual_royalty_ex_tax,
+          computed.tax_rate,
+          computed.tax_amount,
+          computed.total_payment_inc_tax,
+          computed.currency,
+          body.period || null,
+          body.reporting_deadline || null,
+          body.payment_due_date || null,
+          body.notes || null,
+        ]
+      );
+      res.json({ ok: true, id: result.rows[0].id, computed });
+    } catch (error) {
+      console.error("/api/royalty-calculations failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
 
   // -------------------------------------------------------------------
   // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
