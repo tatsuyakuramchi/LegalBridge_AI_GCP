@@ -651,6 +651,132 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------------
+  // /api/order-items/* — read-only mirrors (Phase 4b)
+  //
+  // Writes live on the worker (POST /api/order-items/:id/line-items
+  // and the inspection-side endpoints). Reads can stay on the api
+  // service since they don't need elevated DB privileges.
+  // -------------------------------------------------------------------
+
+  app.get("/api/order-items/by-issue/:key", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const header = await query(
+        `SELECT id, legal_request_id, vendor_code, description,
+                amount, amount_ex_tax, tax_rate, tax_amount, amount_inc_tax,
+                due_date, backlog_issue_key, created_at
+           FROM order_items
+          WHERE backlog_issue_key = $1`,
+        [key]
+      );
+      if (header.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      const orderItem = header.rows[0];
+
+      const lines = await query(
+        `SELECT id, order_item_id, line_no, item_name, spec,
+                unit_price, quantity, amount_ex_tax,
+                payment_method, payment_date,
+                created_at, updated_at
+           FROM order_line_items
+          WHERE order_item_id = $1
+          ORDER BY line_no ASC`,
+        [orderItem.id]
+      );
+
+      // Inline the availability roll-up here so the api service doesn't
+      // have to import the worker-side calc helpers (which do UPDATEs
+      // we can't do under the read-only DB role).
+      const lineIds = lines.rows.map((l: any) => l.id);
+      const inspectedMap: Record<number, { amt: number; qty: number }> = {};
+      if (lineIds.length > 0) {
+        const insp = await query(
+          `SELECT order_line_item_id,
+                  COALESCE(SUM(inspected_amount_ex_tax), 0) AS amt,
+                  COALESCE(SUM(inspected_quantity),       0) AS qty
+             FROM delivery_line_items
+            WHERE order_line_item_id = ANY($1::int[])
+            GROUP BY order_line_item_id`,
+          [lineIds]
+        );
+        insp.rows.forEach((r: any) => {
+          inspectedMap[Number(r.order_line_item_id)] = {
+            amt: Number(r.amt) || 0,
+            qty: Number(r.qty) || 0,
+          };
+        });
+      }
+
+      const linesWithAvail = lines.rows.map((line: any) => {
+        const ordAmt = Number(line.amount_ex_tax) || 0;
+        const ordQty = Number(line.quantity) || 0;
+        const insp = inspectedMap[Number(line.id)] || { amt: 0, qty: 0 };
+        return {
+          ...line,
+          inspection: {
+            ordered_amount: ordAmt,
+            ordered_quantity: ordQty,
+            inspected_amount: insp.amt,
+            inspected_quantity: insp.qty,
+            remaining_amount: ordAmt - insp.amt,
+            remaining_quantity: ordQty - insp.qty,
+            overflow_amount: insp.amt > ordAmt,
+            overflow_quantity: insp.qty > ordQty,
+          },
+        };
+      });
+
+      res.json({
+        order_item: orderItem,
+        line_items: linesWithAvail,
+      });
+    } catch (error) {
+      console.error("/api/order-items/by-issue failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/order-line-items/:id/availability", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const ordered = await query(
+        "SELECT amount_ex_tax, quantity FROM order_line_items WHERE id = $1",
+        [id]
+      );
+      if (ordered.rows.length === 0) {
+        return res.status(404).json({ error: "order_line_item not found" });
+      }
+      const ordAmt = Number(ordered.rows[0].amount_ex_tax) || 0;
+      const ordQty = Number(ordered.rows[0].quantity) || 0;
+
+      const inspected = await query(
+        `SELECT COALESCE(SUM(inspected_amount_ex_tax), 0) AS amt,
+                COALESCE(SUM(inspected_quantity),       0) AS qty
+           FROM delivery_line_items
+          WHERE order_line_item_id = $1`,
+        [id]
+      );
+      const inspAmt = Number(inspected.rows[0].amt) || 0;
+      const inspQty = Number(inspected.rows[0].qty) || 0;
+
+      res.json({
+        ordered_amount: ordAmt,
+        ordered_quantity: ordQty,
+        inspected_amount: inspAmt,
+        inspected_quantity: inspQty,
+        remaining_amount: ordAmt - inspAmt,
+        remaining_quantity: ordQty - inspQty,
+        overflow_amount: inspAmt > ordAmt,
+        overflow_quantity: inspQty > ordQty,
+      });
+    } catch (error) {
+      console.error("/api/order-line-items/:id/availability failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
   // /api/dashboard/*
   // -------------------------------------------------------------------
 

@@ -48,6 +48,14 @@ import {
   query,
   getNewDocumentNumber,
 } from "./src/lib/db.ts";
+import {
+  calculateTax,
+  calculateOrderLineAmount,
+  calculateInspectedAmount,
+  recalculateOrderTotal,
+  getInspectionAvailability,
+  previewInspectionOverflow,
+} from "./src/lib/calc.ts";
 
 dotenv.config();
 
@@ -837,6 +845,276 @@ ${details}
       res.status(500).json({ error: String(error) });
     }
   });
+
+  // -------------------------------------------------------------------
+  // /api/order-items/* + /api/order-line-items/* (Phase 4b)
+  //
+  // 発注書の明細レコード CRUD + 検収可能量チェック。
+  // PO ヘッダは既存の order_items にぶら下がる。
+  // 検収書側ガード (`/api/inspections/preview`) は overflow チェックで
+  // 「これから書こうとしている検収明細」が発注額を超えないか事前確認。
+  // -------------------------------------------------------------------
+
+  /**
+   * PO 全体（ヘッダ + 全明細 + 検収状況サマリ）を取得する。
+   * フロント側で発注書を選んだとき、検収書フォームに既存値を
+   * 流し込むために使う。
+   */
+  app.get("/api/order-items/by-issue/:key", async (req, res) => {
+    try {
+      const { key } = req.params;
+      const header = await query(
+        `SELECT id, legal_request_id, vendor_code, description,
+                amount, amount_ex_tax, tax_rate, tax_amount, amount_inc_tax,
+                due_date, backlog_issue_key, created_at
+           FROM order_items
+          WHERE backlog_issue_key = $1`,
+        [key]
+      );
+      if (header.rows.length === 0) {
+        return res.status(404).json({ error: "Order not found" });
+      }
+      const orderItem = header.rows[0];
+
+      const lines = await query(
+        `SELECT id, order_item_id, line_no, item_name, spec,
+                unit_price, quantity, amount_ex_tax,
+                payment_method, payment_date,
+                created_at, updated_at
+           FROM order_line_items
+          WHERE order_item_id = $1
+          ORDER BY line_no ASC`,
+        [orderItem.id]
+      );
+
+      // 各明細の検収累計も同時に返す（フロントで残量バッジを描くため）
+      const linesWithAvail = await Promise.all(
+        lines.rows.map(async (line: any) => {
+          const av = await getInspectionAvailability(line.id);
+          return { ...line, inspection: av };
+        })
+      );
+
+      res.json({
+        order_item: orderItem,
+        line_items: linesWithAvail,
+      });
+    } catch (error) {
+      console.error("/api/order-items/by-issue failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * PO の明細を一括 upsert する（フロントの明細編集 UI から）。
+   * リクエスト body:
+   *   {
+   *     tax_rate: 10,
+   *     lines: [
+   *       { line_no: 1, item_name, spec, unit_price, quantity,
+   *         payment_method, payment_date },
+   *       ...
+   *     ]
+   *   }
+   * 既存明細は line_no が重複したら更新、それ以外は INSERT。
+   * 送信されなかった line_no は削除。
+   * 最後に order_items の総額を recalculateOrderTotal で書き戻し。
+   */
+  app.post("/api/order-items/:id/line-items", express.json(), async (req, res) => {
+    try {
+      const orderItemId = Number(req.params.id);
+      const taxRate = Number(req.body.tax_rate) || 10;
+      const lines: Array<any> = Array.isArray(req.body.lines) ? req.body.lines : [];
+
+      // 計算
+      const computedLines = lines.map((l) => ({
+        line_no: Number(l.line_no),
+        item_name: l.item_name || "",
+        spec: l.spec || "",
+        unit_price: Number(l.unit_price) || 0,
+        quantity: Number(l.quantity) || 0,
+        amount_ex_tax: calculateOrderLineAmount(
+          Number(l.unit_price) || 0,
+          Number(l.quantity) || 0
+        ),
+        payment_method: l.payment_method || null,
+        payment_date: l.payment_date || null,
+      }));
+
+      // 送信された line_no 一覧 → これ以外は削除
+      const keepNos = computedLines.map((l) => l.line_no).filter((n) => n > 0);
+      if (keepNos.length > 0) {
+        await query(
+          `DELETE FROM order_line_items
+            WHERE order_item_id = $1
+              AND line_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
+          [orderItemId, ...keepNos]
+        );
+      } else {
+        await query("DELETE FROM order_line_items WHERE order_item_id = $1", [orderItemId]);
+      }
+
+      // upsert
+      for (const l of computedLines) {
+        await query(
+          `INSERT INTO order_line_items (
+             order_item_id, line_no, item_name, spec,
+             unit_price, quantity, amount_ex_tax,
+             payment_method, payment_date, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+           ON CONFLICT (order_item_id, line_no) DO UPDATE SET
+             item_name      = EXCLUDED.item_name,
+             spec           = EXCLUDED.spec,
+             unit_price     = EXCLUDED.unit_price,
+             quantity       = EXCLUDED.quantity,
+             amount_ex_tax  = EXCLUDED.amount_ex_tax,
+             payment_method = EXCLUDED.payment_method,
+             payment_date   = EXCLUDED.payment_date,
+             updated_at     = CURRENT_TIMESTAMP`,
+          [
+            orderItemId,
+            l.line_no,
+            l.item_name,
+            l.spec,
+            l.unit_price,
+            l.quantity,
+            l.amount_ex_tax,
+            l.payment_method,
+            l.payment_date,
+          ]
+        );
+      }
+
+      const totals = await recalculateOrderTotal(orderItemId, taxRate);
+      res.json({ success: true, totals, line_count: computedLines.length });
+    } catch (error) {
+      console.error("/api/order-items/:id/line-items failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * 単一の PO 明細について、発注 vs 累計検収の availability を返す。
+   * フロントで検収数量を入れるたびにこれを叩いて残量を可視化する用途。
+   */
+  app.get("/api/order-line-items/:id/availability", async (req, res) => {
+    try {
+      const availability = await getInspectionAvailability(Number(req.params.id));
+      res.json(availability);
+    } catch (error) {
+      console.error("/api/order-line-items/:id/availability failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * 検収書の事前 overflow チェック。検収書を確定保存する前に必ず叩く。
+   * body:
+   *   {
+   *     lines: [
+   *       { order_line_item_id, inspected_quantity, acceptance_ratio }
+   *     ]
+   *   }
+   * 1 件でも will_overflow_* が true なら、フロントは送信ボタンを
+   * 無効化し warning を出す。
+   */
+  app.post("/api/inspections/preview", express.json(), async (req, res) => {
+    try {
+      const lines = Array.isArray(req.body.lines) ? req.body.lines : [];
+      const result = await previewInspectionOverflow(lines);
+      const overflowExists = result.some(
+        (r) => r.will_overflow_amount || r.will_overflow_quantity
+      );
+      res.json({ ok: !overflowExists, lines: result });
+    } catch (error) {
+      console.error("/api/inspections/preview failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * 検収書の明細を保存する。送信時に再度 overflow チェックを行い、
+   * 発注額/数量を超えたら HTTP 400 で拒否する (二重防衛)。
+   * body:
+   *   {
+   *     delivery_event_id: ...,
+   *     lines: [
+   *       { order_line_item_id, inspected_quantity, acceptance_ratio,
+   *         rejection_reason }
+   *     ]
+   *   }
+   * 既存の同じ (delivery_event_id, order_line_item_id) は上書き。
+   */
+  app.post(
+    "/api/delivery-events/:id/line-items",
+    express.json(),
+    async (req, res) => {
+      try {
+        const deliveryEventId = Number(req.params.id);
+        const lines = Array.isArray(req.body.lines) ? req.body.lines : [];
+
+        // overflow 二重チェック (フロントを信用しない)
+        const preview = await previewInspectionOverflow(
+          lines.map((l: any) => ({
+            order_line_item_id: Number(l.order_line_item_id),
+            inspected_quantity: Number(l.inspected_quantity) || 0,
+            acceptance_ratio:
+              l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio),
+          }))
+        );
+        const blocking = preview.filter(
+          (p) => p.will_overflow_amount || p.will_overflow_quantity
+        );
+        if (blocking.length > 0) {
+          return res.status(400).json({
+            ok: false,
+            error: "Inspection would exceed ordered amount/quantity.",
+            blocking,
+          });
+        }
+
+        for (const l of lines) {
+          const orderLineId = Number(l.order_line_item_id);
+          const qty = Number(l.inspected_quantity) || 0;
+          const ratio =
+            l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio);
+
+          // unit_price を引いて金額計算
+          const unitRes = await query(
+            "SELECT unit_price FROM order_line_items WHERE id = $1",
+            [orderLineId]
+          );
+          const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
+          const amount = calculateInspectedAmount(unitPrice, qty, ratio);
+
+          await query(
+            `INSERT INTO delivery_line_items (
+               delivery_event_id, order_line_item_id, inspected_quantity,
+               acceptance_ratio, inspected_amount_ex_tax, rejection_reason
+             ) VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (delivery_event_id, order_line_item_id) DO UPDATE SET
+               inspected_quantity = EXCLUDED.inspected_quantity,
+               acceptance_ratio = EXCLUDED.acceptance_ratio,
+               inspected_amount_ex_tax = EXCLUDED.inspected_amount_ex_tax,
+               rejection_reason = EXCLUDED.rejection_reason`,
+            [
+              deliveryEventId,
+              orderLineId,
+              qty,
+              ratio,
+              amount,
+              l.rejection_reason || null,
+            ]
+          );
+        }
+
+        res.json({ ok: true, line_count: lines.length });
+      } catch (error) {
+        console.error("/api/delivery-events/:id/line-items failed:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    }
+  );
 
   // -------------------------------------------------------------------
   // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
