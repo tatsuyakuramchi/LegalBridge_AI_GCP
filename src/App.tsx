@@ -13,6 +13,7 @@ import { VendorsPanel } from "./pages/master/VendorsPanel"
 import { StaffPanel } from "./pages/master/StaffPanel"
 import { RulesPanel } from "./pages/master/RulesPanel"
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
+import { ImportPage } from "./pages/ImportPage"
 import { SettingsPage } from "./pages/SettingsPage"
 
 export default function App() {
@@ -25,6 +26,7 @@ export default function App() {
               <Route element={<AppShell />}>
                 <Route index element={<DashboardPage />} />
                 <Route path="documents/new" element={<DocumentEditorPage />} />
+                <Route path="imports" element={<ImportPage />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="archive" element={<ArchivePage />} />
 

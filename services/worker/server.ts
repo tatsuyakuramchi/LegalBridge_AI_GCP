@@ -1257,6 +1257,418 @@ ${details}
     }
   );
 
+  // -------------------------------------------------------------------
+  // /api/imports/* — Past-document registration (Phase 8)
+  //
+  // 既に紙やメールベースで成立済みの契約 / 発注 / 個別利用許諾を
+  // 「PDF を再生成せず」 DB に追記するためのエンドポイント。
+  // フロント側の ImportPage が叩く。
+  //
+  // - Backlog 課題なし運用に対応: issue_key 未指定なら IMPORT-<ts> を
+  //   採番。後で本物の課題ができたら、document_number 経由で外部
+  //   アセット連携できる (external_assets テーブルが軸)。
+  // - documents テーブルにも row を作るので、ダッシュボードの
+  //   ドキュメント一覧 / アーカイブで履歴として可視化される。
+  // - drive_link を渡せば external_assets.file_link としても登録、
+  //   後続の発注書 → 検収書 / 個別利用許諾 → ロイヤリティ計算書 の
+  //   フォームから「PO 紐付」 「個別紐付」ボタンで参照できる。
+  // -------------------------------------------------------------------
+
+  /**
+   * 過去の発注書を DB に登録 (PDF 生成なし)。
+   * body: {
+   *   issue_key?: string,           // 省略時は IMPORT-<ts>
+   *   document_number?: string,     // 省略時は worker が採番
+   *   drive_link?: string,
+   *   vendor_code?: string,
+   *   vendor_name?: string,
+   *   description?: string,
+   *   tax_rate?: number,            // default 10
+   *   due_date?: string,
+   *   form_data?: any,              // 全フォーム値 (任意, 監査用)
+   *   items: [{ line_no, item_name, spec, unit_price, quantity,
+   *             amount_ex_tax?, payment_method?, payment_date? }]
+   * }
+   */
+  app.post("/api/imports/order", express.json(), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const issueKey =
+        body.issue_key && String(body.issue_key).trim().length > 0
+          ? String(body.issue_key).trim()
+          : `IMPORT-${Date.now()}`;
+      const docNumber =
+        body.document_number && String(body.document_number).trim().length > 0
+          ? String(body.document_number).trim()
+          : await getNewDocumentNumber("purchase_order", "発注書");
+      const taxRate = Number(body.tax_rate) || 10;
+      const items: Array<any> = Array.isArray(body.items) ? body.items : [];
+
+      if (items.length === 0) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "items[] is required (1+ line)" });
+      }
+
+      // 各行の amount_ex_tax を再計算 (フロント送信値は信用しない)
+      const computedLines = items.map((l, idx) => ({
+        line_no: Number(l.line_no) || idx + 1,
+        item_name: l.item_name || "",
+        spec: l.spec || "",
+        unit_price: Number(l.unit_price) || 0,
+        quantity: Number(l.quantity) || 0,
+        amount_ex_tax: calculateOrderLineAmount(
+          Number(l.unit_price) || 0,
+          Number(l.quantity) || 0
+        ),
+        payment_method: l.payment_method || null,
+        payment_date: l.payment_date || null,
+      }));
+
+      const totalExTax = computedLines.reduce(
+        (s, l) => s + l.amount_ex_tax,
+        0
+      );
+
+      // 1. order_items header — backlog_issue_key ベースで upsert
+      const headerRes = await query(
+        `INSERT INTO order_items (
+           backlog_issue_key, description, amount, vendor_code,
+           tax_rate, due_date
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (backlog_issue_key) DO UPDATE SET
+           description = COALESCE(NULLIF(EXCLUDED.description, ''), order_items.description),
+           amount      = EXCLUDED.amount,
+           vendor_code = COALESCE(NULLIF(EXCLUDED.vendor_code, ''), order_items.vendor_code),
+           tax_rate    = EXCLUDED.tax_rate,
+           due_date    = COALESCE(EXCLUDED.due_date, order_items.due_date)
+         RETURNING id`,
+        [
+          issueKey,
+          body.description || "",
+          totalExTax,
+          body.vendor_code || null,
+          taxRate,
+          body.due_date || null,
+        ]
+      );
+      const orderItemId = Number(headerRes.rows[0].id);
+
+      // 2. order_line_items — 既存 lines はいったん削除して入れ直し
+      await query("DELETE FROM order_line_items WHERE order_item_id = $1", [
+        orderItemId,
+      ]);
+      for (const l of computedLines) {
+        await query(
+          `INSERT INTO order_line_items (
+             order_item_id, line_no, item_name, spec,
+             unit_price, quantity, amount_ex_tax,
+             payment_method, payment_date
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            orderItemId,
+            l.line_no,
+            l.item_name,
+            l.spec,
+            l.unit_price,
+            l.quantity,
+            l.amount_ex_tax,
+            l.payment_method,
+            l.payment_date,
+          ]
+        );
+      }
+
+      // 3. 集計 (tax / inc_tax) を header に書き戻し
+      const totals = await recalculateOrderTotal(orderItemId, taxRate);
+
+      // 4. documents 履歴
+      await query(
+        `INSERT INTO documents (
+           document_number, issue_key, template_type, form_data,
+           drive_link, created_by
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (document_number) DO UPDATE SET
+           form_data  = EXCLUDED.form_data,
+           drive_link = EXCLUDED.drive_link`,
+        [
+          docNumber,
+          issueKey,
+          "purchase_order",
+          JSON.stringify({
+            ...(body.form_data || {}),
+            items: computedLines,
+            grandTotalExTax: totalExTax,
+            taxRate,
+            __imported: true,
+          }),
+          body.drive_link || "",
+          "import",
+        ]
+      );
+
+      // 5. external_assets — drive_link があれば「PO 紐付」ボタン経由で
+      //    後続の検収書から参照できるよう登録
+      if (body.drive_link) {
+        await query(
+          `INSERT INTO external_assets
+           (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (asset_number) DO UPDATE SET
+             file_link = EXCLUDED.file_link,
+             counterparty = EXCLUDED.counterparty`,
+          [
+            docNumber,
+            body.description || docNumber,
+            "individual",
+            body.vendor_name || body.vendor_code || "Imported",
+            body.drive_link,
+            issueKey,
+          ]
+        );
+      }
+
+      res.json({
+        ok: true,
+        order_item_id: orderItemId,
+        issue_key: issueKey,
+        document_number: docNumber,
+        line_count: computedLines.length,
+        totals,
+      });
+    } catch (error) {
+      console.error("/api/imports/order failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 過去の個別利用許諾条件書を DB に登録 (PDF 生成なし)。
+   * body: {
+   *   issue_key?: string,
+   *   contract_number?: string,
+   *   ledger_id?: string,
+   *   drive_link?: string,
+   *   licensor_name?, licensor_address?, licensor_rep?,
+   *   licensor_is_corporation?: boolean,
+   *   licensee_name?, licensee_address?, licensee_rep?,
+   *   licensee_is_corporation?: boolean,
+   *   original_work?, product_name_predicted?,
+   *   license_start_date?, license_period_note?,
+   *   supervisor?, credit_display?, remarks?,
+   *   form_data?: any,
+   *   financial_conditions: [{ condition_no, calc_method, rate_pct, ... }]
+   * }
+   */
+  app.post("/api/imports/license-contract", express.json(), async (req, res) => {
+    try {
+      const body = req.body || {};
+      const issueKey =
+        body.issue_key && String(body.issue_key).trim().length > 0
+          ? String(body.issue_key).trim()
+          : `IMPORT-${Date.now()}`;
+      const contractNumber =
+        body.contract_number && String(body.contract_number).trim().length > 0
+          ? String(body.contract_number).trim()
+          : await getNewDocumentNumber(
+              "individual_license_terms",
+              "個別利用許諾条件"
+            );
+      const ledgerId =
+        body.ledger_id && String(body.ledger_id).trim().length > 0
+          ? String(body.ledger_id).trim()
+          : contractNumber;
+
+      const conditions: Array<any> = Array.isArray(body.financial_conditions)
+        ? body.financial_conditions
+        : [];
+
+      // 1. license_contracts header upsert (Phase 7d の /documents/generate
+      //    で使ったロジックと同等)
+      const lcRes = await query(
+        `INSERT INTO license_contracts (
+           backlog_issue_key, ledger_id, ledger_number, contract_number,
+           licensor, original_work,
+           licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
+           licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
+           product_name_predicted,
+           license_start_date, license_period_note,
+           supervisor, credit_display, remarks
+         )
+         VALUES (
+           $1, $2, $3, $4, $5, $6,
+           $7, $8, $9, $10,
+           $11, $12, $13, $14,
+           $15, $16, $17, $18, $19, $20
+         )
+         ON CONFLICT (backlog_issue_key) DO UPDATE SET
+           contract_number          = EXCLUDED.contract_number,
+           ledger_number            = COALESCE(NULLIF(EXCLUDED.ledger_number, ''), license_contracts.ledger_number),
+           licensor                 = COALESCE(NULLIF(EXCLUDED.licensor, ''), license_contracts.licensor),
+           original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), license_contracts.original_work),
+           licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), license_contracts.licensor_name),
+           licensor_address         = COALESCE(NULLIF(EXCLUDED.licensor_address, ''), license_contracts.licensor_address),
+           licensor_rep             = COALESCE(NULLIF(EXCLUDED.licensor_rep, ''), license_contracts.licensor_rep),
+           licensor_is_corporation  = EXCLUDED.licensor_is_corporation,
+           licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), license_contracts.licensee_name),
+           licensee_address         = COALESCE(NULLIF(EXCLUDED.licensee_address, ''), license_contracts.licensee_address),
+           licensee_rep             = COALESCE(NULLIF(EXCLUDED.licensee_rep, ''), license_contracts.licensee_rep),
+           licensee_is_corporation  = EXCLUDED.licensee_is_corporation,
+           product_name_predicted   = COALESCE(NULLIF(EXCLUDED.product_name_predicted, ''), license_contracts.product_name_predicted),
+           license_start_date       = COALESCE(EXCLUDED.license_start_date, license_contracts.license_start_date),
+           license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), license_contracts.license_period_note),
+           supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), license_contracts.supervisor),
+           credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), license_contracts.credit_display),
+           remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), license_contracts.remarks)
+         RETURNING id`,
+        [
+          issueKey,
+          ledgerId,
+          contractNumber,
+          contractNumber,
+          body.licensor_name || "",
+          body.original_work || "",
+          body.licensor_name || "",
+          body.licensor_address || "",
+          body.licensor_rep || "",
+          !!body.licensor_is_corporation,
+          body.licensee_name || "",
+          body.licensee_address || "",
+          body.licensee_rep || "",
+          !!body.licensee_is_corporation,
+          body.product_name_predicted || "",
+          body.license_start_date || null,
+          body.license_period_note || "",
+          body.supervisor || "",
+          body.credit_display || "",
+          body.remarks || "",
+        ]
+      );
+      const lcId = Number(lcRes.rows[0].id);
+
+      // 2. license_financial_conditions — 過去契約は royalty_calculations
+      //    の参照がないので RESTRICT 衝突は起きないはず。が、念のため
+      //    削除を try/catch で守る。
+      const keepNos = conditions
+        .map((c) => Number(c.condition_no))
+        .filter((n) => n > 0);
+      try {
+        if (keepNos.length > 0) {
+          await query(
+            `DELETE FROM license_financial_conditions
+              WHERE license_contract_id = $1
+                AND condition_no NOT IN (${keepNos
+                  .map((_, i) => `$${i + 2}`)
+                  .join(",")})`,
+            [lcId, ...keepNos]
+          );
+        } else {
+          await query(
+            "DELETE FROM license_financial_conditions WHERE license_contract_id = $1",
+            [lcId]
+          );
+        }
+      } catch (delErr) {
+        console.warn(
+          "Could not prune existing financial conditions on import:",
+          delErr
+        );
+      }
+
+      for (const c of conditions) {
+        const condNo = Number(c.condition_no);
+        if (!Number.isFinite(condNo) || condNo < 1) continue;
+        await query(
+          `INSERT INTO license_financial_conditions (
+             license_contract_id, condition_no,
+             region_language_label, calc_method, rate_pct,
+             base_price_label, calc_period, currency,
+             formula_text, payment_terms, mg_amount, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+           ON CONFLICT (license_contract_id, condition_no) DO UPDATE SET
+             region_language_label = EXCLUDED.region_language_label,
+             calc_method           = EXCLUDED.calc_method,
+             rate_pct              = EXCLUDED.rate_pct,
+             base_price_label      = EXCLUDED.base_price_label,
+             calc_period           = EXCLUDED.calc_period,
+             currency              = EXCLUDED.currency,
+             formula_text          = EXCLUDED.formula_text,
+             payment_terms         = EXCLUDED.payment_terms,
+             mg_amount             = EXCLUDED.mg_amount,
+             updated_at            = CURRENT_TIMESTAMP`,
+          [
+            lcId,
+            condNo,
+            c.region_language_label || null,
+            c.calc_method || null,
+            c.rate_pct != null ? Number(c.rate_pct) : null,
+            c.base_price_label || null,
+            c.calc_period || null,
+            c.currency || "JPY",
+            c.formula_text || null,
+            c.payment_terms || null,
+            c.mg_amount != null ? Number(c.mg_amount) : 0,
+          ]
+        );
+      }
+
+      // 3. documents 履歴
+      await query(
+        `INSERT INTO documents (
+           document_number, issue_key, template_type, form_data,
+           drive_link, created_by
+         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (document_number) DO UPDATE SET
+           form_data  = EXCLUDED.form_data,
+           drive_link = EXCLUDED.drive_link`,
+        [
+          contractNumber,
+          issueKey,
+          "individual_license_terms",
+          JSON.stringify({
+            ...(body.form_data || {}),
+            financial_conditions: conditions,
+            __imported: true,
+          }),
+          body.drive_link || "",
+          "import",
+        ]
+      );
+
+      // 4. external_assets
+      if (body.drive_link) {
+        await query(
+          `INSERT INTO external_assets
+           (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (asset_number) DO UPDATE SET
+             file_link = EXCLUDED.file_link,
+             counterparty = EXCLUDED.counterparty`,
+          [
+            contractNumber,
+            body.original_work || contractNumber,
+            "contract",
+            body.licensor_name || "Imported",
+            body.drive_link,
+            issueKey,
+          ]
+        );
+      }
+
+      res.json({
+        ok: true,
+        license_contract_id: lcId,
+        issue_key: issueKey,
+        contract_number: contractNumber,
+        ledger_id: ledgerId,
+        condition_count: conditions.length,
+      });
+    } catch (error) {
+      console.error("/api/imports/license-contract failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   /**
    * 利用許諾料計算書を preview。MG 消化と税の試算を返す。
    * フロントは数量・サンプル数を変更するたびにこれを叩いて
