@@ -1331,11 +1331,15 @@ ${details}
       );
 
       // 1. order_items header — backlog_issue_key ベースで upsert
+      //
+      // 注: item_no は INTEGER NOT NULL (UNIQUE(legal_request_id, item_no))。
+      // import は legal_request 紐付けなしの単発レコードなので、item_no=1
+      // で固定する (legal_request_id が NULL なので UNIQUE 違反は起きない)。
       const headerRes = await query(
         `INSERT INTO order_items (
-           backlog_issue_key, description, amount, vendor_code,
+           backlog_issue_key, item_no, description, amount, vendor_code,
            tax_rate, due_date
-         ) VALUES ($1, $2, $3, $4, $5, $6)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7)
          ON CONFLICT (backlog_issue_key) DO UPDATE SET
            description = COALESCE(NULLIF(EXCLUDED.description, ''), order_items.description),
            amount      = EXCLUDED.amount,
@@ -1345,6 +1349,7 @@ ${details}
          RETURNING id`,
         [
           issueKey,
+          1, // item_no
           body.description || "",
           totalExTax,
           body.vendor_code || null,
@@ -2420,10 +2425,22 @@ ${details}
 
       // Operational tables: orders / deliveries / license / royalties.
       if (templateType.includes("purchase_order")) {
+        // item_no は INTEGER NOT NULL。legal_request_id 紐付けがある
+        // ケースで item_no が衝突しないよう、当該 legal_request の
+        // 既存 max(item_no)+1 を採番する (LineItem の line_no とは別物)。
+        // backlog_issue_key で upsert。
         await query(
-          "INSERT INTO order_items (backlog_issue_key, description, amount, vendor_code, spec) VALUES ($1, $2, $3, $4, $5)",
+          `INSERT INTO order_items
+             (backlog_issue_key, item_no, description, amount, vendor_code, spec)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+             description = COALESCE(NULLIF(EXCLUDED.description, ''), order_items.description),
+             amount      = EXCLUDED.amount,
+             vendor_code = COALESCE(NULLIF(EXCLUDED.vendor_code, ''), order_items.vendor_code),
+             spec        = COALESCE(NULLIF(EXCLUDED.spec, ''), order_items.spec)`,
           [
             issueKey,
+            1, // item_no — 単発 PO の前提 (再生成時も同じ item_no を使う)
             formData.description || issue.summary,
             formData.amount || 0,
             formData.vendorCode || "",
