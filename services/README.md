@@ -76,10 +76,77 @@ at the repo root.
 
 - [x] Phase 1: GAS dead-code cleanup (`forwardLegalRequest_` et al)
 - [x] Phase 2a/b: Scaffolding + service file copies
-- [ ] Phase 2c: Move read endpoints from top-level `server.ts` → `services/api/server.ts`
-- [ ] Phase 2d: Move write/webhook/doc-gen endpoints → `services/worker/server.ts`
+- [x] Phase 2c: Read endpoints moved to `services/api/server.ts`
+- [x] Phase 2d-1: Webhook + master writes moved to `services/worker/server.ts`
+- [ ] Phase 2d-2: Document generation, templates, workflow-settings, CSV import (still served by top-level `server.ts`; stubs in worker return HTTP 501)
 - [ ] Phase 2e: Wire Cloud Build triggers on `release/api` / `release/worker`
 - [ ] Phase 2f: Decommission top-level `server.ts`, `Dockerfile`, `cloudbuild.yaml`
 
 Top-level `server.ts` continues to be the production source of truth
-until Phase 2c–2d land and the new Cloud Run services are validated.
+until Phase 2d-2 lands and the new Cloud Run services are validated.
+
+## Phase 2e: Cloud Build trigger setup
+
+Run these once in GCP Cloud Build to wire the release-branch triggers
+(this is operational config, not code in the repo):
+
+```bash
+PROJECT=your-gcp-project-id
+REPO_OWNER=tatsuyakuramchi
+REPO_NAME=LegalBridge_AI_GCP
+
+# Trigger for legalbridge-search-api
+gcloud builds triggers create github \
+  --project=$PROJECT \
+  --name=legalbridge-search-api-release \
+  --repo-owner=$REPO_OWNER \
+  --repo-name=$REPO_NAME \
+  --branch-pattern='^release/api$' \
+  --build-config=cloudbuild-api.yaml
+
+# Trigger for legalbridge-document-worker
+gcloud builds triggers create github \
+  --project=$PROJECT \
+  --name=legalbridge-document-worker-release \
+  --repo-owner=$REPO_OWNER \
+  --repo-name=$REPO_NAME \
+  --branch-pattern='^release/worker$' \
+  --build-config=cloudbuild-worker.yaml
+```
+
+Initial deploy:
+
+```bash
+# Push current main contents to release branches to fire the triggers.
+git checkout release/api && git merge main && git push origin release/api
+git checkout release/worker && git merge main && git push origin release/worker
+```
+
+After both Cloud Run services are deployed and respond on
+`/api/status`, switch consumer URLs:
+
+1. **GAS Slack Gateway** — update `CLOUD_RUN_BASE_URL` script property
+   to the new `legalbridge-search-api` URL.
+2. **Backlog Webhook** — update the webhook URL to the new
+   `legalbridge-document-worker` `/api/webhooks/backlog`.
+3. **Admin UI** — point reads to `legalbridge-search-api`, writes to
+   `legalbridge-document-worker` (will require an env var split or
+   reverse proxy; defer until Phase 2d-2 lands so the worker covers
+   every write route the UI uses).
+
+## DB read-only role (Phase 2 hardening)
+
+Once `legalbridge-search-api` is stable, create a read-only Postgres
+role for it:
+
+```sql
+CREATE ROLE lb_read WITH LOGIN PASSWORD '…';
+GRANT CONNECT ON DATABASE legalbridge TO lb_read;
+GRANT USAGE ON SCHEMA public TO lb_read;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO lb_read;
+ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT ON TABLES TO lb_read;
+```
+
+Then bind `DATABASE_URL` for the `legalbridge-search-api` Cloud Run
+revision to use `lb_read`. The worker keeps the existing read-write
+role.
