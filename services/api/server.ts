@@ -235,6 +235,91 @@ async function startServer() {
         template === "inspection_certificate_detailed" ||
         template === "inspection_certificate_v2"
       ) {
+        // Phase 7c: 親 PO の明細 + 検収累計を取得 (Backlog 親子 issue 経由)。
+        //   1. この issue の parentIssueId を Backlog から拾う
+        //   2. parentIssueKey → order_items を見つける
+        //   3. order_line_items を inspection availability 付きで返す
+        try {
+          const fullIssue = await backlogService.getIssue(key);
+          let parentKey: string | null = null;
+          if (fullIssue?.parentIssueId) {
+            try {
+              const parent = await backlogService.getIssue(
+                String(fullIssue.parentIssueId)
+              );
+              parentKey = parent?.issueKey || null;
+            } catch (_) {
+              // parent fetch failed; fall through
+            }
+          }
+          if (parentKey) {
+            const poHeader = await query(
+              `SELECT id, amount_ex_tax, tax_rate, backlog_issue_key
+                 FROM order_items
+                WHERE backlog_issue_key = $1`,
+              [parentKey]
+            );
+            if (poHeader.rows.length > 0) {
+              const poId = poHeader.rows[0].id;
+              const lines = await query(
+                `SELECT id, line_no, item_name, spec, unit_price, quantity,
+                        amount_ex_tax, payment_method, payment_date
+                   FROM order_line_items
+                  WHERE order_item_id = $1
+                  ORDER BY line_no ASC`,
+                [poId]
+              );
+              const lineIds = lines.rows.map((l: any) => l.id);
+              const inspMap: Record<number, { amt: number; qty: number }> = {};
+              if (lineIds.length > 0) {
+                const insp = await query(
+                  `SELECT order_line_item_id,
+                          COALESCE(SUM(inspected_amount_ex_tax), 0) AS amt,
+                          COALESCE(SUM(inspected_quantity),       0) AS qty
+                     FROM delivery_line_items
+                    WHERE order_line_item_id = ANY($1::int[])
+                    GROUP BY order_line_item_id`,
+                  [lineIds]
+                );
+                insp.rows.forEach((r: any) => {
+                  inspMap[Number(r.order_line_item_id)] = {
+                    amt: Number(r.amt) || 0,
+                    qty: Number(r.qty) || 0,
+                  };
+                });
+              }
+              context["parent_po_issue_key"] = parentKey;
+              context["parent_po_id"] = poId;
+              context["order_lines_for_inspection"] = lines.rows.map((l: any) => {
+                const ordAmt = Number(l.amount_ex_tax) || 0;
+                const ordQty = Number(l.quantity) || 0;
+                const i = inspMap[Number(l.id)] || { amt: 0, qty: 0 };
+                return {
+                  id: Number(l.id),
+                  line_no: Number(l.line_no),
+                  item_name: l.item_name || "",
+                  spec: l.spec || "",
+                  unit_price: Number(l.unit_price) || 0,
+                  quantity: ordQty,
+                  amount_ex_tax: ordAmt,
+                  inspection: {
+                    ordered_amount: ordAmt,
+                    ordered_quantity: ordQty,
+                    inspected_amount: i.amt,
+                    inspected_quantity: i.qty,
+                    remaining_amount: ordAmt - i.amt,
+                    remaining_quantity: ordQty - i.qty,
+                    overflow_amount: i.amt > ordAmt,
+                    overflow_quantity: i.qty > ordQty,
+                  },
+                };
+              });
+            }
+          }
+        } catch (parentErr) {
+          console.warn("parent PO lookup failed:", parentErr);
+        }
+
         const deliveryQuery = `
           SELECT de.*, oi.amount as order_amount, oi.description as item_desc, oi.spec as item_spec,
                  v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type, v.account_number, v.account_holder_kana as account_holder,

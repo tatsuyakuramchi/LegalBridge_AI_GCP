@@ -1735,13 +1735,27 @@ ${details}
           "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
           [issueKey, formData.counterparty || formData.PARTY_B_NAME, issue.summary]
         );
-        const orderItemResult = await query(
-          "SELECT id FROM order_items WHERE backlog_issue_key = $1",
-          [issueKey]
-        );
-        const orderItemId = orderItemResult.rows[0]?.id || null;
-        await query(
-          "INSERT INTO delivery_events (backlog_issue_key, order_item_id, delivered_at, inspection_deadline, status, note) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (backlog_issue_key) DO UPDATE SET inspection_deadline = EXCLUDED.inspection_deadline, status = EXCLUDED.status",
+        // 親 PO 検索: formData.parent_po_id (form-context が埋めた値) 優先、
+        // 無ければこの issue 自体の order_items を見る (legacy fallback)。
+        let orderItemId: number | null = null;
+        if (formData.parent_po_id) {
+          orderItemId = Number(formData.parent_po_id);
+        } else {
+          const orderItemResult = await query(
+            "SELECT id FROM order_items WHERE backlog_issue_key = $1",
+            [issueKey]
+          );
+          orderItemId = orderItemResult.rows[0]?.id || null;
+        }
+
+        const deliveryUpsert = await query(
+          `INSERT INTO delivery_events (backlog_issue_key, order_item_id, delivered_at, inspection_deadline, status, note)
+           VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+             order_item_id = EXCLUDED.order_item_id,
+             inspection_deadline = EXCLUDED.inspection_deadline,
+             status = EXCLUDED.status
+           RETURNING id`,
           [
             issueKey,
             orderItemId,
@@ -1751,6 +1765,75 @@ ${details}
             formData.REMARKS || "",
           ]
         );
+        const deliveryEventId = deliveryUpsert.rows[0]?.id;
+
+        // Phase 7c: 検収明細を永続化する。
+        // フロントが formData.delivery_line_items[] を載せていれば
+        // overflow チェック付きで upsert する。
+        if (
+          deliveryEventId &&
+          Array.isArray(formData.delivery_line_items) &&
+          formData.delivery_line_items.length > 0
+        ) {
+          const incoming = (formData.delivery_line_items as Array<any>).map(
+            (l) => ({
+              order_line_item_id: Number(l.order_line_item_id),
+              inspected_quantity: Number(l.inspected_quantity) || 0,
+              acceptance_ratio:
+                l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio),
+              rejection_reason: l.rejection_reason || null,
+            })
+          );
+          // サーバ側 overflow チェック (二重防衛)。フロントの数字を信用しない。
+          const preview = await previewInspectionOverflow(
+            incoming.map((l) => ({
+              order_line_item_id: l.order_line_item_id,
+              inspected_quantity: l.inspected_quantity,
+              acceptance_ratio: l.acceptance_ratio,
+            }))
+          );
+          const blocking = preview.filter(
+            (p) => p.will_overflow_amount || p.will_overflow_quantity
+          );
+          if (blocking.length > 0) {
+            throw new Error(
+              "Inspection overflow detected on save: " +
+                JSON.stringify(blocking.map((b) => b.order_line_item_id))
+            );
+          }
+
+          for (const l of incoming) {
+            const unitRes = await query(
+              "SELECT unit_price FROM order_line_items WHERE id = $1",
+              [l.order_line_item_id]
+            );
+            const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
+            const amt = calculateInspectedAmount(
+              unitPrice,
+              l.inspected_quantity,
+              l.acceptance_ratio
+            );
+            await query(
+              `INSERT INTO delivery_line_items (
+                 delivery_event_id, order_line_item_id, inspected_quantity,
+                 acceptance_ratio, inspected_amount_ex_tax, rejection_reason
+               ) VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (delivery_event_id, order_line_item_id) DO UPDATE SET
+                 inspected_quantity      = EXCLUDED.inspected_quantity,
+                 acceptance_ratio        = EXCLUDED.acceptance_ratio,
+                 inspected_amount_ex_tax = EXCLUDED.inspected_amount_ex_tax,
+                 rejection_reason        = EXCLUDED.rejection_reason`,
+              [
+                deliveryEventId,
+                l.order_line_item_id,
+                l.inspected_quantity,
+                l.acceptance_ratio,
+                amt,
+                l.rejection_reason,
+              ]
+            );
+          }
+        }
       } else if (templateType === "license_master") {
         await query(
           `INSERT INTO license_contracts (backlog_issue_key, ledger_id, ledger_number, licensor, original_work)

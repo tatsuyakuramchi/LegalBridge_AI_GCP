@@ -4,6 +4,11 @@ import { FormSection } from './FormSection';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
 import { LineItemTable, type LineItem } from './LineItemTable';
+import {
+  DeliveryLineItemTable,
+  type OrderLineForInspection,
+  type DeliveryLine,
+} from './DeliveryLineItemTable';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -984,32 +989,69 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         </div>
 
-        <FormSection
-          title="IV. 納品明細"
-          variant="indigo"
-          icon={<Scale className="w-4 h-4" />}
-          headerActions={
-            onLinkAsset && (
-              <button
-                type="button"
-                onClick={() =>
-                  onLinkAsset((asset) =>
-                    setFormData({
-                      ...formData,
-                      linked_po_number: asset.asset_number,
-                      linked_po_link: asset.file_link,
-                    })
-                  )
-                }
-                className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
-              >
-                <Link className="w-2 h-2" /> PO紐付
-              </button>
-            )
-          }
-        >
-          {renderGroup('IV. 納品明細')}
-        </FormSection>
+        {/* Phase 7c: 親 PO の明細別検収テーブル。
+            form-context が parent_po_id + order_lines_for_inspection[] を
+            返したときだけ表示する。それ以外 (親なし) のときは従来の
+            自由入力フォームにフォールバック。 */}
+        {Array.isArray(formData.order_lines_for_inspection) &&
+        formData.order_lines_for_inspection.length > 0 ? (
+          <FormSection
+            title="IV. 明細別検収 (親 PO 連動)"
+            variant="indigo"
+            icon={<Scale className="w-4 h-4" />}
+            headerActions={
+              <span className="text-[9px] font-mono text-muted-foreground italic">
+                親 PO: {formData.parent_po_issue_key || "—"}
+              </span>
+            }
+          >
+            <DeliveryLineItemTable
+              orderLines={formData.order_lines_for_inspection as OrderLineForInspection[]}
+              values={(Array.isArray(formData.delivery_line_items)
+                ? formData.delivery_line_items
+                : []) as DeliveryLine[]}
+              onChange={(values: DeliveryLine[]) => {
+                const total = values.reduce(
+                  (sum, v) => sum + (Number(v.inspected_amount_ex_tax) || 0),
+                  0
+                );
+                setFormData({
+                  ...formData,
+                  delivery_line_items: values,
+                  // 既存の自由入力フィールド deliveredAmountStr もサマリで埋める
+                  deliveredAmountStr: total.toLocaleString("ja-JP"),
+                });
+              }}
+            />
+          </FormSection>
+        ) : (
+          <FormSection
+            title="IV. 納品明細 (自由入力)"
+            variant="indigo"
+            icon={<Scale className="w-4 h-4" />}
+            headerActions={
+              onLinkAsset && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    onLinkAsset((asset) =>
+                      setFormData({
+                        ...formData,
+                        linked_po_number: asset.asset_number,
+                        linked_po_link: asset.file_link,
+                      })
+                    )
+                  }
+                  className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
+                >
+                  <Link className="w-2 h-2" /> PO紐付
+                </button>
+              )
+            }
+          >
+            {renderGroup('IV. 納品明細')}
+          </FormSection>
+        )}
 
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
