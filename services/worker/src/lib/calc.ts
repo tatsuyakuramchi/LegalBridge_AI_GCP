@@ -1,19 +1,21 @@
 /**
- * Tax + line-item + inspection arithmetic for the LegalBridge document
- * pipeline. Single source of truth for the rounding rules and the
- * order ↔ inspection invariants.
+ * Order / inspection arithmetic + DB aggregation helpers.
  *
- * Conventions (確認済):
- *   - 消費税は「切り上げ」(Math.ceil) — agreed with Legal.
- *   - 数量・歩留率は DECIMAL(10,4) / DECIMAL(5,4) なので JavaScript の
- *     number に丸めると最大 4 桁の小数誤差が乗りうる。実務的影響は
- *     ない (1円未満は最終 Math.ceil で吸収) が、SQL で扱った値は
- *     `Number(...)` で読み出しているのでこのモジュール内も number 前提。
- *   - amount_ex_tax / inspected_amount_ex_tax は最終的に小数を許容しない
- *     ので、unit_price × quantity の計算結果も Math.round で円単位に丸める。
+ * Phase 6 で純粋な数式部分は billing.ts に分離した:
+ *   calculateOrderLineAmount / calculateInspectedAmount は薄い wrapper
+ *   になり, 中で billing.calculateFee を呼ぶ. これにより
+ *   発注書↔検収書 と 利用許諾条件書↔利用許諾料計算書 の math が
+ *   1 つの実装に集約された.
+ *
+ * 残っているのはこのモジュール固有の責務:
+ *   - calculateTax: 税の切り上げ (billing からも import される)
+ *   - recalculateOrderTotal: 明細合計 → ヘッダ反映 (DB SQL)
+ *   - getInspectionAvailability: 発注 vs 累計検収 (DB SQL)
+ *   - previewInspectionOverflow: 検収書確定前の overflow チェック (DB SQL)
  */
 
 import { query } from "./db.ts";
+import { calculateFee, grossOf } from "./billing.ts";
 
 // -------------------------------------------------------------------
 // Pure helpers (no DB)
@@ -57,31 +59,37 @@ export function validateTaxConsistency(
 
 /**
  * PO の 1 明細あたりの税抜小計を計算する。
- *   amount_ex_tax = round(unit_price × quantity)
+ *   amount_ex_tax = ceil(unit_price × quantity)
+ *
+ * Phase 6 で billing.calculateFee に委譲。
+ * (歴史的には Math.round だったが Math.ceil に統一. 最大 1 円ズレるが
+ *  Legal 合意済.)
  */
 export function calculateOrderLineAmount(
   unitPrice: number,
   quantity: number
 ): number {
-  return Math.round((Number(unitPrice) || 0) * (Number(quantity) || 0));
+  return grossOf({ type: "fixed", unit_price: unitPrice, quantity });
 }
 
 /**
  * 検収明細 1 行の税抜額を計算する。
- *   inspected_amount = round(unit_price × inspected_quantity × acceptance_ratio)
+ *   inspected_amount = ceil(unit_price × inspected_quantity × acceptance_ratio)
  *
  * acceptance_ratio が指定されない場合は 1.0 (全量検収) として扱う。
+ * 内部実装は billing.calculateFee に委譲。
  */
 export function calculateInspectedAmount(
   unitPrice: number,
   inspectedQuantity: number,
   acceptanceRatio: number = 1.0
 ): number {
-  const up = Number(unitPrice) || 0;
-  const qty = Number(inspectedQuantity) || 0;
-  const ratio = Number(acceptanceRatio);
-  const safeRatio = Number.isFinite(ratio) ? ratio : 1.0;
-  return Math.round(up * qty * safeRatio);
+  const result = calculateFee(
+    { type: "fixed", unit_price: unitPrice, quantity: inspectedQuantity },
+    { acceptance_ratio: acceptanceRatio },
+    0 // tax は別計算なのでここでは 0
+  );
+  return result.after_acceptance;
 }
 
 // -------------------------------------------------------------------

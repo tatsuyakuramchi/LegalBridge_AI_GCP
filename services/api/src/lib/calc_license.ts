@@ -1,23 +1,20 @@
 /**
- * Royalty + MG (Minimum Guarantee) arithmetic for the licensing pipeline.
+ * Licensing pipeline DB helpers + thin wrappers around billing.calculateFee.
  *
- * Mirrors calc.ts (発注書/検収書 用) for the 個別利用許諾条件書 →
- * 利用許諾料計算書 flow. Same rounding policy:
- *   - 消費税およびロイヤリティ算定は Math.ceil で切り上げ
- *     (Legal-confirmed).
- *   - 数量 / 料率は DECIMAL(10,4) / DECIMAL(7,4) なので JS number
- *     経由でも実用上の誤差は出ない。
+ * Phase 6 で純粋な計算 (gross / MG / 税) は billing.ts に統合された。
+ * このモジュールに残るのは licensing 固有の DB 集計と shape adapter:
+ *   - calculateGrossRoyalty / applyMgConsumption: billing への wrapper
+ *   - getMgConsumedToDate: royalty_calculations の累積 SUM
+ *   - previewRoyaltyCalculation: 1 計算書分の試算 (DB lookup + billing)
+ *   - getLicenseMgStatus: 金銭条件単位の MG 残高サマリ
  *
- * MG model:
- *   - mg_amount は license_financial_conditions 単位の総額。
- *   - 各 royalty_calculations 行は mg_consumed_this_time に「今回
- *     消化した額」を保存する。
- *   - 過去消化分は SUM(prior royalty_calculations.mg_consumed_this_time)
- *     で読み出す (calc_license.ts でカプセル化)。
+ * 計算順序 (Legal-confirmed):
+ *   gross → MG 相殺 → AG 相殺 → actual_ex_tax → ceil 消費税 → total
  */
 
 import { query } from "./db.ts";
 import { calculateTax } from "./calc.ts";
+import { calculateFee } from "./billing.ts";
 
 // -------------------------------------------------------------------
 // Pure helpers (no DB)
@@ -26,26 +23,31 @@ import { calculateTax } from "./calc.ts";
 /**
  * 総ロイヤリティ (税抜) を計算する。
  *   gross = ceil(unit_price × billable_quantity × rate_pct / 100)
+ *
+ * Phase 6 で billing.calculateFee に委譲。シグネチャは後方互換のため維持。
  */
 export function calculateGrossRoyalty(
   unitPrice: number,
   billableQuantity: number,
   ratePct: number
 ): number {
-  const up = Number(unitPrice) || 0;
-  const qty = Number(billableQuantity) || 0;
-  const rate = Number(ratePct) || 0;
-  return Math.ceil(up * qty * (rate / 100));
+  return calculateFee(
+    {
+      type: "performance",
+      base_price: unitPrice,
+      quantity: billableQuantity,
+      rate_pct: ratePct,
+    },
+    {},
+    0 // 税はここでは別計算
+  ).gross_ex_tax;
 }
 
 /**
  * MG 消化を適用する。grossRoyalty と mgRemainingBefore を受け取り、
  * 今回消化額・残額・MG 消化完了フラグ・実支払額を返す。
  *
- * ルール:
- *   - MG 残 0 以下: gross 全額が actual_royalty。
- *   - MG 残 >= gross: 今回 gross 全額を MG から相殺、actual_royalty = 0。
- *   - MG 残 < gross: MG 全額消化、actual_royalty = gross - MG残。
+ * Phase 6 で billing.calculateFee の MG 段に委譲。AG は使わず, 税も別。
  */
 export function applyMgConsumption(
   grossRoyalty: number,
@@ -56,31 +58,26 @@ export function applyMgConsumption(
   mg_fully_consumed: boolean;
   actual_royalty: number;
 } {
-  const gross = Number(grossRoyalty) || 0;
-  const remainBefore = Number(mgRemainingBefore) || 0;
-
-  if (remainBefore <= 0) {
-    return {
-      mg_consumed_this_time: 0,
-      mg_remaining_after: 0,
-      mg_fully_consumed: true,
-      actual_royalty: gross,
-    };
-  }
-  if (remainBefore >= gross) {
-    return {
-      mg_consumed_this_time: gross,
-      mg_remaining_after: remainBefore - gross,
-      mg_fully_consumed: false,
-      actual_royalty: 0,
-    };
-  }
-  // 部分: MG が gross の一部しかカバーしない
+  // billing.calculateFee に MG 残を mg_amount として渡し,
+  // mg_consumed_before=0 として「丸ごと残っている」状態を表現する.
+  // gross は固定で渡すために unit_price=1, quantity=gross の Fixed term を使う.
+  const r = calculateFee(
+    {
+      type: "fixed",
+      unit_price: Math.max(0, Number(grossRoyalty) || 0),
+      quantity: 1,
+    },
+    {
+      mg_amount: Math.max(0, Number(mgRemainingBefore) || 0),
+      mg_consumed_before: 0,
+    },
+    0
+  );
   return {
-    mg_consumed_this_time: remainBefore,
-    mg_remaining_after: 0,
-    mg_fully_consumed: true,
-    actual_royalty: gross - remainBefore,
+    mg_consumed_this_time: r.mg_consumed_this_time,
+    mg_remaining_after: r.mg_remaining_after,
+    mg_fully_consumed: r.mg_fully_consumed,
+    actual_royalty: r.actual_ex_tax,
   };
 }
 
@@ -133,6 +130,11 @@ export async function previewRoyaltyCalculation(params: {
   quantity: number;
   sample_quantity?: number;
   tax_rate?: number;
+  /**
+   * AG fields are optional. If you have AG on a license, pass the total
+   * here; mg/ag consumed-before are looked up from royalty_calculations.
+   */
+  ag_amount?: number;
 }): Promise<{
   unit_price: number;
   quantity: number;
@@ -146,11 +148,15 @@ export async function previewRoyaltyCalculation(params: {
   mg_consumed_after: number;
   mg_remaining: number;
   mg_fully_consumed: boolean;
+  ag_amount: number;
+  ag_offset_this_time: number;
+  ag_remaining: number;
   actual_royalty_ex_tax: number;
   tax_rate: number;
   tax_amount: number;
   total_payment_inc_tax: number;
   currency: string;
+  formula_breakdown: string;
 }> {
   const condRes = await query(
     `SELECT rate_pct, mg_amount, currency
@@ -171,19 +177,35 @@ export async function previewRoyaltyCalculation(params: {
   const quantity = Number(params.quantity) || 0;
   const sampleQty = Number(params.sample_quantity) || 0;
   const billableQty = Math.max(0, quantity - sampleQty);
+  const taxRate = params.tax_rate != null ? Number(params.tax_rate) : 10;
+  const agAmount = Number(params.ag_amount) || 0;
 
-  const gross = calculateGrossRoyalty(unitPrice, billableQty, ratePct);
-
-  const consumedToDate = await getMgConsumedToDate(
+  // 過去消化分は DB 集計から
+  const mgConsumedBefore = await getMgConsumedToDate(
     params.license_contract_id,
     params.license_financial_condition_id
   );
-  const mgRemainingBefore = Math.max(0, mgAmount - consumedToDate);
+  // AG 累積消化は royalty_calculations にカラム未追加なので
+  // 当面 0 とみなす (Phase 6 後の拡張余地として残す).
+  const agConsumedBefore = 0;
 
-  const mg = applyMgConsumption(gross, mgRemainingBefore);
-
-  const taxRate = params.tax_rate != null ? Number(params.tax_rate) : 10;
-  const { taxAmount, amountIncTax } = calculateTax(mg.actual_royalty, taxRate);
+  // すべて billing.calculateFee に集約
+  const r = calculateFee(
+    {
+      type: "performance",
+      base_price: unitPrice,
+      quantity,
+      rate_pct: ratePct,
+    },
+    {
+      sample_quantity: sampleQty,
+      mg_amount: mgAmount,
+      mg_consumed_before: mgConsumedBefore,
+      ag_amount: agAmount,
+      ag_consumed_before: agConsumedBefore,
+    },
+    taxRate
+  );
 
   return {
     unit_price: unitPrice,
@@ -191,18 +213,22 @@ export async function previewRoyaltyCalculation(params: {
     sample_quantity: sampleQty,
     billable_quantity: billableQty,
     rate_pct: ratePct,
-    gross_royalty_ex_tax: gross,
+    gross_royalty_ex_tax: r.gross_ex_tax,
     mg_amount: mgAmount,
-    mg_consumed_before: consumedToDate,
-    mg_consumed_this_time: mg.mg_consumed_this_time,
-    mg_consumed_after: consumedToDate + mg.mg_consumed_this_time,
-    mg_remaining: mg.mg_remaining_after,
-    mg_fully_consumed: mg.mg_fully_consumed,
-    actual_royalty_ex_tax: mg.actual_royalty,
-    tax_rate: taxRate,
-    tax_amount: taxAmount,
-    total_payment_inc_tax: amountIncTax,
+    mg_consumed_before: mgConsumedBefore,
+    mg_consumed_this_time: r.mg_consumed_this_time,
+    mg_consumed_after: mgConsumedBefore + r.mg_consumed_this_time,
+    mg_remaining: r.mg_remaining_after,
+    mg_fully_consumed: r.mg_fully_consumed,
+    ag_amount: agAmount,
+    ag_offset_this_time: r.ag_offset_this_time,
+    ag_remaining: r.ag_remaining_after,
+    actual_royalty_ex_tax: r.actual_ex_tax,
+    tax_rate: r.tax_rate,
+    tax_amount: r.tax_amount,
+    total_payment_inc_tax: r.total_inc_tax,
     currency,
+    formula_breakdown: r.formula_breakdown,
   };
 }
 
