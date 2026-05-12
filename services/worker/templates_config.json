@@ -343,6 +343,28 @@
     }
   },
 
+  "nda": {
+    "label": "秘密保持契約書 (NDA)",
+    "category": "Domestic",
+    "vars": {
+      "CONTRACT_DATE_FORMATTED": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日" },
+
+      "PARTY_A_NAME": { "label": "甲 名称", "group": "II. 甲", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
+      "PARTY_A_ADDRESS": { "label": "甲 住所", "group": "II. 甲", "type": "textarea", "required": true },
+      "PARTY_A_REP": { "label": "甲 代表者", "group": "II. 甲", "required": true },
+
+      "PARTY_B_NAME": { "label": "乙 名称", "group": "III. 乙", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
+      "PARTY_B_ADDRESS": { "label": "乙 住所", "group": "III. 乙", "type": "textarea", "required": true },
+      "PARTY_B_REP": { "label": "乙 代表者", "group": "III. 乙", "required": true },
+
+      "NDA_PURPOSE": { "label": "秘密保持の目的", "group": "IV. 契約内容", "type": "textarea", "required": true, "placeholder": "例: 〇〇事業に関する協業検討のため" },
+      "CONTRACT_PERIOD": { "label": "契約期間", "group": "IV. 契約内容", "required": true, "placeholder": "例: 締結日から2年間" },
+      "CONFIDENTIALITY_PERIOD": { "label": "秘密保持義務存続期間", "group": "IV. 契約内容", "required": true, "placeholder": "例: 契約終了後3年間" },
+
+      "JURISDICTION": { "label": "合意管轄", "group": "V. 一般条項", "required": true, "placeholder": "例: 東京地方裁判所" }
+    }
+  },
+
   "individual_license_terms": {
     "label": "個別利用許諾条件書",
     "category": "License",

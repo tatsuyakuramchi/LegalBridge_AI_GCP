@@ -1181,6 +1181,153 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
      );
   }
 
+  // Specialized NDA Form (秘密保持契約書, Phase 3b-7)
+  //
+  // 11 variables, all required. Both 甲 (PARTY_A_*) and 乙 (PARTY_B_*)
+  // are form-editable so the swap pattern applies — either side can
+  // be Arclight depending on who initiated the NDA.
+  if (templateId === 'nda') {
+    const fillPartyAFromSelf = () =>
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: companyProfile?.name || '',
+        PARTY_A_ADDRESS: companyProfile?.address || '',
+        PARTY_A_REP: companyProfile?.representative || '',
+      });
+
+    const fillPartyAFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: activeVendor.vendor_name || '',
+        PARTY_A_ADDRESS: activeVendor.address || '',
+        PARTY_A_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+      });
+    };
+
+    const fillPartyBFromSelf = () =>
+      setFormData({
+        ...formData,
+        PARTY_B_NAME: companyProfile?.name || '',
+        PARTY_B_ADDRESS: companyProfile?.address || '',
+        PARTY_B_REP: companyProfile?.representative || '',
+      });
+
+    const fillPartyBFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        PARTY_B_NAME: activeVendor.vendor_name || '',
+        PARTY_B_ADDRESS: activeVendor.address || '',
+        PARTY_B_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+      });
+    };
+
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
+    return (
+      <div className="space-y-10">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          )}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
+          </div>
+        </div>
+
+        <FormSection
+          title="I. ヘッダ"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          {renderGroup('I. ヘッダ')}
+        </FormSection>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <FormSection
+            title="II. 甲"
+            variant="blue"
+            icon={<Building2 className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillPartyAFromSelf, !companyProfile)}
+                {sideButton('取引先', fillPartyAFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('II. 甲')}
+          </FormSection>
+
+          <FormSection
+            title="III. 乙"
+            variant="amber"
+            icon={<User className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillPartyBFromSelf, !companyProfile)}
+                {sideButton('取引先', fillPartyBFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('III. 乙')}
+          </FormSection>
+        </div>
+
+        <FormSection
+          title="IV. 契約内容"
+          variant="emerald"
+          icon={<Scale className="w-4 h-4" />}
+        >
+          {renderGroup('IV. 契約内容')}
+        </FormSection>
+
+        <FormSection title="V. 一般条項" variant="indigo">
+          {renderGroup('V. 一般条項')}
+        </FormSection>
+      </div>
+    );
+  }
+
   // Specialized Sales Master Form (売買基本契約書, Phase 3b-6)
   //
   // All three variants share the same shape: 甲 (アークライト) is
