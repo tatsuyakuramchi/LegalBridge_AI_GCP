@@ -830,106 +830,353 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
   }
 
-  // Specialized Inspection Form
+  // Specialized Inspection Form (Phase 3b-5)
+  //
+  // 受託者 = vendor side, 検収者 = staff/self side. We keep the existing
+  // 3-column layout for the top row (basic / vendor / staff) but
+  // replace the legacy Master-Sync / Staff-Sync buttons with the
+  // standard sideButton helper and add the required-progress banner.
+  //
+  // NOTE: applies to all inspection_certificate variants
+  // (inspection_certificate, _v2, _detailed) via startsWith. Metadata
+  // is keyed to the main inspection_certificate template; _v2 / _detailed
+  // share the same field IDs where they overlap.
   if (templateId.startsWith('inspection_certificate')) {
+    const fillCounterpartyFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        counterparty: activeVendor.vendor_name || '',
+        counterpartyRepresentativeSama: activeVendor.vendor_rep
+          ? `${activeVendor.vendor_rep} 様`
+          : (activeVendor.contact_name ? `${activeVendor.contact_name} 様` : ''),
+        counterpartyTni: activeVendor.invoice_registration_number || '',
+        // Bank info commonly populated at the same time
+        bankName: activeVendor.bank_name || '',
+        branchName: activeVendor.branch_name || '',
+        accountType: activeVendor.account_type || '',
+        accountNo: activeVendor.account_number || '',
+        accountHolder: activeVendor.account_holder_kana || '',
+      });
+    };
+
+    const fillInspectorFromStaff = () => {
+      if (!selectedStaff) return;
+      setFormData({
+        ...formData,
+        inspectorDept: selectedStaff.department || '',
+        inspectorName: selectedStaff.staff_name || '',
+      });
+    };
+
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
     return (
-      <div className="space-y-8">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-          <FormSection 
-            title="Context & Basic (基本情報)" 
-            variant="blue" 
-            headerActions={<button onClick={onSync} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>}
-          >
-            {renderField('issueKey', '発注番号 (Issue Key)')}
-            {renderField('itemNo', '明細番号')}
-            {renderField('itemCount', '総明細数')}
-            {renderField('deliveryNo', '今回の納品回数')}
-            {renderField('totalDeliveries', '総予定回数')}
-            {renderField('orderDate', '発注日')}
-            {renderField('documentDate', '発行日 (検収書)')}
-            {renderField('isPartial', '分割納品フラグ')}
-          </FormSection>
-
-          <FormSection 
-            title="Counterparty (受託者情報)" 
-            variant="amber" 
-            headerActions={<button onClick={() => { if(activeVendor) setFormData({...formData, counterparty: activeVendor.vendor_name, counterpartyRepresentativeSama: (activeVendor.vendor_rep || activeVendor.contact_name) + ' 様', counterpartyTni: activeVendor.invoice_registration_number}); }} className="text-[8px] font-mono border border-orange-600 text-orange-600 px-2 py-1 uppercase">Master Sync</button>}
-          >
-            {renderField('counterparty', '受託者名')}
-            {renderField('counterpartyRepresentativeSama', '代表者名 (＋様)')}
-            {renderField('counterpartyTni', 'インボイス登録番号 (T-No)')}
-          </FormSection>
-
-          <FormSection 
-            title="Internal (検収者情報)" 
-            variant="emerald" 
-            headerActions={<button onClick={() => { if(selectedStaff) setFormData({...formData, inspectorDept: selectedStaff.department, inspectorName: selectedStaff.staff_name}); }} className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-1 uppercase">Staff Sync</button>}
-          >
-            {renderField('inspectorDept', '検収者部署')}
-            {renderField('inspectorName', '検収者名')}
-            {renderField('deliveredAt', '実納品日')}
-            {renderField('inspectionCompletedAt', '検収完了日')}
-            {renderField('paymentDueDate', '支払期日')}
-          </FormSection>
+      <div className="space-y-10">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          )}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
+          </div>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-          <FormSection 
-            title="Deliverable Detail (納品明細)" 
-            variant="emerald" 
-            headerActions={onLinkAsset && <button onClick={() => onLinkAsset((asset) => setFormData({...formData, linked_po_number: asset.asset_number, linked_po_link: asset.file_link}))} className="text-[8px] font-mono border border-emerald-600 text-emerald-600 px-2 py-0.5 uppercase flex items-center gap-1"><Link className="w-2 h-2" /> PO紐付</button>}
-          >
-            <div className="col-span-full space-y-4">
-              {renderField('description', '成果物・業務内容')}
-              {renderField('spec', '仕様・内容詳細')}
-              <div className="grid grid-cols-2 gap-6 bg-white/50 p-4 rounded-sm border border-emerald-600/10">
-                {['deliveredAmountStr', 'taxRate', 'taxAmountStr', 'totalAmountStr'].map(f => renderField(f))}
-              </div>
-            </div>
-          </FormSection>
-
-          <FormSection title="Financial & Progress (進捗・財務)" variant="indigo">
-             {['inspectedPct', 'inspectedAmountStr', 'totalOrderAmountStr', 'pendingAmountStr', 'paymentConditionSummary', 'bankName', 'branchName', 'accountType', 'accountNo', 'accountHolder'].map(f => renderField(f))}
-          </FormSection>
-        </div>
-
-        <FormSection title="Excel Export Data" variant="blue">
-           <div className="col-span-full grid grid-cols-2 md:grid-cols-3 gap-6">
-             {['件名', '支払日', '部署', '取引先コード', '氏名', '氏名（カナ）', '立替金', '小計', '源泉税', '税引後', '差引振込額'].map(f => renderField(f))}
-           </div>
+        <FormSection
+          title="I. 基本情報"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+          headerActions={
+            <button
+              type="button"
+              onClick={onSync}
+              className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
+              title="Backlog 課題から自動補完"
+            >
+              <Database className="w-2 h-2 inline mr-1" />
+              Backlog Sync
+            </button>
+          }
+        >
+          {renderGroup('I. 基本情報')}
         </FormSection>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <FormSection
+            title="II. 受託者 (取引先)"
+            variant="amber"
+            icon={<Building2 className="w-4 h-4" />}
+            headerActions={sideButton('取引先', fillCounterpartyFromPartner, !activeVendor)}
+          >
+            {renderGroup('II. 受託者 (取引先)')}
+          </FormSection>
+
+          <FormSection
+            title="III. 検収者 (自社)"
+            variant="emerald"
+            icon={<User className="w-4 h-4" />}
+            headerActions={sideButton('Sync Staff', fillInspectorFromStaff, !selectedStaff)}
+          >
+            {renderGroup('III. 検収者 (自社)')}
+          </FormSection>
+        </div>
+
+        <FormSection
+          title="IV. 納品明細"
+          variant="indigo"
+          icon={<Scale className="w-4 h-4" />}
+          headerActions={
+            onLinkAsset && (
+              <button
+                type="button"
+                onClick={() =>
+                  onLinkAsset((asset) =>
+                    setFormData({
+                      ...formData,
+                      linked_po_number: asset.asset_number,
+                      linked_po_link: asset.file_link,
+                    })
+                  )
+                }
+                className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
+              >
+                <Link className="w-2 h-2" /> PO紐付
+              </button>
+            )
+          }
+        >
+          {renderGroup('IV. 納品明細')}
+        </FormSection>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ V. 進捗・財務 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">{renderGroup('V. 進捗・財務 (任意)')}</div>
+        </details>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VI. 振込先 (受託者口座, 任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">
+            {renderGroup('VI. 振込先 (受託者口座, 任意)')}
+          </div>
+        </details>
       </div>
     );
   }
 
-  // Specialized Royalty Form
+  // Specialized Royalty Form (利用許諾料計算書, Phase 3b-5)
+  //
+  // licensor = vendor side (IP owner), licensee = self side (Arclight).
+  // Both sections have side buttons in case the deal is inverted.
   if (templateId === 'royalty_statement') {
-     return (
-       <div className="space-y-8">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-             <FormSection 
-               title="Work & Contract (原案・契約)" 
-               headerActions={
-                 <>
-                   {onLinkAsset && <button onClick={() => onLinkAsset((asset) => setFormData({...formData, linked_terms_number: asset.asset_number, linked_terms_link: asset.file_link}))} className="text-[8px] font-mono border border-blue-600 text-blue-600 px-2 py-1 uppercase flex items-center gap-1"><Link className="w-2 h-2" /> 個別紐付</button>}
-                   <button onClick={onSync} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>
-                 </>
-               }
-             >
-                <div className="col-span-full space-y-4">
-                  {['ledgerId', 'manufacturingIssueKey', 'licenseIssueKey'].map(f => renderField(f))}
-                  <PartySection prefix="licensor" formData={formData} setFormData={setFormData} renderField={renderField} />
-                  <PartySection prefix="licensee" formData={formData} setFormData={setFormData} renderField={renderField} />
-                  {renderField('originalWork')}
-                </div>
-             </FormSection>
-             <FormSection title="Manufacturing (製造情報)" headerActions={<button onClick={onSync} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-1 uppercase">Sync</button>}>
-                {['productName', 'edition', 'completionDate', 'quantity', 'sampleQuantity', 'billableQuantity', 'msrpStr'].map(f => renderField(f))}
-             </FormSection>
+    const fillLicensorFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        licensor: activeVendor.vendor_name || '',
+        VENDOR_REPRESENTATIVE_SAMA: activeVendor.vendor_rep
+          ? `${activeVendor.vendor_rep} 様`
+          : '',
+      });
+    };
+
+    const fillLicensorFromSelf = () =>
+      setFormData({
+        ...formData,
+        licensor: companyProfile?.name || '',
+      });
+
+    const fillLicenseeFromSelf = () =>
+      setFormData({
+        ...formData,
+        licensee: companyProfile?.name || '',
+      });
+
+    const fillLicenseeFromPartner = () => {
+      if (!activeVendor) return;
+      setFormData({
+        ...formData,
+        licensee: activeVendor.vendor_name || '',
+      });
+    };
+
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
+    const requiredIds = Object.entries(metadata.vars || {})
+      .filter(([, m]: [string, any]) => m?.required === true)
+      .map(([id]) => id);
+    const missingRequired = requiredIds.filter((id) => {
+      const v = formData[id];
+      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
+    });
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
+    return (
+      <div className="space-y-10">
+        <div
+          className={cn(
+            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
+            missingRequired.length === 0
+              ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+              : 'bg-amber-50 border-amber-200 text-amber-800'
+          )}
+        >
+          <div className="text-[11px] font-mono">
+            {missingRequired.length === 0 ? (
+              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            ) : (
+              <>
+                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
+                <span className="ml-2 text-[10px] opacity-75">
+                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
+                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
+                </span>
+              </>
+            )}
           </div>
-          <FormSection title="Royalty & MG Calculation (計算明細)" variant="indigo" headerActions={<button onClick={onSync} className="text-[8px] font-mono bg-indigo-600 text-white px-2 py-1 uppercase">Sync</button>}>
-             {['calcType', 'royaltyRatePct', 'grossRoyaltyStr', 'mgAmount', 'mgRemaining', 'actualRoyaltyStr', 'taxRate', 'taxAmount', 'totalPaymentStr', 'paymentConditionSummary', 'reportingDeadline', 'paymentDueDate'].map(f => renderField(f))}
+        </div>
+
+        <FormSection
+          title="I. ヘッダ"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+          headerActions={
+            onLinkAsset && (
+              <button
+                type="button"
+                onClick={() =>
+                  onLinkAsset((asset) =>
+                    setFormData({
+                      ...formData,
+                      linked_terms_number: asset.asset_number,
+                      linked_terms_link: asset.file_link,
+                    })
+                  )
+                }
+                className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
+              >
+                <Link className="w-2 h-2" /> 個別紐付
+              </button>
+            )
+          }
+        >
+          {renderGroup('I. ヘッダ')}
+        </FormSection>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <FormSection
+            title="II. ライセンサー (取引先)"
+            variant="blue"
+            icon={<Building2 className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillLicensorFromSelf, !companyProfile)}
+                {sideButton('取引先', fillLicensorFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('II. ライセンサー (取引先)')}
           </FormSection>
+
+          <FormSection
+            title="III. ライセンシー (自社)"
+            variant="amber"
+            icon={<User className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillLicenseeFromSelf, !companyProfile)}
+                {sideButton('取引先', fillLicenseeFromPartner, !activeVendor)}
+              </>
+            }
+          >
+            {renderGroup('III. ライセンシー (自社)')}
+          </FormSection>
+        </div>
+
+        <FormSection
+          title="IV. 対象作品・製造"
+          variant="emerald"
+          icon={<ShieldCheck className="w-4 h-4" />}
+        >
+          {renderGroup('IV. 対象作品・製造')}
+        </FormSection>
+
+        <FormSection
+          title="V. ロイヤリティ計算"
+          variant="indigo"
+          icon={<Scale className="w-4 h-4" />}
+        >
+          {renderGroup('V. ロイヤリティ計算')}
+        </FormSection>
+
+        <FormSection title="VI. 金銭・支払" variant="cyan">
+          {renderGroup('VI. 金銭・支払')}
+        </FormSection>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VII. 備考 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input">{renderGroup('VII. 備考 (任意)')}</div>
+        </details>
        </div>
      );
   }

@@ -173,6 +173,101 @@
     }
   },
 
+  "inspection_certificate": {
+    "label": "検収書",
+    "category": "Operational",
+    "vars": {
+      "issueKey": { "label": "発注番号 (Issue Key)", "group": "I. 基本情報", "required": true, "dbField": "backlog.issueKey", "helpText": "Backlog 課題から自動補完されます" },
+      "documentDate": { "label": "検収書発行日", "group": "I. 基本情報", "type": "date", "required": true, "dbField": "auto.today" },
+      "orderDate": { "label": "発注日", "group": "I. 基本情報", "type": "date" },
+      "itemNo": { "label": "明細番号", "group": "I. 基本情報", "placeholder": "1" },
+      "itemCount": { "label": "総明細数", "group": "I. 基本情報", "placeholder": "1" },
+      "deliveryNo": { "label": "今回の納品回数", "group": "I. 基本情報", "placeholder": "1" },
+      "totalDeliveries": { "label": "総予定回数", "group": "I. 基本情報", "placeholder": "1" },
+      "isPartial": { "label": "分割納品フラグ", "group": "I. 基本情報", "type": "boolean" },
+
+      "counterparty": { "label": "受託者名", "group": "II. 受託者 (取引先)", "required": true, "dbField": "vendor.vendor_name", "helpText": "[取引先] ボタンで自動入力" },
+      "counterpartyRepresentativeSama": { "label": "受託者代表者 (＋様)", "group": "II. 受託者 (取引先)", "placeholder": "例: 代表取締役 山田 太郎 様" },
+      "counterpartyTni": { "label": "インボイス登録番号 (T-)", "group": "II. 受託者 (取引先)", "dbField": "vendor.invoice_registration_number" },
+
+      "inspectorDept": { "label": "検収者部署", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.department", "helpText": "[Sync Staff] で自動入力" },
+      "inspectorName": { "label": "検収者氏名", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.staff_name" },
+      "deliveredAt": { "label": "実納品日", "group": "III. 検収者 (自社)", "type": "date", "required": true },
+      "inspectionCompletedAt": { "label": "検収完了日", "group": "III. 検収者 (自社)", "type": "date", "required": true },
+      "paymentDueDate": { "label": "支払期日", "group": "III. 検収者 (自社)", "type": "date" },
+
+      "description": { "label": "成果物・業務内容", "group": "IV. 納品明細", "type": "textarea", "required": true },
+      "spec": { "label": "仕様・内容詳細", "group": "IV. 納品明細", "type": "textarea" },
+      "linked_po_number": { "label": "紐付け発注番号 (PO)", "group": "IV. 納品明細", "helpText": "[PO紐付] ボタンで External Asset から取得" },
+      "isReducedTax": { "label": "軽減税率対象", "group": "IV. 納品明細", "type": "boolean" },
+      "deliveredAmountStr": { "label": "納品額 (税抜)", "group": "IV. 納品明細", "required": true, "placeholder": "1,000,000" },
+      "taxRate": { "label": "税率", "group": "IV. 納品明細", "type": "select", "options": ["10", "8"], "placeholder": "10" },
+      "taxAmountStr": { "label": "消費税額", "group": "IV. 納品明細", "placeholder": "100,000" },
+      "totalAmountStr": { "label": "合計額 (税込)", "group": "IV. 納品明細", "placeholder": "1,100,000" },
+
+      "inspectedPct": { "label": "検収率 (%)", "group": "V. 進捗・財務 (任意)", "placeholder": "100" },
+      "inspectedAmountStr": { "label": "検収済額", "group": "V. 進捗・財務 (任意)" },
+      "totalOrderAmountStr": { "label": "発注総額", "group": "V. 進捗・財務 (任意)" },
+      "pendingAmountStr": { "label": "未検収額", "group": "V. 進捗・財務 (任意)", "placeholder": "0" },
+      "paymentConditionSummary": { "label": "支払条件", "group": "V. 進捗・財務 (任意)", "placeholder": "例: 検収月の翌月末日払い" },
+
+      "bankName": { "label": "金融機関", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.bank_name" },
+      "branchName": { "label": "支店名", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.branch_name" },
+      "accountType": { "label": "口座種別", "group": "VI. 振込先 (受託者口座, 任意)", "type": "select", "options": ["普通", "当座"], "dbField": "vendor.account_type" },
+      "accountNo": { "label": "口座番号", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.account_number" },
+      "accountHolder": { "label": "口座名義", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.account_holder_kana" }
+    }
+  },
+
+  "royalty_statement": {
+    "label": "利用許諾料計算書",
+    "category": "License",
+    "vars": {
+      "documentDate": { "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true, "dbField": "auto.today" },
+      "ledgerId": { "label": "台帳ID", "group": "I. ヘッダ", "required": true, "placeholder": "LIC-ARC-DOM-202604001" },
+      "manufacturingIssueKey": { "label": "製造案件 Issue Key", "group": "I. ヘッダ", "helpText": "製造案件の Backlog 課題キー" },
+      "licenseIssueKey": { "label": "ライセンス契約 Issue Key", "group": "I. ヘッダ", "helpText": "基本契約の Backlog 課題キー" },
+      "linked_terms_number": { "label": "個別利用許諾条件書 番号", "group": "I. ヘッダ", "helpText": "[個別紐付] ボタンで External Asset から取得" },
+
+      "licensor": { "label": "ライセンサー名", "group": "II. ライセンサー (取引先)", "required": true, "dbField": "vendor.vendor_name", "helpText": "[取引先] ボタンで自動入力" },
+      "VENDOR_REPRESENTATIVE_SAMA": { "label": "ライセンサー代表者 (＋様)", "group": "II. ライセンサー (取引先)", "placeholder": "例: 代表取締役 山田 太郎 様" },
+
+      "licensee": { "label": "ライセンシー名", "group": "III. ライセンシー (自社)", "required": true, "dbField": "company.name", "helpText": "[自社] ボタンで自動入力" },
+
+      "originalWork": { "label": "原著作物名", "group": "IV. 対象作品・製造", "required": true, "placeholder": "例: ボードゲーム『〇〇』" },
+      "productName": { "label": "製品名", "group": "IV. 対象作品・製造", "required": true },
+      "edition": { "label": "版", "group": "IV. 対象作品・製造", "placeholder": "通常版" },
+      "completionDate": { "label": "完成日", "group": "IV. 対象作品・製造", "type": "date" },
+      "quantity": { "label": "製造数", "group": "IV. 対象作品・製造", "type": "number" },
+      "sampleQuantity": { "label": "サンプル数", "group": "IV. 対象作品・製造", "type": "number", "placeholder": "0" },
+      "billableQuantity": { "label": "課金対象数", "group": "IV. 対象作品・製造", "type": "number", "required": true },
+      "msrpStr": { "label": "上代 (MSRP)", "group": "IV. 対象作品・製造", "required": true },
+
+      "calcType": { "label": "計算タイプ", "group": "V. ロイヤリティ計算", "type": "select", "options": ["manufacturing", "sales", "sublicense"], "required": true, "helpText": "manufacturing=製造ベース, sales=売上ベース, sublicense=サブライセンス" },
+      "royaltyRatePct": { "label": "料率 (%)", "group": "V. ロイヤリティ計算", "required": true, "placeholder": "例: 5.0%" },
+      "grossRoyaltyStr": { "label": "総ロイヤリティ", "group": "V. ロイヤリティ計算" },
+      "mgAmount": { "label": "MG (Minimum Guarantee)", "group": "V. ロイヤリティ計算", "type": "number" },
+      "mgConsumedBefore": { "label": "前回までの MG 消化額", "group": "V. ロイヤリティ計算", "type": "number" },
+      "mgConsumedThisTime": { "label": "今回 MG 消化額", "group": "V. ロイヤリティ計算", "type": "number" },
+      "mgConsumedAfter": { "label": "今回後 MG 累計消化額", "group": "V. ロイヤリティ計算", "type": "number" },
+      "mgRemaining": { "label": "MG 残額", "group": "V. ロイヤリティ計算", "type": "number" },
+      "mgProgressPct": { "label": "MG 進捗 (%)", "group": "V. ロイヤリティ計算" },
+      "mgFullyConsumed": { "label": "MG 完全消化済", "group": "V. ロイヤリティ計算", "type": "boolean" },
+      "actualRoyalty": { "label": "実支払ロイヤリティ", "group": "V. ロイヤリティ計算", "type": "number" },
+      "actualRoyaltyStr": { "label": "実支払ロイヤリティ (表示)", "group": "V. ロイヤリティ計算" },
+
+      "currency": { "label": "通貨", "group": "VI. 金銭・支払", "type": "select", "options": ["JPY", "USD", "EUR", "CNY"], "required": true, "placeholder": "JPY" },
+      "taxRate": { "label": "税率", "group": "VI. 金銭・支払", "type": "select", "options": ["10", "8"], "placeholder": "10" },
+      "taxAmount": { "label": "消費税額", "group": "VI. 金銭・支払" },
+      "totalPaymentStr": { "label": "支払総額 (税込)", "group": "VI. 金銭・支払", "required": true },
+      "paymentConditionSummary": { "label": "支払条件", "group": "VI. 金銭・支払", "placeholder": "例: 四半期報告後の翌月末日払い" },
+      "reportingDeadline": { "label": "報告期限", "group": "VI. 金銭・支払", "type": "date" },
+      "paymentDueDate": { "label": "支払期日", "group": "VI. 金銭・支払", "type": "date" },
+
+      "notes": { "label": "備考", "group": "VII. 備考 (任意)", "type": "textarea" }
+    }
+  },
+
   "individual_license_terms": {
     "label": "個別利用許諾条件書",
     "category": "License",
