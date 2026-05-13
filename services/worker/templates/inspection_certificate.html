@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>検収書 {{issueKey}}-{{itemNo}}-{{deliveryNo}}</title>
+  <title>検収書 {{or parent_po_number issueKey}}</title>
   <style>
     @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -22,25 +22,30 @@
       align-items: flex-end;
     }
     .doc-title { font-size: 20pt; font-weight: bold; letter-spacing: 0.08em; }
-    .doc-meta { text-align: right; font-size: 8.5pt; line-height: 1.9; }
-    .doc-number { font-size: 10pt; font-weight: bold; }
+    .doc-meta { text-align: right; font-size: 9pt; line-height: 1.9; }
 
-    /* 分納バッジ */
+    /* 分納バッジ — 分割時のみ表示 (納品完了バッジは廃止 Phase 9c) */
     .delivery-badge {
       display: inline-block;
-      border: 1.5px solid #000;
+      border: 1.5px dashed #000;
       padding: 2px 10px;
       font-size: 9pt;
       font-weight: bold;
       margin-left: 10px;
       vertical-align: middle;
+      color: #555;
     }
-    .delivery-badge.partial { border-style: dashed; color: #555; }
 
     .parties { display: flex; justify-content: space-between; margin-bottom: 14px; gap: 16px; }
     .party-block { flex: 1; }
     .party-label { font-size: 8pt; color: #555; margin-bottom: 2px; }
     .party-name { font-size: 13pt; font-weight: bold; border-bottom: 1px solid #000; padding-bottom: 2px; }
+    .party-rep {
+      font-size: 10pt;
+      margin-top: 6px;
+      padding-top: 5px;
+      border-top: 1px dashed #ccc;
+    }
 
     /* ② 相手方登録番号表示 */
     .party-reg-no {
@@ -176,32 +181,43 @@
 </head>
 <body>
 
-  <!-- ヘッダー -->
+  {{!-- ヘッダー (Phase 9c)
+       - 「納品完了」バッジは廃止 (分割時のみバッジ表示)
+       - 旧 .doc-number ({{issueKey}}-{{itemNo}}-{{deliveryNo}}) は廃止
+         代わりに「発注番号 = 親 PO の document_number」を表示
+  --}}
   <div class="doc-header">
     <div>
       <span class="doc-title">検　収　書</span>
       {{#if isPartial}}
-      <span class="delivery-badge partial">分割納品 第{{deliveryNo}}回 / 全{{totalDeliveries}}回予定</span>
-      {{else}}
-      <span class="delivery-badge">納品完了</span>
+      <span class="delivery-badge">分割納品 第{{deliveryNo}}回 / 全{{totalDeliveries}}回予定</span>
       {{/if}}
     </div>
     <div class="doc-meta">
-      <div class="doc-number">{{issueKey}}-{{itemNo}}-{{deliveryNo}}</div>
-      <div>発注課題: {{issueKey}} ／ 明細No.: {{itemNo}}</div>
-      <div>発行日: {{documentDate}}</div>
+      <div>発注番号: <strong>{{or parent_po_number issueKey}}</strong></div>
+      <div>明細No.: {{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}</div>
+      <div>発行日: {{formatDate documentDate}}</div>
     </div>
   </div>
 
-  <!-- 当事者ブロック
-       左: 受託者（counterparty + counterpartyRegistrationNo）
-       右: 発注者（株式会社アークライト） -->
+  {{!-- 当事者ブロック (Phase 9c)
+       受託者:
+         - 個人 → 「<名前> 様」
+         - 法人 → 「<会社名> 御中」 + 棒線 + 「<代表者名> 様」
+       発注者:
+         住所 / 建物 / 部署 / 担当を別行に整理
+  --}}
   <div class="parties">
     <div class="party-block">
       <div class="party-label">受託者（課税仕入れの相手方）</div>
-      <div class="party-name">{{counterparty}} 御中</div>
-      {{#if counterpartyRepresentativeSama}}
-      <div style="font-size:10pt; margin-top:4px;">{{counterpartyRepresentativeSama}}</div>
+      <div class="party-name">
+        {{counterparty}}
+        {{#if COUNTERPARTY_IS_CORPORATION}}御中{{else}}様{{/if}}
+      </div>
+      {{#if COUNTERPARTY_IS_CORPORATION}}
+        {{#if counterpartyRep}}
+        <div class="party-rep">{{counterpartyRep}} 様</div>
+        {{/if}}
       {{/if}}
       {{#if counterpartyTni}}
       <div class="party-reg-no">登録番号: <strong>{{counterpartyTni}}</strong></div>
@@ -210,19 +226,20 @@
     <div class="party-block" style="text-align:right; font-size:8.5pt; line-height:1.9;">
       <div style="font-size:11pt; font-weight:bold;">株式会社アークライト</div>
       <div>〒101-0052 東京都千代田区神田小川町1-2</div>
-      <div>風雲堂ビル2階　{{inspectorDept}}</div>
+      <div>風雲堂ビル2階</div>
+      <div style="margin-top:4px;">{{inspectorDept}}</div>
       <div>担当: {{inspectorName}}</div>
     </div>
   </div>
 
-  <!-- 検収確認文 -->
+  {{!-- 検収確認文 — 日付は YYYY年MM月DD日 (formatDate) --}}
   <div class="confirmation-text">
-    　納品日 <strong>{{deliveredAt}}</strong> に納品された下記成果物について検収を行い、
-    検収日 <strong>{{inspectionCompletedAt}}</strong> に検収完了致しましたのでご通知します。
+    　納品日 <strong>{{formatDate deliveredAt}}</strong> に納品された下記成果物について検収を行い、
+    検収日 <strong>{{formatDate inspectionCompletedAt}}</strong> に検収完了致しましたのでご通知します。
     {{#if isPartial}}本書は分割納品（第{{deliveryNo}}回）に係る検収書です。{{/if}}
   </div>
 
-  <!-- 納品進捗サマリー（分割時のみ） -->
+  {{!-- 納品進捗サマリー（分割時のみ） --}}
   {{#if isPartial}}
   <div class="progress-bar-wrap">
     <div class="progress-bar-title">本発注全体の納品・検収進捗</div>
@@ -236,10 +253,12 @@
   </div>
   {{/if}}
 
-  <!-- 今回納品明細
+  {{!-- 今回納品明細
        適格請求書記載要件（消費税法57条の4）に対応する項目：
          納品日（課税仕入れの年月日）、成果物・業務内容（軽減税率対象の旨を含む）、
-         支払対価・税率、消費税額 -->
+         支払対価・税率、消費税額
+       Phase 9c: description / spec は親 PO 発見時に form-context で自動補完
+  --}}
   <div class="section-title">■ 今回の納品内容</div>
   <table style="margin-bottom:4px;">
     <thead>
@@ -256,7 +275,7 @@
         <td class="center">{{itemNo}}</td>
         <td>{{#if isReducedTax}}<span class="reduced-mark">※</span>{{/if}}{{description}}</td>
         <td>{{spec}}</td>
-        <td class="center">{{deliveredAt}}</td>
+        <td class="center">{{formatDate deliveredAt}}</td>
         <td class="right">¥{{deliveredAmountStr}}</td>
       </tr>
       <tr>
@@ -275,7 +294,7 @@
   <div class="reduced-note">※ 軽減税率（8%）対象品目</div>
   {{/if}}
 
-  <!-- 変更履歴（あれば） -->
+  {{!-- 変更履歴（あれば） --}}
   {{#if hasChangeLogs}}
   <div class="change-log-section">
     <div class="change-log-title">⚠️ 変更履歴（当初発注条件からの変更）</div>
@@ -292,12 +311,12 @@
   </div>
   {{/if}}
 
-  <!-- 支払条件・発注情報 -->
+  {{!-- 支払条件・発注情報 — 期日表記は formatDate で YYYY年MM月DD日 --}}
   <div class="conditions">
     <div class="condition-box">
       <h3>■ 支払条件</h3>
       <p>{{paymentConditionSummary}}</p>
-      <p>支払期日: <span class="highlight">{{paymentDueDate}}</span></p>
+      <p>支払期日: <span class="highlight">{{formatDate paymentDueDate}}</span></p>
     </div>
     <div class="condition-box">
       <h3>■ 振込先</h3>
@@ -307,15 +326,15 @@
     </div>
     <div class="condition-box">
       <h3>■ 発注情報</h3>
-      <p>発注日: {{orderDate}}</p>
-      <p>発注番号: {{issueKey}}</p>
-      <p>明細No.: {{itemNo}} / 全{{itemCount}}件中</p>
+      <p>発注日: {{formatDate orderDate}}</p>
+      <p>発注番号: <strong>{{or parent_po_number issueKey}}</strong></p>
+      <p>明細No.: {{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}</p>
     </div>
   </div>
 
 
 
-  <!-- みなし同意 -->
+  {{!-- みなし同意 — 連絡先は DB の staff (inspectorDept / inspectorName / inspectorEmail) から自動補完 --}}
   <div class="section-title">■ 本検収書の内容に関するご確認のお願い</div>
   <div class="confirm-box">
     <p>本検収書にご記載の内容（検収対象成果物、仕様、数量、検収日、金額等）についてご確認のうえ、記載事項に相違または異議がある場合は、本書が貴殿に到達した日の翌日（同日が営業日でない場合は翌営業日）から起算して <strong>5営業日以内</strong> に、下記連絡先宛に書面または電子メールにより、その旨および具体的内容をご通知くださいますようお願いいたします。</p>

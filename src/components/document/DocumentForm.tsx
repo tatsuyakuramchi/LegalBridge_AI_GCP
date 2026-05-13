@@ -1,5 +1,5 @@
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect } from 'react';
 import { FormSection } from './FormSection';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
@@ -52,6 +52,35 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     });
     return groups;
   }, [metadata]);
+
+  // Phase 9c: 検収書テンプレで selectedStaff が既にあり、かつ
+  // 検収者フィールドが空のときは自動で埋める (みなし同意の連絡先が
+  // 空欄のまま PDF が出るのを防ぐ)。
+  // また documentDate が未入力なら今日の日付で初期化。
+  useEffect(() => {
+    if (!templateId.startsWith('inspection_certificate')) return;
+    const patch: Record<string, any> = {};
+    if (
+      selectedStaff &&
+      !formData.inspectorName &&
+      !formData.inspectorDept &&
+      !formData.inspectorEmail
+    ) {
+      patch.inspectorDept = selectedStaff.department || '';
+      patch.inspectorName = selectedStaff.staff_name || '';
+      patch.inspectorEmail = selectedStaff.email || '';
+    }
+    if (!formData.documentDate) {
+      patch.documentDate = new Date().toISOString().slice(0, 10);
+    }
+    if (!formData.inspectionCompletedAt) {
+      patch.inspectionCompletedAt = new Date().toISOString().slice(0, 10);
+    }
+    if (Object.keys(patch).length > 0) {
+      setFormData({ ...formData, ...patch });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, selectedStaff?.staff_name]);
 
   const renderField = (id: string, customLabel?: string) => {
     const meta = (metadata.vars || {})[id] || { label: id, group: 'General' };
@@ -912,12 +941,21 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   if (templateId.startsWith('inspection_certificate')) {
     const fillCounterpartyFromPartner = () => {
       if (!activeVendor) return;
+      // Phase 9c: 法人/個人で表示を切り替える
+      //   - 法人: 会社名「御中」 + 棒線 + 代表者「様」
+      //   - 個人: 名前「様」のみ
+      const isCorporation =
+        (activeVendor.entity_type || '').toLowerCase() === 'corporate' ||
+        activeVendor.entity_type === '法人';
+      const repName =
+        activeVendor.vendor_rep || activeVendor.contact_name || '';
       setFormData({
         ...formData,
         counterparty: activeVendor.vendor_name || '',
-        counterpartyRepresentativeSama: activeVendor.vendor_rep
-          ? `${activeVendor.vendor_rep} 様`
-          : (activeVendor.contact_name ? `${activeVendor.contact_name} 様` : ''),
+        COUNTERPARTY_IS_CORPORATION: isCorporation,
+        counterpartyRep: repName,
+        // Legacy フィールドも残しておく (旧テンプレ・既存生成済み doc の form_data 互換)
+        counterpartyRepresentativeSama: repName ? `${repName} 様` : '',
         counterpartyTni: activeVendor.invoice_registration_number || '',
         // Bank info commonly populated at the same time
         bankName: activeVendor.bank_name || '',
@@ -1040,14 +1078,54 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             formData.order_lines_for_inspection.length > 0
           }
           onPick={(loaded: PoLoaded) => {
+            // Phase 9c: 親 PO 選択時に PDF が必要とする全フィールドを一括流し込み
+            const firstLine = loaded.line_items?.[0];
+            const v = loaded.vendor || {};
+            const isCorp =
+              (v.entity_type || '').toLowerCase() === 'corporate' ||
+              v.entity_type === '法人';
+            const repName = v.vendor_rep || v.contact_name || '';
+            const todayIso = new Date().toISOString().slice(0, 10);
+            const poHeader = loaded.raw?.order_item || {};
+
             setFormData({
               ...formData,
               parent_po_id: loaded.order_item_id,
               parent_po_issue_key: loaded.backlog_issue_key,
+              parent_po_number: loaded.document_number || '',
               order_lines_for_inspection: loaded.line_items,
+              // 発注情報セクション
+              orderDate: poHeader.due_date || poHeader.created_at || '',
+              itemCount: String((loaded.line_items || []).length || 1),
+              itemNo: formData.itemNo || '1',
+              // 検収書発行日 (未入力なら今日で初期化)
+              documentDate: formData.documentDate || todayIso,
+              // 今回納品内容: 第 1 行を default 補完 (multi-line PO は適宜手動編集)
+              description:
+                formData.description || (firstLine?.item_name || ''),
+              spec: formData.spec || (firstLine?.spec || ''),
+              // 取引先情報 (PO の vendor_code から JOIN)
+              ...(v.vendor_name && {
+                counterparty: formData.counterparty || v.vendor_name,
+                COUNTERPARTY_IS_CORPORATION: isCorp,
+                counterpartyRep: formData.counterpartyRep || repName,
+                counterpartyRepresentativeSama:
+                  formData.counterpartyRepresentativeSama ||
+                  (repName ? `${repName} 様` : ''),
+                counterpartyTni:
+                  formData.counterpartyTni ||
+                  v.invoice_registration_number ||
+                  '',
+                bankName: formData.bankName || v.bank_name || '',
+                branchName: formData.branchName || v.branch_name || '',
+                accountType: formData.accountType || v.account_type || '',
+                accountNo: formData.accountNo || v.account_number || '',
+                accountHolder:
+                  formData.accountHolder || v.account_holder_kana || '',
+              }),
               // 親を切り替えたら検収入力は一旦リセット (overflow 整合のため)
               delivery_line_items: [],
-              deliveredAmountStr: "",
+              deliveredAmountStr: '',
             });
           }}
           onClear={() => {

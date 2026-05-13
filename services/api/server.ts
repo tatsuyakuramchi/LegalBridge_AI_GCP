@@ -254,7 +254,8 @@ async function startServer() {
           }
           if (parentKey) {
             const poHeader = await query(
-              `SELECT id, amount_ex_tax, tax_rate, backlog_issue_key
+              `SELECT id, amount_ex_tax, tax_rate, backlog_issue_key,
+                      description, due_date, created_at
                  FROM order_items
                 WHERE backlog_issue_key = $1`,
               [parentKey]
@@ -288,8 +289,36 @@ async function startServer() {
                   };
                 });
               }
+
+              // Phase 9c: 親 PO の document_number / 業務名 / 仕様 / 発注日
+              //   - 発注番号 ← documents.template_type=purchase_order の最新行
+              //   - 業務名 ← order_line_items 1 行目の item_name
+              //   - 仕様   ← order_line_items 1 行目の spec
+              //   - 発注日 ← order_items.created_at (due_date 優先)
+              const docRow = await query(
+                `SELECT document_number FROM documents
+                  WHERE issue_key = $1
+                    AND template_type LIKE '%purchase_order%'
+                  ORDER BY created_at DESC LIMIT 1`,
+                [parentKey]
+              );
+              const parentPoNumber = docRow.rows[0]?.document_number || "";
+              const poRow = poHeader.rows[0];
+              const firstLine = lines.rows[0];
+
               context["parent_po_issue_key"] = parentKey;
               context["parent_po_id"] = poId;
+              context["parent_po_number"] = parentPoNumber;
+              if (firstLine?.item_name) {
+                context["description"] = firstLine.item_name;
+              }
+              if (firstLine?.spec) {
+                context["spec"] = firstLine.spec;
+              }
+              context["orderDate"] = poRow.due_date || poRow.created_at || null;
+              context["itemCount"] = String(lines.rows.length);
+              context["itemNo"] = "1"; // 単発検収では明細 1 を default
+              context["documentDate"] = new Date().toISOString().slice(0, 10);
               context["order_lines_for_inspection"] = lines.rows.map((l: any) => {
                 const ordAmt = Number(l.amount_ex_tax) || 0;
                 const ordQty = Number(l.quantity) || 0;
@@ -322,9 +351,16 @@ async function startServer() {
 
         const deliveryQuery = `
           SELECT de.*, oi.amount as order_amount, oi.description as item_desc, oi.spec as item_spec,
-                 v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type, v.account_number, v.account_holder_kana as account_holder,
+                 v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type,
+                 v.account_number, v.account_holder_kana as account_holder,
+                 v.entity_type as vendor_entity_type, v.vendor_rep as vendor_rep_name,
+                 v.invoice_registration_number as vendor_tni,
                  lr.summary as order_title, lr.created_at as order_date,
-                 ea.asset_number as linked_po_number, ea.file_link as linked_po_link
+                 ea.asset_number as linked_po_number, ea.file_link as linked_po_link,
+                 (SELECT d.document_number FROM documents d
+                    WHERE d.issue_key = oi.backlog_issue_key
+                      AND d.template_type LIKE '%purchase_order%'
+                    ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number
           FROM delivery_events de
           LEFT JOIN order_items oi ON de.order_item_id = oi.id
           LEFT JOIN vendors v ON oi.vendor_code = v.vendor_code
@@ -341,17 +377,27 @@ async function startServer() {
           context["deliveryNo"] = String(row.delivery_no || "1");
           context["totalDeliveries"] = "1";
           context["itemCount"] = "1";
-          context["orderDate"] = row.order_date
-            ? new Date(row.order_date).toLocaleDateString("ja-JP")
-            : "";
-          context["documentDate"] = new Date().toLocaleDateString("ja-JP");
+          context["orderDate"] = row.order_date || "";
+          context["documentDate"] = new Date().toISOString().slice(0, 10);
           context["isPartial"] = row.delivery_no > 1;
+          // Phase 9c: 発注番号 (親 PO の document_number) を上書きしないよう、
+          // 上の parent-by-Backlog 経路で既にセットされていれば温存。
+          if (!context["parent_po_number"] && row.parent_po_number) {
+            context["parent_po_number"] = row.parent_po_number;
+          }
 
           context["counterparty"] = row.vendor_name || "";
-          context["counterpartyRepresentativeSama"] = row.vendor_rep
-            ? `${row.vendor_rep} 様`
+          // Phase 9c: 法人/個人を分岐
+          const isCorp =
+            (row.vendor_entity_type || "").toLowerCase() === "corporate" ||
+            row.vendor_entity_type === "法人";
+          context["COUNTERPARTY_IS_CORPORATION"] = isCorp;
+          context["counterpartyRep"] = row.vendor_rep_name || "";
+          // legacy フィールドも互換のため (旧テンプレ参照対策)
+          context["counterpartyRepresentativeSama"] = row.vendor_rep_name
+            ? `${row.vendor_rep_name} 様`
             : "";
-          context["counterpartyTni"] = row.trade_name || "";
+          context["counterpartyTni"] = row.vendor_tni || row.trade_name || "";
 
           context["inspectorDept"] = "法務部";
           context["deliveredAt"] = row.delivered_at
@@ -962,9 +1008,34 @@ async function startServer() {
         };
       });
 
+      // Phase 9c: 親 PO の document_number と vendor 詳細も同梱。
+      // ParentPoPicker で選んだ時、検収書フォームに 発注番号 / 取引先名 /
+      // 法人個人 / 代表者 / 銀行口座 を一括流し込むため。
+      const docRow = await query(
+        `SELECT document_number FROM documents
+          WHERE issue_key = $1
+            AND template_type LIKE '%purchase_order%'
+          ORDER BY created_at DESC LIMIT 1`,
+        [key]
+      );
+      let vendor: any = null;
+      if (orderItem.vendor_code) {
+        const vRes = await query(
+          `SELECT vendor_name, address, vendor_rep, contact_name, entity_type,
+                  invoice_registration_number,
+                  bank_name, branch_name, account_type, account_number,
+                  account_holder_kana
+             FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+          [orderItem.vendor_code]
+        );
+        vendor = vRes.rows[0] || null;
+      }
+
       res.json({
         order_item: orderItem,
         line_items: linesWithAvail,
+        document_number: docRow.rows[0]?.document_number || "",
+        vendor,
       });
     } catch (error) {
       console.error("/api/order-items/by-issue failed:", error);

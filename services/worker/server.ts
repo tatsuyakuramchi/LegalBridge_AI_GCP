@@ -976,9 +976,32 @@ ${details}
         })
       );
 
+      // Phase 9c: 親 PO の document_number と vendor 詳細も同梱。
+      const docRow = await query(
+        `SELECT document_number FROM documents
+          WHERE issue_key = $1
+            AND template_type LIKE '%purchase_order%'
+          ORDER BY created_at DESC LIMIT 1`,
+        [key]
+      );
+      let vendor: any = null;
+      if (orderItem.vendor_code) {
+        const vRes = await query(
+          `SELECT vendor_name, address, vendor_rep, contact_name, entity_type,
+                  invoice_registration_number,
+                  bank_name, branch_name, account_type, account_number,
+                  account_holder_kana
+             FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+          [orderItem.vendor_code]
+        );
+        vendor = vRes.rows[0] || null;
+      }
+
       res.json({
         order_item: orderItem,
         line_items: linesWithAvail,
+        document_number: docRow.rows[0]?.document_number || "",
+        vendor,
       });
     } catch (error) {
       console.error("/api/order-items/by-issue failed:", error);

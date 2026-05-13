@@ -177,9 +177,10 @@
     "label": "検収書",
     "category": "Operational",
     "vars": {
-      "issueKey": { "label": "発注番号 (Issue Key)", "group": "I. 基本情報", "required": true, "dbField": "backlog.issueKey", "helpText": "Backlog 課題から自動補完されます" },
-      "documentDate": { "label": "検収書発行日", "group": "I. 基本情報", "type": "date", "required": true, "dbField": "auto.today" },
-      "orderDate": { "label": "発注日", "group": "I. 基本情報", "type": "date" },
+      "issueKey": { "label": "Backlog 課題キー", "group": "I. 基本情報", "required": true, "dbField": "backlog.issueKey", "helpText": "Backlog 課題から自動補完されます" },
+      "parent_po_number": { "label": "発注番号 (親 PO 文書番号)", "group": "I. 基本情報", "helpText": "親 PO を選択 / 自動発見すると document_number が入る。PDF ヘッダ「発注番号」に表示" },
+      "documentDate": { "label": "検収書発行日", "group": "I. 基本情報", "type": "date", "required": true, "dbField": "auto.today", "helpText": "未入力だと PDF の発行日が空欄になります" },
+      "orderDate": { "label": "発注日", "group": "I. 基本情報", "type": "date", "helpText": "親 PO を選択すると created_at / due_date から自動補完" },
       "itemNo": { "label": "明細番号", "group": "I. 基本情報", "placeholder": "1" },
       "itemCount": { "label": "総明細数", "group": "I. 基本情報", "placeholder": "1" },
       "deliveryNo": { "label": "今回の納品回数", "group": "I. 基本情報", "placeholder": "1" },
@@ -187,7 +188,9 @@
       "isPartial": { "label": "分割納品フラグ", "group": "I. 基本情報", "type": "boolean" },
 
       "counterparty": { "label": "受託者名", "group": "II. 受託者 (取引先)", "required": true, "dbField": "vendor.vendor_name", "helpText": "[取引先] ボタンで自動入力" },
-      "counterpartyRepresentativeSama": { "label": "受託者代表者 (＋様)", "group": "II. 受託者 (取引先)", "placeholder": "例: 代表取締役 山田 太郎 様" },
+      "COUNTERPARTY_IS_CORPORATION": { "label": "受託者種別 (法人/個人)", "group": "II. 受託者 (取引先)", "type": "boolean", "helpText": "true=法人 (御中+代表者「様」) / false=個人 (「様」のみ)。[取引先] ボタンで vendor.entity_type から自動判定" },
+      "counterpartyRep": { "label": "受託者代表者名", "group": "II. 受託者 (取引先)", "placeholder": "例: 代表取締役 山田 太郎", "helpText": "法人の場合のみ表示。「様」は自動付与" },
+      "counterpartyRepresentativeSama": { "label": "受託者代表者 (＋様, レガシー)", "group": "II. 受託者 (取引先)", "placeholder": "Phase 9c で counterpartyRep に置換。後方互換のため残置" },
       "counterpartyTni": { "label": "インボイス登録番号 (T-)", "group": "II. 受託者 (取引先)", "dbField": "vendor.invoice_registration_number" },
 
       "inspectorDept": { "label": "検収者部署", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.department", "helpText": "[Sync Staff] で自動入力" },
