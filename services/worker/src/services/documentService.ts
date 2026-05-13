@@ -43,9 +43,33 @@ export class DocumentService {
   constructor() {
     // Determine templates directory relative to project root
     this.templatesDir = path.join(process.cwd(), "templates");
-    
+
     // Register common Handlebars helpers
     this.registerHelpers();
+
+    // Register partials (約款テンプレ等)
+    this.registerPartials();
+  }
+
+  /**
+   * Phase 17i: Register Handlebars partials from templates/partials/.
+   *
+   * Used by purchase_order.html to attach the standard 業務委託基本契約約款
+   * (terms_spot_2026) when 基本契約あり=FALSE.
+   */
+  private registerPartials() {
+    try {
+      const partialsDir = path.join(this.templatesDir, "partials");
+      if (!fs.existsSync(partialsDir)) return;
+      for (const fileName of fs.readdirSync(partialsDir)) {
+        if (!fileName.endsWith(".html")) continue;
+        const partialName = fileName.replace(/\.html$/, "");
+        const partialSource = fs.readFileSync(path.join(partialsDir, fileName), "utf-8");
+        Handlebars.registerPartial(partialName, partialSource);
+      }
+    } catch (error) {
+      console.error("Error registering partials:", error);
+    }
   }
 
   private registerHelpers() {

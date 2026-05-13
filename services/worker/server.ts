@@ -987,6 +987,17 @@ ${details}
         })
       );
 
+      // Phase 17i: 経費（交通費等）も同時に返す
+      const expensesRes = await query(
+        `SELECT id, order_item_id, line_no, expense_name, spec,
+                spent_date, amount_inc_tax, remarks,
+                created_at, updated_at
+           FROM order_expenses
+          WHERE order_item_id = $1
+          ORDER BY line_no ASC`,
+        [orderItem.id]
+      );
+
       // Phase 9c: 親 PO の document_number と vendor 詳細も同梱。
       const docRow = await query(
         `SELECT document_number FROM documents
@@ -1027,6 +1038,7 @@ ${details}
       res.json({
         order_item: orderItem,
         line_items: linesWithAvail,
+        expenses: expensesRes.rows,
         document_number: docRow.rows[0]?.document_number || "",
         vendor,
         delivery_progress: {
@@ -1056,6 +1068,11 @@ ${details}
    *       { line_no: 1, item_name, spec, unit_price, quantity,
    *         payment_method, payment_date },
    *       ...
+   *     ],
+   *     expenses: [   // Phase 17i: 経費 (交通費等・税込み額)
+   *       { line_no: 1, expense_name, spec, spent_date,
+   *         amount_inc_tax, remarks },
+   *       ...
    *     ]
    *   }
    * 既存明細は line_no が重複したら更新、それ以外は INSERT。
@@ -1067,6 +1084,7 @@ ${details}
       const orderItemId = Number(req.params.id);
       const taxRate = Number(req.body.tax_rate) || 10;
       const lines: Array<any> = Array.isArray(req.body.lines) ? req.body.lines : [];
+      const expenses: Array<any> = Array.isArray(req.body.expenses) ? req.body.expenses : [];
 
       // 計算 + Phase 13: calc_method / payment_terms を統一
       const computedLines = lines.map((l) => {
@@ -1143,8 +1161,62 @@ ${details}
         );
       }
 
+      // Phase 17i: 経費 (交通費等) を upsert
+      const computedExpenses = expenses
+        .map((e: any, idx: number) => ({
+          line_no: Number(e.line_no) || idx + 1,
+          expense_name: e.expense_name || "",
+          spec: e.spec || "",
+          spent_date: e.spent_date || null,
+          amount_inc_tax: Number(e.amount_inc_tax) || 0,
+          remarks: e.remarks || "",
+        }))
+        .filter((e) => e.expense_name); // 費目名がない行は除外
+
+      const keepExpenseNos = computedExpenses.map((e) => e.line_no).filter((n) => n > 0);
+      if (keepExpenseNos.length > 0) {
+        await query(
+          `DELETE FROM order_expenses
+            WHERE order_item_id = $1
+              AND line_no NOT IN (${keepExpenseNos.map((_, i) => `$${i + 2}`).join(",")})`,
+          [orderItemId, ...keepExpenseNos]
+        );
+      } else {
+        await query("DELETE FROM order_expenses WHERE order_item_id = $1", [orderItemId]);
+      }
+
+      for (const e of computedExpenses) {
+        await query(
+          `INSERT INTO order_expenses (
+             order_item_id, line_no, expense_name, spec,
+             spent_date, amount_inc_tax, remarks, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+           ON CONFLICT (order_item_id, line_no) DO UPDATE SET
+             expense_name   = EXCLUDED.expense_name,
+             spec           = EXCLUDED.spec,
+             spent_date     = EXCLUDED.spent_date,
+             amount_inc_tax = EXCLUDED.amount_inc_tax,
+             remarks        = EXCLUDED.remarks,
+             updated_at     = CURRENT_TIMESTAMP`,
+          [
+            orderItemId,
+            e.line_no,
+            e.expense_name,
+            e.spec,
+            e.spent_date,
+            e.amount_inc_tax,
+            e.remarks,
+          ]
+        );
+      }
+
       const totals = await recalculateOrderTotal(orderItemId, taxRate);
-      res.json({ success: true, totals, line_count: computedLines.length });
+      res.json({
+        success: true,
+        totals,
+        line_count: computedLines.length,
+        expense_count: computedExpenses.length,
+      });
     } catch (error) {
       console.error("/api/order-items/:id/line-items failed:", error);
       res.status(500).json({ error: String(error) });
@@ -1455,6 +1527,8 @@ ${details}
           : await getNewDocumentNumber("purchase_order", "発注書");
       const taxRate = Number(body.tax_rate) || 10;
       const items: Array<any> = Array.isArray(body.items) ? body.items : [];
+      // Phase 17i: 経費 (交通費等・税込み額) を一緒に登録
+      const importExpenses: Array<any> = Array.isArray(body.expenses) ? body.expenses : [];
 
       if (items.length === 0) {
         return res
@@ -1548,6 +1622,43 @@ ${details}
         );
       }
 
+      // Phase 17i: 経費を upsert
+      const computedExpenses = importExpenses
+        .map((e: any, idx: number) => ({
+          line_no: Number(e.line_no) || idx + 1,
+          expense_name: e.expense_name || "",
+          spec: e.spec || "",
+          spent_date: e.spent_date || null,
+          amount_inc_tax: Number(e.amount_inc_tax) || 0,
+          remarks: e.remarks || "",
+        }))
+        .filter((e) => e.expense_name);
+
+      await query("DELETE FROM order_expenses WHERE order_item_id = $1", [
+        orderItemId,
+      ]);
+      for (const e of computedExpenses) {
+        await query(
+          `INSERT INTO order_expenses (
+             order_item_id, line_no, expense_name, spec,
+             spent_date, amount_inc_tax, remarks
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            orderItemId,
+            e.line_no,
+            e.expense_name,
+            e.spec,
+            e.spent_date,
+            e.amount_inc_tax,
+            e.remarks,
+          ]
+        );
+      }
+      const expensesTotalIncTax = computedExpenses.reduce(
+        (s, e) => s + e.amount_inc_tax,
+        0
+      );
+
       // 3. 集計 (tax / inc_tax) を header に書き戻し
       const totals = await recalculateOrderTotal(orderItemId, taxRate);
 
@@ -1567,6 +1678,8 @@ ${details}
           JSON.stringify({
             ...(body.form_data || {}),
             items: computedLines,
+            expenses: computedExpenses,
+            expensesTotalIncTax,
             grandTotalExTax: totalExTax,
             taxRate,
             __imported: true,
@@ -1603,6 +1716,8 @@ ${details}
         issue_key: issueKey,
         document_number: docNumber,
         line_count: computedLines.length,
+        expense_count: computedExpenses.length,
+        expensesTotalIncTax,
         totals,
       });
     } catch (error) {
@@ -2312,9 +2427,18 @@ ${details}
     staffInfo: any
   ): Promise<{ generated: boolean; drive_link: string; error?: string }> {
     try {
+      // Phase 17i: 経費合計をサーバ側で再計算 (テンプレ {{expensesTotalIncTax}} 用)
+      const bulkExpenses = Array.isArray(rawData?.expenses) ? rawData.expenses : [];
+      const bulkExpensesTotal = bulkExpenses.reduce(
+        (s: number, e: any) => s + (Number(e?.amount_inc_tax) || 0),
+        0
+      );
+
       const details = {
         ...rawData,
         ...staffInfo,
+        expenses: bulkExpenses,
+        expensesTotalIncTax: bulkExpensesTotal,
         DOC_NO: documentNumber,
         ORDER_NO: documentNumber,
         hasChangeLogs: false,
@@ -4362,6 +4486,13 @@ ${details}
     try {
       const { templateType, formData, issueKey, requesterEmail } = req.body;
 
+      // Phase 17i: 経費合計をサーバ側で再計算
+      const previewExpenses = Array.isArray(formData?.expenses) ? formData.expenses : [];
+      const previewExpensesTotal = previewExpenses.reduce(
+        (s: number, e: any) => s + (Number(e?.amount_inc_tax) || 0),
+        0
+      );
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey: issueKey || "PREVIEW-000",
@@ -4371,6 +4502,8 @@ ${details}
           date: new Date().toLocaleDateString("ja-JP"),
           details: {
             ...formData,
+            expenses: previewExpenses,
+            expensesTotalIncTax: previewExpensesTotal,
             isLivePreview: true,
           },
         },
@@ -4554,6 +4687,14 @@ ${details}
         });
       }
 
+      // Phase 17i: 経費の合計 (税込) を確実にテンプレに渡す
+      //   フロントが既に計算済みでも、念のためサーバ側で再計算して上書きする。
+      const expensesForRender = Array.isArray(formData.expenses) ? formData.expenses : [];
+      const expensesTotalIncTaxComputed = expensesForRender.reduce(
+        (s: number, e: any) => s + (Number(e?.amount_inc_tax) || 0),
+        0
+      );
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey,
@@ -4564,6 +4705,9 @@ ${details}
           details: {
             ...staffInfo,
             ...formData,
+            // Phase 17i: 経費（テンプレ側で {{#each expenses}} / {{expensesTotalIncTax}}）
+            expenses: expensesForRender,
+            expensesTotalIncTax: expensesTotalIncTaxComputed,
             DOC_NO: docNumber,
             ORDER_NO: formData.orderNumber || parentOrderNumber || issueKey,
             hasChangeLogs: !!formData.CHANGE_RECORDS,
@@ -4912,6 +5056,58 @@ ${details}
             );
           }
           await recalculateOrderTotal(orderItemId, taxRate);
+        }
+
+        // Phase 17i: 経費 (交通費等・税込み額) を upsert
+        if (orderItemId && Array.isArray(formData.expenses)) {
+          const incomingExpenses = formData.expenses as Array<any>;
+          const computedExpenses = incomingExpenses
+            .map((e: any, idx: number) => ({
+              line_no: Number(e.line_no) || idx + 1,
+              expense_name: e.expense_name || "",
+              spec: e.spec || "",
+              spent_date: e.spent_date || null,
+              amount_inc_tax: Number(e.amount_inc_tax) || 0,
+              remarks: e.remarks || "",
+            }))
+            .filter((e) => e.expense_name);
+
+          const keepExpenseNos = computedExpenses.map((e) => e.line_no).filter((n) => n > 0);
+          if (keepExpenseNos.length > 0) {
+            await query(
+              `DELETE FROM order_expenses
+                WHERE order_item_id = $1
+                  AND line_no NOT IN (${keepExpenseNos.map((_, i) => `$${i + 2}`).join(",")})`,
+              [orderItemId, ...keepExpenseNos]
+            );
+          } else {
+            await query("DELETE FROM order_expenses WHERE order_item_id = $1", [orderItemId]);
+          }
+
+          for (const e of computedExpenses) {
+            await query(
+              `INSERT INTO order_expenses (
+                 order_item_id, line_no, expense_name, spec,
+                 spent_date, amount_inc_tax, remarks, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+               ON CONFLICT (order_item_id, line_no) DO UPDATE SET
+                 expense_name   = EXCLUDED.expense_name,
+                 spec           = EXCLUDED.spec,
+                 spent_date     = EXCLUDED.spent_date,
+                 amount_inc_tax = EXCLUDED.amount_inc_tax,
+                 remarks        = EXCLUDED.remarks,
+                 updated_at     = CURRENT_TIMESTAMP`,
+              [
+                orderItemId,
+                e.line_no,
+                e.expense_name,
+                e.spec,
+                e.spent_date,
+                e.amount_inc_tax,
+                e.remarks,
+              ]
+            );
+          }
         }
       } else if (templateType.includes("inspection")) {
         await query(

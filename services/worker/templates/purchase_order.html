@@ -361,6 +361,44 @@
     </tbody>
   </table>
 
+  {{!-- Phase 17i: 経費 (交通費等・税込み額表示) --}}
+  {{#if expenses}}
+  {{#if (gt (length expenses) 0)}}
+  <div class="section-mark">■ 経費（交通費等／税込み額）</div>
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width:6mm;">No</th>
+        <th>費目</th>
+        <th style="width:24mm;">発生日</th>
+        <th style="width:26mm;">金額（税込）</th>
+        <th>摘要</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each expenses}}
+      <tr>
+        <td class="center">{{or line_no (index1 @index)}}</td>
+        <td>
+          <div class="item-name-block">{{expense_name}}</div>
+          {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
+        </td>
+        <td class="center">{{formatDate spent_date}}</td>
+        <td class="right">{{formatYen amount_inc_tax}}</td>
+        <td>{{remarks}}</td>
+      </tr>
+      {{/each}}
+      <tr>
+        <td colspan="3" class="right"><strong>経費合計（税込)</strong></td>
+        <td class="right"><strong>¥ {{formatCurrency expensesTotalIncTax}}</strong></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="small-muted" style="margin-top:4px;">※ 経費は税込み額にて精算します。本発注書に記載の各項目の領収書原本またはそのコピーを添付してください。</div>
+  {{/if}}
+  {{/if}}
+
   {{#if SPECIAL_TERMS}}
   <div class="terms-section">
     <div class="terms-title">特約事項</div>
@@ -387,8 +425,8 @@
   </div>
   {{else}}
   <div class="callout">
-    <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用）」が適用されます。
-    受注者は本発注書を承諾することにより, 当該約款にも同意したものとみなします。
+    <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用・2026年改正法対応版）」が適用されます。
+    受注者は本発注書を承諾することにより、当該約款にも同意したものとみなします。
   </div>
   {{/if}}
 
@@ -474,5 +512,10 @@
   </table>
   {{/if}}
   {{/if}}
+
+  {{!-- Phase 17i: 基本契約なしの場合は標準約款（terms_spot_2026）を別紙としてPDF末尾に添付 --}}
+  {{#unless HAS_BASE_CONTRACT}}
+  {{> terms_spot_2026}}
+  {{/unless}}
 </body>
 </html>

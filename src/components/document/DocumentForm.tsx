@@ -4,6 +4,7 @@ import { FormSection } from './FormSection';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
 import { LineItemTable, type LineItem } from './LineItemTable';
+import { ExpenseTable, type ExpenseItem } from './ExpenseTable';
 import {
   DeliveryLineItemTable,
   type OrderLineForInspection,
@@ -613,6 +614,30 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               });
             }}
             showPaymentColumns={true}
+          />
+        </FormSection>
+
+        {/* IV-b. 経費 (Phase 17i) — 交通費等・税込み額表示。
+            本体報酬とは別に行単位で経費を保持し、PDF にも経費表として
+            出力される。データは order_expenses テーブルに保存。 */}
+        <FormSection
+          title="IV-b. 経費（交通費等・税込み）"
+          variant="indigo"
+          icon={<List className="w-4 h-4" />}
+        >
+          <ExpenseTable
+            expenses={Array.isArray(formData.expenses) ? formData.expenses : []}
+            onChange={(expenses: ExpenseItem[]) => {
+              const expensesTotal = expenses.reduce(
+                (sum, e) => sum + (Number(e.amount_inc_tax) || 0),
+                0
+              );
+              setFormData({
+                ...formData,
+                expenses,
+                expensesTotalIncTax: expensesTotal,
+              });
+            }}
           />
         </FormSection>
 

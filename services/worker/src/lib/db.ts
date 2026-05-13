@@ -261,6 +261,27 @@ export async function initDb() {
       WHERE calc_method IS NULL OR calc_method = '' OR payment_terms IS NULL;`,
 
     // -----------------------------------------------------------------
+    // Phase 17i: 経費 (交通費等) — 発注書本体の業務報酬とは別に、
+    //   発注者が受注者に精算する経費を行単位で保持する。
+    //   料金は基本的に税込み額で記録 (現場の領収書がそのまま反映できる)。
+    //   発注書 PDF では業務明細表の直下に独立した経費表として描画される。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS order_expenses (
+      id SERIAL PRIMARY KEY,
+      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      expense_name TEXT NOT NULL,
+      spec TEXT,
+      spent_date DATE,
+      amount_inc_tax DECIMAL(15, 2),
+      remarks TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(order_item_id, line_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_oe_order_item ON order_expenses(order_item_id);`,
+
+    // -----------------------------------------------------------------
     // Phase 17: 稟議 (ringi) マスタ + 文書との N:N 関連
     //
     // 社内では稟議番号 (5 桁数字, 例: '00001') 単位で複数文書を束ねて
