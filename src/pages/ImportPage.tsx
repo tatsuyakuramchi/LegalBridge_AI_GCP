@@ -1631,7 +1631,7 @@ export function ImportPage() {
     individual_license_terms: "個別利用許諾条件書",
     license_master: "ライセンス基本契約書",
     service_master: "業務委託基本契約書",
-    nda: "秘密保持契約書 (NDA)",
+    nda: "その他契約 (NDA)",
     sales_master: "売買基本契約書",
     pending_pdf: "PDF 未作成キュー",
   }
@@ -1679,48 +1679,57 @@ export function ImportPage() {
         />
       )}
 
-      <div className="flex flex-wrap gap-2 border-b border-border">
+      {/* Phase 16b: グループラベル付きタブバー — カテゴリが視覚的に分かる */}
+      <div className="border-b border-border">
         {(
           [
-            { key: "purchase_order", label: "発注書", group: "個別伝票" },
             {
-              key: "individual_license_terms",
-              label: "個別利用許諾条件書",
               group: "個別伝票",
+              tabs: [
+                { key: "purchase_order", label: "発注書" },
+                { key: "individual_license_terms", label: "個別利用許諾条件書" },
+              ],
             },
             {
-              key: "license_master",
-              label: "ライセンス基本契約書",
               group: "基本契約",
+              tabs: [
+                { key: "license_master", label: "ライセンス基本契約書" },
+                { key: "service_master", label: "業務委託基本契約書" },
+                { key: "sales_master", label: "売買基本契約書" },
+              ],
             },
             {
-              key: "service_master",
-              label: "業務委託基本契約書",
-              group: "基本契約",
+              group: "その他契約",
+              tabs: [{ key: "nda", label: "NDA (秘密保持)" }],
             },
             {
-              key: "sales_master",
-              label: "売買基本契約書",
-              group: "基本契約",
+              group: "PDF 生成",
+              tabs: [{ key: "pending_pdf", label: "📄 PDF 未作成キュー" }],
             },
-            { key: "nda", label: "NDA", group: "その他" },
-            { key: "pending_pdf", label: "📄 PDF 未作成キュー", group: "PDF 生成" },
-          ] as { key: Tab; label: string; group: string }[]
-        ).map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => setTab(t.key)}
-            className={cn(
-              "px-4 py-2 text-[11px] font-mono uppercase tracking-wider border-b-2 transition-colors relative",
-              tab === t.key
-                ? "border-foreground text-foreground font-bold"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            )}
-            title={t.group}
-          >
-            {t.label}
-          </button>
+          ] as { group: string; tabs: { key: Tab; label: string }[] }[]
+        ).map((g) => (
+          <div key={g.group} className="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-b-0">
+            <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground/70 w-24 flex-shrink-0">
+              ░ {g.group}
+            </span>
+            <div className="flex flex-wrap gap-1.5">
+              {g.tabs.map((t) => (
+                <button
+                  key={t.key}
+                  type="button"
+                  onClick={() => setTab(t.key)}
+                  className={cn(
+                    "px-3 py-1 text-[10px] font-mono uppercase tracking-wider rounded-sm border transition-colors",
+                    tab === t.key
+                      ? "bg-foreground text-background border-foreground font-bold"
+                      : "border-border text-muted-foreground hover:text-foreground hover:bg-muted"
+                  )}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          </div>
         ))}
       </div>
 
