@@ -863,6 +863,146 @@ ${details}
     }
   });
 
+  /**
+   * Phase 17o: documents → contract_capabilities の再同期エンドポイント。
+   *
+   * 旧バージョンの worker は VENDOR_CODE をフォーム側で渡していなかった
+   * ため、vendor_name の表記揺れで vendor_id が解決できず、結果として
+   * contract_capabilities.vendor_id が NULL のレコードが残ってしまい、
+   * 法務検索（個別契約セクション）で発注書が見えない問題があった。
+   *
+   * このエンドポイントは documents テーブルの全行を走査して、現在の
+   * vendor master と突合し、contract_capabilities を再 upsert する。
+   * 冪等。
+   *
+   * body: { dry_run?: boolean }
+   */
+  app.post("/api/admin/resync-contract-capabilities", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run === true;
+    try {
+      const docs = await query(
+        `SELECT d.id, d.document_number, d.template_type, d.issue_key,
+                d.form_data, d.drive_link, d.created_at
+           FROM documents d
+          WHERE d.document_number IS NOT NULL
+            AND d.document_number <> ''
+          ORDER BY d.created_at DESC`
+      );
+
+      const stats = {
+        total: docs.rows.length,
+        resolved_vendor: 0,
+        unresolved_vendor: 0,
+        upserted: 0,
+        skipped: 0,
+        errors: [] as Array<{ document_number: string; error: string }>,
+      };
+
+      for (const d of docs.rows) {
+        try {
+          const fd = d.form_data || {};
+          const templateType = String(d.template_type || "");
+
+          let vendorId: number | null = null;
+          const vendorCode = String(fd.VENDOR_CODE || fd.vendorCode || "").trim();
+          const vendorName = String(
+            fd.VENDOR_NAME || fd.PARTY_B_NAME || fd.partyBName || ""
+          ).trim();
+
+          if (vendorCode && vendorCode.toUpperCase() !== "UNKNOWN") {
+            const r = await query(
+              "SELECT id FROM vendors WHERE vendor_code = $1 LIMIT 1",
+              [vendorCode]
+            );
+            if (r.rows.length > 0) vendorId = Number(r.rows[0].id);
+          }
+          if (!vendorId && vendorName) {
+            const r = await query(
+              "SELECT id FROM vendors WHERE vendor_name = $1 LIMIT 1",
+              [vendorName]
+            );
+            if (r.rows.length > 0) vendorId = Number(r.rows[0].id);
+          }
+          if (!vendorId && vendorName) {
+            const r = await query(
+              "SELECT id FROM vendors WHERE trade_name = $1 OR pen_name = $1 LIMIT 1",
+              [vendorName]
+            );
+            if (r.rows.length > 0) vendorId = Number(r.rows[0].id);
+          }
+
+          if (vendorId) stats.resolved_vendor++;
+          else stats.unresolved_vendor++;
+
+          let recordType = "master_contract";
+          if (
+            templateType.includes("license") ||
+            templateType.includes("royalty") ||
+            templateType.includes("fee_statement")
+          ) {
+            recordType = "license_condition";
+          } else if (
+            templateType.includes("purchase_order") ||
+            templateType.includes("inspection")
+          ) {
+            recordType = "individual_contract";
+          }
+
+          if (dryRun) {
+            stats.skipped++;
+            continue;
+          }
+
+          await query(
+            `INSERT INTO contract_capabilities (
+              vendor_id, record_type, contract_category, contract_type, contract_title,
+              document_number, contract_status, effective_date, expiration_date, auto_renewal,
+              original_work, product_name, work_name, media, territory, language, document_url, source_system
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            ON CONFLICT (document_number) DO UPDATE SET
+              vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
+              record_type    = EXCLUDED.record_type,
+              contract_type  = EXCLUDED.contract_type,
+              contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
+              document_url   = COALESCE(NULLIF(EXCLUDED.document_url, ''), contract_capabilities.document_url),
+              updated_at     = CURRENT_TIMESTAMP`,
+            [
+              vendorId,
+              recordType,
+              templateType.includes("license") ? "license" : "service",
+              templateType,
+              fd.CONTRACT_TITLE || fd.contract_title || fd.summary || fd.PROJECT_TITLE || "",
+              d.document_number,
+              "executed",
+              fd.EFFECTIVE_DATE || fd.effectiveDate || null,
+              fd.EXPIRATION_DATE || fd.expirationDate || null,
+              fd.AUTO_RENEWAL === "true" || fd.AUTO_RENEWAL === true || false,
+              fd.ORIGINAL_WORK || fd.originalWork || "",
+              fd.PRODUCT_NAME || fd.productName || "",
+              fd.WORK_NAME || fd.workName || "",
+              fd.MEDIA || fd.media || "",
+              fd.TERRITORY || fd.territory || "",
+              fd.LANGUAGE || fd.language || "",
+              d.drive_link || "",
+              "resync",
+            ]
+          );
+          stats.upserted++;
+        } catch (rowErr: any) {
+          stats.errors.push({
+            document_number: d.document_number,
+            error: String(rowErr?.message || rowErr),
+          });
+        }
+      }
+
+      res.json({ ok: true, dry_run: dryRun, ...stats });
+    } catch (error: any) {
+      console.error("/api/admin/resync-contract-capabilities failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   // -------------------------------------------------------------------
   // /api/order-items/* + /api/order-line-items/* (Phase 4b)
   //
@@ -4896,18 +5036,50 @@ ${details}
       // Mirror as a contract_capability row so the contract-check API
       // surfaces newly-generated docs.
       try {
-        let vendorId = null;
-        const vendorCode = formData.VENDOR_CODE || formData.vendorCode || "";
-        const vendorName =
-          formData.VENDOR_NAME || formData.PARTY_B_NAME || formData.partyBName || "";
-        if (vendorCode || vendorName) {
+        // Phase 17o: vendor lookup を堅牢化。
+        //   優先順:
+        //     1. VENDOR_CODE (master と一致 → 最も確実)
+        //     2. VENDOR_NAME exact match
+        //     3. trade_name / pen_name exact match (旧屋号や PN 入力対応)
+        //   どれも当たらなければ vendor_id=null で INSERT (warn ログを残す)。
+        let vendorId: number | null = null;
+        const vendorCode = String(
+          formData.VENDOR_CODE || formData.vendorCode || ""
+        ).trim();
+        const vendorName = String(
+          formData.VENDOR_NAME ||
+            formData.PARTY_B_NAME ||
+            formData.partyBName ||
+            ""
+        ).trim();
+
+        if (vendorCode && vendorCode.toUpperCase() !== "UNKNOWN") {
           const vRes = await query(
-            "SELECT id FROM vendors WHERE vendor_code = $1 OR vendor_name = $2 LIMIT 1",
-            [vendorCode, vendorName]
+            "SELECT id FROM vendors WHERE vendor_code = $1 LIMIT 1",
+            [vendorCode]
           );
-          if (vRes.rows.length > 0) {
-            vendorId = vRes.rows[0].id;
-          }
+          if (vRes.rows.length > 0) vendorId = Number(vRes.rows[0].id);
+        }
+        if (!vendorId && vendorName) {
+          const vRes = await query(
+            "SELECT id FROM vendors WHERE vendor_name = $1 LIMIT 1",
+            [vendorName]
+          );
+          if (vRes.rows.length > 0) vendorId = Number(vRes.rows[0].id);
+        }
+        if (!vendorId && vendorName) {
+          const vRes = await query(
+            `SELECT id FROM vendors
+              WHERE trade_name = $1 OR pen_name = $1
+              LIMIT 1`,
+            [vendorName]
+          );
+          if (vRes.rows.length > 0) vendorId = Number(vRes.rows[0].id);
+        }
+        if (!vendorId) {
+          console.warn(
+            `[contract_capabilities] vendor 解決失敗 (code='${vendorCode}', name='${vendorName}'). vendor_id=null で INSERT。`
+          );
         }
 
         let recordType = "master_contract";

@@ -326,8 +326,31 @@ export function DocumentEditorPage() {
             formData?.__reopen_doc_number,
         }),
       })
-      const data = await res.json()
-      if (data.driveLink) {
+
+      // Phase 17o: バックエンドの実エラーをサイレントに飲み込まない。
+      // 旧コードは res.ok を見ずに data.driveLink の有無だけで判定して
+      // いたため、HTTP 500 でも「drive link が無いだけ」のように見える
+      // 紛らわしい挙動だった。
+      let data: any = null
+      const rawText = await res.text()
+      try {
+        data = rawText ? JSON.parse(rawText) : null
+      } catch {
+        data = { error: rawText }
+      }
+
+      if (!res.ok) {
+        const detail =
+          data?.error ||
+          data?.message ||
+          rawText ||
+          `HTTP ${res.status}`
+        console.error("Generation failed (server)", res.status, data)
+        showNotification(`文書作成に失敗しました: ${detail}`, "error")
+        return
+      }
+
+      if (data?.driveLink) {
         // Phase 9g: 達成感サクセス画面 — toast だけだと「できたかどうか」が
         // 不明確というフィードバックを受け、明示的なモーダルで完了表示。
         setCompletionResult({
@@ -338,11 +361,17 @@ export function DocumentEditorPage() {
         })
         showNotification("Document generated and uploaded.", "success")
       } else {
-        showNotification("Generation completed, but no drive link was returned.", "info")
+        showNotification(
+          `生成完了 (${data?.documentNumber || "番号未取得"}) — drive link が返却されませんでした`,
+          "info"
+        )
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error("Generation failed", e)
-      showNotification("Document generation failed.", "error")
+      showNotification(
+        `文書作成に失敗しました: ${e?.message || e}`,
+        "error"
+      )
     } finally {
       setIsGenerating(false)
     }

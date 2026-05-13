@@ -435,6 +435,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       const isCorp = isCorporation(activeVendor);
       setFormData({
         ...formData,
+        // Phase 17o: VENDOR_CODE を必ず同期する。
+        //   これが無いと worker 側の contract_capabilities ミラー時に
+        //   vendor_id が解決できず、法務検索（個別契約）に PO が
+        //   表示されない原因になっていた。
+        VENDOR_CODE: activeVendor.vendor_code || '',
         VENDOR_NAME: activeVendor.vendor_name || '',
         VENDOR_ADDRESS: activeVendor.address || '',
         VENDOR_REPRESENTATIVE_SAMA: activeVendor.vendor_rep
@@ -712,6 +717,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       if (!activeVendor) return;
       setFormData({
         ...formData,
+        // Phase 17o: VENDOR_CODE を必ず同期 (法務検索の vendor_id 解決用)
+        VENDOR_CODE: activeVendor.vendor_code || '',
         VENDOR_NAME: activeVendor.vendor_name || '',
         VENDOR_ADDRESS: activeVendor.address || '',
         VENDOR_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
@@ -891,6 +898,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       if (!activeVendor) return;
       setFormData({
         ...formData,
+        // Phase 17o: VENDOR_CODE を必ず同期 (法務検索の vendor_id 解決用)
+        VENDOR_CODE: activeVendor.vendor_code || '',
         VENDOR_NAME: activeVendor.vendor_name || '',
         VENDOR_ADDRESS: activeVendor.address || '',
         VENDOR_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
