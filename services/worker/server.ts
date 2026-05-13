@@ -864,6 +864,77 @@ ${details}
   });
 
   /**
+   * Phase 17r: Backlog プロジェクトのステータス一覧を返す。
+   * workflow_settings.next_status_id を設定するときに使う ID を調べる用。
+   */
+  app.get("/api/admin/backlog-statuses", async (_req, res) => {
+    try {
+      const statuses = await backlogService.getStatuses();
+      res.json({
+        ok: true,
+        statuses: statuses.map((s: any) => ({
+          id: s.id,
+          name: s.name,
+          displayOrder: s.displayOrder,
+          color: s.color,
+        })),
+      });
+    } catch (error: any) {
+      console.error("/api/admin/backlog-statuses failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  /**
+   * Phase 17r: 文書作成完了時に Backlog のどのステータスに遷移させるかを
+   * 種別ごとに設定する。
+   *
+   * body: {
+   *   transitions: [
+   *     { issue_type_name: '発注書',   next_status_id: 4 },
+   *     { issue_type_name: 'purchase_order', next_status_id: 4 },
+   *     { issue_type_name: 'NDA',     next_status_id: 3 },
+   *     ...
+   *   ]
+   * }
+   *
+   * 1 エントリ = workflow_settings 1 行を upsert (issue_type_name UNIQUE で
+   * ON CONFLICT)。同じ next_status_id を「日本語ラベル」「英語テンプレ ID」
+   * の両方で登録しておくと、worker の lookup がどちらのキーでも引ける。
+   */
+  app.post(
+    "/api/admin/configure-status-transitions",
+    express.json(),
+    async (req, res) => {
+      const transitions = Array.isArray(req.body?.transitions)
+        ? req.body.transitions
+        : [];
+      try {
+        const results: Array<{ issue_type_name: string; next_status_id: number | null }> = [];
+        for (const t of transitions) {
+          const name = String(t?.issue_type_name || "").trim();
+          const nsid =
+            t?.next_status_id == null ? null : Number(t.next_status_id);
+          if (!name) continue;
+          await query(
+            `INSERT INTO workflow_settings (issue_type_name, next_status_id)
+             VALUES ($1, $2)
+             ON CONFLICT (issue_type_name) DO UPDATE SET
+               next_status_id = EXCLUDED.next_status_id,
+               updated_at = CURRENT_TIMESTAMP`,
+            [name, nsid]
+          );
+          results.push({ issue_type_name: name, next_status_id: nsid });
+        }
+        res.json({ ok: true, configured: results });
+      } catch (error: any) {
+        console.error("/api/admin/configure-status-transitions failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  /**
    * Phase 17o: documents → contract_capabilities の再同期エンドポイント。
    *
    * 旧バージョンの worker は VENDOR_CODE をフォーム側で渡していなかった
@@ -4808,23 +4879,50 @@ ${details}
           : await getNewDocumentNumber(templateType, issue.issueType.name);
 
       // Auto-advance Backlog status if a next_status_id is configured.
+      //
+      // Phase 17r: lookup を堅牢化。issueType.name (Backlog 側のラベル、
+      // 通常は日本語) と templateType (英語のテンプレ ID) の両方をキー
+      // として workflow_settings を引く。最初にヒットした next_status_id
+      // を使う。これにより:
+      //   - workflow_settings に '発注書' 行を入れても引ける
+      //   - 'purchase_order' 行を入れても引ける
+      //   - issueType.name と templateType を別々の遷移にしたい場合は
+      //     issueType.name の行を優先 (より具体的)。
       if (!nextStatusId) {
         const wsResult = await query(
-          "SELECT next_status_id FROM workflow_settings WHERE issue_type_name = $1",
-          [issue.issueType.name]
+          `SELECT issue_type_name, next_status_id
+             FROM workflow_settings
+            WHERE next_status_id IS NOT NULL
+              AND issue_type_name = ANY($1::text[])
+            ORDER BY CASE WHEN issue_type_name = $2 THEN 0 ELSE 1 END
+            LIMIT 1`,
+          [
+            [issue.issueType.name, templateType].filter(Boolean),
+            issue.issueType.name,
+          ]
         );
         if (wsResult.rows[0]?.next_status_id) {
           nextStatusId = wsResult.rows[0].next_status_id;
           console.log(
-            `📡 Auto-Advance: Found next_status_id ${nextStatusId} for issue type ${issue.issueType.name}`
+            `📡 Auto-Advance: next_status_id=${nextStatusId} hit via key '${wsResult.rows[0].issue_type_name}' (issueType=${issue.issueType.name} / template=${templateType})`
+          );
+        } else {
+          console.log(
+            `📡 Auto-Advance: skipped — workflow_settings に next_status_id 設定なし (issueType='${issue.issueType.name}', template='${templateType}')`
           );
         }
       }
       if (nextStatusId && !isManualIssue) {
         try {
           await backlogService.updateIssueStatus(issueKey, nextStatusId);
+          console.log(
+            `📡 Auto-Advance: ${issueKey} → status ${nextStatusId} OK`
+          );
         } catch (statusError) {
-          console.warn("Failed to update status, continuing...", statusError);
+          console.warn(
+            `[auto-advance] Backlog status 更新失敗 (${issueKey} → ${nextStatusId}):`,
+            statusError
+          );
         }
       }
 
