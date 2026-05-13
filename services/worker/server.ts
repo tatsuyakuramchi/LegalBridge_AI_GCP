@@ -971,7 +971,7 @@ ${details}
         `SELECT id, order_item_id, line_no, item_name, spec,
                 unit_price, quantity, amount_ex_tax,
                 calc_method, payment_terms,
-                payment_method, payment_date,
+                payment_method, payment_date, delivery_date,
                 created_at, updated_at
            FROM order_line_items
           WHERE order_item_id = $1
@@ -1087,6 +1087,8 @@ ${details}
           // legacy: payment_method も payment_terms と同じ値で埋める (テンプレ後方互換)
           payment_method: payTerms,
           payment_date: l.payment_date || null,
+          // Phase 17h: 業務明細ごとの納期
+          delivery_date: l.delivery_date || null,
         };
       });
 
@@ -1103,15 +1105,15 @@ ${details}
         await query("DELETE FROM order_line_items WHERE order_item_id = $1", [orderItemId]);
       }
 
-      // upsert (Phase 13: calc_method + payment_terms 追加, 旧 payment_method は同じ値で互換維持)
+      // upsert (Phase 13/17h: calc_method + payment_terms + delivery_date)
       for (const l of computedLines) {
         await query(
           `INSERT INTO order_line_items (
              order_item_id, line_no, item_name, spec,
              unit_price, quantity, amount_ex_tax,
              calc_method, payment_terms,
-             payment_method, payment_date, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+             payment_method, payment_date, delivery_date, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
            ON CONFLICT (order_item_id, line_no) DO UPDATE SET
              item_name      = EXCLUDED.item_name,
              spec           = EXCLUDED.spec,
@@ -1122,6 +1124,7 @@ ${details}
              payment_terms  = EXCLUDED.payment_terms,
              payment_method = EXCLUDED.payment_method,
              payment_date   = EXCLUDED.payment_date,
+             delivery_date  = EXCLUDED.delivery_date,
              updated_at     = CURRENT_TIMESTAMP`,
           [
             orderItemId,
@@ -1135,6 +1138,7 @@ ${details}
             l.payment_terms,
             l.payment_method,
             l.payment_date,
+            l.delivery_date,
           ]
         );
       }
@@ -1477,6 +1481,7 @@ ${details}
           payment_terms: payTerms,
           payment_method: payTerms, // legacy mirror
           payment_date: l.payment_date || null,
+          delivery_date: l.delivery_date || null, // Phase 17h
         };
       });
 
@@ -1524,8 +1529,8 @@ ${details}
              order_item_id, line_no, item_name, spec,
              unit_price, quantity, amount_ex_tax,
              calc_method, payment_terms,
-             payment_method, payment_date
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+             payment_method, payment_date, delivery_date
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
           [
             orderItemId,
             l.line_no,
@@ -1538,6 +1543,7 @@ ${details}
             l.payment_terms,
             l.payment_method,
             l.payment_date,
+            l.delivery_date,
           ]
         );
       }
@@ -2400,6 +2406,7 @@ ${details}
                 payment_terms: payTerms,
                 payment_method: payTerms, // legacy mirror
                 payment_date: r.payment_date || null,
+                delivery_date: r.delivery_date || null, // Phase 17h
               };
             });
 
@@ -2448,8 +2455,8 @@ ${details}
                  order_item_id, line_no, item_name, spec,
                  unit_price, quantity, amount_ex_tax,
                  calc_method, payment_terms,
-                 payment_method, payment_date
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                 payment_method, payment_date, delivery_date
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
               [
                 orderItemId,
                 l.line_no,
@@ -2462,6 +2469,7 @@ ${details}
                 l.payment_terms,
                 l.payment_method,
                 l.payment_date,
+                l.delivery_date,
               ]
             );
           }
@@ -4044,13 +4052,14 @@ ${details}
           "quantity",
           "calc_method",
           "payment_terms",
+          "delivery_date",
           "payment_date",
         ],
         sample: [
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", ""],
-          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "00002", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", ""],
-          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "00001,00003", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31"],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31"],
+          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "00002", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", "2026-06-15", ""],
+          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "00001,00003", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", "2026-04-01", ""],
         ],
       },
       "license-contract": {
@@ -4872,8 +4881,8 @@ ${details}
                  order_item_id, line_no, item_name, spec,
                  unit_price, quantity, amount_ex_tax,
                  calc_method, payment_terms,
-                 payment_method, payment_date, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+                 payment_method, payment_date, delivery_date, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
                ON CONFLICT (order_item_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
@@ -4884,6 +4893,7 @@ ${details}
                  payment_terms  = EXCLUDED.payment_terms,
                  payment_method = EXCLUDED.payment_method,
                  payment_date   = EXCLUDED.payment_date,
+                 delivery_date  = EXCLUDED.delivery_date,
                  updated_at     = CURRENT_TIMESTAMP`,
               [
                 orderItemId,
@@ -4897,6 +4907,7 @@ ${details}
                 payTerms,
                 payTerms, // legacy mirror
                 l.payment_date || null,
+                l.delivery_date || null, // Phase 17h
               ]
             );
           }

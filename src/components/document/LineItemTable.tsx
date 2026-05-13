@@ -38,6 +38,10 @@ export type LineItem = {
   payment_terms?: string;
   payment_date?: string;
   /**
+   * Phase 17h: 業務明細ごとの納期。分納時は明細ごとに異なる日付を持てる。
+   */
+  delivery_date?: string;
+  /**
    * @deprecated Phase 13 で payment_terms に分離。後方互換のため残置。
    * UI には表示しないが、CSV 入力 / 既存 DB 行とは互換性維持。
    */
@@ -98,6 +102,7 @@ export const LineItemTable: React.FC<Props> = ({
         calc_method: "FIXED",
         payment_terms: "",
         payment_date: "",
+        delivery_date: "",
       },
     ]);
   };
@@ -151,6 +156,7 @@ export const LineItemTable: React.FC<Props> = ({
                 <>
                   <th className="text-left p-2 w-32">計算方式</th>
                   <th className="text-left p-2 w-28">支払条件</th>
+                  <th className="text-left p-2 w-28">納期</th>
                   <th className="text-left p-2 w-28">支払日</th>
                 </>
               )}
@@ -160,14 +166,14 @@ export const LineItemTable: React.FC<Props> = ({
           <tbody>
             {items.length === 0 ? (
               <tr>
-                {/* Phase 13: 列数が変わったので colspan を再計算
+                {/* Phase 17h: 列数が変わったので colspan を再計算
                     基本 6 列 (#/品目/仕様/単価/数量/小計)
-                    + showPayment なら 3 列 (計算方式/支払条件/支払日)
+                    + showPayment なら 4 列 (計算方式/支払条件/納期/支払日)
                     + !readOnly なら 1 列 (削除ボタン) */}
                 <td
                   colSpan={
                     6 +
-                    (showPaymentColumns ? 3 : 0) +
+                    (showPaymentColumns ? 4 : 0) +
                     (readOnly ? 0 : 1)
                   }
                   className="p-3 text-center text-muted-foreground italic"
@@ -250,6 +256,14 @@ export const LineItemTable: React.FC<Props> = ({
                             "翌月末"
                           )}
                         </td>
+                        {/* Phase 17h: 納期 (delivery_date) */}
+                        <td className="p-2">
+                          {cellInput(
+                            it.delivery_date,
+                            (v) => update(idx, { delivery_date: v }),
+                            "date"
+                          )}
+                        </td>
                         <td className="p-2">
                           {cellInput(
                             it.payment_date,
@@ -284,8 +298,8 @@ export const LineItemTable: React.FC<Props> = ({
               <td className="p-2 text-right text-[13px]">
                 ¥ {grandTotal.toLocaleString("ja-JP")}
               </td>
-              {/* Phase 13: 計算方式 / 支払条件 / 支払日 の 3 列 */}
-              {showPaymentColumns && <td colSpan={3}></td>}
+              {/* Phase 17h: 計算方式 / 支払条件 / 納期 / 支払日 の 4 列 */}
+              {showPaymentColumns && <td colSpan={4}></td>}
               {!readOnly && <td></td>}
             </tr>
           </tfoot>

@@ -417,6 +417,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
 
     const fillVendorFromPartner = () => {
       if (!activeVendor) return;
+      // Phase 17h: 法人/個人 を判定して VENDOR_IS_CORPORATION も同期
+      const isCorp = isCorporation(activeVendor);
       setFormData({
         ...formData,
         VENDOR_NAME: activeVendor.vendor_name || '',
@@ -427,7 +429,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         VENDOR_CONTACT_DEPARTMENT: activeVendor.contact_department || '',
         VENDOR_CONTACT_NAME: activeVendor.contact_name || '',
         VENDOR_EMAIL: activeVendor.email || '',
-        VENDOR_SUFFIX: isCorporation(activeVendor) ? '御中' : '様',
+        VENDOR_IS_CORPORATION: isCorp ? '法人' : '個人',
+        VENDOR_SUFFIX: isCorp ? '御中' : '様',
         // Bank info — common ask, pulled at the same time
         BANK_NAME: activeVendor.bank_name || '',
         BRANCH_NAME: activeVendor.branch_name || '',
@@ -446,6 +449,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         VENDOR_REPRESENTATIVE_SAMA: companyProfile?.representative
           ? `${companyProfile.representative} 様`
           : '',
+        VENDOR_IS_CORPORATION: '法人', // 自社は常に法人想定
         VENDOR_SUFFIX: '御中',
       });
 

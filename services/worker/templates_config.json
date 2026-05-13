@@ -61,13 +61,12 @@
     "category": "Domestic",
     "vars": {
       "ORDER_NO": { "label": "発注番号", "group": "I. 発注概要", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
-      "ORDER_DATE_YEAR": { "label": "発行年", "group": "I. 発注概要", "required": true, "placeholder": "2026" },
-      "ORDER_DATE_MONTH": { "label": "発行月", "group": "I. 発注概要", "required": true, "placeholder": "5" },
-      "ORDER_DATE_DAY": { "label": "発行日", "group": "I. 発注概要", "required": true, "placeholder": "12" },
+      "ORDER_DATE": { "label": "発行日", "group": "I. 発注概要", "type": "date", "required": true, "dbField": "auto.today", "helpText": "PDF には YYYY年MM月DD日 で表示。年月日は自動分解" },
       "PROJECT_TITLE": { "label": "件名", "group": "I. 発注概要", "required": true, "dbField": "backlog.summary", "placeholder": "例: ノートPC 5台調達" },
 
       "VENDOR_NAME": { "label": "発注先 名称", "group": "II. 発注先 (取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力" },
-      "VENDOR_SUFFIX": { "label": "敬称", "group": "II. 発注先 (取引先)", "type": "select", "options": ["御中", "様", "殿"], "placeholder": "御中" },
+      "VENDOR_IS_CORPORATION": { "label": "発注先区分", "group": "II. 発注先 (取引先)", "type": "select", "options": ["法人", "個人"], "helpText": "[取引先] ボタンで vendor.entity_type から自動判定。法人は敬称『御中』+ 代表者『様』、個人は『様』のみ" },
+      "VENDOR_SUFFIX": { "label": "敬称", "group": "II. 発注先 (取引先)", "type": "select", "options": ["御中", "様", "殿"], "placeholder": "御中", "helpText": "発注先区分から自動設定。手動上書きも可" },
       "VENDOR_ADDRESS": { "label": "発注先 住所", "group": "II. 発注先 (取引先)", "type": "textarea", "required": true },
       "VENDOR_REPRESENTATIVE_SAMA": { "label": "代表者名 (＋様)", "group": "II. 発注先 (取引先)", "placeholder": "例: 代表取締役 山田 太郎 様" },
       "VENDOR_CONTACT_DEPARTMENT": { "label": "担当部署", "group": "II. 発注先 (取引先)" },

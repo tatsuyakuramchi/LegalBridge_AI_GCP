@@ -102,32 +102,59 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
       </div>
 
       {isBoolean ? (
-        <div className="flex items-center gap-2 py-1">
-          <button
-            type="button"
-            onClick={() => onChange(true)}
-            className={cn(
-              'text-[10px] font-mono font-bold uppercase tracking-[0.14em] px-2.5 py-1 border rounded-sm transition-all',
-              value === true
-                ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground'
-            )}
-          >
-            True
-          </button>
-          <button
-            type="button"
-            onClick={() => onChange(false)}
-            className={cn(
-              'text-[10px] font-mono font-bold uppercase tracking-[0.14em] px-2.5 py-1 border rounded-sm transition-all',
-              value === false
-                ? 'bg-foreground text-background border-foreground'
-                : 'border-border text-muted-foreground hover:text-foreground'
-            )}
-          >
-            False
-          </button>
-        </div>
+        // Phase 17h: 選択状態を強くハイライト。値の型 (boolean / string)
+        // のゆらぎを正規化して比較ミスを防ぐ。
+        (() => {
+          const truthyStrings = new Set(['true', '1', 'yes', 'はい']);
+          const falsyStrings = new Set(['false', '0', 'no', 'いいえ']);
+          const norm =
+            typeof value === 'string'
+              ? truthyStrings.has(value.toLowerCase())
+                ? true
+                : falsyStrings.has(value.toLowerCase())
+                  ? false
+                  : undefined
+              : value === true
+                ? true
+                : value === false
+                  ? false
+                  : undefined;
+          const activeCls =
+            'bg-foreground text-background border-foreground shadow-sm ring-2 ring-foreground/20';
+          const inactiveCls =
+            'bg-card border-border text-muted-foreground hover:text-foreground hover:border-foreground/50';
+          return (
+            <div className="flex items-center gap-2 py-1">
+              <button
+                type="button"
+                onClick={() => onChange(true)}
+                aria-pressed={norm === true}
+                className={cn(
+                  'text-[10px] font-mono font-bold uppercase tracking-[0.14em] px-3 py-1.5 border-2 rounded-sm transition-all',
+                  norm === true ? activeCls : inactiveCls
+                )}
+              >
+                {norm === true && '✓ '}True
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange(false)}
+                aria-pressed={norm === false}
+                className={cn(
+                  'text-[10px] font-mono font-bold uppercase tracking-[0.14em] px-3 py-1.5 border-2 rounded-sm transition-all',
+                  norm === false ? activeCls : inactiveCls
+                )}
+              >
+                {norm === false && '✓ '}False
+              </button>
+              {norm === undefined && (
+                <span className="text-[9px] font-mono text-amber-600 italic">
+                  未選択
+                </span>
+              )}
+            </div>
+          );
+        })()
       ) : options ? (
         <select
           id={id}

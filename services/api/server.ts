@@ -379,7 +379,7 @@ async function startServer() {
           const lines = await query(
             `SELECT line_no, item_name, spec, unit_price, quantity,
                     amount_ex_tax, calc_method, payment_terms,
-                    payment_method, payment_date
+                    payment_method, payment_date, delivery_date
                FROM order_line_items
               WHERE order_item_id = $1
               ORDER BY line_no ASC`,
@@ -398,6 +398,8 @@ async function startServer() {
             // legacy 互換
             payment_method: r.payment_method || r.payment_terms || "",
             payment_date: r.payment_date || "",
+            // Phase 17h: 業務明細ごとの納期
+            delivery_date: r.delivery_date || "",
           }));
         }
       }
@@ -437,7 +439,7 @@ async function startServer() {
               const lines = await query(
                 `SELECT id, line_no, item_name, spec, unit_price, quantity,
                         amount_ex_tax, calc_method, payment_terms,
-                        payment_method, payment_date
+                        payment_method, payment_date, delivery_date
                    FROM order_line_items
                   WHERE order_item_id = $1
                   ORDER BY line_no ASC`,
@@ -1166,7 +1168,7 @@ async function startServer() {
         `SELECT id, order_item_id, line_no, item_name, spec,
                 unit_price, quantity, amount_ex_tax,
                 calc_method, payment_terms,
-                payment_method, payment_date,
+                payment_method, payment_date, delivery_date,
                 created_at, updated_at
            FROM order_line_items
           WHERE order_item_id = $1

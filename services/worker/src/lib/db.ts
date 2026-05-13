@@ -238,6 +238,13 @@ export async function initDb() {
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
     // -----------------------------------------------------------------
+    // Phase 17h: 納期 (delivery_date) を業務明細レベルで持つ。
+    // 既存 order_items.due_date は header レベルの全体納期、
+    // delivery_date は line item ごとの納期 (分納時に分かれる)。
+    // -----------------------------------------------------------------
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS delivery_date DATE;`,
+
+    // -----------------------------------------------------------------
     // Phase 13: order_line_items を calc_method + payment_terms split に。
     // license_financial_conditions と同じ語彙に統一:
     //   calc_method   = 計算方式 (FIXED / SUBSCRIPTION / ROYALTY)

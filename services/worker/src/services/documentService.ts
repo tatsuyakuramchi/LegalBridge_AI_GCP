@@ -120,6 +120,16 @@ export class DocumentService {
 
     // 13. Length helper — useful for {{#if (gt (length items) 0)}}.
     Handlebars.registerHelper("length", (arr) => (Array.isArray(arr) ? arr.length : 0));
+
+    // 14. String concat — useful for synthesizing dates from year/month/day
+    //     {{concat year "-" month "-" day}} → "2026-5-12"
+    // 末尾の Handlebars options 引数は除外する。
+    Handlebars.registerHelper("concat", function (...args: any[]) {
+      return args
+        .slice(0, -1)
+        .map((v) => (v == null ? "" : String(v)))
+        .join("");
+    });
   }
 
   private loadTemplate(type: DocumentType): string {

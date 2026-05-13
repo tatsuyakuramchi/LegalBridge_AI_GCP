@@ -227,7 +227,7 @@
     </div>
     <div class="doc-info">
       発注番号: <strong>{{ORDER_NO}}</strong><br>
-      発行日: {{ORDER_DATE_YEAR}}年{{ORDER_DATE_MONTH}}月{{ORDER_DATE_DAY}}日
+      発行日: {{formatDate (or ORDER_DATE (concat ORDER_DATE_YEAR "-" ORDER_DATE_MONTH "-" ORDER_DATE_DAY))}}
     </div>
   </div>
 
@@ -294,10 +294,11 @@
         <th style="width:6mm;">No</th>
         <th>業務内容・成果物</th>
         <th style="width:18mm;">支払方法</th>
-        <th style="width:24mm;">支払日</th>
-        <th style="width:15mm;">数量</th>
-        <th style="width:22mm;">単価</th>
-        <th style="width:24mm;">金額（税抜）</th>
+        <th style="width:22mm;">納期</th>
+        <th style="width:22mm;">支払日</th>
+        <th style="width:13mm;">数量</th>
+        <th style="width:20mm;">単価</th>
+        <th style="width:22mm;">金額（税抜）</th>
       </tr>
     </thead>
     <tbody>
@@ -323,7 +324,9 @@
           {{/if}}
           {{/if}}
         </td>
-        <td class="center">{{payment_date}}</td>
+        {{!-- Phase 17h: 業務明細ごとの納期 (delivery_date) と支払日 (payment_date) を別列で --}}
+        <td class="center">{{formatDate delivery_date}}</td>
+        <td class="center">{{formatDate payment_date}}</td>
         <td class="right">{{or quantity qty}}</td>
         <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
         <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
@@ -344,6 +347,7 @@
           {{/if}}
           {{/if}}
         </td>
+        <td class="center">{{formatDate DELIVERY_DATE}}</td>
         <td class="center">{{summaryPaymentTerms}}</td>
         <td class="right">1</td>
         <td class="right">-</td>
@@ -351,7 +355,7 @@
       </tr>
       {{/if}}
       <tr>
-        <td colspan="6" class="right"><strong>小計（税抜）</strong></td>
+        <td colspan="7" class="right"><strong>小計（税抜)</strong></td>
         <td class="right"><strong>¥ {{formatCurrency grandTotalExTax}}</strong></td>
       </tr>
     </tbody>
