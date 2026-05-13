@@ -76,11 +76,63 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     if (!formData.inspectionCompletedAt) {
       patch.inspectionCompletedAt = new Date().toISOString().slice(0, 10);
     }
+    if (!formData.taxRate) {
+      patch.taxRate = '10';
+    }
     if (Object.keys(patch).length > 0) {
       setFormData({ ...formData, ...patch });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, selectedStaff?.staff_name]);
+
+  // Phase 9h: 検収書 — delivery_line_items / taxRate / isReducedTax の
+  // どれかが変わったら 税抜合計 / 消費税 / 税込合計 を再計算して
+  // テンプレ用フィールド (deliveredAmountStr / taxAmountStr / totalAmountStr)
+  // に同期。equality チェックで無限ループ防止。
+  useEffect(() => {
+    if (!templateId.startsWith('inspection_certificate')) return;
+    const lines = Array.isArray(formData.delivery_line_items)
+      ? formData.delivery_line_items
+      : [];
+    if (lines.length === 0) return;
+
+    const total = lines.reduce(
+      (sum: number, v: any) => sum + (Number(v.inspected_amount_ex_tax) || 0),
+      0
+    );
+    const taxRate =
+      Number(formData.taxRate) || (formData.isReducedTax ? 8 : 10);
+    const taxAmount = Math.ceil((total * taxRate) / 100);
+    const totalInc = total + taxAmount;
+
+    const newDeliveredStr = total.toLocaleString('ja-JP');
+    const newTaxStr = taxAmount.toLocaleString('ja-JP');
+    const newTotalStr = totalInc.toLocaleString('ja-JP');
+
+    // 既に同じ値なら setFormData をスキップして無限ループ防止
+    if (
+      formData.deliveredAmountStr === newDeliveredStr &&
+      formData.taxAmountStr === newTaxStr &&
+      formData.totalAmountStr === newTotalStr &&
+      String(formData.taxRate) === String(taxRate)
+    ) {
+      return;
+    }
+
+    setFormData({
+      ...formData,
+      deliveredAmountStr: newDeliveredStr,
+      taxRate: String(taxRate),
+      taxAmountStr: newTaxStr,
+      totalAmountStr: newTotalStr,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    templateId,
+    formData.delivery_line_items,
+    formData.taxRate,
+    formData.isReducedTax,
+  ]);
 
   const renderField = (id: string, customLabel?: string) => {
     const meta = (metadata.vars || {})[id] || { label: id, group: 'General' };
@@ -1099,6 +1151,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               orderDate: poHeader.due_date || poHeader.created_at || '',
               itemCount: String((loaded.line_items || []).length || 1),
               itemNo: formData.itemNo || '1',
+              // Phase 9h: 親 PO の tax_rate を優先採用
+              taxRate: String(poHeader.tax_rate || formData.taxRate || 10),
               // 検収書発行日 (未入力なら今日で初期化)
               documentDate: formData.documentDate || todayIso,
               // Phase 9f: 分割検収サポート — 既存検収件数 +1 を採番、
@@ -1177,15 +1231,26 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 ? formData.delivery_line_items
                 : []) as DeliveryLine[]}
               onChange={(values: DeliveryLine[]) => {
+                // Phase 9h: 検収明細の変更ごとに 税抜合計 / 消費税 / 税込合計
+                // を再計算してテンプレ用フィールドに同時セット。
+                //   - taxRate は formData.taxRate (なければ 10)
+                //   - taxAmount = Math.ceil(total × rate / 100)
+                //   - 軽減税率 (8%) は isReducedTax で切り替え可能
                 const total = values.reduce(
                   (sum, v) => sum + (Number(v.inspected_amount_ex_tax) || 0),
                   0
                 );
+                const taxRate = Number(formData.taxRate)
+                  || (formData.isReducedTax ? 8 : 10);
+                const taxAmount = Math.ceil((total * taxRate) / 100);
+                const totalInc = total + taxAmount;
                 setFormData({
                   ...formData,
                   delivery_line_items: values,
-                  // 既存の自由入力フィールド deliveredAmountStr もサマリで埋める
                   deliveredAmountStr: total.toLocaleString("ja-JP"),
+                  taxRate: String(taxRate),
+                  taxAmountStr: taxAmount.toLocaleString("ja-JP"),
+                  totalAmountStr: totalInc.toLocaleString("ja-JP"),
                 });
               }}
             />
