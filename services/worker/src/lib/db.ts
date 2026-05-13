@@ -238,6 +238,22 @@ export async function initDb() {
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
     // -----------------------------------------------------------------
+    // Phase 13: order_line_items を calc_method + payment_terms split に。
+    // license_financial_conditions と同じ語彙に統一:
+    //   calc_method   = 計算方式 (FIXED / SUBSCRIPTION / ROYALTY)
+    //   payment_terms = 支払条件 (自由テキスト、例: '翌月末', '検収後')
+    // 既存 payment_method 列は legacy 用途に残置 (UI 互換)。
+    // -----------------------------------------------------------------
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS calc_method VARCHAR(50) DEFAULT 'FIXED';`,
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS payment_terms TEXT;`,
+    // 既存行を backfill: payment_method の値をそのまま payment_terms に移し、
+    // calc_method を 'FIXED' で埋める (PO 明細は基本的に FIXED 計算)
+    `UPDATE order_line_items
+        SET calc_method = COALESCE(NULLIF(calc_method, ''), 'FIXED'),
+            payment_terms = COALESCE(payment_terms, payment_method)
+      WHERE calc_method IS NULL OR calc_method = '' OR payment_terms IS NULL;`,
+
+    // -----------------------------------------------------------------
     // Phase 11: 文書カテゴリ (基本 / 個別 / その他)
     //
     // 検索結果 (Slack /法務検索) で 基本契約 / 個別契約 / その他 の

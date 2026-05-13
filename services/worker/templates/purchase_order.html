@@ -312,7 +312,16 @@
           {{#if detailText}}<div class="item-spec-block">{{detailText}}</div>{{/if}}
         </td>
         <td class="center">
-          <span class="pay-method-badge">{{or payment_method_display payment_method}}</span>
+          {{!-- Phase 13: 計算方式バッジ + 支払条件
+               優先: calc_method (FIXED/SUBSCRIPTION/ROYALTY) → 旧 payment_method --}}
+          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          {{#if payment_terms}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_terms}}</div>
+          {{else}}
+          {{#if payment_method}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_method}}</div>
+          {{/if}}
+          {{/if}}
         </td>
         <td class="center">{{payment_date}}</td>
         <td class="right">{{or quantity qty}}</td>

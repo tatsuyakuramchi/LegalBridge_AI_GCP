@@ -312,7 +312,8 @@ async function startServer() {
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
           const lines = await query(
             `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, payment_method, payment_date
+                    amount_ex_tax, calc_method, payment_terms,
+                    payment_method, payment_date
                FROM order_line_items
               WHERE order_item_id = $1
               ORDER BY line_no ASC`,
@@ -325,7 +326,11 @@ async function startServer() {
             unit_price: Number(r.unit_price) || 0,
             quantity: Number(r.quantity) || 0,
             amount_ex_tax: Number(r.amount_ex_tax) || 0,
-            payment_method: r.payment_method || "",
+            // Phase 13: calc_method + payment_terms 統一
+            calc_method: r.calc_method || "FIXED",
+            payment_terms: r.payment_terms || r.payment_method || "",
+            // legacy 互換
+            payment_method: r.payment_method || r.payment_terms || "",
             payment_date: r.payment_date || "",
           }));
         }
@@ -365,7 +370,8 @@ async function startServer() {
               const poId = poHeader.rows[0].id;
               const lines = await query(
                 `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                        amount_ex_tax, payment_method, payment_date
+                        amount_ex_tax, calc_method, payment_terms,
+                        payment_method, payment_date
                    FROM order_line_items
                   WHERE order_item_id = $1
                   ORDER BY line_no ASC`,
@@ -1093,6 +1099,7 @@ async function startServer() {
       const lines = await query(
         `SELECT id, order_item_id, line_no, item_name, spec,
                 unit_price, quantity, amount_ex_tax,
+                calc_method, payment_terms,
                 payment_method, payment_date,
                 created_at, updated_at
            FROM order_line_items

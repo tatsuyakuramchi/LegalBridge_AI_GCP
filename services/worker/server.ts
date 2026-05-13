@@ -970,6 +970,7 @@ ${details}
       const lines = await query(
         `SELECT id, order_item_id, line_no, item_name, spec,
                 unit_price, quantity, amount_ex_tax,
+                calc_method, payment_terms,
                 payment_method, payment_date,
                 created_at, updated_at
            FROM order_line_items
@@ -1067,20 +1068,27 @@ ${details}
       const taxRate = Number(req.body.tax_rate) || 10;
       const lines: Array<any> = Array.isArray(req.body.lines) ? req.body.lines : [];
 
-      // 計算
-      const computedLines = lines.map((l) => ({
-        line_no: Number(l.line_no),
-        item_name: l.item_name || "",
-        spec: l.spec || "",
-        unit_price: Number(l.unit_price) || 0,
-        quantity: Number(l.quantity) || 0,
-        amount_ex_tax: calculateOrderLineAmount(
-          Number(l.unit_price) || 0,
-          Number(l.quantity) || 0
-        ),
-        payment_method: l.payment_method || null,
-        payment_date: l.payment_date || null,
-      }));
+      // 計算 + Phase 13: calc_method / payment_terms を統一
+      const computedLines = lines.map((l) => {
+        // 後方互換: payment_terms が空なら payment_method を使う
+        const payTerms = l.payment_terms || l.payment_method || null;
+        return {
+          line_no: Number(l.line_no),
+          item_name: l.item_name || "",
+          spec: l.spec || "",
+          unit_price: Number(l.unit_price) || 0,
+          quantity: Number(l.quantity) || 0,
+          amount_ex_tax: calculateOrderLineAmount(
+            Number(l.unit_price) || 0,
+            Number(l.quantity) || 0
+          ),
+          calc_method: l.calc_method || "FIXED",
+          payment_terms: payTerms,
+          // legacy: payment_method も payment_terms と同じ値で埋める (テンプレ後方互換)
+          payment_method: payTerms,
+          payment_date: l.payment_date || null,
+        };
+      });
 
       // 送信された line_no 一覧 → これ以外は削除
       const keepNos = computedLines.map((l) => l.line_no).filter((n) => n > 0);
@@ -1095,20 +1103,23 @@ ${details}
         await query("DELETE FROM order_line_items WHERE order_item_id = $1", [orderItemId]);
       }
 
-      // upsert
+      // upsert (Phase 13: calc_method + payment_terms 追加, 旧 payment_method は同じ値で互換維持)
       for (const l of computedLines) {
         await query(
           `INSERT INTO order_line_items (
              order_item_id, line_no, item_name, spec,
              unit_price, quantity, amount_ex_tax,
+             calc_method, payment_terms,
              payment_method, payment_date, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
            ON CONFLICT (order_item_id, line_no) DO UPDATE SET
              item_name      = EXCLUDED.item_name,
              spec           = EXCLUDED.spec,
              unit_price     = EXCLUDED.unit_price,
              quantity       = EXCLUDED.quantity,
              amount_ex_tax  = EXCLUDED.amount_ex_tax,
+             calc_method    = EXCLUDED.calc_method,
+             payment_terms  = EXCLUDED.payment_terms,
              payment_method = EXCLUDED.payment_method,
              payment_date   = EXCLUDED.payment_date,
              updated_at     = CURRENT_TIMESTAMP`,
@@ -1120,6 +1131,8 @@ ${details}
             l.unit_price,
             l.quantity,
             l.amount_ex_tax,
+            l.calc_method,
+            l.payment_terms,
             l.payment_method,
             l.payment_date,
           ]
@@ -1446,19 +1459,26 @@ ${details}
       }
 
       // 各行の amount_ex_tax を再計算 (フロント送信値は信用しない)
-      const computedLines = items.map((l, idx) => ({
-        line_no: Number(l.line_no) || idx + 1,
-        item_name: l.item_name || "",
-        spec: l.spec || "",
-        unit_price: Number(l.unit_price) || 0,
-        quantity: Number(l.quantity) || 0,
-        amount_ex_tax: calculateOrderLineAmount(
-          Number(l.unit_price) || 0,
-          Number(l.quantity) || 0
-        ),
-        payment_method: l.payment_method || null,
-        payment_date: l.payment_date || null,
-      }));
+      // Phase 13: calc_method + payment_terms split。
+      // 旧 payment_method は payment_terms にマップして後方互換維持。
+      const computedLines = items.map((l, idx) => {
+        const payTerms = l.payment_terms || l.payment_method || null;
+        return {
+          line_no: Number(l.line_no) || idx + 1,
+          item_name: l.item_name || "",
+          spec: l.spec || "",
+          unit_price: Number(l.unit_price) || 0,
+          quantity: Number(l.quantity) || 0,
+          amount_ex_tax: calculateOrderLineAmount(
+            Number(l.unit_price) || 0,
+            Number(l.quantity) || 0
+          ),
+          calc_method: l.calc_method || "FIXED",
+          payment_terms: payTerms,
+          payment_method: payTerms, // legacy mirror
+          payment_date: l.payment_date || null,
+        };
+      });
 
       const totalExTax = computedLines.reduce(
         (s, l) => s + l.amount_ex_tax,
@@ -1494,7 +1514,7 @@ ${details}
       );
       const orderItemId = Number(headerRes.rows[0].id);
 
-      // 2. order_line_items — 既存 lines はいったん削除して入れ直し
+      // 2. order_line_items — 既存 lines はいったん削除して入れ直し (Phase 13 対応)
       await query("DELETE FROM order_line_items WHERE order_item_id = $1", [
         orderItemId,
       ]);
@@ -1503,8 +1523,9 @@ ${details}
           `INSERT INTO order_line_items (
              order_item_id, line_no, item_name, spec,
              unit_price, quantity, amount_ex_tax,
+             calc_method, payment_terms,
              payment_method, payment_date
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
           [
             orderItemId,
             l.line_no,
@@ -1513,6 +1534,8 @@ ${details}
             l.unit_price,
             l.quantity,
             l.amount_ex_tax,
+            l.calc_method,
+            l.payment_terms,
             l.payment_method,
             l.payment_date,
           ]
@@ -2203,21 +2226,27 @@ ${details}
               : await getNewDocumentNumber("purchase_order", "発注書");
           const taxRate = Number(first.tax_rate) || 10;
 
+          // Phase 13: calc_method + payment_terms 統一。旧 payment_method 入力も受容。
           const lines = groupRows
             .filter((r) => r.line_no || r.item_name || r.unit_price)
-            .map((r, idx) => ({
-              line_no: Number(r.line_no) || idx + 1,
-              item_name: r.item_name || "",
-              spec: r.spec || "",
-              unit_price: Number(r.unit_price) || 0,
-              quantity: Number(r.quantity) || 0,
-              amount_ex_tax: calculateOrderLineAmount(
-                Number(r.unit_price) || 0,
-                Number(r.quantity) || 0
-              ),
-              payment_method: r.payment_method || null,
-              payment_date: r.payment_date || null,
-            }));
+            .map((r, idx) => {
+              const payTerms = r.payment_terms || r.payment_method || null;
+              return {
+                line_no: Number(r.line_no) || idx + 1,
+                item_name: r.item_name || "",
+                spec: r.spec || "",
+                unit_price: Number(r.unit_price) || 0,
+                quantity: Number(r.quantity) || 0,
+                amount_ex_tax: calculateOrderLineAmount(
+                  Number(r.unit_price) || 0,
+                  Number(r.quantity) || 0
+                ),
+                calc_method: r.calc_method || "FIXED",
+                payment_terms: payTerms,
+                payment_method: payTerms, // legacy mirror
+                payment_date: r.payment_date || null,
+              };
+            });
 
           if (lines.length === 0) {
             failed.push({
@@ -2263,8 +2292,9 @@ ${details}
               `INSERT INTO order_line_items (
                  order_item_id, line_no, item_name, spec,
                  unit_price, quantity, amount_ex_tax,
+                 calc_method, payment_terms,
                  payment_method, payment_date
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
               [
                 orderItemId,
                 l.line_no,
@@ -2273,6 +2303,8 @@ ${details}
                 l.unit_price,
                 l.quantity,
                 l.amount_ex_tax,
+                l.calc_method,
+                l.payment_terms,
                 l.payment_method,
                 l.payment_date,
               ]
@@ -2888,6 +2920,10 @@ ${details}
     const { type } = req.params;
     const TEMPLATES: Record<string, { headers: string[]; sample: string[][] }> = {
       order: {
+        // Phase 13: payment_method → calc_method + payment_terms に split。
+        // payment_method 列も legacy 互換で受け取れるが、新規はこちらを推奨。
+        // calc_method の値: FIXED / SUBSCRIPTION / ROYALTY (default FIXED)
+        // payment_terms: 自由テキスト (例: '翌月末', '検収後')
         headers: [
           "import_key",
           "issue_key",
@@ -2903,13 +2939,15 @@ ${details}
           "spec",
           "unit_price",
           "quantity",
-          "payment_method",
+          "calc_method",
+          "payment_terms",
           "payment_date",
         ],
         sample: [
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "1", "書籍印刷", "A5/100p", "500", "200", "翌月末", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "2", "カバー印刷", "カラー両面", "300", "200", "翌月末", ""],
-          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "1", "翻訳作業", "EN→JA", "5000", "10", "検収後", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", ""],
+          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", ""],
+          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", ""],
         ],
       },
       "license-contract": {
@@ -3583,18 +3621,24 @@ ${details}
             const unit = Number(l.unit_price) || 0;
             const qty = Number(l.quantity) || 0;
             const lineAmt = calculateOrderLineAmount(unit, qty);
+            // Phase 13: calc_method + payment_terms 統一
+            const payTerms = l.payment_terms || l.payment_method || null;
+            const calcMethod = l.calc_method || "FIXED";
             await query(
               `INSERT INTO order_line_items (
                  order_item_id, line_no, item_name, spec,
                  unit_price, quantity, amount_ex_tax,
+                 calc_method, payment_terms,
                  payment_method, payment_date, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, CURRENT_TIMESTAMP)
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
                ON CONFLICT (order_item_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
                  unit_price     = EXCLUDED.unit_price,
                  quantity       = EXCLUDED.quantity,
                  amount_ex_tax  = EXCLUDED.amount_ex_tax,
+                 calc_method    = EXCLUDED.calc_method,
+                 payment_terms  = EXCLUDED.payment_terms,
                  payment_method = EXCLUDED.payment_method,
                  payment_date   = EXCLUDED.payment_date,
                  updated_at     = CURRENT_TIMESTAMP`,
@@ -3606,7 +3650,9 @@ ${details}
                 unit,
                 qty,
                 lineAmt,
-                l.payment_method || null,
+                calcMethod,
+                payTerms,
+                payTerms, // legacy mirror
                 l.payment_date || null,
               ]
             );

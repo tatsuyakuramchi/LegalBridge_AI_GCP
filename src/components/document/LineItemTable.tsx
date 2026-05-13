@@ -27,9 +27,31 @@ export type LineItem = {
   quantity: number;
   // amount_ex_tax is derived in render — kept in state for round-trips
   amount_ex_tax?: number;
-  payment_method?: string;
+  /**
+   * Phase 13: 計算方式 (FIXED / SUBSCRIPTION / ROYALTY)。
+   * license_financial_conditions と同じ語彙。default は 'FIXED'。
+   */
+  calc_method?: "FIXED" | "SUBSCRIPTION" | "ROYALTY" | string;
+  /**
+   * Phase 13: 支払条件 (自由テキスト)。例: '翌月末', '検収後即時', '月額更新'。
+   */
+  payment_terms?: string;
   payment_date?: string;
+  /**
+   * @deprecated Phase 13 で payment_terms に分離。後方互換のため残置。
+   * UI には表示しないが、CSV 入力 / 既存 DB 行とは互換性維持。
+   */
+  payment_method?: string;
 };
+
+const CALC_METHOD_OPTIONS: Array<{
+  value: "FIXED" | "SUBSCRIPTION" | "ROYALTY";
+  label: string;
+}> = [
+  { value: "FIXED", label: "FIXED (固定額)" },
+  { value: "SUBSCRIPTION", label: "SUBSCRIPTION (サブスク)" },
+  { value: "ROYALTY", label: "ROYALTY (業績連動)" },
+];
 
 interface Props {
   items: LineItem[];
@@ -72,7 +94,9 @@ export const LineItemTable: React.FC<Props> = ({
         unit_price: 0,
         quantity: 1,
         amount_ex_tax: 0,
-        payment_method: "",
+        // Phase 13: 新規行は FIXED で初期化 (PO は通常固定額)
+        calc_method: "FIXED",
+        payment_terms: "",
         payment_date: "",
       },
     ]);
@@ -125,8 +149,9 @@ export const LineItemTable: React.FC<Props> = ({
               <th className="text-right p-2 w-28">小計 (税抜)</th>
               {showPaymentColumns && (
                 <>
-                  <th className="text-left p-2 w-28">支払方法</th>
-                  <th className="text-left p-2 w-32">支払日</th>
+                  <th className="text-left p-2 w-32">計算方式</th>
+                  <th className="text-left p-2 w-28">支払条件</th>
+                  <th className="text-left p-2 w-28">支払日</th>
                 </>
               )}
               {!readOnly && <th className="w-8 p-2"></th>}
@@ -135,8 +160,16 @@ export const LineItemTable: React.FC<Props> = ({
           <tbody>
             {items.length === 0 ? (
               <tr>
+                {/* Phase 13: 列数が変わったので colspan を再計算
+                    基本 6 列 (#/品目/仕様/単価/数量/小計)
+                    + showPayment なら 3 列 (計算方式/支払条件/支払日)
+                    + !readOnly なら 1 列 (削除ボタン) */}
                 <td
-                  colSpan={showPaymentColumns ? (readOnly ? 7 : 9) : (readOnly ? 6 : 7)}
+                  colSpan={
+                    6 +
+                    (showPaymentColumns ? 3 : 0) +
+                    (readOnly ? 0 : 1)
+                  }
                   className="p-3 text-center text-muted-foreground italic"
                 >
                   明細はまだ追加されていません。下の「行追加」から開始してください。
@@ -179,12 +212,42 @@ export const LineItemTable: React.FC<Props> = ({
                     </td>
                     {showPaymentColumns && (
                       <>
+                        {/* Phase 13: 計算方式 (ライセンス側と同じ語彙の FIXED / SUBSCRIPTION / ROYALTY) */}
+                        <td className="p-2">
+                          <select
+                            value={it.calc_method || "FIXED"}
+                            onChange={(e) =>
+                              update(idx, {
+                                calc_method: e.target
+                                  .value as LineItem["calc_method"],
+                              })
+                            }
+                            disabled={readOnly}
+                            className={cn(
+                              "w-full text-[11px] font-mono bg-transparent",
+                              "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                              "disabled:opacity-60 disabled:cursor-not-allowed"
+                            )}
+                          >
+                            {CALC_METHOD_OPTIONS.map((opt) => (
+                              <option key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        {/* Phase 13: 支払条件 (旧 payment_method の自由テキスト部分を継承) */}
                         <td className="p-2">
                           {cellInput(
-                            it.payment_method,
-                            (v) => update(idx, { payment_method: v }),
+                            it.payment_terms ?? it.payment_method,
+                            (v) =>
+                              update(idx, {
+                                payment_terms: v,
+                                // 旧フィールドも同期 (テンプレ後方互換)
+                                payment_method: v,
+                              }),
                             "text",
-                            "振込"
+                            "翌月末"
                           )}
                         </td>
                         <td className="p-2">
@@ -221,7 +284,8 @@ export const LineItemTable: React.FC<Props> = ({
               <td className="p-2 text-right text-[13px]">
                 ¥ {grandTotal.toLocaleString("ja-JP")}
               </td>
-              {showPaymentColumns && <td colSpan={2}></td>}
+              {/* Phase 13: 計算方式 / 支払条件 / 支払日 の 3 列 */}
+              {showPaymentColumns && <td colSpan={3}></td>}
               {!readOnly && <td></td>}
             </tr>
           </tfoot>
