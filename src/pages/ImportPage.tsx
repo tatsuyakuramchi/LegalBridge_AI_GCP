@@ -47,6 +47,8 @@ type Tab =
   | "individual_license_terms"
   | "license_master"
   | "service_master"
+  | "nda"
+  | "sales_master"
 
 const Section: React.FC<{
   title: string
@@ -1609,11 +1611,16 @@ export function ImportPage() {
   const [bulkOpen, setBulkOpen] = React.useState(false)
 
   // タブ key → bulk endpoint kind の対応表
-  const BULK_KIND_MAP: Record<Tab, "order" | "license-contract" | "license-master" | "service-master"> = {
+  const BULK_KIND_MAP: Record<
+    Tab,
+    "order" | "license-contract" | "license-master" | "service-master" | "nda" | "sales-master"
+  > = {
     purchase_order: "order",
     individual_license_terms: "license-contract",
     license_master: "license-master",
     service_master: "service-master",
+    nda: "nda",
+    sales_master: "sales-master",
   }
 
   const TAB_LABEL_MAP: Record<Tab, string> = {
@@ -1621,6 +1628,8 @@ export function ImportPage() {
     individual_license_terms: "個別利用許諾条件書",
     license_master: "ライセンス基本契約書",
     service_master: "業務委託基本契約書",
+    nda: "秘密保持契約書 (NDA)",
+    sales_master: "売買基本契約書",
   }
 
   return (
@@ -1680,6 +1689,12 @@ export function ImportPage() {
               label: "業務委託基本契約書",
               group: "基本契約",
             },
+            {
+              key: "sales_master",
+              label: "売買基本契約書",
+              group: "基本契約",
+            },
+            { key: "nda", label: "NDA", group: "その他" },
           ] as { key: Tab; label: string; group: string }[]
         ).map((t) => (
           <button
@@ -1725,6 +1740,44 @@ export function ImportPage() {
           companyProfile={companyProfile}
           showNotification={showNotification}
         />
+      )}
+
+      {/* Phase 14a: NDA / 売買基本 は単一フォーム未提供。
+          CSV 一括インポートへの導線のみ表示。 */}
+      {(tab === "nda" || tab === "sales_master") && (
+        <div className="space-y-4">
+          <div className="border border-blue-200 bg-blue-50 rounded-sm p-5">
+            <div className="flex items-start gap-3">
+              <FileSpreadsheet className="w-6 h-6 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <div className="font-bold text-blue-900 text-sm">
+                  {tab === "nda"
+                    ? "秘密保持契約書 (NDA)"
+                    : "売買基本契約書 (3 バリエーション)"}
+                  : CSV 一括インポートのみ対応
+                </div>
+                <p className="text-[11px] font-mono text-blue-800 leading-relaxed">
+                  {tab === "nda"
+                    ? "NDA は単一フォーム入力よりも CSV 一括の方が運用しやすいため、一括インポート専用です。右上の「CSV 一括インポート」ボタンからどうぞ。"
+                    : "売買基本契約書は buyer / standard / credit の 3 バリエーションを variant 列で振り分けます。テンプレ CSV をダウンロードしてサンプル行を参照してください。"}
+                </p>
+                <p className="text-[10px] font-mono text-blue-700/80">
+                  generate_pdf 列に「未作成」を入れると、登録と同時に PDF も
+                  自動生成 + Drive アップロードされます。「作成済」なら DB
+                  登録のみ。
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            CSV 一括インポートを開く
+          </button>
+        </div>
       )}
     </div>
   )

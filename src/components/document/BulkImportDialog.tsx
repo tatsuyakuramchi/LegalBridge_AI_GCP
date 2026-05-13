@@ -26,7 +26,13 @@ import {
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
-type BulkKind = "order" | "license-contract" | "license-master" | "service-master"
+type BulkKind =
+  | "order"
+  | "license-contract"
+  | "license-master"
+  | "service-master"
+  | "nda"
+  | "sales-master"
 
 interface Props {
   kind: BulkKind
@@ -354,7 +360,16 @@ export const BulkImportDialog: React.FC<Props> = ({
                               ? `${g.first_row.licensor_name || ""} → ${g.first_row.licensee_name || ""} · ${g.first_row.original_work || ""}`
                               : kind === "license-master"
                                 ? `${g.first_row.basic_contract_name || g.first_row.original_work || ""}`
-                                : `${g.first_row.contract_title || g.first_row.vendor_name || ""}`}
+                                : kind === "nda"
+                                  ? `${g.first_row.party_a_name || ""} × ${g.first_row.party_b_name || ""} · ${g.first_row.contract_title || ""}`
+                                  : kind === "sales-master"
+                                    ? `[${g.first_row.variant || "standard"}] ${g.first_row.contract_title || g.first_row.party_b_name || ""}`
+                                    : `${g.first_row.contract_title || g.first_row.vendor_name || ""}`}
+                          {g.first_row.generate_pdf === "未作成" && (
+                            <span className="ml-2 text-[9px] px-1 py-0.5 bg-amber-100 text-amber-800 rounded-sm">
+                              📄 PDF 生成
+                            </span>
+                          )}
                         </td>
                       </tr>
                     ))}

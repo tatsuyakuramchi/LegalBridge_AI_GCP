@@ -2191,6 +2191,102 @@ ${details}
   }
 
   /**
+   * Phase 14b: staff_email から staff レコードを引き、部署 / 氏名 / メール
+   * を補完するヘルパー。CSV では email だけ書いてもらえば、後の項目は
+   * DB から自動で埋まる。
+   */
+  async function lookupStaffByEmail(email?: string): Promise<{
+    staff_name: string;
+    department: string;
+    email: string;
+    phone: string;
+  } | null> {
+    if (!email || String(email).trim() === "") return null;
+    const res = await query(
+      `SELECT staff_name, department, email, phone
+         FROM staff WHERE email = $1 LIMIT 1`,
+      [String(email).trim()]
+    );
+    if (res.rows.length === 0) return null;
+    const s = res.rows[0];
+    return {
+      staff_name: s.staff_name || "",
+      department: s.department || "",
+      email: s.email || "",
+      phone: s.phone || "",
+    };
+  }
+
+  /**
+   * Phase 14c: generate_pdf 列の値を真偽に変換。
+   *   '未作成', 'true', 'TRUE', '1', 'YES'  → true (= PDF 生成)
+   *   '作成済', '', 'false', 'FALSE', '0'   → false (= DB のみ)
+   */
+  function shouldGeneratePdf(raw: any): boolean {
+    if (raw == null) return false;
+    const s = String(raw).trim().toLowerCase();
+    if (s === "" || s === "false" || s === "0" || s === "no" || s === "作成済") {
+      return false;
+    }
+    if (s === "true" || s === "1" || s === "yes" || s === "未作成") {
+      return true;
+    }
+    return false; // 不明値は安全側で false
+  }
+
+  /**
+   * Phase 14c: bulk import + 未作成行で PDF をレンダリング + Drive に
+   * upload して documents.drive_link を更新する共通ヘルパー。
+   * 失敗時は warn ログ + 成功 boolean を返すだけ (DB インポートは中断しない)。
+   */
+  async function maybeGeneratePdfForImport(
+    templateType: string,
+    documentNumber: string,
+    issueKey: string,
+    rawData: Record<string, any>,
+    staffInfo: any
+  ): Promise<{ generated: boolean; drive_link: string; error?: string }> {
+    try {
+      const details = {
+        ...rawData,
+        ...staffInfo,
+        DOC_NO: documentNumber,
+        ORDER_NO: documentNumber,
+        hasChangeLogs: false,
+        changeLogs: [],
+      };
+      const { html, fileName } = await documentService.generateDocument(
+        {
+          issueKey,
+          documentNumber,
+          summary: rawData.contract_title || rawData.description || documentNumber,
+          requester: staffInfo?.STAFF_NAME || "Bulk Import",
+          date: new Date().toLocaleDateString("ja-JP"),
+          details,
+        },
+        templateType as any
+      );
+      const driveLink = await googleDriveService.uploadPdf(html, fileName);
+      // documents.drive_link を更新
+      await query(
+        `UPDATE documents SET drive_link = $1 WHERE document_number = $2`,
+        [driveLink, documentNumber]
+      );
+      return { generated: true, drive_link: driveLink };
+    } catch (err: any) {
+      console.warn(
+        `[bulk] PDF generation failed for ${documentNumber} (${templateType}):`,
+        err?.message || err
+      );
+      return {
+        generated: false,
+        drive_link: "",
+        error: String(err?.message || err),
+      };
+    }
+  }
+
+  /**
    * Bulk import: 発注書。CSV 1 行 = 1 明細、import_key でグループ化。
    * 各グループは 1 PO として order_items + order_line_items を作成。
    *
@@ -2357,6 +2453,38 @@ ${details}
             );
           }
 
+          // Phase 14c: generate_pdf=未作成 のとき PDF も生成
+          let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
+            generated: false,
+            drive_link: "",
+          };
+          if (shouldGeneratePdf(first.generate_pdf)) {
+            const staffInfo = await lookupStaffByEmail(first.staff_email);
+            pdfResult = await maybeGeneratePdfForImport(
+              "purchase_order",
+              docNumber,
+              issueKey,
+              {
+                ...first,
+                items: lines,
+                grandTotalExTax: totalExTax,
+                taxRate,
+                VENDOR_NAME: first.vendor_name,
+                VENDOR_CODE: first.vendor_code,
+                description: first.description,
+                summary: first.description,
+              },
+              staffInfo
+                ? {
+                    STAFF_NAME: staffInfo.staff_name,
+                    STAFF_DEPARTMENT: staffInfo.department,
+                    STAFF_EMAIL: staffInfo.email,
+                    STAFF_PHONE: staffInfo.phone,
+                  }
+                : {}
+            );
+          }
+
           succeeded.push({
             import_key: importKey,
             order_item_id: orderItemId,
@@ -2364,6 +2492,9 @@ ${details}
             document_number: docNumber,
             line_count: lines.length,
             total_ex_tax: totals?.amount_ex_tax ?? totalExTax,
+            pdf_generated: pdfResult.generated,
+            drive_link: pdfResult.drive_link,
+            pdf_error: pdfResult.error || undefined,
           });
         } catch (e: any) {
           console.error(`/api/imports/bulk/order group=${importKey} failed:`, e);
@@ -2592,12 +2723,45 @@ ${details}
               );
             }
 
+            // Phase 14c: generate_pdf=未作成 のとき PDF も生成
+            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
+              generated: false,
+              drive_link: "",
+            };
+            if (shouldGeneratePdf(first.generate_pdf)) {
+              const staffInfo = await lookupStaffByEmail(first.staff_email);
+              // license individual テンプレ用に financial_conditions[] を流す
+              pdfResult = await maybeGeneratePdfForImport(
+                "individual_license_terms",
+                contractNumber,
+                issueKey,
+                {
+                  ...first,
+                  financial_conditions: conditions,
+                  Licensor_名称: first.licensor_name,
+                  Licensor_住所: first.licensor_address,
+                  Licensor_代表者名: first.licensor_rep,
+                  LICENSOR_IS_CORPORATION: !!first.licensor_is_corporation,
+                  Licensee_名称: first.licensee_name,
+                  Licensee_住所: first.licensee_address,
+                  Licensee_代表者名: first.licensee_rep,
+                  LICENSEE_IS_CORPORATION: !!first.licensee_is_corporation,
+                  原著作物名: first.original_work,
+                  対象製品予定名: first.product_name_predicted,
+                },
+                staffInfo
+              );
+            }
+
             succeeded.push({
               import_key: importKey,
               license_contract_id: lcId,
               issue_key: issueKey,
               contract_number: contractNumber,
               condition_count: conditions.length,
+              pdf_generated: pdfResult.generated,
+              drive_link: pdfResult.drive_link,
+              pdf_error: pdfResult.error || undefined,
             });
           } catch (e: any) {
             console.error(
@@ -2764,11 +2928,30 @@ ${details}
               );
             }
 
+            // Phase 14c: PDF 生成
+            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
+              generated: false,
+              drive_link: "",
+            };
+            if (shouldGeneratePdf(r.generate_pdf)) {
+              const staffInfo = await lookupStaffByEmail(r.staff_email);
+              pdfResult = await maybeGeneratePdfForImport(
+                "license_master",
+                contractNumber,
+                issueKey,
+                r,
+                staffInfo
+              );
+            }
+
             succeeded.push({
               import_key: importKey,
               license_contract_id: lcId,
               contract_number: contractNumber,
               ledger_id: ledgerId,
+              pdf_generated: pdfResult.generated,
+              drive_link: pdfResult.drive_link,
+              pdf_error: pdfResult.error || undefined,
             });
           } catch (e: any) {
             console.error(`/api/imports/bulk/license-master row=${idx} failed:`, e);
@@ -2887,10 +3070,39 @@ ${details}
               );
             }
 
+            // Phase 14c: PDF 生成
+            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
+              generated: false,
+              drive_link: "",
+            };
+            if (shouldGeneratePdf(r.generate_pdf)) {
+              const staffInfo = await lookupStaffByEmail(r.staff_email);
+              pdfResult = await maybeGeneratePdfForImport(
+                "service_master",
+                contractNumber,
+                issueKey,
+                {
+                  ...r,
+                  PARTY_A_NAME: r.party_a_name,
+                  PARTY_A_ADDRESS: r.party_a_address,
+                  PARTY_A_REP: r.party_a_rep,
+                  PARTY_B_NAME: r.party_b_name || r.vendor_name,
+                  PARTY_B_ADDRESS: r.party_b_address,
+                  PARTY_B_REP: r.party_b_rep,
+                  VENDOR_NAME: r.vendor_name,
+                  VENDOR_CODE: r.vendor_code,
+                },
+                staffInfo
+              );
+            }
+
             succeeded.push({
               import_key: importKey,
               contract_number: contractNumber,
               vendor_id: vendorId,
+              pdf_generated: pdfResult.generated,
+              drive_link: pdfResult.drive_link,
+              pdf_error: pdfResult.error || undefined,
             });
           } catch (e: any) {
             console.error(`/api/imports/bulk/service-master row=${idx} failed:`, e);
@@ -2913,6 +3125,318 @@ ${details}
   );
 
   /**
+   * Bulk import: NDA (秘密保持契約書)。1 行 = 1 doc。
+   *
+   * documents (template_type='nda', category='other') +
+   * contract_capabilities (record_type='master_contract',
+   * contract_category='nda') + external_assets を作成。
+   */
+  app.post(
+    "/api/imports/bulk/nda",
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "rows[] is required" });
+        }
+        const succeeded: any[] = [];
+        const failed: any[] = [];
+
+        for (let idx = 0; idx < rows.length; idx++) {
+          const r = rows[idx];
+          const importKey = r.import_key || `__ROW_${idx}__`;
+          try {
+            const issueKey =
+              r.issue_key && String(r.issue_key).trim().length > 0
+                ? String(r.issue_key).trim()
+                : `IMPORT-${Date.now()}-${idx}`;
+            const contractNumber =
+              r.contract_number && String(r.contract_number).trim().length > 0
+                ? String(r.contract_number).trim()
+                : await getNewDocumentNumber("nda", "NDA");
+
+            // documents 履歴 (template_type='nda' → trigger で category='other')
+            await query(
+              `INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 form_data = EXCLUDED.form_data,
+                 drive_link = EXCLUDED.drive_link`,
+              [
+                contractNumber,
+                issueKey,
+                "nda",
+                JSON.stringify({ ...r, __imported: true, __bulk: true }),
+                r.drive_link || "",
+                "import-bulk",
+              ]
+            );
+
+            // contract_capabilities (NDA は契約カテゴリ独立)
+            await query(
+              `INSERT INTO contract_capabilities (
+                 record_type, contract_category, contract_type, contract_title,
+                 document_number, contract_status, effective_date, expiration_date,
+                 auto_renewal, document_url, source_system
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 contract_title = EXCLUDED.contract_title,
+                 effective_date = EXCLUDED.effective_date,
+                 expiration_date = EXCLUDED.expiration_date,
+                 updated_at = CURRENT_TIMESTAMP`,
+              [
+                "master_contract",
+                "nda",
+                "nda",
+                r.contract_title || "NDA",
+                contractNumber,
+                "executed",
+                r.effective_date || r.issue_date || null,
+                r.expiration_date || null,
+                !!r.auto_renewal,
+                r.drive_link || "",
+                "Import (Bulk CSV)",
+              ]
+            );
+
+            // external_assets
+            if (r.drive_link) {
+              await query(
+                `INSERT INTO external_assets
+                   (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (asset_number) DO UPDATE SET file_link = EXCLUDED.file_link`,
+                [
+                  contractNumber,
+                  r.contract_title || "NDA",
+                  "contract",
+                  r.party_b_name || r.party_a_name || "Imported",
+                  r.drive_link,
+                  issueKey,
+                ]
+              );
+            }
+
+            // Phase 14c: PDF 生成
+            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
+              generated: false,
+              drive_link: "",
+            };
+            if (shouldGeneratePdf(r.generate_pdf)) {
+              const staffInfo = await lookupStaffByEmail(r.staff_email);
+              pdfResult = await maybeGeneratePdfForImport(
+                "nda",
+                contractNumber,
+                issueKey,
+                {
+                  ...r,
+                  PARTY_A_NAME: r.party_a_name,
+                  PARTY_A_ADDRESS: r.party_a_address,
+                  PARTY_A_REP: r.party_a_rep,
+                  PARTY_B_NAME: r.party_b_name,
+                  PARTY_B_ADDRESS: r.party_b_address,
+                  PARTY_B_REP: r.party_b_rep,
+                },
+                staffInfo
+              );
+            }
+
+            succeeded.push({
+              import_key: importKey,
+              contract_number: contractNumber,
+              issue_key: issueKey,
+              pdf_generated: pdfResult.generated,
+              drive_link: pdfResult.drive_link,
+              pdf_error: pdfResult.error || undefined,
+            });
+          } catch (e: any) {
+            console.error(`/api/imports/bulk/nda row=${idx} failed:`, e);
+            failed.push({ import_key: importKey, error: String(e?.message || e) });
+          }
+        }
+
+        res.json({
+          ok: true,
+          total_rows: rows.length,
+          groups: rows.length,
+          succeeded,
+          failed,
+        });
+      } catch (error) {
+        console.error("/api/imports/bulk/nda failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
+   * Bulk import: 売買基本契約書 (sales_master_*)。1 行 = 1 doc。
+   * variant 列で buyer / standard / credit を振り分け。
+   */
+  app.post(
+    "/api/imports/bulk/sales-master",
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "rows[] is required" });
+        }
+        const succeeded: any[] = [];
+        const failed: any[] = [];
+
+        for (let idx = 0; idx < rows.length; idx++) {
+          const r = rows[idx];
+          const importKey = r.import_key || `__ROW_${idx}__`;
+          try {
+            // variant 値の正規化
+            const variantRaw = String(r.variant || "standard").toLowerCase().trim();
+            const variant =
+              variantRaw === "buyer" || variantRaw === "credit" || variantRaw === "standard"
+                ? variantRaw
+                : "standard";
+            const templateType = `sales_master_${variant}`;
+
+            const issueKey =
+              r.issue_key && String(r.issue_key).trim().length > 0
+                ? String(r.issue_key).trim()
+                : `IMPORT-${Date.now()}-${idx}`;
+            const contractNumber =
+              r.contract_number && String(r.contract_number).trim().length > 0
+                ? String(r.contract_number).trim()
+                : await getNewDocumentNumber(templateType, "売買基本契約");
+
+            // vendor lookup
+            let vendorId: number | null = null;
+            if (r.vendor_code || r.vendor_name || r.party_b_name) {
+              const vRes = await query(
+                "SELECT id FROM vendors WHERE vendor_code = $1 OR vendor_name = $2 OR vendor_name = $3 LIMIT 1",
+                [r.vendor_code || "", r.vendor_name || "", r.party_b_name || ""]
+              );
+              if (vRes.rows.length > 0) vendorId = Number(vRes.rows[0].id);
+            }
+
+            // documents (template_type=sales_master_*, category='basic')
+            await query(
+              `INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 form_data = EXCLUDED.form_data,
+                 drive_link = EXCLUDED.drive_link`,
+              [
+                contractNumber,
+                issueKey,
+                templateType,
+                JSON.stringify({ ...r, variant, __imported: true, __bulk: true }),
+                r.drive_link || "",
+                "import-bulk",
+              ]
+            );
+
+            // contract_capabilities
+            await query(
+              `INSERT INTO contract_capabilities (
+                 vendor_id, record_type, contract_category, contract_type, contract_title,
+                 document_number, contract_status, effective_date, expiration_date,
+                 auto_renewal, document_url, source_system
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 vendor_id = EXCLUDED.vendor_id,
+                 contract_title = EXCLUDED.contract_title,
+                 effective_date = EXCLUDED.effective_date,
+                 expiration_date = EXCLUDED.expiration_date,
+                 updated_at = CURRENT_TIMESTAMP`,
+              [
+                vendorId,
+                "master_contract",
+                "sales",
+                templateType,
+                r.contract_title || contractNumber,
+                contractNumber,
+                "executed",
+                r.effective_date || null,
+                r.expiration_date || null,
+                !!r.auto_renewal,
+                r.drive_link || "",
+                "Import (Bulk CSV)",
+              ]
+            );
+
+            // external_assets
+            if (r.drive_link) {
+              await query(
+                `INSERT INTO external_assets
+                   (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (asset_number) DO UPDATE SET file_link = EXCLUDED.file_link`,
+                [
+                  contractNumber,
+                  r.contract_title || contractNumber,
+                  "contract",
+                  r.vendor_name || r.party_b_name || "Imported",
+                  r.drive_link,
+                  issueKey,
+                ]
+              );
+            }
+
+            // Phase 14c: PDF 生成 (variant に応じたテンプレ)
+            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
+              generated: false,
+              drive_link: "",
+            };
+            if (shouldGeneratePdf(r.generate_pdf)) {
+              const staffInfo = await lookupStaffByEmail(r.staff_email);
+              pdfResult = await maybeGeneratePdfForImport(
+                templateType, // sales_master_buyer / standard / credit
+                contractNumber,
+                issueKey,
+                {
+                  ...r,
+                  PARTY_A_NAME: r.party_a_name || "株式会社アークライト",
+                  PARTY_B_NAME: r.party_b_name || r.vendor_name,
+                  PARTY_B_ADDRESS: r.party_b_address,
+                  PARTY_B_REPRESENTATIVE: r.party_b_rep,
+                  PAYMENT_CONDITION_SUMMARY: r.payment_terms,
+                  VENDOR_NAME: r.vendor_name,
+                  VENDOR_CODE: r.vendor_code,
+                },
+                staffInfo
+              );
+            }
+
+            succeeded.push({
+              import_key: importKey,
+              contract_number: contractNumber,
+              issue_key: issueKey,
+              variant,
+              vendor_id: vendorId,
+              pdf_generated: pdfResult.generated,
+              drive_link: pdfResult.drive_link,
+              pdf_error: pdfResult.error || undefined,
+            });
+          } catch (e: any) {
+            console.error(`/api/imports/bulk/sales-master row=${idx} failed:`, e);
+            failed.push({ import_key: importKey, error: String(e?.message || e) });
+          }
+        }
+
+        res.json({
+          ok: true,
+          total_rows: rows.length,
+          groups: rows.length,
+          succeeded,
+          failed,
+        });
+      } catch (error) {
+        console.error("/api/imports/bulk/sales-master failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
    * テンプレ CSV ダウンロード。ユーザーがブランクのテンプレを Excel で
    * 開いて編集 → 一括 import するためのスケルトン。
    */
@@ -2924,6 +3448,7 @@ ${details}
         // payment_method 列も legacy 互換で受け取れるが、新規はこちらを推奨。
         // calc_method の値: FIXED / SUBSCRIPTION / ROYALTY (default FIXED)
         // payment_terms: 自由テキスト (例: '翌月末', '検収後')
+        // Phase 14b: staff_email (担当者) / generate_pdf (作成済/未作成) 追加。
         headers: [
           "import_key",
           "issue_key",
@@ -2934,6 +3459,8 @@ ${details}
           "description",
           "tax_rate",
           "due_date",
+          "staff_email",
+          "generate_pdf",
           "line_no",
           "item_name",
           "spec",
@@ -2944,10 +3471,10 @@ ${details}
           "payment_date",
         ],
         sample: [
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", ""],
-          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", ""],
-          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", ""],
+          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", ""],
+          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", ""],
         ],
       },
       "license-contract": {
@@ -2971,6 +3498,8 @@ ${details}
           "license_period_note",
           "supervisor",
           "credit_display",
+          "staff_email",
+          "generate_pdf",
           "remarks",
           "condition_no",
           "region_language_label",
@@ -2984,8 +3513,8 @@ ${details}
           "mg_amount",
         ],
         sample: [
-          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "", "1", "国内・日本語", "ROYALTY", "5.0", "上代", "四半期", "JPY", "上代 × 5.0% × 製造数", "四半期報告後の翌月末日払い", "1000000"],
-          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "", "2", "国内・日本語", "ROYALTY", "10.0", "売上", "四半期", "JPY", "売上 × 10.0%", "四半期報告後の翌月末日払い", "0"],
+          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "", "1", "国内・日本語", "ROYALTY", "5.0", "上代", "四半期", "JPY", "上代 × 5.0% × 製造数", "四半期報告後の翌月末日払い", "1000000"],
+          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "", "2", "国内・日本語", "ROYALTY", "10.0", "売上", "四半期", "JPY", "売上 × 10.0%", "四半期報告後の翌月末日払い", "0"],
         ],
       },
       "license-master": {
@@ -3012,10 +3541,12 @@ ${details}
           "license_period_note",
           "supervisor",
           "credit_display",
+          "staff_email",
+          "generate_pdf",
           "remarks",
         ],
         sample: [
-          ["LM001", "", "", "LIC-MST-001", "", "◯◯シリーズ ライセンス基本契約", "2024-04-01", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "2024-04-01", "2027-03-31", "true", "3 年自動更新", "", "", ""],
+          ["LM001", "", "", "LIC-MST-001", "", "◯◯シリーズ ライセンス基本契約", "2024-04-01", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "2024-04-01", "2027-03-31", "true", "3 年自動更新", "", "", "tanaka@arclight.co.jp", "作成済", ""],
         ],
       },
       "service-master": {
@@ -3036,10 +3567,72 @@ ${details}
           "party_b_name",
           "party_b_address",
           "party_b_rep",
+          "staff_email",
+          "generate_pdf",
           "remarks",
         ],
         sample: [
-          ["SM001", "", "", "", "株式会社XYZ 業務委託基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", ""],
+          ["SM001", "", "", "", "株式会社XYZ 業務委託基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "tanaka@arclight.co.jp", "作成済", ""],
+        ],
+      },
+      // Phase 14a: NDA (秘密保持契約書)
+      nda: {
+        headers: [
+          "import_key",
+          "issue_key",
+          "contract_number",
+          "drive_link",
+          "contract_title",
+          "issue_date",
+          "effective_date",
+          "expiration_date",
+          "term_months",
+          "party_a_name",
+          "party_a_address",
+          "party_a_rep",
+          "party_b_name",
+          "party_b_address",
+          "party_b_rep",
+          "purpose",
+          "return_or_destroy",
+          "staff_email",
+          "generate_pdf",
+          "remarks",
+        ],
+        sample: [
+          ["NDA001", "", "", "", "業務協議に関する秘密保持契約", "2024-04-01", "2024-04-01", "2026-03-31", "24", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "新規ボードゲーム企画協議", "破棄", "tanaka@arclight.co.jp", "作成済", ""],
+          ["NDA002", "", "", "", "ライセンス契約検討に伴う NDA", "2024-05-15", "2024-05-15", "2025-05-14", "12", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "Sample IP Co.", "Los Angeles, CA", "John Doe", "海外ライセンス可能性検討", "返却", "tanaka@arclight.co.jp", "未作成", ""],
+        ],
+      },
+      // Phase 14a: 売買基本契約書 (3 バリエーション統合, variant 列で振り分け)
+      "sales-master": {
+        headers: [
+          "import_key",
+          "issue_key",
+          "contract_number",
+          "drive_link",
+          "variant",
+          "contract_title",
+          "effective_date",
+          "expiration_date",
+          "auto_renewal",
+          "vendor_code",
+          "vendor_name",
+          "party_a_name",
+          "party_b_name",
+          "party_b_address",
+          "party_b_rep",
+          "payment_terms",
+          "delivery_terms",
+          "credit_limit",
+          "staff_email",
+          "generate_pdf",
+          "remarks",
+        ],
+        sample: [
+          ["SLS001", "", "", "", "buyer", "アークライト買主基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "翌月末払い", "FOB Tokyo", "5000000", "tanaka@arclight.co.jp", "作成済", ""],
+          ["SLS002", "", "", "", "standard", "売買基本契約 (前払/代引)", "2024-04-01", "2027-03-31", "false", "V002", "株式会社ABC", "株式会社アークライト", "株式会社ABC", "東京都...", "代表取締役 鈴木", "前払い", "店頭引取", "", "tanaka@arclight.co.jp", "作成済", ""],
+          ["SLS003", "", "", "", "credit", "売買基本契約 (掛売り)", "2024-04-01", "2027-03-31", "true", "V003", "株式会社DEF", "株式会社アークライト", "株式会社DEF", "東京都...", "代表取締役 佐藤", "月末締翌月末払い", "発送", "10000000", "tanaka@arclight.co.jp", "作成済", ""],
         ],
       },
     };
