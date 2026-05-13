@@ -204,12 +204,38 @@
     }
 
     .item-spec-block {
-      margin-top: 6px;
-      padding-top: 4px;
       font-size: 8.5pt;
       color: var(--muted);
       white-space: pre-wrap;
-      border-top: 1px dashed var(--line);
+      line-height: 1.4;
+    }
+
+    /* Phase 17n: 仕様詳細を独立した「明細詳細行」として描画。narrow
+       列が縦に間延びするのを防ぐ。 */
+    table.items tr.detail-row > td {
+      border-top: 0;
+      padding-top: 0;
+      padding-bottom: 8px;
+    }
+    table.items tr.detail-row .detail-cell {
+      background: #fafafa;
+      border-left: 3px solid var(--line);
+      padding: 6px 10px;
+      font-size: 8.5pt;
+      color: #444;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    table.items tr.detail-row .detail-cell .detail-label {
+      font-size: 7.5pt;
+      color: #888;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+    table.items tr.has-detail > td {
+      border-bottom: 1px dashed #e3e3e3;
     }
 
     .amount-note,
@@ -350,7 +376,8 @@
     </thead>
     <tbody>
       {{#each items}}
-      <tr>
+      {{!-- Phase 17n: 仕様詳細を別行に分離 → narrow 列の間延びを防止 --}}
+      <tr class="{{#if (or spec detailText)}}has-detail{{/if}}">
         <td class="center">{{add @index 1}}</td>
         <td>
           <div class="item-labels">
@@ -360,9 +387,6 @@
           <div class="item-name-block">{{item_name}}</div>
           {{#if deliveryDateStr}}
           <div><span class="delivery-date-badge">納期: {{deliveryDateStr}}</span></div>
-          {{/if}}
-          {{#if detailText}}
-          <div class="item-spec-block">{{detailText}}</div>
           {{/if}}
         </td>
         <td class="center">
@@ -382,6 +406,18 @@
         <td class="right">¥ {{formatCurrency (or unit_price unitPrice)}}</td>
         <td class="right">¥ {{formatCurrency (or amount_ex_tax amount)}}</td>
       </tr>
+      {{#if (or spec detailText)}}
+      <tr class="detail-row">
+        <td></td>
+        <td colspan="5">
+          <div class="detail-cell">
+            <div class="detail-label">仕様 / 詳細</div>
+            {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
+            {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
+          </div>
+        </td>
+      </tr>
+      {{/if}}
       {{/each}}
     </tbody>
   </table>

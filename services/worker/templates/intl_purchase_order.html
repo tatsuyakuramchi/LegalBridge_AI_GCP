@@ -25,8 +25,14 @@
     table.items th { text-align: center; font-weight: 800; }
     .right { text-align: right; } .center { text-align: center; }
     .item-name-block { font-weight: 800; font-size: 10pt; margin-bottom: 3px; display: inline-block; }
-    .item-spec-block { font-size: 8.5pt; color: #555; white-space: pre-wrap; border-top: 1px dashed #cfcfcf; padding-top: 4px; margin-top: 4px; }
+    .item-spec-block { font-size: 8.5pt; color: #555; white-space: pre-wrap; line-height: 1.4; }
     .item-accept-block { font-size: 8.5pt; color: #333; white-space: pre-wrap; border-top: 1px dashed #9ab; padding-top: 4px; margin-top: 4px; }
+    /* Phase 17n: detail-row pattern — split spec into its own full-width row
+       so narrow columns don't get vertically stretched. */
+    table.items tr.detail-row > td { border-top: 0; padding-top: 0; padding-bottom: 8px; }
+    table.items tr.detail-row .detail-cell { background: #fafafa; border-left: 3px solid #cfcfcf; padding: 6px 10px; font-size: 8.5pt; color: #444; white-space: pre-wrap; line-height: 1.5; }
+    table.items tr.detail-row .detail-cell .detail-label { font-size: 7.5pt; color: #888; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 2px; text-transform: uppercase; }
+    table.items tr.has-detail > td { border-bottom: 1px dashed #e3e3e3; }
     .item-accept-label { display: inline-block; font-size: 7pt; font-weight: 800; padding: 1px 4px; border: 1px solid #888; border-radius: 2px; background: #f3f3f3; color: #444; margin-right: 4px; white-space: nowrap; vertical-align: middle; }
     .pay-method-badge { display: inline-block; font-size: 7.5pt; padding: 2px 6px; border-radius: 2px; font-weight: 800; border: 1px solid #111; background: #fff; color: #111; white-space: nowrap; }
     .category-label { display: inline-block; font-size: 7.5pt; padding: 1px 5px; border: 1px solid #cfcfcf; background: #fff; border-radius: 2px; color: #111; white-space: nowrap; margin-right: 4px; margin-bottom: 4px; }
@@ -123,14 +129,12 @@
     <tbody>
       {{#if items}}
       {{#each items}}
-      <tr>
+      {{!-- Phase 17n: split spec/detail into their own full-width row --}}
+      <tr class="{{#if (or spec detailText acceptance_cond)}}has-detail{{/if}}">
         <td class="center">{{or line_no (index1 @index)}}</td>
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
-          {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
-          {{#if detailText}}<div class="item-spec-block">{{detailText}}</div>{{/if}}
-          {{#if acceptance_cond}}<div class="item-accept-block"><span class="item-accept-label">Acceptance</span>{{acceptance_cond}}</div>{{/if}}
         </td>
         <td class="center">
           {{!-- Phase 13: calc_method 優先、payment_terms 副表示 (legacy 互換) --}}
@@ -148,6 +152,23 @@
         <td class="right">{{../CURRENCY}} {{formatCurrency (or unit_price unitPrice)}}</td>
         <td class="right">{{../CURRENCY}} {{formatCurrency (or amount_ex_tax amount)}}</td>
       </tr>
+      {{#if (or spec detailText acceptance_cond)}}
+      <tr class="detail-row">
+        <td></td>
+        <td colspan="6">
+          <div class="detail-cell">
+            {{#if (or spec detailText)}}
+            <div class="detail-label">Specification / Details</div>
+            {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
+            {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
+            {{/if}}
+            {{#if acceptance_cond}}
+            <div class="item-accept-block" style="margin-top:{{#if (or spec detailText)}}8px{{else}}0{{/if}};"><span class="item-accept-label">Acceptance</span>{{acceptance_cond}}</div>
+            {{/if}}
+          </div>
+        </td>
+      </tr>
+      {{/if}}
       {{/each}}
       {{else}}
       {{!-- 単一明細フォールバック — Phase 13 統一 --}}

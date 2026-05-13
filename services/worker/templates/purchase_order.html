@@ -147,9 +147,38 @@
       font-size: 8.5pt;
       color: #555;
       white-space: pre-wrap;
-      border-top: 1px dashed #cfcfcf;
-      padding-top: 4px;
-      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    /* Phase 17n: 仕様を独立した「明細詳細行」として描画。これにより
+       仕様の文章量が多くても、隣接する 数量 / 単価 / 金額 等の narrow
+       列が縦方向に間延びしない (table-row 高さが揃ってしまう問題を
+       回避)。 */
+    table.items tr.detail-row > td {
+      border-top: 0;          /* 直前の本行と継続的に見える */
+      padding-top: 0;
+      padding-bottom: 8px;
+    }
+    table.items tr.detail-row .detail-cell {
+      background: #fafafa;
+      border-left: 3px solid #cfcfcf;
+      padding: 6px 10px;
+      font-size: 8.5pt;
+      color: #444;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    table.items tr.detail-row .detail-cell .detail-label {
+      font-size: 7.5pt;
+      color: #888;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+    /* 本行と詳細行の間の borderを薄くする (視覚的に「同じ明細」と分かる) */
+    table.items tr.has-detail > td {
+      border-bottom: 1px dashed #e3e3e3;
     }
 
     .pay-method-badge {
@@ -304,13 +333,13 @@
     <tbody>
       {{#if items}}
       {{#each items}}
-      <tr>
+      {{!-- Phase 17n: 仕様の文章量に影響されず narrow 列が間延びしないよう、
+           本行（数値・日付など）と仕様詳細行を分けて描画。 --}}
+      <tr class="{{#if (or spec detailText)}}has-detail{{/if}}">
         <td class="center">{{or line_no (index1 @index)}}</td>
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
-          {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
-          {{#if detailText}}<div class="item-spec-block">{{detailText}}</div>{{/if}}
         </td>
         <td class="center">
           {{!-- Phase 13: 計算方式バッジ + 支払条件
@@ -331,6 +360,20 @@
         <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
         <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
       </tr>
+      {{#if (or spec detailText)}}
+      {{!-- Phase 17n: 仕様 / 詳細を全列幅で描画する詳細行。
+           本行と境界線を共有することで「同じ明細」と分かるようにする。 --}}
+      <tr class="detail-row">
+        <td></td>
+        <td colspan="7">
+          <div class="detail-cell">
+            <div class="detail-label">仕様 / 詳細</div>
+            {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
+            {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
+          </div>
+        </td>
+      </tr>
+      {{/if}}
       {{/each}}
       {{else}}
       {{!-- 単一明細フォールバック (items[] が空のとき) — Phase 13: CALC_METHOD + PAYMENT_TERMS 統一 --}}
