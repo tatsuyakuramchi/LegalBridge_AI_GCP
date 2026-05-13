@@ -25,6 +25,11 @@ import dotenv from "dotenv";
 import { BacklogService } from "./src/services/backlogService.ts";
 import { query } from "./src/lib/db.ts";
 import * as contractCheckService from "./src/services/contractCheckService.ts";
+import {
+  listPage as renderListPage,
+  detailPage as renderDetailPage,
+  errorPage as renderErrorPage,
+} from "./src/views/contractSearchHtml.ts";
 
 dotenv.config();
 
@@ -97,6 +102,102 @@ async function startServer() {
     }
     return next();
   }
+
+  // -------------------------------------------------------------------
+  // /search/* — Web 詳細ページ (Phase 12)
+  //
+  // Slack /法務検索 から「Web で詳細」ボタン経由でアクセス。
+  // 認証は LB_PORTAL_SECRET を ?token= でも受け付ける (Slack モーダル
+  // 内ボタンの URL に埋め込めるため)。HTTP header もサポート。
+  // -------------------------------------------------------------------
+  function requirePortalTokenForHtml(
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) {
+    const expected = process.env.LB_PORTAL_SECRET;
+    if (!expected) {
+      // 設定されていない場合は素通し (開発環境用)
+      return next();
+    }
+    const header = req.headers["x-lb-portal-secret"];
+    const token = req.query.token;
+    if (header === expected || token === expected) return next();
+    return res
+      .status(401)
+      .type("html")
+      .send(
+        renderErrorPage(
+          "Unauthorized",
+          "アクセストークンが無効です。Slack /法務検索 から再度開いてください。",
+          401
+        )
+      );
+  }
+
+  app.get("/search/vendor", requirePortalTokenForHtml, async (req, res) => {
+    try {
+      const query = String(req.query.q || "").trim();
+      const token = String(req.query.token || "");
+      if (!query) {
+        return res.type("html").send(
+          renderListPage("", [], token)
+        );
+      }
+      // 単一候補のときも一覧経由で見せる (UX 一貫性)。検索 -> リスト -> 詳細
+      // の階層をユーザーに常に提示するため。
+      const summary = await contractCheckService.searchContractStatus({
+        counterpartyName: query,
+        purposeCode: "",
+      } as any);
+      let results: any[] = [];
+      if (Array.isArray((summary as any)?.results)) {
+        results = (summary as any).results;
+      } else if ((summary as any)?.counterparty) {
+        results = [summary];
+      }
+      res.type("html").send(renderListPage(query, results, token));
+    } catch (error) {
+      console.error("/search/vendor failed:", error);
+      res
+        .status(500)
+        .type("html")
+        .send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+
+  app.get("/search/vendor/:vendorId", requirePortalTokenForHtml, async (req, res) => {
+    try {
+      const vendorId = Number(req.params.vendorId);
+      const token = String(req.query.token || "");
+      const backQuery = String(req.query.q || "");
+      if (!Number.isFinite(vendorId) || vendorId <= 0) {
+        return res
+          .status(400)
+          .type("html")
+          .send(renderErrorPage("Bad Request", "vendor id が不正です", 400));
+      }
+      // searchContractStatus({ vendorId }) で詳細を構築
+      const payload = await contractCheckService.searchContractStatus({
+        counterpartyName: "",
+        purposeCode: "",
+        vendorId,
+      } as any);
+      if (!payload?.counterparty) {
+        return res
+          .status(404)
+          .type("html")
+          .send(renderErrorPage("Not Found", "取引先が見つかりませんでした", 404));
+      }
+      res.type("html").send(renderDetailPage(payload, backQuery, token));
+    } catch (error) {
+      console.error("/search/vendor/:vendorId failed:", error);
+      res
+        .status(500)
+        .type("html")
+        .send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
 
   app.get("/api/status", (_req, res) => {
     res.json({

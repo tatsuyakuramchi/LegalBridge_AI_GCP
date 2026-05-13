@@ -677,24 +677,42 @@ function getSearchResultsModal_(keyword, data) {
   });
   appendContractStatusBlocks_(blocks, contractPayload);
 
+  // Phase 12: search-api の Web 詳細ページへの URL を組み立て
+  // (CLOUD_RUN_BASE_URL + ?q=<keyword>&token=<LB_PORTAL_SECRET>)。
+  var cloudRunBase = (scriptProperty_('CLOUD_RUN_BASE_URL') || '').replace(/\/+$/, '');
+  var portalSecret = scriptProperty_('LB_PORTAL_SECRET') || '';
+  var webDetailUrl = cloudRunBase
+    ? cloudRunBase + '/search/vendor?q=' + encodeURIComponent(keyword) +
+      (portalSecret ? '&token=' + encodeURIComponent(portalSecret) : '')
+    : '';
+
   // ── Footer actions ────────────────────────────────────────────
   blocks.push({ type: 'divider' });
+  var footerButtons = [
+    {
+      type: 'button',
+      action_id: 'legal_search_again',
+      text: { type: 'plain_text', text: '🔁 もう一度検索する' },
+      style: 'primary',
+    },
+  ];
+  if (webDetailUrl) {
+    footerButtons.push({
+      type: 'button',
+      action_id: 'legal_search_open_web',
+      text: { type: 'plain_text', text: '🌐 Web で詳細を見る' },
+      url: webDetailUrl,
+    });
+  }
+  footerButtons.push({
+    type: 'button',
+    action_id: 'legal_search_open_backlog',
+    text: { type: 'plain_text', text: '🔗 Backlog で関連課題を検索' },
+    url: backlogSearchUrl,
+  });
   blocks.push({
     type: 'actions',
-    elements: [
-      {
-        type: 'button',
-        action_id: 'legal_search_again',
-        text: { type: 'plain_text', text: '🔁 もう一度検索する' },
-        style: 'primary',
-      },
-      {
-        type: 'button',
-        action_id: 'legal_search_open_backlog',
-        text: { type: 'plain_text', text: '🔗 Backlog で関連課題を検索' },
-        url: backlogSearchUrl,
-      },
-    ],
+    elements: footerButtons,
   });
 
   return {
