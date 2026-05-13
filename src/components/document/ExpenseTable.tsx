@@ -89,6 +89,35 @@ export const ExpenseTable: React.FC<Props> = ({
     />
   );
 
+  /**
+   * Phase 17j: 複数行 (改行) 入力対応のセル。仕様欄 etc に使う。
+   */
+  const cellTextarea = (
+    value: string | undefined,
+    onChange: (v: string) => void,
+    placeholder?: string
+  ) => (
+    <textarea
+      value={value === undefined || value === null ? "" : String(value)}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      disabled={readOnly}
+      rows={1}
+      onInput={(e) => {
+        const ta = e.currentTarget;
+        ta.style.height = "auto";
+        ta.style.height = ta.scrollHeight + "px";
+      }}
+      className={cn(
+        "w-full text-[11px] font-mono bg-transparent resize-none overflow-hidden",
+        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+        "placeholder:text-muted-foreground/40 placeholder:text-[10px]",
+        "disabled:opacity-60 disabled:cursor-not-allowed",
+        "whitespace-pre-wrap break-words leading-relaxed"
+      )}
+    />
+  );
+
   return (
     <div className="col-span-full">
       <div className="mb-2 flex items-baseline justify-between">
@@ -137,12 +166,12 @@ export const ExpenseTable: React.FC<Props> = ({
                       "例: 交通費 / 宿泊費"
                     )}
                   </td>
-                  <td className="p-2">
-                    {cellInput(
+                  <td className="p-2 align-top">
+                    {/* Phase 17j: 仕様は複数行 (改行可) */}
+                    {cellTextarea(
                       e.spec,
                       (v) => update(idx, { spec: v }),
-                      "text",
-                      "例: 東京〜大阪 新幹線"
+                      "例: 東京〜大阪 新幹線 (複数行可)"
                     )}
                   </td>
                   <td className="p-2">

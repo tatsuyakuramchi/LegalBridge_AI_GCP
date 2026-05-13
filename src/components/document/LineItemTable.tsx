@@ -140,6 +140,38 @@ export const LineItemTable: React.FC<Props> = ({
     />
   );
 
+  /**
+   * Phase 17j: 複数行 (改行) 入力対応のセル。仕様欄 etc に使う。
+   * Shift+Enter / Enter どちらも改行として動作する標準 textarea。
+   * 高さは内容に応じて自動拡張 (rows=1 で最小)。
+   */
+  const cellTextarea = (
+    value: string | undefined,
+    onChange: (v: string) => void,
+    placeholder?: string
+  ) => (
+    <textarea
+      value={value === undefined || value === null ? "" : String(value)}
+      onChange={(e) => onChange(e.target.value)}
+      placeholder={placeholder}
+      disabled={readOnly}
+      rows={1}
+      onInput={(e) => {
+        // 入力に応じて高さを自動拡張
+        const ta = e.currentTarget;
+        ta.style.height = "auto";
+        ta.style.height = ta.scrollHeight + "px";
+      }}
+      className={cn(
+        "w-full text-[11px] font-mono bg-transparent resize-none overflow-hidden",
+        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+        "placeholder:text-muted-foreground/40 placeholder:text-[10px]",
+        "disabled:opacity-60 disabled:cursor-not-allowed",
+        "whitespace-pre-wrap break-words leading-relaxed"
+      )}
+    />
+  );
+
   return (
     <div className="col-span-full">
       <div className="overflow-x-auto">
@@ -194,8 +226,13 @@ export const LineItemTable: React.FC<Props> = ({
                     <td className="p-2">
                       {cellInput(it.item_name, (v) => update(idx, { item_name: v }), "text", "例: ノートPC")}
                     </td>
-                    <td className="p-2">
-                      {cellInput(it.spec, (v) => update(idx, { spec: v }), "text", "規格・モデル")}
+                    <td className="p-2 align-top">
+                      {/* Phase 17j: 仕様は複数行 (改行可) 入力対応 */}
+                      {cellTextarea(
+                        it.spec,
+                        (v) => update(idx, { spec: v }),
+                        "規格・モデル (複数行可・Enter で改行)"
+                      )}
                     </td>
                     <td className="p-2 text-right">
                       {cellInput(
