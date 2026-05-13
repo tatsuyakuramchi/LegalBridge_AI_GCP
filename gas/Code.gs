@@ -753,12 +753,46 @@ function appendContractStatusBlocks_(blocks, payload) {
       pills.push('業務委託 ' + (masters.service && masters.service.exists ? '✅' : '—'));
       pills.push('ライセンス ' + (masters.license && masters.license.exists ? '✅' : '—'));
       pills.push('出版 ' + (masters.publication && masters.publication.exists ? '✅' : '—'));
+
+      // Phase 11: 文書カテゴリ別サマリー (件数 + 上位 3 件の Drive リンク)
+      var cat = c.documentsByCategory || {};
+      var bc = Array.isArray(cat.basic) ? cat.basic : [];
+      var ic = Array.isArray(cat.individual) ? cat.individual : [];
+      var oc = Array.isArray(cat.other) ? cat.other : [];
+      var summary =
+        '📁 基本 ' + bc.length + ' / 個別 ' + ic.length + ' / その他 ' + oc.length;
+
       blocks.push({
         type: 'section',
         text: {
           type: 'mrkdwn',
-          text: '• *' + name + '* (`' + code + '`)\n>' + pills.join(' · '),
+          text: '• *' + name + '* (`' + code + '`)\n>' + pills.join(' · ') + '\n>' + summary,
         },
+      });
+
+      // 各カテゴリの上位 3 件を context ブロックで列挙 (件数 > 0 のときだけ)
+      var miniSections = [
+        { label: '🟦 基本契約', rows: bc },
+        { label: '🟩 個別契約', rows: ic },
+        { label: '⬛ その他', rows: oc },
+      ];
+      miniSections.forEach(function (sec) {
+        if (sec.rows.length === 0) return;
+        var lines = sec.rows.slice(0, 3).map(function (d) {
+          var title = d.contract_title || d.template_type || '(無題)';
+          var docNo = d.document_number ? ' `' + d.document_number + '`' : '';
+          var linked = d.file_link
+            ? ' <' + d.file_link + '|📄>'
+            : '';
+          return '  ' + sec.label + ': ' + title + docNo + linked;
+        });
+        if (sec.rows.length > 3) {
+          lines.push('  _… 他 ' + (sec.rows.length - 3) + ' 件_');
+        }
+        blocks.push({
+          type: 'context',
+          elements: [{ type: 'mrkdwn', text: lines.join('\n') }],
+        });
       });
     });
     if (candidates.length > LIMIT) {
