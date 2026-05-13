@@ -337,7 +337,7 @@ async function startServer() {
               context["totalDeliveries"] = String(
                 Math.max(doneCount + 1, Number(context["totalDeliveries"]) || 0)
               );
-              context["isPartial"] = doneCount > 0; // 2 回目以降は分割扱い
+              context["isPartial"] = doneCount > 0 ? "分割" : "完了"; // 2 回目以降は分割扱い
               context["inspectedAmountStr"] = new Intl.NumberFormat(
                 "ja-JP"
               ).format(doneAmt);
@@ -413,7 +413,7 @@ async function startServer() {
           context["itemCount"] = "1";
           context["orderDate"] = row.order_date || "";
           context["documentDate"] = new Date().toISOString().slice(0, 10);
-          context["isPartial"] = row.delivery_no > 1;
+          context["isPartial"] = row.delivery_no > 1 ? "分割" : "完了";
           // Phase 9c: 発注番号 (親 PO の document_number) を上書きしないよう、
           // 上の parent-by-Backlog 経路で既にセットされていれば温存。
           if (!context["parent_po_number"] && row.parent_po_number) {

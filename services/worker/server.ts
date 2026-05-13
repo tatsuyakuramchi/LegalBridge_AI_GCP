@@ -3080,7 +3080,14 @@ ${details}
         }
       }
 
-      res.json({ success: true, driveLink });
+      // Phase 9g: documentNumber も返してフロントのサクセス画面で
+      // 表示する。
+      res.json({
+        success: true,
+        driveLink,
+        documentNumber: docNumber,
+        templateType,
+      });
     } catch (error) {
       console.error("Error in /api/documents/generate:", error);
       res.status(500).json({ error: String(error) });

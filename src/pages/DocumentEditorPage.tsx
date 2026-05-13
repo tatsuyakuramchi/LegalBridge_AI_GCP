@@ -14,6 +14,10 @@ import {
   Building2,
   History,
   RotateCcw,
+  X,
+  ExternalLink,
+  PartyPopper,
+  Plus,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -67,6 +71,12 @@ export function DocumentEditorPage() {
   const [previewHtml, setPreviewHtml] = React.useState<string | null>(null)
   const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isGenerating, setIsGenerating] = React.useState(false)
+  // Phase 9g: 文書生成完了後の達成感のあるサクセス画面用
+  const [completionResult, setCompletionResult] = React.useState<{
+    driveLink: string;
+    documentNumber: string;
+    templateLabel: string;
+  } | null>(null)
   const [issueSummary, setIssueSummary] = React.useState<any>(null)
   const [lastAutoSave, setLastAutoSave] = React.useState<string | null>(null)
   const [isAssetPickerOpen, setIsAssetPickerOpen] = React.useState(false)
@@ -210,7 +220,14 @@ export function DocumentEditorPage() {
       })
       const data = await res.json()
       if (data.driveLink) {
-        window.open(data.driveLink, "_blank")
+        // Phase 9g: 達成感サクセス画面 — toast だけだと「できたかどうか」が
+        // 不明確というフィードバックを受け、明示的なモーダルで完了表示。
+        setCompletionResult({
+          driveLink: data.driveLink,
+          documentNumber: data.documentNumber || "",
+          templateLabel:
+            templateMetadata[selectedTemplate]?.label || selectedTemplate,
+        })
         showNotification("Document generated and uploaded.", "success")
       } else {
         showNotification("Generation completed, but no drive link was returned.", "info")
@@ -221,6 +238,16 @@ export function DocumentEditorPage() {
     } finally {
       setIsGenerating(false)
     }
+  }
+
+  // Phase 9g: サクセスモーダル経由の「新しい文書を作成」 — フォームを
+  // リセットして次の起票へ。
+  const handleStartNew = () => {
+    setFormData({})
+    setSelectedIssue("")
+    setIssueSummary(null)
+    setCompletionResult(null)
+    showNotification("New document started.", "info")
   }
 
   const handleExportExcel = async () => {
@@ -587,15 +614,27 @@ export function DocumentEditorPage() {
                         Live preview
                       </span>
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="xs"
-                      onClick={handlePreview}
-                      disabled={isPreviewing}
-                    >
-                      <RefreshCw className={isPreviewing ? "animate-spin" : ""} />
-                      Refresh
-                    </Button>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={handlePreview}
+                        disabled={isPreviewing}
+                      >
+                        <RefreshCw className={isPreviewing ? "animate-spin" : ""} />
+                        Refresh
+                      </Button>
+                      {/* Phase 9g: プレビュー画面内にも明示的な閉じるボタン */}
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => setIsPreviewVisible(false)}
+                        title="編集画面に戻る"
+                      >
+                        <X />
+                        編集に戻る
+                      </Button>
+                    </div>
                   </div>
                   <div className="flex-1 overflow-auto custom-scrollbar p-6 grid-paper">
                     <div className="bg-card border border-border shadow-xl mx-auto p-10 prose prose-sm max-w-none relative scale-[0.85] origin-top">
@@ -764,6 +803,102 @@ export function DocumentEditorPage() {
           </SheetBody>
         </SheetContent>
       </Sheet>
+
+      {/* Phase 9g: 文書生成完了サクセスモーダル
+          Finalize & Sync 成功時に表示。ユーザーに「できた!」という
+          達成感を返しつつ、次のアクション (Drive で開く / 新規作成 /
+          ダッシュボードへ) を 1 クリックで選べる。 */}
+      {completionResult && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
+          onClick={() => setCompletionResult(null)}
+        >
+          <div
+            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="bg-emerald-50 border-b border-emerald-200 px-6 py-5 flex items-center gap-4">
+              <div className="h-12 w-12 rounded-full bg-emerald-600 text-white flex items-center justify-center flex-shrink-0">
+                <PartyPopper className="h-6 w-6" />
+              </div>
+              <div>
+                <div className="text-[10px] font-mono uppercase tracking-[0.2em] text-emerald-700">
+                  Generation Complete
+                </div>
+                <div className="text-base font-bold text-emerald-900 mt-0.5">
+                  文書を作成しました
+                </div>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div className="px-6 py-5 space-y-3">
+              <div className="space-y-1">
+                <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                  テンプレ
+                </div>
+                <div className="text-sm font-mono">
+                  {completionResult.templateLabel}
+                </div>
+              </div>
+              {completionResult.documentNumber && (
+                <div className="space-y-1">
+                  <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                    文書番号
+                  </div>
+                  <div className="text-sm font-mono font-bold">
+                    {completionResult.documentNumber}
+                  </div>
+                </div>
+              )}
+              <div className="space-y-1">
+                <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                  Drive リンク
+                </div>
+                <a
+                  href={completionResult.driveLink}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-mono text-blue-700 hover:text-blue-900 underline break-all flex items-center gap-1"
+                >
+                  <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                  {completionResult.driveLink}
+                </a>
+              </div>
+            </div>
+
+            {/* Footer actions */}
+            <div className="bg-muted/30 border-t border-border px-6 py-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setCompletionResult(null)}
+              >
+                <X />
+                閉じる
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleStartNew}
+              >
+                <Plus />
+                新しい文書を作成
+              </Button>
+              <Button
+                size="sm"
+                onClick={() =>
+                  window.open(completionResult.driveLink, "_blank")
+                }
+              >
+                <ExternalLink />
+                Drive で開く
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

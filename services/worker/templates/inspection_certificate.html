@@ -189,7 +189,7 @@
   <div class="doc-header">
     <div>
       <span class="doc-title">検　収　書</span>
-      {{#if isPartial}}
+      {{#if (or (eq isPartial "分割") (eq isPartial true))}}
       <span class="delivery-badge">分割納品 第{{deliveryNo}}回 / 全{{totalDeliveries}}回予定</span>
       {{/if}}
     </div>
@@ -245,11 +245,11 @@
   <div class="confirmation-text">
     　納品日 <strong>{{formatDate deliveredAt}}</strong> に納品された下記成果物について検収を行い、
     検収日 <strong>{{formatDate inspectionCompletedAt}}</strong> に検収完了致しましたのでご通知します。
-    {{#if isPartial}}本書は分割納品（第{{deliveryNo}}回）に係る検収書です。{{/if}}
+    {{#if (or (eq isPartial "分割") (eq isPartial true))}}本書は分割納品（第{{deliveryNo}}回）に係る検収書です。{{/if}}
   </div>
 
   {{!-- 納品進捗サマリー（分割時のみ） --}}
-  {{#if isPartial}}
+  {{#if (or (eq isPartial "分割") (eq isPartial true))}}
   <div class="progress-bar-wrap">
     <div class="progress-bar-title">本発注全体の納品・検収進捗</div>
     <div class="progress-bar-track">

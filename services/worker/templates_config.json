@@ -185,7 +185,7 @@
       "itemCount": { "label": "総明細数", "group": "I. 基本情報", "placeholder": "1" },
       "deliveryNo": { "label": "今回の納品回数", "group": "I. 基本情報", "placeholder": "1" },
       "totalDeliveries": { "label": "総予定回数", "group": "I. 基本情報", "placeholder": "1" },
-      "isPartial": { "label": "分割納品フラグ", "group": "I. 基本情報", "type": "boolean" },
+      "isPartial": { "label": "分割納品", "group": "I. 基本情報", "type": "select", "options": ["分割", "完了"], "helpText": "親 PO 選択時に既存検収件数から自動判定。手動でも変更可" },
 
       "counterparty": { "label": "受託者名", "group": "II. 受託者 (取引先)", "required": true, "dbField": "vendor.vendor_name", "helpText": "[取引先] ボタンで自動入力" },
       "COUNTERPARTY_IS_CORPORATION": { "label": "受託者種別", "group": "II. 受託者 (取引先)", "type": "select", "options": ["法人", "個人"], "helpText": "法人=「御中」+代表者「様」 / 個人=「様」のみ。[取引先] ボタンで vendor.entity_type から自動判定" },

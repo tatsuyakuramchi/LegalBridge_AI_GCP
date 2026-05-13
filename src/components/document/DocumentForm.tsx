@@ -1105,7 +1105,10 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               // 進捗バー用の値もまとめてセット
               ...(prog && {
                 deliveryNo: String(prog.next_delivery_no),
-                isPartial: prog.is_partial || prog.next_delivery_no > 1,
+                isPartial:
+                  prog.is_partial || prog.next_delivery_no > 1
+                    ? '分割'
+                    : '完了',
                 inspectedAmountStr: prog.done_amount_ex_tax.toLocaleString('ja-JP'),
                 pendingAmountStr: prog.remaining_amount_ex_tax.toLocaleString('ja-JP'),
                 totalOrderAmountStr: (

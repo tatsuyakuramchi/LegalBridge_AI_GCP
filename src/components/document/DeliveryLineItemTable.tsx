@@ -172,18 +172,23 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 overflow_quantity: false,
               };
 
+              // Phase 9g: 浮動小数点誤差で 0.0001 単位の超過誤判定を防ぐ
+              //   - 金額は ¥0.5 まで許容 (Math.ceil 切り上げ後の誤差吸収)
+              //   - 数量は 0.0005 まで許容 (DECIMAL(10,4) の最小単位の半分)
+              // 厳密比較を避けつつ、明確な超過は確実に検知する。
+              const AMT_EPS = 0.5;
+              const QTY_EPS = 0.0005;
+              const totalAmt = insp.inspected_amount + inspectedThisTime;
+              const totalQty = insp.inspected_quantity + inspectedQtyThisTime;
               const willOverflowAmount =
-                insp.inspected_amount + inspectedThisTime >
-                insp.ordered_amount;
+                totalAmt - insp.ordered_amount > AMT_EPS;
               const willOverflowQty =
-                insp.inspected_quantity + inspectedQtyThisTime >
-                insp.ordered_quantity;
+                totalQty - insp.ordered_quantity > QTY_EPS;
               const isOverflow = willOverflowAmount || willOverflowQty;
               const isExact =
                 inspectedThisTime > 0 &&
                 !isOverflow &&
-                insp.inspected_amount + inspectedThisTime ===
-                  insp.ordered_amount;
+                Math.abs(totalAmt - insp.ordered_amount) <= AMT_EPS;
 
               return (
                 <tr
