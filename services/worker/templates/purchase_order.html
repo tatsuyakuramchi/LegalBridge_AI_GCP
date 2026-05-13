@@ -330,10 +330,20 @@
       </tr>
       {{/each}}
       {{else}}
+      {{!-- 単一明細フォールバック (items[] が空のとき) — Phase 13: CALC_METHOD + PAYMENT_TERMS 統一 --}}
       <tr>
         <td class="center">1</td>
         <td><div class="item-name-block">{{ITEM_NAME}}</div></td>
-        <td class="center"><span class="pay-method-badge">{{PAYMENT_METHOD}}</span></td>
+        <td class="center">
+          <span class="pay-method-badge">{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}</span>
+          {{#if PAYMENT_TERMS}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_TERMS}}</div>
+          {{else}}
+          {{#if PAYMENT_METHOD}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_METHOD}}</div>
+          {{/if}}
+          {{/if}}
+        </td>
         <td class="center">{{summaryPaymentTerms}}</td>
         <td class="right">1</td>
         <td class="right">-</td>

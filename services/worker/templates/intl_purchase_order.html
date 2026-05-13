@@ -124,25 +124,46 @@
       {{#if items}}
       {{#each items}}
       <tr>
-        <td class="center">{{add @index 1}}</td>
+        <td class="center">{{or line_no (index1 @index)}}</td>
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
+          {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
           {{#if detailText}}<div class="item-spec-block">{{detailText}}</div>{{/if}}
           {{#if acceptance_cond}}<div class="item-accept-block"><span class="item-accept-label">Acceptance</span>{{acceptance_cond}}</div>{{/if}}
         </td>
-        <td class="center"><span class="pay-method-badge">{{payment_method_display}}</span></td>
+        <td class="center">
+          {{!-- Phase 13: calc_method 優先、payment_terms 副表示 (legacy 互換) --}}
+          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          {{#if payment_terms}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_terms}}</div>
+          {{else}}
+          {{#if payment_method}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_method}}</div>
+          {{/if}}
+          {{/if}}
+        </td>
         <td class="center">{{payment_date}}</td>
-        <td class="right">{{qty}}</td>
-        <td class="right">{{../CURRENCY}} {{formatCurrency unitPrice}}</td>
-        <td class="right">{{../CURRENCY}} {{formatCurrency amount}}</td>
+        <td class="right">{{or quantity qty}}</td>
+        <td class="right">{{../CURRENCY}} {{formatCurrency (or unit_price unitPrice)}}</td>
+        <td class="right">{{../CURRENCY}} {{formatCurrency (or amount_ex_tax amount)}}</td>
       </tr>
       {{/each}}
       {{else}}
+      {{!-- 単一明細フォールバック — Phase 13 統一 --}}
       <tr>
         <td class="center">1</td>
         <td><div class="item-name-block">{{ITEM_NAME}}</div></td>
-        <td class="center"><span class="pay-method-badge">{{PAYMENT_METHOD}}</span></td>
+        <td class="center">
+          <span class="pay-method-badge">{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}</span>
+          {{#if PAYMENT_TERMS}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_TERMS}}</div>
+          {{else}}
+          {{#if PAYMENT_METHOD}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_METHOD}}</div>
+          {{/if}}
+          {{/if}}
+        </td>
         <td class="center">{{summaryPaymentDate}}</td>
         <td class="right">1</td><td class="right">—</td>
         <td class="right">{{CURRENCY}} {{formatCurrency grandTotalFees}}</td>

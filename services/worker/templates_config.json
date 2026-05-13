@@ -86,7 +86,9 @@
       "summaryDeliveryDate": { "label": "納期", "group": "IV. 金額・納期", "type": "date" },
       "summaryPaymentTerms": { "label": "支払条件", "group": "IV. 金額・納期", "placeholder": "例: 検収月翌月末日払い" },
       "ITEM_NAME": { "label": "品目名 (単一明細)", "group": "IV. 金額・納期", "helpText": "明細表を使わない場合の代替" },
-      "PAYMENT_METHOD": { "label": "支払方法 (単一明細)", "group": "IV. 金額・納期" },
+      "CALC_METHOD": { "label": "計算方式 (単一明細)", "group": "IV. 金額・納期", "type": "select", "options": ["FIXED", "SUBSCRIPTION", "ROYALTY"], "helpText": "明細表を使わない場合の代替。FIXED=固定額 / SUBSCRIPTION=サブスク / ROYALTY=業績連動" },
+      "PAYMENT_TERMS": { "label": "支払条件 (単一明細)", "group": "IV. 金額・納期", "placeholder": "例: 翌月末" },
+      "PAYMENT_METHOD": { "label": "支払方法 (レガシー)", "group": "IV. 金額・納期", "helpText": "Phase 13 で CALC_METHOD + PAYMENT_TERMS に分離。後方互換のため残置" },
 
       "BANK_NAME": { "label": "金融機関名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.bank_name", "helpText": "[取引先] ボタンで自動入力" },
       "BRANCH_NAME": { "label": "支店名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.branch_name" },

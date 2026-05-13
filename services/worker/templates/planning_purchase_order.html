@@ -366,11 +366,21 @@
           {{/if}}
         </td>
         <td class="center">
-          <span class="pay-method-badge">{{payment_method_display}}</span>
+          {{!-- Phase 13: calc_method (FIXED/SUBSCRIPTION/ROYALTY) を優先表示、
+               下に支払条件 (payment_terms) を副表示。
+               legacy データ (payment_method_display のみ) も互換維持。 --}}
+          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          {{#if payment_terms}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_terms}}</div>
+          {{else}}
+          {{#if payment_method}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_method}}</div>
+          {{/if}}
+          {{/if}}
         </td>
-        <td class="right">{{qty}}</td>
-        <td class="right">¥ {{formatCurrency unitPrice}}</td>
-        <td class="right">¥ {{formatCurrency amount}}</td>
+        <td class="right">{{or quantity qty}}</td>
+        <td class="right">¥ {{formatCurrency (or unit_price unitPrice)}}</td>
+        <td class="right">¥ {{formatCurrency (or amount_ex_tax amount)}}</td>
       </tr>
       {{/each}}
     </tbody>
