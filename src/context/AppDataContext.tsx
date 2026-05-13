@@ -80,6 +80,7 @@ interface AppDataContextValue {
   refreshDashboardStats: () => Promise<void>
   refreshAll: () => Promise<void>
   refreshContracts: () => Promise<void>
+  refreshIssues: () => Promise<void>
   refreshVendors: () => Promise<void>
   refreshStaff: () => Promise<void>
   refreshAssets: () => Promise<void>
@@ -160,6 +161,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch("/api/management/assets")
       const data = await res.json()
       setAssets(dedupe(data as ExternalAsset[], (a) => a.id))
+    } catch (e) {
+      console.error(e)
+    }
+  }, [])
+
+  // Phase 17g: Backlog 課題一覧を再取得 (DocumentEditorPage 等の Issue
+  // プルダウンを最新化する用途)。refreshAll は重いので個別 endpoint で。
+  const refreshIssues = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/backlog/issues")
+      const data = await res.json()
+      setIssues(dedupe(data as Issue[], (i) => i.issueKey))
     } catch (e) {
       console.error(e)
     }
@@ -294,6 +307,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refreshDashboardStats,
     refreshAll,
     refreshContracts,
+    refreshIssues,
     refreshVendors,
     refreshStaff,
     refreshAssets,

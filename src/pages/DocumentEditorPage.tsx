@@ -49,7 +49,31 @@ export function DocumentEditorPage() {
     templateMetadata,
     companyProfile,
     showNotification,
+    refreshIssues,
   } = useAppData()
+
+  // Phase 17g: ページ起動時に最新の Backlog 課題を再取得。
+  // ダッシュボードと違って初期ロード時に取得した stale な issues を
+  // 表示し続けるバグを防ぐ。
+  React.useEffect(() => {
+    refreshIssues?.()
+    // 初回マウント時のみ
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const [issuesRefreshing, setIssuesRefreshing] = React.useState(false)
+  const handleRefreshIssues = async () => {
+    if (!refreshIssues) return
+    setIssuesRefreshing(true)
+    try {
+      await refreshIssues()
+      showNotification("Backlog 課題リストを更新しました", "success")
+    } catch (e: any) {
+      showNotification(`更新失敗: ${e?.message || e}`, "error")
+    } finally {
+      setIssuesRefreshing(false)
+    }
+  }
   const {
     selectedIssue,
     setSelectedIssue,
@@ -409,7 +433,27 @@ export function DocumentEditorPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label className="text-background/60">Backlog ticket</Label>
+                <div className="flex items-center justify-between">
+                  <Label className="text-background/60">
+                    Backlog ticket ({issues.length})
+                  </Label>
+                  {/* Phase 17g: 手動更新ボタン — 新規追加した課題がプルダウンに
+                      出ない問題への対応 (初期ロード時の stale data を再フェッチ) */}
+                  <button
+                    type="button"
+                    onClick={handleRefreshIssues}
+                    disabled={issuesRefreshing}
+                    className="text-[9px] font-mono uppercase tracking-wider text-background/60 hover:text-background flex items-center gap-1 disabled:opacity-50"
+                    title="Backlog 課題リストを最新化"
+                  >
+                    {issuesRefreshing ? (
+                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    ) : (
+                      <RefreshCw className="w-2.5 h-2.5" />
+                    )}
+                    更新
+                  </button>
+                </div>
                 <select
                   value={selectedIssue}
                   onChange={(e) => handleIssueSelect(e.target.value)}
