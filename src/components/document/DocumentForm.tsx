@@ -1078,7 +1078,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             formData.order_lines_for_inspection.length > 0
           }
           onPick={(loaded: PoLoaded) => {
-            // Phase 9c: 親 PO 選択時に PDF が必要とする全フィールドを一括流し込み
+            // Phase 9c/f: 親 PO 選択時に PDF が必要とする全フィールドを一括流し込み
             const firstLine = loaded.line_items?.[0];
             const v = loaded.vendor || {};
             const isCorp =
@@ -1087,6 +1087,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             const repName = v.vendor_rep || v.contact_name || '';
             const todayIso = new Date().toISOString().slice(0, 10);
             const poHeader = loaded.raw?.order_item || {};
+            const prog = loaded.delivery_progress;
 
             setFormData({
               ...formData,
@@ -1100,6 +1101,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               itemNo: formData.itemNo || '1',
               // 検収書発行日 (未入力なら今日で初期化)
               documentDate: formData.documentDate || todayIso,
+              // Phase 9f: 分割検収サポート — 既存検収件数 +1 を採番、
+              // 進捗バー用の値もまとめてセット
+              ...(prog && {
+                deliveryNo: String(prog.next_delivery_no),
+                isPartial: prog.is_partial || prog.next_delivery_no > 1,
+                inspectedAmountStr: prog.done_amount_ex_tax.toLocaleString('ja-JP'),
+                pendingAmountStr: prog.remaining_amount_ex_tax.toLocaleString('ja-JP'),
+                totalOrderAmountStr: (
+                  prog.done_amount_ex_tax + prog.remaining_amount_ex_tax
+                ).toLocaleString('ja-JP'),
+                inspectedPct: String(prog.inspected_pct),
+              }),
               // 今回納品内容: 第 1 行を default 補完 (multi-line PO は適宜手動編集)
               description:
                 formData.description || (firstLine?.item_name || ''),

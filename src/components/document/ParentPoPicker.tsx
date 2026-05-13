@@ -50,6 +50,14 @@ export type PoLoaded = {
   line_items: any[]; // OrderLineForInspection[] (DeliveryLineItemTable が消費)
   document_number: string; // 親 PO の document_number (例: PO-2024-001)
   vendor: any; // vendors テーブルの行 (vendor_name / entity_type / 銀行口座 等)
+  delivery_progress: {
+    done_count: number;
+    next_delivery_no: number;
+    done_amount_ex_tax: number;
+    remaining_amount_ex_tax: number;
+    inspected_pct: number;
+    is_partial: boolean;
+  } | null;
   raw: any; // /api/order-items/by-issue/:key の生レスポンス
 };
 
@@ -122,6 +130,7 @@ export const ParentPoPicker: React.FC<Props> = ({
         line_items: Array.isArray(data?.line_items) ? data.line_items : [],
         document_number: String(data?.document_number || ""),
         vendor: data?.vendor || null,
+        delivery_progress: data?.delivery_progress || null,
         raw: data,
       });
       setOpen(false);

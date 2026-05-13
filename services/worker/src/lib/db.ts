@@ -238,6 +238,38 @@ export async function initDb() {
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
     // -----------------------------------------------------------------
+    // Phase 9f: 1 PO に対する複数回の分割検収サポート
+    //
+    // 旧: backlog_issue_key UNIQUE → 1 issue = 1 検収行 (再生成は上書き)
+    // 新: (backlog_issue_key, delivery_no) UNIQUE → 1 issue = N 検収行
+    //
+    // 既存 DB の UNIQUE 制約を DROP して複合 UNIQUE に張り替え。
+    // 既存データは delivery_no=1 を NOT NULL DEFAULT で埋める。
+    // -----------------------------------------------------------------
+    `UPDATE delivery_events SET delivery_no = 1 WHERE delivery_no IS NULL;`,
+    `ALTER TABLE delivery_events ALTER COLUMN delivery_no SET NOT NULL;`,
+    `ALTER TABLE delivery_events ALTER COLUMN delivery_no SET DEFAULT 1;`,
+    // 旧 UNIQUE 制約をベストエフォートで削除 (制約名は環境依存だが、
+    // pg は CREATE TABLE 内で `UNIQUE NOT NULL` を書くと
+    // <table>_<col>_key の命名で auto-generate する)
+    `ALTER TABLE delivery_events DROP CONSTRAINT IF EXISTS delivery_events_backlog_issue_key_key;`,
+    // 念のためインデックス側もクリーンアップ
+    `DROP INDEX IF EXISTS delivery_events_backlog_issue_key_key;`,
+    // 複合 UNIQUE を立てる
+    `DO $$
+       BEGIN
+         IF NOT EXISTS (
+           SELECT 1 FROM pg_constraint
+            WHERE conname = 'delivery_events_issue_no_uniq'
+         ) THEN
+           ALTER TABLE delivery_events
+             ADD CONSTRAINT delivery_events_issue_no_uniq
+             UNIQUE (backlog_issue_key, delivery_no);
+         END IF;
+       END$$;`,
+    `CREATE INDEX IF NOT EXISTS idx_de_issue ON delivery_events(backlog_issue_key);`,
+
+    // -----------------------------------------------------------------
     // Phase 4a: 検収書の明細レコード (1 検収書 = N 明細)
     //
     // acceptance_ratio は 0.0000–1.0000 で品質評価:

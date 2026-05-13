@@ -319,6 +319,39 @@ async function startServer() {
               context["itemCount"] = String(lines.rows.length);
               context["itemNo"] = "1"; // 単発検収では明細 1 を default
               context["documentDate"] = new Date().toISOString().slice(0, 10);
+
+              // Phase 9f: 親 PO 配下の既存検収件数 +1 を次回 deliveryNo として
+              // セット。残量 > 0 なら isPartial=true。
+              const deliveryAgg = await query(
+                `SELECT COUNT(*) AS done_count,
+                        COALESCE(SUM(delivered_amount), 0) AS done_amt
+                   FROM delivery_events
+                  WHERE order_item_id = $1
+                    AND backlog_issue_key <> $2`,
+                [poId, key]
+              );
+              const doneCount = Number(deliveryAgg.rows[0]?.done_count) || 0;
+              const doneAmt = Number(deliveryAgg.rows[0]?.done_amt) || 0;
+              const orderTotalEx = Number(poRow.amount_ex_tax) || 0;
+              context["deliveryNo"] = String(doneCount + 1);
+              context["totalDeliveries"] = String(
+                Math.max(doneCount + 1, Number(context["totalDeliveries"]) || 0)
+              );
+              context["isPartial"] = doneCount > 0; // 2 回目以降は分割扱い
+              context["inspectedAmountStr"] = new Intl.NumberFormat(
+                "ja-JP"
+              ).format(doneAmt);
+              context["totalOrderAmountStr"] = new Intl.NumberFormat(
+                "ja-JP"
+              ).format(orderTotalEx);
+              context["pendingAmountStr"] = new Intl.NumberFormat(
+                "ja-JP"
+              ).format(Math.max(0, orderTotalEx - doneAmt));
+              context["inspectedPct"] =
+                orderTotalEx > 0
+                  ? String(Math.min(100, Math.floor((doneAmt / orderTotalEx) * 100)))
+                  : "0";
+
               context["order_lines_for_inspection"] = lines.rows.map((l: any) => {
                 const ordAmt = Number(l.amount_ex_tax) || 0;
                 const ordQty = Number(l.quantity) || 0;
@@ -1038,11 +1071,35 @@ async function startServer() {
           : null;
       }
 
+      // Phase 9f: 次回 deliveryNo と進捗を一括で返す。
+      // 同じ PO に対して既に N 回検収が走っていれば deliveryNo=N+1。
+      const dvAgg = await query(
+        `SELECT COUNT(*) AS done_count,
+                COALESCE(SUM(delivered_amount), 0) AS done_amt
+           FROM delivery_events
+          WHERE order_item_id = $1`,
+        [orderItem.id]
+      );
+      const doneCount = Number(dvAgg.rows[0]?.done_count) || 0;
+      const doneAmt = Number(dvAgg.rows[0]?.done_amt) || 0;
+      const orderTotalEx = Number(orderItem.amount_ex_tax) || 0;
+
       res.json({
         order_item: orderItem,
         line_items: linesWithAvail,
         document_number: docRow.rows[0]?.document_number || "",
         vendor,
+        delivery_progress: {
+          done_count: doneCount,
+          next_delivery_no: doneCount + 1,
+          done_amount_ex_tax: doneAmt,
+          remaining_amount_ex_tax: Math.max(0, orderTotalEx - doneAmt),
+          inspected_pct:
+            orderTotalEx > 0
+              ? Math.min(100, Math.floor((doneAmt / orderTotalEx) * 100))
+              : 0,
+          is_partial: doneCount > 0,
+        },
       });
     } catch (error) {
       console.error("/api/order-items/by-issue failed:", error);

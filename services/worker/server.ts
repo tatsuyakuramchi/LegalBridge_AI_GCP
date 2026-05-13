@@ -301,11 +301,21 @@ ${details}
     );
 
     if (requestType === "delivery_inspec") {
+      // Phase 9f: 複合 UNIQUE 制約 (backlog_issue_key, delivery_no) 対応。
+      // 同じ delivery_no で再起票された場合は上書き (Backlog 起票の冪等性確保)。
       await query(
-        "INSERT INTO delivery_events (backlog_issue_key, delivery_no, status, inspection_deadline, delivered_at, delivered_amount) VALUES ($1, $2, $3, $4, $5, $6)",
+        `INSERT INTO delivery_events
+           (backlog_issue_key, delivery_no, status, inspection_deadline,
+            delivered_at, delivered_amount)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET
+           status              = EXCLUDED.status,
+           inspection_deadline = EXCLUDED.inspection_deadline,
+           delivered_at        = EXCLUDED.delivered_at,
+           delivered_amount    = EXCLUDED.delivered_amount`,
         [
           issue.issueKey,
-          deliveryNo,
+          Number(deliveryNo) || 1,
           "pending",
           inspectionDeadline || new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString(),
           deliveryDate || new Date().toISOString(),
@@ -1001,11 +1011,34 @@ ${details}
           : null;
       }
 
+      // Phase 9f: 次回 deliveryNo と進捗
+      const dvAgg = await query(
+        `SELECT COUNT(*) AS done_count,
+                COALESCE(SUM(delivered_amount), 0) AS done_amt
+           FROM delivery_events
+          WHERE order_item_id = $1`,
+        [orderItem.id]
+      );
+      const doneCount = Number(dvAgg.rows[0]?.done_count) || 0;
+      const doneAmt = Number(dvAgg.rows[0]?.done_amt) || 0;
+      const orderTotalEx = Number(orderItem.amount_ex_tax) || 0;
+
       res.json({
         order_item: orderItem,
         line_items: linesWithAvail,
         document_number: docRow.rows[0]?.document_number || "",
         vendor,
+        delivery_progress: {
+          done_count: doneCount,
+          next_delivery_no: doneCount + 1,
+          done_amount_ex_tax: doneAmt,
+          remaining_amount_ex_tax: Math.max(0, orderTotalEx - doneAmt),
+          inspected_pct:
+            orderTotalEx > 0
+              ? Math.min(100, Math.floor((doneAmt / orderTotalEx) * 100))
+              : 0,
+          is_partial: doneCount > 0,
+        },
       });
     } catch (error) {
       console.error("/api/order-items/by-issue failed:", error);
@@ -2553,18 +2586,36 @@ ${details}
           ]
         );
       } else if (templateType.includes("inspection")) {
+        // Phase 9f: 複合 UNIQUE で上書き可能に。delivery_no が指定されて
+        // いなければ MAX(delivery_no)+1 で自動採番。
         const orderRes = await query(
           "SELECT id FROM order_items WHERE backlog_issue_key = $1 LIMIT 1",
           [issueKey]
         );
         if (orderRes.rows.length > 0) {
+          let dno = Number(formData.deliveryNo) || 0;
+          if (!dno) {
+            const maxRes = await query(
+              `SELECT COALESCE(MAX(delivery_no), 0) AS max_no
+                 FROM delivery_events
+                WHERE backlog_issue_key = $1`,
+              [issueKey]
+            );
+            dno = Number(maxRes.rows[0]?.max_no) + 1;
+          }
           await query(
-            "INSERT INTO delivery_events (order_item_id, backlog_issue_key, delivered_amount, delivery_no, delivered_at) VALUES ($1, $2, $3, $4, $5)",
+            `INSERT INTO delivery_events
+               (order_item_id, backlog_issue_key, delivered_amount, delivery_no, delivered_at)
+             VALUES ($1, $2, $3, $4, $5)
+             ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET
+               order_item_id    = EXCLUDED.order_item_id,
+               delivered_amount = EXCLUDED.delivered_amount,
+               delivered_at     = EXCLUDED.delivered_at`,
             [
               orderRes.rows[0].id,
               issueKey,
               formData.deliveredAmount || formData.amount || 0,
-              1,
+              dno,
               new Date(),
             ]
           );
@@ -2681,7 +2732,7 @@ ${details}
           "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
           [issueKey, formData.counterparty || formData.PARTY_B_NAME, issue.summary]
         );
-        // 親 PO 検索: formData.parent_po_id (form-context が埋めた値) 優先、
+        // 親 PO 検索: formData.parent_po_id (form-context / picker が埋めた値) 優先、
         // 無ければこの issue 自体の order_items を見る (legacy fallback)。
         let orderItemId: number | null = null;
         if (formData.parent_po_id) {
@@ -2694,24 +2745,78 @@ ${details}
           orderItemId = orderItemResult.rows[0]?.id || null;
         }
 
+        // Phase 9f: 分割検収サポート — 1 PO に対する複数回検収を許容。
+        // deliveryNo の決定優先順位:
+        //   1. formData.deliveryNo (フロントから明示)
+        //   2. 親 PO 配下の MAX(delivery_no) + 1 を自動採番
+        //   3. なければ 1
+        let deliveryNo = Number(formData.deliveryNo) || 0;
+        if (!deliveryNo) {
+          if (orderItemId) {
+            const maxRes = await query(
+              `SELECT COALESCE(MAX(delivery_no), 0) AS max_no
+                 FROM delivery_events
+                WHERE order_item_id = $1`,
+              [orderItemId]
+            );
+            deliveryNo = Number(maxRes.rows[0]?.max_no) + 1;
+          } else {
+            const maxRes = await query(
+              `SELECT COALESCE(MAX(delivery_no), 0) AS max_no
+                 FROM delivery_events
+                WHERE backlog_issue_key = $1`,
+              [issueKey]
+            );
+            deliveryNo = Number(maxRes.rows[0]?.max_no) + 1;
+          }
+        }
+
+        // 今回検収額 (税抜) — formData.delivery_line_items[] から再計算が
+        // 正しいが、無いケースは deliveredAmountStr 経由でフォールバック。
+        let deliveredAmount = 0;
+        if (
+          Array.isArray(formData.delivery_line_items) &&
+          formData.delivery_line_items.length > 0
+        ) {
+          deliveredAmount = (formData.delivery_line_items as Array<any>)
+            .reduce(
+              (sum, l) => sum + (Number(l.inspected_amount_ex_tax) || 0),
+              0
+            );
+        } else if (formData.deliveredAmountStr) {
+          deliveredAmount = Number(
+            String(formData.deliveredAmountStr).replace(/[^0-9.-]+/g, "")
+          ) || 0;
+        }
+
         const deliveryUpsert = await query(
-          `INSERT INTO delivery_events (backlog_issue_key, order_item_id, delivered_at, inspection_deadline, status, note)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (backlog_issue_key) DO UPDATE SET
-             order_item_id = EXCLUDED.order_item_id,
+          `INSERT INTO delivery_events
+             (backlog_issue_key, order_item_id, delivery_no, delivered_at,
+              delivered_amount, inspection_deadline, status, note)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET
+             order_item_id       = EXCLUDED.order_item_id,
+             delivered_at        = EXCLUDED.delivered_at,
+             delivered_amount    = EXCLUDED.delivered_amount,
              inspection_deadline = EXCLUDED.inspection_deadline,
-             status = EXCLUDED.status
+             status              = EXCLUDED.status,
+             note                = EXCLUDED.note
            RETURNING id`,
           [
             issueKey,
             orderItemId,
-            new Date(),
+            deliveryNo,
+            formData.deliveredAt || new Date(),
+            deliveredAmount,
             formData.inspectionDeadline || null,
             "pending",
             formData.REMARKS || "",
           ]
         );
         const deliveryEventId = deliveryUpsert.rows[0]?.id;
+        console.log(
+          `📦 delivery_events upsert: issueKey=${issueKey} delivery_no=${deliveryNo} amount=${deliveredAmount} id=${deliveryEventId}`
+        );
 
         // Phase 7c: 検収明細を永続化する。
         // フロントが formData.delivery_line_items[] を載せていれば
