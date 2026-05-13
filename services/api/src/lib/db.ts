@@ -403,7 +403,17 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_capabilities_type ON contract_capabilities(contract_type);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_record_type ON contract_capabilities(record_type);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_purposes ON contract_capabilities USING GIN(purpose_codes);`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_capabilities_doc_num ON contract_capabilities(document_number) WHERE document_number IS NOT NULL;`,
+    // Phase 17p: 部分ユニークインデックス → 通常 UNIQUE INDEX に変更
+    //   (ON CONFLICT (document_number) が動くようにするため。詳細は worker
+    //    側 db.ts の同名コメント参照。)
+    `DROP INDEX IF EXISTS idx_capabilities_doc_num;`,
+    `DELETE FROM contract_capabilities a
+       USING contract_capabilities b
+      WHERE a.id < b.id
+        AND a.document_number = b.document_number
+        AND a.document_number IS NOT NULL;`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS contract_capabilities_doc_num_uniq
+       ON contract_capabilities(document_number);`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,

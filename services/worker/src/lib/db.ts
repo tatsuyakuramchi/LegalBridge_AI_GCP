@@ -786,7 +786,39 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_capabilities_type ON contract_capabilities(contract_type);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_record_type ON contract_capabilities(record_type);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_purposes ON contract_capabilities USING GIN(purpose_codes);`,
-    `CREATE UNIQUE INDEX IF NOT EXISTS idx_capabilities_doc_num ON contract_capabilities(document_number) WHERE document_number IS NOT NULL;`,
+    // -----------------------------------------------------------------
+    // Phase 17p: contract_capabilities.document_number の UNIQUE 制約。
+    //
+    // 旧: 部分インデックス (WHERE document_number IS NOT NULL) として張って
+    //     いたが、PostgreSQL の ON CONFLICT は部分ユニークインデックスを
+    //     自動推論せず、INSERT ... ON CONFLICT (document_number) DO UPDATE
+    //     が
+    //       "there is no unique or exclusion constraint matching the
+    //        ON CONFLICT specification"
+    //     で失敗していた。これにより worker の contract_capabilities mirror
+    //     が常に try/catch 内で握り潰され、法務検索 (個別契約) に発注書が
+    //     出ない原因になっていた。
+    //
+    // 新: 通常の UNIQUE INDEX に変更。PostgreSQL では UNIQUE INDEX は
+    //     NULL 値を「distinct (互いに異なる)」として扱うので、
+    //     複数行が document_number=NULL でも問題ない (= 部分インデックス
+    //     と意味的に同じ) が、ON CONFLICT (document_number) で正しく
+    //     推論される。
+    //
+    // 旧インデックスを冪等に DROP → 新規 UNIQUE INDEX を CREATE。
+    // -----------------------------------------------------------------
+    `DROP INDEX IF EXISTS idx_capabilities_doc_num;`,
+    // 念のため重複行 (document_number が同じで複数行) を残す場合に備えた
+    // 防御クリーンアップ — 最新の id 1 件だけ残して他を削除する。
+    // 部分インデックスが効いていれば重複は無いはずだが、過去に
+    // インデックス未適用の時期があった場合の保険。
+    `DELETE FROM contract_capabilities a
+       USING contract_capabilities b
+      WHERE a.id < b.id
+        AND a.document_number = b.document_number
+        AND a.document_number IS NOT NULL;`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS contract_capabilities_doc_num_uniq
+       ON contract_capabilities(document_number);`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
