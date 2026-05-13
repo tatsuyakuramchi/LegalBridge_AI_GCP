@@ -2453,35 +2453,17 @@ ${details}
             );
           }
 
-          // Phase 14c: generate_pdf=未作成 のとき PDF も生成
-          let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
-            generated: false,
-            drive_link: "",
-          };
-          if (shouldGeneratePdf(first.generate_pdf)) {
-            const staffInfo = await lookupStaffByEmail(first.staff_email);
-            pdfResult = await maybeGeneratePdfForImport(
-              "purchase_order",
-              docNumber,
-              issueKey,
-              {
-                ...first,
-                items: lines,
-                grandTotalExTax: totalExTax,
-                taxRate,
-                VENDOR_NAME: first.vendor_name,
-                VENDOR_CODE: first.vendor_code,
-                description: first.description,
-                summary: first.description,
-              },
-              staffInfo
-                ? {
-                    STAFF_NAME: staffInfo.staff_name,
-                    STAFF_DEPARTMENT: staffInfo.department,
-                    STAFF_EMAIL: staffInfo.email,
-                    STAFF_PHONE: staffInfo.phone,
-                  }
-                : {}
+          // Phase 15: インライン PDF 生成は廃止 (キュー方式に移行)。
+          // generate_pdf="未作成" の行は __pdf_pending=true フラグだけ立てて
+          // PDF 未作成キュー画面で後から確認しながら生成する。
+          const pdfPending = shouldGeneratePdf(first.generate_pdf);
+          if (pdfPending) {
+            // form_data の __pdf_pending を true に更新 (キュー対象として印付け)
+            await query(
+              `UPDATE documents
+                  SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'true'::jsonb)
+                WHERE document_number = $1`,
+              [docNumber]
             );
           }
 
@@ -2492,9 +2474,7 @@ ${details}
             document_number: docNumber,
             line_count: lines.length,
             total_ex_tax: totals?.amount_ex_tax ?? totalExTax,
-            pdf_generated: pdfResult.generated,
-            drive_link: pdfResult.drive_link,
-            pdf_error: pdfResult.error || undefined,
+            pdf_pending: pdfPending,
           });
         } catch (e: any) {
           console.error(`/api/imports/bulk/order group=${importKey} failed:`, e);
@@ -2723,33 +2703,14 @@ ${details}
               );
             }
 
-            // Phase 14c: generate_pdf=未作成 のとき PDF も生成
-            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
-              generated: false,
-              drive_link: "",
-            };
-            if (shouldGeneratePdf(first.generate_pdf)) {
-              const staffInfo = await lookupStaffByEmail(first.staff_email);
-              // license individual テンプレ用に financial_conditions[] を流す
-              pdfResult = await maybeGeneratePdfForImport(
-                "individual_license_terms",
-                contractNumber,
-                issueKey,
-                {
-                  ...first,
-                  financial_conditions: conditions,
-                  Licensor_名称: first.licensor_name,
-                  Licensor_住所: first.licensor_address,
-                  Licensor_代表者名: first.licensor_rep,
-                  LICENSOR_IS_CORPORATION: !!first.licensor_is_corporation,
-                  Licensee_名称: first.licensee_name,
-                  Licensee_住所: first.licensee_address,
-                  Licensee_代表者名: first.licensee_rep,
-                  LICENSEE_IS_CORPORATION: !!first.licensee_is_corporation,
-                  原著作物名: first.original_work,
-                  対象製品予定名: first.product_name_predicted,
-                },
-                staffInfo
+            // Phase 15: キュー方式 — フラグだけ立てて後で個別に生成
+            const pdfPending = shouldGeneratePdf(first.generate_pdf);
+            if (pdfPending) {
+              await query(
+                `UPDATE documents
+                    SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'true'::jsonb)
+                  WHERE document_number = $1`,
+                [contractNumber]
               );
             }
 
@@ -2759,9 +2720,7 @@ ${details}
               issue_key: issueKey,
               contract_number: contractNumber,
               condition_count: conditions.length,
-              pdf_generated: pdfResult.generated,
-              drive_link: pdfResult.drive_link,
-              pdf_error: pdfResult.error || undefined,
+              pdf_pending: pdfPending,
             });
           } catch (e: any) {
             console.error(
@@ -2928,19 +2887,14 @@ ${details}
               );
             }
 
-            // Phase 14c: PDF 生成
-            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
-              generated: false,
-              drive_link: "",
-            };
-            if (shouldGeneratePdf(r.generate_pdf)) {
-              const staffInfo = await lookupStaffByEmail(r.staff_email);
-              pdfResult = await maybeGeneratePdfForImport(
-                "license_master",
-                contractNumber,
-                issueKey,
-                r,
-                staffInfo
+            // Phase 15: キュー方式
+            const pdfPending = shouldGeneratePdf(r.generate_pdf);
+            if (pdfPending) {
+              await query(
+                `UPDATE documents
+                    SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'true'::jsonb)
+                  WHERE document_number = $1`,
+                [contractNumber]
               );
             }
 
@@ -2949,9 +2903,7 @@ ${details}
               license_contract_id: lcId,
               contract_number: contractNumber,
               ledger_id: ledgerId,
-              pdf_generated: pdfResult.generated,
-              drive_link: pdfResult.drive_link,
-              pdf_error: pdfResult.error || undefined,
+              pdf_pending: pdfPending,
             });
           } catch (e: any) {
             console.error(`/api/imports/bulk/license-master row=${idx} failed:`, e);
@@ -3070,29 +3022,14 @@ ${details}
               );
             }
 
-            // Phase 14c: PDF 生成
-            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
-              generated: false,
-              drive_link: "",
-            };
-            if (shouldGeneratePdf(r.generate_pdf)) {
-              const staffInfo = await lookupStaffByEmail(r.staff_email);
-              pdfResult = await maybeGeneratePdfForImport(
-                "service_master",
-                contractNumber,
-                issueKey,
-                {
-                  ...r,
-                  PARTY_A_NAME: r.party_a_name,
-                  PARTY_A_ADDRESS: r.party_a_address,
-                  PARTY_A_REP: r.party_a_rep,
-                  PARTY_B_NAME: r.party_b_name || r.vendor_name,
-                  PARTY_B_ADDRESS: r.party_b_address,
-                  PARTY_B_REP: r.party_b_rep,
-                  VENDOR_NAME: r.vendor_name,
-                  VENDOR_CODE: r.vendor_code,
-                },
-                staffInfo
+            // Phase 15: キュー方式
+            const pdfPending = shouldGeneratePdf(r.generate_pdf);
+            if (pdfPending) {
+              await query(
+                `UPDATE documents
+                    SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'true'::jsonb)
+                  WHERE document_number = $1`,
+                [contractNumber]
               );
             }
 
@@ -3100,9 +3037,7 @@ ${details}
               import_key: importKey,
               contract_number: contractNumber,
               vendor_id: vendorId,
-              pdf_generated: pdfResult.generated,
-              drive_link: pdfResult.drive_link,
-              pdf_error: pdfResult.error || undefined,
+              pdf_pending: pdfPending,
             });
           } catch (e: any) {
             console.error(`/api/imports/bulk/service-master row=${idx} failed:`, e);
@@ -3218,27 +3153,14 @@ ${details}
               );
             }
 
-            // Phase 14c: PDF 生成
-            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
-              generated: false,
-              drive_link: "",
-            };
-            if (shouldGeneratePdf(r.generate_pdf)) {
-              const staffInfo = await lookupStaffByEmail(r.staff_email);
-              pdfResult = await maybeGeneratePdfForImport(
-                "nda",
-                contractNumber,
-                issueKey,
-                {
-                  ...r,
-                  PARTY_A_NAME: r.party_a_name,
-                  PARTY_A_ADDRESS: r.party_a_address,
-                  PARTY_A_REP: r.party_a_rep,
-                  PARTY_B_NAME: r.party_b_name,
-                  PARTY_B_ADDRESS: r.party_b_address,
-                  PARTY_B_REP: r.party_b_rep,
-                },
-                staffInfo
+            // Phase 15: キュー方式
+            const pdfPending = shouldGeneratePdf(r.generate_pdf);
+            if (pdfPending) {
+              await query(
+                `UPDATE documents
+                    SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'true'::jsonb)
+                  WHERE document_number = $1`,
+                [contractNumber]
               );
             }
 
@@ -3246,9 +3168,7 @@ ${details}
               import_key: importKey,
               contract_number: contractNumber,
               issue_key: issueKey,
-              pdf_generated: pdfResult.generated,
-              drive_link: pdfResult.drive_link,
-              pdf_error: pdfResult.error || undefined,
+              pdf_pending: pdfPending,
             });
           } catch (e: any) {
             console.error(`/api/imports/bulk/nda row=${idx} failed:`, e);
@@ -3381,28 +3301,14 @@ ${details}
               );
             }
 
-            // Phase 14c: PDF 生成 (variant に応じたテンプレ)
-            let pdfResult: { generated: boolean; drive_link: string; error?: string } = {
-              generated: false,
-              drive_link: "",
-            };
-            if (shouldGeneratePdf(r.generate_pdf)) {
-              const staffInfo = await lookupStaffByEmail(r.staff_email);
-              pdfResult = await maybeGeneratePdfForImport(
-                templateType, // sales_master_buyer / standard / credit
-                contractNumber,
-                issueKey,
-                {
-                  ...r,
-                  PARTY_A_NAME: r.party_a_name || "株式会社アークライト",
-                  PARTY_B_NAME: r.party_b_name || r.vendor_name,
-                  PARTY_B_ADDRESS: r.party_b_address,
-                  PARTY_B_REPRESENTATIVE: r.party_b_rep,
-                  PAYMENT_CONDITION_SUMMARY: r.payment_terms,
-                  VENDOR_NAME: r.vendor_name,
-                  VENDOR_CODE: r.vendor_code,
-                },
-                staffInfo
+            // Phase 15: キュー方式
+            const pdfPending = shouldGeneratePdf(r.generate_pdf);
+            if (pdfPending) {
+              await query(
+                `UPDATE documents
+                    SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'true'::jsonb)
+                  WHERE document_number = $1`,
+                [contractNumber]
               );
             }
 
@@ -3412,9 +3318,7 @@ ${details}
               issue_key: issueKey,
               variant,
               vendor_id: vendorId,
-              pdf_generated: pdfResult.generated,
-              drive_link: pdfResult.drive_link,
-              pdf_error: pdfResult.error || undefined,
+              pdf_pending: pdfPending,
             });
           } catch (e: any) {
             console.error(`/api/imports/bulk/sales-master row=${idx} failed:`, e);
@@ -3435,6 +3339,200 @@ ${details}
       }
     }
   );
+
+  // -------------------------------------------------------------------
+  // /api/documents/pending-pdf, /:id/regenerate-pdf, /:id/mark-as-imported
+  // Phase 15: bulk import で「未作成」マーク付き ドキュメントを
+  // 「PDF 未作成キュー」画面で 1 件ずつ確認しながら生成する経路。
+  // -------------------------------------------------------------------
+
+  /**
+   * PDF 未作成キュー一覧。
+   * form_data.__pdf_pending=true かつ drive_link が空のものを返す。
+   */
+  app.get("/api/documents/pending-pdf", async (req, res) => {
+    try {
+      const templateFilter = String(req.query.template_type || "").trim();
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const params: any[] = [limit];
+      let where = `(form_data->>'__pdf_pending')::text = 'true'
+                    AND (drive_link IS NULL OR drive_link = '')`;
+      if (templateFilter) {
+        params.push(templateFilter);
+        where += ` AND template_type = $${params.length}`;
+      }
+      const result = await query(
+        `SELECT id, document_number, issue_key, template_type, document_category,
+                form_data, drive_link, created_at
+           FROM documents
+          WHERE ${where}
+          ORDER BY created_at DESC
+          LIMIT $1`,
+        params
+      );
+
+      // form_data から summary 用の主要フィールドを抜粋して返す
+      // (フロント表で「取引先 / タイトル / 主要情報」を 1 行で見せる用)。
+      // form_data 全体も返す (編集ページの pre-fill 用)。
+      const rows = result.rows.map((r: any) => {
+        const fd = r.form_data || {};
+        return {
+          id: Number(r.id),
+          document_number: r.document_number,
+          issue_key: r.issue_key,
+          template_type: r.template_type,
+          document_category: r.document_category,
+          created_at: r.created_at,
+          form_data: fd, // Phase 15: 編集ページ pre-fill のため全部返す
+          // 主要フィールド (テンプレ別に取り出すべきものを総ざらえ)
+          summary: {
+            counterparty:
+              fd.vendor_name ||
+              fd.party_b_name ||
+              fd.licensor_name ||
+              fd.licensee_name ||
+              fd.counterparty ||
+              "",
+            title:
+              fd.description ||
+              fd.contract_title ||
+              fd.basic_contract_name ||
+              fd.original_work ||
+              "",
+            staff_email: fd.staff_email || "",
+            line_count: Array.isArray(fd.items) ? fd.items.length : null,
+            condition_count: Array.isArray(fd.financial_conditions)
+              ? fd.financial_conditions.length
+              : null,
+            variant: fd.variant || null,
+            amount: fd.grandTotalExTax || null,
+          },
+        };
+      });
+
+      // テンプレタイプ別 件数も同時に返す (タブの数字バッジ用)
+      const countsRes = await query(
+        `SELECT template_type, COUNT(*) AS n
+           FROM documents
+          WHERE (form_data->>'__pdf_pending')::text = 'true'
+            AND (drive_link IS NULL OR drive_link = '')
+          GROUP BY template_type
+          ORDER BY n DESC`
+      );
+      const counts: Record<string, number> = {};
+      countsRes.rows.forEach((r: any) => {
+        counts[r.template_type] = Number(r.n);
+      });
+
+      res.json({
+        ok: true,
+        total: rows.length,
+        rows,
+        counts_by_template: counts,
+      });
+    } catch (error) {
+      console.error("/api/documents/pending-pdf failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 指定された 1 件の保留中ドキュメントについて、保存済み form_data から
+   * テンプレを render → PDF → Drive アップロード → drive_link 更新。
+   * 成功時は __pdf_pending=false に変更してキューから外す。
+   */
+  app.post("/api/documents/:id/regenerate-pdf", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const result = await query(
+        `SELECT id, document_number, issue_key, template_type, form_data
+           FROM documents WHERE id = $1`,
+        [id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "document not found" });
+      }
+      const doc = result.rows[0];
+      const fd = doc.form_data || {};
+
+      // staff 自動補完 (CSV に staff_email を入れていれば使う)
+      const staff = await lookupStaffByEmail(fd.staff_email);
+      const staffMerge = staff
+        ? {
+            STAFF_NAME: staff.staff_name,
+            STAFF_DEPARTMENT: staff.department,
+            STAFF_EMAIL: staff.email,
+            STAFF_PHONE: staff.phone,
+            inspectorName: fd.inspectorName || staff.staff_name,
+            inspectorDept: fd.inspectorDept || staff.department,
+            inspectorEmail: fd.inspectorEmail || staff.email,
+          }
+        : {};
+
+      const pdfResult = await maybeGeneratePdfForImport(
+        doc.template_type,
+        doc.document_number,
+        doc.issue_key,
+        fd,
+        staffMerge
+      );
+
+      if (!pdfResult.generated) {
+        return res.status(500).json({
+          ok: false,
+          error: pdfResult.error || "PDF generation failed",
+        });
+      }
+
+      // キューから外す
+      await query(
+        `UPDATE documents
+            SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'false'::jsonb)
+          WHERE id = $1`,
+        [id]
+      );
+
+      res.json({
+        ok: true,
+        id,
+        document_number: doc.document_number,
+        drive_link: pdfResult.drive_link,
+      });
+    } catch (error) {
+      console.error("/api/documents/:id/regenerate-pdf failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 「スキップ」操作 — __pdf_pending=false に変更してキューから除外。
+   * PDF は作らないが DB 登録は維持。
+   */
+  app.post("/api/documents/:id/mark-as-imported", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const r = await query(
+        `UPDATE documents
+            SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'false'::jsonb)
+          WHERE id = $1
+          RETURNING document_number`,
+        [id]
+      );
+      if (r.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "document not found" });
+      }
+      res.json({ ok: true, id, document_number: r.rows[0].document_number });
+    } catch (error) {
+      console.error("/api/documents/:id/mark-as-imported failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
 
   /**
    * テンプレ CSV ダウンロード。ユーザーがブランクのテンプレを Excel で
@@ -3794,7 +3892,7 @@ ${details}
   });
 
   app.post("/api/documents/generate", express.json(), async (req, res) => {
-    let { issueKey, templateType, formData, requesterEmail, nextStatusId } = req.body;
+    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber } = req.body;
 
     try {
       // Admin UI が「Backlog 課題なし」で発行する仮キー (MANUAL-<ts>) は
@@ -3844,7 +3942,12 @@ ${details}
         }
       }
 
-      const docNumber = await getNewDocumentNumber(templateType, issue.issueType.name);
+      // Phase 15: existingDocumentNumber が来ていれば再採番せず、その番号で
+      // 既存ドキュメント (PDF 未作成キュー由来) を完成させる。
+      const docNumber =
+        existingDocumentNumber && String(existingDocumentNumber).trim().length > 0
+          ? String(existingDocumentNumber).trim()
+          : await getNewDocumentNumber(templateType, issue.issueType.name);
 
       // Auto-advance Backlog status if a next_status_id is configured.
       if (!nextStatusId) {
@@ -3967,13 +4070,25 @@ ${details}
       // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
       const driveLink = await googleDriveService.uploadPdf(html, fileName);
 
+      // Phase 15: 同じ document_number で再生成された場合 (PDF 未作成キュー
+      // 由来など) は ON CONFLICT で UPDATE、新規なら INSERT。
+      // form_data の __pdf_pending は false にして pending キューから外す。
+      const mergedFormData = {
+        ...(formData || {}),
+        __pdf_pending: false,
+      };
       await query(
-        "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
+        `INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by)
+         VALUES ($1, $2, $3, $4, $5, $6)
+         ON CONFLICT (document_number) DO UPDATE SET
+           form_data  = EXCLUDED.form_data,
+           drive_link = EXCLUDED.drive_link,
+           template_type = EXCLUDED.template_type`,
         [
           docNumber,
           issueKey,
           templateType,
-          JSON.stringify(formData),
+          JSON.stringify(mergedFormData),
           driveLink,
           requesterEmail || "legal_user",
         ]

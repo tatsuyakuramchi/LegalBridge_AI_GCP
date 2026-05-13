@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 import { saveAs } from "file-saver"
 import {
   Database,
@@ -83,6 +84,64 @@ export function DocumentEditorPage() {
   const [assetPickerCallback, setAssetPickerCallback] =
     React.useState<((asset: any) => void) | null>(null)
   const [assetSearch, setAssetSearch] = React.useState("")
+
+  // Phase 15: ?from_pending=<id> 経由で PDF 未作成キューから来た場合、
+  // 該当ドキュメントの form_data をロードしてフォームを pre-fill する。
+  const [searchParams, setSearchParams] = useSearchParams()
+  const fromPendingId = searchParams.get("from_pending")
+  React.useEffect(() => {
+    if (!fromPendingId) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        // 単発の取得 endpoint がないので /api/documents/pending-pdf からマッチ。
+        // (件数は最大 500 件 / 通常 ~数十件なので問題なし)
+        const res = await fetch("/api/documents/pending-pdf?limit=500")
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const data = await res.json()
+        const idNum = Number(fromPendingId)
+        const target = (data.rows || []).find((r: any) => Number(r.id) === idNum)
+        if (!target) {
+          showNotification(
+            "PDF 未作成キューの対象が見つかりませんでした。",
+            "error"
+          )
+          return
+        }
+        // form_data を取得するため詳細を別途読む — pending-pdf は
+        // summary だけ返すので、もう一度個別 fetch が必要。
+        // 暫定: form_data は pending-pdf レスポンスに含めるよう server で
+        // 拡張するか、ここで getDocumentDetail(id) を呼ぶ。今は summary
+        // ベースで selectedTemplate と issueKey のセットだけ行う。
+        if (cancelled) return
+        setSelectedTemplate(target.template_type)
+        setSelectedIssue(target.issue_key || "")
+        // pending-pdf レスポンスの form_data 全体を pre-fill
+        // (CSV インポート時に保存した全フィールド)。
+        setFormData({
+          ...(target.form_data || {}),
+          __from_pending_id: idNum,
+          __from_pending_doc_number: target.document_number,
+        })
+        showNotification(
+          `「${target.document_number}」を PDF 未作成キューから読み込みました。フォームを確認・編集して Finalize & Sync してください。`,
+          "info"
+        )
+        // URL から from_pending を消す (リロード時に二重 prefill しない)
+        searchParams.delete("from_pending")
+        setSearchParams(searchParams, { replace: true })
+      } catch (e: any) {
+        showNotification(
+          `PDF 未作成キューからの読み込み失敗: ${e?.message || e}`,
+          "error"
+        )
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fromPendingId])
 
   // ---- Helpers --------------------------------------------------------
   const syncFromDatabase = React.useCallback(
@@ -216,6 +275,9 @@ export function DocumentEditorPage() {
           templateType: selectedTemplate,
           formData,
           requesterEmail: selectedStaff?.email || "web-user",
+          // Phase 15: PDF 未作成キュー由来の場合は同じ document_number で
+          // 更新 (新規採番せず、pending document を完成させる)。
+          existingDocumentNumber: formData?.__from_pending_doc_number,
         }),
       })
       const data = await res.json()

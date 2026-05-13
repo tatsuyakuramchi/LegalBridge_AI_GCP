@@ -41,6 +41,7 @@ import {
   type FinancialCondition,
 } from "@/src/components/document/FinancialConditionTable"
 import { BulkImportDialog } from "@/src/components/document/BulkImportDialog"
+import { PendingPdfPanel } from "@/src/components/document/PendingPdfPanel"
 
 type Tab =
   | "purchase_order"
@@ -49,6 +50,7 @@ type Tab =
   | "service_master"
   | "nda"
   | "sales_master"
+  | "pending_pdf"
 
 const Section: React.FC<{
   title: string
@@ -1611,10 +1613,11 @@ export function ImportPage() {
   const [bulkOpen, setBulkOpen] = React.useState(false)
 
   // タブ key → bulk endpoint kind の対応表
-  const BULK_KIND_MAP: Record<
+  // pending_pdf はインポート系ではないので Map に含めない (Bulk dialog を開かない)
+  const BULK_KIND_MAP: Partial<Record<
     Tab,
     "order" | "license-contract" | "license-master" | "service-master" | "nda" | "sales-master"
-  > = {
+  >> = {
     purchase_order: "order",
     individual_license_terms: "license-contract",
     license_master: "license-master",
@@ -1630,6 +1633,7 @@ export function ImportPage() {
     service_master: "業務委託基本契約書",
     nda: "秘密保持契約書 (NDA)",
     sales_master: "売買基本契約書",
+    pending_pdf: "PDF 未作成キュー",
   }
 
   return (
@@ -1647,28 +1651,33 @@ export function ImportPage() {
             通常生成した文書と同じく親文書として参照できるようになります。
           </p>
         </div>
-        {/* Phase 10: 一括 CSV インポート起動ボタン (現タブに対応する形式で開く) */}
-        <button
-          type="button"
-          onClick={() => setBulkOpen(true)}
-          className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
-          title={`${TAB_LABEL_MAP[tab]} の CSV 一括インポート`}
-        >
-          <FileSpreadsheet className="w-3.5 h-3.5" />
-          CSV 一括インポート
-        </button>
+        {/* Phase 10: 一括 CSV インポート起動ボタン (現タブに対応する形式で開く)
+            pending_pdf タブでは別機能なので非表示 */}
+        {tab !== "pending_pdf" && BULK_KIND_MAP[tab] && (
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
+            title={`${TAB_LABEL_MAP[tab]} の CSV 一括インポート`}
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            CSV 一括インポート
+          </button>
+        )}
       </header>
 
-      <BulkImportDialog
-        kind={BULK_KIND_MAP[tab]}
-        label={TAB_LABEL_MAP[tab]}
-        open={bulkOpen}
-        onClose={() => setBulkOpen(false)}
-        onCompleted={() => {
-          // インポート後、ダッシュボード等のマスター系を再取得
-          refreshAll?.()
-        }}
-      />
+      {BULK_KIND_MAP[tab] && (
+        <BulkImportDialog
+          kind={BULK_KIND_MAP[tab]!}
+          label={TAB_LABEL_MAP[tab]}
+          open={bulkOpen}
+          onClose={() => setBulkOpen(false)}
+          onCompleted={() => {
+            // インポート後、ダッシュボード等のマスター系を再取得
+            refreshAll?.()
+          }}
+        />
+      )}
 
       <div className="flex flex-wrap gap-2 border-b border-border">
         {(
@@ -1695,6 +1704,7 @@ export function ImportPage() {
               group: "基本契約",
             },
             { key: "nda", label: "NDA", group: "その他" },
+            { key: "pending_pdf", label: "📄 PDF 未作成キュー", group: "PDF 生成" },
           ] as { key: Tab; label: string; group: string }[]
         ).map((t) => (
           <button
@@ -1741,6 +1751,9 @@ export function ImportPage() {
           showNotification={showNotification}
         />
       )}
+
+      {/* Phase 15: PDF 未作成キュー */}
+      {tab === "pending_pdf" && <PendingPdfPanel />}
 
       {/* Phase 14a: NDA / 売買基本 は単一フォーム未提供。
           CSV 一括インポートへの導線のみ表示。 */}
