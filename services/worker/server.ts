@@ -2476,15 +2476,20 @@ ${details}
   }
 
   /**
-   * Bulk import: 発注書。CSV 1 行 = 1 明細、import_key でグループ化。
-   * 各グループは 1 PO として order_items + order_line_items を作成。
+   * Bulk import: 発注書。CSV 1 行 = 1 明細 or 1 経費、import_key でグループ化。
+   * 各グループは 1 PO として order_items + order_line_items + order_expenses を作成。
    *
    * body: { rows: Array<row> }
-   * row 列:
+   * 共通列:
    *   import_key, issue_key?, document_number?, drive_link?,
    *   vendor_code?, vendor_name?, description?, tax_rate?, due_date?,
+   *   staff_email?, generate_pdf?, ringi_numbers?,
+   *   row_type ("item" | "expense", default "item")
+   * item 行用列:
    *   line_no, item_name, spec?, unit_price, quantity,
-   *   payment_method?, payment_date?
+   *   calc_method?, payment_terms?, delivery_date?, payment_date?
+   * expense 行用列 (Phase 17i):
+   *   line_no, expense_name, spec?, spent_date?, amount_inc_tax, remarks?
    */
   app.post("/api/imports/bulk/order", express.json({ limit: "10mb" }), async (req, res) => {
     try {
@@ -2511,8 +2516,20 @@ ${details}
               : await getNewDocumentNumber("purchase_order", "発注書");
           const taxRate = Number(first.tax_rate) || 10;
 
+          // Phase 17i: row_type で item / expense を判別。空 or "item" は明細扱い。
+          //   item 行   → order_line_items (従来動作)
+          //   expense 行 → order_expenses (経費・税込み額)
+          const itemRows = groupRows.filter((r) => {
+            const t = String(r.row_type || "item").trim().toLowerCase();
+            return t !== "expense" && t !== "exp";
+          });
+          const expenseRows = groupRows.filter((r) => {
+            const t = String(r.row_type || "item").trim().toLowerCase();
+            return t === "expense" || t === "exp";
+          });
+
           // Phase 13: calc_method + payment_terms 統一。旧 payment_method 入力も受容。
-          const lines = groupRows
+          const lines = itemRows
             .filter((r) => r.line_no || r.item_name || r.unit_price)
             .map((r, idx) => {
               const payTerms = r.payment_terms || r.payment_method || null;
@@ -2534,15 +2551,33 @@ ${details}
               };
             });
 
-          if (lines.length === 0) {
+          // Phase 17i: 経費行 (税込み額)
+          const bulkExpenses = expenseRows
+            .filter((r) => r.expense_name || r.amount_inc_tax)
+            .map((r, idx) => ({
+              line_no: Number(r.line_no) || idx + 1,
+              expense_name: r.expense_name || r.item_name || "",
+              spec: r.spec || "",
+              spent_date: r.spent_date || r.delivery_date || null,
+              amount_inc_tax: Number(r.amount_inc_tax) || 0,
+              remarks: r.remarks || "",
+            }))
+            .filter((e) => e.expense_name);
+
+          if (lines.length === 0 && bulkExpenses.length === 0) {
             failed.push({
               import_key: importKey,
-              error: "No valid line items (line_no / item_name / unit_price 不足)",
+              error:
+                "No valid item / expense rows (line_no + item_name + unit_price, or row_type=expense + expense_name + amount_inc_tax)",
             });
             continue;
           }
 
           const totalExTax = lines.reduce((s, l) => s + l.amount_ex_tax, 0);
+          const expensesTotalIncTax = bulkExpenses.reduce(
+            (s, e) => s + e.amount_inc_tax,
+            0
+          );
 
           // 1. header upsert (item_no=1 で単発)
           const headerRes = await query(
@@ -2597,6 +2632,29 @@ ${details}
               ]
             );
           }
+
+          // Phase 17i: 経費を一括 upsert (既存削除 + 入れ直し)
+          await query("DELETE FROM order_expenses WHERE order_item_id = $1", [
+            orderItemId,
+          ]);
+          for (const e of bulkExpenses) {
+            await query(
+              `INSERT INTO order_expenses (
+                 order_item_id, line_no, expense_name, spec,
+                 spent_date, amount_inc_tax, remarks
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+              [
+                orderItemId,
+                e.line_no,
+                e.expense_name,
+                e.spec,
+                e.spent_date,
+                e.amount_inc_tax,
+                e.remarks,
+              ]
+            );
+          }
+
           const totals = await recalculateOrderTotal(orderItemId, taxRate);
 
           // 3. documents 履歴
@@ -2614,6 +2672,8 @@ ${details}
               "purchase_order",
               JSON.stringify({
                 items: lines,
+                expenses: bulkExpenses,
+                expensesTotalIncTax,
                 grandTotalExTax: totalExTax,
                 taxRate,
                 __imported: true,
@@ -2667,6 +2727,8 @@ ${details}
             issue_key: issueKey,
             document_number: docNumber,
             line_count: lines.length,
+            expense_count: bulkExpenses.length,
+            expenses_total_inc_tax: expensesTotalIncTax,
             total_ex_tax: totals?.amount_ex_tax ?? totalExTax,
             pdf_pending: pdfPending,
           });
@@ -4156,6 +4218,9 @@ ${details}
         // calc_method の値: FIXED / SUBSCRIPTION / ROYALTY (default FIXED)
         // payment_terms: 自由テキスト (例: '翌月末', '検収後')
         // Phase 14b: staff_email (担当者) / generate_pdf (作成済/未作成) 追加。
+        // Phase 17i: row_type (item / expense) を追加。expense 行は同じ
+        //   import_key グループに混在可。expense 行は line_no / expense_name /
+        //   spec / spent_date / amount_inc_tax / remarks を使う。
         headers: [
           "import_key",
           "issue_key",
@@ -4169,6 +4234,7 @@ ${details}
           "staff_email",
           "generate_pdf",
           "ringi_numbers",
+          "row_type",
           "line_no",
           "item_name",
           "spec",
@@ -4178,12 +4244,18 @@ ${details}
           "payment_terms",
           "delivery_date",
           "payment_date",
+          "expense_name",
+          "spent_date",
+          "amount_inc_tax",
+          "remarks",
         ],
         sample: [
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31"],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31"],
-          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "00002", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", "2026-06-15", ""],
-          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "00001,00003", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", "2026-04-01", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "1", "", "", "", "", "", "", "", "", "交通費", "2026-04-10", "12500", "東京〜大阪 新幹線"],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "2", "", "", "", "", "", "", "", "", "宿泊費", "2026-04-10", "9800", "ビジネスホテル 1 泊"],
+          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "00002", "item", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", "2026-06-15", "", "", "", "", ""],
+          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "00001,00003", "item", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", "2026-04-01", "", "", "", "", ""],
         ],
       },
       "license-contract": {

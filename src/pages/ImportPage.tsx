@@ -37,6 +37,10 @@ import {
   type LineItem,
 } from "@/src/components/document/LineItemTable"
 import {
+  ExpenseTable,
+  type ExpenseItem,
+} from "@/src/components/document/ExpenseTable"
+import {
   FinancialConditionTable,
   type FinancialCondition,
 } from "@/src/components/document/FinancialConditionTable"
@@ -137,6 +141,8 @@ const initialOrderForm = {
   tax_rate: 10,
   due_date: "",
   items: [] as LineItem[],
+  // Phase 17i: 経費 (交通費等・税込み額)
+  expenses: [] as ExpenseItem[],
 }
 
 const OrderImportForm: React.FC<{
@@ -149,6 +155,10 @@ const OrderImportForm: React.FC<{
 
   const grandTotal = (form.items || []).reduce(
     (s, it) => s + (Number(it.amount_ex_tax) || 0),
+    0
+  )
+  const expensesTotal = (form.expenses || []).reduce(
+    (s, e) => s + (Number(e.amount_inc_tax) || 0),
     0
   )
 
@@ -326,13 +336,31 @@ const OrderImportForm: React.FC<{
         </div>
       </Section>
 
+      {/* III-b. 経費 (Phase 17i) — 交通費等・税込み額 */}
+      <Section
+        title={`III-b. 経費（税込合計 ¥ ${expensesTotal.toLocaleString("ja-JP")}）`}
+        icon={<Database className="w-3.5 h-3.5" />}
+      >
+        <div className="md:col-span-2">
+          <ExpenseTable
+            expenses={form.expenses}
+            onChange={(expenses) => setForm({ ...form, expenses })}
+          />
+        </div>
+      </Section>
+
       {/* 送信 */}
       <div className="flex items-center justify-end gap-3">
         {result?.ok && (
           <span className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
             <CheckCircle2 className="w-3 h-3" />
-            登録完了: {result.document_number} ({result.line_count} 明細,
-            ¥{Number(result.totals?.amount_ex_tax || 0).toLocaleString("ja-JP")})
+            登録完了: {result.document_number} ({result.line_count} 明細
+            {result.expense_count ? ` + ${result.expense_count} 経費` : ""},
+            ¥{Number(result.totals?.amount_ex_tax || 0).toLocaleString("ja-JP")}
+            {result.expensesTotalIncTax
+              ? ` / 経費¥${Number(result.expensesTotalIncTax).toLocaleString("ja-JP")}`
+              : ""}
+            )
           </span>
         )}
         {result?.error && (

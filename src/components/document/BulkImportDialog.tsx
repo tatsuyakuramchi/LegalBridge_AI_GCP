@@ -278,6 +278,16 @@ export const BulkImportDialog: React.FC<Props> = ({
                 (or 1 金銭条件)、<code className="bg-card px-1">import_key</code>{" "}
                 列で同じ文書をグループ化します。
               </div>
+              {kind === "order" && (
+                <div className="text-muted-foreground mt-1 leading-relaxed">
+                  Phase 17i: <code className="bg-card px-1">row_type</code> 列で
+                  「item」（業務明細）と「expense」（経費・税込み）を判別します。
+                  経費行は <code className="bg-card px-1">expense_name</code> /
+                  <code className="bg-card px-1">spent_date</code> /
+                  <code className="bg-card px-1">amount_inc_tax</code> /
+                  <code className="bg-card px-1">remarks</code> を使用してください。
+                </div>
+              )}
             </div>
             <button
               type="button"
