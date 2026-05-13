@@ -4991,6 +4991,21 @@ ${details}
       // Phase 17: 稟議リンクを upsert (formData.ringi_numbers が配列なら処理)
       // 既存リンクは削除して入れ直し (送信値を正とする)。
       const documentId = Number(docInsert.rows[0]?.id);
+
+      // Phase 17q: 文書本体 (documents 行 + Drive PDF) が成功した時点で
+      // 「文書作成」自体は完了。以降の各種同期処理 (ringi / external_assets /
+      // contract_capabilities / order_items / legal_requests /
+      // delivery_events / license_contracts / royalty / Slack 通知 等) は
+      // best-effort 扱い。どこかで例外が起きてもユーザーには「作成失敗」
+      // を返さず、warnings 配列に積んでレスポンスで返す。
+      //
+      // 旧実装は単一の try/catch で全部を包んでおり、後段の同期で
+      // 想定外のエラー (FK 違反、Backlog 認証切れ、Slack トークン期限 等)
+      // が起きると HTTP 500 で返してしまい、ユーザーには
+      // 「文書作成に失敗しました」と出るのに DB には実体がある、という
+      // 紛らわしい状態を引き起こしていた。
+      const syncWarnings: Array<{ step: string; error: string }> = [];
+      try {
       if (documentId && Array.isArray(formData?.ringi_numbers)) {
         const numbers: string[] = (formData.ringi_numbers as any[])
           .map((s) => String(s || "").trim())
@@ -5730,13 +5745,31 @@ ${details}
         }
       }
 
+      } catch (syncErr: any) {
+        // Phase 17q: 同期処理での例外を捕捉して warnings に積む。
+        //   文書本体 (documents + Drive) は既に作成済みなので、
+        //   フロントには成功扱いで返す。
+        console.warn(
+          "[/api/documents/generate] post-document sync failed (non-fatal):",
+          syncErr
+        );
+        syncWarnings.push({
+          step: "post_document_sync",
+          error: String(syncErr?.message || syncErr),
+        });
+      }
+
       // Phase 9g: documentNumber も返してフロントのサクセス画面で
       // 表示する。
+      // Phase 17q: 同期警告があれば warnings として一緒に返す。
+      //   フロントは success:true + driveLink を信用してモーダルを出し、
+      //   warnings があれば追加で開発者向けの情報を console に出す。
       res.json({
         success: true,
         driveLink,
         documentNumber: docNumber,
         templateType,
+        warnings: syncWarnings,
       });
     } catch (error) {
       console.error("Error in /api/documents/generate:", error);
