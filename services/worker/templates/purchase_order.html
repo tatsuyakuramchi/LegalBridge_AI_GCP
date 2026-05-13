@@ -481,8 +481,13 @@
   </table>
   {{/if}}
 
-  {{#if ACCEPT_METHOD}}
+  {{!-- Phase 17l: 承諾セクションは ACCEPT_METHOD と SHOW_SIGN_SECTION を
+       それぞれ独立に評価する。これまでは SHOW_SIGN_SECTION が ACCEPT_METHOD
+       の {{#if}} 配下にネストされていたため、ユーザーが「承諾署名欄を表示」
+       を TRUE にしても、承諾方法が空だと署名欄ごと消えてしまっていた。 --}}
+  {{#if (or ACCEPT_METHOD SHOW_SIGN_SECTION)}}
   <div class="section-mark">■ 受領確認（承諾）</div>
+  {{#if ACCEPT_METHOD}}
   <div class="callout">
     <div style="font-weight:900;">承諾方法</div>
     <div class="small-muted">
@@ -495,14 +500,15 @@
     </div>
     {{/if}}
   </div>
+  {{/if}}
   {{#if SHOW_SIGN_SECTION}}
   <table class="sign-table" style="margin-top: 6px;">
     <tr>
-      <th>受領日</th>
-      <td>{{VENDOR_ACCEPT_DATE}}</td>
+      <th style="width:30%;">受領日（承諾日）</th>
+      <td>{{formatDate VENDOR_ACCEPT_DATE}}</td>
     </tr>
     <tr>
-      <th>受領者</th>
+      <th>受領者（承諾者）</th>
       <td>
         {{VENDOR_ACCEPT_NAME}}
         <div class="sign-box"></div>

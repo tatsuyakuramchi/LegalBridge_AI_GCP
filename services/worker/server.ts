@@ -4781,7 +4781,14 @@ ${details}
             expenses: expensesForRender,
             expensesTotalIncTax: expensesTotalIncTaxComputed,
             DOC_NO: docNumber,
-            ORDER_NO: formData.orderNumber || parentOrderNumber || issueKey,
+            // Phase 17l: ORDER_NO は新規発行された docNumber を優先する。
+            //   issueKey (Backlog 課題キー) は最後のフォールバックに留めない —
+            //   purchase_order テンプレ等で 発注番号 として表示されるため、
+            //   ARC-PO-YYYY-NNNN を出さないと意味がない。
+            //   - formData.orderNumber: ユーザーが手動入力した場合
+            //   - parentOrderNumber:    検収書から見た親 PO の番号
+            //   - docNumber:            通常はこれ (採番された自身の文書番号)
+            ORDER_NO: formData.orderNumber || parentOrderNumber || docNumber,
             hasChangeLogs: !!formData.CHANGE_RECORDS,
             changeLogs: formData.CHANGE_RECORDS
               ? formData.CHANGE_RECORDS.split(";").map((log: string) => {
