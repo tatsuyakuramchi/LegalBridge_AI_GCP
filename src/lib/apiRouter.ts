@@ -43,6 +43,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/documents\/pending-pdf(?:\?|$)/,
   /^\/api\/documents\/by-number\/(?:\/|\?|$|.)/,
   /^\/api\/documents\/\d+(?:\/|\?|$)/,
+  // Phase 17: 稟議マスタの read/write は worker (junction テーブル含む)
+  /^\/api\/ringi(?:\/|$|\?)/,
 ];
 
 // Routes that should go to the READ service even on POST.

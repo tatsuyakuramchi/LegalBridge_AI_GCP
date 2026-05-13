@@ -3341,6 +3341,238 @@ ${details}
   );
 
   // -------------------------------------------------------------------
+  // /api/ringi/* — Phase 17: 稟議マスタ + 文書との N:N 関連
+  // 文書作成時インライン作成 + Masters タブの管理画面の両方から呼ばれる。
+  // -------------------------------------------------------------------
+
+  const RINGI_NUM_RE = /^[0-9]{5}$/;
+
+  /**
+   * 稟議の autocomplete / 検索。
+   *   q: 5 桁数字 (前方一致) or title 部分一致
+   */
+  app.get("/api/ringi/search", async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const limit = Math.min(Number(req.query.limit) || 20, 100);
+      const sql = q
+        ? `SELECT id, ringi_number, title, category, status, owner_name
+             FROM ringi_records
+            WHERE ringi_number ILIKE $1 || '%'
+               OR title ILIKE '%' || $1 || '%'
+            ORDER BY ringi_number ASC LIMIT $2`
+        : `SELECT id, ringi_number, title, category, status, owner_name
+             FROM ringi_records
+            ORDER BY ringi_number DESC LIMIT $1`;
+      const params = q ? [q, limit] : [limit];
+      const r = await query(sql, params);
+      res.json({ ok: true, rows: r.rows });
+    } catch (error) {
+      console.error("/api/ringi/search failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 単一稟議の詳細 + 紐付く文書一覧。
+   * 法務検索 (稟議番号で検索) の表示にも使う。
+   */
+  app.get("/api/ringi/:number", async (req, res) => {
+    try {
+      const num = String(req.params.number || "").trim();
+      const r = await query(
+        `SELECT id, ringi_number, title, category, owner_name, owner_department,
+                approved_at, backlog_issue_key, status, total_budget, remarks,
+                created_at, updated_at
+           FROM ringi_records WHERE ringi_number = $1`,
+        [num]
+      );
+      if (r.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "ringi not found" });
+      }
+      const ringi = r.rows[0];
+      const docs = await query(
+        `SELECT d.id, d.document_number, d.issue_key, d.template_type,
+                d.document_category, d.drive_link, d.created_at,
+                d.form_data
+           FROM documents d
+           JOIN ringi_documents rd ON rd.document_id = d.id
+          WHERE rd.ringi_id = $1
+          ORDER BY d.document_category, d.created_at DESC`,
+        [ringi.id]
+      );
+      res.json({
+        ok: true,
+        ringi,
+        documents: docs.rows.map((d: any) => {
+          const fd = d.form_data || {};
+          return {
+            id: Number(d.id),
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            template_type: d.template_type,
+            document_category: d.document_category,
+            drive_link: d.drive_link || "",
+            created_at: d.created_at,
+            counterparty:
+              fd.vendor_name ||
+              fd.party_b_name ||
+              fd.licensor_name ||
+              fd.licensee_name ||
+              fd.counterparty ||
+              "",
+            title:
+              fd.description ||
+              fd.contract_title ||
+              fd.basic_contract_name ||
+              fd.original_work ||
+              "",
+            effective_date: fd.effective_date || fd.license_start_date || "",
+            expiration_date: fd.expiration_date || "",
+          };
+        }),
+      });
+    } catch (error) {
+      console.error("/api/ringi/:number failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 稟議を作成 / 更新 (upsert, ringi_number キー)。
+   */
+  app.post("/api/ringi", express.json(), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const ringiNumber = String(b.ringi_number || "").trim();
+      if (!RINGI_NUM_RE.test(ringiNumber)) {
+        return res.status(400).json({
+          ok: false,
+          error: `稟議番号は 5 桁数字で指定してください (received: '${ringiNumber}')`,
+        });
+      }
+      if (!b.title || String(b.title).trim().length === 0) {
+        return res.status(400).json({ ok: false, error: "title is required" });
+      }
+      const r = await query(
+        `INSERT INTO ringi_records (
+           ringi_number, title, category, owner_name, owner_department,
+           approved_at, backlog_issue_key, status, total_budget, remarks
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         ON CONFLICT (ringi_number) DO UPDATE SET
+           title             = EXCLUDED.title,
+           category          = COALESCE(NULLIF(EXCLUDED.category, ''), ringi_records.category),
+           owner_name        = COALESCE(NULLIF(EXCLUDED.owner_name, ''), ringi_records.owner_name),
+           owner_department  = COALESCE(NULLIF(EXCLUDED.owner_department, ''), ringi_records.owner_department),
+           approved_at       = COALESCE(EXCLUDED.approved_at, ringi_records.approved_at),
+           backlog_issue_key = COALESCE(NULLIF(EXCLUDED.backlog_issue_key, ''), ringi_records.backlog_issue_key),
+           status            = COALESCE(NULLIF(EXCLUDED.status, ''), ringi_records.status),
+           total_budget      = COALESCE(EXCLUDED.total_budget, ringi_records.total_budget),
+           remarks           = COALESCE(NULLIF(EXCLUDED.remarks, ''), ringi_records.remarks),
+           updated_at        = CURRENT_TIMESTAMP
+         RETURNING id, ringi_number, title`,
+        [
+          ringiNumber,
+          b.title,
+          b.category || null,
+          b.owner_name || null,
+          b.owner_department || null,
+          b.approved_at || null,
+          b.backlog_issue_key || null,
+          b.status || "open",
+          b.total_budget != null ? Number(b.total_budget) : null,
+          b.remarks || null,
+        ]
+      );
+      res.json({ ok: true, ringi: r.rows[0] });
+    } catch (error) {
+      console.error("/api/ringi POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 文書と稟議の N:N リンク管理 (まとめて差し替え)。
+   * body: { ringi_numbers: ["00001","00002"] }
+   * 渡された配列を「正」とし、既存リンクを差し替える。
+   */
+  app.post(
+    "/api/documents/:id/ringi-links",
+    express.json(),
+    async (req, res) => {
+      try {
+        const docId = Number(req.params.id);
+        if (!Number.isFinite(docId) || docId <= 0) {
+          return res.status(400).json({ ok: false, error: "invalid document id" });
+        }
+        const nums: string[] = Array.isArray(req.body?.ringi_numbers)
+          ? req.body.ringi_numbers.map((s: any) => String(s || "").trim())
+          : [];
+        // 5 桁数字以外は除外
+        const valid = nums.filter((n) => RINGI_NUM_RE.test(n));
+        const invalid = nums.filter((n) => n && !RINGI_NUM_RE.test(n));
+
+        // 既存リンク削除 → 入れ直し
+        await query("DELETE FROM ringi_documents WHERE document_id = $1", [
+          docId,
+        ]);
+
+        const linked: string[] = [];
+        const notFound: string[] = [];
+        for (const num of valid) {
+          const r = await query(
+            "SELECT id FROM ringi_records WHERE ringi_number = $1",
+            [num]
+          );
+          if (r.rows.length === 0) {
+            notFound.push(num);
+            continue;
+          }
+          const ringiId = Number(r.rows[0].id);
+          await query(
+            `INSERT INTO ringi_documents (ringi_id, document_id)
+             VALUES ($1, $2)
+             ON CONFLICT DO NOTHING`,
+            [ringiId, docId]
+          );
+          linked.push(num);
+        }
+        res.json({
+          ok: true,
+          linked,
+          not_found: notFound,
+          invalid_format: invalid,
+        });
+      } catch (error) {
+        console.error("/api/documents/:id/ringi-links POST failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
+   * 文書 1 件に紐付く稟議一覧を返す (DocumentForm の RingiSelector が初期化時に使う)。
+   */
+  app.get("/api/documents/:id/ringi-links", async (req, res) => {
+    try {
+      const docId = Number(req.params.id);
+      const r = await query(
+        `SELECT rr.id, rr.ringi_number, rr.title, rr.status
+           FROM ringi_records rr
+           JOIN ringi_documents rd ON rd.ringi_id = rr.id
+          WHERE rd.document_id = $1
+          ORDER BY rr.ringi_number ASC`,
+        [docId]
+      );
+      res.json({ ok: true, rows: r.rows });
+    } catch (error) {
+      console.error("/api/documents/:id/ringi-links GET failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
   // /api/documents/pending-pdf, /:id/regenerate-pdf, /:id/mark-as-imported
   // Phase 15: bulk import で「未作成」マーク付き ドキュメントを
   // 「PDF 未作成キュー」画面で 1 件ずつ確認しながら生成する経路。
@@ -4154,13 +4386,14 @@ ${details}
         ...(formData || {}),
         __pdf_pending: false,
       };
-      await query(
+      const docInsert = await query(
         `INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (document_number) DO UPDATE SET
            form_data  = EXCLUDED.form_data,
            drive_link = EXCLUDED.drive_link,
-           template_type = EXCLUDED.template_type`,
+           template_type = EXCLUDED.template_type
+         RETURNING id`,
         [
           docNumber,
           issueKey,
@@ -4170,6 +4403,36 @@ ${details}
           requesterEmail || "legal_user",
         ]
       );
+
+      // Phase 17: 稟議リンクを upsert (formData.ringi_numbers が配列なら処理)
+      // 既存リンクは削除して入れ直し (送信値を正とする)。
+      const documentId = Number(docInsert.rows[0]?.id);
+      if (documentId && Array.isArray(formData?.ringi_numbers)) {
+        const numbers: string[] = (formData.ringi_numbers as any[])
+          .map((s) => String(s || "").trim())
+          .filter((n) => /^[0-9]{5}$/.test(n));
+        await query(`DELETE FROM ringi_documents WHERE document_id = $1`, [
+          documentId,
+        ]);
+        for (const num of numbers) {
+          const r = await query(
+            `SELECT id FROM ringi_records WHERE ringi_number = $1`,
+            [num]
+          );
+          if (r.rows.length > 0) {
+            await query(
+              `INSERT INTO ringi_documents (ringi_id, document_id)
+               VALUES ($1, $2)
+               ON CONFLICT DO NOTHING`,
+              [Number(r.rows[0].id), documentId]
+            );
+          } else {
+            console.warn(
+              `[ringi] document ${docNumber} は稟議 ${num} と紐付け要求されたが ringi_records に未登録のためスキップ`
+            );
+          }
+        }
+      }
 
       await query(
         `INSERT INTO external_assets

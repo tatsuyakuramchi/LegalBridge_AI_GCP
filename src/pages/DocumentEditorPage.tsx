@@ -37,6 +37,7 @@ import {
   SheetBody,
 } from "@/components/ui/sheet"
 import { DocumentForm } from "@/src/components/document/DocumentForm"
+import { RingiSelector } from "@/src/components/document/RingiSelector"
 
 export function DocumentEditorPage() {
   const {
@@ -671,20 +672,35 @@ export function DocumentEditorPage() {
                     ))}
                   </div>
                 ) : (
-                  <DocumentForm
-                    templateId={selectedTemplate}
-                    metadata={templateMetadata[selectedTemplate] || { vars: {} }}
-                    formData={formData}
-                    setFormData={setFormData}
-                    onSync={() => syncFromDatabase()}
-                    onLinkAsset={(cb) => {
-                      setAssetPickerCallback(() => cb)
-                      setIsAssetPickerOpen(true)
-                    }}
-                    companyProfile={companyProfile}
-                    activeVendor={activeVendor}
-                    selectedStaff={selectedStaff}
-                  />
+                  <div className="space-y-6">
+                    {/* Phase 17: 稟議番号セレクタ — 全テンプレ共通の header field。
+                        formData.ringi_numbers[] に保存し、Finalize & Sync で
+                        worker が ringi_documents (N:N) に upsert する。 */}
+                    <RingiSelector
+                      value={
+                        Array.isArray(formData.ringi_numbers)
+                          ? formData.ringi_numbers
+                          : []
+                      }
+                      onChange={(next) =>
+                        setFormData({ ...formData, ringi_numbers: next })
+                      }
+                    />
+                    <DocumentForm
+                      templateId={selectedTemplate}
+                      metadata={templateMetadata[selectedTemplate] || { vars: {} }}
+                      formData={formData}
+                      setFormData={setFormData}
+                      onSync={() => syncFromDatabase()}
+                      onLinkAsset={(cb) => {
+                        setAssetPickerCallback(() => cb)
+                        setIsAssetPickerOpen(true)
+                      }}
+                      companyProfile={companyProfile}
+                      activeVendor={activeVendor}
+                      selectedStaff={selectedStaff}
+                    />
+                  </div>
                 )}
               </div>
 

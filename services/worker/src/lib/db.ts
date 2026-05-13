@@ -254,6 +254,47 @@ export async function initDb() {
       WHERE calc_method IS NULL OR calc_method = '' OR payment_terms IS NULL;`,
 
     // -----------------------------------------------------------------
+    // Phase 17: 稟議 (ringi) マスタ + 文書との N:N 関連
+    //
+    // 社内では稟議番号 (5 桁数字, 例: '00001') 単位で複数文書を束ねて
+    // 管理している。例:
+    //   稟議 00001 (商品開発稟議)
+    //     ├ 発注書 PO-2024-001
+    //     ├ 個別利用許諾 LIC-2024-001
+    //     └ NDA NDA-2024-005
+    //
+    // 1 つの文書が複数の稟議に紐付くケースもありうるので junction
+    // テーブル (N:N) で持つ。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS ringi_records (
+      id SERIAL PRIMARY KEY,
+      ringi_number VARCHAR(5) UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      category VARCHAR(50),
+      owner_name VARCHAR(255),
+      owner_department VARCHAR(100),
+      approved_at DATE,
+      backlog_issue_key VARCHAR(50),
+      status VARCHAR(50) DEFAULT 'open',
+      total_budget DECIMAL(15, 2),
+      remarks TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT ringi_number_5digits CHECK (ringi_number ~ '^[0-9]{5}$')
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_ringi_number ON ringi_records(ringi_number);`,
+    `CREATE INDEX IF NOT EXISTS idx_ringi_backlog ON ringi_records(backlog_issue_key);`,
+    `CREATE INDEX IF NOT EXISTS idx_ringi_status ON ringi_records(status);`,
+
+    `CREATE TABLE IF NOT EXISTS ringi_documents (
+      ringi_id INTEGER NOT NULL REFERENCES ringi_records(id) ON DELETE CASCADE,
+      document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+      linked_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (ringi_id, document_id)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_ringi_documents_doc ON ringi_documents(document_id);`,
+
+    // -----------------------------------------------------------------
     // Phase 11: 文書カテゴリ (基本 / 個別 / その他)
     //
     // 検索結果 (Slack /法務検索) で 基本契約 / 個別契約 / その他 の
