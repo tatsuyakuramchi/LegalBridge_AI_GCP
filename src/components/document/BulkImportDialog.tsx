@@ -33,6 +33,7 @@ type BulkKind =
   | "service-master"
   | "nda"
   | "sales-master"
+  | "ringi"
 
 interface Props {
   kind: BulkKind
@@ -364,7 +365,9 @@ export const BulkImportDialog: React.FC<Props> = ({
                                   ? `${g.first_row.party_a_name || ""} × ${g.first_row.party_b_name || ""} · ${g.first_row.contract_title || ""}`
                                   : kind === "sales-master"
                                     ? `[${g.first_row.variant || "standard"}] ${g.first_row.contract_title || g.first_row.party_b_name || ""}`
-                                    : `${g.first_row.contract_title || g.first_row.vendor_name || ""}`}
+                                    : kind === "ringi"
+                                      ? `稟議 ${g.first_row.ringi_number || "-"} · ${g.first_row.title || ""}`
+                                      : `${g.first_row.contract_title || g.first_row.vendor_name || ""}`}
                           {g.first_row.generate_pdf === "未作成" && (
                             <span className="ml-2 text-[9px] px-1 py-0.5 bg-amber-100 text-amber-800 rounded-sm">
                               📄 PDF 生成

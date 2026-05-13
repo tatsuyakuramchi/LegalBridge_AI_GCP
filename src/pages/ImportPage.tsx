@@ -51,6 +51,7 @@ type Tab =
   | "nda"
   | "sales_master"
   | "pending_pdf"
+  | "ringi_master"
 
 const Section: React.FC<{
   title: string
@@ -1616,7 +1617,13 @@ export function ImportPage() {
   // pending_pdf はインポート系ではないので Map に含めない (Bulk dialog を開かない)
   const BULK_KIND_MAP: Partial<Record<
     Tab,
-    "order" | "license-contract" | "license-master" | "service-master" | "nda" | "sales-master"
+    | "order"
+    | "license-contract"
+    | "license-master"
+    | "service-master"
+    | "nda"
+    | "sales-master"
+    | "ringi"
   >> = {
     purchase_order: "order",
     individual_license_terms: "license-contract",
@@ -1624,6 +1631,7 @@ export function ImportPage() {
     service_master: "service-master",
     nda: "nda",
     sales_master: "sales-master",
+    ringi_master: "ringi",
   }
 
   const TAB_LABEL_MAP: Record<Tab, string> = {
@@ -1634,6 +1642,7 @@ export function ImportPage() {
     nda: "その他契約 (NDA)",
     sales_master: "売買基本契約書",
     pending_pdf: "PDF 未作成キュー",
+    ringi_master: "稟議マスタ",
   }
 
   return (
@@ -1703,6 +1712,10 @@ export function ImportPage() {
               tabs: [{ key: "nda", label: "NDA (秘密保持)" }],
             },
             {
+              group: "マスタ",
+              tabs: [{ key: "ringi_master", label: "📋 稟議マスタ" }],
+            },
+            {
               group: "PDF 生成",
               tabs: [{ key: "pending_pdf", label: "📄 PDF 未作成キュー" }],
             },
@@ -1763,6 +1776,40 @@ export function ImportPage() {
 
       {/* Phase 15: PDF 未作成キュー */}
       {tab === "pending_pdf" && <PendingPdfPanel />}
+
+      {/* Phase 17e: 稟議マスタは CSV 一括インポートのみ対応 */}
+      {tab === "ringi_master" && (
+        <div className="space-y-4">
+          <div className="border border-emerald-200 bg-emerald-50 rounded-sm p-5">
+            <div className="flex items-start gap-3">
+              <FileSpreadsheet className="w-6 h-6 text-emerald-700 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <div className="font-bold text-emerald-900 text-sm">
+                  📋 稟議マスタの一括登録
+                </div>
+                <p className="text-[11px] font-mono text-emerald-900/80 leading-relaxed">
+                  稟議番号 (5 桁数字, 例: 00001) と稟議タイトル / 起案者 /
+                  承認日 等を CSV で一括投入できます。各文書 (発注書 /
+                  個別利用許諾 / NDA 等) から ringi_numbers 列で参照する前に、
+                  稟議マスタ側に先に登録しておくと N:N 紐付けがエラーなく
+                  通ります。
+                </p>
+                <p className="text-[10px] font-mono text-emerald-800/70">
+                  既存の稟議番号と同じ値で再 import すると上書き更新 (upsert) されます。
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setBulkOpen(true)}
+            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            稟議マスタ CSV 一括インポートを開く
+          </button>
+        </div>
+      )}
 
       {/* Phase 14a: NDA / 売買基本 は単一フォーム未提供。
           CSV 一括インポートへの導線のみ表示。 */}

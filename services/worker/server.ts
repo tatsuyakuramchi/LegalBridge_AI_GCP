@@ -3921,6 +3921,97 @@ ${details}
   });
 
   /**
+   * Phase 17e: 稟議マスタの一括インポート (ringi_records への upsert)。
+   * 文書とのリンクは作らない (これは「マスタ事前登録」のためのもの。
+   * 個別文書からのリンクは別経路 bulk/order 等の ringi_numbers 列で行う)。
+   */
+  app.post(
+    "/api/imports/bulk/ringi",
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "rows[] is required" });
+        }
+        const succeeded: any[] = [];
+        const failed: any[] = [];
+
+        for (let idx = 0; idx < rows.length; idx++) {
+          const r = rows[idx];
+          const ringiNumber = String(r.ringi_number || "").trim();
+          try {
+            if (!RINGI_NUM_RE.test(ringiNumber)) {
+              throw new Error(
+                `稟議番号は 5 桁数字で指定してください (received: '${ringiNumber}')`
+              );
+            }
+            const title = String(r.title || "").trim();
+            if (!title) {
+              throw new Error("title は必須です");
+            }
+            const result = await query(
+              `INSERT INTO ringi_records (
+                 ringi_number, title, category, owner_name, owner_department,
+                 approved_at, backlog_issue_key, status, total_budget, remarks
+               )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               ON CONFLICT (ringi_number) DO UPDATE SET
+                 title             = EXCLUDED.title,
+                 category          = COALESCE(NULLIF(EXCLUDED.category, ''), ringi_records.category),
+                 owner_name        = COALESCE(NULLIF(EXCLUDED.owner_name, ''), ringi_records.owner_name),
+                 owner_department  = COALESCE(NULLIF(EXCLUDED.owner_department, ''), ringi_records.owner_department),
+                 approved_at       = COALESCE(EXCLUDED.approved_at, ringi_records.approved_at),
+                 backlog_issue_key = COALESCE(NULLIF(EXCLUDED.backlog_issue_key, ''), ringi_records.backlog_issue_key),
+                 status            = COALESCE(NULLIF(EXCLUDED.status, ''), ringi_records.status),
+                 total_budget      = COALESCE(EXCLUDED.total_budget, ringi_records.total_budget),
+                 remarks           = COALESCE(NULLIF(EXCLUDED.remarks, ''), ringi_records.remarks),
+                 updated_at        = CURRENT_TIMESTAMP
+               RETURNING id, ringi_number, title`,
+              [
+                ringiNumber,
+                title,
+                r.category || null,
+                r.owner_name || null,
+                r.owner_department || null,
+                r.approved_at || null,
+                r.backlog_issue_key || null,
+                r.status || "open",
+                r.total_budget != null && r.total_budget !== ""
+                  ? Number(r.total_budget)
+                  : null,
+                r.remarks || null,
+              ]
+            );
+            succeeded.push({
+              import_key: r.import_key || `__ROW_${idx}__`,
+              id: Number(result.rows[0].id),
+              ringi_number: result.rows[0].ringi_number,
+              title: result.rows[0].title,
+            });
+          } catch (e: any) {
+            console.error(`/api/imports/bulk/ringi row=${idx} failed:`, e);
+            failed.push({
+              import_key: r.import_key || `__ROW_${idx}__`,
+              error: String(e?.message || e),
+            });
+          }
+        }
+        res.json({
+          ok: true,
+          total_rows: rows.length,
+          groups: rows.length,
+          succeeded,
+          failed,
+        });
+      } catch (error) {
+        console.error("/api/imports/bulk/ringi failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
    * テンプレ CSV ダウンロード。ユーザーがブランクのテンプレを Excel で
    * 開いて編集 → 一括 import するためのスケルトン。
    */
@@ -4091,6 +4182,27 @@ ${details}
         sample: [
           ["NDA001", "", "", "", "業務協議に関する秘密保持契約", "2024-04-01", "2024-04-01", "2026-03-31", "24", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "新規ボードゲーム企画協議", "破棄", "tanaka@arclight.co.jp", "作成済", "00001", ""],
           ["NDA002", "", "", "", "ライセンス契約検討に伴う NDA", "2024-05-15", "2024-05-15", "2025-05-14", "12", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "Sample IP Co.", "Los Angeles, CA", "John Doe", "海外ライセンス可能性検討", "返却", "tanaka@arclight.co.jp", "未作成", "00002", ""],
+        ],
+      },
+      // Phase 17e: 稟議マスタ
+      ringi: {
+        headers: [
+          "import_key",
+          "ringi_number",
+          "title",
+          "category",
+          "owner_name",
+          "owner_department",
+          "approved_at",
+          "backlog_issue_key",
+          "status",
+          "total_budget",
+          "remarks",
+        ],
+        sample: [
+          ["RNG001", "00001", "商品開発稟議 ◯◯シリーズ", "商品開発", "田中 太郎", "商品企画部", "2024-04-01", "ARC-1001", "approved", "5000000", "Phase 1 開発予算"],
+          ["RNG002", "00002", "ライセンス取得稟議 (海外 IP)", "ライセンス取得", "鈴木 花子", "ライセンス部", "2024-05-15", "ARC-1050", "approved", "3000000", "Sample IP Co. との 3 年契約"],
+          ["RNG003", "00003", "業務委託案件 (翻訳)", "業務委託", "佐藤 一郎", "編集部", "2024-06-01", "", "open", "500000", "翻訳業者選定中"],
         ],
       },
       // Phase 14a: 売買基本契約書 (3 バリエーション統合, variant 列で振り分け)
