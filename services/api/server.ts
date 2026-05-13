@@ -388,11 +388,11 @@ async function startServer() {
           }
 
           context["counterparty"] = row.vendor_name || "";
-          // Phase 9c: 法人/個人を分岐
+          // Phase 9d: 法人/個人を select 「法人」/「個人」 文字列で保存
           const isCorp =
             (row.vendor_entity_type || "").toLowerCase() === "corporate" ||
             row.vendor_entity_type === "法人";
-          context["COUNTERPARTY_IS_CORPORATION"] = isCorp;
+          context["COUNTERPARTY_IS_CORPORATION"] = isCorp ? "法人" : "個人";
           context["counterpartyRep"] = row.vendor_rep_name || "";
           // legacy フィールドも互換のため (旧テンプレ参照対策)
           context["counterpartyRepresentativeSama"] = row.vendor_rep_name

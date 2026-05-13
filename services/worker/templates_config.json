@@ -188,9 +188,8 @@
       "isPartial": { "label": "分割納品フラグ", "group": "I. 基本情報", "type": "boolean" },
 
       "counterparty": { "label": "受託者名", "group": "II. 受託者 (取引先)", "required": true, "dbField": "vendor.vendor_name", "helpText": "[取引先] ボタンで自動入力" },
-      "COUNTERPARTY_IS_CORPORATION": { "label": "受託者種別 (法人/個人)", "group": "II. 受託者 (取引先)", "type": "boolean", "helpText": "true=法人 (御中+代表者「様」) / false=個人 (「様」のみ)。[取引先] ボタンで vendor.entity_type から自動判定" },
+      "COUNTERPARTY_IS_CORPORATION": { "label": "受託者種別", "group": "II. 受託者 (取引先)", "type": "select", "options": ["法人", "個人"], "helpText": "法人=「御中」+代表者「様」 / 個人=「様」のみ。[取引先] ボタンで vendor.entity_type から自動判定" },
       "counterpartyRep": { "label": "受託者代表者名", "group": "II. 受託者 (取引先)", "placeholder": "例: 代表取締役 山田 太郎", "helpText": "法人の場合のみ表示。「様」は自動付与" },
-      "counterpartyRepresentativeSama": { "label": "受託者代表者 (＋様, レガシー)", "group": "II. 受託者 (取引先)", "placeholder": "Phase 9c で counterpartyRep に置換。後方互換のため残置" },
       "counterpartyTni": { "label": "インボイス登録番号 (T-)", "group": "II. 受託者 (取引先)", "dbField": "vendor.invoice_registration_number" },
 
       "inspectorDept": { "label": "検収者部署", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.department", "helpText": "[Sync Staff] で自動入力" },

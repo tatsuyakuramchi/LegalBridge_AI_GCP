@@ -941,7 +941,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   if (templateId.startsWith('inspection_certificate')) {
     const fillCounterpartyFromPartner = () => {
       if (!activeVendor) return;
-      // Phase 9c: 法人/個人で表示を切り替える
+      // Phase 9d: 法人/個人を select 「法人」/「個人」 文字列で保存。
       //   - 法人: 会社名「御中」 + 棒線 + 代表者「様」
       //   - 個人: 名前「様」のみ
       const isCorporation =
@@ -952,7 +952,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       setFormData({
         ...formData,
         counterparty: activeVendor.vendor_name || '',
-        COUNTERPARTY_IS_CORPORATION: isCorporation,
+        COUNTERPARTY_IS_CORPORATION: isCorporation ? '法人' : '個人',
         counterpartyRep: repName,
         // Legacy フィールドも残しておく (旧テンプレ・既存生成済み doc の form_data 互換)
         counterpartyRepresentativeSama: repName ? `${repName} 様` : '',
@@ -1107,7 +1107,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               // 取引先情報 (PO の vendor_code から JOIN)
               ...(v.vendor_name && {
                 counterparty: formData.counterparty || v.vendor_name,
-                COUNTERPARTY_IS_CORPORATION: isCorp,
+                COUNTERPARTY_IS_CORPORATION: isCorp ? '法人' : '個人',
                 counterpartyRep: formData.counterpartyRep || repName,
                 counterpartyRepresentativeSama:
                   formData.counterpartyRepresentativeSama ||

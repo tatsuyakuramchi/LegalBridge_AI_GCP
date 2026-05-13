@@ -210,13 +210,22 @@
   <div class="parties">
     <div class="party-block">
       <div class="party-label">受託者（課税仕入れの相手方）</div>
+      {{!-- 法人 = 「御中」+ 棒線 + 代表者「様」 / 個人 = 「様」のみ
+           COUNTERPARTY_IS_CORPORATION は文字列 "法人" / "個人" (Phase 9d: select 化)。
+           後方互換: 古い boolean true もそのまま「法人」扱い --}}
       <div class="party-name">
         {{counterparty}}
-        {{#if COUNTERPARTY_IS_CORPORATION}}御中{{else}}様{{/if}}
+        {{#if (eq COUNTERPARTY_IS_CORPORATION "法人")}}御中{{else}}{{#if (eq COUNTERPARTY_IS_CORPORATION true)}}御中{{else}}様{{/if}}{{/if}}
       </div>
-      {{#if COUNTERPARTY_IS_CORPORATION}}
+      {{#if (eq COUNTERPARTY_IS_CORPORATION "法人")}}
         {{#if counterpartyRep}}
         <div class="party-rep">{{counterpartyRep}} 様</div>
+        {{/if}}
+      {{else}}
+        {{#if (eq COUNTERPARTY_IS_CORPORATION true)}}
+          {{#if counterpartyRep}}
+          <div class="party-rep">{{counterpartyRep}} 様</div>
+          {{/if}}
         {{/if}}
       {{/if}}
       {{#if counterpartyTni}}
