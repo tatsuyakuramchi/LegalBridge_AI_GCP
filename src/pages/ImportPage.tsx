@@ -42,6 +42,7 @@ import {
 } from "@/src/components/document/FinancialConditionTable"
 import { BulkImportDialog } from "@/src/components/document/BulkImportDialog"
 import { PendingPdfPanel } from "@/src/components/document/PendingPdfPanel"
+import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 
 type Tab =
   | "purchase_order"
@@ -158,9 +159,11 @@ const OrderImportForm: React.FC<{
     form.items.length > 0
   )
 
-  const pickVendor = (code: string) => {
-    const v = vendors.find((x) => x.vendor_code === code)
-    if (!v) return
+  const pickVendor = (v: any | null) => {
+    if (!v) {
+      setForm({ ...form, vendor_code: "", vendor_name: "" })
+      return
+    }
     setForm({
       ...form,
       vendor_code: v.vendor_code,
@@ -290,18 +293,12 @@ const OrderImportForm: React.FC<{
         icon={<Building2 className="w-3.5 h-3.5" />}
       >
         <Field label="取引先選択 (master)">
-          <select
-            className={inputClass}
-            value={form.vendor_code}
-            onChange={(e) => pickVendor(e.target.value)}
-          >
-            <option value="">— マスターから選択 —</option>
-            {vendors.map((v) => (
-              <option key={v.id} value={v.vendor_code}>
-                {v.vendor_code} - {v.vendor_name}
-              </option>
-            ))}
-          </select>
+          <VendorSearchSelect
+            vendors={vendors}
+            selectedCode={form.vendor_code}
+            onSelect={pickVendor}
+            placeholder="— マスターから検索 —"
+          />
         </Field>
         <Field label="取引先名" required>
           <input
@@ -555,21 +552,18 @@ const LicenseImportForm: React.FC<{
                 onClick={() => fillFromSelf("licensor")}
                 disabled={!companyProfile}
               />
-              <select
-                className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
-                value={selectedVendorCode}
-                onChange={(e) => {
-                  setSelectedVendorCode(e.target.value)
-                  if (e.target.value) fillFromVendor(e.target.value, "licensor")
-                }}
-              >
-                <option value="">取引先選択...</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.vendor_code}>
-                    {v.vendor_code} {v.vendor_name}
-                  </option>
-                ))}
-              </select>
+              <div className="min-w-[220px]">
+                <VendorSearchSelect
+                  vendors={vendors}
+                  selectedCode={selectedVendorCode}
+                  onSelect={(v) => {
+                    setSelectedVendorCode(v?.vendor_code || "")
+                    if (v) fillFromVendor(v.vendor_code, "licensor")
+                  }}
+                  placeholder="取引先を検索…"
+                  size="compact"
+                />
+              </div>
             </>
           }
         >
@@ -627,20 +621,17 @@ const LicenseImportForm: React.FC<{
                 onClick={() => fillFromSelf("licensee")}
                 disabled={!companyProfile}
               />
-              <select
-                className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
-                value=""
-                onChange={(e) => {
-                  if (e.target.value) fillFromVendor(e.target.value, "licensee")
-                }}
-              >
-                <option value="">取引先選択...</option>
-                {vendors.map((v) => (
-                  <option key={v.id} value={v.vendor_code}>
-                    {v.vendor_code} {v.vendor_name}
-                  </option>
-                ))}
-              </select>
+              <div className="min-w-[220px]">
+                <VendorSearchSelect
+                  vendors={vendors}
+                  selectedCode=""
+                  onSelect={(v) => {
+                    if (v) fillFromVendor(v.vendor_code, "licensee")
+                  }}
+                  placeholder="取引先を検索…"
+                  size="compact"
+                />
+              </div>
             </>
           }
         >
@@ -1027,20 +1018,17 @@ const LicenseMasterImportForm: React.FC<{
               onClick={() => fillFromSelf("licensor")}
               disabled={!companyProfile}
             />
-            <select
-              className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) fillFromVendor(e.target.value, "licensor")
-              }}
-            >
-              <option value="">取引先選択...</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.vendor_code}>
-                  {v.vendor_code} {v.vendor_name}
-                </option>
-              ))}
-            </select>
+            <div className="min-w-[220px]">
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode=""
+                onSelect={(v) => {
+                  if (v) fillFromVendor(v.vendor_code, "licensor")
+                }}
+                placeholder="取引先を検索…"
+                size="compact"
+              />
+            </div>
           </>
         }
       >
@@ -1098,20 +1086,17 @@ const LicenseMasterImportForm: React.FC<{
               onClick={() => fillFromSelf("licensee")}
               disabled={!companyProfile}
             />
-            <select
-              className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
-              value=""
-              onChange={(e) => {
-                if (e.target.value) fillFromVendor(e.target.value, "licensee")
-              }}
-            >
-              <option value="">取引先選択...</option>
-              {vendors.map((v) => (
-                <option key={v.id} value={v.vendor_code}>
-                  {v.vendor_code} {v.vendor_name}
-                </option>
-              ))}
-            </select>
+            <div className="min-w-[220px]">
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode=""
+                onSelect={(v) => {
+                  if (v) fillFromVendor(v.vendor_code, "licensee")
+                }}
+                placeholder="取引先を検索…"
+                size="compact"
+              />
+            </div>
           </>
         }
       >
@@ -1516,18 +1501,26 @@ const ServiceMasterImportForm: React.FC<{
         title="III. 乙 (受託者)"
         icon={<User className="w-3.5 h-3.5" />}
         headerActions={
-          <select
-            className="text-[9px] font-mono border border-foreground/30 rounded-sm px-1 py-0.5 bg-card hover:bg-muted"
-            value={form.vendor_code}
-            onChange={(e) => fillPartyBFromVendor(e.target.value)}
-          >
-            <option value="">取引先選択...</option>
-            {vendors.map((v) => (
-              <option key={v.id} value={v.vendor_code}>
-                {v.vendor_code} {v.vendor_name}
-              </option>
-            ))}
-          </select>
+          <div className="min-w-[220px]">
+            <VendorSearchSelect
+              vendors={vendors}
+              selectedCode={form.vendor_code}
+              onSelect={(v) => {
+                if (v) fillPartyBFromVendor(v.vendor_code)
+                else
+                  setForm({
+                    ...form,
+                    vendor_code: "",
+                    vendor_name: "",
+                    party_b_name: "",
+                    party_b_address: "",
+                    party_b_rep: "",
+                  })
+              }}
+              placeholder="取引先を検索…"
+              size="compact"
+            />
+          </div>
         }
       >
         <Field label="名称">
