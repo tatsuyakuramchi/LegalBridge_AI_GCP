@@ -110,7 +110,19 @@ export class GoogleDriveService {
         fields: "id, webViewLink",
         supportsAllDrives: true,
       });
-      return response.data.webViewLink || "";
+      // Phase 9e: PDF (バイナリ) のアップロードでは Google Docs と違い
+      // webViewLink が空で返ってくることがある (Shared Drive 内の
+      // 非ネイティブ形式 + サービスアカウント特有の挙動)。
+      // その場合は file id から /file/d/<id>/view を組み立てる。
+      const link =
+        response.data.webViewLink ||
+        (response.data.id
+          ? `https://drive.google.com/file/d/${response.data.id}/view`
+          : "");
+      console.log(
+        `[uploadPdf] id=${response.data.id} webViewLink=${response.data.webViewLink} → ${link}`
+      );
+      return link;
     } catch (error) {
       console.error("Error uploading PDF to Google Drive:", error);
       throw error;
