@@ -196,10 +196,11 @@ function categoryTable(rows: any[], cat: "basic" | "individual" | "other"): stri
     return `<div class="empty-note">該当なし</div>`;
   }
   const headRow = `<tr>
-    <th style="width: 38%">タイトル</th>
-    <th style="width: 22%">番号</th>
-    <th style="width: 14%">ステータス</th>
-    <th style="width: 14%">有効期限</th>
+    <th style="width: 30%">タイトル</th>
+    <th style="width: 18%">番号</th>
+    <th style="width: 12%">ステータス</th>
+    <th style="width: 16%">Backlog 状態</th>
+    <th style="width: 12%">有効期限</th>
     <th style="width: 12%">リンク</th>
   </tr>`;
   const bodyRows = rows
@@ -210,10 +211,17 @@ function categoryTable(rows: any[], cat: "basic" | "individual" | "other"): stri
       const linkCell = d.file_link
         ? `<a href="${esc(d.file_link)}" target="_blank" rel="noopener noreferrer">📄 開く</a>`
         : `<span style="color:#9ca3af">—</span>`;
+      // Phase 17d: Backlog status (例: "クラウドサイン待ち")
+      const backlogCell = d.backlog_status
+        ? `<span class="badge draft">${esc(d.backlog_status)}</span>`
+        : d.issue_key && !d.issue_key.startsWith("IMPORT-") && !d.issue_key.startsWith("MANUAL-")
+          ? `<span style="color:#9ca3af; font-size:10px;">${esc(d.issue_key)}</span>`
+          : `<span style="color:#9ca3af">—</span>`;
       return `<tr>
         <td class="title">${esc(title)}</td>
         <td class="docno">${esc(docNo)}</td>
         <td class="status">${statusBadge(d.contract_status)}</td>
+        <td class="status">${backlogCell}</td>
         <td class="docno">${esc(expiry)}</td>
         <td class="link">${linkCell}</td>
       </tr>`;
@@ -357,6 +365,73 @@ export function detailPage(payload: any, query: string, token: string): string {
     </section>
 
     <div class="footer">LegalBridge · Search API · vendor #${esc(cp.vendorId || "-")}</div>
+  </div>
+</body>
+</html>`;
+}
+
+/**
+ * Phase 17c: 稟議詳細ページ。/search/ringi/:number
+ * 稟議ヘッダ情報 + 紐付く全文書を 3 カテゴリで表示。
+ */
+export function ringiPage(payload: any, token: string): string {
+  const r = payload.ringi || {};
+  const cat = payload.documentsByCategory || {
+    basic: [], individual: [], other: [], total: 0,
+  };
+  const tokenQS = token ? `?token=${encodeURIComponent(token)}` : "";
+  const backUrl = `/search/vendor${tokenQS}`;
+  const metaLines: string[] = [];
+  if (r.category) metaLines.push(`カテゴリ: <strong>${esc(r.category)}</strong>`);
+  if (r.owner_name) metaLines.push(`起案者: <strong>${esc(r.owner_name)}</strong>`);
+  if (r.owner_department) metaLines.push(`部署: <strong>${esc(r.owner_department)}</strong>`);
+  if (r.approved_at) metaLines.push(`承認日: <strong>${esc(r.approved_at)}</strong>`);
+  if (r.status) metaLines.push(`状態: <strong>${esc(r.status)}</strong>`);
+  if (r.total_budget)
+    metaLines.push(`予算: <strong>¥${Number(r.total_budget).toLocaleString("ja-JP")}</strong>`);
+
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex, nofollow">
+  <title>稟議 ${esc(r.ringi_number || "-")}: ${esc(r.title || "-")}</title>
+  <style>${STYLE}</style>
+</head>
+<body>
+  <div class="container">
+    <header class="page-header">
+      <h1>📋 稟議 ${esc(r.ringi_number || "-")} <span style="font-weight:normal; font-size:14px; color:#6b7280;">${esc(r.title || "")}</span></h1>
+      <div class="breadcrumb">
+        <a href="${esc(backUrl)}">← 検索に戻る</a>
+      </div>
+    </header>
+
+    <div class="vendor-card">
+      <h2>📊 稟議サマリー</h2>
+      <div class="pills">
+        ${metaLines.map((m) => `<span class="pill">${m}</span>`).join("")}
+      </div>
+      ${r.remarks ? `<p style="margin-top:12px; font-size:12px; color:#4b5563;">${esc(r.remarks)}</p>` : ""}
+    </div>
+
+    <section class="category-block basic">
+      <h3>🟦 基本契約 <span class="count">(${cat.basic?.length || 0}件)</span></h3>
+      ${categoryTable(cat.basic || [], "basic")}
+    </section>
+
+    <section class="category-block individual">
+      <h3>🟩 個別契約 <span class="count">(${cat.individual?.length || 0}件)</span></h3>
+      ${categoryTable(cat.individual || [], "individual")}
+    </section>
+
+    <section class="category-block other">
+      <h3>⬛ その他 <span class="count">(${cat.other?.length || 0}件)</span></h3>
+      ${categoryTable(cat.other || [], "other")}
+    </section>
+
+    <div class="footer">LegalBridge · Ringi · #${esc(r.ringi_number || "-")}</div>
   </div>
 </body>
 </html>`;

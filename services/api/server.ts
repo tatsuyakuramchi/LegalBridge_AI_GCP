@@ -29,6 +29,7 @@ import {
   listPage as renderListPage,
   detailPage as renderDetailPage,
   errorPage as renderErrorPage,
+  ringiPage as renderRingiPage,
 } from "./src/views/contractSearchHtml.ts";
 
 dotenv.config();
@@ -166,6 +167,62 @@ async function startServer() {
     }
   });
 
+  // Phase 17d: documentsByCategory に Backlog status を埋め込む共通 helper。
+  async function enrichWithBacklogStatus(payload: any) {
+    const cat = payload?.documentsByCategory;
+    if (!cat) return payload;
+    const allKeys = new Set<string>();
+    ["basic", "individual", "other"].forEach((k) => {
+      (cat[k] || []).forEach((d: any) => {
+        if (d?.issue_key) allKeys.add(d.issue_key);
+      });
+    });
+    if (allKeys.size === 0) return payload;
+    const statusMap = await contractCheckService.fetchBacklogStatuses(
+      backlogService,
+      Array.from(allKeys)
+    );
+    ["basic", "individual", "other"].forEach((k) => {
+      (cat[k] || []).forEach((d: any) => {
+        if (d.issue_key && statusMap[d.issue_key]) {
+          d.backlog_status = statusMap[d.issue_key];
+        }
+      });
+    });
+    return payload;
+  }
+
+  // Phase 17c: 稟議番号 (5 桁数字) で詳細ページを開く
+  //   /search/ringi/00001?token=...
+  app.get("/search/ringi/:number", requirePortalTokenForHtml, async (req, res) => {
+    try {
+      const num = String(req.params.number || "").trim();
+      const token = String(req.query.token || "");
+      if (!/^[0-9]{5}$/.test(num)) {
+        return res
+          .status(400)
+          .type("html")
+          .send(renderErrorPage("Bad Request", "稟議番号は 5 桁数字で指定してください", 400));
+      }
+      const payload = await contractCheckService.searchByRingiNumber(num);
+      if (!payload?.ringi) {
+        return res
+          .status(404)
+          .type("html")
+          .send(renderErrorPage("Not Found", `稟議 ${num} が見つかりませんでした`, 404));
+      }
+      // Phase 17d: Backlog ステータスを enrich
+      await enrichWithBacklogStatus(payload);
+      res.type("html").send(renderRingiPage(payload, token));
+    } catch (error) {
+      console.error("/search/ringi/:number failed:", error);
+      res
+        .status(500)
+        .type("html")
+        .send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+
   app.get("/search/vendor/:vendorId", requirePortalTokenForHtml, async (req, res) => {
     try {
       const vendorId = Number(req.params.vendorId);
@@ -235,6 +292,15 @@ async function startServer() {
             .json({ ok: false, error: "Missing counterpartyName in request body" });
         }
         const result = await contractCheckService.searchContractStatus(input);
+        // Phase 17d: 稟議モード + 候補単体結果に Backlog status を enrich
+        if ((result as any)?.documentsByCategory) {
+          await enrichWithBacklogStatus(result);
+        }
+        if (Array.isArray((result as any)?.results)) {
+          for (const r of (result as any).results) {
+            if (r?.documentsByCategory) await enrichWithBacklogStatus(r);
+          }
+        }
         res.json(result);
       } catch (error) {
         console.error("Error searching contract status:", error);

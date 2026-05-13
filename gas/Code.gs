@@ -734,6 +734,13 @@ function appendContractStatusBlocks_(blocks, payload) {
     return;
   }
 
+  // Phase 17c: 稟議モード (5 桁数字検索のとき) — ringi 詳細を先頭に表示
+  if (payload && payload.ringiMode === true && payload.ringi) {
+    appendRingiDetail_(blocks, payload.ringi);
+    appendDocumentsByCategorySection_(blocks, payload.documentsByCategory);
+    return;
+  }
+
   // Backend may return either a single result or a multi-candidate list.
   var candidates = [];
   if (payload && Array.isArray(payload.results)) candidates = payload.results;
@@ -884,6 +891,45 @@ function appendSingleContractDetail_(blocks, payload) {
 }
 
 /**
+ * Phase 17c: 稟議モード — 稟議ヘッダ情報を先頭に表示
+ */
+function appendRingiDetail_(blocks, ringi) {
+  var title = ringi.title || '(タイトル未設定)';
+  var num = ringi.ringi_number || '-';
+  var meta = [];
+  if (ringi.category) meta.push('カテゴリ: ' + ringi.category);
+  if (ringi.owner_name) meta.push('起案者: ' + ringi.owner_name);
+  if (ringi.owner_department) meta.push('部署: ' + ringi.owner_department);
+  if (ringi.approved_at) meta.push('承認日: ' + ringi.approved_at);
+  if (ringi.status) meta.push('状態: ' + ringi.status);
+  if (ringi.total_budget) {
+    meta.push('予算: ¥' + Number(ringi.total_budget).toLocaleString('ja-JP'));
+  }
+
+  blocks.push({
+    type: 'header',
+    text: {
+      type: 'plain_text',
+      text: '📋 稟議 ' + num + ' ' + title,
+      emoji: true,
+    },
+  });
+  if (meta.length > 0) {
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: meta.join('  ·  ') }],
+    });
+  }
+  if (ringi.remarks) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: '> ' + ringi.remarks },
+    });
+  }
+  blocks.push({ type: 'divider' });
+}
+
+/**
  * Phase 11: 「基本契約は何と何 / 個別契約は何と何 / その他は何と何」を
  * Slack モーダルの 3 セクションで描画する。
  *
@@ -945,10 +991,14 @@ function appendDocumentsByCategorySection_(blocks, catData) {
           ? ' ✓'
           : ' [' + d.contract_status + ']'
         : '';
+      // Phase 17d: Backlog 状態 (例: "クラウドサイン待ち")
+      var backlog = d.backlog_status
+        ? '  🔖 ' + d.backlog_status
+        : '';
       var linked = d.file_link
         ? ' <' + d.file_link + '|📄 開く>'
         : ' _(リンクなし)_';
-      return '• ' + title + docNo + status + linked;
+      return '• ' + title + docNo + status + backlog + linked;
     });
     if (rows.length > maxRows) {
       lines.push('_…他 ' + (rows.length - maxRows) + ' 件_');

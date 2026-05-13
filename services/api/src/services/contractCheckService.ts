@@ -352,7 +352,140 @@ async function buildContractStatusForVendor(input: ContractCheckInput, vendor: a
   };
 }
 
+/**
+ * Phase 17d: documents に紐付く Backlog issue の status を一括取得。
+ * BacklogService を import すると循環参照になるので、ここでは別途
+ * 注入する形にする。呼び出し側 (server.ts) で wrap して使う。
+ *
+ * 渡された issue_keys から status を fetch して { issueKey -> statusName }
+ * の map を返す。BACKLOG が無設定 or API エラーのとき空マップ。
+ */
+export async function fetchBacklogStatuses(
+  backlogService: any,
+  issueKeys: string[]
+): Promise<Record<string, string>> {
+  const out: Record<string, string> = {};
+  if (!backlogService) return out;
+  for (const key of issueKeys) {
+    if (!key || key.startsWith("IMPORT-") || key.startsWith("MANUAL-")) continue;
+    try {
+      const issue = await backlogService.getIssue(key);
+      if (issue?.status?.name) {
+        out[key] = issue.status.name;
+      }
+    } catch {
+      // skip unfetchable (404 / network) — keep going
+    }
+  }
+  return out;
+}
+
+/**
+ * Phase 17c: 稟議番号 (5 桁数字) で文書群を引く。
+ * 戻り値は documentsByCategory と同じ shape + ringi 詳細 (title, owner 等)。
+ * 法務検索で `00001` のような 5 桁の数字を入れた場合に呼ばれる。
+ */
+export async function searchByRingiNumber(ringiNumber: string) {
+  const ringiRes = await query(
+    `SELECT id, ringi_number, title, category, owner_name, owner_department,
+            approved_at, backlog_issue_key, status, total_budget, remarks
+       FROM ringi_records WHERE ringi_number = $1`,
+    [ringiNumber]
+  );
+  if (ringiRes.rows.length === 0) {
+    return { ok: true, ringi: null, documentsByCategory: { basic: [], individual: [], other: [], total: 0 } };
+  }
+  const ringi = ringiRes.rows[0];
+  const docs = await query(
+    `SELECT d.id, d.document_number, d.template_type, d.document_category,
+            d.issue_key, d.drive_link, d.form_data, d.created_at
+       FROM documents d
+       JOIN ringi_documents rd ON rd.document_id = d.id
+      WHERE rd.ringi_id = $1
+      ORDER BY d.created_at DESC`,
+    [ringi.id]
+  );
+  const groups: any = { basic: [], individual: [], other: [] };
+  docs.rows.forEach((r: any) => {
+    const cat = (r.document_category || "other") as keyof typeof groups;
+    const fd = r.form_data || {};
+    const item = {
+      document_number: r.document_number || "",
+      contract_title:
+        fd.contract_title ||
+        fd.description ||
+        fd.basic_contract_name ||
+        fd.original_work ||
+        "",
+      contract_type: r.template_type || "",
+      template_type: r.template_type || "",
+      contract_status:
+        fd.contract_status ||
+        (r.drive_link && r.drive_link !== "" ? "executed" : "draft"),
+      effective_date:
+        fd.effective_date || fd.license_start_date || fd.issue_date || "",
+      expiration_date: fd.expiration_date || "",
+      file_link: r.drive_link || "",
+      issue_key: r.issue_key || "",
+      counterparty:
+        fd.vendor_name ||
+        fd.party_b_name ||
+        fd.licensor_name ||
+        fd.licensee_name ||
+        fd.counterparty ||
+        "",
+      created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+    };
+    (groups[cat] || groups.other).push(item);
+  });
+  return {
+    ok: true,
+    ringi: {
+      ...ringi,
+      approved_at:
+        ringi.approved_at instanceof Date
+          ? ringi.approved_at.toISOString().split("T")[0]
+          : ringi.approved_at || "",
+    },
+    documentsByCategory: {
+      basic: groups.basic,
+      individual: groups.individual,
+      other: groups.other,
+      total: groups.basic.length + groups.individual.length + groups.other.length,
+    },
+  };
+}
+
 export async function searchContractStatus(input: ContractCheckInput) {
+  // Phase 17c: 5 桁数字 (= 稟議番号) を最優先で稟議検索にディスパッチ
+  const trimmed = (input.counterpartyName || "").trim();
+  if (/^[0-9]{5}$/.test(trimmed)) {
+    const ringiResult = await searchByRingiNumber(trimmed);
+    if (ringiResult.ringi) {
+      return {
+        ok: true,
+        ringiMode: true,
+        ringi: ringiResult.ringi,
+        documentsByCategory: ringiResult.documentsByCategory,
+        purposeResult: {
+          selected: false,
+          label: `稟議 ${trimmed} の関連文書`,
+          judgmentLabel: "",
+          recommendedDocumentType: "",
+          legalReviewRequired: false,
+          reasonSummary: "",
+        },
+        suggestedAction: {
+          label: "稟議検索結果",
+          legalReviewRequired: false,
+          message: "稟議番号に紐付く文書を表示しています。",
+        },
+      };
+    }
+    // 該当稟議なし → 通常 vendor 検索にフォールバック (Counterparty 名と
+    // 混同される可能性は低いが念のため)
+  }
+
   const purposeRes = await query(
     `SELECT * FROM contract_purposes WHERE purpose_code = $1`,
     [input.purposeCode]

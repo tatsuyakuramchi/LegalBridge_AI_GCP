@@ -2191,6 +2191,65 @@ ${details}
   }
 
   /**
+   * Phase 17b: bulk CSV の ringi_numbers 列 (カンマ区切り 5 桁数字)
+   * を解析して documents との N:N 関連を作る。未登録の番号は warn ログで
+   * スキップ。冪等性: 同じ document に複数回呼ばれても重複しない。
+   */
+  async function linkRingiToDocument(
+    documentId: number,
+    ringiNumbersStr: string | undefined | null
+  ): Promise<{ linked: string[]; not_found: string[] }> {
+    const linked: string[] = [];
+    const not_found: string[] = [];
+    if (!documentId || !ringiNumbersStr) return { linked, not_found };
+    const nums = String(ringiNumbersStr)
+      .split(/[,;\s]+/)
+      .map((s) => s.trim())
+      .filter((s) => /^[0-9]{5}$/.test(s));
+    if (nums.length === 0) return { linked, not_found };
+    await query(
+      `DELETE FROM ringi_documents WHERE document_id = $1`,
+      [documentId]
+    );
+    for (const num of Array.from(new Set(nums))) {
+      const r = await query(
+        `SELECT id FROM ringi_records WHERE ringi_number = $1`,
+        [num]
+      );
+      if (r.rows.length === 0) {
+        not_found.push(num);
+        continue;
+      }
+      await query(
+        `INSERT INTO ringi_documents (ringi_id, document_id)
+         VALUES ($1, $2)
+         ON CONFLICT DO NOTHING`,
+        [Number(r.rows[0].id), documentId]
+      );
+      linked.push(num);
+    }
+    return { linked, not_found };
+  }
+
+  /**
+   * Phase 17b: 上の linkRingiToDocument の document_number 版ラッパー。
+   * bulk endpoint で INSERT 後にこれを呼べば、稟議紐付けが 1 行で済む。
+   */
+  async function linkRingiByDocNumber(
+    docNumber: string,
+    ringiNumbersStr: string | undefined | null
+  ): Promise<void> {
+    if (!docNumber || !ringiNumbersStr) return;
+    const r = await query(
+      "SELECT id FROM documents WHERE document_number = $1",
+      [docNumber]
+    );
+    if (r.rows.length > 0) {
+      await linkRingiToDocument(Number(r.rows[0].id), ringiNumbersStr);
+    }
+  }
+
+  /**
    * Phase 14b: staff_email から staff レコードを引き、部署 / 氏名 / メール
    * を補完するヘルパー。CSV では email だけ書いてもらえば、後の項目は
    * DB から自動で埋まる。
@@ -2432,6 +2491,9 @@ ${details}
               "import-bulk",
             ]
           );
+
+          // Phase 17b: 稟議番号紐付け
+          await linkRingiByDocNumber(docNumber, first.ringi_numbers);
 
           // 4. external_assets (drive_link あれば)
           if (first.drive_link) {
@@ -2683,6 +2745,9 @@ ${details}
               ]
             );
 
+            // Phase 17b: 稟議番号紐付け
+            await linkRingiByDocNumber(contractNumber, first.ringi_numbers);
+
             // 4. external_assets
             if (first.drive_link) {
               await query(
@@ -2842,6 +2907,9 @@ ${details}
                 "import-bulk",
               ]
             );
+
+            // Phase 17b: 稟議番号紐付け
+            await linkRingiByDocNumber(contractNumber, r.ringi_numbers);
 
             await query(
               `INSERT INTO contract_capabilities (
@@ -3005,6 +3073,9 @@ ${details}
               ]
             );
 
+            // Phase 17b: 稟議番号紐付け
+            await linkRingiByDocNumber(contractNumber, r.ringi_numbers);
+
             if (r.drive_link) {
               await query(
                 `INSERT INTO external_assets
@@ -3107,6 +3178,9 @@ ${details}
                 "import-bulk",
               ]
             );
+
+            // Phase 17b: 稟議番号紐付け
+            await linkRingiByDocNumber(contractNumber, r.ringi_numbers);
 
             // contract_capabilities (NDA は契約カテゴリ独立)
             await query(
@@ -3253,6 +3327,9 @@ ${details}
                 "import-bulk",
               ]
             );
+
+            // Phase 17b: 稟議番号紐付け
+            await linkRingiByDocNumber(contractNumber, r.ringi_numbers);
 
             // contract_capabilities
             await query(
@@ -3868,6 +3945,7 @@ ${details}
           "due_date",
           "staff_email",
           "generate_pdf",
+          "ringi_numbers",
           "line_no",
           "item_name",
           "spec",
@@ -3878,10 +3956,10 @@ ${details}
           "payment_date",
         ],
         sample: [
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", ""],
-          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", ""],
-          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", ""],
+          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "00002", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", ""],
+          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "00001,00003", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", ""],
         ],
       },
       "license-contract": {
@@ -3907,6 +3985,7 @@ ${details}
           "credit_display",
           "staff_email",
           "generate_pdf",
+          "ringi_numbers",
           "remarks",
           "condition_no",
           "region_language_label",
@@ -3920,8 +3999,8 @@ ${details}
           "mg_amount",
         ],
         sample: [
-          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "", "1", "国内・日本語", "ROYALTY", "5.0", "上代", "四半期", "JPY", "上代 × 5.0% × 製造数", "四半期報告後の翌月末日払い", "1000000"],
-          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "", "2", "国内・日本語", "ROYALTY", "10.0", "売上", "四半期", "JPY", "売上 × 10.0%", "四半期報告後の翌月末日払い", "0"],
+          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "00001", "", "1", "国内・日本語", "ROYALTY", "5.0", "上代", "四半期", "JPY", "上代 × 5.0% × 製造数", "四半期報告後の翌月末日払い", "1000000"],
+          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "00001", "", "2", "国内・日本語", "ROYALTY", "10.0", "売上", "四半期", "JPY", "売上 × 10.0%", "四半期報告後の翌月末日払い", "0"],
         ],
       },
       "license-master": {
@@ -3950,10 +4029,11 @@ ${details}
           "credit_display",
           "staff_email",
           "generate_pdf",
+          "ringi_numbers",
           "remarks",
         ],
         sample: [
-          ["LM001", "", "", "LIC-MST-001", "", "◯◯シリーズ ライセンス基本契約", "2024-04-01", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "2024-04-01", "2027-03-31", "true", "3 年自動更新", "", "", "tanaka@arclight.co.jp", "作成済", ""],
+          ["LM001", "", "", "LIC-MST-001", "", "◯◯シリーズ ライセンス基本契約", "2024-04-01", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "2024-04-01", "2027-03-31", "true", "3 年自動更新", "", "", "tanaka@arclight.co.jp", "作成済", "00001", ""],
         ],
       },
       "service-master": {
@@ -3976,10 +4056,11 @@ ${details}
           "party_b_rep",
           "staff_email",
           "generate_pdf",
+          "ringi_numbers",
           "remarks",
         ],
         sample: [
-          ["SM001", "", "", "", "株式会社XYZ 業務委託基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "tanaka@arclight.co.jp", "作成済", ""],
+          ["SM001", "", "", "", "株式会社XYZ 業務委託基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "tanaka@arclight.co.jp", "作成済", "00001", ""],
         ],
       },
       // Phase 14a: NDA (秘密保持契約書)
@@ -4004,11 +4085,12 @@ ${details}
           "return_or_destroy",
           "staff_email",
           "generate_pdf",
+          "ringi_numbers",
           "remarks",
         ],
         sample: [
-          ["NDA001", "", "", "", "業務協議に関する秘密保持契約", "2024-04-01", "2024-04-01", "2026-03-31", "24", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "新規ボードゲーム企画協議", "破棄", "tanaka@arclight.co.jp", "作成済", ""],
-          ["NDA002", "", "", "", "ライセンス契約検討に伴う NDA", "2024-05-15", "2024-05-15", "2025-05-14", "12", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "Sample IP Co.", "Los Angeles, CA", "John Doe", "海外ライセンス可能性検討", "返却", "tanaka@arclight.co.jp", "未作成", ""],
+          ["NDA001", "", "", "", "業務協議に関する秘密保持契約", "2024-04-01", "2024-04-01", "2026-03-31", "24", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "新規ボードゲーム企画協議", "破棄", "tanaka@arclight.co.jp", "作成済", "00001", ""],
+          ["NDA002", "", "", "", "ライセンス契約検討に伴う NDA", "2024-05-15", "2024-05-15", "2025-05-14", "12", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "Sample IP Co.", "Los Angeles, CA", "John Doe", "海外ライセンス可能性検討", "返却", "tanaka@arclight.co.jp", "未作成", "00002", ""],
         ],
       },
       // Phase 14a: 売買基本契約書 (3 バリエーション統合, variant 列で振り分け)
@@ -4034,12 +4116,13 @@ ${details}
           "credit_limit",
           "staff_email",
           "generate_pdf",
+          "ringi_numbers",
           "remarks",
         ],
         sample: [
-          ["SLS001", "", "", "", "buyer", "アークライト買主基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "翌月末払い", "FOB Tokyo", "5000000", "tanaka@arclight.co.jp", "作成済", ""],
-          ["SLS002", "", "", "", "standard", "売買基本契約 (前払/代引)", "2024-04-01", "2027-03-31", "false", "V002", "株式会社ABC", "株式会社アークライト", "株式会社ABC", "東京都...", "代表取締役 鈴木", "前払い", "店頭引取", "", "tanaka@arclight.co.jp", "作成済", ""],
-          ["SLS003", "", "", "", "credit", "売買基本契約 (掛売り)", "2024-04-01", "2027-03-31", "true", "V003", "株式会社DEF", "株式会社アークライト", "株式会社DEF", "東京都...", "代表取締役 佐藤", "月末締翌月末払い", "発送", "10000000", "tanaka@arclight.co.jp", "作成済", ""],
+          ["SLS001", "", "", "", "buyer", "アークライト買主基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "翌月末払い", "FOB Tokyo", "5000000", "tanaka@arclight.co.jp", "作成済", "00001", ""],
+          ["SLS002", "", "", "", "standard", "売買基本契約 (前払/代引)", "2024-04-01", "2027-03-31", "false", "V002", "株式会社ABC", "株式会社アークライト", "株式会社ABC", "東京都...", "代表取締役 鈴木", "前払い", "店頭引取", "", "tanaka@arclight.co.jp", "作成済", "00002", ""],
+          ["SLS003", "", "", "", "credit", "売買基本契約 (掛売り)", "2024-04-01", "2027-03-31", "true", "V003", "株式会社DEF", "株式会社アークライト", "株式会社DEF", "東京都...", "代表取締役 佐藤", "月末締翌月末払い", "発送", "10000000", "tanaka@arclight.co.jp", "作成済", "00003", ""],
         ],
       },
     };
