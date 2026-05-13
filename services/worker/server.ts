@@ -986,15 +986,19 @@ ${details}
       );
       let vendor: any = null;
       if (orderItem.vendor_code) {
+        // 注: vendors テーブルに vendor_rep カラムは存在しない。
+        // 代表者名は contact_name を使う。
         const vRes = await query(
-          `SELECT vendor_name, address, vendor_rep, contact_name, entity_type,
+          `SELECT vendor_name, address, contact_name, entity_type,
                   invoice_registration_number,
                   bank_name, branch_name, account_type, account_number,
                   account_holder_kana
              FROM vendors WHERE vendor_code = $1 LIMIT 1`,
           [orderItem.vendor_code]
         );
-        vendor = vRes.rows[0] || null;
+        vendor = vRes.rows[0]
+          ? { ...vRes.rows[0], vendor_rep: vRes.rows[0].contact_name }
+          : null;
       }
 
       res.json({

@@ -349,11 +349,12 @@ async function startServer() {
           console.warn("parent PO lookup failed:", parentErr);
         }
 
+        // 注: vendors.vendor_rep は存在しない。contact_name を代用。
         const deliveryQuery = `
           SELECT de.*, oi.amount as order_amount, oi.description as item_desc, oi.spec as item_spec,
                  v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type,
                  v.account_number, v.account_holder_kana as account_holder,
-                 v.entity_type as vendor_entity_type, v.vendor_rep as vendor_rep_name,
+                 v.entity_type as vendor_entity_type, v.contact_name as vendor_rep_name,
                  v.invoice_registration_number as vendor_tni,
                  lr.summary as order_title, lr.created_at as order_date,
                  ea.asset_number as linked_po_number, ea.file_link as linked_po_link,
@@ -1020,15 +1021,21 @@ async function startServer() {
       );
       let vendor: any = null;
       if (orderItem.vendor_code) {
+        // 注: vendors テーブルに vendor_rep カラムは存在しない。
+        // 代表者名は contact_name を使う (DocumentForm 側でも同等の
+        // フォールバック `v.vendor_rep || v.contact_name` を使っている)。
         const vRes = await query(
-          `SELECT vendor_name, address, vendor_rep, contact_name, entity_type,
+          `SELECT vendor_name, address, contact_name, entity_type,
                   invoice_registration_number,
                   bank_name, branch_name, account_type, account_number,
                   account_holder_kana
              FROM vendors WHERE vendor_code = $1 LIMIT 1`,
           [orderItem.vendor_code]
         );
-        vendor = vRes.rows[0] || null;
+        // 互換のため vendor_rep を contact_name のミラーで出す
+        vendor = vRes.rows[0]
+          ? { ...vRes.rows[0], vendor_rep: vRes.rows[0].contact_name }
+          : null;
       }
 
       res.json({
