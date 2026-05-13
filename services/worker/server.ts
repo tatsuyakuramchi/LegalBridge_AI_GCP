@@ -3437,6 +3437,83 @@ ${details}
   });
 
   /**
+   * Phase 16: document_number からドキュメント 1 件を引く。
+   * Archive ページから「Re-edit」する経路で使う (asset_number =
+   * document_number で紐付いているため)。
+   */
+  app.get("/api/documents/by-number/:docNumber", async (req, res) => {
+    try {
+      const docNumber = String(req.params.docNumber || "").trim();
+      if (!docNumber) {
+        return res.status(400).json({ ok: false, error: "invalid docNumber" });
+      }
+      const result = await query(
+        `SELECT id, document_number, issue_key, template_type, document_category,
+                form_data, drive_link, created_by, created_at
+           FROM documents WHERE document_number = $1`,
+        [docNumber]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "document not found" });
+      }
+      const r = result.rows[0];
+      res.json({
+        ok: true,
+        id: Number(r.id),
+        document_number: r.document_number,
+        issue_key: r.issue_key,
+        template_type: r.template_type,
+        document_category: r.document_category,
+        form_data: r.form_data || {},
+        drive_link: r.drive_link || "",
+        created_by: r.created_by,
+        created_at: r.created_at,
+      });
+    } catch (error) {
+      console.error("/api/documents/by-number/:docNumber failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * Phase 16: 任意のドキュメント 1 件の詳細を返す。
+   * Re-edit / Re-open 機能用 (form_data 全体を含む)。
+   */
+  app.get("/api/documents/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const result = await query(
+        `SELECT id, document_number, issue_key, template_type, document_category,
+                form_data, drive_link, created_by, created_at
+           FROM documents WHERE id = $1`,
+        [id]
+      );
+      if (result.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "document not found" });
+      }
+      const r = result.rows[0];
+      res.json({
+        ok: true,
+        id: Number(r.id),
+        document_number: r.document_number,
+        issue_key: r.issue_key,
+        template_type: r.template_type,
+        document_category: r.document_category,
+        form_data: r.form_data || {},
+        drive_link: r.drive_link || "",
+        created_by: r.created_by,
+        created_at: r.created_at,
+      });
+    } catch (error) {
+      console.error("/api/documents/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
    * 指定された 1 件の保留中ドキュメントについて、保存済み form_data から
    * テンプレを render → PDF → Drive アップロード → drive_link 更新。
    * 成功時は __pdf_pending=false に変更してキューから外す。

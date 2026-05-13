@@ -38,6 +38,11 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/numbering(?:\/|$)/,
   // Phase 10: CSV テンプレ DL は worker に常駐 (text/csv レスポンス)
   /^\/api\/imports\/bulk\/templates(?:\/|$)/,
+  // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ
+  // (form_data 全件返却 + jsonb 操作のため)
+  /^\/api\/documents\/pending-pdf(?:\?|$)/,
+  /^\/api\/documents\/by-number\/(?:\/|\?|$|.)/,
+  /^\/api\/documents\/\d+(?:\/|\?|$)/,
 ];
 
 // Routes that should go to the READ service even on POST.

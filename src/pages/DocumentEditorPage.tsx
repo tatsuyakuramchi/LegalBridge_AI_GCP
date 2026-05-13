@@ -85,63 +85,54 @@ export function DocumentEditorPage() {
     React.useState<((asset: any) => void) | null>(null)
   const [assetSearch, setAssetSearch] = React.useState("")
 
-  // Phase 15: ?from_pending=<id> 経由で PDF 未作成キューから来た場合、
-  // 該当ドキュメントの form_data をロードしてフォームを pre-fill する。
+  // Phase 15/16: URL クエリパラメータで既存ドキュメントを pre-fill。
+  //   ?from_pending=<id>   PDF 未作成キュー由来 (Phase 15)
+  //   ?reopen=<id>         既に生成済み文書を再編集 (Phase 16)
+  // どちらも /api/documents/:id で form_data を取得して setFormData する。
   const [searchParams, setSearchParams] = useSearchParams()
   const fromPendingId = searchParams.get("from_pending")
+  const reopenId = searchParams.get("reopen")
   React.useEffect(() => {
-    if (!fromPendingId) return
+    const targetId = fromPendingId || reopenId
+    if (!targetId) return
     let cancelled = false
     ;(async () => {
       try {
-        // 単発の取得 endpoint がないので /api/documents/pending-pdf からマッチ。
-        // (件数は最大 500 件 / 通常 ~数十件なので問題なし)
-        const res = await fetch("/api/documents/pending-pdf?limit=500")
+        const res = await fetch(`/api/documents/${encodeURIComponent(targetId)}`)
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
-        const idNum = Number(fromPendingId)
-        const target = (data.rows || []).find((r: any) => Number(r.id) === idNum)
-        if (!target) {
-          showNotification(
-            "PDF 未作成キューの対象が見つかりませんでした。",
-            "error"
-          )
-          return
+        if (!data?.ok || !data.form_data) {
+          throw new Error(data?.error || "form_data not found")
         }
-        // form_data を取得するため詳細を別途読む — pending-pdf は
-        // summary だけ返すので、もう一度個別 fetch が必要。
-        // 暫定: form_data は pending-pdf レスポンスに含めるよう server で
-        // 拡張するか、ここで getDocumentDetail(id) を呼ぶ。今は summary
-        // ベースで selectedTemplate と issueKey のセットだけ行う。
         if (cancelled) return
-        setSelectedTemplate(target.template_type)
-        setSelectedIssue(target.issue_key || "")
-        // pending-pdf レスポンスの form_data 全体を pre-fill
-        // (CSV インポート時に保存した全フィールド)。
+        setSelectedTemplate(data.template_type)
+        setSelectedIssue(data.issue_key || "")
         setFormData({
-          ...(target.form_data || {}),
-          __from_pending_id: idNum,
-          __from_pending_doc_number: target.document_number,
+          ...(data.form_data || {}),
+          __from_pending_id: fromPendingId ? Number(fromPendingId) : undefined,
+          __from_pending_doc_number: data.document_number,
+          // Phase 16: reopen の場合は既存 doc を更新する識別子
+          __reopen_id: reopenId ? Number(reopenId) : undefined,
+          __reopen_doc_number: reopenId ? data.document_number : undefined,
         })
+        const verb = fromPendingId ? "PDF 未作成キューから" : "既存文書を再編集モードで"
         showNotification(
-          `「${target.document_number}」を PDF 未作成キューから読み込みました。フォームを確認・編集して Finalize & Sync してください。`,
+          `「${data.document_number}」を${verb}読み込みました。`,
           "info"
         )
-        // URL から from_pending を消す (リロード時に二重 prefill しない)
+        // URL からクエリを消す (リロード時に二重 prefill しない)
         searchParams.delete("from_pending")
+        searchParams.delete("reopen")
         setSearchParams(searchParams, { replace: true })
       } catch (e: any) {
-        showNotification(
-          `PDF 未作成キューからの読み込み失敗: ${e?.message || e}`,
-          "error"
-        )
+        showNotification(`ドキュメント読み込み失敗: ${e?.message || e}`, "error")
       }
     })()
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fromPendingId])
+  }, [fromPendingId, reopenId])
 
   // ---- Helpers --------------------------------------------------------
   const syncFromDatabase = React.useCallback(
@@ -265,6 +256,34 @@ export function DocumentEditorPage() {
   }, [formData, isPreviewVisible, selectedTemplate, handlePreview])
 
   const handleGenerate = async () => {
+    // Phase 16: クライアント側プレ検証 — templates_config.json で required=true
+    // のフィールドが未入力なら送信を止めて明確に伝える。
+    const meta = templateMetadata[selectedTemplate]
+    if (meta?.vars) {
+      const missing: string[] = []
+      Object.entries(meta.vars).forEach(([id, m]: [string, any]) => {
+        if (m?.required !== true) return
+        const v = formData[id]
+        const isEmpty =
+          v === undefined ||
+          v === null ||
+          (typeof v === "string" && v.trim() === "")
+        if (isEmpty) {
+          missing.push(m.label || id)
+        }
+      })
+      if (missing.length > 0) {
+        const preview = missing.slice(0, 5).join("、")
+        const tail =
+          missing.length > 5 ? ` 他 ${missing.length - 5} 件` : ""
+        showNotification(
+          `必須項目が未入力です: ${preview}${tail}。フォームを確認してください。`,
+          "error"
+        )
+        return
+      }
+    }
+
     setIsGenerating(true)
     try {
       const res = await fetch("/api/documents/generate", {
@@ -275,9 +294,11 @@ export function DocumentEditorPage() {
           templateType: selectedTemplate,
           formData,
           requesterEmail: selectedStaff?.email || "web-user",
-          // Phase 15: PDF 未作成キュー由来の場合は同じ document_number で
-          // 更新 (新規採番せず、pending document を完成させる)。
-          existingDocumentNumber: formData?.__from_pending_doc_number,
+          // Phase 15/16: 既存 doc の更新時は同じ document_number を渡す
+          // (PDF 未作成キュー由来 or 再編集 reopen 由来の両方)。
+          existingDocumentNumber:
+            formData?.__from_pending_doc_number ||
+            formData?.__reopen_doc_number,
         }),
       })
       const data = await res.json()

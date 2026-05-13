@@ -1,5 +1,6 @@
 import * as React from "react"
-import { Search, Plus, Archive as ArchiveIcon, ChevronRight, ExternalLink } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Search, Plus, Archive as ArchiveIcon, ChevronRight, ExternalLink, Edit3 } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
@@ -19,7 +20,38 @@ import { NativeSelect } from "@/components/ui/native-select"
 
 export function ArchivePage() {
   const { assets, setAssets, showNotification } = useAppData()
+  const navigate = useNavigate()
   const [search, setSearch] = React.useState("")
+  const [reeditBusy, setReeditBusy] = React.useState<string | null>(null)
+
+  // Phase 16: 既存文書を再編集モードで開く。
+  // asset_number = documents.document_number で紐付くので、
+  // /api/documents/by-number/<asset_number> で id を引いてから
+  // /documents/new?reopen=<id> に遷移する。
+  const handleReedit = async (assetNumber: string) => {
+    if (!assetNumber) {
+      showNotification("Asset number 未設定の項目は再編集できません", "error")
+      return
+    }
+    setReeditBusy(assetNumber)
+    try {
+      const res = await fetch(
+        `/api/documents/by-number/${encodeURIComponent(assetNumber)}`
+      )
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      navigate(`/documents/new?reopen=${data.id}`)
+    } catch (e: any) {
+      showNotification(
+        `再編集モードで開けませんでした: ${e?.message || e}`,
+        "error"
+      )
+    } finally {
+      setReeditBusy(null)
+    }
+  }
   const [openRegister, setOpenRegister] = React.useState(false)
   const [form, setForm] = React.useState<any>({
     asset_name: "",
@@ -131,9 +163,35 @@ export function ArchivePage() {
                     With · {asset.counterparty}
                   </p>
                 </div>
-                <div className="pt-2 border-t border-dashed border-border flex items-center justify-between">
+                <div className="pt-2 border-t border-dashed border-border flex items-center justify-between gap-2">
                   <Badge variant="success">Secured</Badge>
-                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                  <div className="flex items-center gap-1.5">
+                    {asset.file_link && (
+                      <a
+                        href={asset.file_link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground border border-border rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <ExternalLink className="h-2.5 w-2.5" />
+                        開く
+                      </a>
+                    )}
+                    {/* Phase 16: 既存文書の再編集 — form_data を pre-fill して
+                        DocumentEditorPage を開く。同じ document_number で PDF を
+                        差し替え可能。 */}
+                    <button
+                      type="button"
+                      onClick={() => handleReedit(asset.asset_number)}
+                      disabled={reeditBusy === asset.asset_number}
+                      className="text-[9px] font-mono uppercase tracking-wider text-foreground border border-foreground/40 rounded-sm px-1.5 py-0.5 flex items-center gap-1 hover:bg-muted disabled:opacity-50"
+                      title="この文書を再編集して PDF を差し替え"
+                    >
+                      <Edit3 className="h-2.5 w-2.5" />
+                      再編集
+                    </button>
+                  </div>
                 </div>
               </CardContent>
             </Card>

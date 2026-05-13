@@ -70,6 +70,8 @@ export const PendingPdfPanel: React.FC = () => {
   const [selectedTpl, setSelectedTpl] = React.useState<string>("ALL")
   // 行 ID → 'generating' | 'skipping' (進捗トラッキング)
   const [busyRows, setBusyRows] = React.useState<Record<number, string>>({})
+  // Phase 16: 行ごとの直近 PDF 生成エラーを永続表示 (トーストでは見逃すため)
+  const [rowErrors, setRowErrors] = React.useState<Record<number, string>>({})
   const [lastResult, setLastResult] = React.useState<{
     id: number
     document_number: string
@@ -98,6 +100,12 @@ export const PendingPdfPanel: React.FC = () => {
 
   const generatePdf = async (row: Row) => {
     setBusyRows((b) => ({ ...b, [row.id]: "generating" }))
+    // Phase 16: 前回エラーをクリア
+    setRowErrors((e) => {
+      const copy = { ...e }
+      delete copy[row.id]
+      return copy
+    })
     try {
       const res = await fetch(`/api/documents/${row.id}/regenerate-pdf`, {
         method: "POST",
@@ -123,7 +131,11 @@ export const PendingPdfPanel: React.FC = () => {
           : d
       )
     } catch (e: any) {
-      setError(`PDF 生成失敗 (${row.document_number}): ${e?.message || e}`)
+      // Phase 16: 行内に永続表示 (トーストではなく、状況がわかる位置に固定)
+      setRowErrors((prev) => ({
+        ...prev,
+        [row.id]: String(e?.message || e),
+      }))
     } finally {
       setBusyRows((b) => {
         const copy = { ...b }
@@ -284,11 +296,15 @@ export const PendingPdfPanel: React.FC = () => {
         <div className="space-y-2">
           {filteredRows.map((row) => {
             const busy = busyRows[row.id]
+            const rowError = rowErrors[row.id]
             return (
               <div
                 key={row.id}
                 className={cn(
-                  "border border-border rounded-sm bg-card p-4",
+                  "border rounded-sm bg-card p-4",
+                  rowError
+                    ? "border-red-300 bg-red-50/40"
+                    : "border-border",
                   busy && "opacity-60"
                 )}
               >
@@ -338,11 +354,20 @@ export const PendingPdfPanel: React.FC = () => {
                       type="button"
                       onClick={() => editAndGenerate(row)}
                       disabled={!!busy}
-                      className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-2.5 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-50"
-                      title="DocumentEditorPage を開いて編集してから PDF 生成"
+                      className={cn(
+                        "text-[10px] font-mono uppercase tracking-wider rounded-sm px-2.5 py-1.5 flex items-center gap-1.5 disabled:opacity-50",
+                        rowError
+                          ? "bg-red-600 text-white hover:bg-red-700"
+                          : "border border-foreground/30 hover:bg-muted"
+                      )}
+                      title={
+                        rowError
+                          ? "エラーの原因項目を編集して再試行"
+                          : "DocumentEditorPage を開いて編集してから PDF 生成"
+                      }
                     >
                       <Edit3 className="w-3 h-3" />
-                      編集して生成
+                      {rowError ? "修正して再試行" : "編集して生成"}
                     </button>
                     <button
                       type="button"
@@ -355,7 +380,7 @@ export const PendingPdfPanel: React.FC = () => {
                       ) : (
                         <FileText className="w-3 h-3" />
                       )}
-                      PDF 生成
+                      {rowError ? "そのまま再試行" : "PDF 生成"}
                     </button>
                     <button
                       type="button"
@@ -369,6 +394,23 @@ export const PendingPdfPanel: React.FC = () => {
                     </button>
                   </div>
                 </div>
+
+                {/* Phase 16: 失敗時のエラー詳細を行内に永続表示 */}
+                {rowError && (
+                  <div className="mt-3 border border-red-200 bg-red-50 rounded-sm px-3 py-2 flex items-start gap-2 text-[10px] font-mono text-red-800">
+                    <AlertTriangle className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" />
+                    <div className="space-y-1 min-w-0 flex-1">
+                      <div className="font-bold uppercase tracking-wider text-red-700">
+                        PDF 生成失敗
+                      </div>
+                      <div className="break-all">{rowError}</div>
+                      <div className="text-[9px] text-red-600/80 mt-1">
+                        ✏️ 「修正して再試行」で項目を直してから再生成、または
+                        「そのまま再試行」で時刻差で再実行できます。
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )
           })}
