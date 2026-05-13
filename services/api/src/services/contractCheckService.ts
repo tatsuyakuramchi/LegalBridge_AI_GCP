@@ -199,6 +199,92 @@ export async function getLicenseConditions(vendorId: number) {
   }));
 }
 
+/**
+ * Phase 11: vendor 紐付きの全文書を 3 カテゴリ (basic / individual / other) に
+ * 分けて返す。Slack /法務検索 の結果画面で「基本契約は何と何がある / 個別契約は
+ * 何と何がある / その他はなにとなにがある」をそのまま描画する用途。
+ *
+ * 突合経路:
+ *   1. contract_capabilities.vendor_id = $1 から document_number 群を引く
+ *   2. documents テーブルで document_category と drive_link を取得
+ *   3. external_assets で file_link をフォールバック
+ *
+ * 並び順: created_at DESC (新しい順)
+ */
+export async function getDocumentsByCategory(vendorId: number) {
+  const res = await query(
+    `WITH vendor_docs AS (
+       SELECT DISTINCT
+         cc.document_number,
+         cc.contract_title,
+         cc.contract_status,
+         cc.effective_date,
+         cc.expiration_date,
+         cc.contract_type,
+         cc.document_url
+       FROM contract_capabilities cc
+       WHERE cc.vendor_id = $1
+         AND cc.document_number IS NOT NULL
+         AND cc.document_number <> ''
+     )
+     SELECT
+       vd.document_number,
+       vd.contract_title,
+       vd.contract_status,
+       vd.effective_date,
+       vd.expiration_date,
+       vd.contract_type,
+       COALESCE(d.document_category, lb_category_for_template(vd.contract_type)) AS category,
+       d.template_type,
+       d.issue_key,
+       COALESCE(d.drive_link, ea.file_link, vd.document_url) AS file_link,
+       d.created_at
+     FROM vendor_docs vd
+     LEFT JOIN documents d ON d.document_number = vd.document_number
+     LEFT JOIN external_assets ea ON ea.asset_number = vd.document_number
+     ORDER BY d.created_at DESC NULLS LAST, vd.document_number DESC`,
+    [vendorId]
+  );
+
+  const groups: {
+    basic: any[];
+    individual: any[];
+    other: any[];
+  } = { basic: [], individual: [], other: [] };
+
+  res.rows.forEach((r: any) => {
+    const cat = (r.category || "other") as keyof typeof groups;
+    const item = {
+      document_number: r.document_number || "",
+      contract_title: r.contract_title || "",
+      contract_type: r.contract_type || r.template_type || "",
+      template_type: r.template_type || r.contract_type || "",
+      contract_status: r.contract_status || "",
+      effective_date:
+        r.effective_date instanceof Date
+          ? r.effective_date.toISOString().split("T")[0]
+          : r.effective_date || "",
+      expiration_date:
+        r.expiration_date instanceof Date
+          ? r.expiration_date.toISOString().split("T")[0]
+          : r.expiration_date || "",
+      file_link: r.file_link || "",
+      issue_key: r.issue_key || "",
+      created_at:
+        r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+    };
+    (groups[cat] || groups.other).push(item);
+  });
+
+  return {
+    basic: groups.basic,
+    individual: groups.individual,
+    other: groups.other,
+    total:
+      groups.basic.length + groups.individual.length + groups.other.length,
+  };
+}
+
 export async function getPublicationConditions(vendorId: number) {
   const res = await query(
     `SELECT * FROM contract_capabilities
@@ -244,6 +330,8 @@ async function buildContractStatusForVendor(input: ContractCheckInput, vendor: a
   const masterContracts = await getMasterContractSummary(vendor.id);
   const licenseConditions = await getLicenseConditions(vendor.id);
   const publicationConditions = await getPublicationConditions(vendor.id);
+  // Phase 11: 全文書をカテゴリ別 (基本/個別/その他) にグループ化して返す
+  const documentsByCategory = await getDocumentsByCategory(vendor.id);
   const purposeResult = buildPurposeResult(input, masterContracts, purpose);
   const suggestedAction = buildSuggestedAction(masterContracts, purposeResult);
 
@@ -258,6 +346,7 @@ async function buildContractStatusForVendor(input: ContractCheckInput, vendor: a
     masterContracts,
     licenseConditions,
     publicationConditions,
+    documentsByCategory,
     purposeResult,
     suggestedAction
   };

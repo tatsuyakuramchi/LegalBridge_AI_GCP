@@ -825,6 +825,87 @@ function appendSingleContractDetail_(blocks, payload) {
       ],
     });
   }
+
+  // Phase 11: 文書カテゴリ別の一覧 (基本契約 / 個別契約 / その他)
+  // 各文書には Drive リンクを <url|タイトル> 形式で添付。
+  appendDocumentsByCategorySection_(blocks, payload.documentsByCategory);
+}
+
+/**
+ * Phase 11: 「基本契約は何と何 / 個別契約は何と何 / その他は何と何」を
+ * Slack モーダルの 3 セクションで描画する。
+ *
+ * @param {Array} blocks   累積中のブロック配列 (push する)
+ * @param {Object} catData {basic:[], individual:[], other:[], total:N}
+ */
+function appendDocumentsByCategorySection_(blocks, catData) {
+  if (!catData || typeof catData !== 'object') return;
+  var total = Number(catData.total) || 0;
+  if (total === 0) return;
+
+  // 区切り線
+  blocks.push({ type: 'divider' });
+  blocks.push({
+    type: 'header',
+    text: {
+      type: 'plain_text',
+      text: '📁 登録文書一覧 (' + total + '件)',
+      emoji: true,
+    },
+  });
+
+  var sections = [
+    { key: 'basic', label: '🟦 基本契約' },
+    { key: 'individual', label: '🟩 個別契約' },
+    { key: 'other', label: '⬛ その他' },
+  ];
+
+  sections.forEach(function (sec) {
+    var rows = Array.isArray(catData[sec.key]) ? catData[sec.key] : [];
+    if (rows.length === 0) {
+      blocks.push({
+        type: 'context',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text: '*' + sec.label + '*  _なし_',
+          },
+        ],
+      });
+      return;
+    }
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: '*' + sec.label + ' (' + rows.length + '件)*',
+      },
+    });
+    // 各行: タイトル + 文書番号 + ステータス + Drive リンク
+    // Slack の section は ~3000 文字制限があるので、20 件で打ち切り。
+    var maxRows = 20;
+    var displayRows = rows.slice(0, maxRows);
+    var lines = displayRows.map(function (d) {
+      var title = d.contract_title || d.template_type || '(無題)';
+      var docNo = d.document_number ? ' `' + d.document_number + '`' : '';
+      var status = d.contract_status
+        ? d.contract_status === 'executed'
+          ? ' ✓'
+          : ' [' + d.contract_status + ']'
+        : '';
+      var linked = d.file_link
+        ? ' <' + d.file_link + '|📄 開く>'
+        : ' _(リンクなし)_';
+      return '• ' + title + docNo + status + linked;
+    });
+    if (rows.length > maxRows) {
+      lines.push('_…他 ' + (rows.length - maxRows) + ' 件_');
+    }
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: lines.join('\n') },
+    });
+  });
 }
 
 function masterStatusLabel_(master) {

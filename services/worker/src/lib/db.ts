@@ -238,6 +238,61 @@ export async function initDb() {
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
     // -----------------------------------------------------------------
+    // Phase 11: 文書カテゴリ (基本 / 個別 / その他)
+    //
+    // 検索結果 (Slack /法務検索) で 基本契約 / 個別契約 / その他 の
+    // 3 セクションに分けて表示するための分類列。template_type から
+    // 機械的に決まるので、worker 側 helper で INSERT 時に自動設定する。
+    //
+    // values:
+    //   'basic'      … 基本契約 (license_master, service_master, sales_master_*)
+    //   'individual' … 個別契約 (purchase_order, individual_license_terms,
+    //                          inspection_certificate*, royalty_*, fee_*)
+    //   'other'      … その他 (nda, legal_request, intl_amendment, etc.)
+    // -----------------------------------------------------------------
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_category VARCHAR(20);`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(document_category);`,
+    // template_type → category マップを 1 つの SQL 関数に集約。
+    // worker / search-api 両方の SELECT で UPDATE 不要、INSERT 時 trigger で
+    // 自動設定。helper TS 側 (documentCategory.ts) と同じロジック。
+    `CREATE OR REPLACE FUNCTION lb_category_for_template(t TEXT) RETURNS VARCHAR(20) AS $$
+       BEGIN
+         IF t IN ('license_master','service_master','sales_master_buyer','sales_master_standard','sales_master_credit','intl_master') THEN
+           RETURN 'basic';
+         ELSIF t = 'individual_license_terms'
+            OR t LIKE 'purchase_order%'
+            OR t LIKE 'planning_purchase_order%'
+            OR t LIKE 'intl_purchase_order%'
+            OR t LIKE 'inspection_certificate%'
+            OR t LIKE 'royalty_%'
+            OR t LIKE 'fee_%'
+            OR t LIKE 'license_report%'
+            OR t LIKE 'payment_notice%' THEN
+           RETURN 'individual';
+         ELSE
+           RETURN 'other';
+         END IF;
+       END;
+     $$ LANGUAGE plpgsql IMMUTABLE;`,
+    // 既存行のバックフィル
+    `UPDATE documents
+        SET document_category = lb_category_for_template(template_type)
+      WHERE document_category IS NULL OR document_category = '';`,
+    // INSERT/UPDATE 時に template_type から自動設定 (個別 INSERT で渡し忘れても OK)
+    `CREATE OR REPLACE FUNCTION lb_documents_set_category() RETURNS TRIGGER AS $$
+       BEGIN
+         IF NEW.document_category IS NULL OR NEW.document_category = '' THEN
+           NEW.document_category := lb_category_for_template(NEW.template_type);
+         END IF;
+         RETURN NEW;
+       END;
+     $$ LANGUAGE plpgsql;`,
+    `DROP TRIGGER IF EXISTS documents_auto_category ON documents;`,
+    `CREATE TRIGGER documents_auto_category
+       BEFORE INSERT OR UPDATE ON documents
+       FOR EACH ROW EXECUTE FUNCTION lb_documents_set_category();`,
+
+    // -----------------------------------------------------------------
     // Phase 9f: 1 PO に対する複数回の分割検収サポート
     //
     // 旧: backlog_issue_key UNIQUE → 1 issue = 1 検収行 (再生成は上書き)
