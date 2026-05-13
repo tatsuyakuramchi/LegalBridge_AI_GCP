@@ -482,9 +482,16 @@ export async function getNextSequenceValue(kind: string, year: number): Promise<
   return res.rows[0].current_value;
 }
 
+/**
+ * Phase 17k: ARC umbrella + 文書種別 prefix + 年 + 連番 の 4 セグメント形式。
+ *   ARC-<TYPE>-<YEAR>-<NNNN>  例: ARC-PO-2026-0001
+ *
+ * worker 側の db.ts と完全に同じロジックを保つ (どちらの service が
+ * 採番を実行しても同じ結果になるように)。
+ */
 export async function getNewDocumentNumber(type: string, issueTypeName?: string): Promise<string> {
   let prefix = "";
-  
+
   if (issueTypeName) {
     const wsResult = await query("SELECT document_prefix FROM workflow_settings WHERE issue_type_name = $1", [issueTypeName]);
     if (wsResult.rows[0]?.document_prefix) {
@@ -494,31 +501,62 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
 
   if (!prefix) {
     const typeCodes: Record<string, string> = {
-      nda: "NDA",
+      // 発注系
       purchase_order: "PO",
-      contract: "CTR",
-      external_contract: "ARC",
+      planning_purchase_order: "PPO",
+      intl_purchase_order: "IPO",
+      "発注書": "PO",
+      // 検収系
       inspection_certificate: "INS",
       inspection_certificate_v2: "INS",
-      royalty_statement: "ROY",
-      payment_notice: "PAY",
-      legal_request: "REQ",
+      inspection_certificate_detailed: "INS",
+      delivery_inspec: "INS",
+      "検収書": "INS",
+      // ライセンス系
       license_master: "LIC",
       lic_individual: "ILT",
+      individual_license_terms: "ILT",
+      license_report: "LRP",
+      license_calculation_sheet: "LCS",
+      intl_master: "ILM",
+      intl_amendment: "IAM",
+      "ライセンス基本契約": "LIC",
+      "個別利用許諾条件": "ILT",
+      // ロイヤリティ / 支払
+      royalty_statement: "ROY",
       manufacturing: "MFG",
+      payment_notice: "PAY",
+      payment_notice_alt: "PAY",
+      fee_statement: "FEE",
+      "利用許諾料計算書": "ROY",
+      // 業務委託
+      service_master: "SVC",
+      service_terms: "SVT",
       outsourcing: "OUT",
-      delivery_inspec: "INS",
+      "業務委託基本契約": "SVC",
+      // 売買
       sales_master: "SAL",
+      sales_master_buyer: "SAL",
+      sales_master_credit: "SAL",
+      sales_master_standard: "SAL",
+      "売買基本契約": "SAL",
+      // その他
+      nda: "NDA",
+      "NDA": "NDA",
+      contract: "CTR",
+      external_contract: "ARC",
+      legal_request: "REQ",
       legal_consult: "REQ",
     };
-    prefix = typeCodes[type] || (issueTypeName ? typeCodes[issueTypeName] : null) || type.toUpperCase().substring(0, 3);
+    prefix =
+      typeCodes[type] ||
+      (issueTypeName ? typeCodes[issueTypeName] : "") ||
+      type.toUpperCase().substring(0, 3);
   }
 
   const year = new Date().getFullYear();
-  // Using a unified sequence kind 'ARC' for the general document numbering to ensure global uniqueness if requested,
-  // or sticking to the specific prefix if we want per-type sequences.
-  // Given the request for "ARC-" prefix, we will use 'ARC' as the sequence kind.
-  const val = await getNextSequenceValue('ARC', year);
-  
-  return `ARC-${year}-${val.toString().padStart(4, "0")}`;
+  // sequence kind = prefix なので文書種別ごとに独立した連番が走る
+  const val = await getNextSequenceValue(prefix, year);
+
+  return `ARC-${prefix}-${year}-${val.toString().padStart(4, "0")}`;
 }
