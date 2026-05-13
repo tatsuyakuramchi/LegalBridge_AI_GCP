@@ -58,6 +58,12 @@ export type PoLoaded = {
     inspected_pct: number;
     is_partial: boolean;
   } | null;
+  /**
+   * Phase 17m: 親 PO に紐付く経費（交通費等・税込み額）。
+   * 検収書フォームの「経費精算」セクションで、どの経費を今回の
+   * 検収に含めるかチェックボックスで選択する。
+   */
+  expenses: any[];
   raw: any; // /api/order-items/by-issue/:key の生レスポンス
 };
 
@@ -131,6 +137,8 @@ export const ParentPoPicker: React.FC<Props> = ({
         document_number: String(data?.document_number || ""),
         vendor: data?.vendor || null,
         delivery_progress: data?.delivery_progress || null,
+        // Phase 17m: 経費 (税込) を渡す
+        expenses: Array.isArray(data?.expenses) ? data.expenses : [],
         raw: data,
       });
       setOpen(false);

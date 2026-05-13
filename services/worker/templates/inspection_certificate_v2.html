@@ -64,6 +64,36 @@
       <tr class="total-row"><td colspan="3" class="right">合　計</td><td class="right">¥{{totalAmountStr}}</td></tr>
     </tbody>
   </table>
+
+  {{!-- Phase 17m: 経費精算（交通費等・税込み額） --}}
+  {{#if expenses}}
+  <table class="main" style="margin-top:8px;">
+    <thead>
+      <tr>
+        <th style="width:50%">経費（交通費等）</th>
+        <th style="width:20%">発生日</th>
+        <th style="width:15%"></th>
+        <th style="width:15%">金額（税込）</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each expenses}}
+      <tr>
+        <td>
+          <strong>{{expense_name}}</strong>
+          {{#if spec}}<div style="font-size:8.5pt;color:#666;">{{spec}}</div>{{/if}}
+        </td>
+        <td class="center">{{formatDate spent_date}}</td>
+        <td></td>
+        <td class="right">¥{{formatCurrency amount_inc_tax}}</td>
+      </tr>
+      {{/each}}
+      <tr><td colspan="3" class="right">経費合計（税込）</td><td class="right">¥{{expensesTotalIncTaxStr}}</td></tr>
+      <tr class="total-row" style="background:#eef6ff;"><td colspan="3" class="right">総支払額（検収＋経費・税込）</td><td class="right">¥{{grandTotalPayableStr}}</td></tr>
+    </tbody>
+  </table>
+  <div style="font-size:8.5pt;color:#666;margin-top:2px;">※ 経費は税込み額にて精算します。</div>
+  {{/if}}
   <div class="conditions">
     <div class="condition-box"><h3>■ 検収条件</h3><p>検収期間: 納品日より <span class="highlight">{{inspectionDays}}日間</span></p><p>検収期限: <span class="highlight">{{inspectionDeadline}}</span></p></div>
     <div class="condition-box"><h3>■ 支払条件</h3><p>{{paymentConditionSummary}}</p><p>締め日: {{closingDate}}</p><p>支払期日: <span class="highlight">{{paymentDueDate}}</span></p></div>

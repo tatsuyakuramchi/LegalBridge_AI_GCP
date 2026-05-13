@@ -4767,6 +4767,19 @@ ${details}
         0
       );
 
+      // Phase 17m: 検収書の総支払額 = 検収税込 + 経費税込
+      //   formData.totalAmountStr ("1,234") を数値化して expensesTotalIncTax を足す。
+      //   inspection_certificate 系テンプレで {{grandTotalPayableStr}} を参照する。
+      const inspectionTotalIncTax = Number(
+        String(formData.totalAmountStr || "0").replace(/[^0-9.-]+/g, "")
+      ) || 0;
+      const grandTotalPayableComputed =
+        inspectionTotalIncTax + expensesTotalIncTaxComputed;
+      const expensesTotalIncTaxStrComputed =
+        expensesTotalIncTaxComputed.toLocaleString("ja-JP");
+      const grandTotalPayableStrComputed =
+        grandTotalPayableComputed.toLocaleString("ja-JP");
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey,
@@ -4780,6 +4793,10 @@ ${details}
             // Phase 17i: 経費（テンプレ側で {{#each expenses}} / {{expensesTotalIncTax}}）
             expenses: expensesForRender,
             expensesTotalIncTax: expensesTotalIncTaxComputed,
+            // Phase 17m: 検収書専用 — 経費合計と総支払額の整形済み文字列
+            expensesTotalIncTaxStr: expensesTotalIncTaxStrComputed,
+            grandTotalPayable: grandTotalPayableComputed,
+            grandTotalPayableStr: grandTotalPayableStrComputed,
             DOC_NO: docNumber,
             // Phase 17l: ORDER_NO は新規発行された docNumber を優先する。
             //   issueKey (Backlog 課題キー) は最後のフォールバックに留めない —

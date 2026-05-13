@@ -6,6 +6,10 @@ import { PartySection, SubLicenseeTable } from './SpecializedParts';
 import { LineItemTable, type LineItem } from './LineItemTable';
 import { ExpenseTable, type ExpenseItem } from './ExpenseTable';
 import {
+  InspectionExpenseSelector,
+  type InspectionExpense,
+} from './InspectionExpenseSelector';
+import {
   DeliveryLineItemTable,
   type OrderLineForInspection,
   type DeliveryLine,
@@ -110,11 +114,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     const newTaxStr = taxAmount.toLocaleString('ja-JP');
     const newTotalStr = totalInc.toLocaleString('ja-JP');
 
+    // Phase 17m: 経費（税込）も加算して総支払額を計算
+    const expensesTotalIncTax = Number(formData.expensesTotalIncTax) || 0;
+    const grandTotalPayable = totalInc + expensesTotalIncTax;
+    const newGrandStr = grandTotalPayable.toLocaleString('ja-JP');
+
     // 既に同じ値なら setFormData をスキップして無限ループ防止
     if (
       formData.deliveredAmountStr === newDeliveredStr &&
       formData.taxAmountStr === newTaxStr &&
       formData.totalAmountStr === newTotalStr &&
+      formData.grandTotalPayableStr === newGrandStr &&
       String(formData.taxRate) === String(taxRate)
     ) {
       return;
@@ -126,6 +136,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       taxRate: String(taxRate),
       taxAmountStr: newTaxStr,
       totalAmountStr: newTotalStr,
+      grandTotalPayable,
+      grandTotalPayableStr: newGrandStr,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
@@ -133,6 +145,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     formData.delivery_line_items,
     formData.taxRate,
     formData.isReducedTax,
+    formData.expensesTotalIncTax,
   ]);
 
   const renderField = (id: string, customLabel?: string) => {
@@ -1225,6 +1238,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               // 親を切り替えたら検収入力は一旦リセット (overflow 整合のため)
               delivery_line_items: [],
               deliveredAmountStr: '',
+              // Phase 17m: 親 PO の経費（精算候補）も流し込む
+              po_expenses: Array.isArray(loaded.expenses) ? loaded.expenses : [],
+              selectedExpenseLineNos: [],
+              isFinalInspection: false,
+              expenses: [],
+              expensesTotalIncTax: 0,
             });
           }}
           onClear={() => {
@@ -1234,6 +1253,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               parent_po_issue_key: undefined,
               order_lines_for_inspection: [],
               delivery_line_items: [],
+              // Phase 17m: 経費精算もクリア
+              po_expenses: [],
+              selectedExpenseLineNos: [],
+              isFinalInspection: false,
+              expenses: [],
+              expensesTotalIncTax: 0,
             });
           }}
         />
@@ -1310,6 +1335,54 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             }
           >
             {renderGroup('IV. 納品明細')}
+          </FormSection>
+        )}
+
+        {/* IV-b. 経費精算 (Phase 17m) — 親 PO に経費がある時だけ表示。
+            チェックを入れた経費だけが今回検収の支払額に加算され、PDF に
+            「経費（税込）」セクションが描画される。 */}
+        {Array.isArray(formData.po_expenses) && formData.po_expenses.length > 0 && (
+          <FormSection
+            title="IV-b. 経費精算（親 PO 連動）"
+            variant="indigo"
+            icon={<Scale className="w-4 h-4" />}
+          >
+            <InspectionExpenseSelector
+              poExpenses={formData.po_expenses as InspectionExpense[]}
+              selectedLineNos={
+                Array.isArray(formData.selectedExpenseLineNos)
+                  ? formData.selectedExpenseLineNos
+                  : []
+              }
+              isFinalInspection={!!formData.isFinalInspection}
+              onToggleFinal={(v: boolean) => {
+                setFormData({ ...formData, isFinalInspection: v });
+              }}
+              onChange={(selected: number[]) => {
+                const selectedSet = new Set(selected);
+                const expenses = (formData.po_expenses as InspectionExpense[])
+                  .filter((e) => selectedSet.has(e.line_no));
+                const expensesTotalIncTax = expenses.reduce(
+                  (s, e) => s + (Number(e.amount_inc_tax) || 0),
+                  0
+                );
+                // 検収金額（税込）+ 経費（税込）= 総支払額
+                const totalIncTax = Number(
+                  String(formData.totalAmountStr || "0").replace(/[^0-9.-]+/g, "")
+                ) || 0;
+                const grandTotalPayable = totalIncTax + expensesTotalIncTax;
+                setFormData({
+                  ...formData,
+                  selectedExpenseLineNos: selected,
+                  expenses,
+                  expensesTotalIncTax,
+                  expensesTotalIncTaxStr:
+                    expensesTotalIncTax.toLocaleString("ja-JP"),
+                  grandTotalPayable,
+                  grandTotalPayableStr: grandTotalPayable.toLocaleString("ja-JP"),
+                });
+              }}
+            />
           </FormSection>
         )}
 

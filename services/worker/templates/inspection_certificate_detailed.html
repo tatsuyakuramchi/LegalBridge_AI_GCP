@@ -329,6 +329,52 @@
       </div>
     </div>
 
+    {{!-- Phase 17m: 経費精算（交通費等・税込み額） — 親 PO の
+         order_expenses から「今回含める」とチェックされた行を表示。 --}}
+    {{#if expenses}}
+    <div style="margin-top: 16px;">
+      <div style="font-weight:700;font-size:10.5pt;margin-bottom:6px;">■ 今回精算する経費（交通費等・税込み額）</div>
+      <table class="detail-table">
+        <thead>
+          <tr>
+            <th style="width:6%;">No.</th>
+            <th style="width:30%;">費目</th>
+            <th>仕様 / 区間 等</th>
+            <th style="width:15%;">発生日</th>
+            <th style="width:15%;">金額（税込）</th>
+          </tr>
+        </thead>
+        <tbody>
+          {{#each expenses}}
+          <tr>
+            <td class="center">{{line_no}}</td>
+            <td>
+              <strong>{{expense_name}}</strong>
+              {{#if remarks}}<div class="sub-info">{{remarks}}</div>{{/if}}
+            </td>
+            <td>{{spec}}</td>
+            <td class="center">{{formatDate spent_date}}</td>
+            <td class="right">¥ {{formatCurrency amount_inc_tax}}</td>
+          </tr>
+          {{/each}}
+        </tbody>
+      </table>
+
+      <div class="invoice-box" style="margin-top:6px;">
+        <div class="invoice-row">
+          <span>経費合計（税込）</span>
+          <span>¥ {{expensesTotalIncTaxStr}}</span>
+        </div>
+        <div class="invoice-total" style="background:#eef6ff;">
+          <span>本検収書に基づく総支払額（検収金額＋経費・税込）</span>
+          <span>¥ {{grandTotalPayableStr}}</span>
+        </div>
+      </div>
+
+      <div style="font-size:8.5pt;color:#666;margin-top:4px;">※ 経費は税込み額にて精算します（消費税の二重計上はしません）。</div>
+    </div>
+    {{/if}}
+
     {{#if approver_name}}
     <div style="margin-top: 20px; padding: 10px; background: #f9f9f9; border: 1px solid #ddd; font-size: 9pt;">
       {{#if approver_name}}
