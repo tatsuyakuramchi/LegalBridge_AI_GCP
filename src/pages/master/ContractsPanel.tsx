@@ -76,7 +76,9 @@ export function ContractsPanel() {
     setDraft(empty)
   }
 
+  const [saving, setSaving] = React.useState(false)
   const save = async () => {
+    setSaving(true)
     try {
       const isEdit = !!data?.id
       const url = isEdit ? `/api/master/contracts/${data.id}` : "/api/master/contracts"
@@ -86,14 +88,27 @@ export function ContractsPanel() {
         body: JSON.stringify(data),
       })
       if (res.ok) {
-        showNotification(isEdit ? "契約情報を更新しました" : "契約情報を追加しました", "success")
+        showNotification(
+          isEdit ? "契約情報を更新しました" : "契約情報を追加しました",
+          "success"
+        )
         await refreshContracts()
         close()
       } else {
-        showNotification("保存に失敗しました", "error")
+        let detail = ""
+        try {
+          const j = await res.json()
+          detail = j?.error ? `: ${j.error}` : ""
+        } catch {}
+        showNotification(
+          `保存に失敗しました (HTTP ${res.status})${detail}`,
+          "error"
+        )
       }
-    } catch (e) {
-      showNotification("サーバーエラー", "error")
+    } catch (e: any) {
+      showNotification(`サーバーエラー: ${e?.message || e}`, "error")
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -385,10 +400,12 @@ export function ContractsPanel() {
             </Field>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={close}>
+            <Button variant="outline" onClick={close} disabled={saving}>
               キャンセル
             </Button>
-            <Button onClick={save}>保存して同期</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "保存中…" : "保存して同期"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

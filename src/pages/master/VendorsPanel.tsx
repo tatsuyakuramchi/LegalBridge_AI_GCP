@@ -62,26 +62,43 @@ export function VendorsPanel() {
     setDraft(empty)
   }
 
+  const [saving, setSaving] = React.useState(false)
+
+  // Worker /api/master/vendors は POST のみ (ON CONFLICT DO UPDATE で upsert)
+  // なので新規・編集とも同じ POST で送る。旧コードは PUT を使っていたが
+  // 該当ハンドラが無く 404 で詰まっていた。
   const save = async () => {
+    setSaving(true)
     try {
       const isEdit = !!editing
-      const url = isEdit
-        ? `/api/master/vendors/${editing.vendor_code}`
-        : "/api/master/vendors"
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
+      const res = await fetch("/api/master/vendors", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       })
       if (res.ok) {
-        showNotification("保存しました", "success")
+        showNotification(
+          isEdit
+            ? `「${data?.vendor_name || data?.vendor_code}」を更新しました`
+            : `「${data?.vendor_name || data?.vendor_code}」を登録しました`,
+          "success"
+        )
         await refreshVendors()
         close()
       } else {
-        showNotification("保存に失敗しました", "error")
+        let detail = ""
+        try {
+          const j = await res.json()
+          detail = j?.error ? `: ${j.error}` : ""
+        } catch {
+          // body は text のことも
+        }
+        showNotification(`保存に失敗しました (HTTP ${res.status})${detail}`, "error")
       }
-    } catch (e) {
-      showNotification("サーバーエラー", "error")
+    } catch (e: any) {
+      showNotification(`サーバーエラー: ${e?.message || e}`, "error")
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -265,11 +282,13 @@ export function VendorsPanel() {
             </Field>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={close}>
+            <Button variant="outline" onClick={close} disabled={saving}>
               閉じる
             </Button>
             {(creating || editing) && (
-              <Button onClick={save}>保存</Button>
+              <Button onClick={save} disabled={saving}>
+                {saving ? "保存中…" : "保存"}
+              </Button>
             )}
           </DialogFooter>
         </DialogContent>

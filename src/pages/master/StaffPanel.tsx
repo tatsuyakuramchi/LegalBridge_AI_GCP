@@ -48,26 +48,44 @@ export function StaffPanel() {
     setDraft(empty)
   }
 
+  const [saving, setSaving] = React.useState(false)
+
+  // Worker /api/master/staff は POST のみ (ON CONFLICT (slack_user_id) DO UPDATE
+  // で upsert)。旧コードは編集時 PUT を投げていたが該当ハンドラがなく 404 に
+  // なるバグがあった (Phase 16c で修正)。
   const save = async () => {
+    setSaving(true)
     try {
       const isEdit = !!editing
-      const url = isEdit
-        ? `/api/master/staff/${editing.slack_user_id}`
-        : "/api/master/staff"
-      const res = await fetch(url, {
-        method: isEdit ? "PUT" : "POST",
+      const res = await fetch("/api/master/staff", {
+        method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       })
       if (res.ok) {
-        showNotification("保存しました", "success")
+        showNotification(
+          isEdit
+            ? `「${data?.staff_name || data?.slack_user_id}」を更新しました`
+            : `「${data?.staff_name || data?.slack_user_id}」を登録しました`,
+          "success"
+        )
         await refreshStaff()
         close()
       } else {
-        showNotification("保存に失敗しました", "error")
+        let detail = ""
+        try {
+          const j = await res.json()
+          detail = j?.error ? `: ${j.error}` : ""
+        } catch {}
+        showNotification(
+          `保存に失敗しました (HTTP ${res.status})${detail}`,
+          "error"
+        )
       }
-    } catch (e) {
-      showNotification("サーバーエラー", "error")
+    } catch (e: any) {
+      showNotification(`サーバーエラー: ${e?.message || e}`, "error")
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -173,10 +191,12 @@ export function StaffPanel() {
             </Field>
           </DialogBody>
           <DialogFooter>
-            <Button variant="outline" onClick={close}>
+            <Button variant="outline" onClick={close} disabled={saving}>
               キャンセル
             </Button>
-            <Button onClick={save}>保存</Button>
+            <Button onClick={save} disabled={saving}>
+              {saving ? "保存中…" : "保存"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
