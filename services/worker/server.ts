@@ -2134,6 +2134,892 @@ ${details}
     }
   });
 
+  // -------------------------------------------------------------------
+  // /api/imports/bulk/* — CSV 一括インポート (Phase 10, 案 A)
+  //
+  // フロント側で CSV を parse → JSON 化 → ここに送信。
+  // 各 endpoint は「行繰り返し + import_key グルーピング」を解凍し、
+  // 既存の単発インポートロジックと同じ DB 書き込みを行単位で実行する。
+  // 戻り値は { succeeded: [...], failed: [...] } のグループ単位サマリー。
+  //
+  // 注意:
+  //  - 1 つの行が失敗しても他は処理を続行 (best-effort batch)。
+  //  - 各グループ内のヘッダ列は first row を採用 (不一致は警告ログ)。
+  //  - サーバ側で amount は再計算 (Math.ceil) してフロント送信値を信用しない。
+  // -------------------------------------------------------------------
+
+  /**
+   * Helper: 配列を import_key でグループ化。空 / null は __ROW_<idx>__ で
+   * 各行を個別グループ扱いに (CSV ミスでも全行が 1 グループに吸われない保護)。
+   */
+  function groupByImportKey<T extends Record<string, any>>(
+    rows: T[]
+  ): Map<string, T[]> {
+    const groups = new Map<string, T[]>();
+    rows.forEach((r, idx) => {
+      const k =
+        r.import_key != null && String(r.import_key).trim().length > 0
+          ? String(r.import_key).trim()
+          : `__ROW_${idx}__`;
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k)!.push(r);
+    });
+    return groups;
+  }
+
+  /**
+   * Bulk import: 発注書。CSV 1 行 = 1 明細、import_key でグループ化。
+   * 各グループは 1 PO として order_items + order_line_items を作成。
+   *
+   * body: { rows: Array<row> }
+   * row 列:
+   *   import_key, issue_key?, document_number?, drive_link?,
+   *   vendor_code?, vendor_name?, description?, tax_rate?, due_date?,
+   *   line_no, item_name, spec?, unit_price, quantity,
+   *   payment_method?, payment_date?
+   */
+  app.post("/api/imports/bulk/order", express.json({ limit: "10mb" }), async (req, res) => {
+    try {
+      const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+      if (rows.length === 0) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "rows[] is required (CSV のパース結果)" });
+      }
+      const groups = groupByImportKey(rows);
+      const succeeded: any[] = [];
+      const failed: any[] = [];
+
+      for (const [importKey, groupRows] of groups) {
+        try {
+          const first = groupRows[0];
+          const issueKey =
+            first.issue_key && String(first.issue_key).trim().length > 0
+              ? String(first.issue_key).trim()
+              : `IMPORT-${Date.now()}-${succeeded.length + failed.length}`;
+          const docNumber =
+            first.document_number && String(first.document_number).trim().length > 0
+              ? String(first.document_number).trim()
+              : await getNewDocumentNumber("purchase_order", "発注書");
+          const taxRate = Number(first.tax_rate) || 10;
+
+          const lines = groupRows
+            .filter((r) => r.line_no || r.item_name || r.unit_price)
+            .map((r, idx) => ({
+              line_no: Number(r.line_no) || idx + 1,
+              item_name: r.item_name || "",
+              spec: r.spec || "",
+              unit_price: Number(r.unit_price) || 0,
+              quantity: Number(r.quantity) || 0,
+              amount_ex_tax: calculateOrderLineAmount(
+                Number(r.unit_price) || 0,
+                Number(r.quantity) || 0
+              ),
+              payment_method: r.payment_method || null,
+              payment_date: r.payment_date || null,
+            }));
+
+          if (lines.length === 0) {
+            failed.push({
+              import_key: importKey,
+              error: "No valid line items (line_no / item_name / unit_price 不足)",
+            });
+            continue;
+          }
+
+          const totalExTax = lines.reduce((s, l) => s + l.amount_ex_tax, 0);
+
+          // 1. header upsert (item_no=1 で単発)
+          const headerRes = await query(
+            `INSERT INTO order_items (
+               backlog_issue_key, item_no, description, amount, vendor_code,
+               tax_rate, due_date
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+             ON CONFLICT (backlog_issue_key) DO UPDATE SET
+               description = COALESCE(NULLIF(EXCLUDED.description, ''), order_items.description),
+               amount      = EXCLUDED.amount,
+               vendor_code = COALESCE(NULLIF(EXCLUDED.vendor_code, ''), order_items.vendor_code),
+               tax_rate    = EXCLUDED.tax_rate,
+               due_date    = COALESCE(EXCLUDED.due_date, order_items.due_date)
+             RETURNING id`,
+            [
+              issueKey,
+              1,
+              first.description || "",
+              totalExTax,
+              first.vendor_code || null,
+              taxRate,
+              first.due_date || null,
+            ]
+          );
+          const orderItemId = Number(headerRes.rows[0].id);
+
+          // 2. lines: 既存削除 + 入れ直し
+          await query("DELETE FROM order_line_items WHERE order_item_id = $1", [
+            orderItemId,
+          ]);
+          for (const l of lines) {
+            await query(
+              `INSERT INTO order_line_items (
+                 order_item_id, line_no, item_name, spec,
+                 unit_price, quantity, amount_ex_tax,
+                 payment_method, payment_date
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+              [
+                orderItemId,
+                l.line_no,
+                l.item_name,
+                l.spec,
+                l.unit_price,
+                l.quantity,
+                l.amount_ex_tax,
+                l.payment_method,
+                l.payment_date,
+              ]
+            );
+          }
+          const totals = await recalculateOrderTotal(orderItemId, taxRate);
+
+          // 3. documents 履歴
+          await query(
+            `INSERT INTO documents (
+               document_number, issue_key, template_type, form_data,
+               drive_link, created_by
+             ) VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (document_number) DO UPDATE SET
+               form_data  = EXCLUDED.form_data,
+               drive_link = EXCLUDED.drive_link`,
+            [
+              docNumber,
+              issueKey,
+              "purchase_order",
+              JSON.stringify({
+                items: lines,
+                grandTotalExTax: totalExTax,
+                taxRate,
+                __imported: true,
+                __bulk: true,
+              }),
+              first.drive_link || "",
+              "import-bulk",
+            ]
+          );
+
+          // 4. external_assets (drive_link あれば)
+          if (first.drive_link) {
+            await query(
+              `INSERT INTO external_assets
+                 (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (asset_number) DO UPDATE SET
+                 file_link = EXCLUDED.file_link,
+                 counterparty = EXCLUDED.counterparty`,
+              [
+                docNumber,
+                first.description || docNumber,
+                "individual",
+                first.vendor_name || first.vendor_code || "Imported",
+                first.drive_link,
+                issueKey,
+              ]
+            );
+          }
+
+          succeeded.push({
+            import_key: importKey,
+            order_item_id: orderItemId,
+            issue_key: issueKey,
+            document_number: docNumber,
+            line_count: lines.length,
+            total_ex_tax: totals?.amount_ex_tax ?? totalExTax,
+          });
+        } catch (e: any) {
+          console.error(`/api/imports/bulk/order group=${importKey} failed:`, e);
+          failed.push({
+            import_key: importKey,
+            error: String(e?.message || e),
+          });
+        }
+      }
+
+      res.json({
+        ok: true,
+        total_rows: rows.length,
+        groups: groups.size,
+        succeeded,
+        failed,
+      });
+    } catch (error) {
+      console.error("/api/imports/bulk/order failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * Bulk import: 個別利用許諾条件書。
+   * CSV 1 行 = 1 金銭条件、import_key でグループ化。
+   * 各グループは 1 ライセンス契約として license_contracts +
+   * license_financial_conditions を作成。
+   */
+  app.post(
+    "/api/imports/bulk/license-contract",
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "rows[] is required" });
+        }
+        const groups = groupByImportKey(rows);
+        const succeeded: any[] = [];
+        const failed: any[] = [];
+
+        for (const [importKey, groupRows] of groups) {
+          try {
+            const first = groupRows[0];
+            const issueKey =
+              first.issue_key && String(first.issue_key).trim().length > 0
+                ? String(first.issue_key).trim()
+                : `IMPORT-${Date.now()}-${succeeded.length + failed.length}`;
+            const contractNumber =
+              first.contract_number &&
+              String(first.contract_number).trim().length > 0
+                ? String(first.contract_number).trim()
+                : await getNewDocumentNumber(
+                    "individual_license_terms",
+                    "個別利用許諾条件"
+                  );
+            const ledgerId =
+              first.ledger_id && String(first.ledger_id).trim().length > 0
+                ? String(first.ledger_id).trim()
+                : contractNumber;
+
+            // 1. license_contracts header upsert
+            const lcRes = await query(
+              `INSERT INTO license_contracts (
+                 backlog_issue_key, ledger_id, ledger_number, contract_number,
+                 licensor, original_work,
+                 licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
+                 licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
+                 product_name_predicted,
+                 license_start_date, license_period_note,
+                 supervisor, credit_display, remarks
+               )
+               VALUES ($1, $2, $3, $4, $5, $6,
+                       $7, $8, $9, $10,
+                       $11, $12, $13, $14,
+                       $15, $16, $17, $18, $19, $20)
+               ON CONFLICT (backlog_issue_key) DO UPDATE SET
+                 contract_number          = EXCLUDED.contract_number,
+                 licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), license_contracts.licensor_name),
+                 licensor_address         = COALESCE(NULLIF(EXCLUDED.licensor_address, ''), license_contracts.licensor_address),
+                 licensor_rep             = COALESCE(NULLIF(EXCLUDED.licensor_rep, ''), license_contracts.licensor_rep),
+                 licensor_is_corporation  = EXCLUDED.licensor_is_corporation,
+                 licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), license_contracts.licensee_name),
+                 licensee_address         = COALESCE(NULLIF(EXCLUDED.licensee_address, ''), license_contracts.licensee_address),
+                 licensee_rep             = COALESCE(NULLIF(EXCLUDED.licensee_rep, ''), license_contracts.licensee_rep),
+                 licensee_is_corporation  = EXCLUDED.licensee_is_corporation,
+                 original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), license_contracts.original_work),
+                 product_name_predicted   = COALESCE(NULLIF(EXCLUDED.product_name_predicted, ''), license_contracts.product_name_predicted),
+                 license_start_date       = COALESCE(EXCLUDED.license_start_date, license_contracts.license_start_date),
+                 license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), license_contracts.license_period_note),
+                 supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), license_contracts.supervisor),
+                 credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), license_contracts.credit_display),
+                 remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), license_contracts.remarks)
+               RETURNING id`,
+              [
+                issueKey,
+                ledgerId,
+                contractNumber,
+                contractNumber,
+                first.licensor_name || "",
+                first.original_work || "",
+                first.licensor_name || "",
+                first.licensor_address || "",
+                first.licensor_rep || "",
+                !!first.licensor_is_corporation,
+                first.licensee_name || "",
+                first.licensee_address || "",
+                first.licensee_rep || "",
+                !!first.licensee_is_corporation,
+                first.product_name_predicted || "",
+                first.license_start_date || null,
+                first.license_period_note || "",
+                first.supervisor || "",
+                first.credit_display || "",
+                first.remarks || "",
+              ]
+            );
+            const lcId = Number(lcRes.rows[0].id);
+
+            // 2. financial_conditions: 既存削除 + 入れ直し
+            const conditions = groupRows
+              .filter((r) => r.condition_no || r.calc_method || r.rate_pct)
+              .map((r, idx) => ({
+                condition_no: Number(r.condition_no) || idx + 1,
+                region_language_label: r.region_language_label || null,
+                calc_method: r.calc_method || null,
+                rate_pct: r.rate_pct != null ? Number(r.rate_pct) : null,
+                base_price_label: r.base_price_label || null,
+                calc_period: r.calc_period || null,
+                currency: r.currency || "JPY",
+                formula_text: r.formula_text || null,
+                payment_terms: r.payment_terms || null,
+                mg_amount: r.mg_amount != null ? Number(r.mg_amount) : 0,
+              }));
+
+            try {
+              if (conditions.length > 0) {
+                const keepNos = conditions.map((c) => c.condition_no);
+                await query(
+                  `DELETE FROM license_financial_conditions
+                    WHERE license_contract_id = $1
+                      AND condition_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
+                  [lcId, ...keepNos]
+                );
+              }
+            } catch (delErr) {
+              console.warn("bulk license-contract delete pruning failed:", delErr);
+            }
+
+            for (const c of conditions) {
+              await query(
+                `INSERT INTO license_financial_conditions (
+                   license_contract_id, condition_no,
+                   region_language_label, calc_method, rate_pct,
+                   base_price_label, calc_period, currency,
+                   formula_text, payment_terms, mg_amount, updated_at
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CURRENT_TIMESTAMP)
+                 ON CONFLICT (license_contract_id, condition_no) DO UPDATE SET
+                   region_language_label = EXCLUDED.region_language_label,
+                   calc_method           = EXCLUDED.calc_method,
+                   rate_pct              = EXCLUDED.rate_pct,
+                   base_price_label      = EXCLUDED.base_price_label,
+                   calc_period           = EXCLUDED.calc_period,
+                   currency              = EXCLUDED.currency,
+                   formula_text          = EXCLUDED.formula_text,
+                   payment_terms         = EXCLUDED.payment_terms,
+                   mg_amount             = EXCLUDED.mg_amount,
+                   updated_at            = CURRENT_TIMESTAMP`,
+                [
+                  lcId,
+                  c.condition_no,
+                  c.region_language_label,
+                  c.calc_method,
+                  c.rate_pct,
+                  c.base_price_label,
+                  c.calc_period,
+                  c.currency,
+                  c.formula_text,
+                  c.payment_terms,
+                  c.mg_amount,
+                ]
+              );
+            }
+
+            // 3. documents
+            await query(
+              `INSERT INTO documents (
+                 document_number, issue_key, template_type, form_data,
+                 drive_link, created_by
+               ) VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 form_data  = EXCLUDED.form_data,
+                 drive_link = EXCLUDED.drive_link`,
+              [
+                contractNumber,
+                issueKey,
+                "individual_license_terms",
+                JSON.stringify({
+                  financial_conditions: conditions,
+                  __imported: true,
+                  __bulk: true,
+                }),
+                first.drive_link || "",
+                "import-bulk",
+              ]
+            );
+
+            // 4. external_assets
+            if (first.drive_link) {
+              await query(
+                `INSERT INTO external_assets
+                   (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (asset_number) DO UPDATE SET
+                   file_link = EXCLUDED.file_link,
+                   counterparty = EXCLUDED.counterparty`,
+                [
+                  contractNumber,
+                  first.original_work || contractNumber,
+                  "contract",
+                  first.licensor_name || "Imported",
+                  first.drive_link,
+                  issueKey,
+                ]
+              );
+            }
+
+            succeeded.push({
+              import_key: importKey,
+              license_contract_id: lcId,
+              issue_key: issueKey,
+              contract_number: contractNumber,
+              condition_count: conditions.length,
+            });
+          } catch (e: any) {
+            console.error(
+              `/api/imports/bulk/license-contract group=${importKey} failed:`,
+              e
+            );
+            failed.push({
+              import_key: importKey,
+              error: String(e?.message || e),
+            });
+          }
+        }
+
+        res.json({
+          ok: true,
+          total_rows: rows.length,
+          groups: groups.size,
+          succeeded,
+          failed,
+        });
+      } catch (error) {
+        console.error("/api/imports/bulk/license-contract failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
+   * Bulk import: ライセンス基本契約書 (license_master)。
+   * 1 行 = 1 doc。グループ化不要だが import_key を尊重して順序保持。
+   */
+  app.post(
+    "/api/imports/bulk/license-master",
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "rows[] is required" });
+        }
+        const succeeded: any[] = [];
+        const failed: any[] = [];
+
+        for (let idx = 0; idx < rows.length; idx++) {
+          const r = rows[idx];
+          const importKey = r.import_key || `__ROW_${idx}__`;
+          try {
+            const issueKey =
+              r.issue_key && String(r.issue_key).trim().length > 0
+                ? String(r.issue_key).trim()
+                : `IMPORT-${Date.now()}-${idx}`;
+            const contractNumber =
+              r.contract_number && String(r.contract_number).trim().length > 0
+                ? String(r.contract_number).trim()
+                : await getNewDocumentNumber("license_master", "ライセンス基本契約");
+            const ledgerId =
+              r.ledger_id && String(r.ledger_id).trim().length > 0
+                ? String(r.ledger_id).trim()
+                : contractNumber;
+
+            const lcRes = await query(
+              `INSERT INTO license_contracts (
+                 backlog_issue_key, ledger_id, ledger_number, contract_number,
+                 licensor, original_work,
+                 basic_contract_name, issue_date,
+                 licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
+                 licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
+                 product_name_predicted,
+                 license_start_date, license_period_note,
+                 supervisor, credit_display, remarks
+               )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12,
+                       $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+               ON CONFLICT (backlog_issue_key) DO UPDATE SET
+                 contract_number          = EXCLUDED.contract_number,
+                 basic_contract_name      = COALESCE(NULLIF(EXCLUDED.basic_contract_name, ''), license_contracts.basic_contract_name),
+                 issue_date               = COALESCE(EXCLUDED.issue_date, license_contracts.issue_date),
+                 licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), license_contracts.licensor_name),
+                 licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), license_contracts.licensee_name),
+                 original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), license_contracts.original_work)
+               RETURNING id`,
+              [
+                issueKey,
+                ledgerId,
+                contractNumber,
+                contractNumber,
+                r.licensor_name || "",
+                r.original_work || "",
+                r.basic_contract_name || "",
+                r.issue_date || null,
+                r.licensor_name || "",
+                r.licensor_address || "",
+                r.licensor_rep || "",
+                !!r.licensor_is_corporation,
+                r.licensee_name || "",
+                r.licensee_address || "",
+                r.licensee_rep || "",
+                !!r.licensee_is_corporation,
+                r.product_name_predicted || "",
+                r.license_start_date || null,
+                r.license_period_note || "",
+                r.supervisor || "",
+                r.credit_display || "",
+                r.remarks || "",
+              ]
+            );
+            const lcId = Number(lcRes.rows[0].id);
+
+            await query(
+              `INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (document_number) DO UPDATE SET form_data = EXCLUDED.form_data, drive_link = EXCLUDED.drive_link`,
+              [
+                contractNumber,
+                issueKey,
+                "license_master",
+                JSON.stringify({ ...r, __imported: true, __bulk: true }),
+                r.drive_link || "",
+                "import-bulk",
+              ]
+            );
+
+            await query(
+              `INSERT INTO contract_capabilities (
+                 record_type, contract_category, contract_type, contract_title,
+                 document_number, contract_status, effective_date, expiration_date,
+                 auto_renewal, original_work, document_url, source_system
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 contract_title = EXCLUDED.contract_title,
+                 effective_date = EXCLUDED.effective_date,
+                 expiration_date = EXCLUDED.expiration_date,
+                 updated_at = CURRENT_TIMESTAMP`,
+              [
+                "master_contract",
+                "license",
+                "license_master",
+                r.basic_contract_name || r.original_work || contractNumber,
+                contractNumber,
+                "executed",
+                r.effective_date || r.license_start_date || null,
+                r.expiration_date || null,
+                !!r.auto_renewal,
+                r.original_work || "",
+                r.drive_link || "",
+                "Import (Bulk CSV)",
+              ]
+            );
+
+            if (r.drive_link) {
+              await query(
+                `INSERT INTO external_assets
+                   (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (asset_number) DO UPDATE SET file_link = EXCLUDED.file_link`,
+                [
+                  contractNumber,
+                  r.basic_contract_name || r.original_work || contractNumber,
+                  "contract",
+                  r.licensor_name || "Imported",
+                  r.drive_link,
+                  issueKey,
+                ]
+              );
+            }
+
+            succeeded.push({
+              import_key: importKey,
+              license_contract_id: lcId,
+              contract_number: contractNumber,
+              ledger_id: ledgerId,
+            });
+          } catch (e: any) {
+            console.error(`/api/imports/bulk/license-master row=${idx} failed:`, e);
+            failed.push({ import_key: importKey, error: String(e?.message || e) });
+          }
+        }
+
+        res.json({
+          ok: true,
+          total_rows: rows.length,
+          groups: rows.length,
+          succeeded,
+          failed,
+        });
+      } catch (error) {
+        console.error("/api/imports/bulk/license-master failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
+   * Bulk import: 業務委託基本契約書 (service_master)。
+   * 1 行 = 1 doc。
+   */
+  app.post(
+    "/api/imports/bulk/service-master",
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "rows[] is required" });
+        }
+        const succeeded: any[] = [];
+        const failed: any[] = [];
+
+        for (let idx = 0; idx < rows.length; idx++) {
+          const r = rows[idx];
+          const importKey = r.import_key || `__ROW_${idx}__`;
+          try {
+            const issueKey =
+              r.issue_key && String(r.issue_key).trim().length > 0
+                ? String(r.issue_key).trim()
+                : `IMPORT-${Date.now()}-${idx}`;
+            const contractNumber =
+              r.contract_number && String(r.contract_number).trim().length > 0
+                ? String(r.contract_number).trim()
+                : await getNewDocumentNumber("service_master", "業務委託基本契約");
+
+            let vendorId: number | null = null;
+            if (r.vendor_code || r.vendor_name) {
+              const vRes = await query(
+                "SELECT id FROM vendors WHERE vendor_code = $1 OR vendor_name = $2 LIMIT 1",
+                [r.vendor_code || "", r.vendor_name || ""]
+              );
+              if (vRes.rows.length > 0) vendorId = Number(vRes.rows[0].id);
+            }
+
+            await query(
+              `INSERT INTO contract_capabilities (
+                 vendor_id, record_type, contract_category, contract_type, contract_title,
+                 document_number, contract_status, effective_date, expiration_date,
+                 auto_renewal, document_url, source_system
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 vendor_id = EXCLUDED.vendor_id,
+                 contract_title = EXCLUDED.contract_title,
+                 effective_date = EXCLUDED.effective_date,
+                 expiration_date = EXCLUDED.expiration_date,
+                 updated_at = CURRENT_TIMESTAMP`,
+              [
+                vendorId,
+                "master_contract",
+                "service",
+                "service_master",
+                r.contract_title || contractNumber,
+                contractNumber,
+                "executed",
+                r.effective_date || null,
+                r.expiration_date || null,
+                !!r.auto_renewal,
+                r.drive_link || "",
+                "Import (Bulk CSV)",
+              ]
+            );
+
+            await query(
+              `INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by)
+               VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (document_number) DO UPDATE SET form_data = EXCLUDED.form_data, drive_link = EXCLUDED.drive_link`,
+              [
+                contractNumber,
+                issueKey,
+                "service_master",
+                JSON.stringify({ ...r, __imported: true, __bulk: true }),
+                r.drive_link || "",
+                "import-bulk",
+              ]
+            );
+
+            if (r.drive_link) {
+              await query(
+                `INSERT INTO external_assets
+                   (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 ON CONFLICT (asset_number) DO UPDATE SET file_link = EXCLUDED.file_link`,
+                [
+                  contractNumber,
+                  r.contract_title || contractNumber,
+                  "contract",
+                  r.vendor_name || r.party_b_name || "Imported",
+                  r.drive_link,
+                  issueKey,
+                ]
+              );
+            }
+
+            succeeded.push({
+              import_key: importKey,
+              contract_number: contractNumber,
+              vendor_id: vendorId,
+            });
+          } catch (e: any) {
+            console.error(`/api/imports/bulk/service-master row=${idx} failed:`, e);
+            failed.push({ import_key: importKey, error: String(e?.message || e) });
+          }
+        }
+
+        res.json({
+          ok: true,
+          total_rows: rows.length,
+          groups: rows.length,
+          succeeded,
+          failed,
+        });
+      } catch (error) {
+        console.error("/api/imports/bulk/service-master failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
+   * テンプレ CSV ダウンロード。ユーザーがブランクのテンプレを Excel で
+   * 開いて編集 → 一括 import するためのスケルトン。
+   */
+  app.get("/api/imports/bulk/templates/:type", (req, res) => {
+    const { type } = req.params;
+    const TEMPLATES: Record<string, { headers: string[]; sample: string[][] }> = {
+      order: {
+        headers: [
+          "import_key",
+          "issue_key",
+          "document_number",
+          "drive_link",
+          "vendor_code",
+          "vendor_name",
+          "description",
+          "tax_rate",
+          "due_date",
+          "line_no",
+          "item_name",
+          "spec",
+          "unit_price",
+          "quantity",
+          "payment_method",
+          "payment_date",
+        ],
+        sample: [
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "1", "書籍印刷", "A5/100p", "500", "200", "翌月末", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "2", "カバー印刷", "カラー両面", "300", "200", "翌月末", ""],
+          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "1", "翻訳作業", "EN→JA", "5000", "10", "検収後", ""],
+        ],
+      },
+      "license-contract": {
+        headers: [
+          "import_key",
+          "issue_key",
+          "contract_number",
+          "ledger_id",
+          "drive_link",
+          "licensor_name",
+          "licensor_address",
+          "licensor_rep",
+          "licensor_is_corporation",
+          "licensee_name",
+          "licensee_address",
+          "licensee_rep",
+          "licensee_is_corporation",
+          "original_work",
+          "product_name_predicted",
+          "license_start_date",
+          "license_period_note",
+          "supervisor",
+          "credit_display",
+          "remarks",
+          "condition_no",
+          "region_language_label",
+          "calc_method",
+          "rate_pct",
+          "base_price_label",
+          "calc_period",
+          "currency",
+          "formula_text",
+          "payment_terms",
+          "mg_amount",
+        ],
+        sample: [
+          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "", "1", "国内・日本語", "ROYALTY", "5.0", "上代", "四半期", "JPY", "上代 × 5.0% × 製造数", "四半期報告後の翌月末日払い", "1000000"],
+          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "", "2", "国内・日本語", "ROYALTY", "10.0", "売上", "四半期", "JPY", "売上 × 10.0%", "四半期報告後の翌月末日払い", "0"],
+        ],
+      },
+      "license-master": {
+        headers: [
+          "import_key",
+          "issue_key",
+          "contract_number",
+          "ledger_id",
+          "drive_link",
+          "basic_contract_name",
+          "issue_date",
+          "licensor_name",
+          "licensor_address",
+          "licensor_rep",
+          "licensor_is_corporation",
+          "licensee_name",
+          "licensee_address",
+          "licensee_rep",
+          "licensee_is_corporation",
+          "original_work",
+          "effective_date",
+          "expiration_date",
+          "auto_renewal",
+          "license_period_note",
+          "supervisor",
+          "credit_display",
+          "remarks",
+        ],
+        sample: [
+          ["LM001", "", "", "LIC-MST-001", "", "◯◯シリーズ ライセンス基本契約", "2024-04-01", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "2024-04-01", "2027-03-31", "true", "3 年自動更新", "", "", ""],
+        ],
+      },
+      "service-master": {
+        headers: [
+          "import_key",
+          "issue_key",
+          "contract_number",
+          "drive_link",
+          "contract_title",
+          "effective_date",
+          "expiration_date",
+          "auto_renewal",
+          "vendor_code",
+          "vendor_name",
+          "party_a_name",
+          "party_a_address",
+          "party_a_rep",
+          "party_b_name",
+          "party_b_address",
+          "party_b_rep",
+          "remarks",
+        ],
+        sample: [
+          ["SM001", "", "", "", "株式会社XYZ 業務委託基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", ""],
+        ],
+      },
+    };
+    const tmpl = TEMPLATES[type];
+    if (!tmpl) {
+      return res.status(404).json({ error: `Unknown template type: ${type}` });
+    }
+    // BOM + CRLF で Excel が UTF-8 + 日本語を文字化けなく開けるように
+    const rows = [tmpl.headers.join(","), ...tmpl.sample.map((r) => r.join(","))];
+    const csv = "﻿" + rows.join("\r\n") + "\r\n";
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="import_template_${type}.csv"`
+    );
+    res.send(csv);
+  });
+
   /**
    * 利用許諾料計算書を preview。MG 消化と試算を返す。
    * フロントは数量・サンプル数を変更するたびにこれを叩いて

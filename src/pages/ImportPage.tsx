@@ -27,6 +27,7 @@ import {
   Briefcase,
   Link as LinkIcon,
   Loader2,
+  FileSpreadsheet,
 } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
@@ -39,6 +40,7 @@ import {
   FinancialConditionTable,
   type FinancialCondition,
 } from "@/src/components/document/FinancialConditionTable"
+import { BulkImportDialog } from "@/src/components/document/BulkImportDialog"
 
 type Tab =
   | "purchase_order"
@@ -1602,23 +1604,62 @@ const ServiceMasterImportForm: React.FC<{
 // ---------------------------------------------------------------------
 
 export function ImportPage() {
-  const { vendors, companyProfile, showNotification } = useAppData()
+  const { vendors, companyProfile, showNotification, refreshAll } = useAppData()
   const [tab, setTab] = React.useState<Tab>("purchase_order")
+  const [bulkOpen, setBulkOpen] = React.useState(false)
+
+  // タブ key → bulk endpoint kind の対応表
+  const BULK_KIND_MAP: Record<Tab, "order" | "license-contract" | "license-master" | "service-master"> = {
+    purchase_order: "order",
+    individual_license_terms: "license-contract",
+    license_master: "license-master",
+    service_master: "service-master",
+  }
+
+  const TAB_LABEL_MAP: Record<Tab, string> = {
+    purchase_order: "発注書",
+    individual_license_terms: "個別利用許諾条件書",
+    license_master: "ライセンス基本契約書",
+    service_master: "業務委託基本契約書",
+  }
 
   return (
     <div className="px-6 lg:px-10 py-6 space-y-6 max-w-[1600px] mx-auto">
-      <header className="border-b border-border pb-3">
-        <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
-          <Database className="w-3 h-3" />
-          <span>Imports · Past Document Registration</span>
+      <header className="border-b border-border pb-3 flex items-end justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-[10px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+            <Database className="w-3 h-3" />
+            <span>Imports · Past Document Registration</span>
+          </div>
+          <h1 className="text-xl font-bold mt-1">過去文書 DB 登録</h1>
+          <p className="text-[11px] font-mono text-muted-foreground mt-1 max-w-3xl">
+            既に紙 / メール / 旧システムで成立済みの契約や発注を、PDF を再生成
+            せずに DB に追記します。後続の検収書・ロイヤリティ計算書からは、
+            通常生成した文書と同じく親文書として参照できるようになります。
+          </p>
         </div>
-        <h1 className="text-xl font-bold mt-1">過去文書 DB 登録</h1>
-        <p className="text-[11px] font-mono text-muted-foreground mt-1 max-w-3xl">
-          既に紙 / メール / 旧システムで成立済みの契約や発注を、PDF を再生成
-          せずに DB に追記します。後続の検収書・ロイヤリティ計算書からは、
-          通常生成した文書と同じく親文書として参照できるようになります。
-        </p>
+        {/* Phase 10: 一括 CSV インポート起動ボタン (現タブに対応する形式で開く) */}
+        <button
+          type="button"
+          onClick={() => setBulkOpen(true)}
+          className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
+          title={`${TAB_LABEL_MAP[tab]} の CSV 一括インポート`}
+        >
+          <FileSpreadsheet className="w-3.5 h-3.5" />
+          CSV 一括インポート
+        </button>
       </header>
+
+      <BulkImportDialog
+        kind={BULK_KIND_MAP[tab]}
+        label={TAB_LABEL_MAP[tab]}
+        open={bulkOpen}
+        onClose={() => setBulkOpen(false)}
+        onCompleted={() => {
+          // インポート後、ダッシュボード等のマスター系を再取得
+          refreshAll?.()
+        }}
+      />
 
       <div className="flex flex-wrap gap-2 border-b border-border">
         {(

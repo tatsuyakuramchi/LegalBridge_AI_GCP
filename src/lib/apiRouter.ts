@@ -36,6 +36,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/templates(?:\/|$)/,
   /^\/api\/master\/workflow-settings(?:\/|$)/,
   /^\/api\/numbering(?:\/|$)/,
+  // Phase 10: CSV テンプレ DL は worker に常駐 (text/csv レスポンス)
+  /^\/api\/imports\/bulk\/templates(?:\/|$)/,
 ];
 
 // Routes that should go to the READ service even on POST.
