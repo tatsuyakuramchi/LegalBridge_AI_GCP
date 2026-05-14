@@ -31,6 +31,9 @@ import {
   errorPage as renderErrorPage,
   ringiPage as renderRingiPage,
 } from "./src/views/contractSearchHtml.ts";
+// Phase 17s: HMAC 短期署名 URL + IAP 2 層防御。
+import { requireSignedUrl } from "./src/lib/authMiddleware.ts";
+import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
 
 dotenv.config();
 
@@ -108,42 +111,33 @@ async function startServer() {
   // /search/* — Web 詳細ページ (Phase 12)
   //
   // Slack /法務検索 から「Web で詳細」ボタン経由でアクセス。
-  // 認証は LB_PORTAL_SECRET を ?token= でも受け付ける (Slack モーダル
-  // 内ボタンの URL に埋め込めるため)。HTTP header もサポート。
+  //
+  // Phase 17s: HMAC 短期署名 URL に移行。互換のため legacy LB_PORTAL_SECRET
+  // (?token= or X-LB-Portal-Secret) も dual-accept (移行期間)。最終的に
+  // legacy 経路は撤去予定。
   // -------------------------------------------------------------------
-  function requirePortalTokenForHtml(
-    req: express.Request,
-    res: express.Response,
-    next: express.NextFunction
-  ) {
-    const expected = process.env.LB_PORTAL_SECRET;
-    if (!expected) {
-      // 設定されていない場合は素通し (開発環境用)
-      return next();
+
+  /**
+   * 各 view 関数に渡す HMAC 署名URL生成関数。LB_SIGNING_SECRET が
+   * 未設定の場合は legacy token をそのまま返す (= 旧挙動を維持)。
+   */
+  function makeSignLink(req: express.Request): ((resourceId: string) => string) | string {
+    if (hasSigningSecret()) {
+      return (resourceId: string) => signLinkQs(resourceId);
     }
-    const header = req.headers["x-lb-portal-secret"];
-    const token = req.query.token;
-    if (header === expected || token === expected) return next();
-    return res
-      .status(401)
-      .type("html")
-      .send(
-        renderErrorPage(
-          "Unauthorized",
-          "アクセストークンが無効です。Slack /法務検索 から再度開いてください。",
-          401
-        )
-      );
+    // legacy mode: token を view にそのまま渡す
+    return String(req.query.token || "");
   }
 
-  app.get("/search/vendor", requirePortalTokenForHtml, async (req, res) => {
+  app.get(
+    "/search/vendor",
+    requireSignedUrl({ resourceId: () => "list", renderErrorPage }),
+    async (req, res) => {
     try {
       const query = String(req.query.q || "").trim();
-      const token = String(req.query.token || "");
+      const auth = makeSignLink(req);
       if (!query) {
-        return res.type("html").send(
-          renderListPage("", [], token)
-        );
+        return res.type("html").send(renderListPage("", [], auth));
       }
       // 単一候補のときも一覧経由で見せる (UX 一貫性)。検索 -> リスト -> 詳細
       // の階層をユーザーに常に提示するため。
@@ -157,7 +151,7 @@ async function startServer() {
       } else if ((summary as any)?.counterparty) {
         results = [summary];
       }
-      res.type("html").send(renderListPage(query, results, token));
+      res.type("html").send(renderListPage(query, results, auth));
     } catch (error) {
       console.error("/search/vendor failed:", error);
       res
@@ -193,11 +187,17 @@ async function startServer() {
   }
 
   // Phase 17c: 稟議番号 (5 桁数字) で詳細ページを開く
-  //   /search/ringi/00001?token=...
-  app.get("/search/ringi/:number", requirePortalTokenForHtml, async (req, res) => {
+  //   Phase 17s: /search/ringi/00001?exp=...&sig=...
+  app.get(
+    "/search/ringi/:number",
+    requireSignedUrl({
+      resourceId: (req) => `ringi:${String(req.params.number || "").trim()}`,
+      renderErrorPage,
+    }),
+    async (req, res) => {
     try {
       const num = String(req.params.number || "").trim();
-      const token = String(req.query.token || "");
+      const auth = makeSignLink(req);
       if (!/^[0-9]{5}$/.test(num)) {
         return res
           .status(400)
@@ -213,7 +213,7 @@ async function startServer() {
       }
       // Phase 17d: Backlog ステータスを enrich
       await enrichWithBacklogStatus(payload);
-      res.type("html").send(renderRingiPage(payload, token));
+      res.type("html").send(renderRingiPage(payload, auth));
     } catch (error) {
       console.error("/search/ringi/:number failed:", error);
       res
@@ -223,10 +223,16 @@ async function startServer() {
     }
   });
 
-  app.get("/search/vendor/:vendorId", requirePortalTokenForHtml, async (req, res) => {
+  app.get(
+    "/search/vendor/:vendorId",
+    requireSignedUrl({
+      resourceId: (req) => `vendor:${String(req.params.vendorId || "").trim()}`,
+      renderErrorPage,
+    }),
+    async (req, res) => {
     try {
       const vendorId = Number(req.params.vendorId);
-      const token = String(req.query.token || "");
+      const auth = makeSignLink(req);
       const backQuery = String(req.query.q || "");
       if (!Number.isFinite(vendorId) || vendorId <= 0) {
         return res
@@ -246,7 +252,7 @@ async function startServer() {
           .type("html")
           .send(renderErrorPage("Not Found", "取引先が見つかりませんでした", 404));
       }
-      res.type("html").send(renderDetailPage(payload, backQuery, token));
+      res.type("html").send(renderDetailPage(payload, backQuery, auth));
     } catch (error) {
       console.error("/search/vendor/:vendorId failed:", error);
       res

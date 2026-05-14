@@ -231,14 +231,93 @@ function categoryTable(rows: any[], cat: "basic" | "individual" | "other"): stri
 }
 
 /**
+ * Phase 17s: HMAC 短期署名 URL ヘルパー。
+ *
+ * server.ts が view 関数に「resourceId → QS文字列 (`exp=...&sig=...`)」
+ * のクロージャを渡してくる。view 側はこれを呼んで内部リンクを組み立てる。
+ *
+ * 旧 token 文字列を受け取る互換シム (legacy mode) は authShim() で吸収:
+ *   - signLink が渡されたらそれを使う (HMAC URL)
+ *   - 旧 token (string) が渡されたら `token=<value>` を返す
+ *   - 両方未指定なら空文字 (= 認可なしモード / dev)
+ */
+export type SignLink = (resourceId: string) => string;
+
+interface AuthLinker {
+  /** 任意 resourceId のためのクエリ文字列を返す (先頭の `?`/`&` なし) */
+  qs(resourceId: string): string;
+  /** form の hidden inputs として埋めたい場合 (再検索フォーム用) */
+  hiddenInputs(resourceId: string): string;
+}
+
+function authShim(
+  signLink: SignLink | string | null | undefined
+): AuthLinker {
+  // 新方式: 関数が来た
+  if (typeof signLink === "function") {
+    return {
+      qs(resourceId) {
+        try {
+          return signLink(resourceId);
+        } catch {
+          return "";
+        }
+      },
+      hiddenInputs(resourceId) {
+        try {
+          const qs = signLink(resourceId);
+          if (!qs) return "";
+          // qs は "exp=N&sig=X" 形式
+          return qs
+            .split("&")
+            .filter(Boolean)
+            .map((pair) => {
+              const i = pair.indexOf("=");
+              const k = i >= 0 ? pair.slice(0, i) : pair;
+              const v = i >= 0 ? decodeURIComponent(pair.slice(i + 1)) : "";
+              return `<input type="hidden" name="${esc(k)}" value="${esc(v)}">`;
+            })
+            .join("");
+        } catch {
+          return "";
+        }
+      },
+    };
+  }
+  // 旧方式: token string がそのまま渡された (legacy migration window)
+  if (typeof signLink === "string" && signLink) {
+    const token = signLink;
+    return {
+      qs(_resourceId) {
+        return `token=${encodeURIComponent(token)}`;
+      },
+      hiddenInputs(_resourceId) {
+        return `<input type="hidden" name="token" value="${esc(token)}">`;
+      },
+    };
+  }
+  // 認可なし (dev など)
+  return {
+    qs(_resourceId) {
+      return "";
+    },
+    hiddenInputs(_resourceId) {
+      return "";
+    },
+  };
+}
+
+/**
  * 検索結果一覧ページ (複数候補)。/search/vendor?q=<name>
+ *
+ * 第 3 引数は HMAC 署名URL生成関数 (新) OR 旧 LB_PORTAL_SECRET 文字列 (legacy)。
  */
 export function listPage(
   query: string,
   results: any[],
-  token: string
+  auth: SignLink | string | null | undefined
 ): string {
-  const tokenQS = token ? `&token=${encodeURIComponent(token)}` : "";
+  const a = authShim(auth);
   const cards = results
     .map((c) => {
       const cp = c.counterparty || {};
@@ -249,7 +328,8 @@ export function listPage(
         other: [],
         total: 0,
       };
-      const detailUrl = `/search/vendor/${cp.vendorId}?token=${encodeURIComponent(token)}`;
+      const sub = a.qs(`vendor:${cp.vendorId}`);
+      const detailUrl = `/search/vendor/${cp.vendorId}${sub ? `?${sub}` : ""}`;
       return `
       <a href="${esc(detailUrl)}" style="display:block; text-decoration:none; color:inherit;">
         <div class="vendor-card linkable">
@@ -293,7 +373,7 @@ export function listPage(
 
     <form class="search-form" method="get" action="/search/vendor">
       <input type="text" name="q" value="${esc(query)}" placeholder="取引先名 / 屋号 / ベンダーコード" autofocus>
-      ${token ? `<input type="hidden" name="token" value="${esc(token)}">` : ""}
+      ${a.hiddenInputs("list")}
       <button type="submit">再検索</button>
     </form>
 
@@ -308,7 +388,11 @@ export function listPage(
 /**
  * 詳細ページ (1 vendor)。/search/vendor/:vendorId
  */
-export function detailPage(payload: any, query: string, token: string): string {
+export function detailPage(
+  payload: any,
+  query: string,
+  auth: SignLink | string | null | undefined
+): string {
   const cp = payload.counterparty || {};
   const masters = payload.masterContracts || {};
   const cat = payload.documentsByCategory || {
@@ -317,10 +401,11 @@ export function detailPage(payload: any, query: string, token: string): string {
     other: [],
     total: 0,
   };
-  const tokenQS = token ? `?token=${encodeURIComponent(token)}` : "";
+  const a = authShim(auth);
+  const listQs = a.qs("list");
   const backUrl = query
-    ? `/search/vendor?q=${encodeURIComponent(query)}${token ? `&token=${encodeURIComponent(token)}` : ""}`
-    : `/search/vendor${tokenQS}`;
+    ? `/search/vendor?q=${encodeURIComponent(query)}${listQs ? `&${listQs}` : ""}`
+    : `/search/vendor${listQs ? `?${listQs}` : ""}`;
 
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -374,13 +459,17 @@ export function detailPage(payload: any, query: string, token: string): string {
  * Phase 17c: 稟議詳細ページ。/search/ringi/:number
  * 稟議ヘッダ情報 + 紐付く全文書を 3 カテゴリで表示。
  */
-export function ringiPage(payload: any, token: string): string {
+export function ringiPage(
+  payload: any,
+  auth: SignLink | string | null | undefined
+): string {
   const r = payload.ringi || {};
   const cat = payload.documentsByCategory || {
     basic: [], individual: [], other: [], total: 0,
   };
-  const tokenQS = token ? `?token=${encodeURIComponent(token)}` : "";
-  const backUrl = `/search/vendor${tokenQS}`;
+  const a = authShim(auth);
+  const listQs = a.qs("list");
+  const backUrl = `/search/vendor${listQs ? `?${listQs}` : ""}`;
   const metaLines: string[] = [];
   if (r.category) metaLines.push(`カテゴリ: <strong>${esc(r.category)}</strong>`);
   if (r.owner_name) metaLines.push(`起案者: <strong>${esc(r.owner_name)}</strong>`);

@@ -536,6 +536,43 @@ function scriptProperty_(key) {
 }
 
 // -----------------------------------------------------------------------
+// Phase 17s: HMAC 短期署名 URL ヘルパー
+//
+// services/api 側の signedUrl.ts と完全に同じ仕様で署名する。
+// payload は `${resourceId}.${exp}` を LB_SIGNING_SECRET で HMAC-SHA256 し
+// base64url エンコード。
+//
+// resourceId 規約:
+//   - 'list'           → /search/vendor 一覧 (query は payload に含めない)
+//   - 'vendor:<id>'    → /search/vendor/:vendorId 詳細
+//   - 'ringi:<num>'    → /search/ringi/:number   稟議詳細
+//
+// LB_SIGNING_SECRET が未設定なら null を返す (caller が legacy token に
+// フォールバックする)。
+// -----------------------------------------------------------------------
+
+function signResourceQs_(resourceId, ttlSec) {
+  var secret = scriptProperty_('LB_SIGNING_SECRET');
+  if (!secret) return null;
+  var ttl = Number(ttlSec) > 0 ? Number(ttlSec) : 600;
+  var exp = Math.floor(Date.now() / 1000) + ttl;
+  var rawMac = Utilities.computeHmacSha256Signature(
+    String(resourceId) + '.' + exp,
+    secret
+  );
+  // base64url (RFC 4648 §5) — `+`/`/`/`=` を URL safe に
+  var sig = Utilities.base64Encode(rawMac)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=+$/, '');
+  return 'exp=' + exp + '&sig=' + encodeURIComponent(sig);
+}
+
+function signListResourceQs_() {
+  return signResourceQs_('list', 600);
+}
+
+// -----------------------------------------------------------------------
 //  view_submission parsing
 // -----------------------------------------------------------------------
 
@@ -677,14 +714,26 @@ function getSearchResultsModal_(keyword, data) {
   });
   appendContractStatusBlocks_(blocks, contractPayload);
 
-  // Phase 12: search-api の Web 詳細ページへの URL を組み立て
-  // (CLOUD_RUN_BASE_URL + ?q=<keyword>&token=<LB_PORTAL_SECRET>)。
+  // Phase 12 / 17s: search-api の Web 詳細ページへの URL を組み立て。
+  //   優先: LB_SIGNING_SECRET があれば HMAC 短期署名 URL を発行
+  //   フォールバック: 旧 LB_PORTAL_SECRET の ?token=
+  // 移行期間中は両方 ScriptProperty にあって良い。
   var cloudRunBase = (scriptProperty_('CLOUD_RUN_BASE_URL') || '').replace(/\/+$/, '');
-  var portalSecret = scriptProperty_('LB_PORTAL_SECRET') || '';
-  var webDetailUrl = cloudRunBase
-    ? cloudRunBase + '/search/vendor?q=' + encodeURIComponent(keyword) +
-      (portalSecret ? '&token=' + encodeURIComponent(portalSecret) : '')
-    : '';
+  var webDetailUrl = '';
+  if (cloudRunBase) {
+    var signedQs = signListResourceQs_();
+    if (signedQs) {
+      webDetailUrl =
+        cloudRunBase + '/search/vendor?q=' + encodeURIComponent(keyword) +
+        '&' + signedQs;
+    } else {
+      // legacy fallback
+      var portalSecret = scriptProperty_('LB_PORTAL_SECRET') || '';
+      webDetailUrl =
+        cloudRunBase + '/search/vendor?q=' + encodeURIComponent(keyword) +
+        (portalSecret ? '&token=' + encodeURIComponent(portalSecret) : '');
+    }
+  }
 
   // ── Footer actions ────────────────────────────────────────────
   blocks.push({ type: 'divider' });
