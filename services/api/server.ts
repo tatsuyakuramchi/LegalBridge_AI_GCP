@@ -39,6 +39,7 @@ import { legalonImportPage } from "./src/views/legalonImportHtml.ts";
 import {
   parseCsv as parseLegalonCsv,
   importLegalOnRows,
+  getSampleCsv as getLegalonSampleCsv,
 } from "./src/services/legalonImportService.ts";
 
 dotenv.config();
@@ -297,6 +298,22 @@ async function startServer() {
       }
     }
   );
+
+  // サンプル CSV ダウンロード (Phase 17x)
+  //   UI の「サンプル CSV をダウンロード」ボタンから呼ばれる。
+  //   ヘッダ + 5 行のサンプルデータ (うち 1 行は 3 者契約) を返す。
+  //   署名 URL は不要にしておく (テンプレ自体はセンシティブ情報ゼロ)。
+  app.get("/api/imports/legalon-csv/template", (_req, res) => {
+    const csv = getLegalonSampleCsv();
+    // Excel が UTF-8 を自動認識できるよう BOM を先頭に付ける
+    const body = "﻿" + csv;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="legalon_sample.csv"'
+    );
+    res.send(body);
+  });
 
   app.post(
     "/api/imports/legalon-csv",

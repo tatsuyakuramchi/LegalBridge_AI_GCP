@@ -182,6 +182,17 @@ export function legalonImportPage(
     </header>
 
     <section class="card">
+      <h2>0. (任意) サンプル CSV をダウンロード</h2>
+      <p class="muted" style="margin: 0 0 8px;">
+        実 LegalOn データの取込前に、サンプル CSV で動作確認したい場合や、
+        列フォーマットの確認用に。3 者契約の書き方サンプルも含まれます。
+      </p>
+      <a href="/api/imports/legalon-csv/template" download="legalon_sample.csv">
+        <button type="button" class="secondary">📥 サンプル CSV をダウンロード</button>
+      </a>
+    </section>
+
+    <section class="card">
       <h2>1. CSV ファイルを選択</h2>
       <form id="upload">
         <div class="row">
