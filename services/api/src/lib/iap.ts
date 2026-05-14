@@ -85,7 +85,15 @@ export async function verifyIap(req: Request): Promise<IapVerifyResult> {
   if (!client) return { ok: false, reason: "lib_unavailable" };
 
   try {
-    const pubKeys = await client.getIapPublicKeysAsync();
+    // Phase 17y-6 修正:
+    //   getIapPublicKeysAsync() は { pubkeys, res } 形式のレスポンスを返す。
+    //   verifySignedJwtWithCertsAsync は pubkeys 単独を期待しているので、
+    //   .pubkeys を取り出して渡す必要がある。
+    //   旧実装は response 全体を渡してしまっていて常に検証失敗していた。
+    const pubKeysResponse = await client.getIapPublicKeysAsync();
+    const pubKeys = (pubKeysResponse && pubKeysResponse.pubkeys)
+      ? pubKeysResponse.pubkeys
+      : pubKeysResponse;
     const ticket = await client.verifySignedJwtWithCertsAsync(
       jwt,
       pubKeys,
