@@ -37,13 +37,31 @@ add:
 | Key | Value | Used by |
 | --- | --- | --- |
 | `SLACK_BOT_TOKEN` | `xoxb-...` (the bot user token of the LegalBridge Slack app — `chat:write`, `commands`, `views:read/write` scopes) | All Slack actions |
-| `CLOUD_RUN_BASE_URL` | `https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app` (no trailing slash) | `/法務検索` contract-status lookup only |
-| `LB_PORTAL_SECRET` | Shared secret used by `X-LB-PORTAL-SECRET` header on Cloud Run portal endpoints | `/法務検索` contract-status lookup |
+| `CLOUD_RUN_BASE_URL` | `https://legalbridge-search-api-988056987352.asia-northeast1.run.app` (no trailing slash) | `/法務検索` contract-status + portal `contract_check.html` |
+| `LB_API_BASE_URL` | *(optional / legacy)* 旧 法務ポータル GAS の互換名。`CLOUD_RUN_BASE_URL` が無い場合のみ参照される | 旧プロパティ互換 |
+| `LB_PORTAL_SECRET` | Shared secret used by `X-LB-PORTAL-SECRET` header (legacy dual-accept) | Cloud Run portal endpoints + `/法務検索` legacy fallback |
+| `LB_SIGNING_SECRET` | **Phase 17s** HMAC 鍵 (32+ bytes hex). Cloud Run 側と同一値。設定されると `/法務検索` の Web 詳細リンクは HMAC 短期署名 URL になる | `/法務検索` Web 詳細リンク発行 |
 | `BACKLOG_HOST` | `arclight.backlog.com` | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
 | `BACKLOG_API_KEY` | The Backlog personal API key | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
 | `BACKLOG_PROJECT_KEY` | `LEGAL` | `/法務依頼` issue creation + `/法務検索` Backlog issue search |
 | `ALLOWED_SEARCH_CHANNEL_IDS` | *(optional)* Comma-separated Slack channel IDs that may invoke `/法務検索`, e.g. `C090WRVD1TM` or `C090WRVD1TM,C012345ABCD`. When unset, `/法務検索` is open to every channel. | `/法務検索` channel allow-list |
 | `SLACK_SIGNING_SECRET` | *(optional, currently unused — see "Signature verification" below)* | reserved |
+
+### 統合プロジェクト構成 (Phase 17t)
+
+`gas/Code.gs` は **Slack Gateway** と **法務部ポータル (HTML 多ページ)** を 1 つの GAS プロジェクトで提供する統合版です:
+
+- **`doPost`** … Slack 受信 (`/法務依頼` / `/法務検索` / interactivity)
+- **`doGet`** … 法務ポータル HTML (`?page=portal|bg|pub|vendor|torihiki|clause|contractcheck`) と JSON API (`?api=searchContractStatus|getContractPurposes`)
+
+同じプロジェクトに **2 種類の Web app デプロイ** を持つのが想定構成:
+
+| デプロイ | アクセス | URL prefix | 用途 |
+| --- | --- | --- | --- |
+| **A: 公開デプロイ** | "全員 (匿名可)" | `/macros/s/.../exec` | Slack が `doPost` を叩く |
+| **B: Workspace デプロイ** | "<domain> ユーザー" | `/a/macros/<domain>/s/.../exec` | 法務部員がブラウザで `doGet` ポータルを開く |
+
+両デプロイは同一 Code.gs を共有するので、コード更新は片方ずつ「新しいバージョン」としてデプロイし直すだけです。ScriptProperty はプロジェクト単位なので共通。
 
 > **Architecture note (2026-05)**: contract-status lookups previously hopped
 > through the Contract-Status GAS Web App, which itself proxied to Cloud Run.

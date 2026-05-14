@@ -1,21 +1,136 @@
 /**
- * LegalBridge — Slack ⇄ Cloud Run Gateway (Google Apps Script)
+ * LegalBridge — Slack Gateway + 法務ポータル (Google Apps Script)
  *
  * Responsibilities
- *  - Receives Slack slash-command requests (`/法務依頼`, `/法務検索`) and
- *    interactivity payloads (view_submission, block_actions).
- *  - Acks back to Slack within 3 seconds (Slack's hard timeout).
- *  - Calls the LegalBridge Cloud Run service via UrlFetchApp for the
- *    heavy lifting (Backlog issue creation, DB writes, document
- *    generation, search across legal_requests / vendors).
+ *  - Slack POST 入口 (`/法務依頼`, `/法務検索`, interactivity payloads)
+ *  - 法務部ポータルの HTML 多ページルーティング (doGet)
+ *  - 取引先契約状況確認の Cloud Run 連携 API (?api=...)
+ *  - Cloud Run /法務検索 への取次 (queryContractStatusOnly_)
+ *  - Phase 17s: HMAC 短期署名 URL の発行
  *
  * Environment (script properties — see gas/README.md for setup):
- *  - SLACK_BOT_TOKEN          xoxb-…   (chat:write, commands, views, etc.)
- *  - CLOUD_RUN_BASE_URL       https://legalbridge-…run.app
- *  - SLACK_SIGNING_SECRET     (optional, currently unused — see verifySlackSignature)
+ *  - SLACK_BOT_TOKEN              xoxb-…
+ *  - SLACK_SIGNING_SECRET         (optional)
+ *  - CLOUD_RUN_BASE_URL           https://legalbridge-…run.app
+ *      (旧 ポータル GAS の `LB_API_BASE_URL` でも互換動作 — どちらかに値があれば良い)
+ *  - LB_PORTAL_SECRET             legacy 共有シークレット (dual-accept 移行期用)
+ *  - LB_SIGNING_SECRET            Phase 17s HMAC 鍵 (推奨)
+ *  - BACKLOG_HOST / BACKLOG_API_KEY / BACKLOG_PROJECT_KEY
+ *  - ALLOWED_SEARCH_CHANNEL_IDS   (任意)
+ *
+ * 統合履歴:
+ *   - 旧 Slack 用 GAS と 旧 法務ポータル GAS を 1 プロジェクトに統合 (Phase 17t)。
+ *     ポータルの doGet / APP_CONFIG / 多ページ HTML / 契約状況確認 API は
+ *     そのまま温存。Slack の doPost と同居。
  */
 
 const SLACK_API = 'https://slack.com/api';
+
+// -----------------------------------------------------------------------
+//  法務ポータル設定 (Phase 17t: 旧 法務ポータル GAS から統合)
+// -----------------------------------------------------------------------
+
+const APP_CONFIG = Object.freeze({
+  title: '法務部 実務ガイド',
+  defaultPage: 'portal',
+
+  pages: {
+    portal:        { file: 'legal_portal',   title: '法務部 実務ガイド ポータル' },
+    bg:            { file: 'guide_bg',       title: 'BG事業部 契約スキーム実務ガイド' },
+    pub:           { file: 'guide_pub',      title: '出版フロー実務ガイド' },
+    vendor:        { file: 'guide_vendor',   title: '取引先登録実務ガイド' },
+    torihiki:      { file: 'guide_torihiki', title: '取引適正化・フリーランス法 実務ガイド' },
+    clause:        { file: 'guide_clause',   title: '契約書 条文解説ガイド' },
+    contractcheck: { file: 'contract_check', title: '取引先契約状況確認' }
+  },
+
+  downloadLinks: {
+    serviceGuideUrl: 'https://docs.google.com/presentation/d/1n0PwoWQJYbsPdzzoC2DYfaLeL5hIFuvoq_PoI9q4kcE/export/pptx',
+    licenseGuideUrl: 'https://docs.google.com/presentation/d/1K0LB62rTYYXgKApMN1YwCgp_L9BRcgLoHDqRilaxhLc/export/pptx'
+  }
+});
+
+/**
+ * Cloud Run API が未完成の間は true。
+ * Cloud Run 側の /api/contract-check/search が完成したら false に変更してください。
+ */
+const USE_MOCK_CONTRACT_CHECK = false;
+
+// -----------------------------------------------------------------------
+//  doGet — 法務ポータル HTML ルーティング + JSON API
+//   (Phase 17t: 旧 法務ポータル GAS から移植)
+// -----------------------------------------------------------------------
+
+function doGet(e) {
+  e = e || {};
+  var params = e.parameter || {};
+
+  // ── ① Slack ハブ用 JSON API ブランチ ──
+  if (params.api === 'searchContractStatus') {
+    var payload = {
+      counterpartyName: params.counterpartyName || '',
+      purposeCode:      params.purposeCode      || '',
+      workName:         params.workName         || '',
+      productName:      params.productName      || '',
+      territory:        params.territory        || '',
+      language:         params.language         || ''
+    };
+    if (params.vendorId) payload.vendorId = Number(params.vendorId);
+
+    var result;
+    try {
+      result = searchContractStatus(payload);
+    } catch (err) {
+      result = { ok: false, error: String(err) };
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify(result))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  if (params.api === 'getContractPurposes') {
+    var purposes;
+    try {
+      purposes = getContractPurposes();
+    } catch (err) {
+      purposes = { ok: false, error: String(err) };
+    }
+    return ContentService
+      .createTextOutput(JSON.stringify(purposes))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
+
+  // ── ② HTML 多ページ ──
+  var page = normalizePage_(params.page);
+  var route = APP_CONFIG.pages[page];
+  var template = HtmlService.createTemplateFromFile(route.file);
+  template.appUrl = ScriptApp.getService().getUrl();
+  template.currentPage = page;
+  template.serviceGuideUrl = APP_CONFIG.downloadLinks.serviceGuideUrl;
+  template.licenseGuideUrl = APP_CONFIG.downloadLinks.licenseGuideUrl;
+  return template
+    .evaluate()
+    .setTitle(route.title)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+function normalizePage_(page) {
+  var key = String(page || APP_CONFIG.defaultPage).trim().toLowerCase();
+  return Object.prototype.hasOwnProperty.call(APP_CONFIG.pages, key)
+    ? key
+    : APP_CONFIG.defaultPage;
+}
+
+/** HTML テンプレートから別 HTML を埋め込むユーティリティ */
+function include(filename, data) {
+  var template = HtmlService.createTemplateFromFile(filename);
+  if (data) {
+    Object.keys(data).forEach(function (key) {
+      template[key] = data[key];
+    });
+  }
+  return template.evaluate().getContent();
+}
 
 // -----------------------------------------------------------------------
 //  Entry point — Slack posts here for both slash commands and interactivity
@@ -387,48 +502,232 @@ function createBacklogIssue_(submission) {
  * the results modal without throwing).
  */
 function queryContractStatusOnly_(keyword) {
-  var cloudRunUrl = scriptProperty_('CLOUD_RUN_BASE_URL');
-  var portalSecret = scriptProperty_('LB_PORTAL_SECRET');
-
-  if (!cloudRunUrl) {
-    return {
-      __error: 'CLOUD_RUN_BASE_URL がスクリプトプロパティに設定されていません。',
-    };
-  }
-  var trimmedBase = String(cloudRunUrl).replace(/\/+$/, '');
-
-  var headers = {};
-  if (portalSecret) {
-    headers['X-LB-PORTAL-SECRET'] = portalSecret;
-  }
-
+  // Phase 17t: 統合 callLegalBridgeApi_ に委譲。例外は __error で吸収。
   try {
-    var res = UrlFetchApp.fetch(trimmedBase + '/api/contract-check/search', {
-      method: 'post',
-      contentType: 'application/json',
-      muteHttpExceptions: true,
-      headers: headers,
-      payload: JSON.stringify({ counterpartyName: keyword }),
-    });
-    var code = res.getResponseCode();
-    if (code >= 300) {
-      return {
-        __error:
-          'Cloud Run /api/contract-check/search がエラーを返しました (HTTP ' + code + ').' +
-          ' CLOUD_RUN_BASE_URL と LB_PORTAL_SECRET を確認してください。',
-      };
-    }
-    try {
-      return JSON.parse(res.getContentText());
-    } catch (parseErr) {
-      return {
-        __error: 'Cloud Run /api/contract-check/search が JSON を返しませんでした。',
-      };
-    }
+    return callLegalBridgeApi_(
+      '/api/contract-check/search',
+      'post',
+      { counterpartyName: keyword }
+    );
   } catch (err) {
     console.error('queryContractStatusOnly_ failed:', err);
-    return { __error: '契約状況 API 呼び出し中にエラー: ' + String(err) };
+    return { __error: String(err && err.message ? err.message : err) };
   }
+}
+
+// -----------------------------------------------------------------------
+//  Cloud Run API 統合ラッパ (Phase 17t: 旧 法務ポータル GAS から統合)
+//
+// ScriptProperty:
+//   - CLOUD_RUN_BASE_URL  (新)
+//   - LB_API_BASE_URL     (旧 ポータル GAS の互換名 — 上が無ければこちらを読む)
+//   - LB_PORTAL_SECRET    (legacy 共有シークレット, dual-accept 期)
+// -----------------------------------------------------------------------
+
+function getApiConfig_() {
+  var props = PropertiesService.getScriptProperties();
+  // 新名 (CLOUD_RUN_BASE_URL) を優先、無ければ旧 LB_API_BASE_URL でフォールバック
+  var baseUrl =
+    String(props.getProperty('CLOUD_RUN_BASE_URL') || '').trim() ||
+    String(props.getProperty('LB_API_BASE_URL') || '').trim();
+  return {
+    baseUrl: baseUrl,
+    secret: String(props.getProperty('LB_PORTAL_SECRET') || '').trim()
+  };
+}
+
+/**
+ * Cloud Run へ JSON で REST 呼び出し。成功時は JSON.parse 結果を返す。
+ * 失敗時は throw する (caller が try/catch するか、wrap して __error にする)。
+ */
+function callLegalBridgeApi_(path, method, payload) {
+  var config = getApiConfig_();
+  if (!config.baseUrl) {
+    throw new Error('CLOUD_RUN_BASE_URL (旧 LB_API_BASE_URL) が未設定です。');
+  }
+
+  var baseUrl = String(config.baseUrl).replace(/\/+$/, '');
+  var apiPath = String(path).charAt(0) === '/' ? path : '/' + path;
+
+  var headers = { 'Content-Type': 'application/json' };
+  if (config.secret) {
+    headers['X-LB-PORTAL-SECRET'] = config.secret;
+  }
+
+  var options = {
+    method: method,
+    muteHttpExceptions: true,
+    headers: headers
+  };
+  if (payload) {
+    options.payload = JSON.stringify(payload);
+  }
+
+  var res = UrlFetchApp.fetch(baseUrl + apiPath, options);
+  var status = res.getResponseCode();
+  var text = res.getContentText();
+
+  if (status < 200 || status >= 300) {
+    throw new Error('LegalBridge API error: ' + status + ' ' + String(text).slice(0, 500));
+  }
+  try {
+    return JSON.parse(text);
+  } catch (e) {
+    throw new Error(
+      'LegalBridge API が JSON を返しませんでした (head=' +
+        String(text).slice(0, 300) + ')'
+    );
+  }
+}
+
+// -----------------------------------------------------------------------
+//  契約状況確認 API (HTML ポータルから呼ばれる)
+// -----------------------------------------------------------------------
+
+function getContractPurposes() {
+  if (USE_MOCK_CONTRACT_CHECK) {
+    return getMockContractPurposes_();
+  }
+  return callLegalBridgeApi_('/api/contract-check/purposes', 'get');
+}
+
+function searchContractStatus(payload) {
+  if (USE_MOCK_CONTRACT_CHECK) {
+    return getMockContractStatus_(payload);
+  }
+  return callLegalBridgeApi_('/api/contract-check/search', 'post', payload);
+}
+
+/** 旧 HTML 互換用エイリアス (古い contract_check.html が残っていても落ちないように) */
+function judgeContractScope(payload) {
+  return searchContractStatus(payload);
+}
+
+// ----- モックデータ (USE_MOCK_CONTRACT_CHECK=true 時専用) -----
+
+function getMockContractPurposes_() {
+  return [
+    { purpose_code: 'service_general',       purpose_group: '業務を依頼する',     purpose_label: '制作・編集・デザイン等の業務を依頼したい',   category: 'service',    default_document_type: 'purchase_order' },
+    { purpose_code: 'service_creative',      purpose_group: '業務を依頼する',     purpose_label: 'イラスト・原稿・DTP・校正等を依頼したい',     category: 'service',    default_document_type: 'purchase_order' },
+    { purpose_code: 'service_event',         purpose_group: '業務を依頼する',     purpose_label: 'イベント運営・スタッフ業務を依頼したい',     category: 'service',    default_document_type: 'purchase_order' },
+    { purpose_code: 'license_game',          purpose_group: '作品・IPを利用する', purpose_label: '作品・ゲーム・IPをアナログゲーム化したい',   category: 'license',    default_document_type: 'license_condition' },
+    { purpose_code: 'license_localize',      purpose_group: '作品・IPを利用する', purpose_label: '作品を別地域・別言語で展開したい',           category: 'license',    default_document_type: 'license_condition' },
+    { purpose_code: 'license_sublicense',    purpose_group: '作品・IPを利用する', purpose_label: '第三者に再許諾・OEM展開したい',             category: 'license',    default_document_type: 'license_condition' },
+    { purpose_code: 'publication_paper',     purpose_group: '出版する',           purpose_label: '紙書籍として出版したい',                     category: 'publication', default_document_type: 'publication_contract' },
+    { purpose_code: 'publication_ebook',     purpose_group: '出版する',           purpose_label: '電子書籍として配信したい',                   category: 'publication', default_document_type: 'publication_contract' },
+    { purpose_code: 'publication_translation', purpose_group: '出版する',         purpose_label: '海外出版・翻訳版を出したい',                 category: 'publication', default_document_type: 'publication_contract' },
+    { purpose_code: 'publication_merch',     purpose_group: '出版する',           purpose_label: '出版物・イラストを商品化したい',             category: 'publication', default_document_type: 'publication_contract' },
+    { purpose_code: 'publication_video_game', purpose_group: '出版する',          purpose_label: '映像化・ゲーム化したい',                     category: 'publication', default_document_type: 'legal_review' },
+    { purpose_code: 'mixed_service_license', purpose_group: '複合取引',           purpose_label: '業務依頼と権利利用の両方がある',             category: 'mixed',       default_document_type: 'purchase_order,license_condition' },
+    { purpose_code: 'unknown',               purpose_group: 'その他',             purpose_label: 'どれに該当するかわからない',                 category: 'unknown',     default_document_type: 'legal_review' }
+  ];
+}
+
+function getMockContractStatus_(payload) {
+  if (!payload || !payload.counterpartyName) {
+    return { ok: false, message: '取引先名を入力してください。' };
+  }
+  return {
+    ok: true,
+    counterparty: {
+      vendorId: 1,
+      vendorCode: 'V-000123',
+      vendorName: payload.counterpartyName,
+      entityType: 'corporation'
+    },
+    masterContracts: {
+      service:     { exists: true,  status: 'executed', label: '締結済', contractTitle: '業務委託基本契約書',         documentNumber: 'SB-2026-001', effectiveDate: '2026-04-01', expirationDate: '', autoRenewal: true,  availableDocument: 'purchase_order',     documentUrl: '', legalonUrl: '', cloudsignUrl: '', driveUrl: '' },
+      license:     { exists: true,  status: 'executed', label: '締結済', contractTitle: 'ライセンス利用許諾基本契約書', documentNumber: 'LB-2026-001', effectiveDate: '2026-04-01', expirationDate: '', autoRenewal: true,  availableDocument: 'license_condition',  documentUrl: '', legalonUrl: '', cloudsignUrl: '', driveUrl: '' },
+      publication: { exists: false, status: 'not_found', label: '未締結', contractTitle: '',                           documentNumber: '',           effectiveDate: '',          expirationDate: '', autoRenewal: false, availableDocument: 'publication_contract', documentUrl: '', legalonUrl: '', cloudsignUrl: '', driveUrl: '' }
+    },
+    licenseConditions: [
+      { conditionNumber: 'LIC-2026-001', originalWork: 'サンプル原著作物',  productName: 'サンプル対象製品', territory: '日本',   language: '日本語', status: '有効', documentUrl: '' },
+      { conditionNumber: 'LIC-2026-002', originalWork: 'サンプル原著作物2', productName: '海外展開版',       territory: '北米',   language: '英語',   status: '有効', documentUrl: '' }
+    ],
+    publicationConditions: [
+      { conditionNumber: 'PUB-2026-001', workName: 'サンプル出版作品', media: '紙書籍', territory: '日本', language: '日本語', scope: '紙媒体出版', status: '有効', documentUrl: '' }
+    ],
+    purposeResult: buildMockPurposeResult_(payload),
+    suggestedAction: {
+      label: '契約状況の確認結果',
+      legalReviewRequired: true,
+      message: '業務委託基本契約およびライセンス基本契約は締結済みです。出版基本契約は未締結のため、出版取引を行う場合は法務確認が必要です。'
+    }
+  };
+}
+
+function buildMockPurposeResult_(payload) {
+  var purposeCode = payload && payload.purposeCode;
+  if (!purposeCode) {
+    return {
+      selected: false,
+      label: '今回やりたいことは未選択です',
+      judgmentLabel: '契約締結状況のみ表示',
+      recommendedDocumentType: '',
+      legalReviewRequired: false,
+      reasonSummary: '今回やりたいことが選択されていないため、取引先ごとの契約締結状況のみを表示しています。'
+    };
+  }
+  var purposeMap = {
+    service_general:        { label: '制作・編集・デザイン等の業務を依頼したい', judgmentLabel: '発注書で進行可能', recommendedDocumentType: 'purchase_order',                 legalReviewRequired: false, reasonSummary: '業務委託基本契約が締結済みであり、今回の業務は発注書で個別条件を定める運用に適合します。' },
+    service_creative:       { label: 'イラスト・原稿・DTP・校正等を依頼したい', judgmentLabel: '発注書で進行可能', recommendedDocumentType: 'purchase_order',                 legalReviewRequired: false, reasonSummary: '業務委託基本契約が締結済みであり、制作・編集・デザイン系業務は発注書で進行できる可能性が高いです。' },
+    service_event:          { label: 'イベント運営・スタッフ業務を依頼したい', judgmentLabel: '発注書で進行可能', recommendedDocumentType: 'purchase_order',                 legalReviewRequired: false, reasonSummary: '業務委託基本契約が締結済みであれば、イベント運営・スタッフ業務は発注書で個別条件を定めて進行できます。' },
+    license_game:           { label: '作品・ゲーム・IPをアナログゲーム化したい', judgmentLabel: '個別利用許諾条件書で確認', recommendedDocumentType: 'license_condition',   legalReviewRequired: false, reasonSummary: 'ライセンス基本契約が締結済みであり、対象作品・対象製品・地域・言語・料率を個別利用許諾条件書で定める必要があります。' },
+    license_localize:       { label: '作品を別地域・別言語で展開したい', judgmentLabel: '個別利用許諾条件書または法務確認が必要', recommendedDocumentType: 'license_condition', legalReviewRequired: true,  reasonSummary: '地域・言語の追加はライセンス範囲の確認が必要です。既存の個別利用許諾条件書に含まれない場合、新たな条件書または法務確認が必要です。' },
+    license_sublicense:     { label: '第三者に再許諾・OEM展開したい',           judgmentLabel: '法務確認が必要',                recommendedDocumentType: 'license_condition', legalReviewRequired: true,  reasonSummary: '再許諾・OEM展開は基本契約上の再許諾可否、再許諾先、地域、製造・販売範囲の確認が必要です。' },
+    publication_paper:      { label: '紙書籍として出版したい',                   judgmentLabel: '出版契約または出版条件の確認が必要', recommendedDocumentType: 'publication_contract', legalReviewRequired: true, reasonSummary: '出版基本契約または作品ごとの出版条件の有無を確認し、対象作品・媒体・地域・言語が一致するか確認してください。' },
+    publication_ebook:      { label: '電子書籍として配信したい',                 judgmentLabel: '出版条件の確認が必要',              recommendedDocumentType: 'publication_contract', legalReviewRequired: true, reasonSummary: '電子書籍配信は紙媒体出版とは別に許諾範囲の確認が必要です。電子配信の可否、地域、配信先を確認してください。' },
+    publication_translation:{ label: '海外出版・翻訳版を出したい',               judgmentLabel: '法務確認が必要',                   recommendedDocumentType: 'publication_contract', legalReviewRequired: true, reasonSummary: '海外出版・翻訳版は地域・言語・翻訳権の確認が必要です。既存条件に含まれない場合は追加合意が必要です。' },
+    publication_merch:      { label: '出版物・イラストを商品化したい',           judgmentLabel: '法務確認が必要',                   recommendedDocumentType: 'publication_contract', legalReviewRequired: true, reasonSummary: '商品化は出版許諾とは別の利用態様になる可能性があります。商品化権・二次利用範囲を確認してください。' },
+    publication_video_game: { label: '映像化・ゲーム化したい',                   judgmentLabel: '法務確認が必要',                   recommendedDocumentType: 'legal_review',        legalReviewRequired: true, reasonSummary: '映像化・ゲーム化は通常の出版条件を超える可能性が高いため、個別の法務確認が必要です。' },
+    mixed_service_license:  { label: '業務依頼と権利利用の両方がある',           judgmentLabel: '発注書＋個別利用許諾条件書の確認が必要', recommendedDocumentType: 'purchase_order,license_condition', legalReviewRequired: true, reasonSummary: '業務委託と権利利用が混在するため、発注書だけでなく、ライセンス条件書の要否も確認してください。' },
+    unknown:                { label: 'どれに該当するかわからない',               judgmentLabel: '法務確認が必要',                   recommendedDocumentType: 'legal_review',        legalReviewRequired: true, reasonSummary: '取引類型を自動判定できないため、法務確認が必要です。' }
+  };
+  var result = purposeMap[purposeCode];
+  if (!result) {
+    return {
+      selected: true,
+      label: purposeCode,
+      judgmentLabel: '法務確認が必要',
+      recommendedDocumentType: 'legal_review',
+      legalReviewRequired: true,
+      reasonSummary: '選択された目的コードに対応する判定定義がありません。'
+    };
+  }
+  return Object.assign({ selected: true }, result);
+}
+
+// ----- ポータル GAS 由来の動作確認ヘルパー -----
+
+function testGetContractPurposes() {
+  var result = getContractPurposes();
+  console.log(JSON.stringify(result, null, 2));
+}
+
+function testSearchContractStatus() {
+  var result = searchContractStatus({
+    counterpartyName: '株式会社サンプル',
+    purposeCode: 'service_creative',
+    workName: 'サンプル作品',
+    productName: 'サンプル製品',
+    territory: '日本',
+    language: '日本語'
+  });
+  console.log(JSON.stringify(result, null, 2));
+}
+
+function debugLegalBridgeConfig() {
+  var config = getApiConfig_();
+  console.log('baseUrl = ' + config.baseUrl);
+  console.log('LB_PORTAL_SECRET length = ' + config.secret.length);
+  if (config.secret) {
+    console.log(
+      'LB_PORTAL_SECRET masked = ' +
+        config.secret.slice(0, 3) + '***' + config.secret.slice(-3)
+    );
+  }
+  var signing = scriptProperty_('LB_SIGNING_SECRET') || '';
+  console.log('LB_SIGNING_SECRET length = ' + signing.length);
 }
 
 // -----------------------------------------------------------------------
@@ -714,11 +1013,13 @@ function getSearchResultsModal_(keyword, data) {
   });
   appendContractStatusBlocks_(blocks, contractPayload);
 
-  // Phase 12 / 17s: search-api の Web 詳細ページへの URL を組み立て。
+  // Phase 12 / 17s / 17t: search-api の Web 詳細ページへの URL を組み立て。
   //   優先: LB_SIGNING_SECRET があれば HMAC 短期署名 URL を発行
   //   フォールバック: 旧 LB_PORTAL_SECRET の ?token=
   // 移行期間中は両方 ScriptProperty にあって良い。
-  var cloudRunBase = (scriptProperty_('CLOUD_RUN_BASE_URL') || '').replace(/\/+$/, '');
+  // base URL は CLOUD_RUN_BASE_URL / LB_API_BASE_URL のいずれでも引ける
+  // (getApiConfig_ が dual-read する)。
+  var cloudRunBase = (getApiConfig_().baseUrl || '').replace(/\/+$/, '');
   var webDetailUrl = '';
   if (cloudRunBase) {
     var signedQs = signListResourceQs_();
