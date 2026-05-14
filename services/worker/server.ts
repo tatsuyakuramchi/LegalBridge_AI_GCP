@@ -975,10 +975,27 @@ ${details}
           const templateType = String(d.template_type || "");
 
           let vendorId: number | null = null;
-          const vendorCode = String(fd.VENDOR_CODE || fd.vendorCode || "").trim();
-          const vendorName = String(
+          let vendorCode = String(fd.VENDOR_CODE || fd.vendorCode || "").trim();
+          let vendorName = String(
             fd.VENDOR_NAME || fd.PARTY_B_NAME || fd.partyBName || ""
           ).trim();
+
+          // Phase 17v: form_data に vendor 情報が無い場合は order_items から拾う。
+          //   旧 bulk import で form_data に vendor_code/vendor_name を入れて
+          //   いなかったケースを救済する。order_items.vendor_code は CSV から
+          //   ちゃんと保存されているので、そこを経由できる。
+          if ((!vendorCode || vendorCode.toUpperCase() === "UNKNOWN") && !vendorName && d.issue_key) {
+            const orderRes = await query(
+              `SELECT vendor_code FROM order_items
+                WHERE backlog_issue_key = $1
+                LIMIT 1`,
+              [d.issue_key]
+            );
+            const ocode = String(orderRes.rows[0]?.vendor_code || "").trim();
+            if (ocode && ocode.toUpperCase() !== "UNKNOWN") {
+              vendorCode = ocode;
+            }
+          }
 
           if (vendorCode && vendorCode.toUpperCase() !== "UNKNOWN") {
             const r = await query(
@@ -1888,6 +1905,18 @@ ${details}
           "purchase_order",
           JSON.stringify({
             ...(body.form_data || {}),
+            // Phase 17v: vendor 情報を form_data に必ず入れる
+            //   (resync-contract-capabilities が vendor_id を解決するのに必要)。
+            //   body.form_data 側にも入っていれば spread が優先するので
+            //   それは温存される。
+            VENDOR_CODE:
+              (body.form_data && body.form_data.VENDOR_CODE) ||
+              body.vendor_code ||
+              "",
+            VENDOR_NAME:
+              (body.form_data && body.form_data.VENDOR_NAME) ||
+              body.vendor_name ||
+              "",
             items: computedLines,
             expenses: computedExpenses,
             expensesTotalIncTax,
@@ -2882,6 +2911,15 @@ ${details}
               issueKey,
               "purchase_order",
               JSON.stringify({
+                // Phase 17v: CSV 行の取引先・案件情報も form_data に保存。
+                //   これが無いと resync-contract-capabilities が
+                //   form_data.VENDOR_CODE / VENDOR_NAME を見つけられず
+                //   vendor_id=NULL のまま contract_capabilities に入り、
+                //   法務検索で「個別契約」セクションに出てこなくなる。
+                VENDOR_CODE: first.vendor_code || "",
+                VENDOR_NAME: first.vendor_name || "",
+                description: first.description || "",
+                due_date: first.due_date || "",
                 items: lines,
                 expenses: bulkExpenses,
                 expensesTotalIncTax,
