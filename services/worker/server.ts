@@ -2307,6 +2307,15 @@ ${details}
           "license_master",
           JSON.stringify({
             ...(body.form_data || {}),
+            // Phase 17w: vendor 情報を form_data にも保存し resync で救済可能に
+            VENDOR_CODE:
+              (body.form_data && body.form_data.VENDOR_CODE) ||
+              body.vendor_code ||
+              "",
+            VENDOR_NAME:
+              (body.form_data && body.form_data.VENDOR_NAME) ||
+              body.licensor_name ||
+              "",
             __imported: true,
             __ledger_id: ledgerId,
           }),
@@ -2316,13 +2325,20 @@ ${details}
       );
 
       // 3. contract_capabilities (master_contract / license) — 法務検索の対象
+      // Phase 17w: vendor_id を解決して INSERT に含める (これが無いと法務検索に
+      //   出ない)。ライセンスマスタは「ライセンサー = 取引先 (vendor)」の構図。
+      const lmVendorId = await resolveVendorIdForImport_(
+        body.vendor_code,
+        body.licensor_name
+      );
       await query(
         `INSERT INTO contract_capabilities (
-           record_type, contract_category, contract_type, contract_title,
+           vendor_id, record_type, contract_category, contract_type, contract_title,
            document_number, contract_status, effective_date, expiration_date,
            auto_renewal, original_work, document_url, source_system
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
          ON CONFLICT (document_number) DO UPDATE SET
+           vendor_id        = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
            record_type      = EXCLUDED.record_type,
            contract_category = EXCLUDED.contract_category,
            contract_type    = EXCLUDED.contract_type,
@@ -2334,6 +2350,7 @@ ${details}
            document_url     = EXCLUDED.document_url,
            updated_at       = CURRENT_TIMESTAMP`,
         [
+          lmVendorId,
           "master_contract",
           "license",
           "license_master",
@@ -2531,6 +2548,47 @@ ${details}
   //  - 各グループ内のヘッダ列は first row を採用 (不一致は警告ログ)。
   //  - サーバ側で amount は再計算 (Math.ceil) してフロント送信値を信用しない。
   // -------------------------------------------------------------------
+
+  /**
+   * Phase 17w: import 系エンドポイントで使う共通 vendor 解決ヘルパー。
+   * 優先順:
+   *   1. vendor_code (vendors.vendor_code 完全一致)
+   *   2. vendor_name (vendors.vendor_name 完全一致)
+   *   3. vendor_name (vendors.trade_name / pen_name 完全一致)
+   * 全部 miss なら null を返す → contract_capabilities.vendor_id は NULL で
+   * INSERT されるが、後から /api/admin/resync-contract-capabilities で
+   * 救済可能。
+   */
+  async function resolveVendorIdForImport_(
+    vendorCode?: string | null,
+    vendorName?: string | null
+  ): Promise<number | null> {
+    const code = String(vendorCode || "").trim();
+    const name = String(vendorName || "").trim();
+
+    if (code && code.toUpperCase() !== "UNKNOWN") {
+      const r = await query(
+        "SELECT id FROM vendors WHERE vendor_code = $1 LIMIT 1",
+        [code]
+      );
+      if (r.rows.length > 0) return Number(r.rows[0].id);
+    }
+    if (name) {
+      const r = await query(
+        "SELECT id FROM vendors WHERE vendor_name = $1 LIMIT 1",
+        [name]
+      );
+      if (r.rows.length > 0) return Number(r.rows[0].id);
+    }
+    if (name) {
+      const r = await query(
+        "SELECT id FROM vendors WHERE trade_name = $1 OR pen_name = $1 LIMIT 1",
+        [name]
+      );
+      if (r.rows.length > 0) return Number(r.rows[0].id);
+    }
+    return null;
+  }
 
   /**
    * Helper: 配列を import_key でグループ化。空 / null は __ROW_<idx>__ で
@@ -3345,7 +3403,15 @@ ${details}
                 contractNumber,
                 issueKey,
                 "license_master",
-                JSON.stringify({ ...r, __imported: true, __bulk: true }),
+                JSON.stringify({
+                  ...r,
+                  // Phase 17w: canonical な VENDOR_CODE / VENDOR_NAME を入れる
+                  //   resync が拾えるように。
+                  VENDOR_CODE: r.vendor_code || "",
+                  VENDOR_NAME: r.licensor_name || "",
+                  __imported: true,
+                  __bulk: true,
+                }),
                 r.drive_link || "",
                 "import-bulk",
               ]
@@ -3354,18 +3420,25 @@ ${details}
             // Phase 17b: 稟議番号紐付け
             await linkRingiByDocNumber(contractNumber, r.ringi_numbers);
 
+            // Phase 17w: vendor 解決 (license-master は licensor = 取引先)
+            const lmBulkVendorId = await resolveVendorIdForImport_(
+              r.vendor_code,
+              r.licensor_name
+            );
             await query(
               `INSERT INTO contract_capabilities (
-                 record_type, contract_category, contract_type, contract_title,
+                 vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, original_work, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                ON CONFLICT (document_number) DO UPDATE SET
+                 vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
                  contract_title = EXCLUDED.contract_title,
                  effective_date = EXCLUDED.effective_date,
                  expiration_date = EXCLUDED.expiration_date,
                  updated_at = CURRENT_TIMESTAMP`,
               [
+                lmBulkVendorId,
                 "master_contract",
                 "license",
                 "license_master",
@@ -3616,7 +3689,15 @@ ${details}
                 contractNumber,
                 issueKey,
                 "nda",
-                JSON.stringify({ ...r, __imported: true, __bulk: true }),
+                JSON.stringify({
+                  ...r,
+                  // Phase 17w: canonical な VENDOR_CODE / VENDOR_NAME を入れる
+                  //   NDA は party_b が相手方 (= 取引先)。
+                  VENDOR_CODE: r.vendor_code || "",
+                  VENDOR_NAME: r.party_b_name || r.counterparty || "",
+                  __imported: true,
+                  __bulk: true,
+                }),
                 r.drive_link || "",
                 "import-bulk",
               ]
@@ -3626,18 +3707,25 @@ ${details}
             await linkRingiByDocNumber(contractNumber, r.ringi_numbers);
 
             // contract_capabilities (NDA は契約カテゴリ独立)
+            // Phase 17w: vendor_id を解決して INSERT に含める
+            const ndaVendorId = await resolveVendorIdForImport_(
+              r.vendor_code,
+              r.party_b_name || r.counterparty
+            );
             await query(
               `INSERT INTO contract_capabilities (
-                 record_type, contract_category, contract_type, contract_title,
+                 vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
                ON CONFLICT (document_number) DO UPDATE SET
+                 vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
                  contract_title = EXCLUDED.contract_title,
                  effective_date = EXCLUDED.effective_date,
                  expiration_date = EXCLUDED.expiration_date,
                  updated_at = CURRENT_TIMESTAMP`,
               [
+                ndaVendorId,
                 "master_contract",
                 "nda",
                 "nda",
