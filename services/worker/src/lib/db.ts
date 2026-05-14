@@ -820,6 +820,11 @@ export async function initDb() {
     `CREATE UNIQUE INDEX IF NOT EXISTS contract_capabilities_doc_num_uniq
        ON contract_capabilities(document_number);`,
 
+    // Phase 17x: 3+ 者契約サポート (詳細は api/src/lib/db.ts の同名コメント参照)
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS additional_parties JSONB DEFAULT '[]'::jsonb;`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_additional_parties
+       ON contract_capabilities USING GIN (additional_parties);`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

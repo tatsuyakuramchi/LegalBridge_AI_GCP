@@ -34,6 +34,12 @@ import {
 // Phase 17s: HMAC 短期署名 URL + IAP 2 層防御。
 import { requireSignedUrl } from "./src/lib/authMiddleware.ts";
 import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
+// Phase 17x: LegalOn 契約台帳 CSV 取り込み (search-api 内に閉じた書き込み機能)。
+import { legalonImportPage } from "./src/views/legalonImportHtml.ts";
+import {
+  parseCsv as parseLegalonCsv,
+  importLegalOnRows,
+} from "./src/services/legalonImportService.ts";
 
 dotenv.config();
 
@@ -261,6 +267,91 @@ async function startServer() {
         .send(renderErrorPage("Server Error", String(error), 500));
     }
   });
+
+  // -------------------------------------------------------------------
+  // /imports/legalon — LegalOn 契約台帳の CSV 取り込み (Phase 17x)
+  //
+  // search-api は本来 read-only だが、Phase 17t-w の Option A に従って
+  // ここだけ書き込みエンドポイントを開ける (contract_capabilities への
+  // upsert のみ、ほかのテーブルは触らない)。
+  //
+  // セキュリティ: requireSignedUrl で守られているため、Slack /法務検索 と
+  // 同じく HMAC 短期署名 URL でしかアクセスできない (resource: "imports:legalon")。
+  // -------------------------------------------------------------------
+  app.get(
+    "/imports/legalon",
+    requireSignedUrl({
+      resourceId: () => "imports:legalon",
+      renderErrorPage,
+    }),
+    (req, res) => {
+      try {
+        const auth = makeSignLink(req);
+        res.type("html").send(legalonImportPage(auth));
+      } catch (error) {
+        console.error("/imports/legalon failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  app.post(
+    "/api/imports/legalon-csv",
+    requireSignedUrl({
+      resourceId: () => "imports:legalon",
+      renderErrorPage,
+    }),
+    express.json({ limit: "20mb" }),
+    async (req, res) => {
+      try {
+        const csv = String(req.body?.csv || "");
+        if (!csv) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "csv body field is required" });
+        }
+        const dryRun = req.body?.dry_run === true;
+        const duplicateMode = req.body?.duplicate_mode || "overwrite";
+        if (!["overwrite", "skip", "fill_only"].includes(duplicateMode)) {
+          return res.status(400).json({
+            ok: false,
+            error: "duplicate_mode must be one of: overwrite | skip | fill_only",
+          });
+        }
+
+        const rows = parseLegalonCsv(csv);
+        const result = await importLegalOnRows(rows, {
+          dry_run: dryRun,
+          duplicate_mode: duplicateMode as any,
+        });
+
+        console.log(
+          JSON.stringify({
+            evt: "legalon_import",
+            dry_run: dryRun,
+            duplicate_mode: duplicateMode,
+            total: result.total,
+            succeeded: result.succeeded,
+            failed: result.failed,
+            skipped: result.skipped,
+            multi_party: result.multi_party_count,
+            unresolved_vendors: result.unresolved_vendor_count,
+            ts: new Date().toISOString(),
+          })
+        );
+
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("/api/imports/legalon-csv failed:", error);
+        res
+          .status(500)
+          .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
 
   app.get("/api/status", (_req, res) => {
     res.json({

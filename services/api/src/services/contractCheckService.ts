@@ -212,6 +212,9 @@ export async function getLicenseConditions(vendorId: number) {
  * 並び順: created_at DESC (新しい順)
  */
 export async function getDocumentsByCategory(vendorId: number) {
+  // Phase 17x: 主取引先 (vendor_id) に加えて、3+ 者契約の
+  //   additional_parties JSONB 配列内の vendor_id でも突合する。
+  //   JSONB 配列の各要素は { name, vendor_id, role } の形。
   const res = await query(
     `WITH vendor_docs AS (
        SELECT DISTINCT
@@ -223,7 +226,10 @@ export async function getDocumentsByCategory(vendorId: number) {
          cc.contract_type,
          cc.document_url
        FROM contract_capabilities cc
-       WHERE cc.vendor_id = $1
+       WHERE (
+              cc.vendor_id = $1
+           OR cc.additional_parties @> jsonb_build_array(jsonb_build_object('vendor_id', $1::int))
+         )
          AND cc.document_number IS NOT NULL
          AND cc.document_number <> ''
      )

@@ -415,6 +415,17 @@ export async function initDb() {
     `CREATE UNIQUE INDEX IF NOT EXISTS contract_capabilities_doc_num_uniq
        ON contract_capabilities(document_number);`,
 
+    // Phase 17x: 3+ 者契約サポート
+    //   LegalOn 契約台帳のインポートで「取引先名」列にカンマ区切りで複数社が
+    //   入っている場合、1 つ目を vendor_id (主取引先)、2 つ目以降を
+    //   additional_parties JSONB に格納する。JSONB 配列の各要素は
+    //     { "name": "B社", "vendor_id": 42, "role": "secondary" }
+    //   形式。法務検索は vendor_id の他にこの JSONB を GIN で見て 2+ 社目も
+    //   突合可能にする。
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS additional_parties JSONB DEFAULT '[]'::jsonb;`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_additional_parties
+       ON contract_capabilities USING GIN (additional_parties);`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
