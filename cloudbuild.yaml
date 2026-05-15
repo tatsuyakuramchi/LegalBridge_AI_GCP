@@ -25,6 +25,34 @@ images:
   - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_SERVICE_NAME}:latest"
 
 steps:
+  # 0. Phase 22: Secret Manager から LB_PORTAL_SECRET を取得して
+  #    .env.production.local に書き出す。Vite build 時にこれを読んで
+  #    VITE_API_PORTAL_SECRET として JS bundle に焼き込まれる。
+  #    apiRouter.ts が X-LB-PORTAL-SECRET ヘッダで search-api/worker に
+  #    付与する (= requireIapUser middleware の fallback 認証用)。
+  #
+  #    事前準備 (一回だけ):
+  #      gcloud secrets add-iam-policy-binding lb-portal-secret \
+  #        --member="serviceAccount:$(gcloud projects describe \
+  #          $PROJECT_ID --format='value(projectNumber)')@cloudbuild.gserviceaccount.com" \
+  #        --role="roles/secretmanager.secretAccessor"
+  - id: inject-portal-secret
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: bash
+    args:
+      - -c
+      - |
+        set -e
+        SECRET=$(gcloud secrets versions access latest --secret=lb-portal-secret 2>/dev/null || echo "")
+        if [ -n "$SECRET" ]; then
+          # 値を bundle に焼き込む。echo 結果は build log に出ない (出すなら $SECRET を直書きしない)
+          printf "VITE_API_PORTAL_SECRET=%s\n" "$SECRET" >> .env.production.local
+          echo "✅ VITE_API_PORTAL_SECRET injected from Secret Manager (lb-portal-secret)"
+        else
+          echo "⚠️  lb-portal-secret not found in Secret Manager — admin-ui will not authenticate to search-api."
+          echo "    To fix: grant Cloud Build SA secretmanager.secretAccessor on lb-portal-secret."
+        fi
+
   # 1. Build the image (linux/amd64 — matches Cloud Run runtime).
   - id: build
     name: gcr.io/cloud-builders/docker

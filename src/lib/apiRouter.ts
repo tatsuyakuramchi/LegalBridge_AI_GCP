@@ -31,6 +31,15 @@
 const READ_URL = (import.meta as any).env?.VITE_API_READ_URL || "";
 const WRITE_URL = (import.meta as any).env?.VITE_API_WRITE_URL || "";
 
+// Phase 22: admin-ui が search-api/worker を直接 *.run.app URL で叩く際の
+// 共有シークレット。search-api 側の requireIapUser middleware が
+// X-LB-PORTAL-SECRET ヘッダを portal_secret fallback として受け入れる。
+// 値は Cloud Build 時に Secret Manager (lb-portal-secret) から
+// .env.production.local 経由で注入する。未設定なら header は付かない
+// (= 旧来通り、IAP 経由のみ動作)。
+const PORTAL_SECRET =
+  (import.meta as any).env?.VITE_API_PORTAL_SECRET || "";
+
 // Routes that should go to the WRITE service even on GET.
 const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/templates(?:\/|$)/,
@@ -98,8 +107,22 @@ function installInterceptor() {
         const base = resolveBaseUrl(method, urlString);
         if (base) {
           const newUrl = base.replace(/\/+$/, "") + urlString;
+
+          // Phase 22: portal secret ヘッダを必ず付与 (search-api side で
+          // requireIapUser middleware が fallback として受け入れる)。
+          // 未設定なら付与しない (= IAP 経由のみで動く旧挙動)。
+          const newInit: RequestInit = init ? { ...init } : {};
+          if (PORTAL_SECRET) {
+            const merged = new Headers(init?.headers || undefined);
+            // 既に X-LB-PORTAL-SECRET が呼び出し側で指定されていれば上書きしない
+            if (!merged.has("X-LB-PORTAL-SECRET")) {
+              merged.set("X-LB-PORTAL-SECRET", PORTAL_SECRET);
+            }
+            newInit.headers = merged;
+          }
+
           if (typeof input === "string" || input instanceof URL) {
-            return originalFetch(newUrl, init);
+            return originalFetch(newUrl, newInit);
           }
           // Reconstruct Request with the new URL (rare path).
           return originalFetch(new Request(newUrl, input as Request));

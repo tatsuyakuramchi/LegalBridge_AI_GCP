@@ -27,14 +27,15 @@ type ResourceIdGetter = (req: Request) => string;
  * `req.user` に乗せる正規化済みアイデンティティ (Phase 17z-2)。
  *
  * source の意味:
- *   - "iap_jwt"     : x-goog-iap-jwt-assertion を verify した結果 (最も信頼)
- *   - "iap_header"  : x-goog-authenticated-user-email (IAP が前段にいる前提)
- *   - "dev_env"     : DEV_AS_USER (ローカル開発専用)
- *   - "anonymous"   : 認証なしで通過 (IAP_ENFORCE=false のとき)
+ *   - "iap_jwt"       : x-goog-iap-jwt-assertion を verify した結果 (最も信頼)
+ *   - "iap_header"    : x-goog-authenticated-user-email (IAP が前段にいる前提)
+ *   - "portal_secret" : LB_PORTAL_SECRET 一致 (admin-ui からの直接呼び出し用、Phase 22 で追加)
+ *   - "dev_env"       : DEV_AS_USER (ローカル開発専用)
+ *   - "anonymous"     : 認証なしで通過 (IAP_ENFORCE=false のとき)
  */
 export type ReqUser = {
   email: string | null;
-  source: "iap_jwt" | "iap_header" | "dev_env" | "anonymous";
+  source: "iap_jwt" | "iap_header" | "portal_secret" | "dev_env" | "anonymous";
 };
 
 interface Options {
@@ -204,6 +205,21 @@ export function requireIapUser(opts: {
   const renderErr = opts.renderErrorPage || defaultErrorHtml;
 
   return async (req: Request, res: Response, next: NextFunction) => {
+    // 0) LB_PORTAL_SECRET fallback (Phase 22 で追加):
+    //    admin-ui のような別 Cloud Run サービスから search-api を直接 *.run.app
+    //    URL で叩く経路は IAP を通らないため、共有シークレット (= 既存の
+    //    LB_PORTAL_SECRET) を持っていれば素通しする。
+    //    X-LB-PORTAL-SECRET ヘッダ or ?token= の query で受け取り、
+    //    timing-safe で比較。req.user.source は "portal_secret"。
+    if (checkLegacyToken(req)) {
+      (req as any).user = {
+        email: null,
+        source: "portal_secret",
+      } as ReqUser;
+      logAccess(req, "allow_legacy_token", { layer: "iap_user" });
+      return next();
+    }
+
     // 1) Try IAP JWT
     try {
       const result = await verifyIap(req);
