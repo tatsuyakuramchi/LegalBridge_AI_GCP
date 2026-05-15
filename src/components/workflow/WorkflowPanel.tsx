@@ -1,4 +1,5 @@
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { CheckCircle2, ChevronRight, Loader2, Sparkles } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
@@ -37,9 +38,9 @@ type Props = {
  * workflow_settings の推奨次ステータスをマージして、ユーザーが
  * クリック一発で Backlog のステータスを変更できる UI を提供する。
  *
- * 現在 status は無効ボタン (= 押せない) として表示し、それ以外を
- * クリック可能ボタンとして並べる。displayOrder が信頼できないため、
- * id 順で安定ソートしている。
+ * compact モードは React Portal で document.body にメニューを描画する。
+ * これは親 Card が overflow-hidden (components/ui/card.tsx) で
+ * absolute 配置の dropdown を切り抜いてしまう問題への対策。
  */
 export function WorkflowPanel({
   issueKey,
@@ -96,7 +97,6 @@ export function WorkflowPanel({
         "success"
       )
       onChanged?.(target)
-      // バックエンドへの反映を待ってから一覧 refetch
       await refreshIssues?.()
     } catch (e: any) {
       showNotification(`ステータス変更に失敗: ${e?.message || e}`, "error")
@@ -215,6 +215,8 @@ type CompactProps = {
   className?: string
 }
 
+const MENU_WIDTH = 200
+
 function CompactDropdown({
   issueKey,
   currentStatus,
@@ -225,19 +227,133 @@ function CompactDropdown({
   className,
 }: CompactProps) {
   const [open, setOpen] = React.useState(false)
-  const ref = React.useRef<HTMLDivElement | null>(null)
+  const [coords, setCoords] = React.useState<
+    { top: number; left: number } | null
+  >(null)
+  const wrapperRef = React.useRef<HTMLDivElement | null>(null)
+  const menuRef = React.useRef<HTMLDivElement | null>(null)
+
+  const placeMenu = React.useCallback(() => {
+    const el = wrapperRef.current
+    if (!el) return
+    const rect = el.getBoundingClientRect()
+    // メニューはボタンの右端基準で左に展開、はみ出る場合はビューポート右端から padding。
+    const padding = 8
+    let left = rect.right - MENU_WIDTH
+    if (left < padding) left = padding
+    if (left + MENU_WIDTH > window.innerWidth - padding) {
+      left = window.innerWidth - MENU_WIDTH - padding
+    }
+    let top = rect.bottom + 4
+    // ビューポート下端を超えそうなら上に出す
+    const estimatedMenuH = Math.min(360, statuses.length * 32 + 16)
+    if (top + estimatedMenuH > window.innerHeight - padding) {
+      top = Math.max(padding, rect.top - estimatedMenuH - 4)
+    }
+    setCoords({ top, left })
+  }, [statuses.length])
 
   React.useEffect(() => {
+    if (open) placeMenu()
+    else setCoords(null)
+  }, [open, placeMenu])
+
+  // 外側クリック / スクロール / リサイズ で閉じる
+  React.useEffect(() => {
     if (!open) return
-    const close = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) setOpen(false)
+    const onMouseDown = (e: MouseEvent) => {
+      if (
+        !wrapperRef.current?.contains(e.target as Node) &&
+        !menuRef.current?.contains(e.target as Node)
+      ) {
+        setOpen(false)
+      }
     }
-    document.addEventListener("mousedown", close)
-    return () => document.removeEventListener("mousedown", close)
-  }, [open])
+    const onReflow = () => placeMenu()
+    document.addEventListener("mousedown", onMouseDown)
+    window.addEventListener("scroll", onReflow, true)
+    window.addEventListener("resize", onReflow)
+    return () => {
+      document.removeEventListener("mousedown", onMouseDown)
+      window.removeEventListener("scroll", onReflow, true)
+      window.removeEventListener("resize", onReflow)
+    }
+  }, [open, placeMenu])
+
+  const menu =
+    open && coords && typeof document !== "undefined"
+      ? createPortal(
+          <div
+            ref={menuRef}
+            style={{
+              position: "fixed",
+              top: coords.top,
+              left: coords.left,
+              width: MENU_WIDTH,
+              zIndex: 1000,
+            }}
+            className="rounded-md border border-border bg-card shadow-xl p-1 max-h-[60vh] overflow-y-auto"
+            role="menu"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {statuses.length === 0 ? (
+              <div className="px-2 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
+                no statuses
+              </div>
+            ) : (
+              statuses.map((s) => {
+                const isCurrent = s.id === currentStatus?.id
+                const isRecommended =
+                  !isCurrent && recommendedId != null && s.id === recommendedId
+                return (
+                  <button
+                    key={s.id}
+                    type="button"
+                    disabled={isCurrent || pending != null}
+                    onClick={async () => {
+                      setOpen(false)
+                      await onPick(s)
+                    }}
+                    className={cn(
+                      "w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-left",
+                      "font-mono text-[11px] uppercase tracking-[0.12em]",
+                      "hover:bg-accent transition-colors",
+                      isCurrent &&
+                        "opacity-50 cursor-not-allowed pointer-events-none"
+                    )}
+                  >
+                    {isCurrent ? (
+                      <CheckCircle2 className="h-3 w-3 text-phosphor shrink-0" />
+                    ) : isRecommended ? (
+                      <Sparkles className="h-3 w-3 text-phosphor shrink-0" />
+                    ) : (
+                      <ChevronRight className="h-3 w-3 text-muted-foreground shrink-0" />
+                    )}
+                    <span className="flex-1 truncate">{s.name}</span>
+                    {isCurrent && (
+                      <span className="text-[9px] tracking-[0.18em] text-muted-foreground">
+                        現在
+                      </span>
+                    )}
+                    {isRecommended && !isCurrent && (
+                      <span className="text-[9px] tracking-[0.18em] text-phosphor">
+                        推奨
+                      </span>
+                    )}
+                  </button>
+                )
+              })
+            )}
+          </div>,
+          document.body
+        )
+      : null
 
   return (
-    <div ref={ref} className={cn("relative inline-block", className)}>
+    <div
+      ref={wrapperRef}
+      className={cn("relative inline-block", className)}
+    >
       <Button
         size="sm"
         variant="outline"
@@ -257,54 +373,7 @@ function CompactDropdown({
         {currentStatus?.name || "—"}
         <ChevronRight className="h-3 w-3 rotate-90" />
       </Button>
-      {open && (
-        <div
-          className="absolute right-0 z-40 mt-1 w-48 rounded-md border border-border bg-popover shadow-lg p-1"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {statuses.map((s) => {
-            const isCurrent = s.id === currentStatus?.id
-            const isRecommended =
-              !isCurrent && recommendedId != null && s.id === recommendedId
-            return (
-              <button
-                key={s.id}
-                disabled={isCurrent || pending != null}
-                onClick={async () => {
-                  setOpen(false)
-                  await onPick(s)
-                }}
-                className={cn(
-                  "w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-left",
-                  "font-mono text-[11px] uppercase tracking-[0.12em]",
-                  "hover:bg-accent transition-colors",
-                  isCurrent &&
-                    "opacity-50 cursor-not-allowed pointer-events-none"
-                )}
-              >
-                {isCurrent ? (
-                  <CheckCircle2 className="h-3 w-3 text-phosphor" />
-                ) : isRecommended ? (
-                  <Sparkles className="h-3 w-3 text-phosphor" />
-                ) : (
-                  <ChevronRight className="h-3 w-3 text-muted-foreground" />
-                )}
-                <span className="flex-1">{s.name}</span>
-                {isCurrent && (
-                  <span className="text-[9px] tracking-[0.18em] text-muted-foreground">
-                    現在
-                  </span>
-                )}
-                {isRecommended && !isCurrent && (
-                  <span className="text-[9px] tracking-[0.18em] text-phosphor">
-                    推奨
-                  </span>
-                )}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {menu}
     </div>
   )
 }
