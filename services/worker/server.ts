@@ -5004,49 +5004,29 @@ ${details}
           ? String(existingDocumentNumber).trim()
           : await getNewDocumentNumber(templateType, issue.issueType.name);
 
-      // Auto-advance Backlog status if a next_status_id is configured.
+      // Phase 18 (Manual Workflow): 文書生成時に Backlog status を
+      // 自動進行させる挙動は撤去した。
       //
-      // Phase 17r: lookup を堅牢化。issueType.name (Backlog 側のラベル、
-      // 通常は日本語) と templateType (英語のテンプレ ID) の両方をキー
-      // として workflow_settings を引く。最初にヒットした next_status_id
-      // を使う。これにより:
-      //   - workflow_settings に '発注書' 行を入れても引ける
-      //   - 'purchase_order' 行を入れても引ける
-      //   - issueType.name と templateType を別々の遷移にしたい場合は
-      //     issueType.name の行を優先 (より具体的)。
-      if (!nextStatusId) {
-        const wsResult = await query(
-          `SELECT issue_type_name, next_status_id
-             FROM workflow_settings
-            WHERE next_status_id IS NOT NULL
-              AND issue_type_name = ANY($1::text[])
-            ORDER BY CASE WHEN issue_type_name = $2 THEN 0 ELSE 1 END
-            LIMIT 1`,
-          [
-            [issue.issueType.name, templateType].filter(Boolean),
-            issue.issueType.name,
-          ]
-        );
-        if (wsResult.rows[0]?.next_status_id) {
-          nextStatusId = wsResult.rows[0].next_status_id;
-          console.log(
-            `📡 Auto-Advance: next_status_id=${nextStatusId} hit via key '${wsResult.rows[0].issue_type_name}' (issueType=${issue.issueType.name} / template=${templateType})`
-          );
-        } else {
-          console.log(
-            `📡 Auto-Advance: skipped — workflow_settings に next_status_id 設定なし (issueType='${issue.issueType.name}', template='${templateType}')`
-          );
-        }
-      }
+      // 以前は workflow_settings.next_status_id を参照して
+      // backlogService.updateIssueStatus() を発火していたが、
+      // 運用上「文書が完成した = ステータス進行 OK」と判断できない
+      // ケースが多いため、Admin UI のワークフローパネルから人手で
+      // ステータスを進める方針に変更した。
+      //
+      // workflow_settings テーブルは残してあり、UI 側で「推奨次ステータス」
+      // として表示するヒントとして使う。
+      //
+      // 互換: 旧フローを残したい場合は、呼び出し元 (Admin UI) が
+      // 明示的に nextStatusId を渡せば従来通り進行する (= opt-in)。
       if (nextStatusId && !isManualIssue) {
         try {
           await backlogService.updateIssueStatus(issueKey, nextStatusId);
           console.log(
-            `📡 Auto-Advance: ${issueKey} → status ${nextStatusId} OK`
+            `📡 Manual Advance via nextStatusId: ${issueKey} → status ${nextStatusId} OK`
           );
         } catch (statusError) {
           console.warn(
-            `[auto-advance] Backlog status 更新失敗 (${issueKey} → ${nextStatusId}):`,
+            `[manual-advance] Backlog status 更新失敗 (${issueKey} → ${nextStatusId}):`,
             statusError
           );
         }

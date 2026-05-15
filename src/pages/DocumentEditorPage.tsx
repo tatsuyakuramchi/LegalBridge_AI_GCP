@@ -38,6 +38,7 @@ import {
 } from "@/components/ui/sheet"
 import { DocumentForm } from "@/src/components/document/DocumentForm"
 import { RingiSelector } from "@/src/components/document/RingiSelector"
+import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 
 export function DocumentEditorPage() {
   const {
@@ -746,6 +747,25 @@ export function DocumentEditorPage() {
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* Phase 18: 手動ワークフロー制御。選択中の Backlog 課題
+                        に対するステータス進行ボタン。auto-advance を廃止した
+                        ため、ユーザーが明示的にこのパネルから進める。
+                        MANUAL- 仮キー (Backlog 不存在) のときは出さない。 */}
+                    {selectedIssue && !selectedIssue.startsWith("MANUAL-") && (() => {
+                      const currentIssueObj = issues.find(
+                        (i) => i.issueKey === selectedIssue
+                      ) as any
+                      return (
+                        <WorkflowPanel
+                          issueKey={selectedIssue}
+                          currentStatus={currentIssueObj?.status}
+                          issueTypeName={
+                            currentIssueObj?.issueType?.name ||
+                            currentIssueObj?.issue_type_name
+                          }
+                        />
+                      )
+                    })()}
                     {/* Phase 17: 稟議番号セレクタ — 全テンプレ共通の header field。
                         formData.ringi_numbers[] に保存し、Finalize & Sync で
                         worker が ringi_documents (N:N) に upsert する。 */}

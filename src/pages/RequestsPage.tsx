@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 
 export function RequestsPage() {
   const navigate = useNavigate()
@@ -125,11 +126,29 @@ export function RequestsPage() {
                       {new Date().toLocaleDateString("ja-JP")}
                     </span>
                   </div>
-                  <div className="pt-2 border-t border-dashed border-border flex items-center justify-between">
-                    <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground group-hover:text-foreground transition-colors">
+                  {/* Phase 18: 行内ステータス変更ドロップダウン。click は
+                      stopPropagation で Card 自体の navigate を抑止。 */}
+                  <div
+                    className="pt-2 border-t border-dashed border-border flex items-center justify-between gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <WorkflowPanel
+                      issueKey={issue.issueKey}
+                      currentStatus={(issue as any).status}
+                      issueTypeName={
+                        (issue as any).issueType?.name ||
+                        (issue as any).issue_type_name
+                      }
+                      compact
+                    />
+                    <button
+                      type="button"
+                      onClick={() => open(issue.issueKey)}
+                      className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+                    >
                       Open in editor
-                    </span>
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground group-hover:text-foreground group-hover:translate-x-0.5 transition-all" />
+                      <ArrowRight className="h-3.5 w-3.5" />
+                    </button>
                   </div>
                 </CardContent>
               </Card>
