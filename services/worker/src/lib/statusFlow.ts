@@ -52,8 +52,8 @@ export function resolveCategory(opts: {
 
 export const FLOW: Record<RequestCategory, string[]> = {
   active: [
-    "未着手",
-    "着手中",
+    "未対応",
+    "処理中",
     "相手方確認中",
     "承認待ち",
     "締結準備中",
@@ -63,15 +63,15 @@ export const FLOW: Record<RequestCategory, string[]> = {
   ],
   passive: [
     "トリガー待ち",
-    "未着手",
-    "着手中",
+    "未対応",
+    "処理中",
     "承認待ち",
     "締結準備中",
     "送信待ち",
     "完了",
   ],
-  advisory: ["未着手", "着手中", "完了"],
-  deadline_change: ["未着手", "完了"],
+  advisory: ["未対応", "処理中", "完了"],
+  deadline_change: ["未対応", "完了"],
 };
 
 export const TERMINAL_OFF_FLOW = ["終結", "差戻し", "キャンセル"] as const;

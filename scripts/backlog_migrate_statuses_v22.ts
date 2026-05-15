@@ -55,10 +55,12 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // ─── 仕様 (Phase 22 canonical) ─────────────────────────────────────
 
-/** リネーム: 既存名 → 新名 */
+/** リネーム: 既存名 → 新名
+ *  default status (id 1=未対応, 2=処理中) は API で変更不可なため、
+ *  意味も通じるのでそのまま残す方針。canonical 名としても「未対応」「処理中」
+ *  を採用 (src/lib/statusFlow.ts と同期)。
+ */
 const RENAMES: Array<{ from: string; to: string }> = [
-  { from: "未対応", to: "未着手" }, // default id=1
-  { from: "処理中", to: "着手中" }, // default id=2
   { from: "相談・交渉中", to: "相手方確認中" },
   { from: "審査中", to: "承認待ち" },
   { from: "クラウドサイン送信待ち", to: "締結準備中" },
@@ -92,8 +94,8 @@ const ADDITIONS: Array<{ name: string; color: string }> = [
 
 /** 表示順 (flow 順) */
 const TARGET_ORDER = [
-  "未着手",
-  "着手中",
+  "未対応",
+  "処理中",
   "相手方確認中",
   "承認待ち",
   "締結準備中",
