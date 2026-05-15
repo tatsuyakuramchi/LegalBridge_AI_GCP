@@ -87,16 +87,30 @@ const ISSUE_MIGRATIONS: Array<{
  * 新規追加。
  * Backlog 1 プロジェクトあたり 12 ステータスが上限のため、4 つに絞る。
  * 「差戻し」は別ステータスを設けず、「未対応」に戻す + コメント等で運用代替。
+ *
+ * 色は Backlog API が受け入れるパレットからのみ選択。実環境の検証で
+ * 確認済の色: #ea2c00, #e87758, #868cb7, #3b9dba, #4caf93, #b0be3c, #eda62a
+ * (#bf4f51 は API レスポンスでは見るが POST 時にエラーになる)
  */
 const ADDITIONS: Array<{ name: string; color: string }> = [
   { name: "トリガー待ち", color: "#868cb7" },
   { name: "送信待ち", color: "#4caf93" },
-  { name: "終結", color: "#bf4f51" },
+  { name: "終結", color: "#ea2c00" },
   { name: "キャンセル", color: "#868cb7" },
 ];
 
-/** 表示順 (flow 順) */
+/**
+ * 表示順 (flow 順)。
+ *
+ * 重要: Backlog の仕様で「Closed」タイプの status (= default id=4 完了) は
+ * 表示順の最後でなければならない。"Update order failed. Last status id
+ * must be Closed" エラーを避けるため、完了 を末尾に置く。
+ *
+ * トリガー待ち は受動文書 (検収書 / 利用許諾料計算書) の pre-initial で、
+ * 「未対応」より前のステージなので先頭に置く。
+ */
 const TARGET_ORDER = [
+  "トリガー待ち",
   "未対応",
   "処理中",
   "相手方確認中",
@@ -104,10 +118,9 @@ const TARGET_ORDER = [
   "締結準備中",
   "送信待ち",
   "締結待ち",
-  "完了",
-  "トリガー待ち",
   "終結",
   "キャンセル",
+  "完了", // ← MUST be last (Closed type)
 ];
 
 // ─── helpers ─────────────────────────────────────────────────────
@@ -394,20 +407,36 @@ async function main() {
   }
 
   // ── Phase 4: Reorder ─────────────────────────────────────────────
+  // Backlog 仕様: Closed タイプ (= default 完了 / id=4) は必ず末尾に置く。
+  // TARGET_ORDER の末尾を "完了" にし、それ以外のリストアップ漏れ status
+  // (= 処理済み 等の default residue) は "完了" の手前に挿入する。
   console.log();
   console.log("───── Phase 4: REORDER ─────");
   if (!DRY_RUN) statuses = await listStatuses();
   const byName4 = new Map<string, BacklogStatus>(
     statuses.map((s) => [s.name, s])
   );
-  const orderedIds: number[] = [];
+  const orderedIdsHead: number[] = []; // 完了 より前
+  let closedId: number | null = null;
   for (const name of TARGET_ORDER) {
     const s = byName4.get(name);
-    if (s) orderedIds.push(s.id);
+    if (!s) continue;
+    if (name === "完了") {
+      closedId = s.id;
+    } else {
+      orderedIdsHead.push(s.id);
+    }
   }
-  // include any leftover status (e.g., 処理済み が削除できなかった) at the end
+  // 漏れた status (= 処理済み 等) は 完了 の手前に追加
   for (const s of statuses) {
-    if (!orderedIds.includes(s.id)) orderedIds.push(s.id);
+    if (orderedIdsHead.includes(s.id)) continue;
+    if (closedId != null && s.id === closedId) continue;
+    orderedIdsHead.push(s.id);
+  }
+  const orderedIds: number[] = [...orderedIdsHead];
+  if (closedId != null) orderedIds.push(closedId);
+  else {
+    log("error", "完了 status (id=4) が見つかりません。reorder をスキップします。");
   }
   console.log(
     `   REORDER (${orderedIds.length} statuses)  ${DRY_RUN ? "(dry-run)" : ""}`
@@ -415,9 +444,20 @@ async function main() {
   console.log(
     `   ` + orderedIds.map((id) => `${id}:${statuses.find((s) => s.id === id)?.name}`).join(" → ")
   );
-  if (!DRY_RUN) {
-    await updateDisplayOrder(orderedIds);
-    await sleep(250);
+  if (!DRY_RUN && closedId != null) {
+    try {
+      await updateDisplayOrder(orderedIds);
+      await sleep(250);
+    } catch (e: any) {
+      log(
+        "warn",
+        `   reorder failed: ${
+          e?.response?.data?.errors?.[0]?.message ||
+          e?.response?.status ||
+          e?.message
+        }`
+      );
+    }
   }
 
   // ── Final state ─────────────────────────────────────────────────
