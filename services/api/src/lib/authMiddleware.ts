@@ -19,8 +19,23 @@
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { verify as verifySig, hasSigningSecret } from "./signedUrl.ts";
 import { verifyIap, isIapEnforced } from "./iap.ts";
+import { query } from "./db.ts";
 
 type ResourceIdGetter = (req: Request) => string;
+
+/**
+ * `req.user` に乗せる正規化済みアイデンティティ (Phase 17z-2)。
+ *
+ * source の意味:
+ *   - "iap_jwt"     : x-goog-iap-jwt-assertion を verify した結果 (最も信頼)
+ *   - "iap_header"  : x-goog-authenticated-user-email (IAP が前段にいる前提)
+ *   - "dev_env"     : DEV_AS_USER (ローカル開発専用)
+ *   - "anonymous"   : 認証なしで通過 (IAP_ENFORCE=false のとき)
+ */
+export type ReqUser = {
+  email: string | null;
+  source: "iap_jwt" | "iap_header" | "dev_env" | "anonymous";
+};
 
 interface Options {
   /** リソース ID をどう組み立てるか (例: req → "vendor:123") */
@@ -157,5 +172,220 @@ export function requireSignedUrl(opts: Options): RequestHandler {
           401
         )
       );
+  };
+}
+
+// ====================================================================
+// Phase 17z-2: IAP ユーザー識別 + 役割ベース認可 (恒久 URL 対応)
+//
+// 目的:
+//   - HMAC 短期 URL の代わりに「IAP 認証ユーザー == 社内 Workspace 本人」を
+//     アプリ側でも安価に取り出せるようにする
+//   - /master/vendors のような検索系ページは IAP のみで「恒久 URL」化
+//   - /imports/legalon のような書き込み系は staff_master の部署照会で
+//     役割制御の土台を作る (現段階では soft mode、後で enforce ON)
+// ====================================================================
+
+/**
+ * IAP が injection した本人情報を req.user に attach するミドルウェア。
+ *
+ * 多層検証:
+ *   1. x-goog-iap-jwt-assertion (Google 署名済み JWT) を OAuth2Client で verify
+ *   2. 失敗 / 未設定なら x-goog-authenticated-user-email ヘッダで補完
+ *      (これは IAP が必ずセットするが署名はない。LB 経由前提でのみ信頼)
+ *   3. ローカル開発用に DEV_AS_USER env を見る
+ *   4. すべて駄目 & IAP_ENFORCE=true → 401。そうでなければ anonymous で通過。
+ *
+ * 上位 (server.ts) では `(req as any).user.email` で参照する想定。
+ */
+export function requireIapUser(opts: {
+  renderErrorPage?: (title: string, message: string, status: number) => string;
+} = {}): RequestHandler {
+  const renderErr = opts.renderErrorPage || defaultErrorHtml;
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    // 1) Try IAP JWT
+    try {
+      const result = await verifyIap(req);
+      if (result.ok) {
+        (req as any).user = {
+          email: result.email || null,
+          source: "iap_jwt",
+        } as ReqUser;
+        return next();
+      }
+    } catch {
+      /* fall through */
+    }
+
+    // 2) Fallback to IAP header (unsigned, but trustworthy when behind LB)
+    const emailHdr = req.header("x-goog-authenticated-user-email") || "";
+    const m = emailHdr.match(/^accounts\.google\.com:(.+)$/);
+    if (m && m[1]) {
+      (req as any).user = { email: m[1], source: "iap_header" } as ReqUser;
+      return next();
+    }
+
+    // 3) Dev override
+    if (process.env.DEV_AS_USER) {
+      (req as any).user = {
+        email: process.env.DEV_AS_USER,
+        source: "dev_env",
+      } as ReqUser;
+      return next();
+    }
+
+    // 4) IAP not enforced → allow anonymous
+    if (!isIapEnforced()) {
+      (req as any).user = { email: null, source: "anonymous" } as ReqUser;
+      return next();
+    }
+
+    // 5) IAP enforced and we have no identity → reject
+    logAccess(req, "deny", { layer: "iap_user", reason: "no_identity" });
+    return res
+      .status(401)
+      .type("html")
+      .send(
+        renderErr(
+          "Unauthorized",
+          "ログイン情報を確認できませんでした。Workspace アカウントで再ログインしてください。",
+          401
+        )
+      );
+  };
+}
+
+/**
+ * 役割ベース認可 middleware factory (Phase 17z-2)。
+ *
+ * staff テーブルを email で引いて department を確認する。許可リスト:
+ *   - allowedEmails       : 明示メールアドレス allowlist (staff 未登録でも通す)
+ *   - allowedDepartments  : staff.department が含まれていれば通す
+ *
+ * 動作モード (env で切替):
+ *   - LB_ROLE_ENFORCE=true  : 不適合は 403
+ *   - LB_ROLE_ENFORCE!=true : warn ログのみで通過 (= soft mode, デフォルト)
+ *
+ * soft mode は staff_master を埋めながら段階的に厳格化する移行期向け。
+ * Cloud Logging で `evt:"search_access" outcome:"allow_role_soft"` を
+ * monitor すれば「もし enforce にしたら deny になる」アクセスが見える。
+ */
+export function requireDepartmentRole(opts: {
+  resourceLabel: string;
+  allowedEmails?: string[];
+  allowedDepartments?: string[];
+  renderErrorPage?: (title: string, message: string, status: number) => string;
+}): RequestHandler {
+  const renderErr = opts.renderErrorPage || defaultErrorHtml;
+  const allowedEmails = (opts.allowedEmails || []).map((e) =>
+    e.trim().toLowerCase()
+  );
+  const allowedDepartments = (opts.allowedDepartments || []).map((d) =>
+    d.trim()
+  );
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const enforce =
+      String(process.env.LB_ROLE_ENFORCE || "").toLowerCase() === "true";
+
+    const user: ReqUser | undefined = (req as any).user;
+    const email = (user?.email || "").trim().toLowerCase();
+
+    // 1) Explicit email allowlist (env or opts)
+    const envEmails = (process.env.LB_ROLE_ALLOWLIST_EMAILS || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (email && (allowedEmails.includes(email) || envEmails.includes(email))) {
+      logAccess(req, "allow_signed", {
+        layer: "role",
+        resource: opts.resourceLabel,
+        reason: "email_allowlist",
+        email,
+      });
+      return next();
+    }
+
+    // 2) Lookup staff.department
+    let dept: string | null = null;
+    if (email) {
+      try {
+        const r = await query(
+          "SELECT department FROM staff WHERE LOWER(email) = $1 LIMIT 1",
+          [email]
+        );
+        dept = (r.rows[0]?.department as string) || null;
+      } catch (err) {
+        console.warn(
+          `[role] staff lookup failed for ${email} on ${opts.resourceLabel}:`,
+          err
+        );
+      }
+    }
+
+    const envDepartments = (process.env.LB_ROLE_ALLOWLIST_DEPARTMENTS || "")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+    const deptAllowed = !!(
+      dept &&
+      (allowedDepartments.includes(dept) || envDepartments.includes(dept))
+    );
+
+    if (deptAllowed) {
+      logAccess(req, "allow_signed", {
+        layer: "role",
+        resource: opts.resourceLabel,
+        reason: "dept_allowlist",
+        email,
+        dept,
+      });
+      return next();
+    }
+
+    // 3) Not allowed
+    if (enforce) {
+      logAccess(req, "deny", {
+        layer: "role",
+        resource: opts.resourceLabel,
+        email,
+        dept,
+      });
+      const wantsJson = (req.headers.accept || "").includes("application/json");
+      if (wantsJson) {
+        return res
+          .status(403)
+          .json({ ok: false, error: "Forbidden (role)" });
+      }
+      return res
+        .status(403)
+        .type("html")
+        .send(
+          renderErr(
+            "Forbidden",
+            `この機能は権限が付与されたユーザーのみ利用できます。<br>` +
+              `部署マスター (staff) で部署を「経営管理本部」「法務」などの` +
+              `許可対象に登録してから再度お試しください。<br>` +
+              `<small>email: ${email || "(unknown)"} / dept: ${dept || "(unregistered)"}</small>`,
+            403
+          )
+        );
+    }
+
+    // soft mode: warn + allow (collecting telemetry phase)
+    console.warn(
+      `[role] SOFT-DENY ${opts.resourceLabel} email=${email || "?"} dept=${
+        dept || "?"
+      } — would be 403 when LB_ROLE_ENFORCE=true`
+    );
+    logAccess(req, "allow_signed", {
+      layer: "role",
+      resource: opts.resourceLabel,
+      reason: "soft_mode",
+      email,
+      dept,
+    });
+    return next();
   };
 }

@@ -32,7 +32,12 @@ import {
   ringiPage as renderRingiPage,
 } from "./src/views/contractSearchHtml.ts";
 // Phase 17s: HMAC 短期署名 URL + IAP 2 層防御。
-import { requireSignedUrl } from "./src/lib/authMiddleware.ts";
+// Phase 17z-2: requireIapUser / requireDepartmentRole を追加 (恒久 URL 対応)。
+import {
+  requireSignedUrl,
+  requireIapUser,
+  requireDepartmentRole,
+} from "./src/lib/authMiddleware.ts";
 import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
 // Phase 17x: LegalOn 契約台帳 CSV 取り込み (search-api 内に閉じた書き込み機能)。
 import { legalonImportPage } from "./src/views/legalonImportHtml.ts";
@@ -278,25 +283,32 @@ async function startServer() {
   });
 
   // -------------------------------------------------------------------
-  // /imports/legalon — LegalOn 契約台帳の CSV 取り込み (Phase 17x)
+  // /imports/legalon — LegalOn 契約台帳の CSV 取り込み (Phase 17x → 17z-2)
   //
   // search-api は本来 read-only だが、Phase 17t-w の Option A に従って
   // ここだけ書き込みエンドポイントを開ける (contract_capabilities への
   // upsert のみ、ほかのテーブルは触らない)。
   //
-  // セキュリティ: requireSignedUrl で守られているため、Slack /法務検索 と
-  // 同じく HMAC 短期署名 URL でしかアクセスできない (resource: "imports:legalon")。
+  // 認可 (Phase 17z-2 で恒久 URL + 役割制御に切替):
+  //   - requireIapUser          : IAP で本人特定 (Workspace ログイン必須)
+  //   - requireDepartmentRole   : staff_master の部署照会で書き込み許可を判定
+  //                                 現在 soft mode (warn ログのみ通過)、
+  //                                 LB_ROLE_ENFORCE=true で enforce 403。
+  //
+  // 同じ judgement を GET (UI ページ) と POST (実行) の両方に適用する。
   // -------------------------------------------------------------------
   app.get(
     "/imports/legalon",
-    requireSignedUrl({
-      resourceId: () => "imports:legalon",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "imports:legalon",
+      allowedDepartments: ["経営管理本部", "法務"],
       renderErrorPage,
     }),
     (req, res) => {
       try {
-        const auth = makeSignLink(req);
-        res.type("html").send(legalonImportPage(auth));
+        // 恒久 URL: HMAC 不要 (null 渡し)。fetch は IAP セッションを継承。
+        res.type("html").send(legalonImportPage(null));
       } catch (error) {
         console.error("/imports/legalon failed:", error);
         res
@@ -325,8 +337,10 @@ async function startServer() {
 
   app.post(
     "/api/imports/legalon-csv",
-    requireSignedUrl({
-      resourceId: () => "imports:legalon",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "imports:legalon",
+      allowedDepartments: ["経営管理本部", "法務"],
       renderErrorPage,
     }),
     express.json({ limit: "20mb" }),
@@ -386,19 +400,22 @@ async function startServer() {
   //   - サブ (= 既存維持)   : services/worker の /api/master/vendors
   //   どちらも同じ vendors テーブルを upsert する。
   //
-  // セキュリティ: requireSignedUrl で HMAC 短期署名 URL 必須
-  //   (resource: "master:vendors")。さらに LB 経由なら IAP も前段にいる。
+  // 認可 (Phase 17z-2 で恒久 URL 化):
+  //   - 読み取り (GET): requireIapUser のみ — Workspace ログインしていれば誰でも
+  //     参照可能。URL に exp/sig 不要なので bookmark 可能。
+  //   - 書き込み (POST): requireIapUser + requireDepartmentRole
+  //     現在 soft mode (warn ログのみ)、LB_ROLE_ENFORCE=true で enforce。
+  //     許可部署は LB_ROLE_ALLOWLIST_DEPARTMENTS env で上書き可能。
   // -------------------------------------------------------------------
   app.get(
     "/master/vendors",
-    requireSignedUrl({
-      resourceId: () => "master:vendors",
-      renderErrorPage,
-    }),
+    requireIapUser({ renderErrorPage }),
     (req, res) => {
       try {
-        const auth = makeSignLink(req);
-        res.type("html").send(vendorMasterPage(auth));
+        // 恒久 URL 化のため HMAC は付けない (null で渡す)。
+        // 同一オリジン内の fetch は IAP セッションを継承するので、API も
+        // 認証付き状態で叩ける。
+        res.type("html").send(vendorMasterPage(null));
       } catch (error) {
         console.error("/master/vendors failed:", error);
         res
@@ -412,10 +429,7 @@ async function startServer() {
   // GET /api/master/vendors?q=... — 一覧 (検索)
   app.get(
     "/api/master/vendors",
-    requireSignedUrl({
-      resourceId: () => "master:vendors",
-      renderErrorPage,
-    }),
+    requireIapUser({ renderErrorPage }),
     async (req, res) => {
       try {
         const q = String(req.query.q || "").trim();
@@ -435,10 +449,7 @@ async function startServer() {
   // GET /api/master/vendors/:code — 単件
   app.get(
     "/api/master/vendors/:code",
-    requireSignedUrl({
-      resourceId: () => "master:vendors",
-      renderErrorPage,
-    }),
+    requireIapUser({ renderErrorPage }),
     async (req, res) => {
       try {
         const code = String(req.params.code || "").trim();
@@ -461,11 +472,13 @@ async function startServer() {
     }
   );
 
-  // POST /api/master/vendors — upsert
+  // POST /api/master/vendors — upsert (書き込み: 役割チェック土台あり)
   app.post(
     "/api/master/vendors",
-    requireSignedUrl({
-      resourceId: () => "master:vendors",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "master:vendors:write",
+      allowedDepartments: ["経営管理本部", "法務"],
       renderErrorPage,
     }),
     express.json({ limit: "1mb" }),
