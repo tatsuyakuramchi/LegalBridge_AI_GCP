@@ -1412,6 +1412,149 @@ ${details}
     }
   );
 
+  /**
+   * Phase 21: Slack /法務依頼 「納期変更依頼」用エンドポイント。
+   *
+   * 申請者は line_item_id を Slack モーダルで指定できないので、issueKey
+   * を指定すれば「その課題の未完了業務明細すべて」を一括で新日付に変更する。
+   *
+   * line item 単位で別々の日付にしたいときは admin-ui WorkflowPanel を使う。
+   *
+   * POST /api/management/issues/:issueKey/deadline-change
+   *   body: { delivery_date: "YYYY-MM-DD", reason?: string }
+   */
+  app.post(
+    "/api/management/issues/:issueKey/deadline-change",
+    express.json(),
+    async (req, res) => {
+      try {
+        const issueKey = String(req.params.issueKey || "").trim();
+        if (!issueKey) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "issueKey is required" });
+        }
+        const newDate = req.body?.delivery_date;
+        if (!newDate) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "delivery_date is required" });
+        }
+        const d = new Date(newDate);
+        if (Number.isNaN(d.getTime())) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "invalid delivery_date" });
+        }
+        const newDateStr = d.toISOString().slice(0, 10);
+        const reason = req.body?.reason
+          ? String(req.body.reason).slice(0, 500)
+          : undefined;
+
+        // 未完了 (= acceptance_ratio < 1.0 or 未受領) の line items を全取得
+        const itemsRes = await query(
+          `SELECT oli.id, oli.line_no, oli.item_name, oli.delivery_date
+             FROM order_line_items oli
+             JOIN order_items oi ON oi.id = oli.order_item_id
+            WHERE oi.backlog_issue_key = $1
+              AND NOT EXISTS (
+                SELECT 1 FROM delivery_line_items dli
+                 WHERE dli.order_line_item_id = oli.id
+                   AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+              )
+            ORDER BY oli.line_no`,
+          [issueKey]
+        );
+
+        if (itemsRes.rows.length === 0) {
+          return res.status(404).json({
+            ok: false,
+            error: `${issueKey} に未完了の業務明細が見つかりません`,
+          });
+        }
+
+        const updated: Array<{
+          line_item_id: number;
+          line_no: number;
+          item_name: string;
+          previous_date: string | null;
+        }> = [];
+
+        for (const item of itemsRes.rows) {
+          await query(
+            `UPDATE order_line_items
+                SET delivery_date  = $1,
+                    last_alert_at  = NULL,
+                    alert_count    = 0,
+                    updated_at     = CURRENT_TIMESTAMP
+              WHERE id = $2`,
+            [newDateStr, item.id]
+          );
+          updated.push({
+            line_item_id: item.id,
+            line_no: item.line_no,
+            item_name: item.item_name || "",
+            previous_date: item.delivery_date
+              ? new Date(item.delivery_date).toISOString().slice(0, 10)
+              : null,
+          });
+        }
+
+        // Backlog コメントで履歴を残す (1 件にまとめる)
+        let backlogCommented = false;
+        if (!issueKey.startsWith("MANUAL-")) {
+          const reasonLine = reason ? `\n*変更理由:* ${reason}` : "";
+          const detailList = updated
+            .map(
+              (u) =>
+                `  - #${u.line_no} ${u.item_name} (旧: ${u.previous_date || "未設定"})`
+            )
+            .join("\n");
+          const body =
+            `📅 **業務明細の納期を一括変更しました** (Slack 申請経由)\n\n` +
+            `*新しい納期:* ${newDateStr}\n` +
+            `*対象明細:* ${updated.length} 件\n` +
+            detailList +
+            reasonLine;
+          try {
+            await backlogService.addComment(issueKey, body);
+            backlogCommented = true;
+          } catch (e: any) {
+            console.warn(
+              `[deadline-change] Backlog comment failed (${issueKey}):`,
+              e?.message || e
+            );
+          }
+        }
+
+        // Slack 通知 (申請者 + 部署チャンネル) は notifyIssueEvent を流用
+        try {
+          await notifyIssueEvent(issueKey, {
+            type: "status_changed",
+            from: `業務明細 ${updated.length} 件の旧納期`,
+            to: `全 ${updated.length} 件を ${newDateStr} に変更 (Slack 申請)`,
+          });
+        } catch (e) {
+          console.warn(`[deadline-change] notify failed (${issueKey}):`, e);
+        }
+
+        res.json({
+          ok: true,
+          issue_key: issueKey,
+          new_date: newDateStr,
+          updated,
+          backlog_commented: backlogCommented,
+        });
+      } catch (e: any) {
+        console.error(
+          "POST /api/management/issues/:issueKey/deadline-change failed:",
+          e
+        );
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
   // PATCH /api/management/order-line-items/:id/deadline
   //   業務明細単位の納期延長。Phase 20 修正後の主経路。
   app.patch(

@@ -254,6 +254,14 @@ function handleInteractivity_(payload) {
     if (callbackId === 'legal_request_modal') {
       const submission = parseLegalRequestSubmission_(payload);
 
+      // Phase 21: 納期変更依頼は新規 Backlog 課題を起こさず、
+      // 直接 worker /api/management/issues/:key/deadline-change を叩いて
+      // order_line_items.delivery_date を一括更新する。
+      if (submission.request_type === 'deadline_change') {
+        handleDeadlineChangeSubmission_(submission);
+        return jsonResponse_({ response_action: 'clear' });
+      }
+
       // Phase 19: GAS 側 intake ack DM (sendIntakeAckDm_) は削除した。
       // 課題作成完了の通知は Cloud Run worker 側で webhook type=1
       // 受信時に notifyIssueEvent("created") で発信される
@@ -544,6 +552,46 @@ function getApiConfig_() {
 }
 
 /**
+ * Phase 21: worker (legalbridge-document-worker) への直接呼び出し用 config。
+ *
+ * ScriptProperty `LB_WORKER_BASE_URL` (例: https://legalbridge-document-worker-xxx.run.app)
+ * を読み込む。CLOUD_RUN_BASE_URL は search-api を指しているので、書き込み
+ * 系 (deadline-change 等) は worker URL を直接叩く必要がある。
+ */
+function getWorkerConfig_() {
+  var props = PropertiesService.getScriptProperties();
+  var baseUrl = String(props.getProperty('LB_WORKER_BASE_URL') || '').trim();
+  return { baseUrl: baseUrl };
+}
+
+/**
+ * worker REST 呼び出し用 (Phase 21)。失敗時は throw する。
+ */
+function callWorkerApi_(path, method, payload) {
+  var config = getWorkerConfig_();
+  if (!config.baseUrl) {
+    throw new Error('LB_WORKER_BASE_URL が未設定です (Apps Script の Script Properties で設定してください)。');
+  }
+  var url = String(config.baseUrl).replace(/\/+$/, '') +
+            (String(path).charAt(0) === '/' ? path : '/' + path);
+  var options = {
+    method: method,
+    muteHttpExceptions: true,
+    headers: { 'Content-Type': 'application/json' }
+  };
+  if (payload) options.payload = JSON.stringify(payload);
+
+  var res = UrlFetchApp.fetch(url, options);
+  var status = res.getResponseCode();
+  var text = res.getContentText();
+  if (status < 200 || status >= 300) {
+    throw new Error('worker API error: ' + status + ' ' + String(text).slice(0, 500));
+  }
+  try { return JSON.parse(text); }
+  catch (e) { return { ok: true, raw: text }; }
+}
+
+/**
  * Cloud Run へ JSON で REST 呼び出し。成功時は JSON.parse 結果を返す。
  * 失敗時は throw する (caller が try/catch するか、wrap して __error にする)。
  */
@@ -774,6 +822,82 @@ function notifyUserOfError_(userId, message) {
 }
 
 /**
+ * Phase 21: 納期変更依頼の処理。
+ *
+ * 申請者の入力 (対象 Backlog 課題キー、新しい納期、変更理由) を受け取り、
+ * worker の POST /api/management/issues/:issueKey/deadline-change を叩く。
+ * worker 側で:
+ *   - その課題の未完了 line_items すべての delivery_date を更新
+ *   - Backlog 課題にコメント (履歴) を追加
+ *   - 申請者 + 部署チャンネルに Slack 通知 (notifyIssueEvent)
+ *
+ * GAS 側は実行結果を申請者に即時 DM で返す。エラー時は理由を含めて通知。
+ */
+function handleDeadlineChangeSubmission_(submission) {
+  if (!submission || !submission.slack_user_id) return;
+
+  var issueKey = String(submission.target_issue_key || '').trim().toUpperCase();
+  var newDate = String(submission.new_delivery_date || '').trim();
+  var reason = String(submission.change_reason || '').trim();
+
+  // バリデーション
+  if (!issueKey) {
+    notifyUserOfError_(submission.slack_user_id, '対象 Backlog 課題キーが空です。');
+    return;
+  }
+  if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(issueKey)) {
+    notifyUserOfError_(
+      submission.slack_user_id,
+      '対象 Backlog 課題キーの形式が不正です (例: LEGAL-123)。'
+    );
+    return;
+  }
+  if (!newDate) {
+    notifyUserOfError_(submission.slack_user_id, '新しい納期が指定されていません。');
+    return;
+  }
+  if (!reason) {
+    notifyUserOfError_(submission.slack_user_id, '変更理由を入力してください。');
+    return;
+  }
+
+  // worker を叩く
+  try {
+    var result = callWorkerApi_(
+      '/api/management/issues/' + encodeURIComponent(issueKey) + '/deadline-change',
+      'POST',
+      { delivery_date: newDate, reason: reason }
+    );
+
+    var updatedCount = (result && result.updated && result.updated.length) || 0;
+    var detailLines = (result && result.updated || []).map(function (u) {
+      return '  • #' + u.line_no + ' ' + (u.item_name || '') +
+             ' (旧: ' + (u.previous_date || '未設定') + ')';
+    }).join('\n');
+
+    // 申請者へ完了 DM (本通知は worker の notifyIssueEvent から飛ぶ)
+    slackPost_('chat.postMessage', {
+      channel: submission.slack_user_id,
+      text:
+        '✅ *納期変更を実行しました*\n\n' +
+        '*課題:* ' + issueKey + '\n' +
+        '*新しい納期:* ' + newDate + '\n' +
+        '*対象明細:* ' + updatedCount + ' 件\n' +
+        (detailLines ? detailLines + '\n\n' : '\n') +
+        '*変更理由:* ' + reason + '\n\n' +
+        '※ Backlog 課題に変更履歴コメントを追加しました。' +
+        '部署チャンネルにも通知済みです。'
+    });
+  } catch (err) {
+    var msg = String(err && err.message ? err.message : err);
+    notifyUserOfError_(
+      submission.slack_user_id,
+      '納期変更に失敗しました: ' + msg
+    );
+  }
+}
+
+/**
  * Posts an immediate "we got your submission" DM to the requester right
  * after the modal closes. This makes the intake feel responsive even
  * though the heavy work (Backlog issue, DB writes, Drive upload,
@@ -909,6 +1033,10 @@ function parseLegalRequestSubmission_(payload) {
     order_amount: safeText('order_amount_block', 'order_amount_input') || null,
     delivery_date: safeDate('delivery_date_block', 'delivery_date_input') || null,
     inspection_deadline: safeDate('inspection_deadline_block', 'inspection_deadline_input') || null,
+    // Phase 21: 納期変更依頼 (deadline_change) 専用フィールド
+    target_issue_key: safeText('target_issue_key_block', 'target_issue_key_input'),
+    new_delivery_date: safeDate('new_delivery_date_block', 'new_delivery_date_input'),
+    change_reason: safeText('change_reason_block', 'change_reason_input'),
   };
 }
 
@@ -1405,6 +1533,13 @@ function getLegalRequestModal_(selectedType) {
         { value: 'license_calc', text: '利用許諾計算書' },
       ],
     },
+    // Phase 21: 既存課題の納期を変更する依頼。新規 Backlog 課題は起票せず、
+    // 直接 worker /api/management/issues/:key/deadline-change を叩いて
+    // order_line_items.delivery_date を一括更新する。
+    {
+      label: 'その他',
+      options: [{ value: 'deadline_change', text: '納期変更依頼' }],
+    },
   ];
 
   // Lookup so we can build the `initial_option` for the select.
@@ -1427,7 +1562,7 @@ function getLegalRequestModal_(selectedType) {
     };
   });
 
-  const blocks = [
+  const baseBlocks = [
     {
       type: 'input',
       block_id: 'dept_block',
@@ -1454,6 +1589,72 @@ function getLegalRequestModal_(selectedType) {
         option_groups: optionGroups,
       },
     },
+  ];
+
+  // Phase 21: 納期変更依頼は別フォームで完結する (新規 Backlog 課題は起こさない)
+  if (selectedType === 'deadline_change') {
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split('T')[0];
+    return {
+      type: 'modal',
+      callback_id: 'legal_request_modal',
+      title: { type: 'plain_text', text: '納期変更依頼' },
+      submit: { type: 'plain_text', text: '送信' },
+      blocks: baseBlocks.concat([
+        {
+          type: 'context',
+          elements: [
+            {
+              type: 'mrkdwn',
+              text:
+                '⚠️ *この依頼は新規 Backlog 課題を作成しません。* ' +
+                '指定した Backlog 課題の **未完了業務明細すべて** の納期が ' +
+                '一括で新日付に変更されます。明細ごとに違う日付にしたい場合は ' +
+                '法務担当者へ admin-ui 経由での変更を依頼してください。',
+            },
+          ],
+        },
+        {
+          type: 'input',
+          block_id: 'target_issue_key_block',
+          label: { type: 'plain_text', text: '対象 Backlog 課題キー' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'target_issue_key_input',
+            placeholder: { type: 'plain_text', text: 'LEGAL-123' },
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'new_delivery_date_block',
+          label: { type: 'plain_text', text: '新しい納期' },
+          element: {
+            type: 'datepicker',
+            action_id: 'new_delivery_date_input',
+            initial_date: tomorrow,
+          },
+        },
+        {
+          type: 'input',
+          block_id: 'change_reason_block',
+          label: { type: 'plain_text', text: '変更理由' },
+          element: {
+            type: 'plain_text_input',
+            action_id: 'change_reason_input',
+            multiline: true,
+            placeholder: {
+              type: 'plain_text',
+              text: '例: 仕様変更により制作期間が必要なため',
+            },
+          },
+        },
+      ]),
+    };
+  }
+
+  // 通常 (新規依頼) の form
+  const blocks = baseBlocks.concat([
     {
       type: 'input',
       block_id: 'summary_block',
@@ -1524,7 +1725,7 @@ function getLegalRequestModal_(selectedType) {
         multiline: true,
       },
     },
-  ];
+  ]);
 
   if (selectedType === 'delivery_inspec') {
     blocks.push(
