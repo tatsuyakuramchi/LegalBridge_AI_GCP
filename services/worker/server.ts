@@ -960,6 +960,25 @@ ${details}
             // 該当ルール (発注書→納品報告 / 個別利用許諾→利用許諾報告) に
             // 当てはまれば、Backlog に子課題を起こして「トリガー待ち」に。
             await autoChainOnComplete(issueKey, issue);
+
+            // Phase 22.4: 納期変更依頼 完了 → 実際の納期変更を実行
+            // 課題の contract_type が deadline_change なら notes JSON を
+            // 取り出して applyBulkDeadlineChange を実行する (idempotent)。
+            try {
+              const lrRes = await query(
+                "SELECT contract_type, notes FROM legal_requests WHERE backlog_issue_key = $1",
+                [issueKey]
+              );
+              const lr = lrRes.rows[0];
+              if (lr && lr.contract_type === "deadline_change") {
+                await executeDeadlineChangeRequest(issueKey, lr.notes);
+              }
+            } catch (e) {
+              console.warn(
+                `[deadline-change-execute] check failed for ${issueKey}:`,
+                e
+              );
+            }
           } catch (e) {
             console.warn("Parent-child sync / auto-chain failed:", e);
           }
@@ -1921,12 +1940,329 @@ ${details}
   });
 
   /**
-   * Phase 21: Slack /法務依頼 「納期変更依頼」用エンドポイント。
+   * Phase 22.4: 一括納期変更のコアロジック (関数化)。
    *
-   * 申請者は line_item_id を Slack モーダルで指定できないので、issueKey
-   * を指定すれば「その課題の未完了業務明細すべて」を一括で新日付に変更する。
+   * 旧 Phase 21 のエンドポイント内ロジックを抽出。
+   *   - 既存の Slack 即時実行経路 (admin-ui 等) からも引き続き使用
+   *   - Phase 22.4 の納期変更依頼 完了時 (= 法務承認後) の executeDeadlineChangeRequest からも呼ばれる
+   */
+  async function applyBulkDeadlineChange(
+    targetIssueKey: string,
+    newDeliveryDate: string,
+    reason?: string,
+    contextLabel?: string
+  ): Promise<{
+    issue_key: string;
+    new_date: string;
+    updated: Array<{
+      line_item_id: number;
+      line_no: number;
+      item_name: string;
+      previous_date: string | null;
+    }>;
+    backlog_commented: boolean;
+  }> {
+    const d = new Date(newDeliveryDate);
+    if (Number.isNaN(d.getTime())) {
+      throw new Error("invalid delivery_date");
+    }
+    const newDateStr = d.toISOString().slice(0, 10);
+
+    // 未完了 line items を全取得
+    const itemsRes = await query(
+      `SELECT oli.id, oli.line_no, oli.item_name, oli.delivery_date
+         FROM order_line_items oli
+         JOIN order_items oi ON oi.id = oli.order_item_id
+        WHERE oi.backlog_issue_key = $1
+          AND NOT EXISTS (
+            SELECT 1 FROM delivery_line_items dli
+             WHERE dli.order_line_item_id = oli.id
+               AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+          )
+        ORDER BY oli.line_no`,
+      [targetIssueKey]
+    );
+
+    if (itemsRes.rows.length === 0) {
+      throw new Error(
+        `${targetIssueKey} に未完了の業務明細が見つかりません`
+      );
+    }
+
+    const updated: Array<{
+      line_item_id: number;
+      line_no: number;
+      item_name: string;
+      previous_date: string | null;
+    }> = [];
+
+    for (const item of itemsRes.rows) {
+      await query(
+        `UPDATE order_line_items
+            SET delivery_date  = $1,
+                last_alert_at  = NULL,
+                alert_count    = 0,
+                updated_at     = CURRENT_TIMESTAMP
+          WHERE id = $2`,
+        [newDateStr, item.id]
+      );
+      updated.push({
+        line_item_id: item.id,
+        line_no: item.line_no,
+        item_name: item.item_name || "",
+        previous_date: item.delivery_date
+          ? new Date(item.delivery_date).toISOString().slice(0, 10)
+          : null,
+      });
+    }
+
+    // Backlog コメントで履歴を残す
+    let backlogCommented = false;
+    if (!targetIssueKey.startsWith("MANUAL-")) {
+      const reasonLine = reason ? `\n*変更理由:* ${reason}` : "";
+      const ctxLine = contextLabel ? ` (${contextLabel})` : "";
+      const detailList = updated
+        .map(
+          (u) =>
+            `  - #${u.line_no} ${u.item_name} (旧: ${u.previous_date || "未設定"})`
+        )
+        .join("\n");
+      const body =
+        `📅 **業務明細の納期を一括変更しました**${ctxLine}\n\n` +
+        `*新しい納期:* ${newDateStr}\n` +
+        `*対象明細:* ${updated.length} 件\n` +
+        detailList +
+        reasonLine;
+      try {
+        await backlogService.addComment(targetIssueKey, body);
+        backlogCommented = true;
+      } catch (e: any) {
+        console.warn(
+          `[deadline-change] Backlog comment failed (${targetIssueKey}):`,
+          e?.message || e
+        );
+      }
+    }
+
+    // Slack 通知
+    try {
+      await notifyIssueEvent(targetIssueKey, {
+        type: "status_changed",
+        from: `業務明細 ${updated.length} 件の旧納期`,
+        to: `全 ${updated.length} 件を ${newDateStr} に変更${
+          contextLabel ? " (" + contextLabel + ")" : ""
+        }`,
+      });
+    } catch (e) {
+      console.warn(`[deadline-change] notify failed (${targetIssueKey}):`, e);
+    }
+
+    return {
+      issue_key: targetIssueKey,
+      new_date: newDateStr,
+      updated,
+      backlog_commented: backlogCommented,
+    };
+  }
+
+  /**
+   * Phase 22.4: 納期変更依頼 (deadline_change request_type) が「完了」遷移
+   * したときの実行ロジック。worker webhook type=2 から呼ばれる。
    *
-   * line item 単位で別々の日付にしたいときは admin-ui WorkflowPanel を使う。
+   * legal_requests.notes に保存された JSON から target/new_date/reason を
+   * 取り出し、applyBulkDeadlineChange を実行。idempotency は notes.executed で。
+   */
+  async function executeDeadlineChangeRequest(
+    issueKey: string,
+    notesJson: string | null
+  ): Promise<void> {
+    if (!notesJson) {
+      console.warn(`[deadline-change-execute] empty notes for ${issueKey}`);
+      return;
+    }
+    let notes: any = {};
+    try {
+      notes = JSON.parse(notesJson);
+    } catch {
+      console.warn(
+        `[deadline-change-execute] failed to parse notes for ${issueKey}`
+      );
+      return;
+    }
+
+    if (notes.executed) {
+      console.log(
+        `[deadline-change-execute] ${issueKey} already executed at ${notes.executed_at}, skip`
+      );
+      return;
+    }
+
+    const target = String(notes.target_issue_key || "").trim();
+    const newDate = String(notes.new_delivery_date || "").trim();
+    const reason = notes.reason ? String(notes.reason) : undefined;
+
+    if (!target || !newDate) {
+      console.warn(
+        `[deadline-change-execute] invalid notes for ${issueKey}: target=${target}, newDate=${newDate}`
+      );
+      return;
+    }
+
+    try {
+      const result = await applyBulkDeadlineChange(
+        target,
+        newDate,
+        reason,
+        "Slack 申請 → 法務承認 (admin-ui で実行)"
+      );
+
+      // mark as executed (idempotency)
+      notes.executed = true;
+      notes.executed_at = new Date().toISOString();
+      notes.result = {
+        updated_count: result.updated.length,
+        new_date: result.new_date,
+      };
+      await query(
+        "UPDATE legal_requests SET notes = $1 WHERE backlog_issue_key = $2",
+        [JSON.stringify(notes), issueKey]
+      );
+
+      console.log(
+        `✅ [deadline-change-execute] ${issueKey}: ${target} → ${newDate} (${result.updated.length} 明細更新)`
+      );
+    } catch (e: any) {
+      console.error(
+        `[deadline-change-execute] failed for ${issueKey}:`,
+        e?.message || e
+      );
+      // throw しない (webhook handler を 500 にしない、ログだけ残す)
+    }
+  }
+
+  /**
+   * Phase 21 → 22.4: Slack /法務依頼 「納期変更依頼」起票エンドポイント。
+   *
+   * V1 (Phase 21): GAS が直接 /api/management/issues/:key/deadline-change を叩いて即時実行
+   * V2 (Phase 22.4): 新規 Backlog 課題を作成、法務承認後 (= 完了遷移) に実行
+   *
+   * POST /api/intake/deadline-change-request
+   *   body: { slack_user_id, slack_user_name?, dept?, target_issue_key, new_delivery_date, reason }
+   */
+  app.post(
+    "/api/intake/deadline-change-request",
+    express.json(),
+    async (req, res) => {
+      try {
+        const {
+          slack_user_id,
+          target_issue_key,
+          new_delivery_date,
+          reason,
+        } = req.body || {};
+
+        if (!slack_user_id) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "slack_user_id required" });
+        }
+        if (!target_issue_key) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "target_issue_key required" });
+        }
+        if (!new_delivery_date) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "new_delivery_date required" });
+        }
+
+        const targetKey = String(target_issue_key).trim().toUpperCase();
+        const newDate = String(new_delivery_date).trim();
+        const reasonStr = reason ? String(reason).slice(0, 500) : "";
+
+        // Backlog issue type: 専用が無ければ「法務相談」を流用
+        const issueTypes = await backlogService.getIssueTypes();
+        const dlrType =
+          (issueTypes as any[]).find((t: any) => t.name === "納期変更依頼") ||
+          (issueTypes as any[]).find((t: any) => t.name === "法務相談");
+        if (!dlrType) {
+          return res.status(500).json({
+            ok: false,
+            error: "Backlog issue type not available",
+          });
+        }
+
+        // Backlog 課題作成
+        const created = await backlogService.createIssue({
+          summary: `[納期変更依頼] ${targetKey} → ${newDate}`,
+          description:
+            `納期変更を申請します。\n\n` +
+            `*対象:* ${targetKey}\n` +
+            `*新しい納期:* ${newDate}\n` +
+            `*変更理由:* ${reasonStr || "(記載なし)"}\n` +
+            `*申請者:* <@${slack_user_id}>\n\n` +
+            `※ 法務担当者が内容を確認の上、admin-ui から「完了」遷移すると実際の納期変更が実行されます。`,
+          issueTypeId: dlrType.id,
+          priorityId: 3,
+        });
+
+        if (!created?.issueKey) {
+          return res
+            .status(500)
+            .json({ ok: false, error: "Backlog issue creation failed" });
+        }
+        const issueKey = created.issueKey;
+
+        // DB に保存
+        const notes = JSON.stringify({
+          type: "deadline_change_request",
+          target_issue_key: targetKey,
+          new_delivery_date: newDate,
+          reason: reasonStr,
+          requested_at: new Date().toISOString(),
+          executed: false,
+        });
+
+        try {
+          await query(
+            `INSERT INTO legal_requests
+               (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, deadline, notes)
+             VALUES ($1, $2, 'deadline_change', '', $3, NULL, $4)
+             ON CONFLICT (backlog_issue_key) DO UPDATE SET
+               contract_type = EXCLUDED.contract_type,
+               summary       = EXCLUDED.summary,
+               notes         = EXCLUDED.notes`,
+            [issueKey, slack_user_id, `納期変更依頼 → ${targetKey}`, notes]
+          );
+          await query(
+            `INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name)
+             VALUES ($1, 'deadline_change', '未対応')
+             ON CONFLICT (backlog_issue_key) DO UPDATE SET
+               issue_type_name     = EXCLUDED.issue_type_name,
+               current_status_name = '未対応'`,
+            [issueKey]
+          );
+        } catch (e) {
+          console.warn(
+            `[deadline-change-request] DB insert failed for ${issueKey}:`,
+            e
+          );
+        }
+
+        res.json({ ok: true, issue_key: issueKey });
+      } catch (e: any) {
+        console.error("/api/intake/deadline-change-request failed:", e);
+        res
+          .status(500)
+          .json({ ok: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
+  /**
+   * Phase 21 (legacy): 即時実行エンドポイント。Phase 22.4 で GAS は使わなく
+   * なったが、admin-ui や運用ツールから直接叩く用途で残置。
    *
    * POST /api/management/issues/:issueKey/deadline-change
    *   body: { delivery_date: "YYYY-MM-DD", reason?: string }
@@ -1948,117 +2284,27 @@ ${details}
             .status(400)
             .json({ ok: false, error: "delivery_date is required" });
         }
-        const d = new Date(newDate);
-        if (Number.isNaN(d.getTime())) {
-          return res
-            .status(400)
-            .json({ ok: false, error: "invalid delivery_date" });
-        }
-        const newDateStr = d.toISOString().slice(0, 10);
         const reason = req.body?.reason
           ? String(req.body.reason).slice(0, 500)
           : undefined;
 
-        // 未完了 (= acceptance_ratio < 1.0 or 未受領) の line items を全取得
-        const itemsRes = await query(
-          `SELECT oli.id, oli.line_no, oli.item_name, oli.delivery_date
-             FROM order_line_items oli
-             JOIN order_items oi ON oi.id = oli.order_item_id
-            WHERE oi.backlog_issue_key = $1
-              AND NOT EXISTS (
-                SELECT 1 FROM delivery_line_items dli
-                 WHERE dli.order_line_item_id = oli.id
-                   AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
-              )
-            ORDER BY oli.line_no`,
-          [issueKey]
+        const result = await applyBulkDeadlineChange(
+          issueKey,
+          newDate,
+          reason,
+          "直接 API 呼び出し"
         );
 
-        if (itemsRes.rows.length === 0) {
-          return res.status(404).json({
-            ok: false,
-            error: `${issueKey} に未完了の業務明細が見つかりません`,
-          });
-        }
-
-        const updated: Array<{
-          line_item_id: number;
-          line_no: number;
-          item_name: string;
-          previous_date: string | null;
-        }> = [];
-
-        for (const item of itemsRes.rows) {
-          await query(
-            `UPDATE order_line_items
-                SET delivery_date  = $1,
-                    last_alert_at  = NULL,
-                    alert_count    = 0,
-                    updated_at     = CURRENT_TIMESTAMP
-              WHERE id = $2`,
-            [newDateStr, item.id]
-          );
-          updated.push({
-            line_item_id: item.id,
-            line_no: item.line_no,
-            item_name: item.item_name || "",
-            previous_date: item.delivery_date
-              ? new Date(item.delivery_date).toISOString().slice(0, 10)
-              : null,
-          });
-        }
-
-        // Backlog コメントで履歴を残す (1 件にまとめる)
-        let backlogCommented = false;
-        if (!issueKey.startsWith("MANUAL-")) {
-          const reasonLine = reason ? `\n*変更理由:* ${reason}` : "";
-          const detailList = updated
-            .map(
-              (u) =>
-                `  - #${u.line_no} ${u.item_name} (旧: ${u.previous_date || "未設定"})`
-            )
-            .join("\n");
-          const body =
-            `📅 **業務明細の納期を一括変更しました** (Slack 申請経由)\n\n` +
-            `*新しい納期:* ${newDateStr}\n` +
-            `*対象明細:* ${updated.length} 件\n` +
-            detailList +
-            reasonLine;
-          try {
-            await backlogService.addComment(issueKey, body);
-            backlogCommented = true;
-          } catch (e: any) {
-            console.warn(
-              `[deadline-change] Backlog comment failed (${issueKey}):`,
-              e?.message || e
-            );
-          }
-        }
-
-        // Slack 通知 (申請者 + 部署チャンネル) は notifyIssueEvent を流用
-        try {
-          await notifyIssueEvent(issueKey, {
-            type: "status_changed",
-            from: `業務明細 ${updated.length} 件の旧納期`,
-            to: `全 ${updated.length} 件を ${newDateStr} に変更 (Slack 申請)`,
-          });
-        } catch (e) {
-          console.warn(`[deadline-change] notify failed (${issueKey}):`, e);
-        }
-
-        res.json({
-          ok: true,
-          issue_key: issueKey,
-          new_date: newDateStr,
-          updated,
-          backlog_commented: backlogCommented,
-        });
+        res.json({ ok: true, ...result });
       } catch (e: any) {
         console.error(
           "POST /api/management/issues/:issueKey/deadline-change failed:",
           e
         );
-        res.status(500).json({ ok: false, error: String(e?.message || e) });
+        const msg = String(e?.message || e);
+        const status =
+          /見つかりません|invalid|required/i.test(msg) ? 400 : 500;
+        res.status(status).json({ ok: false, error: msg });
       }
     }
   );

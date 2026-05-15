@@ -930,16 +930,16 @@ function handleLinkTriggerSubmission_(submission, childIssueKey) {
 }
 
 /**
- * Phase 21: 納期変更依頼の処理。
+ * Phase 22.4: 納期変更依頼の処理 (改修版)。
  *
- * 申請者の入力 (対象 Backlog 課題キー、新しい納期、変更理由) を受け取り、
- * worker の POST /api/management/issues/:issueKey/deadline-change を叩く。
- * worker 側で:
- *   - その課題の未完了 line_items すべての delivery_date を更新
- *   - Backlog 課題にコメント (履歴) を追加
- *   - 申請者 + 部署チャンネルに Slack 通知 (notifyIssueEvent)
+ * 旧 Phase 21 では即時実行していたが、法務確認を挟むワークフローに変更:
+ *   1. GAS が worker /api/intake/deadline-change-request を叩いて
+ *      新規 Backlog 課題を「未対応」状態で起票
+ *   2. notes JSON に target_issue_key / new_delivery_date / reason を保存
+ *   3. 法務担当が admin-ui で「完了」遷移すると、webhook 経由で worker が
+ *      実際の納期変更を実行 (applyBulkDeadlineChange)
  *
- * GAS 側は実行結果を申請者に即時 DM で返す。エラー時は理由を含めて通知。
+ * 申請者には「依頼受付」DM を送る (完了 DM は worker → Phase 19 通知から)。
  */
 function handleDeadlineChangeSubmission_(submission) {
   if (!submission || !submission.slack_user_id) return;
@@ -969,38 +969,42 @@ function handleDeadlineChangeSubmission_(submission) {
     return;
   }
 
-  // worker を叩く
+  // worker /api/intake/deadline-change-request を叩く (Backlog 課題作成)
   try {
     var result = callWorkerApi_(
-      '/api/management/issues/' + encodeURIComponent(issueKey) + '/deadline-change',
+      '/api/intake/deadline-change-request',
       'POST',
-      { delivery_date: newDate, reason: reason }
+      {
+        slack_user_id: submission.slack_user_id,
+        slack_user_name: submission.slack_user_name,
+        dept: submission.dept,
+        target_issue_key: issueKey,
+        new_delivery_date: newDate,
+        reason: reason,
+      }
     );
 
-    var updatedCount = (result && result.updated && result.updated.length) || 0;
-    var detailLines = (result && result.updated || []).map(function (u) {
-      return '  • #' + u.line_no + ' ' + (u.item_name || '') +
-             ' (旧: ' + (u.previous_date || '未設定') + ')';
-    }).join('\n');
+    var createdKey = (result && result.issue_key) || '';
 
-    // 申請者へ完了 DM (本通知は worker の notifyIssueEvent から飛ぶ)
+    // 申請者へ受付 DM (worker の notifyIssueEvent("created") からも飛ぶが
+    // それは webhook 到着後で遅延するため、ここで即時フィードバックを送る)
     slackPost_('chat.postMessage', {
       channel: submission.slack_user_id,
       text:
-        '✅ *納期変更を実行しました*\n\n' +
-        '*課題:* ' + issueKey + '\n' +
+        '✅ *納期変更依頼を受け付けました*\n\n' +
+        '*対象:* ' + issueKey + '\n' +
         '*新しい納期:* ' + newDate + '\n' +
-        '*対象明細:* ' + updatedCount + ' 件\n' +
-        (detailLines ? detailLines + '\n\n' : '\n') +
-        '*変更理由:* ' + reason + '\n\n' +
-        '※ Backlog 課題に変更履歴コメントを追加しました。' +
-        '部署チャンネルにも通知済みです。'
+        '*変更理由:* ' + reason + '\n' +
+        (createdKey ? '*依頼課題:* ' + createdKey + '\n' : '') +
+        '\n' +
+        '法務担当者が内容を確認後、admin-ui から実行されます。' +
+        '完了時に再度お知らせします。'
     });
   } catch (err) {
     var msg = String(err && err.message ? err.message : err);
     notifyUserOfError_(
       submission.slack_user_id,
-      '納期変更に失敗しました: ' + msg
+      '納期変更依頼の起票に失敗しました: ' + msg
     );
   }
 }
