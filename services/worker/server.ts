@@ -1025,6 +1025,130 @@ ${details}
     return result;
   }
 
+  /**
+   * Phase 20b: 納期延長のコアロジック。id か backlog_issue_key のどちらでも引ける。
+   * 戻り値: 更新後の delivery_event (DB 更新 + Backlog 同期含む)
+   */
+  async function extendDeliveryDeadline(
+    target: { id?: number; issueKey?: string },
+    newDeadline: string | Date
+  ): Promise<{
+    id: number;
+    backlog_issue_key: string;
+    previous_deadline: string | null;
+    new_deadline: string;
+    backlog_synced: boolean;
+  }> {
+    const d = new Date(newDeadline);
+    if (Number.isNaN(d.getTime())) {
+      throw new Error("invalid inspection_deadline");
+    }
+
+    // 旧値を取得
+    const prevRes = target.id
+      ? await query(
+          `SELECT id, backlog_issue_key, inspection_deadline
+             FROM delivery_events WHERE id = $1`,
+          [target.id]
+        )
+      : await query(
+          `SELECT id, backlog_issue_key, inspection_deadline
+             FROM delivery_events WHERE backlog_issue_key = $1`,
+          [target.issueKey]
+        );
+    const prev = prevRes.rows[0];
+    if (!prev) {
+      throw new Error("delivery_event not found");
+    }
+
+    // 1. DB 更新 (last_alert_at リセット)
+    await query(
+      `UPDATE delivery_events
+          SET inspection_deadline = $1,
+              last_alert_at       = NULL,
+              alert_count         = 0
+        WHERE id = $2`,
+      [d.toISOString(), prev.id]
+    );
+
+    // 2. Backlog 同期 (Q3=b: 「希望納期」カスタムフィールドも同期更新)
+    let backlogSynced = false;
+    const issueKey = prev.backlog_issue_key;
+    if (issueKey && !issueKey.startsWith("MANUAL-")) {
+      try {
+        await backlogService.updateIssue(issueKey, {
+          deadline: d.toISOString().slice(0, 10),
+        });
+        backlogSynced = true;
+      } catch (e: any) {
+        console.warn(
+          `[delivery-extend] Backlog sync failed (${issueKey}):`,
+          e?.message || e
+        );
+      }
+    }
+
+    // 3. Slack 通知 (任意・延長したことを申請者と部署に共有)
+    if (issueKey) {
+      try {
+        await notifyIssueEvent(issueKey, {
+          type: "status_changed",
+          from: `納期 ${
+            prev.inspection_deadline
+              ? new Date(prev.inspection_deadline).toLocaleDateString("ja-JP")
+              : "—"
+          }`,
+          to: `納期 ${d.toLocaleDateString("ja-JP")} に変更`,
+        });
+      } catch (e) {
+        console.warn(`[delivery-extend] notify failed (${issueKey}):`, e);
+      }
+    }
+
+    return {
+      id: prev.id,
+      backlog_issue_key: issueKey,
+      previous_deadline: prev.inspection_deadline
+        ? new Date(prev.inspection_deadline).toISOString()
+        : null,
+      new_deadline: d.toISOString(),
+      backlog_synced: backlogSynced,
+    };
+  }
+
+  // PATCH /api/management/issues/:issueKey/deadline
+  //   admin-ui 等が backlog_issue_key で叩く用。
+  app.patch(
+    "/api/management/issues/:issueKey/deadline",
+    express.json(),
+    async (req, res) => {
+      try {
+        const issueKey = String(req.params.issueKey || "").trim();
+        if (!issueKey) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "issueKey is required" });
+        }
+        const newDeadline = req.body?.inspection_deadline;
+        if (!newDeadline) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "inspection_deadline is required" });
+        }
+        const result = await extendDeliveryDeadline({ issueKey }, newDeadline);
+        res.json({ ok: true, ...result });
+      } catch (e: any) {
+        console.error(
+          "PATCH /api/management/issues/:issueKey/deadline failed:",
+          e
+        );
+        const msg = String(e?.message || e);
+        const status = /not found|invalid/.test(msg) ? 400 : 500;
+        res.status(status).json({ ok: false, error: msg });
+      }
+    }
+  );
+
   // POST /api/management/daily-checks — Cloud Scheduler が朝 9:00 (JST) に叩く
   app.post("/api/management/daily-checks", async (_req, res) => {
     try {
@@ -1045,6 +1169,8 @@ ${details}
   //   2. last_alert_at をリセット (= 新しい期日でアラートカウント再開)
   //   3. Backlog 課題のカスタムフィールド「希望納期」も同期更新
   // -------------------------------------------------------------------
+  // PATCH /api/management/delivery-events/:id
+  //   内部 admin 用 (id で叩く)。ロジックは extendDeliveryDeadline に集約。
   app.patch(
     "/api/management/delivery-events/:id",
     express.json(),
@@ -1060,80 +1186,13 @@ ${details}
             .status(400)
             .json({ ok: false, error: "inspection_deadline is required" });
         }
-        // ISO8601 として date or full datetime をサポート
-        const d = new Date(newDeadline);
-        if (Number.isNaN(d.getTime())) {
-          return res
-            .status(400)
-            .json({ ok: false, error: "invalid inspection_deadline" });
-        }
-
-        // 旧値を取得 (Backlog 同期 + 通知用)
-        const prevRes = await query(
-          `SELECT id, backlog_issue_key, inspection_deadline
-             FROM delivery_events WHERE id = $1`,
-          [id]
-        );
-        const prev = prevRes.rows[0];
-        if (!prev) {
-          return res
-            .status(404)
-            .json({ ok: false, error: "delivery_event not found" });
-        }
-
-        // 1. DB 更新 (last_alert_at リセット)
-        await query(
-          `UPDATE delivery_events
-              SET inspection_deadline = $1,
-                  last_alert_at       = NULL,
-                  alert_count         = 0
-            WHERE id = $2`,
-          [d.toISOString(), id]
-        );
-
-        // 2. Backlog 同期 (希望納期カスタムフィールドを更新)
-        let backlogSynced = false;
-        try {
-          const issueKey = prev.backlog_issue_key;
-          if (issueKey && !issueKey.startsWith("MANUAL-")) {
-            await backlogService.updateIssue(issueKey, {
-              deadline: d.toISOString().slice(0, 10), // YYYY-MM-DD
-            });
-            backlogSynced = true;
-          }
-        } catch (e: any) {
-          console.warn(
-            `[delivery-extend] Backlog sync failed (id=${id}):`,
-            e?.message || e
-          );
-        }
-
-        // 3. Slack 通知 (任意・延長したことを申請者に共有)
-        try {
-          if (prev.backlog_issue_key) {
-            await notifyIssueEvent(prev.backlog_issue_key, {
-              type: "status_changed",
-              from: `納期 ${
-                prev.inspection_deadline
-                  ? new Date(prev.inspection_deadline).toLocaleDateString("ja-JP")
-                  : "—"
-              }`,
-              to: `納期 ${d.toLocaleDateString("ja-JP")} に変更`,
-            });
-          }
-        } catch (e) {
-          console.warn(`[delivery-extend] notify failed (id=${id}):`, e);
-        }
-
-        res.json({
-          ok: true,
-          id,
-          inspection_deadline: d.toISOString(),
-          backlog_synced: backlogSynced,
-        });
+        const result = await extendDeliveryDeadline({ id }, newDeadline);
+        res.json({ ok: true, ...result });
       } catch (e: any) {
         console.error("PATCH /api/management/delivery-events failed:", e);
-        res.status(500).json({ ok: false, error: String(e?.message || e) });
+        const msg = String(e?.message || e);
+        const status = /not found|invalid/.test(msg) ? 400 : 500;
+        res.status(status).json({ ok: false, error: msg });
       }
     }
   );
@@ -1287,14 +1346,17 @@ ${details}
       vendor_id, record_type, contract_category, contract_type, contract_title,
       document_number, contract_status, effective_date, expiration_date, auto_renewal,
       original_work, product_name, work_name, media, territory, language, document_url, condition_number,
+      // Phase 20: 更新アラート用フィールド
+      renewal_notice_months, alert_lead_months,
     } = req.body;
     try {
       const result = await query(
         `INSERT INTO contract_capabilities (
           vendor_id, record_type, contract_category, contract_type, contract_title,
           document_number, contract_status, effective_date, expiration_date, auto_renewal,
-          original_work, product_name, work_name, media, territory, language, document_url, condition_number
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+          original_work, product_name, work_name, media, territory, language, document_url, condition_number,
+          renewal_notice_months, alert_lead_months
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
         RETURNING id`,
         [
           vendor_id || null, record_type || "master_contract", contract_category || "service",
@@ -1302,6 +1364,8 @@ ${details}
           contract_status || "executed", effective_date || null, expiration_date || null,
           auto_renewal || false, original_work || "", product_name || "", work_name || "",
           media || "", territory || "", language || "", document_url || "", condition_number || "",
+          renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
+          alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
         ]
       );
       res.json({ success: true, id: result.rows[0].id });
@@ -1316,6 +1380,8 @@ ${details}
       vendor_id, record_type, contract_category, contract_type, contract_title,
       document_number, contract_status, effective_date, expiration_date, auto_renewal,
       original_work, product_name, work_name, media, territory, language, document_url, condition_number,
+      // Phase 20: 更新アラート用フィールド
+      renewal_notice_months, alert_lead_months,
     } = req.body;
     try {
       await query(
@@ -1325,13 +1391,16 @@ ${details}
           effective_date = $8, expiration_date = $9, auto_renewal = $10,
           original_work = $11, product_name = $12, work_name = $13, media = $14,
           territory = $15, language = $16, document_url = $17, condition_number = $18,
+          renewal_notice_months = $19, alert_lead_months = $20,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $19`,
+        WHERE id = $21`,
         [
           vendor_id || null, record_type, contract_category, contract_type, contract_title,
           document_number, contract_status, effective_date || null, expiration_date || null,
           auto_renewal, original_work || "", product_name || "", work_name || "",
           media || "", territory || "", language || "", document_url || "", condition_number || "",
+          renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
+          alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
           id,
         ]
       );

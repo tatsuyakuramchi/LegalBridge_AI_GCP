@@ -1,14 +1,23 @@
 import * as React from "react"
 import { createPortal } from "react-dom"
-import { CheckCircle2, ChevronRight, Loader2, Sparkles } from "lucide-react"
+import {
+  CalendarClock,
+  CheckCircle2,
+  ChevronRight,
+  Loader2,
+  Sparkles,
+  X,
+} from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
   updateIssueStatus,
   getRecommendedNextStatus,
+  updateDeliveryDeadline,
   type BacklogStatus,
 } from "@/src/lib/backlog"
 
@@ -53,6 +62,49 @@ export function WorkflowPanel({
   const { statuses, refreshIssues, showNotification } = useAppData()
   const [pending, setPending] = React.useState<number | null>(null)
   const [recommendedId, setRecommendedId] = React.useState<number | null>(null)
+
+  // Phase 20b: 納期延長 UI のローカル state
+  const [deadlineOpen, setDeadlineOpen] = React.useState(false)
+  const [deadlineInput, setDeadlineInput] = React.useState("")
+  const [deadlinePending, setDeadlinePending] = React.useState(false)
+
+  const handleExtendDeadline = async () => {
+    if (!issueKey) return
+    if (!deadlineInput) {
+      showNotification("新しい納期を入力してください", "error")
+      return
+    }
+    const d = new Date(deadlineInput)
+    if (Number.isNaN(d.getTime())) {
+      showNotification("無効な日付形式です", "error")
+      return
+    }
+    if (!window.confirm(
+      `${issueKey} の納期を「${d.toLocaleDateString("ja-JP")}」に変更します。\n\nBacklog のカスタムフィールド「希望納期」も同期更新されます。\nよろしいですか？`
+    )) {
+      return
+    }
+    setDeadlinePending(true)
+    try {
+      const r = await updateDeliveryDeadline(issueKey, d)
+      showNotification(
+        `納期を ${d.toLocaleDateString("ja-JP")} に変更しました${
+          r.backlog_synced ? " (Backlog 同期済み)" : ""
+        }`,
+        "success"
+      )
+      setDeadlineOpen(false)
+      setDeadlineInput("")
+      await refreshIssues?.()
+    } catch (e: any) {
+      showNotification(
+        `納期変更に失敗: ${e?.message || e}`,
+        "error"
+      )
+    } finally {
+      setDeadlinePending(false)
+    }
+  }
 
   // 推奨次ステータスを workflow_settings から取得
   React.useEffect(() => {
@@ -197,6 +249,70 @@ export function WorkflowPanel({
               ({issueTypeName} → workflow_settings)
             </span>
           </p>
+        )}
+      </div>
+
+      {/* Phase 20b: 納期延長 (発注書系) ────────────────────────────── */}
+      <div className="retro-rule" />
+
+      <div>
+        {!deadlineOpen ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setDeadlineOpen(true)}
+            className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
+            title={`Backlog ${issueKey} の納期 (delivery_events.inspection_deadline) を延長`}
+          >
+            <CalendarClock className="h-3 w-3" />
+            納期を延長
+          </Button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              New deadline:
+            </p>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <Input
+                type="date"
+                value={deadlineInput}
+                onChange={(e) => setDeadlineInput(e.target.value)}
+                disabled={deadlinePending}
+                className="h-8 w-40 font-mono text-xs"
+                min={new Date().toISOString().slice(0, 10)}
+              />
+              <Button
+                size="sm"
+                onClick={handleExtendDeadline}
+                disabled={deadlinePending || !deadlineInput}
+                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
+              >
+                {deadlinePending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <ChevronRight className="h-3 w-3" />
+                )}
+                変更を実行
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setDeadlineOpen(false)
+                  setDeadlineInput("")
+                }}
+                disabled={deadlinePending}
+                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
+              >
+                <X className="h-3 w-3" />
+                キャンセル
+              </Button>
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              DB の納期 + Backlog 課題のカスタムフィールド「希望納期」を同時に更新します。
+              申請者と部署チャンネルに変更通知が飛びます。
+            </p>
+          </div>
         )}
       </div>
     </div>

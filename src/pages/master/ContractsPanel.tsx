@@ -36,6 +36,9 @@ const empty = {
   effective_date: "",
   expiration_date: "",
   auto_renewal: false,
+  // Phase 20: 自動更新契約の通告期限アラート用 (auto_renewal=true のみ意味あり)
+  renewal_notice_months: "",
+  alert_lead_months: "",
   original_work: "",
   product_name: "",
   work_name: "",
@@ -360,6 +363,45 @@ export function ContractsPanel() {
                   {data?.auto_renewal ? "あり" : "なし"}
                 </span>
               </div>
+            </Field>
+            {/* Phase 20: 自動更新契約の通告期限アラート */}
+            <Field label="解約通告期限 (カ月前)">
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="例: 1"
+                value={
+                  data?.renewal_notice_months == null
+                    ? ""
+                    : String(data.renewal_notice_months)
+                }
+                onChange={(e) =>
+                  set({ renewal_notice_months: e.target.value })
+                }
+                disabled={!data?.auto_renewal}
+              />
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                満期の何カ月前までに通告が必要か (自動更新あり時のみ)
+              </p>
+            </Field>
+            <Field label="アラート前倒し (カ月)">
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                placeholder="例: 2"
+                value={
+                  data?.alert_lead_months == null
+                    ? ""
+                    : String(data.alert_lead_months)
+                }
+                onChange={(e) => set({ alert_lead_months: e.target.value })}
+                disabled={!data?.auto_renewal}
+              />
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                通告期限の何カ月前にアラートを出すか
+              </p>
             </Field>
             <Field label="作品 / 原作">
               <Input

@@ -53,6 +53,52 @@ export async function updateIssueStatus(
 }
 
 /**
+ * 発注書の納期 (delivery_events.inspection_deadline) を変更する。
+ *
+ * worker の `PATCH /api/management/issues/:issueKey/deadline` を叩く。
+ * 同時に Backlog 課題のカスタムフィールド「希望納期」も同期更新される
+ * (worker 側で実施)。
+ *
+ * @param issueKey       対象の Backlog 課題キー (= delivery_events.backlog_issue_key)
+ * @param newDeadline    新しい納期 (Date or ISO8601 文字列)
+ */
+export async function updateDeliveryDeadline(
+  issueKey: string,
+  newDeadline: string | Date
+): Promise<{
+  ok: true
+  id: number
+  backlog_issue_key: string
+  previous_deadline: string | null
+  new_deadline: string
+  backlog_synced: boolean
+}> {
+  const iso =
+    newDeadline instanceof Date
+      ? newDeadline.toISOString()
+      : String(newDeadline)
+  const res = await fetch(
+    `/api/management/issues/${encodeURIComponent(issueKey)}/deadline`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ inspection_deadline: iso }),
+    }
+  )
+  if (!res.ok) {
+    let detail = ""
+    try {
+      const j = await res.json()
+      detail = j?.error ? `: ${j.error}` : ""
+    } catch {
+      /* noop */
+    }
+    throw new Error(`HTTP ${res.status}${detail}`)
+  }
+  return res.json()
+}
+
+/**
  * workflow_settings から「この issue type の推奨次ステータス ID」を取得する。
  *
  * worker の `GET /api/master/workflow-settings?issue_type_name=...` を叩く。
