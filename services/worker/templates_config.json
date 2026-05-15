@@ -147,9 +147,7 @@
     "label": "業務委託基本契約書",
     "category": "Domestic",
     "vars": {
-      "CONTRACT_DATE_YEAR": { "label": "契約締結日 (年)", "group": "I. 契約締結日", "required": true, "placeholder": "2026" },
-      "CONTRACT_DATE_MONTH": { "label": "契約締結日 (月)", "group": "I. 契約締結日", "required": true, "placeholder": "5" },
-      "CONTRACT_DATE_DAY": { "label": "契約締結日 (日)", "group": "I. 契約締結日", "required": true, "placeholder": "12" },
+      "CONTRACT_DATE": { "label": "契約締結日", "type": "date", "group": "I. 契約締結日", "required": true },
 
       "PARTY_A_NAME": { "label": "甲 (委託者) 商号", "group": "II. 甲 (委託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "PARTY_A_ADDRESS": { "label": "甲 (委託者) 住所", "group": "II. 甲 (委託者)", "type": "textarea", "required": true },

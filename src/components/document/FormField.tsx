@@ -41,11 +41,22 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
     value === null ||
     (typeof value === 'string' && value.trim() === '');
 
+  // 明示的に type を指定された場合はそれが最優先。
+  // それ以外は ID ベースの推論 (greedy)。ただし
+  //   - "_YEAR", "_MONTH", "_DAY" 等の date 部分要素 suffix を持つ ID
+  //   - meta.type が 'text' / 'number' で明示されている ID
+  // は date 推論から除外する。
+  const looksLikeDateSubField = /_(YEAR|MONTH|DAY|HOUR|MINUTE)$/i.test(id);
   const isDate =
     meta.type === 'date' ||
-    id.includes('日') ||
-    id.includes('DATE') ||
-    id.includes('期限');
+    (meta.type !== 'text' &&
+      meta.type !== 'number' &&
+      meta.type !== 'textarea' &&
+      meta.type !== 'boolean' &&
+      !looksLikeDateSubField &&
+      (id.includes('日') ||
+        id.includes('DATE') ||
+        id.includes('期限')));
   const isTextarea =
     meta.type === 'textarea' ||
     id.includes('本文') ||

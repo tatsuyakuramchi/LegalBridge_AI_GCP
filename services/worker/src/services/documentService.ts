@@ -173,13 +173,37 @@ export class DocumentService {
   renderHtml(data: DocumentData, type: DocumentType = "legal_request"): string {
     const templateSource = this.loadTemplate(type);
     const template = Handlebars.compile(templateSource);
-    
-    // Merge details into the top level for easier template access
+
+    // 日付フィールドの auto-expand:
+    //   フォーム側は単一の date input (例: CONTRACT_DATE = "2026-05-12") で
+    //   入力するが、既存テンプレ HTML は {{CONTRACT_DATE_YEAR}} 等のように
+    //   分割形式で参照しているケースがある。ここで自動展開する。
+    //
+    //   "YYYY-MM-DD" 形式 (または "YYYY-MM-DDTHH:MM:SS..." 形式) の値を持つ
+    //   キーに対して、{key}_YEAR / _MONTH / _DAY を補完する (既存値があれば上書きしない)。
+    const enrichedDetails: Record<string, any> = { ...(data.details || {}) };
+    for (const [key, val] of Object.entries(enrichedDetails)) {
+      if (typeof val !== "string") continue;
+      const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) continue;
+      const [, y, mo, d] = m;
+      // 1 ベース。先頭ゼロ落としで自然な表示にする (例: 5月 12日)
+      if (enrichedDetails[`${key}_YEAR`] == null) {
+        enrichedDetails[`${key}_YEAR`] = String(parseInt(y, 10));
+      }
+      if (enrichedDetails[`${key}_MONTH`] == null) {
+        enrichedDetails[`${key}_MONTH`] = String(parseInt(mo, 10));
+      }
+      if (enrichedDetails[`${key}_DAY`] == null) {
+        enrichedDetails[`${key}_DAY`] = String(parseInt(d, 10));
+      }
+    }
+
     const context = {
       ...data,
-      ...data.details
+      ...enrichedDetails,
     };
-    
+
     return template(context);
   }
 

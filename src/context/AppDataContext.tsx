@@ -136,11 +136,20 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // Phase 17z 以降、search-api 側の /api/master/vendors と /api/master/staff
+  // は { ok: true, rows: [...], total: N } 形式で返す (旧 worker 側は plain
+  // array)。両方を受け入れるための正規化ヘルパー。
+  const unwrapList = <T,>(data: any): T[] => {
+    if (Array.isArray(data)) return data as T[]
+    if (data && Array.isArray(data.rows)) return data.rows as T[]
+    return []
+  }
+
   const refreshVendors = React.useCallback(async () => {
     try {
       const res = await fetch("/api/master/vendors")
       const data = await res.json()
-      setVendors(dedupe(data as Vendor[], (v) => v.vendor_code))
+      setVendors(dedupe(unwrapList<Vendor>(data), (v) => v.vendor_code))
     } catch (e) {
       console.error(e)
     }
@@ -150,7 +159,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     try {
       const res = await fetch("/api/master/staff")
       const data = await res.json()
-      setStaffList(dedupe(data as Staff[], (s) => s.slack_user_id))
+      setStaffList(dedupe(unwrapList<Staff>(data), (s) => s.slack_user_id))
     } catch (e) {
       console.error(e)
     }
@@ -261,8 +270,8 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     ] = results
 
     setIssues(dedupe(issuesRes as Issue[], (i) => i.issueKey))
-    setVendors(dedupe(vendorsRes as Vendor[], (v) => v.vendor_code))
-    setStaffList(dedupe(staffRes as Staff[], (s) => s.slack_user_id))
+    setVendors(dedupe(unwrapList<Vendor>(vendorsRes), (v) => v.vendor_code))
+    setStaffList(dedupe(unwrapList<Staff>(staffRes), (s) => s.slack_user_id))
     setCompanyProfile(profileRes)
     setAssets(dedupe(assetsRes as ExternalAsset[], (a) => a.id))
     setTemplateList(
