@@ -43,10 +43,11 @@ steps:
       - -c
       - |
         set -e
-        SECRET=$(gcloud secrets versions access latest --secret=lb-portal-secret 2>/dev/null || echo "")
-        if [ -n "$SECRET" ]; then
-          # 値を bundle に焼き込む。echo 結果は build log に出ない (出すなら $SECRET を直書きしない)
-          printf "VITE_API_PORTAL_SECRET=%s\n" "$SECRET" >> .env.production.local
+        # Cloud Build YAML 内では bash の $VAR は $$VAR にエスケープする
+        # (そうしないと Cloud Build が built-in substitution として解釈する)
+        SECRET=$$(gcloud secrets versions access latest --secret=lb-portal-secret 2>/dev/null || echo "")
+        if [ -n "$$SECRET" ]; then
+          printf "VITE_API_PORTAL_SECRET=%s\n" "$$SECRET" >> .env.production.local
           echo "✅ VITE_API_PORTAL_SECRET injected from Secret Manager (lb-portal-secret)"
         else
           echo "⚠️  lb-portal-secret not found in Secret Manager — admin-ui will not authenticate to search-api."
