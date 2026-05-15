@@ -215,7 +215,18 @@ type CompactProps = {
   className?: string
 }
 
-const MENU_WIDTH = 200
+const MENU_WIDTH = 220
+const MENU_PADDING = 8
+const ITEM_HEIGHT = 30 // 1 行の実測高さ
+const MENU_CHROME = 12 // メニュー自身の padding + border 分
+
+type MenuCoords = {
+  top: number
+  left: number
+  maxHeight: number
+  /** ボタンの上側に出るとき true (caret 方向の判定にも使う) */
+  above: boolean
+}
 
 function CompactDropdown({
   issueKey,
@@ -227,9 +238,7 @@ function CompactDropdown({
   className,
 }: CompactProps) {
   const [open, setOpen] = React.useState(false)
-  const [coords, setCoords] = React.useState<
-    { top: number; left: number } | null
-  >(null)
+  const [coords, setCoords] = React.useState<MenuCoords | null>(null)
   const wrapperRef = React.useRef<HTMLDivElement | null>(null)
   const menuRef = React.useRef<HTMLDivElement | null>(null)
 
@@ -237,20 +246,41 @@ function CompactDropdown({
     const el = wrapperRef.current
     if (!el) return
     const rect = el.getBoundingClientRect()
-    // メニューはボタンの右端基準で左に展開、はみ出る場合はビューポート右端から padding。
-    const padding = 8
-    let left = rect.right - MENU_WIDTH
-    if (left < padding) left = padding
-    if (left + MENU_WIDTH > window.innerWidth - padding) {
-      left = window.innerWidth - MENU_WIDTH - padding
+
+    // 横位置: ボタンの左端基準で右に展開 (左揃え)。
+    // ビューポート右端からはみ出るときだけ右端寄せに切り替える。
+    let left = rect.left
+    if (left + MENU_WIDTH > window.innerWidth - MENU_PADDING) {
+      left = window.innerWidth - MENU_WIDTH - MENU_PADDING
     }
-    let top = rect.bottom + 4
-    // ビューポート下端を超えそうなら上に出す
-    const estimatedMenuH = Math.min(360, statuses.length * 32 + 16)
-    if (top + estimatedMenuH > window.innerHeight - padding) {
-      top = Math.max(padding, rect.top - estimatedMenuH - 4)
+    if (left < MENU_PADDING) left = MENU_PADDING
+
+    // 縦位置: 下側に十分な空間があれば下に出す。
+    // 下側が狭く、上側のほうが広ければ上に出す (反転)。
+    const spaceBelow = window.innerHeight - rect.bottom - MENU_PADDING
+    const spaceAbove = rect.top - MENU_PADDING
+    const needed = Math.min(
+      statuses.length * ITEM_HEIGHT + MENU_CHROME,
+      360 // 絶対上限
+    )
+
+    let top: number
+    let maxHeight: number
+    let above: boolean
+
+    if (spaceBelow >= needed || spaceBelow >= spaceAbove) {
+      // 下に出す
+      top = rect.bottom + 4
+      maxHeight = Math.min(needed, spaceBelow - 4)
+      above = false
+    } else {
+      // 上に出す。max は空き分まで切り詰める (= 必ずビューポートに収まる)
+      maxHeight = Math.min(needed, spaceAbove - 4)
+      top = rect.top - maxHeight - 4
+      above = true
     }
-    setCoords({ top, left })
+
+    setCoords({ top, left, maxHeight, above })
   }, [statuses.length])
 
   React.useEffect(() => {
@@ -290,12 +320,43 @@ function CompactDropdown({
               top: coords.top,
               left: coords.left,
               width: MENU_WIDTH,
+              maxHeight: coords.maxHeight,
               zIndex: 1000,
+              // ─── 重要: Tailwind v4 @theme inline + HSL components のため
+              // bg-card / border-border クラスが透明色に展開されるケースが
+              // ある。Portal で document.body にレンダリングしているので
+              // 不透明な背景を絶対に確保したい。よって明示的に hsl(var())
+              // を inline style で指定する。
+              backgroundColor: "hsl(var(--card))",
+              borderColor: "hsl(var(--border))",
+              borderWidth: 1,
+              borderStyle: "solid",
+              borderRadius: "0.375rem",
+              boxShadow:
+                "0 18px 40px -8px hsl(var(--foreground) / 0.22), " +
+                "0 6px 16px -4px hsl(var(--foreground) / 0.14), " +
+                "0 0 0 1px hsl(var(--foreground) / 0.06)",
+              padding: 4,
+              overflowY: "auto",
             }}
-            className="rounded-md border border-border bg-card shadow-xl p-1 max-h-[60vh] overflow-y-auto"
             role="menu"
             onClick={(e) => e.stopPropagation()}
           >
+            {/* メニューヘッダ: 何を変更しようとしているか明示 */}
+            <div
+              className="px-2 py-1 mb-1 flex items-center justify-between gap-2"
+              style={{
+                borderBottom: "1px solid hsl(var(--border))",
+              }}
+            >
+              <span className="text-[9px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+                ▍ STATUS · {issueKey}
+              </span>
+              <span className="text-[8px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                {statuses.length}
+              </span>
+            </div>
+
             {statuses.length === 0 ? (
               <div className="px-2 py-1.5 font-mono text-[11px] uppercase tracking-[0.12em] text-muted-foreground">
                 no statuses
@@ -314,10 +375,22 @@ function CompactDropdown({
                       setOpen(false)
                       await onPick(s)
                     }}
+                    style={{
+                      backgroundColor: "transparent",
+                    }}
+                    onMouseEnter={(e) => {
+                      if (isCurrent) return
+                      ;(e.currentTarget as HTMLElement).style.backgroundColor =
+                        "hsl(var(--accent))"
+                    }}
+                    onMouseLeave={(e) => {
+                      ;(e.currentTarget as HTMLElement).style.backgroundColor =
+                        "transparent"
+                    }}
                     className={cn(
                       "w-full flex items-center gap-2 px-2 py-1.5 rounded-sm text-left",
                       "font-mono text-[11px] uppercase tracking-[0.12em]",
-                      "hover:bg-accent transition-colors",
+                      "transition-colors",
                       isCurrent &&
                         "opacity-50 cursor-not-allowed pointer-events-none"
                     )}
