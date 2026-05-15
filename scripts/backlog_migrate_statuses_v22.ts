@@ -102,16 +102,18 @@ const ADDITIONS: Array<{ name: string; color: string }> = [
 /**
  * 表示順 (flow 順)。
  *
- * 重要: Backlog の仕様で「Closed」タイプの status (= default id=4 完了) は
- * 表示順の最後でなければならない。"Update order failed. Last status id
- * must be Closed" エラーを避けるため、完了 を末尾に置く。
+ * Backlog の仕様で:
+ *   - First status は「Open」タイプ (= default id=1 未対応) でなければいけない
+ *   - Last status は「Closed」タイプ (= default id=4 完了) でなければいけない
  *
- * トリガー待ち は受動文書 (検収書 / 利用許諾料計算書) の pre-initial で、
- * 「未対応」より前のステージなので先頭に置く。
+ * トリガー待ち は意味的には 未対応 より前のステージだが、Backlog の制約で
+ * 未対応 を先頭に置く必要がある。Backlog 上の表示順 (= dropdown / ボード列順) と、
+ * アプリ側 statusFlow.ts の論理経路は別管理 (statusFlow.ts の FLOW で
+ * トリガー待ち → 未対応 → ... の順を保持)。
  */
 const TARGET_ORDER = [
-  "トリガー待ち",
-  "未対応",
+  "未対応", // ← MUST be first (Open type)
+  "トリガー待ち", // 視覚的にも初期グループにまとめる
   "処理中",
   "相手方確認中",
   "承認待ち",
