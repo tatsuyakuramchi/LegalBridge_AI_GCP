@@ -53,7 +53,21 @@ import {
   listVendors,
   getVendor,
   upsertVendor,
+  parseVendorCsv,
+  importVendorRows,
+  getVendorSampleCsv,
 } from "./src/services/vendorMasterService.ts";
+// Phase 17z-4: Staff マスター + Contracts (LegalOn 取込) を Master タブ群に統合。
+import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
+import { masterContractsPage } from "./src/views/masterContractsHtml.ts";
+import {
+  listStaff,
+  getStaff,
+  upsertStaff,
+  parseStaffCsv,
+  importStaffRows,
+  getStaffSampleCsv,
+} from "./src/services/staffMasterService.ts";
 
 dotenv.config();
 
@@ -493,6 +507,220 @@ async function startServer() {
         // バリデーションエラーは 400 で返す
         const status = /必須|invalid|required/i.test(msg) ? 400 : 500;
         res.status(status).json({ ok: false, error: msg });
+      }
+    }
+  );
+
+  // GET /api/master/vendors/template.csv — サンプル CSV ダウンロード (auth 不要)
+  app.get("/api/master/vendors/template.csv", (_req, res) => {
+    const csv = getVendorSampleCsv();
+    const body = "﻿" + csv;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="vendor_sample.csv"');
+    res.send(body);
+  });
+
+  // POST /api/master/vendors/import-csv — 一括取込
+  app.post(
+    "/api/master/vendors/import-csv",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "master:vendors:import",
+      allowedDepartments: ["経営管理本部", "法務"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "20mb" }),
+    async (req, res) => {
+      try {
+        const csv = String(req.body?.csv || "");
+        if (!csv) {
+          return res.status(400).json({ ok: false, error: "csv body field is required" });
+        }
+        const dupMode = req.body?.duplicate_mode || "overwrite";
+        if (!["overwrite", "skip", "fill_only"].includes(dupMode)) {
+          return res.status(400).json({
+            ok: false,
+            error: "duplicate_mode must be one of: overwrite | skip | fill_only",
+          });
+        }
+        const rows = parseVendorCsv(csv);
+        const result = await importVendorRows(rows, {
+          dry_run: req.body?.dry_run === true,
+          duplicate_mode: dupMode,
+        });
+
+        console.log(
+          JSON.stringify({
+            evt: "vendor_csv_import",
+            dry_run: req.body?.dry_run === true,
+            duplicate_mode: dupMode,
+            total: result.total,
+            succeeded: result.succeeded,
+            failed: result.failed,
+            skipped: result.skipped,
+            user: (req as any).user?.email || null,
+            ts: new Date().toISOString(),
+          })
+        );
+
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("POST /api/master/vendors/import-csv failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // /master/staff — スタッフマスター CRUD + CSV 一括取込 (Phase 17z-4)
+  // -------------------------------------------------------------------
+  app.get("/master/staff", requireIapUser({ renderErrorPage }), (req, res) => {
+    try {
+      res.type("html").send(staffMasterPage());
+    } catch (error) {
+      console.error("/master/staff failed:", error);
+      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+
+  app.get(
+    "/api/master/staff",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const q = String(req.query.q || "").trim();
+        const limit = Number(req.query.limit) || undefined;
+        const offset = Number(req.query.offset) || undefined;
+        const result = await listStaff({ q, limit, offset });
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("GET /api/master/staff failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  app.get(
+    "/api/master/staff/:id",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const id = String(req.params.id || "").trim();
+        if (!id) return res.status(400).json({ ok: false, error: "id is required" });
+        const s = await getStaff(id);
+        if (!s) return res.status(404).json({ ok: false, error: `staff not found: ${id}` });
+        res.json(s);
+      } catch (error: any) {
+        console.error("GET /api/master/staff/:id failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  app.post(
+    "/api/master/staff",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "master:staff:write",
+      allowedDepartments: ["経営管理本部", "法務"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "1mb" }),
+    async (req, res) => {
+      try {
+        const payload = req.body || {};
+        const saved = await upsertStaff(payload);
+        res.json({ ok: true, staff: saved });
+      } catch (error: any) {
+        console.error("POST /api/master/staff failed:", error);
+        const msg = String(error?.message || error);
+        const status = /必須|invalid|required/i.test(msg) ? 400 : 500;
+        res.status(status).json({ ok: false, error: msg });
+      }
+    }
+  );
+
+  app.get("/api/master/staff/template.csv", (_req, res) => {
+    const csv = getStaffSampleCsv();
+    const body = "﻿" + csv;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="staff_sample.csv"');
+    res.send(body);
+  });
+
+  app.post(
+    "/api/master/staff/import-csv",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "master:staff:import",
+      allowedDepartments: ["経営管理本部", "法務"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "20mb" }),
+    async (req, res) => {
+      try {
+        const csv = String(req.body?.csv || "");
+        if (!csv) {
+          return res.status(400).json({ ok: false, error: "csv body field is required" });
+        }
+        const dupMode = req.body?.duplicate_mode || "overwrite";
+        if (!["overwrite", "skip", "fill_only"].includes(dupMode)) {
+          return res.status(400).json({
+            ok: false,
+            error: "duplicate_mode must be one of: overwrite | skip | fill_only",
+          });
+        }
+        const rows = parseStaffCsv(csv);
+        const result = await importStaffRows(rows, {
+          dry_run: req.body?.dry_run === true,
+          duplicate_mode: dupMode,
+        });
+
+        console.log(
+          JSON.stringify({
+            evt: "staff_csv_import",
+            dry_run: req.body?.dry_run === true,
+            duplicate_mode: dupMode,
+            total: result.total,
+            succeeded: result.succeeded,
+            failed: result.failed,
+            skipped: result.skipped,
+            user: (req as any).user?.email || null,
+            ts: new Date().toISOString(),
+          })
+        );
+
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("POST /api/master/staff/import-csv failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // /master/contracts — Contracts master タブ (LegalOn 一括取込を内包)
+  //
+  // 旧 /imports/legalon と機能は同一だが、Arcs Legal OS の Master Systems
+  // タブ群と一体化させたページ。旧 URL もそのまま残し、後方互換を維持。
+  // -------------------------------------------------------------------
+  app.get(
+    "/master/contracts",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "master:contracts:view",
+      allowedDepartments: ["経営管理本部", "法務"],
+      renderErrorPage,
+    }),
+    (req, res) => {
+      try {
+        res.type("html").send(masterContractsPage());
+      } catch (error) {
+        console.error("/master/contracts failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
       }
     }
   );

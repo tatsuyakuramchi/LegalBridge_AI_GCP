@@ -13,6 +13,8 @@
  *   呼び出し時にエンドポイント側で resourceId "master:vendors" を渡す。
  */
 
+import Papa from "papaparse";
+
 import { query } from "../lib/db.ts";
 
 export type VendorRow = {
@@ -182,3 +184,285 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
   if (!result) throw new Error("upsert 後の取得に失敗しました");
   return result;
 }
+
+// ====================================================================
+// CSV 一括インポート (Phase 17z-4)
+// ====================================================================
+
+/**
+ * CSV ヘッダ → 内部キーへのマッピング。
+ * worker の csvImportService.ts と一致するエイリアスを受け入れる。
+ */
+const VENDOR_COLUMN_MAP: Record<string, keyof VendorRow> = {
+  // 英語キー (snake_case)
+  vendor_code: "vendor_code",
+  vendor_name: "vendor_name",
+  trade_name: "trade_name",
+  pen_name: "pen_name",
+  vendor_suffix: "vendor_suffix",
+  entity_type: "entity_type",
+  withholding_enabled: "withholding_enabled",
+  aliases: "aliases",
+  address: "address",
+  phone: "phone",
+  email: "email",
+  contact_department: "contact_department",
+  contact_name: "contact_name",
+  master_contract_ref: "master_contract_ref",
+  bank_info: "bank_info",
+  bank_name: "bank_name",
+  branch_name: "branch_name",
+  account_type: "account_type",
+  account_number: "account_number",
+  account_holder_kana: "account_holder_kana",
+  is_invoice_issuer: "is_invoice_issuer",
+  invoice_registration_number: "invoice_registration_number",
+  // camelCase variant
+  vendorCode: "vendor_code",
+  vendorName: "vendor_name",
+  tradeName: "trade_name",
+  penName: "pen_name",
+  vendorSuffix: "vendor_suffix",
+  entityType: "entity_type",
+  withholdingEnabled: "withholding_enabled",
+  contactDepartment: "contact_department",
+  contactName: "contact_name",
+  masterContractRef: "master_contract_ref",
+  bankInfo: "bank_info",
+  bankName: "bank_name",
+  branchName: "branch_name",
+  accountType: "account_type",
+  accountNumber: "account_number",
+  accountHolderKana: "account_holder_kana",
+  isInvoiceIssuer: "is_invoice_issuer",
+  invoiceRegistrationNumber: "invoice_registration_number",
+  // 日本語
+  取引先コード: "vendor_code",
+  取引先名: "vendor_name",
+  正式名称: "vendor_name",
+  屋号: "trade_name",
+  "屋号・ペンネーム": "trade_name",
+  ペンネーム: "pen_name",
+  敬称: "vendor_suffix",
+  区分: "entity_type",
+  種別: "entity_type",
+  エンティティ: "entity_type",
+  源泉徴収: "withholding_enabled",
+  別名: "aliases",
+  住所: "address",
+  所在地: "address",
+  電話: "phone",
+  電話番号: "phone",
+  メール: "email",
+  メールアドレス: "email",
+  担当部署: "contact_department",
+  部署: "contact_department",
+  担当者: "contact_name",
+  担当者名: "contact_name",
+  代表者名: "contact_name",
+  マスター契約: "master_contract_ref",
+  銀行情報: "bank_info",
+  銀行名: "bank_name",
+  支店名: "branch_name",
+  口座種別: "account_type",
+  預金種別: "account_type",
+  口座番号: "account_number",
+  口座名義: "account_holder_kana",
+  口座名義カナ: "account_holder_kana",
+  インボイス: "is_invoice_issuer",
+  適格請求書発行事業者: "is_invoice_issuer",
+  インボイス登録番号: "invoice_registration_number",
+  登録番号: "invoice_registration_number",
+};
+
+function parseBool(v: any): boolean {
+  if (typeof v === "boolean") return v;
+  const s = String(v || "").trim().toLowerCase();
+  return ["true", "1", "yes", "y", "○", "✓", "TRUE", "はい"].includes(s);
+}
+
+/**
+ * CSV テキストを VendorRow[] に変換する。ヘッダはマッピング辞書経由で
+ * 内部キーに正規化、空セルは undefined にする。
+ */
+export function parseVendorCsv(csvText: string): VendorRow[] {
+  const trimmed = String(csvText || "").trim();
+  if (!trimmed) return [];
+
+  const parsed = Papa.parse<Record<string, string>>(trimmed, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (h) => String(h || "").trim().replace(/^﻿/, ""),
+  });
+  if (parsed.errors?.length) {
+    const e = parsed.errors[0];
+    throw new Error(`CSV parse error: ${e.message} (row ${e.row})`);
+  }
+
+  return (parsed.data || []).map((raw) => {
+    const row: any = {};
+    for (const [key, val] of Object.entries(raw)) {
+      const mapped = VENDOR_COLUMN_MAP[key];
+      if (!mapped) continue;
+      const s = typeof val === "string" ? val.trim() : val;
+      if (s === "" || s == null) continue;
+      if (mapped === "withholding_enabled" || mapped === "is_invoice_issuer") {
+        row[mapped] = parseBool(s);
+      } else {
+        row[mapped] = s;
+      }
+    }
+    return row as VendorRow;
+  });
+}
+
+export type VendorImportOptions = {
+  dry_run?: boolean;
+  /**
+   * - "overwrite" : 既存値は EXCLUDED で完全上書き (= デフォルト)
+   * - "skip"      : vendor_code が既存ならスキップ
+   * - "fill_only" : 既存セルが空のときだけ補完
+   */
+  duplicate_mode?: "overwrite" | "skip" | "fill_only";
+};
+
+export type VendorImportResult = {
+  total: number;
+  succeeded: number;
+  failed: number;
+  skipped: number;
+  errors: Array<{ row: number; vendor_code: string; error: string }>;
+  preview?: Array<{
+    row: number;
+    vendor_code: string;
+    action: "insert" | "update" | "skip" | "fill_only";
+    vendor_name: string;
+  }>;
+};
+
+/**
+ * 行配列を vendors テーブルに upsert する。
+ * dry_run=true のときは DB は触らず preview を返す。
+ */
+export async function importVendorRows(
+  rows: VendorRow[],
+  opts: VendorImportOptions = {}
+): Promise<VendorImportResult> {
+  const mode = opts.duplicate_mode || "overwrite";
+  const result: VendorImportResult = {
+    total: rows.length,
+    succeeded: 0,
+    failed: 0,
+    skipped: 0,
+    errors: [],
+    preview: [],
+  };
+
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i];
+    const rowNum = i + 2; // CSV では 1 行目がヘッダ
+    const code = String(r.vendor_code || "").trim();
+    const name = String(r.vendor_name || "").trim();
+    if (!code) {
+      result.failed++;
+      result.errors.push({ row: rowNum, vendor_code: "(empty)", error: "vendor_code が空" });
+      continue;
+    }
+    if (!name) {
+      result.failed++;
+      result.errors.push({ row: rowNum, vendor_code: code, error: "vendor_name が空" });
+      continue;
+    }
+
+    // 既存判定
+    let existing: VendorRow | null = null;
+    try {
+      existing = await getVendor(code);
+    } catch (err: any) {
+      result.failed++;
+      result.errors.push({ row: rowNum, vendor_code: code, error: `lookup failed: ${err?.message || err}` });
+      continue;
+    }
+
+    // 重複モードに応じた action 判定
+    let action: "insert" | "update" | "skip" | "fill_only" = existing ? "update" : "insert";
+    if (existing && mode === "skip") action = "skip";
+    if (existing && mode === "fill_only") action = "fill_only";
+
+    if (action === "skip") {
+      result.skipped++;
+      result.preview!.push({ row: rowNum, vendor_code: code, action, vendor_name: name });
+      continue;
+    }
+
+    if (opts.dry_run) {
+      result.succeeded++;
+      result.preview!.push({ row: rowNum, vendor_code: code, action, vendor_name: name });
+      continue;
+    }
+
+    // 実際の upsert
+    try {
+      if (action === "fill_only" && existing) {
+        // 既存が空のセルだけ補完
+        const merged: VendorRow = { ...existing };
+        for (const [k, v] of Object.entries(r)) {
+          if (v == null || v === "") continue;
+          const cur = (existing as any)[k];
+          if (cur == null || cur === "") (merged as any)[k] = v;
+        }
+        await upsertVendor(merged);
+      } else {
+        // overwrite or insert
+        await upsertVendor(r);
+      }
+      result.succeeded++;
+      result.preview!.push({ row: rowNum, vendor_code: code, action, vendor_name: name });
+    } catch (err: any) {
+      result.failed++;
+      result.errors.push({ row: rowNum, vendor_code: code, error: String(err?.message || err) });
+    }
+  }
+
+  if (!opts.dry_run) {
+    delete result.preview;
+  }
+
+  return result;
+}
+
+/**
+ * サンプル CSV テキスト (UI のテンプレートダウンロード用)。
+ */
+export function getVendorSampleCsv(): string {
+  const header = [
+    "vendor_code", "vendor_name", "trade_name", "pen_name", "entity_type",
+    "phone", "email", "contact_name", "address",
+    "bank_name", "branch_name", "account_type", "account_number", "account_holder_kana",
+    "is_invoice_issuer", "invoice_registration_number",
+  ];
+  const rows = [
+    [
+      "2-20-9001", "株式会社サンプル商事", "サンプル商事", "", "corporate",
+      "03-1234-5678", "info@sample.co.jp", "山田 太郎", "東京都千代田区サンプル町1-2-3",
+      "みずほ銀行", "東京支店", "普通", "1234567", "カ）サンプルシヨウジ",
+      "TRUE", "T1234567890123",
+    ],
+    [
+      "2-20-9002", "サンプル個人事業主", "", "サンプル筆名", "individual",
+      "090-0000-0000", "ind@sample.com", "鈴木 花子", "大阪府大阪市サンプル区2-3-4",
+      "三井住友銀行", "梅田支店", "普通", "7654321", "スズキ ハナコ",
+      "FALSE", "",
+    ],
+  ];
+  return [header, ...rows]
+    .map((cols) =>
+      cols
+        .map((c) =>
+          /[",\n]/.test(String(c)) ? `"${String(c).replace(/"/g, '""')}"` : c
+        )
+        .join(",")
+    )
+    .join("\n");
+}
+

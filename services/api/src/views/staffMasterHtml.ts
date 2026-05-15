@@ -1,14 +1,8 @@
 /**
- * 取引先マスター CRUD 管理 UI (Phase 17z-4)
+ * Staff マスター CRUD 管理 UI (Phase 17z-4)
  *
- * /master/vendors ページ。
- *
- *   - 検索 + 一覧 (カードグリッド)
- *   - 新規追加 / 編集 (モーダル)
- *   - CSV 一括インポート (Phase 17z-4 で追加)
- *
- * フロント JS はバニラ + fetch API。
- * 共通 chrome (topbar, タブナビ, CSS) は masterChrome.ts から取得。
+ * /master/staff ページ。Vendor 版と同じ構造で、Slack ID をユニークキーに
+ * 部署/メール/電話を管理する。CSV 一括インポート機能あり。
  */
 
 import {
@@ -20,13 +14,11 @@ import {
   masterTabsHtml,
 } from "./masterChrome.ts";
 
-export function vendorMasterPage(_authIgnored?: unknown): string {
-  // Phase 17z-2 で恒久 URL 化したので _authIgnored は無視。
-  // API は同一オリジン (IAP セッション継承) で素の URL を叩く。
-  const apiListUrl = "/api/master/vendors";
-  const apiDetailTpl = "/api/master/vendors/__CODE__";
-  const apiImportUrl = "/api/master/vendors/import-csv";
-  const apiTemplateUrl = "/api/master/vendors/template.csv";
+export function staffMasterPage(): string {
+  const apiListUrl = "/api/master/staff";
+  const apiDetailTpl = "/api/master/staff/__ID__";
+  const apiImportUrl = "/api/master/staff/import-csv";
+  const apiTemplateUrl = "/api/master/staff/template.csv";
 
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -34,12 +26,12 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
-  <title>Vendors · Arcs Legal OS</title>
+  <title>Staff · Arcs Legal OS</title>
   ${HEAD_FONTS}
   <style>${MASTER_CSS}</style>
 </head>
 <body>
-  ${topbarHtml("Vendors", "Master · External partners")}
+  ${topbarHtml("Staff", "Master · Internal")}
 
   <div class="container" style="padding-top: 24px; padding-bottom: 48px;">
     ${pageHeaderHtml({
@@ -48,21 +40,19 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       desc: "Reference data — vendors, staff, and contracts.",
     })}
 
-    ${masterTabsHtml("vendors")}
+    ${masterTabsHtml("staff")}
 
-    <!-- Toolbar -->
     <div class="toolbar">
       <div class="search">
         ${SVG.search}
-        <input type="text" id="search" placeholder="取引先名・取引先コードで検索…" autocomplete="off">
+        <input type="text" id="search" placeholder="氏名・部署・メール・Slack ID で検索…" autocomplete="off">
       </div>
       <span class="count-badge" id="count">— entries</span>
       <div class="spacer"></div>
       <button class="btn outline" id="btn-import">${SVG.upload} CSV 一括取込</button>
-      <button class="btn" id="btn-new">${SVG.plus} 取引先を追加</button>
+      <button class="btn" id="btn-new">${SVG.plus} スタッフを追加</button>
     </div>
 
-    <!-- List -->
     <div id="list-wrap">
       <div class="loading">LOADING</div>
     </div>
@@ -73,8 +63,8 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     <div class="modal">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <span class="modal-tag" id="modal-tag">MST · VENDORS</span>
-          <h3 class="modal-title" id="modal-title">取引先の編集</h3>
+          <span class="modal-tag" id="modal-tag">MST · STAFF</span>
+          <h3 class="modal-title" id="modal-title">スタッフの編集</h3>
         </div>
         <button class="btn ghost sm" id="btn-close" aria-label="閉じる">${SVG.x}</button>
       </div>
@@ -85,132 +75,37 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
             <div class="section-head"><span class="retro-tag">SEC · 01 / 基本情報</span></div>
 
             <div class="field">
-              <label class="tech-label">取引先コード<span class="req">*</span></label>
-              <input class="tech-input" type="text" name="vendor_code" required maxlength="50" placeholder="例: 2-20-1234">
-              <span class="field-help">既存コードを入れると上書き (UPSERT)。新規時のみ編集可能。</span>
+              <label class="tech-label">Slack ユーザー ID<span class="req">*</span></label>
+              <input class="tech-input" type="text" name="slack_user_id" required maxlength="50" placeholder="例: U01ABCDEF12">
+              <span class="field-help">unique key。Slack のプロフィールから取得 (Member ID)。新規時のみ編集可能。</span>
             </div>
 
             <div class="field">
-              <label class="tech-label">区分</label>
-              <select class="tech-select" name="entity_type">
-                <option value="">(未指定)</option>
-                <option value="corporate">法人</option>
-                <option value="individual">個人</option>
-                <option value="sole_proprietor">個人事業主</option>
-              </select>
-            </div>
-
-            <div class="field col-2">
-              <label class="tech-label">正式名称<span class="req">*</span></label>
-              <input class="tech-input" type="text" name="vendor_name" required maxlength="255" placeholder="例: 株式会社サンプル">
+              <label class="tech-label">氏名<span class="req">*</span></label>
+              <input class="tech-input" type="text" name="staff_name" required maxlength="255" placeholder="例: 倉持 達也">
             </div>
 
             <div class="field">
-              <label class="tech-label">屋号 / 略称</label>
-              <input class="tech-input" type="text" name="trade_name" maxlength="255">
+              <label class="tech-label">部署</label>
+              <input class="tech-input" type="text" name="department" maxlength="100" placeholder="例: 経営管理本部">
+              <span class="field-help">役割ベース認可で部署照会に使用。</span>
             </div>
 
             <div class="field">
-              <label class="tech-label">ペンネーム</label>
-              <input class="tech-input" type="text" name="pen_name" maxlength="255">
-            </div>
-
-            <div class="field">
-              <label class="tech-label">敬称サフィックス</label>
-              <input class="tech-input" type="text" name="vendor_suffix" maxlength="50" placeholder="様 / 御中">
-            </div>
-
-            <div class="field">
-              <label class="tech-label">別名 (aliases)</label>
-              <input class="tech-input" type="text" name="aliases" placeholder="カンマ区切りで複数可">
+              <label class="tech-label">部署コード</label>
+              <input class="tech-input" type="text" name="department_code" maxlength="50" placeholder="例: MGMT / LEGAL">
             </div>
 
             <div class="section-head"><span class="retro-tag">SEC · 02 / 連絡先</span></div>
 
             <div class="field">
-              <label class="tech-label">担当部署</label>
-              <input class="tech-input" type="text" name="contact_department" maxlength="100">
-            </div>
-
-            <div class="field">
-              <label class="tech-label">担当者</label>
-              <input class="tech-input" type="text" name="contact_name" maxlength="100">
+              <label class="tech-label">メールアドレス</label>
+              <input class="tech-input" type="email" name="email" maxlength="255" placeholder="user@arclight.co.jp">
             </div>
 
             <div class="field">
               <label class="tech-label">電話番号</label>
               <input class="tech-input" type="tel" name="phone" maxlength="50" placeholder="03-1234-5678">
-            </div>
-
-            <div class="field">
-              <label class="tech-label">メールアドレス</label>
-              <input class="tech-input" type="email" name="email" maxlength="255" placeholder="contact@example.com">
-            </div>
-
-            <div class="field col-2">
-              <label class="tech-label">住所</label>
-              <input class="tech-input" type="text" name="address">
-            </div>
-
-            <div class="section-head"><span class="retro-tag">SEC · 03 / 税務・インボイス</span></div>
-
-            <div class="checkbox-row">
-              <input type="checkbox" id="withholding_enabled" name="withholding_enabled">
-              <label for="withholding_enabled">源泉徴収を行う</label>
-            </div>
-
-            <div class="checkbox-row">
-              <input type="checkbox" id="is_invoice_issuer" name="is_invoice_issuer">
-              <label for="is_invoice_issuer">適格請求書発行事業者 (インボイス)</label>
-            </div>
-
-            <div class="field col-2">
-              <label class="tech-label">インボイス登録番号</label>
-              <input class="tech-input" type="text" name="invoice_registration_number" maxlength="50" placeholder="T1234567890123">
-            </div>
-
-            <div class="section-head"><span class="retro-tag">SEC · 04 / 振込先</span></div>
-
-            <div class="field">
-              <label class="tech-label">銀行名</label>
-              <input class="tech-input" type="text" name="bank_name">
-            </div>
-
-            <div class="field">
-              <label class="tech-label">支店名</label>
-              <input class="tech-input" type="text" name="branch_name">
-            </div>
-
-            <div class="field">
-              <label class="tech-label">口座種別</label>
-              <select class="tech-select" name="account_type">
-                <option value="">(未指定)</option>
-                <option value="普通">普通</option>
-                <option value="当座">当座</option>
-                <option value="貯蓄">貯蓄</option>
-              </select>
-            </div>
-
-            <div class="field">
-              <label class="tech-label">口座番号</label>
-              <input class="tech-input" type="text" name="account_number" maxlength="50">
-            </div>
-
-            <div class="field col-2">
-              <label class="tech-label">口座名義 (カナ)</label>
-              <input class="tech-input" type="text" name="account_holder_kana">
-            </div>
-
-            <div class="section-head"><span class="retro-tag">SEC · 05 / その他</span></div>
-
-            <div class="field col-2">
-              <label class="tech-label">マスター契約参照</label>
-              <input class="tech-input" type="text" name="master_contract_ref" placeholder="既存契約番号 / URL 等">
-            </div>
-
-            <div class="field col-2">
-              <label class="tech-label">銀行情報メモ</label>
-              <input class="tech-input" type="text" name="bank_info" placeholder="自由記述">
             </div>
 
           </div>
@@ -228,7 +123,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     <div class="modal">
       <div class="modal-header">
         <div class="modal-title-wrap">
-          <span class="modal-tag">MST · VENDORS / BULK</span>
+          <span class="modal-tag">MST · STAFF / BULK</span>
           <h3 class="modal-title">CSV 一括取込</h3>
         </div>
         <button class="btn ghost sm" id="btn-import-close" aria-label="閉じる">${SVG.x}</button>
@@ -237,9 +132,9 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
         <div class="import-card" style="margin: 0;">
           <p class="desc">
             CSV (UTF-8) を選択してアップロードしてください。
-            <code>vendor_code</code> と <code>vendor_name</code> が必須、
+            <code>slack_user_id</code> と <code>staff_name</code> が必須、
             それ以外は欠落可。<br>
-            既存の <code>vendor_code</code> は重複モードに従って処理されます。
+            既存の Slack ID は重複モードに従って処理されます。
           </p>
 
           <div class="file-input-wrap">
@@ -263,7 +158,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
           </div>
 
           <div style="margin-top: 16px;">
-            <a href="${apiTemplateUrl}" download="vendor_sample.csv" class="btn outline sm">
+            <a href="${apiTemplateUrl}" download="staff_sample.csv" class="btn outline sm">
               ${SVG.download} サンプル CSV
             </a>
           </div>
@@ -286,6 +181,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     const apiDetailTpl = ${JSON.stringify(apiDetailTpl)};
     const apiImportUrl = ${JSON.stringify(apiImportUrl)};
     const $ = (id) => document.getElementById(id);
+    const ICON_USER = ${JSON.stringify(SVG.user)};
 
     let cache = [];
     let creating = false;
@@ -302,8 +198,6 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
     function escAttr(s) { return escHtml(s).replace(/"/g, '&quot;'); }
-
-    const ICON_BUILDING = ${JSON.stringify(SVG.building)};
 
     /* ----- list ----- */
     async function loadList() {
@@ -323,8 +217,8 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     function renderList() {
       const q = $('search').value.trim().toLowerCase();
       const rows = q
-        ? cache.filter(v => {
-            const hay = [v.vendor_code, v.vendor_name, v.trade_name, v.pen_name, v.aliases]
+        ? cache.filter(s => {
+            const hay = [s.slack_user_id, s.staff_name, s.email, s.department, s.department_code]
               .filter(Boolean).join(' ').toLowerCase();
             return hay.includes(q);
           })
@@ -336,32 +230,32 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
       if (rows.length === 0) {
         $('list-wrap').innerHTML =
-          '<div class="grid"><div class="empty">NO VENDORS REGISTERED</div></div>';
+          '<div class="grid"><div class="empty">NO STAFF REGISTERED</div></div>';
         return;
       }
 
-      const cards = rows.map(v => {
-        const entityBadge = v.entity_type === 'corporate'
-          ? '<span class="badge corp">CORP</span>'
-          : (v.entity_type === 'individual' || v.entity_type === 'sole_proprietor')
-            ? '<span class="badge ind">IND</span>'
-            : '';
-        const invoiceBadge = v.is_invoice_issuer ? '<span class="badge inv">INV</span>' : '';
-        const sub = v.trade_name || v.pen_name || '—';
-        return '<div class="card" data-code="' + escAttr(v.vendor_code) + '">'
+      const cards = rows.map(s => {
+        const deptBadge = s.department
+          ? '<span class="badge">' + escHtml(s.department) + '</span>'
+          : '';
+        const codeBadge = s.department_code
+          ? '<span class="badge corp">' + escHtml(s.department_code) + '</span>'
+          : '';
+        const sub = s.email || s.phone || '—';
+        return '<div class="card" data-id="' + escAttr(s.slack_user_id) + '">'
           + '<div class="card-head">'
-          +   ICON_BUILDING
-          +   '<span class="badge">' + escHtml(v.vendor_code) + '</span>'
+          +   ICON_USER
+          +   '<span class="badge">' + escHtml(s.slack_user_id) + '</span>'
           + '</div>'
-          + '<p class="card-name">' + escHtml(v.vendor_name) + '</p>'
+          + '<p class="card-name">' + escHtml(s.staff_name) + '</p>'
           + '<p class="card-sub">' + escHtml(sub) + '</p>'
-          + '<div class="card-meta">' + entityBadge + ' ' + invoiceBadge + '</div>'
+          + '<div class="card-meta">' + deptBadge + ' ' + codeBadge + '</div>'
           + '</div>';
       }).join('');
 
       $('list-wrap').innerHTML = '<div class="grid">' + cards + '</div>';
-      $('list-wrap').querySelectorAll('.card[data-code]').forEach(card => {
-        card.addEventListener('click', () => openEdit(card.dataset.code));
+      $('list-wrap').querySelectorAll('.card[data-id]').forEach(card => {
+        card.addEventListener('click', () => openEdit(card.dataset.id));
       });
     }
 
@@ -370,29 +264,29 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     /* ----- edit modal ----- */
     function openCreate() {
       creating = true;
-      $('modal-tag').textContent = 'MST · VENDORS / NEW';
-      $('modal-title').textContent = '取引先の新規追加';
+      $('modal-tag').textContent = 'MST · STAFF / NEW';
+      $('modal-title').textContent = 'スタッフの新規追加';
       const form = $('form');
       form.reset();
-      form.querySelector('[name=vendor_code]').readOnly = false;
+      form.querySelector('[name=slack_user_id]').readOnly = false;
       $('modal-backdrop').classList.add('open');
-      setTimeout(() => form.querySelector('[name=vendor_code]').focus(), 50);
+      setTimeout(() => form.querySelector('[name=slack_user_id]').focus(), 50);
     }
 
-    async function openEdit(code) {
+    async function openEdit(id) {
       creating = false;
-      $('modal-tag').textContent = 'MST · VENDORS / EDIT';
-      $('modal-title').textContent = code;
+      $('modal-tag').textContent = 'MST · STAFF / EDIT';
+      $('modal-title').textContent = id;
       const form = $('form');
       form.reset();
       $('modal-backdrop').classList.add('open');
       try {
-        const url = apiDetailTpl.replace('__CODE__', encodeURIComponent(code));
+        const url = apiDetailTpl.replace('__ID__', encodeURIComponent(id));
         const res = await fetch(url);
         if (!res.ok) throw new Error('HTTP ' + res.status);
-        const v = await res.json();
-        fillForm(v);
-        form.querySelector('[name=vendor_code]').readOnly = true;
+        const s = await res.json();
+        fillForm(s);
+        form.querySelector('[name=slack_user_id]').readOnly = true;
       } catch (e) {
         toast('取得失敗: ' + (e?.message || e), 'error');
         closeEditModal();
@@ -415,8 +309,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       const out = {};
       Array.from(form.elements).forEach(el => {
         if (!el.name) return;
-        if (el.type === 'checkbox') out[el.name] = el.checked;
-        else out[el.name] = el.value.trim();
+        out[el.name] = el.value.trim();
       });
       return out;
     }
@@ -430,8 +323,8 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
     $('btn-save').addEventListener('click', async () => {
       const payload = readForm();
-      if (!payload.vendor_code) { toast('取引先コードは必須です', 'error'); return; }
-      if (!payload.vendor_name) { toast('正式名称は必須です', 'error'); return; }
+      if (!payload.slack_user_id) { toast('Slack ID は必須です', 'error'); return; }
+      if (!payload.staff_name) { toast('氏名は必須です', 'error'); return; }
       $('btn-save').disabled = true;
       try {
         const res = await fetch(apiListUrl, {
@@ -520,7 +413,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     function renderImportResult(r) {
       const errBlock = (r.errors && r.errors.length > 0)
         ? '<div class="error-list">'
-          + r.errors.map(e => '<div class="row">行 ' + e.row + ' [' + escHtml(e.vendor_code) + ']: ' + escHtml(e.error) + '</div>').join('')
+          + r.errors.map(e => '<div class="row">行 ' + e.row + ' [' + escHtml(e.slack_user_id) + ']: ' + escHtml(e.error) + '</div>').join('')
           + '</div>'
         : '';
       $('import-result').innerHTML =
