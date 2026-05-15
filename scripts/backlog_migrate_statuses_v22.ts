@@ -157,6 +157,14 @@ async function renameStatus(statusId: number, newName: string) {
   await axios.patch(url(`/projects/${PROJECT_KEY}/statuses/${statusId}`), body);
 }
 
+/**
+ * default status (id 1〜4) は API でリネーム不可。Backlog スペース設定の
+ * 「状態管理」から手動でリネームする必要がある。
+ */
+function isDefaultStatus(statusId: number): boolean {
+  return statusId >= 1 && statusId <= 4;
+}
+
 async function addStatus(name: string, color: string): Promise<BacklogStatus> {
   const body = new URLSearchParams();
   body.append("name", name);
@@ -226,6 +234,7 @@ async function main() {
   // ── Phase 1: Renames ─────────────────────────────────────────────
   console.log();
   console.log("───── Phase 1: RENAME ─────");
+  const manualRenames: Array<{ from: string; to: string; id: number }> = [];
   for (const r of RENAMES) {
     const cur = byName.get(r.from);
     if (!cur) {
@@ -242,12 +251,33 @@ async function main() {
       );
       continue;
     }
+    // default status (id 1〜4) は API で直接リネーム不可
+    if (isDefaultStatus(cur.id)) {
+      log(
+        "warn",
+        `skip rename "${r.from}" → "${r.to}" (id=${cur.id} は default status、` +
+          `API でリネーム不可)。Backlog スペース設定の状態管理から手動で変更してください。`
+      );
+      manualRenames.push({ from: r.from, to: r.to, id: cur.id });
+      continue;
+    }
     console.log(
       `   RENAME id=${cur.id}  "${r.from}" → "${r.to}"  ${DRY_RUN ? "(dry-run)" : ""}`
     );
     if (!DRY_RUN) {
-      await renameStatus(cur.id, r.to);
-      await sleep(250);
+      try {
+        await renameStatus(cur.id, r.to);
+        await sleep(250);
+      } catch (e: any) {
+        log(
+          "warn",
+          `   rename failed (id=${cur.id} "${r.from}" → "${r.to}"): ${
+            e?.response?.data?.errors?.[0]?.message ||
+            e?.response?.status ||
+            e?.message
+          }`
+        );
+      }
     }
   }
 
@@ -388,6 +418,31 @@ async function main() {
     console.log();
     console.log("💡 これは DRY RUN です。実際に変更するには --apply を付けて再実行してください。");
     console.log("   tsx scripts/backlog_migrate_statuses_v22.ts --apply");
+  }
+
+  // ── Manual action summary ───────────────────────────────────────
+  if (manualRenames.length > 0) {
+    console.log();
+    console.log("═══════════════════════════════════════════════════");
+    console.log("⚠️  手動操作が必要な項目があります");
+    console.log("═══════════════════════════════════════════════════");
+    console.log();
+    console.log("Backlog の default status (id 1〜4) は API でリネーム不可です。");
+    console.log("スペース管理者として Backlog にログインし、以下の手順で手動変更してください:");
+    console.log();
+    console.log("  1. Backlog にログイン → 右上の歯車 → スペース設定");
+    console.log("  2. 「状態管理」を選択");
+    console.log("  3. 以下のステータスを編集:");
+    console.log();
+    for (const m of manualRenames) {
+      console.log(`     • id=${m.id}: 「${m.from}」 → 「${m.to}」 にリネーム`);
+    }
+    console.log();
+    console.log("  4. 保存");
+    console.log();
+    console.log("(注: スペース設定の変更は全プロジェクトに影響します。");
+    console.log(" 他プロジェクトでこれらの名前を使っている場合は事前に確認してください)");
+    console.log();
   }
 }
 
