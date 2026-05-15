@@ -76,6 +76,9 @@ const ISSUE_MIGRATIONS: Array<{
   { from: "クラウドサイン締結完了", to: "完了", deleteAfter: true },
   { from: "締結済", to: "完了", deleteAfter: true },
   { from: "有効", to: "完了", deleteAfter: true },
+  // Phase 1 で 審査中→承認待ち の rename が name 衝突で skip された場合、
+  // 課題を 承認待ち に移してから 審査中 status を削除する。
+  { from: "審査中", to: "承認待ち", deleteAfter: true },
 ];
 
 /** 新規追加 */
