@@ -342,6 +342,264 @@ async function startServer() {
   }
 
   // -------------------------------------------------------------------
+  // -------------------------------------------------------------------
+  // Phase 22.2: 自動連鎖ルール
+  //
+  // 親課題が「締結待ち → 完了」遷移したら、特定の子課題を自動作成する。
+  // 子課題は「トリガー待ち」初期状態。Slack /法務依頼 で対応する受動文書
+  // (検収書 / 利用許諾料計算書) が起票されたら「未対応」に遷移する。
+  // -------------------------------------------------------------------
+  type AutoChainRule = {
+    parentRequestType: string;
+    childRequestType: string;
+    childIssueTypeName: string;
+    triggerLabel: string;
+    childSummaryPrefix: string;
+    childActionInstruction: string;
+  };
+
+  const AUTO_CHAIN_RULES: AutoChainRule[] = [
+    {
+      parentRequestType: "purchase_order",
+      childRequestType: "delivery_inspec",
+      childIssueTypeName: "納品リクエスト",
+      triggerLabel: "納品待ち",
+      childSummaryPrefix: "[納品報告] ",
+      childActionInstruction:
+        "納品を確認したら Slack で `/法務依頼` → 「納品 / 検収書」 を選び、本課題を選択して起票してください。",
+    },
+    {
+      parentRequestType: "lic_individual",
+      childRequestType: "license_calc",
+      childIssueTypeName: "売上報告案件",
+      triggerLabel: "利用許諾報告待ち",
+      childSummaryPrefix: "[利用許諾報告] ",
+      childActionInstruction:
+        "利用報告を受けたら Slack で `/法務依頼` → 「利用許諾料計算書」 を選び、本課題を選択して起票してください。",
+    },
+  ];
+
+  /**
+   * 親課題が完了したとき、対応する受動子課題を自動作成。
+   * 既に同種類の子があれば二重生成を回避。
+   */
+  async function autoChainOnComplete(
+    parentIssueKey: string,
+    parentIssue: any
+  ): Promise<void> {
+    try {
+      // 親の request_type を DB から取得
+      const lrRes = await query(
+        `SELECT request_type, slack_user_id, slack_user_name, summary, counterparty, dept
+           FROM legal_requests
+          WHERE backlog_issue_key = $1`,
+        [parentIssueKey]
+      );
+      const parentLr = lrRes.rows[0];
+      if (!parentLr) {
+        console.log(
+          `[auto-chain] no legal_requests for ${parentIssueKey}, skip`
+        );
+        return;
+      }
+
+      const rule = AUTO_CHAIN_RULES.find(
+        (r) => r.parentRequestType === parentLr.request_type
+      );
+      if (!rule) return;
+
+      // 既に同型の子課題があれば skip (二重生成防止)
+      let existingChildren: any[] = [];
+      try {
+        existingChildren =
+          (await backlogService.getChildIssues(parentIssue.id)) || [];
+      } catch (e) {
+        console.warn(`[auto-chain] getChildIssues failed for ${parentIssueKey}:`, e);
+      }
+      const alreadyChained = existingChildren.some(
+        (c: any) => c?.issueType?.name === rule.childIssueTypeName
+      );
+      if (alreadyChained) {
+        console.log(
+          `[auto-chain] ${parentIssueKey} already has ${rule.childIssueTypeName} child, skip`
+        );
+        return;
+      }
+
+      // 子課題の Backlog issue type id を解決
+      const issueTypes = await backlogService.getIssueTypes();
+      const childType = issueTypes.find(
+        (t: any) => t.name === rule.childIssueTypeName
+      );
+      if (!childType) {
+        console.warn(
+          `[auto-chain] Backlog issue type "${rule.childIssueTypeName}" not found, skip`
+        );
+        return;
+      }
+
+      // Backlog 子課題作成
+      const childIssue = await backlogService.createIssue({
+        summary: rule.childSummaryPrefix + (parentLr.summary || parentIssueKey),
+        description:
+          `自動作成: 親課題 ${parentIssueKey} が完了したため、` +
+          `${rule.triggerLabel} 課題を起こしました。\n\n` +
+          `申請者: <@${parentLr.slack_user_id}>\n\n` +
+          rule.childActionInstruction,
+        issueTypeId: childType.id,
+        priorityId: 3,
+        parentIssueId: parentIssue.id,
+      });
+
+      if (!childIssue?.issueKey) {
+        console.warn(
+          `[auto-chain] child creation returned no issueKey for ${parentIssueKey}`
+        );
+        return;
+      }
+
+      console.log(
+        `📎 [auto-chain] ${parentIssueKey} → ${childIssue.issueKey} (${rule.childIssueTypeName}) 作成`
+      );
+
+      // 子課題ステータスを「トリガー待ち」に
+      try {
+        const statuses = await backlogService.getStatuses();
+        const triggerStatus = statuses.find(
+          (s: any) => s.name === "トリガー待ち"
+        );
+        if (triggerStatus) {
+          await backlogService.updateIssueStatus(
+            childIssue.issueKey,
+            triggerStatus.id
+          );
+        } else {
+          console.warn(`[auto-chain] "トリガー待ち" status not found in Backlog`);
+        }
+      } catch (e) {
+        console.warn(`[auto-chain] failed to set トリガー待ち on ${childIssue.issueKey}:`, e);
+      }
+
+      // DB: legal_requests と issue_workflows に登録
+      try {
+        await query(
+          `INSERT INTO legal_requests
+             (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, deadline, notes)
+           VALUES ($1, $2, $3, $4, $5, NULL, $6)
+           ON CONFLICT (backlog_issue_key) DO NOTHING`,
+          [
+            childIssue.issueKey,
+            parentLr.slack_user_id,
+            rule.childRequestType,
+            parentLr.counterparty,
+            childIssue.summary,
+            `親: ${parentIssueKey}`,
+          ]
+        );
+        await query(
+          `INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name)
+           VALUES ($1, $2, 'トリガー待ち')
+           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+             current_status_name = 'トリガー待ち',
+             issue_type_name     = EXCLUDED.issue_type_name`,
+          [childIssue.issueKey, rule.childRequestType]
+        );
+      } catch (e) {
+        console.warn(`[auto-chain] DB insert failed for ${childIssue.issueKey}:`, e);
+      }
+
+      // Slack 通知
+      try {
+        await notifyAutoChainCreated(
+          childIssue.issueKey,
+          parentIssueKey,
+          parentLr,
+          rule
+        );
+      } catch (e) {
+        console.warn(`[auto-chain] notify failed:`, e);
+      }
+    } catch (e) {
+      console.error("[auto-chain] fatal error:", e);
+    }
+  }
+
+  /**
+   * 自動連鎖で子課題が作られたことを申請者と部署チャンネルに通知。
+   */
+  async function notifyAutoChainCreated(
+    childIssueKey: string,
+    parentIssueKey: string,
+    parentLr: any,
+    rule: AutoChainRule
+  ): Promise<void> {
+    if (!slackWebClient) return;
+
+    const slackUserId = String(parentLr.slack_user_id || "").trim();
+    if (!slackUserId) return;
+
+    // 部署 channel を引く
+    const dwrRes = await query(
+      `SELECT dwr.slack_channel_id
+         FROM staff s
+         LEFT JOIN department_workflow_rules dwr
+                ON dwr.department = COALESCE(s.department, $2)
+        WHERE s.slack_user_id = $1
+        LIMIT 1`,
+      [slackUserId, parentLr.dept || ""]
+    );
+    const channelId = String(dwrRes.rows[0]?.slack_channel_id || "").trim();
+
+    const backlogHost = (
+      dbSettings.BACKLOG_HOST ||
+      process.env.BACKLOG_HOST ||
+      ""
+    ).replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const childUrl = backlogHost
+      ? `https://${backlogHost}/view/${childIssueKey}`
+      : "";
+    const parentUrl = backlogHost
+      ? `https://${backlogHost}/view/${parentIssueKey}`
+      : "";
+
+    const lines = [
+      `📎 *${rule.triggerLabel} 課題が自動作成されました*`,
+      ``,
+      `親課題 ${parentUrl ? `<${parentUrl}|${parentIssueKey}>` : parentIssueKey} が完了したため、次の段階に進みました。`,
+      ``,
+      `*${rule.triggerLabel} 課題:* ${childUrl ? `<${childUrl}|${childIssueKey}>` : childIssueKey}`,
+      ``,
+      rule.childActionInstruction,
+    ];
+
+    const dmText = lines.join("\n");
+    try {
+      await slackWebClient.chat.postMessage({
+        channel: slackUserId,
+        text: dmText,
+      });
+    } catch (e: any) {
+      console.warn(`[auto-chain notify] DM failed:`, e?.message || e);
+    }
+
+    if (channelId) {
+      const channelText = [
+        `<@${slackUserId}> さんへ`,
+        "",
+        ...lines,
+      ].join("\n");
+      try {
+        await slackWebClient.chat.postMessage({
+          channel: channelId,
+          text: channelText,
+        });
+      } catch (e: any) {
+        console.warn(`[auto-chain notify] channel failed:`, e?.message || e);
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
   // Core pipeline (used by both webhook and the legacy intake endpoint).
   // -------------------------------------------------------------------
 
@@ -679,6 +937,8 @@ ${details}
         if (newStatus === "完了" || event.content.status.id === 4) {
           try {
             const issue = await backlogService.getIssue(issueKey);
+
+            // 既存: 子全完了 → 親自動完了 (Phase 18 で残置を確認した処理)
             if (issue.parentIssueId) {
               const children = await backlogService.getChildIssues(issue.parentIssueId);
               const allCompleted = children.every(
@@ -695,8 +955,13 @@ ${details}
                 );
               }
             }
+
+            // Phase 22.2: 親完了 → 受動子課題自動作成
+            // 該当ルール (発注書→納品報告 / 個別利用許諾→利用許諾報告) に
+            // 当てはまれば、Backlog に子課題を起こして「トリガー待ち」に。
+            await autoChainOnComplete(issueKey, issue);
           } catch (e) {
-            console.warn("Parent-child sync failed:", e);
+            console.warn("Parent-child sync / auto-chain failed:", e);
           }
         }
       }
@@ -1530,6 +1795,130 @@ ${details}
       }
     }
   );
+
+  /**
+   * Phase 22.2: Slack /法務依頼 V2 select 用候補取得エンドポイント。
+   *
+   * 申請者の未完了課題から、紐付け候補を返す:
+   *   type=delivery_inspec  → 申請者の発注書由来 納品報告子課題
+   *   type=license_calc     → 申請者の個別利用許諾由来 利用許諾報告子課題
+   *   type=any              → 申請者の未完了課題すべて (納期変更用)
+   */
+  app.get(
+    "/api/management/users/:slackUserId/candidates",
+    async (req, res) => {
+      try {
+        const slackUserId = String(req.params.slackUserId || "").trim();
+        const filterType = String(req.query.type || "any").trim();
+        if (!slackUserId) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "slackUserId required" });
+        }
+
+        const params: any[] = [slackUserId];
+        let typeClause = "";
+        if (filterType === "delivery_inspec" || filterType === "license_calc") {
+          params.push(filterType);
+          typeClause = `AND lr.contract_type = $2`;
+        }
+
+        const r = await query(
+          `SELECT lr.backlog_issue_key AS issue_key,
+                  lr.contract_type     AS request_type,
+                  lr.summary,
+                  lr.counterparty,
+                  lr.slack_user_id,
+                  iw.current_status_name AS status,
+                  lr.created_at
+             FROM legal_requests lr
+             LEFT JOIN issue_workflows iw
+                    ON iw.backlog_issue_key = lr.backlog_issue_key
+            WHERE lr.slack_user_id = $1
+              AND COALESCE(iw.current_status_name, '') NOT IN
+                  ('完了', '終結', 'キャンセル')
+              ${typeClause}
+            ORDER BY lr.created_at DESC
+            LIMIT 25`,
+          params
+        );
+
+        res.json({ ok: true, candidates: r.rows });
+      } catch (e: any) {
+        console.error(
+          "GET /api/management/users/:slackUserId/candidates failed:",
+          e
+        );
+        res
+          .status(500)
+          .json({ ok: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
+  /**
+   * Phase 22.2: Slack /法務依頼 で候補課題が選択されたときの紐付け
+   * エンドポイント。
+   *
+   * GAS が、新規 Backlog 課題を作らずに既存子課題を活用する経路で使う。
+   * 1. 子課題のステータスを「トリガー待ち → 未対応」に遷移 (Backlog + DB)
+   * 2. その後 processLegalRequestSubmission を呼んで通常の文書生成を走らせる
+   *    (existing_issue_key を渡してパイプライン側で issue 作成スキップ)
+   *
+   * POST /api/intake/link-trigger
+   *   body: LegalRequestSubmission + existing_issue_key (必須)
+   */
+  app.post("/api/intake/link-trigger", express.json(), async (req, res) => {
+    try {
+      const input = req.body || {};
+      const childKey = String(input.existing_issue_key || "").trim();
+      if (!childKey) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "existing_issue_key required" });
+      }
+
+      // Step 1: 子課題が トリガー待ち なら 未対応 に進める
+      try {
+        const wfRes = await query(
+          "SELECT current_status_name FROM issue_workflows WHERE backlog_issue_key = $1",
+          [childKey]
+        );
+        const currentStatusName = wfRes.rows[0]?.current_status_name || null;
+        if (currentStatusName === "トリガー待ち") {
+          const statuses = await backlogService.getStatuses();
+          const target = (statuses as any[]).find(
+            (s: any) => s?.name === "未対応"
+          );
+          if (target) {
+            try {
+              await backlogService.updateIssueStatus(childKey, target.id);
+            } catch (e) {
+              console.warn(
+                `[link-trigger] Backlog status update failed (${childKey}):`,
+                e
+              );
+            }
+          }
+          await query(
+            "UPDATE issue_workflows SET current_status_name = '未対応' WHERE backlog_issue_key = $1",
+            [childKey]
+          );
+        }
+      } catch (e) {
+        console.warn(`[link-trigger] pre-pipeline error:`, e);
+      }
+
+      // Step 2: 通常パイプライン (文書生成 + 通知)
+      const result = await processLegalRequestSubmission(input);
+      res.json({ ok: true, ...result });
+    } catch (e: any) {
+      console.error("/api/intake/link-trigger failed:", e);
+      res
+        .status(500)
+        .json({ ok: false, error: String(e?.message || e) });
+    }
+  });
 
   /**
    * Phase 21: Slack /法務依頼 「納期変更依頼」用エンドポイント。

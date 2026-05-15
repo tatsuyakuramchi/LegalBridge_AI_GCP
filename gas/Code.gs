@@ -228,10 +228,22 @@ function handleInteractivity_(payload) {
     const action = (payload.actions || [])[0];
     if (action && action.action_id === 'request_type_input') {
       const selected = (action.selected_option && action.selected_option.value) || 'legal_consult';
+
+      // Phase 22.2: V2 select 用に申請者の未完了候補を取得
+      var candidates = [];
+      if (selected === 'delivery_inspec' || selected === 'license_calc') {
+        candidates = fetchUserCandidates_(payload.user.id, selected);
+      } else if (selected === 'deadline_change') {
+        candidates = fetchUserCandidates_(payload.user.id, 'any');
+      }
+
       slackPost_('views.update', {
         view_id: payload.view.id,
         hash: payload.view.hash,
-        view: getLegalRequestModal_(selected),
+        view: getLegalRequestModal_(selected, {
+          candidates: candidates,
+          slackUserId: payload.user.id,
+        }),
       });
     }
 
@@ -258,7 +270,27 @@ function handleInteractivity_(payload) {
       // 直接 worker /api/management/issues/:key/deadline-change を叩いて
       // order_line_items.delivery_date を一括更新する。
       if (submission.request_type === 'deadline_change') {
+        // Phase 22.2 V2: 候補 select 値があれば free input より優先
+        if (
+          submission.target_issue_key_select &&
+          submission.target_issue_key_select !== '__NEW__'
+        ) {
+          submission.target_issue_key = submission.target_issue_key_select;
+        }
         handleDeadlineChangeSubmission_(submission);
+        return jsonResponse_({ response_action: 'clear' });
+      }
+
+      // Phase 22.2 V2: delivery_inspec / license_calc で候補が選択されたら
+      // 新規 Backlog 課題を作らず、worker /api/intake/link-trigger を呼ぶ。
+      // 既存子課題を「トリガー待ち → 未対応」に進めて、そこに紐付ける。
+      if (
+        (submission.request_type === 'delivery_inspec' ||
+          submission.request_type === 'license_calc') &&
+        submission.target_issue_key_select &&
+        submission.target_issue_key_select !== '__NEW__'
+      ) {
+        handleLinkTriggerSubmission_(submission, submission.target_issue_key_select);
         return jsonResponse_({ response_action: 'clear' });
       }
 
@@ -552,6 +584,42 @@ function getApiConfig_() {
 }
 
 /**
+ * Phase 22.2: 申請者の未完了課題候補を worker から取得する。
+ *
+ * type 引数:
+ *   - 'delivery_inspec' → 発注書由来の納品報告子課題 (request_type='delivery_inspec')
+ *   - 'license_calc'    → 個別利用許諾由来の利用許諾報告子課題
+ *   - 'any'             → 全て (納期変更依頼用)
+ *
+ * 戻り値: candidates 配列。 [{ issue_key, request_type, summary, counterparty, status }, ...]
+ *         失敗時は空配列を返す (モーダル表示に支障が出ないよう sliently fail)。
+ */
+function fetchUserCandidates_(slackUserId, type) {
+  if (!slackUserId) return [];
+  var config = getWorkerConfig_();
+  if (!config.baseUrl) return [];
+  try {
+    var url =
+      String(config.baseUrl).replace(/\/+$/, '') +
+      '/api/management/users/' + encodeURIComponent(slackUserId) +
+      '/candidates?type=' + encodeURIComponent(type || 'any');
+    var res = UrlFetchApp.fetch(url, {
+      method: 'get',
+      muteHttpExceptions: true,
+    });
+    if (res.getResponseCode() < 200 || res.getResponseCode() >= 300) {
+      console.warn('fetchUserCandidates_ failed: ' + res.getResponseCode());
+      return [];
+    }
+    var data = JSON.parse(res.getContentText());
+    return (data && data.candidates) || [];
+  } catch (e) {
+    console.warn('fetchUserCandidates_ error: ' + e);
+    return [];
+  }
+}
+
+/**
  * Phase 21: worker (legalbridge-document-worker) への直接呼び出し用 config。
  *
  * ScriptProperty `LB_WORKER_BASE_URL` (例: https://legalbridge-document-worker-xxx.run.app)
@@ -822,6 +890,46 @@ function notifyUserOfError_(userId, message) {
 }
 
 /**
+ * Phase 22.2: Slack /法務依頼 V2 select で候補課題が選択された場合の処理。
+ *
+ * 新規 Backlog 課題を作らず、既存子課題に紐付け (= トリガー待ち → 未対応 遷移)
+ * + 通常の文書生成パイプラインを起動する。worker の /api/intake/link-trigger
+ * を叩く。
+ *
+ * @param submission   parseLegalRequestSubmission_ の結果
+ * @param childIssueKey 紐付け対象の既存子課題キー (例: "LEGAL-200")
+ */
+function handleLinkTriggerSubmission_(submission, childIssueKey) {
+  if (!submission || !submission.slack_user_id) return;
+  if (!childIssueKey) return;
+
+  // worker /api/intake/link-trigger を叩く
+  var payload = Object.assign({}, submission, {
+    existing_issue_key: childIssueKey,
+  });
+
+  try {
+    var result = callWorkerApi_('/api/intake/link-trigger', 'POST', payload);
+    slackPost_('chat.postMessage', {
+      channel: submission.slack_user_id,
+      text:
+        '✅ *既存課題に紐付けて起票しました*\n\n' +
+        '*対象課題:* ' + childIssueKey + '\n' +
+        (result && result.docNumber ? '*文書番号:* ' + result.docNumber + '\n' : '') +
+        (result && result.driveLink ? '*ドキュメント:* ' + result.driveLink + '\n' : '') +
+        '\n本課題のステータスを「トリガー待ち → 未対応」に進めました。' +
+        'まもなく詳細な受付通知をお送りします。',
+    });
+  } catch (err) {
+    var msg = String(err && err.message ? err.message : err);
+    notifyUserOfError_(
+      submission.slack_user_id,
+      '既存課題への紐付けに失敗しました: ' + msg
+    );
+  }
+}
+
+/**
  * Phase 21: 納期変更依頼の処理。
  *
  * 申請者の入力 (対象 Backlog 課題キー、新しい納期、変更理由) を受け取り、
@@ -1037,6 +1145,13 @@ function parseLegalRequestSubmission_(payload) {
     target_issue_key: safeText('target_issue_key_block', 'target_issue_key_input'),
     new_delivery_date: safeDate('new_delivery_date_block', 'new_delivery_date_input'),
     change_reason: safeText('change_reason_block', 'change_reason_input'),
+    // Phase 22.2 V2: candidate select の値
+    //   delivery_inspec / license_calc: '__NEW__' = 新規 / それ以外 = 既存子課題キー
+    //   deadline_change: 候補から選択した課題キー (free input より優先)
+    target_issue_key_select: safeOption(
+      'target_issue_key_select_block',
+      'target_issue_key_select_input'
+    ),
   };
 }
 
@@ -1501,8 +1616,18 @@ function masterStatusLabel_(master) {
   return '✅ 締結済' + num;
 }
 
-function getLegalRequestModal_(selectedType) {
+/**
+ * Phase 22.2 で第 2 引数 `opts` を追加:
+ *   opts.candidates  : worker から取得した申請者の未完了候補配列
+ *   opts.slackUserId : 申請者の Slack ID (= block_actions の payload.user.id)
+ *
+ * delivery_inspec / license_calc / deadline_change のときは候補 static_select
+ * を表示し、ユーザーが既存子課題を選択できるようにする (V2 select)。
+ */
+function getLegalRequestModal_(selectedType, opts) {
   selectedType = selectedType || 'legal_consult';
+  opts = opts || {};
+  var candidates = opts.candidates || [];
 
   // Three top-level intake categories. Each category groups one or more
   // concrete request types so the user picks "what kind of work do I
@@ -1596,6 +1721,31 @@ function getLegalRequestModal_(selectedType) {
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000)
       .toISOString()
       .split('T')[0];
+
+    // Phase 22.2 V2: 候補 select を構築 (候補があれば)
+    var deadlineCandidateBlocks = [];
+    if (candidates && candidates.length > 0) {
+      deadlineCandidateBlocks.push({
+        type: 'input',
+        block_id: 'target_issue_key_select_block',
+        label: { type: 'plain_text', text: '対象 Backlog 課題 (候補から選択)' },
+        optional: true,
+        element: {
+          type: 'static_select',
+          action_id: 'target_issue_key_select_input',
+          placeholder: { type: 'plain_text', text: '未完了の依頼から選択…' },
+          options: candidates.slice(0, 25).map(function (c) {
+            var label = '[' + c.issue_key + '] ' + (c.summary || '').slice(0, 60);
+            if (c.counterparty) label += ' / ' + c.counterparty.slice(0, 20);
+            return {
+              text: { type: 'plain_text', text: label.slice(0, 75) },
+              value: c.issue_key,
+            };
+          }),
+        },
+      });
+    }
+
     return {
       type: 'modal',
       callback_id: 'legal_request_modal',
@@ -1615,10 +1765,12 @@ function getLegalRequestModal_(selectedType) {
             },
           ],
         },
+      ]).concat(deadlineCandidateBlocks).concat([
         {
           type: 'input',
           block_id: 'target_issue_key_block',
-          label: { type: 'plain_text', text: '対象 Backlog 課題キー' },
+          label: { type: 'plain_text', text: '対象 Backlog 課題キー (候補にない場合のみ入力)' },
+          optional: candidates && candidates.length > 0,
           element: {
             type: 'plain_text_input',
             action_id: 'target_issue_key_input',
@@ -1654,7 +1806,54 @@ function getLegalRequestModal_(selectedType) {
   }
 
   // 通常 (新規依頼) の form
-  const blocks = baseBlocks.concat([
+
+  // Phase 22.2 V2: 検収書 / 利用許諾料計算書 のときは候補 select を表示
+  // (発注書完了で自動作成された納品報告子課題等への紐付け用)
+  var candidateBlocks = [];
+  if (
+    (selectedType === 'delivery_inspec' || selectedType === 'license_calc') &&
+    candidates && candidates.length > 0
+  ) {
+    candidateBlocks.push({
+      type: 'context',
+      elements: [
+        {
+          type: 'mrkdwn',
+          text:
+            '💡 *候補が見つかりました*。下のセレクタで該当する子課題を選択すると' +
+            '、新規 Backlog 課題は作成されず、既存の子課題に紐付けて起票されます。' +
+            '該当課題が見つからない場合は「新規作成」を選択してください。',
+        },
+      ],
+    });
+    candidateBlocks.push({
+      type: 'input',
+      block_id: 'target_issue_key_select_block',
+      label: { type: 'plain_text', text: '対象課題 (候補から選択)' },
+      element: {
+        type: 'static_select',
+        action_id: 'target_issue_key_select_input',
+        placeholder: { type: 'plain_text', text: '選択してください' },
+        options: [
+          {
+            text: { type: 'plain_text', text: '🆕 新規作成 (該当課題なし)' },
+            value: '__NEW__',
+          },
+        ].concat(
+          candidates.slice(0, 24).map(function (c) {
+            var label = '[' + c.issue_key + '] ' + (c.summary || '').slice(0, 60);
+            if (c.counterparty) label += ' / ' + c.counterparty.slice(0, 20);
+            return {
+              text: { type: 'plain_text', text: label.slice(0, 75) },
+              value: c.issue_key,
+            };
+          })
+        ),
+      },
+    });
+  }
+
+  const blocks = baseBlocks.concat(candidateBlocks).concat([
     {
       type: 'input',
       block_id: 'summary_block',
