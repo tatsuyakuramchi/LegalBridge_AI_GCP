@@ -153,6 +153,11 @@ export async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
 
+    // Phase 22: 「終結」(既存課題に統合された) の記録用
+    //   ステータスが「終結」になった課題で、どの課題に統合されたかを残す。
+    //   admin-ui で見ると「統合先 LEGAL-XXX」が分かる。
+    `ALTER TABLE legal_requests ADD COLUMN IF NOT EXISTS merged_into_issue_key VARCHAR(50);`,
+
     `CREATE TABLE IF NOT EXISTS order_items (
       id SERIAL PRIMARY KEY,
       legal_request_id INTEGER REFERENCES legal_requests(id) ON DELETE CASCADE,

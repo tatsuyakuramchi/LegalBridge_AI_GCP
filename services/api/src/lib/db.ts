@@ -153,6 +153,9 @@ export async function initDb() {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
 
+    // Phase 22: 「終結」記録 (詳細は worker 側 db.ts のコメント参照)
+    `ALTER TABLE legal_requests ADD COLUMN IF NOT EXISTS merged_into_issue_key VARCHAR(50);`,
+
     `CREATE TABLE IF NOT EXISTS order_items (
       id SERIAL PRIMARY KEY,
       legal_request_id INTEGER REFERENCES legal_requests(id) ON DELETE CASCADE,

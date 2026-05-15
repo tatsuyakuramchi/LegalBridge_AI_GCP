@@ -722,6 +722,125 @@ ${details}
     }
   });
 
+  /**
+   * Phase 22.1: 「終結」アクション (= 既存課題に統合)。
+   *
+   * PATCH /api/backlog/issues/:key/terminate
+   *   body: { merged_into_issue_key: "LEGAL-100", reason?: string, statusId?: number }
+   *
+   * 動作:
+   *   1. Backlog 課題ステータスを「終結」に遷移 (statusId 必須 — Backlog 上の終結 status ID)
+   *   2. legal_requests.merged_into_issue_key に統合先キーを保存
+   *   3. Backlog 課題にコメントで「LEGAL-100 に統合」記録 (Q4 = a + c)
+   *   4. Slack 通知 (申請者 + 部署チャンネル)
+   */
+  app.patch(
+    "/api/backlog/issues/:key/terminate",
+    express.json(),
+    async (req, res) => {
+      try {
+        const { key } = req.params;
+        const mergedInto = String(req.body?.merged_into_issue_key || "")
+          .trim()
+          .toUpperCase();
+        const reason = req.body?.reason
+          ? String(req.body.reason).slice(0, 500)
+          : undefined;
+        const statusId = Number(req.body?.statusId) || null;
+
+        if (!mergedInto) {
+          return res.status(400).json({
+            ok: false,
+            error: "merged_into_issue_key は必須です",
+          });
+        }
+        if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(mergedInto)) {
+          return res.status(400).json({
+            ok: false,
+            error: "merged_into_issue_key の形式が不正です (例: LEGAL-100)",
+          });
+        }
+
+        // 1. Backlog の status を「終結」へ
+        if (statusId) {
+          try {
+            await backlogService.updateIssueStatus(key, statusId);
+          } catch (e: any) {
+            console.warn(
+              `[terminate] Backlog status update failed (${key}):`,
+              e?.message || e
+            );
+          }
+        }
+
+        // 2. DB に merged_into_issue_key を保存
+        try {
+          await query(
+            `UPDATE legal_requests
+                SET merged_into_issue_key = $1
+              WHERE backlog_issue_key = $2`,
+            [mergedInto, key]
+          );
+        } catch (e) {
+          console.warn(`[terminate] DB update failed (${key}):`, e);
+        }
+
+        // 3. issue_workflows のステータスも同期 (= "終結")
+        try {
+          await query(
+            `UPDATE issue_workflows
+                SET current_status_name = $1
+              WHERE backlog_issue_key = $2`,
+            ["終結", key]
+          );
+        } catch (e) {
+          /* noop */
+        }
+
+        // 4. Backlog 課題にコメント追加
+        let backlogCommented = false;
+        if (!key.startsWith("MANUAL-")) {
+          const reasonLine = reason ? `\n*理由:* ${reason}` : "";
+          const body =
+            `🔁 **本課題は終結しました**\n\n` +
+            `この依頼は別の課題に統合されました。\n` +
+            `*統合先:* ${mergedInto}` +
+            reasonLine;
+          try {
+            await backlogService.addComment(key, body);
+            backlogCommented = true;
+          } catch (e: any) {
+            console.warn(
+              `[terminate] Backlog comment failed (${key}):`,
+              e?.message || e
+            );
+          }
+        }
+
+        // 5. Slack 通知
+        try {
+          await notifyIssueEvent(key, {
+            type: "status_changed",
+            from: "(進行中)",
+            to: `終結 → ${mergedInto} に統合`,
+          });
+        } catch (e) {
+          console.warn(`[terminate] notify failed (${key}):`, e);
+        }
+
+        res.json({
+          ok: true,
+          key,
+          merged_into_issue_key: mergedInto,
+          backlog_commented: backlogCommented,
+        });
+      } catch (error: any) {
+        console.error("PATCH /api/backlog/issues/:key/terminate failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
   // -------------------------------------------------------------------
   // /api/management/* — write operations
   // -------------------------------------------------------------------

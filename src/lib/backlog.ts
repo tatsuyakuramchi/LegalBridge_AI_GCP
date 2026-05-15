@@ -184,6 +184,58 @@ export async function updateDeliveryDeadline(
 }
 
 /**
+ * Phase 22.1: 課題を「終結」する (既存課題に統合済みの宣言)。
+ *
+ * worker の `PATCH /api/backlog/issues/:key/terminate` を叩く。
+ * 動作 (worker 側):
+ *   1. Backlog 課題ステータスを「終結」に遷移 (statusId を渡せば即時、無ければアプリ側のみ)
+ *   2. legal_requests.merged_into_issue_key に統合先を保存
+ *   3. Backlog にコメントで履歴を残す
+ *   4. Slack 通知
+ *
+ * @param issueKey    終結する課題キー (= 廃止される側)
+ * @param mergedInto  統合先の課題キー (= 残る側)
+ * @param reason      終結理由 (任意)
+ * @param statusId    Backlog 上の「終結」ステータス ID (任意、未指定なら Backlog 側遷移はスキップ)
+ */
+export async function terminateIssue(
+  issueKey: string,
+  mergedInto: string,
+  reason?: string,
+  statusId?: number
+): Promise<{
+  ok: true
+  key: string
+  merged_into_issue_key: string
+  backlog_commented: boolean
+}> {
+  const body: Record<string, unknown> = {
+    merged_into_issue_key: mergedInto.trim().toUpperCase(),
+  }
+  if (reason) body.reason = reason
+  if (statusId) body.statusId = statusId
+  const res = await fetch(
+    `/api/backlog/issues/${encodeURIComponent(issueKey)}/terminate`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!res.ok) {
+    let detail = ""
+    try {
+      const j = await res.json()
+      detail = j?.error ? `: ${j.error}` : ""
+    } catch {
+      /* noop */
+    }
+    throw new Error(`HTTP ${res.status}${detail}`)
+  }
+  return res.json()
+}
+
+/**
  * workflow_settings から「この issue type の推奨次ステータス ID」を取得する。
  *
  * worker の `GET /api/master/workflow-settings?issue_type_name=...` を叩く。

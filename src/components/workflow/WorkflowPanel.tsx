@@ -4,6 +4,7 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronRight,
+  GitMerge,
   Loader2,
   Sparkles,
   X,
@@ -16,12 +17,19 @@ import { Input } from "@/components/ui/input"
 import { cn } from "@/lib/utils"
 import {
   updateIssueStatus,
-  getRecommendedNextStatus,
   getIssueLineItems,
   updateLineItemDeadline,
+  terminateIssue,
   type BacklogStatus,
   type OrderLineItem,
 } from "@/src/lib/backlog"
+import {
+  resolveCategory,
+  visibleStatusesFor,
+  displayStatus,
+  getNextRecommended,
+  type RequestCategory,
+} from "@/src/lib/statusFlow"
 
 type Props = {
   /** 対象の Backlog Issue Key (例: "LEGAL-123")。空のとき何も描画しない */
@@ -32,9 +40,15 @@ type Props = {
    */
   currentStatus?: { id?: number; name?: string } | null
   /**
-   * Issue の type 名 (例: "発注書" / "NDA")。推奨次ステータスを引くキー。
+   * Issue の type 名 (例: "発注書" / "NDA")。Backlog 側 issue type。
+   * Phase 22 ではカテゴリ解決の fallback 用。
    */
   issueTypeName?: string | null
+  /**
+   * Slack /法務依頼 の request_type (例: "purchase_order")。
+   * Phase 22 でカテゴリ解決の主キー。指定があれば issueTypeName より優先。
+   */
+  requestType?: string | null
   /** ステータス変更が完了した後に呼ばれる (一覧の refresh などに使用) */
   onChanged?: (newStatus: BacklogStatus) => void
   /** コンパクト表示 (RequestsPage の行内ドロップダウン用)。デフォルト false */
@@ -57,6 +71,7 @@ export function WorkflowPanel({
   issueKey,
   currentStatus,
   issueTypeName,
+  requestType,
   onChanged,
   compact = false,
   className,
@@ -64,6 +79,74 @@ export function WorkflowPanel({
   const { statuses, refreshIssues, showNotification } = useAppData()
   const [pending, setPending] = React.useState<number | null>(null)
   const [recommendedId, setRecommendedId] = React.useState<number | null>(null)
+
+  // Phase 22: カテゴリ解決 (request_type 優先, fallback で Backlog issue type 名)
+  const category: RequestCategory = React.useMemo(
+    () =>
+      resolveCategory({
+        request_type: requestType,
+        backlog_issue_type_name: issueTypeName,
+      }),
+    [requestType, issueTypeName]
+  )
+
+  // Phase 22: 終結アクション state
+  const [terminateOpen, setTerminateOpen] = React.useState(false)
+  const [mergeIntoInput, setMergeIntoInput] = React.useState("")
+  const [terminateReason, setTerminateReason] = React.useState("")
+  const [terminatePending, setTerminatePending] = React.useState(false)
+
+  const handleTerminate = async () => {
+    if (!issueKey) return
+    const target = mergeIntoInput.trim().toUpperCase()
+    if (!target) {
+      showNotification("統合先の課題キーは必須です", "error")
+      return
+    }
+    if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(target)) {
+      showNotification("統合先キーの形式が不正です (例: LEGAL-100)", "error")
+      return
+    }
+    if (target === issueKey.toUpperCase()) {
+      showNotification("統合先に自分自身は指定できません", "error")
+      return
+    }
+    // Backlog 側「終結」ステータス ID を statuses から探す
+    const terminalStatus = (statuses as any[])?.find(
+      (s) => s?.name === "終結"
+    )
+    const statusId = terminalStatus?.id
+    if (
+      !window.confirm(
+        `${issueKey} を終結し、${target} に統合済みとして記録します。\n\n` +
+          `Backlog 課題にコメントが追加され、申請者と部署チャンネルに通知されます。\n` +
+          `この操作は取り消し不可です。よろしいですか？`
+      )
+    ) {
+      return
+    }
+    setTerminatePending(true)
+    try {
+      await terminateIssue(
+        issueKey,
+        target,
+        terminateReason.trim() || undefined,
+        statusId
+      )
+      showNotification(
+        `${issueKey} を終結しました (統合先: ${target})`,
+        "success"
+      )
+      setTerminateOpen(false)
+      setMergeIntoInput("")
+      setTerminateReason("")
+      await refreshIssues?.()
+    } catch (e: any) {
+      showNotification(`終結に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setTerminatePending(false)
+    }
+  }
 
   // Phase 20 (修正版): 業務明細単位の納期編集 state
   // - lineItems: GET /api/management/issues/:issueKey/line-items の結果
@@ -158,30 +241,34 @@ export function WorkflowPanel({
     setLineReasonInput("")
   }
 
-  // 推奨次ステータスを workflow_settings から取得
+  // Phase 22: 推奨次ステータスは status flow から導出 (workflow_settings に代えて)
   React.useEffect(() => {
-    if (!issueTypeName) {
+    const next = getNextRecommended(category, currentStatus?.name)
+    if (!next) {
       setRecommendedId(null)
       return
     }
-    let cancelled = false
-    getRecommendedNextStatus(issueTypeName).then((id) => {
-      if (!cancelled) setRecommendedId(id)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [issueTypeName])
+    const match = (statuses as any[])?.find((s) => s?.name === next)
+    setRecommendedId(match?.id ?? null)
+  }, [category, currentStatus?.name, statuses])
 
+  // Phase 22: カテゴリ別の経路ステータスのみ表示。
+  //   - Backlog 側にあるが経路に無いもの (= "有効" 等の死後遺産) は隠す。
+  //   - 経路順 (順序を保持) で並べる。
   const orderedStatuses: BacklogStatus[] = React.useMemo(() => {
-    const arr = Array.isArray(statuses) ? [...(statuses as any[])] : []
-    arr.sort((a: any, b: any) => {
-      const ao = a.displayOrder ?? a.id ?? 0
-      const bo = b.displayOrder ?? b.id ?? 0
-      return ao - bo
+    const all = Array.isArray(statuses) ? (statuses as any[]) : []
+    const byName = new Map<string, BacklogStatus>()
+    all.forEach((s) => {
+      if (s?.name) byName.set(s.name, s as BacklogStatus)
     })
-    return arr as BacklogStatus[]
-  }, [statuses])
+    const path = visibleStatusesFor(category)
+    const result: BacklogStatus[] = []
+    path.forEach((name) => {
+      const found = byName.get(name)
+      if (found) result.push(found)
+    })
+    return result
+  }, [statuses, category])
 
   const handleAdvance = async (target: BacklogStatus) => {
     if (!issueKey) return
@@ -246,7 +333,11 @@ export function WorkflowPanel({
           className="h-6 font-mono text-[11px] uppercase tracking-wider"
         >
           <CheckCircle2 className="h-3 w-3 mr-1 text-phosphor" />
-          {currentStatus?.name || "—"}
+          {displayStatus({
+            status: currentStatus?.name,
+            category,
+            request_type: requestType,
+          })}
         </Badge>
       </div>
 
@@ -255,6 +346,9 @@ export function WorkflowPanel({
       <div>
         <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2">
           Advance to:
+          <span className="ml-2 text-muted-foreground/70 normal-case tracking-normal">
+            ({category})
+          </span>
         </p>
         <div className="flex flex-wrap gap-1.5">
           {orderedStatuses.map((s) => {
@@ -262,6 +356,11 @@ export function WorkflowPanel({
             const isRecommended =
               !isCurrent && recommendedId != null && s.id === recommendedId
             const isPending = pending === s.id
+            const label = displayStatus({
+              status: s.name,
+              category,
+              request_type: requestType,
+            })
             return (
               <Button
                 key={s.id}
@@ -278,7 +377,7 @@ export function WorkflowPanel({
                 title={
                   isCurrent
                     ? "現在のステータス"
-                    : `Backlog ${issueKey} を「${s.name}」に進める`
+                    : `Backlog ${issueKey} を「${label}」に進める`
                 }
               >
                 {isPending ? (
@@ -288,7 +387,7 @@ export function WorkflowPanel({
                 ) : (
                   <ChevronRight className="h-3 w-3" />
                 )}
-                {s.name}
+                {label}
               </Button>
             )
           })}
@@ -296,11 +395,84 @@ export function WorkflowPanel({
         {recommendedId != null && (
           <p className="text-[10px] font-mono text-muted-foreground mt-2">
             <Sparkles className="inline h-3 w-3 mr-1 text-phosphor" />
-            <span className="tracking-[0.14em] uppercase">Recommended</span>
-            <span className="ml-1.5">
-              ({issueTypeName} → workflow_settings)
-            </span>
+            <span className="tracking-[0.14em] uppercase">Recommended next</span>
           </p>
+        )}
+      </div>
+
+      {/* Phase 22: 終結 (既存課題に統合) アクション ─────────────── */}
+      <div className="retro-rule" />
+      <div>
+        {!terminateOpen ? (
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setTerminateOpen(true)}
+            disabled={pending != null}
+            className="h-8 font-mono text-[11px] uppercase tracking-[0.14em] text-destructive border-destructive/40 hover:border-destructive"
+            title="既存課題に統合された場合に終結 (terminal)"
+          >
+            <GitMerge className="h-3 w-3" />
+            終結 (既存課題に統合)
+          </Button>
+        ) : (
+          <div className="space-y-2">
+            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              Terminate (merge into existing):
+            </p>
+            <div className="flex flex-wrap gap-1.5 items-center">
+              <Input
+                type="text"
+                placeholder="統合先キー (例: LEGAL-100)"
+                value={mergeIntoInput}
+                onChange={(e) => setMergeIntoInput(e.target.value)}
+                disabled={terminatePending}
+                className="h-8 w-44 font-mono text-xs uppercase"
+                maxLength={50}
+              />
+              <Input
+                type="text"
+                placeholder="理由 (任意)"
+                value={terminateReason}
+                onChange={(e) => setTerminateReason(e.target.value)}
+                disabled={terminatePending}
+                className="h-8 flex-1 min-w-[160px] font-mono text-xs"
+                maxLength={500}
+              />
+              <Button
+                size="sm"
+                variant="destructive"
+                onClick={handleTerminate}
+                disabled={terminatePending || !mergeIntoInput.trim()}
+                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
+              >
+                {terminatePending ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <GitMerge className="h-3 w-3" />
+                )}
+                終結を実行
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  setTerminateOpen(false)
+                  setMergeIntoInput("")
+                  setTerminateReason("")
+                }}
+                disabled={terminatePending}
+                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
+              >
+                <X className="h-3 w-3" />
+              </Button>
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              本課題のステータスを「終結」に変え、legal_requests.merged_into_issue_key
+              に統合先を記録します。Backlog 課題にもコメントが追加されます。
+              <span className="text-destructive ml-1">この操作は取り消し不可。</span>
+            </p>
+          </div>
         )}
       </div>
 
