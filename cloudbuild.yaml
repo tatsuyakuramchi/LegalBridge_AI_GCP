@@ -43,8 +43,8 @@ steps:
       - -c
       - |
         set -e
-        # Cloud Build YAML 内では bash の $VAR は $$VAR にエスケープする
-        # (そうしないと Cloud Build が built-in substitution として解釈する)
+        # NOTE: bash variables must be escaped with double-dollar in
+        # Cloud Build YAML, otherwise the substitution parser claims them.
         SECRET=$$(gcloud secrets versions access latest --secret=lb-portal-secret 2>/dev/null || echo "")
         if [ -n "$$SECRET" ]; then
           printf "VITE_API_PORTAL_SECRET=%s\n" "$$SECRET" >> .env.production.local
