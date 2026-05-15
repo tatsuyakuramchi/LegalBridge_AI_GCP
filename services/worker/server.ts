@@ -748,6 +748,396 @@ ${details}
     res.json({ success: true, message: "Manual check triggered" });
   });
 
+  // -------------------------------------------------------------------
+  // Phase 20: 毎日定期アラート (Cloud Scheduler から呼ばれる)
+  //
+  // POST /api/management/daily-checks
+  //   1. 発注書: 納期 7/3/1 日前 → 各 1 回通知
+  //   2. 発注書: 納期超過 → 平日のみ毎日通知
+  //   3. 契約書: 自動更新あり契約の通告期限の N カ月前 → 1 回通知
+  //
+  // 通知は notifyDeliveryAlert / notifyContractAlert に委譲。
+  // -------------------------------------------------------------------
+
+  /** 発注書 (delivery_events) 1 件のアラート通知 */
+  async function notifyDeliveryAlert(
+    row: any,
+    kind: "warning_7d" | "warning_3d" | "warning_1d" | "overdue",
+    daysUntil: number
+  ): Promise<void> {
+    if (!slackWebClient) return;
+    const issueKey = String(row.backlog_issue_key);
+
+    // legal_requests + staff + department_workflow_rules を JOIN
+    const ctxRes = await query(
+      `SELECT
+         lr.slack_user_id,
+         lr.summary,
+         lr.counterparty,
+         lr.request_type,
+         dwr.slack_channel_id
+       FROM legal_requests lr
+       LEFT JOIN staff s ON s.slack_user_id = lr.slack_user_id
+       LEFT JOIN department_workflow_rules dwr
+              ON dwr.department = COALESCE(s.department, lr.dept)
+       WHERE lr.backlog_issue_key = $1
+       LIMIT 1`,
+      [issueKey]
+    );
+    const ctx = ctxRes.rows[0] || {};
+    const slackUserId = String(ctx.slack_user_id || "").trim();
+
+    const backlogHost = (
+      dbSettings.BACKLOG_HOST ||
+      process.env.BACKLOG_HOST ||
+      ""
+    ).replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const backlogUrl = backlogHost
+      ? `https://${backlogHost}/view/${issueKey}`
+      : "";
+
+    let header: string;
+    if (kind === "warning_7d") header = `⏰ *納期 7 日前のお知らせ*`;
+    else if (kind === "warning_3d") header = `⏰ *納期 3 日前*`;
+    else if (kind === "warning_1d") header = `🚨 *納期前日 — 明日が期限です*`;
+    else
+      header = `🔴 *納期超過 ${Math.abs(daysUntil)} 日* — 延長または完了処理をお願いします`;
+
+    const deadlineStr = row.inspection_deadline
+      ? new Date(row.inspection_deadline).toLocaleDateString("ja-JP")
+      : "—";
+
+    const lines: string[] = [
+      header,
+      "",
+      `*課題:* ${backlogUrl ? `<${backlogUrl}|${issueKey}>` : issueKey}`,
+    ];
+    if (ctx.counterparty) lines.push(`*相手方:* ${ctx.counterparty}`);
+    if (ctx.summary) lines.push(`*概要:* ${ctx.summary}`);
+    lines.push(`*納期:* ${deadlineStr}`);
+    if (daysUntil >= 0) lines.push(`*残り:* ${daysUntil} 日`);
+
+    const dmText = lines.join("\n");
+    const channelText = slackUserId
+      ? [`<@${slackUserId}> さんの依頼の納期アラートです`, "", ...lines].join(
+          "\n"
+        )
+      : dmText;
+
+    // DM
+    if (slackUserId) {
+      try {
+        await slackWebClient.chat.postMessage({
+          channel: slackUserId,
+          text: dmText,
+        });
+      } catch (e: any) {
+        console.warn(`[alert] delivery DM failed (${issueKey}):`, e?.message || e);
+      }
+    }
+    // 部署チャンネル
+    const channelId = String(ctx.slack_channel_id || "").trim();
+    if (channelId) {
+      try {
+        await slackWebClient.chat.postMessage({
+          channel: channelId,
+          text: channelText,
+        });
+      } catch (e: any) {
+        console.warn(
+          `[alert] delivery channel failed (${issueKey} → ${channelId}):`,
+          e?.message || e
+        );
+      }
+    }
+
+    // 送信履歴を更新 (失敗しても続行)
+    try {
+      await query(
+        `UPDATE delivery_events
+            SET last_alert_at = CURRENT_TIMESTAMP,
+                alert_count   = COALESCE(alert_count, 0) + 1
+          WHERE id = $1`,
+        [row.id]
+      );
+    } catch (e) {
+      console.warn(`[alert] delivery flag update failed (${issueKey}):`, e);
+    }
+  }
+
+  /** 契約書 (contract_capabilities) 1 件のアラート通知 */
+  async function notifyContractAlert(row: any): Promise<void> {
+    if (!slackWebClient) return;
+
+    const channelId =
+      process.env.LB_CONTRACT_ALERT_CHANNEL_ID ||
+      dbSettings.LB_CONTRACT_ALERT_CHANNEL_ID ||
+      "";
+    if (!channelId) {
+      console.warn(
+        "[alert] LB_CONTRACT_ALERT_CHANNEL_ID not set; skipping contract alert"
+      );
+      return;
+    }
+
+    // vendor 名を引く
+    let vendorName = "";
+    try {
+      if (row.vendor_id) {
+        const v = await query(
+          "SELECT vendor_name FROM vendors WHERE id = $1 LIMIT 1",
+          [row.vendor_id]
+        );
+        vendorName = v.rows[0]?.vendor_name || "";
+      }
+    } catch {
+      /* noop */
+    }
+
+    const expStr = row.expiration_date
+      ? new Date(row.expiration_date).toLocaleDateString("ja-JP")
+      : "—";
+    const noticeMonths = Number(row.renewal_notice_months) || 0;
+    const leadMonths = Number(row.alert_lead_months) || 0;
+
+    // 通告期限 = expiration_date - noticeMonths months
+    const noticeDate = row.expiration_date
+      ? new Date(row.expiration_date)
+      : null;
+    if (noticeDate) noticeDate.setMonth(noticeDate.getMonth() - noticeMonths);
+    const noticeStr = noticeDate
+      ? noticeDate.toLocaleDateString("ja-JP")
+      : "—";
+
+    const lines: string[] = [
+      `🔔 *契約更新通告期限が近づいています*`,
+      "",
+      `*契約:* ${row.contract_title || "—"}`,
+      `*取引先:* ${vendorName || "—"}`,
+      `*満期日:* ${expStr}`,
+      `*通告期限:* ${noticeStr} (満期の ${noticeMonths} カ月前)`,
+      `*リード:* 通告期限の ${leadMonths} カ月前に通知`,
+      `*自動更新:* ${row.auto_renewal ? "あり" : "なし"}`,
+    ];
+    const docUrl =
+      row.legalon_url || row.cloudsign_url || row.drive_url || row.document_url;
+    if (docUrl) lines.push(`*契約書:* ${docUrl}`);
+
+    try {
+      await slackWebClient.chat.postMessage({
+        channel: channelId,
+        text: lines.join("\n"),
+      });
+    } catch (e: any) {
+      console.warn(`[alert] contract channel failed (id=${row.id}):`, e?.message || e);
+    }
+
+    try {
+      await query(
+        `UPDATE contract_capabilities
+            SET last_renewal_alert_at = CURRENT_TIMESTAMP
+          WHERE id = $1`,
+        [row.id]
+      );
+    } catch (e) {
+      console.warn(`[alert] contract flag update failed (id=${row.id}):`, e);
+    }
+  }
+
+  /** 1 日分のアラート判定を走らせる */
+  async function runDailyChecks(): Promise<{
+    deliveryAlerts: number;
+    contractAlerts: number;
+  }> {
+    const result = { deliveryAlerts: 0, contractAlerts: 0 };
+
+    // 平日判定 (JST)。Cloud Scheduler は時刻は JST だが day は UTC で
+    // 返るおそれもあるので、明示的に JST 換算する。
+    const jstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+    const dayOfWeekJst = jstNow.getUTCDay(); // 0=Sun, 6=Sat
+    const isWeekday = dayOfWeekJst >= 1 && dayOfWeekJst <= 5;
+
+    // ─── 1. 発注書アラート ───────────────────────────────────────
+    try {
+      const deliveries = await query(
+        `SELECT de.*,
+                (de.inspection_deadline::date - CURRENT_DATE) AS days_until
+           FROM delivery_events de
+          WHERE de.status = 'pending'
+            AND de.inspection_deadline IS NOT NULL
+            AND (
+              (de.inspection_deadline::date - CURRENT_DATE) IN (7, 3, 1)
+              OR (de.inspection_deadline::date - CURRENT_DATE) < 0
+            )
+            AND (
+              de.last_alert_at IS NULL
+              OR de.last_alert_at::date < CURRENT_DATE
+            )`
+      );
+      for (const row of deliveries.rows) {
+        const days = Number(row.days_until);
+        let kind: "warning_7d" | "warning_3d" | "warning_1d" | "overdue";
+        if (days === 7) kind = "warning_7d";
+        else if (days === 3) kind = "warning_3d";
+        else if (days === 1) kind = "warning_1d";
+        else if (days < 0) {
+          if (!isWeekday) continue; // 期限超過は平日のみ
+          kind = "overdue";
+        } else continue;
+
+        await notifyDeliveryAlert(row, kind, days);
+        result.deliveryAlerts++;
+      }
+    } catch (e) {
+      console.error("[daily-checks] delivery scan failed:", e);
+    }
+
+    // ─── 2. 契約書アラート ───────────────────────────────────────
+    try {
+      const contracts = await query(
+        `SELECT *
+           FROM contract_capabilities
+          WHERE expiration_date IS NOT NULL
+            AND auto_renewal = TRUE
+            AND renewal_notice_months IS NOT NULL
+            AND alert_lead_months IS NOT NULL
+            AND CURRENT_DATE >= (
+              expiration_date
+                - (renewal_notice_months + alert_lead_months) * INTERVAL '1 month'
+            )::date
+            AND CURRENT_DATE <= expiration_date
+            AND (
+              last_renewal_alert_at IS NULL
+              OR last_renewal_alert_at::date < CURRENT_DATE
+            )`
+      );
+      for (const row of contracts.rows) {
+        await notifyContractAlert(row);
+        result.contractAlerts++;
+      }
+    } catch (e) {
+      console.error("[daily-checks] contract scan failed:", e);
+    }
+
+    console.log(
+      `📅 [daily-checks] dispatched delivery=${result.deliveryAlerts} contract=${result.contractAlerts} (weekday=${isWeekday})`
+    );
+    return result;
+  }
+
+  // POST /api/management/daily-checks — Cloud Scheduler が朝 9:00 (JST) に叩く
+  app.post("/api/management/daily-checks", async (_req, res) => {
+    try {
+      const r = await runDailyChecks();
+      res.json({ ok: true, ...r });
+    } catch (e: any) {
+      console.error("/api/management/daily-checks failed:", e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // Phase 20: 納期変更 (admin-ui 延長ボタン / Phase 21 のスラック申請)
+  //
+  // PATCH /api/management/delivery-events/:id
+  //   body: { inspection_deadline: ISO8601, reason?: string }
+  //   1. DB の inspection_deadline を更新
+  //   2. last_alert_at をリセット (= 新しい期日でアラートカウント再開)
+  //   3. Backlog 課題のカスタムフィールド「希望納期」も同期更新
+  // -------------------------------------------------------------------
+  app.patch(
+    "/api/management/delivery-events/:id",
+    express.json(),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!id || Number.isNaN(id)) {
+          return res.status(400).json({ ok: false, error: "invalid id" });
+        }
+        const newDeadline = req.body?.inspection_deadline;
+        if (!newDeadline) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "inspection_deadline is required" });
+        }
+        // ISO8601 として date or full datetime をサポート
+        const d = new Date(newDeadline);
+        if (Number.isNaN(d.getTime())) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "invalid inspection_deadline" });
+        }
+
+        // 旧値を取得 (Backlog 同期 + 通知用)
+        const prevRes = await query(
+          `SELECT id, backlog_issue_key, inspection_deadline
+             FROM delivery_events WHERE id = $1`,
+          [id]
+        );
+        const prev = prevRes.rows[0];
+        if (!prev) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "delivery_event not found" });
+        }
+
+        // 1. DB 更新 (last_alert_at リセット)
+        await query(
+          `UPDATE delivery_events
+              SET inspection_deadline = $1,
+                  last_alert_at       = NULL,
+                  alert_count         = 0
+            WHERE id = $2`,
+          [d.toISOString(), id]
+        );
+
+        // 2. Backlog 同期 (希望納期カスタムフィールドを更新)
+        let backlogSynced = false;
+        try {
+          const issueKey = prev.backlog_issue_key;
+          if (issueKey && !issueKey.startsWith("MANUAL-")) {
+            await backlogService.updateIssue(issueKey, {
+              deadline: d.toISOString().slice(0, 10), // YYYY-MM-DD
+            });
+            backlogSynced = true;
+          }
+        } catch (e: any) {
+          console.warn(
+            `[delivery-extend] Backlog sync failed (id=${id}):`,
+            e?.message || e
+          );
+        }
+
+        // 3. Slack 通知 (任意・延長したことを申請者に共有)
+        try {
+          if (prev.backlog_issue_key) {
+            await notifyIssueEvent(prev.backlog_issue_key, {
+              type: "status_changed",
+              from: `納期 ${
+                prev.inspection_deadline
+                  ? new Date(prev.inspection_deadline).toLocaleDateString("ja-JP")
+                  : "—"
+              }`,
+              to: `納期 ${d.toLocaleDateString("ja-JP")} に変更`,
+            });
+          }
+        } catch (e) {
+          console.warn(`[delivery-extend] notify failed (id=${id}):`, e);
+        }
+
+        res.json({
+          ok: true,
+          id,
+          inspection_deadline: d.toISOString(),
+          backlog_synced: backlogSynced,
+        });
+      } catch (e: any) {
+        console.error("PATCH /api/management/delivery-events failed:", e);
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
   app.post("/api/management/link-asset", express.json(), async (req, res) => {
     const { type, issueKey, assetId } = req.body;
     try {

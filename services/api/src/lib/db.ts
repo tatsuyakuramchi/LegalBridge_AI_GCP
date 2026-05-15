@@ -184,6 +184,12 @@ export async function initDb() {
     );`,
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
+    // Phase 20: 納期アラート用カラム
+    //   last_alert_at は最終アラート送信日時 (= 同日重複送信防止)
+    //   alert_count は累計送信回数 (運用観察用)
+    `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS last_alert_at TIMESTAMP WITH TIME ZONE;`,
+    `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS alert_count INTEGER DEFAULT 0;`,
+
     // 5. Licensing & Royalties
     `CREATE TABLE IF NOT EXISTS license_contracts (
       id SERIAL PRIMARY KEY,
@@ -425,6 +431,17 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS additional_parties JSONB DEFAULT '[]'::jsonb;`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_additional_parties
        ON contract_capabilities USING GIN (additional_parties);`,
+
+    // Phase 20: 契約更新アラート用カラム
+    //   renewal_notice_months : 自動更新を停止する場合の通告期限 (満期の N カ月前)
+    //                            例: 1 → 満期の 1 カ月前までに通告が必要
+    //   alert_lead_months     : 通告期限の更に N カ月前にアラート
+    //                            例: 2 → 通告期限の 2 カ月前にアラート
+    //                            (= 満期の 3 カ月前にアラート)
+    //   last_renewal_alert_at : 最終通知送信日時 (= 重複防止)
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS renewal_notice_months INTEGER;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_lead_months INTEGER;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS last_renewal_alert_at TIMESTAMP WITH TIME ZONE;`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,

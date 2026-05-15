@@ -237,6 +237,12 @@ export async function initDb() {
     );`,
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
 
+    // Phase 20: 納期アラート用カラム
+    //   last_alert_at は最終アラート送信日時 (= 同日重複送信防止)
+    //   alert_count は累計送信回数 (運用観察用)
+    `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS last_alert_at TIMESTAMP WITH TIME ZONE;`,
+    `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS alert_count INTEGER DEFAULT 0;`,
+
     // -----------------------------------------------------------------
     // Phase 17h: 納期 (delivery_date) を業務明細レベルで持つ。
     // 既存 order_items.due_date は header レベルの全体納期、
@@ -824,6 +830,11 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS additional_parties JSONB DEFAULT '[]'::jsonb;`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_additional_parties
        ON contract_capabilities USING GIN (additional_parties);`,
+
+    // Phase 20: 契約更新アラート用カラム (詳細は api/src/lib/db.ts の同名コメント参照)
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS renewal_notice_months INTEGER;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_lead_months INTEGER;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS last_renewal_alert_at TIMESTAMP WITH TIME ZONE;`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
