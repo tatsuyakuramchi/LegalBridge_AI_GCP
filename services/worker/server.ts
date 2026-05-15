@@ -191,6 +191,157 @@ async function startServer() {
   const upload = multer({ storage: multer.memoryStorage() });
 
   // -------------------------------------------------------------------
+  // Phase 19: Slack 通知ヘルパー
+  //
+  // Backlog 課題作成 (webhook type=1) / ステータス変更 (webhook type=2)
+  // の両イベントで使う共通通知関数。
+  //
+  // 動作:
+  //   1. legal_requests から申請者 (slack_user_id) と申請内容を取得
+  //   2. staff → department_workflow_rules で部署チャンネルを引く
+  //   3. 最新の生成文書 (documents) から drive_link を引く (任意)
+  //   4. 申請者へ DM を送信
+  //   5. 部署チャンネルへ <@申請者> メンション付きで投稿
+  //
+  // 失敗はすべて warn ログのみ (sync 処理を止めない / webhook を 500 に
+  // しない方針)。
+  // -------------------------------------------------------------------
+  type IssueNotifyEvent =
+    | { type: "created" }
+    | { type: "status_changed"; from?: string | null; to: string };
+
+  async function notifyIssueEvent(
+    issueKey: string,
+    event: IssueNotifyEvent
+  ): Promise<void> {
+    if (!slackWebClient) return;
+
+    let ctx: any;
+    try {
+      const r = await query(
+        `SELECT
+           lr.slack_user_id,
+           lr.slack_user_name,
+           lr.summary,
+           lr.counterparty,
+           lr.request_type,
+           lr.dept           AS legal_request_dept,
+           iw.current_status_name,
+           iw.issue_type_name,
+           s.department      AS staff_department,
+           dwr.slack_channel_id,
+           (SELECT drive_link
+              FROM documents
+             WHERE issue_key = $1
+             ORDER BY created_at DESC
+             LIMIT 1)        AS latest_drive_link
+         FROM legal_requests lr
+         LEFT JOIN issue_workflows iw
+                ON iw.backlog_issue_key = lr.backlog_issue_key
+         LEFT JOIN staff s
+                ON s.slack_user_id = lr.slack_user_id
+         LEFT JOIN department_workflow_rules dwr
+                ON dwr.department = COALESCE(s.department, lr.dept)
+         WHERE lr.backlog_issue_key = $1
+         LIMIT 1`,
+        [issueKey]
+      );
+      ctx = r.rows[0];
+    } catch (e) {
+      console.warn(`[notify] lookup failed for ${issueKey}:`, e);
+      return;
+    }
+    if (!ctx) {
+      console.warn(
+        `[notify] no legal_requests row for ${issueKey}, skipping notification`
+      );
+      return;
+    }
+    const slackUserId = String(ctx.slack_user_id || "").trim();
+    if (!slackUserId) {
+      console.warn(`[notify] no slack_user_id for ${issueKey}, skipping`);
+      return;
+    }
+
+    // Backlog 課題 URL を組み立てる (空ホストなら課題キーだけ表示)
+    const backlogHost = (
+      dbSettings.BACKLOG_HOST ||
+      process.env.BACKLOG_HOST ||
+      ""
+    ).replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const backlogUrl = backlogHost
+      ? `https://${backlogHost}/view/${issueKey}`
+      : "";
+
+    // ヘッダ
+    const header =
+      event.type === "created"
+        ? `🆕 *新規依頼を受け付けました*`
+        : `🔄 *ステータス変更:* 「${event.from || "(不明)"}」 → 「${event.to}」`;
+
+    // 本文 (共通)
+    const lines: string[] = [
+      header,
+      "",
+      `*課題:* ${backlogUrl ? `<${backlogUrl}|${issueKey}>` : issueKey}`,
+    ];
+    const typeLabel =
+      ctx.issue_type_name || ctx.request_type || "—";
+    if (typeLabel) lines.push(`*種別:* ${typeLabel}`);
+    if (ctx.counterparty) lines.push(`*相手方:* ${ctx.counterparty}`);
+    if (ctx.summary) lines.push(`*概要:* ${ctx.summary}`);
+
+    const currentStatus =
+      event.type === "status_changed"
+        ? event.to
+        : ctx.current_status_name || "受付済み";
+    lines.push(`*ステータス:* ${currentStatus}`);
+
+    // ステータス変更時に最新文書リンクがあれば添える
+    if (event.type === "status_changed" && ctx.latest_drive_link) {
+      lines.push(`*最新文書:* ${ctx.latest_drive_link}`);
+    }
+
+    const dmText = lines.join("\n");
+
+    // 部署チャンネル投稿用 (先頭にメンション)
+    const channelText = [
+      `<@${slackUserId}> さんの依頼の通知です`,
+      "",
+      ...lines,
+    ].join("\n");
+
+    // DM 送信
+    try {
+      await slackWebClient.chat.postMessage({
+        channel: slackUserId,
+        text: dmText,
+      });
+    } catch (e: any) {
+      console.warn(
+        `[notify] DM send failed (${issueKey} → ${slackUserId}):`,
+        e?.message || e
+      );
+    }
+
+    // 部署チャンネル投稿 (設定があれば)
+    const channelId = String(ctx.slack_channel_id || "").trim();
+    if (channelId) {
+      try {
+        await slackWebClient.chat.postMessage({
+          channel: channelId,
+          text: channelText,
+        });
+      } catch (e: any) {
+        console.warn(
+          `[notify] channel post failed (${issueKey} → ${channelId}):`,
+          e?.message || e
+        );
+      }
+    }
+  }
+
+  // -------------------------------------------------------------------
   // Core pipeline (used by both webhook and the legacy intake endpoint).
   // -------------------------------------------------------------------
 
@@ -376,53 +527,11 @@ ${details}
       [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
     );
 
-    if (slackWebClient) {
-      try {
-        const userSettingsResult = await query(
-          "SELECT value FROM app_settings WHERE key = 'slack_answer_back_user'"
-        );
-        const userTemplate =
-          userSettingsResult.rows[0]?.value?.template ||
-          `✅ 法務相談・文書作成の受付が完了しました。\n\n*種別:* {{requestType}}\n*課題キー:* {{issueKey}}\n*文書番号:* {{docNumber}}\n*生成ドキュメント:* {{driveLink}}\n\n法務担当者からの連絡をお待ちください。`;
-
-        await slackWebClient.chat.postMessage({
-          channel: user,
-          text: replaceSlackPlaceholders(userTemplate, {
-            requestType,
-            issueKey: issue.issueKey,
-            docNumber,
-            driveLink,
-            user,
-            summary,
-            counterparty,
-          }),
-        });
-
-        if (deptChannel) {
-          const chanSettingsResult = await query(
-            "SELECT value FROM app_settings WHERE key = 'slack_answer_back_channel'"
-          );
-          const chanTemplate =
-            chanSettingsResult.rows[0]?.value?.template ||
-            `🆕 *新規依頼受付通知*\n\n<@{{user}}> さんより新規依頼 ({{requestType}}) を受け付けました。\n*課題:* {{issueKey}} ({{summary}})\n*相手方:* {{counterparty}}\n*生成ドキュメント:* {{driveLink}}`;
-
-          await slackWebClient.chat.postMessage({
-            channel: deptChannel,
-            text: replaceSlackPlaceholders(chanTemplate, {
-              requestType,
-              issueKey: issue.issueKey,
-              docNumber,
-              driveLink,
-              user,
-              summary,
-              counterparty,
-            }),
-          });
-        }
-      } catch (e) {
-        console.warn("Slack notification failed (non-fatal):", e);
-      }
-    }
+    // Phase 19: 旧来の「文書生成完了」DM + 部署チャンネル投稿 (driveLink 付き)
+    // は廃止し、共通の notifyIssueEvent ヘルパーで「受付しました」通知を出す
+    // 形に統一。文書完成のお知らせは、admin-ui でステータスを進めたときの
+    // type=2 webhook 経由通知 (latest_drive_link 含む) で兼ねる。
+    await notifyIssueEvent(issue.issueKey, { type: "created" });
 
     return { issueKey: issue.issueKey, docNumber, driveLink };
   }
@@ -539,10 +648,33 @@ ${details}
         const issueKey = `${event.project.projectKey}-${event.content.key_id}`;
         const newStatus = event.content.status.name;
 
+        // 旧 status を取得 (通知の "from" 表示用)。先に SELECT してから UPDATE。
+        let previousStatus: string | null = null;
+        try {
+          const prev = await query(
+            "SELECT current_status_name FROM issue_workflows WHERE backlog_issue_key = $1",
+            [issueKey]
+          );
+          previousStatus = prev.rows[0]?.current_status_name ?? null;
+        } catch {
+          /* 失敗しても通知は続行 (from は "(不明)" になるだけ) */
+        }
+
         await query(
           "UPDATE issue_workflows SET current_status_name = $1 WHERE backlog_issue_key = $2",
           [newStatus, issueKey]
         );
+
+        // Phase 19: ステータス変更通知 (DM + 部署チャンネル)。
+        // 同じステータスへの no-op 更新は通知しない (Backlog は何故か同じ
+        // status で type=2 を送ってくることがある)。
+        if (previousStatus !== newStatus) {
+          await notifyIssueEvent(issueKey, {
+            type: "status_changed",
+            from: previousStatus,
+            to: newStatus,
+          });
+        }
 
         if (newStatus === "完了" || event.content.status.id === 4) {
           try {

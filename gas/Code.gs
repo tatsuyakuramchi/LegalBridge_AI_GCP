@@ -254,24 +254,31 @@ function handleInteractivity_(payload) {
     if (callbackId === 'legal_request_modal') {
       const submission = parseLegalRequestSubmission_(payload);
 
-      // 1. Send an immediate acknowledgement DM so the submitter has
-      //    visible feedback the moment the modal closes, even if a
-      //    GAS cold start makes Slack show "didn't respond".
-      sendIntakeAckDm_(submission);
+      // Phase 19: GAS 側 intake ack DM (sendIntakeAckDm_) は削除した。
+      // 課題作成完了の通知は Cloud Run worker 側で webhook type=1
+      // 受信時に notifyIssueEvent("created") で発信される
+      // (申請者 DM + 部署チャンネル投稿)。重複送信を避けるためここでは
+      // 早期 DM を送らない。
+      //
+      // sendIntakeAckDm_ 関数自体は本ファイル末尾に残置している
+      // (緊急時のロールバック用)。
 
-      // 2. Create the Backlog issue directly from GAS. The Backlog
-      //    type=1 webhook will hand off to Cloud Run which writes to
-      //    the DB, renders the document, uploads to Drive, and posts
-      //    the ✅ 完了 DM with the link.
+      // Create the Backlog issue directly from GAS. The Backlog
+      // type=1 webhook will hand off to Cloud Run which writes to
+      // the DB, renders the document, uploads to Drive, and posts
+      // the 🆕 受付完了 通知 via notifyIssueEvent.
       const created = createBacklogIssue_(submission);
       if (created && created.__error) {
         notifyUserOfError_(submission.slack_user_id, created.__error);
       } else if (created && created.issueKey) {
+        // Backlog API 成功直後の速報 DM (1〜2 秒)。webhook 到着までの
+        // 沈黙 (5〜10 秒) を埋めるための即時フィードバック。
+        // Phase 19 の本通知 (notifyIssueEvent) はこの後 worker から来る。
         slackPost_('chat.postMessage', {
           channel: submission.slack_user_id,
           text:
             '✅ Backlog 課題を作成しました: *' + created.issueKey + '*\n' +
-            '文書生成が完了次第、別 DM でリンクをお送りします。',
+            'まもなく詳細な受付通知をお送りします。',
         });
       }
       return jsonResponse_({ response_action: 'clear' });
