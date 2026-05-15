@@ -41,6 +41,14 @@ import {
   importLegalOnRows,
   getSampleCsv as getLegalonSampleCsv,
 } from "./src/services/legalonImportService.ts";
+// Phase 17z: 取引先マスター CRUD (search-api 側がメイン、worker 側は既存維持の
+// バックアップ位置付け)。同じ vendors テーブルに対する upsert。
+import { vendorMasterPage } from "./src/views/vendorMasterHtml.ts";
+import {
+  listVendors,
+  getVendor,
+  upsertVendor,
+} from "./src/services/vendorMasterService.ts";
 
 dotenv.config();
 
@@ -366,6 +374,112 @@ async function startServer() {
         res
           .status(500)
           .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // /master/vendors — 取引先マスター CRUD (Phase 17z)
+  //
+  // 役割の整理:
+  //   - メイン (= 保守対象) : 本ルート群 (search-api)
+  //   - サブ (= 既存維持)   : services/worker の /api/master/vendors
+  //   どちらも同じ vendors テーブルを upsert する。
+  //
+  // セキュリティ: requireSignedUrl で HMAC 短期署名 URL 必須
+  //   (resource: "master:vendors")。さらに LB 経由なら IAP も前段にいる。
+  // -------------------------------------------------------------------
+  app.get(
+    "/master/vendors",
+    requireSignedUrl({
+      resourceId: () => "master:vendors",
+      renderErrorPage,
+    }),
+    (req, res) => {
+      try {
+        const auth = makeSignLink(req);
+        res.type("html").send(vendorMasterPage(auth));
+      } catch (error) {
+        console.error("/master/vendors failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // GET /api/master/vendors?q=... — 一覧 (検索)
+  app.get(
+    "/api/master/vendors",
+    requireSignedUrl({
+      resourceId: () => "master:vendors",
+      renderErrorPage,
+    }),
+    async (req, res) => {
+      try {
+        const q = String(req.query.q || "").trim();
+        const limit = Number(req.query.limit) || undefined;
+        const offset = Number(req.query.offset) || undefined;
+        const result = await listVendors({ q, limit, offset });
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("GET /api/master/vendors failed:", error);
+        res
+          .status(500)
+          .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // GET /api/master/vendors/:code — 単件
+  app.get(
+    "/api/master/vendors/:code",
+    requireSignedUrl({
+      resourceId: () => "master:vendors",
+      renderErrorPage,
+    }),
+    async (req, res) => {
+      try {
+        const code = String(req.params.code || "").trim();
+        if (!code) {
+          return res.status(400).json({ ok: false, error: "code is required" });
+        }
+        const v = await getVendor(code);
+        if (!v) {
+          return res
+            .status(404)
+            .json({ ok: false, error: `vendor not found: ${code}` });
+        }
+        res.json(v);
+      } catch (error: any) {
+        console.error("GET /api/master/vendors/:code failed:", error);
+        res
+          .status(500)
+          .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // POST /api/master/vendors — upsert
+  app.post(
+    "/api/master/vendors",
+    requireSignedUrl({
+      resourceId: () => "master:vendors",
+      renderErrorPage,
+    }),
+    express.json({ limit: "1mb" }),
+    async (req, res) => {
+      try {
+        const payload = req.body || {};
+        const saved = await upsertVendor(payload);
+        res.json({ ok: true, vendor: saved });
+      } catch (error: any) {
+        console.error("POST /api/master/vendors failed:", error);
+        const msg = String(error?.message || error);
+        // バリデーションエラーは 400 で返す
+        const status = /必須|invalid|required/i.test(msg) ? 400 : 500;
+        res.status(status).json({ ok: false, error: msg });
       }
     }
   );

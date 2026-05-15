@@ -24,6 +24,8 @@ const empty = {
   pen_name: "",
   entity_type: "corporate",
   contact_name: "",
+  phone: "",
+  email: "",
   address: "",
   bank_name: "",
   branch_name: "",
@@ -223,6 +225,24 @@ export function VendorsPanel() {
                 value={data?.contact_name || ""}
                 disabled={!creating && !editing}
                 onChange={(e) => set({ contact_name: e.target.value })}
+              />
+            </Field>
+            <Field label="電話番号">
+              <Input
+                type="tel"
+                placeholder="03-1234-5678"
+                value={data?.phone || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ phone: e.target.value })}
+              />
+            </Field>
+            <Field label="メールアドレス" className="col-span-2">
+              <Input
+                type="email"
+                placeholder="contact@example.com"
+                value={data?.email || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ email: e.target.value })}
               />
             </Field>
             <Field label="住所" className="col-span-2">
