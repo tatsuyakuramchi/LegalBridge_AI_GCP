@@ -83,12 +83,15 @@ const ISSUE_MIGRATIONS: Array<{
   { from: "審査中", to: "承認待ち", deleteAfter: true },
 ];
 
-/** 新規追加 */
+/**
+ * 新規追加。
+ * Backlog 1 プロジェクトあたり 12 ステータスが上限のため、4 つに絞る。
+ * 「差戻し」は別ステータスを設けず、「未対応」に戻す + コメント等で運用代替。
+ */
 const ADDITIONS: Array<{ name: string; color: string }> = [
   { name: "トリガー待ち", color: "#868cb7" },
   { name: "送信待ち", color: "#4caf93" },
   { name: "終結", color: "#bf4f51" },
-  { name: "差戻し", color: "#bf4f51" },
   { name: "キャンセル", color: "#868cb7" },
 ];
 
@@ -104,7 +107,6 @@ const TARGET_ORDER = [
   "完了",
   "トリガー待ち",
   "終結",
-  "差戻し",
   "キャンセル",
 ];
 
@@ -289,36 +291,15 @@ async function main() {
     statuses.map((s) => [s.name, s])
   );
 
-  // ── Phase 2: Additions ──────────────────────────────────────────
+  // ── Phase 2: Issue migrations + delete unused statuses ──────────
+  //   Phase 順序の変更理由: Backlog は 1 プロジェクト 12 ステータス上限。
+  //   ADD を先にやると ((12 + ADDITIONS.length) > 12) で失敗する。
+  //   MIGRATIONS+DELETES で空きを作ってから ADD する順序にする。
   console.log();
-  console.log("───── Phase 2: ADD ─────");
-  for (const a of ADDITIONS) {
-    if (byName2.has(a.name)) {
-      log("verbose", `skip add "${a.name}" (既存)`);
-      continue;
-    }
-    console.log(
-      `   ADD  "${a.name}"  color=${a.color}  ${DRY_RUN ? "(dry-run)" : ""}`
-    );
-    if (!DRY_RUN) {
-      const created = await addStatus(a.name, a.color);
-      byName2.set(a.name, created);
-      await sleep(250);
-    }
-  }
-
-  // refresh
-  if (!DRY_RUN) statuses = await listStatuses();
-  const byName3 = new Map<string, BacklogStatus>(
-    statuses.map((s) => [s.name, s])
-  );
-
-  // ── Phase 3: Issue migrations ────────────────────────────────────
-  console.log();
-  console.log("───── Phase 3: ISSUE MIGRATIONS ─────");
+  console.log("───── Phase 2: ISSUE MIGRATIONS ─────");
   for (const m of ISSUE_MIGRATIONS) {
-    const fromS = byName3.get(m.from);
-    const toS = byName3.get(m.to);
+    const fromS = byName2.get(m.from);
+    const toS = byName2.get(m.to);
     if (!fromS) {
       log("verbose", `skip migration "${m.from}" → "${m.to}" (元 status なし)`);
       continue;
@@ -372,6 +353,41 @@ async function main() {
         log(
           "warn",
           `   skip delete of "${m.from}" (id=${fromS.id} は default status のため削除不可)`
+        );
+      }
+    }
+  }
+
+  // refresh after migrations + deletes
+  if (!DRY_RUN) statuses = await listStatuses();
+  const byName3 = new Map<string, BacklogStatus>(
+    statuses.map((s) => [s.name, s])
+  );
+
+  // ── Phase 3: Additions (after migrations to free up slots) ──────
+  console.log();
+  console.log("───── Phase 3: ADD ─────");
+  for (const a of ADDITIONS) {
+    if (byName3.has(a.name)) {
+      log("verbose", `skip add "${a.name}" (既存)`);
+      continue;
+    }
+    console.log(
+      `   ADD  "${a.name}"  color=${a.color}  ${DRY_RUN ? "(dry-run)" : ""}`
+    );
+    if (!DRY_RUN) {
+      try {
+        const created = await addStatus(a.name, a.color);
+        byName3.set(a.name, created);
+        await sleep(250);
+      } catch (e: any) {
+        log(
+          "warn",
+          `   add failed ("${a.name}"): ${
+            e?.response?.data?.errors?.[0]?.message ||
+            e?.response?.status ||
+            e?.message
+          }`
         );
       }
     }

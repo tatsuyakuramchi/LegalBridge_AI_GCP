@@ -74,7 +74,9 @@ export const FLOW: Record<RequestCategory, string[]> = {
   deadline_change: ["未対応", "完了"],
 };
 
-export const TERMINAL_OFF_FLOW = ["終結", "差戻し", "キャンセル"] as const;
+// Backlog 1 プロジェクト 12 上限のため「差戻し」はステータスとして設けない。
+// 「未対応」への戻し + コメント、または「キャンセル」で代替する運用。
+export const TERMINAL_OFF_FLOW = ["終結", "キャンセル"] as const;
 
 export function triggerWaitLabel(
   request_type: string | null | undefined

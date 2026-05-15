@@ -100,10 +100,12 @@ export const FLOW: Record<RequestCategory, string[]> = {
  * 終了系ステータス (どこからでも遷移可能、メイン経路と独立)。
  *   - 完了        : 正常完了 (FLOW の最後にも含まれる)
  *   - 終結        : 既存課題に統合された (Phase 22 で新規)
- *   - 差戻し       : 申請内容に不備があり戻された
- *   - キャンセル   : 申請者が取り消した
+ *   - キャンセル   : 申請者が取り消した / 法務が差し戻し含む (Backlog 12 上限のため統合)
+ *
+ * 「差戻し」は別ステータスを設けず、「未対応」に戻す + コメントで理由を記録、
+ * もしくは「キャンセル」+ コメント で表現する運用とする。
  */
-export const TERMINAL_OFF_FLOW = ["終結", "差戻し", "キャンセル"] as const
+export const TERMINAL_OFF_FLOW = ["終結", "キャンセル"] as const
 export type TerminalStatus = (typeof TERMINAL_OFF_FLOW)[number]
 
 /** ステータス全部 (UI で扱う候補集合) */
@@ -118,7 +120,6 @@ export const ALL_STATUSES = [
   "締結待ち",
   "完了",
   "終結",
-  "差戻し",
   "キャンセル",
 ] as const
 
