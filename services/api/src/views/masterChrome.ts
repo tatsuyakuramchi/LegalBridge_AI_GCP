@@ -464,10 +464,27 @@ h2.page-title {
 .import-card h3 {
   font-family: var(--font-mono);
   font-weight: 700;
-  font-size: 14px;
+  font-size: 13px;
   text-transform: uppercase;
-  letter-spacing: 0.12em;
-  margin: 0 0 8px;
+  letter-spacing: 0.14em;
+  margin: 0 0 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.import-card h3::before {
+  content: "▍";
+  color: var(--phosphor);
+  font-weight: 400;
+  font-size: 14px;
+  line-height: 1;
+}
+/* h3 内に inline SVG が混じった場合のサイズ強制 (lucide は viewBox のみで
+   width/height が無いため、未指定だと巨大化する事故が起きやすい) */
+.import-card h3 svg {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
 }
 .import-card .desc {
   font-family: var(--font-mono);

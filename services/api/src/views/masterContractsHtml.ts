@@ -45,12 +45,11 @@ export function masterContractsPage(): string {
 
     <!-- LegalOn 一括取込カード -->
     <div class="import-card">
-      <h3>${SVG.upload} LEGALON 契約台帳 / 一括取込</h3>
+      <h3>LegalOn 契約台帳 / 一括取込</h3>
       <p class="desc">
-        LegalOn Cloud から出力した契約書台帳 CSV (UTF-8) を <code>contract_capabilities</code>
-        テーブルに upsert します。<br>
-        3 者契約は <strong>取引先名 列にカンマ区切り</strong> で入れてください
-        (1 つ目 = 主取引先)。
+        LegalOn Cloud から出力した契約書台帳 CSV (UTF-8) を <code>contract_capabilities</code> テーブルに upsert します。
+        3 者契約は <strong>取引先名列をカンマ区切り</strong> (1 つ目が主取引先) で入れてください。
+        初回は Dry Run で件数・解決状況を確認してから本番取込してください。
       </p>
 
       <div class="file-input-wrap">
@@ -69,15 +68,16 @@ export function masterContractsPage(): string {
         </div>
         <label class="dup-mode" style="cursor: pointer;">
           <input type="checkbox" id="dry-run" checked>
-          <span class="tech-label" style="margin: 0;">Dry Run (プレビューのみ・DB は変更されない)</span>
+          <span class="tech-label" style="margin: 0;">Dry Run (プレビューのみ)</span>
         </label>
       </div>
 
-      <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap;">
-        <button class="btn" id="btn-submit">${SVG.upload} 取込開始</button>
-        <button class="btn outline" id="btn-reset">${SVG.refresh} リセット</button>
-        <a href="${apiTemplateUrl}" download="legalon_sample.csv" class="btn outline">
-          ${SVG.download} サンプル CSV
+      <div style="margin-top: 16px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center;">
+        <button class="btn" id="btn-submit">取込実行</button>
+        <button class="btn ghost sm" id="btn-reset">リセット</button>
+        <div style="flex:1"></div>
+        <a href="${apiTemplateUrl}" download="legalon_sample.csv" class="btn outline sm">
+          サンプル CSV
         </a>
       </div>
 
@@ -86,20 +86,8 @@ export function masterContractsPage(): string {
 
     <!-- 結果カード (実行後に出現) -->
     <div class="import-card" id="result-card" style="display:none;">
-      <h3>${SVG.fileText} 取込結果</h3>
+      <h3>取込結果</h3>
       <div id="result"></div>
-    </div>
-
-    <!-- 使い方 -->
-    <div class="import-card" style="background: var(--muted);">
-      <h3>${SVG.fileText} 使い方</h3>
-      <p class="desc" style="margin: 0;">
-        1. LegalOn Cloud で契約書台帳を <strong>CSV (UTF-8) でエクスポート</strong><br>
-        2. 初回は <strong>Dry Run</strong> にチェック → 「取込開始」 → プレビュー確認<br>
-        3. 件数・契約類型・取引先解決状況を確認<br>
-        4. 問題なければ <strong>Dry Run を外して</strong> 再実行 → 本番取込<br>
-        5. 3 者契約は <strong>取引先名 列にカンマ区切り</strong> (1 つ目 = 主取引先)
-      </p>
     </div>
   </div>
 
