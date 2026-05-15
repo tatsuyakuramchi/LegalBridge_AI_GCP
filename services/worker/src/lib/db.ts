@@ -250,6 +250,13 @@ export async function initDb() {
     // -----------------------------------------------------------------
     `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS delivery_date DATE;`,
 
+    // Phase 20 (修正版): 業務明細レベルの納期アラート
+    //   delivery_events.last_alert_at は誤ったテーブルだったため未使用となるが
+    //   将来「検収期限超過アラート」を別途出すかもしれないので残置。
+    //   実運用のアラートはここ order_line_items.last_alert_at を見る。
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS last_alert_at TIMESTAMP WITH TIME ZONE;`,
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS alert_count INTEGER DEFAULT 0;`,
+
     // -----------------------------------------------------------------
     // Phase 13: order_line_items を calc_method + payment_terms split に。
     // license_financial_conditions と同じ語彙に統一:

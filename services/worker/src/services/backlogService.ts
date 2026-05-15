@@ -373,4 +373,32 @@ export class BacklogService {
       throw error;
     }
   }
+
+  /**
+   * Backlog 課題にコメントを追加 (Phase 20 で追加)。
+   *
+   * 業務明細毎の納期変更履歴を Backlog 課題に残すために使う。
+   * Backlog 側ではコメントとしてタイムラインに表示される。
+   *
+   * @param issueKey  対象の Backlog 課題キー
+   * @param content   コメント本文 (markdown も使える)
+   */
+  async addComment(issueKey: string, content: string): Promise<any> {
+    if (!this.apiKey || !this.baseUrl) {
+      console.warn(`⚠️ Backlog credentials missing. Mocking comment on ${issueKey}.`);
+      return { id: 0, content };
+    }
+    try {
+      const body = new URLSearchParams();
+      body.append("content", content);
+      const response = await axios.post(
+        this.getUrl(`/issues/${issueKey}/comments`),
+        body
+      );
+      return response.data;
+    } catch (error) {
+      console.error(`Error adding comment to ${issueKey}:`, error);
+      throw error;
+    }
+  }
 }

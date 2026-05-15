@@ -52,15 +52,100 @@ export async function updateIssueStatus(
   return res.json().catch(() => ({}));
 }
 
+export type OrderLineItem = {
+  line_item_id: number
+  order_item_id: number
+  line_no: number
+  item_name: string | null
+  spec?: string | null
+  unit_price?: number | string | null
+  quantity?: number | string | null
+  amount_ex_tax?: number | string | null
+  delivery_date: string | null
+  last_alert_at?: string | null
+  alert_count?: number | null
+  accepted: boolean
+}
+
 /**
- * 発注書の納期 (delivery_events.inspection_deadline) を変更する。
+ * 指定 Backlog 課題に紐づく業務明細 (order_line_items) を取得する。
+ * 並び順は line_no 昇順。
+ */
+export async function getIssueLineItems(
+  issueKey: string
+): Promise<OrderLineItem[]> {
+  const res = await fetch(
+    `/api/management/issues/${encodeURIComponent(issueKey)}/line-items`
+  )
+  if (!res.ok) {
+    let detail = ""
+    try {
+      const j = await res.json()
+      detail = j?.error ? `: ${j.error}` : ""
+    } catch {
+      /* noop */
+    }
+    throw new Error(`HTTP ${res.status}${detail}`)
+  }
+  const data = await res.json()
+  return (data?.line_items as OrderLineItem[]) || []
+}
+
+/**
+ * 業務明細 (order_line_items.delivery_date) の納期を変更する。
  *
- * worker の `PATCH /api/management/issues/:issueKey/deadline` を叩く。
- * 同時に Backlog 課題のカスタムフィールド「希望納期」も同期更新される
- * (worker 側で実施)。
+ * worker の `PATCH /api/management/order-line-items/:id/deadline` を叩く。
+ * worker 側で:
+ *   - DB の delivery_date 更新 + last_alert_at リセット
+ *   - Backlog 課題にコメントで変更履歴を追加 (Q3=a)
+ *   - 申請者 + 部署チャンネルに Slack 通知
  *
- * @param issueKey       対象の Backlog 課題キー (= delivery_events.backlog_issue_key)
- * @param newDeadline    新しい納期 (Date or ISO8601 文字列)
+ * @param lineItemId   対象の order_line_items.id
+ * @param newDate      新しい納期 (Date or "YYYY-MM-DD" 文字列)
+ * @param reason       変更理由 (任意、Backlog コメントに含まれる)
+ */
+export async function updateLineItemDeadline(
+  lineItemId: number,
+  newDate: string | Date,
+  reason?: string
+): Promise<{
+  ok: true
+  line_item_id: number
+  line_no: number
+  item_name: string
+  backlog_issue_key: string
+  previous_date: string | null
+  new_date: string
+  backlog_commented: boolean
+}> {
+  const dateStr =
+    newDate instanceof Date ? newDate.toISOString().slice(0, 10) : String(newDate)
+  const body: Record<string, string> = { delivery_date: dateStr }
+  if (reason) body.reason = reason
+  const res = await fetch(
+    `/api/management/order-line-items/${lineItemId}/deadline`,
+    {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!res.ok) {
+    let detail = ""
+    try {
+      const j = await res.json()
+      detail = j?.error ? `: ${j.error}` : ""
+    } catch {
+      /* noop */
+    }
+    throw new Error(`HTTP ${res.status}${detail}`)
+  }
+  return res.json()
+}
+
+/**
+ * @deprecated Phase 20a 時点の delivery_events ベース。
+ * 業務明細毎に納期を持つべき → updateLineItemDeadline を使ってください。
  */
 export async function updateDeliveryDeadline(
   issueKey: string,

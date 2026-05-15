@@ -17,8 +17,10 @@ import { cn } from "@/lib/utils"
 import {
   updateIssueStatus,
   getRecommendedNextStatus,
-  updateDeliveryDeadline,
+  getIssueLineItems,
+  updateLineItemDeadline,
   type BacklogStatus,
+  type OrderLineItem,
 } from "@/src/lib/backlog"
 
 type Props = {
@@ -63,47 +65,97 @@ export function WorkflowPanel({
   const [pending, setPending] = React.useState<number | null>(null)
   const [recommendedId, setRecommendedId] = React.useState<number | null>(null)
 
-  // Phase 20b: 納期延長 UI のローカル state
-  const [deadlineOpen, setDeadlineOpen] = React.useState(false)
-  const [deadlineInput, setDeadlineInput] = React.useState("")
-  const [deadlinePending, setDeadlinePending] = React.useState(false)
+  // Phase 20 (修正版): 業務明細単位の納期編集 state
+  // - lineItems: GET /api/management/issues/:issueKey/line-items の結果
+  // - editingLineId: 現在編集中の line_item_id (null = 全部閉じている)
+  // - lineDateInput: date input の値 (YYYY-MM-DD)
+  // - lineReasonInput: 変更理由 (任意)
+  // - linePending: 保存中の line_item_id
+  const [lineItems, setLineItems] = React.useState<OrderLineItem[]>([])
+  const [lineItemsLoading, setLineItemsLoading] = React.useState(false)
+  const [editingLineId, setEditingLineId] = React.useState<number | null>(null)
+  const [lineDateInput, setLineDateInput] = React.useState("")
+  const [lineReasonInput, setLineReasonInput] = React.useState("")
+  const [linePending, setLinePending] = React.useState<number | null>(null)
 
-  const handleExtendDeadline = async () => {
+  const loadLineItems = React.useCallback(async () => {
     if (!issueKey) return
-    if (!deadlineInput) {
+    setLineItemsLoading(true)
+    try {
+      const items = await getIssueLineItems(issueKey)
+      setLineItems(items)
+    } catch (e) {
+      // 失敗時は無視 (line_items が無い issue タイプもある)
+      setLineItems([])
+    } finally {
+      setLineItemsLoading(false)
+    }
+  }, [issueKey])
+
+  React.useEffect(() => {
+    void loadLineItems()
+  }, [loadLineItems])
+
+  const handleExtendLine = async (item: OrderLineItem) => {
+    if (!lineDateInput) {
       showNotification("新しい納期を入力してください", "error")
       return
     }
-    const d = new Date(deadlineInput)
+    const d = new Date(lineDateInput)
     if (Number.isNaN(d.getTime())) {
       showNotification("無効な日付形式です", "error")
       return
     }
-    if (!window.confirm(
-      `${issueKey} の納期を「${d.toLocaleDateString("ja-JP")}」に変更します。\n\nBacklog のカスタムフィールド「希望納期」も同期更新されます。\nよろしいですか？`
-    )) {
+    const oldStr = item.delivery_date
+      ? new Date(item.delivery_date).toLocaleDateString("ja-JP")
+      : "(未設定)"
+    if (
+      !window.confirm(
+        `業務明細 #${item.line_no} (${item.item_name || "—"}) の納期を変更します。\n\n` +
+          `${oldStr} → ${d.toLocaleDateString("ja-JP")}\n\n` +
+          `Backlog 課題にコメントで変更履歴が残り、申請者と部署チャンネルへ通知されます。\nよろしいですか？`
+      )
+    ) {
       return
     }
-    setDeadlinePending(true)
+    setLinePending(item.line_item_id)
     try {
-      const r = await updateDeliveryDeadline(issueKey, d)
+      const r = await updateLineItemDeadline(
+        item.line_item_id,
+        d,
+        lineReasonInput.trim() || undefined
+      )
       showNotification(
-        `納期を ${d.toLocaleDateString("ja-JP")} に変更しました${
-          r.backlog_synced ? " (Backlog 同期済み)" : ""
+        `明細 #${r.line_no} の納期を ${r.new_date} に変更しました${
+          r.backlog_commented ? " (Backlog コメント追加済み)" : ""
         }`,
         "success"
       )
-      setDeadlineOpen(false)
-      setDeadlineInput("")
+      setEditingLineId(null)
+      setLineDateInput("")
+      setLineReasonInput("")
+      await loadLineItems()
       await refreshIssues?.()
     } catch (e: any) {
-      showNotification(
-        `納期変更に失敗: ${e?.message || e}`,
-        "error"
-      )
+      showNotification(`納期変更に失敗: ${e?.message || e}`, "error")
     } finally {
-      setDeadlinePending(false)
+      setLinePending(null)
     }
+  }
+
+  const startEditLine = (item: OrderLineItem) => {
+    setEditingLineId(item.line_item_id)
+    setLineDateInput(
+      item.delivery_date
+        ? new Date(item.delivery_date).toISOString().slice(0, 10)
+        : ""
+    )
+    setLineReasonInput("")
+  }
+  const cancelEditLine = () => {
+    setEditingLineId(null)
+    setLineDateInput("")
+    setLineReasonInput("")
   }
 
   // 推奨次ステータスを workflow_settings から取得
@@ -252,69 +304,155 @@ export function WorkflowPanel({
         )}
       </div>
 
-      {/* Phase 20b: 納期延長 (発注書系) ────────────────────────────── */}
-      <div className="retro-rule" />
+      {/* Phase 20 (修正版): 業務明細毎の納期管理 ────────────────────── */}
+      {(lineItemsLoading || lineItems.length > 0) && (
+        <>
+          <div className="retro-rule" />
+          <div>
+            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mb-2 flex items-center gap-1.5">
+              <CalendarClock className="h-3 w-3" />
+              Deliveries · Line items
+            </p>
 
-      <div>
-        {!deadlineOpen ? (
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={() => setDeadlineOpen(true)}
-            className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
-            title={`Backlog ${issueKey} の納期 (delivery_events.inspection_deadline) を延長`}
-          >
-            <CalendarClock className="h-3 w-3" />
-            納期を延長
-          </Button>
-        ) : (
-          <div className="space-y-2">
-            <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-              New deadline:
-            </p>
-            <div className="flex flex-wrap gap-1.5 items-center">
-              <Input
-                type="date"
-                value={deadlineInput}
-                onChange={(e) => setDeadlineInput(e.target.value)}
-                disabled={deadlinePending}
-                className="h-8 w-40 font-mono text-xs"
-                min={new Date().toISOString().slice(0, 10)}
-              />
-              <Button
-                size="sm"
-                onClick={handleExtendDeadline}
-                disabled={deadlinePending || !deadlineInput}
-                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
-              >
-                {deadlinePending ? (
-                  <Loader2 className="h-3 w-3 animate-spin" />
-                ) : (
-                  <ChevronRight className="h-3 w-3" />
-                )}
-                変更を実行
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => {
-                  setDeadlineOpen(false)
-                  setDeadlineInput("")
-                }}
-                disabled={deadlinePending}
-                className="h-8 font-mono text-[11px] uppercase tracking-[0.14em]"
-              >
-                <X className="h-3 w-3" />
-                キャンセル
-              </Button>
-            </div>
-            <p className="text-[10px] font-mono text-muted-foreground">
-              DB の納期 + Backlog 課題のカスタムフィールド「希望納期」を同時に更新します。
-              申請者と部署チャンネルに変更通知が飛びます。
-            </p>
+            {lineItemsLoading ? (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                <Loader2 className="inline h-3 w-3 animate-spin mr-1" />
+                Loading…
+              </p>
+            ) : (
+              <div className="space-y-1">
+                {lineItems.map((item) => {
+                  const isEditing = editingLineId === item.line_item_id
+                  const isPending = linePending === item.line_item_id
+                  const dateStr = item.delivery_date
+                    ? new Date(item.delivery_date).toLocaleDateString("ja-JP")
+                    : "—"
+                  const today = new Date()
+                  today.setHours(0, 0, 0, 0)
+                  const d = item.delivery_date ? new Date(item.delivery_date) : null
+                  const daysUntil = d
+                    ? Math.round((d.getTime() - today.getTime()) / 86400000)
+                    : null
+                  let dateBadge: React.ReactNode = null
+                  if (item.accepted) {
+                    dateBadge = (
+                      <span className="text-[9px] font-mono tracking-[0.14em] text-emerald-600 uppercase ml-1">
+                        accepted
+                      </span>
+                    )
+                  } else if (daysUntil != null) {
+                    if (daysUntil < 0) {
+                      dateBadge = (
+                        <span className="text-[9px] font-mono tracking-[0.14em] text-destructive uppercase ml-1">
+                          {Math.abs(daysUntil)}d overdue
+                        </span>
+                      )
+                    } else if (daysUntil <= 7) {
+                      dateBadge = (
+                        <span className="text-[9px] font-mono tracking-[0.14em] text-phosphor uppercase ml-1">
+                          in {daysUntil}d
+                        </span>
+                      )
+                    } else {
+                      dateBadge = (
+                        <span className="text-[9px] font-mono tracking-[0.14em] text-muted-foreground uppercase ml-1">
+                          in {daysUntil}d
+                        </span>
+                      )
+                    }
+                  }
+
+                  return (
+                    <div
+                      key={item.line_item_id}
+                      className={cn(
+                        "rounded-sm border border-border px-2 py-1.5",
+                        isEditing ? "bg-accent/30" : "bg-card"
+                      )}
+                    >
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.12em] shrink-0">
+                          #{item.line_no}
+                        </span>
+                        <span className="text-xs font-mono flex-1 truncate">
+                          {item.item_name || "—"}
+                        </span>
+                        <span className="text-[11px] font-mono text-muted-foreground tab-mono">
+                          {dateStr}
+                        </span>
+                        {dateBadge}
+                        {!isEditing && !item.accepted && (
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            onClick={() => startEditLine(item)}
+                            disabled={linePending != null}
+                            className="h-6 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            title="この明細の納期を変更"
+                          >
+                            <CalendarClock className="h-2.5 w-2.5" />
+                            延長
+                          </Button>
+                        )}
+                      </div>
+
+                      {isEditing && (
+                        <div className="mt-2 space-y-1.5">
+                          <div className="flex flex-wrap gap-1.5 items-center">
+                            <Input
+                              type="date"
+                              value={lineDateInput}
+                              onChange={(e) => setLineDateInput(e.target.value)}
+                              disabled={isPending}
+                              className="h-7 w-36 font-mono text-xs"
+                              min={new Date().toISOString().slice(0, 10)}
+                            />
+                            <Input
+                              type="text"
+                              placeholder="変更理由 (任意)"
+                              value={lineReasonInput}
+                              onChange={(e) => setLineReasonInput(e.target.value)}
+                              disabled={isPending}
+                              maxLength={500}
+                              className="h-7 flex-1 min-w-[160px] font-mono text-xs"
+                            />
+                            <Button
+                              size="sm"
+                              onClick={() => handleExtendLine(item)}
+                              disabled={isPending || !lineDateInput}
+                              className="h-7 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            >
+                              {isPending ? (
+                                <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                              ) : (
+                                <ChevronRight className="h-2.5 w-2.5" />
+                              )}
+                              実行
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={cancelEditLine}
+                              disabled={isPending}
+                              className="h-7 font-mono text-[10px] uppercase tracking-[0.14em]"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </Button>
+                          </div>
+                          <p className="text-[10px] font-mono text-muted-foreground">
+                            DB の delivery_date を更新し、Backlog 課題にコメントを追加します。
+                            申請者と部署チャンネルにも通知されます。
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </div>
   )
 }

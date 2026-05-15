@@ -759,7 +759,130 @@ ${details}
   // 通知は notifyDeliveryAlert / notifyContractAlert に委譲。
   // -------------------------------------------------------------------
 
-  /** 発注書 (delivery_events) 1 件のアラート通知 */
+  /**
+   * Phase 20 (修正版): 業務明細 (order_line_items) 1 行のアラート通知
+   *
+   * 業務明細レベルの納期 (oli.delivery_date) に対するアラート。
+   * 申請者へ DM + 部署チャンネルへ <@申請者> メンション付き投稿。
+   * 本文に「明細 #N (item_name)」を含めて、どの明細の話か明示する。
+   */
+  async function notifyLineItemAlert(
+    row: any,
+    issueKey: string,
+    kind: "warning_7d" | "warning_3d" | "warning_1d" | "overdue",
+    daysUntil: number
+  ): Promise<void> {
+    if (!slackWebClient) return;
+
+    // 申請者 + 部署チャンネルを引く
+    const ctxRes = await query(
+      `SELECT
+         lr.slack_user_id,
+         lr.summary,
+         lr.counterparty,
+         lr.request_type,
+         dwr.slack_channel_id
+       FROM legal_requests lr
+       LEFT JOIN staff s ON s.slack_user_id = lr.slack_user_id
+       LEFT JOIN department_workflow_rules dwr
+              ON dwr.department = COALESCE(s.department, lr.dept)
+       WHERE lr.backlog_issue_key = $1
+       LIMIT 1`,
+      [issueKey]
+    );
+    const ctx = ctxRes.rows[0] || {};
+    const slackUserId = String(ctx.slack_user_id || "").trim();
+
+    const backlogHost = (
+      dbSettings.BACKLOG_HOST ||
+      process.env.BACKLOG_HOST ||
+      ""
+    ).replace(/^https?:\/\//, "").replace(/\/$/, "");
+    const backlogUrl = backlogHost
+      ? `https://${backlogHost}/view/${issueKey}`
+      : "";
+
+    let header: string;
+    if (kind === "warning_7d") header = `⏰ *納期 7 日前のお知らせ*`;
+    else if (kind === "warning_3d") header = `⏰ *納期 3 日前*`;
+    else if (kind === "warning_1d") header = `🚨 *納期前日 — 明日が期限です*`;
+    else
+      header = `🔴 *納期超過 ${Math.abs(daysUntil)} 日* — 延長または完了処理をお願いします`;
+
+    const deadlineStr = row.delivery_date
+      ? new Date(row.delivery_date).toLocaleDateString("ja-JP")
+      : "—";
+
+    const lines: string[] = [
+      header,
+      "",
+      `*課題:* ${backlogUrl ? `<${backlogUrl}|${issueKey}>` : issueKey}`,
+      `*業務明細:* #${row.line_no} ${row.item_name || ""}`,
+    ];
+    if (ctx.counterparty) lines.push(`*相手方:* ${ctx.counterparty}`);
+    if (ctx.summary) lines.push(`*依頼:* ${ctx.summary}`);
+    lines.push(`*納期:* ${deadlineStr}`);
+    if (daysUntil >= 0) lines.push(`*残り:* ${daysUntil} 日`);
+
+    const dmText = lines.join("\n");
+    const channelText = slackUserId
+      ? [`<@${slackUserId}> さんの依頼の納期アラートです`, "", ...lines].join(
+          "\n"
+        )
+      : dmText;
+
+    // DM
+    if (slackUserId) {
+      try {
+        await slackWebClient.chat.postMessage({
+          channel: slackUserId,
+          text: dmText,
+        });
+      } catch (e: any) {
+        console.warn(
+          `[alert] line_item DM failed (${issueKey}#${row.line_no}):`,
+          e?.message || e
+        );
+      }
+    }
+    // 部署チャンネル
+    const channelId = String(ctx.slack_channel_id || "").trim();
+    if (channelId) {
+      try {
+        await slackWebClient.chat.postMessage({
+          channel: channelId,
+          text: channelText,
+        });
+      } catch (e: any) {
+        console.warn(
+          `[alert] line_item channel failed (${issueKey}#${row.line_no}):`,
+          e?.message || e
+        );
+      }
+    }
+
+    // 送信履歴を更新
+    try {
+      await query(
+        `UPDATE order_line_items
+            SET last_alert_at = CURRENT_TIMESTAMP,
+                alert_count   = COALESCE(alert_count, 0) + 1
+          WHERE id = $1`,
+        [row.line_item_id]
+      );
+    } catch (e) {
+      console.warn(
+        `[alert] line_item flag update failed (id=${row.line_item_id}):`,
+        e
+      );
+    }
+  }
+
+  /**
+   * @deprecated Phase 20a 時点の delivery_events ベース実装。
+   * 業務明細毎に納期を持つべき (= notifyLineItemAlert) ため未使用に。
+   * コードは残置 (将来「検収期限超過アラート」を別途出す可能性)。
+   */
   async function notifyDeliveryAlert(
     row: any,
     kind: "warning_7d" | "warning_3d" | "warning_1d" | "overdue",
@@ -957,24 +1080,39 @@ ${details}
     const dayOfWeekJst = jstNow.getUTCDay(); // 0=Sun, 6=Sat
     const isWeekday = dayOfWeekJst >= 1 && dayOfWeekJst <= 5;
 
-    // ─── 1. 発注書アラート ───────────────────────────────────────
+    // ─── 1. 発注書 / 業務明細毎の納期アラート ────────────────────
+    // Phase 20 (修正版): order_line_items.delivery_date を走査する。
+    //   - 検収完了 (delivery_line_items.acceptance_ratio >= 1.0) の行は対象外
+    //   - 7/3/1 日前 → 各 1 回通知
+    //   - 期限超過 → 平日のみ毎日通知 (同日内重複は last_alert_at で抑止)
     try {
-      const deliveries = await query(
-        `SELECT de.*,
-                (de.inspection_deadline::date - CURRENT_DATE) AS days_until
-           FROM delivery_events de
-          WHERE de.status = 'pending'
-            AND de.inspection_deadline IS NOT NULL
-            AND (
-              (de.inspection_deadline::date - CURRENT_DATE) IN (7, 3, 1)
-              OR (de.inspection_deadline::date - CURRENT_DATE) < 0
-            )
-            AND (
-              de.last_alert_at IS NULL
-              OR de.last_alert_at::date < CURRENT_DATE
-            )`
+      const lineItems = await query(
+        `SELECT
+           oli.id            AS line_item_id,
+           oli.order_item_id,
+           oli.line_no,
+           oli.item_name,
+           oli.delivery_date,
+           oi.backlog_issue_key,
+           (oli.delivery_date - CURRENT_DATE) AS days_until
+         FROM order_line_items oli
+         JOIN order_items oi ON oi.id = oli.order_item_id
+         WHERE oli.delivery_date IS NOT NULL
+           AND NOT EXISTS (
+             SELECT 1 FROM delivery_line_items dli
+              WHERE dli.order_line_item_id = oli.id
+                AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+           )
+           AND (
+             (oli.delivery_date - CURRENT_DATE) IN (7, 3, 1)
+             OR (oli.delivery_date - CURRENT_DATE) < 0
+           )
+           AND (
+             oli.last_alert_at IS NULL
+             OR oli.last_alert_at::date < CURRENT_DATE
+           )`
       );
-      for (const row of deliveries.rows) {
+      for (const row of lineItems.rows) {
         const days = Number(row.days_until);
         let kind: "warning_7d" | "warning_3d" | "warning_1d" | "overdue";
         if (days === 7) kind = "warning_7d";
@@ -985,11 +1123,13 @@ ${details}
           kind = "overdue";
         } else continue;
 
-        await notifyDeliveryAlert(row, kind, days);
+        const issueKey = String(row.backlog_issue_key || "");
+        if (!issueKey) continue;
+        await notifyLineItemAlert(row, issueKey, kind, days);
         result.deliveryAlerts++;
       }
     } catch (e) {
-      console.error("[daily-checks] delivery scan failed:", e);
+      console.error("[daily-checks] line_items scan failed:", e);
     }
 
     // ─── 2. 契約書アラート ───────────────────────────────────────
@@ -1026,8 +1166,115 @@ ${details}
   }
 
   /**
-   * Phase 20b: 納期延長のコアロジック。id か backlog_issue_key のどちらでも引ける。
-   * 戻り値: 更新後の delivery_event (DB 更新 + Backlog 同期含む)
+   * Phase 20 (修正版): 業務明細単位の納期延長コアロジック。
+   *
+   * 1. order_line_items.delivery_date を更新
+   * 2. last_alert_at をリセット (= 新期日でアラートカウント再開)
+   * 3. Backlog 課題にコメント追加で履歴を残す (Q3=a)
+   *    Backlog のカスタムフィールドは更新しない (line item 概念が無いため)
+   * 4. 申請者 + 部署チャンネルに Slack 通知
+   */
+  async function extendLineItemDeadline(
+    lineItemId: number,
+    newDate: string | Date,
+    reason?: string
+  ): Promise<{
+    line_item_id: number;
+    line_no: number;
+    item_name: string;
+    backlog_issue_key: string;
+    previous_date: string | null;
+    new_date: string;
+    backlog_commented: boolean;
+  }> {
+    const d = new Date(newDate);
+    if (Number.isNaN(d.getTime())) {
+      throw new Error("invalid delivery_date");
+    }
+    const newDateStr = d.toISOString().slice(0, 10);
+
+    // 旧値 + 紐付く Backlog issue key を取得
+    const prevRes = await query(
+      `SELECT
+         oli.id, oli.line_no, oli.item_name, oli.delivery_date,
+         oi.backlog_issue_key
+       FROM order_line_items oli
+       JOIN order_items oi ON oi.id = oli.order_item_id
+       WHERE oli.id = $1`,
+      [lineItemId]
+    );
+    const prev = prevRes.rows[0];
+    if (!prev) {
+      throw new Error("order_line_item not found");
+    }
+    const issueKey = String(prev.backlog_issue_key || "");
+    const previousDateStr = prev.delivery_date
+      ? new Date(prev.delivery_date).toISOString().slice(0, 10)
+      : null;
+
+    // 1. DB 更新 + アラートカウントリセット
+    await query(
+      `UPDATE order_line_items
+          SET delivery_date  = $1,
+              last_alert_at  = NULL,
+              alert_count    = 0,
+              updated_at     = CURRENT_TIMESTAMP
+        WHERE id = $2`,
+      [newDateStr, lineItemId]
+    );
+
+    // 2. Backlog コメント追加 (履歴目的)
+    let backlogCommented = false;
+    if (issueKey && !issueKey.startsWith("MANUAL-")) {
+      const reasonLine = reason ? `\n*変更理由:* ${reason}` : "";
+      const body =
+        `📅 **業務明細の納期を変更しました**\n\n` +
+        `*明細:* #${prev.line_no} ${prev.item_name || ""}\n` +
+        `*変更前:* ${previousDateStr || "(未設定)"}\n` +
+        `*変更後:* ${newDateStr}` +
+        reasonLine;
+      try {
+        await backlogService.addComment(issueKey, body);
+        backlogCommented = true;
+      } catch (e: any) {
+        console.warn(
+          `[line-item-extend] Backlog comment failed (${issueKey}#${prev.line_no}):`,
+          e?.message || e
+        );
+      }
+    }
+
+    // 3. Slack 通知
+    if (issueKey) {
+      try {
+        await notifyIssueEvent(issueKey, {
+          type: "status_changed",
+          from: `明細 #${prev.line_no} 納期 ${previousDateStr || "(未設定)"}`,
+          to: `明細 #${prev.line_no} 納期 ${newDateStr} に変更`,
+        });
+      } catch (e) {
+        console.warn(
+          `[line-item-extend] notify failed (${issueKey}#${prev.line_no}):`,
+          e
+        );
+      }
+    }
+
+    return {
+      line_item_id: prev.id,
+      line_no: prev.line_no,
+      item_name: prev.item_name || "",
+      backlog_issue_key: issueKey,
+      previous_date: previousDateStr,
+      new_date: newDateStr,
+      backlog_commented: backlogCommented,
+    };
+  }
+
+  /**
+   * @deprecated Phase 20b 時点の delivery_events ベース実装。
+   * 業務明細毎に納期を持つべき (= extendLineItemDeadline) ため未使用に。
+   * 互換のためエンドポイントは残置するが、新規 admin-ui は line-item 経路を使う。
    */
   async function extendDeliveryDeadline(
     target: { id?: number; issueKey?: string },
@@ -1115,6 +1362,94 @@ ${details}
       backlog_synced: backlogSynced,
     };
   }
+
+  // -------------------------------------------------------------------
+  // Phase 20 (修正版): 業務明細レベルのエンドポイント
+  // -------------------------------------------------------------------
+
+  // GET /api/management/issues/:issueKey/line-items
+  //   admin-ui WorkflowPanel が「この issue の業務明細一覧 + 納期」を取得する用。
+  app.get(
+    "/api/management/issues/:issueKey/line-items",
+    async (req, res) => {
+      try {
+        const issueKey = String(req.params.issueKey || "").trim();
+        if (!issueKey) {
+          return res.status(400).json({ ok: false, error: "issueKey required" });
+        }
+        const r = await query(
+          `SELECT
+             oli.id              AS line_item_id,
+             oli.order_item_id,
+             oli.line_no,
+             oli.item_name,
+             oli.spec,
+             oli.unit_price,
+             oli.quantity,
+             oli.amount_ex_tax,
+             oli.delivery_date,
+             oli.last_alert_at,
+             oli.alert_count,
+             EXISTS (
+               SELECT 1 FROM delivery_line_items dli
+                WHERE dli.order_line_item_id = oli.id
+                  AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+             ) AS accepted
+           FROM order_line_items oli
+           JOIN order_items oi ON oi.id = oli.order_item_id
+          WHERE oi.backlog_issue_key = $1
+          ORDER BY oli.line_no`,
+          [issueKey]
+        );
+        res.json({ ok: true, line_items: r.rows });
+      } catch (e: any) {
+        console.error(
+          "GET /api/management/issues/:issueKey/line-items failed:",
+          e
+        );
+        res.status(500).json({ ok: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
+  // PATCH /api/management/order-line-items/:id/deadline
+  //   業務明細単位の納期延長。Phase 20 修正後の主経路。
+  app.patch(
+    "/api/management/order-line-items/:id/deadline",
+    express.json(),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!id || Number.isNaN(id)) {
+          return res.status(400).json({ ok: false, error: "invalid id" });
+        }
+        const newDate = req.body?.delivery_date;
+        if (!newDate) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "delivery_date is required" });
+        }
+        const reason = req.body?.reason
+          ? String(req.body.reason).slice(0, 500)
+          : undefined;
+        const result = await extendLineItemDeadline(id, newDate, reason);
+        res.json({ ok: true, ...result });
+      } catch (e: any) {
+        console.error(
+          "PATCH /api/management/order-line-items/:id/deadline failed:",
+          e
+        );
+        const msg = String(e?.message || e);
+        const status = /not found|invalid/.test(msg) ? 400 : 500;
+        res.status(status).json({ ok: false, error: msg });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // @deprecated Phase 20a 時点の delivery_events ベース endpoint。
+  // 互換のため残置するが、新 admin-ui は使わない。
+  // -------------------------------------------------------------------
 
   // PATCH /api/management/issues/:issueKey/deadline
   //   admin-ui 等が backlog_issue_key で叩く用。
