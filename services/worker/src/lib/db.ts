@@ -1058,25 +1058,29 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
 }
 
 /**
- * Phase 22.10: 再発行用の文書番号を採番する。
+ * Phase 22.10 (改 Phase 22.11.1): 文書番号採番 + リビジョン管理。
  *
- * 同じ issue_key + template_type に対して既に documents が存在する場合、
- * 初版の base_document_number を共有しつつ "_001", "_002", ... のサフィックスを
- * 付与した新リビジョン番号を返す。初回 (= 既存なし) の場合は new base を採番。
+ * 採番ルール:
+ *   ① existingDocumentNumber が渡されなかった場合 = 完全新規
+ *        → 毎回新しい番号を採番 (PO-0001, PO-0002, ...)
+ *          同じ Backlog 課題で複数 PO を発行する正常ケースをサポート
+ *   ② existingDocumentNumber 渡し + その既存ドキュメントが
+ *      drive_link 空 = 未完成 draft → そのまま同番号で完成
+ *        (旧 Phase 15: PDF 未作成キュー由来の draft 完成)
+ *   ③ existingDocumentNumber 渡し + drive_link 入り = 完成済を再編集
+ *        → 同じ base を共有しつつ revision を +1 して "_NNN" サフィックス付与
+ *          (Archive から「再編集モードで開く」→ 編集 → 再発行 のフロー)
+ *
+ * 旧 Phase 22.10 にあった「同 issue_key + 同 template_type の既存 doc を見て
+ * 自動的に再発行扱い」ロジックは撤廃。これは同一取引先・同一 issueKey で
+ * 別 PO を発行する正常ユースケースを破壊していた。リビジョンは
+ * 「ユーザーが既存 PO を明示的に reopen して再編集した」場合のみ発火する。
  *
  * 返り値:
- *   {
- *     documentNumber:      実際に新規発行する番号 (初版なら base そのまま、
- *                          再発行なら "{base}_NNN")
- *     baseDocumentNumber:  初版番号 (リビジョンを跨ぐ共通キー)
- *     revision:            0=初版 / 1,2,... = 再発行版
- *     isReissue:           true なら再発行 (既存があった)
- *   }
- *
- * 用途:
- *   - 発注書を修正して再発行 → "ARC-PO-2026-0001" → "ARC-PO-2026-0001_001"
- *   - 元番号は documents.base_document_number で永続的に追跡できる
- *   - UI 側は base_document_number でグループ化して履歴を表示可能
+ *   documentNumber:      実際に新規発行する番号
+ *   baseDocumentNumber:  初版番号 (リビジョンを跨ぐ共通キー)
+ *   revision:            0=初版 / 1,2,... = 再発行版
+ *   isReissue:           true なら再発行 (Rev. ≥ 1 = 既存編集)
  */
 export async function getDocumentNumberForGenerate(opts: {
   issueKey: string;
@@ -1089,25 +1093,41 @@ export async function getDocumentNumberForGenerate(opts: {
   revision: number;
   isReissue: boolean;
 }> {
-  const { issueKey, templateType, issueTypeName, existingDocumentNumber } = opts;
+  const { templateType, issueTypeName, existingDocumentNumber } = opts;
 
-  // 1) existingDocumentNumber が明示渡しなら (PDF 未作成キュー由来等) そのまま使う。
-  //    再発行扱いではなく "同じ番号で完成させる" 用途。
-  if (existingDocumentNumber && existingDocumentNumber.trim()) {
-    const docNum = existingDocumentNumber.trim();
-    const row = await query(
-      `SELECT base_document_number, revision FROM documents WHERE document_number = $1 LIMIT 1`,
-      [docNum]
-    );
-    if (row.rows[0]) {
-      return {
-        documentNumber: docNum,
-        baseDocumentNumber: row.rows[0].base_document_number || docNum,
-        revision: Number(row.rows[0].revision) || 0,
-        isReissue: false,
-      };
-    }
-    // 履歴がない場合 (まれ): 初版扱い
+  // === Case ①: 完全新規 (existingDocumentNumber なし) ===
+  // 毎回新しい番号を採番。同 issueKey に対して 2 度目以降の発行も普通に新規扱い。
+  if (!existingDocumentNumber || !existingDocumentNumber.trim()) {
+    const newNumber = await getNewDocumentNumber(templateType, issueTypeName);
+    return {
+      documentNumber: newNumber,
+      baseDocumentNumber: newNumber,
+      revision: 0,
+      isReissue: false,
+    };
+  }
+
+  const docNum = existingDocumentNumber.trim();
+
+  // existingDocumentNumber に対応する既存行を探す。
+  // 渡された番号が base そのものでも、_001 等のリビジョン版でも、
+  // 同じ base に属する最新リビジョンを取得する。
+  const existingRow = await query(
+    `SELECT base_document_number, revision, drive_link, document_number
+       FROM documents
+      WHERE document_number = $1
+         OR base_document_number = $1
+         OR base_document_number = (
+              SELECT COALESCE(base_document_number, document_number)
+                FROM documents WHERE document_number = $1 LIMIT 1
+            )
+      ORDER BY revision DESC
+      LIMIT 1`,
+    [docNum]
+  );
+
+  // 想定外: 既存履歴ゼロ → 渡された番号で初版扱い (互換性のため)
+  if (existingRow.rows.length === 0) {
     return {
       documentNumber: docNum,
       baseDocumentNumber: docNum,
@@ -1116,36 +1136,32 @@ export async function getDocumentNumberForGenerate(opts: {
     };
   }
 
-  // 2) 同じ issue_key + template_type で既存があるか確認
-  const existing = await query(
-    `SELECT document_number, base_document_number, revision
-       FROM documents
-      WHERE issue_key = $1 AND template_type = $2
-      ORDER BY revision DESC, created_at DESC
-      LIMIT 1`,
-    [issueKey, templateType]
-  );
+  const existing = existingRow.rows[0];
+  const base = existing.base_document_number || existing.document_number || docNum;
+  const isUnfinishedDraft =
+    !existing.drive_link || String(existing.drive_link).trim() === "";
 
-  if (existing.rows.length > 0) {
-    // 再発行: base を共有、revision を +1 してサフィックス付与
-    const base = existing.rows[0].base_document_number || existing.rows[0].document_number;
-    const nextRev = (Number(existing.rows[0].revision) || 0) + 1;
-    const suffix = nextRev.toString().padStart(3, "0");
+  // === Case ②: 未完成 draft の完成 (drive_link 空) ===
+  // 旧 Phase 15: PDF 未作成キュー由来。同番号で UPDATE 完了 (リビジョンは
+  // 上げない)。
+  if (isUnfinishedDraft) {
     return {
-      documentNumber: `${base}_${suffix}`,
+      documentNumber: docNum,
       baseDocumentNumber: base,
-      revision: nextRev,
-      isReissue: true,
+      revision: Number(existing.revision) || 0,
+      isReissue: false,
     };
   }
 
-  // 3) 完全初版: 新規採番
-  const newNumber = await getNewDocumentNumber(templateType, issueTypeName);
+  // === Case ③: 完成済を再編集 → リビジョン採番 ===
+  // base を共有しつつ revision を +1 して "_NNN" サフィックス付与。
+  const nextRev = (Number(existing.revision) || 0) + 1;
+  const suffix = nextRev.toString().padStart(3, "0");
   return {
-    documentNumber: newNumber,
-    baseDocumentNumber: newNumber,
-    revision: 0,
-    isReissue: false,
+    documentNumber: `${base}_${suffix}`,
+    baseDocumentNumber: base,
+    revision: nextRev,
+    isReissue: true,
   };
 }
 
