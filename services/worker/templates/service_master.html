@@ -221,12 +221,23 @@
         </div>
     </div>
 
-    <!-- 乙の情報（相手方=受託者） -->
+    <!-- 乙の情報（相手方=受託者）
+         VENDOR_IS_CORPORATION が "個人" のときは
+         「氏名」のみを表示 (代表者行を省略)。本人=押印者なので
+         stamp-box は氏名行に同居させる。
+         "法人" (デフォルト) のときは従来通り「商号 + 代表者」を表示。 -->
     <div class="info-section">
         <div class="info-title">乙（受託者）</div>
         <div class="info-grid">
             <div class="label">住所</div>
             <div class="value">{{VENDOR_ADDRESS}}</div>
+            {{#if (eq VENDOR_IS_CORPORATION "個人")}}
+            <div class="label">氏名</div>
+            <div class="value stamp-container">
+                <span>{{VENDOR_NAME}}</span>
+                <div class="stamp-box">印</div>
+            </div>
+            {{else}}
             <div class="label">商号</div>
             <div class="value">{{VENDOR_NAME}}</div>
             <div class="label">代表者</div>
@@ -234,6 +245,7 @@
                 <span>{{VENDOR_REP}}</span>
                 <div class="stamp-box">印</div>
             </div>
+            {{/if}}
             <div class="label">電話番号</div>
             <div class="value">{{VENDOR_PHONE}}</div>
             <div class="label">メール</div>

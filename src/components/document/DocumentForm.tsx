@@ -868,6 +868,24 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // (Arclight is normally the 委託者 = 甲 but the swap supports
   // edge scenarios where roles are inverted).
   if (templateId === 'service_master') {
+    // Phase 22.5: 乙 (受託者) の 法人/個人 判定。
+    //   未設定 (新規 / 既存 doc に値なし) は "法人" デフォルト。
+    //   個人選択時は VENDOR_REP フィールドを非表示 + 必須から除外し、
+    //   VENDOR_NAME のラベルを「商号」→「氏名」に切り替える。
+    //   テンプレ HTML 側も {{#if (eq VENDOR_IS_CORPORATION "個人")}} で
+    //   同じ分岐を行うので、PDF も自動で個人形式 (氏名のみ) に切り替わる。
+    const isVendorCorp =
+      (formData.VENDOR_IS_CORPORATION || '法人') === '法人';
+
+    // vendor.entity_type → "法人" / "個人" への正規化。
+    // worker / api 両方 "corporate" / "individual" (英) で持つが、
+    // 旧データには日本語値も混在しうるので両方カバーする。
+    const entityTypeToJa = (et?: string | null): '法人' | '個人' => {
+      const v = String(et || '').toLowerCase();
+      if (v === 'individual' || et === '個人') return '個人';
+      return '法人';
+    };
+
     const fillPartyAFromSelf = () =>
       setFormData({
         ...formData,
@@ -892,19 +910,31 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         VENDOR_NAME: companyProfile?.name || '',
         VENDOR_ADDRESS: companyProfile?.address || '',
         VENDOR_REP: companyProfile?.representative || '',
+        VENDOR_IS_CORPORATION: '法人', // 自社は常に法人想定
       });
 
     const fillVendorFromPartner = () => {
       if (!activeVendor) return;
+      const isCorp = entityTypeToJa(activeVendor.entity_type) === '法人';
       setFormData({
         ...formData,
         // Phase 17o: VENDOR_CODE を必ず同期 (法務検索の vendor_id 解決用)
         VENDOR_CODE: activeVendor.vendor_code || '',
-        VENDOR_NAME: activeVendor.vendor_name || '',
+        // Phase 22.5: 法人=正式名 (vendor_name) / 個人=屋号 or 氏名 (pen_name → trade_name → vendor_name)
+        VENDOR_NAME: isCorp
+          ? activeVendor.vendor_name || ''
+          : activeVendor.pen_name ||
+            activeVendor.trade_name ||
+            activeVendor.vendor_name ||
+            '',
         VENDOR_ADDRESS: activeVendor.address || '',
-        VENDOR_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        // 個人の場合、代表者欄は非表示なので空文字で OK
+        VENDOR_REP: isCorp
+          ? activeVendor.vendor_rep || activeVendor.contact_name || ''
+          : '',
         VENDOR_PHONE: activeVendor.phone || '',
         VENDOR_EMAIL: activeVendor.email || '',
+        VENDOR_IS_CORPORATION: isCorp ? '法人' : '個人',
         // Banking commonly belongs to 乙 on a service master
         BANK_NAME: activeVendor.bank_name || '',
         BRANCH_NAME: activeVendor.branch_name || '',
@@ -935,8 +965,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       </button>
     );
 
+    // Phase 22.5: 個人事業主の場合は VENDOR_REP を必須から除外
+    // (テンプレ側でも非表示なので、入力する場所がなくなるため)
     const requiredIds = Object.entries(metadata.vars || {})
-      .filter(([, m]: [string, any]) => m?.required === true)
+      .filter(([id, m]: [string, any]) => {
+        if (m?.required !== true) return false;
+        if (id === 'VENDOR_REP' && !isVendorCorp) return false;
+        return true;
+      })
       .map(([id]) => id);
     const missingRequired = requiredIds.filter((id) => {
       const v = formData[id];
@@ -944,6 +980,22 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     });
     const renderGroup = (groupName: string) =>
       (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
+    // 乙セクション専用の renderGroup。
+    //   - 個人選択時は VENDOR_REP フィールドを非表示
+    //   - VENDOR_NAME のラベルを 法人/個人 で切替 (商号 / 氏名)
+    const renderVendorGroup = () =>
+      (groupedVars['III. 乙 (受託者)'] || [])
+        .filter((fid) => !(fid === 'VENDOR_REP' && !isVendorCorp))
+        .map((fid) => {
+          if (fid === 'VENDOR_NAME') {
+            return renderField(
+              fid,
+              isVendorCorp ? '乙 (受託者) 商号' : '乙 (受託者) 氏名'
+            );
+          }
+          return renderField(fid);
+        });
 
     return (
       <div className="space-y-10">
@@ -994,7 +1046,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
 
           <FormSection
-            title="III. 乙 (受託者)"
+            title={isVendorCorp ? 'III. 乙 (受託者・法人)' : 'III. 乙 (受託者・個人)'}
             variant="amber"
             icon={<User className="w-4 h-4" />}
             headerActions={
@@ -1004,7 +1056,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               </>
             }
           >
-            {renderGroup('III. 乙 (受託者)')}
+            {renderVendorGroup()}
           </FormSection>
         </div>
 

@@ -153,9 +153,10 @@
       "PARTY_A_ADDRESS": { "label": "甲 (委託者) 住所", "group": "II. 甲 (委託者)", "type": "textarea", "required": true },
       "PARTY_A_REP": { "label": "甲 (委託者) 代表者", "group": "II. 甲 (委託者)", "required": true },
 
-      "VENDOR_NAME": { "label": "乙 (受託者) 商号", "group": "III. 乙 (受託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
+      "VENDOR_IS_CORPORATION": { "label": "乙 種別", "group": "III. 乙 (受託者)", "type": "select", "options": ["法人", "個人"], "required": true, "helpText": "法人=商号+代表者を表示 / 個人=氏名のみ。[取引先] ボタンで vendor.entity_type から自動判定" },
+      "VENDOR_NAME": { "label": "乙 (受託者) 商号 / 氏名", "group": "III. 乙 (受託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力。法人=商号、個人=氏名" },
       "VENDOR_ADDRESS": { "label": "乙 (受託者) 住所", "group": "III. 乙 (受託者)", "type": "textarea", "required": true },
-      "VENDOR_REP": { "label": "乙 (受託者) 代表者", "group": "III. 乙 (受託者)", "required": true },
+      "VENDOR_REP": { "label": "乙 (受託者) 代表者", "group": "III. 乙 (受託者)", "required": true, "helpText": "法人の場合のみ必須。「代表取締役 山田太郎」のような肩書込みの形式。個人を選択すると非表示になります" },
       "VENDOR_PHONE": { "label": "乙 (受託者) TEL", "group": "III. 乙 (受託者)" },
       "VENDOR_EMAIL": { "label": "乙 (受託者) E-mail", "group": "III. 乙 (受託者)" },
 

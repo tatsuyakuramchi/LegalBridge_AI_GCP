@@ -284,11 +284,22 @@ export function DocumentEditorPage() {
   const handleGenerate = async () => {
     // Phase 16: クライアント側プレ検証 — templates_config.json で required=true
     // のフィールドが未入力なら送信を止めて明確に伝える。
+    //
+    // Phase 22.5: service_master で乙が個人事業主 (VENDOR_IS_CORPORATION = "個人")
+    // のときは VENDOR_REP は不要 (テンプレも非表示) なので除外する。
+    // 将来同種の条件付き必須が増えるなら meta.requiredIf 等の汎用化を検討。
     const meta = templateMetadata[selectedTemplate]
     if (meta?.vars) {
       const missing: string[] = []
       Object.entries(meta.vars).forEach(([id, m]: [string, any]) => {
         if (m?.required !== true) return
+        if (
+          selectedTemplate === "service_master" &&
+          id === "VENDOR_REP" &&
+          formData.VENDOR_IS_CORPORATION === "個人"
+        ) {
+          return
+        }
         const v = formData[id]
         const isEmpty =
           v === undefined ||
