@@ -1472,16 +1472,33 @@ async function startServer() {
     try {
       // Phase 22.12: documents 側の base_document_number / revision / is_primary を
       // JOIN で返す。Archive UI で「真の契約 ★」バッジ + 履歴折り畳みを実現する。
-      const result = await query(
-        `SELECT ea.*,
-                d.base_document_number,
-                COALESCE(d.revision, 0) AS revision,
-                COALESCE(d.is_primary, TRUE) AS is_primary,
-                d.superseded_by
-           FROM external_assets ea
-           LEFT JOIN documents d ON d.document_number = ea.asset_number
-          ORDER BY ea.created_at DESC`
-      );
+      // Phase 22.12.1: schema migration 未適用環境 (worker 未デプロイ) でも
+      // 落ちないよう undefined_column フォールバック。
+      let result: any;
+      try {
+        result = await query(
+          `SELECT ea.*,
+                  d.base_document_number,
+                  COALESCE(d.revision, 0) AS revision,
+                  COALESCE(d.is_primary, TRUE) AS is_primary,
+                  d.superseded_by
+             FROM external_assets ea
+             LEFT JOIN documents d ON d.document_number = ea.asset_number
+            ORDER BY ea.created_at DESC`
+        );
+      } catch (err: any) {
+        if (err && err.code === "42703") {
+          console.warn(
+            "[/api/management/assets] documents.is_primary 列が未追加。" +
+              "legacy 形式で返却 (worker 再デプロイで解消)。"
+          );
+          result = await query(
+            "SELECT * FROM external_assets ORDER BY created_at DESC"
+          );
+        } else {
+          throw err;
+        }
+      }
       res.json(result.rows);
     } catch (error) {
       res.status(500).json({ error: String(error) });

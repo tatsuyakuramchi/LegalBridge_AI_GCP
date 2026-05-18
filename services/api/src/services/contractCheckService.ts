@@ -218,50 +218,105 @@ export async function getDocumentsByCategory(vendorId: number) {
   // Phase 22.12: is_primary フィルタを追加。リビジョン版 (is_primary=FALSE) は
   //   検索一覧には出さない (真の契約 = is_primary=TRUE のみ)。NULL は旧データ
   //   なので TRUE 同等扱い (= 表示する)。
-  const res = await query(
-    `WITH vendor_docs AS (
-       SELECT DISTINCT
-         cc.document_number,
-         cc.contract_title,
-         cc.contract_status,
-         cc.effective_date,
-         cc.expiration_date,
-         cc.contract_type,
-         cc.document_url,
-         cc.base_document_number,
-         cc.revision,
-         cc.is_primary
-       FROM contract_capabilities cc
-       WHERE (
-              cc.vendor_id = $1
-           OR cc.additional_parties @> jsonb_build_array(jsonb_build_object('vendor_id', $1::int))
-         )
-         AND cc.document_number IS NOT NULL
-         AND cc.document_number <> ''
-         -- 真の契約のみ。NULL (旧データ) は表示する (= TRUE 同等)。
-         AND cc.is_primary IS NOT FALSE
-     )
-     SELECT
-       vd.document_number,
-       vd.contract_title,
-       vd.contract_status,
-       vd.effective_date,
-       vd.expiration_date,
-       vd.contract_type,
-       COALESCE(d.document_category, lb_category_for_template(vd.contract_type)) AS category,
-       d.template_type,
-       d.issue_key,
-       COALESCE(d.drive_link, ea.file_link, vd.document_url) AS file_link,
-       d.created_at,
-       vd.base_document_number,
-       COALESCE(vd.revision, 0) AS revision,
-       vd.is_primary
-     FROM vendor_docs vd
-     LEFT JOIN documents d ON d.document_number = vd.document_number
-     LEFT JOIN external_assets ea ON ea.asset_number = vd.document_number
-     ORDER BY d.created_at DESC NULLS LAST, vd.document_number DESC`,
-    [vendorId]
-  );
+  // Phase 22.12.1: schema migration が未適用 (= worker 未デプロイ) の環境で
+  //   `cc.is_primary` 列が存在せず Slack 検索が落ちる事故への対策。
+  //   新クエリを試して PostgreSQL undefined_column (42703) なら旧クエリに
+  //   フォールバックする。これにより worker → api のデプロイ順を気にせずに済む。
+  const NEW_QUERY = `
+    WITH vendor_docs AS (
+      SELECT DISTINCT
+        cc.document_number,
+        cc.contract_title,
+        cc.contract_status,
+        cc.effective_date,
+        cc.expiration_date,
+        cc.contract_type,
+        cc.document_url,
+        cc.base_document_number,
+        cc.revision,
+        cc.is_primary
+      FROM contract_capabilities cc
+      WHERE (
+             cc.vendor_id = $1
+          OR cc.additional_parties @> jsonb_build_array(jsonb_build_object('vendor_id', $1::int))
+        )
+        AND cc.document_number IS NOT NULL
+        AND cc.document_number <> ''
+        AND cc.is_primary IS NOT FALSE
+    )
+    SELECT
+      vd.document_number,
+      vd.contract_title,
+      vd.contract_status,
+      vd.effective_date,
+      vd.expiration_date,
+      vd.contract_type,
+      COALESCE(d.document_category, lb_category_for_template(vd.contract_type)) AS category,
+      d.template_type,
+      d.issue_key,
+      COALESCE(d.drive_link, ea.file_link, vd.document_url) AS file_link,
+      d.created_at,
+      vd.base_document_number,
+      COALESCE(vd.revision, 0) AS revision,
+      vd.is_primary
+    FROM vendor_docs vd
+    LEFT JOIN documents d ON d.document_number = vd.document_number
+    LEFT JOIN external_assets ea ON ea.asset_number = vd.document_number
+    ORDER BY d.created_at DESC NULLS LAST, vd.document_number DESC`;
+
+  const LEGACY_QUERY = `
+    WITH vendor_docs AS (
+      SELECT DISTINCT
+        cc.document_number,
+        cc.contract_title,
+        cc.contract_status,
+        cc.effective_date,
+        cc.expiration_date,
+        cc.contract_type,
+        cc.document_url
+      FROM contract_capabilities cc
+      WHERE (
+             cc.vendor_id = $1
+          OR cc.additional_parties @> jsonb_build_array(jsonb_build_object('vendor_id', $1::int))
+        )
+        AND cc.document_number IS NOT NULL
+        AND cc.document_number <> ''
+    )
+    SELECT
+      vd.document_number,
+      vd.contract_title,
+      vd.contract_status,
+      vd.effective_date,
+      vd.expiration_date,
+      vd.contract_type,
+      COALESCE(d.document_category, lb_category_for_template(vd.contract_type)) AS category,
+      d.template_type,
+      d.issue_key,
+      COALESCE(d.drive_link, ea.file_link, vd.document_url) AS file_link,
+      d.created_at,
+      NULL::text AS base_document_number,
+      0 AS revision,
+      TRUE AS is_primary
+    FROM vendor_docs vd
+    LEFT JOIN documents d ON d.document_number = vd.document_number
+    LEFT JOIN external_assets ea ON ea.asset_number = vd.document_number
+    ORDER BY d.created_at DESC NULLS LAST, vd.document_number DESC`;
+
+  let res: any;
+  try {
+    res = await query(NEW_QUERY, [vendorId]);
+  } catch (err: any) {
+    // PostgreSQL undefined_column = 42703。worker 未デプロイの環境で起きる。
+    if (err && err.code === "42703") {
+      console.warn(
+        "[getDocumentsByCategory] is_primary 列が存在しないため legacy query にフォールバック。" +
+          "worker サービスを再デプロイして migration を実行してください。"
+      );
+      res = await query(LEGACY_QUERY, [vendorId]);
+    } else {
+      throw err;
+    }
+  }
 
   const groups: {
     basic: any[];
