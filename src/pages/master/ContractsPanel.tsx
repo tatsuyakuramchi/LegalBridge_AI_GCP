@@ -47,6 +47,9 @@ const empty = {
   language: "",
   document_url: "",
   condition_number: "",
+  // Phase 22.9: 有効/無効。発注書/個別利用許諾条件書/個別出版条件書の
+  // 自動補完で参照される基本契約の候補に含むかどうか (= primary filter)。
+  is_active: true,
 }
 
 export function ContractsPanel() {
@@ -174,6 +177,13 @@ export function ContractsPanel() {
                       className="h-4"
                     >
                       {c.contract_status === "executed" ? "締結済" : c.contract_status}
+                    </Badge>
+                    {/* Phase 22.9: 有効/無効バッジ — 自動補完候補に含まれるかどうか */}
+                    <Badge
+                      variant={c.is_active === false ? "phosphor" : "success"}
+                      className={c.is_active === false ? "h-4 opacity-60" : "h-4"}
+                    >
+                      {c.is_active === false ? "無効" : "有効"}
                     </Badge>
                   </div>
                 </TableCell>
@@ -330,6 +340,25 @@ export function ContractsPanel() {
                 <option value="expired">満了</option>
                 <option value="terminated">解約済</option>
               </NativeSelect>
+            </Field>
+            {/* Phase 22.9: 有効/無効フラグ — 発注書/個別利用許諾条件書/個別出版条件書の
+                自動補完候補に含めるかどうかを切替。
+                例: 旧契約は executed のまま is_active=false にして候補から外す。 */}
+            <Field label="有効 / 無効">
+              <div className="flex items-center gap-2 h-9">
+                <Switch
+                  checked={data?.is_active !== false}
+                  onCheckedChange={(v) => set({ is_active: v })}
+                />
+                <span className="text-xs font-mono">
+                  {data?.is_active !== false ? "有効 (自動補完候補に含む)" : "無効 (自動補完で無視)"}
+                </span>
+              </div>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                発注書 / 個別利用許諾条件書 / 個別出版条件書を作成するとき、
+                取引先 × 区分 (業務委託 / ライセンス / 出版) の組み合わせから
+                自動で基本契約を引いてくる。無効にすると候補に出てこない。
+              </p>
             </Field>
             <Field label="発効日">
               <Input

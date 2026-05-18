@@ -1,5 +1,6 @@
 
 import React, { useMemo, useEffect } from 'react';
+import { useAppData } from '@/src/context/AppDataContext';
 import { FormSection } from './FormSection';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
@@ -89,6 +90,77 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, selectedStaff?.staff_name]);
+
+  // Phase 22.9: 取引先 (activeVendor) が選ばれたら、その vendor に紐づく
+  //             基本契約 (contract_capabilities) を自動補完。
+  //   - 発注書 (purchase_order)               → category="service" の有効な基本契約
+  //   - 個別利用許諾条件書 (individual_license_terms) → category="license" の有効な基本契約
+  //   - 個別出版条件書 (publication_terms, 将来) → category="publication"
+  // 既に該当フィールドに値が入っているときは尊重して上書きしない。
+  // 同じ vendor で再評価が走り続けないよう ref で last 状態を持つ。
+  //
+  // ★ 注意: この useEffect はコンポーネント最上部に置く (Rules of Hooks)。
+  const { contracts: allContracts } = useAppData();
+  const lastAutoFilledRef = React.useRef<string>('');
+  useEffect(() => {
+    if (!activeVendor || !Array.isArray(allContracts)) return;
+    const key = `${activeVendor.vendor_code || activeVendor.id}:${templateId}`;
+    if (lastAutoFilledRef.current === key) return;
+
+    let targetCategory: string | null = null;
+    if (templateId === 'purchase_order') targetCategory = 'service';
+    else if (
+      templateId === 'individual_license_terms' ||
+      templateId === 'lic_individual'
+    )
+      targetCategory = 'license';
+    else if (templateId === 'publication_terms') targetCategory = 'publication';
+    if (!targetCategory) return;
+
+    const masterContract = allContracts.find(
+      (c: any) =>
+        Number(c.vendor_id) === Number(activeVendor.id) &&
+        c.contract_category === targetCategory &&
+        c.record_type === 'master_contract' &&
+        c.is_active !== false
+    );
+    if (!masterContract) {
+      lastAutoFilledRef.current = key;
+      return;
+    }
+
+    const refLabel = masterContract.document_number
+      ? `${masterContract.contract_title || ''} (${masterContract.document_number})`.trim()
+      : masterContract.contract_title || '';
+
+    const patch: Record<string, any> = {};
+    if (templateId === 'purchase_order') {
+      // 既に基本契約フラグ/参照があれば尊重
+      if (!formData.HAS_BASE_CONTRACT && !formData.MASTER_CONTRACT_REF) {
+        patch.HAS_BASE_CONTRACT = true;
+        patch.MASTER_CONTRACT_REF = refLabel;
+      }
+    } else if (
+      templateId === 'individual_license_terms' ||
+      templateId === 'lic_individual'
+    ) {
+      // 個別利用許諾条件書: 「基本契約名」フィールドを補完
+      if (!formData['基本契約名']) {
+        patch['基本契約名'] = refLabel;
+      }
+    } else if (templateId === 'publication_terms') {
+      // 個別出版条件書 (将来): MASTER_CONTRACT_REF 等の汎用フィールドを補完予定
+      if (!formData.MASTER_CONTRACT_REF) {
+        patch.MASTER_CONTRACT_REF = refLabel;
+      }
+    }
+
+    if (Object.keys(patch).length > 0) {
+      setFormData({ ...formData, ...patch });
+    }
+    lastAutoFilledRef.current = key;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeVendor?.vendor_code, templateId, allContracts.length]);
 
   // Phase 22.7: 発注書のサマリー (納期 / 支払日) を明細から自動集計。
   //   - 明細の delivery_date を集約 → summaryDeliveryDate

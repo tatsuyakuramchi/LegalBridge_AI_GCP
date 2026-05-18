@@ -2835,6 +2835,8 @@ ${details}
       original_work, product_name, work_name, media, territory, language, document_url, condition_number,
       // Phase 20: 更新アラート用フィールド
       renewal_notice_months, alert_lead_months,
+      // Phase 22.9: 有効/無効フラグ
+      is_active,
     } = req.body;
     try {
       const result = await query(
@@ -2842,8 +2844,9 @@ ${details}
           vendor_id, record_type, contract_category, contract_type, contract_title,
           document_number, contract_status, effective_date, expiration_date, auto_renewal,
           original_work, product_name, work_name, media, territory, language, document_url, condition_number,
-          renewal_notice_months, alert_lead_months
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
+          renewal_notice_months, alert_lead_months,
+          is_active
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
         RETURNING id`,
         [
           vendor_id || null, record_type || "master_contract", contract_category || "service",
@@ -2853,6 +2856,8 @@ ${details}
           media || "", territory || "", language || "", document_url || "", condition_number || "",
           renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
           alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
+          // is_active 省略時は TRUE (有効)
+          is_active === undefined || is_active === null ? true : Boolean(is_active),
         ]
       );
       res.json({ success: true, id: result.rows[0].id });
@@ -2869,6 +2874,8 @@ ${details}
       original_work, product_name, work_name, media, territory, language, document_url, condition_number,
       // Phase 20: 更新アラート用フィールド
       renewal_notice_months, alert_lead_months,
+      // Phase 22.9: 有効/無効フラグ
+      is_active,
     } = req.body;
     try {
       await query(
@@ -2879,8 +2886,9 @@ ${details}
           original_work = $11, product_name = $12, work_name = $13, media = $14,
           territory = $15, language = $16, document_url = $17, condition_number = $18,
           renewal_notice_months = $19, alert_lead_months = $20,
+          is_active = $21,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $21`,
+        WHERE id = $22`,
         [
           vendor_id || null, record_type, contract_category, contract_type, contract_title,
           document_number, contract_status, effective_date || null, expiration_date || null,
@@ -2888,6 +2896,7 @@ ${details}
           media || "", territory || "", language || "", document_url || "", condition_number || "",
           renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
           alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
+          is_active === undefined || is_active === null ? true : Boolean(is_active),
           id,
         ]
       );

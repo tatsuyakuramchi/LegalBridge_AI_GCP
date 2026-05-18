@@ -814,6 +814,15 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS caution_note TEXT;`,
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
+    // -----------------------------------------------------------------
+    // Phase 22.9: 「有効な基本契約 / 無効な基本契約」フラグ。
+    //   contract_status (executed/expired/terminated) とは独立して、
+    //   「実際に使う / 使わない」をユーザーがトグルできるようにする。
+    //   発注書 / 個別利用許諾条件書 / 個別出版条件書 の自動補完では
+    //   is_active=TRUE の契約だけを候補とする。
+    // -----------------------------------------------------------------
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_active ON contract_capabilities(is_active);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_vendor ON contract_capabilities(vendor_id);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_category ON contract_capabilities(contract_category);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_type ON contract_capabilities(contract_type);`,
