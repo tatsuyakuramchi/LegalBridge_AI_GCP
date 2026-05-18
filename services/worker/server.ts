@@ -1010,6 +1010,7 @@ ${details}
    *     deadline?: string,          // YYYY-MM-DD
    *     dept?: string,              // 依頼部署 (省略可)
    *     details?: string,           // 自由記入の詳細メモ
+   *     parentIssueKey?: string,    // Phase 22.6.2: 親課題 issueKey (子課題として起案する場合)
    *   }
    *
    * Slack 起票 (processLegalRequestSubmission) と異なり、本エンドポイントは
@@ -1037,6 +1038,7 @@ ${details}
           deadline = "",
           dept = "",
           details = "",
+          parentIssueKey = "",
         } = (req.body || {}) as Record<string, string>;
 
         // ---- バリデーション ----
@@ -1088,6 +1090,9 @@ ${details}
         ];
         if (deadline) descLines.push(`希望納期: ${deadline}`);
         descLines.push(`起案者: ${requester}`);
+        if (parentIssueKey) {
+          descLines.push(`親課題: ${parentIssueKey}`);
+        }
         descLines.push("");
         descLines.push("【相手方情報】");
         descLines.push(`名称: ${counterpartyName || "(未指定)"}`);
@@ -1101,7 +1106,9 @@ ${details}
         descLines.push(details || "(なし)");
         descLines.push("");
         descLines.push(
-          "※ admin-ui の Backlog Requests 画面から起案 (口頭/メール起案トリガー)"
+          parentIssueKey
+            ? `※ admin-ui の Backlog Requests 画面から起案 (${parentIssueKey} の子課題)`
+            : "※ admin-ui の Backlog Requests 画面から起案 (口頭/メール起案トリガー)"
         );
         const description = descLines.join("\n");
 
@@ -1151,6 +1158,36 @@ ${details}
           );
         }
 
+        // ---- 親課題の解決 (子課題として起案する場合) ----
+        // Phase 22.6.2: parentIssueKey が渡されたら Backlog から id を引いて
+        // parentIssueId として createIssue に渡す。
+        // 親が見つからない / 取得失敗時はエラーを返す (silently 親なしで
+        // 作成すると意図と異なるため明示的に失敗させる)。
+        let parentIssueId: number | undefined;
+        if (parentIssueKey) {
+          try {
+            const parent = await backlogService.getIssue(parentIssueKey);
+            if (!parent?.id) {
+              return res.status(400).json({
+                ok: false,
+                error: `親課題 ${parentIssueKey} が見つかりません`,
+              });
+            }
+            parentIssueId = parent.id;
+          } catch (parentErr: any) {
+            console.error(
+              `[quick-create] 親課題 ${parentIssueKey} の取得に失敗:`,
+              parentErr
+            );
+            return res.status(400).json({
+              ok: false,
+              error: `親課題の取得に失敗しました: ${
+                parentErr?.message || parentErr
+              }`,
+            });
+          }
+        }
+
         // ---- Backlog 課題作成 ----
         const issueParams: any = {
           summary,
@@ -1163,6 +1200,7 @@ ${details}
           remarks: details,
         };
         if (categoryId) issueParams["categoryId[]"] = categoryId;
+        if (parentIssueId) issueParams.parentIssueId = parentIssueId;
 
         const issue = await backlogService.createIssue(issueParams);
 

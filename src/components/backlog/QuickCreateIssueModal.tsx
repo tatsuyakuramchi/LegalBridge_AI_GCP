@@ -17,7 +17,7 @@
  */
 
 import * as React from "react"
-import { Sparkles, Loader2, ChevronRight } from "lucide-react"
+import { Sparkles, Loader2, ChevronRight, GitBranch, X, Search } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -135,13 +135,21 @@ const ISSUE_TEMPLATES: IssueTemplate[] = [
 interface QuickCreateIssueModalProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  /**
+   * Phase 22.6.2: 子課題として起案する場合に、親課題の issueKey を渡す。
+   * 渡された場合は親選択 UI が固定 (badge + clear button) になり、
+   * 起案時に parentIssueId が自動的にセットされる。
+   * モーダル内でユーザーが手動で親を変更/クリアすることも可能。
+   */
+  defaultParentIssueKey?: string
 }
 
 export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
   open,
   onOpenChange,
+  defaultParentIssueKey,
 }) => {
-  const { vendors, refreshIssues, showNotification } = useAppData()
+  const { vendors, issues, refreshIssues, showNotification } = useAppData()
 
   const [templateId, setTemplateId] = React.useState<string>(
     ISSUE_TEMPLATES[0].id
@@ -156,6 +164,11 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
   const [dept, setDept] = React.useState<string>("")
   const [details, setDetails] = React.useState<string>("")
   const [submitting, setSubmitting] = React.useState<boolean>(false)
+  // Phase 22.6.2: 親課題 (子課題として起案する場合のみ)
+  const [parentIssueKey, setParentIssueKey] = React.useState<string>("")
+  const [parentSearch, setParentSearch] = React.useState<string>("")
+  const [parentSearchOpen, setParentSearchOpen] = React.useState<boolean>(false)
+  const [parentInheritDone, setParentInheritDone] = React.useState<boolean>(false)
 
   // テンプレを変えたら subTopic のデフォルトに置換 (空のときだけ)
   const currentTemplate =
@@ -182,8 +195,69 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
     setDept("")
     setDetails("")
     setSubmitting(false)
+    setParentIssueKey(defaultParentIssueKey || "")
+    setParentSearch("")
+    setParentSearchOpen(false)
+    setParentInheritDone(false)
     prevTemplateIdRef.current = ISSUE_TEMPLATES[0].id
-  }, [open])
+  }, [open, defaultParentIssueKey])
+
+  // Phase 22.6.2: 親課題が設定/変更されたとき、その課題の取引先を継承して
+  // counterparty 欄を auto-fill (空のときだけ — 既に入力済みなら上書きしない)。
+  // form-context endpoint で Backlog custom fields ("取引先名称") を取得し、
+  // vendor master に同名/同コードがあれば master モード + vendor_code をセット、
+  // 一致しなければ manual モード + 取引先名 をセット。
+  React.useEffect(() => {
+    if (!open || !parentIssueKey || parentInheritDone) return
+    const alreadyFilled =
+      (counterpartyMode === "master" && selectedVendorCode) ||
+      (counterpartyMode === "manual" && manualCounterparty.trim())
+    if (alreadyFilled) {
+      setParentInheritDone(true)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(
+          `/api/backlog/issues/${encodeURIComponent(parentIssueKey)}/form-context`
+        )
+        if (!res.ok) {
+          setParentInheritDone(true)
+          return
+        }
+        const ctx = await res.json()
+        if (cancelled) return
+        // Backlog custom field name = "取引先名称" (BACKLOG_FIELD_COUNTERPARTY env で上書き可)
+        const inheritedName =
+          ctx?.["取引先名称"] || ctx?.counterparty || ""
+        if (inheritedName) {
+          // vendor master に存在するかチェック
+          const matched = vendors.find(
+            (v) =>
+              v.vendor_name === inheritedName ||
+              v.vendor_code === inheritedName ||
+              (v as any).trade_name === inheritedName
+          )
+          if (matched) {
+            setCounterpartyMode("master")
+            setSelectedVendorCode(matched.vendor_code)
+          } else {
+            setCounterpartyMode("manual")
+            setManualCounterparty(String(inheritedName))
+          }
+        }
+      } catch (err) {
+        console.warn("[QuickCreate] 親課題からの相手方継承に失敗:", err)
+      } finally {
+        if (!cancelled) setParentInheritDone(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, parentIssueKey])
 
   // 課題名プレビューを live 計算 (= 実送信時の summary と同じロジック)
   const selectedVendor = React.useMemo(
@@ -223,6 +297,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
           deadline,
           dept,
           details,
+          parentIssueKey: parentIssueKey || "",
         }),
       })
       const data = await res.json().catch(() => ({}))
@@ -252,16 +327,138 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
       <DialogContent className="max-w-2xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4" />
-            新規 Backlog 課題を起案
+            {parentIssueKey ? (
+              <>
+                <GitBranch className="h-4 w-4" />
+                子課題を起案 ({parentIssueKey} の配下)
+              </>
+            ) : (
+              <>
+                <Sparkles className="h-4 w-4" />
+                新規 Backlog 課題を起案
+              </>
+            )}
           </DialogTitle>
           <DialogDescription>
-            口頭 / メール依頼を受けた案件を Backlog 課題として登録します。課題名は
-            自動で 【タイプ】相手方｜サブテーマ の形式で組み立てられます。
+            {parentIssueKey
+              ? `${parentIssueKey} の子課題として登録します。相手方は親課題から自動継承されます。`
+              : "口頭 / メール依頼を受けた案件を Backlog 課題として登録します。課題名は自動で 【タイプ】相手方｜サブテーマ の形式で組み立てられます。"}
           </DialogDescription>
         </DialogHeader>
 
         <DialogBody className="space-y-5 max-h-[60vh] overflow-y-auto">
+          {/* 0. 親課題 (任意 / 子課題として起案する場合) */}
+          {(() => {
+            const selectedParent = issues.find(
+              (i) => i.issueKey === parentIssueKey
+            )
+            const filteredParents = (() => {
+              const term = parentSearch.trim().toLowerCase()
+              const base = issues.filter(
+                (i) => i.issueKey !== parentIssueKey
+              )
+              if (!term) return base.slice(0, 30)
+              return base
+                .filter(
+                  (i) =>
+                    i.issueKey.toLowerCase().includes(term) ||
+                    i.summary.toLowerCase().includes(term)
+                )
+                .slice(0, 50)
+            })()
+            return (
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground flex items-center gap-1.5">
+                  <GitBranch className="h-3 w-3" />
+                  親課題 (任意 — 子課題として起案する場合のみ)
+                </label>
+                {parentIssueKey ? (
+                  <div className="flex items-center gap-2 px-2 py-1.5 bg-emerald-50 border border-emerald-200 rounded-sm">
+                    <GitBranch className="h-3 w-3 text-emerald-700 flex-shrink-0" />
+                    <span className="text-[11px] font-mono font-bold text-emerald-900">
+                      {parentIssueKey}
+                    </span>
+                    {selectedParent && (
+                      <span className="text-[10px] font-mono text-emerald-800/80 truncate flex-1">
+                        {selectedParent.summary}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setParentIssueKey("")
+                        setParentInheritDone(false)
+                      }}
+                      className="text-emerald-700/60 hover:text-emerald-900 p-0.5"
+                      title="親課題をクリア"
+                    >
+                      <X className="h-3 w-3" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="flex items-center gap-1.5 border-b border-input py-1.5">
+                      <Search className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                      <input
+                        type="text"
+                        value={parentSearch}
+                        onChange={(e) => {
+                          setParentSearch(e.target.value)
+                          setParentSearchOpen(true)
+                        }}
+                        onFocus={() => setParentSearchOpen(true)}
+                        onBlur={() => {
+                          // 候補選択を捕まえるため少し待つ
+                          setTimeout(() => setParentSearchOpen(false), 150)
+                        }}
+                        placeholder="親課題を検索 (キー / タイトル) — 不要なら空欄のまま"
+                        className="flex-1 text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
+                      />
+                    </div>
+                    {parentSearchOpen && filteredParents.length > 0 && (
+                      <div
+                        className="absolute top-full left-0 right-0 mt-1 border border-border rounded-sm shadow-2xl max-h-[200px] overflow-y-auto"
+                        style={{
+                          backgroundColor: "#ffffff",
+                          zIndex: 100,
+                          isolation: "isolate",
+                        }}
+                      >
+                        {filteredParents.map((i) => (
+                          <button
+                            key={i.issueKey}
+                            type="button"
+                            onMouseDown={(e) => {
+                              e.preventDefault()
+                              setParentIssueKey(i.issueKey)
+                              setParentSearch("")
+                              setParentSearchOpen(false)
+                              setParentInheritDone(false)
+                            }}
+                            className="w-full text-left px-2 py-1.5 hover:bg-muted text-[11px] font-mono flex items-center gap-2 border-b border-border/30 last:border-b-0"
+                          >
+                            <span className="font-bold w-20 flex-shrink-0">
+                              {i.issueKey}
+                            </span>
+                            <span className="flex-1 truncate text-muted-foreground">
+                              {i.summary}
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {parentIssueKey && (
+                  <p className="text-[10px] font-mono text-muted-foreground/70">
+                    この課題は <strong>{parentIssueKey}</strong> の子課題として作成され、
+                    親の取引先が自動継承されます (上書き可能)。
+                  </p>
+                )}
+              </div>
+            )
+          })()}
+
           {/* 1. 課題タイプ */}
           <div className="space-y-1.5">
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
@@ -426,7 +623,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
               </>
             ) : (
               <>
-                Backlog に起案
+                {parentIssueKey ? "子課題として起案" : "Backlog に起案"}
                 <ChevronRight className="h-3.5 w-3.5" />
               </>
             )}

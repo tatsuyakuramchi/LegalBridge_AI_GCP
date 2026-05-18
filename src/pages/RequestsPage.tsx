@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, ArrowRight, User, Calendar, Inbox, Plus } from "lucide-react"
+import { Search, ArrowRight, User, Calendar, Inbox, Plus, GitBranch } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
@@ -18,6 +18,15 @@ export function RequestsPage() {
   const [batch, setBatch] = React.useState<string[]>([])
   // Phase 22.6: 口頭/メール起案用のクイック起案 modal
   const [quickCreateOpen, setQuickCreateOpen] = React.useState(false)
+  // Phase 22.6.2: 子課題起案時にプリセットする親 issueKey (undefined なら新規起案)
+  const [quickCreateParent, setQuickCreateParent] = React.useState<
+    string | undefined
+  >(undefined)
+
+  const openQuickCreate = (parentKey?: string) => {
+    setQuickCreateParent(parentKey)
+    setQuickCreateOpen(true)
+  }
 
   const filtered = issues.filter(
     (i) =>
@@ -73,7 +82,7 @@ export function RequestsPage() {
           <Button
             size="sm"
             variant="default"
-            onClick={() => setQuickCreateOpen(true)}
+            onClick={() => openQuickCreate()}
             className="gap-1.5"
             title="口頭/メール依頼を Backlog 課題として登録"
           >
@@ -95,7 +104,11 @@ export function RequestsPage() {
 
       <QuickCreateIssueModal
         open={quickCreateOpen}
-        onOpenChange={setQuickCreateOpen}
+        onOpenChange={(v) => {
+          setQuickCreateOpen(v)
+          if (!v) setQuickCreateParent(undefined)
+        }}
+        defaultParentIssueKey={quickCreateParent}
       />
 
       {filtered.length === 0 ? (
@@ -148,7 +161,9 @@ export function RequestsPage() {
                     </span>
                   </div>
                   {/* Phase 18: 行内ステータス変更ドロップダウン。click は
-                      stopPropagation で Card 自体の navigate を抑止。 */}
+                      stopPropagation で Card 自体の navigate を抑止。
+                      Phase 22.6.2: 「+ 子課題」ボタンを追加 (この課題を親として
+                      子課題起案モーダルを開く)。 */}
                   <div
                     className="pt-2 border-t border-dashed border-border flex items-center justify-between gap-2"
                     onClick={(e) => e.stopPropagation()}
@@ -162,14 +177,25 @@ export function RequestsPage() {
                       }
                       compact
                     />
-                    <button
-                      type="button"
-                      onClick={() => open(issue.issueKey)}
-                      className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
-                    >
-                      Open in editor
-                      <ArrowRight className="h-3.5 w-3.5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => openQuickCreate(issue.issueKey)}
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-1.5 py-0.5 rounded-sm"
+                        title={`${issue.issueKey} の子課題を起案`}
+                      >
+                        <GitBranch className="h-3 w-3" />
+                        子課題
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => open(issue.issueKey)}
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+                      >
+                        Open in editor
+                        <ArrowRight className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </CardContent>
               </Card>
