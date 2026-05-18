@@ -995,6 +995,223 @@ ${details}
   // /api/backlog/* — write operations (status patch)
   // -------------------------------------------------------------------
 
+  /**
+   * Phase 22.6: 口頭 / メール起案用の Backlog 課題作成エンドポイント。
+   *
+   * POST /api/backlog/issues/quick-create
+   *   body: {
+   *     issueTypeLabel: "契約審査" | "法務相談" | "事務手続" | "納品・検収" | "利用許諾計算",
+   *     requestType: "contract" | "nda" | "outsourcing" | "license_master" |
+   *                  "lic_individual" | "sales_master" | "purchase_order" |
+   *                  "delivery_inspec" | "legal_consult" | "license_calc" | "legal_request",
+   *     counterpartyName?: string,  // 表示用 (master 選択時は vendor_name)
+   *     vendorCode?: string,        // master 選択時のみセット (description に記載)
+   *     subTopic?: string,          // 「業務委託基本契約書ドラフト」等の短い見出し
+   *     deadline?: string,          // YYYY-MM-DD
+   *     dept?: string,              // 依頼部署 (省略可)
+   *     details?: string,           // 自由記入の詳細メモ
+   *   }
+   *
+   * Slack 起票 (processLegalRequestSubmission) と異なり、本エンドポイントは
+   * 「Backlog 課題を作るだけ」に責務を絞る。PDF 自動生成も Slack DM もしない。
+   * 口頭/メール依頼を受けた法務担当が、UI 上でクイックに起案する用途。
+   *
+   * 課題名フォーマットは均一化のため固定:
+   *   【${issueTypeLabel}】${counterpartyDisplay}｜${subTopicDisplay}
+   *   例: 【契約審査】株式会社サンプル商事｜業務委託基本契約書
+   *
+   * 課題作成後は legal_requests + issue_workflows にも INSERT して、
+   * 既存の workflow state machine と連動するようにする。
+   */
+  app.post(
+    "/api/backlog/issues/quick-create",
+    express.json(),
+    async (req, res) => {
+      try {
+        const {
+          issueTypeLabel,
+          requestType,
+          counterpartyName = "",
+          vendorCode = "",
+          subTopic = "",
+          deadline = "",
+          dept = "",
+          details = "",
+        } = (req.body || {}) as Record<string, string>;
+
+        // ---- バリデーション ----
+        const ALLOWED_TYPE_LABELS = new Set([
+          "契約審査",
+          "法務相談",
+          "事務手続",
+          "納品・検収",
+          "利用許諾計算",
+        ]);
+        const ALLOWED_REQUEST_TYPES = new Set([
+          "contract",
+          "nda",
+          "outsourcing",
+          "license_master",
+          "lic_individual",
+          "sales_master",
+          "purchase_order",
+          "delivery_inspec",
+          "legal_consult",
+          "license_calc",
+          "legal_request",
+        ]);
+        if (!ALLOWED_TYPE_LABELS.has(issueTypeLabel)) {
+          return res.status(400).json({
+            ok: false,
+            error: `issueTypeLabel が不正: ${issueTypeLabel}`,
+          });
+        }
+        if (!ALLOWED_REQUEST_TYPES.has(requestType)) {
+          return res.status(400).json({
+            ok: false,
+            error: `requestType が不正: ${requestType}`,
+          });
+        }
+
+        // ---- 課題名 (均一フォーマット) ----
+        const counterpartyDisplay = counterpartyName.trim() || "(相手方未指定)";
+        const subTopicDisplay = subTopic.trim() || "(内容未指定)";
+        const summary = `【${issueTypeLabel}】${counterpartyDisplay}｜${subTopicDisplay}`;
+
+        // ---- description (起案元と起案者情報を明示) ----
+        const requester =
+          (req as any).user?.email ||
+          (req as any).user?.name ||
+          "admin-ui";
+        const descLines: string[] = [
+          `依頼タイプ: ${requestType} (${issueTypeLabel})`,
+        ];
+        if (deadline) descLines.push(`希望納期: ${deadline}`);
+        descLines.push(`起案者: ${requester}`);
+        descLines.push("");
+        descLines.push("【相手方情報】");
+        descLines.push(`名称: ${counterpartyName || "(未指定)"}`);
+        if (vendorCode) descLines.push(`取引先コード: ${vendorCode}`);
+        if (dept) {
+          descLines.push("");
+          descLines.push(`依頼部署: ${dept}`);
+        }
+        descLines.push("");
+        descLines.push("【詳細】");
+        descLines.push(details || "(なし)");
+        descLines.push("");
+        descLines.push(
+          "※ admin-ui の Backlog Requests 画面から起案 (口頭/メール起案トリガー)"
+        );
+        const description = descLines.join("\n");
+
+        // ---- Backlog issueType / category の解決 ----
+        // Slack 起票と同じロジックで mapping (UI 側で typeLabel を渡しているので
+        // そのままマッチさせるだけだが、API 失敗時は最初の type にフォールバック)。
+        let issueTypeId = 1;
+        let categoryId: number | undefined;
+        try {
+          const [types, categories] = await Promise.all([
+            backlogService.getIssueTypes(),
+            backlogService.getCategories(),
+          ]);
+          if (types?.length) {
+            const matched = types.find((t: any) => t.name === issueTypeLabel);
+            issueTypeId = matched ? matched.id : types[0].id;
+          }
+          if (categories?.length) {
+            let targetCategoryName = "通知書";
+            if (
+              [
+                "nda",
+                "contract",
+                "outsourcing",
+                "license_master",
+                "lic_individual",
+              ].includes(requestType)
+            )
+              targetCategoryName = "契約";
+            else if (requestType === "purchase_order")
+              targetCategoryName = "発注";
+            else if (requestType === "delivery_inspec")
+              targetCategoryName = "納品";
+            else if (requestType === "sales_master")
+              targetCategoryName = "売買";
+            else if (requestType === "license_calc")
+              targetCategoryName = "ライセンス";
+            const matched = categories.find(
+              (c: any) => c.name === targetCategoryName
+            );
+            if (matched) categoryId = matched.id;
+          }
+        } catch (lookupErr) {
+          console.warn(
+            "[quick-create] issueType/category lookup failed, falling back",
+            lookupErr
+          );
+        }
+
+        // ---- Backlog 課題作成 ----
+        const issueParams: any = {
+          summary,
+          description,
+          issueTypeId,
+          priorityId: 3,
+          counterparty: counterpartyName,
+          dept,
+          deadline,
+          remarks: details,
+        };
+        if (categoryId) issueParams["categoryId[]"] = categoryId;
+
+        const issue = await backlogService.createIssue(issueParams);
+
+        // ---- legal_requests / issue_workflows に登録 (Slack 起票と同じ流れ) ----
+        // ON CONFLICT は付けない (新規 issueKey なので衝突しないはず) が、
+        // ここで失敗しても Backlog 課題は既に作られているため、エラーは
+        // ログだけ吐いて UI には ok を返す (issueKey は伝える)。
+        try {
+          await query(
+            `INSERT INTO legal_requests
+               (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, notes)
+             VALUES ($1, $2, $3, $4, $5, $6)`,
+            [
+              issue.issueKey,
+              requester,
+              requestType,
+              counterpartyName || null,
+              subTopic || null,
+              details || null,
+            ]
+          );
+          await query(
+            `INSERT INTO issue_workflows
+               (backlog_issue_key, issue_type_name, current_status_name)
+             VALUES ($1, $2, $3)`,
+            [issue.issueKey, requestType, "文書生成依頼"]
+          );
+        } catch (dbErr) {
+          console.error(
+            `[quick-create] DB insert failed for ${issue.issueKey} (Backlog 課題は作成済み):`,
+            dbErr
+          );
+        }
+
+        return res.json({
+          ok: true,
+          issueKey: issue.issueKey,
+          summary,
+        });
+      } catch (error: any) {
+        console.error("POST /api/backlog/issues/quick-create failed:", error);
+        return res.status(500).json({
+          ok: false,
+          error: String(error?.message || error),
+        });
+      }
+    }
+  );
+
   app.patch("/api/backlog/issues/:key/status", express.json(), async (req, res) => {
     try {
       const { key } = req.params;

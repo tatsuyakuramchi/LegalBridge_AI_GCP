@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, ArrowRight, User, Calendar, Inbox } from "lucide-react"
+import { Search, ArrowRight, User, Calendar, Inbox, Plus } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
+import { QuickCreateIssueModal } from "@/src/components/backlog/QuickCreateIssueModal"
 
 export function RequestsPage() {
   const navigate = useNavigate()
@@ -15,6 +16,8 @@ export function RequestsPage() {
   const { setSelectedIssue, selectedTemplate } = useDocumentSession()
   const [search, setSearch] = React.useState("")
   const [batch, setBatch] = React.useState<string[]>([])
+  // Phase 22.6: 口頭/メール起案用のクイック起案 modal
+  const [quickCreateOpen, setQuickCreateOpen] = React.useState(false)
 
   const filtered = issues.filter(
     (i) =>
@@ -65,17 +68,35 @@ export function RequestsPage() {
             </div>
           )}
         </div>
-        <div className="relative w-72">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="Filter by key or title…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
+        <div className="flex items-center gap-2">
+          {/* Phase 22.6: クイック起案ボタン (口頭/メール依頼トリガー) */}
+          <Button
+            size="sm"
+            variant="default"
+            onClick={() => setQuickCreateOpen(true)}
+            className="gap-1.5"
+            title="口頭/メール依頼を Backlog 課題として登録"
+          >
+            <Plus className="h-3.5 w-3.5" />
+            新規起案
+          </Button>
+          <div className="relative w-72">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="Filter by key or title…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
         </div>
       </header>
+
+      <QuickCreateIssueModal
+        open={quickCreateOpen}
+        onOpenChange={setQuickCreateOpen}
+      />
 
       {filtered.length === 0 ? (
         <div className="p-16 text-center border border-dashed border-border rounded-md">
