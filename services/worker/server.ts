@@ -48,6 +48,7 @@ import {
   query,
   getNewDocumentNumber,
   getDocumentNumberForGenerate,
+  markPrimaryDocument,
 } from "./src/lib/db.ts";
 import {
   calculateTax,
@@ -6444,6 +6445,53 @@ ${details}
    * Archive ページから「Re-edit」する経路で使う (asset_number =
    * document_number で紐付いているため)。
    */
+  /**
+   * Phase 22.12: 指定 document_number を「真の契約 (is_primary=TRUE)」にする。
+   *   POST /api/documents/:docNumber/mark-primary
+   *   同 base_document_number に属する他の行は is_primary=FALSE になり、
+   *   superseded_by が今回の docNumber を指す。
+   *
+   *   Archive 画面で「これを真の契約にする」ボタンから呼ばれる。
+   */
+  app.post(
+    "/api/documents/:docNumber/mark-primary",
+    express.json(),
+    async (req, res) => {
+      try {
+        const docNumber = String(req.params.docNumber || "").trim();
+        if (!docNumber) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "invalid docNumber" });
+        }
+        const r = await query(
+          `SELECT base_document_number FROM documents WHERE document_number = $1`,
+          [docNumber]
+        );
+        if (r.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "document not found" });
+        }
+        const base = r.rows[0].base_document_number || docNumber;
+        await markPrimaryDocument(base, docNumber);
+        console.log(
+          `🌟 [mark-primary] base=${base} → primary=${docNumber}`
+        );
+        return res.json({
+          ok: true,
+          document_number: docNumber,
+          base_document_number: base,
+        });
+      } catch (error) {
+        console.error("POST /api/documents/:docNumber/mark-primary failed:", error);
+        return res
+          .status(500)
+          .json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
   app.get("/api/documents/by-number/:docNumber", async (req, res) => {
     try {
       const docNumber = String(req.params.docNumber || "").trim();
@@ -7409,16 +7457,18 @@ ${details}
       const docInsert = await query(
         `INSERT INTO documents (
            document_number, issue_key, template_type, form_data, drive_link, created_by,
-           base_document_number, revision, vendor_name_snapshot
+           base_document_number, revision, vendor_name_snapshot, is_primary
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)
          ON CONFLICT (document_number) DO UPDATE SET
            form_data            = EXCLUDED.form_data,
            drive_link           = EXCLUDED.drive_link,
            template_type        = EXCLUDED.template_type,
            base_document_number = EXCLUDED.base_document_number,
            revision             = EXCLUDED.revision,
-           vendor_name_snapshot = EXCLUDED.vendor_name_snapshot
+           vendor_name_snapshot = EXCLUDED.vendor_name_snapshot,
+           is_primary           = TRUE,
+           superseded_by        = NULL
          RETURNING id`,
         [
           docNumber,
@@ -7432,6 +7482,18 @@ ${details}
           vendorNameForFile || null,
         ]
       );
+
+      // Phase 22.12: 新リビジョン生成時、同 base の旧 doc を全部 demote。
+      //   markPrimaryDocument: 指定 target だけ is_primary=TRUE、それ以外は FALSE + superseded_by=target
+      //   isReissue でも !isReissue でも呼ぶ (新規発行の場合は base = doc 自身、影響なし)。
+      try {
+        await markPrimaryDocument(baseDocumentNumber, docNumber);
+      } catch (markErr) {
+        console.warn(
+          `[primary-mark] failed for ${docNumber} (base=${baseDocumentNumber}):`,
+          markErr
+        );
+      }
 
       // Phase 17: 稟議リンクを upsert (formData.ringi_numbers が配列なら処理)
       // 既存リンクは削除して入れ直し (送信値を正とする)。
@@ -7560,8 +7622,9 @@ ${details}
           `INSERT INTO contract_capabilities (
             vendor_id, record_type, contract_category, contract_type, contract_title,
             document_number, contract_status, effective_date, expiration_date, auto_renewal,
-            original_work, product_name, work_name, media, territory, language, document_url, source_system
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+            original_work, product_name, work_name, media, territory, language, document_url, source_system,
+            base_document_number, revision, is_primary
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE)
           ON CONFLICT (document_number) DO UPDATE SET
             vendor_id = EXCLUDED.vendor_id,
             record_type = EXCLUDED.record_type,
@@ -7579,6 +7642,10 @@ ${details}
             territory = EXCLUDED.territory,
             language = EXCLUDED.language,
             document_url = EXCLUDED.document_url,
+            base_document_number = EXCLUDED.base_document_number,
+            revision = EXCLUDED.revision,
+            is_primary = TRUE,
+            superseded_by = NULL,
             updated_at = CURRENT_TIMESTAMP`,
           [
             vendorId,
@@ -7599,9 +7666,25 @@ ${details}
             formData.LANGUAGE || formData.language || "",
             driveLink,
             "App Document Generator",
+            // Phase 22.12: リビジョン情報を contract_capabilities にも同期
+            baseDocumentNumber,
+            revision,
           ]
         );
         console.log(`✅ Sync to contract_capabilities successful for: ${docNumber}`);
+
+        // Phase 22.12: 旧版 demote (markPrimaryDocument は documents 側を既に
+        // 更新済みだが、INSERT の ON CONFLICT で UPSERT した今の row が
+        // is_primary=TRUE に上書きされている。同 base の他 row の
+        // is_primary=FALSE 同期を再度走らせる)。
+        try {
+          await markPrimaryDocument(baseDocumentNumber, docNumber);
+        } catch (rePromoteErr) {
+          console.warn(
+            `[primary-mark re-sync] failed:`,
+            rePromoteErr
+          );
+        }
       } catch (ccErr) {
         console.warn(
           `⚠️ Failed to sync generated document to contract_capabilities:`,

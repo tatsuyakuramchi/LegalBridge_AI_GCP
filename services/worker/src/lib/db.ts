@@ -77,6 +77,44 @@ export async function initDb() {
         SET base_document_number = COALESCE(base_document_number, document_number)
       WHERE base_document_number IS NULL;`,
     `CREATE INDEX IF NOT EXISTS idx_documents_base ON documents(base_document_number);`,
+    // -----------------------------------------------------------------
+    // Phase 22.12: 「真の契約」フラグ。
+    //   is_primary    : TRUE = この行が現在の真の契約 (検索一覧に表示する)
+    //                  FALSE = 旧版・superseded (新リビジョンに置き換えられた)
+    //   superseded_by : この行が無効化されたとき、置き換え先の document_number
+    //   既存データはまず全部 TRUE で開始 (DEFAULT TRUE)。
+    //   その後 backfill: 同 base 内で newer sibling がある旧 doc は FALSE に。
+    // -----------------------------------------------------------------
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT TRUE;`,
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS superseded_by VARCHAR(100);`,
+    `UPDATE documents d SET is_primary = FALSE
+      WHERE is_primary IS NOT FALSE
+        AND base_document_number IS NOT NULL
+        AND EXISTS (
+          SELECT 1 FROM documents d2
+           WHERE d2.base_document_number = d.base_document_number
+             AND d2.document_number <> d.document_number
+             AND d2.created_at > d.created_at
+        );`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_is_primary ON documents(is_primary);`,
+
+    // contract_capabilities にも同じ概念をミラー。
+    // 検索 (個別契約一覧) が is_primary でフィルタできるようにする。
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS base_document_number VARCHAR(100);`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS revision INTEGER DEFAULT 0;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS is_primary BOOLEAN DEFAULT TRUE;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS superseded_by VARCHAR(100);`,
+    // documents から base_document_number / revision / is_primary / superseded_by を逆ミラー
+    `UPDATE contract_capabilities cc
+        SET base_document_number = d.base_document_number,
+            revision             = d.revision,
+            is_primary           = d.is_primary,
+            superseded_by        = d.superseded_by
+       FROM documents d
+      WHERE cc.document_number = d.document_number
+        AND (cc.base_document_number IS NULL OR cc.is_primary IS NULL);`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_is_primary ON contract_capabilities(is_primary);`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_base ON contract_capabilities(base_document_number);`,
 
     `CREATE TABLE IF NOT EXISTS document_sequences (
       kind VARCHAR(50) NOT NULL,
@@ -1055,6 +1093,46 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
   const val = await getNextSequenceValue(prefix, year);
 
   return `ARC-${prefix}-${year}-${val.toString().padStart(4, "0")}`;
+}
+
+/**
+ * Phase 22.12: 「真の契約」マーク管理。
+ *
+ * 指定 base に属する全ドキュメント (documents + contract_capabilities) を対象に、
+ * targetDocNumber のみ is_primary=TRUE、それ以外は is_primary=FALSE + superseded_by=target
+ * に書き換える。
+ *
+ * 用途:
+ *   - 新リビジョン生成時: 自動的に最新を真の契約に格上げ
+ *   - ユーザーが Archive UI から手動で旧版を真の契約に戻す (override)
+ */
+export async function markPrimaryDocument(
+  baseDocumentNumber: string,
+  targetDocNumber: string
+): Promise<void> {
+  if (!baseDocumentNumber || !targetDocNumber) return;
+  // documents 側を一括更新
+  await query(
+    `UPDATE documents
+        SET is_primary    = (document_number = $2),
+            superseded_by = CASE WHEN document_number = $2 THEN NULL ELSE $2 END
+      WHERE base_document_number = $1`,
+    [baseDocumentNumber, targetDocNumber]
+  );
+  // contract_capabilities 側も同期 (検索一覧フィルタ用)。
+  // 旧データで base_document_number が未設定の row もカバーするため
+  // documents JOIN もチェックする。
+  await query(
+    `UPDATE contract_capabilities
+        SET is_primary    = (document_number = $2),
+            superseded_by = CASE WHEN document_number = $2 THEN NULL ELSE $2 END,
+            updated_at    = CURRENT_TIMESTAMP
+      WHERE base_document_number = $1
+         OR document_number IN (
+              SELECT document_number FROM documents WHERE base_document_number = $1
+            )`,
+    [baseDocumentNumber, targetDocNumber]
+  );
 }
 
 /**

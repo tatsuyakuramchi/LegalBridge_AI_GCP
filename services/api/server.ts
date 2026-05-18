@@ -1470,8 +1470,17 @@ async function startServer() {
 
   app.get("/api/management/assets", async (_req, res) => {
     try {
+      // Phase 22.12: documents 側の base_document_number / revision / is_primary を
+      // JOIN で返す。Archive UI で「真の契約 ★」バッジ + 履歴折り畳みを実現する。
       const result = await query(
-        "SELECT * FROM external_assets ORDER BY created_at DESC"
+        `SELECT ea.*,
+                d.base_document_number,
+                COALESCE(d.revision, 0) AS revision,
+                COALESCE(d.is_primary, TRUE) AS is_primary,
+                d.superseded_by
+           FROM external_assets ea
+           LEFT JOIN documents d ON d.document_number = ea.asset_number
+          ORDER BY ea.created_at DESC`
       );
       res.json(result.rows);
     } catch (error) {

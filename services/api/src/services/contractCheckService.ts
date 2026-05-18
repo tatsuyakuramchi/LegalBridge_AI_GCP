@@ -215,6 +215,9 @@ export async function getDocumentsByCategory(vendorId: number) {
   // Phase 17x: 主取引先 (vendor_id) に加えて、3+ 者契約の
   //   additional_parties JSONB 配列内の vendor_id でも突合する。
   //   JSONB 配列の各要素は { name, vendor_id, role } の形。
+  // Phase 22.12: is_primary フィルタを追加。リビジョン版 (is_primary=FALSE) は
+  //   検索一覧には出さない (真の契約 = is_primary=TRUE のみ)。NULL は旧データ
+  //   なので TRUE 同等扱い (= 表示する)。
   const res = await query(
     `WITH vendor_docs AS (
        SELECT DISTINCT
@@ -224,7 +227,10 @@ export async function getDocumentsByCategory(vendorId: number) {
          cc.effective_date,
          cc.expiration_date,
          cc.contract_type,
-         cc.document_url
+         cc.document_url,
+         cc.base_document_number,
+         cc.revision,
+         cc.is_primary
        FROM contract_capabilities cc
        WHERE (
               cc.vendor_id = $1
@@ -232,6 +238,8 @@ export async function getDocumentsByCategory(vendorId: number) {
          )
          AND cc.document_number IS NOT NULL
          AND cc.document_number <> ''
+         -- 真の契約のみ。NULL (旧データ) は表示する (= TRUE 同等)。
+         AND cc.is_primary IS NOT FALSE
      )
      SELECT
        vd.document_number,
@@ -244,7 +252,10 @@ export async function getDocumentsByCategory(vendorId: number) {
        d.template_type,
        d.issue_key,
        COALESCE(d.drive_link, ea.file_link, vd.document_url) AS file_link,
-       d.created_at
+       d.created_at,
+       vd.base_document_number,
+       COALESCE(vd.revision, 0) AS revision,
+       vd.is_primary
      FROM vendor_docs vd
      LEFT JOIN documents d ON d.document_number = vd.document_number
      LEFT JOIN external_assets ea ON ea.asset_number = vd.document_number
@@ -278,6 +289,10 @@ export async function getDocumentsByCategory(vendorId: number) {
       issue_key: r.issue_key || "",
       created_at:
         r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+      // Phase 22.12: リビジョン情報も含める
+      base_document_number: r.base_document_number || r.document_number || "",
+      revision: Number(r.revision) || 0,
+      is_primary: r.is_primary !== false,
     };
     (groups[cat] || groups.other).push(item);
   });

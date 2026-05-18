@@ -150,7 +150,24 @@ export function ArchivePage() {
                   <div className="flex h-8 w-8 items-center justify-center bg-muted rounded-sm">
                     <ArchiveIcon className="h-4 w-4 text-muted-foreground" />
                   </div>
-                  <Badge variant="outline">{asset.asset_type}</Badge>
+                  <div className="flex items-center gap-1.5">
+                    {/* Phase 22.12: 真の契約 / 旧版 バッジ */}
+                    {(asset as any).revision > 0 && (
+                      <Badge variant="outline" className="h-4 text-[9px]">
+                        Rev. {(asset as any).revision}
+                      </Badge>
+                    )}
+                    {(asset as any).is_primary === false ? (
+                      <Badge variant="phosphor" className="h-4 opacity-70" title="旧版 (新リビジョンに置き換えられた)">
+                        旧版
+                      </Badge>
+                    ) : (
+                      <Badge variant="success" className="h-4" title="真の契約 (検索一覧に表示される)">
+                        ★ 真
+                      </Badge>
+                    )}
+                    <Badge variant="outline">{asset.asset_type}</Badge>
+                  </div>
                 </div>
                 <div>
                   <p className="text-sm font-mono font-bold truncate">
@@ -159,6 +176,12 @@ export function ArchivePage() {
                   <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground mt-1">
                     Ref · {asset.asset_number}
                   </p>
+                  {(asset as any).base_document_number &&
+                    (asset as any).base_document_number !== asset.asset_number && (
+                      <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground/70">
+                        Base · {(asset as any).base_document_number}
+                      </p>
+                    )}
                   <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
                     With · {asset.counterparty}
                   </p>
@@ -177,6 +200,44 @@ export function ArchivePage() {
                         <ExternalLink className="h-2.5 w-2.5" />
                         開く
                       </a>
+                    )}
+                    {/* Phase 22.12: 旧版を真の契約に戻す手動オーバーライド。
+                        is_primary=false の行にだけ表示。 */}
+                    {(asset as any).is_primary === false && (
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const ok = window.confirm(
+                            `${asset.asset_number} を「真の契約」にしますか?\n\n同 base の他の版は旧版扱いになります。`
+                          )
+                          if (!ok) return
+                          try {
+                            const res = await fetch(
+                              `/api/documents/${encodeURIComponent(asset.asset_number)}/mark-primary`,
+                              { method: "POST" }
+                            )
+                            const data = await res.json()
+                            if (!res.ok || !data?.ok) {
+                              throw new Error(data?.error || `HTTP ${res.status}`)
+                            }
+                            showNotification(
+                              `${asset.asset_number} を真の契約に設定しました`,
+                              "success"
+                            )
+                            const list = await fetch("/api/management/assets").then((r) => r.json())
+                            setAssets(Array.isArray(list) ? list : [])
+                          } catch (e: any) {
+                            showNotification(
+                              `失敗しました: ${e?.message || e}`,
+                              "error"
+                            )
+                          }
+                        }}
+                        className="text-[9px] font-mono uppercase tracking-wider text-emerald-700 border border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100 rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+                        title="この版を真の契約として設定 (他の版は旧版扱いに)"
+                      >
+                        ★ 真にする
+                      </button>
                     )}
                     {/* Phase 16: 既存文書の再編集 — form_data を pre-fill して
                         DocumentEditorPage を開く。同じ document_number で PDF を
