@@ -7177,26 +7177,46 @@ ${details}
         }
       }
 
-      // Phase 22.10: 採番ロジック統一。
-      //   - existingDocumentNumber 指定: その番号で完成 (PDF 未作成キュー由来)
-      //   - 同 issue + 同 templateType の既存ドキュメントあり: 再発行扱いで
-      //     "_001" / "_002" のサフィックス付き番号を採番
-      //   - なければ完全新規採番
-      // base_document_number / revision / isReissue を一緒に返す。
-      const numAssign = await getDocumentNumberForGenerate({
-        issueKey,
-        templateType,
-        issueTypeName: issue.issueType.name,
-        existingDocumentNumber,
-      });
-      const docNumber = numAssign.documentNumber;
-      const baseDocumentNumber = numAssign.baseDocumentNumber;
-      const revision = numAssign.revision;
-      const isReissue = numAssign.isReissue;
-      if (isReissue) {
+      // Phase 22.10/22.11.2: 採番ロジック。
+      //   優先順位:
+      //   ① formData.documentNumberOverride が空でない → その文字列を強制使用
+      //      (社内修正版のリビジョンを外に出さない用途。revision/isReissue は false)
+      //   ② existingDocumentNumber 指定 + drive_link 空 → PDF未作成 draft 完成
+      //   ③ existingDocumentNumber 指定 + drive_link 入り → リビジョン採番 _NNN
+      //   ④ それ以外 → 完全新規採番
+      const manualOverride =
+        typeof formData?.documentNumberOverride === "string"
+          ? formData.documentNumberOverride.trim()
+          : "";
+      let docNumber: string;
+      let baseDocumentNumber: string;
+      let revision: number;
+      let isReissue: boolean;
+      if (manualOverride) {
+        // 手動上書き: 番号を完全にユーザーが制御
+        docNumber = manualOverride;
+        baseDocumentNumber = manualOverride;
+        revision = 0;
+        isReissue = false;
         console.log(
-          `📝 [reissue] ${issueKey} ${templateType}: base=${baseDocumentNumber} rev=${revision} → ${docNumber}`
+          `📝 [manual-override] ${issueKey} ${templateType}: docNumber=${docNumber}`
         );
+      } else {
+        const numAssign = await getDocumentNumberForGenerate({
+          issueKey,
+          templateType,
+          issueTypeName: issue.issueType.name,
+          existingDocumentNumber,
+        });
+        docNumber = numAssign.documentNumber;
+        baseDocumentNumber = numAssign.baseDocumentNumber;
+        revision = numAssign.revision;
+        isReissue = numAssign.isReissue;
+        if (isReissue) {
+          console.log(
+            `📝 [reissue] ${issueKey} ${templateType}: base=${baseDocumentNumber} rev=${revision} → ${docNumber}`
+          );
+        }
       }
 
       // Phase 18 (Manual Workflow): 文書生成時に Backlog status を

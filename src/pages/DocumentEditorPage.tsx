@@ -105,6 +105,20 @@ export function DocumentEditorPage() {
     templateLabel: string;
   } | null>(null)
   const [issueSummary, setIssueSummary] = React.useState<any>(null)
+  // Phase 22.11.2: 課題選択時、同 (issue, template) で過去 doc があれば
+  // バナーで提示して「前回内容を読み込む」or「再編集モードで開く」を選ばせる。
+  // form-context endpoint の _previousDocument から得る (上書きされないよう
+  // formData とは別 state に保持)。
+  const [previousDocument, setPreviousDocument] = React.useState<{
+    id: number
+    document_number: string
+    base_document_number: string
+    revision: number
+    drive_link: string
+    created_at: string
+    vendor_name_snapshot: string
+  } | null>(null)
+  const [loadingPrevious, setLoadingPrevious] = React.useState(false)
   const [lastAutoSave, setLastAutoSave] = React.useState<string | null>(null)
   const [isAssetPickerOpen, setIsAssetPickerOpen] = React.useState(false)
   const [assetPickerCallback, setAssetPickerCallback] =
@@ -174,6 +188,14 @@ export function DocumentEditorPage() {
           `/api/backlog/issues/${key}/form-context?template=${selectedTemplate}`
         )
         const context = await res.json()
+        // Phase 22.11.2: 過去 doc のメタ情報を別 state に保存 (formData は汚さない)
+        if (context && context._previousDocument) {
+          setPreviousDocument(context._previousDocument)
+          // formData に流し込む前に削除 (context spread で残ると formData が膨らむ)
+          delete context._previousDocument
+        } else {
+          setPreviousDocument(null)
+        }
         setFormData((prev: any) => ({
           ...prev,
           基本契約名: issue?.summary || prev["基本契約名"],
@@ -181,6 +203,7 @@ export function DocumentEditorPage() {
           ...context,
         }))
       } catch (e) {
+        setPreviousDocument(null)
         if (issue) {
           setFormData((prev: any) => ({
             ...prev,
@@ -203,6 +226,88 @@ export function DocumentEditorPage() {
       .then((d) => setCaseHistory(d))
       .catch((e) => console.error("History fetch error:", e))
   }
+
+  // Phase 22.11.2: 「前回内容を読み込む」 — 過去 doc の form_data を
+  // 取得して formData に反映 (内部の __reopen_doc_number 等は付けない →
+  // 新規発行扱い)。
+  const handleLoadPrevious = React.useCallback(async () => {
+    if (!previousDocument?.document_number) return
+    setLoadingPrevious(true)
+    try {
+      const res = await fetch(
+        `/api/documents/by-number/${encodeURIComponent(
+          previousDocument.document_number
+        )}`
+      )
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      // form_data を formData にマージ (現在の formData が空 or 確認後上書き)
+      const hasEdits = Object.keys(formData || {}).some(
+        (k) => !k.startsWith("__") && (formData as any)[k]
+      )
+      if (hasEdits) {
+        const ok = window.confirm(
+          "現在のフォーム内容が前回内容で上書きされます。続行しますか?\n\n" +
+            `前回: ${previousDocument.document_number}\n` +
+            `作成: ${new Date(previousDocument.created_at).toLocaleString("ja-JP")}`
+        )
+        if (!ok) return
+      }
+      const prevFormData = data.form_data || {}
+      // 新規発行扱いで読み込むので __reopen_doc_number は付けない
+      // (新規番号で採番される。リビジョン採番は明示「再編集」時のみ。)
+      setFormData(prevFormData)
+      showNotification(
+        `前回 ${previousDocument.document_number} の内容を読み込みました (新規番号で発行されます)`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(
+        `前回内容の読み込みに失敗しました: ${e?.message || e}`,
+        "error"
+      )
+    } finally {
+      setLoadingPrevious(false)
+    }
+  }, [previousDocument, formData, setFormData, showNotification])
+
+  // Phase 22.11.2: 「前回 doc を再編集モードで開く」 — Archive の再編集と同等。
+  // 既存 doc の form_data を読み込み、generate 時にリビジョン採番されるよう
+  // __reopen_doc_number を付ける。
+  const handleReopenPrevious = React.useCallback(async () => {
+    if (!previousDocument?.document_number) return
+    setLoadingPrevious(true)
+    try {
+      const res = await fetch(
+        `/api/documents/by-number/${encodeURIComponent(
+          previousDocument.document_number
+        )}`
+      )
+      const data = await res.json()
+      if (!res.ok || !data?.ok) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      const prevFormData = {
+        ...(data.form_data || {}),
+        __reopen_id: previousDocument.id,
+        __reopen_doc_number: previousDocument.document_number,
+      }
+      setFormData(prevFormData)
+      showNotification(
+        `${previousDocument.document_number} を再編集モードで開きました (再発行版として採番されます)`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(
+        `再編集モード起動失敗: ${e?.message || e}`,
+        "error"
+      )
+    } finally {
+      setLoadingPrevious(false)
+    }
+  }, [previousDocument, setFormData, showNotification])
 
   // Re-fetch fields when template changes (server-driven schema)
   React.useEffect(() => {
@@ -777,6 +882,79 @@ export function DocumentEditorPage() {
                         />
                       )
                     })()}
+                    {/* Phase 22.11.2: 同 (issue, template) で過去 doc があれば
+                        バナーで通知。「前回内容を読み込む」(新規発行) と
+                        「再編集モードで開く」(リビジョン採番) を選べる。
+                        formData は上書きされないため、現状を見失わない設計。 */}
+                    {previousDocument && (
+                      <div className="rounded-sm border border-blue-200 bg-blue-50 px-3 py-2.5">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="text-[11px] font-mono text-blue-900 leading-relaxed">
+                            <div className="font-bold mb-0.5">
+                              📄 この課題には過去文書あり: {previousDocument.document_number}
+                              {previousDocument.revision > 0 && (
+                                <span className="ml-1 text-blue-700/70">
+                                  (Rev. {previousDocument.revision})
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-blue-800/80">
+                              作成日:{" "}
+                              {new Date(
+                                previousDocument.created_at
+                              ).toLocaleString("ja-JP")}
+                              {previousDocument.vendor_name_snapshot && (
+                                <>
+                                  {" "}/ 取引先:{" "}
+                                  <span className="font-bold">
+                                    {previousDocument.vendor_name_snapshot}
+                                  </span>
+                                </>
+                              )}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPreviousDocument(null)}
+                            className="text-blue-600/40 hover:text-blue-900 text-[10px] flex-shrink-0"
+                            title="バナーを閉じる"
+                          >
+                            ×
+                          </button>
+                        </div>
+                        <div className="mt-2 flex flex-wrap items-center gap-2">
+                          {previousDocument.drive_link && (
+                            <a
+                              href={previousDocument.drive_link}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="text-[10px] font-mono uppercase tracking-wider text-blue-700 hover:text-blue-900 underline"
+                            >
+                              前回 PDF を確認
+                            </a>
+                          )}
+                          <button
+                            type="button"
+                            disabled={loadingPrevious}
+                            onClick={handleLoadPrevious}
+                            className="text-[10px] font-mono uppercase tracking-wider border border-blue-600/40 bg-white hover:bg-blue-100 text-blue-800 px-2 py-1 rounded-sm disabled:opacity-50"
+                            title="前回 doc の内容をフォームに読み込み (新規番号で発行)"
+                          >
+                            前回内容を引き継ぐ (新規発行)
+                          </button>
+                          <button
+                            type="button"
+                            disabled={loadingPrevious}
+                            onClick={handleReopenPrevious}
+                            className="text-[10px] font-mono uppercase tracking-wider border border-amber-600/40 bg-white hover:bg-amber-100 text-amber-800 px-2 py-1 rounded-sm disabled:opacity-50"
+                            title="前回 doc を再編集モードで開く (リビジョン採番される)"
+                          >
+                            再編集モードで開く (_001 採番)
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Phase 17: 稟議番号セレクタ — 全テンプレ共通の header field。
                         formData.ringi_numbers[] に保存し、Finalize & Sync で
                         worker が ringi_documents (N:N) に upsert する。 */}

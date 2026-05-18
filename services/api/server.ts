@@ -832,6 +832,41 @@ async function startServer() {
         console.warn("Could not fetch full issue details for context mapping", e);
       }
 
+      // Phase 22.11.2: 同 issue_key + 同 template_type の "最新文書" メタを context に同梱。
+      //   admin-ui が課題を選んだとき「前回の発注書を読み込む」UI を出すために使う。
+      //   form_data そのものは大きいので別 endpoint (/api/documents/by-number/:n) で
+      //   取得させる方針 — ここでは識別子 / 日付 / リビジョン情報のみ返す。
+      try {
+        if (template && typeof template === "string") {
+          const prev = await query(
+            `SELECT id, document_number, base_document_number, revision,
+                    drive_link, created_at, vendor_name_snapshot
+               FROM documents
+              WHERE issue_key = $1 AND template_type = $2
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [key, template]
+          );
+          if (prev.rows[0]) {
+            const r = prev.rows[0];
+            context["_previousDocument"] = {
+              id: Number(r.id),
+              document_number: r.document_number,
+              base_document_number: r.base_document_number || r.document_number,
+              revision: Number(r.revision) || 0,
+              drive_link: r.drive_link || "",
+              created_at: r.created_at,
+              vendor_name_snapshot: r.vendor_name_snapshot || "",
+            };
+          }
+        }
+      } catch (lookupErr) {
+        console.warn(
+          "[form-context] previous-document lookup failed (non-fatal):",
+          lookupErr
+        );
+      }
+
       // Phase 7b: 発注書テンプレなら既存 order_line_items を items[] として
       // プリセットする (フォーム側の LineItemTable がそのまま使える shape)。
       if (template === "purchase_order" || template === "planning_purchase_order") {

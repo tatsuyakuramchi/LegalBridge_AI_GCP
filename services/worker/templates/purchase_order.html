@@ -253,17 +253,23 @@
   <div class="header-row">
     <div class="title-box">
       <h1>発 注 書</h1>
-      {{!-- Phase 22.10: 再発行版バナー (revision >= 1 のときだけ表示) --}}
+      {{!-- Phase 22.10: 再発行版バナー。
+           Phase 22.11.2: showReissueBanner=false なら表示しない (社内修正版を
+           対外的には初版に見せたい場合)。default は表示。 --}}
       {{#if isReissue}}
+      {{#unless (eq showReissueBanner false)}}
       <div style="display:inline-block; margin-top:4px; padding:2px 8px; background:#fff3cd; border:1px solid #ffc107; color:#856404; font-size:9pt; font-weight:bold;">
         再発行版 (Rev. {{REVISION}}) — 元発注書: {{BASE_DOC_NO}}
       </div>
+      {{/unless}}
       {{/if}}
     </div>
     <div class="doc-info">
       発注番号: <strong>{{ORDER_NO}}</strong><br>
       {{#if isReissue}}
+      {{#unless (eq showReissueBanner false)}}
       <span style="font-size:8pt; color:#666;">(元: {{BASE_DOC_NO}})</span><br>
+      {{/unless}}
       {{/if}}
       発行日: {{formatDate (or ORDER_DATE (concat ORDER_DATE_YEAR "-" ORDER_DATE_MONTH "-" ORDER_DATE_DAY))}}
     </div>
