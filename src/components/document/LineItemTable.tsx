@@ -16,7 +16,7 @@
  */
 
 import React from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Plus, Trash2, Maximize2, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type LineItem = {
@@ -75,6 +75,13 @@ export const LineItemTable: React.FC<Props> = ({
   readOnly = false,
   showPaymentColumns = true,
 }) => {
+  // Phase 22.7: 仕様詳細編集モーダル。長文の仕様を別ウィンドウで快適に編集するため。
+  // インライン textarea は高さキャップ + 内部スクロール (= 行高は固定) に変更し、
+  // フォーム全体の縦伸びを根本解決。詳しく書きたいときはこのモーダルを開く。
+  const [specEditIdx, setSpecEditIdx] = React.useState<number | null>(null);
+  const specEditValue =
+    specEditIdx !== null ? items[specEditIdx]?.spec || "" : "";
+
   const update = (idx: number, patch: Partial<LineItem>) => {
     const next = items.slice();
     next[idx] = { ...next[idx], ...patch };
@@ -141,35 +148,54 @@ export const LineItemTable: React.FC<Props> = ({
   );
 
   /**
-   * Phase 17j: 複数行 (改行) 入力対応のセル。仕様欄 etc に使う。
-   * Shift+Enter / Enter どちらも改行として動作する標準 textarea。
-   * 高さは内容に応じて自動拡張 (rows=1 で最小)。
+   * Phase 22.7: 仕様欄 (複数行) 入力セル。
+   *
+   * 旧 Phase 17j: 自動拡張 (rows=1 → scrollHeight に伸びる) にしていたが、
+   * 長文が入ると行高が際限なく伸び、split-preview モードで他列が破綻していた。
+   *
+   * 新仕様:
+   *   - 高さは max-h-[72px] (約 3 行) でキャップ + 内部スクロール
+   *   - 詳細編集ボタン (右上 Maximize2 アイコン) で full モーダルを開く
+   *   - 行高は固定なので他列 (単価/数量/日付等) と縦揃いが保たれる
    */
   const cellTextarea = (
+    rowIdx: number,
     value: string | undefined,
     onChange: (v: string) => void,
     placeholder?: string
   ) => (
-    <textarea
-      value={value === undefined || value === null ? "" : String(value)}
-      onChange={(e) => onChange(e.target.value)}
-      placeholder={placeholder}
-      disabled={readOnly}
-      rows={1}
-      onInput={(e) => {
-        // 入力に応じて高さを自動拡張
-        const ta = e.currentTarget;
-        ta.style.height = "auto";
-        ta.style.height = ta.scrollHeight + "px";
-      }}
-      className={cn(
-        "w-full text-[11px] font-mono bg-transparent resize-none overflow-hidden",
-        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
-        "placeholder:text-muted-foreground/40 placeholder:text-[10px]",
-        "disabled:opacity-60 disabled:cursor-not-allowed",
-        "whitespace-pre-wrap break-words leading-relaxed"
+    <div className="relative group">
+      <textarea
+        value={value === undefined || value === null ? "" : String(value)}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        disabled={readOnly}
+        rows={2}
+        className={cn(
+          "w-full text-[11px] font-mono bg-transparent resize-none",
+          "border-b border-input py-1 pl-1 pr-6 focus:outline-none focus:border-foreground",
+          "placeholder:text-muted-foreground/40 placeholder:text-[10px]",
+          "disabled:opacity-60 disabled:cursor-not-allowed",
+          "whitespace-pre-wrap break-words leading-relaxed",
+          // ★ 高さキャップ + 内部スクロール (行高固定)
+          "max-h-[72px] overflow-y-auto"
+        )}
+      />
+      {!readOnly && (
+        <button
+          type="button"
+          onClick={() => setSpecEditIdx(rowIdx)}
+          className={cn(
+            "absolute top-0.5 right-0.5 p-0.5 rounded-sm",
+            "text-muted-foreground/40 hover:text-foreground hover:bg-muted",
+            "opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+          )}
+          title="仕様を別ウィンドウで詳細編集 (長文向け)"
+        >
+          <Maximize2 className="w-3 h-3" />
+        </button>
       )}
-    />
+    </div>
   );
 
   return (
@@ -227,11 +253,13 @@ export const LineItemTable: React.FC<Props> = ({
                       {cellInput(it.item_name, (v) => update(idx, { item_name: v }), "text", "例: ノートPC")}
                     </td>
                     <td className="p-2 align-top">
-                      {/* Phase 17j: 仕様は複数行 (改行可) 入力対応 */}
+                      {/* Phase 22.7: 仕様は複数行 OK だが行高はキャップ。
+                          長文は右上 [⤢] ボタンで詳細編集モーダル経由。 */}
                       {cellTextarea(
+                        idx,
                         it.spec,
                         (v) => update(idx, { spec: v }),
-                        "規格・モデル (複数行可・Enter で改行)"
+                        "規格・モデル (3行まで表示)"
                       )}
                     </td>
                     <td className="p-2 text-right">
@@ -355,6 +383,74 @@ export const LineItemTable: React.FC<Props> = ({
           </button>
           <div className="text-[10px] font-mono text-muted-foreground italic">
             小計は単価 × 数量を切り上げで自動計算されます (税は別途)。
+          </div>
+        </div>
+      )}
+
+      {/* Phase 22.7: 仕様詳細編集モーダル — 長文の規格・モデル説明を快適に書ける広い textarea。
+          画面サイズに応じてサイズが拡大し、split-preview でも編集に十分なスペースを確保。 */}
+      {specEditIdx !== null && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{
+            backgroundColor: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(2px)",
+          }}
+          onClick={() => setSpecEditIdx(null)}
+        >
+          <div
+            className="rounded-md border border-border shadow-2xl flex flex-col w-full max-w-2xl max-h-[80vh]"
+            style={{ backgroundColor: "#ffffff", isolation: "isolate" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Maximize2 className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-mono font-bold uppercase tracking-[0.16em]">
+                  仕様詳細編集
+                </h3>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  行 {specEditIdx + 1} ·{" "}
+                  {items[specEditIdx]?.item_name || "(品目名未入力)"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSpecEditIdx(null)}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-muted"
+                title="閉じる"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-4 flex-1 overflow-auto">
+              <textarea
+                value={specEditValue}
+                onChange={(e) => update(specEditIdx, { spec: e.target.value })}
+                placeholder="規格・モデル・仕様・備考などを自由に記入&#10;改行も保持されます (PDF にもそのまま反映)"
+                rows={16}
+                className={cn(
+                  "w-full text-[12px] font-mono bg-transparent",
+                  "border border-input rounded-sm p-3",
+                  "focus:outline-none focus:border-foreground focus:ring-1 focus:ring-foreground/20",
+                  "placeholder:text-muted-foreground/40",
+                  "whitespace-pre-wrap break-words leading-relaxed resize-y"
+                )}
+                autoFocus
+              />
+              <p className="mt-2 text-[10px] font-mono text-muted-foreground italic">
+                編集内容は即座に明細行に反映されます。閉じるだけで保存完了。
+              </p>
+            </div>
+            <div className="px-4 py-3 border-t border-border bg-muted/30 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSpecEditIdx(null)}
+                className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-4 py-1.5 rounded-sm transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
           </div>
         </div>
       )}

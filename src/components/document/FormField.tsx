@@ -32,6 +32,11 @@ const SELECT_OPTIONS: Record<string, string[]> = {
 };
 
 export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, onChange }) => {
+  // Phase 22.7: type: "hidden" のフィールドは UI 上には描画しない。
+  // formData にだけ保持されて PDF テンプレに渡る (例: 発注書で明細から自動集計
+  // される summaryDeliveryDate / summaryPaymentDate / 後方互換のみ残置の旧フィールド)。
+  if (meta.type === 'hidden') return null;
+
   const label = meta.label || id.replace(/_/g, ' ');
   const options = meta.options || SELECT_OPTIONS[id];
   const placeholder = meta.placeholder;

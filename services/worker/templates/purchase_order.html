@@ -308,11 +308,13 @@
     </tr>
     <tr>
       <th>納期</th>
-      <td>{{summaryDeliveryDate}}</td>
+      <td>{{or summaryDeliveryDate "—"}}</td>
     </tr>
     <tr>
       <th>支払日</th>
-      <td>{{summaryPaymentTerms}}</td>
+      {{!-- Phase 22.7: 明細から自動集計した summaryPaymentDate を表示。
+           後方互換のため、空のときは旧 summaryPaymentTerms にフォールバック。 --}}
+      <td>{{or summaryPaymentDate summaryPaymentTerms "—"}}</td>
     </tr>
   </table>
 

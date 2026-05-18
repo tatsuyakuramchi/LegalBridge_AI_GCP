@@ -81,13 +81,15 @@
       "STAFF_PHONE": { "label": "TEL", "group": "III. 発注元 (自社)", "dbField": "staff.phone" },
       "STAFF_EMAIL": { "label": "E-mail", "group": "III. 発注元 (自社)", "dbField": "staff.email" },
 
-      "grandTotalExTax": { "label": "合計金額 (税抜)", "group": "IV. 金額・納期", "type": "number", "required": true, "placeholder": "1000000" },
-      "summaryDeliveryDate": { "label": "納期", "group": "IV. 金額・納期", "type": "date" },
-      "summaryPaymentTerms": { "label": "支払条件", "group": "IV. 金額・納期", "placeholder": "例: 検収月翌月末日払い" },
-      "ITEM_NAME": { "label": "品目名 (単一明細)", "group": "IV. 金額・納期", "helpText": "明細表を使わない場合の代替" },
-      "CALC_METHOD": { "label": "計算方式 (単一明細)", "group": "IV. 金額・納期", "type": "select", "options": ["FIXED", "SUBSCRIPTION", "ROYALTY"], "helpText": "明細表を使わない場合の代替。FIXED=固定額 / SUBSCRIPTION=サブスク / ROYALTY=業績連動" },
-      "PAYMENT_TERMS": { "label": "支払条件 (単一明細)", "group": "IV. 金額・納期", "placeholder": "例: 翌月末" },
-      "PAYMENT_METHOD": { "label": "支払方法 (レガシー)", "group": "IV. 金額・納期", "helpText": "Phase 13 で CALC_METHOD + PAYMENT_TERMS に分離。後方互換のため残置" },
+      "grandTotalExTax": { "label": "合計金額 (税抜)", "group": "IV. 金額・納期", "type": "number", "required": true, "placeholder": "1000000", "helpText": "明細から自動集計 (単価×数量の合計)" },
+      "summaryDeliveryDate": { "label": "納期 (自動: 明細から集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "明細の delivery_date を自動集計するので入力不要" },
+      "summaryPaymentDate": { "label": "支払日 (自動: 明細から集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "明細の payment_date を自動集計するので入力不要" },
+      "summaryPaymentTerms": { "label": "支払条件 (廃止予定)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "type": "hidden", "helpText": "明細の payment_terms に置換予定。旧テンプレ互換のため残置" },
+
+      "ITEM_NAME": { "label": "品目名 (単一明細フォールバック)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "helpText": "明細表が空のときだけ参照される互換用入力。通常は IV. 明細表を使用" },
+      "CALC_METHOD": { "label": "計算方式 (単一明細)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "type": "select", "options": ["FIXED", "SUBSCRIPTION", "ROYALTY"], "helpText": "FIXED=固定額 / SUBSCRIPTION=サブスク / ROYALTY=業績連動" },
+      "PAYMENT_TERMS": { "label": "支払条件 (単一明細)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "placeholder": "例: 翌月末" },
+      "PAYMENT_METHOD": { "label": "支払方法 (レガシー)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "helpText": "Phase 13 で CALC_METHOD + PAYMENT_TERMS に分離。後方互換のため残置" },
 
       "BANK_NAME": { "label": "金融機関名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.bank_name", "helpText": "[取引先] ボタンで自動入力" },
       "BRANCH_NAME": { "label": "支店名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.branch_name" },

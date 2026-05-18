@@ -424,6 +424,45 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   - Side-swappable Vendor / Issuer sections ([自社]/[取引先] buttons)
   //   - Bank info auto-fills from active vendor
   //   - Advanced sections (特約・備考, 契約・署名) collapsed by default
+  // Phase 22.7: 発注書のサマリー (納期 / 支払日) を明細から自動集計。
+  //   - 明細の delivery_date を集約 → summaryDeliveryDate
+  //   - 明細の payment_date を集約 → summaryPaymentDate
+  // 集約ロジック:
+  //   - 値なし: 空文字
+  //   - 全 1 件 / 全同日: その日付を返す (YYYY-MM-DD)
+  //   - 複数日付混在: "YYYY/MM/DD 〜 YYYY/MM/DD (明細参照)" 形式
+  // ユーザーは入力しない (read-only 表示)。PDF テンプレもこの値を使う。
+  // テンプレ自体は purchase_order のみ。それ以外は素通り。
+  React.useEffect(() => {
+    if (templateId !== 'purchase_order') return;
+    const items: any[] = Array.isArray(formData.items) ? formData.items : [];
+    const aggregate = (field: 'delivery_date' | 'payment_date'): string => {
+      const dates = items
+        .map((it) => (typeof it?.[field] === 'string' ? it[field] : ''))
+        .filter((d: string) => d && d.trim() !== '');
+      if (dates.length === 0) return '';
+      const unique = Array.from(new Set(dates)).sort();
+      if (unique.length === 1) return unique[0];
+      // 複数日付 — 範囲 + 明細参照ラベル
+      return `${unique[0]} 〜 ${unique[unique.length - 1]} (明細参照)`;
+    };
+    const nextDelivery = aggregate('delivery_date');
+    const nextPayment = aggregate('payment_date');
+    // 既に同じ値なら setFormData をスキップして無限ループ防止
+    if (
+      formData.summaryDeliveryDate === nextDelivery &&
+      formData.summaryPaymentDate === nextPayment
+    ) {
+      return;
+    }
+    setFormData({
+      ...formData,
+      summaryDeliveryDate: nextDelivery,
+      summaryPaymentDate: nextPayment,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.items]);
+
   if (templateId === 'purchase_order') {
     const isCorporation = (vendor: any) =>
       (vendor?.entity_type || '').toLowerCase() === 'corporate' ||
@@ -659,10 +698,79 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           />
         </FormSection>
 
-        {/* V. 金額サマリ・納期 */}
-        <FormSection title="V. 金額サマリ・納期" variant="indigo" icon={<Scale className="w-4 h-4" />}>
-          {renderGroup('IV. 金額・納期')}
+        {/* V. 金額サマリ・納期
+            Phase 22.7: 納期 / 支払日 は明細から自動集計するので、ユーザー入力
+            欄を撤去して計算結果の read-only 表示に変更。
+            grandTotalExTax は既に明細から自動集計済 (LineItemTable onChange)。
+            単一明細フォールバック (ITEM_NAME/CALC_METHOD/PAYMENT_TERMS/PAYMENT_METHOD)
+            は下の Advanced 折り畳みに退避。 */}
+        <FormSection title="V. 金額サマリ・納期 (明細から自動集計)" variant="indigo" icon={<Scale className="w-4 h-4" />}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[11px] font-mono">
+            <div className="space-y-1">
+              <div className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+                合計金額 (税抜)
+              </div>
+              <div className="text-base font-bold">
+                ¥ {Number(formData.grandTotalExTax || 0).toLocaleString('ja-JP')}
+              </div>
+              <div className="text-[9px] text-muted-foreground/70 italic">
+                明細の小計を合算 (税は別途)
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+                納期 (自動集計)
+              </div>
+              <div className="text-sm font-bold">
+                {formData.summaryDeliveryDate || (
+                  <span className="text-muted-foreground/60 font-normal italic">
+                    明細の納期が未入力
+                  </span>
+                )}
+              </div>
+              <div className="text-[9px] text-muted-foreground/70 italic">
+                明細の納期から集約 (全同日ならその日付、複数日付なら範囲表示)
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+                支払日 (自動集計)
+              </div>
+              <div className="text-sm font-bold">
+                {formData.summaryPaymentDate || (
+                  <span className="text-muted-foreground/60 font-normal italic">
+                    明細の支払日が未入力
+                  </span>
+                )}
+              </div>
+              <div className="text-[9px] text-muted-foreground/70 italic">
+                明細の支払日から集約
+              </div>
+            </div>
+          </div>
         </FormSection>
+
+        {/* IV-z. 単一明細用 (任意) — 通常は IV. 明細表を使うので折り畳み
+            grandTotalExTax は明細表を使う場合は LineItemTable から自動入力されるが、
+            ここでも明示的に editable で出して、明細を使わないユーザーが
+            手入力できるようにする。 */}
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ IV-z. 単一明細用フォールバック (任意・上級者向け) — 明細表が空のときだけ参照される
+          </summary>
+          <div className="p-4 border-t border-input space-y-3">
+            <p className="text-[10px] font-mono text-muted-foreground italic">
+              通常は <strong>IV. 明細</strong> 表を使ってください。以下は
+              旧テンプレートとの後方互換のための入力で、明細表が空の場合のみ PDF に反映されます。
+              明細表を使う場合は <code>合計金額</code> は自動集計されるのでここを触る必要はありません。
+            </p>
+            {renderField(
+              'grandTotalExTax',
+              '合計金額 (税抜) — 手入力 (明細表を使わない場合のみ)'
+            )}
+            {renderGroup('IV-z. 単一明細用 (任意・上級者向け)')}
+          </div>
+        </details>
 
         {/* VI. 振込先 */}
         <FormSection
