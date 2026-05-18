@@ -47,6 +47,7 @@ import {
   initDb,
   query,
   getNewDocumentNumber,
+  getDocumentNumberForGenerate,
 } from "./src/lib/db.ts";
 import {
   calculateTax,
@@ -7110,12 +7111,27 @@ ${details}
         }
       }
 
-      // Phase 15: existingDocumentNumber が来ていれば再採番せず、その番号で
-      // 既存ドキュメント (PDF 未作成キュー由来) を完成させる。
-      const docNumber =
-        existingDocumentNumber && String(existingDocumentNumber).trim().length > 0
-          ? String(existingDocumentNumber).trim()
-          : await getNewDocumentNumber(templateType, issue.issueType.name);
+      // Phase 22.10: 採番ロジック統一。
+      //   - existingDocumentNumber 指定: その番号で完成 (PDF 未作成キュー由来)
+      //   - 同 issue + 同 templateType の既存ドキュメントあり: 再発行扱いで
+      //     "_001" / "_002" のサフィックス付き番号を採番
+      //   - なければ完全新規採番
+      // base_document_number / revision / isReissue を一緒に返す。
+      const numAssign = await getDocumentNumberForGenerate({
+        issueKey,
+        templateType,
+        issueTypeName: issue.issueType.name,
+        existingDocumentNumber,
+      });
+      const docNumber = numAssign.documentNumber;
+      const baseDocumentNumber = numAssign.baseDocumentNumber;
+      const revision = numAssign.revision;
+      const isReissue = numAssign.isReissue;
+      if (isReissue) {
+        console.log(
+          `📝 [reissue] ${issueKey} ${templateType}: base=${baseDocumentNumber} rev=${revision} → ${docNumber}`
+        );
+      }
 
       // Phase 18 (Manual Workflow): 文書生成時に Backlog status を
       // 自動進行させる挙動は撤去した。
@@ -7237,6 +7253,17 @@ ${details}
       const grandTotalPayableStrComputed =
         grandTotalPayableComputed.toLocaleString("ja-JP");
 
+      // Phase 22.10: ファイル名と reissue banner 用に取引先名を確定
+      //   formData の VENDOR_NAME / counterparty / Licensor_名称 等から拾う。
+      //   どれも無ければ空文字 (ファイル名にはサフィックスが付かない)。
+      const vendorNameForFile: string =
+        (formData?.VENDOR_NAME as string) ||
+        (formData?.counterparty as string) ||
+        (formData?.Licensor_名称 as string) ||
+        (formData?.Licensor_氏名会社名 as string) ||
+        (formData?.licensor as string) ||
+        "";
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey,
@@ -7255,6 +7282,11 @@ ${details}
             grandTotalPayable: grandTotalPayableComputed,
             grandTotalPayableStr: grandTotalPayableStrComputed,
             DOC_NO: docNumber,
+            // Phase 22.10: 再発行時のリビジョン情報をテンプレに渡す。
+            //   テンプレ側で {{#if isReissue}}<re-issue banner>{{/if}} 可能。
+            BASE_DOC_NO: baseDocumentNumber,
+            REVISION: revision,
+            isReissue,
             // Phase 17l: ORDER_NO は新規発行された docNumber を優先する。
             //   issueKey (Backlog 課題キー) は最後のフォールバックに留めない —
             //   purchase_order テンプレ等で 発注番号 として表示されるため、
@@ -7272,7 +7304,8 @@ ${details}
               : [],
           },
         },
-        templateType
+        templateType,
+        { vendorName: vendorNameForFile }
       );
 
       // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
@@ -7288,12 +7321,18 @@ ${details}
         __pdf_pending: false,
       };
       const docInsert = await query(
-        `INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by)
-         VALUES ($1, $2, $3, $4, $5, $6)
+        `INSERT INTO documents (
+           document_number, issue_key, template_type, form_data, drive_link, created_by,
+           base_document_number, revision, vendor_name_snapshot
+         )
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (document_number) DO UPDATE SET
-           form_data  = EXCLUDED.form_data,
-           drive_link = EXCLUDED.drive_link,
-           template_type = EXCLUDED.template_type
+           form_data            = EXCLUDED.form_data,
+           drive_link           = EXCLUDED.drive_link,
+           template_type        = EXCLUDED.template_type,
+           base_document_number = EXCLUDED.base_document_number,
+           revision             = EXCLUDED.revision,
+           vendor_name_snapshot = EXCLUDED.vendor_name_snapshot
          RETURNING id`,
         [
           docNumber,
@@ -7302,6 +7341,9 @@ ${details}
           JSON.stringify(mergedFormData),
           driveLink,
           requesterEmail || "legal_user",
+          baseDocumentNumber,
+          revision,
+          vendorNameForFile || null,
         ]
       );
 

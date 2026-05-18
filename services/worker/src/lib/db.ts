@@ -60,6 +60,23 @@ export async function initDb() {
     );`,
     `ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_number VARCHAR(100) UNIQUE;`,
     `ALTER TABLE documents ADD COLUMN IF NOT EXISTS legacy_document_number VARCHAR(100);`,
+    // -----------------------------------------------------------------
+    // Phase 22.10: 発注書 (および他文書) の再発行リビジョン管理。
+    //   base_document_number : 初版の document_number。再発行版もこれを共有する。
+    //   revision             : 0=初版 / 1,2,... = 再発行版 (採番順)
+    //   document_number       : 初版は base のまま、再発行版は "{base}_001" / "_002" …
+    //   vendor_name_snapshot : 生成時の取引先名 (file 名整形 / 検索用)
+    //
+    //   過去ドキュメントは base_document_number = document_number (= 初版) で
+    //   backfill する。
+    // -----------------------------------------------------------------
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS base_document_number VARCHAR(100);`,
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS revision INTEGER DEFAULT 0;`,
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS vendor_name_snapshot TEXT;`,
+    `UPDATE documents
+        SET base_document_number = COALESCE(base_document_number, document_number)
+      WHERE base_document_number IS NULL;`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_base ON documents(base_document_number);`,
 
     `CREATE TABLE IF NOT EXISTS document_sequences (
       kind VARCHAR(50) NOT NULL,
@@ -1038,4 +1055,111 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
   const val = await getNextSequenceValue(prefix, year);
 
   return `ARC-${prefix}-${year}-${val.toString().padStart(4, "0")}`;
+}
+
+/**
+ * Phase 22.10: 再発行用の文書番号を採番する。
+ *
+ * 同じ issue_key + template_type に対して既に documents が存在する場合、
+ * 初版の base_document_number を共有しつつ "_001", "_002", ... のサフィックスを
+ * 付与した新リビジョン番号を返す。初回 (= 既存なし) の場合は new base を採番。
+ *
+ * 返り値:
+ *   {
+ *     documentNumber:      実際に新規発行する番号 (初版なら base そのまま、
+ *                          再発行なら "{base}_NNN")
+ *     baseDocumentNumber:  初版番号 (リビジョンを跨ぐ共通キー)
+ *     revision:            0=初版 / 1,2,... = 再発行版
+ *     isReissue:           true なら再発行 (既存があった)
+ *   }
+ *
+ * 用途:
+ *   - 発注書を修正して再発行 → "ARC-PO-2026-0001" → "ARC-PO-2026-0001_001"
+ *   - 元番号は documents.base_document_number で永続的に追跡できる
+ *   - UI 側は base_document_number でグループ化して履歴を表示可能
+ */
+export async function getDocumentNumberForGenerate(opts: {
+  issueKey: string;
+  templateType: string;
+  issueTypeName?: string;
+  existingDocumentNumber?: string;
+}): Promise<{
+  documentNumber: string;
+  baseDocumentNumber: string;
+  revision: number;
+  isReissue: boolean;
+}> {
+  const { issueKey, templateType, issueTypeName, existingDocumentNumber } = opts;
+
+  // 1) existingDocumentNumber が明示渡しなら (PDF 未作成キュー由来等) そのまま使う。
+  //    再発行扱いではなく "同じ番号で完成させる" 用途。
+  if (existingDocumentNumber && existingDocumentNumber.trim()) {
+    const docNum = existingDocumentNumber.trim();
+    const row = await query(
+      `SELECT base_document_number, revision FROM documents WHERE document_number = $1 LIMIT 1`,
+      [docNum]
+    );
+    if (row.rows[0]) {
+      return {
+        documentNumber: docNum,
+        baseDocumentNumber: row.rows[0].base_document_number || docNum,
+        revision: Number(row.rows[0].revision) || 0,
+        isReissue: false,
+      };
+    }
+    // 履歴がない場合 (まれ): 初版扱い
+    return {
+      documentNumber: docNum,
+      baseDocumentNumber: docNum,
+      revision: 0,
+      isReissue: false,
+    };
+  }
+
+  // 2) 同じ issue_key + template_type で既存があるか確認
+  const existing = await query(
+    `SELECT document_number, base_document_number, revision
+       FROM documents
+      WHERE issue_key = $1 AND template_type = $2
+      ORDER BY revision DESC, created_at DESC
+      LIMIT 1`,
+    [issueKey, templateType]
+  );
+
+  if (existing.rows.length > 0) {
+    // 再発行: base を共有、revision を +1 してサフィックス付与
+    const base = existing.rows[0].base_document_number || existing.rows[0].document_number;
+    const nextRev = (Number(existing.rows[0].revision) || 0) + 1;
+    const suffix = nextRev.toString().padStart(3, "0");
+    return {
+      documentNumber: `${base}_${suffix}`,
+      baseDocumentNumber: base,
+      revision: nextRev,
+      isReissue: true,
+    };
+  }
+
+  // 3) 完全初版: 新規採番
+  const newNumber = await getNewDocumentNumber(templateType, issueTypeName);
+  return {
+    documentNumber: newNumber,
+    baseDocumentNumber: newNumber,
+    revision: 0,
+    isReissue: false,
+  };
+}
+
+/**
+ * Phase 22.10: ファイル名に取引先名を含める用のサニタイザ。
+ *   日本語 OK だがファイルシステム / URL で問題になる文字 (/ \ ? * : | " < > 改行等) を
+ *   "_" に置換する。空白も "_" に。長すぎる名前は 40 文字で truncate。
+ */
+export function sanitizeForFilename(s: string): string {
+  if (!s) return "";
+  return s
+    .replace(/[\\/:*?"<>|\r\n\t]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "")
+    .slice(0, 40);
 }

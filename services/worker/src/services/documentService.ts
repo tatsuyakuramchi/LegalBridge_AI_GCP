@@ -2,6 +2,8 @@ import Handlebars from "handlebars";
 import fs from "fs";
 import path from "path";
 
+import { sanitizeForFilename } from "../lib/db.ts";
+
 export interface DocumentData {
   issueKey: string;
   documentNumber?: string;
@@ -249,12 +251,23 @@ export class DocumentService {
     return template(context);
   }
 
-  async generateDocument(data: DocumentData, type: DocumentType = "legal_request"): Promise<{ html: string; fileName: string }> {
+  async generateDocument(
+    data: DocumentData,
+    type: DocumentType = "legal_request",
+    opts?: { vendorName?: string }
+  ): Promise<{ html: string; fileName: string }> {
     const html = this.renderHtml(data, type);
     const prefix = type.toUpperCase();
-    const fileName = data.documentNumber 
-      ? `${data.documentNumber}.html`
-      : `${prefix}_${data.issueKey}_${Date.now()}.html`;
+    // Phase 22.10: ファイル名に取引先名を含める。
+    //   取引先名は filesystem 安全に sanitize し、空のときはサフィックスなし。
+    //   例: "ARC-PO-2026-0001_株式会社サンプル.html"
+    //       "ARC-PO-2026-0001_001_株式会社サンプル.html" (再発行版)
+    const vendorPart = opts?.vendorName
+      ? `_${sanitizeForFilename(opts.vendorName)}`
+      : "";
+    const fileName = data.documentNumber
+      ? `${data.documentNumber}${vendorPart}.html`
+      : `${prefix}_${data.issueKey}${vendorPart}_${Date.now()}.html`;
     return { html, fileName };
   }
 
