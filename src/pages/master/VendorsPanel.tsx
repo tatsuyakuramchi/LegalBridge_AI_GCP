@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Search, Plus, Building2 } from "lucide-react"
+import { Search, Plus, Building2, Trash2, Star } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
@@ -16,6 +16,20 @@ import {
 } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { cn } from "@/lib/utils"
+
+// Phase 22.13: 担当者 (vendor_contacts) の型
+type VendorContact = {
+  id?: number
+  contact_name: string
+  contact_department?: string
+  title?: string
+  email?: string
+  phone?: string
+  is_primary?: boolean
+  sort_order?: number
+  remarks?: string
+}
 
 const empty = {
   vendor_name: "",
@@ -34,6 +48,9 @@ const empty = {
   account_holder_kana: "",
   is_invoice_issuer: false,
   invoice_registration_number: "",
+  // Phase 22.13
+  vendor_rep: "",
+  contacts: [] as VendorContact[],
 }
 
 export function VendorsPanel() {
@@ -220,14 +237,22 @@ export function VendorsPanel() {
                 onChange={(e) => set({ pen_name: e.target.value })}
               />
             </Field>
-            <Field label="担当者">
-              <Input
-                value={data?.contact_name || ""}
-                disabled={!creating && !editing}
-                onChange={(e) => set({ contact_name: e.target.value })}
-              />
-            </Field>
-            <Field label="電話番号">
+            {/* Phase 22.13: 法人のみ 代表者欄を表示 (個人は不要) */}
+            {data?.entity_type !== "individual" && (
+              <Field label="代表者名" className="col-span-2">
+                <Input
+                  placeholder="例: 代表取締役 山田太郎"
+                  value={data?.vendor_rep || ""}
+                  disabled={!creating && !editing}
+                  onChange={(e) => set({ vendor_rep: e.target.value })}
+                />
+                <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                  契約書 / 発注書の代表者欄に転記されます。肩書込みの形式で
+                  記入してください (個人事業主は省略可)。
+                </p>
+              </Field>
+            )}
+            <Field label="電話番号 (代表 / メイン)">
               <Input
                 type="tel"
                 placeholder="03-1234-5678"
@@ -300,6 +325,200 @@ export function VendorsPanel() {
                 }
               />
             </Field>
+
+            {/* Phase 22.13: 担当者リスト (1 取引先 N 担当者)。primary 1 件は
+                 文書テンプレの「担当者」に転記される。 */}
+            <div className="col-span-2 mt-2 border-t border-border pt-3 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                  担当者 ({Array.isArray(data?.contacts) ? data.contacts.length : 0} 件)
+                </Label>
+                {(creating || editing) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      const next: VendorContact[] = Array.isArray(data?.contacts)
+                        ? [...data.contacts]
+                        : []
+                      next.push({
+                        contact_name: "",
+                        contact_department: "",
+                        title: "",
+                        email: "",
+                        phone: "",
+                        is_primary: next.length === 0, // 1 件目は自動 primary
+                        sort_order: next.length,
+                      })
+                      set({ contacts: next })
+                    }}
+                  >
+                    <Plus className="h-3 w-3" />
+                    担当者を追加
+                  </Button>
+                )}
+              </div>
+              <p className="text-[10px] font-mono text-muted-foreground">
+                ★ マーク = メイン担当者。発注書 / 検収書テンプレで「担当者」として使用されます。
+                複数登録時は 1 件だけ ★ にしてください (なければ先頭を自動で ★)。
+              </p>
+              {!Array.isArray(data?.contacts) || data.contacts.length === 0 ? (
+                <div className="text-[11px] font-mono text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
+                  担当者がまだ登録されていません{creating || editing ? " — 上の「追加」ボタンから追加してください" : ""}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {data.contacts.map((c: VendorContact, idx: number) => (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "rounded-sm border p-2.5 space-y-2",
+                        c.is_primary
+                          ? "border-emerald-300 bg-emerald-50/50"
+                          : "border-border bg-card"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          disabled={!creating && !editing}
+                          onClick={() => {
+                            const next = data.contacts.map(
+                              (x: VendorContact, i: number) => ({
+                                ...x,
+                                is_primary: i === idx,
+                              })
+                            )
+                            set({ contacts: next })
+                          }}
+                          className={cn(
+                            "inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 border rounded-sm transition-colors",
+                            c.is_primary
+                              ? "border-emerald-500 bg-emerald-100 text-emerald-800"
+                              : "border-border text-muted-foreground hover:border-foreground"
+                          )}
+                          title="このメンバーをメイン担当者にする"
+                        >
+                          <Star
+                            className={cn(
+                              "h-3 w-3",
+                              c.is_primary && "fill-emerald-600"
+                            )}
+                          />
+                          {c.is_primary ? "メイン担当者" : "メインに設定"}
+                        </button>
+                        {(creating || editing) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = data.contacts.filter(
+                                (_: any, i: number) => i !== idx
+                              )
+                              // primary を消したら先頭を昇格
+                              if (
+                                c.is_primary &&
+                                next.length > 0 &&
+                                !next.some((x: VendorContact) => x.is_primary)
+                              ) {
+                                next[0].is_primary = true
+                              }
+                              set({ contacts: next })
+                            }}
+                            className="text-muted-foreground hover:text-destructive p-1"
+                            title="この担当者を削除"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                            氏名 *
+                          </Label>
+                          <Input
+                            placeholder="例: 田中 一郎"
+                            value={c.contact_name || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => {
+                              const next = [...data.contacts]
+                              next[idx] = { ...c, contact_name: e.target.value }
+                              set({ contacts: next })
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                            部署
+                          </Label>
+                          <Input
+                            placeholder="例: 営業部"
+                            value={c.contact_department || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => {
+                              const next = [...data.contacts]
+                              next[idx] = {
+                                ...c,
+                                contact_department: e.target.value,
+                              }
+                              set({ contacts: next })
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                            役職
+                          </Label>
+                          <Input
+                            placeholder="例: 課長"
+                            value={c.title || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => {
+                              const next = [...data.contacts]
+                              next[idx] = { ...c, title: e.target.value }
+                              set({ contacts: next })
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                            メール
+                          </Label>
+                          <Input
+                            type="email"
+                            placeholder="example@vendor.co.jp"
+                            value={c.email || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => {
+                              const next = [...data.contacts]
+                              next[idx] = { ...c, email: e.target.value }
+                              set({ contacts: next })
+                            }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                            電話
+                          </Label>
+                          <Input
+                            type="tel"
+                            placeholder="03-xxxx-xxxx"
+                            value={c.phone || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => {
+                              const next = [...data.contacts]
+                              next[idx] = { ...c, phone: e.target.value }
+                              set({ contacts: next })
+                            }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={close} disabled={saving}>

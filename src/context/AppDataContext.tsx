@@ -4,13 +4,26 @@ import { useToast } from "@/components/ui/toast"
 
 // --- Types ---------------------------------------------------------------
 
+// Phase 22.13: 担当者を 1:N に変更。primary 1 件 + 補助担当者複数。
+export interface VendorContact {
+  id?: number
+  contact_name: string
+  contact_department?: string
+  title?: string
+  email?: string
+  phone?: string
+  is_primary?: boolean
+  sort_order?: number
+  remarks?: string
+}
+
 export interface Vendor {
   id?: number
   vendor_code: string
   vendor_name: string
   trade_name?: string
   address?: string
-  contact_name?: string
+  contact_name?: string  // legacy: primary 担当者の名前 (worker が backfill する)
   vendor_rep?: string
   bank_name?: string
   branch_name?: string
@@ -22,6 +35,8 @@ export interface Vendor {
   email?: string
   pen_name?: string
   is_invoice_issuer?: boolean
+  // Phase 22.13
+  contacts?: VendorContact[]
 }
 
 export interface Staff {

@@ -170,6 +170,44 @@ export async function initDb() {
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_number VARCHAR(50);`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_holder_kana TEXT;`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS is_invoice_issuer BOOLEAN DEFAULT FALSE;`,
+    // -----------------------------------------------------------------
+    // Phase 22.13: 代表者名 (法人の場合に契約書 / 発注書の代表者欄に転記)。
+    //   個人事業主では空でよい。entity_type = 'corporate' の場合のみ UI で必須化。
+    // -----------------------------------------------------------------
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS vendor_rep TEXT;`,
+    // -----------------------------------------------------------------
+    // Phase 22.13: 担当者を 1 取引先 N 担当者の構造化テーブルに分離。
+    //   従来 vendors.contact_name は 1:1 だったが、大企業や複数案件持ち
+    //   取引先に対応するため別テーブル化。1 件を is_primary=TRUE で
+    //   「メイン担当者」とし、vendor 行の contact_name は backfill で
+    //   primary 担当者の名前にミラーする (後方互換)。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS vendor_contacts (
+      id SERIAL PRIMARY KEY,
+      vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+      contact_name VARCHAR(255) NOT NULL,
+      contact_department VARCHAR(255),
+      title VARCHAR(100),
+      email VARCHAR(255),
+      phone VARCHAR(50),
+      is_primary BOOLEAN DEFAULT FALSE,
+      sort_order INTEGER DEFAULT 0,
+      remarks TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_vendor_contacts_vendor ON vendor_contacts(vendor_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_vendor_contacts_primary ON vendor_contacts(vendor_id, is_primary);`,
+    // backfill: 既存 vendors.contact_name を primary contact として 1 行作る
+    // (まだ vendor_contacts に存在しない場合のみ)。
+    `INSERT INTO vendor_contacts (vendor_id, contact_name, contact_department, email, phone, is_primary, sort_order)
+     SELECT v.id, v.contact_name, v.contact_department, v.email, v.phone, TRUE, 0
+       FROM vendors v
+      WHERE v.contact_name IS NOT NULL
+        AND v.contact_name <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM vendor_contacts vc WHERE vc.vendor_id = v.id
+        );`,
 
     // 3. Staff & Workflow Rules
     `CREATE TABLE IF NOT EXISTS staff (

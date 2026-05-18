@@ -2741,14 +2741,19 @@ ${details}
 
   app.post("/api/master/vendors", express.json(), async (req, res) => {
     // Accept a row payload with vendor_code uniqueness enforced.
+    // Phase 22.13: vendor_rep + contacts[] を受け取れるよう拡張。
+    //   contacts[] = [{ contact_name, contact_department?, title?, email?, phone?, is_primary?, sort_order?, remarks? }]
+    //   contacts[] が渡されたら既存を全削除して入れ直し (= replacement semantics)。
+    //   primary 担当者の name を vendors.contact_name にミラーして legacy 互換を維持。
     const v = req.body;
     try {
-      await query(
+      // 1) vendor 本体 upsert (vendor_rep 追加)
+      const upsert = await query(
         `INSERT INTO vendors (vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type,
           withholding_enabled, aliases, address, phone, email, contact_department, contact_name,
           master_contract_ref, bank_info, bank_name, branch_name, account_type, account_number,
-          account_holder_kana, is_invoice_issuer, invoice_registration_number)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22)
+          account_holder_kana, is_invoice_issuer, invoice_registration_number, vendor_rep)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
          ON CONFLICT (vendor_code) DO UPDATE SET
            vendor_name = EXCLUDED.vendor_name,
            trade_name = EXCLUDED.trade_name,
@@ -2770,7 +2775,9 @@ ${details}
            account_number = EXCLUDED.account_number,
            account_holder_kana = EXCLUDED.account_holder_kana,
            is_invoice_issuer = EXCLUDED.is_invoice_issuer,
-           invoice_registration_number = EXCLUDED.invoice_registration_number`,
+           invoice_registration_number = EXCLUDED.invoice_registration_number,
+           vendor_rep = EXCLUDED.vendor_rep
+         RETURNING id`,
         [
           v.vendor_code, v.vendor_name, v.trade_name || null, v.pen_name || null,
           v.vendor_suffix || null, v.entity_type || null, v.withholding_enabled || false,
@@ -2779,8 +2786,67 @@ ${details}
           v.bank_info || null, v.bank_name || null, v.branch_name || null, v.account_type || null,
           v.account_number || null, v.account_holder_kana || null, v.is_invoice_issuer || false,
           v.invoice_registration_number || null,
+          v.vendor_rep || null,
         ]
       );
+      const vendorId = Number(upsert.rows[0]?.id);
+
+      // 2) contacts[] (Phase 22.13) — 配列が渡された場合のみ反映。
+      //    渡されない (undefined) の場合は既存テーブルを触らない (後方互換)。
+      if (Array.isArray(v.contacts) && vendorId) {
+        const contacts: any[] = v.contacts
+          .filter((c: any) => c && (c.contact_name || "").trim())
+          .map((c: any, idx: number) => ({
+            contact_name: String(c.contact_name).trim(),
+            contact_department: c.contact_department || null,
+            title: c.title || null,
+            email: c.email || null,
+            phone: c.phone || null,
+            is_primary: !!c.is_primary,
+            sort_order: Number.isFinite(Number(c.sort_order))
+              ? Number(c.sort_order)
+              : idx,
+            remarks: c.remarks || null,
+          }));
+
+        // primary 担当者がない場合は先頭を primary に昇格 (一覧で必ず 1 件 primary)
+        if (contacts.length > 0 && !contacts.some((c) => c.is_primary)) {
+          contacts[0].is_primary = true;
+        }
+
+        await query("DELETE FROM vendor_contacts WHERE vendor_id = $1", [vendorId]);
+        for (const c of contacts) {
+          await query(
+            `INSERT INTO vendor_contacts
+              (vendor_id, contact_name, contact_department, title, email, phone, is_primary, sort_order, remarks)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              vendorId,
+              c.contact_name,
+              c.contact_department,
+              c.title,
+              c.email,
+              c.phone,
+              c.is_primary,
+              c.sort_order,
+              c.remarks,
+            ]
+          );
+        }
+
+        // 後方互換: primary contact の name を vendors.contact_name にミラー
+        const primary = contacts.find((c) => c.is_primary) || contacts[0];
+        if (primary) {
+          await query(
+            `UPDATE vendors
+                SET contact_name        = $1,
+                    contact_department  = COALESCE($2, contact_department)
+              WHERE id = $3`,
+            [primary.contact_name, primary.contact_department, vendorId]
+          );
+        }
+      }
+
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: String(error) });

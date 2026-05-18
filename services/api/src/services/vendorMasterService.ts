@@ -17,6 +17,18 @@ import Papa from "papaparse";
 
 import { query } from "../lib/db.ts";
 
+export type VendorContact = {
+  id?: number;
+  contact_name: string;
+  contact_department?: string | null;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  is_primary?: boolean;
+  sort_order?: number;
+  remarks?: string | null;
+};
+
 export type VendorRow = {
   id?: number;
   vendor_code: string;
@@ -41,6 +53,9 @@ export type VendorRow = {
   account_holder_kana?: string | null;
   is_invoice_issuer?: boolean;
   invoice_registration_number?: string | null;
+  // Phase 22.13
+  vendor_rep?: string | null;
+  contacts?: VendorContact[];
 };
 
 const SELECT_COLUMNS = `
@@ -48,8 +63,56 @@ const SELECT_COLUMNS = `
   withholding_enabled, aliases, address, phone, email,
   contact_department, contact_name, master_contract_ref, bank_info,
   bank_name, branch_name, account_type, account_number, account_holder_kana,
-  is_invoice_issuer, invoice_registration_number
+  is_invoice_issuer, invoice_registration_number, vendor_rep
 `;
+
+/**
+ * Phase 22.13: 指定 vendor_id 群の contacts[] を一括取得 (N+1 回避)。
+ *   schema migration 未適用 (worker 未デプロイ) 環境では undefined_column
+ *   になるため、catch して空 Map で返す (= UI には contacts なし扱い)。
+ */
+async function fetchContactsMap(
+  vendorIds: number[]
+): Promise<Map<number, VendorContact[]>> {
+  const map = new Map<number, VendorContact[]>();
+  if (vendorIds.length === 0) return map;
+  try {
+    const res = await query(
+      `SELECT vendor_id, id, contact_name, contact_department, title, email, phone,
+              is_primary, sort_order, remarks
+         FROM vendor_contacts
+        WHERE vendor_id = ANY($1::int[])
+        ORDER BY vendor_id, is_primary DESC, sort_order ASC, id ASC`,
+      [vendorIds]
+    );
+    res.rows.forEach((r: any) => {
+      const vid = Number(r.vendor_id);
+      if (!map.has(vid)) map.set(vid, []);
+      map.get(vid)!.push({
+        id: Number(r.id),
+        contact_name: r.contact_name || "",
+        contact_department: r.contact_department || null,
+        title: r.title || null,
+        email: r.email || null,
+        phone: r.phone || null,
+        is_primary: !!r.is_primary,
+        sort_order: Number(r.sort_order) || 0,
+        remarks: r.remarks || null,
+      });
+    });
+  } catch (err: any) {
+    if (err && (err.code === "42703" || err.code === "42P01")) {
+      // 列なし / テーブルなし → worker 未デプロイ。空 Map を返して呼び出し側で contacts: [] にする。
+      console.warn(
+        "[fetchContactsMap] vendor_contacts table/column unavailable. " +
+          "worker サービスを再デプロイして migration を実行してください。"
+      );
+      return map;
+    }
+    throw err;
+  }
+  return map;
+}
 
 /**
  * 取引先の一覧取得 (検索 + ページング)。
@@ -84,15 +147,43 @@ export async function listVendors(
   const total = Number(countRes.rows[0]?.c || 0);
 
   params.push(limit, offset);
-  const res = await query(
-    `SELECT ${SELECT_COLUMNS}
-       FROM vendors
-       ${where}
-       ORDER BY vendor_code
-       LIMIT $${params.length - 1} OFFSET $${params.length}`,
-    params
-  );
-  return { rows: res.rows as VendorRow[], total };
+  // Phase 22.13: vendor_rep が未追加の環境ではフォールバック (legacy SELECT)
+  let res: any;
+  try {
+    res = await query(
+      `SELECT ${SELECT_COLUMNS}
+         FROM vendors
+         ${where}
+         ORDER BY vendor_code
+         LIMIT $${params.length - 1} OFFSET $${params.length}`,
+      params
+    );
+  } catch (err: any) {
+    if (err && err.code === "42703") {
+      // vendor_rep 列なし → 旧 SELECT で再試行
+      const LEGACY_COLS = SELECT_COLUMNS.replace(/,\s*vendor_rep\b/, "");
+      res = await query(
+        `SELECT ${LEGACY_COLS}
+           FROM vendors
+           ${where}
+           ORDER BY vendor_code
+           LIMIT $${params.length - 1} OFFSET $${params.length}`,
+        params
+      );
+    } else {
+      throw err;
+    }
+  }
+  const rows: VendorRow[] = res.rows as VendorRow[];
+
+  // Phase 22.13: contacts[] を 1 クエリで全 vendor 分取得して inject (N+1 回避)
+  const ids = rows.map((r) => Number(r.id)).filter((n) => Number.isFinite(n));
+  const contactsMap = await fetchContactsMap(ids);
+  rows.forEach((r) => {
+    r.contacts = contactsMap.get(Number(r.id)) || [];
+  });
+
+  return { rows, total };
 }
 
 /**
@@ -101,11 +192,28 @@ export async function listVendors(
 export async function getVendor(vendorCode: string): Promise<VendorRow | null> {
   const code = String(vendorCode || "").trim();
   if (!code) return null;
-  const res = await query(
-    `SELECT ${SELECT_COLUMNS} FROM vendors WHERE vendor_code = $1 LIMIT 1`,
-    [code]
-  );
-  return (res.rows[0] as VendorRow) || null;
+  let res: any;
+  try {
+    res = await query(
+      `SELECT ${SELECT_COLUMNS} FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+      [code]
+    );
+  } catch (err: any) {
+    if (err && err.code === "42703") {
+      const LEGACY_COLS = SELECT_COLUMNS.replace(/,\s*vendor_rep\b/, "");
+      res = await query(
+        `SELECT ${LEGACY_COLS} FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+        [code]
+      );
+    } else {
+      throw err;
+    }
+  }
+  const row = (res.rows[0] as VendorRow) || null;
+  if (!row) return null;
+  const contactsMap = await fetchContactsMap([Number(row.id)]);
+  row.contacts = contactsMap.get(Number(row.id)) || [];
+  return row;
 }
 
 /**
