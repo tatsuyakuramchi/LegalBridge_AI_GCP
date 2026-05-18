@@ -99,6 +99,17 @@ export class DocumentService {
       });
     });
 
+    // Phase 22.8.1: コンパクト日付 (YYYY/MM/DD) — 表の狭い列で改行を避けたい時に使う
+    Handlebars.registerHelper("formatDateCompact", (value) => {
+      if (!value) return "";
+      const date = new Date(value);
+      if (isNaN(date.getTime())) return String(value);
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}/${m}/${d}`;
+    });
+
     // 5. Addition (used for indexing etc)
     Handlebars.registerHelper("add", (a, b) => {
       return Number(a) + Number(b);

@@ -337,9 +337,8 @@
       {{#each items}}
       {{!-- Phase 17n: 仕様の文章量に影響されず narrow 列が間延びしないよう、
            本行（数値・日付など）と仕様詳細行を分けて描画。 --}}
-      {{!-- Phase 22.8: SUBSCRIPTION の場合は detail-row を強制表示
-           (周期・契約期間情報を必ず明示するため) --}}
-      <tr class="{{#if (or spec detailText (eq calc_method "SUBSCRIPTION"))}}has-detail{{/if}}">
+      {{!-- Phase 17n: spec か detailText があるときだけ detail-row を表示 --}}
+      <tr class="{{#if (or spec detailText)}}has-detail{{/if}}">
         <td class="center">{{or line_no (index1 @index)}}</td>
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
@@ -373,10 +372,14 @@
         </td>
         <td class="center">
           {{#if (eq calc_method "SUBSCRIPTION")}}
-            <div style="font-size:7.5pt;">
-              {{#if term_start}}{{formatDate term_start}}{{else}}—{{/if}}
-              <br>〜<br>
-              {{#if term_end}}{{formatDate term_end}}{{else}}継続中{{/if}}
+            {{!-- Phase 22.8.1: 期間はコンパクト日付 (2026/04/01) で 1 行ずつ。
+                 折返し時も "〜" を独立行に出さないよう nowrap で各端日付を確保。 --}}
+            <div style="font-size:8pt; line-height:1.4; white-space:nowrap;">
+              {{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}}
+            </div>
+            <div style="font-size:7pt; color:#999; line-height:1; margin:1px 0;">〜</div>
+            <div style="font-size:8pt; line-height:1.4; white-space:nowrap;">
+              {{#if term_end}}{{formatDateCompact term_end}}{{else}}<span style="color:#666;">継続中</span>{{/if}}
             </div>
           {{else}}
             {{formatDate payment_date}}
@@ -386,24 +389,19 @@
         <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
         <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
       </tr>
-      {{#if (or spec detailText (eq calc_method "SUBSCRIPTION"))}}
+      {{#if (or spec detailText)}}
       {{!-- Phase 17n: 仕様 / 詳細を全列幅で描画する詳細行。
            本行と境界線を共有することで「同じ明細」と分かるようにする。
-           Phase 22.8: SUBSCRIPTION 時は spec が無くてもサブスク注記を出す。 --}}
+           Phase 22.8.1: 旧 Phase 22.8 で SUBSCRIPTION 時に黄色ハイライトボックスで
+           周期/単価/数量/期間総額/支払日/契約期間を再記載していたが、すべて
+           表本行と重複しており冗長なため削除。SUBSCRIPTION 行であることは
+           「支払方法」列の SUBSCRIPTION バッジ + サブテキスト「月次」等で十分。
+           この detail-row は本来の用途 (仕様 / 業務内容の長文記述) に専念する。 --}}
       <tr class="detail-row">
         <td></td>
         <td colspan="7">
           <div class="detail-cell">
             <div class="detail-label">仕様 / 詳細</div>
-            {{#if (eq calc_method "SUBSCRIPTION")}}
-            {{!-- SUBSCRIPTION サマリ注記 (spec の前に挿入) --}}
-            <div class="item-spec-block" style="background:#fffbf0; border-left:3px solid #d4a017; padding:4px 8px; margin-bottom:{{#if (or spec detailText)}}6px{{else}}0{{/if}};">
-              <strong>📅 サブスクリプション ({{cycleLabel cycle}})</strong>
-              ・単価 {{formatYen (or unit_price unitPrice)}} × 数量 {{or quantity qty}} = {{formatYen (or amount_ex_tax amount)}} (期間総額)
-              ・支払サイクル: {{billingDayLabel billing_day cycle}}
-              ・契約期間: {{#if term_start}}{{formatDate term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDate term_end}}{{else}}<strong>継続中 (期限なし)</strong>{{/if}}
-            </div>
-            {{/if}}
             {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
             {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
           </div>
