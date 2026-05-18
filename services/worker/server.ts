@@ -3881,8 +3881,14 @@ ${details}
       // 各行の amount_ex_tax を再計算 (フロント送信値は信用しない)
       // Phase 13: calc_method + payment_terms split。
       // 旧 payment_method は payment_terms にマップして後方互換維持。
+      // Phase 22.11: SUBSCRIPTION 構造化フィールドも読み取る (FIXED/ROYALTY なら null)。
       const computedLines = items.map((l, idx) => {
         const payTerms = l.payment_terms || l.payment_method || null;
+        const isSub = String(l.calc_method || "").toUpperCase() === "SUBSCRIPTION";
+        const billingDayRaw =
+          l.billing_day === undefined || l.billing_day === null || l.billing_day === ""
+            ? null
+            : Number(l.billing_day);
         return {
           line_no: Number(l.line_no) || idx + 1,
           item_name: l.item_name || "",
@@ -3898,6 +3904,14 @@ ${details}
           payment_method: payTerms, // legacy mirror
           payment_date: l.payment_date || null,
           delivery_date: l.delivery_date || null, // Phase 17h
+          // Phase 22.11: SUBSCRIPTION 構造化フィールド
+          cycle: isSub ? String(l.cycle || "").toUpperCase() || "MONTHLY" : null,
+          term_start: isSub ? l.term_start || null : null,
+          term_end: isSub ? l.term_end || null : null,
+          billing_day:
+            isSub && billingDayRaw !== null && !Number.isNaN(billingDayRaw)
+              ? billingDayRaw
+              : null,
         };
       });
 
@@ -3936,6 +3950,7 @@ ${details}
       const orderItemId = Number(headerRes.rows[0].id);
 
       // 2. order_line_items — 既存 lines はいったん削除して入れ直し (Phase 13 対応)
+      //    Phase 22.11: SUBSCRIPTION 構造化フィールド (cycle/term_start/term_end/billing_day) を含む
       await query("DELETE FROM order_line_items WHERE order_item_id = $1", [
         orderItemId,
       ]);
@@ -3945,8 +3960,9 @@ ${details}
              order_item_id, line_no, item_name, spec,
              unit_price, quantity, amount_ex_tax,
              calc_method, payment_terms,
-             payment_method, payment_date, delivery_date
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+             payment_method, payment_date, delivery_date,
+             cycle, term_start, term_end, billing_day
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
           [
             orderItemId,
             l.line_no,
@@ -3960,6 +3976,13 @@ ${details}
             l.payment_method,
             l.payment_date,
             l.delivery_date,
+            // Phase 22.11
+            (l as any).cycle || null,
+            (l as any).term_start || null,
+            (l as any).term_end || null,
+            (l as any).billing_day === null || (l as any).billing_day === undefined
+              ? null
+              : Number((l as any).billing_day),
           ]
         );
       }
@@ -4941,10 +4964,18 @@ ${details}
           });
 
           // Phase 13: calc_method + payment_terms 統一。旧 payment_method 入力も受容。
+          // Phase 22.11: SUBSCRIPTION 行は cycle / term_start / term_end / billing_day
+          //   構造化フィールドも読み込む。FIXED/ROYALTY 行では null のまま。
           const lines = itemRows
             .filter((r) => r.line_no || r.item_name || r.unit_price)
             .map((r, idx) => {
               const payTerms = r.payment_terms || r.payment_method || null;
+              const isSub = String(r.calc_method || "").toUpperCase() === "SUBSCRIPTION";
+              // billing_day を安全に Number 化 (空文字や非数は null)
+              const billingDayRaw =
+                r.billing_day === undefined || r.billing_day === null || r.billing_day === ""
+                  ? null
+                  : Number(r.billing_day);
               return {
                 line_no: Number(r.line_no) || idx + 1,
                 item_name: r.item_name || "",
@@ -4960,6 +4991,16 @@ ${details}
                 payment_method: payTerms, // legacy mirror
                 payment_date: r.payment_date || null,
                 delivery_date: r.delivery_date || null, // Phase 17h
+                // Phase 22.11: SUBSCRIPTION 構造化フィールド (FIXED/ROYALTY なら null)
+                cycle: isSub
+                  ? String(r.cycle || "").toUpperCase() || "MONTHLY"
+                  : null,
+                term_start: isSub ? r.term_start || null : null,
+                term_end: isSub ? r.term_end || null : null,
+                billing_day:
+                  isSub && billingDayRaw !== null && !Number.isNaN(billingDayRaw)
+                    ? billingDayRaw
+                    : null,
               };
             });
 
@@ -5026,8 +5067,9 @@ ${details}
                  order_item_id, line_no, item_name, spec,
                  unit_price, quantity, amount_ex_tax,
                  calc_method, payment_terms,
-                 payment_method, payment_date, delivery_date
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+                 payment_method, payment_date, delivery_date,
+                 cycle, term_start, term_end, billing_day
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
               [
                 orderItemId,
                 l.line_no,
@@ -5041,6 +5083,13 @@ ${details}
                 l.payment_method,
                 l.payment_date,
                 l.delivery_date,
+                // Phase 22.11: SUBSCRIPTION 構造化フィールド
+                (l as any).cycle || null,
+                (l as any).term_start || null,
+                (l as any).term_end || null,
+                (l as any).billing_day === null || (l as any).billing_day === undefined
+                  ? null
+                  : Number((l as any).billing_day),
               ]
             );
           }
@@ -6672,6 +6721,12 @@ ${details}
         // Phase 17i: row_type (item / expense) を追加。expense 行は同じ
         //   import_key グループに混在可。expense 行は line_no / expense_name /
         //   spec / spent_date / amount_inc_tax / remarks を使う。
+        // Phase 22.11: SUBSCRIPTION 構造化フィールドを追加 (item 行のみ意味あり):
+        //   cycle       : MONTHLY / QUARTERLY / SEMIANNUAL / ANNUAL
+        //   term_start  : 契約開始日 (YYYY-MM-DD)
+        //   term_end    : 契約終了日 (空なら継続中扱い)
+        //   billing_day : 毎周期の支払日 (1-31。0 or >30 で末日)
+        //   1 PO 内で FIXED と SUBSCRIPTION の明細混在 OK (per-row 判定)。
         headers: [
           "import_key",
           "issue_key",
@@ -6695,18 +6750,29 @@ ${details}
           "payment_terms",
           "delivery_date",
           "payment_date",
+          // Phase 22.11: SUBSCRIPTION 専用フィールド (FIXED/ROYALTY 行は空欄で OK)
+          "cycle",
+          "term_start",
+          "term_end",
+          "billing_day",
           "expense_name",
           "spent_date",
           "amount_inc_tax",
           "remarks",
         ],
         sample: [
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item", "1", "書籍印刷", "A5/100p", "500", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item", "2", "カバー印刷", "カラー両面", "300", "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "1", "", "", "", "", "", "", "", "", "交通費", "2026-04-10", "12500", "東京〜大阪 新幹線"],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "2", "", "", "", "", "", "", "", "", "宿泊費", "2026-04-10", "9800", "ビジネスホテル 1 泊"],
-          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務", "10", "", "tanaka@arclight.co.jp", "未作成", "00002", "item", "1", "翻訳作業", "EN→JA", "5000", "10", "FIXED", "検収後", "2026-06-15", "", "", "", "", ""],
-          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守", "10", "", "tanaka@arclight.co.jp", "未作成", "00001,00003", "item", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "月初", "2026-04-01", "", "", "", "", ""],
+          // ORD001: 同一 PO に 2 明細 (FIXED) + 2 経費。SUBSCRIPTION 列は空。
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item",    "1", "書籍印刷",   "A5/100p",        "500",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item",    "2", "カバー印刷", "カラー両面",     "300",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "1", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "交通費", "2026-04-10", "12500", "東京〜大阪 新幹線"],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "2", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "宿泊費", "2026-04-10", "9800",  "ビジネスホテル 1 泊"],
+          // ORD002: 単純な FIXED 1 明細
+          ["ORD002", "",         "", "", "V002", "株式会社ABC", "翻訳業務",     "10", "",           "tanaka@arclight.co.jp", "未作成", "00002", "item",    "1", "翻訳作業",   "EN→JA",          "5000",  "10",  "FIXED", "検収後", "2026-06-15", "",           "", "", "", "", "", "", "", ""],
+          // ORD003: 純サブスク (月額保守 12 ヶ月 = 期間総額 600,000)
+          ["ORD003", "",         "", "", "V003", "株式会社サンプル", "月額保守", "10", "",         "tanaka@arclight.co.jp", "未作成", "00001,00003", "item", "1", "保守料月額", "12ヶ月",         "50000", "12",  "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "25", "", "", "", ""],
+          // Phase 22.11: ORD004 — FIXED + SUBSCRIPTION 混在の同一 PO 例 (顧問契約 + スポット業務)
+          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "item", "1", "法律顧問業務", "月次定額 (顧問契約)",         "100000", "12", "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "20", "", "", "", ""],
+          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "item", "2", "新規契約レビュー (スポット)", "M&A 一件",                "300000", "1",  "FIXED",        "翌月末", "2026-05-15", "2026-06-30", "", "", "", "", "", "", "", ""],
         ],
       },
       "license-contract": {
