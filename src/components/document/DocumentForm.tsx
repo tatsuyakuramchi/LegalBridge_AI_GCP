@@ -90,6 +90,47 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, selectedStaff?.staff_name]);
 
+  // Phase 22.7: 発注書のサマリー (納期 / 支払日) を明細から自動集計。
+  //   - 明細の delivery_date を集約 → summaryDeliveryDate
+  //   - 明細の payment_date を集約 → summaryPaymentDate
+  // 集約ロジック:
+  //   - 値なし: 空文字
+  //   - 全 1 件 / 全同日: その日付を返す (YYYY-MM-DD)
+  //   - 複数日付混在: "YYYY/MM/DD 〜 YYYY/MM/DD (明細参照)" 形式
+  // ユーザーは入力しない (read-only 表示)。PDF テンプレもこの値を使う。
+  //
+  // ★ 注意: この useEffect はコンポーネント最上部に置く必要がある。
+  //   後段の "if (templateId === 'xxx') return (...)" Early Return より下に
+  //   置くと、テンプレ切替時に hook 数が変わって React がクラッシュする
+  //   (Rules of Hooks 違反)。実行ガードは effect 内の if 文で行う。
+  useEffect(() => {
+    if (templateId !== 'purchase_order') return;
+    const items: any[] = Array.isArray(formData.items) ? formData.items : [];
+    const aggregate = (field: 'delivery_date' | 'payment_date'): string => {
+      const dates = items
+        .map((it) => (typeof it?.[field] === 'string' ? it[field] : ''))
+        .filter((d: string) => d && d.trim() !== '');
+      if (dates.length === 0) return '';
+      const unique = Array.from(new Set(dates)).sort();
+      if (unique.length === 1) return unique[0];
+      return `${unique[0]} 〜 ${unique[unique.length - 1]} (明細参照)`;
+    };
+    const nextDelivery = aggregate('delivery_date');
+    const nextPayment = aggregate('payment_date');
+    if (
+      formData.summaryDeliveryDate === nextDelivery &&
+      formData.summaryPaymentDate === nextPayment
+    ) {
+      return;
+    }
+    setFormData({
+      ...formData,
+      summaryDeliveryDate: nextDelivery,
+      summaryPaymentDate: nextPayment,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.items]);
+
   // Phase 9h: 検収書 — delivery_line_items / taxRate / isReducedTax の
   // どれかが変わったら 税抜合計 / 消費税 / 税込合計 を再計算して
   // テンプレ用フィールド (deliveredAmountStr / taxAmountStr / totalAmountStr)
@@ -424,45 +465,6 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   - Side-swappable Vendor / Issuer sections ([自社]/[取引先] buttons)
   //   - Bank info auto-fills from active vendor
   //   - Advanced sections (特約・備考, 契約・署名) collapsed by default
-  // Phase 22.7: 発注書のサマリー (納期 / 支払日) を明細から自動集計。
-  //   - 明細の delivery_date を集約 → summaryDeliveryDate
-  //   - 明細の payment_date を集約 → summaryPaymentDate
-  // 集約ロジック:
-  //   - 値なし: 空文字
-  //   - 全 1 件 / 全同日: その日付を返す (YYYY-MM-DD)
-  //   - 複数日付混在: "YYYY/MM/DD 〜 YYYY/MM/DD (明細参照)" 形式
-  // ユーザーは入力しない (read-only 表示)。PDF テンプレもこの値を使う。
-  // テンプレ自体は purchase_order のみ。それ以外は素通り。
-  React.useEffect(() => {
-    if (templateId !== 'purchase_order') return;
-    const items: any[] = Array.isArray(formData.items) ? formData.items : [];
-    const aggregate = (field: 'delivery_date' | 'payment_date'): string => {
-      const dates = items
-        .map((it) => (typeof it?.[field] === 'string' ? it[field] : ''))
-        .filter((d: string) => d && d.trim() !== '');
-      if (dates.length === 0) return '';
-      const unique = Array.from(new Set(dates)).sort();
-      if (unique.length === 1) return unique[0];
-      // 複数日付 — 範囲 + 明細参照ラベル
-      return `${unique[0]} 〜 ${unique[unique.length - 1]} (明細参照)`;
-    };
-    const nextDelivery = aggregate('delivery_date');
-    const nextPayment = aggregate('payment_date');
-    // 既に同じ値なら setFormData をスキップして無限ループ防止
-    if (
-      formData.summaryDeliveryDate === nextDelivery &&
-      formData.summaryPaymentDate === nextPayment
-    ) {
-      return;
-    }
-    setFormData({
-      ...formData,
-      summaryDeliveryDate: nextDelivery,
-      summaryPaymentDate: nextPayment,
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [templateId, formData.items]);
-
   if (templateId === 'purchase_order') {
     const isCorporation = (vendor: any) =>
       (vendor?.entity_type || '').toLowerCase() === 'corporate' ||
