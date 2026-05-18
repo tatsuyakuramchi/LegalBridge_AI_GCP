@@ -6,9 +6,16 @@
  *
  * 入力 1 文字以上で 取引先コード / 名称 / 屋号 のいずれかにマッチ。
  * クリックで選択 → onSelect(vendor) → ドロップダウンを閉じる。
+ *
+ * Phase 22.6.1: Dialog 内で使われたときに親の overflow-y-auto に閉じ込められて
+ * 後続の form fields とぐちゃぐちゃに重なる視認性問題があった。これを避けるため
+ * ドロップダウンは createPortal で document.body にレンダリングし、トリガーの
+ * getBoundingClientRect() を元に fixed 位置決めする。
+ * スクロール / リサイズ時は位置を追従更新。
  */
 
 import * as React from "react"
+import { createPortal } from "react-dom"
 import { Search, ChevronDown, X, Check, Building2 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -35,34 +42,71 @@ export const VendorSearchSelect: React.FC<Props> = ({
   const [open, setOpen] = React.useState(false)
   const [q, setQ] = React.useState("")
   const containerRef = React.useRef<HTMLDivElement>(null)
+  const triggerRef = React.useRef<HTMLButtonElement>(null)
+  const dropdownRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
+  // Portal 配置用: トリガーの viewport 座標 + 幅
+  const [dropdownStyle, setDropdownStyle] =
+    React.useState<React.CSSProperties>({})
 
   const selected = React.useMemo(
     () => vendors.find((v) => v.vendor_code === selectedCode) || null,
     [vendors, selectedCode]
   )
 
-  // クリック外で閉じる
+  // 開いている間、トリガーの座標から ドロップダウンの fixed 位置を再計算。
+  // ウィンドウ / 親 scroll の都度更新するので、scroll イベントを capture phase で拾う。
+  const recalcPosition = React.useCallback(() => {
+    const trigger = triggerRef.current
+    if (!trigger) return
+    const r = trigger.getBoundingClientRect()
+    // 下方向に十分なスペースがないときは上方向に開く
+    const dropdownMaxH = 320
+    const spaceBelow = window.innerHeight - r.bottom
+    const openUpward = spaceBelow < dropdownMaxH + 12 && r.top > dropdownMaxH
+    setDropdownStyle({
+      position: "fixed",
+      left: r.left,
+      width: r.width,
+      ...(openUpward
+        ? { bottom: window.innerHeight - r.top + 4 }
+        : { top: r.bottom + 4 }),
+      zIndex: 1000, // Dialog (z-50) より上に積む
+    })
+  }, [])
+
+  // クリック外で閉じる (Portal も含めて判定)
   React.useEffect(() => {
     if (!open) return
     const handler = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
-        setOpen(false)
-      }
+      const inTrigger =
+        containerRef.current?.contains(e.target as Node) ?? false
+      const inDropdown =
+        dropdownRef.current?.contains(e.target as Node) ?? false
+      if (!inTrigger && !inDropdown) setOpen(false)
     }
     document.addEventListener("mousedown", handler)
     return () => document.removeEventListener("mousedown", handler)
   }, [open])
 
-  // 開いたら input にフォーカス
+  // 開いたら input にフォーカス + 位置初期化
   React.useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 0)
+    if (!open) return
+    recalcPosition()
+    setTimeout(() => inputRef.current?.focus(), 0)
+  }, [open, recalcPosition])
+
+  // ウィンドウ / 親 scroll に追従。capture phase で全ての scroll を拾う。
+  React.useEffect(() => {
+    if (!open) return
+    const onScrollOrResize = () => recalcPosition()
+    window.addEventListener("scroll", onScrollOrResize, true)
+    window.addEventListener("resize", onScrollOrResize)
+    return () => {
+      window.removeEventListener("scroll", onScrollOrResize, true)
+      window.removeEventListener("resize", onScrollOrResize)
     }
-  }, [open])
+  }, [open, recalcPosition])
 
   const filtered = React.useMemo(() => {
     const term = q.trim().toLowerCase()
@@ -103,10 +147,85 @@ export const VendorSearchSelect: React.FC<Props> = ({
     size === "compact" && "py-1 text-[10px]"
   )
 
+  // ドロップダウン本体 (Portal でレンダリング)。
+  // 不透明背景 (bg-popover) + 強い shadow + 高 z-index で
+  // 親 stacking context に関係なく確実に最前面に乗る。
+  const dropdownContent = open ? (
+    <div
+      ref={dropdownRef}
+      style={dropdownStyle}
+      className="bg-popover border border-border rounded-sm shadow-2xl max-h-[320px] flex flex-col"
+    >
+      {/* Search input */}
+      <div className="border-b border-border p-2 flex items-center gap-2 bg-muted/40 sticky top-0">
+        <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+        <input
+          ref={inputRef}
+          type="text"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="検索 (コード / 名称 / 屋号)"
+          className="flex-1 text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
+        />
+        <span className="text-[9px] font-mono text-muted-foreground/60">
+          {filtered.length}/{vendors.length}
+        </span>
+      </div>
+
+      {/* Results */}
+      <div className="overflow-y-auto flex-1 bg-popover">
+        {filtered.length === 0 ? (
+          <div className="p-3 text-center text-[10px] font-mono text-muted-foreground italic">
+            該当する取引先が見つかりません
+          </div>
+        ) : (
+          filtered.map((v) => {
+            const isSelected = v.vendor_code === selectedCode
+            return (
+              <button
+                key={v.id || v.vendor_code}
+                type="button"
+                onClick={() => handleSelect(v)}
+                className={cn(
+                  "w-full text-left px-2 py-1.5 hover:bg-muted text-[11px] font-mono flex items-center gap-2 border-b border-border/30 last:border-b-0",
+                  isSelected && "bg-emerald-50"
+                )}
+              >
+                <span className="font-bold w-16 flex-shrink-0">
+                  {v.vendor_code || "—"}
+                </span>
+                <span className="flex-1 truncate">
+                  {v.vendor_name}
+                  {v.trade_name && (
+                    <span className="text-muted-foreground/70 ml-1">
+                      ({v.trade_name})
+                    </span>
+                  )}
+                </span>
+                {v.entity_type && (
+                  <span className="text-[9px] text-muted-foreground/70 flex-shrink-0">
+                    {v.entity_type === "corporate" ||
+                    v.entity_type === "法人"
+                      ? "法人"
+                      : "個人"}
+                  </span>
+                )}
+                {isSelected && (
+                  <Check className="w-3 h-3 text-emerald-700 flex-shrink-0" />
+                )}
+              </button>
+            )
+          })
+        )}
+      </div>
+    </div>
+  ) : null
+
   return (
     <div ref={containerRef} className="relative">
       {/* Trigger */}
       <button
+        ref={triggerRef}
         type="button"
         onClick={() => !disabled && setOpen((v) => !v)}
         disabled={disabled}
@@ -143,73 +262,11 @@ export const VendorSearchSelect: React.FC<Props> = ({
         />
       </button>
 
-      {/* Dropdown */}
-      {open && (
-        <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-sm shadow-xl z-30 max-h-[320px] flex flex-col">
-          {/* Search input */}
-          <div className="border-b border-border p-2 flex items-center gap-2 bg-muted/30 sticky top-0">
-            <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-            <input
-              ref={inputRef}
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="検索 (コード / 名称 / 屋号)"
-              className="flex-1 text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
-            />
-            <span className="text-[9px] font-mono text-muted-foreground/60">
-              {filtered.length}/{vendors.length}
-            </span>
-          </div>
-
-          {/* Results */}
-          <div className="overflow-y-auto flex-1">
-            {filtered.length === 0 ? (
-              <div className="p-3 text-center text-[10px] font-mono text-muted-foreground italic">
-                該当する取引先が見つかりません
-              </div>
-            ) : (
-              filtered.map((v) => {
-                const isSelected = v.vendor_code === selectedCode
-                return (
-                  <button
-                    key={v.id || v.vendor_code}
-                    type="button"
-                    onClick={() => handleSelect(v)}
-                    className={cn(
-                      "w-full text-left px-2 py-1.5 hover:bg-muted text-[11px] font-mono flex items-center gap-2 border-b border-border/30 last:border-b-0",
-                      isSelected && "bg-emerald-50"
-                    )}
-                  >
-                    <span className="font-bold w-16 flex-shrink-0">
-                      {v.vendor_code || "—"}
-                    </span>
-                    <span className="flex-1 truncate">
-                      {v.vendor_name}
-                      {v.trade_name && (
-                        <span className="text-muted-foreground/70 ml-1">
-                          ({v.trade_name})
-                        </span>
-                      )}
-                    </span>
-                    {v.entity_type && (
-                      <span className="text-[9px] text-muted-foreground/70 flex-shrink-0">
-                        {v.entity_type === "corporate" ||
-                        v.entity_type === "法人"
-                          ? "法人"
-                          : "個人"}
-                      </span>
-                    )}
-                    {isSelected && (
-                      <Check className="w-3 h-3 text-emerald-700 flex-shrink-0" />
-                    )}
-                  </button>
-                )
-              })
-            )}
-          </div>
-        </div>
-      )}
+      {/* Dropdown - rendered into document.body via Portal so it escapes any
+          parent overflow / stacking context (e.g. Dialog body, scrollable cards). */}
+      {typeof document !== "undefined" &&
+        dropdownContent &&
+        createPortal(dropdownContent, document.body)}
     </div>
   )
 }
