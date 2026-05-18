@@ -3393,7 +3393,7 @@ ${details}
       const expenses: Array<any> = Array.isArray(req.body.expenses) ? req.body.expenses : [];
 
       // 計算 + Phase 13: calc_method / payment_terms を統一
-      const computedLines = lines.map((l) => {
+      const computedLines = lines.map((l: any) => {
         // 後方互換: payment_terms が空なら payment_method を使う
         const payTerms = l.payment_terms || l.payment_method || null;
         return {
@@ -3413,6 +3413,17 @@ ${details}
           payment_date: l.payment_date || null,
           // Phase 17h: 業務明細ごとの納期
           delivery_date: l.delivery_date || null,
+          // Phase 22.8: SUBSCRIPTION 用フィールド (FIXED/ROYALTY 行では NULL)
+          cycle: l.calc_method === "SUBSCRIPTION" ? l.cycle || "MONTHLY" : null,
+          term_start: l.calc_method === "SUBSCRIPTION" ? l.term_start || null : null,
+          term_end: l.calc_method === "SUBSCRIPTION" ? l.term_end || null : null,
+          billing_day:
+            l.calc_method === "SUBSCRIPTION" &&
+            l.billing_day !== undefined &&
+            l.billing_day !== null &&
+            l.billing_day !== ""
+              ? Number(l.billing_day)
+              : null,
         };
       });
 
@@ -3429,15 +3440,19 @@ ${details}
         await query("DELETE FROM order_line_items WHERE order_item_id = $1", [orderItemId]);
       }
 
-      // upsert (Phase 13/17h: calc_method + payment_terms + delivery_date)
+      // upsert (Phase 13/17h: calc_method + payment_terms + delivery_date
+      //         Phase 22.8: + SUBSCRIPTION fields cycle / term_start /
+      //                       term_end / billing_day)
       for (const l of computedLines) {
         await query(
           `INSERT INTO order_line_items (
              order_item_id, line_no, item_name, spec,
              unit_price, quantity, amount_ex_tax,
              calc_method, payment_terms,
-             payment_method, payment_date, delivery_date, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+             payment_method, payment_date, delivery_date,
+             cycle, term_start, term_end, billing_day,
+             updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
            ON CONFLICT (order_item_id, line_no) DO UPDATE SET
              item_name      = EXCLUDED.item_name,
              spec           = EXCLUDED.spec,
@@ -3449,6 +3464,10 @@ ${details}
              payment_method = EXCLUDED.payment_method,
              payment_date   = EXCLUDED.payment_date,
              delivery_date  = EXCLUDED.delivery_date,
+             cycle          = EXCLUDED.cycle,
+             term_start     = EXCLUDED.term_start,
+             term_end       = EXCLUDED.term_end,
+             billing_day    = EXCLUDED.billing_day,
              updated_at     = CURRENT_TIMESTAMP`,
           [
             orderItemId,
@@ -3463,6 +3482,13 @@ ${details}
             l.payment_method,
             l.payment_date,
             l.delivery_date,
+            // Phase 22.8: SUBSCRIPTION fields (null-safe; FIXED/ROYALTY 行は NULL)
+            (l as any).cycle || null,
+            (l as any).term_start || null,
+            (l as any).term_end || null,
+            (l as any).billing_day === undefined || (l as any).billing_day === null
+              ? null
+              : Number((l as any).billing_day),
           ]
         );
       }

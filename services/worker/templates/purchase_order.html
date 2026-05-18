@@ -337,7 +337,9 @@
       {{#each items}}
       {{!-- Phase 17n: 仕様の文章量に影響されず narrow 列が間延びしないよう、
            本行（数値・日付など）と仕様詳細行を分けて描画。 --}}
-      <tr class="{{#if (or spec detailText)}}has-detail{{/if}}">
+      {{!-- Phase 22.8: SUBSCRIPTION の場合は detail-row を強制表示
+           (周期・契約期間情報を必ず明示するため) --}}
+      <tr class="{{#if (or spec detailText (eq calc_method "SUBSCRIPTION"))}}has-detail{{/if}}">
         <td class="center">{{or line_no (index1 @index)}}</td>
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
@@ -345,8 +347,11 @@
         </td>
         <td class="center">
           {{!-- Phase 13: 計算方式バッジ + 支払条件
-               優先: calc_method (FIXED/SUBSCRIPTION/ROYALTY) → 旧 payment_method --}}
+               Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
           <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          {{#if (eq calc_method "SUBSCRIPTION")}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
+          {{else}}
           {{#if payment_terms}}
           <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_terms}}</div>
           {{else}}
@@ -354,22 +359,51 @@
           <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_method}}</div>
           {{/if}}
           {{/if}}
+          {{/if}}
         </td>
-        {{!-- Phase 17h: 業務明細ごとの納期 (delivery_date) と支払日 (payment_date) を別列で --}}
-        <td class="center">{{formatDate delivery_date}}</td>
-        <td class="center">{{formatDate payment_date}}</td>
+        {{!-- Phase 17h: 業務明細ごとの納期 (delivery_date) と支払日 (payment_date) を別列で
+             Phase 22.8: SUBSCRIPTION のときは納期=支払日サマリ ("毎月25日") /
+                         支払日=期間サマリ ("2026/01/01 〜 2026/12/31") に切替 --}}
+        <td class="center">
+          {{#if (eq calc_method "SUBSCRIPTION")}}
+            {{billingDayLabel billing_day cycle}}
+          {{else}}
+            {{formatDate delivery_date}}
+          {{/if}}
+        </td>
+        <td class="center">
+          {{#if (eq calc_method "SUBSCRIPTION")}}
+            <div style="font-size:7.5pt;">
+              {{#if term_start}}{{formatDate term_start}}{{else}}—{{/if}}
+              <br>〜<br>
+              {{#if term_end}}{{formatDate term_end}}{{else}}継続中{{/if}}
+            </div>
+          {{else}}
+            {{formatDate payment_date}}
+          {{/if}}
+        </td>
         <td class="right">{{or quantity qty}}</td>
         <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
         <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
       </tr>
-      {{#if (or spec detailText)}}
+      {{#if (or spec detailText (eq calc_method "SUBSCRIPTION"))}}
       {{!-- Phase 17n: 仕様 / 詳細を全列幅で描画する詳細行。
-           本行と境界線を共有することで「同じ明細」と分かるようにする。 --}}
+           本行と境界線を共有することで「同じ明細」と分かるようにする。
+           Phase 22.8: SUBSCRIPTION 時は spec が無くてもサブスク注記を出す。 --}}
       <tr class="detail-row">
         <td></td>
         <td colspan="7">
           <div class="detail-cell">
             <div class="detail-label">仕様 / 詳細</div>
+            {{#if (eq calc_method "SUBSCRIPTION")}}
+            {{!-- SUBSCRIPTION サマリ注記 (spec の前に挿入) --}}
+            <div class="item-spec-block" style="background:#fffbf0; border-left:3px solid #d4a017; padding:4px 8px; margin-bottom:{{#if (or spec detailText)}}6px{{else}}0{{/if}};">
+              <strong>📅 サブスクリプション ({{cycleLabel cycle}})</strong>
+              ・単価 {{formatYen (or unit_price unitPrice)}} × 数量 {{or quantity qty}} = {{formatYen (or amount_ex_tax amount)}} (期間総額)
+              ・支払サイクル: {{billingDayLabel billing_day cycle}}
+              ・契約期間: {{#if term_start}}{{formatDate term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDate term_end}}{{else}}<strong>継続中 (期限なし)</strong>{{/if}}
+            </div>
+            {{/if}}
             {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
             {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
           </div>

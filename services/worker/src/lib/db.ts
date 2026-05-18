@@ -279,6 +279,21 @@ export async function initDb() {
       WHERE calc_method IS NULL OR calc_method = '' OR payment_terms IS NULL;`,
 
     // -----------------------------------------------------------------
+    // Phase 22.8: SUBSCRIPTION (継続課金) 用フィールド。
+    //   calc_method='SUBSCRIPTION' の行のみ意味を持つ:
+    //     cycle       : 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'ANNUAL'
+    //     term_start  : 契約開始日
+    //     term_end    : 契約終了日 (NULL なら継続中扱い)
+    //     billing_day : 毎周期の支払日 (1-31; 0 or >30 で末日扱い)
+    //   FIXED/ROYALTY 行では NULL のまま (UI / PDF にも出ない)。
+    //   顧問契約・SaaS 月額・年額ライセンス等のスケジュールを構造化保持。
+    // -----------------------------------------------------------------
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS cycle VARCHAR(20);`,
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS term_start DATE;`,
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS term_end DATE;`,
+    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS billing_day SMALLINT;`,
+
+    // -----------------------------------------------------------------
     // Phase 17i: 経費 (交通費等) — 発注書本体の業務報酬とは別に、
     //   発注者が受注者に精算する経費を行単位で保持する。
     //   料金は基本的に税込み額で記録 (現場の領収書がそのまま反映できる)。

@@ -154,6 +154,37 @@ export class DocumentService {
         .map((v) => (v == null ? "" : String(v)))
         .join("");
     });
+
+    // 15. Phase 22.8: SUBSCRIPTION の周期コード → 日本語ラベル
+    //     {{cycleLabel "MONTHLY"}} → "月次"
+    Handlebars.registerHelper("cycleLabel", (cycle: any) => {
+      const c = String(cycle || "").toUpperCase();
+      if (c === "QUARTERLY") return "四半期";
+      if (c === "SEMIANNUAL") return "半年";
+      if (c === "ANNUAL") return "年次";
+      return "月次"; // MONTHLY or unknown は月次扱い (default)
+    });
+
+    // 16. Phase 22.8: SUBSCRIPTION の支払日表示
+    //     {{billingDayLabel 25 "MONTHLY"}} → "毎月25日"
+    //     {{billingDayLabel 0  "MONTHLY"}} → "毎月末日" (0 or >30 で末日)
+    //     {{billingDayLabel 15 "QUARTERLY"}} → "毎四半期15日"
+    Handlebars.registerHelper("billingDayLabel", (day: any, cycle: any) => {
+      if (day === null || day === undefined || day === "") return "";
+      const n = Number(day);
+      if (Number.isNaN(n)) return "";
+      const c = String(cycle || "").toUpperCase();
+      const prefix =
+        c === "QUARTERLY"
+          ? "毎四半期"
+          : c === "SEMIANNUAL"
+            ? "毎半期"
+            : c === "ANNUAL"
+              ? "毎年"
+              : "毎月";
+      if (n === 0 || n > 30) return `${prefix}末日`;
+      return `${prefix}${n}日`;
+    });
   }
 
   private loadTemplate(type: DocumentType): string {

@@ -106,8 +106,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   useEffect(() => {
     if (templateId !== 'purchase_order') return;
     const items: any[] = Array.isArray(formData.items) ? formData.items : [];
-    const aggregate = (field: 'delivery_date' | 'payment_date'): string => {
-      const dates = items
+
+    // FIXED/ROYALTY 明細から日付列を集約
+    // SUBSCRIPTION 明細は別建て (期間 + 周期サマリ) で集約
+    const fixedItems = items.filter((it) => it?.calc_method !== 'SUBSCRIPTION');
+    const subItems = items.filter((it) => it?.calc_method === 'SUBSCRIPTION');
+
+    const aggregateDates = (field: 'delivery_date' | 'payment_date'): string => {
+      const dates = fixedItems
         .map((it) => (typeof it?.[field] === 'string' ? it[field] : ''))
         .filter((d: string) => d && d.trim() !== '');
       if (dates.length === 0) return '';
@@ -115,8 +121,68 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       if (unique.length === 1) return unique[0];
       return `${unique[0]} 〜 ${unique[unique.length - 1]} (明細参照)`;
     };
-    const nextDelivery = aggregate('delivery_date');
-    const nextPayment = aggregate('payment_date');
+
+    // SUBSCRIPTION 明細を 1 行 "毎月25日 (2026/01/01〜2026/12/31)" 形式で並べる
+    const cycleShort = (c?: string) =>
+      c === 'QUARTERLY'
+        ? '四半期'
+        : c === 'SEMIANNUAL'
+          ? '半年'
+          : c === 'ANNUAL'
+            ? '年次'
+            : '月次';
+    const billingDayDisplay = (day?: number, cycle?: string) => {
+      if (day === undefined || day === null || Number.isNaN(Number(day))) return '';
+      const prefix =
+        cycle === 'QUARTERLY'
+          ? '毎四半期'
+          : cycle === 'SEMIANNUAL'
+            ? '毎半期'
+            : cycle === 'ANNUAL'
+              ? '毎年'
+              : '毎月';
+      const n = Number(day);
+      if (n === 0 || n > 30) return `${prefix}末日`;
+      return `${prefix}${n}日`;
+    };
+    const subSummaryLines = subItems
+      .map((it) => {
+        const billing = billingDayDisplay(it.billing_day, it.cycle);
+        const range =
+          (it.term_start ? it.term_start : '—') +
+          ' 〜 ' +
+          (it.term_end ? it.term_end : '継続中');
+        const cyc = cycleShort(it.cycle);
+        return `${cyc}・${billing || '(支払日未設定)'} (${range})`;
+      })
+      .filter((s) => s && s.trim() !== '');
+
+    const nextDelivery = (() => {
+      const fixed = aggregateDates('delivery_date');
+      if (subSummaryLines.length === 0) return fixed;
+      // SUBSCRIPTION 行は「期間で常時納品」扱い → 期間サマリを返す
+      const subLabel = subSummaryLines
+        .map((line, i) => `${subItems.length > 1 ? `[#${i + 1}] ` : ''}${line.split(' (')[1]?.replace(/\)$/, '') || ''}`)
+        .filter(Boolean)
+        .join(' / ');
+      if (fixed && subLabel) return `${fixed} (固定明細) + サブスク期間: ${subLabel}`;
+      if (subLabel) return `サブスク期間: ${subLabel}`;
+      return fixed;
+    })();
+
+    const nextPayment = (() => {
+      const fixed = aggregateDates('payment_date');
+      if (subSummaryLines.length === 0) return fixed;
+      const subLabel = subSummaryLines
+        .map((line, i) =>
+          `${subItems.length > 1 ? `[#${i + 1}] ` : ''}${line.split(' (')[0]}`
+        )
+        .join(' / ');
+      if (fixed && subLabel) return `${fixed} (固定明細) + ${subLabel}`;
+      if (subLabel) return subLabel;
+      return fixed;
+    })();
+
     if (
       formData.summaryDeliveryDate === nextDelivery &&
       formData.summaryPaymentDate === nextPayment

@@ -16,7 +16,7 @@
  */
 
 import React from "react";
-import { Plus, Trash2, Maximize2, X } from "lucide-react";
+import { Plus, Trash2, Maximize2, X, Repeat, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type LineItem = {
@@ -46,6 +46,20 @@ export type LineItem = {
    * UI には表示しないが、CSV 入力 / 既存 DB 行とは互換性維持。
    */
   payment_method?: string;
+  // ────────────────────────────────────────────────
+  // Phase 22.8: SUBSCRIPTION (サブスク継続課金) 専用フィールド。
+  // calc_method = "SUBSCRIPTION" のときだけ意味を持つ。顧問契約・
+  // SaaS 月額・年額ライセンス等を「単価 × 数量 (期間数) = 期間総額」
+  // で表しつつ、契約スケジュールも構造化して保持できるようにする。
+  // ────────────────────────────────────────────────
+  /** 周期: 月次/四半期/半年/年次。default は MONTHLY。 */
+  cycle?: "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "ANNUAL";
+  /** 契約開始日 (YYYY-MM-DD)。 */
+  term_start?: string;
+  /** 契約終了日 (YYYY-MM-DD)。空なら「継続中」扱いで PDF にもそう表記。 */
+  term_end?: string;
+  /** 毎周期の支払日 (例: 月次なら 1-31 の日。月末なら 31 or 0)。 */
+  billing_day?: number;
 };
 
 const CALC_METHOD_OPTIONS: Array<{
@@ -56,6 +70,46 @@ const CALC_METHOD_OPTIONS: Array<{
   { value: "SUBSCRIPTION", label: "SUBSCRIPTION (サブスク)" },
   { value: "ROYALTY", label: "ROYALTY (業績連動)" },
 ];
+
+// Phase 22.8: サブスク周期。
+const CYCLE_OPTIONS: Array<{
+  value: NonNullable<LineItem["cycle"]>;
+  label: string;
+  short: string;
+}> = [
+  { value: "MONTHLY", label: "月次", short: "月次" },
+  { value: "QUARTERLY", label: "四半期", short: "四半期" },
+  { value: "SEMIANNUAL", label: "半年", short: "半年" },
+  { value: "ANNUAL", label: "年次", short: "年次" },
+];
+
+// サブスクの「支払日 表示」を組み立てる。
+//   月次: "毎月25日" / 月末: "毎月末日"
+//   四半期/半年/年次: "毎期25日" (or 月末)
+function formatBillingDay(day?: number, cycle?: LineItem["cycle"]): string {
+  if (!day && day !== 0) return "";
+  const cycleLabel =
+    cycle === "QUARTERLY"
+      ? "毎四半期"
+      : cycle === "SEMIANNUAL"
+        ? "毎半期"
+        : cycle === "ANNUAL"
+          ? "毎年"
+          : "毎月";
+  if (day === 0 || day > 30) return `${cycleLabel}末日`;
+  return `${cycleLabel}${day}日`;
+}
+
+// サブスクの「期間 表示」を組み立てる。
+//   start のみ:           "2026/01/01 〜 継続中"
+//   start + end:          "2026/01/01 〜 2026/12/31"
+//   end のみ / 両方なし:  ""
+function formatTermRange(start?: string, end?: string): string {
+  if (!start && !end) return "";
+  const startStr = start ? start : "";
+  const endStr = end ? end : "継続中";
+  return `${startStr || "—"} 〜 ${endStr}`;
+}
 
 interface Props {
   items: LineItem[];
@@ -81,6 +135,11 @@ export const LineItemTable: React.FC<Props> = ({
   const [specEditIdx, setSpecEditIdx] = React.useState<number | null>(null);
   const specEditValue =
     specEditIdx !== null ? items[specEditIdx]?.spec || "" : "";
+  // Phase 22.8: サブスク詳細編集モーダル。calc_method=SUBSCRIPTION の
+  // 行のみ「⚙ サブスク」ボタンで起動し、cycle / term_start / term_end /
+  // billing_day をひとまとめに編集できる。
+  const [subEditIdx, setSubEditIdx] = React.useState<number | null>(null);
+  const subEditItem = subEditIdx !== null ? items[subEditIdx] : null;
 
   const update = (idx: number, patch: Partial<LineItem>) => {
     const next = items.slice();
@@ -283,57 +342,107 @@ export const LineItemTable: React.FC<Props> = ({
                     </td>
                     {showPaymentColumns && (
                       <>
-                        {/* Phase 13: 計算方式 (ライセンス側と同じ語彙の FIXED / SUBSCRIPTION / ROYALTY) */}
-                        <td className="p-2">
-                          <select
-                            value={it.calc_method || "FIXED"}
-                            onChange={(e) =>
-                              update(idx, {
-                                calc_method: e.target
-                                  .value as LineItem["calc_method"],
-                              })
-                            }
-                            disabled={readOnly}
-                            className={cn(
-                              "w-full text-[11px] font-mono bg-transparent",
-                              "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
-                              "disabled:opacity-60 disabled:cursor-not-allowed"
+                        {/* Phase 13: 計算方式 (FIXED / SUBSCRIPTION / ROYALTY)
+                            Phase 22.8: SUBSCRIPTION のときは右に「⚙ サブスク」ボタンを出して
+                            cycle / term_start / term_end / billing_day をモーダル編集できるように。 */}
+                        <td className="p-2 align-top">
+                          <div className="flex items-center gap-1">
+                            <select
+                              value={it.calc_method || "FIXED"}
+                              onChange={(e) =>
+                                update(idx, {
+                                  calc_method: e.target
+                                    .value as LineItem["calc_method"],
+                                  // SUBSCRIPTION 切替時に cycle が未設定なら MONTHLY を初期値に
+                                  ...(e.target.value === "SUBSCRIPTION" &&
+                                  !it.cycle
+                                    ? { cycle: "MONTHLY" as const }
+                                    : {}),
+                                })
+                              }
+                              disabled={readOnly}
+                              className={cn(
+                                "flex-1 min-w-0 text-[11px] font-mono bg-transparent",
+                                "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                                "disabled:opacity-60 disabled:cursor-not-allowed"
+                              )}
+                            >
+                              {CALC_METHOD_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
+                            {it.calc_method === "SUBSCRIPTION" && !readOnly && (
+                              <button
+                                type="button"
+                                onClick={() => setSubEditIdx(idx)}
+                                className="flex-shrink-0 p-1 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                                title="サブスク詳細を編集 (周期 / 開始日 / 終了日 / 支払日)"
+                              >
+                                <Settings className="w-3 h-3" />
+                              </button>
                             )}
-                          >
-                            {CALC_METHOD_OPTIONS.map((opt) => (
-                              <option key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </option>
-                            ))}
-                          </select>
+                          </div>
                         </td>
-                        {/* Phase 13: 支払条件 (旧 payment_method の自由テキスト部分を継承) */}
-                        <td className="p-2">
-                          {cellInput(
-                            it.payment_terms ?? it.payment_method,
-                            (v) =>
-                              update(idx, {
-                                payment_terms: v,
-                                // 旧フィールドも同期 (テンプレ後方互換)
-                                payment_method: v,
-                              }),
-                            "text",
-                            "翌月末"
+                        {/* Phase 22.8: SUBSCRIPTION なら 周期 ラベル、それ以外なら 支払条件 自由テキスト */}
+                        <td className="p-2 align-top">
+                          {it.calc_method === "SUBSCRIPTION" ? (
+                            <div className="flex items-center gap-1 text-[11px] font-mono">
+                              <Repeat className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                              <span className="text-foreground/80">
+                                {CYCLE_OPTIONS.find(
+                                  (o) => o.value === (it.cycle || "MONTHLY")
+                                )?.short || "月次"}
+                              </span>
+                            </div>
+                          ) : (
+                            cellInput(
+                              it.payment_terms ?? it.payment_method,
+                              (v) =>
+                                update(idx, {
+                                  payment_terms: v,
+                                  payment_method: v,
+                                }),
+                              "text",
+                              "翌月末"
+                            )
                           )}
                         </td>
-                        {/* Phase 17h: 納期 (delivery_date) */}
-                        <td className="p-2">
-                          {cellInput(
-                            it.delivery_date,
-                            (v) => update(idx, { delivery_date: v }),
-                            "date"
+                        {/* Phase 22.8: SUBSCRIPTION なら 支払日サマリ (毎月N日)、それ以外なら delivery_date */}
+                        <td className="p-2 align-top">
+                          {it.calc_method === "SUBSCRIPTION" ? (
+                            <span className="text-[11px] font-mono text-foreground/80">
+                              {formatBillingDay(it.billing_day, it.cycle) || (
+                                <span className="text-muted-foreground/60 italic text-[10px]">
+                                  支払日未設定
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            cellInput(
+                              it.delivery_date,
+                              (v) => update(idx, { delivery_date: v }),
+                              "date"
+                            )
                           )}
                         </td>
-                        <td className="p-2">
-                          {cellInput(
-                            it.payment_date,
-                            (v) => update(idx, { payment_date: v }),
-                            "date"
+                        {/* Phase 22.8: SUBSCRIPTION なら 期間サマリ (start〜end)、それ以外なら payment_date */}
+                        <td className="p-2 align-top">
+                          {it.calc_method === "SUBSCRIPTION" ? (
+                            <span className="text-[10px] font-mono text-foreground/70 whitespace-nowrap">
+                              {formatTermRange(it.term_start, it.term_end) || (
+                                <span className="text-muted-foreground/60 italic">
+                                  期間未設定
+                                </span>
+                              )}
+                            </span>
+                          ) : (
+                            cellInput(
+                              it.payment_date,
+                              (v) => update(idx, { payment_date: v }),
+                              "date"
+                            )
                           )}
                         </td>
                       </>
@@ -383,6 +492,157 @@ export const LineItemTable: React.FC<Props> = ({
           </button>
           <div className="text-[10px] font-mono text-muted-foreground italic">
             小計は単価 × 数量を切り上げで自動計算されます (税は別途)。
+          </div>
+        </div>
+      )}
+
+      {/* Phase 22.8: サブスク詳細編集モーダル — calc_method=SUBSCRIPTION の行で
+          cycle / term_start / term_end / billing_day をまとめて編集。
+          顧問契約・SaaS 月額・年額ライセンスなど継続課金パターンを
+          構造化して入力できる。 */}
+      {subEditIdx !== null && subEditItem && (
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{
+            backgroundColor: "rgba(0,0,0,0.5)",
+            backdropFilter: "blur(2px)",
+          }}
+          onClick={() => setSubEditIdx(null)}
+        >
+          <div
+            className="rounded-md border border-border shadow-2xl flex flex-col w-full max-w-xl"
+            style={{ backgroundColor: "#ffffff", isolation: "isolate" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-muted/30">
+              <div className="flex items-center gap-2">
+                <Repeat className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-mono font-bold uppercase tracking-[0.16em]">
+                  サブスク詳細編集
+                </h3>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  行 {subEditIdx + 1} ·{" "}
+                  {subEditItem.item_name || "(品目名未入力)"}
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSubEditIdx(null)}
+                className="text-muted-foreground hover:text-foreground p-1 rounded-sm hover:bg-muted"
+                title="閉じる"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4">
+              {/* 周期 */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                  周期
+                </label>
+                <select
+                  value={subEditItem.cycle || "MONTHLY"}
+                  onChange={(e) =>
+                    update(subEditIdx, {
+                      cycle: e.target.value as LineItem["cycle"],
+                    })
+                  }
+                  className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+                >
+                  {CYCLE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              {/* 開始日 / 終了日 */}
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    契約開始日 <span className="text-amber-600">*</span>
+                  </label>
+                  <input
+                    type="date"
+                    value={subEditItem.term_start || ""}
+                    onChange={(e) =>
+                      update(subEditIdx, { term_start: e.target.value })
+                    }
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    契約終了日 (任意)
+                  </label>
+                  <input
+                    type="date"
+                    value={subEditItem.term_end || ""}
+                    onChange={(e) =>
+                      update(subEditIdx, { term_end: e.target.value })
+                    }
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+                  />
+                  <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                    空欄なら PDF に「継続中」と記載
+                  </p>
+                </div>
+              </div>
+              {/* 支払日 */}
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                  支払日 (毎周期の何日に支払うか)
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min={0}
+                    max={31}
+                    value={
+                      subEditItem.billing_day === undefined ||
+                      subEditItem.billing_day === null
+                        ? ""
+                        : subEditItem.billing_day
+                    }
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      update(subEditIdx, {
+                        billing_day: raw === "" ? undefined : Number(raw),
+                      });
+                    }}
+                    placeholder="25"
+                    className="w-24 text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  />
+                  <span className="text-[11px] font-mono text-muted-foreground">
+                    日 (0 または 31 以上で「末日」扱い)
+                  </span>
+                </div>
+                <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                  プレビュー:{" "}
+                  <strong>
+                    {formatBillingDay(
+                      subEditItem.billing_day,
+                      subEditItem.cycle
+                    ) || "(未設定)"}
+                  </strong>
+                </p>
+              </div>
+              {/* 数量 ヒント */}
+              <div className="rounded-sm bg-amber-50 border border-amber-200 px-3 py-2 text-[10px] font-mono text-amber-900 leading-relaxed">
+                ※ 単価=1周期あたりの料金、数量=期間内の周期数 で
+                <strong> 小計 = 期間総額</strong> になります。
+                例: 月額 100,000 円 × 12 ヶ月 = 1,200,000 円。
+              </div>
+            </div>
+            <div className="px-4 py-3 border-t border-border bg-muted/30 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setSubEditIdx(null)}
+                className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-4 py-1.5 rounded-sm transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
           </div>
         </div>
       )}
