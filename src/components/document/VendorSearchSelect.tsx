@@ -45,9 +45,15 @@ export const VendorSearchSelect: React.FC<Props> = ({
   const triggerRef = React.useRef<HTMLButtonElement>(null)
   const dropdownRef = React.useRef<HTMLDivElement>(null)
   const inputRef = React.useRef<HTMLInputElement>(null)
-  // Portal 配置用: トリガーの viewport 座標 + 幅
+  // Portal 配置用: トリガーの viewport 座標 + 幅。
+  // 初期値は viewport の外 (-9999px) にして、recalcPosition 前のチラつきを完全排除。
   const [dropdownStyle, setDropdownStyle] =
-    React.useState<React.CSSProperties>({})
+    React.useState<React.CSSProperties>({
+      position: "fixed",
+      top: -9999,
+      left: -9999,
+      width: 0,
+    })
 
   const selected = React.useMemo(
     () => vendors.find((v) => v.vendor_code === selectedCode) || null,
@@ -71,7 +77,16 @@ export const VendorSearchSelect: React.FC<Props> = ({
       ...(openUpward
         ? { bottom: window.innerHeight - r.top + 4 }
         : { top: r.bottom + 4 }),
-      zIndex: 1000, // Dialog (z-50) より上に積む
+      // Dialog backdrop は z-50。ここは破格に高くしておけば
+      // 親の stacking context に巻き込まれても確実に最前面に出る。
+      zIndex: 2147483000,
+      // CSS トークン (bg-popover 等) に頼らず、インラインで完全不透明な背景を強制。
+      // (Tailwind v4 の @theme inline 解決によっては alpha 値が混入する可能性
+      // があるため、根本的に opaque を保証する)
+      backgroundColor: "#ffffff",
+      // isolation で完全な stacking context を生成 → 親の transform/filter/will-change
+      // 等の副作用を一切受けない
+      isolation: "isolate",
     })
   }, [])
 
@@ -148,16 +163,19 @@ export const VendorSearchSelect: React.FC<Props> = ({
   )
 
   // ドロップダウン本体 (Portal でレンダリング)。
-  // 不透明背景 (bg-popover) + 強い shadow + 高 z-index で
-  // 親 stacking context に関係なく確実に最前面に乗る。
+  // 背景はインラインで #ffffff を強制 (CSS トークンに依存しない)。
+  // isolation: isolate + 巨大 zIndex で親 stacking context から完全分離。
   const dropdownContent = open ? (
     <div
       ref={dropdownRef}
       style={dropdownStyle}
-      className="bg-popover border border-border rounded-sm shadow-2xl max-h-[320px] flex flex-col"
+      className="border border-border rounded-sm shadow-2xl max-h-[320px] flex flex-col"
     >
       {/* Search input */}
-      <div className="border-b border-border p-2 flex items-center gap-2 bg-muted/40 sticky top-0">
+      <div
+        className="border-b border-border p-2 flex items-center gap-2 sticky top-0"
+        style={{ backgroundColor: "#f5f5f4" }}
+      >
         <Search className="w-3 h-3 text-muted-foreground flex-shrink-0" />
         <input
           ref={inputRef}
@@ -172,8 +190,11 @@ export const VendorSearchSelect: React.FC<Props> = ({
         </span>
       </div>
 
-      {/* Results */}
-      <div className="overflow-y-auto flex-1 bg-popover">
+      {/* Results — 親の inline bg を継承するため、ここでも explicit に white */}
+      <div
+        className="overflow-y-auto flex-1"
+        style={{ backgroundColor: "#ffffff" }}
+      >
         {filtered.length === 0 ? (
           <div className="p-3 text-center text-[10px] font-mono text-muted-foreground italic">
             該当する取引先が見つかりません
@@ -190,6 +211,9 @@ export const VendorSearchSelect: React.FC<Props> = ({
                   "w-full text-left px-2 py-1.5 hover:bg-muted text-[11px] font-mono flex items-center gap-2 border-b border-border/30 last:border-b-0",
                   isSelected && "bg-emerald-50"
                 )}
+                style={
+                  isSelected ? undefined : { backgroundColor: "#ffffff" }
+                }
               >
                 <span className="font-bold w-16 flex-shrink-0">
                   {v.vendor_code || "—"}
