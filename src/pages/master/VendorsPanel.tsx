@@ -198,7 +198,7 @@ export function VendorsPanel() {
                 : "取引先詳細"}
             </DialogTitle>
           </DialogHeader>
-          <DialogBody className="grid grid-cols-2 gap-3">
+          <DialogBody className="grid grid-cols-2 gap-3 max-h-[70vh] overflow-y-auto">
             <Field label="取引先コード *">
               <Input
                 value={data?.vendor_code || ""}

@@ -282,7 +282,7 @@ export function ContractsPanel() {
               {creating ? "新規契約情報の登録" : "契約情報の編集"}
             </DialogTitle>
           </DialogHeader>
-          <DialogBody className="grid grid-cols-2 md:grid-cols-3 gap-3">
+          <DialogBody className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[70vh] overflow-y-auto">
             <Field label="取引先 *">
               <NativeSelect
                 value={data?.vendor_id || ""}
