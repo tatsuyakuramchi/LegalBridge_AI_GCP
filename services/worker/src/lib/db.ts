@@ -703,12 +703,17 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_ledgers_active ON ledgers(is_active);`,
     `CREATE INDEX IF NOT EXISTS idx_ledgers_title_kana ON ledgers(title_kana);`,
     // Phase 22.20: 原作マスターのデフォルト値 (個別利用許諾条件書フォームで自動引用)
-    //   default_rights_holder   : 素材権利者デフォルト (materials.rights_holder が空のとき fallback)
-    //   default_credit_display  : PDF のクレジット表記デフォルト
-    //   default_work_supplement : 原著作物補記デフォルト
+    //   default_rights_holder    : 素材権利者デフォルト (materials.rights_holder が空のとき fallback)
+    //   default_credit_display   : PDF のクレジット表記デフォルト
+    //   default_work_supplement  : 原著作物補記デフォルト
+    // Phase 22.21.7: 承認条件 / 承認時期 のデフォルト値も原作単位で持つ。
+    //   default_approval_target  : 承認対象 (例: "ゲームルール・テーマ・文面...")
+    //   default_approval_timing  : 承認時期 (例: "製造前・変更前（書面による事前承諾）")
     `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_rights_holder TEXT;`,
     `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_credit_display TEXT;`,
     `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_work_supplement TEXT;`,
+    `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_approval_target TEXT;`,
+    `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_approval_timing TEXT;`,
     `CREATE TABLE IF NOT EXISTS materials (
       id SERIAL PRIMARY KEY,
       ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
@@ -1336,6 +1341,9 @@ export async function createLedgerWithDefaultMaterial(payload: {
   default_rights_holder?: string;
   default_credit_display?: string;
   default_work_supplement?: string;
+  // Phase 22.21.7: 承認条件 / 承認時期 デフォルト
+  default_approval_target?: string;
+  default_approval_timing?: string;
 }): Promise<{
   id: number;
   ledger_code: string;
@@ -1347,8 +1355,9 @@ export async function createLedgerWithDefaultMaterial(payload: {
     `INSERT INTO ledgers (
        ledger_code, title, title_kana, alternative_titles,
        creator_name, publisher_name, remarks,
-       default_rights_holder, default_credit_display, default_work_supplement
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       default_rights_holder, default_credit_display, default_work_supplement,
+       default_approval_target, default_approval_timing
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
      RETURNING id, ledger_code`,
     [
       ledgerCode,
@@ -1361,6 +1370,8 @@ export async function createLedgerWithDefaultMaterial(payload: {
       payload.default_rights_holder || null,
       payload.default_credit_display || null,
       payload.default_work_supplement || null,
+      payload.default_approval_target || null,
+      payload.default_approval_timing || null,
     ]
   );
   const ledgerId = Number(ledgerRes.rows[0].id);

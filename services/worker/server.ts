@@ -3003,6 +3003,7 @@ ${details}
         `SELECT id, ledger_code, title, title_kana, alternative_titles,
                 creator_name, publisher_name, remarks, is_active,
                 default_rights_holder, default_credit_display, default_work_supplement,
+                default_approval_target, default_approval_timing,
                 created_at, updated_at
            FROM ledgers
           ORDER BY ledger_code DESC`
@@ -3068,6 +3069,9 @@ ${details}
         default_rights_holder: body.default_rights_holder,
         default_credit_display: body.default_credit_display,
         default_work_supplement: body.default_work_supplement,
+        // Phase 22.21.7
+        default_approval_target: body.default_approval_target,
+        default_approval_timing: body.default_approval_timing,
       });
       console.log(
         `📚 [ledger] created ${result.ledger_code} (id=${result.id}), default material=${result.default_material_code}`
@@ -3085,18 +3089,20 @@ ${details}
     try {
       await query(
         `UPDATE ledgers SET
-           title                   = $1,
-           title_kana              = $2,
-           alternative_titles      = $3,
-           creator_name            = $4,
-           publisher_name          = $5,
-           remarks                 = $6,
-           is_active               = $7,
-           default_rights_holder   = $8,
-           default_credit_display  = $9,
-           default_work_supplement = $10,
-           updated_at              = CURRENT_TIMESTAMP
-         WHERE id = $11`,
+           title                    = $1,
+           title_kana               = $2,
+           alternative_titles       = $3,
+           creator_name             = $4,
+           publisher_name           = $5,
+           remarks                  = $6,
+           is_active                = $7,
+           default_rights_holder    = $8,
+           default_credit_display   = $9,
+           default_work_supplement  = $10,
+           default_approval_target  = $11,
+           default_approval_timing  = $12,
+           updated_at               = CURRENT_TIMESTAMP
+         WHERE id = $13`,
         [
           body.title,
           body.title_kana || null,
@@ -3108,6 +3114,8 @@ ${details}
           body.default_rights_holder || null,
           body.default_credit_display || null,
           body.default_work_supplement || null,
+          body.default_approval_target || null,
+          body.default_approval_timing || null,
           id,
         ]
       );

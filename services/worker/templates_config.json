@@ -407,6 +407,8 @@
       "素材権利者": { "label": "素材権利者", "group": "V. 素材・監修" },
       "監修者": { "label": "監修者", "group": "V. 素材・監修", "dbField": "staff.staff_name", "helpText": "[Sync Staff] で選択中の担当者を流し込み" },
       "クレジット表示": { "label": "クレジット表示", "group": "V. 素材・監修" },
+      "承認対象": { "label": "承認対象 (承認条件)", "group": "V. 素材・監修", "type": "textarea", "helpText": "原作マスター > 承認条件デフォルトから自動入力 (上書き可)" },
+      "承認時期": { "label": "承認時期", "group": "V. 素材・監修", "helpText": "原作マスター > 承認時期デフォルトから自動入力 (上書き可)" },
 
       "金銭条件1_地域言語ラベル": { "label": "金銭条件1 地域・言語ラベル", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 国内・日本語" },
       "金銭条件1_計算方式": { "label": "計算方式", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "ROYALTY / FIXED 等" },

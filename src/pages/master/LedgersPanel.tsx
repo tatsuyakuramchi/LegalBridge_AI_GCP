@@ -70,6 +70,9 @@ type Ledger = {
   default_rights_holder?: string
   default_credit_display?: string
   default_work_supplement?: string
+  // Phase 22.21.7: 承認条件 / 承認時期 のデフォルト
+  default_approval_target?: string
+  default_approval_timing?: string
 }
 
 const emptyLedger: Ledger = {
@@ -83,6 +86,8 @@ const emptyLedger: Ledger = {
   default_rights_holder: "",
   default_credit_display: "",
   default_work_supplement: "",
+  default_approval_target: "",
+  default_approval_timing: "",
 }
 
 const emptyMaterial: Material = {
@@ -441,6 +446,31 @@ export function LedgersPanel() {
                       set({ default_work_supplement: e.target.value })
                     }
                   />
+                </Field>
+                {/* Phase 22.21.7: 承認条件 / 承認時期 デフォルト */}
+                <Field label="承認条件 (承認対象) デフォルト" className="col-span-2">
+                  <Input
+                    placeholder="例: ゲームルール・テーマ・文面・記号・名称の変更、追加、削除、商品としての仕様変更、パッケージ・広告宣伝材料"
+                    value={data?.default_approval_target || ""}
+                    onChange={(e) =>
+                      set({ default_approval_target: e.target.value })
+                    }
+                  />
+                  <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                    PDF Section 2「承認対象」欄に自動入力されます。
+                  </p>
+                </Field>
+                <Field label="承認時期 デフォルト" className="col-span-2">
+                  <Input
+                    placeholder="例: 製造前・変更前（書面による事前承諾）"
+                    value={data?.default_approval_timing || ""}
+                    onChange={(e) =>
+                      set({ default_approval_timing: e.target.value })
+                    }
+                  />
+                  <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                    PDF Section 2「承認時期」欄に自動入力されます。
+                  </p>
                 </Field>
               </div>
             </div>

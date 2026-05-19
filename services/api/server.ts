@@ -1699,28 +1699,46 @@ async function startServer() {
   //   で落ちる可能性があるが、その場合は空配列で返す (Slack 検索を巻き込まない)。
   app.get("/api/master/ledgers", async (_req, res) => {
     try {
-      // Phase 22.20: default_rights_holder / default_credit_display /
-      //   default_work_supplement も含める。worker 未デプロイ環境で 42703
-      //   なら legacy SELECT に fallback。
+      // Phase 22.20 / 22.21.7: default_rights_holder / default_credit_display /
+      //   default_work_supplement / default_approval_target / default_approval_timing
+      //   も含める。worker 未デプロイ環境で 42703 ならフォールバックを 2 段階で実行。
       let ledgers: any;
       try {
         ledgers = await query(
           `SELECT id, ledger_code, title, title_kana, alternative_titles,
                   creator_name, publisher_name, remarks, is_active,
                   default_rights_holder, default_credit_display, default_work_supplement,
+                  default_approval_target, default_approval_timing,
                   created_at, updated_at
              FROM ledgers
             ORDER BY ledger_code DESC`
         );
       } catch (err: any) {
         if (err && err.code === "42703") {
-          ledgers = await query(
-            `SELECT id, ledger_code, title, title_kana, alternative_titles,
-                    creator_name, publisher_name, remarks, is_active,
-                    created_at, updated_at
-               FROM ledgers
-              ORDER BY ledger_code DESC`
-          );
+          // Phase 22.20 列はあるが 22.21.7 列がないケース → 22.20 SELECT に fallback
+          try {
+            ledgers = await query(
+              `SELECT id, ledger_code, title, title_kana, alternative_titles,
+                      creator_name, publisher_name, remarks, is_active,
+                      default_rights_holder, default_credit_display, default_work_supplement,
+                      created_at, updated_at
+                 FROM ledgers
+                ORDER BY ledger_code DESC`
+            );
+          } catch (err2: any) {
+            if (err2 && err2.code === "42703") {
+              // legacy 環境 (Phase 22.20 列もない)
+              ledgers = await query(
+                `SELECT id, ledger_code, title, title_kana, alternative_titles,
+                        creator_name, publisher_name, remarks, is_active,
+                        created_at, updated_at
+                   FROM ledgers
+                  ORDER BY ledger_code DESC`
+              );
+            } else {
+              throw err2;
+            }
+          }
         } else {
           throw err;
         }

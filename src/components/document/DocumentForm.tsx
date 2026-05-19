@@ -233,6 +233,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     if (!formData['原著作物補記'] && ledger.default_work_supplement) {
       patch['原著作物補記'] = ledger.default_work_supplement;
     }
+    // Phase 22.21.7: 承認対象 / 承認時期 の retroactive auto-fill
+    if (!formData['承認対象'] && ledger.default_approval_target) {
+      patch['承認対象'] = ledger.default_approval_target;
+    }
+    if (!formData['承認時期'] && ledger.default_approval_timing) {
+      patch['承認時期'] = ledger.default_approval_timing;
+    }
     // 原著作物名 / 素材番号 / 素材名 も念のため (空のときだけ)
     if (!formData['原著作物名'] && ledger.title) {
       patch['原著作物名'] = ledger.title;
@@ -516,6 +523,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       // Phase 22.21.3: 原作切り替えは「ユーザーが意図的に主役を変えた」操作
       //   なので、素材権利者/クレジット表示も resolveXxx() の結果で上書きする。
       //   既存値を残したい場合は『素材切替』だけ実施するか、上書き後に編集すれば良い。
+      // Phase 22.21.7: 承認対象 / 承認時期 も原作デフォルトから引用
       setFormData({
         ...formData,
         ledger_ref_id: lid,
@@ -534,6 +542,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           resolveCreditDisplay(ledger) || formData.クレジット表示 || '',
         原著作物補記:
           ledger?.default_work_supplement || formData.原著作物補記 || '',
+        // Phase 22.21.7: 承認対象 / 承認時期 デフォルト
+        承認対象:
+          ledger?.default_approval_target || formData.承認対象 || '',
+        承認時期:
+          ledger?.default_approval_timing || formData.承認時期 || '',
       });
     };
 
