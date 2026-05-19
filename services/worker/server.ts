@@ -8909,27 +8909,64 @@ ${details}
                 (sl.MGAG && String(sl.MGAG).trim());
               if (!hasContent) continue;
 
-              await query(
-                `INSERT INTO work_sublicensees (
-                   license_contract_id, sublicensee_id, inline_name,
-                   category, region, language,
-                   payment_terms_label, mg_ag_label, rate_label, remarks,
-                   sort_order
-                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                [
-                  lcId,
-                  sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
-                  sl.名称 || null,
-                  sl.区分 || null,
-                  sl.地域 || null,
-                  sl.言語 || null,
-                  sl.金銭条件 || null,
-                  sl.MGAG || null,
-                  sl.料率 || null,
-                  sl.備考 || null,
-                  order++,
-                ]
-              );
+              // Phase 22.21.13: contract_date を YYYY-MM-DD 形式で取り込み。
+              //   フォームの date input は ISO 文字列。空文字は null に。
+              const contractDate =
+                sl.契約締結日 && String(sl.契約締結日).trim()
+                  ? String(sl.契約締結日).trim()
+                  : null;
+              try {
+                await query(
+                  `INSERT INTO work_sublicensees (
+                     license_contract_id, sublicensee_id, inline_name,
+                     category, region, language,
+                     payment_terms_label, mg_ag_label, rate_label, remarks,
+                     contract_date, sort_order
+                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+                  [
+                    lcId,
+                    sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
+                    sl.名称 || null,
+                    sl.区分 || null,
+                    sl.地域 || null,
+                    sl.言語 || null,
+                    sl.金銭条件 || null,
+                    sl.MGAG || null,
+                    sl.料率 || null,
+                    sl.備考 || null,
+                    contractDate,
+                    order++,
+                  ]
+                );
+              } catch (insertErr: any) {
+                // contract_date カラムがまだ無い環境 (worker 未デプロイ前) は
+                // 旧 INSERT (11 列) に fallback する。
+                if (insertErr && insertErr.code === "42703") {
+                  await query(
+                    `INSERT INTO work_sublicensees (
+                       license_contract_id, sublicensee_id, inline_name,
+                       category, region, language,
+                       payment_terms_label, mg_ag_label, rate_label, remarks,
+                       sort_order
+                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                    [
+                      lcId,
+                      sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
+                      sl.名称 || null,
+                      sl.区分 || null,
+                      sl.地域 || null,
+                      sl.言語 || null,
+                      sl.金銭条件 || null,
+                      sl.MGAG || null,
+                      sl.料率 || null,
+                      sl.備考 || null,
+                      order++,
+                    ]
+                  );
+                } else {
+                  throw insertErr;
+                }
+              }
             }
             console.log(
               `🤝 [work-sublicensees] saved ${order} rows for work ${

@@ -1369,21 +1369,48 @@ async function startServer() {
             //   fallback として使う (inline 入力優先)。
             //   テーブル未追加環境では 42P01 を catch して空配列。
             try {
-              const wsRes = await query(
-                `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
-                        ws.category, ws.region, ws.language,
-                        ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
-                        ws.remarks, ws.sort_order,
-                        s.name AS master_name,
-                        s.category AS master_category,
-                        s.default_region AS master_region,
-                        s.default_language AS master_language
-                   FROM work_sublicensees ws
-                   LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
-                  WHERE ws.license_contract_id = $1
-                  ORDER BY ws.sort_order ASC, ws.id ASC`,
-                [lcId]
-              );
+              // Phase 22.21.13: contract_date 追加。worker 未デプロイ環境では
+              //   42703 で落ちるので 2 段階 fallback (新版 → 旧版)。
+              let wsRes: any;
+              try {
+                wsRes = await query(
+                  `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
+                          ws.category, ws.region, ws.language,
+                          ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
+                          ws.remarks, ws.contract_date, ws.sort_order,
+                          s.name AS master_name,
+                          s.category AS master_category,
+                          s.default_region AS master_region,
+                          s.default_language AS master_language
+                     FROM work_sublicensees ws
+                     LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
+                    WHERE ws.license_contract_id = $1
+                    ORDER BY ws.sort_order ASC, ws.id ASC`,
+                  [lcId]
+                );
+              } catch (innerErr: any) {
+                if (innerErr && innerErr.code === "42703") {
+                  // contract_date カラム未追加 → legacy SELECT
+                  wsRes = await query(
+                    `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
+                            ws.category, ws.region, ws.language,
+                            ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
+                            ws.remarks, ws.sort_order,
+                            NULL AS contract_date,
+                            s.name AS master_name,
+                            s.category AS master_category,
+                            s.default_region AS master_region,
+                            s.default_language AS master_language
+                       FROM work_sublicensees ws
+                       LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
+                      WHERE ws.license_contract_id = $1
+                      ORDER BY ws.sort_order ASC, ws.id ASC`,
+                    [lcId]
+                  );
+                } else {
+                  throw innerErr;
+                }
+              }
               context["サブライセンシー一覧"] = wsRes.rows.map((r: any) => ({
                 id: Number(r.id),
                 sublicensee_id: r.sublicensee_id
@@ -1396,6 +1423,12 @@ async function startServer() {
                 金銭条件: r.payment_terms_label || "",
                 MGAG: r.mg_ag_label || "",
                 料率: r.rate_label || "",
+                // Phase 22.21.13: 契約締結日 (YYYY-MM-DD 文字列に正規化)
+                契約締結日: r.contract_date
+                  ? typeof r.contract_date === "string"
+                    ? r.contract_date.slice(0, 10)
+                    : new Date(r.contract_date).toISOString().slice(0, 10)
+                  : "",
                 備考: r.remarks || "",
               }));
             } catch (wsErr: any) {

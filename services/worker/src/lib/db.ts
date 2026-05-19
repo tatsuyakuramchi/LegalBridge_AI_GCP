@@ -676,6 +676,8 @@ export async function initDb() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_ws_license_contract ON work_sublicensees(license_contract_id);`,
     `CREATE INDEX IF NOT EXISTS idx_ws_sublicensee ON work_sublicensees(sublicensee_id);`,
+    // Phase 22.21.13: 契約締結日カラム追加 (PDF v3 再許諾テーブルの 9 列目)
+    `ALTER TABLE work_sublicensees ADD COLUMN IF NOT EXISTS contract_date DATE;`,
 
     // -----------------------------------------------------------------
     // Phase 22.18: 原作マスター (ledgers) + 素材マスター (materials)
