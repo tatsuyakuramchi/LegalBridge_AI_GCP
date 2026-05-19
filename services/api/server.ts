@@ -1280,13 +1280,41 @@ async function startServer() {
         template === "royalty_statement"
       ) {
         try {
-          const lc = await query(
-            `SELECT id FROM license_contracts WHERE backlog_issue_key = $1`,
-            [key]
-          );
+          // Phase 22.19: ledger_ref_id / material_ref_id / work_id も含めて取得
+          //   schema 未追加環境 (worker 未デプロイ) では undefined_column で
+          //   落ちるので catch + legacy SELECT に fallback。
+          let lc: any;
+          try {
+            lc = await query(
+              `SELECT id, ledger_ref_id, material_ref_id, work_id
+                 FROM license_contracts WHERE backlog_issue_key = $1`,
+              [key]
+            );
+          } catch (colErr: any) {
+            if (colErr && colErr.code === "42703") {
+              lc = await query(
+                `SELECT id FROM license_contracts WHERE backlog_issue_key = $1`,
+                [key]
+              );
+            } else {
+              throw colErr;
+            }
+          }
           if (lc.rows.length > 0) {
-            const lcId = lc.rows[0].id;
+            const row = lc.rows[0];
+            const lcId = row.id;
             context["license_contract_id"] = lcId;
+            // Phase 22.19: Ledger / Material / WorkID を form context に注入
+            if (row.ledger_ref_id) {
+              context["ledger_ref_id"] = Number(row.ledger_ref_id);
+            }
+            if (row.material_ref_id) {
+              context["material_ref_id"] = Number(row.material_ref_id);
+            }
+            if (row.work_id) {
+              context["work_id"] = row.work_id;
+              context["WORK_ID"] = row.work_id;
+            }
             const conds = await query(
               `SELECT id, condition_no, region_language_label, calc_method,
                       rate_pct, base_price_label, calc_period, currency,

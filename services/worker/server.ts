@@ -8436,6 +8436,92 @@ ${details}
         formData.ledgerId = resolvedLedgerId;
         formData["台帳ID"] = resolvedLedgerId;
 
+        // Phase 22.19: 原作 / 素材 マスター連動。
+        //   - formData.ledger_ref_id / material_ref_id が UI から渡されたら採用
+        //   - 既存 license_contracts 行に ledger_ref_id があれば再発行時は維持
+        //   - work_id は ledger_code 配下で独立採番 (再発行は既存維持)
+        //   - 素材番号 / 素材名 / 原著作物名 を materials 行から PDF テンプレに供給
+        let resolvedLedgerRefId: number | null = formData.ledger_ref_id
+          ? Number(formData.ledger_ref_id)
+          : null;
+        let resolvedMaterialRefId: number | null = formData.material_ref_id
+          ? Number(formData.material_ref_id)
+          : null;
+        let resolvedWorkId: string = formData.work_id
+          ? String(formData.work_id).trim()
+          : "";
+
+        // 既存 license_contracts に紐付き情報があれば取り込む (再発行ケース)
+        const existingLcRow = await query(
+          `SELECT ledger_ref_id, material_ref_id, work_id
+             FROM license_contracts WHERE backlog_issue_key = $1 LIMIT 1`,
+          [issueKey]
+        );
+        const existingLc = existingLcRow.rows[0];
+        if (existingLc) {
+          // 渡されてなければ既存値を使う
+          if (!resolvedLedgerRefId && existingLc.ledger_ref_id) {
+            resolvedLedgerRefId = Number(existingLc.ledger_ref_id);
+          }
+          if (!resolvedMaterialRefId && existingLc.material_ref_id) {
+            resolvedMaterialRefId = Number(existingLc.material_ref_id);
+          }
+          if (!resolvedWorkId && existingLc.work_id) {
+            resolvedWorkId = existingLc.work_id;
+          }
+        }
+
+        // 原作 / 素材 マスター情報を引いて PDF テンプレフィールドに反映
+        let ledgerCodeForWork = "";
+        if (resolvedLedgerRefId) {
+          const lr = await query(
+            "SELECT ledger_code, title FROM ledgers WHERE id = $1",
+            [resolvedLedgerRefId]
+          );
+          if (lr.rows[0]) {
+            ledgerCodeForWork = lr.rows[0].ledger_code;
+            // 原著作物名 を ledger.title で同期 (ユーザー入力なしの場合)
+            if (!formData.原著作物名 || !String(formData.原著作物名).trim()) {
+              formData.原著作物名 = lr.rows[0].title;
+            }
+          }
+        }
+        if (resolvedMaterialRefId) {
+          const mr = await query(
+            `SELECT material_code, material_name, rights_holder, is_default
+               FROM materials WHERE id = $1`,
+            [resolvedMaterialRefId]
+          );
+          if (mr.rows[0]) {
+            const m = mr.rows[0];
+            // 素材番号 PDF フィールド
+            if (!formData.素材番号 || !String(formData.素材番号).trim()) {
+              formData.素材番号 = m.material_code;
+            }
+            // 素材名 / 素材権利者 (空のときだけ)
+            if (!formData.素材名 || !String(formData.素材名).trim()) {
+              formData.素材名 = m.material_name;
+            }
+            if (!formData.素材権利者 || !String(formData.素材権利者).trim()) {
+              formData.素材権利者 = m.rights_holder || "";
+            }
+          }
+        }
+
+        // work_id 採番 (新規 + ledger_ref_id ありの場合のみ)
+        if (!resolvedWorkId && ledgerCodeForWork) {
+          resolvedWorkId = await getNewWorkId(ledgerCodeForWork);
+          console.log(
+            `🎫 [work-id] auto-assigned ${resolvedWorkId} for ${issueKey} (ledger=${ledgerCodeForWork})`
+          );
+        }
+
+        // formData に書き戻し → PDF テンプレが {{work_id}} で参照可能
+        if (resolvedWorkId) {
+          formData.work_id = resolvedWorkId;
+          formData.WORK_ID = resolvedWorkId;
+        }
+
         const lcUpsert = await query(
           `INSERT INTO license_contracts (
              backlog_issue_key, ledger_id, ledger_number, contract_number,
@@ -8444,7 +8530,8 @@ ${details}
              licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
              product_name_predicted,
              license_start_date, license_period_note,
-             supervisor, credit_display, remarks
+             supervisor, credit_display, remarks,
+             ledger_ref_id, material_ref_id, work_id
            )
            VALUES (
              $1, $2, $3, $4,
@@ -8453,7 +8540,8 @@ ${details}
              $11, $12, $13, $14,
              $15,
              $16, $17,
-             $18, $19, $20
+             $18, $19, $20,
+             $21, $22, $23
            )
            ON CONFLICT (backlog_issue_key) DO UPDATE SET
              contract_number          = EXCLUDED.contract_number,
@@ -8473,7 +8561,10 @@ ${details}
              license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), license_contracts.license_period_note),
              supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), license_contracts.supervisor),
              credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), license_contracts.credit_display),
-             remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), license_contracts.remarks)
+             remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), license_contracts.remarks),
+             ledger_ref_id            = COALESCE(EXCLUDED.ledger_ref_id, license_contracts.ledger_ref_id),
+             material_ref_id          = COALESCE(EXCLUDED.material_ref_id, license_contracts.material_ref_id),
+             work_id                  = COALESCE(NULLIF(EXCLUDED.work_id, ''), license_contracts.work_id)
            RETURNING id`,
           [
             issueKey,
@@ -8496,6 +8587,10 @@ ${details}
             formData.監修者 || "",
             formData.クレジット表示 || "",
             formData.特記事項 || formData.remarks || "",
+            // Phase 22.19: ledger / material / work_id
+            resolvedLedgerRefId,
+            resolvedMaterialRefId,
+            resolvedWorkId || null,
           ]
         );
         const lcId = Number(lcUpsert.rows[0]?.id);

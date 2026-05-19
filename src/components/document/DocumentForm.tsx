@@ -100,7 +100,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 同じ vendor で再評価が走り続けないよう ref で last 状態を持つ。
   //
   // ★ 注意: この useEffect はコンポーネント最上部に置く (Rules of Hooks)。
-  const { contracts: allContracts } = useAppData();
+  const { contracts: allContracts, ledgers: allLedgers } = useAppData();
   const lastAutoFilledRef = React.useRef<string>('');
   useEffect(() => {
     if (!activeVendor || !Array.isArray(allContracts)) return;
@@ -354,6 +354,82 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       (vendor?.entity_type || '').toLowerCase() === 'corporate' ||
       (vendor?.entity_type || '') === '法人';
 
+    // Phase 22.19: 原作 / 素材 セレクタ用ヘルパー
+    // 選ぶと formData の関連フィールドを自動補完。
+    const ledgerList: any[] = Array.isArray(allLedgers) ? allLedgers : [];
+    const selectedLedger = formData.ledger_ref_id
+      ? ledgerList.find(
+          (l: any) => Number(l.id) === Number(formData.ledger_ref_id)
+        )
+      : null;
+    const materialOptions: any[] = selectedLedger?.materials || [];
+    const selectedMaterial = formData.material_ref_id
+      ? materialOptions.find(
+          (m: any) => Number(m.id) === Number(formData.material_ref_id)
+        )
+      : null;
+
+    const onLedgerChange = (ledgerId: string) => {
+      const lid = Number(ledgerId);
+      if (!lid) {
+        setFormData({
+          ...formData,
+          ledger_ref_id: undefined,
+          material_ref_id: undefined,
+          素材番号: '',
+          素材名: '',
+          素材権利者: '',
+          原著作物名: '',
+        });
+        return;
+      }
+      const ledger = (Array.isArray(allLedgers) ? allLedgers : []).find(
+        (l: any) => Number(l.id) === lid
+      );
+      // 原作選択時、デフォルトで -001 (原作本体素材) を auto-pick
+      const defaultMaterial =
+        ledger?.materials?.find((m: any) => m.is_default) ||
+        ledger?.materials?.[0];
+      setFormData({
+        ...formData,
+        ledger_ref_id: lid,
+        material_ref_id: defaultMaterial?.id || undefined,
+        素材番号: defaultMaterial?.material_code || '',
+        素材名: defaultMaterial?.material_name || '',
+        素材権利者: defaultMaterial?.rights_holder || '',
+        原著作物名:
+          defaultMaterial?.is_default
+            ? ledger?.title || formData.原著作物名 || ''
+            : formData.原著作物名 || ledger?.title || '',
+      });
+    };
+
+    const onMaterialChange = (materialId: string) => {
+      const mid = Number(materialId);
+      const material = materialOptions.find((m: any) => Number(m.id) === mid);
+      if (!material) {
+        setFormData({
+          ...formData,
+          material_ref_id: undefined,
+          素材番号: '',
+          素材名: '',
+          素材権利者: '',
+        });
+        return;
+      }
+      setFormData({
+        ...formData,
+        material_ref_id: mid,
+        素材番号: material.material_code || '',
+        素材名: material.material_name || '',
+        素材権利者: material.rights_holder || '',
+        // 原作本体 (is_default) を選んだ場合は 原著作物名 を ledger.title で上書き
+        原著作物名: material.is_default
+          ? selectedLedger?.title || formData.原著作物名 || ''
+          : formData.原著作物名 || material.material_name || '',
+      });
+    };
+
     const fillLicensorFromSelf = () =>
       setFormData({
         ...formData,
@@ -465,6 +541,99 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             )}
           </div>
         </div>
+
+        {/* Phase 22.19: 原作 / 素材 セレクタ
+            原作 (ledger) を選ぶと配下の素材一覧が表示され、選択した素材の
+            material_code (例: LO-2026-0001-002) が 素材番号 に自動入力される。
+            原作本体 (-001) を選んだ場合は ledger.title を 原著作物名 に同期。
+            work_id は生成時にサーバ側で自動採番。 */}
+        <FormSection
+          title="0. 原作・素材"
+          variant="emerald"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                原作 (Ledger)
+              </label>
+              <select
+                value={formData.ledger_ref_id || ''}
+                onChange={(e) => onLedgerChange(e.target.value)}
+                className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+              >
+                <option value="">— 原作を選択 —</option>
+                {ledgerList
+                  .filter((l: any) => l.is_active !== false)
+                  .map((l: any) => (
+                    <option key={l.id} value={l.id}>
+                      [{l.ledger_code}] {l.title}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-[10px] font-mono text-muted-foreground/70">
+                マスター &gt; Ledgers で登録した原作 (LO-YYYY-NNNN) から選択
+              </p>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                素材 (Material)
+              </label>
+              <select
+                value={formData.material_ref_id || ''}
+                onChange={(e) => onMaterialChange(e.target.value)}
+                disabled={!formData.ledger_ref_id || materialOptions.length === 0}
+                className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground disabled:opacity-50"
+              >
+                <option value="">— 素材を選択 —</option>
+                {materialOptions
+                  .filter((m: any) => m.is_active !== false)
+                  .map((m: any) => (
+                    <option key={m.id} value={m.id}>
+                      [{m.material_code}]{m.is_default ? ' ★' : ''}{' '}
+                      {m.material_name}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-[10px] font-mono text-muted-foreground/70">
+                ★ = 原作本体 (デフォルト)。派生作品/キャラ等を選択
+              </p>
+            </div>
+
+            {selectedLedger && selectedMaterial && (
+              <div className="md:col-span-2 rounded-sm border border-emerald-200 bg-emerald-50/40 px-3 py-2">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-700 mb-1">
+                  選択中 — 生成時に Work ID が採番されます
+                </div>
+                <div className="text-[11px] font-mono space-y-0.5">
+                  <div>
+                    <span className="text-muted-foreground">原作 :</span>{' '}
+                    <span className="font-bold">{selectedLedger.ledger_code}</span> ·{' '}
+                    {selectedLedger.title}
+                  </div>
+                  <div>
+                    <span className="text-muted-foreground">素材 :</span>{' '}
+                    <span className="font-bold">
+                      {selectedMaterial.material_code}
+                    </span>{' '}
+                    · {selectedMaterial.material_name}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/70 mt-1">
+                    予定 Work ID: LIC-{selectedLedger.ledger_code}-W-
+                    {new Date().getFullYear()}-NNNN
+                    {formData.work_id && (
+                      <>
+                        {' '}
+                        / 既存: <strong>{formData.work_id}</strong>
+                      </>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        </FormSection>
 
         {/* I. ヘッダ */}
         <FormSection title="I. ヘッダ" variant="default" icon={<Briefcase className="w-4 h-4" />}>
