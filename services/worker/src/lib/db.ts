@@ -626,16 +626,16 @@ export async function initDb() {
     // Phase 22.20-C: サブライセンシー マスター。
     //   個別利用許諾条件書フォームの SubLicenseeTable は従来 formData の
     //   JSON 配列だったが、繰り返し利用される企業が多いため master 化。
-    //   1 サブライセンシー = 1 行。区分 (Phase 22.21.3 で 2 軸 × 2 軸 化:
-    //   翻訳出版/IPコラボ × プロダクトアウト/ライセンスアウト + デジタル等) や
-    //   想定地域・言語はマスターで保持し、契約ごとの金銭条件 / 料率 / MGAG は
-    //   別途各契約レコードで個別に持つ (master と契約は join)。
+    //   1 サブライセンシー = 1 行。区分 (Phase 22.21.4 で再ラベル:
+    //   翻訳販売 (P-out)/翻訳製造販売 (L-out)/IPコラボ-P-out/IPコラボ-L-out
+    //   + デジタル等) や想定地域・言語はマスターで保持し、契約ごとの
+    //   金銭条件 / 料率 / MGAG は別途各契約レコードで個別に持つ (master と契約は join)。
     // -----------------------------------------------------------------
     `CREATE TABLE IF NOT EXISTS sublicensees (
       id SERIAL PRIMARY KEY,
       name TEXT NOT NULL,
       name_kana TEXT,
-      category VARCHAR(50),          -- 翻訳出版-プロダクトアウト / IPコラボ-ライセンスアウト 等
+      category VARCHAR(50),          -- 翻訳販売-プロダクトアウト / IPコラボ-ライセンスアウト 等
       default_region TEXT,
       default_language TEXT,
       rights_holder TEXT,

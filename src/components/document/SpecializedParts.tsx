@@ -80,7 +80,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
     const newItem = {
       id: Date.now(),
       sublicensee_id: undefined,  // マスター ID (任意 = inline 入力でも OK)
-      区分: '翻訳出版 - プロダクトアウト',
+      区分: '翻訳販売 - プロダクトアウト',
       名称: '',
       地域: '',
       言語: '',
@@ -205,16 +205,17 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
                   className={inputCls}
                 >
                   {/*
-                    Phase 22.21.3: 区分を 2 軸 × 2 軸 の 4 分類で再構成。
-                      - 翻訳出版 (TL) : 当社翻訳データ利用
-                      - IPコラボ (IP) : IP 連携型
+                    Phase 22.21.4: 区分の名称を業務実態に合わせて再ラベル。
                       - プロダクトアウト (P-out) : 当社で製造、相手方が販売
+                        → 翻訳系は『翻訳販売』(相手方が翻訳+販売、当社製造の構造)
                       - ライセンスアウト (L-out) : 相手方が製造販売
+                        → 翻訳系は『翻訳製造販売』(相手方が翻訳+製造+販売)
+                      - IPコラボ は呼称そのまま
                     +デジタル/配信/グッズ/音声化/その他 を追加バリエーションとして残す。
                   */}
-                  <optgroup label="翻訳出版">
-                    <option value="翻訳出版 - プロダクトアウト">翻訳出版 - プロダクトアウト</option>
-                    <option value="翻訳出版 - ライセンスアウト">翻訳出版 - ライセンスアウト</option>
+                  <optgroup label="翻訳系">
+                    <option value="翻訳販売 - プロダクトアウト">翻訳販売 - プロダクトアウト</option>
+                    <option value="翻訳製造販売 - ライセンスアウト">翻訳製造販売 - ライセンスアウト</option>
                   </optgroup>
                   <optgroup label="IPコラボ">
                     <option value="IPコラボ - プロダクトアウト">IPコラボ - プロダクトアウト</option>

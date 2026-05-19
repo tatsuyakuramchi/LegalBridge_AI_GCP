@@ -839,7 +839,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderGroup('IV. 対象作品・期間')}
         </FormSection>
 
-        {/* V. 素材・監修 */}
+        {/* V. 素材・監修
+            Phase 22.21.4: クレジット表示にクイック選択チップ群を追加。
+              - 別途協議 : 商談中で確定していないケース
+              - © {ledger.title} : 原作タイトルからの自動生成
+              - クリア   : 空に戻す
+            renderGroup の出力は変えず、その下にプリセット行を挿入することで
+            既存の generic Field renderer の振る舞いに影響しない。 */}
         <FormSection
           title="V. 素材・監修"
           variant="default"
@@ -851,6 +857,58 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           )}
         >
           {renderGroup('V. 素材・監修')}
+          <div className="col-span-full mt-1 pt-2 border-t border-dashed border-input">
+            <div className="flex items-center flex-wrap gap-2">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                クレジット表示 プリセット:
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({ ...formData, クレジット表示: '別途協議' })
+                }
+                className={cn(
+                  'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+                  formData.クレジット表示 === '別途協議'
+                    ? 'border-foreground bg-foreground text-background'
+                    : 'border-foreground/30 text-foreground hover:bg-muted'
+                )}
+              >
+                別途協議
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const t = selectedLedger?.title || formData.原著作物名 || '';
+                  if (!t) return;
+                  setFormData({ ...formData, クレジット表示: `© ${t}` });
+                }}
+                disabled={!selectedLedger?.title && !formData.原著作物名}
+                className={cn(
+                  'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+                  'border-foreground/30 text-foreground hover:bg-muted',
+                  'disabled:opacity-40 disabled:cursor-not-allowed'
+                )}
+                title={
+                  selectedLedger?.title || formData.原著作物名
+                    ? `© ${selectedLedger?.title || formData.原著作物名} を入力`
+                    : '原作タイトル未確定 (Ledger を選択 or 原著作物名 を入力)'
+                }
+              >
+                © {selectedLedger?.title || formData.原著作物名 || '(原作名)'}
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, クレジット表示: '' })}
+                className="text-[10px] font-mono px-2 py-0.5 uppercase border border-foreground/30 text-foreground hover:bg-muted rounded-sm transition-colors"
+              >
+                クリア
+              </button>
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">
+              クイック選択で値を上書きできます。手入力も可。
+            </p>
+          </div>
         </FormSection>
 
         {/* VI. 金銭条件 — Phase 7d: 統合された FinancialConditionTable。
