@@ -390,17 +390,29 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       const defaultMaterial =
         ledger?.materials?.find((m: any) => m.is_default) ||
         ledger?.materials?.[0];
+      // Phase 22.20: ledger.default_rights_holder を素材権利者の fallback に
+      //   優先順: material.rights_holder → ledger.default_rights_holder → 空
+      const rightsHolder =
+        defaultMaterial?.rights_holder ||
+        ledger?.default_rights_holder ||
+        '';
       setFormData({
         ...formData,
         ledger_ref_id: lid,
         material_ref_id: defaultMaterial?.id || undefined,
         素材番号: defaultMaterial?.material_code || '',
         素材名: defaultMaterial?.material_name || '',
-        素材権利者: defaultMaterial?.rights_holder || '',
+        素材権利者: rightsHolder,
         原著作物名:
           defaultMaterial?.is_default
             ? ledger?.title || formData.原著作物名 || ''
             : formData.原著作物名 || ledger?.title || '',
+        // Phase 22.20: ledger デフォルトを クレジット表記 / 原著作物補記 にも自動入力
+        //   既にユーザー入力済みなら尊重 (空のときのみ補完)
+        クレジット表示:
+          formData.クレジット表示 || ledger?.default_credit_display || '',
+        原著作物補記:
+          formData.原著作物補記 || ledger?.default_work_supplement || '',
       });
     };
 
@@ -417,12 +429,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         });
         return;
       }
+      // Phase 22.20: 素材権利者の fallback (material 単体に無ければ ledger default を使う)
+      const rightsHolder =
+        material.rights_holder ||
+        selectedLedger?.default_rights_holder ||
+        '';
       setFormData({
         ...formData,
         material_ref_id: mid,
         素材番号: material.material_code || '',
         素材名: material.material_name || '',
-        素材権利者: material.rights_holder || '',
+        素材権利者: rightsHolder,
         // 原作本体 (is_default) を選んだ場合は 原著作物名 を ledger.title で上書き
         原著作物名: material.is_default
           ? selectedLedger?.title || formData.原著作物名 || ''

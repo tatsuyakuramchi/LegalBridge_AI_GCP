@@ -3002,6 +3002,7 @@ ${details}
       const ledgers = await query(
         `SELECT id, ledger_code, title, title_kana, alternative_titles,
                 creator_name, publisher_name, remarks, is_active,
+                default_rights_holder, default_credit_display, default_work_supplement,
                 created_at, updated_at
            FROM ledgers
           ORDER BY ledger_code DESC`
@@ -3063,6 +3064,10 @@ ${details}
         publisher_name: body.publisher_name,
         remarks: body.remarks,
         ledger_code: body.ledger_code, // legacy 移行時の手動指定可
+        // Phase 22.20
+        default_rights_holder: body.default_rights_holder,
+        default_credit_display: body.default_credit_display,
+        default_work_supplement: body.default_work_supplement,
       });
       console.log(
         `📚 [ledger] created ${result.ledger_code} (id=${result.id}), default material=${result.default_material_code}`
@@ -3080,15 +3085,18 @@ ${details}
     try {
       await query(
         `UPDATE ledgers SET
-           title              = $1,
-           title_kana         = $2,
-           alternative_titles = $3,
-           creator_name       = $4,
-           publisher_name     = $5,
-           remarks            = $6,
-           is_active          = $7,
-           updated_at         = CURRENT_TIMESTAMP
-         WHERE id = $8`,
+           title                   = $1,
+           title_kana              = $2,
+           alternative_titles      = $3,
+           creator_name            = $4,
+           publisher_name          = $5,
+           remarks                 = $6,
+           is_active               = $7,
+           default_rights_holder   = $8,
+           default_credit_display  = $9,
+           default_work_supplement = $10,
+           updated_at              = CURRENT_TIMESTAMP
+         WHERE id = $11`,
         [
           body.title,
           body.title_kana || null,
@@ -3097,6 +3105,9 @@ ${details}
           body.publisher_name || null,
           body.remarks || null,
           body.is_active === false ? false : true,
+          body.default_rights_holder || null,
+          body.default_credit_display || null,
+          body.default_work_supplement || null,
           id,
         ]
       );

@@ -647,6 +647,13 @@ export async function initDb() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_ledgers_active ON ledgers(is_active);`,
     `CREATE INDEX IF NOT EXISTS idx_ledgers_title_kana ON ledgers(title_kana);`,
+    // Phase 22.20: 原作マスターのデフォルト値 (個別利用許諾条件書フォームで自動引用)
+    //   default_rights_holder   : 素材権利者デフォルト (materials.rights_holder が空のとき fallback)
+    //   default_credit_display  : PDF のクレジット表記デフォルト
+    //   default_work_supplement : 原著作物補記デフォルト
+    `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_rights_holder TEXT;`,
+    `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_credit_display TEXT;`,
+    `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_work_supplement TEXT;`,
     `CREATE TABLE IF NOT EXISTS materials (
       id SERIAL PRIMARY KEY,
       ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
@@ -1259,6 +1266,10 @@ export async function createLedgerWithDefaultMaterial(payload: {
   publisher_name?: string;
   remarks?: string;
   ledger_code?: string; // 手動指定時 (legacy 移行等)
+  // Phase 22.20: 原作デフォルト値
+  default_rights_holder?: string;
+  default_credit_display?: string;
+  default_work_supplement?: string;
 }): Promise<{
   id: number;
   ledger_code: string;
@@ -1269,8 +1280,9 @@ export async function createLedgerWithDefaultMaterial(payload: {
   const ledgerRes = await query(
     `INSERT INTO ledgers (
        ledger_code, title, title_kana, alternative_titles,
-       creator_name, publisher_name, remarks
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+       creator_name, publisher_name, remarks,
+       default_rights_holder, default_credit_display, default_work_supplement
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
      RETURNING id, ledger_code`,
     [
       ledgerCode,
@@ -1280,19 +1292,28 @@ export async function createLedgerWithDefaultMaterial(payload: {
       payload.creator_name || null,
       payload.publisher_name || null,
       payload.remarks || null,
+      payload.default_rights_holder || null,
+      payload.default_credit_display || null,
+      payload.default_work_supplement || null,
     ]
   );
   const ledgerId = Number(ledgerRes.rows[0].id);
 
   // 原作本体素材 (-001) を自動作成
+  // Phase 22.20: 素材権利者を ledger.default_rights_holder で初期化
   const defaultMaterialCode = `${ledgerCode}-001`;
   const matRes = await query(
     `INSERT INTO materials (
        ledger_id, material_no, material_code, material_name,
-       material_type, is_default
-     ) VALUES ($1, 1, $2, $3, 'original', TRUE)
+       material_type, rights_holder, is_default
+     ) VALUES ($1, 1, $2, $3, 'original', $4, TRUE)
      RETURNING id, material_code`,
-    [ledgerId, defaultMaterialCode, payload.title]
+    [
+      ledgerId,
+      defaultMaterialCode,
+      payload.title,
+      payload.default_rights_holder || null,
+    ]
   );
   return {
     id: ledgerId,

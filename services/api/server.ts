@@ -1628,13 +1628,32 @@ async function startServer() {
   //   で落ちる可能性があるが、その場合は空配列で返す (Slack 検索を巻き込まない)。
   app.get("/api/master/ledgers", async (_req, res) => {
     try {
-      const ledgers = await query(
-        `SELECT id, ledger_code, title, title_kana, alternative_titles,
-                creator_name, publisher_name, remarks, is_active,
-                created_at, updated_at
-           FROM ledgers
-          ORDER BY ledger_code DESC`
-      );
+      // Phase 22.20: default_rights_holder / default_credit_display /
+      //   default_work_supplement も含める。worker 未デプロイ環境で 42703
+      //   なら legacy SELECT に fallback。
+      let ledgers: any;
+      try {
+        ledgers = await query(
+          `SELECT id, ledger_code, title, title_kana, alternative_titles,
+                  creator_name, publisher_name, remarks, is_active,
+                  default_rights_holder, default_credit_display, default_work_supplement,
+                  created_at, updated_at
+             FROM ledgers
+            ORDER BY ledger_code DESC`
+        );
+      } catch (err: any) {
+        if (err && err.code === "42703") {
+          ledgers = await query(
+            `SELECT id, ledger_code, title, title_kana, alternative_titles,
+                    creator_name, publisher_name, remarks, is_active,
+                    created_at, updated_at
+               FROM ledgers
+              ORDER BY ledger_code DESC`
+          );
+        } else {
+          throw err;
+        }
+      }
       const ids = ledgers.rows.map((l: any) => Number(l.id));
       const matsMap = new Map<number, any[]>();
       if (ids.length > 0) {

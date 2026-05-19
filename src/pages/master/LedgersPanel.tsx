@@ -66,6 +66,10 @@ type Ledger = {
   remarks?: string
   is_active?: boolean
   materials?: Material[]
+  // Phase 22.20: 個別利用許諾条件書フォームで自動引用されるデフォルト値
+  default_rights_holder?: string
+  default_credit_display?: string
+  default_work_supplement?: string
 }
 
 const emptyLedger: Ledger = {
@@ -76,6 +80,9 @@ const emptyLedger: Ledger = {
   publisher_name: "",
   remarks: "",
   is_active: true,
+  default_rights_holder: "",
+  default_credit_display: "",
+  default_work_supplement: "",
 }
 
 const emptyMaterial: Material = {
@@ -391,6 +398,51 @@ export function LedgersPanel() {
                   </span>
                 </div>
               </Field>
+            </div>
+
+            {/* Phase 22.20: 個別利用許諾条件書フォームで自動引用されるデフォルト値 */}
+            <div className="border-t border-border pt-3 space-y-2">
+              <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                個別利用許諾条件書フォーム自動引用 (任意)
+              </Label>
+              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+                ここで設定した値は、個別利用許諾条件書フォームで原作を選択した時に
+                <strong>素材権利者 / クレジット表記 / 原著作物 補記</strong>
+                の各フィールドに自動入力されます。空欄なら何もしません。
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <Field label="素材権利者 デフォルト" className="col-span-2">
+                  <Input
+                    placeholder="例: 株式会社XX出版"
+                    value={data?.default_rights_holder || ""}
+                    onChange={(e) =>
+                      set({ default_rights_holder: e.target.value })
+                    }
+                  />
+                  <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                    各素材の rights_holder が空のときに fallback されます。
+                    新規派生素材を追加するときの初期値にも使われます。
+                  </p>
+                </Field>
+                <Field label="クレジット表記 デフォルト" className="col-span-2">
+                  <Input
+                    placeholder="例: © トーネードスプラッシュ製作委員会"
+                    value={data?.default_credit_display || ""}
+                    onChange={(e) =>
+                      set({ default_credit_display: e.target.value })
+                    }
+                  />
+                </Field>
+                <Field label="原著作物 補記 デフォルト" className="col-span-2">
+                  <Input
+                    placeholder="例: 原作および派生作品を含む"
+                    value={data?.default_work_supplement || ""}
+                    onChange={(e) =>
+                      set({ default_work_supplement: e.target.value })
+                    }
+                  />
+                </Field>
+              </div>
             </div>
 
             {/* 素材リスト (編集モードのみ) */}
