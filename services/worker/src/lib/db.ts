@@ -695,6 +695,17 @@ export async function initDb() {
       UNIQUE(license_contract_id, condition_no)
     );`,
     `CREATE INDEX IF NOT EXISTS idx_lfc_contract ON license_financial_conditions(license_contract_id);`,
+    // -----------------------------------------------------------------
+    // Phase 22.20-B: 計算期間を構造化。
+    //   calc_period_kind         : 種別 (MANUFACTURING/MONTHLY/QUARTERLY/SEMIANNUAL/ANNUAL)
+    //   calc_period_close_month  : 締め月 (1-12, MANUFACTURING/MONTHLY は NULL)
+    //   既存 calc_period (free text) は表示ラベルとして使い続けるが、
+    //   新規入力時はこの 2 列から自動生成 (例: "四半期 (3月締)")
+    // -----------------------------------------------------------------
+    `ALTER TABLE license_financial_conditions
+       ADD COLUMN IF NOT EXISTS calc_period_kind VARCHAR(20);`,
+    `ALTER TABLE license_financial_conditions
+       ADD COLUMN IF NOT EXISTS calc_period_close_month SMALLINT;`,
 
     // Backfill: 既存 license_contracts.royalty_rate / mg_amount を
     // condition_no=1 の自社製造条件として一行立てる。

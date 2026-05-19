@@ -1315,15 +1315,35 @@ async function startServer() {
               context["work_id"] = row.work_id;
               context["WORK_ID"] = row.work_id;
             }
-            const conds = await query(
-              `SELECT id, condition_no, region_language_label, calc_method,
-                      rate_pct, base_price_label, calc_period, currency,
-                      formula_text, payment_terms, mg_amount
-                 FROM license_financial_conditions
-                WHERE license_contract_id = $1
-                ORDER BY condition_no ASC`,
-              [lcId]
-            );
+            // Phase 22.20-B: calc_period_kind / calc_period_close_month を含める
+            //   schema 未追加環境では 42703 を catch して legacy SELECT に fallback
+            let conds: any;
+            try {
+              conds = await query(
+                `SELECT id, condition_no, region_language_label, calc_method,
+                        rate_pct, base_price_label, calc_period, currency,
+                        formula_text, payment_terms, mg_amount,
+                        calc_period_kind, calc_period_close_month
+                   FROM license_financial_conditions
+                  WHERE license_contract_id = $1
+                  ORDER BY condition_no ASC`,
+                [lcId]
+              );
+            } catch (colErr2: any) {
+              if (colErr2 && colErr2.code === "42703") {
+                conds = await query(
+                  `SELECT id, condition_no, region_language_label, calc_method,
+                          rate_pct, base_price_label, calc_period, currency,
+                          formula_text, payment_terms, mg_amount
+                     FROM license_financial_conditions
+                    WHERE license_contract_id = $1
+                    ORDER BY condition_no ASC`,
+                  [lcId]
+                );
+              } else {
+                throw colErr2;
+              }
+            }
             context["financial_conditions"] = conds.rows.map((r: any) => ({
               id: Number(r.id),
               condition_no: Number(r.condition_no),
@@ -1332,6 +1352,11 @@ async function startServer() {
               rate_pct: r.rate_pct !== null ? Number(r.rate_pct) : undefined,
               base_price_label: r.base_price_label || "",
               calc_period: r.calc_period || "",
+              calc_period_kind: r.calc_period_kind || undefined,
+              calc_period_close_month:
+                r.calc_period_close_month != null
+                  ? Number(r.calc_period_close_month)
+                  : undefined,
               currency: r.currency || "JPY",
               formula_text: r.formula_text || "",
               payment_terms: r.payment_terms || "",

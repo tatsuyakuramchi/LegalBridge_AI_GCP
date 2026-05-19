@@ -8619,20 +8619,23 @@ ${details}
               `INSERT INTO license_financial_conditions (
                  license_contract_id, condition_no, region_language_label,
                  calc_method, rate_pct, base_price_label, calc_period,
-                 currency, formula_text, payment_terms, mg_amount
+                 currency, formula_text, payment_terms, mg_amount,
+                 calc_period_kind, calc_period_close_month
                )
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
                ON CONFLICT (license_contract_id, condition_no) DO UPDATE SET
-                 region_language_label = EXCLUDED.region_language_label,
-                 calc_method           = EXCLUDED.calc_method,
-                 rate_pct              = EXCLUDED.rate_pct,
-                 base_price_label      = EXCLUDED.base_price_label,
-                 calc_period           = EXCLUDED.calc_period,
-                 currency              = EXCLUDED.currency,
-                 formula_text          = EXCLUDED.formula_text,
-                 payment_terms         = EXCLUDED.payment_terms,
-                 mg_amount             = EXCLUDED.mg_amount,
-                 updated_at            = CURRENT_TIMESTAMP`,
+                 region_language_label   = EXCLUDED.region_language_label,
+                 calc_method             = EXCLUDED.calc_method,
+                 rate_pct                = EXCLUDED.rate_pct,
+                 base_price_label        = EXCLUDED.base_price_label,
+                 calc_period             = EXCLUDED.calc_period,
+                 currency                = EXCLUDED.currency,
+                 formula_text            = EXCLUDED.formula_text,
+                 payment_terms           = EXCLUDED.payment_terms,
+                 mg_amount               = EXCLUDED.mg_amount,
+                 calc_period_kind        = EXCLUDED.calc_period_kind,
+                 calc_period_close_month = EXCLUDED.calc_period_close_month,
+                 updated_at              = CURRENT_TIMESTAMP`,
               [
                 lcId,
                 condNo,
@@ -8649,6 +8652,12 @@ ${details}
                 c.mg_amount !== undefined && c.mg_amount !== null
                   ? Number(c.mg_amount)
                   : 0,
+                // Phase 22.20-B
+                c.calc_period_kind || null,
+                c.calc_period_close_month !== undefined &&
+                c.calc_period_close_month !== null
+                  ? Number(c.calc_period_close_month)
+                  : null,
               ]
             );
           }

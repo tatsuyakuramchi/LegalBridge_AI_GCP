@@ -23,12 +23,49 @@ export type FinancialCondition = {
   calc_method?: string; // ROYALTY / FIXED / SUBSCRIPTION
   rate_pct?: number; // 例: 5.0 (%)
   base_price_label?: string; // 例: 上代 (MSRP)
-  calc_period?: string; // 例: 四半期 / 月次
+  calc_period?: string; // 表示用 free-text label (自動生成 / 手動上書き可)
+  // Phase 22.20-B: 計算期間を構造化
+  calc_period_kind?: "MANUFACTURING" | "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "ANNUAL";
+  calc_period_close_month?: number; // 1-12 (MANUFACTURING / MONTHLY は未設定)
   currency?: string; // JPY / USD ...
   formula_text?: string; // 例: 上代 × 5.0% × 製造数
   payment_terms?: string;
   mg_amount?: number; // MG 総額 (この条件単位)
 };
+
+// Phase 22.20-B: kind + close_month から表示ラベルを組み立てる。
+//   MANUFACTURING       → "製造時"
+//   MONTHLY (月毎)       → "月次"
+//   QUARTERLY + 3       → "四半期 (3月締)"
+//   SEMIANNUAL + 6      → "半期 (6月締)"
+//   ANNUAL + 12         → "年次 (12月締)"
+export function buildCalcPeriodLabel(
+  kind?: FinancialCondition["calc_period_kind"],
+  closeMonth?: number
+): string {
+  if (!kind) return "";
+  if (kind === "MANUFACTURING") return "製造時";
+  if (kind === "MONTHLY") return "月次";
+  const monthLabel =
+    closeMonth && closeMonth >= 1 && closeMonth <= 12
+      ? ` (${closeMonth}月締)`
+      : "";
+  if (kind === "QUARTERLY") return `四半期${monthLabel}`;
+  if (kind === "SEMIANNUAL") return `半期${monthLabel}`;
+  if (kind === "ANNUAL") return `年次${monthLabel}`;
+  return "";
+}
+
+const CALC_PERIOD_KIND_OPTIONS: Array<{
+  value: NonNullable<FinancialCondition["calc_period_kind"]>;
+  label: string;
+}> = [
+  { value: "MANUFACTURING", label: "製造時" },
+  { value: "MONTHLY", label: "月毎 (月次)" },
+  { value: "QUARTERLY", label: "四半期毎" },
+  { value: "SEMIANNUAL", label: "半期毎" },
+  { value: "ANNUAL", label: "年毎" },
+];
 
 interface Props {
   conditions: FinancialCondition[];
@@ -190,13 +227,72 @@ export const FinancialConditionTable: React.FC<Props> = ({
                 </div>
                 <div>
                   <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                    計算期間
+                    計算期間 種別
                   </div>
-                  {cellInput(
-                    c.calc_period,
-                    (v) => update(idx, { calc_period: v }),
-                    "text",
-                    "四半期"
+                  <select
+                    value={c.calc_period_kind || ""}
+                    onChange={(e) => {
+                      const kind = e.target.value as FinancialCondition["calc_period_kind"];
+                      // 種別変更で MANUFACTURING / MONTHLY なら close_month をリセット
+                      const needsMonth =
+                        kind === "QUARTERLY" ||
+                        kind === "SEMIANNUAL" ||
+                        kind === "ANNUAL";
+                      const month = needsMonth ? c.calc_period_close_month : undefined;
+                      update(idx, {
+                        calc_period_kind: kind,
+                        calc_period_close_month: month,
+                        // 表示ラベルを自動生成 (ユーザーが calc_period に手動入力済みでも上書き)
+                        calc_period: buildCalcPeriodLabel(kind, month),
+                      });
+                    }}
+                    disabled={readOnly}
+                    className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+                  >
+                    <option value="">— 選択 —</option>
+                    {CALC_PERIOD_KIND_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                {/* 計算月 — QUARTERLY/SEMIANNUAL/ANNUAL のときだけ意味あり */}
+                <div>
+                  <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                    計算月 (締め月)
+                  </div>
+                  {c.calc_period_kind === "QUARTERLY" ||
+                  c.calc_period_kind === "SEMIANNUAL" ||
+                  c.calc_period_kind === "ANNUAL" ? (
+                    <select
+                      value={c.calc_period_close_month || ""}
+                      onChange={(e) => {
+                        const m = Number(e.target.value) || undefined;
+                        update(idx, {
+                          calc_period_close_month: m,
+                          calc_period: buildCalcPeriodLabel(c.calc_period_kind, m),
+                        });
+                      }}
+                      disabled={readOnly}
+                      className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+                    >
+                      <option value="">— 月選択 —</option>
+                      {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                        <option key={m} value={m}>
+                          {m}月
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="text-[10px] font-mono text-muted-foreground/60 py-1 px-1 border-b border-dashed border-input/50">
+                      (種別によっては不要)
+                    </div>
+                  )}
+                  {c.calc_period && (
+                    <div className="text-[9px] font-mono text-muted-foreground/70 mt-0.5">
+                      ラベル: {c.calc_period}
+                    </div>
                   )}
                 </div>
 
