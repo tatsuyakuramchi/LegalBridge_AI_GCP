@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>別紙 個別利用許諾条件 - {{台帳ID}}</title>
+  <title>別紙 個別利用許諾条件 - {{work_id}}</title>
   <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&family=Noto+Sans+JP:wght@400;700&display=swap');
 
@@ -444,7 +444,8 @@
       <div class="meta-info">
         発行日: <strong>{{発行日}}</strong><br>
         契約書番号: <strong>{{契約書番号}}</strong><br>
-        台帳ID: <strong>{{台帳ID}}</strong>
+        {{!-- Phase 22.21.8: 台帳ID → ワークID 表示に切替 (work_id は生成時に自動採番) --}}
+        ワークID: <strong>{{#if work_id}}{{work_id}}{{else}}{{台帳ID}}{{/if}}</strong>
       </div>
     </header>
 
@@ -917,6 +918,7 @@
               <div class="sig-row-value">{{Licensor_住所}}</div>
             </div>
           </div>
+          {{!-- Phase 22.21.8: 代表者印 行を削除。会社印 (会社名横の 電子印影) のみ残す --}}
           {{#if LICENSOR_IS_CORPORATION}}
           <div class="sig-row">
             <div class="sig-row-text">
@@ -930,13 +932,6 @@
               <div class="sig-row-label">代表者名</div>
               <div class="sig-row-value" style="font-weight:700">{{Licensor_代表者名}}</div>
             </div>
-          </div>
-          <div class="sig-row">
-            <div class="sig-row-text">
-              <div class="sig-row-label">代表者印</div>
-              <div class="sig-row-value">&nbsp;</div>
-            </div>
-            <div class="seal-area">電子<br>印影</div>
           </div>
           {{else}}
           <div class="sig-row">
@@ -958,6 +953,7 @@
               <div class="sig-row-value">{{Licensee_住所}}</div>
             </div>
           </div>
+          {{!-- Phase 22.21.8: 代表者印 行を削除。会社印 (会社名横の 電子印影) のみ残す --}}
           {{#if LICENSEE_IS_CORPORATION}}
           <div class="sig-row">
             <div class="sig-row-text">
@@ -971,13 +967,6 @@
               <div class="sig-row-label">代表者名</div>
               <div class="sig-row-value" style="font-weight:700">{{Licensee_代表者名}}</div>
             </div>
-          </div>
-          <div class="sig-row">
-            <div class="sig-row-text">
-              <div class="sig-row-label">代表者印</div>
-              <div class="sig-row-value">&nbsp;</div>
-            </div>
-            <div class="seal-area">電子<br>印影</div>
           </div>
           {{else}}
           <div class="sig-row">
@@ -993,7 +982,7 @@
     </section>
 
     <footer>
-      発行日: {{発行日}}　／　契約書番号: {{契約書番号}}　／　台帳ID: {{台帳ID}}<br>
+      発行日: {{発行日}}　／　契約書番号: {{契約書番号}}　／　ワークID: {{#if work_id}}{{work_id}}{{else}}{{台帳ID}}{{/if}}<br>
       ※ 本別紙は、{{基本契約名}}（{{契約書番号}}）に付随する個別条件を定めるものです。
     </footer>
   </div>
