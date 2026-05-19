@@ -178,6 +178,30 @@ export class DocumentService {
       return "月次"; // MONTHLY or unknown は月次扱い (default)
     });
 
+    // Phase 22.16: 適格請求書発行事業者の表示ラベル正規化。
+    //   テンプレ間で IS_INVOICE_ISSUER の値型がバラバラだったため:
+    //     boolean true        → "該当"
+    //     boolean false       → "非該当"
+    //     文字列 "該当"        → "該当"
+    //     文字列 "非該当"      → "非該当"
+    //     文字列 "true"/"yes"  → "該当"
+    //     文字列 "false"/"no"  → "非該当"
+    //     空 / undefined / null → "非該当"
+    //   PDF で "true" / "false" がそのまま出てしまう不格好を防ぐ。
+    Handlebars.registerHelper("invoiceLabel", (v: any) => {
+      if (v === true) return "該当";
+      if (v === false || v == null) return "非該当";
+      const s = String(v).trim();
+      if (!s) return "非該当";
+      if (s === "該当") return "該当";
+      if (s === "非該当") return "非該当";
+      const lower = s.toLowerCase();
+      if (["true", "yes", "y", "1", "○", "✓"].includes(lower)) return "該当";
+      if (["false", "no", "n", "0", "×"].includes(lower)) return "非該当";
+      // それ以外の文字列はそのまま返す (フリーテキスト想定外なので fallback)
+      return s;
+    });
+
     // 16. Phase 22.8: SUBSCRIPTION の支払日表示
     //     {{billingDayLabel 25 "MONTHLY"}} → "毎月25日"
     //     {{billingDayLabel 0  "MONTHLY"}} → "毎月末日" (0 or >30 で末日)
