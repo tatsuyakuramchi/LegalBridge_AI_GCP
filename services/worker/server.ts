@@ -7495,6 +7495,11 @@ ${details}
             //   - parentOrderNumber:    検収書から見た親 PO の番号
             //   - docNumber:            通常はこれ (採番された自身の文書番号)
             ORDER_NO: formData.orderNumber || parentOrderNumber || docNumber,
+            // Phase 22.15: ライセンス系テンプレが参照する CONTRACT_NO も
+            //   自動採番した docNumber を渡す。formData にユーザー手動値が
+            //   あればそれを優先 (上書き目的)。これにより license_master.html
+            //   の {{CONTRACT_NO}} が空欄になる問題を解消。
+            CONTRACT_NO: formData.CONTRACT_NO || docNumber,
             hasChangeLogs: !!formData.CHANGE_RECORDS,
             changeLogs: formData.CHANGE_RECORDS
               ? formData.CHANGE_RECORDS.split(";").map((log: string) => {

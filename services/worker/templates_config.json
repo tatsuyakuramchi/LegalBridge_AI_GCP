@@ -142,7 +142,10 @@
       "invoiceRegistrationDisplay": { "label": "インボイス登録番号 (T-)", "group": "IV. 振込先口座 (ロイヤリティ送金先)", "helpText": "IS_INVOICE_ISSUER が true の場合に表示" },
 
       "HAS_REMARKS": { "label": "備考あり", "group": "V. 備考 (任意)", "type": "boolean" },
-      "REMARKS": { "label": "備考", "group": "V. 備考 (任意)", "type": "textarea", "helpText": "HAS_REMARKS が true の場合に表示" }
+      "REMARKS": { "label": "備考", "group": "V. 備考 (任意)", "type": "textarea", "helpText": "HAS_REMARKS が true の場合に表示" },
+
+      "documentNumberOverride": { "label": "契約番号 手動上書き (任意)", "group": "VI. 発行オプション (任意)", "helpText": "空欄なら自動採番。社内修正版を外部に出す場合、再発行リビジョン (_001 等) ではなく任意の番号を指定可能 (例: 元番号 ARC-LIC-2026-0001 をそのまま使い続ける)" },
+      "showReissueBanner": { "label": "PDF に再発行版バナーを表示", "group": "VI. 発行オプション (任意)", "type": "boolean", "helpText": "ON (デフォルト): 再発行版のとき PDF に黄色バナーを表示。OFF: 社内修正のみで相手方には初版に見せたいとき。リビジョン番号は DB 側で常に管理されます" }
     }
   },
 

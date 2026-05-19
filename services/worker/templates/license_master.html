@@ -177,6 +177,17 @@
 
   <div class="header-no">契約番号: {{CONTRACT_NO}}</div>
 
+  {{!-- Phase 22.15: 再発行版バナー。
+       revision >= 1 のときに表示するが、showReissueBanner=false なら
+       社内修正版を対外的には初版に見せたい用途で非表示にできる。 --}}
+  {{#if isReissue}}
+  {{#unless (eq showReissueBanner false)}}
+  <div style="margin: 8px 0; padding: 6px 12px; background: #fff3cd; border: 1px solid #ffc107; color: #856404; font-size: 10pt; font-weight: bold; text-align: center;">
+    再発行版 (Rev. {{REVISION}}) — 元契約書: {{BASE_DOC_NO}}
+  </div>
+  {{/unless}}
+  {{/if}}
+
   <h1>ライセンス利用許諾基本契約書</h1>
 
   <div class="info-section">
