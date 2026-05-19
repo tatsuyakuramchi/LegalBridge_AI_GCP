@@ -20,7 +20,7 @@
 
     @page {
       size: A4;
-      margin: 20mm 15mm;
+      margin: 14mm 14mm 12mm 14mm;   /* Phase 22.21.6: 余白を絞ってページ送り改善 */
     }
 
     * { box-sizing: border-box; }
@@ -28,7 +28,7 @@
     body {
       font-family: "Noto Sans JP", "Inter", sans-serif;
       font-size: 9pt;
-      line-height: 1.6;
+      line-height: 1.55;
       color: var(--ink);
       margin: 0;
       padding: 0;
@@ -47,13 +47,13 @@
       justify-content: space-between;
       align-items: flex-end;
       border-bottom: 2px solid var(--primary);
-      padding-bottom: 12px;
-      margin-bottom: 30px;
+      padding-bottom: 8px;
+      margin-bottom: 16px;
     }
 
     .title-group h1 {
       margin: 0;
-      font-size: 18pt;
+      font-size: 17pt;
       font-weight: 700;
       letter-spacing: -0.02em;
     }
@@ -68,22 +68,22 @@
     .meta-info strong { color: var(--primary); }
 
     .doc-subtitle {
-      font-size: 12pt;
+      font-size: 11.5pt;
       font-weight: 700;
-      margin-bottom: 20px;
+      margin-bottom: 12px;
     }
 
     /* ──── SUMMARY PANEL ──── */
     .summary-panel {
       background: var(--bg-light);
       border: 1px solid var(--border);
-      padding: 20px;
-      margin-bottom: 30px;
+      padding: 12px 16px;
+      margin-bottom: 16px;
     }
 
     .summary-row {
       display: flex;
-      padding: 8px 0;
+      padding: 5px 0;
       border-bottom: 1px solid rgba(0,0,0,0.05);
     }
 
@@ -105,30 +105,35 @@
       font-size: 8pt;
       color: var(--secondary);
       font-style: italic;
-      margin-top: 10px;
-      padding-top: 10px;
+      margin-top: 6px;
+      padding-top: 6px;
       border-top: 1px dashed var(--border);
     }
 
     /* ──── SECTIONS ──── */
-    section { margin-bottom: 30px; page-break-inside: avoid; }
+    /* Phase 22.21.6: page-break-inside: avoid を section から外す。
+       長い section (例: Section 1 + terms-card) を 1 ページに収めようとして
+       前ページに大きな空白が出る問題を回避。break-inside は本当に分割不可な
+       要素 (.finance-panel, .sig-box, .sublicense-table の各行など) にだけ
+       適用する。 */
+    section { margin-bottom: 18px; }
 
     .section-header {
       display: flex;
       align-items: center;
-      gap: 12px;
-      margin-bottom: 15px;
+      gap: 10px;
+      margin-bottom: 8px;
       border-left: 4px solid var(--primary);
-      padding-left: 10px;
+      padding-left: 8px;
     }
 
     .section-num {
-      font-size: 13pt;
+      font-size: 12pt;
       font-weight: 700;
     }
 
     .section-title {
-      font-size: 11pt;
+      font-size: 10.5pt;
       font-weight: 700;
       letter-spacing: 0.02em;
     }
@@ -137,12 +142,12 @@
     .data-table {
       width: 100%;
       border-collapse: collapse;
-      margin-bottom: 15px;
+      margin-bottom: 10px;
     }
 
     .data-table th, .data-table td {
       border: 1px solid var(--border);
-      padding: 8px 12px;
+      padding: 5px 10px;
       text-align: left;
       vertical-align: top;
     }
@@ -158,29 +163,30 @@
     /* ──── CARDS ──── */
     .terms-card {
       border: 1px solid var(--border);
-      padding: 20px;
+      padding: 12px 16px;
       background: white;
-      margin-top: 15px;
+      margin-top: 8px;
     }
 
     .card-title {
       font-weight: 700;
       border-bottom: 1px solid var(--ink);
-      padding-bottom: 8px;
-      margin-bottom: 15px;
+      padding-bottom: 5px;
+      margin-bottom: 10px;
       font-size: 10pt;
     }
 
     .sub-section-title {
       font-weight: 700;
       font-size: 9pt;
-      margin: 15px 0 5px;
+      margin: 10px 0 4px;
       color: var(--ink);
     }
 
     .terms-text {
       font-size: 8.5pt;
       color: #333;
+      line-height: 1.6;
     }
 
     .terms-text ul {
@@ -189,27 +195,27 @@
     }
 
     .terms-text ul li {
-      margin-bottom: 4px;
+      margin-bottom: 3px;
     }
 
     /* ──── FINANCIALS ──── */
     .finance-panel {
       border: 1px solid var(--primary);
-      margin-bottom: 20px;
-      page-break-inside: avoid;
+      margin-bottom: 12px;
+      page-break-inside: avoid;   /* 1 つの金銭条件 panel は分割しない */
     }
 
     .finance-header {
       background: var(--primary);
       color: white;
-      padding: 8px 15px;
+      padding: 6px 12px;
       font-weight: 700;
       font-size: 9.5pt;
     }
 
     .formula-box {
       background: #f0f7ff;
-      padding: 15px;
+      padding: 10px 12px;
       border-bottom: 1px solid var(--border);
     }
 
@@ -237,7 +243,7 @@
     }
 
     .detail-item {
-      padding: 8px 15px;
+      padding: 6px 12px;
       border-right: 1px solid var(--border);
       border-bottom: 1px solid var(--border);
     }
@@ -258,7 +264,7 @@
 
     .payment-terms {
       background: var(--yellow);
-      padding: 10px 15px;
+      padding: 7px 12px;
       font-size: 8.5pt;
       border-top: 1px dashed var(--yellow-border);
     }
@@ -271,7 +277,7 @@
     }
 
     .mg-box {
-      padding: 10px 15px;
+      padding: 6px 12px;
       border-top: 1px dashed var(--border);
       font-size: 8.5pt;
     }
@@ -284,7 +290,7 @@
     }
 
     .calc-note {
-      padding: 10px 15px;
+      padding: 6px 12px;
       border-top: 1px dotted var(--border);
       font-size: 8pt;
       color: #444;
@@ -302,15 +308,17 @@
       width: 100%;
       border-collapse: collapse;
       font-size: 7.5pt;
-      margin-bottom: 10px;
+      margin-bottom: 8px;
     }
 
     .sublicense-table th, .sublicense-table td {
       border: 1px solid var(--border);
-      padding: 6px 8px;
+      padding: 4px 6px;
       vertical-align: top;
       text-align: left;
     }
+
+    .sublicense-table tr { page-break-inside: avoid; }  /* 1 行を 2 ページに割らない */
 
     .sublicense-table th {
       background: var(--bg-light);
@@ -320,7 +328,7 @@
     }
 
     .sublicense-note {
-      padding: 10px 12px;
+      padding: 6px 10px;
       background: var(--bg-light);
       border: 1px solid var(--border);
       font-size: 8pt;
@@ -330,55 +338,55 @@
     .sublicense-note-label {
       font-weight: 700;
       font-size: 8pt;
-      margin-bottom: 4px;
+      margin-bottom: 3px;
       color: var(--ink);
     }
 
     /* ──── REMARKS LIST ──── */
     .remarks-list {
       border: 1px solid var(--border);
-      padding: 16px 20px;
-      line-height: 1.9;
+      padding: 10px 14px;
+      line-height: 1.7;
       font-size: 9pt;
     }
 
     .remarks-list p {
-      margin: 0 0 8px 0;
+      margin: 0 0 5px 0;
       text-indent: 0;
     }
 
     /* ──── SIGNATURES ──── */
     .signatures-intro {
-      margin-top: 30px;
-      margin-bottom: 15px;
+      margin-top: 14px;
+      margin-bottom: 10px;
       font-size: 9pt;
     }
 
     .signatures {
       display: grid;
       grid-template-columns: 1fr 1fr;
-      gap: 20px;
+      gap: 14px;
       page-break-inside: avoid;
     }
 
     .sig-box {
       border: 1px solid var(--border);
-      padding: 16px;
+      padding: 10px 12px;
     }
 
     .sig-party {
       font-weight: 700;
       border-bottom: 1px solid var(--primary);
-      padding-bottom: 6px;
-      margin-bottom: 12px;
+      padding-bottom: 4px;
+      margin-bottom: 8px;
       font-size: 9.5pt;
     }
 
     .sig-row {
       display: flex;
-      gap: 10px;
+      gap: 8px;
       align-items: flex-end;
-      padding: 8px 0;
+      padding: 5px 0;
       border-bottom: 1px solid var(--border);
     }
 
@@ -401,8 +409,8 @@
     }
 
     .seal-area {
-      width: 50px;
-      height: 50px;
+      width: 44px;
+      height: 44px;
       border: 1px dashed #bbb;
       color: #999;
       display: flex;
@@ -416,13 +424,13 @@
 
     /* ──── FOOTER ──── */
     footer {
-      margin-top: 40px;
-      padding-top: 12px;
+      margin-top: 18px;
+      padding-top: 8px;
       border-top: 1px solid var(--border);
       text-align: center;
       font-size: 7.5pt;
       color: var(--secondary);
-      line-height: 1.6;
+      line-height: 1.5;
     }
   </style>
 </head>
