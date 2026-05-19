@@ -31,6 +31,9 @@ export type FinancialCondition = {
   formula_text?: string; // 例: 上代 × 5.0% × 製造数
   payment_terms?: string;
   mg_amount?: number; // MG 総額 (この条件単位)
+  // Phase 22.21.11: 概要 (フリーテキスト)。空のときは
+  //   condition_no ベースのデフォルト文が PDF 側で表示される。
+  summary?: string;
 };
 
 // Phase 22.20-B: kind + close_month から表示ラベルを組み立てる。
@@ -216,7 +219,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                 </div>
                 <div>
                   <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                    基準価格ラベル
+                    基準価格
                   </div>
                   {cellInput(
                     c.base_price_label,
@@ -357,6 +360,34 @@ export const FinancialConditionTable: React.FC<Props> = ({
                       {yen(c.mg_amount)}
                     </div>
                   ) : null}
+                </div>
+                {/* Phase 22.21.11: 概要 (フリーテキスト)。
+                    空のときは PDF テンプレ側で condition_no ベースの
+                    デフォルト文が自動表示される。 */}
+                <div className="col-span-2 md:col-span-4">
+                  <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                    概要 (任意 — 空欄なら標準文を自動表示)
+                  </div>
+                  <textarea
+                    value={c.summary || ""}
+                    onChange={(e) => update(idx, { summary: e.target.value })}
+                    placeholder={
+                      condNo === 1
+                        ? "標準文: Licensee 自らが販売する国内販売において、基準価格に料率と販売数を乗じた金額をロイヤリティとして支払います。"
+                        : condNo === 2
+                        ? "標準文: 国内・海外パートナーにサブライセンスし、Licensee が受領したサブライセンス料を料率に応じて分配します。"
+                        : condNo === 3
+                        ? "標準文: 海外パートナーからの委託により Licensee がローカライズ版を製造・出荷し、海外パートナーが現地で販売元となる形式。海外パートナーから Licensee が受領する製造代金および利用許諾料を含む取引額に対して料率を乗じた金額を、Licensor へロイヤリティとして支払います。"
+                        : "この金銭条件の概要を入力 (PDF Section 3 に表示)"
+                    }
+                    disabled={readOnly}
+                    rows={2}
+                    className={cn(
+                      "w-full text-[11px] font-mono bg-card border border-input rounded-sm px-2 py-1 resize-y",
+                      "focus:outline-none focus:border-foreground",
+                      "placeholder:text-muted-foreground/40 placeholder:text-[10px] placeholder:italic"
+                    )}
+                  />
                 </div>
               </div>
             </div>

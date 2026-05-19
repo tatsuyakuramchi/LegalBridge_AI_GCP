@@ -237,7 +237,7 @@
       margin-top: 4px;
     }
 
-    /* Phase 22.21.9: 計算方式 を 1 行で表示 (label 左 + value 右) */
+    /* Phase 22.21.9: 計算方式 / 概要 を 1 行で表示 (label 左 + value 右) */
     .method-row {
       display: flex;
       gap: 12px;
@@ -259,6 +259,33 @@
       font-weight: 700;
       flex: 1;
       min-width: 0;
+    }
+
+    /* Phase 22.21.11: 概要 (summary) は 計算方式 と同じ構造だが
+       太字でない通常テキスト + 行間広めで、長い説明文向きの装飾 */
+    .summary-row {
+      display: flex;
+      gap: 12px;
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border);
+      align-items: baseline;
+    }
+
+    .summary-row-label {
+      font-size: 7pt;
+      color: var(--secondary);
+      text-transform: uppercase;
+      width: 90px;
+      flex-shrink: 0;
+    }
+
+    .summary-row-value {
+      font-size: 8.5pt;
+      font-weight: 400;
+      flex: 1;
+      min-width: 0;
+      line-height: 1.6;
+      color: #333;
     }
 
     .finance-details {
@@ -672,6 +699,37 @@
             <div class="method-row-label">計算方式</div>
             <div class="method-row-value">{{or calc_method "—"}}</div>
           </div>
+          {{!--
+            Phase 22.21.11: 概要 (summary) 行。
+              row.summary が明示されていればそれを優先。
+              そうでなければ condition_no ベースのデフォルト文を使用。
+              いずれもなければ row を省略 (空ボックスを描かない)。
+          --}}
+          {{#if summary}}
+          <div class="summary-row">
+            <div class="summary-row-label">概要</div>
+            <div class="summary-row-value">{{summary}}</div>
+          </div>
+          {{else}}
+          {{#if (eq condition_no 1)}}
+          <div class="summary-row">
+            <div class="summary-row-label">概要</div>
+            <div class="summary-row-value">Licensee 自らが販売する国内販売において、基準価格に料率と販売数を乗じた金額をロイヤリティとして支払います。</div>
+          </div>
+          {{/if}}
+          {{#if (eq condition_no 2)}}
+          <div class="summary-row">
+            <div class="summary-row-label">概要</div>
+            <div class="summary-row-value">国内・海外パートナーにサブライセンスし、Licensee が受領したサブライセンス料を料率に応じて分配します。</div>
+          </div>
+          {{/if}}
+          {{#if (eq condition_no 3)}}
+          <div class="summary-row">
+            <div class="summary-row-label">概要</div>
+            <div class="summary-row-value">海外パートナーからの委託により Licensee がローカライズ版を製造・出荷し、海外パートナーが現地で販売元となる形式。海外パートナーから Licensee が受領する製造代金および利用許諾料を含む取引額に対して料率を乗じた金額を、Licensor へロイヤリティとして支払います。</div>
+          </div>
+          {{/if}}
+          {{/if}}
           {{#if formula_text}}
           <div class="formula-box">
             <div class="formula-label">計算式 / Formula</div>
@@ -681,7 +739,7 @@
           {{/if}}
           <div class="finance-details">
             <div class="detail-item">
-              <div class="sig-label">基準価格ラベル</div>
+              <div class="sig-label">基準価格</div>
               <div class="sig-value">{{or base_price_label "—"}}</div>
             </div>
             <div class="detail-item">
@@ -723,6 +781,10 @@
             <div class="method-row-label">計算方式</div>
             <div class="method-row-value">{{金銭条件1_計算方式}}</div>
           </div>
+          <div class="summary-row">
+            <div class="summary-row-label">概要</div>
+            <div class="summary-row-value">{{#if 金銭条件1_概要}}{{金銭条件1_概要}}{{else}}Licensee 自らが販売する国内販売において、基準価格に料率と販売数を乗じた金額をロイヤリティとして支払います。{{/if}}</div>
+          </div>
           {{#if 金銭条件1_計算式}}
           <div class="formula-box">
             <div class="formula-label">計算式 / Formula</div>
@@ -731,7 +793,7 @@
           {{/if}}
           <div class="finance-details">
             <div class="detail-item">
-              <div class="sig-label">基準価格ラベル</div>
+              <div class="sig-label">基準価格</div>
               <div class="sig-value">{{金銭条件1_基準価格ラベル}}</div>
             </div>
             <div class="detail-item">
@@ -766,6 +828,10 @@
             <div class="method-row-label">計算方式</div>
             <div class="method-row-value">{{金銭条件2_計算方式}}</div>
           </div>
+          <div class="summary-row">
+            <div class="summary-row-label">概要</div>
+            <div class="summary-row-value">{{#if 金銭条件2_概要}}{{金銭条件2_概要}}{{else}}国内・海外パートナーにサブライセンスし、Licensee が受領したサブライセンス料を料率に応じて分配します。{{/if}}</div>
+          </div>
           {{#if 金銭条件2_計算式}}
           <div class="formula-box">
             <div class="formula-label">計算式 / Formula</div>
@@ -774,7 +840,7 @@
           {{/if}}
           <div class="finance-details">
             <div class="detail-item">
-              <div class="sig-label">基準価格ラベル</div>
+              <div class="sig-label">基準価格</div>
               <div class="sig-value">{{金銭条件2_基準価格ラベル}}</div>
             </div>
             <div class="detail-item">
@@ -810,6 +876,10 @@
             <div class="method-row-label">計算方式</div>
             <div class="method-row-value">{{金銭条件3_計算方式}}</div>
           </div>
+          <div class="summary-row">
+            <div class="summary-row-label">概要</div>
+            <div class="summary-row-value">{{#if 金銭条件3_概要}}{{金銭条件3_概要}}{{else}}海外パートナーからの委託により Licensee がローカライズ版を製造・出荷し、海外パートナーが現地で販売元となる形式。海外パートナーから Licensee が受領する製造代金および利用許諾料を含む取引額に対して料率を乗じた金額を、Licensor へロイヤリティとして支払います。{{/if}}</div>
+          </div>
           {{#if 金銭条件3_計算式}}
           <div class="formula-box">
             <div class="formula-label">計算式 / Formula</div>
@@ -818,7 +888,7 @@
           {{/if}}
           <div class="finance-details">
             <div class="detail-item">
-              <div class="sig-label">基準価格ラベル</div>
+              <div class="sig-label">基準価格</div>
               <div class="sig-value">{{金銭条件3_基準価格ラベル}}</div>
             </div>
             <div class="detail-item">
