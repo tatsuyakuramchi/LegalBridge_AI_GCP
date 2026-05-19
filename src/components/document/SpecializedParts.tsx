@@ -87,6 +87,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
       金銭条件: '',
       MGAG: '',
       料率: '',
+      契約締結日: '',   // Phase 22.21.5: PDF v3 で再許諾テーブルに 契約締結日 列が必要
       備考: '',
     };
     setFormData({ ...formData, サブライセンシー一覧: [...list, newItem] });
@@ -261,7 +262,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-3">
+            <div className="grid grid-cols-1 md:grid-cols-5 gap-4 pt-3">
               {['金銭条件', 'MGAG', '料率', '備考'].map((sub) => (
                 <div key={sub} className="space-y-1">
                   <label className={labelCls}>{sub}</label>
@@ -273,6 +274,16 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
                   />
                 </div>
               ))}
+              {/* Phase 22.21.5: 契約締結日 (PDF v3 で再許諾テーブルに必要) */}
+              <div className="space-y-1">
+                <label className={labelCls}>契約締結日</label>
+                <input
+                  type="date"
+                  value={item.契約締結日 || ''}
+                  onChange={(e) => updateItem(idx, '契約締結日', e.target.value)}
+                  className={inputCls}
+                />
+              </div>
             </div>
           </div>
         ))}
