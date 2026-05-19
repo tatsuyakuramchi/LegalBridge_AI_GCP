@@ -326,12 +326,15 @@ export function VendorsPanel() {
               />
             </Field>
 
-            {/* Phase 22.13: 担当者リスト (1 取引先 N 担当者)。primary 1 件は
-                 文書テンプレの「担当者」に転記される。 */}
+            {/* Phase 22.13: 取引先側 窓口担当者リスト (1 取引先 N 担当者)。
+                 ※ ここで言う「担当者」は取引先側の窓口担当者 (相手方の人)。
+                   当社側の担当者はマスター > スタッフ で管理。
+                 ★ primary 1 件の名前が vendor.contact_name にミラーされ、
+                   発注書 / 検収書テンプレの「取引先担当者」フィールドに転記。 */}
             <div className="col-span-2 mt-2 border-t border-border pt-3 space-y-2">
               <div className="flex items-center justify-between">
                 <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
-                  担当者 ({Array.isArray(data?.contacts) ? data.contacts.length : 0} 件)
+                  取引先 窓口担当者 ({Array.isArray(data?.contacts) ? data.contacts.length : 0} 件)
                 </Label>
                 {(creating || editing) && (
                   <Button
@@ -355,13 +358,17 @@ export function VendorsPanel() {
                     }}
                   >
                     <Plus className="h-3 w-3" />
-                    担当者を追加
+                    窓口担当者を追加
                   </Button>
                 )}
               </div>
-              <p className="text-[10px] font-mono text-muted-foreground">
-                ★ マーク = メイン担当者。発注書 / 検収書テンプレで「担当者」として使用されます。
-                複数登録時は 1 件だけ ★ にしてください (なければ先頭を自動で ★)。
+              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+                <strong>取引先側</strong>の窓口になる人を登録 (= 相手方の連絡先)。
+                当社側の担当者は <strong>マスター &gt; スタッフ</strong> 画面で別途管理してください。
+                <br />
+                ★ マーク = メイン窓口。発注書 / 検収書 PDF の「取引先担当者」欄に
+                この名前 / 部署が転記されます。複数登録時は 1 件だけ ★ にしてください
+                (なければ先頭を自動で ★)。
               </p>
               {!Array.isArray(data?.contacts) || data.contacts.length === 0 ? (
                 <div className="text-[11px] font-mono text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
