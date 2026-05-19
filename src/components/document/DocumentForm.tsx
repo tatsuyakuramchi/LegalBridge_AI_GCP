@@ -21,6 +21,7 @@ import {
 } from './FinancialConditionTable';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
 import { ParentPoPicker, type PoLoaded } from './ParentPoPicker';
+import { DocumentNumberLookup } from './DocumentNumberLookup';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -654,6 +655,36 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
 
         {/* I. ヘッダ */}
         <FormSection title="I. ヘッダ" variant="default" icon={<Briefcase className="w-4 h-4" />}>
+          {/* Phase 22.21: 基本契約名 を archived document から検索して反映。
+              文書番号 (ARC-LIC-2026-XXXX 等) を入れて「検索」→「適用」で
+              フォーム上の formData.基本契約名 / formData.基本契約番号 を一括補完。
+              ライセンス系の親契約 (license_master / 過去の individual_license_terms /
+              service_master 等) を再利用するときに便利。 */}
+          <div className="col-span-full mb-2">
+            <DocumentNumberLookup
+              label="基本契約名を文書番号で検索 (アーカイブから)"
+              placeholder="例: ARC-LIC-2026-0001 / ARC-SVC-2026-0001"
+              initialQuery={formData.基本契約番号 || ''}
+              filterTemplateTypes={[
+                'license_master',
+                'service_master',
+                'individual_license_terms',
+                'sales_master_buyer',
+                'sales_master_credit',
+                'sales_master_standard',
+              ]}
+              onApply={(doc) => {
+                setFormData({
+                  ...formData,
+                  基本契約名: doc.derived_title,
+                  基本契約番号: doc.document_number,
+                  // 任意: 親契約の Drive リンクも保持しておくと PDF テンプレで
+                  // 参照可能。テンプレが拾わない場合は無害。
+                  基本契約リンク: doc.drive_link || formData.基本契約リンク,
+                });
+              }}
+            />
+          </div>
           {renderGroup('I. ヘッダ')}
         </FormSection>
 
