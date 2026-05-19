@@ -623,6 +623,31 @@ export async function initDb() {
     // 利用許諾料計算書はこのテーブルの 1 行を指して計算する。
     // -----------------------------------------------------------------
     // -----------------------------------------------------------------
+    // Phase 22.20-C: サブライセンシー マスター。
+    //   個別利用許諾条件書フォームの SubLicenseeTable は従来 formData の
+    //   JSON 配列だったが、繰り返し利用される企業が多いため master 化。
+    //   1 サブライセンシー = 1 行。区分 (製造販売 / 翻訳出版 / デジタル等) や
+    //   想定地域・言語はマスターで保持し、契約ごとの金銭条件 / 料率 / MGAG は
+    //   別途各契約レコードで個別に持つ (master と契約は join)。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS sublicensees (
+      id SERIAL PRIMARY KEY,
+      name TEXT NOT NULL,
+      name_kana TEXT,
+      category VARCHAR(50),          -- 製造販売 / 翻訳出版 / デジタル / 配信 等
+      default_region TEXT,
+      default_language TEXT,
+      rights_holder TEXT,
+      contact_email TEXT,
+      contact_phone VARCHAR(50),
+      remarks TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_sublicensees_active ON sublicensees(is_active);`,
+    `CREATE INDEX IF NOT EXISTS idx_sublicensees_category ON sublicensees(category);`,
+    // -----------------------------------------------------------------
     // Phase 22.18: 原作マスター (ledgers) + 素材マスター (materials)
     //   原作 IP 単位 → 配下に素材 N 件 → 各素材ごとに 1 契約 (license_contracts)
     //   ID 体系:

@@ -2,6 +2,7 @@ import React from 'react';
 import { Building2, User, Trash2, Plus, GitBranch } from 'lucide-react';
 
 import { cn } from '@/lib/utils';
+import { useAppData } from '@/src/context/AppDataContext';
 
 interface PartySectionProps {
   prefix: string;
@@ -70,10 +71,15 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
   setFormData,
 }) => {
   const list = formData.サブライセンシー一覧 || [];
+  // Phase 22.20-C: マスター連動。sublicensees から選ぶと
+  // 区分/名称/地域/言語/権利者表記が auto-fill。
+  const { sublicensees } = useAppData();
+  const masterList: any[] = Array.isArray(sublicensees) ? sublicensees : [];
 
   const addItem = () => {
     const newItem = {
       id: Date.now(),
+      sublicensee_id: undefined,  // マスター ID (任意 = inline 入力でも OK)
       区分: '製造販売',
       名称: '',
       地域: '',
@@ -95,6 +101,27 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
   const updateItem = (idx: number, field: string, value: any) => {
     const newList = [...list];
     newList[idx] = { ...newList[idx], [field]: value };
+    setFormData({ ...formData, サブライセンシー一覧: newList });
+  };
+
+  // Phase 22.20-C: マスター行を選んだら関連フィールドを auto-fill
+  const pickFromMaster = (idx: number, sublicenseeId: string) => {
+    const sid = Number(sublicenseeId);
+    if (!sid) {
+      updateItem(idx, 'sublicensee_id', undefined);
+      return;
+    }
+    const m = masterList.find((s: any) => Number(s.id) === sid);
+    if (!m) return;
+    const newList = [...list];
+    newList[idx] = {
+      ...newList[idx],
+      sublicensee_id: sid,
+      区分: m.category || newList[idx].区分,
+      名称: m.name || '',
+      地域: m.default_region || newList[idx].地域,
+      言語: m.default_language || newList[idx].言語,
+    };
     setFormData({ ...formData, サブライセンシー一覧: newList });
   };
 
@@ -141,6 +168,34 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
               <Trash2 className="h-3 w-3" />
             </button>
 
+            {/* Phase 22.20-C: マスターからの引用 */}
+            {masterList.length > 0 && (
+              <div className="mb-3 pb-3 border-b border-dashed border-border">
+                <label className={labelCls}>
+                  マスターから引用 ({masterList.length} 件登録あり)
+                </label>
+                <select
+                  value={item.sublicensee_id || ''}
+                  onChange={(e) => pickFromMaster(idx, e.target.value)}
+                  className={inputCls}
+                >
+                  <option value="">— マスターを選んで自動入力 / または手入力 —</option>
+                  {masterList
+                    .filter((s: any) => s.is_active !== false)
+                    .map((s: any) => (
+                      <option key={s.id} value={s.id}>
+                        [{s.category || '—'}] {s.name}
+                        {s.default_region ? ` / ${s.default_region}` : ''}
+                      </option>
+                    ))}
+                </select>
+                <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">
+                  マスター &gt; Sublicensees で登録した取引先を選ぶと
+                  区分 / 名称 / 地域 / 言語 が自動入力されます。手入力でも OK。
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pb-4 border-b border-dashed border-border">
               <div className="space-y-1">
                 <label className={labelCls}>区分</label>
@@ -152,6 +207,10 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
                   <option value="製造販売">製造販売</option>
                   <option value="翻訳出版">翻訳出版</option>
                   <option value="デジタル">デジタル</option>
+                  <option value="配信">配信</option>
+                  <option value="グッズ">グッズ</option>
+                  <option value="音声化">音声化</option>
+                  <option value="その他">その他</option>
                 </select>
               </div>
               <div className="md:col-span-2 space-y-1">

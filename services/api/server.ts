@@ -1724,6 +1724,36 @@ async function startServer() {
     }
   });
 
+  // Phase 22.20-C: サブライセンシー マスター (read mirror)
+  app.get("/api/master/sublicensees", async (_req, res) => {
+    try {
+      const result = await query(
+        `SELECT id, name, name_kana, category, default_region, default_language,
+                rights_holder, contact_email, contact_phone, remarks, is_active,
+                created_at, updated_at
+           FROM sublicensees
+          ORDER BY name ASC`
+      );
+      res.json(
+        result.rows.map((r: any) => ({
+          ...r,
+          id: Number(r.id),
+          is_active: r.is_active !== false,
+        }))
+      );
+    } catch (err: any) {
+      if (err && (err.code === "42703" || err.code === "42P01")) {
+        console.warn(
+          "[/api/master/sublicensees] テーブル未追加。worker サービスを再デプロイしてください。"
+        );
+        res.json([]);
+        return;
+      }
+      console.error("GET /api/master/sublicensees failed:", err);
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   app.get("/api/master/rules", async (_req, res) => {
     try {
       const result = await query(

@@ -3235,6 +3235,113 @@ ${details}
     }
   });
 
+  // -------------------------------------------------------------------
+  // Phase 22.20-C: サブライセンシー マスター CRUD
+  // -------------------------------------------------------------------
+  app.get("/api/master/sublicensees", async (_req, res) => {
+    try {
+      const result = await query(
+        `SELECT id, name, name_kana, category, default_region, default_language,
+                rights_holder, contact_email, contact_phone, remarks, is_active,
+                created_at, updated_at
+           FROM sublicensees
+          ORDER BY name ASC`
+      );
+      res.json(
+        result.rows.map((r: any) => ({
+          ...r,
+          id: Number(r.id),
+          is_active: r.is_active !== false,
+        }))
+      );
+    } catch (error) {
+      console.error("GET /api/master/sublicensees failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.post("/api/master/sublicensees", express.json(), async (req, res) => {
+    const body = req.body || {};
+    if (!body.name || !String(body.name).trim()) {
+      return res.status(400).json({ ok: false, error: "name は必須" });
+    }
+    try {
+      const result = await query(
+        `INSERT INTO sublicensees (
+           name, name_kana, category, default_region, default_language,
+           rights_holder, contact_email, contact_phone, remarks, is_active
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING id`,
+        [
+          String(body.name).trim(),
+          body.name_kana || null,
+          body.category || null,
+          body.default_region || null,
+          body.default_language || null,
+          body.rights_holder || null,
+          body.contact_email || null,
+          body.contact_phone || null,
+          body.remarks || null,
+          body.is_active === false ? false : true,
+        ]
+      );
+      res.json({ ok: true, id: Number(result.rows[0].id) });
+    } catch (error) {
+      console.error("POST /api/master/sublicensees failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.put("/api/master/sublicensees/:id", express.json(), async (req, res) => {
+    const { id } = req.params;
+    const body = req.body || {};
+    try {
+      await query(
+        `UPDATE sublicensees SET
+           name             = $1,
+           name_kana        = $2,
+           category         = $3,
+           default_region   = $4,
+           default_language = $5,
+           rights_holder    = $6,
+           contact_email    = $7,
+           contact_phone    = $8,
+           remarks          = $9,
+           is_active        = $10,
+           updated_at       = CURRENT_TIMESTAMP
+         WHERE id = $11`,
+        [
+          body.name,
+          body.name_kana || null,
+          body.category || null,
+          body.default_region || null,
+          body.default_language || null,
+          body.rights_holder || null,
+          body.contact_email || null,
+          body.contact_phone || null,
+          body.remarks || null,
+          body.is_active === false ? false : true,
+          id,
+        ]
+      );
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("PUT /api/master/sublicensees/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.delete("/api/master/sublicensees/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      await query("DELETE FROM sublicensees WHERE id = $1", [id]);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("DELETE /api/master/sublicensees/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.post("/api/master/rules", express.json(), async (req, res) => {
     const { department, approver_slack_id, stamp_operator_slack_id, manager_slack_id, slack_channel_id, is_active } = req.body;
     try {
