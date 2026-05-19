@@ -80,7 +80,7 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
     const newItem = {
       id: Date.now(),
       sublicensee_id: undefined,  // マスター ID (任意 = inline 入力でも OK)
-      区分: '製造販売',
+      区分: '翻訳出版 - プロダクトアウト',
       名称: '',
       地域: '',
       言語: '',
@@ -204,13 +204,29 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
                   onChange={(e) => updateItem(idx, '区分', e.target.value)}
                   className={inputCls}
                 >
-                  <option value="製造販売">製造販売</option>
-                  <option value="翻訳出版">翻訳出版</option>
-                  <option value="デジタル">デジタル</option>
-                  <option value="配信">配信</option>
-                  <option value="グッズ">グッズ</option>
-                  <option value="音声化">音声化</option>
-                  <option value="その他">その他</option>
+                  {/*
+                    Phase 22.21.3: 区分を 2 軸 × 2 軸 の 4 分類で再構成。
+                      - 翻訳出版 (TL) : 当社翻訳データ利用
+                      - IPコラボ (IP) : IP 連携型
+                      - プロダクトアウト (P-out) : 当社で製造、相手方が販売
+                      - ライセンスアウト (L-out) : 相手方が製造販売
+                    +デジタル/配信/グッズ/音声化/その他 を追加バリエーションとして残す。
+                  */}
+                  <optgroup label="翻訳出版">
+                    <option value="翻訳出版 - プロダクトアウト">翻訳出版 - プロダクトアウト</option>
+                    <option value="翻訳出版 - ライセンスアウト">翻訳出版 - ライセンスアウト</option>
+                  </optgroup>
+                  <optgroup label="IPコラボ">
+                    <option value="IPコラボ - プロダクトアウト">IPコラボ - プロダクトアウト</option>
+                    <option value="IPコラボ - ライセンスアウト">IPコラボ - ライセンスアウト</option>
+                  </optgroup>
+                  <optgroup label="その他">
+                    <option value="デジタル">デジタル</option>
+                    <option value="配信">配信</option>
+                    <option value="グッズ">グッズ</option>
+                    <option value="音声化">音声化</option>
+                    <option value="その他">その他</option>
+                  </optgroup>
                 </select>
               </div>
               <div className="md:col-span-2 space-y-1">

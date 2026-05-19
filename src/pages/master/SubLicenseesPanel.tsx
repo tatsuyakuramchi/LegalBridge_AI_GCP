@@ -49,7 +49,7 @@ type Sublicensee = {
 const empty: Sublicensee = {
   name: "",
   name_kana: "",
-  category: "製造販売",
+  category: "翻訳出版 - プロダクトアウト",
   default_region: "",
   default_language: "",
   rights_holder: "",
@@ -59,9 +59,16 @@ const empty: Sublicensee = {
   is_active: true,
 }
 
+// Phase 22.21.3: 区分を 2 軸 × 2 軸 の 4 分類で再構成。
+//   - 翻訳出版 (TL) : 当社翻訳データ利用
+//   - IPコラボ (IP) : IP 連携型
+//   - プロダクトアウト (P-out) : 当社で製造、相手方が販売
+//   - ライセンスアウト (L-out) : 相手方が製造販売
 const CATEGORIES = [
-  "製造販売",
-  "翻訳出版",
+  "翻訳出版 - プロダクトアウト",
+  "翻訳出版 - ライセンスアウト",
+  "IPコラボ - プロダクトアウト",
+  "IPコラボ - ライセンスアウト",
   "デジタル",
   "配信",
   "グッズ",

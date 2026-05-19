@@ -163,6 +163,101 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVendor?.vendor_code, templateId, allContracts.length]);
 
+  // ---------------------------------------------------------------
+  // Phase 22.21.3: 原作 / 素材 マスター由来の auto-fill を初回マウント時にも実行。
+  //   `onLedgerChange` / `onMaterialChange` はユーザーが選択し直したときしか
+  //   発火しないので、保存済みフォームを再編集で開いた瞬間や、ledgers
+  //   マスター fetch 完了の直後に 素材権利者 / クレジット表示 / 原著作物補記
+  //   が空のままになるケースがあった。それを補正する retroactive auto-fill。
+  //
+  //   - templateId が individual_license_terms の時のみ動作
+  //   - formData.ledger_ref_id が設定されていて、対応する ledger / material が
+  //     allLedgers から取れるときに、未入力フィールドだけ静かに埋める。
+  //   - ユーザーが手動で空にしたいケースを壊さないよう、「上書き可能」設計
+  //     (= 一度埋めた値は二度と再書き込みしない)。lastLedgerFillRef で抑止。
+  //
+  //   ★ 注意: Rules of Hooks のため、Early Return より上に置く必要がある。
+  // ---------------------------------------------------------------
+  const lastLedgerFillRef = React.useRef<string>('');
+  useEffect(() => {
+    if (
+      templateId !== 'individual_license_terms' &&
+      templateId !== 'lic_individual'
+    )
+      return;
+    const ledgers = Array.isArray(allLedgers) ? allLedgers : [];
+    if (ledgers.length === 0) return;
+    const lid = formData.ledger_ref_id ? Number(formData.ledger_ref_id) : 0;
+    if (!lid) return;
+    const ledger = ledgers.find((l: any) => Number(l.id) === lid);
+    if (!ledger) return;
+
+    const materials: any[] = Array.isArray(ledger.materials)
+      ? ledger.materials
+      : [];
+    const mid = formData.material_ref_id
+      ? Number(formData.material_ref_id)
+      : 0;
+    const material = mid
+      ? materials.find((m: any) => Number(m.id) === mid) ||
+        materials.find((m: any) => m.is_default) ||
+        null
+      : materials.find((m: any) => m.is_default) || materials[0] || null;
+
+    // 同じ (ledger, material) 組で 1 回だけ実行
+    const key = `${lid}:${material ? material.id : 'none'}`;
+    if (lastLedgerFillRef.current === key) return;
+
+    const resolveRH = (mat: any, led: any): string =>
+      (mat && mat.rights_holder) ||
+      (led && led.default_rights_holder) ||
+      (led && led.publisher_name) ||
+      (led && led.creator_name) ||
+      '';
+    const resolveCD = (led: any): string => {
+      if (led && led.default_credit_display) return led.default_credit_display;
+      if (led && led.title) return `© ${led.title}`;
+      return '';
+    };
+
+    const patch: Record<string, any> = {};
+    // 空のときだけ補完 (auto-fill + 上書き可能)
+    if (!formData['素材権利者']) {
+      const v = resolveRH(material, ledger);
+      if (v) patch['素材権利者'] = v;
+    }
+    if (!formData['クレジット表示']) {
+      const v = resolveCD(ledger);
+      if (v) patch['クレジット表示'] = v;
+    }
+    if (!formData['原著作物補記'] && ledger.default_work_supplement) {
+      patch['原著作物補記'] = ledger.default_work_supplement;
+    }
+    // 原著作物名 / 素材番号 / 素材名 も念のため (空のときだけ)
+    if (!formData['原著作物名'] && ledger.title) {
+      patch['原著作物名'] = ledger.title;
+    }
+    if (material) {
+      if (!formData['素材番号'] && material.material_code) {
+        patch['素材番号'] = material.material_code;
+      }
+      if (!formData['素材名'] && material.material_name) {
+        patch['素材名'] = material.material_name;
+      }
+    }
+
+    if (Object.keys(patch).length > 0) {
+      setFormData({ ...formData, ...patch });
+    }
+    lastLedgerFillRef.current = key;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    templateId,
+    formData.ledger_ref_id,
+    formData.material_ref_id,
+    allLedgers?.length,
+  ]);
+
   // Phase 22.7: 発注書のサマリー (納期 / 支払日) を明細から自動集計。
   //   - 明細の delivery_date を集約 → summaryDeliveryDate
   //   - 明細の payment_date を集約 → summaryPaymentDate
@@ -418,6 +513,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       const defaultMaterial =
         ledger?.materials?.find((m: any) => m.is_default) ||
         ledger?.materials?.[0];
+      // Phase 22.21.3: 原作切り替えは「ユーザーが意図的に主役を変えた」操作
+      //   なので、素材権利者/クレジット表示も resolveXxx() の結果で上書きする。
+      //   既存値を残したい場合は『素材切替』だけ実施するか、上書き後に編集すれば良い。
       setFormData({
         ...formData,
         ledger_ref_id: lid,
@@ -430,12 +528,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           defaultMaterial?.is_default
             ? ledger?.title || formData.原著作物名 || ''
             : formData.原著作物名 || ledger?.title || '',
-        // Phase 22.20: ledger デフォルトを クレジット表記 / 原著作物補記 にも自動入力
-        //   既にユーザー入力済みなら尊重 (空のときのみ補完)
+        // Phase 22.21.3: ledger 切替時は resolveCreditDisplay() を強制反映
+        //   (タイトルが変わるので前の `© 旧タイトル` が残ると混乱の元)
         クレジット表示:
-          formData.クレジット表示 || resolveCreditDisplay(ledger),
+          resolveCreditDisplay(ledger) || formData.クレジット表示 || '',
         原著作物補記:
-          formData.原著作物補記 || ledger?.default_work_supplement || '',
+          ledger?.default_work_supplement || formData.原著作物補記 || '',
       });
     };
 
