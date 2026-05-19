@@ -8787,6 +8787,66 @@ ${details}
             }
           }
         }
+
+        // Phase 22.20-D: work_sublicensees (Work × サブライセンシー) を永続化
+        //   formData.サブライセンシー一覧 [] が UI から渡された場合のみ反映。
+        //   undefined のときは触らない (フォームが他テンプレなら関係ない)。
+        //   replacement semantics: 既存を削除 → 新リストを順番に INSERT。
+        if (
+          lcId &&
+          Array.isArray(formData.サブライセンシー一覧)
+        ) {
+          try {
+            await query(
+              "DELETE FROM work_sublicensees WHERE license_contract_id = $1",
+              [lcId]
+            );
+            let order = 0;
+            for (const sl of formData.サブライセンシー一覧) {
+              if (!sl) continue;
+              // 名称も sublicensee_id も無い完全空行はスキップ
+              const hasContent =
+                sl.sublicensee_id ||
+                (sl.名称 && String(sl.名称).trim()) ||
+                (sl.金銭条件 && String(sl.金銭条件).trim()) ||
+                (sl.料率 && String(sl.料率).trim()) ||
+                (sl.MGAG && String(sl.MGAG).trim());
+              if (!hasContent) continue;
+
+              await query(
+                `INSERT INTO work_sublicensees (
+                   license_contract_id, sublicensee_id, inline_name,
+                   category, region, language,
+                   payment_terms_label, mg_ag_label, rate_label, remarks,
+                   sort_order
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                [
+                  lcId,
+                  sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
+                  sl.名称 || null,
+                  sl.区分 || null,
+                  sl.地域 || null,
+                  sl.言語 || null,
+                  sl.金銭条件 || null,
+                  sl.MGAG || null,
+                  sl.料率 || null,
+                  sl.備考 || null,
+                  order++,
+                ]
+              );
+            }
+            console.log(
+              `🤝 [work-sublicensees] saved ${order} rows for work ${
+                resolvedWorkId || lcId
+              }`
+            );
+          } catch (wsErr) {
+            console.warn(
+              `[work-sublicensees] persist failed for license_contract_id=${lcId}:`,
+              wsErr
+            );
+          }
+        }
       } else if (templateType === "royalty_statement") {
         await query(
           "INSERT INTO royalty_payments (backlog_issue_key, total_amount, period, status) VALUES ($1, $2, $3, $4)",

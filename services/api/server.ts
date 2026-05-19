@@ -1362,6 +1362,52 @@ async function startServer() {
               payment_terms: r.payment_terms || "",
               mg_amount: r.mg_amount !== null ? Number(r.mg_amount) : 0,
             }));
+
+            // Phase 22.20-D: work_sublicensees を読み出して
+            //   formData.サブライセンシー一覧 と同じ shape で返却。
+            //   master が紐付いている場合は master_name / master_category を
+            //   fallback として使う (inline 入力優先)。
+            //   テーブル未追加環境では 42P01 を catch して空配列。
+            try {
+              const wsRes = await query(
+                `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
+                        ws.category, ws.region, ws.language,
+                        ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
+                        ws.remarks, ws.sort_order,
+                        s.name AS master_name,
+                        s.category AS master_category,
+                        s.default_region AS master_region,
+                        s.default_language AS master_language
+                   FROM work_sublicensees ws
+                   LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
+                  WHERE ws.license_contract_id = $1
+                  ORDER BY ws.sort_order ASC, ws.id ASC`,
+                [lcId]
+              );
+              context["サブライセンシー一覧"] = wsRes.rows.map((r: any) => ({
+                id: Number(r.id),
+                sublicensee_id: r.sublicensee_id
+                  ? Number(r.sublicensee_id)
+                  : undefined,
+                区分: r.category || r.master_category || "",
+                名称: r.inline_name || r.master_name || "",
+                地域: r.region || r.master_region || "",
+                言語: r.language || r.master_language || "",
+                金銭条件: r.payment_terms_label || "",
+                MGAG: r.mg_ag_label || "",
+                料率: r.rate_label || "",
+                備考: r.remarks || "",
+              }));
+            } catch (wsErr: any) {
+              if (wsErr && (wsErr.code === "42P01" || wsErr.code === "42703")) {
+                // テーブル / 列なし → worker 未デプロイ。空で返す。
+                console.warn(
+                  "[form-context] work_sublicensees テーブル未追加。空 list で返却。"
+                );
+              } else {
+                console.warn("work_sublicensees lookup failed:", wsErr);
+              }
+            }
           }
         } catch (lcErr) {
           console.warn("license_financial_conditions lookup failed:", lcErr);

@@ -648,6 +648,35 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_sublicensees_active ON sublicensees(is_active);`,
     `CREATE INDEX IF NOT EXISTS idx_sublicensees_category ON sublicensees(category);`,
     // -----------------------------------------------------------------
+    // Phase 22.20-D: Work × サブライセンシー 紐付きテーブル。
+    //   個別利用許諾契約 (license_contracts = Work) ごとに、複数の
+    //   サブライセンシーとの 契約条件 (プロダクトアウト / ライセンスアウト) を
+    //   構造化して保持。
+    //   sublicensee_id (master FK) は任意で、未登録のものは inline_name で
+    //   フリー入力。region / language / category は master からのスナップショット
+    //   (= 契約時の値を保存、後で master が変わっても契約の表記は変わらない)。
+    //   payment_terms_label / mg_ag_label / rate_label は契約固有の文字列。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS work_sublicensees (
+      id SERIAL PRIMARY KEY,
+      license_contract_id INTEGER NOT NULL REFERENCES license_contracts(id) ON DELETE CASCADE,
+      sublicensee_id INTEGER REFERENCES sublicensees(id) ON DELETE SET NULL,
+      inline_name TEXT,
+      category VARCHAR(50),
+      region TEXT,
+      language TEXT,
+      payment_terms_label TEXT,
+      mg_ag_label TEXT,
+      rate_label TEXT,
+      remarks TEXT,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_ws_license_contract ON work_sublicensees(license_contract_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_ws_sublicensee ON work_sublicensees(sublicensee_id);`,
+
+    // -----------------------------------------------------------------
     // Phase 22.18: 原作マスター (ledgers) + 素材マスター (materials)
     //   原作 IP 単位 → 配下に素材 N 件 → 各素材ごとに 1 契約 (license_contracts)
     //   ID 体系:
