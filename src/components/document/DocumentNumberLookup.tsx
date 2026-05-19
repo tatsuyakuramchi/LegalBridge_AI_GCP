@@ -48,45 +48,60 @@ interface Props {
   disabled?: boolean
 }
 
+// Phase 22.21.2: テンプレ種別ごとの「契約類型名」前置ラベル。
+//   例: ARC-SVC-2026-0001 (service_master) → "業務委託基本契約 - 株式会社X × 株式会社アークライト"
+//       ARC-LIC-2026-0001 (license_master) → "ライセンス基本契約書 - 株式会社X × 株式会社アークライト"
+const TEMPLATE_TYPE_LABELS: Record<string, string> = {
+  license_master: "ライセンス基本契約書",
+  service_master: "業務委託基本契約",
+  sales_master_buyer: "売買基本契約 (買手)",
+  sales_master_credit: "売買基本契約 (信用)",
+  sales_master_standard: "売買基本契約",
+  individual_license_terms: "個別利用許諾条件書",
+  nda: "NDA (機密保持契約)",
+  purchase_order: "発注書",
+  planning_purchase_order: "企画発注書",
+  intl_purchase_order: "国際発注書",
+}
+
 const deriveTitle = (
   templateType: string,
   fd: Record<string, any>,
   fallback: string
 ): string => {
-  // テンプレ別に最も人間可読な title 候補を組み立てる。
+  const typeLabel = TEMPLATE_TYPE_LABELS[templateType] || ""
+  let parties = ""
+
   if (templateType === "license_master") {
-    return (
-      [fd.VENDOR_NAME, fd.PARTY_A_NAME].filter(Boolean).join(" × ") ||
-      fd.CONTRACT_NO ||
-      fallback
-    )
-  }
-  if (templateType === "individual_license_terms") {
-    return (
+    parties = [fd.VENDOR_NAME, fd.PARTY_A_NAME].filter(Boolean).join(" × ")
+  } else if (templateType === "individual_license_terms") {
+    parties =
       fd.基本契約名 ||
       fd.対象製品予定名 ||
       fd.原著作物名 ||
       fd.Licensor_氏名会社名 ||
       fd.Licensor_名称 ||
-      fallback
-    )
+      ""
+  } else if (templateType === "service_master") {
+    parties = [fd.PARTY_A_NAME, fd.VENDOR_NAME].filter(Boolean).join(" × ")
+  } else if (templateType.startsWith("sales_master")) {
+    parties = [fd.PARTY_A_NAME, fd.PARTY_B_NAME].filter(Boolean).join(" × ")
+  } else if (templateType.startsWith("purchase_order")) {
+    parties = [fd.VENDOR_NAME, fd.PROJECT_TITLE].filter(Boolean).join(" / ")
+  } else if (templateType === "nda") {
+    parties =
+      [fd.PARTY_A_NAME, fd.PARTY_B_NAME].filter(Boolean).join(" × ") ||
+      fd.summary ||
+      ""
+  } else {
+    parties = fd.summary || fd.PROJECT_TITLE || fd.VENDOR_NAME || fd.title || ""
   }
-  if (templateType === "service_master") {
-    return (
-      [fd.PARTY_A_NAME, fd.VENDOR_NAME].filter(Boolean).join(" × ") ||
-      fallback
-    )
-  }
-  if (templateType.startsWith("purchase_order")) {
-    return (
-      [fd.VENDOR_NAME, fd.PROJECT_TITLE].filter(Boolean).join(" / ") ||
-      fallback
-    )
-  }
-  // generic fallback
-  return (
-    fd.summary || fd.PROJECT_TITLE || fd.VENDOR_NAME || fd.title || fallback
-  )
+
+  // typeLabel + parties の組み立て。両方あれば " - " 区切り。
+  if (typeLabel && parties) return `${typeLabel} - ${parties}`
+  if (typeLabel) return typeLabel
+  if (parties) return parties
+  return fallback
 }
 
 export const DocumentNumberLookup: React.FC<Props> = ({
