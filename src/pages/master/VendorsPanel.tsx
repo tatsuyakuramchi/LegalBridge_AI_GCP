@@ -188,7 +188,10 @@ export function VendorsPanel() {
       </div>
 
       <Dialog open={open} onOpenChange={(v) => !v && close()}>
-        <DialogContent className="max-w-2xl">
+        {/* Phase 22.14: max-h-[90vh] + flex column で modal が viewport を
+            突き抜けないようにする。DialogBody 単体の overflow-y-auto だけだと
+            DialogContent 自体が肥大化して top/bottom が画面外に出る問題を解消。 */}
+        <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>
               {creating
@@ -198,7 +201,7 @@ export function VendorsPanel() {
                 : "取引先詳細"}
             </DialogTitle>
           </DialogHeader>
-          <DialogBody className="grid grid-cols-2 gap-3 max-h-[70vh] overflow-y-auto">
+          <DialogBody className="grid grid-cols-2 gap-3 overflow-y-auto flex-1 min-h-0">
             <Field label="取引先コード *">
               <Input
                 value={data?.vendor_code || ""}
