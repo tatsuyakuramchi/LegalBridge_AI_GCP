@@ -7757,14 +7757,98 @@ ${details}
         }
       }
 
+      // -----------------------------------------------------------------
+      // Phase 22.21.12: 個別利用許諾条件書 (individual_license_terms) の
+      //   台帳ID / work_id を PDF レンダリング前に自動採番する。
+      //   旧実装は templateType === "lic_individual" でチェックしていたが、
+      //   実際の templateType は "individual_license_terms" のため分岐が
+      //   一度もマッチせず採番されていなかった。さらに採番ロジックは
+      //   generateDocument の "後" にあったため、PDF テンプレが空値で
+      //   レンダリングされていた。両方を修正:
+      //     - 分岐文字列を正す ("lic_individual" → "individual_license_terms")
+      //     - 採番 (formData への書き戻し) を generateDocument の前に実行
+      //   DB upsert 側 (旧 8534 行) は後段でも同じ値を再利用するので、
+      //   ここで formData に書き込んだ値が PDF と DB の両方に反映される。
+      // -----------------------------------------------------------------
+      if (templateType === "individual_license_terms") {
+        // 台帳ID 採番
+        let resolvedLedgerId = formData.ledgerId
+          ? String(formData.ledgerId).trim()
+          : formData["台帳ID"]
+            ? String(formData["台帳ID"]).trim()
+            : "";
+        if (!resolvedLedgerId) {
+          const existing = await query(
+            "SELECT ledger_id FROM license_contracts WHERE backlog_issue_key = $1 LIMIT 1",
+            [issueKey]
+          );
+          if (existing.rows[0]?.ledger_id) {
+            resolvedLedgerId = existing.rows[0].ledger_id;
+          } else {
+            resolvedLedgerId = await getNewLedgerId();
+            console.log(
+              `📒 [ledger-id pre-render] auto-assigned ${resolvedLedgerId} for ${issueKey}`
+            );
+          }
+        }
+        formData.ledgerId = resolvedLedgerId;
+        formData["台帳ID"] = resolvedLedgerId;
+
+        // work_id 採番 (formData.ledger_ref_id があれば ledger_code 配下で採番)
+        let preResolvedWorkId: string = formData.work_id
+          ? String(formData.work_id).trim()
+          : "";
+        const ledgerRefIdNum = formData.ledger_ref_id
+          ? Number(formData.ledger_ref_id)
+          : 0;
+        // 既存 license_contracts に紐付き情報があれば取り込む (再発行ケース)
+        if (!preResolvedWorkId) {
+          const existingLc = await query(
+            `SELECT ledger_ref_id, work_id FROM license_contracts
+              WHERE backlog_issue_key = $1 LIMIT 1`,
+            [issueKey]
+          );
+          if (existingLc.rows[0]?.work_id) {
+            preResolvedWorkId = existingLc.rows[0].work_id;
+          }
+          // form から ledger_ref_id 来てないが DB にあれば取り込む
+          if (!ledgerRefIdNum && existingLc.rows[0]?.ledger_ref_id) {
+            formData.ledger_ref_id = Number(existingLc.rows[0].ledger_ref_id);
+          }
+        }
+        // 新規採番 (ledger_ref_id がある場合のみ)
+        if (!preResolvedWorkId) {
+          const lref = formData.ledger_ref_id
+            ? Number(formData.ledger_ref_id)
+            : 0;
+          if (lref) {
+            const lr = await query(
+              "SELECT ledger_code FROM ledgers WHERE id = $1",
+              [lref]
+            );
+            if (lr.rows[0]?.ledger_code) {
+              preResolvedWorkId = await getNewWorkId(lr.rows[0].ledger_code);
+              console.log(
+                `🎫 [work-id pre-render] auto-assigned ${preResolvedWorkId} for ${issueKey} (ledger=${lr.rows[0].ledger_code})`
+              );
+            }
+          }
+        }
+        if (preResolvedWorkId) {
+          formData.work_id = preResolvedWorkId;
+          formData.WORK_ID = preResolvedWorkId;
+        }
+      }
+
       // Phase 7d: individual_license_terms 用に
       // formData.financial_conditions[] を HTML テンプレートが参照する
       // legacy flat field {{金銭条件1_料率}}, {{金銭条件1_計算式}} ... に
       // 展開する。Admin UI 側は FinancialConditionTable で構造化された
       // rows を持っているが、Handlebars テンプレ自体は古い flat ID で
       // 書かれているため、ここで橋渡し。
+      // Phase 22.21.12: 分岐文字列を正す (旧: "lic_individual")
       if (
-        templateType === "lic_individual" &&
+        templateType === "individual_license_terms" &&
         Array.isArray(formData.financial_conditions)
       ) {
         formData.financial_conditions.forEach((c: any) => {
@@ -8531,7 +8615,7 @@ ${details}
             formData.WORK_TITLE,
           ]
         );
-      } else if (templateType === "lic_individual") {
+      } else if (templateType === "individual_license_terms") {
         // Phase 7d: license_contracts ヘッダを upsert
         // (License Master が先に走っていなくても個別条件書から開始可)。
         // ledger_id は NOT NULL UNIQUE。
@@ -8540,6 +8624,10 @@ ${details}
         //     1. formData.ledgerId が明示渡し → 尊重 (legacy 台帳 ID 持ち込み等)
         //     2. 同 backlog_issue_key の license_contracts 行が既存 → 既存 ledger_id を維持
         //     3. それ以外 → getNewLedgerId() で "LIC-YYYY-NNNN" を採番
+        // Phase 22.21.12: 旧 "lic_individual" は templateType 実値と不一致で
+        //   この分岐が一度もマッチしていなかった。"individual_license_terms"
+        //   に修正。なお pre-render の auto-numbering で同じ値が formData に
+        //   入っているため、ここでは再計算しても結果は同じ。
         let resolvedLedgerId = formData.ledgerId
           ? String(formData.ledgerId).trim()
           : "";
