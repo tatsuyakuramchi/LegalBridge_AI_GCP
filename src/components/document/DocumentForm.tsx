@@ -1153,7 +1153,30 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
             ▶ VII. 契約・署名 (任意) — クリックして展開
           </summary>
-          <div className="p-4 border-t border-input">
+          <div className="p-4 border-t border-input space-y-3">
+            {/* Phase 22.21: 発注書も基本契約を文書番号で検索して反映できるように。
+                適用すると HAS_BASE_CONTRACT=true + MASTER_CONTRACT_REF が埋まる。 */}
+            <DocumentNumberLookup
+              label="基本契約を文書番号で検索 (アーカイブから)"
+              placeholder="例: ARC-SVC-2026-0001 / ARC-LIC-2026-0001"
+              initialQuery={formData.MASTER_CONTRACT_NUMBER || ''}
+              filterTemplateTypes={[
+                'service_master',
+                'license_master',
+                'sales_master_buyer',
+                'sales_master_credit',
+                'sales_master_standard',
+              ]}
+              onApply={(doc) => {
+                setFormData({
+                  ...formData,
+                  HAS_BASE_CONTRACT: true,
+                  MASTER_CONTRACT_REF: `${doc.derived_title} (${doc.document_number})`,
+                  MASTER_CONTRACT_NUMBER: doc.document_number,
+                  MASTER_CONTRACT_LINK: doc.drive_link || formData.MASTER_CONTRACT_LINK,
+                });
+              }}
+            />
             {renderGroup('VII. 契約・署名 (任意)')}
           </div>
         </details>
