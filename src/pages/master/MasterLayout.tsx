@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils"
 const tabs = [
   { to: "/master/contracts", label: "Contracts", icon: FileText },
   { to: "/master/vendors", label: "Vendors", icon: Building2 },
+  // Phase 22.18: 原作マスター (LO-YYYY-NNNN + 配下素材 -NNN)
+  { to: "/master/ledgers", label: "Ledgers (原作)", icon: BookMarked },
   { to: "/master/staff", label: "Staff", icon: Users },
   { to: "/master/rules", label: "Routing", icon: GitBranch },
 ]

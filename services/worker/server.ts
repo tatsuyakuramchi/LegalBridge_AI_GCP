@@ -49,6 +49,10 @@ import {
   getNewDocumentNumber,
   getDocumentNumberForGenerate,
   getNewLedgerId,
+  getNewLedgerCode,
+  getNewWorkId,
+  createLedgerWithDefaultMaterial,
+  addMaterialToLedger,
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import {
@@ -2982,6 +2986,241 @@ ${details}
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // Phase 22.18: 原作マスター (ledgers) + 素材マスター (materials) CRUD
+  // -------------------------------------------------------------------
+
+  /**
+   * 一覧取得 — 原作 + 配下の素材リストを embedded で返す。
+   * Admin UI の LedgersPanel が直接 consume する想定。
+   */
+  app.get("/api/master/ledgers", async (_req, res) => {
+    try {
+      const ledgers = await query(
+        `SELECT id, ledger_code, title, title_kana, alternative_titles,
+                creator_name, publisher_name, remarks, is_active,
+                created_at, updated_at
+           FROM ledgers
+          ORDER BY ledger_code DESC`
+      );
+      const ids = ledgers.rows.map((l: any) => Number(l.id));
+      const matsMap = new Map<number, any[]>();
+      if (ids.length > 0) {
+        const mats = await query(
+          `SELECT id, ledger_id, material_no, material_code, material_name,
+                  material_type, rights_holder, remarks, is_default, is_active,
+                  created_at, updated_at
+             FROM materials
+            WHERE ledger_id = ANY($1::int[])
+            ORDER BY ledger_id, material_no ASC`,
+          [ids]
+        );
+        mats.rows.forEach((m: any) => {
+          const lid = Number(m.ledger_id);
+          if (!matsMap.has(lid)) matsMap.set(lid, []);
+          matsMap.get(lid)!.push({
+            ...m,
+            id: Number(m.id),
+            ledger_id: lid,
+            material_no: Number(m.material_no),
+            is_default: !!m.is_default,
+            is_active: m.is_active !== false,
+          });
+        });
+      }
+      const rows = ledgers.rows.map((l: any) => ({
+        ...l,
+        id: Number(l.id),
+        is_active: l.is_active !== false,
+        materials: matsMap.get(Number(l.id)) || [],
+      }));
+      res.json(rows);
+    } catch (error) {
+      console.error("GET /api/master/ledgers failed:", error);
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  /**
+   * 原作を新規登録 + 自動で -001 (原作本体) 素材を作成。
+   */
+  app.post("/api/master/ledgers", express.json(), async (req, res) => {
+    const body = req.body || {};
+    if (!body.title || !String(body.title).trim()) {
+      return res.status(400).json({ ok: false, error: "title は必須" });
+    }
+    try {
+      const result = await createLedgerWithDefaultMaterial({
+        title: String(body.title).trim(),
+        title_kana: body.title_kana,
+        alternative_titles: Array.isArray(body.alternative_titles)
+          ? body.alternative_titles
+          : undefined,
+        creator_name: body.creator_name,
+        publisher_name: body.publisher_name,
+        remarks: body.remarks,
+        ledger_code: body.ledger_code, // legacy 移行時の手動指定可
+      });
+      console.log(
+        `📚 [ledger] created ${result.ledger_code} (id=${result.id}), default material=${result.default_material_code}`
+      );
+      res.json({ ok: true, ...result });
+    } catch (error: any) {
+      console.error("POST /api/master/ledgers failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  app.put("/api/master/ledgers/:id", express.json(), async (req, res) => {
+    const { id } = req.params;
+    const body = req.body || {};
+    try {
+      await query(
+        `UPDATE ledgers SET
+           title              = $1,
+           title_kana         = $2,
+           alternative_titles = $3,
+           creator_name       = $4,
+           publisher_name     = $5,
+           remarks            = $6,
+           is_active          = $7,
+           updated_at         = CURRENT_TIMESTAMP
+         WHERE id = $8`,
+        [
+          body.title,
+          body.title_kana || null,
+          Array.isArray(body.alternative_titles) ? body.alternative_titles : [],
+          body.creator_name || null,
+          body.publisher_name || null,
+          body.remarks || null,
+          body.is_active === false ? false : true,
+          id,
+        ]
+      );
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("PUT /api/master/ledgers/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.delete("/api/master/ledgers/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      // 配下の素材を参照する license_contracts があるかチェック
+      const refs = await query(
+        `SELECT COUNT(*)::int AS c FROM license_contracts WHERE ledger_ref_id = $1`,
+        [id]
+      );
+      if (Number(refs.rows[0].c) > 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `この原作には ${refs.rows[0].c} 件の契約が紐付いているため削除できません`,
+        });
+      }
+      await query("DELETE FROM ledgers WHERE id = $1", [id]);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("DELETE /api/master/ledgers/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 派生素材の追加 (-002, -003, ... と枝番自動)
+   */
+  app.post(
+    "/api/master/ledgers/:id/materials",
+    express.json(),
+    async (req, res) => {
+      const ledgerId = Number(req.params.id);
+      const body = req.body || {};
+      if (!body.material_name || !String(body.material_name).trim()) {
+        return res.status(400).json({ ok: false, error: "material_name は必須" });
+      }
+      try {
+        const m = await addMaterialToLedger({
+          ledger_id: ledgerId,
+          material_name: String(body.material_name).trim(),
+          material_type: body.material_type || "derivative",
+          rights_holder: body.rights_holder,
+          remarks: body.remarks,
+        });
+        console.log(
+          `📚 [material] added ${m.material_code} (id=${m.id}) under ledger ${ledgerId}`
+        );
+        res.json({ ok: true, ...m });
+      } catch (error: any) {
+        console.error("POST /api/master/ledgers/:id/materials failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  app.put("/api/master/materials/:id", express.json(), async (req, res) => {
+    const { id } = req.params;
+    const body = req.body || {};
+    try {
+      await query(
+        `UPDATE materials SET
+           material_name = $1,
+           material_type = $2,
+           rights_holder = $3,
+           remarks       = $4,
+           is_active     = $5,
+           updated_at    = CURRENT_TIMESTAMP
+         WHERE id = $6`,
+        [
+          body.material_name,
+          body.material_type || null,
+          body.rights_holder || null,
+          body.remarks || null,
+          body.is_active === false ? false : true,
+          id,
+        ]
+      );
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("PUT /api/master/materials/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  app.delete("/api/master/materials/:id", async (req, res) => {
+    const { id } = req.params;
+    try {
+      // 原作本体 (-001) は削除不可
+      const check = await query(
+        `SELECT is_default FROM materials WHERE id = $1`,
+        [id]
+      );
+      if (check.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "素材が見つかりません" });
+      }
+      if (check.rows[0].is_default) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "原作本体素材 (-001) は削除できません" });
+      }
+      // 参照あれば拒否
+      const refs = await query(
+        `SELECT COUNT(*)::int AS c FROM license_contracts WHERE material_ref_id = $1`,
+        [id]
+      );
+      if (Number(refs.rows[0].c) > 0) {
+        return res.status(400).json({
+          ok: false,
+          error: `この素材には ${refs.rows[0].c} 件の契約が紐付いているため削除できません`,
+        });
+      }
+      await query("DELETE FROM materials WHERE id = $1", [id]);
+      res.json({ ok: true });
+    } catch (error) {
+      console.error("DELETE /api/master/materials/:id failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
     }
   });
 

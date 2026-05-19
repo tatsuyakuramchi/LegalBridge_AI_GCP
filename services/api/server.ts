@@ -1595,6 +1595,63 @@ async function startServer() {
     }
   });
 
+  // Phase 22.18: 原作 (ledgers) + 配下の素材 (materials) を 1 つの payload で返す。
+  //   worker と同じ shape を出力するため、worker 未デプロイ環境では undefined_table
+  //   で落ちる可能性があるが、その場合は空配列で返す (Slack 検索を巻き込まない)。
+  app.get("/api/master/ledgers", async (_req, res) => {
+    try {
+      const ledgers = await query(
+        `SELECT id, ledger_code, title, title_kana, alternative_titles,
+                creator_name, publisher_name, remarks, is_active,
+                created_at, updated_at
+           FROM ledgers
+          ORDER BY ledger_code DESC`
+      );
+      const ids = ledgers.rows.map((l: any) => Number(l.id));
+      const matsMap = new Map<number, any[]>();
+      if (ids.length > 0) {
+        const mats = await query(
+          `SELECT id, ledger_id, material_no, material_code, material_name,
+                  material_type, rights_holder, remarks, is_default, is_active
+             FROM materials
+            WHERE ledger_id = ANY($1::int[])
+            ORDER BY ledger_id, material_no ASC`,
+          [ids]
+        );
+        mats.rows.forEach((m: any) => {
+          const lid = Number(m.ledger_id);
+          if (!matsMap.has(lid)) matsMap.set(lid, []);
+          matsMap.get(lid)!.push({
+            ...m,
+            id: Number(m.id),
+            ledger_id: lid,
+            material_no: Number(m.material_no),
+            is_default: !!m.is_default,
+            is_active: m.is_active !== false,
+          });
+        });
+      }
+      const rows = ledgers.rows.map((l: any) => ({
+        ...l,
+        id: Number(l.id),
+        is_active: l.is_active !== false,
+        materials: matsMap.get(Number(l.id)) || [],
+      }));
+      res.json(rows);
+    } catch (err: any) {
+      if (err && (err.code === "42703" || err.code === "42P01")) {
+        console.warn(
+          "[/api/master/ledgers] ledgers / materials テーブル未追加。" +
+            "worker サービスを再デプロイして migration を実行してください。"
+        );
+        res.json([]); // フォールバック空
+        return;
+      }
+      console.error("GET /api/master/ledgers failed:", err);
+      res.status(500).json({ error: String(err) });
+    }
+  });
+
   app.get("/api/master/rules", async (_req, res) => {
     try {
       const result = await query(

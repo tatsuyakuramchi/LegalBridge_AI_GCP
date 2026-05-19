@@ -622,6 +622,54 @@ export async function initDb() {
     //
     // 利用許諾料計算書はこのテーブルの 1 行を指して計算する。
     // -----------------------------------------------------------------
+    // -----------------------------------------------------------------
+    // Phase 22.18: 原作マスター (ledgers) + 素材マスター (materials)
+    //   原作 IP 単位 → 配下に素材 N 件 → 各素材ごとに 1 契約 (license_contracts)
+    //   ID 体系:
+    //     ledgers.ledger_code      : LO-YYYY-NNNN
+    //     materials.material_code  : {ledger_code}-NNN  (枝番、原作本体 = -001)
+    //     license_contracts.work_id : LIC-{ledger_code}-W-YYYY-NNNN
+    //   原作登録時に自動で -001 (原作本体) を 1 件作成し、ledger 配下の
+    //   デフォルト素材として運用する。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS ledgers (
+      id SERIAL PRIMARY KEY,
+      ledger_code VARCHAR(40) UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      title_kana TEXT,
+      alternative_titles TEXT[] DEFAULT '{}',
+      creator_name TEXT,
+      publisher_name TEXT,
+      remarks TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_ledgers_active ON ledgers(is_active);`,
+    `CREATE INDEX IF NOT EXISTS idx_ledgers_title_kana ON ledgers(title_kana);`,
+    `CREATE TABLE IF NOT EXISTS materials (
+      id SERIAL PRIMARY KEY,
+      ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
+      material_no INTEGER NOT NULL,
+      material_code VARCHAR(80) UNIQUE NOT NULL,
+      material_name TEXT NOT NULL,
+      material_type VARCHAR(50),
+      rights_holder TEXT,
+      remarks TEXT,
+      is_default BOOLEAN DEFAULT FALSE,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(ledger_id, material_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_materials_ledger ON materials(ledger_id);`,
+    // license_contracts に 原作 / 素材 / Work ID の参照列を追加 (nullable で legacy データを壊さない)
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS ledger_ref_id INTEGER REFERENCES ledgers(id);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS material_ref_id INTEGER REFERENCES materials(id);`,
+    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS work_id VARCHAR(120) UNIQUE;`,
+    `CREATE INDEX IF NOT EXISTS idx_lc_ledger_ref ON license_contracts(ledger_ref_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_lc_material_ref ON license_contracts(material_ref_id);`,
+
     `CREATE TABLE IF NOT EXISTS license_financial_conditions (
       id SERIAL PRIMARY KEY,
       license_contract_id INTEGER NOT NULL REFERENCES license_contracts(id) ON DELETE CASCADE,
@@ -1144,6 +1192,161 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
  *   - 新リビジョン生成時: 自動的に最新を真の契約に格上げ
  *   - ユーザーが Archive UI から手動で旧版を真の契約に戻す (override)
  */
+/**
+ * Phase 22.18: 原作マスター (ledgers) の ledger_code 自動採番。
+ *
+ * 形式: LO-{YYYY}-{NNNN} (例: LO-2026-0001)
+ *
+ * document_sequences に kind="LO" / year=YYYY で連番。年単位リセット。
+ */
+export async function getNewLedgerCode(year?: number): Promise<string> {
+  const y = year || new Date().getFullYear();
+  const val = await getNextSequenceValue("LO", y);
+  return `LO-${y}-${val.toString().padStart(4, "0")}`;
+}
+
+/**
+ * Phase 22.18: WorkID (license_contracts.work_id) の自動採番。
+ *
+ * 形式: LIC-{ledger_code}-W-{YYYY}-{NNNN}
+ *   例: LIC-LO-2026-0001-W-2026-0001
+ *
+ * 連番カウンタは **原作 (ledger_code) 単位で独立**。
+ * document_sequences に kind=`W_${ledger_code}` / year=YYYY で連番。
+ *
+ * これにより:
+ *   - LO-2026-0001 配下: LIC-LO-2026-0001-W-2026-0001, 0002, ...
+ *   - LO-2026-0002 配下: LIC-LO-2026-0002-W-2026-0001, 0002, ...
+ * となり「シリーズ何作目?」が即わかる識別子になる。
+ */
+export async function getNewWorkId(
+  ledgerCode: string,
+  year?: number
+): Promise<string> {
+  if (!ledgerCode) throw new Error("ledgerCode is required");
+  const y = year || new Date().getFullYear();
+  const kind = `W_${ledgerCode}`;
+  const val = await getNextSequenceValue(kind, y);
+  return `LIC-${ledgerCode}-W-${y}-${val.toString().padStart(4, "0")}`;
+}
+
+/**
+ * Phase 22.18: 素材 (materials) の枝番自動採番。
+ *
+ * 指定 ledger_id 配下の MAX(material_no) + 1 を返す。
+ * 原作マスター登録時に最初に -001 (原作本体) を立てるので、
+ * 派生素材は -002, -003, ... と進む。
+ */
+export async function getNextMaterialNo(ledgerId: number): Promise<number> {
+  const res = await query(
+    "SELECT COALESCE(MAX(material_no), 0) + 1 AS next FROM materials WHERE ledger_id = $1",
+    [ledgerId]
+  );
+  return Number(res.rows[0].next) || 1;
+}
+
+/**
+ * Phase 22.18: 原作マスター登録 + 自動で原作本体素材 (-001) を作成する一括ヘルパー。
+ *
+ * @param payload 原作の属性 (title 必須, kana / publisher など任意)
+ * @returns 作成された ledger 行 (id, ledger_code, ...) + デフォルト素材
+ */
+export async function createLedgerWithDefaultMaterial(payload: {
+  title: string;
+  title_kana?: string;
+  alternative_titles?: string[];
+  creator_name?: string;
+  publisher_name?: string;
+  remarks?: string;
+  ledger_code?: string; // 手動指定時 (legacy 移行等)
+}): Promise<{
+  id: number;
+  ledger_code: string;
+  default_material_id: number;
+  default_material_code: string;
+}> {
+  const ledgerCode = payload.ledger_code || (await getNewLedgerCode());
+  const ledgerRes = await query(
+    `INSERT INTO ledgers (
+       ledger_code, title, title_kana, alternative_titles,
+       creator_name, publisher_name, remarks
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+     RETURNING id, ledger_code`,
+    [
+      ledgerCode,
+      payload.title,
+      payload.title_kana || null,
+      payload.alternative_titles || [],
+      payload.creator_name || null,
+      payload.publisher_name || null,
+      payload.remarks || null,
+    ]
+  );
+  const ledgerId = Number(ledgerRes.rows[0].id);
+
+  // 原作本体素材 (-001) を自動作成
+  const defaultMaterialCode = `${ledgerCode}-001`;
+  const matRes = await query(
+    `INSERT INTO materials (
+       ledger_id, material_no, material_code, material_name,
+       material_type, is_default
+     ) VALUES ($1, 1, $2, $3, 'original', TRUE)
+     RETURNING id, material_code`,
+    [ledgerId, defaultMaterialCode, payload.title]
+  );
+  return {
+    id: ledgerId,
+    ledger_code: ledgerCode,
+    default_material_id: Number(matRes.rows[0].id),
+    default_material_code: matRes.rows[0].material_code,
+  };
+}
+
+/**
+ * Phase 22.18: 原作配下に派生素材を追加する一括ヘルパー。
+ *
+ * @returns 作成された material 行
+ */
+export async function addMaterialToLedger(payload: {
+  ledger_id: number;
+  material_name: string;
+  material_type?: string;
+  rights_holder?: string;
+  remarks?: string;
+}): Promise<{ id: number; material_code: string; material_no: number }> {
+  const ledgerRes = await query(
+    "SELECT ledger_code FROM ledgers WHERE id = $1",
+    [payload.ledger_id]
+  );
+  if (ledgerRes.rows.length === 0) {
+    throw new Error(`ledger ${payload.ledger_id} not found`);
+  }
+  const ledgerCode = ledgerRes.rows[0].ledger_code;
+  const nextNo = await getNextMaterialNo(payload.ledger_id);
+  const materialCode = `${ledgerCode}-${nextNo.toString().padStart(3, "0")}`;
+  const res = await query(
+    `INSERT INTO materials (
+       ledger_id, material_no, material_code, material_name,
+       material_type, rights_holder, remarks, is_default
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)
+     RETURNING id, material_code, material_no`,
+    [
+      payload.ledger_id,
+      nextNo,
+      materialCode,
+      payload.material_name,
+      payload.material_type || "derivative",
+      payload.rights_holder || null,
+      payload.remarks || null,
+    ]
+  );
+  return {
+    id: Number(res.rows[0].id),
+    material_code: res.rows[0].material_code,
+    material_no: Number(res.rows[0].material_no),
+  };
+}
+
 /**
  * Phase 22.17: 台帳ID (license_contracts.ledger_id) の自動採番。
  *

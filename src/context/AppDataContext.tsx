@@ -72,6 +72,7 @@ interface AppDataContextValue {
   staffList: Staff[]
   assets: ExternalAsset[]
   contracts: any[]
+  ledgers: any[]  // Phase 22.18: 原作マスター (素材 embedded)
   workflowRules: any[]
   statuses: any[]
   companyProfile: any
@@ -95,6 +96,7 @@ interface AppDataContextValue {
   refreshDashboardStats: () => Promise<void>
   refreshAll: () => Promise<void>
   refreshContracts: () => Promise<void>
+  refreshLedgers: () => Promise<void>  // Phase 22.18
   refreshIssues: () => Promise<void>
   refreshVendors: () => Promise<void>
   refreshStaff: () => Promise<void>
@@ -124,6 +126,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [staffList, setStaffList] = React.useState<Staff[]>([])
   const [assets, setAssets] = React.useState<ExternalAsset[]>([])
   const [contracts, setContracts] = React.useState<any[]>([])
+  const [ledgers, setLedgers] = React.useState<any[]>([])  // Phase 22.18
   const [workflowRules, setWorkflowRules] = React.useState<any[]>([])
   const [statuses, setStatuses] = React.useState<any[]>([])
   const [companyProfile, setCompanyProfile] = React.useState<any>(null)
@@ -148,6 +151,17 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setContracts(Array.isArray(data) ? data : [])
     } catch (e) {
       console.error("Failed to fetch contracts", e)
+    }
+  }, [])
+
+  // Phase 22.18: 原作マスター取得 (素材を embedded)
+  const refreshLedgers = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/master/ledgers")
+      const data = await res.json()
+      setLedgers(Array.isArray(data) ? data : [])
+    } catch (e) {
+      console.error("Failed to fetch ledgers", e)
     }
   }, [])
 
@@ -253,6 +267,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       { key: "statuses", url: "/api/backlog/statuses" },
       { key: "workflowRules", url: "/api/master/rules" },
       { key: "contracts", url: "/api/master/contracts" },
+      { key: "ledgers", url: "/api/master/ledgers" }, // Phase 22.18
     ]
 
     const results = await Promise.all(
@@ -282,6 +297,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       statusesRes,
       rulesRes,
       contractsRes,
+      ledgersRes, // Phase 22.18
     ] = results
 
     setIssues(dedupe(issuesRes as Issue[], (i) => i.issueKey))
@@ -296,6 +312,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     setStatuses(Array.isArray(statusesRes) ? statusesRes : [])
     setWorkflowRules(Array.isArray(rulesRes) ? rulesRes : [])
     setContracts(Array.isArray(contractsRes) ? contractsRes : [])
+    setLedgers(Array.isArray(ledgersRes) ? ledgersRes : [])
   }, [])
 
   React.useEffect(() => {
@@ -312,6 +329,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     staffList,
     assets,
     contracts,
+    ledgers, // Phase 22.18
     workflowRules,
     statuses,
     companyProfile,
@@ -331,6 +349,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refreshDashboardStats,
     refreshAll,
     refreshContracts,
+    refreshLedgers, // Phase 22.18
     refreshIssues,
     refreshVendors,
     refreshStaff,
