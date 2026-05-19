@@ -657,7 +657,16 @@
         --}}
         <div class="finance-panel">
           <div class="finance-header">
-            金銭条件 {{condition_no}}{{#if title}}：{{title}}{{/if}}{{#if region_language_label}}（{{region_language_label}}）{{/if}}
+            {{!--
+              Phase 22.21.10: condition_no ベースのデフォルトタイトル。
+                1 → 自社製造・直接販売
+                2 → 国内・海外展開（ライセンスアウト型）
+                3 → 海外展開（プロダクトアウト型）
+                4+ → ベタ "金銭条件 N"
+              row.title が明示的にあればそれを優先 (将来 form 側で
+              タイトル編集可能にした際にも壊れない)。
+            --}}
+            金銭条件 {{condition_no}}：{{#if title}}{{title}}{{else}}{{#if (eq condition_no 1)}}自社製造・直接販売{{/if}}{{#if (eq condition_no 2)}}国内・海外展開（ライセンスアウト型）{{/if}}{{#if (eq condition_no 3)}}海外展開（プロダクトアウト型）{{/if}}{{/if}}{{#if region_language_label}}（{{region_language_label}}）{{/if}}
           </div>
           <div class="method-row">
             <div class="method-row-label">計算方式</div>
@@ -709,7 +718,7 @@
       {{else}}
         {{!-- Legacy fallback (flat 金銭条件N_*) — Phase 22.21.9 同じレイアウト整理 --}}
         <div class="finance-panel">
-          <div class="finance-header">金銭条件 1：自社製造・直接販売（{{金銭条件1_地域言語ラベル}}）</div>
+          <div class="finance-header">金銭条件 1：自社製造・直接販売{{#if 金銭条件1_地域言語ラベル}}（{{金銭条件1_地域言語ラベル}}）{{/if}}</div>
           <div class="method-row">
             <div class="method-row-label">計算方式</div>
             <div class="method-row-value">{{金銭条件1_計算方式}}</div>
@@ -752,7 +761,7 @@
 
         {{#if 金銭条件2_計算方式}}
         <div class="finance-panel">
-          <div class="finance-header">金銭条件 2：サブライセンス等（{{金銭条件2_地域言語ラベル}}）</div>
+          <div class="finance-header">金銭条件 2：国内・海外展開（ライセンスアウト型）{{#if 金銭条件2_地域言語ラベル}}（{{金銭条件2_地域言語ラベル}}）{{/if}}</div>
           <div class="method-row">
             <div class="method-row-label">計算方式</div>
             <div class="method-row-value">{{金銭条件2_計算方式}}</div>
@@ -796,7 +805,7 @@
 
         {{#if 金銭条件3_計算方式}}
         <div class="finance-panel">
-          <div class="finance-header">金銭条件 3：プロダクトアウト条件（{{金銭条件3_地域言語ラベル}}）</div>
+          <div class="finance-header">金銭条件 3：海外展開（プロダクトアウト型）{{#if 金銭条件3_地域言語ラベル}}（{{金銭条件3_地域言語ラベル}}）{{/if}}</div>
           <div class="method-row">
             <div class="method-row-label">計算方式</div>
             <div class="method-row-value">{{金銭条件3_計算方式}}</div>
