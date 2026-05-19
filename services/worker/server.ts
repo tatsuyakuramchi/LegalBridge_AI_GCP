@@ -48,6 +48,7 @@ import {
   query,
   getNewDocumentNumber,
   getDocumentNumberForGenerate,
+  getNewLedgerId,
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import {
@@ -8168,10 +8169,34 @@ ${details}
       } else if (templateType === "lic_individual") {
         // Phase 7d: license_contracts ヘッダを upsert
         // (License Master が先に走っていなくても個別条件書から開始可)。
-        // ledger_id は NOT NULL UNIQUE なので、新規時は docNumber を使う
-        // (License Master が走っていれば既存値が温存される)。
-        // license_contracts.updated_at が無いスキーマでも安全なように
-        // updated_at は外している。
+        // ledger_id は NOT NULL UNIQUE。
+        // Phase 22.17: 台帳ID は自動採番に変更。
+        //   優先順:
+        //     1. formData.ledgerId が明示渡し → 尊重 (legacy 台帳 ID 持ち込み等)
+        //     2. 同 backlog_issue_key の license_contracts 行が既存 → 既存 ledger_id を維持
+        //     3. それ以外 → getNewLedgerId() で "LIC-YYYY-NNNN" を採番
+        let resolvedLedgerId = formData.ledgerId
+          ? String(formData.ledgerId).trim()
+          : "";
+        if (!resolvedLedgerId) {
+          const existing = await query(
+            "SELECT ledger_id FROM license_contracts WHERE backlog_issue_key = $1 LIMIT 1",
+            [issueKey]
+          );
+          if (existing.rows[0]?.ledger_id) {
+            resolvedLedgerId = existing.rows[0].ledger_id;
+          } else {
+            resolvedLedgerId = await getNewLedgerId();
+            console.log(
+              `📒 [ledger-id] auto-assigned ${resolvedLedgerId} for ${issueKey}`
+            );
+          }
+        }
+        // formData にも書き戻し、PDF テンプレートが {{台帳ID}} / {{ledgerId}} を
+        // 参照できるようにする。
+        formData.ledgerId = resolvedLedgerId;
+        formData["台帳ID"] = resolvedLedgerId;
+
         const lcUpsert = await query(
           `INSERT INTO license_contracts (
              backlog_issue_key, ledger_id, ledger_number, contract_number,
@@ -8213,7 +8238,7 @@ ${details}
            RETURNING id`,
           [
             issueKey,
-            formData.ledgerId || docNumber, // ledger_id (UNIQUE NOT NULL)
+            resolvedLedgerId,               // ledger_id (UNIQUE NOT NULL) — Phase 22.17 自動採番
             docNumber,                      // ledger_number
             docNumber,                      // contract_number
             formData.Licensor_名称 || formData.Licensor_氏名会社名 || "", // legacy licensor

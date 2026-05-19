@@ -233,7 +233,7 @@
     "category": "License",
     "vars": {
       "documentDate": { "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true, "dbField": "auto.today" },
-      "ledgerId": { "label": "台帳ID", "group": "I. ヘッダ", "required": true, "placeholder": "LIC-ARC-DOM-202604001" },
+      "ledgerId": { "label": "台帳ID", "group": "I. ヘッダ", "placeholder": "(空欄で自動採番)", "helpText": "空欄で生成時に LIC-YYYY-NNNN 形式で自動採番。既存ライセンス契約に紐付くときは form-context が既存値を自動入力 (= 上書きしない)" },
       "manufacturingIssueKey": { "label": "製造案件 Issue Key", "group": "I. ヘッダ", "helpText": "製造案件の Backlog 課題キー" },
       "licenseIssueKey": { "label": "ライセンス契約 Issue Key", "group": "I. ヘッダ", "helpText": "基本契約の Backlog 課題キー" },
       "linked_terms_number": { "label": "個別利用許諾条件書 番号", "group": "I. ヘッダ", "helpText": "[個別紐付] ボタンで External Asset から取得" },
@@ -379,7 +379,7 @@
     "category": "License",
     "vars": {
       "発行日": { "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true, "dbField": "auto.today" },
-      "台帳ID": { "label": "台帳ID", "group": "I. ヘッダ", "required": true, "placeholder": "LIC-2026-001" },
+      "台帳ID": { "label": "台帳ID", "group": "I. ヘッダ", "placeholder": "(空欄で自動採番)", "helpText": "空欄で生成時に LIC-YYYY-NNNN 形式で自動採番。同じ Backlog 課題で再発行する場合は既存の台帳ID を維持" },
       "契約書番号": { "label": "契約書番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
       "基本契約名": { "label": "基本契約名", "group": "I. ヘッダ", "type": "textarea", "required": true, "dbField": "backlog.summary", "helpText": "親となるライセンス基本契約の名称" },
 

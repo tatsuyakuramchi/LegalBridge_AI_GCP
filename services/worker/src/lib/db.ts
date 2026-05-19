@@ -1144,6 +1144,22 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
  *   - 新リビジョン生成時: 自動的に最新を真の契約に格上げ
  *   - ユーザーが Archive UI から手動で旧版を真の契約に戻す (override)
  */
+/**
+ * Phase 22.17: 台帳ID (license_contracts.ledger_id) の自動採番。
+ *
+ * 形式: LIC-{YYYY}-{NNNN}  (例: LIC-2026-0001)
+ *
+ * document_number (ARC-LIC-2026-NNNN) とは独立した連番。
+ * 同じ Backlog 課題で複数 PO 発行しても document_number は別々に増えるが、
+ * 台帳ID は 1 ライセンス契約 (license_contracts 行) に対して 1 つ固定。
+ * document_sequences テーブルに kind='LEDGER' / year=YYYY で連番を持つ。
+ */
+export async function getNewLedgerId(year?: number): Promise<string> {
+  const y = year || new Date().getFullYear();
+  const val = await getNextSequenceValue("LEDGER", y);
+  return `LIC-${y}-${val.toString().padStart(4, "0")}`;
+}
+
 export async function markPrimaryDocument(
   baseDocumentNumber: string,
   targetDocNumber: string
