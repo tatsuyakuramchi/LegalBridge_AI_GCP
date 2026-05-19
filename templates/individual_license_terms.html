@@ -237,6 +237,30 @@
       margin-top: 4px;
     }
 
+    /* Phase 22.21.9: 計算方式 を 1 行で表示 (label 左 + value 右) */
+    .method-row {
+      display: flex;
+      gap: 12px;
+      padding: 7px 12px;
+      border-bottom: 1px solid var(--border);
+      align-items: baseline;
+    }
+
+    .method-row-label {
+      font-size: 7pt;
+      color: var(--secondary);
+      text-transform: uppercase;
+      width: 90px;
+      flex-shrink: 0;
+    }
+
+    .method-row-value {
+      font-size: 9pt;
+      font-weight: 700;
+      flex: 1;
+      min-width: 0;
+    }
+
     .finance-details {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -621,21 +645,23 @@
         --}}
       {{#if financial_conditions.length}}
         {{#each financial_conditions}}
+        {{!--
+          Phase 22.21.9: レイアウト整理
+            旧: 計算式が detail-item と yellow formula-box の両方に重複表示
+            新: 計算方式 = 1 行フル幅 (.method-row)
+                計算式   = yellow formula-box のみ (prominent)
+                その他 (基準価格/料率/計算期間/通貨) = 2x2 grid
+                支払条件 = yellow payment-terms
+                MG/AG    = mg-box
+                補足     = calc-note (任意)
+        --}}
         <div class="finance-panel">
           <div class="finance-header">
             金銭条件 {{condition_no}}{{#if title}}：{{title}}{{/if}}{{#if region_language_label}}（{{region_language_label}}）{{/if}}
           </div>
-          <div class="finance-details">
-            <div class="detail-item">
-              <div class="sig-label">計算方式</div>
-              <div class="sig-value" style="font-weight:700">{{or calc_method "—"}}</div>
-            </div>
-            <div class="detail-item">
-              {{#if formula_text}}
-              <div class="sig-label">計算式 / Formula</div>
-              <div class="sig-value">{{formula_text}}</div>
-              {{/if}}
-            </div>
+          <div class="method-row">
+            <div class="method-row-label">計算方式</div>
+            <div class="method-row-value">{{or calc_method "—"}}</div>
           </div>
           {{#if formula_text}}
           <div class="formula-box">
@@ -681,20 +707,19 @@
         </div>
         {{/each}}
       {{else}}
-        <!-- Legacy fallback (flat 金銭条件N_*) -->
+        {{!-- Legacy fallback (flat 金銭条件N_*) — Phase 22.21.9 同じレイアウト整理 --}}
         <div class="finance-panel">
           <div class="finance-header">金銭条件 1：自社製造・直接販売（{{金銭条件1_地域言語ラベル}}）</div>
-          <div class="finance-details">
-            <div class="detail-item">
-              <div class="sig-label">計算方式</div>
-              <div class="sig-value" style="font-weight:700">{{金銭条件1_計算方式}}</div>
-            </div>
-            <div class="detail-item"></div>
+          <div class="method-row">
+            <div class="method-row-label">計算方式</div>
+            <div class="method-row-value">{{金銭条件1_計算方式}}</div>
           </div>
+          {{#if 金銭条件1_計算式}}
           <div class="formula-box">
-            <div class="formula-label">計算式</div>
+            <div class="formula-label">計算式 / Formula</div>
             <div class="formula-value">{{金銭条件1_計算式}}</div>
           </div>
+          {{/if}}
           <div class="finance-details">
             <div class="detail-item">
               <div class="sig-label">基準価格ラベル</div>
@@ -713,10 +738,12 @@
               <div class="sig-value">{{金銭条件1_通貨}}</div>
             </div>
           </div>
+          {{#if 金銭条件1_支払条件}}
           <div class="payment-terms">
             <div class="payment-terms-label">支払条件</div>
             <div>{{金銭条件1_支払条件}}</div>
           </div>
+          {{/if}}
           <div class="mg-box">
             <div class="mg-box-label">MG/AG・最低保証等</div>
             <div>（別途定めなし）</div>
@@ -726,17 +753,16 @@
         {{#if 金銭条件2_計算方式}}
         <div class="finance-panel">
           <div class="finance-header">金銭条件 2：サブライセンス等（{{金銭条件2_地域言語ラベル}}）</div>
-          <div class="finance-details">
-            <div class="detail-item">
-              <div class="sig-label">計算方式</div>
-              <div class="sig-value" style="font-weight:700">{{金銭条件2_計算方式}}</div>
-            </div>
-            <div class="detail-item"></div>
+          <div class="method-row">
+            <div class="method-row-label">計算方式</div>
+            <div class="method-row-value">{{金銭条件2_計算方式}}</div>
           </div>
+          {{#if 金銭条件2_計算式}}
           <div class="formula-box">
-            <div class="formula-label">計算式</div>
+            <div class="formula-label">計算式 / Formula</div>
             <div class="formula-value">{{金銭条件2_計算式}}</div>
           </div>
+          {{/if}}
           <div class="finance-details">
             <div class="detail-item">
               <div class="sig-label">基準価格ラベル</div>
@@ -755,10 +781,12 @@
               <div class="sig-value">{{金銭条件2_通貨}}</div>
             </div>
           </div>
+          {{#if 金銭条件2_支払条件}}
           <div class="payment-terms">
             <div class="payment-terms-label">支払条件</div>
             <div>{{金銭条件2_支払条件}}</div>
           </div>
+          {{/if}}
           <div class="mg-box">
             <div class="mg-box-label">MG/AG・最低保証等</div>
             <div>（別途定めなし）</div>
@@ -769,17 +797,16 @@
         {{#if 金銭条件3_計算方式}}
         <div class="finance-panel">
           <div class="finance-header">金銭条件 3：プロダクトアウト条件（{{金銭条件3_地域言語ラベル}}）</div>
-          <div class="finance-details">
-            <div class="detail-item">
-              <div class="sig-label">計算方式</div>
-              <div class="sig-value" style="font-weight:700">{{金銭条件3_計算方式}}</div>
-            </div>
-            <div class="detail-item"></div>
+          <div class="method-row">
+            <div class="method-row-label">計算方式</div>
+            <div class="method-row-value">{{金銭条件3_計算方式}}</div>
           </div>
+          {{#if 金銭条件3_計算式}}
           <div class="formula-box">
-            <div class="formula-label">計算式</div>
+            <div class="formula-label">計算式 / Formula</div>
             <div class="formula-value">{{金銭条件3_計算式}}</div>
           </div>
+          {{/if}}
           <div class="finance-details">
             <div class="detail-item">
               <div class="sig-label">基準価格ラベル</div>
@@ -798,10 +825,12 @@
               <div class="sig-value">{{金銭条件3_通貨}}</div>
             </div>
           </div>
+          {{#if 金銭条件3_支払条件}}
           <div class="payment-terms">
             <div class="payment-terms-label">支払条件</div>
             <div>{{金銭条件3_支払条件}}</div>
           </div>
+          {{/if}}
           <div class="mg-box">
             <div class="mg-box-label">MG/AG・最低保証等</div>
             <div>（別途定めなし）</div>
