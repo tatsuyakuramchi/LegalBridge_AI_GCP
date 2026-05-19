@@ -122,7 +122,6 @@
     "category": "License",
     "vars": {
       "CONTRACT_NO": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
-      "JURISDICTION": { "label": "管轄裁判所", "group": "I. ヘッダ", "required": true, "placeholder": "例: 東京地方裁判所" },
 
       "VENDOR_NAME": { "label": "ライセンサー名称", "group": "II. ライセンサー (許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "VENDOR_ADDRESS": { "label": "ライセンサー住所", "group": "II. ライセンサー (許諾者)", "type": "textarea", "required": true },
