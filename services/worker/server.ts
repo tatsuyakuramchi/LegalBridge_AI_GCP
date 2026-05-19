@@ -8888,6 +8888,19 @@ ${details}
         //   formData.サブライセンシー一覧 [] が UI から渡された場合のみ反映。
         //   undefined のときは触らない (フォームが他テンプレなら関係ない)。
         //   replacement semantics: 既存を削除 → 新リストを順番に INSERT。
+        // Phase 22.21.14: 診断ログを充実 + 空判定をより寛容に。
+        //   旧 hasContent は 名称 / sublicensee_id / 金銭条件 / 料率 / MGAG
+        //   のいずれかが必要だったが、地域・言語・備考・契約締結日・区分
+        //   のみ入っているケースも保持する。
+        console.log(
+          `🤝 [work-sublicensees] check for lcId=${lcId}: ` +
+            `array=${Array.isArray(formData.サブライセンシー一覧)} ` +
+            `length=${
+              Array.isArray(formData.サブライセンシー一覧)
+                ? formData.サブライセンシー一覧.length
+                : "n/a"
+            }`
+        );
         if (
           lcId &&
           Array.isArray(formData.サブライセンシー一覧)
@@ -8898,16 +8911,32 @@ ${details}
               [lcId]
             );
             let order = 0;
+            let skipped = 0;
             for (const sl of formData.サブライセンシー一覧) {
-              if (!sl) continue;
-              // 名称も sublicensee_id も無い完全空行はスキップ
+              if (!sl) {
+                skipped++;
+                continue;
+              }
+              // Phase 22.21.14: 完全空行判定をより寛容に。
+              //   sublicensee_id / 名称 / 区分 / 地域 / 言語 / 金銭条件 /
+              //   MGAG / 料率 / 契約締結日 / 備考 のいずれかがあれば保持。
+              const nonEmpty = (v: any) =>
+                v !== undefined && v !== null && String(v).trim() !== "";
               const hasContent =
-                sl.sublicensee_id ||
-                (sl.名称 && String(sl.名称).trim()) ||
-                (sl.金銭条件 && String(sl.金銭条件).trim()) ||
-                (sl.料率 && String(sl.料率).trim()) ||
-                (sl.MGAG && String(sl.MGAG).trim());
-              if (!hasContent) continue;
+                nonEmpty(sl.sublicensee_id) ||
+                nonEmpty(sl.名称) ||
+                nonEmpty(sl.区分) ||
+                nonEmpty(sl.地域) ||
+                nonEmpty(sl.言語) ||
+                nonEmpty(sl.金銭条件) ||
+                nonEmpty(sl.MGAG) ||
+                nonEmpty(sl.料率) ||
+                nonEmpty(sl.契約締結日) ||
+                nonEmpty(sl.備考);
+              if (!hasContent) {
+                skipped++;
+                continue;
+              }
 
               // Phase 22.21.13: contract_date を YYYY-MM-DD 形式で取り込み。
               //   フォームの date input は ISO 文字列。空文字は null に。
@@ -8969,7 +8998,7 @@ ${details}
               }
             }
             console.log(
-              `🤝 [work-sublicensees] saved ${order} rows for work ${
+              `🤝 [work-sublicensees] saved ${order} rows (skipped ${skipped} empty) for work ${
                 resolvedWorkId || lcId
               }`
             );
