@@ -46,6 +46,7 @@ import { CsvImportService } from "./src/services/csvImportService.ts";
 import {
   initDb,
   query,
+  pool,
   getNewDocumentNumber,
   getDocumentNumberForGenerate,
   getNewLedgerId,
@@ -479,176 +480,170 @@ async function startServer() {
         `🔗 [auto-chain] existing children count=${existingChildren.length}, no ${rule.childIssueTypeName} yet`
       );
 
-      // Phase 22.21.24: DB レベルの追加 idempotency。
-      //   Backlog の 1 階層制約により「祖父課題の子 = 親課題の兄弟」として
-      //   作成した場合、上の getChildIssues(parentIssue.id) ではヒットしない。
-      //   legal_requests.notes に '親: LEGAL-XXX' を入れる仕様なので、
-      //   DB 側で重複検査する。
-      const dbDup = await query(
-        `SELECT backlog_issue_key FROM legal_requests
-          WHERE contract_type = $1
-            AND notes ILIKE $2
-          LIMIT 1`,
-        [rule.childRequestType, `%親: ${parentIssueKey}%`]
-      );
-      if (dbDup.rows.length > 0) {
-        console.log(
-          `🔗 [auto-chain] SKIP: legal_requests already has ${rule.childRequestType} child ${dbDup.rows[0].backlog_issue_key} for parent ${parentIssueKey}`
-        );
-        return;
-      }
-      console.log(`🔗 [auto-chain] DB dedup OK, proceed`);
-
-      // 子課題の Backlog issue type id を解決
-      const issueTypes = await backlogService.getIssueTypes();
-      const childType = issueTypes.find(
-        (t: any) => t.name === rule.childIssueTypeName
-      );
-      if (!childType) {
-        console.warn(
-          `🔗 [auto-chain] SKIP: Backlog issue type "${rule.childIssueTypeName}" not found. ` +
-            `Available types: ${issueTypes.map((t: any) => t.name).join(", ")}`
-        );
-        return;
-      }
-      console.log(
-        `🔗 [auto-chain] resolved issueType ${rule.childIssueTypeName} id=${childType.id}`
-      );
-
-      // Phase 22.21.25: 子課題タイトルに親文書番号 + 取引先名を含める。
-      //   旧: "[納品報告] 発注書"  ← 複数並ぶと区別不能
-      //   新: "[納品報告] ARC-PO-2026-0007 / 福原 朋実"
-      //
-      //   document_number は documents テーブルから template_type で絞って
-      //   最新を取得。複数リビジョン (Phase 22.10) があれば最新のを使う。
-      //   見つからなければ親 issueKey を fallback とする。
-      let parentDocNumber = "";
+      // Phase 22.21.26: race-safe DB dedup。
+      //   旧 Phase 22.21.24 は SELECT-then-INSERT で 2.2ms 差の同時呼び出しに
+      //   負けた (LEGAL-125 / LEGAL-126 二重作成事案)。
+      //   対策: PostgreSQL の advisory lock を専用 client + transaction で
+      //   取得して critical section (dedup 確認 + createIssue + INSERT) を
+      //   直列化する。2 件目以降のコールは 1 件目の COMMIT 待ちになり、
+      //   その後 dedup 検査で必ずスキップする。
+      //   client.release() / ROLLBACK は後段の finally で行う。
+      const dedupClient = await pool.connect();
       try {
-        // ルールに応じて template_type のパターンを切り替え
-        const tmplPattern =
-          rule.parentRequestType === "purchase_order" ||
-          rule.parentRequestType === "planning_purchase_order"
-            ? "%purchase_order%"
-            : rule.parentRequestType === "lic_individual"
-              ? "individual_license_terms"
-              : "%";
-        const docRes = await query(
-          `SELECT document_number
-             FROM documents
-            WHERE issue_key = $1
-              AND template_type LIKE $2
-            ORDER BY created_at DESC
+        await dedupClient.query("BEGIN");
+        // xact-scope lock: 同じ (parent, child_type) ペアに対し他 trx を待たせる
+        await dedupClient.query(
+          `SELECT pg_advisory_xact_lock(hashtext($1))`,
+          [`autochain:${parentIssueKey}:${rule.childRequestType}`]
+        );
+        // Lock 下で再確認 (column 経由 + notes ILIKE 両方)
+        const lockedDup = await dedupClient.query(
+          `SELECT backlog_issue_key FROM legal_requests
+            WHERE contract_type = $1
+              AND (parent_issue_key = $2 OR notes ILIKE $3)
             LIMIT 1`,
-          [parentIssueKey, tmplPattern]
+          [rule.childRequestType, parentIssueKey, `%親: ${parentIssueKey}%`]
         );
-        parentDocNumber = String(docRes.rows[0]?.document_number || "").trim();
-      } catch (e) {
-        console.warn(`🔗 [auto-chain] document_number lookup failed:`, e);
-      }
-      const counterpartyForTitle = String(
-        parentLr.counterparty || ""
-      ).trim();
-      // タイトル組み立て: [納品報告] ARC-PO-2026-0007 / 福原 朋実
-      const titleAfterPrefix = [parentDocNumber || parentIssueKey, counterpartyForTitle]
-        .filter(Boolean)
-        .join(" / ");
-      const childSummary = rule.childSummaryPrefix + titleAfterPrefix;
-      console.log(`🔗 [auto-chain] child summary = "${childSummary}"`);
-
-      // Phase 22.21.24: Backlog は親子関係を 1 階層しか許さない。
-      //   parentIssue 自体が既に他課題の子だった場合、parentIssueId を
-      //   渡すと err.editIssue.parentChildIssue.3 で 400 を返す。
-      //   その場合は (a) 祖父課題を新しい親にする (兄弟関係) → (b) それも無理
-      //   なら親なし (top-level) で作成する、というフォールバックを実施。
-      const grandParentId = parentIssue?.parentIssueId
-        ? Number(parentIssue.parentIssueId)
-        : null;
-      const effectiveParentId = grandParentId || parentIssue.id;
-      const fallbackDueToHierarchy = !!grandParentId;
-      console.log(
-        `🔗 [auto-chain] calling backlogService.createIssue ` +
-          `(effectiveParentId=${effectiveParentId}, typeId=${childType.id})` +
-          (fallbackDueToHierarchy
-            ? ` [fallback: 祖父課題 ${grandParentId} を親にした (Backlog 1 階層制約のため LEGAL-${parentIssueKey} の直下には作れない)]`
-            : "")
-      );
-      const baseDescription =
-        `自動作成: 親課題 ${parentIssueKey} が完了したため、` +
-        `${rule.triggerLabel} 課題を起こしました。\n\n` +
-        (fallbackDueToHierarchy
-          ? `※ Backlog の親子 1 階層制約により、本課題は ${parentIssueKey} の` +
-            `「兄弟」(同じ親の配下) として作成されています。\n\n`
-          : "") +
-        `申請者: <@${parentLr.slack_user_id}>\n\n` +
-        rule.childActionInstruction;
-
-      let childIssue: any = null;
-      try {
-        childIssue = await backlogService.createIssue({
-          summary: childSummary,
-          description: baseDescription,
-          issueTypeId: childType.id,
-          priorityId: 3,
-          parentIssueId: effectiveParentId,
-        });
-      } catch (createErr: any) {
-        const msg = String(createErr?.message || createErr);
-        if (msg.includes("parentChildIssue")) {
-          // 祖父課題でも 400 になった or そもそも grandparent 無しで 400
-          // (= 親候補が child だが grandparent が無い、稀ケース) → top-level で再試行
-          console.warn(
-            `🔗 [auto-chain] parentChildIssue error with parent=${effectiveParentId}, retry as top-level: ${msg}`
+        if (lockedDup.rows.length > 0) {
+          console.log(
+            `🔗 [auto-chain] SKIP (locked dedup): existing child ${lockedDup.rows[0].backlog_issue_key} for parent ${parentIssueKey}`
           );
+          await dedupClient.query("COMMIT");
+          return;
+        }
+        console.log(`🔗 [auto-chain] DB dedup OK under lock, proceed`);
+
+        // 子課題の Backlog issue type id を解決
+        const issueTypes = await backlogService.getIssueTypes();
+        const childType = issueTypes.find(
+          (t: any) => t.name === rule.childIssueTypeName
+        );
+        if (!childType) {
+          console.warn(
+            `🔗 [auto-chain] SKIP: Backlog issue type "${rule.childIssueTypeName}" not found. ` +
+              `Available types: ${issueTypes.map((t: any) => t.name).join(", ")}`
+          );
+          await dedupClient.query("ROLLBACK");
+          return;
+        }
+        console.log(
+          `🔗 [auto-chain] resolved issueType ${rule.childIssueTypeName} id=${childType.id}`
+        );
+
+        // Phase 22.21.25: 子課題タイトルに親文書番号 + 取引先名を含める。
+        //   旧: "[納品報告] 発注書"  ← 複数並ぶと区別不能
+        //   新: "[納品報告] ARC-PO-2026-0007 / 福原 朋実"
+        let parentDocNumber = "";
+        try {
+          // ルールに応じて template_type のパターンを切り替え
+          const tmplPattern =
+            rule.parentRequestType === "purchase_order" ||
+            rule.parentRequestType === "planning_purchase_order"
+              ? "%purchase_order%"
+              : rule.parentRequestType === "lic_individual"
+                ? "individual_license_terms"
+                : "%";
+          // documents テーブルは別 client (pool) で読んで OK (read-only)
+          const docRes = await query(
+            `SELECT document_number
+               FROM documents
+              WHERE issue_key = $1
+                AND template_type LIKE $2
+              ORDER BY created_at DESC
+              LIMIT 1`,
+            [parentIssueKey, tmplPattern]
+          );
+          parentDocNumber = String(docRes.rows[0]?.document_number || "").trim();
+          console.log(
+            `🔗 [auto-chain] document lookup: issue_key=${parentIssueKey} ` +
+              `tmplPattern=${tmplPattern} → document_number='${parentDocNumber}'`
+          );
+        } catch (e) {
+          console.warn(`🔗 [auto-chain] document_number lookup failed:`, e);
+        }
+        const counterpartyForTitle = String(
+          parentLr.counterparty || ""
+        ).trim();
+        // タイトル組み立て: [納品報告] ARC-PO-2026-0007 / 福原 朋実
+        const titleAfterPrefix = [parentDocNumber || parentIssueKey, counterpartyForTitle]
+          .filter(Boolean)
+          .join(" / ");
+        const childSummary = rule.childSummaryPrefix + titleAfterPrefix;
+        console.log(`🔗 [auto-chain] child summary = "${childSummary}"`);
+
+        // Phase 22.21.24: Backlog は親子関係を 1 階層しか許さない。
+        const grandParentId = parentIssue?.parentIssueId
+          ? Number(parentIssue.parentIssueId)
+          : null;
+        const effectiveParentId = grandParentId || parentIssue.id;
+        const fallbackDueToHierarchy = !!grandParentId;
+        console.log(
+          `🔗 [auto-chain] calling backlogService.createIssue ` +
+            `(effectiveParentId=${effectiveParentId}, typeId=${childType.id})` +
+            (fallbackDueToHierarchy
+              ? ` [fallback: 祖父課題 ${grandParentId} を親にした (Backlog 1 階層制約のため LEGAL-${parentIssueKey} の直下には作れない)]`
+              : "")
+        );
+        const baseDescription =
+          `自動作成: 親課題 ${parentIssueKey} が完了したため、` +
+          `${rule.triggerLabel} 課題を起こしました。\n\n` +
+          (fallbackDueToHierarchy
+            ? `※ Backlog の親子 1 階層制約により、本課題は ${parentIssueKey} の` +
+              `「兄弟」(同じ親の配下) として作成されています。\n\n`
+            : "") +
+          `申請者: <@${parentLr.slack_user_id}>\n\n` +
+          rule.childActionInstruction;
+
+        // Backlog createIssue は遅い (~500ms-2s) が、advisory lock を
+        // 保持し続けることで他の並行コールはここで COMMIT 待ちになる。
+        let childIssue: any = null;
+        try {
           childIssue = await backlogService.createIssue({
             summary: childSummary,
-            description:
-              baseDescription +
-              `\n\n※ Backlog の親子制約により、独立課題として作成されました。`,
+            description: baseDescription,
             issueTypeId: childType.id,
             priorityId: 3,
-            // parentIssueId 渡さない
+            parentIssueId: effectiveParentId,
           });
-        } else {
-          throw createErr;
+        } catch (createErr: any) {
+          const msg = String(createErr?.message || createErr);
+          if (msg.includes("parentChildIssue")) {
+            console.warn(
+              `🔗 [auto-chain] parentChildIssue error with parent=${effectiveParentId}, retry as top-level: ${msg}`
+            );
+            childIssue = await backlogService.createIssue({
+              summary: childSummary,
+              description:
+                baseDescription +
+                `\n\n※ Backlog の親子制約により、独立課題として作成されました。`,
+              issueTypeId: childType.id,
+              priorityId: 3,
+            });
+          } else {
+            throw createErr;
+          }
         }
-      }
 
-      if (!childIssue?.issueKey) {
-        console.warn(
-          `🔗 [auto-chain] child creation returned no issueKey for ${parentIssueKey}. ` +
-            `Backlog API がエラーを返した可能性。 BACKLOG_API_KEY / BACKLOG_PROJECT_KEY 環境変数を確認。`
-        );
-        return;
-      }
-
-      console.log(
-        `📎 [auto-chain] CREATED ${parentIssueKey} → ${childIssue.issueKey} (${rule.childIssueTypeName})`
-      );
-
-      // 子課題ステータスを「トリガー待ち」に
-      try {
-        const statuses = await backlogService.getStatuses();
-        const triggerStatus = statuses.find(
-          (s: any) => s.name === "トリガー待ち"
-        );
-        if (triggerStatus) {
-          await backlogService.updateIssueStatus(
-            childIssue.issueKey,
-            triggerStatus.id
+        if (!childIssue?.issueKey) {
+          console.warn(
+            `🔗 [auto-chain] child creation returned no issueKey for ${parentIssueKey}. ` +
+              `Backlog API がエラーを返した可能性。 BACKLOG_API_KEY / BACKLOG_PROJECT_KEY 環境変数を確認。`
           );
-        } else {
-          console.warn(`[auto-chain] "トリガー待ち" status not found in Backlog`);
+          await dedupClient.query("ROLLBACK");
+          return;
         }
-      } catch (e) {
-        console.warn(`[auto-chain] failed to set トリガー待ち on ${childIssue.issueKey}:`, e);
-      }
 
-      // DB: legal_requests と issue_workflows に登録
-      try {
-        await query(
+        console.log(
+          `📎 [auto-chain] CREATED ${parentIssueKey} → ${childIssue.issueKey} (${rule.childIssueTypeName})`
+        );
+
+        // INSERT legal_requests (lock 保持中なので race-safe)。
+        // parent_issue_key 列に親キーを入れることで、以降の dedup 検査が
+        // notes ILIKE よりも確実かつ高速になる。
+        await dedupClient.query(
           `INSERT INTO legal_requests
-             (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, deadline, notes)
-           VALUES ($1, $2, $3, $4, $5, NULL, $6)
+             (backlog_issue_key, slack_user_id, contract_type, counterparty, summary, deadline, notes, parent_issue_key)
+           VALUES ($1, $2, $3, $4, $5, NULL, $6, $7)
            ON CONFLICT (backlog_issue_key) DO NOTHING`,
           [
             childIssue.issueKey,
@@ -657,30 +652,65 @@ async function startServer() {
             parentLr.counterparty,
             childIssue.summary,
             `親: ${parentIssueKey}`,
+            parentIssueKey,
           ]
         );
-        await query(
-          `INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name)
-           VALUES ($1, $2, 'トリガー待ち')
-           ON CONFLICT (backlog_issue_key) DO UPDATE SET
-             current_status_name = 'トリガー待ち',
-             issue_type_name     = EXCLUDED.issue_type_name`,
-          [childIssue.issueKey, rule.childRequestType]
-        );
-      } catch (e) {
-        console.warn(`[auto-chain] DB insert failed for ${childIssue.issueKey}:`, e);
-      }
 
-      // Slack 通知
-      try {
-        await notifyAutoChainCreated(
-          childIssue.issueKey,
-          parentIssueKey,
-          parentLr,
-          rule
-        );
-      } catch (e) {
-        console.warn(`[auto-chain] notify failed:`, e);
+        // COMMIT してロック解放。以降は他コールの dedup で必ずヒットする。
+        await dedupClient.query("COMMIT");
+        console.log(`🔗 [auto-chain] transaction COMMIT, lock released`);
+
+        // ロック外で並行可能な後処理: トリガー待ちステータス + workflows + 通知
+        try {
+          const statuses = await backlogService.getStatuses();
+          const triggerStatus = statuses.find(
+            (s: any) => s.name === "トリガー待ち"
+          );
+          if (triggerStatus) {
+            await backlogService.updateIssueStatus(
+              childIssue.issueKey,
+              triggerStatus.id
+            );
+          } else {
+            console.warn(`[auto-chain] "トリガー待ち" status not found in Backlog`);
+          }
+        } catch (e) {
+          console.warn(`[auto-chain] failed to set トリガー待ち on ${childIssue.issueKey}:`, e);
+        }
+
+        try {
+          await query(
+            `INSERT INTO issue_workflows (backlog_issue_key, issue_type_name, current_status_name)
+             VALUES ($1, $2, 'トリガー待ち')
+             ON CONFLICT (backlog_issue_key) DO UPDATE SET
+               current_status_name = 'トリガー待ち',
+               issue_type_name     = EXCLUDED.issue_type_name`,
+            [childIssue.issueKey, rule.childRequestType]
+          );
+        } catch (e) {
+          console.warn(`[auto-chain] issue_workflows insert failed for ${childIssue.issueKey}:`, e);
+        }
+
+        try {
+          await notifyAutoChainCreated(
+            childIssue.issueKey,
+            parentIssueKey,
+            parentLr,
+            rule
+          );
+        } catch (e) {
+          console.warn(`[auto-chain] notify failed:`, e);
+        }
+      } catch (innerErr) {
+        // 何らかの例外で create / INSERT が途中で死んだ → ROLLBACK
+        try {
+          await dedupClient.query("ROLLBACK");
+        } catch {
+          /* noop */
+        }
+        throw innerErr;
+      } finally {
+        dedupClient.release();
       }
     } catch (e) {
       console.error("[auto-chain] fatal error:", e);

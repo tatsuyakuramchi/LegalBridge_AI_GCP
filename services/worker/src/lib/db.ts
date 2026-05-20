@@ -291,6 +291,39 @@ export async function initDb() {
         AND d.template_type = 'individual_license_terms'
         AND (lr.contract_type IS NULL OR lr.contract_type = '');`,
 
+    // -----------------------------------------------------------------
+    // Phase 22.21.26: 自動連鎖 (autoChainOnComplete) の race-safe dedup。
+    //   症状: 2.2ms 差で同じ親に対し 2 つの子課題が INSERT された
+    //   (LEGAL-125 / LEGAL-126 とも notes='親: LEGAL-120')
+    //   原因: PATCH /status の直接呼び出し と Backlog webhook が同時着火し、
+    //         両方とも SELECT (no row) → INSERT のパスを通った (TOCTOU race)。
+    //   対策: 親キーを専用カラムに昇格させて UNIQUE 制約で防ぐ。
+    //
+    //   - parent_issue_key カラム追加
+    //   - 既存 notes ('親: LEGAL-XXX') から正規表現で backfill
+    //   - 部分 UNIQUE INDEX (contract_type, parent_issue_key) を WHERE 両方
+    //     NOT NULL で作成 → 同じ親に対する同じ contract_type の 2 件目を拒否
+    //   - 既存重複行 (LEGAL-125 / LEGAL-126 のような) は手動 cleanup 後に
+    //     インデックスを張る (まず重複削除、その後 CREATE) のが安全だが、
+    //     CREATE UNIQUE INDEX IF NOT EXISTS は既存重複があると失敗する。
+    //     そのため CREATE INDEX (non-unique) で先に張り、後段の運用で
+    //     重複削除→DROP INDEX→CREATE UNIQUE INDEX の手順を踏む。
+    //
+    //   --> Phase 22.21.26 では まず column + backfill + non-unique index のみ。
+    //       重複行を手動で削除した後、別マイグレーション (22.21.27) で
+    //       UNIQUE INDEX に置き換える計画。
+    //       worker INSERT 側は parent_issue_key を埋めるが、ON CONFLICT は
+    //       UNIQUE 化以降に強制的に効く形にする。
+    // -----------------------------------------------------------------
+    `ALTER TABLE legal_requests ADD COLUMN IF NOT EXISTS parent_issue_key VARCHAR(50);`,
+    `UPDATE legal_requests
+        SET parent_issue_key = substring(notes from '親: (LEGAL-[0-9]+)')
+      WHERE parent_issue_key IS NULL
+        AND notes ~ '親: LEGAL-[0-9]+';`,
+    `CREATE INDEX IF NOT EXISTS idx_lr_parent_issue_key
+        ON legal_requests (parent_issue_key)
+      WHERE parent_issue_key IS NOT NULL;`,
+
     `CREATE TABLE IF NOT EXISTS order_items (
       id SERIAL PRIMARY KEY,
       legal_request_id INTEGER REFERENCES legal_requests(id) ON DELETE CASCADE,
