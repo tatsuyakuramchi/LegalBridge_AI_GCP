@@ -375,6 +375,16 @@ async function startServer() {
       childActionInstruction:
         "納品を確認したら Slack で `/法務依頼` → 「納品 / 検収書」 を選び、本課題を選択して起票してください。",
     },
+    // Phase 22.21.22: 企画発注書も同じ納品リクエストを連鎖させる。
+    {
+      parentRequestType: "planning_purchase_order",
+      childRequestType: "delivery_inspec",
+      childIssueTypeName: "納品リクエスト",
+      triggerLabel: "納品待ち",
+      childSummaryPrefix: "[納品報告] ",
+      childActionInstruction:
+        "納品を確認したら Slack で `/法務依頼` → 「納品 / 検収書」 を選び、本課題を選択して起票してください。",
+    },
     {
       parentRequestType: "lic_individual",
       childRequestType: "license_calc",
@@ -394,6 +404,9 @@ async function startServer() {
     parentIssueKey: string,
     parentIssue: any
   ): Promise<void> {
+    console.log(
+      `🔗 [auto-chain] START parent=${parentIssueKey} parentIssueId=${parentIssue?.id}`
+    );
     try {
       // 親の request_type を DB から取得。
       // Phase 22.21.20: 旧コードは `request_type / slack_user_name / dept` を
@@ -409,23 +422,37 @@ async function startServer() {
       const parentLr = lrRes.rows[0];
       if (!parentLr) {
         console.log(
-          `[auto-chain] no legal_requests row for ${parentIssueKey}, skip`
+          `🔗 [auto-chain] SKIP: no legal_requests row for ${parentIssueKey}. ` +
+            `Admin UI で /api/documents/generate が legal_requests に INSERT するはず。` +
+            `課題が手動起票で文書未生成のケースで起こりうる。`
         );
         return;
       }
       if (!parentLr.request_type) {
         console.log(
-          `[auto-chain] ${parentIssueKey} has no contract_type, skip ` +
-            "(発注書テンプレで legal_requests を INSERT するときに contract_type を入れる必要があるが、" +
-            "古いデータでは欠落していることがある)"
+          `🔗 [auto-chain] SKIP: ${parentIssueKey} has no contract_type. ` +
+            `Phase 22.21.21 の backfill UPDATE が走っていない可能性。` +
+            `worker 再起動 or 該当行に手動 UPDATE 必要。`
         );
         return;
       }
+      console.log(
+        `🔗 [auto-chain] parent contract_type=${parentLr.request_type}`
+      );
 
       const rule = AUTO_CHAIN_RULES.find(
         (r) => r.parentRequestType === parentLr.request_type
       );
-      if (!rule) return;
+      if (!rule) {
+        console.log(
+          `🔗 [auto-chain] SKIP: no AUTO_CHAIN_RULES entry for request_type='${parentLr.request_type}'. ` +
+            `Known rules: ${AUTO_CHAIN_RULES.map((r) => r.parentRequestType).join(", ")}`
+        );
+        return;
+      }
+      console.log(
+        `🔗 [auto-chain] matched rule: ${rule.parentRequestType} → ${rule.childRequestType} (${rule.childIssueTypeName})`
+      );
 
       // 既に同型の子課題があれば skip (二重生成防止)
       let existingChildren: any[] = [];
@@ -433,17 +460,20 @@ async function startServer() {
         existingChildren =
           (await backlogService.getChildIssues(parentIssue.id)) || [];
       } catch (e) {
-        console.warn(`[auto-chain] getChildIssues failed for ${parentIssueKey}:`, e);
+        console.warn(`🔗 [auto-chain] getChildIssues failed for ${parentIssueKey}:`, e);
       }
       const alreadyChained = existingChildren.some(
         (c: any) => c?.issueType?.name === rule.childIssueTypeName
       );
       if (alreadyChained) {
         console.log(
-          `[auto-chain] ${parentIssueKey} already has ${rule.childIssueTypeName} child, skip`
+          `🔗 [auto-chain] SKIP: ${parentIssueKey} already has ${rule.childIssueTypeName} child`
         );
         return;
       }
+      console.log(
+        `🔗 [auto-chain] existing children count=${existingChildren.length}, no ${rule.childIssueTypeName} yet, proceed`
+      );
 
       // 子課題の Backlog issue type id を解決
       const issueTypes = await backlogService.getIssueTypes();
@@ -452,12 +482,19 @@ async function startServer() {
       );
       if (!childType) {
         console.warn(
-          `[auto-chain] Backlog issue type "${rule.childIssueTypeName}" not found, skip`
+          `🔗 [auto-chain] SKIP: Backlog issue type "${rule.childIssueTypeName}" not found. ` +
+            `Available types: ${issueTypes.map((t: any) => t.name).join(", ")}`
         );
         return;
       }
+      console.log(
+        `🔗 [auto-chain] resolved issueType ${rule.childIssueTypeName} id=${childType.id}`
+      );
 
       // Backlog 子課題作成
+      console.log(
+        `🔗 [auto-chain] calling backlogService.createIssue (parentId=${parentIssue.id}, typeId=${childType.id})...`
+      );
       const childIssue = await backlogService.createIssue({
         summary: rule.childSummaryPrefix + (parentLr.summary || parentIssueKey),
         description:
@@ -472,13 +509,14 @@ async function startServer() {
 
       if (!childIssue?.issueKey) {
         console.warn(
-          `[auto-chain] child creation returned no issueKey for ${parentIssueKey}`
+          `🔗 [auto-chain] child creation returned no issueKey for ${parentIssueKey}. ` +
+            `Backlog API がエラーを返した可能性。 BACKLOG_API_KEY / BACKLOG_PROJECT_KEY 環境変数を確認。`
         );
         return;
       }
 
       console.log(
-        `📎 [auto-chain] ${parentIssueKey} → ${childIssue.issueKey} (${rule.childIssueTypeName}) 作成`
+        `📎 [auto-chain] CREATED ${parentIssueKey} → ${childIssue.issueKey} (${rule.childIssueTypeName})`
       );
 
       // 子課題ステータスを「トリガー待ち」に
@@ -1265,6 +1303,59 @@ ${details}
           ok: false,
           error: String(error?.message || error),
         });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // Phase 22.21.22: 自動連鎖の手動トリガー (診断用)
+  //
+  //   POST /api/debug/auto-chain-trigger/:key
+  //   body: なし
+  //
+  //   - 親課題を「完了」に進めずに autoChainOnComplete だけ強制実行
+  //   - Cloud Run ログに 🔗 [auto-chain] ... の詳細が出るので、
+  //     なぜ子課題が作られないかを段階追跡できる
+  //   - 冪等 (既存子課題があれば作成しない)
+  //   - レスポンスにも success / parent issue / 直近ログを返す
+  // -------------------------------------------------------------------
+  app.post(
+    "/api/debug/auto-chain-trigger/:key",
+    express.json(),
+    async (req, res) => {
+      const { key } = req.params;
+      try {
+        const issue = await backlogService.getIssue(key);
+        if (!issue) {
+          return res.status(404).json({
+            ok: false,
+            error: `Backlog issue ${key} not found`,
+          });
+        }
+        // legal_requests 行の状態を返却 (なぜマッチしないか判別の助けに)
+        const lrRes = await query(
+          `SELECT contract_type, slack_user_id, summary, counterparty
+             FROM legal_requests
+            WHERE backlog_issue_key = $1`,
+          [key]
+        );
+        const lr = lrRes.rows[0] || null;
+
+        await autoChainOnComplete(key, issue);
+
+        res.json({
+          ok: true,
+          parentIssueKey: key,
+          parentIssueId: issue.id,
+          legalRequest: lr,
+          message:
+            "autoChainOnComplete を実行しました。Cloud Run ログで 🔗 [auto-chain] を grep してください。",
+        });
+      } catch (e: any) {
+        console.error("[auto-chain debug] failed:", e);
+        res
+          .status(500)
+          .json({ ok: false, error: e?.message || String(e) });
       }
     }
   );
