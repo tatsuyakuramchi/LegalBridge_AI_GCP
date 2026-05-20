@@ -321,6 +321,13 @@
         <div class="amount-note">※ 消費税等の精算は、支払通知または請求処理にて行います。</div>
       </td>
     </tr>
+    {{!-- Phase 22.21.30: 発注日 行を追加。
+         formData.発注日 / order_date が空のときは「発行日」へ fallback、
+         それも空なら "—" 表示。 --}}
+    <tr>
+      <th>発注日</th>
+      <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
+    </tr>
     <tr>
       <th>納期</th>
       <td>{{or summaryDeliveryDate "—"}}</td>

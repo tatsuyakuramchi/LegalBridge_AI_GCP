@@ -147,9 +147,38 @@
       font-size: 8.5pt;
       color: #555;
       white-space: pre-wrap;
-      border-top: 1px dashed #cfcfcf;
-      padding-top: 4px;
-      margin-top: 4px;
+      line-height: 1.4;
+    }
+
+    /* Phase 17n: 仕様を独立した「明細詳細行」として描画。これにより
+       仕様の文章量が多くても、隣接する 数量 / 単価 / 金額 等の narrow
+       列が縦方向に間延びしない (table-row 高さが揃ってしまう問題を
+       回避)。 */
+    table.items tr.detail-row > td {
+      border-top: 0;          /* 直前の本行と継続的に見える */
+      padding-top: 0;
+      padding-bottom: 8px;
+    }
+    table.items tr.detail-row .detail-cell {
+      background: #fafafa;
+      border-left: 3px solid #cfcfcf;
+      padding: 6px 10px;
+      font-size: 8.5pt;
+      color: #444;
+      white-space: pre-wrap;
+      line-height: 1.5;
+    }
+    table.items tr.detail-row .detail-cell .detail-label {
+      font-size: 7.5pt;
+      color: #888;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      margin-bottom: 2px;
+      text-transform: uppercase;
+    }
+    /* 本行と詳細行の間の borderを薄くする (視覚的に「同じ明細」と分かる) */
+    table.items tr.has-detail > td {
+      border-bottom: 1px dashed #e3e3e3;
     }
 
     .pay-method-badge {
@@ -224,10 +253,25 @@
   <div class="header-row">
     <div class="title-box">
       <h1>発 注 書</h1>
+      {{!-- Phase 22.10: 再発行版バナー。
+           Phase 22.11.2: showReissueBanner=false なら表示しない (社内修正版を
+           対外的には初版に見せたい場合)。default は表示。 --}}
+      {{#if isReissue}}
+      {{#unless (eq showReissueBanner false)}}
+      <div style="display:inline-block; margin-top:4px; padding:2px 8px; background:#fff3cd; border:1px solid #ffc107; color:#856404; font-size:9pt; font-weight:bold;">
+        再発行版 (Rev. {{REVISION}}) — 元発注書: {{BASE_DOC_NO}}
+      </div>
+      {{/unless}}
+      {{/if}}
     </div>
     <div class="doc-info">
       発注番号: <strong>{{ORDER_NO}}</strong><br>
-      発行日: {{ORDER_DATE_YEAR}}年{{ORDER_DATE_MONTH}}月{{ORDER_DATE_DAY}}日
+      {{#if isReissue}}
+      {{#unless (eq showReissueBanner false)}}
+      <span style="font-size:8pt; color:#666;">(元: {{BASE_DOC_NO}})</span><br>
+      {{/unless}}
+      {{/if}}
+      発行日: {{formatDate (or ORDER_DATE (concat ORDER_DATE_YEAR "-" ORDER_DATE_MONTH "-" ORDER_DATE_DAY))}}
     </div>
   </div>
 
@@ -277,13 +321,22 @@
         <div class="amount-note">※ 消費税等の精算は、支払通知または請求処理にて行います。</div>
       </td>
     </tr>
+    {{!-- Phase 22.21.30: 発注日 行を追加。
+         formData.発注日 / order_date が空のときは「発行日」へ fallback、
+         それも空なら "—" 表示。 --}}
+    <tr>
+      <th>発注日</th>
+      <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
+    </tr>
     <tr>
       <th>納期</th>
-      <td>{{summaryDeliveryDate}}</td>
+      <td>{{or summaryDeliveryDate "—"}}</td>
     </tr>
     <tr>
       <th>支払日</th>
-      <td>{{summaryPaymentTerms}}</td>
+      {{!-- Phase 22.7: 明細から自動集計した summaryPaymentDate を表示。
+           後方互換のため、空のときは旧 summaryPaymentTerms にフォールバック。 --}}
+      <td>{{or summaryPaymentDate summaryPaymentTerms "—"}}</td>
     </tr>
   </table>
 
@@ -294,34 +347,106 @@
         <th style="width:6mm;">No</th>
         <th>業務内容・成果物</th>
         <th style="width:18mm;">支払方法</th>
-        <th style="width:24mm;">支払日</th>
-        <th style="width:15mm;">数量</th>
-        <th style="width:22mm;">単価</th>
-        <th style="width:24mm;">金額（税抜）</th>
+        <th style="width:22mm;">納期</th>
+        <th style="width:22mm;">支払日</th>
+        <th style="width:13mm;">数量</th>
+        <th style="width:20mm;">単価</th>
+        <th style="width:22mm;">金額（税抜）</th>
       </tr>
     </thead>
     <tbody>
       {{#if items}}
       {{#each items}}
-      <tr>
-        <td class="center">{{add @index 1}}</td>
+      {{!-- Phase 17n: 仕様の文章量に影響されず narrow 列が間延びしないよう、
+           本行（数値・日付など）と仕様詳細行を分けて描画。 --}}
+      {{!-- Phase 17n: spec か detailText があるときだけ detail-row を表示 --}}
+      <tr class="{{#if (or spec detailText)}}has-detail{{/if}}">
+        <td class="center">{{or line_no (index1 @index)}}</td>
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
-          {{#if detailText}}<div class="item-spec-block">{{detailText}}</div>{{/if}}
         </td>
-        <td class="center"><span class="pay-method-badge">{{payment_method_display}}</span></td>
-        <td class="center">{{payment_date}}</td>
-        <td class="right">{{qty}}</td>
-        <td class="right">¥ {{formatCurrency unitPrice}}</td>
-        <td class="right">¥ {{formatCurrency amount}}</td>
+        <td class="center">
+          {{!-- Phase 13: 計算方式バッジ + 支払条件
+               Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
+          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          {{#if (eq calc_method "SUBSCRIPTION")}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
+          {{else}}
+          {{#if payment_terms}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_terms}}</div>
+          {{else}}
+          {{#if payment_method}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_method}}</div>
+          {{/if}}
+          {{/if}}
+          {{/if}}
+        </td>
+        {{!-- Phase 17h: 業務明細ごとの納期 (delivery_date) と支払日 (payment_date) を別列で
+             Phase 22.8: SUBSCRIPTION のときは納期=支払日サマリ ("毎月25日") /
+                         支払日=期間サマリ ("2026/01/01 〜 2026/12/31") に切替 --}}
+        <td class="center">
+          {{#if (eq calc_method "SUBSCRIPTION")}}
+            {{billingDayLabel billing_day cycle}}
+          {{else}}
+            {{formatDate delivery_date}}
+          {{/if}}
+        </td>
+        <td class="center">
+          {{#if (eq calc_method "SUBSCRIPTION")}}
+            {{!-- Phase 22.8.1: 期間はコンパクト日付 (2026/04/01) で 1 行ずつ。
+                 折返し時も "〜" を独立行に出さないよう nowrap で各端日付を確保。 --}}
+            <div style="font-size:8pt; line-height:1.4; white-space:nowrap;">
+              {{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}}
+            </div>
+            <div style="font-size:7pt; color:#999; line-height:1; margin:1px 0;">〜</div>
+            <div style="font-size:8pt; line-height:1.4; white-space:nowrap;">
+              {{#if term_end}}{{formatDateCompact term_end}}{{else}}<span style="color:#666;">継続中</span>{{/if}}
+            </div>
+          {{else}}
+            {{formatDate payment_date}}
+          {{/if}}
+        </td>
+        <td class="right">{{or quantity qty}}</td>
+        <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
+        <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
       </tr>
+      {{#if (or spec detailText)}}
+      {{!-- Phase 17n: 仕様 / 詳細を全列幅で描画する詳細行。
+           本行と境界線を共有することで「同じ明細」と分かるようにする。
+           Phase 22.8.1: 旧 Phase 22.8 で SUBSCRIPTION 時に黄色ハイライトボックスで
+           周期/単価/数量/期間総額/支払日/契約期間を再記載していたが、すべて
+           表本行と重複しており冗長なため削除。SUBSCRIPTION 行であることは
+           「支払方法」列の SUBSCRIPTION バッジ + サブテキスト「月次」等で十分。
+           この detail-row は本来の用途 (仕様 / 業務内容の長文記述) に専念する。 --}}
+      <tr class="detail-row">
+        <td></td>
+        <td colspan="7">
+          <div class="detail-cell">
+            <div class="detail-label">仕様 / 詳細</div>
+            {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
+            {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
+          </div>
+        </td>
+      </tr>
+      {{/if}}
       {{/each}}
       {{else}}
+      {{!-- 単一明細フォールバック (items[] が空のとき) — Phase 13: CALC_METHOD + PAYMENT_TERMS 統一 --}}
       <tr>
         <td class="center">1</td>
         <td><div class="item-name-block">{{ITEM_NAME}}</div></td>
-        <td class="center"><span class="pay-method-badge">{{PAYMENT_METHOD}}</span></td>
+        <td class="center">
+          <span class="pay-method-badge">{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}</span>
+          {{#if PAYMENT_TERMS}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_TERMS}}</div>
+          {{else}}
+          {{#if PAYMENT_METHOD}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_METHOD}}</div>
+          {{/if}}
+          {{/if}}
+        </td>
+        <td class="center">{{formatDate DELIVERY_DATE}}</td>
         <td class="center">{{summaryPaymentTerms}}</td>
         <td class="right">1</td>
         <td class="right">-</td>
@@ -329,11 +454,49 @@
       </tr>
       {{/if}}
       <tr>
-        <td colspan="6" class="right"><strong>小計（税抜）</strong></td>
+        <td colspan="7" class="right"><strong>小計（税抜)</strong></td>
         <td class="right"><strong>¥ {{formatCurrency grandTotalExTax}}</strong></td>
       </tr>
     </tbody>
   </table>
+
+  {{!-- Phase 17i: 経費 (交通費等・税込み額表示) --}}
+  {{#if expenses}}
+  {{#if (gt (length expenses) 0)}}
+  <div class="section-mark">■ 経費（交通費等／税込み額）</div>
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width:6mm;">No</th>
+        <th>費目</th>
+        <th style="width:24mm;">発生日</th>
+        <th style="width:26mm;">金額（税込）</th>
+        <th>摘要</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each expenses}}
+      <tr>
+        <td class="center">{{or line_no (index1 @index)}}</td>
+        <td>
+          <div class="item-name-block">{{expense_name}}</div>
+          {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
+        </td>
+        <td class="center">{{formatDate spent_date}}</td>
+        <td class="right">{{formatYen amount_inc_tax}}</td>
+        <td>{{remarks}}</td>
+      </tr>
+      {{/each}}
+      <tr>
+        <td colspan="3" class="right"><strong>経費合計（税込)</strong></td>
+        <td class="right"><strong>¥ {{formatCurrency expensesTotalIncTax}}</strong></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="small-muted" style="margin-top:4px;">※ 経費は税込み額にて精算します。本発注書に記載の各項目の領収書原本またはそのコピーを添付してください。</div>
+  {{/if}}
+  {{/if}}
 
   {{#if SPECIAL_TERMS}}
   <div class="terms-section">
@@ -361,8 +524,8 @@
   </div>
   {{else}}
   <div class="callout">
-    <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用）」が適用されます。
-    受注者は本発注書を承諾することにより, 当該約款にも同意したものとみなします。
+    <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用・2026年改正法対応版）」が適用されます。
+    受注者は本発注書を承諾することにより、当該約款にも同意したものとみなします。
   </div>
   {{/if}}
 
@@ -417,8 +580,13 @@
   </table>
   {{/if}}
 
-  {{#if ACCEPT_METHOD}}
+  {{!-- Phase 17l: 承諾セクションは ACCEPT_METHOD と SHOW_SIGN_SECTION を
+       それぞれ独立に評価する。これまでは SHOW_SIGN_SECTION が ACCEPT_METHOD
+       の {{#if}} 配下にネストされていたため、ユーザーが「承諾署名欄を表示」
+       を TRUE にしても、承諾方法が空だと署名欄ごと消えてしまっていた。 --}}
+  {{#if (or ACCEPT_METHOD SHOW_SIGN_SECTION)}}
   <div class="section-mark">■ 受領確認（承諾）</div>
+  {{#if ACCEPT_METHOD}}
   <div class="callout">
     <div style="font-weight:900;">承諾方法</div>
     <div class="small-muted">
@@ -431,14 +599,15 @@
     </div>
     {{/if}}
   </div>
+  {{/if}}
   {{#if SHOW_SIGN_SECTION}}
   <table class="sign-table" style="margin-top: 6px;">
     <tr>
-      <th>受領日</th>
-      <td>{{VENDOR_ACCEPT_DATE}}</td>
+      <th style="width:30%;">受領日（承諾日）</th>
+      <td>{{formatDate VENDOR_ACCEPT_DATE}}</td>
     </tr>
     <tr>
-      <th>受領者</th>
+      <th>受領者（承諾者）</th>
       <td>
         {{VENDOR_ACCEPT_NAME}}
         <div class="sign-box"></div>
@@ -448,5 +617,10 @@
   </table>
   {{/if}}
   {{/if}}
+
+  {{!-- Phase 17i: 基本契約なしの場合は標準約款（terms_spot_2026）を別紙としてPDF末尾に添付 --}}
+  {{#unless HAS_BASE_CONTRACT}}
+  {{> terms_spot_2026}}
+  {{/unless}}
 </body>
 </html>

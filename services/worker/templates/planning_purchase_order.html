@@ -342,6 +342,11 @@
         <div class="amount-note">※ 消費税等の精算は、支払通知書にて行います。</div>
       </td>
     </tr>
+    {{!-- Phase 22.21.30: 発注日 行を追加 (planning も同じ) --}}
+    <tr>
+      <th>発注日</th>
+      <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
+    </tr>
     <tr>
       <th>初稿納期</th>
       <td>{{FIRST_DRAFT_DEADLINE}}</td>

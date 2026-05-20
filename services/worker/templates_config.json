@@ -62,6 +62,7 @@
     "vars": {
       "ORDER_NO": { "label": "発注番号", "group": "I. 発注概要", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
       "ORDER_DATE": { "label": "発行日", "group": "I. 発注概要", "type": "date", "required": true, "dbField": "auto.today", "helpText": "PDF には YYYY年MM月DD日 で表示。年月日は自動分解" },
+      "発注日": { "label": "発注日", "group": "I. 発注概要", "type": "date", "helpText": "実際に発注を行った日付。空欄なら PDF では発行日 で代替表示" },
       "PROJECT_TITLE": { "label": "件名", "group": "I. 発注概要", "required": true, "dbField": "backlog.summary", "placeholder": "例: ノートPC 5台調達" },
 
       "VENDOR_NAME": { "label": "発注先 名称", "group": "II. 発注先 (取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力" },
