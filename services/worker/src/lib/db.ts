@@ -678,6 +678,27 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_ws_sublicensee ON work_sublicensees(sublicensee_id);`,
     // Phase 22.21.13: 契約締結日カラム追加 (PDF v3 再許諾テーブルの 9 列目)
     `ALTER TABLE work_sublicensees ADD COLUMN IF NOT EXISTS contract_date DATE;`,
+    // -----------------------------------------------------------------
+    // Phase 22.21.18: work_id 列を追加。
+    //   個別利用許諾条件書 (Work) を再編集 / リビジョン採番した際に、
+    //   license_contracts.id (= license_contract_id) は backlog_issue_key
+    //   ベースの upsert で同じ id を維持するが、別フロー (例えば前回内容を
+    //   引き継いで新規発行) で新しい license_contracts 行が作られる可能性
+    //   がある。そのケースで親作品 (Work) を共有させたいため、work_id を
+    //   セカンダリキーとして保持しておく。
+    //   - 永続化: INSERT 時に work_id を同時保存
+    //   - 読み出し: 優先 license_contract_id、見つからなければ work_id 経由で fallback
+    //   - 既存データ: license_contracts.work_id から backfill
+    // -----------------------------------------------------------------
+    `ALTER TABLE work_sublicensees ADD COLUMN IF NOT EXISTS work_id VARCHAR(120);`,
+    `CREATE INDEX IF NOT EXISTS idx_ws_work_id ON work_sublicensees(work_id);`,
+    // backfill: 旧データを親 license_contracts.work_id で埋める
+    `UPDATE work_sublicensees ws
+        SET work_id = lc.work_id
+       FROM license_contracts lc
+      WHERE ws.license_contract_id = lc.id
+        AND ws.work_id IS NULL
+        AND lc.work_id IS NOT NULL;`,
 
     // -----------------------------------------------------------------
     // Phase 22.18: 原作マスター (ledgers) + 素材マスター (materials)

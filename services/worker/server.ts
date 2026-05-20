@@ -8906,9 +8906,21 @@ ${details}
           Array.isArray(formData.サブライセンシー一覧)
         ) {
           try {
+            // Phase 22.21.18: DELETE のスコープを license_contract_id だけでなく
+            //   work_id も対象にする。理由:
+            //     (a) 通常: license_contract_id ベースで全行を一掃 (旧挙動)
+            //     (b) 別 license_contracts 行に紐付いていた同 work_id の行も
+            //         まとめて削除。これにより「前回内容を引き継ぐ → 新規
+            //         license_contracts 行が出来てサブライセンシーが重複する」
+            //         状況を防ぐ。
+            //   resolvedWorkId が空文字なら (b) は skip (work_id IS NULL の
+            //   全行を消すような事故を防ぐ ANDで防御)。
             await query(
-              "DELETE FROM work_sublicensees WHERE license_contract_id = $1",
-              [lcId]
+              `DELETE FROM work_sublicensees
+                WHERE license_contract_id = $1
+                   OR (work_id IS NOT NULL AND work_id <> ''
+                       AND work_id = $2)`,
+              [lcId, resolvedWorkId || ""]
             );
             let order = 0;
             let skipped = 0;
@@ -8945,13 +8957,16 @@ ${details}
                   ? String(sl.契約締結日).trim()
                   : null;
               try {
+                // Phase 22.21.18: work_id を 13 番目の列として永続化。
+                //   pre-render で resolvedWorkId が決まっていればその値、
+                //   未確定なら NULL (= ledger 紐付け無しの個別利用許諾)。
                 await query(
                   `INSERT INTO work_sublicensees (
                      license_contract_id, sublicensee_id, inline_name,
                      category, region, language,
                      payment_terms_label, mg_ag_label, rate_label, remarks,
-                     contract_date, sort_order
-                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+                     contract_date, sort_order, work_id
+                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
                   [
                     lcId,
                     sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
@@ -8965,33 +8980,65 @@ ${details}
                     sl.備考 || null,
                     contractDate,
                     order++,
+                    resolvedWorkId || null,
                   ]
                 );
               } catch (insertErr: any) {
-                // contract_date カラムがまだ無い環境 (worker 未デプロイ前) は
-                // 旧 INSERT (11 列) に fallback する。
+                // work_id / contract_date カラムが無い環境では旧 INSERT に fallback。
+                //   42703 = undefined_column。
                 if (insertErr && insertErr.code === "42703") {
-                  await query(
-                    `INSERT INTO work_sublicensees (
-                       license_contract_id, sublicensee_id, inline_name,
-                       category, region, language,
-                       payment_terms_label, mg_ag_label, rate_label, remarks,
-                       sort_order
-                     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-                    [
-                      lcId,
-                      sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
-                      sl.名称 || null,
-                      sl.区分 || null,
-                      sl.地域 || null,
-                      sl.言語 || null,
-                      sl.金銭条件 || null,
-                      sl.MGAG || null,
-                      sl.料率 || null,
-                      sl.備考 || null,
-                      order++,
-                    ]
-                  );
+                  // 第 1 段階 fallback: contract_date あり、work_id なし (12 列)
+                  try {
+                    await query(
+                      `INSERT INTO work_sublicensees (
+                         license_contract_id, sublicensee_id, inline_name,
+                         category, region, language,
+                         payment_terms_label, mg_ag_label, rate_label, remarks,
+                         contract_date, sort_order
+                       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+                      [
+                        lcId,
+                        sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
+                        sl.名称 || null,
+                        sl.区分 || null,
+                        sl.地域 || null,
+                        sl.言語 || null,
+                        sl.金銭条件 || null,
+                        sl.MGAG || null,
+                        sl.料率 || null,
+                        sl.備考 || null,
+                        contractDate,
+                        order - 1, // order was already incremented in outer
+                      ]
+                    );
+                  } catch (innerErr: any) {
+                    if (innerErr && innerErr.code === "42703") {
+                      // 第 2 段階 fallback: contract_date も無い超 legacy (11 列)
+                      await query(
+                        `INSERT INTO work_sublicensees (
+                           license_contract_id, sublicensee_id, inline_name,
+                           category, region, language,
+                           payment_terms_label, mg_ag_label, rate_label, remarks,
+                           sort_order
+                         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+                        [
+                          lcId,
+                          sl.sublicensee_id ? Number(sl.sublicensee_id) : null,
+                          sl.名称 || null,
+                          sl.区分 || null,
+                          sl.地域 || null,
+                          sl.言語 || null,
+                          sl.金銭条件 || null,
+                          sl.MGAG || null,
+                          sl.料率 || null,
+                          sl.備考 || null,
+                          order - 1,
+                        ]
+                      );
+                    } else {
+                      throw innerErr;
+                    }
+                  }
                 } else {
                   throw insertErr;
                 }

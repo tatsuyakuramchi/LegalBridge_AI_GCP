@@ -1371,13 +1371,18 @@ async function startServer() {
             try {
               // Phase 22.21.13: contract_date 追加。worker 未デプロイ環境では
               //   42703 で落ちるので 2 段階 fallback (新版 → 旧版)。
+              // Phase 22.21.18: work_id を OR 条件で参照。lcId が違う行 でも
+              //   work_id が一致すれば取得 → 「前回内容を引き継ぐ → 新規
+              //   license_contracts 行」のようなフローでもサブライセンシーを
+              //   復元できるようにする。row.work_id は context にも入っている。
+              const workIdForLookup = row.work_id || "";
               let wsRes: any;
               try {
                 wsRes = await query(
                   `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
                           ws.category, ws.region, ws.language,
                           ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
-                          ws.remarks, ws.contract_date, ws.sort_order,
+                          ws.remarks, ws.contract_date, ws.sort_order, ws.work_id,
                           s.name AS master_name,
                           s.category AS master_category,
                           s.default_region AS master_region,
@@ -1385,28 +1390,55 @@ async function startServer() {
                      FROM work_sublicensees ws
                      LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
                     WHERE ws.license_contract_id = $1
+                       OR (ws.work_id IS NOT NULL AND ws.work_id <> ''
+                           AND ws.work_id = $2)
                     ORDER BY ws.sort_order ASC, ws.id ASC`,
-                  [lcId]
+                  [lcId, workIdForLookup]
                 );
               } catch (innerErr: any) {
                 if (innerErr && innerErr.code === "42703") {
-                  // contract_date カラム未追加 → legacy SELECT
-                  wsRes = await query(
-                    `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
-                            ws.category, ws.region, ws.language,
-                            ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
-                            ws.remarks, ws.sort_order,
-                            NULL AS contract_date,
-                            s.name AS master_name,
-                            s.category AS master_category,
-                            s.default_region AS master_region,
-                            s.default_language AS master_language
-                       FROM work_sublicensees ws
-                       LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
-                      WHERE ws.license_contract_id = $1
-                      ORDER BY ws.sort_order ASC, ws.id ASC`,
-                    [lcId]
-                  );
+                  // work_id カラム未追加 → 第 1 段階 fallback (contract_date あり)
+                  try {
+                    wsRes = await query(
+                      `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
+                              ws.category, ws.region, ws.language,
+                              ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
+                              ws.remarks, ws.contract_date, ws.sort_order,
+                              NULL::text AS work_id,
+                              s.name AS master_name,
+                              s.category AS master_category,
+                              s.default_region AS master_region,
+                              s.default_language AS master_language
+                         FROM work_sublicensees ws
+                         LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
+                        WHERE ws.license_contract_id = $1
+                        ORDER BY ws.sort_order ASC, ws.id ASC`,
+                      [lcId]
+                    );
+                  } catch (deepErr: any) {
+                    if (deepErr && deepErr.code === "42703") {
+                      // contract_date も無い超 legacy
+                      wsRes = await query(
+                        `SELECT ws.id, ws.sublicensee_id, ws.inline_name,
+                                ws.category, ws.region, ws.language,
+                                ws.payment_terms_label, ws.mg_ag_label, ws.rate_label,
+                                ws.remarks, ws.sort_order,
+                                NULL AS contract_date,
+                                NULL::text AS work_id,
+                                s.name AS master_name,
+                                s.category AS master_category,
+                                s.default_region AS master_region,
+                                s.default_language AS master_language
+                           FROM work_sublicensees ws
+                           LEFT JOIN sublicensees s ON s.id = ws.sublicensee_id
+                          WHERE ws.license_contract_id = $1
+                          ORDER BY ws.sort_order ASC, ws.id ASC`,
+                        [lcId]
+                      );
+                    } else {
+                      throw deepErr;
+                    }
+                  }
                 } else {
                   throw innerErr;
                 }
