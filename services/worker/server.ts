@@ -395,9 +395,13 @@ async function startServer() {
     parentIssue: any
   ): Promise<void> {
     try {
-      // 親の request_type を DB から取得
+      // 親の request_type を DB から取得。
+      // Phase 22.21.20: 旧コードは `request_type / slack_user_name / dept` を
+      //   SELECT していたが、legal_requests 実スキーマには存在せず 42703 で
+      //   silently 失敗していた (catch で握り潰し)。実 column 名にあわせて
+      //   alias し、未永続化の列はクエリから外す。
       const lrRes = await query(
-        `SELECT request_type, slack_user_id, slack_user_name, summary, counterparty, dept
+        `SELECT contract_type AS request_type, slack_user_id, summary, counterparty
            FROM legal_requests
           WHERE backlog_issue_key = $1`,
         [parentIssueKey]
@@ -405,7 +409,15 @@ async function startServer() {
       const parentLr = lrRes.rows[0];
       if (!parentLr) {
         console.log(
-          `[auto-chain] no legal_requests for ${parentIssueKey}, skip`
+          `[auto-chain] no legal_requests row for ${parentIssueKey}, skip`
+        );
+        return;
+      }
+      if (!parentLr.request_type) {
+        console.log(
+          `[auto-chain] ${parentIssueKey} has no contract_type, skip ` +
+            "(発注書テンプレで legal_requests を INSERT するときに contract_type を入れる必要があるが、" +
+            "古いデータでは欠落していることがある)"
         );
         return;
       }
@@ -1262,6 +1274,20 @@ ${details}
       const { key } = req.params;
       const { statusId } = req.body;
       const result = await backlogService.updateIssueStatus(key, statusId);
+      // Phase 22.21.20: Backlog webhook が安定して打ち返ってこない環境でも
+      //   自動連鎖を発火させるため、status が「完了 (4)」になったら
+      //   ここで直接 autoChainOnComplete を呼ぶ (冪等)。
+      if (Number(statusId) === 4) {
+        try {
+          const issue = await backlogService.getIssue(key);
+          await autoChainOnComplete(key, issue);
+        } catch (chainErr) {
+          console.warn(
+            `[auto-chain] direct call from PATCH /status failed for ${key}:`,
+            chainErr
+          );
+        }
+      }
       res.json(result);
     } catch (error) {
       res.status(500).json({ error: String(error) });
@@ -7719,6 +7745,19 @@ ${details}
           console.log(
             `📡 Manual Advance via nextStatusId: ${issueKey} → status ${nextStatusId} OK`
           );
+          // Phase 22.21.20: 完了 (4) に進めたら自動連鎖を直接呼ぶ
+          //   (Backlog webhook 待ちに依存しない)。冪等 (子課題があれば skip)。
+          if (Number(nextStatusId) === 4) {
+            try {
+              const issueForChain = await backlogService.getIssue(issueKey);
+              await autoChainOnComplete(issueKey, issueForChain);
+            } catch (chainErr) {
+              console.warn(
+                `[auto-chain] direct call from /generate failed for ${issueKey}:`,
+                chainErr
+              );
+            }
+          }
         } catch (statusError) {
           console.warn(
             `[manual-advance] Backlog status 更新失敗 (${issueKey} → ${nextStatusId}):`,
@@ -8296,9 +8335,30 @@ ${details}
         templateType.includes("purchase_order") ||
         templateType === "planning_purchase_order"
       ) {
+        // Phase 22.21.20: contract_type を必ずセットする。
+        //   旧 INSERT は contract_type を入れていなかったため、自動連鎖
+        //   (autoChainOnComplete) の `parentRequestType === "purchase_order"`
+        //   照合がマッチせず、納品リクエスト子課題が作成されなかった。
+        //   - 新規 INSERT: contract_type を 'purchase_order' で挿入
+        //   - 既存行: COALESCE で空のときだけ補完 (既存値を上書きしない)
+        const poContractType =
+          templateType === "planning_purchase_order"
+            ? "planning_purchase_order"
+            : "purchase_order";
         const lrResult = await query(
-          "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO UPDATE SET counterparty = EXCLUDED.counterparty RETURNING id",
-          [issueKey, formData.VENDOR_NAME || formData.PARTY_B_NAME, issue.summary]
+          `INSERT INTO legal_requests (backlog_issue_key, contract_type, counterparty, summary)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (backlog_issue_key) DO UPDATE SET
+               counterparty  = EXCLUDED.counterparty,
+               contract_type = COALESCE(NULLIF(legal_requests.contract_type, ''),
+                                        EXCLUDED.contract_type)
+             RETURNING id`,
+          [
+            issueKey,
+            poContractType,
+            formData.VENDOR_NAME || formData.PARTY_B_NAME,
+            issue.summary,
+          ]
         );
         const lrId = lrResult.rows[0].id;
         const amount = parseFloat(
@@ -8442,8 +8502,12 @@ ${details}
           }
         }
       } else if (templateType.includes("inspection")) {
+        // Phase 22.21.20: contract_type を 'delivery_inspec' でセット。
+        //   ON CONFLICT は DO NOTHING を継続 (検収書側は既存行があれば触らない)。
         await query(
-          "INSERT INTO legal_requests (backlog_issue_key, counterparty, summary) VALUES ($1, $2, $3) ON CONFLICT (backlog_issue_key) DO NOTHING",
+          `INSERT INTO legal_requests (backlog_issue_key, contract_type, counterparty, summary)
+             VALUES ($1, 'delivery_inspec', $2, $3)
+             ON CONFLICT (backlog_issue_key) DO NOTHING`,
           [issueKey, formData.counterparty || formData.PARTY_B_NAME, issue.summary]
         );
         // 親 PO 検索: formData.parent_po_id (form-context / picker が埋めた値) 優先、
