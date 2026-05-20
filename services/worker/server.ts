@@ -476,8 +476,28 @@ async function startServer() {
         return;
       }
       console.log(
-        `🔗 [auto-chain] existing children count=${existingChildren.length}, no ${rule.childIssueTypeName} yet, proceed`
+        `🔗 [auto-chain] existing children count=${existingChildren.length}, no ${rule.childIssueTypeName} yet`
       );
+
+      // Phase 22.21.24: DB レベルの追加 idempotency。
+      //   Backlog の 1 階層制約により「祖父課題の子 = 親課題の兄弟」として
+      //   作成した場合、上の getChildIssues(parentIssue.id) ではヒットしない。
+      //   legal_requests.notes に '親: LEGAL-XXX' を入れる仕様なので、
+      //   DB 側で重複検査する。
+      const dbDup = await query(
+        `SELECT backlog_issue_key FROM legal_requests
+          WHERE contract_type = $1
+            AND notes ILIKE $2
+          LIMIT 1`,
+        [rule.childRequestType, `%親: ${parentIssueKey}%`]
+      );
+      if (dbDup.rows.length > 0) {
+        console.log(
+          `🔗 [auto-chain] SKIP: legal_requests already has ${rule.childRequestType} child ${dbDup.rows[0].backlog_issue_key} for parent ${parentIssueKey}`
+        );
+        return;
+      }
+      console.log(`🔗 [auto-chain] DB dedup OK, proceed`);
 
       // 子課題の Backlog issue type id を解決
       const issueTypes = await backlogService.getIssueTypes();
@@ -495,21 +515,65 @@ async function startServer() {
         `🔗 [auto-chain] resolved issueType ${rule.childIssueTypeName} id=${childType.id}`
       );
 
-      // Backlog 子課題作成
+      // Phase 22.21.24: Backlog は親子関係を 1 階層しか許さない。
+      //   parentIssue 自体が既に他課題の子だった場合、parentIssueId を
+      //   渡すと err.editIssue.parentChildIssue.3 で 400 を返す。
+      //   その場合は (a) 祖父課題を新しい親にする (兄弟関係) → (b) それも無理
+      //   なら親なし (top-level) で作成する、というフォールバックを実施。
+      const grandParentId = parentIssue?.parentIssueId
+        ? Number(parentIssue.parentIssueId)
+        : null;
+      const effectiveParentId = grandParentId || parentIssue.id;
+      const fallbackDueToHierarchy = !!grandParentId;
       console.log(
-        `🔗 [auto-chain] calling backlogService.createIssue (parentId=${parentIssue.id}, typeId=${childType.id})...`
+        `🔗 [auto-chain] calling backlogService.createIssue ` +
+          `(effectiveParentId=${effectiveParentId}, typeId=${childType.id})` +
+          (fallbackDueToHierarchy
+            ? ` [fallback: 祖父課題 ${grandParentId} を親にした (Backlog 1 階層制約のため LEGAL-${parentIssueKey} の直下には作れない)]`
+            : "")
       );
-      const childIssue = await backlogService.createIssue({
-        summary: rule.childSummaryPrefix + (parentLr.summary || parentIssueKey),
-        description:
-          `自動作成: 親課題 ${parentIssueKey} が完了したため、` +
-          `${rule.triggerLabel} 課題を起こしました。\n\n` +
-          `申請者: <@${parentLr.slack_user_id}>\n\n` +
-          rule.childActionInstruction,
-        issueTypeId: childType.id,
-        priorityId: 3,
-        parentIssueId: parentIssue.id,
-      });
+      const baseDescription =
+        `自動作成: 親課題 ${parentIssueKey} が完了したため、` +
+        `${rule.triggerLabel} 課題を起こしました。\n\n` +
+        (fallbackDueToHierarchy
+          ? `※ Backlog の親子 1 階層制約により、本課題は ${parentIssueKey} の` +
+            `「兄弟」(同じ親の配下) として作成されています。\n\n`
+          : "") +
+        `申請者: <@${parentLr.slack_user_id}>\n\n` +
+        rule.childActionInstruction;
+
+      let childIssue: any = null;
+      try {
+        childIssue = await backlogService.createIssue({
+          summary:
+            rule.childSummaryPrefix + (parentLr.summary || parentIssueKey),
+          description: baseDescription,
+          issueTypeId: childType.id,
+          priorityId: 3,
+          parentIssueId: effectiveParentId,
+        });
+      } catch (createErr: any) {
+        const msg = String(createErr?.message || createErr);
+        if (msg.includes("parentChildIssue")) {
+          // 祖父課題でも 400 になった or そもそも grandparent 無しで 400
+          // (= 親候補が child だが grandparent が無い、稀ケース) → top-level で再試行
+          console.warn(
+            `🔗 [auto-chain] parentChildIssue error with parent=${effectiveParentId}, retry as top-level: ${msg}`
+          );
+          childIssue = await backlogService.createIssue({
+            summary:
+              rule.childSummaryPrefix + (parentLr.summary || parentIssueKey),
+            description:
+              baseDescription +
+              `\n\n※ Backlog の親子制約により、独立課題として作成されました。`,
+            issueTypeId: childType.id,
+            priorityId: 3,
+            // parentIssueId 渡さない
+          });
+        } else {
+          throw createErr;
+        }
+      }
 
       if (!childIssue?.issueKey) {
         console.warn(
