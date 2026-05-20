@@ -251,6 +251,46 @@ export async function initDb() {
     //   admin-ui で見ると「統合先 LEGAL-XXX」が分かる。
     `ALTER TABLE legal_requests ADD COLUMN IF NOT EXISTS merged_into_issue_key VARCHAR(50);`,
 
+    // -----------------------------------------------------------------
+    // Phase 22.21.21: 古い 発注書 / 検収書 / 個別利用許諾条件書 の
+    //   contract_type を backfill。
+    //
+    //   背景: Phase 22.21.20 以前は Admin UI からの /api/documents/generate
+    //   が legal_requests を INSERT する際に contract_type を入れていなかった。
+    //   その結果、自動連鎖 (autoChainOnComplete) が parentRequestType と
+    //   マッチせず、納品リクエスト子課題 / 売上報告子課題が作られていなかった。
+    //
+    //   修正: documents.template_type を辿って contract_type を埋める。
+    //   既に contract_type が入っている行は触らない (IS NULL / '' のみ対象)。
+    //   冪等なので毎回 worker 起動時に走っても安全。
+    //
+    //   マッピング:
+    //     template_type LIKE '%purchase_order%'           → 'purchase_order'
+    //                                                       (planning_purchase_order も purchase_order に統合する。
+    //                                                        自動連鎖ルールはどちらも同じ delivery_inspec を子に
+    //                                                        付ける想定なので OK)
+    //     template_type LIKE 'inspection%'                → 'delivery_inspec'
+    //     template_type = 'individual_license_terms'      → 'lic_individual'
+    // -----------------------------------------------------------------
+    `UPDATE legal_requests lr
+        SET contract_type = 'purchase_order'
+       FROM documents d
+      WHERE d.issue_key = lr.backlog_issue_key
+        AND d.template_type LIKE '%purchase_order%'
+        AND (lr.contract_type IS NULL OR lr.contract_type = '');`,
+    `UPDATE legal_requests lr
+        SET contract_type = 'delivery_inspec'
+       FROM documents d
+      WHERE d.issue_key = lr.backlog_issue_key
+        AND d.template_type LIKE 'inspection%'
+        AND (lr.contract_type IS NULL OR lr.contract_type = '');`,
+    `UPDATE legal_requests lr
+        SET contract_type = 'lic_individual'
+       FROM documents d
+      WHERE d.issue_key = lr.backlog_issue_key
+        AND d.template_type = 'individual_license_terms'
+        AND (lr.contract_type IS NULL OR lr.contract_type = '');`,
+
     `CREATE TABLE IF NOT EXISTS order_items (
       id SERIAL PRIMARY KEY,
       legal_request_id INTEGER REFERENCES legal_requests(id) ON DELETE CASCADE,
