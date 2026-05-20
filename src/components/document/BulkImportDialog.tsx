@@ -439,6 +439,31 @@ export const BulkImportDialog: React.FC<Props> = ({
                           </td>
                           <td className="p-1.5 text-muted-foreground">
                             {s.issue_key}
+                            {/* Phase 22.21.27: bulk import の Backlog 自動化結果 */}
+                            {(s as any).issue_key_created && (
+                              <span
+                                className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-sm"
+                                title="Backlog 課題を新規作成しました"
+                              >
+                                NEW
+                              </span>
+                            )}
+                            {(s as any).auto_completed && (
+                              <span
+                                className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-sm"
+                                title="完了に自動進行 + 子課題自動作成"
+                              >
+                                ✓完了
+                              </span>
+                            )}
+                            {(s as any).delivery_child_issue_key && (
+                              <span
+                                className="ml-1 text-[9px] text-emerald-700"
+                                title="納品・検収 子課題"
+                              >
+                                → {(s as any).delivery_child_issue_key}
+                              </span>
+                            )}
                           </td>
                         </tr>
                       ))}

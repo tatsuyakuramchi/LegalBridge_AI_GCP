@@ -5624,17 +5624,111 @@ ${details}
       const succeeded: any[] = [];
       const failed: any[] = [];
 
+      // Phase 22.21.27: Backlog 課題 + auto-chain (納品・検収子課題) を
+      //   bulk import の各行に対しても起こす。
+      //   - issue_key が CSV にあれば既存課題に紐付け (再 import で冪等)
+      //   - 無ければ Backlog に「契約審査」課題を新規作成
+      //   - legal_requests に contract_type='purchase_order' で登録
+      //   - 完了 (statusId=4) に自動進行
+      //   - autoChainOnComplete を呼んで「納品・検収」子課題を起票
+      //
+      //   1 回だけ拾えば十分なので、ループ外で issue type / status の解決を
+      //   キャッシュする。
+      let cachedContractReviewTypeId: number | null = null;
+      const resolveContractReviewTypeId = async (): Promise<number | null> => {
+        if (cachedContractReviewTypeId !== null) return cachedContractReviewTypeId;
+        try {
+          const types = await backlogService.getIssueTypes();
+          const t = types.find((x: any) => x.name === "契約審査");
+          if (t) cachedContractReviewTypeId = Number(t.id);
+        } catch (e) {
+          console.warn(`[bulk/order] getIssueTypes failed:`, e);
+        }
+        return cachedContractReviewTypeId;
+      };
+      let cachedCompletedStatusId: number | null = null;
+      const resolveCompletedStatusId = async (): Promise<number | null> => {
+        if (cachedCompletedStatusId !== null) return cachedCompletedStatusId;
+        try {
+          const statuses = await backlogService.getStatuses();
+          const s = statuses.find(
+            (x: any) => x.name === "完了" || Number(x.id) === 4
+          );
+          if (s) cachedCompletedStatusId = Number(s.id);
+        } catch (e) {
+          console.warn(`[bulk/order] getStatuses failed:`, e);
+        }
+        return cachedCompletedStatusId;
+      };
+
       for (const [importKey, groupRows] of groups) {
         try {
           const first = groupRows[0];
-          const issueKey =
+          // CSV 列 auto_complete (デフォルト true / 「Yes/true/1」も受容)
+          const autoComplete = (() => {
+            const v = first.auto_complete;
+            if (v === undefined || v === null || v === "") return true;
+            const s = String(v).trim().toLowerCase();
+            return !["false", "no", "0", "off"].includes(s);
+          })();
+          // CSV 列 create_backlog (auto_complete とは独立。default true)
+          const createBacklog = (() => {
+            const v = first.create_backlog;
+            if (v === undefined || v === null || v === "") return true;
+            const s = String(v).trim().toLowerCase();
+            return !["false", "no", "0", "off"].includes(s);
+          })();
+
+          let issueKey =
             first.issue_key && String(first.issue_key).trim().length > 0
               ? String(first.issue_key).trim()
-              : `IMPORT-${Date.now()}-${succeeded.length + failed.length}`;
+              : "";
           const docNumber =
             first.document_number && String(first.document_number).trim().length > 0
               ? String(first.document_number).trim()
               : await getNewDocumentNumber("purchase_order", "発注書");
+
+          // Phase 22.21.27: issue_key が未指定なら Backlog 課題を新規作成。
+          //   作成失敗時は IMPORT-... fallback で続行 (DB だけ作って Backlog 同期は後日)。
+          let backlogIssueCreated = false;
+          if (!issueKey && createBacklog) {
+            const typeId = await resolveContractReviewTypeId();
+            if (typeId) {
+              try {
+                const vendorName = String(
+                  first.vendor_name || first.vendor_code || ""
+                ).trim();
+                const summary = `【契約審査】${vendorName || "—"}｜発注書 ${docNumber}`;
+                const description =
+                  `Bulk import で自動起票された発注書課題です。\n\n` +
+                  `発注番号: ${docNumber}\n` +
+                  `取引先: ${vendorName || "—"}\n` +
+                  `案件: ${String(first.description || "—").slice(0, 200)}\n` +
+                  `インポートグループキー: ${importKey}`;
+                const created = await backlogService.createIssue({
+                  summary,
+                  description,
+                  issueTypeId: typeId,
+                  priorityId: 3,
+                });
+                if (created?.issueKey) {
+                  issueKey = String(created.issueKey).trim();
+                  backlogIssueCreated = true;
+                  console.log(
+                    `📥 [bulk/order] created Backlog issue ${issueKey} for ${docNumber}`
+                  );
+                }
+              } catch (e: any) {
+                console.warn(
+                  `[bulk/order] Backlog createIssue failed for ${docNumber} (continuing with synthetic key):`,
+                  e?.message || e
+                );
+              }
+            }
+          }
+          if (!issueKey) {
+            issueKey = `IMPORT-${Date.now()}-${succeeded.length + failed.length}`;
+          }
           const taxRate = Number(first.tax_rate) || 10;
 
           // Phase 17i: row_type で item / expense を判別。空 or "item" は明細扱い。
@@ -5877,16 +5971,100 @@ ${details}
             );
           }
 
+          // Phase 22.21.27: legal_requests に contract_type='purchase_order' を
+          //   登録。auto-chain ルールがマッチするためのキー情報。
+          //   ON CONFLICT は contract_type を上書きしない (既存値尊重)。
+          //   issueKey が IMPORT-... の synthetic だと autoChainOnComplete が
+          //   Backlog API で getIssue できないのでスキップする。
+          const isSyntheticKey = issueKey.startsWith("IMPORT-");
+          if (!isSyntheticKey) {
+            try {
+              await query(
+                `INSERT INTO legal_requests
+                   (backlog_issue_key, contract_type, counterparty, summary)
+                 VALUES ($1, 'purchase_order', $2, $3)
+                 ON CONFLICT (backlog_issue_key) DO UPDATE SET
+                   counterparty  = COALESCE(NULLIF(EXCLUDED.counterparty, ''), legal_requests.counterparty),
+                   contract_type = COALESCE(NULLIF(legal_requests.contract_type, ''),
+                                            EXCLUDED.contract_type)`,
+                [
+                  issueKey,
+                  first.vendor_name || first.vendor_code || null,
+                  first.description || `発注書 ${docNumber}`,
+                ]
+              );
+            } catch (lrErr) {
+              console.warn(
+                `[bulk/order] legal_requests insert failed for ${issueKey}:`,
+                lrErr
+              );
+            }
+          }
+
+          // Phase 22.21.27: auto_complete が true なら Backlog ステータスを
+          //   完了に進めて autoChainOnComplete を発火し「納品・検収」子課題
+          //   を起こす。synthetic IMPORT-... key の場合はスキップ。
+          let chainResult: { triggered: boolean; childIssueKey?: string } = {
+            triggered: false,
+          };
+          if (autoComplete && !isSyntheticKey) {
+            try {
+              const completedStatusId = await resolveCompletedStatusId();
+              if (completedStatusId) {
+                await backlogService.updateIssueStatus(issueKey, completedStatusId);
+                console.log(
+                  `📡 [bulk/order] ${issueKey} → status 完了 (${completedStatusId})`
+                );
+              } else {
+                console.warn(`[bulk/order] cannot resolve 完了 status id`);
+              }
+            } catch (statusErr: any) {
+              console.warn(
+                `[bulk/order] Backlog status update failed for ${issueKey}:`,
+                statusErr?.message || statusErr
+              );
+            }
+            // auto-chain (納品・検収 子課題作成)
+            try {
+              const parentIssueForChain = await backlogService.getIssue(issueKey);
+              await autoChainOnComplete(issueKey, parentIssueForChain);
+              chainResult.triggered = true;
+              // 結果課題の確認は最良努力 (children query は冪等)
+              try {
+                const kids =
+                  (await backlogService.getChildIssues(parentIssueForChain.id)) ||
+                  [];
+                const deliveryChild = kids.find(
+                  (k: any) => k?.issueType?.name === "納品・検収"
+                );
+                if (deliveryChild?.issueKey) {
+                  chainResult.childIssueKey = deliveryChild.issueKey;
+                }
+              } catch {
+                /* noop */
+              }
+            } catch (chainErr) {
+              console.warn(
+                `[bulk/order] autoChainOnComplete failed for ${issueKey}:`,
+                chainErr
+              );
+            }
+          }
+
           succeeded.push({
             import_key: importKey,
             order_item_id: orderItemId,
             issue_key: issueKey,
+            issue_key_created: backlogIssueCreated,
             document_number: docNumber,
             line_count: lines.length,
             expense_count: bulkExpenses.length,
             expenses_total_inc_tax: expensesTotalIncTax,
             total_ex_tax: totals?.amount_ex_tax ?? totalExTax,
             pdf_pending: pdfPending,
+            // Phase 22.21.27: bulk import の結果に Backlog 自動化の状態も返す
+            auto_completed: autoComplete && !isSyntheticKey,
+            delivery_child_issue_key: chainResult.childIssueKey || null,
           });
         } catch (e: any) {
           console.error(`/api/imports/bulk/order group=${importKey} failed:`, e);
@@ -7473,6 +7651,15 @@ ${details}
           "staff_email",
           "generate_pdf",
           "ringi_numbers",
+          // Phase 22.21.27: Backlog 課題自動作成 + 完了遷移 + auto-chain (納品・検収子課題)
+          //   create_backlog : true (default) で issue_key 未指定なら Backlog 課題を新規作成。
+          //                     false なら IMPORT-... の synthetic key のみ (Backlog 同期なし)。
+          //   auto_complete  : true (default) で Backlog ステータスを 完了 に進めて
+          //                     autoChainOnComplete を呼び 納品・検収 子課題を起票。
+          //                     false なら課題作成のみ。
+          //                     create_backlog=false または synthetic issue_key の場合は無効。
+          "create_backlog",
+          "auto_complete",
           "row_type",
           "line_no",
           "item_name",
@@ -7494,18 +7681,19 @@ ${details}
           "remarks",
         ],
         sample: [
-          // ORD001: 同一 PO に 2 明細 (FIXED) + 2 経費。SUBSCRIPTION 列は空。
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item",    "1", "書籍印刷",   "A5/100p",        "500",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "item",    "2", "カバー印刷", "カラー両面",     "300",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "1", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "交通費", "2026-04-10", "12500", "東京〜大阪 新幹線"],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "expense", "2", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "宿泊費", "2026-04-10", "9800",  "ビジネスホテル 1 泊"],
-          // ORD002: 単純な FIXED 1 明細
-          ["ORD002", "",         "", "", "V002", "株式会社ABC", "翻訳業務",     "10", "",           "tanaka@arclight.co.jp", "未作成", "00002", "item",    "1", "翻訳作業",   "EN→JA",          "5000",  "10",  "FIXED", "検収後", "2026-06-15", "",           "", "", "", "", "", "", "", ""],
-          // ORD003: 純サブスク (月額保守 12 ヶ月 = 期間総額 600,000)
-          ["ORD003", "",         "", "", "V003", "株式会社サンプル", "月額保守", "10", "",         "tanaka@arclight.co.jp", "未作成", "00001,00003", "item", "1", "保守料月額", "12ヶ月",         "50000", "12",  "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "25", "", "", "", ""],
-          // Phase 22.11: ORD004 — FIXED + SUBSCRIPTION 混在の同一 PO 例 (顧問契約 + スポット業務)
-          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "item", "1", "法律顧問業務", "月次定額 (顧問契約)",         "100000", "12", "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "20", "", "", "", ""],
-          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "item", "2", "新規契約レビュー (スポット)", "M&A 一件",                "300000", "1",  "FIXED",        "翌月末", "2026-05-15", "2026-06-30", "", "", "", "", "", "", "", ""],
+          // Phase 22.21.27: create_backlog / auto_complete を各行 2 列追加
+          // ORD001: 同一 PO に 2 明細 (FIXED) + 2 経費。issue_key 指定済なので Backlog 新規作成はスキップ、auto_complete=true で完了化 + 納品子課題生成。
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "item",    "1", "書籍印刷",   "A5/100p",        "500",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "item",    "2", "カバー印刷", "カラー両面",     "300",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "expense", "1", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "交通費", "2026-04-10", "12500", "東京〜大阪 新幹線"],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "expense", "2", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "宿泊費", "2026-04-10", "9800",  "ビジネスホテル 1 泊"],
+          // ORD002: 単純な FIXED 1 明細。issue_key 空 → Backlog 課題新規作成 + 完了化 + 納品子課題生成。
+          ["ORD002", "",         "", "", "V002", "株式会社ABC", "翻訳業務",     "10", "",           "tanaka@arclight.co.jp", "未作成", "00002", "true", "true", "item",    "1", "翻訳作業",   "EN→JA",          "5000",  "10",  "FIXED", "検収後", "2026-06-15", "",           "", "", "", "", "", "", "", ""],
+          // ORD003: 純サブスク。Backlog 自動化を OFF にする例 (auto_complete=false なので 課題は作るが 完了に進めない)。
+          ["ORD003", "",         "", "", "V003", "株式会社サンプル", "月額保守", "10", "",         "tanaka@arclight.co.jp", "未作成", "00001,00003", "true", "false", "item", "1", "保守料月額", "12ヶ月",         "50000", "12",  "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "25", "", "", "", ""],
+          // ORD004: FIXED + SUBSCRIPTION 混在。Backlog 課題自体を作らない例 (create_backlog=false → IMPORT-... synthetic key)。
+          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "false", "false", "item", "1", "法律顧問業務", "月次定額 (顧問契約)",         "100000", "12", "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "20", "", "", "", ""],
+          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "false", "false", "item", "2", "新規契約レビュー (スポット)", "M&A 一件",                "300000", "1",  "FIXED",        "翌月末", "2026-05-15", "2026-06-30", "", "", "", "", "", "", "", ""],
         ],
       },
       "license-contract": {
