@@ -76,7 +76,10 @@ export const PendingPdfPanel: React.FC = () => {
     id: number
     document_number: string
     drive_link?: string
-    action: "generated" | "skipped"
+    // Phase 22.21.33: 一括完了 アクションを追加
+    action: "generated" | "skipped" | "completed"
+    delivery_child_issue_key?: string | null
+    warnings?: Array<{ step: string; error: string }>
   } | null>(null)
 
   const refresh = React.useCallback(async () => {
@@ -132,6 +135,63 @@ export const PendingPdfPanel: React.FC = () => {
       )
     } catch (e: any) {
       // Phase 16: 行内に永続表示 (トーストではなく、状況がわかる位置に固定)
+      setRowErrors((prev) => ({
+        ...prev,
+        [row.id]: String(e?.message || e),
+      }))
+    } finally {
+      setBusyRows((b) => {
+        const copy = { ...b }
+        delete copy[row.id]
+        return copy
+      })
+    }
+  }
+
+  // Phase 22.21.33: 「📦 一括完了」アクション
+  //   PDF 生成 + Backlog 完了化 + 納品・検収 子課題作成 を 1 ボタンで実行。
+  //   発注書系の確認済データを一気に運用フローへ流す用途。
+  const regenerateAndComplete = async (row: Row) => {
+    if (
+      !window.confirm(
+        `${row.document_number} を PDF 生成 + Backlog 完了 + 納品・検収 子課題作成 まで一括実行します。よろしいですか?`
+      )
+    )
+      return
+    setBusyRows((b) => ({ ...b, [row.id]: "completing" }))
+    setRowErrors((e) => {
+      const copy = { ...e }
+      delete copy[row.id]
+      return copy
+    })
+    try {
+      const res = await fetch(
+        `/api/documents/${row.id}/regenerate-and-complete`,
+        { method: "POST" }
+      )
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      setLastResult({
+        id: row.id,
+        document_number: json.document_number,
+        drive_link: json.drive_link,
+        action: "completed",
+        delivery_child_issue_key: json.delivery_child_issue_key || null,
+        warnings: Array.isArray(json.warnings) ? json.warnings : [],
+      })
+      // 一覧から除外
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              rows: d.rows.filter((r) => r.id !== row.id),
+              total: d.total - 1,
+            }
+          : d
+      )
+    } catch (e: any) {
       setRowErrors((prev) => ({
         ...prev,
         [row.id]: String(e?.message || e),
@@ -226,29 +286,55 @@ export const PendingPdfPanel: React.FC = () => {
       {lastResult && (
         <div
           className={cn(
-            "border rounded-sm px-4 py-2 text-[11px] font-mono flex items-center justify-between gap-3",
+            "border rounded-sm px-4 py-2 text-[11px] font-mono flex flex-col gap-2",
             lastResult.action === "generated"
               ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-              : "bg-amber-50 border-amber-200 text-amber-900"
+              : lastResult.action === "completed"
+                ? "bg-emerald-100 border-emerald-300 text-emerald-900"
+                : "bg-amber-50 border-amber-200 text-amber-900"
           )}
         >
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4" />
-            {lastResult.action === "generated"
-              ? `✓ PDF 生成完了: ${lastResult.document_number}`
-              : `✓ スキップ済: ${lastResult.document_number}`}
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4" />
+              {lastResult.action === "generated"
+                ? `✓ PDF 生成完了: ${lastResult.document_number}`
+                : lastResult.action === "completed"
+                  ? `📦 一括完了: ${lastResult.document_number}`
+                  : `✓ スキップ済: ${lastResult.document_number}`}
+              {lastResult.action === "completed" &&
+                lastResult.delivery_child_issue_key && (
+                  <span className="ml-2 text-[10px] px-1.5 py-0.5 bg-white/60 border border-emerald-300 rounded-sm">
+                    → 納品・検収 {lastResult.delivery_child_issue_key}
+                  </span>
+                )}
+            </div>
+            {lastResult.drive_link && (
+              <a
+                href={lastResult.drive_link}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1 underline"
+              >
+                <ExternalLink className="w-3 h-3" />
+                Drive で開く
+              </a>
+            )}
           </div>
-          {lastResult.drive_link && (
-            <a
-              href={lastResult.drive_link}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-1 underline"
-            >
-              <ExternalLink className="w-3 h-3" />
-              Drive で開く
-            </a>
-          )}
+          {/* Phase 22.21.33: 一括完了 で部分失敗 (PDF は OK だが Backlog or auto-chain 失敗) */}
+          {Array.isArray(lastResult.warnings) &&
+            lastResult.warnings.length > 0 && (
+              <div className="border-t border-current/20 pt-1.5 text-[10px] space-y-0.5">
+                <div className="font-bold opacity-80">
+                  ⚠ 警告 (PDF 自体は成功):
+                </div>
+                {lastResult.warnings.map((w, i) => (
+                  <div key={i} className="opacity-80">
+                    <span className="font-bold">[{w.step}]</span> {w.error}
+                  </div>
+                ))}
+              </div>
+            )}
         </div>
       )}
 
@@ -374,13 +460,29 @@ export const PendingPdfPanel: React.FC = () => {
                       onClick={() => generatePdf(row)}
                       disabled={!!busy}
                       className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+                      title="PDF だけ作る (Backlog ステータスは触らない)"
                     >
                       {busy === "generating" ? (
                         <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
                         <FileText className="w-3 h-3" />
                       )}
-                      {rowError ? "そのまま再試行" : "PDF 生成"}
+                      {rowError ? "そのまま再試行" : "📄 PDF 生成"}
+                    </button>
+                    {/* Phase 22.21.33: 📦 一括完了 — PDF + Backlog 完了 + 納品子課題作成 */}
+                    <button
+                      type="button"
+                      onClick={() => regenerateAndComplete(row)}
+                      disabled={!!busy}
+                      className="text-[10px] font-mono uppercase tracking-wider bg-emerald-600 text-white rounded-sm px-3 py-1.5 hover:bg-emerald-700 flex items-center gap-1.5 disabled:opacity-50"
+                      title="PDF 生成 + Backlog ステータスを 完了 に進めて納品・検収 子課題を自動作成"
+                    >
+                      {busy === "completing" ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <CheckCircle2 className="w-3 h-3" />
+                      )}
+                      📦 一括完了
                     </button>
                     <button
                       type="button"

@@ -7566,6 +7566,170 @@ ${details}
   });
 
   /**
+   * Phase 22.21.33: 「📦 一括完了」エンドポイント。
+   *
+   *   POST /api/documents/:id/regenerate-and-complete
+   *
+   *   実行内容:
+   *     1. regenerate-pdf と同じく PDF 生成 + Drive アップ + キュー除外
+   *     2. Backlog 課題ステータスを 完了 (id=4) に進行
+   *        - synthetic IMPORT-... / MANUAL-... key の場合はスキップ
+   *     3. autoChainOnComplete を呼んで「納品・検収」子課題を起票
+   *        (Phase 22.21.26 の race-safe lock 経由)
+   *
+   *   レスポンス:
+   *     ok / drive_link / document_number / status_advanced / delivery_child_issue_key
+   *
+   *   失敗ハンドリング:
+   *     - PDF 生成失敗: 500 で error 返却 (Backlog 触らない)
+   *     - Backlog status 失敗 / auto-chain 失敗: warnings に積んで 200 で返す
+   *       (PDF は完成しているので「失敗」とは扱わない)
+   */
+  app.post(
+    "/api/documents/:id/regenerate-and-complete",
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          return res.status(400).json({ ok: false, error: "invalid id" });
+        }
+        const result = await query(
+          `SELECT id, document_number, issue_key, template_type, form_data
+             FROM documents WHERE id = $1`,
+          [id]
+        );
+        if (result.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "document not found" });
+        }
+        const doc = result.rows[0];
+        const fd = doc.form_data || {};
+
+        // --- (1) PDF 生成 (regenerate-pdf 相当) ---
+        const staff = await lookupStaffByEmail(fd.staff_email);
+        const staffMerge = staff
+          ? {
+              STAFF_NAME: staff.staff_name,
+              STAFF_DEPARTMENT: staff.department,
+              STAFF_EMAIL: staff.email,
+              STAFF_PHONE: staff.phone,
+              inspectorName: fd.inspectorName || staff.staff_name,
+              inspectorDept: fd.inspectorDept || staff.department,
+              inspectorEmail: fd.inspectorEmail || staff.email,
+            }
+          : {};
+        const pdfResult = await maybeGeneratePdfForImport(
+          doc.template_type,
+          doc.document_number,
+          doc.issue_key,
+          fd,
+          staffMerge
+        );
+        if (!pdfResult.generated) {
+          return res.status(500).json({
+            ok: false,
+            error: pdfResult.error || "PDF generation failed",
+          });
+        }
+        // キューから外す
+        await query(
+          `UPDATE documents
+              SET form_data = jsonb_set(form_data, '{__pdf_pending}', 'false'::jsonb)
+            WHERE id = $1`,
+          [id]
+        );
+
+        const warnings: Array<{ step: string; error: string }> = [];
+        let statusAdvanced = false;
+        let deliveryChildKey: string | null = null;
+
+        // synthetic key だと Backlog 連携不可
+        const issueKey = String(doc.issue_key || "").trim();
+        const isSyntheticKey =
+          issueKey.startsWith("IMPORT-") || issueKey.startsWith("MANUAL-");
+
+        if (!issueKey || isSyntheticKey) {
+          warnings.push({
+            step: "backlog",
+            error: `issue_key が synthetic (${issueKey}) のため Backlog 連携をスキップ`,
+          });
+        } else {
+          // --- (2) Backlog ステータスを 完了 に ---
+          try {
+            await backlogService.updateIssueStatus(issueKey, 4);
+            statusAdvanced = true;
+            console.log(
+              `📡 [regen-complete] ${issueKey} → status 完了 (4)`
+            );
+          } catch (statusErr: any) {
+            warnings.push({
+              step: "backlog-status",
+              error: String(statusErr?.message || statusErr),
+            });
+            console.warn(
+              `[regen-complete] Backlog status update failed for ${issueKey}:`,
+              statusErr?.message || statusErr
+            );
+          }
+
+          // --- (3) auto-chain (納品・検収 子課題) ---
+          try {
+            const issue = await backlogService.getIssue(issueKey);
+            await autoChainOnComplete(issueKey, issue);
+            // 子課題が作られたか確認 (best effort)
+            try {
+              const kids =
+                (await backlogService.getChildIssues(issue.id)) || [];
+              const child = kids.find(
+                (k: any) => k?.issueType?.name === "納品・検収"
+              );
+              if (child?.issueKey) {
+                deliveryChildKey = String(child.issueKey);
+              } else {
+                // 兄弟として作られた場合は legal_requests から探す
+                const sib = await query(
+                  `SELECT backlog_issue_key FROM legal_requests
+                    WHERE contract_type = 'delivery_inspec'
+                      AND (parent_issue_key = $1 OR notes ILIKE $2)
+                    ORDER BY created_at DESC LIMIT 1`,
+                  [issueKey, `%親: ${issueKey}%`]
+                );
+                if (sib.rows[0]?.backlog_issue_key) {
+                  deliveryChildKey = sib.rows[0].backlog_issue_key;
+                }
+              }
+            } catch {
+              /* noop */
+            }
+          } catch (chainErr: any) {
+            warnings.push({
+              step: "auto-chain",
+              error: String(chainErr?.message || chainErr),
+            });
+          }
+        }
+
+        res.json({
+          ok: true,
+          id,
+          document_number: doc.document_number,
+          drive_link: pdfResult.drive_link,
+          status_advanced: statusAdvanced,
+          delivery_child_issue_key: deliveryChildKey,
+          warnings,
+        });
+      } catch (error) {
+        console.error(
+          "/api/documents/:id/regenerate-and-complete failed:",
+          error
+        );
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
    * 「スキップ」操作 — __pdf_pending=false に変更してキューから除外。
    * PDF は作らないが DB 登録は維持。
    */
