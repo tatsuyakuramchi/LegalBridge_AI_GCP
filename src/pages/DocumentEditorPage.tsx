@@ -51,6 +51,7 @@ export function DocumentEditorPage() {
     companyProfile,
     showNotification,
     refreshIssues,
+    refreshAssets, // Phase 22.21.32: 文書生成後に Archive リストを最新化
   } = useAppData()
 
   // Phase 17g: ページ起動時に最新の Backlog 課題を再取得。
@@ -539,6 +540,16 @@ export function DocumentEditorPage() {
           `生成完了 (${data?.documentNumber || "番号未取得"}) — drive link が返却されませんでした`,
           "info"
         )
+      }
+      // Phase 22.21.32: 生成成功直後に Archive のキャッシュを更新。
+      //   これが無いと Archive ページに移動してもリロードしないと新文書が
+      //   見えない (= "アーカイブに作成文章が反映されない" バグの修正)。
+      //   PDF 未作成キューからの再生成 / リビジョン再発行も同じ /api/documents/generate
+      //   経由なので、このパスで一律カバーされる。
+      try {
+        await refreshAssets?.()
+      } catch (refErr) {
+        console.warn("[generate] refreshAssets failed:", refErr)
       }
     } catch (e: any) {
       console.error("Generation failed", e)
