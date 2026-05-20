@@ -439,19 +439,27 @@ export const BulkImportDialog: React.FC<Props> = ({
                           </td>
                           <td className="p-1.5 text-muted-foreground">
                             {s.issue_key}
-                            {/* Phase 22.21.27: bulk import の Backlog 自動化結果 */}
+                            {/* Phase 22.21.27/28: bulk import の Backlog 自動化結果 */}
                             {(s as any).issue_key_created && (
                               <span
                                 className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-sm"
-                                title="Backlog 課題を新規作成しました"
+                                title={`Backlog 課題を新規作成しました (種別: ${(s as any).backlog_issue_type || "—"})`}
                               >
-                                NEW
+                                NEW · {(s as any).backlog_issue_type || "?"}
+                              </span>
+                            )}
+                            {(s as any).pdf_pending && (
+                              <span
+                                className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 rounded-sm"
+                                title="PDF 未作成。Document Editor で PDF を生成してから完了に進めると 納品・検収 子課題が自動作成されます"
+                              >
+                                PDF 未作成
                               </span>
                             )}
                             {(s as any).auto_completed && (
                               <span
                                 className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-sm"
-                                title="完了に自動進行 + 子課題自動作成"
+                                title="完了に自動進行 + 納品・検収 子課題自動作成"
                               >
                                 ✓完了
                               </span>

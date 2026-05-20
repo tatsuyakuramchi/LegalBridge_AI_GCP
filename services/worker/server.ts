@@ -5634,17 +5634,35 @@ ${details}
       //
       //   1 回だけ拾えば十分なので、ループ外で issue type / status の解決を
       //   キャッシュする。
+      // Phase 22.21.28: 課題種別を generate_pdf に応じて切替。
+      //   - 作成済 (= pdfPending=false): "契約審査" (発注書発行済 → 完了化 → 納品子課題)
+      //   - 未作成 (= pdfPending=true):  "文書作成" (発注書を これから 作るタスク。完了化や納品子課題は走らせない)
       let cachedContractReviewTypeId: number | null = null;
-      const resolveContractReviewTypeId = async (): Promise<number | null> => {
-        if (cachedContractReviewTypeId !== null) return cachedContractReviewTypeId;
+      let cachedDocCreationTypeId: number | null = null;
+      let cachedTypesLookup: any[] | null = null;
+      const ensureIssueTypesFetched = async (): Promise<void> => {
+        if (cachedTypesLookup !== null) return;
         try {
-          const types = await backlogService.getIssueTypes();
-          const t = types.find((x: any) => x.name === "契約審査");
-          if (t) cachedContractReviewTypeId = Number(t.id);
+          cachedTypesLookup = (await backlogService.getIssueTypes()) || [];
+          const reviewType = cachedTypesLookup.find(
+            (x: any) => x.name === "契約審査"
+          );
+          if (reviewType) cachedContractReviewTypeId = Number(reviewType.id);
+          const docType = cachedTypesLookup.find(
+            (x: any) => x.name === "文書作成"
+          );
+          if (docType) cachedDocCreationTypeId = Number(docType.id);
         } catch (e) {
           console.warn(`[bulk/order] getIssueTypes failed:`, e);
         }
+      };
+      const resolveContractReviewTypeId = async (): Promise<number | null> => {
+        await ensureIssueTypesFetched();
         return cachedContractReviewTypeId;
+      };
+      const resolveDocCreationTypeId = async (): Promise<number | null> => {
+        await ensureIssueTypesFetched();
+        return cachedDocCreationTypeId;
       };
       let cachedCompletedStatusId: number | null = null;
       const resolveCompletedStatusId = async (): Promise<number | null> => {
@@ -5691,20 +5709,32 @@ ${details}
           // Phase 22.21.27: issue_key が未指定なら Backlog 課題を新規作成。
           //   作成失敗時は IMPORT-... fallback で続行 (DB だけ作って Backlog 同期は後日)。
           let backlogIssueCreated = false;
+          // Phase 22.21.28: PDF 状態を早めに決定 (Backlog 課題種別の判別に使う)
+          const pdfPendingEarly = shouldGeneratePdf(first.generate_pdf);
           if (!issueKey && createBacklog) {
-            const typeId = await resolveContractReviewTypeId();
+            // pdfPendingEarly=true (未作成) → 文書作成 課題、後段の auto_complete はスキップ
+            // pdfPendingEarly=false (作成済) → 契約審査 課題、auto_complete + auto-chain
+            const typeId = pdfPendingEarly
+              ? await resolveDocCreationTypeId()
+              : await resolveContractReviewTypeId();
+            const typeLabel = pdfPendingEarly ? "文書作成" : "契約審査";
             if (typeId) {
               try {
                 const vendorName = String(
                   first.vendor_name || first.vendor_code || ""
                 ).trim();
-                const summary = `【契約審査】${vendorName || "—"}｜発注書 ${docNumber}`;
+                const summary = pdfPendingEarly
+                  ? `【文書作成】${vendorName || "—"}｜発注書 ${docNumber} (PDF 未作成)`
+                  : `【契約審査】${vendorName || "—"}｜発注書 ${docNumber}`;
                 const description =
-                  `Bulk import で自動起票された発注書課題です。\n\n` +
+                  `Bulk import で自動起票された発注書課題です (種別: ${typeLabel})。\n\n` +
                   `発注番号: ${docNumber}\n` +
                   `取引先: ${vendorName || "—"}\n` +
                   `案件: ${String(first.description || "—").slice(0, 200)}\n` +
-                  `インポートグループキー: ${importKey}`;
+                  `インポートグループキー: ${importKey}\n` +
+                  (pdfPendingEarly
+                    ? `\n※ generate_pdf=未作成 で取り込まれました。Document Editor で実 PDF を生成してから 完了 へ進めてください。完了時に納品・検収 子課題が自動作成されます。`
+                    : "");
                 const created = await backlogService.createIssue({
                   summary,
                   description,
@@ -5715,7 +5745,7 @@ ${details}
                   issueKey = String(created.issueKey).trim();
                   backlogIssueCreated = true;
                   console.log(
-                    `📥 [bulk/order] created Backlog issue ${issueKey} for ${docNumber}`
+                    `📥 [bulk/order] created Backlog issue ${issueKey} for ${docNumber} (${typeLabel})`
                   );
                 }
               } catch (e: any) {
@@ -5724,6 +5754,10 @@ ${details}
                   e?.message || e
                 );
               }
+            } else {
+              console.warn(
+                `[bulk/order] Backlog issue type "${typeLabel}" not found, skip create`
+              );
             }
           }
           if (!issueKey) {
@@ -5960,7 +5994,8 @@ ${details}
           // Phase 15: インライン PDF 生成は廃止 (キュー方式に移行)。
           // generate_pdf="未作成" の行は __pdf_pending=true フラグだけ立てて
           // PDF 未作成キュー画面で後から確認しながら生成する。
-          const pdfPending = shouldGeneratePdf(first.generate_pdf);
+          // Phase 22.21.28: 上部で計算済の pdfPendingEarly を流用 (二重計算回避)
+          const pdfPending = pdfPendingEarly;
           if (pdfPending) {
             // form_data の __pdf_pending を true に更新 (キュー対象として印付け)
             await query(
@@ -6001,13 +6036,26 @@ ${details}
             }
           }
 
-          // Phase 22.21.27: auto_complete が true なら Backlog ステータスを
+          // Phase 22.21.27 + 22.21.28: auto_complete が true かつ PDF 作成済
+          //   (= pdfPendingEarly が false) のときだけ Backlog ステータスを
           //   完了に進めて autoChainOnComplete を発火し「納品・検収」子課題
-          //   を起こす。synthetic IMPORT-... key の場合はスキップ。
+          //   を起こす。
+          //   - 未作成 (pdfPendingEarly=true): 発注書を Document Editor で
+          //     作るタスクが残っているため、ここでは完了化しない。
+          //     ユーザーが Document Editor で実 PDF を生成 → 完了に進めた
+          //     タイミングで auto-chain が走る (Phase 22.21.12 の通常経路)。
+          //   - synthetic IMPORT-... key の場合もスキップ。
           let chainResult: { triggered: boolean; childIssueKey?: string } = {
             triggered: false,
           };
-          if (autoComplete && !isSyntheticKey) {
+          const shouldAutoComplete =
+            autoComplete && !isSyntheticKey && !pdfPendingEarly;
+          if (pdfPendingEarly && !isSyntheticKey) {
+            console.log(
+              `📥 [bulk/order] ${issueKey} は PDF 未作成 → 完了化 + auto-chain はスキップ (Document Editor で PDF 生成後に完了へ進めてください)`
+            );
+          }
+          if (shouldAutoComplete) {
             try {
               const completedStatusId = await resolveCompletedStatusId();
               if (completedStatusId) {
@@ -6062,8 +6110,16 @@ ${details}
             expenses_total_inc_tax: expensesTotalIncTax,
             total_ex_tax: totals?.amount_ex_tax ?? totalExTax,
             pdf_pending: pdfPending,
-            // Phase 22.21.27: bulk import の結果に Backlog 自動化の状態も返す
-            auto_completed: autoComplete && !isSyntheticKey,
+            // Phase 22.21.27/28: bulk import の結果に Backlog 自動化の状態
+            //   - issue_type: 文書作成 (未作成) or 契約審査 (作成済)
+            //   - auto_completed: 完了に進めた + auto-chain 起動した
+            //   - delivery_child_issue_key: 納品・検収 子課題のキー
+            backlog_issue_type: backlogIssueCreated
+              ? pdfPending
+                ? "文書作成"
+                : "契約審査"
+              : null,
+            auto_completed: shouldAutoComplete && chainResult.triggered,
             delivery_child_issue_key: chainResult.childIssueKey || null,
           });
         } catch (e: any) {
