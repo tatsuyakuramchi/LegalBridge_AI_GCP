@@ -515,6 +515,46 @@ async function startServer() {
         `🔗 [auto-chain] resolved issueType ${rule.childIssueTypeName} id=${childType.id}`
       );
 
+      // Phase 22.21.25: 子課題タイトルに親文書番号 + 取引先名を含める。
+      //   旧: "[納品報告] 発注書"  ← 複数並ぶと区別不能
+      //   新: "[納品報告] ARC-PO-2026-0007 / 福原 朋実"
+      //
+      //   document_number は documents テーブルから template_type で絞って
+      //   最新を取得。複数リビジョン (Phase 22.10) があれば最新のを使う。
+      //   見つからなければ親 issueKey を fallback とする。
+      let parentDocNumber = "";
+      try {
+        // ルールに応じて template_type のパターンを切り替え
+        const tmplPattern =
+          rule.parentRequestType === "purchase_order" ||
+          rule.parentRequestType === "planning_purchase_order"
+            ? "%purchase_order%"
+            : rule.parentRequestType === "lic_individual"
+              ? "individual_license_terms"
+              : "%";
+        const docRes = await query(
+          `SELECT document_number
+             FROM documents
+            WHERE issue_key = $1
+              AND template_type LIKE $2
+            ORDER BY created_at DESC
+            LIMIT 1`,
+          [parentIssueKey, tmplPattern]
+        );
+        parentDocNumber = String(docRes.rows[0]?.document_number || "").trim();
+      } catch (e) {
+        console.warn(`🔗 [auto-chain] document_number lookup failed:`, e);
+      }
+      const counterpartyForTitle = String(
+        parentLr.counterparty || ""
+      ).trim();
+      // タイトル組み立て: [納品報告] ARC-PO-2026-0007 / 福原 朋実
+      const titleAfterPrefix = [parentDocNumber || parentIssueKey, counterpartyForTitle]
+        .filter(Boolean)
+        .join(" / ");
+      const childSummary = rule.childSummaryPrefix + titleAfterPrefix;
+      console.log(`🔗 [auto-chain] child summary = "${childSummary}"`);
+
       // Phase 22.21.24: Backlog は親子関係を 1 階層しか許さない。
       //   parentIssue 自体が既に他課題の子だった場合、parentIssueId を
       //   渡すと err.editIssue.parentChildIssue.3 で 400 を返す。
@@ -545,8 +585,7 @@ async function startServer() {
       let childIssue: any = null;
       try {
         childIssue = await backlogService.createIssue({
-          summary:
-            rule.childSummaryPrefix + (parentLr.summary || parentIssueKey),
+          summary: childSummary,
           description: baseDescription,
           issueTypeId: childType.id,
           priorityId: 3,
@@ -561,8 +600,7 @@ async function startServer() {
             `🔗 [auto-chain] parentChildIssue error with parent=${effectiveParentId}, retry as top-level: ${msg}`
           );
           childIssue = await backlogService.createIssue({
-            summary:
-              rule.childSummaryPrefix + (parentLr.summary || parentIssueKey),
+            summary: childSummary,
             description:
               baseDescription +
               `\n\n※ Backlog の親子制約により、独立課題として作成されました。`,
