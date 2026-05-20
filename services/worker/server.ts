@@ -5960,6 +5960,17 @@ ${details}
                 expensesTotalIncTax,
                 grandTotalExTax: totalExTax,
                 taxRate,
+                // Phase 22.21.31: 発注書 PDF 用ヘッダの最小セット。
+                //   VENDOR 詳細 (住所 / 代表者 / 担当者) や PARTY_A (自社) は
+                //   Document Editor 側で vendor_code → 取引先マスター →
+                //   自動補完 / 自社プロファイル → PARTY_A_* 自動補完 で埋まる
+                //   ため CSV 列には含めない。
+                発注日: first.order_date || "",
+                order_date: first.order_date || "",
+                PROJECT_TITLE: first.project_title || first.description || "",
+                // STAFF_EMAIL は既存 CSV 列なので保存しておく (Editor で
+                // staff_email → staff 行 → STAFF_NAME / DEPARTMENT / PHONE 自動補完)
+                STAFF_EMAIL: first.staff_email || "",
                 __imported: true,
                 __bulk: true,
               }),
@@ -7695,27 +7706,31 @@ ${details}
         //   billing_day : 毎周期の支払日 (1-31。0 or >30 で末日)
         //   1 PO 内で FIXED と SUBSCRIPTION の明細混在 OK (per-row 判定)。
         headers: [
+          // === 共通: グループキー + 識別子 ===
           "import_key",
           "issue_key",
           "document_number",
           "drive_link",
+          // === 共通: 取引先・案件 ===
+          //   vendor_code / vendor_name のみで OK。住所・代表者・担当者などの
+          //   詳細は Document Editor で取引先マスター / 自社プロファイルから
+          //   自動補完される (Phase 22.21.31 後の方針: CSV はミニマル列構成)。
           "vendor_code",
           "vendor_name",
           "description",
+          // === Phase 22.21.31: 発注書専用ヘッダ追加 ===
+          "order_date",            // 発注日 (Phase 22.21.30 で追加された PDF 行と紐付け)
+          "project_title",         // 件名 (PROJECT_TITLE)。空なら description で fallback
+          // === 共通: 期日・税率 ===
           "tax_rate",
           "due_date",
           "staff_email",
           "generate_pdf",
           "ringi_numbers",
-          // Phase 22.21.27: Backlog 課題自動作成 + 完了遷移 + auto-chain (納品・検収子課題)
-          //   create_backlog : true (default) で issue_key 未指定なら Backlog 課題を新規作成。
-          //                     false なら IMPORT-... の synthetic key のみ (Backlog 同期なし)。
-          //   auto_complete  : true (default) で Backlog ステータスを 完了 に進めて
-          //                     autoChainOnComplete を呼び 納品・検収 子課題を起票。
-          //                     false なら課題作成のみ。
-          //                     create_backlog=false または synthetic issue_key の場合は無効。
+          // === Phase 22.21.27: Backlog 課題自動作成 + 完了遷移 + auto-chain ===
           "create_backlog",
           "auto_complete",
+          // === 明細・経費 (1 行 = 1 明細 or 経費) ===
           "row_type",
           "line_no",
           "item_name",
@@ -7726,30 +7741,68 @@ ${details}
           "payment_terms",
           "delivery_date",
           "payment_date",
-          // Phase 22.11: SUBSCRIPTION 専用フィールド (FIXED/ROYALTY 行は空欄で OK)
+          // === Phase 22.11: SUBSCRIPTION 専用フィールド (FIXED/ROYALTY 行は空欄で OK) ===
           "cycle",
           "term_start",
           "term_end",
           "billing_day",
+          // === 経費行用 (row_type=expense のとき) ===
           "expense_name",
           "spent_date",
           "amount_inc_tax",
           "remarks",
         ],
         sample: [
-          // Phase 22.21.27: create_backlog / auto_complete を各行 2 列追加
-          // ORD001: 同一 PO に 2 明細 (FIXED) + 2 経費。issue_key 指定済なので Backlog 新規作成はスキップ、auto_complete=true で完了化 + 納品子課題生成。
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "item",    "1", "書籍印刷",   "A5/100p",        "500",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "item",    "2", "カバー印刷", "カラー両面",     "300",   "200", "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "expense", "1", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "交通費", "2026-04-10", "12500", "東京〜大阪 新幹線"],
-          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "書籍印刷一式", "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true", "expense", "2", "",           "",               "",      "",    "",      "",       "",           "",           "", "", "", "", "宿泊費", "2026-04-10", "9800",  "ビジネスホテル 1 泊"],
-          // ORD002: 単純な FIXED 1 明細。issue_key 空 → Backlog 課題新規作成 + 完了化 + 納品子課題生成。
-          ["ORD002", "",         "", "", "V002", "株式会社ABC", "翻訳業務",     "10", "",           "tanaka@arclight.co.jp", "未作成", "00002", "true", "true", "item",    "1", "翻訳作業",   "EN→JA",          "5000",  "10",  "FIXED", "検収後", "2026-06-15", "",           "", "", "", "", "", "", "", ""],
-          // ORD003: 純サブスク。Backlog 自動化を OFF にする例 (auto_complete=false なので 課題は作るが 完了に進めない)。
-          ["ORD003", "",         "", "", "V003", "株式会社サンプル", "月額保守", "10", "",         "tanaka@arclight.co.jp", "未作成", "00001,00003", "true", "false", "item", "1", "保守料月額", "12ヶ月",         "50000", "12",  "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "25", "", "", "", ""],
-          // ORD004: FIXED + SUBSCRIPTION 混在。Backlog 課題自体を作らない例 (create_backlog=false → IMPORT-... synthetic key)。
-          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "false", "false", "item", "1", "法律顧問業務", "月次定額 (顧問契約)",         "100000", "12", "SUBSCRIPTION", "", "", "",                          "MONTHLY", "2026-04-01", "2027-03-31", "20", "", "", "", ""],
-          ["ORD004", "",         "", "", "V004", "株式会社ミックス", "顧問+スポット", "10", "", "tanaka@arclight.co.jp", "未作成", "", "false", "false", "item", "2", "新規契約レビュー (スポット)", "M&A 一件",                "300000", "1",  "FIXED",        "翌月末", "2026-05-15", "2026-06-30", "", "", "", "", "", "", "", ""],
+          // Phase 22.21.31: ミニマル列構成版。
+          //   発注先の住所 / 代表者 / 担当者 等は Document Editor 側で
+          //   取引先マスター (vendor_code から) と自社プロファイルから
+          //   自動補完されるため、CSV では vendor_code / vendor_name に絞る。
+          //   ヘッダ追加: order_date (発注日) / project_title (件名) のみ。
+
+          // === ORD001: 国内 PO、2 明細 + 2 経費。Backlog 既存課題に紐付け (issue_key=ARC-1234) ===
+          //   作成済 → 契約審査 課題 + 完了 + 納品子課題チェーン。
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "ノートPC調達",
+           "2026-04-15", "ノートPC 5台調達",
+           "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true",
+           "item",    "1", "ノートPC本体", "ThinkPad X1 Carbon", "180000", "5",
+           "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
+          // ORD001 同グループ 2 明細目 (ヘッダ系は空でも OK — 1 行目を採用)
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "ノートPC調達",
+           "", "",
+           "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true",
+           "item",    "2", "セットアップ作業料", "初期設定込み", "5000", "5",
+           "FIXED", "翌月末", "2026-04-25", "2026-05-31", "", "", "", "", "", "", "", ""],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "ノートPC調達",
+           "", "",
+           "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true",
+           "expense", "1", "", "", "", "", "", "", "", "", "", "", "", "", "交通費", "2026-04-10", "12500", "東京〜大阪 新幹線"],
+          ["ORD001", "ARC-1234", "", "", "V001", "株式会社XYZ", "ノートPC調達",
+           "", "",
+           "10", "2026-04-30", "tanaka@arclight.co.jp", "作成済", "00001", "true", "true",
+           "expense", "2", "", "", "", "", "", "", "", "", "", "", "", "", "宿泊費", "2026-04-10", "9800",  "ビジネスホテル 1 泊"],
+
+          // === ORD002: 単純 FIXED 1 明細。issue_key 空 → Backlog 新規作成 + 完了 + 納品子課題 ===
+          ["ORD002", "", "", "", "V002", "株式会社ABC", "翻訳業務",
+           "2026-05-01", "技術文書翻訳",
+           "10", "", "tanaka@arclight.co.jp", "未作成", "00002", "true", "true",
+           "item",    "1", "翻訳作業",   "EN→JA",          "5000",  "10", "FIXED", "検収後", "2026-06-15", "", "", "", "", "", "", "", "", ""],
+
+          // === ORD003: 純サブスク。auto_complete=false → 課題は作るが 完了に進めない ===
+          ["ORD003", "", "", "", "V003", "株式会社サンプル", "月額保守",
+           "2026-04-01", "システム月額保守",
+           "10", "", "tanaka@arclight.co.jp", "未作成", "00001,00003", "true", "false",
+           "item", "1", "保守料月額", "12ヶ月", "50000", "12", "SUBSCRIPTION", "", "", "", "MONTHLY", "2026-04-01", "2027-03-31", "25", "", "", "", ""],
+
+          // === ORD004: 顧問契約 (SUBSCRIPTION) + スポット業務 (FIXED) 混在 ===
+          //   create_backlog=false → Backlog 課題自体を作らない (DB だけ登録)
+          ["ORD004", "", "", "", "V004", "株式会社ミックス", "顧問+スポット",
+           "2026-04-01", "法律顧問契約 + スポット業務",
+           "10", "", "tanaka@arclight.co.jp", "未作成", "", "false", "false",
+           "item", "1", "法律顧問業務", "月次定額 (顧問契約)", "100000", "12", "SUBSCRIPTION", "", "", "", "MONTHLY", "2026-04-01", "2027-03-31", "20", "", "", "", ""],
+          ["ORD004", "", "", "", "V004", "株式会社ミックス", "顧問+スポット",
+           "", "",
+           "10", "", "tanaka@arclight.co.jp", "未作成", "", "false", "false",
+           "item", "2", "新規契約レビュー (スポット)", "M&A 一件", "300000", "1", "FIXED", "翌月末", "2026-05-15", "2026-06-30", "", "", "", "", "", "", "", ""],
         ],
       },
       "license-contract": {
