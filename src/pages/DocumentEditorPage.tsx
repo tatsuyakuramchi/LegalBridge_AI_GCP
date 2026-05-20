@@ -96,6 +96,10 @@ export function DocumentEditorPage() {
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false)
   const [previewHtml, setPreviewHtml] = React.useState<string | null>(null)
+  // Phase 22.21.16: プレビュー API のエラーを UI 上で可視化。
+  //   旧実装は console.error しかしておらず、500 や空 html を返した場合に
+  //   「Awaiting field input…」のまま無言で止まっていた。
+  const [previewError, setPreviewError] = React.useState<string | null>(null)
   const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isGenerating, setIsGenerating] = React.useState(false)
   // Phase 9g: 文書生成完了後の達成感のあるサクセス画面用
@@ -357,7 +361,8 @@ export function DocumentEditorPage() {
 
   const handlePreview = React.useCallback(async () => {
     setIsPreviewing(true)
-    setPreviewHtml(null)
+    setPreviewError(null)
+    // 旧 previewHtml は残しておく (refresh 中も前回内容を表示し続ける)
     try {
       const res = await fetch("/api/documents/preview", {
         method: "POST",
@@ -368,10 +373,42 @@ export function DocumentEditorPage() {
           issueKey: selectedIssue,
         }),
       })
+      // Phase 22.21.16: 500 / 422 などの HTTP エラーを明示的に拾う
+      if (!res.ok) {
+        let errMsg = `HTTP ${res.status} ${res.statusText}`
+        try {
+          const errBody = await res.json()
+          if (errBody?.error) errMsg += `: ${errBody.error}`
+        } catch {
+          // body が JSON でないケース
+          try {
+            const t = await res.text()
+            if (t) errMsg += `: ${t.slice(0, 300)}`
+          } catch {}
+        }
+        setPreviewError(errMsg)
+        setPreviewHtml(null)
+        console.error("Preview failed:", errMsg)
+        return
+      }
       const data = await res.json()
-      if (data.html) setPreviewHtml(data.html)
-    } catch (e) {
-      console.error("Preview failed", e)
+      if (data.html) {
+        setPreviewHtml(data.html)
+        setPreviewError(null)
+      } else {
+        // 200 OK だが html が空 — テンプレが空文字を返したケース
+        setPreviewError(
+          `Preview API returned no HTML${
+            data?.error ? `: ${data.error}` : ""
+          }`
+        )
+        setPreviewHtml(null)
+      }
+    } catch (e: any) {
+      const msg = e?.message || String(e)
+      console.error("Preview failed:", e)
+      setPreviewError(`Network or fetch error: ${msg}`)
+      setPreviewHtml(null)
     } finally {
       setIsPreviewing(false)
     }
@@ -1026,6 +1063,33 @@ export function DocumentEditorPage() {
                       )}
                       {previewHtml ? (
                         <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+                      ) : previewError ? (
+                        <div className="flex flex-col items-center justify-center py-12 px-6">
+                          <div className="w-full max-w-xl rounded-md border border-destructive/30 bg-destructive/5 p-4">
+                            <div className="flex items-center gap-2 mb-2">
+                              <span className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-destructive">
+                                Preview failed
+                              </span>
+                            </div>
+                            <pre className="text-[10.5px] font-mono whitespace-pre-wrap break-words text-destructive/90 max-h-[280px] overflow-auto">
+                              {previewError}
+                            </pre>
+                            <div className="mt-3 text-[10px] font-mono text-muted-foreground">
+                              ヒント: Cloud Run worker のログで「Preview failed:」を検索すると
+                              テンプレートの Handlebars エラー詳細が確認できます。
+                            </div>
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              className="mt-3"
+                              onClick={handlePreview}
+                              disabled={isPreviewing}
+                            >
+                              <RefreshCw className={isPreviewing ? "animate-spin" : ""} />
+                              Retry
+                            </Button>
+                          </div>
+                        </div>
                       ) : (
                         <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
                           <FileText className="h-12 w-12 mb-3 opacity-30" />
