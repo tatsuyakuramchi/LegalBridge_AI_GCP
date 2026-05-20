@@ -365,21 +365,25 @@ async function startServer() {
     childActionInstruction: string;
   };
 
+  // Phase 22.21.23: Backlog プロジェクトに実在する課題種別名と一致させる。
+  //   実存: 文書作成 / 契約審査 / 法務相談 / 事務手続 / 納品・検収 / 利用許諾計算
+  //   旧コードは 「納品リクエスト」「売上報告案件」を探していたが、Backlog に
+  //   存在せず、SKIP: issue type not found で止まっていた。
   const AUTO_CHAIN_RULES: AutoChainRule[] = [
     {
       parentRequestType: "purchase_order",
       childRequestType: "delivery_inspec",
-      childIssueTypeName: "納品リクエスト",
+      childIssueTypeName: "納品・検収",
       triggerLabel: "納品待ち",
       childSummaryPrefix: "[納品報告] ",
       childActionInstruction:
         "納品を確認したら Slack で `/法務依頼` → 「納品 / 検収書」 を選び、本課題を選択して起票してください。",
     },
-    // Phase 22.21.22: 企画発注書も同じ納品リクエストを連鎖させる。
+    // 企画発注書も同じ「納品・検収」を連鎖させる。
     {
       parentRequestType: "planning_purchase_order",
       childRequestType: "delivery_inspec",
-      childIssueTypeName: "納品リクエスト",
+      childIssueTypeName: "納品・検収",
       triggerLabel: "納品待ち",
       childSummaryPrefix: "[納品報告] ",
       childActionInstruction:
@@ -388,7 +392,7 @@ async function startServer() {
     {
       parentRequestType: "lic_individual",
       childRequestType: "license_calc",
-      childIssueTypeName: "売上報告案件",
+      childIssueTypeName: "利用許諾計算",
       triggerLabel: "利用許諾報告待ち",
       childSummaryPrefix: "[利用許諾報告] ",
       childActionInstruction:
