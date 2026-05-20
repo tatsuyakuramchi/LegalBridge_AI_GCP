@@ -95,6 +95,15 @@ export function DocumentEditorPage() {
   const [templateSearch, setTemplateSearch] = React.useState("")
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false)
+  // Phase 22.21.29: 課題選択時の閲覧モード。
+  //   旧挙動: REQUESTS から課題をクリック → form-context をマージ → 直前の
+  //           作業データが残り、新しい課題のデータと混在する事故が発生。
+  //   新挙動:
+  //     1. 課題選択時 → formData を一旦リセット → form-context だけで再構築
+  //     2. isReadOnly=true で「閲覧モード」表示 (pointer-events:none + opacity)
+  //     3. ユーザーが [編集] ボタンを押したら isReadOnly=false → 通常編集
+  //   フォーム初期状態 (課題未選択) では isReadOnly=false (新規作成扱い)。
+  const [isReadOnly, setIsReadOnly] = React.useState(false)
   const [previewHtml, setPreviewHtml] = React.useState<string | null>(null)
   // Phase 22.21.16: プレビュー API のエラーを UI 上で可視化。
   //   旧実装は console.error しかしておらず、500 や空 html を返した場合に
@@ -200,20 +209,24 @@ export function DocumentEditorPage() {
         } else {
           setPreviousDocument(null)
         }
-        setFormData((prev: any) => ({
-          ...prev,
-          基本契約名: issue?.summary || prev["基本契約名"],
-          remarks: issue?.description || prev["remarks"],
+        // Phase 22.21.29: prev をマージせず、フォームを 完全に置換 する。
+        //   そうしないと直前の課題で入力したフィールドがリーク。
+        //   __local_* / __pdf_pending 等の制御フラグは ここでは入れない
+        //   (リセットが目的なので)。
+        setFormData({
+          基本契約名: issue?.summary || "",
+          remarks: issue?.description || "",
           ...context,
-        }))
+        })
       } catch (e) {
         setPreviousDocument(null)
         if (issue) {
-          setFormData((prev: any) => ({
-            ...prev,
-            基本契約名: issue.summary,
-            remarks: issue.description,
-          }))
+          setFormData({
+            基本契約名: issue.summary || "",
+            remarks: issue.description || "",
+          })
+        } else {
+          setFormData({})
         }
       }
     },
@@ -222,6 +235,9 @@ export function DocumentEditorPage() {
 
   const handleIssueSelect = async (issueKey: string) => {
     setSelectedIssue(issueKey)
+    // Phase 22.21.29: 課題切替時に「閲覧モード」をオン。編集はユーザーが
+    //   [編集] ボタンを押した時のみ可能になる (誤編集防止)。
+    setIsReadOnly(true)
     const issue = issues.find((i) => i.issueKey === issueKey)
     if (issue) setIssueSummary(issue)
     await syncFromDatabase(issueKey)
@@ -263,6 +279,8 @@ export function DocumentEditorPage() {
       // 新規発行扱いで読み込むので __reopen_doc_number は付けない
       // (新規番号で採番される。リビジョン採番は明示「再編集」時のみ。)
       setFormData(prevFormData)
+      // Phase 22.21.29: 「前回内容を引き継ぐ」= 編集意図あり → 編集モードに
+      setIsReadOnly(false)
       showNotification(
         `前回 ${previousDocument.document_number} の内容を読み込みました (新規番号で発行されます)`,
         "success"
@@ -299,6 +317,8 @@ export function DocumentEditorPage() {
         __reopen_doc_number: previousDocument.document_number,
       }
       setFormData(prevFormData)
+      // Phase 22.21.29: 「再編集モードで開く」= 編集意図あり → 編集モードに
+      setIsReadOnly(false)
       showNotification(
         `${previousDocument.document_number} を再編集モードで開きました (再発行版として採番されます)`,
         "success"
@@ -992,33 +1012,89 @@ export function DocumentEditorPage() {
                       </div>
                     )}
 
+                    {/* Phase 22.21.29: 閲覧モードバナー
+                        REQUESTS から課題を選択した直後は閲覧モードに入る。
+                        ユーザーが [編集を開始] を押すまでフォームは pointer-events
+                        無効化で読み取り専用になる。誤入力/直前データ混在を防ぐ。 */}
+                    {isReadOnly && selectedIssue && (
+                      <div className="rounded-sm border border-amber-300 bg-amber-50 px-3 py-2.5 flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-mono text-amber-900 leading-relaxed">
+                          <div className="font-bold mb-0.5">
+                            🔒 閲覧モード - {selectedIssue}
+                          </div>
+                          <div className="text-amber-800/80">
+                            読み取り専用です。編集するには右の「編集を開始」をクリックしてください。
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsReadOnly(false)}
+                          className="flex-shrink-0 text-[10px] font-mono font-bold uppercase tracking-wider bg-foreground text-background hover:opacity-90 px-3 py-1.5 rounded-sm"
+                          title="フォームを編集可能にする"
+                        >
+                          ✎ 編集を開始
+                        </button>
+                      </div>
+                    )}
+                    {!isReadOnly && selectedIssue && (
+                      <div className="rounded-sm border border-emerald-300 bg-emerald-50 px-3 py-1.5 flex items-center justify-between gap-3">
+                        <div className="text-[11px] font-mono text-emerald-900">
+                          <span className="font-bold">✎ 編集モード</span>
+                          <span className="ml-2 text-emerald-800/70">
+                            変更は draft として localStorage に自動保存
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setIsReadOnly(true)}
+                          className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider border border-emerald-700/40 bg-white hover:bg-emerald-100 text-emerald-800 px-2 py-1 rounded-sm"
+                          title="閲覧モードに戻す"
+                        >
+                          🔒 閲覧モードに戻す
+                        </button>
+                      </div>
+                    )}
+
                     {/* Phase 17: 稟議番号セレクタ — 全テンプレ共通の header field。
                         formData.ringi_numbers[] に保存し、Finalize & Sync で
                         worker が ringi_documents (N:N) に upsert する。 */}
-                    <RingiSelector
-                      value={
-                        Array.isArray(formData.ringi_numbers)
-                          ? formData.ringi_numbers
-                          : []
+                    {/* Phase 22.21.29: 閲覧モードでは pointer-events 無効化で
+                        すべての入力を不可にする。CSS だけなので keyboard で
+                        focus は出来ない (tabindex は html input が持つ) が、
+                        テキスト選択 (user-select:text) は許可してコピー可能に。 */}
+                    <div
+                      className={
+                        isReadOnly
+                          ? "pointer-events-none opacity-75 select-text"
+                          : ""
                       }
-                      onChange={(next) =>
-                        setFormData({ ...formData, ringi_numbers: next })
-                      }
-                    />
-                    <DocumentForm
-                      templateId={selectedTemplate}
-                      metadata={templateMetadata[selectedTemplate] || { vars: {} }}
-                      formData={formData}
-                      setFormData={setFormData}
-                      onSync={() => syncFromDatabase()}
-                      onLinkAsset={(cb) => {
-                        setAssetPickerCallback(() => cb)
-                        setIsAssetPickerOpen(true)
-                      }}
-                      companyProfile={companyProfile}
-                      activeVendor={activeVendor}
-                      selectedStaff={selectedStaff}
-                    />
+                      aria-readonly={isReadOnly ? "true" : "false"}
+                    >
+                      <RingiSelector
+                        value={
+                          Array.isArray(formData.ringi_numbers)
+                            ? formData.ringi_numbers
+                            : []
+                        }
+                        onChange={(next) =>
+                          setFormData({ ...formData, ringi_numbers: next })
+                        }
+                      />
+                      <DocumentForm
+                        templateId={selectedTemplate}
+                        metadata={templateMetadata[selectedTemplate] || { vars: {} }}
+                        formData={formData}
+                        setFormData={setFormData}
+                        onSync={() => syncFromDatabase()}
+                        onLinkAsset={(cb) => {
+                          setAssetPickerCallback(() => cb)
+                          setIsAssetPickerOpen(true)
+                        }}
+                        companyProfile={companyProfile}
+                        activeVendor={activeVendor}
+                        selectedStaff={selectedStaff}
+                      />
+                    </div>
                   </div>
                 )}
               </div>
