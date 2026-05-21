@@ -128,23 +128,9 @@ export async function initDb() {
     );`,
     `ALTER TABLE staff ADD COLUMN IF NOT EXISTS email VARCHAR(255);`,
     `ALTER TABLE staff ADD COLUMN IF NOT EXISTS phone VARCHAR(50);`,
-    // -----------------------------------------------------------------
-    // Phase 22.21.36: アプリ内ロール (app_role) を staff に追加。
-    //   values:
-    //     'admin'  ... /admin ダッシュボード + import 機能を使える
-    //     'viewer' ... 検索系のみ (default)
-    //   旧 requireDepartmentRole は dept_allowlist で粗く制御していたが、
-    //   個人単位で「この人だけ取込許可」のような運用に対応するため、
-    //   個別フラグを持つ。NULL は viewer 扱い (後方互換)。
-    //
-    //   bootstrap: 初回起動時、LB_ROLE_ALLOWLIST_EMAILS に列挙された人
-    //   または「経営管理本部」「法務」部署の既存 staff を自動的に admin
-    //   に昇格 (Phase 22.21.36 リリース直後でも admin が誰か居る状態に)。
-    // -----------------------------------------------------------------
-    `ALTER TABLE staff ADD COLUMN IF NOT EXISTS app_role VARCHAR(20) DEFAULT 'viewer';`,
-    `UPDATE staff SET app_role = 'admin'
-       WHERE app_role IS NULL OR app_role = 'viewer'
-         AND department IN ('経営管理本部', '法務');`,
+    // Phase 22.21.40: app_role の ALTER は services/worker/src/lib/db.ts へ
+    //   移植済 (こちらの initDb() は server.ts から呼ばれない死コード)。
+    //   一覧の見やすさのためコメントだけ残す。
 
     `CREATE TABLE IF NOT EXISTS department_workflow_rules (
       id SERIAL PRIMARY KEY,

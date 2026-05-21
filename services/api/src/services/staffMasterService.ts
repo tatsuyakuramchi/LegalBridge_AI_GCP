@@ -22,13 +22,38 @@ export type StaffRow = {
   app_role?: string | null;
 };
 
-// Phase 22.21.36: app_role を SELECT に追加。
-//   未マイグレーション環境では undefined_column になるため、
-//   COALESCE で 'viewer' に fallback。
-const SELECT_COLUMNS = `
+// Phase 22.21.40: app_role 列を SELECT に含めるが、worker 側マイグレーションが
+//   未デプロイ環境では列が無いため 42703 (undefined_column) で落ちる。
+//   その場合は legacy SELECT (app_role なし) に自動 fallback する。
+const SELECT_COLUMNS_NEW = `
   id, slack_user_id, staff_name, email, phone, department, department_code,
   COALESCE(app_role, 'viewer') AS app_role
 `;
+const SELECT_COLUMNS_LEGACY = `
+  id, slack_user_id, staff_name, email, phone, department, department_code,
+  'viewer' AS app_role
+`;
+
+/**
+ * 42703 (undefined_column) を catch して legacy SELECT に切り替えるラッパ。
+ *   query が新スキーマで落ちたら、SELECT_COLUMNS_NEW を SELECT_COLUMNS_LEGACY
+ *   に置換した SQL を再実行する。
+ */
+async function queryWithRoleFallback(sql: string, params: any[]): Promise<any> {
+  try {
+    return await query(sql, params);
+  } catch (err: any) {
+    if (err?.code === "42703" && sql.includes("app_role")) {
+      const legacy = sql
+        .replace(/COALESCE\(app_role, 'viewer'\) AS app_role/g, "'viewer' AS app_role");
+      console.warn(
+        "[staffMaster] app_role column missing — falling back to legacy SELECT (worker migration not deployed yet?)"
+      );
+      return await query(legacy, params);
+    }
+    throw err;
+  }
+}
 
 export async function listStaff(
   opts: { q?: string; limit?: number; offset?: number } = {}
@@ -56,8 +81,8 @@ export async function listStaff(
   const total = Number(countRes.rows[0]?.c || 0);
 
   params.push(limit, offset);
-  const res = await query(
-    `SELECT ${SELECT_COLUMNS}
+  const res = await queryWithRoleFallback(
+    `SELECT ${SELECT_COLUMNS_NEW}
        FROM staff
        ${where}
        ORDER BY department NULLS LAST, staff_name
@@ -70,8 +95,8 @@ export async function listStaff(
 export async function getStaff(slackUserId: string): Promise<StaffRow | null> {
   const id = String(slackUserId || "").trim();
   if (!id) return null;
-  const res = await query(
-    `SELECT ${SELECT_COLUMNS} FROM staff WHERE slack_user_id = $1 LIMIT 1`,
+  const res = await queryWithRoleFallback(
+    `SELECT ${SELECT_COLUMNS_NEW} FROM staff WHERE slack_user_id = $1 LIMIT 1`,
     [id]
   );
   return (res.rows[0] as StaffRow) || null;

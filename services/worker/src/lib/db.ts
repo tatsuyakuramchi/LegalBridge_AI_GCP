@@ -221,6 +221,31 @@ export async function initDb() {
     );`,
     `ALTER TABLE staff ADD COLUMN IF NOT EXISTS email VARCHAR(255);`,
     `ALTER TABLE staff ADD COLUMN IF NOT EXISTS phone VARCHAR(50);`,
+    // -----------------------------------------------------------------
+    // Phase 22.21.40: アプリ内ロール (app_role) を staff に追加。
+    //   元々 Phase 22.21.36 で services/api/src/lib/db.ts に書いていたが、
+    //   そちらの initDb() は server.ts から呼ばれない死コードだったため、
+    //   実際にマイグレーションを走らせる worker 側 db.ts に移植する。
+    //
+    //   values:
+    //     'admin'  ... /admin ダッシュボード + import 機能を使える
+    //     'viewer' ... 検索系のみ (default)
+    //   NULL は viewer 扱い (後方互換)。
+    //
+    //   bootstrap: 「経営管理本部」「法務」部署の既存 staff を自動的に admin
+    //   に昇格 (Phase 22.21.36 リリース直後でも admin が誰か居る状態に)。
+    //
+    //   ※ 旧コードの WHERE 句に OR の優先順位ミスがあったので修正:
+    //     旧: WHERE app_role IS NULL OR app_role = 'viewer' AND department IN (...)
+    //         (AND が先に評価されて意図と違う)
+    //     新: WHERE (app_role IS NULL OR app_role = 'viewer')
+    //           AND department IN (...)
+    // -----------------------------------------------------------------
+    `ALTER TABLE staff ADD COLUMN IF NOT EXISTS app_role VARCHAR(20) DEFAULT 'viewer';`,
+    `UPDATE staff
+        SET app_role = 'admin'
+      WHERE (app_role IS NULL OR app_role = 'viewer')
+        AND department IN ('経営管理本部', '法務');`,
 
     `CREATE TABLE IF NOT EXISTS department_workflow_rules (
       id SERIAL PRIMARY KEY,
