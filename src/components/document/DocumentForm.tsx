@@ -790,8 +790,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               service_master 等) を再利用するときに便利。 */}
           <div className="col-span-full mb-2">
             <DocumentNumberLookup
-              label="基本契約名を文書番号で検索 (アーカイブから)"
-              placeholder="例: ARC-LIC-2026-0001 / ARC-SVC-2026-0001"
+              label="基本契約をアーカイブから検索 (部分一致 / 空欄で最新一覧)"
+              placeholder="例: 株式会社X / GCT / ARC-LIC-2026-0001"
               initialQuery={formData.基本契約番号 || ''}
               filterTemplateTypes={[
                 'license_master',
@@ -1343,8 +1343,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             {/* Phase 22.21: 発注書も基本契約を文書番号で検索して反映できるように。
                 適用すると HAS_BASE_CONTRACT=true + MASTER_CONTRACT_REF が埋まる。 */}
             <DocumentNumberLookup
-              label="基本契約を文書番号で検索 (アーカイブから)"
-              placeholder="例: ARC-SVC-2026-0001 / ARC-LIC-2026-0001"
+              label="基本契約をアーカイブから検索 (部分一致 / 空欄で最新一覧)"
+              placeholder="例: 株式会社X / GCT / ARC-SVC-2026-0001"
               initialQuery={formData.MASTER_CONTRACT_NUMBER || ''}
               filterTemplateTypes={[
                 'service_master',

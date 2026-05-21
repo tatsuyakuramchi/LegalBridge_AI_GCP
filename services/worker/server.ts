@@ -7515,6 +7515,135 @@ ${details}
     }
   );
 
+  /**
+   * Phase 22.21.48: 文書アーカイブの部分検索。
+   *
+   *   GET /api/documents/search?q=<text>&template_types=a,b,c&limit=50
+   *
+   * - q: 部分一致 (NFKC 正規化、document_number / form_data の値 / issue_key を対象)
+   *      空文字でも OK — その場合は template_types でフィルタした全件を created_at DESC で返す
+   * - template_types: カンマ区切りで template_type を絞り込み (例: "service_master,license_master")
+   * - limit: 1..200 (default 50)
+   *
+   * 発注書フォーム等の「基本契約検索」ウィジェットから呼ぶ。NFKC 正規化により
+   * 全角/半角の差は無視 (Phase 22.21.47 と同じ思想)。
+   */
+  app.get("/api/documents/search", async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const templateTypesRaw = String(req.query.template_types || "").trim();
+      const templateTypes = templateTypesRaw
+        ? templateTypesRaw.split(",").map((s) => s.trim()).filter(Boolean)
+        : [];
+      const limit = Math.max(
+        1,
+        Math.min(200, Number(req.query.limit) || 50)
+      );
+
+      const conditions: string[] = [];
+      const params: any[] = [];
+
+      if (q) {
+        params.push(`%${q.normalize("NFKC")}%`);
+        const pIdx = params.length;
+        conditions.push(
+          `(
+             normalize(document_number, NFKC) ILIKE normalize($${pIdx}, NFKC)
+             OR normalize(COALESCE(issue_key, ''), NFKC) ILIKE normalize($${pIdx}, NFKC)
+             OR normalize(form_data::text, NFKC) ILIKE normalize($${pIdx}, NFKC)
+           )`
+        );
+      }
+      if (templateTypes.length > 0) {
+        params.push(templateTypes);
+        conditions.push(`template_type = ANY($${params.length}::text[])`);
+      }
+
+      const whereNfkc = conditions.length > 0
+        ? `WHERE ${conditions.join(" AND ")}`
+        : "";
+      params.push(limit);
+
+      const SQL_NFKC = `
+        SELECT id, document_number, issue_key, template_type, document_category,
+               form_data, drive_link, created_by, created_at,
+               base_document_number, revision
+          FROM documents
+          ${whereNfkc}
+          ORDER BY created_at DESC
+          LIMIT $${params.length}
+      `;
+
+      // legacy fallback (PG12-) — normalize() を外しただけのフォーム
+      const conditionsLegacy: string[] = [];
+      const paramsLegacy: any[] = [];
+      if (q) {
+        paramsLegacy.push(`%${q}%`);
+        const pIdx = paramsLegacy.length;
+        conditionsLegacy.push(
+          `(
+             document_number ILIKE $${pIdx}
+             OR COALESCE(issue_key, '') ILIKE $${pIdx}
+             OR form_data::text ILIKE $${pIdx}
+           )`
+        );
+      }
+      if (templateTypes.length > 0) {
+        paramsLegacy.push(templateTypes);
+        conditionsLegacy.push(
+          `template_type = ANY($${paramsLegacy.length}::text[])`
+        );
+      }
+      paramsLegacy.push(limit);
+      const SQL_LEGACY = `
+        SELECT id, document_number, issue_key, template_type, document_category,
+               form_data, drive_link, created_by, created_at,
+               base_document_number, revision
+          FROM documents
+          ${conditionsLegacy.length > 0 ? `WHERE ${conditionsLegacy.join(" AND ")}` : ""}
+          ORDER BY created_at DESC
+          LIMIT $${paramsLegacy.length}
+      `;
+
+      let rows: any[] = [];
+      try {
+        const r = await query(SQL_NFKC, params);
+        rows = r.rows;
+      } catch (err: any) {
+        if (err?.code === "42883") {
+          console.warn(
+            "[documents/search] normalize() unsupported, falling back to plain ILIKE"
+          );
+          const r = await query(SQL_LEGACY, paramsLegacy);
+          rows = r.rows;
+        } else {
+          throw err;
+        }
+      }
+
+      res.json({
+        ok: true,
+        total: rows.length,
+        results: rows.map((r) => ({
+          id: Number(r.id),
+          document_number: r.document_number,
+          issue_key: r.issue_key,
+          template_type: r.template_type,
+          document_category: r.document_category,
+          form_data: r.form_data || {},
+          drive_link: r.drive_link || "",
+          created_by: r.created_by,
+          created_at: r.created_at,
+          base_document_number: r.base_document_number || null,
+          revision: r.revision != null ? Number(r.revision) : null,
+        })),
+      });
+    } catch (error) {
+      console.error("/api/documents/search failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.get("/api/documents/by-number/:docNumber", async (req, res) => {
     try {
       const docNumber = String(req.params.docNumber || "").trim();
