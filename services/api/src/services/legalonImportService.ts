@@ -21,7 +21,7 @@
  */
 
 import Papa from "papaparse";
-import { query } from "../lib/db.ts";
+import { query, getNewDocumentNumber } from "../lib/db.ts";
 
 // ----------------------------------------------------------------------
 // Public types
@@ -459,11 +459,32 @@ export async function importLegalOnRows(
     const rowNum = i + 2; // header=1, data starts row 2
 
     try {
-      const docNum = String(row.document_number || "").trim();
+      // Phase 22.21.46: 管理番号が空のものは「自動発番」する。
+      //   旧仕様では空欄をエラー扱いにしていたが、紙契約 / 古い契約 / 取込元で
+      //   採番されていない契約も多いため、worker と同じ getNewDocumentNumber 関数で
+      //   ARC-<TYPE>-<YEAR>-<NNNN> を発番する。
+      //   - Dry Run: 連番を消費したくないので "(AUTO: ARC-…-XXXX)" のような
+      //     プレビュー文字列だけ作って表示。
+      //   - 本番: 実際に連番を消費して発番。
+      let docNum = String(row.document_number || "").trim();
+      let docNumberAuto = false;
+      const inferredContractType = (() => {
+        const t = inferContractType(
+          row.contract_title || "",
+          row.contract_type_raw || row.contract_type_raw_alt || ""
+        );
+        return t.type;
+      })();
       if (!docNum) {
-        result.errors.push({ row: rowNum, error: "管理番号 が空です" });
-        result.failed++;
-        continue;
+        docNumberAuto = true;
+        if (dryRun) {
+          // 連番を消費しない placeholder。本番時の prefix だけ予測表示。
+          docNum = `(AUTO 発番予定: ${inferredContractType})`;
+        } else {
+          docNum = await getNewDocumentNumber(
+            inferredContractType || "external_contract"
+          );
+        }
       }
 
       const partyNames = splitCounterparties(row.counterparty_raw);
@@ -517,6 +538,20 @@ export async function importLegalOnRows(
         action = "SKIP";
       }
 
+      // Phase 22.21.46: warning メッセージ組み立て。
+      //   従来の取引先未登録警告に加え、管理番号 自動発番の通知も付与。
+      const warnings: string[] = [];
+      if (docNumberAuto) {
+        warnings.push(
+          `管理番号 自動発番${dryRun ? " (本番取込時に確定)" : ""}`
+        );
+      }
+      if (primary.vendor_id === null) {
+        warnings.push(`主取引先 "${primary.name}" が vendors マスタに未登録`);
+      } else if (additional.some((p) => p.vendor_id === null)) {
+        warnings.push(`2 つ目以降の取引先の一部が vendors マスタに未登録`);
+      }
+
       const previewRow: ImportPreviewRow = {
         row: rowNum,
         document_number: docNum,
@@ -531,12 +566,7 @@ export async function importLegalOnRows(
         auto_renewal: autoRenewal,
         legalon_url: row.legalon_url || "",
         action,
-        warning:
-          primary.vendor_id === null
-            ? `主取引先 "${primary.name}" が vendors マスタに未登録`
-            : additional.some((p) => p.vendor_id === null)
-            ? `2 つ目以降の取引先の一部が vendors マスタに未登録`
-            : undefined,
+        warning: warnings.length > 0 ? warnings.join(" / ") : undefined,
       };
 
       if (action === "SKIP") {

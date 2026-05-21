@@ -25,6 +25,31 @@ import {
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
 
+// Phase 22.21.46: DB から返ってきた auto_renewal の型ゆらぎ ('t'/'f'/'true'/1/etc)
+//   を Boolean に正規化する。Switch 等の制御コンポーネントが期待する型に揃える。
+const toBool = (v: any): boolean =>
+  v === true || v === "t" || v === "true" || v === 1 || v === "1";
+
+// Phase 22.21.46: alert_slack_channels / alert_slack_mentions は DB で JSONB 配列
+//   として保存される。fetched 値は array で来るが、フォーム編集中は string[] と
+//   array を行き来する。表示用テキスト ↔ 配列の往復用 helper。
+const arrToText = (v: any): string => {
+  if (!v) return "";
+  if (Array.isArray(v)) return v.join("\n");
+  // 既に string ならそのまま返す (PG の jsonb -> string になっているケース対策)
+  try {
+    const parsed = typeof v === "string" ? JSON.parse(v) : v;
+    return Array.isArray(parsed) ? parsed.join("\n") : String(v);
+  } catch {
+    return String(v);
+  }
+};
+const textToArr = (s: string): string[] =>
+  String(s || "")
+    .split(/[\n,]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+
 const empty = {
   vendor_id: "",
   record_type: "master_contract",
@@ -50,6 +75,9 @@ const empty = {
   // Phase 22.9: 有効/無効。発注書/個別利用許諾条件書/個別出版条件書の
   // 自動補完で参照される基本契約の候補に含むかどうか (= primary filter)。
   is_active: true,
+  // Phase 22.21.46: Slack アラート設定 (複数チャンネル / 複数メンション)
+  alert_slack_channels: [] as string[],
+  alert_slack_mentions: [] as string[],
 }
 
 export function ContractsPanel() {
@@ -327,8 +355,14 @@ export function ContractsPanel() {
               <Input
                 value={data?.document_number || ""}
                 onChange={(e) => set({ document_number: e.target.value })}
-                placeholder="DOC-2026-0001"
+                placeholder="空欄なら自動発番 (例 ARC-SVC-2026-0001)"
               />
+              {/* Phase 22.21.46: 空欄なら worker 側で getNewDocumentNumber が
+                  発火し、契約種別から prefix を引いて自動採番。発番方式は
+                  発注書 / 検収書 等と同じ ARC-<TYPE>-<YEAR>-<NNNN>。 */}
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                空欄で保存すると契約種別に応じた prefix で自動発番されます。
+              </p>
             </Field>
             <Field label="ステータス">
               <NativeSelect
@@ -383,13 +417,15 @@ export function ContractsPanel() {
               />
             </Field>
             <Field label="自動更新">
+              {/* Phase 22.21.46: DB から 't'/'f' で返ってくるケースに対応するため
+                  toBool で正規化。Switch のクリックは boolean を返す。 */}
               <div className="flex items-center gap-2 h-9">
                 <Switch
-                  checked={!!data?.auto_renewal}
-                  onCheckedChange={(v) => set({ auto_renewal: v })}
+                  checked={toBool(data?.auto_renewal)}
+                  onCheckedChange={(v) => set({ auto_renewal: !!v })}
                 />
                 <span className="text-xs font-mono">
-                  {data?.auto_renewal ? "あり" : "なし"}
+                  {toBool(data?.auto_renewal) ? "あり (満期で自動延長)" : "なし"}
                 </span>
               </div>
             </Field>
@@ -408,7 +444,7 @@ export function ContractsPanel() {
                 onChange={(e) =>
                   set({ renewal_notice_months: e.target.value })
                 }
-                disabled={!data?.auto_renewal}
+                disabled={!toBool(data?.auto_renewal)}
               />
               <p className="text-[10px] font-mono text-muted-foreground mt-1">
                 満期の何カ月前までに通告が必要か (自動更新あり時のみ)
@@ -426,10 +462,54 @@ export function ContractsPanel() {
                     : String(data.alert_lead_months)
                 }
                 onChange={(e) => set({ alert_lead_months: e.target.value })}
-                disabled={!data?.auto_renewal}
+                disabled={!toBool(data?.auto_renewal)}
               />
               <p className="text-[10px] font-mono text-muted-foreground mt-1">
                 通告期限の何カ月前にアラートを出すか
+              </p>
+            </Field>
+            {/* Phase 22.21.46: Slack アラート通知設定 ─────────────────────────
+                自動更新・満期アラート発火時に投稿する Slack チャンネルと
+                メンションを契約ごとに設定。複数指定可 (カンマ または 改行区切り)。
+                空欄なら env LEGAL_BRIDGE_DEFAULT_ALERT_CHANNEL にフォールバック、
+                メンションは空ならメンションなし。 */}
+            <Field
+              label="Slack 通知チャンネル (複数可)"
+              className="col-span-2 md:col-span-3"
+            >
+              <textarea
+                value={arrToText(data?.alert_slack_channels)}
+                onChange={(e) =>
+                  set({ alert_slack_channels: textToArr(e.target.value) })
+                }
+                placeholder={"#legal-alerts\n#operations\nC0123ABCD"}
+                rows={2}
+                className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
+              />
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                <code>#channel-name</code> または Slack の channel ID
+                (C で始まる). 改行・カンマで複数指定。空欄なら env デフォルトを使用。
+              </p>
+            </Field>
+            <Field
+              label="Slack メンション (複数可)"
+              className="col-span-2 md:col-span-3"
+            >
+              <textarea
+                value={arrToText(data?.alert_slack_mentions)}
+                onChange={(e) =>
+                  set({ alert_slack_mentions: textToArr(e.target.value) })
+                }
+                placeholder={
+                  "<!channel>\n<@U0123ABCD>\n<!subteam^S0123ABCD|@legal-team>"
+                }
+                rows={2}
+                className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
+              />
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                Slack の生メンション形式 <code>&lt;@U…&gt;</code> /{" "}
+                <code>&lt;!subteam^S…&gt;</code> / <code>&lt;!channel&gt;</code> 等。
+                改行・カンマ区切りで複数。空欄ならメンションなし。
               </p>
             </Field>
             <Field label="作品 / 原作">

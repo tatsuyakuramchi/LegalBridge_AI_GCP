@@ -1906,20 +1906,43 @@ ${details}
     }
   }
 
-  /** 契約書 (contract_capabilities) 1 件のアラート通知 */
+  /** 契約書 (contract_capabilities) 1 件のアラート通知。
+   *
+   * Phase 22.21.46:
+   *   - row.alert_slack_channels (JSONB 配列) が設定されていれば全チャンネルに投稿。
+   *     空配列なら env LB_CONTRACT_ALERT_CHANNEL_ID 1 件にフォールバック。
+   *   - row.alert_slack_mentions (JSONB 配列) があれば本文先頭に prepend。
+   */
   async function notifyContractAlert(row: any): Promise<void> {
     if (!slackWebClient) return;
 
-    const channelId =
+    // 通知先チャンネルを決定。
+    //   1. row.alert_slack_channels (per-contract, 複数可)
+    //   2. env LB_CONTRACT_ALERT_CHANNEL_ID (legacy / global fallback)
+    const perContractChannels: string[] = Array.isArray(row.alert_slack_channels)
+      ? row.alert_slack_channels.filter((c: any) => c && String(c).trim())
+      : [];
+    const fallbackChannel =
       process.env.LB_CONTRACT_ALERT_CHANNEL_ID ||
       dbSettings.LB_CONTRACT_ALERT_CHANNEL_ID ||
       "";
-    if (!channelId) {
+    const targetChannels =
+      perContractChannels.length > 0
+        ? perContractChannels
+        : fallbackChannel
+        ? [fallbackChannel]
+        : [];
+    if (targetChannels.length === 0) {
       console.warn(
-        "[alert] LB_CONTRACT_ALERT_CHANNEL_ID not set; skipping contract alert"
+        `[alert] contract id=${row.id}: no Slack channel configured (per-contract or env)`
       );
       return;
     }
+
+    // メンション (per-contract のみ; 空ならメンションなし)
+    const mentions: string[] = Array.isArray(row.alert_slack_mentions)
+      ? row.alert_slack_mentions.filter((m: any) => m && String(m).trim())
+      : [];
 
     // vendor 名を引く
     let vendorName = "";
@@ -1950,7 +1973,11 @@ ${details}
       ? noticeDate.toLocaleDateString("ja-JP")
       : "—";
 
-    const lines: string[] = [
+    const lines: string[] = [];
+    if (mentions.length > 0) {
+      lines.push(mentions.join(" "));
+    }
+    lines.push(
       `🔔 *契約更新通告期限が近づいています*`,
       "",
       `*契約:* ${row.contract_title || "—"}`,
@@ -1958,20 +1985,30 @@ ${details}
       `*満期日:* ${expStr}`,
       `*通告期限:* ${noticeStr} (満期の ${noticeMonths} カ月前)`,
       `*リード:* 通告期限の ${leadMonths} カ月前に通知`,
-      `*自動更新:* ${row.auto_renewal ? "あり" : "なし"}`,
-    ];
+      `*自動更新:* ${row.auto_renewal ? "あり" : "なし"}`
+    );
     const docUrl =
       row.legalon_url || row.cloudsign_url || row.drive_url || row.document_url;
     if (docUrl) lines.push(`*契約書:* ${docUrl}`);
+    const messageText = lines.join("\n");
 
-    try {
-      await slackWebClient.chat.postMessage({
-        channel: channelId,
-        text: lines.join("\n"),
-      });
-    } catch (e: any) {
-      console.warn(`[alert] contract channel failed (id=${row.id}):`, e?.message || e);
-    }
+    // 全チャンネルに並列投稿。1 つが失敗しても他をブロックしない。
+    await Promise.all(
+      targetChannels.map(async (ch) => {
+        try {
+          await slackWebClient.chat.postMessage({
+            channel: ch,
+            text: messageText,
+            link_names: true,
+          });
+        } catch (e: any) {
+          console.warn(
+            `[alert] contract channel failed (id=${row.id}, ch=${ch}):`,
+            e?.message || e
+          );
+        }
+      })
+    );
 
     try {
       await query(
@@ -3154,6 +3191,32 @@ ${details}
     }
   });
 
+  // Phase 22.21.46: 文字列 (CSV / 改行区切り) / 配列の入力を JSONB 配列に正規化。
+  //   admin-ui が "#legal, #ops" を送ってきても、["#legal","#ops"] を送ってきても
+  //   両方を受け付ける。空文字 / null / undefined は [] にする。
+  function normalizeAlertList(v: any): string[] {
+    if (v == null) return [];
+    if (Array.isArray(v)) {
+      return v.map((s) => String(s).trim()).filter(Boolean);
+    }
+    return String(v)
+      .split(/[\n,]/)
+      .map((s) => s.trim())
+      .filter(Boolean);
+  }
+
+  // Phase 22.21.46: 文書番号が空のときの自動採番。
+  //   入力フォームから document_number が空で来た場合に、worker の発番ロジックで
+  //   1 件発行して上書きする。inferContractType 相当の判定は admin-ui 側で
+  //   contract_type を選んで送ってくれているので、それを type ヒントに使う。
+  async function ensureDocumentNumber(input: any, contractType: string): Promise<string> {
+    const v = String(input || "").trim();
+    if (v) return v;
+    // contract_type が分かれば prefix が引ける (例: "service_basic" → SVC)。
+    // 引けない場合は getNewDocumentNumber の最後の fallback (3 文字大文字) になる。
+    return await getNewDocumentNumber(contractType || "external_contract");
+  }
+
   app.post("/api/master/contracts", express.json(), async (req, res) => {
     const {
       vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -3163,30 +3226,45 @@ ${details}
       renewal_notice_months, alert_lead_months,
       // Phase 22.9: 有効/無効フラグ
       is_active,
+      // Phase 22.21.46: Slack アラート設定 (複数チャンネル / 複数メンション)
+      alert_slack_channels, alert_slack_mentions,
     } = req.body;
     try {
+      const channels = normalizeAlertList(alert_slack_channels);
+      const mentions = normalizeAlertList(alert_slack_mentions);
+      const finalDocNumber = await ensureDocumentNumber(document_number, contract_type);
       const result = await query(
         `INSERT INTO contract_capabilities (
           vendor_id, record_type, contract_category, contract_type, contract_title,
           document_number, contract_status, effective_date, expiration_date, auto_renewal,
           original_work, product_name, work_name, media, territory, language, document_url, condition_number,
           renewal_notice_months, alert_lead_months,
-          is_active
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
-        RETURNING id`,
+          is_active,
+          alert_slack_channels, alert_slack_mentions
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb)
+        RETURNING id, document_number`,
         [
           vendor_id || null, record_type || "master_contract", contract_category || "service",
-          contract_type || "service_basic", contract_title, document_number,
+          contract_type || "service_basic", contract_title, finalDocNumber,
           contract_status || "executed", effective_date || null, expiration_date || null,
-          auto_renewal || false, original_work || "", product_name || "", work_name || "",
+          // Boolean 正規化 — 't' / 'f' / 1 / 0 / 文字列 'true' なども受け取れるように
+          auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
+          original_work || "", product_name || "", work_name || "",
           media || "", territory || "", language || "", document_url || "", condition_number || "",
           renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
           alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
           // is_active 省略時は TRUE (有効)
           is_active === undefined || is_active === null ? true : Boolean(is_active),
+          JSON.stringify(channels),
+          JSON.stringify(mentions),
         ]
       );
-      res.json({ success: true, id: result.rows[0].id });
+      res.json({
+        success: true,
+        id: result.rows[0].id,
+        document_number: result.rows[0].document_number,
+        document_number_auto: !String(document_number || "").trim(),
+      });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
@@ -3202,8 +3280,13 @@ ${details}
       renewal_notice_months, alert_lead_months,
       // Phase 22.9: 有効/無効フラグ
       is_active,
+      // Phase 22.21.46: Slack アラート設定
+      alert_slack_channels, alert_slack_mentions,
     } = req.body;
     try {
+      const channels = normalizeAlertList(alert_slack_channels);
+      const mentions = normalizeAlertList(alert_slack_mentions);
+      const finalDocNumber = await ensureDocumentNumber(document_number, contract_type);
       await query(
         `UPDATE contract_capabilities SET
           vendor_id = $1, record_type = $2, contract_category = $3, contract_type = $4,
@@ -3213,20 +3296,30 @@ ${details}
           territory = $15, language = $16, document_url = $17, condition_number = $18,
           renewal_notice_months = $19, alert_lead_months = $20,
           is_active = $21,
+          alert_slack_channels = $22::jsonb,
+          alert_slack_mentions = $23::jsonb,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $22`,
+        WHERE id = $24`,
         [
           vendor_id || null, record_type, contract_category, contract_type, contract_title,
-          document_number, contract_status, effective_date || null, expiration_date || null,
-          auto_renewal, original_work || "", product_name || "", work_name || "",
+          finalDocNumber, contract_status, effective_date || null, expiration_date || null,
+          // Boolean 正規化
+          auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
+          original_work || "", product_name || "", work_name || "",
           media || "", territory || "", language || "", document_url || "", condition_number || "",
           renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
           alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
           is_active === undefined || is_active === null ? true : Boolean(is_active),
+          JSON.stringify(channels),
+          JSON.stringify(mentions),
           id,
         ]
       );
-      res.json({ success: true });
+      res.json({
+        success: true,
+        document_number: finalDocNumber,
+        document_number_auto: !String(document_number || "").trim(),
+      });
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }

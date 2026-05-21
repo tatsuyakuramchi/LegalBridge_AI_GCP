@@ -1212,6 +1212,17 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_lead_months INTEGER;`,
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS last_renewal_alert_at TIMESTAMP WITH TIME ZONE;`,
 
+    // Phase 22.21.46: 契約ごとの Slack アラート設定。
+    //   alert_slack_channels: 通知先チャンネル配列 (例: ["#legal", "C0123ABCD"]).
+    //     '#name' 形式または Slack channel ID をそのまま入れる。空 / [] なら
+    //     env LEGAL_BRIDGE_DEFAULT_ALERT_CHANNEL の値にフォールバック。
+    //   alert_slack_mentions: 通知時のメンション配列 (例: ["@U0123", "<!subteam^S...>", "<!channel>"])
+    //     ユーザー ID / グループ ID / 特殊メンション をそのまま入れる。空 / [] なら
+    //     メンションなしで通知。
+    //   いずれも自動更新アラート (renewal) や満了アラート (expiry) で参照する。
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_slack_channels JSONB DEFAULT '[]'::jsonb;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_slack_mentions JSONB DEFAULT '[]'::jsonb;`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
