@@ -283,7 +283,10 @@ export const LineItemTable: React.FC<Props> = ({
               {showPaymentColumns && (
                 <>
                   <th className="text-left p-2 w-32">計算方式</th>
-                  <th className="text-left p-2 w-28">支払条件</th>
+                  {/* Phase 22.21.45: 「支払条件」→「契約種別」に名称変更。
+                      請負/準委任 は民法上の契約類型なので "契約種別" のほうが正確。
+                      内部フィールド名は後方互換のため payment_terms のまま維持。 */}
+                  <th className="text-left p-2 w-28">契約種別</th>
                   <th className="text-left p-2 w-28">納期</th>
                   <th className="text-left p-2 w-28">支払日</th>
                 </>
@@ -296,7 +299,7 @@ export const LineItemTable: React.FC<Props> = ({
               <tr>
                 {/* Phase 17h: 列数が変わったので colspan を再計算
                     基本 6 列 (#/品目/仕様/単価/数量/小計)
-                    + showPayment なら 4 列 (計算方式/支払条件/納期/支払日)
+                    + showPayment なら 4 列 (計算方式/契約種別/納期/支払日)
                     + !readOnly なら 1 列 (削除ボタン) */}
                 <td
                   colSpan={
@@ -506,7 +509,7 @@ export const LineItemTable: React.FC<Props> = ({
               <td className="p-2 text-right text-[13px]">
                 ¥ {grandTotal.toLocaleString("ja-JP")}
               </td>
-              {/* Phase 17h: 計算方式 / 支払条件 / 納期 / 支払日 の 4 列 */}
+              {/* Phase 17h: 計算方式 / 契約種別 / 納期 / 支払日 の 4 列 */}
               {showPaymentColumns && <td colSpan={4}></td>}
               {!readOnly && <td></td>}
             </tr>
