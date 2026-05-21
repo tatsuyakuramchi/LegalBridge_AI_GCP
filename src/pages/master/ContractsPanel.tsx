@@ -31,6 +31,22 @@ import { cn } from "@/lib/utils"
 const toBool = (v: any): boolean =>
   v === true || v === "t" || v === "true" || v === 1 || v === "1";
 
+// Phase 22.21.51: worker と完全に同じロジックで prefix を予測表示する。
+//   発番されるまで分からないと不安なので「保存するとこの prefix になります」を
+//   出して安心感を与える。worker 側の deriveTemplateTypeForNumbering と同じ
+//   マッピング (重複定義だが、フロント表示専用のため許容)。
+const previewDocPrefix = (category: any, recordType: any): string => {
+  const cat = String(category || "").toLowerCase();
+  const isIndividualLike =
+    recordType === "individual_contract" ||
+    recordType === "standalone_contract" ||
+    recordType === "license_condition";
+  if (cat === "license") return isIndividualLike ? "ILT" : "LIC";
+  if (cat === "publication") return "PUB";
+  // service or unknown
+  return isIndividualLike ? "OUT" : "SVC";
+};
+
 // Phase 22.21.46: alert_slack_channels / alert_slack_mentions は DB で JSONB 配列
 //   として保存される。fetched 値は array で来るが、フォーム編集中は string[] と
 //   array を行き来する。表示用テキスト ↔ 配列の往復用 helper。
@@ -440,17 +456,26 @@ export function ContractsPanel() {
                   {data?.regenerate_document_number ? "再発番 ON" : "再発番"}
                 </Button>
               </div>
-              {/* Phase 22.21.46: 空欄なら worker 側で getNewDocumentNumber が
-                  発火し、契約種別から prefix を引いて自動採番。発番方式は
-                  発注書 / 検収書 等と同じ ARC-<TYPE>-<YEAR>-<NNNN>。 */}
-              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+              {/* Phase 22.21.46 / 22.21.51: 空欄 or 再発番 ON で worker が
+                  contract_category + record_type から prefix を導出して自動採番。
+                    ライセンス 基本 → LIC / 個別・単独 → ILT
+                    業務委託   基本 → SVC / 個別・単独 → OUT
+                    出版       基本 → PUB / 個別・単独 → PUB
+                  形式は ARC-<TYPE>-<YEAR>-<NNNN> (発注書/検収書と同じ採番系統)。 */}
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
                 {data?.regenerate_document_number ? (
                   <span className="text-amber-700 font-bold">
                     🔄 保存すると新規発番されます (現在の番号は破棄)
+                    <br />
+                    予測 prefix: {previewDocPrefix(data?.contract_category, data?.record_type)}
                   </span>
                 ) : (
-                  <>空欄で保存すると契約種別に応じた prefix で自動発番されます。
-                  既存の番号を新規発番で振り直したい場合は「再発番」ボタンを ON。</>
+                  <>
+                    空欄で保存するとカテゴリ × 区分から prefix を引いて自動発番。
+                    予測 prefix: <strong>{previewDocPrefix(data?.contract_category, data?.record_type)}</strong>
+                    <br />
+                    既存番号を振り直すには「再発番」ボタンを ON。
+                  </>
                 )}
               </p>
             </Field>

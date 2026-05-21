@@ -3205,31 +3205,72 @@ ${details}
       .filter(Boolean);
   }
 
-  // Phase 22.21.46 / 22.21.49: 文書番号の自動採番。
+  /**
+   * Phase 22.21.51: 文書番号の prefix 決定ロジック。
+   *
+   *   contract_category (UI で必ず選ばれる: service / license / publication)
+   *   + record_type     (master_contract / individual_contract / standalone_contract /
+   *                      legacy license_condition)
+   *   から、worker が持つ typeCodes (db.ts) に登録済みの template type 名を引いて
+   *   prefix を 1 段間接的に決める。これで「カテゴリ = ライセンス なのに SER」
+   *   みたいなズレが起きない。
+   *
+   *   service + 基本 → service_master → SVC
+   *   service + 個別/単独 → outsourcing → OUT
+   *   license + 基本 → license_master → LIC
+   *   license + 個別/単独 → individual_license_terms → ILT
+   *   publication + 基本 → publication_master → PUB (fallback)
+   *   publication + 個別/単独 → publication_individual → PUB (fallback)
+   */
+  function deriveTemplateTypeForNumbering(
+    category: string,
+    recordType: string
+  ): string {
+    const cat = String(category || "").toLowerCase();
+    const isIndividualLike =
+      recordType === "individual_contract" ||
+      recordType === "standalone_contract" ||
+      recordType === "license_condition";
+
+    if (cat === "license") {
+      return isIndividualLike ? "individual_license_terms" : "license_master";
+    }
+    if (cat === "publication") {
+      return isIndividualLike ? "publication_individual" : "publication_master";
+    }
+    // service or unknown
+    return isIndividualLike ? "outsourcing" : "service_master";
+  }
+
+  // Phase 22.21.46 / 22.21.49 / 22.21.51: 文書番号の自動採番。
   //   - regenerate=true (admin-ui の「🔄 再発番」ボタン経由) → input 値を無視して
-  //     強制的に新規発番。空文字検出だけだと「全角空白だけが入っていた」「先頭/末尾
-  //     の不可視文字で truthy」等で誤動作するケースを救う明示的なフラグ。
+  //     強制的に新規発番。
   //   - input が空文字 / null / undefined / 空白だけ → 新規発番
   //   - それ以外 → input をそのまま返す (= 手動入力)
+  //
+  //   prefix は contract_category + record_type から derive (Phase 22.21.51)。
+  //   contract_type は formData 上は service_basic 等のままで放置されるケースが
+  //   多く、prefix 決定の主入力としては信頼できないので使わない。
   async function ensureDocumentNumber(
     input: any,
     contractType: string,
+    contractCategory: string,
+    recordType: string,
     regenerate: boolean = false
   ): Promise<string> {
+    const numberingType = deriveTemplateTypeForNumbering(contractCategory, recordType);
     if (regenerate) {
       console.log(
-        `[contracts] regenerate_document_number=true → fresh number (contract_type=${contractType})`
+        `[contracts] regenerate=true → fresh number (category=${contractCategory}, record_type=${recordType}, type=${numberingType})`
       );
-      return await getNewDocumentNumber(contractType || "external_contract");
+      return await getNewDocumentNumber(numberingType);
     }
     const v = String(input || "").trim();
     if (v) return v;
     console.log(
-      `[contracts] document_number empty → fresh number (contract_type=${contractType})`
+      `[contracts] document_number empty → fresh number (category=${contractCategory}, record_type=${recordType}, type=${numberingType})`
     );
-    // contract_type が分かれば prefix が引ける (例: "service_basic" → SVC)。
-    // 引けない場合は getNewDocumentNumber の最後の fallback (3 文字大文字) になる。
-    return await getNewDocumentNumber(contractType || "external_contract");
+    return await getNewDocumentNumber(numberingType);
   }
 
   app.post("/api/master/contracts", express.json(), async (req, res) => {
@@ -3252,6 +3293,8 @@ ${details}
       const finalDocNumber = await ensureDocumentNumber(
         document_number,
         contract_type,
+        contract_category,
+        record_type,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
       const result = await query(
@@ -3315,6 +3358,8 @@ ${details}
       const finalDocNumber = await ensureDocumentNumber(
         document_number,
         contract_type,
+        contract_category,
+        record_type,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
       await query(
