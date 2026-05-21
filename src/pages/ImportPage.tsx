@@ -45,6 +45,8 @@ import {
   type FinancialCondition,
 } from "@/src/components/document/FinancialConditionTable"
 import { BulkImportDialog } from "@/src/components/document/BulkImportDialog"
+// Phase 22.21.34: 取引先マスター CSV 一括取込
+import { VendorCsvImportDialog } from "@/src/components/master/VendorCsvImportDialog"
 import { PendingPdfPanel } from "@/src/components/document/PendingPdfPanel"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 
@@ -57,6 +59,8 @@ type Tab =
   | "sales_master"
   | "pending_pdf"
   | "ringi_master"
+  // Phase 22.21.34: 取引先マスター CSV 一括取込
+  | "vendor_master"
 
 const Section: React.FC<{
   title: string
@@ -1633,6 +1637,8 @@ export function ImportPage() {
   const { vendors, companyProfile, showNotification, refreshAll } = useAppData()
   const [tab, setTab] = React.useState<Tab>("purchase_order")
   const [bulkOpen, setBulkOpen] = React.useState(false)
+  // Phase 22.21.34: 取引先 CSV 取込ダイアログ
+  const [vendorCsvOpen, setVendorCsvOpen] = React.useState(false)
 
   // タブ key → bulk endpoint kind の対応表
   // pending_pdf はインポート系ではないので Map に含めない (Bulk dialog を開かない)
@@ -1664,6 +1670,8 @@ export function ImportPage() {
     sales_master: "売買基本契約書",
     pending_pdf: "PDF 未作成キュー",
     ringi_master: "稟議マスタ",
+    // Phase 22.21.34: 取引先マスター
+    vendor_master: "取引先マスタ",
   }
 
   return (
@@ -1682,8 +1690,9 @@ export function ImportPage() {
           </p>
         </div>
         {/* Phase 10: 一括 CSV インポート起動ボタン (現タブに対応する形式で開く)
-            pending_pdf タブでは別機能なので非表示 */}
-        {tab !== "pending_pdf" && BULK_KIND_MAP[tab] && (
+            pending_pdf タブでは別機能なので非表示
+            Phase 22.21.34: vendor_master は別ダイアログ (VendorCsvImportDialog) */}
+        {tab !== "pending_pdf" && tab !== "vendor_master" && BULK_KIND_MAP[tab] && (
           <button
             type="button"
             onClick={() => setBulkOpen(true)}
@@ -1692,6 +1701,17 @@ export function ImportPage() {
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             CSV 一括インポート
+          </button>
+        )}
+        {tab === "vendor_master" && (
+          <button
+            type="button"
+            onClick={() => setVendorCsvOpen(true)}
+            className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
+            title="取引先マスター CSV 一括取込"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" />
+            CSV 一括取込
           </button>
         )}
       </header>
@@ -1708,6 +1728,15 @@ export function ImportPage() {
           }}
         />
       )}
+
+      {/* Phase 22.21.34: 取引先 CSV 取込ダイアログ */}
+      <VendorCsvImportDialog
+        open={vendorCsvOpen}
+        onClose={() => setVendorCsvOpen(false)}
+        onCompleted={() => {
+          refreshAll?.()
+        }}
+      />
 
       {/* Phase 16b: グループラベル付きタブバー — カテゴリが視覚的に分かる */}
       <div className="border-b border-border">
@@ -1734,7 +1763,11 @@ export function ImportPage() {
             },
             {
               group: "マスタ",
-              tabs: [{ key: "ringi_master", label: "📋 稟議マスタ" }],
+              tabs: [
+                { key: "ringi_master", label: "📋 稟議マスタ" },
+                // Phase 22.21.34: 取引先マスター CSV 一括取込
+                { key: "vendor_master", label: "🏢 取引先マスタ" },
+              ],
             },
             {
               group: "PDF 生成",
@@ -1828,6 +1861,43 @@ export function ImportPage() {
           >
             <FileSpreadsheet className="w-4 h-4" />
             稟議マスタ CSV 一括インポートを開く
+          </button>
+        </div>
+      )}
+
+      {/* Phase 22.21.34: 取引先マスタ CSV 一括取込 (VendorCsvImportDialog) */}
+      {tab === "vendor_master" && (
+        <div className="space-y-4">
+          <div className="border border-indigo-200 bg-indigo-50 rounded-sm p-5">
+            <div className="flex items-start gap-3">
+              <FileSpreadsheet className="w-6 h-6 text-indigo-700 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <div className="font-bold text-indigo-900 text-sm">
+                  🏢 取引先マスタ CSV 一括取込
+                </div>
+                <p className="text-[11px] font-mono text-indigo-900/80 leading-relaxed">
+                  取引先 (vendors) を CSV で一括登録・更新できます。vendor_code
+                  と vendor_name は必須、その他 (住所 / 担当者 / 振込先 / 法人
+                  個人区分 等) は任意です。
+                </p>
+                <p className="text-[11px] font-mono text-indigo-900/80 leading-relaxed">
+                  「プレビュー (dry-run)」で 何件 新規 / 更新 / スキップ / エラー
+                  になるかを確認した上で、本番取り込みできます。
+                </p>
+                <p className="text-[10px] font-mono text-indigo-800/70">
+                  既存 vendor_code との重複モードは「上書き / スキップ / 空欄補完」
+                  から選択。
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setVendorCsvOpen(true)}
+            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            取引先マスタ CSV 一括取込を開く
           </button>
         </div>
       )}
