@@ -84,6 +84,26 @@ body {
   color: var(--muted-foreground);
   margin-top: 2px;
 }
+/* Phase 22.21.41: topbar 右端の Admin 戻りリンク */
+.topbar-back {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted-foreground);
+  text-decoration: none;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: hsl(40 40% 99%);
+  transition: background .15s, color .15s;
+}
+.topbar-back:hover {
+  background: hsl(40 30% 94%);
+  color: var(--foreground);
+}
+.topbar-back svg { width: 12px; height: 12px; }
 
 /* ─── Page header ──────────────────────────────────────── */
 .page-header {
@@ -600,6 +620,8 @@ export const SVG = {
  * Topbar HTML を返す。
  * @param title    breadcrumb 後ろの大文字タイトル (例: "Vendors")
  * @param subtitle 小さい注記 (例: "Master · External partners")
+ *
+ * Phase 22.21.41: 右端に「← Admin」戻りリンクを追加 (admin ダッシュボードへ)。
  */
 export function topbarHtml(title: string, subtitle: string): string {
   return `<header class="topbar">
@@ -610,6 +632,10 @@ export function topbarHtml(title: string, subtitle: string): string {
       <p class="crumb-sub">${subtitle}</p>
     </div>
     <div style="flex:1"></div>
+    <a class="topbar-back" href="/admin" title="管理ダッシュボードに戻る">
+      <span aria-hidden="true" style="display:inline-flex;transform:rotate(180deg);">${SVG.chevronRight}</span>
+      Admin に戻る
+    </a>
   </header>`;
 }
 

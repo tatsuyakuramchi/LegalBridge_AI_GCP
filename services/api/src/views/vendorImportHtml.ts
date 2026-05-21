@@ -27,6 +27,29 @@ header.page-header {
   border-bottom: 2px solid #1f2937;
   padding-bottom: 16px;
   margin-bottom: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+header.page-header .title-wrap { flex: 1; min-width: 0; }
+header.page-header .back-link {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  background: #fff;
+  color: #374151;
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  transition: background .15s, color .15s, border-color .15s;
+}
+header.page-header .back-link:hover {
+  background: #f3f4f6;
+  color: #1f2937;
+  border-color: #9ca3af;
 }
 h1 { font-size: 22px; margin: 0; }
 h2 { font-size: 16px; margin: 24px 0 12px; }
@@ -157,8 +180,11 @@ export function vendorImportPage(
 <body>
   <div class="container">
     <header class="page-header">
-      <h1>🏢 取引先マスター CSV 取り込み</h1>
-      <div class="muted">vendors テーブルに upsert します (vendor_code を主キーとして判定)</div>
+      <div class="title-wrap">
+        <h1>🏢 取引先マスター CSV 取り込み</h1>
+        <div class="muted">vendors テーブルに upsert します (vendor_code を主キーとして判定)</div>
+      </div>
+      <a class="back-link" href="/admin" title="管理ダッシュボードに戻る">← Admin に戻る</a>
     </header>
 
     <section class="card">
