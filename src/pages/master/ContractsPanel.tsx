@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
+import { cn } from "@/lib/utils"
 
 // Phase 22.21.46: DB から返ってきた auto_renewal の型ゆらぎ ('t'/'f'/'true'/1/etc)
 //   を Boolean に正規化する。Switch 等の制御コンポーネントが期待する型に揃える。
@@ -351,15 +352,35 @@ export function ContractsPanel() {
                 ))}
               </NativeSelect>
             </Field>
+            {/* Phase 22.21.50: レコード区分の整理
+                - 基本契約: 親契約 (top-level)。単体では発注書/計算書を発行しない。
+                - 個別契約: 基本契約の子。利用許諾計算書/検収書の発行ロジック対象。
+                - 単独契約: 親契約を持たない単独構成。個別契約と同じく計算/発行可能。
+                旧 license_condition は legacy として個別契約扱いで読み込む。 */}
             <Field label="レコード区分">
               <NativeSelect
-                value={data?.record_type || "master_contract"}
+                value={
+                  // legacy license_condition は表示上 individual_contract と同じ
+                  // "個別契約" 系として扱う。保存時はそのまま legacy 値で出ていく。
+                  data?.record_type === "license_condition"
+                    ? "license_condition"
+                    : data?.record_type || "master_contract"
+                }
                 onChange={(e) => set({ record_type: e.target.value })}
               >
-                <option value="master_contract">基本契約</option>
-                <option value="license_condition">個別ライセンス</option>
-                <option value="individual_contract">個別契約</option>
+                <option value="master_contract">基本契約 (親)</option>
+                <option value="individual_contract">個別契約 (子)</option>
+                <option value="standalone_contract">単独契約 (単体)</option>
+                {/* 旧データを上書き表示で消さないよう、選択中だけ legacy 候補を出す */}
+                {data?.record_type === "license_condition" && (
+                  <option value="license_condition">個別契約 (旧: 個別ライセンス)</option>
+                )}
               </NativeSelect>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+                <strong>基本契約</strong>: 親(top-level)。発注書の参照元。<br />
+                <strong>個別契約</strong>: 基本契約の子。利用許諾計算書/検収書 発行可能。<br />
+                <strong>単独契約</strong>: 親無し。個別契約と同じく計算/発行可能。
+              </p>
             </Field>
             <Field label="カテゴリ">
               <NativeSelect
@@ -448,13 +469,27 @@ export function ContractsPanel() {
                 自動補完候補に含めるかどうかを切替。
                 例: 旧契約は executed のまま is_active=false にして候補から外す。 */}
             <Field label="有効 / 無効">
+              {/* Phase 22.21.50: Switch だけだと状態がパッと分からないので、
+                  状態テキストを大きめ + 色付きで表示する。 */}
               <div className="flex items-center gap-2 h-9">
                 <Switch
                   checked={data?.is_active !== false}
                   onCheckedChange={(v) => set({ is_active: v })}
                 />
-                <span className="text-xs font-mono">
-                  {data?.is_active !== false ? "有効 (自動補完候補に含む)" : "無効 (自動補完で無視)"}
+                <span
+                  className={cn(
+                    "text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm",
+                    data?.is_active !== false
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      : "bg-muted text-muted-foreground border border-input"
+                  )}
+                >
+                  {data?.is_active !== false ? "● 有効" : "○ 無効"}
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {data?.is_active !== false
+                    ? "自動補完候補に含む"
+                    : "自動補完で無視"}
                 </span>
               </div>
               <p className="text-[10px] font-mono text-muted-foreground mt-1">
@@ -487,14 +522,27 @@ export function ContractsPanel() {
             </Field>
             <Field label="自動更新">
               {/* Phase 22.21.46: DB から 't'/'f' で返ってくるケースに対応するため
-                  toBool で正規化。Switch のクリックは boolean を返す。 */}
+                  toBool で正規化。Switch のクリックは boolean を返す。
+                  Phase 22.21.50: ON/OFF をテキストバッジで強調表示。 */}
               <div className="flex items-center gap-2 h-9">
                 <Switch
                   checked={toBool(data?.auto_renewal)}
                   onCheckedChange={(v) => set({ auto_renewal: !!v })}
                 />
-                <span className="text-xs font-mono">
-                  {toBool(data?.auto_renewal) ? "あり (満期で自動延長)" : "なし"}
+                <span
+                  className={cn(
+                    "text-xs font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm",
+                    toBool(data?.auto_renewal)
+                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                      : "bg-muted text-muted-foreground border border-input"
+                  )}
+                >
+                  {toBool(data?.auto_renewal) ? "● あり" : "○ なし"}
+                </span>
+                <span className="text-[10px] font-mono text-muted-foreground">
+                  {toBool(data?.auto_renewal)
+                    ? "満期で自動延長"
+                    : "満期で終了"}
                 </span>
               </div>
             </Field>
