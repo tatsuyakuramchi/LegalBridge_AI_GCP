@@ -31,16 +31,25 @@ import { cn } from "@/lib/utils"
 const toBool = (v: any): boolean =>
   v === true || v === "t" || v === "true" || v === 1 || v === "1";
 
-// Phase 22.21.51: worker と完全に同じロジックで prefix を予測表示する。
-//   発番されるまで分からないと不安なので「保存するとこの prefix になります」を
-//   出して安心感を与える。worker 側の deriveTemplateTypeForNumbering と同じ
-//   マッピング (重複定義だが、フロント表示専用のため許容)。
-const previewDocPrefix = (category: any, recordType: any): string => {
+// Phase 22.21.51 / 22.21.52: worker と完全に同じロジックで prefix を予測表示。
+//   ledger_code が紐付いた license + 個別/単独 の場合は新フォーマット
+//   "LIC-{ledger_code}-ILT-NNNN" を返す。それ以外は従来通り ARC-<TYPE>-YYYY-NNNN
+//   の prefix 文字列を返す。
+const previewDocPrefix = (
+  category: any,
+  recordType: any,
+  ledgerCode?: any
+): string => {
   const cat = String(category || "").toLowerCase();
   const isIndividualLike =
     recordType === "individual_contract" ||
     recordType === "standalone_contract" ||
     recordType === "license_condition";
+  const ledger = String(ledgerCode || "").trim();
+  if (cat === "license" && isIndividualLike && ledger) {
+    // ledger ベース ILT 採番
+    return `LIC-${ledger}-ILT-NNNN`;
+  }
   if (cat === "license") return isIndividualLike ? "ILT" : "LIC";
   if (cat === "publication") return "PUB";
   // service or unknown
@@ -99,10 +108,13 @@ const empty = {
   // 保存すると、worker は document_number の値を無視して新規発番する。
   // 保存後に worker レスポンスから受け取った新番号で reset。
   regenerate_document_number: false,
+  // Phase 22.21.52: 原作 (ledger) 紐付け。ライセンス系の 個別/単独 契約で
+  // 設定すると、LIC-{ledger_code}-ILT-NNNN 形式で採番される。
+  ledger_code: "",
 }
 
 export function ContractsPanel() {
-  const { contracts, vendors, refreshContracts, showNotification } = useAppData()
+  const { contracts, vendors, ledgers, refreshContracts, showNotification } = useAppData()
   const [search, setSearch] = React.useState("")
   const [editing, setEditing] = React.useState<any>(null)
   const [creating, setCreating] = React.useState(false)
@@ -467,12 +479,12 @@ export function ContractsPanel() {
                   <span className="text-amber-700 font-bold">
                     🔄 保存すると新規発番されます (現在の番号は破棄)
                     <br />
-                    予測 prefix: {previewDocPrefix(data?.contract_category, data?.record_type)}
+                    予測 prefix: {previewDocPrefix(data?.contract_category, data?.record_type, data?.ledger_code)}
                   </span>
                 ) : (
                   <>
                     空欄で保存するとカテゴリ × 区分から prefix を引いて自動発番。
-                    予測 prefix: <strong>{previewDocPrefix(data?.contract_category, data?.record_type)}</strong>
+                    予測 prefix: <strong>{previewDocPrefix(data?.contract_category, data?.record_type, data?.ledger_code)}</strong>
                     <br />
                     既存番号を振り直すには「再発番」ボタンを ON。
                   </>
@@ -654,11 +666,42 @@ export function ContractsPanel() {
                 改行・カンマ区切りで複数。空欄ならメンションなし。
               </p>
             </Field>
-            <Field label="作品 / 原作">
+            <Field label="作品 / 原作 (任意)">
               <Input
                 value={data?.original_work || ""}
                 onChange={(e) => set({ original_work: e.target.value })}
+                placeholder="自由入力"
               />
+            </Field>
+            {/* Phase 22.21.52: 原作マスタ (ledgers) との紐付け。
+                ライセンス系の 個別 / 単独 契約で ledger を選ぶと、文書番号が
+                LIC-{ledger_code}-ILT-NNNN 形式 (原作通算連番) で発番される。
+                未選択時は ARC-ILT-YYYY-NNNN (年単位連番) にフォールバック。 */}
+            <Field label="原作 (ledger 紐付け)">
+              <NativeSelect
+                value={data?.ledger_code || ""}
+                onChange={(e) => set({ ledger_code: e.target.value })}
+              >
+                <option value="">— 紐付けなし (年単位連番) —</option>
+                {ledgers.map((l: any) => (
+                  <option key={`ledger-${l.id}`} value={l.ledger_code}>
+                    {l.ledger_code} — {l.title || l.original_work || "(無題)"}
+                  </option>
+                ))}
+              </NativeSelect>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                {data?.ledger_code ? (
+                  <span className="text-emerald-700 font-bold">
+                    📚 原作 {data.ledger_code} に紐付け → 発番形式:
+                    LIC-{data.ledger_code}-ILT-NNNN (原作通算)
+                  </span>
+                ) : (
+                  <>
+                    紐付けると ILT 番号が原作単位の通算連番になります
+                    (ライセンス × 個別/単独 のみ有効)。
+                  </>
+                )}
+              </p>
             </Field>
             <Field label="製品名">
               <Input

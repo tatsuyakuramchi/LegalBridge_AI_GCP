@@ -1223,6 +1223,16 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_slack_channels JSONB DEFAULT '[]'::jsonb;`,
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_slack_mentions JSONB DEFAULT '[]'::jsonb;`,
 
+    // Phase 22.21.52: 契約に紐づく原作 (ledger) コード。ライセンス系の
+    //   個別/単独契約に ledger を紐づけることで「この原作に対する N 件目の
+    //   ILT」という形で番号を発番できるようにする。
+    //   形式: LIC-{ledger_code}-ILT-{NNNN}  (例: LIC-LO-2026-0001-ILT-0001)
+    //   ledgers.ledger_code への論理参照 (FK は意図的に張らず文字列で持つ。
+    //   ledgers を物理削除しても契約データ側は残るほうが運用都合が良い)。
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS ledger_code VARCHAR(40);`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_ledger_code
+       ON contract_capabilities (ledger_code) WHERE ledger_code IS NOT NULL;`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -1438,6 +1448,32 @@ export async function getNewWorkId(
   const kind = `W_${ledgerCode}`;
   const val = await getNextSequenceValue(kind, y);
   return `LIC-${ledgerCode}-W-${y}-${val.toString().padStart(4, "0")}`;
+}
+
+/**
+ * Phase 22.21.52: ILT (個別利用許諾条件書 + 単独契約) の原作ベース採番。
+ *
+ * 形式: LIC-{ledger_code}-ILT-{NNNN}
+ *   例: LIC-LO-2026-0001-ILT-0001
+ *
+ * 連番は **原作 (ledger_code) 単位で通算**。年単位ではリセットしない
+ * (作品ライフタイムを通じた連番。getNewWorkId と違う設計判断)。
+ *
+ * 用途:
+ *   - contract_capabilities で record_type='individual_contract' /
+ *     'standalone_contract' / 'license_condition' かつ
+ *     contract_category='license' かつ ledger_code 紐付け済み のレコード。
+ *
+ * document_sequences の (kind, year) PK 制約があるため、年でリセットしない
+ * 場合は year=0 を sentinel として使う。
+ */
+export async function getNewIltNumberForLedger(
+  ledgerCode: string
+): Promise<string> {
+  if (!ledgerCode) throw new Error("ledgerCode is required for ILT numbering");
+  const kind = `ILT_${ledgerCode}`;
+  const val = await getNextSequenceValue(kind, 0);
+  return `LIC-${ledgerCode}-ILT-${val.toString().padStart(4, "0")}`;
 }
 
 /**

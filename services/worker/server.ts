@@ -52,6 +52,7 @@ import {
   getNewLedgerId,
   getNewLedgerCode,
   getNewWorkId,
+  getNewIltNumberForLedger,
   createLedgerWithDefaultMaterial,
   addMaterialToLedger,
   markPrimaryDocument,
@@ -3242,24 +3243,50 @@ ${details}
     return isIndividualLike ? "outsourcing" : "service_master";
   }
 
-  // Phase 22.21.46 / 22.21.49 / 22.21.51: 文書番号の自動採番。
-  //   - regenerate=true (admin-ui の「🔄 再発番」ボタン経由) → input 値を無視して
-  //     強制的に新規発番。
+  // Phase 22.21.46 / 22.21.49 / 22.21.51 / 22.21.52: 文書番号の自動採番。
+  //   - regenerate=true → input 値を無視して強制的に新規発番
   //   - input が空文字 / null / undefined / 空白だけ → 新規発番
-  //   - それ以外 → input をそのまま返す (= 手動入力)
+  //   - それ以外 → input をそのまま返す
   //
   //   prefix は contract_category + record_type から derive (Phase 22.21.51)。
-  //   contract_type は formData 上は service_basic 等のままで放置されるケースが
-  //   多く、prefix 決定の主入力としては信頼できないので使わない。
+  //
+  //   Phase 22.21.52: ライセンス系 (license + individual/standalone/legacy) かつ
+  //   ledger_code 紐付けがある場合は、原作ベースの新フォーマットを使う:
+  //     LIC-{ledger_code}-ILT-{NNNN}
+  //     例: LIC-LO-2026-0001-ILT-0001
+  //   ledger 紐付けがない場合は従来通り ARC-ILT-YYYY-NNNN にフォールバック。
   async function ensureDocumentNumber(
     input: any,
     contractType: string,
     contractCategory: string,
     recordType: string,
+    ledgerCode: string | null | undefined,
     regenerate: boolean = false
   ): Promise<string> {
     const numberingType = deriveTemplateTypeForNumbering(contractCategory, recordType);
+
+    // ledger ベース ILT 採番の判定。
+    //   - カテゴリ license
+    //   - record_type が individual_contract / standalone_contract /
+    //     license_condition (legacy)
+    //   - ledger_code が紐付いている
+    const ledger = String(ledgerCode || "").trim();
+    const isIndividualLike =
+      recordType === "individual_contract" ||
+      recordType === "standalone_contract" ||
+      recordType === "license_condition";
+    const useLedgerBasedIlt =
+      String(contractCategory || "").toLowerCase() === "license" &&
+      isIndividualLike &&
+      !!ledger;
+
     if (regenerate) {
+      if (useLedgerBasedIlt) {
+        console.log(
+          `[contracts] regenerate=true → ledger-based ILT (ledger=${ledger})`
+        );
+        return await getNewIltNumberForLedger(ledger);
+      }
       console.log(
         `[contracts] regenerate=true → fresh number (category=${contractCategory}, record_type=${recordType}, type=${numberingType})`
       );
@@ -3267,6 +3294,12 @@ ${details}
     }
     const v = String(input || "").trim();
     if (v) return v;
+    if (useLedgerBasedIlt) {
+      console.log(
+        `[contracts] document_number empty → ledger-based ILT (ledger=${ledger})`
+      );
+      return await getNewIltNumberForLedger(ledger);
+    }
     console.log(
       `[contracts] document_number empty → fresh number (category=${contractCategory}, record_type=${recordType}, type=${numberingType})`
     );
@@ -3286,15 +3319,19 @@ ${details}
       alert_slack_channels, alert_slack_mentions,
       // Phase 22.21.49: 強制再発番フラグ (admin-ui の「🔄 再発番」ボタン)
       regenerate_document_number,
+      // Phase 22.21.52: 原作 (ledger) 紐付け — ILT 採番に使う
+      ledger_code,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
+      const ledger = String(ledger_code || "").trim() || null;
       const finalDocNumber = await ensureDocumentNumber(
         document_number,
         contract_type,
         contract_category,
         record_type,
+        ledger,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
       const result = await query(
@@ -3304,8 +3341,9 @@ ${details}
           original_work, product_name, work_name, media, territory, language, document_url, condition_number,
           renewal_notice_months, alert_lead_months,
           is_active,
-          alert_slack_channels, alert_slack_mentions
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb)
+          alert_slack_channels, alert_slack_mentions,
+          ledger_code
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24)
         RETURNING id, document_number`,
         [
           vendor_id || null, record_type || "master_contract", contract_category || "service",
@@ -3321,6 +3359,7 @@ ${details}
           is_active === undefined || is_active === null ? true : Boolean(is_active),
           JSON.stringify(channels),
           JSON.stringify(mentions),
+          ledger,
         ]
       );
       res.json({
@@ -3351,15 +3390,19 @@ ${details}
       alert_slack_channels, alert_slack_mentions,
       // Phase 22.21.49: 強制再発番フラグ
       regenerate_document_number,
+      // Phase 22.21.52: 原作 (ledger) 紐付け
+      ledger_code,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
+      const ledger = String(ledger_code || "").trim() || null;
       const finalDocNumber = await ensureDocumentNumber(
         document_number,
         contract_type,
         contract_category,
         record_type,
+        ledger,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
       await query(
@@ -3373,8 +3416,9 @@ ${details}
           is_active = $21,
           alert_slack_channels = $22::jsonb,
           alert_slack_mentions = $23::jsonb,
+          ledger_code = $24,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $24`,
+        WHERE id = $25`,
         [
           vendor_id || null, record_type, contract_category, contract_type, contract_title,
           finalDocNumber, contract_status, effective_date || null, expiration_date || null,
@@ -3387,6 +3431,7 @@ ${details}
           is_active === undefined || is_active === null ? true : Boolean(is_active),
           JSON.stringify(channels),
           JSON.stringify(mentions),
+          ledger,
           id,
         ]
       );

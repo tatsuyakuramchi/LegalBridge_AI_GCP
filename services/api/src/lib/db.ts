@@ -455,6 +455,12 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_slack_channels JSONB DEFAULT '[]'::jsonb;`,
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS alert_slack_mentions JSONB DEFAULT '[]'::jsonb;`,
 
+    // Phase 22.21.52: 原作 (ledger) 紐付け。ILT 採番 (LIC-{ledger_code}-ILT-NNNN) に使う。
+    //   詳細は worker/src/lib/db.ts の同名コメント参照。
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS ledger_code VARCHAR(40);`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_ledger_code
+       ON contract_capabilities (ledger_code) WHERE ledger_code IS NOT NULL;`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
