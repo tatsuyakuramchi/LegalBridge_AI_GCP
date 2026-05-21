@@ -1,13 +1,19 @@
 import * as React from "react"
-import { Search, Plus, Building2, Trash2, Star, FileSpreadsheet } from "lucide-react"
+import {
+  Search,
+  Plus,
+  Building2,
+  Trash2,
+  Star,
+  FileSpreadsheet,
+  ExternalLink,
+} from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-// Phase 22.21.34: 取引先 CSV 一括取込ダイアログ
-import { VendorCsvImportDialog } from "@/src/components/master/VendorCsvImportDialog"
 import {
   Dialog,
   DialogContent,
@@ -57,8 +63,14 @@ const empty = {
 
 export function VendorsPanel() {
   const { vendors, refreshVendors, showNotification } = useAppData()
-  // Phase 22.21.34: CSV 一括取込ダイアログの開閉
-  const [csvImportOpen, setCsvImportOpen] = React.useState(false)
+  // Phase 22.21.35: CSV 一括取込は search-api 側 (/imports/vendor) に集約。
+  //   admin-ui からは新タブで開くだけ。保守対象を search-api に一本化。
+  const vendorImportUrl = (() => {
+    const base =
+      (import.meta as any).env?.VITE_API_READ_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "")
+    return `${base.replace(/\/$/, "")}/imports/vendor`
+  })()
   const [search, setSearch] = React.useState("")
   const [editing, setEditing] = React.useState<any>(null)
   const [creating, setCreating] = React.useState(false)
@@ -141,14 +153,17 @@ export function VendorsPanel() {
           {vendors.length} entries
         </span>
         <div className="flex-1" />
-        {/* Phase 22.21.34: CSV 一括取込ボタン */}
+        {/* Phase 22.21.35: CSV 一括取込ボタン (search-api 側のページを新タブで開く) */}
         <Button
           variant="outline"
-          onClick={() => setCsvImportOpen(true)}
-          title="CSV から取引先を一括取込 (dry-run プレビュー対応)"
+          asChild
+          title="取引先 CSV 一括取込 (search-api 側で dry-run プレビュー対応)"
         >
-          <FileSpreadsheet />
-          CSV 一括取込
+          <a href={vendorImportUrl} target="_blank" rel="noreferrer">
+            <FileSpreadsheet />
+            CSV 一括取込
+            <ExternalLink className="ml-0.5 h-3 w-3 opacity-60" />
+          </a>
         </Button>
         <Button
           onClick={() => {
@@ -160,16 +175,6 @@ export function VendorsPanel() {
           取引先を追加
         </Button>
       </div>
-
-      {/* Phase 22.21.34: CSV 一括取込ダイアログ */}
-      <VendorCsvImportDialog
-        open={csvImportOpen}
-        onClose={() => setCsvImportOpen(false)}
-        onCompleted={() => {
-          refreshVendors?.()
-          showNotification("取引先マスターを更新しました", "success")
-        }}
-      />
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {filtered.map((v, idx) => (

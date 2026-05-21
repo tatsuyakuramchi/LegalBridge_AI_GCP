@@ -45,8 +45,6 @@ import {
   type FinancialCondition,
 } from "@/src/components/document/FinancialConditionTable"
 import { BulkImportDialog } from "@/src/components/document/BulkImportDialog"
-// Phase 22.21.34: 取引先マスター CSV 一括取込
-import { VendorCsvImportDialog } from "@/src/components/master/VendorCsvImportDialog"
 import { PendingPdfPanel } from "@/src/components/document/PendingPdfPanel"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 
@@ -1637,8 +1635,13 @@ export function ImportPage() {
   const { vendors, companyProfile, showNotification, refreshAll } = useAppData()
   const [tab, setTab] = React.useState<Tab>("purchase_order")
   const [bulkOpen, setBulkOpen] = React.useState(false)
-  // Phase 22.21.34: 取引先 CSV 取込ダイアログ
-  const [vendorCsvOpen, setVendorCsvOpen] = React.useState(false)
+  // Phase 22.21.35: 取引先 CSV 取込は search-api 側のページを新タブで開く形に変更
+  const vendorImportUrl = (() => {
+    const base =
+      (import.meta as any).env?.VITE_API_READ_URL ||
+      (typeof window !== "undefined" ? window.location.origin : "")
+    return `${base.replace(/\/$/, "")}/imports/vendor`
+  })()
 
   // タブ key → bulk endpoint kind の対応表
   // pending_pdf はインポート系ではないので Map に含めない (Bulk dialog を開かない)
@@ -1704,15 +1707,16 @@ export function ImportPage() {
           </button>
         )}
         {tab === "vendor_master" && (
-          <button
-            type="button"
-            onClick={() => setVendorCsvOpen(true)}
+          <a
+            href={vendorImportUrl}
+            target="_blank"
+            rel="noreferrer"
             className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-2 hover:bg-muted flex items-center gap-1.5 whitespace-nowrap"
-            title="取引先マスター CSV 一括取込"
+            title="取引先マスター CSV 一括取込 (search-api 側ページを新タブで開く)"
           >
             <FileSpreadsheet className="w-3.5 h-3.5" />
             CSV 一括取込
-          </button>
+          </a>
         )}
       </header>
 
@@ -1729,14 +1733,7 @@ export function ImportPage() {
         />
       )}
 
-      {/* Phase 22.21.34: 取引先 CSV 取込ダイアログ */}
-      <VendorCsvImportDialog
-        open={vendorCsvOpen}
-        onClose={() => setVendorCsvOpen(false)}
-        onCompleted={() => {
-          refreshAll?.()
-        }}
-      />
+      {/* Phase 22.21.35: 取引先 CSV 取込は search-api 側に集約。ダイアログ不要。 */}
 
       {/* Phase 16b: グループラベル付きタブバー — カテゴリが視覚的に分かる */}
       <div className="border-b border-border">
@@ -1891,14 +1888,15 @@ export function ImportPage() {
               </div>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setVendorCsvOpen(true)}
-            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+          <a
+            href={vendorImportUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted inline-flex items-center gap-2"
           >
             <FileSpreadsheet className="w-4 h-4" />
-            取引先マスタ CSV 一括取込を開く
-          </button>
+            取引先マスタ CSV 一括取込ページを開く (新タブ)
+          </a>
         </div>
       )}
 

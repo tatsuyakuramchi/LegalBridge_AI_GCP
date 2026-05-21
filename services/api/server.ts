@@ -49,6 +49,9 @@ import {
 // Phase 17z: 取引先マスター CRUD (search-api 側がメイン、worker 側は既存維持の
 // バックアップ位置付け)。同じ vendors テーブルに対する upsert。
 import { vendorMasterPage } from "./src/views/vendorMasterHtml.ts";
+// Phase 22.21.35: 取引先 CSV 取り込み UI を search-api に集約 (保守対象統一)。
+//   admin-ui (React) から直接アクセスせず、本ページ /imports/vendor で完結。
+import { vendorImportPage } from "./src/views/vendorImportHtml.ts";
 import {
   listVendors,
   getVendor,
@@ -325,6 +328,34 @@ async function startServer() {
         res.type("html").send(legalonImportPage(null));
       } catch (error) {
         console.error("/imports/legalon failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // /imports/vendor — 取引先マスター CSV 取り込み (Phase 22.21.35)
+  //
+  // search-api 側に集約する方針 (保守対象統一)。admin-ui 側からは
+  // 「CSV 一括取込」ボタンが新タブで本 URL を開く形に変更。
+  // 認可は legalon と同じ「経営管理本部」「法務」の役割制御。
+  // -------------------------------------------------------------------
+  app.get(
+    "/imports/vendor",
+    requireIapUser({ renderErrorPage }),
+    requireDepartmentRole({
+      resourceLabel: "imports:vendor",
+      allowedDepartments: ["経営管理本部", "法務"],
+      renderErrorPage,
+    }),
+    (req, res) => {
+      try {
+        res.type("html").send(vendorImportPage(null));
+      } catch (error) {
+        console.error("/imports/vendor failed:", error);
         res
           .status(500)
           .type("html")
