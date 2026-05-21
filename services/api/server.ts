@@ -56,6 +56,8 @@ import { vendorMasterPage } from "./src/views/vendorMasterHtml.ts";
 import { vendorImportPage } from "./src/views/vendorImportHtml.ts";
 // Phase 22.21.36: 管理者ダッシュボード。インポート機能 + ユーザー権限管理。
 import { adminDashboardPage } from "./src/views/adminDashboardHtml.ts";
+// Phase 22.21.37: viewer 用ルート案内ページ。
+import { viewerGuidePage } from "./src/views/viewerGuideHtml.ts";
 import {
   listVendors,
   getVendor,
@@ -335,6 +337,68 @@ async function startServer() {
         res.type("html").send(legalonImportPage(null));
       } catch (error) {
         console.error("/imports/legalon failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // Phase 22.21.37: ルートパス / の振る舞い。
+  //   IAP 認証後、staff.app_role を参照して:
+  //     - admin → /admin に 302 リダイレクト
+  //     - viewer (or no DB record) → /search/* の使い方案内 HTML を表示
+  //   旧挙動 (Cannot GET /) は単に Express 404 だったが、誤って Cloud Run
+  //   URL のルートに来たユーザーへの導線として機能する。
+  // -------------------------------------------------------------------
+  app.get(
+    "/",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const user = (req as any).user as { email?: string | null } | undefined;
+        const email = (user?.email || "").trim().toLowerCase();
+
+        // bootstrap admin (env)
+        const bootstrapAdmins = (process.env.LB_APP_ADMIN_EMAILS || "")
+          .split(",")
+          .map((s) => s.trim().toLowerCase())
+          .filter(Boolean);
+        if (email && bootstrapAdmins.includes(email)) {
+          return res.redirect(302, "/admin");
+        }
+
+        // DB の app_role を引く
+        let role: string | null = null;
+        if (email) {
+          try {
+            const r = await query(
+              "SELECT COALESCE(app_role, 'viewer') AS app_role FROM staff WHERE LOWER(email) = $1 LIMIT 1",
+              [email]
+            );
+            role = (r.rows[0]?.app_role as string) || null;
+          } catch {
+            /* noop — column may not exist yet on first deploy */
+          }
+        }
+
+        if (role === "admin") {
+          return res.redirect(302, "/admin");
+        }
+
+        // viewer or unregistered → 案内ページ
+        res
+          .type("html")
+          .send(
+            viewerGuidePage({
+              currentEmail: user?.email || null,
+              currentRole: role || "viewer",
+            })
+          );
+      } catch (error) {
+        console.error("/ failed:", error);
         res
           .status(500)
           .type("html")
