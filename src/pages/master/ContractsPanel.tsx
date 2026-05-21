@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Plus, Search, Edit2, Trash2, ExternalLink } from "lucide-react"
+import { Plus, Search, Edit2, Trash2, ExternalLink, RefreshCw } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -78,6 +78,10 @@ const empty = {
   // Phase 22.21.46: Slack アラート設定 (複数チャンネル / 複数メンション)
   alert_slack_channels: [] as string[],
   alert_slack_mentions: [] as string[],
+  // Phase 22.21.49: 強制再発番フラグ。「🔄 再発番」ボタンで true にセットして
+  // 保存すると、worker は document_number の値を無視して新規発番する。
+  // 保存後に worker レスポンスから受け取った新番号で reset。
+  regenerate_document_number: false,
 }
 
 export function ContractsPanel() {
@@ -116,16 +120,39 @@ export function ContractsPanel() {
     try {
       const isEdit = !!data?.id
       const url = isEdit ? `/api/master/contracts/${data.id}` : "/api/master/contracts"
+      // Phase 22.21.49: 再発番フラグの正規化。boolean のまま送れば worker は
+      //   regenerate_document_number === true で判定する。
+      const payload = {
+        ...data,
+        regenerate_document_number: !!data?.regenerate_document_number,
+      }
       const res = await fetch(url, {
         method: isEdit ? "PUT" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
-        showNotification(
-          isEdit ? "契約情報を更新しました" : "契約情報を追加しました",
-          "success"
-        )
+        // Phase 22.21.49: worker レスポンスに新規発番された document_number が
+        //   含まれていれば、ユーザーに通知して何番が振られたか視覚化する。
+        let savedDoc: any = null
+        try {
+          savedDoc = await res.json()
+        } catch {}
+        const newDocNo = savedDoc?.document_number || ""
+        const wasAuto = !!savedDoc?.document_number_auto
+        const wasRegen = !!savedDoc?.document_number_regenerated;
+        if (wasAuto || wasRegen) {
+          showNotification(
+            `${isEdit ? "契約情報を更新しました" : "契約情報を追加しました"}` +
+              (newDocNo ? ` (文書番号: ${newDocNo}${wasRegen ? " ← 再発番" : " ← 自動発番"})` : ""),
+            "success"
+          )
+        } else {
+          showNotification(
+            isEdit ? "契約情報を更新しました" : "契約情報を追加しました",
+            "success"
+          )
+        }
         await refreshContracts()
         close()
       } else {
@@ -352,16 +379,58 @@ export function ContractsPanel() {
               />
             </Field>
             <Field label="管理番号">
-              <Input
-                value={data?.document_number || ""}
-                onChange={(e) => set({ document_number: e.target.value })}
-                placeholder="空欄なら自動発番 (例 ARC-SVC-2026-0001)"
-              />
+              <div className="flex items-center gap-2">
+                <Input
+                  value={data?.document_number || ""}
+                  onChange={(e) =>
+                    set({
+                      document_number: e.target.value,
+                      // 手動で値を編集したら再発番フラグは降ろす
+                      regenerate_document_number: false,
+                    })
+                  }
+                  placeholder="空欄なら自動発番 (例 ARC-SVC-2026-0001)"
+                  disabled={!!data?.regenerate_document_number}
+                  className={
+                    data?.regenerate_document_number
+                      ? "line-through opacity-60"
+                      : ""
+                  }
+                />
+                {/* Phase 22.21.49: 「🔄 再発番」ボタン。
+                    クリックすると document_number = "" にした上で
+                    regenerate_document_number=true をセット。
+                    保存時に worker は強制的に新しい番号を採番する。
+                    既に未保存の番号を入れていても、このボタンで上書きできる。 */}
+                <Button
+                  type="button"
+                  variant={data?.regenerate_document_number ? "default" : "outline"}
+                  size="sm"
+                  onClick={() =>
+                    set({
+                      document_number: "",
+                      regenerate_document_number: !data?.regenerate_document_number,
+                    })
+                  }
+                  title="保存時に新しい文書番号を採番します。既存番号も上書きされます。"
+                  className="flex-shrink-0"
+                >
+                  <RefreshCw className={data?.regenerate_document_number ? "animate-spin" : ""} />
+                  {data?.regenerate_document_number ? "再発番 ON" : "再発番"}
+                </Button>
+              </div>
               {/* Phase 22.21.46: 空欄なら worker 側で getNewDocumentNumber が
                   発火し、契約種別から prefix を引いて自動採番。発番方式は
                   発注書 / 検収書 等と同じ ARC-<TYPE>-<YEAR>-<NNNN>。 */}
               <p className="text-[10px] font-mono text-muted-foreground mt-1">
-                空欄で保存すると契約種別に応じた prefix で自動発番されます。
+                {data?.regenerate_document_number ? (
+                  <span className="text-amber-700 font-bold">
+                    🔄 保存すると新規発番されます (現在の番号は破棄)
+                  </span>
+                ) : (
+                  <>空欄で保存すると契約種別に応じた prefix で自動発番されます。
+                  既存の番号を新規発番で振り直したい場合は「再発番」ボタンを ON。</>
+                )}
               </p>
             </Field>
             <Field label="ステータス">

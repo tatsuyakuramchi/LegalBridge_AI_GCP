@@ -3205,13 +3205,28 @@ ${details}
       .filter(Boolean);
   }
 
-  // Phase 22.21.46: 文書番号が空のときの自動採番。
-  //   入力フォームから document_number が空で来た場合に、worker の発番ロジックで
-  //   1 件発行して上書きする。inferContractType 相当の判定は admin-ui 側で
-  //   contract_type を選んで送ってくれているので、それを type ヒントに使う。
-  async function ensureDocumentNumber(input: any, contractType: string): Promise<string> {
+  // Phase 22.21.46 / 22.21.49: 文書番号の自動採番。
+  //   - regenerate=true (admin-ui の「🔄 再発番」ボタン経由) → input 値を無視して
+  //     強制的に新規発番。空文字検出だけだと「全角空白だけが入っていた」「先頭/末尾
+  //     の不可視文字で truthy」等で誤動作するケースを救う明示的なフラグ。
+  //   - input が空文字 / null / undefined / 空白だけ → 新規発番
+  //   - それ以外 → input をそのまま返す (= 手動入力)
+  async function ensureDocumentNumber(
+    input: any,
+    contractType: string,
+    regenerate: boolean = false
+  ): Promise<string> {
+    if (regenerate) {
+      console.log(
+        `[contracts] regenerate_document_number=true → fresh number (contract_type=${contractType})`
+      );
+      return await getNewDocumentNumber(contractType || "external_contract");
+    }
     const v = String(input || "").trim();
     if (v) return v;
+    console.log(
+      `[contracts] document_number empty → fresh number (contract_type=${contractType})`
+    );
     // contract_type が分かれば prefix が引ける (例: "service_basic" → SVC)。
     // 引けない場合は getNewDocumentNumber の最後の fallback (3 文字大文字) になる。
     return await getNewDocumentNumber(contractType || "external_contract");
@@ -3228,11 +3243,17 @@ ${details}
       is_active,
       // Phase 22.21.46: Slack アラート設定 (複数チャンネル / 複数メンション)
       alert_slack_channels, alert_slack_mentions,
+      // Phase 22.21.49: 強制再発番フラグ (admin-ui の「🔄 再発番」ボタン)
+      regenerate_document_number,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
-      const finalDocNumber = await ensureDocumentNumber(document_number, contract_type);
+      const finalDocNumber = await ensureDocumentNumber(
+        document_number,
+        contract_type,
+        regenerate_document_number === true || regenerate_document_number === "true"
+      );
       const result = await query(
         `INSERT INTO contract_capabilities (
           vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -3263,7 +3284,10 @@ ${details}
         success: true,
         id: result.rows[0].id,
         document_number: result.rows[0].document_number,
-        document_number_auto: !String(document_number || "").trim(),
+        document_number_auto:
+          !String(document_number || "").trim() ||
+          regenerate_document_number === true ||
+          regenerate_document_number === "true",
       });
     } catch (error) {
       res.status(500).json({ error: String(error) });
@@ -3282,11 +3306,17 @@ ${details}
       is_active,
       // Phase 22.21.46: Slack アラート設定
       alert_slack_channels, alert_slack_mentions,
+      // Phase 22.21.49: 強制再発番フラグ
+      regenerate_document_number,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
-      const finalDocNumber = await ensureDocumentNumber(document_number, contract_type);
+      const finalDocNumber = await ensureDocumentNumber(
+        document_number,
+        contract_type,
+        regenerate_document_number === true || regenerate_document_number === "true"
+      );
       await query(
         `UPDATE contract_capabilities SET
           vendor_id = $1, record_type = $2, contract_category = $3, contract_type = $4,
@@ -3318,7 +3348,14 @@ ${details}
       res.json({
         success: true,
         document_number: finalDocNumber,
-        document_number_auto: !String(document_number || "").trim(),
+        document_number_auto:
+          !String(document_number || "").trim() ||
+          regenerate_document_number === true ||
+          regenerate_document_number === "true",
+        document_number_regenerated:
+          (regenerate_document_number === true ||
+            regenerate_document_number === "true") &&
+          finalDocNumber !== String(document_number || "").trim(),
       });
     } catch (error) {
       res.status(500).json({ error: String(error) });
