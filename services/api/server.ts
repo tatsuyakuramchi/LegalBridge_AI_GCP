@@ -56,6 +56,7 @@ import { vendorMasterPage } from "./src/views/vendorMasterHtml.ts";
 import { vendorImportPage } from "./src/views/vendorImportHtml.ts";
 // Phase 22.21.36: 管理者ダッシュボード。インポート機能 + ユーザー権限管理。
 import { adminDashboardPage } from "./src/views/adminDashboardHtml.ts";
+import { adminStaffPage } from "./src/views/adminStaffHtml.ts";
 // Phase 22.21.37: viewer 用ルート案内ページ。
 import { viewerGuidePage } from "./src/views/viewerGuideHtml.ts";
 import {
@@ -361,12 +362,17 @@ async function startServer() {
         const user = (req as any).user as { email?: string | null } | undefined;
         const email = (user?.email || "").trim().toLowerCase();
 
+        // Phase 22.21.42: admin が viewer ランディングを確認するためのプレビュー
+        //   /admin から「Viewer 用ポータルを開く」リンクで遷移してきたときに
+        //   admin リダイレクトをスキップする。
+        const previewViewer = String(req.query.preview || "").toLowerCase() === "viewer";
+
         // bootstrap admin (env)
         const bootstrapAdmins = (process.env.LB_APP_ADMIN_EMAILS || "")
           .split(",")
           .map((s) => s.trim().toLowerCase())
           .filter(Boolean);
-        if (email && bootstrapAdmins.includes(email)) {
+        if (email && bootstrapAdmins.includes(email) && !previewViewer) {
           return res.redirect(302, "/admin");
         }
 
@@ -384,17 +390,17 @@ async function startServer() {
           }
         }
 
-        if (role === "admin") {
+        if (role === "admin" && !previewViewer) {
           return res.redirect(302, "/admin");
         }
 
-        // viewer or unregistered → 案内ページ
+        // viewer or unregistered (or admin が preview=viewer 指定) → 案内ページ
         res
           .type("html")
           .send(
             viewerGuidePage({
               currentEmail: user?.email || null,
-              currentRole: role || "viewer",
+              currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
             })
           );
       } catch (error) {
@@ -428,6 +434,34 @@ async function startServer() {
           .send(adminDashboardPage({ currentEmail: user?.email || null }));
       } catch (error) {
         console.error("/admin failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // Phase 22.21.42: /admin/staff スタッフ権限管理サブページ
+  //   /admin から 1 ステップ挟んで開く。staff 一覧 + admin/viewer 切替。
+  // -------------------------------------------------------------------
+  app.get(
+    "/admin/staff",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "admin:staff",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    (req, res) => {
+      try {
+        const user = (req as any).user as { email?: string | null } | undefined;
+        res
+          .type("html")
+          .send(adminStaffPage({ currentEmail: user?.email || null }));
+      } catch (error) {
+        console.error("/admin/staff failed:", error);
         res
           .status(500)
           .type("html")
