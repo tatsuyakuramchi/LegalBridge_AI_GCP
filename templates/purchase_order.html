@@ -152,33 +152,45 @@
 
     /* Phase 17n: 仕様を独立した「明細詳細行」として描画。これにより
        仕様の文章量が多くても、隣接する 数量 / 単価 / 金額 等の narrow
-       列が縦方向に間延びしない (table-row 高さが揃ってしまう問題を
-       回避)。 */
+       列が縦方向に間延びしない (table-row 高さが揃ってしまう問題を回避)。
+       Phase 22.21.53: ボックス装飾を廃止して、品目名の直下に自然に続く
+       テキストブロックに変更 (白背景・border 無し・行間タイト)。
+       目的: 「同じ明細の一部」として読みやすく、視覚的にあっさり見せる。 */
     table.items tr.detail-row > td {
       border-top: 0;          /* 直前の本行と継続的に見える */
       padding-top: 0;
-      padding-bottom: 8px;
+      padding-bottom: 6px;
     }
     table.items tr.detail-row .detail-cell {
-      background: #fafafa;
-      border-left: 3px solid #cfcfcf;
-      padding: 6px 10px;
+      background: transparent;       /* 旧 #fafafa を廃止 */
+      border-left: none;              /* 旧 3px solid #cfcfcf を廃止 */
+      padding: 0 2px 0 0;             /* 品目本行とインデント揃え (4px) */
       font-size: 8.5pt;
-      color: #444;
+      color: #333;
       white-space: pre-wrap;
-      line-height: 1.5;
+      line-height: 1.35;              /* タイト化 (旧 1.5) */
     }
+    /* 詳細ラベル "仕様 / 詳細" は読み流せるくらい控えめに。
+       完全に消すとセクション境界が分からなくなるので、極小グレーで残す。 */
     table.items tr.detail-row .detail-cell .detail-label {
-      font-size: 7.5pt;
-      color: #888;
-      font-weight: 800;
-      letter-spacing: 0.05em;
-      margin-bottom: 2px;
-      text-transform: uppercase;
+      font-size: 7pt;
+      color: #aaa;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      margin-bottom: 1px;
+      /* text-transform: uppercase を廃止 — 日本語混在で読みづらかった */
     }
-    /* 本行と詳細行の間の borderを薄くする (視覚的に「同じ明細」と分かる) */
+    /* 本行と詳細行は連続のものなので、間の境界線は消す。
+       次の明細との境界は次行 (`tr` 単体) の border-bottom で確保される。 */
     table.items tr.has-detail > td {
-      border-bottom: 1px dashed #e3e3e3;
+      border-bottom: 0;
+    }
+    /* item-spec-block は detail-cell 内では行間タイト & 余白詰めで読みやすく */
+    table.items tr.detail-row .item-spec-block {
+      font-size: 8.5pt;
+      color: #333;
+      line-height: 1.35;
+      white-space: pre-wrap;
     }
 
     .pay-method-badge {
@@ -412,20 +424,15 @@
         <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
       </tr>
       {{#if (or spec detailText)}}
-      {{!-- Phase 17n: 仕様 / 詳細を全列幅で描画する詳細行。
-           本行と境界線を共有することで「同じ明細」と分かるようにする。
-           Phase 22.8.1: 旧 Phase 22.8 で SUBSCRIPTION 時に黄色ハイライトボックスで
-           周期/単価/数量/期間総額/支払日/契約期間を再記載していたが、すべて
-           表本行と重複しており冗長なため削除。SUBSCRIPTION 行であることは
-           「支払方法」列の SUBSCRIPTION バッジ + サブテキスト「月次」等で十分。
-           この detail-row は本来の用途 (仕様 / 業務内容の長文記述) に専念する。 --}}
+      {{!-- Phase 17n / 22.8.1 / 22.21.53: 仕様 / 詳細を全列幅で描画する詳細行。
+           Phase 22.21.53: ボックス装飾と "仕様 / 詳細" ラベルを廃止し、品目名の
+           直下に自然に続くテキスト群として表示 (白背景・border 無し)。 --}}
       <tr class="detail-row">
         <td></td>
         <td colspan="7">
           <div class="detail-cell">
-            <div class="detail-label">仕様 / 詳細</div>
             {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
-            {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
+            {{#if detailText}}<div class="item-spec-block"{{#if spec}} style="margin-top:2px;"{{/if}}>{{detailText}}</div>{{/if}}
           </div>
         </td>
       </tr>
