@@ -83,6 +83,17 @@ const CYCLE_OPTIONS: Array<{
   { value: "ANNUAL", label: "年次", short: "年次" },
 ];
 
+// Phase 22.21.44: 支払条件プルダウン候補。
+//   業務委託の基本類型 (請負 / 準委任) を 2 択で選ばせる。
+//   - 請負: 仕事の完成 (成果物の引渡し) が報酬支払の対価 — 民法 632条
+//   - 準委任: 業務処理の遂行 (時間・労務) が報酬支払の対価 — 民法 656条
+//   旧自由テキスト ("翌月末" 等) は受け入れない。空欄もしくはこの 2 値のみ。
+const PAYMENT_TERMS_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "— 未選択 —" },
+  { value: "請負", label: "請負" },
+  { value: "準委任", label: "準委任" },
+];
+
 // サブスクの「支払日 表示」を組み立てる。
 //   月次: "毎月25日" / 月末: "毎月末日"
 //   四半期/半年/年次: "毎期25日" (or 月末)
@@ -385,7 +396,8 @@ export const LineItemTable: React.FC<Props> = ({
                             )}
                           </div>
                         </td>
-                        {/* Phase 22.8: SUBSCRIPTION なら 周期 ラベル、それ以外なら 支払条件 自由テキスト */}
+                        {/* Phase 22.8: SUBSCRIPTION なら 周期 ラベル
+                            Phase 22.21.44: それ以外は 請負/準委任 のプルダウン (旧自由テキスト廃止) */}
                         <td className="p-2 align-top">
                           {it.calc_method === "SUBSCRIPTION" ? (
                             <div className="flex items-center gap-1 text-[11px] font-mono">
@@ -397,16 +409,38 @@ export const LineItemTable: React.FC<Props> = ({
                               </span>
                             </div>
                           ) : (
-                            cellInput(
-                              it.payment_terms ?? it.payment_method,
-                              (v) =>
+                            <select
+                              value={
+                                // 旧自由テキストが入っていた場合、請負/準委任 以外は
+                                // 未選択扱いにして select の初期値を空に戻す。
+                                (() => {
+                                  const cur =
+                                    it.payment_terms ?? it.payment_method ?? "";
+                                  return cur === "請負" || cur === "準委任"
+                                    ? cur
+                                    : "";
+                                })()
+                              }
+                              onChange={(e) =>
                                 update(idx, {
-                                  payment_terms: v,
-                                  payment_method: v,
-                                }),
-                              "text",
-                              "翌月末"
-                            )
+                                  payment_terms: e.target.value,
+                                  payment_method: e.target.value,
+                                })
+                              }
+                              disabled={readOnly}
+                              className={cn(
+                                "w-full text-[11px] font-mono bg-transparent",
+                                "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                                "disabled:opacity-60 disabled:cursor-not-allowed"
+                              )}
+                              title="業務委託の類型を選択 (請負: 成果物単位 / 準委任: 役務単位)"
+                            >
+                              {PAYMENT_TERMS_OPTIONS.map((opt) => (
+                                <option key={opt.value} value={opt.value}>
+                                  {opt.label}
+                                </option>
+                              ))}
+                            </select>
                           )}
                         </td>
                         {/* Phase 22.8: SUBSCRIPTION なら 支払日サマリ (毎月N日)、それ以外なら delivery_date */}

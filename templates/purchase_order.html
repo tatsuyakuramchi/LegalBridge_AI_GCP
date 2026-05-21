@@ -606,12 +606,24 @@
       <th style="width:30%;">受領日（承諾日）</th>
       <td>{{formatDate VENDOR_ACCEPT_DATE}}</td>
     </tr>
+    {{!-- Phase 22.21.44: 取引先が法人 (VENDOR_IS_CORPORATION='法人') のときは
+         会社名を 受領者署名行の前に自動表示する。VENDOR_NAME はフォームの
+         [取引先] ボタンで vendor マスタから自動補完される。
+         個人事業主の場合はこの行を省略し、氏名のみで完結させる。 --}}
+    {{#if (eq VENDOR_IS_CORPORATION "法人")}}
+    <tr>
+      <th>会社名（受注者）</th>
+      <td>{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}} {{VENDOR_SUFFIX}}{{/if}}</td>
+    </tr>
+    {{/if}}
     <tr>
       <th>受領者（承諾者）</th>
       <td>
         {{VENDOR_ACCEPT_NAME}}
         <div class="sign-box"></div>
-        <div class="small-muted">※ 記名押印（または署名）欄</div>
+        <div class="small-muted">
+          ※ 記名押印（または署名）欄{{#if (eq VENDOR_IS_CORPORATION "法人")}} — 受注者の権限ある代表者または担当者の記名押印をお願いします{{/if}}
+        </div>
       </td>
     </tr>
   </table>
