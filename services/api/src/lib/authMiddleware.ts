@@ -405,3 +405,126 @@ export function requireDepartmentRole(opts: {
     return next();
   };
 }
+
+/**
+ * Phase 22.21.36: アプリ内ロール (staff.app_role) ベースの認可ミドルウェア。
+ *
+ *   - requireIapUser の後段で使う前提 (req.user.email 必須)
+ *   - staff.app_role を引いて allowedRoles に含まれていれば next、
+ *     そうでなければ 403。
+ *   - 明示的に LB_APP_ADMIN_EMAILS env (カンマ区切り) に列挙された人は
+ *     DB を引かず無条件に admin 扱い (= bootstrap / 緊急時のための bypass)。
+ *   - portal_secret ソース (admin-ui からの内部呼び出し) も無条件通過。
+ *
+ *   使い方:
+ *     requireAppRole({
+ *       resourceLabel: "admin:dashboard",
+ *       allowedRoles: ["admin"],
+ *       renderErrorPage,
+ *     })
+ *
+ *   応答:
+ *     - HTML routes: renderErrorPage で 403 ページ
+ *     - API routes:  JSON { ok:false, error: "forbidden" }
+ */
+export function requireAppRole(opts: {
+  resourceLabel: string;
+  allowedRoles: string[]; // 例: ["admin"]
+  renderErrorPage?: (title: string, message: string, status: number) => string;
+}): RequestHandler {
+  const renderErr = opts.renderErrorPage || defaultErrorHtml;
+  const allowed = new Set(opts.allowedRoles.map((r) => r.trim().toLowerCase()));
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const user: ReqUser | undefined = (req as any).user;
+    const email = (user?.email || "").trim().toLowerCase();
+    const acceptsJson =
+      String(req.headers["accept"] || "").includes("application/json") ||
+      req.path.startsWith("/api/");
+    const sendForbidden = (msg: string, currentRole: string | null) => {
+      if (acceptsJson) {
+        return res.status(403).json({ ok: false, error: msg });
+      }
+      return res
+        .status(403)
+        .type("html")
+        .send(
+          renderErr(
+            "Forbidden",
+            `この機能は管理者ロール (app_role=admin) を持つユーザーのみ利用できます。<br>` +
+              `管理者にロール付与を依頼してください。<br>` +
+              `<small>email: ${email || "(unknown)"} / role: ${
+                currentRole || "(none)"
+              }</small>`,
+            403
+          )
+        );
+    };
+
+    // 1) Portal-secret 経由 (admin-ui の内部呼び出し) は無条件通過
+    if (user?.source === "portal_secret") {
+      logAccess(req, "allow_signed", {
+        layer: "app_role",
+        resource: opts.resourceLabel,
+        reason: "portal_secret",
+      });
+      return next();
+    }
+
+    // 2) Bootstrap allowlist (env)
+    const bootstrapAdmins = (process.env.LB_APP_ADMIN_EMAILS || "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean);
+    if (email && bootstrapAdmins.includes(email) && allowed.has("admin")) {
+      logAccess(req, "allow_signed", {
+        layer: "app_role",
+        resource: opts.resourceLabel,
+        reason: "bootstrap_admin",
+        email,
+      });
+      return next();
+    }
+
+    if (!email) {
+      return sendForbidden("認証情報が不明です", null);
+    }
+
+    // 3) staff.app_role を引く
+    let role: string | null = null;
+    try {
+      const r = await query(
+        "SELECT app_role FROM staff WHERE LOWER(email) = $1 LIMIT 1",
+        [email]
+      );
+      role = ((r.rows[0]?.app_role as string) || "").trim().toLowerCase() || null;
+    } catch (err) {
+      console.warn(
+        `[app_role] staff lookup failed for ${email} on ${opts.resourceLabel}:`,
+        err
+      );
+    }
+
+    if (role && allowed.has(role)) {
+      logAccess(req, "allow_signed", {
+        layer: "app_role",
+        resource: opts.resourceLabel,
+        reason: "db_role",
+        email,
+        role,
+      });
+      return next();
+    }
+
+    logAccess(req, "deny", {
+      layer: "app_role",
+      resource: opts.resourceLabel,
+      email,
+      role,
+    });
+    return sendForbidden(
+      `app_role=${role || "viewer"} は ${opts.resourceLabel} へのアクセス権がありません`,
+      role
+    );
+  };
+}

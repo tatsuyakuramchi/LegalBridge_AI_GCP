@@ -32,11 +32,13 @@ import {
   ringiPage as renderRingiPage,
 } from "./src/views/contractSearchHtml.ts";
 // Phase 17s: HMAC 短期署名 URL + IAP 2 層防御。
+// Phase 22.21.36: requireAppRole を追加 (staff.app_role ベース)。
 // Phase 17z-2: requireIapUser / requireDepartmentRole を追加 (恒久 URL 対応)。
 import {
   requireSignedUrl,
   requireIapUser,
   requireDepartmentRole,
+  requireAppRole,
 } from "./src/lib/authMiddleware.ts";
 import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
 // Phase 17x: LegalOn 契約台帳 CSV 取り込み (search-api 内に閉じた書き込み機能)。
@@ -52,6 +54,8 @@ import { vendorMasterPage } from "./src/views/vendorMasterHtml.ts";
 // Phase 22.21.35: 取引先 CSV 取り込み UI を search-api に集約 (保守対象統一)。
 //   admin-ui (React) から直接アクセスせず、本ページ /imports/vendor で完結。
 import { vendorImportPage } from "./src/views/vendorImportHtml.ts";
+// Phase 22.21.36: 管理者ダッシュボード。インポート機能 + ユーザー権限管理。
+import { adminDashboardPage } from "./src/views/adminDashboardHtml.ts";
 import {
   listVendors,
   getVendor,
@@ -317,9 +321,12 @@ async function startServer() {
   app.get(
     "/imports/legalon",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    // Phase 22.21.36: requireDepartmentRole → requireAppRole に変更。
+    //   個人単位の admin 権限で制御 (staff.app_role)。
+    //   後方互換: bootstrap 期間中は LB_APP_ADMIN_EMAILS env でも通過。
+    requireAppRole({
       resourceLabel: "imports:legalon",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     (req, res) => {
@@ -337,6 +344,93 @@ async function startServer() {
   );
 
   // -------------------------------------------------------------------
+  // Phase 22.21.36: /admin ダッシュボード
+  //   staff.app_role='admin' (or LB_APP_ADMIN_EMAILS) のみアクセス可能。
+  //   ユーザー権限管理 + データ取込ショートカット + マスター CRUD リンク。
+  // -------------------------------------------------------------------
+  app.get(
+    "/admin",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "admin:dashboard",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    (req, res) => {
+      try {
+        const user = (req as any).user as { email?: string | null } | undefined;
+        res
+          .type("html")
+          .send(adminDashboardPage({ currentEmail: user?.email || null }));
+      } catch (error) {
+        console.error("/admin failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // Phase 22.21.36: app_role 切替エンドポイント (admin 限定)
+  //   PATCH /api/master/staff/:email/role
+  //   body: { app_role: "admin" | "viewer" }
+  //   自分自身を viewer に降格しようとしている場合 (= admin が 0 人になる懸念)
+  //   は警告を出すが許可。緊急時は LB_APP_ADMIN_EMAILS env で bypass 可能。
+  app.patch(
+    "/api/master/staff/:email/role",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "admin:staff-role",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "10kb" }),
+    async (req, res) => {
+      try {
+        const targetEmail = String(req.params.email || "").trim().toLowerCase();
+        const newRole = String(req.body?.app_role || "").trim().toLowerCase();
+        if (!targetEmail) {
+          return res.status(400).json({ ok: false, error: "email is required" });
+        }
+        if (!["admin", "viewer"].includes(newRole)) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "app_role must be 'admin' or 'viewer'" });
+        }
+        const result = await query(
+          `UPDATE staff
+              SET app_role = $1
+            WHERE LOWER(email) = $2
+            RETURNING id, email, staff_name, app_role`,
+          [newRole, targetEmail]
+        );
+        if (result.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ ok: false, error: `staff not found: ${targetEmail}` });
+        }
+        const actor = ((req as any).user?.email || "?").toString();
+        console.log(
+          JSON.stringify({
+            evt: "staff_role_change",
+            actor,
+            target_email: targetEmail,
+            new_role: newRole,
+            ts: new Date().toISOString(),
+          })
+        );
+        res.json({ ok: true, staff: result.rows[0] });
+      } catch (error: any) {
+        console.error("PATCH /api/master/staff/:email/role failed:", error);
+        res
+          .status(500)
+          .json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
   // /imports/vendor — 取引先マスター CSV 取り込み (Phase 22.21.35)
   //
   // search-api 側に集約する方針 (保守対象統一)。admin-ui 側からは
@@ -346,9 +440,10 @@ async function startServer() {
   app.get(
     "/imports/vendor",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    // Phase 22.21.36: admin ロールのみ
+    requireAppRole({
       resourceLabel: "imports:vendor",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     (req, res) => {
@@ -383,9 +478,10 @@ async function startServer() {
   app.post(
     "/api/imports/legalon-csv",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    // Phase 22.21.36: admin ロールのみ書き込み可
+    requireAppRole({
       resourceLabel: "imports:legalon",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     express.json({ limit: "20mb" }),
@@ -555,9 +651,10 @@ async function startServer() {
   app.post(
     "/api/master/vendors/import-csv",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    // Phase 22.21.36: admin ロールのみ書き込み可
+    requireAppRole({
       resourceLabel: "master:vendors:import",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     express.json({ limit: "20mb" }),
@@ -682,9 +779,10 @@ async function startServer() {
   app.post(
     "/api/master/staff/import-csv",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    // Phase 22.21.36: admin ロールのみ書き込み可
+    requireAppRole({
       resourceLabel: "master:staff:import",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     express.json({ limit: "20mb" }),

@@ -18,10 +18,16 @@ export type StaffRow = {
   phone?: string | null;
   department?: string | null;
   department_code?: string | null;
+  // Phase 22.21.36: アプリ内ロール ('admin' / 'viewer')
+  app_role?: string | null;
 };
 
+// Phase 22.21.36: app_role を SELECT に追加。
+//   未マイグレーション環境では undefined_column になるため、
+//   COALESCE で 'viewer' に fallback。
 const SELECT_COLUMNS = `
-  id, slack_user_id, staff_name, email, phone, department, department_code
+  id, slack_user_id, staff_name, email, phone, department, department_code,
+  COALESCE(app_role, 'viewer') AS app_role
 `;
 
 export async function listStaff(
