@@ -59,58 +59,135 @@ function dedupeVendorsById(rows: any[]) {
   return Array.from(map.values());
 }
 
+/**
+ * Phase 22.21.47: 全角/半角の差を意識せずに検索できるよう、SQL 両側を NFKC
+ * 正規化した上で ILIKE 比較する。例:
+ *   DB="ＧＣＴ研究所" / 入力="GCT" → 旧仕様では ILIKE が失敗。
+ *   normalize(DB,NFKC)="GCT研究所" / normalize(入力,NFKC)="GCT" → ヒット。
+ *
+ * `normalize(text, NFKC)` は PostgreSQL 13+ で利用可能。Cloud SQL の現行設定は
+ * PG14+ のため通常通る。旧 PG 環境で 42883 (undefined_function) が出た場合は
+ * 旧来の ILIKE フォーム (NFKC 無し) に自動 fallback する。
+ */
+const VENDOR_SEARCH_SQL_NFKC = `
+  SELECT *
+    FROM (
+      SELECT
+        v.*,
+        CASE
+          WHEN normalize(v.vendor_name, NFKC) ILIKE normalize($1, NFKC) THEN 0
+          WHEN normalize(v.trade_name,  NFKC) ILIKE normalize($1, NFKC) THEN 0
+          WHEN normalize(v.pen_name,    NFKC) ILIKE normalize($1, NFKC) THEN 0
+          WHEN normalize(v.aliases,     NFKC) ILIKE normalize($1, NFKC) THEN 0
+          WHEN normalize(v.vendor_code, NFKC) ILIKE normalize($1, NFKC) THEN 0
+          WHEN normalize(v.vendor_name, NFKC) ILIKE normalize($2, NFKC) THEN 1
+          WHEN normalize(v.trade_name,  NFKC) ILIKE normalize($2, NFKC) THEN 1
+          WHEN normalize(v.pen_name,    NFKC) ILIKE normalize($2, NFKC) THEN 1
+          WHEN normalize(v.aliases,     NFKC) ILIKE normalize($2, NFKC) THEN 1
+          WHEN normalize(v.vendor_code, NFKC) ILIKE normalize($2, NFKC) THEN 1
+          WHEN normalize(v.vendor_name, NFKC) ILIKE normalize($3, NFKC) THEN 2
+          WHEN normalize(v.trade_name,  NFKC) ILIKE normalize($3, NFKC) THEN 2
+          WHEN normalize(v.pen_name,    NFKC) ILIKE normalize($3, NFKC) THEN 2
+          WHEN normalize(v.aliases,     NFKC) ILIKE normalize($3, NFKC) THEN 2
+          ELSE 9
+        END AS match_priority
+      FROM vendors v
+      WHERE normalize(v.vendor_name, NFKC) ILIKE normalize($1, NFKC)
+         OR normalize(v.trade_name,  NFKC) ILIKE normalize($1, NFKC)
+         OR normalize(v.pen_name,    NFKC) ILIKE normalize($1, NFKC)
+         OR normalize(v.aliases,     NFKC) ILIKE normalize($1, NFKC)
+         OR normalize(v.vendor_code, NFKC) ILIKE normalize($1, NFKC)
+         OR normalize(v.vendor_name, NFKC) ILIKE normalize($2, NFKC)
+         OR normalize(v.trade_name,  NFKC) ILIKE normalize($2, NFKC)
+         OR normalize(v.pen_name,    NFKC) ILIKE normalize($2, NFKC)
+         OR normalize(v.aliases,     NFKC) ILIKE normalize($2, NFKC)
+         OR normalize(v.vendor_code, NFKC) ILIKE normalize($2, NFKC)
+         OR normalize(v.vendor_name, NFKC) ILIKE normalize($3, NFKC)
+         OR normalize(v.trade_name,  NFKC) ILIKE normalize($3, NFKC)
+         OR normalize(v.pen_name,    NFKC) ILIKE normalize($3, NFKC)
+         OR normalize(v.aliases,     NFKC) ILIKE normalize($3, NFKC)
+    ) matched
+   ORDER BY match_priority ASC, vendor_name ASC, id ASC
+   LIMIT $4
+`;
+
+const VENDOR_SEARCH_SQL_LEGACY = `
+  SELECT *
+    FROM (
+      SELECT
+        v.*,
+        CASE
+          WHEN v.vendor_name ILIKE $1 THEN 0
+          WHEN v.trade_name  ILIKE $1 THEN 0
+          WHEN v.pen_name    ILIKE $1 THEN 0
+          WHEN v.aliases     ILIKE $1 THEN 0
+          WHEN v.vendor_code ILIKE $1 THEN 0
+          WHEN v.vendor_name ILIKE $2 THEN 1
+          WHEN v.trade_name  ILIKE $2 THEN 1
+          WHEN v.pen_name    ILIKE $2 THEN 1
+          WHEN v.aliases     ILIKE $2 THEN 1
+          WHEN v.vendor_code ILIKE $2 THEN 1
+          WHEN v.vendor_name ILIKE $3 THEN 2
+          WHEN v.trade_name  ILIKE $3 THEN 2
+          WHEN v.pen_name    ILIKE $3 THEN 2
+          WHEN v.aliases     ILIKE $3 THEN 2
+          ELSE 9
+        END AS match_priority
+      FROM vendors v
+      WHERE v.vendor_name ILIKE $1
+         OR v.trade_name  ILIKE $1
+         OR v.pen_name    ILIKE $1
+         OR v.aliases     ILIKE $1
+         OR v.vendor_code ILIKE $1
+         OR v.vendor_name ILIKE $2
+         OR v.trade_name  ILIKE $2
+         OR v.pen_name    ILIKE $2
+         OR v.aliases     ILIKE $2
+         OR v.vendor_code ILIKE $2
+         OR v.vendor_name ILIKE $3
+         OR v.trade_name  ILIKE $3
+         OR v.pen_name    ILIKE $3
+         OR v.aliases     ILIKE $3
+    ) matched
+   ORDER BY match_priority ASC, vendor_name ASC, id ASC
+   LIMIT $4
+`;
+
 export async function findVendorsByName(counterpartyName: string, limit: number = 10) {
   const normalized = normalizeName(counterpartyName);
   if (!normalized) return [];
 
-  const exactValue = counterpartyName;
-  const rawLike = `%${counterpartyName}%`;
+  // 入力側も JS で NFKC 正規化しておく (DB 側は SQL で normalize() するので
+  // 二重正規化になるが、NFKC は冪等なので問題ない)。
+  const inputNfkc = String(counterpartyName).normalize("NFKC");
+  const exactValue = inputNfkc;
+  const rawLike = `%${inputNfkc}%`;
   const normalizedLike = `%${normalized}%`;
 
-  const res = await query(
-    `SELECT *
-       FROM (
-         SELECT
-           v.*,
-           CASE
-             WHEN v.vendor_name ILIKE $1 THEN 0
-             WHEN v.trade_name ILIKE $1 THEN 0
-             WHEN v.pen_name ILIKE $1 THEN 0
-             WHEN v.aliases ILIKE $1 THEN 0
-             WHEN v.vendor_code ILIKE $1 THEN 0
-             WHEN v.vendor_name ILIKE $2 THEN 1
-             WHEN v.trade_name ILIKE $2 THEN 1
-             WHEN v.pen_name ILIKE $2 THEN 1
-             WHEN v.aliases ILIKE $2 THEN 1
-             WHEN v.vendor_code ILIKE $2 THEN 1
-             WHEN v.vendor_name ILIKE $3 THEN 2
-             WHEN v.trade_name ILIKE $3 THEN 2
-             WHEN v.pen_name ILIKE $3 THEN 2
-             WHEN v.aliases ILIKE $3 THEN 2
-             ELSE 9
-           END AS match_priority
-         FROM vendors v
-         WHERE v.vendor_name ILIKE $1
-            OR v.trade_name ILIKE $1
-            OR v.pen_name ILIKE $1
-            OR v.aliases ILIKE $1
-            OR v.vendor_code ILIKE $1
-            OR v.vendor_name ILIKE $2
-            OR v.trade_name ILIKE $2
-            OR v.pen_name ILIKE $2
-            OR v.aliases ILIKE $2
-            OR v.vendor_code ILIKE $2
-            OR v.vendor_name ILIKE $3
-            OR v.trade_name ILIKE $3
-            OR v.pen_name ILIKE $3
-            OR v.aliases ILIKE $3
-       ) matched
-      ORDER BY match_priority ASC, vendor_name ASC, id ASC
-      LIMIT $4`,
-    [exactValue, rawLike, normalizedLike, limit]
-  );
-
-  return dedupeVendorsById(res.rows).slice(0, limit);
+  try {
+    const res = await query(VENDOR_SEARCH_SQL_NFKC, [
+      exactValue,
+      rawLike,
+      normalizedLike,
+      limit,
+    ]);
+    return dedupeVendorsById(res.rows).slice(0, limit);
+  } catch (err: any) {
+    // PG12 以下では normalize() が無く 42883 (undefined_function) になる。
+    if (err?.code === "42883") {
+      console.warn(
+        "[contractCheck] normalize(NFKC) unsupported; falling back to plain ILIKE search"
+      );
+      const res = await query(VENDOR_SEARCH_SQL_LEGACY, [
+        exactValue,
+        rawLike,
+        normalizedLike,
+        limit,
+      ]);
+      return dedupeVendorsById(res.rows).slice(0, limit);
+    }
+    throw err;
+  }
 }
 
 export async function findVendorByName(counterpartyName: string) {

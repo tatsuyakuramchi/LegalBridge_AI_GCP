@@ -127,11 +127,22 @@ export async function listVendors(
   const limit = Math.max(1, Math.min(5000, Number(opts.limit ?? 5000)));
   const offset = Math.max(0, Number(opts.offset ?? 0));
 
+  // Phase 22.21.47: 全角/半角の差を吸収するため WHERE 句両側を NFKC 正規化。
+  //   PG12 以下では normalize() が無く 42883 で落ちるので、その場合は legacy
+  //   ILIKE (NFKC 無し) に自動 fallback する。
   let where = "";
+  let whereLegacy = "";
   const params: any[] = [];
   if (q) {
-    params.push(`%${q}%`);
+    params.push(`%${String(q).normalize("NFKC")}%`);
     where = `WHERE
+      normalize(vendor_code,            NFKC) ILIKE normalize($1, NFKC) OR
+      normalize(vendor_name,            NFKC) ILIKE normalize($1, NFKC) OR
+      normalize(trade_name,             NFKC) ILIKE normalize($1, NFKC) OR
+      normalize(pen_name,               NFKC) ILIKE normalize($1, NFKC) OR
+      normalize(COALESCE(aliases, ''),  NFKC) ILIKE normalize($1, NFKC)
+    `;
+    whereLegacy = `WHERE
       vendor_code ILIKE $1 OR
       vendor_name ILIKE $1 OR
       trade_name ILIKE $1 OR
@@ -140,11 +151,27 @@ export async function listVendors(
     `;
   }
 
-  const countRes = await query(
-    `SELECT COUNT(*)::int AS c FROM vendors ${where}`,
-    params
-  );
-  const total = Number(countRes.rows[0]?.c || 0);
+  // 件数取得は同じ where を使う (失敗時に再試行)
+  let total = 0;
+  try {
+    const countRes = await query(
+      `SELECT COUNT(*)::int AS c FROM vendors ${where}`,
+      params
+    );
+    total = Number(countRes.rows[0]?.c || 0);
+  } catch (err: any) {
+    if (err?.code === "42883" && where) {
+      const countRes = await query(
+        `SELECT COUNT(*)::int AS c FROM vendors ${whereLegacy}`,
+        params
+      );
+      total = Number(countRes.rows[0]?.c || 0);
+      // ↓ 本体クエリも legacy に切替
+      where = whereLegacy;
+    } else {
+      throw err;
+    }
+  }
 
   params.push(limit, offset);
   // Phase 22.13: vendor_rep が未追加の環境ではフォールバック (legacy SELECT)

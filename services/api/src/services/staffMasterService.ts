@@ -62,11 +62,20 @@ export async function listStaff(
   const limit = Math.max(1, Math.min(5000, Number(opts.limit ?? 5000)));
   const offset = Math.max(0, Number(opts.offset ?? 0));
 
+  // Phase 22.21.47: 全角/半角の差を吸収するため WHERE 句両側を NFKC 正規化。
+  //   PG12 以下では normalize() が無く 42883 で落ちるため、legacy にフォールバック。
   let where = "";
+  let whereLegacy = "";
   const params: any[] = [];
   if (q) {
-    params.push(`%${q}%`);
+    params.push(`%${String(q).normalize("NFKC")}%`);
     where = `WHERE
+      normalize(slack_user_id,                NFKC) ILIKE normalize($1, NFKC) OR
+      normalize(staff_name,                   NFKC) ILIKE normalize($1, NFKC) OR
+      normalize(COALESCE(email, ''),          NFKC) ILIKE normalize($1, NFKC) OR
+      normalize(COALESCE(department, ''),     NFKC) ILIKE normalize($1, NFKC)
+    `;
+    whereLegacy = `WHERE
       slack_user_id ILIKE $1 OR
       staff_name ILIKE $1 OR
       COALESCE(email, '') ILIKE $1 OR
@@ -74,11 +83,25 @@ export async function listStaff(
     `;
   }
 
-  const countRes = await query(
-    `SELECT COUNT(*)::int AS c FROM staff ${where}`,
-    params
-  );
-  const total = Number(countRes.rows[0]?.c || 0);
+  let total = 0;
+  try {
+    const countRes = await query(
+      `SELECT COUNT(*)::int AS c FROM staff ${where}`,
+      params
+    );
+    total = Number(countRes.rows[0]?.c || 0);
+  } catch (err: any) {
+    if (err?.code === "42883" && where) {
+      const countRes = await query(
+        `SELECT COUNT(*)::int AS c FROM staff ${whereLegacy}`,
+        params
+      );
+      total = Number(countRes.rows[0]?.c || 0);
+      where = whereLegacy;
+    } else {
+      throw err;
+    }
+  }
 
   params.push(limit, offset);
   const res = await queryWithRoleFallback(
