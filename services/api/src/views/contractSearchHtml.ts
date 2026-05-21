@@ -528,8 +528,14 @@ export function ringiPage(
 
 /**
  * エラー / 認証失敗 / Not found 用のシンプル HTML。
+ *
+ * Phase 22.21.39: 改行 (\n) を <br> に変換するよう改良。
+ *   呼び出し側は HTML タグを書かず \n を使うだけで段落分けできる。
+ *   メール / role 等の動的値も先に esc() してから埋め込めば XSS 安全。
  */
 export function errorPage(title: string, message: string, status = 404): string {
+  // \n → <br> 変換。これ以外の HTML は全て escape される。
+  const messageHtml = esc(message).replace(/\n/g, "<br>");
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -542,7 +548,7 @@ export function errorPage(title: string, message: string, status = 404): string 
 <body>
   <div class="container">
     <header class="page-header"><h1>${esc(title)}</h1></header>
-    <div class="notfound">${esc(message)}</div>
+    <div class="notfound">${messageHtml}</div>
     <div class="footer">LegalBridge · Search API · HTTP ${status}</div>
   </div>
 </body>

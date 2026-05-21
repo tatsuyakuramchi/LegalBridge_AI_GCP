@@ -380,10 +380,14 @@ export function requireDepartmentRole(opts: {
         .send(
           renderErr(
             "Forbidden",
-            `この機能は権限が付与されたユーザーのみ利用できます。<br>` +
-              `部署マスター (staff) で部署を「経営管理本部」「法務」などの` +
-              `許可対象に登録してから再度お試しください。<br>` +
-              `<small>email: ${email || "(unknown)"} / dept: ${dept || "(unregistered)"}</small>`,
+            // Phase 22.21.39: \n -> <br> 変換に対応
+            "この機能は権限が付与されたユーザーのみ利用できます。\n" +
+              "部署マスター (staff) で部署を「経営管理本部」「法務」などの" +
+              "許可対象に登録してから再度お試しください。\n" +
+              "\n" +
+              `email: ${email || "(unknown)"}    dept: ${
+                dept || "(unregistered)"
+              }`,
             403
           )
         );
@@ -451,11 +455,14 @@ export function requireAppRole(opts: {
         .send(
           renderErr(
             "Forbidden",
-            `この機能は管理者ロール (app_role=admin) を持つユーザーのみ利用できます。<br>` +
-              `管理者にロール付与を依頼してください。<br>` +
-              `<small>email: ${email || "(unknown)"} / role: ${
+            // Phase 22.21.39: errorPage が \n → <br> 変換するようになったため
+            //   HTML タグは使わず plain text + 改行 で組み立てる。
+            "この機能は管理者ロール (app_role=admin) を持つユーザーのみ利用できます。\n" +
+              "管理者にロール付与を依頼してください。\n" +
+              "\n" +
+              `email: ${email || "(unknown)"}    role: ${
                 currentRole || "(none)"
-              }</small>`,
+              }`,
             403
           )
         );
