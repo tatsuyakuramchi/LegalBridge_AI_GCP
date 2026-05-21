@@ -22,17 +22,43 @@ export function RequestsPage() {
   const [quickCreateParent, setQuickCreateParent] = React.useState<
     string | undefined
   >(undefined)
+  // Phase 22.21.54: ステータスフィルタ。null = ALL、それ以外は status.name で絞り込み
+  const [statusFilter, setStatusFilter] = React.useState<string | null>(null)
 
   const openQuickCreate = (parentKey?: string) => {
     setQuickCreateParent(parentKey)
     setQuickCreateOpen(true)
   }
 
-  const filtered = issues.filter(
-    (i) =>
-      i.issueKey.toLowerCase().includes(search.toLowerCase()) ||
-      i.summary.toLowerCase().includes(search.toLowerCase())
-  )
+  // Phase 22.21.54: 全 issues からユニークな status を集計。
+  //   - ステータス名 / 件数 を sort してチップ表示用に整える
+  //   - status が undefined の課題は "未設定" として 1 つのバケットにまとめる
+  const statusBuckets = React.useMemo(() => {
+    const counter = new Map<string, number>()
+    for (const i of issues) {
+      const name = String((i as any)?.status?.name || "").trim() || "未設定"
+      counter.set(name, (counter.get(name) || 0) + 1)
+    }
+    // 件数 desc → 名前 asc
+    return Array.from(counter.entries())
+      .map(([name, count]) => ({ name, count }))
+      .sort((a, b) => (b.count - a.count) || a.name.localeCompare(b.name, "ja"))
+  }, [issues])
+
+  const filtered = issues.filter((i) => {
+    // テキスト検索
+    const q = search.toLowerCase()
+    const matchesText =
+      i.issueKey.toLowerCase().includes(q) ||
+      i.summary.toLowerCase().includes(q)
+    if (!matchesText) return false
+    // ステータス絞り込み
+    if (statusFilter !== null) {
+      const sName = String((i as any)?.status?.name || "").trim() || "未設定"
+      if (sName !== statusFilter) return false
+    }
+    return true
+  })
 
   const open = (key: string) => {
     setSelectedIssue(key)
@@ -110,6 +136,49 @@ export function RequestsPage() {
         }}
         defaultParentIssueKey={quickCreateParent}
       />
+
+      {/* Phase 22.21.54: ステータスフィルタ chip 群。
+          ALL + 各ステータス名(件数) をクリックで絞り込み。選択中は緑塗り。
+          0 件のステータスは出さない (= statusBuckets で既に集計済み)。 */}
+      {statusBuckets.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono uppercase tracking-[0.16em]">
+          <span className="text-muted-foreground">Status:</span>
+          <button
+            type="button"
+            onClick={() => setStatusFilter(null)}
+            className={`px-2 py-1 rounded-sm border transition-colors ${
+              statusFilter === null
+                ? "bg-foreground text-background border-foreground"
+                : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
+            }`}
+          >
+            ALL <span className="opacity-70">({issues.length})</span>
+          </button>
+          {statusBuckets.map((b) => {
+            const active = statusFilter === b.name
+            return (
+              <button
+                key={`status-${b.name}`}
+                type="button"
+                onClick={() => setStatusFilter(active ? null : b.name)}
+                className={`px-2 py-1 rounded-sm border transition-colors ${
+                  active
+                    ? "bg-emerald-600 text-white border-emerald-700"
+                    : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
+                }`}
+                title={active ? "クリックで解除" : `${b.name} だけ表示`}
+              >
+                {b.name} <span className="opacity-70">({b.count})</span>
+              </button>
+            )
+          })}
+          {statusFilter !== null && (
+            <span className="text-muted-foreground">
+              → {filtered.length} 件表示中
+            </span>
+          )}
+        </div>
+      )}
 
       {filtered.length === 0 ? (
         <div className="p-16 text-center border border-dashed border-border rounded-md">
