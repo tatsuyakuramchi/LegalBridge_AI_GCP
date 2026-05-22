@@ -52,6 +52,10 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/documents\/pending-pdf(?:\?|$)/,
   /^\/api\/documents\/by-number\/(?:\/|\?|$|.)/,
   /^\/api\/documents\/\d+(?:\/|\?|$)/,
+  // Phase 22.21.48 / 22.21.59: 部分検索エンドポイントも worker のみ実装。
+  //   旧仕様の by-number (完全一致) と違い、search-api 側にミラーが無いので
+  //   明示的に WRITE 経路にルーティングしないと search-api で 404 になる。
+  /^\/api\/documents\/search(?:\?|$|\/)/,
   // Phase 17: 稟議マスタの read/write は worker (junction テーブル含む)
   /^\/api\/ringi(?:\/|$|\?)/,
 ];
