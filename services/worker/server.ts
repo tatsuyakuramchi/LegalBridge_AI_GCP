@@ -3536,6 +3536,115 @@ ${details}
     }
   });
 
+  /**
+   * Phase 22.21.61: 過去のアーカイブをマスター番号に手動でリネーム。
+   *
+   *   POST /api/master/contracts/:id/rename-archive
+   *   body: { from_document_number: "ARC-ILT-2026-0001" }
+   *
+   * 動作:
+   *   1. contract_capabilities.id でマスター行を引き、現在の document_number
+   *      (= "正" の番号) を取得
+   *   2. body.from_document_number に対応する documents 行 +
+   *      external_assets 行を新番号にリネーム
+   *   3. UNIQUE 違反は安全に検知して 409 で返す
+   *
+   * Phase 22.21.60 (master 保存時の自動同期) でカバーできない「過去ドリフト
+   * の手動修復」用エンドポイント。
+   */
+  app.post(
+    "/api/master/contracts/:id/rename-archive",
+    express.json(),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        const from = String(req.body?.from_document_number || "").trim();
+        if (!Number.isFinite(id) || id <= 0) {
+          return res.status(400).json({ ok: false, error: "invalid id" });
+        }
+        if (!from) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "from_document_number is required" });
+        }
+        const master = await query(
+          `SELECT document_number FROM contract_capabilities WHERE id = $1`,
+          [id]
+        );
+        const target = String(master.rows[0]?.document_number || "").trim();
+        if (!target) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "contract not found or has no document_number" });
+        }
+        if (from === target) {
+          return res.json({
+            ok: true,
+            already_synced: true,
+            from,
+            to: target,
+            documents_updated: 0,
+            assets_updated: 0,
+          });
+        }
+
+        let docsUpdated = 0;
+        let assetsUpdated = 0;
+        try {
+          const upd = await query(
+            `UPDATE documents
+                SET document_number = $1
+              WHERE document_number = $2`,
+            [target, from]
+          );
+          docsUpdated = upd.rowCount || 0;
+          try {
+            const upd2 = await query(
+              `UPDATE external_assets
+                  SET asset_number = $1
+                WHERE asset_number = $2`,
+              [target, from]
+            );
+            assetsUpdated = upd2.rowCount || 0;
+          } catch (err: any) {
+            if (err?.code !== "42P01") throw err;
+          }
+        } catch (err: any) {
+          if (err?.code === "23505") {
+            return res.status(409).json({
+              ok: false,
+              error:
+                `target document_number "${target}" は既に別 archive 行で使用されています。` +
+                ` 衝突 row を削除/別番号化してから再実行してください。`,
+              from,
+              to: target,
+            });
+          }
+          throw err;
+        }
+        if (docsUpdated === 0 && assetsUpdated === 0) {
+          return res.status(404).json({
+            ok: false,
+            error: `from_document_number "${from}" に該当する archive 行が見つかりません`,
+          });
+        }
+        console.log(
+          `[contracts] manual archive rename: ${from} → ${target} (documents=${docsUpdated}, external_assets=${assetsUpdated}, master_id=${id})`
+        );
+        res.json({
+          ok: true,
+          from,
+          to: target,
+          documents_updated: docsUpdated,
+          assets_updated: assetsUpdated,
+        });
+      } catch (error) {
+        console.error("rename-archive failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
   app.delete("/api/master/contracts/:id", async (req, res) => {
     const { id } = req.params;
     try {

@@ -516,6 +516,19 @@ export function ContractsPanel() {
                 )}
               </p>
             </Field>
+            {/* Phase 22.21.61: 過去のアーカイブをマスター番号に合わせる手動同期セクション。
+                Phase 22.21.60 の自動同期は「保存時に旧→新を同時 rename」する仕組みだが、
+                過去にドリフトしたケース (= 既に master と archive がズレている) は
+                対象 archive 番号を知っている人が手動マッピングで rename する必要がある。 */}
+            {!creating && data?.id && (
+              <Field label="アーカイブと番号を合わせる (手動同期)" className="col-span-2 md:col-span-3">
+                <ArchiveSyncSection
+                  masterId={Number(data.id)}
+                  masterDocNumber={String(data.document_number || "")}
+                  showNotification={showNotification}
+                />
+              </Field>
+            )}
             <Field label="ステータス">
               <NativeSelect
                 value={data?.contract_status || "executed"}
@@ -787,6 +800,118 @@ function Field({
     <div className={`space-y-1 ${className || ""}`}>
       <Label>{label}</Label>
       {children}
+    </div>
+  )
+}
+
+/**
+ * Phase 22.21.61: 過去のアーカイブをマスターの number に手動で合わせる小ウィジェット。
+ *
+ * 自動同期 (Phase 22.21.60) は「マスター保存時に旧→新を rename」する仕組みだが、
+ * 既にドリフトしている過去データは保存時の rename トリガーが効かない。
+ * このウィジェットでは:
+ *   1. ユーザーがアーカイブ側の "現在の" 番号を入力 (例: ARC-ILT-2026-0001)
+ *   2. ボタン押下で POST /api/master/contracts/:id/rename-archive に投げる
+ *   3. worker が documents + external_assets を target 番号に rename
+ */
+function ArchiveSyncSection({
+  masterId,
+  masterDocNumber,
+  showNotification,
+}: {
+  masterId: number
+  masterDocNumber: string
+  showNotification: (msg: string, kind?: "success" | "error" | "info") => void
+}) {
+  const [from, setFrom] = React.useState("")
+  const [busy, setBusy] = React.useState(false)
+  const target = (masterDocNumber || "").trim()
+
+  const run = async () => {
+    const fromTrimmed = from.trim()
+    if (!fromTrimmed) {
+      showNotification("アーカイブ側の現在の番号を入力してください", "error")
+      return
+    }
+    if (!target) {
+      showNotification(
+        "マスター側の document_number が空です。先に保存して番号を確定してください。",
+        "error"
+      )
+      return
+    }
+    if (fromTrimmed === target) {
+      showNotification(
+        `入力された番号 (${fromTrimmed}) は既にマスター番号と一致しています`,
+        "info"
+      )
+      return
+    }
+    if (
+      !confirm(
+        `アーカイブ "${fromTrimmed}" を "${target}" にリネームします。\n` +
+          `この操作は documents テーブルと external_assets テーブルを直接更新します。よろしいですか?`
+      )
+    )
+      return
+
+    setBusy(true)
+    try {
+      const res = await fetch(
+        `/api/master/contracts/${masterId}/rename-archive`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ from_document_number: fromTrimmed }),
+        }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      if (data.already_synced) {
+        showNotification("既に同期済みです (変更なし)", "info")
+      } else {
+        showNotification(
+          `アーカイブをリネームしました: ${data.from} → ${data.to} ` +
+            `(documents ${data.documents_updated} 件 / external_assets ${data.assets_updated} 件)`,
+          "success"
+        )
+        setFrom("")
+      }
+    } catch (e: any) {
+      showNotification(`同期失敗: ${e?.message || e}`, "error")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="space-y-2 rounded-sm border border-dashed border-amber-300 bg-amber-50/40 p-3">
+      <div className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+        過去のアーカイブが旧番号のまま残っている場合、ここで現在の番号を入力すると
+        マスター番号 <code className="bg-muted px-1">{target || "(未設定)"}</code> にリネームします。
+        documents テーブルと external_assets テーブルが直接更新されます。
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="text"
+          value={from}
+          onChange={(e) => setFrom(e.target.value)}
+          placeholder="アーカイブ側の現在の番号 (例: ARC-ILT-2026-0001)"
+          disabled={busy}
+          className="flex-1 text-[11px] font-mono bg-background border border-input rounded-sm py-1.5 px-2 focus:outline-none focus:border-foreground"
+        />
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          onClick={run}
+          disabled={busy || !from.trim() || !target}
+        >
+          {busy ? "実行中…" : `→ ${target || "(未設定)"} にリネーム`}
+        </Button>
+      </div>
     </div>
   )
 }
