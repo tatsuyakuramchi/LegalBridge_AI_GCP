@@ -506,6 +506,26 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_oe_order_item ON order_expenses(order_item_id);`,
 
     // -----------------------------------------------------------------
+    // Phase 22.21.57: 発注書の「その他手数料」(税抜・合計に加算) を行単位で
+    //   保持。order_expenses (税込・別精算) とは別物。
+    //   - 業務委託報酬 (order_line_items) とも区別され、コーディネート費・
+    //     振込手数料 等の追加報酬を別行で記録できる。
+    //   - 検収書生成時にこの行を「今回精算する」とチェックして含められる。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS order_other_fees (
+      id SERIAL PRIMARY KEY,
+      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      fee_name TEXT NOT NULL,
+      amount DECIMAL(15, 2) NOT NULL DEFAULT 0,
+      remarks TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(order_item_id, line_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_oof_order_item ON order_other_fees(order_item_id);`,
+
+    // -----------------------------------------------------------------
     // Phase 17: 稟議 (ringi) マスタ + 文書との N:N 関連
     //
     // 社内では稟議番号 (5 桁数字, 例: '00001') 単位で複数文書を束ねて

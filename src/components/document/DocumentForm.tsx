@@ -13,6 +13,10 @@ import {
   type InspectionExpense,
 } from './InspectionExpenseSelector';
 import {
+  InspectionOtherFeesSelector,
+  type InspectionOtherFee,
+} from './InspectionOtherFeesSelector';
+import {
   DeliveryLineItemTable,
   type OrderLineForInspection,
   type DeliveryLine,
@@ -2020,6 +2024,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               isFinalInspection: false,
               expenses: [],
               expensesTotalIncTax: 0,
+              // Phase 22.21.57: 親 PO のその他手数料 (精算候補) も流し込む
+              po_other_fees: Array.isArray((loaded as any).other_fees)
+                ? (loaded as any).other_fees
+                : [],
+              selectedOtherFeeLineNos: [],
+              other_fees: [],
+              otherFeesTotal: 0,
             });
           }}
           onClear={() => {
@@ -2035,6 +2046,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               isFinalInspection: false,
               expenses: [],
               expensesTotalIncTax: 0,
+              // Phase 22.21.57: 手数料もクリア
+              po_other_fees: [],
+              selectedOtherFeeLineNos: [],
+              other_fees: [],
+              otherFeesTotal: 0,
             });
           }}
         />
@@ -2154,6 +2170,61 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   expensesTotalIncTax,
                   expensesTotalIncTaxStr:
                     expensesTotalIncTax.toLocaleString("ja-JP"),
+                  grandTotalPayable,
+                  grandTotalPayableStr: grandTotalPayable.toLocaleString("ja-JP"),
+                });
+              }}
+            />
+          </FormSection>
+        )}
+
+        {/* IV-c. その他手数料 精算 (Phase 22.21.57) — 親 PO に手数料がある時だけ表示。
+            チェックを入れた手数料 (税抜) を今回検収の支払額に加算し、PDF に
+            「その他手数料 (税抜)」セクションが描画される。 */}
+        {Array.isArray(formData.po_other_fees) && formData.po_other_fees.length > 0 && (
+          <FormSection
+            title="IV-c. その他手数料 精算 (親 PO 連動)"
+            variant="indigo"
+            icon={<Coins className="w-4 h-4" />}
+          >
+            <InspectionOtherFeesSelector
+              poOtherFees={formData.po_other_fees as InspectionOtherFee[]}
+              selectedLineNos={
+                Array.isArray(formData.selectedOtherFeeLineNos)
+                  ? formData.selectedOtherFeeLineNos
+                  : []
+              }
+              isFinalInspection={!!formData.isFinalInspection}
+              onToggleFinal={(v: boolean) => {
+                setFormData({ ...formData, isFinalInspection: v });
+              }}
+              onChange={(selected: number[]) => {
+                const selectedSet = new Set(selected);
+                const other_fees = (formData.po_other_fees as InspectionOtherFee[])
+                  .filter((f) => selectedSet.has(f.line_no));
+                const otherFeesTotal = other_fees.reduce(
+                  (s, f) => s + (Number(f.amount) || 0),
+                  0
+                );
+                // 検収金額(税込) + 経費(税込) + 手数料(税抜 → 税込換算は別途) の総支払額
+                // 手数料は税抜なので、税率分を加えて税込化 (経費との二重計上を避ける)
+                const taxRate =
+                  Number(formData.taxRate) || (formData.isReducedTax ? 8 : 10);
+                const otherFeesIncTax = Math.ceil(otherFeesTotal * (1 + taxRate / 100));
+                const totalIncTax = Number(
+                  String(formData.totalAmountStr || "0").replace(/[^0-9.-]+/g, "")
+                ) || 0;
+                const expensesTotalIncTax = Number(formData.expensesTotalIncTax) || 0;
+                const grandTotalPayable =
+                  totalIncTax + expensesTotalIncTax + otherFeesIncTax;
+                setFormData({
+                  ...formData,
+                  selectedOtherFeeLineNos: selected,
+                  other_fees,
+                  otherFeesTotal,
+                  otherFeesTotalStr: otherFeesTotal.toLocaleString("ja-JP"),
+                  otherFeesTotalIncTax: otherFeesIncTax,
+                  otherFeesTotalIncTaxStr: otherFeesIncTax.toLocaleString("ja-JP"),
                   grandTotalPayable,
                   grandTotalPayableStr: grandTotalPayable.toLocaleString("ja-JP"),
                 });

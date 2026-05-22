@@ -334,12 +334,52 @@
     </tbody>
   </table>
   <div style="font-size:8.5pt;color:#666;margin-top:2px;">※ 経費は税込み額にて精算します（消費税の二重計上はしません）。</div>
+  {{/if}}
 
-  {{!-- 検収金額（税込）+ 経費（税込）の総支払額 --}}
+  {{!-- Phase 22.21.57: その他手数料 (税抜・コーディネート費・振込手数料等) --}}
+  {{#if other_fees}}
+  {{#if (gt (length other_fees) 0)}}
+  <div class="section-title">■ 今回精算するその他手数料（税抜）</div>
+  <table style="margin-bottom:4px;">
+    <thead>
+      <tr>
+        <th style="width:6%">No.</th>
+        <th style="width:64%">項目名</th>
+        <th style="width:15%">金額（税抜）</th>
+        <th style="width:15%">摘要</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each other_fees}}
+      <tr>
+        <td class="center">{{line_no}}</td>
+        <td>{{fee_name}}</td>
+        <td class="right">¥{{formatCurrency amount}}</td>
+        <td>{{remarks}}</td>
+      </tr>
+      {{/each}}
+      <tr class="total-row">
+        <td colspan="2" class="right">手数料合計（税抜）</td>
+        <td class="right">¥{{otherFeesTotalStr}}</td>
+        <td></td>
+      </tr>
+      <tr class="total-row" style="background:#f3f3f3;">
+        <td colspan="2" class="right">手数料合計（税込換算）</td>
+        <td class="right">¥{{otherFeesTotalIncTaxStr}}</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+  <div style="font-size:8.5pt;color:#666;margin-top:2px;">※ その他手数料は税抜表示。消費税は本検収金額と合算して再計算しています。</div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- 検収金額（税込）+ 経費（税込）+ 手数料(税込換算) の総支払額 --}}
+  {{#if (or expenses other_fees)}}
   <table style="margin-top:8px;margin-bottom:4px;">
     <tbody>
       <tr class="total-row" style="background:#eef6ff;">
-        <td style="width:85%;" class="right"><strong>本検収書に基づく総支払額（税込・経費含む）</strong></td>
+        <td style="width:85%;" class="right"><strong>本検収書に基づく総支払額（税込・経費 / 手数料含む）</strong></td>
         <td style="width:15%;" class="right"><strong>¥{{grandTotalPayableStr}}</strong></td>
       </tr>
     </tbody>

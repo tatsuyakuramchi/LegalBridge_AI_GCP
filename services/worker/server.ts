@@ -4220,6 +4220,23 @@ ${details}
         [orderItem.id]
       );
 
+      // Phase 22.21.57: その他手数料 (税抜・合計加算) を同時に返す
+      let otherFeesRes: any = { rows: [] };
+      try {
+        otherFeesRes = await query(
+          `SELECT id, order_item_id, line_no, fee_name, amount, remarks,
+                  created_at, updated_at
+             FROM order_other_fees
+            WHERE order_item_id = $1
+            ORDER BY line_no ASC`,
+          [orderItem.id]
+        );
+      } catch (err: any) {
+        // テーブルが未マイグレーションの環境では undefined_table (42P01) を catch
+        if (err?.code !== "42P01") throw err;
+        console.warn("[order-items/by-issue] order_other_fees not yet migrated");
+      }
+
       // Phase 9c: 親 PO の document_number と vendor 詳細も同梱。
       const docRow = await query(
         `SELECT document_number FROM documents
@@ -4261,6 +4278,8 @@ ${details}
         order_item: orderItem,
         line_items: linesWithAvail,
         expenses: expensesRes.rows,
+        // Phase 22.21.57: その他手数料 (検収書フォームで精算対象を選ぶ)
+        other_fees: otherFeesRes.rows,
         document_number: docRow.rows[0]?.document_number || "",
         vendor,
         delivery_progress: {
@@ -4458,12 +4477,63 @@ ${details}
         );
       }
 
+      // Phase 22.21.57: その他手数料 (税抜・合計加算) を upsert。
+      //   経費 (税込・別精算) と同じパターン。worker DB の order_other_fees
+      //   テーブルに行ごとに保存する。
+      const otherFeesIn: Array<any> = Array.isArray(req.body.other_fees)
+        ? req.body.other_fees
+        : [];
+      const computedFees = otherFeesIn
+        .map((f: any, idx: number) => ({
+          line_no: Number(f.line_no) || idx + 1,
+          fee_name: f.fee_name || "",
+          amount: Number(f.amount) || 0,
+          remarks: f.remarks || "",
+        }))
+        .filter((f) => f.fee_name);
+
+      try {
+        const keepFeeNos = computedFees.map((f) => f.line_no).filter((n) => n > 0);
+        if (keepFeeNos.length > 0) {
+          await query(
+            `DELETE FROM order_other_fees
+              WHERE order_item_id = $1
+                AND line_no NOT IN (${keepFeeNos.map((_, i) => `$${i + 2}`).join(",")})`,
+            [orderItemId, ...keepFeeNos]
+          );
+        } else {
+          await query("DELETE FROM order_other_fees WHERE order_item_id = $1", [
+            orderItemId,
+          ]);
+        }
+        for (const f of computedFees) {
+          await query(
+            `INSERT INTO order_other_fees (
+               order_item_id, line_no, fee_name, amount, remarks, updated_at
+             ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+             ON CONFLICT (order_item_id, line_no) DO UPDATE SET
+               fee_name   = EXCLUDED.fee_name,
+               amount     = EXCLUDED.amount,
+               remarks    = EXCLUDED.remarks,
+               updated_at = CURRENT_TIMESTAMP`,
+            [orderItemId, f.line_no, f.fee_name, f.amount, f.remarks]
+          );
+        }
+      } catch (err: any) {
+        if (err?.code === "42P01") {
+          console.warn(
+            "[line-items] order_other_fees not yet migrated — skipping fee persistence"
+          );
+        } else throw err;
+      }
+
       const totals = await recalculateOrderTotal(orderItemId, taxRate);
       res.json({
         success: true,
         totals,
         line_count: computedLines.length,
         expense_count: computedExpenses.length,
+        other_fee_count: computedFees.length,
       });
     } catch (error) {
       console.error("/api/order-items/:id/line-items failed:", error);
