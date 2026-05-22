@@ -150,42 +150,38 @@
       line-height: 1.4;
     }
 
-    /* Phase 17n: 仕様を独立した「明細詳細行」として描画。これにより
-       仕様の文章量が多くても、隣接する 数量 / 単価 / 金額 等の narrow
-       列が縦方向に間延びしない (table-row 高さが揃ってしまう問題を回避)。
-       Phase 22.21.53: ボックス装飾を廃止して、品目名の直下に自然に続く
-       テキストブロックに変更 (白背景・border 無し・行間タイト)。
-       目的: 「同じ明細の一部」として読みやすく、視覚的にあっさり見せる。 */
+    /* Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様を独立した「明細詳細行」
+       として描画。これにより仕様の文章量が多くても narrow 列 (数量・単価等)
+       が縦方向に間延びしない。
+       Phase 22.21.58: 旧 <td></td><td colspan="7"> の 2 セル構成では No 列下に
+       空の小さなセルが残って境界線が「切れて」見えていた問題を解消するため、
+       template 側を <td colspan="8"> の単一セルに統一。CSS で左パディングを
+       業務内容列の開始位置に揃える。 */
     table.items tr.detail-row > td {
       border-top: 0;          /* 直前の本行と継続的に見える */
+      border-left: 1px solid #cfcfcf;   /* 外枠は普通の table border を踏襲 */
+      border-right: 1px solid #cfcfcf;
       padding-top: 0;
       padding-bottom: 6px;
+      /* 左パディングを No 列幅 (6mm) + 業務内容列の通常パディング (8px) に
+         合わせて、品目名の文字位置から自然につながるよう揃える。 */
+      padding-left: calc(6mm + 8px);
+      padding-right: 8px;
     }
     table.items tr.detail-row .detail-cell {
-      background: transparent;       /* 旧 #fafafa を廃止 */
-      border-left: none;              /* 旧 3px solid #cfcfcf を廃止 */
-      padding: 0 2px 0 0;             /* 品目本行とインデント揃え (4px) */
+      background: transparent;
+      border-left: none;
+      padding: 0;
       font-size: 8.5pt;
       color: #333;
       white-space: pre-wrap;
-      line-height: 1.35;              /* タイト化 (旧 1.5) */
+      line-height: 1.35;
     }
-    /* 詳細ラベル "仕様 / 詳細" は読み流せるくらい控えめに。
-       完全に消すとセクション境界が分からなくなるので、極小グレーで残す。 */
-    table.items tr.detail-row .detail-cell .detail-label {
-      font-size: 7pt;
-      color: #aaa;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      margin-bottom: 1px;
-      /* text-transform: uppercase を廃止 — 日本語混在で読みづらかった */
-    }
-    /* 本行と詳細行は連続のものなので、間の境界線は消す。
+    /* 本行と詳細行は連続したものなので、間の境界線を消す。
        次の明細との境界は次行 (`tr` 単体) の border-bottom で確保される。 */
     table.items tr.has-detail > td {
       border-bottom: 0;
     }
-    /* item-spec-block は detail-cell 内では行間タイト & 余白詰めで読みやすく */
     table.items tr.detail-row .item-spec-block {
       font-size: 8.5pt;
       color: #333;
@@ -424,12 +420,14 @@
         <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
       </tr>
       {{#if (or spec detailText)}}
-      {{!-- Phase 17n / 22.8.1 / 22.21.53: 仕様 / 詳細を全列幅で描画する詳細行。
-           Phase 22.21.53: ボックス装飾と "仕様 / 詳細" ラベルを廃止し、品目名の
-           直下に自然に続くテキスト群として表示 (白背景・border 無し)。 --}}
+      {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
+           本行 (.has-detail) と border を共有して同じ明細の一部に見せる。
+           Phase 22.21.58: 旧 2-cell 構成 (空 td + colspan=7) では No 列下に
+           空セルが残って境界線が分断されていた問題を解消するため、
+           colspan=8 の単一セルに統一。CSS の padding-left で業務内容列の
+           開始位置に文字を揃える。 --}}
       <tr class="detail-row">
-        <td></td>
-        <td colspan="7">
+        <td colspan="8">
           <div class="detail-cell">
             {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
             {{#if detailText}}<div class="item-spec-block"{{#if spec}} style="margin-top:2px;"{{/if}}>{{detailText}}</div>{{/if}}
