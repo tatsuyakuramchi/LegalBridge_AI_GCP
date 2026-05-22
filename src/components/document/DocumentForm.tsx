@@ -2908,6 +2908,36 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             </>
           }
         >
+          {/* Phase 22.21.64: 親 PO 検索 — ORDER_NO を手入力する代わりに
+              アーカイブから部分検索 → ヘッダ群を一括反映。
+              親 PO の form_data から PROJECT_TITLE / PARTY_A_NAME / VENDOR_NAME
+              も引き継いで別紙ヘッダ入力工数を最小化する。 */}
+          <div className="col-span-full mb-2">
+            <DocumentNumberLookup
+              label="親発注書をアーカイブから検索 (部分一致 / 空欄で最新一覧)"
+              placeholder="例: ARC-PO-2026-0001 / 株式会社X / 通訳"
+              initialQuery={formData.ORDER_NO || ''}
+              filterTemplateTypes={[
+                'purchase_order',
+                'planning_purchase_order',
+                'intl_purchase_order',
+              ]}
+              onApply={(doc) => {
+                const fd = doc.form_data || {};
+                setFormData({
+                  ...formData,
+                  ORDER_NO: doc.document_number,
+                  // 親 PO のヘッダ情報を引き継ぐ (既に入力済みは尊重)
+                  PROJECT_TITLE:
+                    formData.PROJECT_TITLE || fd.PROJECT_TITLE || '',
+                  PARTY_A_NAME:
+                    formData.PARTY_A_NAME || fd.PARTY_A_NAME || '',
+                  VENDOR_NAME:
+                    formData.VENDOR_NAME || fd.VENDOR_NAME || '',
+                });
+              }}
+            />
+          </div>
           {renderGroup('I. ヘッダ')}
         </FormSection>
 
