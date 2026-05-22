@@ -31,6 +31,35 @@ import { cn } from "@/lib/utils"
 const toBool = (v: any): boolean =>
   v === true || v === "t" || v === "true" || v === 1 || v === "1";
 
+// Phase 22.21.66: contract_status (5 段階) を日本語ラベル + Badge variant に。
+//   draft               作成中
+//   awaiting_signature  締結待ち
+//   executed            締結中 (= 締結済)
+//   expired             満了
+//   terminated          解約済
+const STATUS_OPTIONS = [
+  { value: "draft", label: "作成中" },
+  { value: "awaiting_signature", label: "締結待ち" },
+  { value: "executed", label: "締結中" },
+  { value: "expired", label: "満了" },
+  { value: "terminated", label: "解約済" },
+] as const
+
+const statusToLabel = (v: any): string => {
+  const opt = STATUS_OPTIONS.find((o) => o.value === v)
+  return opt?.label || String(v || "—")
+}
+const statusToVariant = (v: any): "success" | "phosphor" | "warning" | "destructive" | "outline" => {
+  switch (v) {
+    case "executed": return "success"
+    case "awaiting_signature": return "warning" as any
+    case "draft": return "phosphor"
+    case "expired": return "outline"
+    case "terminated": return "destructive"
+    default: return "outline"
+  }
+}
+
 // Phase 22.21.51 / 22.21.52: worker と完全に同じロジックで prefix を予測表示。
 //   ledger_code が紐付いた license + 個別/単独 の場合は新フォーマット
 //   "LIC-{ledger_code}-ILT-NNNN" を返す。それ以外は従来通り ARC-<TYPE>-YYYY-NNNN
@@ -282,10 +311,10 @@ export function ContractsPanel() {
                       {c.document_number || "N/A"}
                     </Badge>
                     <Badge
-                      variant={c.contract_status === "executed" ? "success" : "phosphor"}
+                      variant={statusToVariant(c.contract_status)}
                       className="h-4"
                     >
-                      {c.contract_status === "executed" ? "締結済" : c.contract_status}
+                      {statusToLabel(c.contract_status)}
                     </Badge>
                     {/* Phase 22.9: 有効/無効バッジ — 自動補完候補に含まれるかどうか */}
                     <Badge
@@ -530,15 +559,22 @@ export function ContractsPanel() {
               </Field>
             )}
             <Field label="ステータス">
+              {/* Phase 22.21.66: 5 段階に整理。draft → 作成中、新規 awaiting_signature。 */}
               <NativeSelect
-                value={data?.contract_status || "executed"}
+                value={data?.contract_status || "draft"}
                 onChange={(e) => set({ contract_status: e.target.value })}
               >
-                <option value="executed">締結済</option>
-                <option value="draft">草案・作成中</option>
-                <option value="expired">満了</option>
-                <option value="terminated">解約済</option>
+                {STATUS_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
               </NativeSelect>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+                <strong>作成中</strong>: 編集中 / <strong>締結待ち</strong>: 相手方サイン待ち /
+                <strong>締結中</strong>: 両者署名済み / <strong>満了</strong>: expiration_date 経過
+                (cron で自動遷移) / <strong>解約済</strong>: 早期解約
+              </p>
             </Field>
             {/* Phase 22.9: 有効/無効フラグ — 発注書/個別利用許諾条件書/個別出版条件書の
                 自動補完候補に含めるかどうかを切替。

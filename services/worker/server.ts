@@ -53,6 +53,7 @@ import {
   getNewLedgerCode,
   getNewWorkId,
   getNewIltNumberForLedger,
+  sanitizeForFilename,
   createLedgerWithDefaultMaterial,
   addMaterialToLedger,
   markPrimaryDocument,
@@ -2027,8 +2028,9 @@ ${details}
   async function runDailyChecks(): Promise<{
     deliveryAlerts: number;
     contractAlerts: number;
+    expiredTransitions: number;
   }> {
-    const result = { deliveryAlerts: 0, contractAlerts: 0 };
+    const result = { deliveryAlerts: 0, contractAlerts: 0, expiredTransitions: 0 };
 
     // 平日判定 (JST)。Cloud Scheduler は時刻は JST だが day は UTC で
     // 返るおそれもあるので、明示的に JST 換算する。
@@ -2115,8 +2117,35 @@ ${details}
       console.error("[daily-checks] contract scan failed:", e);
     }
 
+    // ─── 3. Phase 22.21.66: 満了ステータス自動遷移 ──────────────────
+    //   expiration_date < CURRENT_DATE で contract_status が
+    //   draft / awaiting_signature / executed のままの行を 'expired' に。
+    //   terminated は早期解約のため触らない。
+    try {
+      const expired = await query(
+        `UPDATE contract_capabilities
+            SET contract_status = 'expired',
+                updated_at = CURRENT_TIMESTAMP
+          WHERE expiration_date IS NOT NULL
+            AND expiration_date < CURRENT_DATE
+            AND contract_status IN ('draft', 'awaiting_signature', 'executed')
+          RETURNING id, document_number, contract_title, expiration_date`
+      );
+      result.expiredTransitions = expired.rowCount || 0;
+      if (result.expiredTransitions > 0) {
+        console.log(
+          `📅 [daily-checks] auto-transitioned ${result.expiredTransitions} contracts to 'expired': ` +
+            expired.rows
+              .map((r: any) => `${r.document_number}(${r.expiration_date.toISOString().split("T")[0]})`)
+              .join(", ")
+        );
+      }
+    } catch (e) {
+      console.error("[daily-checks] expired auto-transition failed:", e);
+    }
+
     console.log(
-      `📅 [daily-checks] dispatched delivery=${result.deliveryAlerts} contract=${result.contractAlerts} (weekday=${isWeekday})`
+      `📅 [daily-checks] dispatched delivery=${result.deliveryAlerts} contract=${result.contractAlerts} expired=${result.expiredTransitions} (weekday=${isWeekday})`
     );
     return result;
   }
@@ -3267,9 +3296,43 @@ ${details}
     documents_superseded_updated: number;
     assets_updated: number;
     assets_revisions_updated: number;
+    drive_files_renamed: number;
   }> {
     const fromUnderscore = from + "_"; // e.g. "ARC-PO-2026-0021_"
     const fromUnderscoreLen = fromUnderscore.length;
+
+    // Phase 22.21.66: DB rename 前に Drive ファイル名 rename 対象を取得しておく。
+    //   documents.drive_link を持つ行 (base + revision suffix 付き 両方) について、
+    //   新しい document_number で Drive 上のファイル名も追従させる。
+    //   DB rename と Drive rename は別トランザクションなので、片方失敗しても
+    //   他方は反映され続ける ("最終的整合性" を許容)。
+    //   best-effort: Drive API 失敗は warn ログだけで継続。
+    let driveTargets: Array<{ oldDocNumber: string; newDocNumber: string; driveLink: string; vendorName: string | null }> = [];
+    try {
+      const driveFetch = await query(
+        `SELECT document_number, drive_link, vendor_name_snapshot
+           FROM documents
+          WHERE drive_link IS NOT NULL AND drive_link <> ''
+            AND (document_number = $1 OR LEFT(document_number, $2::int) = $3)`,
+        [from, fromUnderscoreLen, fromUnderscore]
+      );
+      driveTargets = driveFetch.rows.map((r: any) => {
+        const oldNo = String(r.document_number || "");
+        // base / revision の判定: from と完全一致なら base、それ以外は suffix を保つ
+        const newNo =
+          oldNo === from
+            ? to
+            : to + oldNo.substring(fromUnderscoreLen - 1); // -1: '_' の前から
+        return {
+          oldDocNumber: oldNo,
+          newDocNumber: newNo,
+          driveLink: r.drive_link,
+          vendorName: r.vendor_name_snapshot || null,
+        };
+      });
+    } catch (err: any) {
+      console.warn("[renameArchive] failed to fetch drive targets:", err?.message || err);
+    }
 
     // 1. 完全一致 (base row)
     const r1 = await query(
@@ -3321,6 +3384,27 @@ ${details}
       if (err?.code !== "42P01") throw err;
     }
 
+    // Phase 22.21.66: DB rename 完了後、Drive ファイル名を非同期に追従させる。
+    //   各ターゲットを順次 (Promise.all だとレートリミットに当たる可能性あり) 処理。
+    //   成功件数を返却し、失敗は warn ログのみ。
+    let driveRenamed = 0;
+    for (const t of driveTargets) {
+      const vendorPart = t.vendorName ? `_${sanitizeForFilename(t.vendorName)}` : "";
+      const newFileName = `${t.newDocNumber}${vendorPart}.html`;
+      try {
+        const result = await googleDriveService.renameFile(t.driveLink, newFileName);
+        if (result) {
+          driveRenamed++;
+          console.log(`[renameArchive] Drive renamed: ${t.oldDocNumber} → ${t.newDocNumber}`);
+        }
+      } catch (err: any) {
+        console.warn(
+          `[renameArchive] Drive rename failed for ${t.oldDocNumber}:`,
+          err?.message || err
+        );
+      }
+    }
+
     return {
       documents_updated: r1.rowCount || 0,
       documents_revisions_updated: r2.rowCount || 0,
@@ -3328,6 +3412,7 @@ ${details}
       documents_superseded_updated: (r4.rowCount || 0) + (r5.rowCount || 0),
       assets_updated: assetsBase,
       assets_revisions_updated: assetsRev,
+      drive_files_renamed: driveRenamed,
     };
   }
 
@@ -3551,6 +3636,7 @@ ${details}
         documents_superseded_updated: number;
         assets_updated: number;
         assets_revisions_updated: number;
+        drive_files_renamed: number;
         conflict?: string;
       } | null = null;
       if (
@@ -3572,7 +3658,8 @@ ${details}
             `[contracts] archive renamed: ${previousDocNumber} → ${finalDocNumber} ` +
               `(base=${r.documents_updated}, rev=${r.documents_revisions_updated}, ` +
               `base_ref=${r.documents_base_updated}, superseded=${r.documents_superseded_updated}, ` +
-              `assets=${r.assets_updated}+${r.assets_revisions_updated})`
+              `assets=${r.assets_updated}+${r.assets_revisions_updated}, ` +
+              `drive=${r.drive_files_renamed})`
           );
         } catch (err: any) {
           if (err?.code === "23505") {
@@ -3585,6 +3672,7 @@ ${details}
               documents_superseded_updated: 0,
               assets_updated: 0,
               assets_revisions_updated: 0,
+              drive_files_renamed: 0,
               conflict:
                 "新番号と同じ document_number の archive row が既に存在するため、アーカイブ側のリネームをスキップしました。古い番号の archive row は残っています。",
             };

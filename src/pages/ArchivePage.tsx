@@ -166,6 +166,27 @@ export function ArchivePage() {
                         ★ 真
                       </Badge>
                     )}
+                    {/* Phase 22.21.66: マスター契約ステータス (5 段階) */}
+                    {(asset as any).contract_status && (() => {
+                      const s = String((asset as any).contract_status)
+                      const label =
+                        s === "draft" ? "作成中" :
+                        s === "awaiting_signature" ? "締結待ち" :
+                        s === "executed" ? "締結中" :
+                        s === "expired" ? "満了" :
+                        s === "terminated" ? "解約済" : s
+                      const variant: any =
+                        s === "executed" ? "success" :
+                        s === "awaiting_signature" ? "warning" :
+                        s === "draft" ? "phosphor" :
+                        s === "expired" ? "outline" :
+                        s === "terminated" ? "destructive" : "outline"
+                      return (
+                        <Badge variant={variant} className="h-4" title={`マスター契約ステータス: ${label}`}>
+                          ● {label}
+                        </Badge>
+                      )
+                    })()}
                     <Badge variant="outline">{asset.asset_type}</Badge>
                   </div>
                 </div>

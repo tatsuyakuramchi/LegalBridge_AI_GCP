@@ -186,5 +186,41 @@ export class GoogleDriveService {
       throw error;
     }
   }
+
+  /**
+   * Phase 22.21.66: Drive 上のファイル名を変更する。
+   *
+   * documents.drive_link は Drive の webViewLink (例:
+   *   https://drive.google.com/file/d/<fileId>/view) 形式。
+   * URL から fileId を抽出して drive.files.update を呼ぶ。
+   *
+   * 失敗は throw せず、null を返して呼び出し側が best-effort で処理できる
+   * ようにする (DB rename は既に確定しているので、Drive 側だけ失敗しても
+   * 警告ログだけで継続したい)。
+   */
+  async renameFile(driveLink: string, newName: string): Promise<string | null> {
+    if (!driveLink || !newName) return null;
+    const m = driveLink.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    const fileId = m?.[1];
+    if (!fileId) {
+      console.warn(`[GoogleDriveService.renameFile] cannot extract fileId from: ${driveLink}`);
+      return null;
+    }
+    try {
+      const response = await this.drive.files.update({
+        fileId,
+        requestBody: { name: newName },
+        fields: "id, name",
+        supportsAllDrives: true,
+      });
+      return response.data.name || null;
+    } catch (error: any) {
+      console.warn(
+        `[GoogleDriveService.renameFile] failed to rename fileId=${fileId} to "${newName}":`,
+        error?.message || error
+      );
+      return null;
+    }
+  }
 }
 

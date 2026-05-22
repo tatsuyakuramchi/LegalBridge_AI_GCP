@@ -1861,10 +1861,11 @@ async function startServer() {
 
   app.get("/api/management/assets", async (_req, res) => {
     try {
-      // Phase 22.12: documents 側の base_document_number / revision / is_primary を
-      // JOIN で返す。Archive UI で「真の契約 ★」バッジ + 履歴折り畳みを実現する。
-      // Phase 22.12.1: schema migration 未適用環境 (worker 未デプロイ) でも
-      // 落ちないよう undefined_column フォールバック。
+      // Phase 22.12: documents の base_document_number / revision / is_primary を JOIN。
+      // Phase 22.21.66: contract_capabilities.contract_status / expiration_date も
+      //   同時に JOIN し、Archive UI で 2 軸バッジ (★真 + 契約ステータス) を出せるように。
+      //   asset_number = contract_capabilities.document_number で string match。
+      // Phase 22.12.1: schema migration 未適用環境でも落ちないよう undefined_column フォールバック。
       let result: any;
       try {
         result = await query(
@@ -1872,16 +1873,22 @@ async function startServer() {
                   d.base_document_number,
                   COALESCE(d.revision, 0) AS revision,
                   COALESCE(d.is_primary, TRUE) AS is_primary,
-                  d.superseded_by
+                  d.superseded_by,
+                  cc.contract_status,
+                  cc.expiration_date  AS cc_expiration_date,
+                  cc.effective_date   AS cc_effective_date
              FROM external_assets ea
-             LEFT JOIN documents d ON d.document_number = ea.asset_number
+             LEFT JOIN documents d
+               ON d.document_number = ea.asset_number
+             LEFT JOIN contract_capabilities cc
+               ON cc.document_number = ea.asset_number
+                  OR cc.document_number = COALESCE(d.base_document_number, ea.asset_number)
             ORDER BY ea.created_at DESC`
         );
       } catch (err: any) {
         if (err && err.code === "42703") {
           console.warn(
-            "[/api/management/assets] documents.is_primary 列が未追加。" +
-              "legacy 形式で返却 (worker 再デプロイで解消)。"
+            "[/api/management/assets] schema migration 未適用 — legacy 形式で返却"
           );
           result = await query(
             "SELECT * FROM external_assets ORDER BY created_at DESC"
