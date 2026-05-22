@@ -287,23 +287,23 @@
     "label": "売買基本契約書（当社買手版）",
     "category": "Sales",
     "vars": {
-      "CONTRACT_NO": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
-      "CONTRACT_DATE_FORMATTED": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日", "helpText": "PDF 署名欄 日付に出る (テンプレ第2版で必須化)" },
+      "CONTRACT_NO": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "📌 PDF 右上「契約番号：__」に出ます\n生成時に自動採番 (空欄でも可)" },
+      "CONTRACT_DATE_FORMATTED": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日", "helpText": "📌 PDF 署名欄上部「__」の日付に出ます\n年月日を「2026年5月12日」のように 全角/半角どちらでも可" },
 
-      "PARTY_B_NAME": { "label": "乙 (売主) 名称", "group": "II. 乙 (売主・取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力。甲は『株式会社アークライト』固定" },
-      "PARTY_B_ADDRESS": { "label": "乙 住所", "group": "II. 乙 (売主・取引先)", "type": "textarea", "required": true },
-      "PARTY_B_REPRESENTATIVE": { "label": "乙 代表者", "group": "II. 乙 (売主・取引先)", "required": true, "placeholder": "例: 代表取締役 山田 太郎" },
+      "PARTY_B_NAME": { "label": "乙 (売主) 名称", "group": "II. 乙 (売主・取引先)", "required": true, "helpText": "📌 PDF 頭書 + 第26条署名「乙 会社名」に出ます\n[取引先] ボタンで自動入力 / 甲はテンプレ内『株式会社アークライト』固定" },
+      "PARTY_B_ADDRESS": { "label": "乙 住所", "group": "II. 乙 (売主・取引先)", "type": "textarea", "required": true, "helpText": "📌 PDF 署名欄「乙 所在地」に出ます" },
+      "PARTY_B_REPRESENTATIVE": { "label": "乙 代表者", "group": "II. 乙 (売主・取引先)", "required": true, "placeholder": "例: 代表取締役 山田 太郎", "helpText": "📌 PDF 署名欄「乙 代表者」+ ㊞ 印影マークに出ます" },
 
-      "PRODUCT_SCOPE": { "label": "本製品の範囲", "group": "III. 取引条件", "type": "textarea", "placeholder": "例: 乙が取扱うアナログゲーム製品全般", "helpText": "未入力なら『個別契約に定めるとおり』と PDF 描画 (テンプレ第2版)" },
-      "DELIVERY_LOCATION": { "label": "納入場所", "group": "III. 取引条件", "placeholder": "例: 甲指定の倉庫", "helpText": "未入力なら『注文書に定める納品場所』と PDF 描画" },
-      "WARRANTY_PERIOD": { "label": "契約不適合 保証期間", "group": "III. 取引条件", "required": true, "placeholder": "例: 引渡し後1年", "helpText": "第11条 契約不適合責任の権利行使可能期間" },
-      "PAYMENT_CONDITION_SUMMARY": { "label": "支払条件", "group": "III. 取引条件", "placeholder": "例: 月末締め翌月末日払い", "helpText": "未入力なら『注文書に定める支払条件』と PDF 描画" },
-      "CURE_PERIOD_DAYS": { "label": "是正催告期間 (営業日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "14", "helpText": "第17条 解除条項の催告期間" },
+      "PRODUCT_SCOPE": { "label": "本製品の範囲", "group": "III. 取引条件", "type": "textarea", "placeholder": "例: 乙が取扱うアナログゲーム製品全般", "helpText": "📌 第2条「本契約に基づき売買の対象となる本製品の範囲は、__とする」に挿入\n空欄なら『個別契約 (注文書) に定めるとおりとする』と自動描画" },
+      "DELIVERY_LOCATION": { "label": "納入場所", "group": "III. 取引条件", "placeholder": "例: 甲指定の倉庫", "helpText": "📌 第5条「注文書に定める納品場所 (__)」に挿入\n空欄なら『注文書に定める納品場所』と自動描画" },
+      "WARRANTY_PERIOD": { "label": "契約不適合 保証期間", "group": "III. 取引条件", "required": true, "placeholder": "例: 引渡し後1年", "helpText": "📌 第11条「引渡し後 __ 以内に発見された場合」+「引渡しから __ を超えて行使することはできない」の 2 箇所に挿入\n→ 隠れた瑕疵を含む契約不適合の追完請求権が行使可能な期間" },
+      "PAYMENT_CONDITION_SUMMARY": { "label": "支払条件", "group": "III. 取引条件", "placeholder": "例: 月末締め翌月末日払い", "helpText": "📌 第9条「__により、乙が指定する銀行口座へ振込みにて支払う」に挿入\n空欄なら『注文書に定める支払条件』と自動描画" },
+      "CURE_PERIOD_DAYS": { "label": "是正催告期間 (営業日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "14", "helpText": "📌 第17条「是正を要求する通知を受領した後 __ 営業日以内にその違反を是正しない場合は、相手方は、本契約及び個別契約を直ちに解除することができる」に挿入\n→ 違反通知後の是正猶予期間 (営業日)。一般的には 14 営業日" },
 
-      "CONFIDENTIALITY_YEARS": { "label": "秘密保持期間 (年)", "group": "IV. 一般条項", "type": "number", "required": true, "placeholder": "5", "helpText": "第24条 存続条項で機密保持義務が継続する年数" },
-      "JURISDICTION": { "label": "合意管轄", "group": "IV. 一般条項", "required": true, "placeholder": "例: 東京地方裁判所" },
+      "CONFIDENTIALITY_YEARS": { "label": "秘密保持期間 (年)", "group": "IV. 一般条項", "type": "number", "required": true, "placeholder": "5", "helpText": "📌 第24条「第13条 (秘密保持) については、本契約の終了後 __ 年間に限り、その効力を有する」に挿入\n→ 契約終了後も機密保持義務が継続する年数。一般的には 3〜5 年" },
+      "JURISDICTION": { "label": "合意管轄", "group": "IV. 一般条項", "required": true, "placeholder": "例: 東京地方裁判所", "helpText": "📌 第25条「本契約に関する紛争については、__ を第一審の専属的合意管轄裁判所とする」に挿入\n→ 訴訟の第一審管轄。当社の場合は 東京地方裁判所 が一般的" },
 
-      "SPECIAL_TERMS": { "label": "特約事項", "group": "V. 特約 (任意)", "type": "textarea", "helpText": "未入力なら PDF に該当ブロックが表示されません" }
+      "SPECIAL_TERMS": { "label": "特約事項", "group": "V. 特約 (任意)", "type": "textarea", "helpText": "📌 PDF 末尾 (署名欄の前) に「【特記事項】」ブロックで囲み枠付きで挿入\n空欄なら該当ブロックは PDF に出力されません" }
     }
   },
 

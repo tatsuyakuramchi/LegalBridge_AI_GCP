@@ -105,16 +105,9 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
             </span>
           )}
         </label>
-        {meta.helpText ? (
-          <span
-            className="text-[8px] text-muted-foreground/50 italic ml-2 truncate max-w-[60%] text-right"
-            title={meta.helpText}
-          >
-            {meta.helpText}
-          </span>
-        ) : (
-          <HelpCircle className="h-2.5 w-2.5 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-help" />
-        )}
+        {/* Phase 22.21.68: helpText は下に再表示するので、ここでは
+            アイコンだけにして label 行を圧迫しない */}
+        <HelpCircle className="h-2.5 w-2.5 text-muted-foreground/30 opacity-0 group-hover:opacity-100 transition-opacity cursor-help" />
       </div>
 
       {isBoolean ? (
@@ -204,11 +197,30 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
         <input
           id={id}
           type={isDate ? 'date' : isNumber ? 'number' : 'text'}
-          value={value || ''}
+          // Phase 22.21.68: 0 を value=0 として表示するため、number 型は
+          //   `value || ''` ではなく明示的に空判定を行う ("0" || "" は 0 を消す)
+          value={
+            isNumber
+              ? value === 0 || value === '0' || (value !== undefined && value !== null && value !== '')
+                ? String(value)
+                : ''
+              : value || ''
+          }
           onChange={(e) => onChange(e.target.value)}
           className={baseInput}
           placeholder={isDate ? '' : (placeholder || `Input ${label}…`)}
+          {...(isNumber
+            ? { inputMode: 'numeric' as const, min: 0, step: 1 }
+            : {})}
         />
+      )}
+
+      {/* Phase 22.21.68: helpText を入力欄の下に全幅表示。
+          条文番号などの長文ガイドが切れないよう改行可能なテキスト。 */}
+      {meta.helpText && (
+        <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mt-0.5 whitespace-pre-wrap">
+          {meta.helpText}
+        </p>
       )}
     </div>
   );
