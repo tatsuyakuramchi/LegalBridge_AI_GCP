@@ -7,6 +7,7 @@ import { PartySection, SubLicenseeTable } from './SpecializedParts';
 import * as MaintenanceSpecParts from './MaintenanceSpecParts';
 import { LineItemTable, type LineItem } from './LineItemTable';
 import { ExpenseTable, type ExpenseItem } from './ExpenseTable';
+import { OtherFeesTable, type OtherFee } from './OtherFeesTable';
 import {
   InspectionExpenseSelector,
   type InspectionExpense,
@@ -1195,7 +1196,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         </div>
 
-        {/* IV. 明細 (Phase 7a/7b) — primary path; grandTotalExTax は自動集計 */}
+        {/* IV. 明細 (Phase 7a/7b) — primary path; grandTotalExTax は自動集計
+            Phase 22.21.56: grandTotalExTax = items 合計 + other_fees 合計 */}
         <FormSection
           title="IV. 明細"
           variant="indigo"
@@ -1204,17 +1206,55 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           <LineItemTable
             items={Array.isArray(formData.items) ? formData.items : []}
             onChange={(items: LineItem[]) => {
-              const grandTotal = items.reduce(
+              const itemsTotal = items.reduce(
                 (sum, it) => sum + (Number(it.amount_ex_tax) || 0),
+                0
+              );
+              const feesTotal = (Array.isArray(formData.other_fees)
+                ? formData.other_fees
+                : []
+              ).reduce((s: number, f: any) => s + (Number(f?.amount) || 0), 0);
+              setFormData({
+                ...formData,
+                items,
+                itemsSubtotalExTax: itemsTotal,
+                otherFeesTotal: feesTotal,
+                grandTotalExTax: itemsTotal + feesTotal,
+              });
+            }}
+            showPaymentColumns={true}
+          />
+        </FormSection>
+
+        {/* IV-a. その他手数料 (Phase 22.21.56) — 業務委託報酬以外の手数料。
+            税抜表示で grandTotalExTax に加算される。経費 (IV-b 税込・別精算) とは別物。 */}
+        <FormSection
+          title="IV-a. その他手数料（税抜・合計に加算）"
+          variant="indigo"
+          icon={<Coins className="w-4 h-4" />}
+        >
+          <OtherFeesTable
+            fees={Array.isArray(formData.other_fees) ? formData.other_fees : []}
+            onChange={(other_fees: OtherFee[]) => {
+              const feesTotal = other_fees.reduce(
+                (sum, f) => sum + (Number(f.amount) || 0),
+                0
+              );
+              const itemsTotal = (Array.isArray(formData.items)
+                ? formData.items
+                : []
+              ).reduce(
+                (s: number, it: any) => s + (Number(it?.amount_ex_tax) || 0),
                 0
               );
               setFormData({
                 ...formData,
-                items,
-                grandTotalExTax: grandTotal,
+                other_fees,
+                itemsSubtotalExTax: itemsTotal,
+                otherFeesTotal: feesTotal,
+                grandTotalExTax: itemsTotal + feesTotal,
               });
             }}
-            showPaymentColumns={true}
           />
         </FormSection>
 

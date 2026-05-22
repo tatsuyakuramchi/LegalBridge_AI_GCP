@@ -87,6 +87,11 @@
       "summaryPaymentDate": { "label": "支払日 (自動: 明細から集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "明細の payment_date を自動集計するので入力不要" },
       "summaryPaymentTerms": { "label": "支払条件 (廃止予定)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "type": "hidden", "helpText": "明細の payment_terms に置換予定。旧テンプレ互換のため残置" },
 
+      "itemsSubtotalExTax": { "label": "業務委託小計 (税抜・自動集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "明細から自動集計" },
+      "otherFeesTotal":     { "label": "手数料小計 (税抜・自動集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "その他手数料テーブルから自動集計" },
+      "other_fees":         { "label": "その他手数料 (動的配列)", "group": "_DYNAMIC", "type": "hidden", "helpText": "OtherFeesTable から編集" },
+
+
       "ITEM_NAME": { "label": "品目名 (単一明細フォールバック)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "helpText": "明細表が空のときだけ参照される互換用入力。通常は IV. 明細表を使用" },
       "CALC_METHOD": { "label": "計算方式 (単一明細)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "type": "select", "options": ["FIXED", "SUBSCRIPTION", "ROYALTY"], "helpText": "FIXED=固定額 / SUBSCRIPTION=サブスク / ROYALTY=業績連動" },
       "PAYMENT_TERMS": { "label": "支払条件 (単一明細)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "placeholder": "例: 翌月末" },

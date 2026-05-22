@@ -461,11 +461,61 @@
       </tr>
       {{/if}}
       <tr>
-        <td colspan="7" class="right"><strong>小計（税抜)</strong></td>
-        <td class="right"><strong>¥ {{formatCurrency grandTotalExTax}}</strong></td>
+        <td colspan="7" class="right"><strong>業務委託 小計（税抜)</strong></td>
+        <td class="right"><strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong></td>
       </tr>
     </tbody>
   </table>
+
+  {{!-- Phase 22.21.56: その他手数料 (税抜・合計に加算)。コーディネート費・
+       振込手数料 等、業務委託報酬とは別の手数料項目。経費 (税込・別精算) とは
+       明確に区別され、本表の合計 grandTotalExTax に加算済み。 --}}
+  {{#if other_fees}}
+  {{#if (gt (length other_fees) 0)}}
+  <div class="section-mark">■ その他手数料（税抜・合計に加算）</div>
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width:6mm;">No</th>
+        <th>項目名</th>
+        <th style="width:30mm;">金額（税抜）</th>
+        <th>摘要</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each other_fees}}
+      <tr>
+        <td class="center">{{or line_no (index1 @index)}}</td>
+        <td><div class="item-name-block">{{fee_name}}</div></td>
+        <td class="right">{{formatYen amount}}</td>
+        <td>{{remarks}}</td>
+      </tr>
+      {{/each}}
+      <tr>
+        <td colspan="2" class="right"><strong>手数料 小計（税抜)</strong></td>
+        <td class="right"><strong>¥ {{formatCurrency otherFeesTotal}}</strong></td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+
+  {{!-- 合計 (業務委託 + その他手数料) を再掲。上部「発注概要」テーブルの
+       合計とも一致するが、明細表 + 手数料表 の直後に再表示することで読み手が
+       支払総額をすぐ把握できる。 --}}
+  <table class="summary" style="margin-top:6px;">
+    <tr>
+      <th>発注合計（税抜・業務委託 + 手数料）</th>
+      <td>
+        <div class="total-amount">¥ {{formatCurrency grandTotalExTax}}</div>
+        <div class="amount-note">
+          ※ 業務委託 ¥{{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}
+          ＋ 手数料 ¥{{formatCurrency otherFeesTotal}}
+        </div>
+      </td>
+    </tr>
+  </table>
+  {{/if}}
+  {{/if}}
 
   {{!-- Phase 17i: 経費 (交通費等・税込み額表示) --}}
   {{#if expenses}}
