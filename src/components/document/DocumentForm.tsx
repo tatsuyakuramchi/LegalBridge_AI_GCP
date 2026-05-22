@@ -2850,9 +2850,64 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       ? formData.scopeOutItems
       : []
 
+    // Phase 22.21.63: 保守仕様書フォームに「自社」「取引先」DB 補完ボタンを追加。
+    //   - [自社]   ボタン: companyProfile から PARTY_A_NAME を流入
+    //   - [取引先] ボタン: activeVendor から VENDOR_NAME を流入
+    //   親 PO に紐づいた別紙のため、PROJECT_TITLE と CREATED_DATE は
+    //   既に dbField (auto) で埋まっているはず。残るは甲乙 2 行だけ。
+    const fillPartyAFromSelf = () => {
+      if (!companyProfile) return;
+      setFormData({
+        ...formData,
+        PARTY_A_NAME: companyProfile.name || formData.PARTY_A_NAME || '',
+      });
+    };
+    const fillVendorFromPartner = () => {
+      if (!activeVendor) return;
+      const isCorp =
+        (activeVendor.entity_type || '').toLowerCase() === 'corporate' ||
+        activeVendor.entity_type === '法人';
+      setFormData({
+        ...formData,
+        // 法人なら正式商号、個人なら屋号/筆名/氏名の優先順
+        VENDOR_NAME: isCorp
+          ? activeVendor.vendor_name || ''
+          : activeVendor.pen_name ||
+            activeVendor.trade_name ||
+            activeVendor.vendor_name ||
+            '',
+      });
+    };
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+
     return (
       <div className="space-y-10">
-        <FormSection title="I. ヘッダ" variant="default" icon={<FileText className="w-4 h-4" />}>
+        <FormSection
+          title="I. ヘッダ"
+          variant="default"
+          icon={<FileText className="w-4 h-4" />}
+          headerActions={
+            <>
+              {sideButton('自社', fillPartyAFromSelf, !companyProfile)}
+              {sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+            </>
+          }
+        >
           {renderGroup('I. ヘッダ')}
         </FormSection>
 
