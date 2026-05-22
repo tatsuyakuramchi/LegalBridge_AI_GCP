@@ -3397,6 +3397,18 @@ ${details}
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
       const ledger = String(ledger_code || "").trim() || null;
+
+      // Phase 22.21.60: マスター側の番号変更を「正」にするため、変更前の
+      // 番号を保持しておき、変更後に documents テーブル側にも伝播させる。
+      //   contract_capabilities が UPDATE される前に DB 上の旧番号を取得。
+      const existingRow = await query(
+        `SELECT document_number FROM contract_capabilities WHERE id = $1`,
+        [id]
+      );
+      const previousDocNumber = String(
+        existingRow.rows[0]?.document_number || ""
+      ).trim();
+
       const finalDocNumber = await ensureDocumentNumber(
         document_number,
         contract_type,
@@ -3435,6 +3447,77 @@ ${details}
           id,
         ]
       );
+
+      // Phase 22.21.60: 旧 → 新 で document_number が変わったら、
+      //   archive (documents) の対応 row も同じ番号にリネームする。
+      //   これでマスター側を「正」とし、文書検索 (Phase 22.21.48 search) と
+      //   master が常に同期した状態を保つ。
+      let archivePropagation: {
+        old: string;
+        new: string;
+        documents_updated: number;
+        assets_updated: number;
+        conflict?: string;
+      } | null = null;
+      if (
+        previousDocNumber &&
+        finalDocNumber &&
+        previousDocNumber !== finalDocNumber
+      ) {
+        try {
+          const upd = await query(
+            `UPDATE documents
+                SET document_number = $1
+              WHERE document_number = $2`,
+            [finalDocNumber, previousDocNumber]
+          );
+          // external_assets.asset_number にも document_number が同期されている
+          // 環境があるので、同じ string なら一緒にリネーム (best effort)。
+          let assetsUpdated = 0;
+          try {
+            const upd2 = await query(
+              `UPDATE external_assets
+                  SET asset_number = $1
+                WHERE asset_number = $2`,
+              [finalDocNumber, previousDocNumber]
+            );
+            assetsUpdated = upd2.rowCount || 0;
+          } catch (err: any) {
+            // external_assets が無い環境はスキップ
+            if (err?.code !== "42P01") throw err;
+          }
+          archivePropagation = {
+            old: previousDocNumber,
+            new: finalDocNumber,
+            documents_updated: upd.rowCount || 0,
+            assets_updated: assetsUpdated,
+          };
+          console.log(
+            `[contracts] document_number renamed: ${previousDocNumber} → ${finalDocNumber} ` +
+              `(documents=${upd.rowCount}, external_assets=${assetsUpdated})`
+          );
+        } catch (err: any) {
+          if (err?.code === "23505") {
+            // UNIQUE 違反 — 新番号で既に別 row が存在するケース。
+            //   マスター側は更新済み (= contract_capabilities に新番号が入った)
+            //   が、documents 側はリネーム不可。警告のみで処理続行する。
+            archivePropagation = {
+              old: previousDocNumber,
+              new: finalDocNumber,
+              documents_updated: 0,
+              assets_updated: 0,
+              conflict:
+                "新番号と同じ document_number の archive row が既に存在するため、アーカイブ側のリネームをスキップしました。古い番号の archive row は残っています。",
+            };
+            console.warn(
+              `[contracts] could not rename documents.document_number to ${finalDocNumber} — duplicate exists`
+            );
+          } else {
+            throw err;
+          }
+        }
+      }
+
       res.json({
         success: true,
         document_number: finalDocNumber,
@@ -3446,6 +3529,7 @@ ${details}
           (regenerate_document_number === true ||
             regenerate_document_number === "true") &&
           finalDocNumber !== String(document_number || "").trim(),
+        archive_propagation: archivePropagation,
       });
     } catch (error) {
       res.status(500).json({ error: String(error) });

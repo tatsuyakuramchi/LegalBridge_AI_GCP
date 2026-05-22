@@ -170,16 +170,41 @@ export function ContractsPanel() {
         const newDocNo = savedDoc?.document_number || ""
         const wasAuto = !!savedDoc?.document_number_auto
         const wasRegen = !!savedDoc?.document_number_regenerated;
+        // Phase 22.21.60: archive_propagation を toast に反映。
+        //   - 成功 (documents_updated > 0) → 通知に件数を併記
+        //   - conflict 発生 → エラー風の警告通知で詳細を表示
+        const propag = savedDoc?.archive_propagation as
+          | {
+              old: string
+              new: string
+              documents_updated: number
+              assets_updated: number
+              conflict?: string
+            }
+          | null
+          | undefined
+        let propagSuffix = ""
+        if (propag && propag.old && propag.new && propag.old !== propag.new) {
+          if (propag.conflict) {
+            propagSuffix = ` (⚠ ${propag.old} → ${propag.new}: ${propag.conflict})`
+          } else if (propag.documents_updated > 0 || propag.assets_updated > 0) {
+            propagSuffix =
+              ` (アーカイブ同期: ${propag.old} → ${propag.new}, ` +
+              `documents ${propag.documents_updated} 件 / external_assets ${propag.assets_updated} 件)`
+          }
+        }
         if (wasAuto || wasRegen) {
           showNotification(
             `${isEdit ? "契約情報を更新しました" : "契約情報を追加しました"}` +
-              (newDocNo ? ` (文書番号: ${newDocNo}${wasRegen ? " ← 再発番" : " ← 自動発番"})` : ""),
-            "success"
+              (newDocNo ? ` (文書番号: ${newDocNo}${wasRegen ? " ← 再発番" : " ← 自動発番"})` : "") +
+              propagSuffix,
+            propag?.conflict ? "error" : "success"
           )
         } else {
           showNotification(
-            isEdit ? "契約情報を更新しました" : "契約情報を追加しました",
-            "success"
+            (isEdit ? "契約情報を更新しました" : "契約情報を追加しました") +
+              propagSuffix,
+            propag?.conflict ? "error" : "success"
           )
         }
         await refreshContracts()
