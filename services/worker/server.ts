@@ -3243,6 +3243,94 @@ ${details}
     return isIndividualLike ? "outsourcing" : "service_master";
   }
 
+  /**
+   * Phase 22.21.62: 文書番号を archive 全体で `from` → `to` にリネーム。
+   *
+   * 単純な完全一致だけでなく、Phase 22.10 のリビジョン suffix (`_NNN`) 行も
+   * 一緒に追従させる。例えば from = "ARC-PO-2026-0021" / to = "ARC-SVC-2026-0008"
+   * のとき:
+   *   - documents.document_number = "ARC-PO-2026-0021"             → "ARC-SVC-2026-0008"
+   *   - documents.document_number = "ARC-PO-2026-0021_001..._005"  → "ARC-SVC-2026-0008_001..._005"
+   *   - documents.base_document_number = "ARC-PO-2026-0021"        → "ARC-SVC-2026-0008"
+   *   - documents.superseded_by (完全一致 + suffix 付き) も同様
+   *   - external_assets.asset_number (完全一致 + suffix 付き)      も同様
+   *
+   * 23505 (UNIQUE 違反) は呼び出し側で catch して "conflict" として扱う。
+   */
+  async function renameArchiveDocumentNumber(
+    from: string,
+    to: string
+  ): Promise<{
+    documents_updated: number;
+    documents_revisions_updated: number;
+    documents_base_updated: number;
+    documents_superseded_updated: number;
+    assets_updated: number;
+    assets_revisions_updated: number;
+  }> {
+    const fromUnderscore = from + "_"; // e.g. "ARC-PO-2026-0021_"
+    const fromUnderscoreLen = fromUnderscore.length;
+
+    // 1. 完全一致 (base row)
+    const r1 = await query(
+      `UPDATE documents SET document_number = $1 WHERE document_number = $2`,
+      [to, from]
+    );
+    // 2. リビジョン suffix 行: "from_NNN" → "to_NNN"
+    const r2 = await query(
+      `UPDATE documents
+          SET document_number = $1 || SUBSTRING(document_number FROM $2::int)
+        WHERE LEFT(document_number, $3::int) = $4`,
+      [to, fromUnderscoreLen, fromUnderscoreLen, fromUnderscore]
+    );
+    // 3. base_document_number 参照
+    const r3 = await query(
+      `UPDATE documents SET base_document_number = $1 WHERE base_document_number = $2`,
+      [to, from]
+    );
+    // 4. superseded_by 参照 (完全一致)
+    const r4 = await query(
+      `UPDATE documents SET superseded_by = $1 WHERE superseded_by = $2`,
+      [to, from]
+    );
+    // 5. superseded_by 参照 (suffix 付き)
+    const r5 = await query(
+      `UPDATE documents
+          SET superseded_by = $1 || SUBSTRING(superseded_by FROM $2::int)
+        WHERE LEFT(superseded_by, $3::int) = $4`,
+      [to, fromUnderscoreLen, fromUnderscoreLen, fromUnderscore]
+    );
+
+    // 6. external_assets — table が無い環境はスキップ
+    let assetsBase = 0;
+    let assetsRev = 0;
+    try {
+      const a1 = await query(
+        `UPDATE external_assets SET asset_number = $1 WHERE asset_number = $2`,
+        [to, from]
+      );
+      assetsBase = a1.rowCount || 0;
+      const a2 = await query(
+        `UPDATE external_assets
+            SET asset_number = $1 || SUBSTRING(asset_number FROM $2::int)
+          WHERE LEFT(asset_number, $3::int) = $4`,
+        [to, fromUnderscoreLen, fromUnderscoreLen, fromUnderscore]
+      );
+      assetsRev = a2.rowCount || 0;
+    } catch (err: any) {
+      if (err?.code !== "42P01") throw err;
+    }
+
+    return {
+      documents_updated: r1.rowCount || 0,
+      documents_revisions_updated: r2.rowCount || 0,
+      documents_base_updated: r3.rowCount || 0,
+      documents_superseded_updated: (r4.rowCount || 0) + (r5.rowCount || 0),
+      assets_updated: assetsBase,
+      assets_revisions_updated: assetsRev,
+    };
+  }
+
   // Phase 22.21.46 / 22.21.49 / 22.21.51 / 22.21.52: 文書番号の自動採番。
   //   - regenerate=true → input 値を無視して強制的に新規発番
   //   - input が空文字 / null / undefined / 空白だけ → 新規発番
@@ -3452,11 +3540,17 @@ ${details}
       //   archive (documents) の対応 row も同じ番号にリネームする。
       //   これでマスター側を「正」とし、文書検索 (Phase 22.21.48 search) と
       //   master が常に同期した状態を保つ。
+      // Phase 22.21.62: 完全一致 + リビジョン suffix + base_document_number /
+      //   superseded_by 参照を一括リネーム。
       let archivePropagation: {
         old: string;
         new: string;
         documents_updated: number;
+        documents_revisions_updated: number;
+        documents_base_updated: number;
+        documents_superseded_updated: number;
         assets_updated: number;
+        assets_revisions_updated: number;
         conflict?: string;
       } | null = null;
       if (
@@ -3465,52 +3559,37 @@ ${details}
         previousDocNumber !== finalDocNumber
       ) {
         try {
-          const upd = await query(
-            `UPDATE documents
-                SET document_number = $1
-              WHERE document_number = $2`,
-            [finalDocNumber, previousDocNumber]
+          const r = await renameArchiveDocumentNumber(
+            previousDocNumber,
+            finalDocNumber
           );
-          // external_assets.asset_number にも document_number が同期されている
-          // 環境があるので、同じ string なら一緒にリネーム (best effort)。
-          let assetsUpdated = 0;
-          try {
-            const upd2 = await query(
-              `UPDATE external_assets
-                  SET asset_number = $1
-                WHERE asset_number = $2`,
-              [finalDocNumber, previousDocNumber]
-            );
-            assetsUpdated = upd2.rowCount || 0;
-          } catch (err: any) {
-            // external_assets が無い環境はスキップ
-            if (err?.code !== "42P01") throw err;
-          }
           archivePropagation = {
             old: previousDocNumber,
             new: finalDocNumber,
-            documents_updated: upd.rowCount || 0,
-            assets_updated: assetsUpdated,
+            ...r,
           };
           console.log(
-            `[contracts] document_number renamed: ${previousDocNumber} → ${finalDocNumber} ` +
-              `(documents=${upd.rowCount}, external_assets=${assetsUpdated})`
+            `[contracts] archive renamed: ${previousDocNumber} → ${finalDocNumber} ` +
+              `(base=${r.documents_updated}, rev=${r.documents_revisions_updated}, ` +
+              `base_ref=${r.documents_base_updated}, superseded=${r.documents_superseded_updated}, ` +
+              `assets=${r.assets_updated}+${r.assets_revisions_updated})`
           );
         } catch (err: any) {
           if (err?.code === "23505") {
-            // UNIQUE 違反 — 新番号で既に別 row が存在するケース。
-            //   マスター側は更新済み (= contract_capabilities に新番号が入った)
-            //   が、documents 側はリネーム不可。警告のみで処理続行する。
             archivePropagation = {
               old: previousDocNumber,
               new: finalDocNumber,
               documents_updated: 0,
+              documents_revisions_updated: 0,
+              documents_base_updated: 0,
+              documents_superseded_updated: 0,
               assets_updated: 0,
+              assets_revisions_updated: 0,
               conflict:
                 "新番号と同じ document_number の archive row が既に存在するため、アーカイブ側のリネームをスキップしました。古い番号の archive row は残っています。",
             };
             console.warn(
-              `[contracts] could not rename documents.document_number to ${finalDocNumber} — duplicate exists`
+              `[contracts] could not rename to ${finalDocNumber} — duplicate exists`
             );
           } else {
             throw err;
@@ -3588,27 +3667,10 @@ ${details}
           });
         }
 
-        let docsUpdated = 0;
-        let assetsUpdated = 0;
+        // Phase 22.21.62: 共通ヘルパで base + リビジョン + 参照すべてを一括リネーム
+        let r;
         try {
-          const upd = await query(
-            `UPDATE documents
-                SET document_number = $1
-              WHERE document_number = $2`,
-            [target, from]
-          );
-          docsUpdated = upd.rowCount || 0;
-          try {
-            const upd2 = await query(
-              `UPDATE external_assets
-                  SET asset_number = $1
-                WHERE asset_number = $2`,
-              [target, from]
-            );
-            assetsUpdated = upd2.rowCount || 0;
-          } catch (err: any) {
-            if (err?.code !== "42P01") throw err;
-          }
+          r = await renameArchiveDocumentNumber(from, target);
         } catch (err: any) {
           if (err?.code === "23505") {
             return res.status(409).json({
@@ -3622,21 +3684,37 @@ ${details}
           }
           throw err;
         }
-        if (docsUpdated === 0 && assetsUpdated === 0) {
+        const totalChanged =
+          r.documents_updated +
+          r.documents_revisions_updated +
+          r.documents_base_updated +
+          r.documents_superseded_updated +
+          r.assets_updated +
+          r.assets_revisions_updated;
+        if (totalChanged === 0) {
           return res.status(404).json({
             ok: false,
             error: `from_document_number "${from}" に該当する archive 行が見つかりません`,
           });
         }
         console.log(
-          `[contracts] manual archive rename: ${from} → ${target} (documents=${docsUpdated}, external_assets=${assetsUpdated}, master_id=${id})`
+          `[contracts] manual archive rename: ${from} → ${target} ` +
+            `(base=${r.documents_updated}, rev=${r.documents_revisions_updated}, ` +
+            `base_ref=${r.documents_base_updated}, superseded=${r.documents_superseded_updated}, ` +
+            `assets=${r.assets_updated}+${r.assets_revisions_updated}, master_id=${id})`
         );
         res.json({
           ok: true,
           from,
           to: target,
-          documents_updated: docsUpdated,
-          assets_updated: assetsUpdated,
+          ...r,
+          // 後方互換 (旧フィールド名も維持)
+          documents_updated:
+            r.documents_updated +
+            r.documents_revisions_updated +
+            r.documents_base_updated +
+            r.documents_superseded_updated,
+          assets_updated: r.assets_updated + r.assets_revisions_updated,
         });
       } catch (error) {
         console.error("rename-archive failed:", error);
