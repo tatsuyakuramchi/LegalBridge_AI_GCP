@@ -4,6 +4,7 @@ import { useAppData } from '@/src/context/AppDataContext';
 import { FormSection } from './FormSection';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
+import * as MaintenanceSpecParts from './MaintenanceSpecParts';
 import { LineItemTable, type LineItem } from './LineItemTable';
 import { ExpenseTable, type ExpenseItem } from './ExpenseTable';
 import {
@@ -23,7 +24,7 @@ import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
 import { ParentPoPicker, type PoLoaded } from './ParentPoPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
 import { TemplateMetadata } from './types';
-import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins } from 'lucide-react';
+import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 interface DocumentFormProps {
@@ -2712,6 +2713,139 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             ▶ V. 特約 (任意) — クリックして展開
           </summary>
           <div className="p-4 border-t border-input">{renderGroup('V. 特約 (任意)')}</div>
+        </details>
+      </div>
+    );
+  }
+
+  // Phase 22.21.55: Specialized Maintenance Spec Form (システム保守仕様書・別紙)
+  //
+  // 動的配列 (scopeItems / handoverItems / milestones / responsibilityRows /
+  // scopeOutItems) は専用テーブルエディタ (MaintenanceSpecParts) で編集。
+  // それ以外のスカラ値 (ヘッダ・SLA・連絡先・時間外単価 等) は
+  // templates_config.json から自動生成された renderGroup で扱う。
+  // _DYNAMIC group は dropdown 表示せず、専用エディタが代わりにレンダリングする。
+  if (templateId === 'maintenance_spec') {
+    const renderGroup = (groupName: string) =>
+      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+
+    const scopeItems = Array.isArray(formData.scopeItems) ? formData.scopeItems : []
+    const handoverItems = Array.isArray(formData.handoverItems) ? formData.handoverItems : []
+    const milestones = Array.isArray(formData.milestones) ? formData.milestones : []
+    const responsibilityRows = Array.isArray(formData.responsibilityRows)
+      ? formData.responsibilityRows
+      : []
+    const scopeOutItems = Array.isArray(formData.scopeOutItems)
+      ? formData.scopeOutItems
+      : []
+
+    return (
+      <div className="space-y-10">
+        <FormSection title="I. ヘッダ" variant="default" icon={<FileText className="w-4 h-4" />}>
+          {renderGroup('I. ヘッダ')}
+        </FormSection>
+
+        <FormSection
+          title="II. 月額稼働の構成"
+          variant="blue"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          {renderGroup('II. 月額稼働の構成')}
+        </FormSection>
+
+        <FormSection
+          title="III. 通常保守"
+          variant="emerald"
+          icon={<User className="w-4 h-4" />}
+        >
+          {renderGroup('III. 通常保守')}
+        </FormSection>
+
+        <FormSection
+          title="IV. 障害対応"
+          variant="amber"
+          icon={<AlertCircle className="w-4 h-4" />}
+        >
+          {renderGroup('IV. 障害対応')}
+        </FormSection>
+
+        <FormSection title="IV-2. SLA 重大度" variant="amber">
+          {renderGroup('IV-2. SLA 重大度')}
+        </FormSection>
+
+        <FormSection title="V. 時間外費用" variant="default">
+          {renderGroup('V. 時間外費用')}
+        </FormSection>
+
+        {/* ──── 動的配列セクション ──── */}
+        <FormSection
+          title="第2条 保守スコープ (動的)"
+          variant="default"
+          icon={<Settings className="w-4 h-4" />}
+        >
+          <div className="col-span-full">
+            <MaintenanceSpecParts.ScopeItemsTable
+              items={scopeItems}
+              onChange={(next) => setFormData({ ...formData, scopeItems: next })}
+            />
+          </div>
+        </FormSection>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VI. 初月対応 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input space-y-6">
+            {renderGroup('VI. 初月対応 (任意)')}
+            <div>
+              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
+                引継ぎ残課題
+              </div>
+              <MaintenanceSpecParts.HandoverItemsTable
+                items={handoverItems}
+                onChange={(next) => setFormData({ ...formData, handoverItems: next })}
+              />
+            </div>
+          </div>
+        </details>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VII. マイルストーン (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input space-y-6">
+            {renderGroup('VII. マイルストーン (任意)')}
+            <MaintenanceSpecParts.MilestonesTable
+              items={milestones}
+              onChange={(next) => setFormData({ ...formData, milestones: next })}
+            />
+          </div>
+        </details>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VIII. 責任分担 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input space-y-6">
+            {renderGroup('VIII. 責任分担 (任意)')}
+            <MaintenanceSpecParts.ResponsibilityTable
+              items={responsibilityRows}
+              onChange={(next) => setFormData({ ...formData, responsibilityRows: next })}
+            />
+          </div>
+        </details>
+
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ IX. スコープ外 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input space-y-6">
+            {renderGroup('IX. スコープ外 (任意)')}
+            <MaintenanceSpecParts.ScopeOutList
+              items={scopeOutItems}
+              onChange={(next) => setFormData({ ...formData, scopeOutItems: next })}
+            />
+          </div>
         </details>
       </div>
     );

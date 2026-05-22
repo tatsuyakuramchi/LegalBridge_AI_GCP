@@ -1,0 +1,415 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>別紙{{ANNEX_NO}}　{{ANNEX_TITLE}}</title>
+  <style>
+    @page { size: A4; margin: 12mm 15mm; }
+    * { box-sizing: border-box; }
+    body {
+      font-family: "Noto Sans CJK JP", "Noto Sans JP", "IPAexGothic", "IPAGothic", sans-serif;
+      font-size: 10pt;
+      line-height: 1.6;
+      color: #111;
+      margin: 0;
+    }
+
+    .annex-header {
+      border-bottom: 2px solid #111;
+      padding-bottom: 6px;
+      margin-bottom: 16px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+    }
+    .annex-header h1 { font-size: 16pt; margin: 0; letter-spacing: 1px; }
+    .annex-meta { text-align: right; font-size: 9pt; color: #555; line-height: 1.7; }
+
+    .section-mark {
+      display: inline-block;
+      border-left: 4px solid #111;
+      padding: 2px 0 2px 10px;
+      font-weight: 800;
+      font-size: 10pt;
+      margin-top: 16px;
+      margin-bottom: 8px;
+    }
+
+    table { width: 100%; border-collapse: collapse; font-size: 9.5pt; margin-bottom: 10px; }
+    th, td { border: 1px solid #cfcfcf; padding: 6px 8px; vertical-align: top; }
+    thead th { background: #f3f3f3; font-weight: 800; text-align: center; }
+    td.label-col { background: #fafafa; font-weight: 700; width: 28%; white-space: nowrap; }
+    td.center { text-align: center; }
+    td.muted { color: #555; font-size: 9pt; }
+
+    .badge {
+      display: inline-block; font-size: 8pt; font-weight: 800;
+      padding: 1px 6px; border-radius: 2px; border: 1px solid; white-space: nowrap;
+    }
+    .badge-a { border-color: #b00; color: #b00; background: #fff5f5; }
+    .badge-b { border-color: #b07000; color: #b07000; background: #fffaf0; }
+    .badge-c { border-color: #555; color: #555; background: #f9f9f9; }
+
+    .step-list { list-style: none; padding: 0; margin: 0; }
+    .step-list li {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 6px 0; border-bottom: 1px dashed #e0e0e0; font-size: 9.5pt;
+    }
+    .step-list li:last-child { border-bottom: none; }
+    .step-num {
+      flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%;
+      background: #111; color: #fff; font-size: 9pt; font-weight: 800;
+      display: flex; align-items: center; justify-content: center; margin-top: 1px;
+    }
+    .step-body strong { display: block; font-size: 9.5pt; }
+    .step-body span { font-size: 8.5pt; color: #555; }
+
+    .callout {
+      border: 1px solid #cfcfcf; border-left: 4px solid #111;
+      padding: 8px 10px; background: #fff; font-size: 9pt; margin-top: 8px;
+    }
+    .small-muted { font-size: 8.5pt; color: #555; }
+    .todo-badge {
+      display: inline-block; background: #fff8e1; border: 1px solid #e6b800;
+      color: #7a5c00; font-size: 8pt; font-weight: 700; padding: 1px 6px; border-radius: 2px;
+    }
+    .annex-footer {
+      margin-top: 24px; border-top: 1px solid #cfcfcf;
+      padding-top: 6px; font-size: 8.5pt; color: #777; text-align: right;
+    }
+  </style>
+</head>
+<body>
+
+  {{!-- ── ヘッダー ── --}}
+  <div class="annex-header">
+    <div>
+      <div style="font-size:8.5pt; color:#555; margin-bottom:3px;">発注書 {{ORDER_NO}} 付属</div>
+      <h1>別紙{{ANNEX_NO}}　{{ANNEX_TITLE}}</h1>
+    </div>
+    <div class="annex-meta">
+      対象案件: {{PROJECT_TITLE}}<br>
+      発注者: {{PARTY_A_NAME}}<br>
+      受注者: {{VENDOR_NAME}}<br>
+      作成日: {{CREATED_DATE}}
+    </div>
+  </div>
+
+  {{!-- ════ 第1条　月額稼働の構成 ════ --}}
+  <div class="section-mark">■ 第1条　月額稼働の構成</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:20%">区分</th>
+        <th style="width:18%">目安工数</th>
+        <th>主な対応内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="label-col">定常作業</td>
+        <td class="center">約 {{ROUTINE_HOURS}}時間/月</td>
+        <td>{{ROUTINE_WORK_DESC}}</td>
+      </tr>
+      <tr>
+        <td class="label-col">予備工数</td>
+        <td class="center">約 {{BUFFER_HOURS}}時間/月</td>
+        <td>{{BUFFER_WORK_DESC}}</td>
+      </tr>
+      <tr>
+        <td class="label-col" style="font-weight:900;">合計</td>
+        <td class="center" style="font-weight:900;">{{TOTAL_HOURS}}時間/月</td>
+        <td class="muted">月額固定の範囲。超過が見込まれる場合は事前に発注者の承認を要する（発注書特約第1条1-2参照）。</td>
+      </tr>
+    </tbody>
+  </table>
+
+  {{!-- ════ 第2条　月額保守に含まれる主な対応内容 ════ --}}
+  <div class="section-mark">■ 第2条　月額保守に含まれる主な対応内容</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width:22%">区分</th>
+        <th>主な対応内容</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each scopeItems}}
+      <tr>
+        <td class="label-col">{{category}}</td>
+        <td>
+          {{content}}
+          {{#if note}}
+          <br><span class="small-muted">※ {{note}}</span>
+          {{/if}}
+        </td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+
+  {{!-- ════ 第3条　通常保守の対応時間 ════ --}}
+  <div class="section-mark">■ 第3条　通常保守の対応時間</div>
+
+  <p style="font-size:9.5pt; margin:0 0 8px 0;">
+    乙（受注者）は、甲（発注者）からの通常の問い合わせ、仕様確認、および軽微な修正対応等について、
+    以下の各項目に沿って受付および対応を行うものとする。
+  </p>
+  <table>
+    <tbody>
+      <tr>
+        <td class="label-col">対応曜日</td>
+        <td>{{SUPPORT_DAYS}}</td>
+      </tr>
+      <tr>
+        <td class="label-col">対応時間</td>
+        <td>
+          {{#if SUPPORT_HOURS}}
+            {{SUPPORT_HOURS}}
+          {{else}}
+            <span class="todo-badge">【要記入：先方確認のうえ記載】</span>
+            <span class="small-muted" style="margin-left:6px;">（例：午前○時○分 〜 午後○時○分）</span>
+          {{/if}}
+        </td>
+      </tr>
+      <tr>
+        <td class="label-col">通常保守の上限稼働時間</td>
+        <td>
+          1ヶ月あたり最大 <strong>{{TOTAL_HOURS}}時間</strong> 以内とする。<br>
+          <span class="small-muted">（内訳：定常作業 約{{ROUTINE_HOURS}}時間 ＋ 予備工数 約{{BUFFER_HOURS}}時間。第1条参照。）</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="label-col">受付方法</td>
+        <td>
+          {{#if CONTACT_SLACK}}Slack（<strong>{{CONTACT_SLACK}}</strong>）または {{/if}}メール（{{CONTACT_EMAIL}}）
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  {{!-- ════ 第4条　障害発生時の対応時間・連絡ルート ════ --}}
+  <div class="section-mark">■ 第4条　障害発生時の対応時間・連絡ルート</div>
+
+  <p style="font-size:9.5pt; margin:0 0 8px 0;">
+    前条の内容に関わらず、Webサイトのページ表示不具合等、システムに重大な機能不全（以下「障害」という）が
+    発生した場合、乙は以下の各項目に沿って速やかに初動対応（原因調査および状況報告）を開始するものとする。
+  </p>
+  <table>
+    <tbody>
+      <tr>
+        <td class="label-col">障害対応時間</td>
+        <td>通常保守の対応曜日および対応時間の内外に関わらず、<strong>24時間365日</strong> いつでも対応を行うものとする。</td>
+      </tr>
+      <tr>
+        <td class="label-col">障害対応の上限稼働時間</td>
+        <td>
+          1ヶ月あたり最大 <strong>{{INCIDENT_MAX_HOURS}}時間</strong> 以内とする。<br>
+          <span class="small-muted">（月額予備工数{{INCIDENT_MAX_HOURS}}時間の範囲内。超過する場合は第5条に定める時間外費用を適用する。）</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="label-col">緊急連絡先</td>
+        <td>
+          担当者直通電話：
+          {{#if EMERGENCY_PHONE}}
+            <strong>{{EMERGENCY_PHONE}}</strong>
+          {{else}}
+            <span class="todo-badge">【要記入：受注者担当者の直通電話番号】</span>
+          {{/if}}<br>
+          緊急用メールアドレス：
+          {{#if EMERGENCY_EMAIL}}
+            <strong>{{EMERGENCY_EMAIL}}</strong>
+          {{else}}
+            <span class="todo-badge">【要記入：緊急用メールアドレス】</span>
+          {{/if}}
+          {{#if EMERGENCY_SLACK}}<br>Slack：<strong>{{EMERGENCY_SLACK}}</strong>{{/if}}
+        </td>
+      </tr>
+      <tr>
+        <td class="label-col">目標復旧時間</td>
+        <td>
+          障害検知、または甲からの通知受領後、重大度に応じて下表のとおり一次回答または暫定対応を行うよう努めるものとする。<br>
+          <span class="small-muted">※ 復旧時間は目標値であり、{{EXTERNAL_SERVICES}} 等、乙の支配が及ばない外部サービスの障害に起因する場合は免責とする。ただし乙は状況報告を継続する。</span>
+          <table style="margin-top:8px; margin-bottom:0;">
+            <thead>
+              <tr>
+                <th style="width:18%">重大度</th>
+                <th style="width:38%">定義</th>
+                <th style="width:22%">初動報告目標</th>
+                <th>復旧着手目標</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="center"><span class="badge badge-a">重大度 A</span></td>
+                <td>{{SLA_A_DEF}}</td>
+                <td class="center"><strong>{{SLA_A_INITIAL}}</strong></td>
+                <td class="center">初動報告後<br><strong>{{SLA_A_RECOVERY}}</strong></td>
+              </tr>
+              <tr>
+                <td class="center"><span class="badge badge-b">重大度 B</span></td>
+                <td>{{SLA_B_DEF}}</td>
+                <td class="center"><strong>{{SLA_B_INITIAL}}</strong></td>
+                <td class="center"><strong>{{SLA_B_RECOVERY}}</strong></td>
+              </tr>
+              <tr>
+                <td class="center"><span class="badge badge-c">重大度 C</span></td>
+                <td>{{SLA_C_DEF}}</td>
+                <td class="center"><strong>{{SLA_C_INITIAL}}</strong></td>
+                <td class="center">{{SLA_C_RECOVERY}}</td>
+              </tr>
+            </tbody>
+          </table>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+
+  {{!-- ════ 第5条　時間外の費用 ════ --}}
+  <div class="section-mark">■ 第5条　時間外の費用</div>
+
+  <p style="font-size:9.5pt; margin:0 0 8px 0;">
+    第3条または第4条に定める上限稼働時間を超過した場合の費用は、超過の性質に応じて以下のとおり区分して取り扱うものとする。
+  </p>
+  <table>
+    <thead>
+      <tr>
+        <th style="width:22%">区分</th>
+        <th style="width:38%">適用条件</th>
+        <th>費用の取り扱い</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="label-col">① 通常保守の超過</td>
+        <td>第3条（通常保守）に係る問い合わせ対応・軽微修正・定常作業において月額上限稼働時間を超過した場合</td>
+        <td>
+          甲乙別途協議合意のうえ、<strong>{{OVERTIME_RATE}}円/時間（{{OVERTIME_RATE_TAX}}）</strong>にて対応するものとする。<br>
+          <span class="small-muted">超過が見込まれる時点で乙より甲に事前報告・承認を要する。承認なき超過分は請求不可。</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="label-col">② 障害対応の超過</td>
+        <td>第4条（障害発生時）に係る原因調査・復旧対応・暫定措置において月額上限稼働時間を超過した場合</td>
+        <td>
+          障害対応は作業時間のみでは価値を適切に評価できない場合があるため、超過費用は<strong>時間単価によらず甲乙別途協議</strong>のうえ決定するものとする。<br>
+          <span class="small-muted">協議にあたっては、乙は対応内容・作業工数・難易度・根本原因の所在を書面にて甲に報告し、甲はこれをもとに費用の合理性を判断する。なお、乙の帰責事由による障害については超過費用を請求しないものとする。</span>
+        </td>
+      </tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <strong>共通事項：</strong>いずれの区分においても、超過が見込まれる時点で乙は速やかに甲へ通知し、対応継続の可否を確認するものとする。甲の承認または協議合意なく超過した費用は請求できない。超過分は当月の月次報告書に工数明細・対応概要を添付し、翌月請求とする。
+  </div>
+
+  {{!-- ════ 第6条　初月の対応範囲（オプション） ════ --}}
+  {{#if firstMonthSection}}
+  <div class="section-mark">■ 第6条　初月（{{FIRST_MONTH}}）の対応範囲</div>
+
+  <table>
+    <tbody>
+      <tr>
+        <td class="label-col">保守開始方式</td>
+        <td>{{FIRST_MONTH_START_METHOD}}</td>
+      </tr>
+      {{#if handoverItems}}
+      <tr>
+        <td class="label-col">引継ぎ残課題</td>
+        <td>
+          {{HANDOVER_CONTEXT}}<br>
+          現時点の残課題（合計約{{HANDOVER_HOURS}}時間規模）は以下のとおりであり、月額予備工数（約{{BUFFER_HOURS}}時間/月）の範囲内で対応する。
+          <ul style="margin:6px 0 0 0; padding-left:16px;">
+            {{#each handoverItems}}
+            <li>
+              {{item}}
+              {{#if note}}<br><span class="small-muted">※ {{note}}</span>{{/if}}
+            </li>
+            {{/each}}
+          </ul>
+        </td>
+      </tr>
+      {{/if}}
+      <tr>
+        <td class="label-col">費用への影響</td>
+        <td>{{FIRST_MONTH_COST_NOTE}}</td>
+      </tr>
+    </tbody>
+  </table>
+  {{/if}}
+
+  {{!-- ════ 第7条　発注後の業務開始手順 ════ --}}
+  {{#if milestones}}
+  <div class="section-mark">■ 第{{milestoneArticleNo}}条　発注後の業務開始手順（マイルストーン）</div>
+
+  <ul class="step-list">
+    {{#each milestones}}
+    <li>
+      <div class="step-num">{{add @index 1}}</div>
+      <div class="step-body">
+        <strong>{{title}}</strong>
+        <span>{{description}}</span>
+      </div>
+    </li>
+    {{/each}}
+  </ul>
+
+  {{#if MILESTONE_DELAY_NOTE}}
+  <div class="callout" style="margin-top:8px;">{{MILESTONE_DELAY_NOTE}}</div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- ════ 責任分担 ════ --}}
+  {{#if responsibilityRows}}
+  <div class="section-mark">■ 第{{responsibilityArticleNo}}条　責任分担</div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>業務項目</th>
+        <th style="width:18%; text-align:center;">発注者（甲）</th>
+        <th style="width:18%; text-align:center;">受注者（乙）</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each responsibilityRows}}
+      <tr>
+        <td>{{item}}</td>
+        <td class="center">{{party_a}}</td>
+        <td class="center">{{party_b}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{#if RESPONSIBILITY_NOTE}}
+  <div class="small-muted" style="margin-top:4px;">※ {{RESPONSIBILITY_NOTE}}</div>
+  {{/if}}
+  {{/if}}
+
+  {{!-- ════ スコープ外 ════ --}}
+  {{#if scopeOutItems}}
+  <div class="section-mark">■ 第{{scopeOutArticleNo}}条　月額保守スコープ外（別途見積）</div>
+
+  <p style="font-size:9.5pt; margin-bottom:6px;">
+    以下は月額保守の範囲外とし、必要に応じて別途発注書を発行して対応するものとする。
+  </p>
+  <table>
+    <tbody>
+      {{#each scopeOutItems}}
+      <tr>
+        <td style="width:5%; text-align:center;">{{circledNum @index}}</td>
+        <td>{{this}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  {{/if}}
+
+  <div class="annex-footer">
+    別紙{{ANNEX_NO}}「{{ANNEX_TITLE}}」／発注書 {{ORDER_NO}} 付属／{{PARTY_A_NAME}}・{{VENDOR_NAME}}
+  </div>
+
+</body>
+</html>

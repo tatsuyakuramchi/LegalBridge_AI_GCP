@@ -440,5 +440,70 @@
 
       "特記事項_本文": { "label": "特記事項", "group": "IX. 特記事項", "type": "textarea", "placeholder": "個別契約に固有の追加条件など" }
     }
+  },
+
+  "maintenance_spec": {
+    "label": "システム保守仕様書 (別紙)",
+    "category": "Domestic",
+    "vars": {
+      "ORDER_NO":      { "label": "親発注書番号", "group": "I. ヘッダ", "helpText": "別紙として紐付ける発注書番号 (例: ARC-PO-2026-0001)" },
+      "ANNEX_NO":      { "label": "別紙番号", "group": "I. ヘッダ", "placeholder": "1", "helpText": "数値だけ。タイトルは別紙タイトルへ" },
+      "ANNEX_TITLE":   { "label": "別紙タイトル", "group": "I. ヘッダ", "required": true, "placeholder": "システム保守仕様書" },
+      "PROJECT_TITLE": { "label": "対象案件", "group": "I. ヘッダ", "required": true, "dbField": "backlog.summary" },
+      "PARTY_A_NAME":  { "label": "発注者 (甲)", "group": "I. ヘッダ", "required": true, "helpText": "[自社] ボタンで自動入力" },
+      "VENDOR_NAME":   { "label": "受注者 (乙)", "group": "I. ヘッダ", "required": true, "helpText": "[取引先] ボタンで自動入力" },
+      "CREATED_DATE":  { "label": "作成日", "group": "I. ヘッダ", "type": "date", "dbField": "auto.today" },
+
+      "ROUTINE_HOURS":     { "label": "定常作業 (時間/月)", "group": "II. 月額稼働の構成", "type": "number", "placeholder": "9" },
+      "ROUTINE_WORK_DESC": { "label": "定常作業 内容", "group": "II. 月額稼働の構成", "type": "textarea", "placeholder": "例: 軽微修正・問い合わせ対応・運用監視" },
+      "BUFFER_HOURS":      { "label": "予備工数 (時間/月)", "group": "II. 月額稼働の構成", "type": "number", "placeholder": "15" },
+      "BUFFER_WORK_DESC":  { "label": "予備工数 内容", "group": "II. 月額稼働の構成", "type": "textarea", "placeholder": "例: 障害対応・突発作業の備え" },
+      "TOTAL_HOURS":       { "label": "合計 (時間/月)", "group": "II. 月額稼働の構成", "type": "number", "placeholder": "24", "helpText": "定常 + 予備の合計。第3条の上限稼働時間にも表示される" },
+
+      "SUPPORT_DAYS":   { "label": "対応曜日", "group": "III. 通常保守", "placeholder": "例: 月曜日 〜 金曜日 (祝日除く)" },
+      "SUPPORT_HOURS":  { "label": "対応時間", "group": "III. 通常保守", "placeholder": "例: 10:00 〜 18:00" },
+      "CONTACT_SLACK":  { "label": "Slack チャンネル", "group": "III. 通常保守", "placeholder": "#project-xxx (任意)" },
+      "CONTACT_EMAIL":  { "label": "受付メール", "group": "III. 通常保守", "required": true, "placeholder": "support@example.com" },
+
+      "INCIDENT_MAX_HOURS":  { "label": "障害対応の上限稼働時間", "group": "IV. 障害対応", "type": "number", "placeholder": "15", "helpText": "通常は予備工数と同じ" },
+      "EMERGENCY_PHONE":     { "label": "緊急連絡先 (電話)", "group": "IV. 障害対応", "placeholder": "03-xxxx-xxxx" },
+      "EMERGENCY_EMAIL":     { "label": "緊急連絡先 (メール)", "group": "IV. 障害対応", "placeholder": "emergency@example.com" },
+      "EMERGENCY_SLACK":     { "label": "緊急連絡先 (Slack)", "group": "IV. 障害対応", "placeholder": "(任意)" },
+      "EXTERNAL_SERVICES":   { "label": "免責対象の外部サービス", "group": "IV. 障害対応", "placeholder": "例: AWS / microCMS / GitHub" },
+
+      "SLA_A_DEF":      { "label": "重大度 A 定義", "group": "IV-2. SLA 重大度", "type": "textarea", "placeholder": "例: サイト全体が表示不能、または決済機能が停止" },
+      "SLA_A_INITIAL":  { "label": "重大度 A 初動報告目標", "group": "IV-2. SLA 重大度", "placeholder": "1時間以内" },
+      "SLA_A_RECOVERY": { "label": "重大度 A 復旧着手目標", "group": "IV-2. SLA 重大度", "placeholder": "4時間以内" },
+      "SLA_B_DEF":      { "label": "重大度 B 定義", "group": "IV-2. SLA 重大度", "type": "textarea", "placeholder": "例: 主要機能の一部が利用不可" },
+      "SLA_B_INITIAL":  { "label": "重大度 B 初動報告目標", "group": "IV-2. SLA 重大度", "placeholder": "4時間以内" },
+      "SLA_B_RECOVERY": { "label": "重大度 B 復旧着手目標", "group": "IV-2. SLA 重大度", "placeholder": "翌営業日中" },
+      "SLA_C_DEF":      { "label": "重大度 C 定義", "group": "IV-2. SLA 重大度", "type": "textarea", "placeholder": "例: 表示崩れ・軽微な不具合" },
+      "SLA_C_INITIAL":  { "label": "重大度 C 初動報告目標", "group": "IV-2. SLA 重大度", "placeholder": "翌営業日中" },
+      "SLA_C_RECOVERY": { "label": "重大度 C 復旧着手目標", "group": "IV-2. SLA 重大度", "placeholder": "別途協議" },
+
+      "OVERTIME_RATE":      { "label": "時間外単価", "group": "V. 時間外費用", "type": "number", "placeholder": "5625" },
+      "OVERTIME_RATE_TAX":  { "label": "税表記", "group": "V. 時間外費用", "placeholder": "税別" },
+
+      "firstMonthSection":         { "label": "第6条 (初月対応) を表示", "group": "VI. 初月対応 (任意)", "type": "boolean" },
+      "FIRST_MONTH":               { "label": "初月", "group": "VI. 初月対応 (任意)", "placeholder": "例: 2026年6月" },
+      "FIRST_MONTH_START_METHOD":  { "label": "保守開始方式", "group": "VI. 初月対応 (任意)", "type": "textarea" },
+      "HANDOVER_CONTEXT":          { "label": "引継ぎ前文", "group": "VI. 初月対応 (任意)", "type": "textarea" },
+      "HANDOVER_HOURS":            { "label": "引継ぎ残課題 合計時間", "group": "VI. 初月対応 (任意)", "type": "number" },
+      "FIRST_MONTH_COST_NOTE":     { "label": "費用への影響", "group": "VI. 初月対応 (任意)", "type": "textarea" },
+
+      "milestoneArticleNo":        { "label": "マイルストーン条 番号", "group": "VII. マイルストーン (任意)", "type": "number", "placeholder": "7", "helpText": "第N条として表示" },
+      "MILESTONE_DELAY_NOTE":      { "label": "遅延時の注記", "group": "VII. マイルストーン (任意)", "type": "textarea" },
+
+      "responsibilityArticleNo":   { "label": "責任分担条 番号", "group": "VIII. 責任分担 (任意)", "type": "number", "placeholder": "8" },
+      "RESPONSIBILITY_NOTE":       { "label": "責任分担 注記", "group": "VIII. 責任分担 (任意)", "type": "textarea" },
+
+      "scopeOutArticleNo":         { "label": "スコープ外条 番号", "group": "IX. スコープ外 (任意)", "type": "number", "placeholder": "9" },
+
+      "scopeItems":          { "label": "保守対応内容 (動的配列)", "group": "_DYNAMIC", "type": "hidden", "helpText": "専用 UI から編集" },
+      "handoverItems":       { "label": "引継ぎ残課題 (動的配列)", "group": "_DYNAMIC", "type": "hidden" },
+      "milestones":          { "label": "マイルストーン (動的配列)", "group": "_DYNAMIC", "type": "hidden" },
+      "responsibilityRows":  { "label": "責任分担行 (動的配列)", "group": "_DYNAMIC", "type": "hidden" },
+      "scopeOutItems":       { "label": "スコープ外項目 (動的配列)", "group": "_DYNAMIC", "type": "hidden" }
+    }
   }
 }

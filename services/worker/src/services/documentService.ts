@@ -125,6 +125,18 @@ export class DocumentService {
     // 7. 1-based index (use inside {{#each}} as {{index1 @index}})
     Handlebars.registerHelper("index1", (idx) => Number(idx) + 1);
 
+    // 7b. Phase 22.21.55: 丸数字 (①②③...⑳) — {{circledNum @index}} で 0-based を 1-based に。
+    //     21 以降は "21." のような数字表記にフォールバック。
+    //     maintenance_spec のスコープ外項目箇条書きで使う。
+    Handlebars.registerHelper("circledNum", (idx: any) => {
+      const n = Number(idx) + 1;
+      const circled = [
+        "①","②","③","④","⑤","⑥","⑦","⑧","⑨","⑩",
+        "⑪","⑫","⑬","⑭","⑮","⑯","⑰","⑱","⑲","⑳",
+      ];
+      return circled[n - 1] || `${n}.`;
+    });
+
     // 8. Percent formatting (e.g. 5.0 -> "5.0 %")
     //    Strips trailing zeros after decimal point for visual hygiene.
     Handlebars.registerHelper("formatPct", (value) => {
