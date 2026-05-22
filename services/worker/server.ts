@@ -9354,14 +9354,19 @@ ${details}
             BASE_DOC_NO: baseDocumentNumber,
             REVISION: revision,
             isReissue,
-            // Phase 17l: ORDER_NO は新規発行された docNumber を優先する。
-            //   issueKey (Backlog 課題キー) は最後のフォールバックに留めない —
-            //   purchase_order テンプレ等で 発注番号 として表示されるため、
-            //   ARC-PO-YYYY-NNNN を出さないと意味がない。
-            //   - formData.orderNumber: ユーザーが手動入力した場合
-            //   - parentOrderNumber:    検収書から見た親 PO の番号
-            //   - docNumber:            通常はこれ (採番された自身の文書番号)
-            ORDER_NO: formData.orderNumber || parentOrderNumber || docNumber,
+            // Phase 17l / 22.21.65: ORDER_NO の解決ロジック。
+            //   テンプレ種別で振る舞いが変わる:
+            //   [A] purchase_order 系 (purchase_order / planning_purchase_order /
+            //       intl_purchase_order): ORDER_NO は自身の文書番号 (= 発注書 No)。
+            //       formData.orderNumber > parentOrderNumber > docNumber の順。
+            //   [B] それ以外 (maintenance_spec 等の "別紙" テンプレ):
+            //       ORDER_NO は 親発注書の番号 = foreign reference。ユーザーが
+            //       フォームで設定した formData.ORDER_NO を最優先する。
+            //       Phase 22.21.55 / 64 で maintenance_spec の親 PO 検索ウィジェットが
+            //       formData.ORDER_NO に親 PO 番号を入れているため、それを尊重する。
+            ORDER_NO: String(templateType || "").includes("purchase_order")
+              ? formData.orderNumber || parentOrderNumber || docNumber
+              : formData.ORDER_NO || formData.orderNumber || parentOrderNumber || docNumber,
             // Phase 22.15: ライセンス系テンプレが参照する CONTRACT_NO も
             //   自動採番した docNumber を渡す。formData にユーザー手動値が
             //   あればそれを優先 (上書き目的)。これにより license_master.html
