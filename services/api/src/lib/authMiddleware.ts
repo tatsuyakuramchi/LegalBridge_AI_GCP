@@ -103,7 +103,7 @@ export function requireSignedUrl(opts: Options): RequestHandler {
     // ─── 0. IAP 検証 (best-effort, IAP_ENFORCE=true なら必須) ──────
     if (isIapEnforced()) {
       const iap = await verifyIap(req);
-      if (!iap.ok) {
+      if (iap.ok === false) {
         logAccess(req, "deny", { layer: "iap", reason: iap.reason });
         return res
           .status(401)

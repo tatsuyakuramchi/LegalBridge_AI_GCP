@@ -290,7 +290,7 @@ async function startServer() {
           .send(renderErrorPage("Bad Request", "vendor id が不正です", 400));
       }
       // searchContractStatus({ vendorId }) で詳細を構築
-      const payload = await contractCheckService.searchContractStatus({
+      const payload: any = await contractCheckService.searchContractStatus({
         counterpartyName: "",
         purposeCode: "",
         vendorId,
