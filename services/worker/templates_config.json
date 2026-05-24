@@ -128,6 +128,7 @@
     "category": "License",
     "vars": {
       "CONTRACT_NO": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
+      "CONTRACT_DATE": { "label": "\u5951\u7d04\u7de0\u7d50\u65e5", "group": "I. \u30d8\u30c3\u30c0", "type": "date", "required": true },
 
       "VENDOR_NAME": { "label": "ライセンサー名称", "group": "II. ライセンサー (許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "VENDOR_ADDRESS": { "label": "ライセンサー住所", "group": "II. ライセンサー (許諾者)", "type": "textarea", "required": true },
@@ -146,6 +147,7 @@
       "ACCOUNT_HOLDER_KANA": { "label": "口座名義 (カナ)", "group": "IV. 振込先口座 (ロイヤリティ送金先)" },
       "IS_INVOICE_ISSUER": { "label": "適格請求書発行事業者", "group": "IV. 振込先口座 (ロイヤリティ送金先)", "type": "boolean" },
       "invoiceRegistrationDisplay": { "label": "インボイス登録番号 (T-)", "group": "IV. 振込先口座 (ロイヤリティ送金先)", "helpText": "IS_INVOICE_ISSUER が true の場合に表示" },
+      "CONTRACT_PERIOD_SUMMARY": { "label": "\u5951\u7d04\u671f\u9593", "group": "IV. \u632f\u8fbc\u5148\u53e3\u5ea7 (\u30ed\u30a4\u30e4\u30ea\u30c6\u30a3\u9001\u91d1\u5148)", "placeholder": "\u4f8b: \u5951\u7d04\u7de0\u7d50\u65e5\u304b\u30895\u5e74\u9593\uff08\u671f\u9593\u6e80\u4e861\u304b\u6708\u524d\u307e\u3067\u306e\u66f4\u65b0\u62d2\u7d76\u901a\u77e5\u304c\u306a\u3044\u5834\u5408\u306f\u540c\u4e00\u6761\u4ef6\u30675\u5e74\u9593\u66f4\u65b0\uff09" },
 
       "HAS_REMARKS": { "label": "備考あり", "group": "V. 備考 (任意)", "type": "boolean" },
       "REMARKS": { "label": "備考", "group": "V. 備考 (任意)", "type": "textarea", "helpText": "HAS_REMARKS が true の場合に表示" },
@@ -159,6 +161,7 @@
     "label": "業務委託基本契約書",
     "category": "Domestic",
     "vars": {
+      "CONTRACT_NO": { "label": "\u5951\u7d04\u756a\u53f7", "type": "text", "group": "I. \u5951\u7d04\u7de0\u7d50\u65e5", "dbField": "auto.docNumber", "helpText": "\u751f\u6210\u6642\u306b\u81ea\u52d5\u63a1\u756a\u3055\u308c\u307e\u3059" },
       "CONTRACT_DATE": { "label": "契約締結日", "type": "date", "group": "I. 契約締結日", "required": true },
 
       "PARTY_A_NAME": { "label": "甲 (委託者) 商号", "group": "II. 甲 (委託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
@@ -180,6 +183,7 @@
 
       "IS_INVOICE_ISSUER": { "label": "適格請求書発行事業者 (該当/非該当)", "group": "V. インボイス制度関連", "placeholder": "該当 / 非該当" },
       "invoiceRegistrationDisplay": { "label": "登録番号 (T-)", "group": "V. インボイス制度関連", "helpText": "[取引先] ボタンで自動入力 (T プレフィクス付与)" },
+      "CONTRACT_PERIOD_SUMMARY": { "label": "\u5951\u7d04\u671f\u9593", "group": "V. \u30a4\u30f3\u30dc\u30a4\u30b9\u5236\u5ea6\u95a2\u9023", "placeholder": "\u4f8b: \u5951\u7d04\u7de0\u7d50\u65e5\u304b\u30891\u5e74\u9593\uff08\u671f\u9593\u6e80\u4e861\u304b\u6708\u524d\u307e\u3067\u306e\u89e3\u7d04\u901a\u77e5\u304c\u306a\u3044\u5834\u5408\u306f\u540c\u4e00\u6761\u4ef6\u30671\u5e74\u9593\u66f4\u65b0\uff09" },
 
       "REMARKS": { "label": "特約・特記事項", "group": "VI. 特約 (任意)", "type": "textarea", "helpText": "未入力なら PDF に該当ブロックが表示されません" }
     }

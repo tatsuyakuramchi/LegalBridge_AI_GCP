@@ -5,33 +5,61 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>業務委託基本契約書</title>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap');
+        @page {
+            size: A4;
+            margin: 18mm 20mm 22mm 25mm;
+            @bottom-center {
+                content: "- " counter(page) " -";
+                font-size: 8.5pt;
+                font-family: "Noto Serif CJK JP", "IPAMincho", serif;
+            }
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            font-family: "Noto Sans JP", "Hiragino Kaku Gothic ProN", Meiryo, sans-serif;
+            font-family: "Noto Serif CJK JP", "IPAMincho", "MS Mincho", serif;
             font-size: 10pt;
-            line-height: 1.5;
-            color: #333;
-            background-color: #f9f9f9;
+            line-height: 1.75;
+            color: #000;
+            background-color: #fff;
             margin: 0;
-            padding: 5px;
+            padding: 0;
         }
 
         .contract-document {
             max-width: 210mm;
             margin: 0 auto;
             background-color: #fff;
-            padding: 10mm 12mm;
-            box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            padding: 18mm 20mm 22mm 25mm;
             box-sizing: border-box;
         }
 
-        h1 {
-            font-size: 16pt;
+        /* ===== ドキュメントヘッダー ===== */
+        .doc-header {
+            display: flex;
+            justify-content: flex-end;
+            align-items: baseline;
+            gap: 0.45em;
+            margin-bottom: 0.5em;
+            font-size: 8.5pt;
+            color: #555;
+            letter-spacing: 0.05em;
+        }
+
+        .doc-header .header-separator {
+            color: #aaa;
+        }
+
+        /* ===== タイトル ===== */
+        h1.contract-title {
             text-align: center;
-            margin-bottom: 20px;
+            font-size: 14pt;
+            font-weight: bold;
+            letter-spacing: 0.35em;
+            margin-bottom: 0.9em;
             text-decoration: underline;
-            text-underline-offset: 5px;
+            text-underline-offset: 0.22em;
         }
 
         h2 {
@@ -52,8 +80,128 @@
             margin-bottom: 6px;
         }
 
-        li {
-            margin-bottom: 3px;
+        li { margin-bottom: 3px; }
+
+        /* ===== 頭書き表 ===== */
+        .tobogaki {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1.15em;
+            font-size: 9pt;
+            line-height: 1.6;
+            border-top: 1.5pt solid #1a1a1a;
+            border-bottom: 1.5pt solid #1a1a1a;
+        }
+
+        .tobogaki th,
+        .tobogaki td {
+            border: none;
+            border-bottom: 0.5pt solid #d8d8d8;
+            padding: 0.45em 0.7em;
+            vertical-align: top;
+        }
+
+        .tobogaki .sec-row td {
+            padding-top: 0.9em;
+            padding-bottom: 0.25em;
+            border-bottom: 0.5pt solid #888;
+            font-size: 7.5pt;
+            font-weight: bold;
+            letter-spacing: 0.25em;
+            color: #555;
+            text-transform: uppercase;
+        }
+
+        .tobogaki .col-item {
+            width: 36%;
+            font-weight: bold;
+            color: #1a1a1a;
+            padding-left: 0.5em;
+        }
+
+        .tobogaki .col-item .art-ref {
+            font-size: 7.5pt;
+            font-weight: normal;
+            color: #777;
+        }
+
+        .tobogaki .col-item .sub-note {
+            display: block;
+            font-size: 7.5pt;
+            font-weight: normal;
+            color: #888;
+            margin-top: 0.1em;
+        }
+
+        .tobogaki .col-value {
+            width: 64%;
+            word-break: break-all;
+            overflow-wrap: break-word;
+            color: #1a1a1a;
+        }
+
+        .tobogaki .special-cell {
+            min-height: 2.5em;
+            word-break: break-all;
+            overflow-wrap: break-word;
+            color: #1a1a1a;
+            white-space: pre-wrap;
+        }
+
+        /* ===== 頭書き下部署名欄 ===== */
+        .head-signature {
+            margin: 0.2em 0 1.3em;
+            page-break-inside: avoid;
+            font-size: 9.2pt;
+            line-height: 1.55;
+        }
+
+        .head-signature .sig-date {
+            text-align: right;
+            margin-bottom: 0.8em;
+        }
+
+        .head-signature .sig-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.2em;
+        }
+
+        .head-signature .sig-party {
+            border-top: 1pt solid #1a1a1a;
+            padding-top: 0.5em;
+        }
+
+        .head-signature .party-label {
+            font-weight: bold;
+            margin-bottom: 0.3em;
+        }
+
+        .head-signature .sig-name-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.8em;
+            margin-top: 0.3em;
+        }
+
+        .head-signature .stamp-box {
+            width: 52px;
+            height: 52px;
+            border: 1pt solid #1a1a1a;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 11pt;
+            background-color: #fff;
+            flex-shrink: 0;
+        }
+
+        .preamble {
+            font-size: 9.5pt;
+            text-indent: 1em;
+            margin-bottom: 0.9em;
+            line-height: 1.7;
         }
 
         .article-block > ol {
@@ -98,100 +246,24 @@
             top: 0;
         }
 
-        .info-section {
-            margin-bottom: 10px;
-            border: 1px solid #ddd;
-            padding: 8px 10px;
-            background-color: #fafafa;
-        }
-
-        .info-title {
-            font-weight: bold;
-            margin-bottom: 5px;
-            border-bottom: 1px dashed #ccc;
-            padding-bottom: 2px;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: 120px 1fr;
-            gap: 5px 10px;
-            align-items: center;
-        }
-
-        .label {
-            font-weight: bold;
-            color: #555;
-        }
-
-        .value {
-            border-bottom: 1px solid #eee;
-            min-height: 1.6em;
-        }
-
-        .stamp-container {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding-right: 10px;
-        }
-
-        .stamp-box {
-            width: 60px;
-            height: 60px;
-            border: 1px dotted #aaa;
-            color: #ccc;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            font-size: 12px;
-            background-color: #fff;
-            margin-left: 15px;
-            flex-shrink: 0;
-        }
-
-        /* ページ送り制御 */
-        .article-block {
-            page-break-inside: auto;
-        }
-
-        .article-block h2 {
-            page-break-after: avoid;
-        }
-
-        .info-section {
-            page-break-inside: avoid;
-        }
+        .article-block { page-break-inside: auto; }
+        .article-block h2 { page-break-after: avoid; }
+        .no-break { page-break-inside: avoid; }
 
         @media print {
-            body {
-                background-color: #fff;
-                padding: 0;
-            }
+            body { background-color: #fff; padding: 0; }
             .contract-document {
                 box-shadow: none;
                 margin: 0;
                 width: 100%;
                 max-width: none;
-                padding: 6mm 10mm;
+                padding: 0;
             }
-            h2 {
-                page-break-after: avoid;
-                margin-top: 10px;
-            }
-            .article-block {
-                page-break-inside: auto;
-            }
-            .article-block > ol > li {
-                page-break-inside: auto;
-            }
-            .info-section {
-                page-break-inside: avoid;
-            }
-            p {
-                orphans: 3;
-                widows: 3;
-            }
+            h2 { page-break-after: avoid; margin-top: 10px; }
+            .article-block { page-break-inside: auto; }
+            .article-block > ol > li { page-break-inside: auto; }
+            .head-signature, .tobogaki { page-break-inside: avoid; }
+            p { orphans: 3; widows: 3; }
         }
     </style>
 </head>
@@ -199,97 +271,141 @@
 
 <div class="contract-document">
 
-    <h1>業務委託基本契約書</h1>
-
-    <div style="text-align: right; margin-bottom: 20px;">
-        <strong>契約締結日:</strong> {{CONTRACT_DATE_YEAR}}年 {{CONTRACT_DATE_MONTH}}月 {{CONTRACT_DATE_DAY}}日
+    <div class="doc-header">
+        <span class="header-item">契約締結日：{{CONTRACT_DATE}}</span>
+        <span class="header-separator">｜</span>
+        <span class="header-item contract-no">契約番号：{{CONTRACT_NO}}</span>
     </div>
 
-    <!-- 甲の情報（当社=委託者） -->
-    <div class="info-section">
-        <div class="info-title">甲（委託者）</div>
-        <div class="info-grid">
-            <div class="label">住所</div>
-            <div class="value">{{PARTY_A_ADDRESS}}</div>
-            <div class="label">商号</div>
-            <div class="value">{{PARTY_A_NAME}}</div>
-            <div class="label">代表者</div>
-            <div class="value stamp-container">
-                <span>{{PARTY_A_REP}}</span>
-                <div class="stamp-box">印</div>
-            </div>
-        </div>
-    </div>
+    <h1 class="contract-title">業務委託基本契約書</h1>
 
-    <!-- 乙の情報（相手方=受託者）
-         VENDOR_IS_CORPORATION が "個人" のときは
-         「氏名」のみを表示 (代表者行を省略)。本人=押印者なので
-         stamp-box は氏名行に同居させる。
-         "法人" (デフォルト) のときは従来通り「商号 + 代表者」を表示。 -->
-    <div class="info-section">
-        <div class="info-title">乙（受託者）</div>
-        <div class="info-grid">
-            <div class="label">住所</div>
-            <div class="value">{{VENDOR_ADDRESS}}</div>
-            {{#if (eq VENDOR_IS_CORPORATION "個人")}}
-            <div class="label">氏名</div>
-            <div class="value stamp-container">
-                <span>{{VENDOR_NAME}}</span>
-                <div class="stamp-box">印</div>
-            </div>
-            {{else}}
-            <div class="label">商号</div>
-            <div class="value">{{VENDOR_NAME}}</div>
-            <div class="label">代表者</div>
-            <div class="value stamp-container">
-                <span>{{VENDOR_REP}}</span>
-                <div class="stamp-box">印</div>
-            </div>
+    <!-- ======================================================
+         頭書き（当事者目録・契約条件一覧）
+         ====================================================== -->
+    <table class="tobogaki">
+        <tbody>
+            <!-- 当事者 -->
+            <tr class="sec-row"><td colspan="2">当　事　者</td></tr>
+            <tr>
+                <td class="col-item">甲（委託者）</td>
+                <td class="col-value">
+                    {{PARTY_A_ADDRESS}}<br>
+                    {{PARTY_A_NAME}}<br>
+                    {{PARTY_A_REP}}
+                </td>
+            </tr>
+            <tr>
+                <td class="col-item">乙（受託者）</td>
+                <td class="col-value">
+                    {{VENDOR_ADDRESS}}<br>
+                    {{VENDOR_NAME}}<br>
+                    {{VENDOR_REP}}
+                </td>
+            </tr>
+
+            <!-- 基本条件 -->
+            <tr class="sec-row"><td colspan="2">基　本　条　件</td></tr>
+            <tr>
+                <td class="col-item">
+                    本件業務の範囲<span class="art-ref">（第1条・第3条）</span>
+                    <span class="sub-note">個別業務の内容は発注書により定める</span>
+                </td>
+                <td class="col-value">発注書に定めるとおり</td>
+            </tr>
+            <tr>
+                <td class="col-item">
+                    契約形態<span class="art-ref">（第2条）</span>
+                    <span class="sub-note">請負・準委任・委任の別</span>
+                </td>
+                <td class="col-value">各業務の性質に応じ、発注書において定める</td>
+            </tr>
+            <tr>
+                <td class="col-item">
+                    契約期間<span class="art-ref">（第14条）</span>
+                    <span class="sub-note">更新・中途解約は本契約本文による</span>
+                </td>
+                <td class="col-value">{{CONTRACT_PERIOD_SUMMARY}}</td>
+            </tr>
+
+            <!-- 報酬・支払・税務 -->
+            <tr class="sec-row"><td colspan="2">報　酬・支　払・税　務</td></tr>
+            <tr>
+                <td class="col-item">
+                    支払条件<span class="art-ref">（第8条）</span>
+                    <span class="sub-note">個別条件は発注書により定める</span>
+                </td>
+                <td class="col-value">発注書に定めるとおり</td>
+            </tr>
+            <tr>
+                <td class="col-item">
+                    振込先銀行口座<span class="art-ref">（第8条・第13条）</span>
+                    <span class="sub-note">変更時は乙から速やかに通知</span>
+                </td>
+                <td class="col-value">
+                    {{BANK_NAME}}　{{BRANCH_NAME}}<br>
+                    {{ACCOUNT_TYPE}}　{{ACCOUNT_NUMBER}}<br>
+                    口座名義（カナ）：{{ACCOUNT_HOLDER_KANA}}
+                </td>
+            </tr>
+            <tr>
+                <td class="col-item">
+                    インボイス制度関連<span class="art-ref">（第8条・第13条）</span>
+                    <span class="sub-note">適格請求書発行事業者の登録状況</span>
+                </td>
+                <td class="col-value">
+                    適格請求書発行事業者：{{invoiceLabel IS_INVOICE_ISSUER}}<br>
+                    登録番号：{{invoiceRegistrationDisplay}}
+                </td>
+            </tr>
+
+            <!-- 連絡先 -->
+            <tr class="sec-row"><td colspan="2">連　絡　先</td></tr>
+            <tr>
+                <td class="col-item">
+                    乙の連絡先<span class="art-ref">（第13条）</span>
+                    <span class="sub-note">通知・請求・届出事項確認に使用</span>
+                </td>
+                <td class="col-value">
+                    電話番号：{{VENDOR_PHONE}}<br>
+                    メール：{{VENDOR_EMAIL}}
+                </td>
+            </tr>
+
+            {{#if REMARKS}}
+            <tr class="sec-row"><td colspan="2">特　記　事　項</td></tr>
+            <tr>
+                <td colspan="2" class="special-cell">{{REMARKS}}</td>
+            </tr>
             {{/if}}
-            <div class="label">電話番号</div>
-            <div class="value">{{VENDOR_PHONE}}</div>
-            <div class="label">メール</div>
-            <div class="value">{{VENDOR_EMAIL}}</div>
+        </tbody>
+    </table>
+
+    <!-- 頭書き下部署名欄 -->
+    <div class="head-signature">
+        <div class="sig-date">2026年5月24日</div>
+        <div class="sig-grid">
+            <div class="sig-party">
+                <div class="party-label">甲（委託者）</div>
+                <div>{{PARTY_A_ADDRESS}}</div>
+                <div>{{PARTY_A_NAME}}</div>
+                <div class="sig-name-row">
+                    <span>{{PARTY_A_REP}}</span>
+                    <span class="stamp-box">印</span>
+                </div>
+            </div>
+            <div class="sig-party">
+                <div class="party-label">乙（受託者）</div>
+                <div>{{VENDOR_ADDRESS}}</div>
+                <div>{{VENDOR_NAME}}</div>
+                <div class="sig-name-row">
+                    <span>{{VENDOR_REP}}</span>
+                    <span class="stamp-box">印</span>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- 振込先情報 -->
-    <div class="info-section">
-        <div class="info-title">振込先銀行口座</div>
-        <div class="info-grid">
-            <div class="label">銀行名</div>
-            <div class="value">{{BANK_NAME}}</div>
-            <div class="label">支店名</div>
-            <div class="value">{{BRANCH_NAME}}</div>
-            <div class="label">口座種別</div>
-            <div class="value">{{ACCOUNT_TYPE}}</div>
-            <div class="label">口座番号</div>
-            <div class="value">{{ACCOUNT_NUMBER}}</div>
-            <div class="label">口座名義(カナ)</div>
-            <div class="value">{{ACCOUNT_HOLDER_KANA}}</div>
-        </div>
-    </div>
-
-    <!-- インボイス情報 -->
-    <div class="info-section">
-        <div class="info-title">インボイス制度関連</div>
-        <div class="info-grid">
-            <div class="label">適格請求書<br>発行事業者</div>
-            <div class="value">{{invoiceLabel IS_INVOICE_ISSUER}}</div>
-            <div class="label">登録番号</div>
-            <div class="value">{{invoiceRegistrationDisplay}}</div>
-        </div>
-    </div>
-
-    <!-- 特約・特記事項 -->
-    {{#if REMARKS}}
-    <div class="info-section" style="background-color: #fffbf0; border-color: #f0e6d0;">
-        <div class="info-title" style="color: #8b6914;">特約・特記事項</div>
-        <div style="padding: 10px 5px; white-space: pre-wrap; line-height: 1.6;">{{REMARKS}}</div>
-    </div>
-    {{/if}}
-
-    <p>甲および乙（以下「両当事者」という）は、甲が乙に対して委託する業務（以下「本件業務」という）について、以下のとおり業務委託基本契約（以下「本契約」という）を締結する。</p>
+    <p class="preamble">甲および乙（以下「両当事者」という）は、甲が乙に対して委託する業務（以下「本件業務」という）について、以下のとおり業務委託基本契約（以下「本契約」という）を締結する。</p>
 
     <div class="article-block">
         <h2>第1条（目的）</h2>
@@ -458,7 +574,7 @@
     <div class="article-block">
         <h2>第14条（契約期間および中途解約）</h2>
         <ol>
-            <li>本契約の有効期間は、契約締結日より起算して1年間とする。期間満了の1か月前までにいずれの当事者からも書面による解約の意思表示がない限り、本契約は同一条件にてさらに1年間延長されるものとし、その後も同様とする。</li>
+            <li>本契約の有効期間は、{{CONTRACT_PERIOD_SUMMARY}}とする。</li>
             <li>契約期間中であっても、やむを得ない事由により本契約を解約する必要が生じた場合、当事者は相手方に対して少なくとも30日前までに書面にて通知するものとする。</li>
             <li>本契約が中途解約または期間満了により終了した場合であっても、以下の個別契約については、その完了または終了まで本契約の関連条項が適用されるものとし、当該個別契約に関する権利義務は継続するものとする。
                 <ol>
