@@ -28,6 +28,7 @@ import { cn } from "@/lib/utils"
 
 type BulkKind =
   | "order"
+  | "inspection"
   | "license-contract"
   | "license-master"
   | "service-master"
@@ -367,7 +368,9 @@ export const BulkImportDialog: React.FC<Props> = ({
                         <td className="p-1.5 text-muted-foreground truncate max-w-[280px]">
                           {kind === "order"
                             ? `${g.first_row.issue_key || "(auto)"} · ${g.first_row.vendor_name || g.first_row.vendor_code || ""} · ${g.first_row.description || ""}`
-                            : kind === "license-contract"
+                            : kind === "inspection"
+                              ? `${g.first_row.issue_key || ""} ・ ${g.first_row.parent_po_number || g.first_row.parent_po_issue_key || ""} ・ ${g.first_row.description || ""}`
+                              : kind === "license-contract"
                               ? `${g.first_row.licensor_name || ""} → ${g.first_row.licensee_name || ""} · ${g.first_row.original_work || ""}`
                               : kind === "license-master"
                                 ? `${g.first_row.basic_contract_name || g.first_row.original_work || ""}`

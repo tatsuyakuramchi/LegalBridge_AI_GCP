@@ -47,6 +47,7 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/numbering(?:\/|$)/,
   // Phase 10: CSV テンプレ DL は worker に常駐 (text/csv レスポンス)
   /^\/api\/imports\/bulk\/templates(?:\/|$)/,
+  /^\/api\/imports\/bulk\/inspection\/trigger-waiting\.csv(?:\?|$)/,
   // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ
   // (form_data 全件返却 + jsonb 操作のため)
   /^\/api\/documents\/pending-pdf(?:\?|$)/,

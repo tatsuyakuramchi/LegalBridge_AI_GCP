@@ -6189,6 +6189,24 @@ ${details}
    * upload して documents.drive_link を更新する共通ヘルパー。
    * 失敗時は warn ログ + 成功 boolean を返すだけ (DB インポートは中断しない)。
    */
+  function csvEscape(value: any): string {
+    const s = value === null || value === undefined ? "" : String(value);
+    return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  }
+
+  function toCsv(headers: string[], rows: Array<Record<string, any>>): string {
+    return [
+      headers.map(csvEscape).join(","),
+      ...rows.map((r) => headers.map((h) => csvEscape(r[h])).join(",")),
+    ].join("\r\n");
+  }
+
+  function parseBoolFlag(raw: any, defaultValue = false): boolean {
+    if (raw === undefined || raw === null || raw === "") return defaultValue;
+    const s = String(raw).trim().toLowerCase();
+    return !["false", "no", "0", "off", "done", "created"].includes(s);
+  }
+
   async function maybeGeneratePdfForImport(
     templateType: string,
     documentNumber: string,
@@ -8629,6 +8647,460 @@ ${details}
    * テンプレ CSV ダウンロード。ユーザーがブランクのテンプレを Excel で
    * 開いて編集 → 一括 import するためのスケルトン。
    */
+  app.get("/api/imports/bulk/inspection/trigger-waiting.csv", async (req, res) => {
+    try {
+      const limit = Math.min(Number(req.query.limit) || 100, 500);
+      const triggerWaitingName = "\u30c8\u30ea\u30ac\u30fc\u5f85\u3061";
+      const inspectionIssueTypeName = "\u7d0d\u54c1\u30fb\u691c\u53ce";
+      const statuses = await backlogService.getStatuses();
+      const issueTypes = await backlogService.getIssueTypes();
+      const triggerStatus = statuses.find((s: any) => s.name === triggerWaitingName);
+      const inspectionType = issueTypes.find((t: any) => t.name === inspectionIssueTypeName);
+
+      if (!triggerStatus) {
+        return res.status(404).json({ ok: false, error: `Backlog status not found: ${triggerWaitingName}` });
+      }
+      if (!inspectionType) {
+        return res.status(404).json({ ok: false, error: `Backlog issue type not found: ${inspectionIssueTypeName}` });
+      }
+
+      const issues = await backlogService.searchIssues({
+        "statusId[]": [Number(triggerStatus.id)],
+        "issueTypeId[]": [Number(inspectionType.id)],
+        count: limit,
+        sort: "updated",
+        order: "desc",
+      });
+
+      const today = new Date().toISOString().slice(0, 10);
+      const outRows: Array<Record<string, any>> = [];
+
+      for (const issue of issues) {
+        const issueKey = String(issue.issueKey || "").trim();
+        if (!issueKey) continue;
+
+        const lr = await query(
+          `SELECT parent_issue_key, counterparty, slack_user_id
+             FROM legal_requests
+            WHERE backlog_issue_key = $1
+            LIMIT 1`,
+          [issueKey]
+        );
+        const lrRow = lr.rows[0] || {};
+        let parentKey = String(lrRow.parent_issue_key || "").trim();
+        if (!parentKey && issue.description) {
+          const matches = String(issue.description).match(/[A-Z][A-Z0-9_]*-\d+/g) || [];
+          parentKey = matches.find((m) => m !== issueKey) || "";
+        }
+
+        let orderItem: any = null;
+        if (parentKey) {
+          const order = await query(
+            `SELECT oi.id, oi.backlog_issue_key, oi.description, oi.vendor_code,
+                    oi.tax_rate, oi.due_date,
+                    (SELECT d.document_number FROM documents d
+                      WHERE d.issue_key = oi.backlog_issue_key
+                        AND d.template_type LIKE '%purchase_order%'
+                      ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number,
+                    (SELECT v.vendor_name FROM vendors v
+                      WHERE v.vendor_code = oi.vendor_code LIMIT 1) AS vendor_name
+               FROM order_items oi
+              WHERE oi.backlog_issue_key = $1
+              LIMIT 1`,
+            [parentKey]
+          );
+          orderItem = order.rows[0] || null;
+        }
+
+        const baseRow = {
+          import_key: issueKey,
+          issue_key: issueKey,
+          parent_po_issue_key: parentKey,
+          parent_po_id: orderItem?.id || "",
+          parent_po_number: orderItem?.parent_po_number || "",
+          document_number: "",
+          document_date: today,
+          delivered_at: "",
+          inspection_completed_at: "",
+          payment_due_date: "",
+          staff_email: "",
+          counterparty: lrRow.counterparty || orderItem?.vendor_name || "",
+          vendor_code: orderItem?.vendor_code || "",
+          description: orderItem?.description || issue.summary || "",
+          tax_rate: orderItem?.tax_rate || 10,
+          delivery_no: "",
+          generate_pdf: "\u672a\u4f5c\u6210",
+          remarks: "",
+        };
+
+        if (!orderItem?.id) {
+          outRows.push({
+            ...baseRow,
+            row_type: "item",
+            line_no: "",
+            order_line_item_id: "",
+            item_name: "",
+            spec: "",
+            inspected_quantity: "",
+            acceptance_ratio: "1",
+          });
+          continue;
+        }
+
+        const lines = await query(
+          `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax
+             FROM order_line_items
+            WHERE order_item_id = $1
+            ORDER BY line_no ASC`,
+          [Number(orderItem.id)]
+        );
+        if (lines.rows.length === 0) {
+          outRows.push({
+            ...baseRow,
+            row_type: "item",
+            line_no: "",
+            order_line_item_id: "",
+            item_name: "",
+            spec: "",
+            inspected_quantity: "",
+            acceptance_ratio: "1",
+          });
+          continue;
+        }
+        for (const line of lines.rows) {
+          const availability = await getInspectionAvailability(Number(line.id));
+          const remainingQty = Math.max(Number(availability.remaining_quantity) || 0, 0);
+          outRows.push({
+            ...baseRow,
+            row_type: "item",
+            line_no: line.line_no,
+            order_line_item_id: line.id,
+            item_name: line.item_name || "",
+            spec: line.spec || "",
+            inspected_quantity: remainingQty || "",
+            acceptance_ratio: "1",
+          });
+        }
+      }
+
+      const headers = [
+        "import_key",
+        "issue_key",
+        "parent_po_issue_key",
+        "parent_po_id",
+        "parent_po_number",
+        "document_number",
+        "document_date",
+        "delivered_at",
+        "inspection_completed_at",
+        "payment_due_date",
+        "staff_email",
+        "counterparty",
+        "vendor_code",
+        "description",
+        "tax_rate",
+        "delivery_no",
+        "generate_pdf",
+        "remarks",
+        "row_type",
+        "line_no",
+        "order_line_item_id",
+        "item_name",
+        "spec",
+        "inspected_quantity",
+        "acceptance_ratio",
+      ];
+      const csv = "\uFEFF" + toCsv(headers, outRows);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", 'attachment; filename="inspection_trigger_waiting.csv"');
+      res.send(csv);
+    } catch (error: any) {
+      console.error("/api/imports/bulk/inspection/trigger-waiting.csv failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  app.post("/api/imports/bulk/inspection", express.json({ limit: "10mb" }), async (req, res) => {
+    try {
+      const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+      if (rows.length === 0) {
+        return res.status(400).json({ ok: false, error: "rows[] is required" });
+      }
+
+      const groups = groupByImportKey(rows);
+      const succeeded: any[] = [];
+      const failed: any[] = [];
+
+      for (const [importKey, groupRows] of groups) {
+        try {
+          const first = groupRows[0];
+          const issueKey = String(first.issue_key || first.issueKey || importKey).trim();
+          if (!issueKey) throw new Error("issue_key is required");
+
+          let orderItemId = Number(first.parent_po_id) || 0;
+          let parentPoIssueKey = String(first.parent_po_issue_key || "").trim();
+          if (!orderItemId && parentPoIssueKey) {
+            const r = await query(
+              "SELECT id FROM order_items WHERE backlog_issue_key = $1 LIMIT 1",
+              [parentPoIssueKey]
+            );
+            orderItemId = Number(r.rows[0]?.id) || 0;
+          }
+          if (!orderItemId && first.parent_po_number) {
+            const r = await query(
+              `SELECT oi.id, oi.backlog_issue_key
+                 FROM documents d
+                 JOIN order_items oi ON oi.backlog_issue_key = d.issue_key
+                WHERE d.document_number = $1
+                LIMIT 1`,
+              [String(first.parent_po_number).trim()]
+            );
+            orderItemId = Number(r.rows[0]?.id) || 0;
+            parentPoIssueKey = parentPoIssueKey || String(r.rows[0]?.backlog_issue_key || "");
+          }
+          if (!orderItemId) {
+            throw new Error("parent PO not found. parent_po_id, parent_po_issue_key, or parent_po_number is required");
+          }
+
+          const orderHeader = await query(
+            `SELECT oi.id, oi.backlog_issue_key, oi.description, oi.vendor_code,
+                    oi.tax_rate, oi.due_date,
+                    (SELECT d.document_number FROM documents d
+                      WHERE d.issue_key = oi.backlog_issue_key
+                        AND d.template_type LIKE '%purchase_order%'
+                      ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number,
+                    (SELECT v.vendor_name FROM vendors v
+                      WHERE v.vendor_code = oi.vendor_code LIMIT 1) AS vendor_name
+               FROM order_items oi
+              WHERE oi.id = $1
+              LIMIT 1`,
+            [orderItemId]
+          );
+          const order = orderHeader.rows[0];
+          if (!order) throw new Error(`order_items not found: ${orderItemId}`);
+          parentPoIssueKey = parentPoIssueKey || String(order.backlog_issue_key || "");
+
+          const orderLinesRes = await query(
+            `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax
+               FROM order_line_items
+              WHERE order_item_id = $1
+              ORDER BY line_no ASC`,
+            [orderItemId]
+          );
+          const orderLines = orderLinesRes.rows;
+          const byLineNo = new Map(orderLines.map((l: any) => [Number(l.line_no), l]));
+          const byId = new Map(orderLines.map((l: any) => [Number(l.id), l]));
+
+          const incoming = groupRows
+            .filter((r) => String(r.row_type || "item").trim().toLowerCase() !== "expense")
+            .map((r) => {
+              const line =
+                byId.get(Number(r.order_line_item_id)) ||
+                byLineNo.get(Number(r.line_no));
+              if (!line) return null;
+              const inspectedQuantity = Number(r.inspected_quantity);
+              return {
+                order_line_item_id: Number(line.id),
+                line_no: Number(line.line_no),
+                item_name: line.item_name || "",
+                spec: line.spec || "",
+                unit_price: Number(line.unit_price) || 0,
+                ordered_quantity: Number(line.quantity) || 0,
+                inspected_quantity: Number.isFinite(inspectedQuantity) ? inspectedQuantity : 0,
+                acceptance_ratio:
+                  r.acceptance_ratio === undefined || r.acceptance_ratio === ""
+                    ? 1
+                    : Number(r.acceptance_ratio) || 1,
+                rejection_reason: r.rejection_reason || null,
+              };
+            })
+            .filter(Boolean) as Array<any>;
+
+          if (incoming.length === 0) {
+            throw new Error("No valid inspection line rows");
+          }
+
+          const deliveryNo = Number(first.delivery_no) || Number(
+            (
+              await query(
+                "SELECT COALESCE(MAX(delivery_no), 0) + 1 AS next_no FROM delivery_events WHERE order_item_id = $1",
+                [orderItemId]
+              )
+            ).rows[0]?.next_no || 1
+          );
+
+          const computedLines = incoming.map((l) => ({
+            ...l,
+            inspected_amount_ex_tax: calculateInspectedAmount(
+              l.unit_price,
+              l.inspected_quantity,
+              l.acceptance_ratio
+            ),
+          }));
+          const amountExTax = computedLines.reduce(
+            (s, l) => s + (Number(l.inspected_amount_ex_tax) || 0),
+            0
+          );
+          const taxRate = Number(first.tax_rate) || Number(order.tax_rate) || 10;
+          const tax = calculateTax(amountExTax, taxRate);
+          const staff = await lookupStaffByEmail(first.staff_email);
+          const docNumber =
+            first.document_number && String(first.document_number).trim()
+              ? String(first.document_number).trim()
+              : await getNewDocumentNumber("inspection_certificate", "\u7d0d\u54c1\u30fb\u691c\u53ce");
+
+          const preview = await previewInspectionOverflow(
+            computedLines.map((l) => ({
+              order_line_item_id: l.order_line_item_id,
+              inspected_quantity: l.inspected_quantity,
+              acceptance_ratio: l.acceptance_ratio,
+            }))
+          );
+          const blocking = preview.filter((p) => p.will_overflow_amount || p.will_overflow_quantity);
+          if (blocking.length > 0) {
+            throw new Error(
+              "Inspection overflow: " +
+                blocking.map((b) => b.order_line_item_id).join(", ")
+            );
+          }
+
+          const delivery = await query(
+            `INSERT INTO delivery_events
+               (backlog_issue_key, order_item_id, delivery_no, delivered_at,
+                delivered_amount, inspection_deadline, status, note)
+             VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
+             ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET
+               order_item_id = EXCLUDED.order_item_id,
+               delivered_at = EXCLUDED.delivered_at,
+               delivered_amount = EXCLUDED.delivered_amount,
+               inspection_deadline = EXCLUDED.inspection_deadline,
+               note = EXCLUDED.note
+             RETURNING id`,
+            [
+              issueKey,
+              orderItemId,
+              deliveryNo,
+              first.delivered_at || first.deliveredAt || new Date().toISOString().slice(0, 10),
+              amountExTax,
+              first.inspection_deadline || null,
+              first.remarks || "",
+            ]
+          );
+          const deliveryEventId = Number(delivery.rows[0]?.id);
+          await query("DELETE FROM delivery_line_items WHERE delivery_event_id = $1", [
+            deliveryEventId,
+          ]);
+          for (const l of computedLines) {
+            await query(
+              `INSERT INTO delivery_line_items (
+                 delivery_event_id, order_line_item_id, inspected_quantity,
+                 acceptance_ratio, inspected_amount_ex_tax, rejection_reason
+               ) VALUES ($1, $2, $3, $4, $5, $6)`,
+              [
+                deliveryEventId,
+                l.order_line_item_id,
+                l.inspected_quantity,
+                l.acceptance_ratio,
+                l.inspected_amount_ex_tax,
+                l.rejection_reason,
+              ]
+            );
+          }
+
+          const formData = {
+            issueKey,
+            parent_po_id: orderItemId,
+            parent_po_issue_key: parentPoIssueKey,
+            parent_po_number: first.parent_po_number || order.parent_po_number || "",
+            documentDate: first.document_date || first.documentDate || new Date().toISOString().slice(0, 10),
+            deliveredAt: first.delivered_at || first.deliveredAt || "",
+            inspectionCompletedAt:
+              first.inspection_completed_at || first.inspectionCompletedAt || "",
+            paymentDueDate: first.payment_due_date || first.paymentDueDate || "",
+            deliveryNo: String(deliveryNo),
+            isPartial: deliveryNo > 1 ? "\u5206\u5272" : "\u5b8c\u4e86",
+            counterparty: first.counterparty || order.vendor_name || "",
+            VENDOR_CODE: order.vendor_code || first.vendor_code || "",
+            inspectorDept: staff?.department || "",
+            inspectorName: staff?.staff_name || "",
+            inspectorEmail: staff?.email || first.staff_email || "",
+            description: first.description || order.description || "",
+            taxRate: String(taxRate),
+            deliveredAmountStr: amountExTax.toLocaleString("ja-JP"),
+            taxAmountStr: tax.taxAmount.toLocaleString("ja-JP"),
+            totalAmountStr: tax.amountIncTax.toLocaleString("ja-JP"),
+            grandTotalPayable: tax.amountIncTax,
+            grandTotalPayableStr: tax.amountIncTax.toLocaleString("ja-JP"),
+            order_lines_for_inspection: orderLines,
+            delivery_line_items: computedLines,
+            __imported: true,
+            __bulk: true,
+            __pdf_pending: parseBoolFlag(first.generate_pdf, true),
+          };
+
+          await query(
+            `INSERT INTO documents (
+               document_number, issue_key, template_type, form_data, drive_link,
+               created_by, base_document_number, revision, vendor_name_snapshot, is_primary
+             ) VALUES ($1, $2, 'inspection_certificate', $3, '', 'import-bulk-inspection', $1, 0, $4, TRUE)
+             ON CONFLICT (document_number) DO UPDATE SET
+               issue_key = EXCLUDED.issue_key,
+               template_type = EXCLUDED.template_type,
+               form_data = EXCLUDED.form_data,
+               vendor_name_snapshot = EXCLUDED.vendor_name_snapshot,
+               is_primary = TRUE`,
+            [
+              docNumber,
+              issueKey,
+              JSON.stringify(formData),
+              formData.counterparty || null,
+            ]
+          );
+
+          await query(
+            `INSERT INTO legal_requests
+               (backlog_issue_key, contract_type, counterparty, summary, parent_issue_key)
+             VALUES ($1, 'delivery_inspec', $2, $3, $4)
+             ON CONFLICT (backlog_issue_key) DO UPDATE SET
+               contract_type = 'delivery_inspec',
+               counterparty = COALESCE(NULLIF(EXCLUDED.counterparty, ''), legal_requests.counterparty),
+               parent_issue_key = COALESCE(NULLIF(EXCLUDED.parent_issue_key, ''), legal_requests.parent_issue_key)`,
+            [
+              issueKey,
+              formData.counterparty,
+              formData.description || `Inspection ${docNumber}`,
+              parentPoIssueKey || null,
+            ]
+          );
+
+          succeeded.push({
+            import_key: importKey,
+            issue_key: issueKey,
+            document_number: docNumber,
+            delivery_event_id: deliveryEventId,
+            line_count: computedLines.length,
+            total_ex_tax: amountExTax,
+            pdf_pending: formData.__pdf_pending,
+          });
+        } catch (e: any) {
+          console.error(`/api/imports/bulk/inspection group=${importKey} failed:`, e);
+          failed.push({ import_key: importKey, error: String(e?.message || e) });
+        }
+      }
+
+      res.json({
+        ok: true,
+        total_rows: rows.length,
+        groups: groups.size,
+        succeeded,
+        failed,
+      });
+    } catch (error: any) {
+      console.error("/api/imports/bulk/inspection failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   app.get("/api/imports/bulk/templates/:type", (req, res) => {
     const { type } = req.params;
     const TEMPLATES: Record<string, { headers: string[]; sample: string[][] }> = {
@@ -8745,6 +9217,64 @@ ${details}
            "", "",
            "10", "", "tanaka@arclight.co.jp", "未作成", "", "false", "false",
            "item", "2", "新規契約レビュー (スポット)", "M&A 一件", "300000", "1", "FIXED", "翌月末", "2026-05-15", "2026-06-30", "", "", "", "", "", "", "", ""],
+        ],
+      },
+      inspection: {
+        headers: [
+          "import_key",
+          "issue_key",
+          "parent_po_issue_key",
+          "parent_po_id",
+          "parent_po_number",
+          "document_number",
+          "document_date",
+          "delivered_at",
+          "inspection_completed_at",
+          "payment_due_date",
+          "staff_email",
+          "counterparty",
+          "vendor_code",
+          "description",
+          "tax_rate",
+          "delivery_no",
+          "generate_pdf",
+          "remarks",
+          "row_type",
+          "line_no",
+          "order_line_item_id",
+          "item_name",
+          "spec",
+          "inspected_quantity",
+          "acceptance_ratio",
+        ],
+        sample: [
+          [
+            "INS001",
+            "LEGAL-2001",
+            "LEGAL-1999",
+            "",
+            "ARC-PO-2026-0001",
+            "",
+            "2026-05-24",
+            "2026-05-24",
+            "2026-05-24",
+            "",
+            "tanaka@arclight.co.jp",
+            "Sample Vendor",
+            "V001",
+            "Delivery acceptance",
+            "10",
+            "1",
+            "\u672a\u4f5c\u6210",
+            "",
+            "item",
+            "1",
+            "",
+            "Deliverable",
+            "Spec",
+            "1",
+            "1",
+          ],
         ],
       },
       "license-contract": {

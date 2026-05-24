@@ -50,6 +50,7 @@ import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect
 
 type Tab =
   | "purchase_order"
+  | "inspection_certificate"
   | "individual_license_terms"
   | "license_master"
   | "service_master"
@@ -1648,6 +1649,7 @@ export function ImportPage() {
   const BULK_KIND_MAP: Partial<Record<
     Tab,
     | "order"
+    | "inspection"
     | "license-contract"
     | "license-master"
     | "service-master"
@@ -1656,6 +1658,7 @@ export function ImportPage() {
     | "ringi"
   >> = {
     purchase_order: "order",
+    inspection_certificate: "inspection",
     individual_license_terms: "license-contract",
     license_master: "license-master",
     service_master: "service-master",
@@ -1665,6 +1668,7 @@ export function ImportPage() {
   }
 
   const TAB_LABEL_MAP: Record<Tab, string> = {
+    inspection_certificate: "検収書",
     purchase_order: "発注書",
     individual_license_terms: "個別利用許諾条件書",
     license_master: "ライセンス基本契約書",
@@ -1675,6 +1679,30 @@ export function ImportPage() {
     ringi_master: "稟議マスタ",
     // Phase 22.21.34: 取引先マスター
     vendor_master: "取引先マスタ",
+  }
+
+  const downloadInspectionTriggerCsv = async () => {
+    try {
+      const res = await fetch("/api/imports/bulk/inspection/trigger-waiting.csv")
+      if (!res.ok) {
+        let detail = `HTTP ${res.status}`
+        try {
+          const json = await res.json()
+          if (json?.error) detail = json.error
+        } catch {}
+        throw new Error(detail)
+      }
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `inspection_trigger_waiting_${Date.now()}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+      showNotification("Inspection trigger CSV exported.", "success")
+    } catch (e: any) {
+      showNotification(`CSV export failed: ${e?.message || e}`, "error")
+    }
   }
 
   return (
@@ -1743,6 +1771,7 @@ export function ImportPage() {
               group: "個別伝票",
               tabs: [
                 { key: "purchase_order", label: "発注書" },
+                { key: "inspection_certificate", label: "検収書" },
                 { key: "individual_license_terms", label: "個別利用許諾条件書" },
               ],
             },
@@ -1802,6 +1831,32 @@ export function ImportPage() {
           vendors={vendors || []}
           showNotification={showNotification}
         />
+      )}
+      {tab === "inspection_certificate" && (
+        <div className="space-y-4">
+          <div className="border border-emerald-200 bg-emerald-50 rounded-sm p-5">
+            <div className="flex items-start gap-3">
+              <FileSpreadsheet className="w-6 h-6 text-emerald-700 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <div className="font-bold text-emerald-900 text-sm">
+                  Trigger waiting inspection CSV
+                </div>
+                <p className="text-[11px] font-mono text-emerald-900/80 leading-relaxed">
+                  Backlog の「トリガー待ち」かつ「納品・検収」の課題を抽出し、親 PO と残検収明細を CSV にします。
+                  CSV を確認・補正してから右上の CSV 一括インポートで登録してください。
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={downloadInspectionTriggerCsv}
+            className="text-[11px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-4 py-2 hover:bg-muted flex items-center gap-2"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            トリガー待ち CSV を抽出
+          </button>
+        </div>
       )}
       {tab === "individual_license_terms" && (
         <LicenseImportForm

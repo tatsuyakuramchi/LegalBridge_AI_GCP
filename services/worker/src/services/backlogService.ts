@@ -274,6 +274,26 @@ export class BacklogService {
     }
   }
 
+  async searchIssues(params: Record<string, any> = {}): Promise<any[]> {
+    if (!this.apiKey || !this.baseUrl || !this.projectKey) {
+      console.warn("Backlog credentials missing; searchIssues returns empty.");
+      return [];
+    }
+    try {
+      const projectId = await this.getProjectId();
+      const response = await axios.get(this.getUrl("/issues"), {
+        params: {
+          "projectId[]": [projectId],
+          ...params,
+        },
+      });
+      return response.data;
+    } catch (error) {
+      console.error("Error searching Backlog issues:", error);
+      return [];
+    }
+  }
+
   async getIssueTypes(): Promise<any[]> {
     if (!this.apiKey || !this.baseUrl || !this.projectKey) return [];
     try {
