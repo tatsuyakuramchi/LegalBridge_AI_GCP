@@ -62,7 +62,7 @@ export function templatePreviewPage(): string {
         <h1>Template Preview</h1>
         <div class="muted">サンプル情報でテンプレートの HTML プレビューと PDF ダウンロードを確認します。</div>
       </div>
-      <a class="btn secondary" href="/admin">Admin に戻る</a>
+      <a class="btn secondary" href="/">Search Portal に戻る</a>
     </header>
 
     <div class="toolbar">

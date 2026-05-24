@@ -488,11 +488,6 @@ async function startServer() {
   app.get(
     "/templates/preview",
     requireIapUser({ renderErrorPage }),
-    requireAppRole({
-      resourceLabel: "admin:template-preview",
-      allowedRoles: ["admin"],
-      renderErrorPage,
-    }),
     (_req, res) => {
       try {
         res.type("html").send(templatePreviewPage());
@@ -509,11 +504,6 @@ async function startServer() {
   app.get(
     "/api/template-preview/list",
     requireIapUser({ renderErrorPage }),
-    requireAppRole({
-      resourceLabel: "admin:template-preview-list",
-      allowedRoles: ["admin"],
-      renderErrorPage,
-    }),
     async (_req, res) => {
       try {
         const [templatesRes, metadataRes] = await Promise.all([
@@ -542,11 +532,6 @@ async function startServer() {
   app.get(
     "/api/template-preview/:type/html",
     requireIapUser({ renderErrorPage }),
-    requireAppRole({
-      resourceLabel: "admin:template-preview-html",
-      allowedRoles: ["admin"],
-      renderErrorPage,
-    }),
     async (req, res) => {
       try {
         const type = encodeURIComponent(String(req.params.type || ""));
@@ -565,11 +550,6 @@ async function startServer() {
   app.get(
     "/api/template-preview/:type/pdf",
     requireIapUser({ renderErrorPage }),
-    requireAppRole({
-      resourceLabel: "admin:template-preview-pdf",
-      allowedRoles: ["admin"],
-      renderErrorPage,
-    }),
     async (req, res) => {
       try {
         const typeRaw = String(req.params.type || "");

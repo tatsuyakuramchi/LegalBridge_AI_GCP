@@ -115,6 +115,13 @@ export function viewerGuidePage(opts: {
       </div>
     </div>
 
+    <a class="tile" href="/templates/preview">
+      <div class="title">📄 ひな型プレビュー</div>
+      <div class="desc">
+        現在のひな型をサンプル情報付きで HTML プレビューし、PDF でダウンロードできます。
+      </div>
+    </a>
+
     <div class="card" style="background: #f9fafb; font-size: 12px;">
       <strong>取込機能 / 管理機能を使いたい場合</strong><br>
       管理者にロール変更 (app_role=admin) を依頼してください。
