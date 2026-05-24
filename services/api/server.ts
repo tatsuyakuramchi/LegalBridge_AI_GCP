@@ -70,6 +70,7 @@ import {
 // Phase 17z-4: Staff マスター + Contracts (LegalOn 取込) を Master タブ群に統合。
 import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
 import { masterContractsPage } from "./src/views/masterContractsHtml.ts";
+import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 import {
   listStaff,
   getStaff,
@@ -84,6 +85,10 @@ dotenv.config();
 async function startServer() {
   const app = express();
   const PORT = Number(process.env.PORT) || 8080;
+  const DOCUMENT_WORKER_URL =
+    process.env.LB_WORKER_BASE_URL ||
+    process.env.DOCUMENT_WORKER_URL ||
+    "https://legalbridge-document-worker-988056987352.asia-northeast1.run.app";
   console.log("🚀 Starting legalbridge-search-api...");
 
   // Load Backlog credentials from DB app_settings (preferred) or env.
@@ -475,6 +480,120 @@ async function startServer() {
   //   body: { app_role: "admin" | "viewer" }
   //   自分自身を viewer に降格しようとしている場合 (= admin が 0 人になる懸念)
   //   は警告を出すが許可。緊急時は LB_APP_ADMIN_EMAILS env で bypass 可能。
+  async function fetchWorker(path: string): Promise<Response> {
+    const base = DOCUMENT_WORKER_URL.replace(/\/+$/, "");
+    return fetch(`${base}${path}`);
+  }
+
+  app.get(
+    "/templates/preview",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "admin:template-preview",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    (_req, res) => {
+      try {
+        res.type("html").send(templatePreviewPage());
+      } catch (error) {
+        console.error("/templates/preview failed:", error);
+        res
+          .status(500)
+          .type("html")
+          .send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  app.get(
+    "/api/template-preview/list",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "admin:template-preview-list",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    async (_req, res) => {
+      try {
+        const [templatesRes, metadataRes] = await Promise.all([
+          fetchWorker("/api/templates"),
+          fetchWorker("/api/templates/config/metadata"),
+        ]);
+        if (!templatesRes.ok) throw new Error(`worker /api/templates HTTP ${templatesRes.status}`);
+        const templateTypes = (await templatesRes.json()) as string[];
+        const metadata = metadataRes.ok ? ((await metadataRes.json()) as Record<string, any>) : {};
+        const templates = templateTypes
+          .filter((type) => !type.includes("/") && !type.startsWith("partials"))
+          .sort((a, b) => a.localeCompare(b))
+          .map((type) => ({
+            type,
+            label: metadata[type]?.label || "",
+            category: metadata[type]?.category || "",
+          }));
+        res.json({ ok: true, templates });
+      } catch (error) {
+        console.error("/api/template-preview/list failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  app.get(
+    "/api/template-preview/:type/html",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "admin:template-preview-html",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    async (req, res) => {
+      try {
+        const type = encodeURIComponent(String(req.params.type || ""));
+        const upstream = await fetchWorker(`/api/templates/${type}/sample-preview`);
+        const body = await upstream.text();
+        res.status(upstream.status);
+        res.setHeader("Content-Type", upstream.headers.get("content-type") || "text/html; charset=utf-8");
+        res.send(body);
+      } catch (error) {
+        console.error("/api/template-preview/:type/html failed:", error);
+        res.status(500).type("text/plain").send(String(error));
+      }
+    }
+  );
+
+  app.get(
+    "/api/template-preview/:type/pdf",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "admin:template-preview-pdf",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    async (req, res) => {
+      try {
+        const typeRaw = String(req.params.type || "");
+        const type = encodeURIComponent(typeRaw);
+        const upstream = await fetchWorker(`/api/templates/${type}/sample.pdf`);
+        const buffer = Buffer.from(await upstream.arrayBuffer());
+        res.status(upstream.status);
+        res.setHeader("Content-Type", upstream.headers.get("content-type") || "application/pdf");
+        res.setHeader(
+          "Content-Disposition",
+          upstream.headers.get("content-disposition") ||
+            `attachment; filename="${typeRaw.replace(/[^A-Za-z0-9_.-]+/g, "_")}_sample.pdf"`
+        );
+        res.send(buffer);
+      } catch (error) {
+        console.error("/api/template-preview/:type/pdf failed:", error);
+        res.status(500).type("text/plain").send(String(error));
+      }
+    }
+  );
+
+  // Phase 22.21.36: app_role 切替エンドポイント (admin 限定)
+  //   PATCH /api/master/staff/:email/role
+  //   body: { app_role: "admin" | "viewer" }
   app.patch(
     "/api/master/staff/:email/role",
     requireIapUser({ renderErrorPage }),

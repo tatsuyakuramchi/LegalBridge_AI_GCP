@@ -134,6 +134,10 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
           <div class="title">📜 契約マスタ <span class="arrow">→</span></div>
           <div class="desc">contract_capabilities 詳細表示・LegalOn 統合</div>
         </a>
+        <a class="tile preview" href="/templates/preview">
+          <div class="title">Template Preview <span class="arrow">→</span></div>
+          <div class="desc">現行テンプレートをサンプル情報で HTML 表示 / PDF ダウンロード</div>
+        </a>
       </div>
     </section>
 

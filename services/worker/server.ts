@@ -41,6 +41,7 @@ import { BacklogService } from "./src/services/backlogService.ts";
 import { DocumentService } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
+import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
 import { ExcelService } from "./src/services/excelService.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
 import {
@@ -11414,6 +11415,128 @@ ${details}
       res.json({ variables });
     } catch (error) {
       res.status(500).json({ error: String(error) });
+    }
+  });
+
+  function loadTemplateMetadata(): Record<string, any> {
+    const configPath = path.join(process.cwd(), "templates_config.json");
+    if (!fs.existsSync(configPath)) return {};
+    return JSON.parse(fs.readFileSync(configPath, "utf-8"));
+  }
+
+  function sampleValueForTemplateField(fieldId: string, meta: any): any {
+    const id = String(fieldId || "");
+    const upper = id.toUpperCase();
+    const label = String(meta?.label || "");
+    const placeholder = String(meta?.placeholder || "");
+    if (meta?.type === "boolean") return true;
+    if (meta?.type === "number") {
+      if (upper.includes("DAYS")) return 10;
+      if (upper.includes("YEARS")) return 5;
+      if (upper.includes("RATE")) return 10;
+      if (upper.includes("AMOUNT") || upper.includes("TOTAL") || label.includes("金額")) return 100000;
+      return 1;
+    }
+    if (meta?.type === "select" && Array.isArray(meta.options) && meta.options.length > 0) {
+      return meta.options[0];
+    }
+    if (upper.includes("CONTRACT_NO") || upper.includes("ORDER_NO")) return "SAMPLE-2026-0001";
+    if (upper.includes("CONTRACT_DATE_FORMATTED")) return "2026年5月24日";
+    if (upper.includes("DATE")) return "2026-05-24";
+    if (upper.includes("PARTY_B_NAME") || upper.includes("VENDOR_NAME")) return "サンプル株式会社";
+    if (upper.includes("ADDRESS")) return "東京都千代田区サンプル1-2-3";
+    if (upper.includes("REPRESENTATIVE") || upper.includes("_REP")) return "代表取締役 山田 太郎";
+    if (upper.includes("EMAIL")) return "sample@example.com";
+    if (upper.includes("PHONE") || upper.includes("TEL")) return "03-1234-5678";
+    if (upper.includes("JURISDICTION")) return "東京地方裁判所";
+    if (upper.includes("CONFIDENTIALITY_YEARS")) return 5;
+    if (upper.includes("BREACH_CURE_DAYS")) return 14;
+    if (upper.includes("PAYMENT")) return "月末締め翌月末日払い";
+    if (upper.includes("DELIVERY_LOCATION")) return "甲指定倉庫";
+    if (upper.includes("PRODUCT_SCOPE")) return "アナログゲーム製品および関連商品";
+    if (upper.includes("WARRANTY_PERIOD")) return "引渡し後1年";
+    if (upper.includes("SPECIAL_TERMS") || upper.includes("REMARKS") || upper.includes("NOTES")) {
+      return "本欄はサンプル表示です。実運用では案件に応じて編集してください。";
+    }
+    if (placeholder) return placeholder.replace(/^例[:：]\s*/, "");
+    if (label) return `${label}サンプル`;
+    return `[${id}]`;
+  }
+
+  function buildSampleDocumentData(type: string) {
+    const metadata = loadTemplateMetadata();
+    const vars = metadata[type]?.vars || {};
+    const templateVars = documentService.getTemplateVariables(type as any);
+    const details: Record<string, any> = {};
+    const fieldIds = new Set<string>([...Object.keys(vars), ...templateVars]);
+    for (const fieldId of fieldIds) {
+      details[fieldId] = sampleValueForTemplateField(fieldId, vars[fieldId]);
+    }
+
+    Object.assign(details, {
+      CONTRACT_NO: details.CONTRACT_NO || "SAMPLE-2026-0001",
+      ORDER_NO: details.ORDER_NO || "SAMPLE-2026-0001",
+      DOC_NO: details.DOC_NO || "SAMPLE-2026-0001",
+      issueKey: "SAMPLE-1",
+      items: [
+        { item_name: "サンプル品目A", spec: "仕様A", quantity: 10, unit_price: 10000, amount: 100000, remarks: "サンプル明細" },
+        { item_name: "サンプル品目B", spec: "仕様B", quantity: 5, unit_price: 20000, amount: 100000, remarks: "" },
+      ],
+      order_lines: [
+        { line_no: 1, item_name: "サンプル品目A", spec: "仕様A", quantity: 10, unit_price: 10000, amount_ex_tax: 100000 },
+        { line_no: 2, item_name: "サンプル品目B", spec: "仕様B", quantity: 5, unit_price: 20000, amount_ex_tax: 100000 },
+      ],
+      order_lines_for_inspection: [
+        { id: 1, line_no: 1, item_name: "サンプル成果物A", spec: "仕様A", quantity: 10, unit_price: 10000, amount_ex_tax: 100000 },
+      ],
+      delivery_line_items: [
+        { line_no: 1, item_name: "サンプル成果物A", spec: "仕様A", inspected_quantity: 10, acceptance_ratio: 1, inspected_amount_ex_tax: 100000 },
+      ],
+      expenses: [
+        { line_no: 1, expense_name: "サンプル経費", spent_date: "2026-05-24", amount_inc_tax: 11000, remarks: "交通費" },
+      ],
+      other_fees: [
+        { line_no: 1, fee_name: "サンプル手数料", amount: 10000, remarks: "任意手数料" },
+      ],
+      CHANGE_RECORDS: details.CHANGE_RECORDS || "2026-05-24|検収金額|100000|80000|一部不合格のため減額",
+    });
+
+    const documentNumber = String(
+      details.CONTRACT_NO || details.ORDER_NO || details.DOC_NO || "SAMPLE-2026-0001"
+    );
+    return {
+      issueKey: "SAMPLE-1",
+      documentNumber,
+      summary: `${metadata[type]?.label || type} サンプル`,
+      requester: "LegalBridge Sample",
+      date: new Date().toLocaleDateString("ja-JP"),
+      details,
+    };
+  }
+
+  app.get("/api/templates/:type/sample-preview", (req, res) => {
+    try {
+      const { type } = req.params;
+      const html = documentService.renderHtml(buildSampleDocumentData(type), type as any);
+      res.type("html").send(html);
+    } catch (error) {
+      res.status(500).type("text/plain").send(String(error));
+    }
+  });
+
+  app.get("/api/templates/:type/sample.pdf", async (req, res) => {
+    try {
+      const { type } = req.params;
+      const html = documentService.renderHtml(buildSampleDocumentData(type), type as any);
+      const pdf = await renderHtmlToPdf(html);
+      res.setHeader("Content-Type", "application/pdf");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${sanitizeForFilename(type)}_sample.pdf"`
+      );
+      res.send(pdf);
+    } catch (error) {
+      res.status(500).type("text/plain").send(String(error));
     }
   });
 
