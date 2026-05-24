@@ -534,11 +534,18 @@ async function startServer() {
     requireIapUser({ renderErrorPage }),
     async (req, res) => {
       try {
-        const type = encodeURIComponent(String(req.params.type || ""));
+        const typeRaw = String(req.params.type || "");
+        const type = encodeURIComponent(typeRaw);
         const upstream = await fetchWorker(`/api/templates/${type}/sample-preview`);
         const body = await upstream.text();
         res.status(upstream.status);
         res.setHeader("Content-Type", upstream.headers.get("content-type") || "text/html; charset=utf-8");
+        if (String(req.query.download || "") === "1") {
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${typeRaw.replace(/[^A-Za-z0-9_.-]+/g, "_")}_sample.html"`
+          );
+        }
         res.send(body);
       } catch (error) {
         console.error("/api/template-preview/:type/html failed:", error);

@@ -16,7 +16,7 @@ body {
 h1 { margin: 0; font-size: 22px; letter-spacing: .02em; }
 .muted { color: #6b7280; font-size: 12px; }
 .toolbar {
-  display: grid; grid-template-columns: minmax(260px, 1fr) auto auto auto; gap: 8px;
+  display: grid; grid-template-columns: minmax(260px, 1fr) auto auto auto auto; gap: 8px;
   align-items: center; background: #fff; border: 1px solid #e5e7eb; border-radius: 6px;
   padding: 12px; margin-bottom: 12px;
 }
@@ -69,6 +69,7 @@ export function templatePreviewPage(): string {
       <select id="templateSelect" aria-label="template"></select>
       <button id="previewBtn" type="button">HTML プレビュー</button>
       <a id="openHtmlBtn" class="btn secondary" href="#" target="_blank" rel="noopener">別タブで開く</a>
+      <a id="htmlDownloadBtn" class="btn secondary" href="#" download>HTML ダウンロード</a>
       <a id="pdfBtn" class="btn" href="#" download>PDF ダウンロード</a>
     </div>
 
@@ -84,20 +85,25 @@ export function templatePreviewPage(): string {
     const statusEl = document.getElementById('status');
     const previewBtn = document.getElementById('previewBtn');
     const openHtmlBtn = document.getElementById('openHtmlBtn');
+    const htmlDownloadBtn = document.getElementById('htmlDownloadBtn');
     const pdfBtn = document.getElementById('pdfBtn');
 
     function setStatus(text) { statusEl.textContent = text || ''; }
     function currentType() { return select.value; }
     function htmlUrl(type) { return '/api/template-preview/' + encodeURIComponent(type) + '/html'; }
+    function htmlDownloadUrl(type) { return htmlUrl(type) + '?download=1'; }
     function pdfUrl(type) { return '/api/template-preview/' + encodeURIComponent(type) + '/pdf'; }
 
     function refreshLinks() {
       const type = currentType();
       if (!type) return;
       const h = htmlUrl(type);
+      const hd = htmlDownloadUrl(type);
       const p = pdfUrl(type);
       frame.src = h;
       openHtmlBtn.href = h;
+      htmlDownloadBtn.href = hd;
+      htmlDownloadBtn.setAttribute('download', type + '_sample.html');
       pdfBtn.href = p;
       pdfBtn.setAttribute('download', type + '_sample.pdf');
       setStatus(type + ' を表示中');
