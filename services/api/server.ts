@@ -791,7 +791,17 @@ async function startServer() {
     }
   );
 
-  // GET /api/master/vendors/:code — 単件
+  // GET /api/master/vendors/template.csv - sample CSV download (no auth)
+  // Keep this before /api/master/vendors/:code; otherwise "template.csv" is treated as a code.
+  app.get("/api/master/vendors/template.csv", (_req, res) => {
+    const csv = getVendorSampleCsv();
+    const body = "\uFEFF" + csv;
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="vendor_sample.csv"');
+    res.send(body);
+  });
+
+  // GET /api/master/vendors/:code
   app.get(
     "/api/master/vendors/:code",
     requireIapUser({ renderErrorPage }),
@@ -842,14 +852,6 @@ async function startServer() {
     }
   );
 
-  // GET /api/master/vendors/template.csv — サンプル CSV ダウンロード (auth 不要)
-  app.get("/api/master/vendors/template.csv", (_req, res) => {
-    const csv = getVendorSampleCsv();
-    const body = "﻿" + csv;
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", 'attachment; filename="vendor_sample.csv"');
-    res.send(body);
-  });
 
   // POST /api/master/vendors/import-csv — 一括取込
   app.post(
