@@ -318,14 +318,17 @@
       "CONTRACT_NO": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
       "CONTRACT_DATE_FORMATTED": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日" },
 
-      "PARTY_B_NAME": { "label": "乙 (買主) 名称", "group": "II. 乙 (買主・取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力。甲は『株式会社アークライト』固定" },
-      "PARTY_B_ADDRESS": { "label": "乙 住所", "group": "II. 乙 (買主・取引先)", "type": "textarea", "required": true },
-      "PARTY_B_REPRESENTATIVE": { "label": "乙 代表者", "group": "II. 乙 (買主・取引先)", "required": true },
+      "PARTY_B_NAME": { "label": "甲 (買主) 名称", "group": "II. 甲 (買主・取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力。乙は『株式会社アークライト』固定" },
+      "PARTY_B_ADDRESS": { "label": "甲 住所", "group": "II. 甲 (買主・取引先)", "type": "textarea", "required": true },
+      "PARTY_B_REPRESENTATIVE": { "label": "甲 代表者", "group": "II. 甲 (買主・取引先)", "required": true },
+      "PRODUCT_SCOPE": { "label": "\u672c\u88fd\u54c1\u306e\u7bc4\u56f2", "group": "III. \u652f\u6255\u30fb\u7d0d\u54c1\u6761\u4ef6", "type": "textarea", "placeholder": "\u4f8b: \u4e59\u304c\u53d6\u308a\u6271\u3044\u3001\u500b\u5225\u5951\u7d04\u306b\u3088\u308a\u58f2\u8cb7\u306e\u5bfe\u8c61\u3068\u3057\u3066\u7279\u5b9a\u3055\u308c\u308b\u5546\u54c1" },
 
       "PREPAY_DEADLINE_DAYS": { "label": "前払期限 (日)", "group": "III. 支払・納品条件", "type": "number", "required": true, "placeholder": "7", "helpText": "受注後の前払期限日数" },
       "DELIVERY_DAYS_AFTER_PAYMENT": { "label": "入金後納品 (日)", "group": "III. 支払・納品条件", "type": "number", "required": true, "placeholder": "5" },
       "COD_DELIVERY_DAYS": { "label": "代引納品 (日)", "group": "III. 支払・納品条件", "type": "number", "placeholder": "5" },
+      "DELIVERY_FEE_THRESHOLD": { "label": "\u7d0d\u54c1\u8cbb\u7528\u306e\u4e59\u8ca0\u62c5\u95be\u5024 (\u5186)", "group": "III. \u652f\u6255\u30fb\u7d0d\u54c1\u6761\u4ef6", "type": "number", "placeholder": "30000" },
       "INSPECTION_PERIOD_DAYS": { "label": "検収期間 (日)", "group": "III. 支払・納品条件", "type": "number", "required": true, "placeholder": "10" },
+      "INSPECTION_CURE_DAYS": { "label": "\u4e0d\u9069\u5408\u306e\u8ffd\u5b8c\u671f\u9650 (\u65e5)", "group": "III. \u652f\u6255\u30fb\u7d0d\u54c1\u6761\u4ef6", "type": "number", "required": true, "placeholder": "10" },
       "WARRANTY_PERIOD": { "label": "保証期間", "group": "III. 支払・納品条件", "required": true, "placeholder": "例: 引渡し後1年" },
 
       "CONFIDENTIALITY_YEARS": { "label": "秘密保持期間 (年)", "group": "IV. 一般条項", "type": "number", "required": true, "placeholder": "5" },
@@ -342,9 +345,10 @@
       "CONTRACT_NO": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます" },
       "CONTRACT_DATE_FORMATTED": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日" },
 
-      "PARTY_B_NAME": { "label": "乙 (買主) 名称", "group": "II. 乙 (買主・取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力。甲は『株式会社アークライト』固定" },
-      "PARTY_B_ADDRESS": { "label": "乙 住所", "group": "II. 乙 (買主・取引先)", "type": "textarea", "required": true },
-      "PARTY_B_REPRESENTATIVE": { "label": "乙 代表者", "group": "II. 乙 (買主・取引先)", "required": true },
+      "PARTY_B_NAME": { "label": "甲 (買主) 名称", "group": "II. 甲 (買主・取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力。乙は『株式会社アークライト』固定" },
+      "PARTY_B_ADDRESS": { "label": "甲 住所", "group": "II. 甲 (買主・取引先)", "type": "textarea", "required": true },
+      "PARTY_B_REPRESENTATIVE": { "label": "甲 代表者", "group": "II. 甲 (買主・取引先)", "required": true },
+      "PRODUCT_SCOPE": { "label": "\u672c\u88fd\u54c1\u306e\u7bc4\u56f2", "group": "III. \u4fdd\u8a3c\u91d1\u30fb\u639b\u3051\u58f2\u308a\u6761\u4ef6", "type": "textarea", "placeholder": "\u4f8b: \u4e59\u304c\u53d6\u308a\u6271\u3044\u3001\u500b\u5225\u5951\u7d04\u306b\u3088\u308a\u58f2\u8cb7\u306e\u5bfe\u8c61\u3068\u3057\u3066\u7279\u5b9a\u3055\u308c\u308b\u5546\u54c1" },
 
       "SECURITY_DEPOSIT_AMOUNT": { "label": "保証金額 (円)", "group": "III. 保証金・掛け売り条件", "type": "number", "required": true, "placeholder": "1000000" },
       "DEPOSIT_REPLENISH_DAYS": { "label": "保証金不足時の補填期限 (日)", "group": "III. 保証金・掛け売り条件", "type": "number", "required": true, "placeholder": "14" },
@@ -352,6 +356,7 @@
       "MONTHLY_CLOSING_DAY": { "label": "毎月締日 (日)", "group": "III. 保証金・掛け売り条件", "type": "number", "required": true, "placeholder": "末日 / 20" },
       "PAYMENT_DUE_DAY": { "label": "支払期日 (締後)", "group": "III. 保証金・掛け売り条件", "required": true, "placeholder": "例: 翌月末日" },
       "INSPECTION_PERIOD_DAYS": { "label": "検収期間 (日)", "group": "III. 保証金・掛け売り条件", "type": "number", "required": true, "placeholder": "10" },
+      "INSPECTION_CURE_DAYS": { "label": "\u4e0d\u9069\u5408\u306e\u8ffd\u5b8c\u671f\u9650 (\u65e5)", "group": "III. \u4fdd\u8a3c\u91d1\u30fb\u639b\u3051\u58f2\u308a\u6761\u4ef6", "type": "number", "required": true, "placeholder": "10" },
       "WARRANTY_PERIOD": { "label": "保証期間", "group": "III. 保証金・掛け売り条件", "required": true, "placeholder": "例: 引渡し後1年" },
 
       "CONFIDENTIALITY_YEARS": { "label": "秘密保持期間 (年)", "group": "IV. 一般条項", "type": "number", "required": true, "placeholder": "5" },

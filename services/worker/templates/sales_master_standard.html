@@ -1,15 +1,16 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
   <title>売買基本契約書（前払・代引版）- {{CONTRACT_NO}}</title>
   <style>
+
     @page {
       size: A4;
-      margin: 25mm 20mm 25mm 25mm;
+      margin: 18mm 20mm 22mm 25mm;
       @bottom-center {
         content: "- " counter(page) " -";
-        font-size: 9pt;
+        font-size: 8.5pt;
         font-family: "Noto Serif CJK JP", "IPAMincho", serif;
       }
     }
@@ -18,26 +19,103 @@
 
     body {
       font-family: "Noto Serif CJK JP", "IPAMincho", "MS Mincho", serif;
-      font-size: 10.5pt;
-      line-height: 1.9;
+      font-size: 10pt;
+      line-height: 1.75;
       color: #000;
+    }
+
+    .doc-header {
+      display: flex;
+      justify-content: flex-end;
+      align-items: flex-end;
+      gap: 1.4em;
+      margin-bottom: 0.5em;
+      font-size: 8.5pt;
+      color: #555;
+      letter-spacing: 0.04em;
     }
 
     h1.contract-title {
       text-align: center;
-      font-size: 15pt;
+      font-size: 14pt;
       font-weight: bold;
-      letter-spacing: 0.3em;
-      margin-bottom: 2em;
+      letter-spacing: 0.35em;
+      margin-bottom: 0.9em;
       text-decoration: underline;
     }
 
-    .preamble {
-      margin-bottom: 1.5em;
-      text-indent: 1em;
+    .tobogaki {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.1em;
+      font-size: 9pt;
+      line-height: 1.6;
+      border-top: 1.5pt solid #1a1a1a;
+      border-bottom: 1.5pt solid #1a1a1a;
     }
 
-    /* Article structure */
+    .tobogaki th,
+    .tobogaki td {
+      border: none;
+      border-bottom: 0.5pt solid #d8d8d8;
+      padding: 0.45em 0.7em;
+      vertical-align: top;
+    }
+
+    .tobogaki .sec-row td {
+      padding-top: 0.9em;
+      padding-bottom: 0.25em;
+      border-bottom: 0.5pt solid #888;
+      font-size: 7.5pt;
+      font-weight: bold;
+      letter-spacing: 0.25em;
+      color: #555;
+      text-transform: uppercase;
+    }
+
+    .tobogaki .col-item {
+      width: 36%;
+      font-weight: bold;
+      color: #1a1a1a;
+      padding-left: 0.5em;
+    }
+
+    .tobogaki .col-item .art-ref {
+      font-size: 7.5pt;
+      font-weight: normal;
+      color: #777;
+    }
+
+    .tobogaki .col-item .sub-note {
+      display: block;
+      font-size: 7.5pt;
+      font-weight: normal;
+      color: #888;
+      margin-top: 0.1em;
+    }
+
+    .tobogaki .col-value {
+      width: 64%;
+      word-break: break-all;
+      overflow-wrap: break-word;
+      color: #1a1a1a;
+    }
+
+    .tobogaki .special-cell {
+      min-height: 2.5em;
+      word-break: break-all;
+      overflow-wrap: break-word;
+      color: #1a1a1a;
+      white-space: pre-wrap;
+    }
+
+    .preamble {
+      font-size: 9.5pt;
+      text-indent: 1em;
+      margin-bottom: 0.9em;
+      line-height: 1.7;
+    }
+
     ol.articles {
       list-style: none;
       padding: 0;
@@ -46,50 +124,49 @@
 
     ol.articles > li {
       counter-increment: article;
-      margin-bottom: 1.2em;
+      margin-bottom: 0.9em;
     }
 
     ol.articles > li > .article-title {
       font-weight: bold;
-      margin-bottom: 0.3em;
+      font-size: 10pt;
+      margin-bottom: 0.15em;
     }
 
     ol.articles > li > .article-title::before {
-      content: counter(article) ". ";
+      content: "第" counter(article) "条";
     }
 
-    /* Sub-items */
     ol.items {
       list-style: none;
-      padding-left: 1.5em;
+      padding-left: 1.2em;
       counter-reset: item;
+      font-size: 10pt;
     }
 
     ol.items > li {
       counter-increment: item;
       padding-left: 2em;
       text-indent: -2em;
-      margin-bottom: 0.5em;
+      margin-bottom: 0.35em;
     }
 
     ol.items > li::before {
       content: counter(item) "　";
-      font-weight: normal;
     }
 
-    /* Nested sub-sub-items (イ、ロ etc using japanese numbering) */
     ol.sub-items {
       list-style: none;
       padding-left: 2em;
       counter-reset: subitem;
-      margin-top: 0.3em;
+      margin-top: 0.25em;
     }
 
     ol.sub-items > li {
       counter-increment: subitem;
       padding-left: 2em;
       text-indent: -2em;
-      margin-bottom: 0.3em;
+      margin-bottom: 0.25em;
     }
 
     ol.sub-items > li::before {
@@ -100,21 +177,109 @@
       list-style: none;
       padding-left: 2em;
       counter-reset: subsubitem;
-      margin-top: 0.3em;
+      margin-top: 0.2em;
     }
 
     ol.sub-sub-items > li {
       counter-increment: subsubitem;
       padding-left: 2.5em;
       text-indent: -2.5em;
-      margin-bottom: 0.3em;
+      margin-bottom: 0.2em;
     }
 
     ol.sub-sub-items > li::before {
       content: counter(subsubitem, katakana) "　";
     }
 
-    /* Placeholder styles */
+    .signature-block {
+      margin-top: 2.5em;
+      page-break-inside: avoid;
+    }
+
+    .signature-block .sig-intro {
+      font-size: 9.5pt;
+      margin-bottom: 1.2em;
+      line-height: 1.7;
+    }
+
+    .signature-block .date-line {
+      text-align: right;
+      margin-bottom: 1.5em;
+      font-size: 10pt;
+    }
+
+    .party {
+      margin-bottom: 1.4em;
+    }
+
+    .party .party-label {
+      font-weight: bold;
+      margin-bottom: 0.25em;
+    }
+
+    .party .party-row {
+      display: flex;
+      margin-bottom: 0.2em;
+    }
+
+    .party .party-row .label {
+      min-width: 4em;
+    }
+
+    .party .party-row .value {
+      flex: 1;
+      word-break: break-all;
+    }
+
+    .signature-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1.2em;
+    }
+
+    .sig-party {
+      border-top: 0.5pt solid #999;
+      padding-top: 0.55em;
+      font-size: 9pt;
+      line-height: 1.55;
+      min-height: 7.5em;
+    }
+
+    .sig-party .sig-label {
+      font-weight: bold;
+      margin-bottom: 0.25em;
+      letter-spacing: 0.05em;
+    }
+
+    .sig-row {
+      display: flex;
+      gap: 0.5em;
+      margin-bottom: 0.15em;
+    }
+
+    .sig-row .label {
+      width: 3.8em;
+      flex: 0 0 3.8em;
+      color: #444;
+    }
+
+    .sig-row .value {
+      flex: 1;
+      word-break: break-all;
+    }
+
+    .seal-box {
+      display: inline-flex;
+      justify-content: center;
+      align-items: center;
+      width: 2.7em;
+      height: 2.7em;
+      border: 0.8pt solid #333;
+      margin-left: 0.8em;
+      font-size: 9pt;
+      vertical-align: middle;
+    }
+
     .ph {
       border-bottom: 1px solid #000;
       display: inline-block;
@@ -127,87 +292,124 @@
       min-width: 8em;
     }
 
-    /* Signature block */
-    .signature-block {
-      margin-top: 4em;
-      page-break-inside: avoid;
-    }
-
-    .signature-block .date-line {
-      text-align: right;
-      margin-bottom: 2em;
-    }
-
-    .party {
-      margin-bottom: 2em;
-    }
-
-    .party .party-label {
-      font-weight: bold;
-      margin-bottom: 0.3em;
-    }
-
-    .party .party-row {
-      display: flex;
-      margin-bottom: 0.3em;
-    }
-
-    .party .party-row .label {
-      min-width: 4em;
-    }
-
-    .party .party-row .value {
-      flex: 1;
-    }
-
-    .seal-area {
-      text-align: right;
-      margin-top: 0.5em;
-    }
-
-    /* Special terms box */
-    .special-terms {
-      border: 1px solid #666;
-      padding: 0.8em 1em;
-      margin-top: 0.8em;
-      min-height: 3em;
-    }
-
-    .special-terms-label {
-      font-weight: bold;
-      margin-bottom: 0.3em;
-    }
-
-    /* Whitespace footer note */
     .margin-note {
       text-align: center;
-      margin: 2em 0 3em;
+      margin: 1.5em 0 2em;
       font-size: 9pt;
     }
 
-    /* Page break helpers */
     .page-break { page-break-after: always; }
     .no-break { page-break-inside: avoid; }
 
-    /* Contract number header */
-    .contract-meta {
-      text-align: right;
-      font-size: 9pt;
-      margin-bottom: 1em;
-      color: #444;
+    @media print {
+      body { background-color: #fff; }
+      .signature-block, .tobogaki { page-break-inside: avoid; }
+      ol.articles > li { page-break-inside: auto; }
+      p { orphans: 3; widows: 3; }
     }
+
   </style>
 </head>
 <body>
 
-<!-- 契約番号（アプリ側採番） -->
-<div class="contract-meta">契約番号：{{CONTRACT_NO}}</div>
+<div class="doc-header">
+  <span>契約番号：{{CONTRACT_NO}}</span>
+  <span>契約締結日：{{CONTRACT_DATE_FORMATTED}}</span>
+</div>
 
 <h1 class="contract-title">売買基本契約書</h1>
 
-<!-- 頭書き -->
+<!-- ======================================================
+     頭書き（当事者目録・契約条件一覧）
+     ====================================================== -->
+<table class="tobogaki">
+  <tbody>
+
+    <tr class="sec-row"><td colspan="2">当　事　者</td></tr>
+    <tr>
+      <td class="col-item">甲（買手）</td>
+      <td class="col-value">
+        {{PARTY_B_ADDRESS}}<br>
+        {{PARTY_B_NAME}}<br>
+        {{PARTY_B_REPRESENTATIVE}}
+      </td>
+    </tr>
+    <tr>
+      <td class="col-item">乙（売手）</td>
+      <td class="col-value">
+        東京都千代田区小川町１－２　風雲堂ビル２階<br>
+        株式会社アークライト<br>
+        代表取締役　青柳　昌行
+      </td>
+    </tr>
+
+    <tr class="sec-row"><td colspan="2">基　本　条　件</td></tr>
+    <tr>
+      <td class="col-item">契約類型<span class="art-ref">（第１条）</span></td>
+      <td class="col-value">売買基本契約（前払・代引版）</td>
+    </tr>
+    <tr>
+      <td class="col-item">本製品の範囲<span class="art-ref">（第１条）</span><span class="sub-note">個別契約・注文書により特定</span></td>
+      <td class="col-value">{{PRODUCT_SCOPE}}</td>
+    </tr>
+    <tr>
+      <td class="col-item">個別契約の成立・納入期日<span class="art-ref">（第２条）</span></td>
+      <td class="col-value">甲による注文書の送付および乙の承諾により成立。現金前払いの場合は着金確認日から{{DELIVERY_DAYS_AFTER_PAYMENT}}営業日以内、代金引換の場合は乙の承諾日から{{COD_DELIVERY_DAYS}}営業日以内を納入期日の基準とする。</td>
+    </tr>
+    <tr>
+      <td class="col-item">支払方法<span class="art-ref">（第５条）</span></td>
+      <td class="col-value">現金前払い又は代金引換。振込手数料、代金引換手数料その他決済手数料は甲の負担とする。</td>
+    </tr>
+    <tr>
+      <td class="col-item">納品費用<span class="art-ref">（第３条）</span></td>
+      <td class="col-value">納品代金金額の合計が{{DELIVERY_FEE_THRESHOLD}}円（税別）以上の場合は乙負担、{{DELIVERY_FEE_THRESHOLD}}円未満の場合は甲負担。</td>
+    </tr>
+
+    <tr class="sec-row"><td colspan="2">手　続・期　間</td></tr>
+    <tr>
+      <td class="col-item">検査期間<span class="art-ref">（第４条）</span><span class="sub-note">納品物の検査・不適合通知期間</span></td>
+      <td class="col-value">納品後{{INSPECTION_PERIOD_DAYS}}営業日以内</td>
+    </tr>
+    <tr>
+      <td class="col-item">不適合の追完期限<span class="art-ref">（第４条）</span></td>
+      <td class="col-value">不適合通知書面の到達後{{INSPECTION_CURE_DAYS}}営業日以内</td>
+    </tr>
+    <tr>
+      <td class="col-item">契約不適合責任期間<span class="art-ref">（第９条）</span></td>
+      <td class="col-value">{{WARRANTY_PERIOD}}以内</td>
+    </tr>
+    <tr>
+      <td class="col-item">契約違反の是正期間<span class="art-ref">（第１６条）</span></td>
+      <td class="col-value">是正要求通知の受領後14日以内</td>
+    </tr>
+    <tr>
+      <td class="col-item">有効期間<span class="art-ref">（第２０条）</span></td>
+      <td class="col-value">契約締結日から1年間。ただし、期間満了の1か月前までに書面による申出がない場合、同一条件で1年間自動更新。</td>
+    </tr>
+    <tr>
+      <td class="col-item">秘密保持期間<span class="art-ref">（第１１条・第２３条）</span></td>
+      <td class="col-value">本契約終了後{{CONFIDENTIALITY_YEARS}}年間</td>
+    </tr>
+
+    <tr class="sec-row"><td colspan="2">管　　　　　轄</td></tr>
+    <tr>
+      <td class="col-item">合意管轄裁判所<span class="art-ref">（第２４条）</span></td>
+      <td class="col-value">{{JURISDICTION}}（第一審専属）</td>
+    </tr>
+
+    {{#if SPECIAL_TERMS}}
+    <tr class="sec-row"><td colspan="2">特　記　事　項</td></tr>
+    <tr>
+      <td colspan="2" class="special-cell">{{SPECIAL_TERMS}}</td>
+    </tr>
+    {{/if}}
+
+  </tbody>
+</table>
+
+<!-- 前文 -->
 <p class="preamble">
-  <span class="ph-blank">{{PARTY_B_NAME}}</span>（以下「甲」という。）と株式会社アークライト（以下「乙」という。）は, 乙が取り扱う商品（以下「本製品」という）の売買に関し、基本的事項を定めるため, 以下のとおり契約（以下「本契約」という）を締結する。
+  頭書き記載の甲（以下「甲」という。）と乙（株式会社アークライト。以下「乙」という。）は、乙が取り扱う商品（以下「本製品」という。）の売買に関し、基本的事項を定めるため、以下のとおり契約（以下「本契約」という。）を締結する。
 </p>
 
 <ol class="articles">
@@ -235,7 +437,7 @@
     <div class="article-title">（納品）</div>
     <ol class="items">
       <li>乙から甲への納品は, 甲が注文書で指定した納品期日までに, 甲が指定した納品場所に本製品が納品されたときに完了する。</li>
-      <li>前項の納品に係る費用は, 納品代金金額の合計が３万円（税別）以上の場合, 乙の負担とし, ３万円未満の場合は甲が負担する。</li>
+      <li>前項の納品に係る費用は, 納品代金金額の合計が{{DELIVERY_FEE_THRESHOLD}}円（税別）以上の場合, 乙の負担とし, {{DELIVERY_FEE_THRESHOLD}}円未満の場合は甲が負担する。</li>
     </ol>
   </li>
 
@@ -244,7 +446,7 @@
     <div class="article-title">（検品）</div>
     <ol class="items">
       <li>甲は, 本商品の納品後<span class="ph">{{INSPECTION_PERIOD_DAYS}}</span>営業日（以下「検査期間」という。）以内に甲乙が協議により定めた方法により納品物の検査を行い, 種類, 品質又は数量に関して本契約及び個別契約の内容に適合しないもの（以下「不適合」という。）があった場合, 検査期間内に, 乙に対し, 当該不適合の具体的な内容を明示した書面を交付する。</li>
-      <li>乙は, 前項に定める書面が交付された場合, 当該書面の到達後<span class="ph">{{INSPECTION_PERIOD_DAYS}}</span>営業日以内に, 当該不適合が乙の責めに帰すべき事由による場合に限り, 乙の費用で, 商品の修補, 代替品の引渡し, 又は不足分の引渡しによる履行の追完を行わなければならない。ただし, 乙がやむを得ない事情により追完が困難な場合は, 乙は甲に対し代替措置について別途協議を求めることができるものとする。</li>
+      <li>乙は, 前項に定める書面が交付された場合, 当該書面の到達後<span class="ph">{{INSPECTION_CURE_DAYS}}</span>営業日以内に, 当該不適合が乙の責めに帰すべき事由による場合に限り, 乙の費用で, 商品の修補, 代替品の引渡し, 又は不足分の引渡しによる履行の追完を行わなければならない。ただし, 乙がやむを得ない事情により追完が困難な場合は, 乙は甲に対し代替措置について別途協議を求めることができるものとする。</li>
       <li>検査期間内に本条第２項に定める書面が乙に交付されない場合, 甲が検査遅延の理由について書面で合理的な理由を明示したときを除き, 納品物は, 本条所定の検査に合格したものとみなす。</li>
       <li>本条所定の検査に合格したことをもって, 納品物の検収完了とし, 納品物の引渡しが完了したものとみなす。</li>
     </ol>
@@ -489,42 +691,34 @@
 
 </ol><!-- /articles -->
 
-<!-- 特記事項 -->
-{{#if SPECIAL_TERMS}}
-<div class="no-break" style="margin-top:1.5em;">
-  <div class="special-terms-label">【特記事項】</div>
-  <div class="special-terms">{{SPECIAL_TERMS}}</div>
-</div>
-{{/if}}
-
 <div class="margin-note">（以下余白）</div>
 
-<!-- 署名欄 -->
+<!-- ======================================================
+     署名欄（末尾）
+     ====================================================== -->
 <div class="signature-block no-break">
-  <p style="margin-bottom:1em;">本契約締結の証として, 本書２通を作成し, 甲乙記名押印のうえ, 各１通を保有又は, 本書の電磁的記録を作成し, 甲乙合意の後電子署名を施し, 各自その電磁的記録を保管する。</p>
+  <p class="sig-intro">本契約締結の証として、本書２通を作成し、甲乙記名押印のうえ、各１通を保有又は、本書の電磁的記録を作成し、甲乙合意の後電子署名を施し、各自その電磁的記録を保管する。</p>
 
-  <div class="date-line">
-    <span class="ph-blank">{{CONTRACT_DATE_FORMATTED}}</span>
-  </div>
+  <div class="date-line">締結日：{{CONTRACT_DATE_FORMATTED}}</div>
 
-  <!-- 甲 -->
+  <!-- 甲（買手・相手方） -->
   <div class="party">
     <div class="party-label">甲</div>
     <div class="party-row">
       <span class="label">所在地　</span>
-      <span class="value"><span class="ph-blank">{{PARTY_B_ADDRESS}}</span></span>
+      <span class="value">{{PARTY_B_ADDRESS}}</span>
     </div>
     <div class="party-row">
       <span class="label">会社名　</span>
-      <span class="value"><span class="ph-blank">{{PARTY_B_NAME}}</span></span>
+      <span class="value">{{PARTY_B_NAME}}</span>
     </div>
     <div class="party-row">
       <span class="label">代表者　</span>
-      <span class="value"><span class="ph-blank">{{PARTY_B_REPRESENTATIVE}}</span>　　　　　㊞</span>
+      <span class="value">{{PARTY_B_REPRESENTATIVE}}　　　　　㊞</span>
     </div>
   </div>
 
-  <!-- 乙 -->
+  <!-- 乙（売手・アークライト） -->
   <div class="party">
     <div class="party-label">乙</div>
     <div class="party-row">
