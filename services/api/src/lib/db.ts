@@ -105,7 +105,17 @@ export async function initDb() {
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS entity_type VARCHAR(50);`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS withholding_enabled BOOLEAN DEFAULT FALSE;`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS aliases TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS corporate_number VARCHAR(20);`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS phone VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS payment_terms TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS main_business TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS transaction_category VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS capital_yen BIGINT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS employee_count INTEGER;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS subcontract_act_applicable BOOLEAN DEFAULT FALSE;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS rating VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS antisocial_check_result VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS master_updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS contact_department VARCHAR(100);`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS contact_name VARCHAR(100);`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS master_contract_ref TEXT;`,
@@ -115,6 +125,54 @@ export async function initDb() {
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_number VARCHAR(50);`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_holder_kana TEXT;`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS is_invoice_issuer BOOLEAN DEFAULT FALSE;`,
+    `CREATE TABLE IF NOT EXISTS vendor_addresses (
+      id SERIAL PRIMARY KEY,
+      vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+      address_label VARCHAR(100),
+      postal_code VARCHAR(20),
+      address TEXT NOT NULL,
+      is_primary BOOLEAN DEFAULT FALSE,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_vendor_addresses_vendor ON vendor_addresses(vendor_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_vendor_addresses_primary ON vendor_addresses(vendor_id, is_primary);`,
+    `INSERT INTO vendor_addresses (vendor_id, address_label, address, is_primary, sort_order)
+     SELECT v.id, 'primary', v.address, TRUE, 0
+       FROM vendors v
+      WHERE v.address IS NOT NULL
+        AND v.address <> ''
+        AND NOT EXISTS (
+          SELECT 1 FROM vendor_addresses va WHERE va.vendor_id = v.id
+        );`,
+    `CREATE TABLE IF NOT EXISTS vendor_bank_accounts (
+      id SERIAL PRIMARY KEY,
+      vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+      bank_label VARCHAR(100),
+      bank_name TEXT,
+      branch_name TEXT,
+      account_type VARCHAR(50),
+      account_number VARCHAR(50),
+      account_holder_kana TEXT,
+      is_primary BOOLEAN DEFAULT FALSE,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_vendor_bank_accounts_vendor ON vendor_bank_accounts(vendor_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_vendor_bank_accounts_primary ON vendor_bank_accounts(vendor_id, is_primary);`,
+    `INSERT INTO vendor_bank_accounts
+      (vendor_id, bank_label, bank_name, branch_name, account_type, account_number, account_holder_kana, is_primary, sort_order)
+     SELECT v.id, 'primary', v.bank_name, v.branch_name, v.account_type, v.account_number, v.account_holder_kana, TRUE, 0
+       FROM vendors v
+      WHERE (COALESCE(v.bank_name, '') <> ''
+          OR COALESCE(v.branch_name, '') <> ''
+          OR COALESCE(v.account_number, '') <> ''
+          OR COALESCE(v.account_holder_kana, '') <> '')
+        AND NOT EXISTS (
+          SELECT 1 FROM vendor_bank_accounts vba WHERE vba.vendor_id = v.id
+        );`,
 
     // 3. Staff & Workflow Rules
     `CREATE TABLE IF NOT EXISTS staff (

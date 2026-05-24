@@ -29,10 +29,32 @@ export type VendorContact = {
   remarks?: string | null;
 };
 
+export type VendorAddress = {
+  id?: number;
+  address_label?: string | null;
+  postal_code?: string | null;
+  address: string;
+  is_primary?: boolean;
+  sort_order?: number;
+};
+
+export type VendorBankAccount = {
+  id?: number;
+  bank_label?: string | null;
+  bank_name?: string | null;
+  branch_name?: string | null;
+  account_type?: string | null;
+  account_number?: string | null;
+  account_holder_kana?: string | null;
+  is_primary?: boolean;
+  sort_order?: number;
+};
+
 export type VendorRow = {
   id?: number;
   vendor_code: string;
   vendor_name: string;
+  corporate_number?: string | null;
   trade_name?: string | null;
   pen_name?: string | null;
   vendor_suffix?: string | null;
@@ -42,6 +64,15 @@ export type VendorRow = {
   address?: string | null;
   phone?: string | null;
   email?: string | null;
+  payment_terms?: string | null;
+  main_business?: string | null;
+  transaction_category?: string | null;
+  capital_yen?: number | string | null;
+  employee_count?: number | string | null;
+  subcontract_act_applicable?: boolean | null;
+  rating?: string | null;
+  antisocial_check_result?: string | null;
+  master_updated_at?: string | null;
   contact_department?: string | null;
   contact_name?: string | null;
   master_contract_ref?: string | null;
@@ -56,11 +87,15 @@ export type VendorRow = {
   // Phase 22.13
   vendor_rep?: string | null;
   contacts?: VendorContact[];
+  addresses?: VendorAddress[];
+  bank_accounts?: VendorBankAccount[];
 };
 
 const SELECT_COLUMNS = `
-  id, vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type,
-  withholding_enabled, aliases, address, phone, email,
+  id, vendor_code, vendor_name, corporate_number, trade_name, pen_name, vendor_suffix, entity_type,
+  withholding_enabled, aliases, address, phone, email, payment_terms, main_business,
+  transaction_category, capital_yen, employee_count, subcontract_act_applicable,
+  rating, antisocial_check_result, master_updated_at,
   contact_department, contact_name, master_contract_ref, bank_info,
   bank_name, branch_name, account_type, account_number, account_holder_kana,
   is_invoice_issuer, invoice_registration_number, vendor_rep
@@ -112,6 +147,88 @@ async function fetchContactsMap(
     throw err;
   }
   return map;
+}
+
+async function fetchAddressesMap(
+  vendorIds: number[]
+): Promise<Map<number, VendorAddress[]>> {
+  const map = new Map<number, VendorAddress[]>();
+  if (vendorIds.length === 0) return map;
+  try {
+    const res = await query(
+      `SELECT vendor_id, id, address_label, postal_code, address, is_primary, sort_order
+         FROM vendor_addresses
+        WHERE vendor_id = ANY($1::int[])
+        ORDER BY vendor_id, is_primary DESC, sort_order ASC, id ASC`,
+      [vendorIds]
+    );
+    res.rows.forEach((r: any) => {
+      const vid = Number(r.vendor_id);
+      if (!map.has(vid)) map.set(vid, []);
+      map.get(vid)!.push({
+        id: Number(r.id),
+        address_label: r.address_label || null,
+        postal_code: r.postal_code || null,
+        address: r.address || "",
+        is_primary: !!r.is_primary,
+        sort_order: Number(r.sort_order) || 0,
+      });
+    });
+  } catch (err: any) {
+    if (err && (err.code === "42703" || err.code === "42P01")) return map;
+    throw err;
+  }
+  return map;
+}
+
+async function fetchBankAccountsMap(
+  vendorIds: number[]
+): Promise<Map<number, VendorBankAccount[]>> {
+  const map = new Map<number, VendorBankAccount[]>();
+  if (vendorIds.length === 0) return map;
+  try {
+    const res = await query(
+      `SELECT vendor_id, id, bank_label, bank_name, branch_name, account_type,
+              account_number, account_holder_kana, is_primary, sort_order
+         FROM vendor_bank_accounts
+        WHERE vendor_id = ANY($1::int[])
+        ORDER BY vendor_id, is_primary DESC, sort_order ASC, id ASC`,
+      [vendorIds]
+    );
+    res.rows.forEach((r: any) => {
+      const vid = Number(r.vendor_id);
+      if (!map.has(vid)) map.set(vid, []);
+      map.get(vid)!.push({
+        id: Number(r.id),
+        bank_label: r.bank_label || null,
+        bank_name: r.bank_name || null,
+        branch_name: r.branch_name || null,
+        account_type: r.account_type || null,
+        account_number: r.account_number || null,
+        account_holder_kana: r.account_holder_kana || null,
+        is_primary: !!r.is_primary,
+        sort_order: Number(r.sort_order) || 0,
+      });
+    });
+  } catch (err: any) {
+    if (err && (err.code === "42703" || err.code === "42P01")) return map;
+    throw err;
+  }
+  return map;
+}
+
+function normalizeNumber(v: unknown): number | null {
+  if (v == null || v === "") return null;
+  const n = Number(String(v).replace(/,/g, ""));
+  return Number.isFinite(n) ? n : null;
+}
+
+function calculateSubcontractActApplicable(v: VendorRow): boolean {
+  const category = String(v.transaction_category || "").trim();
+  const capital = normalizeNumber(v.capital_yen);
+  const employees = normalizeNumber(v.employee_count);
+  if (!category && capital == null && employees == null) return false;
+  return (capital != null && capital >= 10000000) || (employees != null && employees >= 100);
 }
 
 /**
@@ -205,9 +322,15 @@ export async function listVendors(
 
   // Phase 22.13: contacts[] を 1 クエリで全 vendor 分取得して inject (N+1 回避)
   const ids = rows.map((r) => Number(r.id)).filter((n) => Number.isFinite(n));
-  const contactsMap = await fetchContactsMap(ids);
+  const [contactsMap, addressesMap, bankAccountsMap] = await Promise.all([
+    fetchContactsMap(ids),
+    fetchAddressesMap(ids),
+    fetchBankAccountsMap(ids),
+  ]);
   rows.forEach((r) => {
     r.contacts = contactsMap.get(Number(r.id)) || [];
+    r.addresses = addressesMap.get(Number(r.id)) || [];
+    r.bank_accounts = bankAccountsMap.get(Number(r.id)) || [];
   });
 
   return { rows, total };
@@ -238,9 +361,103 @@ export async function getVendor(vendorCode: string): Promise<VendorRow | null> {
   }
   const row = (res.rows[0] as VendorRow) || null;
   if (!row) return null;
-  const contactsMap = await fetchContactsMap([Number(row.id)]);
+  const [contactsMap, addressesMap, bankAccountsMap] = await Promise.all([
+    fetchContactsMap([Number(row.id)]),
+    fetchAddressesMap([Number(row.id)]),
+    fetchBankAccountsMap([Number(row.id)]),
+  ]);
   row.contacts = contactsMap.get(Number(row.id)) || [];
+  row.addresses = addressesMap.get(Number(row.id)) || [];
+  row.bank_accounts = bankAccountsMap.get(Number(row.id)) || [];
   return row;
+}
+
+async function replaceVendorAddresses(vendorId: number, addresses: VendorAddress[]) {
+  const rows = addresses
+    .filter((a) => a && String(a.address || "").trim())
+    .map((a, idx) => ({
+      address_label: a.address_label || null,
+      postal_code: a.postal_code || null,
+      address: String(a.address).trim(),
+      is_primary: !!a.is_primary,
+      sort_order: Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : idx,
+    }));
+  if (rows.length > 0 && !rows.some((a) => a.is_primary)) rows[0].is_primary = true;
+
+  await query("DELETE FROM vendor_addresses WHERE vendor_id = $1", [vendorId]);
+  for (const a of rows) {
+    await query(
+      `INSERT INTO vendor_addresses
+        (vendor_id, address_label, postal_code, address, is_primary, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [vendorId, a.address_label, a.postal_code, a.address, a.is_primary, a.sort_order]
+    );
+  }
+
+  const primary = rows.find((a) => a.is_primary) || rows[0];
+  if (primary) {
+    await query("UPDATE vendors SET address = $1 WHERE id = $2", [primary.address, vendorId]);
+  }
+}
+
+async function replaceVendorBankAccounts(vendorId: number, bankAccounts: VendorBankAccount[]) {
+  const rows = bankAccounts
+    .filter((a) =>
+      a &&
+      [a.bank_name, a.branch_name, a.account_number, a.account_holder_kana].some((x) =>
+        String(x || "").trim()
+      )
+    )
+    .map((a, idx) => ({
+      bank_label: a.bank_label || null,
+      bank_name: a.bank_name || null,
+      branch_name: a.branch_name || null,
+      account_type: a.account_type || null,
+      account_number: a.account_number || null,
+      account_holder_kana: a.account_holder_kana || null,
+      is_primary: !!a.is_primary,
+      sort_order: Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : idx,
+    }));
+  if (rows.length > 0 && !rows.some((a) => a.is_primary)) rows[0].is_primary = true;
+
+  await query("DELETE FROM vendor_bank_accounts WHERE vendor_id = $1", [vendorId]);
+  for (const a of rows) {
+    await query(
+      `INSERT INTO vendor_bank_accounts
+        (vendor_id, bank_label, bank_name, branch_name, account_type,
+         account_number, account_holder_kana, is_primary, sort_order)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        vendorId,
+        a.bank_label,
+        a.bank_name,
+        a.branch_name,
+        a.account_type,
+        a.account_number,
+        a.account_holder_kana,
+        a.is_primary,
+        a.sort_order,
+      ]
+    );
+  }
+
+  const primary = rows.find((a) => a.is_primary) || rows[0];
+  if (primary) {
+    await query(
+      `UPDATE vendors
+          SET bank_name = $1, branch_name = $2, account_type = $3,
+              account_number = $4, account_holder_kana = $5
+        WHERE id = $6`,
+      [
+        primary.bank_name,
+        primary.branch_name,
+        primary.account_type,
+        primary.account_number,
+        primary.account_holder_kana,
+        vendorId,
+      ]
+    );
+  }
 }
 
 /**
@@ -257,18 +474,22 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
   if (!code) throw new Error("vendor_code は必須です");
   if (!name) throw new Error("vendor_name は必須です");
 
-  await query(
+  const subcontractApplicable = calculateSubcontractActApplicable(v);
+  const upsert = await query(
     `INSERT INTO vendors (
-      vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type,
-      withholding_enabled, aliases, address, phone, email, contact_department,
+      vendor_code, vendor_name, corporate_number, trade_name, pen_name, vendor_suffix, entity_type,
+      withholding_enabled, aliases, address, phone, email, payment_terms,
+      main_business, transaction_category, capital_yen, employee_count,
+      subcontract_act_applicable, rating, antisocial_check_result, master_updated_at, contact_department,
       contact_name, master_contract_ref, bank_info, bank_name, branch_name,
       account_type, account_number, account_holder_kana, is_invoice_issuer,
       invoice_registration_number
     ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22
+      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,COALESCE($21, CURRENT_TIMESTAMP),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
     )
     ON CONFLICT (vendor_code) DO UPDATE SET
       vendor_name                 = EXCLUDED.vendor_name,
+      corporate_number            = EXCLUDED.corporate_number,
       trade_name                  = EXCLUDED.trade_name,
       pen_name                    = EXCLUDED.pen_name,
       vendor_suffix               = EXCLUDED.vendor_suffix,
@@ -278,6 +499,15 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
       address                     = EXCLUDED.address,
       phone                       = EXCLUDED.phone,
       email                       = EXCLUDED.email,
+      payment_terms               = EXCLUDED.payment_terms,
+      main_business               = EXCLUDED.main_business,
+      transaction_category        = EXCLUDED.transaction_category,
+      capital_yen                 = EXCLUDED.capital_yen,
+      employee_count              = EXCLUDED.employee_count,
+      subcontract_act_applicable  = EXCLUDED.subcontract_act_applicable,
+      rating                      = EXCLUDED.rating,
+      antisocial_check_result     = EXCLUDED.antisocial_check_result,
+      master_updated_at           = EXCLUDED.master_updated_at,
       contact_department          = EXCLUDED.contact_department,
       contact_name                = EXCLUDED.contact_name,
       master_contract_ref         = EXCLUDED.master_contract_ref,
@@ -288,10 +518,12 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
       account_number              = EXCLUDED.account_number,
       account_holder_kana         = EXCLUDED.account_holder_kana,
       is_invoice_issuer           = EXCLUDED.is_invoice_issuer,
-      invoice_registration_number = EXCLUDED.invoice_registration_number`,
+      invoice_registration_number = EXCLUDED.invoice_registration_number
+    RETURNING id`,
     [
       code,
       name,
+      v.corporate_number || null,
       v.trade_name || null,
       v.pen_name || null,
       v.vendor_suffix || null,
@@ -301,6 +533,15 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
       v.address || null,
       v.phone || null,
       v.email || null,
+      v.payment_terms || null,
+      v.main_business || null,
+      v.transaction_category || null,
+      normalizeNumber(v.capital_yen),
+      normalizeNumber(v.employee_count),
+      subcontractApplicable,
+      v.rating || null,
+      v.antisocial_check_result || null,
+      v.master_updated_at || null,
       v.contact_department || null,
       v.contact_name || null,
       v.master_contract_ref || null,
@@ -314,6 +555,32 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
       v.invoice_registration_number || null,
     ]
   );
+  const vendorId = Number(upsert.rows[0]?.id);
+
+  if (Array.isArray(v.addresses) && vendorId) {
+    await replaceVendorAddresses(vendorId, v.addresses);
+  } else if (v.address && vendorId) {
+    const existingAddresses = await fetchAddressesMap([vendorId]);
+    if ((existingAddresses.get(vendorId) || []).length === 0) {
+      await replaceVendorAddresses(vendorId, [{ address: v.address, is_primary: true }]);
+    }
+  }
+
+  if (Array.isArray(v.bank_accounts) && vendorId) {
+    await replaceVendorBankAccounts(vendorId, v.bank_accounts);
+  } else if (vendorId && (v.bank_name || v.branch_name || v.account_number || v.account_holder_kana)) {
+    const existingAccounts = await fetchBankAccountsMap([vendorId]);
+    if ((existingAccounts.get(vendorId) || []).length === 0) {
+      await replaceVendorBankAccounts(vendorId, [{
+        bank_name: v.bank_name || null,
+        branch_name: v.branch_name || null,
+        account_type: v.account_type || null,
+        account_number: v.account_number || null,
+        account_holder_kana: v.account_holder_kana || null,
+        is_primary: true,
+      }]);
+    }
+  }
 
   const result = await getVendor(code);
   if (!result) throw new Error("upsert 後の取得に失敗しました");
@@ -332,6 +599,7 @@ const VENDOR_COLUMN_MAP: Record<string, keyof VendorRow> = {
   // 英語キー (snake_case)
   vendor_code: "vendor_code",
   vendor_name: "vendor_name",
+  corporate_number: "corporate_number",
   trade_name: "trade_name",
   pen_name: "pen_name",
   vendor_suffix: "vendor_suffix",
@@ -341,6 +609,14 @@ const VENDOR_COLUMN_MAP: Record<string, keyof VendorRow> = {
   address: "address",
   phone: "phone",
   email: "email",
+  payment_terms: "payment_terms",
+  main_business: "main_business",
+  transaction_category: "transaction_category",
+  capital_yen: "capital_yen",
+  employee_count: "employee_count",
+  rating: "rating",
+  antisocial_check_result: "antisocial_check_result",
+  master_updated_at: "master_updated_at",
   contact_department: "contact_department",
   contact_name: "contact_name",
   master_contract_ref: "master_contract_ref",
@@ -355,12 +631,21 @@ const VENDOR_COLUMN_MAP: Record<string, keyof VendorRow> = {
   // camelCase variant
   vendorCode: "vendor_code",
   vendorName: "vendor_name",
+  corporateNumber: "corporate_number",
   tradeName: "trade_name",
   penName: "pen_name",
   vendorSuffix: "vendor_suffix",
   entityType: "entity_type",
   withholdingEnabled: "withholding_enabled",
   contactDepartment: "contact_department",
+  paymentTerms: "payment_terms",
+  mainBusiness: "main_business",
+  transactionCategory: "transaction_category",
+  capitalYen: "capital_yen",
+  employeeCount: "employee_count",
+  ratingScore: "rating",
+  antisocialCheckResult: "antisocial_check_result",
+  masterUpdatedAt: "master_updated_at",
   contactName: "contact_name",
   masterContractRef: "master_contract_ref",
   bankInfo: "bank_info",
@@ -571,22 +856,28 @@ export async function importVendorRows(
  */
 export function getVendorSampleCsv(): string {
   const header = [
-    "vendor_code", "vendor_name", "trade_name", "pen_name", "entity_type",
-    "phone", "email", "contact_name", "address",
+    "vendor_code", "corporate_number", "vendor_name", "trade_name", "pen_name", "entity_type",
+    "phone", "email", "payment_terms", "main_business", "transaction_category",
+    "capital_yen", "employee_count", "rating", "antisocial_check_result", "master_updated_at",
+    "contact_name", "address",
     "bank_name", "branch_name", "account_type", "account_number", "account_holder_kana",
     "is_invoice_issuer", "invoice_registration_number",
   ];
   const rows = [
     [
-      "2-20-9001", "株式会社サンプル商事", "サンプル商事", "", "corporate",
-      "03-1234-5678", "info@sample.co.jp", "山田 太郎", "東京都千代田区サンプル町1-2-3",
-      "みずほ銀行", "東京支店", "普通", "1234567", "カ）サンプルシヨウジ",
+      "2-20-9001", "1234567890123", "Sample Trading Co., Ltd.", "Sample Trading", "", "corporate",
+      "03-1234-5678", "info@sample.co.jp", "month-end closing / next month-end payment", "content production and distribution", "goods_sale",
+      "50000000", "120", "A", "clear", "2026-05-24",
+      "Taro Yamada", "1-2-3 Sample, Chiyoda-ku, Tokyo",
+      "Mizuho Bank", "Tokyo Branch", "ordinary", "1234567", "SAMPLE TRADING",
       "TRUE", "T1234567890123",
     ],
     [
-      "2-20-9002", "サンプル個人事業主", "", "サンプル筆名", "individual",
-      "090-0000-0000", "ind@sample.com", "鈴木 花子", "大阪府大阪市サンプル区2-3-4",
-      "三井住友銀行", "梅田支店", "普通", "7654321", "スズキ ハナコ",
+      "2-20-9002", "", "Sample Sole Proprietor", "", "Sample Pen Name", "individual",
+      "090-0000-0000", "ind@sample.com", "payment after acceptance", "design services", "service",
+      "", "3", "B", "clear", "2026-05-24",
+      "Hanako Suzuki", "2-3-4 Sample, Osaka-shi, Osaka",
+      "Sumitomo Mitsui Banking Corporation", "Umeda Branch", "ordinary", "7654321", "HANAKO SUZUKI",
       "FALSE", "",
     ],
   ];
@@ -600,4 +891,3 @@ export function getVendorSampleCsv(): string {
     )
     .join("\n");
 }
-

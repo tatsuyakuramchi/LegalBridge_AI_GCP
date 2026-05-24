@@ -125,6 +125,67 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
               <input class="tech-input" type="text" name="aliases" placeholder="カンマ区切りで複数可">
             </div>
 
+
+            <div class="field">
+              <label class="tech-label">&#27861;&#20154;&#30058;&#21495;</label>
+              <input class="tech-input" type="text" name="corporate_number" maxlength="20" placeholder="13&#26689;">
+            </div>
+
+            <div class="field">
+              <label class="tech-label">&#21462;&#24341;&#20869;&#23481;&#21306;&#20998;</label>
+              <select class="tech-select" name="transaction_category" id="transaction_category">
+                <option value="">(&#26410;&#25351;&#23450;)</option>
+                <option value="goods_sale">&#29289;&#21697;&#22770;&#36023;</option>
+                <option value="service">&#26989;&#21209;&#22996;&#35351;&#12539;&#24441;&#21209;</option>
+                <option value="license">&#12521;&#12452;&#12475;&#12531;&#12473;</option>
+                <option value="other">&#12381;&#12398;&#20182;</option>
+              </select>
+            </div>
+
+            <div class="field">
+              <label class="tech-label">&#36039;&#26412;&#37329;&#65288;&#20870;&#65289;</label>
+              <input class="tech-input" type="number" name="capital_yen" id="capital_yen" min="0" step="1">
+            </div>
+
+            <div class="field">
+              <label class="tech-label">&#24467;&#26989;&#21729;&#25968;&#65288;&#20154;&#65289;</label>
+              <input class="tech-input" type="number" name="employee_count" id="employee_count" min="0" step="1">
+            </div>
+
+            <div class="field">
+              <label class="tech-label">&#21462;&#36969;&#27861;&#36969;&#29992;&#21028;&#23450;</label>
+              <input class="tech-input" type="text" name="subcontract_act_applicable_display" id="subcontract_act_applicable_display" readonly>
+            </div>
+
+            <div class="field">
+              <label class="tech-label">&#21462;&#24341;&#20808;&#12510;&#12473;&#12479;&#26356;&#26032;&#26085;</label>
+              <input class="tech-input" type="date" name="master_updated_at">
+            </div>
+
+            <div class="field col-2">
+              <label class="tech-label">&#21462;&#24341;&#20808;&#20027;&#35201;&#20107;&#26989;</label>
+              <input class="tech-input" type="text" name="main_business">
+            </div>
+
+            <div class="field">
+              <label class="tech-label">&#27770;&#28168;&#26465;&#20214;</label>
+              <input class="tech-input" type="text" name="payment_terms" placeholder="&#20363;: &#26376;&#26411;&#32224;&#12417;&#32716;&#26376;&#26411;&#25173;&#12356;">
+            </div>
+
+            <div class="field">
+              <label class="tech-label">&#35413;&#28857;</label>
+              <input class="tech-input" type="text" name="rating">
+            </div>
+
+            <div class="field col-2">
+              <label class="tech-label">&#21453;&#31038;&#12481;&#12455;&#12483;&#12463;&#32080;&#26524;</label>
+              <select class="tech-select" name="antisocial_check_result">
+                <option value="">(&#26410;&#30906;&#35469;)</option>
+                <option value="clear">&#21839;&#38988;&#12394;&#12375;</option>
+                <option value="pending">&#30906;&#35469;&#20013;</option>
+                <option value="ng">NG</option>
+              </select>
+            </div>
             <div class="section-head"><span class="retro-tag">SEC · 02 / 連絡先</span></div>
 
             <div class="field">
@@ -152,6 +213,14 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
               <input class="tech-input" type="text" name="address">
             </div>
 
+
+            <div class="field col-2">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <label class="tech-label">&#20303;&#25152;&#65288;1:N&#65289;</label>
+                <button class="btn outline sm" type="button" id="btn-add-address">&#20303;&#25152;&#12434;&#36861;&#21152;</button>
+              </div>
+              <div id="addresses-list" style="display:grid;gap:8px;"></div>
+            </div>
             <div class="section-head"><span class="retro-tag">SEC · 03 / 税務・インボイス</span></div>
 
             <div class="checkbox-row">
@@ -213,6 +282,14 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
               <input class="tech-input" type="text" name="bank_info" placeholder="自由記述">
             </div>
 
+
+            <div class="field col-2">
+              <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+                <label class="tech-label">&#21475;&#24231;&#24773;&#22577;&#65288;1:N&#65289;</label>
+                <button class="btn outline sm" type="button" id="btn-add-bank-account">&#21475;&#24231;&#12434;&#36861;&#21152;</button>
+              </div>
+              <div id="bank-accounts-list" style="display:grid;gap:8px;"></div>
+            </div>
           </div>
         </form>
       </div>
@@ -375,6 +452,9 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       const form = $('form');
       form.reset();
       form.querySelector('[name=vendor_code]').readOnly = false;
+      renderAddresses([]);
+      renderBankAccounts([]);
+      updateSubcontractDisplay();
       $('modal-backdrop').classList.add('open');
       setTimeout(() => form.querySelector('[name=vendor_code]').focus(), 50);
     }
@@ -401,13 +481,114 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
     function closeEditModal() { $('modal-backdrop').classList.remove('open'); }
 
+    function calcSubcontractApplicable(capital, employees) {
+      const c = Number(String(capital || '').replace(/,/g, ''));
+      const e = Number(String(employees || '').replace(/,/g, ''));
+      return (Number.isFinite(c) && c >= 10000000) || (Number.isFinite(e) && e >= 100);
+    }
+
+    function updateSubcontractDisplay() {
+      const applicable = calcSubcontractApplicable($('capital_yen').value, $('employee_count').value);
+      $('subcontract_act_applicable_display').value = applicable ? '対象' : '対象外';
+    }
+
+    function rowStyle() {
+      return 'border:1px solid var(--border);padding:10px;display:grid;grid-template-columns:80px 1fr 1fr 44px;gap:8px;align-items:center;';
+    }
+
+    function renderAddresses(rows) {
+      const list = $('addresses-list');
+      const items = Array.isArray(rows) && rows.length ? rows : [{ address_label: 'primary', address: '', is_primary: true }];
+      list.innerHTML = items.map((a, idx) =>
+        '<div class="address-row" style="' + rowStyle() + '">'
+        + '<label class="tech-label" style="display:flex;gap:6px;align-items:center;margin:0;"><input type="radio" name="primary_address" ' + (a.is_primary || idx === 0 ? 'checked' : '') + '>代表</label>'
+        + '<input class="tech-input" data-address-field="address_label" placeholder="種別" value="' + escAttr(a.address_label || '') + '">'
+        + '<input class="tech-input" data-address-field="address" placeholder="住所" value="' + escAttr(a.address || '') + '">'
+        + '<button type="button" class="btn ghost sm" data-remove-address>' + ${JSON.stringify(SVG.x)} + '</button>'
+        + '</div>'
+      ).join('');
+      list.querySelectorAll('[data-remove-address]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          btn.closest('.address-row').remove();
+          if (!list.querySelector('input[name=primary_address]:checked') && list.querySelector('input[name=primary_address]')) {
+            list.querySelector('input[name=primary_address]').checked = true;
+          }
+        });
+      });
+    }
+
+    function renderBankAccounts(rows) {
+      const list = $('bank-accounts-list');
+      const items = Array.isArray(rows) && rows.length ? rows : [{
+        bank_label: 'primary',
+        bank_name: '',
+        branch_name: '',
+        account_type: '',
+        account_number: '',
+        account_holder_kana: '',
+        is_primary: true,
+      }];
+      list.innerHTML = items.map((a, idx) =>
+        '<div class="bank-row" style="border:1px solid var(--border);padding:10px;display:grid;grid-template-columns:80px repeat(3,1fr) 44px;gap:8px;align-items:center;">'
+        + '<label class="tech-label" style="display:flex;gap:6px;align-items:center;margin:0;"><input type="radio" name="primary_bank_account" ' + (a.is_primary || idx === 0 ? 'checked' : '') + '>代表</label>'
+        + '<input class="tech-input" data-bank-field="bank_name" placeholder="銀行名" value="' + escAttr(a.bank_name || '') + '">'
+        + '<input class="tech-input" data-bank-field="branch_name" placeholder="支店名" value="' + escAttr(a.branch_name || '') + '">'
+        + '<input class="tech-input" data-bank-field="account_number" placeholder="口座番号" value="' + escAttr(a.account_number || '') + '">'
+        + '<button type="button" class="btn ghost sm" data-remove-bank-account>' + ${JSON.stringify(SVG.x)} + '</button>'
+        + '<input class="tech-input" data-bank-field="account_type" placeholder="種別" value="' + escAttr(a.account_type || '') + '">'
+        + '<input class="tech-input" data-bank-field="account_holder_kana" placeholder="口座名義カナ" value="' + escAttr(a.account_holder_kana || '') + '" style="grid-column: span 3;">'
+        + '</div>'
+      ).join('');
+      list.querySelectorAll('[data-remove-bank-account]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          btn.closest('.bank-row').remove();
+          if (!list.querySelector('input[name=primary_bank_account]:checked') && list.querySelector('input[name=primary_bank_account]')) {
+            list.querySelector('input[name=primary_bank_account]').checked = true;
+          }
+        });
+      });
+    }
+
+    function readAddresses() {
+      return Array.from(document.querySelectorAll('.address-row')).map((row, idx) => ({
+        address_label: row.querySelector('[data-address-field=address_label]')?.value.trim() || '',
+        address: row.querySelector('[data-address-field=address]')?.value.trim() || '',
+        is_primary: !!row.querySelector('input[name=primary_address]')?.checked,
+        sort_order: idx,
+      })).filter((a) => a.address);
+    }
+
+    function readBankAccounts() {
+      return Array.from(document.querySelectorAll('.bank-row')).map((row, idx) => ({
+        bank_name: row.querySelector('[data-bank-field=bank_name]')?.value.trim() || '',
+        branch_name: row.querySelector('[data-bank-field=branch_name]')?.value.trim() || '',
+        account_type: row.querySelector('[data-bank-field=account_type]')?.value.trim() || '',
+        account_number: row.querySelector('[data-bank-field=account_number]')?.value.trim() || '',
+        account_holder_kana: row.querySelector('[data-bank-field=account_holder_kana]')?.value.trim() || '',
+        is_primary: !!row.querySelector('input[name=primary_bank_account]')?.checked,
+        sort_order: idx,
+      })).filter((a) => a.bank_name || a.branch_name || a.account_number || a.account_holder_kana);
+    }
+
     function fillForm(v) {
       const form = $('form');
       Array.from(form.elements).forEach(el => {
         if (!el.name) return;
+        if (el.name === 'subcontract_act_applicable_display') return;
         if (el.type === 'checkbox') el.checked = !!v[el.name];
+        else if (el.type === 'date' && v[el.name]) el.value = String(v[el.name]).slice(0, 10);
         else el.value = v[el.name] == null ? '' : v[el.name];
       });
+      renderAddresses(v.addresses || (v.address ? [{ address: v.address, is_primary: true }] : []));
+      renderBankAccounts(v.bank_accounts || ((v.bank_name || v.account_number) ? [{
+        bank_name: v.bank_name,
+        branch_name: v.branch_name,
+        account_type: v.account_type,
+        account_number: v.account_number,
+        account_holder_kana: v.account_holder_kana,
+        is_primary: true,
+      }] : []));
+      updateSubcontractDisplay();
     }
 
     function readForm() {
@@ -415,13 +596,39 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       const out = {};
       Array.from(form.elements).forEach(el => {
         if (!el.name) return;
+        if (el.name === 'subcontract_act_applicable_display') return;
         if (el.type === 'checkbox') out[el.name] = el.checked;
         else out[el.name] = el.value.trim();
       });
+      out.addresses = readAddresses();
+      out.bank_accounts = readBankAccounts();
+      const primaryAddress = out.addresses.find(a => a.is_primary) || out.addresses[0];
+      if (primaryAddress) out.address = primaryAddress.address;
+      const primaryAccount = out.bank_accounts.find(a => a.is_primary) || out.bank_accounts[0];
+      if (primaryAccount) {
+        out.bank_name = primaryAccount.bank_name;
+        out.branch_name = primaryAccount.branch_name;
+        out.account_type = primaryAccount.account_type;
+        out.account_number = primaryAccount.account_number;
+        out.account_holder_kana = primaryAccount.account_holder_kana;
+      }
+      out.subcontract_act_applicable = calcSubcontractApplicable(out.capital_yen, out.employee_count);
       return out;
     }
 
     $('btn-new').addEventListener('click', openCreate);
+    $('btn-add-address').addEventListener('click', () => {
+      const rows = readAddresses();
+      rows.push({ address_label: '', address: '', is_primary: rows.length === 0, sort_order: rows.length });
+      renderAddresses(rows);
+    });
+    $('btn-add-bank-account').addEventListener('click', () => {
+      const rows = readBankAccounts();
+      rows.push({ bank_name: '', branch_name: '', account_type: '', account_number: '', account_holder_kana: '', is_primary: rows.length === 0, sort_order: rows.length });
+      renderBankAccounts(rows);
+    });
+    $('capital_yen').addEventListener('input', updateSubcontractDisplay);
+    $('employee_count').addEventListener('input', updateSubcontractDisplay);
     $('btn-close').addEventListener('click', closeEditModal);
     $('btn-cancel').addEventListener('click', closeEditModal);
     $('modal-backdrop').addEventListener('click', (e) => {

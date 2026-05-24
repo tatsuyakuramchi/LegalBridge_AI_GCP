@@ -17,10 +17,32 @@ export interface VendorContact {
   remarks?: string
 }
 
+export interface VendorAddress {
+  id?: number
+  address_label?: string
+  postal_code?: string
+  address: string
+  is_primary?: boolean
+  sort_order?: number
+}
+
+export interface VendorBankAccount {
+  id?: number
+  bank_label?: string
+  bank_name?: string
+  branch_name?: string
+  account_type?: string
+  account_number?: string
+  account_holder_kana?: string
+  is_primary?: boolean
+  sort_order?: number
+}
+
 export interface Vendor {
   id?: number
   vendor_code: string
   vendor_name: string
+  corporate_number?: string
   trade_name?: string
   address?: string
   contact_name?: string  // legacy: primary 担当者の名前 (worker が backfill する)
@@ -33,10 +55,22 @@ export interface Vendor {
   entity_type?: string
   invoice_registration_number?: string
   email?: string
+  phone?: string
+  payment_terms?: string
+  main_business?: string
+  transaction_category?: string
+  capital_yen?: number | string
+  employee_count?: number | string
+  subcontract_act_applicable?: boolean
+  rating?: string
+  antisocial_check_result?: string
+  master_updated_at?: string
   pen_name?: string
   is_invoice_issuer?: boolean
   // Phase 22.13
   contacts?: VendorContact[]
+  addresses?: VendorAddress[]
+  bank_accounts?: VendorBankAccount[]
 }
 
 export interface Staff {
