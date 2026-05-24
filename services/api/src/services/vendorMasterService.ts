@@ -101,6 +101,14 @@ const SELECT_COLUMNS = `
   is_invoice_issuer, invoice_registration_number, vendor_rep
 `;
 
+const LEGACY_SELECT_COLUMNS = `
+  id, vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type,
+  withholding_enabled, aliases, address, phone, email,
+  contact_department, contact_name, master_contract_ref, bank_info,
+  bank_name, branch_name, account_type, account_number, account_holder_kana,
+  is_invoice_issuer, invoice_registration_number
+`;
+
 /**
  * Phase 22.13: 指定 vendor_id 群の contacts[] を一括取得 (N+1 回避)。
  *   schema migration 未適用 (worker 未デプロイ) 環境では undefined_column
@@ -291,7 +299,8 @@ export async function listVendors(
   }
 
   params.push(limit, offset);
-  // Phase 22.13: vendor_rep が未追加の環境ではフォールバック (legacy SELECT)
+  // New vendor master columns are created by the worker migration. Until that
+  // migration has run, keep read pages alive by falling back to the legacy shape.
   let res: any;
   try {
     res = await query(
@@ -304,10 +313,8 @@ export async function listVendors(
     );
   } catch (err: any) {
     if (err && err.code === "42703") {
-      // vendor_rep 列なし → 旧 SELECT で再試行
-      const LEGACY_COLS = SELECT_COLUMNS.replace(/,\s*vendor_rep\b/, "");
       res = await query(
-        `SELECT ${LEGACY_COLS}
+        `SELECT ${LEGACY_SELECT_COLUMNS}
            FROM vendors
            ${where}
            ORDER BY vendor_code
@@ -350,9 +357,8 @@ export async function getVendor(vendorCode: string): Promise<VendorRow | null> {
     );
   } catch (err: any) {
     if (err && err.code === "42703") {
-      const LEGACY_COLS = SELECT_COLUMNS.replace(/,\s*vendor_rep\b/, "");
       res = await query(
-        `SELECT ${LEGACY_COLS} FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+        `SELECT ${LEGACY_SELECT_COLUMNS} FROM vendors WHERE vendor_code = $1 LIMIT 1`,
         [code]
       );
     } else {
