@@ -2756,9 +2756,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         : { title: 'III. 保証金・掛け売り条件', variant: 'indigo' as const };
 
     // Sub-role label inside the partner section depends on the variant.
-    const partnerRoleLabel = templateId === 'sales_master_buyer'
+    const isBuyerSideSalesMaster = templateId === 'sales_master_buyer';
+    const companyRoleLabel = isBuyerSideSalesMaster ? '甲' : '乙';
+    const partnerRoleLabel = isBuyerSideSalesMaster
       ? '乙 (売主・取引先)'
-      : '乙 (買主・取引先)';
+      : '甲 (買主・取引先)';
 
     return (
       <div className="space-y-10">
@@ -2786,8 +2788,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         </div>
 
         <div className="px-4 py-2 rounded-sm bg-muted/50 text-[10px] font-mono text-muted-foreground">
-          甲 は「株式会社アークライト」がテンプレート内に固定されています。
-          以下は 乙 ({partnerRoleLabel.replace('乙 (', '').replace(')', '')}) の情報のみ入力してください。
+          {companyRoleLabel} は「株式会社アークライト」がテンプレート内に固定されています。
+          以下は {partnerRoleLabel} の情報のみ入力してください。
         </div>
 
         <FormSection
