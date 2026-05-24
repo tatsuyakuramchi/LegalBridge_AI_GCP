@@ -8731,6 +8731,7 @@ ${details}
           delivery_no: "",
           generate_pdf: "\u672a\u4f5c\u6210",
           remarks: "",
+          CHANGE_RECORDS: "",
         };
 
         if (!orderItem?.id) {
@@ -8802,6 +8803,7 @@ ${details}
         "delivery_no",
         "generate_pdf",
         "remarks",
+        "CHANGE_RECORDS",
         "row_type",
         "line_no",
         "order_line_item_id",
@@ -9019,6 +9021,11 @@ ${details}
             paymentDueDate: first.payment_due_date || first.paymentDueDate || "",
             deliveryNo: String(deliveryNo),
             isPartial: deliveryNo > 1 ? "\u5206\u5272" : "\u5b8c\u4e86",
+            CHANGE_RECORDS:
+              first.CHANGE_RECORDS ||
+              first.change_records ||
+              first.changeRecords ||
+              "",
             counterparty: first.counterparty || order.vendor_name || "",
             VENDOR_CODE: order.vendor_code || first.vendor_code || "",
             inspectorDept: staff?.department || "",
@@ -9239,6 +9246,7 @@ ${details}
           "delivery_no",
           "generate_pdf",
           "remarks",
+          "CHANGE_RECORDS",
           "row_type",
           "line_no",
           "order_line_item_id",
@@ -9267,6 +9275,7 @@ ${details}
             "1",
             "\u672a\u4f5c\u6210",
             "",
+            "2026-05-24|検収金額|100000|80000|一部不合格のため減額",
             "item",
             "1",
             "",

@@ -225,6 +225,7 @@
       "totalOrderAmountStr": { "label": "発注総額", "group": "V. 進捗・財務 (任意)" },
       "pendingAmountStr": { "label": "未検収額", "group": "V. 進捗・財務 (任意)", "placeholder": "0" },
       "paymentConditionSummary": { "label": "支払条件", "group": "V. 進捗・財務 (任意)", "placeholder": "例: 検収月の翌月末日払い" },
+      "CHANGE_RECORDS": { "label": "変更履歴", "group": "V. 進捗・財務 (任意)", "type": "textarea", "placeholder": "2026-05-24|検収金額|100,000|80,000|一部不合格のため減額", "helpText": "PDF の「変更履歴（当初発注条件からの変更）」に出力。複数件は ; 区切り。形式: 日付|項目名|変更前|変更後|理由" },
 
       "bankName": { "label": "金融機関", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.bank_name" },
       "branchName": { "label": "支店名", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.branch_name" },
@@ -296,9 +297,12 @@
 
       "PRODUCT_SCOPE": { "label": "本製品の範囲", "group": "III. 取引条件", "type": "textarea", "placeholder": "例: 乙が取扱うアナログゲーム製品全般", "helpText": "📌 第2条「本契約に基づき売買の対象となる本製品の範囲は、__とする」に挿入\n空欄なら『個別契約 (注文書) に定めるとおりとする』と自動描画" },
       "DELIVERY_LOCATION": { "label": "納入場所", "group": "III. 取引条件", "placeholder": "例: 甲指定の倉庫", "helpText": "📌 第5条「注文書に定める納品場所 (__)」に挿入\n空欄なら『注文書に定める納品場所』と自動描画" },
+      "ACCEPTANCE_PERIOD_DAYS": { "label": "受入確認期間 (日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "10", "helpText": "📌 受入確認・検査を行う期間。例: 10" },
+      "INSPECTION_PERIOD_DAYS": { "label": "検査通知期間 (日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "10", "helpText": "📌 検査結果または不適合を通知する期間。例: 10" },
+      "INSPECTION_CURE_DAYS": { "label": "検査不合格時の是正期間 (日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "10", "helpText": "📌 検査不合格・不適合時に乙へ是正を求める期間。例: 10" },
       "WARRANTY_PERIOD": { "label": "契約不適合 保証期間", "group": "III. 取引条件", "required": true, "placeholder": "例: 引渡し後1年", "helpText": "📌 第11条「引渡し後 __ 以内に発見された場合」+「引渡しから __ を超えて行使することはできない」の 2 箇所に挿入\n→ 隠れた瑕疵を含む契約不適合の追完請求権が行使可能な期間" },
       "PAYMENT_CONDITION_SUMMARY": { "label": "支払条件", "group": "III. 取引条件", "placeholder": "例: 月末締め翌月末日払い", "helpText": "📌 第9条「__により、乙が指定する銀行口座へ振込みにて支払う」に挿入\n空欄なら『注文書に定める支払条件』と自動描画" },
-      "CURE_PERIOD_DAYS": { "label": "是正催告期間 (営業日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "14", "helpText": "📌 第17条「是正を要求する通知を受領した後 __ 営業日以内にその違反を是正しない場合は、相手方は、本契約及び個別契約を直ちに解除することができる」に挿入\n→ 違反通知後の是正猶予期間 (営業日)。一般的には 14 営業日" },
+      "BREACH_CURE_DAYS": { "label": "契約違反時の是正催告期間 (営業日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "14", "helpText": "📌 契約違反通知後の是正猶予期間。例: 14 営業日" },
 
       "CONFIDENTIALITY_YEARS": { "label": "秘密保持期間 (年)", "group": "IV. 一般条項", "type": "number", "required": true, "placeholder": "5", "helpText": "📌 第24条「第13条 (秘密保持) については、本契約の終了後 __ 年間に限り、その効力を有する」に挿入\n→ 契約終了後も機密保持義務が継続する年数。一般的には 3〜5 年" },
       "JURISDICTION": { "label": "合意管轄", "group": "IV. 一般条項", "required": true, "placeholder": "例: 東京地方裁判所", "helpText": "📌 第25条「本契約に関する紛争については、__ を第一審の専属的合意管轄裁判所とする」に挿入\n→ 訴訟の第一審管轄。当社の場合は 東京地方裁判所 が一般的" },

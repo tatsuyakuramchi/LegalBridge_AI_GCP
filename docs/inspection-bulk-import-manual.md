@@ -70,6 +70,7 @@ CSV ファイル名は `inspection_trigger_waiting_<timestamp>.csv` 形式でダ
 | delivery_no | 任意 | 納品回数です。空欄の場合は親発注書ごとの次番号を自動採番します。 |
 | generate_pdf | 任意 | PDF 生成対象にするか。空欄または `true` 相当なら PDF 未作成キューに入ります。 |
 | remarks | 任意 | 備考です。納品イベントの note に保存されます。 |
+| CHANGE_RECORDS | 任意 | PDF の「変更履歴（当初発注条件からの変更）」に出力する変更履歴です。形式は `日付|項目名|変更前|変更後|理由`。複数件は `;` 区切りです。 |
 | row_type | 任意 | 明細行種別です。通常は `item`。`expense` は検収書取込では対象外です。 |
 | line_no | 条件付き | 親発注書の明細行番号です。`order_line_item_id` があれば省略可です。 |
 | order_line_item_id | 条件付き | 親発注書明細 ID です。最も確実な明細紐づけキーです。 |

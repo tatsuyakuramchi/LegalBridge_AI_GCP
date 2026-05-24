@@ -6,10 +6,10 @@
   <style>
     @page {
       size: A4;
-      margin: 25mm 20mm 25mm 25mm;
+      margin: 18mm 20mm 22mm 25mm;
       @bottom-center {
         content: "- " counter(page) " -";
-        font-size: 9pt;
+        font-size: 8.5pt;
         font-family: "Noto Serif CJK JP", "IPAMincho", serif;
       }
     }
@@ -18,25 +18,113 @@
 
     body {
       font-family: "Noto Serif CJK JP", "IPAMincho", "MS Mincho", serif;
-      font-size: 10.5pt;
-      line-height: 1.9;
+      font-size: 10pt;
+      line-height: 1.75;
       color: #000;
     }
 
+    /* ===== ドキュメントヘッダー ===== */
+    .doc-header {
+      display: flex;
+      justify-content: flex-end;
+      align-items: baseline;
+      margin-bottom: 0.5em;
+    }
+
+    .doc-header .contract-no {
+      font-size: 8.5pt;
+      color: #555;
+      letter-spacing: 0.05em;
+    }
+
+    /* ===== タイトル ===== */
     h1.contract-title {
       text-align: center;
-      font-size: 15pt;
+      font-size: 14pt;
       font-weight: bold;
-      letter-spacing: 0.3em;
-      margin-bottom: 2em;
+      letter-spacing: 0.35em;
+      margin-bottom: 0.9em;
       text-decoration: underline;
     }
 
-    .preamble {
-      margin-bottom: 1.5em;
-      text-indent: 1em;
+    /* ===== 頭書き表 ===== */
+    .tobogaki {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.4em;
+      font-size: 9pt;
+      line-height: 1.6;
+      border-top: 1.5pt solid #1a1a1a;
+      border-bottom: 1.5pt solid #1a1a1a;
     }
 
+    .tobogaki th,
+    .tobogaki td {
+      border: none;
+      border-bottom: 0.5pt solid #d8d8d8;
+      padding: 0.45em 0.7em;
+      vertical-align: top;
+    }
+
+    /* セクション見出し行 */
+    .tobogaki .sec-row td {
+      padding-top: 0.9em;
+      padding-bottom: 0.25em;
+      border-bottom: 0.5pt solid #888;
+      font-size: 7.5pt;
+      font-weight: bold;
+      letter-spacing: 0.25em;
+      color: #555;
+      text-transform: uppercase;
+    }
+
+    /* 項目列 */
+    .tobogaki .col-item {
+      width: 36%;
+      font-weight: bold;
+      color: #1a1a1a;
+      padding-left: 0.5em;
+    }
+
+    .tobogaki .col-item .art-ref {
+      font-size: 7.5pt;
+      font-weight: normal;
+      color: #777;
+    }
+
+    .tobogaki .col-item .sub-note {
+      display: block;
+      font-size: 7.5pt;
+      font-weight: normal;
+      color: #888;
+      margin-top: 0.1em;
+    }
+
+    /* 内容列 */
+    .tobogaki .col-value {
+      width: 64%;
+      word-break: break-all;
+      overflow-wrap: break-word;
+      color: #1a1a1a;
+    }
+
+    /* 特記事項セル（全幅） */
+    .tobogaki .special-cell {
+      min-height: 2.5em;
+      word-break: break-all;
+      overflow-wrap: break-word;
+      color: #1a1a1a;
+    }
+
+    /* ===== 前文 ===== */
+    .preamble {
+      font-size: 9.5pt;
+      text-indent: 1em;
+      margin-bottom: 0.9em;
+      line-height: 1.7;
+    }
+
+    /* ===== 条文 ===== */
     ol.articles {
       list-style: none;
       padding: 0;
@@ -45,29 +133,31 @@
 
     ol.articles > li {
       counter-increment: article;
-      margin-bottom: 1.2em;
+      margin-bottom: 0.9em;
     }
 
     ol.articles > li > .article-title {
       font-weight: bold;
-      margin-bottom: 0.3em;
+      font-size: 10pt;
+      margin-bottom: 0.15em;
     }
 
     ol.articles > li > .article-title::before {
-      content: counter(article) ". ";
+      content: "第" counter(article) "条";
     }
 
     ol.items {
       list-style: none;
-      padding-left: 1.5em;
+      padding-left: 1.2em;
       counter-reset: item;
+      font-size: 10pt;
     }
 
     ol.items > li {
       counter-increment: item;
       padding-left: 2em;
       text-indent: -2em;
-      margin-bottom: 0.5em;
+      margin-bottom: 0.35em;
     }
 
     ol.items > li::before {
@@ -78,14 +168,14 @@
       list-style: none;
       padding-left: 2em;
       counter-reset: subitem;
-      margin-top: 0.3em;
+      margin-top: 0.25em;
     }
 
     ol.sub-items > li {
       counter-increment: subitem;
       padding-left: 2em;
       text-indent: -2em;
-      margin-bottom: 0.3em;
+      margin-bottom: 0.25em;
     }
 
     ol.sub-items > li::before {
@@ -96,54 +186,60 @@
       list-style: none;
       padding-left: 2em;
       counter-reset: subsubitem;
-      margin-top: 0.3em;
+      margin-top: 0.2em;
     }
 
     ol.sub-sub-items > li {
       counter-increment: subsubitem;
       padding-left: 2.5em;
       text-indent: -2.5em;
-      margin-bottom: 0.3em;
+      margin-bottom: 0.2em;
     }
 
     ol.sub-sub-items > li::before {
       content: counter(subsubitem, katakana) "　";
     }
 
-    .ph {
-      border-bottom: 1px solid #000;
-      display: inline-block;
-      min-width: 5em;
+    /* ===== 余白・改ページ ===== */
+    .margin-note {
+      text-align: center;
+      margin: 1.5em 0 2em;
+      font-size: 9pt;
     }
 
-    .ph-blank {
-      display: inline-block;
-      border-bottom: 1px solid #000;
-      min-width: 8em;
-    }
+    .page-break { page-break-after: always; }
+    .no-break   { page-break-inside: avoid; }
 
+    /* ===== 署名欄 ===== */
     .signature-block {
-      margin-top: 4em;
+      margin-top: 2.5em;
       page-break-inside: avoid;
+    }
+
+    .signature-block .sig-intro {
+      font-size: 9.5pt;
+      margin-bottom: 1.2em;
+      line-height: 1.7;
     }
 
     .signature-block .date-line {
       text-align: right;
-      margin-bottom: 2em;
+      margin-bottom: 1.5em;
+      font-size: 10pt;
     }
 
     .party {
-      margin-bottom: 2em;
+      margin-bottom: 1.4em;
     }
 
     .party .party-label {
       font-weight: bold;
-      margin-bottom: 0.3em;
+      margin-bottom: 0.25em;
     }
 
     .party .party-row {
       display: flex;
-      margin-bottom: 0.3em;
+      margin-bottom: 0.2em;
     }
 
     .party .party-row .label {
@@ -152,57 +248,155 @@
 
     .party .party-row .value {
       flex: 1;
-    }
-
-    .special-terms {
-      border: 1px solid #666;
-      padding: 0.8em 1em;
-      margin-top: 0.8em;
-      min-height: 3em;
-    }
-
-    .special-terms-label {
-      font-weight: bold;
-      margin-bottom: 0.3em;
-    }
-
-    .margin-note {
-      text-align: center;
-      margin: 2em 0 3em;
-      font-size: 9pt;
-    }
-
-    .page-break { page-break-after: always; }
-    .no-break   { page-break-inside: avoid; }
-
-    .contract-meta {
-      text-align: right;
-      font-size: 9pt;
-      margin-bottom: 1em;
-      color: #444;
+      word-break: break-all;
     }
   </style>
 </head>
 <body>
 
-<!-- 契約番号（アプリ側採番） -->
-<div class="contract-meta">契約番号：{{CONTRACT_NO}}</div>
+<div class="doc-header">
+  <span class="contract-no">契約番号：{{CONTRACT_NO}}</span>
+</div>
 
 <h1 class="contract-title">売買基本契約書</h1>
 
-<!-- 頭書き  甲＝アークライト（買手）　乙＝相手方（売手） -->
+<!-- ======================================================
+     頭書き（当事者目録・契約条件一覧）
+     ====================================================== -->
+<table class="tobogaki">
+  <tbody>
+
+    <!-- 当事者 -->
+    <tr class="sec-row"><td colspan="2">当　事　者</td></tr>
+    <tr>
+      <td class="col-item">甲（買手）</td>
+      <td class="col-value">
+        東京都千代田区小川町１－２　風雲堂ビル２階<br>
+        株式会社アークライト<br>
+        代表取締役　青柳　昌行
+      </td>
+    </tr>
+    <tr>
+      <td class="col-item">乙（売手）</td>
+      <td class="col-value">
+        {{PARTY_B_ADDRESS}}<br>
+        {{PARTY_B_NAME}}<br>
+        {{PARTY_B_REPRESENTATIVE}}
+      </td>
+    </tr>
+
+    <!-- 個別取引条件 -->
+    <tr class="sec-row"><td colspan="2">個　別　取　引　条　件</td></tr>
+    <tr>
+      <td class="col-item">
+        本製品の範囲<span class="art-ref">（第２条）</span>
+        <span class="sub-note">未記載の場合は注文書による</span>
+      </td>
+      <td class="col-value">
+        {{#if PRODUCT_SCOPE}}{{PRODUCT_SCOPE}}{{else}}注文書に定めるとおり{{/if}}
+      </td>
+    </tr>
+    <tr>
+      <td class="col-item">
+        納入場所<span class="art-ref">（第５条）</span>
+        <span class="sub-note">未記載の場合は注文書による</span>
+      </td>
+      <td class="col-value">
+        {{#if DELIVERY_LOCATION}}{{DELIVERY_LOCATION}}{{else}}注文書に定めるとおり{{/if}}
+      </td>
+    </tr>
+    <tr>
+      <td class="col-item">
+        支払条件<span class="art-ref">（第９条）</span>
+        <span class="sub-note">未記載の場合は注文書による</span>
+      </td>
+      <td class="col-value">
+        {{#if PAYMENT_CONDITION_SUMMARY}}{{PAYMENT_CONDITION_SUMMARY}}{{else}}注文書に定めるとおり{{/if}}
+      </td>
+    </tr>
+
+    <!-- 手続・期間 -->
+    <tr class="sec-row"><td colspan="2">手　続・期　間</td></tr>
+    <tr>
+      <td class="col-item">
+        個別契約の承諾期限<span class="art-ref">（第３条第２項）</span>
+        <span class="sub-note">注文書受領後に乙が承諾を要する期限</span>
+      </td>
+      <td class="col-value">{{#if ACCEPTANCE_PERIOD_DAYS}}注文書受領日から{{ACCEPTANCE_PERIOD_DAYS}}営業日以内{{else}}注文書記載のとおり{{/if}}</td>
+    </tr>
+    <tr>
+      <td class="col-item">
+        検収期間<span class="art-ref">（第８条第１項）</span>
+        <span class="sub-note">納品後に甲が検査を完了すべき期間</span>
+      </td>
+      <td class="col-value">{{#if INSPECTION_PERIOD_DAYS}}納品後{{INSPECTION_PERIOD_DAYS}}営業日以内{{else}}注文書記載のとおり{{/if}}</td>
+    </tr>
+    <tr>
+      <td class="col-item">
+        不適合の追完期限<span class="art-ref">（第８条第２項）</span>
+        <span class="sub-note">不適合通知受領後に乙が是正すべき期限</span>
+      </td>
+      <td class="col-value">{{#if INSPECTION_CURE_DAYS}}不適合通知の到達後{{INSPECTION_CURE_DAYS}}営業日以内{{else}}注文書記載のとおり{{/if}}</td>
+    </tr>
+    <tr>
+      <td class="col-item">
+        契約不適合責任期間<span class="art-ref">（第１１条）</span>
+        <span class="sub-note">引渡し後に担保責任を追及できる期間</span>
+      </td>
+      <td class="col-value">{{#if WARRANTY_PERIOD}}引渡しから{{WARRANTY_PERIOD}}{{else}}注文書記載のとおり{{/if}}</td>
+    </tr>
+    <tr>
+      <td class="col-item">
+        契約違反の是正期間<span class="art-ref">（第１７条第１項）</span>
+        <span class="sub-note">是正要求の通知受領後に対応すべき期限</span>
+      </td>
+      <td class="col-value">{{#if BREACH_CURE_DAYS}}是正要求の通知受領後{{BREACH_CURE_DAYS}}営業日以内{{else}}注文書記載のとおり{{/if}}</td>
+    </tr>
+    <tr>
+      <td class="col-item">
+        秘密保持期間<span class="art-ref">（第１３条・第２４条）</span>
+        <span class="sub-note">契約終了後も義務が存続する期間</span>
+      </td>
+      <td class="col-value">{{#if CONFIDENTIALITY_YEARS}}本契約終了後{{CONFIDENTIALITY_YEARS}}年間{{else}}注文書記載のとおり{{/if}}</td>
+    </tr>
+
+    <!-- 管轄 -->
+    <tr class="sec-row"><td colspan="2">管　　　　　轄</td></tr>
+    <tr>
+      <td class="col-item">合意管轄裁判所<span class="art-ref">（第２５条第２項）</span></td>
+      <td class="col-value">{{JURISDICTION}}（第一審専属）</td>
+    </tr>
+
+    <!-- 特記事項（任意） -->
+    {{#if SPECIAL_TERMS}}
+    <tr class="sec-row"><td colspan="2">特　記　事　項</td></tr>
+    <tr>
+      <td colspan="2" class="special-cell">{{SPECIAL_TERMS}}</td>
+    </tr>
+    {{/if}}
+
+  </tbody>
+</table>
+
+<!-- 前文 -->
 <p class="preamble">
-  株式会社アークライト（以下「甲」という。）と<span class="ph-blank">{{PARTY_B_NAME}}</span>（以下「乙」という。）は、乙が取り扱う商品（以下「本製品」という。）の売買に関し、基本的事項を定めるため、以下のとおり契約（以下「本契約」という。）を締結する。
+  頭書き記載の甲（株式会社アークライト。以下「甲」という。）と乙（以下「乙」という。）は、乙が取り扱う商品（以下「本製品」という。）の売買に関し、基本的事項を定めるため、以下のとおり契約（以下「本契約」という。）を締結する。
 </p>
 
+<!-- ======================================================
+     条文本体
+     ====================================================== -->
 <ol class="articles">
 
   <!-- 第１条 -->
   <li>
     <div class="article-title">（本契約と個別契約）</div>
     <ol class="items">
-      <li>本契約は、本製品にかかる個々の売買契約（以下「個別契約」という。）に共通する事項を定めるものであり、甲および乙は、本契約および個別契約を遵守する。</li>
-      <li>本契約と個別契約の内容が相違する場合は、個別契約が優先して適用される。ただし、本契約の内容が個別契約よりも甲に有利な場合は、本契約の規定が優先する。</li>
+      <li>本契約は、乙が取り扱う本製品を甲に売り渡し、甲がこれを買い受ける売買取引に関する基本的事項を定めるものであり、甲が乙に対して、物品の製造、加工、修理、情報成果物の作成又は役務の提供を委託することを目的とするものではない。</li>
+      <li>本契約は、本製品にかかる個々の売買契約（以下「個別契約」という。）に共通して適用されるものとし、甲及び乙は、本契約及び個別契約を遵守する。</li>
+      <li>本契約と個別契約の内容が相違する場合は、当該個別契約において本契約の特定の条項を変更又は排除する旨が明示されている場合に限り、当該個別契約の定めが優先する。</li>
+      <li>見積書、注文請書、納品書、請求書その他乙が提示する書面又は電磁的記録に、甲の義務を加重し、又は甲の権利を制限する定めが含まれる場合であっても、甲が当該定めを明示的に承諾した場合を除き、当該定めは甲に対して効力を有しない。</li>
+      <li>甲乙が個別契約において、製造委託、加工委託、修理委託、情報成果物の作成委託又は役務提供委託を明示的に定める場合には、当該個別契約又は別途締結する契約に従うものとする。</li>
     </ol>
   </li>
 
@@ -210,11 +404,7 @@
   <li>
     <div class="article-title">（本製品の範囲）</div>
     <ol class="items">
-      {{#if PRODUCT_SCOPE}}
-      <li>本契約に基づき売買の対象となる本製品の範囲は、<span class="ph">{{PRODUCT_SCOPE}}</span>とする。</li>
-      {{else}}
-      <li>本契約に基づき売買の対象となる本製品の範囲は、個別契約（注文書）に定めるとおりとする。</li>
-      {{/if}}
+      <li>本契約に基づき売買の対象となる本製品の範囲は、頭書きに定めるとおりとする。</li>
       <li>本製品の仕様、規格その他の詳細は、個別契約において定める。乙は、個別契約に定められた仕様・規格に適合した本製品を供給する義務を負う。</li>
     </ol>
   </li>
@@ -223,9 +413,10 @@
   <li>
     <div class="article-title">（個別契約の成立）</div>
     <ol class="items">
-      <li>個別契約は、甲が発行する注文書（発行年月日・品名・仕様・単価・数量・合計金額（税込）・納入期日・納入場所・その他必要事項を記載）を乙に送付し、乙がこれを承諾する書面を甲に発送することにより成立する。</li>
-      <li>乙は、注文書を受領した日から３営業日以内に承諾の意思表示を行わなければならない。当該期間内に拒否の通知がない場合、乙は注文書の内容を承諾したものとみなす。</li>
-      <li>前２項の規定は、甲及び乙が協議の上でこれに代わる方法を定めることを妨げない。</li>
+      <li>個別契約は、甲が発行する注文書（発行年月日、品名、仕様、単価、数量、合計金額、納入期日、納入場所その他必要事項を記載したものをいう。）を乙に送付し、乙が注文請書、電子メールその他の書面又は電磁的方法によりこれを承諾した時点で成立する。</li>
+      <li>乙が注文書の内容に基づき、本製品の出荷、納品その他履行に着手した場合、乙は当該注文書の内容を承諾したものとみなす。</li>
+      <li>乙は、注文書を受領した日から頭書きに定める承諾期限（頭書きに記載のない場合は注文書記載のとおり）以内に、承諾又は異議の意思表示を行うものとする。当該期間内に乙から異議の通知がなく、かつ、当事者間の従前の取引慣行その他の事情に照らして合理的と認められる場合には、乙は当該注文書の内容を承諾したものとみなす。</li>
+      <li>前各項の規定は、甲及び乙が協議の上でこれに代わる個別契約の成立方法を定めることを妨げない。</li>
     </ol>
   </li>
 
@@ -242,13 +433,10 @@
   <li>
     <div class="article-title">（納品）</div>
     <ol class="items">
-      {{#if DELIVERY_LOCATION}}
-      <li>乙から甲への納品は、甲が指定した納品期日までに、注文書に定める納品場所（<span class="ph">{{DELIVERY_LOCATION}}</span>）に本製品が到着したときに完了する。</li>
-      {{else}}
-      <li>乙から甲への納品は、甲が指定した納品期日までに、注文書に定める納品場所に本製品が到着したときに完了する。</li>
-      {{/if}}
-      <li>納品に要する費用（運送料、梱包費等を含む。）は、特段の合意がない限り乙の負担とする。</li>
-      <li>乙は、納品の際に、品名・数量・仕様を記載した納品書を添付しなければならない。</li>
+      <li>乙は、個別契約に定める納入期日までに、頭書き又は注文書に定める納入場所に本製品を納品するものとする。</li>
+      <li>本製品の納品は、乙が甲の指定する納入場所に本製品を搬入し、甲又は甲の指定する者がこれを物理的に受領した時点で完了する。ただし、当該受領は、数量、品質、仕様その他契約適合性について甲が承認したことを意味しない。</li>
+      <li>納品に要する費用（運送料、梱包費、保険料その他納品に通常必要となる費用を含む。）は、特段の合意がない限り乙の負担とする。</li>
+      <li>乙は、納品の際に、品名、数量、仕様その他甲が合理的に必要と認める事項を記載した納品書を添付しなければならない。</li>
     </ol>
   </li>
 
@@ -256,7 +444,7 @@
   <li>
     <div class="article-title">（所有権の移転）</div>
     <ol class="items">
-      <li>本製品の所有権は、甲への引渡しをもって乙から甲に移転する。</li>
+      <li>本製品の所有権は、甲による検収が完了した時点で、乙から甲に移転する。ただし、個別契約において別段の定めがある場合は、当該定めに従う。</li>
     </ol>
   </li>
 
@@ -264,19 +452,22 @@
   <li>
     <div class="article-title">（危険負担）</div>
     <ol class="items">
-      <li>本製品の引渡し前に生じた本製品の滅失、毀損その他一切のリスクは、甲の責めに帰すべきものを除き乙の負担とする。</li>
-      <li>本製品の引渡し後に生じた本製品の滅失、毀損その他一切のリスクは、乙の責めに帰すべきものを除き甲の負担とする。</li>
+      <li>本製品の検収完了前に生じた本製品の滅失、毀損、変質その他一切の危険は、甲の責めに帰すべき事由による場合を除き、乙の負担とする。</li>
+      <li>本製品の検収完了後に生じた本製品の滅失、毀損、変質その他一切の危険は、乙の責めに帰すべき事由による場合を除き、甲の負担とする。</li>
+      <li>前２項の定めにかかわらず、本製品に契約不適合がある場合、又は乙の梱包、表示、輸送手配その他乙の責めに帰すべき事由により本製品に滅失、毀損、変質その他の問題が生じた場合には、乙がその責任を負う。</li>
     </ol>
   </li>
 
   <!-- 第８条 -->
   <li>
-    <div class="article-title">（検品）</div>
+    <div class="article-title">（検品及び検収）</div>
     <ol class="items">
-      <li>甲は、本製品の納品後、注文書に定める検査期間（注文書に定めのないときは、納品後５営業日。以下「検査期間」という。）以内に、甲が定める方法により納品物の検査を行う。種類、品質又は数量に関して本契約及び個別契約の内容に適合しないもの（以下「不適合」という。）があった場合、甲は検査期間内に乙に対し当該不適合の内容を書面または電子的手段で通知する。</li>
-      <li>乙は、前項の通知を受領した場合、当該通知の到達後、注文書に定める期間（注文書に定めのないときは、通知到達後５営業日）以内に、甲が指定する方法（修補・代替品引渡し・不足分引渡しを含む。）により履行の追完を行わなければならない。追完が困難な場合は、乙は甲に対し代替措置につき別途協議を申し出ることができる。</li>
-      <li>検査期間内に甲から不適合の通知がない場合、甲が検査遅延の合理的な理由を書面で示したときを除き、納品物は検査に合格したものとみなす。</li>
-      <li>本条所定の検査に合格したことをもって、納品物の検収完了とし、引渡しが完了したものとみなす。</li>
+      <li>甲は、本製品の納品後、頭書きに定める検収期間（頭書きに記載のない場合は注文書記載のとおり）以内に、甲が定める方法により本製品の検査を行う。</li>
+      <li>前項の検査の結果、本製品の種類、品質、数量、仕様その他の内容が本契約又は個別契約の内容に適合しないこと（以下「不適合」という。）が判明した場合、甲は乙に対し、当該不適合の内容を、書面又は電子的手段により通知するものとする。</li>
+      <li>乙は、前項の通知を受領した場合、頭書きに定める追完期限（頭書きに記載のない場合は注文書記載のとおり）以内に、甲が指定する方法により、修補、代替品の引渡し、不足分の引渡しその他必要な履行の追完を行わなければならない。</li>
+      <li>前項の追完が困難である場合、又は追完によっても本契約若しくは個別契約の目的を達することができない場合、甲は、代金の減額、損害賠償、個別契約の解除その他法令及び本契約に基づき認められる措置を請求することができる。</li>
+      <li>検収期間内に甲から不適合の通知がない場合、本製品は検査に合格したものとみなす。ただし、検査によって直ちに発見することが困難な不適合については、この限りでない。</li>
+      <li>本製品が第１項の検査に合格した時点又は前項本文により合格したものとみなされた時点をもって、検収完了とする。</li>
     </ol>
   </li>
 
@@ -284,11 +475,7 @@
   <li>
     <div class="article-title">（支払方法）</div>
     <ol class="items">
-      {{#if PAYMENT_CONDITION_SUMMARY}}
-      <li>甲は、乙に対し、個別契約に基づく本製品の代金を、<span class="ph">{{PAYMENT_CONDITION_SUMMARY}}</span>により、乙が指定する銀行口座へ振込みにて支払うものとする。振込手数料は甲の負担とする。</li>
-      {{else}}
-      <li>甲は、乙に対し、個別契約に基づく本製品の代金を、注文書に定める支払条件により、乙が指定する銀行口座へ振込みにて支払うものとする。振込手数料は甲の負担とする。</li>
-      {{/if}}
+      <li>甲は、乙に対し、個別契約に基づく本製品の代金を、頭書きまたは注文書に定める支払条件により、乙が指定する銀行口座へ振込みにて支払うものとする。振込手数料は甲の負担とする。</li>
       <li>乙は、支払期日の到来した請求書を、甲が定める様式に従い、締日後速やかに甲に発行するものとする。</li>
       <li>甲は、乙に対して有する反対債権がある場合、支払期日前であっても相殺をもって代金の支払に充当することができる。</li>
     </ol>
@@ -307,25 +494,29 @@
   <li>
     <div class="article-title">（契約不適合責任）</div>
     <ol class="items">
-      <li>第８条（検品）の検査により本製品に契約不適合が発見された場合、または検査では直ちに発見できない契約不適合（隠れた瑕疵を含む。）が引渡し後<span class="ph">{{WARRANTY_PERIOD}}</span>以内に発見された場合、甲は乙に対し、以下のいずれかまたはその組合せを甲の選択により請求することができる。
+      <li>本製品に不適合がある場合、甲は乙に対し、次の各号に定める請求のいずれか又はその組合せを、甲の選択により行うことができる。
         <ol class="sub-items">
-          <li>履行の追完（修補・代替品引渡し・不足分引渡しを含む。）</li>
+          <li>履行の追完（修補、代替品の引渡し又は不足分の引渡しを含む。）</li>
           <li>代金の減額</li>
           <li>損害賠償</li>
-          <li>個別契約の解除（契約目的を達することができない場合を含む。）</li>
+          <li>個別契約の全部又は一部の解除</li>
+          <li>その他法令又は本契約に基づき認められる措置</li>
         </ol>
       </li>
-      <li>乙は、契約不適合が甲の責めに帰すべき事由によるものであることを証明した場合に限り、前項の責任を免れることができる。</li>
-      <li>第１項に基づく甲の請求権は、甲が契約不適合を知った日から１年以内に行使するものとする。ただし、引渡しから<span class="ph">{{WARRANTY_PERIOD}}</span>を超えて行使することはできない。</li>
+      <li>甲は、検査により発見された不適合については、第８条に定める検収期間内に乙へ通知するものとする。</li>
+      <li>甲は、検査によって直ちに発見することが困難な不適合については、頭書きに定める契約不適合責任期間内に発見し、かつ、発見後相当期間内に乙へ通知することにより、前項に定める権利を行使することができる。</li>
+      <li>前項の通知がなされた場合、甲の追完請求、代金減額請求、損害賠償請求及び解除権の行使期間は、民法、商法その他適用法令の定めに従う。</li>
+      <li>乙は、不適合が甲の責めに帰すべき事由によるものであることを証明した場合に限り、本条に定める責任を免れる。</li>
     </ol>
   </li>
 
   <!-- 第１２条 -->
   <li>
-    <div class="article-title">（製造物責任）</div>
+    <div class="article-title">（製造物責任等）</div>
     <ol class="items">
-      <li>甲又は乙は、本製品の欠陥に起因して第三者との間で紛議が生じた場合、直ちに相手方に通知し、協力して当該紛議の解決にあたるものとする。</li>
-      <li>本製品の欠陥に起因する第三者への損害については、当該欠陥が乙の責めに帰すべき事由による場合、乙が一次的に責任を負い、甲に生じた損害（甲が第三者に支払った賠償額を含む。）を乙が賠償する。</li>
+      <li>甲又は乙は、本製品の欠陥、不適合、安全性、表示、取扱説明その他本製品に関して第三者との間で紛議、請求、行政対応その他の問題が生じた場合、直ちに相手方に通知し、相互に協力して当該問題の解決にあたるものとする。</li>
+      <li>本製品の設計、製造、加工、梱包、表示、取扱説明、警告表示その他乙が関与した事項に起因して、本製品に欠陥、不適合又は安全上の問題が生じた場合、乙は自己の費用と責任において、第三者からの請求、行政対応、回収、交換、返金、廃棄その他必要な措置を行うものとする。</li>
+      <li>前項の場合、乙は、甲に生じた損害、費用及び負担を賠償するものとする。当該損害等には、甲が第三者に支払った賠償金、返金額、回収費用、廃棄費用、調査費用、弁護士費用その他合理的に発生した費用を含む。</li>
     </ol>
   </li>
 
@@ -378,19 +569,20 @@
   <li>
     <div class="article-title">（解除等）</div>
     <ol class="items">
-      <li>甲又は乙が本契約又は個別契約のいずれかの条項に違反し、相手方からその是正を要求する通知を受領した後<span class="ph">{{CURE_PERIOD_DAYS}}</span>営業日以内にその違反を是正しない場合は、相手方は、本契約及び個別契約を直ちに解除することができる。</li>
-      <li>甲又は乙は、相手方が以下の各号に定める事由のいずれかに該当した場合には、何らの催告なくして、直ちに本契約及び個別契約を解除することができる。
+      <li>甲又は乙が本契約又は個別契約のいずれかの条項に違反し、相手方からその是正を要求する通知を受領した後、頭書きに定める是正期間（頭書きに記載のない場合は注文書記載のとおり）以内にその違反を是正しない場合、相手方は、本契約又は当該個別契約の全部又は一部を解除することができる。</li>
+      <li>甲又は乙は、相手方が以下の各号に定める事由のいずれかに該当した場合には、何らの催告を要することなく、直ちに本契約又は個別契約の全部又は一部を解除することができる。
         <ol class="sub-items">
           <li>重大な過失又は背信行為があったとき</li>
-          <li>手形若しくは小切手の不渡りが生じたとき、電子交換所の取引停止処分を受けたとき、又は支払停止の状態に陥ったとき。</li>
-          <li>第三者より仮差押え、仮処分、強制執行などを受けたとき、又は公租公課の滞納処分を受けたとき。</li>
-          <li>破産手続、特別清算、民事再生手続又は会社更生手続開始の申立てがあったとき。</li>
+          <li>手形若しくは小切手の不渡りが生じたとき、電子交換所の取引停止処分を受けたとき、又は支払停止の状態に陥ったとき</li>
+          <li>第三者より仮差押え、仮処分、強制執行等を受けたとき、又は公租公課の滞納処分を受けたとき</li>
+          <li>破産手続、特別清算、民事再生手続又は会社更生手続開始の申立てがあったとき</li>
           <li>債務整理の通知がなされたとき</li>
-          <li>その他財務状態が著しく悪化し、又は悪化のおそれがあるとき。</li>
-          <li>その他前各号に準ずるような本契約又は個別契約を継続し難い重大な事由が発生した場合</li>
+          <li>財務状態が著しく悪化し、又は悪化のおそれがあると認められるとき</li>
+          <li>その他前各号に準ずるような、本契約又は個別契約を継続し難い重大な事由が発生したとき</li>
         </ol>
       </li>
-      <li>甲は、前２項に定めるほか、甲の都合による事業上の理由により、乙に対して書面または電子的手段により通知することで、本契約又は個別契約を解除することができる。この場合、甲は乙に対し、既に発生した個別契約上の義務（出荷済み製品等）の精算を行うものとする。</li>
+      <li>甲は、前２項に定めるほか、事業上の必要がある場合、乙に対して書面又は電磁的方法により通知することで、未履行部分に限り、個別契約の全部又は一部を解除又は変更することができる。</li>
+      <li>前項の場合において、乙が既に本製品の出荷、納品その他履行に着手しているときは、甲乙協議の上、既履行部分、出荷済み製品その他合理的に精算すべき事項について精算するものとする。</li>
     </ol>
   </li>
 
@@ -424,8 +616,9 @@
   <li>
     <div class="article-title">（損害賠償）</div>
     <ol class="items">
-      <li>甲または乙が本契約または個別契約に違反したときは、相互に当該債務不履行により生じた損害（通常損害のほか、違反当時に予見可能であった特別損害を含む。）を相手方に賠償する義務を負う。</li>
-      <li>乙が本製品の供給義務（第４条）または知的財産権等の保証義務（第１０条）に違反したことにより甲に損害が生じた場合、乙は当該損害を甲に賠償する。この場合の損害額には、甲が代替品の調達のために要した費用、逸失利益、弁護士費用等を含む。</li>
+      <li>甲又は乙が本契約又は個別契約に違反した場合、当該当事者は、相手方に対し、当該違反により相手方に生じた損害を賠償する責任を負う。</li>
+      <li>乙が本製品の供給義務、第１０条に定める知的財産権等の保証義務、第１１条に定める契約不適合責任又は第１２条に定める製造物責任等に違反したことにより甲に損害が生じた場合、乙は当該損害を甲に賠償するものとする。</li>
+      <li>前項の損害には、甲が代替品の調達のために要した費用、回収費用、交換費用、返金対応費用、第三者対応費用、弁護士費用その他合理的に発生した費用を含む。</li>
     </ol>
   </li>
 
@@ -475,7 +668,7 @@
   <li>
     <div class="article-title">（存続）</div>
     <ol class="items">
-      <li>本契約が終了した場合でも、本条及び第１１条（契約不適合責任）、第１２条（製造物責任）、第１５条（遅延損害金）、第２０条（損害賠償）、第２３条（地位譲渡等の禁止）、第２５条（準拠法および専属的合意管轄裁判所）並びに第２６条（協議）は有効に存続する。ただし、第１３条（秘密保持）については、本契約の終了後<span class="ph">{{CONFIDENTIALITY_YEARS}}</span>年間に限り、その効力を有する。</li>
+      <li>本契約が終了した場合でも、第１０条（知的財産権等の保証）、第１１条（契約不適合責任）、第１２条（製造物責任等）、第１３条（秘密保持）、第１４条（個人情報）、第１５条（遅延損害金）、第２０条（損害賠償）、第２２条（反社会的勢力の排除）、第２３条（本契約及び個別契約上の地位譲渡等の禁止）、第２５条（準拠法及び専属的合意管轄裁判所）並びに第２６条（協議）は、その性質上又は本条の定めに従い、本契約終了後も有効に存続する。ただし、第１３条（秘密保持）については、頭書きに定める秘密保持期間（頭書きに記載のない場合は注文書記載のとおり）に限り、その効力を有する。</li>
     </ol>
   </li>
 
@@ -484,7 +677,7 @@
     <div class="article-title">（準拠法および専属的合意管轄裁判所）</div>
     <ol class="items">
       <li>本契約及び個別契約の成立、効力、解釈及び履行については、日本法を準拠法とする。</li>
-      <li>本契約に関する紛争については、<span class="ph">{{JURISDICTION}}</span>を第一審の専属的合意管轄裁判所とする。</li>
+      <li>本契約に関する紛争については、頭書きに定める合意管轄裁判所を第一審の専属的合意管轄裁判所とする。</li>
     </ol>
   </li>
 
@@ -498,23 +691,15 @@
 
 </ol><!-- /articles -->
 
-<!-- 特記事項 -->
-{{#if SPECIAL_TERMS}}
-<div class="no-break" style="margin-top:1.5em;">
-  <div class="special-terms-label">【特記事項】</div>
-  <div class="special-terms">{{SPECIAL_TERMS}}</div>
-</div>
-{{/if}}
-
 <div class="margin-note">（以下余白）</div>
 
-<!-- 署名欄 -->
+<!-- ======================================================
+     署名欄（末尾）
+     ====================================================== -->
 <div class="signature-block no-break">
-  <p style="margin-bottom:1em;">本契約締結の証として、本書２通を作成し、甲乙記名押印のうえ、各１通を保有又は、本書の電磁的記録を作成し、甲乙合意の後電子署名を施し、各自その電磁的記録を保管する。</p>
+  <p class="sig-intro">本契約締結の証として、本書２通を作成し、甲乙記名押印のうえ、各１通を保有又は、本書の電磁的記録を作成し、甲乙合意の後電子署名を施し、各自その電磁的記録を保管する。</p>
 
-  <div class="date-line">
-    <span class="ph-blank">{{CONTRACT_DATE_FORMATTED}}</span>
-  </div>
+  <div class="date-line">締結日：{{CONTRACT_DATE_FORMATTED}}</div>
 
   <!-- 甲（買手・アークライト） -->
   <div class="party">
@@ -538,15 +723,15 @@
     <div class="party-label">乙</div>
     <div class="party-row">
       <span class="label">所在地　</span>
-      <span class="value"><span class="ph-blank">{{PARTY_B_ADDRESS}}</span></span>
+      <span class="value">{{PARTY_B_ADDRESS}}</span>
     </div>
     <div class="party-row">
       <span class="label">会社名　</span>
-      <span class="value"><span class="ph-blank">{{PARTY_B_NAME}}</span></span>
+      <span class="value">{{PARTY_B_NAME}}</span>
     </div>
     <div class="party-row">
       <span class="label">代表者　</span>
-      <span class="value"><span class="ph-blank">{{PARTY_B_REPRESENTATIVE}}</span>　　　　　㊞</span>
+      <span class="value">{{PARTY_B_REPRESENTATIVE}}　　　　　㊞</span>
     </div>
   </div>
 </div>
