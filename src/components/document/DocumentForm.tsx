@@ -1892,71 +1892,72 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     const renderGroup = (groupName: string) =>
       (groupedVars[groupName] || []).map((fid) => renderField(fid));
 
+    // Phase 22.21.93: 4 ステップ動線の進捗ステータス。
+    //   Step 1 — 親 PO 選択 (parent_po_id があれば完了)
+    //   Step 2 — 検収内容 (明細別検収なら delivery_line_items に金額入力あり,
+    //            自由入力なら deliveredAmountStr または description あり)
+    //   Step 3 — 検収者 (inspectorName) 必須
+    //   Step 4 — 発行日 (documentDate) 必須
+    const hasParentPo = !!formData.parent_po_id;
+    const deliveryLines = Array.isArray(formData.delivery_line_items)
+      ? formData.delivery_line_items
+      : [];
+    const step2DoneViaLines = deliveryLines.some(
+      (l: any) => Number(l?.inspected_amount_ex_tax) > 0
+    );
+    const step2DoneViaFree =
+      !!formData.deliveredAmountStr || !!formData.description;
+    const stepStatus = {
+      step1: hasParentPo,
+      step2: hasParentPo ? step2DoneViaLines : step2DoneViaFree,
+      step3: !!formData.inspectorName,
+      step4: !!formData.documentDate,
+    };
+    const stepsDone = Object.values(stepStatus).filter(Boolean).length;
+    const totalSteps = 4;
+
     return (
-      <div className="space-y-10">
+      <div className="space-y-6">
+        {/* 進捗バナー (royalty_statement と同じ 4-step スタイル) */}
         <div
           className={cn(
-            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
-            missingRequired.length === 0
+            'flex items-center justify-between gap-3 px-4 py-2.5 rounded-sm border',
+            stepsDone === totalSteps
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-amber-50 border-amber-200 text-amber-800'
           )}
         >
           <div className="text-[11px] font-mono">
-            {missingRequired.length === 0 ? (
-              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            {stepsDone === totalSteps ? (
+              <>✓ 必要な入力はすべて揃いました ({totalSteps} ステップ)</>
             ) : (
               <>
-                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
-                <span className="ml-2 text-[10px] opacity-75">
-                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
-                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
-                </span>
+                ステップ {stepsDone} / {totalSteps} 完了 —
+                {!stepStatus.step1 && ' 1) 親 PO を選択'}
+                {stepStatus.step1 && !stepStatus.step2 && ' 2) 検収内容を入力'}
+                {stepStatus.step1 && stepStatus.step2 && !stepStatus.step3 && ' 3) 検収者を選択'}
+                {stepStatus.step1 && stepStatus.step2 && stepStatus.step3 && !stepStatus.step4 && ' 4) 発行日を入力'}
               </>
             )}
           </div>
+          <div className="text-[10px] font-mono opacity-70">
+            発行日: {formData.documentDate || '未設定'}
+          </div>
         </div>
 
+        {/* ─── STEP 1 ─ 親 PO を選択 ────────────────────────── */}
         <FormSection
-          title="I. 基本情報"
-          variant="default"
+          title="ステップ 1 — 親 PO (発注書) を選択"
+          variant="indigo"
           icon={<Briefcase className="w-4 h-4" />}
-          headerActions={
-            <button
-              type="button"
-              onClick={onSync}
-              className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
-              title="Backlog 課題から自動補完"
-            >
-              <Database className="w-2 h-2 inline mr-1" />
-              Backlog Sync
-            </button>
-          }
         >
-          {renderGroup('I. 基本情報')}
-        </FormSection>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          <FormSection
-            title="II. 受託者 (取引先)"
-            variant="amber"
-            icon={<Building2 className="w-4 h-4" />}
-            headerActions={sideButton('取引先', fillCounterpartyFromPartner, !activeVendor)}
-          >
-            {renderGroup('II. 受託者 (取引先)')}
-          </FormSection>
-
-          <FormSection
-            title="III. 検収者 (自社)"
-            variant="emerald"
-            icon={<User className="w-4 h-4" />}
-            headerActions={sideButton('Sync Staff', fillInspectorFromStaff, !selectedStaff)}
-          >
-            {renderGroup('III. 検収者 (自社)')}
-          </FormSection>
-        </div>
-
-        {/* Phase 8c: 親 PO ピッカー — Backlog 親子経由で自動発見できない
+          <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
+            <strong>受託者・明細・経費・手数料は親 PO から自動入力されます。</strong>
+            <br />
+            通常は Backlog 親子関係から自動発見されます。それ以外
+            (IMPORT-* / 親子未設定) は下のピッカーで選択してください。
+          </p>
+          {/* Phase 8c: 親 PO ピッカー — Backlog 親子経由で自動発見できない
             ケース (IMPORT-* PO / 親子未設定) のためのフォールバック手段。
             form-context が既に親 PO を載せていても、ここで上書き可能。 */}
         <ParentPoPicker
@@ -2068,7 +2069,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             });
           }}
         />
+          {hasParentPo && (
+            <div className="mt-3 px-3 py-2 rounded-sm border border-emerald-200 bg-emerald-50/50 text-[10px] font-mono text-emerald-800 leading-relaxed">
+              ✓ 親 PO <strong>{formData.parent_po_issue_key || formData.parent_po_number || '(番号未取得)'}</strong> を連動中。
+              受託者・明細・経費・手数料が自動入力されました。
+            </div>
+          )}
+        </FormSection>
 
+        {/* ─── STEP 2 ─ 検収内容 ──────────────────────────────── */}
         {/* Phase 7c: 親 PO の明細別検収テーブル。
             form-context が parent_po_id + order_lines_for_inspection[] を
             返したときだけ表示する。それ以外 (親なし) のときは従来の
@@ -2076,7 +2085,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {Array.isArray(formData.order_lines_for_inspection) &&
         formData.order_lines_for_inspection.length > 0 ? (
           <FormSection
-            title="IV. 明細別検収 (親 PO 連動)"
+            title="ステップ 2 — 検収内容 (明細別)"
             variant="indigo"
             icon={<Scale className="w-4 h-4" />}
             headerActions={
@@ -2117,7 +2126,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         ) : (
           <FormSection
-            title="IV. 納品明細 (自由入力)"
+            title="ステップ 2 — 検収内容 (自由入力)"
             variant="indigo"
             icon={<Scale className="w-4 h-4" />}
             headerActions={
@@ -2140,16 +2149,20 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               )
             }
           >
+            <p className="text-[10px] font-mono text-amber-700 mb-2 border-l-2 border-amber-400 pl-2">
+              ⚠ 親 PO 未連動です。ステップ 1 で発注書を選ぶと明細が自動入力されます。
+              ここは PO 連動できない場合 (旧データ等) の手入力フォールバックです。
+            </p>
             {renderGroup('IV. 納品明細')}
           </FormSection>
         )}
 
-        {/* IV-b. 経費精算 (Phase 17m) — 親 PO に経費がある時だけ表示。
+        {/* ステップ 2-b. 経費精算 (Phase 17m) — 親 PO に経費がある時だけ表示。
             チェックを入れた経費だけが今回検収の支払額に加算され、PDF に
             「経費（税込）」セクションが描画される。 */}
         {Array.isArray(formData.po_expenses) && formData.po_expenses.length > 0 && (
           <FormSection
-            title="IV-b. 経費精算（親 PO 連動）"
+            title="ステップ 2-b — 経費精算（親 PO 連動）"
             variant="indigo"
             icon={<Scale className="w-4 h-4" />}
           >
@@ -2192,12 +2205,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         )}
 
-        {/* IV-c. その他手数料 精算 (Phase 22.21.57) — 親 PO に手数料がある時だけ表示。
+        {/* ステップ 2-c. その他手数料 精算 (Phase 22.21.57) — 親 PO に手数料がある時だけ表示。
             チェックを入れた手数料 (税抜) を今回検収の支払額に加算し、PDF に
             「その他手数料 (税抜)」セクションが描画される。 */}
         {Array.isArray(formData.po_other_fees) && formData.po_other_fees.length > 0 && (
           <FormSection
-            title="IV-c. その他手数料 精算 (親 PO 連動)"
+            title="ステップ 2-c — その他手数料 精算 (親 PO 連動)"
             variant="indigo"
             icon={<Coins className="w-4 h-4" />}
           >
@@ -2247,16 +2260,63 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         )}
 
+        {/* ─── STEP 3 ─ 検収者 (自社) + 受託者 (確認) ───────────── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <FormSection
+            title="ステップ 3a — 検収者 (自社)"
+            variant="emerald"
+            icon={<User className="w-4 h-4" />}
+            headerActions={sideButton('Sync Staff', fillInspectorFromStaff, !selectedStaff)}
+          >
+            {renderGroup('III. 検収者 (自社)')}
+          </FormSection>
+
+          <FormSection
+            title="ステップ 3b — 受託者 (取引先) 確認"
+            variant="amber"
+            icon={<Building2 className="w-4 h-4" />}
+            headerActions={sideButton('取引先', fillCounterpartyFromPartner, !activeVendor)}
+          >
+            {hasParentPo && (
+              <p className="text-[10px] font-mono text-emerald-700 mb-2 border-l-2 border-emerald-500 pl-2">
+                ✓ 親 PO から自動入力済み。必要なら下のフィールドで編集してください。
+              </p>
+            )}
+            {renderGroup('II. 受託者 (取引先)')}
+          </FormSection>
+        </div>
+
+        {/* ─── STEP 4 ─ 検収情報 (発行日・件名・備考) ────────────── */}
+        <FormSection
+          title="ステップ 4 — 検収情報"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+          headerActions={
+            <button
+              type="button"
+              onClick={onSync}
+              className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
+              title="Backlog 課題から自動補完"
+            >
+              <Database className="w-2 h-2 inline mr-1" />
+              Backlog Sync
+            </button>
+          }
+        >
+          {renderGroup('I. 基本情報')}
+        </FormSection>
+
+        {/* ─── 任意セクション (折りたたみ) ─────────────────────────── */}
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ V. 進捗・財務 (任意) — クリックして展開
+            ▶ 進捗・財務 (任意) — クリックして展開
           </summary>
           <div className="p-4 border-t border-input">{renderGroup('V. 進捗・財務 (任意)')}</div>
         </details>
 
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ VI. 振込先 (受託者口座, 任意) — クリックして展開
+            ▶ 振込先 (受託者口座, 任意 — 親 PO から自動入力済み) — クリックして展開
           </summary>
           <div className="p-4 border-t border-input">
             {renderGroup('VI. 振込先 (受託者口座, 任意)')}
