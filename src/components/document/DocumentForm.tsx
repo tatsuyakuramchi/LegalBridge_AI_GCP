@@ -2923,9 +2923,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               label="親発注書をアーカイブから検索 (部分一致 / 空欄で最新一覧)"
               placeholder="例: ARC-PO-2026-0001 / 株式会社X / 通訳"
               initialQuery={formData.ORDER_NO || ''}
+              // Phase 22.21.82: planning_purchase_order テンプレ削除に伴い除去
               filterTemplateTypes={[
                 'purchase_order',
-                'planning_purchase_order',
                 'intl_purchase_order',
               ]}
               onApply={(doc) => {

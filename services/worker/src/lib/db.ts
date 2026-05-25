@@ -634,8 +634,13 @@ export async function initDb() {
     // values:
     //   'basic'      … 基本契約 (license_master, service_master, sales_master_*)
     //   'individual' … 個別契約 (purchase_order, individual_license_terms,
-    //                          inspection_certificate*, royalty_*, fee_*)
-    //   'other'      … その他 (nda, legal_request, intl_amendment, etc.)
+    //                          inspection_certificate, royalty_, maintenance_spec)
+    //   'other'      … その他 (nda)
+    //
+    // Phase 22.21.82: 削除済みテンプレを SQL 関数からも除去
+    //   削除: intl_master, planning_purchase_order, fee_, license_report,
+    //         payment_notice
+    //   追加: maintenance_spec (Phase 22.21.64 追加の別紙)
     // -----------------------------------------------------------------
     `ALTER TABLE documents ADD COLUMN IF NOT EXISTS document_category VARCHAR(20);`,
     `CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(document_category);`,
@@ -644,17 +649,14 @@ export async function initDb() {
     // 自動設定。helper TS 側 (documentCategory.ts) と同じロジック。
     `CREATE OR REPLACE FUNCTION lb_category_for_template(t TEXT) RETURNS VARCHAR(20) AS $$
        BEGIN
-         IF t IN ('license_master','service_master','sales_master_buyer','sales_master_standard','sales_master_credit','intl_master') THEN
+         IF t IN ('license_master','service_master','sales_master_buyer','sales_master_standard','sales_master_credit') THEN
            RETURN 'basic';
          ELSIF t = 'individual_license_terms'
             OR t LIKE 'purchase_order%'
-            OR t LIKE 'planning_purchase_order%'
             OR t LIKE 'intl_purchase_order%'
             OR t LIKE 'inspection_certificate%'
             OR t LIKE 'royalty_%'
-            OR t LIKE 'fee_%'
-            OR t LIKE 'license_report%'
-            OR t LIKE 'payment_notice%' THEN
+            OR t LIKE 'maintenance_spec%' THEN
            RETURN 'individual';
          ELSE
            RETURN 'other';

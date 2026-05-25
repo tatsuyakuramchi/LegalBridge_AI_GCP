@@ -13,31 +13,26 @@ export interface DocumentData {
   details: Record<string, any>;
 }
 
-export type DocumentType = 
-  | "legal_request" 
-  | "purchase_order" 
-  | "contract"
+// Phase 22.21.82: 未使用テンプレを削除。type は admin-ui templates_config.json
+//   に登録され UI 選択可能な 12 種 + 旧互換 (license_calculation_sheet) のみ。
+//   削除済み: legal_request / contract / planning_purchase_order /
+//             payment_notice / fee_statement / license_report / service_terms /
+//             inspection_certificate_detailed / inspection_certificate_v2 /
+//             payment_notice_alt / intl_amendment / intl_master
+export type DocumentType =
+  | "purchase_order"
+  | "intl_purchase_order"
   | "nda"
-  | "planning_purchase_order"
-  | "payment_notice"
-  | "fee_statement"
-  | "license_report"
+  | "license_master"
+  | "individual_license_terms"
+  | "service_master"
   | "sales_master_buyer"
   | "sales_master_credit"
   | "sales_master_standard"
-  | "service_master"
-  | "service_terms"
-  | "inspection_certificate"
-  | "inspection_certificate_detailed"
-  | "payment_notice_alt"
   | "royalty_statement"
-  | "inspection_certificate_v2"
-  | "intl_amendment"
-  | "intl_master"
-  | "intl_purchase_order"
-  | "individual_license_terms"
-  | "license_calculation_sheet"
-  | "license_master";
+  | "inspection_certificate"
+  | "maintenance_spec"
+  | "license_calculation_sheet"; // legacy alias (= royalty_statement 系の旧名)
 
 export class DocumentService {
   private templatesDir: string;
@@ -250,7 +245,7 @@ export class DocumentService {
     throw new Error(`Template not found: ${type}`);
   }
 
-  renderHtml(data: DocumentData, type: DocumentType = "legal_request"): string {
+  renderHtml(data: DocumentData, type: DocumentType = "purchase_order"): string {
     const templateSource = this.loadTemplate(type);
     const template = Handlebars.compile(templateSource);
 
@@ -289,7 +284,7 @@ export class DocumentService {
 
   async generateDocument(
     data: DocumentData,
-    type: DocumentType = "legal_request",
+    type: DocumentType = "purchase_order",
     opts?: { vendorName?: string }
   ): Promise<{ html: string; fileName: string }> {
     const html = this.renderHtml(data, type);

@@ -1204,7 +1204,8 @@ async function startServer() {
 
       // Phase 7b: 発注書テンプレなら既存 order_line_items を items[] として
       // プリセットする (フォーム側の LineItemTable がそのまま使える shape)。
-      if (template === "purchase_order" || template === "planning_purchase_order") {
+      // Phase 22.21.82: planning_purchase_order テンプレ削除に伴い分岐から除去
+      if (template === "purchase_order") {
         const orderHeader = await query(
           `SELECT id, amount_ex_tax, tax_rate
              FROM order_items
@@ -1249,11 +1250,8 @@ async function startServer() {
         }
       }
 
-      if (
-        template === "inspection_certificate" ||
-        template === "inspection_certificate_detailed" ||
-        template === "inspection_certificate_v2"
-      ) {
+      // Phase 22.21.82: inspection_certificate_detailed / _v2 削除に伴い分岐から除去
+      if (template === "inspection_certificate") {
         // Phase 7c: 親 PO の明細 + 検収累計を取得 (Backlog 親子 issue 経由)。
         //   1. この issue の parentIssueId を Backlog から拾う
         //   2. parentIssueKey → order_items を見つける
@@ -1494,10 +1492,10 @@ async function startServer() {
           context["paymentConditionSummary"] = "検収月の翌月末日払い";
         }
       } else if (
+        // Phase 22.21.82: license_report テンプレ削除に伴い列挙から除去
         template === "royalty_statement" ||
         template === "individual_license_terms" ||
         template === "license_master" ||
-        template === "license_report" ||
         template === "intl_purchase_order"
       ) {
         const royaltyQuery = `

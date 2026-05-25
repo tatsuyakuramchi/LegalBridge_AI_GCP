@@ -15,29 +15,30 @@ export type DocumentCategory = "basic" | "individual" | "other";
 /**
  * 基本契約として扱うテンプレ ID の集合。
  */
+// Phase 22.21.82: intl_master を削除 (未使用テンプレ整理)
 const BASIC_TEMPLATES = new Set<string>([
   "license_master",
   "service_master",
   "sales_master_buyer",
   "sales_master_standard",
   "sales_master_credit",
-  "intl_master",
 ]);
 
 /**
  * 個別契約に該当するテンプレ ID の prefix。
  * これらに startsWith マッチしたら 'individual'。
+ *
+ * Phase 22.21.82: planning_purchase_order / fee_ / license_report /
+ *   payment_notice を削除 (未使用テンプレ整理)。maintenance_spec を追加
+ *   (Phase 22.21.64 で追加された別紙テンプレも個別扱い)。
  */
 const INDIVIDUAL_PREFIXES = [
   "purchase_order",
-  "planning_purchase_order",
   "intl_purchase_order",
   "individual_license_terms",
   "inspection_certificate",
   "royalty_",
-  "fee_",
-  "license_report",
-  "payment_notice",
+  "maintenance_spec",
 ];
 
 export function getDocumentCategory(

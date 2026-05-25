@@ -85,6 +85,7 @@ interface Props {
 }
 
 // Phase 22.21.2: テンプレ種別ごとの「契約類型名」前置ラベル。
+// Phase 22.21.82: planning_purchase_order テンプレ削除に伴いラベルから除去
 const TEMPLATE_TYPE_LABELS: Record<string, string> = {
   license_master: "ライセンス基本契約書",
   service_master: "業務委託基本契約",
@@ -94,8 +95,10 @@ const TEMPLATE_TYPE_LABELS: Record<string, string> = {
   individual_license_terms: "個別利用許諾条件書",
   nda: "NDA (機密保持契約)",
   purchase_order: "発注書",
-  planning_purchase_order: "企画発注書",
   intl_purchase_order: "国際発注書",
+  inspection_certificate: "検収書",
+  royalty_statement: "利用許諾料計算書",
+  maintenance_spec: "システム保守仕様書",
 }
 
 const deriveTitle = (
@@ -143,6 +146,7 @@ const deriveTitle = (
 //   standalone_contract / license_condition の 4 種で、template_type
 //   とは直接対応しない。category だけ大雑把に絞り込んで残りはテキスト
 //   一致で拾わせる。
+// Phase 22.21.82: planning_purchase_order テンプレ削除に伴いマップから除去
 const TEMPLATE_TYPE_TO_MASTER_CATEGORY: Record<string, string> = {
   license_master: "license",
   individual_license_terms: "license",
@@ -151,7 +155,6 @@ const TEMPLATE_TYPE_TO_MASTER_CATEGORY: Record<string, string> = {
   sales_master_credit: "service",
   sales_master_standard: "service",
   purchase_order: "service",
-  planning_purchase_order: "service",
   intl_purchase_order: "service",
 }
 

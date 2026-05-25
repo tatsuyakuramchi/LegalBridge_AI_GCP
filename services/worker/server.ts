@@ -426,16 +426,8 @@ async function startServer() {
       childActionInstruction:
         "納品を確認したら Slack で `/法務依頼` → 「納品 / 検収書」 を選び、本課題を選択して起票してください。",
     },
-    // 企画発注書も同じ「納品・検収」を連鎖させる。
-    {
-      parentRequestType: "planning_purchase_order",
-      childRequestType: "delivery_inspec",
-      childIssueTypeName: "納品・検収",
-      triggerLabel: "納品待ち",
-      childSummaryPrefix: "[納品報告] ",
-      childActionInstruction:
-        "納品を確認したら Slack で `/法務依頼` → 「納品 / 検収書」 を選び、本課題を選択して起票してください。",
-    },
+    // Phase 22.21.82: planning_purchase_order テンプレ削除に伴い、
+    //   AUTO_CHAIN_RULES から該当ルールを撤去。
     {
       parentRequestType: "lic_individual",
       childRequestType: "license_calc",
@@ -582,9 +574,10 @@ async function startServer() {
         let parentDocNumber = "";
         try {
           // ルールに応じて template_type のパターンを切り替え
+          // Phase 22.21.82: planning_purchase_order 削除に伴い分岐から外す
+          //   (intl_purchase_order などの "%purchase_order%" マッチは生かす)。
           const tmplPattern =
-            rule.parentRequestType === "purchase_order" ||
-            rule.parentRequestType === "planning_purchase_order"
+            rule.parentRequestType === "purchase_order"
               ? "%purchase_order%"
               : rule.parentRequestType === "lic_individual"
                 ? "individual_license_terms"
@@ -862,13 +855,20 @@ async function startServer() {
       inspection_deadline: inspectionDeadline = null,
     } = input;
 
-    let templateType: DocumentType = "legal_request";
+    // Phase 22.21.82: 旧 default "legal_request" は legal_request.html 削除により使えない。
+    //   未知の requestType が来た場合は purchase_order (最も汎用) にフォールバック。
+    let templateType: DocumentType = "purchase_order";
     if (requestType === "delivery_inspec") templateType = "inspection_certificate";
     else if (requestType === "purchase_order") templateType = "purchase_order";
     else if (requestType === "nda") templateType = "nda";
     else if (requestType === "license_master") templateType = "license_master";
     else if (requestType === "lic_individual") templateType = "individual_license_terms";
     else if (requestType === "license_calc") templateType = "license_calculation_sheet";
+    else {
+      console.warn(
+        `[legacy-issue] unknown requestType=${requestType}, falling back to purchase_order`
+      );
+    }
 
     const displaySummary = deliveryNo ? `${summary} (第${deliveryNo}回納品)` : summary;
 
@@ -4420,10 +4420,10 @@ ${details}
           else stats.unresolved_vendor++;
 
           let recordType = "master_contract";
+          // Phase 22.21.82: fee_statement テンプレ削除に伴い branch から除去
           if (
             templateType.includes("license") ||
-            templateType.includes("royalty") ||
-            templateType.includes("fee_statement")
+            templateType.includes("royalty")
           ) {
             recordType = "license_condition";
           } else if (
@@ -10493,10 +10493,10 @@ ${details}
         }
 
         let recordType = "master_contract";
+        // Phase 22.21.82: fee_statement テンプレ削除に伴い branch から除去
         if (
           templateType.includes("license") ||
-          templateType.includes("royalty") ||
-          templateType.includes("fee_statement")
+          templateType.includes("royalty")
         ) {
           recordType = "license_condition";
         } else if (
@@ -10659,20 +10659,17 @@ ${details}
       }
 
       // Lifecycle event sync (purchase_order / inspection / license / royalty).
-      if (
-        templateType.includes("purchase_order") ||
-        templateType === "planning_purchase_order"
-      ) {
+      // Phase 22.21.82: planning_purchase_order テンプレ削除に伴い分岐を簡素化。
+      //   templateType.includes("purchase_order") は intl_purchase_order と
+      //   purchase_order を同時にカバー。
+      if (templateType.includes("purchase_order")) {
         // Phase 22.21.20: contract_type を必ずセットする。
         //   旧 INSERT は contract_type を入れていなかったため、自動連鎖
         //   (autoChainOnComplete) の `parentRequestType === "purchase_order"`
         //   照合がマッチせず、納品リクエスト子課題が作成されなかった。
         //   - 新規 INSERT: contract_type を 'purchase_order' で挿入
         //   - 既存行: COALESCE で空のときだけ補完 (既存値を上書きしない)
-        const poContractType =
-          templateType === "planning_purchase_order"
-            ? "planning_purchase_order"
-            : "purchase_order";
+        const poContractType = "purchase_order";
         const lrResult = await query(
           `INSERT INTO legal_requests (backlog_issue_key, contract_type, counterparty, summary)
              VALUES ($1, $2, $3, $4)
@@ -11548,7 +11545,10 @@ ${details}
 
   app.post("/api/test-generate", async (req, res) => {
     try {
-      const type = (req.query.type as any) || "legal_request";
+      // Phase 22.21.82: 削除済みテンプレ (legal_request / contract /
+      //   planning_purchase_order / payment_notice / fee_statement /
+      //   license_report) 用の分岐を撤去。デフォルトを purchase_order に。
+      const type = (req.query.type as any) || "purchase_order";
 
       let demoData: any = {
         issueKey: "DEMO-123",
@@ -11584,24 +11584,8 @@ ${details}
           ORDER_AMOUNT: "750,000",
           REMARKS: "納期：2026年5月末日",
         };
-      } else if (type === "contract") {
-        demoData.summary = "新規事業開発に関する秘密保持契約";
-        demoData.details = {
-          ...demoData.details,
-          PARTY_B_NAME: "株式会社イノベーション・ラボ",
-          PARTY_B_ADDRESS: "大阪府大阪市北区...",
-          DURATION: "3年",
-        };
       } else if (type === "nda") {
         demoData.summary = "NDA (秘密保持契約書)";
-      } else if (type === "planning_purchase_order") {
-        demoData.summary = "企画発注書";
-      } else if (type === "payment_notice") {
-        demoData.summary = "支払通知書";
-      } else if (type === "fee_statement") {
-        demoData.summary = "報酬明細書";
-      } else if (type === "license_report") {
-        demoData.summary = "ライセンス報告書";
       } else if (type === "sales_master_buyer") {
         demoData.summary = "売買基本契約書（買主側）";
       }
