@@ -1363,7 +1363,28 @@ export async function initDb() {
       ('sales_master', 'SAL'),
       ('legal_consult', 'REQ'),
       ('nda', 'NDA')
-    ON CONFLICT (issue_type_name) DO UPDATE SET document_prefix = EXCLUDED.document_prefix;`
+    ON CONFLICT (issue_type_name) DO UPDATE SET document_prefix = EXCLUDED.document_prefix;`,
+
+    // -----------------------------------------------------------------
+    // Phase 22.21.70: sales_master_buyer の var リネーム backfill
+    //   旧フィールド名 CURE_PERIOD_DAYS → 新フィールド名 BREACH_CURE_DAYS
+    //   (週末コミット 46e46b3 で template + config がリネームされたが、既存の
+    //    documents.form_data には旧キーが残ったままだった)
+    //   テンプレ参照は BREACH_CURE_DAYS のみなので、旧キーは編集まで PDF に
+    //   反映されない silently-lost 状態。
+    //   このマイグレは form_data から旧キーを抜き、新キーが未設定なら値を移行する。
+    //   どのケースでも CURE_PERIOD_DAYS は最終的に消えるので冪等
+    //   (再度同じ SQL を流しても rowCount=0 になる)。
+    // -----------------------------------------------------------------
+    `UPDATE documents
+        SET form_data = CASE
+          WHEN form_data ? 'BREACH_CURE_DAYS'
+            THEN form_data - 'CURE_PERIOD_DAYS'
+          ELSE (form_data - 'CURE_PERIOD_DAYS')
+               || jsonb_build_object('BREACH_CURE_DAYS', form_data->'CURE_PERIOD_DAYS')
+        END
+      WHERE template_type = 'sales_master_buyer'
+        AND form_data ? 'CURE_PERIOD_DAYS';`,
   ];
 
   try {
