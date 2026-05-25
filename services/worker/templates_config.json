@@ -387,6 +387,7 @@
       "NDA_PURPOSE": { "label": "秘密保持の目的 (検討目的・本件業務)", "group": "IV. 契約内容", "type": "textarea", "required": true, "placeholder": "例: 〇〇事業に関する協業検討のため", "helpText": "頭書きの「検討目的・本件業務」欄に表示" },
       "CONTRACT_PERIOD": { "label": "契約期間", "group": "IV. 契約内容", "required": true, "placeholder": "例: 本契約締結日から2年間", "helpText": "第8条「本契約の有効期間は, {ここ}とする」に挿入。前置詞「本契約締結日から」も含めて記入" },
       "CONFIDENTIALITY_PERIOD": { "label": "秘密保持義務存続期間", "group": "IV. 契約内容", "required": true, "placeholder": "例: 本契約終了後3年間", "helpText": "第8条「秘密保持義務については, {ここ}存続する」に挿入。前置詞「本契約終了後」も含めて記入" },
+      "RETURN_DISPOSAL": { "label": "返還・廃棄の取扱い (任意)", "group": "IV. 契約内容", "type": "textarea", "placeholder": "相手方の要請に応じて速やかに返還又は廃棄する。", "helpText": "頭書きの「返還・廃棄」欄に表示。未入力なら「相手方の要請に応じて速やかに返還又は廃棄する。」がデフォルト挿入される。特約があるときのみ記入 (例: 業務終了から30日以内に削除証明書を提出)" },
 
       "GOVERNING_LAW": { "label": "準拠法 (任意)", "group": "V. 一般条項", "placeholder": "日本法", "helpText": "未入力なら「日本法」がデフォルト挿入される。海外当事者向けに変更したいときのみ記入" },
       "JURISDICTION": { "label": "合意管轄", "group": "V. 一般条項", "required": true, "placeholder": "例: 東京地方裁判所" }

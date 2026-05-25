@@ -14,6 +14,7 @@
     {{NDA_PURPOSE}}             検討目的・本件業務
     {{CONTRACT_PERIOD}}         有効期間 (例: 本契約締結日から2年間)
     {{CONFIDENTIALITY_PERIOD}}  秘密保持義務存続期間 (例: 本契約終了後3年間)
+    {{RETURN_DISPOSAL}}         返還・廃棄 (任意、デフォルト: 相手方の要請に応じて速やかに返還又は廃棄する。)
     {{JURISDICTION}}            合意管轄 (例: 東京地方裁判所)
     {{GOVERNING_LAW}}           準拠法 (任意、デフォルト: 日本法)
 
@@ -284,7 +285,7 @@
         返還・廃棄<span class="art-ref">（第７条）</span>
         <span class="sub-note">本件業務終了時又は開示者から要求があった場合</span>
       </td>
-      <td class="col-value">秘密情報及びその複製物等を速やかに返還又は廃棄する。</td>
+      <td class="col-value">{{#if RETURN_DISPOSAL}}{{RETURN_DISPOSAL}}{{else}}相手方の要請に応じて速やかに返還又は廃棄する。{{/if}}</td>
     </tr>
 
   </tbody>
