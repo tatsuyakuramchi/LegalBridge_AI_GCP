@@ -1,85 +1,321 @@
-<!--
-  legal_response.html — Phase 22.21.83 PLACEHOLDER
+{{!--
+  legal_response.html — Phase 22.21.84
+  ユーザー提供デザインを Handlebars 化したもの。
 
-  ⚠️ これは仮テンプレです。ユーザー側で正式デザインに差し替えてください。
-  templates_config.json の "legal_response" エントリで定義された変数を
-  すべてここで {{VAR_NAME}} 形式で参照しているので、まずはこの最小版で
-  worker のプレビュー / PDF 生成が通ることを確認できます。
-
-  使える主要変数:
-    - {{DOC_NO}}                自動採番された文書番号
-    - {{ISSUE_DATE}}            発行日
-    - {{RELATED_ISSUE_KEY}}     関連 Backlog 課題 (LEGAL-NNN)
-    - {{RELATED_REQ_TYPE}}      相談区分 (法務相談 / 事務手続 等)
-    - {{CONSULTER_NAME}}        相談者氏名
-    - {{CONSULTER_DEPT}}        相談者部署
-    - {{CONSULTER_EMAIL}}       相談者メール
-    - {{CONSULT_DATE}}          相談日
-    - {{CONSULT_SUMMARY}}       件名・概要
-    - {{CONSULT_DETAIL}}        相談詳細 (改行可)
-    - {{RESPONSE_DATE}}         回答日
-    - {{RESPONSE_AUTHOR}}       回答者
-    - {{RESPONSE_CONTENT}}      回答内容 (改行可)
-    - {{REFERENCED_RULES}}      引用条文・社内規程・判例
-    - {{REMARKS}}               補足事項
-    - {{ATTACHMENT_NOTE}}       添付資料の説明
--->
+  使用変数 (templates_config.json: legal_response):
+    {{DOC_NO}}          自動採番された文書番号 (例: ARC-LG-2026-0001)
+    {{RESPONSE_DATE}}   回答日
+    {{CONSULTER_DEPT}}  相談部署
+    {{CONSULTER_NAME}}  相談者
+    {{SUBJECT}}         件名
+    {{RESPONSE_AUTHOR}} 回答担当者 (default: 法務部次長 倉持 達也)
+    {{QUESTION_1}}      Q1 質問 (必須)
+    {{ANSWER_1}}        A1 回答 (必須)
+    {{QUESTION_2}}      Q2 質問 (任意、空ならブロック非表示)
+    {{ANSWER_2}}        A2 回答
+    {{QUESTION_3}}      Q3 質問 (任意)
+    {{ANSWER_3}}        A3 回答
+--}}
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="utf-8">
-  <title>法務回答書 {{DOC_NO}}</title>
-  <style>
-    body { font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; color: #1a1a1a; max-width: 720px; margin: 40px auto; padding: 0 24px; line-height: 1.7; }
-    h1 { font-size: 18pt; text-align: center; margin: 0 0 8px; letter-spacing: 0.15em; }
-    .doc-no { text-align: right; font-size: 9pt; color: #555; margin-bottom: 24px; }
-    h2 { font-size: 12pt; border-left: 4px solid #1a4f8c; padding-left: 8px; margin-top: 28px; }
-    .field-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; margin: 6px 0; font-size: 10.5pt; }
-    .label { color: #555; font-size: 9.5pt; }
-    .value { white-space: pre-wrap; }
-    .section-body { font-size: 10.5pt; white-space: pre-wrap; padding: 8px 0; }
-    .footer { margin-top: 48px; font-size: 9pt; color: #666; text-align: right; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>法務相談 回答書 {{DOC_NO}}</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Meiryo', sans-serif;
+    background: #fff;
+    color: #111;
+    font-size: 13px;
+    line-height: 1.7;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .page {
+    max-width: 794px;
+    margin: 0 auto;
+    padding: 48px 52px 64px;
+  }
+
+  /* ── Header ── */
+  .doc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    border-bottom: 2px solid #111;
+    padding-bottom: 12px;
+    margin-bottom: 40px;
+  }
+  .doc-header .org {
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    color: #666;
+    text-transform: uppercase;
+  }
+  .doc-header .doc-id {
+    font-size: 10px;
+    color: #888;
+    letter-spacing: 0.06em;
+  }
+
+  /* ── Title ── */
+  .doc-title {
+    margin-bottom: 36px;
+  }
+  .doc-title h1 {
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    line-height: 1.2;
+    margin-bottom: 4px;
+  }
+  .doc-title .subtitle {
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: #888;
+    text-transform: uppercase;
+  }
+
+  /* ── Meta table ── */
+  .meta-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 44px;
+    font-size: 12px;
+  }
+  .meta-table tr {
+    border-bottom: 0.5px solid #e0e0e0;
+  }
+  .meta-table tr:first-child {
+    border-top: 0.5px solid #e0e0e0;
+  }
+  .meta-table td {
+    padding: 8px 12px;
+    vertical-align: top;
+  }
+  .meta-table .label {
+    width: 120px;
+    color: #888;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    white-space: nowrap;
+  }
+  .meta-table .value {
+    color: #111;
+  }
+
+  /* ── Divider ── */
+  .section-divider {
+    border: none;
+    border-top: 0.5px solid #ccc;
+    margin: 36px 0;
+  }
+
+  /* ── Q&A block ── */
+  .qa-block {
+    margin-bottom: 36px;
+  }
+  .qa-number {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: #999;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+  }
+
+  .question-box {
+    border-left: 3px solid #111;
+    padding: 14px 16px;
+    background: #f7f7f7;
+    margin-bottom: 16px;
+  }
+  .question-box .box-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+    color: #999;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .question-box .content {
+    font-size: 13px;
+    color: #222;
+    min-height: 18px;
+    /* Phase 22.21.84: form 入力の改行をそのまま PDF に反映 */
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  .answer-box {
+    border-left: 3px solid #111;
+    padding: 14px 16px;
+    background: #fff;
+    border: 1px solid #e0e0e0;
+    border-left: 3px solid #111;
+  }
+  .answer-box .box-label {
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    font-weight: 700;
+    color: #555;
+    text-transform: uppercase;
+    margin-bottom: 6px;
+  }
+  .answer-box .content {
+    font-size: 13px;
+    color: #111;
+    min-height: 72px;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+  }
+
+  /* ── Footer note ── */
+  .doc-footer {
+    margin-top: 52px;
+    padding-top: 16px;
+    border-top: 0.5px solid #ccc;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 16px;
+  }
+  .doc-footer .note {
+    font-size: 10px;
+    color: #aaa;
+    line-height: 1.6;
+    flex: 1;
+  }
+  .doc-footer .stamp-area {
+    display: flex;
+    gap: 1px;
+    flex-shrink: 0;
+  }
+  .stamp-box {
+    width: 64px;
+    height: 64px;
+    border: 1px solid #ccc;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 5px 4px 4px;
+  }
+  .stamp-box .stamp-label {
+    font-size: 8px;
+    color: #aaa;
+    letter-spacing: 0.06em;
+  }
+  .stamp-box .stamp-inner {
+    flex: 1;
+  }
+
+  /* ── Print ── */
+  @media print {
+    body { background: #fff; }
+    .page { padding: 24mm 22mm; max-width: none; }
+  }
+</style>
 </head>
 <body>
-  <h1>法 務 回 答 書</h1>
-  <div class="doc-no">文書番号: {{DOC_NO}} ／ 発行日: {{ISSUE_DATE}}</div>
+<div class="page">
 
-  <h2>I. ヘッダ</h2>
-  <div class="field-row"><div class="label">関連課題</div><div class="value">{{RELATED_ISSUE_KEY}}</div></div>
-  <div class="field-row"><div class="label">相談区分</div><div class="value">{{RELATED_REQ_TYPE}}</div></div>
+  <!-- Header -->
+  <div class="doc-header">
+    <div class="org">株式会社アークライト　法務部</div>
+    <div class="doc-id">No. {{DOC_NO}}</div>
+  </div>
 
-  <h2>II. 相談者</h2>
-  <div class="field-row"><div class="label">氏名</div><div class="value">{{CONSULTER_NAME}}</div></div>
-  <div class="field-row"><div class="label">部署</div><div class="value">{{CONSULTER_DEPT}}</div></div>
-  <div class="field-row"><div class="label">メール</div><div class="value">{{CONSULTER_EMAIL}}</div></div>
-  <div class="field-row"><div class="label">相談日</div><div class="value">{{CONSULT_DATE}}</div></div>
+  <!-- Title -->
+  <div class="doc-title">
+    <h1>法務相談 回答書</h1>
+    <div class="subtitle">Legal Consultation Response</div>
+  </div>
 
-  <h2>III. 相談内容</h2>
-  <div class="field-row"><div class="label">件名</div><div class="value">{{CONSULT_SUMMARY}}</div></div>
-  <div class="section-body">{{CONSULT_DETAIL}}</div>
+  <!-- Meta -->
+  <table class="meta-table">
+    <tr>
+      <td class="label">回答日</td>
+      <td class="value">{{#if RESPONSE_DATE}}{{RESPONSE_DATE}}{{else}}　　　年　　月　　日{{/if}}</td>
+    </tr>
+    <tr>
+      <td class="label">相談部署</td>
+      <td class="value">{{CONSULTER_DEPT}}</td>
+    </tr>
+    <tr>
+      <td class="label">相談者</td>
+      <td class="value">{{CONSULTER_NAME}}</td>
+    </tr>
+    <tr>
+      <td class="label">件名</td>
+      <td class="value">{{SUBJECT}}</td>
+    </tr>
+    <tr>
+      <td class="label">回答担当者</td>
+      <td class="value">{{#if RESPONSE_AUTHOR}}{{RESPONSE_AUTHOR}}{{else}}法務部次長　倉持 達也{{/if}}</td>
+    </tr>
+  </table>
 
-  <h2>IV. 回答</h2>
-  <div class="field-row"><div class="label">回答日</div><div class="value">{{RESPONSE_DATE}}</div></div>
-  <div class="field-row"><div class="label">回答者</div><div class="value">{{RESPONSE_AUTHOR}}</div></div>
-  <div class="section-body">{{RESPONSE_CONTENT}}</div>
+  <!-- Q&A 1 -->
+  <div class="qa-block">
+    <div class="qa-number">Q &amp; A — 01</div>
+    <div class="question-box">
+      <div class="box-label">質問</div>
+      <div class="content">{{QUESTION_1}}</div>
+    </div>
+    <div class="answer-box">
+      <div class="box-label">回答</div>
+      <div class="content">{{ANSWER_1}}</div>
+    </div>
+  </div>
 
-  {{#if REFERENCED_RULES}}
-  <h2>IV-2. 引用条文・社内規程・判例</h2>
-  <div class="section-body">{{REFERENCED_RULES}}</div>
-  {{/if}}
-
-  {{#if REMARKS}}
-  <h2>V. 補足</h2>
-  <div class="section-body">{{REMARKS}}</div>
-  {{/if}}
-
-  {{#if ATTACHMENT_NOTE}}
-  <div style="margin-top: 24px; font-size: 9.5pt; color: #666; border-top: 1px dashed #ccc; padding-top: 8px;">
-    📎 添付: {{ATTACHMENT_NOTE}}
+  {{#if QUESTION_2}}
+  <!-- Q&A 2 -->
+  <div class="qa-block">
+    <div class="qa-number">Q &amp; A — 02</div>
+    <div class="question-box">
+      <div class="box-label">質問</div>
+      <div class="content">{{QUESTION_2}}</div>
+    </div>
+    <div class="answer-box">
+      <div class="box-label">回答</div>
+      <div class="content">{{ANSWER_2}}</div>
+    </div>
   </div>
   {{/if}}
 
-  <div class="footer">— 以上 —</div>
+  {{#if QUESTION_3}}
+  <!-- Q&A 3 -->
+  <div class="qa-block">
+    <div class="qa-number">Q &amp; A — 03</div>
+    <div class="question-box">
+      <div class="box-label">質問</div>
+      <div class="content">{{QUESTION_3}}</div>
+    </div>
+    <div class="answer-box">
+      <div class="box-label">回答</div>
+      <div class="content">{{ANSWER_3}}</div>
+    </div>
+  </div>
+  {{/if}}
+
+  <!-- Footer -->
+  <div class="doc-footer">
+    <div class="note">
+      本回答は相談時点の情報に基づくものです。状況の変化により見解が変わる場合があります。<br>
+      外部弁護士等の正式な法的意見に代わるものではありません。
+    </div>
+    <div class="stamp-area">
+      <div class="stamp-box"><div class="stamp-label">起案</div><div class="stamp-inner"></div></div>
+      <div class="stamp-box"><div class="stamp-label">確認</div><div class="stamp-inner"></div></div>
+      <div class="stamp-box"><div class="stamp-label">受領</div><div class="stamp-inner"></div></div>
+    </div>
+  </div>
+
+</div>
 </body>
 </html>

@@ -1500,12 +1500,13 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       // 別紙 (保守仕様書)
       maintenance_spec: "MNT",
       "システム保守仕様書": "MNT",
-      // 法務回答 (Phase 22.21.83)
-      legal_response: "LGR",
-      "法務回答書": "LGR",
-      legal_consult: "LGR",
-      "法務相談": "LGR",
-      "事務手続": "LGR",
+      // 法務回答 (Phase 22.21.83 → 22.21.84: ユーザー提供デザインに合わせ
+      //   prefix を LGR から LG に短縮。"No. LG-2026-NNNN" 形式で表示。)
+      legal_response: "LG",
+      "法務回答書": "LG",
+      legal_consult: "LG",
+      "法務相談": "LG",
+      "事務手続": "LG",
       // その他
       nda: "NDA",
       "NDA": "NDA",

@@ -524,28 +524,23 @@
     }
   },
   "legal_response": {
-    "label": "法務回答書",
+    "label": "法務相談 回答書",
     "category": "Internal",
     "vars": {
-      "ISSUE_DATE":         { "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true },
-      "RELATED_ISSUE_KEY":  { "label": "関連 Backlog 課題", "group": "I. ヘッダ", "placeholder": "例: LEGAL-126", "helpText": "課題選択時に自動補完" },
-      "RELATED_REQ_TYPE":   { "label": "相談区分", "group": "I. ヘッダ", "placeholder": "例: 法務相談 / 事務手続", "helpText": "Backlog issueType を引用" },
+      "RESPONSE_DATE":   { "label": "回答日", "group": "I. ヘッダ", "type": "date", "required": true, "helpText": "PDF の「回答日」欄に表示。空欄なら「　　　年　　月　　日」" },
+      "CONSULTER_DEPT":  { "label": "相談部署", "group": "I. ヘッダ", "required": true, "placeholder": "例: 営業企画部" },
+      "CONSULTER_NAME":  { "label": "相談者", "group": "I. ヘッダ", "required": true, "placeholder": "例: 山田 太郎" },
+      "SUBJECT":         { "label": "件名", "group": "I. ヘッダ", "required": true, "placeholder": "例: A社向けNDA修正案の確認" },
+      "RESPONSE_AUTHOR": { "label": "回答担当者", "group": "I. ヘッダ", "required": true, "placeholder": "例: 法務部次長 倉持 達也", "helpText": "デフォルト: 法務部次長 倉持 達也 (必要に応じて変更)" },
 
-      "CONSULTER_NAME":     { "label": "相談者氏名", "group": "II. 相談者", "required": true },
-      "CONSULTER_DEPT":     { "label": "相談者部署", "group": "II. 相談者" },
-      "CONSULTER_EMAIL":    { "label": "相談者メール", "group": "II. 相談者", "type": "email" },
-      "CONSULT_DATE":       { "label": "相談日", "group": "II. 相談者", "type": "date" },
+      "QUESTION_1":      { "label": "Q1 質問", "group": "II. Q&A — 01", "type": "textarea", "required": true, "placeholder": "相談内容を入力してください" },
+      "ANSWER_1":        { "label": "A1 回答", "group": "II. Q&A — 01", "type": "textarea", "required": true, "placeholder": "法務部の回答を入力してください" },
 
-      "CONSULT_SUMMARY":    { "label": "件名 / 概要", "group": "III. 相談内容", "required": true, "placeholder": "例: 取引先A社からの修正版 NDA の確認依頼" },
-      "CONSULT_DETAIL":     { "label": "相談詳細", "group": "III. 相談内容", "type": "textarea", "required": true },
+      "QUESTION_2":      { "label": "Q2 質問 (任意)", "group": "III. Q&A — 02 (任意)", "type": "textarea", "placeholder": "2 つ目の質問があれば入力。空ならブロック自体が非表示" },
+      "ANSWER_2":        { "label": "A2 回答 (任意)", "group": "III. Q&A — 02 (任意)", "type": "textarea" },
 
-      "RESPONSE_DATE":      { "label": "回答日", "group": "IV. 回答", "type": "date", "required": true },
-      "RESPONSE_AUTHOR":    { "label": "回答者", "group": "IV. 回答", "required": true, "placeholder": "例: 法務部 山田 太郎" },
-      "RESPONSE_CONTENT":   { "label": "回答内容 (本文)", "group": "IV. 回答", "type": "textarea", "required": true },
-      "REFERENCED_RULES":   { "label": "引用条文・社内規程・判例", "group": "IV. 回答", "type": "textarea", "placeholder": "例: 民法第415条 / 当社契約レビュー規程 §3.2 / 最判平成XX年..." },
-
-      "REMARKS":            { "label": "補足事項", "group": "V. 補足", "type": "textarea" },
-      "ATTACHMENT_NOTE":    { "label": "添付資料の説明 (任意)", "group": "V. 補足", "placeholder": "例: 別紙: NDA Annex A 修正版コメント.pdf" }
+      "QUESTION_3":      { "label": "Q3 質問 (任意)", "group": "IV. Q&A — 03 (任意)", "type": "textarea", "placeholder": "3 つ目の質問があれば入力。空ならブロック自体が非表示" },
+      "ANSWER_3":        { "label": "A3 回答 (任意)", "group": "IV. Q&A — 03 (任意)", "type": "textarea" }
     }
   }
 }
