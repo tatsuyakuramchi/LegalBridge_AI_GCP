@@ -115,12 +115,12 @@ export function viewerGuidePage(opts: {
       </div>
     </div>
 
-    <a class="tile" href="/templates/preview">
-      <div class="title">📄 ひな型ライブラリ</div>
+    <a class="tile" href="/templates/preview?type=nda">
+      <div class="title">📄 ひな型プレビュー</div>
       <div class="desc">
-        全ひな型 (発注書 / NDA / 業務委託基本契約 / 売買基本契約 / 検収書 等)
-        をカード一覧で表示し、各ひな型から HTML プレビュー / HTML DL / PDF DL に直接アクセスできます。<br>
-        <code>/templates/preview?type=&lt;type&gt;</code> で個別ひな型にダイレクトリンク可能 (例: <code>?type=purchase_order</code>)。
+        通常は <strong>Slack キャンバスのひな型一覧</strong>から個別リンクで開きます。<br>
+        直接アクセスする場合は URL に <code>?type=&lt;template&gt;</code> を指定してください
+        (例: <code>?type=nda</code>, <code>?type=purchase_order</code>)。
       </div>
     </a>
 
