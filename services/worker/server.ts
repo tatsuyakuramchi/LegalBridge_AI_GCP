@@ -8678,6 +8678,28 @@ ${details}
           }
         }
 
+        // Phase 22.21.80: PDF 発行完了 → document_drafts の draft を冪等削除。
+        //   issue_key が synthetic (IMPORT-/MANUAL-) でも draft は付くケースが
+        //   あるので、issue_key の文字列をそのまま使って削除する。
+        try {
+          const delRes = await query(
+            `DELETE FROM document_drafts
+              WHERE issue_key = $1 AND template_type = $2`,
+            [doc.issue_key, doc.template_type]
+          );
+          if ((delRes.rowCount || 0) > 0) {
+            console.log(
+              `🗑️ [draft-cleanup] removed draft for ${doc.issue_key} (${doc.template_type}) after regenerate-and-complete`
+            );
+          }
+        } catch (draftErr) {
+          console.warn("[draft-cleanup] failed (non-fatal):", draftErr);
+          warnings.push({
+            step: "draft-cleanup",
+            error: String((draftErr as any)?.message || draftErr),
+          });
+        }
+
         res.json({
           ok: true,
           id,
@@ -11401,6 +11423,29 @@ ${details}
         syncWarnings.push({
           step: "post_document_sync",
           error: String(syncErr?.message || syncErr),
+        });
+      }
+
+      // Phase 22.21.80: 文書発行が成功したら document_drafts の draft を消す。
+      //   PDF が完成 = draft の役目終了。残すとフォームを再オープンした時に
+      //   古い入力で上書き復元されて混乱する。冪等 (無くてもエラーにしない)。
+      //   syncWarnings には積むが、HTTP は成功扱いで返す。
+      try {
+        const delRes = await query(
+          `DELETE FROM document_drafts
+            WHERE issue_key = $1 AND template_type = $2`,
+          [issueKey, templateType]
+        );
+        if ((delRes.rowCount || 0) > 0) {
+          console.log(
+            `🗑️ [draft-cleanup] removed draft for ${issueKey} (${templateType})`
+          );
+        }
+      } catch (draftErr) {
+        console.warn("[draft-cleanup] failed (non-fatal):", draftErr);
+        syncWarnings.push({
+          step: "draft_cleanup",
+          error: String((draftErr as any)?.message || draftErr),
         });
       }
 
