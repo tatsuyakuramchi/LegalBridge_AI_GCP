@@ -125,6 +125,15 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
               <input class="tech-input" type="text" name="aliases" placeholder="カンマ区切りで複数可">
             </div>
 
+            <!-- Phase 22.21.78: 代表者名 (法人代表者)。契約書 / 発注書 / 検収書 PDF の
+                 代表者欄に転記される。肩書込みの形式で記入 (例: 代表取締役 山田太郎)。
+                 個人事業主の場合は空でよい。admin-ui の VendorsPanel に揃えるため
+                 ここでは entity_type による表示切り替えはしない (空欄なら出力されない)。 -->
+            <div class="field col-2">
+              <label class="tech-label">代表者名</label>
+              <input class="tech-input" type="text" name="vendor_rep" maxlength="100" placeholder="例: 代表取締役 山田 太郎">
+              <span class="field-help">法人の場合のみ記入。肩書込みで契約書 / 発注書の代表者欄に転記される。個人事業主は空欄でよい。</span>
+            </div>
 
             <div class="field">
               <label class="tech-label">&#27861;&#20154;&#30058;&#21495;</label>
