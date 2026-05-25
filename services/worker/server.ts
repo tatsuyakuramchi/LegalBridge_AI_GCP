@@ -8835,13 +8835,27 @@ ${details}
       const failed: any[] = [];
 
       for (const [importKey, groupRows] of groups) {
-        try {
-          const first = groupRows[0];
-          const issueKey = String(first.issue_key || first.issueKey || importKey).trim();
-          if (!issueKey) throw new Error("issue_key is required");
+        // Phase 22.21.69: 1 \u30b0\u30eb\u30fc\u30d7\u306e\u66f8\u8fbc\u307f\u3092 transaction + advisory_xact_lock \u3067
+        //   \u6392\u4ed6\u5236\u5fa1\u3002
+        //   - BEGIN / COMMIT \u3067 5 \u3064\u306e\u66f8\u8fbc\u307f (delivery_events / delivery_line_items
+        //     DELETE+INSERT / documents UPSERT / legal_requests UPSERT) \u3092\u30a2\u30c8\u30df\u30c3\u30af\u5316
+        //   - pg_advisory_xact_lock(order_item_id) \u3067\u540c\u4e00 PO \u306b\u5bfe\u3059\u308b\u4e26\u5217 import \u3092
+        //     \u76f4\u5217\u5316 \u2192 delivery_no MAX+1 \u3068 previewInspectionOverflow \u306e TOCTOU \u3092\u89e3\u6d88
+        //   \u5931\u6557\u6642\u306f ROLLBACK \u3067\u90e8\u5206\u66f8\u8fbc\u307f\u3092\u5dfb\u304d\u623b\u3059\u3002
+        //   parent PO \u89e3\u6c7a (orderItemId \u78ba\u5b9a) \u306f\u30c8\u30e9\u30f3\u30b6\u30af\u30b7\u30e7\u30f3\u5916\u3067\u5b9f\u884c
+        //   (lock \u3092\u53d6\u308b\u30ad\u30fc\u304c\u5fc5\u8981\u306a\u305f\u3081)\u3002
+        const first = groupRows[0];
+        const issueKey = String(first.issue_key || first.issueKey || importKey).trim();
+        if (!issueKey) {
+          failed.push({ import_key: importKey, error: "issue_key is required" });
+          continue;
+        }
 
-          let orderItemId = Number(first.parent_po_id) || 0;
-          let parentPoIssueKey = String(first.parent_po_issue_key || "").trim();
+        // \u2500\u2500 parent PO \u89e3\u6c7a (lock \u3092\u53d6\u308b\u524d\u306b orderItemId \u3092\u77e5\u308b\u305f\u3081) \u2500\u2500
+        let orderItemId = 0;
+        let parentPoIssueKey = String(first.parent_po_issue_key || "").trim();
+        try {
+          orderItemId = Number(first.parent_po_id) || 0;
           if (!orderItemId && parentPoIssueKey) {
             const r = await query(
               "SELECT id FROM order_items WHERE backlog_issue_key = $1 LIMIT 1",
@@ -8864,8 +8878,23 @@ ${details}
           if (!orderItemId) {
             throw new Error("parent PO not found. parent_po_id, parent_po_issue_key, or parent_po_number is required");
           }
+        } catch (e: any) {
+          failed.push({ import_key: importKey, error: String(e?.message || e) });
+          continue;
+        }
 
-          const orderHeader = await query(
+        // \u2500\u2500 transaction \u958b\u59cb \u2500\u2500
+        const client = await pool.connect();
+        try {
+          await client.query("BEGIN");
+
+          // \ud83d\udd12 advisory lock \u2014 \u540c\u3058 order_item_id \u306b\u5bfe\u3059\u308b\u540c\u6642 import \u3092\u76f4\u5217\u5316\u3002
+          //   transaction-scoped \u306a\u306e\u3067 COMMIT/ROLLBACK \u3067\u81ea\u52d5\u89e3\u653e\u3002
+          await client.query("SELECT pg_advisory_xact_lock($1::bigint)", [
+            orderItemId,
+          ]);
+
+          const orderHeader = await client.query(
             `SELECT oi.id, oi.backlog_issue_key, oi.description, oi.vendor_code,
                     oi.tax_rate, oi.due_date,
                     (SELECT d.document_number FROM documents d
@@ -8883,21 +8912,28 @@ ${details}
           if (!order) throw new Error(`order_items not found: ${orderItemId}`);
           parentPoIssueKey = parentPoIssueKey || String(order.backlog_issue_key || "");
 
-          const orderLinesRes = await query(
+          const orderLinesRes = await client.query(
             `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax
                FROM order_line_items
               WHERE order_item_id = $1
               ORDER BY line_no ASC`,
             [orderItemId]
           );
-          const orderLines = orderLinesRes.rows;
-          const byLineNo = new Map(orderLines.map((l: any) => [Number(l.line_no), l]));
-          const byId = new Map(orderLines.map((l: any) => [Number(l.id), l]));
+          // Phase 22.21.69: pg の client.query は QueryResult<unknown> を返すため、
+          //   Map の value 型推論が unknown になる → `line.id` 等のアクセスが
+          //   TS エラーになる。明示的に any[] にキャストして従来挙動を維持。
+          const orderLines = orderLinesRes.rows as any[];
+          const byLineNo = new Map<number, any>(
+            orderLines.map((l: any) => [Number(l.line_no), l])
+          );
+          const byId = new Map<number, any>(
+            orderLines.map((l: any) => [Number(l.id), l])
+          );
 
           const incoming = groupRows
             .filter((r) => String(r.row_type || "item").trim().toLowerCase() !== "expense")
             .map((r) => {
-              const line =
+              const line: any =
                 byId.get(Number(r.order_line_item_id)) ||
                 byLineNo.get(Number(r.line_no));
               if (!line) return null;
@@ -8923,9 +8959,10 @@ ${details}
             throw new Error("No valid inspection line rows");
           }
 
+          // delivery_no \u306e MAX+1: lock \u53d6\u5f97\u5f8c\u306b\u8aad\u3080\u306e\u3067\u3001\u5225 import \u3068\u306e\u7af6\u5408\u306a\u3057\u3002
           const deliveryNo = Number(first.delivery_no) || Number(
             (
-              await query(
+              await client.query(
                 "SELECT COALESCE(MAX(delivery_no), 0) + 1 AS next_no FROM delivery_events WHERE order_item_id = $1",
                 [orderItemId]
               )
@@ -8952,6 +8989,8 @@ ${details}
               ? String(first.document_number).trim()
               : await getNewDocumentNumber("inspection_certificate", "\u7d0d\u54c1\u30fb\u691c\u53ce");
 
+          // overflow \u30c1\u30a7\u30c3\u30af\u306f lock \u5185\u3067\u5b9f\u884c\u3002\u4ed6 import \u304c\u540c\u6642\u306b\u66f8\u3044\u3066\u3044\u3066\u3082\u3001
+          //   \u305d\u308c\u306f lock \u5f85\u3061\u72b6\u614b\u306a\u306e\u3067\u3001\u3053\u3053\u3067\u8aad\u3080\u72b6\u614b\u306f\u5b89\u5b9a\u3057\u3066\u3044\u308b\u3002
           const preview = await previewInspectionOverflow(
             computedLines.map((l) => ({
               order_line_item_id: l.order_line_item_id,
@@ -8967,7 +9006,7 @@ ${details}
             );
           }
 
-          const delivery = await query(
+          const delivery = await client.query(
             `INSERT INTO delivery_events
                (backlog_issue_key, order_item_id, delivery_no, delivered_at,
                 delivered_amount, inspection_deadline, status, note)
@@ -8990,11 +9029,11 @@ ${details}
             ]
           );
           const deliveryEventId = Number(delivery.rows[0]?.id);
-          await query("DELETE FROM delivery_line_items WHERE delivery_event_id = $1", [
+          await client.query("DELETE FROM delivery_line_items WHERE delivery_event_id = $1", [
             deliveryEventId,
           ]);
           for (const l of computedLines) {
-            await query(
+            await client.query(
               `INSERT INTO delivery_line_items (
                  delivery_event_id, order_line_item_id, inspected_quantity,
                  acceptance_ratio, inspected_amount_ex_tax, rejection_reason
@@ -9046,7 +9085,7 @@ ${details}
             __pdf_pending: parseBoolFlag(first.generate_pdf, true),
           };
 
-          await query(
+          await client.query(
             `INSERT INTO documents (
                document_number, issue_key, template_type, form_data, drive_link,
                created_by, base_document_number, revision, vendor_name_snapshot, is_primary
@@ -9065,7 +9104,7 @@ ${details}
             ]
           );
 
-          await query(
+          await client.query(
             `INSERT INTO legal_requests
                (backlog_issue_key, contract_type, counterparty, summary, parent_issue_key)
              VALUES ($1, 'delivery_inspec', $2, $3, $4)
@@ -9081,6 +9120,8 @@ ${details}
             ]
           );
 
+          await client.query("COMMIT");
+
           succeeded.push({
             import_key: importKey,
             issue_key: issueKey,
@@ -9091,8 +9132,11 @@ ${details}
             pdf_pending: formData.__pdf_pending,
           });
         } catch (e: any) {
+          await client.query("ROLLBACK").catch(() => { /* noop */ });
           console.error(`/api/imports/bulk/inspection group=${importKey} failed:`, e);
           failed.push({ import_key: importKey, error: String(e?.message || e) });
+        } finally {
+          client.release();
         }
       }
 
