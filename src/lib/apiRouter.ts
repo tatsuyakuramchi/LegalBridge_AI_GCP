@@ -59,6 +59,10 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/documents\/search(?:\?|$|\/)/,
   // Phase 17: 稟議マスタの read/write は worker (junction テーブル含む)
   /^\/api\/ringi(?:\/|$|\?)/,
+  // Phase 22.21.79: 文書 draft (一時保存) は worker のみで GET/POST/DELETE
+  //   admin-ui DocumentEditorPage の「DBSYNC」ボタンと
+  //   閲覧/編集モードトグル時に直叩きする。
+  /^\/api\/document-drafts(?:\/|$|\?)/,
 ];
 
 // Routes that should go to the READ service even on POST.

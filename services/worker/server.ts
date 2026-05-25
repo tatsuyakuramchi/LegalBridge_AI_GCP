@@ -8165,6 +8165,115 @@ ${details}
    * 発注書フォーム等の「基本契約検索」ウィジェットから呼ぶ。NFKC 正規化により
    * 全角/半角の差は無視 (Phase 22.21.47 と同じ思想)。
    */
+  // ===================================================================
+  // Phase 22.21.79: 文書作成 draft (一時保存) API
+  //   admin-ui DocumentEditorPage が「閲覧モード ⇄ 編集モード」 トグル時
+  //   および手動「一時保存」操作で POST し、「DBSYNC」ボタンで GET する。
+  //   storage は document_drafts(issue_key, template_type) UNIQUE で UPSERT。
+  //   完成 PDF 発行後の自動削除は今回は実装しない (手動 DELETE のみ提供)。
+  //
+  //   admin-ui → worker 直叩きなので requirePortalSecret を適用。
+  //   apiRouter.ts の WRITE_PATHS_ON_GET に /api/document-drafts を追加して
+  //   GET も WRITE_URL (= worker) に routing する設計。
+  // ===================================================================
+
+  /** GET /api/document-drafts/:issueKey?template_type=...
+   *  指定課題 + テンプレの最新 draft を返す。なければ 404 で返す
+   *  (admin-ui 側は 404 = "draft 無し → form-context 経路にフォールバック")。
+   */
+  app.get("/api/document-drafts/:issueKey", requirePortalSecret, async (req, res) => {
+    try {
+      const issueKey = String(req.params.issueKey || "").trim();
+      const templateType = String(req.query.template_type || "").trim();
+      if (!issueKey || !templateType) {
+        return res.status(400).json({
+          ok: false,
+          error: "issueKey (path) and template_type (query) are required",
+        });
+      }
+      const r = await query(
+        `SELECT id, issue_key, template_type, form_data, updated_at, updated_by
+           FROM document_drafts
+          WHERE issue_key = $1 AND template_type = $2
+          LIMIT 1`,
+        [issueKey, templateType]
+      );
+      if (r.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "draft not found" });
+      }
+      res.json({ ok: true, draft: r.rows[0] });
+    } catch (err: any) {
+      console.error("[document-drafts GET] failed:", err);
+      res.status(500).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
+
+  /** POST /api/document-drafts
+   *  body: { issue_key, template_type, form_data, updated_by? }
+   *  UPSERT。空の form_data でも明示的に呼ばれれば上書きする
+   *  (= 編集モード入り直後に「クリア状態」を保存したい場合もあるため)。
+   */
+  app.post("/api/document-drafts", requirePortalSecret, express.json({ limit: "5mb" }), async (req, res) => {
+    try {
+      const issueKey = String(req.body?.issue_key || "").trim();
+      const templateType = String(req.body?.template_type || "").trim();
+      const formData = req.body?.form_data;
+      const updatedBy = req.body?.updated_by ? String(req.body.updated_by).slice(0, 200) : null;
+      if (!issueKey || !templateType) {
+        return res.status(400).json({
+          ok: false,
+          error: "issue_key, template_type are required",
+        });
+      }
+      if (formData == null || typeof formData !== "object") {
+        return res.status(400).json({
+          ok: false,
+          error: "form_data must be an object",
+        });
+      }
+      const r = await query(
+        `INSERT INTO document_drafts (issue_key, template_type, form_data, updated_by, updated_at)
+         VALUES ($1, $2, $3::jsonb, $4, NOW())
+         ON CONFLICT (issue_key, template_type) DO UPDATE
+            SET form_data = EXCLUDED.form_data,
+                updated_by = EXCLUDED.updated_by,
+                updated_at = NOW()
+         RETURNING id, issue_key, template_type, form_data, updated_at, updated_by`,
+        [issueKey, templateType, JSON.stringify(formData), updatedBy]
+      );
+      res.json({ ok: true, draft: r.rows[0] });
+    } catch (err: any) {
+      console.error("[document-drafts POST] failed:", err);
+      res.status(500).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
+
+  /** DELETE /api/document-drafts/:issueKey?template_type=...
+   *  完成 PDF を発行した後等に明示的に呼んで draft を消す。
+   *  存在しなくても 200 で OK (冪等)。
+   */
+  app.delete("/api/document-drafts/:issueKey", requirePortalSecret, async (req, res) => {
+    try {
+      const issueKey = String(req.params.issueKey || "").trim();
+      const templateType = String(req.query.template_type || "").trim();
+      if (!issueKey || !templateType) {
+        return res.status(400).json({
+          ok: false,
+          error: "issueKey (path) and template_type (query) are required",
+        });
+      }
+      const r = await query(
+        `DELETE FROM document_drafts
+          WHERE issue_key = $1 AND template_type = $2`,
+        [issueKey, templateType]
+      );
+      res.json({ ok: true, deleted: r.rowCount || 0 });
+    } catch (err: any) {
+      console.error("[document-drafts DELETE] failed:", err);
+      res.status(500).json({ ok: false, error: String(err?.message || err) });
+    }
+  });
+
   app.get("/api/documents/search", async (req, res) => {
     try {
       const q = String(req.query.q || "").trim();

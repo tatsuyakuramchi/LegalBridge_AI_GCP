@@ -189,6 +189,73 @@ export function DocumentEditorPage() {
   }, [fromPendingId, reopenId])
 
   // ---- Helpers --------------------------------------------------------
+
+  /**
+   * Phase 22.21.79: form_data を DB に一時保存する (document_drafts テーブル)。
+   *
+   * 呼び出しタイミング:
+   *   1. 「🔒 閲覧モードに戻す」/ 「✎ 編集を開始」 ボタン押下時 (両方向)
+   *   2. 必要なら手動「一時保存」ボタンからも (未実装、将来拡張)
+   *
+   * 失敗しても UX は止めない (notification 出して継続)。localStorage の
+   * draft とは独立 (両方走らせて二重に保護)。
+   */
+  const saveDraftToServer = React.useCallback(
+    async (silent = false): Promise<boolean> => {
+      if (!selectedIssue || !selectedTemplate) return false
+      // 中身が空 (or 制御フラグのみ) なら保存しない
+      const hasContent = Object.keys(formData || {}).some(
+        (k) => !k.startsWith("__") && (formData as any)[k] != null && (formData as any)[k] !== ""
+      )
+      if (!hasContent) return false
+      try {
+        const res = await fetch("/api/document-drafts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            issue_key: selectedIssue,
+            template_type: selectedTemplate,
+            form_data: formData,
+          }),
+        })
+        const data = await res.json().catch(() => ({}))
+        if (!res.ok || data?.ok === false) {
+          throw new Error(data?.error || `HTTP ${res.status}`)
+        }
+        if (!silent) {
+          showNotification(`📄 Draft saved (${selectedIssue})`, "success")
+        }
+        return true
+      } catch (e: any) {
+        // localStorage には別 effect で書かれ続けるので致命的ではない
+        console.warn("[saveDraftToServer] failed:", e)
+        if (!silent) {
+          showNotification(
+            `Draft 保存失敗 (localStorage には保存済): ${e?.message || e}`,
+            "error"
+          )
+        }
+        return false
+      }
+    },
+    [selectedIssue, selectedTemplate, formData, showNotification]
+  )
+
+  /**
+   * Phase 22.21.79: 閲覧 ⇄ 編集モード切替時に draft 保存をはさむ。
+   * setIsReadOnly を直接呼ばずにこちらを使う。
+   */
+  const toggleReadOnly = React.useCallback(
+    async (nextReadOnly: boolean) => {
+      // 編集モードから抜けるとき (= 閲覧モードへ) は確実に保存
+      // 編集モードに入るとき (= 閲覧モードから抜ける) も念のため保存
+      //   (DBSYNC で過去 draft を上書き読み込みする前に現在の状態を残しておく)
+      await saveDraftToServer(/* silent */ false)
+      setIsReadOnly(nextReadOnly)
+    },
+    [saveDraftToServer]
+  )
+
   const syncFromDatabase = React.useCallback(
     async (issueKeyToUse?: string) => {
       const key = issueKeyToUse || selectedIssue
@@ -197,6 +264,28 @@ export function DocumentEditorPage() {
         return
       }
       const issue = issues.find((i) => i.issueKey === key)
+
+      // Phase 22.21.79: まず document_drafts (一時保存) を確認。
+      //   draft があれば form-context より優先して読み込む (= 直近の編集状態を復元)。
+      //   無ければ従来通り backlog form-context へフォールバック。
+      let draft: any = null
+      if (selectedTemplate) {
+        try {
+          const dRes = await fetch(
+            `/api/document-drafts/${encodeURIComponent(key)}?template_type=${encodeURIComponent(
+              selectedTemplate
+            )}`
+          )
+          if (dRes.ok) {
+            const d = await dRes.json().catch(() => ({}))
+            if (d?.ok && d?.draft) draft = d.draft
+          }
+          // 404 は draft 無し = 正常系。それ以外のエラーも警告のみで継続。
+        } catch (e) {
+          console.warn("[syncFromDatabase] draft lookup failed:", e)
+        }
+      }
+
       try {
         const res = await fetch(
           `/api/backlog/issues/${key}/form-context?template=${selectedTemplate}`
@@ -214,14 +303,32 @@ export function DocumentEditorPage() {
         //   そうしないと直前の課題で入力したフィールドがリーク。
         //   __local_* / __pdf_pending 等の制御フラグは ここでは入れない
         //   (リセットが目的なので)。
-        setFormData({
+        // Phase 22.21.79: draft があれば context をベースに draft で上書きする。
+        //   draft は最新の編集状態 (= ユーザーが最後に入力した内容) なので、
+        //   context の自動補完値で塗りつぶされないよう draft を後にスプレッドする。
+        const base: Record<string, any> = {
           基本契約名: issue?.summary || "",
           remarks: issue?.description || "",
           ...context,
-        })
+        }
+        if (draft?.form_data && typeof draft.form_data === "object") {
+          Object.assign(base, draft.form_data)
+          const when = draft.updated_at
+            ? new Date(draft.updated_at).toLocaleString("ja-JP")
+            : ""
+          showNotification(
+            `📄 Draft restored from server (${when})`,
+            "success"
+          )
+        }
+        setFormData(base)
       } catch (e) {
         setPreviousDocument(null)
-        if (issue) {
+        if (draft?.form_data && typeof draft.form_data === "object") {
+          // form-context 取得失敗時も draft があれば最低限復元する
+          setFormData(draft.form_data)
+          showNotification(`📄 Draft restored (form-context 取得失敗)`, "success")
+        } else if (issue) {
           setFormData({
             基本契約名: issue.summary || "",
             remarks: issue.description || "",
@@ -894,7 +1001,12 @@ export function DocumentEditorPage() {
                   <Eye />
                   {isPreviewVisible ? "Close preview" : "Split preview"}
                 </Button>
-                <Button variant="outline" size="sm" onClick={() => syncFromDatabase()}>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => syncFromDatabase()}
+                  title="DB から最新状態を取得 (一時保存された draft があれば優先 / 無ければ Backlog form-context)"
+                >
                   <Database />
                   DB Sync
                 </Button>
@@ -1039,9 +1151,9 @@ export function DocumentEditorPage() {
                         </div>
                         <button
                           type="button"
-                          onClick={() => setIsReadOnly(false)}
+                          onClick={() => toggleReadOnly(false)}
                           className="flex-shrink-0 text-[10px] font-mono font-bold uppercase tracking-wider bg-foreground text-background hover:opacity-90 px-3 py-1.5 rounded-sm"
-                          title="フォームを編集可能にする"
+                          title="フォームを編集可能にする (現在の内容を一時保存してから切り替え)"
                         >
                           ✎ 編集を開始
                         </button>
@@ -1052,14 +1164,15 @@ export function DocumentEditorPage() {
                         <div className="text-[11px] font-mono text-emerald-900">
                           <span className="font-bold">✎ 編集モード</span>
                           <span className="ml-2 text-emerald-800/70">
-                            変更は draft として localStorage に自動保存
+                            変更は draft として localStorage + DB
+                            (モード切替時) に保存
                           </span>
                         </div>
                         <button
                           type="button"
-                          onClick={() => setIsReadOnly(true)}
+                          onClick={() => toggleReadOnly(true)}
                           className="flex-shrink-0 text-[10px] font-mono uppercase tracking-wider border border-emerald-700/40 bg-white hover:bg-emerald-100 text-emerald-800 px-2 py-1 rounded-sm"
-                          title="閲覧モードに戻す"
+                          title="閲覧モードに戻す (現在の内容を DB に一時保存)"
                         >
                           🔒 閲覧モードに戻す
                         </button>

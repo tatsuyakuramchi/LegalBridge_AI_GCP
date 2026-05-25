@@ -1385,6 +1385,29 @@ export async function initDb() {
         END
       WHERE template_type = 'sales_master_buyer'
         AND form_data ? 'CURE_PERIOD_DAYS';`,
+
+    // -----------------------------------------------------------------
+    // Phase 22.21.79: document_drafts — 文書作成中の form_data 一時保存。
+    //   admin-ui DocumentEditorPage が「閲覧モード ⇄ 編集モード」を
+    //   トグルしたタイミング、および「DBSYNC」ボタン押下で参照する。
+    //   issue_key + template_type の組で UNIQUE (1 課題 × 1 テンプレ あたり
+    //   最新 1 件のみ保持、UPSERT で上書き)。
+    //   localStorage の draft と違って:
+    //     - 別端末 / 別ブラウザでも編集を引き継げる
+    //     - 退職者の引き継ぎや、IT メンバーが状況を見るのが容易
+    //   完成 PDF 発行後の draft 自動削除は今回は実装しない (履歴として残す)。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS document_drafts (
+        id SERIAL PRIMARY KEY,
+        issue_key TEXT NOT NULL,
+        template_type TEXT NOT NULL,
+        form_data JSONB NOT NULL DEFAULT '{}'::jsonb,
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_by TEXT,
+        UNIQUE (issue_key, template_type)
+     );`,
+    `CREATE INDEX IF NOT EXISTS idx_document_drafts_issue
+       ON document_drafts(issue_key);`,
   ];
 
   try {
