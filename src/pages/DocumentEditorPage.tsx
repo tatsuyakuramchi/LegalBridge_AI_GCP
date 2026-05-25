@@ -56,8 +56,8 @@ export function DocumentEditorPage() {
     refreshAssets, // Phase 22.21.32: 文書生成後に Archive リストを最新化
   } = useAppData()
 
-  // Phase 22.21.92: royalty_statement 向け — license カテゴリかつ
-  // financial_conditions を持つ契約マスタ一覧 (Legal Asset Search モーダルで表示)。
+  // Phase 22.21.92: テンプレート別 Master 検索リスト
+  // royalty_statement: license + financial_conditions あり
   const royaltyLicenseMasters = (allContracts || []).filter(
     (c: any) =>
       String(c.contract_category || '').toLowerCase() === 'license' &&
@@ -66,6 +66,12 @@ export function DocumentEditorPage() {
         c.record_type === 'license_condition') &&
       Array.isArray(c.financial_conditions) &&
       c.financial_conditions.length > 0
+  )
+  // inspection_certificate: service カテゴリの有効な契約マスタ
+  const inspectionServiceMasters = (allContracts || []).filter(
+    (c: any) =>
+      String(c.contract_category || '').toLowerCase() === 'service' &&
+      c.is_active !== false
   )
 
   // Phase 17g: ページ起動時に最新の Backlog 課題を再取得。
@@ -1387,6 +1393,8 @@ export function DocumentEditorPage() {
             <SheetTitle>
               {selectedTemplate === "royalty_statement"
                 ? "▍ 契約マスタ検索 (利用許諾料計算書)"
+                : selectedTemplate?.startsWith("inspection_certificate")
+                ? "▍ 契約マスタ検索 (検収書)"
                 : "▍ Legal asset search"}
             </SheetTitle>
           </SheetHeader>
@@ -1395,7 +1403,8 @@ export function DocumentEditorPage() {
               type="text"
               autoFocus
               placeholder={
-                selectedTemplate === "royalty_statement"
+                selectedTemplate === "royalty_statement" ||
+                selectedTemplate?.startsWith("inspection_certificate")
                   ? "契約タイトル / 取引先名 / 文書番号…"
                   : "Contract no. / ledger ID / partner name…"
               }
@@ -1403,25 +1412,77 @@ export function DocumentEditorPage() {
               onChange={(e) => setAssetSearch(e.target.value)}
             />
 
-            {/* ── royalty_statement モード: 契約マスタ (capability) を表示 ── */}
-            {selectedTemplate === "royalty_statement" && !assetPickerCallback ? (
-              <div className="border border-border rounded-md overflow-hidden">
-                <div className="grid grid-cols-[1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
-                  <span>契約マスタ</span>
-                  <span>選択</span>
-                </div>
-                <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
-                  {royaltyLicenseMasters
-                    .filter((c: any) => {
-                      if (!assetSearch.trim()) return true
-                      const q = assetSearch.toLowerCase()
-                      return (
-                        (c.contract_title || '').toLowerCase().includes(q) ||
-                        (c.document_number || '').toLowerCase().includes(q) ||
-                        (c.vendor_name || '').toLowerCase().includes(q)
-                      )
-                    })
-                    .map((c: any) => (
+            {/* ヘルパー: 契約マスタ行リスト (royalty / inspection 共通レイアウト) */}
+            {(() => {
+              // どの契約マスタリストを使うか決定
+              const isMasterMode =
+                !assetPickerCallback &&
+                (selectedTemplate === "royalty_statement" ||
+                  selectedTemplate?.startsWith("inspection_certificate"))
+
+              if (!isMasterMode) return null   // 通常モードは下の else ブロックが担当
+
+              const masterList =
+                selectedTemplate === "royalty_statement"
+                  ? royaltyLicenseMasters
+                  : inspectionServiceMasters
+
+              const filtered = masterList.filter((c: any) => {
+                if (!assetSearch.trim()) return true
+                const q = assetSearch.toLowerCase()
+                return (
+                  (c.contract_title || '').toLowerCase().includes(q) ||
+                  (c.document_number || '').toLowerCase().includes(q) ||
+                  (c.vendor_name || '').toLowerCase().includes(q)
+                )
+              })
+
+              const handleSelect = (c: any) => {
+                if (selectedTemplate === "royalty_statement") {
+                  // selectMasterContract 相当: 全フィールドを一括 auto-fill
+                  const ledger = c.ledger_code
+                    ? (allLedgers || []).find((l: any) => l.ledger_code === c.ledger_code)
+                    : null
+                  const firstCond = (c.financial_conditions || [])[0]
+                  setFormData((prev: any) => ({
+                    ...prev,
+                    selected_master_contract_id: Number(c.id),
+                    licensor: c.vendor_name || prev.licensor || '',
+                    licensee: companyProfile?.name || prev.licensee || '',
+                    originalWork:
+                      ledger?.title || c.original_work || c.work_name || prev.originalWork || '',
+                    financial_conditions: (c.financial_conditions as any[]).map(
+                      (fc: any) => ({ ...fc, source: 'capability' })
+                    ),
+                    license_contract_id: 0,
+                    license_financial_condition_id: 0,
+                    capability_financial_condition_id: 0,
+                    currency: firstCond?.currency || prev.currency || 'JPY',
+                  }))
+                } else {
+                  // inspection_certificate: 受託者 (counterparty) を auto-fill
+                  setFormData((prev: any) => ({
+                    ...prev,
+                    counterparty: c.vendor_name || prev.counterparty || '',
+                    // 基本契約番号 / 参照番号として document_number を保持
+                    MASTER_CONTRACT_REF:
+                      c.document_number
+                        ? `${c.contract_title || ''} (${c.document_number})`.trim()
+                        : c.contract_title || prev.MASTER_CONTRACT_REF || '',
+                  }))
+                }
+                setAssetSearch('')
+                setIsAssetPickerOpen(false)
+              }
+
+              return (
+                <div className="border border-border rounded-md overflow-hidden">
+                  <div className="grid grid-cols-[1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                    <span>契約マスタ</span>
+                    <span>選択</span>
+                  </div>
+                  <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
+                    {filtered.map((c: any) => (
                       <div
                         key={`master-${c.id}`}
                         className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors"
@@ -1432,71 +1493,46 @@ export function DocumentEditorPage() {
                           </p>
                           <p className="text-[10px] font-mono text-muted-foreground truncate">
                             {c.vendor_name && <span>{c.vendor_name} · </span>}
-                            {c.document_number && <span className="opacity-70">{c.document_number} · </span>}
-                            <span className="opacity-60">条件 {c.financial_conditions?.length ?? 0} 件</span>
+                            {c.document_number && (
+                              <span className="opacity-70">{c.document_number} · </span>
+                            )}
+                            <span className="opacity-60 uppercase">
+                              {c.record_type?.replace(/_/g, ' ')}
+                            </span>
                           </p>
                         </div>
                         <Button
                           size="xs"
                           variant="outline"
-                          onClick={() => {
-                            // selectMasterContract と同等のロジックをここで実行。
-                            // DocumentForm 内の関数は scope 外なので複製して適用する。
-                            const ledger = c.ledger_code
-                              ? (allLedgers || []).find((l: any) => l.ledger_code === c.ledger_code)
-                              : null
-                            const firstCond = (c.financial_conditions || [])[0]
-                            setFormData((prev: any) => ({
-                              ...prev,
-                              selected_master_contract_id: Number(c.id),
-                              licensor: c.vendor_name || prev.licensor || '',
-                              licensee: companyProfile?.name || prev.licensee || '',
-                              originalWork:
-                                ledger?.title ||
-                                c.original_work ||
-                                c.work_name ||
-                                prev.originalWork ||
-                                '',
-                              financial_conditions: (c.financial_conditions as any[]).map(
-                                (fc: any) => ({ ...fc, source: 'capability' })
-                              ),
-                              license_contract_id: 0,
-                              license_financial_condition_id: 0,
-                              capability_financial_condition_id: 0,
-                              currency: firstCond?.currency || prev.currency || 'JPY',
-                            }))
-                            setAssetSearch('')
-                            setIsAssetPickerOpen(false)
-                          }}
+                          onClick={() => handleSelect(c)}
                         >
                           選択
                         </Button>
                       </div>
                     ))}
-                  {royaltyLicenseMasters.length === 0 && (
-                    <div className="p-10 text-center text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
-                      金銭条件を持つライセンス契約マスタがありません。
-                      マスタ &gt; 契約 で登録してください。
-                    </div>
-                  )}
-                  {royaltyLicenseMasters.length > 0 &&
-                    royaltyLicenseMasters.filter((c: any) => {
-                      if (!assetSearch.trim()) return true
-                      const q = assetSearch.toLowerCase()
-                      return (
-                        (c.contract_title || '').toLowerCase().includes(q) ||
-                        (c.document_number || '').toLowerCase().includes(q) ||
-                        (c.vendor_name || '').toLowerCase().includes(q)
-                      )
-                    }).length === 0 && (
-                    <div className="p-10 text-center text-[10px] font-mono text-muted-foreground italic">
-                      「{assetSearch}」に一致する契約マスタがありません
-                    </div>
-                  )}
+                    {masterList.length === 0 && (
+                      <div className="p-10 text-center text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
+                        {selectedTemplate === "royalty_statement"
+                          ? "金銭条件を持つライセンス契約マスタがありません"
+                          : "サービス契約マスタがありません"}
+                        <br />
+                        マスタ &gt; 契約 で登録してください
+                      </div>
+                    )}
+                    {masterList.length > 0 && filtered.length === 0 && (
+                      <div className="p-10 text-center text-[10px] font-mono text-muted-foreground italic">
+                        「{assetSearch}」に一致する契約マスタがありません
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ) : (
-              /* ── 通常モード: ExternalAsset (Archive) を表示 ── */
+              )
+            })()}
+
+            {/* ── 通常モード: ExternalAsset (Archive) を表示 ── */}
+            {(assetPickerCallback ||
+              (selectedTemplate !== "royalty_statement" &&
+                !selectedTemplate?.startsWith("inspection_certificate"))) && (
               <div className="border border-border rounded-md overflow-hidden">
                 <div className="grid grid-cols-[120px_1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
                   <span>Identity</span>
