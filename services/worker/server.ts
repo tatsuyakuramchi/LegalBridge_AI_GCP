@@ -3547,6 +3547,91 @@ ${details}
     return await getNewDocumentNumber(numberingType);
   }
 
+  /**
+   * Phase 22.21.91: 契約マスタの金銭条件 (capability_financial_conditions) を
+   *   配列で受け取って upsert する。license_financial_conditions の
+   *   upsert ロジック (server.ts /api/imports/license-contract) と同等。
+   *
+   *   - raw が undefined → 何もしない (既存条件を保持)
+   *   - raw が null or [] → 全件削除
+   *   - それ以外 → 配列内の condition_no で upsert、含まれていない condition_no
+   *               を削除 (= ユーザーが行を消したら DB からも消える)
+   */
+  async function upsertCapabilityFinancialConditions(
+    capabilityId: number,
+    raw: any
+  ): Promise<void> {
+    if (raw === undefined) return;
+    const conditions: Array<any> = Array.isArray(raw) ? raw : [];
+    const keepNos = conditions
+      .map((c) => Number(c?.condition_no))
+      .filter((n) => Number.isFinite(n) && n >= 1);
+    try {
+      if (keepNos.length === 0) {
+        await query(
+          `DELETE FROM capability_financial_conditions WHERE capability_id = $1`,
+          [capabilityId]
+        );
+      } else {
+        await query(
+          `DELETE FROM capability_financial_conditions
+            WHERE capability_id = $1
+              AND condition_no NOT IN (${keepNos
+                .map((_, i) => `$${i + 2}`)
+                .join(",")})`,
+          [capabilityId, ...keepNos]
+        );
+      }
+    } catch (delErr) {
+      console.warn(
+        "[capability_financial_conditions] prune failed:",
+        delErr
+      );
+    }
+    for (const c of conditions) {
+      const condNo = Number(c?.condition_no);
+      if (!Number.isFinite(condNo) || condNo < 1) continue;
+      await query(
+        `INSERT INTO capability_financial_conditions (
+           capability_id, condition_no,
+           region_language_label, calc_method, rate_pct,
+           base_price_label, calc_period, calc_period_kind, calc_period_close_month,
+           currency, formula_text, payment_terms, mg_amount, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+         ON CONFLICT (capability_id, condition_no) DO UPDATE SET
+           region_language_label   = EXCLUDED.region_language_label,
+           calc_method             = EXCLUDED.calc_method,
+           rate_pct                = EXCLUDED.rate_pct,
+           base_price_label        = EXCLUDED.base_price_label,
+           calc_period             = EXCLUDED.calc_period,
+           calc_period_kind        = EXCLUDED.calc_period_kind,
+           calc_period_close_month = EXCLUDED.calc_period_close_month,
+           currency                = EXCLUDED.currency,
+           formula_text            = EXCLUDED.formula_text,
+           payment_terms           = EXCLUDED.payment_terms,
+           mg_amount               = EXCLUDED.mg_amount,
+           updated_at              = CURRENT_TIMESTAMP`,
+        [
+          capabilityId,
+          condNo,
+          c.region_language_label || null,
+          c.calc_method || null,
+          c.rate_pct != null && c.rate_pct !== "" ? Number(c.rate_pct) : null,
+          c.base_price_label || null,
+          c.calc_period || null,
+          c.calc_period_kind || null,
+          c.calc_period_close_month != null && c.calc_period_close_month !== ""
+            ? Number(c.calc_period_close_month)
+            : null,
+          c.currency || "JPY",
+          c.formula_text || null,
+          c.payment_terms || null,
+          c.mg_amount != null && c.mg_amount !== "" ? Number(c.mg_amount) : 0,
+        ]
+      );
+    }
+  }
+
   app.post("/api/master/contracts", express.json(), async (req, res) => {
     const {
       vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -3562,6 +3647,8 @@ ${details}
       regenerate_document_number,
       // Phase 22.21.52: 原作 (ledger) 紐付け — ILT 採番に使う
       ledger_code,
+      // Phase 22.21.91: ライセンス系の金銭条件 (条件 1..3 配列)
+      financial_conditions,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -3603,9 +3690,15 @@ ${details}
           ledger,
         ]
       );
+      const newId = Number(result.rows[0].id);
+      // Phase 22.21.91: 金銭条件 (条件 1..3) を子テーブルに upsert。
+      //   ライセンス系の単独/個別契約のみで意味を持つが、ここでは
+      //   contract_category に依らず req.body.financial_conditions が
+      //   配列で来たらそのまま書く (フロントが gating を担当)。
+      await upsertCapabilityFinancialConditions(newId, financial_conditions);
       res.json({
         success: true,
-        id: result.rows[0].id,
+        id: newId,
         document_number: result.rows[0].document_number,
         document_number_auto:
           !String(document_number || "").trim() ||
@@ -3633,6 +3726,8 @@ ${details}
       regenerate_document_number,
       // Phase 22.21.52: 原作 (ledger) 紐付け
       ledger_code,
+      // Phase 22.21.91: 金銭条件 (条件 1..3 配列)
+      financial_conditions,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -3688,6 +3783,11 @@ ${details}
           id,
         ]
       );
+
+      // Phase 22.21.91: 金銭条件 (条件 1..3) を子テーブルに upsert。
+      //   送られてこなければ (= undefined) 既存条件は触らない。明示的に [] が
+      //   来た場合は全件削除する。
+      await upsertCapabilityFinancialConditions(Number(id), financial_conditions);
 
       // Phase 22.21.60: 旧 → 新 で document_number が変わったら、
       //   archive (documents) の対応 row も同じ番号にリネームする。
@@ -9842,6 +9942,13 @@ ${details}
         quantity: Number(req.body.quantity),
         sample_quantity: Number(req.body.sample_quantity) || 0,
         tax_rate: req.body.tax_rate != null ? Number(req.body.tax_rate) : undefined,
+        // Phase 22.21.91: 契約マスタ (capability) ベースの preview を許容。
+        //   license_financial_condition_id が 0/null で capability 側 id があれば
+        //   capability_financial_conditions から条件を引く ("what-if" preview)。
+        capability_financial_condition_id:
+          req.body.capability_financial_condition_id != null
+            ? Number(req.body.capability_financial_condition_id)
+            : undefined,
       });
       res.json({ ok: true, ...result });
     } catch (error) {

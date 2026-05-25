@@ -2090,17 +2090,117 @@ async function startServer() {
 
   app.get("/api/master/contracts", async (_req, res) => {
     try {
-      const result = await query(
-        `SELECT cc.*, v.vendor_name
-         FROM contract_capabilities cc
-         LEFT JOIN vendors v ON cc.vendor_id = v.id
-         ORDER BY cc.id DESC`
-      );
+      // Phase 22.21.91: 金銭条件 (capability_financial_conditions) を
+      //   JSON 集約で同梱。worker 未デプロイで テーブルが無い環境では
+      //   42P01 を握り潰してフォールバック SELECT に切り替える。
+      let result: any;
+      try {
+        result = await query(
+          `SELECT cc.*, v.vendor_name,
+                  COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cfc.id,
+                                 'condition_no', cfc.condition_no,
+                                 'region_language_label', cfc.region_language_label,
+                                 'calc_method', cfc.calc_method,
+                                 'rate_pct', cfc.rate_pct,
+                                 'base_price_label', cfc.base_price_label,
+                                 'calc_period', cfc.calc_period,
+                                 'calc_period_kind', cfc.calc_period_kind,
+                                 'calc_period_close_month', cfc.calc_period_close_month,
+                                 'currency', cfc.currency,
+                                 'formula_text', cfc.formula_text,
+                                 'payment_terms', cfc.payment_terms,
+                                 'mg_amount', cfc.mg_amount
+                               )
+                               ORDER BY cfc.condition_no ASC
+                             )
+                        FROM capability_financial_conditions cfc
+                       WHERE cfc.capability_id = cc.id
+                    ),
+                    '[]'::json
+                  ) AS financial_conditions
+           FROM contract_capabilities cc
+           LEFT JOIN vendors v ON cc.vendor_id = v.id
+           ORDER BY cc.id DESC`
+        );
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          console.warn(
+            "[/api/master/contracts] capability_financial_conditions テーブル未追加。" +
+              "worker を再デプロイして migration を実行してください。フォールバックで空配列を返します。"
+          );
+          result = await query(
+            `SELECT cc.*, v.vendor_name, '[]'::json AS financial_conditions
+             FROM contract_capabilities cc
+             LEFT JOIN vendors v ON cc.vendor_id = v.id
+             ORDER BY cc.id DESC`
+          );
+        } else {
+          throw err;
+        }
+      }
       res.json(result.rows);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
   });
+
+  // Phase 22.21.91: 契約マスタ (contract_capabilities) の金銭条件だけを返す
+  //   読み取り専用エンドポイント。利用許諾計算書フォームから master を
+  //   選んだときに条件 1..3 を引いて financial_conditions[] に流し込む用途。
+  //   応答 shape は /api/license-contracts/:id/financial-conditions と
+  //   同じになるよう source='capability' を付与。
+  app.get(
+    "/api/master/contracts/:id/financial-conditions",
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id) || id <= 0) {
+          return res.status(400).json({ error: "invalid id" });
+        }
+        const result = await query(
+          `SELECT id, condition_no, region_language_label, calc_method,
+                  rate_pct, base_price_label, calc_period, calc_period_kind,
+                  calc_period_close_month, currency, formula_text,
+                  payment_terms, mg_amount
+             FROM capability_financial_conditions
+            WHERE capability_id = $1
+            ORDER BY condition_no ASC`,
+          [id]
+        );
+        // source='capability' をつけることで、フロント側の radio handler が
+        // license_financial_condition_id ではなく capability_financial_condition_id
+        // を formData にセットできるようにする。
+        res.json(
+          result.rows.map((r: any) => ({
+            ...r,
+            id: Number(r.id),
+            condition_no: Number(r.condition_no),
+            rate_pct: r.rate_pct != null ? Number(r.rate_pct) : null,
+            mg_amount: r.mg_amount != null ? Number(r.mg_amount) : 0,
+            calc_period_close_month:
+              r.calc_period_close_month != null
+                ? Number(r.calc_period_close_month)
+                : null,
+            source: "capability",
+          }))
+        );
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          // テーブル未追加 (worker 未デプロイ) なら空で返す
+          return res.json([]);
+        }
+        console.error(
+          "/api/master/contracts/:id/financial-conditions failed:",
+          err
+        );
+        res.status(500).json({ error: String(err) });
+      }
+    }
+  );
 
   // Phase 22.18: 原作 (ledgers) + 配下の素材 (materials) を 1 つの payload で返す。
   //   worker と同じ shape を出力するため、worker 未デプロイ環境では undefined_table

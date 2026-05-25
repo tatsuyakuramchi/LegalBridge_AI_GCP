@@ -140,7 +140,30 @@ const empty = {
   // Phase 22.21.52: 原作 (ledger) 紐付け。ライセンス系の 個別/単独 契約で
   // 設定すると、LIC-{ledger_code}-ILT-NNNN 形式で採番される。
   ledger_code: "",
+  // Phase 22.21.91: 金銭条件 (ライセンス系の単独/個別契約で「個別利用許諾条件書」
+  //   と同形の条件配列)。条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト。
+  //   後段の「利用許諾計算書」フォームから自動補完用に参照される。
+  financial_conditions: [] as any[],
 }
+
+// Phase 22.21.91: 金銭条件エディタで使う定数。
+const COND_LABELS: Record<number, string> = {
+  1: "条件 1: 自社製造",
+  2: "条件 2: サブライセンス",
+  3: "条件 3: プロダクトアウト",
+}
+const CALC_METHOD_OPTIONS = [
+  { value: "ROYALTY", label: "ロイヤリティ" },
+  { value: "FIXED", label: "固定額" },
+  { value: "SUBSCRIPTION", label: "サブスク" },
+] as const
+const PERIOD_KIND_OPTIONS = [
+  { value: "MANUFACTURING", label: "製造ごと" },
+  { value: "MONTHLY", label: "月次" },
+  { value: "QUARTERLY", label: "四半期" },
+  { value: "SEMIANNUAL", label: "半期" },
+  { value: "ANNUAL", label: "年次" },
+] as const
 
 export function ContractsPanel() {
   const { contracts, vendors, ledgers, refreshContracts, showNotification } = useAppData()
@@ -801,6 +824,25 @@ export function ContractsPanel() {
                 onChange={(e) => set({ language: e.target.value })}
               />
             </Field>
+            {/* Phase 22.21.91: 金銭条件 (ライセンス系のみ表示)。
+                個別利用許諾条件書と同じ shape で条件 1..3 を入力できる。
+                後段の利用許諾計算書フォームから defaults として参照される。 */}
+            {String(data?.contract_category || "").toLowerCase() === "license" && (
+              <Field
+                label="金銭条件 (利用許諾計算書 自動補完用)"
+                className="col-span-2 md:col-span-3"
+              >
+                <FinancialConditionsEditor
+                  value={
+                    Array.isArray(data?.financial_conditions)
+                      ? data.financial_conditions
+                      : []
+                  }
+                  onChange={(v) => set({ financial_conditions: v })}
+                  recordType={String(data?.record_type || "")}
+                />
+              </Field>
+            )}
             <Field label="文書 URL" className="col-span-2 md:col-span-3">
               <Input
                 value={data?.document_url || ""}
@@ -836,6 +878,245 @@ function Field({
     <div className={`space-y-1 ${className || ""}`}>
       <Label>{label}</Label>
       {children}
+    </div>
+  )
+}
+
+/**
+ * Phase 22.21.91: 契約マスタの金銭条件エディタ。
+ *
+ *   ライセンス系 (contract_category=license) の単独/個別契約で、
+ *   個別利用許諾条件書と同じ shape (1..3 条件) の金銭条件を入力できる。
+ *   後段の「利用許諾計算書」フォームから defaults として参照される。
+ *
+ *   - 条件は最大 3 行 (condition_no: 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト)
+ *   - 行追加時は未使用の最小番号を自動採番
+ *   - 行削除は完全削除 (保存時に DB 側からも消える)
+ */
+function FinancialConditionsEditor({
+  value,
+  onChange,
+  recordType,
+}: {
+  value: any[]
+  onChange: (v: any[]) => void
+  recordType: string
+}) {
+  const usedNos = new Set(value.map((c) => Number(c.condition_no)))
+  const nextNo = [1, 2, 3].find((n) => !usedNos.has(n))
+
+  // 基本契約 (master_contract) で金銭条件を入れる意味は薄いので軽い警告を出す。
+  // ただし入力自体は許す (将来の柔軟性のため)。
+  const isIndividualLike =
+    recordType === "individual_contract" ||
+    recordType === "standalone_contract" ||
+    recordType === "license_condition"
+
+  const update = (idx: number, patch: any) => {
+    onChange(value.map((c, i) => (i === idx ? { ...c, ...patch } : c)))
+  }
+  const add = () => {
+    if (!nextNo) return
+    onChange([
+      ...value,
+      {
+        condition_no: nextNo,
+        calc_method: "ROYALTY",
+        currency: "JPY",
+        rate_pct: "",
+        mg_amount: "",
+        region_language_label: "",
+        base_price_label: "上代",
+        calc_period: "",
+        calc_period_kind: "",
+        calc_period_close_month: "",
+        formula_text: "",
+        payment_terms: "",
+      },
+    ])
+  }
+  const remove = (idx: number) => {
+    onChange(value.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div className="space-y-3">
+      {!isIndividualLike && value.length > 0 && (
+        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+          ⚠ 「基本契約」では金銭条件は通常使われません。単独契約 / 個別契約への
+          切替を検討してください。
+        </div>
+      )}
+      {value.length === 0 && (
+        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+          金銭条件が未設定です。「条件を追加」で 1〜3 件まで登録できます。
+          単独契約/個別契約で入力しておくと、利用許諾計算書 を作成するときに
+          自動補完されます。
+        </div>
+      )}
+      {value.map((c, idx) => (
+        <div
+          key={`cond-${idx}`}
+          className="border border-border rounded-sm p-3 bg-muted/30 space-y-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant="info" className="h-5">
+              {COND_LABELS[Number(c.condition_no)] ||
+                `条件 ${c.condition_no}`}
+            </Badge>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="destructive"
+              onClick={() => remove(idx)}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">区分</Label>
+              <NativeSelect
+                value={String(c.condition_no || "")}
+                onChange={(e) =>
+                  update(idx, { condition_no: Number(e.target.value) })
+                }
+              >
+                <option value="1">1: 自社製造</option>
+                <option value="2">2: サブライセンス</option>
+                <option value="3">3: プロダクトアウト</option>
+              </NativeSelect>
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">計算方法</Label>
+              <NativeSelect
+                value={c.calc_method || ""}
+                onChange={(e) => update(idx, { calc_method: e.target.value })}
+              >
+                <option value="">—</option>
+                {CALC_METHOD_OPTIONS.map((m) => (
+                  <option key={m.value} value={m.value}>
+                    {m.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">料率 (%)</Label>
+              <Input
+                type="number"
+                step="0.0001"
+                min="0"
+                value={c.rate_pct ?? ""}
+                onChange={(e) => update(idx, { rate_pct: e.target.value })}
+                placeholder="例: 5.0"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">通貨</Label>
+              <Input
+                value={c.currency || "JPY"}
+                onChange={(e) => update(idx, { currency: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">基準価格ラベル</Label>
+              <Input
+                value={c.base_price_label || ""}
+                onChange={(e) =>
+                  update(idx, { base_price_label: e.target.value })
+                }
+                placeholder="例: 上代 (MSRP)"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">計算期間 種別</Label>
+              <NativeSelect
+                value={c.calc_period_kind || ""}
+                onChange={(e) =>
+                  update(idx, { calc_period_kind: e.target.value })
+                }
+              >
+                <option value="">—</option>
+                {PERIOD_KIND_OPTIONS.map((p) => (
+                  <option key={p.value} value={p.value}>
+                    {p.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">締め月 (1-12)</Label>
+              <Input
+                type="number"
+                min="1"
+                max="12"
+                step="1"
+                value={c.calc_period_close_month ?? ""}
+                onChange={(e) =>
+                  update(idx, { calc_period_close_month: e.target.value })
+                }
+              />
+            </div>
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">地域・言語ラベル</Label>
+              <Input
+                value={c.region_language_label || ""}
+                onChange={(e) =>
+                  update(idx, { region_language_label: e.target.value })
+                }
+                placeholder="例: 国内・日本語"
+              />
+            </div>
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">MG (最低保証額)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={c.mg_amount ?? ""}
+                onChange={(e) => update(idx, { mg_amount: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2 md:col-span-4 space-y-0.5">
+              <Label className="text-[10px]">計算式テキスト</Label>
+              <Input
+                value={c.formula_text || ""}
+                onChange={(e) => update(idx, { formula_text: e.target.value })}
+                placeholder="例: 上代 × 5.0% × 製造数"
+              />
+            </div>
+            <div className="col-span-2 md:col-span-4 space-y-0.5">
+              <Label className="text-[10px]">支払条件</Label>
+              <textarea
+                value={c.payment_terms || ""}
+                onChange={(e) =>
+                  update(idx, { payment_terms: e.target.value })
+                }
+                rows={2}
+                className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
+                placeholder="例: 締め月翌月末払い"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center gap-2 flex-wrap">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={add}
+          disabled={!nextNo}
+        >
+          <Plus />
+          条件を追加 {nextNo ? `(条件 ${nextNo})` : "(上限)"}
+        </Button>
+        <p className="text-[10px] font-mono text-muted-foreground">
+          単独契約/個別契約で入力した条件は、利用許諾計算書 フォームで
+          contract_capability から自動補完されます。
+        </p>
+      </div>
     </div>
   )
 }

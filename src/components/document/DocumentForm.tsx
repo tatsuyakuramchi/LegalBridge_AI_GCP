@@ -1,5 +1,5 @@
 
-import React, { useMemo, useEffect } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
 import { useAppData } from '@/src/context/AppDataContext';
 import { FormSection } from './FormSection';
 import { FormField } from './FormField';
@@ -31,6 +31,8 @@ import { DocumentNumberLookup } from './DocumentNumberLookup';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 
 interface DocumentFormProps {
   templateId: string;
@@ -65,6 +67,10 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     });
     return groups;
   }, [metadata]);
+
+  // Phase 22.21.92: royalty_statement フォームの契約マスタ絞り込み検索ワード。
+  // useState はコンポーネント最上位でなければならないため、template ブロックの外で宣言。
+  const [royaltyContractSearch, setRoyaltyContractSearch] = useState('');
 
   // Phase 9c: 検収書テンプレで selectedStaff が既にあり、かつ
   // 検収者フィールドが空のときは自動で埋める (みなし同意の連絡先が
@@ -794,9 +800,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               フォーム上の formData.基本契約名 / formData.基本契約番号 を一括補完。
               ライセンス系の親契約 (license_master / 過去の individual_license_terms /
               service_master 等) を再利用するときに便利。 */}
+          {/* Phase 22.21.92: 課題キー紐づけは不要 (文書作成時に issue_key はドキュメントレコード
+              に自動記録されるため)。基本契約は契約マスタ (Master) またはアーカイブから検索して
+              補完する。includeMaster=true で contract_capabilities も横断検索。 */}
           <div className="col-span-full mb-2">
             <DocumentNumberLookup
-              label="基本契約をアーカイブから検索 (部分一致 / 空欄で最新一覧)"
+              label="基本契約をマスタ・アーカイブから検索 (部分一致 / 空欄で最新一覧)"
               placeholder="例: 株式会社X / GCT / ARC-LIC-2026-0001"
               initialQuery={formData.基本契約番号 || ''}
               filterTemplateTypes={[
@@ -807,6 +816,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 'sales_master_credit',
                 'sales_master_standard',
               ]}
+              includeMaster={true}
               onApply={(doc) => {
                 setFormData({
                   ...formData,
@@ -2256,192 +2266,278 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
   }
 
-  // Specialized Royalty Form (利用許諾料計算書, Phase 3b-5)
+  // Phase 22.21.92: 利用許諾料計算書フォームを 4 ステップ動線に再構成。
   //
-  // licensor = vendor side (IP owner), licensee = self side (Arclight).
-  // Both sections have side buttons in case the deal is inverted.
+  //   旧フォームは Backlog 課題前提で manufacturingIssueKey 等の手入力フィールドが
+  //   多く、計算結果 (MG 消化・税込総額) まで入力欄として出ていたため "何を入れれば
+  //   PDF が出るのか" が直感的でなかった。
+  //
+  //   新フォーム:
+  //     Step 1 — 契約マスタを選ぶ (license × 単独/個別) → 当事者・原作・条件をまとめて auto-fill
+  //     Step 2 — 製造内容を入力 (productName, 上代, 製造数 etc.)
+  //     Step 3 — RoyaltyPreviewPanel のライブ計算 (capability 経由)
+  //     Step 4 — 報告・支払・備考 (折りたたみ)
+  //
+  //   Backlog 系フィールド (manufacturingIssueKey / licenseIssueKey / linked_terms_number)
+  //   は完全に廃止 (Backlog は依頼管理だけに使い、数値はマスタから引く方針)。
   if (templateId === 'royalty_statement') {
-    const fillLicensorFromPartner = () => {
-      if (!activeVendor) return;
-      setFormData({
-        ...formData,
-        licensor: activeVendor.vendor_name || '',
-        VENDOR_REPRESENTATIVE_SAMA: activeVendor.vendor_rep
-          ? `${activeVendor.vendor_rep} 様`
-          : '',
-      });
-    };
-
-    const fillLicensorFromSelf = () =>
-      setFormData({
-        ...formData,
-        licensor: companyProfile?.name || '',
-      });
-
-    const fillLicenseeFromSelf = () =>
-      setFormData({
-        ...formData,
-        licensee: companyProfile?.name || '',
-      });
-
-    const fillLicenseeFromPartner = () => {
-      if (!activeVendor) return;
-      setFormData({
-        ...formData,
-        licensee: activeVendor.vendor_name || '',
-      });
-    };
-
-    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
-      <button
-        type="button"
-        onClick={onClick}
-        disabled={disabled}
-        className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
-          disabled
-            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
-            : 'border-foreground/30 text-foreground hover:bg-muted'
-        )}
-        title={disabled ? '上部で対象を選択してください' : undefined}
-      >
-        {label}
-      </button>
+    // ---- データ参照 ---------------------------------------------------
+    // 候補となる契約マスタ: license カテゴリの 単独/個別 で
+    // financial_conditions[] を持つもの。
+    const licenseMasters = (allContracts || []).filter(
+      (c: any) =>
+        String(c.contract_category || '').toLowerCase() === 'license' &&
+        (c.record_type === 'standalone_contract' ||
+          c.record_type === 'individual_contract' ||
+          c.record_type === 'license_condition') &&
+        Array.isArray(c.financial_conditions) &&
+        c.financial_conditions.length > 0
     );
 
-    const requiredIds = Object.entries(metadata.vars || {})
-      .filter(([, m]: [string, any]) => m?.required === true)
-      .map(([id]) => id);
-    const missingRequired = requiredIds.filter((id) => {
-      const v = formData[id];
-      return v === undefined || v === null || (typeof v === 'string' && v.trim() === '');
-    });
-    const renderGroup = (groupName: string) =>
-      (groupedVars[groupName] || []).map((fid) => renderField(fid));
+    // マスター絞り込み: 検索ワードで契約タイトル / 取引先名 / 文書番号をフィルタ。
+    // royaltyContractSearch は component 最上位の useState から参照。
+    const filteredMasters = royaltyContractSearch.trim()
+      ? licenseMasters.filter((c: any) => {
+          const q = royaltyContractSearch.toLowerCase();
+          return (
+            (c.contract_title || '').toLowerCase().includes(q) ||
+            (c.document_number || '').toLowerCase().includes(q) ||
+            (c.vendor_name || '').toLowerCase().includes(q)
+          );
+        })
+      : licenseMasters;
+
+    const selectedContractId = Number(formData.selected_master_contract_id) || 0;
+    const selectedContract = licenseMasters.find(
+      (c: any) => Number(c.id) === selectedContractId
+    );
+    const selectedConditionId =
+      Number(formData.capability_financial_condition_id) || 0;
+    const ledgerForContract = selectedContract?.ledger_code
+      ? (allLedgers || []).find(
+          (l: any) => l.ledger_code === selectedContract.ledger_code
+        )
+      : null;
+
+    // ---- イベントハンドラ -------------------------------------------
+    // 契約マスタを選ぶと、当事者 / 原作 / 金銭条件配列 / デフォルト通貨を
+    // 一括 auto-fill。条件選択は次のステップで radio で行う。
+    const selectMasterContract = (id: number) => {
+      const c = licenseMasters.find((x: any) => Number(x.id) === id);
+      if (!c) {
+        setFormData({
+          ...formData,
+          selected_master_contract_id: 0,
+          financial_conditions: [],
+          capability_financial_condition_id: 0,
+          license_financial_condition_id: 0,
+        });
+        return;
+      }
+      const ledger = c.ledger_code
+        ? (allLedgers || []).find((l: any) => l.ledger_code === c.ledger_code)
+        : null;
+      const firstCond = (c.financial_conditions || [])[0];
+      setFormData({
+        ...formData,
+        selected_master_contract_id: id,
+        // 当事者
+        licensor: c.vendor_name || formData.licensor || '',
+        licensee: companyProfile?.name || formData.licensee || '',
+        // 原著作物 (ledger から)
+        originalWork:
+          ledger?.title ||
+          c.original_work ||
+          c.work_name ||
+          formData.originalWork ||
+          '',
+        // 金銭条件配列 (capability 由来マーカー付き)
+        financial_conditions: (c.financial_conditions as any[]).map((fc) => ({
+          ...fc,
+          source: 'capability' as const,
+        })),
+        license_contract_id: 0,
+        license_financial_condition_id: 0,
+        capability_financial_condition_id: 0,
+        currency: firstCond?.currency || formData.currency || 'JPY',
+      });
+    };
+
+    // 金銭条件 (radio) 選択時: capability_financial_condition_id に id をセットし、
+    // PDF テンプレ用の計算系フィールドも条件から auto-fill。
+    const selectCondition = (cid: number) => {
+      const fc = selectedContract?.financial_conditions?.find(
+        (c: any) => Number(c.id) === cid
+      );
+      if (!fc) return;
+      const calcType =
+        fc.calc_method === 'SUBSCRIPTION'
+          ? 'sublicense'
+          : fc.calc_method === 'FIXED'
+          ? 'sales'
+          : 'manufacturing';
+      setFormData({
+        ...formData,
+        capability_financial_condition_id: cid,
+        license_financial_condition_id: 0,
+        calcType,
+        royaltyRatePct: fc.rate_pct != null ? String(fc.rate_pct) : '',
+        mgAmount: fc.mg_amount != null ? String(fc.mg_amount) : '',
+        currency: fc.currency || formData.currency || 'JPY',
+        paymentConditionSummary:
+          fc.payment_terms || formData.paymentConditionSummary || '',
+        // legacy PDF テンプレ用の「料率」フィールドにも反映
+        料率: fc.rate_pct != null ? String(fc.rate_pct) : formData.料率,
+      });
+    };
+
+    // 製造数 / サンプル数の変更時: 課金対象数を自動計算。
+    const updateQuantity = (patch: Record<string, any>) => {
+      const next = { ...formData, ...patch };
+      const billable = Math.max(
+        0,
+        (Number(next.quantity) || 0) - (Number(next.sampleQuantity) || 0)
+      );
+      setFormData({ ...next, billableQuantity: String(billable) });
+    };
+
+    // ---- 入力状況サマリ ---------------------------------------------
+    // 「次に何をすればいいか」を上部バナーで示す。
+    const billableQty = Math.max(
+      0,
+      (Number(formData.quantity) || 0) - (Number(formData.sampleQuantity) || 0)
+    );
+    const stepStatus = {
+      step1: selectedContract && selectedConditionId > 0,
+      step2:
+        formData.productName &&
+        Number(formData.msrpStr) > 0 &&
+        Number(formData.quantity) > 0,
+      step4: !!formData.currency,
+    };
+    const stepsDone = [stepStatus.step1, stepStatus.step2, stepStatus.step4]
+      .filter(Boolean).length;
+    const totalSteps = 3;
 
     return (
-      <div className="space-y-10">
+      <div className="space-y-6">
+        {/* 進捗バナー */}
         <div
           className={cn(
-            'flex items-center justify-between gap-3 px-4 py-2 rounded-sm border',
-            missingRequired.length === 0
+            'flex items-center justify-between gap-3 px-4 py-2.5 rounded-sm border',
+            stepsDone === totalSteps
               ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
               : 'bg-amber-50 border-amber-200 text-amber-800'
           )}
         >
           <div className="text-[11px] font-mono">
-            {missingRequired.length === 0 ? (
-              <>✓ 必須項目はすべて入力済み ({requiredIds.length} 項目)</>
+            {stepsDone === totalSteps ? (
+              <>✓ 必要な入力はすべて揃いました ({totalSteps} ステップ)</>
             ) : (
               <>
-                必須項目 {requiredIds.length - missingRequired.length} / {requiredIds.length} 入力済み
-                <span className="ml-2 text-[10px] opacity-75">
-                  未入力: {missingRequired.slice(0, 5).map((id) => metadata.vars?.[id]?.label || id).join(', ')}
-                  {missingRequired.length > 5 && ` 他 ${missingRequired.length - 5} 件`}
-                </span>
+                ステップ {stepsDone} / {totalSteps} 完了 —
+                {!stepStatus.step1 && ' 1) 契約と条件を選択'}
+                {!stepStatus.step2 && ' 2) 製品・上代・製造数を入力'}
+                {!stepStatus.step4 && ' 3) 通貨を選択'}
               </>
             )}
           </div>
+          <div className="text-[10px] font-mono opacity-70">
+            発行日: {formData.documentDate || '未設定'}
+          </div>
         </div>
 
+        {/* ─── STEP 1 ─ 契約と条件 ──────────────────────────── */}
         <FormSection
-          title="I. ヘッダ"
-          variant="default"
-          icon={<Briefcase className="w-4 h-4" />}
-          headerActions={
-            onLinkAsset && (
-              <button
-                type="button"
-                onClick={() =>
-                  onLinkAsset((asset) =>
-                    setFormData({
-                      ...formData,
-                      linked_terms_number: asset.asset_number,
-                      linked_terms_link: asset.file_link,
-                    })
-                  )
-                }
-                className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
-              >
-                <Link className="w-2 h-2" /> 個別紐付
-              </button>
-            )
-          }
-        >
-          {renderGroup('I. ヘッダ')}
-        </FormSection>
-
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          <FormSection
-            title="II. ライセンサー (取引先)"
-            variant="blue"
-            icon={<Building2 className="w-4 h-4" />}
-            headerActions={
-              <>
-                {sideButton('自社', fillLicensorFromSelf, !companyProfile)}
-                {sideButton('取引先', fillLicensorFromPartner, !activeVendor)}
-              </>
-            }
-          >
-            {renderGroup('II. ライセンサー (取引先)')}
-          </FormSection>
-
-          <FormSection
-            title="III. ライセンシー (自社)"
-            variant="amber"
-            icon={<User className="w-4 h-4" />}
-            headerActions={
-              <>
-                {sideButton('自社', fillLicenseeFromSelf, !companyProfile)}
-                {sideButton('取引先', fillLicenseeFromPartner, !activeVendor)}
-              </>
-            }
-          >
-            {renderGroup('III. ライセンシー (自社)')}
-          </FormSection>
-        </div>
-
-        <FormSection
-          title="IV. 対象作品・製造"
-          variant="emerald"
-          icon={<ShieldCheck className="w-4 h-4" />}
-        >
-          {renderGroup('IV. 対象作品・製造')}
-        </FormSection>
-
-        {/* V. ロイヤリティ計算 — Phase 7e: 右ペインにライブ計算プレビュー。
-            form-context が license_contract_id + financial_conditions[] を
-            プリセットしているとき、ユーザーは
-              ・条件 1〜N の選択 (calc target)
-              ・基準価格 / 数量 / サンプル数量 / 税率
-            の 4 つを動かすだけで、サーバ側 billing.calculateFee の結果が
-            300ms デバウンスで右側に出る。Math.ceil の挙動も含めて UI 上で
-            確定保存前に検証できる。 */}
-        <FormSection
-          title="V. ロイヤリティ計算"
+          title="ステップ 1 — 契約と条件"
           variant="indigo"
-          icon={<Scale className="w-4 h-4" />}
+          icon={<Briefcase className="w-4 h-4" />}
         >
-          <div className="col-span-full grid grid-cols-1 lg:grid-cols-5 gap-6">
-            {/* 左 3/5: 既存フィールド + condition ピッカー */}
-            <div className="lg:col-span-3 space-y-3">
-              {/* 金銭条件ピッカー — form-context から拾った行を radio で選ぶ */}
-              {Array.isArray(formData.financial_conditions) &&
-              formData.financial_conditions.length > 0 ? (
-                <div className="border border-input rounded-sm p-3 bg-muted/20">
-                  <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
-                    計算対象の金銭条件
-                  </div>
-                  <div className="space-y-1.5">
-                    {(
-                      formData.financial_conditions as FinancialCondition[]
-                    ).map((c) => {
+          <div className="col-span-full space-y-4">
+            {/* ① 契約マスタ (マスター検索) */}
+            <div className="space-y-1.5">
+              <Label className="text-[11px] font-mono">
+                ① 契約マスタを選ぶ <span className="text-red-600">*</span>
+              </Label>
+
+              {/* マスター検索フィルタ — 取引先名 / 契約タイトル / 文書番号で絞り込み */}
+              {licenseMasters.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="text"
+                    value={royaltyContractSearch}
+                    onChange={(e) => setRoyaltyContractSearch(e.target.value)}
+                    placeholder="取引先名・契約タイトル・文書番号で絞り込み..."
+                    className="text-xs font-mono flex-1"
+                  />
+                  {royaltyContractSearch && (
+                    <button
+                      type="button"
+                      onClick={() => setRoyaltyContractSearch('')}
+                      className="text-[10px] font-mono px-2 py-1 border border-input rounded-sm hover:bg-muted flex-shrink-0"
+                    >
+                      クリア
+                    </button>
+                  )}
+                </div>
+              )}
+              {royaltyContractSearch && (
+                <p className="text-[10px] font-mono text-muted-foreground">
+                  {filteredMasters.length} 件 / 全 {licenseMasters.length} 件
+                  {filteredMasters.length === 0 && (
+                    <span className="text-amber-700 ml-1">— 一致なし (検索ワードを変えてください)</span>
+                  )}
+                </p>
+              )}
+
+              <select
+                value={selectedContractId || ''}
+                onChange={(e) => selectMasterContract(Number(e.target.value))}
+                className="w-full text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-background focus:outline-none focus:border-foreground"
+                size={filteredMasters.length > 0 && filteredMasters.length <= 8 ? filteredMasters.length + 1 : undefined}
+              >
+                <option value="">— 契約マスタから選択 —</option>
+                {filteredMasters.map((c: any) => (
+                  <option key={`master-${c.id}`} value={c.id}>
+                    {c.contract_title || '(無題)'}
+                    {c.document_number ? ` [${c.document_number}]` : ''}
+                    {c.vendor_name ? ` — ${c.vendor_name}` : ''}
+                    {` (条件 ${c.financial_conditions.length} 件)`}
+                  </option>
+                ))}
+              </select>
+              {licenseMasters.length === 0 && (
+                <p className="text-[10px] font-mono text-amber-700">
+                  ⚠ 候補となる契約マスタがありません。
+                  ライセンス系の 単独契約 / 個別契約 を作成して、
+                  金銭条件 (条件 1〜3) を登録してください。
+                </p>
+              )}
+              {selectedContract && (
+                <p className="text-[10px] font-mono text-muted-foreground">
+                  選択中: <strong>{selectedContract.contract_title}</strong>
+                  {selectedContract.document_number && (
+                    <> ({selectedContract.document_number})</>
+                  )}
+                </p>
+              )}
+            </div>
+
+            {/* ② 金銭条件 (radio) */}
+            {selectedContract &&
+              Array.isArray(selectedContract.financial_conditions) &&
+              selectedContract.financial_conditions.length > 0 && (
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-mono">
+                    ② 金銭条件 <span className="text-red-600">*</span>
+                  </Label>
+                  <div className="space-y-1.5 border border-input rounded-sm p-2 bg-muted/20">
+                    {selectedContract.financial_conditions.map((c: any) => {
                       const cid = Number(c.id);
-                      const selected =
-                        Number(formData.license_financial_condition_id) === cid;
+                      const selected = selectedConditionId === cid;
                       return (
                         <label
-                          key={cid || c.condition_no}
+                          key={`cond-${cid}`}
                           className={cn(
                             'flex items-center gap-2 cursor-pointer text-[11px] font-mono p-1.5 rounded-sm',
                             selected
@@ -2451,31 +2547,26 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                         >
                           <input
                             type="radio"
-                            name="license_financial_condition_id"
+                            name="capability_financial_condition_id"
                             checked={selected}
-                            onChange={() =>
-                              setFormData({
-                                ...formData,
-                                license_financial_condition_id: cid,
-                                // 料率もこの条件で上書き (HTML テンプレ用 legacy)
-                                料率:
-                                  c.rate_pct !== undefined
-                                    ? String(c.rate_pct)
-                                    : formData.料率,
-                              })
-                            }
+                            onChange={() => selectCondition(cid)}
                             className="cursor-pointer"
                           />
-                          <span className="font-bold">条件 {c.condition_no}</span>
+                          <span className="font-bold">
+                            条件 {c.condition_no}
+                          </span>
                           <span className="opacity-70">
                             {c.calc_method || '—'}
                           </span>
                           <span className="opacity-70">
-                            {c.rate_pct !== undefined ? `${c.rate_pct}%` : ''}
+                            {c.rate_pct !== undefined && c.rate_pct !== null
+                              ? `${c.rate_pct}%`
+                              : ''}
                           </span>
-                          {c.mg_amount && c.mg_amount > 0 ? (
+                          {c.mg_amount && Number(c.mg_amount) > 0 ? (
                             <span className="opacity-70">
-                              MG {Number(c.mg_amount).toLocaleString('ja-JP')}
+                              MG{' '}
+                              {Number(c.mg_amount).toLocaleString('ja-JP')}
                             </span>
                           ) : null}
                           {c.region_language_label && (
@@ -2488,73 +2579,361 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                     })}
                   </div>
                 </div>
-              ) : formData.license_contract_id ? (
-                <div className="text-[10px] font-mono text-muted-foreground italic">
-                  ライセンス契約 ID は紐付き済ですが、金銭条件が未登録です。
-                  先に「個別利用許諾条件書」を作成してください。
+              )}
+
+            {/* ③ 当事者 (read-only display) */}
+            {selectedContract && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-mono opacity-70">
+                    ライセンサー (取引先 — 自動入力)
+                  </Label>
+                  <Input
+                    value={formData.licensor || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, licensor: e.target.value })
+                    }
+                    className="text-xs"
+                    placeholder="契約マスタから自動入力"
+                  />
+                  <Input
+                    value={formData.VENDOR_REPRESENTATIVE_SAMA || ''}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        VENDOR_REPRESENTATIVE_SAMA: e.target.value,
+                      })
+                    }
+                    className="text-xs"
+                    placeholder="代表者名 (＋様)"
+                  />
                 </div>
-              ) : null}
+                <div className="space-y-1">
+                  <Label className="text-[10px] font-mono opacity-70">
+                    ライセンシー (自社 — 自動入力)
+                  </Label>
+                  <Input
+                    value={formData.licensee || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, licensee: e.target.value })
+                    }
+                    className="text-xs"
+                    placeholder="自社プロファイルから自動入力"
+                  />
+                </div>
+              </div>
+            )}
 
-              {renderGroup('V. ロイヤリティ計算')}
-            </div>
-
-            {/* 右 2/5: ライブ計算プレビュー */}
-            <div className="lg:col-span-2">
-              <RoyaltyPreviewPanel
-                licenseContractId={Number(formData.license_contract_id)}
-                licenseFinancialConditionId={Number(
-                  formData.license_financial_condition_id
+            {/* ④ 原著作物 (ledger 由来) */}
+            {selectedContract && (
+              <div className="space-y-1">
+                <Label className="text-[10px] font-mono opacity-70">
+                  原著作物 (原作マスタから自動引用) <span className="text-red-600">*</span>
+                </Label>
+                {ledgerForContract ? (
+                  <div className="flex items-center gap-2 text-xs font-mono px-3 py-2 border border-emerald-200 bg-emerald-50/50 rounded-sm">
+                    <span className="font-bold">
+                      {ledgerForContract.title || '(無題)'}
+                    </span>
+                    <span className="opacity-60 text-[10px]">
+                      [{ledgerForContract.ledger_code}]
+                    </span>
+                  </div>
+                ) : (
+                  <>
+                    <select
+                      value=""
+                      onChange={(e) => {
+                        const lc = e.target.value;
+                        const l = (allLedgers || []).find(
+                          (x: any) => x.ledger_code === lc
+                        );
+                        if (l) {
+                          setFormData({
+                            ...formData,
+                            originalWork: l.title || '',
+                          });
+                        }
+                      }}
+                      className="w-full text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-background focus:outline-none focus:border-foreground"
+                    >
+                      <option value="">— 原作マスタから選択 —</option>
+                      {(allLedgers || []).map((l: any) => (
+                        <option key={`ledger-${l.id}`} value={l.ledger_code}>
+                          {l.title || '(無題)'} [{l.ledger_code}]
+                        </option>
+                      ))}
+                    </select>
+                    <Input
+                      value={formData.originalWork || ''}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          originalWork: e.target.value,
+                        })
+                      }
+                      className="text-xs"
+                      placeholder="原著作物名 (手入力も可)"
+                    />
+                    <p className="text-[10px] font-mono text-amber-700">
+                      ⚠ 契約マスタに ledger 未紐付。
+                      上で原作を選択するか手入力してください。
+                      (契約マスタ側で ledger を紐づけると次回から自動入力されます)
+                    </p>
+                  </>
                 )}
-                unitPrice={Number(formData.基準価格 || formData.MSRP || 0)}
-                quantity={Number(formData.quantity || 0)}
-                sampleQuantity={Number(formData.sampleQuantity || 0)}
-                taxRate={Number(formData.taxRate || 10)}
-                onPreview={(p) => {
-                  if (!p) return;
-                  // Preview 結果をフォームの「合計」系フィールドに同期。
-                  // 確定保存前にユーザーが目視する数字がサーバと一致するように。
-                  // 注: setFormData は functional updater 非対応のため
-                  // closure の formData を読む。fetch 中に別フィールドが
-                  // 編集された場合は最新の合計値が上書きされるが、ユーザーは
-                  // 入力継続で再計算が走るので実害は小さい。
+              </div>
+            )}
+          </div>
+        </FormSection>
+
+        {/* ─── STEP 2 ─ 製造内容 ──────────────────────────── */}
+        <FormSection
+          title="ステップ 2 — 製造内容"
+          variant="emerald"
+          icon={<Coins className="w-4 h-4" />}
+        >
+          <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">
+                製品名 <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                value={formData.productName || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, productName: e.target.value })
+                }
+                placeholder="例: 〇〇 通常版"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">版</Label>
+              <Input
+                value={formData.edition || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, edition: e.target.value })
+                }
+                placeholder="通常版"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">完成日</Label>
+              <Input
+                type="date"
+                value={formData.completionDate || ''}
+                onChange={(e) =>
                   setFormData({
                     ...formData,
-                    billableQuantity: String(p.billable_quantity),
-                    grossRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
-                      p.gross_royalty_ex_tax
-                    ),
-                    mgAmount: String(p.mg_amount),
-                    mgRemaining: String(p.mg_remaining),
-                    actualRoyalty: p.actual_royalty_ex_tax,
-                    actualRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
-                      p.actual_royalty_ex_tax
-                    ),
-                    taxAmount: new Intl.NumberFormat('ja-JP').format(
-                      p.tax_amount
-                    ),
-                    totalPaymentStr: new Intl.NumberFormat('ja-JP').format(
-                      p.total_payment_inc_tax
-                    ),
-                  });
-                }}
+                    completionDate: e.target.value,
+                  })
+                }
               />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">
+                上代 (MSRP) <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={formData.msrpStr || ''}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    msrpStr: e.target.value,
+                    // legacy エイリアスにも同期
+                    MSRP: e.target.value,
+                    基準価格: e.target.value,
+                  })
+                }
+                placeholder="例: 3000"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">
+                製造数 <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={formData.quantity ?? ''}
+                onChange={(e) =>
+                  updateQuantity({ quantity: e.target.value })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">サンプル数</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={formData.sampleQuantity ?? ''}
+                onChange={(e) =>
+                  updateQuantity({ sampleQuantity: e.target.value })
+                }
+                placeholder="0"
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <Label className="text-[10px] font-mono opacity-70">
+                課金対象数 (自動: 製造数 − サンプル数)
+              </Label>
+              <div className="text-sm font-mono font-bold px-3 py-2 bg-muted/40 rounded-sm border border-input">
+                {billableQty.toLocaleString('ja-JP')}
+              </div>
             </div>
           </div>
         </FormSection>
 
-        <FormSection title="VI. 金銭・支払" variant="cyan">
-          {renderGroup('VI. 金銭・支払')}
+        {/* ─── STEP 3 ─ ライブ計算結果 ─────────────────── */}
+        <FormSection
+          title="ステップ 3 — 計算結果 (自動)"
+          variant="indigo"
+          icon={<Scale className="w-4 h-4" />}
+        >
+          <div className="col-span-full">
+            <RoyaltyPreviewPanel
+              licenseContractId={Number(formData.license_contract_id) || 0}
+              licenseFinancialConditionId={
+                Number(formData.license_financial_condition_id) || 0
+              }
+              capabilityFinancialConditionId={
+                Number(formData.capability_financial_condition_id) || 0
+              }
+              unitPrice={Number(formData.msrpStr || formData.基準価格 || formData.MSRP || 0)}
+              quantity={Number(formData.quantity) || 0}
+              sampleQuantity={Number(formData.sampleQuantity) || 0}
+              taxRate={Number(formData.taxRate) || 10}
+              onPreview={(p) => {
+                if (!p) return;
+                // preview 結果を formData の表示系フィールドに同期。
+                // 確定保存前に PDF プレビューで見える数字とサーバ算出を一致させる。
+                setFormData({
+                  ...formData,
+                  billableQuantity: String(p.billable_quantity),
+                  grossRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
+                    p.gross_royalty_ex_tax
+                  ),
+                  mgAmount: String(p.mg_amount),
+                  mgRemaining: String(p.mg_remaining),
+                  mgConsumedBefore: String(p.mg_consumed_before),
+                  mgConsumedThisTime: String(p.mg_consumed_this_time),
+                  mgConsumedAfter: String(p.mg_consumed_after),
+                  mgFullyConsumed: p.mg_fully_consumed,
+                  actualRoyalty: p.actual_royalty_ex_tax,
+                  actualRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
+                    p.actual_royalty_ex_tax
+                  ),
+                  taxAmount: new Intl.NumberFormat('ja-JP').format(
+                    p.tax_amount
+                  ),
+                  totalPaymentStr: new Intl.NumberFormat('ja-JP').format(
+                    p.total_payment_inc_tax
+                  ),
+                });
+              }}
+            />
+          </div>
         </FormSection>
 
-        <details className="group rounded-sm border border-input">
-          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ VII. 備考 (任意) — クリックして展開
+        {/* ─── STEP 4 ─ 報告・支払・備考 (折りたたみ) ──── */}
+        <details className="group rounded-sm border border-input" open>
+          <summary className="cursor-pointer px-4 py-2.5 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▼ ステップ 4 — 報告・支払・備考
           </summary>
-          <div className="p-4 border-t border-input">{renderGroup('VII. 備考 (任意)')}</div>
+          <div className="p-4 border-t border-input grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">
+                通貨 <span className="text-red-600">*</span>
+              </Label>
+              <select
+                value={formData.currency || 'JPY'}
+                onChange={(e) =>
+                  setFormData({ ...formData, currency: e.target.value })
+                }
+                className="w-full text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-background focus:outline-none focus:border-foreground"
+              >
+                <option value="JPY">JPY</option>
+                <option value="USD">USD</option>
+                <option value="EUR">EUR</option>
+                <option value="CNY">CNY</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">税率 (%)</Label>
+              <select
+                value={formData.taxRate || '10'}
+                onChange={(e) =>
+                  setFormData({ ...formData, taxRate: e.target.value })
+                }
+                className="w-full text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-background focus:outline-none focus:border-foreground"
+              >
+                <option value="10">10</option>
+                <option value="8">8</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">報告期限</Label>
+              <Input
+                type="date"
+                value={formData.reportingDeadline || ''}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    reportingDeadline: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">支払期日</Label>
+              <Input
+                type="date"
+                value={formData.paymentDueDate || ''}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    paymentDueDate: e.target.value,
+                  })
+                }
+              />
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <Label className="text-[11px] font-mono">支払条件</Label>
+              <Input
+                value={formData.paymentConditionSummary || ''}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    paymentConditionSummary: e.target.value,
+                  })
+                }
+                placeholder="例: 四半期報告後の翌月末日払い"
+              />
+              <p className="text-[10px] font-mono text-muted-foreground/70">
+                契約マスタの条件側 payment_terms から自動補完 (上書き可)
+              </p>
+            </div>
+            <div className="space-y-1 md:col-span-2">
+              <Label className="text-[11px] font-mono">備考</Label>
+              <textarea
+                value={formData.notes || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, notes: e.target.value })
+                }
+                rows={3}
+                className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
+              />
+            </div>
+          </div>
         </details>
-       </div>
-     );
+      </div>
+    );
   }
+
 
   // Specialized NDA Form (秘密保持契約書, Phase 3b-7)
   //

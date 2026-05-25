@@ -519,6 +519,30 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_capabilities_ledger_code
        ON contract_capabilities (ledger_code) WHERE ledger_code IS NOT NULL;`,
 
+    // Phase 22.21.91: 契約マスタの金銭条件 (1..N 行) ─ ライセンス系の
+    //   単独契約 / 個別契約で「個別利用許諾条件書」と同じ shape の
+    //   金銭条件を保持する。詳細は worker/src/lib/db.ts の同名コメント参照。
+    `CREATE TABLE IF NOT EXISTS capability_financial_conditions (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      condition_no INTEGER NOT NULL,
+      region_language_label TEXT,
+      calc_method VARCHAR(50),
+      rate_pct DECIMAL(7, 4),
+      base_price_label TEXT,
+      calc_period VARCHAR(50),
+      calc_period_kind VARCHAR(20),
+      calc_period_close_month SMALLINT,
+      currency VARCHAR(10) DEFAULT 'JPY',
+      formula_text TEXT,
+      payment_terms TEXT,
+      mg_amount DECIMAL(15, 2) DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(capability_id, condition_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cfc_capability ON capability_financial_conditions(capability_id);`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

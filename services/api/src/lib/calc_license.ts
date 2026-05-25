@@ -135,6 +135,11 @@ export async function previewRoyaltyCalculation(params: {
    * here; mg/ag consumed-before are looked up from royalty_calculations.
    */
   ag_amount?: number;
+  /**
+   * Phase 22.21.91: 契約マスタ (contract_capabilities) からの preview。
+   * 詳細は services/worker/src/lib/calc_license.ts の同名コメント参照。
+   */
+  capability_financial_condition_id?: number;
 }): Promise<{
   unit_price: number;
   quantity: number;
@@ -158,15 +163,31 @@ export async function previewRoyaltyCalculation(params: {
   currency: string;
   formula_breakdown: string;
 }> {
-  const condRes = await query(
-    `SELECT rate_pct, mg_amount, currency
-       FROM license_financial_conditions
-      WHERE id = $1`,
-    [params.license_financial_condition_id]
-  );
+  // Phase 22.21.91: capability ベースの preview なら capability_financial_conditions
+  // から条件を引く (詳細は worker 側 calc_license.ts のコメント参照)。
+  const useCapability =
+    (!params.license_financial_condition_id ||
+      params.license_financial_condition_id <= 0) &&
+    !!params.capability_financial_condition_id &&
+    params.capability_financial_condition_id > 0;
+  const condRes = useCapability
+    ? await query(
+        `SELECT rate_pct, mg_amount, currency
+           FROM capability_financial_conditions
+          WHERE id = $1`,
+        [params.capability_financial_condition_id]
+      )
+    : await query(
+        `SELECT rate_pct, mg_amount, currency
+           FROM license_financial_conditions
+          WHERE id = $1`,
+        [params.license_financial_condition_id]
+      );
   if (condRes.rows.length === 0) {
     throw new Error(
-      `license_financial_condition ${params.license_financial_condition_id} not found`
+      useCapability
+        ? `capability_financial_condition ${params.capability_financial_condition_id} not found`
+        : `license_financial_condition ${params.license_financial_condition_id} not found`
     );
   }
   const ratePct = Number(condRes.rows[0].rate_pct) || 0;
@@ -180,11 +201,13 @@ export async function previewRoyaltyCalculation(params: {
   const taxRate = params.tax_rate != null ? Number(params.tax_rate) : 10;
   const agAmount = Number(params.ag_amount) || 0;
 
-  // 過去消化分は DB 集計から
-  const mgConsumedBefore = await getMgConsumedToDate(
-    params.license_contract_id,
-    params.license_financial_condition_id
-  );
+  // 過去消化分は DB 集計から。capability ベースは履歴がないので 0。
+  const mgConsumedBefore = useCapability
+    ? 0
+    : await getMgConsumedToDate(
+        params.license_contract_id,
+        params.license_financial_condition_id
+      );
   // AG 累積消化は royalty_calculations にカラム未追加なので
   // 当面 0 とみなす (Phase 6 後の拡張余地として残す).
   const agConsumedBefore = 0;

@@ -48,6 +48,13 @@ export type RoyaltyPreview = {
 interface Props {
   licenseContractId?: number;
   licenseFinancialConditionId?: number;
+  /**
+   * Phase 22.21.91: 契約マスタ (contract_capabilities) ベースの preview。
+   * licenseFinancialConditionId が 0/未指定で capabilityFinancialConditionId
+   * が指定されている場合、worker は capability_financial_conditions から
+   * 条件を引いて what-if 計算する (MG 累積履歴は 0 として扱う)。
+   */
+  capabilityFinancialConditionId?: number;
   unitPrice: number;
   quantity: number;
   sampleQuantity?: number;
@@ -72,6 +79,7 @@ const pct = (n: number) =>
 export const RoyaltyPreviewPanel: React.FC<Props> = ({
   licenseContractId,
   licenseFinancialConditionId,
+  capabilityFinancialConditionId,
   unitPrice,
   quantity,
   sampleQuantity,
@@ -89,6 +97,8 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
     () => ({
       license_contract_id: Number(licenseContractId) || 0,
       license_financial_condition_id: Number(licenseFinancialConditionId) || 0,
+      capability_financial_condition_id:
+        Number(capabilityFinancialConditionId) || 0,
       unit_price: Number(unitPrice) || 0,
       quantity: Number(quantity) || 0,
       sample_quantity: Number(sampleQuantity) || 0,
@@ -97,6 +107,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
     [
       licenseContractId,
       licenseFinancialConditionId,
+      capabilityFinancialConditionId,
       unitPrice,
       quantity,
       sampleQuantity,
@@ -104,9 +115,11 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
     ]
   );
 
+  // Phase 22.21.91: license 系の id が揃うか、capability の id が揃えば ready。
+  //   capability ベースの preview では license_contract_id は不要 (履歴を見ない)。
   const ready =
-    args.license_contract_id > 0 &&
-    args.license_financial_condition_id > 0 &&
+    ((args.license_contract_id > 0 && args.license_financial_condition_id > 0) ||
+      args.capability_financial_condition_id > 0) &&
     args.unit_price > 0 &&
     args.quantity > 0;
 
@@ -162,6 +175,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
   }, [
     args.license_contract_id,
     args.license_financial_condition_id,
+    args.capability_financial_condition_id,
     args.unit_price,
     args.quantity,
     args.sample_quantity,
@@ -200,23 +214,22 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
           <ul className="mt-1 space-y-0.5">
             <li
               className={cn(
-                args.license_contract_id > 0
+                args.license_financial_condition_id > 0 ||
+                  args.capability_financial_condition_id > 0
                   ? "text-emerald-700"
                   : "text-muted-foreground"
               )}
             >
-              {args.license_contract_id > 0 ? "✓" : "◻"} ライセンス契約 ID
-              (form-context から自動取得)
-            </li>
-            <li
-              className={cn(
-                args.license_financial_condition_id > 0
-                  ? "text-emerald-700"
-                  : "text-muted-foreground"
-              )}
-            >
-              {args.license_financial_condition_id > 0 ? "✓" : "◻"}{" "}
+              {args.license_financial_condition_id > 0 ||
+              args.capability_financial_condition_id > 0
+                ? "✓"
+                : "◻"}{" "}
               金銭条件の選択 (条件 1/2/3 のいずれか)
+              {args.capability_financial_condition_id > 0 && (
+                <span className="ml-1 text-[9px] opacity-60">
+                  (契約マスタから)
+                </span>
+              )}
             </li>
             <li
               className={cn(

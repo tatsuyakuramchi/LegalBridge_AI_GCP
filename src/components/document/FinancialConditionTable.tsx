@@ -34,6 +34,13 @@ export type FinancialCondition = {
   // Phase 22.21.11: 概要 (フリーテキスト)。空のときは
   //   condition_no ベースのデフォルト文が PDF 側で表示される。
   summary?: string;
+  // Phase 22.21.91: 由来マーカー。
+  //   - 'license' (省略時)   : license_financial_conditions.id を id に保持
+  //   - 'capability'         : capability_financial_conditions.id を id に保持
+  //   royalty_statement form の radio handler はこれを見て
+  //   license_financial_condition_id か capability_financial_condition_id か
+  //   どちらに id をセットするか分岐する。
+  source?: "license" | "capability";
 };
 
 // Phase 22.20-B: kind + close_month から表示ラベルを組み立てる。

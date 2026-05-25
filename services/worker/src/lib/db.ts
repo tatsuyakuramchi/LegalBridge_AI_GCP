@@ -1313,6 +1313,42 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_capabilities_ledger_code
        ON contract_capabilities (ledger_code) WHERE ledger_code IS NOT NULL;`,
 
+    // -----------------------------------------------------------------
+    // Phase 22.21.91: 契約マスタ (contract_capabilities) の金銭条件 (1..N 行)
+    //
+    //   ライセンス系の 単独契約 / 個別契約 を契約マスタとして登録するとき、
+    //   後段の「個別利用許諾条件書」「利用許諾計算書」と同じ粒度で
+    //   金銭条件 (条件 1: 自社製造 / 2: サブライセンス / 3: プロダクトアウト) を
+    //   保持できるようにする。フォーム側は license_financial_conditions と
+    //   同じ shape で受け渡し、利用許諾計算書フォームから master_capability_id
+    //   経由で defaults を引いてくる。
+    //
+    //   schema は license_financial_conditions と完全ミラー
+    //   (license_contract_id → capability_id に置き換え)。
+    //
+    //   contract_capabilities を物理削除した場合は紐づく条件も削除 (CASCADE)。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS capability_financial_conditions (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      condition_no INTEGER NOT NULL,            -- 1=自社製造, 2=サブライセンス, 3=プロダクトアウト
+      region_language_label TEXT,               -- 例: 国内・日本語
+      calc_method VARCHAR(50),                  -- ROYALTY / FIXED / SUBSCRIPTION
+      rate_pct DECIMAL(7, 4),                   -- 例: 5.0000 (%)
+      base_price_label TEXT,                    -- 例: 上代 (MSRP)
+      calc_period VARCHAR(50),                  -- 表示ラベル (kind+close_month から自動生成可)
+      calc_period_kind VARCHAR(20),             -- MANUFACTURING / MONTHLY / QUARTERLY / SEMIANNUAL / ANNUAL
+      calc_period_close_month SMALLINT,         -- 1-12
+      currency VARCHAR(10) DEFAULT 'JPY',
+      formula_text TEXT,                        -- 例: 上代 × 5.0% × 製造数
+      payment_terms TEXT,
+      mg_amount DECIMAL(15, 2) DEFAULT 0,       -- MG 総額 (この条件単位)
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(capability_id, condition_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cfc_capability ON capability_financial_conditions(capability_id);`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
