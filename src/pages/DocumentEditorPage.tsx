@@ -849,7 +849,15 @@ export function DocumentEditorPage() {
               <Button
                 variant="secondary"
                 className="w-full"
-                onClick={() => setIsAssetPickerOpen(true)}
+                onClick={() => {
+                  // Phase 22.21.93: サイドバーから開くときは callback を
+                  // 必ずクリアして、template-aware モード (Mode 1/2 = Master+Archive
+                  // 横断検索) に確実に入るようにする。callback が残っていると
+                  // 検収書/発注書フォームの「PO紐付」用 Archive 専用 UI に
+                  // 落ちてしまっていた。
+                  setAssetPickerCallback(null)
+                  setIsAssetPickerOpen(true)
+                }}
               >
                 <ScanSearch />
                 Search Legal Assets
@@ -1387,7 +1395,16 @@ export function DocumentEditorPage() {
           ・royalty_statement    → 個別利用許諾条件書 (archive) + ライセンスマスタ (master) 横断検索
           ・inspection_certificate → 発注書 (archive) + 業務委託マスタ (master) 横断検索
           ・その他 / assetPickerCallback あり → 従来の ExternalAsset (Archive) リスト */}
-      <Sheet open={isAssetPickerOpen} onOpenChange={setIsAssetPickerOpen}>
+      <Sheet
+        open={isAssetPickerOpen}
+        onOpenChange={(v) => {
+          // Phase 22.21.93: 閉じるとき (X クリック / 外側クリック) は
+          // callback も同時にクリア。閉じ忘れ callback が次回起動時に
+          // Mode 3 (Archive 専用) を強制してしまう不具合を防ぐ。
+          if (!v) setAssetPickerCallback(null)
+          setIsAssetPickerOpen(v)
+        }}
+      >
         <SheetContent side="right" className="w-full sm:max-w-xl">
           <SheetHeader>
             <SheetTitle>
