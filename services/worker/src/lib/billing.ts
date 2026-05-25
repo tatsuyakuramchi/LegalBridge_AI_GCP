@@ -7,9 +7,9 @@
  *   gross_ex_tax (depends on 計算型)
  *     ↓ × acceptance_ratio (歩留率)
  *   after_acceptance
- *     ↓ − MG 消化
+ *     ↓ MG floor (Phase 22.21.95: max(after_acceptance, mg_amount))
  *   after_mg
- *     ↓ − AG 相殺
+ *     ↓ − AG 相殺 (累積消化)
  *   actual_ex_tax
  *     ↓ × tax_rate (ceil)
  *   total_inc_tax
@@ -34,14 +34,21 @@
  *     Math.round を使っていた箇所は最大 1 円のズレが生じるが, 統一の
  *     方がエンジニアリング上の正しさ保証が強い (Legal とも合意).
  *
- * MG / AG model:
- *   - MG (Minimum Guarantee): 最低保証額. ロイヤリティが MG に達するまで
- *     支払いなし, 達したら超過分のみ支払い.
- *   - AG (Advance Guarantee): 前払い保証金. 将来の発生額から相殺.
- *   - 計算順序は MG 先, 残りに対して AG.
- *   - サブスク型のイニシャル費用も同じ gross に統合され, MG/AG 相殺対象.
- *   - mg_consumed_before / ag_consumed_before は呼び出し側 (DB 集計) で
- *     渡す. このモジュールは pure function.
+ * MG / AG model (Phase 22.21.95 — semantically corrected):
+ *   - MG (Minimum Guarantee): 各計算書での **floor (最低保証)**.
+ *       actual = max(after_acceptance, mg_amount). MG 自体は消化されない
+ *       (毎期チェックされる単純な floor). 累積管理は不要。
+ *   - AG (Advance Guarantee): 前払い保証金 (累積消化型).
+ *       将来発生分から相殺。AG 残高を超えるまで実支払はゼロ。
+ *   - 計算順序: gross → acceptance → **MG floor** → **AG offset** → actual.
+ *   - サブスク型のイニシャル費用も同じ gross に統合される.
+ *   - ag_consumed_before は呼び出し側 (DB 集計) で渡す.
+ *
+ *   旧バージョン (Phase 22.21.94 まで) は mg_amount を AG と同じ消化型として
+ *   扱っていた (誤実装)。Phase 22.21.95 で MG=floor / AG=consume に修正。
+ *   旧コードの戻り値 mg_consumed_* は AG として再解釈すべきデータだが、
+ *   既存呼び出し側との互換性のため返却 shape は当面維持し、AG 用フィールドを
+ *   追加する形にしている。
  */
 
 // ─────────────────────────────────────────────────────────────────
@@ -77,14 +84,18 @@ export type Adjustments = {
   /** 不課金分の数量. fixed / performance のみ意味を持つ. */
   sample_quantity?: number;
 
-  /** MG (最低保証) 総額. */
+  /**
+   * MG (最低保証 = floor) 総額. Phase 22.21.95:
+   * 累積消化ではなく毎期 floor として扱う。actual = max(after_acceptance, mg_amount).
+   * mg_consumed_before は MG では使われない (互換のため shape は残す).
+   */
   mg_amount?: number;
-  /** これまでに消化済の MG 累計. DB 集計で渡す. */
+  /** @deprecated Phase 22.21.95: MG が floor 化したため使用しない. */
   mg_consumed_before?: number;
 
-  /** AG (前払い保証) 総額. */
+  /** AG (前払い保証 = 累積消化) 総額. */
   ag_amount?: number;
-  /** これまでに相殺済の AG 累計. DB 集計で渡す. */
+  /** これまでに消化済の AG 累計. DB 集計で渡す. */
   ag_consumed_before?: number;
 };
 
@@ -93,8 +104,19 @@ export type FeeResult = {
   gross_ex_tax: number;
   after_acceptance: number;
 
+  /**
+   * Phase 22.21.95: MG が floor として適用された場合の上乗せ額.
+   *   mg_topup_this_time = max(0, mg_amount - after_acceptance)
+   * これが > 0 なら "MG floor 適用 (グロス < MG)" の状態.
+   */
+  mg_topup_this_time: number;
+  mg_floor_applied: boolean; // mg_topup_this_time > 0 か否か
+
+  /** @deprecated Phase 22.21.95: MG は floor 化したため常に 0 を返す. */
   mg_consumed_this_time: number;
+  /** @deprecated Phase 22.21.95: MG remaining の概念が無くなった. mg_amount をそのまま返す. */
   mg_remaining_after: number;
+  /** @deprecated Phase 22.21.95: 互換のため false 固定. */
   mg_fully_consumed: boolean;
 
   ag_offset_this_time: number;
@@ -182,17 +204,19 @@ export function calculateFee(
       : Math.max(0, Math.min(1, Number(rawRatio)));
   const after_acceptance = Math.ceil(gross * ratio);
 
-  // 3. MG offset
+  // 3. MG floor (Phase 22.21.95 — semantically corrected).
+  //    MG は「最低保証額」= 各計算書での floor。グロスが MG を下回ったら
+  //    MG を採用する。MG 自体は消化されない (毎期独立の floor チェック)。
   const mgTotal = Number(adjustments.mg_amount) || 0;
-  const mgConsumedBefore = Number(adjustments.mg_consumed_before) || 0;
-  const mgRemainBefore = Math.max(0, mgTotal - mgConsumedBefore);
-  const mg_consumed_this_time = Math.min(after_acceptance, mgRemainBefore);
-  const mg_remaining_after = mgRemainBefore - mg_consumed_this_time;
-  const mg_fully_consumed =
-    mgTotal > 0 && mgConsumedBefore + mg_consumed_this_time >= mgTotal;
-  const after_mg = after_acceptance - mg_consumed_this_time;
+  const after_mg = Math.max(after_acceptance, mgTotal);
+  const mg_topup_this_time = Math.max(0, after_mg - after_acceptance);
+  const mg_floor_applied = mg_topup_this_time > 0;
+  // 旧 shape 互換 (mg_consumed_* は使われなくなった)
+  const mg_consumed_this_time = 0;
+  const mg_remaining_after = mgTotal;
+  const mg_fully_consumed = false;
 
-  // 4. AG offset (applied after MG)
+  // 4. AG offset (= 累積消化型. 前払い保証金から差し引き).
   const agTotal = Number(adjustments.ag_amount) || 0;
   const agConsumedBefore = Number(adjustments.ag_consumed_before) || 0;
   const agRemainBefore = Math.max(0, agTotal - agConsumedBefore);
@@ -210,6 +234,8 @@ export function calculateFee(
   return {
     gross_ex_tax: gross,
     after_acceptance,
+    mg_topup_this_time,
+    mg_floor_applied,
     mg_consumed_this_time,
     mg_remaining_after,
     mg_fully_consumed,

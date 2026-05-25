@@ -28,15 +28,24 @@ export type RoyaltyPreview = {
   billable_quantity: number;
   rate_pct: number;
   gross_royalty_ex_tax: number;
+  // MG (floor) — Phase 22.21.95
   mg_amount: number;
-  mg_consumed_before: number;
-  mg_consumed_this_time: number;
-  mg_consumed_after: number;
-  mg_remaining: number;
-  mg_fully_consumed: boolean;
+  mg_floor_applied: boolean;
+  mg_topup_this_time: number;
+  // legacy mg_consumed_* — 互換のため受け取るが 0 で返ってくる
+  mg_consumed_before?: number;
+  mg_consumed_this_time?: number;
+  mg_consumed_after?: number;
+  mg_remaining?: number;
+  mg_fully_consumed?: boolean;
+  // AG (累積消化) — Phase 22.21.95
   ag_amount: number;
+  ag_consumed_before: number;
+  ag_consumed_this_time: number;
+  ag_consumed_after: number;
   ag_offset_this_time: number;
   ag_remaining: number;
+  ag_fully_consumed: boolean;
   actual_royalty_ex_tax: number;
   tax_rate: number;
   tax_amount: number;
@@ -296,61 +305,71 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
             </div>
           </div>
 
-          {/* ---- MG cascade ---- */}
+          {/* ---- MG floor (Phase 22.21.95) ---- */}
           {preview.mg_amount > 0 && (
             <div className="bg-muted/30 rounded-sm p-2 space-y-1">
               <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
                 <Coins className="w-2.5 h-2.5" />
-                ② MG 消化
-                {preview.mg_fully_consumed && (
+                ② MG (最低保証 floor)
+                {preview.mg_floor_applied && (
                   <span className="ml-auto text-[9px] font-bold text-amber-700">
-                    完全消化
+                    FLOOR 適用
                   </span>
                 )}
               </div>
               <div className="grid grid-cols-2 text-[10px] gap-0.5">
-                <div className="text-muted-foreground">MG 総額</div>
+                <div className="text-muted-foreground">MG 額</div>
                 <div className="text-right">
                   {yen(preview.mg_amount, preview.currency)}
                 </div>
-                <div className="text-muted-foreground">過去消化累計</div>
-                <div className="text-right">
-                  {yen(preview.mg_consumed_before, preview.currency)}
+                <div className="text-muted-foreground">グロス &lt; MG ?</div>
+                <div className="text-right font-bold">
+                  {preview.mg_floor_applied ? "Yes (MG を採用)" : "No"}
                 </div>
-                <div className="text-muted-foreground">今回消化</div>
-                <div className="text-right text-foreground font-bold">
-                  {yen(preview.mg_consumed_this_time, preview.currency)}
-                </div>
-                <div className="text-muted-foreground">残 MG</div>
-                <div
-                  className={cn(
-                    "text-right",
-                    preview.mg_remaining === 0 && "text-emerald-700 font-bold"
-                  )}
-                >
-                  {yen(preview.mg_remaining, preview.currency)}
-                </div>
+                {preview.mg_floor_applied && (
+                  <>
+                    <div className="text-muted-foreground">MG 上乗せ額</div>
+                    <div className="text-right text-foreground font-bold">
+                      +{yen(preview.mg_topup_this_time, preview.currency)}
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           )}
 
-          {/* ---- AG cascade ---- */}
+          {/* ---- AG cascade (Phase 22.21.95) ---- */}
           {preview.ag_amount > 0 && (
             <div className="bg-muted/30 rounded-sm p-2 space-y-1">
-              <div className="text-[10px] uppercase tracking-wider text-muted-foreground">
-                ③ AG 相殺
+              <div className="flex items-center gap-1 text-[10px] uppercase tracking-wider text-muted-foreground">
+                <Coins className="w-2.5 h-2.5" />
+                ③ AG (前払い保証 消化)
+                {preview.ag_fully_consumed && (
+                  <span className="ml-auto text-[9px] font-bold text-amber-700">
+                    消化完了
+                  </span>
+                )}
               </div>
               <div className="grid grid-cols-2 text-[10px] gap-0.5">
                 <div className="text-muted-foreground">AG 総額</div>
                 <div className="text-right">
                   {yen(preview.ag_amount, preview.currency)}
                 </div>
-                <div className="text-muted-foreground">今回相殺</div>
+                <div className="text-muted-foreground">過去消化累計</div>
                 <div className="text-right">
-                  {yen(preview.ag_offset_this_time, preview.currency)}
+                  {yen(preview.ag_consumed_before, preview.currency)}
+                </div>
+                <div className="text-muted-foreground">今回消化</div>
+                <div className="text-right text-foreground font-bold">
+                  ▲{yen(preview.ag_consumed_this_time, preview.currency)}
                 </div>
                 <div className="text-muted-foreground">残 AG</div>
-                <div className="text-right">
+                <div
+                  className={cn(
+                    "text-right",
+                    preview.ag_remaining === 0 && "text-emerald-700 font-bold"
+                  )}
+                >
                   {yen(preview.ag_remaining, preview.currency)}
                 </div>
               </div>

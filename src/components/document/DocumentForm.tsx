@@ -2445,7 +2445,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         license_financial_condition_id: 0,
         calcType,
         royaltyRatePct: fc.rate_pct != null ? String(fc.rate_pct) : '',
-        mgAmount: fc.mg_amount != null ? String(fc.mg_amount) : '',
+        // Phase 22.21.95: MG (floor) と AG (累積消化) を分けて formData に反映
+        mgAmount: fc.mg_amount != null && Number(fc.mg_amount) > 0
+          ? String(fc.mg_amount) : '',
+        agAmount: fc.ag_amount != null && Number(fc.ag_amount) > 0
+          ? String(fc.ag_amount) : '',
         currency: fc.currency || formData.currency || 'JPY',
         paymentConditionSummary:
           fc.payment_terms || formData.paymentConditionSummary || '',
@@ -2872,30 +2876,57 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               taxRate={Number(formData.taxRate) || 10}
               onPreview={(p) => {
                 if (!p) return;
-                // preview 結果を formData の表示系フィールドに同期。
-                // 確定保存前に PDF プレビューで見える数字とサーバ算出を一致させる。
+                // Phase 22.21.95: MG が floor 化、AG が追加されたので
+                //   テンプレ用フィールドも MG / AG を分けてセットする。
+                //   `{{#if mgAmount}}` 等は文字列 "0" を truthy 扱いするため、
+                //   0 のときは空文字を入れて Handlebars の if を確実に false に。
+                const fmt = (n: number) => new Intl.NumberFormat('ja-JP').format(n || 0);
+                const nonZeroStr = (n: number) =>
+                  Number(n) > 0 ? fmt(n) : '';
                 setFormData({
                   ...formData,
                   billableQuantity: String(p.billable_quantity),
-                  grossRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
-                    p.gross_royalty_ex_tax
-                  ),
-                  mgAmount: String(p.mg_amount),
-                  mgRemaining: String(p.mg_remaining),
-                  mgConsumedBefore: String(p.mg_consumed_before),
-                  mgConsumedThisTime: String(p.mg_consumed_this_time),
-                  mgConsumedAfter: String(p.mg_consumed_after),
-                  mgFullyConsumed: p.mg_fully_consumed,
+                  grossRoyaltyStr: fmt(p.gross_royalty_ex_tax),
+                  // MG (floor) 関連 — mgTopupApplied は適用された時だけ truthy
+                  mgAmount: nonZeroStr(p.mg_amount),
+                  mgAmountStr: nonZeroStr(p.mg_amount),
+                  mgTopupApplied: !!(p as any).mg_floor_applied,
+                  mgTopupThisTime: (p as any).mg_topup_this_time || 0,
+                  mgTopupThisTimeStr: nonZeroStr((p as any).mg_topup_this_time || 0),
+                  // legacy mg_consumed_* は 0 で固定 (PDF 側は使わない)
+                  mgRemaining: '',
+                  mgConsumedBefore: '',
+                  mgConsumedThisTime: '',
+                  mgConsumedAfter: '',
+                  mgFullyConsumed: false,
+                  // AG (累積消化) — agApplied は ag_amount > 0 の時だけ truthy
+                  agAmount: nonZeroStr((p as any).ag_amount || 0),
+                  agAmountStr: nonZeroStr((p as any).ag_amount || 0),
+                  agApplied: Number((p as any).ag_amount || 0) > 0,
+                  agConsumedBefore: nonZeroStr((p as any).ag_consumed_before || 0),
+                  agConsumedBeforeStr: nonZeroStr((p as any).ag_consumed_before || 0),
+                  agConsumedThisTime: nonZeroStr((p as any).ag_consumed_this_time || 0),
+                  agConsumedThisTimeStr: nonZeroStr((p as any).ag_consumed_this_time || 0),
+                  agConsumedAfter: nonZeroStr((p as any).ag_consumed_after || 0),
+                  agConsumedAfterStr: nonZeroStr((p as any).ag_consumed_after || 0),
+                  agRemaining: nonZeroStr((p as any).ag_remaining || 0),
+                  agRemainingStr: nonZeroStr((p as any).ag_remaining || 0),
+                  agFullyConsumed: !!(p as any).ag_fully_consumed,
+                  agProgressPct:
+                    Number((p as any).ag_amount || 0) > 0
+                      ? Math.min(
+                          100,
+                          Math.round(
+                            (Number((p as any).ag_consumed_after || 0) /
+                              Number((p as any).ag_amount || 1)) *
+                              100
+                          )
+                        )
+                      : 0,
                   actualRoyalty: p.actual_royalty_ex_tax,
-                  actualRoyaltyStr: new Intl.NumberFormat('ja-JP').format(
-                    p.actual_royalty_ex_tax
-                  ),
-                  taxAmount: new Intl.NumberFormat('ja-JP').format(
-                    p.tax_amount
-                  ),
-                  totalPaymentStr: new Intl.NumberFormat('ja-JP').format(
-                    p.total_payment_inc_tax
-                  ),
+                  actualRoyaltyStr: fmt(p.actual_royalty_ex_tax),
+                  taxAmount: fmt(p.tax_amount),
+                  totalPaymentStr: fmt(p.total_payment_inc_tax),
                 });
               }}
             />

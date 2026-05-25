@@ -198,7 +198,6 @@
     <div class="party-block">
       <div class="party-label">ライセンシー（乙）</div>
       <div class="party-name">{{licensee}}</div>
-      <div class="party-sub">法務部</div>
     </div>
     <div class="party-block">
       <div class="party-label">原著作物</div>
@@ -256,14 +255,30 @@
         <td class="right">¥{{grossRoyaltyStr}}</td>
       </tr>
 
-      {{#if mgAmount}}
+      {{!-- Phase 22.21.95: MG (最低保証) = floor。
+            グロスより MG が高い場合のみ「MG 適用」行を出す。
+            mgTopupApplied は worker / preview で計算する boolean フラグ。 --}}
+      {{#if mgTopupApplied}}
       <tr class="mg-row">
         <td>
-          MG（最低保証金）充当額
-          {{#if mgFullyConsumed}}<span class="badge-consumed">消化完了</span>{{/if}}
+          MG（最低保証）適用
+          <span class="badge-consumed">FLOOR</span>
         </td>
-        <td class="center">MG残高 ¥{{mgConsumedBefore}} → 今回 ▲¥{{mgConsumedThisTime}}</td>
-        <td class="right" style="color:#444;">▲¥{{mgConsumedThisTime}}</td>
+        <td class="center">グロス ¥{{grossRoyaltyStr}} &lt; MG ¥{{mgAmountStr}} → MG を採用</td>
+        <td class="right" style="color:#444;">+¥{{mgTopupThisTimeStr}}</td>
+      </tr>
+      {{/if}}
+
+      {{!-- Phase 22.21.95: AG (前払い保証) = 消化型。
+            ag_amount > 0 のときのみ表示。今回消化額 = min(after_mg, AG 残高)。 --}}
+      {{#if agApplied}}
+      <tr class="mg-row">
+        <td>
+          AG（前払い保証金）充当
+          {{#if agFullyConsumed}}<span class="badge-consumed">消化完了</span>{{/if}}
+        </td>
+        <td class="center">AG残高 ¥{{agConsumedBeforeStr}} → 今回 ▲¥{{agConsumedThisTimeStr}}</td>
+        <td class="right" style="color:#444;">▲¥{{agConsumedThisTimeStr}}</td>
       </tr>
       {{/if}}
 
@@ -271,7 +286,7 @@
         <td colspan="2">
           実支払ロイヤリティ
           {{#if (eq actualRoyalty 0)}}
-            <span class="badge-zero">MG充当のため今期支払なし</span>
+            <span class="badge-zero">AG充当のため今期支払なし</span>
           {{/if}}
         </td>
         <td class="right">¥{{actualRoyaltyStr}}</td>
@@ -290,16 +305,17 @@
     </tbody>
   </table>
 
-  <!-- MG進捗 -->
-  {{#if mgAmount}}
+  {{!-- Phase 22.21.95: AG 進捗バー — AG は累積消化するので残高が意味あり。
+        MG は floor なので進捗管理は不要。 --}}
+  {{#if agApplied}}
   <div class="mg-bar-wrap">
-    <div class="mg-bar-title">MG消化進捗（今回処理後）</div>
+    <div class="mg-bar-title">AG消化進捗（今回処理後）</div>
     <div class="mg-bar-track">
-      <div class="mg-bar-fill" style="width: {{mgProgressPct}}%;"></div>
+      <div class="mg-bar-fill" style="width: {{agProgressPct}}%;"></div>
     </div>
     <div class="mg-bar-labels">
-      <span>消化済: ¥{{mgConsumedAfter}} / MG総額: ¥{{mgAmount}}</span>
-      <span>残高: ¥{{mgRemaining}}</span>
+      <span>消化済: ¥{{agConsumedAfterStr}} / AG総額: ¥{{agAmountStr}}</span>
+      <span>残高: ¥{{agRemainingStr}}</span>
     </div>
   </div>
   {{/if}}
@@ -348,13 +364,15 @@
     <div class="result-item">
       <div class="label-sm">今期実支払額</div>
       <div class="value-lg" style="color:#666;">¥ 0</div>
-      <div class="label-sm" style="margin-top:4px;">MG充当のため今期のお支払はありません</div>
+      <div class="label-sm" style="margin-top:4px;">AG充当のため今期のお支払はありません</div>
     </div>
+    {{#if agApplied}}
     <div class="result-divider"></div>
     <div class="result-item">
-      <div class="label-sm">MG残高</div>
-      <div class="value-md">¥ {{mgRemaining}}</div>
+      <div class="label-sm">AG残高</div>
+      <div class="value-md">¥ {{agRemainingStr}}</div>
     </div>
+    {{/if}}
   </div>
   {{/if}}
 

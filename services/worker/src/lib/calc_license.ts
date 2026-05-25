@@ -118,6 +118,41 @@ export async function getMgConsumedToDate(
 }
 
 /**
+ * Phase 22.21.95: AG (前払い保証金) の累積消化額を返す。
+ *   royalty_calculations.ag_consumed_this_time (新規列) を SUM する。
+ *   列が存在しない古い DB では undefined_column 例外を握り潰して 0 を返す。
+ */
+export async function getAgConsumedToDate(
+  licenseContractId: number,
+  licenseFinancialConditionId?: number,
+  excludeCalculationId?: number
+): Promise<number> {
+  const conditions: string[] = ["license_contract_id = $1"];
+  const params: any[] = [licenseContractId];
+  if (licenseFinancialConditionId != null) {
+    params.push(licenseFinancialConditionId);
+    conditions.push(`license_financial_condition_id = $${params.length}`);
+  }
+  if (excludeCalculationId != null) {
+    params.push(excludeCalculationId);
+    conditions.push(`id <> $${params.length}`);
+  }
+  try {
+    const res = await query(
+      `SELECT COALESCE(SUM(ag_consumed_this_time), 0) AS consumed
+         FROM royalty_calculations
+        WHERE ${conditions.join(" AND ")}`,
+      params
+    );
+    return Number(res.rows[0].consumed) || 0;
+  } catch (err: any) {
+    // 42703 = undefined column → 列マイグレーション前の DB なので 0 とみなす
+    if (err && err.code === "42703") return 0;
+    throw err;
+  }
+}
+
+/**
  * 利用許諾料計算書を 1 件 preview する (まだ保存しない)。
  * フロントが「数量を 100 に変更したら税込いくら？」と問い合わせる用途。
  *
@@ -150,15 +185,23 @@ export async function previewRoyaltyCalculation(params: {
   billable_quantity: number;
   rate_pct: number;
   gross_royalty_ex_tax: number;
+  // Phase 22.21.95: MG は floor。mg_consumed_* は legacy 互換のため 0 を返す。
   mg_amount: number;
   mg_consumed_before: number;
   mg_consumed_this_time: number;
   mg_consumed_after: number;
   mg_remaining: number;
   mg_fully_consumed: boolean;
+  mg_floor_applied: boolean;
+  mg_topup_this_time: number;
+  // Phase 22.21.95: AG は累積消化型
   ag_amount: number;
+  ag_consumed_before: number;
+  ag_consumed_this_time: number;
+  ag_consumed_after: number;
   ag_offset_this_time: number;
   ag_remaining: number;
+  ag_fully_consumed: boolean;
   actual_royalty_ex_tax: number;
   tax_rate: number;
   tax_amount: number;
@@ -168,6 +211,7 @@ export async function previewRoyaltyCalculation(params: {
 }> {
   // Phase 22.21.91: capability ベースの preview なら capability_financial_conditions
   // から条件を引く。license ベースのときは従来通り license_financial_conditions から。
+  // Phase 22.21.95: ag_amount を SELECT に追加 (列が無い古い DB では COALESCE で 0)。
   const useCapability =
     (!params.license_financial_condition_id ||
       params.license_financial_condition_id <= 0) &&
@@ -175,13 +219,17 @@ export async function previewRoyaltyCalculation(params: {
     params.capability_financial_condition_id > 0;
   const condRes = useCapability
     ? await query(
-        `SELECT rate_pct, mg_amount, currency
+        `SELECT rate_pct, mg_amount,
+                COALESCE(ag_amount, 0) AS ag_amount,
+                currency
            FROM capability_financial_conditions
           WHERE id = $1`,
         [params.capability_financial_condition_id]
       )
     : await query(
-        `SELECT rate_pct, mg_amount, currency
+        `SELECT rate_pct, mg_amount,
+                COALESCE(ag_amount, 0) AS ag_amount,
+                currency
            FROM license_financial_conditions
           WHERE id = $1`,
         [params.license_financial_condition_id]
@@ -195,6 +243,11 @@ export async function previewRoyaltyCalculation(params: {
   }
   const ratePct = Number(condRes.rows[0].rate_pct) || 0;
   const mgAmount = Number(condRes.rows[0].mg_amount) || 0;
+  // Phase 22.21.95: AG = DB の ag_amount。フォームから明示的に渡された場合は上書き。
+  const agAmount =
+    params.ag_amount != null
+      ? Number(params.ag_amount) || 0
+      : Number(condRes.rows[0].ag_amount) || 0;
   const currency = condRes.rows[0].currency || "JPY";
 
   const unitPrice = Number(params.unit_price) || 0;
@@ -202,18 +255,17 @@ export async function previewRoyaltyCalculation(params: {
   const sampleQty = Number(params.sample_quantity) || 0;
   const billableQty = Math.max(0, quantity - sampleQty);
   const taxRate = params.tax_rate != null ? Number(params.tax_rate) : 10;
-  const agAmount = Number(params.ag_amount) || 0;
 
-  // 過去消化分は DB 集計から。capability ベースの preview では履歴が存在しないので 0。
-  const mgConsumedBefore = useCapability
+  // Phase 22.21.95: MG は floor 化したので consumed_before 不要 (常に 0)。
+  const mgConsumedBefore = 0;
+  // AG 累積消化は royalty_calculations.ag_consumed_this_time から SUM。
+  //   capability ベースの preview では履歴紐付けが無いので 0。
+  const agConsumedBefore = useCapability
     ? 0
-    : await getMgConsumedToDate(
+    : await getAgConsumedToDate(
         params.license_contract_id,
         params.license_financial_condition_id
       );
-  // AG 累積消化は royalty_calculations にカラム未追加なので
-  // 当面 0 とみなす (Phase 6 後の拡張余地として残す).
-  const agConsumedBefore = 0;
 
   // すべて billing.calculateFee に集約
   const r = calculateFee(
@@ -241,14 +293,22 @@ export async function previewRoyaltyCalculation(params: {
     rate_pct: ratePct,
     gross_royalty_ex_tax: r.gross_ex_tax,
     mg_amount: mgAmount,
-    mg_consumed_before: mgConsumedBefore,
-    mg_consumed_this_time: r.mg_consumed_this_time,
-    mg_consumed_after: mgConsumedBefore + r.mg_consumed_this_time,
-    mg_remaining: r.mg_remaining_after,
-    mg_fully_consumed: r.mg_fully_consumed,
+    // Phase 22.21.95: MG floor 化に伴い、mg_consumed_* は legacy 0 を返す。
+    mg_consumed_before: 0,
+    mg_consumed_this_time: 0,
+    mg_consumed_after: 0,
+    mg_remaining: mgAmount,
+    mg_fully_consumed: false,
+    // Phase 22.21.95: MG floor 適用フラグと上乗せ額
+    mg_floor_applied: r.mg_floor_applied,
+    mg_topup_this_time: r.mg_topup_this_time,
     ag_amount: agAmount,
+    ag_consumed_before: agConsumedBefore,
+    ag_consumed_this_time: r.ag_offset_this_time,
+    ag_consumed_after: agConsumedBefore + r.ag_offset_this_time,
     ag_offset_this_time: r.ag_offset_this_time,
     ag_remaining: r.ag_remaining_after,
+    ag_fully_consumed: r.ag_fully_consumed,
     actual_royalty_ex_tax: r.actual_ex_tax,
     tax_rate: r.tax_rate,
     tax_amount: r.tax_amount,

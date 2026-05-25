@@ -537,11 +537,15 @@ export async function initDb() {
       formula_text TEXT,
       payment_terms TEXT,
       mg_amount DECIMAL(15, 2) DEFAULT 0,
+      ag_amount DECIMAL(15, 2) DEFAULT 0,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(capability_id, condition_no)
     );`,
     `CREATE INDEX IF NOT EXISTS idx_cfc_capability ON capability_financial_conditions(capability_id);`,
+    // Phase 22.21.95: 旧 DB に対しても ag_amount を追加
+    `ALTER TABLE capability_financial_conditions
+       ADD COLUMN IF NOT EXISTS ag_amount DECIMAL(15, 2) DEFAULT 0;`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,

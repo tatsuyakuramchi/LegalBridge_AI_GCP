@@ -933,6 +933,7 @@ function FinancialConditionsEditor({
         currency: "JPY",
         rate_pct: "",
         mg_amount: "",
+        ag_amount: "",
         region_language_label: "",
         base_price_label: "上代",
         calc_period: "",
@@ -1076,8 +1077,8 @@ function FinancialConditionsEditor({
                 placeholder="例: 国内・日本語"
               />
             </div>
-            <div className="col-span-2 space-y-0.5">
-              <Label className="text-[10px]">MG (最低保証額)</Label>
+            <div className="col-span-1 space-y-0.5">
+              <Label className="text-[10px]">MG (最低保証 floor)</Label>
               <Input
                 type="number"
                 min="0"
@@ -1085,6 +1086,22 @@ function FinancialConditionsEditor({
                 value={c.mg_amount ?? ""}
                 onChange={(e) => update(idx, { mg_amount: e.target.value })}
               />
+              <p className="text-[9px] font-mono text-muted-foreground">
+                ロイヤリティ &lt; MG なら MG を採用 (毎期 floor)
+              </p>
+            </div>
+            <div className="col-span-1 space-y-0.5">
+              <Label className="text-[10px]">AG (前払い保証額)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={c.ag_amount ?? ""}
+                onChange={(e) => update(idx, { ag_amount: e.target.value })}
+              />
+              <p className="text-[9px] font-mono text-muted-foreground">
+                前払い済み額。各計算で消化していく
+              </p>
             </div>
             <div className="col-span-2 md:col-span-4 space-y-0.5">
               <Label className="text-[10px]">計算式テキスト</Label>

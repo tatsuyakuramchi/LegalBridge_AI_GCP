@@ -2113,7 +2113,8 @@ async function startServer() {
                                  'currency', cfc.currency,
                                  'formula_text', cfc.formula_text,
                                  'payment_terms', cfc.payment_terms,
-                                 'mg_amount', cfc.mg_amount
+                                 'mg_amount', cfc.mg_amount,
+                                 'ag_amount', COALESCE(cfc.ag_amount, 0)
                                )
                                ORDER BY cfc.condition_no ASC
                              )
@@ -2165,7 +2166,8 @@ async function startServer() {
           `SELECT id, condition_no, region_language_label, calc_method,
                   rate_pct, base_price_label, calc_period, calc_period_kind,
                   calc_period_close_month, currency, formula_text,
-                  payment_terms, mg_amount
+                  payment_terms, mg_amount,
+                  COALESCE(ag_amount, 0) AS ag_amount
              FROM capability_financial_conditions
             WHERE capability_id = $1
             ORDER BY condition_no ASC`,
@@ -2181,6 +2183,7 @@ async function startServer() {
             condition_no: Number(r.condition_no),
             rate_pct: r.rate_pct != null ? Number(r.rate_pct) : null,
             mg_amount: r.mg_amount != null ? Number(r.mg_amount) : 0,
+            ag_amount: r.ag_amount != null ? Number(r.ag_amount) : 0,
             calc_period_close_month:
               r.calc_period_close_month != null
                 ? Number(r.calc_period_close_month)

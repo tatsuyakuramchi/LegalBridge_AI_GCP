@@ -967,6 +967,13 @@ export async function initDb() {
        ADD COLUMN IF NOT EXISTS calc_period_kind VARCHAR(20);`,
     `ALTER TABLE license_financial_conditions
        ADD COLUMN IF NOT EXISTS calc_period_close_month SMALLINT;`,
+    // Phase 22.21.95: AG (Advance Guarantee = 前払い保証金) 列を追加。
+    //   旧バージョンでは mg_amount を AG 相当の消化型として使っていたが、
+    //   MG / AG の役割を分離するため AG 用の独立列を追加。
+    //   - mg_amount: 最低保証額 (floor 用. 累積消化なし)
+    //   - ag_amount: 前払い保証金 (累積消化型. royalty_calculations から SUM)
+    `ALTER TABLE license_financial_conditions
+       ADD COLUMN IF NOT EXISTS ag_amount DECIMAL(15, 2) DEFAULT 0;`,
 
     // Backfill: 既存 license_contracts.royalty_rate / mg_amount を
     // condition_no=1 の自社製造条件として一行立てる。
@@ -1065,6 +1072,24 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_rc_license ON royalty_calculations(license_contract_id);`,
     `CREATE INDEX IF NOT EXISTS idx_rc_mfg ON royalty_calculations(manufacturing_event_id);`,
     `CREATE INDEX IF NOT EXISTS idx_rc_period ON royalty_calculations(license_contract_id, period);`,
+    // Phase 22.21.95: AG (Advance Guarantee) と MG floor の履歴列を追加。
+    //   - mg_topup_this_time: MG floor が適用された上乗せ額 (max(0, mg - gross))
+    //   - ag_amount / ag_consumed_*: AG の累積消化を追跡
+    //   旧 mg_consumed_* 列は legacy 互換のため残置 (新規 INSERT では 0)
+    `ALTER TABLE royalty_calculations
+       ADD COLUMN IF NOT EXISTS mg_topup_this_time DECIMAL(15, 2) DEFAULT 0;`,
+    `ALTER TABLE royalty_calculations
+       ADD COLUMN IF NOT EXISTS ag_amount DECIMAL(15, 2) DEFAULT 0;`,
+    `ALTER TABLE royalty_calculations
+       ADD COLUMN IF NOT EXISTS ag_consumed_before DECIMAL(15, 2) DEFAULT 0;`,
+    `ALTER TABLE royalty_calculations
+       ADD COLUMN IF NOT EXISTS ag_consumed_this_time DECIMAL(15, 2) DEFAULT 0;`,
+    `ALTER TABLE royalty_calculations
+       ADD COLUMN IF NOT EXISTS ag_consumed_after DECIMAL(15, 2) DEFAULT 0;`,
+    `ALTER TABLE royalty_calculations
+       ADD COLUMN IF NOT EXISTS ag_remaining DECIMAL(15, 2) DEFAULT 0;`,
+    `ALTER TABLE royalty_calculations
+       ADD COLUMN IF NOT EXISTS ag_fully_consumed BOOLEAN DEFAULT FALSE;`,
 
     // 6. Contact Assets / External Documents
     `CREATE TABLE IF NOT EXISTS external_assets (
@@ -1342,12 +1367,16 @@ export async function initDb() {
       currency VARCHAR(10) DEFAULT 'JPY',
       formula_text TEXT,                        -- 例: 上代 × 5.0% × 製造数
       payment_terms TEXT,
-      mg_amount DECIMAL(15, 2) DEFAULT 0,       -- MG 総額 (この条件単位)
+      mg_amount DECIMAL(15, 2) DEFAULT 0,       -- MG (最低保証 floor) — Phase 22.21.95 で floor 化
+      ag_amount DECIMAL(15, 2) DEFAULT 0,       -- AG (前払い保証 = 累積消化) — Phase 22.21.95 で追加
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       UNIQUE(capability_id, condition_no)
     );`,
     `CREATE INDEX IF NOT EXISTS idx_cfc_capability ON capability_financial_conditions(capability_id);`,
+    // 旧 DB 用の追加 ALTER (新規 CREATE では既に DEF 済みだが念のため)
+    `ALTER TABLE capability_financial_conditions
+       ADD COLUMN IF NOT EXISTS ag_amount DECIMAL(15, 2) DEFAULT 0;`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
