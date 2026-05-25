@@ -15,7 +15,20 @@
 
 import Papa from "papaparse";
 
-import { query } from "../lib/db.ts";
+import { query, pool } from "../lib/db.ts";
+
+/**
+ * Phase 22.21.72: 任意の "client もしくは pool" の query 抽象。
+ *   transaction 配下では PoolClient を受け取り、それ以外は global pool query を使う。
+ *   replaceVendorAddresses / replaceVendorBankAccounts を transaction 化したときに
+ *   呼び出し側から client を渡せるようにするためのインタフェース。
+ */
+type Queryable = {
+  query: (text: string, params?: any[]) => Promise<any>;
+};
+const defaultQueryable: Queryable = {
+  query: (text, params) => query(text, params),
+};
 
 export type VendorContact = {
   id?: number;
@@ -378,7 +391,13 @@ export async function getVendor(vendorCode: string): Promise<VendorRow | null> {
   return row;
 }
 
-async function replaceVendorAddresses(vendorId: number, addresses: VendorAddress[]) {
+// Phase 22.21.72: 第3引数 q (Queryable) を受け取り、transaction 配下では
+//   PoolClient 経由で実行する。省略時は defaultQueryable (= global pool query)。
+async function replaceVendorAddresses(
+  vendorId: number,
+  addresses: VendorAddress[],
+  q: Queryable = defaultQueryable
+) {
   const rows = addresses
     .filter((a) => a && String(a.address || "").trim())
     .map((a, idx) => ({
@@ -390,9 +409,9 @@ async function replaceVendorAddresses(vendorId: number, addresses: VendorAddress
     }));
   if (rows.length > 0 && !rows.some((a) => a.is_primary)) rows[0].is_primary = true;
 
-  await query("DELETE FROM vendor_addresses WHERE vendor_id = $1", [vendorId]);
+  await q.query("DELETE FROM vendor_addresses WHERE vendor_id = $1", [vendorId]);
   for (const a of rows) {
-    await query(
+    await q.query(
       `INSERT INTO vendor_addresses
         (vendor_id, address_label, postal_code, address, is_primary, sort_order)
        VALUES ($1, $2, $3, $4, $5, $6)`,
@@ -402,11 +421,15 @@ async function replaceVendorAddresses(vendorId: number, addresses: VendorAddress
 
   const primary = rows.find((a) => a.is_primary) || rows[0];
   if (primary) {
-    await query("UPDATE vendors SET address = $1 WHERE id = $2", [primary.address, vendorId]);
+    await q.query("UPDATE vendors SET address = $1 WHERE id = $2", [primary.address, vendorId]);
   }
 }
 
-async function replaceVendorBankAccounts(vendorId: number, bankAccounts: VendorBankAccount[]) {
+async function replaceVendorBankAccounts(
+  vendorId: number,
+  bankAccounts: VendorBankAccount[],
+  q: Queryable = defaultQueryable
+) {
   const rows = bankAccounts
     .filter((a) =>
       a &&
@@ -426,9 +449,9 @@ async function replaceVendorBankAccounts(vendorId: number, bankAccounts: VendorB
     }));
   if (rows.length > 0 && !rows.some((a) => a.is_primary)) rows[0].is_primary = true;
 
-  await query("DELETE FROM vendor_bank_accounts WHERE vendor_id = $1", [vendorId]);
+  await q.query("DELETE FROM vendor_bank_accounts WHERE vendor_id = $1", [vendorId]);
   for (const a of rows) {
-    await query(
+    await q.query(
       `INSERT INTO vendor_bank_accounts
         (vendor_id, bank_label, bank_name, branch_name, account_type,
          account_number, account_holder_kana, is_primary, sort_order)
@@ -449,7 +472,7 @@ async function replaceVendorBankAccounts(vendorId: number, bankAccounts: VendorB
 
   const primary = rows.find((a) => a.is_primary) || rows[0];
   if (primary) {
-    await query(
+    await q.query(
       `UPDATE vendors
           SET bank_name = $1, branch_name = $2, account_type = $3,
               account_number = $4, account_holder_kana = $5
@@ -480,114 +503,159 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
   if (!code) throw new Error("vendor_code は必須です");
   if (!name) throw new Error("vendor_name は必須です");
 
+  // Phase 22.21.72: vendors INSERT/UPDATE + vendor_addresses + vendor_bank_accounts
+  //   の書込みをトランザクション化。途中失敗で中途半端なデータ (住所だけ消える等)
+  //   が残るのを防ぐ。
+  //   - pool.connect() で専用 client を取得
+  //   - BEGIN → 全 write を client 経由
+  //   - COMMIT で確定、エラー時 ROLLBACK で全巻戻し
+  //   - finally で client.release() — 接続リーク防止
+  //   - getVendor(code) は COMMIT 後の global pool 経由 (確定済データを返す)
   const subcontractApplicable = calculateSubcontractActApplicable(v);
-  const upsert = await query(
-    `INSERT INTO vendors (
-      vendor_code, vendor_name, corporate_number, trade_name, pen_name, vendor_suffix, entity_type,
-      withholding_enabled, aliases, address, phone, email, payment_terms,
-      main_business, transaction_category, capital_yen, employee_count,
-      subcontract_act_applicable, rating, antisocial_check_result, master_updated_at, contact_department,
-      contact_name, master_contract_ref, bank_info, bank_name, branch_name,
-      account_type, account_number, account_holder_kana, is_invoice_issuer,
-      invoice_registration_number
-    ) VALUES (
-      $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,COALESCE($21, CURRENT_TIMESTAMP),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
-    )
-    ON CONFLICT (vendor_code) DO UPDATE SET
-      vendor_name                 = EXCLUDED.vendor_name,
-      corporate_number            = EXCLUDED.corporate_number,
-      trade_name                  = EXCLUDED.trade_name,
-      pen_name                    = EXCLUDED.pen_name,
-      vendor_suffix               = EXCLUDED.vendor_suffix,
-      entity_type                 = EXCLUDED.entity_type,
-      withholding_enabled         = EXCLUDED.withholding_enabled,
-      aliases                     = EXCLUDED.aliases,
-      address                     = EXCLUDED.address,
-      phone                       = EXCLUDED.phone,
-      email                       = EXCLUDED.email,
-      payment_terms               = EXCLUDED.payment_terms,
-      main_business               = EXCLUDED.main_business,
-      transaction_category        = EXCLUDED.transaction_category,
-      capital_yen                 = EXCLUDED.capital_yen,
-      employee_count              = EXCLUDED.employee_count,
-      subcontract_act_applicable  = EXCLUDED.subcontract_act_applicable,
-      rating                      = EXCLUDED.rating,
-      antisocial_check_result     = EXCLUDED.antisocial_check_result,
-      master_updated_at           = EXCLUDED.master_updated_at,
-      contact_department          = EXCLUDED.contact_department,
-      contact_name                = EXCLUDED.contact_name,
-      master_contract_ref         = EXCLUDED.master_contract_ref,
-      bank_info                   = EXCLUDED.bank_info,
-      bank_name                   = EXCLUDED.bank_name,
-      branch_name                 = EXCLUDED.branch_name,
-      account_type                = EXCLUDED.account_type,
-      account_number              = EXCLUDED.account_number,
-      account_holder_kana         = EXCLUDED.account_holder_kana,
-      is_invoice_issuer           = EXCLUDED.is_invoice_issuer,
-      invoice_registration_number = EXCLUDED.invoice_registration_number
-    RETURNING id`,
-    [
-      code,
-      name,
-      v.corporate_number || null,
-      v.trade_name || null,
-      v.pen_name || null,
-      v.vendor_suffix || null,
-      v.entity_type || null,
-      Boolean(v.withholding_enabled),
-      v.aliases || null,
-      v.address || null,
-      v.phone || null,
-      v.email || null,
-      v.payment_terms || null,
-      v.main_business || null,
-      v.transaction_category || null,
-      normalizeNumber(v.capital_yen),
-      normalizeNumber(v.employee_count),
-      subcontractApplicable,
-      v.rating || null,
-      v.antisocial_check_result || null,
-      v.master_updated_at || null,
-      v.contact_department || null,
-      v.contact_name || null,
-      v.master_contract_ref || null,
-      v.bank_info || null,
-      v.bank_name || null,
-      v.branch_name || null,
-      v.account_type || null,
-      v.account_number || null,
-      v.account_holder_kana || null,
-      Boolean(v.is_invoice_issuer),
-      v.invoice_registration_number || null,
-    ]
-  );
-  const vendorId = Number(upsert.rows[0]?.id);
+  const client = await pool.connect();
+  let vendorId = 0;
+  try {
+    await client.query("BEGIN");
 
-  if (Array.isArray(v.addresses) && vendorId) {
-    await replaceVendorAddresses(vendorId, v.addresses);
-  } else if (v.address && vendorId) {
-    const existingAddresses = await fetchAddressesMap([vendorId]);
-    if ((existingAddresses.get(vendorId) || []).length === 0) {
-      await replaceVendorAddresses(vendorId, [{ address: v.address, is_primary: true }]);
+    const upsert = await client.query(
+      `INSERT INTO vendors (
+        vendor_code, vendor_name, corporate_number, trade_name, pen_name, vendor_suffix, entity_type,
+        withholding_enabled, aliases, address, phone, email, payment_terms,
+        main_business, transaction_category, capital_yen, employee_count,
+        subcontract_act_applicable, rating, antisocial_check_result, master_updated_at, contact_department,
+        contact_name, master_contract_ref, bank_info, bank_name, branch_name,
+        account_type, account_number, account_holder_kana, is_invoice_issuer,
+        invoice_registration_number
+      ) VALUES (
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,COALESCE($21, CURRENT_TIMESTAMP),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
+      )
+      ON CONFLICT (vendor_code) DO UPDATE SET
+        vendor_name                 = EXCLUDED.vendor_name,
+        corporate_number            = EXCLUDED.corporate_number,
+        trade_name                  = EXCLUDED.trade_name,
+        pen_name                    = EXCLUDED.pen_name,
+        vendor_suffix               = EXCLUDED.vendor_suffix,
+        entity_type                 = EXCLUDED.entity_type,
+        withholding_enabled         = EXCLUDED.withholding_enabled,
+        aliases                     = EXCLUDED.aliases,
+        address                     = EXCLUDED.address,
+        phone                       = EXCLUDED.phone,
+        email                       = EXCLUDED.email,
+        payment_terms               = EXCLUDED.payment_terms,
+        main_business               = EXCLUDED.main_business,
+        transaction_category        = EXCLUDED.transaction_category,
+        capital_yen                 = EXCLUDED.capital_yen,
+        employee_count              = EXCLUDED.employee_count,
+        subcontract_act_applicable  = EXCLUDED.subcontract_act_applicable,
+        rating                      = EXCLUDED.rating,
+        antisocial_check_result     = EXCLUDED.antisocial_check_result,
+        master_updated_at           = EXCLUDED.master_updated_at,
+        contact_department          = EXCLUDED.contact_department,
+        contact_name                = EXCLUDED.contact_name,
+        master_contract_ref         = EXCLUDED.master_contract_ref,
+        bank_info                   = EXCLUDED.bank_info,
+        bank_name                   = EXCLUDED.bank_name,
+        branch_name                 = EXCLUDED.branch_name,
+        account_type                = EXCLUDED.account_type,
+        account_number              = EXCLUDED.account_number,
+        account_holder_kana         = EXCLUDED.account_holder_kana,
+        is_invoice_issuer           = EXCLUDED.is_invoice_issuer,
+        invoice_registration_number = EXCLUDED.invoice_registration_number
+      RETURNING id`,
+      [
+        code,
+        name,
+        v.corporate_number || null,
+        v.trade_name || null,
+        v.pen_name || null,
+        v.vendor_suffix || null,
+        v.entity_type || null,
+        Boolean(v.withholding_enabled),
+        v.aliases || null,
+        v.address || null,
+        v.phone || null,
+        v.email || null,
+        v.payment_terms || null,
+        v.main_business || null,
+        v.transaction_category || null,
+        normalizeNumber(v.capital_yen),
+        normalizeNumber(v.employee_count),
+        subcontractApplicable,
+        v.rating || null,
+        v.antisocial_check_result || null,
+        v.master_updated_at || null,
+        v.contact_department || null,
+        v.contact_name || null,
+        v.master_contract_ref || null,
+        v.bank_info || null,
+        v.bank_name || null,
+        v.branch_name || null,
+        v.account_type || null,
+        v.account_number || null,
+        v.account_holder_kana || null,
+        Boolean(v.is_invoice_issuer),
+        v.invoice_registration_number || null,
+      ]
+    );
+    vendorId = Number(upsert.rows[0]?.id);
+    // Queryable adapter — replace ヘルパに client を渡してトランザクション内実行
+    const tx: Queryable = { query: (text, params) => client.query(text, params) };
+
+    if (Array.isArray(v.addresses) && vendorId) {
+      await replaceVendorAddresses(vendorId, v.addresses, tx);
+    } else if (v.address && vendorId) {
+      // 既存 vendor_addresses 行の存在チェック (transaction 内なので tx 経由)。
+      //   無ければ legacy `v.address` から 1 行作成してバックフィル。
+      const existing = await client.query(
+        "SELECT 1 FROM vendor_addresses WHERE vendor_id = $1 LIMIT 1",
+        [vendorId]
+      );
+      if (existing.rows.length === 0) {
+        await replaceVendorAddresses(
+          vendorId,
+          [{ address: v.address, is_primary: true }],
+          tx
+        );
+      }
     }
+
+    if (Array.isArray(v.bank_accounts) && vendorId) {
+      await replaceVendorBankAccounts(vendorId, v.bank_accounts, tx);
+    } else if (
+      vendorId &&
+      (v.bank_name || v.branch_name || v.account_number || v.account_holder_kana)
+    ) {
+      const existing = await client.query(
+        "SELECT 1 FROM vendor_bank_accounts WHERE vendor_id = $1 LIMIT 1",
+        [vendorId]
+      );
+      if (existing.rows.length === 0) {
+        await replaceVendorBankAccounts(
+          vendorId,
+          [
+            {
+              bank_name: v.bank_name || null,
+              branch_name: v.branch_name || null,
+              account_type: v.account_type || null,
+              account_number: v.account_number || null,
+              account_holder_kana: v.account_holder_kana || null,
+              is_primary: true,
+            },
+          ],
+          tx
+        );
+      }
+    }
+
+    await client.query("COMMIT");
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => { /* noop */ });
+    throw e;
+  } finally {
+    client.release();
   }
 
-  if (Array.isArray(v.bank_accounts) && vendorId) {
-    await replaceVendorBankAccounts(vendorId, v.bank_accounts);
-  } else if (vendorId && (v.bank_name || v.branch_name || v.account_number || v.account_holder_kana)) {
-    const existingAccounts = await fetchBankAccountsMap([vendorId]);
-    if ((existingAccounts.get(vendorId) || []).length === 0) {
-      await replaceVendorBankAccounts(vendorId, [{
-        bank_name: v.bank_name || null,
-        branch_name: v.branch_name || null,
-        account_type: v.account_type || null,
-        account_number: v.account_number || null,
-        account_holder_kana: v.account_holder_kana || null,
-        is_primary: true,
-      }]);
-    }
-  }
-
+  // COMMIT 確定後、getVendor で最新状態を読み戻して返却 (global pool 経由)。
   const result = await getVendor(code);
   if (!result) throw new Error("upsert 後の取得に失敗しました");
   return result;
