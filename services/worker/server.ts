@@ -172,6 +172,49 @@ async function startServer() {
     next();
   });
 
+  /**
+   * Phase 22.21.71: worker への直接アクセスを防ぐ shared-secret middleware。
+   *
+   * 想定経路:
+   *   - 通常: admin-ui の apiRouter.ts が全 API 呼び出しに
+   *     X-LB-PORTAL-SECRET ヘッダを付与 → ここで突合チェック
+   *   - 想定外: Cloud Run の *.run.app 直 URL でこのエンドポイントを叩く
+   *     (IAP 未通過 / 漏洩 URL) → 401 で reject
+   *
+   * env LB_PORTAL_SECRET が未設定の環境 (= local dev / 旧運用) では
+   * warning ログを出して通過させる (= 旧挙動互換)。
+   *
+   * 全エンドポイントに app.use で適用すると Slack webhook 等の
+   * 既存 GAS 経由フローが壊れるため、必要なエンドポイントに対して
+   * 明示的に middleware として刺す方式を採用。
+   */
+  function requirePortalSecret(
+    req: express.Request,
+    res: express.Response,
+    next: express.NextFunction
+  ) {
+    const expected = process.env.LB_PORTAL_SECRET;
+    if (!expected) {
+      // 未設定環境は通す (テスト / ローカル / 旧運用互換)。
+      // 重要: 本番 Cloud Run では必ず LB_PORTAL_SECRET を設定すること。
+      console.warn(
+        "⚠️ LB_PORTAL_SECRET is not set on worker. Direct access is not protected."
+      );
+      return next();
+    }
+    // 大文字小文字どちらでも受ける (Express は header 名 lowercase に正規化)
+    const actual =
+      req.headers["x-lb-portal-secret"] ||
+      req.headers["X-LB-PORTAL-SECRET" as any];
+    if (actual !== expected) {
+      console.warn(
+        `[requirePortalSecret] 401 reject: ${req.method} ${req.url} (header missing or invalid)`
+      );
+      return res.status(401).json({ ok: false, error: "Unauthorized" });
+    }
+    return next();
+  }
+
   const slackBotToken = dbSettings.SLACK_BOT_TOKEN || process.env.SLACK_BOT_TOKEN;
   const slackWebClient: WebClient | null = slackBotToken
     ? new WebClient(slackBotToken)
@@ -8648,7 +8691,7 @@ ${details}
    * テンプレ CSV ダウンロード。ユーザーがブランクのテンプレを Excel で
    * 開いて編集 → 一括 import するためのスケルトン。
    */
-  app.get("/api/imports/bulk/inspection/trigger-waiting.csv", async (req, res) => {
+  app.get("/api/imports/bulk/inspection/trigger-waiting.csv", requirePortalSecret, async (req, res) => {
     try {
       const limit = Math.min(Number(req.query.limit) || 100, 500);
       const triggerWaitingName = "\u30c8\u30ea\u30ac\u30fc\u5f85\u3061";
@@ -8823,7 +8866,7 @@ ${details}
     }
   });
 
-  app.post("/api/imports/bulk/inspection", express.json({ limit: "10mb" }), async (req, res) => {
+  app.post("/api/imports/bulk/inspection", requirePortalSecret, express.json({ limit: "10mb" }), async (req, res) => {
     try {
       const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
       if (rows.length === 0) {
