@@ -549,7 +549,16 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
         subcontract_act_applicable  = EXCLUDED.subcontract_act_applicable,
         rating                      = EXCLUDED.rating,
         antisocial_check_result     = EXCLUDED.antisocial_check_result,
-        master_updated_at           = EXCLUDED.master_updated_at,
+        -- Phase 22.21.73: master_updated_at は user-curated タイムスタンプ。
+        --   ユーザーが日付欄を空白で保存すると EXCLUDED.master_updated_at が
+        --   NULL になり、既存値を NULL で上書きしてしまう問題があった。
+        --   COALESCE で「新値があれば新値、無ければ既存値、最後の砦は now()」
+        --   の優先順に変更する。
+        master_updated_at           = COALESCE(
+                                        EXCLUDED.master_updated_at,
+                                        vendors.master_updated_at,
+                                        CURRENT_TIMESTAMP
+                                      ),
         contact_department          = EXCLUDED.contact_department,
         contact_name                = EXCLUDED.contact_name,
         master_contract_ref         = EXCLUDED.master_contract_ref,
