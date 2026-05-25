@@ -719,6 +719,33 @@ export function ContractsPanel() {
                 通告期限の何カ月前にアラートを出すか
               </p>
             </Field>
+            {/* Phase 22.21.93: 金銭条件 (= 個別利用許諾条件と同じ shape) を
+                上部に移動。ライセンス系の単独/個別契約ではメイン情報なので、
+                Slack 設定や原作紐付けより前に表示する。 */}
+            {String(data?.contract_category || "").toLowerCase() === "license" && (
+              <Field
+                label="▍ 個別利用許諾条件 (金銭条件)"
+                className="col-span-2 md:col-span-3"
+              >
+                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                  <strong>個別利用許諾条件書と同じ内容</strong>を直接入力できます。
+                  単独契約 / 個別契約に登録した条件は、後で「利用許諾計算書」を
+                  作成するときに自動補完されます (別途 ILT 文書を発行する必要なし)。
+                  <br />
+                  条件 1=自社製造 / 条件 2=サブライセンス / 条件 3=プロダクトアウト
+                  の 3 行まで登録可能。
+                </p>
+                <FinancialConditionsEditor
+                  value={
+                    Array.isArray(data?.financial_conditions)
+                      ? data.financial_conditions
+                      : []
+                  }
+                  onChange={(v) => set({ financial_conditions: v })}
+                  recordType={String(data?.record_type || "")}
+                />
+              </Field>
+            )}
             {/* Phase 22.21.46: Slack アラート通知設定 ─────────────────────────
                 自動更新・満期アラート発火時に投稿する Slack チャンネルと
                 メンションを契約ごとに設定。複数指定可 (カンマ または 改行区切り)。
@@ -824,25 +851,6 @@ export function ContractsPanel() {
                 onChange={(e) => set({ language: e.target.value })}
               />
             </Field>
-            {/* Phase 22.21.91: 金銭条件 (ライセンス系のみ表示)。
-                個別利用許諾条件書と同じ shape で条件 1..3 を入力できる。
-                後段の利用許諾計算書フォームから defaults として参照される。 */}
-            {String(data?.contract_category || "").toLowerCase() === "license" && (
-              <Field
-                label="金銭条件 (利用許諾計算書 自動補完用)"
-                className="col-span-2 md:col-span-3"
-              >
-                <FinancialConditionsEditor
-                  value={
-                    Array.isArray(data?.financial_conditions)
-                      ? data.financial_conditions
-                      : []
-                  }
-                  onChange={(v) => set({ financial_conditions: v })}
-                  recordType={String(data?.record_type || "")}
-                />
-              </Field>
-            )}
             <Field label="文書 URL" className="col-span-2 md:col-span-3">
               <Input
                 value={data?.document_url || ""}
