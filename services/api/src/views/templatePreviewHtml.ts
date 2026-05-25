@@ -146,7 +146,11 @@ iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 .md-section h2 {
   font-size: 13px; margin: 0; font-weight: 700; color: #0f172a;
 }
-.md-section .desc { color: #6b7280; font-size: 11px; margin: 2px 0 8px; }
+.md-section .desc { color: #6b7280; font-size: 11px; margin: 2px 0 8px; line-height: 1.6; }
+.md-section .desc code {
+  font-family: ui-monospace, "Menlo", "SFMono-Regular", monospace;
+  background: #f3f4f6; padding: 1px 6px; border-radius: 3px; font-size: 11px;
+}
 .md-section .md-tabs {
   display: inline-flex; gap: 2px; background: #f3f4f6;
   border-radius: 6px; padding: 3px;
@@ -238,7 +242,10 @@ export function templatePreviewPage(): string {
       <header>
         <div>
           <h2>📋 Slack キャンバス用 markdown</h2>
-          <div class="desc">下のスタイルを選び、テキストをコピーして Slack キャンバスに貼り付けてください。URL はこのページのドメインを動的に使用します。</div>
+          <div class="desc">
+            下のスタイルを選び、テキストをコピーして Slack キャンバスに貼り付けてください。<br>
+            URL は常に <code>https://legalbridge.arclight.co.jp</code> (IAP 経由) を使用するため、貼り付け後のリンクは社内 Google アカウントでサインインしたユーザーがそのまま開けます。
+          </div>
         </div>
         <div class="md-tabs" role="tablist">
           <button class="md-tab active" type="button" data-style="table">📊 表形式</button>
@@ -342,13 +349,19 @@ export function templatePreviewPage(): string {
       return card;
     }
 
-    // ----- Phase 22.21.86: Slack canvas markdown 生成 -----
+    // ----- Phase 22.21.86 → 22.21.87: Slack canvas markdown 生成 -----
     //   3 スタイル (table / grouped / compact) を currentTemplates から生成。
-    //   ベース URL は window.location.origin を使い、custom domain 移行後も
-    //   そのまま動く。
-    function absUrl(path) {
-      return window.location.origin + path;
-    }
+    //
+    //   Phase 22.21.87: ベース URL を IAP 経由の公開ドメイン
+    //   (legalbridge.arclight.co.jp) にハードコード。
+    //   理由: window.location.origin だと、もし担当者が誤って
+    //   .run.app 直 URL でこのページを開いていた場合、コピーされる
+    //   markdown が .run.app になり、Slack でクリックされた瞬間 IAP を
+    //   バイパスして 401 になる。ハードコードすればホスト名に関係なく
+    //   常に正しい IAP-fronted URL が生成される。
+    //
+    //   将来ドメイン変更が必要になったらこの定数 1 か所を更新する。
+    const PUBLIC_ORIGIN = 'https://legalbridge.arclight.co.jp';
 
     // category → 表示順 & 日本語ラベル (grouped スタイル用)
     const CAT_ORDER = ['Domestic', 'International', 'Internal', 'Other'];
@@ -360,25 +373,23 @@ export function templatePreviewPage(): string {
     };
 
     function buildMdTable(templates) {
-      const origin = window.location.origin;
       const lines = [];
       lines.push('# 📄 ひな型ライブラリ');
       lines.push('');
-      lines.push('> [🗂 全件一覧ページを開く](' + origin + '/templates/preview)');
+      lines.push('> [🗂 全件一覧ページを開く](' + PUBLIC_ORIGIN + '/templates/preview)');
       lines.push('');
       lines.push('| ひな型 | プレビュー | PDF DL |');
       lines.push('|---|---|---|');
       templates.forEach((t) => {
         const label = (t.label || t.type).replace(/\\|/g, '\\\\|');
-        const prev = origin + '/templates/preview?type=' + encodeURIComponent(t.type);
-        const pdf = origin + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
+        const prev = PUBLIC_ORIGIN + '/templates/preview?type=' + encodeURIComponent(t.type);
+        const pdf = PUBLIC_ORIGIN + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
         lines.push('| ' + label + ' | [📖](' + prev + ') | [⬇](' + pdf + ') |');
       });
       return lines.join('\\n');
     }
 
     function buildMdGrouped(templates) {
-      const origin = window.location.origin;
       const buckets = {};
       templates.forEach((t) => {
         const cat = t.category || 'Other';
@@ -388,7 +399,7 @@ export function templatePreviewPage(): string {
       const lines = [];
       lines.push('# 📄 ひな型ライブラリ');
       lines.push('');
-      lines.push('[🗂 全件一覧ページ](' + origin + '/templates/preview)');
+      lines.push('[🗂 全件一覧ページ](' + PUBLIC_ORIGIN + '/templates/preview)');
       lines.push('');
       CAT_ORDER.forEach((cat) => {
         const list = buckets[cat];
@@ -396,8 +407,8 @@ export function templatePreviewPage(): string {
         lines.push('## ' + (CAT_LABEL_JA[cat] || cat));
         list.forEach((t) => {
           const label = t.label || t.type;
-          const prev = origin + '/templates/preview?type=' + encodeURIComponent(t.type);
-          const pdf = origin + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
+          const prev = PUBLIC_ORIGIN + '/templates/preview?type=' + encodeURIComponent(t.type);
+          const pdf = PUBLIC_ORIGIN + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
           lines.push('- **' + label + '** — [📖 プレビュー](' + prev + ') ・ [⬇ PDF](' + pdf + ')');
         });
         lines.push('');
@@ -406,15 +417,14 @@ export function templatePreviewPage(): string {
     }
 
     function buildMdCompact(templates) {
-      const origin = window.location.origin;
       const lines = [];
       lines.push('# 📄 ひな型 PDF ダウンロード');
       lines.push('');
-      lines.push('[🗂 全件一覧（プレビュー付き）](' + origin + '/templates/preview)');
+      lines.push('[🗂 全件一覧（プレビュー付き）](' + PUBLIC_ORIGIN + '/templates/preview)');
       lines.push('');
       templates.forEach((t) => {
         const label = t.label || t.type;
-        const pdf = origin + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
+        const pdf = PUBLIC_ORIGIN + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
         lines.push('- [' + label + '](' + pdf + ')');
       });
       return lines.join('\\n');
