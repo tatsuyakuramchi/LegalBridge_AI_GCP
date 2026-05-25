@@ -8177,6 +8177,45 @@ ${details}
   //   GET も WRITE_URL (= worker) に routing する設計。
   // ===================================================================
 
+  /** GET /api/document-drafts
+   *  Phase 22.21.81: draft 一覧 (admin-ui の DraftsPanel が利用)。
+   *  q (部分一致 / 任意) と limit (default 200) をサポート。
+   *  form_data 全文は返さない (size_bytes と keys_count の要約だけ)。
+   *  詳細は /api/document-drafts/:issueKey?template_type=... を別途叩く。
+   */
+  app.get("/api/document-drafts", requirePortalSecret, async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const limit = Math.min(
+        Math.max(parseInt(String(req.query.limit || "200"), 10), 1),
+        1000
+      );
+      const params: any[] = [];
+      let where = "";
+      if (q) {
+        params.push(`%${q}%`);
+        where = `WHERE issue_key ILIKE $1 OR template_type ILIKE $1 OR COALESCE(updated_by, '') ILIKE $1`;
+      }
+      params.push(limit);
+      const r = await query(
+        `SELECT id, issue_key, template_type, updated_at, updated_by,
+                (SELECT COUNT(*) FROM jsonb_object_keys(form_data)) AS keys_count,
+                octet_length(form_data::text) AS size_bytes
+           FROM document_drafts
+           ${where}
+          ORDER BY updated_at DESC
+          LIMIT $${params.length}`,
+        params
+      );
+      res.json({ ok: true, drafts: r.rows, total: r.rows.length });
+    } catch (err: any) {
+      console.error("[document-drafts LIST] failed:", err);
+      res
+        .status(500)
+        .json({ ok: false, error: String(err?.message || err) });
+    }
+  });
+
   /** GET /api/document-drafts/:issueKey?template_type=...
    *  指定課題 + テンプレの最新 draft を返す。なければ 404 で返す
    *  (admin-ui 側は 404 = "draft 無し → form-context 経路にフォールバック")。
@@ -8273,6 +8312,46 @@ ${details}
       res.status(500).json({ ok: false, error: String(err?.message || err) });
     }
   });
+
+  /** POST /api/document-drafts/bulk-delete
+   *  body: { ids: number[] } または { all: true } (= 全削除)
+   *  Phase 22.21.81: DraftsPanel から複数選択削除 / 「全部消す」操作用。
+   */
+  app.post(
+    "/api/document-drafts/bulk-delete",
+    requirePortalSecret,
+    express.json({ limit: "200kb" }),
+    async (req, res) => {
+      try {
+        const all = req.body?.all === true;
+        const ids = Array.isArray(req.body?.ids)
+          ? req.body.ids
+              .map((x: any) => Number(x))
+              .filter((n: number) => Number.isFinite(n) && n > 0)
+          : [];
+        if (!all && ids.length === 0) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "ids[] (1 以上) または all:true が必要" });
+        }
+        let result: any;
+        if (all) {
+          result = await query(`DELETE FROM document_drafts`);
+        } else {
+          result = await query(
+            `DELETE FROM document_drafts WHERE id = ANY($1::int[])`,
+            [ids]
+          );
+        }
+        res.json({ ok: true, deleted: result.rowCount || 0 });
+      } catch (err: any) {
+        console.error("[document-drafts BULK-DELETE] failed:", err);
+        res
+          .status(500)
+          .json({ ok: false, error: String(err?.message || err) });
+      }
+    }
+  );
 
   app.get("/api/documents/search", async (req, res) => {
     try {
