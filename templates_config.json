@@ -249,7 +249,10 @@
       "ledgerId": { "label": "台帳ID (legacy)", "group": "I. ヘッダ", "hidden": true, "helpText": "Phase 22.21.94 で PDF 上は廃止 — フィールド自体は legacy データ互換のため残置" },
 
       "licensor": { "label": "ライセンサー名", "group": "II. 当事者 (契約マスタから自動入力)", "required": true, "dbField": "vendor.vendor_name", "readonly": true, "helpText": "契約マスタの取引先から自動入力" },
+      "LICENSOR_SUFFIX": { "label": "ライセンサー敬称 (御中/様)", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "helpText": "Phase 22.21.97: 取引先 entity_type から判定 (法人→御中 / 個人→様)" },
+      "LICENSOR_IS_CORPORATION": { "label": "ライセンサー 法人/個人", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "hidden": true },
       "VENDOR_REPRESENTATIVE_SAMA": { "label": "ライセンサー代表者 (＋様)", "group": "II. 当事者 (契約マスタから自動入力)", "placeholder": "例: 代表取締役 山田 太郎 様" },
+      "licensor_t_number": { "label": "T番号 (Backlog 課題キー)", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "helpText": "Phase 22.21.97: 実 Backlog 課題キーのみ PDF に表示 (LEGAL-* 等の合成キーは非表示)" },
       "licensee": { "label": "ライセンシー名", "group": "II. 当事者 (契約マスタから自動入力)", "required": true, "dbField": "company.name", "readonly": true, "helpText": "自社プロファイルから自動入力" },
 
       "originalWork": { "label": "原著作物名", "group": "III. 対象作品 (原作マスタから自動引用)", "required": true, "readonly": true, "helpText": "契約マスタに紐づく原作マスタ (ledger) から自動引用。紐付けなしの場合は原作マスタから手動選択" },

@@ -206,13 +206,17 @@
 
   <div class="party-grid">
     {{!-- 左: ライセンサー (取引先) ──────────────────── --}}
+    {{!-- Phase 22.21.97:
+          ・LICENSOR_SUFFIX = 取引先 entity_type から判定 (法人→御中 / 個人→様)
+          ・T番号 (licensor_t_number) は実 Backlog 課題キーのときだけ表示
+            合成キー (LEGAL-* / IMPORT-* 等) は worker で空文字化される --}}
     <div class="vendor-section">
-      <div class="vendor-name">{{licensor}}{{#if licensor}} 御中{{/if}}</div>
+      <div class="vendor-name">{{licensor}}{{#if licensor}}{{#if LICENSOR_SUFFIX}} {{LICENSOR_SUFFIX}}{{else}} 御中{{/if}}{{/if}}</div>
       {{#if VENDOR_REPRESENTATIVE_SAMA}}
       <div style="margin-top:6px; font-size:9.5pt;">{{VENDOR_REPRESENTATIVE_SAMA}}</div>
       {{/if}}
-      {{#if issueKey}}
-      <div style="margin-top:6px; font-size:9pt; color:#555;">T番号: {{issueKey}}</div>
+      {{#if licensor_t_number}}
+      <div style="margin-top:6px; font-size:9pt; color:#555;">T番号: {{licensor_t_number}}</div>
       {{/if}}
 
       <div style="margin-top:12px; font-size:10.5pt;">

@@ -10410,6 +10410,17 @@ ${details}
         (formData?.licensor as string) ||
         "";
 
+      // Phase 22.21.97: 利用許諾料計算書テンプレが参照する licensor_t_number。
+      //   - 実 Backlog 課題キーで作成された文書 → そのまま表示
+      //   - フォーム経由の合成キー (LEGAL-* / IMPORT-* / DEMO-* / PREVIEW-* /
+      //     CRON-* / TIMER-*) → 空文字 (テンプレ側 {{#if}} で非表示になる)
+      //   ユーザー要望: 「取引先マスタから引用する際になければ非表示」=
+      //   form-only 作成では T番号 が存在しないので出さない。
+      const isSyntheticIssueKey =
+        !issueKey ||
+        /^(LEGAL|IMPORT|DEMO|PREVIEW|CRON|TIMER)-/i.test(String(issueKey));
+      const licensorTNumberForTemplate = isSyntheticIssueKey ? "" : issueKey;
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey,
@@ -10420,6 +10431,8 @@ ${details}
           details: {
             ...staffInfo,
             ...formData,
+            // Phase 22.21.97: 合成キーを除外した実 Backlog T番号
+            licensor_t_number: licensorTNumberForTemplate,
             // Phase 17i: 経費（テンプレ側で {{#each expenses}} / {{expensesTotalIncTax}}）
             expenses: expensesForRender,
             expensesTotalIncTax: expensesTotalIncTaxComputed,

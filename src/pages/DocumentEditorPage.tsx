@@ -1442,6 +1442,13 @@ export function DocumentEditorPage() {
                             )
                           : null
                         const firstCond = (c.financial_conditions || [])[0]
+                        // Phase 22.21.97: 取引先の entity_type から 御中/様 を判定
+                        const vt = String(
+                          (c as any).vendor_entity_type ||
+                            (c as any).entity_type ||
+                            ""
+                        ).toLowerCase()
+                        const isCorp = vt === "corporate" || vt === "法人"
                         setFormData((prev: any) => ({
                           ...prev,
                           selected_master_contract_id: Number(c.id),
@@ -1449,6 +1456,9 @@ export function DocumentEditorPage() {
                           linked_contract_number:
                             c.document_number || prev.linked_contract_number || "",
                           licensor: c.vendor_name || prev.licensor || "",
+                          // Phase 22.21.97: 御中/様 サフィックス
+                          LICENSOR_SUFFIX: isCorp ? "御中" : "様",
+                          LICENSOR_IS_CORPORATION: isCorp ? "法人" : "個人",
                           licensee: companyProfile?.name || prev.licensee || "",
                           originalWork:
                             ledger?.title ||

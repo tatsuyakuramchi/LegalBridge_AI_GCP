@@ -2097,6 +2097,7 @@ async function startServer() {
       try {
         result = await query(
           `SELECT cc.*, v.vendor_name,
+                  v.entity_type AS vendor_entity_type,
                   COALESCE(
                     (
                       SELECT json_agg(
@@ -2134,7 +2135,9 @@ async function startServer() {
               "worker を再デプロイして migration を実行してください。フォールバックで空配列を返します。"
           );
           result = await query(
-            `SELECT cc.*, v.vendor_name, '[]'::json AS financial_conditions
+            `SELECT cc.*, v.vendor_name,
+                    v.entity_type AS vendor_entity_type,
+                    '[]'::json AS financial_conditions
              FROM contract_capabilities cc
              LEFT JOIN vendors v ON cc.vendor_id = v.id
              ORDER BY cc.id DESC`

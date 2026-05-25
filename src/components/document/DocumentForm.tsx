@@ -2398,6 +2398,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ? (allLedgers || []).find((l: any) => l.ledger_code === c.ledger_code)
         : null;
       const firstCond = (c.financial_conditions || [])[0];
+      // Phase 22.21.97: 取引先の entity_type から 御中/様 を判定。
+      //   corporate / 法人 → 御中、その他 (個人 / individual / 空) → 様
+      const vendorEntityType = String(
+        (c as any).vendor_entity_type || (c as any).entity_type || ''
+      ).toLowerCase();
+      const isCorporate =
+        vendorEntityType === 'corporate' || vendorEntityType === '法人';
+      const licensorSuffix = isCorporate ? '御中' : '様';
+
       setFormData({
         ...formData,
         selected_master_contract_id: id,
@@ -2406,6 +2415,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         linked_contract_number: c.document_number || formData.linked_contract_number || '',
         // 当事者
         licensor: c.vendor_name || formData.licensor || '',
+        // Phase 22.21.97: 御中/様 サフィックス
+        LICENSOR_SUFFIX: licensorSuffix,
+        LICENSOR_IS_CORPORATION: isCorporate ? '法人' : '個人',
         licensee: companyProfile?.name || formData.licensee || '',
         // 原著作物 (ledger から)
         originalWork:
