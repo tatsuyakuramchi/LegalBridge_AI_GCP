@@ -147,7 +147,15 @@ export class CsvImportService {
         const phone = row.phone || row["電話番号"] || row["電話"] || "";
         const email = row.email || row["メール"] || row["メールアドレス"] || "";
         const contact_department = row.contactDepartment || row.contact_department || row["担当部署"] || "";
-        const contact_name = row.contactName || row.contact_name || row["代表者名"] || row["宛名"] || "";
+        // Phase 22.21.77: 「代表者名」を contact_name から外す (vendor_rep に移管)。
+        //   旧仕様 (Phase 22.13 前) では vendor_rep カラムが無く contact_name で
+        //   兼用していたが、22.13 で正式な vendor_rep カラムが追加された後も
+        //   ここのマッピングが残っていたため CSV 「代表者名」列が誤って
+        //   担当者名フィールドを上書きしていた。
+        const contact_name = row.contactName || row.contact_name || row["担当者名"] || row["担当者"] || row["宛名"] || "";
+        // Phase 22.21.77: vendor_rep (法人の代表者名) を取り込む。
+        //   admin-ui の VendorsPanel が法人区分時のみ表示するフィールドに対応。
+        const vendor_rep = row.vendorRep || row.vendor_rep || row["代表者名"] || row["代表者"] || row["代表"] || "";
         const master_contract_ref = row.masterContractRef || row.master_contract_ref || row["基本契約書参照"] || "";
         const bank_info = row.bankInfo || row.bank_info || "";
         const bank_name = row.bankName || row.bank_name || row["金融機関名"] || row["銀行名"] || "";
@@ -159,14 +167,15 @@ export class CsvImportService {
         const invoice_registration_number = row.invoiceRegistrationNumber || row.invoice_registration_number || row["インボイス登録番号"] || row["登録番号"] || "";
 
         await query(
+          // Phase 22.21.77: vendor_rep カラムを INSERT/UPDATE に追加
           `INSERT INTO vendors (
-            vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type, 
-            withholding_enabled, aliases, address, phone, email, contact_department, 
-            contact_name, master_contract_ref, bank_info, bank_name, branch_name, 
-            account_type, account_number, account_holder_kana, is_invoice_issuer, 
-            invoice_registration_number
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
-          ON CONFLICT (vendor_code) DO UPDATE SET 
+            vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type,
+            withholding_enabled, aliases, address, phone, email, contact_department,
+            contact_name, master_contract_ref, bank_info, bank_name, branch_name,
+            account_type, account_number, account_holder_kana, is_invoice_issuer,
+            invoice_registration_number, vendor_rep
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+          ON CONFLICT (vendor_code) DO UPDATE SET
             vendor_name = CASE WHEN vendors.vendor_name IS NULL OR vendors.vendor_name = '' THEN EXCLUDED.vendor_name ELSE vendors.vendor_name END,
             trade_name = CASE WHEN vendors.trade_name IS NULL OR vendors.trade_name = '' THEN EXCLUDED.trade_name ELSE vendors.trade_name END,
             pen_name = CASE WHEN vendors.pen_name IS NULL OR vendors.pen_name = '' THEN EXCLUDED.pen_name ELSE vendors.pen_name END,
@@ -187,13 +196,14 @@ export class CsvImportService {
             account_number = CASE WHEN vendors.account_number IS NULL OR vendors.account_number = '' THEN EXCLUDED.account_number ELSE vendors.account_number END,
             account_holder_kana = CASE WHEN vendors.account_holder_kana IS NULL OR vendors.account_holder_kana = '' THEN EXCLUDED.account_holder_kana ELSE vendors.account_holder_kana END,
             is_invoice_issuer = CASE WHEN vendors.is_invoice_issuer IS NULL THEN EXCLUDED.is_invoice_issuer ELSE vendors.is_invoice_issuer END,
-            invoice_registration_number = CASE WHEN vendors.invoice_registration_number IS NULL OR vendors.invoice_registration_number = '' THEN EXCLUDED.invoice_registration_number ELSE vendors.invoice_registration_number END`,
+            invoice_registration_number = CASE WHEN vendors.invoice_registration_number IS NULL OR vendors.invoice_registration_number = '' THEN EXCLUDED.invoice_registration_number ELSE vendors.invoice_registration_number END,
+            vendor_rep = CASE WHEN vendors.vendor_rep IS NULL OR vendors.vendor_rep = '' THEN EXCLUDED.vendor_rep ELSE vendors.vendor_rep END`,
           [
-            vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type, 
-            withholding_enabled, aliases, address, phone, email, contact_department, 
-            contact_name, master_contract_ref, bank_info, bank_name, branch_name, 
-            account_type, account_number, account_holder_kana, is_invoice_issuer, 
-            invoice_registration_number
+            vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type,
+            withholding_enabled, aliases, address, phone, email, contact_department,
+            contact_name, master_contract_ref, bank_info, bank_name, branch_name,
+            account_type, account_number, account_holder_kana, is_invoice_issuer,
+            invoice_registration_number, vendor_rep
           ]
         );
         processedCount++;
@@ -403,7 +413,9 @@ export class CsvImportService {
             { key: 'trade_name', keys: ['tradeName', 'trade_name', '屋号', '屋号・ペンネーム'] },
             { key: 'pen_name', keys: ['penName', 'pen_name', 'ペンネーム'] },
             { key: 'entity_type', keys: ['entityType', 'entity_type', 'エンティティ', '種別'] },
-            { key: 'contact_name', keys: ['contactName', 'contact_name', '代表者名'] },
+            // Phase 22.21.77: 代表者名 は vendor_rep へ。担当者名 / 担当者 のみ contact_name に。
+            { key: 'contact_name', keys: ['contactName', 'contact_name', '担当者名', '担当者', '宛名'] },
+            { key: 'vendor_rep', keys: ['vendorRep', 'vendor_rep', '代表者名', '代表者', '代表'] },
             { key: 'address', keys: ['address', '住所', '取引先住所', '所在地'] },
             { key: 'bank_name', keys: ['bankName', 'bank_name', '銀行名'] },
             { key: 'branch_name', keys: ['branchName', 'branch_name', '支店名'] },
@@ -463,7 +475,9 @@ export class CsvImportService {
               { key: 'trade_name', keys: ['tradeName', 'trade_name', '屋号', '屋号・ペンネーム'] },
               { key: 'pen_name', keys: ['penName', 'pen_name', 'ペンネーム'] },
               { key: 'entity_type', keys: ['entityType', 'entity_type', 'エンティティ', '種別'] },
-              { key: 'contact_name', keys: ['contactName', 'contact_name', '代表者名'] },
+              // Phase 22.21.77: 代表者名 は vendor_rep へ。担当者名 / 担当者 のみ contact_name に。
+            { key: 'contact_name', keys: ['contactName', 'contact_name', '担当者名', '担当者', '宛名'] },
+            { key: 'vendor_rep', keys: ['vendorRep', 'vendor_rep', '代表者名', '代表者', '代表'] },
               { key: 'address', keys: ['address', '住所', '取引先住所', '所在地'] },
               { key: 'bank_name', keys: ['bankName', 'bank_name', '銀行名'] },
               { key: 'branch_name', keys: ['branchName', 'branch_name', '支店名'] },
@@ -510,7 +524,9 @@ export class CsvImportService {
           } else {
             // Auto create vendor
             let csvEntityType = row.entityType || row.entity_type || row["エンティティ"] || row["種別"] || "corporate";
-            let csvContactName = row.contactName || row.contact_name || row["代表者名"] || "";
+            // Phase 22.21.77: 代表者名 → vendor_rep, 担当者名 → contact_name に分離
+            let csvContactName = row.contactName || row.contact_name || row["担当者名"] || row["担当者"] || row["宛名"] || "";
+            let csvVendorRep = row.vendorRep || row.vendor_rep || row["代表者名"] || row["代表者"] || row["代表"] || "";
             let csvPenName = row.penName || row.pen_name || row["ペンネーム"] || "";
             let csvTradeName = row.tradeName || row.trade_name || row["屋号"] || row["屋号・ペンネーム"] || "";
             let csvAddress = row.address || row.address_name || row["住所"] || row["所在地"] || "";
@@ -524,17 +540,17 @@ export class CsvImportService {
 
             const insertVendorRes = await query(
               `INSERT INTO vendors (
-                vendor_code, vendor_name, entity_type, withholding_enabled, 
+                vendor_code, vendor_name, entity_type, withholding_enabled,
                 contact_name, pen_name, trade_name, address,
                 bank_name, branch_name, account_type, account_number, account_holder_kana,
-                is_invoice_issuer, invoice_registration_number
-              ) 
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15) RETURNING id`,
+                is_invoice_issuer, invoice_registration_number, vendor_rep
+              )
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id`,
               [
-                vCode, vName, csvEntityType, false, 
+                vCode, vName, csvEntityType, false,
                 csvContactName, csvPenName, csvTradeName, csvAddress,
                 csvBankName, csvBranchName, csvAccountType, csvAccountNumber, csvAccountHolderKana,
-                csvIsInvoiceIssuer, csvInvoiceReg
+                csvIsInvoiceIssuer, csvInvoiceReg, csvVendorRep
               ]
             );
             vendorId = insertVendorRes.rows[0].id;

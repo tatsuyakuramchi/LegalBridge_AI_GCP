@@ -739,6 +739,13 @@ const VENDOR_COLUMN_MAP: Record<string, keyof VendorRow> = {
   accountHolderKana: "account_holder_kana",
   isInvoiceIssuer: "is_invoice_issuer",
   invoiceRegistrationNumber: "invoice_registration_number",
+  // Phase 22.21.77: 代表者名 (法人の正式代表者) の alias を追加。
+  //   Phase 22.13 で vendors.vendor_rep カラムを追加したのに、CSV import
+  //   側のマッピング辞書には英語 alias が追加されておらず、さらに日本語
+  //   alias「代表者名」が誤って contact_name (担当者名) に振られていた。
+  //   今回両方を修正。
+  vendor_rep: "vendor_rep",
+  vendorRep: "vendor_rep",
   // 日本語
   取引先コード: "vendor_code",
   取引先名: "vendor_name",
@@ -762,7 +769,12 @@ const VENDOR_COLUMN_MAP: Record<string, keyof VendorRow> = {
   部署: "contact_department",
   担当者: "contact_name",
   担当者名: "contact_name",
-  代表者名: "contact_name",
+  // Phase 22.21.77: 代表者名 は vendor_rep にマップ (Phase 22.13 で追加)。
+  //   旧仕様では contact_name (担当者名) に振っていたが、Phase 22.13 で
+  //   vendor_rep カラムを追加した時にここの更新が漏れていた。
+  代表者名: "vendor_rep",
+  代表者: "vendor_rep",
+  代表: "vendor_rep",
   マスター契約: "master_contract_ref",
   銀行情報: "bank_info",
   銀行名: "bank_name",

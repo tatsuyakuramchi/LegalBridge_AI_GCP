@@ -4650,18 +4650,27 @@ ${details}
       );
       let vendor: any = null;
       if (orderItem.vendor_code) {
-        // 注: vendors テーブルに vendor_rep カラムは存在しない。
-        // 代表者名は contact_name を使う。
+        // Phase 22.21.77: vendors.vendor_rep カラムを SELECT し、空のときだけ
+        //   contact_name にフォールバック。
+        //   Phase 22.13 で vendor_rep カラムが正式に追加されたが、ここの
+        //   コードはそれ以前の遺物で「常に contact_name を vendor_rep として返す」
+        //   状態だった。これだと VendorsPanel で正しく代表者名を入力しても
+        //   発注明細から見ると常に担当者名で上書きされ、PO 帳票の代表者欄に
+        //   担当者名が混入する事故が起きていた。
         const vRes = await query(
           `SELECT vendor_name, address, contact_name, entity_type,
-                  invoice_registration_number,
+                  invoice_registration_number, vendor_rep,
                   bank_name, branch_name, account_type, account_number,
                   account_holder_kana
              FROM vendors WHERE vendor_code = $1 LIMIT 1`,
           [orderItem.vendor_code]
         );
         vendor = vRes.rows[0]
-          ? { ...vRes.rows[0], vendor_rep: vRes.rows[0].contact_name }
+          ? {
+              ...vRes.rows[0],
+              vendor_rep:
+                vRes.rows[0].vendor_rep || vRes.rows[0].contact_name || "",
+            }
           : null;
       }
 
