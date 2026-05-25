@@ -301,9 +301,9 @@
 
       "PRODUCT_SCOPE": { "label": "本製品の範囲", "group": "III. 取引条件", "type": "textarea", "placeholder": "例: 乙が取扱うアナログゲーム製品全般", "helpText": "📌 第2条「本契約に基づき売買の対象となる本製品の範囲は、__とする」に挿入\n空欄なら『個別契約 (注文書) に定めるとおりとする』と自動描画" },
       "DELIVERY_LOCATION": { "label": "納入場所", "group": "III. 取引条件", "placeholder": "例: 甲指定の倉庫", "helpText": "📌 第5条「注文書に定める納品場所 (__)」に挿入\n空欄なら『注文書に定める納品場所』と自動描画" },
-      "ACCEPTANCE_PERIOD_DAYS": { "label": "受入確認期間 (日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "10", "helpText": "📌 受入確認・検査を行う期間。例: 10" },
-      "INSPECTION_PERIOD_DAYS": { "label": "検査通知期間 (日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "10", "helpText": "📌 検査結果または不適合を通知する期間。例: 10" },
-      "INSPECTION_CURE_DAYS": { "label": "検査不合格時の是正期間 (日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "10", "helpText": "📌 検査不合格・不適合時に乙へ是正を求める期間。例: 10" },
+      "ACCEPTANCE_PERIOD_DAYS": { "label": "受入確認期間 (営業日・任意)", "group": "III. 取引条件", "type": "number", "placeholder": "例: 10", "helpText": "📌 第3条「注文書受領日から __ 営業日以内」に挿入\n→ 注文書受領後に乙が承諾を要する期限。\n空欄なら『注文書記載のとおり』とフォールバック描画。" },
+      "INSPECTION_PERIOD_DAYS": { "label": "検査通知期間 (営業日・任意)", "group": "III. 取引条件", "type": "number", "placeholder": "例: 10", "helpText": "📌 第8条「納品後 __ 営業日以内」に挿入\n→ 納品後に甲が検査を完了すべき期間。\n空欄なら『注文書記載のとおり』とフォールバック描画。" },
+      "INSPECTION_CURE_DAYS": { "label": "検査不合格時の是正期間 (営業日・任意)", "group": "III. 取引条件", "type": "number", "placeholder": "例: 10", "helpText": "📌 第8条「不適合通知の到達後 __ 営業日以内」に挿入\n→ 不適合通知受領後に乙が是正すべき期限。\n空欄なら『注文書記載のとおり』とフォールバック描画。" },
       "WARRANTY_PERIOD": { "label": "契約不適合 保証期間", "group": "III. 取引条件", "required": true, "placeholder": "例: 引渡し後1年", "helpText": "📌 第11条「引渡し後 __ 以内に発見された場合」+「引渡しから __ を超えて行使することはできない」の 2 箇所に挿入\n→ 隠れた瑕疵を含む契約不適合の追完請求権が行使可能な期間" },
       "PAYMENT_CONDITION_SUMMARY": { "label": "支払条件", "group": "III. 取引条件", "placeholder": "例: 月末締め翌月末日払い", "helpText": "📌 第9条「__により、乙が指定する銀行口座へ振込みにて支払う」に挿入\n空欄なら『注文書に定める支払条件』と自動描画" },
       "BREACH_CURE_DAYS": { "label": "契約違反時の是正催告期間 (営業日)", "group": "III. 取引条件", "type": "number", "required": true, "placeholder": "14", "helpText": "📌 契約違反通知後の是正猶予期間。例: 14 営業日" },
