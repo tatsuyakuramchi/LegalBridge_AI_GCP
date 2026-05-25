@@ -1386,10 +1386,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </summary>
           <div className="p-4 border-t border-input space-y-3">
             {/* Phase 22.21: 発注書も基本契約を文書番号で検索して反映できるように。
-                適用すると HAS_BASE_CONTRACT=true + MASTER_CONTRACT_REF が埋まる。 */}
+                適用すると HAS_BASE_CONTRACT=true + MASTER_CONTRACT_REF が埋まる。
+                Phase 22.21.76: Archive (PDF アーカイブ) と Master (契約マスタ)
+                  の両方を横断検索。PDF が未生成の Master 契約も基本契約として
+                  参照できるようになった。 */}
             <DocumentNumberLookup
-              label="基本契約をアーカイブから検索 (部分一致 / 空欄で最新一覧)"
-              placeholder="例: 株式会社X / GCT / ARC-SVC-2026-0001"
+              label="基本契約を Archive / Master から検索 (部分一致 / 空欄で最新一覧)"
+              placeholder="例: 株式会社X / GCT / ARC-SVC-2026-0001 / SVC-2026-0001"
               initialQuery={formData.MASTER_CONTRACT_NUMBER || ''}
               filterTemplateTypes={[
                 'service_master',
@@ -1398,6 +1401,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 'sales_master_credit',
                 'sales_master_standard',
               ]}
+              includeMaster={true}
               onApply={(doc) => {
                 setFormData({
                   ...formData,
