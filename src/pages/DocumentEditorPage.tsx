@@ -46,6 +46,8 @@ export function DocumentEditorPage() {
     vendors,
     staffList,
     assets,
+    contracts: allContracts,
+    ledgers: allLedgers,
     templateList,
     templateMetadata,
     companyProfile,
@@ -53,6 +55,18 @@ export function DocumentEditorPage() {
     refreshIssues,
     refreshAssets, // Phase 22.21.32: 文書生成後に Archive リストを最新化
   } = useAppData()
+
+  // Phase 22.21.92: royalty_statement 向け — license カテゴリかつ
+  // financial_conditions を持つ契約マスタ一覧 (Legal Asset Search モーダルで表示)。
+  const royaltyLicenseMasters = (allContracts || []).filter(
+    (c: any) =>
+      String(c.contract_category || '').toLowerCase() === 'license' &&
+      (c.record_type === 'standalone_contract' ||
+        c.record_type === 'individual_contract' ||
+        c.record_type === 'license_condition') &&
+      Array.isArray(c.financial_conditions) &&
+      c.financial_conditions.length > 0
+  )
 
   // Phase 17g: ページ起動時に最新の Backlog 課題を再取得。
   // ダッシュボードと違って初期ロード時に取得した stale な issues を
@@ -1364,87 +1378,193 @@ export function DocumentEditorPage() {
         </section>
       </div>
 
-      {/* Asset picker */}
+      {/* Asset picker
+          Phase 22.21.92: royalty_statement の場合は contract_capabilities (Master)
+          を表示する。それ以外は従来通り ExternalAsset (Archive) を表示する。 */}
       <Sheet open={isAssetPickerOpen} onOpenChange={setIsAssetPickerOpen}>
         <SheetContent side="right" className="w-full sm:max-w-xl">
           <SheetHeader>
-            <SheetTitle>▍ Legal asset search</SheetTitle>
+            <SheetTitle>
+              {selectedTemplate === "royalty_statement"
+                ? "▍ 契約マスタ検索 (利用許諾料計算書)"
+                : "▍ Legal asset search"}
+            </SheetTitle>
           </SheetHeader>
           <SheetBody className="space-y-4">
             <Input
               type="text"
               autoFocus
-              placeholder="Contract no. / ledger ID / partner name…"
+              placeholder={
+                selectedTemplate === "royalty_statement"
+                  ? "契約タイトル / 取引先名 / 文書番号…"
+                  : "Contract no. / ledger ID / partner name…"
+              }
               value={assetSearch}
               onChange={(e) => setAssetSearch(e.target.value)}
             />
-            <div className="border border-border rounded-md overflow-hidden">
-              <div className="grid grid-cols-[120px_1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
-                <span>Identity</span>
-                <span>Reference</span>
-                <span>Action</span>
-              </div>
-              <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
-                {assets
-                  .filter(
-                    (a) =>
-                      a.asset_number.includes(assetSearch) ||
-                      a.asset_name.toLowerCase().includes(assetSearch.toLowerCase()) ||
-                      a.counterparty.toLowerCase().includes(assetSearch.toLowerCase())
-                  )
-                  .map((asset, idx) => (
-                    <div
-                      key={`asset-${asset.id || idx}`}
-                      className="grid grid-cols-[120px_1fr_auto] gap-3 items-center px-3 py-2.5 hover:bg-muted/40 transition-colors"
-                    >
-                      <span className="text-[11px] font-mono font-bold tracking-tight">
-                        {asset.asset_number}
-                      </span>
-                      <div>
-                        <p className="text-xs font-mono leading-tight">
-                          {asset.asset_name}
-                        </p>
-                        <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
-                          {asset.counterparty}
-                        </p>
-                      </div>
-                      <Button
-                        size="xs"
-                        variant="outline"
-                        onClick={() => {
-                          if (assetPickerCallback) {
-                            assetPickerCallback(asset)
-                            setAssetPickerCallback(null)
-                            setIsAssetPickerOpen(false)
-                            return
-                          }
-                          const update: any = {}
-                          if (
-                            asset.asset_type === "contract" ||
-                            asset.asset_number.startsWith("AL-") ||
-                            asset.asset_number.startsWith("C-")
-                          ) {
-                            update["契約書番号"] = asset.asset_number
-                            update["基本契約名"] = asset.asset_name
-                          } else {
-                            update["台帳ID"] = asset.asset_number
-                            update["原著作物名"] = asset.asset_name
-                          }
-                          setFormData((prev: any) => ({ ...prev, ...update }))
-                          setIsAssetPickerOpen(false)
-                        }}
+
+            {/* ── royalty_statement モード: 契約マスタ (capability) を表示 ── */}
+            {selectedTemplate === "royalty_statement" && !assetPickerCallback ? (
+              <div className="border border-border rounded-md overflow-hidden">
+                <div className="grid grid-cols-[1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  <span>契約マスタ</span>
+                  <span>選択</span>
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
+                  {royaltyLicenseMasters
+                    .filter((c: any) => {
+                      if (!assetSearch.trim()) return true
+                      const q = assetSearch.toLowerCase()
+                      return (
+                        (c.contract_title || '').toLowerCase().includes(q) ||
+                        (c.document_number || '').toLowerCase().includes(q) ||
+                        (c.vendor_name || '').toLowerCase().includes(q)
+                      )
+                    })
+                    .map((c: any) => (
+                      <div
+                        key={`master-${c.id}`}
+                        className="flex items-center gap-3 px-3 py-2.5 hover:bg-muted/40 transition-colors"
                       >
-                        Select
-                      </Button>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[11px] font-mono font-bold leading-tight truncate">
+                            {c.contract_title || '(無題)'}
+                          </p>
+                          <p className="text-[10px] font-mono text-muted-foreground truncate">
+                            {c.vendor_name && <span>{c.vendor_name} · </span>}
+                            {c.document_number && <span className="opacity-70">{c.document_number} · </span>}
+                            <span className="opacity-60">条件 {c.financial_conditions?.length ?? 0} 件</span>
+                          </p>
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => {
+                            // selectMasterContract と同等のロジックをここで実行。
+                            // DocumentForm 内の関数は scope 外なので複製して適用する。
+                            const ledger = c.ledger_code
+                              ? (allLedgers || []).find((l: any) => l.ledger_code === c.ledger_code)
+                              : null
+                            const firstCond = (c.financial_conditions || [])[0]
+                            setFormData((prev: any) => ({
+                              ...prev,
+                              selected_master_contract_id: Number(c.id),
+                              licensor: c.vendor_name || prev.licensor || '',
+                              licensee: companyProfile?.name || prev.licensee || '',
+                              originalWork:
+                                ledger?.title ||
+                                c.original_work ||
+                                c.work_name ||
+                                prev.originalWork ||
+                                '',
+                              financial_conditions: (c.financial_conditions as any[]).map(
+                                (fc: any) => ({ ...fc, source: 'capability' })
+                              ),
+                              license_contract_id: 0,
+                              license_financial_condition_id: 0,
+                              capability_financial_condition_id: 0,
+                              currency: firstCond?.currency || prev.currency || 'JPY',
+                            }))
+                            setAssetSearch('')
+                            setIsAssetPickerOpen(false)
+                          }}
+                        >
+                          選択
+                        </Button>
+                      </div>
+                    ))}
+                  {royaltyLicenseMasters.length === 0 && (
+                    <div className="p-10 text-center text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
+                      金銭条件を持つライセンス契約マスタがありません。
+                      マスタ &gt; 契約 で登録してください。
                     </div>
-                  ))}
-                {assets.length === 0 && (
-                  <div className="p-12 text-center text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground italic">
-                    Index retrieval failed or no assets
-                  </div>
-                )}
+                  )}
+                  {royaltyLicenseMasters.length > 0 &&
+                    royaltyLicenseMasters.filter((c: any) => {
+                      if (!assetSearch.trim()) return true
+                      const q = assetSearch.toLowerCase()
+                      return (
+                        (c.contract_title || '').toLowerCase().includes(q) ||
+                        (c.document_number || '').toLowerCase().includes(q) ||
+                        (c.vendor_name || '').toLowerCase().includes(q)
+                      )
+                    }).length === 0 && (
+                    <div className="p-10 text-center text-[10px] font-mono text-muted-foreground italic">
+                      「{assetSearch}」に一致する契約マスタがありません
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              /* ── 通常モード: ExternalAsset (Archive) を表示 ── */
+              <div className="border border-border rounded-md overflow-hidden">
+                <div className="grid grid-cols-[120px_1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  <span>Identity</span>
+                  <span>Reference</span>
+                  <span>Action</span>
+                </div>
+                <div className="max-h-[60vh] overflow-y-auto divide-y divide-border">
+                  {assets
+                    .filter(
+                      (a) =>
+                        a.asset_number.includes(assetSearch) ||
+                        a.asset_name.toLowerCase().includes(assetSearch.toLowerCase()) ||
+                        a.counterparty.toLowerCase().includes(assetSearch.toLowerCase())
+                    )
+                    .map((asset, idx) => (
+                      <div
+                        key={`asset-${asset.id || idx}`}
+                        className="grid grid-cols-[120px_1fr_auto] gap-3 items-center px-3 py-2.5 hover:bg-muted/40 transition-colors"
+                      >
+                        <span className="text-[11px] font-mono font-bold tracking-tight">
+                          {asset.asset_number}
+                        </span>
+                        <div>
+                          <p className="text-xs font-mono leading-tight">
+                            {asset.asset_name}
+                          </p>
+                          <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
+                            {asset.counterparty}
+                          </p>
+                        </div>
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => {
+                            if (assetPickerCallback) {
+                              assetPickerCallback(asset)
+                              setAssetPickerCallback(null)
+                              setIsAssetPickerOpen(false)
+                              return
+                            }
+                            const update: any = {}
+                            if (
+                              asset.asset_type === "contract" ||
+                              asset.asset_number.startsWith("AL-") ||
+                              asset.asset_number.startsWith("C-")
+                            ) {
+                              update["契約書番号"] = asset.asset_number
+                              update["基本契約名"] = asset.asset_name
+                            } else {
+                              update["台帳ID"] = asset.asset_number
+                              update["原著作物名"] = asset.asset_name
+                            }
+                            setFormData((prev: any) => ({ ...prev, ...update }))
+                            setIsAssetPickerOpen(false)
+                          }}
+                        >
+                          Select
+                        </Button>
+                      </div>
+                    ))}
+                  {assets.length === 0 && (
+                    <div className="p-12 text-center text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground italic">
+                      Index retrieval failed or no assets
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           </SheetBody>
         </SheetContent>
       </Sheet>
