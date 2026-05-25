@@ -134,6 +134,46 @@ iframe { width: 100%; height: 100%; border: 0; background: #fff; }
   border: 1px dashed #cbd5e1; border-radius: 8px; background: #fff;
 }
 
+/* ── Slack canvas markdown panel (Phase 22.21.86) ── */
+.md-section {
+  background: #fff; border: 1px solid #e5e7eb; border-radius: 8px;
+  padding: 12px 14px; margin-top: 16px;
+}
+.md-section header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 8px; flex-wrap: wrap;
+}
+.md-section h2 {
+  font-size: 13px; margin: 0; font-weight: 700; color: #0f172a;
+}
+.md-section .desc { color: #6b7280; font-size: 11px; margin: 2px 0 8px; }
+.md-section .md-tabs {
+  display: inline-flex; gap: 2px; background: #f3f4f6;
+  border-radius: 6px; padding: 3px;
+}
+.md-section .md-tab {
+  padding: 5px 12px; border: 0; background: transparent;
+  font: inherit; font-size: 11.5px; font-weight: 600; color: #475569;
+  border-radius: 4px; cursor: pointer;
+}
+.md-section .md-tab.active { background: #fff; color: #0f172a; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+.md-section textarea {
+  width: 100%; min-height: 220px; max-height: 50vh;
+  font-family: ui-monospace, "Menlo", "SFMono-Regular", monospace;
+  font-size: 12px; line-height: 1.55;
+  padding: 12px; border: 1px solid #d1d5db; border-radius: 6px;
+  background: #f8fafc; color: #1f2937; resize: vertical;
+}
+.md-section .md-actions {
+  display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;
+}
+.copy-flash {
+  display: inline-block; margin-left: 8px; font-size: 11px;
+  color: #15803d; font-weight: 600;
+  opacity: 0; transition: opacity 0.15s;
+}
+.copy-flash.shown { opacity: 1; }
+
 @media (max-width: 720px) {
   .header { display: block; }
   .grid { grid-template-columns: 1fr; }
@@ -190,10 +230,35 @@ export function templatePreviewPage(): string {
       </div>
     </section>
 
+    <!-- Phase 22.21.86: Slack キャンバス用 markdown スニペット
+         viewer ロールで誰でも閲覧 / コピー可能。ベース URL は
+         window.location.origin で動的に決まるので、custom domain 移行後も
+         そのまま動く。 -->
+    <section class="md-section" id="mdSection">
+      <header>
+        <div>
+          <h2>📋 Slack キャンバス用 markdown</h2>
+          <div class="desc">下のスタイルを選び、テキストをコピーして Slack キャンバスに貼り付けてください。URL はこのページのドメインを動的に使用します。</div>
+        </div>
+        <div class="md-tabs" role="tablist">
+          <button class="md-tab active" type="button" data-style="table">📊 表形式</button>
+          <button class="md-tab" type="button" data-style="grouped">📑 カテゴリ別</button>
+          <button class="md-tab" type="button" data-style="compact">📝 コンパクト</button>
+        </div>
+      </header>
+      <textarea id="mdOutput" readonly aria-label="Slack canvas markdown"></textarea>
+      <div class="md-actions">
+        <button id="copyMdBtn" type="button" class="btn">📋 クリップボードにコピー</button>
+        <button id="selectMdBtn" type="button" class="btn secondary">🔍 全選択</button>
+        <span id="copyFlash" class="copy-flash">✓ コピーしました</span>
+      </div>
+    </section>
+
     <div class="muted" style="margin-top: 32px; font-size: 11px; line-height: 1.7;">
       ※ サンプル PDF はダミーデータを差し込んで生成されたもので、実運用の文書ではありません。<br>
       ※ 「プレビュー」ボタンを押すと下部に内容が表示されます。新しいタブで開く / DL も可能です。<br>
-      ※ 取引先 / 案件固有の文書を発行したい場合は法務部までご依頼ください。
+      ※ 取引先 / 案件固有の文書を発行したい場合は法務部までご依頼ください。<br>
+      ※ Slack キャンバスに貼った URL は <strong>IAP 認証ゲート</strong>配下です — クリックした人が社内 Google アカウントでサインインしていればそのまま閲覧できます。
     </div>
   </div>
 
@@ -210,6 +275,14 @@ export function templatePreviewPage(): string {
     const viewerOpen = document.getElementById('viewerOpen');
     const viewerClose = document.getElementById('viewerClose');
     const frame = document.getElementById('previewFrame');
+    // Phase 22.21.86: Slack 用 markdown panel refs
+    const mdOutput = document.getElementById('mdOutput');
+    const copyMdBtn = document.getElementById('copyMdBtn');
+    const selectMdBtn = document.getElementById('selectMdBtn');
+    const copyFlash = document.getElementById('copyFlash');
+    const mdTabs = document.querySelectorAll('.md-tab');
+    let currentMdStyle = 'table';
+    let currentTemplates = [];
 
     // ----- URL builders -----
     function htmlUrl(type, download) {
@@ -269,6 +342,135 @@ export function templatePreviewPage(): string {
       return card;
     }
 
+    // ----- Phase 22.21.86: Slack canvas markdown 生成 -----
+    //   3 スタイル (table / grouped / compact) を currentTemplates から生成。
+    //   ベース URL は window.location.origin を使い、custom domain 移行後も
+    //   そのまま動く。
+    function absUrl(path) {
+      return window.location.origin + path;
+    }
+
+    // category → 表示順 & 日本語ラベル (grouped スタイル用)
+    const CAT_ORDER = ['Domestic', 'International', 'Internal', 'Other'];
+    const CAT_LABEL_JA = {
+      Domestic: '🟦 国内文書',
+      International: '🟢 国際文書',
+      Internal: '🟡 内部文書',
+      Other: '⬜ その他',
+    };
+
+    function buildMdTable(templates) {
+      const origin = window.location.origin;
+      const lines = [];
+      lines.push('# 📄 ひな型ライブラリ');
+      lines.push('');
+      lines.push('> [🗂 全件一覧ページを開く](' + origin + '/templates/preview)');
+      lines.push('');
+      lines.push('| ひな型 | プレビュー | PDF DL |');
+      lines.push('|---|---|---|');
+      templates.forEach((t) => {
+        const label = (t.label || t.type).replace(/\\|/g, '\\\\|');
+        const prev = origin + '/templates/preview?type=' + encodeURIComponent(t.type);
+        const pdf = origin + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
+        lines.push('| ' + label + ' | [📖](' + prev + ') | [⬇](' + pdf + ') |');
+      });
+      return lines.join('\\n');
+    }
+
+    function buildMdGrouped(templates) {
+      const origin = window.location.origin;
+      const buckets = {};
+      templates.forEach((t) => {
+        const cat = t.category || 'Other';
+        if (!buckets[cat]) buckets[cat] = [];
+        buckets[cat].push(t);
+      });
+      const lines = [];
+      lines.push('# 📄 ひな型ライブラリ');
+      lines.push('');
+      lines.push('[🗂 全件一覧ページ](' + origin + '/templates/preview)');
+      lines.push('');
+      CAT_ORDER.forEach((cat) => {
+        const list = buckets[cat];
+        if (!list || list.length === 0) return;
+        lines.push('## ' + (CAT_LABEL_JA[cat] || cat));
+        list.forEach((t) => {
+          const label = t.label || t.type;
+          const prev = origin + '/templates/preview?type=' + encodeURIComponent(t.type);
+          const pdf = origin + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
+          lines.push('- **' + label + '** — [📖 プレビュー](' + prev + ') ・ [⬇ PDF](' + pdf + ')');
+        });
+        lines.push('');
+      });
+      return lines.join('\\n').trimEnd();
+    }
+
+    function buildMdCompact(templates) {
+      const origin = window.location.origin;
+      const lines = [];
+      lines.push('# 📄 ひな型 PDF ダウンロード');
+      lines.push('');
+      lines.push('[🗂 全件一覧（プレビュー付き）](' + origin + '/templates/preview)');
+      lines.push('');
+      templates.forEach((t) => {
+        const label = t.label || t.type;
+        const pdf = origin + '/api/template-preview/' + encodeURIComponent(t.type) + '/pdf';
+        lines.push('- [' + label + '](' + pdf + ')');
+      });
+      return lines.join('\\n');
+    }
+
+    function regenerateMd() {
+      if (!currentTemplates.length) {
+        mdOutput.value = '(テンプレート一覧を読み込み中...)';
+        return;
+      }
+      if (currentMdStyle === 'grouped') {
+        mdOutput.value = buildMdGrouped(currentTemplates);
+      } else if (currentMdStyle === 'compact') {
+        mdOutput.value = buildMdCompact(currentTemplates);
+      } else {
+        mdOutput.value = buildMdTable(currentTemplates);
+      }
+    }
+
+    mdTabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        mdTabs.forEach((t) => t.classList.remove('active'));
+        tab.classList.add('active');
+        currentMdStyle = tab.dataset.style || 'table';
+        regenerateMd();
+      });
+    });
+
+    selectMdBtn.addEventListener('click', () => {
+      mdOutput.focus();
+      mdOutput.select();
+    });
+
+    copyMdBtn.addEventListener('click', async () => {
+      const text = mdOutput.value;
+      let ok = false;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(text);
+          ok = true;
+        }
+      } catch (e) { /* fall through to execCommand fallback */ }
+      if (!ok) {
+        // フォールバック: textarea を select して execCommand('copy')
+        mdOutput.focus();
+        mdOutput.select();
+        try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+      }
+      if (ok) {
+        copyFlash.classList.add('shown');
+        setTimeout(() => copyFlash.classList.remove('shown'), 1800);
+      } else {
+        alert('コピーに失敗しました。手動で全選択 (Ctrl+A) → コピー (Ctrl+C) してください。');
+      }
+    });
+
     // ----- Viewer -----
     function openInViewer(t) {
       const url = htmlUrl(t.type, false);
@@ -323,6 +525,10 @@ export function templatePreviewPage(): string {
         templates.forEach((t) => gridEl.appendChild(renderCard(t)));
         statusEl.textContent = '';
         applyFilter();
+
+        // Phase 22.21.86: Slack markdown panel に流し込む
+        currentTemplates = templates;
+        regenerateMd();
 
         // Deep link: /templates/preview?type=xxx で来た場合は自動で viewer を開く
         const params = new URLSearchParams(location.search);
