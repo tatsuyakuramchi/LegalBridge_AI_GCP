@@ -776,6 +776,28 @@ const VENDOR_COLUMN_MAP: Record<string, keyof VendorRow> = {
   適格請求書発行事業者: "is_invoice_issuer",
   インボイス登録番号: "invoice_registration_number",
   登録番号: "invoice_registration_number",
+  // Phase 22.21.74: 週末追加した新列の日本語 alias。これがないと日本語
+  //   ヘッダ CSV (例: "法人番号,資本金,従業員数,...") が silently ドロップする。
+  法人番号: "corporate_number",
+  支払サイト: "payment_terms",
+  支払条件: "payment_terms",
+  主要事業: "main_business",
+  業種: "main_business",
+  取引区分: "transaction_category",
+  取引カテゴリ: "transaction_category",
+  資本金: "capital_yen",
+  資本金額: "capital_yen",
+  従業員数: "employee_count",
+  社員数: "employee_count",
+  格付: "rating",
+  格付け: "rating",
+  レーティング: "rating",
+  "反社チェック": "antisocial_check_result",
+  反社確認: "antisocial_check_result",
+  反社チェック結果: "antisocial_check_result",
+  最終更新日: "master_updated_at",
+  マスター更新日: "master_updated_at",
+  更新日: "master_updated_at",
 };
 
 function parseBool(v: any): boolean {

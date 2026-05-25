@@ -6248,7 +6248,12 @@ ${details}
   function parseBoolFlag(raw: any, defaultValue = false): boolean {
     if (raw === undefined || raw === null || raw === "") return defaultValue;
     const s = String(raw).trim().toLowerCase();
-    return !["false", "no", "0", "off", "done", "created"].includes(s);
+    // Phase 22.21.74: 日本語の falsy 値も認識。
+    //   manual 上で "作成済" を「PDF 生成をスキップ」と謳っていたが、旧実装では
+    //   falsy リストに無く true 判定されていた drift を解消。
+    //   他に 済 / 完了 / 不要 / skip / no も追加 (ユーザー入力ゆらぎ対応)。
+    return !["false", "no", "0", "off", "done", "created", "skip",
+             "作成済", "作成済み", "済", "済み", "完了", "不要", "いいえ"].includes(s);
   }
 
   async function maybeGeneratePdfForImport(
@@ -6323,7 +6328,7 @@ ${details}
    * expense 行用列 (Phase 17i):
    *   line_no, expense_name, spec?, spent_date?, amount_inc_tax, remarks?
    */
-  app.post("/api/imports/bulk/order", express.json({ limit: "10mb" }), async (req, res) => {
+  app.post("/api/imports/bulk/order", requirePortalSecret, express.json({ limit: "10mb" }), async (req, res) => {
     try {
       const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
       if (rows.length === 0) {
@@ -6874,6 +6879,7 @@ ${details}
    */
   app.post(
     "/api/imports/bulk/license-contract",
+    requirePortalSecret,
     express.json({ limit: "10mb" }),
     async (req, res) => {
       try {
@@ -7125,6 +7131,7 @@ ${details}
    */
   app.post(
     "/api/imports/bulk/license-master",
+    requirePortalSecret,
     express.json({ limit: "10mb" }),
     async (req, res) => {
       try {
@@ -7320,6 +7327,7 @@ ${details}
    */
   app.post(
     "/api/imports/bulk/service-master",
+    requirePortalSecret,
     express.json({ limit: "10mb" }),
     async (req, res) => {
       try {
@@ -7460,6 +7468,7 @@ ${details}
    */
   app.post(
     "/api/imports/bulk/nda",
+    requirePortalSecret,
     express.json({ limit: "10mb" }),
     async (req, res) => {
       try {
@@ -7606,6 +7615,7 @@ ${details}
    */
   app.post(
     "/api/imports/bulk/sales-master",
+    requirePortalSecret,
     express.json({ limit: "10mb" }),
     async (req, res) => {
       try {
@@ -8603,6 +8613,7 @@ ${details}
    */
   app.post(
     "/api/imports/bulk/ringi",
+    requirePortalSecret,
     express.json({ limit: "10mb" }),
     async (req, res) => {
       try {
