@@ -1445,6 +1445,9 @@ export function DocumentEditorPage() {
                         setFormData((prev: any) => ({
                           ...prev,
                           selected_master_contract_id: Number(c.id),
+                          // Phase 22.21.94: PDF ヘッダ右上の「契約番号」欄に出力
+                          linked_contract_number:
+                            c.document_number || prev.linked_contract_number || "",
                           licensor: c.vendor_name || prev.licensor || "",
                           licensee: companyProfile?.name || prev.licensee || "",
                           originalWork:
@@ -1473,6 +1476,10 @@ export function DocumentEditorPage() {
                         : []
                       setFormData((prev: any) => ({
                         ...prev,
+                        // Phase 22.21.94: PDF ヘッダ右上の「契約番号」に出力 —
+                        // archive ILT の document_number を流し込む
+                        linked_contract_number:
+                          doc.document_number || prev.linked_contract_number || "",
                         licensor:
                           fd["Licensor_名称"] ||
                           fd["Licensor_氏名会社名"] ||

@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
-  <title>利用許諾料計算書 {{manufacturingIssueKey}}</title>
+  <title>利用許諾料計算書 {{DOC_NO}}</title>
   <style>
     @page { size: A4; margin: 18mm 16mm 18mm 16mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -175,13 +175,15 @@
 <body>
 
   <!-- ヘッダー -->
+  <!-- Phase 22.21.94: 台帳ID / ライセンス課題 を撤去し、
+       文書番号 (royalty_statement 自身 = DOC_NO) +
+       契約番号 (linked_contract_number = 基本契約/個別利用許諾の document_number)
+       を表示。 -->
   <div class="doc-header">
     <div class="doc-title">利用許諾料計算書</div>
     <div class="doc-meta">
-      <div class="doc-number">{{manufacturingIssueKey}}</div>
-      <div>台帳ID: {{ledgerId}}</div>
-      <div>ライセンス課題: {{licenseIssueKey}}</div>
-      {{#if linked_terms_number}}<div>個別契約番号: {{linked_terms_number}}</div>{{/if}}
+      <div class="doc-number">{{DOC_NO}}</div>
+      {{#if linked_contract_number}}<div>契約番号: {{linked_contract_number}}</div>{{/if}}
       <div>発行日: {{documentDate}}</div>
     </div>
   </div>
@@ -356,16 +358,27 @@
   </div>
   {{/if}}
 
-  <!-- 備考 -->
+  <!-- 備考 / みなし合意 -->
+  <!-- Phase 22.21.94: 捺印欄 (担当者・法務部長・取締役) を削除し、
+       備考欄に下記の固定文言を常時挿入:
+         - 支払額は源泉徴収税引き後である旨
+         - みなし合意 (5 営業日以内に異議がなければ同意とみなす)
+         - 連絡先 (担当者情報から自動引用 — STAFF_NAME / DEPARTMENT / EMAIL / PHONE)
+       追加メモ (formData.notes) があれば下段に表示。 -->
   <div class="notes-box">
-    備考: {{#if notes}}{{notes}}{{/if}}
-  </div>
-
-  <!-- 捺印欄 -->
-  <div class="stamp-area">
-    <div class="stamp-box">担当者</div>
-    <div class="stamp-box">法務部長</div>
-    <div class="stamp-box">取締役</div>
+    <div style="font-weight:bold; margin-bottom:4px;">備考</div>
+    <div>※ 支払額は源泉徴収税引き後の金額になります。</div>
+    <div style="margin-top:3px;">
+      ※ 本計算書の内容に異議がある場合は、本書到達後 5 営業日以内に下記連絡先までご連絡ください。
+      期限内にご連絡がない場合は、内容にご同意いただいたものとみなします。
+    </div>
+    <div style="margin-top:3px;">
+      ※ 連絡先:
+      {{#if STAFF_NAME}}{{STAFF_NAME}}{{else}}（担当者未設定）{{/if}}{{#if STAFF_DEPARTMENT}} ／ {{STAFF_DEPARTMENT}}{{/if}}{{#if STAFF_EMAIL}} ／ {{STAFF_EMAIL}}{{/if}}{{#if STAFF_PHONE}} ／ TEL {{STAFF_PHONE}}{{/if}}
+    </div>
+    {{#if notes}}
+    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #ccc;">{{notes}}</div>
+    {{/if}}
   </div>
 
   <!-- フッター -->

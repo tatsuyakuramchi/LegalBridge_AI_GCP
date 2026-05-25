@@ -2401,6 +2401,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       setFormData({
         ...formData,
         selected_master_contract_id: id,
+        // Phase 22.21.94: PDF ヘッダ右上「契約番号」用。
+        // 契約マスタの document_number をそのまま流し込む。
+        linked_contract_number: c.document_number || formData.linked_contract_number || '',
         // 当事者
         licensor: c.vendor_name || formData.licensor || '',
         licensee: companyProfile?.name || formData.licensee || '',

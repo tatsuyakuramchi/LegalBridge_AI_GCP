@@ -245,7 +245,8 @@
     "_comment": "Phase 22.21.92: フォームを 4 ステップ動線に再構成。Backlog 系フィールド (manufacturingIssueKey / licenseIssueKey / linked_terms_number) は削除、計算結果は readonly。原著作物は ledger マスタから自動引用。詳細は templates_config.json (root) を参照。",
     "vars": {
       "documentDate": { "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true, "dbField": "auto.today" },
-      "ledgerId": { "label": "台帳ID", "group": "I. ヘッダ", "placeholder": "(空欄で自動採番)", "helpText": "空欄で生成時に LIC-YYYY-NNNN 形式で自動採番" },
+      "linked_contract_number": { "label": "契約番号 (基本契約 / 個別利用許諾の文書番号)", "group": "I. ヘッダ", "readonly": true, "helpText": "契約マスタを選択すると自動入力されます (PDF 右上の「契約番号」欄に出力)" },
+      "ledgerId": { "label": "台帳ID (legacy)", "group": "I. ヘッダ", "hidden": true, "helpText": "Phase 22.21.94 で PDF 上は廃止 — フィールド自体は legacy データ互換のため残置" },
 
       "licensor": { "label": "ライセンサー名", "group": "II. 当事者 (契約マスタから自動入力)", "required": true, "dbField": "vendor.vendor_name", "readonly": true, "helpText": "契約マスタの取引先から自動入力" },
       "VENDOR_REPRESENTATIVE_SAMA": { "label": "ライセンサー代表者 (＋様)", "group": "II. 当事者 (契約マスタから自動入力)", "placeholder": "例: 代表取締役 山田 太郎 様" },
