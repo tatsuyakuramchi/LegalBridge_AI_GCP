@@ -1,0 +1,85 @@
+<!--
+  legal_response.html — Phase 22.21.83 PLACEHOLDER
+
+  ⚠️ これは仮テンプレです。ユーザー側で正式デザインに差し替えてください。
+  templates_config.json の "legal_response" エントリで定義された変数を
+  すべてここで {{VAR_NAME}} 形式で参照しているので、まずはこの最小版で
+  worker のプレビュー / PDF 生成が通ることを確認できます。
+
+  使える主要変数:
+    - {{DOC_NO}}                自動採番された文書番号
+    - {{ISSUE_DATE}}            発行日
+    - {{RELATED_ISSUE_KEY}}     関連 Backlog 課題 (LEGAL-NNN)
+    - {{RELATED_REQ_TYPE}}      相談区分 (法務相談 / 事務手続 等)
+    - {{CONSULTER_NAME}}        相談者氏名
+    - {{CONSULTER_DEPT}}        相談者部署
+    - {{CONSULTER_EMAIL}}       相談者メール
+    - {{CONSULT_DATE}}          相談日
+    - {{CONSULT_SUMMARY}}       件名・概要
+    - {{CONSULT_DETAIL}}        相談詳細 (改行可)
+    - {{RESPONSE_DATE}}         回答日
+    - {{RESPONSE_AUTHOR}}       回答者
+    - {{RESPONSE_CONTENT}}      回答内容 (改行可)
+    - {{REFERENCED_RULES}}      引用条文・社内規程・判例
+    - {{REMARKS}}               補足事項
+    - {{ATTACHMENT_NOTE}}       添付資料の説明
+-->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>法務回答書 {{DOC_NO}}</title>
+  <style>
+    body { font-family: "Yu Gothic", "Hiragino Kaku Gothic ProN", sans-serif; color: #1a1a1a; max-width: 720px; margin: 40px auto; padding: 0 24px; line-height: 1.7; }
+    h1 { font-size: 18pt; text-align: center; margin: 0 0 8px; letter-spacing: 0.15em; }
+    .doc-no { text-align: right; font-size: 9pt; color: #555; margin-bottom: 24px; }
+    h2 { font-size: 12pt; border-left: 4px solid #1a4f8c; padding-left: 8px; margin-top: 28px; }
+    .field-row { display: grid; grid-template-columns: 140px 1fr; gap: 8px 16px; margin: 6px 0; font-size: 10.5pt; }
+    .label { color: #555; font-size: 9.5pt; }
+    .value { white-space: pre-wrap; }
+    .section-body { font-size: 10.5pt; white-space: pre-wrap; padding: 8px 0; }
+    .footer { margin-top: 48px; font-size: 9pt; color: #666; text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>法 務 回 答 書</h1>
+  <div class="doc-no">文書番号: {{DOC_NO}} ／ 発行日: {{ISSUE_DATE}}</div>
+
+  <h2>I. ヘッダ</h2>
+  <div class="field-row"><div class="label">関連課題</div><div class="value">{{RELATED_ISSUE_KEY}}</div></div>
+  <div class="field-row"><div class="label">相談区分</div><div class="value">{{RELATED_REQ_TYPE}}</div></div>
+
+  <h2>II. 相談者</h2>
+  <div class="field-row"><div class="label">氏名</div><div class="value">{{CONSULTER_NAME}}</div></div>
+  <div class="field-row"><div class="label">部署</div><div class="value">{{CONSULTER_DEPT}}</div></div>
+  <div class="field-row"><div class="label">メール</div><div class="value">{{CONSULTER_EMAIL}}</div></div>
+  <div class="field-row"><div class="label">相談日</div><div class="value">{{CONSULT_DATE}}</div></div>
+
+  <h2>III. 相談内容</h2>
+  <div class="field-row"><div class="label">件名</div><div class="value">{{CONSULT_SUMMARY}}</div></div>
+  <div class="section-body">{{CONSULT_DETAIL}}</div>
+
+  <h2>IV. 回答</h2>
+  <div class="field-row"><div class="label">回答日</div><div class="value">{{RESPONSE_DATE}}</div></div>
+  <div class="field-row"><div class="label">回答者</div><div class="value">{{RESPONSE_AUTHOR}}</div></div>
+  <div class="section-body">{{RESPONSE_CONTENT}}</div>
+
+  {{#if REFERENCED_RULES}}
+  <h2>IV-2. 引用条文・社内規程・判例</h2>
+  <div class="section-body">{{REFERENCED_RULES}}</div>
+  {{/if}}
+
+  {{#if REMARKS}}
+  <h2>V. 補足</h2>
+  <div class="section-body">{{REMARKS}}</div>
+  {{/if}}
+
+  {{#if ATTACHMENT_NOTE}}
+  <div style="margin-top: 24px; font-size: 9.5pt; color: #666; border-top: 1px dashed #ccc; padding-top: 8px;">
+    📎 添付: {{ATTACHMENT_NOTE}}
+  </div>
+  {{/if}}
+
+  <div class="footer">— 以上 —</div>
+</body>
+</html>

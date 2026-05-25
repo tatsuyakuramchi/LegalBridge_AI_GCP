@@ -1461,38 +1461,34 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
   if (!prefix) {
     // テンプレ type 名 / Backlog issueType.name どちらでもヒットするよう
     // 両方向のキーを登録する。
+    // Phase 22.21.82: 削除済みテンプレ (planning_purchase_order /
+    //   inspection_certificate_v2 / inspection_certificate_detailed /
+    //   license_report / intl_master / intl_amendment / payment_notice /
+    //   payment_notice_alt / fee_statement / service_terms / contract)
+    //   を typeCodes から除去。
+    // Phase 22.21.83: legal_response (LGR) と maintenance_spec (MNT) を追加。
     const typeCodes: Record<string, string> = {
       // 発注系
       purchase_order: "PO",
-      planning_purchase_order: "PPO",
       intl_purchase_order: "IPO",
       "発注書": "PO",
       // 検収系
       inspection_certificate: "INS",
-      inspection_certificate_v2: "INS",
-      inspection_certificate_detailed: "INS",
       delivery_inspec: "INS",
       "検収書": "INS",
       // ライセンス系
       license_master: "LIC",
       lic_individual: "ILT",
       individual_license_terms: "ILT",
-      license_report: "LRP",
       license_calculation_sheet: "LCS",
-      intl_master: "ILM",
-      intl_amendment: "IAM",
       "ライセンス基本契約": "LIC",
       "個別利用許諾条件": "ILT",
       // ロイヤリティ / 支払
       royalty_statement: "ROY",
       manufacturing: "MFG",
-      payment_notice: "PAY",
-      payment_notice_alt: "PAY",
-      fee_statement: "FEE",
       "利用許諾料計算書": "ROY",
       // 業務委託
       service_master: "SVC",
-      service_terms: "SVT",
       outsourcing: "OUT",
       "業務委託基本契約": "SVC",
       // 売買
@@ -1501,13 +1497,19 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       sales_master_credit: "SAL",
       sales_master_standard: "SAL",
       "売買基本契約": "SAL",
+      // 別紙 (保守仕様書)
+      maintenance_spec: "MNT",
+      "システム保守仕様書": "MNT",
+      // 法務回答 (Phase 22.21.83)
+      legal_response: "LGR",
+      "法務回答書": "LGR",
+      legal_consult: "LGR",
+      "法務相談": "LGR",
+      "事務手続": "LGR",
       // その他
       nda: "NDA",
       "NDA": "NDA",
-      contract: "CTR",
       external_contract: "ARC",
-      legal_request: "REQ",
-      legal_consult: "REQ",
     };
     prefix =
       typeCodes[type] ||

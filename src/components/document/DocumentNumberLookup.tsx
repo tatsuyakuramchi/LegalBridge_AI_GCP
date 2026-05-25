@@ -99,6 +99,7 @@ const TEMPLATE_TYPE_LABELS: Record<string, string> = {
   inspection_certificate: "検収書",
   royalty_statement: "利用許諾料計算書",
   maintenance_spec: "システム保守仕様書",
+  legal_response: "法務回答書", // Phase 22.21.83
 }
 
 const deriveTitle = (

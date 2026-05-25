@@ -4,7 +4,7 @@
  * 3 カテゴリ:
  *   - basic      : 基本契約 (master agreements)
  *   - individual : 個別契約 (案件単位の伝票・契約)
- *   - other      : その他 (NDA, 法務依頼など、上記以外)
+ *   - other      : その他 (NDA, 法務回答書など、上記以外)
  *
  * DB の documents.document_category と Slack /法務検索 の表示
  * グループ化の両方でこの関数を使う (重複ロジックを避けるため)。

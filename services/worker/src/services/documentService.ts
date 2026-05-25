@@ -32,6 +32,7 @@ export type DocumentType =
   | "royalty_statement"
   | "inspection_certificate"
   | "maintenance_spec"
+  | "legal_response" // Phase 22.21.83: 法務回答書 (法務相談・事務手続への正式回答)
   | "license_calculation_sheet"; // legacy alias (= royalty_statement 系の旧名)
 
 export class DocumentService {

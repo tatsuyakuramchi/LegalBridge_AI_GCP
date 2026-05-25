@@ -855,9 +855,19 @@ async function startServer() {
       inspection_deadline: inspectionDeadline = null,
     } = input;
 
-    // Phase 22.21.82: 旧 default "legal_request" は legal_request.html 削除により使えない。
-    //   未知の requestType が来た場合は purchase_order (最も汎用) にフォールバック。
-    let templateType: DocumentType = "purchase_order";
+    // Phase 22.21.83: requestType → templateType マップ。
+    //   legal_consult / 事務手続 / 未知 issueType は PDF テンプレ無し
+    //   (= 自動 PDF 生成をスキップ、Backlog チケットだけ作る) に変更。
+    //   担当者が後で admin-ui から「法務回答書 (legal_response)」を選んで
+    //   PDF を発行する想定。
+    //
+    //   skipPdf = true のとき:
+    //     - documentService.generateDocument() / uploadPdf() / documents INSERT
+    //       を全部スキップ
+    //     - getNewDocumentNumber も呼ばない (採番しない)
+    //     - 戻り値の docNumber / driveLink は空文字
+    let templateType: DocumentType | null = null;
+    let skipPdf = false;
     if (requestType === "delivery_inspec") templateType = "inspection_certificate";
     else if (requestType === "purchase_order") templateType = "purchase_order";
     else if (requestType === "nda") templateType = "nda";
@@ -865,8 +875,10 @@ async function startServer() {
     else if (requestType === "lic_individual") templateType = "individual_license_terms";
     else if (requestType === "license_calc") templateType = "license_calculation_sheet";
     else {
-      console.warn(
-        `[legacy-issue] unknown requestType=${requestType}, falling back to purchase_order`
+      // legal_consult / 事務手続 / 未知の Backlog issueType
+      skipPdf = true;
+      console.log(
+        `[legacy-issue] requestType=${requestType} → PDF auto-generation skipped (担当者が後で法務回答書を発行)`
       );
     }
 
@@ -986,43 +998,55 @@ ${details}
     );
     const deptChannel = deptRule.rows[0]?.slack_channel_id;
 
-    const docNumber = await getNewDocumentNumber(templateType, requestType);
+    // Phase 22.21.83: skipPdf=true なら docNumber/driveLink は空、PDF 関連の
+    //   一連の処理 (採番 / レンダ / Drive アップ / documents INSERT) をすべて
+    //   省略する。Backlog チケットと legal_requests 行だけ作って受付完了通知
+    //   (notifyIssueEvent) を出す。
+    let docNumber = "";
+    let driveLink = "";
+    if (!skipPdf && templateType) {
+      docNumber = await getNewDocumentNumber(templateType, requestType);
 
-    const { html, fileName } = await documentService.generateDocument(
-      {
-        issueKey: issue.issueKey,
-        documentNumber: docNumber,
-        summary: displaySummary,
-        requester: userName || user,
-        date: new Date().toLocaleDateString("ja-JP"),
-        details: {
-          相談詳細: details,
-          相手方: counterparty,
-          counterparty,
-          description: details || displaySummary,
-          SlackユーザーID: user,
-          VENDOR_NAME: counterparty,
-          DELIVERY_NUMBER: deliveryNo ? String(deliveryNo) : "",
-          deliveryDate: deliveryDate ? new Date(deliveryDate).toLocaleDateString("ja-JP") : "",
-          inspectionDeadline: inspectionDeadline
-            ? new Date(inspectionDeadline).toLocaleDateString("ja-JP")
-            : "",
-          orderAmountStr: orderAmount
-            ? new Intl.NumberFormat("ja-JP").format(parseFloat(orderAmount))
-            : "0",
-          DOC_NO: docNumber,
+      const { html, fileName } = await documentService.generateDocument(
+        {
+          issueKey: issue.issueKey,
+          documentNumber: docNumber,
+          summary: displaySummary,
+          requester: userName || user,
+          date: new Date().toLocaleDateString("ja-JP"),
+          details: {
+            相談詳細: details,
+            相手方: counterparty,
+            counterparty,
+            description: details || displaySummary,
+            SlackユーザーID: user,
+            VENDOR_NAME: counterparty,
+            DELIVERY_NUMBER: deliveryNo ? String(deliveryNo) : "",
+            deliveryDate: deliveryDate ? new Date(deliveryDate).toLocaleDateString("ja-JP") : "",
+            inspectionDeadline: inspectionDeadline
+              ? new Date(inspectionDeadline).toLocaleDateString("ja-JP")
+              : "",
+            orderAmountStr: orderAmount
+              ? new Intl.NumberFormat("ja-JP").format(parseFloat(orderAmount))
+              : "0",
+            DOC_NO: docNumber,
+          },
         },
-      },
-      templateType
-    );
+        templateType
+      );
 
-    // Phase 9: PDF レンダリング経由で upload (Backlog webhook 経路)
-    const driveLink = await googleDriveService.uploadPdf(html, fileName);
+      // Phase 9: PDF レンダリング経由で upload (Backlog webhook 経路)
+      driveLink = await googleDriveService.uploadPdf(html, fileName);
 
-    await query(
-      "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
-      [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
-    );
+      await query(
+        "INSERT INTO documents (document_number, issue_key, template_type, form_data, drive_link, created_by) VALUES ($1, $2, $3, $4, $5, $6)",
+        [docNumber, issue.issueKey, templateType, JSON.stringify(details), driveLink, user]
+      );
+    } else {
+      console.log(
+        `[legacy-issue] ${issue.issueKey} (${requestType}): skipped auto PDF generation, awaiting manual document by 法務担当`
+      );
+    }
 
     // Phase 19: 旧来の「文書生成完了」DM + 部署チャンネル投稿 (driveLink 付き)
     // は廃止し、共通の notifyIssueEvent ヘルパーで「受付しました」通知を出す
