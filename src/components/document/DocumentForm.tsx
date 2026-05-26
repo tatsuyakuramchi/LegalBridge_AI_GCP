@@ -2486,17 +2486,23 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       0,
       (Number(formData.quantity) || 0) - (Number(formData.sampleQuantity) || 0)
     );
+    // Phase 22.21.98: 担当者ステップを追加 (4 ステップ進捗)
     const stepStatus = {
       step1: selectedContract && selectedConditionId > 0,
       step2:
         formData.productName &&
         Number(formData.msrpStr) > 0 &&
         Number(formData.quantity) > 0,
+      step3: !!formData.STAFF_NAME, // 担当者 (連絡先)
       step4: !!formData.currency,
     };
-    const stepsDone = [stepStatus.step1, stepStatus.step2, stepStatus.step4]
-      .filter(Boolean).length;
-    const totalSteps = 3;
+    const stepsDone = [
+      stepStatus.step1,
+      stepStatus.step2,
+      stepStatus.step3,
+      stepStatus.step4,
+    ].filter(Boolean).length;
+    const totalSteps = 4;
 
     return (
       <div className="space-y-6">
@@ -2516,8 +2522,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               <>
                 ステップ {stepsDone} / {totalSteps} 完了 —
                 {!stepStatus.step1 && ' 1) 契約と条件を選択'}
-                {!stepStatus.step2 && ' 2) 製品・上代・製造数を入力'}
-                {!stepStatus.step4 && ' 3) 通貨を選択'}
+                {stepStatus.step1 && !stepStatus.step2 && ' 2) 製品・上代・製造数を入力'}
+                {stepStatus.step1 && stepStatus.step2 && !stepStatus.step3 && ' 3) 担当者 (連絡先) を選択'}
+                {stepStatus.step1 && stepStatus.step2 && stepStatus.step3 && !stepStatus.step4 && ' 4) 通貨を選択'}
               </>
             )}
           </div>
@@ -2945,10 +2952,104 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </FormSection>
 
-        {/* ─── STEP 4 ─ 報告・支払・備考 (折りたたみ) ──── */}
+        {/* ─── STEP 4 ─ 担当者 (連絡先) ──────────────────────────
+            Phase 22.21.98: PDF 右上のグレーボックス「発行元 (ライセンシー)」
+            と備考の「※ 連絡先:」に出力される。サイドバーの Master · Context
+            → Staff で選択した担当者を Sync Staff ボタンで一括流し込み、
+            手動編集も可能にする。royalty_statement 専用なので fillStaff も
+            ここでローカル定義 (purchase_order の fillStaff と同 shape)。 */}
+        <FormSection
+          title="ステップ 4 — 担当者 (連絡先)"
+          variant="emerald"
+          icon={<User className="w-4 h-4" />}
+          headerActions={
+            <button
+              type="button"
+              onClick={() => {
+                if (!selectedStaff) return;
+                setFormData({
+                  ...formData,
+                  STAFF_NAME: selectedStaff.staff_name || '',
+                  STAFF_DEPARTMENT: selectedStaff.department || '',
+                  STAFF_PHONE: selectedStaff.phone || '',
+                  STAFF_EMAIL: selectedStaff.email || '',
+                });
+              }}
+              disabled={!selectedStaff}
+              className={cn(
+                'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+                !selectedStaff
+                  ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+                  : 'border-foreground/30 text-foreground hover:bg-muted'
+              )}
+              title={
+                !selectedStaff
+                  ? '左サイドバーの Master · Context で担当者を選択してください'
+                  : 'サイドバーで選んだ担当者の情報をフォームに反映'
+              }
+            >
+              Sync Staff
+            </button>
+          }
+        >
+          <p className="text-[10px] font-mono text-muted-foreground mb-3 border-l-2 border-emerald-500 pl-2 leading-relaxed">
+            PDF 右上のグレーボックス「発行元 (ライセンシー)」と
+            備考の「※ 連絡先:」に出力されます。<br />
+            左サイドバーの <strong>Master · Context → Staff</strong> で担当者を選び、
+            上の <strong>Sync Staff</strong> ボタンで一括反映できます (手入力も可)。
+          </p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">担当者氏名</Label>
+              <Input
+                value={formData.STAFF_NAME || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, STAFF_NAME: e.target.value })
+                }
+                placeholder="例: 倉持 達也"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">部署</Label>
+              <Input
+                value={formData.STAFF_DEPARTMENT || ''}
+                onChange={(e) =>
+                  setFormData({
+                    ...formData,
+                    STAFF_DEPARTMENT: e.target.value,
+                  })
+                }
+                placeholder="例: 法務部"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">電話番号</Label>
+              <Input
+                value={formData.STAFF_PHONE || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, STAFF_PHONE: e.target.value })
+                }
+                placeholder="例: 03-1234-5678"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">メールアドレス</Label>
+              <Input
+                type="email"
+                value={formData.STAFF_EMAIL || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, STAFF_EMAIL: e.target.value })
+                }
+                placeholder="例: legal@example.com"
+              />
+            </div>
+          </div>
+        </FormSection>
+
+        {/* ─── STEP 5 ─ 報告・支払・備考 (折りたたみ) ──── */}
         <details className="group rounded-sm border border-input" open>
           <summary className="cursor-pointer px-4 py-2.5 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▼ ステップ 4 — 報告・支払・備考
+            ▼ ステップ 5 — 報告・支払・備考
           </summary>
           <div className="p-4 border-t border-input grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
