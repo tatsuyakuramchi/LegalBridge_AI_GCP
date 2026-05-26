@@ -58,6 +58,7 @@ export function DocumentEditorPage() {
     showNotification,
     refreshIssues,
     refreshAssets, // Phase 22.21.32: 文書生成後に Archive リストを最新化
+    refreshContracts, // Phase 22.21.123: Sheet 開く度にマスタ最新化
   } = useAppData()
 
   // Phase 22.21.92: royalty_statement 向け — license カテゴリかつ
@@ -859,8 +860,11 @@ export function DocumentEditorPage() {
                   // 横断検索) に確実に入るようにする。callback が残っていると
                   // 検収書/発注書フォームの「PO紐付」用 Archive 専用 UI に
                   // 落ちてしまっていた。
+                  // Phase 22.21.123: 別タブで契約を登録した後でも反映されるよう
+                  // 開く度に refreshContracts() で master データを最新化。
                   setAssetPickerCallback(null)
                   setIsAssetPickerOpen(true)
+                  refreshContracts?.()
                 }}
               >
                 <ScanSearch />
@@ -1248,9 +1252,12 @@ export function DocumentEditorPage() {
                         // Phase 22.21.122: callback なしの Sheet 起動。
                         //   inspection_certificate / royalty_statement の
                         //   フォーム内インラインボタンからマスタ検索を直接開く。
+                        // Phase 22.21.123: 開く度に refreshContracts() で
+                        //   master データを最新化 (別タブで登録した直後でも反映)。
                         onOpenLegalAssetSearch={() => {
                           setAssetPickerCallback(null)
                           setIsAssetPickerOpen(true)
+                          refreshContracts?.()
                         }}
                         companyProfile={companyProfile}
                         activeVendor={activeVendor}

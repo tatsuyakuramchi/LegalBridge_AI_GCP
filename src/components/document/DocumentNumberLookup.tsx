@@ -284,8 +284,10 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                 )
                 const nq = normalize(q)
                 const filtered = rows.filter((row: any) => {
-                  // is_active = false の Master は除外 (使われていない契約)
-                  if (row.is_active === false) return false
+                  // Phase 22.21.123: is_active=false でも候補に出す
+                  //   (登録直後 / フラグ未設定でも見えなくなる問題に対処)。
+                  //   表示時に「[無効]」バッジを付けて区別する。
+                  //
                   // category 絞り込み (filterTemplateTypes が指定されている時のみ)
                   if (
                     wantedCats &&
@@ -308,7 +310,11 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                     .join(" ")
                   return hay.includes(nq)
                 })
-                return filtered.slice(0, limit).map(masterRowToLookup)
+                // Phase 22.21.123: Master は limit を緩く適用 (= limit * 2.5)。
+                //   archive と異なり master は短く小数で見たいニーズが強い。
+                return filtered
+                  .slice(0, Math.max(limit, 50))
+                  .map(masterRowToLookup)
               })
               .catch((e: any) => {
                 console.warn("[DocumentNumberLookup] master fetch failed:", e)
