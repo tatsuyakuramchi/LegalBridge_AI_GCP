@@ -478,94 +478,119 @@ export const DocumentNumberLookup: React.FC<Props> = ({
             )}
           </div>
           {results.length > 0 && (
-            <div className="max-h-[260px] overflow-y-auto rounded-sm border border-input bg-background divide-y divide-input">
-              {results.map((doc) => (
-                <button
-                  key={`${doc.source}:${doc.id}`}
-                  type="button"
-                  onClick={() => onApply(doc)}
-                  className={cn(
-                    "w-full text-left px-2.5 py-2 hover:bg-emerald-50/60 transition-colors",
-                    "group focus:outline-none focus:bg-emerald-50/60"
-                  )}
-                  title="クリックでフォームに適用"
-                >
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0 space-y-0.5">
-                      <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold">
-                        <CheckCircle2 className="h-3 w-3 text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity" />
-                        {/* Phase 22.21.76: source バッジ。Master 行は青、
-                            Archive 行はグレーで一目で区別できるように。 */}
-                        <span
-                          className={cn(
-                            "text-[8px] font-mono px-1 py-px rounded uppercase tracking-wider border",
-                            doc.source === "master"
-                              ? "bg-sky-50 border-sky-300 text-sky-800"
-                              : "bg-muted/60 border-input text-muted-foreground"
+            <div className="max-h-[400px] overflow-y-auto rounded-sm border border-input bg-background">
+              {/* Phase 22.21.124: MASTER / ARCHIVE をセクションで分けて、
+                  どこからどこまでが master かを明確化。スクロールで隠れる
+                  問題を防ぐため max-h を拡大 (260→400)。 */}
+              {(() => {
+                const masterRows = results.filter((d) => d.source === "master")
+                const archiveRows = results.filter((d) => d.source === "archive")
+                const renderRow = (doc: LookedUpDocument) => (
+                  <button
+                    key={`${doc.source}:${doc.id}`}
+                    type="button"
+                    onClick={() => onApply(doc)}
+                    className={cn(
+                      "w-full text-left px-2.5 py-2 hover:bg-emerald-50/60 transition-colors",
+                      "group focus:outline-none focus:bg-emerald-50/60 border-b border-input last:border-b-0"
+                    )}
+                    title="クリックでフォームに適用"
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="flex-1 min-w-0 space-y-0.5">
+                        <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold">
+                          <CheckCircle2 className="h-3 w-3 text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity" />
+                          <span
+                            className={cn(
+                              "text-[8px] font-mono px-1 py-px rounded uppercase tracking-wider border",
+                              doc.source === "master"
+                                ? "bg-sky-50 border-sky-300 text-sky-800"
+                                : "bg-muted/60 border-input text-muted-foreground"
+                            )}
+                            title={
+                              doc.source === "master"
+                                ? "契約マスタ (Master) 由来"
+                                : "PDF アーカイブ (Archive) 由来"
+                            }
+                          >
+                            {doc.source === "master" ? "Master" : "Archive"}
+                          </span>
+                          <span className="text-foreground truncate">
+                            {doc.document_number || "(番号未設定)"}
+                          </span>
+                          {doc.revision != null && doc.revision > 0 && (
+                            <span className="text-muted-foreground/70 text-[9px]">
+                              (Rev. {doc.revision})
+                            </span>
                           )}
+                        </div>
+                        <div className="text-[10px] font-mono text-foreground/80 truncate pl-4">
+                          {doc.derived_title}
+                        </div>
+                        <div className="text-[9px] font-mono text-muted-foreground pl-4 truncate">
+                          {doc.source === "master" ? (
+                            <>
+                              {doc.master_meta?.contract_category &&
+                                `${doc.master_meta.contract_category}`}
+                              {doc.master_meta?.record_type &&
+                                ` / ${doc.master_meta.record_type}`}
+                              {doc.master_meta?.contract_status &&
+                                ` / ${doc.master_meta.contract_status}`}
+                              {doc.master_meta?.effective_date &&
+                                ` / ${doc.master_meta.effective_date}`}
+                              {doc.master_meta?.expiration_date &&
+                                `–${doc.master_meta.expiration_date}`}
+                            </>
+                          ) : (
+                            <>
+                              種別: {doc.template_type}
+                              {doc.issue_key && ` / ${doc.issue_key}`} /{" "}
+                              {new Date(doc.created_at).toLocaleDateString("ja-JP")}
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      {doc.drive_link && (
+                        <a
+                          href={doc.drive_link}
+                          target="_blank"
+                          rel="noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="text-muted-foreground hover:text-foreground text-[9px] font-mono uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0"
                           title={
                             doc.source === "master"
-                              ? "契約マスタ (Master) 由来"
-                              : "PDF アーカイブ (Archive) 由来"
+                              ? "Master 登録のリンクを開く"
+                              : "PDF を開く"
                           }
                         >
-                          {doc.source === "master" ? "Master" : "Archive"}
-                        </span>
-                        <span className="text-foreground truncate">
-                          {doc.document_number || "(番号未設定)"}
-                        </span>
-                        {doc.revision != null && doc.revision > 0 && (
-                          <span className="text-muted-foreground/70 text-[9px]">
-                            (Rev. {doc.revision})
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[10px] font-mono text-foreground/80 truncate pl-4">
-                        {doc.derived_title}
-                      </div>
-                      <div className="text-[9px] font-mono text-muted-foreground pl-4 truncate">
-                        {doc.source === "master" ? (
-                          <>
-                            {doc.master_meta?.contract_category &&
-                              `${doc.master_meta.contract_category}`}
-                            {doc.master_meta?.record_type &&
-                              ` / ${doc.master_meta.record_type}`}
-                            {doc.master_meta?.contract_status &&
-                              ` / ${doc.master_meta.contract_status}`}
-                            {doc.master_meta?.effective_date &&
-                              ` / ${doc.master_meta.effective_date}`}
-                            {doc.master_meta?.expiration_date &&
-                              `–${doc.master_meta.expiration_date}`}
-                          </>
-                        ) : (
-                          <>
-                            種別: {doc.template_type}
-                            {doc.issue_key && ` / ${doc.issue_key}`} /{" "}
-                            {new Date(doc.created_at).toLocaleDateString("ja-JP")}
-                          </>
-                        )}
-                      </div>
+                          <ExternalLink className="h-2.5 w-2.5" />
+                          {doc.source === "master" ? "Link" : "PDF"}
+                        </a>
+                      )}
                     </div>
-                    {doc.drive_link && (
-                      <a
-                        href={doc.drive_link}
-                        target="_blank"
-                        rel="noreferrer"
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-muted-foreground hover:text-foreground text-[9px] font-mono uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0"
-                        title={
-                          doc.source === "master"
-                            ? "Master 登録のリンクを開く"
-                            : "PDF を開く"
-                        }
-                      >
-                        <ExternalLink className="h-2.5 w-2.5" />
-                        {doc.source === "master" ? "Link" : "PDF"}
-                      </a>
+                  </button>
+                )
+                return (
+                  <>
+                    {masterRows.length > 0 && (
+                      <>
+                        <div className="sticky top-0 z-10 bg-sky-50 border-b border-sky-300 px-2.5 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-sky-900">
+                          ▼ MASTER (契約マスタ) — {masterRows.length} 件
+                        </div>
+                        {masterRows.map(renderRow)}
+                      </>
                     )}
-                  </div>
-                </button>
-              ))}
+                    {archiveRows.length > 0 && (
+                      <>
+                        <div className="sticky top-0 z-10 bg-muted/80 border-y border-input px-2.5 py-1.5 text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground mt-2">
+                          ▼ ARCHIVE (PDF アーカイブ) — {archiveRows.length} 件
+                        </div>
+                        {archiveRows.map(renderRow)}
+                      </>
+                    )}
+                  </>
+                )
+              })()}
             </div>
           )}
         </>
