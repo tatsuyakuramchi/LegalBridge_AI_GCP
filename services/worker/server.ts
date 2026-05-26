@@ -8396,20 +8396,61 @@ ${details}
     try {
       const q = String(req.query.q || "").trim();
       const limit = Math.min(Number(req.query.limit) || 20, 100);
+      // Phase 22.21.116: 検索 endpoint で全フィールド + 紐付き文書数を返す。
+      //   旧呼び出し側 (RingiSelector) は ringi_number / title / category /
+      //   status / owner_name のみ参照するので互換性あり。
       const sql = q
-        ? `SELECT id, ringi_number, title, category, status, owner_name
-             FROM ringi_records
-            WHERE ringi_number ILIKE $1 || '%'
-               OR title ILIKE '%' || $1 || '%'
-            ORDER BY ringi_number ASC LIMIT $2`
-        : `SELECT id, ringi_number, title, category, status, owner_name
-             FROM ringi_records
-            ORDER BY ringi_number DESC LIMIT $1`;
+        ? `SELECT r.id, r.ringi_number, r.title, r.category, r.owner_name,
+                  r.owner_department, r.approved_at, r.backlog_issue_key,
+                  r.status, r.total_budget, r.remarks,
+                  r.created_at, r.updated_at,
+                  COALESCE(
+                    (SELECT COUNT(*)::int FROM ringi_documents rd
+                      WHERE rd.ringi_id = r.id), 0
+                  ) AS linked_document_count
+             FROM ringi_records r
+            WHERE r.ringi_number ILIKE $1 || '%'
+               OR r.title ILIKE '%' || $1 || '%'
+               OR r.owner_name ILIKE '%' || $1 || '%'
+               OR r.category ILIKE '%' || $1 || '%'
+            ORDER BY r.ringi_number ASC LIMIT $2`
+        : `SELECT r.id, r.ringi_number, r.title, r.category, r.owner_name,
+                  r.owner_department, r.approved_at, r.backlog_issue_key,
+                  r.status, r.total_budget, r.remarks,
+                  r.created_at, r.updated_at,
+                  COALESCE(
+                    (SELECT COUNT(*)::int FROM ringi_documents rd
+                      WHERE rd.ringi_id = r.id), 0
+                  ) AS linked_document_count
+             FROM ringi_records r
+            ORDER BY r.ringi_number DESC LIMIT $1`;
       const params = q ? [q, limit] : [limit];
       const r = await query(sql, params);
       res.json({ ok: true, rows: r.rows });
     } catch (error) {
       console.error("/api/ringi/search failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  // Phase 22.21.116: 稟議の削除。N:N リンク (ringi_documents) は
+  //   ON DELETE CASCADE で自動削除される。文書本体は残る。
+  app.delete("/api/ringi/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const r = await query(
+        "DELETE FROM ringi_records WHERE id = $1 RETURNING ringi_number",
+        [id]
+      );
+      if (r.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "not found" });
+      }
+      res.json({ ok: true, deleted_ringi_number: r.rows[0].ringi_number });
+    } catch (error) {
+      console.error("/api/ringi/:id DELETE failed:", error);
       res.status(500).json({ ok: false, error: String(error) });
     }
   });

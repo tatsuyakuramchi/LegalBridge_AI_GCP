@@ -14,6 +14,7 @@ import { StaffPanel } from "./pages/master/StaffPanel"
 import { RulesPanel } from "./pages/master/RulesPanel"
 import { LedgersPanel } from "./pages/master/LedgersPanel" // Phase 22.18
 import { SubLicenseesPanel } from "./pages/master/SubLicenseesPanel" // Phase 22.20-C
+import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
@@ -39,6 +40,7 @@ export default function App() {
                   <Route path="vendors" element={<VendorsPanel />} />
                   <Route path="ledgers" element={<LedgersPanel />} />{/* Phase 22.18 */}
                   <Route path="sublicensees" element={<SubLicenseesPanel />} />{/* Phase 22.20-C */}
+                  <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}
                   <Route path="drafts" element={<DraftsPanel />} />{/* Phase 22.21.81 */}
                   <Route path="staff" element={<StaffPanel />} />
                   <Route path="rules" element={<RulesPanel />} />

@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,8 @@ const tabs = [
   { to: "/master/ledgers", label: "Ledgers (原作)", icon: BookMarked },
   // Phase 22.20-C: サブライセンシー マスター
   { to: "/master/sublicensees", label: "Sublicensees", icon: GitBranch },
+  // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
+  { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
   // Phase 22.21.81: 文書作成途中の draft (一時保存) の掃除タブ
   { to: "/master/drafts", label: "Drafts (一時保存)", icon: FileEdit },
   { to: "/master/staff", label: "Staff", icon: Users },
