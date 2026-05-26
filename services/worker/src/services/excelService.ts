@@ -143,6 +143,12 @@ export class ExcelService {
 
     if (isInspection) {
       // ── 検収書 ─────────────────────────────────
+      // Phase 22.21.105: スロット詰め込み順をユーザー確定仕様に変更
+      //   ① 業務明細 (delivery_line_items) を先に詰める
+      //   ② その他手数料 (other_fees, 税抜) を続けて同じスロットに詰める
+      //   ③ 5 スロット超過分は無視 (overflow 警告は出さない方針)
+      //   ④ 経費・交通費 (expenses, 税込) は合算して「立替金」へ
+      //   小計 = items 合算 (= 業務明細 + 手数料, 税抜)
       summary =
         formData.PROJECT_TITLE ||
         formData.summary ||
@@ -154,39 +160,70 @@ export class ExcelService {
       department =
         formData.inspectorDept || formData.STAFF_DEPARTMENT || '';
 
-      // 明細別検収 (delivery_line_items) があれば優先、無ければ自由入力フォールバック
       const lines = Array.isArray(formData.delivery_line_items)
         ? formData.delivery_line_items
         : [];
+      const otherFees = Array.isArray(formData.other_fees)
+        ? formData.other_fees
+        : [];
+
+      const combined: InspectionExcelData['items'] = [];
+
       if (lines.length > 0) {
-        items = lines.slice(0, 5).map((l: any) => ({
-          content: l.item_name || l.description || '',
-          unit_price: num(l.unit_price),
-          quantity: num(l.quantity),
-          amount: num(l.inspected_amount_ex_tax || l.amount_ex_tax),
-          delivery_date: isoDate(l.delivery_date),
-        }));
+        for (const l of lines) {
+          combined.push({
+            content: l.item_name || l.description || '',
+            unit_price: num(l.unit_price),
+            quantity: num(l.quantity),
+            amount: num(l.inspected_amount_ex_tax || l.amount_ex_tax),
+            delivery_date: isoDate(l.delivery_date),
+          });
+        }
       } else {
-        // 自由入力フォールバック (単一明細)
+        // 自由入力フォールバック (単一明細) — delivery_line_items が空のとき
         const amt = num(formData.deliveredAmountStr);
         if (amt > 0 || formData.description) {
-          items = [
-            {
-              content:
-                formData.description || formData.itemName || '検収内容',
-              unit_price: amt,
-              quantity: 1,
-              amount: amt,
-              delivery_date: isoDate(
-                formData.deliveryDate || formData.documentDate
-              ),
-            },
-          ];
+          combined.push({
+            content:
+              formData.description || formData.itemName || '検収内容',
+            unit_price: amt,
+            quantity: 1,
+            amount: amt,
+            delivery_date: isoDate(
+              formData.deliveryDate || formData.documentDate
+            ),
+          });
         }
       }
 
-      reimbursement = num(formData.expensesTotalIncTax);
-      // 小計 = 検収金額 (税抜) + 立替金 (= grandTotalPayable は税込なので不適切)
+      // その他手数料を続けて詰める (= 業務明細の後に「手数料」スロット)
+      // InspectionOtherFee shape: { line_no, fee_name, amount, remarks? }
+      for (const f of otherFees) {
+        const feeAmount = num(f.amount);
+        combined.push({
+          content: f.fee_name || f.label || f.description || '手数料',
+          unit_price: feeAmount,
+          quantity: 1,
+          amount: feeAmount,
+          delivery_date: isoDate(formData.documentDate),
+        });
+      }
+
+      items = combined.slice(0, 5);
+
+      // 立替金 = 経費 (税込) 合算。formData.expensesTotalIncTax を優先、
+      // 無ければ expenses 配列をフォールバック計算。
+      let reimburseSum = num(formData.expensesTotalIncTax);
+      if (!reimburseSum && Array.isArray(formData.expenses)) {
+        reimburseSum = formData.expenses.reduce(
+          (s: number, e: any) =>
+            s + num(e.amount_inc_tax || e.amount || e.amount_ex_tax),
+          0
+        );
+      }
+      reimbursement = reimburseSum;
+
+      // 小計 = 業務明細 + 手数料 (税抜) の合算。立替金は含めない。
       subtotal = items.reduce((s, it) => s + it.amount, 0);
     } else if (isRoyalty) {
       // ── 利用許諾料計算書 ───────────────────────
