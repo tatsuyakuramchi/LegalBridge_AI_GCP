@@ -442,6 +442,55 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     formData.expensesTotalIncTax,
   ]);
 
+  // Phase 22.21.101: royalty_statement で contract master を選択済みなら、
+  //   PDF ヘッダ用フィールド (linked_contract_number / LICENSOR_SUFFIX /
+  //   LICENSOR_IS_CORPORATION / licensor / licensee) が formData に
+  //   揃っているか毎レンダー検査し、不足していたら master から自動同期する。
+  //
+  //   背景: 旧バージョンで master 選択 → 後に新コードで auto-set ロジックを
+  //   追加した結果、既に formData がある draft では select を再操作するまで
+  //   ヘッダの「契約番号」が出ない問題が発生していた。
+  //   この useEffect で formData が空の項目だけ補填する (上書きはしない)。
+  useEffect(() => {
+    if (templateId !== 'royalty_statement') return;
+    if (!Array.isArray(allContracts) || allContracts.length === 0) return;
+    const selectedId = Number(formData.selected_master_contract_id) || 0;
+    if (!selectedId) return;
+    const c: any = allContracts.find((x: any) => Number(x.id) === selectedId);
+    if (!c) return;
+
+    const patch: Record<string, any> = {};
+    // 契約番号 (PDF 右上)
+    if (!formData.linked_contract_number && c.document_number) {
+      patch.linked_contract_number = c.document_number;
+    }
+    // 法人/個人 → 御中/様
+    if (!formData.LICENSOR_SUFFIX) {
+      const vt = String(
+        c.vendor_entity_type || c.entity_type || ''
+      ).toLowerCase();
+      const isCorp = vt === 'corporate' || vt === '法人';
+      patch.LICENSOR_SUFFIX = isCorp ? '御中' : '様';
+      patch.LICENSOR_IS_CORPORATION = isCorp ? '法人' : '個人';
+    }
+    // licensor / licensee (古い draft 互換)
+    if (!formData.licensor && c.vendor_name) {
+      patch.licensor = c.vendor_name;
+    }
+
+    if (Object.keys(patch).length > 0) {
+      setFormData({ ...formData, ...patch });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [
+    templateId,
+    formData.selected_master_contract_id,
+    formData.linked_contract_number,
+    formData.LICENSOR_SUFFIX,
+    formData.licensor,
+    allContracts.length,
+  ]);
+
   const renderField = (id: string, customLabel?: string) => {
     const meta = (metadata.vars || {})[id] || { label: id, group: 'General' };
     const label = customLabel || meta.label || id.replace(/_/g, ' ');
@@ -2600,12 +2649,49 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 </p>
               )}
               {selectedContract && (
-                <p className="text-[10px] font-mono text-muted-foreground">
-                  選択中: <strong>{selectedContract.contract_title}</strong>
+                <div className="text-[10px] font-mono text-muted-foreground space-y-0.5">
+                  <p>
+                    選択中: <strong>{selectedContract.contract_title}</strong>
+                    {selectedContract.document_number && (
+                      <> ({selectedContract.document_number})</>
+                    )}
+                  </p>
+                  {/* Phase 22.21.101: 契約番号 (PDF ヘッダ右上「契約番号:」) を
+                      表示。formData.linked_contract_number と一致しているか
+                      ユーザーが目視確認できる。一致しない場合は警告表示 */}
                   {selectedContract.document_number && (
-                    <> ({selectedContract.document_number})</>
+                    <p className="flex items-center gap-1">
+                      <span>PDF ヘッダ「契約番号」に反映:</span>
+                      <span
+                        className={cn(
+                          'font-bold px-1.5 py-0.5 rounded-sm',
+                          formData.linked_contract_number === selectedContract.document_number
+                            ? 'bg-emerald-50 border border-emerald-300 text-emerald-900'
+                            : 'bg-amber-50 border border-amber-300 text-amber-900'
+                        )}
+                      >
+                        {formData.linked_contract_number || '(未設定 — 自動同期中)'}
+                      </span>
+                      {formData.linked_contract_number !==
+                        selectedContract.document_number && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setFormData({
+                              ...formData,
+                              linked_contract_number:
+                                selectedContract.document_number,
+                            })
+                          }
+                          className="text-[9px] font-mono px-1.5 py-0.5 border border-input rounded-sm hover:bg-muted"
+                          title="contract_capability の document_number で上書き"
+                        >
+                          ↻ 同期
+                        </button>
+                      )}
+                    </p>
                   )}
-                </p>
+                </div>
               )}
             </div>
 
