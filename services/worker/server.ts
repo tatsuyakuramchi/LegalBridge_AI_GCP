@@ -3140,13 +3140,24 @@ ${details}
     //   primary 担当者の name を vendors.contact_name にミラーして legacy 互換を維持。
     const v = req.body;
     try {
-      // 1) vendor 本体 upsert (vendor_rep 追加)
+      // 1) vendor 本体 upsert
+      //   Phase 22.13: vendor_rep + contacts[] を受け取れるよう拡張。
+      //   Phase 22.21.119: search-api 側 vendor 登録画面と項目を揃える。
+      //   追加列: corporate_number / transaction_category / capital_yen /
+      //          employee_count / subcontract_act_applicable /
+      //          master_updated_at / main_business / payment_terms /
+      //          rating / antisocial_check_result
+      //   いずれも vendors テーブルには列存在済 (Phase 22.13 / Phase 16 で追加)。
       const upsert = await query(
         `INSERT INTO vendors (vendor_code, vendor_name, trade_name, pen_name, vendor_suffix, entity_type,
           withholding_enabled, aliases, address, phone, email, contact_department, contact_name,
           master_contract_ref, bank_info, bank_name, branch_name, account_type, account_number,
-          account_holder_kana, is_invoice_issuer, invoice_registration_number, vendor_rep)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23)
+          account_holder_kana, is_invoice_issuer, invoice_registration_number, vendor_rep,
+          corporate_number, transaction_category, capital_yen, employee_count,
+          subcontract_act_applicable, master_updated_at, main_business, payment_terms,
+          rating, antisocial_check_result)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,
+                 $24,$25,$26,$27,$28,$29,$30,$31,$32,$33)
          ON CONFLICT (vendor_code) DO UPDATE SET
            vendor_name = EXCLUDED.vendor_name,
            trade_name = EXCLUDED.trade_name,
@@ -3169,7 +3180,17 @@ ${details}
            account_holder_kana = EXCLUDED.account_holder_kana,
            is_invoice_issuer = EXCLUDED.is_invoice_issuer,
            invoice_registration_number = EXCLUDED.invoice_registration_number,
-           vendor_rep = EXCLUDED.vendor_rep
+           vendor_rep = EXCLUDED.vendor_rep,
+           corporate_number = EXCLUDED.corporate_number,
+           transaction_category = EXCLUDED.transaction_category,
+           capital_yen = EXCLUDED.capital_yen,
+           employee_count = EXCLUDED.employee_count,
+           subcontract_act_applicable = EXCLUDED.subcontract_act_applicable,
+           master_updated_at = EXCLUDED.master_updated_at,
+           main_business = EXCLUDED.main_business,
+           payment_terms = EXCLUDED.payment_terms,
+           rating = EXCLUDED.rating,
+           antisocial_check_result = EXCLUDED.antisocial_check_result
          RETURNING id`,
         [
           v.vendor_code, v.vendor_name, v.trade_name || null, v.pen_name || null,
@@ -3180,6 +3201,17 @@ ${details}
           v.account_number || null, v.account_holder_kana || null, v.is_invoice_issuer || false,
           v.invoice_registration_number || null,
           v.vendor_rep || null,
+          // Phase 22.21.119 追加列
+          v.corporate_number || null,
+          v.transaction_category || null,
+          v.capital_yen != null && v.capital_yen !== "" ? Number(v.capital_yen) : null,
+          v.employee_count != null && v.employee_count !== "" ? Number(v.employee_count) : null,
+          v.subcontract_act_applicable === true || v.subcontract_act_applicable === "true" || false,
+          v.master_updated_at || null,
+          v.main_business || null,
+          v.payment_terms || null,
+          v.rating || null,
+          v.antisocial_check_result || null,
         ]
       );
       const vendorId = Number(upsert.rows[0]?.id);

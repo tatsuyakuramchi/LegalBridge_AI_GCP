@@ -45,20 +45,40 @@ const empty = {
   trade_name: "",
   pen_name: "",
   entity_type: "corporate",
+  vendor_suffix: "",
+  aliases: "",
+  // 連絡先
+  contact_department: "",
   contact_name: "",
   phone: "",
   email: "",
   address: "",
+  // 税務・インボイス
+  withholding_enabled: false,
+  is_invoice_issuer: false,
+  invoice_registration_number: "",
+  // 振込先
   bank_name: "",
   branch_name: "",
   account_type: "普通",
   account_number: "",
   account_holder_kana: "",
-  is_invoice_issuer: false,
-  invoice_registration_number: "",
-  // Phase 22.13
+  // Phase 22.13: 代表者 + 担当者 (1:N)
   vendor_rep: "",
   contacts: [] as VendorContact[],
+  // Phase 22.21.119: search-api 側に揃えて追加
+  corporate_number: "",
+  transaction_category: "",
+  capital_yen: "" as string | number,
+  employee_count: "" as string | number,
+  subcontract_act_applicable: false,
+  master_updated_at: "",
+  main_business: "",
+  payment_terms: "",
+  rating: "",
+  antisocial_check_result: "",
+  master_contract_ref: "",
+  bank_info: "",
 }
 
 export function VendorsPanel() {
@@ -230,11 +250,14 @@ export function VendorsPanel() {
             </DialogTitle>
           </DialogHeader>
           <DialogBody className="grid grid-cols-2 gap-3 overflow-y-auto flex-1 min-h-0">
+            {/* ── SEC 01 / 基本情報 ──────────────────────────────────── */}
+            <SectionHead label="SEC · 01 / 基本情報" />
             <Field label="取引先コード *">
               <Input
                 value={data?.vendor_code || ""}
                 disabled={!creating}
                 onChange={(e) => set({ vendor_code: e.target.value })}
+                placeholder="例: 2-20-1234"
               />
             </Field>
             <Field label="区分">
@@ -243,8 +266,10 @@ export function VendorsPanel() {
                 disabled={!creating && !editing}
                 onChange={(e) => set({ entity_type: e.target.value })}
               >
+                <option value="">(未指定)</option>
                 <option value="corporate">法人</option>
                 <option value="individual">個人</option>
+                <option value="sole_proprietor">個人事業主</option>
               </NativeSelect>
             </Field>
             <Field label="正式名称 *" className="col-span-2">
@@ -252,6 +277,7 @@ export function VendorsPanel() {
                 value={data?.vendor_name || ""}
                 disabled={!creating && !editing}
                 onChange={(e) => set({ vendor_name: e.target.value })}
+                placeholder="例: 株式会社サンプル"
               />
             </Field>
             <Field label="屋号 / 略称">
@@ -268,21 +294,177 @@ export function VendorsPanel() {
                 onChange={(e) => set({ pen_name: e.target.value })}
               />
             </Field>
-            {/* Phase 22.13: 法人のみ 代表者欄を表示 (個人は不要) */}
-            {data?.entity_type !== "individual" && (
-              <Field label="代表者名" className="col-span-2">
-                <Input
-                  placeholder="例: 代表取締役 山田太郎"
-                  value={data?.vendor_rep || ""}
-                  disabled={!creating && !editing}
-                  onChange={(e) => set({ vendor_rep: e.target.value })}
-                />
-                <p className="text-[10px] font-mono text-muted-foreground mt-1">
-                  契約書 / 発注書の代表者欄に転記されます。肩書込みの形式で
-                  記入してください (個人事業主は省略可)。
-                </p>
-              </Field>
-            )}
+            <Field label="敬称サフィックス">
+              <Input
+                value={data?.vendor_suffix || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ vendor_suffix: e.target.value })}
+                placeholder="様 / 御中"
+              />
+            </Field>
+            <Field label="別名 (aliases)">
+              <Input
+                value={data?.aliases || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ aliases: e.target.value })}
+                placeholder="カンマ区切りで複数可"
+              />
+            </Field>
+            <Field label="代表者名" className="col-span-2">
+              <Input
+                placeholder="例: 代表取締役 山田太郎"
+                value={data?.vendor_rep || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ vendor_rep: e.target.value })}
+              />
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                法人の場合のみ記入。肩書込みで契約書 / 発注書 / 検収書 PDF の
+                代表者欄に転記されます (個人事業主は省略可)。
+              </p>
+            </Field>
+            <Field label="法人番号">
+              <Input
+                value={data?.corporate_number || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ corporate_number: e.target.value })}
+                placeholder="13 桁"
+                maxLength={13}
+              />
+            </Field>
+            <Field label="取引内容区分">
+              <NativeSelect
+                value={data?.transaction_category || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ transaction_category: e.target.value })}
+              >
+                <option value="">(未指定)</option>
+                <option value="goods_sale">物品売買</option>
+                <option value="service">業務委託・役務</option>
+                <option value="license">ライセンス</option>
+                <option value="other">その他</option>
+              </NativeSelect>
+            </Field>
+            <Field label="資本金 (円)">
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={(data?.capital_yen as any) ?? ""}
+                disabled={!creating && !editing}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const next: any = { capital_yen: v }
+                  // 取適法判定: 資本金 1000 万以下 OR 従業員数 100 人以下
+                  const cap = Number(v) || 0
+                  const emp = Number(data?.employee_count) || 0
+                  if (cap > 0 || emp > 0) {
+                    next.subcontract_act_applicable =
+                      (cap > 0 && cap <= 10000000) ||
+                      (emp > 0 && emp <= 100)
+                  }
+                  set(next)
+                }}
+              />
+            </Field>
+            <Field label="従業員数 (人)">
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={(data?.employee_count as any) ?? ""}
+                disabled={!creating && !editing}
+                onChange={(e) => {
+                  const v = e.target.value
+                  const next: any = { employee_count: v }
+                  const cap = Number(data?.capital_yen) || 0
+                  const emp = Number(v) || 0
+                  if (cap > 0 || emp > 0) {
+                    next.subcontract_act_applicable =
+                      (cap > 0 && cap <= 10000000) ||
+                      (emp > 0 && emp <= 100)
+                  }
+                  set(next)
+                }}
+              />
+            </Field>
+            <Field label="取適法適用判定">
+              <Input
+                value={
+                  data?.subcontract_act_applicable === true
+                    ? "適用あり (下請法対象)"
+                    : data?.capital_yen || data?.employee_count
+                    ? "適用なし"
+                    : ""
+                }
+                readOnly
+                placeholder="資本金・従業員数から自動判定"
+              />
+            </Field>
+            <Field label="取引先マスタ更新日">
+              <Input
+                type="date"
+                value={
+                  data?.master_updated_at
+                    ? String(data.master_updated_at).substring(0, 10)
+                    : ""
+                }
+                disabled={!creating && !editing}
+                onChange={(e) => set({ master_updated_at: e.target.value })}
+              />
+            </Field>
+            <Field label="取引先主要事業" className="col-span-2">
+              <Input
+                value={data?.main_business || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ main_business: e.target.value })}
+              />
+            </Field>
+            <Field label="決済条件">
+              <Input
+                value={data?.payment_terms || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ payment_terms: e.target.value })}
+                placeholder="例: 月末締め翌月末払い"
+              />
+            </Field>
+            <Field label="評点">
+              <Input
+                value={data?.rating || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ rating: e.target.value })}
+              />
+            </Field>
+            <Field label="反社チェック結果" className="col-span-2">
+              <NativeSelect
+                value={data?.antisocial_check_result || ""}
+                disabled={!creating && !editing}
+                onChange={(e) =>
+                  set({ antisocial_check_result: e.target.value })
+                }
+              >
+                <option value="">(未確認)</option>
+                <option value="clear">問題なし</option>
+                <option value="pending">確認中</option>
+                <option value="ng">NG</option>
+              </NativeSelect>
+            </Field>
+
+            {/* ── SEC 02 / 連絡先 ──────────────────────────────────── */}
+            <SectionHead label="SEC · 02 / 連絡先" />
+            <Field label="担当部署">
+              <Input
+                value={data?.contact_department || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ contact_department: e.target.value })}
+              />
+            </Field>
+            <Field label="担当者">
+              <Input
+                value={data?.contact_name || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ contact_name: e.target.value })}
+              />
+            </Field>
             <Field label="電話番号 (代表 / メイン)">
               <Input
                 type="tel"
@@ -292,7 +474,7 @@ export function VendorsPanel() {
                 onChange={(e) => set({ phone: e.target.value })}
               />
             </Field>
-            <Field label="メールアドレス" className="col-span-2">
+            <Field label="メールアドレス">
               <Input
                 type="email"
                 placeholder="contact@example.com"
@@ -308,6 +490,54 @@ export function VendorsPanel() {
                 onChange={(e) => set({ address: e.target.value })}
               />
             </Field>
+
+            {/* ── SEC 03 / 税務・インボイス ──────────────────────── */}
+            <SectionHead label="SEC · 03 / 税務・インボイス" />
+            <Field label="源泉徴収">
+              <label className="flex items-center gap-2 h-9">
+                <input
+                  type="checkbox"
+                  checked={!!data?.withholding_enabled}
+                  disabled={!creating && !editing}
+                  onChange={(e) =>
+                    set({ withholding_enabled: e.target.checked })
+                  }
+                  className="h-4 w-4"
+                />
+                <span className="text-xs font-mono">源泉徴収を行う</span>
+              </label>
+              <p className="text-[10px] font-mono text-muted-foreground">
+                個人取引先は通常 ON (Excel 出力で 10.21% 自動控除)
+              </p>
+            </Field>
+            <Field label="適格請求書発行事業者 (インボイス)">
+              <label className="flex items-center gap-2 h-9">
+                <input
+                  type="checkbox"
+                  checked={!!data?.is_invoice_issuer}
+                  disabled={!creating && !editing}
+                  onChange={(e) =>
+                    set({ is_invoice_issuer: e.target.checked })
+                  }
+                  className="h-4 w-4"
+                />
+                <span className="text-xs font-mono">インボイス発行事業者</span>
+              </label>
+            </Field>
+            <Field label="インボイス登録番号" className="col-span-2">
+              <Input
+                value={data?.invoice_registration_number || ""}
+                disabled={!creating && !editing}
+                onChange={(e) =>
+                  set({ invoice_registration_number: e.target.value })
+                }
+                placeholder="T1234567890123"
+                maxLength={50}
+              />
+            </Field>
+
+            {/* ── SEC 04 / 振込先 ──────────────────────────────────── */}
+            <SectionHead label="SEC · 04 / 振込先" />
             <Field label="銀行名">
               <Input
                 value={data?.bank_name || ""}
@@ -347,13 +577,23 @@ export function VendorsPanel() {
                 onChange={(e) => set({ account_holder_kana: e.target.value })}
               />
             </Field>
-            <Field label="インボイス登録番号" className="col-span-2">
+
+            {/* ── SEC 05 / その他 ────────────────────────────────────── */}
+            <SectionHead label="SEC · 05 / その他" />
+            <Field label="マスター契約参照" className="col-span-2">
               <Input
-                value={data?.invoice_registration_number || ""}
+                value={data?.master_contract_ref || ""}
                 disabled={!creating && !editing}
-                onChange={(e) =>
-                  set({ invoice_registration_number: e.target.value })
-                }
+                onChange={(e) => set({ master_contract_ref: e.target.value })}
+                placeholder="既存契約番号 / URL 等"
+              />
+            </Field>
+            <Field label="銀行情報メモ" className="col-span-2">
+              <Input
+                value={data?.bank_info || ""}
+                disabled={!creating && !editing}
+                onChange={(e) => set({ bank_info: e.target.value })}
+                placeholder="自由記述"
               />
             </Field>
 
@@ -587,6 +827,17 @@ function Field({
     <div className={`space-y-1 ${className || ""}`}>
       <Label>{label}</Label>
       {children}
+    </div>
+  )
+}
+
+// Phase 22.21.119: search-api 側の SEC ヘッダと同じ視覚言語。
+function SectionHead({ label }: { label: string }) {
+  return (
+    <div className="col-span-2 mt-3 pt-2 border-t border-border">
+      <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-foreground/70">
+        {label}
+      </span>
     </div>
   )
 }
