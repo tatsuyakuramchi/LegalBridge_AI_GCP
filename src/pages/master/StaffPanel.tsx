@@ -50,40 +50,54 @@ export function StaffPanel() {
 
   const [saving, setSaving] = React.useState(false)
 
-  // Worker /api/master/staff は POST のみ (ON CONFLICT (slack_user_id) DO UPDATE
-  // で upsert)。旧コードは編集時 PUT を投げていたが該当ハンドラがなく 404 に
-  // なるバグがあった (Phase 16c で修正)。
+  // Worker /api/master/staff は POST のみ。
+  //   - 編集時: body.id を含めて UPDATE モード (Phase 22.21.120)
+  //   - 新規時: slack_user_id で upsert (空ならプレースホルダ自動採番)
   const save = async () => {
     setSaving(true)
     try {
       const isEdit = !!editing
+      // Phase 22.21.120: 編集時は id を必ず付ける (Worker 側で UPDATE 経路に入る)。
+      const body = isEdit && data?.id != null ? { ...data, id: Number(data.id) } : data
       const res = await fetch("/api/master/staff", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(body),
       })
       if (res.ok) {
         showNotification(
           isEdit
-            ? `「${data?.staff_name || data?.slack_user_id}」を更新しました`
-            : `「${data?.staff_name || data?.slack_user_id}」を登録しました`,
+            ? `「${data?.staff_name || data?.slack_user_id || "(無名)"}」を更新しました`
+            : `「${data?.staff_name || data?.slack_user_id || "(無名)"}」を登録しました`,
           "success"
         )
         await refreshStaff()
         close()
       } else {
-        let detail = ""
+        // Phase 22.21.120: Worker のエラー詳細 (error / code / constraint) を表示。
+        let errBody: any = null
         try {
-          const j = await res.json()
-          detail = j?.error ? `: ${j.error}` : ""
-        } catch {}
+          errBody = await res.json()
+        } catch {
+          // text の可能性
+          try {
+            errBody = { error: await res.text() }
+          } catch {}
+        }
+        const parts: string[] = []
+        if (errBody?.error) parts.push(errBody.error)
+        if (errBody?.code) parts.push(`code=${errBody.code}`)
+        if (errBody?.constraint) parts.push(`constraint=${errBody.constraint}`)
+        const detail = parts.length > 0 ? ` — ${parts.join(" / ")}` : ""
         showNotification(
           `保存に失敗しました (HTTP ${res.status})${detail}`,
           "error"
         )
+        console.error("Staff save failed:", { status: res.status, errBody })
       }
     } catch (e: any) {
       showNotification(`サーバーエラー: ${e?.message || e}`, "error")
+      console.error("Staff save threw:", e)
     } finally {
       setSaving(false)
     }

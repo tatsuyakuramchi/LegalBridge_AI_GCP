@@ -3305,19 +3305,85 @@ ${details}
   );
 
   app.post("/api/master/staff", express.json(), async (req, res) => {
-    const { slack_user_id, staff_name, email, phone, department, department_code } = req.body;
+    // Phase 22.21.120: 編集時は body.id を尊重して UPDATE。新規時は slack_user_id
+    //   での upsert。slack_user_id が空のまま新規登録すると UNIQUE/NOT NULL で
+    //   エラーになるケースを解消する (UI 入力が任意なため空文字を許容)。
+    const {
+      id,
+      slack_user_id,
+      staff_name,
+      email,
+      phone,
+      department,
+      department_code,
+    } = req.body;
     try {
-      await query(
+      // バリデーション
+      if (!staff_name || String(staff_name).trim() === "") {
+        return res.status(400).json({ error: "氏名 (staff_name) は必須です" });
+      }
+      // 編集モード: body.id があり、その id が staff 表に存在する → UPDATE
+      if (id != null && Number.isFinite(Number(id))) {
+        const upd = await query(
+          `UPDATE staff
+              SET staff_name      = $1,
+                  email           = $2,
+                  phone           = $3,
+                  department      = $4,
+                  department_code = $5,
+                  slack_user_id   = COALESCE(NULLIF($6, ''), slack_user_id)
+            WHERE id = $7
+          RETURNING id, slack_user_id`,
+          [
+            staff_name,
+            email || null,
+            phone || null,
+            department || null,
+            department_code || null,
+            slack_user_id || null,
+            Number(id),
+          ]
+        );
+        if (upd.rows.length === 0) {
+          return res
+            .status(404)
+            .json({ error: `staff id=${id} が見つかりません` });
+        }
+        return res.json({ success: true, id: upd.rows[0].id, mode: "update" });
+      }
+      // 新規モード: slack_user_id が空ならプレースホルダで自動採番
+      //   (UNIQUE 衝突防止のため tmp prefix + timestamp)
+      const finalSlackId =
+        slack_user_id && String(slack_user_id).trim().length > 0
+          ? String(slack_user_id).trim()
+          : `LOCAL-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+      const r = await query(
         `INSERT INTO staff (slack_user_id, staff_name, email, phone, department, department_code)
          VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (slack_user_id) DO UPDATE SET
-         staff_name = EXCLUDED.staff_name, email = EXCLUDED.email, phone = EXCLUDED.phone,
-         department = EXCLUDED.department, department_code = EXCLUDED.department_code`,
-        [slack_user_id, staff_name, email, phone, department, department_code]
+           staff_name      = EXCLUDED.staff_name,
+           email           = EXCLUDED.email,
+           phone           = EXCLUDED.phone,
+           department      = EXCLUDED.department,
+           department_code = EXCLUDED.department_code
+         RETURNING id`,
+        [
+          finalSlackId,
+          staff_name,
+          email || null,
+          phone || null,
+          department || null,
+          department_code || null,
+        ]
       );
-      res.json({ success: true });
-    } catch (error) {
-      res.status(500).json({ error: String(error) });
+      res.json({ success: true, id: r.rows[0].id, mode: "insert" });
+    } catch (error: any) {
+      console.error("/api/master/staff POST failed:", error);
+      res.status(500).json({
+        error: String(error?.message || error),
+        code: error?.code,
+        constraint: error?.constraint,
+      });
     }
   });
 
