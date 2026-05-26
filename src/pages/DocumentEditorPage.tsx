@@ -1245,6 +1245,13 @@ export function DocumentEditorPage() {
                           setAssetPickerCallback(() => cb)
                           setIsAssetPickerOpen(true)
                         }}
+                        // Phase 22.21.122: callback なしの Sheet 起動。
+                        //   inspection_certificate / royalty_statement の
+                        //   フォーム内インラインボタンからマスタ検索を直接開く。
+                        onOpenLegalAssetSearch={() => {
+                          setAssetPickerCallback(null)
+                          setIsAssetPickerOpen(true)
+                        }}
                         companyProfile={companyProfile}
                         activeVendor={activeVendor}
                         selectedStaff={selectedStaff}

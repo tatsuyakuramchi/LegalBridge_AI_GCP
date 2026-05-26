@@ -41,6 +41,11 @@ interface DocumentFormProps {
   setFormData: (data: any) => void;
   onSync: () => void;
   onLinkAsset?: (callback: (asset: any) => void) => void;
+  // Phase 22.21.122: callback なしで Legal Asset Search Sheet を開く。
+  //   inspection_certificate / royalty_statement の master+archive 横断検索を
+  //   フォーム内インラインボタンから起動するため (右サイドバーの "Search Legal
+  //   Assets" ボタンと同じ動作)。
+  onOpenLegalAssetSearch?: () => void;
   companyProfile?: any;
   activeVendor?: any;
   selectedStaff?: any;
@@ -53,6 +58,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   setFormData,
   onSync,
   onLinkAsset,
+  onOpenLegalAssetSearch,
   companyProfile,
   activeVendor,
   selectedStaff
@@ -2093,6 +2099,19 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           title="ステップ 1 — 親 PO (発注書) または 業務委託マスタ を選択"
           variant="indigo"
           icon={<Briefcase className="w-4 h-4" />}
+          headerActions={
+            onOpenLegalAssetSearch && (
+              <button
+                type="button"
+                onClick={onOpenLegalAssetSearch}
+                className="text-[9px] font-mono uppercase tracking-wider border border-emerald-700/40 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 px-2.5 py-1 rounded-sm flex items-center gap-1"
+                title="業務委託マスタ / Archive 発注書を検索 (= 右サイドバー Search Legal Assets と同じ)"
+              >
+                <Link className="w-2.5 h-2.5" />
+                マスタ / 発注書を検索
+              </button>
+            )
+          }
         >
           <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
             <strong>受託者・明細・経費・手数料は親 PO または 業務委託マスタから
@@ -2101,8 +2120,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             通常は Backlog 親子関係から PO が自動発見されます。
             親子未設定 / IMPORT-* は下のピッカーで選択。
             <br />
-            <strong>※ 業務委託マスタを優先したい場合は、画面右上の
-            「Search Legal Assets」から master を選択してください。</strong>
+            <strong>※ 業務委託マスタを優先したい場合は、上の
+            「🔗 マスタ / 発注書を検索」ボタンから master を選択してください。</strong>
             マスタが選択されると「ステップ 2 検収内容」はマスタの業務明細を
             「正」として表示します (PO は裏のリンクとしてのみ残ります)。
           </p>
@@ -2297,11 +2316,21 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             {displaySource === "po" &&
               masterContractId === 0 &&
               formData.parent_po_id && (
-                <div className="mb-3 px-3 py-2 rounded-sm border border-sky-200 bg-sky-50/40 text-[10px] font-mono text-sky-900 leading-relaxed">
-                  <strong>📄 発注書 (PO)</strong> の業務明細を表示しています。
-                  業務委託マスタにこの取引先の契約が登録されていれば、
-                  右上の「Search Legal Assets」から master を選択して
-                  上書き表示できます。
+                <div className="mb-3 px-3 py-2 rounded-sm border border-sky-200 bg-sky-50/40 text-[10px] font-mono text-sky-900 leading-relaxed flex items-center justify-between gap-2">
+                  <span>
+                    <strong>📄 発注書 (PO)</strong> の業務明細を表示しています。
+                    業務委託マスタにこの取引先の契約が登録されていれば、
+                    マスタを選択して上書き表示できます。
+                  </span>
+                  {onOpenLegalAssetSearch && (
+                    <button
+                      type="button"
+                      onClick={onOpenLegalAssetSearch}
+                      className="text-[10px] font-mono px-2 py-0.5 border border-sky-700/40 bg-white text-sky-800 hover:bg-sky-100 rounded-sm flex-shrink-0"
+                    >
+                      🔗 マスタを検索
+                    </button>
+                  )}
                 </div>
               )}
             <DeliveryLineItemTable
