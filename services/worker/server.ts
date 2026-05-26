@@ -10511,6 +10511,72 @@ ${details}
       // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
       const driveLink = await googleDriveService.uploadPdf(html, fileName);
 
+      // Phase 22.21.104: 検収書 / 利用許諾料計算書 は会計用 Excel も同時に
+      //   生成して Drive にアップ。失敗しても PDF 生成は成功扱い (warning へ)。
+      let excelLink: string | null = null;
+      try {
+        const wantsExcel =
+          String(templateType || "").startsWith("inspection_certificate") ||
+          templateType === "royalty_statement";
+        if (wantsExcel) {
+          // 源泉徴収判定のため vendor 行を 1 件引く (vendor_code 優先、
+          // 無ければ vendor_name で部分一致)。withholding_enabled が
+          // 取れないと源泉徴収は 0 のまま出力される。
+          let vendorRow: any = null;
+          const vcode =
+            (formData?.VENDOR_CODE as string) || "";
+          const vname =
+            (formData?.VENDOR_NAME as string) ||
+            (formData?.counterparty as string) ||
+            (formData?.licensor as string) ||
+            "";
+          if (vcode) {
+            const r = await query(
+              `SELECT vendor_code, vendor_name, account_holder_kana,
+                      withholding_enabled
+                 FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+              [vcode]
+            );
+            vendorRow = r.rows[0] || null;
+          }
+          if (!vendorRow && vname) {
+            const r = await query(
+              `SELECT vendor_code, vendor_name, account_holder_kana,
+                      withholding_enabled
+                 FROM vendors WHERE vendor_name = $1 LIMIT 1`,
+              [vname]
+            );
+            vendorRow = r.rows[0] || null;
+          }
+          const xlData = excelService.buildFromFormData(
+            formData || {},
+            String(templateType || ""),
+            vendorRow
+          );
+          if (xlData) {
+            const buffer = excelService.generateInspectionExcel(xlData);
+            const xlsxName = fileName.replace(/\.pdf$/i, "") + ".xlsx";
+            const { Readable } = await import("stream");
+            const stream = Readable.from(buffer);
+            excelLink = await googleDriveService.uploadFile(
+              stream,
+              xlsxName,
+              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            );
+            console.log(
+              `[Phase 22.21.104] Excel uploaded for ${docNumber}: ${excelLink}`
+            );
+          }
+        }
+      } catch (xlErr: any) {
+        // syncWarnings は後段で declare されるためここでは console のみ。
+        // PDF は既に保存済みなので Excel 失敗で全体を止めない。
+        console.warn(
+          `[Phase 22.21.104] Excel generation/upload failed for ${docNumber}:`,
+          xlErr?.message || xlErr
+        );
+      }
+
       // Phase 15: 同じ document_number で再生成された場合 (PDF 未作成キュー
       // 由来など) は ON CONFLICT で UPDATE、新規なら INSERT。
       // form_data の __pdf_pending は false にして pending キューから外す。
@@ -11709,6 +11775,9 @@ ${details}
       res.json({
         success: true,
         driveLink,
+        // Phase 22.21.104: 検収書 / 利用許諾料計算書のみ Excel リンクも返す
+        // (それ以外の templateType では null)
+        excelLink,
         documentNumber: docNumber,
         templateType,
         warnings: syncWarnings,

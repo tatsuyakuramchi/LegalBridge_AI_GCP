@@ -132,8 +132,10 @@ export function DocumentEditorPage() {
   const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isGenerating, setIsGenerating] = React.useState(false)
   // Phase 9g: 文書生成完了後の達成感のあるサクセス画面用
+  // Phase 22.21.104: 検収書 / 利用許諾料計算書では excelLink も返るので保持
   const [completionResult, setCompletionResult] = React.useState<{
     driveLink: string;
+    excelLink?: string | null;
     documentNumber: string;
     templateLabel: string;
   } | null>(null)
@@ -656,6 +658,8 @@ export function DocumentEditorPage() {
         // 不明確というフィードバックを受け、明示的なモーダルで完了表示。
         setCompletionResult({
           driveLink: data.driveLink,
+          // Phase 22.21.104: 検収書 / 利用許諾料計算書のみ excelLink あり
+          excelLink: data.excelLink || null,
           documentNumber: data.documentNumber || "",
           templateLabel:
             templateMetadata[selectedTemplate]?.label || selectedTemplate,
@@ -1707,7 +1711,7 @@ export function DocumentEditorPage() {
               )}
               <div className="space-y-1">
                 <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
-                  Drive リンク
+                  Drive リンク (PDF)
                 </div>
                 <a
                   href={completionResult.driveLink}
@@ -1719,6 +1723,26 @@ export function DocumentEditorPage() {
                   {completionResult.driveLink}
                 </a>
               </div>
+              {/* Phase 22.21.104: 検収書 / 利用許諾料計算書のみ Excel リンク表示 */}
+              {completionResult.excelLink && (
+                <div className="space-y-1">
+                  <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-emerald-700">
+                    会計用 Excel (自動生成)
+                  </div>
+                  <a
+                    href={completionResult.excelLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-xs font-mono text-emerald-700 hover:text-emerald-900 underline break-all flex items-center gap-1"
+                  >
+                    <ExternalLink className="h-3 w-3 flex-shrink-0" />
+                    {completionResult.excelLink}
+                  </a>
+                  <p className="text-[10px] font-mono text-muted-foreground">
+                    会計チームの支払処理フォーマット (件名/支払日/明細5行/源泉徴収/振込額) で出力
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Footer actions */}
