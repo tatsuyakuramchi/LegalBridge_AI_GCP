@@ -477,6 +477,16 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     if (!formData.licensor && c.vendor_name) {
       patch.licensor = c.vendor_name;
     }
+    // Phase 22.21.108: VENDOR_CODE + 源泉徴収フラグ (古い draft 互換)
+    if (!formData.VENDOR_CODE && c.vendor_code) {
+      patch.VENDOR_CODE = c.vendor_code;
+    }
+    if (
+      formData.VENDOR_WITHHOLDING_ENABLED == null &&
+      c.vendor_withholding_enabled === true
+    ) {
+      patch.VENDOR_WITHHOLDING_ENABLED = true;
+    }
     // Phase 22.21.103: 振込先口座 (古い draft も自動補完)
     if (!formData.bankName && c.vendor_bank_name) {
       patch.bankName = c.vendor_bank_name;
@@ -2486,6 +2496,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         // Phase 22.21.94: PDF ヘッダ右上「契約番号」用。
         // 契約マスタの document_number をそのまま流し込む。
         linked_contract_number: c.document_number || formData.linked_contract_number || '',
+        // Phase 22.21.108: 取引先コード + 源泉徴収フラグを formData に積む。
+        //   会計用 Excel の取引先コード列、源泉徴収判定 (worker 側 lookup の
+        //   primary key) で使う。draft 保存 → 再ロードでも維持される。
+        VENDOR_CODE:
+          (c as any).vendor_code || formData.VENDOR_CODE || '',
+        VENDOR_WITHHOLDING_ENABLED:
+          (c as any).vendor_withholding_enabled === true ||
+          formData.VENDOR_WITHHOLDING_ENABLED === true,
         // 当事者
         licensor: c.vendor_name || formData.licensor || '',
         // Phase 22.21.97: 御中/様 サフィックス
@@ -2727,6 +2745,49 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                       )}
                     </p>
                   )}
+                  {/* Phase 22.21.108: 取引先コード + 源泉徴収フラグ を可視化。
+                      会計用 Excel と源泉計算の透明性を確保。 */}
+                  <p className="flex items-center gap-2 flex-wrap">
+                    <span>取引先コード:</span>
+                    <span
+                      className={cn(
+                        'font-bold px-1.5 py-0.5 rounded-sm',
+                        formData.VENDOR_CODE
+                          ? 'bg-sky-50 border border-sky-300 text-sky-900'
+                          : 'bg-muted border border-input text-muted-foreground'
+                      )}
+                    >
+                      {formData.VENDOR_CODE || '(未設定)'}
+                    </span>
+                    <span className="opacity-50">|</span>
+                    <span>源泉徴収:</span>
+                    <span
+                      className={cn(
+                        'font-bold px-1.5 py-0.5 rounded-sm',
+                        formData.VENDOR_WITHHOLDING_ENABLED
+                          ? 'bg-amber-50 border border-amber-300 text-amber-900'
+                          : 'bg-muted border border-input text-muted-foreground'
+                      )}
+                    >
+                      {formData.VENDOR_WITHHOLDING_ENABLED
+                        ? '対象 (10.21%)'
+                        : '対象外'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        setFormData({
+                          ...formData,
+                          VENDOR_WITHHOLDING_ENABLED:
+                            !formData.VENDOR_WITHHOLDING_ENABLED,
+                        })
+                      }
+                      className="text-[9px] font-mono px-1.5 py-0.5 border border-input rounded-sm hover:bg-muted"
+                      title="源泉徴収の対象/対象外をトグル (取引先マスタ未設定時の手動上書き用)"
+                    >
+                      ⇄ 切替
+                    </button>
+                  </p>
                 </div>
               )}
             </div>

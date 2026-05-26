@@ -1459,6 +1459,12 @@ export function DocumentEditorPage() {
                           // Phase 22.21.94: PDF ヘッダ右上の「契約番号」欄に出力
                           linked_contract_number:
                             c.document_number || prev.linked_contract_number || "",
+                          // Phase 22.21.108: 取引先コード + 源泉徴収フラグ
+                          VENDOR_CODE:
+                            (c as any).vendor_code || prev.VENDOR_CODE || "",
+                          VENDOR_WITHHOLDING_ENABLED:
+                            (c as any).vendor_withholding_enabled === true ||
+                            prev.VENDOR_WITHHOLDING_ENABLED === true,
                           licensor: c.vendor_name || prev.licensor || "",
                           // Phase 22.21.97: 御中/様 サフィックス
                           LICENSOR_SUFFIX: isCorp ? "御中" : "様",

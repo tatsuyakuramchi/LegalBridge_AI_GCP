@@ -10600,6 +10600,18 @@ ${details}
               vendorRow = { ...vendorRow, withholding_enabled: true };
             }
           }
+          // Phase 22.21.108: formData に VENDOR_WITHHOLDING_ENABLED が
+          //   明示的にセットされていれば最優先で採用 (フロント側で master
+          //   選択時に積まれる)。vendor lookup 失敗時の保険にもなる。
+          if (formData?.VENDOR_WITHHOLDING_ENABLED === true) {
+            vendorRow = vendorRow
+              ? { ...vendorRow, withholding_enabled: true }
+              : {
+                  vendor_code: formData.VENDOR_CODE || "",
+                  vendor_name: formData.licensor || formData.counterparty || "",
+                  withholding_enabled: true,
+                };
+          }
 
           console.log(
             `[Phase 22.21.107] Excel vendor lookup for ${docNumber}: ` +
