@@ -477,11 +477,46 @@ export async function initDb() {
     //   (ON CONFLICT (document_number) が動くようにするため。詳細は worker
     //    側 db.ts の同名コメント参照。)
     `DROP INDEX IF EXISTS idx_capabilities_doc_num;`,
-    `DELETE FROM contract_capabilities a
-       USING contract_capabilities b
-      WHERE a.id < b.id
-        AND a.document_number = b.document_number
-        AND a.document_number IS NOT NULL;`,
+    // Phase 22.21.102: 真 = 最新 updated_at で重複マージ。
+    // 詳細は worker/src/lib/db.ts の同名コメント参照。
+    `DO $merge$
+     DECLARE
+       loser_count INTEGER;
+     BEGIN
+       CREATE TEMP TABLE _cc_winners ON COMMIT DROP AS
+         SELECT DISTINCT ON (document_number)
+                document_number, id AS winner_id
+           FROM contract_capabilities
+          WHERE document_number IS NOT NULL
+          ORDER BY document_number, updated_at DESC NULLS LAST, id DESC;
+       CREATE TEMP TABLE _cc_losers ON COMMIT DROP AS
+         SELECT cc.id AS loser_id, w.winner_id
+           FROM contract_capabilities cc
+           JOIN _cc_winners w ON w.document_number = cc.document_number
+          WHERE cc.id <> w.winner_id;
+       SELECT COUNT(*) INTO loser_count FROM _cc_losers;
+       IF loser_count > 0 THEN
+         UPDATE capability_financial_conditions cfc
+            SET capability_id = l.winner_id
+           FROM _cc_losers l
+          WHERE cfc.capability_id = l.loser_id
+            AND NOT EXISTS (
+              SELECT 1 FROM capability_financial_conditions w
+               WHERE w.capability_id = l.winner_id
+                 AND w.condition_no = cfc.condition_no
+            );
+         DELETE FROM capability_financial_conditions cfc
+          USING _cc_losers l
+          WHERE cfc.capability_id = l.loser_id;
+         DELETE FROM contract_capabilities cc
+          USING _cc_losers l
+          WHERE cc.id = l.loser_id;
+         RAISE NOTICE
+           '[Phase 22.21.102] contract_capabilities: merged % duplicate rows by document_number (winner = latest updated_at).',
+           loser_count;
+       END IF;
+     END
+     $merge$;`,
     `CREATE UNIQUE INDEX IF NOT EXISTS contract_capabilities_doc_num_uniq
        ON contract_capabilities(document_number);`,
 

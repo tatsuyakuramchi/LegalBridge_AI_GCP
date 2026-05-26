@@ -262,15 +262,24 @@ export function ContractsPanel() {
         await refreshContracts()
         close()
       } else {
-        let detail = ""
+        // Phase 22.21.102: 409 = document_number 重複。専用メッセージで分かりやすく
+        let body: any = null
         try {
-          const j = await res.json()
-          detail = j?.error ? `: ${j.error}` : ""
+          body = await res.json()
         } catch {}
-        showNotification(
-          `保存に失敗しました (HTTP ${res.status})${detail}`,
-          "error"
-        )
+        if (res.status === 409 && body?.code === "DOC_NUMBER_DUPLICATE") {
+          showNotification(
+            body.error ||
+              `文書番号 ${body.document_number} は既に登録されています`,
+            "error"
+          )
+        } else {
+          const detail = body?.error ? `: ${body.error}` : ""
+          showNotification(
+            `保存に失敗しました (HTTP ${res.status})${detail}`,
+            "error"
+          )
+        }
       }
     } catch (e: any) {
       showNotification(`サーバーエラー: ${e?.message || e}`, "error")

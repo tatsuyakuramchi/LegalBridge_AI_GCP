@@ -3708,7 +3708,22 @@ ${details}
           regenerate_document_number === true ||
           regenerate_document_number === "true",
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Phase 22.21.102: document_number UNIQUE 違反は 409 で返す。
+      //   ユーザーが既存番号と同じものを入力したことを明示。
+      if (
+        error &&
+        error.code === "23505" &&
+        String(error.constraint || "").includes("doc_num")
+      ) {
+        return res.status(409).json({
+          error:
+            `この文書番号は既に登録されています: ${document_number}。` +
+            `既存の契約を編集するか、別の番号を指定してください。`,
+          code: "DOC_NUMBER_DUPLICATE",
+          document_number,
+        });
+      }
       res.status(500).json({ error: String(error) });
     }
   });
@@ -3869,7 +3884,21 @@ ${details}
           finalDocNumber !== String(document_number || "").trim(),
         archive_propagation: archivePropagation,
       });
-    } catch (error) {
+    } catch (error: any) {
+      // Phase 22.21.102: 編集時に他レコードと document_number が衝突
+      if (
+        error &&
+        error.code === "23505" &&
+        String(error.constraint || "").includes("doc_num")
+      ) {
+        return res.status(409).json({
+          error:
+            `この文書番号は別の契約で既に使われています: ${document_number}。` +
+            `別の番号を指定するか、既存契約を先に編集/削除してください。`,
+          code: "DOC_NUMBER_DUPLICATE",
+          document_number,
+        });
+      }
       res.status(500).json({ error: String(error) });
     }
   });

@@ -1295,15 +1295,72 @@ export async function initDb() {
     // 旧インデックスを冪等に DROP → 新規 UNIQUE INDEX を CREATE。
     // -----------------------------------------------------------------
     `DROP INDEX IF EXISTS idx_capabilities_doc_num;`,
-    // 念のため重複行 (document_number が同じで複数行) を残す場合に備えた
-    // 防御クリーンアップ — 最新の id 1 件だけ残して他を削除する。
-    // 部分インデックスが効いていれば重複は無いはずだが、過去に
-    // インデックス未適用の時期があった場合の保険。
-    `DELETE FROM contract_capabilities a
-       USING contract_capabilities b
-      WHERE a.id < b.id
-        AND a.document_number = b.document_number
-        AND a.document_number IS NOT NULL;`,
+    // Phase 22.21.102: contract_capabilities の document_number 重複を解消
+    // (ユーザー要望: 真 = 最新 updated_at)。
+    //
+    //   旧実装 (id ベース) は新しく INSERT された行が必ず "真" になり、
+    //   ユーザーが古い行を手動編集 (= updated_at が新しい) しても上書き
+    //   削除される問題があった。Phase 22.21.102 で updated_at の最新を
+    //   "真" に変更し、子テーブル (capability_financial_conditions) も
+    //   loser → winner に再ポイントしてからマージ削除する。
+    //
+    //   手順:
+    //     (1) winners 一時テーブル: 各 document_number で max(updated_at)
+    //         → tie-break: max(id) → 1 件選ぶ
+    //     (2) losers 一時テーブル: winner 以外の重複行
+    //     (3) capability_financial_conditions:
+    //         - winner が同じ condition_no を持っていなければ loser→winner に移行
+    //         - 持っていれば loser 側の cfc 行は削除 (winner の値を採用)
+    //     (4) losers の contract_capabilities 行を削除
+    //         (CASCADE で残りの cfc も消える保険)
+    //
+    //   PL/pgSQL DO ブロックで wrap して原子性を確保。一時テーブルは
+    //   セッション完了で自動破棄される。
+    `DO $merge$
+     DECLARE
+       loser_count INTEGER;
+     BEGIN
+       CREATE TEMP TABLE _cc_winners ON COMMIT DROP AS
+         SELECT DISTINCT ON (document_number)
+                document_number, id AS winner_id
+           FROM contract_capabilities
+          WHERE document_number IS NOT NULL
+          ORDER BY document_number, updated_at DESC NULLS LAST, id DESC;
+       CREATE TEMP TABLE _cc_losers ON COMMIT DROP AS
+         SELECT cc.id AS loser_id, w.winner_id
+           FROM contract_capabilities cc
+           JOIN _cc_winners w ON w.document_number = cc.document_number
+          WHERE cc.id <> w.winner_id;
+       SELECT COUNT(*) INTO loser_count FROM _cc_losers;
+       IF loser_count > 0 THEN
+         -- (3a) move financial_conditions where winner doesn't already have the condition_no
+         UPDATE capability_financial_conditions cfc
+            SET capability_id = l.winner_id
+           FROM _cc_losers l
+          WHERE cfc.capability_id = l.loser_id
+            AND NOT EXISTS (
+              SELECT 1 FROM capability_financial_conditions w
+               WHERE w.capability_id = l.winner_id
+                 AND w.condition_no = cfc.condition_no
+            );
+         -- (3b) delete remaining loser financial_conditions
+         DELETE FROM capability_financial_conditions cfc
+          USING _cc_losers l
+          WHERE cfc.capability_id = l.loser_id;
+         -- (4) delete loser contract_capabilities rows
+         DELETE FROM contract_capabilities cc
+          USING _cc_losers l
+          WHERE cc.id = l.loser_id;
+         RAISE NOTICE
+           '[Phase 22.21.102] contract_capabilities: merged % duplicate rows by document_number (winner = latest updated_at).',
+           loser_count;
+       END IF;
+     END
+     $merge$;`,
+    // Phase 22.21.102: NON-partial UNIQUE INDEX を維持 (= 既存の
+    //   ON CONFLICT (document_number) DO UPDATE を持つ INSERT 7+ 箇所と
+    //   推論互換)。Postgres は NULL を distinct 扱いするので、
+    //   document_number=NULL の行は複数 OK (NULL 同士は重複しない)。
     `CREATE UNIQUE INDEX IF NOT EXISTS contract_capabilities_doc_num_uniq
        ON contract_capabilities(document_number);`,
 
