@@ -1982,6 +1982,64 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     //   Step 3 — 検収者 (inspectorName) 必須
     //   Step 4 — 発行日 (documentDate) 必須
     const hasParentPo = !!formData.parent_po_id;
+    // Phase 22.21.121: 業務委託マスタを「正」として PO 表示を上書き。
+    //   selected_master_contract_id があれば allContracts から master を引き、
+    //   その capability_line_items を order_lines_for_inspection 形式に変換した
+    //   ものを表示の "効果的なライン" として使う。
+    //   PO はバックエンドリンク (parent_po_id) としては残るが、
+    //   画面表示はマスタが優先される。
+    const masterContractId =
+      Number(formData.selected_master_contract_id) || 0;
+    const masterContractRecord =
+      masterContractId > 0
+        ? (allContracts || []).find(
+            (c: any) => Number(c.id) === masterContractId
+          )
+        : null;
+    const masterLineItems =
+      masterContractRecord &&
+      Array.isArray((masterContractRecord as any).line_items)
+        ? ((masterContractRecord as any).line_items as any[])
+        : [];
+    const masterEffectiveLines =
+      masterLineItems.length > 0
+        ? masterLineItems.map((l: any, idx: number) => ({
+            line_no: Number(l.line_no) || idx + 1,
+            item_name: l.item_name || "",
+            spec: l.spec || "",
+            category: l.category || "",
+            calc_method: l.calc_method || "FIXED",
+            quantity: Number(l.quantity) || 0,
+            unit_price: Number(l.unit_price) || 0,
+            amount_ex_tax: Number(l.amount_ex_tax) || 0,
+            delivery_date: l.delivery_date || "",
+            payment_date: l.payment_date || "",
+            payment_terms: l.payment_terms || "",
+            payment_method: l.payment_method || "",
+            cycle: l.cycle || "",
+            billing_day: l.billing_day || "",
+            term_start: l.term_start || "",
+            term_end: l.term_end || "",
+            // PO 表示と互換: inspected_amount / remaining_amount は未使用 0
+            ordered_amount_ex_tax: Number(l.amount_ex_tax) || 0,
+            inspected_amount_so_far: 0,
+            remaining_amount_ex_tax: Number(l.amount_ex_tax) || 0,
+          }))
+        : null;
+
+    // 効果的な明細表 (= マスタ優先, 無ければ PO の order_lines_for_inspection)
+    const effectiveOrderLines = masterEffectiveLines
+      ? masterEffectiveLines
+      : Array.isArray(formData.order_lines_for_inspection)
+        ? formData.order_lines_for_inspection
+        : [];
+    const displaySource: "master" | "po" | "free" =
+      masterEffectiveLines && masterEffectiveLines.length > 0
+        ? "master"
+        : effectiveOrderLines.length > 0
+          ? "po"
+          : "free";
+
     const deliveryLines = Array.isArray(formData.delivery_line_items)
       ? formData.delivery_line_items
       : [];
@@ -1990,9 +2048,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
     const step2DoneViaFree =
       !!formData.deliveredAmountStr || !!formData.description;
+    // Phase 22.21.121: PO 連動 / マスタ選択 のいずれかで step1 完了扱い。
+    const hasMasterOrPo = hasParentPo || masterContractId > 0;
     const stepStatus = {
-      step1: hasParentPo,
-      step2: hasParentPo ? step2DoneViaLines : step2DoneViaFree,
+      step1: hasMasterOrPo,
+      step2: hasMasterOrPo ? step2DoneViaLines : step2DoneViaFree,
       step3: !!formData.inspectorName,
       step4: !!formData.documentDate,
     };
@@ -2030,16 +2090,49 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
 
         {/* ─── STEP 1 ─ 親 PO を選択 ────────────────────────── */}
         <FormSection
-          title="ステップ 1 — 親 PO (発注書) を選択"
+          title="ステップ 1 — 親 PO (発注書) または 業務委託マスタ を選択"
           variant="indigo"
           icon={<Briefcase className="w-4 h-4" />}
         >
           <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
-            <strong>受託者・明細・経費・手数料は親 PO から自動入力されます。</strong>
+            <strong>受託者・明細・経費・手数料は親 PO または 業務委託マスタから
+            自動入力されます。</strong>
             <br />
-            通常は Backlog 親子関係から自動発見されます。それ以外
-            (IMPORT-* / 親子未設定) は下のピッカーで選択してください。
+            通常は Backlog 親子関係から PO が自動発見されます。
+            親子未設定 / IMPORT-* は下のピッカーで選択。
+            <br />
+            <strong>※ 業務委託マスタを優先したい場合は、画面右上の
+            「Search Legal Assets」から master を選択してください。</strong>
+            マスタが選択されると「ステップ 2 検収内容」はマスタの業務明細を
+            「正」として表示します (PO は裏のリンクとしてのみ残ります)。
           </p>
+          {/* Phase 22.21.121: マスタ選択中バッジ */}
+          {masterContractId > 0 && masterContractRecord && (
+            <div className="mb-2 px-3 py-2 rounded-sm border border-emerald-300 bg-emerald-50 text-[10px] font-mono text-emerald-900 leading-relaxed flex items-center justify-between gap-2">
+              <span>
+                📘 業務委託マスタ{" "}
+                <strong>
+                  {(masterContractRecord as any).document_number}
+                </strong>{" "}
+                ({(masterContractRecord as any).contract_title}) を「正」として
+                表示中
+              </span>
+              <button
+                type="button"
+                onClick={() =>
+                  setFormData({
+                    ...formData,
+                    selected_master_contract_id: 0,
+                    linked_contract_number: "",
+                  })
+                }
+                className="text-[10px] font-mono px-2 py-0.5 border border-emerald-700/40 rounded-sm hover:bg-emerald-100 flex-shrink-0"
+                title="マスタ参照を解除して PO 表示に戻す"
+              >
+                ↩ マスタ解除
+              </button>
+            </div>
+          )}
           {/* Phase 8c: 親 PO ピッカー — Backlog 親子経由で自動発見できない
             ケース (IMPORT-* PO / 親子未設定) のためのフォールバック手段。
             form-context が既に親 PO を載せていても、ここで上書き可能。 */}
@@ -2164,21 +2257,55 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {/* Phase 7c: 親 PO の明細別検収テーブル。
             form-context が parent_po_id + order_lines_for_inspection[] を
             返したときだけ表示する。それ以外 (親なし) のときは従来の
-            自由入力フォームにフォールバック。 */}
-        {Array.isArray(formData.order_lines_for_inspection) &&
-        formData.order_lines_for_inspection.length > 0 ? (
+            自由入力フォームにフォールバック。
+            Phase 22.21.121: 業務委託マスタが選択されていれば master の
+            line_items を優先表示 (= effectiveOrderLines)。 */}
+        {effectiveOrderLines.length > 0 ? (
           <FormSection
             title="ステップ 2 — 検収内容 (明細別)"
             variant="indigo"
             icon={<Scale className="w-4 h-4" />}
             headerActions={
-              <span className="text-[9px] font-mono text-muted-foreground italic">
-                親 PO: {formData.parent_po_issue_key || "—"}
+              <span
+                className={cn(
+                  "text-[9px] font-mono italic",
+                  displaySource === "master"
+                    ? "text-emerald-700 font-bold"
+                    : "text-muted-foreground"
+                )}
+              >
+                {displaySource === "master"
+                  ? `📘 マスタ参照: ${(masterContractRecord as any)?.document_number || ""}`
+                  : `📄 親 PO: ${formData.parent_po_issue_key || "—"}`}
               </span>
             }
           >
+            {/* Phase 22.21.121: 引用元バナー */}
+            {displaySource === "master" && (
+              <div className="mb-3 px-3 py-2 rounded-sm border border-emerald-200 bg-emerald-50/60 text-[10px] font-mono text-emerald-900 leading-relaxed">
+                <strong>📘 業務委託マスタ</strong> (
+                {(masterContractRecord as any)?.contract_title || ""}) の
+                業務明細を「正」として表示しています。
+                {formData.parent_po_issue_key && (
+                  <> 参考: PO {formData.parent_po_issue_key} もリンクされています。</>
+                )}
+                <br />
+                マスタを切り離して PO 表示に戻す場合は、上の「ステップ 1」で
+                マスタを 解除 してください。
+              </div>
+            )}
+            {displaySource === "po" &&
+              masterContractId === 0 &&
+              formData.parent_po_id && (
+                <div className="mb-3 px-3 py-2 rounded-sm border border-sky-200 bg-sky-50/40 text-[10px] font-mono text-sky-900 leading-relaxed">
+                  <strong>📄 発注書 (PO)</strong> の業務明細を表示しています。
+                  業務委託マスタにこの取引先の契約が登録されていれば、
+                  右上の「Search Legal Assets」から master を選択して
+                  上書き表示できます。
+                </div>
+              )}
             <DeliveryLineItemTable
-              orderLines={formData.order_lines_for_inspection as OrderLineForInspection[]}
+              orderLines={effectiveOrderLines as OrderLineForInspection[]}
               values={(Array.isArray(formData.delivery_line_items)
                 ? formData.delivery_line_items
                 : []) as DeliveryLine[]}
