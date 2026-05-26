@@ -454,17 +454,13 @@ export function ContractsPanel() {
           </DialogHeader>
           <DialogBody className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[70vh] overflow-y-auto">
             <Field label="取引先 *">
-              <NativeSelect
+              {/* Phase 22.21.111: vendor が多くてプルダウンが辛い問題に対処。
+                  検索可能なインライン picker に置き換え。 */}
+              <VendorPicker
                 value={data?.vendor_id || ""}
-                onChange={(e) => set({ vendor_id: e.target.value })}
-              >
-                <option value="">— 取引先を選択 —</option>
-                {vendors.map((v) => (
-                  <option key={`opt-${v.id}`} value={v.id}>
-                    {v.vendor_name} ({v.vendor_code})
-                  </option>
-                ))}
-              </NativeSelect>
+                onChange={(id) => set({ vendor_id: id })}
+                vendors={vendors}
+              />
             </Field>
             {/* Phase 22.21.50: レコード区分の整理
                 - 基本契約: 親契約 (top-level)。単体では発注書/計算書を発行しない。
@@ -895,6 +891,182 @@ function Field({
     <div className={`space-y-1 ${className || ""}`}>
       <Label>{label}</Label>
       {children}
+    </div>
+  )
+}
+
+/**
+ * Phase 22.21.111: 取引先 (vendors) を検索 + 選択する小さな picker。
+ *
+ *   旧実装の <NativeSelect> は vendors が増えてくると数百〜数千行の
+ *   プルダウンになり、目視で探すのが現実的でなくなる問題に対処。
+ *
+ *   UX:
+ *     - 未選択時: 検索 input + 候補リスト (max 30 件)
+ *       検索対象: vendor_name / vendor_code / trade_name / pen_name / aliases
+ *     - 選択済み時: 取引先名 + コードを表示し、[変更] / [×] ボタン
+ *     - 検索は NFKC + 小文字化で全角/半角・大文字小文字を吸収
+ *     - Enter で先頭候補を即選択 (キーボード派向け)
+ */
+function VendorPicker({
+  value,
+  onChange,
+  vendors,
+}: {
+  value: string | number
+  onChange: (id: string) => void
+  vendors: any[]
+}) {
+  const [search, setSearch] = React.useState("")
+  const [forceOpen, setForceOpen] = React.useState(false)
+  const selected = vendors.find(
+    (v) => String(v.id) === String(value || "")
+  )
+
+  // ── 選択済み表示モード ──
+  if (selected && !forceOpen) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <div
+          className={cn(
+            "flex-1 min-w-0 px-2.5 py-1.5 rounded-sm border",
+            "border-emerald-300 bg-emerald-50/50"
+          )}
+        >
+          <div className="text-xs font-mono font-bold truncate">
+            {selected.vendor_name || "(無名)"}
+          </div>
+          <div className="text-[10px] font-mono text-muted-foreground">
+            {selected.vendor_code}
+            {selected.entity_type ? ` · ${selected.entity_type}` : ""}
+          </div>
+        </div>
+        <button
+          type="button"
+          onClick={() => {
+            setSearch("")
+            setForceOpen(true)
+          }}
+          className="text-[10px] font-mono px-2 py-1 border border-input rounded-sm hover:bg-muted flex-shrink-0"
+          title="別の取引先に変更"
+        >
+          変更
+        </button>
+        <button
+          type="button"
+          onClick={() => onChange("")}
+          className="text-[10px] font-mono px-2 py-1 border border-input rounded-sm hover:bg-muted text-muted-foreground flex-shrink-0"
+          title="選択解除"
+        >
+          ×
+        </button>
+      </div>
+    )
+  }
+
+  // ── 検索モード ──
+  const normalize = (s: any): string =>
+    String(s || "")
+      .normalize("NFKC")
+      .toLowerCase()
+  const q = normalize(search)
+  const filtered = !q
+    ? vendors
+    : vendors.filter((v: any) => {
+        const hay = [
+          v.vendor_name,
+          v.vendor_code,
+          v.trade_name,
+          v.pen_name,
+          v.aliases,
+          v.vendor_rep,
+          v.contact_name,
+        ]
+          .map(normalize)
+          .join(" ")
+        return hay.includes(q)
+      })
+  const visible = filtered.slice(0, 30)
+
+  const applyFirst = () => {
+    if (visible[0]) {
+      onChange(String(visible[0].id))
+      setSearch("")
+      setForceOpen(false)
+    }
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center gap-1.5">
+        <Input
+          type="text"
+          autoFocus
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault()
+              applyFirst()
+            }
+          }}
+          placeholder="取引先名・コード・別名で検索…"
+          className="text-xs font-mono flex-1"
+        />
+        {selected && (
+          <button
+            type="button"
+            onClick={() => {
+              setSearch("")
+              setForceOpen(false)
+            }}
+            className="text-[10px] font-mono px-2 py-1 border border-input rounded-sm hover:bg-muted text-muted-foreground flex-shrink-0"
+            title="変更を中止 (現在の選択を維持)"
+          >
+            戻る
+          </button>
+        )}
+      </div>
+      <div className="text-[10px] font-mono text-muted-foreground px-1 flex items-center justify-between">
+        <span>
+          {filtered.length} / 全 {vendors.length} 件
+          {filtered.length > visible.length && ` (上位 ${visible.length} 件表示)`}
+        </span>
+        {q && (
+          <span className="text-foreground/60">Enter で先頭を選択</span>
+        )}
+      </div>
+      <div className="max-h-[220px] overflow-y-auto border border-input rounded-sm divide-y divide-input bg-background">
+        {visible.map((v: any) => (
+          <button
+            key={`vp-${v.id}`}
+            type="button"
+            onClick={() => {
+              onChange(String(v.id))
+              setSearch("")
+              setForceOpen(false)
+            }}
+            className={cn(
+              "w-full text-left px-2.5 py-1.5 hover:bg-emerald-50/60 transition-colors",
+              String(v.id) === String(value) && "bg-emerald-50"
+            )}
+          >
+            <div className="text-xs font-mono font-bold truncate">
+              {v.vendor_name || "(無名)"}
+            </div>
+            <div className="text-[9px] font-mono text-muted-foreground truncate">
+              {v.vendor_code}
+              {v.entity_type ? ` · ${v.entity_type}` : ""}
+              {v.aliases ? ` · 別名: ${v.aliases}` : ""}
+            </div>
+          </button>
+        ))}
+        {filtered.length === 0 && (
+          <div className="p-3 text-center text-[10px] font-mono text-muted-foreground">
+            該当する取引先が見つかりません
+          </div>
+        )}
+      </div>
     </div>
   )
 }
