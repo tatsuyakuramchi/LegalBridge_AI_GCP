@@ -1417,11 +1417,12 @@ function LineItemsEditor({
       ...value,
       {
         line_no: nextLineNo,
-        category: "",
         item_name: "",
         spec: "",
         calc_method: "FIXED",
-        payment_method: "",
+        // Phase 22.21.114: 発注書 LineItemTable と整合。
+        //   payment_terms は契約種別 (請負/準委任) の 2 択。
+        //   旧 category / payment_method は UI から削除。
         payment_terms: "",
         quantity: "",
         unit_price: "",
@@ -1473,15 +1474,10 @@ function LineItemsEditor({
               <Trash2 />
             </Button>
           </div>
+          {/* Phase 22.21.114: 発注書 LineItemTable と項目を揃える。
+              ・カテゴリ / 支払方法 を撤去
+              ・契約種別 (= payment_terms) を 請負/準委任 の 2 択に */}
           <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">カテゴリ</Label>
-              <Input
-                value={c.category || ""}
-                onChange={(e) => update(idx, { category: e.target.value })}
-                placeholder="例: 制作"
-              />
-            </div>
             <div className="col-span-2 md:col-span-3 space-y-0.5">
               <Label className="text-[10px]">業務内容・成果物</Label>
               <Input
@@ -1501,16 +1497,19 @@ function LineItemsEditor({
                 <option value="ROYALTY">ROYALTY (歩合)</option>
               </NativeSelect>
             </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">支払方法</Label>
-              <Input
-                value={c.payment_method || ""}
-                onChange={(e) => update(idx, { payment_method: e.target.value })}
-                placeholder="例: 銀行振込"
-              />
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">契約種別</Label>
+              <NativeSelect
+                value={c.payment_terms || ""}
+                onChange={(e) => update(idx, { payment_terms: e.target.value })}
+              >
+                <option value="">— 未選択 —</option>
+                <option value="請負">請負 (成果物の引渡しが報酬の対価 — 民法 632 条)</option>
+                <option value="準委任">準委任 (業務遂行が報酬の対価 — 民法 656 条)</option>
+              </NativeSelect>
             </div>
           </div>
-          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2 text-xs">
             <div className="space-y-0.5">
               <Label className="text-[10px]">数量</Label>
               <Input
@@ -1558,14 +1557,6 @@ function LineItemsEditor({
                 type="date"
                 value={c.payment_date || ""}
                 onChange={(e) => update(idx, { payment_date: e.target.value })}
-              />
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">支払条件</Label>
-              <Input
-                value={c.payment_terms || ""}
-                onChange={(e) => update(idx, { payment_terms: e.target.value })}
-                placeholder="例: 月末締翌月末払"
               />
             </div>
           </div>

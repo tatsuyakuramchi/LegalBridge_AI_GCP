@@ -7881,16 +7881,23 @@ ${details}
             const capId = Number(ccRes.rows[0].id);
 
             // 2) capability_line_items を一括 upsert
+            // Phase 22.21.114: category / payment_method 列は CSV テンプレから
+            //   削除済み。DB schema には列が残っているが空文字で埋める
+            //   (発注書 LineItemTable と整合)。
+            //   payment_terms は 契約種別 ("請負" or "準委任") のみ受け入れる。
             const lineItems = groupRows
               .filter((r: any) => Number(r.line_no) > 0)
               .map((r: any) => ({
                 line_no: Number(r.line_no),
-                category: r.category || "",
+                category: "", // 撤去 — 旧 CSV 互換のため key だけ残す
                 item_name: r.item_name || "",
                 spec: r.spec || "",
                 calc_method: r.calc_method || "FIXED",
-                payment_method: r.payment_method || "",
-                payment_terms: r.payment_terms || "",
+                payment_method: "", // 撤去 (deprecated)
+                payment_terms:
+                  r.payment_terms === "請負" || r.payment_terms === "準委任"
+                    ? r.payment_terms
+                    : "", // 想定外の値はエラーにせず空に
                 quantity: r.quantity,
                 unit_price: r.unit_price,
                 amount_ex_tax:
@@ -10222,6 +10229,8 @@ ${details}
       // Phase 22.21.113: 業務委託 個別/単独契約 (= 検収書 自動補完用の業務明細)
       //   record_type で individual_contract / standalone_contract を切替。
       //   1 グループ (import_key) = 1 contract_capabilities + N capability_line_items。
+      // Phase 22.21.114: 発注書 LineItemTable と整合 — category / payment_method 列を削除。
+      //   payment_terms は 契約種別 ("請負" or "準委任") のみ受け付ける。
       "service-contract": {
         headers: [
           // === 共通: グループキー + 識別子 ===
@@ -10242,12 +10251,10 @@ ${details}
           "parent_master_number",
           // === 業務明細 (1 行 = 1 明細) ===
           "line_no",
-          "category",
           "item_name",
           "spec",
-          "calc_method",
-          "payment_method",
-          "payment_terms",
+          "calc_method",            // FIXED / SUBSCRIPTION / ROYALTY
+          "payment_terms",          // 契約種別 (請負 / 準委任)
           "quantity",
           "unit_price",
           "amount_ex_tax",
@@ -10268,16 +10275,16 @@ ${details}
           ["SVC001", "", "", "", "standalone_contract",
             "V001", "株式会社XYZ", "イラスト制作業務委託契約",
             "2026-04-01", "2026-09-30", "false", "",
-            "1", "制作", "イラスト制作", "5 点 (キャラクター原画)",
-            "FIXED", "銀行振込", "翌月末",
+            "1", "イラスト制作", "5 点 (キャラクター原画)",
+            "FIXED", "請負",
             "5", "30000", "150000", "2026-06-30", "2026-07-31",
             "", "", "", "",
             "tanaka@arclight.co.jp", "00001", "1 期目"],
           ["SVC001", "", "", "", "standalone_contract",
             "V001", "株式会社XYZ", "イラスト制作業務委託契約",
             "2026-04-01", "2026-09-30", "false", "",
-            "2", "制作", "校正作業", "上記イラスト 5 点の修正対応",
-            "FIXED", "銀行振込", "翌月末",
+            "2", "校正作業", "上記イラスト 5 点の修正対応",
+            "FIXED", "請負",
             "1", "20000", "20000", "2026-07-31", "2026-08-31",
             "", "", "", "",
             "tanaka@arclight.co.jp", "00001", ""],
@@ -10285,8 +10292,8 @@ ${details}
           ["SVC002", "", "", "", "individual_contract",
             "V002", "株式会社ABC", "システム保守業務 (月額)",
             "2026-04-01", "2027-03-31", "true", "ARC-SVC-2026-0001",
-            "1", "保守", "システム月額保守", "サーバ監視 + 障害対応",
-            "SUBSCRIPTION", "銀行振込", "毎月末日締翌月末払",
+            "1", "システム月額保守", "サーバ監視 + 障害対応",
+            "SUBSCRIPTION", "準委任",
             "12", "50000", "600000", "", "",
             "monthly", "2026-04-01", "2027-03-31", "25",
             "tanaka@arclight.co.jp", "00002", "12 ヶ月分"],
