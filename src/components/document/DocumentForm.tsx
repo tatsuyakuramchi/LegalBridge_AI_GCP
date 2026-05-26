@@ -2218,14 +2218,37 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             }}
           />
           {hasParentPo && (
-            <div className="mt-3 px-3 py-2 rounded-sm border border-emerald-200 bg-emerald-50/50 text-[10px] font-mono text-emerald-800 leading-relaxed">
-              ✓ 親契約{" "}
-              <strong>
-                {formData.parent_po_number ||
-                  formData.parent_po_issue_key ||
-                  "(番号未取得)"}
-              </strong>{" "}
-              を連動中。受託者・明細・経費・手数料が自動入力されました。
+            <div className="mt-3 rounded-md border border-emerald-300 bg-emerald-50 p-3 text-xs leading-relaxed text-emerald-900 shadow-sm">
+              <div className="flex items-start gap-2">
+                <div className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white text-[10px] font-bold">
+                  ✓
+                </div>
+                <div className="flex-1 space-y-1">
+                  <div className="font-bold">
+                    親契約{" "}
+                    <span className="font-mono">
+                      {formData.parent_po_number ||
+                        formData.parent_po_issue_key ||
+                        "(番号未取得)"}
+                    </span>{" "}
+                    を連動中
+                  </div>
+                  <div className="text-[11px]">
+                    以下のフィールドは親契約から自動入力されています:
+                  </div>
+                  <ul className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[10px] font-mono">
+                    <li>• 受託者 (取引先名・口座など)</li>
+                    <li>• 業務明細 (順番に展開)</li>
+                    <li>• 税率・発注日</li>
+                    <li>• 経費・その他手数料 (候補)</li>
+                  </ul>
+                  <div className="mt-1 text-[10px] text-emerald-700">
+                    手動で上書き編集も可能です。親契約を切り替えるには
+                    上の「親契約を切り替える」を、連動を外すには「連動解除」を
+                    クリック。
+                  </div>
+                </div>
+              </div>
             </div>
           )}
         </FormSection>

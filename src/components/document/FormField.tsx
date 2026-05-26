@@ -1,5 +1,5 @@
 import React from 'react';
-import { HelpCircle } from 'lucide-react';
+import { HelpCircle, Lock } from 'lucide-react';
 import { TemplateVar } from './types';
 
 import { cn } from '@/lib/utils';
@@ -35,12 +35,16 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
   // Phase 22.7: type: "hidden" のフィールドは UI 上には描画しない。
   // formData にだけ保持されて PDF テンプレに渡る (例: 発注書で明細から自動集計
   // される summaryDeliveryDate / summaryPaymentDate / 後方互換のみ残置の旧フィールド)。
-  if (meta.type === 'hidden') return null;
+  if (meta.type === 'hidden' || meta.hidden === true) return null;
 
   const label = meta.label || id.replace(/_/g, ' ');
   const options = meta.options || SELECT_OPTIONS[id];
   const placeholder = meta.placeholder;
   const isRequired = meta.required === true;
+  // Phase 23 UX: readonly フィールドは🔒 アイコン+グレー背景。
+  //   PDF 計算結果 (royalty_statement の MG/AG, gross 等) や自動補完結果
+  //   (linked_contract_number, licensor 名など) で使う。
+  const isReadOnly = meta.readonly === true;
   const isEmpty =
     value === undefined ||
     value === null ||
@@ -72,15 +76,24 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
   const isNumber = meta.type === 'number';
 
   const baseInput = cn(
-    'w-full text-xs font-mono tab-mono bg-transparent transition-colors',
+    'w-full text-xs font-mono tab-mono transition-colors',
     'border-b border-input py-1.5 focus:outline-none focus:border-foreground',
     'placeholder:text-muted-foreground/60 placeholder:text-[11px]',
+    isReadOnly
+      ? 'bg-muted/40 text-muted-foreground/80 border-transparent cursor-not-allowed select-text'
+      : 'bg-transparent',
     error && 'border-destructive focus:border-destructive',
-    isRequired && isEmpty && 'border-amber-500/60'
+    isRequired && isEmpty && !isReadOnly && 'border-amber-500/60 bg-amber-50/40'
   );
 
   return (
-    <div className="space-y-1 group relative">
+    <div
+      className="space-y-1 group relative"
+      data-field-id={id}
+      data-required={isRequired ? '1' : '0'}
+      data-required-empty={isRequired && isEmpty ? '1' : '0'}
+      data-readonly={isReadOnly ? '1' : '0'}
+    >
       <div className="flex items-center justify-between">
         <label
           htmlFor={id}
@@ -89,14 +102,31 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
             error ? 'text-destructive' : 'text-muted-foreground group-hover:text-foreground'
           )}
         >
+          {isReadOnly && (
+            <Lock
+              className="h-2.5 w-2.5 text-muted-foreground/60"
+              aria-label="読み取り専用"
+            />
+          )}
           {label}
           {isRequired && (
             <span
-              className="text-amber-600 font-bold leading-none"
-              title="必須項目"
-              aria-label="required"
+              className={cn(
+                'font-bold leading-none',
+                isEmpty ? 'text-red-600' : 'text-amber-600'
+              )}
+              title={isEmpty ? '必須項目（未入力）' : '必須項目'}
+              aria-label={isEmpty ? 'required, not filled' : 'required'}
             >
               *
+            </span>
+          )}
+          {isReadOnly && (
+            <span
+              className="text-[8px] bg-slate-100 text-slate-600 px-1.5 py-px rounded-sm normal-case tracking-normal"
+              title="自動計算 / 自動補完 — 直接編集はできません"
+            >
+              自動
             </span>
           )}
           {error && (
@@ -169,6 +199,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           id={id}
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
+          disabled={isReadOnly}
           className={cn(baseInput, 'appearance-none pr-4')}
         >
           <option value="">— Select —</option>
@@ -183,13 +214,17 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           id={id}
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
+          readOnly={isReadOnly}
           rows={2}
           className={cn(
-            'w-full text-xs font-mono bg-card border border-input rounded-sm p-2 resize-none transition-colors',
+            'w-full text-xs font-mono border border-input rounded-sm p-2 resize-none transition-colors',
             'focus:outline-none focus:border-foreground',
             'placeholder:text-muted-foreground/60 placeholder:text-[11px]',
+            isReadOnly
+              ? 'bg-muted/40 text-muted-foreground/80 cursor-not-allowed'
+              : 'bg-card',
             error && 'border-destructive',
-            isRequired && isEmpty && 'border-amber-500/60'
+            isRequired && isEmpty && !isReadOnly && 'border-amber-500/60 bg-amber-50/40'
           )}
           placeholder={placeholder || `Enter ${label}…`}
         />
@@ -197,8 +232,6 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
         <input
           id={id}
           type={isDate ? 'date' : isNumber ? 'number' : 'text'}
-          // Phase 22.21.68: 0 を value=0 として表示するため、number 型は
-          //   `value || ''` ではなく明示的に空判定を行う ("0" || "" は 0 を消す)
           value={
             isNumber
               ? value === 0 || value === '0' || (value !== undefined && value !== null && value !== '')
@@ -207,6 +240,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
               : value || ''
           }
           onChange={(e) => onChange(e.target.value)}
+          readOnly={isReadOnly}
           className={baseInput}
           placeholder={isDate ? '' : (placeholder || `Input ${label}…`)}
           {...(isNumber

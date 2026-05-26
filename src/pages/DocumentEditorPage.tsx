@@ -1023,6 +1023,46 @@ export function DocumentEditorPage() {
                 )}
               </div>
               <div className="flex items-center gap-2">
+                {/* Phase 23 UX-A: 採番ステータスバッジ
+                    formData.documentNumber が存在 → 採番済 (緑)
+                    formData.__reopen_id がある → 既存編集 (青)
+                    それ以外 → 未採番 Draft (アンバー)
+                */}
+                {(() => {
+                  const docNum = formData.documentNumber as string | undefined;
+                  const reopenId = formData.__reopen_id as number | undefined;
+                  if (docNum) {
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-mono font-bold text-emerald-800"
+                        title={`採番済: ${docNum}`}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        採番済 · {docNum}
+                      </span>
+                    );
+                  }
+                  if (reopenId) {
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-md border border-sky-300 bg-sky-50 px-2 py-1 text-[10px] font-mono font-bold text-sky-800"
+                        title="既存文書の再編集 (生成時にリビジョン採番)"
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-sky-500" />
+                        再編集 · Rev予定
+                      </span>
+                    );
+                  }
+                  return (
+                    <span
+                      className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-mono font-bold text-amber-800"
+                      title="未採番 Draft — 生成ボタン押下時に自動採番されます"
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
+                      未採番 Draft
+                    </span>
+                  );
+                })()}
                 {lastAutoSave && (
                   <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
                     Saved {lastAutoSave}
@@ -1040,10 +1080,10 @@ export function DocumentEditorPage() {
                   variant="outline"
                   size="sm"
                   onClick={() => syncFromDatabase()}
-                  title="DB から最新状態を取得 (一時保存された draft があれば優先 / 無ければ Backlog form-context)"
+                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します"
                 >
                   <Database />
-                  DB Sync
+                  Backlog Sync
                 </Button>
                 <Button
                   variant="ghost"

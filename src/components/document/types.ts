@@ -2,7 +2,11 @@
 export interface TemplateVar {
   label: string;
   group: string;
-  type?: 'date' | 'textarea' | 'number' | 'boolean' | 'select';
+  type?: 'date' | 'textarea' | 'number' | 'boolean' | 'select' | 'hidden';
+  /** UI 表示しない (formData にだけ保持) */
+  hidden?: boolean;
+  /** 自動計算/補完結果。入力不可で🔒アイコン + グレー背景表示 */
+  readonly?: boolean;
   formula?: string;
   options?: string[];
 
