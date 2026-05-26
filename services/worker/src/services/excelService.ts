@@ -270,6 +270,11 @@ export class ExcelService {
       subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
     } else if (isRoyalty) {
       // ── 利用許諾料計算書 ───────────────────────
+      // Phase 22.21.110: 単価列を「実効ロイヤリティ単価」(= MSRP × 料率)
+      //   に変更。旧実装は MSRP そのもの (2500) を出していたため、
+      //   単価×数量 が小計とまったく合わない見た目になっていた。
+      //   今後: 単価 = MSRP × 料率 / 100 → 単価×数量 ≒ 税抜小計
+      //         金額 = 税込実支払 (Phase 22.21.109)
       summary = (formData.originalWork || '') + ' 利用許諾料';
       payment_date = isoDate(
         formData.paymentDueDate || formData.documentDate
@@ -280,7 +285,10 @@ export class ExcelService {
         (formData.productName || '') +
         (formData.edition ? `（${formData.edition}）` : '') +
         ' 利用許諾料';
-      const unit = num(formData.msrpStr); // 税抜 単価 (= MSRP)
+      const msrp = num(formData.msrpStr); // 基準価格 (MSRP)
+      const ratePct = num(formData.royaltyRatePct); // 料率 (%) 例: 5
+      // 実効ロイヤリティ単価 = MSRP × 料率 / 100 (税抜, 整数化)
+      const effectiveUnit = ratePct > 0 ? Math.round(msrp * ratePct / 100) : msrp;
       const qty = num(formData.billableQuantity);
       // 実支払 (税抜) → 税込
       const actualExTax =
@@ -289,13 +297,13 @@ export class ExcelService {
       const actualIncTax =
         num(formData.totalPaymentStr) || toIncTax(actualExTax);
 
-      if (actualIncTax > 0 || unit > 0) {
+      if (actualIncTax > 0 || effectiveUnit > 0) {
         items = [
           {
             content,
-            unit_price: unit, // 税抜
+            unit_price: effectiveUnit, // 税抜 実効単価 (= MSRP × 料率)
             quantity: qty,
-            amount: actualIncTax, // 税込
+            amount: actualIncTax, // 税込実支払
             delivery_date: isoDate(formData.completionDate),
           },
         ];
