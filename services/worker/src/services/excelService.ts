@@ -62,32 +62,66 @@ export class ExcelService {
       '差引振込額'
     ];
 
+    // Phase 22.21.106: 空スロットでも 36 列分の セル を必ず出力する。
+    //   後続処理で「行コピペで新規行を作る」運用があり、スロット 2-5 の
+    //   列が無いとコピー元として使えない問題があった。
+    //   - 値が無いセルは "" を入れる (undefined ではなく明示的空文字)
+    //   - 立替金/小計/源泉税/税引後/差引振込額 が 0 でも数値 0 をそのまま入れる
+    //     (会計側で SUM 計算しやすいため)
+    const safe = (v: any) => (v === undefined || v === null ? '' : v);
     const row: any[] = [
-      data.summary,
-      data.payment_date,
-      data.department,
-      data.vendor_code,
-      data.name,
-      data.name_kana
+      safe(data.summary),
+      safe(data.payment_date),
+      safe(data.department),
+      safe(data.vendor_code),
+      safe(data.name),
+      safe(data.name_kana),
     ];
 
-    // Add 5 items
+    // 5 スロット必ず展開 — items[i] が無くても 5 セル分の空セルを出す
     for (let i = 0; i < 5; i++) {
-      const item = data.items[i] || { content: '', unit_price: '', quantity: '', amount: '', delivery_date: '' };
-      row.push(item.content);
-      row.push(item.unit_price);
-      row.push(item.quantity);
-      row.push(item.amount);
-      row.push(item.delivery_date);
+      const item: any = data.items[i] || {};
+      row.push(safe(item.content));
+      row.push(item.unit_price === undefined || item.unit_price === null ? '' : item.unit_price);
+      row.push(item.quantity === undefined || item.quantity === null ? '' : item.quantity);
+      row.push(item.amount === undefined || item.amount === null ? '' : item.amount);
+      row.push(safe(item.delivery_date));
     }
 
-    row.push(data.reimbursement);
-    row.push(data.subtotal);
-    row.push(data.withholding_tax);
-    row.push(data.after_tax);
-    row.push(data.net_transfer_amount);
+    row.push(data.reimbursement ?? 0);
+    row.push(data.subtotal ?? 0);
+    row.push(data.withholding_tax ?? 0);
+    row.push(data.after_tax ?? 0);
+    row.push(data.net_transfer_amount ?? 0);
+
+    // headers.length === row.length === 36 列であることを assert.
+    // ここで一致しない場合は実装ミスなので例外を投げて気付けるようにする。
+    if (row.length !== headers.length) {
+      throw new Error(
+        `[ExcelService] header / row length mismatch: headers=${headers.length} row=${row.length}`
+      );
+    }
 
     const ws = XLSX.utils.aoa_to_sheet([headers, row]);
+
+    // Phase 22.21.106: trailing empty cells が trim されないよう
+    //   sheet の '!ref' を明示的に 36 列・2 行に設定する。
+    //   encode_range で A1:AJ2 のような正式 A1 形式に変換 (36 列目 = AJ)。
+    const lastCol = headers.length - 1; // 35 (0-indexed)
+    ws['!ref'] = XLSX.utils.encode_range({
+      s: { r: 0, c: 0 },
+      e: { r: 1, c: lastCol },
+    });
+
+    // 各空セルにも明示的に空文字セル {t:'s', v:''} を埋めて、
+    // Excel 側で「列が存在しない」と認識されないようにする保険。
+    for (let c = 0; c <= lastCol; c++) {
+      const addr = XLSX.utils.encode_cell({ r: 1, c }); // 2 行目 (データ行)
+      if (!ws[addr]) {
+        ws[addr] = { t: 's', v: '' };
+      }
+    }
+
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '検収書');
 
