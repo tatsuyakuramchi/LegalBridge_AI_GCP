@@ -582,6 +582,33 @@ export async function initDb() {
     `ALTER TABLE capability_financial_conditions
        ADD COLUMN IF NOT EXISTS ag_amount DECIMAL(15, 2) DEFAULT 0;`,
 
+    // Phase 22.21.112: 業務委託マスタの業務明細 (検収書 自動補完用)。
+    // 詳細は worker/src/lib/db.ts の同名コメント参照。
+    `CREATE TABLE IF NOT EXISTS capability_line_items (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      category VARCHAR(100),
+      item_name TEXT,
+      spec TEXT,
+      calc_method VARCHAR(50),
+      payment_method VARCHAR(50),
+      payment_terms TEXT,
+      quantity DECIMAL(15, 4),
+      unit_price DECIMAL(15, 2),
+      amount_ex_tax DECIMAL(15, 2),
+      delivery_date DATE,
+      payment_date DATE,
+      cycle VARCHAR(50),
+      billing_day INTEGER,
+      term_start DATE,
+      term_end DATE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(capability_id, line_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cli_capability ON capability_line_items(capability_id);`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

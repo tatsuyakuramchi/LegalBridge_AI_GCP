@@ -1435,6 +1435,46 @@ export async function initDb() {
     `ALTER TABLE capability_financial_conditions
        ADD COLUMN IF NOT EXISTS ag_amount DECIMAL(15, 2) DEFAULT 0;`,
 
+    // -----------------------------------------------------------------
+    // Phase 22.21.112: 契約マスタの業務明細 (1..N 行)
+    //   業務委託 (service) カテゴリの単独/個別契約に紐づけ、後段の
+    //   検収書 (inspection_certificate) フォームから order_lines_for_inspection
+    //   として読み込まれる defaults。
+    //
+    //   shape は order_line_items (発注書) と意味的にミラー:
+    //     - line_no, category, item_name, spec, calc_method, payment_terms
+    //     - quantity, unit_price, amount_ex_tax
+    //     - delivery_date / payment_date (master では空が普通。PO 起票時に設定)
+    //     - SUBSCRIPTION 用: cycle / billing_day / term_start / term_end
+    //
+    //   contract_capabilities を物理削除した場合は紐づく明細も削除 (CASCADE)。
+    // -----------------------------------------------------------------
+    `CREATE TABLE IF NOT EXISTS capability_line_items (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      category VARCHAR(100),
+      item_name TEXT,
+      spec TEXT,
+      calc_method VARCHAR(50),          -- FIXED / SUBSCRIPTION / ROYALTY 等
+      payment_method VARCHAR(50),
+      payment_terms TEXT,
+      quantity DECIMAL(15, 4),
+      unit_price DECIMAL(15, 2),
+      amount_ex_tax DECIMAL(15, 2),
+      delivery_date DATE,
+      payment_date DATE,
+      -- SUBSCRIPTION 系
+      cycle VARCHAR(50),
+      billing_day INTEGER,
+      term_start DATE,
+      term_end DATE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(capability_id, line_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cli_capability ON capability_line_items(capability_id);`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

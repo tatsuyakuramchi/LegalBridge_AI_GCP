@@ -1554,7 +1554,7 @@ export function DocumentEditorPage() {
               <>
                 <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
                   対象の発注書（Archive）または業務委託マスタ（Master）を選択すると、
-                  受託者名・発注番号が自動補完されます。
+                  受託者・契約番号・業務明細・振込先・取引先コードが自動補完されます。
                 </p>
                 <DocumentNumberLookup
                   label="発注書 / 業務委託マスタを検索"
@@ -1563,19 +1563,95 @@ export function DocumentEditorPage() {
                   includeMaster={true}
                   onApply={(doc: LookedUpDocument) => {
                     const fd = doc.form_data || {}
-                    setFormData((prev: any) => ({
-                      ...prev,
-                      counterparty:
-                        fd.VENDOR_NAME ||
-                        doc.master_meta?.vendor_name ||
-                        prev.counterparty ||
-                        "",
-                      // 発注書 (archive) を選んだ場合は parent_po_number に文書番号をセット
-                      ...(doc.source === "archive" &&
-                      doc.template_type === "purchase_order"
-                        ? { parent_po_number: doc.document_number }
-                        : {}),
-                    }))
+                    if (doc.source === "master") {
+                      // Phase 22.21.112: 業務委託マスタ選択 → 業務明細を
+                      //   検収書フォームの order_lines_for_inspection に流し込み。
+                      //   master 行の line_items は capability_line_items から
+                      //   API SELECT で json_agg されている (allContracts に含まれる)。
+                      const c = (allContracts as any[] || []).find(
+                        (x: any) => Number(x.id) === doc.id
+                      )
+                      if (c) {
+                        const linesRaw = Array.isArray(c.line_items)
+                          ? c.line_items
+                          : []
+                        const orderLines = linesRaw.map((l: any, idx: number) => ({
+                          line_no: Number(l.line_no) || idx + 1,
+                          item_name: l.item_name || "",
+                          spec: l.spec || "",
+                          category: l.category || "",
+                          calc_method: l.calc_method || "FIXED",
+                          quantity: Number(l.quantity) || 0,
+                          unit_price: Number(l.unit_price) || 0,
+                          amount_ex_tax: Number(l.amount_ex_tax) || 0,
+                          delivery_date: l.delivery_date || "",
+                          payment_date: l.payment_date || "",
+                          payment_terms: l.payment_terms || "",
+                          payment_method: l.payment_method || "",
+                          cycle: l.cycle || "",
+                          billing_day: l.billing_day || "",
+                          term_start: l.term_start || "",
+                          term_end: l.term_end || "",
+                        }))
+                        const isCorp =
+                          String(c.vendor_entity_type || "").toLowerCase() ===
+                            "corporate" || c.vendor_entity_type === "法人"
+                        setFormData((prev: any) => ({
+                          ...prev,
+                          // 取引先 (受託者)
+                          counterparty:
+                            c.vendor_name || prev.counterparty || "",
+                          counterpartyRep: prev.counterpartyRep || "",
+                          COUNTERPARTY_IS_CORPORATION: isCorp ? "法人" : "個人",
+                          // Master 紐付け (検収書では parent_po_* は使わない)
+                          selected_master_contract_id: Number(c.id),
+                          linked_contract_number:
+                            c.document_number || prev.linked_contract_number || "",
+                          // 取引先コード + 源泉徴収 (Excel 用)
+                          VENDOR_CODE:
+                            c.vendor_code || prev.VENDOR_CODE || "",
+                          VENDOR_WITHHOLDING_ENABLED:
+                            c.vendor_withholding_enabled === true ||
+                            prev.VENDOR_WITHHOLDING_ENABLED === true,
+                          // 振込先 (取引先マスタから)
+                          bankName: c.vendor_bank_name || prev.bankName || "",
+                          branchName: c.vendor_branch_name || prev.branchName || "",
+                          accountType: c.vendor_account_type || prev.accountType || "",
+                          accountNo: c.vendor_account_number || prev.accountNo || "",
+                          accountHolder:
+                            c.vendor_account_holder_kana ||
+                            prev.accountHolder ||
+                            "",
+                          counterpartyTni:
+                            c.vendor_invoice_registration_number ||
+                            prev.counterpartyTni ||
+                            "",
+                          // 業務明細 → order_lines_for_inspection
+                          //   親 PO 紐付けは無し (master 起点なので)
+                          parent_po_id: undefined,
+                          parent_po_issue_key: undefined,
+                          parent_po_number: c.document_number || "",
+                          order_lines_for_inspection: orderLines,
+                          // 検収側の入力は空でスタート
+                          delivery_line_items: [],
+                          po_expenses: [],
+                          po_other_fees: [],
+                        }))
+                      }
+                    } else {
+                      // archive: 発注書 (purchase_order)
+                      setFormData((prev: any) => ({
+                        ...prev,
+                        counterparty:
+                          fd.VENDOR_NAME ||
+                          doc.master_meta?.vendor_name ||
+                          prev.counterparty ||
+                          "",
+                        ...(doc.template_type === "purchase_order"
+                          ? { parent_po_number: doc.document_number }
+                          : {}),
+                      }))
+                    }
                     setIsAssetPickerOpen(false)
                   }}
                 />

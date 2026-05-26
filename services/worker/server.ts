@@ -3635,6 +3635,100 @@ ${details}
     }
   }
 
+  /**
+   * Phase 22.21.112: 契約マスタの業務明細 (capability_line_items) を
+   *   配列で受け取って upsert する。upsertCapabilityFinancialConditions と
+   *   同じ semantics:
+   *
+   *   - raw が undefined → 何もしない (既存明細を保持)
+   *   - raw が null or [] → 全件削除
+   *   - それ以外 → 配列内の line_no で upsert、含まれていない line_no を削除
+   */
+  async function upsertCapabilityLineItems(
+    capabilityId: number,
+    raw: any
+  ): Promise<void> {
+    if (raw === undefined) return;
+    const items: Array<any> = Array.isArray(raw) ? raw : [];
+    try {
+      if (items.length === 0) {
+        await query(
+          `DELETE FROM capability_line_items WHERE capability_id = $1`,
+          [capabilityId]
+        );
+      } else {
+        const keepNos = items
+          .map((c) => Number(c?.line_no))
+          .filter((n) => Number.isFinite(n) && n > 0);
+        await query(
+          `DELETE FROM capability_line_items
+            WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
+          [capabilityId, keepNos]
+        );
+      }
+    } catch (delErr) {
+      console.warn(
+        "[capability_line_items] prune failed:",
+        delErr
+      );
+    }
+    for (const c of items) {
+      const lineNo = Number(c?.line_no);
+      if (!Number.isFinite(lineNo) || lineNo < 1) continue;
+      const numOrNull = (v: any) =>
+        v != null && v !== "" && !Number.isNaN(Number(v)) ? Number(v) : null;
+      const dateOrNull = (v: any) =>
+        v && String(v).length >= 8 ? String(v).substring(0, 10) : null;
+      await query(
+        `INSERT INTO capability_line_items (
+           capability_id, line_no,
+           category, item_name, spec,
+           calc_method, payment_method, payment_terms,
+           quantity, unit_price, amount_ex_tax,
+           delivery_date, payment_date,
+           cycle, billing_day, term_start, term_end,
+           updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
+         ON CONFLICT (capability_id, line_no) DO UPDATE SET
+           category       = EXCLUDED.category,
+           item_name      = EXCLUDED.item_name,
+           spec           = EXCLUDED.spec,
+           calc_method    = EXCLUDED.calc_method,
+           payment_method = EXCLUDED.payment_method,
+           payment_terms  = EXCLUDED.payment_terms,
+           quantity       = EXCLUDED.quantity,
+           unit_price     = EXCLUDED.unit_price,
+           amount_ex_tax  = EXCLUDED.amount_ex_tax,
+           delivery_date  = EXCLUDED.delivery_date,
+           payment_date   = EXCLUDED.payment_date,
+           cycle          = EXCLUDED.cycle,
+           billing_day    = EXCLUDED.billing_day,
+           term_start     = EXCLUDED.term_start,
+           term_end       = EXCLUDED.term_end,
+           updated_at     = CURRENT_TIMESTAMP`,
+        [
+          capabilityId,
+          lineNo,
+          c.category || null,
+          c.item_name || null,
+          c.spec || null,
+          c.calc_method || null,
+          c.payment_method || null,
+          c.payment_terms || null,
+          numOrNull(c.quantity),
+          numOrNull(c.unit_price),
+          numOrNull(c.amount_ex_tax),
+          dateOrNull(c.delivery_date),
+          dateOrNull(c.payment_date),
+          c.cycle || null,
+          numOrNull(c.billing_day),
+          dateOrNull(c.term_start),
+          dateOrNull(c.term_end),
+        ]
+      );
+    }
+  }
+
   app.post("/api/master/contracts", express.json(), async (req, res) => {
     const {
       vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -3699,6 +3793,9 @@ ${details}
       //   contract_category に依らず req.body.financial_conditions が
       //   配列で来たらそのまま書く (フロントが gating を担当)。
       await upsertCapabilityFinancialConditions(newId, financial_conditions);
+      // Phase 22.21.112: 業務明細 (検収書 自動補完用) を子テーブルに upsert。
+      //   業務委託 (service) カテゴリの単独/個別契約で意味を持つ。
+      await upsertCapabilityLineItems(newId, req.body?.line_items);
       res.json({
         success: true,
         id: newId,
@@ -3806,6 +3903,9 @@ ${details}
       //   送られてこなければ (= undefined) 既存条件は触らない。明示的に [] が
       //   来た場合は全件削除する。
       await upsertCapabilityFinancialConditions(Number(id), financial_conditions);
+      // Phase 22.21.112: 業務明細 (検収書 自動補完用) を upsert。
+      //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
+      await upsertCapabilityLineItems(Number(id), req.body?.line_items);
 
       // Phase 22.21.60: 旧 → 新 で document_number が変わったら、
       //   archive (documents) の対応 row も同じ番号にリネームする。

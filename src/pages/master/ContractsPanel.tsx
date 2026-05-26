@@ -144,6 +144,10 @@ const empty = {
   //   と同形の条件配列)。条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト。
   //   後段の「利用許諾計算書」フォームから自動補完用に参照される。
   financial_conditions: [] as any[],
+  // Phase 22.21.112: 業務明細 (業務委託系の単独/個別契約で「発注書 業務明細」
+  //   と同形の明細配列)。後段の「検収書」フォームから order_lines_for_inspection
+  //   として自動補完用に参照される。
+  line_items: [] as any[],
 }
 
 // Phase 22.21.91: 金銭条件エディタで使う定数。
@@ -751,6 +755,32 @@ export function ContractsPanel() {
                 />
               </Field>
             )}
+            {/* Phase 22.21.112: 業務委託カテゴリで業務明細 (= 検収書 自動補完用) を編集。
+                個別契約 / 単独契約に登録した明細は、検収書フォームから
+                「業務委託マスタから読み込む」で order_lines_for_inspection に
+                自動補完される。発注書 (purchase_order) フォームの items[] と同 shape。 */}
+            {String(data?.contract_category || "").toLowerCase() === "service" && (
+              <Field
+                label="▍ 業務明細 (検収書 自動補完用)"
+                className="col-span-2 md:col-span-3"
+              >
+                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                  <strong>発注書の業務明細と同じ内容</strong>を直接入力できます。
+                  単独契約 / 個別契約に登録した業務明細は、後で「検収書」を
+                  作成するときに自動補完されます (毎回 PO を起票しなくても
+                  マスタから直接検収書を出せる)。
+                </p>
+                <LineItemsEditor
+                  value={
+                    Array.isArray(data?.line_items)
+                      ? data.line_items
+                      : []
+                  }
+                  onChange={(v) => set({ line_items: v })}
+                  recordType={String(data?.record_type || "")}
+                />
+              </Field>
+            )}
             {/* Phase 22.21.46: Slack アラート通知設定 ─────────────────────────
                 自動更新・満期アラート発火時に投稿する Slack チャンネルと
                 メンションを契約ごとに設定。複数指定可 (カンマ または 改行区切り)。
@@ -1323,6 +1353,288 @@ function FinancialConditionsEditor({
           contract_capability から自動補完されます。
         </p>
       </div>
+    </div>
+  )
+}
+
+/**
+ * Phase 22.21.112: 業務委託マスタの業務明細エディタ。
+ *
+ *   業務委託 (service) カテゴリの単独/個別契約で、発注書の業務明細と同じ
+ *   shape の業務明細 (1..N 行) を入力できる。後段の「検収書」フォームから
+ *   defaults として参照される。
+ *
+ *   - 行追加は line_no を 1 から自動採番
+ *   - 各行: カテゴリ / 業務内容 / 仕様 / 計算方式 / 数量 / 単価 /
+ *     金額(税抜) / 納期 / 支払日
+ *   - calc_method = FIXED / SUBSCRIPTION / ROYALTY
+ *   - SUBSCRIPTION 用 (cycle / billing_day / term_start / term_end) は
+ *     折り畳みで表示
+ *   - 金額(税抜) = 数量 × 単価 を入力ヘルパー
+ */
+function LineItemsEditor({
+  value,
+  onChange,
+  recordType,
+}: {
+  value: any[]
+  onChange: (v: any[]) => void
+  recordType: string
+}) {
+  const isIndividualLike =
+    recordType === "individual_contract" ||
+    recordType === "standalone_contract" ||
+    recordType === "license_condition"
+
+  const nextLineNo = (value.reduce(
+    (max: number, c: any) => Math.max(max, Number(c?.line_no) || 0),
+    0
+  )) + 1
+
+  const update = (idx: number, patch: any) => {
+    onChange(
+      value.map((c, i) => {
+        if (i !== idx) return c
+        const next = { ...c, ...patch }
+        // 数量 × 単価 → 金額 (税抜) を自動計算 (ユーザーが触ったら上書き)
+        if (
+          ("quantity" in patch || "unit_price" in patch) &&
+          !("amount_ex_tax" in patch)
+        ) {
+          const qty = Number(next.quantity) || 0
+          const unit = Number(next.unit_price) || 0
+          if (qty > 0 && unit > 0) {
+            next.amount_ex_tax = Math.round(qty * unit)
+          }
+        }
+        return next
+      })
+    )
+  }
+
+  const add = () => {
+    onChange([
+      ...value,
+      {
+        line_no: nextLineNo,
+        category: "",
+        item_name: "",
+        spec: "",
+        calc_method: "FIXED",
+        payment_method: "",
+        payment_terms: "",
+        quantity: "",
+        unit_price: "",
+        amount_ex_tax: "",
+        delivery_date: "",
+        payment_date: "",
+        cycle: "",
+        billing_day: "",
+        term_start: "",
+        term_end: "",
+      },
+    ])
+  }
+
+  const remove = (idx: number) => {
+    onChange(value.filter((_, i) => i !== idx))
+  }
+
+  return (
+    <div className="space-y-3">
+      {!isIndividualLike && value.length > 0 && (
+        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+          ⚠ 「基本契約」では業務明細は通常使われません。単独契約 / 個別契約への
+          切替を検討してください。
+        </div>
+      )}
+      {value.length === 0 && (
+        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+          業務明細が未設定です。「明細を追加」で 1 件以上登録できます。
+          単独契約 / 個別契約で入力しておくと、検収書フォームから
+          一括 auto-fill されます。
+        </div>
+      )}
+      {value.map((c: any, idx: number) => (
+        <div
+          key={`line-${idx}`}
+          className="border border-border rounded-sm p-3 bg-muted/30 space-y-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant="info" className="h-5">
+              明細 {c.line_no || idx + 1}
+            </Badge>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="destructive"
+              onClick={() => remove(idx)}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">カテゴリ</Label>
+              <Input
+                value={c.category || ""}
+                onChange={(e) => update(idx, { category: e.target.value })}
+                placeholder="例: 制作"
+              />
+            </div>
+            <div className="col-span-2 md:col-span-3 space-y-0.5">
+              <Label className="text-[10px]">業務内容・成果物</Label>
+              <Input
+                value={c.item_name || ""}
+                onChange={(e) => update(idx, { item_name: e.target.value })}
+                placeholder="例: イラスト 5 点制作"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">計算方式</Label>
+              <NativeSelect
+                value={c.calc_method || "FIXED"}
+                onChange={(e) => update(idx, { calc_method: e.target.value })}
+              >
+                <option value="FIXED">FIXED (固定額)</option>
+                <option value="SUBSCRIPTION">SUBSCRIPTION (期間契約)</option>
+                <option value="ROYALTY">ROYALTY (歩合)</option>
+              </NativeSelect>
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">支払方法</Label>
+              <Input
+                value={c.payment_method || ""}
+                onChange={(e) => update(idx, { payment_method: e.target.value })}
+                placeholder="例: 銀行振込"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-2 text-xs">
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">数量</Label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={c.quantity ?? ""}
+                onChange={(e) => update(idx, { quantity: e.target.value })}
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">単価</Label>
+              <Input
+                type="number"
+                min="0"
+                step="any"
+                value={c.unit_price ?? ""}
+                onChange={(e) => update(idx, { unit_price: e.target.value })}
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">金額 (税抜)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={c.amount_ex_tax ?? ""}
+                onChange={(e) =>
+                  update(idx, { amount_ex_tax: e.target.value })
+                }
+                placeholder="数量×単価を自動計算"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">納期</Label>
+              <Input
+                type="date"
+                value={c.delivery_date || ""}
+                onChange={(e) => update(idx, { delivery_date: e.target.value })}
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">支払日</Label>
+              <Input
+                type="date"
+                value={c.payment_date || ""}
+                onChange={(e) => update(idx, { payment_date: e.target.value })}
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">支払条件</Label>
+              <Input
+                value={c.payment_terms || ""}
+                onChange={(e) => update(idx, { payment_terms: e.target.value })}
+                placeholder="例: 月末締翌月末払"
+              />
+            </div>
+          </div>
+          {/* SUBSCRIPTION 用 (折り畳み) */}
+          {c.calc_method === "SUBSCRIPTION" && (
+            <details className="border-t border-input pt-2 mt-1">
+              <summary className="text-[10px] font-mono uppercase tracking-wider cursor-pointer text-muted-foreground hover:text-foreground">
+                ▶ SUBSCRIPTION 詳細 (周期 / 締日 / 期間)
+              </summary>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs mt-2">
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">周期</Label>
+                  <NativeSelect
+                    value={c.cycle || ""}
+                    onChange={(e) => update(idx, { cycle: e.target.value })}
+                  >
+                    <option value="">—</option>
+                    <option value="monthly">月次</option>
+                    <option value="quarterly">四半期</option>
+                    <option value="yearly">年次</option>
+                  </NativeSelect>
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">締日</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    max="31"
+                    value={c.billing_day ?? ""}
+                    onChange={(e) =>
+                      update(idx, { billing_day: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">期間 (開始)</Label>
+                  <Input
+                    type="date"
+                    value={c.term_start || ""}
+                    onChange={(e) => update(idx, { term_start: e.target.value })}
+                  />
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">期間 (終了)</Label>
+                  <Input
+                    type="date"
+                    value={c.term_end || ""}
+                    onChange={(e) => update(idx, { term_end: e.target.value })}
+                  />
+                </div>
+              </div>
+            </details>
+          )}
+          <div className="space-y-0.5">
+            <Label className="text-[10px]">仕様 (詳細)</Label>
+            <textarea
+              value={c.spec || ""}
+              onChange={(e) => update(idx, { spec: e.target.value })}
+              rows={2}
+              className="w-full text-xs font-mono px-2 py-1 border border-input rounded-sm bg-transparent focus:outline-none focus:border-foreground"
+              placeholder="納品物の詳細仕様 (任意)"
+            />
+          </div>
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={add}>
+        <Plus />
+        明細を追加
+      </Button>
     </div>
   )
 }
