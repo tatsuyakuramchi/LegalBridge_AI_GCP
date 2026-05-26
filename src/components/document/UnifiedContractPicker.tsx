@@ -4,8 +4,9 @@
  * 全フォーム共通の親契約 picker。検収書・利用許諾料計算書・発注書フォーム
  * など、親文書を選ぶ全てのフォームで利用する。
  *
- * 旧 ParentPoPicker (order_items) と、selected_master_contract_id を inline
- * セレクタで選ぶ方式 (contract_capabilities) の 2 系統を 1 本に統合。
+ * Phase 23.0.3: フォーム内 inline ドロップダウンだと表示領域が狭く読みづらい
+ * ため Dialog ベースの全幅モーダルに改修。テーブル形式で 種別 / 文書番号・件名
+ * / 取引先 / 税抜金額 / 検収状況 を並べる。
  *
  * Props:
  *   acceptableRecordTypes : ["purchase_order","individual_contract",...]
@@ -28,8 +29,18 @@ import {
   Loader2,
   AlertTriangle,
   PackageOpen,
+  X,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog";
 
 export type RecordType =
   | "purchase_order"
@@ -127,6 +138,13 @@ const RECORD_TYPE_LABEL: Record<RecordType, string> = {
   master_contract: "基本契約",
 };
 
+const RECORD_TYPE_BADGE_CLASS: Record<RecordType, string> = {
+  purchase_order: "bg-sky-100 text-sky-800 border-sky-200",
+  individual_contract: "bg-emerald-100 text-emerald-800 border-emerald-200",
+  standalone_contract: "bg-violet-100 text-violet-800 border-violet-200",
+  master_contract: "bg-amber-100 text-amber-800 border-amber-200",
+};
+
 export const UnifiedContractPicker: React.FC<Props> = ({
   acceptableRecordTypes,
   categoryFilter,
@@ -156,7 +174,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
         if (categoryFilter && categoryFilter.length > 0) {
           params.set("category", categoryFilter.join(","));
         }
-        params.set("limit", "50");
+        params.set("limit", "100");
         const res = await fetch(`/api/contracts/search?${params.toString()}`);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
@@ -167,7 +185,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
       } finally {
         setLoading(false);
       }
-    }, 300);
+    }, 250);
     return () => window.clearTimeout(t);
   }, [open, q, acceptableRecordTypes.join(","), (categoryFilter || []).join(",")]);
 
@@ -193,7 +211,6 @@ export const UnifiedContractPicker: React.FC<Props> = ({
     }
   };
 
-  // 手動入力 (document_number から逆引き)
   const loadByDocNumber = async (docNumber: string) => {
     if (!docNumber.trim()) return;
     setPicking(-1);
@@ -203,9 +220,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
         `/api/contracts/search?q=${encodeURIComponent(docNumber.trim())}&limit=10`
       );
       const arr = (await r.json()) as ContractSearchHit[];
-      const hit = arr.find(
-        (x) => x.document_number === docNumber.trim()
-      );
+      const hit = arr.find((x) => x.document_number === docNumber.trim());
       if (!hit) throw new Error(`文書番号 ${docNumber} の契約が見つかりません`);
       await loadDetail(hit.id);
     } catch (e: any) {
@@ -224,7 +239,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
       <div className="flex items-center gap-2">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={() => setOpen(true)}
           className={cn(
             "inline-flex items-center gap-2 rounded-sm border px-3 py-1.5 text-sm",
             hasParent
@@ -247,132 +262,240 @@ export const UnifiedContractPicker: React.FC<Props> = ({
         )}
       </div>
 
-      {open && (
-        <div className="rounded-sm border border-slate-300 bg-white p-3 space-y-3 shadow-sm">
-          <div className="flex items-center gap-2">
-            <Search size={14} className="text-slate-400" />
-            <input
-              type="text"
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="文書番号 / タイトル / 取引先名 / Backlogキー で検索"
-              className="flex-1 rounded-sm border border-slate-300 px-2 py-1 text-sm"
-            />
-            <span className="text-xs text-slate-500">
-              対象: {acceptableRecordTypes.map((rt) => RECORD_TYPE_LABEL[rt]).join("/")}
-            </span>
-          </div>
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="max-w-5xl w-[92vw] max-h-[88vh] flex flex-col p-0">
+          <DialogHeader>
+            <DialogTitle>親契約を選ぶ</DialogTitle>
+            <DialogDescription>
+              対象: {acceptableRecordTypes.map((rt) => RECORD_TYPE_LABEL[rt]).join(" / ")}
+              {categoryFilter && categoryFilter.length > 0 && (
+                <> ・ カテゴリ: {categoryFilter.join(" / ")}</>
+              )}
+              ・ 文書番号 / 件名 / 取引先名 / Backlog キー で部分一致検索
+            </DialogDescription>
+          </DialogHeader>
 
-          {error && (
-            <div className="flex items-start gap-2 rounded-sm border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
-              <AlertTriangle size={14} className="mt-0.5" />
-              {error}
-            </div>
-          )}
-
-          <div className="max-h-80 overflow-y-auto divide-y divide-slate-100 rounded-sm border border-slate-200">
-            {loading ? (
-              <div className="flex items-center justify-center p-6 text-slate-400">
-                <Loader2 size={16} className="animate-spin mr-2" />
-                検索中...
-              </div>
-            ) : filteredList.length === 0 ? (
-              <div className="flex items-center justify-center p-6 text-slate-400 text-sm">
-                <PackageOpen size={16} className="mr-2" />
-                該当する契約がありません
-              </div>
-            ) : (
-              filteredList.map((it) => (
+          <DialogBody className="flex-1 overflow-hidden flex flex-col gap-3 min-h-0">
+            {/* 検索バー */}
+            <div className="flex items-center gap-2">
+              <Search size={16} className="text-slate-400 flex-shrink-0" />
+              <input
+                type="text"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                placeholder="例: 大神貴寛 / PO-2026-055 / LEGAL-120 / ボードゲーム"
+                className="flex-1 rounded-sm border border-slate-300 px-3 py-2 text-sm font-mono focus:outline-none focus:border-slate-500"
+                autoFocus
+              />
+              {q && (
                 <button
-                  key={it.id}
                   type="button"
-                  onClick={() => loadDetail(it.id)}
-                  disabled={picking === it.id}
-                  className={cn(
-                    "w-full text-left p-2 hover:bg-slate-50 transition",
-                    currentContractId === it.id && "bg-emerald-50"
-                  )}
+                  onClick={() => setQ("")}
+                  className="text-xs px-2 py-1.5 rounded-sm border border-slate-300 bg-white hover:bg-slate-50"
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 text-xs">
-                        <span className="rounded bg-slate-100 px-1.5 py-0.5 text-slate-600">
-                          {RECORD_TYPE_LABEL[it.record_type]}
-                        </span>
-                        <span className="text-slate-500">
-                          {it.contract_category}
-                        </span>
-                        {it.is_imported && (
-                          <span className="rounded bg-amber-100 px-1.5 py-0.5 text-amber-700">
-                            IMPORT
-                          </span>
-                        )}
-                        {!it.is_active && (
-                          <span className="rounded bg-slate-200 px-1.5 py-0.5 text-slate-600">
-                            無効
-                          </span>
-                        )}
-                      </div>
-                      <div className="mt-1 truncate font-medium text-sm">
-                        {it.contract_title || it.document_number}
-                      </div>
-                      <div className="mt-0.5 text-xs text-slate-500 truncate">
-                        {it.document_number} ・ {it.vendor_name || "(取引先不明)"}
-                        {it.backlog_issue_key && ` ・ ${it.backlog_issue_key}`}
-                      </div>
-                    </div>
-                    <div className="text-right text-xs whitespace-nowrap">
-                      {it.amount_ex_tax != null && (
-                        <div>
-                          <span className="text-slate-400">税抜</span>{" "}
-                          {yen(it.amount_ex_tax)}
-                        </div>
-                      )}
-                      {it.line_count > 0 && (
-                        <div className="text-slate-400">
-                          明細 {it.line_count} 件
-                        </div>
-                      )}
-                      {it.condition_count > 0 && (
-                        <div className="text-slate-400">
-                          条件 {it.condition_count} 件
-                        </div>
-                      )}
-                      {it.inspected_amount > 0 && (
-                        <div className="text-emerald-600">
-                          検収済 {yen(it.inspected_amount)}
-                        </div>
-                      )}
-                      {picking === it.id && (
-                        <Loader2 size={14} className="animate-spin inline-block" />
-                      )}
-                    </div>
-                  </div>
+                  <X size={12} className="inline mr-1" />
+                  クリア
                 </button>
-              ))
-            )}
-          </div>
+              )}
+              <span className="text-xs text-slate-500 ml-2 whitespace-nowrap">
+                {loading ? "検索中..." : `${filteredList.length} 件`}
+              </span>
+            </div>
 
-          <div className="flex items-center gap-2 pt-1 border-t border-slate-100">
-            <span className="text-xs text-slate-500">文書番号で直接指定:</span>
-            <input
-              type="text"
-              value={manual}
-              onChange={(e) => setManual(e.target.value)}
-              placeholder="例: ARC-PO-2026-0001"
-              className="flex-1 rounded-sm border border-slate-300 px-2 py-1 text-sm"
-            />
+            {error && (
+              <div className="flex items-start gap-2 rounded-sm border border-amber-300 bg-amber-50 p-2 text-xs text-amber-800">
+                <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
+                {error}
+              </div>
+            )}
+
+            {/* 結果テーブル */}
+            <div className="flex-1 overflow-auto rounded-sm border border-slate-200 min-h-[300px]">
+              {loading ? (
+                <div className="flex items-center justify-center p-12 text-slate-400">
+                  <Loader2 size={20} className="animate-spin mr-2" />
+                  検索中...
+                </div>
+              ) : filteredList.length === 0 ? (
+                <div className="flex flex-col items-center justify-center p-12 text-slate-400 text-sm gap-2">
+                  <PackageOpen size={32} />
+                  該当する契約がありません
+                  {q && <span className="text-xs">検索ワードを変えてみてください</span>}
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="sticky top-0 bg-slate-50 border-b border-slate-200 z-10">
+                    <tr className="text-left text-slate-600">
+                      <th className="px-3 py-2 font-medium w-24">種別</th>
+                      <th className="px-3 py-2 font-medium">文書番号 / 件名</th>
+                      <th className="px-3 py-2 font-medium w-44">取引先</th>
+                      <th className="px-3 py-2 font-medium w-28 text-right">税抜金額</th>
+                      <th className="px-3 py-2 font-medium w-32">検収状況</th>
+                      <th className="px-3 py-2 font-medium w-16 text-center">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {filteredList.map((it) => {
+                      const pct =
+                        it.amount_ex_tax && it.amount_ex_tax > 0
+                          ? Math.round((it.inspected_amount / it.amount_ex_tax) * 100)
+                          : 0;
+                      return (
+                        <tr
+                          key={it.id}
+                          className={cn(
+                            "hover:bg-slate-50 cursor-pointer transition",
+                            currentContractId === it.id && "bg-emerald-50",
+                            picking === it.id && "opacity-50"
+                          )}
+                          onClick={() => loadDetail(it.id)}
+                        >
+                          <td className="px-3 py-2 align-top">
+                            <span
+                              className={cn(
+                                "inline-block px-1.5 py-0.5 rounded border text-[10px] font-bold whitespace-nowrap",
+                                RECORD_TYPE_BADGE_CLASS[it.record_type]
+                              )}
+                            >
+                              {RECORD_TYPE_LABEL[it.record_type]}
+                            </span>
+                            <div className="text-[10px] text-slate-500 mt-1">
+                              {it.contract_category}
+                            </div>
+                            {it.is_imported && (
+                              <span className="inline-block mt-1 text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">
+                                IMPORT
+                              </span>
+                            )}
+                            {!it.is_active && (
+                              <span className="inline-block mt-1 text-[9px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded">
+                                無効
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 align-top min-w-0">
+                            <div className="font-mono text-slate-900 font-medium">
+                              {it.document_number || "(文書番号未採番)"}
+                            </div>
+                            <div className="text-slate-700 mt-0.5 break-words">
+                              {it.contract_title || "(件名なし)"}
+                            </div>
+                            {it.backlog_issue_key && (
+                              <div className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                                {it.backlog_issue_key}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            <div className="text-slate-800 truncate" title={it.vendor_name}>
+                              {it.vendor_name || "(取引先不明)"}
+                            </div>
+                            {it.vendor_code && (
+                              <div className="text-[10px] text-slate-400 font-mono mt-0.5">
+                                {it.vendor_code}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 align-top text-right">
+                            {it.amount_ex_tax != null ? (
+                              <span className="font-mono text-slate-900">
+                                {yen(it.amount_ex_tax)}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400">—</span>
+                            )}
+                            <div className="text-[10px] text-slate-500 mt-0.5">
+                              {it.line_count > 0 && `明細 ${it.line_count}件`}
+                              {it.condition_count > 0 && `条件 ${it.condition_count}件`}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 align-top">
+                            {it.amount_ex_tax && it.amount_ex_tax > 0 ? (
+                              <>
+                                <div className="flex items-center gap-1">
+                                  <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                                    <div
+                                      className={cn(
+                                        "h-full transition-all",
+                                        pct >= 100
+                                          ? "bg-emerald-500"
+                                          : pct > 0
+                                          ? "bg-sky-400"
+                                          : "bg-slate-300"
+                                      )}
+                                      style={{ width: `${Math.min(pct, 100)}%` }}
+                                    />
+                                  </div>
+                                  <span className="text-[10px] text-slate-600 w-8 text-right">
+                                    {pct}%
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-500 mt-1">
+                                  残 {yen(it.remaining_amount)}
+                                </div>
+                              </>
+                            ) : (
+                              <span className="text-slate-400 text-[10px]">—</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 align-top text-center">
+                            {picking === it.id ? (
+                              <Loader2
+                                size={14}
+                                className="animate-spin inline-block text-slate-400"
+                              />
+                            ) : (
+                              <span className="text-[10px] text-emerald-700 font-medium">
+                                選択
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </DialogBody>
+
+          <DialogFooter className="!justify-between !flex-row">
+            <div className="flex items-center gap-2 flex-1">
+              <span className="text-xs text-slate-600 whitespace-nowrap">
+                文書番号で直接指定:
+              </span>
+              <input
+                type="text"
+                value={manual}
+                onChange={(e) => setManual(e.target.value)}
+                placeholder="例: ARC-PO-2026-0001"
+                className="flex-1 max-w-xs rounded-sm border border-slate-300 px-2 py-1.5 text-xs font-mono"
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && manual.trim()) {
+                    e.preventDefault();
+                    loadByDocNumber(manual);
+                  }
+                }}
+              />
+              <button
+                type="button"
+                onClick={() => loadByDocNumber(manual)}
+                disabled={!manual.trim() || picking === -1}
+                className="rounded-sm border border-slate-300 px-3 py-1.5 text-xs bg-white hover:bg-slate-50 disabled:opacity-40"
+              >
+                {picking === -1 ? <Loader2 size={12} className="animate-spin" /> : "適用"}
+              </button>
+            </div>
             <button
               type="button"
-              onClick={() => loadByDocNumber(manual)}
-              disabled={!manual.trim() || picking === -1}
-              className="rounded-sm border border-slate-300 px-3 py-1 text-sm bg-white hover:bg-slate-50 disabled:opacity-40"
+              onClick={() => setOpen(false)}
+              className="rounded-sm border border-slate-300 px-3 py-1.5 text-xs bg-white hover:bg-slate-50"
             >
-              {picking === -1 ? "..." : "適用"}
+              閉じる
             </button>
-          </div>
-        </div>
-      )}
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
