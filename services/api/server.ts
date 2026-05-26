@@ -2108,6 +2108,16 @@ async function startServer() {
                   v.withholding_enabled AS vendor_withholding_enabled,
                   COALESCE(
                     (
+                      SELECT array_agg(rr.ringi_number ORDER BY rr.ringi_number)
+                        FROM documents d
+                        JOIN ringi_documents rd ON rd.document_id = d.id
+                        JOIN ringi_records rr ON rr.id = rd.ringi_id
+                       WHERE d.document_number = cc.document_number
+                    ),
+                    '{}'::text[]
+                  ) AS ringi_numbers,
+                  COALESCE(
+                    (
                       SELECT json_agg(
                                json_build_object(
                                  'id', cfc.id,

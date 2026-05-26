@@ -3796,6 +3796,58 @@ ${details}
       // Phase 22.21.112: 業務明細 (検収書 自動補完用) を子テーブルに upsert。
       //   業務委託 (service) カテゴリの単独/個別契約で意味を持つ。
       await upsertCapabilityLineItems(newId, req.body?.line_items);
+
+      // Phase 22.21.115: 稟議番号 N:N リンク + documents 行同期。
+      //   稟議リンクは ringi_documents.document_id 経由なので documents 行が必須。
+      //   bulk import と同じパターンで documents を upsert する。
+      //   template_type は record_type + category から導出:
+      //     license + master_contract → 'license_master'
+      //     license + individual/standalone → 'individual_license_terms'
+      //     service + (any) → 'service_master'
+      try {
+        const ttForDoc =
+          record_type === "master_contract"
+            ? contract_category === "license"
+              ? "license_master"
+              : "service_master"
+            : contract_category === "license"
+              ? "individual_license_terms"
+              : "service_master";
+        await query(
+          `INSERT INTO documents (
+             document_number, issue_key, template_type, form_data,
+             drive_link, created_by
+           ) VALUES ($1, $2, $3, $4, $5, $6)
+           ON CONFLICT (document_number) DO UPDATE SET
+             form_data = COALESCE(documents.form_data, '{}'::jsonb) || EXCLUDED.form_data,
+             drive_link = COALESCE(NULLIF(EXCLUDED.drive_link, ''), documents.drive_link)`,
+          [
+            finalDocNumber,
+            `MASTER-${finalDocNumber}`,
+            ttForDoc,
+            JSON.stringify({
+              __master_form: true,
+              ringi_numbers: Array.isArray(req.body?.ringi_numbers)
+                ? req.body.ringi_numbers
+                : [],
+            }),
+            document_url || "",
+            "master-form",
+          ]
+        );
+        await linkRingiByDocNumber(
+          finalDocNumber,
+          Array.isArray(req.body?.ringi_numbers)
+            ? req.body.ringi_numbers.join(",")
+            : req.body?.ringi_numbers
+        );
+      } catch (ringiErr: any) {
+        console.warn(
+          `[contract_capabilities] ringi link failed for ${finalDocNumber}:`,
+          ringiErr?.message || ringiErr
+        );
+      }
+
       res.json({
         success: true,
         id: newId,
@@ -3906,6 +3958,54 @@ ${details}
       // Phase 22.21.112: 業務明細 (検収書 自動補完用) を upsert。
       //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
       await upsertCapabilityLineItems(Number(id), req.body?.line_items);
+
+      // Phase 22.21.115: 稟議番号リンクを更新 (POST と同じパターン)。
+      //   ringi_numbers が undefined なら触らない。[] なら全削除。
+      if (req.body?.ringi_numbers !== undefined) {
+        try {
+          const ttForDoc =
+            record_type === "master_contract"
+              ? contract_category === "license"
+                ? "license_master"
+                : "service_master"
+              : contract_category === "license"
+                ? "individual_license_terms"
+                : "service_master";
+          await query(
+            `INSERT INTO documents (
+               document_number, issue_key, template_type, form_data,
+               drive_link, created_by
+             ) VALUES ($1, $2, $3, $4, $5, $6)
+             ON CONFLICT (document_number) DO UPDATE SET
+               form_data = COALESCE(documents.form_data, '{}'::jsonb) || EXCLUDED.form_data,
+               drive_link = COALESCE(NULLIF(EXCLUDED.drive_link, ''), documents.drive_link)`,
+            [
+              finalDocNumber,
+              `MASTER-${finalDocNumber}`,
+              ttForDoc,
+              JSON.stringify({
+                __master_form: true,
+                ringi_numbers: Array.isArray(req.body.ringi_numbers)
+                  ? req.body.ringi_numbers
+                  : [],
+              }),
+              document_url || "",
+              "master-form",
+            ]
+          );
+          await linkRingiByDocNumber(
+            finalDocNumber,
+            Array.isArray(req.body.ringi_numbers)
+              ? req.body.ringi_numbers.join(",")
+              : req.body.ringi_numbers
+          );
+        } catch (ringiErr: any) {
+          console.warn(
+            `[contract_capabilities PUT] ringi link failed for ${finalDocNumber}:`,
+            ringiErr?.message || ringiErr
+          );
+        }
+      }
 
       // Phase 22.21.60: 旧 → 新 で document_number が変わったら、
       //   archive (documents) の対応 row も同じ番号にリネームする。

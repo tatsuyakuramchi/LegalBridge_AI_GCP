@@ -23,6 +23,8 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { NativeSelect } from "@/components/ui/native-select"
+// Phase 22.21.115: 稟議番号 selector (発注書・個別利用許諾と同 UI)
+import { RingiSelector } from "@/src/components/document/RingiSelector"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 
@@ -148,6 +150,9 @@ const empty = {
   //   と同形の明細配列)。後段の「検収書」フォームから order_lines_for_inspection
   //   として自動補完用に参照される。
   line_items: [] as any[],
+  // Phase 22.21.115: 稟議番号 (発注書・個別利用許諾と同じ shape: 5 桁数字の配列)。
+  //   保存時に Worker 側で ringi_documents テーブルに N:N リンクされる。
+  ringi_numbers: [] as string[],
 }
 
 // Phase 22.21.91: 金銭条件エディタで使う定数。
@@ -575,6 +580,21 @@ export function ContractsPanel() {
                     既存番号を振り直すには「再発番」ボタンを ON。
                   </>
                 )}
+              </p>
+            </Field>
+            {/* Phase 22.21.115: 稟議番号 (発注書 / 個別利用許諾と同 UI)。
+                保存時に Worker 側で documents 行を upsert + ringi_documents
+                テーブルに N:N リンク。GET 時にも array_agg で復元される。 */}
+            <Field label="稟議番号 (複数可)" className="col-span-2 md:col-span-3">
+              <RingiSelector
+                value={
+                  Array.isArray(data?.ringi_numbers) ? data.ringi_numbers : []
+                }
+                onChange={(next) => set({ ringi_numbers: next })}
+              />
+              <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                稟議マスタに登録済みの 5 桁番号を選択。保存時に N:N で紐付き、
+                ダッシュボード等で「この稟議に紐づく契約」として参照可能になります。
               </p>
             </Field>
             {/* Phase 22.21.61: 過去のアーカイブをマスター番号に合わせる手動同期セクション。
