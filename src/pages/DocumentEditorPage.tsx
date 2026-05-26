@@ -582,7 +582,7 @@ export function DocumentEditorPage() {
     // 将来同種の条件付き必須が増えるなら meta.requiredIf 等の汎用化を検討。
     const meta = templateMetadata[selectedTemplate]
     if (meta?.vars) {
-      const missing: string[] = []
+      const missing: { id: string; label: string }[] = []
       Object.entries(meta.vars).forEach(([id, m]: [string, any]) => {
         if (m?.required !== true) return
         if (
@@ -598,17 +598,37 @@ export function DocumentEditorPage() {
           v === null ||
           (typeof v === "string" && v.trim() === "")
         if (isEmpty) {
-          missing.push(m.label || id)
+          missing.push({ id, label: m.label || id })
         }
       })
       if (missing.length > 0) {
-        const preview = missing.slice(0, 5).join("、")
+        const preview = missing.slice(0, 5).map((m) => m.label).join("、")
         const tail =
           missing.length > 5 ? ` 他 ${missing.length - 5} 件` : ""
         showNotification(
-          `必須項目が未入力です: ${preview}${tail}。フォームを確認してください。`,
+          `必須項目が未入力です: ${preview}${tail}。最初の項目までスクロールします。`,
           "error"
         )
+        // Phase 23 UX-J: 最初の未入力必須フィールドへ自動スクロール + フォーカス
+        const firstId = missing[0].id
+        if (typeof window !== "undefined") {
+          window.requestAnimationFrame(() => {
+            const wrap = document.querySelector(
+              `[data-field-id="${firstId}"]`
+            ) as HTMLElement | null
+            if (wrap) {
+              wrap.scrollIntoView({ behavior: "smooth", block: "center" })
+              wrap.classList.add("ring-2", "ring-destructive", "rounded-md")
+              setTimeout(() => {
+                wrap.classList.remove("ring-2", "ring-destructive", "rounded-md")
+              }, 3000)
+              const focusable = wrap.querySelector(
+                "input, textarea, select, button"
+              ) as HTMLElement | null
+              focusable?.focus()
+            }
+          })
+        }
         return
       }
     }

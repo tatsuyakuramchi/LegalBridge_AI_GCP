@@ -135,9 +135,180 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
     );
   }
 
+  // Phase 23 UX-E: 各行を 1 度だけ計算してテーブル / カード両方で使う。
+  const rows = orderLines.map((line) => {
+    const v = valueByLineId.get(line.id);
+    const inspectedThisTime = v?.inspected_amount_ex_tax ?? 0;
+    const inspectedQtyThisTime = Number(v?.inspected_quantity) || 0;
+    const insp = line.inspection || {
+      ordered_amount: line.amount_ex_tax || 0,
+      ordered_quantity: line.quantity || 0,
+      inspected_amount: 0,
+      inspected_quantity: 0,
+      remaining_amount: line.amount_ex_tax || 0,
+      remaining_quantity: line.quantity || 0,
+      overflow_amount: false,
+      overflow_quantity: false,
+    };
+    const AMT_EPS = 0.5;
+    const QTY_EPS = 0.0005;
+    const totalAmt = insp.inspected_amount + inspectedThisTime;
+    const totalQty = insp.inspected_quantity + inspectedQtyThisTime;
+    const willOverflowAmount = totalAmt - insp.ordered_amount > AMT_EPS;
+    const willOverflowQty = totalQty - insp.ordered_quantity > QTY_EPS;
+    const isOverflow = willOverflowAmount || willOverflowQty;
+    const isExact =
+      inspectedThisTime > 0 &&
+      !isOverflow &&
+      Math.abs(totalAmt - insp.ordered_amount) <= AMT_EPS;
+    return {
+      line,
+      v,
+      inspectedThisTime,
+      insp,
+      isOverflow,
+      isExact,
+      willOverflowAmount,
+      willOverflowQty,
+    };
+  });
+
+  const statusBadge = (r: typeof rows[number]) =>
+    r.isOverflow ? (
+      <span
+        className="inline-flex items-center gap-1 text-[9px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-sm"
+        title={`発注額/数量を超過 (${
+          r.willOverflowAmount ? "amount" : ""
+        }${r.willOverflowAmount && r.willOverflowQty ? " & " : ""}${
+          r.willOverflowQty ? "qty" : ""
+        })`}
+      >
+        <AlertTriangle className="w-2.5 h-2.5" /> 超過
+      </span>
+    ) : r.isExact ? (
+      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-sm">
+        <CheckCircle2 className="w-2.5 h-2.5" /> 完了
+      </span>
+    ) : r.inspectedThisTime > 0 ? (
+      <span className="inline-flex items-center gap-1 text-[9px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-sm">
+        分割中
+      </span>
+    ) : (
+      <span className="text-[9px] text-muted-foreground">—</span>
+    );
+
   return (
     <div className="col-span-full">
-      <div className="overflow-x-auto">
+      {/* カード型 (画面幅 < lg = 1024px) ────────────────────────── */}
+      <div className="space-y-3 lg:hidden">
+        {rows.map((r) => (
+          <div
+            key={r.line.id}
+            className={cn(
+              "rounded-md border bg-card p-3 shadow-sm",
+              r.isOverflow ? "border-red-300 bg-red-50/40" : "border-border"
+            )}
+          >
+            <div className="flex items-start justify-between gap-2 mb-2">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground font-mono">
+                    #{r.line.line_no}
+                  </span>
+                  {statusBadge(r)}
+                </div>
+                <div className="font-bold text-sm mt-1">{r.line.item_name}</div>
+                {r.line.spec && (
+                  <div className="text-[11px] text-muted-foreground mt-0.5">
+                    {r.line.spec}
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-[11px] font-mono py-2 border-y border-border/40 mb-2">
+              <div>
+                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">
+                  発注
+                </div>
+                <div className="font-medium">{yen(r.insp.ordered_amount)}</div>
+              </div>
+              <div>
+                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">
+                  既検収
+                </div>
+                <div className="font-medium">
+                  {yen(r.insp.inspected_amount)}
+                </div>
+              </div>
+              <div>
+                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">
+                  残
+                </div>
+                <div
+                  className={cn(
+                    "font-bold",
+                    r.insp.remaining_amount === 0 && "text-emerald-700"
+                  )}
+                >
+                  {yen(r.insp.remaining_amount)}
+                </div>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3 mb-2">
+              <label className="block">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  今回数量
+                </div>
+                {cellInput(
+                  r.v?.inspected_quantity,
+                  (val) =>
+                    update(r.line.id, {
+                      inspected_quantity: Number(val) || 0,
+                    }),
+                  "number",
+                  "0",
+                  "0.0001"
+                )}
+              </label>
+              <label className="block">
+                <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                  歩留率 (0.0 - 1.0)
+                </div>
+                {cellInput(
+                  r.v?.acceptance_ratio ?? 1.0,
+                  (val) => {
+                    const n = Number(val);
+                    const clamped = Number.isFinite(n)
+                      ? Math.max(0, Math.min(1, n))
+                      : 1.0;
+                    update(r.line.id, { acceptance_ratio: clamped });
+                  },
+                  "number",
+                  "1.0",
+                  "0.01"
+                )}
+              </label>
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-border/40">
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
+                今回検収額 (税抜)
+              </span>
+              <span className="font-mono font-bold text-base">
+                {yen(r.inspectedThisTime)}
+              </span>
+            </div>
+          </div>
+        ))}
+        <div className="rounded-md border-2 border-foreground/20 bg-muted/30 p-3 flex items-center justify-between">
+          <span className="text-[10px] uppercase tracking-wider font-bold">
+            今回検収合計 (税抜)
+          </span>
+          <span className="font-mono font-bold text-lg">{yen(grandTotal)}</span>
+        </div>
+      </div>
+
+      {/* テーブル型 (画面幅 >= lg) ────────────────────────────── */}
+      <div className="hidden lg:block overflow-x-auto">
         <table className="w-full text-[11px] font-mono border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-[10px] uppercase tracking-wider">

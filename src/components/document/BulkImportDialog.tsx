@@ -457,30 +457,65 @@ export const BulkImportDialog: React.FC<Props> = ({
           {/* Step 4: Result */}
           {result && (
             <div className="space-y-3">
-              <div
-                className={cn(
-                  "rounded-sm p-3 flex items-center gap-3 border",
-                  result.failed.length === 0
-                    ? "bg-emerald-50 border-emerald-200 text-emerald-900"
-                    : "bg-amber-50 border-amber-200 text-amber-900"
-                )}
-              >
-                {result.failed.length === 0 ? (
-                  <PartyPopper className="w-5 h-5" />
-                ) : (
-                  <AlertTriangle className="w-5 h-5" />
-                )}
-                <div className="text-[11px] font-mono">
-                  <div className="font-bold">
-                    {result.failed.length === 0
-                      ? "すべて成功"
-                      : `${result.succeeded.length} 成功 / ${result.failed.length} 失敗`}
+              {/* Phase 23 UX-I: 大きな成功率サマリバー */}
+              {(() => {
+                const totalGroups = result.groups || 0;
+                const successPct =
+                  totalGroups > 0
+                    ? Math.round((result.succeeded.length / totalGroups) * 100)
+                    : 0;
+                const isAllOk = result.failed.length === 0;
+                return (
+                  <div
+                    className={cn(
+                      "rounded-md p-4 border-2",
+                      isAllOk
+                        ? "bg-emerald-50 border-emerald-300 text-emerald-900"
+                        : "bg-amber-50 border-amber-300 text-amber-900"
+                    )}
+                  >
+                    <div className="flex items-center gap-3 mb-3">
+                      {isAllOk ? (
+                        <PartyPopper className="w-7 h-7 flex-shrink-0" />
+                      ) : (
+                        <AlertTriangle className="w-7 h-7 flex-shrink-0" />
+                      )}
+                      <div className="flex-1">
+                        <div className="text-base font-bold">
+                          {isAllOk
+                            ? `🎉 ${totalGroups}件すべて取り込み成功`
+                            : `${result.succeeded.length} / ${totalGroups} 件成功 (${successPct}%)`}
+                        </div>
+                        <div className="text-xs mt-0.5 opacity-80">
+                          CSV {result.total_rows} 行 を解析し {totalGroups} 件の文書に集約
+                        </div>
+                      </div>
+                    </div>
+                    {/* 進捗バー */}
+                    <div className="h-2 bg-white/60 rounded-full overflow-hidden">
+                      <div
+                        className={cn(
+                          "h-full transition-all",
+                          isAllOk ? "bg-emerald-500" : "bg-amber-500"
+                        )}
+                        style={{ width: `${successPct}%` }}
+                      />
+                    </div>
+                    <div className="flex items-center justify-between mt-2 text-[11px] font-mono">
+                      <span className="flex items-center gap-1">
+                        <CheckCircle2 className="w-3 h-3" />
+                        成功 {result.succeeded.length}
+                      </span>
+                      {result.failed.length > 0 && (
+                        <span className="flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          失敗 {result.failed.length}
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-[10px] mt-0.5 opacity-75">
-                    {result.total_rows} 行 / {result.groups} 件の文書
-                  </div>
-                </div>
-              </div>
+                );
+              })()}
 
               {result.succeeded.length > 0 && (
                 <div className="border border-input rounded-sm max-h-[200px] overflow-y-auto">
