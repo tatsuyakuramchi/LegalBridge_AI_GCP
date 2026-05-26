@@ -7356,6 +7356,78 @@ ${details}
               );
             }
 
+            // Phase 22.21.113: contract_capabilities + capability_financial_conditions
+            //   にも同期 (= 新スキーマ)。legacy の license_contracts / license_financial_conditions
+            //   とは別系統として共存。royalty_statement フォームの 4 ステップ動線で
+            //   「契約マスタ」として選択できるようにする。
+            //
+            //   record_type:
+            //     - first.record_type が individual_contract / standalone_contract
+            //       のいずれかなら採用
+            //     - 旧 CSV (record_type 列無し) は individual_contract で互換
+            //   ag_amount 列があれば AG (前払い保証) として扱う。
+            try {
+              const ccRecordType =
+                first.record_type === "standalone_contract"
+                  ? "standalone_contract"
+                  : "individual_contract";
+              const ccVendorId = await resolveVendorIdForImport_(
+                first.vendor_code,
+                first.licensor_name
+              );
+              const ccRes = await query(
+                `INSERT INTO contract_capabilities (
+                   vendor_id, record_type, contract_category, contract_type, contract_title,
+                   document_number, contract_status, effective_date, expiration_date,
+                   auto_renewal, original_work, document_url, source_system
+                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+                 ON CONFLICT (document_number) DO UPDATE SET
+                   vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
+                   record_type    = EXCLUDED.record_type,
+                   contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
+                   effective_date = EXCLUDED.effective_date,
+                   expiration_date = EXCLUDED.expiration_date,
+                   original_work  = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
+                   document_url   = COALESCE(NULLIF(EXCLUDED.document_url, ''), contract_capabilities.document_url),
+                   updated_at     = CURRENT_TIMESTAMP
+                 RETURNING id`,
+                [
+                  ccVendorId,
+                  ccRecordType,
+                  "license",
+                  ccRecordType === "standalone_contract"
+                    ? "license_standalone"
+                    : "license_individual",
+                  first.original_work ||
+                    first.product_name_predicted ||
+                    contractNumber,
+                  contractNumber,
+                  "executed",
+                  first.license_start_date || null,
+                  null, // expiration_date は license-contract には無いので空
+                  false,
+                  first.original_work || "",
+                  first.drive_link || "",
+                  "import-bulk-license-contract",
+                ]
+              );
+              const capId = Number(ccRes.rows[0].id);
+              // 金銭条件 (ag_amount 列があれば AG として扱う)
+              const capConditions = conditions.map((c: any, i: number) => ({
+                ...c,
+                ag_amount: groupRows[i]?.ag_amount
+                  ? Number(groupRows[i].ag_amount) || 0
+                  : 0,
+              }));
+              await upsertCapabilityFinancialConditions(capId, capConditions);
+            } catch (capErr: any) {
+              console.warn(
+                `[license-contract bulk] contract_capabilities sync failed for ${contractNumber}:`,
+                capErr?.message || capErr
+              );
+              // 失敗しても legacy 側は成功扱い (= 既存運用を壊さない)
+            }
+
             succeeded.push({
               import_key: importKey,
               license_contract_id: lcId,
@@ -7719,6 +7791,180 @@ ${details}
         });
       } catch (error) {
         console.error("/api/imports/bulk/service-master failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  /**
+   * Phase 22.21.113: 業務委託 個別/単独契約 (= 検収書 自動補完用 業務明細付き)
+   * のバルクインポート。1 グループ (import_key) = 1 contract_capabilities +
+   * N capability_line_items。
+   *
+   *   record_type 列で individual_contract / standalone_contract を切替。
+   *   parent_master_number 列が入っていれば individual_contract の親紐付け
+   *   情報 (master 検索時の hint) として form_data に格納。
+   *
+   *   後段の検収書フォームは Legal Asset Search で service master を選ぶと
+   *   この行の capability_line_items を order_lines_for_inspection に
+   *   流し込む。発注書を経由しなくても検収書を出せる。
+   */
+  app.post(
+    "/api/imports/bulk/service-contract",
+    requirePortalSecret,
+    express.json({ limit: "10mb" }),
+    async (req, res) => {
+      try {
+        const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+        if (rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "rows[] is required" });
+        }
+        const groups = groupByImportKey(rows);
+        const succeeded: any[] = [];
+        const failed: any[] = [];
+
+        for (const [importKey, groupRows] of groups) {
+          try {
+            const first = groupRows[0];
+            const recordType =
+              first.record_type === "individual_contract" ||
+              first.record_type === "standalone_contract"
+                ? first.record_type
+                : "standalone_contract";
+            const contractNumber =
+              first.contract_number &&
+              String(first.contract_number).trim().length > 0
+                ? String(first.contract_number).trim()
+                : await getNewDocumentNumber("service_master");
+
+            const vendorId = await resolveVendorIdForImport_(
+              first.vendor_code,
+              first.vendor_name
+            );
+
+            // 1) contract_capabilities (service / individual or standalone) を upsert
+            const ccRes = await query(
+              `INSERT INTO contract_capabilities (
+                 vendor_id, record_type, contract_category, contract_type, contract_title,
+                 document_number, contract_status, effective_date, expiration_date,
+                 auto_renewal, source_system
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
+                 record_type    = EXCLUDED.record_type,
+                 contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
+                 effective_date = EXCLUDED.effective_date,
+                 expiration_date = EXCLUDED.expiration_date,
+                 auto_renewal   = EXCLUDED.auto_renewal,
+                 updated_at     = CURRENT_TIMESTAMP
+               RETURNING id`,
+              [
+                vendorId,
+                recordType,
+                "service",
+                recordType === "standalone_contract"
+                  ? "service_standalone"
+                  : "service_individual",
+                first.contract_title ||
+                  first.item_name ||
+                  contractNumber,
+                contractNumber,
+                "executed",
+                first.effective_date || null,
+                first.expiration_date || null,
+                first.auto_renewal === "true" ||
+                  first.auto_renewal === true ||
+                  false,
+                "import-bulk-service-contract",
+              ]
+            );
+            const capId = Number(ccRes.rows[0].id);
+
+            // 2) capability_line_items を一括 upsert
+            const lineItems = groupRows
+              .filter((r: any) => Number(r.line_no) > 0)
+              .map((r: any) => ({
+                line_no: Number(r.line_no),
+                category: r.category || "",
+                item_name: r.item_name || "",
+                spec: r.spec || "",
+                calc_method: r.calc_method || "FIXED",
+                payment_method: r.payment_method || "",
+                payment_terms: r.payment_terms || "",
+                quantity: r.quantity,
+                unit_price: r.unit_price,
+                amount_ex_tax:
+                  r.amount_ex_tax ||
+                  (Number(r.quantity) && Number(r.unit_price)
+                    ? Math.round(Number(r.quantity) * Number(r.unit_price))
+                    : null),
+                delivery_date: r.delivery_date || null,
+                payment_date: r.payment_date || null,
+                cycle: r.cycle || null,
+                billing_day: r.billing_day || null,
+                term_start: r.term_start || null,
+                term_end: r.term_end || null,
+              }));
+            await upsertCapabilityLineItems(capId, lineItems);
+
+            // 3) documents 行も登録 (template_type='service_master' で一覧に出す)
+            await query(
+              `INSERT INTO documents (
+                 document_number, issue_key, template_type, form_data,
+                 drive_link, created_by
+               ) VALUES ($1, $2, $3, $4, $5, $6)
+               ON CONFLICT (document_number) DO UPDATE SET
+                 form_data  = EXCLUDED.form_data,
+                 drive_link = EXCLUDED.drive_link`,
+              [
+                contractNumber,
+                first.issue_key ||
+                  `IMPORT-${Date.now()}-${succeeded.length + failed.length}`,
+                "service_master",
+                JSON.stringify({
+                  ...first,
+                  record_type: recordType,
+                  parent_master_number: first.parent_master_number || "",
+                  line_items: lineItems,
+                  __imported: true,
+                  __bulk: true,
+                }),
+                first.drive_link || "",
+                "import-bulk",
+              ]
+            );
+
+            // 4) 稟議番号紐付け
+            await linkRingiByDocNumber(contractNumber, first.ringi_numbers);
+
+            succeeded.push({
+              import_key: importKey,
+              capability_id: capId,
+              contract_number: contractNumber,
+              record_type: recordType,
+              line_item_count: lineItems.length,
+            });
+          } catch (e: any) {
+            console.error(
+              `/api/imports/bulk/service-contract group=${importKey} failed:`,
+              e
+            );
+            failed.push({
+              import_key: importKey,
+              error: String(e?.message || e),
+            });
+          }
+        }
+
+        res.json({
+          ok: true,
+          total_rows: rows.length,
+          groups: groups.size,
+          succeeded,
+          failed,
+        });
+      } catch (error) {
+        console.error("/api/imports/bulk/service-contract failed:", error);
         res.status(500).json({ ok: false, error: String(error) });
       }
     }
@@ -9867,6 +10113,12 @@ ${details}
           "contract_number",
           "ledger_id",
           "drive_link",
+          // Phase 22.21.113: record_type 列 (individual_contract / standalone_contract)
+          //   空欄なら individual_contract (旧 CSV 互換)
+          "record_type",
+          // Phase 22.21.113: vendor_code を追加 (新スキーマ contract_capabilities の
+          //   vendor_id 解決に使う。空でも licensor_name で fallback resolve される)
+          "vendor_code",
           "licensor_name",
           "licensor_address",
           "licensor_rep",
@@ -9895,10 +10147,16 @@ ${details}
           "formula_text",
           "payment_terms",
           "mg_amount",
+          // Phase 22.21.113: AG (前払い保証) 列 (Phase 22.21.95 で導入)
+          //   空欄なら 0。100,000 のように数値を入れると AG として累積消化される。
+          "ag_amount",
         ],
         sample: [
-          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "00001", "", "1", "国内・日本語", "ROYALTY", "5.0", "上代", "四半期", "JPY", "上代 × 5.0% × 製造数", "四半期報告後の翌月末日払い", "1000000"],
-          ["LIC001", "", "", "LIC-2024-001", "", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "00001", "", "2", "国内・日本語", "ROYALTY", "10.0", "売上", "四半期", "JPY", "売上 × 10.0%", "四半期報告後の翌月末日払い", "0"],
+          // LIC001: 単独契約 (record_type=standalone_contract)、条件 2 行
+          ["LIC001", "", "", "LIC-2024-001", "", "standalone_contract", "V001", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "00001", "", "1", "国内・日本語", "ROYALTY", "5.0", "上代", "四半期", "JPY", "上代 × 5.0% × 製造数", "四半期報告後の翌月末日払い", "1000000", "0"],
+          ["LIC001", "", "", "LIC-2024-001", "", "standalone_contract", "V001", "Sample IP Co.", "東京都...", "山田 太郎", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ボードゲーム『◯◯』", "◯◯ Pocket", "2024-04-01", "基本契約の満了日まで", "", "© Sample IP", "tanaka@arclight.co.jp", "作成済", "00001", "", "2", "国内・日本語", "ROYALTY", "10.0", "売上", "四半期", "JPY", "売上 × 10.0%", "四半期報告後の翌月末日払い", "0", "0"],
+          // LIC002: 個別契約 (record_type=individual_contract)、AG 100 万円
+          ["LIC002", "", "", "LIC-2024-002", "", "individual_contract", "V002", "Other IP Co.", "大阪府...", "佐藤 花子", "true", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "true", "ライトノベル『△△』", "△△ Battle", "2024-07-01", "5 年", "", "© Other IP", "tanaka@arclight.co.jp", "作成済", "00002", "", "1", "国内・日本語", "ROYALTY", "8.0", "上代", "半期", "JPY", "上代 × 8.0% × 製造数", "半期報告後 60 日以内", "0", "1000000"],
         ],
       },
       "license-master": {
@@ -9959,6 +10217,79 @@ ${details}
         ],
         sample: [
           ["SM001", "", "", "", "株式会社XYZ 業務委託基本契約", "2024-04-01", "2027-03-31", "true", "V001", "株式会社XYZ", "株式会社アークライト", "東京都千代田区...", "代表取締役 田中 一郎", "株式会社XYZ", "東京都...", "代表取締役 山田 太郎", "tanaka@arclight.co.jp", "作成済", "00001", ""],
+        ],
+      },
+      // Phase 22.21.113: 業務委託 個別/単独契約 (= 検収書 自動補完用の業務明細)
+      //   record_type で individual_contract / standalone_contract を切替。
+      //   1 グループ (import_key) = 1 contract_capabilities + N capability_line_items。
+      "service-contract": {
+        headers: [
+          // === 共通: グループキー + 識別子 ===
+          "import_key",
+          "issue_key",
+          "contract_number",
+          "drive_link",
+          // record_type: individual_contract (基本契約配下) / standalone_contract (単体)
+          "record_type",
+          // === 共通: 取引先・案件 ===
+          "vendor_code",
+          "vendor_name",
+          "contract_title",
+          "effective_date",
+          "expiration_date",
+          "auto_renewal",
+          // === 親契約 (個別契約の場合のみ意味あり。標準契約 number) ===
+          "parent_master_number",
+          // === 業務明細 (1 行 = 1 明細) ===
+          "line_no",
+          "category",
+          "item_name",
+          "spec",
+          "calc_method",
+          "payment_method",
+          "payment_terms",
+          "quantity",
+          "unit_price",
+          "amount_ex_tax",
+          "delivery_date",
+          "payment_date",
+          // === SUBSCRIPTION 専用 (FIXED/ROYALTY 行は空欄で OK) ===
+          "cycle",
+          "term_start",
+          "term_end",
+          "billing_day",
+          // === メタ ===
+          "staff_email",
+          "ringi_numbers",
+          "remarks",
+        ],
+        sample: [
+          // SVC001: 業務委託 単独契約 (basic なし) + 業務明細 2 行
+          ["SVC001", "", "", "", "standalone_contract",
+            "V001", "株式会社XYZ", "イラスト制作業務委託契約",
+            "2026-04-01", "2026-09-30", "false", "",
+            "1", "制作", "イラスト制作", "5 点 (キャラクター原画)",
+            "FIXED", "銀行振込", "翌月末",
+            "5", "30000", "150000", "2026-06-30", "2026-07-31",
+            "", "", "", "",
+            "tanaka@arclight.co.jp", "00001", "1 期目"],
+          ["SVC001", "", "", "", "standalone_contract",
+            "V001", "株式会社XYZ", "イラスト制作業務委託契約",
+            "2026-04-01", "2026-09-30", "false", "",
+            "2", "制作", "校正作業", "上記イラスト 5 点の修正対応",
+            "FIXED", "銀行振込", "翌月末",
+            "1", "20000", "20000", "2026-07-31", "2026-08-31",
+            "", "", "", "",
+            "tanaka@arclight.co.jp", "00001", ""],
+          // SVC002: 業務委託 個別契約 (基本契約 ARC-SVC-2026-0001 配下) + SUBSCRIPTION 1 行
+          ["SVC002", "", "", "", "individual_contract",
+            "V002", "株式会社ABC", "システム保守業務 (月額)",
+            "2026-04-01", "2027-03-31", "true", "ARC-SVC-2026-0001",
+            "1", "保守", "システム月額保守", "サーバ監視 + 障害対応",
+            "SUBSCRIPTION", "銀行振込", "毎月末日締翌月末払",
+            "12", "50000", "600000", "", "",
+            "monthly", "2026-04-01", "2027-03-31", "25",
+            "tanaka@arclight.co.jp", "00002", "12 ヶ月分"],
         ],
       },
       // Phase 14a: NDA (秘密保持契約書)

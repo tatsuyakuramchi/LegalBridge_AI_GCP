@@ -54,6 +54,8 @@ type Tab =
   | "individual_license_terms"
   | "license_master"
   | "service_master"
+  // Phase 22.21.113: 業務委託 個別/単独契約 (= 検収書 自動補完用 業務明細付き)
+  | "service_contract"
   | "nda"
   | "sales_master"
   | "pending_pdf"
@@ -1653,6 +1655,7 @@ export function ImportPage() {
     | "license-contract"
     | "license-master"
     | "service-master"
+    | "service-contract"
     | "nda"
     | "sales-master"
     | "ringi"
@@ -1662,6 +1665,8 @@ export function ImportPage() {
     individual_license_terms: "license-contract",
     license_master: "license-master",
     service_master: "service-master",
+    // Phase 22.21.113: 業務委託 個別/単独契約 + 業務明細
+    service_contract: "service-contract",
     nda: "nda",
     sales_master: "sales-master",
     ringi_master: "ringi",
@@ -1673,6 +1678,8 @@ export function ImportPage() {
     individual_license_terms: "個別利用許諾条件書",
     license_master: "ライセンス基本契約書",
     service_master: "業務委託基本契約書",
+    // Phase 22.21.113
+    service_contract: "業務委託 個別/単独契約 (業務明細付)",
     nda: "その他契約 (NDA)",
     sales_master: "売買基本契約書",
     pending_pdf: "PDF 未作成キュー",
@@ -1773,6 +1780,8 @@ export function ImportPage() {
                 { key: "purchase_order", label: "発注書" },
                 { key: "inspection_certificate", label: "検収書" },
                 { key: "individual_license_terms", label: "個別利用許諾条件書" },
+                // Phase 22.21.113: 業務委託 個別/単独契約 (= 検収書 自動補完用 業務明細付き)
+                { key: "service_contract", label: "業務委託 個別/単独 (検収用)" },
               ],
             },
             {
@@ -1878,6 +1887,42 @@ export function ImportPage() {
           companyProfile={companyProfile}
           showNotification={showNotification}
         />
+      )}
+
+      {/* Phase 22.21.113: 業務委託 個別/単独契約 (検収書 自動補完用 業務明細付き)
+          単独入力フォームは未提供 (= 契約マスタの「業務明細」UI を使う想定)。
+          ここでは CSV 一括インポートの案内のみ表示。 */}
+      {tab === "service_contract" && (
+        <div className="space-y-4">
+          <div className="border border-emerald-200 bg-emerald-50 rounded-sm p-5">
+            <div className="flex items-start gap-3">
+              <FileSpreadsheet className="w-6 h-6 text-emerald-700 flex-shrink-0 mt-0.5" />
+              <div className="space-y-2">
+                <div className="font-bold text-emerald-900 text-sm">
+                  📋 業務委託 個別/単独契約 (業務明細付き) の一括登録
+                </div>
+                <p className="text-[11px] font-mono text-emerald-900/80 leading-relaxed">
+                  業務委託マスタの単独契約 / 個別契約と、検収書 自動補完用の
+                  業務明細 (N 行) を一括取込できます。
+                  <br />
+                  ・<code>record_type</code> 列 = <code>standalone_contract</code> /
+                  <code>individual_contract</code>
+                  <br />
+                  ・<code>line_no</code> 列で 1 グループ (= 1 contract) 内に
+                  複数明細を入れられます (同 <code>import_key</code> でグループ化)
+                  <br />
+                  ・登録後、検収書フォームの「Legal Asset Search」で業務委託
+                  マスタを選ぶと、ここで登録した業務明細が
+                  <code>order_lines_for_inspection</code> に自動展開されます
+                </p>
+                <p className="text-[10px] font-mono text-emerald-900/60">
+                  右上の「CSV 一括インポート」ボタンからテンプレートを
+                  ダウンロード → 値を埋めて再アップロードしてください。
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Phase 15: PDF 未作成キュー */}

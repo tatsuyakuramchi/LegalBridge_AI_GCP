@@ -32,6 +32,8 @@ type BulkKind =
   | "license-contract"
   | "license-master"
   | "service-master"
+  // Phase 22.21.113: 業務委託 個別/単独契約 (= 検収書 自動補完用 業務明細付き)
+  | "service-contract"
   | "nda"
   | "sales-master"
   | "ringi"
