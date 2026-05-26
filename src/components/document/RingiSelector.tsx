@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils"
 type RingiHint = {
   id: number
   ringi_number: string
+  decision_type?: "ringi" | "board_resolution"
   title: string
   category?: string
   status?: string
@@ -34,7 +35,8 @@ interface Props {
   disabled?: boolean
 }
 
-const RINGI_RE = /^[0-9]{5}$/
+// Phase 22.21.117: 番号形式は "R-NNNNN" / "B-NNNNN" (新) または 5 桁数字 (legacy 入力)
+const RINGI_RE = /^((R|B)-[0-9]{5}|[0-9]{5})$/i
 
 export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) => {
   const [q, setQ] = React.useState("")
@@ -45,6 +47,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
   const [showDropdown, setShowDropdown] = React.useState(false)
   const [createOpen, setCreateOpen] = React.useState(false)
   const [createDraft, setCreateDraft] = React.useState({
+    decision_type: "ringi" as "ringi" | "board_resolution",
     ringi_number: "",
     title: "",
     category: "",
@@ -130,7 +133,10 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
         } else {
           // 未登録 → 新規登録ダイアログを開いてその番号を default 入力
           setCreateDraft({
-            ringi_number: trimmed,
+            decision_type: trimmed.toUpperCase().startsWith("B-")
+              ? "board_resolution"
+              : "ringi",
+            ringi_number: trimmed.toUpperCase(),
             title: "",
             category: "",
             owner_name: "",
@@ -248,7 +254,18 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                   }}
                   className="w-full text-left px-2 py-1.5 hover:bg-muted text-[11px] font-mono flex items-center gap-2 border-b border-border/30 last:border-b-0"
                 >
-                  <span className="font-bold w-12">{h.ringi_number}</span>
+                  {/* Phase 22.21.117: decision_type バッジ */}
+                  <span
+                    className={cn(
+                      "text-[8px] font-bold px-1 rounded-sm border",
+                      h.decision_type === "board_resolution"
+                        ? "bg-purple-50 border-purple-300 text-purple-800"
+                        : "bg-sky-50 border-sky-300 text-sky-800"
+                    )}
+                  >
+                    {h.decision_type === "board_resolution" ? "取締役会" : "稟議"}
+                  </span>
+                  <span className="font-bold w-20">{h.ringi_number}</span>
                   <span className="flex-1 truncate">{h.title}</span>
                   {h.status && (
                     <span className="text-[9px] opacity-60">{h.status}</span>
@@ -306,15 +323,36 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
               </button>
             </div>
             <div className="p-4 space-y-3">
+              {/* Phase 22.21.117: 決裁種別 */}
+              <label className="space-y-1 block">
+                <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
+                  決裁種別 (必須)
+                </div>
+                <select
+                  value={createDraft.decision_type}
+                  onChange={(e) =>
+                    setCreateDraft({
+                      ...createDraft,
+                      decision_type: e.target.value as
+                        | "ringi"
+                        | "board_resolution",
+                    })
+                  }
+                  className="w-full text-[11px] font-mono bg-card border border-input rounded-sm px-2 py-1 focus:outline-none focus:border-foreground"
+                >
+                  <option value="ringi">稟議 (R-NNNNN)</option>
+                  <option value="board_resolution">取締役会 (B-NNNNN)</option>
+                </select>
+              </label>
               <RingiField
-                label="稟議番号 (5 桁数字, 必須)"
+                label="決裁番号 (R-NNNNN / B-NNNNN / 5 桁数字, 必須)"
                 value={createDraft.ringi_number}
                 onChange={(v) =>
-                  setCreateDraft({ ...createDraft, ringi_number: v })
+                  setCreateDraft({ ...createDraft, ringi_number: v.toUpperCase() })
                 }
-                placeholder="00001"
-                inputMode="numeric"
-                maxLength={5}
+                placeholder="R-00001 or 00001"
+                inputMode="text"
+                maxLength={8}
               />
               <RingiField
                 label="タイトル (必須)"

@@ -616,6 +616,36 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_ringi_backlog ON ringi_records(backlog_issue_key);`,
     `CREATE INDEX IF NOT EXISTS idx_ringi_status ON ringi_records(status);`,
 
+    // Phase 22.21.117: 決裁種別を導入 — 稟議承認 + 取締役会決議 を区別する。
+    //   ringi_number の format を 5 桁数字から "R-NNNNN" (稟議) /
+    //   "B-NNNNN" (board) のプレフィックス付きに拡張。
+    //
+    //   Migration 手順:
+    //     (1) decision_type 列を追加 (default 'ringi')
+    //     (2) 旧 CHECK 制約 (5 桁数字限定) を撤去
+    //     (3) 既存 5 桁数字を "R-" プレフィックスで backfill
+    //     (4) 新 CHECK 制約 (R-NNNNN / B-NNNNN) を追加
+    `ALTER TABLE ringi_records
+       ADD COLUMN IF NOT EXISTS decision_type VARCHAR(20) DEFAULT 'ringi';`,
+    `UPDATE ringi_records SET decision_type = 'ringi'
+       WHERE decision_type IS NULL OR decision_type = '';`,
+    `ALTER TABLE ringi_records DROP CONSTRAINT IF EXISTS ringi_number_5digits;`,
+    `UPDATE ringi_records
+        SET ringi_number = 'R-' || ringi_number
+      WHERE ringi_number ~ '^[0-9]{5}$';`,
+    // 新 CHECK 制約 (重複追加で失敗しないよう DO ブロックで囲む)
+    `DO $ringi_chk$
+       BEGIN
+         BEGIN
+           ALTER TABLE ringi_records ADD CONSTRAINT ringi_number_format
+             CHECK (ringi_number ~ '^(R|B)-[0-9]{5}$');
+         EXCEPTION WHEN duplicate_object THEN
+           NULL;
+         END;
+       END
+     $ringi_chk$;`,
+    `CREATE INDEX IF NOT EXISTS idx_ringi_decision_type ON ringi_records(decision_type);`,
+
     `CREATE TABLE IF NOT EXISTS ringi_documents (
       ringi_id INTEGER NOT NULL REFERENCES ringi_records(id) ON DELETE CASCADE,
       document_id INTEGER NOT NULL REFERENCES documents(id) ON DELETE CASCADE,

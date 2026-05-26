@@ -47,9 +47,12 @@ import { NativeSelect } from "@/components/ui/native-select"
 import { cn } from "@/lib/utils"
 import { BulkImportDialog } from "@/src/components/document/BulkImportDialog"
 
+type DecisionType = "ringi" | "board_resolution"
+
 type RingiRecord = {
   id?: number
-  ringi_number: string
+  ringi_number: string         // "R-00001" / "B-00001" 形式
+  decision_type?: DecisionType
   title: string
   category?: string
   owner_name?: string
@@ -66,6 +69,7 @@ type RingiRecord = {
 
 const empty: RingiRecord = {
   ringi_number: "",
+  decision_type: "ringi",
   title: "",
   category: "",
   owner_name: "",
@@ -75,6 +79,17 @@ const empty: RingiRecord = {
   status: "open",
   total_budget: "",
   remarks: "",
+}
+
+// Phase 22.21.117: 決裁種別の表示ラベル
+const DECISION_TYPE_LABEL: Record<DecisionType, string> = {
+  ringi: "稟議",
+  board_resolution: "取締役会",
+}
+
+const DECISION_TYPE_BADGE: Record<DecisionType, "info" | "phosphor"> = {
+  ringi: "info",
+  board_resolution: "phosphor",
 }
 
 const STATUS_OPTIONS = [
@@ -143,6 +158,10 @@ export function RingiPanel() {
     setSaving(true)
     try {
       const body: any = {
+        // Phase 22.21.117: decision_type を Worker に渡す。
+        //   ringi_number は "R-NNNNN" / "B-NNNNN" or 5 桁数字どちらでも OK。
+        //   Worker 側で正規化される。
+        decision_type: data.decision_type || "ringi",
         ringi_number: String(data.ringi_number || "").trim(),
         title: String(data.title || "").trim(),
         category: data.category || "",
@@ -250,7 +269,8 @@ export function RingiPanel() {
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[110px]">稟議番号</TableHead>
+              <TableHead className="w-[80px]">種別</TableHead>
+              <TableHead className="w-[110px]">決裁番号</TableHead>
               <TableHead>タイトル</TableHead>
               <TableHead className="w-[140px]">起案者 / 部署</TableHead>
               <TableHead className="w-[120px]">承認日</TableHead>
@@ -262,6 +282,22 @@ export function RingiPanel() {
           <TableBody>
             {rows.map((r) => (
               <TableRow key={`ringi-${r.id}`}>
+                <TableCell>
+                  <Badge
+                    variant={
+                      DECISION_TYPE_BADGE[
+                        (r.decision_type || "ringi") as DecisionType
+                      ]
+                    }
+                    className="h-5"
+                  >
+                    {
+                      DECISION_TYPE_LABEL[
+                        (r.decision_type || "ringi") as DecisionType
+                      ]
+                    }
+                  </Badge>
+                </TableCell>
                 <TableCell>
                   <div className="font-mono font-bold">{r.ringi_number}</div>
                   {r.backlog_issue_key && (
@@ -351,7 +387,7 @@ export function RingiPanel() {
             {rows.length === 0 && (
               <TableRow>
                 <TableCell
-                  colSpan={7}
+                  colSpan={8}
                   className="p-12 text-center text-muted-foreground text-sm"
                 >
                   {loading
@@ -374,19 +410,40 @@ export function RingiPanel() {
             </DialogTitle>
           </DialogHeader>
           <DialogBody className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[70vh] overflow-y-auto">
-            <Field label="稟議番号 * (5 桁数字)">
+            {/* Phase 22.21.117: 決裁種別 (稟議 / 取締役会) */}
+            <Field label="決裁種別 *">
+              <NativeSelect
+                value={data?.decision_type || "ringi"}
+                onChange={(e) =>
+                  set({ decision_type: e.target.value as DecisionType })
+                }
+                disabled={!creating && !!editing?.id}
+              >
+                <option value="ringi">稟議 (R-NNNNN)</option>
+                <option value="board_resolution">取締役会 (B-NNNNN)</option>
+              </NativeSelect>
+            </Field>
+            <Field label="決裁番号 * (R-NNNNN or 5 桁数字)">
               <Input
                 value={data?.ringi_number || ""}
-                onChange={(e) =>
-                  set({ ringi_number: e.target.value.replace(/[^0-9]/g, "") })
-                }
-                maxLength={5}
-                placeholder="00001"
+                onChange={(e) => {
+                  // 大文字化 + R-/B- 形式と 5 桁数字どちらも許容
+                  const v = e.target.value.toUpperCase().replace(/[^0-9RB\-]/g, "")
+                  set({ ringi_number: v })
+                }}
+                maxLength={8}
+                placeholder="R-00001 / 00001"
                 disabled={!creating && !!editing?.id}
               />
+              {creating && (
+                <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                  5 桁数字を入力すると、種別から自動でプレフィックスが付きます
+                  (例: ringi → R-00001)
+                </p>
+              )}
               {!creating && (
                 <p className="text-[10px] font-mono text-muted-foreground mt-1">
-                  既存稟議の番号は変更不可。削除→再登録してください。
+                  既存番号は変更不可。削除→再登録してください。
                 </p>
               )}
             </Field>
@@ -483,7 +540,11 @@ export function RingiPanel() {
               onClick={save}
               disabled={
                 saving ||
-                !data?.ringi_number?.match(/^[0-9]{5}$/) ||
+                // Phase 22.21.117: R-NNNNN / B-NNNNN / 5 桁数字 のいずれか
+                !(
+                  data?.ringi_number?.match(/^(R|B)-[0-9]{5}$/) ||
+                  data?.ringi_number?.match(/^[0-9]{5}$/)
+                ) ||
                 !data?.title?.trim()
               }
             >

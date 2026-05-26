@@ -6502,19 +6502,26 @@ ${details}
     const linked: string[] = [];
     const not_found: string[] = [];
     if (!documentId || !ringiNumbersStr) return { linked, not_found };
-    const nums = String(ringiNumbersStr)
+    // Phase 22.21.117: legacy 5 桁数字も受け入れて R- / B- にあたる行を探す
+    const rawNums = String(ringiNumbersStr)
       .split(/[,;\s]+/)
-      .map((s) => s.trim())
-      .filter((s) => /^[0-9]{5}$/.test(s));
-    if (nums.length === 0) return { linked, not_found };
+      .map((s) => s.trim().toUpperCase())
+      .filter((s) => DECISION_NUM_RE.test(s) || RINGI_NUM_RE.test(s));
+    if (rawNums.length === 0) return { linked, not_found };
     await query(
       `DELETE FROM ringi_documents WHERE document_id = $1`,
       [documentId]
     );
-    for (const num of Array.from(new Set(nums))) {
+    for (const num of Array.from(new Set(rawNums))) {
+      // 候補リストを構築: 完全一致優先、5 桁数字なら R-/B- 両方試す
+      const candidates: string[] = DECISION_NUM_RE.test(num)
+        ? [num]
+        : [`R-${num}`, `B-${num}`];
       const r = await query(
-        `SELECT id FROM ringi_records WHERE ringi_number = $1`,
-        [num]
+        `SELECT id, ringi_number FROM ringi_records
+          WHERE ringi_number = ANY($1::text[])
+          LIMIT 1`,
+        [candidates]
       );
       if (r.rows.length === 0) {
         not_found.push(num);
@@ -6526,7 +6533,7 @@ ${details}
          ON CONFLICT DO NOTHING`,
         [Number(r.rows[0].id), documentId]
       );
-      linked.push(num);
+      linked.push(r.rows[0].ringi_number);
     }
     return { linked, not_found };
   }
@@ -8386,7 +8393,37 @@ ${details}
   // 文書作成時インライン作成 + Masters タブの管理画面の両方から呼ばれる。
   // -------------------------------------------------------------------
 
-  const RINGI_NUM_RE = /^[0-9]{5}$/;
+  // Phase 22.21.117: 決裁種別 (ringi / board_resolution) で番号フォーマットを切替。
+  //   - 旧: 5 桁数字 ("00001")
+  //   - 新: "R-NNNNN" (稟議) / "B-NNNNN" (取締役会)
+  //   入力としては legacy 5 桁も受け付け、decision_type に応じて自動プレフィックス。
+  const RINGI_NUM_RE = /^[0-9]{5}$/; // legacy 入力検証用
+  const DECISION_NUM_RE = /^(R|B)-[0-9]{5}$/;
+
+  // 5 桁数字 or プレフィックス付き どちらでも受け取り、正規化された
+  //   "R-NNNNN" / "B-NNNNN" を返す。失敗時は null。
+  const normalizeDecisionNumber = (
+    raw: string,
+    type: "ringi" | "board_resolution" = "ringi"
+  ): string | null => {
+    const s = String(raw || "").trim().toUpperCase();
+    if (DECISION_NUM_RE.test(s)) return s;
+    if (RINGI_NUM_RE.test(s)) {
+      const prefix = type === "board_resolution" ? "B" : "R";
+      return `${prefix}-${s}`;
+    }
+    return null;
+  };
+
+  // 番号から decision_type を推定 (プレフィックス文字から)
+  const inferDecisionType = (
+    code: string
+  ): "ringi" | "board_resolution" | null => {
+    const s = String(code || "").trim().toUpperCase();
+    if (s.startsWith("R-")) return "ringi";
+    if (s.startsWith("B-")) return "board_resolution";
+    return null;
+  };
 
   /**
    * 稟議の autocomplete / 検索。
@@ -8400,7 +8437,7 @@ ${details}
       //   旧呼び出し側 (RingiSelector) は ringi_number / title / category /
       //   status / owner_name のみ参照するので互換性あり。
       const sql = q
-        ? `SELECT r.id, r.ringi_number, r.title, r.category, r.owner_name,
+        ? `SELECT r.id, r.ringi_number, r.decision_type, r.title, r.category, r.owner_name,
                   r.owner_department, r.approved_at, r.backlog_issue_key,
                   r.status, r.total_budget, r.remarks,
                   r.created_at, r.updated_at,
@@ -8409,12 +8446,12 @@ ${details}
                       WHERE rd.ringi_id = r.id), 0
                   ) AS linked_document_count
              FROM ringi_records r
-            WHERE r.ringi_number ILIKE $1 || '%'
+            WHERE r.ringi_number ILIKE '%' || $1 || '%'
                OR r.title ILIKE '%' || $1 || '%'
                OR r.owner_name ILIKE '%' || $1 || '%'
                OR r.category ILIKE '%' || $1 || '%'
             ORDER BY r.ringi_number ASC LIMIT $2`
-        : `SELECT r.id, r.ringi_number, r.title, r.category, r.owner_name,
+        : `SELECT r.id, r.ringi_number, r.decision_type, r.title, r.category, r.owner_name,
                   r.owner_department, r.approved_at, r.backlog_issue_key,
                   r.status, r.total_budget, r.remarks,
                   r.created_at, r.updated_at,
@@ -8462,12 +8499,23 @@ ${details}
   app.get("/api/ringi/:number", async (req, res) => {
     try {
       const num = String(req.params.number || "").trim();
+      // Phase 22.21.117: legacy 5 桁数字でも引けるよう、両方を試す。
+      //   R-NNNNN / B-NNNNN の完全一致 → そのまま
+      //   5 桁数字 → R- / B- 両方試す
+      const tryNumbers: string[] = [];
+      tryNumbers.push(num.toUpperCase());
+      if (RINGI_NUM_RE.test(num)) {
+        tryNumbers.push(`R-${num}`);
+        tryNumbers.push(`B-${num}`);
+      }
       const r = await query(
-        `SELECT id, ringi_number, title, category, owner_name, owner_department,
+        `SELECT id, ringi_number, decision_type, title, category, owner_name, owner_department,
                 approved_at, backlog_issue_key, status, total_budget, remarks,
                 created_at, updated_at
-           FROM ringi_records WHERE ringi_number = $1`,
-        [num]
+           FROM ringi_records WHERE ringi_number = ANY($1::text[])
+           ORDER BY CASE WHEN ringi_number = $2 THEN 0 ELSE 1 END
+           LIMIT 1`,
+        [tryNumbers, num.toUpperCase()]
       );
       if (r.rows.length === 0) {
         return res.status(404).json({ ok: false, error: "ringi not found" });
@@ -8526,23 +8574,38 @@ ${details}
   app.post("/api/ringi", express.json(), async (req, res) => {
     try {
       const b = req.body || {};
-      const ringiNumber = String(b.ringi_number || "").trim();
-      if (!RINGI_NUM_RE.test(ringiNumber)) {
+      // Phase 22.21.117: decision_type を受け取り、ringi_number を
+      //   "R-NNNNN" / "B-NNNNN" に正規化。
+      const decisionType =
+        b.decision_type === "board_resolution" ? "board_resolution" : "ringi";
+      const rawNum = String(b.ringi_number || b.decision_number || "").trim();
+      const normalized = normalizeDecisionNumber(rawNum, decisionType);
+      if (!normalized) {
         return res.status(400).json({
           ok: false,
-          error: `稟議番号は 5 桁数字で指定してください (received: '${ringiNumber}')`,
+          error:
+            `決裁番号は "R-NNNNN" / "B-NNNNN" または 5 桁数字で指定してください ` +
+            `(received: '${rawNum}')`,
         });
+      }
+      // プレフィックスから推定した type と decision_type が齟齬なら decision_type を優先するが警告
+      const inferredType = inferDecisionType(normalized) || decisionType;
+      if (inferredType !== decisionType) {
+        console.warn(
+          `[/api/ringi] decision_type mismatch: input=${decisionType}, prefix=${inferredType}. Adopting input.`
+        );
       }
       if (!b.title || String(b.title).trim().length === 0) {
         return res.status(400).json({ ok: false, error: "title is required" });
       }
       const r = await query(
         `INSERT INTO ringi_records (
-           ringi_number, title, category, owner_name, owner_department,
+           ringi_number, decision_type, title, category, owner_name, owner_department,
            approved_at, backlog_issue_key, status, total_budget, remarks
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
          ON CONFLICT (ringi_number) DO UPDATE SET
+           decision_type     = EXCLUDED.decision_type,
            title             = EXCLUDED.title,
            category          = COALESCE(NULLIF(EXCLUDED.category, ''), ringi_records.category),
            owner_name        = COALESCE(NULLIF(EXCLUDED.owner_name, ''), ringi_records.owner_name),
@@ -8553,9 +8616,10 @@ ${details}
            total_budget      = COALESCE(EXCLUDED.total_budget, ringi_records.total_budget),
            remarks           = COALESCE(NULLIF(EXCLUDED.remarks, ''), ringi_records.remarks),
            updated_at        = CURRENT_TIMESTAMP
-         RETURNING id, ringi_number, title`,
+         RETURNING id, ringi_number, decision_type, title`,
         [
-          ringiNumber,
+          normalized,
+          decisionType,
           b.title,
           b.category || null,
           b.owner_name || null,
@@ -9495,11 +9559,15 @@ ${details}
 
         for (let idx = 0; idx < rows.length; idx++) {
           const r = rows[idx];
-          const ringiNumber = String(r.ringi_number || "").trim();
+          // Phase 22.21.117: decision_type 列を尊重しつつ legacy 5 桁数字も自動プレフィックス。
+          const decisionType: "ringi" | "board_resolution" =
+            r.decision_type === "board_resolution" ? "board_resolution" : "ringi";
+          const rawNum = String(r.ringi_number || r.decision_number || "").trim();
           try {
-            if (!RINGI_NUM_RE.test(ringiNumber)) {
+            const normalized = normalizeDecisionNumber(rawNum, decisionType);
+            if (!normalized) {
               throw new Error(
-                `稟議番号は 5 桁数字で指定してください (received: '${ringiNumber}')`
+                `決裁番号は "R-NNNNN" / "B-NNNNN" または 5 桁数字で指定してください (received: '${rawNum}')`
               );
             }
             const title = String(r.title || "").trim();
@@ -9508,11 +9576,12 @@ ${details}
             }
             const result = await query(
               `INSERT INTO ringi_records (
-                 ringi_number, title, category, owner_name, owner_department,
+                 ringi_number, decision_type, title, category, owner_name, owner_department,
                  approved_at, backlog_issue_key, status, total_budget, remarks
                )
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
                ON CONFLICT (ringi_number) DO UPDATE SET
+                 decision_type     = EXCLUDED.decision_type,
                  title             = EXCLUDED.title,
                  category          = COALESCE(NULLIF(EXCLUDED.category, ''), ringi_records.category),
                  owner_name        = COALESCE(NULLIF(EXCLUDED.owner_name, ''), ringi_records.owner_name),
@@ -9523,9 +9592,10 @@ ${details}
                  total_budget      = COALESCE(EXCLUDED.total_budget, ringi_records.total_budget),
                  remarks           = COALESCE(NULLIF(EXCLUDED.remarks, ''), ringi_records.remarks),
                  updated_at        = CURRENT_TIMESTAMP
-               RETURNING id, ringi_number, title`,
+               RETURNING id, ringi_number, decision_type, title`,
               [
-                ringiNumber,
+                normalized,
+                decisionType,
                 title,
                 r.category || null,
                 r.owner_name || null,
@@ -10471,9 +10541,13 @@ ${details}
         ],
       },
       // Phase 17e: 稟議マスタ
+      // Phase 22.21.117: decision_type 列を追加 (ringi / board_resolution)。
+      //   ringi_number は 5 桁数字でも "R-NNNNN" / "B-NNNNN" でも OK。
+      //   5 桁数字なら decision_type に応じて自動プレフィックス。
       ringi: {
         headers: [
           "import_key",
+          "decision_type",
           "ringi_number",
           "title",
           "category",
@@ -10486,9 +10560,9 @@ ${details}
           "remarks",
         ],
         sample: [
-          ["RNG001", "00001", "商品開発稟議 ◯◯シリーズ", "商品開発", "田中 太郎", "商品企画部", "2024-04-01", "ARC-1001", "approved", "5000000", "Phase 1 開発予算"],
-          ["RNG002", "00002", "ライセンス取得稟議 (海外 IP)", "ライセンス取得", "鈴木 花子", "ライセンス部", "2024-05-15", "ARC-1050", "approved", "3000000", "Sample IP Co. との 3 年契約"],
-          ["RNG003", "00003", "業務委託案件 (翻訳)", "業務委託", "佐藤 一郎", "編集部", "2024-06-01", "", "open", "500000", "翻訳業者選定中"],
+          ["RNG001", "ringi", "R-00001", "商品開発稟議 ◯◯シリーズ", "商品開発", "田中 太郎", "商品企画部", "2024-04-01", "ARC-1001", "approved", "5000000", "Phase 1 開発予算"],
+          ["RNG002", "ringi", "00002", "ライセンス取得稟議 (海外 IP)", "ライセンス取得", "鈴木 花子", "ライセンス部", "2024-05-15", "ARC-1050", "approved", "3000000", "5 桁数字は ringi なら R- に自動プレフィックス"],
+          ["BRD001", "board_resolution", "B-00001", "取締役会決議 — 海外子会社設立", "経営", "高橋 部長", "経営企画部", "2024-04-15", "ARC-2001", "approved", "100000000", "2024 年度第 2 回取締役会"],
         ],
       },
       // Phase 14a: 売買基本契約書 (3 バリエーション統合, variant 列で振り分け)
