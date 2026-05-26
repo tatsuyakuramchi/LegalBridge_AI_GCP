@@ -246,8 +246,8 @@
     </div>
   </div>
 
-  {{!-- ── 製造イベント ── --}}
-  <div class="section-mark">■ 製造イベント</div>
+  {{!-- ── 利用概要 ── --}}
+  <div class="section-mark">■ 利用概要</div>
   <table style="margin-bottom:12px;">
     <tr>
       <td class="label">製品名</td>
@@ -377,6 +377,33 @@
       <td class="center">{{taxRate}}%</td>
     </tr>
   </table>
+
+  {{!-- Phase 22.21.103: 振込先口座 (取引先マスタから自動補完)。
+        bankName / branchName / accountType / accountNo / accountHolder
+        のいずれかが set されていればセクション全体を出す。 --}}
+  {{#if (or bankName accountNo accountHolder)}}
+  <div class="section-mark">■ 振込先口座 (取引先指定)</div>
+  <table style="margin-bottom:12px;">
+    <tr>
+      <td class="label">金融機関</td>
+      <td>{{bankName}}{{#if branchName}} {{branchName}}{{/if}}</td>
+      <td class="label" style="width:120px;">口座種別</td>
+      <td class="center" style="width:140px;">{{accountType}}</td>
+    </tr>
+    <tr>
+      <td class="label">口座番号</td>
+      <td><strong>{{accountNo}}</strong></td>
+      <td class="label">口座名義 (カナ)</td>
+      <td>{{accountHolder}}</td>
+    </tr>
+    {{#if invoiceRegistrationNumber}}
+    <tr>
+      <td class="label">インボイス登録番号</td>
+      <td colspan="3">{{invoiceRegistrationNumber}}</td>
+    </tr>
+    {{/if}}
+  </table>
+  {{/if}}
 
   {{!-- ── 支払金額サマリー ── --}}
   {{#if actualRoyalty}}

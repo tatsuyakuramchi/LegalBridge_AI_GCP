@@ -1460,6 +1460,29 @@ export function DocumentEditorPage() {
                           LICENSOR_SUFFIX: isCorp ? "御中" : "様",
                           LICENSOR_IS_CORPORATION: isCorp ? "法人" : "個人",
                           licensee: companyProfile?.name || prev.licensee || "",
+                          // Phase 22.21.103: 振込先口座を取引先マスタから自動補完
+                          bankName:
+                            (c as any).vendor_bank_name || prev.bankName || "",
+                          branchName:
+                            (c as any).vendor_branch_name ||
+                            prev.branchName ||
+                            "",
+                          accountType:
+                            (c as any).vendor_account_type ||
+                            prev.accountType ||
+                            "",
+                          accountNo:
+                            (c as any).vendor_account_number ||
+                            prev.accountNo ||
+                            "",
+                          accountHolder:
+                            (c as any).vendor_account_holder_kana ||
+                            prev.accountHolder ||
+                            "",
+                          invoiceRegistrationNumber:
+                            (c as any).vendor_invoice_registration_number ||
+                            prev.invoiceRegistrationNumber ||
+                            "",
                           originalWork:
                             ledger?.title ||
                             c.original_work ||

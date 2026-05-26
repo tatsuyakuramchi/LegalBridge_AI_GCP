@@ -2098,6 +2098,12 @@ async function startServer() {
         result = await query(
           `SELECT cc.*, v.vendor_name,
                   v.entity_type AS vendor_entity_type,
+                  v.bank_name AS vendor_bank_name,
+                  v.branch_name AS vendor_branch_name,
+                  v.account_type AS vendor_account_type,
+                  v.account_number AS vendor_account_number,
+                  v.account_holder_kana AS vendor_account_holder_kana,
+                  v.invoice_registration_number AS vendor_invoice_registration_number,
                   COALESCE(
                     (
                       SELECT json_agg(
@@ -2137,6 +2143,12 @@ async function startServer() {
           result = await query(
             `SELECT cc.*, v.vendor_name,
                     v.entity_type AS vendor_entity_type,
+                    v.bank_name AS vendor_bank_name,
+                    v.branch_name AS vendor_branch_name,
+                    v.account_type AS vendor_account_type,
+                    v.account_number AS vendor_account_number,
+                    v.account_holder_kana AS vendor_account_holder_kana,
+                    v.invoice_registration_number AS vendor_invoice_registration_number,
                     '[]'::json AS financial_conditions
              FROM contract_capabilities cc
              LEFT JOIN vendors v ON cc.vendor_id = v.id

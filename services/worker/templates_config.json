@@ -302,6 +302,13 @@
       "reportingDeadline": { "label": "報告期限", "group": "VI. 報告・支払", "type": "date" },
       "paymentDueDate": { "label": "支払期日", "group": "VI. 報告・支払", "type": "date" },
 
+      "bankName": { "label": "金融機関名", "group": "VI. 報告・支払", "helpText": "Phase 22.21.103: 取引先マスタから自動補完" },
+      "branchName": { "label": "支店名", "group": "VI. 報告・支払" },
+      "accountType": { "label": "口座種別", "group": "VI. 報告・支払" },
+      "accountNo": { "label": "口座番号", "group": "VI. 報告・支払" },
+      "accountHolder": { "label": "口座名義 (カナ)", "group": "VI. 報告・支払" },
+      "invoiceRegistrationNumber": { "label": "インボイス登録番号", "group": "VI. 報告・支払" },
+
       "notes": { "label": "備考", "group": "VII. 備考 (任意)", "type": "textarea" }
     }
   },

@@ -477,6 +477,28 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     if (!formData.licensor && c.vendor_name) {
       patch.licensor = c.vendor_name;
     }
+    // Phase 22.21.103: 振込先口座 (古い draft も自動補完)
+    if (!formData.bankName && c.vendor_bank_name) {
+      patch.bankName = c.vendor_bank_name;
+    }
+    if (!formData.branchName && c.vendor_branch_name) {
+      patch.branchName = c.vendor_branch_name;
+    }
+    if (!formData.accountType && c.vendor_account_type) {
+      patch.accountType = c.vendor_account_type;
+    }
+    if (!formData.accountNo && c.vendor_account_number) {
+      patch.accountNo = c.vendor_account_number;
+    }
+    if (!formData.accountHolder && c.vendor_account_holder_kana) {
+      patch.accountHolder = c.vendor_account_holder_kana;
+    }
+    if (
+      !formData.invoiceRegistrationNumber &&
+      c.vendor_invoice_registration_number
+    ) {
+      patch.invoiceRegistrationNumber = c.vendor_invoice_registration_number;
+    }
 
     if (Object.keys(patch).length > 0) {
       setFormData({ ...formData, ...patch });
@@ -488,6 +510,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     formData.linked_contract_number,
     formData.LICENSOR_SUFFIX,
     formData.licensor,
+    formData.bankName,
+    formData.accountNo,
     allContracts.length,
   ]);
 
@@ -2468,6 +2492,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         LICENSOR_SUFFIX: licensorSuffix,
         LICENSOR_IS_CORPORATION: isCorporate ? '法人' : '個人',
         licensee: companyProfile?.name || formData.licensee || '',
+        // Phase 22.21.103: 振込先口座を取引先マスタから自動補完
+        //   (取引先 vendors テーブルの bank 情報を PDF テンプレ用に流し込む)
+        bankName: (c as any).vendor_bank_name || formData.bankName || '',
+        branchName: (c as any).vendor_branch_name || formData.branchName || '',
+        accountType: (c as any).vendor_account_type || formData.accountType || '',
+        accountNo: (c as any).vendor_account_number || formData.accountNo || '',
+        accountHolder:
+          (c as any).vendor_account_holder_kana || formData.accountHolder || '',
+        invoiceRegistrationNumber:
+          (c as any).vendor_invoice_registration_number ||
+          formData.invoiceRegistrationNumber ||
+          '',
         // 原著作物 (ledger から)
         originalWork:
           ledger?.title ||
