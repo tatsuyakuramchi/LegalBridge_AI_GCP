@@ -211,7 +211,9 @@
           ・T番号 (licensor_t_number) は実 Backlog 課題キーのときだけ表示
             合成キー (LEGAL-* / IMPORT-* 等) は worker で空文字化される --}}
     <div class="vendor-section">
-      <div class="vendor-name">{{licensor}}{{#if licensor}}{{#if LICENSOR_SUFFIX}} {{LICENSOR_SUFFIX}}{{else}} 御中{{/if}}{{/if}}</div>
+      {{!-- Phase 22.21.100: LICENSOR_SUFFIX はフォームで必ず set されるので
+            旧 fallback (御中) を廃止。万一未 set の場合は何も付けない。 --}}
+      <div class="vendor-name">{{licensor}}{{#if LICENSOR_SUFFIX}} {{LICENSOR_SUFFIX}}{{/if}}</div>
       {{#if VENDOR_REPRESENTATIVE_SAMA}}
       <div style="margin-top:6px; font-size:9.5pt;">{{VENDOR_REPRESENTATIVE_SAMA}}</div>
       {{/if}}

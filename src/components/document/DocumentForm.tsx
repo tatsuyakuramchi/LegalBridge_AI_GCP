@@ -2674,14 +2674,39 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   <Label className="text-[10px] font-mono opacity-70">
                     ライセンサー (取引先 — 自動入力)
                   </Label>
-                  <Input
-                    value={formData.licensor || ''}
-                    onChange={(e) =>
-                      setFormData({ ...formData, licensor: e.target.value })
-                    }
-                    className="text-xs"
-                    placeholder="契約マスタから自動入力"
-                  />
+                  <div className="flex items-center gap-1.5">
+                    <Input
+                      value={formData.licensor || ''}
+                      onChange={(e) =>
+                        setFormData({ ...formData, licensor: e.target.value })
+                      }
+                      className="text-xs flex-1"
+                      placeholder="契約マスタから自動入力"
+                    />
+                    {/* Phase 22.21.100: 敬称 (御中/様) を目視確認 + 手動上書き。
+                        master の entity_type から自動セットされるが、
+                        誤分類されている場合や master の登録が不完全な場合に
+                        この select で即修正できる。 */}
+                    <select
+                      value={formData.LICENSOR_SUFFIX || '様'}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          LICENSOR_SUFFIX: e.target.value,
+                          LICENSOR_IS_CORPORATION:
+                            e.target.value === '御中' ? '法人' : '個人',
+                        })
+                      }
+                      className="text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-background focus:outline-none focus:border-foreground flex-shrink-0"
+                      title="法人なら『御中』、個人なら『様』"
+                    >
+                      <option value="様">様 (個人)</option>
+                      <option value="御中">御中 (法人)</option>
+                    </select>
+                  </div>
+                  <p className="text-[10px] font-mono text-muted-foreground/70">
+                    取引先マスタの 法人/個人 区分から自動判定 (上書き可)
+                  </p>
                   <Input
                     value={formData.VENDOR_REPRESENTATIVE_SAMA || ''}
                     onChange={(e) =>
