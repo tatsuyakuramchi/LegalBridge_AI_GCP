@@ -175,14 +175,24 @@ export class ExcelService {
     let reimbursement = 0;
     let subtotal = 0;
 
+    // Phase 22.21.109: 支払スロットの金額を税込に変更。
+    //   - 単価は 税抜 のまま (実勢単価。数量との掛け算は崩れるが運用優先)
+    //   - 金額 = 税込 (= 税抜 × (1 + taxRate/100), ceil)
+    //   - 小計 = 税込合計
+    //   - 源泉徴収 = 税込小計 × 10.21% (100万超は超過分 20.42%)
+    //   - 税引後 = 税込小計 − 源泉
+    //   - 差引振込額 = 税引後 + 立替金 (経費税込)
+    const taxRatePct = num(formData.taxRate) || (formData.isReducedTax ? 8 : 10);
+    const toIncTax = (exTax: number): number =>
+      Math.ceil(exTax * (1 + taxRatePct / 100));
+
     if (isInspection) {
       // ── 検収書 ─────────────────────────────────
-      // Phase 22.21.105: スロット詰め込み順をユーザー確定仕様に変更
+      // Phase 22.21.105: スロット詰め込み順
       //   ① 業務明細 (delivery_line_items) を先に詰める
-      //   ② その他手数料 (other_fees, 税抜) を続けて同じスロットに詰める
-      //   ③ 5 スロット超過分は無視 (overflow 警告は出さない方針)
+      //   ② その他手数料 (other_fees) を続けて同じスロットに詰める
+      //   ③ 5 スロット超過分は無視
       //   ④ 経費・交通費 (expenses, 税込) は合算して「立替金」へ
-      //   小計 = items 合算 (= 業務明細 + 手数料, 税抜)
       summary =
         formData.PROJECT_TITLE ||
         formData.summary ||
@@ -205,24 +215,25 @@ export class ExcelService {
 
       if (lines.length > 0) {
         for (const l of lines) {
+          const amtExTax = num(l.inspected_amount_ex_tax || l.amount_ex_tax);
           combined.push({
             content: l.item_name || l.description || '',
-            unit_price: num(l.unit_price),
+            unit_price: num(l.unit_price), // 税抜 単価
             quantity: num(l.quantity),
-            amount: num(l.inspected_amount_ex_tax || l.amount_ex_tax),
+            amount: toIncTax(amtExTax), // 税込
             delivery_date: isoDate(l.delivery_date),
           });
         }
       } else {
-        // 自由入力フォールバック (単一明細) — delivery_line_items が空のとき
-        const amt = num(formData.deliveredAmountStr);
-        if (amt > 0 || formData.description) {
+        // 自由入力フォールバック (単一明細)
+        const amtExTax = num(formData.deliveredAmountStr);
+        if (amtExTax > 0 || formData.description) {
           combined.push({
             content:
               formData.description || formData.itemName || '検収内容',
-            unit_price: amt,
+            unit_price: amtExTax,
             quantity: 1,
-            amount: amt,
+            amount: toIncTax(amtExTax),
             delivery_date: isoDate(
               formData.deliveryDate || formData.documentDate
             ),
@@ -230,23 +241,21 @@ export class ExcelService {
         }
       }
 
-      // その他手数料を続けて詰める (= 業務明細の後に「手数料」スロット)
-      // InspectionOtherFee shape: { line_no, fee_name, amount, remarks? }
+      // その他手数料: { line_no, fee_name, amount(税抜), remarks? }
       for (const f of otherFees) {
-        const feeAmount = num(f.amount);
+        const feeExTax = num(f.amount);
         combined.push({
           content: f.fee_name || f.label || f.description || '手数料',
-          unit_price: feeAmount,
+          unit_price: feeExTax, // 税抜
           quantity: 1,
-          amount: feeAmount,
+          amount: toIncTax(feeExTax), // 税込
           delivery_date: isoDate(formData.documentDate),
         });
       }
 
       items = combined.slice(0, 5);
 
-      // 立替金 = 経費 (税込) 合算。formData.expensesTotalIncTax を優先、
-      // 無ければ expenses 配列をフォールバック計算。
+      // 立替金 = 経費 (税込) 合算
       let reimburseSum = num(formData.expensesTotalIncTax);
       if (!reimburseSum && Array.isArray(formData.expenses)) {
         reimburseSum = formData.expenses.reduce(
@@ -257,11 +266,10 @@ export class ExcelService {
       }
       reimbursement = reimburseSum;
 
-      // 小計 = 業務明細 + 手数料 (税抜) の合算。立替金は含めない。
-      subtotal = items.reduce((s, it) => s + it.amount, 0);
+      // 小計 = 税込 items 合算
+      subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
     } else if (isRoyalty) {
       // ── 利用許諾料計算書 ───────────────────────
-      // 行 1 にグロス計算、行 2-5 は空 (ユーザー回答に従う)
       summary = (formData.originalWork || '') + ' 利用許諾料';
       payment_date = isoDate(
         formData.paymentDueDate || formData.documentDate
@@ -272,26 +280,33 @@ export class ExcelService {
         (formData.productName || '') +
         (formData.edition ? `（${formData.edition}）` : '') +
         ' 利用許諾料';
-      // 単価 = MSRP × 料率 (実効単価相当)、数量 = 課金対象、金額 = 実支払
-      const unit = num(formData.msrpStr);
+      const unit = num(formData.msrpStr); // 税抜 単価 (= MSRP)
       const qty = num(formData.billableQuantity);
-      const amount = num(formData.actualRoyaltyStr) || num(formData.actualRoyalty);
-      if (amount > 0 || unit > 0) {
+      // 実支払 (税抜) → 税込
+      const actualExTax =
+        num(formData.actualRoyaltyStr) || num(formData.actualRoyalty);
+      // formData.totalPaymentStr が既に 税込 計算されているのでそれを優先
+      const actualIncTax =
+        num(formData.totalPaymentStr) || toIncTax(actualExTax);
+
+      if (actualIncTax > 0 || unit > 0) {
         items = [
           {
             content,
-            unit_price: unit,
+            unit_price: unit, // 税抜
             quantity: qty,
-            amount,
+            amount: actualIncTax, // 税込
             delivery_date: isoDate(formData.completionDate),
           },
         ];
       }
       reimbursement = 0;
-      subtotal = amount;
+      subtotal = actualIncTax;
     }
 
-    // 源泉徴収 (10.21% / 20.42% の段階課税)
+    // Phase 22.21.109: 源泉徴収 = 税込小計 × 税率
+    //   - 税込 100 万円以下 → 10.21%
+    //   - 100 万円超     → 1,000,000 × 10.21% + (超過分 × 20.42%)
     let withholding_tax = 0;
     if (vendor?.withholding_enabled === true && subtotal > 0) {
       const threshold = 1_000_000;
