@@ -191,11 +191,18 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
         <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground flex items-center gap-1.5">
           <FileText className="w-3 h-3" />
           稟議番号
-          <span className="text-[9px] opacity-70">(5 桁数字 / 複数登録可)</span>
+          {/* Phase 22.21.118: 任意項目であることを明示 */}
+          <span className="text-[9px] opacity-70">
+            (任意 / R-NNNNN・B-NNNNN・5 桁数字 / 複数登録可)
+          </span>
         </div>
-        {normalized.length > 0 && (
+        {normalized.length > 0 ? (
           <span className="text-[9px] font-mono text-emerald-700">
             {normalized.length} 件 紐付け済み
+          </span>
+        ) : (
+          <span className="text-[9px] font-mono text-muted-foreground opacity-70">
+            未入力でも保存可
           </span>
         )}
       </div>

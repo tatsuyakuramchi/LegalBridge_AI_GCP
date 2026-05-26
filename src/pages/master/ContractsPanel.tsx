@@ -585,7 +585,10 @@ export function ContractsPanel() {
             {/* Phase 22.21.115: 稟議番号 (発注書 / 個別利用許諾と同 UI)。
                 保存時に Worker 側で documents 行を upsert + ringi_documents
                 テーブルに N:N リンク。GET 時にも array_agg で復元される。 */}
-            <Field label="稟議番号 (複数可)" className="col-span-2 md:col-span-3">
+            <Field
+              label="稟議番号 (任意・複数可)"
+              className="col-span-2 md:col-span-3"
+            >
               <RingiSelector
                 value={
                   Array.isArray(data?.ringi_numbers) ? data.ringi_numbers : []
@@ -593,8 +596,10 @@ export function ContractsPanel() {
                 onChange={(next) => set({ ringi_numbers: next })}
               />
               <p className="text-[10px] font-mono text-muted-foreground mt-1">
-                稟議マスタに登録済みの 5 桁番号を選択。保存時に N:N で紐付き、
-                ダッシュボード等で「この稟議に紐づく契約」として参照可能になります。
+                Phase 22.21.118: 任意項目です。稟議マスタに登録済みの番号
+                (R-NNNNN / B-NNNNN / 5 桁数字) を選択すると、保存時に N:N で
+                紐付き、ダッシュボード等で「この稟議に紐づく契約」として
+                参照可能になります。
               </p>
             </Field>
             {/* Phase 22.21.61: 過去のアーカイブをマスター番号に合わせる手動同期セクション。
