@@ -10513,47 +10513,114 @@ ${details}
 
       // Phase 22.21.104: 検収書 / 利用許諾料計算書 は会計用 Excel も同時に
       //   生成して Drive にアップ。失敗しても PDF 生成は成功扱い (warning へ)。
+      // Phase 22.21.107: vendor lookup を強化 (selected_master_contract_id
+      //   → contract_capabilities.vendor_id 経由を最優先) + 個人取引先は
+      //   withholding_enabled 未設定でも源泉対象とみなす。
       let excelLink: string | null = null;
       try {
         const wantsExcel =
           String(templateType || "").startsWith("inspection_certificate") ||
           templateType === "royalty_statement";
         if (wantsExcel) {
-          // 源泉徴収判定のため vendor 行を 1 件引く (vendor_code 優先、
-          // 無ければ vendor_name で部分一致)。withholding_enabled が
-          // 取れないと源泉徴収は 0 のまま出力される。
           let vendorRow: any = null;
-          const vcode =
-            (formData?.VENDOR_CODE as string) || "";
-          const vname =
-            (formData?.VENDOR_NAME as string) ||
-            (formData?.counterparty as string) ||
-            (formData?.licensor as string) ||
-            "";
-          if (vcode) {
+
+          // (1) 最優先: selected_master_contract_id → vendor_id 経由
+          //   royalty_statement / inspection_certificate で contract マスタを
+          //   選択しているケースは確実にここで vendor を特定できる。
+          const masterId = Number(formData?.selected_master_contract_id) || 0;
+          if (masterId > 0) {
             const r = await query(
-              `SELECT vendor_code, vendor_name, account_holder_kana,
-                      withholding_enabled
-                 FROM vendors WHERE vendor_code = $1 LIMIT 1`,
-              [vcode]
+              `SELECT v.vendor_code, v.vendor_name, v.entity_type,
+                      v.account_holder_kana, v.withholding_enabled
+                 FROM contract_capabilities cc
+                 LEFT JOIN vendors v ON v.id = cc.vendor_id
+                WHERE cc.id = $1 LIMIT 1`,
+              [masterId]
             );
-            vendorRow = r.rows[0] || null;
+            if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
           }
-          if (!vendorRow && vname) {
-            const r = await query(
-              `SELECT vendor_code, vendor_name, account_holder_kana,
-                      withholding_enabled
-                 FROM vendors WHERE vendor_name = $1 LIMIT 1`,
-              [vname]
-            );
-            vendorRow = r.rows[0] || null;
+
+          // (2) parent_po_id → order_items.vendor_code → vendors
+          //   検収書: 親 PO 経由で vendor を引く
+          if (!vendorRow) {
+            const poId = Number(formData?.parent_po_id) || 0;
+            if (poId > 0) {
+              const r = await query(
+                `SELECT v.vendor_code, v.vendor_name, v.entity_type,
+                        v.account_holder_kana, v.withholding_enabled
+                   FROM order_items oi
+                   LEFT JOIN vendors v ON v.vendor_code = oi.vendor_code
+                  WHERE oi.id = $1 LIMIT 1`,
+                [poId]
+              );
+              if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
+            }
           }
+
+          // (3) vendor_code 直接指定 (CSV import 等)
+          if (!vendorRow) {
+            const vcode = (formData?.VENDOR_CODE as string) || "";
+            if (vcode) {
+              const r = await query(
+                `SELECT vendor_code, vendor_name, entity_type,
+                        account_holder_kana, withholding_enabled
+                   FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+                [vcode]
+              );
+              vendorRow = r.rows[0] || null;
+            }
+          }
+
+          // (4) 最終フォールバック: vendor_name 完全一致
+          if (!vendorRow) {
+            const vname =
+              (formData?.VENDOR_NAME as string) ||
+              (formData?.counterparty as string) ||
+              (formData?.licensor as string) ||
+              "";
+            if (vname) {
+              const r = await query(
+                `SELECT vendor_code, vendor_name, entity_type,
+                        account_holder_kana, withholding_enabled
+                   FROM vendors WHERE vendor_name = $1 LIMIT 1`,
+                [vname]
+              );
+              vendorRow = r.rows[0] || null;
+            }
+          }
+
+          // Phase 22.21.107: 個人取引先 (entity_type='個人' or 'individual')
+          //   なら withholding_enabled が false/null でも源泉対象とみなす。
+          //   これにより取引先マスタの withholding_enabled 設定漏れを
+          //   救済する (個人への支払は原則源泉徴収が必要)。
+          if (vendorRow) {
+            const et = String(vendorRow.entity_type || "").toLowerCase();
+            const isIndividual = et === "個人" || et === "individual";
+            if (isIndividual && vendorRow.withholding_enabled !== true) {
+              vendorRow = { ...vendorRow, withholding_enabled: true };
+            }
+          }
+
+          console.log(
+            `[Phase 22.21.107] Excel vendor lookup for ${docNumber}: ` +
+              `templateType=${templateType}, masterId=${masterId}, ` +
+              `vendor_code=${vendorRow?.vendor_code || "(not found)"}, ` +
+              `entity_type=${vendorRow?.entity_type || "(none)"}, ` +
+              `withholding_enabled=${vendorRow?.withholding_enabled === true}`
+          );
+
           const xlData = excelService.buildFromFormData(
             formData || {},
             String(templateType || ""),
             vendorRow
           );
           if (xlData) {
+            console.log(
+              `[Phase 22.21.107] Excel calc result for ${docNumber}: ` +
+                `subtotal=${xlData.subtotal}, withholding_tax=${xlData.withholding_tax}, ` +
+                `after_tax=${xlData.after_tax}, reimbursement=${xlData.reimbursement}, ` +
+                `net_transfer=${xlData.net_transfer_amount}`
+            );
             const buffer = excelService.generateInspectionExcel(xlData);
             const xlsxName = fileName.replace(/\.pdf$/i, "") + ".xlsx";
             const { Readable } = await import("stream");
