@@ -26,7 +26,11 @@ import {
   type FinancialCondition,
 } from './FinancialConditionTable';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
-import { ParentPoPicker, type PoLoaded } from './ParentPoPicker';
+// Phase 23: ParentPoPicker は UnifiedContractPicker に統合済み。
+import {
+  UnifiedContractPicker,
+  type ContractDetail,
+} from './UnifiedContractPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
@@ -1247,6 +1251,52 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </div>
 
+        {/* 0. 基本契約ピッカー (Phase 23: 統一ピッカー)
+            業務委託基本契約を選ぶと HAS_BASE_CONTRACT / MASTER_CONTRACT_REF /
+            MASTER_CONTRACT_NUMBER / MASTER_CONTRACT_LINK が埋まる。
+            折りたたみで「業務委託基本契約 (任意)」として配置。 */}
+        <FormSection
+          title="0. 業務委託基本契約を選ぶ (任意)"
+          variant="emerald"
+          icon={<Link className="w-4 h-4" />}
+        >
+          <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
+            この発注書を紐づけたい基本契約があれば選択してください。選択すると
+            PDF テンプレに「基本契約: …」として反映されます。
+            通常は取引先を選ぶと自動補完されます。
+          </p>
+          <UnifiedContractPicker
+            acceptableRecordTypes={["master_contract"]}
+            categoryFilter={["service"]}
+            currentContractId={
+              Number(formData.MASTER_CONTRACT_CAPABILITY_ID) || undefined
+            }
+            hasParent={!!formData.MASTER_CONTRACT_NUMBER}
+            label="業務委託基本契約を選ぶ"
+            onPick={(detail) => {
+              const c = detail.contract;
+              setFormData({
+                ...formData,
+                HAS_BASE_CONTRACT: true,
+                MASTER_CONTRACT_CAPABILITY_ID: c.id,
+                MASTER_CONTRACT_REF: `${c.contract_title} (${c.document_number})`,
+                MASTER_CONTRACT_NUMBER: c.document_number,
+                MASTER_CONTRACT_LINK: detail.drive_link || formData.MASTER_CONTRACT_LINK,
+              });
+            }}
+            onClear={() => {
+              setFormData({
+                ...formData,
+                HAS_BASE_CONTRACT: false,
+                MASTER_CONTRACT_CAPABILITY_ID: undefined,
+                MASTER_CONTRACT_REF: "",
+                MASTER_CONTRACT_NUMBER: "",
+                MASTER_CONTRACT_LINK: "",
+              });
+            }}
+          />
+        </FormSection>
+
         {/* I. 発注概要 */}
         <FormSection
           title="I. 発注概要"
@@ -1988,63 +2038,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     //   Step 3 — 検収者 (inspectorName) 必須
     //   Step 4 — 発行日 (documentDate) 必須
     const hasParentPo = !!formData.parent_po_id;
-    // Phase 22.21.121: 業務委託マスタを「正」として PO 表示を上書き。
-    //   selected_master_contract_id があれば allContracts から master を引き、
-    //   その capability_line_items を order_lines_for_inspection 形式に変換した
-    //   ものを表示の "効果的なライン" として使う。
-    //   PO はバックエンドリンク (parent_po_id) としては残るが、
-    //   画面表示はマスタが優先される。
-    const masterContractId =
-      Number(formData.selected_master_contract_id) || 0;
-    const masterContractRecord =
-      masterContractId > 0
-        ? (allContracts || []).find(
-            (c: any) => Number(c.id) === masterContractId
-          )
-        : null;
-    const masterLineItems =
-      masterContractRecord &&
-      Array.isArray((masterContractRecord as any).line_items)
-        ? ((masterContractRecord as any).line_items as any[])
-        : [];
-    const masterEffectiveLines =
-      masterLineItems.length > 0
-        ? masterLineItems.map((l: any, idx: number) => ({
-            line_no: Number(l.line_no) || idx + 1,
-            item_name: l.item_name || "",
-            spec: l.spec || "",
-            category: l.category || "",
-            calc_method: l.calc_method || "FIXED",
-            quantity: Number(l.quantity) || 0,
-            unit_price: Number(l.unit_price) || 0,
-            amount_ex_tax: Number(l.amount_ex_tax) || 0,
-            delivery_date: l.delivery_date || "",
-            payment_date: l.payment_date || "",
-            payment_terms: l.payment_terms || "",
-            payment_method: l.payment_method || "",
-            cycle: l.cycle || "",
-            billing_day: l.billing_day || "",
-            term_start: l.term_start || "",
-            term_end: l.term_end || "",
-            // PO 表示と互換: inspected_amount / remaining_amount は未使用 0
-            ordered_amount_ex_tax: Number(l.amount_ex_tax) || 0,
-            inspected_amount_so_far: 0,
-            remaining_amount_ex_tax: Number(l.amount_ex_tax) || 0,
-          }))
-        : null;
-
-    // 効果的な明細表 (= マスタ優先, 無ければ PO の order_lines_for_inspection)
-    const effectiveOrderLines = masterEffectiveLines
-      ? masterEffectiveLines
-      : Array.isArray(formData.order_lines_for_inspection)
-        ? formData.order_lines_for_inspection
-        : [];
-    const displaySource: "master" | "po" | "free" =
-      masterEffectiveLines && masterEffectiveLines.length > 0
-        ? "master"
-        : effectiveOrderLines.length > 0
-          ? "po"
-          : "free";
+    // Phase 23: UnifiedContractPicker で 発注書 / 個別契約 / 単独契約 が
+    //   parent_po_id (= contract_capabilities.id) + order_lines_for_inspection
+    //   に一本化された。旧 selected_master_contract_id 分岐は廃止。
+    const effectiveOrderLines = Array.isArray(formData.order_lines_for_inspection)
+      ? formData.order_lines_for_inspection
+      : [];
+    const displaySource: "po" | "free" =
+      effectiveOrderLines.length > 0 ? "po" : "free";
 
     const deliveryLines = Array.isArray(formData.delivery_line_items)
       ? formData.delivery_line_items
@@ -2054,8 +2055,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     );
     const step2DoneViaFree =
       !!formData.deliveredAmountStr || !!formData.description;
-    // Phase 22.21.121: PO 連動 / マスタ選択 のいずれかで step1 完了扱い。
-    const hasMasterOrPo = hasParentPo || masterContractId > 0;
+    const hasMasterOrPo = hasParentPo;
     const stepStatus = {
       step1: hasMasterOrPo,
       step2: hasMasterOrPo ? step2DoneViaLines : step2DoneViaFree,
@@ -2094,180 +2094,133 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </div>
 
-        {/* ─── STEP 1 ─ 親 PO を選択 ────────────────────────── */}
+        {/* ─── STEP 1 ─ 親契約を選択 (Phase 23: 統一ピッカー) ─────────── */}
         <FormSection
-          title="ステップ 1 — 親 PO (発注書) または 業務委託マスタ を選択"
+          title="ステップ 1 — 親契約 (発注書 / 業務委託契約) を選択"
           variant="indigo"
           icon={<Briefcase className="w-4 h-4" />}
-          headerActions={
-            onOpenLegalAssetSearch && (
-              <button
-                type="button"
-                onClick={onOpenLegalAssetSearch}
-                className="text-[9px] font-mono uppercase tracking-wider border border-emerald-700/40 bg-emerald-50 text-emerald-800 hover:bg-emerald-100 px-2.5 py-1 rounded-sm flex items-center gap-1"
-                title="業務委託マスタ / Archive 発注書を検索 (= 右サイドバー Search Legal Assets と同じ)"
-              >
-                <Link className="w-2.5 h-2.5" />
-                マスタ / 発注書を検索
-              </button>
-            )
-          }
         >
           <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
-            <strong>受託者・明細・経費・手数料は親 PO または 業務委託マスタから
-            自動入力されます。</strong>
+            <strong>受託者・明細・経費・手数料は親契約から自動入力されます。</strong>
             <br />
-            通常は Backlog 親子関係から PO が自動発見されます。
-            親子未設定 / IMPORT-* は下のピッカーで選択。
-            <br />
-            <strong>※ 業務委託マスタを優先したい場合は、上の
-            「🔗 マスタ / 発注書を検索」ボタンから master を選択してください。</strong>
-            マスタが選択されると「ステップ 2 検収内容」はマスタの業務明細を
-            「正」として表示します (PO は裏のリンクとしてのみ残ります)。
+            発注書 / 業務委託の個別契約・単独契約 を 1 つのピッカーから検索できます。
+            インポート由来 (IMPORT-*) の契約も同じ画面で出ます。
           </p>
-          {/* Phase 22.21.121: マスタ選択中バッジ */}
-          {masterContractId > 0 && masterContractRecord && (
-            <div className="mb-2 px-3 py-2 rounded-sm border border-emerald-300 bg-emerald-50 text-[10px] font-mono text-emerald-900 leading-relaxed flex items-center justify-between gap-2">
-              <span>
-                📘 業務委託マスタ{" "}
-                <strong>
-                  {(masterContractRecord as any).document_number}
-                </strong>{" "}
-                ({(masterContractRecord as any).contract_title}) を「正」として
-                表示中
-              </span>
-              <button
-                type="button"
-                onClick={() =>
-                  setFormData({
-                    ...formData,
-                    selected_master_contract_id: 0,
-                    linked_contract_number: "",
-                  })
-                }
-                className="text-[10px] font-mono px-2 py-0.5 border border-emerald-700/40 rounded-sm hover:bg-emerald-100 flex-shrink-0"
-                title="マスタ参照を解除して PO 表示に戻す"
-              >
-                ↩ マスタ解除
-              </button>
-            </div>
-          )}
-          {/* Phase 8c: 親 PO ピッカー — Backlog 親子経由で自動発見できない
-            ケース (IMPORT-* PO / 親子未設定) のためのフォールバック手段。
-            form-context が既に親 PO を載せていても、ここで上書き可能。 */}
-        <ParentPoPicker
-          currentKey={formData.parent_po_issue_key}
-          hasParent={
-            Array.isArray(formData.order_lines_for_inspection) &&
-            formData.order_lines_for_inspection.length > 0
-          }
-          onPick={(loaded: PoLoaded) => {
-            // Phase 9c/f: 親 PO 選択時に PDF が必要とする全フィールドを一括流し込み
-            const firstLine = loaded.line_items?.[0];
-            const v = loaded.vendor || {};
-            const isCorp =
-              (v.entity_type || '').toLowerCase() === 'corporate' ||
-              v.entity_type === '法人';
-            const repName = v.vendor_rep || v.contact_name || '';
-            const todayIso = new Date().toISOString().slice(0, 10);
-            const poHeader = loaded.raw?.order_item || {};
-            const prog = loaded.delivery_progress;
+          <UnifiedContractPicker
+            acceptableRecordTypes={[
+              "purchase_order",
+              "individual_contract",
+              "standalone_contract",
+            ]}
+            categoryFilter={["service"]}
+            currentContractId={Number(formData.parent_po_id) || undefined}
+            hasParent={!!formData.parent_po_id}
+            label="親契約 (発注書 / 業務委託) を選ぶ"
+            onPick={(detail: ContractDetail) => {
+              const c = detail.contract;
+              const v = detail.vendor || {};
+              const isCorp =
+                (v.entity_type || "").toLowerCase() === "corporate" ||
+                v.entity_type === "法人";
+              const repName = v.vendor_rep || v.contact_name || "";
+              const todayIso = new Date().toISOString().slice(0, 10);
+              const firstLine = detail.line_items?.[0];
+              const prog = detail.delivery_progress;
 
-            setFormData({
-              ...formData,
-              parent_po_id: loaded.order_item_id,
-              parent_po_issue_key: loaded.backlog_issue_key,
-              parent_po_number: loaded.document_number || '',
-              order_lines_for_inspection: loaded.line_items,
-              // 発注情報セクション
-              orderDate: poHeader.due_date || poHeader.created_at || '',
-              itemCount: String((loaded.line_items || []).length || 1),
-              itemNo: formData.itemNo || '1',
-              // Phase 9h: 親 PO の tax_rate を優先採用
-              taxRate: String(poHeader.tax_rate || formData.taxRate || 10),
-              // 検収書発行日 (未入力なら今日で初期化)
-              documentDate: formData.documentDate || todayIso,
-              // Phase 9f: 分割検収サポート — 既存検収件数 +1 を採番、
-              // 進捗バー用の値もまとめてセット
-              ...(prog && {
-                deliveryNo: String(prog.next_delivery_no),
-                isPartial:
-                  prog.is_partial || prog.next_delivery_no > 1
-                    ? '分割'
-                    : '完了',
-                inspectedAmountStr: prog.done_amount_ex_tax.toLocaleString('ja-JP'),
-                pendingAmountStr: prog.remaining_amount_ex_tax.toLocaleString('ja-JP'),
-                totalOrderAmountStr: (
-                  prog.done_amount_ex_tax + prog.remaining_amount_ex_tax
-                ).toLocaleString('ja-JP'),
-                inspectedPct: String(prog.inspected_pct),
-              }),
-              // 今回納品内容: 第 1 行を default 補完 (multi-line PO は適宜手動編集)
-              description:
-                formData.description || (firstLine?.item_name || ''),
-              spec: formData.spec || (firstLine?.spec || ''),
-              // 取引先情報 (PO の vendor_code から JOIN)
-              ...(v.vendor_name && {
-                counterparty: formData.counterparty || v.vendor_name,
-                COUNTERPARTY_IS_CORPORATION: isCorp ? '法人' : '個人',
-                counterpartyRep: formData.counterpartyRep || repName,
-                counterpartyRepresentativeSama:
-                  formData.counterpartyRepresentativeSama ||
-                  (repName ? `${repName} 様` : ''),
-                counterpartyTni:
-                  formData.counterpartyTni ||
-                  v.invoice_registration_number ||
-                  '',
-                bankName: formData.bankName || v.bank_name || '',
-                branchName: formData.branchName || v.branch_name || '',
-                accountType: formData.accountType || v.account_type || '',
-                accountNo: formData.accountNo || v.account_number || '',
-                accountHolder:
-                  formData.accountHolder || v.account_holder_kana || '',
-              }),
-              // 親を切り替えたら検収入力は一旦リセット (overflow 整合のため)
-              delivery_line_items: [],
-              deliveredAmountStr: '',
-              // Phase 17m: 親 PO の経費（精算候補）も流し込む
-              po_expenses: Array.isArray(loaded.expenses) ? loaded.expenses : [],
-              selectedExpenseLineNos: [],
-              isFinalInspection: false,
-              expenses: [],
-              expensesTotalIncTax: 0,
-              // Phase 22.21.57: 親 PO のその他手数料 (精算候補) も流し込む
-              po_other_fees: Array.isArray((loaded as any).other_fees)
-                ? (loaded as any).other_fees
-                : [],
-              selectedOtherFeeLineNos: [],
-              other_fees: [],
-              otherFeesTotal: 0,
-            });
-          }}
-          onClear={() => {
-            setFormData({
-              ...formData,
-              parent_po_id: undefined,
-              parent_po_issue_key: undefined,
-              order_lines_for_inspection: [],
-              delivery_line_items: [],
-              // Phase 17m: 経費精算もクリア
-              po_expenses: [],
-              selectedExpenseLineNos: [],
-              isFinalInspection: false,
-              expenses: [],
-              expensesTotalIncTax: 0,
-              // Phase 22.21.57: 手数料もクリア
-              po_other_fees: [],
-              selectedOtherFeeLineNos: [],
-              other_fees: [],
-              otherFeesTotal: 0,
-            });
-          }}
-        />
+              setFormData({
+                ...formData,
+                parent_po_id: c.id,
+                parent_po_issue_key: c.backlog_issue_key,
+                parent_po_number: c.document_number || "",
+                parent_contract_record_type: c.record_type,
+                order_lines_for_inspection: detail.line_items,
+                orderDate: c.due_date || c.effective_date || "",
+                itemCount: String((detail.line_items || []).length || 1),
+                itemNo: formData.itemNo || "1",
+                taxRate: String(c.tax_rate || formData.taxRate || 10),
+                documentDate: formData.documentDate || todayIso,
+                ...(prog && {
+                  deliveryNo: String((prog as any).next_delivery_no || 1),
+                  isPartial:
+                    (prog as any).is_partial || (prog as any).next_delivery_no > 1
+                      ? "分割"
+                      : "完了",
+                  inspectedAmountStr: (
+                    (prog as any).done_amount_ex_tax || prog.inspected_amount_ex_tax || 0
+                  ).toLocaleString("ja-JP"),
+                  pendingAmountStr: (
+                    prog.remaining_amount_ex_tax || 0
+                  ).toLocaleString("ja-JP"),
+                  totalOrderAmountStr: (
+                    prog.ordered_amount_ex_tax || 0
+                  ).toLocaleString("ja-JP"),
+                  inspectedPct: String((prog as any).inspected_pct || 0),
+                }),
+                description: formData.description || (firstLine?.item_name || ""),
+                spec: formData.spec || (firstLine?.spec || ""),
+                ...(v.vendor_name && {
+                  counterparty: formData.counterparty || v.vendor_name,
+                  COUNTERPARTY_IS_CORPORATION: isCorp ? "法人" : "個人",
+                  counterpartyRep: formData.counterpartyRep || repName,
+                  counterpartyRepresentativeSama:
+                    formData.counterpartyRepresentativeSama ||
+                    (repName ? `${repName} 様` : ""),
+                  counterpartyTni:
+                    formData.counterpartyTni ||
+                    v.invoice_registration_number ||
+                    "",
+                  bankName: formData.bankName || v.bank_name || "",
+                  branchName: formData.branchName || v.branch_name || "",
+                  accountType: formData.accountType || v.account_type || "",
+                  accountNo: formData.accountNo || v.account_number || "",
+                  accountHolder:
+                    formData.accountHolder || v.account_holder_kana || "",
+                }),
+                delivery_line_items: [],
+                deliveredAmountStr: "",
+                po_expenses: detail.expenses || [],
+                selectedExpenseLineNos: [],
+                isFinalInspection: false,
+                expenses: [],
+                expensesTotalIncTax: 0,
+                po_other_fees: detail.other_fees || [],
+                selectedOtherFeeLineNos: [],
+                other_fees: [],
+                otherFeesTotal: 0,
+                // 旧 selected_master_contract_id ロジックは廃止 (統一化)
+                selected_master_contract_id: 0,
+              });
+            }}
+            onClear={() => {
+              setFormData({
+                ...formData,
+                parent_po_id: undefined,
+                parent_po_issue_key: undefined,
+                parent_po_number: undefined,
+                parent_contract_record_type: undefined,
+                order_lines_for_inspection: [],
+                delivery_line_items: [],
+                po_expenses: [],
+                selectedExpenseLineNos: [],
+                isFinalInspection: false,
+                expenses: [],
+                expensesTotalIncTax: 0,
+                po_other_fees: [],
+                selectedOtherFeeLineNos: [],
+                other_fees: [],
+                otherFeesTotal: 0,
+              });
+            }}
+          />
           {hasParentPo && (
             <div className="mt-3 px-3 py-2 rounded-sm border border-emerald-200 bg-emerald-50/50 text-[10px] font-mono text-emerald-800 leading-relaxed">
-              ✓ 親 PO <strong>{formData.parent_po_issue_key || formData.parent_po_number || '(番号未取得)'}</strong> を連動中。
-              受託者・明細・経費・手数料が自動入力されました。
+              ✓ 親契約{" "}
+              <strong>
+                {formData.parent_po_number ||
+                  formData.parent_po_issue_key ||
+                  "(番号未取得)"}
+              </strong>{" "}
+              を連動中。受託者・明細・経費・手数料が自動入力されました。
             </div>
           )}
         </FormSection>
@@ -2285,54 +2238,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             variant="indigo"
             icon={<Scale className="w-4 h-4" />}
             headerActions={
-              <span
-                className={cn(
-                  "text-[9px] font-mono italic",
-                  displaySource === "master"
-                    ? "text-emerald-700 font-bold"
-                    : "text-muted-foreground"
-                )}
-              >
-                {displaySource === "master"
-                  ? `📘 マスタ参照: ${(masterContractRecord as any)?.document_number || ""}`
-                  : `📄 親 PO: ${formData.parent_po_issue_key || "—"}`}
+              <span className="text-[9px] font-mono italic text-muted-foreground">
+                📄 親契約:{" "}
+                {formData.parent_po_number ||
+                  formData.parent_po_issue_key ||
+                  "—"}
               </span>
             }
           >
-            {/* Phase 22.21.121: 引用元バナー */}
-            {displaySource === "master" && (
-              <div className="mb-3 px-3 py-2 rounded-sm border border-emerald-200 bg-emerald-50/60 text-[10px] font-mono text-emerald-900 leading-relaxed">
-                <strong>📘 業務委託マスタ</strong> (
-                {(masterContractRecord as any)?.contract_title || ""}) の
-                業務明細を「正」として表示しています。
-                {formData.parent_po_issue_key && (
-                  <> 参考: PO {formData.parent_po_issue_key} もリンクされています。</>
-                )}
-                <br />
-                マスタを切り離して PO 表示に戻す場合は、上の「ステップ 1」で
-                マスタを 解除 してください。
-              </div>
-            )}
-            {displaySource === "po" &&
-              masterContractId === 0 &&
-              formData.parent_po_id && (
-                <div className="mb-3 px-3 py-2 rounded-sm border border-sky-200 bg-sky-50/40 text-[10px] font-mono text-sky-900 leading-relaxed flex items-center justify-between gap-2">
-                  <span>
-                    <strong>📄 発注書 (PO)</strong> の業務明細を表示しています。
-                    業務委託マスタにこの取引先の契約が登録されていれば、
-                    マスタを選択して上書き表示できます。
-                  </span>
-                  {onOpenLegalAssetSearch && (
-                    <button
-                      type="button"
-                      onClick={onOpenLegalAssetSearch}
-                      className="text-[10px] font-mono px-2 py-0.5 border border-sky-700/40 bg-white text-sky-800 hover:bg-sky-100 rounded-sm flex-shrink-0"
-                    >
-                      🔗 マスタを検索
-                    </button>
-                  )}
-                </div>
-              )}
             <DeliveryLineItemTable
               orderLines={effectiveOrderLines as OrderLineForInspection[]}
               values={(Array.isArray(formData.delivery_line_items)
@@ -2802,55 +2715,31 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             {/* ① 契約マスタ (マスター検索) */}
             <div className="space-y-1.5">
               <Label className="text-[11px] font-mono">
-                ① 契約マスタを選ぶ <span className="text-red-600">*</span>
+                ① ライセンス契約を選ぶ <span className="text-red-600">*</span>
               </Label>
-
-              {/* マスター検索フィルタ — 取引先名 / 契約タイトル / 文書番号で絞り込み */}
-              {licenseMasters.length > 0 && (
-                <div className="flex items-center gap-2">
-                  <Input
-                    type="text"
-                    value={royaltyContractSearch}
-                    onChange={(e) => setRoyaltyContractSearch(e.target.value)}
-                    placeholder="取引先名・契約タイトル・文書番号で絞り込み..."
-                    className="text-xs font-mono flex-1"
-                  />
-                  {royaltyContractSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setRoyaltyContractSearch('')}
-                      className="text-[10px] font-mono px-2 py-1 border border-input rounded-sm hover:bg-muted flex-shrink-0"
-                    >
-                      クリア
-                    </button>
-                  )}
-                </div>
-              )}
-              {royaltyContractSearch && (
-                <p className="text-[10px] font-mono text-muted-foreground">
-                  {filteredMasters.length} 件 / 全 {licenseMasters.length} 件
-                  {filteredMasters.length === 0 && (
-                    <span className="text-amber-700 ml-1">— 一致なし (検索ワードを変えてください)</span>
-                  )}
-                </p>
-              )}
-
-              <select
-                value={selectedContractId || ''}
-                onChange={(e) => selectMasterContract(Number(e.target.value))}
-                className="w-full text-xs font-mono px-2 py-1.5 border border-input rounded-sm bg-background focus:outline-none focus:border-foreground"
-                size={filteredMasters.length > 0 && filteredMasters.length <= 8 ? filteredMasters.length + 1 : undefined}
-              >
-                <option value="">— 契約マスタから選択 —</option>
-                {filteredMasters.map((c: any) => (
-                  <option key={`master-${c.id}`} value={c.id}>
-                    {c.contract_title || '(無題)'}
-                    {c.document_number ? ` [${c.document_number}]` : ''}
-                    {c.vendor_name ? ` — ${c.vendor_name}` : ''}
-                    {` (条件 ${c.financial_conditions.length} 件)`}
-                  </option>
-                ))}
-              </select>
+              {/* Phase 23: UnifiedContractPicker に統合。
+                  license カテゴリの 個別契約 / 単独契約 / license_condition を
+                  検収書と同じ操作感で検索・選択できる。 */}
+              <UnifiedContractPicker
+                acceptableRecordTypes={[
+                  "individual_contract",
+                  "standalone_contract",
+                ]}
+                categoryFilter={["license"]}
+                currentContractId={selectedContractId || undefined}
+                hasParent={selectedContractId > 0}
+                label={
+                  selectedContractId > 0
+                    ? "ライセンス契約を切り替える"
+                    : "ライセンス契約を選ぶ"
+                }
+                onPick={(detail) => {
+                  // in-memory list 側に詳細フィールド (vendor_*, ledger 結合 etc.)
+                  // があるので id 経由でルックアップして既存ロジックに合流。
+                  selectMasterContract(detail.contract.id);
+                }}
+                onClear={() => selectMasterContract(0)}
+              />
               {licenseMasters.length === 0 && (
                 <p className="text-[10px] font-mono text-amber-700">
                   ⚠ 候補となる契約マスタがありません。

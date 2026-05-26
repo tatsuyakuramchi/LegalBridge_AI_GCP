@@ -24,6 +24,7 @@ import express from "express";
 import dotenv from "dotenv";
 import { BacklogService } from "./src/services/backlogService.ts";
 import { query } from "./src/lib/db.ts";
+import { registerContractsV2 } from "./src/routes/contractsV2.ts";
 import * as contractCheckService from "./src/services/contractCheckService.ts";
 import {
   listPage as renderListPage,
@@ -2412,6 +2413,18 @@ async function startServer() {
    * search-api 側は read-only DB ロールなので副作用なしで安全に
    * リストアップできる。
    */
+  // -----------------------------------------------------------------
+  // Phase 23.0 — 統一検索API (v2)。
+  //   GET /api/contracts/search — フォームの親 picker 用 (record_types フィルタ)
+  //   GET /api/contracts/:id    — 詳細 (line_items, financial_conditions,
+  //                                expenses, other_fees, vendor, 検収集計)
+  //   旧 /api/order-items/list / by-issue は Phase 23.1 で削除予定。
+  // -----------------------------------------------------------------
+  registerContractsV2(app, { query });
+
+  // [DEPRECATED Phase 23] /api/order-items/list は UnifiedContractPicker
+  //   経由で /api/contracts/search に統合済み。残置は外部スクリプトの互換用。
+  //   Phase 23.1 で物理削除予定。新規実装は /api/contracts/search を使うこと。
   app.get("/api/order-items/list", async (req, res) => {
     try {
       const q = String(req.query.q || "").trim();

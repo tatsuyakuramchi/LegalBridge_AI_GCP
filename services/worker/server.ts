@@ -59,6 +59,7 @@ import {
   addMaterialToLedger,
   markPrimaryDocument,
 } from "./src/lib/db.ts";
+import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import {
   calculateTax,
   calculateOrderLineAmount,
@@ -6798,6 +6799,38 @@ ${details}
    * expense 行用列 (Phase 17i):
    *   line_no, expense_name, spec?, spent_date?, amount_inc_tax, remarks?
    */
+
+  // -----------------------------------------------------------------
+  // Phase 23.0 — 統一インポートAPI (v2)。
+  //   全 record_type を 1 つのエンドポイントで受け、contract_capabilities
+  //   + capability_line_items + capability_financial_conditions + 経費 +
+  //   その他手数料 + documents + external_assets を一括 upsert する。
+  //
+  //   以下の旧APIは Phase 23.1 で物理削除予定:
+  //     - /api/imports/order
+  //     - /api/imports/license-contract
+  //     - /api/imports/license-master
+  //     - /api/imports/service-master
+  //     - /api/imports/bulk/order
+  //     - /api/imports/bulk/license-contract
+  //     - /api/imports/bulk/license-master
+  //     - /api/imports/bulk/service-master
+  //     - /api/imports/bulk/service-contract
+  //     - /api/imports/bulk/nda
+  //     - /api/imports/bulk/sales-master
+  //   検収書 (inspection) と 稟議 (ringi) のバルクは contract_capabilities
+  //   とは別テーブル運用なので legacy のまま維持する。
+  // -----------------------------------------------------------------
+  registerImportsV2(app, {
+    query,
+    getNewDocumentNumber,
+    resolveVendorIdForImport: resolveVendorIdForImport_,
+    linkRingiByDocNumber,
+    requirePortalSecret,
+  });
+
+  // [DEPRECATED Phase 23] /api/imports/bulk/order は /api/imports/v2/bulk
+  //   + record_type='purchase_order' に置換済み。Phase 23.1 で物理削除予定。
   app.post("/api/imports/bulk/order", requirePortalSecret, express.json({ limit: "10mb" }), async (req, res) => {
     try {
       const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];

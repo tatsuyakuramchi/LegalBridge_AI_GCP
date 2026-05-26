@@ -1505,6 +1505,81 @@ export async function initDb() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_cli_capability ON capability_line_items(capability_id);`,
 
+    // -----------------------------------------------------------------
+    // Phase 23.0: 統一スキーマ — contract_capabilities を全契約・全発注の
+    //   正テーブルにする。order_items / license_contracts は段階廃止予定。
+    //
+    //   record_type 値域:
+    //     'master_contract'      : 基本契約 (NDA, license_master, service_master, sales_master)
+    //     'individual_contract'  : 基本契約あり個別契約
+    //     'standalone_contract'  : 基本契約なし単独契約
+    //     'purchase_order'       : 発注書 (新設, contract_category='service' と組合せ)
+    //
+    //   contract_capabilities に発注書由来の列を追加:
+    //     - tax_rate / amount_ex_tax / amount_inc_tax / tax_amount : 金額系
+    //     - due_date                                               : 納期
+    //     - issue_date                                             : 発注日
+    //     - legal_request_id / backlog_issue_key                   : 課題紐付け
+    // -----------------------------------------------------------------
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS tax_rate INTEGER DEFAULT 10;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS amount_ex_tax DECIMAL(15,2);`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS amount_inc_tax DECIMAL(15,2);`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS tax_amount DECIMAL(15,2);`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS due_date DATE;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS issue_date_po DATE;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS legal_request_id INTEGER REFERENCES legal_requests(id);`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS backlog_issue_key VARCHAR(50);`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_backlog ON contract_capabilities(backlog_issue_key) WHERE backlog_issue_key IS NOT NULL;`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_record_type_cat ON contract_capabilities(record_type, contract_category);`,
+
+    // capability_line_items にも検収集計・アラート列を追加 (旧 order_line_items 由来)
+    `ALTER TABLE capability_line_items ADD COLUMN IF NOT EXISTS inspected_amount_ex_tax DECIMAL(15,2) DEFAULT 0;`,
+    `ALTER TABLE capability_line_items ADD COLUMN IF NOT EXISTS last_alert_at TIMESTAMP WITH TIME ZONE;`,
+    `ALTER TABLE capability_line_items ADD COLUMN IF NOT EXISTS alert_count INTEGER DEFAULT 0;`,
+
+    // 新規: 経費 (税込) — 旧 order_expenses の移行先
+    `CREATE TABLE IF NOT EXISTS capability_expenses (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      expense_name TEXT NOT NULL,
+      spec TEXT,
+      spent_date DATE,
+      amount_inc_tax DECIMAL(15,2),
+      remarks TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(capability_id, line_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_ce_capability ON capability_expenses(capability_id);`,
+
+    // 新規: その他手数料 — 旧 order_other_fees の移行先
+    `CREATE TABLE IF NOT EXISTS capability_other_fees (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      fee_name TEXT NOT NULL,
+      amount DECIMAL(15,2) NOT NULL DEFAULT 0,
+      remarks TEXT,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(capability_id, line_no)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cof_capability ON capability_other_fees(capability_id);`,
+
+    // delivery_events / delivery_line_items に capability 直参照キーを追加
+    //   旧: order_item_id / order_line_item_id を持つ
+    //   新: capability_id / capability_line_item_id を持つ (両者並存 → 移行スクリプトで張替)
+    `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS capability_id INTEGER REFERENCES contract_capabilities(id);`,
+    `ALTER TABLE delivery_line_items ADD COLUMN IF NOT EXISTS capability_line_item_id INTEGER REFERENCES capability_line_items(id);`,
+    `CREATE INDEX IF NOT EXISTS idx_de_capability ON delivery_events(capability_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_dli_capability_line ON delivery_line_items(capability_line_item_id);`,
+
+    // royalty_calculations も capability 直参照に
+    `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS capability_id INTEGER REFERENCES contract_capabilities(id);`,
+    `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS capability_financial_condition_id INTEGER REFERENCES capability_financial_conditions(id);`,
+    `CREATE INDEX IF NOT EXISTS idx_rc_capability ON royalty_calculations(capability_id);`,
+
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,
       requested_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,

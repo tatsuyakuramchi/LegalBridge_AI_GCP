@@ -1,16 +1,54 @@
 /**
- * BulkImportDialog — CSV 一括インポート用の共通モーダル (Phase 10)。
+ * BulkImportDialog — CSV 一括インポート用の共通モーダル。
+ *
+ * Phase 23: 統一API (/api/imports/v2/bulk) にルーティング。
+ *   kind を v2 の record_type + contract_category にマップして
+ *   1 つのエンドポイントで処理する。
+ *
+ *   例外: 'inspection' (検収書) と 'ringi' (稟議) は contract_capabilities では
+ *   なく別テーブル (delivery_events / ringi_records) なので、旧APIを継続使用。
  *
  * 流れ:
  *   1. CSV を選択 / ドロップ
  *   2. クライアント側で papaparse → JSON 化
  *   3. import_key でグループ化してプレビュー
  *   4. ユーザーが確認して「インポート実行」
- *   5. /api/imports/bulk/:kind を叩く
+ *   5. /api/imports/v2/bulk または旧APIを叩く
  *   6. 成功/失敗を行単位で表示。失敗行は CSV ダウンロード可能
  *
- * テンプレ DL ボタン: /api/imports/bulk/templates/:kind を新タブで取得
+ * テンプレ DL ボタン: /api/imports/v2/templates?record_type=X (v2)
+ *   または /api/imports/bulk/templates/:kind (legacy: inspection, ringi)
  */
+
+// kind → v2 record_type / category マッピング。v2 で扱えるものは true で
+// マークし、CSV 行に record_type と contract_category を自動付与する。
+const V2_KIND_MAP: Record<
+  string,
+  { record_type: string; contract_category: string } | null
+> = {
+  order: { record_type: "purchase_order", contract_category: "service" },
+  "license-contract": {
+    record_type: "individual_contract",
+    contract_category: "license",
+  },
+  "license-master": {
+    record_type: "master_contract",
+    contract_category: "license",
+  },
+  "service-master": {
+    record_type: "master_contract",
+    contract_category: "service",
+  },
+  "service-contract": {
+    record_type: "individual_contract",
+    contract_category: "service",
+  },
+  nda: { record_type: "master_contract", contract_category: "nda" },
+  "sales-master": { record_type: "master_contract", contract_category: "sales" },
+  // 検収書 / 稟議 は v2 対象外 (別テーブル運用)
+  inspection: null,
+  ringi: null,
+};
 
 import * as React from "react"
 import Papa from "papaparse"
@@ -168,10 +206,24 @@ export const BulkImportDialog: React.FC<Props> = ({
     setSubmitting(true)
     setResult(null)
     try {
-      const res = await fetch(`/api/imports/bulk/${kind}`, {
+      // Phase 23: 統一APIへルーティング。CSV 行に record_type / contract_category を
+      // 自動付与し、v2 のフラット形式に揃える。検収書・稟議は引き続き旧API。
+      const v2Map = V2_KIND_MAP[kind]
+      const endpoint = v2Map
+        ? "/api/imports/v2/bulk"
+        : `/api/imports/bulk/${kind}`
+      const rowsToSend = v2Map
+        ? csvRows.map((r) => ({
+            record_type: r.record_type || v2Map.record_type,
+            contract_category:
+              r.contract_category || v2Map.contract_category,
+            ...r,
+          }))
+        : csvRows
+      const res = await fetch(endpoint, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rows: csvRows }),
+        body: JSON.stringify({ rows: rowsToSend }),
       })
       const data: BulkResult = await res.json()
       setResult(data)
@@ -198,15 +250,20 @@ export const BulkImportDialog: React.FC<Props> = ({
   // 通らないので、fetch でバイナリ取得して blob 経由でダウンロード。
   const downloadTemplate = async () => {
     try {
-      const res = await fetch(`/api/imports/bulk/templates/${kind}`)
+      // Phase 23: v2 対象は統一テンプレ、検収書 / 稟議 は旧テンプレを使用
+      const v2Map = V2_KIND_MAP[kind]
+      const url = v2Map
+        ? `/api/imports/v2/templates?record_type=${encodeURIComponent(v2Map.record_type)}`
+        : `/api/imports/bulk/templates/${kind}`
+      const res = await fetch(url)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
-      const url = URL.createObjectURL(blob)
+      const blobUrl = URL.createObjectURL(blob)
       const a = document.createElement("a")
-      a.href = url
+      a.href = blobUrl
       a.download = `import_template_${kind}.csv`
       a.click()
-      URL.revokeObjectURL(url)
+      URL.revokeObjectURL(blobUrl)
     } catch (e: any) {
       setParseError(`テンプレ DL 失敗: ${e?.message || e}`)
     }
