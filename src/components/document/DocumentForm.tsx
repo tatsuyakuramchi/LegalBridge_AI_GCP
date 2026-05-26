@@ -2156,8 +2156,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   ).toLocaleString("ja-JP"),
                   inspectedPct: String((prog as any).inspected_pct || 0),
                 }),
-                description: formData.description || (firstLine?.item_name || ""),
-                spec: formData.spec || (firstLine?.spec || ""),
+                // Phase 23.0.1: 親契約選択時は line item の item_name / spec を
+                // 「正」とする。Backlog Sync 由来の本文 (依頼タイプ: ... 起案者: ...)
+                // が formData.description に残っていても、PDF の
+                // 「成果物・業務内容」列 ({{description}}) には line item 名が
+                // 入るべきなので明示的に上書きする。
+                description: firstLine?.item_name || formData.description || "",
+                spec: firstLine?.spec || formData.spec || "",
                 ...(v.vendor_name && {
                   counterparty: formData.counterparty || v.vendor_name,
                   COUNTERPARTY_IS_CORPORATION: isCorp ? "法人" : "個人",
