@@ -211,17 +211,43 @@ export class ExcelService {
         ? formData.other_fees
         : [];
 
+      // Phase 23.0.2: delivery_line_items は inspected_amount_ex_tax しか
+      //   持たないので、item_name / unit_price / quantity / delivery_date は
+      //   order_lines_for_inspection 側を引いて補完する。
+      //   結合キーは order_line_item_id (UnifiedContractPicker が capability_line_items.id
+      //   を入れる)。fallback として line_no でも結合。
+      const parentLines = Array.isArray(formData.order_lines_for_inspection)
+        ? formData.order_lines_for_inspection
+        : [];
+      const findParentLine = (l: any): any => {
+        const olid = l.order_line_item_id ?? l.capability_line_item_id;
+        if (olid != null) {
+          const m = parentLines.find(
+            (p: any) => Number(p.id) === Number(olid)
+          );
+          if (m) return m;
+        }
+        if (l.line_no != null) {
+          const m = parentLines.find(
+            (p: any) => Number(p.line_no) === Number(l.line_no)
+          );
+          if (m) return m;
+        }
+        return null;
+      };
+
       const combined: InspectionExcelData['items'] = [];
 
       if (lines.length > 0) {
         for (const l of lines) {
+          const p = findParentLine(l) || {};
           const amtExTax = num(l.inspected_amount_ex_tax || l.amount_ex_tax);
           combined.push({
-            content: l.item_name || l.description || '',
-            unit_price: num(l.unit_price), // 税抜 単価
-            quantity: num(l.quantity),
+            content: l.item_name || p.item_name || l.description || '',
+            unit_price: num(l.unit_price || p.unit_price), // 税抜 単価
+            quantity: num(l.quantity || p.quantity),
             amount: toIncTax(amtExTax), // 税込
-            delivery_date: isoDate(l.delivery_date),
+            delivery_date: isoDate(l.delivery_date || p.delivery_date),
           });
         }
       } else {

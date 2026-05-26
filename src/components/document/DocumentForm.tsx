@@ -2443,7 +2443,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         </div>
 
-        {/* ─── STEP 4 ─ 検収情報 (発行日・件名・備考) ────────────── */}
+        {/* ─── STEP 4 ─ 検収情報 (発行日・分納フラグなど手動編集可) ────────────
+            Phase 23.0.2: STEP 1 の UnifiedContractPicker で
+            parent_po_number / orderDate / itemNo / itemCount / deliveryNo /
+            totalDeliveries / isPartial は自動補完される。
+            ここでは手動編集が必要な documentDate / isPartial のみを最前面に
+            出し、残りの I. 基本情報 フィールドは折りたたみで参照可能にする。
+        */}
         <FormSection
           title="ステップ 4 — 検収情報"
           variant="default"
@@ -2460,7 +2466,19 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             </button>
           }
         >
-          {renderGroup('I. 基本情報')}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {renderField('documentDate')}
+            {renderField('isPartial')}
+          </div>
+          <details className="mt-4 group rounded-sm border border-input">
+            <summary className="cursor-pointer px-3 py-1.5 text-[10px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+              ▶ 自動補完項目 (ステップ 1 で親契約を選ぶと埋まる) — 必要に応じて手動修正
+            </summary>
+            <div className="p-3 border-t border-input space-y-3">
+              {['issueKey','parent_po_number','orderDate','itemNo','itemCount','deliveryNo','totalDeliveries']
+                .map((fid) => renderField(fid))}
+            </div>
+          </details>
         </FormSection>
 
         {/* ─── 任意セクション (折りたたみ) ─────────────────────────── */}
