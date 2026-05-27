@@ -116,6 +116,13 @@ export function DocumentEditorPage() {
   const [templateSearch, setTemplateSearch] = React.useState("")
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false)
+  // Phase 23.1: 再編集モード時の保存方針。
+  //   - 'internal': 内部修正 (同 row 上書き、Drive PDF も同 URL に差し替え) ← default
+  //   - 'reissue':  再発行 (revision +1、過去 row は lifecycle='reissued' に)
+  //   新規発行 (reopen 経由でない) の場合は UI 非表示で常に 'internal' 扱い相当。
+  const [saveMode, setSaveMode] = React.useState<"internal" | "reissue">(
+    "internal"
+  )
   // Phase 23.0.4: 未入力フィールド ring ハイライト解除の setTimeout id。
   //   連続 generate で前回の timer が新規 wrap の ring を消さないようにする。
   const scrollRingTimerRef = React.useRef<number | null>(null)
@@ -697,6 +704,10 @@ export function DocumentEditorPage() {
 
     setIsGenerating(true)
     try {
+      // Phase 23.1: 再編集 (reopen) かつ saveMode='reissue' のときだけ reissue=true。
+      //   その他 (新規発行 / 内部修正 / PDF 未作成キュー再生成) は reissue=false。
+      const isReopen = !!formData?.__reopen_doc_number
+      const reissueFlag = isReopen && saveMode === "reissue"
       const res = await fetch("/api/documents/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -710,6 +721,7 @@ export function DocumentEditorPage() {
           existingDocumentNumber:
             formData?.__from_pending_doc_number ||
             formData?.__reopen_doc_number,
+          reissue: reissueFlag,
         }),
       })
 
@@ -1516,6 +1528,45 @@ export function DocumentEditorPage() {
                     <Download />
                     Export Excel
                   </Button>
+                )}
+                {/* Phase 23.1: 再編集モード (= reopen 経由) のときだけ
+                    「内部修正 / 再発行」の保存方針を選ばせる。
+                    - 内部修正: 既存 row 上書き、Drive PDF も同 URL のまま差し替え
+                    - 再発行:   revision +1 で新 row、過去版は履歴に。PDF に「修正版 Rev. N」 */}
+                {formData?.__reopen_doc_number && (
+                  <div
+                    role="radiogroup"
+                    aria-label="保存方針"
+                    className="flex items-center gap-2 text-[11px] font-mono border border-input rounded-sm px-2 py-1 bg-muted/30"
+                  >
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="saveMode"
+                        value="internal"
+                        checked={saveMode === "internal"}
+                        onChange={() => setSaveMode("internal")}
+                        className="cursor-pointer"
+                      />
+                      <span>内部修正</span>
+                    </label>
+                    <label className="flex items-center gap-1 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="saveMode"
+                        value="reissue"
+                        checked={saveMode === "reissue"}
+                        onChange={() => setSaveMode("reissue")}
+                        className="cursor-pointer"
+                      />
+                      <span>
+                        再発行
+                        <span className="text-muted-foreground/70 ml-1">
+                          (外部要請)
+                        </span>
+                      </span>
+                    </label>
+                  </div>
                 )}
                 <Button onClick={handleGenerate} disabled={isGenerating}>
                   {isGenerating ? (

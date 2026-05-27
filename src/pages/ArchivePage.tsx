@@ -23,6 +23,27 @@ export function ArchivePage() {
   const navigate = useNavigate()
   const [search, setSearch] = React.useState("")
   const [reeditBusy, setReeditBusy] = React.useState<string | null>(null)
+  // Phase 23.1: 履歴 (archived_draft / reissued) を表示するトグル。
+  //   default: false (final のみ表示)。ON で /api/management/assets?include_history=1
+  //   を fetch し直す。
+  const [showHistory, setShowHistory] = React.useState(false)
+  React.useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(
+          `/api/management/assets${showHistory ? "?include_history=1" : ""}`
+        )
+        const data = await res.json()
+        if (!cancelled && Array.isArray(data)) setAssets(data)
+      } catch (e) {
+        console.warn("[ArchivePage] assets re-fetch failed:", e)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [showHistory, setAssets])
 
   // Phase 16: 既存文書を再編集モードで開く。
   // asset_number = documents.document_number で紐付くので、
@@ -124,6 +145,17 @@ export function ArchivePage() {
               className="pl-8"
             />
           </div>
+          {/* Phase 23.1: 履歴 (archived_draft / reissued) も表示するトグル。
+              default は OFF (= 現在の正のみ)。 */}
+          <label className="flex items-center gap-1.5 text-[11px] font-mono cursor-pointer select-none border border-input rounded-sm px-2 py-1.5 hover:bg-muted/40">
+            <input
+              type="checkbox"
+              checked={showHistory}
+              onChange={(e) => setShowHistory(e.target.checked)}
+              className="cursor-pointer"
+            />
+            <span>履歴を表示</span>
+          </label>
           <Button onClick={() => setOpenRegister(true)}>
             <Plus />
             Register
