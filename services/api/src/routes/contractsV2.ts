@@ -310,7 +310,15 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       //   - synthetic な行は id を負の値にして DB の行と区別 (検収時の参照用)
       if (lineRows.length === 0) {
         const formData = docRow.rows[0]?.form_data || {};
-        const formLines = Array.isArray(formData.line_items)
+        // Phase 23.6.11: worker (/api/documents/generate) は formData.items
+        //   (アンダースコアなし) で明細を保存している (server.ts:9595)。
+        //   従来 Phase 23.6.6 のここは formData.line_items / delivery_line_items
+        //   しか見ていなかったため、items 経由で保存された旧 PO (例: 手数料計算
+        //   付き発注書) は line_count=0 のまま autofill されなかった。
+        //   items を最優先に追加する。
+        const formLines = Array.isArray(formData.items)
+          ? formData.items
+          : Array.isArray(formData.line_items)
           ? formData.line_items
           : Array.isArray(formData.delivery_line_items)
           ? formData.delivery_line_items
