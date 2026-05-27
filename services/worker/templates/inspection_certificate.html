@@ -92,6 +92,23 @@
     tr.total-row td { background: #f0f0f0; font-weight: bold; font-size: 11pt; }
     tr.subtotal-row td { background: #f8f8f8; }
 
+    /* Phase 23.4: 成果物セル内の item_name / spec 併記レイアウト。
+       旧「仕様」列を廃止し、成果物セル内に補足として表示する。
+       背景は付けず (テーブル背景のまま) 左の縦線だけで補足を表現。 */
+    .item-name {
+      font-weight: bold;
+      line-height: 1.5;
+    }
+    .item-spec {
+      margin-top: 3px;
+      padding-left: 8px;
+      border-left: 2px solid #666;
+      font-size: 9pt;
+      color: #000;
+      line-height: 1.55;
+      white-space: pre-line;     /* spec 内の \n を改行として保持 */
+    }
+
     /* ④ 軽減税率対象識別マーク（消費税法57条の4第1項第3号ロ） */
     .reduced-mark {
       display: inline-block;
@@ -291,19 +308,26 @@
     <thead>
       <tr>
         <th style="width:6%">No.</th>
-        <th style="width:44%">成果物・業務内容</th>
-        <th style="width:20%">仕様</th>
+        <th style="width:64%">成果物・業務内容</th>
         <th style="width:15%">納品日</th>
         <th style="width:15%">支払対価（税抜）</th>
       </tr>
     </thead>
     <tbody>
+      {{!-- Phase 23.4: 旧「仕様」列を削除し、「成果物・業務内容」セル内に
+           item_name (太字) + spec (補足、左に縦線) を併記するレイアウトに。
+           spec 空の行は補足ブロック自体を表示しない (= 行高は item_name 1 行)。
+           長文 spec の場合に行が縦に間延びする問題を解消。 --}}
       {{#if (gt (length delivery_line_items) 0)}}
         {{#each delivery_line_items}}
           <tr>
             <td class="center">{{index1 @index}}</td>
-            <td>{{#if ../isReducedTax}}<span class="reduced-mark">※</span>{{/if}}{{or item_name ../description}}</td>
-            <td>{{or spec ../spec}}</td>
+            <td>
+              <div class="item-name">{{#if ../isReducedTax}}<span class="reduced-mark">※</span>{{/if}}{{or item_name ../description}}</div>
+              {{#if (or spec ../spec)}}
+              <div class="item-spec">{{or spec ../spec}}</div>
+              {{/if}}
+            </td>
             <td class="center">{{formatDate (or delivery_date ../deliveredAt)}}</td>
             <td class="right">{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}</td>
           </tr>
@@ -311,20 +335,24 @@
       {{else}}
         <tr>
           <td class="center">{{itemNo}}</td>
-          <td>{{#if isReducedTax}}<span class="reduced-mark">※</span>{{/if}}{{description}}</td>
-          <td>{{spec}}</td>
+          <td>
+            <div class="item-name">{{#if isReducedTax}}<span class="reduced-mark">※</span>{{/if}}{{description}}</div>
+            {{#if spec}}
+            <div class="item-spec">{{spec}}</div>
+            {{/if}}
+          </td>
           <td class="center">{{formatDate deliveredAt}}</td>
           <td class="right">¥{{deliveredAmountStr}}</td>
         </tr>
       {{/if}}
       <tr>
-        <td colspan="4" class="right">
-          消費税（{{taxRate}}%{{#if isReducedTax}}・軽減税率対象{{/if}}）
+        <td colspan="3" class="right">
+          消費税({{taxRate}}%{{#if isReducedTax}}・軽減税率対象{{/if}})
         </td>
         <td class="right">¥{{taxAmountStr}}</td>
       </tr>
       <tr class="total-row">
-        <td colspan="4" class="right">今回検収金額（税込）</td>
+        <td colspan="3" class="right">今回検収金額(税込)</td>
         <td class="right">¥{{totalAmountStr}}</td>
       </tr>
     </tbody>
