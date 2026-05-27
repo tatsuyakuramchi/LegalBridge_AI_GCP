@@ -6823,6 +6823,7 @@ ${details}
   // -----------------------------------------------------------------
   registerImportsV2(app, {
     query,
+    pool,
     getNewDocumentNumber,
     resolveVendorIdForImport: resolveVendorIdForImport_,
     linkRingiByDocNumber,

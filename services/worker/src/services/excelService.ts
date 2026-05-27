@@ -241,13 +241,17 @@ export class ExcelService {
       if (lines.length > 0) {
         for (const l of lines) {
           const p = findParentLine(l) || {};
-          const amtExTax = num(l.inspected_amount_ex_tax || l.amount_ex_tax);
+          // Phase 23.0.4: `||` だと 0 を falsy 扱いして「今回検収しない 0 円行」
+          //   が発注額 (amount_ex_tax) に化ける。null/undefined のみフォール
+          //   バックする `??` を使う。unit_price / quantity / delivery_date /
+          //   item_name も同様 (0 や空文字を意図的に入れている場合の挙動を尊重)。
+          const amtExTax = num(l.inspected_amount_ex_tax ?? l.amount_ex_tax);
           combined.push({
-            content: l.item_name || p.item_name || l.description || '',
-            unit_price: num(l.unit_price || p.unit_price), // 税抜 単価
-            quantity: num(l.quantity || p.quantity),
+            content: l.item_name ?? p.item_name ?? l.description ?? '',
+            unit_price: num(l.unit_price ?? p.unit_price), // 税抜 単価
+            quantity: num(l.quantity ?? p.quantity),
             amount: toIncTax(amtExTax), // 税込
-            delivery_date: isoDate(l.delivery_date || p.delivery_date),
+            delivery_date: isoDate(l.delivery_date ?? p.delivery_date),
           });
         }
       } else {

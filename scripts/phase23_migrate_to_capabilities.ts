@@ -17,19 +17,27 @@
  * 実行:
  *   tsx scripts/phase23_migrate_to_capabilities.ts            # ドライラン (件数比較のみ)
  *   tsx scripts/phase23_migrate_to_capabilities.ts --apply    # 実際に移行
- *   tsx scripts/phase23_migrate_to_capabilities.ts --apply --drop  # 旧テーブルもDROP
+ *   tsx scripts/phase23_migrate_to_capabilities.ts --apply --drop                # 旧テーブルの依存関係を表示 (削除はしない)
+ *   tsx scripts/phase23_migrate_to_capabilities.ts --apply --drop --really-drop  # 実際にDROP TABLE CASCADE
  *
  * 全工程は単一トランザクション (--apply) で実行。失敗時は ROLLBACK。
  * 冪等性:
  *   - 既存 contract_capabilities (document_number で同定) は UPDATE
  *   - 子テーブルは ON CONFLICT (capability_id, line_no/condition_no) DO UPDATE
  *   - 再実行しても件数増えない
+ *
+ * Phase 23.0.4: `--drop` だけでは DROP TABLE を実行しない安全モードに変更。
+ *   依存オブジェクト (FK / view / index 等) の一覧を表示するだけにとどめ、
+ *   実際に物理削除する場合は `--really-drop` を併用する必要がある。
+ *   これにより `DROP TABLE ... CASCADE` で manufacturing_events や
+ *   royalty_payments の FK 列が意図せず壊れる事故を防ぐ。
  */
 
 import { pool } from "../services/worker/src/lib/db.js";
 
 const APPLY = process.argv.includes("--apply");
 const DROP = process.argv.includes("--drop");
+const REALLY_DROP = process.argv.includes("--really-drop");
 
 type Counts = Record<string, number>;
 
@@ -445,22 +453,86 @@ async function backfillInspectedAmount(client: any) {
   console.log(`      inspected_amount backfilled rows: ${r.rowCount}`);
 }
 
+const LEGACY_TABLES = [
+  "order_expenses",
+  "order_other_fees",
+  "order_line_items",
+  "order_items",
+  "license_financial_conditions",
+  "license_contracts",
+] as const;
+
+const LEGACY_COLUMNS: Array<{ table: string; column: string }> = [
+  { table: "delivery_events", column: "order_item_id" },
+  { table: "delivery_line_items", column: "order_line_item_id" },
+  { table: "royalty_calculations", column: "license_contract_id" },
+  { table: "royalty_calculations", column: "license_financial_condition_id" },
+  { table: "royalty_calculations", column: "manufacturing_event_id" },
+];
+
+async function inspectDependencies(client: any) {
+  console.log("\n[DROP/inspect] 旧テーブルへの依存オブジェクトを列挙");
+  for (const t of LEGACY_TABLES) {
+    const r = await client.query(
+      `SELECT DISTINCT
+         CASE c.relkind
+           WHEN 'r' THEN 'table'
+           WHEN 'v' THEN 'view'
+           WHEN 'm' THEN 'matview'
+           WHEN 'i' THEN 'index'
+           WHEN 'S' THEN 'sequence'
+           ELSE c.relkind::text
+         END AS obj_type,
+         n.nspname || '.' || c.relname AS obj_name
+       FROM pg_depend d
+       JOIN pg_class c ON c.oid = d.objid
+       JOIN pg_namespace n ON n.oid = c.relnamespace
+       WHERE d.refobjid = to_regclass($1)
+         AND d.deptype = 'n'
+         AND c.relname <> $2
+       ORDER BY obj_type, obj_name`,
+      [t, t]
+    );
+    if (r.rows.length === 0) {
+      console.log(`  ${t.padEnd(36)} (依存なし)`);
+    } else {
+      console.log(`  ${t}:`);
+      for (const row of r.rows) {
+        console.log(`    - ${row.obj_type.padEnd(10)} ${row.obj_name}`);
+      }
+    }
+  }
+}
+
 async function dropLegacy(client: any) {
-  console.log("\n[DROP] 旧テーブル / 旧カラム を物理削除");
+  if (!REALLY_DROP) {
+    console.log(
+      "\n[DROP] 依存関係の表示のみ実行 (実際の DROP は --really-drop を併用してください)"
+    );
+    await inspectDependencies(client);
+    console.log(
+      "\n  ⚠️  --really-drop を付けて再実行すると DROP TABLE ... CASCADE が走り、上記の依存オブジェクトが破壊されます。"
+    );
+    return;
+  }
+
+  console.log(
+    "\n[DROP] --really-drop 指定あり: 旧テーブル / 旧カラムを物理削除します"
+  );
+  await inspectDependencies(client);
+  console.log("\n  ⚠️  CASCADE 削除を実行します...");
+
   // 旧 FK 列を先に DROP（テーブル参照されているため）
-  await client.query(`ALTER TABLE delivery_events DROP COLUMN IF EXISTS order_item_id;`);
-  await client.query(`ALTER TABLE delivery_line_items DROP COLUMN IF EXISTS order_line_item_id;`);
-  await client.query(`ALTER TABLE royalty_calculations DROP COLUMN IF EXISTS license_contract_id;`);
-  await client.query(`ALTER TABLE royalty_calculations DROP COLUMN IF EXISTS license_financial_condition_id;`);
-  await client.query(`ALTER TABLE royalty_calculations DROP COLUMN IF EXISTS manufacturing_event_id;`);
+  for (const { table, column } of LEGACY_COLUMNS) {
+    await client.query(
+      `ALTER TABLE ${table} DROP COLUMN IF EXISTS ${column};`
+    );
+  }
 
   // 旧テーブル DROP
-  await client.query(`DROP TABLE IF EXISTS order_expenses CASCADE;`);
-  await client.query(`DROP TABLE IF EXISTS order_other_fees CASCADE;`);
-  await client.query(`DROP TABLE IF EXISTS order_line_items CASCADE;`);
-  await client.query(`DROP TABLE IF EXISTS order_items CASCADE;`);
-  await client.query(`DROP TABLE IF EXISTS license_financial_conditions CASCADE;`);
-  await client.query(`DROP TABLE IF EXISTS license_contracts CASCADE;`);
+  for (const t of LEGACY_TABLES) {
+    await client.query(`DROP TABLE IF EXISTS ${t} CASCADE;`);
+  }
   // manufacturing_events / royalty_payments も license_contracts 依存だったので確認
   // ※ manufacturing_events は royalty_calculations から参照されていたので一旦残す
   //   royalty_payments も同様。新スキーマに移行する場合は別途対応。
@@ -468,7 +540,18 @@ async function dropLegacy(client: any) {
 }
 
 async function main() {
-  console.log(`Phase 23 migration: ${APPLY ? "APPLY" : "DRY-RUN"} ${DROP ? "+ DROP" : ""}`);
+  const mode = APPLY ? "APPLY" : "DRY-RUN";
+  const dropPart = DROP
+    ? REALLY_DROP
+      ? "+ DROP (REALLY)"
+      : "+ DROP (inspect-only)"
+    : "";
+  console.log(`Phase 23 migration: ${mode} ${dropPart}`);
+  if (REALLY_DROP && !DROP) {
+    console.log(
+      "  ℹ️  --really-drop は --drop と併用してください (単独では何もしません)"
+    );
+  }
 
   const before = await countAll();
   printCounts("BEFORE", before);

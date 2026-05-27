@@ -53,6 +53,7 @@
 
 import type { Express, RequestHandler } from "express";
 import express from "express";
+import type { Pool } from "pg";
 
 export type RecordType =
   | "purchase_order"
@@ -69,6 +70,7 @@ export type ContractCategory =
 
 export interface ImportsV2Deps {
   query: (text: string, params?: any[]) => Promise<any>;
+  pool: Pool;
   getNewDocumentNumber: (type: string, issueTypeName?: string) => Promise<string>;
   resolveVendorIdForImport: (
     vendorCode?: string | null,
@@ -215,6 +217,25 @@ async function upsertContract(
     throw new Error(`invalid contract_category: ${p.contract_category}`);
   }
 
+  // 子テーブル NOT NULL カラム (capability_expenses.expense_name / capability_other_fees.fee_name)
+  // を空で渡すと INSERT 失敗 → トランザクションが ROLLBACK される。
+  // 早めに 400 系で弾いた方がユーザに親切なので、トランザクション開始前にチェック。
+  const expenses = Array.isArray(p.expenses) ? p.expenses : [];
+  for (const e of expenses) {
+    if (!e?.expense_name || !String(e.expense_name).trim()) {
+      throw new Error(
+        `expense_name is required (line_no=${e?.line_no ?? "?"})`
+      );
+    }
+  }
+  const fees = Array.isArray(p.other_fees) ? p.other_fees : [];
+  for (const f of fees) {
+    if (!f?.fee_name || !String(f.fee_name).trim()) {
+      throw new Error(`fee_name is required (line_no=${f?.line_no ?? "?"})`);
+    }
+  }
+
+  // vendor 解決と採番はトランザクション外でも安全 (別 INSERT の副作用なし)。
   const vendorId = await deps.resolveVendorIdForImport(
     p.vendor_code,
     p.vendor_name
@@ -231,264 +252,283 @@ async function upsertContract(
       ? p.backlog_issue_key.trim()
       : `IMPORT-${Date.now()}`;
 
-  // 1. contract_capabilities upsert (document_number UNIQUE)
-  const ccRes = await deps.query(
-    `INSERT INTO contract_capabilities (
-       vendor_id, record_type, contract_category, contract_type, contract_title,
-       document_number, contract_status, source_system,
-       backlog_issue_key, effective_date, expiration_date, auto_renewal,
-       tax_rate, due_date, issue_date_po, original_work, ledger_code,
-       drive_url
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-     ON CONFLICT (document_number) DO UPDATE SET
-       vendor_id         = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-       record_type       = EXCLUDED.record_type,
-       contract_category = EXCLUDED.contract_category,
-       contract_type     = EXCLUDED.contract_type,
-       contract_title    = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-       backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, contract_capabilities.backlog_issue_key),
-       effective_date    = COALESCE(EXCLUDED.effective_date, contract_capabilities.effective_date),
-       expiration_date   = COALESCE(EXCLUDED.expiration_date, contract_capabilities.expiration_date),
-       auto_renewal      = EXCLUDED.auto_renewal,
-       tax_rate          = COALESCE(EXCLUDED.tax_rate, contract_capabilities.tax_rate),
-       due_date          = COALESCE(EXCLUDED.due_date, contract_capabilities.due_date),
-       issue_date_po     = COALESCE(EXCLUDED.issue_date_po, contract_capabilities.issue_date_po),
-       original_work     = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
-       ledger_code       = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
-       drive_url         = COALESCE(NULLIF(EXCLUDED.drive_url, ''), contract_capabilities.drive_url),
-       updated_at        = CURRENT_TIMESTAMP
-     RETURNING id`,
-    [
-      vendorId,
-      p.record_type,
-      p.contract_category,
-      contractTypeLabel(p.record_type, p.contract_category),
-      p.contract_title || docNumber,
-      docNumber,
-      "executed",
-      "import-v2",
-      issueKey,
-      p.effective_date || null,
-      p.expiration_date || null,
-      !!p.auto_renewal,
-      Number(p.tax_rate) || 10,
-      p.due_date || null,
-      p.issue_date_po || null,
-      p.original_work || null,
-      p.ledger_code || null,
-      p.drive_link || null,
-    ]
-  );
-  const capabilityId = Number(ccRes.rows[0].id);
+  // contract_capabilities + 子テーブル + documents + external_assets は
+  // 単一トランザクションで atomic に書き込む。
+  // 途中で失敗すると ROLLBACK され、子テーブルが「半分消えた」状態は発生しない。
+  const client = await deps.pool.connect();
+  let capabilityId: number;
+  try {
+    await client.query("BEGIN");
 
-  // 2. line_items 一括 upsert
-  const lines = Array.isArray(p.line_items) ? p.line_items : [];
-  if (lines.length > 0) {
-    await deps.query(
-      `DELETE FROM capability_line_items WHERE capability_id = $1`,
-      [capabilityId]
-    );
-    let totalExTax = 0;
-    for (const l of lines) {
-      const qty = Number(l.quantity) || 0;
-      const unit = Number(l.unit_price) || 0;
-      const amount =
-        Number(l.amount_ex_tax) || (qty && unit ? Math.round(qty * unit) : 0);
-      totalExTax += amount;
-      await deps.query(
-        `INSERT INTO capability_line_items (
-           capability_id, line_no, category, item_name, spec, calc_method,
-           payment_method, payment_terms,
-           quantity, unit_price, amount_ex_tax,
-           delivery_date, payment_date,
-           cycle, billing_day, term_start, term_end
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
-        [
-          capabilityId,
-          Number(l.line_no) || 1,
-          l.category || "",
-          l.item_name || "",
-          l.spec || "",
-          l.calc_method || "FIXED",
-          l.payment_method || "",
-          l.payment_terms || "",
-          qty,
-          unit,
-          amount,
-          l.delivery_date || null,
-          l.payment_date || null,
-          l.cycle || null,
-          l.billing_day == null ? null : Number(l.billing_day),
-          l.term_start || null,
-          l.term_end || null,
-        ]
-      );
-    }
-    // PO 系 (record_type='purchase_order') は合計を contract_capabilities にも反映
-    if (p.record_type === "purchase_order") {
-      const taxRate = Number(p.tax_rate) || 10;
-      const taxAmount = Math.ceil((totalExTax * taxRate) / 100);
-      const incTax = totalExTax + taxAmount;
-      await deps.query(
-        `UPDATE contract_capabilities
-            SET amount_ex_tax = $2,
-                tax_amount    = $3,
-                amount_inc_tax= $4,
-                tax_rate      = $5,
-                updated_at    = CURRENT_TIMESTAMP
-          WHERE id = $1`,
-        [capabilityId, totalExTax, taxAmount, incTax, taxRate]
-      );
-    }
-  }
-
-  // 3. financial_conditions 一括 upsert
-  const conds = Array.isArray(p.financial_conditions)
-    ? p.financial_conditions
-    : [];
-  for (const c of conds) {
-    await deps.query(
-      `INSERT INTO capability_financial_conditions (
-         capability_id, condition_no, region_language_label, calc_method,
-         rate_pct, base_price_label, calc_period, calc_period_kind, calc_period_close_month,
-         currency, formula_text, payment_terms, mg_amount, ag_amount
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-       ON CONFLICT (capability_id, condition_no) DO UPDATE SET
-         region_language_label  = EXCLUDED.region_language_label,
-         calc_method            = EXCLUDED.calc_method,
-         rate_pct               = EXCLUDED.rate_pct,
-         base_price_label       = EXCLUDED.base_price_label,
-         calc_period            = EXCLUDED.calc_period,
-         calc_period_kind       = EXCLUDED.calc_period_kind,
-         calc_period_close_month= EXCLUDED.calc_period_close_month,
-         currency               = EXCLUDED.currency,
-         formula_text           = EXCLUDED.formula_text,
-         payment_terms          = EXCLUDED.payment_terms,
-         mg_amount              = EXCLUDED.mg_amount,
-         ag_amount              = EXCLUDED.ag_amount,
-         updated_at             = CURRENT_TIMESTAMP`,
+    // 1. contract_capabilities upsert (document_number UNIQUE)
+    const ccRes = await client.query(
+      `INSERT INTO contract_capabilities (
+         vendor_id, record_type, contract_category, contract_type, contract_title,
+         document_number, contract_status, source_system,
+         backlog_issue_key, effective_date, expiration_date, auto_renewal,
+         tax_rate, due_date, issue_date_po, original_work, ledger_code,
+         drive_url
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+       ON CONFLICT (document_number) DO UPDATE SET
+         vendor_id         = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
+         record_type       = EXCLUDED.record_type,
+         contract_category = EXCLUDED.contract_category,
+         contract_type     = EXCLUDED.contract_type,
+         contract_title    = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
+         backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, contract_capabilities.backlog_issue_key),
+         effective_date    = COALESCE(EXCLUDED.effective_date, contract_capabilities.effective_date),
+         expiration_date   = COALESCE(EXCLUDED.expiration_date, contract_capabilities.expiration_date),
+         auto_renewal      = EXCLUDED.auto_renewal,
+         tax_rate          = COALESCE(EXCLUDED.tax_rate, contract_capabilities.tax_rate),
+         due_date          = COALESCE(EXCLUDED.due_date, contract_capabilities.due_date),
+         issue_date_po     = COALESCE(EXCLUDED.issue_date_po, contract_capabilities.issue_date_po),
+         original_work     = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
+         ledger_code       = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
+         drive_url         = COALESCE(NULLIF(EXCLUDED.drive_url, ''), contract_capabilities.drive_url),
+         updated_at        = CURRENT_TIMESTAMP
+       RETURNING id`,
       [
-        capabilityId,
-        Number(c.condition_no) || 1,
-        c.region_language_label || null,
-        c.calc_method || null,
-        c.rate_pct == null ? null : Number(c.rate_pct),
-        c.base_price_label || null,
-        c.calc_period || null,
-        c.calc_period_kind || null,
-        c.calc_period_close_month == null
-          ? null
-          : Number(c.calc_period_close_month),
-        c.currency || "JPY",
-        c.formula_text || null,
-        c.payment_terms || null,
-        Number(c.mg_amount) || 0,
-        Number(c.ag_amount) || 0,
+        vendorId,
+        p.record_type,
+        p.contract_category,
+        contractTypeLabel(p.record_type, p.contract_category),
+        p.contract_title || docNumber,
+        docNumber,
+        "executed",
+        "import-v2",
+        issueKey,
+        p.effective_date || null,
+        p.expiration_date || null,
+        !!p.auto_renewal,
+        Number(p.tax_rate) || 10,
+        p.due_date || null,
+        p.issue_date_po || null,
+        p.original_work || null,
+        p.ledger_code || null,
+        p.drive_link || null,
       ]
     );
-  }
+    capabilityId = Number(ccRes.rows[0].id);
 
-  // 4. expenses 一括 upsert
-  const expenses = Array.isArray(p.expenses) ? p.expenses : [];
-  if (expenses.length > 0) {
-    await deps.query(
-      `DELETE FROM capability_expenses WHERE capability_id = $1`,
-      [capabilityId]
-    );
-    for (const e of expenses) {
-      await deps.query(
-        `INSERT INTO capability_expenses (
-           capability_id, line_no, expense_name, spec, spent_date,
-           amount_inc_tax, remarks
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+    // 2. line_items 一括 upsert
+    const lines = Array.isArray(p.line_items) ? p.line_items : [];
+    if (lines.length > 0) {
+      await client.query(
+        `DELETE FROM capability_line_items WHERE capability_id = $1`,
+        [capabilityId]
+      );
+      let totalExTax = 0;
+      for (const l of lines) {
+        const qty = Number(l.quantity) || 0;
+        const unit = Number(l.unit_price) || 0;
+        const amount =
+          Number(l.amount_ex_tax) || (qty && unit ? Math.round(qty * unit) : 0);
+        totalExTax += amount;
+        await client.query(
+          `INSERT INTO capability_line_items (
+             capability_id, line_no, category, item_name, spec, calc_method,
+             payment_method, payment_terms,
+             quantity, unit_price, amount_ex_tax,
+             delivery_date, payment_date,
+             cycle, billing_day, term_start, term_end
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+          [
+            capabilityId,
+            Number(l.line_no) || 1,
+            l.category || "",
+            l.item_name || "",
+            l.spec || "",
+            l.calc_method || "FIXED",
+            l.payment_method || "",
+            l.payment_terms || "",
+            qty,
+            unit,
+            amount,
+            l.delivery_date || null,
+            l.payment_date || null,
+            l.cycle || null,
+            l.billing_day == null ? null : Number(l.billing_day),
+            l.term_start || null,
+            l.term_end || null,
+          ]
+        );
+      }
+      // PO 系 (record_type='purchase_order') は合計を contract_capabilities にも反映
+      if (p.record_type === "purchase_order") {
+        const taxRate = Number(p.tax_rate) || 10;
+        const taxAmount = Math.ceil((totalExTax * taxRate) / 100);
+        const incTax = totalExTax + taxAmount;
+        await client.query(
+          `UPDATE contract_capabilities
+              SET amount_ex_tax = $2,
+                  tax_amount    = $3,
+                  amount_inc_tax= $4,
+                  tax_rate      = $5,
+                  updated_at    = CURRENT_TIMESTAMP
+            WHERE id = $1`,
+          [capabilityId, totalExTax, taxAmount, incTax, taxRate]
+        );
+      }
+    }
+
+    // 3. financial_conditions 一括 upsert
+    const conds = Array.isArray(p.financial_conditions)
+      ? p.financial_conditions
+      : [];
+    for (const c of conds) {
+      await client.query(
+        `INSERT INTO capability_financial_conditions (
+           capability_id, condition_no, region_language_label, calc_method,
+           rate_pct, base_price_label, calc_period, calc_period_kind, calc_period_close_month,
+           currency, formula_text, payment_terms, mg_amount, ag_amount
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+         ON CONFLICT (capability_id, condition_no) DO UPDATE SET
+           region_language_label  = EXCLUDED.region_language_label,
+           calc_method            = EXCLUDED.calc_method,
+           rate_pct               = EXCLUDED.rate_pct,
+           base_price_label       = EXCLUDED.base_price_label,
+           calc_period            = EXCLUDED.calc_period,
+           calc_period_kind       = EXCLUDED.calc_period_kind,
+           calc_period_close_month= EXCLUDED.calc_period_close_month,
+           currency               = EXCLUDED.currency,
+           formula_text           = EXCLUDED.formula_text,
+           payment_terms          = EXCLUDED.payment_terms,
+           mg_amount              = EXCLUDED.mg_amount,
+           ag_amount              = EXCLUDED.ag_amount,
+           updated_at             = CURRENT_TIMESTAMP`,
         [
           capabilityId,
-          Number(e.line_no) || 1,
-          e.expense_name,
-          e.spec || "",
-          e.spent_date || null,
-          Number(e.amount_inc_tax) || 0,
-          e.remarks || "",
+          Number(c.condition_no) || 1,
+          c.region_language_label || null,
+          c.calc_method || null,
+          c.rate_pct == null ? null : Number(c.rate_pct),
+          c.base_price_label || null,
+          c.calc_period || null,
+          c.calc_period_kind || null,
+          c.calc_period_close_month == null
+            ? null
+            : Number(c.calc_period_close_month),
+          c.currency || "JPY",
+          c.formula_text || null,
+          c.payment_terms || null,
+          Number(c.mg_amount) || 0,
+          Number(c.ag_amount) || 0,
         ]
       );
     }
-  }
 
-  // 5. other_fees 一括 upsert
-  const fees = Array.isArray(p.other_fees) ? p.other_fees : [];
-  if (fees.length > 0) {
-    await deps.query(
-      `DELETE FROM capability_other_fees WHERE capability_id = $1`,
-      [capabilityId]
-    );
-    for (const f of fees) {
-      await deps.query(
-        `INSERT INTO capability_other_fees (
-           capability_id, line_no, fee_name, amount, remarks
-         ) VALUES ($1,$2,$3,$4,$5)`,
-        [
-          capabilityId,
-          Number(f.line_no) || 1,
-          f.fee_name,
-          Number(f.amount) || 0,
-          f.remarks || "",
-        ]
+    // 4. expenses 一括 upsert (expense_name は事前バリデーション済)
+    if (expenses.length > 0) {
+      await client.query(
+        `DELETE FROM capability_expenses WHERE capability_id = $1`,
+        [capabilityId]
       );
+      for (const e of expenses) {
+        await client.query(
+          `INSERT INTO capability_expenses (
+             capability_id, line_no, expense_name, spec, spent_date,
+             amount_inc_tax, remarks
+           ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+          [
+            capabilityId,
+            Number(e.line_no) || 1,
+            String(e.expense_name).trim(),
+            e.spec || "",
+            e.spent_date || null,
+            Number(e.amount_inc_tax) || 0,
+            e.remarks || "",
+          ]
+        );
+      }
     }
-  }
 
-  // 6. documents 行も登録 (PDF生成履歴の役割)
-  await deps.query(
-    `INSERT INTO documents (
-       document_number, issue_key, template_type, form_data,
-       drive_link, created_by
-     ) VALUES ($1,$2,$3,$4,$5,$6)
-     ON CONFLICT (document_number) DO UPDATE SET
-       form_data  = EXCLUDED.form_data,
-       drive_link = EXCLUDED.drive_link`,
-    [
-      docNumber,
-      issueKey,
-      tmplType,
-      JSON.stringify({
-        ...(p.form_data || {}),
-        VENDOR_CODE: p.vendor_code || "",
-        VENDOR_NAME: p.vendor_name || "",
-        record_type: p.record_type,
-        contract_category: p.contract_category,
-        line_items: p.line_items || [],
-        financial_conditions: p.financial_conditions || [],
-        expenses: p.expenses || [],
-        other_fees: p.other_fees || [],
-        __imported: true,
-        __v2: true,
-      }),
-      p.drive_link || "",
-      "import-v2",
-    ]
-  );
+    // 5. other_fees 一括 upsert (fee_name は事前バリデーション済)
+    if (fees.length > 0) {
+      await client.query(
+        `DELETE FROM capability_other_fees WHERE capability_id = $1`,
+        [capabilityId]
+      );
+      for (const f of fees) {
+        await client.query(
+          `INSERT INTO capability_other_fees (
+             capability_id, line_no, fee_name, amount, remarks
+           ) VALUES ($1,$2,$3,$4,$5)`,
+          [
+            capabilityId,
+            Number(f.line_no) || 1,
+            String(f.fee_name).trim(),
+            Number(f.amount) || 0,
+            f.remarks || "",
+          ]
+        );
+      }
+    }
 
-  // 7. external_assets (drive_link あれば)
-  if (p.drive_link) {
-    await deps.query(
-      `INSERT INTO external_assets
-         (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
-       VALUES ($1,$2,$3,$4,$5,$6)
-       ON CONFLICT (asset_number) DO UPDATE SET
-         file_link    = EXCLUDED.file_link,
-         counterparty = EXCLUDED.counterparty`,
+    // 6. documents 行も登録 (PDF生成履歴の役割)
+    await client.query(
+      `INSERT INTO documents (
+         document_number, issue_key, template_type, form_data,
+         drive_link, created_by
+       ) VALUES ($1,$2,$3,$4,$5,$6)
+       ON CONFLICT (document_number) DO UPDATE SET
+         form_data  = EXCLUDED.form_data,
+         drive_link = EXCLUDED.drive_link`,
       [
         docNumber,
-        p.contract_title || docNumber,
-        p.record_type === "master_contract" ? "master_contract" : "individual",
-        p.vendor_name || p.vendor_code || "Imported",
-        p.drive_link,
         issueKey,
+        tmplType,
+        JSON.stringify({
+          ...(p.form_data || {}),
+          VENDOR_CODE: p.vendor_code || "",
+          VENDOR_NAME: p.vendor_name || "",
+          record_type: p.record_type,
+          contract_category: p.contract_category,
+          line_items: p.line_items || [],
+          financial_conditions: p.financial_conditions || [],
+          expenses: p.expenses || [],
+          other_fees: p.other_fees || [],
+          __imported: true,
+          __v2: true,
+        }),
+        p.drive_link || "",
+        "import-v2",
       ]
     );
+
+    // 7. external_assets (drive_link あれば)
+    if (p.drive_link) {
+      await client.query(
+        `INSERT INTO external_assets
+           (asset_number, asset_name, asset_type, counterparty, file_link, backlog_issue_key)
+         VALUES ($1,$2,$3,$4,$5,$6)
+         ON CONFLICT (asset_number) DO UPDATE SET
+           file_link    = EXCLUDED.file_link,
+           counterparty = EXCLUDED.counterparty`,
+        [
+          docNumber,
+          p.contract_title || docNumber,
+          p.record_type === "master_contract" ? "master_contract" : "individual",
+          p.vendor_name || p.vendor_code || "Imported",
+          p.drive_link,
+          issueKey,
+        ]
+      );
+    }
+
+    await client.query("COMMIT");
+  } catch (e) {
+    try {
+      await client.query("ROLLBACK");
+    } catch (rollbackErr) {
+      console.error("upsertContract: ROLLBACK failed:", rollbackErr);
+    }
+    throw e;
+  } finally {
+    client.release();
   }
 
-  // 8. 稟議番号紐付け
+  // 8. 稟議番号紐付け (トランザクション外 — ringi 側 INSERT は別テーブルで
+  //    独立。失敗しても契約本体は保持される。)
   if (p.ringi_numbers) {
     await deps.linkRingiByDocNumber(docNumber, p.ringi_numbers);
   }
