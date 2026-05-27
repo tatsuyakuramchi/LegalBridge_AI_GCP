@@ -222,13 +222,49 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           WHERE capability_id = $1 ORDER BY line_no`,
         [id]
       );
+      // Phase 23.6.10: form_data lookup を broaden する。
+      //   直接 document_number でヒットしない場合 (例: ARC-PO-2026-0021_004
+      //   が contract_capabilities にだけあって documents に無いケース) に、
+      //   base_document_number の revision chain 全体を見にいく。
+      //   ON CONFLICT (document_number) によるリビジョン管理の過程で、
+      //   contract_capabilities と documents の document_number が一致しなく
+      //   なっていることがあるため、その救済。
+      //
+      //   優先順位 (一番上が最良):
+      //     1. document_number = cc.document_number (完全一致)
+      //     2. document_number = cc.base_document_number (基底)
+      //     3. document_number LIKE base_document_number || '\_%'
+      //                                            (改版 _001 / _002 / ...)
+      //     4. form_data に items[] が入っている方を優先
+      //     5. created_at DESC で最新
       const docRow = await deps.query(
-        `SELECT document_number, drive_link, created_at, form_data
+        `SELECT document_number, drive_link, created_at, form_data,
+                CASE
+                  WHEN document_number = $1 THEN 1
+                  WHEN document_number = $2 THEN 2
+                  ELSE 3
+                END AS match_rank,
+                (form_data ? 'items'
+                   AND jsonb_typeof(form_data->'items') = 'array'
+                   AND jsonb_array_length(form_data->'items') > 0) AS has_items
            FROM documents
           WHERE document_number = $1
-          ORDER BY created_at DESC LIMIT 1`,
-        [cc.document_number]
+             OR ($2 <> '' AND (
+                  document_number = $2
+                  OR document_number LIKE $2 || '\_%' ESCAPE '\'
+                ))
+          ORDER BY has_items DESC, match_rank ASC, created_at DESC
+          LIMIT 1`,
+        [cc.document_number, cc.base_document_number || ""]
       );
+      if (
+        docRow.rows.length > 0 &&
+        docRow.rows[0].document_number !== cc.document_number
+      ) {
+        console.log(
+          `[contracts/${id}] form_data fallback: ${cc.document_number} → ${docRow.rows[0].document_number} (base=${cc.base_document_number})`
+        );
+      }
 
       // 検収件数 (delivery_events.capability_id) と次の delivery_no
       const delivCount = await deps.query(
