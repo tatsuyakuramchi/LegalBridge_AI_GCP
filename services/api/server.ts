@@ -1276,9 +1276,12 @@ async function startServer() {
             }
           }
           if (parentKey) {
+            // Phase 23.6.12: contract_capabilities には description 列が無い
+            //   (旧 order_items の名残)。下流の poRow.description 参照箇所も
+            //   無いので SELECT から削除。これで PG が 500 で死ぬのを防ぐ。
             const poHeader = await query(
               `SELECT id, amount_ex_tax, tax_rate, backlog_issue_key,
-                      description, due_date, created_at
+                      contract_title, due_date, created_at
                  FROM contract_capabilities
                 WHERE backlog_issue_key = $1
                   AND record_type = 'purchase_order'`,
@@ -1417,8 +1420,19 @@ async function startServer() {
         //   PO 帳票 / 検収書の代表者欄に正しい値が出るようにする。
         // Phase 23: order_items → contract_capabilities (record_type='purchase_order'),
         //   delivery_events.order_item_id → capability_id に置換。
+        // Phase 23.6.12: contract_capabilities には amount / description / spec /
+        //   vendor_code は無い (旧 order_items の名残)。
+        //   - oi.amount        → oi.amount_ex_tax
+        //   - oi.description   → oi.contract_title
+        //   - oi.spec          → capability_line_items 1 行目から取る
+        //   - JOIN vendors は vendor_id 経由に変更
         const deliveryQuery = `
-          SELECT de.*, oi.amount as order_amount, oi.description as item_desc, oi.spec as item_spec,
+          SELECT de.*,
+                 oi.amount_ex_tax  as order_amount,
+                 oi.contract_title as item_desc,
+                 (SELECT cli.spec FROM capability_line_items cli
+                    WHERE cli.capability_id = oi.id
+                    ORDER BY cli.line_no LIMIT 1) as item_spec,
                  v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type,
                  v.account_number, v.account_holder_kana as account_holder,
                  v.entity_type as vendor_entity_type,
@@ -1434,7 +1448,7 @@ async function startServer() {
           LEFT JOIN contract_capabilities oi
                  ON de.capability_id = oi.id
                 AND oi.record_type = 'purchase_order'
-          LEFT JOIN vendors v ON oi.vendor_code = v.vendor_code
+          LEFT JOIN vendors v ON v.id = oi.vendor_id
           LEFT JOIN legal_requests lr ON de.backlog_issue_key = lr.backlog_issue_key
           LEFT JOIN external_assets ea ON de.linked_asset_id = ea.id
           WHERE de.backlog_issue_key = $1
@@ -1872,29 +1886,36 @@ async function startServer() {
       });
 
       // Phase 23: order_items → contract_capabilities (record_type='purchase_order') に置換。
+      // Phase 23.6.12: 旧 order_items.item_no / .amount は contract_capabilities
+      //   には存在しない。document_number / contract_title / amount_ex_tax で
+      //   置き換える。1 issue に複数 PO がぶら下がるケースのために id 順を
+      //   line_no 代替として使う。
       const orders = await query(
-        `SELECT * FROM contract_capabilities
+        `SELECT id, document_number, contract_title, amount_ex_tax,
+                created_at
+           FROM contract_capabilities
           WHERE backlog_issue_key = $1
             AND record_type = 'purchase_order'
           ORDER BY created_at ASC`,
         [key]
       );
-      orders.rows.forEach((o) => {
+      orders.rows.forEach((o, idx) => {
         history.push({
           id: `order-${o.id}`,
           type: "order",
-          label: `発注登録 (アイテム #${o.item_no})`,
+          label: `発注登録: ${o.document_number || o.contract_title || `#${idx + 1}`}`,
           date: o.created_at,
-          ref: `PO Item #${o.item_no}`,
-          amount: o.amount,
+          ref: o.document_number || `PO #${o.id}`,
+          amount: Number(o.amount_ex_tax) || 0,
           details: o,
         });
       });
 
       // Phase 23: order_items → contract_capabilities, delivery_events.order_item_id → capability_id に置換。
+      // Phase 23.6.12: oi.item_no は存在しないので document_number を表示用に使う。
       const deliveries = await query(
         `
-        SELECT de.*, oi.item_no
+        SELECT de.*, oi.document_number AS po_document_number
         FROM delivery_events de
         LEFT JOIN contract_capabilities oi
                ON de.capability_id = oi.id
@@ -1908,9 +1929,11 @@ async function startServer() {
         history.push({
           id: `delivery-${dev.id}`,
           type: "delivery",
-          label: `検収確認 [${dev.status.toUpperCase()}]`,
+          label: `検収確認 [${(dev.status || "").toString().toUpperCase()}]`,
           date: dev.created_at,
-          ref: `納品 #${dev.delivery_no}${dev.item_no ? ` (Item #${dev.item_no})` : ""}`,
+          ref: `納品 #${dev.delivery_no}${
+            dev.po_document_number ? ` (${dev.po_document_number})` : ""
+          }`,
           details: dev,
         });
       });

@@ -63,6 +63,16 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   //   admin-ui DocumentEditorPage の「DBSYNC」ボタンと
   //   閲覧/編集モードトグル時に直叩きする。
   /^\/api\/document-drafts(?:\/|$|\?)/,
+  // Phase 23.6.12: /api/management/* は worker のみに実装。
+  //   GET /api/management/issues/:issueKey/line-items (WorkflowPanel)
+  //   PATCH /api/management/order-line-items/:id/deadline
+  //   PATCH /api/management/issues/:issueKey/deadline
+  //   POST  /api/management/issues/:issueKey/deadline-change
+  //   GET   /api/management/alerts / /api/management/deliveries は
+  //         api/server.ts にも mirror がある (上書きされて WRITE に行く)
+  //         が、search-api 経路でも問題ないので broaden しない。
+  //   ここでは line-items GET を WRITE に明示的に振る。
+  /^\/api\/management\/issues\/[^/]+\/line-items(?:\?|$|\/)/,
 ];
 
 // Routes that should go to the READ service even on POST.
