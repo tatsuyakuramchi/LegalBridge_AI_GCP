@@ -9364,6 +9364,20 @@ ${details}
           );
         }
 
+        // Phase 23.6.7: record_type 分類を正す。
+        //   従来は purchase_order / inspection を両方 'individual_contract' に
+        //   まとめていたため、発注書 (例: ARC-PO-2026-0019) が
+        //   UnifiedContractPicker で「個別契約」として表示され、検収書フォーム
+        //   から選択しても明細が出ない事故が発生していた (Phase 23.6.6 で対症
+        //   療法を入れたが、ここが根本原因)。
+        //
+        //   record_type 値域 (db.ts 1300〜参照):
+        //     'master_contract'      : 基本契約 (NDA / sales_master 等)
+        //     'individual_contract'  : 基本契約あり個別契約
+        //     'standalone_contract'  : 基本契約なし単独契約
+        //     'purchase_order'       : 発注書
+        //     'license_condition'    : 利用許諾 (license / royalty)
+        //     'delivery_record'      : 検収書 (mirror 用、picker には載らない)
         let recordType = "master_contract";
         // Phase 22.21.82: fee_statement テンプレ削除に伴い branch から除去
         if (
@@ -9371,11 +9385,11 @@ ${details}
           templateType.includes("royalty")
         ) {
           recordType = "license_condition";
-        } else if (
-          templateType.includes("purchase_order") ||
-          templateType.includes("inspection")
-        ) {
-          recordType = "individual_contract";
+        } else if (templateType.includes("purchase_order")) {
+          recordType = "purchase_order";
+        } else if (templateType.includes("inspection")) {
+          // 検収書は契約ではなく delivery event。picker から除外したい。
+          recordType = "delivery_record";
         }
 
         await query(

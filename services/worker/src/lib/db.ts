@@ -1320,6 +1320,42 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_capabilities_backlog ON contract_capabilities(backlog_issue_key) WHERE backlog_issue_key IS NOT NULL;`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_record_type_cat ON contract_capabilities(record_type, contract_category);`,
 
+    // -----------------------------------------------------------------
+    // Phase 23.6.7: 既存データの record_type 修復。
+    //   worker/server.ts 旧版が purchase_order / inspection を両方
+    //   'individual_contract' として登録していたため、UnifiedContractPicker
+    //   で発注書が「個別契約」表示になり、検収書フォームから選択しても
+    //   明細が出ない事故 (例: ARC-PO-2026-0019) を起こしていた。
+    //
+    //   contract_type / document_number 接頭辞をヒントに正しい record_type へ
+    //   バックフィル。冪等 (条件付き UPDATE)。
+    //
+    //   - contract_type='purchase_order' or document_number LIKE 'ARC-PO-%'
+    //     かつ record_type='individual_contract' → 'purchase_order'
+    //   - contract_type LIKE '%inspection%' or document_number LIKE 'ARC-IC-%'
+    //     かつ record_type='individual_contract' → 'delivery_record'
+    // -----------------------------------------------------------------
+    `UPDATE contract_capabilities
+        SET record_type = 'purchase_order',
+            contract_category = COALESCE(contract_category, 'service'),
+            updated_at = CURRENT_TIMESTAMP
+      WHERE record_type = 'individual_contract'
+        AND (
+          contract_type = 'purchase_order'
+          OR contract_type = 'intl_purchase_order'
+          OR document_number LIKE 'ARC-PO-%'
+          OR document_number LIKE 'ARC-IPO-%'
+        );`,
+    `UPDATE contract_capabilities
+        SET record_type = 'delivery_record',
+            contract_category = COALESCE(contract_category, 'service'),
+            updated_at = CURRENT_TIMESTAMP
+      WHERE record_type = 'individual_contract'
+        AND (
+          contract_type LIKE '%inspection%'
+          OR document_number LIKE 'ARC-IC-%'
+        );`,
+
     // capability_line_items にも検収集計・アラート列を追加 (旧 order_line_items 由来)
     `ALTER TABLE capability_line_items ADD COLUMN IF NOT EXISTS inspected_amount_ex_tax DECIMAL(15,2) DEFAULT 0;`,
     `ALTER TABLE capability_line_items ADD COLUMN IF NOT EXISTS last_alert_at TIMESTAMP WITH TIME ZONE;`,
