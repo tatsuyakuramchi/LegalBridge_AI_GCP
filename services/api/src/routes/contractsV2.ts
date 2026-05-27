@@ -12,10 +12,13 @@
  * /api/license-contracts/by-issue/:key を全置換する。
  */
 
-import type { Express } from "express";
+import type { Express, RequestHandler } from "express";
 
 export interface ContractsV2Deps {
   query: (text: string, params?: any[]) => Promise<any>;
+  // Phase 23.0.4: portal secret 認証ミドルウェア。
+  // search / detail とも社内テナント (admin-ui) 専用なので必須化。
+  requirePortalSecret: RequestHandler;
 }
 
 export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
@@ -30,7 +33,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
    *   limit        : デフォルト 50, 最大 200
    *   include_inactive=1 を付けると is_active=FALSE も返す
    */
-  app.get("/api/contracts/search", async (req, res) => {
+  app.get("/api/contracts/search", deps.requirePortalSecret, async (req, res) => {
     try {
       const q = String(req.query.q || "").trim();
       const recordTypesRaw = String(req.query.record_types || "").trim();
@@ -153,7 +156,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
    * 詳細取得。子テーブル全部 + vendor + 検収集計を返す。
    * 検収書フォームの onPick で必要な形にまとめる。
    */
-  app.get("/api/contracts/:id", async (req, res) => {
+  app.get("/api/contracts/:id", deps.requirePortalSecret, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id) || id <= 0) {

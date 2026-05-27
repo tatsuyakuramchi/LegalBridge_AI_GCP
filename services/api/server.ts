@@ -1383,6 +1383,11 @@ async function startServer() {
                   unit_price: Number(l.unit_price) || 0,
                   quantity: ordQty,
                   amount_ex_tax: ordAmt,
+                  // Phase 23.0.4: 検収書 Excel / PDF 生成時に納品日列が空に
+                  //   なる問題を解消するため delivery_date / payment_date を追加。
+                  //   excelService.findParentLine が l.delivery_date を読む。
+                  delivery_date: l.delivery_date || null,
+                  payment_date: l.payment_date || null,
                   inspection: {
                     ordered_amount: ordAmt,
                     ordered_quantity: ordQty,
@@ -2420,7 +2425,7 @@ async function startServer() {
   //                                expenses, other_fees, vendor, 検収集計)
   //   旧 /api/order-items/list / by-issue は Phase 23.1 で削除予定。
   // -----------------------------------------------------------------
-  registerContractsV2(app, { query });
+  registerContractsV2(app, { query, requirePortalSecret });
 
   // [DEPRECATED Phase 23] /api/order-items/list は UnifiedContractPicker
   //   経由で /api/contracts/search に統合済み。残置は外部スクリプトの互換用。

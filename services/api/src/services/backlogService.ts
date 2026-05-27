@@ -171,12 +171,24 @@ export class BacklogService {
 
   /**
    * Flattens Backlog custom fields into a readable object { [fieldNameOrId]: value }
+   *
+   * Phase 23.0.4: `description` キー には Backlog 課題本文が入る (例:
+   *   「依頼タイプ: delivery_inspec ...」)。下流テンプレで {{description}}
+   *   を直接参照すると、検収書PDFの「成果物・業務内容」列に Backlog 本文が
+   *   そのまま流出する事故が発生する。
+   *
+   *   - 検収書フォームでは onPick 時に line_items.item_name で上書きする
+   *     対症療法を入れているが、他テンプレ (発注書・利用許諾等) で
+   *     {{description}} を使うときには注意。
+   *   - `__backlog_description` は Backlog 由来であることを明示するキー。
+   *     新規テンプレ / form-context ロジックはこちらを参照することを推奨。
    */
   extractCustomFields(issue: any): Record<string, any> {
     const fields: Record<string, any> = {
       issueKey: issue.issueKey,
       summary: issue.summary,
       description: issue.description,
+      __backlog_description: issue.description,
       status: issue.status?.name,
       issueType: issue.issueType?.name,
       priority: issue.priority?.name,
