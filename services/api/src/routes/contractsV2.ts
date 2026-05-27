@@ -39,6 +39,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       const recordTypesRaw = String(req.query.record_types || "").trim();
       const categoryRaw = String(req.query.category || "").trim();
       const includeInactive = String(req.query.include_inactive || "") === "1";
+      // Phase 23.1: 履歴 (archived_draft / reissued) も含めるトグル。
+      //   default は false (= lifecycle_status='final' のみ)。
+      const includeHistory = String(req.query.include_history || "") === "1";
       const limit = Math.min(Number(req.query.limit) || 50, 200);
 
       const recordTypes = recordTypesRaw
@@ -60,6 +63,11 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       }
       if (!includeInactive) {
         where.push(`COALESCE(cc.is_active, TRUE) = TRUE`);
+      }
+      // Phase 23.1: lifecycle_status='final' のみを既定で返す。
+      //   include_history=1 で archived_draft / reissued も含める。
+      if (!includeHistory) {
+        where.push(`COALESCE(cc.lifecycle_status, 'final') = 'final'`);
       }
       if (q) {
         params.push(`%${q}%`);
@@ -97,6 +105,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           cc.original_work,
           cc.ledger_code,
           cc.is_active,
+          cc.lifecycle_status,
+          cc.revision,
+          cc.base_document_number,
           cc.created_at,
           v.vendor_code,
           v.vendor_name,
@@ -137,6 +148,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           original_work: r.original_work || "",
           ledger_code: r.ledger_code || "",
           is_active: r.is_active !== false,
+          lifecycle_status: r.lifecycle_status || "final",
+          revision: Number(r.revision) || 0,
+          base_document_number: r.base_document_number || "",
           created_at: r.created_at,
           line_count: Number(r.line_count) || 0,
           condition_count: Number(r.condition_count) || 0,

@@ -116,6 +116,31 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_capabilities_is_primary ON contract_capabilities(is_primary);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_base ON contract_capabilities(base_document_number);`,
 
+    // -----------------------------------------------------------------
+    // Phase 23.1: 文書ライフサイクル管理。
+    //   従来の is_primary は「真の契約=1件」のフラグだったが、(issue_key,
+    //   template_type) 単位での「正/過去版」区分が運用上不足。lifecycle_status
+    //   で 3 状態に分けて管理する。
+    //
+    //   values:
+    //     'final'           ... 現在の正 (検索一覧・PDF再生成の対象)
+    //     'archived_draft'  ... 内部修正で上書き前の過去版 (履歴参照のみ)
+    //     'reissued'        ... 外部要請の再発行で revision+1 された過去版
+    //                            (修正版 Rev. N で置換された旧 final)
+    //
+    //   既存データは DEFAULT 'final' で開始。実際の正規化 (= 同 issueKey に
+    //   複数 final がある状態の解消) は scripts/normalize_document_lifecycle.ts
+    //   を別途実行する運用とする (initDb では行わない)。
+    // -----------------------------------------------------------------
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(20) DEFAULT 'final';`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS lifecycle_status VARCHAR(20) DEFAULT 'final';`,
+    `UPDATE documents SET lifecycle_status = 'final'
+      WHERE lifecycle_status IS NULL OR lifecycle_status = '';`,
+    `UPDATE contract_capabilities SET lifecycle_status = 'final'
+      WHERE lifecycle_status IS NULL OR lifecycle_status = '';`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_lifecycle ON documents(lifecycle_status);`,
+    `CREATE INDEX IF NOT EXISTS idx_capabilities_lifecycle ON contract_capabilities(lifecycle_status);`,
+
     `CREATE TABLE IF NOT EXISTS document_sequences (
       kind VARCHAR(50) NOT NULL,
       year INTEGER NOT NULL,
@@ -2053,7 +2078,7 @@ export async function markPrimaryDocument(
 }
 
 /**
- * Phase 22.10 (改 Phase 22.11.1): 文書番号採番 + リビジョン管理。
+ * Phase 22.10 (改 Phase 22.11.1 / 改 Phase 23.1): 文書番号採番 + リビジョン管理。
  *
  * 採番ルール:
  *   ① existingDocumentNumber が渡されなかった場合 = 完全新規
@@ -2062,33 +2087,46 @@ export async function markPrimaryDocument(
  *   ② existingDocumentNumber 渡し + その既存ドキュメントが
  *      drive_link 空 = 未完成 draft → そのまま同番号で完成
  *        (旧 Phase 15: PDF 未作成キュー由来の draft 完成)
- *   ③ existingDocumentNumber 渡し + drive_link 入り = 完成済を再編集
- *        → 同じ base を共有しつつ revision を +1 して "_NNN" サフィックス付与
- *          (Archive から「再編集モードで開く」→ 編集 → 再発行 のフロー)
+ *   ③ existingDocumentNumber 渡し + drive_link 入り + reissue=false (default)
+ *      = 完成済を内部修正 (上書き)
+ *        → 同じ document_number / revision / base のまま (overwrite=true で返す)
+ *          (Phase 23.1: 既定動作。caller 側で UPDATE で同 row を上書きし、
+ *           Drive PDF も同 fileId で content 差し替え)
+ *   ④ existingDocumentNumber 渡し + drive_link 入り + reissue=true
+ *      = 完成済を外部要請で再発行
+ *        → base を共有しつつ revision を +1 して "_NNN" サフィックス付与
+ *          (Phase 23.1: 明示的 reissue=true でのみ発動。caller 側で過去 row を
+ *           lifecycle_status='reissued' に倒し、新 row を挿入する)
  *
  * 旧 Phase 22.10 にあった「同 issue_key + 同 template_type の既存 doc を見て
- * 自動的に再発行扱い」ロジックは撤廃。これは同一取引先・同一 issueKey で
- * 別 PO を発行する正常ユースケースを破壊していた。リビジョンは
- * 「ユーザーが既存 PO を明示的に reopen して再編集した」場合のみ発火する。
+ * 自動的に再発行扱い」ロジックは撤廃済。同一取引先・同一 issueKey で
+ * 別 PO を発行する正常ユースケースを破壊しないため、リビジョンは
+ * 「ユーザーが reopen して "再発行" を明示選択した」場合のみ発火する。
  *
  * 返り値:
- *   documentNumber:      実際に新規発行する番号
+ *   documentNumber:      実際に発行/更新する番号
  *   baseDocumentNumber:  初版番号 (リビジョンを跨ぐ共通キー)
  *   revision:            0=初版 / 1,2,... = 再発行版
- *   isReissue:           true なら再発行 (Rev. ≥ 1 = 既存編集)
+ *   isReissue:           true なら再発行 (Rev. ≥ 1、新規 row 挿入が必要)
+ *   overwrite:           true なら既存 row を UPDATE で上書き (Phase 23.1 新設)
+ *                        — INSERT ではなく UPDATE で同 row を更新し、Drive PDF も
+ *                        既存 fileId に content を差し替える経路を caller に伝える
  */
 export async function getDocumentNumberForGenerate(opts: {
   issueKey: string;
   templateType: string;
   issueTypeName?: string;
   existingDocumentNumber?: string;
+  /** Phase 23.1: 外部要請の再発行フラグ。true なら revision+1 で別 row 採番。 */
+  reissue?: boolean;
 }): Promise<{
   documentNumber: string;
   baseDocumentNumber: string;
   revision: number;
   isReissue: boolean;
+  overwrite: boolean;
 }> {
-  const { templateType, issueTypeName, existingDocumentNumber } = opts;
+  const { templateType, issueTypeName, existingDocumentNumber, reissue } = opts;
 
   // === Case ①: 完全新規 (existingDocumentNumber なし) ===
   // 毎回新しい番号を採番。同 issueKey に対して 2 度目以降の発行も普通に新規扱い。
@@ -2099,6 +2137,7 @@ export async function getDocumentNumberForGenerate(opts: {
       baseDocumentNumber: newNumber,
       revision: 0,
       isReissue: false,
+      overwrite: false,
     };
   }
 
@@ -2128,35 +2167,55 @@ export async function getDocumentNumberForGenerate(opts: {
       baseDocumentNumber: docNum,
       revision: 0,
       isReissue: false,
+      overwrite: false,
     };
   }
 
   const existing = existingRow.rows[0];
   const base = existing.base_document_number || existing.document_number || docNum;
+  const existingDocNumber = existing.document_number || docNum;
   const isUnfinishedDraft =
     !existing.drive_link || String(existing.drive_link).trim() === "";
 
   // === Case ②: 未完成 draft の完成 (drive_link 空) ===
   // 旧 Phase 15: PDF 未作成キュー由来。同番号で UPDATE 完了 (リビジョンは
-  // 上げない)。
+  // 上げない)。overwrite=true で同 row UPDATE 経路へ。
   if (isUnfinishedDraft) {
     return {
-      documentNumber: docNum,
+      documentNumber: existingDocNumber,
       baseDocumentNumber: base,
       revision: Number(existing.revision) || 0,
       isReissue: false,
+      overwrite: true,
     };
   }
 
-  // === Case ③: 完成済を再編集 → リビジョン採番 ===
-  // base を共有しつつ revision を +1 して "_NNN" サフィックス付与。
-  const nextRev = (Number(existing.revision) || 0) + 1;
-  const suffix = nextRev.toString().padStart(3, "0");
+  // === Case ④: 完成済 + 再発行 (reissue=true) → revision+1 で新行 ===
+  // 「再発行 (修正版)」ボタン経由でのみ発動。base を共有しつつ revision を
+  // +1 して "_NNN" サフィックス付与。caller は過去 row を
+  // lifecycle_status='reissued' に倒し、新 row を挿入する。
+  if (reissue === true) {
+    const nextRev = (Number(existing.revision) || 0) + 1;
+    const suffix = nextRev.toString().padStart(3, "0");
+    return {
+      documentNumber: `${base}_${suffix}`,
+      baseDocumentNumber: base,
+      revision: nextRev,
+      isReissue: true,
+      overwrite: false,
+    };
+  }
+
+  // === Case ③: 完成済 + reissue=false (default) → 同 row 上書き (内部修正) ===
+  // Phase 23.1: 再編集 → 生成は既定で「内部修正」扱い。document_number /
+  // revision を維持して同 row を UPDATE で上書き。Drive PDF も既存 fileId に
+  // content 差し替えで参照リンク不変。
   return {
-    documentNumber: `${base}_${suffix}`,
+    documentNumber: existingDocNumber,
     baseDocumentNumber: base,
-    revision: nextRev,
-    isReissue: true,
+    revision: Number(existing.revision) || 0,
+    isReissue: false,
+    overwrite: true,
   };
 }
 

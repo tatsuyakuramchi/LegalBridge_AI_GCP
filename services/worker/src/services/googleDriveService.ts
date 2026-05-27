@@ -222,5 +222,66 @@ export class GoogleDriveService {
       return null;
     }
   }
+
+  /**
+   * Phase 23.1: 既存 Drive ファイルの PDF コンテンツを上書きする (fileId 維持)。
+   *
+   * 内部修正 (= getDocumentNumberForGenerate の overwrite=true 経路) で使用。
+   * 参照リンク (webViewLink) は同じ fileId を指すので、Drive 上の URL は不変。
+   *
+   * 動作:
+   *   1. driveLink から fileId を抽出
+   *   2. HTML を PDF に再レンダー
+   *   3. drive.files.update で media を差し替え + ファイル名も同時に更新可
+   *
+   * 失敗時は throw (caller 側で再アップロードにフォールバックさせる)。
+   *
+   * @param driveLink  既存の webViewLink (https://drive.google.com/file/d/.../view)
+   * @param html       新しい HTML コンテンツ
+   * @param fileName   新しいファイル名 (拡張子は .pdf に整形される)
+   * @param renderOptions  PDF レンダーオプション
+   * @returns 上書き後の webViewLink (基本的に同じ URL)
+   */
+  async overwritePdf(
+    driveLink: string,
+    html: string,
+    fileName: string,
+    renderOptions?: RenderPdfOptions
+  ): Promise<string> {
+    if (!driveLink) {
+      throw new Error("driveLink is required for overwritePdf");
+    }
+    const m = driveLink.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    const fileId = m?.[1];
+    if (!fileId) {
+      throw new Error(
+        `[GoogleDriveService.overwritePdf] cannot extract fileId from: ${driveLink}`
+      );
+    }
+
+    const pdfBuffer = await renderHtmlToPdf(html, renderOptions);
+    const pdfName = fileName.replace(/\.(html?|docx?)$/i, "") + ".pdf";
+    const media = {
+      mimeType: "application/pdf",
+      body: Readable.from(pdfBuffer),
+    };
+
+    const response = await this.drive.files.update({
+      fileId,
+      requestBody: { name: pdfName, mimeType: "application/pdf" },
+      media,
+      fields: "id, webViewLink",
+      supportsAllDrives: true,
+    });
+    const link =
+      response.data.webViewLink ||
+      (response.data.id
+        ? `https://drive.google.com/file/d/${response.data.id}/view`
+        : driveLink);
+    console.log(
+      `[overwritePdf] id=${response.data.id} webViewLink=${response.data.webViewLink} → ${link}`
+    );
+    return link;
+  }
 }
 

@@ -10904,7 +10904,12 @@ ${details}
   });
 
   app.post("/api/documents/generate", express.json(), async (req, res) => {
-    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber } = req.body;
+    // Phase 23.1: reissue フラグを受け取り、内部修正 (default: false) と
+    //   外部要請の再発行 (true) を区別する。
+    //   - reissue=false: 同 row UPDATE + Drive PDF 上書き (overwrite=true)
+    //   - reissue=true:  revision+1 で新 row + Drive 新規アップロード、
+    //                    過去 row は lifecycle_status='reissued' に倒す
+    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber, reissue } = req.body;
 
     try {
       // Admin UI が「Backlog 課題なし」で発行する仮キー (MANUAL-<ts>) は
@@ -10969,12 +10974,16 @@ ${details}
       let baseDocumentNumber: string;
       let revision: number;
       let isReissue: boolean;
+      // Phase 23.1: overwrite=true なら既存 row UPDATE + Drive PDF 上書き経路。
+      //   false なら現状通り新規 INSERT + 新規 Drive アップロード。
+      let overwrite: boolean;
       if (manualOverride) {
         // 手動上書き: 番号を完全にユーザーが制御
         docNumber = manualOverride;
         baseDocumentNumber = manualOverride;
         revision = 0;
         isReissue = false;
+        overwrite = false;
         console.log(
           `📝 [manual-override] ${issueKey} ${templateType}: docNumber=${docNumber}`
         );
@@ -10984,14 +10993,20 @@ ${details}
           templateType,
           issueTypeName: issue.issueType.name,
           existingDocumentNumber,
+          reissue: reissue === true,
         });
         docNumber = numAssign.documentNumber;
         baseDocumentNumber = numAssign.baseDocumentNumber;
         revision = numAssign.revision;
         isReissue = numAssign.isReissue;
+        overwrite = numAssign.overwrite;
         if (isReissue) {
           console.log(
             `📝 [reissue] ${issueKey} ${templateType}: base=${baseDocumentNumber} rev=${revision} → ${docNumber}`
+          );
+        } else if (overwrite) {
+          console.log(
+            `📝 [overwrite] ${issueKey} ${templateType}: docNumber=${docNumber} rev=${revision} (内部修正)`
           );
         }
       }
@@ -11294,7 +11309,44 @@ ${details}
       // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
       // 変換させていたが、CSS が大幅に潰れて template と程遠い見栄えに
       // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
-      const driveLink = await googleDriveService.uploadPdf(html, fileName);
+      //
+      // Phase 23.1: 内部修正 (overwrite=true) のときは既存 fileId に PDF を
+      //   上書きアップロードして webViewLink を維持する。Drive 上の URL が
+      //   変わらないので、Backlog コメントや Slack 共有 link がそのまま生きる。
+      //   - 既存 row の drive_link を取得して overwritePdf を呼ぶ
+      //   - 既存 link が無い (DB 不整合) 場合は uploadPdf にフォールバック
+      let driveLink: string;
+      if (overwrite) {
+        const existingRow = await query(
+          `SELECT drive_link FROM documents WHERE document_number = $1 LIMIT 1`,
+          [docNumber]
+        );
+        const existingLink = existingRow.rows[0]?.drive_link || "";
+        if (existingLink) {
+          try {
+            driveLink = await googleDriveService.overwritePdf(
+              existingLink,
+              html,
+              fileName
+            );
+            console.log(
+              `[overwrite] reused fileId for ${docNumber}: ${driveLink}`
+            );
+          } catch (overwriteErr: any) {
+            console.warn(
+              `[overwrite] failed for ${docNumber} (${existingLink}), fallback to upload:`,
+              overwriteErr?.message || overwriteErr
+            );
+            driveLink = await googleDriveService.uploadPdf(html, fileName);
+          }
+        } else {
+          // 既存 link が DB に無い (= 過去の生成失敗で row だけ残った等)。
+          // 新規アップロードで補完する。
+          driveLink = await googleDriveService.uploadPdf(html, fileName);
+        }
+      } else {
+        driveLink = await googleDriveService.uploadPdf(html, fileName);
+      }
 
       // Phase 22.21.104: 検収書 / 利用許諾料計算書 は会計用 Excel も同時に
       //   生成して Drive にアップ。失敗しても PDF 生成は成功扱い (warning へ)。
@@ -11444,6 +11496,9 @@ ${details}
       // Phase 15: 同じ document_number で再生成された場合 (PDF 未作成キュー
       // 由来など) は ON CONFLICT で UPDATE、新規なら INSERT。
       // form_data の __pdf_pending は false にして pending キューから外す。
+      // Phase 23.1: lifecycle_status='final' を明示。新規 / 内部修正 / 再発行
+      //   いずれもこの行は「現在の正」として書く。過去 row の demote は
+      //   isReissue=true のとき markPrimaryDocument 後に別途実行。
       const mergedFormData = {
         ...(formData || {}),
         __pdf_pending: false,
@@ -11451,9 +11506,9 @@ ${details}
       const docInsert = await query(
         `INSERT INTO documents (
            document_number, issue_key, template_type, form_data, drive_link, created_by,
-           base_document_number, revision, vendor_name_snapshot, is_primary
+           base_document_number, revision, vendor_name_snapshot, is_primary, lifecycle_status
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 'final')
          ON CONFLICT (document_number) DO UPDATE SET
            form_data            = EXCLUDED.form_data,
            drive_link           = EXCLUDED.drive_link,
@@ -11462,6 +11517,7 @@ ${details}
            revision             = EXCLUDED.revision,
            vendor_name_snapshot = EXCLUDED.vendor_name_snapshot,
            is_primary           = TRUE,
+           lifecycle_status     = 'final',
            superseded_by        = NULL
          RETURNING id`,
         [
@@ -11487,6 +11543,37 @@ ${details}
           `[primary-mark] failed for ${docNumber} (base=${baseDocumentNumber}):`,
           markErr
         );
+      }
+
+      // Phase 23.1: 再発行 (isReissue=true) のときは、同 base 内の過去 final 行を
+      //   lifecycle_status='reissued' に倒す。markPrimaryDocument は is_primary を
+      //   倒すが lifecycle_status は触らないので、別途同期する。
+      //   contract_capabilities も同 base で同期。
+      if (isReissue) {
+        try {
+          await query(
+            `UPDATE documents
+                SET lifecycle_status = 'reissued'
+              WHERE base_document_number = $1
+                AND document_number <> $2
+                AND lifecycle_status = 'final'`,
+            [baseDocumentNumber, docNumber]
+          );
+          await query(
+            `UPDATE contract_capabilities
+                SET lifecycle_status = 'reissued',
+                    updated_at       = CURRENT_TIMESTAMP
+              WHERE base_document_number = $1
+                AND document_number <> $2
+                AND lifecycle_status = 'final'`,
+            [baseDocumentNumber, docNumber]
+          );
+        } catch (reissueErr) {
+          console.warn(
+            `[reissue-demote] failed for ${docNumber} (base=${baseDocumentNumber}):`,
+            reissueErr
+          );
+        }
       }
 
       // Phase 17: 稟議リンクを upsert (formData.ringi_numbers が配列なら処理)

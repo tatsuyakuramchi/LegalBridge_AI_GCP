@@ -1974,7 +1974,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/management/assets", async (_req, res) => {
+  app.get("/api/management/assets", async (req, res) => {
     try {
       // Phase 22.12: documents の base_document_number / revision / is_primary を JOIN。
       // Phase 22.21.66: contract_capabilities.contract_status / expiration_date も
@@ -1982,12 +1982,16 @@ async function startServer() {
       //   asset_number = contract_capabilities.document_number で string match。
       // Phase 22.12.1: schema migration 未適用環境でも落ちないよう undefined_column フォールバック。
       let result: any;
+      // Phase 23.1: include_history=1 で archived_draft / reissued も含める。
+      //   default は documents.lifecycle_status='final' のみ。
+      const includeHistory = String(req.query.include_history || "") === "1";
       try {
         result = await query(
           `SELECT ea.*,
                   d.base_document_number,
                   COALESCE(d.revision, 0) AS revision,
                   COALESCE(d.is_primary, TRUE) AS is_primary,
+                  COALESCE(d.lifecycle_status, 'final') AS lifecycle_status,
                   d.superseded_by,
                   cc.contract_status,
                   cc.expiration_date  AS cc_expiration_date,
@@ -1998,6 +2002,11 @@ async function startServer() {
              LEFT JOIN contract_capabilities cc
                ON cc.document_number = ea.asset_number
                   OR cc.document_number = COALESCE(d.base_document_number, ea.asset_number)
+            WHERE ${
+              includeHistory
+                ? "TRUE"
+                : "COALESCE(d.lifecycle_status, 'final') = 'final'"
+            }
             ORDER BY ea.created_at DESC`
         );
       } catch (err: any) {
