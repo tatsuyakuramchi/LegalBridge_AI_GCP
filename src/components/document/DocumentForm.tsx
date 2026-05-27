@@ -81,6 +81,48 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // Phase 22.21.92: royalty_statement フォームの契約マスタ絞り込み検索ワード。
   // useState はコンポーネント最上位でなければならないため、template ブロックの外で宣言。
   const [royaltyContractSearch, setRoyaltyContractSearch] = useState('');
+  // Phase 23.0.4: UnifiedContractPicker で選んだ契約が AppDataContext (allContracts)
+  //   に載っていないケース (新規 import 直後 等) のために、最後に選んだ detail を保持。
+  //   selectedContract の lookup で fallback として使う。
+  const [royaltyPickedDetail, setRoyaltyPickedDetail] = useState<any>(null);
+  // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
+  // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
+  const detailToLicenseMaster = (d: any) => {
+    if (!d || !d.contract) return undefined;
+    return {
+      id: d.contract.id,
+      contract_title: d.contract.contract_title || '',
+      document_number: d.contract.document_number || '',
+      backlog_issue_key: d.contract.backlog_issue_key || '',
+      record_type: d.contract.record_type,
+      contract_category: d.contract.contract_category,
+      contract_type: d.contract.contract_type,
+      vendor_id: d.vendor?.id ?? null,
+      vendor_code: d.vendor?.vendor_code || '',
+      vendor_name: d.vendor?.vendor_name || '',
+      vendor_entity_type:
+        d.vendor?.entity_type || d.vendor?.vendor_entity_type || '',
+      vendor_bank_name: d.vendor?.bank_name || '',
+      vendor_branch_name: d.vendor?.branch_name || '',
+      vendor_account_type: d.vendor?.account_type || '',
+      vendor_account_number: d.vendor?.account_number || '',
+      vendor_account_holder_kana:
+        d.vendor?.account_holder_kana || d.vendor?.account_holder || '',
+      vendor_invoice_registration_number:
+        d.vendor?.invoice_registration_number || '',
+      vendor_withholding_enabled:
+        d.vendor?.withholding_enabled === true,
+      ledger_code: d.contract.ledger_code || '',
+      original_work: d.contract.original_work || '',
+      work_name: d.contract.original_work || '',
+      financial_conditions: Array.isArray(d.financial_conditions)
+        ? d.financial_conditions
+        : [],
+      amount_ex_tax: d.contract.amount_ex_tax ?? null,
+      effective_date: d.contract.effective_date || null,
+      expiration_date: d.contract.expiration_date || null,
+    };
+  };
 
   // Phase 9c: 検収書テンプレで selectedStaff が既にあり、かつ
   // 検収者フィールドが空のときは自動で埋める (みなし同意の連絡先が
@@ -744,7 +786,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -1044,7 +1086,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           variant="indigo"
           icon={<Coins className="w-4 h-4" />}
           headerActions={
-            <span className="text-[9px] font-mono text-muted-foreground italic">
+            <span className="text-[11px] font-mono text-muted-foreground italic">
               条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト (任意で追加可)
             </span>
           }
@@ -1202,7 +1244,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -1306,7 +1348,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             <button
               type="button"
               onClick={onSync}
-              className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
+              className="text-[10px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
               title="Backlog 課題から自動補完"
             >
               <Database className="w-2 h-2 inline mr-1" />
@@ -1444,18 +1486,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         <FormSection title="V. 金額サマリ・納期 (明細から自動集計)" variant="indigo" icon={<Scale className="w-4 h-4" />}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[11px] font-mono">
             <div className="space-y-1">
-              <div className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                 合計金額 (税抜)
               </div>
               <div className="text-base font-bold">
                 ¥ {Number(formData.grandTotalExTax || 0).toLocaleString('ja-JP')}
               </div>
-              <div className="text-[9px] text-muted-foreground/70 italic">
+              <div className="text-[11px] text-muted-foreground/70 italic">
                 明細の小計を合算 (税は別途)
               </div>
             </div>
             <div className="space-y-1">
-              <div className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                 納期 (自動集計)
               </div>
               <div className="text-sm font-bold">
@@ -1465,12 +1507,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   </span>
                 )}
               </div>
-              <div className="text-[9px] text-muted-foreground/70 italic">
+              <div className="text-[11px] text-muted-foreground/70 italic">
                 明細の納期から集約 (全同日ならその日付、複数日付なら範囲表示)
               </div>
             </div>
             <div className="space-y-1">
-              <div className="text-[9px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                 支払日 (自動集計)
               </div>
               <div className="text-sm font-bold">
@@ -1480,7 +1522,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   </span>
                 )}
               </div>
-              <div className="text-[9px] text-muted-foreground/70 italic">
+              <div className="text-[11px] text-muted-foreground/70 italic">
                 明細の支払日から集約
               </div>
             </div>
@@ -1633,7 +1675,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -1826,7 +1868,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -2010,7 +2052,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -2266,7 +2308,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             variant="indigo"
             icon={<Scale className="w-4 h-4" />}
             headerActions={
-              <span className="text-[9px] font-mono italic text-muted-foreground">
+              <span className="text-[11px] font-mono italic text-muted-foreground">
                 📄 親契約:{" "}
                 {formData.parent_po_number ||
                   formData.parent_po_issue_key ||
@@ -2322,7 +2364,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                       })
                     )
                   }
-                  className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
+                  className="text-[10px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted flex items-center gap-1"
                 >
                   <Link className="w-2 h-2" /> PO紐付
                 </button>
@@ -2481,7 +2523,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             <button
               type="button"
               onClick={onSync}
-              className="text-[8px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
+              className="text-[10px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
               title="Backlog 課題から自動補完"
             >
               <Database className="w-2 h-2 inline mr-1" />
@@ -2566,9 +2608,25 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       : licenseMasters;
 
     const selectedContractId = Number(formData.selected_master_contract_id) || 0;
-    const selectedContract = licenseMasters.find(
-      (c: any) => Number(c.id) === selectedContractId
-    );
+    // Phase 23.0.4: UnifiedContractPicker の onPick で受け取った detail は
+    //   AppDataContext の `allContracts` に必ずしも載っていない (例: 新規 import 直後)。
+    //   その場合 `licenseMasters.find(...)` は undefined を返し、Step 2 以降の radio や
+    //   当事者表示が空になる事故が起きていた。
+    //   - royaltyPickedDetail (component-top useState) に最後に onPick した detail を保持
+    //   - licenseMasters ↔ ContractDetail のスキーマ差を吸収する小ヘルパで合成する
+    const selectedContract = (() => {
+      const fromList = licenseMasters.find(
+        (c: any) => Number(c.id) === selectedContractId
+      );
+      if (fromList) return fromList;
+      if (
+        royaltyPickedDetail &&
+        Number(royaltyPickedDetail.contract.id) === selectedContractId
+      ) {
+        return detailToLicenseMaster(royaltyPickedDetail);
+      }
+      return undefined;
+    })();
     const selectedConditionId =
       Number(formData.capability_financial_condition_id) || 0;
     const ledgerForContract = selectedContract?.ledger_code
@@ -2580,8 +2638,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // ---- イベントハンドラ -------------------------------------------
     // 契約マスタを選ぶと、当事者 / 原作 / 金銭条件配列 / デフォルト通貨を
     // 一括 auto-fill。条件選択は次のステップで radio で行う。
-    const selectMasterContract = (id: number) => {
-      const c = licenseMasters.find((x: any) => Number(x.id) === id);
+    // fromDetail を渡せば AppDataContext に無い契約 (新規 import 直後 等) も使える。
+    const selectMasterContract = (id: number, fromDetail?: any) => {
+      const c =
+        licenseMasters.find((x: any) => Number(x.id) === id) ||
+        (fromDetail ? detailToLicenseMaster(fromDetail) : undefined);
       if (!c) {
         setFormData({
           ...formData,
@@ -2780,11 +2841,16 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                     : "ライセンス契約を選ぶ"
                 }
                 onPick={(detail) => {
-                  // in-memory list 側に詳細フィールド (vendor_*, ledger 結合 etc.)
-                  // があるので id 経由でルックアップして既存ロジックに合流。
-                  selectMasterContract(detail.contract.id);
+                  // Phase 23.0.4: detail を pickedDetail state に保存。
+                  //   allContracts に未掲載の契約 (新規 import 直後 等) でも
+                  //   selectMasterContract / selectedContract lookup が動くようにする。
+                  setRoyaltyPickedDetail(detail);
+                  selectMasterContract(detail.contract.id, detail);
                 }}
-                onClear={() => selectMasterContract(0)}
+                onClear={() => {
+                  setRoyaltyPickedDetail(null);
+                  selectMasterContract(0);
+                }}
               />
               {licenseMasters.length === 0 && (
                 <p className="text-[10px] font-mono text-amber-700">
@@ -2828,7 +2894,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                                 selectedContract.document_number,
                             })
                           }
-                          className="text-[9px] font-mono px-1.5 py-0.5 border border-input rounded-sm hover:bg-muted"
+                          className="text-[11px] font-mono px-1.5 py-0.5 border border-input rounded-sm hover:bg-muted"
                           title="contract_capability の document_number で上書き"
                         >
                           ↻ 同期
@@ -2873,7 +2939,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                             !formData.VENDOR_WITHHOLDING_ENABLED,
                         })
                       }
-                      className="text-[9px] font-mono px-1.5 py-0.5 border border-input rounded-sm hover:bg-muted"
+                      className="text-[11px] font-mono px-1.5 py-0.5 border border-input rounded-sm hover:bg-muted"
                       title="源泉徴収の対象/対象外をトグル (取引先マスタ未設定時の手動上書き用)"
                     >
                       ⇄ 切替
@@ -2930,7 +2996,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                             </span>
                           ) : null}
                           {c.region_language_label && (
-                            <span className="opacity-60 ml-auto text-[9px]">
+                            <span className="opacity-60 ml-auto text-[11px]">
                               {c.region_language_label}
                             </span>
                           )}
@@ -3276,7 +3342,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               }}
               disabled={!selectedStaff}
               className={cn(
-                'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+                'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
                 !selectedStaff
                   ? 'border-input text-muted-foreground/40 cursor-not-allowed'
                   : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -3489,7 +3555,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -3616,7 +3682,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -3775,7 +3841,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         onClick={onClick}
         disabled={disabled}
         className={cn(
-          'text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
           disabled
             ? 'border-input text-muted-foreground/40 cursor-not-allowed'
             : 'border-foreground/30 text-foreground hover:bg-muted'
@@ -3942,7 +4008,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   return (
     <div className="space-y-10">
       {(Object.entries(groupedVars) as [string, string[]][]).map(([groupName, varIds]) => (
-        <FormSection key={groupName} title={groupName} variant="default" headerActions={<button onClick={onSync} className="text-[8px] font-mono bg-blue-600 text-white px-2 py-0.5 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>}>
+        <FormSection key={groupName} title={groupName} variant="default" headerActions={<button onClick={onSync} className="text-[10px] font-mono bg-blue-600 text-white px-2 py-0.5 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>}>
           {varIds.map(fid => renderField(fid))}
         </FormSection>
       ))}

@@ -162,8 +162,21 @@ export const UnifiedContractPicker: React.FC<Props> = ({
   const [error, setError] = React.useState<string | null>(null);
   const [manual, setManual] = React.useState("");
 
+  // Phase 23.0.4: 検索 / 詳細取得の race condition 対策。
+  //   debounce はタイマー解除だけで in-flight な fetch を止められないため、
+  //   AbortController で「前のリクエストを明示的にキャンセル」する。
+  //   - searchAbortRef: 検索リクエスト (q / フィルタ変化で発火)
+  //   - detailAbortRef: 行クリック / 文書番号指定での詳細取得
+  const searchAbortRef = React.useRef<AbortController | null>(null);
+  const detailAbortRef = React.useRef<AbortController | null>(null);
+
   React.useEffect(() => {
     if (!open) return;
+    const controller = new AbortController();
+    // 古い検索が走っていればキャンセル
+    searchAbortRef.current?.abort();
+    searchAbortRef.current = controller;
+
     const t = window.setTimeout(async () => {
       setLoading(true);
       setError(null);
@@ -175,58 +188,92 @@ export const UnifiedContractPicker: React.FC<Props> = ({
           params.set("category", categoryFilter.join(","));
         }
         params.set("limit", "100");
-        const res = await fetch(`/api/contracts/search?${params.toString()}`);
+        const res = await fetch(`/api/contracts/search?${params.toString()}`, {
+          signal: controller.signal,
+        });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         const data = await res.json();
+        if (controller.signal.aborted) return;
         setList(Array.isArray(data) ? data : []);
       } catch (e: any) {
+        // AbortError は新しい検索が走ったときの正常終了。state は触らない。
+        if (e?.name === "AbortError") return;
         setError(String(e?.message || e));
         setList([]);
       } finally {
-        setLoading(false);
+        if (!controller.signal.aborted) setLoading(false);
       }
     }, 250);
-    return () => window.clearTimeout(t);
+    return () => {
+      window.clearTimeout(t);
+      controller.abort();
+    };
   }, [open, q, acceptableRecordTypes.join(","), (categoryFilter || []).join(",")]);
+
+  // モーダルが閉じられたら in-flight な検索 / 詳細取得もキャンセル。
+  React.useEffect(() => {
+    if (open) return;
+    searchAbortRef.current?.abort();
+    detailAbortRef.current?.abort();
+  }, [open]);
 
   const loadDetail = async (id: number) => {
     if (!id) return;
+    // 前回の詳細取得が走っていればキャンセル (連打で新しいクリックを優先)
+    detailAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+
     setPicking(id);
     setError(null);
     try {
-      const res = await fetch(`/api/contracts/${id}`);
+      const res = await fetch(`/api/contracts/${id}`, {
+        signal: controller.signal,
+      });
       if (!res.ok) {
         if (res.status === 404)
           throw new Error(`契約 ID ${id} が見つかりません`);
         throw new Error(`HTTP ${res.status}`);
       }
       const detail = (await res.json()) as ContractDetail;
+      if (controller.signal.aborted) return;
       onPick(detail);
       setOpen(false);
       setManual("");
     } catch (e: any) {
+      if (e?.name === "AbortError") return;
       setError(String(e?.message || e));
     } finally {
-      setPicking(null);
+      // 新しい詳細取得が走ったときは picking 状態を残しておく。
+      if (detailAbortRef.current === controller) setPicking(null);
     }
   };
 
   const loadByDocNumber = async (docNumber: string) => {
     if (!docNumber.trim()) return;
+    detailAbortRef.current?.abort();
+    const controller = new AbortController();
+    detailAbortRef.current = controller;
+
     setPicking(-1);
     setError(null);
     try {
       const r = await fetch(
-        `/api/contracts/search?q=${encodeURIComponent(docNumber.trim())}&limit=10`
+        `/api/contracts/search?q=${encodeURIComponent(docNumber.trim())}&limit=10`,
+        { signal: controller.signal }
       );
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
       const arr = (await r.json()) as ContractSearchHit[];
+      if (controller.signal.aborted) return;
       const hit = arr.find((x) => x.document_number === docNumber.trim());
       if (!hit) throw new Error(`文書番号 ${docNumber} の契約が見つかりません`);
+      // loadDetail は自分で AbortController を取り直すので、ここで OK。
       await loadDetail(hit.id);
     } catch (e: any) {
+      if (e?.name === "AbortError") return;
       setError(String(e?.message || e));
     } finally {
-      setPicking(null);
+      if (detailAbortRef.current === controller) setPicking(null);
     }
   };
 
@@ -343,12 +390,25 @@ export const UnifiedContractPicker: React.FC<Props> = ({
                       return (
                         <tr
                           key={it.id}
+                          // Phase 23.0.4: キーボード操作対応。Enter/Space で行選択を発火。
+                          //   `<tr role="button" tabIndex={0}>` で SR にもボタンとして読まれる。
+                          role="button"
+                          tabIndex={picking === it.id ? -1 : 0}
+                          aria-label={`契約 ${it.document_number || it.contract_title} を選択`}
+                          aria-disabled={picking === it.id || undefined}
                           className={cn(
                             "hover:bg-slate-50 cursor-pointer transition",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-400",
                             currentContractId === it.id && "bg-emerald-50",
                             picking === it.id && "opacity-50"
                           )}
                           onClick={() => loadDetail(it.id)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.preventDefault();
+                              loadDetail(it.id);
+                            }
+                          }}
                         >
                           <td className="px-3 py-2 align-top">
                             <span
@@ -363,12 +423,12 @@ export const UnifiedContractPicker: React.FC<Props> = ({
                               {it.contract_category}
                             </div>
                             {it.is_imported && (
-                              <span className="inline-block mt-1 text-[9px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">
+                              <span className="inline-block mt-1 text-[11px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">
                                 IMPORT
                               </span>
                             )}
                             {!it.is_active && (
-                              <span className="inline-block mt-1 text-[9px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded">
+                              <span className="inline-block mt-1 text-[11px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded">
                                 無効
                               </span>
                             )}

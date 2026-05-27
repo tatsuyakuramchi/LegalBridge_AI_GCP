@@ -410,7 +410,7 @@ export const BulkImportDialog: React.FC<Props> = ({
               </div>
               <div className="border border-input rounded-sm max-h-[280px] overflow-y-auto">
                 <table className="w-full text-[10px] font-mono">
-                  <thead className="bg-muted/40 text-[9px] uppercase tracking-wider sticky top-0">
+                  <thead className="bg-muted/40 text-[11px] uppercase tracking-wider sticky top-0">
                     <tr>
                       <th className="text-left p-1.5 w-8">#</th>
                       <th className="text-left p-1.5">import_key</th>
@@ -441,7 +441,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                                       ? `稟議 ${g.first_row.ringi_number || "-"} · ${g.first_row.title || ""}`
                                       : `${g.first_row.contract_title || g.first_row.vendor_name || ""}`}
                           {g.first_row.generate_pdf === "未作成" && (
-                            <span className="ml-2 text-[9px] px-1 py-0.5 bg-amber-100 text-amber-800 rounded-sm">
+                            <span className="ml-2 text-[11px] px-1 py-0.5 bg-amber-100 text-amber-800 rounded-sm">
                               📄 PDF 生成
                             </span>
                           )}
@@ -460,30 +460,42 @@ export const BulkImportDialog: React.FC<Props> = ({
               {/* Phase 23 UX-I: 大きな成功率サマリバー */}
               {(() => {
                 const totalGroups = result.groups || 0;
-                const successPct =
-                  totalGroups > 0
-                    ? Math.round((result.succeeded.length / totalGroups) * 100)
-                    : 0;
-                const isAllOk = result.failed.length === 0;
+                // Phase 23.0.4: groups 0 件 (空 CSV / 全行が row_type=line で
+                //   親キーなし 等) を「全件成功」と表示しないよう、isEmpty と
+                //   isAllOk を分けて判定。successPct は念のため [0, 100] に
+                //   clamp する。
+                const isEmpty = totalGroups === 0;
+                const rawPct = isEmpty
+                  ? 0
+                  : Math.round((result.succeeded.length / totalGroups) * 100);
+                const successPct = Math.min(100, Math.max(0, rawPct));
+                const isAllOk =
+                  !isEmpty && result.failed.length === 0;
                 return (
                   <div
                     className={cn(
                       "rounded-md p-4 border-2",
-                      isAllOk
+                      isEmpty
+                        ? "bg-slate-50 border-slate-300 text-slate-700"
+                        : isAllOk
                         ? "bg-emerald-50 border-emerald-300 text-emerald-900"
                         : "bg-amber-50 border-amber-300 text-amber-900"
                     )}
                   >
                     <div className="flex items-center gap-3 mb-3">
-                      {isAllOk ? (
+                      {isEmpty ? (
+                        <AlertTriangle className="w-7 h-7 flex-shrink-0" />
+                      ) : isAllOk ? (
                         <PartyPopper className="w-7 h-7 flex-shrink-0" />
                       ) : (
                         <AlertTriangle className="w-7 h-7 flex-shrink-0" />
                       )}
                       <div className="flex-1">
                         <div className="text-base font-bold">
-                          {isAllOk
-                            ? `🎉 ${totalGroups}件すべて取り込み成功`
+                          {isEmpty
+                            ? `取り込み対象なし (CSV 内に契約行が見つかりません)`
+                            : isAllOk
+                            ? `${totalGroups}件すべて取り込み成功`
                             : `${result.succeeded.length} / ${totalGroups} 件成功 (${successPct}%)`}
                         </div>
                         <div className="text-xs mt-0.5 opacity-80">
@@ -496,7 +508,11 @@ export const BulkImportDialog: React.FC<Props> = ({
                       <div
                         className={cn(
                           "h-full transition-all",
-                          isAllOk ? "bg-emerald-500" : "bg-amber-500"
+                          isEmpty
+                            ? "bg-slate-400"
+                            : isAllOk
+                            ? "bg-emerald-500"
+                            : "bg-amber-500"
                         )}
                         style={{ width: `${successPct}%` }}
                       />
@@ -519,7 +535,7 @@ export const BulkImportDialog: React.FC<Props> = ({
 
               {result.succeeded.length > 0 && (
                 <div className="border border-input rounded-sm max-h-[200px] overflow-y-auto">
-                  <div className="bg-emerald-50 px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-emerald-700 sticky top-0 flex items-center gap-1">
+                  <div className="bg-emerald-50 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-emerald-700 sticky top-0 flex items-center gap-1">
                     <CheckCircle2 className="w-2.5 h-2.5" />
                     成功 ({result.succeeded.length})
                   </div>
@@ -539,7 +555,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             {/* Phase 22.21.27/28: bulk import の Backlog 自動化結果 */}
                             {(s as any).issue_key_created && (
                               <span
-                                className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-sm"
+                                className="ml-1 px-1 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200 rounded-sm"
                                 title={`Backlog 課題を新規作成しました (種別: ${(s as any).backlog_issue_type || "—"})`}
                               >
                                 NEW · {(s as any).backlog_issue_type || "?"}
@@ -547,7 +563,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             )}
                             {(s as any).pdf_pending && (
                               <span
-                                className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 rounded-sm"
+                                className="ml-1 px-1 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-amber-50 text-amber-700 border border-amber-200 rounded-sm"
                                 title="PDF 未作成。Document Editor で PDF を生成してから完了に進めると 納品・検収 子課題が自動作成されます"
                               >
                                 PDF 未作成
@@ -555,7 +571,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             )}
                             {(s as any).auto_completed && (
                               <span
-                                className="ml-1 px-1 py-0.5 text-[8px] font-mono uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-sm"
+                                className="ml-1 px-1 py-0.5 text-[10px] font-mono uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-sm"
                                 title="完了に自動進行 + 納品・検収 子課題自動作成"
                               >
                                 ✓完了
@@ -563,7 +579,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                             )}
                             {(s as any).delivery_child_issue_key && (
                               <span
-                                className="ml-1 text-[9px] text-emerald-700"
+                                className="ml-1 text-[11px] text-emerald-700"
                                 title="納品・検収 子課題"
                               >
                                 → {(s as any).delivery_child_issue_key}
@@ -579,7 +595,7 @@ export const BulkImportDialog: React.FC<Props> = ({
 
               {result.failed.length > 0 && (
                 <div className="border border-input rounded-sm max-h-[200px] overflow-y-auto">
-                  <div className="bg-red-50 px-2 py-1 text-[9px] font-mono uppercase tracking-wider text-red-700 sticky top-0 flex items-center justify-between">
+                  <div className="bg-red-50 px-2 py-1 text-[11px] font-mono uppercase tracking-wider text-red-700 sticky top-0 flex items-center justify-between">
                     <span className="flex items-center gap-1">
                       <AlertTriangle className="w-2.5 h-2.5" />
                       失敗 ({result.failed.length})
@@ -587,7 +603,7 @@ export const BulkImportDialog: React.FC<Props> = ({
                     <button
                       type="button"
                       onClick={downloadFailedRows}
-                      className="text-[9px] font-mono uppercase tracking-wider border border-red-700/30 rounded-sm px-1.5 py-0.5 hover:bg-red-100 flex items-center gap-1"
+                      className="text-[11px] font-mono uppercase tracking-wider border border-red-700/30 rounded-sm px-1.5 py-0.5 hover:bg-red-100 flex items-center gap-1"
                     >
                       <Download className="w-2.5 h-2.5" />
                       失敗行 .csv

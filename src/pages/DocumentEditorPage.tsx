@@ -116,6 +116,22 @@ export function DocumentEditorPage() {
   const [templateSearch, setTemplateSearch] = React.useState("")
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   const [isPreviewVisible, setIsPreviewVisible] = React.useState(false)
+  // Phase 23.0.4: 未入力フィールド ring ハイライト解除の setTimeout id。
+  //   連続 generate で前回の timer が新規 wrap の ring を消さないようにする。
+  const scrollRingTimerRef = React.useRef<number | null>(null)
+  const scrollRingWrapRef = React.useRef<HTMLElement | null>(null)
+  React.useEffect(() => {
+    return () => {
+      if (scrollRingTimerRef.current != null) {
+        window.clearTimeout(scrollRingTimerRef.current)
+      }
+      scrollRingWrapRef.current?.classList.remove(
+        "ring-2",
+        "ring-destructive",
+        "rounded-md"
+      )
+    }
+  }, [])
   // Phase 22.21.29: 課題選択時の閲覧モード。
   //   旧挙動: REQUESTS から課題をクリック → form-context をマージ → 直前の
   //           作業データが残り、新しい課題のデータと混在する事故が発生。
@@ -610,23 +626,69 @@ export function DocumentEditorPage() {
           "error"
         )
         // Phase 23 UX-J: 最初の未入力必須フィールドへ自動スクロール + フォーカス
+        // Phase 23.0.4:
+        //   - 祖先の <details> が閉じていると要素が display:none で到達不可なので
+        //     先に全部 open に。
+        //   - prefers-reduced-motion を尊重して smooth/auto を切替。
+        //   - フォーカス対象から [readonly] / [disabled] を除外
+        //     (Wave1 で readonly select が増えたため)。
+        //   - 前回 setTimeout の ring 解除が新規 wrap を巻き込まないよう
+        //     ref で id を保持し、新規スクロール時にクリア。
         const firstId = missing[0].id
         if (typeof window !== "undefined") {
           window.requestAnimationFrame(() => {
             const wrap = document.querySelector(
               `[data-field-id="${firstId}"]`
             ) as HTMLElement | null
-            if (wrap) {
-              wrap.scrollIntoView({ behavior: "smooth", block: "center" })
-              wrap.classList.add("ring-2", "ring-destructive", "rounded-md")
-              setTimeout(() => {
-                wrap.classList.remove("ring-2", "ring-destructive", "rounded-md")
-              }, 3000)
-              const focusable = wrap.querySelector(
-                "input, textarea, select, button"
-              ) as HTMLElement | null
-              focusable?.focus()
+            if (!wrap) return
+
+            // 祖先の details を遡って全部 open に
+            let detailsAncestor: HTMLElement | null =
+              wrap.closest("details:not([open])")
+            while (detailsAncestor) {
+              detailsAncestor.setAttribute("open", "")
+              detailsAncestor =
+                detailsAncestor.parentElement?.closest(
+                  "details:not([open])"
+                ) || null
             }
+
+            const prefersReducedMotion =
+              window.matchMedia &&
+              window.matchMedia("(prefers-reduced-motion: reduce)").matches
+            wrap.scrollIntoView({
+              behavior: prefersReducedMotion ? "auto" : "smooth",
+              block: "center",
+            })
+
+            // 前回のタイマー / wrap の ring を解除してから新しい ring を付ける
+            if (scrollRingTimerRef.current != null) {
+              window.clearTimeout(scrollRingTimerRef.current)
+            }
+            scrollRingWrapRef.current?.classList.remove(
+              "ring-2",
+              "ring-destructive",
+              "rounded-md"
+            )
+
+            wrap.classList.add("ring-2", "ring-destructive", "rounded-md")
+            scrollRingWrapRef.current = wrap
+            scrollRingTimerRef.current = window.setTimeout(() => {
+              wrap.classList.remove(
+                "ring-2",
+                "ring-destructive",
+                "rounded-md"
+              )
+              if (scrollRingWrapRef.current === wrap) {
+                scrollRingWrapRef.current = null
+              }
+              scrollRingTimerRef.current = null
+            }, 3000)
+
+            const focusable = wrap.querySelector(
+              "input:not([readonly]):not([disabled]), textarea:not([readonly]):not([disabled]), select:not([disabled]), button:not([disabled])"
+            ) as HTMLElement | null
+            focusable?.focus()
           })
         }
         return
@@ -808,7 +870,7 @@ export function DocumentEditorPage() {
                     type="button"
                     onClick={handleRefreshIssues}
                     disabled={issuesRefreshing}
-                    className="text-[9px] font-mono uppercase tracking-wider text-background/60 hover:text-background flex items-center gap-1 disabled:opacity-50"
+                    className="text-[11px] font-mono uppercase tracking-wider text-background/60 hover:text-background flex items-center gap-1 disabled:opacity-50"
                     title="Backlog 課題リストを最新化"
                   >
                     {issuesRefreshing ? (
@@ -993,7 +1055,7 @@ export function DocumentEditorPage() {
                 {caseHistory.map((item, idx) => (
                   <div key={`${item.id}-${idx}`} className="relative">
                     <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-card border-2 border-foreground" />
-                    <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
                       {new Date(item.date).toLocaleDateString("ja-JP")}
                     </p>
                     <p className="text-xs font-mono font-bold leading-tight">
@@ -1084,7 +1146,7 @@ export function DocumentEditorPage() {
                   );
                 })()}
                 {lastAutoSave && (
-                  <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                  <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
                     Saved {lastAutoSave}
                   </span>
                 )}
@@ -1418,7 +1480,7 @@ export function DocumentEditorPage() {
                     <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em]">
                       Draft valid
                     </p>
-                    <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
                       Ready for sync
                     </p>
                   </div>
@@ -1430,7 +1492,7 @@ export function DocumentEditorPage() {
                     <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em]">
                       Live syncing
                     </p>
-                    <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
                       Backlog API
                     </p>
                   </div>
@@ -1741,7 +1803,7 @@ export function DocumentEditorPage() {
                   onChange={(e) => setAssetSearch(e.target.value)}
                 />
                 <div className="border border-border rounded-md overflow-hidden">
-                  <div className="grid grid-cols-[120px_1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[9px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  <div className="grid grid-cols-[120px_1fr_auto] gap-3 px-3 py-2 bg-muted/40 border-b border-border text-[11px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
                     <span>Identity</span>
                     <span>Reference</span>
                     <span>Action</span>
@@ -1770,7 +1832,7 @@ export function DocumentEditorPage() {
                             <p className="text-xs font-mono leading-tight">
                               {asset.asset_name}
                             </p>
-                            <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
+                            <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground italic">
                               {asset.counterparty}
                             </p>
                           </div>
@@ -1848,7 +1910,7 @@ export function DocumentEditorPage() {
             {/* Body */}
             <div className="px-6 py-5 space-y-3">
               <div className="space-y-1">
-                <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
                   テンプレ
                 </div>
                 <div className="text-sm font-mono">
@@ -1857,7 +1919,7 @@ export function DocumentEditorPage() {
               </div>
               {completionResult.documentNumber && (
                 <div className="space-y-1">
-                  <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
                     文書番号
                   </div>
                   <div className="text-sm font-mono font-bold">
@@ -1866,7 +1928,7 @@ export function DocumentEditorPage() {
                 </div>
               )}
               <div className="space-y-1">
-                <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+                <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
                   Drive リンク (PDF)
                 </div>
                 <a
@@ -1882,7 +1944,7 @@ export function DocumentEditorPage() {
               {/* Phase 22.21.104: 検収書 / 利用許諾料計算書のみ Excel リンク表示 */}
               {completionResult.excelLink && (
                 <div className="space-y-1">
-                  <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-emerald-700">
+                  <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-emerald-700">
                     会計用 Excel (自動生成)
                   </div>
                   <a
