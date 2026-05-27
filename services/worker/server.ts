@@ -1427,7 +1427,15 @@ ${details}
         // parentIssueId として createIssue に渡す。
         // 親が見つからない / 取得失敗時はエラーを返す (silently 親なしで
         // 作成すると意図と異なるため明示的に失敗させる)。
+        //
+        // Phase 23.6.9: Backlog は親子関係を 1 階層しか許さないため、
+        //   parentIssueKey が既に他の課題の子だった場合 (= parent.parentIssueId
+        //   が non-null) は、その祖父課題に昇格させて「兄弟」として作成する。
+        //   auto-chain (line 614-619 付近) と同じロジックを quick-create にも
+        //   適用。これがないと err.editIssue.parentChildIssue.3 で 400 が返る。
         let parentIssueId: number | undefined;
+        let fallbackDueToHierarchy = false;
+        let originalParentKey = "";
         if (parentIssueKey) {
           try {
             const parent = await backlogService.getIssue(parentIssueKey);
@@ -1437,7 +1445,20 @@ ${details}
                 error: `親課題 ${parentIssueKey} が見つかりません`,
               });
             }
-            parentIssueId = parent.id;
+            const grandParentId = parent.parentIssueId
+              ? Number(parent.parentIssueId)
+              : null;
+            if (grandParentId) {
+              // 親自身が子 → 祖父を effective parent にする
+              parentIssueId = grandParentId;
+              fallbackDueToHierarchy = true;
+              originalParentKey = parentIssueKey;
+              console.log(
+                `[quick-create] Backlog 1 階層制約 fallback: ${parentIssueKey} (id=${parent.id}) は既に子課題のため、祖父 (id=${grandParentId}) を effective parent にする`
+              );
+            } else {
+              parentIssueId = parent.id;
+            }
           } catch (parentErr: any) {
             console.error(
               `[quick-create] 親課題 ${parentIssueKey} の取得に失敗:`,
@@ -1453,9 +1474,14 @@ ${details}
         }
 
         // ---- Backlog 課題作成 ----
+        // Phase 23.6.9: fallback 時は description に注記を追加。
+        const descriptionFinal = fallbackDueToHierarchy
+          ? description +
+            `\n\n※ Backlog の親子 1 階層制約により、本課題は ${originalParentKey} の「兄弟」(同じ祖父配下) として作成されています。`
+          : description;
         const issueParams: any = {
           summary,
-          description,
+          description: descriptionFinal,
           issueTypeId,
           priorityId: 3,
           counterparty: counterpartyName,
@@ -1466,7 +1492,31 @@ ${details}
         if (categoryId) issueParams["categoryId[]"] = categoryId;
         if (parentIssueId) issueParams.parentIssueId = parentIssueId;
 
-        const issue = await backlogService.createIssue(issueParams);
+        // Phase 23.6.9: parentChildIssue エラーが残り続けるケース
+        //   (祖父も子だった、親が完了状態、etc.) を考慮し、最終 safety net
+        //   として top-level retry を入れる。auto-chain と同じ振る舞い。
+        let issue: any;
+        try {
+          issue = await backlogService.createIssue(issueParams);
+        } catch (createErr: any) {
+          const msg = String(createErr?.message || createErr);
+          if (msg.includes("parentChildIssue") && parentIssueId) {
+            console.warn(
+              `[quick-create] parentChildIssue error with parent=${parentIssueId}, retry as top-level: ${msg}`
+            );
+            const retryParams = { ...issueParams };
+            delete retryParams.parentIssueId;
+            retryParams.description =
+              description +
+              `\n\n※ Backlog の親子制約により、独立課題として作成されました。` +
+              (originalParentKey
+                ? ` (起案時の指定親: ${originalParentKey})`
+                : "");
+            issue = await backlogService.createIssue(retryParams);
+          } else {
+            throw createErr;
+          }
+        }
 
         // ---- legal_requests / issue_workflows に登録 (Slack 起票と同じ流れ) ----
         // ON CONFLICT は付けない (新規 issueKey なので衝突しないはず) が、
