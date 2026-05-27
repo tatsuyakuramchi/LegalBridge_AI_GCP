@@ -181,7 +181,7 @@ function MatrixView({
             {templateList.map((t) => (
               <th
                 key={t}
-                className="p-3 text-center text-[9px] uppercase tracking-[0.14em] min-w-[120px] border-r border-border"
+                className="p-3 text-center text-[11px] uppercase tracking-[0.14em] min-w-[120px] border-r border-border"
               >
                 {templateMetadata[t]?.label || t}
               </th>
@@ -204,7 +204,7 @@ function MatrixView({
                     {m ? (
                       <div className="flex flex-col items-center gap-1">
                         <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
-                        <span className="text-[8px] text-muted-foreground truncate max-w-[100px]">
+                        <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
                           {m.label}
                         </span>
                       </div>
@@ -460,7 +460,7 @@ export function TemplateEditorPage() {
             <p className="retro-tag">
               <Wand2 className="h-3 w-3" /> Insert Variable
             </p>
-            <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+            <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
               Click to inject placeholder at cursor.
             </p>
             <div className="space-y-0.5 max-h-[420px] overflow-y-auto custom-scrollbar pr-1">

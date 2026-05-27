@@ -452,7 +452,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
           スクロール可能な固定高さで、長い候補もはみ出さないように。 */}
       {hasSearched && !error && (
         <>
-          <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-wider text-muted-foreground px-1">
+          <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-muted-foreground px-1">
             <span>
               {results.length === 0
                 ? "該当なし"
@@ -502,7 +502,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                           <CheckCircle2 className="h-3 w-3 text-emerald-700 opacity-0 group-hover:opacity-100 transition-opacity" />
                           <span
                             className={cn(
-                              "text-[8px] font-mono px-1 py-px rounded uppercase tracking-wider border",
+                              "text-[10px] font-mono px-1 py-px rounded uppercase tracking-wider border",
                               doc.source === "master"
                                 ? "bg-sky-50 border-sky-300 text-sky-800"
                                 : "bg-muted/60 border-input text-muted-foreground"
@@ -519,7 +519,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                             {doc.document_number || "(番号未設定)"}
                           </span>
                           {doc.revision != null && doc.revision > 0 && (
-                            <span className="text-muted-foreground/70 text-[9px]">
+                            <span className="text-muted-foreground/70 text-[11px]">
                               (Rev. {doc.revision})
                             </span>
                           )}
@@ -527,7 +527,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                         <div className="text-[10px] font-mono text-foreground/80 truncate pl-4">
                           {doc.derived_title}
                         </div>
-                        <div className="text-[9px] font-mono text-muted-foreground pl-4 truncate">
+                        <div className="text-[11px] font-mono text-muted-foreground pl-4 truncate">
                           {doc.source === "master" ? (
                             <>
                               {doc.master_meta?.contract_category &&
@@ -556,7 +556,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                           target="_blank"
                           rel="noreferrer"
                           onClick={(e) => e.stopPropagation()}
-                          className="text-muted-foreground hover:text-foreground text-[9px] font-mono uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0"
+                          className="text-muted-foreground hover:text-foreground text-[11px] font-mono uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0"
                           title={
                             doc.source === "master"
                               ? "Master 登録のリンクを開く"

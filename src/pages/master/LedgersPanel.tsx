@@ -279,7 +279,7 @@ export function LedgersPanel() {
                   <Badge variant="outline" className="font-mono text-[10px]">
                     {l.ledger_code}
                   </Badge>
-                  <Badge variant={l.is_active === false ? "phosphor" : "success"} className="h-4 text-[9px]">
+                  <Badge variant={l.is_active === false ? "phosphor" : "success"} className="h-4 text-[11px]">
                     {l.is_active === false ? "無効" : "有効"}
                   </Badge>
                 </div>
@@ -525,7 +525,7 @@ export function LedgersPanel() {
                           <div className="text-[11px] font-mono font-bold truncate">
                             {m.material_name}
                           </div>
-                          <div className="text-[9px] font-mono text-muted-foreground/70">
+                          <div className="text-[11px] font-mono text-muted-foreground/70">
                             {m.material_type || "—"}
                             {m.rights_holder && ` / ${m.rights_holder}`}
                           </div>

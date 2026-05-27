@@ -1109,7 +1109,7 @@ function VendorPicker({
             <div className="text-xs font-mono font-bold truncate">
               {v.vendor_name || "(無名)"}
             </div>
-            <div className="text-[9px] font-mono text-muted-foreground truncate">
+            <div className="text-[11px] font-mono text-muted-foreground truncate">
               {v.vendor_code}
               {v.entity_type ? ` · ${v.entity_type}` : ""}
               {v.aliases ? ` · 別名: ${v.aliases}` : ""}
@@ -1322,7 +1322,7 @@ function FinancialConditionsEditor({
                 value={c.mg_amount ?? ""}
                 onChange={(e) => update(idx, { mg_amount: e.target.value })}
               />
-              <p className="text-[9px] font-mono text-muted-foreground">
+              <p className="text-[11px] font-mono text-muted-foreground">
                 ロイヤリティ &lt; MG なら MG を採用 (毎期 floor)
               </p>
             </div>
@@ -1335,7 +1335,7 @@ function FinancialConditionsEditor({
                 value={c.ag_amount ?? ""}
                 onChange={(e) => update(idx, { ag_amount: e.target.value })}
               />
-              <p className="text-[9px] font-mono text-muted-foreground">
+              <p className="text-[11px] font-mono text-muted-foreground">
                 前払い済み額。各計算で消化していく
               </p>
             </div>

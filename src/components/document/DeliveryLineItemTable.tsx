@@ -176,7 +176,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
   const statusBadge = (r: typeof rows[number]) =>
     r.isOverflow ? (
       <span
-        className="inline-flex items-center gap-1 text-[9px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-sm"
+        className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-sm"
         title={`発注額/数量を超過 (${
           r.willOverflowAmount ? "amount" : ""
         }${r.willOverflowAmount && r.willOverflowQty ? " & " : ""}${
@@ -186,15 +186,15 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
         <AlertTriangle className="w-2.5 h-2.5" /> 超過
       </span>
     ) : r.isExact ? (
-      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-sm">
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-sm">
         <CheckCircle2 className="w-2.5 h-2.5" /> 完了
       </span>
     ) : r.inspectedThisTime > 0 ? (
-      <span className="inline-flex items-center gap-1 text-[9px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-sm">
+      <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-sm">
         分割中
       </span>
     ) : (
-      <span className="text-[9px] text-muted-foreground">—</span>
+      <span className="text-[11px] text-muted-foreground">—</span>
     );
 
   return (
@@ -227,13 +227,13 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
             </div>
             <div className="grid grid-cols-3 gap-2 text-[11px] font-mono py-2 border-y border-border/40 mb-2">
               <div>
-                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">
+                <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
                   発注
                 </div>
                 <div className="font-medium">{yen(r.insp.ordered_amount)}</div>
               </div>
               <div>
-                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">
+                <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
                   既検収
                 </div>
                 <div className="font-medium">
@@ -241,7 +241,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 </div>
               </div>
               <div>
-                <div className="text-[9px] text-muted-foreground uppercase tracking-wider">
+                <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
                   残
                 </div>
                 <div
@@ -256,7 +256,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
             </div>
             <div className="grid grid-cols-2 gap-3 mb-2">
               <label className="block">
-                <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                   今回数量
                 </div>
                 {cellInput(
@@ -271,7 +271,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 )}
               </label>
               <label className="block">
-                <div className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
                   歩留率 (0.0 - 1.0)
                 </div>
                 {cellInput(
@@ -316,7 +316,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
               <th className="text-left p-2 min-w-[140px]">品目名</th>
               <th className="text-right p-2 w-32">
                 発注 / 既検収 / 残
-                <div className="text-[8px] font-normal opacity-60 normal-case tracking-normal">
+                <div className="text-[10px] font-normal opacity-60 normal-case tracking-normal">
                   (税抜)
                 </div>
               </th>
@@ -373,7 +373,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                   <td className="p-2">
                     <div className="font-bold">{line.item_name}</div>
                     {line.spec && (
-                      <div className="text-[9px] text-muted-foreground">
+                      <div className="text-[11px] text-muted-foreground">
                         {line.spec}
                       </div>
                     )}
@@ -425,7 +425,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                   <td className="p-2">
                     {isOverflow ? (
                       <span
-                        className="inline-flex items-center gap-1 text-[9px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-sm"
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-red-700 bg-red-100 px-1.5 py-0.5 rounded-sm"
                         title={`発注額/数量を超過しています (overflow: ${
                           willOverflowAmount ? "amount" : ""
                         }${willOverflowAmount && willOverflowQty ? " & " : ""}${
@@ -435,15 +435,15 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                         <AlertTriangle className="w-2.5 h-2.5" /> 超過
                       </span>
                     ) : isExact ? (
-                      <span className="inline-flex items-center gap-1 text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-sm">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-sm">
                         <CheckCircle2 className="w-2.5 h-2.5" /> 完了
                       </span>
                     ) : inspectedThisTime > 0 ? (
-                      <span className="inline-flex items-center gap-1 text-[9px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-sm">
+                      <span className="inline-flex items-center gap-1 text-[11px] text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-sm">
                         分割中
                       </span>
                     ) : (
-                      <span className="text-[9px] text-muted-foreground">—</span>
+                      <span className="text-[11px] text-muted-foreground">—</span>
                     )}
                   </td>
                 </tr>

@@ -1,29 +1,67 @@
 # Phase 24 — UX 改修 残課題
 
-Phase 23（contract_capabilities 統一）の後、Wave1/2/4 まで実施済み。
+Phase 23（contract_capabilities 統一）の後、Wave1/2/4 + 23.0.4 修正バンドル まで実施済み。
 本ドキュメントは別 PC で続きを進めるための実装ガイド。
+
+> 📌 Wave3 は本作業計画では番号スキップ済 (Wave2+4 と統合)。Wave3 を別途実施する予定はありません。
 
 ## 完了済み（参考）
 
 | Wave | 内容 | コミット |
 |---|---|---|
 | 23.0 | order_items / license_contracts → contract_capabilities 統一 + マイグレ + v2 API + UnifiedContractPicker | `9cc528c` |
-| 23.0.1 | 検収書PDF「成果物・業務内容」列の Backlog 本文混入修正 | `a478901` |
+| 23.0.1 | 検収書PDF「成果物・業務内容」列の Backlog 本文混入修正 (対症療法版) | `a478901` |
 | 23.0.2 | Excel 出力の空欄問題 + 検収情報セクション重複整理 | `889a403` |
 | 23.0.3 | UnifiedContractPicker をフルモーダル化 | `a652452` |
 | Wave1 | 採番ステータスバッジ・親契約フィードバック・必須/読取専用 視覚化 | `735326d` |
 | Wave2+4 | テーブルレスポンシブ化・バルク取込サマリ・必須エラー自動スクロール | `04fe3f7` |
+| **23.0.4** | **Phase A-F 修正バンドル (本セッションで実施)** | (このコミット) |
+
+### 23.0.4 で対応した内容
+
+**Phase A — データ安全性 (Critical)**
+
+- `upsertContract` を `pool.connect()` + BEGIN/COMMIT/ROLLBACK でトランザクション化。子テーブルの「半分消えた」状態を防止 ([services/worker/src/routes/importsV2.ts](../services/worker/src/routes/importsV2.ts))
+- `expense_name` / `fee_name` (NOT NULL) を事前バリデーション (`importsV2.ts`)
+- `excelService.ts:244` の `inspected_amount_ex_tax || amount_ex_tax` を `??` に置換 (0 円検収が発注額に化けるバグ)
+- `phase23_migrate --drop` を `--really-drop` 必須に変更。依存オブジェクト一覧を表示してから物理削除する 2 段階確認に ([scripts/phase23_migrate_to_capabilities.ts](../scripts/phase23_migrate_to_capabilities.ts))
+
+**Phase B — 検収書整合性 (Critical)**
+
+- 検収書PDFテンプレを `{{#each delivery_line_items}}` ループ化。複数明細に正しく対応 (両 [templates/](../templates/inspection_certificate.html) と [services/worker/templates/](../services/worker/templates/inspection_certificate.html) 同期)
+- `extractCustomFields` に `__backlog_description` キーを追加し、Backlog 本文の流出経路を明示化 ([backlogService.ts:179](../services/api/src/services/backlogService.ts))
+- form-context `/api/documents/form-context` の `order_lines_for_inspection` に `delivery_date` / `payment_date` を追加 ([server.ts:1374](../services/api/server.ts))
+- 既存 `documents.form_data.description` の修復スクリプト追加 ([scripts/fix_inspection_description_from_backlog.ts](../scripts/fix_inspection_description_from_backlog.ts)) — 本番では `--apply` で実行
+
+**Phase C — セキュリティ (Major)**
+
+- `/api/contracts/search` と `/:id` に `requirePortalSecret` ミドルウェア適用 ([contractsV2.ts](../services/api/src/routes/contractsV2.ts))
+
+**Phase D — race condition / UX (Major)**
+
+- UnifiedContractPicker の検索 / loadDetail / loadByDocNumber に `AbortController`。古いレスポンスが新しい state を上書きする race を解消 ([UnifiedContractPicker.tsx](../src/components/document/UnifiedContractPicker.tsx))
+- royalty_statement の `selectedContract` を `pickedDetail` ベースで fallback。allContracts に未掲載の契約 (新規 import 直後 等) でも反映される ([DocumentForm.tsx](../src/components/document/DocumentForm.tsx))
+- auto-scroll: 祖先 `<details>` を自動展開 / `prefers-reduced-motion` 尊重 / `[readonly]`/`[disabled]` 除外 / setTimeout の競合解消 ([DocumentEditorPage.tsx](../src/pages/DocumentEditorPage.tsx))
+- BulkImportDialog の空 CSV (`totalGroups === 0`) 専用表示 + `successPct` を `[0, 100]` に clamp ([BulkImportDialog.tsx](../src/components/document/BulkImportDialog.tsx))
+
+**Phase E — todo.md 残課題**
+
+- E-L: FormField に `aria-required` / `aria-invalid` / `aria-readonly` / `aria-describedby` を付与。select の readonly 表現を input と統一 ([FormField.tsx](../src/components/document/FormField.tsx))。toast error を `role="alert"` / `aria-live="assertive"` に分離 ([toast.tsx](../components/ui/toast.tsx))
+- E-M: `EmptyState` 共通コンポーネント追加 ([src/components/EmptyState.tsx](../src/components/EmptyState.tsx))
+- E-E2: LineItemTable をカード型レスポンシブ (`lg:hidden` / `hidden lg:block`) に。EmptyState を採用 ([LineItemTable.tsx](../src/components/document/LineItemTable.tsx))
+- E-N: UnifiedContractPicker のテーブル行に `role="button"` + Enter/Space 対応
+- E-K: `text-[8px]` / `text-[9px]` を `text-[10px]` / `text-[11px]` に一括置換 (約 136 箇所 / 25 ファイル)
+- E-G+H: `TemplateVar.helpText` を `string | { brief, full }` に拡張。FormField で details/summary 展開対応 (基盤のみ。テンプレ設定の実分割は次フェーズ)
 
 ## 残課題一覧
 
 | # | 優先度 | キー | 課題 | 想定工数 |
 |---|---|---|---|---|
-| 1 | 🟡 | G+H | templates_config.json の見出し正規化 + helpText brief/full 分割 | 1〜2 日 |
-| 2 | 🟡 | E2 | LineItemTable のカード型レスポンシブ化（発注書フォーム用） | 30 分 |
-| 3 | 🟢 | K | 極小フォント (text-[8px]/[9px]) を WCAG 準拠サイズに置換 | 2〜3 時間 |
-| 4 | 🟢 | L | aria-label / aria-describedby 整備（アクセシビリティ） | 4〜6 時間 |
-| 5 | 🟢 | M | 空状態 (empty state) デザイン統一 | 2〜3 時間 |
-| 6 | 🟢 | N | キーボード操作（Tab/Esc/Enter）の予測可能性 | 2〜3 時間 |
+| 1 | 🟡 | G | templates_config.json の見出し正規化 (I. 基本情報 / II. 当事者 / ...) | 1 日 |
+| 2 | 🟡 | H | 100 字超の helpText を `{brief, full}` に実分割 (型基盤は 23.0.4 で導入済) | 4〜6 時間 |
+| 3 | 🟢 | L+ | icon-only ボタンに aria-label 追加 (Sidebar / Topbar 等の残存箇所) | 2〜3 時間 |
+| 4 | 🟢 | KK | LineItemTable のテーブル `<tbody>` 側を `rows` / `statusBadge` ベースに統一 (Wave2+4 でカード側だけ共通化されたが、テーブル側は古い行内計算が残存) | 1〜2 時間 |
+| 5 | 🟢 | DD | UnifiedContractPicker の `currentContractId` がリスト圏外のとき、ヘッダに pin 表示 | 1〜2 時間 |
 
 ---
 

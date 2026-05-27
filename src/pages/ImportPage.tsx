@@ -97,7 +97,7 @@ const Field: React.FC<{
     </div>
     {children}
     {hint && (
-      <div className="text-[9px] font-mono text-muted-foreground/60">
+      <div className="text-[11px] font-mono text-muted-foreground/60">
         {hint}
       </div>
     )}
@@ -122,7 +122,7 @@ const SideButton: React.FC<{
     disabled={disabled}
     title={title}
     className={cn(
-      "text-[8px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors",
+      "text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors",
       disabled
         ? "border-input text-muted-foreground/40 cursor-not-allowed"
         : "border-foreground/30 text-foreground hover:bg-muted"
@@ -1811,7 +1811,7 @@ export function ImportPage() {
           ] as { group: string; tabs: { key: Tab; label: string }[] }[]
         ).map((g) => (
           <div key={g.group} className="flex items-center gap-2 py-1.5 border-b border-border/40 last:border-b-0">
-            <span className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground/70 w-24 flex-shrink-0">
+            <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground/70 w-24 flex-shrink-0">
               ░ {g.group}
             </span>
             <div className="flex flex-wrap gap-1.5">

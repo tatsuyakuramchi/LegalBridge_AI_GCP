@@ -300,7 +300,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     </div>
                   )}
                   {c.calc_period && (
-                    <div className="text-[9px] font-mono text-muted-foreground/70 mt-0.5">
+                    <div className="text-[11px] font-mono text-muted-foreground/70 mt-0.5">
                       ラベル: {c.calc_period}
                     </div>
                   )}
@@ -363,7 +363,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     "1"
                   )}
                   {c.mg_amount && c.mg_amount > 0 ? (
-                    <div className="text-[9px] text-muted-foreground mt-0.5">
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
                       {yen(c.mg_amount)}
                     </div>
                   ) : null}

@@ -58,7 +58,7 @@ export function Topbar() {
             {title}
           </h1>
           {subtitle && (
-            <p className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-0.5">
+            <p className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-0.5">
               {subtitle}
             </p>
           )}
@@ -82,7 +82,7 @@ export function Topbar() {
         <span className="text-[10px] font-mono tab-mono font-bold tracking-[0.14em]">
           {now.toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })}
         </span>
-        <span className="text-[8px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-0.5">
+        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-0.5">
           {now.toLocaleDateString("ja-JP", { month: "short", day: "2-digit", weekday: "short" })}
         </span>
       </div>
@@ -98,7 +98,7 @@ export function Topbar() {
           <p className="text-[10px] font-mono font-bold uppercase tracking-[0.14em]">
             Kuramochi T.
           </p>
-          <p className="text-[8px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-0.5">
+          <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-0.5">
             Administrator
           </p>
         </div>

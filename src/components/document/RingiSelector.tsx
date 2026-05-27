@@ -192,16 +192,16 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
           <FileText className="w-3 h-3" />
           稟議番号
           {/* Phase 22.21.118: 任意項目であることを明示 */}
-          <span className="text-[9px] opacity-70">
+          <span className="text-[11px] opacity-70">
             (任意 / R-NNNNN・B-NNNNN・5 桁数字 / 複数登録可)
           </span>
         </div>
         {normalized.length > 0 ? (
-          <span className="text-[9px] font-mono text-emerald-700">
+          <span className="text-[11px] font-mono text-emerald-700">
             {normalized.length} 件 紐付け済み
           </span>
         ) : (
-          <span className="text-[9px] font-mono text-muted-foreground opacity-70">
+          <span className="text-[11px] font-mono text-muted-foreground opacity-70">
             未入力でも保存可
           </span>
         )}
@@ -264,7 +264,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                   {/* Phase 22.21.117: decision_type バッジ */}
                   <span
                     className={cn(
-                      "text-[8px] font-bold px-1 rounded-sm border",
+                      "text-[10px] font-bold px-1 rounded-sm border",
                       h.decision_type === "board_resolution"
                         ? "bg-purple-50 border-purple-300 text-purple-800"
                         : "bg-sky-50 border-sky-300 text-sky-800"
@@ -275,7 +275,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
                   <span className="font-bold w-20">{h.ringi_number}</span>
                   <span className="flex-1 truncate">{h.title}</span>
                   {h.status && (
-                    <span className="text-[9px] opacity-60">{h.status}</span>
+                    <span className="text-[11px] opacity-60">{h.status}</span>
                   )}
                 </button>
               ))}
@@ -332,7 +332,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
             <div className="p-4 space-y-3">
               {/* Phase 22.21.117: 決裁種別 */}
               <label className="space-y-1 block">
-                <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
+                <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
                   決裁種別 (必須)
                 </div>
                 <select
@@ -449,7 +449,7 @@ const RingiField: React.FC<{
   maxLength?: number
 }> = ({ label, value, onChange, placeholder, inputMode = "text", maxLength }) => (
   <label className="space-y-1 block">
-    <div className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground">
+    <div className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground">
       {label}
     </div>
     <input

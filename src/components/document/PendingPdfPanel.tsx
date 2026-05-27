@@ -404,7 +404,7 @@ export const PendingPdfPanel: React.FC = () => {
                         {row.document_number}
                       </span>
                       {row.summary.variant && (
-                        <span className="text-[9px] font-mono px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded-sm">
+                        <span className="text-[11px] font-mono px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded-sm">
                           {row.summary.variant}
                         </span>
                       )}
@@ -506,7 +506,7 @@ export const PendingPdfPanel: React.FC = () => {
                         PDF 生成失敗
                       </div>
                       <div className="break-all">{rowError}</div>
-                      <div className="text-[9px] text-red-600/80 mt-1">
+                      <div className="text-[11px] text-red-600/80 mt-1">
                         ✏️ 「修正して再試行」で項目を直してから再生成、または
                         「そのまま再試行」で時刻差で再実行できます。
                       </div>
@@ -541,7 +541,7 @@ const TabButton: React.FC<{
     {label}
     <span
       className={cn(
-        "ml-1.5 inline-flex items-center justify-center min-w-[20px] px-1 rounded-sm text-[9px]",
+        "ml-1.5 inline-flex items-center justify-center min-w-[20px] px-1 rounded-sm text-[11px]",
         active ? "bg-background/20" : "bg-muted"
       )}
     >

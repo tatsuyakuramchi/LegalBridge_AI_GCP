@@ -206,12 +206,12 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
         <Calculator className="w-3.5 h-3.5" />
         <span>ライブ計算 (サーバ算出)</span>
         {loading && (
-          <span className="ml-auto text-[9px] text-muted-foreground/60">
+          <span className="ml-auto text-[11px] text-muted-foreground/60">
             calc...
           </span>
         )}
         {isStale && !loading && (
-          <span className="ml-auto text-[9px] text-amber-700">
+          <span className="ml-auto text-[11px] text-amber-700">
             stale (recalc...)
           </span>
         )}
@@ -235,7 +235,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
                 : "◻"}{" "}
               金銭条件の選択 (条件 1/2/3 のいずれか)
               {args.capability_financial_condition_id > 0 && (
-                <span className="ml-1 text-[9px] opacity-60">
+                <span className="ml-1 text-[11px] opacity-60">
                   (契約マスタから)
                 </span>
               )}
@@ -265,7 +265,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
           <AlertTriangle className="w-3 h-3 mt-0.5 flex-shrink-0" />
           <div>
             <div className="font-bold">計算サーバエラー</div>
-            <div className="text-[9px] opacity-80 break-all">{error}</div>
+            <div className="text-[11px] opacity-80 break-all">{error}</div>
           </div>
         </div>
       ) : preview ? (
@@ -312,7 +312,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
                 <Coins className="w-2.5 h-2.5" />
                 ② MG (最低保証 floor)
                 {preview.mg_floor_applied && (
-                  <span className="ml-auto text-[9px] font-bold text-amber-700">
+                  <span className="ml-auto text-[11px] font-bold text-amber-700">
                     FLOOR 適用
                   </span>
                 )}
@@ -345,7 +345,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
                 <Coins className="w-2.5 h-2.5" />
                 ③ AG (前払い保証 消化)
                 {preview.ag_fully_consumed && (
-                  <span className="ml-auto text-[9px] font-bold text-amber-700">
+                  <span className="ml-auto text-[11px] font-bold text-amber-700">
                     消化完了
                   </span>
                 )}
@@ -407,7 +407,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
 
           {/* ---- Formula breakdown ---- */}
           {preview.formula_breakdown && (
-            <details className="text-[9px] text-muted-foreground">
+            <details className="text-[11px] text-muted-foreground">
               <summary className="cursor-pointer hover:text-foreground select-none">
                 ▶ 計算式の内訳
               </summary>

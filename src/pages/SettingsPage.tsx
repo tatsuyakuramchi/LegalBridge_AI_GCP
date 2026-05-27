@@ -284,7 +284,7 @@ function SlackField({
         className="text-[11px]"
       />
       {hint && (
-        <p className="text-[9px] font-mono text-muted-foreground italic">
+        <p className="text-[11px] font-mono text-muted-foreground italic">
           {hint}
         </p>
       )}

@@ -18,6 +18,7 @@
 import React from "react";
 import { Plus, Trash2, Maximize2, X, Repeat, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { EmptyState } from "@/components/EmptyState";
 
 export type LineItem = {
   line_no?: number;
@@ -268,10 +269,245 @@ export const LineItemTable: React.FC<Props> = ({
     </div>
   );
 
+  // Phase 23.0.4: カード型レンダラ (lg 未満で使う)。
+  //   <table> は狭幅で列が潰れて読めなくなるため、モバイル/タブレット用に
+  //   1 行 = 1 カードで縦並び。spec のモーダル / サブスク詳細モーダルは共通利用。
+  const renderCard = (it: LineItem, idx: number) => {
+    const amount =
+      it.amount_ex_tax ?? ceilProduct(it.unit_price ?? 0, it.quantity ?? 0);
+    return (
+      <div
+        key={idx}
+        className="rounded-md border border-border bg-card p-3 shadow-sm space-y-3"
+      >
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+            行 {idx + 1}
+          </span>
+          {!readOnly && (
+            <button
+              type="button"
+              onClick={() => removeRow(idx)}
+              className="text-muted-foreground hover:text-destructive transition-colors p-1.5 rounded-sm"
+              title="この行を削除"
+              aria-label="この行を削除"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+        </div>
+        <label className="block">
+          <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+            品目名
+          </span>
+          {cellInput(
+            it.item_name,
+            (v) => update(idx, { item_name: v }),
+            "text",
+            "例: ノートPC"
+          )}
+        </label>
+        <label className="block">
+          <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+            仕様
+          </span>
+          {cellTextarea(
+            idx,
+            it.spec,
+            (v) => update(idx, { spec: v }),
+            "規格・モデル (3行まで表示)"
+          )}
+        </label>
+        <div className="grid grid-cols-3 gap-3 items-end">
+          <label className="block">
+            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+              単価
+            </span>
+            {cellInput(
+              it.unit_price,
+              (v) => update(idx, { unit_price: Number(v) || 0 }),
+              "number",
+              "0"
+            )}
+          </label>
+          <label className="block">
+            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+              数量
+            </span>
+            {cellInput(
+              it.quantity,
+              (v) => update(idx, { quantity: Number(v) || 0 }),
+              "number",
+              "1"
+            )}
+          </label>
+          <div>
+            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+              小計 (税抜)
+            </span>
+            <div className="text-right text-sm font-mono font-bold py-1">
+              ¥ {Number(amount).toLocaleString("ja-JP")}
+            </div>
+          </div>
+        </div>
+        {showPaymentColumns && (
+          <>
+            <label className="block">
+              <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+                計算方式
+              </span>
+              <div className="flex items-center gap-2">
+                <select
+                  value={it.calc_method || "FIXED"}
+                  onChange={(e) =>
+                    update(idx, {
+                      calc_method: e.target.value as LineItem["calc_method"],
+                      ...(e.target.value === "SUBSCRIPTION" && !it.cycle
+                        ? { cycle: "MONTHLY" as const }
+                        : {}),
+                    })
+                  }
+                  disabled={readOnly}
+                  className={cn(
+                    "flex-1 min-w-0 text-xs font-mono bg-transparent",
+                    "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                    "disabled:opacity-60 disabled:cursor-not-allowed"
+                  )}
+                >
+                  {CALC_METHOD_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {it.calc_method === "SUBSCRIPTION" && !readOnly && (
+                  <button
+                    type="button"
+                    onClick={() => setSubEditIdx(idx)}
+                    className="flex-shrink-0 p-1.5 rounded-sm text-muted-foreground hover:text-foreground hover:bg-muted"
+                    title="サブスク詳細を編集"
+                    aria-label="サブスク詳細を編集"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            </label>
+            <div className="grid grid-cols-2 gap-3">
+              <label className="block">
+                <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+                  {it.calc_method === "SUBSCRIPTION" ? "周期" : "契約種別"}
+                </span>
+                {it.calc_method === "SUBSCRIPTION" ? (
+                  <div className="flex items-center gap-1 text-xs font-mono py-1">
+                    <Repeat className="w-3 h-3 text-muted-foreground" />
+                    <span>
+                      {CYCLE_OPTIONS.find(
+                        (o) => o.value === (it.cycle || "MONTHLY")
+                      )?.short || "月次"}
+                    </span>
+                  </div>
+                ) : (
+                  <select
+                    value={(() => {
+                      const cur =
+                        it.payment_terms ?? it.payment_method ?? "";
+                      return cur === "請負" || cur === "準委任" ? cur : "";
+                    })()}
+                    onChange={(e) =>
+                      update(idx, {
+                        payment_terms: e.target.value,
+                        payment_method: e.target.value,
+                      })
+                    }
+                    disabled={readOnly}
+                    className={cn(
+                      "w-full text-xs font-mono bg-transparent",
+                      "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                      "disabled:opacity-60 disabled:cursor-not-allowed"
+                    )}
+                  >
+                    {PAYMENT_TERMS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </label>
+              <label className="block">
+                <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+                  {it.calc_method === "SUBSCRIPTION" ? "支払日" : "納期"}
+                </span>
+                {it.calc_method === "SUBSCRIPTION" ? (
+                  <span className="text-xs font-mono py-1 block">
+                    {formatBillingDay(it.billing_day, it.cycle) || (
+                      <span className="text-muted-foreground/60 italic">
+                        未設定
+                      </span>
+                    )}
+                  </span>
+                ) : (
+                  cellInput(
+                    it.delivery_date,
+                    (v) => update(idx, { delivery_date: v }),
+                    "date"
+                  )
+                )}
+              </label>
+            </div>
+            <label className="block">
+              <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+                {it.calc_method === "SUBSCRIPTION" ? "契約期間" : "支払日"}
+              </span>
+              {it.calc_method === "SUBSCRIPTION" ? (
+                <span className="text-xs font-mono py-1 block">
+                  {formatTermRange(it.term_start, it.term_end) || (
+                    <span className="text-muted-foreground/60 italic">
+                      未設定
+                    </span>
+                  )}
+                </span>
+              ) : (
+                cellInput(
+                  it.payment_date,
+                  (v) => update(idx, { payment_date: v }),
+                  "date"
+                )
+              )}
+            </label>
+          </>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div className="col-span-full">
-      <div className="overflow-x-auto">
-        <table className="w-full text-[11px] font-mono border-collapse">
+      {/* Phase 23.0.4: lg 未満はカード型、lg 以上は従来テーブル */}
+      {items.length === 0 ? (
+        <EmptyState
+          title="明細はまだ追加されていません"
+          description={
+            readOnly ? undefined : "下の「行追加」から開始してください。"
+          }
+          compact
+        />
+      ) : (
+        <>
+          <div className="space-y-3 lg:hidden">
+            {items.map((it, idx) => renderCard(it, idx))}
+            <div className="rounded-md border border-foreground/30 bg-muted/40 px-3 py-2 flex items-center justify-between">
+              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                合計 (税抜)
+              </span>
+              <span className="text-sm font-mono font-bold">
+                ¥ {grandTotal.toLocaleString("ja-JP")}
+              </span>
+            </div>
+          </div>
+          <div className="hidden lg:block overflow-x-auto">
+            <table className="w-full text-[11px] font-mono border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-[10px] uppercase tracking-wider">
               <th className="w-8 text-left p-2">#</th>
@@ -295,25 +531,7 @@ export const LineItemTable: React.FC<Props> = ({
             </tr>
           </thead>
           <tbody>
-            {items.length === 0 ? (
-              <tr>
-                {/* Phase 17h: 列数が変わったので colspan を再計算
-                    基本 6 列 (#/品目/仕様/単価/数量/小計)
-                    + showPayment なら 4 列 (計算方式/契約種別/納期/支払日)
-                    + !readOnly なら 1 列 (削除ボタン) */}
-                <td
-                  colSpan={
-                    6 +
-                    (showPaymentColumns ? 4 : 0) +
-                    (readOnly ? 0 : 1)
-                  }
-                  className="p-3 text-center text-muted-foreground italic"
-                >
-                  明細はまだ追加されていません。下の「行追加」から開始してください。
-                </td>
-              </tr>
-            ) : (
-              items.map((it, idx) => {
+            {items.map((it, idx) => {
                 const amount =
                   it.amount_ex_tax ?? ceilProduct(it.unit_price ?? 0, it.quantity ?? 0);
                 return (
@@ -498,8 +716,7 @@ export const LineItemTable: React.FC<Props> = ({
                     )}
                   </tr>
                 );
-              })
-            )}
+              })}
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-foreground/20 bg-muted/30 font-bold">
@@ -515,7 +732,9 @@ export const LineItemTable: React.FC<Props> = ({
             </tr>
           </tfoot>
         </table>
-      </div>
+          </div>
+        </>
+      )}
 
       {!readOnly && (
         <div className="mt-3 flex justify-between items-center">

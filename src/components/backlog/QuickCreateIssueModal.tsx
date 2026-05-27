@@ -492,7 +492,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
                   type="button"
                   onClick={() => setCounterpartyMode("master")}
                   className={cn(
-                    "text-[9px] font-mono px-2 py-0.5 border rounded-sm transition-colors",
+                    "text-[11px] font-mono px-2 py-0.5 border rounded-sm transition-colors",
                     counterpartyMode === "master"
                       ? "bg-foreground text-background border-foreground"
                       : "border-border text-muted-foreground hover:border-foreground"
@@ -504,7 +504,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
                   type="button"
                   onClick={() => setCounterpartyMode("manual")}
                   className={cn(
-                    "text-[9px] font-mono px-2 py-0.5 border rounded-sm transition-colors",
+                    "text-[11px] font-mono px-2 py-0.5 border rounded-sm transition-colors",
                     counterpartyMode === "manual"
                       ? "bg-foreground text-background border-foreground"
                       : "border-border text-muted-foreground hover:border-foreground"
@@ -592,7 +592,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
 
           {/* プレビュー */}
           <div className="border border-dashed border-border rounded-sm bg-muted/30 p-3 space-y-1">
-            <div className="text-[9px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
+            <div className="text-[11px] font-mono uppercase tracking-[0.2em] text-muted-foreground">
               作成される課題名 (プレビュー)
             </div>
             <div className="text-sm font-mono font-bold break-all">

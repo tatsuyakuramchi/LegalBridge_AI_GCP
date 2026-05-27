@@ -508,26 +508,26 @@ export function WorkflowPanel({
                   let dateBadge: React.ReactNode = null
                   if (item.accepted) {
                     dateBadge = (
-                      <span className="text-[9px] font-mono tracking-[0.14em] text-emerald-600 uppercase ml-1">
+                      <span className="text-[11px] font-mono tracking-[0.14em] text-emerald-600 uppercase ml-1">
                         accepted
                       </span>
                     )
                   } else if (daysUntil != null) {
                     if (daysUntil < 0) {
                       dateBadge = (
-                        <span className="text-[9px] font-mono tracking-[0.14em] text-destructive uppercase ml-1">
+                        <span className="text-[11px] font-mono tracking-[0.14em] text-destructive uppercase ml-1">
                           {Math.abs(daysUntil)}d overdue
                         </span>
                       )
                     } else if (daysUntil <= 7) {
                       dateBadge = (
-                        <span className="text-[9px] font-mono tracking-[0.14em] text-phosphor uppercase ml-1">
+                        <span className="text-[11px] font-mono tracking-[0.14em] text-phosphor uppercase ml-1">
                           in {daysUntil}d
                         </span>
                       )
                     } else {
                       dateBadge = (
-                        <span className="text-[9px] font-mono tracking-[0.14em] text-muted-foreground uppercase ml-1">
+                        <span className="text-[11px] font-mono tracking-[0.14em] text-muted-foreground uppercase ml-1">
                           in {daysUntil}d
                         </span>
                       )
@@ -775,10 +775,10 @@ function CompactDropdown({
                 borderBottom: "1px solid hsl(var(--border))",
               }}
             >
-              <span className="text-[9px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+              <span className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
                 ▍ STATUS · {issueKey}
               </span>
-              <span className="text-[8px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+              <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
                 {statuses.length}
               </span>
             </div>
@@ -830,12 +830,12 @@ function CompactDropdown({
                     )}
                     <span className="flex-1 truncate">{s.name}</span>
                     {isCurrent && (
-                      <span className="text-[9px] tracking-[0.18em] text-muted-foreground">
+                      <span className="text-[11px] tracking-[0.18em] text-muted-foreground">
                         現在
                       </span>
                     )}
                     {isRecommended && !isCurrent && (
-                      <span className="text-[9px] tracking-[0.18em] text-phosphor">
+                      <span className="text-[11px] tracking-[0.18em] text-phosphor">
                         推奨
                       </span>
                     )}

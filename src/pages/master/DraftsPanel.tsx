@@ -319,7 +319,7 @@ export function DraftsPanel() {
               <div className="text-right text-muted-foreground">
                 {formatBytes(r.size_bytes)}
                 {r.keys_count != null && (
-                  <span className="ml-1 text-[9px] opacity-70">({r.keys_count}k)</span>
+                  <span className="ml-1 text-[11px] opacity-70">({r.keys_count}k)</span>
                 )}
               </div>
               <div className="flex items-center justify-end gap-1">

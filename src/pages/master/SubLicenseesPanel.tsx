@@ -199,13 +199,13 @@ export function SubLicenseesPanel() {
               <CardContent className="px-4 space-y-2">
                 <div className="flex items-center justify-between gap-2">
                   {s.category && (
-                    <Badge variant="info" className="text-[9px]">
+                    <Badge variant="info" className="text-[11px]">
                       {s.category}
                     </Badge>
                   )}
                   <Badge
                     variant={s.is_active === false ? "phosphor" : "success"}
-                    className="h-4 text-[9px]"
+                    className="h-4 text-[11px]"
                   >
                     {s.is_active === false ? "無効" : "有効"}
                   </Badge>

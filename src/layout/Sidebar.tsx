@@ -61,7 +61,7 @@ export function Sidebar() {
         </div>
         <div className="leading-tight">
           <p className="text-[11px] font-mono font-bold uppercase tracking-[0.18em]">Arcs</p>
-          <p className="text-[9px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+          <p className="text-[11px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
             Legal · OS
           </p>
         </div>
@@ -71,7 +71,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 custom-scrollbar">
         {groups.map((group) => (
           <div key={group.label} className="space-y-1.5">
-            <p className="px-2 text-[9px] font-mono font-bold uppercase tracking-[0.22em] text-muted-foreground/70">
+            <p className="px-2 text-[11px] font-mono font-bold uppercase tracking-[0.22em] text-muted-foreground/70">
               ░ {group.label}
             </p>
             <ul className="space-y-0.5">
@@ -103,7 +103,7 @@ export function Sidebar() {
                       )}
                     </NavLink>
                     {item.description && (
-                      <p className="ml-9 text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground/60">
+                      <p className="ml-9 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground/60">
                         {item.description}
                       </p>
                     )}
@@ -117,15 +117,15 @@ export function Sidebar() {
 
       {/* Footer status */}
       <div className="border-t border-border p-3 space-y-1.5">
-        <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.16em]">
+        <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.16em]">
           <span className="text-muted-foreground">▍ Backlog</span>
           <span className="text-emerald-600 font-bold">Online</span>
         </div>
-        <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.16em]">
+        <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.16em]">
           <span className="text-muted-foreground">▍ Drive</span>
           <span className="text-emerald-600 font-bold">Active</span>
         </div>
-        <div className="flex items-center justify-between text-[9px] font-mono uppercase tracking-[0.16em]">
+        <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.16em]">
           <span className="text-muted-foreground">▍ Identity</span>
           <span className="text-amber-600 font-bold">Sync</span>
         </div>

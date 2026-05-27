@@ -105,7 +105,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           {isReadOnly && (
             <Lock
               className="h-2.5 w-2.5 text-muted-foreground/60"
-              aria-label="読み取り専用"
+              aria-hidden="true"
             />
           )}
           {label}
@@ -116,21 +116,21 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
                 isEmpty ? 'text-red-600' : 'text-amber-600'
               )}
               title={isEmpty ? '必須項目（未入力）' : '必須項目'}
-              aria-label={isEmpty ? 'required, not filled' : 'required'}
+              aria-label={isEmpty ? '必須項目（未入力）' : '必須項目'}
             >
               *
             </span>
           )}
           {isReadOnly && (
             <span
-              className="text-[8px] bg-slate-100 text-slate-600 px-1.5 py-px rounded-sm normal-case tracking-normal"
+              className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-px rounded-sm normal-case tracking-normal"
               title="自動計算 / 自動補完 — 直接編集はできません"
             >
               自動
             </span>
           )}
           {error && (
-            <span className="text-[8px] bg-destructive/15 text-destructive px-1.5 py-px rounded-sm">
+            <span className="text-[10px] bg-destructive/15 text-destructive px-1.5 py-px rounded-sm">
               !
             </span>
           )}
@@ -187,7 +187,7 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
                 {norm === false && '✓ '}False
               </button>
               {norm === undefined && (
-                <span className="text-[9px] font-mono text-amber-600 italic">
+                <span className="text-[11px] font-mono text-amber-600 italic">
                   未選択
                 </span>
               )}
@@ -195,11 +195,27 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           );
         })()
       ) : options ? (
+        // Phase 23.0.4: select も他要素と同じく「読み取り専用 = フォーカス可能・
+        //   操作不可」に揃える。disabled では tab 順から外れスクリーンリーダーで
+        //   「使用不可」と読まれるため、aria-disabled + onMouseDown 抑止で表現。
         <select
           id={id}
           value={value || ''}
-          onChange={(e) => onChange(e.target.value)}
-          disabled={isReadOnly}
+          onChange={(e) => {
+            if (isReadOnly) return;
+            onChange(e.target.value);
+          }}
+          aria-required={isRequired || undefined}
+          aria-invalid={error ? true : undefined}
+          aria-readonly={isReadOnly || undefined}
+          aria-disabled={isReadOnly || undefined}
+          aria-describedby={meta.helpText ? `help-${id}` : undefined}
+          onMouseDown={(e) => {
+            if (isReadOnly) e.preventDefault();
+          }}
+          onKeyDown={(e) => {
+            if (isReadOnly && e.key !== 'Tab') e.preventDefault();
+          }}
           className={cn(baseInput, 'appearance-none pr-4')}
         >
           <option value="">— Select —</option>
@@ -215,6 +231,10 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           value={value || ''}
           onChange={(e) => onChange(e.target.value)}
           readOnly={isReadOnly}
+          aria-required={isRequired || undefined}
+          aria-invalid={error ? true : undefined}
+          aria-readonly={isReadOnly || undefined}
+          aria-describedby={meta.helpText ? `help-${id}` : undefined}
           rows={2}
           className={cn(
             'w-full text-xs font-mono border border-input rounded-sm p-2 resize-none transition-colors',
@@ -241,6 +261,10 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
           }
           onChange={(e) => onChange(e.target.value)}
           readOnly={isReadOnly}
+          aria-required={isRequired || undefined}
+          aria-invalid={error ? true : undefined}
+          aria-readonly={isReadOnly || undefined}
+          aria-describedby={meta.helpText ? `help-${id}` : undefined}
           className={baseInput}
           placeholder={isDate ? '' : (placeholder || `Input ${label}…`)}
           {...(isNumber
@@ -250,12 +274,34 @@ export const FormField: React.FC<FormFieldProps> = ({ id, meta, value, error, on
       )}
 
       {/* Phase 22.21.68: helpText を入力欄の下に全幅表示。
-          条文番号などの長文ガイドが切れないよう改行可能なテキスト。 */}
-      {meta.helpText && (
-        <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mt-0.5 whitespace-pre-wrap">
-          {meta.helpText}
-        </p>
-      )}
+          条文番号などの長文ガイドが切れないよう改行可能なテキスト。
+          Phase 23.0.4:
+            - string  : 従来通り 1 行表示 (後方互換)
+            - {brief,full}: brief を summary 行に、full を <details> で展開表示
+            - aria-describedby で input と紐付け、SR が読み上げる */}
+      {meta.helpText &&
+        (typeof meta.helpText === 'string' ? (
+          <p
+            id={`help-${id}`}
+            className="text-[10px] font-mono text-muted-foreground leading-relaxed mt-0.5 whitespace-pre-wrap"
+          >
+            {meta.helpText}
+          </p>
+        ) : (
+          <details
+            id={`help-${id}`}
+            className="text-[10px] font-mono text-muted-foreground leading-relaxed mt-0.5"
+          >
+            <summary className="cursor-pointer hover:text-foreground whitespace-pre-wrap">
+              {meta.helpText.brief}
+            </summary>
+            {meta.helpText.full && (
+              <p className="mt-1 pl-3 border-l border-muted whitespace-pre-wrap">
+                {meta.helpText.full}
+              </p>
+            )}
+          </details>
+        ))}
     </div>
   );
 };

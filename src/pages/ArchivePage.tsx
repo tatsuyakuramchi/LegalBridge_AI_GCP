@@ -153,7 +153,7 @@ export function ArchivePage() {
                   <div className="flex items-center gap-1.5">
                     {/* Phase 22.12: 真の契約 / 旧版 バッジ */}
                     {(asset as any).revision > 0 && (
-                      <Badge variant="outline" className="h-4 text-[9px]">
+                      <Badge variant="outline" className="h-4 text-[11px]">
                         Rev. {(asset as any).revision}
                       </Badge>
                     )}
@@ -215,7 +215,7 @@ export function ArchivePage() {
                         href={asset.file_link}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-[9px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground border border-border rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+                        className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground border border-border rounded-sm px-1.5 py-0.5 flex items-center gap-1"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <ExternalLink className="h-2.5 w-2.5" />
@@ -254,7 +254,7 @@ export function ArchivePage() {
                             )
                           }
                         }}
-                        className="text-[9px] font-mono uppercase tracking-wider text-emerald-700 border border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100 rounded-sm px-1.5 py-0.5 flex items-center gap-1"
+                        className="text-[11px] font-mono uppercase tracking-wider text-emerald-700 border border-emerald-600/40 bg-emerald-50 hover:bg-emerald-100 rounded-sm px-1.5 py-0.5 flex items-center gap-1"
                         title="この版を真の契約として設定 (他の版は旧版扱いに)"
                       >
                         ★ 真にする
@@ -267,7 +267,7 @@ export function ArchivePage() {
                       type="button"
                       onClick={() => handleReedit(asset.asset_number)}
                       disabled={reeditBusy === asset.asset_number}
-                      className="text-[9px] font-mono uppercase tracking-wider text-foreground border border-foreground/40 rounded-sm px-1.5 py-0.5 flex items-center gap-1 hover:bg-muted disabled:opacity-50"
+                      className="text-[11px] font-mono uppercase tracking-wider text-foreground border border-foreground/40 rounded-sm px-1.5 py-0.5 flex items-center gap-1 hover:bg-muted disabled:opacity-50"
                       title="この文書を再編集して PDF を差し替え"
                     >
                       <Edit3 className="h-2.5 w-2.5" />

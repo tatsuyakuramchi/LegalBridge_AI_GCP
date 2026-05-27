@@ -29,8 +29,15 @@ export interface TemplateVar {
   /** Short placeholder shown inside empty inputs. */
   placeholder?: string;
 
-  /** One-line guidance shown beneath the field on hover. */
-  helpText?: string;
+  /**
+   * One-line guidance shown beneath the field.
+   *
+   * Phase 23.0.4: 長文 helpText (条文番号や根拠などの詳細解説) は
+   *   `{ brief, full }` 形式に分割可能。FormField は brief を summary 行に出し、
+   *   full を <details> 展開で表示する。
+   *   既存の `string` 形式は後方互換でそのまま 1 行表示。
+   */
+  helpText?: string | { brief: string; full?: string };
 }
 
 export interface TemplateMetadata {

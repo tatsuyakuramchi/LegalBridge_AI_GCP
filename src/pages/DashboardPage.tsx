@@ -104,7 +104,7 @@ export function DashboardPage() {
               <Card key={s.label} className="bracketed">
                 <CardContent className="px-4">
                   <div className="flex items-center justify-between">
-                    <p className="text-[9px] font-mono font-bold uppercase tracking-[0.22em] text-muted-foreground">
+                    <p className="text-[11px] font-mono font-bold uppercase tracking-[0.22em] text-muted-foreground">
                       {s.label}
                     </p>
                     <Icon className={`h-3.5 w-3.5 ${s.tint}`} />
@@ -112,7 +112,7 @@ export function DashboardPage() {
                   <p className={`mt-3 text-3xl font-mono font-bold tab-mono tracking-tight ${s.tint}`}>
                     {s.value}
                   </p>
-                  <p className="mt-1 text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
+                  <p className="mt-1 text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground/70">
                     {s.hint}
                   </p>
                 </CardContent>
@@ -128,7 +128,7 @@ export function DashboardPage() {
               <h3 className="text-xs font-mono font-bold uppercase tracking-[0.2em]">
                 ▍ Legal Request Pipeline
               </h3>
-              <span className="text-[9px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+              <span className="text-[11px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
                 {dashboardStats?.issueDetails?.length ?? 0} issues
               </span>
             </div>
@@ -170,10 +170,10 @@ export function DashboardPage() {
                           {issue.summary}
                         </p>
                         <div className="mt-1 flex items-center gap-2">
-                          <Badge variant="outline" className="h-4 text-[9px]">
+                          <Badge variant="outline" className="h-4 text-[11px]">
                             {issue.status?.name ?? "—"}
                           </Badge>
-                          <span className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                          <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
                             {issue.assignee?.name || "Unassigned"}
                           </span>
                         </div>
@@ -184,7 +184,7 @@ export function DashboardPage() {
                         <p className="text-[11px] font-mono font-bold tab-mono">
                           {issue.documentCount ?? 0}
                         </p>
-                        <p className="text-[9px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                        <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
                           docs
                         </p>
                       </div>
@@ -223,7 +223,7 @@ export function DashboardPage() {
                       <p className="text-xs font-mono font-bold truncate">
                         {doc.template_type}
                       </p>
-                      <p className="text-[9px] font-mono uppercase tracking-[0.16em] opacity-60">
+                      <p className="text-[11px] font-mono uppercase tracking-[0.16em] opacity-60">
                         {doc.issue_key} ·{" "}
                         {doc.created_at
                           ? new Date(doc.created_at).toLocaleDateString("ja-JP")

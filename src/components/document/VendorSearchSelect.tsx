@@ -185,7 +185,7 @@ export const VendorSearchSelect: React.FC<Props> = ({
           placeholder="検索 (コード / 名称 / 屋号)"
           className="flex-1 text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40"
         />
-        <span className="text-[9px] font-mono text-muted-foreground/60">
+        <span className="text-[11px] font-mono text-muted-foreground/60">
           {filtered.length}/{vendors.length}
         </span>
       </div>
@@ -227,7 +227,7 @@ export const VendorSearchSelect: React.FC<Props> = ({
                   )}
                 </span>
                 {v.entity_type && (
-                  <span className="text-[9px] text-muted-foreground/70 flex-shrink-0">
+                  <span className="text-[11px] text-muted-foreground/70 flex-shrink-0">
                     {v.entity_type === "corporate" ||
                     v.entity_type === "法人"
                       ? "法人"
