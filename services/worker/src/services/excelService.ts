@@ -183,8 +183,13 @@ export class ExcelService {
     //   - 税引後 = 税込小計 − 源泉
     //   - 差引振込額 = 税引後 + 立替金 (経費税込)
     const taxRatePct = num(formData.taxRate) || (formData.isReducedTax ? 8 : 10);
-    const toIncTax = (exTax: number): number =>
-      Math.ceil(exTax * (1 + taxRatePct / 100));
+    // Phase 23.0.5: 浮動小数点誤差で 12000 * 1.1 = 13200.000000000002 になり、
+    //   Math.ceil で 13201 になるバグを修正。税額を独立に整数算で計算してから足す。
+    //   12000 * 10/100 = 1200 (整数) → exTax + tax = 13200 ✓
+    const toIncTax = (exTax: number): number => {
+      const tax = Math.ceil((exTax * taxRatePct) / 100);
+      return exTax + tax;
+    };
 
     if (isInspection) {
       // ── 検収書 ─────────────────────────────────
