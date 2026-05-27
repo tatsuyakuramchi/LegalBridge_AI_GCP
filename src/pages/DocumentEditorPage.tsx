@@ -115,7 +115,9 @@ export function DocumentEditorPage() {
   const [staffSearch, setStaffSearch] = React.useState("")
   const [templateSearch, setTemplateSearch] = React.useState("")
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
-  const [isPreviewVisible, setIsPreviewVisible] = React.useState(false)
+  // Phase 23.2: 旧 Split preview (画面を半分にして並べる) は狭幅で厳しいため
+  //   廃止し、別タブでプレビューを開く方式に一本化。
+  //   isPreviewVisible / previewHtml / live preview useEffect は撤去済。
   // Phase 23.1: 再編集モード時の保存方針。
   //   - 'internal': 内部修正 (同 row 上書き、Drive PDF も同 URL に差し替え) ← default
   //   - 'reissue':  再発行 (revision +1、過去 row は lifecycle='reissued' に)
@@ -148,7 +150,8 @@ export function DocumentEditorPage() {
   //     3. ユーザーが [編集] ボタンを押したら isReadOnly=false → 通常編集
   //   フォーム初期状態 (課題未選択) では isReadOnly=false (新規作成扱い)。
   const [isReadOnly, setIsReadOnly] = React.useState(false)
-  const [previewHtml, setPreviewHtml] = React.useState<string | null>(null)
+  // Phase 23.2: previewHtml はメイン画面に描画しなくなったため state 不要。
+  //   別タブで blob URL を開くだけ。エラーは showNotification で表示。
   // Phase 22.21.16: プレビュー API のエラーを UI 上で可視化。
   //   旧実装は console.error しかしておらず、500 や空 html を返した場合に
   //   「Awaiting field input…」のまま無言で止まっていた。
@@ -532,10 +535,14 @@ export function DocumentEditorPage() {
     return () => clearTimeout(to)
   }, [formData, selectedIssue])
 
+  // Phase 23.2: プレビューを別タブで開く (Split preview は廃止)。
+  //   - クリック時点の最新 formData で /api/documents/preview を呼ぶ
+  //   - 取得 HTML を Blob URL にし、window.open で新規タブに表示
+  //   - 古い Blob URL は 60 秒後に revoke (タブ表示中は十分残る)
+  //   - ポップアップブロック対策: 失敗時は通知でユーザーに伝える
   const handlePreview = React.useCallback(async () => {
     setIsPreviewing(true)
     setPreviewError(null)
-    // 旧 previewHtml は残しておく (refresh 中も前回内容を表示し続ける)
     try {
       const res = await fetch("/api/documents/preview", {
         method: "POST",
@@ -546,55 +553,55 @@ export function DocumentEditorPage() {
           issueKey: selectedIssue,
         }),
       })
-      // Phase 22.21.16: 500 / 422 などの HTTP エラーを明示的に拾う
       if (!res.ok) {
         let errMsg = `HTTP ${res.status} ${res.statusText}`
         try {
           const errBody = await res.json()
           if (errBody?.error) errMsg += `: ${errBody.error}`
         } catch {
-          // body が JSON でないケース
           try {
             const t = await res.text()
             if (t) errMsg += `: ${t.slice(0, 300)}`
           } catch {}
         }
         setPreviewError(errMsg)
-        setPreviewHtml(null)
+        showNotification(`プレビュー生成失敗: ${errMsg}`, "error")
         console.error("Preview failed:", errMsg)
         return
       }
       const data = await res.json()
-      if (data.html) {
-        setPreviewHtml(data.html)
-        setPreviewError(null)
-      } else {
-        // 200 OK だが html が空 — テンプレが空文字を返したケース
-        setPreviewError(
-          `Preview API returned no HTML${
-            data?.error ? `: ${data.error}` : ""
-          }`
-        )
-        setPreviewHtml(null)
+      if (!data?.html) {
+        const msg = `Preview API returned no HTML${
+          data?.error ? `: ${data.error}` : ""
+        }`
+        setPreviewError(msg)
+        showNotification(msg, "error")
+        return
       }
+      const blob = new Blob([data.html], { type: "text/html;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const win = window.open(url, "_blank", "noopener,noreferrer")
+      if (!win) {
+        showNotification(
+          "プレビューを別タブで開けませんでした (ポップアップブロックの可能性)。ブラウザ設定を確認してください。",
+          "error"
+        )
+      }
+      // Blob URL は数分後に revoke。新タブで開いた後の navigation でも
+      // メモリリーク防止のため。
+      setTimeout(() => URL.revokeObjectURL(url), 60_000)
     } catch (e: any) {
       const msg = e?.message || String(e)
       console.error("Preview failed:", e)
       setPreviewError(`Network or fetch error: ${msg}`)
-      setPreviewHtml(null)
+      showNotification(`プレビュー失敗: ${msg}`, "error")
     } finally {
       setIsPreviewing(false)
     }
-  }, [formData, selectedIssue, selectedTemplate])
+  }, [formData, selectedIssue, selectedTemplate, showNotification])
 
-  // Live preview
-  React.useEffect(() => {
-    if (!isPreviewVisible) return
-    const to = setTimeout(() => {
-      handlePreview()
-    }, 1000)
-    return () => clearTimeout(to)
-  }, [formData, isPreviewVisible, selectedTemplate, handlePreview])
+  // Phase 23.2: 旧 Live preview (formData 変更で自動再描画) は撤去。
+  //   別タブで開く方式なのでクリック都度の発火だけ。
 
   const handleGenerate = async () => {
     // Phase 16: クライアント側プレ検証 — templates_config.json で required=true
@@ -1034,11 +1041,7 @@ export function DocumentEditorPage() {
         </div>
 
         {/* ─── Stage ─────────────────────────────────────────── */}
-        <section
-          className={`col-span-12 ${
-            isPreviewVisible ? "lg:col-span-9" : "lg:col-span-9"
-          } space-y-4`}
-        >
+        <section className="col-span-12 lg:col-span-9 space-y-4">
           <Card className="rounded-md">
             {/* Header */}
             <div className="flex items-center justify-between gap-3 px-5 py-3 border-b border-border bg-muted/40">
@@ -1107,13 +1110,20 @@ export function DocumentEditorPage() {
                     Saved {lastAutoSave}
                   </span>
                 )}
+                {/* Phase 23.2: Split preview 廃止 → 別タブで開く方式に。 */}
                 <Button
-                  variant={isPreviewVisible ? "default" : "outline"}
+                  variant="outline"
                   size="sm"
-                  onClick={() => setIsPreviewVisible((v) => !v)}
+                  onClick={handlePreview}
+                  disabled={isPreviewing}
+                  title="プレビューを別タブで開きます"
                 >
-                  <Eye />
-                  {isPreviewVisible ? "Close preview" : "Split preview"}
+                  {isPreviewing ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Eye />
+                  )}
+                  プレビュー (別タブ)
                 </Button>
                 <Button
                   variant="outline"
@@ -1135,16 +1145,10 @@ export function DocumentEditorPage() {
               </div>
             </div>
 
-            {/* Body */}
-            <div
-              className={`flex ${
-                isPreviewVisible ? "flex-row" : "flex-col"
-              } overflow-hidden`}
-            >
+            {/* Body — Phase 23.2: Split preview 廃止により常に縦並び */}
+            <div className="flex flex-col overflow-hidden">
               <div
-                className={`flex-1 overflow-y-auto custom-scrollbar p-6 ${
-                  isPreviewVisible ? "max-w-[50%]" : ""
-                }`}
+                className={`flex-1 overflow-y-auto custom-scrollbar p-6`}
               >
                 {isRefreshingFields ? (
                   <div className="space-y-3">
@@ -1347,85 +1351,7 @@ export function DocumentEditorPage() {
                 )}
               </div>
 
-              {isPreviewVisible && (
-                <div className="w-1/2 border-l border-border bg-muted/40 flex flex-col overflow-hidden">
-                  <div className="px-4 py-2.5 bg-card border-b border-border flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 blink" />
-                      <span className="text-[10px] font-mono font-bold uppercase tracking-[0.22em] text-muted-foreground">
-                        Live preview
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="xs"
-                        onClick={handlePreview}
-                        disabled={isPreviewing}
-                      >
-                        <RefreshCw className={isPreviewing ? "animate-spin" : ""} />
-                        Refresh
-                      </Button>
-                      {/* Phase 9g: プレビュー画面内にも明示的な閉じるボタン */}
-                      <Button
-                        variant="outline"
-                        size="xs"
-                        onClick={() => setIsPreviewVisible(false)}
-                        title="編集画面に戻る"
-                      >
-                        <X />
-                        編集に戻る
-                      </Button>
-                    </div>
-                  </div>
-                  <div className="flex-1 overflow-auto custom-scrollbar p-6 grid-paper">
-                    <div className="bg-card border border-border shadow-xl mx-auto p-10 prose prose-sm max-w-none relative scale-[0.85] origin-top">
-                      {isPreviewing && (
-                        <div className="absolute inset-0 bg-card/60 backdrop-blur-[2px] flex items-center justify-center z-10">
-                          <Loader2 className="h-6 w-6 animate-spin text-foreground" />
-                        </div>
-                      )}
-                      {previewHtml ? (
-                        <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
-                      ) : previewError ? (
-                        <div className="flex flex-col items-center justify-center py-12 px-6">
-                          <div className="w-full max-w-xl rounded-md border border-destructive/30 bg-destructive/5 p-4">
-                            <div className="flex items-center gap-2 mb-2">
-                              <span className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-destructive">
-                                Preview failed
-                              </span>
-                            </div>
-                            <pre className="text-[10.5px] font-mono whitespace-pre-wrap break-words text-destructive/90 max-h-[280px] overflow-auto">
-                              {previewError}
-                            </pre>
-                            <div className="mt-3 text-[10px] font-mono text-muted-foreground">
-                              ヒント: Cloud Run worker のログで「Preview failed:」を検索すると
-                              テンプレートの Handlebars エラー詳細が確認できます。
-                            </div>
-                            <Button
-                              variant="outline"
-                              size="xs"
-                              className="mt-3"
-                              onClick={handlePreview}
-                              disabled={isPreviewing}
-                            >
-                              <RefreshCw className={isPreviewing ? "animate-spin" : ""} />
-                              Retry
-                            </Button>
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
-                          <FileText className="h-12 w-12 mb-3 opacity-30" />
-                          <p className="font-mono text-xs uppercase tracking-[0.2em] text-center">
-                            Awaiting field input…
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {/* Phase 23.2: Split preview ペインは廃止 (別タブで開く方式に統一)。 */}
             </div>
 
             {/* Footer */}
@@ -1456,13 +1382,19 @@ export function DocumentEditorPage() {
                 </div>
               </div>
               <div className="flex items-center gap-2">
-                <Button variant="outline" onClick={handlePreview} disabled={isPreviewing}>
+                {/* Phase 23.2: Footer のプレビューも別タブで開く */}
+                <Button
+                  variant="outline"
+                  onClick={handlePreview}
+                  disabled={isPreviewing}
+                  title="プレビューを別タブで開きます"
+                >
                   {isPreviewing ? (
                     <Loader2 className="animate-spin" />
                   ) : (
                     <Eye />
                   )}
-                  Preview
+                  プレビュー (別タブ)
                 </Button>
                 {selectedTemplate.startsWith("inspection_certificate") && (
                   <Button
