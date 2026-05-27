@@ -223,7 +223,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         [id]
       );
       const docRow = await deps.query(
-        `SELECT document_number, drive_link, created_at
+        `SELECT document_number, drive_link, created_at, form_data
            FROM documents
           WHERE document_number = $1
           ORDER BY created_at DESC LIMIT 1`,
@@ -240,7 +240,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       const doneCount = Number(delivCount.rows[0]?.done_count) || 0;
       const nextDeliveryNo = Number(delivCount.rows[0]?.next_delivery_no) || 1;
 
-      const lineRows = lines.rows.map((l: any) => ({
+      let lineRows: any[] = lines.rows.map((l: any) => ({
         id: Number(l.id),
         line_no: Number(l.line_no),
         item_name: l.item_name || "",
@@ -264,6 +264,103 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           (Number(l.amount_ex_tax) || 0) -
           (Number(l.inspected_amount_so_far) || 0),
       }));
+
+      // Phase 23.6.6: capability_line_items が空のとき、documents.form_data
+      //   からフォールバック合成する。Phase 23 移行スクリプト未実行 or 旧
+      //   生成経路で contract_capabilities ヘッダだけ登録され明細が無いケース
+      //   (例: ARC-PO-2026-0019) で検収書フォームが空になる事故を防ぐ。
+      //   - form_data.line_items[] があればそれを使う
+      //   - 無ければ cc.amount_ex_tax / form_data.amount から 1 行合成
+      //   - synthetic な行は id を負の値にして DB の行と区別 (検収時の参照用)
+      if (lineRows.length === 0) {
+        const formData = docRow.rows[0]?.form_data || {};
+        const formLines = Array.isArray(formData.line_items)
+          ? formData.line_items
+          : Array.isArray(formData.delivery_line_items)
+          ? formData.delivery_line_items
+          : [];
+        if (formLines.length > 0) {
+          lineRows = formLines.map((l: any, i: number) => {
+            const amt =
+              Number(l.amount_ex_tax) ||
+              Number(l.amount) ||
+              (Number(l.quantity) || 0) * (Number(l.unit_price) || 0) ||
+              0;
+            return {
+              id: -(i + 1), // 負 ID で synthetic を識別
+              line_no: Number(l.line_no) || i + 1,
+              item_name: l.item_name || l.description || "",
+              spec: l.spec || "",
+              category: l.category || "",
+              calc_method: l.calc_method || "FIXED",
+              payment_terms: l.payment_terms || "",
+              payment_method: l.payment_method || "",
+              quantity: Number(l.quantity) || 1,
+              unit_price: Number(l.unit_price) || amt,
+              amount_ex_tax: amt,
+              delivery_date: l.delivery_date || null,
+              payment_date: l.payment_date || null,
+              cycle: l.cycle || "",
+              billing_day: l.billing_day == null ? null : Number(l.billing_day),
+              term_start: l.term_start || null,
+              term_end: l.term_end || null,
+              ordered_amount_ex_tax: amt,
+              inspected_amount_so_far: 0,
+              remaining_amount_ex_tax: amt,
+              __synthetic: true,
+            };
+          });
+        } else {
+          // form_data にも line_items が無い場合、ヘッダの金額から 1 行合成。
+          // amount_ex_tax が null でも、form_data の deliveredAmountStr 等から
+          // 復元を試みる。
+          const headerAmt =
+            Number(cc.amount_ex_tax) ||
+            Number(
+              (formData.deliveredAmountStr || formData.totalAmountStr || "")
+                .toString()
+                .replace(/[^0-9.-]/g, "")
+            ) ||
+            Number(formData.amount) ||
+            0;
+          if (headerAmt > 0) {
+            lineRows = [
+              {
+                id: -1,
+                line_no: 1,
+                item_name:
+                  cc.contract_title ||
+                  formData.description ||
+                  formData.itemName ||
+                  cc.document_number,
+                spec: formData.spec || "",
+                category: "",
+                calc_method: "FIXED",
+                payment_terms: "",
+                payment_method: "",
+                quantity: 1,
+                unit_price: headerAmt,
+                amount_ex_tax: headerAmt,
+                delivery_date: cc.due_date,
+                payment_date: null,
+                cycle: "",
+                billing_day: null,
+                term_start: null,
+                term_end: null,
+                ordered_amount_ex_tax: headerAmt,
+                inspected_amount_so_far: 0,
+                remaining_amount_ex_tax: headerAmt,
+                __synthetic: true,
+              },
+            ];
+          }
+        }
+        if (lineRows.length > 0) {
+          console.log(
+            `[contracts/${id}] line_items 空 → form_data から ${lineRows.length} 行を合成 (synthetic)`
+          );
+        }
+      }
 
       res.json({
         contract: {
@@ -341,7 +438,15 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         document_number: cc.document_number || "",
         drive_link: docRow.rows[0]?.drive_link || cc.drive_url || "",
         delivery_progress: (() => {
-          const ordered = Number(cc.amount_ex_tax) || 0;
+          // Phase 23.6.6: cc.amount_ex_tax が null のとき (旧データ等) は
+          //   合成された lineRows の合計から ordered を計算する。
+          //   これにより検収書フォームの進捗バーが「0/0」表示にならない。
+          const headerAmt = Number(cc.amount_ex_tax) || 0;
+          const lineSum = lineRows.reduce(
+            (s: number, l: any) => s + (Number(l.amount_ex_tax) || 0),
+            0
+          );
+          const ordered = headerAmt > 0 ? headerAmt : lineSum;
           const inspected = lineRows.reduce(
             (s: number, l: any) => s + l.inspected_amount_so_far,
             0
