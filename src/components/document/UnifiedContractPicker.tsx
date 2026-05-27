@@ -98,6 +98,9 @@ export type ContractDetail = {
     amount_inc_tax: number | null;
     tax_rate: number | null;
     due_date: string | null;
+    /** Phase 23.5: 発注書系の発注日 (PO header の発行日)。検収書フォームの
+     *  orderDate 自動補完の最優先キー。due_date は支払期限なので別概念。 */
+    issue_date_po: string | null;
     effective_date: string | null;
     expiration_date: string | null;
     original_work: string;

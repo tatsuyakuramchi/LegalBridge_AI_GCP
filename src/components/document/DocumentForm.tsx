@@ -2176,7 +2176,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 parent_po_number: c.document_number || "",
                 parent_contract_record_type: c.record_type,
                 order_lines_for_inspection: detail.line_items,
-                orderDate: c.due_date || c.effective_date || "",
+                // Phase 23.5: 「発注日」は issue_date_po (PO header の発行日)
+                //   を最優先。due_date は支払期限、effective_date は契約発効日
+                //   なので、いずれも「発注日」とは別概念。issue_date_po が
+                //   入っていない古いデータでのみ due_date / effective_date に
+                //   フォールバックする。
+                orderDate:
+                  (c as any).issue_date_po ||
+                  c.due_date ||
+                  c.effective_date ||
+                  formData.orderDate ||
+                  "",
                 itemCount: String((detail.line_items || []).length || 1),
                 itemNo: formData.itemNo || "1",
                 taxRate: String(c.tax_rate || formData.taxRate || 10),
@@ -2531,8 +2541,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             </button>
           }
         >
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Phase 23.5: orderDate (発注日) を主表示エリアに昇格。
+              親 PO 選択で contract_capabilities.issue_date_po から自動補完
+              されるが、フォーム上での視認性を確保するため折り畳みから出す。
+              documentDate / orderDate / isPartial の 3 フィールドを並列表示。 */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {renderField('documentDate')}
+            {renderField('orderDate')}
             {renderField('isPartial')}
           </div>
           <details className="mt-4 group rounded-sm border border-input">
@@ -2540,7 +2555,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               ▶ 自動補完項目 (ステップ 1 で親契約を選ぶと埋まる) — 必要に応じて手動修正
             </summary>
             <div className="p-3 border-t border-input space-y-3">
-              {['issueKey','parent_po_number','orderDate','itemNo','itemCount','deliveryNo','totalDeliveries']
+              {['issueKey','parent_po_number','itemNo','itemCount','deliveryNo','totalDeliveries']
                 .map((fid) => renderField(fid))}
             </div>
           </details>

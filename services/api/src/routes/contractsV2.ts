@@ -99,6 +99,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           cc.amount_inc_tax,
           cc.tax_rate,
           cc.due_date,
+          cc.issue_date_po,
           cc.effective_date,
           cc.expiration_date,
           cc.drive_url,
@@ -142,6 +143,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           amount_inc_tax: r.amount_inc_tax == null ? null : Number(r.amount_inc_tax),
           tax_rate: r.tax_rate == null ? null : Number(r.tax_rate),
           due_date: r.due_date,
+          // Phase 23.5: 発注書系の「発注日」。検収書フォームの orderDate
+          //   自動補完で最優先キーとして使う (due_date は支払期限のため別概念)。
+          issue_date_po: r.issue_date_po,
           effective_date: r.effective_date,
           expiration_date: r.expiration_date,
           drive_link: r.drive_url || "",
@@ -275,6 +279,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             cc.amount_inc_tax == null ? null : Number(cc.amount_inc_tax),
           tax_rate: cc.tax_rate == null ? null : Number(cc.tax_rate),
           due_date: cc.due_date,
+          // Phase 23.5: 発注書系の「発注日」。検収書 onPick で orderDate 補完の
+          //   最優先キーとして使う。
+          issue_date_po: cc.issue_date_po,
           effective_date: cc.effective_date,
           expiration_date: cc.expiration_date,
           original_work: cc.original_work || "",
