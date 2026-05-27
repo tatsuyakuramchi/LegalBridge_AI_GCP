@@ -859,234 +859,179 @@ export function DocumentEditorPage() {
   return (
     <div className="px-6 py-6 max-w-[1600px] mx-auto">
       <div className="grid grid-cols-12 gap-5">
-        {/* ─── Side panel ─────────────────────────────────────── */}
-        <aside className="col-span-12 lg:col-span-3 space-y-4">
-          {/* Environment / Selection */}
-          <Card className="bg-foreground text-background border-foreground rounded-md">
-            <CardContent className="px-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <p className="text-[10px] font-mono font-bold uppercase tracking-[0.22em]">
-                  ▍ Session
-                </p>
-                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 blink" />
-              </div>
-
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <Label className="text-background/60">
-                    Backlog ticket ({issues.length})
-                  </Label>
-                  {/* Phase 17g: 手動更新ボタン — 新規追加した課題がプルダウンに
-                      出ない問題への対応 (初期ロード時の stale data を再フェッチ) */}
-                  <button
-                    type="button"
-                    onClick={handleRefreshIssues}
-                    disabled={issuesRefreshing}
-                    className="text-[11px] font-mono uppercase tracking-wider text-background/60 hover:text-background flex items-center gap-1 disabled:opacity-50"
-                    title="Backlog 課題リストを最新化"
-                  >
-                    {issuesRefreshing ? (
-                      <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                    ) : (
-                      <RefreshCw className="w-2.5 h-2.5" />
-                    )}
-                    更新
-                  </button>
-                </div>
-                <select
-                  value={selectedIssue}
-                  onChange={(e) => handleIssueSelect(e.target.value)}
-                  className="w-full bg-transparent border-b border-background/20 py-1.5 text-xs font-mono focus:outline-none focus:border-emerald-400"
-                >
-                  <option value="" className="text-foreground">— Select ticket —</option>
-                  {issues.map((i, idx) => (
-                    <option
-                      key={`issue-${i.issueKey || idx}-${idx}`}
-                      value={i.issueKey}
-                      className="text-foreground"
+        {/* ─── Phase 23.2: 上部 Setup Bar (4 スロット) ───────────────
+            動線を「左→右上→右下」から「上→下」に直すため、入力前の
+            必須選択 (課題 / テンプレ / 担当者 / 取引先) を画面上部に
+            水平 4 列で配置する。lg 未満は 2 列、sm 未満は 1 列に折る。 */}
+        <div className="col-span-12">
+          <Card className="rounded-md">
+            <CardContent className="px-4 py-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* ① Backlog 課題 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-1.5 text-[11px]">
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground text-background text-[9px] font-bold">
+                        ①
+                      </span>
+                      Backlog 課題 ({issues.length})
+                    </Label>
+                    <button
+                      type="button"
+                      onClick={handleRefreshIssues}
+                      disabled={issuesRefreshing}
+                      className="text-[11px] font-mono uppercase tracking-wider text-muted-foreground hover:text-foreground flex items-center gap-1 disabled:opacity-50"
+                      title="Backlog 課題リストを最新化"
                     >
-                      [{i.issueKey}] {i.summary}
-                    </option>
-                  ))}
-                </select>
-              </div>
+                      {issuesRefreshing ? (
+                        <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                      ) : (
+                        <RefreshCw className="w-2.5 h-2.5" />
+                      )}
+                      更新
+                    </button>
+                  </div>
+                  <NativeSelect
+                    value={selectedIssue}
+                    onChange={(e) => handleIssueSelect(e.target.value)}
+                  >
+                    <option value="">— 課題を選択 —</option>
+                    {issues.map((i, idx) => (
+                      <option key={`issue-${i.issueKey || idx}-${idx}`} value={i.issueKey}>
+                        [{i.issueKey}] {i.summary}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
 
-              <div className="space-y-1.5">
-                <Label className="text-background/60">Blueprint</Label>
-                <div className="relative">
-                  <Search className="pointer-events-none absolute left-0 top-1.5 h-3 w-3 text-background/40" />
-                  <input
+                {/* ② テンプレート */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5 text-[11px]">
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground text-background text-[9px] font-bold">
+                      ②
+                    </span>
+                    文書テンプレート
+                  </Label>
+                  <Input
                     type="text"
-                    placeholder="Filter…"
+                    placeholder="テンプレ検索…"
                     value={templateSearch}
                     onChange={(e) => setTemplateSearch(e.target.value)}
-                    className="w-full bg-transparent border-b border-background/10 pl-4 py-1 text-[11px] font-mono focus:outline-none focus:border-emerald-400 placeholder:text-background/30"
+                    className="h-8 text-xs"
                   />
-                </div>
-                <select
-                  value={selectedTemplate}
-                  onChange={(e) => setSelectedTemplate(e.target.value)}
-                  className="w-full bg-transparent border-b border-background/20 py-1.5 text-xs font-mono focus:outline-none focus:border-emerald-400"
-                >
-                  <option value="" className="text-foreground">— Select blueprint —</option>
-                  {templateCategories.map((cat) => (
-                    <optgroup key={cat || "uncategorized"} label={cat} className="text-foreground">
-                      {filteredTemplates
-                        .filter(
-                          (t) => (templateMetadata[t]?.category || "General") === cat
-                        )
-                        .map((t) => (
-                          <option key={t} value={t} className="text-foreground">
-                            {templateMetadata[t]?.label || t.replace(/_/g, " ")}
-                          </option>
-                        ))}
-                    </optgroup>
-                  ))}
-                </select>
-              </div>
-
-              <Button
-                variant="secondary"
-                className="w-full"
-                onClick={() => {
-                  // Phase 22.21.93: サイドバーから開くときは callback を
-                  // 必ずクリアして、template-aware モード (Mode 1/2 = Master+Archive
-                  // 横断検索) に確実に入るようにする。callback が残っていると
-                  // 検収書/発注書フォームの「PO紐付」用 Archive 専用 UI に
-                  // 落ちてしまっていた。
-                  // Phase 22.21.123: 別タブで契約を登録した後でも反映されるよう
-                  // 開く度に refreshContracts() で master データを最新化。
-                  setAssetPickerCallback(null)
-                  setIsAssetPickerOpen(true)
-                  refreshContracts?.()
-                }}
-              >
-                <ScanSearch />
-                Search Legal Assets
-              </Button>
-            </CardContent>
-          </Card>
-
-          {/* Master context */}
-          <div className="space-y-2.5">
-            <p className="retro-tag">Master · Context</p>
-
-            <Card>
-              <CardContent className="px-4 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-1.5">
-                    <Briefcase className="h-3 w-3" /> Internal Staff
-                  </Label>
-                  {selectedStaff && (
-                    <Badge variant="outline">
-                      {selectedStaff.staff_name}
-                    </Badge>
-                  )}
-                </div>
-                <Input
-                  type="text"
-                  placeholder="Search staff…"
-                  value={staffSearch}
-                  onChange={(e) => setStaffSearch(e.target.value)}
-                  className="h-8 text-xs"
-                />
-                <NativeSelect
-                  value={selectedStaff?.slack_user_id || ""}
-                  onChange={(e) =>
-                    setSelectedStaff(
-                      staffList.find((s) => s.slack_user_id === e.target.value) || null
-                    )
-                  }
-                >
-                  <option value="">— Staff DB —</option>
-                  {staffList
-                    .filter(
-                      (s) =>
-                        s.staff_name.toLowerCase().includes(staffSearch.toLowerCase()) ||
-                        (s.department &&
-                          s.department.toLowerCase().includes(staffSearch.toLowerCase()))
-                    )
-                    .map((s, idx) => (
-                      <option key={`staff-${s.slack_user_id || idx}`} value={s.slack_user_id}>
-                        {s.staff_name} · {s.department}
-                      </option>
+                  <NativeSelect
+                    value={selectedTemplate}
+                    onChange={(e) => setSelectedTemplate(e.target.value)}
+                  >
+                    <option value="">— テンプレを選択 —</option>
+                    {templateCategories.map((cat) => (
+                      <optgroup key={cat || "uncategorized"} label={cat}>
+                        {filteredTemplates
+                          .filter(
+                            (t) => (templateMetadata[t]?.category || "General") === cat
+                          )
+                          .map((t) => (
+                            <option key={t} value={t}>
+                              {templateMetadata[t]?.label || t.replace(/_/g, " ")}
+                            </option>
+                          ))}
+                      </optgroup>
                     ))}
-                </NativeSelect>
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardContent className="px-4 space-y-2.5">
-                <div className="flex items-center justify-between">
-                  <Label className="flex items-center gap-1.5">
-                    <Building2 className="h-3 w-3" /> External Partner
-                  </Label>
-                  {activeVendor && (
-                    <Badge variant="outline">{activeVendor.vendor_code}</Badge>
-                  )}
+                  </NativeSelect>
                 </div>
-                <Input
-                  type="text"
-                  placeholder="Search vendor…"
-                  value={vendorSearch}
-                  onChange={(e) => setVendorSearch(e.target.value)}
-                  className="h-8 text-xs"
-                />
-                <NativeSelect
-                  value={activeVendor?.vendor_code || ""}
-                  onChange={(e) =>
-                    setActiveVendor(
-                      vendors.find((v) => v.vendor_code === e.target.value) || null
-                    )
-                  }
-                >
-                  <option value="">— Vendor DB —</option>
-                  {vendors
-                    .filter(
-                      (v) =>
-                        v.vendor_name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
-                        v.vendor_code.toLowerCase().includes(vendorSearch.toLowerCase())
-                    )
-                    .map((v) => (
-                      <option key={`vendor-${v.vendor_code}`} value={v.vendor_code}>
-                        {v.vendor_name}
-                      </option>
-                    ))}
-                </NativeSelect>
-              </CardContent>
-            </Card>
-          </div>
 
-          {/* Case history */}
-          {selectedIssue && caseHistory.length > 0 && (
-            <div className="space-y-2.5">
-              <p className="retro-tag">
-                <History className="h-3 w-3" /> Case data stream
-              </p>
-              <div className="relative pl-4 border-l border-dashed border-border space-y-3">
-                {caseHistory.map((item, idx) => (
-                  <div key={`${item.id}-${idx}`} className="relative">
-                    <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-card border-2 border-foreground" />
-                    <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                      {new Date(item.date).toLocaleDateString("ja-JP")}
-                    </p>
-                    <p className="text-xs font-mono font-bold leading-tight">
-                      {item.label}
-                    </p>
-                    <p className="text-[10px] font-mono text-cyan-700 dark:text-cyan-300 truncate">
-                      {item.ref}
-                    </p>
-                    {item.amount && (
-                      <p className="text-[10px] font-mono font-bold text-emerald-600">
-                        ¥{new Intl.NumberFormat("ja-JP").format(item.amount)}
-                      </p>
+                {/* ③ 担当者 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-1.5 text-[11px]">
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground text-background text-[9px] font-bold">
+                        ③
+                      </span>
+                      <Briefcase className="h-3 w-3" />
+                      担当者
+                    </Label>
+                    {selectedStaff && (
+                      <Badge variant="outline">{selectedStaff.staff_name}</Badge>
                     )}
                   </div>
-                ))}
+                  <Input
+                    type="text"
+                    placeholder="担当者検索…"
+                    value={staffSearch}
+                    onChange={(e) => setStaffSearch(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <NativeSelect
+                    value={selectedStaff?.slack_user_id || ""}
+                    onChange={(e) =>
+                      setSelectedStaff(
+                        staffList.find((s) => s.slack_user_id === e.target.value) || null
+                      )
+                    }
+                  >
+                    <option value="">— 担当者 DB —</option>
+                    {staffList
+                      .filter(
+                        (s) =>
+                          s.staff_name.toLowerCase().includes(staffSearch.toLowerCase()) ||
+                          (s.department &&
+                            s.department.toLowerCase().includes(staffSearch.toLowerCase()))
+                      )
+                      .map((s, idx) => (
+                        <option key={`staff-${s.slack_user_id || idx}`} value={s.slack_user_id}>
+                          {s.staff_name} · {s.department}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                </div>
+
+                {/* ④ 取引先 */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <Label className="flex items-center gap-1.5 text-[11px]">
+                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground text-background text-[9px] font-bold">
+                        ④
+                      </span>
+                      <Building2 className="h-3 w-3" />
+                      取引先
+                    </Label>
+                    {activeVendor && (
+                      <Badge variant="outline">{activeVendor.vendor_code}</Badge>
+                    )}
+                  </div>
+                  <Input
+                    type="text"
+                    placeholder="取引先検索…"
+                    value={vendorSearch}
+                    onChange={(e) => setVendorSearch(e.target.value)}
+                    className="h-8 text-xs"
+                  />
+                  <NativeSelect
+                    value={activeVendor?.vendor_code || ""}
+                    onChange={(e) =>
+                      setActiveVendor(
+                        vendors.find((v) => v.vendor_code === e.target.value) || null
+                      )
+                    }
+                  >
+                    <option value="">— 取引先 DB —</option>
+                    {vendors
+                      .filter(
+                        (v) =>
+                          v.vendor_name.toLowerCase().includes(vendorSearch.toLowerCase()) ||
+                          v.vendor_code.toLowerCase().includes(vendorSearch.toLowerCase())
+                      )
+                      .map((v) => (
+                        <option key={`vendor-${v.vendor_code}`} value={v.vendor_code}>
+                          {v.vendor_name}
+                        </option>
+                      ))}
+                  </NativeSelect>
+                </div>
               </div>
-            </div>
-          )}
-        </aside>
+            </CardContent>
+          </Card>
+        </div>
 
         {/* ─── Stage ─────────────────────────────────────────── */}
         <section
@@ -1580,6 +1525,68 @@ export function DocumentEditorPage() {
             </div>
           </Card>
         </section>
+
+        {/* ─── Phase 23.2: 右側 Side panel ─────────────────────
+            Legal Assets Search ボタン + Case history (案件履歴) を
+            縦並びで表示。Editor 本体とは独立した補助 panel。
+            狭幅では Editor の下に回り込む (lg 未満で col-span-12)。 */}
+        <aside className="col-span-12 lg:col-span-3 space-y-4">
+          <Card>
+            <CardContent className="px-4 py-3 space-y-2">
+              <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground">
+                ▍ 参照
+              </p>
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => {
+                  // Phase 22.21.93: サイドバーから開くときは callback を
+                  // 必ずクリアして、template-aware モード (Mode 1/2 = Master+Archive
+                  // 横断検索) に確実に入るようにする。
+                  // Phase 22.21.123: 別タブで契約を登録した後でも反映されるよう
+                  // 開く度に refreshContracts() で master データを最新化。
+                  setAssetPickerCallback(null)
+                  setIsAssetPickerOpen(true)
+                  refreshContracts?.()
+                }}
+              >
+                <ScanSearch />
+                法務アセットを検索
+              </Button>
+            </CardContent>
+          </Card>
+
+          {selectedIssue && caseHistory.length > 0 && (
+            <Card>
+              <CardContent className="px-4 py-3 space-y-2.5">
+                <p className="text-[10px] font-mono uppercase tracking-[0.22em] text-muted-foreground flex items-center gap-1.5">
+                  <History className="h-3 w-3" /> 案件履歴
+                </p>
+                <div className="relative pl-4 border-l border-dashed border-border space-y-3">
+                  {caseHistory.map((item, idx) => (
+                    <div key={`${item.id}-${idx}`} className="relative">
+                      <span className="absolute -left-[19px] top-1 h-2 w-2 rounded-full bg-card border-2 border-foreground" />
+                      <p className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                        {new Date(item.date).toLocaleDateString("ja-JP")}
+                      </p>
+                      <p className="text-xs font-mono font-bold leading-tight">
+                        {item.label}
+                      </p>
+                      <p className="text-[10px] font-mono text-cyan-700 dark:text-cyan-300 truncate">
+                        {item.ref}
+                      </p>
+                      {item.amount && (
+                        <p className="text-[10px] font-mono font-bold text-emerald-600">
+                          ¥{new Intl.NumberFormat("ja-JP").format(item.amount)}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </aside>
       </div>
 
       {/* Asset picker — Phase 22.21.92 改修
