@@ -194,16 +194,75 @@ const OrderImportForm: React.FC<{
     setSubmitting(true)
     setResult(null)
     try {
-      const res = await fetch("/api/imports/order", {
+      // Phase 23: 旧 /api/imports/order を /api/imports/v2/contract に切替。
+      // record_type='purchase_order', contract_category='service'。
+      // 旧固有フィールド (issue_key, description, items, expenses) を
+      // 新スキーマ (backlog_issue_key, contract_title, line_items, expenses)
+      // にリネームしてマッピングする。
+      const payload = {
+        record_type: "purchase_order" as const,
+        contract_category: "service" as const,
+        contract_title: form.description,
+        document_number: form.document_number || undefined,
+        backlog_issue_key: form.issue_key || undefined,
+        vendor_code: form.vendor_code || undefined,
+        vendor_name: form.vendor_name || undefined,
+        drive_link: form.drive_link || undefined,
+        tax_rate: Number(form.tax_rate) || 10,
+        due_date: form.due_date || undefined,
+        line_items: (form.items || []).map((it, idx) => ({
+          line_no: idx + 1,
+          item_name: it.item_name || "",
+          spec: it.spec || "",
+          calc_method: it.calc_method || "FIXED",
+          payment_terms: it.payment_terms || "",
+          payment_method: it.payment_method || "",
+          quantity: Number(it.quantity) || 0,
+          unit_price: Number(it.unit_price) || 0,
+          amount_ex_tax: Number(it.amount_ex_tax) || 0,
+          delivery_date: it.delivery_date || null,
+          payment_date: it.payment_date || null,
+          cycle: it.cycle || null,
+          billing_day: it.billing_day == null ? null : Number(it.billing_day),
+          term_start: it.term_start || null,
+          term_end: it.term_end || null,
+        })),
+        expenses: (form.expenses || []).map((e, idx) => ({
+          line_no: idx + 1,
+          expense_name: e.expense_name || "",
+          spec: e.spec || "",
+          spent_date: e.spent_date || null,
+          amount_inc_tax: Number(e.amount_inc_tax) || 0,
+          remarks: e.remarks || "",
+        })),
+        // 旧 UI が表示していた description はサーバ側で contract_title に
+        // 入れているが、念のため form_data にも残しておく。
+        form_data: {
+          description: form.description,
+          legacy_endpoint: "/api/imports/order",
+        },
+      }
+      const res = await fetch("/api/imports/v2/contract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || `HTTP ${res.status}`)
       }
-      setResult(data)
+      // 新 API は { ok, capability_id, document_number } のみ返す。
+      // 旧 UI が参照していた line_count / expense_count / totals は
+      // クライアント側で計算済みの値 (grandTotal, expensesTotal, items.length)
+      // を使って合成する。
+      const enriched = {
+        ...data,
+        line_count: (form.items || []).length,
+        expense_count: (form.expenses || []).length,
+        totals: { amount_ex_tax: grandTotal },
+        expensesTotalIncTax: expensesTotal,
+      }
+      setResult(enriched)
       showNotification(
         `発注書を登録しました (${data.document_number})`,
         "success"
@@ -496,18 +555,84 @@ const LicenseImportForm: React.FC<{
     setSubmitting(true)
     setResult(null)
     try {
-      const res = await fetch("/api/imports/license-contract", {
+      // Phase 23: 旧 /api/imports/license-contract を
+      // /api/imports/v2/contract に切替。
+      // record_type='individual_contract', contract_category='license'。
+      // 当事者情報 (licensor_*, licensee_*) はサーバ側の対応カラムが無いため
+      // form_data に保存して旧情報を保持する。
+      // 旧 vendor 解決は licensor_name を vendor_name に投げて任せる
+      // (licensor 取引先選択で取り込まれている時のみ vendor_code が入る)。
+      const payload = {
+        record_type: "individual_contract" as const,
+        contract_category: "license" as const,
+        contract_title:
+          form.original_work || form.product_name_predicted || undefined,
+        document_number: form.contract_number || undefined,
+        backlog_issue_key: form.issue_key || undefined,
+        vendor_code: selectedVendorCode || undefined,
+        vendor_name: form.licensor_name || undefined,
+        effective_date: form.license_start_date || undefined,
+        drive_link: form.drive_link || undefined,
+        original_work: form.original_work,
+        ledger_code: form.ledger_id || undefined,
+        financial_conditions: (form.financial_conditions || []).map(
+          (c, idx) => ({
+            condition_no: idx + 1,
+            region_language_label: c.region_language_label || "",
+            calc_method: c.calc_method || "",
+            rate_pct: c.rate_pct == null ? undefined : Number(c.rate_pct),
+            base_price_label: c.base_price_label || "",
+            calc_period: c.calc_period || "",
+            calc_period_kind: c.calc_period_kind || "",
+            calc_period_close_month:
+              c.calc_period_close_month == null
+                ? undefined
+                : Number(c.calc_period_close_month),
+            currency: c.currency || "JPY",
+            formula_text: c.formula_text || "",
+            payment_terms: c.payment_terms || "",
+            mg_amount: Number(c.mg_amount) || 0,
+            // FinancialCondition 型に ag_amount は無い (型上は mg_amount のみ)
+            // が、新 API は ag_amount を受け取れる。将来の互換のため 0 を送る。
+            ag_amount: 0,
+          })
+        ),
+        form_data: {
+          licensor_name: form.licensor_name,
+          licensor_address: form.licensor_address,
+          licensor_rep: form.licensor_rep,
+          licensor_is_corporation: form.licensor_is_corporation,
+          licensee_name: form.licensee_name,
+          licensee_address: form.licensee_address,
+          licensee_rep: form.licensee_rep,
+          licensee_is_corporation: form.licensee_is_corporation,
+          product_name_predicted: form.product_name_predicted,
+          license_period_note: form.license_period_note,
+          supervisor: form.supervisor,
+          credit_display: form.credit_display,
+          remarks: form.remarks,
+          legacy_endpoint: "/api/imports/license-contract",
+        },
+      }
+      const res = await fetch("/api/imports/v2/contract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || `HTTP ${res.status}`)
       }
-      setResult(data)
+      // 新 API は document_number を返す (旧は contract_number だった)。
+      // UI 側で旧フィールド名を期待しているので合成する。
+      const enriched = {
+        ...data,
+        contract_number: data.document_number,
+        condition_count: (form.financial_conditions || []).length,
+      }
+      setResult(enriched)
       showNotification(
-        `個別利用許諾条件書を登録しました (${data.contract_number})`,
+        `個別利用許諾条件書を登録しました (${data.document_number})`,
         "success"
       )
     } catch (e: any) {
@@ -935,18 +1060,64 @@ const LicenseMasterImportForm: React.FC<{
     setSubmitting(true)
     setResult(null)
     try {
-      const res = await fetch("/api/imports/license-master", {
+      // Phase 23: 旧 /api/imports/license-master を
+      // /api/imports/v2/contract に切替。
+      // record_type='master_contract', contract_category='license'。
+      // 個別契約フォームと同様に licensor/licensee 等は form_data に退避。
+      const payload = {
+        record_type: "master_contract" as const,
+        contract_category: "license" as const,
+        contract_title:
+          form.basic_contract_name || form.original_work || undefined,
+        document_number: form.contract_number || undefined,
+        backlog_issue_key: form.issue_key || undefined,
+        vendor_name: form.licensor_name || undefined,
+        effective_date: form.effective_date || undefined,
+        expiration_date: form.expiration_date || undefined,
+        auto_renewal: !!form.auto_renewal,
+        drive_link: form.drive_link || undefined,
+        original_work: form.original_work || undefined,
+        ledger_code: form.ledger_id || undefined,
+        form_data: {
+          basic_contract_name: form.basic_contract_name,
+          issue_date: form.issue_date,
+          licensor_name: form.licensor_name,
+          licensor_address: form.licensor_address,
+          licensor_rep: form.licensor_rep,
+          licensor_is_corporation: form.licensor_is_corporation,
+          licensee_name: form.licensee_name,
+          licensee_address: form.licensee_address,
+          licensee_rep: form.licensee_rep,
+          licensee_is_corporation: form.licensee_is_corporation,
+          product_name_predicted: form.product_name_predicted,
+          license_start_date: form.license_start_date,
+          license_period_note: form.license_period_note,
+          supervisor: form.supervisor,
+          credit_display: form.credit_display,
+          remarks: form.remarks,
+          legacy_endpoint: "/api/imports/license-master",
+        },
+      }
+      const res = await fetch("/api/imports/v2/contract", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(payload),
       })
       const data = await res.json()
       if (!res.ok || !data?.ok) {
         throw new Error(data?.error || `HTTP ${res.status}`)
       }
-      setResult(data)
+      // 旧 UI は contract_number と ledger_id を表示するので合成。
+      // 新 API は ledger_id を返さないが、ユーザが入力した
+      // ledger_id (= ledger_code) があればそれを再利用して表示する。
+      const enriched = {
+        ...data,
+        contract_number: data.document_number,
+        ledger_id: form.ledger_id || data.document_number,
+      }
+      setResult(enriched)
       showNotification(
-        `ライセンス基本契約書を登録しました (${data.contract_number})`,
+        `ライセンス基本契約書を登録しました (${data.document_number})`,
         "success"
       )
     } catch (e: any) {
