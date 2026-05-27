@@ -304,9 +304,33 @@ export class CsvImportService {
           [issueKey, staffId, `${vendorName} - ${bookTitle}`, details || summary, vendorName]
         );
         
+        // Phase 23: order_items → contract_capabilities (record_type='purchase_order')
+        //   vendor_code は vendors.vendor_code 経由で vendor_id を引いて保存。
+        let vendorIdForBulk: number | null = null;
+        if (vendorCode) {
+          const vr = await query(
+            "SELECT id FROM vendors WHERE vendor_code = $1 LIMIT 1",
+            [vendorCode]
+          );
+          vendorIdForBulk = vr.rows[0]?.id ? Number(vr.rows[0].id) : null;
+        }
         await query(
-          "INSERT INTO order_items (legal_request_id, item_no, vendor_code, description, amount, due_date) VALUES ($1, $2, $3, $4, $5, $6)",
-          [reqResult.rows[0].id, 1, vendorCode, summary, parseFloat(String(totalAmount || "0").replace(/,/g, "")), finalDeadline || orderDate]
+          `INSERT INTO contract_capabilities
+             (legal_request_id, vendor_id, contract_title, amount_ex_tax, due_date,
+              backlog_issue_key, record_type, contract_category, contract_type,
+              document_number)
+           VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
+                   'purchase_order', $7)
+           ON CONFLICT (document_number) DO NOTHING`,
+          [
+            reqResult.rows[0].id,
+            vendorIdForBulk,
+            summary,
+            parseFloat(String(totalAmount || "0").replace(/,/g, "")),
+            finalDeadline || orderDate,
+            issueKey,
+            orderNumber,
+          ]
         );
 
         // 2. Inspection part (optional)

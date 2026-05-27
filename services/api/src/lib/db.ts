@@ -217,26 +217,15 @@ export async function initDb() {
     // Phase 22: 「終結」記録 (詳細は worker 側 db.ts のコメント参照)
     `ALTER TABLE legal_requests ADD COLUMN IF NOT EXISTS merged_into_issue_key VARCHAR(50);`,
 
-    `CREATE TABLE IF NOT EXISTS order_items (
-      id SERIAL PRIMARY KEY,
-      legal_request_id INTEGER REFERENCES legal_requests(id) ON DELETE CASCADE,
-      item_no INTEGER NOT NULL,
-      vendor_code VARCHAR(50),
-      description TEXT,
-      amount DECIMAL(15, 2),
-      due_date TIMESTAMP WITH TIME ZONE,
-      latest_amount DECIMAL(15, 2),
-      latest_due_date TIMESTAMP WITH TIME ZONE,
-      backlog_issue_key VARCHAR(50) UNIQUE,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(legal_request_id, item_no)
-    );`,
-    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
+    // Phase 23.6.5: order_items の CREATE TABLE / ALTER は廃止
+    //   (contract_capabilities + capability_line_items に統合済み)。
+    //   delivery_events.order_item_id 列は FK 制約を外して残置 (物理 DROP 待ち)。
 
     `CREATE TABLE IF NOT EXISTS delivery_events (
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
-      order_item_id INTEGER REFERENCES order_items(id),
+      -- Phase 23.6.5: order_items は廃止予定のため FK 制約を外す
+      order_item_id INTEGER,
       delivery_no INTEGER,
       delivered_at TIMESTAMP WITH TIME ZONE,
       delivered_amount DECIMAL(15, 2),
@@ -255,30 +244,16 @@ export async function initDb() {
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS alert_count INTEGER DEFAULT 0;`,
 
     // 5. Licensing & Royalties
-    `CREATE TABLE IF NOT EXISTS license_contracts (
-      id SERIAL PRIMARY KEY,
-      backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
-      ledger_id VARCHAR(50) UNIQUE NOT NULL,
-      ledger_number VARCHAR(100),
-      contract_number VARCHAR(100),
-      licensor VARCHAR(255),
-      original_work TEXT,
-      royalty_rate DECIMAL(5, 4),
-      mg_amount DECIMAL(15, 2),
-      fee_structure VARCHAR(50),
-      payment_cycle VARCHAR(50),
-      license_start_date DATE,
-      linked_asset_id INTEGER, -- Link to external_assets
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS ledger_number VARCHAR(100);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS contract_number VARCHAR(100);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
+    // Phase 23.6.5: license_contracts の CREATE TABLE / ALTER は廃止
+    //   (contract_capabilities + capability_financial_conditions に統合済み)。
+    //   manufacturing_events / royalty_payments の license_contract_id 列は
+    //   FK 制約を外して残置 (物理 DROP 待ち)。
 
     `CREATE TABLE IF NOT EXISTS manufacturing_events (
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
-      license_contract_id INTEGER REFERENCES license_contracts(id),
+      -- Phase 23.6.5: license_contracts は廃止予定のため FK 制約を外す
+      license_contract_id INTEGER,
       product_name VARCHAR(255) NOT NULL,
       completion_date DATE,
       quantity INTEGER,
@@ -291,7 +266,8 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) NOT NULL,
       manufacturing_event_id INTEGER REFERENCES manufacturing_events(id) UNIQUE,
-      license_contract_id INTEGER REFERENCES license_contracts(id),
+      -- Phase 23.6.5: license_contracts は廃止予定のため FK 制約を外す
+      license_contract_id INTEGER,
       payment_due_date DATE,
       reporting_deadline DATE,
       total_amount DECIMAL(15, 2),
@@ -348,8 +324,7 @@ export async function initDb() {
     `ALTER TABLE workflow_settings ADD COLUMN IF NOT EXISTS next_status_id INTEGER;`,
     `ALTER TABLE workflow_settings ADD COLUMN IF NOT EXISTS document_prefix VARCHAR(50);`,
     `ALTER TABLE royalty_payments ADD COLUMN IF NOT EXISTS backlog_issue_key VARCHAR(50);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS mg_amount DECIMAL(15, 2);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS fee_structure VARCHAR(50);`,
+    // Phase 23.6.5: license_contracts への ALTER は廃止 (テーブル自体が新規 DB には存在しない)。
 
     // 8. Contract Check & Capabilities (Audit/Referral API Support)
     `CREATE TABLE IF NOT EXISTS contract_purposes (

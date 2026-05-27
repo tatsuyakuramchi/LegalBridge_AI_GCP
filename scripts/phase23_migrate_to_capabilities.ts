@@ -502,6 +502,65 @@ async function inspectDependencies(client: any) {
       }
     }
   }
+
+  // Phase 23.6.5: capability_id 移行後にDROP する旧 FK 列の存在 / 値の有無を表示
+  console.log("\n[DROP/inspect] 物理 DROP 予定の旧 FK 列 (LEGACY_COLUMNS)");
+  for (const { table, column } of LEGACY_COLUMNS) {
+    const exists = await client.query(
+      `SELECT 1
+         FROM information_schema.columns
+        WHERE table_schema = current_schema()
+          AND table_name = $1
+          AND column_name = $2
+        LIMIT 1`,
+      [table, column]
+    );
+    if (exists.rowCount === 0) {
+      console.log(`  ${table}.${column.padEnd(34)} (既に存在しない)`);
+      continue;
+    }
+    const cnt = await client.query(
+      `SELECT COUNT(*)::bigint AS n FROM ${table} WHERE ${column} IS NOT NULL`
+    );
+    const n = Number(cnt.rows[0]?.n ?? 0);
+    // royalty_calculations の場合、新 capability_id 側にも値が入っているか確認
+    let extra = "";
+    if (table === "royalty_calculations" && column === "license_contract_id") {
+      const m = await client.query(
+        `SELECT COUNT(*)::bigint AS n FROM royalty_calculations
+          WHERE license_contract_id IS NOT NULL AND capability_id IS NULL`
+      );
+      extra = `  (うち capability_id 未マッピング: ${m.rows[0]?.n ?? 0})`;
+    } else if (
+      table === "royalty_calculations" &&
+      column === "license_financial_condition_id"
+    ) {
+      const m = await client.query(
+        `SELECT COUNT(*)::bigint AS n FROM royalty_calculations
+          WHERE license_financial_condition_id IS NOT NULL
+            AND capability_financial_condition_id IS NULL`
+      );
+      extra = `  (うち capability_financial_condition_id 未マッピング: ${m.rows[0]?.n ?? 0})`;
+    } else if (table === "delivery_events" && column === "order_item_id") {
+      const m = await client.query(
+        `SELECT COUNT(*)::bigint AS n FROM delivery_events
+          WHERE order_item_id IS NOT NULL AND capability_id IS NULL`
+      );
+      extra = `  (うち capability_id 未マッピング: ${m.rows[0]?.n ?? 0})`;
+    } else if (
+      table === "delivery_line_items" &&
+      column === "order_line_item_id"
+    ) {
+      const m = await client.query(
+        `SELECT COUNT(*)::bigint AS n FROM delivery_line_items
+          WHERE order_line_item_id IS NOT NULL AND capability_line_item_id IS NULL`
+      );
+      extra = `  (うち capability_line_item_id 未マッピング: ${m.rows[0]?.n ?? 0})`;
+    }
+    console.log(
+      `  ${table}.${column.padEnd(34)} non-null rows: ${n}${extra}`
+    );
+  }
 }
 
 async function dropLegacy(client: any) {

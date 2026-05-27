@@ -6,7 +6,13 @@
  *   - calculateGrossRoyalty / applyMgConsumption: billing への wrapper
  *   - getMgConsumedToDate: royalty_calculations の累積 SUM
  *   - previewRoyaltyCalculation: 1 計算書分の試算 (DB lookup + billing)
- *   - getLicenseMgStatus: 金銭条件単位の MG 残高サマリ
+ *   - getCapabilityMgStatus: 金銭条件単位の MG 残高サマリ
+ *
+ * Phase 23: 旧 license_contracts / license_financial_conditions を
+ *   contract_capabilities (contract_category='license') /
+ *   capability_financial_conditions に置換。royalty_calculations の FK 列も
+ *   license_contract_id / license_financial_condition_id →
+ *   capability_id / capability_financial_condition_id に切替。
  *
  * 計算順序 (Legal-confirmed):
  *   gross → MG 相殺 → AG 相殺 → actual_ex_tax → ceil 消費税 → total
@@ -86,23 +92,26 @@ export function applyMgConsumption(
 // -------------------------------------------------------------------
 
 /**
- * 指定ライセンス契約 (任意で特定の金銭条件) のこれまでの MG 累積
+ * 指定 capability (任意で特定の金銭条件) のこれまでの MG 累積
  * 消化額を返す。Phase 5b の preview/save エンドポイントで「今回前の
  * MG 残」を求めるのに使う。
  *
- * 注: license_financial_condition_id で絞らない場合、その契約全体の
+ * Phase 23: license_contract_id / license_financial_condition_id →
+ *   capability_id / capability_financial_condition_id に切替。
+ *
+ * 注: capability_financial_condition_id で絞らない場合、その capability 全体の
  *      MG 累積消化を返す (金銭条件単位の MG が複数ある場合に注意)。
  */
 export async function getMgConsumedToDate(
-  licenseContractId: number,
-  licenseFinancialConditionId?: number,
+  capabilityId: number,
+  capabilityFinancialConditionId?: number,
   excludeCalculationId?: number
 ): Promise<number> {
-  const conditions: string[] = ["license_contract_id = $1"];
-  const params: any[] = [licenseContractId];
-  if (licenseFinancialConditionId != null) {
-    params.push(licenseFinancialConditionId);
-    conditions.push(`license_financial_condition_id = $${params.length}`);
+  const conditions: string[] = ["capability_id = $1"];
+  const params: any[] = [capabilityId];
+  if (capabilityFinancialConditionId != null) {
+    params.push(capabilityFinancialConditionId);
+    conditions.push(`capability_financial_condition_id = $${params.length}`);
   }
   if (excludeCalculationId != null) {
     params.push(excludeCalculationId);
@@ -121,17 +130,20 @@ export async function getMgConsumedToDate(
  * Phase 22.21.95: AG (前払い保証金) の累積消化額を返す。
  *   royalty_calculations.ag_consumed_this_time (新規列) を SUM する。
  *   列が存在しない古い DB では undefined_column 例外を握り潰して 0 を返す。
+ *
+ * Phase 23: license_contract_id / license_financial_condition_id →
+ *   capability_id / capability_financial_condition_id に切替。
  */
 export async function getAgConsumedToDate(
-  licenseContractId: number,
-  licenseFinancialConditionId?: number,
+  capabilityId: number,
+  capabilityFinancialConditionId?: number,
   excludeCalculationId?: number
 ): Promise<number> {
-  const conditions: string[] = ["license_contract_id = $1"];
-  const params: any[] = [licenseContractId];
-  if (licenseFinancialConditionId != null) {
-    params.push(licenseFinancialConditionId);
-    conditions.push(`license_financial_condition_id = $${params.length}`);
+  const conditions: string[] = ["capability_id = $1"];
+  const params: any[] = [capabilityId];
+  if (capabilityFinancialConditionId != null) {
+    params.push(capabilityFinancialConditionId);
+    conditions.push(`capability_financial_condition_id = $${params.length}`);
   }
   if (excludeCalculationId != null) {
     params.push(excludeCalculationId);
@@ -157,10 +169,13 @@ export async function getAgConsumedToDate(
  * フロントが「数量を 100 に変更したら税込いくら？」と問い合わせる用途。
  *
  * 戻り値は royalty_calculations にそのまま挿入できる shape にしてある。
+ *
+ * Phase 23: license_contract_id / license_financial_condition_id →
+ *   capability_id / capability_financial_condition_id に切替。capability_financial_conditions を引く。
  */
 export async function previewRoyaltyCalculation(params: {
-  license_contract_id: number;
-  license_financial_condition_id: number;
+  capability_id: number;
+  capability_financial_condition_id: number;
   unit_price: number;
   quantity: number;
   sample_quantity?: number;
@@ -170,14 +185,6 @@ export async function previewRoyaltyCalculation(params: {
    * here; mg/ag consumed-before are looked up from royalty_calculations.
    */
   ag_amount?: number;
-  /**
-   * Phase 22.21.91: 契約マスタ (contract_capabilities) からの preview。
-   * license_financial_condition_id が 0/falsy で capability_financial_condition_id
-   * が指定された場合、capability_financial_conditions から rate/mg/currency を引いて
-   * 計算する。MG 消化履歴は royalty_calculations に capability ベースの
-   * 紐付けが無いため 0 とみなす ("master からの新規 what-if preview")。
-   */
-  capability_financial_condition_id?: number;
 }): Promise<{
   unit_price: number;
   quantity: number;
@@ -209,36 +216,19 @@ export async function previewRoyaltyCalculation(params: {
   currency: string;
   formula_breakdown: string;
 }> {
-  // Phase 22.21.91: capability ベースの preview なら capability_financial_conditions
-  // から条件を引く。license ベースのときは従来通り license_financial_conditions から。
+  // Phase 23: 常に capability_financial_conditions から条件を引く。
   // Phase 22.21.95: ag_amount を SELECT に追加 (列が無い古い DB では COALESCE で 0)。
-  const useCapability =
-    (!params.license_financial_condition_id ||
-      params.license_financial_condition_id <= 0) &&
-    !!params.capability_financial_condition_id &&
-    params.capability_financial_condition_id > 0;
-  const condRes = useCapability
-    ? await query(
-        `SELECT rate_pct, mg_amount,
-                COALESCE(ag_amount, 0) AS ag_amount,
-                currency
-           FROM capability_financial_conditions
-          WHERE id = $1`,
-        [params.capability_financial_condition_id]
-      )
-    : await query(
-        `SELECT rate_pct, mg_amount,
-                COALESCE(ag_amount, 0) AS ag_amount,
-                currency
-           FROM license_financial_conditions
-          WHERE id = $1`,
-        [params.license_financial_condition_id]
-      );
+  const condRes = await query(
+    `SELECT rate_pct, mg_amount,
+            COALESCE(ag_amount, 0) AS ag_amount,
+            currency
+       FROM capability_financial_conditions
+      WHERE id = $1`,
+    [params.capability_financial_condition_id]
+  );
   if (condRes.rows.length === 0) {
     throw new Error(
-      useCapability
-        ? `capability_financial_condition ${params.capability_financial_condition_id} not found`
-        : `license_financial_condition ${params.license_financial_condition_id} not found`
+      `capability_financial_condition ${params.capability_financial_condition_id} not found`
     );
   }
   const ratePct = Number(condRes.rows[0].rate_pct) || 0;
@@ -259,13 +249,10 @@ export async function previewRoyaltyCalculation(params: {
   // Phase 22.21.95: MG は floor 化したので consumed_before 不要 (常に 0)。
   const mgConsumedBefore = 0;
   // AG 累積消化は royalty_calculations.ag_consumed_this_time から SUM。
-  //   capability ベースの preview では履歴紐付けが無いので 0。
-  const agConsumedBefore = useCapability
-    ? 0
-    : await getAgConsumedToDate(
-        params.license_contract_id,
-        params.license_financial_condition_id
-      );
+  const agConsumedBefore = await getAgConsumedToDate(
+    params.capability_id,
+    params.capability_financial_condition_id
+  );
 
   // すべて billing.calculateFee に集約
   const r = calculateFee(
@@ -319,11 +306,13 @@ export async function previewRoyaltyCalculation(params: {
 }
 
 /**
- * ライセンス契約の MG ステータス (総額・累積消化・残額) を返す。
+ * capability (license category) の MG ステータス (総額・累積消化・残額) を返す。
  * Admin UI のヘッダや warning バナーで使う想定。
+ *
+ * Phase 23: license_financial_conditions → capability_financial_conditions に切替。
  */
-export async function getLicenseMgStatus(
-  licenseContractId: number
+export async function getCapabilityMgStatus(
+  capabilityId: number
 ): Promise<
   Array<{
     condition_no: number;
@@ -336,15 +325,15 @@ export async function getLicenseMgStatus(
 > {
   const conds = await query(
     `SELECT id, condition_no, mg_amount
-       FROM license_financial_conditions
-      WHERE license_contract_id = $1
+       FROM capability_financial_conditions
+      WHERE capability_id = $1
       ORDER BY condition_no ASC`,
-    [licenseContractId]
+    [capabilityId]
   );
 
   const results: Array<any> = [];
   for (const c of conds.rows) {
-    const consumed = await getMgConsumedToDate(licenseContractId, Number(c.id));
+    const consumed = await getMgConsumedToDate(capabilityId, Number(c.id));
     const mgAmount = Number(c.mg_amount) || 0;
     const remaining = Math.max(0, mgAmount - consumed);
     results.push({

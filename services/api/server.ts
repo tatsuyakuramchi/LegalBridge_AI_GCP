@@ -1203,14 +1203,17 @@ async function startServer() {
         );
       }
 
-      // Phase 7b: 発注書テンプレなら既存 order_line_items を items[] として
+      // Phase 7b: 発注書テンプレなら既存 capability_line_items を items[] として
       // プリセットする (フォーム側の LineItemTable がそのまま使える shape)。
       // Phase 22.21.82: planning_purchase_order テンプレ削除に伴い分岐から除去
+      // Phase 23: order_items → contract_capabilities (record_type='purchase_order'),
+      //   order_line_items → capability_line_items に置換。
       if (template === "purchase_order") {
         const orderHeader = await query(
           `SELECT id, amount_ex_tax, tax_rate
-             FROM order_items
-            WHERE backlog_issue_key = $1`,
+             FROM contract_capabilities
+            WHERE backlog_issue_key = $1
+              AND record_type = 'purchase_order'`,
           [key]
         );
         if (orderHeader.rows.length > 0) {
@@ -1222,8 +1225,8 @@ async function startServer() {
                     amount_ex_tax, calc_method, payment_terms,
                     payment_method, payment_date, delivery_date,
                     cycle, term_start, term_end, billing_day
-               FROM order_line_items
-              WHERE order_item_id = $1
+               FROM capability_line_items
+              WHERE capability_id = $1
               ORDER BY line_no ASC`,
             [orderItemId]
           );
@@ -1255,8 +1258,10 @@ async function startServer() {
       if (template === "inspection_certificate") {
         // Phase 7c: 親 PO の明細 + 検収累計を取得 (Backlog 親子 issue 経由)。
         //   1. この issue の parentIssueId を Backlog から拾う
-        //   2. parentIssueKey → order_items を見つける
-        //   3. order_line_items を inspection availability 付きで返す
+        //   2. parentIssueKey → contract_capabilities (record_type='purchase_order') を見つける
+        //   3. capability_line_items を inspection availability 付きで返す
+        // Phase 23: order_items → contract_capabilities, order_line_items → capability_line_items,
+        //   delivery_line_items.order_line_item_id → capability_line_item_id に置換。
         try {
           const fullIssue = await backlogService.getIssue(key);
           let parentKey: string | null = null;
@@ -1274,8 +1279,9 @@ async function startServer() {
             const poHeader = await query(
               `SELECT id, amount_ex_tax, tax_rate, backlog_issue_key,
                       description, due_date, created_at
-                 FROM order_items
-                WHERE backlog_issue_key = $1`,
+                 FROM contract_capabilities
+                WHERE backlog_issue_key = $1
+                  AND record_type = 'purchase_order'`,
               [parentKey]
             );
             if (poHeader.rows.length > 0) {
@@ -1284,8 +1290,8 @@ async function startServer() {
                 `SELECT id, line_no, item_name, spec, unit_price, quantity,
                         amount_ex_tax, calc_method, payment_terms,
                         payment_method, payment_date, delivery_date
-                   FROM order_line_items
-                  WHERE order_item_id = $1
+                   FROM capability_line_items
+                  WHERE capability_id = $1
                   ORDER BY line_no ASC`,
                 [poId]
               );
@@ -1293,16 +1299,16 @@ async function startServer() {
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
                 const insp = await query(
-                  `SELECT order_line_item_id,
+                  `SELECT capability_line_item_id,
                           COALESCE(SUM(inspected_amount_ex_tax), 0) AS amt,
                           COALESCE(SUM(inspected_quantity),       0) AS qty
                      FROM delivery_line_items
-                    WHERE order_line_item_id = ANY($1::int[])
-                    GROUP BY order_line_item_id`,
+                    WHERE capability_line_item_id = ANY($1::int[])
+                    GROUP BY capability_line_item_id`,
                   [lineIds]
                 );
                 insp.rows.forEach((r: any) => {
-                  inspMap[Number(r.order_line_item_id)] = {
+                  inspMap[Number(r.capability_line_item_id)] = {
                     amt: Number(r.amt) || 0,
                     qty: Number(r.qty) || 0,
                   };
@@ -1311,9 +1317,9 @@ async function startServer() {
 
               // Phase 9c: 親 PO の document_number / 業務名 / 仕様 / 発注日
               //   - 発注番号 ← documents.template_type=purchase_order の最新行
-              //   - 業務名 ← order_line_items 1 行目の item_name
-              //   - 仕様   ← order_line_items 1 行目の spec
-              //   - 発注日 ← order_items.created_at (due_date 優先)
+              //   - 業務名 ← capability_line_items 1 行目の item_name
+              //   - 仕様   ← capability_line_items 1 行目の spec
+              //   - 発注日 ← contract_capabilities.created_at (due_date 優先)
               const docRow = await query(
                 `SELECT document_number FROM documents
                   WHERE issue_key = $1
@@ -1345,7 +1351,7 @@ async function startServer() {
                 `SELECT COUNT(*) AS done_count,
                         COALESCE(SUM(delivered_amount), 0) AS done_amt
                    FROM delivery_events
-                  WHERE order_item_id = $1
+                  WHERE capability_id = $1
                     AND backlog_issue_key <> $2`,
                 [poId, key]
               );
@@ -1409,6 +1415,8 @@ async function startServer() {
         // Phase 22.21.78: vendor_rep カラムは Phase 22.13 で正式に追加済み。
         //   空のときだけ contact_name にフォールバックする COALESCE で取得し、
         //   PO 帳票 / 検収書の代表者欄に正しい値が出るようにする。
+        // Phase 23: order_items → contract_capabilities (record_type='purchase_order'),
+        //   delivery_events.order_item_id → capability_id に置換。
         const deliveryQuery = `
           SELECT de.*, oi.amount as order_amount, oi.description as item_desc, oi.spec as item_spec,
                  v.vendor_name, v.vendor_code, v.trade_name, v.bank_name, v.branch_name, v.account_type,
@@ -1423,7 +1431,9 @@ async function startServer() {
                       AND d.template_type LIKE '%purchase_order%'
                     ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number
           FROM delivery_events de
-          LEFT JOIN order_items oi ON de.order_item_id = oi.id
+          LEFT JOIN contract_capabilities oi
+                 ON de.capability_id = oi.id
+                AND oi.record_type = 'purchase_order'
           LEFT JOIN vendors v ON oi.vendor_code = v.vendor_code
           LEFT JOIN legal_requests lr ON de.backlog_issue_key = lr.backlog_issue_key
           LEFT JOIN external_assets ea ON de.linked_asset_id = ea.id
@@ -1434,7 +1444,7 @@ async function startServer() {
         if (result.rows.length > 0) {
           const row = result.rows[0];
           context["issueKey"] = key;
-          context["itemNo"] = String(row.order_item_id || "1");
+          context["itemNo"] = String(row.capability_id || row.order_item_id || "1");
           context["deliveryNo"] = String(row.delivery_no || "1");
           context["totalDeliveries"] = "1";
           context["itemCount"] = "1";
@@ -1504,16 +1514,21 @@ async function startServer() {
         template === "license_master" ||
         template === "intl_purchase_order"
       ) {
+        // Phase 23: license_contracts → contract_capabilities (contract_category='license') に置換。
+        // royalty_payments / manufacturing_events 側の license_contract_id は worker 担当の
+        // マイグレーションで capability_id に置換予定だが、過渡期は alias で受ける想定で
+        // ここでは contract_capabilities 側のみ切替える。
         const royaltyQuery = `
           SELECT lc.*, rp.total_amount as last_payment_amount, rp.period as last_period, me.product_name, me.msrp,
                  v.vendor_name, v.address as vendor_address, v.email as vendor_email, v.contact_name as vendor_contact,
                  ea.asset_number as linked_terms_number, ea.file_link as linked_terms_link
-          FROM license_contracts lc
+          FROM contract_capabilities lc
           LEFT JOIN royalty_payments rp ON lc.id = rp.license_contract_id
           LEFT JOIN manufacturing_events me ON lc.id = me.license_contract_id
           LEFT JOIN vendors v ON (lc.licensor = v.vendor_name)
           LEFT JOIN external_assets ea ON lc.linked_asset_id = ea.id
-          WHERE lc.backlog_issue_key = $1 OR rp.backlog_issue_key = $1
+          WHERE lc.contract_category = 'license'
+            AND (lc.backlog_issue_key = $1 OR rp.backlog_issue_key = $1)
           ORDER BY rp.created_at DESC, me.created_at DESC LIMIT 1
         `;
         const result = await query(royaltyQuery, [key]);
@@ -1612,11 +1627,13 @@ async function startServer() {
       }
 
       // Phase 7d/7e: 個別利用許諾条件書 & 利用許諾料計算書の両方で
-      // license_financial_conditions を構造化 rows として同梱する。
+      // capability_financial_conditions を構造化 rows として同梱する。
       // - individual_license_terms: FinancialConditionTable の編集ソース
       // - royalty_statement: 計算対象の condition を選ぶドロップダウン用
       // 既存の {{金銭条件1_*}} flat field 群は上の royaltyQuery 分岐で
       // 既に埋まっているので、こちらは追加情報。
+      // Phase 23: license_contracts → contract_capabilities (contract_category='license'),
+      //   license_financial_conditions → capability_financial_conditions に置換。
       if (
         template === "individual_license_terms" ||
         template === "royalty_statement"
@@ -1629,13 +1646,17 @@ async function startServer() {
           try {
             lc = await query(
               `SELECT id, ledger_ref_id, material_ref_id, work_id
-                 FROM license_contracts WHERE backlog_issue_key = $1`,
+                 FROM contract_capabilities
+                WHERE backlog_issue_key = $1
+                  AND contract_category = 'license'`,
               [key]
             );
           } catch (colErr: any) {
             if (colErr && colErr.code === "42703") {
               lc = await query(
-                `SELECT id FROM license_contracts WHERE backlog_issue_key = $1`,
+                `SELECT id FROM contract_capabilities
+                  WHERE backlog_issue_key = $1
+                    AND contract_category = 'license'`,
                 [key]
               );
             } else {
@@ -1645,7 +1666,10 @@ async function startServer() {
           if (lc.rows.length > 0) {
             const row = lc.rows[0];
             const lcId = row.id;
+            // Phase 23: フロント互換のため license_contract_id key も維持しつつ
+            //   新規 capability_id key も同時にセットする。
             context["license_contract_id"] = lcId;
+            context["capability_id"] = lcId;
             // Phase 22.19: Ledger / Material / WorkID を form context に注入
             if (row.ledger_ref_id) {
               context["ledger_ref_id"] = Number(row.ledger_ref_id);
@@ -1666,8 +1690,8 @@ async function startServer() {
                         rate_pct, base_price_label, calc_period, currency,
                         formula_text, payment_terms, mg_amount,
                         calc_period_kind, calc_period_close_month
-                   FROM license_financial_conditions
-                  WHERE license_contract_id = $1
+                   FROM capability_financial_conditions
+                  WHERE capability_id = $1
                   ORDER BY condition_no ASC`,
                 [lcId]
               );
@@ -1677,8 +1701,8 @@ async function startServer() {
                   `SELECT id, condition_no, region_language_label, calc_method,
                           rate_pct, base_price_label, calc_period, currency,
                           formula_text, payment_terms, mg_amount
-                     FROM license_financial_conditions
-                    WHERE license_contract_id = $1
+                     FROM capability_financial_conditions
+                    WHERE capability_id = $1
                     ORDER BY condition_no ASC`,
                   [lcId]
                 );
@@ -1817,7 +1841,7 @@ async function startServer() {
             }
           }
         } catch (lcErr) {
-          console.warn("license_financial_conditions lookup failed:", lcErr);
+          console.warn("capability_financial_conditions lookup failed:", lcErr);
         }
       }
 
@@ -1847,8 +1871,12 @@ async function startServer() {
         });
       });
 
+      // Phase 23: order_items → contract_capabilities (record_type='purchase_order') に置換。
       const orders = await query(
-        "SELECT * FROM order_items WHERE backlog_issue_key = $1 ORDER BY created_at ASC",
+        `SELECT * FROM contract_capabilities
+          WHERE backlog_issue_key = $1
+            AND record_type = 'purchase_order'
+          ORDER BY created_at ASC`,
         [key]
       );
       orders.rows.forEach((o) => {
@@ -1863,11 +1891,14 @@ async function startServer() {
         });
       });
 
+      // Phase 23: order_items → contract_capabilities, delivery_events.order_item_id → capability_id に置換。
       const deliveries = await query(
         `
         SELECT de.*, oi.item_no
         FROM delivery_events de
-        LEFT JOIN order_items oi ON de.order_item_id = oi.id
+        LEFT JOIN contract_capabilities oi
+               ON de.capability_id = oi.id
+              AND oi.record_type = 'purchase_order'
         WHERE de.backlog_issue_key = $1 OR oi.backlog_issue_key = $2
         ORDER BY de.created_at ASC
       `,

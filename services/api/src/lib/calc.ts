@@ -7,9 +7,13 @@
  *   発注書↔検収書 と 利用許諾条件書↔利用許諾料計算書 の math が
  *   1 つの実装に集約された.
  *
+ * Phase 23: 旧 order_items / order_line_items / delivery_line_items.order_line_item_id を
+ *   contract_capabilities (record_type='purchase_order') / capability_line_items /
+ *   delivery_line_items.capability_line_item_id に置換。
+ *
  * 残っているのはこのモジュール固有の責務:
  *   - calculateTax: 税の切り上げ (billing からも import される)
- *   - recalculateOrderTotal: 明細合計 → ヘッダ反映 (DB SQL)
+ *   - recalculateCapabilityTotal: 明細合計 → ヘッダ反映 (DB SQL)
  *   - getInspectionAvailability: 発注 vs 累計検収 (DB SQL)
  *   - previewInspectionOverflow: 検収書確定前の overflow チェック (DB SQL)
  */
@@ -97,18 +101,21 @@ export function calculateInspectedAmount(
 // -------------------------------------------------------------------
 
 /**
- * order_line_items の合計を再集計し、order_items ヘッダの
+ * capability_line_items の合計を再集計し、contract_capabilities ヘッダの
  * amount_ex_tax / tax_rate / tax_amount / amount_inc_tax / amount
  * を整合的に書き戻す。Phase 4b 以降、明細を追加・更新するたびに
  * 呼び出すことで「明細合計 ≠ 総額」の不整合を構造的に防ぐ。
  *
- * @param orderItemId order_items.id
+ * Phase 23: order_items / order_line_items → contract_capabilities /
+ *   capability_line_items に置換 (record_type='purchase_order')。
+ *
+ * @param capabilityId contract_capabilities.id
  * @param taxRateOverride 明示的に税率を渡したい場合 (フォーム送信時等)。
- *                        省略すると order_items の既存税率、それも
+ *                        省略すると contract_capabilities の既存税率、それも
  *                        無ければ 10 がデフォルト。
  */
-export async function recalculateOrderTotal(
-  orderItemId: number,
+export async function recalculateCapabilityTotal(
+  capabilityId: number,
   taxRateOverride?: number
 ): Promise<{
   amount_ex_tax: number;
@@ -118,17 +125,18 @@ export async function recalculateOrderTotal(
 }> {
   const sumRes = await query(
     `SELECT COALESCE(SUM(amount_ex_tax), 0) AS total
-       FROM order_line_items
-      WHERE order_item_id = $1`,
-    [orderItemId]
+       FROM capability_line_items
+      WHERE capability_id = $1`,
+    [capabilityId]
   );
   const amountExTax = Number(sumRes.rows[0].total) || 0;
 
   let taxRate = taxRateOverride;
   if (taxRate === undefined || taxRate === null) {
     const headerRes = await query(
-      "SELECT tax_rate FROM order_items WHERE id = $1",
-      [orderItemId]
+      `SELECT tax_rate FROM contract_capabilities WHERE id = $1
+         AND record_type = 'purchase_order'`,
+      [capabilityId]
     );
     taxRate = Number(headerRes.rows[0]?.tax_rate) || 10;
   }
@@ -136,15 +144,16 @@ export async function recalculateOrderTotal(
   const { taxAmount, amountIncTax } = calculateTax(amountExTax, taxRate);
 
   await query(
-    `UPDATE order_items
+    `UPDATE contract_capabilities
         SET amount_ex_tax = $1,
             tax_rate      = $2,
             tax_amount    = $3,
             amount_inc_tax = $4,
             amount        = $1,
             latest_amount = $1
-      WHERE id = $5`,
-    [amountExTax, taxRate, taxAmount, amountIncTax, orderItemId]
+      WHERE id = $5
+        AND record_type = 'purchase_order'`,
+    [amountExTax, taxRate, taxAmount, amountIncTax, capabilityId]
   );
 
   return {
@@ -156,16 +165,19 @@ export async function recalculateOrderTotal(
 }
 
 /**
- * ある PO 明細 (order_line_item) について、発注額 vs これまでの検収累計を
+ * ある PO 明細 (capability_line_item) について、発注額 vs これまでの検収累計を
  * 突き合わせ、残検収可能量・残検収可能額・overflow フラグを返す。
  *
  * 検収書生成エンドポイント (Phase 4b) はこの結果を見て:
  *   - overflow_amount / overflow_quantity が true → HTTP 400 で拒否
  *   - そうでなければ delivery_line_items に書き込み
  * という挙動を取る。
+ *
+ * Phase 23: order_line_items → capability_line_items,
+ *   delivery_line_items.order_line_item_id → capability_line_item_id に置換。
  */
 export async function getInspectionAvailability(
-  orderLineItemId: number
+  capabilityLineItemId: number
 ): Promise<{
   ordered_amount: number;
   ordered_quantity: number;
@@ -178,12 +190,12 @@ export async function getInspectionAvailability(
 }> {
   const orderedRes = await query(
     `SELECT amount_ex_tax, quantity
-       FROM order_line_items
+       FROM capability_line_items
       WHERE id = $1`,
-    [orderLineItemId]
+    [capabilityLineItemId]
   );
   if (orderedRes.rows.length === 0) {
-    throw new Error(`order_line_item ${orderLineItemId} not found`);
+    throw new Error(`capability_line_item ${capabilityLineItemId} not found`);
   }
   const orderedAmount = Number(orderedRes.rows[0].amount_ex_tax) || 0;
   const orderedQuantity = Number(orderedRes.rows[0].quantity) || 0;
@@ -192,8 +204,8 @@ export async function getInspectionAvailability(
     `SELECT COALESCE(SUM(inspected_amount_ex_tax), 0) AS amt,
             COALESCE(SUM(inspected_quantity),       0) AS qty
        FROM delivery_line_items
-      WHERE order_line_item_id = $1`,
-    [orderLineItemId]
+      WHERE capability_line_item_id = $1`,
+    [capabilityLineItemId]
   );
   const inspectedAmount = Number(inspectedRes.rows[0].amt) || 0;
   const inspectedQuantity = Number(inspectedRes.rows[0].qty) || 0;
@@ -215,16 +227,18 @@ export async function getInspectionAvailability(
  * proposed[] に「これから書き込もうとしている明細」を入れて呼ぶと、
  * 既存 delivery_line_items にこの追加分を仮計上した状態での
  * availability を返す。事前バリデーションに使う。
+ *
+ * Phase 23: 引数キー order_line_item_id → capability_line_item_id。
  */
 export async function previewInspectionOverflow(
   proposed: Array<{
-    order_line_item_id: number;
+    capability_line_item_id: number;
     inspected_quantity: number;
     acceptance_ratio: number;
   }>
 ): Promise<
   Array<{
-    order_line_item_id: number;
+    capability_line_item_id: number;
     availability: Awaited<ReturnType<typeof getInspectionAvailability>>;
     proposed_quantity: number;
     proposed_amount: number;
@@ -235,8 +249,8 @@ export async function previewInspectionOverflow(
   const out: Array<any> = [];
   for (const p of proposed) {
     const lineRes = await query(
-      "SELECT unit_price FROM order_line_items WHERE id = $1",
-      [p.order_line_item_id]
+      "SELECT unit_price FROM capability_line_items WHERE id = $1",
+      [p.capability_line_item_id]
     );
     const unitPrice = Number(lineRes.rows[0]?.unit_price) || 0;
     const proposedAmount = calculateInspectedAmount(
@@ -244,10 +258,10 @@ export async function previewInspectionOverflow(
       p.inspected_quantity,
       p.acceptance_ratio
     );
-    const availability = await getInspectionAvailability(p.order_line_item_id);
+    const availability = await getInspectionAvailability(p.capability_line_item_id);
 
     out.push({
-      order_line_item_id: p.order_line_item_id,
+      capability_line_item_id: p.capability_line_item_id,
       availability,
       proposed_quantity: Number(p.inspected_quantity) || 0,
       proposed_amount: proposedAmount,

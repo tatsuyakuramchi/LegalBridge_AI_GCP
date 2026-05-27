@@ -64,8 +64,11 @@ import {
   calculateTax,
   calculateOrderLineAmount,
   calculateInspectedAmount,
-  recalculateOrderTotal,
-  getInspectionAvailability,
+  // Phase 23: 旧名 (recalculateOrderTotal / getInspectionAvailability) は
+  //   deprecated alias として calc.ts に残っているが、本ファイルでは
+  //   新名 (recalculateCapabilityTotal / getCapabilityLineAvailability) を使う。
+  recalculateCapabilityTotal,
+  getCapabilityLineAvailability,
   previewInspectionOverflow,
 } from "./src/lib/calc.ts";
 import {
@@ -1850,7 +1853,7 @@ ${details}
     // 送信履歴を更新
     try {
       await query(
-        `UPDATE order_line_items
+        `UPDATE capability_line_items
             SET last_alert_at = CURRENT_TIMESTAMP,
                 alert_count   = COALESCE(alert_count, 0) + 1
           WHERE id = $1`,
@@ -2105,35 +2108,39 @@ ${details}
     const isWeekday = dayOfWeekJst >= 1 && dayOfWeekJst <= 5;
 
     // ─── 1. 発注書 / 業務明細毎の納期アラート ────────────────────
-    // Phase 20 (修正版): order_line_items.delivery_date を走査する。
+    // Phase 20 (修正版): capability_line_items.delivery_date を走査する。
     //   - 検収完了 (delivery_line_items.acceptance_ratio >= 1.0) の行は対象外
     //   - 7/3/1 日前 → 各 1 回通知
     //   - 期限超過 → 平日のみ毎日通知 (同日内重複は last_alert_at で抑止)
+    // Phase 23: order_items / order_line_items は contract_capabilities /
+    //   capability_line_items に統合された。発注書 = record_type='purchase_order'。
     try {
       const lineItems = await query(
         `SELECT
-           oli.id            AS line_item_id,
-           oli.order_item_id,
-           oli.line_no,
-           oli.item_name,
-           oli.delivery_date,
-           oi.backlog_issue_key,
-           (oli.delivery_date - CURRENT_DATE) AS days_until
-         FROM order_line_items oli
-         JOIN order_items oi ON oi.id = oli.order_item_id
-         WHERE oli.delivery_date IS NOT NULL
+           cli.id            AS line_item_id,
+           cli.capability_id AS order_item_id,
+           cli.line_no,
+           cli.item_name,
+           cli.delivery_date,
+           cc.backlog_issue_key,
+           (cli.delivery_date - CURRENT_DATE) AS days_until
+         FROM capability_line_items cli
+         JOIN contract_capabilities cc
+           ON cc.id = cli.capability_id
+          AND cc.record_type = 'purchase_order'
+         WHERE cli.delivery_date IS NOT NULL
            AND NOT EXISTS (
              SELECT 1 FROM delivery_line_items dli
-              WHERE dli.order_line_item_id = oli.id
+              WHERE dli.capability_line_item_id = cli.id
                 AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
            )
            AND (
-             (oli.delivery_date - CURRENT_DATE) IN (7, 3, 1)
-             OR (oli.delivery_date - CURRENT_DATE) < 0
+             (cli.delivery_date - CURRENT_DATE) IN (7, 3, 1)
+             OR (cli.delivery_date - CURRENT_DATE) < 0
            )
            AND (
-             oli.last_alert_at IS NULL
-             OR oli.last_alert_at::date < CURRENT_DATE
+             cli.last_alert_at IS NULL
+             OR cli.last_alert_at::date < CURRENT_DATE
            )`
       );
       for (const row of lineItems.rows) {
@@ -2245,27 +2252,30 @@ ${details}
     const newDateStr = d.toISOString().slice(0, 10);
 
     // 旧値 + 紐付く Backlog issue key を取得
+    // Phase 23: capability_line_items + contract_capabilities (record_type='purchase_order') から取る
     const prevRes = await query(
       `SELECT
-         oli.id, oli.line_no, oli.item_name, oli.delivery_date,
-         oi.backlog_issue_key
-       FROM order_line_items oli
-       JOIN order_items oi ON oi.id = oli.order_item_id
-       WHERE oli.id = $1`,
+         cli.id, cli.line_no, cli.item_name, cli.delivery_date,
+         cc.backlog_issue_key
+       FROM capability_line_items cli
+       JOIN contract_capabilities cc
+         ON cc.id = cli.capability_id
+        AND cc.record_type = 'purchase_order'
+       WHERE cli.id = $1`,
       [lineItemId]
     );
     const prev = prevRes.rows[0];
     if (!prev) {
-      throw new Error("order_line_item not found");
+      throw new Error("capability_line_item not found");
     }
     const issueKey = String(prev.backlog_issue_key || "");
     const previousDateStr = prev.delivery_date
       ? new Date(prev.delivery_date).toISOString().slice(0, 10)
       : null;
 
-    // 1. DB 更新 + アラートカウントリセット
+    // 1. DB 更新 + アラートカウントリセット (Phase 23: capability_line_items)
     await query(
-      `UPDATE order_line_items
+      `UPDATE capability_line_items
           SET delivery_date  = $1,
               last_alert_at  = NULL,
               alert_count    = 0,
@@ -2428,28 +2438,31 @@ ${details}
         if (!issueKey) {
           return res.status(400).json({ ok: false, error: "issueKey required" });
         }
+        // Phase 23: order_items / order_line_items → contract_capabilities / capability_line_items
         const r = await query(
           `SELECT
-             oli.id              AS line_item_id,
-             oli.order_item_id,
-             oli.line_no,
-             oli.item_name,
-             oli.spec,
-             oli.unit_price,
-             oli.quantity,
-             oli.amount_ex_tax,
-             oli.delivery_date,
-             oli.last_alert_at,
-             oli.alert_count,
+             cli.id              AS line_item_id,
+             cli.capability_id   AS order_item_id,
+             cli.line_no,
+             cli.item_name,
+             cli.spec,
+             cli.unit_price,
+             cli.quantity,
+             cli.amount_ex_tax,
+             cli.delivery_date,
+             cli.last_alert_at,
+             cli.alert_count,
              EXISTS (
                SELECT 1 FROM delivery_line_items dli
-                WHERE dli.order_line_item_id = oli.id
+                WHERE dli.capability_line_item_id = cli.id
                   AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
              ) AS accepted
-           FROM order_line_items oli
-           JOIN order_items oi ON oi.id = oli.order_item_id
-          WHERE oi.backlog_issue_key = $1
-          ORDER BY oli.line_no`,
+           FROM capability_line_items cli
+           JOIN contract_capabilities cc
+             ON cc.id = cli.capability_id
+            AND cc.record_type = 'purchase_order'
+          WHERE cc.backlog_issue_key = $1
+          ORDER BY cli.line_no`,
           [issueKey]
         );
         res.json({ ok: true, line_items: r.rows });
@@ -2616,18 +2629,20 @@ ${details}
     }
     const newDateStr = d.toISOString().slice(0, 10);
 
-    // 未完了 line items を全取得
+    // 未完了 line items を全取得 (Phase 23: capability ベース)
     const itemsRes = await query(
-      `SELECT oli.id, oli.line_no, oli.item_name, oli.delivery_date
-         FROM order_line_items oli
-         JOIN order_items oi ON oi.id = oli.order_item_id
-        WHERE oi.backlog_issue_key = $1
+      `SELECT cli.id, cli.line_no, cli.item_name, cli.delivery_date
+         FROM capability_line_items cli
+         JOIN contract_capabilities cc
+           ON cc.id = cli.capability_id
+          AND cc.record_type = 'purchase_order'
+        WHERE cc.backlog_issue_key = $1
           AND NOT EXISTS (
             SELECT 1 FROM delivery_line_items dli
-             WHERE dli.order_line_item_id = oli.id
+             WHERE dli.capability_line_item_id = cli.id
                AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
           )
-        ORDER BY oli.line_no`,
+        ORDER BY cli.line_no`,
       [targetIssueKey]
     );
 
@@ -2646,7 +2661,7 @@ ${details}
 
     for (const item of itemsRes.rows) {
       await query(
-        `UPDATE order_line_items
+        `UPDATE capability_line_items
             SET delivery_date  = $1,
                 last_alert_at  = NULL,
                 alert_count    = 0,
@@ -3086,8 +3101,12 @@ ${details}
           [assetId, issueKey]
         );
       } else if (type === "contract") {
+        // Phase 23: license_contracts → contract_capabilities (license category)
         await query(
-          "UPDATE license_contracts SET linked_asset_id = $1 WHERE backlog_issue_key = $2",
+          `UPDATE contract_capabilities
+              SET linked_asset_id = $1
+            WHERE backlog_issue_key = $2
+              AND contract_category = 'license'`,
           [assetId, issueKey]
         );
       }
@@ -4457,9 +4476,14 @@ ${details}
   app.delete("/api/master/ledgers/:id", async (req, res) => {
     const { id } = req.params;
     try {
-      // 配下の素材を参照する license_contracts があるかチェック
+      // 配下の素材を参照する license 契約があるかチェック
+      // Phase 23: license_contracts → contract_capabilities (license)
       const refs = await query(
-        `SELECT COUNT(*)::int AS c FROM license_contracts WHERE ledger_ref_id = $1`,
+        `SELECT COUNT(*)::int AS c
+           FROM contract_capabilities
+          WHERE contract_category = 'license'
+            AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
+            AND ledger_ref_id = $1`,
         [id]
       );
       if (Number(refs.rows[0].c) > 0) {
@@ -4552,9 +4576,13 @@ ${details}
           .status(400)
           .json({ ok: false, error: "原作本体素材 (-001) は削除できません" });
       }
-      // 参照あれば拒否
+      // 参照あれば拒否 (Phase 23: license_contracts → contract_capabilities)
       const refs = await query(
-        `SELECT COUNT(*)::int AS c FROM license_contracts WHERE material_ref_id = $1`,
+        `SELECT COUNT(*)::int AS c
+           FROM contract_capabilities
+          WHERE contract_category = 'license'
+            AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
+            AND material_ref_id = $1`,
         [id]
       );
       if (Number(refs.rows[0].c) > 0) {
@@ -4829,14 +4857,18 @@ ${details}
             fd.VENDOR_NAME || fd.PARTY_B_NAME || fd.partyBName || ""
           ).trim();
 
-          // Phase 17v: form_data に vendor 情報が無い場合は order_items から拾う。
+          // Phase 17v: form_data に vendor 情報が無い場合は contract_capabilities から拾う。
           //   旧 bulk import で form_data に vendor_code/vendor_name を入れて
-          //   いなかったケースを救済する。order_items.vendor_code は CSV から
-          //   ちゃんと保存されているので、そこを経由できる。
+          //   いなかったケースを救済する。
+          // Phase 23: order_items → contract_capabilities (purchase_order)。
+          //   vendor_code は vendor_id 経由で vendors テーブルから引く。
           if ((!vendorCode || vendorCode.toUpperCase() === "UNKNOWN") && !vendorName && d.issue_key) {
             const orderRes = await query(
-              `SELECT vendor_code FROM order_items
-                WHERE backlog_issue_key = $1
+              `SELECT v.vendor_code
+                 FROM contract_capabilities cc
+                 LEFT JOIN vendors v ON v.id = cc.vendor_id
+                WHERE cc.backlog_issue_key = $1
+                  AND cc.record_type = 'purchase_order'
                 LIMIT 1`,
               [d.issue_key]
             );
@@ -4945,11 +4977,13 @@ ${details}
    * body:
    *   {
    *     lines: [
-   *       { order_line_item_id, inspected_quantity, acceptance_ratio }
+   *       { capability_line_item_id (旧 order_line_item_id), inspected_quantity, acceptance_ratio }
    *     ]
    *   }
    * 1 件でも will_overflow_* が true なら、フロントは送信ボタンを
    * 無効化し warning を出す。
+   *
+   * Phase 23: 旧フィールド名 order_line_item_id も後方互換で受け付ける。
    */
   app.post("/api/inspections/preview", express.json(), async (req, res) => {
     try {
@@ -4972,11 +5006,15 @@ ${details}
    *   {
    *     delivery_event_id: ...,
    *     lines: [
-   *       { order_line_item_id, inspected_quantity, acceptance_ratio,
-   *         rejection_reason }
+   *       { capability_line_item_id (旧 order_line_item_id),
+   *         inspected_quantity, acceptance_ratio, rejection_reason }
    *     ]
    *   }
-   * 既存の同じ (delivery_event_id, order_line_item_id) は上書き。
+   * 既存の同じ (delivery_event_id, capability_line_item_id) は上書き。
+   *
+   * Phase 23: order_line_items → capability_line_items にスキーマ移行。
+   *   delivery_line_items.order_line_item_id は capability_line_item_id に
+   *   切替 (列追加は Phase 23 マイグレーション済)。旧フィールド名も受付。
    */
   app.post(
     "/api/delivery-events/:id/line-items",
@@ -4989,7 +5027,9 @@ ${details}
         // overflow 二重チェック (フロントを信用しない)
         const preview = await previewInspectionOverflow(
           lines.map((l: any) => ({
-            order_line_item_id: Number(l.order_line_item_id),
+            capability_line_item_id: Number(
+              l.capability_line_item_id ?? l.order_line_item_id
+            ),
             inspected_quantity: Number(l.inspected_quantity) || 0,
             acceptance_ratio:
               l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio),
@@ -5007,32 +5047,34 @@ ${details}
         }
 
         for (const l of lines) {
-          const orderLineId = Number(l.order_line_item_id);
+          const capLineId = Number(
+            l.capability_line_item_id ?? l.order_line_item_id
+          );
           const qty = Number(l.inspected_quantity) || 0;
           const ratio =
             l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio);
 
-          // unit_price を引いて金額計算
+          // unit_price を引いて金額計算 (Phase 23: capability_line_items)
           const unitRes = await query(
-            "SELECT unit_price FROM order_line_items WHERE id = $1",
-            [orderLineId]
+            "SELECT unit_price FROM capability_line_items WHERE id = $1",
+            [capLineId]
           );
           const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
           const amount = calculateInspectedAmount(unitPrice, qty, ratio);
 
           await query(
             `INSERT INTO delivery_line_items (
-               delivery_event_id, order_line_item_id, inspected_quantity,
+               delivery_event_id, capability_line_item_id, inspected_quantity,
                acceptance_ratio, inspected_amount_ex_tax, rejection_reason
              ) VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (delivery_event_id, order_line_item_id) DO UPDATE SET
+             ON CONFLICT (delivery_event_id, capability_line_item_id) DO UPDATE SET
                inspected_quantity = EXCLUDED.inspected_quantity,
                acceptance_ratio = EXCLUDED.acceptance_ratio,
                inspected_amount_ex_tax = EXCLUDED.inspected_amount_ex_tax,
                rejection_reason = EXCLUDED.rejection_reason`,
             [
               deliveryEventId,
-              orderLineId,
+              capLineId,
               qty,
               ratio,
               amount,
@@ -7422,17 +7464,22 @@ ${details}
 
         let orderItem: any = null;
         if (parentKey) {
+          // Phase 23: order_items → contract_capabilities (record_type='purchase_order')
+          //   vendor_code は vendors テーブルから取得。description は contract_title へ。
           const order = await query(
-            `SELECT oi.id, oi.backlog_issue_key, oi.description, oi.vendor_code,
-                    oi.tax_rate, oi.due_date,
+            `SELECT cc.id, cc.backlog_issue_key,
+                    cc.contract_title AS description,
+                    v.vendor_code,
+                    cc.tax_rate, cc.due_date,
                     (SELECT d.document_number FROM documents d
-                      WHERE d.issue_key = oi.backlog_issue_key
+                      WHERE d.issue_key = cc.backlog_issue_key
                         AND d.template_type LIKE '%purchase_order%'
                       ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number,
-                    (SELECT v.vendor_name FROM vendors v
-                      WHERE v.vendor_code = oi.vendor_code LIMIT 1) AS vendor_name
-               FROM order_items oi
-              WHERE oi.backlog_issue_key = $1
+                    v.vendor_name AS vendor_name
+               FROM contract_capabilities cc
+               LEFT JOIN vendors v ON v.id = cc.vendor_id
+              WHERE cc.backlog_issue_key = $1
+                AND cc.record_type = 'purchase_order'
               LIMIT 1`,
             [parentKey]
           );
@@ -7477,8 +7524,8 @@ ${details}
 
         const lines = await query(
           `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax
-             FROM order_line_items
-            WHERE order_item_id = $1
+             FROM capability_line_items
+            WHERE capability_id = $1
             ORDER BY line_no ASC`,
           [Number(orderItem.id)]
         );
@@ -7496,7 +7543,7 @@ ${details}
           continue;
         }
         for (const line of lines.rows) {
-          const availability = await getInspectionAvailability(Number(line.id));
+          const availability = await getCapabilityLineAvailability(Number(line.id));
           const remainingQty = Math.max(Number(availability.remaining_quantity) || 0, 0);
           outRows.push({
             ...baseRow,
@@ -7583,17 +7630,23 @@ ${details}
         try {
           orderItemId = Number(first.parent_po_id) || 0;
           if (!orderItemId && parentPoIssueKey) {
+            // Phase 23: order_items → contract_capabilities (purchase_order)
             const r = await query(
-              "SELECT id FROM order_items WHERE backlog_issue_key = $1 LIMIT 1",
+              `SELECT id FROM contract_capabilities
+                 WHERE backlog_issue_key = $1
+                   AND record_type = 'purchase_order'
+                 LIMIT 1`,
               [parentPoIssueKey]
             );
             orderItemId = Number(r.rows[0]?.id) || 0;
           }
           if (!orderItemId && first.parent_po_number) {
             const r = await query(
-              `SELECT oi.id, oi.backlog_issue_key
+              `SELECT cc.id, cc.backlog_issue_key
                  FROM documents d
-                 JOIN order_items oi ON oi.backlog_issue_key = d.issue_key
+                 JOIN contract_capabilities cc
+                   ON cc.backlog_issue_key = d.issue_key
+                  AND cc.record_type = 'purchase_order'
                 WHERE d.document_number = $1
                 LIMIT 1`,
               [String(first.parent_po_number).trim()]
@@ -7620,28 +7673,33 @@ ${details}
             orderItemId,
           ]);
 
+          // Phase 23: order_items → contract_capabilities (purchase_order)
           const orderHeader = await client.query(
-            `SELECT oi.id, oi.backlog_issue_key, oi.description, oi.vendor_code,
-                    oi.tax_rate, oi.due_date,
+            `SELECT cc.id, cc.backlog_issue_key,
+                    cc.contract_title AS description,
+                    v.vendor_code,
+                    cc.tax_rate, cc.due_date,
                     (SELECT d.document_number FROM documents d
-                      WHERE d.issue_key = oi.backlog_issue_key
+                      WHERE d.issue_key = cc.backlog_issue_key
                         AND d.template_type LIKE '%purchase_order%'
                       ORDER BY d.created_at DESC LIMIT 1) AS parent_po_number,
-                    (SELECT v.vendor_name FROM vendors v
-                      WHERE v.vendor_code = oi.vendor_code LIMIT 1) AS vendor_name
-               FROM order_items oi
-              WHERE oi.id = $1
+                    v.vendor_name AS vendor_name
+               FROM contract_capabilities cc
+               LEFT JOIN vendors v ON v.id = cc.vendor_id
+              WHERE cc.id = $1
+                AND cc.record_type = 'purchase_order'
               LIMIT 1`,
             [orderItemId]
           );
           const order = orderHeader.rows[0];
-          if (!order) throw new Error(`order_items not found: ${orderItemId}`);
+          if (!order) throw new Error(`contract_capabilities (purchase_order) not found: ${orderItemId}`);
           parentPoIssueKey = parentPoIssueKey || String(order.backlog_issue_key || "");
 
+          // Phase 23: order_line_items → capability_line_items
           const orderLinesRes = await client.query(
             `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax
-               FROM order_line_items
-              WHERE order_item_id = $1
+               FROM capability_line_items
+              WHERE capability_id = $1
               ORDER BY line_no ASC`,
             [orderItemId]
           );
@@ -7689,7 +7747,8 @@ ${details}
           const deliveryNo = Number(first.delivery_no) || Number(
             (
               await client.query(
-                "SELECT COALESCE(MAX(delivery_no), 0) + 1 AS next_no FROM delivery_events WHERE order_item_id = $1",
+                // Phase 23: delivery_events.order_item_id → capability_id
+                "SELECT COALESCE(MAX(delivery_no), 0) + 1 AS next_no FROM delivery_events WHERE capability_id = $1",
                 [orderItemId]
               )
             ).rows[0]?.next_no || 1
@@ -7719,7 +7778,7 @@ ${details}
           //   \u305d\u308c\u306f lock \u5f85\u3061\u72b6\u614b\u306a\u306e\u3067\u3001\u3053\u3053\u3067\u8aad\u3080\u72b6\u614b\u306f\u5b89\u5b9a\u3057\u3066\u3044\u308b\u3002
           const preview = await previewInspectionOverflow(
             computedLines.map((l) => ({
-              order_line_item_id: l.order_line_item_id,
+              capability_line_item_id: l.order_line_item_id,
               inspected_quantity: l.inspected_quantity,
               acceptance_ratio: l.acceptance_ratio,
             }))
@@ -7728,17 +7787,18 @@ ${details}
           if (blocking.length > 0) {
             throw new Error(
               "Inspection overflow: " +
-                blocking.map((b) => b.order_line_item_id).join(", ")
+                blocking.map((b) => b.capability_line_item_id).join(", ")
             );
           }
 
+          // Phase 23: delivery_events.order_item_id → capability_id
           const delivery = await client.query(
             `INSERT INTO delivery_events
-               (backlog_issue_key, order_item_id, delivery_no, delivered_at,
+               (backlog_issue_key, capability_id, delivery_no, delivered_at,
                 delivered_amount, inspection_deadline, status, note)
              VALUES ($1, $2, $3, $4, $5, $6, 'pending', $7)
              ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET
-               order_item_id = EXCLUDED.order_item_id,
+               capability_id = EXCLUDED.capability_id,
                delivered_at = EXCLUDED.delivered_at,
                delivered_amount = EXCLUDED.delivered_amount,
                inspection_deadline = EXCLUDED.inspection_deadline,
@@ -7759,9 +7819,10 @@ ${details}
             deliveryEventId,
           ]);
           for (const l of computedLines) {
+            // Phase 23: delivery_line_items.order_line_item_id → capability_line_item_id
             await client.query(
               `INSERT INTO delivery_line_items (
-                 delivery_event_id, order_line_item_id, inspected_quantity,
+                 delivery_event_id, capability_line_item_id, inspected_quantity,
                  acceptance_ratio, inspected_amount_ex_tax, rejection_reason
                ) VALUES ($1, $2, $3, $4, $5, $6)`,
               [
@@ -8391,9 +8452,12 @@ ${details}
         tax_rate: body.tax_rate != null ? Number(body.tax_rate) : undefined,
       });
 
+      // Phase 23: royalty_calculations.license_contract_id /
+      //   license_financial_condition_id → capability_id /
+      //   capability_financial_condition_id (FK 列は Phase 23 マイグレーションで追加済)
       const result = await query(
         `INSERT INTO royalty_calculations (
-           backlog_issue_key, license_contract_id, license_financial_condition_id,
+           backlog_issue_key, capability_id, capability_financial_condition_id,
            manufacturing_event_id, calc_type,
            unit_price, quantity, sample_quantity, billable_quantity,
            rate_pct, gross_royalty_ex_tax,
@@ -8704,8 +8768,13 @@ ${details}
             ? String(formData["台帳ID"]).trim()
             : "";
         if (!resolvedLedgerId) {
+          // Phase 23: license_contracts → contract_capabilities (license)
           const existing = await query(
-            "SELECT ledger_id FROM license_contracts WHERE backlog_issue_key = $1 LIMIT 1",
+            `SELECT ledger_id FROM contract_capabilities
+              WHERE backlog_issue_key = $1
+                AND contract_category = 'license'
+                AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
+              LIMIT 1`,
             [issueKey]
           );
           if (existing.rows[0]?.ledger_id) {
@@ -8727,11 +8796,16 @@ ${details}
         const ledgerRefIdNum = formData.ledger_ref_id
           ? Number(formData.ledger_ref_id)
           : 0;
-        // 既存 license_contracts に紐付き情報があれば取り込む (再発行ケース)
+        // 既存 license 契約に紐付き情報があれば取り込む (再発行ケース)
+        // Phase 23: license_contracts → contract_capabilities (license)
         if (!preResolvedWorkId) {
           const existingLc = await query(
-            `SELECT ledger_ref_id, work_id FROM license_contracts
-              WHERE backlog_issue_key = $1 LIMIT 1`,
+            `SELECT ledger_ref_id, work_id
+               FROM contract_capabilities
+              WHERE backlog_issue_key = $1
+                AND contract_category = 'license'
+                AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
+              LIMIT 1`,
             [issueKey]
           );
           if (existingLc.rows[0]?.work_id) {
@@ -8978,17 +9052,21 @@ ${details}
             if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
           }
 
-          // (2) parent_po_id → order_items.vendor_code → vendors
+          // (2) parent_po_id → contract_capabilities.vendor_id → vendors
           //   検収書: 親 PO 経由で vendor を引く
+          // Phase 23: order_items → contract_capabilities (purchase_order),
+          //   vendor_code 直結 → vendor_id 経由に変更。
           if (!vendorRow) {
             const poId = Number(formData?.parent_po_id) || 0;
             if (poId > 0) {
               const r = await query(
                 `SELECT v.vendor_code, v.vendor_name, v.entity_type,
                         v.account_holder_kana, v.withholding_enabled
-                   FROM order_items oi
-                   LEFT JOIN vendors v ON v.vendor_code = oi.vendor_code
-                  WHERE oi.id = $1 LIMIT 1`,
+                   FROM contract_capabilities cc
+                   LEFT JOIN vendors v ON v.id = cc.vendor_id
+                  WHERE cc.id = $1
+                    AND cc.record_type = 'purchase_order'
+                  LIMIT 1`,
                 [poId]
               );
               if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
@@ -9375,34 +9453,23 @@ ${details}
       }
 
       // Operational tables: orders / deliveries / license / royalties.
+      // Phase 23: order_items の最小限 mirror は contract_capabilities
+      //   (record_type='purchase_order') の UPSERT に統合される。本ブロックは
+      //   下流の "purchase_order" 分岐 (lines 9530〜) が contract_capabilities
+      //   を amount / due_date / 明細込みで永続化するため、ここでは何もしない。
       if (templateType.includes("purchase_order")) {
-        // item_no は INTEGER NOT NULL。legal_request_id 紐付けがある
-        // ケースで item_no が衝突しないよう、当該 legal_request の
-        // 既存 max(item_no)+1 を採番する (LineItem の line_no とは別物)。
-        // backlog_issue_key で upsert。
-        await query(
-          `INSERT INTO order_items
-             (backlog_issue_key, item_no, description, amount, vendor_code, spec)
-           VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (backlog_issue_key) DO UPDATE SET
-             description = COALESCE(NULLIF(EXCLUDED.description, ''), order_items.description),
-             amount      = EXCLUDED.amount,
-             vendor_code = COALESCE(NULLIF(EXCLUDED.vendor_code, ''), order_items.vendor_code),
-             spec        = COALESCE(NULLIF(EXCLUDED.spec, ''), order_items.spec)`,
-          [
-            issueKey,
-            1, // item_no — 単発 PO の前提 (再生成時も同じ item_no を使う)
-            formData.description || issue.summary,
-            formData.amount || 0,
-            formData.vendorCode || "",
-            formData.spec || "",
-          ]
-        );
+        // (削除済) 旧 order_items への最小 mirror INSERT は Phase 23 で廃止。
+        //   contract_capabilities 側の UPSERT が下の分岐で行われる。
       } else if (templateType.includes("inspection")) {
         // Phase 9f: 複合 UNIQUE で上書き可能に。delivery_no が指定されて
         // いなければ MAX(delivery_no)+1 で自動採番。
+        // Phase 23: order_items → contract_capabilities (purchase_order),
+        //   delivery_events.order_item_id → capability_id。
         const orderRes = await query(
-          "SELECT id FROM order_items WHERE backlog_issue_key = $1 LIMIT 1",
+          `SELECT id FROM contract_capabilities
+             WHERE backlog_issue_key = $1
+               AND record_type = 'purchase_order'
+             LIMIT 1`,
           [issueKey]
         );
         if (orderRes.rows.length > 0) {
@@ -9418,10 +9485,10 @@ ${details}
           }
           await query(
             `INSERT INTO delivery_events
-               (order_item_id, backlog_issue_key, delivered_amount, delivery_no, delivered_at)
+               (capability_id, backlog_issue_key, delivered_amount, delivery_no, delivered_at)
              VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET
-               order_item_id    = EXCLUDED.order_item_id,
+               capability_id    = EXCLUDED.capability_id,
                delivered_amount = EXCLUDED.delivered_amount,
                delivered_at     = EXCLUDED.delivered_at`,
             [
@@ -9483,29 +9550,48 @@ ${details}
         const amount = parseFloat(
           (formData.ORDER_AMOUNT || formData.TOTAL_AMOUNT || "0").replace(/,/g, "")
         );
+        // Phase 23: order_items → contract_capabilities (record_type='purchase_order')
+        //   旧 order_items.vendor_code は vendors.vendor_code 経由で vendor_id を引いて保持。
+        //   description は contract_title へ、amount は amount_ex_tax へ。
+        let vendorIdForPo: number | null = null;
+        const vcodeForPo = String(formData.VENDOR_CODE || "").trim();
+        if (vcodeForPo && vcodeForPo.toUpperCase() !== "UNKNOWN") {
+          const vr = await query(
+            "SELECT id FROM vendors WHERE vendor_code = $1 LIMIT 1",
+            [vcodeForPo]
+          );
+          vendorIdForPo = vr.rows[0]?.id ? Number(vr.rows[0].id) : null;
+        }
         const orderItemRes = await query(
-          `INSERT INTO order_items (legal_request_id, item_no, vendor_code, description, amount, due_date, backlog_issue_key)
-           VALUES ($1, $2, $3, $4, $5, $6, $7)
-           ON CONFLICT (backlog_issue_key) DO UPDATE SET
-           amount = EXCLUDED.amount,
-           due_date = EXCLUDED.due_date,
-           description = EXCLUDED.description
+          `INSERT INTO contract_capabilities
+             (legal_request_id, vendor_id, contract_title, amount_ex_tax,
+              due_date, backlog_issue_key, record_type, contract_category,
+              contract_type, document_number)
+           VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
+                   'purchase_order', $7)
+           ON CONFLICT (document_number) DO UPDATE SET
+             amount_ex_tax  = EXCLUDED.amount_ex_tax,
+             due_date       = EXCLUDED.due_date,
+             contract_title = EXCLUDED.contract_title,
+             vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
+             updated_at     = CURRENT_TIMESTAMP
            RETURNING id`,
           [
             lrId,
-            1,
-            formData.VENDOR_CODE || "UNKNOWN",
+            vendorIdForPo,
             formData.summary || issue.summary,
             amount,
             formData.DELIVERY_DATE || formData.due_date || null,
             issueKey,
+            docNumber,
           ]
         );
         const orderItemId = orderItemRes.rows[0]?.id;
 
         // Phase 7b: 発注書フォームから items[] が送信されていれば
-        // order_line_items を upsert し, recalculateOrderTotal で
+        // capability_line_items を upsert し, recalculateCapabilityTotal で
         // ヘッダ総額を「明細合計」と整合させる。
+        // Phase 23: order_line_items → capability_line_items
         if (orderItemId && Array.isArray(formData.items) && formData.items.length > 0) {
           const taxRate = Number(formData.taxRate) || 10;
           const incomingLines = formData.items as Array<any>;
@@ -9515,8 +9601,8 @@ ${details}
 
           if (keepNos.length > 0) {
             await query(
-              `DELETE FROM order_line_items
-                WHERE order_item_id = $1
+              `DELETE FROM capability_line_items
+                WHERE capability_id = $1
                   AND line_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
               [orderItemId, ...keepNos]
             );
@@ -9532,13 +9618,13 @@ ${details}
             const payTerms = l.payment_terms || l.payment_method || null;
             const calcMethod = l.calc_method || "FIXED";
             await query(
-              `INSERT INTO order_line_items (
-                 order_item_id, line_no, item_name, spec,
+              `INSERT INTO capability_line_items (
+                 capability_id, line_no, item_name, spec,
                  unit_price, quantity, amount_ex_tax,
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date, updated_at
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
-               ON CONFLICT (order_item_id, line_no) DO UPDATE SET
+               ON CONFLICT (capability_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
                  unit_price     = EXCLUDED.unit_price,
@@ -9566,10 +9652,12 @@ ${details}
               ]
             );
           }
-          await recalculateOrderTotal(orderItemId, taxRate);
+          // Phase 23: recalculateOrderTotal → recalculateCapabilityTotal
+          await recalculateCapabilityTotal(orderItemId, taxRate);
         }
 
         // Phase 17i: 経費 (交通費等・税込み額) を upsert
+        // Phase 23: order_expenses → capability_expenses
         if (orderItemId && Array.isArray(formData.expenses)) {
           const incomingExpenses = formData.expenses as Array<any>;
           const computedExpenses = incomingExpenses
@@ -9586,22 +9674,22 @@ ${details}
           const keepExpenseNos = computedExpenses.map((e) => e.line_no).filter((n) => n > 0);
           if (keepExpenseNos.length > 0) {
             await query(
-              `DELETE FROM order_expenses
-                WHERE order_item_id = $1
+              `DELETE FROM capability_expenses
+                WHERE capability_id = $1
                   AND line_no NOT IN (${keepExpenseNos.map((_, i) => `$${i + 2}`).join(",")})`,
               [orderItemId, ...keepExpenseNos]
             );
           } else {
-            await query("DELETE FROM order_expenses WHERE order_item_id = $1", [orderItemId]);
+            await query("DELETE FROM capability_expenses WHERE capability_id = $1", [orderItemId]);
           }
 
           for (const e of computedExpenses) {
             await query(
-              `INSERT INTO order_expenses (
-                 order_item_id, line_no, expense_name, spec,
+              `INSERT INTO capability_expenses (
+                 capability_id, line_no, expense_name, spec,
                  spent_date, amount_inc_tax, remarks, updated_at
                ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-               ON CONFLICT (order_item_id, line_no) DO UPDATE SET
+               ON CONFLICT (capability_id, line_no) DO UPDATE SET
                  expense_name   = EXCLUDED.expense_name,
                  spec           = EXCLUDED.spec,
                  spent_date     = EXCLUDED.spent_date,
@@ -9630,13 +9718,16 @@ ${details}
           [issueKey, formData.counterparty || formData.PARTY_B_NAME, issue.summary]
         );
         // 親 PO 検索: formData.parent_po_id (form-context / picker が埋めた値) 優先、
-        // 無ければこの issue 自体の order_items を見る (legacy fallback)。
+        // 無ければこの issue 自体の contract_capabilities (purchase_order) を見る。
+        // Phase 23: order_items → contract_capabilities
         let orderItemId: number | null = null;
         if (formData.parent_po_id) {
           orderItemId = Number(formData.parent_po_id);
         } else {
           const orderItemResult = await query(
-            "SELECT id FROM order_items WHERE backlog_issue_key = $1",
+            `SELECT id FROM contract_capabilities
+              WHERE backlog_issue_key = $1
+                AND record_type = 'purchase_order'`,
             [issueKey]
           );
           orderItemId = orderItemResult.rows[0]?.id || null;
@@ -9650,10 +9741,11 @@ ${details}
         let deliveryNo = Number(formData.deliveryNo) || 0;
         if (!deliveryNo) {
           if (orderItemId) {
+            // Phase 23: delivery_events.order_item_id → capability_id
             const maxRes = await query(
               `SELECT COALESCE(MAX(delivery_no), 0) AS max_no
                  FROM delivery_events
-                WHERE order_item_id = $1`,
+                WHERE capability_id = $1`,
               [orderItemId]
             );
             deliveryNo = Number(maxRes.rows[0]?.max_no) + 1;
@@ -9686,13 +9778,14 @@ ${details}
           ) || 0;
         }
 
+        // Phase 23: delivery_events.order_item_id → capability_id
         const deliveryUpsert = await query(
           `INSERT INTO delivery_events
-             (backlog_issue_key, order_item_id, delivery_no, delivered_at,
+             (backlog_issue_key, capability_id, delivery_no, delivered_at,
               delivered_amount, inspection_deadline, status, note)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
            ON CONFLICT (backlog_issue_key, delivery_no) DO UPDATE SET
-             order_item_id       = EXCLUDED.order_item_id,
+             capability_id       = EXCLUDED.capability_id,
              delivered_at        = EXCLUDED.delivered_at,
              delivered_amount    = EXCLUDED.delivered_amount,
              inspection_deadline = EXCLUDED.inspection_deadline,
@@ -9723,9 +9816,13 @@ ${details}
           Array.isArray(formData.delivery_line_items) &&
           formData.delivery_line_items.length > 0
         ) {
+          // Phase 23: order_line_item_id → capability_line_item_id (フィールド名は
+          //   フロント互換のため formData では旧名のまま受ける)。
           const incoming = (formData.delivery_line_items as Array<any>).map(
             (l) => ({
-              order_line_item_id: Number(l.order_line_item_id),
+              capability_line_item_id: Number(
+                l.capability_line_item_id ?? l.order_line_item_id
+              ),
               inspected_quantity: Number(l.inspected_quantity) || 0,
               acceptance_ratio:
                 l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio),
@@ -9735,7 +9832,7 @@ ${details}
           // サーバ側 overflow チェック (二重防衛)。フロントの数字を信用しない。
           const preview = await previewInspectionOverflow(
             incoming.map((l) => ({
-              order_line_item_id: l.order_line_item_id,
+              capability_line_item_id: l.capability_line_item_id,
               inspected_quantity: l.inspected_quantity,
               acceptance_ratio: l.acceptance_ratio,
             }))
@@ -9746,14 +9843,15 @@ ${details}
           if (blocking.length > 0) {
             throw new Error(
               "Inspection overflow detected on save: " +
-                JSON.stringify(blocking.map((b) => b.order_line_item_id))
+                JSON.stringify(blocking.map((b) => b.capability_line_item_id))
             );
           }
 
           for (const l of incoming) {
+            // Phase 23: capability_line_items
             const unitRes = await query(
-              "SELECT unit_price FROM order_line_items WHERE id = $1",
-              [l.order_line_item_id]
+              "SELECT unit_price FROM capability_line_items WHERE id = $1",
+              [l.capability_line_item_id]
             );
             const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
             const amt = calculateInspectedAmount(
@@ -9761,19 +9859,20 @@ ${details}
               l.inspected_quantity,
               l.acceptance_ratio
             );
+            // Phase 23: delivery_line_items.order_line_item_id → capability_line_item_id
             await query(
               `INSERT INTO delivery_line_items (
-                 delivery_event_id, order_line_item_id, inspected_quantity,
+                 delivery_event_id, capability_line_item_id, inspected_quantity,
                  acceptance_ratio, inspected_amount_ex_tax, rejection_reason
                ) VALUES ($1, $2, $3, $4, $5, $6)
-               ON CONFLICT (delivery_event_id, order_line_item_id) DO UPDATE SET
+               ON CONFLICT (delivery_event_id, capability_line_item_id) DO UPDATE SET
                  inspected_quantity      = EXCLUDED.inspected_quantity,
                  acceptance_ratio        = EXCLUDED.acceptance_ratio,
                  inspected_amount_ex_tax = EXCLUDED.inspected_amount_ex_tax,
                  rejection_reason        = EXCLUDED.rejection_reason`,
               [
                 deliveryEventId,
-                l.order_line_item_id,
+                l.capability_line_item_id,
                 l.inspected_quantity,
                 l.acceptance_ratio,
                 amt,
@@ -9783,19 +9882,26 @@ ${details}
           }
         }
       } else if (templateType === "license_master") {
+        // Phase 23: license_contracts → contract_capabilities (license, master_contract)
+        //   ON CONFLICT は document_number (contract_capabilities の UNIQUE) に変更。
         await query(
-          `INSERT INTO license_contracts (backlog_issue_key, ledger_id, ledger_number, licensor, original_work)
-           VALUES ($1, $2, $3, $4, $5)
-           ON CONFLICT (backlog_issue_key) DO UPDATE SET
-           ledger_number = EXCLUDED.ledger_number,
-           licensor = EXCLUDED.licensor,
-           original_work = EXCLUDED.original_work`,
+          `INSERT INTO contract_capabilities
+             (backlog_issue_key, ledger_id, ledger_number, licensor, original_work,
+              document_number, record_type, contract_category, contract_type, contract_title)
+           VALUES ($1, $2, $3, $4, $5, $6, 'master_contract', 'license', 'license_basic', $7)
+           ON CONFLICT (document_number) DO UPDATE SET
+             ledger_number = EXCLUDED.ledger_number,
+             licensor      = EXCLUDED.licensor,
+             original_work = EXCLUDED.original_work,
+             updated_at    = CURRENT_TIMESTAMP`,
           [
             issueKey,
             formData.ledgerId || docNumber,
             docNumber,
             formData.LICENSOR_NAME || formData.PARTY_B_NAME,
             formData.WORK_TITLE,
+            docNumber,
+            formData.WORK_TITLE || formData.LICENSOR_NAME || docNumber,
           ]
         );
       } else if (templateType === "individual_license_terms") {
@@ -9815,8 +9921,13 @@ ${details}
           ? String(formData.ledgerId).trim()
           : "";
         if (!resolvedLedgerId) {
+          // Phase 23: license_contracts → contract_capabilities (license)
           const existing = await query(
-            "SELECT ledger_id FROM license_contracts WHERE backlog_issue_key = $1 LIMIT 1",
+            `SELECT ledger_id FROM contract_capabilities
+              WHERE backlog_issue_key = $1
+                AND contract_category = 'license'
+                AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
+              LIMIT 1`,
             [issueKey]
           );
           if (existing.rows[0]?.ledger_id) {
@@ -9848,10 +9959,15 @@ ${details}
           ? String(formData.work_id).trim()
           : "";
 
-        // 既存 license_contracts に紐付き情報があれば取り込む (再発行ケース)
+        // 既存 license 契約に紐付き情報があれば取り込む (再発行ケース)
+        // Phase 23: license_contracts → contract_capabilities (license)
         const existingLcRow = await query(
           `SELECT ledger_ref_id, material_ref_id, work_id
-             FROM license_contracts WHERE backlog_issue_key = $1 LIMIT 1`,
+             FROM contract_capabilities
+            WHERE backlog_issue_key = $1
+              AND contract_category = 'license'
+              AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
+            LIMIT 1`,
           [issueKey]
         );
         const existingLc = existingLcRow.rows[0];
@@ -9919,8 +10035,13 @@ ${details}
           formData.WORK_ID = resolvedWorkId;
         }
 
+        // Phase 23: license_contracts → contract_capabilities (license, individual_contract)
+        //   旧 license_contracts の license_* 列は Phase 23 マイグレーションで
+        //   contract_capabilities に ALTER ADD COLUMN 済みの想定。
+        //   ON CONFLICT は document_number (UNIQUE INDEX) に変更。
+        //   contract_title は original_work (なければ docNumber) で補完。
         const lcUpsert = await query(
-          `INSERT INTO license_contracts (
+          `INSERT INTO contract_capabilities (
              backlog_issue_key, ledger_id, ledger_number, contract_number,
              licensor, original_work,
              licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
@@ -9928,7 +10049,8 @@ ${details}
              product_name_predicted,
              license_start_date, license_period_note,
              supervisor, credit_display, remarks,
-             ledger_ref_id, material_ref_id, work_id
+             ledger_ref_id, material_ref_id, work_id,
+             record_type, contract_category, contract_type, contract_title, document_number
            )
            VALUES (
              $1, $2, $3, $4,
@@ -9938,30 +10060,32 @@ ${details}
              $15,
              $16, $17,
              $18, $19, $20,
-             $21, $22, $23
+             $21, $22, $23,
+             'individual_contract', 'license', 'license_basic', COALESCE(NULLIF($6, ''), $4), $4
            )
-           ON CONFLICT (backlog_issue_key) DO UPDATE SET
+           ON CONFLICT (document_number) DO UPDATE SET
              contract_number          = EXCLUDED.contract_number,
-             ledger_number            = COALESCE(NULLIF(EXCLUDED.ledger_number, ''), license_contracts.ledger_number),
-             licensor                 = COALESCE(NULLIF(EXCLUDED.licensor, ''), license_contracts.licensor),
-             original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), license_contracts.original_work),
-             licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), license_contracts.licensor_name),
-             licensor_address         = COALESCE(NULLIF(EXCLUDED.licensor_address, ''), license_contracts.licensor_address),
-             licensor_rep             = COALESCE(NULLIF(EXCLUDED.licensor_rep, ''), license_contracts.licensor_rep),
+             ledger_number            = COALESCE(NULLIF(EXCLUDED.ledger_number, ''), contract_capabilities.ledger_number),
+             licensor                 = COALESCE(NULLIF(EXCLUDED.licensor, ''), contract_capabilities.licensor),
+             original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
+             licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), contract_capabilities.licensor_name),
+             licensor_address         = COALESCE(NULLIF(EXCLUDED.licensor_address, ''), contract_capabilities.licensor_address),
+             licensor_rep             = COALESCE(NULLIF(EXCLUDED.licensor_rep, ''), contract_capabilities.licensor_rep),
              licensor_is_corporation  = EXCLUDED.licensor_is_corporation,
-             licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), license_contracts.licensee_name),
-             licensee_address         = COALESCE(NULLIF(EXCLUDED.licensee_address, ''), license_contracts.licensee_address),
-             licensee_rep             = COALESCE(NULLIF(EXCLUDED.licensee_rep, ''), license_contracts.licensee_rep),
+             licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), contract_capabilities.licensee_name),
+             licensee_address         = COALESCE(NULLIF(EXCLUDED.licensee_address, ''), contract_capabilities.licensee_address),
+             licensee_rep             = COALESCE(NULLIF(EXCLUDED.licensee_rep, ''), contract_capabilities.licensee_rep),
              licensee_is_corporation  = EXCLUDED.licensee_is_corporation,
-             product_name_predicted   = COALESCE(NULLIF(EXCLUDED.product_name_predicted, ''), license_contracts.product_name_predicted),
-             license_start_date       = COALESCE(EXCLUDED.license_start_date, license_contracts.license_start_date),
-             license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), license_contracts.license_period_note),
-             supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), license_contracts.supervisor),
-             credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), license_contracts.credit_display),
-             remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), license_contracts.remarks),
-             ledger_ref_id            = COALESCE(EXCLUDED.ledger_ref_id, license_contracts.ledger_ref_id),
-             material_ref_id          = COALESCE(EXCLUDED.material_ref_id, license_contracts.material_ref_id),
-             work_id                  = COALESCE(NULLIF(EXCLUDED.work_id, ''), license_contracts.work_id)
+             product_name_predicted   = COALESCE(NULLIF(EXCLUDED.product_name_predicted, ''), contract_capabilities.product_name_predicted),
+             license_start_date       = COALESCE(EXCLUDED.license_start_date, contract_capabilities.license_start_date),
+             license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), contract_capabilities.license_period_note),
+             supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), contract_capabilities.supervisor),
+             credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), contract_capabilities.credit_display),
+             remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), contract_capabilities.remarks),
+             ledger_ref_id            = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
+             material_ref_id          = COALESCE(EXCLUDED.material_ref_id, contract_capabilities.material_ref_id),
+             work_id                  = COALESCE(NULLIF(EXCLUDED.work_id, ''), contract_capabilities.work_id),
+             updated_at               = CURRENT_TIMESTAMP
            RETURNING id`,
           [
             issueKey,
@@ -9992,9 +10116,11 @@ ${details}
         );
         const lcId = Number(lcUpsert.rows[0]?.id);
 
-        // Phase 7d: financial_conditions[] を license_financial_conditions
+        // Phase 7d: financial_conditions[] を capability_financial_conditions
         // に upsert (condition_no をキーに一意)。FinancialConditionTable
         // で削除された condition は DB からも削除する。
+        // Phase 23: license_financial_conditions → capability_financial_conditions
+        //   (license_contract_id → capability_id)
         if (lcId && Array.isArray(formData.financial_conditions)) {
           const keepNos = new Set<number>();
           for (const c of formData.financial_conditions) {
@@ -10002,14 +10128,14 @@ ${details}
             if (!Number.isFinite(condNo) || condNo < 1) continue;
             keepNos.add(condNo);
             await query(
-              `INSERT INTO license_financial_conditions (
-                 license_contract_id, condition_no, region_language_label,
+              `INSERT INTO capability_financial_conditions (
+                 capability_id, condition_no, region_language_label,
                  calc_method, rate_pct, base_price_label, calc_period,
                  currency, formula_text, payment_terms, mg_amount,
                  calc_period_kind, calc_period_close_month
                )
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-               ON CONFLICT (license_contract_id, condition_no) DO UPDATE SET
+               ON CONFLICT (capability_id, condition_no) DO UPDATE SET
                  region_language_label   = EXCLUDED.region_language_label,
                  calc_method             = EXCLUDED.calc_method,
                  rate_pct                = EXCLUDED.rate_pct,
@@ -10052,9 +10178,10 @@ ${details}
           // ON DELETE は RESTRICT を期待。失敗時は黙って残す。
           if (keepNos.size > 0) {
             try {
+              // Phase 23: license_financial_conditions → capability_financial_conditions
               await query(
-                `DELETE FROM license_financial_conditions
-                  WHERE license_contract_id = $1
+                `DELETE FROM capability_financial_conditions
+                  WHERE capability_id = $1
                     AND condition_no <> ALL($2::int[])`,
                 [lcId, Array.from(keepNos)]
               );

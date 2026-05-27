@@ -432,79 +432,22 @@ export async function initDb() {
         ON legal_requests (parent_issue_key)
       WHERE parent_issue_key IS NOT NULL;`,
 
-    `CREATE TABLE IF NOT EXISTS order_items (
-      id SERIAL PRIMARY KEY,
-      legal_request_id INTEGER REFERENCES legal_requests(id) ON DELETE CASCADE,
-      item_no INTEGER NOT NULL,
-      vendor_code VARCHAR(50),
-      description TEXT,
-      amount DECIMAL(15, 2),
-      due_date TIMESTAMP WITH TIME ZONE,
-      latest_amount DECIMAL(15, 2),
-      latest_due_date TIMESTAMP WITH TIME ZONE,
-      backlog_issue_key VARCHAR(50) UNIQUE,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(legal_request_id, item_no)
-    );`,
-    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
-
     // -----------------------------------------------------------------
-    // Phase 4a: 発注書の税抜・税込・税率を SQL-queryable に
-    //
-    // 既存の order_items.amount は税抜総額として残し、新カラムで
-    // 内訳を持つ。税は Math.ceil で切り上げ (calc.ts 参照)。
+    // Phase 23.6.5: order_items / order_line_items / order_expenses /
+    //   order_other_fees の CREATE TABLE / ALTER / Backfill は廃止。
+    //   新規 DB では作成しない (= contract_capabilities + capability_line_items
+    //   + capability_expenses + capability_other_fees に統合済み)。
+    //   既存 DB の物理 DROP は scripts/phase23_migrate_to_capabilities.ts
+    //   --apply --drop --really-drop で実施。
+    //   delivery_events.order_item_id / delivery_line_items.order_line_item_id
+    //   は FK 列として残置 (物理 DROP 時に同時撤去予定)。
     // -----------------------------------------------------------------
-    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS amount_ex_tax DECIMAL(15, 2);`,
-    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_rate INTEGER;`,
-    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS tax_amount DECIMAL(15, 2);`,
-    `ALTER TABLE order_items ADD COLUMN IF NOT EXISTS amount_inc_tax DECIMAL(15, 2);`,
-
-    // Backfill amount_ex_tax from the legacy single-column amount so
-    // the new query surface works for historic rows.
-    `UPDATE order_items
-        SET amount_ex_tax = amount
-      WHERE amount_ex_tax IS NULL AND amount IS NOT NULL;`,
-
-    // -----------------------------------------------------------------
-    // Phase 4a: 発注書の明細レコード (1 PO = N 明細)
-    //
-    // quantity / inspected_quantity は DECIMAL(10, 4) — 部分検収
-    // (例: 0.5 単位) と契約不適合品の割合評価 (acceptance_ratio) に
-    // 対応するため整数では不足。
-    // amount_ex_tax は unit_price × quantity をサーバ側で計算 (calc.ts)。
-    // -----------------------------------------------------------------
-    `CREATE TABLE IF NOT EXISTS order_line_items (
-      id SERIAL PRIMARY KEY,
-      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      line_no INTEGER NOT NULL,
-      item_name TEXT NOT NULL,
-      spec TEXT,
-      unit_price DECIMAL(15, 2),
-      quantity DECIMAL(10, 4),
-      amount_ex_tax DECIMAL(15, 2),
-      payment_method VARCHAR(50),
-      payment_date DATE,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(order_item_id, line_no)
-    );`,
-    `CREATE INDEX IF NOT EXISTS idx_oli_order_item ON order_line_items(order_item_id);`,
-
-    // Backfill: turn each existing order_items row into a single
-    // line item so the new SUM(line.amount_ex_tax) = header.amount_ex_tax
-    // invariant holds without rewriting historic data manually.
-    `INSERT INTO order_line_items (order_item_id, line_no, item_name, spec, amount_ex_tax)
-     SELECT oi.id, 1, COALESCE(oi.description, ''), '', oi.amount
-       FROM order_items oi
-       LEFT JOIN order_line_items oli
-         ON oli.order_item_id = oi.id AND oli.line_no = 1
-      WHERE oli.id IS NULL
-        AND oi.amount IS NOT NULL;`,
 
     `CREATE TABLE IF NOT EXISTS delivery_events (
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
-      order_item_id INTEGER REFERENCES order_items(id),
+      -- Phase 23.6.5: order_items は廃止予定のため FK 制約を外す
+      order_item_id INTEGER,
       delivery_no INTEGER,
       delivered_at TIMESTAMP WITH TIME ZONE,
       delivered_amount DECIMAL(15, 2),
@@ -523,90 +466,11 @@ export async function initDb() {
     `ALTER TABLE delivery_events ADD COLUMN IF NOT EXISTS alert_count INTEGER DEFAULT 0;`,
 
     // -----------------------------------------------------------------
-    // Phase 17h: 納期 (delivery_date) を業務明細レベルで持つ。
-    // 既存 order_items.due_date は header レベルの全体納期、
-    // delivery_date は line item ごとの納期 (分納時に分かれる)。
+    // Phase 23.6.5: 旧 order_line_items / order_expenses / order_other_fees
+    //   への ALTER / Backfill / INDEX 文も廃止 (capability_* に統合済み)。
+    //   旧テーブルが残存する DB でも IF NOT EXISTS は害が無いが、新規 DB では
+    //   そもそもテーブルが作られないので無意味なため削除。
     // -----------------------------------------------------------------
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS delivery_date DATE;`,
-
-    // Phase 20 (修正版): 業務明細レベルの納期アラート
-    //   delivery_events.last_alert_at は誤ったテーブルだったため未使用となるが
-    //   将来「検収期限超過アラート」を別途出すかもしれないので残置。
-    //   実運用のアラートはここ order_line_items.last_alert_at を見る。
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS last_alert_at TIMESTAMP WITH TIME ZONE;`,
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS alert_count INTEGER DEFAULT 0;`,
-
-    // -----------------------------------------------------------------
-    // Phase 13: order_line_items を calc_method + payment_terms split に。
-    // license_financial_conditions と同じ語彙に統一:
-    //   calc_method   = 計算方式 (FIXED / SUBSCRIPTION / ROYALTY)
-    //   payment_terms = 支払条件 (自由テキスト、例: '翌月末', '検収後')
-    // 既存 payment_method 列は legacy 用途に残置 (UI 互換)。
-    // -----------------------------------------------------------------
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS calc_method VARCHAR(50) DEFAULT 'FIXED';`,
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS payment_terms TEXT;`,
-    // 既存行を backfill: payment_method の値をそのまま payment_terms に移し、
-    // calc_method を 'FIXED' で埋める (PO 明細は基本的に FIXED 計算)
-    `UPDATE order_line_items
-        SET calc_method = COALESCE(NULLIF(calc_method, ''), 'FIXED'),
-            payment_terms = COALESCE(payment_terms, payment_method)
-      WHERE calc_method IS NULL OR calc_method = '' OR payment_terms IS NULL;`,
-
-    // -----------------------------------------------------------------
-    // Phase 22.8: SUBSCRIPTION (継続課金) 用フィールド。
-    //   calc_method='SUBSCRIPTION' の行のみ意味を持つ:
-    //     cycle       : 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'ANNUAL'
-    //     term_start  : 契約開始日
-    //     term_end    : 契約終了日 (NULL なら継続中扱い)
-    //     billing_day : 毎周期の支払日 (1-31; 0 or >30 で末日扱い)
-    //   FIXED/ROYALTY 行では NULL のまま (UI / PDF にも出ない)。
-    //   顧問契約・SaaS 月額・年額ライセンス等のスケジュールを構造化保持。
-    // -----------------------------------------------------------------
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS cycle VARCHAR(20);`,
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS term_start DATE;`,
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS term_end DATE;`,
-    `ALTER TABLE order_line_items ADD COLUMN IF NOT EXISTS billing_day SMALLINT;`,
-
-    // -----------------------------------------------------------------
-    // Phase 17i: 経費 (交通費等) — 発注書本体の業務報酬とは別に、
-    //   発注者が受注者に精算する経費を行単位で保持する。
-    //   料金は基本的に税込み額で記録 (現場の領収書がそのまま反映できる)。
-    //   発注書 PDF では業務明細表の直下に独立した経費表として描画される。
-    // -----------------------------------------------------------------
-    `CREATE TABLE IF NOT EXISTS order_expenses (
-      id SERIAL PRIMARY KEY,
-      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      line_no INTEGER NOT NULL,
-      expense_name TEXT NOT NULL,
-      spec TEXT,
-      spent_date DATE,
-      amount_inc_tax DECIMAL(15, 2),
-      remarks TEXT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(order_item_id, line_no)
-    );`,
-    `CREATE INDEX IF NOT EXISTS idx_oe_order_item ON order_expenses(order_item_id);`,
-
-    // -----------------------------------------------------------------
-    // Phase 22.21.57: 発注書の「その他手数料」(税抜・合計に加算) を行単位で
-    //   保持。order_expenses (税込・別精算) とは別物。
-    //   - 業務委託報酬 (order_line_items) とも区別され、コーディネート費・
-    //     振込手数料 等の追加報酬を別行で記録できる。
-    //   - 検収書生成時にこの行を「今回精算する」とチェックして含められる。
-    // -----------------------------------------------------------------
-    `CREATE TABLE IF NOT EXISTS order_other_fees (
-      id SERIAL PRIMARY KEY,
-      order_item_id INTEGER NOT NULL REFERENCES order_items(id) ON DELETE CASCADE,
-      line_no INTEGER NOT NULL,
-      fee_name TEXT NOT NULL,
-      amount DECIMAL(15, 2) NOT NULL DEFAULT 0,
-      remarks TEXT,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(order_item_id, line_no)
-    );`,
-    `CREATE INDEX IF NOT EXISTS idx_oof_order_item ON order_other_fees(order_item_id);`,
 
     // -----------------------------------------------------------------
     // Phase 17: 稟議 (ringi) マスタ + 文書との N:N 関連
@@ -782,7 +646,8 @@ export async function initDb() {
     `CREATE TABLE IF NOT EXISTS delivery_line_items (
       id SERIAL PRIMARY KEY,
       delivery_event_id INTEGER NOT NULL REFERENCES delivery_events(id) ON DELETE CASCADE,
-      order_line_item_id INTEGER REFERENCES order_line_items(id),
+      -- Phase 23.6.5: order_line_items は廃止予定のため FK 制約を外す
+      order_line_item_id INTEGER,
       inspected_quantity DECIMAL(10, 4),
       acceptance_ratio DECIMAL(5, 4) DEFAULT 1.0,
       inspected_amount_ex_tax DECIMAL(15, 2),
@@ -794,67 +659,17 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_dli_order_line ON delivery_line_items(order_line_item_id);`,
 
     // 5. Licensing & Royalties
-    `CREATE TABLE IF NOT EXISTS license_contracts (
-      id SERIAL PRIMARY KEY,
-      backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
-      ledger_id VARCHAR(50) UNIQUE NOT NULL,
-      ledger_number VARCHAR(100),
-      contract_number VARCHAR(100),
-      licensor VARCHAR(255),
-      original_work TEXT,
-      royalty_rate DECIMAL(5, 4),
-      mg_amount DECIMAL(15, 2),
-      fee_structure VARCHAR(50),
-      payment_cycle VARCHAR(50),
-      license_start_date DATE,
-      linked_asset_id INTEGER, -- Link to external_assets
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-    );`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS ledger_number VARCHAR(100);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS contract_number VARCHAR(100);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS linked_asset_id INTEGER;`,
+    // -----------------------------------------------------------------
+    // Phase 23.6.5: license_contracts の CREATE TABLE / ALTER / Backfill は廃止。
+    //   新規 DB では作成しない (= contract_capabilities + capability_financial_conditions
+    //   に統合済み)。
+    //   既存 DB の物理 DROP は scripts/phase23_migrate_to_capabilities.ts
+    //   --apply --drop --really-drop で実施。
+    //   旧テーブルを参照する work_sublicensees / manufacturing_events /
+    //   royalty_payments / royalty_calculations の license_contract_id 列は
+    //   FK 制約を外して残置 (物理 DROP 時に同時撤去予定)。
+    // -----------------------------------------------------------------
 
-    // -----------------------------------------------------------------
-    // Phase 5a: 個別利用許諾条件書のヘッダ情報を SQL-queryable に
-    //
-    // 既存の license_contracts は最低限の項目しか持たないので、
-    // individual_license_terms テンプレが扱う変数を直接マッピングできる
-    // カラムを追加する。licensor* / licensee* は両当事者の入れ替えに対応
-    // するため両方ともテーブルに持つ。
-    // -----------------------------------------------------------------
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS issue_date DATE;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS basic_contract_name TEXT;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_name VARCHAR(255);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_address TEXT;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_rep VARCHAR(255);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensor_is_corporation BOOLEAN;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_name VARCHAR(255);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_address TEXT;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_rep VARCHAR(255);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS licensee_is_corporation BOOLEAN;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS license_period_note TEXT;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS original_work_note TEXT;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS product_name_predicted TEXT;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS exclusivity VARCHAR(20);`, // 独占/非独占
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS supervisor VARCHAR(255);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS credit_display TEXT;`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS remarks TEXT;`,
-
-    // Backfill: legacy licensor varchar → licensor_name
-    `UPDATE license_contracts
-        SET licensor_name = licensor
-      WHERE licensor_name IS NULL AND licensor IS NOT NULL;`,
-
-    // -----------------------------------------------------------------
-    // Phase 5a: 金銭条件 (1 ライセンス契約 = N 金銭条件)
-    //
-    // individual_license_terms テンプレは 金銭条件1 (自社製造) / 2
-    // (サブライセンス) / 3 (プロダクトアウト) の 3 つの slot を扱う。
-    // 各条件ごとに rate / base_price_label / currency / mg_amount を
-    // 持てるようにする。
-    //
-    // 利用許諾料計算書はこのテーブルの 1 行を指して計算する。
-    // -----------------------------------------------------------------
     // -----------------------------------------------------------------
     // Phase 22.20-C: サブライセンシー マスター。
     //   個別利用許諾条件書フォームの SubLicenseeTable は従来 formData の
@@ -893,7 +708,9 @@ export async function initDb() {
     // -----------------------------------------------------------------
     `CREATE TABLE IF NOT EXISTS work_sublicensees (
       id SERIAL PRIMARY KEY,
-      license_contract_id INTEGER NOT NULL REFERENCES license_contracts(id) ON DELETE CASCADE,
+      -- Phase 23.6.5: license_contracts は廃止予定のため FK 制約を外す
+      -- (列自体は物理 DROP 時に capability_id と一緒に撤去)
+      license_contract_id INTEGER NOT NULL,
       sublicensee_id INTEGER REFERENCES sublicensees(id) ON DELETE SET NULL,
       inline_name TEXT,
       category VARCHAR(50),
@@ -925,13 +742,8 @@ export async function initDb() {
     // -----------------------------------------------------------------
     `ALTER TABLE work_sublicensees ADD COLUMN IF NOT EXISTS work_id VARCHAR(120);`,
     `CREATE INDEX IF NOT EXISTS idx_ws_work_id ON work_sublicensees(work_id);`,
-    // backfill: 旧データを親 license_contracts.work_id で埋める
-    `UPDATE work_sublicensees ws
-        SET work_id = lc.work_id
-       FROM license_contracts lc
-      WHERE ws.license_contract_id = lc.id
-        AND ws.work_id IS NULL
-        AND lc.work_id IS NOT NULL;`,
+    // Phase 23.6.5: 旧 license_contracts ベースの backfill は廃止
+    // (license_contracts テーブルが新規 DB には存在しないため)。
 
     // -----------------------------------------------------------------
     // Phase 22.18: 原作マスター (ledgers) + 素材マスター (materials)
@@ -986,67 +798,16 @@ export async function initDb() {
       UNIQUE(ledger_id, material_no)
     );`,
     `CREATE INDEX IF NOT EXISTS idx_materials_ledger ON materials(ledger_id);`,
-    // license_contracts に 原作 / 素材 / Work ID の参照列を追加 (nullable で legacy データを壊さない)
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS ledger_ref_id INTEGER REFERENCES ledgers(id);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS material_ref_id INTEGER REFERENCES materials(id);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS work_id VARCHAR(120) UNIQUE;`,
-    `CREATE INDEX IF NOT EXISTS idx_lc_ledger_ref ON license_contracts(ledger_ref_id);`,
-    `CREATE INDEX IF NOT EXISTS idx_lc_material_ref ON license_contracts(material_ref_id);`,
+    // Phase 23.6.5: license_contracts の ALTER は廃止 (テーブル自体が新規 DB には存在しない)。
 
-    `CREATE TABLE IF NOT EXISTS license_financial_conditions (
-      id SERIAL PRIMARY KEY,
-      license_contract_id INTEGER NOT NULL REFERENCES license_contracts(id) ON DELETE CASCADE,
-      condition_no INTEGER NOT NULL,            -- 1=自社製造, 2=サブライセンス, 3=プロダクトアウト
-      region_language_label TEXT,               -- 例: 国内・日本語
-      calc_method VARCHAR(50),                  -- ROYALTY / FIXED / SUBSCRIPTION
-      rate_pct DECIMAL(7, 4),                   -- 例: 5.0000 (%)
-      base_price_label TEXT,                    -- 例: 上代 (MSRP)
-      calc_period VARCHAR(50),                  -- 例: 四半期 / 月次
-      currency VARCHAR(10) DEFAULT 'JPY',
-      formula_text TEXT,                        -- 例: 上代 × 5.0% × 製造数
-      payment_terms TEXT,
-      mg_amount DECIMAL(15, 2) DEFAULT 0,       -- MG 総額 (この条件単位)
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(license_contract_id, condition_no)
-    );`,
-    `CREATE INDEX IF NOT EXISTS idx_lfc_contract ON license_financial_conditions(license_contract_id);`,
-    // -----------------------------------------------------------------
-    // Phase 22.20-B: 計算期間を構造化。
-    //   calc_period_kind         : 種別 (MANUFACTURING/MONTHLY/QUARTERLY/SEMIANNUAL/ANNUAL)
-    //   calc_period_close_month  : 締め月 (1-12, MANUFACTURING/MONTHLY は NULL)
-    //   既存 calc_period (free text) は表示ラベルとして使い続けるが、
-    //   新規入力時はこの 2 列から自動生成 (例: "四半期 (3月締)")
-    // -----------------------------------------------------------------
-    `ALTER TABLE license_financial_conditions
-       ADD COLUMN IF NOT EXISTS calc_period_kind VARCHAR(20);`,
-    `ALTER TABLE license_financial_conditions
-       ADD COLUMN IF NOT EXISTS calc_period_close_month SMALLINT;`,
-    // Phase 22.21.95: AG (Advance Guarantee = 前払い保証金) 列を追加。
-    //   旧バージョンでは mg_amount を AG 相当の消化型として使っていたが、
-    //   MG / AG の役割を分離するため AG 用の独立列を追加。
-    //   - mg_amount: 最低保証額 (floor 用. 累積消化なし)
-    //   - ag_amount: 前払い保証金 (累積消化型. royalty_calculations から SUM)
-    `ALTER TABLE license_financial_conditions
-       ADD COLUMN IF NOT EXISTS ag_amount DECIMAL(15, 2) DEFAULT 0;`,
-
-    // Backfill: 既存 license_contracts.royalty_rate / mg_amount を
-    // condition_no=1 の自社製造条件として一行立てる。
-    `INSERT INTO license_financial_conditions
-       (license_contract_id, condition_no, calc_method, rate_pct, mg_amount, currency)
-     SELECT lc.id, 1, 'ROYALTY',
-            COALESCE(lc.royalty_rate * 100, 0),
-            COALESCE(lc.mg_amount, 0),
-            'JPY'
-       FROM license_contracts lc
-       LEFT JOIN license_financial_conditions lfc
-         ON lfc.license_contract_id = lc.id AND lfc.condition_no = 1
-      WHERE lfc.id IS NULL;`,
+    // Phase 23.6.5: license_financial_conditions の CREATE / ALTER / Backfill は廃止
+    //   (capability_financial_conditions に統合済み)。
 
     `CREATE TABLE IF NOT EXISTS manufacturing_events (
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) UNIQUE NOT NULL,
-      license_contract_id INTEGER REFERENCES license_contracts(id),
+      -- Phase 23.6.5: license_contracts は廃止予定のため FK 制約を外す
+      license_contract_id INTEGER,
       product_name VARCHAR(255) NOT NULL,
       completion_date DATE,
       quantity INTEGER,
@@ -1071,7 +832,8 @@ export async function initDb() {
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50) NOT NULL,
       manufacturing_event_id INTEGER REFERENCES manufacturing_events(id) UNIQUE,
-      license_contract_id INTEGER REFERENCES license_contracts(id),
+      -- Phase 23.6.5: license_contracts は廃止予定のため FK 制約を外す
+      license_contract_id INTEGER,
       payment_due_date DATE,
       reporting_deadline DATE,
       total_amount DECIMAL(15, 2),
@@ -1097,8 +859,10 @@ export async function initDb() {
     `CREATE TABLE IF NOT EXISTS royalty_calculations (
       id SERIAL PRIMARY KEY,
       backlog_issue_key VARCHAR(50),               -- 計算書の Backlog issue
-      license_contract_id INTEGER REFERENCES license_contracts(id),
-      license_financial_condition_id INTEGER REFERENCES license_financial_conditions(id),
+      -- Phase 23.6.5: license_contracts / license_financial_conditions は廃止予定のため FK 制約を外す
+      -- (列自体は物理 DROP 時に capability_id と一緒に撤去予定)
+      license_contract_id INTEGER,
+      license_financial_condition_id INTEGER,
       manufacturing_event_id INTEGER REFERENCES manufacturing_events(id),
       calc_type VARCHAR(20),                       -- manufacturing / sales / sublicense
       unit_price DECIMAL(15, 2),                   -- 基準価格 (MSRP 等)
@@ -1194,8 +958,7 @@ export async function initDb() {
     `ALTER TABLE workflow_settings ADD COLUMN IF NOT EXISTS next_status_id INTEGER;`,
     `ALTER TABLE workflow_settings ADD COLUMN IF NOT EXISTS document_prefix VARCHAR(50);`,
     `ALTER TABLE royalty_payments ADD COLUMN IF NOT EXISTS backlog_issue_key VARCHAR(50);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS mg_amount DECIMAL(15, 2);`,
-    `ALTER TABLE license_contracts ADD COLUMN IF NOT EXISTS fee_structure VARCHAR(50);`,
+    // Phase 23.6.5: license_contracts への ALTER は廃止 (テーブル自体が新規 DB には存在しない)。
 
     // 8. Contract Check & Capabilities (Audit/Referral API Support)
     `CREATE TABLE IF NOT EXISTS contract_purposes (
@@ -1604,6 +1367,30 @@ export async function initDb() {
     `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS capability_id INTEGER REFERENCES contract_capabilities(id);`,
     `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS capability_financial_condition_id INTEGER REFERENCES capability_financial_conditions(id);`,
     `CREATE INDEX IF NOT EXISTS idx_rc_capability ON royalty_calculations(capability_id);`,
+
+    // -----------------------------------------------------------------
+    // Phase 23.6.4: royalty_calculations.capability_id バックフィル
+    //   既存の license_contract_id → contract_capabilities への張替を、
+    //   documents.document_number (= license_contracts.contract_number /
+    //   ledger_number / work_id) 経由で行う。
+    //   旧 license_contracts テーブルがまだ存在する DB でのみ実行
+    //   (to_regclass でガード)。新規 DB ではスキップされる。
+    //   冪等: WHERE rc.capability_id IS NULL で再実行可。
+    // -----------------------------------------------------------------
+    `DO $rc_backfill$
+     BEGIN
+       IF to_regclass('public.license_contracts') IS NOT NULL THEN
+         UPDATE royalty_calculations rc
+            SET capability_id = cc.id
+           FROM license_contracts lc
+           JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(lc.contract_number, lc.ledger_number, lc.work_id)
+          WHERE rc.license_contract_id = lc.id
+            AND rc.capability_id IS NULL
+            AND cc.document_number IS NOT NULL;
+       END IF;
+     END
+     $rc_backfill$;`,
 
     `CREATE TABLE IF NOT EXISTS contract_decision_logs (
       id SERIAL PRIMARY KEY,

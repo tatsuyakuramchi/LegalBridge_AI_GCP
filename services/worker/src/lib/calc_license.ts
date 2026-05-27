@@ -86,23 +86,27 @@ export function applyMgConsumption(
 // -------------------------------------------------------------------
 
 /**
- * 指定ライセンス契約 (任意で特定の金銭条件) のこれまでの MG 累積
+ * 指定契約 (任意で特定の金銭条件) のこれまでの MG 累積
  * 消化額を返す。Phase 5b の preview/save エンドポイントで「今回前の
  * MG 残」を求めるのに使う。
  *
- * 注: license_financial_condition_id で絞らない場合、その契約全体の
+ * Phase 23: royalty_calculations を license_contract_id /
+ *   license_financial_condition_id → capability_id /
+ *   capability_financial_condition_id に切替。引数名は後方互換のため維持。
+ *
+ * 注: condition_id で絞らない場合、その契約全体の
  *      MG 累積消化を返す (金銭条件単位の MG が複数ある場合に注意)。
  */
 export async function getMgConsumedToDate(
-  licenseContractId: number,
-  licenseFinancialConditionId?: number,
+  capabilityId: number,
+  capabilityFinancialConditionId?: number,
   excludeCalculationId?: number
 ): Promise<number> {
-  const conditions: string[] = ["license_contract_id = $1"];
-  const params: any[] = [licenseContractId];
-  if (licenseFinancialConditionId != null) {
-    params.push(licenseFinancialConditionId);
-    conditions.push(`license_financial_condition_id = $${params.length}`);
+  const conditions: string[] = ["capability_id = $1"];
+  const params: any[] = [capabilityId];
+  if (capabilityFinancialConditionId != null) {
+    params.push(capabilityFinancialConditionId);
+    conditions.push(`capability_financial_condition_id = $${params.length}`);
   }
   if (excludeCalculationId != null) {
     params.push(excludeCalculationId);
@@ -121,17 +125,19 @@ export async function getMgConsumedToDate(
  * Phase 22.21.95: AG (前払い保証金) の累積消化額を返す。
  *   royalty_calculations.ag_consumed_this_time (新規列) を SUM する。
  *   列が存在しない古い DB では undefined_column 例外を握り潰して 0 を返す。
+ *
+ * Phase 23: capability_id / capability_financial_condition_id ベース。
  */
 export async function getAgConsumedToDate(
-  licenseContractId: number,
-  licenseFinancialConditionId?: number,
+  capabilityId: number,
+  capabilityFinancialConditionId?: number,
   excludeCalculationId?: number
 ): Promise<number> {
-  const conditions: string[] = ["license_contract_id = $1"];
-  const params: any[] = [licenseContractId];
-  if (licenseFinancialConditionId != null) {
-    params.push(licenseFinancialConditionId);
-    conditions.push(`license_financial_condition_id = $${params.length}`);
+  const conditions: string[] = ["capability_id = $1"];
+  const params: any[] = [capabilityId];
+  if (capabilityFinancialConditionId != null) {
+    params.push(capabilityFinancialConditionId);
+    conditions.push(`capability_financial_condition_id = $${params.length}`);
   }
   if (excludeCalculationId != null) {
     params.push(excludeCalculationId);
@@ -209,38 +215,34 @@ export async function previewRoyaltyCalculation(params: {
   currency: string;
   formula_breakdown: string;
 }> {
-  // Phase 22.21.91: capability ベースの preview なら capability_financial_conditions
-  // から条件を引く。license ベースのときは従来通り license_financial_conditions から。
+  // Phase 23: license_financial_conditions は廃止され、capability_financial_conditions
+  //   に統合された。preview は capability_financial_condition_id 優先、なければ
+  //   後方互換として license_financial_condition_id を capability_financial_conditions.id
+  //   として解釈する (Phase 23 マイグレーションで ID が引き継がれている前提)。
   // Phase 22.21.95: ag_amount を SELECT に追加 (列が無い古い DB では COALESCE で 0)。
-  const useCapability =
-    (!params.license_financial_condition_id ||
-      params.license_financial_condition_id <= 0) &&
-    !!params.capability_financial_condition_id &&
-    params.capability_financial_condition_id > 0;
-  const condRes = useCapability
-    ? await query(
-        `SELECT rate_pct, mg_amount,
-                COALESCE(ag_amount, 0) AS ag_amount,
-                currency
-           FROM capability_financial_conditions
-          WHERE id = $1`,
-        [params.capability_financial_condition_id]
-      )
-    : await query(
-        `SELECT rate_pct, mg_amount,
-                COALESCE(ag_amount, 0) AS ag_amount,
-                currency
-           FROM license_financial_conditions
-          WHERE id = $1`,
-        [params.license_financial_condition_id]
-      );
+  const cfcId =
+    params.capability_financial_condition_id &&
+    params.capability_financial_condition_id > 0
+      ? params.capability_financial_condition_id
+      : params.license_financial_condition_id;
+  const condRes = await query(
+    `SELECT rate_pct, mg_amount,
+            COALESCE(ag_amount, 0) AS ag_amount,
+            currency
+       FROM capability_financial_conditions
+      WHERE id = $1`,
+    [cfcId]
+  );
   if (condRes.rows.length === 0) {
     throw new Error(
-      useCapability
-        ? `capability_financial_condition ${params.capability_financial_condition_id} not found`
-        : `license_financial_condition ${params.license_financial_condition_id} not found`
+      `capability_financial_condition ${cfcId} not found`
     );
   }
+  // Phase 22.21.91 互換: 旧 useCapability フラグ用途は AG 履歴 lookup の
+  //   有無に使われていた。license_contract_id が >0 なら履歴あり、capability
+  //   ベースの単独 preview なら履歴なし、として扱う。
+  const hasLicenseHistory =
+    !!params.license_contract_id && params.license_contract_id > 0;
   const ratePct = Number(condRes.rows[0].rate_pct) || 0;
   const mgAmount = Number(condRes.rows[0].mg_amount) || 0;
   // Phase 22.21.95: AG = DB の ag_amount。フォームから明示的に渡された場合は上書き。
@@ -259,13 +261,14 @@ export async function previewRoyaltyCalculation(params: {
   // Phase 22.21.95: MG は floor 化したので consumed_before 不要 (常に 0)。
   const mgConsumedBefore = 0;
   // AG 累積消化は royalty_calculations.ag_consumed_this_time から SUM。
-  //   capability ベースの preview では履歴紐付けが無いので 0。
-  const agConsumedBefore = useCapability
-    ? 0
-    : await getAgConsumedToDate(
+  //   capability ベースの単独 preview では履歴紐付けが無いので 0。
+  // Phase 23: getAgConsumedToDate は capability_id ベースに変更。
+  const agConsumedBefore = hasLicenseHistory
+    ? await getAgConsumedToDate(
         params.license_contract_id,
-        params.license_financial_condition_id
-      );
+        cfcId
+      )
+    : 0;
 
   // すべて billing.calculateFee に集約
   const r = calculateFee(
@@ -334,10 +337,13 @@ export async function getLicenseMgStatus(
     fully_consumed: boolean;
   }>
 > {
+  // Phase 23: license_financial_conditions → capability_financial_conditions。
+  //   引数 licenseContractId は capability_id として解釈する
+  //   (Phase 23 マイグレーションで ID が引き継がれている前提)。
   const conds = await query(
     `SELECT id, condition_no, mg_amount
-       FROM license_financial_conditions
-      WHERE license_contract_id = $1
+       FROM capability_financial_conditions
+      WHERE capability_id = $1
       ORDER BY condition_no ASC`,
     [licenseContractId]
   );
