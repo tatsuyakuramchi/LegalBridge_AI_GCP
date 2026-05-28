@@ -78,6 +78,12 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
 // Routes that should go to the READ service even on POST.
 const READ_PATHS_ON_POST: RegExp[] = [
   /^\/api\/contract-check(?:\/|$)/,
+  // Phase 25.1: 取引先 upsert は search-api の正規実装 (住所/口座 1:N +
+  //   数値正規化 + トランザクション) を本体とする。admin-ui の保存 (POST
+  //   /api/master/vendors の完全一致のみ) を search-api へ振り、worker の簡易
+  //   二重実装は使わない。サブパス (/:code 詳細 GET, /import-csv,
+  //   /upload-change-request の multipart) は対象外なので末尾を厳密に判定。
+  /^\/api\/master\/vendors(?:\?|$)/,
 ];
 
 function resolveBaseUrl(method: string, path: string): string {

@@ -308,6 +308,19 @@ export function requireDepartmentRole(opts: {
     const user: ReqUser | undefined = (req as any).user;
     const email = (user?.email || "").trim().toLowerCase();
 
+    // 0) Portal-secret 経由 (admin-ui の内部呼び出し) は部署ロール審査を
+    //    スキップして通過させる。requireAppRole と同じ扱い。admin-ui は
+    //    portal_secret で email を持たないため、ここで通さないと取引先保存等が
+    //    LB_ROLE_ENFORCE=true 環境で 403 になる (Phase 25.1)。
+    if (user?.source === "portal_secret") {
+      logAccess(req, "allow_signed", {
+        layer: "role",
+        resource: opts.resourceLabel,
+        reason: "portal_secret",
+      });
+      return next();
+    }
+
     // 1) Explicit email allowlist (env or opts)
     const envEmails = (process.env.LB_ROLE_ALLOWLIST_EMAILS || "")
       .split(",")

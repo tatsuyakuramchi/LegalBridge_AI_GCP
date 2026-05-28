@@ -119,9 +119,10 @@ export function VendorsPanel() {
 
   const [saving, setSaving] = React.useState(false)
 
-  // Worker /api/master/vendors は POST のみ (ON CONFLICT DO UPDATE で upsert)
-  // なので新規・編集とも同じ POST で送る。旧コードは PUT を使っていたが
-  // 該当ハンドラが無く 404 で詰まっていた。
+  // POST /api/master/vendors は新規・編集とも同じ (ON CONFLICT DO UPDATE で upsert)。
+  // Phase 25.1: apiRouter で本 POST は search-api の正規 upsert へルーティングされる
+  //   (住所/口座 1:N + 数値正規化 + トランザクション)。レスポンスは res.ok のみで判定
+  //   するため worker {success:true} / search-api {ok:true,vendor} 双方と互換。
   const save = async () => {
     setSaving(true)
     try {
