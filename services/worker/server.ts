@@ -9242,6 +9242,26 @@ ${details}
         /^(LEGAL|IMPORT|DEMO|PREVIEW|CRON|TIMER)-/i.test(String(issueKey));
       const licensorTNumberForTemplate = isSyntheticIssueKey ? "" : issueKey;
 
+      // Phase 25.5: config の dbField==="auto.docNumber" を持つ全フィールドに
+      //   採番値を流し込む。従来は CONTRACT_NO / ORDER_NO / DOC_NO の英語キーへ
+      //   ハードコードで差していたため、出版テンプレの日本語キー
+      //   ({{契約番号}} / {{条件書番号}} / {{追加条件書番号}}) が空欄になっていた。
+      //   ユーザーが手入力した値があればそれを優先する。
+      const autoNumberFields: Record<string, string> = {};
+      try {
+        const meta = loadTemplateMetadata();
+        const vars = (meta?.[templateType]?.vars || {}) as Record<string, any>;
+        for (const [k, def] of Object.entries(vars)) {
+          if (def?.dbField === "auto.docNumber") {
+            const manual = formData?.[k];
+            autoNumberFields[k] =
+              manual && String(manual).trim() ? String(manual).trim() : docNumber;
+          }
+        }
+      } catch (metaErr) {
+        console.warn("[generate] auto.docNumber field mapping failed:", metaErr);
+      }
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey,
@@ -9252,6 +9272,9 @@ ${details}
           details: {
             ...staffInfo,
             ...formData,
+            // Phase 25.5: auto.docNumber フィールド (出版の 契約番号/条件書番号/
+            //   追加条件書番号 等) に採番値を反映。...formData の後に置いて空値を上書き。
+            ...autoNumberFields,
             // Phase 22.21.97: 合成キーを除外した実 Backlog T番号
             licensor_t_number: licensorTNumberForTemplate,
             // Phase 17i: 経費（テンプレ側で {{#each expenses}} / {{expensesTotalIncTax}}）
