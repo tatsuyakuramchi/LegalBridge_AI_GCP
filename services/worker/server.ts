@@ -3225,6 +3225,16 @@ ${details}
         .status(400)
         .json({ error: "vendor_code と vendor_name は必須です" });
     }
+    // Phase 25.1: 数値カラム (capital_yen BIGINT / employee_count INTEGER) は
+    //   「1,000,000」等カンマ付き文字列が来ると Number() が NaN になり、
+    //   BIGINT/INTEGER への INSERT で "invalid input syntax" → 500 になっていた
+    //   (企業情報の資本金・従業員数の登録で発生)。数字以外を除去して安全に
+    //   パースし、不正値は null にフォールバックする (search-api 側 normalizeNumber と同等)。
+    const toIntOrNull = (x: any): number | null => {
+      if (x == null || x === "") return null;
+      const n = Number(String(x).replace(/[^0-9.-]/g, ""));
+      return Number.isFinite(n) ? Math.trunc(n) : null;
+    };
     try {
       // 1) vendor 本体 upsert
       //   Phase 22.13: vendor_rep + contacts[] を受け取れるよう拡張。
@@ -3295,8 +3305,8 @@ ${details}
           // Phase 22.21.119 追加列
           v.corporate_number || null,
           v.transaction_category || null,
-          v.capital_yen != null && v.capital_yen !== "" ? Number(v.capital_yen) : null,
-          v.employee_count != null && v.employee_count !== "" ? Number(v.employee_count) : null,
+          toIntOrNull(v.capital_yen),
+          toIntOrNull(v.employee_count),
           v.subcontract_act_applicable === true || v.subcontract_act_applicable === "true" || false,
           v.master_updated_at || null,
           v.main_business || null,
