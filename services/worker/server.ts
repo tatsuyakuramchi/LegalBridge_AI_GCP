@@ -3205,7 +3205,17 @@ ${details}
     //   contacts[] = [{ contact_name, contact_department?, title?, email?, phone?, is_primary?, sort_order?, remarks? }]
     //   contacts[] が渡されたら既存を全削除して入れ直し (= replacement semantics)。
     //   primary 担当者の name を vendors.contact_name にミラーして legacy 互換を維持。
-    const v = req.body;
+    const v = req.body || {};
+    // Phase 25.1: 必須項目ガード。詳細取得が 404 になった際にエラーボディを
+    //   そのまま編集対象として保存しようとすると vendor_name=NULL で
+    //   NOT NULL 制約違反 → 500 になっていた。空なら 400 を返して握る。
+    const vcode = String(v.vendor_code || "").trim();
+    const vname = String(v.vendor_name || "").trim();
+    if (!vcode || !vname) {
+      return res
+        .status(400)
+        .json({ error: "vendor_code と vendor_name は必須です" });
+    }
     try {
       // 1) vendor 本体 upsert
       //   Phase 22.13: vendor_rep + contacts[] を受け取れるよう拡張。
@@ -3260,10 +3270,12 @@ ${details}
            antisocial_check_result = EXCLUDED.antisocial_check_result
          RETURNING id`,
         [
-          // Phase 25.1: vendor_code 末尾空白の混入を防ぐため write 時に trim。
-          //   (検索/詳細は vendor_code 完全一致なので、前後空白があると
-          //    GET /api/master/vendors/:code が 404 になる事故があった)
-          String(v.vendor_code || "").trim(), v.vendor_name, v.trade_name || null, v.pen_name || null,
+          // Phase 25.1: vendor_code は受領値のまま使用する。ここで trim すると
+          //   既存行の vendor_code に末尾空白が残っている場合に ON CONFLICT
+          //   (vendor_code) が一致せず、重複行 INSERT や制約違反 (500) を
+          //   引き起こすため。前後空白の吸収は search-api getVendor 側 (TRIM
+          //   一致) と既存データの正規化 SQL で対応する。
+          v.vendor_code, v.vendor_name, v.trade_name || null, v.pen_name || null,
           v.vendor_suffix || null, v.entity_type || null, v.withholding_enabled || false,
           v.aliases || null, v.address || null, v.phone || null, v.email || null,
           v.contact_department || null, v.contact_name || null, v.master_contract_ref || null,
