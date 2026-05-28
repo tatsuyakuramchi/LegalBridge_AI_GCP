@@ -33,6 +33,10 @@ export type DocumentType =
   | "inspection_certificate"
   | "maintenance_spec"
   | "legal_response" // Phase 22.21.83: 法務回答書 (法務相談・事務手続への正式回答)
+  | "pub_master_individual" // Phase 25: 出版等許諾基本契約書 (個人版)
+  | "pub_master_corporate" // Phase 25: 出版等許諾基本契約書 (法人版)
+  | "pub_license_terms" // Phase 25: 出版等利用許諾条件書
+  | "pub_additional_terms" // Phase 25: 追加利用許諾条件書 (商品化・映像化・デジタルゲーム化)
   | "license_calculation_sheet"; // legacy alias (= royalty_statement 系の旧名)
 
 export class DocumentService {

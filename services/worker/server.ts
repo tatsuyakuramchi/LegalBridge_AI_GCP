@@ -9619,6 +9619,12 @@ ${details}
           formData.VENDOR_NAME ||
             formData.PARTY_B_NAME ||
             formData.partyBName ||
+            // Phase 25: 出版契約の相手方 (許諾者=甲) は VENDOR_NAME ではなく
+            //   許諾者法人名 / 許諾者氏名 / 許諾者 で入る。vendor master に
+            //   一致するものがあれば紐付け、無ければ vendor_id=null で登録。
+            formData["許諾者法人名"] ||
+            formData["許諾者氏名"] ||
+            formData["許諾者"] ||
             ""
         ).trim();
 
@@ -9666,8 +9672,18 @@ ${details}
         //     'license_condition'    : 利用許諾 (license / royalty)
         //     'delivery_record'      : 検収書 (mirror 用、picker には載らない)
         let recordType = "master_contract";
+        // Phase 25: 出版系を最優先で判定。pub_license_terms は "license" を含む
+        //   ため、後段の license 判定より前に分岐させないと誤分類になる。
+        //     pub_master_*         → master_contract (出版基本契約)
+        //     pub_license_terms    → individual_contract (基本契約配下の利用許諾条件書)
+        //     pub_additional_terms → individual_contract (追加利用許諾条件書)
+        if (templateType.startsWith("pub_")) {
+          recordType = templateType.startsWith("pub_master_")
+            ? "master_contract"
+            : "individual_contract";
+        }
         // Phase 22.21.82: fee_statement テンプレ削除に伴い branch から除去
-        if (
+        else if (
           templateType.includes("license") ||
           templateType.includes("royalty")
         ) {
@@ -9711,16 +9727,27 @@ ${details}
           [
             vendorId,
             recordType,
-            templateType.includes("license") ? "license" : "service",
+            // Phase 25: 出版系は publication。pub_license_terms の "license"
+            //   含有による誤判定を避けるため startsWith("pub_") を先に評価。
+            templateType.startsWith("pub_")
+              ? "publication"
+              : templateType.includes("license")
+              ? "license"
+              : "service",
             templateType,
-            formData.CONTRACT_TITLE || formData.contract_title || issue.summary,
+            formData.CONTRACT_TITLE ||
+              formData.contract_title ||
+              // Phase 25: 出版系は作品名を契約タイトルに採用
+              formData["対象出版物名"] ||
+              formData["原著作物名"] ||
+              issue.summary,
             docNumber,
             "executed",
             formData.EFFECTIVE_DATE || formData.effectiveDate || null,
             formData.EXPIRATION_DATE || formData.expirationDate || null,
             formData.AUTO_RENEWAL === "true" || formData.AUTO_RENEWAL === true || false,
-            formData.ORIGINAL_WORK || formData.originalWork || "",
-            formData.PRODUCT_NAME || formData.productName || "",
+            formData.ORIGINAL_WORK || formData.originalWork || formData["原著作物名"] || "",
+            formData.PRODUCT_NAME || formData.productName || formData["対象出版物名"] || "",
             formData.WORK_NAME || formData.workName || "",
             formData.MEDIA || formData.media || "",
             formData.TERRITORY || formData.territory || "",

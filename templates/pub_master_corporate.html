@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>出版等許諾基本契約書（法人版） - {{契約番号}}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 20mm 22mm 25mm;
+      @bottom-center {
+        content: "- " counter(page) " -";
+        font-size: 8.5pt;
+        font-family: "Noto Serif CJK JP", "IPAMincho", serif;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Noto Serif CJK JP", "IPAMincho", "MS Mincho", serif;
+      font-size: 10pt;
+      line-height: 1.75;
+      color: #000;
+      background-color: #fff;
+    }
+    .contract-document {
+      max-width: 210mm;
+      margin: 0 auto;
+      background-color: #fff;
+      padding: 18mm 20mm 22mm 25mm;
+    }
+    .doc-header {
+      display: flex;
+      justify-content: flex-end;
+      align-items: baseline;
+      gap: 0.45em;
+      margin-bottom: 0.5em;
+      font-size: 8.5pt;
+      color: #555;
+      letter-spacing: 0.05em;
+    }
+    .doc-header .header-separator { color: #aaa; }
+    .revision-notice {
+      margin: 0.25em 0 0.9em;
+      padding: 0.35em 0.75em;
+      border: 0.8pt solid #b8a05a;
+      color: #6f5600;
+      background: #fffdf2;
+      font-size: 8.8pt;
+      font-weight: bold;
+      text-align: center;
+      letter-spacing: 0.03em;
+    }
+    h1.contract-title {
+      text-align: center;
+      font-size: 14pt;
+      font-weight: bold;
+      letter-spacing: 0.28em;
+      margin-bottom: 0.3em;
+      text-decoration: underline;
+      text-underline-offset: 0.22em;
+    }
+    .contract-subtitle {
+      text-align: center;
+      font-size: 9pt;
+      color: #444;
+      margin-bottom: 1em;
+      letter-spacing: 0.12em;
+    }
+    .tobogaki {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.15em;
+      font-size: 9pt;
+      line-height: 1.6;
+      border-top: 1.5pt solid #1a1a1a;
+      border-bottom: 1.5pt solid #1a1a1a;
+    }
+    .tobogaki th, .tobogaki td {
+      border: none;
+      border-bottom: 0.5pt solid #d8d8d8;
+      padding: 0.45em 0.7em;
+      vertical-align: top;
+    }
+    .tobogaki .sec-row td {
+      padding-top: 0.9em;
+      padding-bottom: 0.25em;
+      border-bottom: 0.5pt solid #888;
+      font-size: 7.5pt;
+      font-weight: bold;
+      letter-spacing: 0.25em;
+      color: #555;
+    }
+    .tobogaki .col-item {
+      width: 36%;
+      font-weight: bold;
+      color: #1a1a1a;
+      padding-left: 0.5em;
+    }
+    .tobogaki .col-item .art-ref { font-size: 7.5pt; font-weight: normal; color: #777; }
+    .tobogaki .col-item .sub-note {
+      display: block;
+      font-size: 7.5pt;
+      font-weight: normal;
+      color: #888;
+      margin-top: 0.1em;
+    }
+    .tobogaki .col-value { width: 64%; word-break: break-all; overflow-wrap: break-word; color: #1a1a1a; }
+    .tobogaki .special-cell { min-height: 2.5em; word-break: break-all; overflow-wrap: break-word; color: #1a1a1a; white-space: pre-wrap; }
+    .head-signature { margin: 0.2em 0 1.3em; page-break-inside: avoid; font-size: 9.2pt; line-height: 1.55; }
+    .head-signature .sig-date { text-align: right; margin-bottom: 0.8em; }
+    .head-signature .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2em; }
+    .head-signature .sig-party { border-top: 1pt solid #1a1a1a; padding-top: 0.5em; }
+    .head-signature .party-label { font-weight: bold; margin-bottom: 0.3em; }
+    .head-signature .sig-name-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8em; margin-top: 0.3em; }
+    .head-signature .stamp-box { width: 52px; height: 52px; border: 1pt solid #1a1a1a; display: flex; justify-content: center; align-items: center; font-size: 11pt; background-color: #fff; flex-shrink: 0; }
+    .preamble { font-size: 9.5pt; text-indent: 1em; margin-bottom: 0.9em; line-height: 1.7; text-align: justify; }
+    .article { margin-bottom: 0.9em; page-break-inside: auto; }
+    .article-title { font-weight: bold; font-size: 10pt; margin-bottom: 0.15em; page-break-after: avoid; }
+    .clause { margin-left: 0; margin-bottom: 0.35em; text-align: justify; page-break-inside: auto; }
+    .clause-content { padding-left: 1.5em; text-indent: -1.5em; }
+    .sub-clause { margin-left: 1.5em; padding-left: 2em; text-indent: -2em; margin-bottom: 0.25em; text-align: justify; page-break-inside: auto; }
+    .margin-note { text-align: center; margin: 1.5em 0 2em; font-size: 9pt; color: #666; }
+    @media print {
+      body { background-color: #fff; }
+      .contract-document { box-shadow: none; margin: 0; width: 100%; max-width: none; padding: 0; }
+      .head-signature, .tobogaki { page-break-inside: avoid; }
+      p { orphans: 3; widows: 3; }
+    }
+
+  </style>
+</head>
+<body>
+<div class="contract-document">
+
+  <div class="doc-header">
+    <span class="header-item">締結日：{{契約締結日}}</span>
+    <span class="header-separator">｜</span>
+    <span class="header-item">契約番号：{{契約番号}}</span>
+  </div>
+
+  {{#if 再発行フラグ}}
+  <div class="revision-notice">再発行版 (Rev. {{改訂番号}}) — 元契約書: {{元契約番号}}</div>
+  {{/if}}
+
+  <h1 class="contract-title">出版等許諾基本契約書</h1>
+  <div class="contract-subtitle">法人版（二次利用条項付き）</div>
+
+  <table class="tobogaki">
+    <tbody>
+
+      <tr class="sec-row"><td colspan="2">当　事　者</td></tr>
+      <tr>
+        <td class="col-item">許諾者（甲）</td>
+        <td class="col-value">
+          {{許諾者住所}}<br>
+          {{許諾者法人名}}<br>
+          {{代表者職名}}　{{代表者氏名}}<br>
+          担当：{{担当者氏名}}<br>
+          電話番号：{{担当者電話番号}}<br>
+          メール：{{担当者メール}}
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">アークライト（乙）</td>
+        <td class="col-value">
+          {{アークライト住所}}<br>
+          株式会社アークライト<br>
+          代表取締役　{{アークライト代表者氏名}}
+        </td>
+      </tr>
+
+      <tr class="sec-row"><td colspan="2">許　諾　条　件</td></tr>
+      <tr>
+        <td class="col-item">
+          許諾範囲<span class="art-ref">（第３条・第４条・別紙）</span>
+          <span class="sub-note">具体的条件・対象著作物・許諾地域は別紙個別契約による</span>
+        </td>
+        <td class="col-value">出版許諾：紙媒体・電子書籍（第３条）<br>二次利用許諾：翻訳・翻案等（第４条）<br>商品化・映像化・デジタルゲーム化等は、追加条件書、覚書その他の書面で明示した場合に限り許諾</td>
+      </tr>
+      <tr>
+        <td class="col-item">
+          著作権利用料（印税）<span class="art-ref">（第１５条・別紙）</span>
+          <span class="sub-note">料率・算定根拠・支払期日は別紙個別契約による</span>
+        </td>
+        <td class="col-value">別紙個別契約に定めるとおり</td>
+      </tr>
+      <tr>
+        <td class="col-item">
+          振込先口座<span class="art-ref">（第１５条）</span>
+          <span class="sub-note">許諾者が指定する金融機関口座</span>
+        </td>
+        <td class="col-value">
+          {{振込先銀行名}}　{{支店名}}<br>
+          {{口座種別}}　{{口座番号}}<br>
+          口座名義（カナ）：{{口座名義カナ}}
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">
+          インボイス制度<span class="art-ref">（第１５条第５項・第６項）</span>
+          <span class="sub-note">適格請求書発行事業者の登録状況</span>
+        </td>
+        <td class="col-value">
+          適格請求書発行事業者：{{インボイス登録状況}}<br>
+          登録番号：{{インボイス登録番号}}
+        </td>
+      </tr>
+
+      <tr class="sec-row"><td colspan="2">準　拠　法・管　轄</td></tr>
+      <tr>
+        <td class="col-item">準拠法・合意管轄<span class="art-ref">（第３０条）</span></td>
+        <td class="col-value">日本法／東京地方裁判所（第一審専属）</td>
+      </tr>
+
+      <tr class="sec-row"><td colspan="2">特　記　事　項</td></tr>
+      <tr>
+        <td colspan="2" class="special-cell">{{特記事項}}</td>
+      </tr>
+    </tbody>
+  </table>
+
+
+  <div class="head-signature">
+    <div class="sig-date">{{契約締結日}}</div>
+    <div class="sig-grid">
+      <div class="sig-party">
+        <div class="party-label">許諾者（甲）</div>
+        <div>{{許諾者住所}}</div>
+        <div>{{許諾者法人名}}</div>
+        <div class="sig-name-row">
+          <span>{{代表者職名}}　{{代表者氏名}}</span>
+          <span class="stamp-box">印</span>
+        </div>
+        <div style="font-size:8.5pt;margin-top:0.3em;">担当：{{担当者氏名}}　連絡先：{{担当者電話番号}}</div>
+      </div>
+      <div class="sig-party">
+        <div class="party-label">株式会社アークライト（乙）</div>
+        <div>{{アークライト住所}}</div>
+        <div class="sig-name-row">
+          <span>代表取締役　{{アークライト代表者氏名}}</span>
+          <span class="stamp-box">印</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="preamble">{{許諾者法人名}}（代表取締役{{代表者氏名}}）（以下「許諾者」という）と株式会社アークライト（以下「アークライト」という）は、許諾者が著作権を保有する著作物の出版等に関する基本的な取引条件を定めるため、以下のとおり出版等許諾基本契約書（以下「本基本契約」という）を締結する。</p>
+
+
+  <div class="article">
+    <div class="article-title">第１条　（定義）</div>
+    <div class="clause clause-content">　本基本契約において、以下の用語は以下の意味を有するものとする。</div>
+    <div class="sub-clause">（1）　「個別契約」とは、本基本契約に基づき、アークライトと許諾者との間で個別の著作物ごとに締結される利用許諾条件書をいう。</div>
+    <div class="sub-clause">（2）　「本著作物」とは、各個別契約において特定された著作物をいう。</div>
+    <div class="sub-clause">（3）　「本出版物」とは、本著作物に基づきアークライトが制作・発行する出版物（電子書籍を含む）をいう。</div>
+    <div class="sub-clause">（4）　「技術的保護手段（DRM）」とは、著作権法第２条第１項第20号に定める技術的保護手段をいい、電子書籍の不正複製・不正配布を防止するためにコンテンツデータに適用される電子的手段をいう。</div>
+    <div class="sub-clause">（5）　「配信プラットフォーム」とは、電子書籍の配信・販売を行う事業者が運営するオンラインサービスおよびそのシステムをいう。</div>
+    <div class="sub-clause">（6）　「電子書籍」とは、本著作物に基づきアークライトが制作・配信するデジタルコンテンツであって、スマートフォン・タブレット端末・電子書籍専用端末・PCその他の汎用情報端末向けの電子書籍ストアまたは電子書籍専用アプリを通じて配信されるものをいう。家庭用ゲーム機・ゲームコンソール・ゲームプラットフォームその他のゲーム専用システムを通じた配信は、本定義における「電子書籍」に含まない。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２条　（個別契約との関係）</div>
+    <div class="clause clause-content">　アークライトと許諾者は、本基本契約に基づき、個別の著作物ごとに個別契約を締結するものとする。</div>
+    <div class="clause clause-content">２　個別契約は本基本契約の一部を構成する。本基本契約と個別契約との間に矛盾または相違がある場合は、別段の定めがない限り、個別契約の定めが優先するものとする。</div>
+    <div class="clause clause-content">３　本基本契約は、個別契約が締結された場合に、当該個別契約に係る著作物の利用について効力を生じる。</div>
+  </div>
+
+    <div class="article">
+    <div class="article-title">第３条　（出版の許諾）</div>
+    <div class="clause clause-content">　許諾者は、アークライトに対し、個別契約に定める条件の下で、本著作物について以下の各号に定める権利を独占的に許諾する。</div>
+    <div class="sub-clause">（1）　印刷媒体を用いた出版物（オンデマンド印刷を含む。以下「紙媒体出版物」という）として複製し、頒布すること（著作権法第21条・第26条の2）</div>
+    <div class="sub-clause">（2）　電子書籍（第１条第６号に定めるものをいう）の複製・公衆送信（送信可能化を含む）（著作権法第21条・第23条）（個別契約において電子書籍出版を許諾すると定めた場合に限る）</div>
+    <div class="clause clause-content">２　許諾者は、アークライトに対し、前項の出版に関連する広告宣伝および販売促進を目的として本著作物の一部を利用した素材を制作、複製、頒布、展示することを非独占的に許諾する。</div>
+    <div class="clause clause-content">３　アークライトは、第１項に定める利用について、書店、取次、流通業者、配信プラットフォーム事業者その他アークライトが適切と認める第三者に再許諾することができる。</div>
+    <div class="clause clause-content">４　アークライトは、採用する配信プラットフォームおよびデジタルフォーマットを個別契約において定めるものとし、以下の各号に該当する場合は速やかに許諾者に通知し、必要に応じて誠実に協議するものとする。</div>
+    <div class="sub-clause">（1）　採用する配信プラットフォームまたはデジタルフォーマットを変更するとき</div>
+    <div class="sub-clause">（2）　特定の配信プラットフォームへの独占的提供を条件とする配信プログラムに参加するとき</div>
+    <div class="sub-clause">（3）　プラットフォームのサービス終了その他の事由により電子書籍配信の継続が困難となったとき</div>
+    <div class="clause clause-content">５　アークライトは、第１項第２号に基づく電子書籍の配信にあたり、DRMを適切に実装するものとする。ただし、許諾者の書面による承諾を得た場合はこの限りでない。アークライトが第３項に基づく再許諾を配信プラットフォーム事業者に行う場合、当該プラットフォームが提供するDRM技術を本著作物の電子書籍データに適用する権限を、許諾者はアークライトに予め授権するものとする。</div>
+    <div class="clause clause-content">６　アークライトは、使用するDRM技術の概要を個別契約において、または電子書籍の初回配信前に許諾者に通知するものとする。第三者によるDRM回避（著作権法第113条第7項が定める技術的保護手段の回避に該当する行為を含む）を知得した場合は、速やかに許諾者に通知するとともに合理的な措置を講じるものとする。</div>
+    <div class="clause clause-content">７　本条に基づく許諾は、著作権法第79条以下に定める出版権の設定ではなく、当事者間の独占的利用許諾である。甲乙が協議の上、同法第79条第２項に定める出版権（電子書籍配信を含む）の設定を希望する場合は、別途書面により合意するものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第４条　（二次利用の許諾および再許諾権）</div>
+    <div class="clause clause-content">　許諾者は、アークライトに対し、個別契約、追加条件書、覚書その他の書面（以下本条において「追加条件書等」という）において明示された範囲および条件に限り、本著作物について、以下の各号に定める権利を独占的に許諾する（以下「二次利用」という）。</div>
+    <div class="sub-clause">（1）　翻訳・翻案その他の方法による二次的著作物の創作（著作権法第27条）</div>
+    <div class="sub-clause">（2）　前号により創作された二次的著作物の複製・上演・演奏・上映・公衆送信・展示・頒布・譲渡・貸与その他の利用（著作権法第28条）</div>
+    <div class="sub-clause">（3）　本著作物に含まれる図版・イラスト等を商品（グッズ・ポスター・アートプリント・クリアファイルその他）に用いた製造・販売（著作権法第21条）</div>
+    <div class="sub-clause">（4）　本著作物を翻案して実写映画・アニメーション・テレビドラマ・OVAその他の映像作品を制作し、上映・放送・配信・頒布すること（著作権法第22条の2、第23条、第26条、第27条および第28条）</div>
+    <div class="sub-clause">（5）　本著作物に含まれるキャラクターデザイン・背景・UI素材等をビデオゲームその他のゲームソフトウェアに利用し、または本著作物に基づくゲームのキャラクター・世界観を創作すること（著作権法第21条、第27条および第28条）</div>
+    <div class="sub-clause">（6）　上記各号のほか、追加条件書等において別途定めた利用態様</div>
+    <div class="clause clause-content">２　本基本契約は、前項各号の二次利用を将来の権利メニューとして定めるものであり、本基本契約の締結のみをもって、商品化、映像化、デジタルゲーム化、アプリ化、グッズ化その他通常の出版利用を超える利用が当然に許諾されるものではない。これらの利用は、追加条件書等において、対象著作物、利用態様、地域、期間、対価、監修・承認条件その他必要な条件が明示された場合に限り許諾される。</div>
+    <div class="clause clause-content">３　許諾者は、アークライトが、追加条件書等において許諾された二次利用に係る権利の全部または一部を、自らの判断により第三者に再許諾することを認める（著作権等管理事業の委託を意図するものではない）。アークライトは、再許諾を行う場合、以下の条件を遵守するものとする。</div>
+    <div class="sub-clause">（1）　再許諾先に対し、本著作物の著作権および著作者人格権が許諾者に帰属する旨を契約書において明示すること</div>
+    <div class="sub-clause">（2）　再許諾先に対し、許諾者の著作権表示（クレジット表記）を維持する義務を課すること</div>
+    <div class="sub-clause">（3）　再許諾の相手方・利用態様・条件の概要を、再許諾後30日以内に許諾者に書面（電磁的方法を含む）で報告すること</div>
+    <div class="clause clause-content">４　第１項第４号（映像化）および第５号（デジタルゲーム化）に係る再許諾については、前項本文の規定にかかわらず、アークライトは当該プロジェクトの企画・主要条件（制作会社、配信先、対象プラットフォーム、制作スケジュール、主要な収益条件の概要を含む）を事前に許諾者に書面で提示し、許諾者の書面による承諾を得るものとする。許諾者は提示受領後20営業日以内に回答するものとし、合理的な理由なく承諾を拒絶または留保しないものとする。ただし、回答がないことのみをもって承諾があったものとはみなさない。</div>
+    <div class="clause clause-content">５　第３項の再許諾は、本基本契約および当該追加条件書等の有効期間中に限り効力を有する。本基本契約または当該追加条件書等が終了した場合、アークライトは再許諾先に対し速やかに許諾終了を通知するものとする。ただし、再許諾先が終了時点までに適法に制作・流通させた成果物の取扱いについては、別途誠実に協議する。</div>
+    <div class="clause clause-content">６　アークライトは、本条に基づく再許諾によって生じる再許諾先の行為について、許諾者との関係において責任を負うものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第５条　（著作者人格権の不行使）</div>
+    <div class="clause clause-content">　許諾者は、アークライトおよびアークライトが本基本契約に基づき再許諾した第三者に対し、本基本契約に基づく一切の利用において、著作者人格権（公表権、氏名表示権および同一性保持権）を行使しないものとする。</div>
+    <div class="clause clause-content">２　前項にかかわらず、許諾者の名誉または声望を害する方法による利用（著作権法第113条第11項）に対しては、許諾者は著作者人格権を行使することができる。</div>
+    <div class="clause clause-content">３　本条は、許諾者の著作者人格権を放棄するものではなく、本基本契約に基づく利用の範囲内における不行使の合意にとどまる。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第６条　（AI学習利用の制限）</div>
+    <div class="clause clause-content">　アークライトは、本著作物（本著作物に含まれる図版・イラスト等を含む。以下本条において同じ）を、生成AI・機械学習モデルその他のAIシステムの学習用データセットとして利用し、または第三者に提供してはならない。</div>
+    <div class="clause clause-content">２　前項にかかわらず、アークライトが事前に許諾者の書面による承諾を得た場合は、この限りでない。この場合の条件（利用目的・利用態様・データの取扱い・対価を含む）については、別途書面で合意するものとする。</div>
+    <div class="clause clause-content">３　アークライトは、本基本契約に基づき再許諾した第三者に対しても、前２項と同等のAI学習利用制限を課す旨を再許諾契約に明記するものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第７条　（第三者知的財産権の取扱い）</div>
+    <div class="clause clause-content">　本条は、本著作物が第三者（以下「原権利者」という）の保有する著作権・商標権・その他の知的財産権に係る許諾（以下「原許諾」という）を前提として創作されている場合に適用する。本著作物が第三者の知的財産権に係る許諾を前提としない場合、本条は適用されない。</div>
+    <div class="clause clause-content">２　許諾者は、アークライトに対し、以下の事項を表明し、保証する。</div>
+    <div class="sub-clause">（1）　個別契約締結時点において、原許諾を有効に取得し、かつ維持していること</div>
+    <div class="sub-clause">（2）　原許諾の内容が、アークライトによる本基本契約に基づく利用（二次利用・再許諾を含む）を包含していること、またはそのための権限が許諾者に付与されていること</div>
+    <div class="sub-clause">（3）　原許諾の有効期間が個別契約の有効期間をカバーしていること。カバーしていない場合は、その旨および原許諾の満了時期を個別契約締結前にアークライトに対して書面で開示していること</div>
+    <div class="clause clause-content">３　許諾者は、アークライトに対し、原許諾の概要（原権利者名・許諾内容・有効期間・主要な制限事項）を個別契約の別紙「原許諾概要書」に記載して開示するものとする。開示内容に変更が生じた場合は、速やかに更新情報を書面で通知するものとする。</div>
+    <div class="clause clause-content">４　原許諾が終了し、原権利者との間に紛争が生じ、または原許諾の内容が変更されてアークライトの利用に影響を及ぼすおそれが生じた場合、許諾者は直ちにアークライトに書面で通知するものとする。</div>
+    <div class="clause clause-content">５　前項の通知を受けた場合、または原許諾の終了・紛争等によりアークライトによる個別契約に基づく利用が制限されるおそれがあると合理的に認められる場合、アークライトは当該個別契約を解除することができる。</div>
+    <div class="clause clause-content">６　原許諾に起因してアークライトが損害を被った場合、許諾者はその損害を賠償するものとする。ただし、許諾者が原権利者の責に帰すべき事由により原許諾の終了を招き、かつ許諾者に故意または重大な過失がない場合はこの限りでない。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第８条　（原稿引渡し等）</div>
+    <div class="clause clause-content">　許諾者は、個別契約に定める原稿引渡期日までに、本著作物の完全な原稿（以下「原稿」という）を、アークライトに引渡すものとする。</div>
+    <div class="clause clause-content">２　許諾者は、アークライトの要請に応じて、本出版物の制作および発行に必要かつ合理的な範囲で協力するものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第９条　（出版物等の制作）</div>
+    <div class="clause clause-content">　アークライトは、本出版物の制作にあたり、本著作物の内容または題号を変更しようとする場合には、事前に許諾者に通知し、その承諾を得るものとする。</div>
+    <div class="clause clause-content">２　アークライトが本出版物の制作のために作成したレイアウトデータ、組版データ、印刷用データ、装丁デザイン、その他の中間成果物（以下「制作用データ等」という）に関する著作権以外の一切の権利は、アークライトに帰属する。</div>
+    <div class="clause clause-content">３　許諾者は、アークライトの事前の書面による承諾なく、制作用データ等を利用し、または第三者に利用させてはならない。本基本契約が終了した後においても同様とする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１０条　（出版物の販売等）</div>
+    <div class="clause clause-content">　アークライトは、本出版物の販売価格、造本形態、配本方法その他の販売に関する事項を自らの裁量により決定することができる。ただし、著作物の価値または著作者の名誉・信用を著しく毀損する態様での販売は行わないものとする。</div>
+    <div class="clause clause-content">２　アークライトは、本著作物の内容が法令、公序良俗、または社会的通念に照らして販売等に適さないと合理的に判断した場合には、許諾者に対しその旨を通知し、対応について協議する。協議が整わない場合、アークライトは当該個別契約を解除することができる。</div>
+    <div class="clause clause-content">３　許諾者は、アークライトが本出版物を、図書館、教育機関、書店、販売促進イベント等において、貸与、展示、見本誌として無償提供すること、ならびに広告宣伝目的で使用することを承諾する。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１１条　（出版継続・絶版・販売終了）</div>
+    <div class="clause clause-content">　本基本契約において「絶版」または「販売終了」とは、個別契約に定める利用類型ごとに、以下の全ての状態が継続して12か月以上経過した場合をいう。ただし、個別契約において別段の定めをした場合は、その定めを優先する。</div>
+    <div class="sub-clause">（1）　紙媒体出版については、アークライトおよび正規取扱店において販売可能な在庫が実質的に消滅し、かつアークライトが重版またはオンデマンド印刷による販売継続を予定していないこと。</div>
+    <div class="sub-clause">（2）　電子書籍出版については、主要な配信プラットフォームにおける配信が停止され、かつアークライトが再配信を予定していないこと。</div>
+    <div class="sub-clause">（3）　海外出版・商品化・映像化・デジタルゲーム化その他の二次利用については、当該利用類型に係る再許諾契約または実施中の企画が終了し、かつ新たな利用予定が具体化していないこと。</div>
+    <div class="clause clause-content">２　許諾者は、前項各号のいずれかに該当する可能性があると合理的に判断した場合、アークライトに対し、当該利用類型について出版継続、配信継続、重版、再配信または二次利用継続の意思の有無を確認する書面を送付することができる。</div>
+    <div class="clause clause-content">３　アークライトは、前項の確認書面を受領した日から45日以内に、当該利用類型について継続意思の有無および予定される対応の概要を許諾者に通知するものとする。アークライトが継続意思を通知した場合、通知日から６か月以内に重版、再配信、再許諾交渉その他の合理的な継続措置に着手するものとする。</div>
+    <div class="clause clause-content">４　アークライトが前項の期間内に継続意思を通知しない場合、または継続意思を通知したにもかかわらず合理的な継続措置に着手しない場合、許諾者は、当該利用類型に限り、個別契約上の許諾を終了させることができる。ただし、既に製造済みの在庫、配信中コンテンツ、再許諾先との既存契約および終了前に発生した権利義務の取扱いについては、個別契約または当事者間の協議に従うものとする。</div>
+    <div class="clause clause-content">５　前項に基づき一部の利用類型が終了した場合であっても、その他の利用類型および本基本契約の効力には影響しない。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１２条　（改訂版・新版の取扱い）</div>
+    <div class="clause clause-content">　本基本契約の対象著作物は、各個別契約に記載の著作物に限り、許諾者が新たに創作した改訂版・増補版・完全版・新装版その他の版（以下「改訂版等」という）は、原則として当該個別契約の対象に含まれない。</div>
+    <div class="clause clause-content">２　ただし、改訂版等の内容が原著作物と実質的に同一である場合（全体に対する変更・追加の分量が概ね20%未満である場合を含む）は、当該個別契約の対象に含まれるものとみなす。</div>
+    <div class="clause clause-content">３　許諾者が改訂版等を新たに発行しようとする場合、許諾者はアークライトに対し、発行予定日の６か月前までに書面でその旨を通知し、アークライトに優先交渉権を付与するものとする。アークライトは通知受領後30日以内に交渉の意思を書面で回答するものとし、以後60日以内に条件合意に至らない場合、許諾者は第三者と交渉することができる。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１３条　（著作者による本著作物等の利用制限）</div>
+    <div class="clause clause-content">　許諾者は、個別契約において競合利用制限の対象として定めた著作物、利用態様、期間および地域について、アークライトの事前の書面による承諾なく、自らまたは第三者をして、本出版物等と実質的に競合する出版、配信、商品化その他の利用を行い、または第三者に許諾してはならない。</div>
+    <div class="clause clause-content">２　前項の制限は、個別契約に明示された範囲に限り適用されるものとし、許諾者による自己紹介、ポートフォリオ掲載、既存実績の表示、個別のイラスト・文章の非競合的利用その他本出版物等の市場を実質的に害しない利用を当然に禁止するものではない。</div>
+    <div class="clause clause-content">３　許諾者が、本著作物と関連する新規企画、改訂版、増補版、続編その他本出版物等と市場上関連し得る企画を第三者に許諾しようとする場合で、個別契約に優先交渉権の定めがあるときは、当該定めに従うものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１４条　（貸与権および電子書籍デジタル貸出の許諾）</div>
+    <div class="clause clause-content">　許諾者は、アークライトに対し、紙媒体出版物の貸与に関する権利（著作権法第26条の3）を許諾する。</div>
+    <div class="clause clause-content">２　許諾者は、アークライトに対し、図書館等による電子書籍の利用者への提供（いわゆるデジタル貸出）その他電子書籍の一時的な利用に係る公衆送信（著作権法第23条）を許諾する（個別契約において電子書籍出版を許諾すると定めた場合に限る）。</div>
+    <div class="clause clause-content">３　アークライトは、前２項に定める権利の行使およびその管理に必要な手続きを、著作権等管理事業法に基づく登録管理団体その他の適切な第三者に委託し、当該利用に係る利用料を受領することができる。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１５条　（著作権利用料の支払い）</div>
+    <div class="clause clause-content">　アークライトは、許諾者に対し、本基本契約に基づく各利用に係る著作権利用料（以下「印税」という）を、個別契約に定める条件のもと、許諾者が指定する金融機関口座に振込送金により支払うものとする。送金手数料はアークライトの負担とする。</div>
+    <div class="clause clause-content">２　支払に際し、所得税法等に基づき源泉徴収が必要な場合には、アークライトは当該税額を控除した上で支払うことができる。</div>
+    <div class="clause clause-content">３　アークライトは、印税の支払ごとに、利用形態別の報告書（算定根拠・数量・単価を含む）を許諾者に提出するものとする。</div>
+    <div class="clause clause-content">４　許諾者は、アークライトの計算に疑義がある場合、支払日から12か月以内に書面で異議を申し出ることができる。アークライトは当該申し出を受けた場合、関連帳票類を合理的な範囲で開示するものとする。</div>
+    <div class="clause clause-content">５　アークライトは、許諾者が消費税法第57条の2に基づく適格請求書発行事業者として登録されている場合、許諾者が発行する適格請求書（インボイス）の交付を受け、消費税相当額を含む著作権利用料を支払うものとする。</div>
+    <div class="clause clause-content">６　許諾者が適格請求書発行事業者でない場合における消費税相当額の取扱い（経過措置の適用可否を含む）については、別途書面により合意するものとする。許諾者の登録状況に変更が生じた場合（登録の取得・取消・変更等を含む）、許諾者は速やかにアークライトに書面で通知するものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１６条　（表明および保証）</div>
+    <div class="clause clause-content">　許諾者は、アークライトに対し、以下の各号の事項について表明し、保証する。</div>
+    <div class="sub-clause">（1）　許諾者は、本著作物について、単独の著作権者であるか、または共同著作権者その他の権利者から、本基本契約および個別契約を締結し、本著作物を本基本契約に基づき許諾するために必要な権限を適法に取得していること。</div>
+    <div class="sub-clause">（2）　個別契約または別紙「原許諾概要書」に明示された第三者知的財産権を除き、アークライトが本基本契約および個別契約に基づき本著作物を利用するために、第三者の追加許諾を要せず、またアークライトが第三者に著作権使用料等の対価を直接支払う義務を負わないこと。</div>
+    <div class="sub-clause">（3）　本著作物の内容および表現が、第三者の著作権、著作者人格権、肖像権、プライバシー権、名誉権、商標権その他の権利を侵害していないこと。</div>
+    <div class="sub-clause">（4）　本著作物が法令または公序良俗に反する内容を含まず、かつ虚偽の表示その他社会的信用を損なうおそれのある内容を含まないこと。</div>
+    <div class="sub-clause">（5）　本著作物が共同著作物、職務著作、外注成果物、第三者原作、二次的著作物その他複数の権利者が関与する著作物である場合、許諾者は、当該関係者の氏名・名称、権利関係、許諾範囲、制限事項その他アークライトの利用判断に必要な事項を、個別契約または別紙において正確に開示していること。</div>
+    <div class="clause clause-content">２　許諾者が前項の保証に反し、第三者との間に紛争が生じた場合は、自己の責任と費用負担において解決し、アークライトに一切の損害を与えないものとする。万一アークライトが損害を被った場合には、その損害を賠償するものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１７条　（譲渡禁止）</div>
+    <div class="clause clause-content">　許諾者は、アークライトの事前の書面による承諾なくして、本著作物に係る著作権（全部または一部）を第三者に譲渡し、または担保の目的に供してはならない。</div>
+    <div class="clause clause-content">２　許諾者およびアークライトは、相手方の事前の書面による承諾なくして、本基本契約上の地位ならびに本基本契約に基づく権利義務（全部または一部）を第三者に譲渡し、または担保の目的に供してはならない。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１８条　（許諾者の組織変更等）</div>
+    <div class="clause clause-content">　許諾者が合併（吸収合併・新設合併）を行う場合、本基本契約に基づく許諾者の権利義務は、合併後の存続会社または新設会社に承継されるものとする。許諾者は、合併の効力発生日の１か月前までに、アークライトに対して相手方会社名・合併の種別・効力発生予定日を書面で通知するものとする。</div>
+    <div class="clause clause-content">２　許諾者が会社分割（吸収分割・新設分割）を行う場合、本基本契約に基づく権利義務が承継される分割後の会社の名称・所在地・代表者を、分割の効力発生日の１か月前までに書面で通知するものとする。承継先が本基本契約の履行について懸念があるとアークライトが合理的に判断した場合、アークライトは本基本契約を解除することができる。</div>
+    <div class="clause clause-content">３　許諾者が解散した場合、本基本契約は終了するものとする。ただし、清算手続中に既に発行済みの本出版物の販売・配信に係る権利義務は清算結了まで存続するものとし、清算人はその旨をアークライトに通知するものとする。</div>
+    <div class="clause clause-content">４　許諾者の代表者が変更された場合、許諾者は変更後14日以内にアークライトに対して書面で通知するものとする。</div>
+    <div class="clause clause-content">５　前各項の場合において、権利義務を承継する者が本基本契約の履行について懸念があるとアークライトが合理的に判断した場合、アークライトは本基本契約を解除することができる。</div>
+    <div class="clause clause-content">６　本著作物の著作権者が変更となった場合（共同著作者の離脱を含む）、許諾者は直ちにアークライトに書面で通知するものとする。変更後の著作権者との間で本基本契約の継続についての合意が得られない場合、アークライトは本基本契約を解除することができる。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第１９条　（秘密保持）</div>
+    <div class="clause clause-content">　許諾者およびアークライトは、本基本契約の有効期間中および終了後３年間、本基本契約に関連して知り得た相手方の営業上、技術上その他一切の非公知の情報（以下「秘密情報」という）を、相手方の事前の書面による承諾なく、第三者に開示または漏洩してはならない。</div>
+    <div class="clause clause-content">２　前項の規定にかかわらず、アークライトは、本著作物に関する情報について、本出版物の制作、販売、広告宣伝、二次利用その他本基本契約に基づく利用を行うために必要な範囲で、秘密情報を自ら使用し、または第三者に提供することができる。</div>
+    <div class="clause clause-content">３　次の各号に該当する情報については、前２項の義務の対象外とする。</div>
+    <div class="sub-clause">（1）　開示を受けた時点で既に受領者が適法に保有していた情報</div>
+    <div class="sub-clause">（2）　開示後、受領者が秘密保持義務を負うことなく適法に第三者から取得した情報</div>
+    <div class="sub-clause">（3）　受領者が開示された情報に依拠することなく独自に開発または取得した情報</div>
+    <div class="sub-clause">（4）　開示時または開示後に、受領者の責に帰さない事由により公知となった情報</div>
+    <div class="sub-clause">（5）　法令または裁判所・行政機関等の命令により開示を求められた情報（事前通知・開示範囲限定に努めるものとする）</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２０条　（個人情報の保護）</div>
+    <div class="clause clause-content">　許諾者およびアークライトは、本基本契約の締結および履行に関連して取得した相手方または第三者の個人情報（個人情報の保護に関する法律第２条第１項に定めるものをいう。以下本条において同じ）を、同法その他の関係法令を遵守して適切に管理するものとする。</div>
+    <div class="clause clause-content">２　許諾者およびアークライトは、前項の個人情報を本基本契約の履行に必要な範囲を超えて利用せず、また相手方の事前の書面による承諾なく第三者に提供または開示してはならない。ただし、法令または裁判所・行政機関の命令による場合はこの限りでない。</div>
+    <div class="clause clause-content">３　アークライトは、電子書籍の配信に際して配信プラットフォームを通じて取得した読者の購入履歴・閲覧データ等（個人を識別できるものに限る）を、本著作物の出版・流通の目的以外に利用してはならない。</div>
+    <div class="clause clause-content">４　許諾者またはアークライトが個人情報の漏洩、滅失または毀損その他のセキュリティインシデントの発生を知得した場合、速やかに相手方に通知するとともに、個人情報の保護に関する法律第26条に基づく対応を含む必要な措置を講じるものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２１条　（有効期間）</div>
+    <div class="clause clause-content">　本基本契約の有効期間は、締結日から３年間とし、期間満了の３か月前までに書面による終了の申し入れがなされない場合、さらに３年間自動更新され、以後も同様とする。</div>
+    <div class="clause clause-content">２　本基本契約の有効期間中に締結された個別契約は、本基本契約が終了した場合においても、当該個別契約の定める期間が満了するまで引き続き有効に存続するものとし、本基本契約の各条項は当該存続期間中引き続き適用されるものとする。</div>
+    <div class="clause clause-content">３　本基本契約の終了後においても、アークライトは、本出版物（電子書籍を含む）の既存在庫または配信中コンテンツが存在する限りにおいて、引き続き販売・配信を行うことができる。この場合、著作権利用料は個別契約に定める料率に従い支払うものとする。</div>
+    <div class="clause clause-content">４　アークライトは、契約終了後の販売・配信にあたっては、本基本契約の定めに従い誠実に取り扱うものとし、販売報告および著作権利用料の支払義務は、契約終了後も存続するものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２２条　（旧合意の取扱い）</div>
+    <div class="clause clause-content">　許諾者とアークライトとの間で、本著作物またはその利用に関して本基本契約締結前に成立していた合意、覚書、発注書、電子メール、口頭合意、慣行その他の取決め（以下「旧合意」という）の取扱いは、個別契約において明示的に定める場合に限り、当該個別契約の定めに従うものとする。</div>
+    <div class="clause clause-content">２　本基本契約の締結のみをもって、旧合意が当然に終了し、変更され、または本基本契約に包括統合されるものではない。旧合意を終了、変更、統合または確認する場合は、対象著作物、対象利用、対象期間、未払著作権利用料その他の清算事項を個別契約または別途書面に明記するものとする。</div>
+    <div class="clause clause-content">３　旧合意に基づき既に発生し、または確定した権利義務（未払著作権利用料、報告義務、表明保証責任、秘密保持義務その他の債権債務を含む）は、個別契約に別段の定めがない限り、なお有効に存続する。</div>
+    <div class="clause clause-content">４　本基本契約および個別契約と旧合意の内容が抵触する場合、当該抵触部分については、個別契約において優先関係を明示するものとし、明示がない場合は、当事者間で誠実に協議して解決する。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２３条　（不可抗力）</div>
+    <div class="clause clause-content">　天災地変、戦争、テロ、暴動、火災、洪水、感染症の流行、大規模なサイバー攻撃、主要な電気通信設備の重大な障害、法令の制定・改廃、行政機関による命令その他不可抗力により、本基本契約の全部または一部の履行が困難または不可能となった場合、当該当事者は、その履行義務の全部または一部について責任を負わないものとする。</div>
+    <div class="clause clause-content">２　前項に該当する事由が生じた場合、当該当事者は速やかに相手方に通知し、双方誠実に協議のうえ対応について合意するものとする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２４条　（著作権者等の表示）</div>
+    <div class="clause clause-content">　アークライトは、本出版物等（電子書籍・商品化物・映像化物・デジタルゲーム化物を含む）において、許諾者の権利を保全するため、個別契約に定める著作権表示に従い、適切な位置に以下の事項を表示するものとする。</div>
+    <div class="sub-clause">（1）　著作権表示（©マーク）</div>
+    <div class="sub-clause">（2）　著作権者名</div>
+    <div class="sub-clause">（3）　発行年</div>
+    <div class="sub-clause">（4）　その他、著作権保護のために必要と認められる表示</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２５条　（著作権侵害に対する対応）</div>
+    <div class="clause clause-content">　本著作物に関して、第三者による著作権侵害その他の権利侵害があった場合、許諾者およびアークライトは、当該侵害への対応について誠実に協議し、相互に協力して対処するものとする。</div>
+    <div class="clause clause-content">２　前項の場合、必要に応じて、いずれか一方が自らの名義または共同名義で法的措置を講じることができるものとし、その際の費用および損害賠償の分担については、事前に協議のうえ定めるものとする。</div>
+    <div class="clause clause-content">３　許諾者は、アークライトが本著作物に係る第三者侵害に対応するために必要な範囲で、権利関係の説明、証拠資料の提供、警告書・削除申請・プラットフォーム申立て・税関差止申立てその他合理的な権利行使手続への協力を行うものとする。</div>
+    <div class="clause clause-content">４　アークライトは、海賊版、無断転載、無断配信その他本出版物等の販売・配信・二次利用に重大な支障を及ぼすおそれのある侵害を発見した場合、許諾者に事後報告したうえで、緊急性に応じて削除申請その他合理的な初動対応を行うことができる。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２６条　（著作者人格権の尊重）</div>
+    <div class="clause clause-content">　アークライトは、第５条に定める著作者人格権の不行使合意を前提としても、本著作物に関する著作者人格権の存在およびその趣旨を尊重し、本出版物等の制作および利用に際して、許諾者の名誉または声望を害する態様で本著作物を利用しないよう合理的に配慮する。</div>
+    <div class="clause clause-content">２　許諾者は、本基本契約および個別契約に基づく本出版物等の制作、販売、配信、二次利用、広告宣伝その他の利用について、第５条に定める範囲で著作者人格権を行使しないものとする。ただし、アークライトまたは再許諾先による利用が許諾者の名誉または声望を著しく害する場合は、この限りでない。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２７条　（契約の解除）</div>
+    <div class="clause clause-content">　許諾者またはアークライトは、相手方が本基本契約に違反し、相当期間（原則として15営業日以上）を定めて書面により是正を求めたにもかかわらず是正されない場合、本基本契約（および当該違反に係る個別契約）を解除することができる。</div>
+    <div class="clause clause-content">２　前項にかかわらず、次の各号のいずれかに該当した場合、相手方は何らの催告を要することなく、直ちに本基本契約（および全ての個別契約）を解除することができる。</div>
+    <div class="sub-clause">（1）　破産、民事再生、会社更生、特別清算等の法的手続の申立てがなされた場合</div>
+    <div class="sub-clause">（2）　差押え、仮差押え、仮処分、手形の不渡り、営業許可の取消し等、信用を著しく毀損する事由が生じた場合</div>
+    <div class="sub-clause">（3）　反社会的勢力と認められる場合、またはその関係が判明した場合</div>
+    <div class="sub-clause">（4）　その他本基本契約の継続が著しく困難であると合理的に認められる重大な事情がある場合</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２８条　（反社会的勢力の排除）</div>
+    <div class="clause clause-content">　許諾者およびアークライト（以下「当事者」という）は、それぞれ相手方に対し、次の各号の事項を確約する。</div>
+    <div class="sub-clause">（1）　自らが暴力団、暴力団関係企業、総会屋若しくはこれらに準ずる者、またはその構成員（以下「反社会的勢力」という）ではないこと。</div>
+    <div class="sub-clause">（2）　自らの役員（業務を執行する社員、取締役、執行役またはこれらに準ずる者）が反社会的勢力ではないこと。</div>
+    <div class="sub-clause">（3）　反社会的勢力に自己の名義を利用させて本基本契約を締結したものではないこと。</div>
+    <div class="sub-clause">（4）　本基本契約の有効期間中、自己または第三者を利用して、相手方に対して暴力的な要求、詐術的な行為、公序良俗に反する行為等を行わないこと。</div>
+    <div class="clause clause-content">２　当事者の一方が前項の確約に違反したと判断された場合、相手方は何らの催告を要することなく、本基本契約を直ちに解除することができる。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第２９条　（損害賠償責任）</div>
+    <div class="clause clause-content">　当事者の一方が本基本契約または個別契約に違反し、または不法行為により相手方に損害を与えた場合、違反当事者は、相手方に生じた通常かつ直接の損害に限り、その賠償責任を負う。</div>
+    <div class="clause clause-content">２　本条に基づく損害賠償額の上限は、当該損害に係る個別契約に基づき過去12か月間にアークライトが許諾者に支払った著作権利用料の総額とする。ただし、第１６条（表明および保証）、第１９条（秘密保持）、第２０条（個人情報の保護）、第２８条（反社会的勢力の排除）に違反した場合、または故意若しくは重過失による場合は、この限りでない。</div>
+    <div class="clause clause-content">３　本基本契約または個別契約の終了後であっても、終了前に発生した損害賠償請求権の行使を妨げない。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第３０条　（準拠法・管轄裁判所）</div>
+    <div class="clause clause-content">　本基本契約の成立、効力、履行および解釈については、日本国の法令を準拠法とする。</div>
+    <div class="clause clause-content">２　本基本契約に関して紛争が生じた場合には、東京地方裁判所を第一審の専属的合意管轄裁判所とする。</div>
+  </div>
+
+  <div class="article">
+    <div class="article-title">第３１条　（協議）</div>
+    <div class="clause clause-content">　本基本契約に定めのない事項または疑義が生じた事項については、許諾者・アークライトが誠実に協議して解決するものとする。</div>
+  </div>
+
+  <div class="margin-note">（以下余白）</div>
+
+  <p class="preamble" style="margin-top:1.5em;">本基本契約の成立を証するため、本書の電磁的記録を作成し、許諾者とアークライトが合意後、電子署名を施し、各自その電磁的記録を保管する。ただし、書面により締結する場合は本書２通を作成し、記名押印の上各１通を保有する。</p>
+
+</div>
+</body>
+</html>

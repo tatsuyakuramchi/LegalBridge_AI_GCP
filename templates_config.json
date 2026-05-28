@@ -242,41 +242,41 @@
   "royalty_statement": {
     "label": "利用許諾料計算書",
     "category": "License",
-    "_comment": "Phase 22.21.92: フォームを 4 ステップ動線に再構成 (DocumentForm.tsx の royalty_statement 専用ブロック)。vars は PDF テンプレ互換のためキー名を温存しつつ、入力欄を出さないフィールドは hidden:true、計算結果は readonly:true、Backlog 系 (manufacturingIssueKey / licenseIssueKey / linked_terms_number) は完全削除。",
+    "_comment": "Phase 22.21.92: フォームを 4 ステップ動線に再構成。Backlog 系フィールド (manufacturingIssueKey / licenseIssueKey / linked_terms_number) は削除、計算結果は readonly。原著作物は ledger マスタから自動引用。詳細は templates_config.json (root) を参照。",
     "vars": {
       "documentDate": { "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true, "dbField": "auto.today" },
       "linked_contract_number": { "label": "契約番号 (基本契約 / 個別利用許諾の文書番号)", "group": "I. ヘッダ", "readonly": true, "helpText": "契約マスタを選択すると自動入力されます (PDF 右上の「契約番号」欄に出力)" },
       "ledgerId": { "label": "台帳ID (legacy)", "group": "I. ヘッダ", "hidden": true, "helpText": "Phase 22.21.94 で PDF 上は廃止 — フィールド自体は legacy データ互換のため残置" },
 
       "licensor": { "label": "ライセンサー名", "group": "II. 当事者 (契約マスタから自動入力)", "required": true, "dbField": "vendor.vendor_name", "readonly": true, "helpText": "契約マスタの取引先から自動入力" },
-      "LICENSOR_SUFFIX": { "label": "ライセンサー敬称 (御中/様)", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "helpText": "Phase 22.21.97: 取引先 entity_type から判定 (法人→御中 / 個人→様)" },
+      "LICENSOR_SUFFIX": { "label": "ライセンサー敬称 (御中/様)", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "helpText": "Phase 22.21.97: 法人→御中 / 個人→様" },
       "LICENSOR_IS_CORPORATION": { "label": "ライセンサー 法人/個人", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "hidden": true },
       "VENDOR_REPRESENTATIVE_SAMA": { "label": "ライセンサー代表者 (＋様)", "group": "II. 当事者 (契約マスタから自動入力)", "placeholder": "例: 代表取締役 山田 太郎 様" },
-      "licensor_t_number": { "label": "T番号 (Backlog 課題キー)", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "helpText": "Phase 22.21.97: 実 Backlog 課題キーのみ PDF に表示 (LEGAL-* 等の合成キーは非表示)" },
+      "licensor_t_number": { "label": "T番号 (Backlog 課題キー)", "group": "II. 当事者 (契約マスタから自動入力)", "readonly": true, "helpText": "Phase 22.21.97: 実 Backlog 課題キーのみ PDF に表示" },
       "licensee": { "label": "ライセンシー名", "group": "II. 当事者 (契約マスタから自動入力)", "required": true, "dbField": "company.name", "readonly": true, "helpText": "自社プロファイルから自動入力" },
 
-      "originalWork": { "label": "原著作物名", "group": "III. 対象作品 (原作マスタから自動引用)", "required": true, "readonly": true, "helpText": "契約マスタに紐づく原作マスタ (ledger) から自動引用。紐付けなしの場合は原作マスタから手動選択" },
+      "originalWork": { "label": "原著作物名", "group": "III. 対象作品 (原作マスタから自動引用)", "required": true, "readonly": true, "helpText": "契約マスタに紐づく原作マスタ (ledger) から自動引用" },
       "productName": { "label": "製品名", "group": "IV. 製造内容", "required": true },
       "edition": { "label": "版", "group": "IV. 製造内容", "placeholder": "通常版" },
       "completionDate": { "label": "完成日", "group": "IV. 製造内容", "type": "date" },
       "quantity": { "label": "製造数", "group": "IV. 製造内容", "type": "number", "required": true },
       "sampleQuantity": { "label": "サンプル数", "group": "IV. 製造内容", "type": "number", "placeholder": "0" },
       "billableQuantity": { "label": "課金対象数 (自動: 製造数−サンプル数)", "group": "IV. 製造内容", "type": "number", "readonly": true },
-      "msrpStr": { "label": "上代 (MSRP)", "group": "IV. 製造内容", "required": true, "helpText": "基準価格。単価×数量×料率の基準" },
+      "msrpStr": { "label": "上代 (MSRP)", "group": "IV. 製造内容", "required": true, "helpText": "基準価格" },
 
-      "calcType": { "label": "計算タイプ", "group": "V. 計算結果 (自動)", "type": "select", "options": ["manufacturing", "sales", "sublicense"], "readonly": true, "helpText": "選択した金銭条件から自動セット" },
-      "royaltyRatePct": { "label": "料率 (%)", "group": "V. 計算結果 (自動)", "readonly": true, "helpText": "選択した金銭条件から自動セット" },
+      "calcType": { "label": "計算タイプ", "group": "V. 計算結果 (自動)", "type": "select", "options": ["manufacturing", "sales", "sublicense"], "readonly": true },
+      "royaltyRatePct": { "label": "料率 (%)", "group": "V. 計算結果 (自動)", "readonly": true },
       "grossRoyaltyStr": { "label": "総ロイヤリティ", "group": "V. 計算結果 (自動)", "readonly": true },
-      "mgAmount": { "label": "MG (最低保証 floor)", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true, "helpText": "Phase 22.21.95: ロイヤリティが MG を下回ったら MG を採用 (毎期 floor)" },
+      "mgAmount": { "label": "MG (最低保証 floor)", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true, "helpText": "Phase 22.21.95: floor 化 (= max(gross, MG) を採用)" },
       "mgAmountStr": { "label": "MG (整形)", "group": "V. 計算結果 (自動)", "readonly": true, "hidden": true },
       "mgTopupApplied": { "label": "MG floor 適用", "group": "V. 計算結果 (自動)", "type": "boolean", "readonly": true },
       "mgTopupThisTime": { "label": "MG 上乗せ額", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true },
       "mgTopupThisTimeStr": { "label": "MG 上乗せ額 (整形)", "group": "V. 計算結果 (自動)", "readonly": true, "hidden": true },
-      "agAmount": { "label": "AG (前払い保証総額)", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true, "helpText": "前払い保証金。各計算書で消化される" },
+      "agAmount": { "label": "AG (前払い保証総額)", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true },
       "agAmountStr": { "label": "AG (整形)", "group": "V. 計算結果 (自動)", "readonly": true, "hidden": true },
       "agApplied": { "label": "AG 適用", "group": "V. 計算結果 (自動)", "type": "boolean", "readonly": true },
       "agConsumedBefore": { "label": "前回までの AG 消化額", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true },
-      "agConsumedBeforeStr": { "label": "前回までの AG 消化額 (整形)", "group": "V. 計算結果 (自動)", "readonly": true, "hidden": true },
+      "agConsumedBeforeStr": { "label": "AG 消化額 (整形)", "group": "V. 計算結果 (自動)", "readonly": true, "hidden": true },
       "agConsumedThisTime": { "label": "今回 AG 消化額", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true },
       "agConsumedThisTimeStr": { "label": "今回 AG 消化額 (整形)", "group": "V. 計算結果 (自動)", "readonly": true, "hidden": true },
       "agConsumedAfter": { "label": "今回後 AG 累計消化額", "group": "V. 計算結果 (自動)", "type": "number", "readonly": true },
@@ -302,12 +302,12 @@
       "reportingDeadline": { "label": "報告期限", "group": "VI. 報告・支払", "type": "date" },
       "paymentDueDate": { "label": "支払期日", "group": "VI. 報告・支払", "type": "date" },
 
-      "bankName": { "label": "金融機関名", "group": "VI. 報告・支払", "helpText": "Phase 22.21.103: 取引先マスタの bank_name から自動補完" },
-      "branchName": { "label": "支店名", "group": "VI. 報告・支払", "helpText": "取引先マスタの branch_name から自動補完" },
-      "accountType": { "label": "口座種別", "group": "VI. 報告・支払", "helpText": "例: 普通 / 当座" },
-      "accountNo": { "label": "口座番号", "group": "VI. 報告・支払", "helpText": "取引先マスタの account_number から自動補完" },
-      "accountHolder": { "label": "口座名義 (カナ)", "group": "VI. 報告・支払", "helpText": "取引先マスタの account_holder_kana から自動補完" },
-      "invoiceRegistrationNumber": { "label": "インボイス登録番号", "group": "VI. 報告・支払", "helpText": "T + 13 桁。空欄の場合は PDF に表示されません" },
+      "bankName": { "label": "金融機関名", "group": "VI. 報告・支払", "helpText": "Phase 22.21.103: 取引先マスタから自動補完" },
+      "branchName": { "label": "支店名", "group": "VI. 報告・支払" },
+      "accountType": { "label": "口座種別", "group": "VI. 報告・支払" },
+      "accountNo": { "label": "口座番号", "group": "VI. 報告・支払" },
+      "accountHolder": { "label": "口座名義 (カナ)", "group": "VI. 報告・支払" },
+      "invoiceRegistrationNumber": { "label": "インボイス登録番号", "group": "VI. 報告・支払" },
 
       "notes": { "label": "備考", "group": "VII. 備考 (任意)", "type": "textarea" }
     }
@@ -568,6 +568,233 @@
 
       "QUESTION_3":      { "label": "Q3 質問 (任意)", "group": "IV. Q&A — 03 (任意)", "type": "textarea", "placeholder": "3 つ目の質問があれば入力。空ならブロック自体が非表示" },
       "ANSWER_3":        { "label": "A3 回答 (任意)", "group": "IV. Q&A — 03 (任意)", "type": "textarea" }
+    }
+  },
+
+  "pub_master_individual": {
+    "label": "出版等許諾基本契約書（個人版）",
+    "category": "Publication",
+    "vars": {
+      "契約番号": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます (ARC-PUB-YYYY-NNNN)" },
+      "契約締結日": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日", "helpText": "PDF ヘッダ・署名欄に表示" },
+
+      "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・個人)", "type": "textarea", "required": true },
+      "許諾者氏名": { "label": "許諾者 氏名", "group": "II. 許諾者 (甲・個人)", "required": true },
+      "許諾者電話番号": { "label": "許諾者 電話番号", "group": "II. 許諾者 (甲・個人)" },
+      "許諾者メール": { "label": "許諾者 メール", "group": "II. 許諾者 (甲・個人)" },
+
+      "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true },
+
+      "振込先銀行名": { "label": "金融機関名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.bank_name" },
+      "支店名": { "label": "支店名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.branch_name" },
+      "口座種別": { "label": "口座種別", "group": "IV. 振込先口座 (許諾者)", "type": "select", "options": ["普通", "当座"], "dbField": "vendor.account_type" },
+      "口座番号": { "label": "口座番号", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.account_number" },
+      "口座名義カナ": { "label": "口座名義 (カナ)", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.account_holder_kana" },
+
+      "インボイス登録状況": { "label": "適格請求書発行事業者", "group": "V. インボイス制度", "type": "select", "options": ["登録済", "未登録"], "placeholder": "登録済 / 未登録" },
+      "インボイス登録番号": { "label": "登録番号 (T-)", "group": "V. インボイス制度", "dbField": "vendor.invoice_registration_number" },
+
+      "特記事項": { "label": "特記事項", "group": "VI. 特記・発行オプション", "type": "textarea", "helpText": "未入力ならブランク表示" },
+      "再発行フラグ": { "label": "再発行版バナーを表示", "group": "VI. 特記・発行オプション", "type": "boolean", "helpText": "ON で PDF 冒頭に「再発行版」バナーを表示" },
+      "改訂番号": { "label": "改訂番号 (Rev.)", "group": "VI. 特記・発行オプション", "placeholder": "1", "helpText": "再発行版のとき表示" },
+      "元契約番号": { "label": "元契約番号", "group": "VI. 特記・発行オプション", "placeholder": "ARC-PUB-2026-0001", "helpText": "再発行版のとき表示" }
+    }
+  },
+
+  "pub_master_corporate": {
+    "label": "出版等許諾基本契約書（法人版）",
+    "category": "Publication",
+    "vars": {
+      "契約番号": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます (ARC-PUB-YYYY-NNNN)" },
+      "契約締結日": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日", "helpText": "PDF ヘッダ・署名欄に表示" },
+
+      "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・法人)", "type": "textarea", "required": true },
+      "許諾者法人名": { "label": "許諾者 法人名", "group": "II. 許諾者 (甲・法人)", "required": true },
+      "代表者職名": { "label": "代表者 職名", "group": "II. 許諾者 (甲・法人)", "placeholder": "例: 代表取締役" },
+      "代表者氏名": { "label": "代表者 氏名", "group": "II. 許諾者 (甲・法人)", "required": true },
+      "担当者氏名": { "label": "担当者 氏名", "group": "II. 許諾者 (甲・法人)" },
+      "担当者電話番号": { "label": "担当者 電話番号", "group": "II. 許諾者 (甲・法人)" },
+      "担当者メール": { "label": "担当者 メール", "group": "II. 許諾者 (甲・法人)" },
+
+      "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true },
+
+      "振込先銀行名": { "label": "金融機関名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.bank_name" },
+      "支店名": { "label": "支店名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.branch_name" },
+      "口座種別": { "label": "口座種別", "group": "IV. 振込先口座 (許諾者)", "type": "select", "options": ["普通", "当座"], "dbField": "vendor.account_type" },
+      "口座番号": { "label": "口座番号", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.account_number" },
+      "口座名義カナ": { "label": "口座名義 (カナ)", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.account_holder_kana" },
+
+      "インボイス登録状況": { "label": "適格請求書発行事業者", "group": "V. インボイス制度", "type": "select", "options": ["登録済", "未登録"], "placeholder": "登録済 / 未登録" },
+      "インボイス登録番号": { "label": "登録番号 (T-)", "group": "V. インボイス制度", "dbField": "vendor.invoice_registration_number" },
+
+      "特記事項": { "label": "特記事項", "group": "VI. 特記・発行オプション", "type": "textarea", "helpText": "未入力ならブランク表示" },
+      "再発行フラグ": { "label": "再発行版バナーを表示", "group": "VI. 特記・発行オプション", "type": "boolean", "helpText": "ON で PDF 冒頭に「再発行版」バナーを表示" },
+      "改訂番号": { "label": "改訂番号 (Rev.)", "group": "VI. 特記・発行オプション", "placeholder": "1" },
+      "元契約番号": { "label": "元契約番号", "group": "VI. 特記・発行オプション", "placeholder": "ARC-PUB-2026-0001" }
+    }
+  },
+
+  "pub_license_terms": {
+    "label": "出版等利用許諾条件書",
+    "category": "Publication",
+    "vars": {
+      "条件書番号": { "label": "条件書番号", "group": "I. 基本情報", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます (ARC-PUBT-YYYY-NNNN)" },
+      "基本契約番号": { "label": "基本契約番号", "group": "I. 基本情報", "placeholder": "ARC-PUB-2026-0001", "helpText": "紐づく出版基本契約の契約番号" },
+      "締結日": { "label": "締結日", "group": "I. 基本情報", "required": true, "placeholder": "例: 2026年5月12日" },
+      "基本契約締結日": { "label": "基本契約 締結日", "group": "I. 基本情報", "placeholder": "例: 2026年4月1日", "helpText": "前文に表示" },
+      "許諾者": { "label": "許諾者 名称 (氏名/法人名)", "group": "I. 基本情報", "required": true },
+      "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" },
+
+      "許諾開始日": { "label": "許諾開始日", "group": "II. 許諾期間", "type": "date" },
+      "許諾終了日": { "label": "許諾終了日", "group": "II. 許諾期間", "type": "date" },
+      "自動更新有無": { "label": "自動更新", "group": "II. 許諾期間", "placeholder": "あり / なし" },
+      "更新単位": { "label": "更新単位", "group": "II. 許諾期間", "placeholder": "例: 1年" },
+      "終了通知期限": { "label": "終了通知期限", "group": "II. 許諾期間", "placeholder": "例: 期間満了3か月前" },
+
+      "原著作物名": { "label": "原著作物名", "group": "III. 対象著作物", "required": true },
+      "対象出版物名": { "label": "対象出版物名", "group": "III. 対象著作物", "required": true },
+      "著作者名": { "label": "著作者名", "group": "III. 対象著作物", "required": true },
+      "著作権者": { "label": "著作権者", "group": "III. 対象著作物" },
+      "共同著作第三者権利有無": { "label": "共同著作・第三者権利の有無", "group": "III. 対象著作物", "placeholder": "あり / なし" },
+      "権利関係備考": { "label": "権利関係 備考", "group": "III. 対象著作物", "type": "textarea" },
+
+      "電子書籍配信許諾有無": { "label": "電子書籍配信 許諾", "group": "IV. 許諾内容", "placeholder": "許諾する / 許諾しない" },
+      "電子書籍配信条件": { "label": "電子書籍配信 条件", "group": "IV. 許諾内容", "type": "textarea" },
+      "翻訳海外版許諾有無": { "label": "翻訳版・海外版 許諾", "group": "IV. 許諾内容", "placeholder": "許諾する / 許諾しない" },
+      "翻訳海外版対象地域言語": { "label": "翻訳版・海外版 対象地域・言語", "group": "IV. 許諾内容" },
+
+      "発行予定日": { "label": "発行予定日", "group": "V. 出版条件", "type": "date" },
+      "刊行期限": { "label": "刊行期限", "group": "V. 出版条件", "type": "date" },
+      "許諾地域": { "label": "許諾地域", "group": "V. 出版条件", "placeholder": "例: 日本国内" },
+      "許諾言語": { "label": "言語", "group": "V. 出版条件", "placeholder": "例: 日本語" },
+      "販売形態": { "label": "販売形態", "group": "V. 出版条件", "placeholder": "例: 紙書籍／電子書籍／EC販売" },
+      "定価又は基準価格": { "label": "定価・基準価格", "group": "V. 出版条件" },
+
+      "紙媒体計算式": { "label": "紙媒体 印税計算式", "group": "VI. 対価・支払条件", "type": "textarea", "placeholder": "例: 税抜定価 × 印税対象部数 × 印税率" },
+      "紙書籍印税率": { "label": "紙書籍 印税率 (%)", "group": "VI. 対価・支払条件", "placeholder": "10" },
+      "紙媒体印税対象部数区分": { "label": "紙媒体 印税対象部数区分", "group": "VI. 対価・支払条件", "placeholder": "例: 実売部数 / 刷部数" },
+      "電子書籍計算式": { "label": "電子書籍 印税計算式", "group": "VI. 対価・支払条件", "type": "textarea" },
+      "電子書籍印税率": { "label": "電子書籍 印税率 (%)", "group": "VI. 対価・支払条件" },
+      "翻訳海外版計算式": { "label": "翻訳・海外版 計算式", "group": "VI. 対価・支払条件", "type": "textarea" },
+      "翻訳海外版料率": { "label": "翻訳・海外版 料率 (%)", "group": "VI. 対価・支払条件" },
+      "精算時期": { "label": "精算時期", "group": "VI. 対価・支払条件", "placeholder": "例: 半期ごと" },
+      "支払期日": { "label": "支払期日", "group": "VI. 対価・支払条件", "placeholder": "例: 報告後翌月末" },
+      "報告明細": { "label": "報告明細", "group": "VI. 対価・支払条件", "type": "textarea" },
+      "消費税区分": { "label": "消費税区分", "group": "VI. 対価・支払条件", "placeholder": "例: 外税10%" },
+      "源泉徴収有無": { "label": "源泉徴収", "group": "VI. 対価・支払条件", "placeholder": "あり / なし" },
+      "インボイス登録番号": { "label": "インボイス登録番号 (T-)", "group": "VI. 対価・支払条件", "dbField": "vendor.invoice_registration_number" },
+
+      "振込先銀行名": { "label": "金融機関名", "group": "VII. 振込口座", "dbField": "vendor.bank_name" },
+      "支店名": { "label": "支店名", "group": "VII. 振込口座", "dbField": "vendor.branch_name" },
+      "口座種別": { "label": "口座種別", "group": "VII. 振込口座", "type": "select", "options": ["普通", "当座"], "dbField": "vendor.account_type" },
+      "口座番号": { "label": "口座番号", "group": "VII. 振込口座", "dbField": "vendor.account_number" },
+      "口座名義カナ": { "label": "口座名義 (カナ)", "group": "VII. 振込口座", "dbField": "vendor.account_holder_kana" },
+
+      "第三者IP関与有無": { "label": "第三者IPの関与", "group": "VIII. 第三者IP・著作権表示", "placeholder": "あり / なし" },
+      "著作権表示": { "label": "著作権表示 内容", "group": "VIII. 第三者IP・著作権表示", "type": "textarea" },
+      "表示位置補足": { "label": "表示位置・補足", "group": "VIII. 第三者IP・著作権表示", "type": "textarea" },
+
+      "旧合意過去利用取扱い": { "label": "旧合意・過去利用の取扱い", "group": "IX. 旧合意・特記", "type": "textarea", "helpText": "必要な場合のみ記載" },
+      "特記事項": { "label": "特記事項", "group": "IX. 旧合意・特記", "type": "textarea" },
+
+      "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" }
+    }
+  },
+
+  "pub_additional_terms": {
+    "label": "追加利用許諾条件書（商品化・映像化・ゲーム化）",
+    "category": "Publication",
+    "vars": {
+      "追加条件書番号": { "label": "追加条件書番号", "group": "I. 基本情報", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます (ARC-PUBA-YYYY-NNNN)" },
+      "基本契約番号": { "label": "基本契約番号", "group": "I. 基本情報", "placeholder": "ARC-PUB-2026-0001" },
+      "通常条件書番号": { "label": "関連する通常条件書 番号", "group": "I. 基本情報", "placeholder": "ARC-PUBT-2026-0001" },
+      "対象出版物名": { "label": "対象出版物名", "group": "I. 基本情報", "required": true },
+      "締結日": { "label": "締結日", "group": "I. 基本情報", "required": true, "placeholder": "例: 2026年5月12日" },
+      "効力発生日": { "label": "効力発生日", "group": "I. 基本情報", "type": "date" },
+      "基本契約締結日": { "label": "基本契約 締結日", "group": "I. 基本情報", "placeholder": "例: 2026年4月1日" },
+      "通常条件書締結日": { "label": "通常条件書 締結日", "group": "I. 基本情報", "placeholder": "例: 2026年4月15日" },
+      "許諾者": { "label": "許諾者 名称", "group": "I. 基本情報", "required": true },
+      "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" },
+      "追加許諾開始日": { "label": "追加許諾 開始日", "group": "I. 基本情報", "type": "date" },
+      "追加許諾終了日": { "label": "追加許諾 終了日", "group": "I. 基本情報", "type": "date" },
+      "自動更新有無": { "label": "自動更新", "group": "I. 基本情報", "placeholder": "あり / なし" },
+      "更新単位": { "label": "更新単位", "group": "I. 基本情報", "placeholder": "例: 1年" },
+      "終了通知期限": { "label": "終了通知期限", "group": "I. 基本情報", "placeholder": "例: 満了3か月前" },
+
+      "原著作物名": { "label": "原著作物名", "group": "II. 対象著作物", "required": true },
+      "対象キャラクター設定等": { "label": "対象キャラクター・設定等", "group": "II. 対象著作物", "type": "textarea" },
+      "著作者名": { "label": "著作者名", "group": "II. 対象著作物", "required": true },
+      "著作権者": { "label": "著作権者", "group": "II. 対象著作物" },
+      "第三者権利有無": { "label": "第三者権利の有無", "group": "II. 対象著作物", "placeholder": "あり / なし" },
+      "第三者権利備考": { "label": "第三者権利 備考", "group": "II. 対象著作物", "type": "textarea" },
+
+      "商品化": { "label": "商品化を許諾する", "group": "III. 追加利用類型 (選択)", "type": "boolean", "helpText": "ON にすると PDF に商品化のチェック☑と条件表が表示されます" },
+      "映像化": { "label": "映像化を許諾する", "group": "III. 追加利用類型 (選択)", "type": "boolean" },
+      "デジタルゲーム化": { "label": "デジタルゲーム化を許諾する", "group": "III. 追加利用類型 (選択)", "type": "boolean" },
+      "その他追加利用": { "label": "その他の追加利用を許諾する", "group": "III. 追加利用類型 (選択)", "type": "boolean" },
+      "その他利用類型": { "label": "その他 利用類型 (名称)", "group": "III. 追加利用類型 (選択)" },
+      "独占非独占区分": { "label": "許諾の性質", "group": "III. 追加利用類型 (選択)", "placeholder": "独占 / 非独占 / 優先交渉権のみ" },
+      "許諾性質補足": { "label": "許諾性質 補足", "group": "III. 追加利用類型 (選択)" },
+      "追加利用許諾地域": { "label": "許諾地域", "group": "III. 追加利用類型 (選択)", "placeholder": "例: 全世界 / 日本国内" },
+      "追加利用許諾言語": { "label": "許諾言語", "group": "III. 追加利用類型 (選択)" },
+      "再許諾可否": { "label": "再許諾", "group": "III. 追加利用類型 (選択)", "placeholder": "可 / 不可" },
+      "委託先利用可否": { "label": "委託先利用", "group": "III. 追加利用類型 (選択)", "placeholder": "可 / 不可" },
+      "承認済再許諾先委託先": { "label": "承認済み再許諾先・委託先", "group": "III. 追加利用類型 (選択)", "type": "textarea" },
+
+      "商品化対象商品": { "label": "商品化 対象商品", "group": "IV. 商品化条件 (商品化=ON時)", "type": "textarea" },
+      "商品化製造販売条件": { "label": "商品化 製造・販売条件", "group": "IV. 商品化条件 (商品化=ON時)", "type": "textarea" },
+      "商品化監修承認条件": { "label": "商品化 監修・承認", "group": "IV. 商品化条件 (商品化=ON時)", "type": "textarea" },
+      "商品化サンプル条件": { "label": "商品化 サンプル・献本", "group": "IV. 商品化条件 (商品化=ON時)" },
+
+      "映像化対象媒体": { "label": "映像化 対象媒体", "group": "V. 映像化条件 (映像化=ON時)", "type": "textarea" },
+      "映像化制作条件": { "label": "映像化 制作条件", "group": "V. 映像化条件 (映像化=ON時)", "type": "textarea" },
+      "映像化改変脚色条件": { "label": "映像化 改変・脚色条件", "group": "V. 映像化条件 (映像化=ON時)", "type": "textarea" },
+      "映像化監修承認条件": { "label": "映像化 監修・承認", "group": "V. 映像化条件 (映像化=ON時)", "type": "textarea" },
+
+      "ゲーム化対象プラットフォーム": { "label": "ゲーム化 対象プラットフォーム", "group": "VI. ゲーム化条件 (ゲーム化=ON時)", "type": "textarea" },
+      "ゲーム化対象ゲーム機能": { "label": "ゲーム化 対象ゲーム・機能", "group": "VI. ゲーム化条件 (ゲーム化=ON時)", "type": "textarea" },
+      "ゲーム化運営条件": { "label": "ゲーム化 運営条件", "group": "VI. ゲーム化条件 (ゲーム化=ON時)", "type": "textarea" },
+      "ゲーム化監修承認条件": { "label": "ゲーム化 監修・承認", "group": "VI. ゲーム化条件 (ゲーム化=ON時)", "type": "textarea" },
+      "その他追加利用条件": { "label": "その他追加利用 条件", "group": "VI. ゲーム化条件 (ゲーム化=ON時)", "type": "textarea" },
+
+      "監修対象": { "label": "監修対象", "group": "VII. 共通利用条件", "type": "textarea" },
+      "監修提出物": { "label": "監修 提出物", "group": "VII. 共通利用条件", "type": "textarea" },
+      "承認期限": { "label": "承認期限", "group": "VII. 共通利用条件" },
+      "承認方法": { "label": "承認方法", "group": "VII. 共通利用条件" },
+      "禁止事項制限事項": { "label": "禁止事項・制限事項", "group": "VII. 共通利用条件", "type": "textarea" },
+      "派生素材権利帰属": { "label": "成果物・派生素材の権利帰属", "group": "VII. 共通利用条件", "type": "textarea" },
+      "追加利用著作権表示": { "label": "表示・クレジット", "group": "VII. 共通利用条件", "type": "textarea" },
+
+      "対価区分固定": { "label": "対価: 固定対価", "group": "VIII. 対価・支払条件", "type": "boolean" },
+      "対価区分売上連動": { "label": "対価: 売上連動", "group": "VIII. 対価・支払条件", "type": "boolean" },
+      "対価区分ライセンス収益分配": { "label": "対価: ライセンス収益分配", "group": "VIII. 対価・支払条件", "type": "boolean" },
+      "対価区分MG前払": { "label": "対価: MG／前払金あり", "group": "VIII. 対価・支払条件", "type": "boolean" },
+      "対価区分無償": { "label": "対価: 無償", "group": "VIII. 対価・支払条件", "type": "boolean" },
+      "商品化対価計算式": { "label": "商品化 対価計算式", "group": "VIII. 対価・支払条件", "type": "textarea" },
+      "映像化対価計算式": { "label": "映像化 対価計算式", "group": "VIII. 対価・支払条件", "type": "textarea" },
+      "ゲーム化対価計算式": { "label": "ゲーム化 対価計算式", "group": "VIII. 対価・支払条件", "type": "textarea" },
+      "控除項目為替条件": { "label": "控除項目・為替", "group": "VIII. 対価・支払条件", "type": "textarea" },
+      "MG前払金条件": { "label": "MG・前払金 条件", "group": "VIII. 対価・支払条件", "type": "textarea" },
+      "MG前払金充当方法": { "label": "MG・前払金 充当方法", "group": "VIII. 対価・支払条件" },
+      "報告対象期間": { "label": "報告対象期間", "group": "VIII. 対価・支払条件", "placeholder": "例: 四半期" },
+      "報告期限": { "label": "報告期限", "group": "VIII. 対価・支払条件" },
+      "支払期日": { "label": "支払期日", "group": "VIII. 対価・支払条件" },
+      "報告明細": { "label": "報告明細", "group": "VIII. 対価・支払条件", "type": "textarea" },
+      "消費税区分": { "label": "消費税区分", "group": "VIII. 対価・支払条件", "placeholder": "例: 外税10%" },
+      "源泉徴収有無": { "label": "源泉徴収", "group": "VIII. 対価・支払条件", "placeholder": "あり / なし" },
+      "インボイス登録番号": { "label": "インボイス登録番号 (T-)", "group": "VIII. 対価・支払条件", "dbField": "vendor.invoice_registration_number" },
+
+      "終了後処理": { "label": "終了後処理", "group": "IX. 終了後・特記・発行オプション", "type": "textarea" },
+      "特記事項": { "label": "特記事項", "group": "IX. 終了後・特記・発行オプション", "type": "textarea" },
+      "再発行フラグ": { "label": "再発行版バナーを表示", "group": "IX. 終了後・特記・発行オプション", "type": "boolean" },
+      "改訂番号": { "label": "改訂番号 (Rev.)", "group": "IX. 終了後・特記・発行オプション", "placeholder": "1" },
+      "元契約番号": { "label": "元条件書番号", "group": "IX. 終了後・特記・発行オプション", "placeholder": "ARC-PUBA-2026-0001" },
+
+      "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" }
     }
   }
 }

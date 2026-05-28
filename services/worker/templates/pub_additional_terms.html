@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <base target="_top">
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>追加利用許諾条件書（商品化・映像化・デジタルゲーム化） - {{追加条件書番号}}</title>
+  <style>
+    @page {
+      size: A4;
+      margin: 18mm 20mm 22mm 25mm;
+      @bottom-center {
+        content: "- " counter(page) " -";
+        font-size: 8.5pt;
+        font-family: "Noto Serif CJK JP", "IPAMincho", serif;
+      }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Noto Serif CJK JP", "IPAMincho", "MS Mincho", serif;
+      font-size: 10pt;
+      line-height: 1.75;
+      color: #000;
+      background-color: #fff;
+    }
+    .contract-document {
+      max-width: 210mm;
+      margin: 0 auto;
+      background-color: #fff;
+      padding: 18mm 20mm 22mm 25mm;
+    }
+    .doc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 0.5em;
+      font-size: 8.5pt;
+      color: #555;
+      letter-spacing: 0.05em;
+    }
+    .doc-header .header-no { font-size: 10pt; font-weight: bold; color: #1a1a1a; letter-spacing: 0.1em; }
+    .doc-header .header-right { display: flex; gap: 0.45em; align-items: baseline; }
+    .doc-header .header-separator { color: #aaa; }
+    .revision-notice {
+      margin: 0.25em 0 0.9em;
+      padding: 0.35em 0.75em;
+      border: 0.8pt solid #b8a05a;
+      color: #6f5600;
+      background: #fffdf2;
+      font-size: 8.8pt;
+      font-weight: bold;
+      text-align: center;
+      letter-spacing: 0.03em;
+    }
+    h1.contract-title {
+      text-align: center;
+      font-size: 14pt;
+      font-weight: bold;
+      letter-spacing: 0.18em;
+      margin-bottom: 0.9em;
+      text-decoration: underline;
+      text-underline-offset: 0.22em;
+    }
+    .preamble {
+      font-size: 9.5pt;
+      text-indent: 1em;
+      margin-bottom: 0.9em;
+      line-height: 1.7;
+      text-align: justify;
+    }
+    .tobogaki {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1.15em;
+      font-size: 9pt;
+      line-height: 1.6;
+      border-top: 1.5pt solid #1a1a1a;
+      border-bottom: 1.5pt solid #1a1a1a;
+    }
+    .tobogaki th, .tobogaki td {
+      border: none;
+      border-bottom: 0.5pt solid #d8d8d8;
+      padding: 0.45em 0.7em;
+      vertical-align: top;
+    }
+    .tobogaki .sec-row td {
+      padding-top: 0.9em;
+      padding-bottom: 0.25em;
+      border-bottom: 0.5pt solid #888;
+      font-size: 7.5pt;
+      font-weight: bold;
+      letter-spacing: 0.25em;
+      color: #555;
+    }
+    .tobogaki .sec-row .sec-ref {
+      font-weight: normal;
+      letter-spacing: 0;
+      color: #999;
+      font-size: 7pt;
+      margin-left: 0.5em;
+    }
+    .tobogaki .col-item {
+      width: 32%;
+      font-weight: bold;
+      color: #1a1a1a;
+      padding-left: 0.5em;
+    }
+    .tobogaki .col-item .sub-note {
+      display: block;
+      font-size: 7.5pt;
+      font-weight: normal;
+      color: #888;
+      margin-top: 0.1em;
+    }
+    .tobogaki .col-value       { width: 68%; word-break: break-word; overflow-wrap: break-word; color: #1a1a1a; }
+    .tobogaki .special-cell    { min-height: 2.5em; word-break: break-word; overflow-wrap: break-word; color: #1a1a1a; white-space: pre-wrap; }
+    .formula-cell { font-size: 8.6pt; line-height: 1.62; color: #1a1a1a; }
+    .formula-line { margin: 0.1em 0; padding-left: 1em; text-indent: -1em; }
+    .scope-note { margin-top: 0.35em; color: #555; font-size: 7.8pt; line-height: 1.45; }
+    .caution-note { margin-top: 0.35em; color: #7a4b00; font-size: 7.8pt; line-height: 1.45; }
+    .type-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 8.4pt;
+      line-height: 1.5;
+      margin-top: 0.2em;
+    }
+    .type-table th,
+    .type-table td {
+      border: 0.5pt solid #d4d4d4;
+      padding: 0.35em 0.45em;
+      vertical-align: top;
+    }
+    .type-table th { background: #f7f7f7; font-weight: bold; text-align: left; }
+    .type-table .narrow { width: 20%; }
+    .type-table .wide { width: 80%; }
+    .check-row { line-height: 1.65; }
+    .check-row span { display: inline-block; margin-right: 1.3em; white-space: nowrap; }
+    .head-signature { margin: 0.5em 0 1em; page-break-inside: avoid; font-size: 9.2pt; line-height: 1.55; }
+    .head-signature .sig-date { text-align: right; margin-bottom: 0.8em; }
+    .head-signature .sig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.2em; }
+    .head-signature .sig-party { border-top: 1pt solid #1a1a1a; padding-top: 0.5em; }
+    .head-signature .party-label { font-weight: bold; margin-bottom: 0.3em; }
+    .head-signature .sig-name-row { display: flex; align-items: center; justify-content: space-between; gap: 0.8em; margin-top: 0.3em; }
+    .head-signature .stamp-box { width: 52px; height: 52px; border: 1pt solid #1a1a1a; display: flex; justify-content: center; align-items: center; font-size: 11pt; background-color: #fff; flex-shrink: 0; }
+    .closing-note { font-size: 9.5pt; text-indent: 1em; margin: 1em 0 0.5em; line-height: 1.7; text-align: justify; }
+    .closing-text { font-size: 9.5pt; text-indent: 1em; margin: 0.5em 0; line-height: 1.7; text-align: justify; }
+    @media print {
+      body { background-color: #fff; }
+      .contract-document { box-shadow: none; margin: 0; width: 100%; max-width: none; padding: 0; }
+      .head-signature, .tobogaki { page-break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+<div class="contract-document">
+
+  <div class="doc-header">
+    <span class="header-no">第　{{追加条件書番号}}　号</span>
+    <div class="header-right">
+      <span>基本契約番号：{{基本契約番号}}</span>
+      <span class="header-separator">｜</span>
+      <span>締結日：{{締結日}}</span>
+    </div>
+  </div>
+
+  {{#if 再発行フラグ}}
+  <div class="revision-notice">再発行版 (Rev. {{改訂番号}}) — 元条件書: {{元契約番号}}</div>
+  {{/if}}
+
+  <h1 class="contract-title">追加利用許諾条件書</h1>
+
+  <p class="preamble">株式会社アークライト（以下「アークライト」という）と{{許諾者}}（以下「許諾者」という）は、{{基本契約締結日}}付出版等許諾基本契約書（以下「基本契約」という）および{{通常条件書締結日}}付出版等利用許諾条件書（以下「通常条件書」という）に関連して、通常条件書では許諾対象外とされた商品化、映像化、デジタルゲーム化その他の追加利用について、以下のとおり個別の利用許諾条件を定める。</p>
+
+  <table class="tobogaki">
+    <tbody>
+
+      <!-- ===== 基本情報 ===== -->
+      <tr class="sec-row"><td colspan="2">基　本　情　報</td></tr>
+      <tr>
+        <td class="col-item">追加条件書番号</td>
+        <td class="col-value">{{追加条件書番号}}</td>
+      </tr>
+      <tr>
+        <td class="col-item">基本契約番号</td>
+        <td class="col-value">{{基本契約番号}}</td>
+      </tr>
+      <tr>
+        <td class="col-item">関連する通常条件書</td>
+        <td class="col-value">条件書番号：{{通常条件書番号}}<br>対象出版物名：『{{対象出版物名}}』</td>
+      </tr>
+      <tr>
+        <td class="col-item">締結日・効力発生日</td>
+        <td class="col-value">締結日：{{締結日}}<br>効力発生日：{{効力発生日}}</td>
+      </tr>
+      <tr>
+        <td class="col-item">
+          追加許諾期間
+          <span class="sub-note">通常条件書と異なる場合は本欄を優先</span>
+        </td>
+        <td class="col-value">
+          許諾開始日：{{追加許諾開始日}}<br>
+          許諾終了日：{{追加許諾終了日}}<br>
+          自動更新：{{自動更新有無}}（更新単位：{{更新単位}}／終了通知期限：{{終了通知期限}}）
+        </td>
+      </tr>
+
+      <!-- ===== 対象著作物 ===== -->
+      <tr class="sec-row"><td colspan="2">対　象　著　作　物</td></tr>
+      <tr>
+        <td class="col-item">原著作物名</td>
+        <td class="col-value">『{{原著作物名}}』</td>
+      </tr>
+      <tr>
+        <td class="col-item">対象キャラクター・設定等</td>
+        <td class="col-value">{{対象キャラクター設定等}}</td>
+      </tr>
+      <tr>
+        <td class="col-item">著作者名・著作権者</td>
+        <td class="col-value">著作者名：{{著作者名}}<br>著作権者：{{著作権者}}</td>
+      </tr>
+      <tr>
+        <td class="col-item">第三者権利の有無</td>
+        <td class="col-value">{{第三者権利有無}}<br>備考：{{第三者権利備考}}</td>
+      </tr>
+
+      <!-- ===== 追加許諾の対象 ===== -->
+      <tr class="sec-row">
+        <td colspan="2">
+          追　加　許　諾　の　対　象
+          <span class="sec-ref">（基本契約第４条）</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">
+          追加利用類型
+          <span class="sub-note">選択した類型のみ有効</span>
+        </td>
+        <td class="col-value">
+          <div class="check-row">
+            <span>{{#if 商品化}}☑{{else}}□{{/if}} 商品化</span>
+            <span>{{#if 映像化}}☑{{else}}□{{/if}} 映像化</span>
+            <span>{{#if デジタルゲーム化}}☑{{else}}□{{/if}} デジタルゲーム化</span>
+            <span>{{#if その他追加利用}}☑{{else}}□{{/if}} その他（{{その他利用類型}}）</span>
+          </div>
+          <div class="scope-note">上記で選択されていない利用類型は、本条件書によって許諾されない。</div>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">許諾の性質</td>
+        <td class="col-value">{{独占非独占区分}}（独占／非独占／優先交渉権のみ／その他：{{許諾性質補足}}）</td>
+      </tr>
+      <tr>
+        <td class="col-item">許諾地域・言語</td>
+        <td class="col-value">許諾地域：{{追加利用許諾地域}}<br>許諾言語：{{追加利用許諾言語}}</td>
+      </tr>
+      <tr>
+        <td class="col-item">再許諾・委託先利用</td>
+        <td class="col-value">
+          再許諾：{{再許諾可否}}<br>
+          製造委託先・制作会社・配信事業者・広告代理店その他の委託先による利用：{{委託先利用可否}}<br>
+          承認済み再許諾先・委託先：{{承認済再許諾先委託先}}
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">許諾対象外</td>
+        <td class="col-value">本条件書に明示された利用類型、媒体、商品、地域、期間および方法を超える利用は、アークライトに許諾されない。著作権の譲渡、出版権の設定、商標権その他の登録権利の移転または設定は、本条件書に明示された場合を除き行われない。</td>
+      </tr>
+
+      <!-- ===== 利用類型別条件 ===== -->
+      <tr class="sec-row">
+        <td colspan="2">
+          利　用　類　型　別　条　件
+          <span class="sec-ref">選択した類型のみ記載</span>
+        </td>
+      </tr>
+      {{#if 商品化}}
+      <tr>
+        <td class="col-item">商品化</td>
+        <td class="col-value">
+          <table class="type-table">
+            <tr><th class="narrow">対象商品</th><td class="wide">{{商品化対象商品}}</td></tr>
+            <tr><th>製造・販売条件</th><td>{{商品化製造販売条件}}（例：製造数量、販売チャネル、販売開始予定日、販売終了予定日）</td></tr>
+            <tr><th>監修・承認</th><td>{{商品化監修承認条件}}（例：商品仕様、サンプル、パッケージ、広告物の事前確認）</td></tr>
+            <tr><th>サンプル・献本</th><td>{{商品化サンプル条件}}</td></tr>
+          </table>
+        </td>
+      </tr>
+      {{/if}}
+      {{#if 映像化}}
+      <tr>
+        <td class="col-item">映像化</td>
+        <td class="col-value">
+          <table class="type-table">
+            <tr><th class="narrow">対象媒体</th><td class="wide">{{映像化対象媒体}}（例：PV、CM、配信番組、アニメーション、実写映像、イベント上映）</td></tr>
+            <tr><th>制作条件</th><td>{{映像化制作条件}}（例：制作会社、公開予定日、公開媒体、尺、地域）</td></tr>
+            <tr><th>改変・脚色</th><td>{{映像化改変脚色条件}}（例：構成、脚本、キャラクター表現、世界観変更の承認要否）</td></tr>
+            <tr><th>監修・承認</th><td>{{映像化監修承認条件}}</td></tr>
+          </table>
+        </td>
+      </tr>
+      {{/if}}
+      {{#if デジタルゲーム化}}
+      <tr>
+        <td class="col-item">デジタルゲーム化</td>
+        <td class="col-value">
+          <table class="type-table">
+            <tr><th class="narrow">対象プラットフォーム</th><td class="wide">{{ゲーム化対象プラットフォーム}}（例：iOS、Android、Steam、家庭用ゲーム機、ブラウザゲーム）</td></tr>
+            <tr><th>対象ゲーム・機能</th><td>{{ゲーム化対象ゲーム機能}}（例：ゲームタイトル、ゲームジャンル、DLC、追加シナリオ、アプリ内課金、広告収益）</td></tr>
+            <tr><th>運営条件</th><td>{{ゲーム化運営条件}}（例：配信開始予定日、サービス終了、アップデート、追加コンテンツ）</td></tr>
+            <tr><th>監修・承認</th><td>{{ゲーム化監修承認条件}}</td></tr>
+          </table>
+        </td>
+      </tr>
+      {{/if}}
+      {{#if その他追加利用}}
+      <tr>
+        <td class="col-item">その他追加利用</td>
+        <td class="col-value">{{その他追加利用条件}}</td>
+      </tr>
+      {{/if}}
+
+      <!-- ===== 共通利用条件 ===== -->
+      <tr class="sec-row">
+        <td colspan="2">
+          共　通　利　用　条　件
+          <span class="sec-ref">追加利用全般に適用</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">監修・承認手続</td>
+        <td class="col-value">
+          監修対象：{{監修対象}}<br>
+          提出物：{{監修提出物}}<br>
+          承認期限：{{承認期限}}<br>
+          承認方法：{{承認方法}}
+          <div class="caution-note">※ 明示的に承認不要とする場合を除き、最終的な商品仕様、映像素材、ゲーム内容、広告宣伝物、著作権表示は、事前確認の対象とする。</div>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">禁止事項・制限事項</td>
+        <td class="col-value">{{禁止事項制限事項}}<br>本著作物または許諾者の名誉・声望を害する態様、法令・公序良俗に反する態様、基本契約および本条件書の範囲を超える態様での利用はできない。</td>
+      </tr>
+      <tr>
+        <td class="col-item">成果物・派生素材の権利帰属</td>
+        <td class="col-value">{{派生素材権利帰属}}<br>本条件書に明示のない限り、追加利用のためにアークライトまたはその委託先が作成した商品デザイン、映像素材、ゲームプログラム、UI、広告素材その他の新規成果物に係る権利は、当該成果物の制作主体またはアークライトに帰属する。ただし、原著作物に係る許諾者の権利は許諾者に留保される。</td>
+      </tr>
+      <tr>
+        <td class="col-item">表示・クレジット</td>
+        <td class="special-cell">{{追加利用著作権表示}}</td>
+      </tr>
+
+      <!-- ===== 対価・支払条件 ===== -->
+      <tr class="sec-row">
+        <td colspan="2">
+          対　価・報　告・支　払　条　件
+          <span class="sec-ref">（基本契約第１５条）</span>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">対価区分</td>
+        <td class="col-value">
+          <div class="check-row">
+            <span>{{#if 対価区分固定}}☑{{else}}□{{/if}} 固定対価</span>
+            <span>{{#if 対価区分売上連動}}☑{{else}}□{{/if}} 売上連動</span>
+            <span>{{#if 対価区分ライセンス収益分配}}☑{{else}}□{{/if}} ライセンス収益分配</span>
+            <span>{{#if 対価区分MG前払}}☑{{else}}□{{/if}} MG／前払金あり</span>
+            <span>{{#if 対価区分無償}}☑{{else}}□{{/if}} 無償</span>
+          </div>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">計算式</td>
+        <td class="formula-cell">
+          {{#if 商品化}}<div class="formula-line">商品化：{{商品化対価計算式}}</div>{{/if}}
+          {{#if 映像化}}<div class="formula-line">映像化：{{映像化対価計算式}}</div>{{/if}}
+          {{#if デジタルゲーム化}}<div class="formula-line">デジタルゲーム化：{{ゲーム化対価計算式}}</div>{{/if}}
+          <div class="formula-line">控除項目・為替：{{控除項目為替条件}}</div>
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">MG・前払金</td>
+        <td class="col-value">{{MG前払金条件}}<br>充当方法：{{MG前払金充当方法}}</td>
+      </tr>
+      <tr>
+        <td class="col-item">報告・支払条件</td>
+        <td class="col-value">
+          報告対象期間：{{報告対象期間}}<br>
+          報告期限：{{報告期限}}<br>
+          支払期日：{{支払期日}}<br>
+          報告明細：{{報告明細}}
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">消費税・源泉徴収</td>
+        <td class="col-value">消費税：{{消費税区分}}<br>源泉徴収：{{源泉徴収有無}}<br>インボイス登録番号：{{インボイス登録番号}}</td>
+      </tr>
+
+      <!-- ===== 優先関係・終了後処理 ===== -->
+      <tr class="sec-row">
+        <td colspan="2">
+          優　先　関　係・終　了　後　処　理
+        </td>
+      </tr>
+      <tr>
+        <td class="col-item">通常条件書との関係</td>
+        <td class="col-value">本条件書は、通常条件書では許諾対象外とされた追加利用についてのみ適用される。本条件書と基本契約または通常条件書の内容が抵触する場合、当該追加利用に関する範囲に限り、本条件書の定めが優先する。</td>
+      </tr>
+      <tr>
+        <td class="col-item">終了後処理</td>
+        <td class="col-value">{{終了後処理}}<br>本条件書に基づく追加許諾が終了した場合、アークライトは、未販売在庫、制作中素材、公開済み映像、配信中ゲーム、広告素材その他の終了後取扱いについて、本欄または別途合意に従う。</td>
+      </tr>
+      <tr>
+        <td class="col-item">特記事項</td>
+        <td class="special-cell">{{特記事項}}</td>
+      </tr>
+
+    </tbody>
+  </table>
+
+  <p class="closing-note">本条件書に定めのない事項については、基本契約および通常条件書の定めによるものとする。</p>
+  <p class="closing-text">本条件書の成立を証するため、本書の電磁的記録を作成し、許諾者とアークライトが合意後、電子署名を施し、各自その電磁的記録を保管する。ただし、書面により締結する場合は本書２通を作成し、記名押印の上各１通を保有する。</p>
+
+  <div class="head-signature">
+    <div class="sig-date">{{締結日}}</div>
+    <div class="sig-grid">
+      <div class="sig-party">
+        <div class="party-label">許　諾　者</div>
+        <div>{{許諾者住所}}</div>
+        <div class="sig-name-row">
+          <span>{{著作者名}}（法人の場合は法人名・代表者名）</span>
+          <span class="stamp-box">印</span>
+        </div>
+      </div>
+      <div class="sig-party">
+        <div class="party-label">株式会社アークライト</div>
+        <div>{{アークライト住所}}</div>
+        <div class="sig-name-row">
+          <span>代表取締役　{{アークライト代表者氏名}}</span>
+          <span class="stamp-box">印</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

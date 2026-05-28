@@ -1606,6 +1606,14 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       service_master: "SVC",
       outsourcing: "OUT",
       "業務委託基本契約": "SVC",
+      // 出版 (Phase 25): 基本契約=PUB / 利用許諾条件書=PUBT / 追加利用許諾条件書=PUBA
+      pub_master_individual: "PUB",
+      pub_master_corporate: "PUB",
+      "出版等許諾基本契約": "PUB",
+      pub_license_terms: "PUBT",
+      "出版等利用許諾条件書": "PUBT",
+      pub_additional_terms: "PUBA",
+      "追加利用許諾条件書": "PUBA",
       // 売買
       sales_master: "SAL",
       sales_master_buyer: "SAL",
