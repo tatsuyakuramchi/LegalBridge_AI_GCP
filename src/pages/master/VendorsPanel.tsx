@@ -201,14 +201,27 @@ export function VendorsPanel() {
           <Card
             key={`vendor-${v.vendor_code || idx}`}
             className="cursor-pointer hover:border-foreground transition-all"
-            onClick={() =>
-              fetch(`/api/master/vendors/${v.vendor_code}`)
-                .then((r) => r.json())
+            onClick={() => {
+              // Phase 25.1: 一覧 (listVendors) は既に contacts/addresses/
+              //   bank_accounts を含む完全な行を返すため、まず手元の行で詳細を
+              //   開いて即編集可能にする。その上で detail エンドポイントでの補完を
+              //   試みるが、404/エラー時は握りつぶす。
+              //   (vendor_code に "/"・空白・"#" 等が含まれると encode しない URL で
+              //    path 不一致になり 404 になる事故があったため encodeURIComponent。)
+              setDetail(v)
+              setEditing(v)
+              const code = String(v.vendor_code || "").trim()
+              if (!code) return
+              fetch(`/api/master/vendors/${encodeURIComponent(code)}`)
+                .then((r) => (r.ok ? r.json() : null))
                 .then((d) => {
-                  setDetail(d)
-                  setEditing(d)
+                  if (d && !d.error && (d.vendor_code || d.id)) {
+                    setDetail(d)
+                    setEditing(d)
+                  }
                 })
-            }
+                .catch(() => {})
+            }}
           >
             <CardContent className="px-4 space-y-2">
               <div className="flex items-start justify-between gap-2">
