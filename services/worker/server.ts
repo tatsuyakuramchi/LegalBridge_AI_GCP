@@ -9772,6 +9772,52 @@ ${details}
             );
           }
         }
+
+        // Phase 23.6.13: その他手数料 (other_fees) も capability_other_fees に
+        //   永続化する。従来は formData.other_fees が documents.form_data の
+        //   JSON にだけ残って DB のテーブルには書かれていなかったため、
+        //   検収書フォームの親 PO 連動でその他手数料が出てこない事故が起きていた。
+        //   expenses (line 9725〜) と同じ DELETE→UPSERT パターン。
+        if (orderItemId && Array.isArray(formData.other_fees)) {
+          const incomingFees = formData.other_fees as Array<any>;
+          const computedFees = incomingFees
+            .map((f: any, idx: number) => ({
+              line_no: Number(f.line_no) || idx + 1,
+              fee_name: f.fee_name || "",
+              amount: Number(f.amount) || 0,
+              remarks: f.remarks || "",
+            }))
+            .filter((f) => f.fee_name);
+
+          const keepFeeNos = computedFees.map((f) => f.line_no).filter((n) => n > 0);
+          if (keepFeeNos.length > 0) {
+            await query(
+              `DELETE FROM capability_other_fees
+                WHERE capability_id = $1
+                  AND line_no NOT IN (${keepFeeNos.map((_, i) => `$${i + 2}`).join(",")})`,
+              [orderItemId, ...keepFeeNos]
+            );
+          } else {
+            await query(
+              "DELETE FROM capability_other_fees WHERE capability_id = $1",
+              [orderItemId]
+            );
+          }
+
+          for (const f of computedFees) {
+            await query(
+              `INSERT INTO capability_other_fees (
+                 capability_id, line_no, fee_name, amount, remarks, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+               ON CONFLICT (capability_id, line_no) DO UPDATE SET
+                 fee_name   = EXCLUDED.fee_name,
+                 amount     = EXCLUDED.amount,
+                 remarks    = EXCLUDED.remarks,
+                 updated_at = CURRENT_TIMESTAMP`,
+              [orderItemId, f.line_no, f.fee_name, f.amount, f.remarks]
+            );
+          }
+        }
       } else if (templateType.includes("inspection")) {
         // Phase 22.21.20: contract_type を 'delivery_inspec' でセット。
         //   ON CONFLICT は DO NOTHING を継続 (検収書側は既存行があれば触らない)。

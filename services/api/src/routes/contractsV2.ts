@@ -355,9 +355,34 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             };
           });
         } else {
+          // Phase 23.6.13: form_data に items[] が無くても expenses[] や
+          //   other_fees[] が入っている「経費 / 手数料だけの PO」がある
+          //   ため、それらを合成して line_items 1 行にまとめる。
+          //   - expenses: amount_inc_tax を税抜換算 (簡易、税率10%固定)
+          //   - other_fees: amount をそのまま
+          //   いずれかが見つかれば「(その他経費/手数料)」の単行 line_item
+          //   として STEP 2 を表示できるようにする。
+          const formExpenses = Array.isArray(formData.expenses)
+            ? formData.expenses
+            : [];
+          const formOtherFees = Array.isArray(formData.other_fees)
+            ? formData.other_fees
+            : [];
+          const expensesTotal = formExpenses.reduce(
+            (s: number, e: any) => s + (Number(e.amount_inc_tax) || 0),
+            0
+          );
+          const feesTotal = formOtherFees.reduce(
+            (s: number, f: any) => s + (Number(f.amount) || 0),
+            0
+          );
+          // 経費は税込なので税抜に戻す (税率 10% 固定で簡易換算)
+          const feeBasedAmt =
+            Math.floor(expensesTotal / 1.1) + feesTotal;
+
           // form_data にも line_items が無い場合、ヘッダの金額から 1 行合成。
           // amount_ex_tax が null でも、form_data の deliveredAmountStr 等から
-          // 復元を試みる。
+          // 復元を試みる。Phase 23.6.13: 経費/手数料合計も候補に加える。
           const headerAmt =
             Number(cc.amount_ex_tax) ||
             Number(
@@ -366,6 +391,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
                 .replace(/[^0-9.-]/g, "")
             ) ||
             Number(formData.amount) ||
+            feeBasedAmt ||
             0;
           if (headerAmt > 0) {
             lineRows = [
