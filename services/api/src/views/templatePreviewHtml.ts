@@ -102,9 +102,37 @@ iframe { width: 100%; height: 100%; border: 0; background: #fff; }
   padding: 10px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 12px;
 }
 
+/* ── Template list (empty state when no ?type=) ── */
+.tpl-list { text-align: left; margin-top: 8px; }
+.tpl-cat {
+  font-size: 11px; font-weight: 700; color: #64748b; letter-spacing: .06em;
+  text-transform: uppercase; margin: 18px 0 6px; padding-bottom: 4px;
+  border-bottom: 1px solid #e5e7eb;
+}
+.tpl-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 9px 10px; border: 1px solid #e5e7eb; border-radius: 6px; margin: 6px 0;
+  background: #fff; flex-wrap: wrap;
+}
+.tpl-info { display: flex; align-items: baseline; gap: 10px; min-width: 0; flex-wrap: wrap; }
+.tpl-info a { font-weight: 600; color: #1d4ed8; text-decoration: none; }
+.tpl-info a:hover { text-decoration: underline; }
+.tpl-type {
+  font-family: ui-monospace, "Menlo", "SFMono-Regular", monospace;
+  font-size: 11px; color: #94a3b8;
+}
+.tpl-actions { display: flex; gap: 6px; flex-shrink: 0; }
+.copy-toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: #111827; color: #fff; padding: 8px 16px; border-radius: 6px;
+  font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 50;
+}
+.copy-toast.show { opacity: 1; }
+
 @media (max-width: 720px) {
   .header { display: block; }
   .viewer { height: 70vh; min-height: 420px; }
+  .tpl-row { flex-direction: column; align-items: stretch; }
 }
 `;
 
@@ -148,16 +176,18 @@ export function templatePreviewPage(): string {
       </div>
     </section>
 
-    <!-- ?type= 無し: 案内文 -->
+    <!-- ?type= 無し: ひな型一覧 (プレビュー導線 + Slack 用 MD コピー) -->
     <section class="empty-state" id="emptyState" style="display:none;">
-      <h2>ひな型を選択してください</h2>
-      <p>このページは Slack キャンバスから個別のリンクで開く想定です。</p>
+      <h2>ひな型一覧</h2>
       <p class="muted">
-        URL に <code>?type=&lt;template&gt;</code> を付けてアクセスしてください。<br>
-        例: <code>/templates/preview?type=nda</code>
+        「プレビュー」で内容を確認できます。「Slack用リンクをコピー」で
+        キャンバスに貼れる Markdown リンク <code>[名称](URL)</code> をコピーします。
       </p>
+      <div id="tplListMsg" class="muted" style="margin:14px 0;">読み込み中…</div>
+      <div id="tplList" class="tpl-list"></div>
     </section>
   </div>
+  <div id="copyToast" class="copy-toast">コピーしました</div>
 
   <script>
     const viewerSection = document.getElementById('viewerSection');
@@ -183,11 +213,89 @@ export function templatePreviewPage(): string {
       errorBanner.style.display = '';
     }
 
+    function escapeHtml(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, (c) =>
+        ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])
+      );
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('copyToast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 1500);
+    }
+
+    async function copyText(text) {
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (e) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (_) {}
+        document.body.removeChild(ta);
+      }
+    }
+
+    // ?type= 無しのときのひな型一覧 (プレビュー導線 + Slack 用 Markdown リンク)
+    async function renderTemplateList() {
+      const listEl = document.getElementById('tplList');
+      const msgEl = document.getElementById('tplListMsg');
+      try {
+        const res = await fetch('/api/template-preview/list');
+        const data = await res.json();
+        const templates = (data && data.templates) || [];
+        if (!templates.length) {
+          msgEl.textContent = 'ひな型が見つかりませんでした。';
+          return;
+        }
+        msgEl.style.display = 'none';
+        const byCat = {};
+        templates.forEach((t) => {
+          const c = t.category || 'その他';
+          (byCat[c] = byCat[c] || []).push(t);
+        });
+        const origin = location.origin;
+        let html = '';
+        Object.keys(byCat).sort().forEach((cat) => {
+          html += '<div class="tpl-cat">' + escapeHtml(cat) + '</div>';
+          byCat[cat].forEach((t) => {
+            const q = '?type=' + encodeURIComponent(t.type);
+            const viewerUrl = origin + '/templates/preview' + q;
+            const md = '[' + (t.label || t.type) + '](' + viewerUrl + ')';
+            html +=
+              '<div class="tpl-row">' +
+                '<div class="tpl-info">' +
+                  '<a href="' + q + '">' + escapeHtml(t.label || t.type) + '</a>' +
+                  '<span class="tpl-type">' + escapeHtml(t.type) + '</span>' +
+                '</div>' +
+                '<div class="tpl-actions">' +
+                  '<a class="btn tiny outline" href="' + q + '">プレビュー</a>' +
+                  '<button class="btn tiny" type="button" data-md="' + escapeHtml(md) + '">Slack用リンクをコピー</button>' +
+                '</div>' +
+              '</div>';
+          });
+        });
+        listEl.innerHTML = html;
+        listEl.querySelectorAll('button[data-md]').forEach((btn) => {
+          btn.addEventListener('click', async () => {
+            await copyText(btn.getAttribute('data-md') || '');
+            showToast('Slack用リンクをコピーしました');
+          });
+        });
+      } catch (e) {
+        msgEl.textContent = '一覧の取得に失敗しました: ' + e;
+      }
+    }
+
     async function init() {
       const params = new URLSearchParams(location.search);
       const type = (params.get('type') || '').trim();
       if (!type) {
         emptyState.style.display = '';
+        renderTemplateList();
         return;
       }
 

@@ -115,12 +115,11 @@ export function viewerGuidePage(opts: {
       </div>
     </div>
 
-    <a class="tile" href="/templates/preview?type=nda">
+    <a class="tile" href="/templates/preview">
       <div class="title">📄 ひな型プレビュー</div>
       <div class="desc">
-        通常は <strong>Slack キャンバスのひな型一覧</strong>から個別リンクで開きます。<br>
-        直接アクセスする場合は URL に <code>?type=&lt;template&gt;</code> を指定してください
-        (例: <code>?type=nda</code>, <code>?type=purchase_order</code>)。
+        全ひな型の一覧から選んでプレビューできます。<br>
+        各ひな型の <strong>Slack 貼付け用リンク (Markdown)</strong> もこの画面でコピーできます。
       </div>
     </a>
 
