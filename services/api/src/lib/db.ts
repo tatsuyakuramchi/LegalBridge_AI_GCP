@@ -719,6 +719,17 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       sales_master_credit: "SAL",
       sales_master_standard: "SAL",
       "売買基本契約": "SAL",
+      // 出版 (Phase 25.6): worker と同一仕様。基本契約=PUB / 利用許諾条件書=PUBT /
+      //   追加利用許諾条件書=PUBA。publication_contract は legalon import の基本契約。
+      pub_master_individual: "PUB",
+      pub_master_corporate: "PUB",
+      publication_contract: "PUB",
+      "出版等許諾基本契約": "PUB",
+      "出版基本契約": "PUB",
+      pub_license_terms: "PUBT",
+      "出版等利用許諾条件書": "PUBT",
+      pub_additional_terms: "PUBA",
+      "追加利用許諾条件書": "PUBA",
       // その他
       nda: "NDA",
       "NDA": "NDA",

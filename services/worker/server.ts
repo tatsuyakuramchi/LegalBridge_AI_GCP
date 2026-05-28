@@ -5116,8 +5116,15 @@ ${details}
           else stats.unresolved_vendor++;
 
           let recordType = "master_contract";
+          // Phase 25.6: 出版系を最優先で判定 (pub_license_terms は "license" を含む
+          //   ため license 判定より前に分岐)。search-api の正仕様に合わせる。
+          if (templateType.startsWith("pub_")) {
+            recordType = templateType.startsWith("pub_master_")
+              ? "master_contract"
+              : "publication_condition";
+          }
           // Phase 22.21.82: fee_statement テンプレ削除に伴い branch から除去
-          if (
+          else if (
             templateType.includes("license") ||
             templateType.includes("royalty")
           ) {
@@ -5150,7 +5157,13 @@ ${details}
             [
               vendorId,
               recordType,
-              templateType.includes("license") ? "license" : "service",
+              // Phase 25.6: 出版系は publication。pub_license_terms の "license"
+              //   含有による誤判定を避けるため startsWith("pub_") を先に評価。
+              templateType.startsWith("pub_")
+                ? "publication"
+                : templateType.includes("license")
+                ? "license"
+                : "service",
               templateType,
               fd.CONTRACT_TITLE || fd.contract_title || fd.summary || fd.PROJECT_TITLE || "",
               d.document_number,
@@ -9729,15 +9742,17 @@ ${details}
         //     'license_condition'    : 利用許諾 (license / royalty)
         //     'delivery_record'      : 検収書 (mirror 用、picker には載らない)
         let recordType = "master_contract";
-        // Phase 25: 出版系を最優先で判定。pub_license_terms は "license" を含む
-        //   ため、後段の license 判定より前に分岐させないと誤分類になる。
-        //     pub_master_*         → master_contract (出版基本契約)
-        //     pub_license_terms    → individual_contract (基本契約配下の利用許諾条件書)
-        //     pub_additional_terms → individual_contract (追加利用許諾条件書)
+        // Phase 25 / 25.6: 出版系を最優先で判定。pub_license_terms は "license" を
+        //   含むため、後段の license 判定より前に分岐させないと誤分類になる。
+        //   record_type は search-api (contractCheckService) の正仕様に合わせる:
+        //     pub_master_*         → master_contract     (出版基本契約 / category=publication)
+        //     pub_license_terms    → publication_condition (出版利用許諾条件書)
+        //     pub_additional_terms → publication_condition (追加利用許諾条件書)
+        //   ※ getPublicationConditions() が record_type='publication_condition' を参照。
         if (templateType.startsWith("pub_")) {
           recordType = templateType.startsWith("pub_master_")
             ? "master_contract"
-            : "individual_contract";
+            : "publication_condition";
         }
         // Phase 22.21.82: fee_statement テンプレ削除に伴い branch から除去
         else if (

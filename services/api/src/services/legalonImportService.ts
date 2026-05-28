@@ -167,6 +167,11 @@ function inferContractType(
   if (/個別利用許諾|個別ライセンス|個別契約/.test(s)) {
     return { type: "individual_license_terms", category: "license", recordType: "individual_contract" };
   }
+  // Phase 25.6: 出版の個別条件 (利用許諾条件書 / 追加利用許諾条件書) →
+  //   record_type='publication_condition' (contractCheckService.getPublicationConditions と一致)
+  if (/追加利用許諾条件|出版.*利用許諾条件|出版.*条件書/.test(s)) {
+    return { type: "pub_license_terms", category: "publication", recordType: "publication_condition" };
+  }
   // 基本契約系
   if (/業務委託基本契約|業務委託.*基本|業務委託契約/.test(s)) {
     return { type: "service_master", category: "service", recordType: "master_contract" };
