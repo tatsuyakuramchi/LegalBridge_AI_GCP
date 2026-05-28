@@ -345,6 +345,15 @@
           <td class="right">¥{{deliveredAmountStr}}</td>
         </tr>
       {{/if}}
+      {{#if otherFeesTaxable}}
+      {{!-- Phase 23.6.15: その他手数料がある場合、消費税は末尾の「請求金額サマリー」で
+           検収税抜＋手数料税抜を合算して 1 回だけ計算する (二重計上を避けるため、
+           ここでは検収の税抜小計のみ表示)。 --}}
+      <tr class="total-row">
+        <td colspan="3" class="right">検収 小計（税抜）</td>
+        <td class="right">¥{{deliveredAmountStr}}</td>
+      </tr>
+      {{else}}
       <tr>
         <td colspan="3" class="right">
           消費税({{taxRate}}%{{#if isReducedTax}}・軽減税率対象{{/if}})
@@ -355,6 +364,7 @@
         <td colspan="3" class="right">今回検収金額(税込)</td>
         <td class="right">¥{{totalAmountStr}}</td>
       </tr>
+      {{/if}}
     </tbody>
   </table>
   {{#if isReducedTax}}
@@ -421,18 +431,54 @@
         <td class="right">¥{{otherFeesTotalStr}}</td>
         <td></td>
       </tr>
-      <tr class="total-row" style="background:#f3f3f3;">
-        <td colspan="2" class="right">手数料合計（税込換算）</td>
-        <td class="right">¥{{otherFeesTotalIncTaxStr}}</td>
-        <td></td>
-      </tr>
     </tbody>
   </table>
-  <div style="font-size:8.5pt;color:#666;margin-top:2px;">※ その他手数料は税抜表示。消費税は本検収金額と合算して再計算しています。</div>
+  <div style="font-size:8.5pt;color:#666;margin-top:2px;">※ その他手数料は税抜表示。消費税は検収金額と合算し、下記「請求金額サマリー」で税率ごとに一括計算します（二重計上はしません）。</div>
   {{/if}}
   {{/if}}
 
-  {{!-- 検収金額（税込）+ 経費（税込）+ 手数料(税込換算) の総支払額 --}}
+  {{!-- Phase 23.6.15: 請求金額サマリー（適格請求書 / 消費税法57条の4 対応）。
+       検収金額(税抜) と その他手数料(税抜) を税率ごとに区分して合算し、消費税を
+       1 回だけ計算する。経費(税込)は課税対象外の立替として別掲。手数料がある
+       ときのみ表示 (手数料が無ければ上の「今回検収金額(税込)」で完結する)。 --}}
+  {{#if otherFeesTaxable}}
+  <div class="section-title">■ 請求金額サマリー（適格請求書）</div>
+  <table style="margin-bottom:4px;">
+    <tbody>
+      <tr>
+        <td style="width:70%;" class="right">検収金額（税抜）</td>
+        <td style="width:30%;" class="right">¥{{deliveredAmountStr}}</td>
+      </tr>
+      <tr>
+        <td class="right">その他手数料（税抜）</td>
+        <td class="right">¥{{otherFeesTotalStr}}</td>
+      </tr>
+      <tr class="total-row">
+        <td class="right">{{taxRate}}%対象 税抜合計</td>
+        <td class="right">¥{{taxableSubtotalExTaxStr}}</td>
+      </tr>
+      <tr>
+        <td class="right">消費税（{{taxRate}}%）</td>
+        <td class="right">¥{{combinedTaxStr}}</td>
+      </tr>
+      <tr class="total-row" style="background:#f3f3f3;">
+        <td class="right">税込合計</td>
+        <td class="right">¥{{taxableTotalIncTaxStr}}</td>
+      </tr>
+      {{#if expenses}}
+      <tr>
+        <td class="right">経費（税込・課税対象外／別精算）</td>
+        <td class="right">¥{{expensesTotalIncTaxStr}}</td>
+      </tr>
+      {{/if}}
+    </tbody>
+  </table>
+  <div style="font-size:8.5pt;color:#666;margin-top:2px;">
+    ※ 消費税は {{taxRate}}%対象（検収金額＋その他手数料）の税抜合計に対し、税率ごとに区分して一括計算しています（消費税の二重計上はしません）。{{#if counterpartyTni}} 登録番号: {{counterpartyTni}}{{/if}}
+  </div>
+  {{/if}}
+
+  {{!-- 検収金額（税込）+ その他手数料（税込・上のサマリーで合算課税）+ 経費（税込） の総支払額 --}}
   {{#if (or expenses other_fees)}}
   <table style="margin-top:8px;margin-bottom:4px;">
     <tbody>

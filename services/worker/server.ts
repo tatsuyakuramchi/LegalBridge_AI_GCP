@@ -8691,6 +8691,94 @@ ${details}
   // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
   // -------------------------------------------------------------------
 
+  /**
+   * Phase 23.6.15: 検収書の金額サマリーをサーバ側で一元計算する (適格請求書対応)。
+   *
+   *   消費税は「検収明細 税抜 + その他手数料 税抜」を合算した課税標準に対して、
+   *   税率ごとに 1 回だけ計算する (per-section の二重計上・二重丸めを排除)。
+   *   経費 (expenses) は領収書の税込み額をそのまま精算する課税対象外の立替で、
+   *   合計には税込のまま加算する。
+   *
+   *   戻り値は inspection_certificate.html が参照する整形済み文字列群。
+   *   preview / generate の両方で details にスプレッドして使う。
+   */
+  function computeInspectionSummary(formData: any) {
+    const isReduced = !!formData?.isReducedTax;
+    const taxRate = Number(formData?.taxRate) || (isReduced ? 8 : 10);
+
+    // 検収明細 税抜合計: delivery_line_items[] 優先、無ければ deliveredAmountStr。
+    const deliveryLines = Array.isArray(formData?.delivery_line_items)
+      ? formData.delivery_line_items
+      : [];
+    const deliveredExTax =
+      deliveryLines.length > 0
+        ? deliveryLines.reduce(
+            (s: number, l: any) =>
+              s +
+              (Number(l?.inspected_amount_ex_tax) ||
+                Number(l?.amount_ex_tax) ||
+                0),
+            0
+          )
+        : Number(
+            String(formData?.deliveredAmountStr || "0").replace(/[^0-9.-]+/g, "")
+          ) || 0;
+
+    // その他手数料 税抜合計 (課税対象)
+    const otherFees = Array.isArray(formData?.other_fees)
+      ? formData.other_fees
+      : [];
+    const otherFeesExTax = otherFees.reduce(
+      (s: number, f: any) => s + (Number(f?.amount) || 0),
+      0
+    );
+    const otherFeesTaxable = otherFees.length > 0 && otherFeesExTax > 0;
+
+    // 経費 (税込パススルー・課税対象外)
+    const expenses = Array.isArray(formData?.expenses) ? formData.expenses : [];
+    const expensesIncTax = expenses.reduce(
+      (s: number, e: any) => s + (Number(e?.amount_inc_tax) || 0),
+      0
+    );
+
+    // 検収単体の税 (手数料が無いときの「今回検収金額(税込)」用)
+    const deliveryTaxOnly = Math.ceil((deliveredExTax * taxRate) / 100);
+    const deliveryTotalIncTax = deliveredExTax + deliveryTaxOnly;
+
+    // 課税標準 (検収税抜 + 手数料税抜) に対して消費税を 1 回だけ計算
+    const taxableBaseExTax = deliveredExTax + otherFeesExTax;
+    const combinedTax = Math.ceil((taxableBaseExTax * taxRate) / 100);
+    const taxableTotalIncTax = taxableBaseExTax + combinedTax;
+
+    // 総支払額 = 課税分(税込) + 経費(税込)
+    const grandTotalPayable = taxableTotalIncTax + expensesIncTax;
+
+    const yen = (n: number) => Math.round(n).toLocaleString("ja-JP");
+
+    return {
+      expenses,
+      other_fees: otherFees,
+      otherFeesTaxable,
+      taxRate,
+      // 検収明細
+      deliveredAmountStr: yen(deliveredExTax),
+      taxAmountStr: yen(deliveryTaxOnly),
+      totalAmountStr: yen(deliveryTotalIncTax),
+      // その他手数料 (税抜)
+      otherFeesTotalStr: yen(otherFeesExTax),
+      // 適格請求書サマリー (税率ごとに区分・消費税は 1 回)
+      taxableSubtotalExTaxStr: yen(taxableBaseExTax),
+      combinedTaxStr: yen(combinedTax),
+      taxableTotalIncTaxStr: yen(taxableTotalIncTax),
+      // 経費 (税込)
+      expensesTotalIncTax: expensesIncTax,
+      expensesTotalIncTaxStr: yen(expensesIncTax),
+      // 総支払額
+      grandTotalPayable,
+      grandTotalPayableStr: yen(grandTotalPayable),
+    };
+  }
+
   app.post("/api/documents/preview", express.json(), async (req, res) => {
     try {
       const { templateType, formData, issueKey, requesterEmail } = req.body;
@@ -8701,6 +8789,12 @@ ${details}
         (s: number, e: any) => s + (Number(e?.amount_inc_tax) || 0),
         0
       );
+      // Phase 23.6.15: 検収書系は消費税 1 回計算の適格請求書サマリーで上書き。
+      const previewInspectionSummary = String(templateType || "").includes(
+        "inspection"
+      )
+        ? computeInspectionSummary(formData)
+        : null;
 
       const { html, fileName } = await documentService.generateDocument(
         {
@@ -8713,6 +8807,7 @@ ${details}
             ...formData,
             expenses: previewExpenses,
             expensesTotalIncTax: previewExpensesTotal,
+            ...(previewInspectionSummary || {}),
             isLivePreview: true,
           },
         },
@@ -9081,6 +9176,16 @@ ${details}
       const grandTotalPayableStrComputed =
         grandTotalPayableComputed.toLocaleString("ja-JP");
 
+      // Phase 23.6.15: 検収書系は適格請求書サマリー (消費税 1 回計算) を
+      //   サーバ側で一括計算し、details の末尾でスプレッドして上書きする。
+      //   これにより検収明細と「その他手数料」の per-section 二重課税を排除し、
+      //   grandTotalPayable に手数料が加算されないバグも同時に解消する。
+      const generateInspectionSummary = String(templateType || "").includes(
+        "inspection"
+      )
+        ? computeInspectionSummary(formData)
+        : null;
+
       // Phase 22.10: ファイル名と reissue banner 用に取引先名を確定
       //   formData の VENDOR_NAME / counterparty / Licensor_名称 等から拾う。
       //   どれも無ければ空文字 (ファイル名にはサフィックスが付かない)。
@@ -9153,6 +9258,10 @@ ${details}
                   return { changedAt, fieldLabel, beforeValue, afterValue, reason };
                 })
               : [],
+            // Phase 23.6.15: 検収書の金額サマリー (消費税 1 回計算・適格請求書対応)
+            //   を最後にスプレッドして deliveredAmountStr / taxAmountStr /
+            //   totalAmountStr / otherFeesTotalStr / grandTotalPayable 等を上書き。
+            ...(generateInspectionSummary || {}),
           },
         },
         templateType,
