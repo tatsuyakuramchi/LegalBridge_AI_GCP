@@ -82,6 +82,33 @@ const ISSUE_TEMPLATES: IssueTemplate[] = [
     subTopicDefault: "個別利用許諾条件書",
   },
   {
+    // Phase 25.7: 出版等許諾基本契約 (個人版/法人版とも本テンプレで起票。
+    //   PDF の個人/法人差は DocumentEditorPage 側で選択)。親課題向け。
+    id: "contract_pub_master",
+    issueTypeLabel: "契約審査",
+    requestType: "pub_master",
+    label: "出版基本契約",
+    subTopicDefault: "出版等許諾基本契約書",
+  },
+  {
+    // Phase 25.7: 出版等利用許諾条件書。基本契約の子課題として起票する想定
+    //   (起案時に親課題=出版基本契約 を選択)。
+    id: "contract_pub_terms",
+    issueTypeLabel: "契約審査",
+    requestType: "pub_terms",
+    label: "出版利用許諾条件書",
+    subTopicDefault: "出版等利用許諾条件書",
+  },
+  {
+    // Phase 25.7: 追加利用許諾条件書 (商品化/映像化/ゲーム化)。基本契約の
+    //   子課題として起票する想定。
+    id: "contract_pub_additional",
+    issueTypeLabel: "契約審査",
+    requestType: "pub_additional",
+    label: "追加利用許諾条件書",
+    subTopicDefault: "追加利用許諾条件書",
+  },
+  {
     id: "contract_sales_master",
     issueTypeLabel: "契約審査",
     requestType: "sales_master",

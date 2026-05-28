@@ -1325,6 +1325,11 @@ ${details}
           "legal_consult",
           "license_calc",
           "legal_request",
+          // Phase 25.7: 出版系 (基本契約=pub_master / 利用許諾条件書=pub_terms /
+          //   追加利用許諾条件書=pub_additional)。いずれも issueTypeLabel=契約審査。
+          "pub_master",
+          "pub_terms",
+          "pub_additional",
         ]);
         if (!ALLOWED_TYPE_LABELS.has(issueTypeLabel)) {
           return res.status(400).json({
@@ -1399,6 +1404,10 @@ ${details}
                 "outsourcing",
                 "license_master",
                 "lic_individual",
+                // Phase 25.7: 出版系も「契約」カテゴリに割当
+                "pub_master",
+                "pub_terms",
+                "pub_additional",
               ].includes(requestType)
             )
               targetCategoryName = "契約";
