@@ -578,13 +578,13 @@
       "契約番号": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます (ARC-PUB-YYYY-NNNN)" },
       "契約締結日": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日", "helpText": "PDF ヘッダ・署名欄に表示" },
 
-      "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・個人)", "type": "textarea", "required": true },
-      "許諾者氏名": { "label": "許諾者 氏名", "group": "II. 許諾者 (甲・個人)", "required": true },
-      "許諾者電話番号": { "label": "許諾者 電話番号", "group": "II. 許諾者 (甲・個人)" },
-      "許諾者メール": { "label": "許諾者 メール", "group": "II. 許諾者 (甲・個人)" },
+      "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・個人)", "type": "textarea", "required": true , "dbField": "vendor.address" },
+      "許諾者氏名": { "label": "許諾者 氏名", "group": "II. 許諾者 (甲・個人)", "required": true , "dbField": "vendor.vendor_name" },
+      "許諾者電話番号": { "label": "許諾者 電話番号", "group": "II. 許諾者 (甲・個人)" , "dbField": "vendor.phone" },
+      "許諾者メール": { "label": "許諾者 メール", "group": "II. 許諾者 (甲・個人)" , "dbField": "vendor.email" },
 
-      "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" },
-      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true },
+      "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true , "dbField": "company.rep" },
 
       "振込先銀行名": { "label": "金融機関名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.bank_name" },
       "支店名": { "label": "支店名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.branch_name" },
@@ -609,16 +609,16 @@
       "契約番号": { "label": "契約番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます (ARC-PUB-YYYY-NNNN)" },
       "契約締結日": { "label": "契約締結日", "group": "I. ヘッダ", "required": true, "placeholder": "例: 2026年5月12日", "helpText": "PDF ヘッダ・署名欄に表示" },
 
-      "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・法人)", "type": "textarea", "required": true },
-      "許諾者法人名": { "label": "許諾者 法人名", "group": "II. 許諾者 (甲・法人)", "required": true },
+      "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・法人)", "type": "textarea", "required": true , "dbField": "vendor.address" },
+      "許諾者法人名": { "label": "許諾者 法人名", "group": "II. 許諾者 (甲・法人)", "required": true , "dbField": "vendor.vendor_name" },
       "代表者職名": { "label": "代表者 職名", "group": "II. 許諾者 (甲・法人)", "placeholder": "例: 代表取締役" },
-      "代表者氏名": { "label": "代表者 氏名", "group": "II. 許諾者 (甲・法人)", "required": true },
-      "担当者氏名": { "label": "担当者 氏名", "group": "II. 許諾者 (甲・法人)" },
-      "担当者電話番号": { "label": "担当者 電話番号", "group": "II. 許諾者 (甲・法人)" },
-      "担当者メール": { "label": "担当者 メール", "group": "II. 許諾者 (甲・法人)" },
+      "代表者氏名": { "label": "代表者 氏名", "group": "II. 許諾者 (甲・法人)", "required": true , "dbField": "vendor.vendor_rep" },
+      "担当者氏名": { "label": "担当者 氏名", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.contact_name" },
+      "担当者電話番号": { "label": "担当者 電話番号", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.phone" },
+      "担当者メール": { "label": "担当者 メール", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.email" },
 
-      "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" },
-      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true },
+      "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true , "dbField": "company.rep" },
 
       "振込先銀行名": { "label": "金融機関名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.bank_name" },
       "支店名": { "label": "支店名", "group": "IV. 振込先口座 (許諾者)", "dbField": "vendor.branch_name" },
@@ -644,8 +644,8 @@
       "基本契約番号": { "label": "基本契約番号", "group": "I. 基本情報", "placeholder": "ARC-PUB-2026-0001", "helpText": "紐づく出版基本契約の契約番号" },
       "締結日": { "label": "締結日", "group": "I. 基本情報", "required": true, "placeholder": "例: 2026年5月12日" },
       "基本契約締結日": { "label": "基本契約 締結日", "group": "I. 基本情報", "placeholder": "例: 2026年4月1日", "helpText": "前文に表示" },
-      "許諾者": { "label": "許諾者 名称 (氏名/法人名)", "group": "I. 基本情報", "required": true },
-      "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" },
+      "許諾者": { "label": "許諾者 名称 (氏名/法人名)", "group": "I. 基本情報", "required": true , "dbField": "vendor.vendor_name" },
+      "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" , "dbField": "vendor.address" },
 
       "許諾開始日": { "label": "許諾開始日", "group": "II. 許諾期間", "type": "date" },
       "許諾終了日": { "label": "許諾終了日", "group": "II. 許諾期間", "type": "date" },
@@ -699,8 +699,8 @@
       "旧合意過去利用取扱い": { "label": "旧合意・過去利用の取扱い", "group": "IX. 旧合意・特記", "type": "textarea", "helpText": "必要な場合のみ記載" },
       "特記事項": { "label": "特記事項", "group": "IX. 旧合意・特記", "type": "textarea" },
 
-      "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" },
-      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" }
+      "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" , "dbField": "company.rep" }
     }
   },
 
@@ -716,8 +716,8 @@
       "効力発生日": { "label": "効力発生日", "group": "I. 基本情報", "type": "date" },
       "基本契約締結日": { "label": "基本契約 締結日", "group": "I. 基本情報", "placeholder": "例: 2026年4月1日" },
       "通常条件書締結日": { "label": "通常条件書 締結日", "group": "I. 基本情報", "placeholder": "例: 2026年4月15日" },
-      "許諾者": { "label": "許諾者 名称", "group": "I. 基本情報", "required": true },
-      "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" },
+      "許諾者": { "label": "許諾者 名称", "group": "I. 基本情報", "required": true , "dbField": "vendor.vendor_name" },
+      "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" , "dbField": "vendor.address" },
       "追加許諾開始日": { "label": "追加許諾 開始日", "group": "I. 基本情報", "type": "date" },
       "追加許諾終了日": { "label": "追加許諾 終了日", "group": "I. 基本情報", "type": "date" },
       "自動更新有無": { "label": "自動更新", "group": "I. 基本情報", "placeholder": "あり / なし" },
@@ -793,8 +793,8 @@
       "改訂番号": { "label": "改訂番号 (Rev.)", "group": "IX. 終了後・特記・発行オプション", "placeholder": "1" },
       "元契約番号": { "label": "元条件書番号", "group": "IX. 終了後・特記・発行オプション", "placeholder": "ARC-PUBA-2026-0001" },
 
-      "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" },
-      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" }
+      "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
+      "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" , "dbField": "company.rep" }
     }
   }
 }

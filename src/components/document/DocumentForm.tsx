@@ -4020,10 +4020,75 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   }
 
   // Default Meta-driven dynamic form
+  // Phase 25.2: config の dbField ヒント (vendor.* / company.* / staff.*) を使って
+  //   取引先・自社・担当者マスタから一括補完する。出版契約のような generic
+  //   フォームでも [取引先]/[自社]/Sync Staff が効くようにする (従来は Backlog
+  //   Sync のみで、日本語キーのフィールドには何も入らなかった)。
+  const metaVars: Record<string, any> = metadata.vars || {};
+  const dbFieldOf = (id: string): string => String(metaVars[id]?.dbField || '');
+  const hasPrefix = (prefix: string) =>
+    Object.keys(metaVars).some((id) => dbFieldOf(id).startsWith(prefix));
+  const hasVendorFields = hasPrefix('vendor.');
+  const hasCompanyFields = hasPrefix('company.');
+  const hasStaffFields = hasPrefix('staff.');
+
+  const resolveDbValue = (dbField: string): any => {
+    const dot = dbField.indexOf('.');
+    if (dot < 0) return undefined;
+    const src = dbField.slice(0, dot);
+    const key = dbField.slice(dot + 1);
+    if (src === 'vendor') return activeVendor ? (activeVendor as any)[key] : undefined;
+    if (src === 'staff') return selectedStaff ? (selectedStaff as any)[key] : undefined;
+    if (src === 'company') {
+      if (!companyProfile) return undefined;
+      const alias: Record<string, string> = { rep: 'representative' };
+      return (companyProfile as any)[alias[key] || key];
+    }
+    return undefined;
+  };
+
+  const fillByPrefix = (prefix: string) => {
+    const patch: Record<string, any> = {};
+    Object.keys(metaVars).forEach((id) => {
+      const f = dbFieldOf(id);
+      if (!f.startsWith(prefix)) return;
+      const v = resolveDbValue(f);
+      if (v !== undefined && v !== null && v !== '') patch[id] = v;
+    });
+    if (Object.keys(patch).length > 0) setFormData({ ...formData, ...patch });
+  };
+
+  const metaFillBtn = (label: string, onClick: () => void, disabled: boolean) => (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={disabled ? '上部バーで対象 (取引先 / 担当者) を選択してください' : `${label} マスタから一括補完`}
+      className="text-[10px] font-mono border border-input px-2 py-0.5 uppercase disabled:opacity-40 hover:bg-muted"
+    >
+      {label}
+    </button>
+  );
+
   return (
-    <div className="space-y-10">
+    <div className="space-y-6">
+      <div className="flex flex-wrap items-center gap-2 rounded-sm border border-input bg-muted/30 px-3 py-2">
+        <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+          DB 補完
+        </span>
+        {hasVendorFields && metaFillBtn('取引先', () => fillByPrefix('vendor.'), !activeVendor)}
+        {hasCompanyFields && metaFillBtn('自社', () => fillByPrefix('company.'), !companyProfile)}
+        {hasStaffFields && metaFillBtn('Sync Staff', () => fillByPrefix('staff.'), !selectedStaff)}
+        <button
+          type="button"
+          onClick={onSync}
+          className="text-[10px] font-mono bg-blue-600 text-white px-2 py-0.5 uppercase flex items-center gap-1 ml-auto"
+        >
+          <Database className="w-2 h-2" /> Backlog Sync
+        </button>
+      </div>
       {(Object.entries(groupedVars) as [string, string[]][]).map(([groupName, varIds]) => (
-        <FormSection key={groupName} title={groupName} variant="default" headerActions={<button onClick={onSync} className="text-[10px] font-mono bg-blue-600 text-white px-2 py-0.5 uppercase flex items-center gap-1"><Database className="w-2 h-2" /> Sync</button>}>
+        <FormSection key={groupName} title={groupName} variant="default">
           {varIds.map(fid => renderField(fid))}
         </FormSection>
       ))}
