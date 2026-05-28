@@ -362,16 +362,23 @@ export async function listVendors(
 export async function getVendor(vendorCode: string): Promise<VendorRow | null> {
   const code = String(vendorCode || "").trim();
   if (!code) return null;
+  // Phase 25.1: DB 側の vendor_code に前後空白が混入している行 (CSV 取込時に
+  //   法人番号末尾へ紛れ込んだケース等) でも引けるよう、完全一致を優先しつつ
+  //   TRIM 一致を fallback として OR でマッチさせる。受け取り code は既に trim 済み。
   let res: any;
   try {
     res = await query(
-      `SELECT ${SELECT_COLUMNS} FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+      `SELECT ${SELECT_COLUMNS} FROM vendors
+        WHERE vendor_code = $1 OR TRIM(vendor_code) = $1
+        ORDER BY (vendor_code = $1) DESC LIMIT 1`,
       [code]
     );
   } catch (err: any) {
     if (err && err.code === "42703") {
       res = await query(
-        `SELECT ${LEGACY_SELECT_COLUMNS} FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+        `SELECT ${LEGACY_SELECT_COLUMNS} FROM vendors
+          WHERE vendor_code = $1 OR TRIM(vendor_code) = $1
+          ORDER BY (vendor_code = $1) DESC LIMIT 1`,
         [code]
       );
     } else {

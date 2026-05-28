@@ -3260,7 +3260,10 @@ ${details}
            antisocial_check_result = EXCLUDED.antisocial_check_result
          RETURNING id`,
         [
-          v.vendor_code, v.vendor_name, v.trade_name || null, v.pen_name || null,
+          // Phase 25.1: vendor_code 末尾空白の混入を防ぐため write 時に trim。
+          //   (検索/詳細は vendor_code 完全一致なので、前後空白があると
+          //    GET /api/master/vendors/:code が 404 になる事故があった)
+          String(v.vendor_code || "").trim(), v.vendor_name, v.trade_name || null, v.pen_name || null,
           v.vendor_suffix || null, v.entity_type || null, v.withholding_enabled || false,
           v.aliases || null, v.address || null, v.phone || null, v.email || null,
           v.contact_department || null, v.contact_name || null, v.master_contract_ref || null,
