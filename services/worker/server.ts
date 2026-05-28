@@ -3894,6 +3894,127 @@ ${details}
     }
   }
 
+  /**
+   * Phase 23.6.14: 契約マスタの経費 (capability_expenses) を配列で受け取って upsert。
+   *   upsertCapabilityLineItems と同じ semantics:
+   *   - raw === undefined → 何もしない (既存経費を保持)
+   *   - raw === null or [] → 全件削除
+   *   - それ以外 → line_no で upsert、含まれない line_no を削除
+   *   発注書フォーム IV-b. 経費 と同 shape。検収書「ステップ2-b 経費精算」で
+   *   親 PO 連動として参照される (税込み額)。
+   */
+  async function upsertCapabilityExpenses(
+    capabilityId: number,
+    raw: any
+  ): Promise<void> {
+    if (raw === undefined) return;
+    const rows: Array<any> = Array.isArray(raw) ? raw : [];
+    const dateOrNull = (v: any) =>
+      v && String(v).length >= 8 ? String(v).substring(0, 10) : null;
+    const computed = rows
+      .map((e: any, idx: number) => ({
+        line_no: Number(e?.line_no) || idx + 1,
+        expense_name: e?.expense_name || "",
+        spec: e?.spec || "",
+        spent_date: dateOrNull(e?.spent_date),
+        amount_inc_tax: Number(e?.amount_inc_tax) || 0,
+        remarks: e?.remarks || "",
+      }))
+      .filter((e) => e.expense_name);
+    try {
+      const keepNos = computed.map((e) => e.line_no).filter((n) => n > 0);
+      if (keepNos.length === 0) {
+        await query(
+          `DELETE FROM capability_expenses WHERE capability_id = $1`,
+          [capabilityId]
+        );
+      } else {
+        await query(
+          `DELETE FROM capability_expenses
+            WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
+          [capabilityId, keepNos]
+        );
+      }
+    } catch (delErr) {
+      console.warn("[capability_expenses] prune failed:", delErr);
+    }
+    for (const e of computed) {
+      await query(
+        `INSERT INTO capability_expenses (
+           capability_id, line_no, expense_name, spec,
+           spent_date, amount_inc_tax, remarks, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
+         ON CONFLICT (capability_id, line_no) DO UPDATE SET
+           expense_name   = EXCLUDED.expense_name,
+           spec           = EXCLUDED.spec,
+           spent_date     = EXCLUDED.spent_date,
+           amount_inc_tax = EXCLUDED.amount_inc_tax,
+           remarks        = EXCLUDED.remarks,
+           updated_at     = CURRENT_TIMESTAMP`,
+        [
+          capabilityId,
+          e.line_no,
+          e.expense_name,
+          e.spec,
+          e.spent_date,
+          e.amount_inc_tax,
+          e.remarks,
+        ]
+      );
+    }
+  }
+
+  /**
+   * Phase 23.6.14: 契約マスタのその他手数料 (capability_other_fees) を upsert。
+   *   発注書フォーム IV-a. その他手数料 と同 shape (税抜)。検収書「ステップ2-c
+   *   その他手数料」で参照。semantics は upsertCapabilityExpenses と同じ。
+   */
+  async function upsertCapabilityOtherFees(
+    capabilityId: number,
+    raw: any
+  ): Promise<void> {
+    if (raw === undefined) return;
+    const rows: Array<any> = Array.isArray(raw) ? raw : [];
+    const computed = rows
+      .map((f: any, idx: number) => ({
+        line_no: Number(f?.line_no) || idx + 1,
+        fee_name: f?.fee_name || "",
+        amount: Number(f?.amount) || 0,
+        remarks: f?.remarks || "",
+      }))
+      .filter((f) => f.fee_name);
+    try {
+      const keepNos = computed.map((f) => f.line_no).filter((n) => n > 0);
+      if (keepNos.length === 0) {
+        await query(
+          `DELETE FROM capability_other_fees WHERE capability_id = $1`,
+          [capabilityId]
+        );
+      } else {
+        await query(
+          `DELETE FROM capability_other_fees
+            WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
+          [capabilityId, keepNos]
+        );
+      }
+    } catch (delErr) {
+      console.warn("[capability_other_fees] prune failed:", delErr);
+    }
+    for (const f of computed) {
+      await query(
+        `INSERT INTO capability_other_fees (
+           capability_id, line_no, fee_name, amount, remarks, updated_at
+         ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
+         ON CONFLICT (capability_id, line_no) DO UPDATE SET
+           fee_name   = EXCLUDED.fee_name,
+           amount     = EXCLUDED.amount,
+           remarks    = EXCLUDED.remarks,
+           updated_at = CURRENT_TIMESTAMP`,
+        [capabilityId, f.line_no, f.fee_name, f.amount, f.remarks]
+      );
+    }
+  }
+
   app.post("/api/master/contracts", express.json(), async (req, res) => {
     const {
       vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -3961,6 +4082,10 @@ ${details}
       // Phase 22.21.112: 業務明細 (検収書 自動補完用) を子テーブルに upsert。
       //   業務委託 (service) カテゴリの単独/個別契約で意味を持つ。
       await upsertCapabilityLineItems(newId, req.body?.line_items);
+      // Phase 23.6.14: 経費 / その他手数料 (検収書の経費精算 / 手数料精算 自動補完用)。
+      //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
+      await upsertCapabilityExpenses(newId, req.body?.expenses);
+      await upsertCapabilityOtherFees(newId, req.body?.other_fees);
 
       // Phase 22.21.115: 稟議番号 N:N リンク + documents 行同期。
       //   稟議リンクは ringi_documents.document_id 経由なので documents 行が必須。
@@ -4123,6 +4248,9 @@ ${details}
       // Phase 22.21.112: 業務明細 (検収書 自動補完用) を upsert。
       //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
       await upsertCapabilityLineItems(Number(id), req.body?.line_items);
+      // Phase 23.6.14: 経費 / その他手数料 (検収書 自動補完用)。同 semantics。
+      await upsertCapabilityExpenses(Number(id), req.body?.expenses);
+      await upsertCapabilityOtherFees(Number(id), req.body?.other_fees);
 
       // Phase 22.21.115: 稟議番号リンクを更新 (POST と同じパターン)。
       //   ringi_numbers が undefined なら触らない。[] なら全削除。

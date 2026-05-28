@@ -150,6 +150,12 @@ const empty = {
   //   と同形の明細配列)。後段の「検収書」フォームから order_lines_for_inspection
   //   として自動補完用に参照される。
   line_items: [] as any[],
+  // Phase 23.6.14: 経費 (capability_expenses) / その他手数料 (capability_other_fees)。
+  //   業務委託系の単独/個別契約で、発注書フォームと同 shape の経費・手数料を
+  //   入力できる。検収書フォームの「ステップ2-b 経費精算」「ステップ2-c その他手数料」
+  //   で自動補完用に参照される。
+  expenses: [] as any[],
+  other_fees: [] as any[],
   // Phase 22.21.115: 稟議番号 (発注書・個別利用許諾と同じ shape: 5 桁数字の配列)。
   //   保存時に Worker 側で ringi_documents テーブルに N:N リンクされる。
   ringi_numbers: [] as string[],
@@ -802,6 +808,46 @@ export function ContractsPanel() {
                       : []
                   }
                   onChange={(v) => set({ line_items: v })}
+                  recordType={String(data?.record_type || "")}
+                />
+              </Field>
+            )}
+            {/* Phase 23.6.14: 経費 (capability_expenses) — 発注書フォーム IV-b と同 shape。
+                検収書フォームの「ステップ2-b 経費精算」で親契約連動として参照される。 */}
+            {String(data?.contract_category || "").toLowerCase() === "service" && (
+              <Field
+                label="▍ 経費（交通費等・税込み / 検収書 自動補完用）"
+                className="col-span-2 md:col-span-3"
+              >
+                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                  領収書額面（税込み）をそのまま入力します。ここで登録した経費は
+                  検収書フォームの「ステップ2-b 経費精算」で親契約から自動補完されます。
+                </p>
+                <ExpensesEditor
+                  value={
+                    Array.isArray(data?.expenses) ? data.expenses : []
+                  }
+                  onChange={(v) => set({ expenses: v })}
+                  recordType={String(data?.record_type || "")}
+                />
+              </Field>
+            )}
+            {/* Phase 23.6.14: その他手数料 (capability_other_fees) — 発注書フォーム IV-a と同 shape。
+                検収書フォームの「ステップ2-c その他手数料」で参照される (税抜)。 */}
+            {String(data?.contract_category || "").toLowerCase() === "service" && (
+              <Field
+                label="▍ その他手数料（税抜 / 検収書 自動補完用）"
+                className="col-span-2 md:col-span-3"
+              >
+                <p className="text-[10px] font-mono text-muted-foreground mb-2 leading-relaxed border-l-2 border-emerald-500 pl-2">
+                  コーディネート費・振込手数料 等（税抜）。経費（税込・別精算）とは区別します。
+                  検収書フォームの「ステップ2-c その他手数料」で親契約から自動補完されます。
+                </p>
+                <OtherFeesEditor
+                  value={
+                    Array.isArray(data?.other_fees) ? data.other_fees : []
+                  }
+                  onChange={(v) => set({ other_fees: v })}
                   recordType={String(data?.record_type || "")}
                 />
               </Field>
@@ -1651,6 +1697,261 @@ function LineItemsEditor({
         <Plus />
         明細を追加
       </Button>
+    </div>
+  )
+}
+
+/**
+ * Phase 23.6.14: 契約マスタの経費エディタ (capability_expenses)。
+ *
+ *   業務委託 (service) カテゴリの単独/個別契約で、発注書フォーム IV-b. 経費 と
+ *   同 shape の経費 (税込み額) を入力できる。後段の「検収書」フォームの
+ *   ステップ2-b 経費精算で親契約から自動補完される。
+ *   semantics は LineItemsEditor と同じ (undefined→維持 / []→全削除)。
+ */
+function ExpensesEditor({
+  value,
+  onChange,
+  recordType,
+}: {
+  value: any[]
+  onChange: (v: any[]) => void
+  recordType: string
+}) {
+  const isIndividualLike =
+    recordType === "individual_contract" ||
+    recordType === "standalone_contract" ||
+    recordType === "license_condition"
+
+  const nextLineNo =
+    value.reduce((m: number, c: any) => Math.max(m, Number(c?.line_no) || 0), 0) + 1
+
+  const update = (idx: number, patch: any) =>
+    onChange(value.map((c, i) => (i === idx ? { ...c, ...patch } : c)))
+  const add = () =>
+    onChange([
+      ...value,
+      {
+        line_no: nextLineNo,
+        expense_name: "",
+        spec: "",
+        spent_date: "",
+        amount_inc_tax: "",
+        remarks: "",
+      },
+    ])
+  const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx))
+  const total = value.reduce(
+    (s: number, e: any) => s + (Number(e?.amount_inc_tax) || 0),
+    0
+  )
+
+  return (
+    <div className="space-y-3">
+      {!isIndividualLike && value.length > 0 && (
+        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+          ⚠ 「基本契約」では経費は通常使われません。単独契約 / 個別契約への
+          切替を検討してください。
+        </div>
+      )}
+      {value.length === 0 && (
+        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+          経費が未設定です。「経費を追加」で 1 件以上登録できます (税込み額)。
+          単独契約 / 個別契約で入力しておくと、検収書フォームの
+          「ステップ2-b 経費精算」で自動補完されます。
+        </div>
+      )}
+      {value.map((c: any, idx: number) => (
+        <div
+          key={`exp-${idx}`}
+          className="border border-border rounded-sm p-3 bg-muted/30 space-y-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant="info" className="h-5">
+              経費 {c.line_no || idx + 1}
+            </Badge>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="destructive"
+              onClick={() => remove(idx)}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">費目</Label>
+              <Input
+                value={c.expense_name || ""}
+                onChange={(e) => update(idx, { expense_name: e.target.value })}
+                placeholder="例: 交通費 / 宿泊費"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">発生日</Label>
+              <Input
+                type="date"
+                value={c.spent_date || ""}
+                onChange={(e) => update(idx, { spent_date: e.target.value })}
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">金額 (税込)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={c.amount_inc_tax ?? ""}
+                onChange={(e) =>
+                  update(idx, { amount_inc_tax: e.target.value })
+                }
+              />
+            </div>
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">仕様 / 区間 等</Label>
+              <Input
+                value={c.spec || ""}
+                onChange={(e) => update(idx, { spec: e.target.value })}
+                placeholder="例: 東京〜大阪 新幹線"
+              />
+            </div>
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">摘要</Label>
+              <Input
+                value={c.remarks || ""}
+                onChange={(e) => update(idx, { remarks: e.target.value })}
+                placeholder="領収書 No 等 (任意)"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center justify-between gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={add}>
+          <Plus />
+          経費を追加
+        </Button>
+        {value.length > 0 && (
+          <span className="text-[10px] font-mono text-muted-foreground">
+            経費合計 (税込): ¥ {total.toLocaleString("ja-JP")}
+          </span>
+        )}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Phase 23.6.14: 契約マスタのその他手数料エディタ (capability_other_fees)。
+ *
+ *   発注書フォーム IV-a. その他手数料 と同 shape (税抜)。検収書フォームの
+ *   ステップ2-c その他手数料 で親契約から自動補完される。
+ */
+function OtherFeesEditor({
+  value,
+  onChange,
+  recordType,
+}: {
+  value: any[]
+  onChange: (v: any[]) => void
+  recordType: string
+}) {
+  const isIndividualLike =
+    recordType === "individual_contract" ||
+    recordType === "standalone_contract" ||
+    recordType === "license_condition"
+
+  const nextLineNo =
+    value.reduce((m: number, c: any) => Math.max(m, Number(c?.line_no) || 0), 0) + 1
+
+  const update = (idx: number, patch: any) =>
+    onChange(value.map((c, i) => (i === idx ? { ...c, ...patch } : c)))
+  const add = () =>
+    onChange([
+      ...value,
+      { line_no: nextLineNo, fee_name: "", amount: "", remarks: "" },
+    ])
+  const remove = (idx: number) => onChange(value.filter((_, i) => i !== idx))
+  const total = value.reduce(
+    (s: number, f: any) => s + (Number(f?.amount) || 0),
+    0
+  )
+
+  return (
+    <div className="space-y-3">
+      {!isIndividualLike && value.length > 0 && (
+        <div className="text-[10px] font-mono text-amber-700 border border-amber-300 bg-amber-50/40 rounded-sm px-2 py-1">
+          ⚠ 「基本契約」ではその他手数料は通常使われません。単独契約 / 個別契約への
+          切替を検討してください。
+        </div>
+      )}
+      {value.length === 0 && (
+        <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
+          その他手数料が未設定です。「手数料を追加」で 1 件以上登録できます (税抜)。
+          単独契約 / 個別契約で入力しておくと、検収書フォームの
+          「ステップ2-c その他手数料」で自動補完されます。
+        </div>
+      )}
+      {value.map((c: any, idx: number) => (
+        <div
+          key={`fee-${idx}`}
+          className="border border-border rounded-sm p-3 bg-muted/30 space-y-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <Badge variant="info" className="h-5">
+              手数料 {c.line_no || idx + 1}
+            </Badge>
+            <Button
+              type="button"
+              size="icon-sm"
+              variant="destructive"
+              onClick={() => remove(idx)}
+            >
+              <Trash2 />
+            </Button>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">項目名</Label>
+              <Input
+                value={c.fee_name || ""}
+                onChange={(e) => update(idx, { fee_name: e.target.value })}
+                placeholder="例: コーディネート費 / 振込手数料"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">金額 (税抜)</Label>
+              <Input
+                type="number"
+                min="0"
+                step="1"
+                value={c.amount ?? ""}
+                onChange={(e) => update(idx, { amount: e.target.value })}
+              />
+            </div>
+            <div className="col-span-2 md:col-span-1 space-y-0.5">
+              <Label className="text-[10px]">摘要</Label>
+              <Input
+                value={c.remarks || ""}
+                onChange={(e) => update(idx, { remarks: e.target.value })}
+                placeholder="(任意)"
+              />
+            </div>
+          </div>
+        </div>
+      ))}
+      <div className="flex items-center justify-between gap-2">
+        <Button type="button" variant="outline" size="sm" onClick={add}>
+          <Plus />
+          手数料を追加
+        </Button>
+        {value.length > 0 && (
+          <span className="text-[10px] font-mono text-muted-foreground">
+            手数料 小計 (税抜): ¥ {total.toLocaleString("ja-JP")}
+          </span>
+        )}
+      </div>
     </div>
   )
 }

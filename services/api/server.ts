@@ -2239,7 +2239,43 @@ async function startServer() {
                        WHERE cli.capability_id = cc.id
                     ),
                     '[]'::json
-                  ) AS line_items
+                  ) AS line_items,
+                  COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', ce.id,
+                                 'line_no', ce.line_no,
+                                 'expense_name', ce.expense_name,
+                                 'spec', ce.spec,
+                                 'spent_date', ce.spent_date,
+                                 'amount_inc_tax', ce.amount_inc_tax,
+                                 'remarks', ce.remarks
+                               )
+                               ORDER BY ce.line_no ASC
+                             )
+                        FROM capability_expenses ce
+                       WHERE ce.capability_id = cc.id
+                    ),
+                    '[]'::json
+                  ) AS expenses,
+                  COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cof.id,
+                                 'line_no', cof.line_no,
+                                 'fee_name', cof.fee_name,
+                                 'amount', cof.amount,
+                                 'remarks', cof.remarks
+                               )
+                               ORDER BY cof.line_no ASC
+                             )
+                        FROM capability_other_fees cof
+                       WHERE cof.capability_id = cc.id
+                    ),
+                    '[]'::json
+                  ) AS other_fees
            FROM contract_capabilities cc
            LEFT JOIN vendors v ON cc.vendor_id = v.id
            ORDER BY cc.id DESC`
@@ -2262,7 +2298,9 @@ async function startServer() {
                     v.invoice_registration_number AS vendor_invoice_registration_number,
                     v.withholding_enabled AS vendor_withholding_enabled,
                     '[]'::json AS financial_conditions,
-                    '[]'::json AS line_items
+                    '[]'::json AS line_items,
+                    '[]'::json AS expenses,
+                    '[]'::json AS other_fees
              FROM contract_capabilities cc
              LEFT JOIN vendors v ON cc.vendor_id = v.id
              ORDER BY cc.id DESC`
