@@ -1,7 +1,8 @@
-# テーブル構造 刷新案 ― 作品(Work)を軸とした契約・ロイヤリティ・業務委託報酬の統合管理
+# テーブル構造 刷新案 ― 作品(Work)を軸とした知財・契約・支払の統合管理
 
 > 対象: LegalBridge AI (PostgreSQL / Cloud SQL)
-> 目的: **作品(Work)を中心軸**に据え、(1) 契約管理、(2) ロイヤリティ支払管理、(3) 業務委託報酬の支払管理 を一貫して追跡・集計できるデータ構造へ再編する。
+> 目的: **作品(Work)を中心軸**に据え、(1) 知的財産管理、(2) 契約管理、(3) ロイヤリティ・業務委託報酬の支払管理 を、
+> **「権利の取得 → 保有 → 活用 → 請求 → 支払/入金」** の循環で漏れなく・ダブりなく(MECE)追跡できるデータ構造へ再編する。
 
 ---
 
@@ -53,17 +54,35 @@
 
 「作品(IP/クリエイティブ)」と「製品(売り物のSKU = 初版/第2版/拡張/電子版)」が分離されていない。ロイヤリティは本来「製品の製造数・販売数 × 料率」で計算されるため、製品単位の実体が必要。
 
+### 1.6 MECE 監査で判明した「抜け」と「重複」
+
+3ドメインを MECE で監査した結果、骨格に加えて以下の補完が必要と判明した(本提案に反映済み)。
+
+| 区分 | 指摘 | 反映先 |
+| :--- | :--- | :--- |
+| 抜け(知財) | **自社作品の権利取得**(委託成果物の譲渡/許諾区分)を持つ場所が無い | `work_rights`(§3.2) |
+| 抜け(知財) | 商標・意匠等の**産業財産権と更新期限**が未カバー | `ip_registrations`(§3.2) |
+| 抜け(契約) | 改定・覚書の**親子チェーン**、契約↔書類↔稟議の実FK | `contracts.parent_contract_id` / `documents.contract_id`(§3.3) |
+| 抜け(契約) | **金銭以外の契約義務**(最低製造義務・クレジット表記・報告義務・監査権) | `contract_obligations`(§3.3) |
+| 抜け(支払) | 支払前の**「請求」フェーズ**(適格請求書の受領 / 入金請求の発行) | `invoices`(§3.4) |
+| 抜け(支払) | **為替レート**(多通貨・海外送金の換算) | `payments` FX列(§3.4) |
+| 抜け(支払) | 前払金 / 債権債務の**残高把握** | 残高ビュー(§3.4) |
+| 重複(ME) | **取引先 vs 再許諾先の二重管理** | `vendors` + `party_roles` に一元化(§3.1) |
+| 重複(ME) | 契約 vs 書類 vs 外部資産の境界が曖昧 | `contracts`=実体 / `documents`=物理ファイル と役割分離(§3.3) |
+
 ---
 
 ## 2. 設計方針
 
-1. **作品(`works`)を単一のハブ**にする。契約・製品・支払はすべて作品にFKで紐づく。
+1. **作品(`works`)を単一のハブ**にする。知財・契約・製品・支払はすべて作品にFKで紐づく。
    - `works` は **自社が開発・出版する自社作品のみ** を対象とする。
-   - 外部から許諾を受ける **原作IPは別マスター(`source_ips`)に分離**し、作品とは M:N(`work_source_ips`)で結ぶ(1作品が複数原作をミックスする/1原作が複数作品に展開されるケースに対応)。
-2. **自由記述・文字列キー・JSONB疎結合を、実FK + 中間テーブルに正規化**する。
-3. **支払を1つの統一台帳(`payments`)に集約**し、ロイヤリティ/業務委託/許諾料/入金を `payment_kind` + `direction` で区別する。各行に必ず `work_id` を持たせ、作品軸の集計を可能にする。
-4. **契約⇔作品は M:N**(包括契約は複数作品をカバー、1作品に複数契約)を中間テーブルで表現する。
-5. 現行の Backlog連携・採番・帳票生成ロジックを壊さないよう、`backlog_issue_key` / `document_number` 列は**補助キーとして温存**しつつ、主従関係はFKで張り直す。
+   - 外部から許諾を受ける **原作IPは別マスター(`source_ips`)に分離**し、作品とは M:N(`work_source_ips`)で結ぶ。
+2. **権利の循環を閉じる**: 「取得(委託)→ 保有(IP)→ 活用(契約)→ 請求 → 支払/入金」の各フェーズに実体テーブルを置き、抜け・ダブりを排除する。
+3. **自由記述・文字列キー・JSONB疎結合を、実FK + 中間テーブルに正規化**する。
+4. **当事者は `vendors` に一元化**し、役割(委託先 / 権利者 / 再許諾先 / 著者 / 出版元)は `party_roles` で多重付与する(取引先と再許諾先の二重管理を解消)。
+5. **支払を1つの統一台帳(`payments`)に集約**し、ロイヤリティ/業務委託/許諾料/入金を `payment_kind` + `direction` で区別する。各行に必ず `work_id` を持たせ、作品軸の集計を可能にする。
+6. **契約⇔作品は M:N**(包括契約は複数作品をカバー、1作品に複数契約)を中間テーブルで表現する。
+7. 現行の Backlog連携・採番・帳票生成ロジックを壊さないよう、`backlog_issue_key` / `document_number` 列は**補助キーとして温存**しつつ、主従関係はFKで張り直す。
 
 ---
 
@@ -76,29 +95,40 @@ erDiagram
     source_ips ||--o{ work_source_ips : "M:N(自社作品⇔原作IP)"
     source_ips ||--o{ source_ip_materials : "原作素材"
     source_ips ||--o{ contract_works : "許諾対象(任意)"
+
+    vendors ||--o{ party_roles : "役割(委託先/権利者/再許諾先/著者)"
     vendors ||--o{ source_ips : "原作権利者"
+
+    works ||--o{ work_rights : "権利取得"
+    contracts ||--o{ work_rights : "取得元契約"
+    vendors ||--o{ work_rights : "権利者"
+    works ||--o{ ip_registrations : "商標/意匠"
+
     works ||--o{ contract_works : ""
     contracts ||--o{ contract_works : "M:N"
+    contracts ||--o{ contracts : "改定(parent_contract_id)"
     contracts ||--o{ contract_parties : "当事者"
     contracts ||--o{ contract_financial_terms : "金銭条件"
     contracts ||--o{ contract_line_items : "業務明細"
+    contracts ||--o{ contract_obligations : "非金銭義務"
     vendors  ||--o{ contract_parties : ""
-    vendors  ||--o{ contract_works : "権利者(任意)"
+    contracts ||--o{ documents : "生成書類"
 
-    works ||--o{ payments : "作品軸の集計"
-    contracts ||--o{ payments : ""
     products ||--o{ manufacturing_events : "製造実績"
     products ||--o{ sales_events : "販売実績"
     contract_financial_terms ||--o{ royalty_statements : ""
     manufacturing_events ||--o{ royalty_statements : ""
     sales_events ||--o{ royalty_statements : ""
-    royalty_statements ||--|| payments : "1計算書=1支払"
 
     contracts ||--o{ orders : "発注(業務委託)"
     orders ||--o{ delivery_events : "検収"
-    delivery_events ||--|| payments : "検収=支払"
 
-    sublicensees ||--o{ contract_parties : "再許諾先"
+    contracts ||--o{ invoices : "請求/受領"
+    invoices ||--o{ payments : "請求→支払/入金"
+    royalty_statements ||--|| payments : "1計算書=1支払"
+    delivery_events ||--|| invoices : "検収=請求対象"
+    works ||--o{ payments : "作品軸の集計"
+    payments ||--o{ payments : "調整(adjustment_of)"
 ```
 
 ### 3.1 マスター層
@@ -160,33 +190,85 @@ erDiagram
 | jan_code / isbn | VARCHAR | |
 | release_date / status | | |
 
-#### `vendors`(取引先) / `sublicensees`(再許諾先)
+#### `vendors`(取引先) + `party_roles`(役割) ― **当事者を一元化(MECE: ダブり解消)**
 
-現行を踏襲。中長期的には `sublicensees` を `vendors` + 役割フラグに統合することを推奨するが(再許諾先も取引先になりうるため)、影響範囲が大きいため**本提案では現行2テーブルを維持**し、`contract_parties` 経由で双方を当事者として扱えるようにする。
+現 `sublicensees`(再許諾先)を `vendors` に統合する。同一企業が「委託先かつ再許諾先」になりうるため、別マスターは相互排他でない。役割は `party_roles` で多重付与する。
 
-### 3.2 契約層
+| `party_roles` 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| vendor_id | INTEGER FK→vendors | |
+| role | VARCHAR(30) | service_provider(委託先) / rights_holder(権利者) / sublicensee(再許諾先) / author(著者) / publisher(出版元) |
+| attributes | JSONB | 役割固有属性(再許諾先の default_region / default_language 等、旧 sublicensees の列) |
+| UNIQUE(vendor_id, role) | | |
+
+> `vendors` 本体の銀行口座・住所・連絡先・インボイス登録番号(現行 `vendor_addresses` / `vendor_bank_accounts` / `vendor_contacts`)はそのまま踏襲。
+
+### 3.2 知的財産権層 ― **新規(MECE: 知財の抜け解消)**
+
+#### `work_rights`(作品権利要素) ― **最重要の抜け。自社作品の権利取得を記録**
+
+自社作品を構成する委託成果物(イラスト・シナリオ・デザイン・楽曲)を、**「誰から・どの契約で・どう権利取得したか(譲渡/許諾)」** で管理する。業務委託(契約)→ 権利取得 → IP保有 を結ぶ要。将来ロイヤリティが発生するか否か(`is_royalty_bearing`)もここで決まる。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| work_id | INTEGER FK→works | 対象の自社作品 |
+| component_name | TEXT | 権利要素(キービジュアル / コマイラスト / シナリオ / BGM 等) |
+| component_type | VARCHAR(50) | illustration / scenario / design / music / text |
+| rights_holder_vendor_id | INTEGER FK→vendors | 権利者(=委託先クリエイター) |
+| source_contract_id | INTEGER FK→contracts | 権利を取得した業務委託契約 |
+| rights_type | VARCHAR(30) | **copyright_assignment(著作権譲渡) / license(利用許諾) / joint(共有)** |
+| moral_rights_waiver | BOOLEAN | 著作者人格権の不行使特約 |
+| scope | TEXT | 利用範囲(媒体・地域・期間) |
+| is_royalty_bearing | BOOLEAN | 二次利用で印税が発生するか(TRUE なら payments と連動) |
+| secondary_use_flags | JSONB | 海外/グッズ化/映像化/ゲーム化 等の可否 |
+| remarks, created_at, updated_at | | |
+
+#### `ip_registrations`(産業財産権) ― **商標・意匠の登録と更新期限**
+
+ボードゲームタイトル・ロゴ・パッケージ等の商標/意匠を、出願〜登録〜更新で管理する。更新期限は契約満期と同じくアラート対象にできる。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| work_id | INTEGER FK→works NULL | 紐づく作品(全社共通マークは NULL) |
+| ip_type | VARCHAR(20) | trademark(商標) / design(意匠) / patent(特許) |
+| registration_no / application_no | VARCHAR | 登録番号 / 出願番号 |
+| classes | TEXT[] | 商標区分(第28類=ゲーム 等) |
+| status | VARCHAR(20) | applied / registered / abandoned / expired |
+| application_date / registration_date | DATE | |
+| next_renewal_date | DATE | **更新期限(アラート対象)** |
+| holder_vendor_id | INTEGER FK→vendors NULL | 権利者(自社=NULL or 自社ベンダー) |
+| agent_vendor_id | INTEGER FK→vendors NULL | 代理人(特許事務所) |
+| remarks, created_at, updated_at | | |
+
+### 3.3 契約層
 
 #### `contracts`(契約) ― 現 `contract_capabilities` を整理
 
-役割を「契約そのもの」に純化。作品への参照は文字列 `ledger_code` を廃し、後述の `contract_works` 中間テーブルへ移す。
+役割を「契約そのもの(=論理的な契約の実体)」に純化。作品への参照は文字列 `ledger_code` を廃し `contract_works` へ移す。**物理ファイルは `documents` / `external_assets` に持たせ、`contracts` はその束ねとする(MECE: 境界の明確化)。**
 
 | 列 | 型 | 説明 |
 | :--- | :--- | :--- |
 | id | SERIAL PK | |
 | document_number | VARCHAR(100) UNIQUE | 採番(現行踏襲) |
-| record_type | VARCHAR(50) | master_contract / license_condition / publication_condition(現行踏襲) |
+| parent_contract_id | INTEGER FK→contracts NULL | **改定・覚書の親契約**(amendment チェーン) |
+| record_type | VARCHAR(50) | master_contract / license_condition / publication_condition / amendment(覚書) |
 | contract_category | VARCHAR(30) | **license_in / license_out / service(業務委託) / publication / sales / nda** に再整理 |
 | contract_type | VARCHAR(100) | service_basic / license_basic / individual_license_terms 等 |
 | contract_title | TEXT | |
 | primary_vendor_id | INTEGER FK→vendors | 主取引先 |
 | contract_status / effective_date / expiration_date / auto_renewal | | 現行踏襲 |
 | renewal_notice_months / alert_lead_months / last_renewal_alert_at / alert_slack_* | | 更新アラート(現行踏襲) |
+| ringi_id | INTEGER FK→ringi_records NULL | **締結根拠の稟議**(現行は書類経由のみ) |
 | legalon_url / cloudsign_url / drive_url / source_system | | 現行踏襲 |
 | purpose_codes | TEXT[] | 現行踏襲(GIN) |
 | 許諾範囲フラグ群(overseas_allowed, translation_allowed, sublicense_allowed, ebook_allowed, merchandising_allowed, video_adaptation_allowed, game_adaptation_allowed, scope 等) | | 現行踏襲 |
 | risk_flags / legal_review_required / scope_confidence | | 現行踏襲 |
 
 > **削除/移設**: `ledger_code`, `work_name`, `original_work`, `product_name`, `covered_works`, `covered_products` 等の作品関連自由記述列は `contract_works` へ移設。`additional_parties JSONB` は `contract_parties` へ移設。
+> **書類リンク**: `documents` / `external_assets` に **`contract_id INTEGER FK→contracts`** を追加し、`backlog_issue_key` 文字列依存を脱却。
 
 #### `contract_works`(契約⇔作品 中間) ― **新規・最重要**
 
@@ -205,9 +287,9 @@ erDiagram
 
 #### `contract_parties`(契約当事者) ― 現 `additional_parties JSONB` を正規化
 
-| contract_id FK | vendor_id FK(or sublicensee_id) | party_role(主/副/連帯保証/権利者/再許諾先) | sort_order |
+| contract_id FK | vendor_id FK→vendors | party_role(主/副/連帯保証/権利者/再許諾先) | sort_order |
 
-> これにより3者以上契約をGINではなく実FK + 索引で検索できる。現 `work_sublicensees` の役割も、`contract_parties`(再許諾先) + `contract_financial_terms`(地域別条件)に吸収できる。
+> 当事者は `vendors` に一元化済みのため、再許諾先も `vendor_id` で参照する(旧 `sublicensee_id` は廃止)。3者以上契約を GIN ではなく実FK + 索引で検索可能。
 
 #### `contract_financial_terms`(金銭条件) ― 現 `capability_financial_conditions` を踏襲
 
@@ -217,7 +299,53 @@ erDiagram
 
 `capability_id` → `contract_id` に改名。業務委託契約の成果物明細(業務名, 単価, 数量, 納期, 支払サイクル)。検収書の自動補完元。
 
-### 3.3 実績・支払層
+#### `contract_obligations`(契約義務) ― **新規(MECE: 非金銭義務の抜け解消)**
+
+金額ではない契約上の約束と期限を管理し、満期アラートと同じ仕組みで通知する。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| contract_id | INTEGER FK→contracts | |
+| obligation_type | VARCHAR(40) | min_manufacturing(最低製造義務) / credit_display(クレジット表記) / reporting(報告義務) / audit(監査権) / exclusivity(独占) / sample_delivery(サンプル提供) |
+| description | TEXT | |
+| due_rule | TEXT | 期日ルール(毎年◯月 / 製造前 等) |
+| next_due_date | DATE | 次回期限(アラート対象) |
+| status | VARCHAR(20) | active / fulfilled / breached / waived |
+| last_alert_at | TIMESTAMPTZ | |
+
+### 3.4 実績・請求・支払層
+
+#### `manufacturing_events`(製造実績) / `sales_events`(販売実績)
+
+現 `manufacturing_events` を `product_id FK→products` 紐付けに変更(死んだ `license_contract_id` を撤去)。売上報告ベースのロイヤリティ(Phase 28 で追加)のために `sales_events`(販売数/売上金額)を新設し、`royalty_statements` の計算元を製造/販売の両方に対応させる。
+
+#### `royalty_statements`(利用許諾料計算書) ― 現 `royalty_calculations` を整理
+
+死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。MG/AG累積消化のロジック列(現行)はそのまま維持。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
+
+#### `orders`(発注) / `delivery_events`(検収) ― 業務委託フロー
+
+業務委託の発注書を `orders`(現状は `documents` + `contract_capabilities(record_type=purchase_order)` に分散)として明示化し、`contract_id` / `work_id` に紐付け。`delivery_events`(検収)で確定した金額が次段の `invoices` の請求対象になる。
+
+#### `invoices`(請求 / 受領) ― **新規(MECE: 請求フェーズの抜け解消)**
+
+「検収=確定額」「請求=請求額」「支払=実支払額」は別概念。支払の手前に請求を1段挟み、**支払側(適格請求書の受領)と入金側(請求書の発行)** の双方を扱う。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| invoice_no | VARCHAR(40) | 自社発行番号 or 受領請求書番号 |
+| direction | VARCHAR(10) | received(受領=支払側) / issued(発行=入金側) |
+| contract_id | INTEGER FK→contracts | |
+| work_id | INTEGER FK→works NULL | 作品軸 |
+| delivery_event_id | INTEGER FK→delivery_events NULL | 業務委託の検収根拠 |
+| counterparty_vendor_id | INTEGER FK→vendors | 請求元 / 請求先 |
+| amount_ex_tax / tax_amount / total_amount | DECIMAL | |
+| qualified_invoice | BOOLEAN | 適格請求書(インボイス)要件充足 |
+| invoice_registration_number | VARCHAR(50) | 受領した登録番号(検証用) |
+| received_date / issued_date / due_date | DATE | |
+| status | VARCHAR(20) | draft / sent / received / matched / paid |
 
 #### `payments`(支払・入金 統一台帳) ― **新規・最重要**
 
@@ -232,48 +360,54 @@ erDiagram
 | work_id | INTEGER FK→works | **作品軸(原則必須)** |
 | product_id | INTEGER FK→products NULL | |
 | contract_id | INTEGER FK→contracts | |
+| invoice_id | INTEGER FK→invoices NULL | 対応する請求 |
 | financial_term_id | INTEGER FK→contract_financial_terms NULL | 適用した金銭条件 |
 | counterparty_vendor_id | INTEGER FK→vendors | 支払先 / 入金元 |
+| paid_from_bank_account_id | INTEGER FK→vendor_bank_accounts NULL | 使用した送金先口座(スナップショット) |
 | period | VARCHAR(7) NULL | YYYY-MM(ロイヤリティ期) |
 | amount_ex_tax / tax_rate / tax_amount | | |
 | withholding_tax | DECIMAL(15,2) | 源泉徴収(印税・個人委託) |
-| total_amount | DECIMAL(15,2) | |
-| currency | VARCHAR(10) | |
+| total_amount | DECIMAL(15,2) | 取引通貨での総額 |
+| currency | VARCHAR(10) | 取引通貨 |
+| fx_rate | DECIMAL(15,6) | **適用為替レート**(海外送金/外貨ロイヤリティ) |
+| amount_jpy | DECIMAL(15,2) | **JPY換算額**(集計・会計用) |
+| fx_rate_date | DATE | レート基準日 |
+| adjustment_of_payment_id | INTEGER FK→payments NULL | **前期修正・相殺・返金の補正対象** |
 | status | VARCHAR(20) | planned / calculated / approved / paid / received |
 | due_date / paid_date | DATE | |
 | source_document_number / backlog_issue_key | | 補助キー(現行連携用) |
 
-#### `manufacturing_events`(製造実績) / `sales_events`(販売実績)
+#### 残高ビュー(前払金 / 債権債務) ― **新規(MECE: 残高把握の抜け解消)**
 
-現 `manufacturing_events` を `product_id FK→products` 紐付けに変更(死んだ `license_contract_id` を撤去)。売上報告ベースのロイヤリティ(Phase 28 で追加)のために `sales_events`(販売数/売上金額)を新設し、`royalty_statements` の計算元を製造/販売の両方に対応させる。
+実テーブルではなくビュー(または集計テーブル)として、契約・作品単位の残高を即時把握する。
 
-#### `royalty_statements`(利用許諾料計算書) ― 現 `royalty_calculations` を整理
-
-死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。MG/AG累積消化のロジック列(現行)はそのまま維持。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
-
-#### `orders`(発注) / `delivery_events`(検収) ― 業務委託フロー
-
-業務委託の発注書を `orders`(現状は `documents` + `contract_capabilities(record_type=purchase_order)` に分散)として明示化し、`contract_id` / `work_id` に紐付け。`delivery_events`(検収)→ 確定額を `payments`(payment_kind=service_fee)に1対1で連結。
+- **前払金残高(recoupment)**: `contract_financial_terms.mg_amount + ag_amount − SUM(royalty_statements.mg/ag_consumed)`
+- **未払残高(AP)**: `SUM(invoices.received where unpaid) − SUM(payments.outbound)`
+- **売掛残高(AR)**: `SUM(invoices.issued) − SUM(payments.inbound)`
 
 ---
 
-## 4. 3つの業務フローと作品軸の貫通
+## 4. 業務フローと作品軸の貫通(権利の循環)
 
-### ① 業務委託報酬の支払
+### ① 業務委託報酬の支払 + 権利取得
 ```
-works ─ contracts(service) ─ contract_line_items ─ orders(発注書) ─ delivery_events(検収) ─ payments(service_fee, outbound)
+works ─ contracts(service) ─ contract_line_items ─ orders(発注) ─ delivery_events(検収)
+        │                                                            │
+        └─ work_rights(成果物の権利取得: 譲渡/許諾)              invoices(請求受領) ─ payments(service_fee, outbound)
 ```
 
 ### ② ロイヤリティ支払(license-in:原作権利者へ / 印税:著者へ)
 ```
 works ─ products ─ manufacturing_events / sales_events
                                    │
-contracts(license_in) ─ contract_financial_terms ─ royalty_statements(MG/AG消化) ─ payments(royalty, outbound)
+contracts(license_in) ─ contract_financial_terms ─ royalty_statements(MG/AG消化) ─ invoices ─ payments(royalty, outbound)
 ```
 
 ### ③ サブライセンス収入(license-out:入金)
 ```
-works ─ contracts(license_out) ─ contract_parties(再許諾先) ─ contract_financial_terms ─ royalty_statements ─ payments(royalty/sublicense_income, inbound)
+works ─ contracts(license_out) ─ contract_parties(再許諾先=vendor) ─ contract_financial_terms
+                                   │
+                          royalty_statements ─ invoices(発行) ─ payments(sublicense_income, inbound)
 ```
 
 すべての終端 `payments` が `work_id` を持つため、**作品1本の損益・支払総額を横断集計**できる。
@@ -284,63 +418,72 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先) ─ contract
 
 | 現行 | 新 | 移行方法 |
 | :--- | :--- | :--- |
-| `ledgers`(自社作品相当の行) | `works` | 自社タイトルの行を移行。`ledger_code`→`work_code`、列追加(work_type, status, publisher_vendor_id)。原作属性(権利者/クレジット/承認)は持ち込まない。 |
-| `ledgers`(外部原作相当の行) | `source_ips` | 外部原作の行を分離移行。`ledger_code`→`source_code`、`creator_name`→`rights_holder_vendor_id`(名寄せ)、default_* 群を移設。自社作品との関係は `work_source_ips` に展開。 |
+| `ledgers`(自社作品相当の行) | `works` | 自社タイトルの行を移行。`ledger_code`→`work_code`、列追加。原作属性は持ち込まない。 |
+| `ledgers`(外部原作相当の行) | `source_ips` | 外部原作の行を分離移行。`creator_name`→`rights_holder_vendor_id`、default_* 群を移設。 |
 | `materials` | `source_ip_materials` | `ledger_id`→`source_ip_id`、`rights_holder`→`rights_holder_vendor_id`(名寄せ)。 |
 | (なし) | `products` | `manufacturing_events` の product_name/edition から逆生成して初期投入。 |
-| `contract_capabilities` | `contracts` + `contract_works` + `contract_parties` | 作品関連列を `contract_works` へ、`additional_parties` を `contract_parties` へ展開。`ledger_code` → `contract_works.work_id`。 |
+| (なし) | `work_rights` | 既存の業務委託契約・素材情報から権利区分を初期登録(要・運用入力)。 |
+| (なし) | `ip_registrations` | 商標台帳(Excel等)から初期投入。 |
+| `sublicensees` | `vendors` + `party_roles(role=sublicensee)` | 再許諾先を取引先に名寄せ統合。固有属性は `party_roles.attributes` へ。 |
+| `contract_capabilities` | `contracts` + `contract_works` + `contract_parties` | 作品関連列を `contract_works` へ、`additional_parties` を `contract_parties` へ展開。 |
 | `capability_financial_conditions` | `contract_financial_terms` | `capability_id`→`contract_id` リネームのみ。 |
 | `capability_line_items` | `contract_line_items` | 同上。 |
+| (なし) | `contract_obligations` | 契約レビュー時に非金銭義務を抽出登録。 |
 | `manufacturing_events` | `manufacturing_events`(改) | `license_contract_id`(死)撤去、`product_id` FK追加。 |
 | `royalty_calculations` | `royalty_statements` | 死んだFKを `contract_id`/`financial_term_id`/`product_id` に張り直し。 |
-| `royalty_payments` | `payments`(kind=royalty) | 統一台帳へ移行。 |
-| `delivery_events` / `delivery_line_items` | 維持 + `payments`連結 | 検収確定額を payments(service_fee) に集約。 |
-| `work_sublicensees` / `sublicensees` | `contract_parties` + `contract_financial_terms` / `sublicensees`維持 | 作品×再許諾先の条件を契約配下へ正規化。 |
+| `royalty_payments` | `payments`(kind=royalty) + `invoices` | 統一台帳へ移行。請求段階を分離。 |
+| `delivery_events` / `delivery_line_items` | 維持 + `invoices`/`payments`連結 | 検収確定額を invoices→payments(service_fee) に集約。 |
+| `work_sublicensees` | `contract_parties` + `contract_financial_terms` | 作品×再許諾先の条件を契約配下へ正規化。 |
+| `documents` / `external_assets` | 維持 + `contract_id` FK追加 | 物理ファイルとして契約に紐付け。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`contract_works`/`contract_parties`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`work_rights`/`ip_registrations`/`contract_works`/`contract_parties`/`contract_obligations`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
-3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
+3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
 ---
 
 ## 6. 作品軸クエリ例(刷新後)
 
 ```sql
--- 作品1本の支払総額を種別(印税/許諾料/委託費)別に集計
-SELECT w.title,
-       p.payment_kind,
-       p.direction,
-       SUM(p.total_amount) AS total
+-- 作品1本の支払総額を種別(印税/許諾料/委託費)別に集計(JPY換算)
+SELECT w.title, p.payment_kind, p.direction, SUM(p.amount_jpy) AS total_jpy
 FROM works w
 JOIN payments p ON p.work_id = w.id
 WHERE w.work_code = 'W-2025-0007'
 GROUP BY w.title, p.payment_kind, p.direction;
 
--- 作品にぶら下がる全契約と満期アラート
+-- 作品にぶら下がる全契約と満期/更新アラート
 SELECT w.title, c.contract_title, c.contract_category, c.expiration_date
 FROM works w
 JOIN contract_works cw ON cw.work_id = w.id
 JOIN contracts c ON c.id = cw.contract_id
 WHERE w.id = $1;
 
--- 期またぎのMG消化状況(製品単位)
-SELECT pr.product_name, rs.period, rs.mg_consumed_after, rs.mg_remaining
-FROM royalty_statements rs
-JOIN products pr ON pr.id = rs.product_id
-WHERE pr.work_id = $1
-ORDER BY rs.period;
+-- 作品を構成する権利要素と取得形態(譲渡/許諾)・印税発生の有無
+SELECT wr.component_name, wr.rights_type, wr.is_royalty_bearing, v.vendor_name
+FROM work_rights wr
+JOIN vendors v ON v.id = wr.rights_holder_vendor_id
+WHERE wr.work_id = $1;
+
+-- 直近で更新期限が来る商標・契約義務(アラート対象)
+SELECT '商標' AS kind, registration_no AS ref, next_renewal_date AS due FROM ip_registrations WHERE next_renewal_date <= now() + interval '90 days'
+UNION ALL
+SELECT '契約義務', obligation_type, next_due_date FROM contract_obligations WHERE status='active' AND next_due_date <= now() + interval '90 days'
+ORDER BY due;
 ```
 
 ---
 
-## 7. 期待効果
+## 7. 期待効果(MECE で閉じる権利の循環)
 
-- **作品軸の一元集計**: 1作品の契約・印税・許諾料・委託費・収入を横断で即時把握。
+- **権利の循環が漏れなく閉じる**: 「取得(`work_rights`)→ 保有(`works`/`ip_registrations`)→ 活用(`contracts`)→ 請求(`invoices`)→ 支払/入金(`payments`)」が一気通貫。
+- **作品軸の一元集計**: 1作品の契約・印税・許諾料・委託費・収入・残高を横断で即時把握。
+- **当事者のダブり解消**: `vendors` + `party_roles` で取引先/再許諾先を一元管理。
 - **参照整合性の回復**: 死んだFK・文字列キー・JSONB疎結合を実FKに置換し、データ破損リスクを低減。
 - **製品(SKU)単位のロイヤリティ精緻化**: 版・形態ごとの製造/販売実績に基づく正確なMG/AG消化計算。
-- **支払台帳の統一**: ロイヤリティと業務委託報酬を同一ビューで支払予定・実績管理。
-- **拡張容易性**: 入金(サブライセンス収入)も同一台帳で扱え、将来の損益管理へ発展可能。
+- **インボイス・源泉・為替に対応した支払管理**: 適格請求書の受領検証、源泉徴収、外貨換算(`amount_jpy`)を含む正確な金銭管理。
+- **金銭以外の義務もアラート化**: 最低製造義務・クレジット表記・報告義務・商標更新を満期アラートと同じ仕組みで監視。
 
 ---
 
