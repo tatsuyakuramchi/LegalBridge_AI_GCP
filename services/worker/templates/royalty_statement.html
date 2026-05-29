@@ -255,6 +255,8 @@
       <td class="label" style="width:120px;">製造完了日</td>
       <td class="center" style="width:130px;"><strong>{{completionDate}}</strong></td>
     </tr>
+    {{!-- Phase 28: 製造/印刷契機のみ数量系を表示。売上報告ベースは金額表記 --}}
+    {{#if (eq calcType "manufacturing")}}
     <tr>
       <td class="label">製造数量（総数）</td>
       <td class="right">{{quantity}} 個</td>
@@ -267,6 +269,14 @@
       <td class="label">MSRP（税抜）</td>
       <td class="right">¥{{msrpStr}}</td>
     </tr>
+    {{else}}
+    <tr>
+      <td class="label">{{#if (eq calcType "sublicense")}}被許諾者受領額{{else}}報告売上高{{/if}}（税抜）</td>
+      <td class="right"><strong>¥{{msrpStr}}</strong></td>
+      <td class="label">料率</td>
+      <td class="right">{{royaltyRatePct}}%</td>
+    </tr>
+    {{/if}}
   </table>
 
   {{!-- ── ロイヤリティ計算明細 ── --}}

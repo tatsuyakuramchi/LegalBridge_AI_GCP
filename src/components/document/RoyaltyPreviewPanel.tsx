@@ -22,6 +22,8 @@ import { Calculator, AlertTriangle, Coins, ArrowRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type RoyaltyPreview = {
+  // Phase 28: 計算方式 ("manufacturing" | "sales" | "sublicense")
+  calc_type?: string;
   unit_price: number;
   quantity: number;
   sample_quantity: number;
@@ -64,6 +66,13 @@ interface Props {
    * 条件を引いて what-if 計算する (MG 累積履歴は 0 として扱う)。
    */
   capabilityFinancialConditionId?: number;
+  /**
+   * Phase 28: 計算方式。
+   *   "manufacturing" … 製造/印刷契機 (基準価格 × 数量 × 料率)
+   *   "sales" / "sublicense" … 売上報告ベース (報告金額 × 料率、数量なし)
+   * 未指定なら "manufacturing" 扱い。
+   */
+  calcType?: string;
   unitPrice: number;
   quantity: number;
   sampleQuantity?: number;
@@ -89,6 +98,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
   licenseContractId,
   licenseFinancialConditionId,
   capabilityFinancialConditionId,
+  calcType,
   unitPrice,
   quantity,
   sampleQuantity,
@@ -102,12 +112,16 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
   const abortRef = useRef<AbortController | null>(null);
 
   // 引数は number / string 混在で来うるので安全側で number 化。
+  // Phase 28: 売上報告ベース (sales/sublicense) は数量を使わない。
+  const isRevenue = !!calcType && calcType !== "manufacturing";
+
   const args = useMemo(
     () => ({
       license_contract_id: Number(licenseContractId) || 0,
       license_financial_condition_id: Number(licenseFinancialConditionId) || 0,
       capability_financial_condition_id:
         Number(capabilityFinancialConditionId) || 0,
+      calc_type: calcType || "manufacturing",
       unit_price: Number(unitPrice) || 0,
       quantity: Number(quantity) || 0,
       sample_quantity: Number(sampleQuantity) || 0,
@@ -117,6 +131,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
       licenseContractId,
       licenseFinancialConditionId,
       capabilityFinancialConditionId,
+      calcType,
       unitPrice,
       quantity,
       sampleQuantity,
@@ -126,11 +141,12 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
 
   // Phase 22.21.91: license 系の id が揃うか、capability の id が揃えば ready。
   //   capability ベースの preview では license_contract_id は不要 (履歴を見ない)。
+  // Phase 28: 売上報告ベースは数量不要 (報告金額 × 料率)。
   const ready =
     ((args.license_contract_id > 0 && args.license_financial_condition_id > 0) ||
       args.capability_financial_condition_id > 0) &&
     args.unit_price > 0 &&
-    args.quantity > 0;
+    (isRevenue || args.quantity > 0);
 
   useEffect(() => {
     if (!ready) {
@@ -185,6 +201,7 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
     args.license_contract_id,
     args.license_financial_condition_id,
     args.capability_financial_condition_id,
+    args.calc_type,
     args.unit_price,
     args.quantity,
     args.sample_quantity,
@@ -247,17 +264,20 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
                   : "text-muted-foreground"
               )}
             >
-              {args.unit_price > 0 ? "✓" : "◻"} 基準価格 (上代等)
+              {args.unit_price > 0 ? "✓" : "◻"}{" "}
+              {isRevenue ? "報告金額 (基準売上 / 受領額)" : "基準価格 (上代等)"}
             </li>
-            <li
-              className={cn(
-                args.quantity > 0
-                  ? "text-emerald-700"
-                  : "text-muted-foreground"
-              )}
-            >
-              {args.quantity > 0 ? "✓" : "◻"} 数量
-            </li>
+            {!isRevenue && (
+              <li
+                className={cn(
+                  args.quantity > 0
+                    ? "text-emerald-700"
+                    : "text-muted-foreground"
+                )}
+              >
+                {args.quantity > 0 ? "✓" : "◻"} 数量
+              </li>
+            )}
           </ul>
         </div>
       ) : error ? (
@@ -272,23 +292,40 @@ export const RoyaltyPreviewPanel: React.FC<Props> = ({
         <div className="space-y-2 text-[11px] font-mono">
           {/* ---- インプット復唱 ---- */}
           <div className="grid grid-cols-2 gap-1 pb-2 border-b border-border text-[10px] text-muted-foreground">
-            <div>基準価格</div>
-            <div className="text-right text-foreground">
-              {yen(preview.unit_price, preview.currency)}
-            </div>
-            <div>数量</div>
-            <div className="text-right text-foreground">
-              {preview.quantity.toLocaleString("ja-JP")}{" "}
-              {preview.sample_quantity > 0 && (
-                <span className="opacity-60">
-                  (うちサンプル {preview.sample_quantity})
-                </span>
-              )}
-            </div>
-            <div>請求対象数量</div>
-            <div className="text-right text-foreground font-bold">
-              {preview.billable_quantity.toLocaleString("ja-JP")}
-            </div>
+            {isRevenue ? (
+              <>
+                <div>報告金額</div>
+                <div className="text-right text-foreground">
+                  {yen(preview.unit_price, preview.currency)}
+                </div>
+                <div>計算方式</div>
+                <div className="text-right text-foreground">
+                  {preview.calc_type === "sublicense"
+                    ? "受領額ベース"
+                    : "売上報告ベース"}
+                </div>
+              </>
+            ) : (
+              <>
+                <div>基準価格</div>
+                <div className="text-right text-foreground">
+                  {yen(preview.unit_price, preview.currency)}
+                </div>
+                <div>数量</div>
+                <div className="text-right text-foreground">
+                  {preview.quantity.toLocaleString("ja-JP")}{" "}
+                  {preview.sample_quantity > 0 && (
+                    <span className="opacity-60">
+                      (うちサンプル {preview.sample_quantity})
+                    </span>
+                  )}
+                </div>
+                <div>請求対象数量</div>
+                <div className="text-right text-foreground font-bold">
+                  {preview.billable_quantity.toLocaleString("ja-JP")}
+                </div>
+              </>
+            )}
             <div>料率</div>
             <div className="text-right text-foreground">
               {pct(preview.rate_pct)}

@@ -2788,13 +2788,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       0,
       (Number(formData.quantity) || 0) - (Number(formData.sampleQuantity) || 0)
     );
+    // Phase 28: 計算方式 (計算書ごとに切替可能)。
+    //   manufacturing … 製造/印刷契機 (基準価格 × 数量 × 料率)
+    //   sales / sublicense … 売上報告ベース (報告金額 × 料率、数量なし)
+    const calcType = String(formData.calcType || 'manufacturing');
+    const isRevenueCalc = calcType !== 'manufacturing';
     // Phase 22.21.98: 担当者ステップを追加 (4 ステップ進捗)
     const stepStatus = {
       step1: selectedContract && selectedConditionId > 0,
       step2:
         formData.productName &&
         Number(formData.msrpStr) > 0 &&
-        Number(formData.quantity) > 0,
+        (isRevenueCalc || Number(formData.quantity) > 0),
       step3: !!formData.STAFF_NAME, // 担当者 (連絡先)
       step4: !!formData.currency,
     };
@@ -3170,6 +3175,50 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           variant="emerald"
           icon={<Coins className="w-4 h-4" />}
         >
+          {/* Phase 28: 計算方式 (計算書ごとに切替) ---------------------- */}
+          <div className="col-span-full space-y-1.5 mb-1">
+            <Label className="text-[11px] font-mono">
+              計算方式 <span className="text-red-600">*</span>
+            </Label>
+            <div className="flex flex-wrap gap-2">
+              {[
+                { v: 'manufacturing', label: '製造/印刷契機', desc: '基準価格 × 数量 × 料率' },
+                { v: 'sales', label: '売上報告ベース', desc: '売上高 × 料率' },
+                { v: 'sublicense', label: '受領額ベース', desc: '被許諾者受領額 × 料率' },
+              ].map((opt) => {
+                const active = calcType === opt.v;
+                return (
+                  <button
+                    key={opt.v}
+                    type="button"
+                    onClick={() => setFormData({ ...formData, calcType: opt.v })}
+                    className={cn(
+                      'flex-1 min-w-[150px] text-left rounded-sm border px-3 py-2 transition-colors',
+                      active
+                        ? 'border-foreground bg-foreground text-background'
+                        : 'border-input hover:bg-muted'
+                    )}
+                  >
+                    <div className="text-[11px] font-mono font-bold">{opt.label}</div>
+                    <div
+                      className={cn(
+                        'text-[10px] font-mono',
+                        active ? 'opacity-80' : 'text-muted-foreground'
+                      )}
+                    >
+                      {opt.desc}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              {isRevenueCalc
+                ? '※ 売上報告ベースは「報告金額 × 料率」で計算します（数量・サンプル数は使いません）。'
+                : '※ 製造/印刷契機は「基準価格 × 課金対象数量 × 料率」で計算します。'}
+            </p>
+          </div>
+
           <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-3">
             <div className="space-y-1">
               <Label className="text-[11px] font-mono">
@@ -3208,7 +3257,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             </div>
             <div className="space-y-1">
               <Label className="text-[11px] font-mono">
-                上代 (MSRP) <span className="text-red-600">*</span>
+                {isRevenueCalc
+                  ? (calcType === 'sublicense'
+                      ? '被許諾者受領額'
+                      : '報告売上高 (税抜)')
+                  : '上代 (MSRP)'}{' '}
+                <span className="text-red-600">*</span>
               </Label>
               <Input
                 type="number"
@@ -3224,44 +3278,54 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                     基準価格: e.target.value,
                   })
                 }
-                placeholder="例: 3000"
+                placeholder={isRevenueCalc ? '例: 1000000' : '例: 3000'}
               />
+              {isRevenueCalc && (
+                <p className="text-[10px] font-mono text-muted-foreground">
+                  この金額 × 料率 で計算します。
+                </p>
+              )}
             </div>
-            <div className="space-y-1">
-              <Label className="text-[11px] font-mono">
-                製造数 <span className="text-red-600">*</span>
-              </Label>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                value={formData.quantity ?? ''}
-                onChange={(e) =>
-                  updateQuantity({ quantity: e.target.value })
-                }
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[11px] font-mono">サンプル数</Label>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                value={formData.sampleQuantity ?? ''}
-                onChange={(e) =>
-                  updateQuantity({ sampleQuantity: e.target.value })
-                }
-                placeholder="0"
-              />
-            </div>
-            <div className="space-y-1 md:col-span-2">
-              <Label className="text-[10px] font-mono opacity-70">
-                課金対象数 (自動: 製造数 − サンプル数)
-              </Label>
-              <div className="text-sm font-mono font-bold px-3 py-2 bg-muted/40 rounded-sm border border-input">
-                {billableQty.toLocaleString('ja-JP')}
-              </div>
-            </div>
+            {/* Phase 28: 売上報告ベースでは数量系を非表示 (計算に使わない) */}
+            {!isRevenueCalc && (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-mono">
+                    製造数 <span className="text-red-600">*</span>
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={formData.quantity ?? ''}
+                    onChange={(e) =>
+                      updateQuantity({ quantity: e.target.value })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-[11px] font-mono">サンプル数</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={formData.sampleQuantity ?? ''}
+                    onChange={(e) =>
+                      updateQuantity({ sampleQuantity: e.target.value })
+                    }
+                    placeholder="0"
+                  />
+                </div>
+                <div className="space-y-1 md:col-span-2">
+                  <Label className="text-[10px] font-mono opacity-70">
+                    課金対象数 (自動: 製造数 − サンプル数)
+                  </Label>
+                  <div className="text-sm font-mono font-bold px-3 py-2 bg-muted/40 rounded-sm border border-input">
+                    {billableQty.toLocaleString('ja-JP')}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </FormSection>
 
@@ -3280,6 +3344,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               capabilityFinancialConditionId={
                 Number(formData.capability_financial_condition_id) || 0
               }
+              calcType={calcType}
               unitPrice={Number(formData.msrpStr || formData.基準価格 || formData.MSRP || 0)}
               quantity={Number(formData.quantity) || 0}
               sampleQuantity={Number(formData.sampleQuantity) || 0}

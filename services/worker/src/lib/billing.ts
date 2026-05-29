@@ -76,7 +76,24 @@ export type PerformanceTerms = {
   quantity: number; // 評価個数
 };
 
-export type FeeTerms = FixedTerms | SubscriptionTerms | PerformanceTerms;
+/**
+ * 売上報告型 (RevenueTerms) — Phase 28.
+ *   報告された金額 (基準売上 / 被許諾者受領額) に料率を掛けるだけで,
+ *   数量・部数の概念を持たない。出版/ライセンスの「売上報告ベース」
+ *   利用許諾料 (gross = ceil(base_amount × rate_pct/100)) に使う。
+ *   製造/印刷契機の PerformanceTerms (base × quantity × rate) と対になる。
+ */
+export type RevenueTerms = {
+  type: "revenue";
+  base_amount: number; // 報告金額 (基準売上 / 被許諾者受領額)
+  rate_pct: number; // 料率 %
+};
+
+export type FeeTerms =
+  | FixedTerms
+  | SubscriptionTerms
+  | PerformanceTerms
+  | RevenueTerms;
 
 export type Adjustments = {
   /** 歩留率 0.0–1.0. default 1.0 (全量). サブスクには通常適用しない. */
@@ -171,6 +188,14 @@ function calcGross(terms: FeeTerms, adj: Adjustments): {
       const breakdown = samples > 0
         ? `${base} × (${terms.quantity} − ${samples}) × ${rate}% = ${gross}`
         : `${base} × ${billable} × ${rate}% = ${gross}`;
+      return { gross, breakdown };
+    }
+    case "revenue": {
+      // Phase 28: 売上報告型 = 報告金額 × 料率 (数量なし)。
+      const base = Number(terms.base_amount) || 0;
+      const rate = Number(terms.rate_pct) || 0;
+      const gross = Math.ceil(base * (rate / 100));
+      const breakdown = `${base} × ${rate}% = ${gross}`;
       return { gross, breakdown };
     }
   }

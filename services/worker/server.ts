@@ -8658,6 +8658,9 @@ ${details}
           req.body.capability_financial_condition_id != null
             ? Number(req.body.capability_financial_condition_id)
             : undefined,
+        // Phase 28: 製造/印刷契機 (manufacturing) か売上報告ベース
+        //   (sales/sublicense) かで gross の算式を切替える。
+        calc_type: req.body.calc_type || undefined,
       });
       res.json({ ok: true, ...result });
     } catch (error) {
@@ -8676,10 +8679,16 @@ ${details}
       const computed = await previewRoyaltyCalculation({
         license_contract_id: Number(body.license_contract_id),
         license_financial_condition_id: Number(body.license_financial_condition_id),
+        capability_financial_condition_id:
+          body.capability_financial_condition_id != null
+            ? Number(body.capability_financial_condition_id)
+            : undefined,
         unit_price: Number(body.unit_price),
         quantity: Number(body.quantity),
         sample_quantity: Number(body.sample_quantity) || 0,
         tax_rate: body.tax_rate != null ? Number(body.tax_rate) : undefined,
+        // Phase 28: 確定保存時も calc_type を反映 (フロント送信値は信用せず再計算)。
+        calc_type: body.calc_type || undefined,
       });
 
       // Phase 23: royalty_calculations.license_contract_id /

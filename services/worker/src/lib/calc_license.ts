@@ -184,7 +184,15 @@ export async function previewRoyaltyCalculation(params: {
    * 紐付けが無いため 0 とみなす ("master からの新規 what-if preview")。
    */
   capability_financial_condition_id?: number;
+  /**
+   * Phase 28: 計算方式。
+   *   "manufacturing" (既定) … 製造/印刷契機。gross = 基準価格 × (数量−サンプル) × 料率
+   *   "sales" / "sublicense" … 売上報告ベース。gross = 報告金額 (unit_price) × 料率
+   *     ※ 報告金額は unit_price 欄を流用 (数量・サンプルは無視)。
+   */
+  calc_type?: string;
 }): Promise<{
+  calc_type: string;
   unit_price: number;
   quantity: number;
   sample_quantity: number;
@@ -252,10 +260,17 @@ export async function previewRoyaltyCalculation(params: {
       : Number(condRes.rows[0].ag_amount) || 0;
   const currency = condRes.rows[0].currency || "JPY";
 
+  // Phase 28: calc_type で「製造/印刷契機 (数量あり)」と「売上報告ベース
+  //   (金額 × 料率)」を分ける。manufacturing 以外 (sales / sublicense) は
+  //   数量を使わない revenue 型として扱う。
+  const calcType = String(params.calc_type || "manufacturing");
+  const isRevenue = calcType !== "manufacturing";
+
   const unitPrice = Number(params.unit_price) || 0;
-  const quantity = Number(params.quantity) || 0;
-  const sampleQty = Number(params.sample_quantity) || 0;
-  const billableQty = Math.max(0, quantity - sampleQty);
+  // revenue 型では数量・サンプルは計算に使わない (表示も 1 件扱い)。
+  const quantity = isRevenue ? 1 : Number(params.quantity) || 0;
+  const sampleQty = isRevenue ? 0 : Number(params.sample_quantity) || 0;
+  const billableQty = isRevenue ? 1 : Math.max(0, quantity - sampleQty);
   const taxRate = params.tax_rate != null ? Number(params.tax_rate) : 10;
 
   // Phase 22.21.95: MG は floor 化したので consumed_before 不要 (常に 0)。
@@ -270,25 +285,43 @@ export async function previewRoyaltyCalculation(params: {
       )
     : 0;
 
-  // すべて billing.calculateFee に集約
-  const r = calculateFee(
-    {
-      type: "performance",
-      base_price: unitPrice,
-      quantity,
-      rate_pct: ratePct,
-    },
-    {
-      sample_quantity: sampleQty,
-      mg_amount: mgAmount,
-      mg_consumed_before: mgConsumedBefore,
-      ag_amount: agAmount,
-      ag_consumed_before: agConsumedBefore,
-    },
-    taxRate
-  );
+  // すべて billing.calculateFee に集約。
+  //   manufacturing → performance (base × 数量 × 料率)
+  //   sales/sublicense → revenue (報告金額 × 料率)
+  const r = isRevenue
+    ? calculateFee(
+        {
+          type: "revenue",
+          base_amount: unitPrice,
+          rate_pct: ratePct,
+        },
+        {
+          mg_amount: mgAmount,
+          mg_consumed_before: mgConsumedBefore,
+          ag_amount: agAmount,
+          ag_consumed_before: agConsumedBefore,
+        },
+        taxRate
+      )
+    : calculateFee(
+        {
+          type: "performance",
+          base_price: unitPrice,
+          quantity,
+          rate_pct: ratePct,
+        },
+        {
+          sample_quantity: sampleQty,
+          mg_amount: mgAmount,
+          mg_consumed_before: mgConsumedBefore,
+          ag_amount: agAmount,
+          ag_consumed_before: agConsumedBefore,
+        },
+        taxRate
+      );
 
   return {
+    calc_type: calcType,
     unit_price: unitPrice,
     quantity,
     sample_quantity: sampleQty,
