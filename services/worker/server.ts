@@ -9858,6 +9858,87 @@ ${details}
             rePromoteErr
           );
         }
+
+        // Phase 26.9: 出版等利用許諾条件書の印税率を capability_financial_conditions
+        //   に保存し、ライセンス契約と同様に「利用許諾計算書」を発行できる土台を作る。
+        //   紙媒体=condition_no 1 / 電子書籍=2 / 翻訳・海外版=3。
+        //   「許諾しない」種別は配列に含めないことで、upsertCapabilityFinancialConditions
+        //   側の prune により DB からも自動削除される (再生成で許諾を外したケースに対応)。
+        if (templateType === "pub_license_terms") {
+          try {
+            const capRes = await query(
+              `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+              [docNumber]
+            );
+            const capId = Number(capRes.rows[0]?.id);
+            if (capId) {
+              const toPct = (v: any) => {
+                const n = parseFloat(String(v ?? "").replace(/[^0-9.]/g, ""));
+                return Number.isFinite(n) ? n : null;
+              };
+              const payDay =
+                formData["許諾者種別"] === "法人" ? "末日" : "20日";
+              const pubConditions: any[] = [
+                {
+                  // 紙媒体出版 (常に独占的に許諾)
+                  condition_no: 1,
+                  region_language_label: "紙書籍出版",
+                  calc_method: "ROYALTY",
+                  rate_pct: toPct(formData["紙書籍印税率"]),
+                  base_price_label: "税抜定価",
+                  formula_text:
+                    formData["紙媒体計算式"] || "税抜定価 × 印税対象部数 × 印税率",
+                  calc_period: formData["紙媒体印税対象部数区分"] || "",
+                  currency: "JPY",
+                  payment_terms: `都度払い（刊行日を含む月の翌々月${payDay}払い）`,
+                  mg_amount: 0,
+                  ag_amount: 0,
+                },
+              ];
+              if (formData["電子書籍配信許諾有無"] === "許諾する") {
+                pubConditions.push({
+                  condition_no: 2,
+                  region_language_label: "電子書籍配信",
+                  calc_method: "ROYALTY",
+                  rate_pct: toPct(formData["電子書籍印税率"]),
+                  base_price_label: "被許諾者受領額",
+                  formula_text:
+                    formData["電子書籍計算式"] || "被許諾者の受領額 × 料率",
+                  calc_period: "毎年4月1日〜翌3月末日",
+                  currency: "JPY",
+                  payment_terms: `年1回・6月${payDay}払い`,
+                  mg_amount: 0,
+                  ag_amount: 0,
+                });
+              }
+              if (formData["翻訳海外版許諾有無"] === "許諾する") {
+                pubConditions.push({
+                  condition_no: 3,
+                  region_language_label:
+                    formData["翻訳海外版対象地域言語"] || "翻訳・海外版",
+                  calc_method: "ROYALTY",
+                  rate_pct: toPct(formData["翻訳海外版料率"]),
+                  base_price_label: "被許諾者受取ライセンス収益",
+                  formula_text:
+                    formData["翻訳海外版計算式"] ||
+                    "被許諾者受取ライセンス収益 × 料率",
+                  currency: "JPY",
+                  mg_amount: 0,
+                  ag_amount: 0,
+                });
+              }
+              await upsertCapabilityFinancialConditions(capId, pubConditions);
+              console.log(
+                `✅ Saved ${pubConditions.length} publication royalty condition(s) for: ${docNumber}`
+              );
+            }
+          } catch (pubFcErr) {
+            console.warn(
+              "⚠️ Failed to persist publication financial conditions:",
+              pubFcErr
+            );
+          }
+        }
       } catch (ccErr) {
         console.warn(
           `⚠️ Failed to sync generated document to contract_capabilities:`,

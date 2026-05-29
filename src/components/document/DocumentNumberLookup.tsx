@@ -157,6 +157,10 @@ const TEMPLATE_TYPE_TO_MASTER_CATEGORY: Record<string, string> = {
   sales_master_standard: "service",
   purchase_order: "service",
   intl_purchase_order: "service",
+  // Phase 26.9: 出版基本契約 (個人/法人) → publication カテゴリ。
+  //   出版等利用許諾条件書フォームの「基本契約番号」検索で親契約を引く。
+  pub_master_individual: "publication",
+  pub_master_corporate: "publication",
 }
 
 const filterTypesToMasterCategories = (

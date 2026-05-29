@@ -4137,6 +4137,35 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               マスター &gt; 原作 (Ledgers) で登録した原作から選択。「原著作物名」は正式名称で自動入力されます（手入力不可）。
             </p>
           </div>
+
+          {/* Phase 26.9: 基本契約番号を DB (出版基本契約マスタ) から検索して反映。
+              許諾者名で初期検索し、ヒットした出版基本契約の番号と締結日を流し込む。 */}
+          <div className="col-span-full space-y-1 mt-3">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              基本契約番号 — DB (出版基本契約) から検索して反映
+            </label>
+            <DocumentNumberLookup
+              label="出版基本契約を検索"
+              placeholder="取引先名 / 契約番号 / 作品名 で部分検索 (空欄で一覧)"
+              includeMaster
+              filterTemplateTypes={['pub_master_individual', 'pub_master_corporate']}
+              initialQuery={formData['許諾者'] || ''}
+              onApply={(doc) => {
+                setFormData({
+                  ...formData,
+                  基本契約番号: doc.document_number || formData['基本契約番号'] || '',
+                  ...(doc.master_meta?.effective_date
+                    ? { 基本契約締結日: doc.master_meta.effective_date }
+                    : {}),
+                });
+              }}
+            />
+            {formData['基本契約番号'] && (
+              <p className="text-[10px] font-mono text-emerald-700">
+                選択中の基本契約番号: {formData['基本契約番号']}
+              </p>
+            )}
+          </div>
         </FormSection>
       )}
       {(Object.entries(groupedVars) as [string, string[]][]).map(([groupName, varIds]) => (
