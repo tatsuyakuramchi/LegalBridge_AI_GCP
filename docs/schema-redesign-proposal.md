@@ -110,6 +110,8 @@ erDiagram
 
     works ||--o{ contract_works : ""
     contracts ||--o{ contract_works : "M:N"
+    works ||--o{ contract_financial_terms : "利用許諾条件明細(作品別)"
+    works ||--o{ contract_line_items : "業務委託明細(作品別)"
     contracts ||--o{ contracts : "改定(parent_contract_id)"
     contracts ||--o{ contract_parties : "当事者"
     contracts ||--o{ contract_financial_terms : "金銭条件"
@@ -304,13 +306,15 @@ erDiagram
 
 > 当事者は `vendors` に一元化済みのため、再許諾先も `vendor_id` で参照する(旧 `sublicensee_id` は廃止)。3者以上契約を GIN ではなく実FK + 索引で検索可能。
 
-#### `contract_financial_terms`(金銭条件) ― 現 `capability_financial_conditions` を踏襲
+#### `contract_financial_terms`(利用許諾条件明細 / 金銭条件) ― 現 `capability_financial_conditions` を踏襲・拡張
 
-`capability_id` → `contract_id` に改名し、ほぼそのまま。地域・言語別に複数行(料率, MG, AG, 計算期間, 通貨, 計算式)。
+`capability_id` → `contract_id` に改名。地域・言語別に複数行(料率, MG, AG, 計算期間, 通貨, 計算式)。
+**追加**: `work_id INTEGER FK→works NULL` / `product_id INTEGER FK→products NULL` を持たせ、基本契約が複数作品をカバーする場合でも**作品(製品)単位で許諾条件明細を直接引ける**ようにする(法的根拠の `contract_id` は必須で残す)。これが「利用許諾料報告(`royalty_statements`)」→ `payments` の発火元になる。
 
-#### `contract_line_items`(業務明細) ― 現 `capability_line_items` を踏襲
+#### `contract_line_items`(業務委託明細) ― 現 `capability_line_items` を踏襲・拡張
 
 `capability_id` → `contract_id` に改名。業務委託契約の成果物明細(業務名, 単価, 数量, 納期, 支払サイクル)。検収書の自動補完元。
+**追加**: `work_id INTEGER FK→works NULL` / `product_id INTEGER FK→products NULL` を持たせ、**作品単位で委託明細を直接引ける**ようにする。これが「納品・検収(`delivery_events`)」→ `invoices` → `payments` の発火元になる。
 
 #### `contract_obligations`(契約義務) ― **新規(MECE: 非金銭義務の抜け解消)**
 
@@ -401,6 +405,20 @@ erDiagram
 ---
 
 ## 4. 業務フローと作品軸の貫通(権利の循環)
+
+### 作品中心ビュー(運用イメージ)
+
+1作品を開くと、**利用許諾条件明細**と**業務委託明細**がぶら下がり、各明細に対して**納品(検収)**または**利用許諾料報告**で支払が実行される、という運用イメージをそのまま表現する。
+
+```
+作品 (works)
+ ├─ 利用許諾条件明細 (contract_financial_terms: work_id/product_id)
+ │     └─ 利用許諾料報告 (royalty_statements) ── invoices ── payments(royalty)
+ └─ 業務委託明細 (contract_line_items: work_id)
+       └─ 納品・検収 (orders → delivery_events) ── invoices ── payments(service_fee)
+```
+
+> 明細の**法的根拠は契約**(`contract_id`)に置きつつ、`work_id`/`product_id` で**作品から直接引ける**ため、「作品に明細が付き、そこに支払が実行される」イメージと完全に一致する。
 
 ### ① 業務委託報酬の支払 + 権利取得
 ```
