@@ -216,6 +216,12 @@ export async function initDb() {
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_number VARCHAR(50);`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_holder_kana TEXT;`,
     `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS is_invoice_issuer BOOLEAN DEFAULT FALSE;`,
+    // Phase 28: bank_name / invoice_registration_number は CREATE TABLE 句にしか
+    //   無く、既存 (旧) vendors テーブルには ADD COLUMN が無いため列が欠落していた。
+    //   この 2 列を参照する upsert INSERT が 42703 (undefined_column) で 500 に
+    //   なっていたので、明示的に backfill する。
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS bank_name TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS invoice_registration_number VARCHAR(50);`,
     `CREATE TABLE IF NOT EXISTS vendor_addresses (
       id SERIAL PRIMARY KEY,
       vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
