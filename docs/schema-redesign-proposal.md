@@ -64,6 +64,7 @@
 | 抜け(知財) | 商標・意匠等の**産業財産権と更新期限**が未カバー | `ip_registrations`(§3.2) |
 | 抜け(契約) | マスター↔個別の階層、改定・覚書チェーン、契約↔書類↔稟議の実FK | `contracts.master_contract_id` / `amends_contract_id` / `documents.contract_id`(§3.3) |
 | 抜け(契約) | **金銭以外の契約義務**(最低製造義務・クレジット表記・報告義務・監査権) | `contract_obligations`(§3.3) |
+| 抜け(契約) | レビュー / ドラフト依頼〜締結の**進捗を契約ネイティブで管理**(現行は Backlog 依存) | `contracts.lifecycle_stage` + `contract_stage_history`(§3.3) |
 | 抜け(支払) | 支払前の**「請求」フェーズ**(適格請求書の受領 / 入金請求の発行) | `invoices`(§3.4) |
 | 抜け(支払) | **為替レート**(多通貨・海外送金の換算) | `payments` FX列(§3.4) |
 | 抜け(支払) | 前払金 / 債権債務の**残高把握** | 残高ビュー(§3.4) |
@@ -97,6 +98,8 @@ erDiagram
     ringi_records ||--o{ ringi_works : "稟議⇔作品 N:N"
     works ||--o{ ringi_works : ""
     ringi_records ||--o{ contracts : "決裁稟議"
+    legal_requests ||--o| contracts : "依頼→契約"
+    contracts ||--o{ contract_stage_history : "締結までの進捗"
     works ||--o{ products : "製品/SKU"
     works ||--o{ work_source_ips : ""
     source_ips ||--o{ work_source_ips : "M:N(自社作品⇔原作IP)"
@@ -337,6 +340,40 @@ erDiagram
 - **条件明細を持つのは `individual` と `standalone` のみ**(`master` は一般条項の器)。アプリ層で「`master` には financial_terms/line_items を作らせない」ガードを置く。
 - マスターの一般条件(料率レンジ・支払サイト等の包括条項)を保持したい場合は、`master` 側にも参考値として `contract_financial_terms` を許容してよいが、**金銭計算(royalty_statements / payments)の根拠となる確定明細は individual / standalone に限定**する。
 - マスター↔個別(`master_contract_id`)と、改定↔覚書(`amends_contract_id`)は**直交する別軸**。個別契約自体も覚書で改定され得る。
+
+##### 契約ライフサイクル ― レビュー / ドラフト依頼 〜 締結の進捗管理
+
+依頼受付 → ドラフト → 社内レビュー → 相手方レビュー → 稟議・決裁 → 署名・押印 → 締結 までを管理する。現行は Backlog 課題ステータス + `issue_workflows` で運用しているが、刷新案では**契約自体にライフサイクル状態と遷移履歴を持たせ**、Backlog の文字列ステータス依存を脱却して進捗・滞留・リードタイムをDBで集計する。
+
+`contracts` への追加列:
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| lifecycle_stage | VARCHAR(30) | requested / drafting / internal_review / counterparty_review / approval / pending_signature / executed / on_hold / cancelled / expired / terminated。現行 `contract_status`(executed/confirmed/pending)はこの軸に統合 |
+| current_owner_slack_id | VARCHAR(50) | 現在の担当者(法務 / 事業部) |
+| review_due_date | DATE | レビュー / 締結の目標期限(アラート対象) |
+| requested_at / executed_at | TIMESTAMPTZ | 依頼日時 / 締結日時(リードタイム算出) |
+
+`contract_stage_history`(進捗履歴 / 監査証跡) ― **新規**
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| contract_id | INTEGER FK→contracts | |
+| from_stage / to_stage | VARCHAR(30) | 遷移元 / 遷移先 |
+| changed_at | TIMESTAMPTZ | |
+| changed_by_slack_id | VARCHAR(50) | 操作者 |
+| comment | TEXT | レビュー指摘 / 差し戻し理由 等 |
+
+> ステージ遷移を記録し、**カンバン表示・監査証跡・各ステージの滞留時間(リードタイム)分析**に使う。
+
+既存資産との接続:
+- **依頼 / ドラフト依頼** = `legal_requests`(intake)。**`legal_requests.contract_id` を追加**し、依頼→契約を接続。
+- **ドラフトの版** = `documents`(`lifecycle_status=archived_draft` + `revision`)。社内 / 相手方レビューの修正稿を版管理。
+- **稟議・決裁** = `ringi_records`(`contracts.ringi_id`)。`approval` ステージの根拠。
+- **署名・押印** = CloudSign / LegalOn(`cloudsign_url` / `legalon_url`)+ `issue_workflows.stamp_at`。`pending_signature`→`executed`。
+- Backlog は運用ボードとして併用し、`lifecycle_stage` ↔ Backlog ステータスのマッピングで同期する。
+- 条項単位のレビューコメントまで管理したい場合は任意で `contract_review_comments`(contract_id / document_revision / clause_ref / comment / raised_by / resolved)へ拡張可。まずは `contract_stage_history.comment` + Backlog コメントで運用する。
 
 #### `contract_works`(契約⇔作品 中間) ― **新規・最重要**
 
@@ -636,9 +673,11 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | `documents` / `external_assets` | 維持 + `contract_id` / `work_id` / `source_kind`,`source_id` FK追加 | 成果物・外部原本を契約/作品/業務に紐付け。版管理列(base/revision/superseded_by/lifecycle_status)は現行踏襲。 |
 | `templates_config.json` / `templates/` | 維持(ファイルベース) | テンプレート定義は現行どおりコード/設定で管理。必要時のみ `document_templates` へ登録制化。 |
 | `document_sequences` / `workflow_settings` / `issue_workflows` | 維持 + `issue_workflows` に補助FK | 採番・テンプレート許可・ドラフト/承認/押印の制作ワークフローを踏襲。 |
+| `legal_requests` | 維持 + `contract_id` FK | 依頼(intake)を契約に接続。`lifecycle_stage` の起点(requested)。 |
+| (なし) | `contract_stage_history` | 依頼〜締結のステージ遷移履歴。現行 Backlog ステータス / `issue_workflows` の履歴から初期投入可。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`contract_stage_history`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
@@ -653,6 +692,22 @@ FROM works w
 JOIN payments p ON p.work_id = w.id
 WHERE w.work_code = 'W-2025-0007'
 GROUP BY w.title, p.payment_kind, p.direction;
+
+-- 締結待ちの契約を進捗ステージ・担当者・期限で一覧(カンバン/アラート)
+SELECT c.contract_title, c.lifecycle_stage, c.current_owner_slack_id, c.review_due_date
+FROM contracts c
+WHERE c.lifecycle_stage NOT IN ('executed','cancelled','expired','terminated')
+ORDER BY c.review_due_date NULLS LAST;
+
+-- 各ステージの平均滞留日数(リードタイム分析)
+SELECT to_stage, AVG(next_at - changed_at) AS avg_duration
+FROM (
+  SELECT contract_id, to_stage, changed_at,
+         LEAD(changed_at) OVER (PARTITION BY contract_id ORDER BY changed_at) AS next_at
+  FROM contract_stage_history
+) t
+WHERE next_at IS NOT NULL
+GROUP BY to_stage;
 
 -- 全社・部門経費(作品に紐づかない業務委託等)を費目別に集計
 SELECT p.department_code, ec.label AS expense, SUM(p.amount_jpy) AS total_jpy
@@ -695,6 +750,7 @@ ORDER BY due;
 - **契約書(実体/版/制作)の分離管理**: 「契約という実体」「その時々の書類(再発行・覚書・別紙)」「制作の元データ(テンプレート/フォーム)」を独立追跡し、正本(`is_primary`)を一意特定。生成エンジンは現行資産を維持したまま作品・契約へFK接続。
 - **成果物の納品・リテイク・権利取得の一気通貫**: イラスト等の成果物を `deliverables` + `deliverable_revisions` で版・受領ステータス込みで管理し、発注明細→納品→検収→権利取得(`work_rights`)→報酬支払(`payments`)を1本で追跡。
 - **創作委託+権利留保+利用許諾の複合に対応**: 作成は委託・権利は相手方留保・当社は許諾利用、という形態を1契約(mixed)で表現し、作成料(service_fee)と利用許諾料(royalty)の二重支払を成果物単位で正しく処理。
+- **締結までの進捗を契約ネイティブで可視化**: 依頼→ドラフト→社内/相手方レビュー→稟議→署名→締結を `lifecycle_stage` + `contract_stage_history` で管理し、担当者・期限アラート・ステージ滞留時間(リードタイム)を Backlog 非依存で集計。
 
 ---
 
