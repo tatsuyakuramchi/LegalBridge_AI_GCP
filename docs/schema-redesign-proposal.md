@@ -80,7 +80,9 @@
 2. **権利の循環を閉じる**: 「取得(委託)→ 保有(IP)→ 活用(契約)→ 請求 → 支払/入金」の各フェーズに実体テーブルを置き、抜け・ダブりを排除する。
 3. **自由記述・文字列キー・JSONB疎結合を、実FK + 中間テーブルに正規化**する。
 4. **当事者は `vendors` に一元化**し、役割(委託先 / 権利者 / 再許諾先 / 著者 / 出版元)は `party_roles` で多重付与する(取引先と再許諾先の二重管理を解消)。
-5. **支払を1つの統一台帳(`payments`)に集約**し、ロイヤリティ/業務委託/許諾料/入金を `payment_kind` + `direction` で区別する。各行に必ず `work_id` を持たせ、作品軸の集計を可能にする。
+5. **支払を1つの統一台帳(`payments`)に集約**し、ロイヤリティ/業務委託/許諾料/入金を `payment_kind` + `direction` で区別する。
+   - 帰属先は **「作品費(`work_id`)」XOR「全社・部門経費(`department_code` + `expense_category`)」** の2系統。会計士委託・システム保守・顧問料・賃料など**作品に紐づかない契約・支払**は後者で分類する(`work_id` は NULL)。
+   - 「作品別の支払」+「全社経費(費目別)」を合算すれば総支払が漏れなく(MECE)集計できる。
 6. **契約⇔作品は M:N**(包括契約は複数作品をカバー、1作品に複数契約)を中間テーブルで表現する。
 7. 現行の Backlog連携・採番・帳票生成ロジックを壊さないよう、`backlog_issue_key` / `document_number` 列は**補助キーとして温存**しつつ、主従関係はFKで張り直す。
 
@@ -219,6 +221,19 @@ erDiagram
 
 > `vendors` 本体の銀行口座・住所・連絡先・インボイス登録番号(現行 `vendor_addresses` / `vendor_bank_accounts` / `vendor_contacts`)はそのまま踏襲。
 
+#### `expense_categories`(費目マスター) ― **新規。作品に紐づかない経費の分類軸**
+
+会計士委託・システム保守・法務顧問・賃料など、**作品費にならない全社/部門経費**を分類するための費目マスター(現 `contract_purposes` と同型の参照テーブル)。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| expense_code | VARCHAR(40) PK | accounting_audit / system_maintenance / legal_advisory / rent / communication / advertising 等 |
+| label | TEXT | 会計監査 / システム保守 / 法務顧問 / 賃料 … |
+| account_category | VARCHAR(50) | 販管費 / 一般管理費 等(会計連携用) |
+| is_active / sort_order | | |
+
+> 帰属部門は現行の `staff.department_code` / `department_workflow_rules` と同じ部門コード体系を用いる(必要なら軽量な `departments` マスターに昇格)。
+
 ### 3.2 知的財産権層 ― **新規(MECE: 知財の抜け解消)**
 
 #### `work_rights`(作品権利要素) ― **最重要の抜け。自社作品の権利取得を記録**
@@ -274,6 +289,9 @@ erDiagram
 | contract_type | VARCHAR(100) | service_basic / license_basic / individual_license_terms 等 |
 | contract_title | TEXT | |
 | primary_vendor_id | INTEGER FK→vendors | 主取引先 |
+| is_work_related | BOOLEAN | 作品に紐づくか。FALSE の場合は `contract_works` を持たず全社/部門経費として扱う |
+| department_code | VARCHAR(50) NULL | **作品に紐づかない契約の帰属部門**(例: 経理部)。会計士委託・保守等 |
+| expense_category | VARCHAR(40) FK→expense_categories NULL | **同・費目**(accounting_audit / system_maintenance 等) |
 | contract_status / effective_date / expiration_date / auto_renewal | | 現行踏襲 |
 | renewal_notice_months / alert_lead_months / last_renewal_alert_at / alert_slack_* | | 更新アラート(現行踏襲) |
 | ringi_id | INTEGER FK→ringi_records NULL | **締結根拠の稟議**(現行は書類経由のみ) |
@@ -287,7 +305,7 @@ erDiagram
 
 #### `contract_works`(契約⇔作品 中間) ― **新規・最重要**
 
-契約と作品の M:N を解決する。包括基本契約が複数作品をカバーするケース、1作品に複数契約(基本契約+個別条件書)が付くケースの両方を表現。
+契約と作品の M:N を解決する。包括基本契約が複数作品をカバーするケース、1作品に複数契約(基本契約+個別条件書)が付くケースの両方を表現。**作品に紐づかない契約(会計士委託・システム保守等)は、この中間テーブルに行を持たず**、`contracts.department_code` + `expense_category` で全社/部門経費として分類する。
 
 | 列 | 型 | 説明 |
 | :--- | :--- | :--- |
@@ -373,9 +391,11 @@ erDiagram
 | id | SERIAL PK | |
 | payment_no | VARCHAR(40) UNIQUE | `PAY-YYYY-NNNN` |
 | direction | VARCHAR(10) | **outbound(支払) / inbound(入金)** |
-| payment_kind | VARCHAR(30) | **royalty / service_fee(業務委託報酬) / advance(MG・AG前払) / lump_sum(一時金) / sublicense_income** |
-| work_id | INTEGER FK→works | **作品軸(原則必須)** |
+| payment_kind | VARCHAR(30) | **royalty / service_fee(業務委託報酬) / advance(MG・AG前払) / lump_sum(一時金) / sublicense_income / overhead(全社・部門経費)** |
+| work_id | INTEGER FK→works NULL | **作品費の場合の作品軸**(全社経費では NULL) |
 | product_id | INTEGER FK→products NULL | |
+| department_code | VARCHAR(50) NULL | **全社・部門経費の帰属部門**(work_id が NULL のとき必須) |
+| expense_category | VARCHAR(40) FK→expense_categories NULL | **同・費目**(会計監査/システム保守 等) |
 | contract_id | INTEGER FK→contracts | |
 | invoice_id | INTEGER FK→invoices NULL | 対応する請求 |
 | financial_term_id | INTEGER FK→contract_financial_terms NULL | 適用した金銭条件 |
@@ -393,6 +413,8 @@ erDiagram
 | status | VARCHAR(20) | planned / calculated / approved / paid / received |
 | due_date / paid_date | DATE | |
 | source_document_number / backlog_issue_key | | 補助キー(現行連携用) |
+
+> **帰属ルール(MECE)**: `CHECK (work_id IS NOT NULL OR department_code IS NOT NULL)` で、全支払が「作品費」か「全社・部門経費」のいずれかに必ず帰属する。両者を合算すれば総支払が漏れなく集計できる。
 
 #### 残高ビュー(前払金 / 債権債務) ― **新規(MECE: 残高把握の抜け解消)**
 
@@ -441,7 +463,14 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先=vendor) ─ c
                           royalty_statements ─ invoices(発行) ─ payments(sublicense_income, inbound)
 ```
 
-すべての終端 `payments` が `work_id` を持つため、**作品1本の損益・支払総額を横断集計**できる。
+### ④ 全社・部門経費(作品に紐づかない業務委託)
+```
+contracts(service, is_work_related=FALSE, department_code=経理部, expense_category=accounting_audit)
+        └─ contract_line_items ─ delivery_events(検収) ─ invoices ─ payments(overhead, work_id=NULL, department_code/expense_category)
+```
+会計士委託・システム保守・法務顧問・賃料などは `contract_works` を持たず、部門×費目で分類する。
+
+作品費の `payments` は `work_id` を持つため**作品1本の損益・支払総額を横断集計**でき、全社経費は `department_code`/`expense_category` で集計できる。両者の和が総支払。
 
 ---
 
@@ -468,7 +497,7 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先=vendor) ─ c
 | `documents` / `external_assets` | 維持 + `contract_id` FK追加 | 物理ファイルとして契約に紐付け。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
@@ -483,6 +512,13 @@ FROM works w
 JOIN payments p ON p.work_id = w.id
 WHERE w.work_code = 'W-2025-0007'
 GROUP BY w.title, p.payment_kind, p.direction;
+
+-- 全社・部門経費(作品に紐づかない業務委託等)を費目別に集計
+SELECT p.department_code, ec.label AS expense, SUM(p.amount_jpy) AS total_jpy
+FROM payments p
+JOIN expense_categories ec ON ec.expense_code = p.expense_category
+WHERE p.work_id IS NULL
+GROUP BY p.department_code, ec.label;
 
 -- 作品にぶら下がる全契約と満期/更新アラート
 SELECT w.title, c.contract_title, c.contract_category, c.expiration_date
@@ -509,7 +545,7 @@ ORDER BY due;
 ## 7. 期待効果(MECE で閉じる権利の循環)
 
 - **権利の循環が漏れなく閉じる**: 「取得(`work_rights`)→ 保有(`works`/`ip_registrations`)→ 活用(`contracts`)→ 請求(`invoices`)→ 支払/入金(`payments`)」が一気通貫。
-- **作品軸の一元集計**: 1作品の契約・印税・許諾料・委託費・収入・残高を横断で即時把握。
+- **作品軸の一元集計 + 全社経費の分離**: 1作品の契約・印税・許諾料・委託費・収入・残高を横断把握しつつ、**作品に紐づかない業務委託(会計士・システム保守・顧問・賃料)は部門×費目で分類**。作品費と全社経費の和で総支払が漏れなく出る。
 - **当事者のダブり解消**: `vendors` + `party_roles` で取引先/再許諾先を一元管理。
 - **参照整合性の回復**: 死んだFK・文字列キー・JSONB疎結合を実FKに置換し、データ破損リスクを低減。
 - **製品(SKU)単位のロイヤリティ精緻化**: 版・形態ごとの製造/販売実績に基づく正確なMG/AG消化計算。
