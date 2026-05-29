@@ -62,7 +62,7 @@
 | :--- | :--- | :--- |
 | 抜け(知財) | **自社作品の権利取得**(委託成果物の譲渡/許諾区分)を持つ場所が無い | `work_rights`(§3.2) |
 | 抜け(知財) | 商標・意匠等の**産業財産権と更新期限**が未カバー | `ip_registrations`(§3.2) |
-| 抜け(契約) | 改定・覚書の**親子チェーン**、契約↔書類↔稟議の実FK | `contracts.parent_contract_id` / `documents.contract_id`(§3.3) |
+| 抜け(契約) | マスター↔個別の階層、改定・覚書チェーン、契約↔書類↔稟議の実FK | `contracts.master_contract_id` / `amends_contract_id` / `documents.contract_id`(§3.3) |
 | 抜け(契約) | **金銭以外の契約義務**(最低製造義務・クレジット表記・報告義務・監査権) | `contract_obligations`(§3.3) |
 | 抜け(支払) | 支払前の**「請求」フェーズ**(適格請求書の受領 / 入金請求の発行) | `invoices`(§3.4) |
 | 抜け(支払) | **為替レート**(多通貨・海外送金の換算) | `payments` FX列(§3.4) |
@@ -114,7 +114,8 @@ erDiagram
     contracts ||--o{ contract_works : "M:N"
     works ||--o{ contract_financial_terms : "利用許諾条件明細(作品別)"
     works ||--o{ contract_line_items : "業務委託明細(作品別)"
-    contracts ||--o{ contracts : "改定(parent_contract_id)"
+    contracts ||--o{ contracts : "マスター→個別(master_contract_id)"
+    contracts ||--o{ contracts : "改定→覚書(amends_contract_id)"
     contracts ||--o{ contract_parties : "当事者"
     contracts ||--o{ contract_financial_terms : "金銭条件"
     contracts ||--o{ contract_line_items : "業務明細"
@@ -286,8 +287,10 @@ erDiagram
 | :--- | :--- | :--- |
 | id | SERIAL PK | |
 | document_number | VARCHAR(100) UNIQUE | 採番(現行踏襲) |
-| parent_contract_id | INTEGER FK→contracts NULL | **改定・覚書の親契約**(amendment チェーン) |
-| record_type | VARCHAR(50) | master_contract / license_condition / publication_condition / amendment(覚書) |
+| contract_level | VARCHAR(20) | **master(基本契約) / individual(個別契約) / standalone(単独契約)**。条件明細を持つのは individual と standalone のみ |
+| master_contract_id | INTEGER FK→contracts NULL | `individual` のとき、ぶら下がる**基本契約**を参照(マスター+個別パターン) |
+| amends_contract_id | INTEGER FK→contracts NULL | **改定・覚書**のとき、改定対象の契約を参照(master/individual/standalone いずれにも付き得る。階層とは別軸) |
+| record_type | VARCHAR(50) | 現行値(master_contract/license_condition/publication_condition)は contract_level × contract_category から導出可。互換のため残置 |
 | contract_category | VARCHAR(30) | **license_in / license_out / service(業務委託) / publication / sales / nda** に再整理 |
 | contract_type | VARCHAR(100) | service_basic / license_basic / individual_license_terms 等 |
 | contract_title | TEXT | |
@@ -305,6 +308,27 @@ erDiagram
 
 > **削除/移設**: `ledger_code`, `work_name`, `original_work`, `product_name`, `covered_works`, `covered_products` 等の作品関連自由記述列は `contract_works` へ移設。`additional_parties JSONB` は `contract_parties` へ移設。
 > **書類リンク**: `documents` / `external_assets` に **`contract_id INTEGER FK→contracts`** を追加し、`backlog_issue_key` 文字列依存を脱却。
+
+##### 契約階層の2パターンと「条件明細が付く層」
+
+```
+パターン1: マスター + 個別                パターン2: スタンドアローン
+  contracts(level=master)                   contracts(level=standalone)
+    │  一般条項のみ・条件明細なし               │  条件明細あり ★
+    └─ contracts(level=individual)            └─ contract_financial_terms / contract_line_items
+         │ master_contract_id で親を参照
+         └─ contract_financial_terms / contract_line_items  ★
+```
+
+| level | master_contract_id | 条件明細(financial_terms / line_items) | 例 |
+| :--- | :--- | :--- | :--- |
+| master(基本契約) | NULL | **持たない** | 業務委託基本契約 / ライセンス基本契約 / 出版基本契約 |
+| individual(個別契約) | **必須(→master)** | **持つ** | 個別利用許諾条件書(ILT) / 個別発注 / 出版利用許諾条件 |
+| standalone(単独契約) | NULL | **持つ** | 単発NDA / 単独の売買・委託契約 |
+
+- **条件明細を持つのは `individual` と `standalone` のみ**(`master` は一般条項の器)。アプリ層で「`master` には financial_terms/line_items を作らせない」ガードを置く。
+- マスターの一般条件(料率レンジ・支払サイト等の包括条項)を保持したい場合は、`master` 側にも参考値として `contract_financial_terms` を許容してよいが、**金銭計算(royalty_statements / payments)の根拠となる確定明細は individual / standalone に限定**する。
+- マスター↔個別(`master_contract_id`)と、改定↔覚書(`amends_contract_id`)は**直交する別軸**。個別契約自体も覚書で改定され得る。
 
 #### `contract_works`(契約⇔作品 中間) ― **新規・最重要**
 
@@ -329,12 +353,12 @@ erDiagram
 
 #### `contract_financial_terms`(利用許諾条件明細 / 金銭条件) ― 現 `capability_financial_conditions` を踏襲・拡張
 
-`capability_id` → `contract_id` に改名。地域・言語別に複数行(料率, MG, AG, 計算期間, 通貨, 計算式)。
+**`individual` / `standalone` 契約にのみ付く**(master には付けない)。`capability_id` → `contract_id` に改名。地域・言語別に複数行(料率, MG, AG, 計算期間, 通貨, 計算式)。
 **追加**: `work_id INTEGER FK→works NULL` / `product_id INTEGER FK→products NULL` を持たせ、基本契約が複数作品をカバーする場合でも**作品(製品)単位で許諾条件明細を直接引ける**ようにする(法的根拠の `contract_id` は必須で残す)。これが「利用許諾料報告(`royalty_statements`)」→ `payments` の発火元になる。
 
 #### `contract_line_items`(業務委託明細) ― 現 `capability_line_items` を踏襲・拡張
 
-`capability_id` → `contract_id` に改名。業務委託契約の成果物明細(業務名, 単価, 数量, 納期, 支払サイクル)。検収書の自動補完元。
+**`individual` / `standalone` 契約にのみ付く**(master には付けない)。`capability_id` → `contract_id` に改名。業務委託契約の成果物明細(業務名, 単価, 数量, 納期, 支払サイクル)。検収書の自動補完元。
 **追加**: `work_id INTEGER FK→works NULL` / `product_id INTEGER FK→products NULL` を持たせ、**作品単位で委託明細を直接引ける**ようにする。これが「納品・検収(`delivery_events`)」→ `invoices` → `payments` の発火元になる。
 
 #### `contract_obligations`(契約義務) ― **新規(MECE: 非金銭義務の抜け解消)**
@@ -469,7 +493,7 @@ LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本
 #### 版・改定の二層管理
 
 - **契約書の再発行(reissue)**: `documents` の `base_document_number` / `revision` / `superseded_by` で表現(現行踏襲)。
-- **契約の改定(覚書/amendment)**: `contracts.parent_contract_id`(§3.3)で新旧契約をチェーンし、覚書PDFは新しい `documents` 行 + `contract_id` で紐付け。
+- **契約の改定(覚書/amendment)**: `contracts.amends_contract_id`(§3.3)で新旧契約をチェーンし、覚書PDFは新しい `documents` 行 + `contract_id` で紐付け。
 
 > これにより「契約という実体」「その時々の書類(版)」「制作の元データ(テンプレート/フォーム)」が**それぞれ独立して追跡**でき、再発行・覚書・別紙が混在しても正本(`is_primary`)を一意に特定できる。
 
@@ -534,7 +558,7 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | (なし) | `work_rights` | 既存の業務委託契約・素材情報から権利区分を初期登録(要・運用入力)。 |
 | (なし) | `ip_registrations` | 商標台帳(Excel等)から初期投入。 |
 | `sublicensees` | `vendors` + `party_roles(role=sublicensee)` | 再許諾先を取引先に名寄せ統合。固有属性は `party_roles.attributes` へ。 |
-| `contract_capabilities` | `contracts` + `contract_works` + `contract_parties` | 作品関連列を `contract_works` へ、`additional_parties` を `contract_parties` へ展開。 |
+| `contract_capabilities` | `contracts` + `contract_works` + `contract_parties` | 作品関連列を `contract_works` へ、`additional_parties` を `contract_parties` へ展開。`record_type` から `contract_level`(master/individual/standalone)を導出し、個別契約は `master_contract_id` で基本契約へ接続。 |
 | `capability_financial_conditions` | `contract_financial_terms` | `capability_id`→`contract_id` リネームのみ。 |
 | `capability_line_items` | `contract_line_items` | 同上。 |
 | (なし) | `contract_obligations` | 契約レビュー時に非金銭義務を抽出登録。 |
