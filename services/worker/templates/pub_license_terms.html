@@ -161,13 +161,10 @@
 <body>
 <div class="contract-document">
 
-  <div class="doc-header">
-    <span class="header-no">第　{{条件書番号}}　号</span>
-    <div class="header-right">
-      <span>基本契約番号：{{基本契約番号}}</span>
-      <span class="header-separator">｜</span>
-      <span>締結日：{{締結日}}</span>
-    </div>
+  <div class="doc-header" style="flex-direction: column; align-items: flex-end; gap: 0.15em;">
+    <span>締結日：{{締結日}}</span>
+    <span>基本契約番号：{{基本契約番号}}</span>
+    <span>個別利用許諾番号：{{条件書番号}}</span>
   </div>
 
   <h1 class="contract-title">出版等利用許諾条件書</h1>
@@ -393,8 +390,9 @@
         </div>
       </div>
       <div class="sig-party">
-        <div class="party-label">株式会社アークライト</div>
+        <div class="party-label">被　許　諾　者</div>
         <div>{{アークライト住所}}</div>
+        <div>株式会社アークライト</div>
         <div class="sig-name-row">
           <span>代表取締役　{{アークライト代表者氏名}}</span>
           <span class="stamp-box">印</span>
