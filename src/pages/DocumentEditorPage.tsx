@@ -1161,6 +1161,31 @@ export function DocumentEditorPage() {
                   </div>
                 ) : (
                   <div className="space-y-6">
+                    {/* 選択中 Backlog 課題の本文 (description) を参照表示。
+                        起票時に Backlog 側へ書かれた「依頼タイプ / 相手方情報 /
+                        詳細」等をフォーム入力の参考として常に見られるようにする。
+                        折りたたみ可 (details)。読み取り専用なので isReadOnly の
+                        pointer-events 無効化ラッパーの外に置く (常に開閉できる)。 */}
+                    {issueSummary?.description && (
+                      <details
+                        open
+                        className="rounded-sm border border-border bg-muted/20"
+                      >
+                        <summary className="cursor-pointer select-none px-3 py-2 text-[11px] font-mono font-bold uppercase tracking-wider flex items-center gap-2">
+                          <FileText className="h-3.5 w-3.5 shrink-0" />
+                          Backlog 課題内容
+                          <span className="text-muted-foreground font-normal normal-case truncate">
+                            [{issueSummary.issueKey}] {issueSummary.summary}
+                          </span>
+                        </summary>
+                        <div className="border-t border-border px-3 py-2.5 max-h-72 overflow-y-auto custom-scrollbar">
+                          <pre className="whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground/90">
+                            {issueSummary.description}
+                          </pre>
+                        </div>
+                      </details>
+                    )}
+
                     {/* Phase 18: 手動ワークフロー制御。選択中の Backlog 課題
                         に対するステータス進行ボタン。auto-advance を廃止した
                         ため、ユーザーが明示的にこのパネルから進める。
