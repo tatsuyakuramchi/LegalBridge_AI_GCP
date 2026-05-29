@@ -90,6 +90,10 @@
 
 ```mermaid
 erDiagram
+    ringi_records ||--o{ works : "起案稟議(origin, 任意)"
+    ringi_records ||--o{ ringi_works : "稟議⇔作品 N:N"
+    works ||--o{ ringi_works : ""
+    ringi_records ||--o{ contracts : "決裁稟議"
     works ||--o{ products : "製品/SKU"
     works ||--o{ work_source_ips : ""
     source_ips ||--o{ work_source_ips : "M:N(自社作品⇔原作IP)"
@@ -147,8 +151,17 @@ erDiagram
 | work_type | VARCHAR(50) | board_game / trpg_book / supplement / digital など |
 | status | VARCHAR(20) | planning / in_production / released / suspended / discontinued |
 | publisher_vendor_id | INTEGER FK→vendors | 出版元(自社外の場合) |
+| origin_ringi_id | INTEGER FK→ringi_records NULL | **起案稟議(作品稟議)**。作品の「生まれ」を1本参照。識別子は一体化しない |
 | is_original | BOOLEAN | 完全自社オリジナル(原作なし)か。FALSE の場合 `work_source_ips` に1件以上を期待 |
 | remarks, is_active, created_at, updated_at | | |
+
+> **稟議との関係(独立 + FK)**: 稟議は「決定イベント」、作品は「長寿命マスター」で別物。1作品は生涯で複数の稟議(企画/増刷/海外展開/続編)を経て、1稟議が複数作品を一括決裁することもある(N:N)。よって**稟議番号を作品キーにせず**、`origin_ringi_id`(起案1本)と下記 `ringi_works`(生涯のN:N)で結ぶ。作品稟議は `ringi_records.category='work'` で判別する。
+
+#### `ringi_works`(稟議⇔作品 中間) ― **新規**
+
+既存 `ringi_documents`(稟議↔書類)と同型。増刷・海外展開・続編など、作品に対する複数の稟議を紐付ける。
+
+| ringi_id FK→ringi_records | work_id FK→works | role(企画/増刷/海外展開/続編/価格改定 等) | linked_at | PK(ringi_id, work_id, role) |
 
 #### `source_ips`(原作IP) ― **新規。外部から許諾を受ける原作の独立マスター**
 
@@ -437,7 +450,7 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先=vendor) ─ c
 | `documents` / `external_assets` | 維持 + `contract_id` FK追加 | 物理ファイルとして契約に紐付け。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`work_rights`/`ip_registrations`/`contract_works`/`contract_parties`/`contract_obligations`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
