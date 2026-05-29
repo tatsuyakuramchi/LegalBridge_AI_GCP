@@ -148,6 +148,23 @@ table.docs td.link a {
 table.docs td.link a:hover { text-decoration: underline; }
 .empty-note { color: #9ca3af; font-size: 12px; padding: 8px 0; font-style: italic; }
 
+.info-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 0 28px;
+  font-size: 12px;
+  margin-top: 4px;
+}
+.info-grid .row {
+  display: flex; gap: 10px; padding: 5px 0;
+  border-bottom: 1px solid #f3f4f6;
+}
+.info-grid .row .k {
+  color: #6b7280; min-width: 92px; flex-shrink: 0;
+  font-family: ui-monospace, monospace; font-size: 11px;
+}
+.info-grid .row .v { color: #1f2937; word-break: break-word; }
+
 form.search-form {
   display: flex; gap: 8px; margin-bottom: 24px;
 }
@@ -181,6 +198,71 @@ function masterPill(label: string, master: any): string {
     return `<span class="pill executed">${esc(label)} ✓${num}</span>`;
   }
   return `<span class="pill empty">${esc(label)} —</span>`;
+}
+
+function infoRow(label: string, value: any): string {
+  if (value == null || value === "") return "";
+  return `<div class="row"><span class="k">${esc(label)}</span><span class="v">${esc(value)}</span></div>`;
+}
+
+/**
+ * Phase 26.8: 取引先マスタの入力済み項目を全件カードで描画。
+ * counterparty (buildCounterparty の戻り値) を受け取り、値が入っている
+ * 項目のみを「全件」並べる。Slack /法務検索 → Web 詳細で
+ * 「文書情報だけでなく取引先情報も表示」を満たすための区画。
+ */
+function vendorInfoCard(cp: any): string {
+  if (!cp) return "";
+  const yen = (n: any) =>
+    n == null || n === "" ? "" : `¥${Number(n).toLocaleString("ja-JP")}`;
+  const ppl = (n: any) =>
+    n == null || n === "" ? "" : `${Number(n).toLocaleString("ja-JP")} 名`;
+  const bool = (b: any) => (b === true ? "対象" : b === false ? "対象外" : "");
+  const entity =
+    cp.entityType === "corporate"
+      ? "法人"
+      : cp.entityType === "individual"
+        ? "個人"
+        : cp.entityType || "";
+  const rows = [
+    infoRow("正式名称", cp.vendorName),
+    infoRow("コード", cp.vendorCode),
+    infoRow("区分", entity),
+    infoRow("屋号", cp.tradeName),
+    infoRow("ペンネーム", cp.penName),
+    infoRow("敬称", cp.vendorSuffix),
+    infoRow("別名", cp.aliases),
+    infoRow("法人番号", cp.corporateNumber),
+    infoRow("登録番号", cp.invoiceRegistrationNumber),
+    infoRow("適格請求書", bool(cp.isInvoiceIssuer)),
+    infoRow("源泉徴収", bool(cp.withholdingEnabled)),
+    infoRow("下請法", bool(cp.subcontractActApplicable)),
+    infoRow("住所", cp.address),
+    infoRow("電話", cp.phone),
+    infoRow("メール", cp.email),
+    infoRow("担当部署", cp.contactDepartment),
+    infoRow("担当者", cp.contactName),
+    infoRow("取引区分", cp.transactionCategory),
+    infoRow("支払条件", cp.paymentTerms),
+    infoRow("主要事業", cp.mainBusiness),
+    infoRow("資本金", yen(cp.capitalYen)),
+    infoRow("従業員数", ppl(cp.employeeCount)),
+    infoRow("格付", cp.rating),
+    infoRow("反社チェック", cp.antisocialCheckResult),
+    infoRow("振込先銀行", cp.bankName),
+    infoRow("支店", cp.branchName),
+    infoRow("口座種別", cp.accountType),
+    infoRow("口座番号", cp.accountNumber),
+    infoRow("口座名義", cp.accountHolderKana),
+    infoRow("基本契約参照", cp.masterContractRef),
+    infoRow("マスタ更新日", cp.masterUpdatedAt),
+  ].filter(Boolean);
+  if (rows.length === 0) return "";
+  return `
+    <div class="vendor-card">
+      <h2>🏢 取引先情報</h2>
+      <div class="info-grid">${rows.join("")}</div>
+    </div>`;
 }
 
 function statusBadge(status: string): string {
@@ -330,6 +412,18 @@ export function listPage(
       };
       const sub = a.qs(`vendor:${cp.vendorId}`);
       const detailUrl = `/search/vendor/${cp.vendorId}${sub ? `?${sub}` : ""}`;
+      const entity =
+        cp.entityType === "corporate"
+          ? "法人"
+          : cp.entityType === "individual"
+            ? "個人"
+            : cp.entityType || "";
+      const idBits = [
+        entity,
+        cp.tradeName ? `屋号: ${cp.tradeName}` : "",
+        cp.corporateNumber ? `法人番号 ${cp.corporateNumber}` : "",
+        cp.invoiceRegistrationNumber ? `登録 ${cp.invoiceRegistrationNumber}` : "",
+      ].filter(Boolean);
       return `
       <a href="${esc(detailUrl)}" style="display:block; text-decoration:none; color:inherit;">
         <div class="vendor-card linkable">
@@ -337,6 +431,11 @@ export function listPage(
             ${esc(cp.vendorName || "-")}
             <span class="vendor-code">${esc(cp.vendorCode || "-")}</span>
           </h2>
+          ${
+            idBits.length
+              ? `<div style="font-size:12px; color:#6b7280; margin-bottom:4px;">${esc(idBits.join(" · "))}</div>`
+              : ""
+          }
           <div class="pills">
             ${masterPill("業務委託", masters.service)}
             ${masterPill("ライセンス", masters.license)}
@@ -433,6 +532,8 @@ export function detailPage(
         ${masterPill("出版", masters.publication)}
       </div>
     </div>
+
+    ${vendorInfoCard(cp)}
 
     <section class="category-block basic">
       <h3>🟦 基本契約 <span class="count">(${cat.basic?.length || 0}件)</span></h3>

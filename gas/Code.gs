@@ -1444,6 +1444,87 @@ function appendContractStatusBlocks_(blocks, payload) {
   });
 }
 
+/**
+ * Phase 26.8: 取引先マスタの入力済み項目を「全件」Slack ブロックで描画。
+ * counterparty (Cloud Run /api/contract-check/search の counterparty) を
+ * 受け取り、値の入っている項目のみを 2 カラム fields で並べる。
+ * これまでは name + code + 文書情報しか出していなかったため、
+ * 「取引先情報も表示してほしい」という要望に対応する。
+ */
+function appendVendorInfoBlock_(blocks, cp) {
+  if (!cp) return;
+  function ent(v) {
+    return v === 'corporate' ? '法人' : v === 'individual' ? '個人' : (v || '');
+  }
+  function bool(b) {
+    return b === true ? '対象' : b === false ? '対象外' : '';
+  }
+  function comma(n) {
+    return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+  }
+  function yen(n) {
+    return n === null || n === undefined || n === '' ? '' : '¥' + comma(n);
+  }
+  function ppl(n) {
+    return n === null || n === undefined || n === '' ? '' : comma(n) + ' 名';
+  }
+
+  var pairs = [
+    ['屋号', cp.tradeName],
+    ['ペンネーム', cp.penName],
+    ['敬称', cp.vendorSuffix],
+    ['別名', cp.aliases],
+    ['区分', ent(cp.entityType)],
+    ['法人番号', cp.corporateNumber],
+    ['登録番号', cp.invoiceRegistrationNumber],
+    ['適格請求書', bool(cp.isInvoiceIssuer)],
+    ['源泉徴収', bool(cp.withholdingEnabled)],
+    ['下請法', bool(cp.subcontractActApplicable)],
+    ['住所', cp.address],
+    ['電話', cp.phone],
+    ['メール', cp.email],
+    ['担当部署', cp.contactDepartment],
+    ['担当者', cp.contactName],
+    ['取引区分', cp.transactionCategory],
+    ['支払条件', cp.paymentTerms],
+    ['主要事業', cp.mainBusiness],
+    ['資本金', yen(cp.capitalYen)],
+    ['従業員数', ppl(cp.employeeCount)],
+    ['格付', cp.rating],
+    ['反社チェック', cp.antisocialCheckResult],
+    ['振込先銀行', cp.bankName],
+    ['支店', cp.branchName],
+    ['口座種別', cp.accountType],
+    ['口座番号', cp.accountNumber],
+    ['口座名義', cp.accountHolderKana],
+    ['基本契約参照', cp.masterContractRef],
+    ['マスタ更新日', cp.masterUpdatedAt],
+  ].filter(function (p) {
+    return p[1] !== null && p[1] !== undefined && p[1] !== '';
+  });
+
+  if (pairs.length === 0) return;
+
+  blocks.push({
+    type: 'section',
+    text: { type: 'mrkdwn', text: '*🏢 取引先情報*' },
+  });
+
+  // Slack の section.fields は最大 10 件 / 1 ブロック。10 件ずつ束ねる。
+  for (var i = 0; i < pairs.length; i += 10) {
+    var chunk = pairs.slice(i, i + 10);
+    blocks.push({
+      type: 'section',
+      fields: chunk.map(function (p) {
+        // 1 field の text は 2000 文字上限。長文 (支払条件等) は切り詰める。
+        var v = String(p[1]);
+        if (v.length > 300) v = v.slice(0, 297) + '…';
+        return { type: 'mrkdwn', text: '*' + p[0] + '*\n' + v };
+      }),
+    });
+  }
+}
+
 /** Renders a single counterparty's contract status. */
 function appendSingleContractDetail_(blocks, payload) {
   var cp = payload.counterparty || {};
@@ -1458,6 +1539,9 @@ function appendSingleContractDetail_(blocks, payload) {
       text: '*' + name + '* (`' + code + '`)',
     },
   });
+
+  // Phase 26.8: 取引先マスタの入力済み項目を全件表示。
+  appendVendorInfoBlock_(blocks, cp);
 
   // Master contract pills (one line, easy to scan).
   var pillLines = [

@@ -479,6 +479,73 @@ function createVendorNotFoundResult(purpose: any) {
   };
 }
 
+/**
+ * Phase 26.8: 取引先マスタの「入力済みの全項目」を counterparty として返す。
+ *
+ * Slack /法務検索 の結果 (GAS が描画) と /search/vendor 系の Web 詳細ページの
+ * 両方で「文書情報だけでなく取引先情報も全件表示」するための共通整形。
+ * vendor は vendors テーブルの全カラム (SELECT *) 行。
+ */
+function buildCounterparty(vendor: any) {
+  const toDateStr = (v: any) =>
+    v instanceof Date ? v.toISOString().split("T")[0] : v || "";
+  return {
+    vendorId: vendor.id,
+    vendorCode: vendor.vendor_code || "",
+    vendorName: vendor.vendor_name || "",
+    entityType: vendor.entity_type || "",
+    // 名称・識別
+    tradeName: vendor.trade_name || "",
+    penName: vendor.pen_name || "",
+    vendorSuffix: vendor.vendor_suffix || "",
+    aliases: vendor.aliases || "",
+    corporateNumber: vendor.corporate_number || "",
+    invoiceRegistrationNumber: vendor.invoice_registration_number || "",
+    isInvoiceIssuer:
+      vendor.is_invoice_issuer === null || vendor.is_invoice_issuer === undefined
+        ? null
+        : !!vendor.is_invoice_issuer,
+    withholdingEnabled:
+      vendor.withholding_enabled === null || vendor.withholding_enabled === undefined
+        ? null
+        : !!vendor.withholding_enabled,
+    subcontractActApplicable:
+      vendor.subcontract_act_applicable === null ||
+      vendor.subcontract_act_applicable === undefined
+        ? null
+        : !!vendor.subcontract_act_applicable,
+    // 連絡先
+    address: vendor.address || "",
+    phone: vendor.phone || "",
+    email: vendor.email || "",
+    contactDepartment: vendor.contact_department || "",
+    contactName: vendor.contact_name || "",
+    // 取引・与信
+    transactionCategory: vendor.transaction_category || "",
+    paymentTerms: vendor.payment_terms || "",
+    mainBusiness: vendor.main_business || "",
+    capitalYen:
+      vendor.capital_yen === null || vendor.capital_yen === undefined
+        ? null
+        : Number(vendor.capital_yen),
+    employeeCount:
+      vendor.employee_count === null || vendor.employee_count === undefined
+        ? null
+        : Number(vendor.employee_count),
+    rating: vendor.rating || "",
+    antisocialCheckResult: vendor.antisocial_check_result || "",
+    // 振込先
+    bankName: vendor.bank_name || vendor.bank_info || "",
+    branchName: vendor.branch_name || "",
+    accountType: vendor.account_type || "",
+    accountNumber: vendor.account_number || "",
+    accountHolderKana: vendor.account_holder_kana || "",
+    // 参照・更新
+    masterContractRef: vendor.master_contract_ref || "",
+    masterUpdatedAt: toDateStr(vendor.master_updated_at),
+  };
+}
+
 async function buildContractStatusForVendor(input: ContractCheckInput, vendor: any, purpose: any) {
   const masterContracts = await getMasterContractSummary(vendor.id);
   const licenseConditions = await getLicenseConditions(vendor.id);
@@ -490,12 +557,7 @@ async function buildContractStatusForVendor(input: ContractCheckInput, vendor: a
 
   return {
     ok: true,
-    counterparty: {
-      vendorId: vendor.id,
-      vendorCode: vendor.vendor_code,
-      vendorName: vendor.vendor_name,
-      entityType: vendor.entity_type
-    },
+    counterparty: buildCounterparty(vendor),
     masterContracts,
     licenseConditions,
     publicationConditions,
