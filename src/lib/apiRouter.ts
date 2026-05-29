@@ -51,6 +51,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ
   // (form_data 全件返却 + jsonb 操作のため)
   /^\/api\/documents\/pending-pdf(?:\?|$)/,
+  // Excel バッチ出力キュー (未発行集計) は worker のみ実装 (form_data 集計)。
+  /^\/api\/excel-batches\/pending(?:\?|$)/,
   /^\/api\/documents\/by-number\/(?:\/|\?|$|.)/,
   /^\/api\/documents\/\d+(?:\/|\?|$)/,
   // Phase 22.21.48 / 22.21.59: 部分検索エンドポイントも worker のみ実装。

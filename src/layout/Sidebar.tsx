@@ -11,6 +11,7 @@ import {
   Terminal,
   ChevronRight,
   Database,
+  FileSpreadsheet,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -35,6 +36,7 @@ const groups: NavGroup[] = [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, description: "Overview", end: true },
       { to: "/documents/new", label: "New Document", icon: FilePlus2, description: "Generate" },
       { to: "/imports", label: "Imports", icon: Database, description: "Past docs → DB" },
+      { to: "/excel-batches", label: "Excel Export", icon: FileSpreadsheet, description: "未発行 検収/許諾" },
       { to: "/requests", label: "Requests", icon: Inbox, description: "Backlog" },
       { to: "/archive", label: "Archive", icon: Archive, description: "Concluded" },
     ],

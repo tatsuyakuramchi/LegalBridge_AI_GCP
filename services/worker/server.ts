@@ -8893,6 +8893,263 @@ ${details}
     }
   });
 
+  // ---------------------------------------------------------------------
+  // Phase 24: 会計用 Excel のバッチ出力（担当者 × 支払期日）
+  //
+  //   PDF 発行と同時に Excel を作るのをやめ、検収書 / 利用許諾料計算書を
+  //   「発行済みだが Excel 未発行」(documents.excel_issued_at IS NULL) で
+  //   溜め、検収担当者 × 支払期日 でまとめて 1 ファイル (複数行) に出力する。
+  // ---------------------------------------------------------------------
+
+  // formData から vendor を解決（旧インライン生成のロジックを踏襲）。
+  const resolveVendorForExcel = async (formData: any): Promise<any> => {
+    let vendorRow: any = null;
+
+    const masterId = Number(formData?.selected_master_contract_id) || 0;
+    if (masterId > 0) {
+      const r = await query(
+        `SELECT v.vendor_code, v.vendor_name, v.entity_type,
+                v.account_holder_kana, v.withholding_enabled
+           FROM contract_capabilities cc
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE cc.id = $1 LIMIT 1`,
+        [masterId]
+      );
+      if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
+    }
+
+    if (!vendorRow) {
+      const poId = Number(formData?.parent_po_id) || 0;
+      if (poId > 0) {
+        const r = await query(
+          `SELECT v.vendor_code, v.vendor_name, v.entity_type,
+                  v.account_holder_kana, v.withholding_enabled
+             FROM contract_capabilities cc
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+            WHERE cc.id = $1 AND cc.record_type = 'purchase_order'
+            LIMIT 1`,
+          [poId]
+        );
+        if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
+      }
+    }
+
+    if (!vendorRow) {
+      const vcode = (formData?.VENDOR_CODE as string) || "";
+      if (vcode) {
+        const r = await query(
+          `SELECT vendor_code, vendor_name, entity_type,
+                  account_holder_kana, withholding_enabled
+             FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+          [vcode]
+        );
+        vendorRow = r.rows[0] || null;
+      }
+    }
+
+    if (!vendorRow) {
+      const vname =
+        (formData?.VENDOR_NAME as string) ||
+        (formData?.counterparty as string) ||
+        (formData?.licensor as string) ||
+        "";
+      if (vname) {
+        const r = await query(
+          `SELECT vendor_code, vendor_name, entity_type,
+                  account_holder_kana, withholding_enabled
+             FROM vendors WHERE vendor_name = $1 LIMIT 1`,
+          [vname]
+        );
+        vendorRow = r.rows[0] || null;
+      }
+    }
+
+    // 個人取引先は withholding_enabled 未設定でも源泉対象とみなす。
+    if (vendorRow) {
+      const et = String(vendorRow.entity_type || "").toLowerCase();
+      const isIndividual = et === "個人" || et === "individual";
+      if (isIndividual && vendorRow.withholding_enabled !== true) {
+        vendorRow = { ...vendorRow, withholding_enabled: true };
+      }
+    }
+    // formData の VENDOR_WITHHOLDING_ENABLED を最優先で採用（保険）。
+    if (formData?.VENDOR_WITHHOLDING_ENABLED === true) {
+      vendorRow = vendorRow
+        ? { ...vendorRow, withholding_enabled: true }
+        : {
+            vendor_code: formData.VENDOR_CODE || "",
+            vendor_name: formData.licensor || formData.counterparty || "",
+            withholding_enabled: true,
+          };
+    }
+    return vendorRow;
+  };
+
+  // 検収担当者 / 支払期日 のグルーピングキーを formData から導出。
+  //   buildFromFormData の payment_date 算出ロジックと揃える。
+  const deriveExcelGroupKey = (templateType: string, fd: any) => {
+    const isRoyalty = templateType === "royalty_statement";
+    const category = isRoyalty ? "royalty_statement" : "inspection_certificate";
+    const inspectorEmail = fd?.inspectorEmail || fd?.STAFF_EMAIL || "";
+    const inspectorName =
+      fd?.inspectorName || fd?.STAFF_NAME || "(担当者未設定)";
+    const rawDate = isRoyalty
+      ? fd?.paymentDueDate || fd?.documentDate || ""
+      : fd?.paymentDate || fd?.payment_due_date || fd?.documentDate || "";
+    const paymentDate = rawDate ? String(rawDate).substring(0, 10) : "";
+    return { category, inspectorEmail, inspectorName, paymentDate };
+  };
+
+  // 未発行の検収書 / 利用許諾料計算書を 担当者 × 支払期日 × 種別 で集計。
+  app.get("/api/excel-batches/pending", async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT document_number, template_type, form_data, created_at
+           FROM documents
+          WHERE excel_issued_at IS NULL
+            AND is_primary = TRUE
+            AND lifecycle_status = 'final'
+            AND (template_type LIKE 'inspection_certificate%'
+                 OR template_type = 'royalty_statement')
+          ORDER BY created_at ASC`
+      );
+      const groups = new Map<string, any>();
+      for (const row of r.rows) {
+        const fd = row.form_data || {};
+        const { category, inspectorEmail, inspectorName, paymentDate } =
+          deriveExcelGroupKey(String(row.template_type || ""), fd);
+        const key = `${category}||${inspectorEmail}||${paymentDate}`;
+        if (!groups.has(key)) {
+          groups.set(key, {
+            key,
+            category,
+            inspectorEmail,
+            inspectorName,
+            paymentDate,
+            count: 0,
+            documentNumbers: [] as string[],
+          });
+        }
+        const g = groups.get(key);
+        g.count += 1;
+        g.documentNumbers.push(row.document_number);
+      }
+      res.json({ success: true, groups: Array.from(groups.values()) });
+    } catch (e: any) {
+      console.error("[excel-batches/pending] failed:", e);
+      res
+        .status(500)
+        .json({ success: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 指定した未発行ドキュメント群を 1 ファイル (複数行) で出力 → Drive →
+  //   excel_issued_at / excel_link を更新。
+  app.post(
+    "/api/excel-batches/export",
+    express.json(),
+    async (req, res) => {
+      try {
+        const documentNumbers: string[] = Array.isArray(
+          req.body?.documentNumbers
+        )
+          ? req.body.documentNumbers
+          : [];
+        if (documentNumbers.length === 0) {
+          return res
+            .status(400)
+            .json({ success: false, error: "documentNumbers は必須です" });
+        }
+
+        const r = await query(
+          `SELECT document_number, template_type, form_data
+             FROM documents
+            WHERE document_number = ANY($1)
+              AND excel_issued_at IS NULL`,
+          [documentNumbers]
+        );
+        if (r.rows.length === 0) {
+          return res.status(404).json({
+            success: false,
+            error: "対象の未発行ドキュメントが見つかりません",
+          });
+        }
+
+        const dataList: any[] = [];
+        let category = "inspection_certificate";
+        let inspectorName = "";
+        let paymentDate = "";
+        for (const row of r.rows) {
+          const fd = row.form_data || {};
+          const vendorRow = await resolveVendorForExcel(fd);
+          const xl = excelService.buildFromFormData(
+            fd,
+            String(row.template_type || ""),
+            vendorRow
+          );
+          if (xl) {
+            dataList.push(xl);
+            if (row.template_type === "royalty_statement")
+              category = "royalty_statement";
+            const g = deriveExcelGroupKey(String(row.template_type || ""), fd);
+            inspectorName = inspectorName || g.inspectorName;
+            paymentDate = paymentDate || g.paymentDate || xl.payment_date || "";
+          }
+        }
+        if (dataList.length === 0) {
+          return res.status(400).json({
+            success: false,
+            error: "Excel データを生成できませんでした",
+          });
+        }
+
+        const label =
+          category === "royalty_statement" ? "利用許諾料計算書" : "検収書";
+        const buffer = excelService.generateInspectionExcelBatch(
+          dataList,
+          label
+        );
+        const safeName = (inspectorName || "unknown").replace(
+          /[\\/:*?"<>|]/g,
+          "_"
+        );
+        const xlsxName = `${label}_${safeName}_${paymentDate || "nodate"}.xlsx`;
+        const { Readable } = await import("stream");
+        const stream = Readable.from(buffer);
+        const link = await googleDriveService.uploadFile(
+          stream,
+          xlsxName,
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        );
+
+        const issuedNumbers = r.rows.map((x: any) => x.document_number);
+        await query(
+          `UPDATE documents
+              SET excel_issued_at = NOW(), excel_link = $2
+            WHERE document_number = ANY($1)
+              AND excel_issued_at IS NULL`,
+          [issuedNumbers, link]
+        );
+
+        console.log(
+          `[excel-batches/export] ${label} ${safeName} ${paymentDate}: ` +
+            `${dataList.length} 件 → ${link}`
+        );
+        res.json({
+          success: true,
+          excelLink: link,
+          fileName: xlsxName,
+          count: dataList.length,
+        });
+      } catch (e: any) {
+        console.error("[excel-batches/export] failed:", e);
+        res
+          .status(500)
+          .json({ success: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
   app.post("/api/documents/generate", express.json(), async (req, res) => {
     // Phase 23.1: reissue フラグを受け取り、内部修正 (default: false) と
     //   外部要請の再発行 (true) を区別する。
@@ -9385,154 +9642,12 @@ ${details}
         driveLink = await googleDriveService.uploadPdf(html, fileName);
       }
 
-      // Phase 22.21.104: 検収書 / 利用許諾料計算書 は会計用 Excel も同時に
-      //   生成して Drive にアップ。失敗しても PDF 生成は成功扱い (warning へ)。
-      // Phase 22.21.107: vendor lookup を強化 (selected_master_contract_id
-      //   → contract_capabilities.vendor_id 経由を最優先) + 個人取引先は
-      //   withholding_enabled 未設定でも源泉対象とみなす。
-      let excelLink: string | null = null;
-      try {
-        const wantsExcel =
-          String(templateType || "").startsWith("inspection_certificate") ||
-          templateType === "royalty_statement";
-        if (wantsExcel) {
-          let vendorRow: any = null;
-
-          // (1) 最優先: selected_master_contract_id → vendor_id 経由
-          //   royalty_statement / inspection_certificate で contract マスタを
-          //   選択しているケースは確実にここで vendor を特定できる。
-          const masterId = Number(formData?.selected_master_contract_id) || 0;
-          if (masterId > 0) {
-            const r = await query(
-              `SELECT v.vendor_code, v.vendor_name, v.entity_type,
-                      v.account_holder_kana, v.withholding_enabled
-                 FROM contract_capabilities cc
-                 LEFT JOIN vendors v ON v.id = cc.vendor_id
-                WHERE cc.id = $1 LIMIT 1`,
-              [masterId]
-            );
-            if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
-          }
-
-          // (2) parent_po_id → contract_capabilities.vendor_id → vendors
-          //   検収書: 親 PO 経由で vendor を引く
-          // Phase 23: order_items → contract_capabilities (purchase_order),
-          //   vendor_code 直結 → vendor_id 経由に変更。
-          if (!vendorRow) {
-            const poId = Number(formData?.parent_po_id) || 0;
-            if (poId > 0) {
-              const r = await query(
-                `SELECT v.vendor_code, v.vendor_name, v.entity_type,
-                        v.account_holder_kana, v.withholding_enabled
-                   FROM contract_capabilities cc
-                   LEFT JOIN vendors v ON v.id = cc.vendor_id
-                  WHERE cc.id = $1
-                    AND cc.record_type = 'purchase_order'
-                  LIMIT 1`,
-                [poId]
-              );
-              if (r.rows[0]?.vendor_code) vendorRow = r.rows[0];
-            }
-          }
-
-          // (3) vendor_code 直接指定 (CSV import 等)
-          if (!vendorRow) {
-            const vcode = (formData?.VENDOR_CODE as string) || "";
-            if (vcode) {
-              const r = await query(
-                `SELECT vendor_code, vendor_name, entity_type,
-                        account_holder_kana, withholding_enabled
-                   FROM vendors WHERE vendor_code = $1 LIMIT 1`,
-                [vcode]
-              );
-              vendorRow = r.rows[0] || null;
-            }
-          }
-
-          // (4) 最終フォールバック: vendor_name 完全一致
-          if (!vendorRow) {
-            const vname =
-              (formData?.VENDOR_NAME as string) ||
-              (formData?.counterparty as string) ||
-              (formData?.licensor as string) ||
-              "";
-            if (vname) {
-              const r = await query(
-                `SELECT vendor_code, vendor_name, entity_type,
-                        account_holder_kana, withholding_enabled
-                   FROM vendors WHERE vendor_name = $1 LIMIT 1`,
-                [vname]
-              );
-              vendorRow = r.rows[0] || null;
-            }
-          }
-
-          // Phase 22.21.107: 個人取引先 (entity_type='個人' or 'individual')
-          //   なら withholding_enabled が false/null でも源泉対象とみなす。
-          //   これにより取引先マスタの withholding_enabled 設定漏れを
-          //   救済する (個人への支払は原則源泉徴収が必要)。
-          if (vendorRow) {
-            const et = String(vendorRow.entity_type || "").toLowerCase();
-            const isIndividual = et === "個人" || et === "individual";
-            if (isIndividual && vendorRow.withholding_enabled !== true) {
-              vendorRow = { ...vendorRow, withholding_enabled: true };
-            }
-          }
-          // Phase 22.21.108: formData に VENDOR_WITHHOLDING_ENABLED が
-          //   明示的にセットされていれば最優先で採用 (フロント側で master
-          //   選択時に積まれる)。vendor lookup 失敗時の保険にもなる。
-          if (formData?.VENDOR_WITHHOLDING_ENABLED === true) {
-            vendorRow = vendorRow
-              ? { ...vendorRow, withholding_enabled: true }
-              : {
-                  vendor_code: formData.VENDOR_CODE || "",
-                  vendor_name: formData.licensor || formData.counterparty || "",
-                  withholding_enabled: true,
-                };
-          }
-
-          console.log(
-            `[Phase 22.21.107] Excel vendor lookup for ${docNumber}: ` +
-              `templateType=${templateType}, masterId=${masterId}, ` +
-              `vendor_code=${vendorRow?.vendor_code || "(not found)"}, ` +
-              `entity_type=${vendorRow?.entity_type || "(none)"}, ` +
-              `withholding_enabled=${vendorRow?.withholding_enabled === true}`
-          );
-
-          const xlData = excelService.buildFromFormData(
-            formData || {},
-            String(templateType || ""),
-            vendorRow
-          );
-          if (xlData) {
-            console.log(
-              `[Phase 22.21.107] Excel calc result for ${docNumber}: ` +
-                `subtotal=${xlData.subtotal}, withholding_tax=${xlData.withholding_tax}, ` +
-                `after_tax=${xlData.after_tax}, reimbursement=${xlData.reimbursement}, ` +
-                `net_transfer=${xlData.net_transfer_amount}`
-            );
-            const buffer = excelService.generateInspectionExcel(xlData);
-            const xlsxName = fileName.replace(/\.pdf$/i, "") + ".xlsx";
-            const { Readable } = await import("stream");
-            const stream = Readable.from(buffer);
-            excelLink = await googleDriveService.uploadFile(
-              stream,
-              xlsxName,
-              "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            );
-            console.log(
-              `[Phase 22.21.104] Excel uploaded for ${docNumber}: ${excelLink}`
-            );
-          }
-        }
-      } catch (xlErr: any) {
-        // syncWarnings は後段で declare されるためここでは console のみ。
-        // PDF は既に保存済みなので Excel 失敗で全体を止めない。
-        console.warn(
-          `[Phase 22.21.104] Excel generation/upload failed for ${docNumber}:`,
-          xlErr?.message || xlErr
-        );
-      }
+      // Phase 24: 会計用 Excel は PDF 発行と同時生成しない。検収書 / 利用許諾料
+      //   計算書は「発行済みだが Excel 未発行」(documents.excel_issued_at IS NULL)
+      //   の状態で残し、担当者 × 支払期日 のバッチ出力
+      //   (POST /api/excel-batches/export) でまとめて生成する。
+      //   excelLink はレスポンス互換のため残すが、ここでは常に null。
+      const excelLink: string | null = null;
 
       // Phase 15: 同じ document_number で再生成された場合 (PDF 未作成キュー
       // 由来など) は ON CONFLICT で UPDATE、新規なら INSERT。

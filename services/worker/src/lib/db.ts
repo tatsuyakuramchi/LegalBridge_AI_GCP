@@ -141,6 +141,17 @@ export async function initDb() {
     `CREATE INDEX IF NOT EXISTS idx_documents_lifecycle ON documents(lifecycle_status);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_lifecycle ON contract_capabilities(lifecycle_status);`,
 
+    // -----------------------------------------------------------------
+    // Phase 24: 会計用 Excel の発行を PDF 発行から切り離し、担当者 × 支払期日
+    //   のバッチ出力に一本化。検収書 / 利用許諾料計算書が「発行済みだが Excel
+    //   未発行」かを追跡する。excel_issued_at IS NULL = 未発行。
+    // -----------------------------------------------------------------
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS excel_issued_at TIMESTAMP WITH TIME ZONE;`,
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS excel_link TEXT;`,
+    `CREATE INDEX IF NOT EXISTS idx_documents_excel_pending
+       ON documents(template_type)
+       WHERE excel_issued_at IS NULL;`,
+
     `CREATE TABLE IF NOT EXISTS document_sequences (
       kind VARCHAR(50) NOT NULL,
       year INTEGER NOT NULL,

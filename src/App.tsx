@@ -18,6 +18,7 @@ import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
+import { ExcelBatchPage } from "./pages/ExcelBatchPage"
 import { SettingsPage } from "./pages/SettingsPage"
 
 export default function App() {
@@ -31,6 +32,7 @@ export default function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="documents/new" element={<DocumentEditorPage />} />
                 <Route path="imports" element={<ImportPage />} />
+                <Route path="excel-batches" element={<ExcelBatchPage />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="archive" element={<ArchivePage />} />
 

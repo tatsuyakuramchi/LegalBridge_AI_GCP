@@ -9,66 +9,53 @@ export interface InspectionExcelData {
   name_kana: string; // 氏名（カナ）
   items: Array<{
     content: string; // 支払内容
-    unit_price: number; // 単価
+    unit_price: number; // 単価（税抜・参考）
     quantity: number; // 数量
-    amount: number; // 金額
+    amount: number; // 金額（税抜）
     delivery_date: string; // 納品日
   }>;
-  reimbursement: number; // 立替金
-  subtotal: number; // 小計
-  withholding_tax: number; // 源泉税
-  after_tax: number; // 税引後
-  net_transfer_amount: number; // 差引振込額
+  reimbursement: number; // 立替金（経費税込）
+  subtotal: number; // 小計（税抜合計）
+  consumption_tax: number; // 消費税（小計税抜 × 税率、一括）
+  withholding_tax: number; // 源泉税（税込ベース）
+  after_tax: number; // 税引後（小計 + 消費税 − 源泉税）
+  net_transfer_amount: number; // 差引振込額（税引後 + 立替金）
 }
 
+// Phase 24: 支払スロットを 5 → 8 に拡張。
+const SLOT_COUNT = 8;
+
 export class ExcelService {
-  generateInspectionExcel(data: InspectionExcelData): Buffer {
-    const headers = [
+  // ヘッダ行（件名…〜各スロット〜末尾合計欄）。
+  // 末尾は 立替金 / 小計(税抜) / 消費税 / 源泉税 / 税引後 / 差引振込額 の 6 列。
+  private buildHeaders(): string[] {
+    const headers: string[] = [
       '件名',
       '支払日',
       '部署',
       '取引先コード',
       '氏名',
       '氏名（カナ）',
-      '支払内容（１）',
-      '単価（１）',
-      '数量（１）',
-      '金額（１）',
-      '納品日(１)',
-      '支払内容（２）',
-      '単価（２）',
-      '数量（２）',
-      '金額（２）',
-      '納品日(２)',
-      '支払内容（３）',
-      '単価（３）',
-      '数量（３）',
-      '金額（３）',
-      '納品日(３)',
-      '支払内容（４）',
-      '単価（４）',
-      '数量（４）',
-      '金額（４）',
-      '納品日(４)',
-      '支払内容（５）',
-      '単価（５）',
-      '数量（５）',
-      '金額（５）',
-      '納品日(５)',
-      '立替金',
-      '小計',
-      '源泉税',
-      '税引後',
-      '差引振込額'
     ];
+    for (let i = 1; i <= SLOT_COUNT; i++) {
+      headers.push(
+        `支払内容（${i}）`,
+        `単価（${i}）`,
+        `数量（${i}）`,
+        `金額（${i}）`,
+        `納品日(${i})`
+      );
+    }
+    headers.push('立替金', '小計', '消費税', '源泉税', '税引後', '差引振込額');
+    return headers;
+  }
 
-    // Phase 22.21.106: 空スロットでも 36 列分の セル を必ず出力する。
-    //   後続処理で「行コピペで新規行を作る」運用があり、スロット 2-5 の
-    //   列が無いとコピー元として使えない問題があった。
-    //   - 値が無いセルは "" を入れる (undefined ではなく明示的空文字)
-    //   - 立替金/小計/源泉税/税引後/差引振込額 が 0 でも数値 0 をそのまま入れる
-    //     (会計側で SUM 計算しやすいため)
+  // 1 検収書 = 1 データ行。値が無いセルは "" を明示、金額系の 0 は数値 0 のまま。
+  private buildRow(data: InspectionExcelData): any[] {
     const safe = (v: any) => (v === undefined || v === null ? '' : v);
+    const numOrBlank = (v: any) =>
+      v === undefined || v === null ? '' : v;
+
     const row: any[] = [
       safe(data.summary),
       safe(data.payment_date),
@@ -78,66 +65,113 @@ export class ExcelService {
       safe(data.name_kana),
     ];
 
-    // 5 スロット必ず展開 — items[i] が無くても 5 セル分の空セルを出す
-    for (let i = 0; i < 5; i++) {
+    // 8 スロット必ず展開 — items[i] が無くても 5 セル分の空セルを出す
+    for (let i = 0; i < SLOT_COUNT; i++) {
       const item: any = data.items[i] || {};
       row.push(safe(item.content));
-      row.push(item.unit_price === undefined || item.unit_price === null ? '' : item.unit_price);
-      row.push(item.quantity === undefined || item.quantity === null ? '' : item.quantity);
-      row.push(item.amount === undefined || item.amount === null ? '' : item.amount);
+      row.push(numOrBlank(item.unit_price));
+      row.push(numOrBlank(item.quantity));
+      row.push(numOrBlank(item.amount)); // 金額（税抜）
       row.push(safe(item.delivery_date));
     }
 
     row.push(data.reimbursement ?? 0);
     row.push(data.subtotal ?? 0);
+    row.push(data.consumption_tax ?? 0);
     row.push(data.withholding_tax ?? 0);
     row.push(data.after_tax ?? 0);
     row.push(data.net_transfer_amount ?? 0);
 
-    // headers.length === row.length === 36 列であることを assert.
-    // ここで一致しない場合は実装ミスなので例外を投げて気付けるようにする。
-    if (row.length !== headers.length) {
-      throw new Error(
-        `[ExcelService] header / row length mismatch: headers=${headers.length} row=${row.length}`
-      );
-    }
+    return row;
+  }
 
-    const ws = XLSX.utils.aoa_to_sheet([headers, row]);
-
-    // Phase 22.21.106: trailing empty cells が trim されないよう
-    //   sheet の '!ref' を明示的に 36 列・2 行に設定する。
-    //   encode_range で A1:AJ2 のような正式 A1 形式に変換 (36 列目 = AJ)。
-    const lastCol = headers.length - 1; // 35 (0-indexed)
-    ws['!ref'] = XLSX.utils.encode_range({
-      s: { r: 0, c: 0 },
-      e: { r: 1, c: lastCol },
-    });
-
-    // 各空セルにも明示的に空文字セル {t:'s', v:''} を埋めて、
-    // Excel 側で「列が存在しない」と認識されないようにする保険。
-    for (let c = 0; c <= lastCol; c++) {
-      const addr = XLSX.utils.encode_cell({ r: 1, c }); // 2 行目 (データ行)
-      if (!ws[addr]) {
-        ws[addr] = { t: 's', v: '' };
+  // aoa（ヘッダ + データ行群）から、空セルも埋めた worksheet を組み立てる。
+  private buildSheet(rows: any[][]): XLSX.WorkSheet {
+    const headers = this.buildHeaders();
+    for (const r of rows) {
+      if (r.length !== headers.length) {
+        throw new Error(
+          `[ExcelService] header / row length mismatch: headers=${headers.length} row=${r.length}`
+        );
       }
     }
 
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+
+    // trailing empty cells が trim されないよう '!ref' を明示。
+    const lastCol = headers.length - 1;
+    const lastRow = rows.length; // 0=ヘッダ行, 1..N=データ行
+    ws['!ref'] = XLSX.utils.encode_range({
+      s: { r: 0, c: 0 },
+      e: { r: lastRow, c: lastCol },
+    });
+
+    // 各空セルにも明示的に空文字セルを埋め、「列が存在しない」と
+    // 認識されないようにする保険。
+    for (let rr = 1; rr <= lastRow; rr++) {
+      for (let c = 0; c <= lastCol; c++) {
+        const addr = XLSX.utils.encode_cell({ r: rr, c });
+        if (!ws[addr]) {
+          ws[addr] = { t: 's', v: '' };
+        }
+      }
+    }
+    return ws;
+  }
+
+  // 1 検収書 → 1 シート（ヘッダ + 1 行）の xlsx。
+  generateInspectionExcel(data: InspectionExcelData): Buffer {
+    const ws = this.buildSheet([this.buildRow(data)]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, '検収書');
-
     return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
   }
 
+  // Phase 24: 担当者 × 支払期日 のバッチ出力。
+  //   複数の検収書 / 利用許諾料計算書を 1 ファイル（ヘッダ + N 行）にまとめる。
+  generateInspectionExcelBatch(
+    dataList: InspectionExcelData[],
+    sheetName = '検収書'
+  ): Buffer {
+    const rows = dataList.map((d) => this.buildRow(d));
+    const ws = this.buildSheet(rows.length > 0 ? rows : [this.buildRow(this.emptyData())]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, sheetName.slice(0, 31));
+    return XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+  }
+
+  private emptyData(): InspectionExcelData {
+    return {
+      summary: '',
+      payment_date: '',
+      department: '',
+      vendor_code: '',
+      name: '',
+      name_kana: '',
+      items: [],
+      reimbursement: 0,
+      subtotal: 0,
+      consumption_tax: 0,
+      withholding_tax: 0,
+      after_tax: 0,
+      net_transfer_amount: 0,
+    };
+  }
+
   /**
-   * Phase 22.21.104: formData + vendor 情報から InspectionExcelData を組み立てる。
+   * formData + vendor 情報から InspectionExcelData を組み立てる。
    *   検収書 (inspection_certificate) と利用許諾料計算書 (royalty_statement)
    *   の両方をサポート。templateType が対象外なら null を返す。
    *
-   *   源泉徴収:
-   *     vendor.withholding_enabled === true のときのみ控除。
-   *     - 支払対象額 (=小計) <= 100万円 → 10.21%
-   *     - 100万円超 → 1,000,000 × 10.21% + (超過分 × 20.42%)
-   *     vendor が見つからない / withholding_enabled が false → 控除 0
+   *   Phase 24: 消費税の二重計算を回避する税計算に変更。
+   *     - 金額（n） = 検収額（税抜）をそのまま（単価×数量ではない。部分検収を尊重）
+   *     - 小計      = Σ 金額（税抜合計）
+   *     - 消費税    = ceil(小計 × 税率/100)（最後に一度だけ）
+   *     - 源泉税    = 税込（小計 + 消費税）ベース（現状ロジック踏襲）
+   *                   税込 ≤ 100万 → 10.21% / 100万超 → 超過分 20.42%
+   *                   vendor.withholding_enabled が false なら 0
+   *     - 税引後    = 小計 + 消費税 − 源泉税
+   *     - 差引振込額 = 税引後 + 立替金（経費税込）
    */
   buildFromFormData(
     formData: any,
@@ -164,7 +198,6 @@ export class ExcelService {
     const isoDate = (v: any): string => {
       if (!v) return '';
       const s = String(v);
-      // 既に YYYY-MM-DD ならそのまま、それ以外は先頭 10 文字
       return s.length >= 10 ? s.substring(0, 10) : s;
     };
 
@@ -173,31 +206,14 @@ export class ExcelService {
     let payment_date = '';
     let department = '';
     let reimbursement = 0;
-    let subtotal = 0;
 
-    // Phase 22.21.109: 支払スロットの金額を税込に変更。
-    //   - 単価は 税抜 のまま (実勢単価。数量との掛け算は崩れるが運用優先)
-    //   - 金額 = 税込 (= 税抜 × (1 + taxRate/100), ceil)
-    //   - 小計 = 税込合計
-    //   - 源泉徴収 = 税込小計 × 10.21% (100万超は超過分 20.42%)
-    //   - 税引後 = 税込小計 − 源泉
-    //   - 差引振込額 = 税引後 + 立替金 (経費税込)
     const taxRatePct = num(formData.taxRate) || (formData.isReducedTax ? 8 : 10);
-    // Phase 23.0.5: 浮動小数点誤差で 12000 * 1.1 = 13200.000000000002 になり、
-    //   Math.ceil で 13201 になるバグを修正。税額を独立に整数算で計算してから足す。
-    //   12000 * 10/100 = 1200 (整数) → exTax + tax = 13200 ✓
-    const toIncTax = (exTax: number): number => {
-      const tax = Math.ceil((exTax * taxRatePct) / 100);
-      return exTax + tax;
-    };
+    // 税額（消費税）を整数算で計算。Phase 23.0.5 の浮動小数点対策を踏襲。
+    const taxOf = (exTax: number): number =>
+      Math.ceil((exTax * taxRatePct) / 100);
 
     if (isInspection) {
       // ── 検収書 ─────────────────────────────────
-      // Phase 22.21.105: スロット詰め込み順
-      //   ① 業務明細 (delivery_line_items) を先に詰める
-      //   ② その他手数料 (other_fees) を続けて同じスロットに詰める
-      //   ③ 5 スロット超過分は無視
-      //   ④ 経費・交通費 (expenses, 税込) は合算して「立替金」へ
       summary =
         formData.PROJECT_TITLE ||
         formData.summary ||
@@ -206,8 +222,7 @@ export class ExcelService {
       payment_date = isoDate(
         formData.paymentDate || formData.payment_due_date || formData.documentDate
       );
-      department =
-        formData.inspectorDept || formData.STAFF_DEPARTMENT || '';
+      department = formData.inspectorDept || formData.STAFF_DEPARTMENT || '';
 
       const lines = Array.isArray(formData.delivery_line_items)
         ? formData.delivery_line_items
@@ -216,11 +231,6 @@ export class ExcelService {
         ? formData.other_fees
         : [];
 
-      // Phase 23.0.2: delivery_line_items は inspected_amount_ex_tax しか
-      //   持たないので、item_name / unit_price / quantity / delivery_date は
-      //   order_lines_for_inspection 側を引いて補完する。
-      //   結合キーは order_line_item_id (UnifiedContractPicker が capability_line_items.id
-      //   を入れる)。fallback として line_no でも結合。
       const parentLines = Array.isArray(formData.order_lines_for_inspection)
         ? formData.order_lines_for_inspection
         : [];
@@ -246,16 +256,12 @@ export class ExcelService {
       if (lines.length > 0) {
         for (const l of lines) {
           const p = findParentLine(l) || {};
-          // Phase 23.0.4: `||` だと 0 を falsy 扱いして「今回検収しない 0 円行」
-          //   が発注額 (amount_ex_tax) に化ける。null/undefined のみフォール
-          //   バックする `??` を使う。unit_price / quantity / delivery_date /
-          //   item_name も同様 (0 や空文字を意図的に入れている場合の挙動を尊重)。
           const amtExTax = num(l.inspected_amount_ex_tax ?? l.amount_ex_tax);
           combined.push({
             content: l.item_name ?? p.item_name ?? l.description ?? '',
-            unit_price: num(l.unit_price ?? p.unit_price), // 税抜 単価
+            unit_price: num(l.unit_price ?? p.unit_price), // 税抜 単価（参考）
             quantity: num(l.quantity ?? p.quantity),
-            amount: toIncTax(amtExTax), // 税込
+            amount: amtExTax, // 税抜（検収額そのまま）
             delivery_date: isoDate(l.delivery_date ?? p.delivery_date),
           });
         }
@@ -268,7 +274,7 @@ export class ExcelService {
               formData.description || formData.itemName || '検収内容',
             unit_price: amtExTax,
             quantity: 1,
-            amount: toIncTax(amtExTax),
+            amount: amtExTax, // 税抜
             delivery_date: isoDate(
               formData.deliveryDate || formData.documentDate
             ),
@@ -283,12 +289,12 @@ export class ExcelService {
           content: f.fee_name || f.label || f.description || '手数料',
           unit_price: feeExTax, // 税抜
           quantity: 1,
-          amount: toIncTax(feeExTax), // 税込
+          amount: feeExTax, // 税抜
           delivery_date: isoDate(formData.documentDate),
         });
       }
 
-      items = combined.slice(0, 5);
+      items = combined.slice(0, SLOT_COUNT);
 
       // 立替金 = 経費 (税込) 合算
       let reimburseSum = num(formData.expensesTotalIncTax);
@@ -300,16 +306,8 @@ export class ExcelService {
         );
       }
       reimbursement = reimburseSum;
-
-      // 小計 = 税込 items 合算
-      subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
     } else if (isRoyalty) {
       // ── 利用許諾料計算書 ───────────────────────
-      // Phase 22.21.110: 単価列を「実効ロイヤリティ単価」(= MSRP × 料率)
-      //   に変更。旧実装は MSRP そのもの (2500) を出していたため、
-      //   単価×数量 が小計とまったく合わない見た目になっていた。
-      //   今後: 単価 = MSRP × 料率 / 100 → 単価×数量 ≒ 税抜小計
-      //         金額 = 税込実支払 (Phase 22.21.109)
       summary = (formData.originalWork || '') + ' 利用許諾料';
       payment_date = isoDate(
         formData.paymentDueDate || formData.documentDate
@@ -321,47 +319,49 @@ export class ExcelService {
         (formData.edition ? `（${formData.edition}）` : '') +
         ' 利用許諾料';
       const msrp = num(formData.msrpStr); // 基準価格 (MSRP)
-      const ratePct = num(formData.royaltyRatePct); // 料率 (%) 例: 5
+      const ratePct = num(formData.royaltyRatePct); // 料率 (%)
       // 実効ロイヤリティ単価 = MSRP × 料率 / 100 (税抜, 整数化)
-      const effectiveUnit = ratePct > 0 ? Math.round(msrp * ratePct / 100) : msrp;
+      const effectiveUnit =
+        ratePct > 0 ? Math.round((msrp * ratePct) / 100) : msrp;
       const qty = num(formData.billableQuantity);
-      // 実支払 (税抜) → 税込
+      // 実支払 (税抜)
       const actualExTax =
         num(formData.actualRoyaltyStr) || num(formData.actualRoyalty);
-      // formData.totalPaymentStr が既に 税込 計算されているのでそれを優先
-      const actualIncTax =
-        num(formData.totalPaymentStr) || toIncTax(actualExTax);
 
-      if (actualIncTax > 0 || effectiveUnit > 0) {
+      if (actualExTax > 0 || effectiveUnit > 0) {
         items = [
           {
             content,
-            unit_price: effectiveUnit, // 税抜 実効単価 (= MSRP × 料率)
+            unit_price: effectiveUnit, // 税抜 実効単価（参考）
             quantity: qty,
-            amount: actualIncTax, // 税込実支払
+            amount: actualExTax, // 税抜 実支払
             delivery_date: isoDate(formData.completionDate),
           },
         ];
       }
       reimbursement = 0;
-      subtotal = actualIncTax;
     }
 
-    // Phase 22.21.109: 源泉徴収 = 税込小計 × 税率
-    //   - 税込 100 万円以下 → 10.21%
-    //   - 100 万円超     → 1,000,000 × 10.21% + (超過分 × 20.42%)
+    // 小計（税抜合計）
+    const subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
+    // 消費税（最後に一度だけ）
+    const consumption_tax = taxOf(subtotal);
+    // 税込（源泉ベース）
+    const taxIncluded = subtotal + consumption_tax;
+
+    // 源泉徴収（税込ベース・現状ロジック踏襲）
     let withholding_tax = 0;
-    if (vendor?.withholding_enabled === true && subtotal > 0) {
+    if (vendor?.withholding_enabled === true && taxIncluded > 0) {
       const threshold = 1_000_000;
-      if (subtotal <= threshold) {
-        withholding_tax = Math.floor(subtotal * 0.1021);
+      if (taxIncluded <= threshold) {
+        withholding_tax = Math.floor(taxIncluded * 0.1021);
       } else {
         withholding_tax =
           Math.floor(threshold * 0.1021) +
-          Math.floor((subtotal - threshold) * 0.2042);
+          Math.floor((taxIncluded - threshold) * 0.2042);
       }
     }
-    const after_tax = subtotal - withholding_tax;
+    const after_tax = taxIncluded - withholding_tax;
     const net_transfer_amount = after_tax + reimbursement;
 
     return {
@@ -383,6 +383,7 @@ export class ExcelService {
       items,
       reimbursement,
       subtotal,
+      consumption_tax,
       withholding_tax,
       after_tax,
       net_transfer_amount,
