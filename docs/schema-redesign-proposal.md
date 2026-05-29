@@ -801,4 +801,46 @@ ORDER BY due;
 
 ---
 
-> 本ドキュメントは設計提案であり、DDLの実装(マイグレーション)は別フェーズで段階的に行うことを想定している。
+## 8. リプレース可否評価と移行戦略
+
+### 結論
+
+**リプレースは可能。ただし一括置換(ビッグバン)は非現実的・高リスク**であり、**段階移行(strangler)が現実解**。本リポジトリは ORM を用いず**生SQL 約432か所**で列名を直書きしているため、テーブル/列のリネームは手作業の全置換になる。一方、phase23 で **`license_contracts` → `contract_capabilities` の大統合を実績ありで完了**しており、`--apply` / `--drop` フラグ運用や backfill スクリプトの型(`scripts/phase23_migrate_to_capabilities.ts`)を流用できるため、同じ作法で十分実現できる。
+
+### 難度マトリクス(コード依存度ベース)
+
+| 対象 | 参照数 / ファイル | 難度 | 方針 |
+| :--- | :--- | :--- | :--- |
+| 新規テーブル群(works/source_ips/products/payments/deliverables/signature_* 等) | 0 | ☆ 純追加 | 既存に影響せず先行投入可 |
+| `royalty_calculations`→`royalty_statements`、`capability_*`→`contract_*`(列 `capability_id`→`contract_id`) | 57 / 61 / 84 + 195 | ★☆ 機械的 | リネーム + 互換ビュー |
+| `ledgers`(52)+`materials`(27)→`works`/`source_ips` 分割 | 79 / 3 | ★★ | 行の自社作品/外部原作 判別が必要 |
+| `sublicensees`→`vendors`+`party_roles` 統合 | 26 / 3 | ★★ | 名寄せ・重複排除 |
+| `contract_capabilities`→`contracts`+`contract_works`+`contract_parties`(列移設) | **432 / 20** | ★★★ 最難 | 心臓部。互換ビューで段階切替必須 |
+| `ledger_code`(80)/`license_contract_id`(61)/`work_id`(63) 文字列キー撤去 | 204 | ★★★ | 移行期は dual-read fallback |
+
+### 移行戦略 ― 互換ビューを使った4段階
+
+1. **追加**: 新テーブルを `CREATE`(本番無影響)。既存データを backfill。
+2. **並行(互換ビュー)**: 新 `contracts`+join の上に `CREATE VIEW contract_capabilities AS …` 等の**後方互換ビュー**を作り、**旧コード432か所を無改修のまま動かしつつ**新コードから新テーブルを使う。これで「全書換完了まで本番停止」を回避し、**ファイル単位で順次移行**できる。
+3. **切替**: 参照を新テーブル/新FKへ移し、文字列キーは fallback として暫定維持。
+4. **撤去**: 死んだ `license_contract_id` 系・`ledger_code` 文字列・`additional_parties JSONB`・`sublicensees` を物理削除(phase23 と同じ `--drop`)。
+
+### コールドスタート(移行できないデータ)
+
+以下は**現行に元データが無い**ためバックフィル不可。**空で開始し、運用で前方充填**する(= 抜けを埋める新機能として想定どおり)。
+
+- `work_rights`(譲渡/許諾区分・人格権)、`ip_registrations`(商標台帳)、`contract_obligations`(非金銭義務)
+- `deliverables` / `deliverable_revisions`(過去の納品履歴)、`signature_steps`(過去の署名リレー)
+- `expense_categories` 帰属、`contract_stage_history`(過去の進捗履歴)
+
+### 移行前に確定すべき判別ルール(初期整備)
+
+- `ledgers` の各行 → 自社作品(`works`) か 外部原作(`source_ips`) かの判別
+- 契約の `contract_level`(master / individual / standalone)の判定(現 `record_type` から導出)
+- `sublicensees` ↔ `vendors` の名寄せ(同一企業の統合)
+
+> いずれも自動判別 + 人手レビューの初期整備フェーズを設ける。判別が曖昧な行は `unknown` で退避し、段階的に確定する。
+
+---
+
+> 本ドキュメントは設計提案であり、DDLの実装(マイグレーション)は別フェーズで段階的に行うことを想定している。リプレースは互換ビューを用いた段階移行で実現可能(§8)。
