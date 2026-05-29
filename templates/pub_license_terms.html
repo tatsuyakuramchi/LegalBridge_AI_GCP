@@ -214,8 +214,8 @@
         <td class="col-value">『{{対象出版物名}}』</td>
       </tr>
       <tr>
-        <td class="col-item">著作者名</td>
-        <td class="col-value">{{著作者名}}</td>
+        <td class="col-item">著作者名<span class="sub-note">共著の場合は複数記載</span></td>
+        <td class="col-value" style="white-space: pre-wrap;">{{著作者名}}</td>
       </tr>
       <tr>
         <td class="col-item">著作権者・権限</td>
@@ -267,8 +267,8 @@
         </td>
       </tr>
       <tr>
-        <td class="col-item">発行予定日・刊行期限</td>
-        <td class="col-value">発行予定日：{{発行予定日}}<br>刊行期限：{{刊行期限}}</td>
+        <td class="col-item">刊行期限</td>
+        <td class="col-value">{{刊行期限}}</td>
       </tr>
       <tr>
         <td class="col-item">許諾地域・言語</td>
@@ -277,10 +277,6 @@
       <tr>
         <td class="col-item">販売形態</td>
         <td class="col-value">{{販売形態}}（例：紙書籍／電子書籍／イベント販売／EC販売／その他）</td>
-      </tr>
-      <tr>
-        <td class="col-item">定価・基準価格</td>
-        <td class="col-value">{{定価又は基準価格}}</td>
       </tr>
 
       <!-- ===== 対価・支払条件 ===== -->
@@ -295,6 +291,7 @@
         <td class="formula-cell">
           <div class="formula-line">計算式：{{紙媒体計算式}}（例：税抜定価 × 印税対象部数 × {{紙書籍印税率}}％）</div>
           <div class="formula-line">印税対象部数：{{紙媒体印税対象部数区分}}</div>
+          <div class="caution-note">※ サンプル・献本その他の無償配布分は、印税対象部数に含めない。</div>
         </td>
       </tr>
       <tr>

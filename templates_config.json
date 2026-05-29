@@ -649,28 +649,26 @@
 
       "許諾開始日": { "label": "許諾開始日", "group": "II. 許諾期間", "type": "date" },
       "許諾終了日": { "label": "許諾終了日", "group": "II. 許諾期間", "type": "date" },
-      "自動更新有無": { "label": "自動更新", "group": "II. 許諾期間", "placeholder": "あり / なし" },
+      "自動更新有無": { "label": "自動更新", "group": "II. 許諾期間", "type": "select", "options": ["あり", "なし"] },
       "更新単位": { "label": "更新単位", "group": "II. 許諾期間", "placeholder": "例: 1年" },
       "終了通知期限": { "label": "終了通知期限", "group": "II. 許諾期間", "placeholder": "例: 期間満了3か月前" },
 
       "原著作物名": { "label": "原著作物名", "group": "III. 対象著作物", "required": true },
       "対象出版物名": { "label": "対象出版物名", "group": "III. 対象著作物", "required": true },
-      "著作者名": { "label": "著作者名", "group": "III. 対象著作物", "required": true },
-      "著作権者": { "label": "著作権者", "group": "III. 対象著作物" },
-      "共同著作第三者権利有無": { "label": "共同著作・第三者権利の有無", "group": "III. 対象著作物", "placeholder": "あり / なし" },
+      "著作者名": { "label": "著作者名", "group": "III. 対象著作物", "type": "textarea", "required": true, "helpText": "共著の場合は改行または読点（、）区切りで複数記載できます" },
+      "著作権者": { "label": "著作権者", "group": "III. 対象著作物", "type": "textarea", "helpText": "共有の場合は複数記載できます" },
+      "共同著作第三者権利有無": { "label": "共同著作・第三者権利の有無", "group": "III. 対象著作物", "type": "select", "options": ["あり", "なし"] },
       "権利関係備考": { "label": "権利関係 備考", "group": "III. 対象著作物", "type": "textarea" },
 
-      "電子書籍配信許諾有無": { "label": "電子書籍配信 許諾", "group": "IV. 許諾内容", "placeholder": "許諾する / 許諾しない" },
+      "電子書籍配信許諾有無": { "label": "電子書籍配信 許諾", "group": "IV. 許諾内容", "type": "select", "options": ["許諾する", "許諾しない"] },
       "電子書籍配信条件": { "label": "電子書籍配信 条件", "group": "IV. 許諾内容", "type": "textarea" },
-      "翻訳海外版許諾有無": { "label": "翻訳版・海外版 許諾", "group": "IV. 許諾内容", "placeholder": "許諾する / 許諾しない" },
+      "翻訳海外版許諾有無": { "label": "翻訳版・海外版 許諾", "group": "IV. 許諾内容", "type": "select", "options": ["許諾する", "許諾しない"] },
       "翻訳海外版対象地域言語": { "label": "翻訳版・海外版 対象地域・言語", "group": "IV. 許諾内容" },
 
-      "発行予定日": { "label": "発行予定日", "group": "V. 出版条件", "type": "date" },
       "刊行期限": { "label": "刊行期限", "group": "V. 出版条件", "type": "date" },
       "許諾地域": { "label": "許諾地域", "group": "V. 出版条件", "placeholder": "例: 日本国内" },
       "許諾言語": { "label": "言語", "group": "V. 出版条件", "placeholder": "例: 日本語" },
       "販売形態": { "label": "販売形態", "group": "V. 出版条件", "placeholder": "例: 紙書籍／電子書籍／EC販売" },
-      "定価又は基準価格": { "label": "定価・基準価格", "group": "V. 出版条件" },
 
       "紙媒体計算式": { "label": "紙媒体 印税計算式", "group": "VI. 対価・支払条件", "type": "textarea", "placeholder": "例: 税抜定価 × 印税対象部数 × 印税率" },
       "紙書籍印税率": { "label": "紙書籍 印税率 (%)", "group": "VI. 対価・支払条件", "placeholder": "10" },
@@ -683,7 +681,7 @@
       "支払期日": { "label": "支払期日", "group": "VI. 対価・支払条件", "placeholder": "例: 報告後翌月末" },
       "報告明細": { "label": "報告明細", "group": "VI. 対価・支払条件", "type": "textarea" },
       "消費税区分": { "label": "消費税区分", "group": "VI. 対価・支払条件", "placeholder": "例: 外税10%" },
-      "源泉徴収有無": { "label": "源泉徴収", "group": "VI. 対価・支払条件", "placeholder": "あり / なし" },
+      "源泉徴収有無": { "label": "源泉徴収", "group": "VI. 対価・支払条件", "type": "select", "options": ["あり", "なし"] },
       "インボイス登録番号": { "label": "インボイス登録番号 (T-)", "group": "VI. 対価・支払条件", "dbField": "vendor.invoice_registration_number" },
 
       "振込先銀行名": { "label": "金融機関名", "group": "VII. 振込口座", "dbField": "vendor.bank_name" },
@@ -692,7 +690,7 @@
       "口座番号": { "label": "口座番号", "group": "VII. 振込口座", "dbField": "vendor.account_number" },
       "口座名義カナ": { "label": "口座名義 (カナ)", "group": "VII. 振込口座", "dbField": "vendor.account_holder_kana" },
 
-      "第三者IP関与有無": { "label": "第三者IPの関与", "group": "VIII. 第三者IP・著作権表示", "placeholder": "あり / なし" },
+      "第三者IP関与有無": { "label": "第三者IPの関与", "group": "VIII. 第三者IP・著作権表示", "type": "select", "options": ["あり", "なし"] },
       "著作権表示": { "label": "著作権表示 内容", "group": "VIII. 第三者IP・著作権表示", "type": "textarea" },
       "表示位置補足": { "label": "表示位置・補足", "group": "VIII. 第三者IP・著作権表示", "type": "textarea" },
 
