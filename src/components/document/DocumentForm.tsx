@@ -4087,6 +4087,58 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           <Database className="w-2 h-2" /> Backlog Sync
         </button>
       </div>
+      {/* Phase 26: 出版利用許諾条件書は原作マスタ (ledgers) と紐付け。
+          選択すると formData.ledger_ref_id / ledger_code を保持し、原著作物名を
+          原作の正式名称で自動入力する (config 側で 原著作物名 は readonly)。
+          ※ 事業部の絞り込みは行わず全原作を表示 (運用判断)。 */}
+      {templateId === 'pub_license_terms' && (
+        <FormSection title="0. 原作 (原作マスタ)" variant="default">
+          <div className="col-span-full space-y-1">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              原作 (Ledger) — 選択で「原著作物名」を自動入力
+            </label>
+            <select
+              value={formData.ledger_ref_id || ''}
+              onChange={(e) => {
+                const lid = Number(e.target.value);
+                const list = Array.isArray(allLedgers) ? allLedgers : [];
+                const ledger = list.find((l: any) => Number(l.id) === lid);
+                if (!lid || !ledger) {
+                  setFormData({
+                    ...formData,
+                    ledger_ref_id: undefined,
+                    ledger_code: '',
+                    原著作物名: '',
+                  });
+                  return;
+                }
+                setFormData({
+                  ...formData,
+                  ledger_ref_id: lid,
+                  ledger_code: ledger.ledger_code || '',
+                  原著作物名: ledger.title || '',
+                });
+              }}
+              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+            >
+              <option value="">— 原作マスタから選択 —</option>
+              {(Array.isArray(allLedgers) ? allLedgers : [])
+                .filter((l: any) => l.is_active !== false)
+                .map((l: any) => (
+                  <option key={l.id} value={l.id}>
+                    [{l.ledger_code}] {l.title}
+                    {Array.isArray(l.division) && l.division.length
+                      ? ` 〔${l.division.join('/')}〕`
+                      : ''}
+                  </option>
+                ))}
+            </select>
+            <p className="text-[10px] font-mono text-muted-foreground/70">
+              マスター &gt; 原作 (Ledgers) で登録した原作から選択。「原著作物名」は正式名称で自動入力されます（手入力不可）。
+            </p>
+          </div>
+        </FormSection>
+      )}
       {(Object.entries(groupedVars) as [string, string[]][]).map(([groupName, varIds]) => (
         <FormSection key={groupName} title={groupName} variant="default">
           {varIds.map(fid => renderField(fid))}

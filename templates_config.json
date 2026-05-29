@@ -653,7 +653,7 @@
       "更新単位": { "label": "更新単位", "group": "II. 許諾期間", "placeholder": "例: 1年" },
       "終了通知期限": { "label": "終了通知期限", "group": "II. 許諾期間", "placeholder": "例: 期間満了3か月前" },
 
-      "原著作物名": { "label": "原著作物名", "group": "III. 対象著作物", "required": true },
+      "原著作物名": { "label": "原著作物名 (原作選択で自動入力)", "group": "III. 対象著作物", "required": true, "readonly": true, "helpText": "上部「0. 原作 (原作マスタ)」で原作を選ぶと正式名称が自動入力されます" },
       "対象出版物名": { "label": "対象出版物名", "group": "III. 対象著作物", "required": true },
       "著作者名": { "label": "著作者名", "group": "III. 対象著作物", "type": "textarea", "required": true, "helpText": "共著の場合は改行または読点（、）区切りで複数記載できます" },
       "著作権者": { "label": "著作権者", "group": "III. 対象著作物", "type": "textarea", "helpText": "共有の場合は複数記載できます" },

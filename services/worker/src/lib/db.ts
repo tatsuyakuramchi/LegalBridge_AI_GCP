@@ -782,6 +782,12 @@ export async function initDb() {
     `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_work_supplement TEXT;`,
     `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_approval_target TEXT;`,
     `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS default_approval_timing TEXT;`,
+    // Phase 26: 事業部タグ (BDG=ボードゲーム事業部 / PUB=出版事業部)。複数付与可 (TEXT[])。
+    //   既存行 (division IS NULL) は従来ボードゲーム用途なので BDG で一度きり初期化する。
+    //   以後の新規 INSERT は createLedgerWithDefaultMaterial が必ず値を入れるため NULL は発生しない。
+    `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS division TEXT[];`,
+    `UPDATE ledgers SET division = ARRAY['BDG'] WHERE division IS NULL;`,
+    `CREATE INDEX IF NOT EXISTS idx_ledgers_division ON ledgers USING GIN (division);`,
     `CREATE TABLE IF NOT EXISTS materials (
       id SERIAL PRIMARY KEY,
       ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
@@ -1212,6 +1218,12 @@ export async function initDb() {
     `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS ledger_code VARCHAR(40);`,
     `CREATE INDEX IF NOT EXISTS idx_capabilities_ledger_code
        ON contract_capabilities (ledger_code) WHERE ledger_code IS NOT NULL;`,
+    // Phase 26: 原作 (ledger) / 素材 (material) への数値参照。
+    //   従来は phase23_migrate.sql 手動移行でのみ追加されていたが、
+    //   出版利用許諾条件書 (publication_condition) でも原作紐付けを使うため、
+    //   冪等な ADD COLUMN を db.ts に明示し、新規/再構築 DB でも確実に存在させる。
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS ledger_ref_id INTEGER;`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS material_ref_id INTEGER;`,
 
     // -----------------------------------------------------------------
     // Phase 22.21.91: 契約マスタ (contract_capabilities) の金銭条件 (1..N 行)
@@ -1765,6 +1777,8 @@ export async function createLedgerWithDefaultMaterial(payload: {
   // Phase 22.21.7: 承認条件 / 承認時期 デフォルト
   default_approval_target?: string;
   default_approval_timing?: string;
+  // Phase 26: 事業部タグ (BDG / PUB)。未指定なら ['BDG'] で初期化 (従来運用に合わせる)。
+  division?: string[];
 }): Promise<{
   id: number;
   ledger_code: string;
@@ -1772,13 +1786,17 @@ export async function createLedgerWithDefaultMaterial(payload: {
   default_material_code: string;
 }> {
   const ledgerCode = payload.ledger_code || (await getNewLedgerCode());
+  const division =
+    Array.isArray(payload.division) && payload.division.length > 0
+      ? payload.division
+      : ["BDG"];
   const ledgerRes = await query(
     `INSERT INTO ledgers (
        ledger_code, title, title_kana, alternative_titles,
        creator_name, publisher_name, remarks,
        default_rights_holder, default_credit_display, default_work_supplement,
-       default_approval_target, default_approval_timing
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+       default_approval_target, default_approval_timing, division
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
      RETURNING id, ledger_code`,
     [
       ledgerCode,
@@ -1793,6 +1811,7 @@ export async function createLedgerWithDefaultMaterial(payload: {
       payload.default_work_supplement || null,
       payload.default_approval_target || null,
       payload.default_approval_timing || null,
+      division,
     ]
   );
   const ledgerId = Number(ledgerRes.rows[0].id);

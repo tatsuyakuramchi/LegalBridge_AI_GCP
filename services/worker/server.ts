@@ -4562,7 +4562,7 @@ ${details}
         `SELECT id, ledger_code, title, title_kana, alternative_titles,
                 creator_name, publisher_name, remarks, is_active,
                 default_rights_holder, default_credit_display, default_work_supplement,
-                default_approval_target, default_approval_timing,
+                default_approval_target, default_approval_timing, division,
                 created_at, updated_at
            FROM ledgers
           ORDER BY ledger_code DESC`
@@ -4631,6 +4631,8 @@ ${details}
         // Phase 22.21.7
         default_approval_target: body.default_approval_target,
         default_approval_timing: body.default_approval_timing,
+        // Phase 26: 事業部タグ (BDG / PUB)
+        division: Array.isArray(body.division) ? body.division : undefined,
       });
       console.log(
         `📚 [ledger] created ${result.ledger_code} (id=${result.id}), default material=${result.default_material_code}`
@@ -4660,8 +4662,9 @@ ${details}
            default_work_supplement  = $10,
            default_approval_target  = $11,
            default_approval_timing  = $12,
+           division                 = COALESCE($13, division),
            updated_at               = CURRENT_TIMESTAMP
-         WHERE id = $13`,
+         WHERE id = $14`,
         [
           body.title,
           body.title_kana || null,
@@ -4675,6 +4678,8 @@ ${details}
           body.default_work_supplement || null,
           body.default_approval_target || null,
           body.default_approval_timing || null,
+          // Phase 26: 事業部タグ (未指定なら COALESCE で既存維持)
+          Array.isArray(body.division) ? body.division : null,
           id,
         ]
       );
@@ -9772,8 +9777,9 @@ ${details}
             vendor_id, record_type, contract_category, contract_type, contract_title,
             document_number, contract_status, effective_date, expiration_date, auto_renewal,
             original_work, product_name, work_name, media, territory, language, document_url, source_system,
-            base_document_number, revision, is_primary
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE)
+            base_document_number, revision, is_primary,
+            ledger_ref_id, ledger_code
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE, $21, $22)
           ON CONFLICT (document_number) DO UPDATE SET
             vendor_id = EXCLUDED.vendor_id,
             record_type = EXCLUDED.record_type,
@@ -9794,6 +9800,8 @@ ${details}
             base_document_number = EXCLUDED.base_document_number,
             revision = EXCLUDED.revision,
             is_primary = TRUE,
+            ledger_ref_id = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
+            ledger_code = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
             superseded_by = NULL,
             updated_at = CURRENT_TIMESTAMP`,
           [
@@ -9829,6 +9837,11 @@ ${details}
             // Phase 22.12: リビジョン情報を contract_capabilities にも同期
             baseDocumentNumber,
             revision,
+            // Phase 26: 原作 (ledger) 紐付け。出版利用許諾条件書フォームの原作
+            //   ピッカー、または BDG ライセンスフォーム由来の ledger_ref_id/ledger_code
+            //   を保存 (未設定なら null → ON CONFLICT COALESCE で既存維持)。
+            formData.ledger_ref_id ? Number(formData.ledger_ref_id) : null,
+            formData.ledger_code || null,
           ]
         );
         console.log(`✅ Sync to contract_capabilities successful for: ${docNumber}`);

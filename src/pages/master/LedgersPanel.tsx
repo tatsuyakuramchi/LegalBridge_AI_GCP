@@ -73,7 +73,14 @@ type Ledger = {
   // Phase 22.21.7: 承認条件 / 承認時期 のデフォルト
   default_approval_target?: string
   default_approval_timing?: string
+  // Phase 26: 事業部タグ (BDG=ボードゲーム / PUB=出版)。複数付与可。
+  division?: string[]
 }
+
+const DIVISION_OPTIONS: { value: string; label: string }[] = [
+  { value: "BDG", label: "BDG (ボードゲーム)" },
+  { value: "PUB", label: "PUB (出版)" },
+]
 
 const emptyLedger: Ledger = {
   title: "",
@@ -88,6 +95,7 @@ const emptyLedger: Ledger = {
   default_work_supplement: "",
   default_approval_target: "",
   default_approval_timing: "",
+  division: ["BDG"],
 }
 
 const emptyMaterial: Material = {
@@ -100,6 +108,7 @@ const emptyMaterial: Material = {
 export function LedgersPanel() {
   const { ledgers, refreshLedgers, showNotification } = useAppData()
   const [search, setSearch] = React.useState("")
+  const [divFilter, setDivFilter] = React.useState<string>("")
   const [editing, setEditing] = React.useState<Ledger | null>(null)
   const [creating, setCreating] = React.useState(false)
   const [draft, setDraft] = React.useState<Ledger>(emptyLedger)
@@ -110,6 +119,11 @@ export function LedgersPanel() {
   const [newMaterial, setNewMaterial] = React.useState<Material>(emptyMaterial)
 
   const filtered = (ledgers || []).filter((l: Ledger) => {
+    if (
+      divFilter &&
+      !(Array.isArray(l.division) && l.division.includes(divFilter))
+    )
+      return false
     const q = search.toLowerCase()
     if (!q) return true
     return (
@@ -248,6 +262,19 @@ export function LedgersPanel() {
             className="pl-8"
           />
         </div>
+        <NativeSelect
+          value={divFilter}
+          onChange={(e) => setDivFilter(e.target.value)}
+          className="h-9 w-44"
+          aria-label="事業部で絞り込み"
+        >
+          <option value="">全事業部</option>
+          {DIVISION_OPTIONS.map((d) => (
+            <option key={d.value} value={d.value}>
+              {d.label}
+            </option>
+          ))}
+        </NativeSelect>
         <Button
           onClick={() => {
             setCreating(true)
@@ -290,6 +317,15 @@ export function LedgersPanel() {
                   <p className="text-[10px] font-mono text-muted-foreground/70">
                     {l.title_kana}
                   </p>
+                )}
+                {Array.isArray(l.division) && l.division.length > 0 && (
+                  <div className="flex flex-wrap gap-1">
+                    {l.division.map((d) => (
+                      <Badge key={d} variant="phosphor" className="h-4 text-[10px]">
+                        {d}
+                      </Badge>
+                    ))}
+                  </div>
                 )}
                 <div className="flex items-center gap-1.5 text-[10px] font-mono text-muted-foreground">
                   <Layers className="h-3 w-3" />
@@ -401,6 +437,33 @@ export function LedgersPanel() {
                   <span className="text-xs font-mono">
                     {data?.is_active !== false ? "有効" : "無効"}
                   </span>
+                </div>
+              </Field>
+              <Field label="事業部タグ (複数可)">
+                <div className="flex items-center gap-4 h-9">
+                  {DIVISION_OPTIONS.map((d) => {
+                    const cur = data?.division || []
+                    const on = cur.includes(d.value)
+                    return (
+                      <label
+                        key={d.value}
+                        className="flex items-center gap-1.5 cursor-pointer text-xs font-mono"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={on}
+                          onChange={() =>
+                            set({
+                              division: on
+                                ? cur.filter((x) => x !== d.value)
+                                : [...cur, d.value],
+                            })
+                          }
+                        />
+                        {d.label}
+                      </label>
+                    )
+                  })}
                 </div>
               </Field>
             </div>

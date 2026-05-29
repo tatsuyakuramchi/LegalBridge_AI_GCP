@@ -2385,7 +2385,7 @@ async function startServer() {
           `SELECT id, ledger_code, title, title_kana, alternative_titles,
                   creator_name, publisher_name, remarks, is_active,
                   default_rights_holder, default_credit_display, default_work_supplement,
-                  default_approval_target, default_approval_timing,
+                  default_approval_target, default_approval_timing, division,
                   created_at, updated_at
              FROM ledgers
             ORDER BY ledger_code DESC`
