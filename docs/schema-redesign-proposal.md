@@ -120,7 +120,10 @@ erDiagram
     contracts ||--o{ contract_line_items : "業務明細"
     contracts ||--o{ contract_obligations : "非金銭義務"
     vendors  ||--o{ contract_parties : ""
-    contracts ||--o{ documents : "生成書類"
+    contracts ||--o{ documents : "生成書類(自社)"
+    contracts ||--o{ external_assets : "外部原本"
+    works ||--o{ documents : "作品の書類一覧"
+    documents ||--o{ documents : "再発行(base/revision)"
 
     products ||--o{ manufacturing_events : "製造実績"
     products ||--o{ sales_events : "販売実績"
@@ -424,6 +427,52 @@ erDiagram
 - **未払残高(AP)**: `SUM(invoices.received where unpaid) − SUM(payments.outbound)`
 - **売掛残高(AR)**: `SUM(invoices.issued) − SUM(payments.inbound)`
 
+### 3.5 書類層 ― 契約書の「管理」と「制作」
+
+「契約(実体 = `contracts`)」と「契約書(成果物ファイル)」を分離する。現行の生成エンジン(テンプレート/採番/ワークフロー)は優れた資産のため**作り替えず、作品・契約へFKで接続するだけ**にとどめる。
+
+#### 制作(生成エンジン)層 ― 現行を踏襲
+
+| テーブル | 役割 | 刷新方針 |
+| :--- | :--- | :--- |
+| `templates_config.json` + `templates/`(HTML/Handlebars) | テンプレート定義・入力フィールド構成 | **ファイルベースを維持**(要件「HTML+JSON追加だけで新書類対応」を尊重)。ガバナンス強化が必要なら任意で `document_templates`(template_key / version / prefix / applicable_category / field_schema)へ登録制化。 |
+| `document_sequences`(kind, year, current_value) | 採番(PO/LIC/ILT/ROY/PAY 等) | 維持。新カテゴリ(invoice 等)の prefix を追加。 |
+| `workflow_settings`(allowed_templates, variable_mappings, status_configs, document_prefix) | テンプレート許可・変数マッピング・ステータス連動 | 維持。 |
+| `issue_workflows`(document_draft, generated_documents, approval_at, stamp_at) | 課題単位のドラフト・生成履歴・承認/押印 | 維持 + 補助FK `contract_id` / `work_id` を追加。 |
+
+#### 管理(版・保管)層
+
+##### `documents`(自社生成 成果物の正本ストア) ― 現行を拡張
+
+契約書だけでなく発注書・検収書・利用許諾料計算書・支払通知も保持する成果物ストア。**追加FK**で実体に接続する。
+
+| 列 | 説明 |
+| :--- | :--- |
+| document_number / template_type / form_data(JSONB=生成時スナップショット) / drive_link / excel_link | 現行踏襲 |
+| **base_document_number / revision / is_primary / superseded_by / lifecycle_status**(final/archived_draft/reissued) | **版管理(再発行チェーン)** ― 現行の優れた仕組みを維持 |
+| **contract_id INTEGER FK→contracts NULL** | 由来する契約(契約書・覚書・別紙の場合) |
+| **work_id INTEGER FK→works NULL** | 作品からの書類一覧引き |
+| **source_kind / source_id** | 由来業務(order / delivery_event / royalty_statement / payment / invoice)への参照 |
+
+##### `external_assets`(外部原本) ― 現行を拡張
+
+LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本。**追加FK** `contract_id` / `work_id`。
+
+##### 統一ビュー `v_contract_documents`
+
+`contract_id` で `documents` ∪ `external_assets` を束ね、**「この契約のすべての書類(ドラフト/締結済/覚書/別紙/付随帳票)」** を1リストで取得する。
+
+#### 業務テーブル ↔ 成果物の相互参照
+
+`orders` / `delivery_events` / `royalty_statements` / `payments` / `invoices` に `document_id INTEGER FK→documents NULL` を持たせ、各業務レコードと生成PDFを双方向に辿れるようにする。
+
+#### 版・改定の二層管理
+
+- **契約書の再発行(reissue)**: `documents` の `base_document_number` / `revision` / `superseded_by` で表現(現行踏襲)。
+- **契約の改定(覚書/amendment)**: `contracts.parent_contract_id`(§3.3)で新旧契約をチェーンし、覚書PDFは新しい `documents` 行 + `contract_id` で紐付け。
+
+> これにより「契約という実体」「その時々の書類(版)」「制作の元データ(テンプレート/フォーム)」が**それぞれ独立して追跡**でき、再発行・覚書・別紙が混在しても正本(`is_primary`)を一意に特定できる。
+
 ---
 
 ## 4. 業務フローと作品軸の貫通(権利の循環)
@@ -494,7 +543,9 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | `royalty_payments` | `payments`(kind=royalty) + `invoices` | 統一台帳へ移行。請求段階を分離。 |
 | `delivery_events` / `delivery_line_items` | 維持 + `invoices`/`payments`連結 | 検収確定額を invoices→payments(service_fee) に集約。 |
 | `work_sublicensees` | `contract_parties` + `contract_financial_terms` | 作品×再許諾先の条件を契約配下へ正規化。 |
-| `documents` / `external_assets` | 維持 + `contract_id` FK追加 | 物理ファイルとして契約に紐付け。 |
+| `documents` / `external_assets` | 維持 + `contract_id` / `work_id` / `source_kind`,`source_id` FK追加 | 成果物・外部原本を契約/作品/業務に紐付け。版管理列(base/revision/superseded_by/lifecycle_status)は現行踏襲。 |
+| `templates_config.json` / `templates/` | 維持(ファイルベース) | テンプレート定義は現行どおりコード/設定で管理。必要時のみ `document_templates` へ登録制化。 |
+| `document_sequences` / `workflow_settings` / `issue_workflows` | 維持 + `issue_workflows` に補助FK | 採番・テンプレート許可・ドラフト/承認/押印の制作ワークフローを踏襲。 |
 
 ### 移行ステップ(推奨)
 1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
@@ -551,6 +602,7 @@ ORDER BY due;
 - **製品(SKU)単位のロイヤリティ精緻化**: 版・形態ごとの製造/販売実績に基づく正確なMG/AG消化計算。
 - **インボイス・源泉・為替に対応した支払管理**: 適格請求書の受領検証、源泉徴収、外貨換算(`amount_jpy`)を含む正確な金銭管理。
 - **金銭以外の義務もアラート化**: 最低製造義務・クレジット表記・報告義務・商標更新を満期アラートと同じ仕組みで監視。
+- **契約書(実体/版/制作)の分離管理**: 「契約という実体」「その時々の書類(再発行・覚書・別紙)」「制作の元データ(テンプレート/フォーム)」を独立追跡し、正本(`is_primary`)を一意特定。生成エンジンは現行資産を維持したまま作品・契約へFK接続。
 
 ---
 
