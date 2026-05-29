@@ -65,6 +65,7 @@
 | 抜け(契約) | マスター↔個別の階層、改定・覚書チェーン、契約↔書類↔稟議の実FK | `contracts.master_contract_id` / `amends_contract_id` / `documents.contract_id`(§3.3) |
 | 抜け(契約) | **金銭以外の契約義務**(最低製造義務・クレジット表記・報告義務・監査権) | `contract_obligations`(§3.3) |
 | 抜け(契約) | レビュー / ドラフト依頼〜締結の**進捗を契約ネイティブで管理**(現行は Backlog 依存) | `contracts.lifecycle_stage` + `contract_stage_history`(§3.3) |
+| 抜け(契約) | 電子契約の**署名リレー(宛先順)と現在のリレー相手**(現行は cloudsign_url 1本のみ) | `signature_requests` + `signature_steps`(§3.3) |
 | 抜け(支払) | 支払前の**「請求」フェーズ**(適格請求書の受領 / 入金請求の発行) | `invoices`(§3.4) |
 | 抜け(支払) | **為替レート**(多通貨・海外送金の換算) | `payments` FX列(§3.4) |
 | 抜け(支払) | 前払金 / 債権債務の**残高把握** | 残高ビュー(§3.4) |
@@ -100,6 +101,9 @@ erDiagram
     ringi_records ||--o{ contracts : "決裁稟議"
     legal_requests ||--o| contracts : "依頼→契約"
     contracts ||--o{ contract_stage_history : "締結までの進捗"
+    contracts ||--o{ signature_requests : "電子契約送信"
+    signature_requests ||--o{ signature_steps : "署名リレー(宛先順)"
+    vendors ||--o{ signature_steps : "相手方署名者"
     works ||--o{ products : "製品/SKU"
     works ||--o{ work_source_ips : ""
     source_ips ||--o{ work_source_ips : "M:N(自社作品⇔原作IP)"
@@ -374,6 +378,42 @@ erDiagram
 - **署名・押印** = CloudSign / LegalOn(`cloudsign_url` / `legalon_url`)+ `issue_workflows.stamp_at`。`pending_signature`→`executed`。
 - Backlog は運用ボードとして併用し、`lifecycle_stage` ↔ Backlog ステータスのマッピングで同期する。
 - 条項単位のレビューコメントまで管理したい場合は任意で `contract_review_comments`(contract_id / document_revision / clause_ref / comment / raised_by / resolved)へ拡張可。まずは `contract_stage_history.comment` + Backlog コメントで運用する。
+
+##### 電子契約の署名リレー ― 稟議承認後の「リレー相手」表示
+
+`approval`(稟議承認)後、`pending_signature` ステージで CloudSign 等に送信し、署名は**宛先順(リレー)**に回付される。各宛先をステップとして保持し、**「いま誰のところにあるか(リレー相手)」を表示**できるようにする。
+
+`signature_requests`(電子契約の送信単位) ― **新規**
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| contract_id | INTEGER FK→contracts | |
+| document_id | INTEGER FK→documents NULL | 送付した書類 |
+| provider | VARCHAR(20) | cloudsign / legalon / docusign / paper |
+| provider_envelope_id | VARCHAR(120) | CloudSign 書類ID(Webhook 突合用) |
+| status | VARCHAR(20) | preparing / circulating(リレー中) / completed / declined / cancelled / expired |
+| cloudsign_url | TEXT | |
+| sent_at / completed_at | TIMESTAMPTZ | |
+
+`signature_steps`(リレーの各宛先 = 署名順) ― **新規**
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| signature_request_id | INTEGER FK→signature_requests | |
+| step_no | INTEGER | リレー順(1,2,3…) |
+| party_type | VARCHAR(20) | internal(自社押印者) / counterparty(相手方) / witness |
+| vendor_id | INTEGER FK→vendors NULL | 相手方署名者 |
+| signer_name / signer_email | | |
+| signer_slack_id | VARCHAR(50) NULL | 自社署名者 |
+| status | VARCHAR(20) | pending / **current(現在の宛先=リレー相手)** / signed / declined / skipped |
+| acted_at | TIMESTAMPTZ | |
+| UNIQUE(signature_request_id, step_no) | | |
+
+- **リレー相手の表示** = `status='current'`(または最小 `step_no` の `pending`)のステップ。ビュー `v_current_signer` で契約ごとの「現在の宛先・氏名・順番」を返す。
+- **連携**: 稟議承認(`ringi_records.status='approved'`)→ `contracts.lifecycle_stage=pending_signature` へ遷移し `signature_requests` を生成・送信。CloudSign の **Webhook**(各署名完了)で `signature_steps.status` を更新し、次の宛先を `current` に進める。全署名完了で `status=completed` → 契約 `lifecycle_stage=executed`・`executed_at` 記録、締結済PDFを `documents`/`external_assets` に格納。
+- 自社の押印者は `department_workflow_rules.stamp_operator_slack_id` から internal ステップを自動生成できる。
 
 #### `contract_works`(契約⇔作品 中間) ― **新規・最重要**
 
@@ -677,7 +717,7 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | (なし) | `contract_stage_history` | 依頼〜締結のステージ遷移履歴。現行 Backlog ステータス / `issue_workflows` の履歴から初期投入可。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`contract_stage_history`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`contract_stage_history`/`signature_requests`/`signature_steps`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
@@ -698,6 +738,12 @@ SELECT c.contract_title, c.lifecycle_stage, c.current_owner_slack_id, c.review_d
 FROM contracts c
 WHERE c.lifecycle_stage NOT IN ('executed','cancelled','expired','terminated')
 ORDER BY c.review_due_date NULLS LAST;
+
+-- 署名リレー中の契約と現在のリレー相手(誰のところで止まっているか)
+SELECT c.contract_title, sr.provider, ss.step_no, ss.party_type, ss.signer_name
+FROM contracts c
+JOIN signature_requests sr ON sr.contract_id = c.id AND sr.status = 'circulating'
+JOIN signature_steps ss ON ss.signature_request_id = sr.id AND ss.status = 'current';
 
 -- 各ステージの平均滞留日数(リードタイム分析)
 SELECT to_stage, AVG(next_at - changed_at) AS avg_duration
@@ -751,6 +797,7 @@ ORDER BY due;
 - **成果物の納品・リテイク・権利取得の一気通貫**: イラスト等の成果物を `deliverables` + `deliverable_revisions` で版・受領ステータス込みで管理し、発注明細→納品→検収→権利取得(`work_rights`)→報酬支払(`payments`)を1本で追跡。
 - **創作委託+権利留保+利用許諾の複合に対応**: 作成は委託・権利は相手方留保・当社は許諾利用、という形態を1契約(mixed)で表現し、作成料(service_fee)と利用許諾料(royalty)の二重支払を成果物単位で正しく処理。
 - **締結までの進捗を契約ネイティブで可視化**: 依頼→ドラフト→社内/相手方レビュー→稟議→署名→締結を `lifecycle_stage` + `contract_stage_history` で管理し、担当者・期限アラート・ステージ滞留時間(リードタイム)を Backlog 非依存で集計。
+- **電子契約の署名リレーを可視化**: 稟議承認→CloudSign送信→宛先順の回付を `signature_requests` + `signature_steps` で管理し、**「現在のリレー相手(どこで止まっているか)」**を Webhook 連動でリアルタイム表示。完了で自動的に締結(executed)へ。
 
 ---
 
