@@ -67,6 +67,7 @@
 | 抜け(支払) | 支払前の**「請求」フェーズ**(適格請求書の受領 / 入金請求の発行) | `invoices`(§3.4) |
 | 抜け(支払) | **為替レート**(多通貨・海外送金の換算) | `payments` FX列(§3.4) |
 | 抜け(支払) | 前払金 / 債権債務の**残高把握** | 残高ビュー(§3.4) |
+| 抜け(成果物) | 納品物の**実ファイル・版・リテイク・受領ステータス**を持つ実体が無い | `deliverables` / `deliverable_revisions`(§3.4) |
 | 重複(ME) | **取引先 vs 再許諾先の二重管理** | `vendors` + `party_roles` に一元化(§3.1) |
 | 重複(ME) | 契約 vs 書類 vs 外部資産の境界が曖昧 | `contracts`=実体 / `documents`=物理ファイル と役割分離(§3.3) |
 
@@ -133,6 +134,10 @@ erDiagram
     sales_events ||--o{ royalty_statements : ""
 
     contracts ||--o{ orders : "発注(業務委託)"
+    contract_line_items ||--o{ deliverables : "成果物"
+    deliverables ||--o{ deliverable_revisions : "版/リテイク"
+    deliverables ||--o{ work_rights : "検収→権利取得"
+    delivery_events ||--o{ deliverables : "検収"
     orders ||--o{ delivery_events : "検収"
 
     contracts ||--o{ invoices : "請求/受領"
@@ -252,6 +257,7 @@ erDiagram
 | component_type | VARCHAR(50) | illustration / scenario / design / music / text |
 | rights_holder_vendor_id | INTEGER FK→vendors | 権利者(=委託先クリエイター) |
 | source_contract_id | INTEGER FK→contracts | 権利を取得した業務委託契約 |
+| source_deliverable_id | INTEGER FK→deliverables NULL | 権利の元となった納品成果物(§3.4) |
 | rights_type | VARCHAR(30) | **copyright_assignment(著作権譲渡) / license(利用許諾) / joint(共有)** |
 | moral_rights_waiver | BOOLEAN | 著作者人格権の不行使特約 |
 | scope | TEXT | 利用範囲(媒体・地域・期間) |
@@ -390,6 +396,47 @@ erDiagram
 
 業務委託の発注書を `orders`(現状は `documents` + `contract_capabilities(record_type=purchase_order)` に分散)として明示化し、`contract_id` / `work_id` に紐付け。`delivery_events`(検収)で確定した金額が次段の `invoices` の請求対象になる。
 
+#### `deliverables`(成果物) / `deliverable_revisions`(版・リテイク) ― **新規(納品管理)**
+
+イラスト・原稿・デザイン・楽曲など、業務委託で**納品された成果物そのもの**を管理する。「何を発注したか(`contract_line_items`)」と「いくら検収したか(`delivery_events`)」の間に立ち、**実ファイル・版・受領ステータス・リテイク履歴**を保持する。
+
+`deliverables`
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| deliverable_code | VARCHAR(60) | 任意の管理番号 |
+| contract_id | INTEGER FK→contracts | 委託契約(individual/standalone) |
+| contract_line_item_id | INTEGER FK→contract_line_items NULL | 由来する発注明細 |
+| work_id | INTEGER FK→works NULL | 紐づく作品 |
+| product_id | INTEGER FK→products NULL | 紐づく製品 |
+| vendor_id | INTEGER FK→vendors | 制作者(委託先) |
+| deliverable_name | TEXT | 成果物名(キービジュアル / コマイラスト 等) |
+| deliverable_type | VARCHAR(40) | illustration / manuscript / design / music / data |
+| spec | TEXT | 仕様(サイズ・解像度・形式) |
+| current_version | INTEGER | 現在の版番号 |
+| status | VARCHAR(20) | submitted(提出) / in_review(確認中) / revision_requested(リテイク) / accepted(検収済) / rejected |
+| accepted_delivery_event_id | INTEGER FK→delivery_events NULL | 検収したイベント |
+| file_asset_id | INTEGER FK→external_assets NULL | 最新ファイル(または drive_link) |
+| drive_link | TEXT | 格納先(fallback) |
+| created_at / updated_at | | |
+
+`deliverable_revisions`(ラフ→リテイク→決定稿の履歴)
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| deliverable_id | INTEGER FK→deliverables | |
+| revision_no | INTEGER | v1, v2, … |
+| file_asset_id / drive_link | | この版のファイル |
+| submitted_at | TIMESTAMPTZ | 提出日時 |
+| review_status | VARCHAR(20) | pending / approved / retake |
+| review_comment | TEXT | リテイク指示 |
+| reviewer_slack_id | VARCHAR(50) | 確認者 |
+| UNIQUE(deliverable_id, revision_no) | | |
+
+> **連携**: `delivery_line_items` に `deliverable_id INTEGER FK→deliverables NULL` を追加し検収明細と成果物を結ぶ。検収(`status=accepted`)した成果物は `work_rights.source_deliverable_id` 経由で権利取得レコードに繋がり、報酬は `invoices → payments(service_fee)` で支払う。実ファイルは `external_assets`(asset_type=design 等)/ Google Drive に格納し、DAM 的な重い管理(サムネイル等)は専用ツールに委ねる。
+
 #### `invoices`(請求 / 受領) ― **新規(MECE: 請求フェーズの抜け解消)**
 
 「検収=確定額」「請求=請求額」「支払=実支払額」は別概念。支払の手前に請求を1段挟み、**支払側(適格請求書の受領)と入金側(請求書の発行)** の双方を扱う。
@@ -515,11 +562,14 @@ LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本
 
 > 明細の**法的根拠は契約**(`contract_id`)に置きつつ、`work_id`/`product_id` で**作品から直接引ける**ため、「作品に明細が付き、そこに支払が実行される」イメージと完全に一致する。
 
-### ① 業務委託報酬の支払 + 権利取得
+### ① 業務委託報酬の支払 + 成果物 + 権利取得
 ```
-works ─ contracts(service) ─ contract_line_items ─ orders(発注) ─ delivery_events(検収)
-        │                                                            │
-        └─ work_rights(成果物の権利取得: 譲渡/許諾)              invoices(請求受領) ─ payments(service_fee, outbound)
+works ─ contracts(service) ─ contract_line_items(発注明細)
+                                   │
+                          deliverables(成果物) ─ deliverable_revisions(ラフ→リテイク→決定稿)
+                                   │
+                          delivery_events(検収) ─┬─ work_rights(権利取得: 譲渡/許諾)
+                                                  └─ invoices(請求受領) ─ payments(service_fee, outbound)
 ```
 
 ### ② ロイヤリティ支払(license-in:原作権利者へ / 印税:著者へ)
@@ -565,14 +615,15 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | `manufacturing_events` | `manufacturing_events`(改) | `license_contract_id`(死)撤去、`product_id` FK追加。 |
 | `royalty_calculations` | `royalty_statements` | 死んだFKを `contract_id`/`financial_term_id`/`product_id` に張り直し。 |
 | `royalty_payments` | `payments`(kind=royalty) + `invoices` | 統一台帳へ移行。請求段階を分離。 |
-| `delivery_events` / `delivery_line_items` | 維持 + `invoices`/`payments`連結 | 検収確定額を invoices→payments(service_fee) に集約。 |
+| `delivery_events` / `delivery_line_items` | 維持 + `invoices`/`payments`連結 + `delivery_line_items.deliverable_id` | 検収確定額を invoices→payments(service_fee) に集約。検収明細を成果物に紐付け。 |
+| (なし) | `deliverables` / `deliverable_revisions` | 納品成果物の実ファイル・版・リテイク・受領ステータスを管理。既存の design 系 `external_assets` から初期紐付け可。 |
 | `work_sublicensees` | `contract_parties` + `contract_financial_terms` | 作品×再許諾先の条件を契約配下へ正規化。 |
 | `documents` / `external_assets` | 維持 + `contract_id` / `work_id` / `source_kind`,`source_id` FK追加 | 成果物・外部原本を契約/作品/業務に紐付け。版管理列(base/revision/superseded_by/lifecycle_status)は現行踏襲。 |
 | `templates_config.json` / `templates/` | 維持(ファイルベース) | テンプレート定義は現行どおりコード/設定で管理。必要時のみ `document_templates` へ登録制化。 |
 | `document_sequences` / `workflow_settings` / `issue_workflows` | 維持 + `issue_workflows` に補助FK | 採番・テンプレート許可・ドラフト/承認/押印の制作ワークフローを踏襲。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
@@ -627,6 +678,7 @@ ORDER BY due;
 - **インボイス・源泉・為替に対応した支払管理**: 適格請求書の受領検証、源泉徴収、外貨換算(`amount_jpy`)を含む正確な金銭管理。
 - **金銭以外の義務もアラート化**: 最低製造義務・クレジット表記・報告義務・商標更新を満期アラートと同じ仕組みで監視。
 - **契約書(実体/版/制作)の分離管理**: 「契約という実体」「その時々の書類(再発行・覚書・別紙)」「制作の元データ(テンプレート/フォーム)」を独立追跡し、正本(`is_primary`)を一意特定。生成エンジンは現行資産を維持したまま作品・契約へFK接続。
+- **成果物の納品・リテイク・権利取得の一気通貫**: イラスト等の成果物を `deliverables` + `deliverable_revisions` で版・受領ステータス込みで管理し、発注明細→納品→検収→権利取得(`work_rights`)→報酬支払(`payments`)を1本で追跡。
 
 ---
 
