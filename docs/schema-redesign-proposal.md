@@ -58,6 +58,8 @@
 ## 2. 設計方針
 
 1. **作品(`works`)を単一のハブ**にする。契約・製品・支払はすべて作品にFKで紐づく。
+   - `works` は **自社が開発・出版する自社作品のみ** を対象とする。
+   - 外部から許諾を受ける **原作IPは別マスター(`source_ips`)に分離**し、作品とは M:N(`work_source_ips`)で結ぶ(1作品が複数原作をミックスする/1原作が複数作品に展開されるケースに対応)。
 2. **自由記述・文字列キー・JSONB疎結合を、実FK + 中間テーブルに正規化**する。
 3. **支払を1つの統一台帳(`payments`)に集約**し、ロイヤリティ/業務委託/許諾料/入金を `payment_kind` + `direction` で区別する。各行に必ず `work_id` を持たせ、作品軸の集計を可能にする。
 4. **契約⇔作品は M:N**(包括契約は複数作品をカバー、1作品に複数契約)を中間テーブルで表現する。
@@ -69,8 +71,12 @@
 
 ```mermaid
 erDiagram
-    works ||--o{ work_components : "構成素材"
     works ||--o{ products : "製品/SKU"
+    works ||--o{ work_source_ips : ""
+    source_ips ||--o{ work_source_ips : "M:N(自社作品⇔原作IP)"
+    source_ips ||--o{ source_ip_materials : "原作素材"
+    source_ips ||--o{ contract_works : "許諾対象(任意)"
+    vendors ||--o{ source_ips : "原作権利者"
     works ||--o{ contract_works : ""
     contracts ||--o{ contract_works : "M:N"
     contracts ||--o{ contract_parties : "当事者"
@@ -97,27 +103,46 @@ erDiagram
 
 ### 3.1 マスター層
 
-#### `works`(作品) ― **新ハブ。現 `ledgers` を昇格・拡張**
+#### `works`(自社作品) ― **新ハブ。自社の開発・出版作品のみ**
+
+外部原作の属性(権利者・クレジット・承認条件)は持たせず、後述の `source_ips` 側に集約する。`works` は「当社が世に出すタイトル」に純化する。
 
 | 列 | 型 | 説明 |
 | :--- | :--- | :--- |
 | id | SERIAL PK | |
-| work_code | VARCHAR(40) UNIQUE | `W-YYYY-NNNN`(現 `ledger_code` LO- を継承可) |
+| work_code | VARCHAR(40) UNIQUE | `W-YYYY-NNNN` |
 | title / title_kana | TEXT | 作品名 |
 | alternative_titles | TEXT[] | 別名 |
 | division | TEXT[] | `{BDG, PUB}` 事業部タグ(現行踏襲, GIN索引) |
 | work_type | VARCHAR(50) | board_game / trpg_book / supplement / digital など |
 | status | VARCHAR(20) | planning / in_production / released / suspended / discontinued |
-| is_licensed_in | BOOLEAN | 外部原作の許諾を受けて制作する作品か(license-in) |
-| source_ip_holder_vendor_id | INTEGER FK→vendors | 原作権利者(自由記述 `creator_name` を実FK化) |
-| publisher_vendor_id | INTEGER FK→vendors | 出版元 |
+| publisher_vendor_id | INTEGER FK→vendors | 出版元(自社外の場合) |
+| is_original | BOOLEAN | 完全自社オリジナル(原作なし)か。FALSE の場合 `work_source_ips` に1件以上を期待 |
+| remarks, is_active, created_at, updated_at | | |
+
+#### `source_ips`(原作IP) ― **新規。外部から許諾を受ける原作の独立マスター**
+
+現 `ledgers` が抱えていた「原作の権利者・帳票デフォルト・承認条件」はこちらへ移す。license-in ロイヤリティ契約は原則この `source_ips` を許諾対象として参照する。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| source_code | VARCHAR(40) UNIQUE | `IP-YYYY-NNNN`(現 `ledger_code` LO- を継承可) |
+| title / title_kana | TEXT | 原作名 |
+| alternative_titles | TEXT[] | 別名 |
+| rights_holder_vendor_id | INTEGER FK→vendors | 原作権利者(現 `creator_name` 自由記述を実FK化) |
+| original_publisher | TEXT | 原作出版元 |
 | default_rights_holder / default_credit_display / default_work_supplement | TEXT | 帳票デフォルト(現 ledgers 踏襲) |
 | default_approval_target / default_approval_timing | TEXT | 承認条件デフォルト(現 ledgers 踏襲) |
 | remarks, is_active, created_at, updated_at | | |
 
-#### `work_components`(作品構成素材) ― 現 `materials` を拡張
+#### `work_source_ips`(自社作品⇔原作IP 中間) ― **新規**
 
-現 `materials` をほぼ踏襲。`rights_holder TEXT`(自由記述)を **`rights_holder_vendor_id INTEGER FK→vendors`** に置換し、権利者を取引先マスターに正規化する(自由記述は `rights_holder_label` として併存可)。
+| work_id FK→works | source_ip_id FK→source_ips | role(原作/題材/イラスト原案 等) | UNIQUE(work_id, source_ip_id) |
+
+#### `source_ip_materials`(原作素材) ― 現 `materials` を移設・拡張
+
+現 `materials` を `source_ips` 配下へ移設(`ledger_id`→`source_ip_id`)。`rights_holder TEXT`(自由記述)を **`rights_holder_vendor_id INTEGER FK→vendors`** に置換し権利者を正規化する(自由記述は `rights_holder_label` として併存可)。素材単位で権利者・許諾条件が異なるケースに対応。
 
 #### `products`(製品 / SKU) ― **新規**
 
@@ -171,11 +196,12 @@ erDiagram
 | :--- | :--- | :--- |
 | id | SERIAL PK | |
 | contract_id | INTEGER FK→contracts | |
-| work_id | INTEGER FK→works | |
+| work_id | INTEGER FK→works NULL | 契約対象の自社作品 |
+| source_ip_id | INTEGER FK→source_ips NULL | license-in契約で許諾を受ける原作IP |
 | product_id | INTEGER FK→products NULL | 製品単位で結ぶ場合 |
-| role | VARCHAR(30) | licensed_work(原作許諾) / service_target(委託対象) / publication_target(出版対象) |
-| rights_holder_vendor_id | INTEGER FK→vendors NULL | 当該作品の権利者(契約ごとに異なる場合) |
-| UNIQUE(contract_id, work_id, product_id) | | |
+| role | VARCHAR(30) | licensed_in(原作許諾を受ける) / licensed_out(再許諾する) / service_target(委託対象) / publication_target(出版対象) |
+| rights_holder_vendor_id | INTEGER FK→vendors NULL | 当該対象の権利者(契約ごとに異なる場合) |
+| CHECK(work_id IS NOT NULL OR source_ip_id IS NOT NULL) | | 作品か原作IPのいずれかは必須 |
 
 #### `contract_parties`(契約当事者) ― 現 `additional_parties JSONB` を正規化
 
@@ -258,8 +284,9 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先) ─ contract
 
 | 現行 | 新 | 移行方法 |
 | :--- | :--- | :--- |
-| `ledgers` | `works` | リネーム + 列追加(work_type, status, *_vendor_id)。`ledger_code`→`work_code`。 |
-| `materials` | `work_components` | `rights_holder` → `rights_holder_vendor_id`(名寄せ)。 |
+| `ledgers`(自社作品相当の行) | `works` | 自社タイトルの行を移行。`ledger_code`→`work_code`、列追加(work_type, status, publisher_vendor_id)。原作属性(権利者/クレジット/承認)は持ち込まない。 |
+| `ledgers`(外部原作相当の行) | `source_ips` | 外部原作の行を分離移行。`ledger_code`→`source_code`、`creator_name`→`rights_holder_vendor_id`(名寄せ)、default_* 群を移設。自社作品との関係は `work_source_ips` に展開。 |
+| `materials` | `source_ip_materials` | `ledger_id`→`source_ip_id`、`rights_holder`→`rights_holder_vendor_id`(名寄せ)。 |
 | (なし) | `products` | `manufacturing_events` の product_name/edition から逆生成して初期投入。 |
 | `contract_capabilities` | `contracts` + `contract_works` + `contract_parties` | 作品関連列を `contract_works` へ、`additional_parties` を `contract_parties` へ展開。`ledger_code` → `contract_works.work_id`。 |
 | `capability_financial_conditions` | `contract_financial_terms` | `capability_id`→`contract_id` リネームのみ。 |
@@ -271,7 +298,7 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先) ─ contract
 | `work_sublicensees` / `sublicensees` | `contract_parties` + `contract_financial_terms` / `sublicensees`維持 | 作品×再許諾先の条件を契約配下へ正規化。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`products`/`contract_works`/`contract_parties`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`contract_works`/`contract_parties`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
