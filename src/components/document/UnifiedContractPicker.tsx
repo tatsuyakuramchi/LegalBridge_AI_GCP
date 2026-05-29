@@ -46,7 +46,11 @@ export type RecordType =
   | "purchase_order"
   | "individual_contract"
   | "standalone_contract"
-  | "master_contract";
+  | "master_contract"
+  // Phase 26.10: 利用許諾計算書フォームが「条件 (金銭条件を持つ個別文書)」を
+  //   直接 picker から選べるよう、条件系の record_type も受け付ける。
+  | "license_condition"
+  | "publication_condition";
 
 export type Category =
   | "service"
@@ -139,6 +143,8 @@ const RECORD_TYPE_LABEL: Record<RecordType, string> = {
   individual_contract: "個別契約",
   standalone_contract: "単独契約",
   master_contract: "基本契約",
+  license_condition: "利用許諾条件",
+  publication_condition: "出版利用許諾条件",
 };
 
 const RECORD_TYPE_BADGE_CLASS: Record<RecordType, string> = {
@@ -146,6 +152,8 @@ const RECORD_TYPE_BADGE_CLASS: Record<RecordType, string> = {
   individual_contract: "bg-emerald-100 text-emerald-800 border-emerald-200",
   standalone_contract: "bg-violet-100 text-violet-800 border-violet-200",
   master_contract: "bg-amber-100 text-amber-800 border-amber-200",
+  license_condition: "bg-teal-100 text-teal-800 border-teal-200",
+  publication_condition: "bg-rose-100 text-rose-800 border-rose-200",
 };
 
 export const UnifiedContractPicker: React.FC<Props> = ({

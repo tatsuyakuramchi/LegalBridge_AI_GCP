@@ -2599,15 +2599,23 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // ---- データ参照 ---------------------------------------------------
     // 候補となる契約マスタ: license カテゴリの 単独/個別 で
     // financial_conditions[] を持つもの。
-    const licenseMasters = (allContracts || []).filter(
-      (c: any) =>
-        String(c.contract_category || '').toLowerCase() === 'license' &&
+    const licenseMasters = (allContracts || []).filter((c: any) => {
+      const cat = String(c.contract_category || '').toLowerCase();
+      const hasConds =
+        Array.isArray(c.financial_conditions) &&
+        c.financial_conditions.length > 0;
+      if (!hasConds) return false;
+      const isLicense =
+        cat === 'license' &&
         (c.record_type === 'standalone_contract' ||
           c.record_type === 'individual_contract' ||
-          c.record_type === 'license_condition') &&
-        Array.isArray(c.financial_conditions) &&
-        c.financial_conditions.length > 0
-    );
+          c.record_type === 'license_condition');
+      // Phase 26.10: 出版等利用許諾条件書 (publication_condition) の金銭条件も
+      //   利用許諾計算書の対象に含める (Phase 26.9 で印税率を cfc に保存済み)。
+      const isPublication =
+        cat === 'publication' && c.record_type === 'publication_condition';
+      return isLicense || isPublication;
+    });
 
     // マスター絞り込み: 検索ワードで契約タイトル / 取引先名 / 文書番号をフィルタ。
     // royaltyContractSearch は component 最上位の useState から参照。
@@ -2837,23 +2845,26 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             {/* ① 契約マスタ (マスター検索) */}
             <div className="space-y-1.5">
               <Label className="text-[11px] font-mono">
-                ① ライセンス契約を選ぶ <span className="text-red-600">*</span>
+                ① ライセンス／出版の契約・条件を選ぶ <span className="text-red-600">*</span>
               </Label>
               {/* Phase 23: UnifiedContractPicker に統合。
                   license カテゴリの 個別契約 / 単独契約 / license_condition を
-                  検収書と同じ操作感で検索・選択できる。 */}
+                  検収書と同じ操作感で検索・選択できる。
+                  Phase 26.10: publication カテゴリの出版等利用許諾条件書
+                  (publication_condition) も選択可能にし、出版印税の利用許諾計算書を発行。 */}
               <UnifiedContractPicker
                 acceptableRecordTypes={[
                   "individual_contract",
                   "standalone_contract",
+                  "publication_condition",
                 ]}
-                categoryFilter={["license"]}
+                categoryFilter={["license", "publication"]}
                 currentContractId={selectedContractId || undefined}
                 hasParent={selectedContractId > 0}
                 label={
                   selectedContractId > 0
-                    ? "ライセンス契約を切り替える"
-                    : "ライセンス契約を選ぶ"
+                    ? "契約・条件を切り替える"
+                    : "ライセンス契約／出版条件を選ぶ"
                 }
                 onPick={(detail) => {
                   // Phase 23.0.4: detail を pickedDetail state に保存。
@@ -2869,9 +2880,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               />
               {licenseMasters.length === 0 && (
                 <p className="text-[10px] font-mono text-amber-700">
-                  ⚠ 候補となる契約マスタがありません。
-                  ライセンス系の 単独契約 / 個別契約 を作成して、
-                  金銭条件 (条件 1〜3) を登録してください。
+                  ⚠ 候補となる契約・条件がありません。
+                  ライセンス系の 単独契約 / 個別契約、または出版等利用許諾条件書を作成して、
+                  金銭条件 (印税率など) を登録してください。
                 </p>
               )}
               {selectedContract && (
