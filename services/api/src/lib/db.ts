@@ -655,6 +655,84 @@ export async function initDb() {
   }
 }
 
+/**
+ * Phase 28.1: search-api 専用の取引先テーブル列バックフィル。
+ *
+ * search-api (services/api) は initDb() を呼ばない設計 (= worker の migration に
+ * 依存) だが、worker の再デプロイ/migration が共有 DB に届く前は
+ * upsertVendor の INSERT が 42703 (undefined_column) で 500 になる。
+ * worker のデプロイ完了タイミングに依存せず保存を成立させるため、
+ * vendors と子テーブルに必要な列/テーブルだけを冪等に保証する軽量 migration。
+ *
+ * - 呼び出し側 (vendorMasterService.upsertVendor) でメモ化して 1 回だけ実行。
+ * - 全て IF NOT EXISTS なので既存 DB では実質 no-op。
+ */
+export async function ensureVendorColumns(): Promise<void> {
+  const stmts = [
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS corporate_number VARCHAR(20);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS trade_name VARCHAR(255);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS pen_name VARCHAR(255);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS vendor_suffix VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS entity_type VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS withholding_enabled BOOLEAN DEFAULT FALSE;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS aliases TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS address TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS phone VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS email VARCHAR(255);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS payment_terms TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS main_business TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS transaction_category VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS capital_yen BIGINT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS employee_count INTEGER;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS subcontract_act_applicable BOOLEAN DEFAULT FALSE;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS rating VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS antisocial_check_result VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS master_updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS contact_department VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS contact_name VARCHAR(100);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS master_contract_ref TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS bank_info TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS bank_name TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS branch_name TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_type VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_number VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS account_holder_kana TEXT;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS is_invoice_issuer BOOLEAN DEFAULT FALSE;`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS invoice_registration_number VARCHAR(50);`,
+    `ALTER TABLE vendors ADD COLUMN IF NOT EXISTS vendor_rep TEXT;`,
+    // upsert は vendor_addresses / vendor_bank_accounts にも書き込むため、
+    //   テーブルが無い旧 DB でも 42P01 にならないよう最低限の DDL を保証する。
+    `CREATE TABLE IF NOT EXISTS vendor_addresses (
+      id SERIAL PRIMARY KEY,
+      vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+      address_label VARCHAR(100),
+      postal_code VARCHAR(20),
+      address TEXT NOT NULL,
+      is_primary BOOLEAN DEFAULT FALSE,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE TABLE IF NOT EXISTS vendor_bank_accounts (
+      id SERIAL PRIMARY KEY,
+      vendor_id INTEGER NOT NULL REFERENCES vendors(id) ON DELETE CASCADE,
+      bank_label VARCHAR(100),
+      bank_name TEXT,
+      branch_name TEXT,
+      account_type VARCHAR(50),
+      account_number VARCHAR(50),
+      account_holder_kana TEXT,
+      is_primary BOOLEAN DEFAULT FALSE,
+      sort_order INTEGER DEFAULT 0,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+  ];
+  for (const sql of stmts) {
+    await query(sql);
+  }
+}
+
 export async function getNextSequenceValue(kind: string, year: number): Promise<number> {
   const res = await query(
     `INSERT INTO document_sequences (kind, year, current_value)

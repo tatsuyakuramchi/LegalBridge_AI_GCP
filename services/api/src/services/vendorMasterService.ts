@@ -15,7 +15,23 @@
 
 import Papa from "papaparse";
 
-import { query, pool } from "../lib/db.ts";
+import { query, pool, ensureVendorColumns } from "../lib/db.ts";
+
+/**
+ * Phase 28.1: ensureVendorColumns を 1 プロセス 1 回だけ実行するためのメモ化 Promise。
+ *   search-api は initDb を呼ばないため、upsert が走る前に vendors 列を保証する。
+ *   失敗したら memo をクリアして次回再試行できるようにする。
+ */
+let vendorSchemaReady: Promise<void> | null = null;
+function ensureVendorSchema(): Promise<void> {
+  if (!vendorSchemaReady) {
+    vendorSchemaReady = ensureVendorColumns().catch((e) => {
+      vendorSchemaReady = null;
+      throw e;
+    });
+  }
+  return vendorSchemaReady;
+}
 
 /**
  * Phase 22.21.72: 任意の "client もしくは pool" の query 抽象。
@@ -518,6 +534,10 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
   //   - COMMIT で確定、エラー時 ROLLBACK で全巻戻し
   //   - finally で client.release() — 接続リーク防止
   //   - getVendor(code) は COMMIT 後の global pool 経由 (確定済データを返す)
+  // Phase 28.1: worker の migration が共有 DB に届く前でも保存を成立させるため、
+  //   upsert 実行前に vendors 列/子テーブルを冪等に保証する (プロセス内 1 回)。
+  await ensureVendorSchema();
+
   const subcontractApplicable = calculateSubcontractActApplicable(v);
   const client = await pool.connect();
   let vendorId = 0;
