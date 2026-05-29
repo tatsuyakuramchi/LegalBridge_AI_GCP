@@ -646,6 +646,7 @@
       "基本契約締結日": { "label": "基本契約 締結日", "group": "I. 基本情報", "placeholder": "例: 2026年4月1日", "helpText": "前文に表示" },
       "許諾者": { "label": "許諾者 名称 (氏名/法人名)", "group": "I. 基本情報", "required": true , "dbField": "vendor.vendor_name" },
       "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" , "dbField": "vendor.address" },
+      "許諾者種別": { "label": "許諾者 種別 (支払日: 法人=末日 / 個人=20日)", "group": "I. 基本情報", "type": "select", "options": ["法人", "個人"], "helpText": "支払時期の支払日 (個人=20日 / 法人=末日) を固定文言に反映します" },
 
       "許諾開始日": { "label": "許諾開始日", "group": "II. 許諾期間", "type": "date" },
       "許諾終了日": { "label": "許諾終了日", "group": "II. 許諾期間", "type": "date" },
@@ -677,8 +678,6 @@
       "電子書籍印税率": { "label": "電子書籍 印税率 (%)", "group": "VI. 対価・支払条件" },
       "翻訳海外版計算式": { "label": "翻訳・海外版 計算式", "group": "VI. 対価・支払条件", "type": "textarea" },
       "翻訳海外版料率": { "label": "翻訳・海外版 料率 (%)", "group": "VI. 対価・支払条件" },
-      "精算時期": { "label": "精算時期", "group": "VI. 対価・支払条件", "placeholder": "例: 半期ごと" },
-      "支払期日": { "label": "支払期日", "group": "VI. 対価・支払条件", "placeholder": "例: 報告後翌月末" },
       "報告明細": { "label": "報告明細", "group": "VI. 対価・支払条件", "type": "textarea" },
       "消費税区分": { "label": "消費税区分", "group": "VI. 対価・支払条件", "placeholder": "例: 外税10%" },
       "源泉徴収有無": { "label": "源泉徴収", "group": "VI. 対価・支払条件", "type": "select", "options": ["あり", "なし"] },

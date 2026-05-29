@@ -154,7 +154,12 @@
     @media print {
       body { background-color: #fff; }
       .contract-document { box-shadow: none; margin: 0; width: 100%; max-width: none; padding: 0; }
-      .head-signature, .tobogaki { page-break-inside: avoid; }
+      /* Phase 26.7: 表全体の page-break-inside:avoid は、明細表が1ページ目に
+         収まらないとき表全体を2ページ目へ送り、1ページ目に大きな余白を生む。
+         署名欄のみ分割禁止とし、表は行単位 (tr) で分割可とすることで1ページ目を
+         詰めて余白を解消する。 */
+      .head-signature { page-break-inside: avoid; }
+      .tobogaki tr { page-break-inside: avoid; }
     }
   </style>
 </head>
@@ -300,10 +305,10 @@
         <td class="formula-cell">{{翻訳海外版計算式}}（例：被許諾者受取ライセンス収益 × {{翻訳海外版料率}}％）</td>
       </tr>
       <tr>
-        <td class="col-item">支払条件</td>
+        <td class="col-item">支払時期・方法</td>
         <td class="col-value">
-          精算時期：{{精算時期}}<br>
-          支払期日：{{支払期日}}<br>
+          紙書籍：都度払い（刊行日を含む月の翌々月{{#if (eq 許諾者種別 "法人")}}末日{{else}}20日{{/if}}払い）。{{#if (eq 電子書籍配信許諾有無 "許諾する")}}<br>
+          電子書籍：年1回・6月{{#if (eq 許諾者種別 "法人")}}末日{{else}}20日{{/if}}払い（算定期間：毎年4月1日から翌年3月末日まで、同日締め）。{{/if}}<br>
           報告明細：{{報告明細}}
         </td>
       </tr>
