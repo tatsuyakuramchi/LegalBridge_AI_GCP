@@ -248,6 +248,7 @@ erDiagram
 #### `work_rights`(作品権利要素) ― **最重要の抜け。自社作品の権利取得を記録**
 
 自社作品を構成する委託成果物(イラスト・シナリオ・デザイン・楽曲)を、**「誰から・どの契約で・どう権利取得したか(譲渡/許諾)」** で管理する。業務委託(契約)→ 権利取得 → IP保有 を結ぶ要。将来ロイヤリティが発生するか否か(`is_royalty_bearing`)もここで決まる。
+**権利留保パターン**(作成は委託するが権利は相手方に留保し、当社は利用許諾を受けて使う)もここで表現する: `rights_type='license'` + `rights_holder_vendor_id=制作者` + `is_royalty_bearing=TRUE` + `license_financial_term_id`(料率/MG)。当社は所有せず許諾で利用していることが IP 台帳上も明確になる。
 
 | 列 | 型 | 説明 |
 | :--- | :--- | :--- |
@@ -261,7 +262,8 @@ erDiagram
 | rights_type | VARCHAR(30) | **copyright_assignment(著作権譲渡) / license(利用許諾) / joint(共有)** |
 | moral_rights_waiver | BOOLEAN | 著作者人格権の不行使特約 |
 | scope | TEXT | 利用範囲(媒体・地域・期間) |
-| is_royalty_bearing | BOOLEAN | 二次利用で印税が発生するか(TRUE なら payments と連動) |
+| is_royalty_bearing | BOOLEAN | 二次利用で印税/利用許諾料が発生するか(TRUE なら payments と連動) |
+| license_financial_term_id | INTEGER FK→contract_financial_terms NULL | **権利留保→利用許諾**の場合の料率/MG条件(§3.3)。royalty_statements の計算根拠 |
 | secondary_use_flags | JSONB | 海外/グッズ化/映像化/ゲーム化 等の可否 |
 | remarks, created_at, updated_at | | |
 
@@ -297,7 +299,7 @@ erDiagram
 | master_contract_id | INTEGER FK→contracts NULL | `individual` のとき、ぶら下がる**基本契約**を参照(マスター+個別パターン) |
 | amends_contract_id | INTEGER FK→contracts NULL | **改定・覚書**のとき、改定対象の契約を参照(master/individual/standalone いずれにも付き得る。階層とは別軸) |
 | record_type | VARCHAR(50) | 現行値(master_contract/license_condition/publication_condition)は contract_level × contract_category から導出可。互換のため残置 |
-| contract_category | VARCHAR(30) | **license_in / license_out / service(業務委託) / publication / sales / nda** に再整理 |
+| contract_category | VARCHAR(30) | **license_in / license_out / service(業務委託) / publication / sales / nda / mixed(委託+許諾の複合)** に再整理 |
 | contract_type | VARCHAR(100) | service_basic / license_basic / individual_license_terms 等 |
 | contract_title | TEXT | |
 | primary_vendor_id | INTEGER FK→vendors | 主取引先 |
@@ -367,6 +369,8 @@ erDiagram
 **`individual` / `standalone` 契約にのみ付く**(master には付けない)。`capability_id` → `contract_id` に改名。業務委託契約の成果物明細(業務名, 単価, 数量, 納期, 支払サイクル)。検収書の自動補完元。
 **追加**: `work_id INTEGER FK→works NULL` / `product_id INTEGER FK→products NULL` を持たせ、**作品単位で委託明細を直接引ける**ようにする。これが「納品・検収(`delivery_events`)」→ `invoices` → `payments` の発火元になる。
 
+> **複合(mixed)契約**: 1つの契約(`category=mixed`)に `contract_line_items`(作成料=業務委託)と `contract_financial_terms`(利用許諾料=ロイヤリティ)の**双方をぶら下げてよい**。「創作委託 + 権利留保 + 利用許諾」(§4-⑤)はこの形で表現する。
+
 #### `contract_obligations`(契約義務) ― **新規(MECE: 非金銭義務の抜け解消)**
 
 金額ではない契約上の約束と期限を管理し、満期アラートと同じ仕組みで通知する。
@@ -390,7 +394,7 @@ erDiagram
 
 #### `royalty_statements`(利用許諾料計算書) ― 現 `royalty_calculations` を整理
 
-死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。MG/AG累積消化のロジック列(現行)はそのまま維持。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
+死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。**追加**: `work_right_id INTEGER FK→work_rights NULL` ― 権利留保→利用許諾の成果物(イラスト等)に対する利用許諾料を計算する場合、対象の権利要素を指す。MG/AG累積消化のロジック列(現行)はそのまま維持。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
 
 #### `orders`(発注) / `delivery_events`(検収) ― 業務委託フロー
 
@@ -586,6 +590,17 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先=vendor) ─ c
                           royalty_statements ─ invoices(発行) ─ payments(sublicense_income, inbound)
 ```
 
+### ⑤ 創作委託 + 権利留保 + 利用許諾(複合パターン)
+作成は委託するが権利は相手方に留保。当社は利用許諾を受けて使い、**作成料(業務委託報酬)** と **利用許諾料(ロイヤリティ)** を二重に支払う。
+```
+contracts(category=mixed: service + license_in)
+  ├─ contract_line_items ─ deliverables ─ delivery_events(検収) ─ invoices ─ payments(service_fee)   ← 作成料(一時)
+  └─ contract_financial_terms(料率/MG)
+        └ work_rights(rights_type=license / 権利者=制作者 / is_royalty_bearing=TRUE / license_financial_term_id)
+            └ products 製造・販売 ─ royalty_statements(work_right_id) ─ payments(royalty, outbound)    ← 利用許諾料(継続)
+```
+1契約に業務委託明細と利用許諾条件明細の双方がぶら下がり、権利は `work_rights` で「相手方留保・許諾利用」と記録される。
+
 ### ④ 全社・部門経費(作品に紐づかない業務委託)
 ```
 contracts(service, is_work_related=FALSE, department_code=経理部, expense_category=accounting_audit)
@@ -679,6 +694,7 @@ ORDER BY due;
 - **金銭以外の義務もアラート化**: 最低製造義務・クレジット表記・報告義務・商標更新を満期アラートと同じ仕組みで監視。
 - **契約書(実体/版/制作)の分離管理**: 「契約という実体」「その時々の書類(再発行・覚書・別紙)」「制作の元データ(テンプレート/フォーム)」を独立追跡し、正本(`is_primary`)を一意特定。生成エンジンは現行資産を維持したまま作品・契約へFK接続。
 - **成果物の納品・リテイク・権利取得の一気通貫**: イラスト等の成果物を `deliverables` + `deliverable_revisions` で版・受領ステータス込みで管理し、発注明細→納品→検収→権利取得(`work_rights`)→報酬支払(`payments`)を1本で追跡。
+- **創作委託+権利留保+利用許諾の複合に対応**: 作成は委託・権利は相手方留保・当社は許諾利用、という形態を1契約(mixed)で表現し、作成料(service_fee)と利用許諾料(royalty)の二重支払を成果物単位で正しく処理。
 
 ---
 
