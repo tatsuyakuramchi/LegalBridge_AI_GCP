@@ -293,6 +293,21 @@ erDiagram
 | agent_vendor_id | INTEGER FK→vendors NULL | 代理人(特許事務所) |
 | remarks, created_at, updated_at | | |
 
+#### 権利取得形態の表現マップ ― 業務委託で作った成果物の権利をどう持つか
+
+業務委託で制作した成果物の権利を **「当社が持つ(譲渡)」か「相手が持ち当社は許諾を受ける」か** で、表現する層が分かれる。決定軸は **権利の所在(社内 / 社外)**。
+
+| ケース | 権利の所在 | 表現する層 | 設定 | 支払 |
+| :--- | :--- | :--- | :--- | :--- |
+| **譲渡(当社保有)** | 社内 | `work_rights` | rights_type=`copyright_assignment` / 権利者=当社 / is_royalty_bearing=FALSE | 作成料(service_fee)のみ |
+| 共有 | 社内外 | `work_rights` | rights_type=`joint` | 作成料 +(取決めに応じ)許諾料 |
+| 許諾・一点もの | 社外(制作者) | `work_rights` | rights_type=`license` / 権利者=制作者 / `license_financial_term_id` | 作成料 + 利用許諾料(royalty) |
+| **許諾・継続/再利用IP** | 社外(制作者) | `source_ips` / `source_ip_materials` + `contract_financial_terms` | source 側に権利者・標準料率、条件明細に `source_ip_material_id` + 料率/MG | 作成料 + 利用許諾料(royalty) |
+
+- **譲渡(当社保有)**: 当社IPとして `works` / `products` 配下で保有。`source_ips` には入れない(社外保有ではないため)。将来他社へ出す場合は `license_out` 契約 + work/product で扱う。
+- **許諾(相手保持)**: 制作者保有のマテリアルを **外部原作(マンガ等)と同じく `source_ips` 系で一貫管理**するのが基本。`work_source_ips` で作品と接続し、利用許諾条件明細(`contract_financial_terms.source_ip_material_id`)→ `royalty_statements` → `payments(royalty)`。再利用しない一点ものは `source_ip` 登録を省き `work_rights(license)` で軽く完結してもよい。
+- いずれのケースも作成料は `payments(service_fee)`。許諾系のみ利用許諾料(`payments(royalty)`)が継続発生する。
+
 ### 3.3 契約層
 
 #### `contracts`(契約) ― 現 `contract_capabilities` を整理
