@@ -675,7 +675,8 @@ erDiagram
 | UNIQUE(template_id, version_no) | | |
 
 - **partials**: `kind='partial'` の行として同じテーブルに格納し、生成時に全 partial を Handlebars に register する(現 `registerPartials()` の DB 版)。
-- **Handlebars helper**(eq/ne/formatCurrency/formatDate/add/multiply 等)は**コードに残す**(DBではない)。Search が preview/viewer でレンダリングする場合は同じ helper セットが要る(D3: 意図的分岐だが helper だけは共有 or 複製)。
+- **Handlebars helper**(eq/ne/formatCurrency/formatDate/add/multiply 等)は**コードに残す**(DBではない)。Search の viewer は**データ流し込みのプレビュー/PDF生成(②)まで行う**ため、worker と同一の **レンダリング部品(Handlebars セットアップ + helper + PDF レンダラ)を共有ライブラリ化**する(service-arch D3 の例外)。
+- **Search viewer はエフェメラル**: プレビュー/DL 用にレンダリングするが **`documents` には書かない**(正式な書類生成・保管・Drive/Backlog 連携は worker のまま)。これにより D1(documents=worker所有)を保つ。
 - **生成書類との紐付け**: `documents` に **`template_version_id INTEGER FK→document_template_versions`** を追加し、**どの版で生成したか**を固定(忠実な再レンダリング・監査)。
 - **所有(D1)**: 書込=**Search admin**(A3)、読取=**worker(生成)/ Search(viewer DL・検索)**。
 - **移行(A2)**: `templates_config.json`(17定義)+ `templates/*.html`(18本)+ `partials/*` を version 1 として投入。`dbField`(auto.docNumber 等)の自動補完マッピングはそのまま保持。
