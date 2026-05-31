@@ -707,7 +707,7 @@ erDiagram
 | **base_document_number / revision / is_primary / superseded_by / lifecycle_status**(final/archived_draft/reissued) | **版管理(再発行チェーン)** ― 現行の優れた仕組みを維持 |
 | **contract_id INTEGER FK→contracts NULL** | 由来する契約(契約書・覚書・別紙の場合) |
 | **work_id INTEGER FK→works NULL** | 作品からの書類一覧引き |
-| **source_kind / source_id** | 由来業務(order / delivery_event / royalty_statement / payment / invoice)への参照 |
+| **delivery_event_id / royalty_statement_id / payment_id / invoice_id**(いずれも FK・NULL可) | 由来業務への**実FK**(R4: ポリモーフィックを廃し参照整合性を確保。該当する1つだけ非NULL) |
 
 ##### `external_assets`(外部原本) ― 現行を拡張
 
@@ -736,8 +736,8 @@ LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本
 | :--- | :--- | :--- |
 | id | SERIAL PK | |
 | alert_type | VARCHAR(40) | contract_renewal / inspection_deadline / obligation / ip_renewal / review_due / royalty_report |
-| source_table | VARCHAR(40) | 発生源テーブル(contracts / delivery_events / contract_obligations / ip_registrations / royalty_statements …) |
-| source_id | INTEGER | 発生源レコードID |
+| contract_id / delivery_event_id / contract_obligation_id / ip_registration_id / royalty_statement_id(いずれも FK・NULL可) | 発生源への**実FK**(R4: ポリモーフィックを廃し、主要関連は実FKで持つ。`alert_type` に応じ該当1つが非NULL) |
+| source_label | TEXT | 表示用の補助ラベルのみ(整合性は上の実FKが担保) |
 | work_id | INTEGER FK→works NULL | 作品軸(あれば) |
 | due_date | DATE | 期限(各表の期日列から同期) |
 | lead_days | INTEGER | 何日前に通知するか |
@@ -963,13 +963,23 @@ ORDER BY due;
 3. **切替**: 参照を新テーブル/新FKへ移し、文字列キーは fallback として暫定維持。
 4. **撤去**: 死んだ `license_contract_id` 系・`ledger_code` 文字列・`additional_parties JSONB`・`sublicensees` を物理削除(phase23 と同じ `--drop`)。
 
-### コールドスタート(移行できないデータ)
+### 併存期の読取優先ルール(R5)
+
+worker 書込先差し替え(service-arch §10 Phase3 / C5)は**ドメイン単位で段階適用**するため、旧モデル(`royalty_calculations` 等)と新モデル(`royalty_statements`/`payments`)が**一時併存**する。読取は以下で一意化する:
+
+- **ドメインごとに `cutover` フラグ**(例: `app_settings` に `royalty_cutover=true`)を持ち、`true` 以降は**新テーブルが authoritative**、未cutoverは旧テーブル。
+- 二重書き期間(C5 ロールバック用)は**新を正・旧は影**とし、読取は新のみ参照。差異検知バッチで整合を監視。
+- cutover 完了後、旧テーブルは**読取専用 互換ビュー**に置換(§7.4)。
+
+### コールドスタート(移行できないデータ)― R6: 初期整備フェーズとして計画する
 
 以下は**現行に元データが無い**ためバックフィル不可。**空で開始し、運用で前方充填**する(= 抜けを埋める新機能として想定どおり)。
 
 - `work_materials`(譲渡/許諾区分・人格権)、`ip_registrations`(商標台帳)、`contract_obligations`(非金銭義務)
 - `deliverables` / `deliverable_revisions`(過去の納品履歴)、`signature_steps`(過去の署名リレー)
-- `expense_categories` 帰属、`contract_stage_history`(過去の進捗履歴)
+- `expense_categories` 帰属、`contract_stage_history`(過去の進捗履歴)、`vendors.related_party`(関連当事者)
+
+> **R6 注意: これらは「人手入力」コストを伴う**。移行計画に**初期整備フェーズ**(担当・期限・優先順位)を明示的に設ける。優先度は法務・会計リスクの高い順(例: `related_party` / `ip_registrations` 更新期限 / `work_materials` の権利未処理)。未入力行は機能上 `pending`/`unknown` として可視化し、段階的に潰す。
 
 ### 移行前に確定すべき判別ルール(初期整備)
 
