@@ -82,7 +82,7 @@
    - 外部から許諾を受ける **原作IPは別マスター(`source_ips`)に分離**し、作品とは `work_materials`(作品マテリアル+権利)経由で結ぶ。
 2. **権利の循環を閉じる**: 「取得(委託)→ 保有(IP)→ 活用(契約)→ 請求 → 支払/入金」の各フェーズに実体テーブルを置き、抜け・ダブりを排除する。
 3. **自由記述・文字列キー・JSONB疎結合を、実FK + 中間テーブルに正規化**する。
-4. **当事者は `vendors` に一元化**し、役割(委託先 / 権利者 / 再許諾先 / 著者 / 出版元)は `party_roles` で多重付与する(取引先と再許諾先の二重管理を解消)。
+4. **当事者は `vendors` に一元化**する(取引先と再許諾先の二重管理を解消)。役割の登場は `contract_parties`(契約ごとの当事者)から導出し、`party_roles` は役割固有のマスター属性がある場合のみ補助的に持つ。
 5. **支払を1つの統一台帳(`payments`)に集約**し、ロイヤリティ/業務委託/許諾料/入金を `payment_kind` + `direction` で区別する。
    - 帰属先は **「作品費(`work_id`)」XOR「全社・部門経費(`department_code` + `expense_category`)」** の2系統。会計士委託・システム保守・顧問料・賃料など**作品に紐づかない契約・支払**は後者で分類する(`work_id` は NULL)。
    - 「作品別の支払」+「全社経費(費目別)」を合算すれば総支払が漏れなく(MECE)集計できる。
@@ -140,13 +140,16 @@ erDiagram
     manufacturing_events ||--o{ royalty_statements : ""
     sales_events ||--o{ royalty_statements : ""
 
-    contracts ||--o{ orders : "発注(業務委託)"
+    contracts ||--o{ contract_line_items : "発注明細(level=individual)"
     contract_line_items ||--o{ deliverables : "成果物"
     deliverables ||--o{ deliverable_revisions : "版/リテイク"
     deliverables ||--o{ work_materials : "検収→権利取得"
     delivery_events ||--o{ deliverables : "検収"
-    orders ||--o{ delivery_events : "検収"
+    contracts ||--o{ delivery_events : "検収(contract_id直結)"
 
+    contracts ||--o{ alerts : "満期/義務/レビュー期限"
+    delivery_events ||--o{ alerts : "検収期限"
+    ip_registrations ||--o{ alerts : "商標更新期限"
     contracts ||--o{ invoices : "請求/受領"
     invoices ||--o{ payments : "請求→支払/入金"
     royalty_statements ||--|| payments : "1計算書=1支払"
@@ -226,14 +229,16 @@ erDiagram
 
 #### `vendors`(取引先) + `party_roles`(役割) ― **当事者を一元化(MECE: ダブり解消)**
 
-現 `sublicensees`(再許諾先)を `vendors` に統合する。同一企業が「委託先かつ再許諾先」になりうるため、別マスターは相互排他でない。役割は `party_roles` で多重付与する。
+現 `sublicensees`(再許諾先)を `vendors` に統合する。同一企業が「委託先かつ再許諾先」になりうるため、別マスターは相互排他でない。
+
+> **MECE整理: `party_roles` は「役割固有のマスター属性」専用に限定**する。「この取引先がどの役割で実際に契約に登場したか」は `contract_parties`(契約ごとの当事者)から導出できるため、**役割の有無を重複保持しない**。`party_roles` は再許諾先の既定地域/言語など**役割ごとの初期値(マスター属性)を持つ場合のみ**作成し、属性が不要なら本テーブルは作らず `contract_parties` だけで足りる。
 
 | `party_roles` 列 | 型 | 説明 |
 | :--- | :--- | :--- |
 | id | SERIAL PK | |
 | vendor_id | INTEGER FK→vendors | |
-| role | VARCHAR(30) | service_provider(委託先) / rights_holder(権利者) / sublicensee(再許諾先) / author(著者) / publisher(出版元) |
-| attributes | JSONB | 役割固有属性(再許諾先の default_region / default_language 等、旧 sublicensees の列) |
+| role | VARCHAR(30) | sublicensee(再許諾先) / author(著者) 等、**固有属性を持つ役割のみ** |
+| attributes | JSONB | 役割固有のマスター属性(再許諾先の default_region / default_language 等、旧 sublicensees の列) |
 | UNIQUE(vendor_id, role) | | |
 
 > `vendors` 本体の銀行口座・住所・連絡先・インボイス登録番号(現行 `vendor_addresses` / `vendor_bank_accounts` / `vendor_contacts`)はそのまま踏襲。
@@ -335,8 +340,8 @@ erDiagram
 | is_work_related | BOOLEAN | 作品に紐づくか。FALSE の場合は `contract_works` を持たず全社/部門経費として扱う |
 | department_code | VARCHAR(50) NULL | **作品に紐づかない契約の帰属部門**(例: 経理部)。会計士委託・保守等 |
 | expense_category | VARCHAR(40) FK→expense_categories NULL | **同・費目**(accounting_audit / system_maintenance 等) |
-| contract_status / effective_date / expiration_date / auto_renewal | | 現行踏襲 |
-| renewal_notice_months / alert_lead_months / last_renewal_alert_at / alert_slack_* | | 更新アラート(現行踏襲) |
+| effective_date / expiration_date / auto_renewal | | 現行踏襲。**`contract_status`(executed/confirmed/pending)は廃止し `lifecycle_stage` に一本化**(状態列の二重を解消) |
+| renewal_notice_months / alert_lead_months / alert_slack_* | | 更新通告の条件(現行踏襲)。アラートの発火・既読状態は汎用 `alerts`(§3.6)に集約 |
 | ringi_id | INTEGER FK→ringi_records NULL | **締結根拠の稟議**(現行は書類経由のみ) |
 | legalon_url / cloudsign_url / drive_url / source_system | | 現行踏襲 |
 | purpose_codes | TEXT[] | 現行踏襲(GIN) |
@@ -458,6 +463,8 @@ erDiagram
 
 > 当事者は `vendors` に一元化済みのため、再許諾先も `vendor_id` で参照する(旧 `sublicensee_id` は廃止)。3者以上契約を GIN ではなく実FK + 索引で検索可能。
 
+> **MECE: 金銭明細2種の使い分けルール** ― `contract_financial_terms`(利用許諾条件明細)= **料率/MG型(継続課金・成果連動)**、`contract_line_items`(業務委託明細)= **単価×数量型(確定額・都度払)**。同一契約に両方を持てる(mixed)が、1つの金銭事象はどちらか一方に帰属させ重複計上しない。
+
 #### `contract_financial_terms`(利用許諾条件明細 / 金銭条件) ― 現 `capability_financial_conditions` を踏襲・拡張
 
 **`individual` / `standalone` 契約にのみ付く**(master には付けない)。`capability_id` → `contract_id` に改名。地域・言語別に複数行(料率, MG, AG, 計算期間, 通貨, 計算式)。
@@ -479,7 +486,7 @@ erDiagram
 
 #### `contract_obligations`(契約義務) ― **新規(MECE: 非金銭義務の抜け解消)**
 
-金額ではない契約上の約束と期限を管理し、満期アラートと同じ仕組みで通知する。
+金額ではない契約上の約束と期限を管理し、期日は汎用 `alerts`(§3.6)で通知する。
 
 | 列 | 型 | 説明 |
 | :--- | :--- | :--- |
@@ -502,9 +509,22 @@ erDiagram
 
 死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。**追加**: `work_material_id INTEGER FK→work_materials NULL` ― 権利留保→利用許諾の成果物(イラスト等)に対する利用許諾料を計算する場合、対象の権利要素を指す。MG/AG累積消化のロジック列(現行)はそのまま維持。**MG/AG の累積消化は `contract_id` 単位でプール**し、契約配下の全作品・製品・原作マテリアルを横断して `period` 順に消化する(§3.3 決定)。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
 
-#### `orders`(発注) / `delivery_events`(検収) ― 業務委託フロー
+#### `delivery_events`(検収) ― 業務委託フロー
 
-業務委託の発注書を `orders`(現状は `documents` + `contract_capabilities(record_type=purchase_order)` に分散)として明示化し、`contract_id` / `work_id` に紐付け。`delivery_events`(検収)で確定した金額が次段の `invoices` の請求対象になる。
+> **MECE整理: `orders`(発注)テーブルは設けない**。発注は「個別サービス契約(`contracts.contract_level='individual'`)+ `contract_line_items`(発注明細)+ 発注書 `documents`」で表現され、独立した `orders` 表は3重表現になるため廃止。検収(`delivery_events`)は **`contract_id` に直結**する。
+
+`delivery_events`(検収)は現行を維持し、`contract_id` / `work_id` に紐付ける(現行 `backlog_issue_key` も補助キーとして温存)。検収で確定した金額が次段の `invoices` の請求対象になる。
+
+##### 業務委託の明細チェーン(MECE: 4層の排他的役割)
+
+| 層 | テーブル | 表すもの(排他) |
+| :--- | :--- | :--- |
+| 計画 | `contract_line_items` | 契約で合意した発注項目(何を頼んだか) |
+| 納品物 | `deliverables` / `deliverable_revisions` | 納品された成果物の実体・版・リテイク(何が届いたか) |
+| 検収 | `delivery_events` / `delivery_line_items` | 検収イベントと金額・数量・品質(いくら検収したか) |
+| 確定権利 | `work_materials` | 検収後に確定した権利(所有/許諾) |
+
+> 4層は重複させない。金額確定=`delivery_*`、ファイル/版=`deliverables`、権利=`work_materials` と役割を固定する。
 
 #### `deliverables`(成果物) / `deliverable_revisions`(版・リテイク) ― **新規(納品管理)**
 
@@ -645,7 +665,7 @@ LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本
 
 #### 業務テーブル ↔ 成果物の相互参照
 
-`orders` / `delivery_events` / `royalty_statements` / `payments` / `invoices` に `document_id INTEGER FK→documents NULL` を持たせ、各業務レコードと生成PDFを双方向に辿れるようにする。
+`delivery_events` / `royalty_statements` / `payments` / `invoices` に `document_id INTEGER FK→documents NULL` を持たせ、各業務レコードと生成PDFを双方向に辿れるようにする。
 
 #### 版・改定の二層管理
 
@@ -653,6 +673,25 @@ LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本
 - **契約の改定(覚書/amendment)**: `contracts.amends_contract_id`(§3.3)で新旧契約をチェーンし、覚書PDFは新しい `documents` 行 + `contract_id` で紐付け。
 
 > これにより「契約という実体」「その時々の書類(版)」「制作の元データ(テンプレート/フォーム)」が**それぞれ独立して追跡**でき、再発行・覚書・別紙が混在しても正本(`is_primary`)を一意に特定できる。
+
+### 3.6 横断: 汎用アラート(`alerts`) ― **MECE: 期限通知の一元化**
+
+満期・検収期限・契約義務・商標更新・レビュー期限・ロイヤリティ報告期限など、現状は各表に `last_alert_at` / 期日列が**散在**している。期日(source-of-truth)は各表に残しつつ、**アラートの発火・通知先・既読状態を1テーブルに集約**して DRY 化する。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| alert_type | VARCHAR(40) | contract_renewal / inspection_deadline / obligation / ip_renewal / review_due / royalty_report |
+| source_table | VARCHAR(40) | 発生源テーブル(contracts / delivery_events / contract_obligations / ip_registrations / royalty_statements …) |
+| source_id | INTEGER | 発生源レコードID |
+| work_id | INTEGER FK→works NULL | 作品軸(あれば) |
+| due_date | DATE | 期限(各表の期日列から同期) |
+| lead_days | INTEGER | 何日前に通知するか |
+| status | VARCHAR(20) | scheduled / notified / snoozed / done / dismissed |
+| last_alert_at / alert_count | | 通知の発火状態 |
+| channels / mentions | JSONB | 通知先(Slack 等) |
+
+> 各表の期日列(`expiration_date` / `inspection_deadline` / `next_renewal_date` / `review_due_date` / `reporting_deadline`)が真実の源で、`alerts` はそれらを集約した**通知ディスパッチ層**。既存の `delivery_events.last_alert_at` 等は移行期は温存し、段階的に `alerts` へ寄せる(現行アラート機能の回帰を防ぐ)。
 
 ---
 
@@ -668,7 +707,7 @@ LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本
  │     │  ← 原作マテリアル(source_ip_materials)に紐づく。MG/AGは契約単位でプール
  │     └─ 利用許諾料報告 (royalty_statements) ── invoices ── payments(royalty)
  └─ 業務委託明細 (contract_line_items: work_id)
-       └─ 納品・検収 (orders → delivery_events) ── invoices ── payments(service_fee)
+       └─ 納品・検収 (delivery_events: contract_id直結) ── invoices ── payments(service_fee)
 ```
 
 > 明細の**法的根拠は契約**(`contract_id`)に置きつつ、`work_id`/`product_id` で**作品から直接引ける**ため、「作品に明細が付き、そこに支払が実行される」イメージと完全に一致する。
@@ -747,7 +786,7 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | (なし) | `contract_stage_history` | 依頼〜締結のステージ遷移履歴。現行 Backlog ステータス / `issue_workflows` の履歴から初期投入可。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_materials`(旧 work_rights+work_source_ips を統合)/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`contract_stage_history`/`signature_requests`/`signature_steps`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_materials`(旧 work_rights+work_source_ips を統合)/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`contract_stage_history`/`signature_requests`/`signature_steps`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`/`alerts`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。なお `orders` テーブルは設けない(発注=個別契約+`contract_line_items`+発注書documents)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
