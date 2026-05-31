@@ -636,10 +636,49 @@ erDiagram
 
 | テーブル | 役割 | 刷新方針 |
 | :--- | :--- | :--- |
-| `templates_config.json` + `templates/`(HTML/Handlebars) | テンプレート定義・入力フィールド構成 | **ファイルベースを維持**(要件「HTML+JSON追加だけで新書類対応」を尊重)。ガバナンス強化が必要なら任意で `document_templates`(template_key / version / prefix / applicable_category / field_schema)へ登録制化。 |
-| `document_sequences`(kind, year, current_value) | 採番(PO/LIC/ILT/ROY/PAY 等) | 維持。新カテゴリ(invoice 等)の prefix を追加。 |
+| `templates_config.json` + `templates/`(HTML/Handlebars) | テンプレート定義・入力フィールド構成 | **DB化(決定)** → `document_templates` / `document_template_versions`(下記)。汎用性確保のため Search/worker 双方が DB から読む。 |
+| `document_sequences`(kind, year, current_value) | 採番(PO/LIC/ILT/ROY/PAY 等) | 維持(worker 所有・生成書類用)。Search 登録契約は別系統 `master_sequences`(service-arch §7.4)。 |
 | `workflow_settings`(allowed_templates, variable_mappings, status_configs, document_prefix) | テンプレート許可・変数マッピング・ステータス連動 | 維持。 |
 | `issue_workflows`(document_draft, generated_documents, approval_at, stamp_at) | 課題単位のドラフト・生成履歴・承認/押印 | 維持 + 補助FK `contract_id` / `work_id` を追加。 |
+
+##### `document_templates` / `document_template_versions`(テンプレDB化 ― A1)
+
+現行の3要素(① `templates/<key>.html` の Handlebars本体、② `templates_config.json[key]` の label/category/vars、③ `templates/partials/*.html`)を **DBに移設**。テンプレ編集はバージョン履歴つきで監査・ロールバック可能にする。
+
+`document_templates`(論理テンプレ = head)
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| template_key | VARCHAR(60) UNIQUE | 現行のキー兼ファイル名(purchase_order / license_master 等) |
+| kind | VARCHAR(20) | document(本体) / partial(共通部品 = 旧 templates/partials/*) |
+| label | TEXT | 表示名(現 config.label) |
+| category | VARCHAR(50) | 区分(現 config.category) |
+| comment | TEXT | 補足(現 config._comment) |
+| document_prefix | VARCHAR(20) | 採番prefix(PO/LIC… 情報用。実増分は worker `document_sequences`) |
+| engine | VARCHAR(20) DEFAULT 'handlebars' | レンダリングエンジン |
+| current_version_id | INTEGER FK→document_template_versions | 現行版へのポインタ |
+| is_active | BOOLEAN | |
+| created_at / updated_at | | |
+
+`document_template_versions`(不変の版履歴)
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| id | SERIAL PK | |
+| template_id | INTEGER FK→document_templates | |
+| version_no | INTEGER | 1,2,3… |
+| html_source | TEXT | Handlebars 本体(旧 templates/<key>.html) |
+| field_schema | JSONB | 入力フィールド定義(旧 vars)。**順序保持のため配列形式**: `[{name, label, group, type, required, readonly, hidden, options[], placeholder, helpText, dbField}, …]` |
+| comment | TEXT | 改版理由 |
+| created_at / created_by | | 監査(誰がいつ) |
+| UNIQUE(template_id, version_no) | | |
+
+- **partials**: `kind='partial'` の行として同じテーブルに格納し、生成時に全 partial を Handlebars に register する(現 `registerPartials()` の DB 版)。
+- **Handlebars helper**(eq/ne/formatCurrency/formatDate/add/multiply 等)は**コードに残す**(DBではない)。Search が preview/viewer でレンダリングする場合は同じ helper セットが要る(D3: 意図的分岐だが helper だけは共有 or 複製)。
+- **生成書類との紐付け**: `documents` に **`template_version_id INTEGER FK→document_template_versions`** を追加し、**どの版で生成したか**を固定(忠実な再レンダリング・監査)。
+- **所有(D1)**: 書込=**Search admin**(A3)、読取=**worker(生成)/ Search(viewer DL・検索)**。
+- **移行(A2)**: `templates_config.json`(17定義)+ `templates/*.html`(18本)+ `partials/*` を version 1 として投入。`dbField`(auto.docNumber 等)の自動補完マッピングはそのまま保持。
 
 #### 管理(版・保管)層
 
