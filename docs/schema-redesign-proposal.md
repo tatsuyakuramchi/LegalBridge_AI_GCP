@@ -186,7 +186,7 @@ erDiagram
 
 #### `source_ips`(原作IP) ― **新規。外部から許諾を受ける原作の独立マスター**
 
-現 `ledgers` が抱えていた「原作の権利者・帳票デフォルト・承認条件」はこちらへ移す。license-in ロイヤリティ契約は原則この `source_ips` を許諾対象として参照する。
+現 `ledgers` が抱えていた「原作の権利者・帳票デフォルト・承認条件」はこちらへ移す。license-in ロイヤリティ契約は原則この `source_ips` を許諾対象として参照する。第三者の既存原作(マンガ・小説等)だけでなく、**業務委託で制作させたが権利が相手方に残るマテリアル**も同じくここで管理する(= 社外に権利があり当社が許諾を受けて使うIP全般の器)。
 
 | 列 | 型 | 説明 |
 | :--- | :--- | :--- |
@@ -207,6 +207,9 @@ erDiagram
 #### `source_ip_materials`(原作素材) ― 現 `materials` を移設・拡張
 
 現 `materials` を `source_ips` 配下へ移設(`ledger_id`→`source_ip_id`)。`rights_holder TEXT`(自由記述)を **`rights_holder_vendor_id INTEGER FK→vendors`** に置換し権利者を正規化する(自由記述は `rights_holder_label` として併存可)。素材単位で権利者・許諾条件が異なるケースに対応。
+
+> **委託成果物(相手保持・許諾)の取込口でもある**: 業務委託で制作したが権利は相手方に残り当社は許諾を受けて使う素材は、**ここに1マテリアルとして追加**(`rights_holder_vendor_id=制作者` / `material_type=illustration` 等)し、`contract_financial_terms.source_ip_material_id` で条件明細を結ぶ。外部原作(マンガ等)と同一レールで管理できる。
+> 親 `source_ips` の置き方: **作品横断で再利用するIP**は独立した原作IPとして登録(例「制作者X キャラクターデザイン」)、**制作者の委託物をまとめたい**場合は制作者単位の原作IP(例「制作者X 委託アート」)に材料を足す。`source_ips` は「**社外に権利があり当社が許諾を受けて使うIP**」全般の器であり、第三者の既存原作に限定しない。
 
 #### `products`(製品 / SKU) ― **新規**
 
