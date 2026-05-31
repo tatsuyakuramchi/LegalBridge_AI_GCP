@@ -243,6 +243,20 @@ erDiagram
 
 > `vendors` 本体の銀行口座・住所・連絡先・インボイス登録番号(現行 `vendor_addresses` / `vendor_bank_accounts` / `vendor_contacts`)はそのまま踏襲。
 
+##### `vendors` 追加列 ― 関連当事者フラグ(コンプライアンス)
+
+既存のコンプライアンス系列(`antisocial_check_result` 反社チェック / `subcontract_act_applicable` 下請法)と同じ群に、**関連当事者(related party)** を追加する。役員関連会社・親子会社・近親者など、関連当事者取引の開示・牽制に用いる。
+
+| 列 | 型 | 説明 |
+| :--- | :--- | :--- |
+| `related_party` | BOOLEAN DEFAULT FALSE | **関連当事者フラグ**。TRUE の取引先との取引は開示・要審査の対象 |
+| `related_party_type` | VARCHAR(50) NULL | 関係区分: 親会社 / 子会社 / 関連会社 / 役員関連 / 役員兼任 / 近親者 等 |
+| `related_party_note` | TEXT NULL | 関係の具体(対象役員名・関係内容等) |
+
+- **フォーム**: 取引先登録フォーム(Search admin / service-arch §9.1)に「関連当事者」チェック + 区分プルダウン + 備考を追加。反社チェック等と同じ「コンプライアンス」グループに配置。
+- **CSV取込テンプレ**: `vendors` のインポートテンプレートにも 3 列を追加。
+- **活用**: `related_party=TRUE` の取引先が当事者(`contract_parties`)に含まれる契約・支払を抽出し、**関連当事者取引一覧**として開示・モニタリングできる。
+
 #### `expense_categories`(費目マスター) ― **新規。作品に紐づかない経費の分類軸**
 
 会計士委託・システム保守・法務顧問・賃料など、**作品費にならない全社/部門経費**を分類するための費目マスター(現 `contract_purposes` と同型の参照テーブル)。
