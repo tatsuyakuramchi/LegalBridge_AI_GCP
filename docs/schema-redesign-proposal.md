@@ -202,7 +202,9 @@ erDiagram
 
 #### `work_source_ips`(自社作品⇔原作IP 中間) ― **新規**
 
-| work_id FK→works | source_ip_id FK→source_ips | role(原作/題材/イラスト原案 等) | UNIQUE(work_id, source_ip_id) |
+| work_id FK→works | source_ip_id FK→source_ips | source_ip_material_id FK→source_ip_materials NULL | role(原作/題材/イラスト原案 等) | UNIQUE(work_id, source_ip_id, source_ip_material_id) |
+
+> `source_ip_material_id`(任意)を持たせ、**作品がどのマテリアルを使うかをマテリアル粒度で確定**できる。条件明細(`contract_financial_terms`)が未入力でも権利台帳(`v_work_rights_ledger`, §6)に漏れなく現れる。NULL は IP 丸ごと利用。
 
 #### `source_ip_materials`(原作素材) ― 現 `materials` を移設・拡張
 
@@ -274,6 +276,7 @@ erDiagram
 | moral_rights_waiver | BOOLEAN | 著作者人格権の不行使特約 |
 | scope | TEXT | 利用範囲(媒体・地域・期間) |
 | is_royalty_bearing | BOOLEAN | 二次利用で印税/利用許諾料が発生するか(TRUE なら payments と連動) |
+| rights_status | VARCHAR(20) | **権利のクリアランス状態**: cleared(処理済) / pending(未処理) / expired(失効) / disputed(係争)。許諾系は契約 `expiration_date` から失効を自動判定可 |
 | license_financial_term_id | INTEGER FK→contract_financial_terms NULL | **権利留保→利用許諾**の場合の料率/MG条件(§3.3)。royalty_statements の計算根拠 |
 | secondary_use_flags | JSONB | 海外/グッズ化/映像化/ゲーム化 等の可否 |
 | remarks, created_at, updated_at | | |
@@ -796,11 +799,36 @@ JOIN contract_works cw ON cw.work_id = w.id
 JOIN contracts c ON c.id = cw.contract_id
 WHERE w.id = $1;
 
--- 作品を構成する権利要素と取得形態(譲渡/許諾)・印税発生の有無
-SELECT wr.component_name, wr.rights_type, wr.is_royalty_bearing, v.vendor_name
+-- 作品の権利台帳: 全マテリアルの権利状態(譲渡/許諾/共有・権利者・印税・有効/失効)
+-- 2層(work_rights ＋ 原作マテリアル経由)を UNION したビュー
+CREATE OR REPLACE VIEW v_work_rights_ledger AS
+SELECT wr.work_id, wr.component_name AS material, wr.rights_type,
+       wr.rights_holder_vendor_id, wr.is_royalty_bearing,
+       wr.rights_status, wr.source_contract_id AS contract_id
 FROM work_rights wr
-JOIN vendors v ON v.id = wr.rights_holder_vendor_id
-WHERE wr.work_id = $1;
+UNION ALL
+SELECT cft.work_id, sim.material_name, 'license',
+       sim.rights_holder_vendor_id, TRUE,
+       CASE WHEN c.expiration_date < now() THEN 'expired' ELSE 'cleared' END,
+       cft.contract_id
+FROM contract_financial_terms cft
+JOIN source_ip_materials sim ON sim.id = cft.source_ip_material_id
+JOIN contracts c ON c.id = cft.contract_id
+WHERE cft.source_ip_material_id IS NOT NULL;
+
+-- 作品の全マテリアル権利状態 + 失効/未処理の検出(販売リスク)
+SELECT l.material, l.rights_type, l.rights_status, l.is_royalty_bearing, v.vendor_name
+FROM v_work_rights_ledger l
+LEFT JOIN vendors v ON v.id = l.rights_holder_vendor_id
+WHERE l.work_id = $1
+ORDER BY (l.rights_status <> 'cleared') DESC;  -- 未処理/失効/係争を上位に
+
+-- 作品にぶら下がる全契約(contract_works ∪ 条件明細/業務明細の work_id)
+SELECT DISTINCT c.id, c.contract_title, c.contract_category, c.lifecycle_stage, c.expiration_date
+FROM contracts c
+WHERE c.id IN (SELECT contract_id FROM contract_works         WHERE work_id = $1)
+   OR c.id IN (SELECT contract_id FROM contract_financial_terms WHERE work_id = $1)
+   OR c.id IN (SELECT contract_id FROM contract_line_items      WHERE work_id = $1);
 
 -- 直近で更新期限が来る商標・契約義務(アラート対象)
 SELECT '商標' AS kind, registration_no AS ref, next_renewal_date AS due FROM ip_registrations WHERE next_renewal_date <= now() + interval '90 days'
@@ -825,6 +853,7 @@ ORDER BY due;
 - **創作委託+権利留保+利用許諾の複合に対応**: 作成は委託・権利は相手方留保・当社は許諾利用、という形態を1契約(mixed)で表現し、作成料(service_fee)と利用許諾料(royalty)の二重支払を成果物単位で正しく処理。
 - **締結までの進捗を契約ネイティブで可視化**: 依頼→ドラフト→社内/相手方レビュー→稟議→署名→締結を `lifecycle_stage` + `contract_stage_history` で管理し、担当者・期限アラート・ステージ滞留時間(リードタイム)を Backlog 非依存で集計。
 - **電子契約の署名リレーを可視化**: 稟議承認→CloudSign送信→宛先順の回付を `signature_requests` + `signature_steps` で管理し、**「現在のリレー相手(どこで止まっているか)」**を Webhook 連動でリアルタイム表示。完了で自動的に締結(executed)へ。
+- **作品の権利状態を1ビューで把握**: `v_work_rights_ledger`(`work_rights` ＋ 原作マテリアル経由を UNION)で、作品が使う全マテリアルの「譲渡/許諾/共有・権利者・印税有無・有効/失効/未処理」を一覧。**失効・未処理の権利を持つ作品(=販売リスク)**を検出でき、紐づく全契約も `contract_works` 経由で辿れる。
 
 ---
 
