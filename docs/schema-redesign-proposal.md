@@ -109,6 +109,7 @@ erDiagram
     source_ips ||--o{ work_source_ips : "M:N(自社作品⇔原作IP)"
     source_ips ||--o{ source_ip_materials : "原作素材"
     source_ips ||--o{ contract_works : "許諾対象(任意)"
+    source_ip_materials ||--o{ contract_financial_terms : "許諾マテリアル別 条件明細"
 
     vendors ||--o{ party_roles : "役割(委託先/権利者/再許諾先/著者)"
     vendors ||--o{ source_ips : "原作権利者"
@@ -440,6 +441,11 @@ erDiagram
 
 **`individual` / `standalone` 契約にのみ付く**(master には付けない)。`capability_id` → `contract_id` に改名。地域・言語別に複数行(料率, MG, AG, 計算期間, 通貨, 計算式)。
 **追加**: `work_id INTEGER FK→works NULL` / `product_id INTEGER FK→products NULL` を持たせ、基本契約が複数作品をカバーする場合でも**作品(製品)単位で許諾条件明細を直接引ける**ようにする(法的根拠の `contract_id` は必須で残す)。これが「利用許諾料報告(`royalty_statements`)」→ `payments` の発火元になる。
+**追加(原作連動)**: `source_ip_id INTEGER FK→source_ips NULL` / `source_ip_material_id INTEGER FK→source_ip_materials NULL` を持たせ、**「どの原作マテリアルの許諾か」を条件明細に紐づける**。これにより「原作(`source_ips` / `source_ip_materials`)= 許諾可能マテリアル・権利者・標準料率を制御」「作品(`works`)= その原作に紐づく利用許諾条件明細が並ぶ(`WHERE work_id`)」という管理が成立する。`source_ip_material_id` は任意(NULL = IP丸ごとの許諾でマテリアル単位でない場合)。
+
+> **原作=デフォルト / 契約=確定**: `source_ip_materials` 側はマスター(許諾可能なマテリアル・権利者・標準料率の参照値)、`contract_financial_terms` 側は契約で確定した拘束力ある実条件、と役割を分ける(現行 `ledgers.default_*` → 契約と同思想)。
+>
+> **【要決定】MG/AG の消化プール単位**: 最低保証(MG)・前払(AG)の消化を **(a) 原作マテリアル単位 / (b) 契約単位 / (c) 作品・製品単位** のいずれで集約するかにより `royalty_statements` の集計キーが変わる。運用に合わせて確定する。
 
 #### `contract_line_items`(業務委託明細) ― 現 `capability_line_items` を踏襲・拡張
 
