@@ -60,7 +60,7 @@
 
 | 区分 | 指摘 | 反映先 |
 | :--- | :--- | :--- |
-| 抜け(知財) | **自社作品の権利取得**(委託成果物の譲渡/許諾区分)を持つ場所が無い | `work_rights`(§3.2) |
+| 抜け(知財) | **自社作品の権利取得**(委託成果物の譲渡/許諾区分)を持つ場所が無い | `work_materials`(§3.2) |
 | 抜け(知財) | 商標・意匠等の**産業財産権と更新期限**が未カバー | `ip_registrations`(§3.2) |
 | 抜け(契約) | マスター↔個別の階層、改定・覚書チェーン、契約↔書類↔稟議の実FK | `contracts.master_contract_id` / `amends_contract_id` / `documents.contract_id`(§3.3) |
 | 抜け(契約) | **金銭以外の契約義務**(最低製造義務・クレジット表記・報告義務・監査権) | `contract_obligations`(§3.3) |
@@ -79,7 +79,7 @@
 
 1. **作品(`works`)を単一のハブ**にする。知財・契約・製品・支払はすべて作品にFKで紐づく。
    - `works` は **自社が開発・出版する自社作品のみ** を対象とする。
-   - 外部から許諾を受ける **原作IPは別マスター(`source_ips`)に分離**し、作品とは M:N(`work_source_ips`)で結ぶ。
+   - 外部から許諾を受ける **原作IPは別マスター(`source_ips`)に分離**し、作品とは `work_materials`(作品マテリアル+権利)経由で結ぶ。
 2. **権利の循環を閉じる**: 「取得(委託)→ 保有(IP)→ 活用(契約)→ 請求 → 支払/入金」の各フェーズに実体テーブルを置き、抜け・ダブりを排除する。
 3. **自由記述・文字列キー・JSONB疎結合を、実FK + 中間テーブルに正規化**する。
 4. **当事者は `vendors` に一元化**し、役割(委託先 / 権利者 / 再許諾先 / 著者 / 出版元)は `party_roles` で多重付与する(取引先と再許諾先の二重管理を解消)。
@@ -105,18 +105,17 @@ erDiagram
     signature_requests ||--o{ signature_steps : "署名リレー(宛先順)"
     vendors ||--o{ signature_steps : "相手方署名者"
     works ||--o{ products : "製品/SKU"
-    works ||--o{ work_source_ips : ""
-    source_ips ||--o{ work_source_ips : "M:N(自社作品⇔原作IP)"
-    source_ips ||--o{ source_ip_materials : "原作素材"
+    source_ips ||--o{ source_ip_materials : "原作素材(カタログ)"
     source_ips ||--o{ contract_works : "許諾対象(任意)"
     source_ip_materials ||--o{ contract_financial_terms : "許諾マテリアル別 条件明細"
 
     vendors ||--o{ party_roles : "役割(委託先/権利者/再許諾先/著者)"
     vendors ||--o{ source_ips : "原作権利者"
 
-    works ||--o{ work_rights : "権利取得"
-    contracts ||--o{ work_rights : "取得元契約"
-    vendors ||--o{ work_rights : "権利者"
+    works ||--o{ work_materials : "作品マテリアル+権利(権利台帳)"
+    source_ip_materials ||--o{ work_materials : "許諾マテリアル参照"
+    contracts ||--o{ work_materials : "取得/許諾契約"
+    vendors ||--o{ work_materials : "権利者"
     works ||--o{ ip_registrations : "商標/意匠"
 
     works ||--o{ contract_works : ""
@@ -144,7 +143,7 @@ erDiagram
     contracts ||--o{ orders : "発注(業務委託)"
     contract_line_items ||--o{ deliverables : "成果物"
     deliverables ||--o{ deliverable_revisions : "版/リテイク"
-    deliverables ||--o{ work_rights : "検収→権利取得"
+    deliverables ||--o{ work_materials : "検収→権利取得"
     delivery_events ||--o{ deliverables : "検収"
     orders ||--o{ delivery_events : "検収"
 
@@ -173,7 +172,7 @@ erDiagram
 | status | VARCHAR(20) | planning / in_production / released / suspended / discontinued |
 | publisher_vendor_id | INTEGER FK→vendors | 出版元(自社外の場合) |
 | origin_ringi_id | INTEGER FK→ringi_records NULL | **起案稟議(作品稟議)**。作品の「生まれ」を1本参照。識別子は一体化しない |
-| is_original | BOOLEAN | 完全自社オリジナル(原作なし)か。FALSE の場合 `work_source_ips` に1件以上を期待 |
+| is_original | BOOLEAN | 完全自社オリジナル(原作なし)か。FALSE の場合 `work_materials` に許諾(source_ip 参照)行を1件以上期待 |
 | remarks, is_active, created_at, updated_at | | |
 
 > **稟議との関係(独立 + FK)**: 稟議は「決定イベント」、作品は「長寿命マスター」で別物。1作品は生涯で複数の稟議(企画/増刷/海外展開/続編)を経て、1稟議が複数作品を一括決裁することもある(N:N)。よって**稟議番号を作品キーにせず**、`origin_ringi_id`(起案1本)と下記 `ringi_works`(生涯のN:N)で結ぶ。作品稟議は `ringi_records.category='work'` で判別する。
@@ -200,11 +199,7 @@ erDiagram
 | default_approval_target / default_approval_timing | TEXT | 承認条件デフォルト(現 ledgers 踏襲) |
 | remarks, is_active, created_at, updated_at | | |
 
-#### `work_source_ips`(自社作品⇔原作IP 中間) ― **新規**
-
-| work_id FK→works | source_ip_id FK→source_ips | source_ip_material_id FK→source_ip_materials NULL | role(原作/題材/イラスト原案 等) | UNIQUE(work_id, source_ip_id, source_ip_material_id) |
-
-> `source_ip_material_id`(任意)を持たせ、**作品がどのマテリアルを使うかをマテリアル粒度で確定**できる。条件明細(`contract_financial_terms`)が未入力でも権利台帳(`v_work_rights_ledger`, §6)に漏れなく現れる。NULL は IP 丸ごと利用。
+> **作品↔原作IPの紐付けは `work_materials`(§3.2)に統合**(旧 `work_source_ips` は廃止)。許諾マテリアルは `work_materials.source_ip_id` / `source_ip_material_id` で作品と接続し、作品↔IPは `SELECT DISTINCT source_ip_id FROM work_materials WHERE work_id=…` で導出する。
 
 #### `source_ip_materials`(原作素材) ― 現 `materials` を移設・拡張
 
@@ -258,28 +253,33 @@ erDiagram
 
 ### 3.2 知的財産権層 ― **新規(MECE: 知財の抜け解消)**
 
-#### `work_rights`(作品権利要素) ― **最重要の抜け。自社作品の権利取得を記録**
+#### `work_materials`(作品マテリアル + 権利) ― **作品の権利を1テーブルに集約(旧 work_rights + work_source_ips を統合)**
 
-自社作品を構成する委託成果物(イラスト・シナリオ・デザイン・楽曲)を、**「誰から・どの契約で・どう権利取得したか(譲渡/許諾)」** で管理する。業務委託(契約)→ 権利取得 → IP保有 を結ぶ要。将来ロイヤリティが発生するか否か(`is_royalty_bearing`)もここで決まる。
-**権利留保パターン**(作成は委託するが権利は相手方に留保し、当社は利用許諾を受けて使う)もここで表現する: `rights_type='license'` + `rights_holder_vendor_id=制作者` + `is_royalty_bearing=TRUE` + `license_financial_term_id`(料率/MG)。当社は所有せず許諾で利用していることが IP 台帳上も明確になる。
+**作品が使う全マテリアルと、その権利状態を1テーブルで持つ**(=作品の権利台帳)。所有(譲渡)・共有・許諾を `rights_type` で区別し、許諾の場合は外部マスター `source_ips`/`source_ip_materials` を参照する。これにより「所有 vs 許諾で2テーブルに分割」を避け、**作品の権利は常にこのテーブル1本で分かる**(§6 のビューも UNION 不要)。`source_ip_id` を持つため旧 `work_source_ips`(作品↔原作IP)も本テーブルに吸収される。
+
+> **設計原則(割る軸)**: 「所有/許諾」で割らない。「**マスター(再利用可能な社外IPカタログ = `source_ips`/`source_ip_materials`)** vs **作品ごとの利用+権利(`work_materials`)**」で割る。許諾マテリアルはカタログを参照し、作品ごとの権利状態は本テーブルが正(マスターは既定値)。
 
 | 列 | 型 | 説明 |
 | :--- | :--- | :--- |
 | id | SERIAL PK | |
 | work_id | INTEGER FK→works | 対象の自社作品 |
-| component_name | TEXT | 権利要素(キービジュアル / コマイラスト / シナリオ / BGM 等) |
-| component_type | VARCHAR(50) | illustration / scenario / design / music / text |
-| rights_holder_vendor_id | INTEGER FK→vendors | 権利者(=委託先クリエイター) |
-| source_contract_id | INTEGER FK→contracts | 権利を取得した業務委託契約 |
+| material_name | TEXT | マテリアル名(キービジュアル / コマイラスト / シナリオ / BGM 等)。インライン(自社オリジナル)時の表示名 |
+| material_type | VARCHAR(50) | illustration / scenario / design / music / text |
+| rights_type | VARCHAR(30) | **owned(自社オリジナル・原始取得) / copyright_assignment(譲渡取得) / license(利用許諾) / joint(共有)** |
+| rights_holder_vendor_id | INTEGER FK→vendors NULL | 権利者(NULL=自社 / 譲渡時は当社 / 許諾時は制作者) |
+| rights_status | VARCHAR(20) | **クリアランス状態**: cleared(処理済) / pending(未処理) / expired(失効) / disputed(係争)。許諾系は契約 `expiration_date` から失効を自動判定可 |
+| is_royalty_bearing | BOOLEAN | 二次利用で印税/利用許諾料が発生するか(TRUE なら payments と連動) |
+| source_ip_id | INTEGER FK→source_ips NULL | 許諾の場合の原作IP(IP丸ごと利用 / 旧 work_source_ips を吸収) |
+| source_ip_material_id | INTEGER FK→source_ip_materials NULL | 許諾の場合の原作マテリアル(マテリアル粒度) |
+| source_contract_id | INTEGER FK→contracts NULL | 権利を取得/許諾した契約 |
+| license_financial_term_id | INTEGER FK→contract_financial_terms NULL | 許諾の場合の料率/MG条件(§3.3)。royalty_statements の計算根拠 |
 | source_deliverable_id | INTEGER FK→deliverables NULL | 権利の元となった納品成果物(§3.4) |
-| rights_type | VARCHAR(30) | **copyright_assignment(著作権譲渡) / license(利用許諾) / joint(共有)** |
 | moral_rights_waiver | BOOLEAN | 著作者人格権の不行使特約 |
 | scope | TEXT | 利用範囲(媒体・地域・期間) |
-| is_royalty_bearing | BOOLEAN | 二次利用で印税/利用許諾料が発生するか(TRUE なら payments と連動) |
-| rights_status | VARCHAR(20) | **権利のクリアランス状態**: cleared(処理済) / pending(未処理) / expired(失効) / disputed(係争)。許諾系は契約 `expiration_date` から失効を自動判定可 |
-| license_financial_term_id | INTEGER FK→contract_financial_terms NULL | **権利留保→利用許諾**の場合の料率/MG条件(§3.3)。royalty_statements の計算根拠 |
 | secondary_use_flags | JSONB | 海外/グッズ化/映像化/ゲーム化 等の可否 |
 | remarks, created_at, updated_at | | |
+
+> 作品↔原作IPの関係は `SELECT DISTINCT source_ip_id FROM work_materials WHERE work_id=…` で導出(旧 `work_source_ips` テーブルは不要)。
 
 #### `ip_registrations`(産業財産権) ― **商標・意匠の登録と更新期限**
 
@@ -305,13 +305,13 @@ erDiagram
 
 | ケース | 権利の所在 | 表現する層 | 設定 | 支払 |
 | :--- | :--- | :--- | :--- | :--- |
-| **譲渡(当社保有)** | 社内 | `work_rights` | rights_type=`copyright_assignment` / 権利者=当社 / is_royalty_bearing=FALSE | 作成料(service_fee)のみ |
-| 共有 | 社内外 | `work_rights` | rights_type=`joint` | 作成料 +(取決めに応じ)許諾料 |
-| 許諾・一点もの | 社外(制作者) | `work_rights` | rights_type=`license` / 権利者=制作者 / `license_financial_term_id` | 作成料 + 利用許諾料(royalty) |
+| **譲渡(当社保有)** | 社内 | `work_materials` | rights_type=`copyright_assignment` / 権利者=当社 / is_royalty_bearing=FALSE | 作成料(service_fee)のみ |
+| 共有 | 社内外 | `work_materials` | rights_type=`joint` | 作成料 +(取決めに応じ)許諾料 |
+| 許諾・一点もの | 社外(制作者) | `work_materials` | rights_type=`license` / 権利者=制作者 / `license_financial_term_id` | 作成料 + 利用許諾料(royalty) |
 | **許諾・継続/再利用IP** | 社外(制作者) | `source_ips` / `source_ip_materials` + `contract_financial_terms` | source 側に権利者・標準料率、条件明細に `source_ip_material_id` + 料率/MG | 作成料 + 利用許諾料(royalty) |
 
 - **譲渡(当社保有)**: 当社IPとして `works` / `products` 配下で保有。`source_ips` には入れない(社外保有ではないため)。将来他社へ出す場合は `license_out` 契約 + work/product で扱う。
-- **許諾(相手保持)**: 制作者保有のマテリアルを **外部原作(マンガ等)と同じく `source_ips` 系で一貫管理**するのが基本。`work_source_ips` で作品と接続し、利用許諾条件明細(`contract_financial_terms.source_ip_material_id`)→ `royalty_statements` → `payments(royalty)`。再利用しない一点ものは `source_ip` 登録を省き `work_rights(license)` で軽く完結してもよい。
+- **許諾(相手保持)**: 制作者保有のマテリアルを **外部原作(マンガ等)と同じく `source_ips` 系で一貫管理**するのが基本。`work_materials`(rights_type=license, `source_ip_material_id` 参照)で作品と接続し、利用許諾条件明細(`contract_financial_terms.source_ip_material_id`)→ `royalty_statements` → `payments(royalty)`。再利用しない一点ものは `source_ip` 登録を省き `work_materials(license)` 単独で軽く完結してもよい。
 - いずれのケースも作成料は `payments(service_fee)`。許諾系のみ利用許諾料(`payments(royalty)`)が継続発生する。
 
 ### 3.3 契約層
@@ -500,7 +500,7 @@ erDiagram
 
 #### `royalty_statements`(利用許諾料計算書) ― 現 `royalty_calculations` を整理
 
-死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。**追加**: `work_right_id INTEGER FK→work_rights NULL` ― 権利留保→利用許諾の成果物(イラスト等)に対する利用許諾料を計算する場合、対象の権利要素を指す。MG/AG累積消化のロジック列(現行)はそのまま維持。**MG/AG の累積消化は `contract_id` 単位でプール**し、契約配下の全作品・製品・原作マテリアルを横断して `period` 順に消化する(§3.3 決定)。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
+死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。**追加**: `work_material_id INTEGER FK→work_materials NULL` ― 権利留保→利用許諾の成果物(イラスト等)に対する利用許諾料を計算する場合、対象の権利要素を指す。MG/AG累積消化のロジック列(現行)はそのまま維持。**MG/AG の累積消化は `contract_id` 単位でプール**し、契約配下の全作品・製品・原作マテリアルを横断して `period` 順に消化する(§3.3 決定)。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
 
 #### `orders`(発注) / `delivery_events`(検収) ― 業務委託フロー
 
@@ -545,7 +545,7 @@ erDiagram
 | reviewer_slack_id | VARCHAR(50) | 確認者 |
 | UNIQUE(deliverable_id, revision_no) | | |
 
-> **連携**: `delivery_line_items` に `deliverable_id INTEGER FK→deliverables NULL` を追加し検収明細と成果物を結ぶ。検収(`status=accepted`)した成果物は `work_rights.source_deliverable_id` 経由で権利取得レコードに繋がり、報酬は `invoices → payments(service_fee)` で支払う。実ファイルは `external_assets`(asset_type=design 等)/ Google Drive に格納し、DAM 的な重い管理(サムネイル等)は専用ツールに委ねる。
+> **連携**: `delivery_line_items` に `deliverable_id INTEGER FK→deliverables NULL` を追加し検収明細と成果物を結ぶ。検収(`status=accepted`)した成果物は `work_materials.source_deliverable_id` 経由で権利取得レコードに繋がり、報酬は `invoices → payments(service_fee)` で支払う。実ファイルは `external_assets`(asset_type=design 等)/ Google Drive に格納し、DAM 的な重い管理(サムネイル等)は専用ツールに委ねる。
 
 #### `invoices`(請求 / 受領) ― **新規(MECE: 請求フェーズの抜け解消)**
 
@@ -679,7 +679,7 @@ works ─ contracts(service) ─ contract_line_items(発注明細)
                                    │
                           deliverables(成果物) ─ deliverable_revisions(ラフ→リテイク→決定稿)
                                    │
-                          delivery_events(検収) ─┬─ work_rights(権利取得: 譲渡/許諾)
+                          delivery_events(検収) ─┬─ work_materials(権利取得: 譲渡/許諾)
                                                   └─ invoices(請求受領) ─ payments(service_fee, outbound)
 ```
 
@@ -703,10 +703,10 @@ works ─ contracts(license_out) ─ contract_parties(再許諾先=vendor) ─ c
 contracts(category=mixed: service + license_in)
   ├─ contract_line_items ─ deliverables ─ delivery_events(検収) ─ invoices ─ payments(service_fee)   ← 作成料(一時)
   └─ contract_financial_terms(料率/MG)
-        └ work_rights(rights_type=license / 権利者=制作者 / is_royalty_bearing=TRUE / license_financial_term_id)
-            └ products 製造・販売 ─ royalty_statements(work_right_id) ─ payments(royalty, outbound)    ← 利用許諾料(継続)
+        └ work_materials(rights_type=license / 権利者=制作者 / is_royalty_bearing=TRUE / license_financial_term_id)
+            └ products 製造・販売 ─ royalty_statements(work_material_id) ─ payments(royalty, outbound)    ← 利用許諾料(継続)
 ```
-1契約に業務委託明細と利用許諾条件明細の双方がぶら下がり、権利は `work_rights` で「相手方留保・許諾利用」と記録される。
+1契約に業務委託明細と利用許諾条件明細の双方がぶら下がり、権利は `work_materials` で「相手方留保・許諾利用」と記録される。
 
 ### ④ 全社・部門経費(作品に紐づかない業務委託)
 ```
@@ -727,7 +727,7 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | `ledgers`(外部原作相当の行) | `source_ips` | 外部原作の行を分離移行。`creator_name`→`rights_holder_vendor_id`、default_* 群を移設。 |
 | `materials` | `source_ip_materials` | `ledger_id`→`source_ip_id`、`rights_holder`→`rights_holder_vendor_id`(名寄せ)。 |
 | (なし) | `products` | `manufacturing_events` の product_name/edition から逆生成して初期投入。 |
-| (なし) | `work_rights` | 既存の業務委託契約・素材情報から権利区分を初期登録(要・運用入力)。 |
+| (なし) | `work_materials` | 既存の業務委託契約・素材情報から権利区分を初期登録(要・運用入力)。 |
 | (なし) | `ip_registrations` | 商標台帳(Excel等)から初期投入。 |
 | `sublicensees` | `vendors` + `party_roles(role=sublicensee)` | 再許諾先を取引先に名寄せ統合。固有属性は `party_roles.attributes` へ。 |
 | `contract_capabilities` | `contracts` + `contract_works` + `contract_parties` | 作品関連列を `contract_works` へ、`additional_parties` を `contract_parties` へ展開。`record_type` から `contract_level`(master/individual/standalone)を導出し、個別契約は `master_contract_id` で基本契約へ接続。 |
@@ -747,7 +747,7 @@ contracts(service, is_work_related=FALSE, department_code=経理部, expense_cat
 | (なし) | `contract_stage_history` | 依頼〜締結のステージ遷移履歴。現行 Backlog ステータス / `issue_workflows` の履歴から初期投入可。 |
 
 ### 移行ステップ(推奨)
-1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`work_source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_rights`/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`contract_stage_history`/`signature_requests`/`signature_steps`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
+1. **追加フェーズ**: 新テーブル(`works`/`source_ips`/`source_ip_materials`/`products`/`party_roles`/`expense_categories`/`work_materials`(旧 work_rights+work_source_ips を統合)/`ip_registrations`/`ringi_works`/`contract_works`/`contract_parties`/`contract_obligations`/`contract_stage_history`/`signature_requests`/`signature_steps`/`deliverables`/`deliverable_revisions`/`invoices`/`payments`/`sales_events`)を `CREATE` し、既存データをバックフィル(現行テーブルは温存)。`ledgers` は自社作品行と外部原作行を判別して `works` / `source_ips` に振り分け、作品稟議(`ringi_records.category='work'`)があれば `origin_ringi_id` / `ringi_works` を紐付ける。
 2. **二重書き込み期間**: アプリを新FK経由の読み出しに切替え、旧文字列キーは fallback として残す。
 3. **撤去フェーズ**: 死んだ `license_contract_id` 系、`ledger_code` 文字列、`additional_parties JSONB`、`sublicensees` を物理削除(現行 `scripts/phase23_migrate_to_capabilities.ts --drop` と同じ作法)。
 
@@ -799,29 +799,18 @@ JOIN contract_works cw ON cw.work_id = w.id
 JOIN contracts c ON c.id = cw.contract_id
 WHERE w.id = $1;
 
--- 作品の権利台帳: 全マテリアルの権利状態(譲渡/許諾/共有・権利者・印税・有効/失効)
--- 2層(work_rights ＋ 原作マテリアル経由)を UNION したビュー
-CREATE OR REPLACE VIEW v_work_rights_ledger AS
-SELECT wr.work_id, wr.component_name AS material, wr.rights_type,
-       wr.rights_holder_vendor_id, wr.is_royalty_bearing,
-       wr.rights_status, wr.source_contract_id AS contract_id
-FROM work_rights wr
-UNION ALL
-SELECT cft.work_id, sim.material_name, 'license',
-       sim.rights_holder_vendor_id, TRUE,
-       CASE WHEN c.expiration_date < now() THEN 'expired' ELSE 'cleared' END,
-       cft.contract_id
-FROM contract_financial_terms cft
-JOIN source_ip_materials sim ON sim.id = cft.source_ip_material_id
-JOIN contracts c ON c.id = cft.contract_id
-WHERE cft.source_ip_material_id IS NOT NULL;
-
--- 作品の全マテリアル権利状態 + 失効/未処理の検出(販売リスク)
-SELECT l.material, l.rights_type, l.rights_status, l.is_royalty_bearing, v.vendor_name
-FROM v_work_rights_ledger l
-LEFT JOIN vendors v ON v.id = l.rights_holder_vendor_id
-WHERE l.work_id = $1
-ORDER BY (l.rights_status <> 'cleared') DESC;  -- 未処理/失効/係争を上位に
+-- 作品の権利台帳: 全マテリアルの権利状態(所有/譲渡/許諾/共有・権利者・印税・有効/失効)
+-- 統合済みの work_materials 1テーブルを引くだけ(UNION 不要)。許諾系は契約満期から失効判定。
+SELECT wm.material_name, wm.rights_type,
+       CASE WHEN wm.rights_type IN ('license','joint')
+                 AND c.expiration_date < now() THEN 'expired'
+            ELSE wm.rights_status END AS rights_status,
+       wm.is_royalty_bearing, v.vendor_name AS rights_holder
+FROM work_materials wm
+LEFT JOIN vendors v   ON v.id = wm.rights_holder_vendor_id
+LEFT JOIN contracts c ON c.id = wm.source_contract_id
+WHERE wm.work_id = $1
+ORDER BY (COALESCE(wm.rights_status,'') <> 'cleared') DESC;  -- 未処理/失効/係争を上位に
 
 -- 作品にぶら下がる全契約(contract_works ∪ 条件明細/業務明細の work_id)
 SELECT DISTINCT c.id, c.contract_title, c.contract_category, c.lifecycle_stage, c.expiration_date
@@ -841,7 +830,7 @@ ORDER BY due;
 
 ## 7. 期待効果(MECE で閉じる権利の循環)
 
-- **権利の循環が漏れなく閉じる**: 「取得(`work_rights`)→ 保有(`works`/`ip_registrations`)→ 活用(`contracts`)→ 請求(`invoices`)→ 支払/入金(`payments`)」が一気通貫。
+- **権利の循環が漏れなく閉じる**: 「取得(`work_materials`)→ 保有(`works`/`ip_registrations`)→ 活用(`contracts`)→ 請求(`invoices`)→ 支払/入金(`payments`)」が一気通貫。
 - **作品軸の一元集計 + 全社経費の分離**: 1作品の契約・印税・許諾料・委託費・収入・残高を横断把握しつつ、**作品に紐づかない業務委託(会計士・システム保守・顧問・賃料)は部門×費目で分類**。作品費と全社経費の和で総支払が漏れなく出る。
 - **当事者のダブり解消**: `vendors` + `party_roles` で取引先/再許諾先を一元管理。
 - **参照整合性の回復**: 死んだFK・文字列キー・JSONB疎結合を実FKに置換し、データ破損リスクを低減。
@@ -849,11 +838,11 @@ ORDER BY due;
 - **インボイス・源泉・為替に対応した支払管理**: 適格請求書の受領検証、源泉徴収、外貨換算(`amount_jpy`)を含む正確な金銭管理。
 - **金銭以外の義務もアラート化**: 最低製造義務・クレジット表記・報告義務・商標更新を満期アラートと同じ仕組みで監視。
 - **契約書(実体/版/制作)の分離管理**: 「契約という実体」「その時々の書類(再発行・覚書・別紙)」「制作の元データ(テンプレート/フォーム)」を独立追跡し、正本(`is_primary`)を一意特定。生成エンジンは現行資産を維持したまま作品・契約へFK接続。
-- **成果物の納品・リテイク・権利取得の一気通貫**: イラスト等の成果物を `deliverables` + `deliverable_revisions` で版・受領ステータス込みで管理し、発注明細→納品→検収→権利取得(`work_rights`)→報酬支払(`payments`)を1本で追跡。
+- **成果物の納品・リテイク・権利取得の一気通貫**: イラスト等の成果物を `deliverables` + `deliverable_revisions` で版・受領ステータス込みで管理し、発注明細→納品→検収→権利取得(`work_materials`)→報酬支払(`payments`)を1本で追跡。
 - **創作委託+権利留保+利用許諾の複合に対応**: 作成は委託・権利は相手方留保・当社は許諾利用、という形態を1契約(mixed)で表現し、作成料(service_fee)と利用許諾料(royalty)の二重支払を成果物単位で正しく処理。
 - **締結までの進捗を契約ネイティブで可視化**: 依頼→ドラフト→社内/相手方レビュー→稟議→署名→締結を `lifecycle_stage` + `contract_stage_history` で管理し、担当者・期限アラート・ステージ滞留時間(リードタイム)を Backlog 非依存で集計。
 - **電子契約の署名リレーを可視化**: 稟議承認→CloudSign送信→宛先順の回付を `signature_requests` + `signature_steps` で管理し、**「現在のリレー相手(どこで止まっているか)」**を Webhook 連動でリアルタイム表示。完了で自動的に締結(executed)へ。
-- **作品の権利状態を1ビューで把握**: `v_work_rights_ledger`(`work_rights` ＋ 原作マテリアル経由を UNION)で、作品が使う全マテリアルの「譲渡/許諾/共有・権利者・印税有無・有効/失効/未処理」を一覧。**失効・未処理の権利を持つ作品(=販売リスク)**を検出でき、紐づく全契約も `contract_works` 経由で辿れる。
+- **作品の権利状態を1テーブルで把握**: `work_materials` 1本(旧 work_rights + work_source_ips を統合)で、作品が使う全マテリアルの「所有/譲渡/許諾/共有・権利者・印税有無・有効/失効/未処理」を一覧(UNION 不要)。**失効・未処理の権利を持つ作品(=販売リスク)**を検出でき、紐づく全契約も `contract_works` 経由で辿れる。
 
 ---
 
@@ -885,7 +874,7 @@ ORDER BY due;
 
 以下は**現行に元データが無い**ためバックフィル不可。**空で開始し、運用で前方充填**する(= 抜けを埋める新機能として想定どおり)。
 
-- `work_rights`(譲渡/許諾区分・人格権)、`ip_registrations`(商標台帳)、`contract_obligations`(非金銭義務)
+- `work_materials`(譲渡/許諾区分・人格権)、`ip_registrations`(商標台帳)、`contract_obligations`(非金銭義務)
 - `deliverables` / `deliverable_revisions`(過去の納品履歴)、`signature_steps`(過去の署名リレー)
 - `expense_categories` 帰属、`contract_stage_history`(過去の進捗履歴)
 
