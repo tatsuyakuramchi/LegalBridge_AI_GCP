@@ -445,7 +445,9 @@ erDiagram
 
 > **原作=デフォルト / 契約=確定**: `source_ip_materials` 側はマスター(許諾可能なマテリアル・権利者・標準料率の参照値)、`contract_financial_terms` 側は契約で確定した拘束力ある実条件、と役割を分ける(現行 `ledgers.default_*` → 契約と同思想)。
 >
-> **【要決定】MG/AG の消化プール単位**: 最低保証(MG)・前払(AG)の消化を **(a) 原作マテリアル単位 / (b) 契約単位 / (c) 作品・製品単位** のいずれで集約するかにより `royalty_statements` の集計キーが変わる。運用に合わせて確定する。
+> **MG/AG の消化プール = 契約単位(決定)**: 最低保証(MG)・前払(AG)の消化は**契約単位**でプールする。1契約のMGを、その契約配下の全作品・製品・原作マテリアルの利用許諾料で**横断消化**する。`royalty_statements` の MG/AG 累積は `contract_id` をキーに期(`period`)順で計算する。これは現行 `royalty_calculations`(`idx_rc_license` = license_contract 単位)とも整合する。
+>
+> **条件明細は接合の子テーブル(確定)**: `contract_financial_terms` は **(作品/製品 × 原作マテリアル × 契約)の接合行**であり、`works` に列は増やさない。「作品に並ぶ条件明細」= `SELECT … FROM contract_financial_terms WHERE work_id = X`。1作品が複数原作マテリアルを使う/1原作が複数作品に展開、の双方を表現する。
 
 #### `contract_line_items`(業務委託明細) ― 現 `capability_line_items` を踏襲・拡張
 
@@ -477,7 +479,7 @@ erDiagram
 
 #### `royalty_statements`(利用許諾料計算書) ― 現 `royalty_calculations` を整理
 
-死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。**追加**: `work_right_id INTEGER FK→work_rights NULL` ― 権利留保→利用許諾の成果物(イラスト等)に対する利用許諾料を計算する場合、対象の権利要素を指す。MG/AG累積消化のロジック列(現行)はそのまま維持。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
+死んだ `license_contract_id` / `license_financial_condition_id` を撤去し、**`contract_id` / `financial_term_id` / `product_id` の実FK**に張り直す。**追加**: `work_right_id INTEGER FK→work_rights NULL` ― 権利留保→利用許諾の成果物(イラスト等)に対する利用許諾料を計算する場合、対象の権利要素を指す。MG/AG累積消化のロジック列(現行)はそのまま維持。**MG/AG の累積消化は `contract_id` 単位でプール**し、契約配下の全作品・製品・原作マテリアルを横断して `period` 順に消化する(§3.3 決定)。1計算書 = 1 `payments` 行(`payment_id FK`)に連結。
 
 #### `orders`(発注) / `delivery_events`(検収) ― 業務委託フロー
 
@@ -641,7 +643,8 @@ LegalOn / CloudSign / スキャンPDF 等、外部で締結・取込んだ原本
 
 ```
 作品 (works)
- ├─ 利用許諾条件明細 (contract_financial_terms: work_id/product_id)
+ ├─ 利用許諾条件明細 (contract_financial_terms: work_id/product_id + source_ip_material_id)
+ │     │  ← 原作マテリアル(source_ip_materials)に紐づく。MG/AGは契約単位でプール
  │     └─ 利用許諾料報告 (royalty_statements) ── invoices ── payments(royalty)
  └─ 業務委託明細 (contract_line_items: work_id)
        └─ 納品・検収 (orders → delivery_events) ── invoices ── payments(service_fee)
