@@ -60,6 +60,8 @@ import {
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
+// C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
+import { registerSharedReads } from "./src/routes/sharedReads.ts";
 import {
   calculateTax,
   calculateOrderLineAmount,
@@ -129,11 +131,19 @@ const replaceSlackPlaceholders = (tmpl: string, data: any): string => {
 };
 
 async function startServer() {
-  try {
-    await initDb();
-    console.log("✅ Database initialized (worker has read-write role)");
-  } catch (dbErr) {
-    console.error("❌ Database initialization failed:", dbErr);
+  // Phase 0 (D2): schema は migration ランナー(migrations/)が単一所有する。
+  // 起動時 initDb は段階移行のため RUN_INIT_DB で制御する。
+  //   未設定 / "true": 現行どおり起動時に DDL を流す(後方互換)
+  //   "false"        : worker は DDL を触らない(ランナー検証後に切替 — §8.5 step3)
+  if (process.env.RUN_INIT_DB === "false") {
+    console.log("⏭️  RUN_INIT_DB=false — skipping initDb (schema owned by migrations/ runner)");
+  } else {
+    try {
+      await initDb();
+      console.log("✅ Database initialized (worker has read-write role)");
+    } catch (dbErr) {
+      console.error("❌ Database initialization failed:", dbErr);
+    }
   }
 
   const app = express();
@@ -227,6 +237,9 @@ async function startServer() {
     projectKey: dbSettings.BACKLOG_PROJECT_KEY || process.env.BACKLOG_PROJECT_KEY,
   });
   const documentService = new DocumentService();
+  // Phase 2 / C3: TEMPLATE_SOURCE=db のとき、起動時に DB からテンプレを一括ロード
+  //   (disk モードでは no-op)。失敗しても disk フォールバックで動作継続。
+  await documentService.loadFromDb();
   const googleDriveService = new GoogleDriveService();
   const excelService = new ExcelService();
   const csvImportService = new CsvImportService();
@@ -5769,6 +5782,9 @@ ${details}
     linkRingiByDocNumber,
     requirePortalSecret,
   });
+
+  // C2 バッチ1: 単純マスター read(search-api からの移植)を worker に登録。
+  registerSharedReads(app, { query });
 
   /**
    * Bulk import: 業務委託基本契約書 (service_master)。
