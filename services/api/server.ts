@@ -261,7 +261,7 @@ async function startServer() {
     const cat = payload?.documentsByCategory;
     if (!cat) return payload;
     const allKeys = new Set<string>();
-    ["basic", "individual", "other"].forEach((k) => {
+    ["basic", "individual", "inspection", "other"].forEach((k) => {
       (cat[k] || []).forEach((d: any) => {
         if (d?.issue_key) allKeys.add(d.issue_key);
       });
@@ -271,7 +271,7 @@ async function startServer() {
       backlogService,
       Array.from(allKeys)
     );
-    ["basic", "individual", "other"].forEach((k) => {
+    ["basic", "individual", "inspection", "other"].forEach((k) => {
       (cat[k] || []).forEach((d: any) => {
         if (d.issue_key && statusMap[d.issue_key]) {
           d.backlog_status = statusMap[d.issue_key];

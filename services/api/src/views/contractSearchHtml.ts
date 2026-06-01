@@ -106,6 +106,7 @@ section.category-block h3 {
 }
 section.category-block.basic h3 { border-left-color: #2563eb; }
 section.category-block.individual h3 { border-left-color: #10b981; }
+section.category-block.inspection h3 { border-left-color: #f59e0b; }
 section.category-block.other h3 { border-left-color: #6b7280; }
 section.category-block .count {
   font-family: ui-monospace, monospace; font-size: 11px; color: #6b7280;
@@ -273,7 +274,7 @@ function statusBadge(status: string): string {
   return `<span class="badge ${cls}">${esc(label)}</span>`;
 }
 
-function categoryTable(rows: any[], cat: "basic" | "individual" | "other"): string {
+function categoryTable(rows: any[], cat: "basic" | "individual" | "inspection" | "other"): string {
   if (!rows || rows.length === 0) {
     return `<div class="empty-note">該当なし</div>`;
   }
@@ -407,6 +408,7 @@ export function listPage(
       const cat = c.documentsByCategory || {
         basic: [],
         individual: [],
+        inspection: [],
         other: [],
         total: 0,
       };
@@ -444,6 +446,7 @@ export function listPage(
           <div class="pills" style="margin-top: 8px;">
             <span class="pill count">📁 基本 ${cat.basic?.length || 0}</span>
             <span class="pill count">📁 個別 ${cat.individual?.length || 0}</span>
+            <span class="pill count">🧾 検収書 ${cat.inspection?.length || 0}</span>
             <span class="pill count">📁 その他 ${cat.other?.length || 0}</span>
           </div>
         </div>
@@ -497,6 +500,7 @@ export function detailPage(
   const cat = payload.documentsByCategory || {
     basic: [],
     individual: [],
+    inspection: [],
     other: [],
     total: 0,
   };
@@ -545,6 +549,11 @@ export function detailPage(
       ${categoryTable(cat.individual || [], "individual")}
     </section>
 
+    <section class="category-block inspection">
+      <h3>🧾 検収書 <span class="count">(${cat.inspection?.length || 0}件)</span><span style="font-size:10px;color:#9ca3af;font-weight:normal;">※ 契約ではなく納品検収の記録</span></h3>
+      ${categoryTable(cat.inspection || [], "inspection")}
+    </section>
+
     <section class="category-block other">
       <h3>⬛ その他 <span class="count">(${cat.other?.length || 0}件)</span></h3>
       ${categoryTable(cat.other || [], "other")}
@@ -566,7 +575,7 @@ export function ringiPage(
 ): string {
   const r = payload.ringi || {};
   const cat = payload.documentsByCategory || {
-    basic: [], individual: [], other: [], total: 0,
+    basic: [], individual: [], inspection: [], other: [], total: 0,
   };
   const a = authShim(auth);
   const listQs = a.qs("list");
@@ -614,6 +623,11 @@ export function ringiPage(
     <section class="category-block individual">
       <h3>🟩 個別契約 <span class="count">(${cat.individual?.length || 0}件)</span></h3>
       ${categoryTable(cat.individual || [], "individual")}
+    </section>
+
+    <section class="category-block inspection">
+      <h3>🧾 検収書 <span class="count">(${cat.inspection?.length || 0}件)</span><span style="font-size:10px;color:#9ca3af;font-weight:normal;">※ 契約ではなく納品検収の記録</span></h3>
+      ${categoryTable(cat.inspection || [], "inspection")}
     </section>
 
     <section class="category-block other">

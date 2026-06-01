@@ -1,0 +1,353 @@
+/**
+ * workModelImportService — 作品中心(work-centric / /api/v3)モデルの CSV 一括取込。
+ *
+ * 取引先(vendorMasterService.importVendorRows)/ LegalOn(legalonImportService)と
+ * 同じ仕組み:
+ *   - papaparse で header 付き CSV をパース
+ *   - 日本語 / 英語ヘッダを内部フィールドにマップ(alias 辞書)
+ *   - dry_run(検証のみ)+ duplicate_mode(overwrite / skip / fill_only)
+ *   - コード列(source_code / work_code / document_number)を UNIQUE キーに upsert
+ *     未指定なら master_sequences で自動採番
+ *
+ * 対応エンティティ: source-ips / works / contracts。
+ */
+
+import Papa from "papaparse";
+
+type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
+
+export type V3Entity = "source-ips" | "works" | "contracts";
+export type V3ImportOptions = {
+  dry_run?: boolean;
+  duplicate_mode?: "overwrite" | "skip" | "fill_only";
+};
+export type V3ImportResult = {
+  entity: V3Entity;
+  dry_run: boolean;
+  duplicate_mode: string;
+  total: number;
+  succeeded: number;
+  skipped: number;
+  failed: number;
+  errors: { row: number; message: string }[];
+  preview: { row: number; action: string; code: string; title: string }[];
+};
+
+type ColType = "text" | "int" | "bool" | "date" | "array" | "vendor";
+type ColSpec = { field: string; aliases: string[]; type?: ColType };
+
+type EntityConfig = {
+  table: string;
+  codeColumn: string; // UNIQUE upsert キー
+  seqKind: string; // master_sequences.kind
+  codePrefix: string; // 自動採番接頭辞 (IP / W / ARC-REG)
+  titleField: string; // 必須・プレビュー表示用
+  cols: ColSpec[]; // テーブル列(コード列含む)
+  links?: ColSpec[]; // contracts のみ: contract_works への作品/IP 紐付け
+};
+
+const normHeader = (h: string) =>
+  String(h || "").trim().toLowerCase().replace(/[\s　]+/g, "");
+
+function parseBool(v: unknown): boolean {
+  const s = String(v ?? "").trim().toLowerCase();
+  return ["true", "1", "yes", "y", "○", "有", "はい", "オリジナル", "自動更新"].includes(s);
+}
+
+const splitArray = (v: unknown): string[] =>
+  String(v ?? "")
+    .split(/[,、;；]/)
+    .map((s) => s.trim())
+    .filter(Boolean);
+
+const CONFIGS: Record<V3Entity, EntityConfig> = {
+  "source-ips": {
+    table: "source_ips",
+    codeColumn: "source_code",
+    seqKind: "IP",
+    codePrefix: "IP",
+    titleField: "title",
+    cols: [
+      { field: "source_code", aliases: ["source_code", "ipコード", "コード"] },
+      { field: "title", aliases: ["title", "タイトル", "作品名", "原作名"] },
+      { field: "title_kana", aliases: ["title_kana", "タイトルカナ", "ヨミ", "よみ"] },
+      { field: "alternative_titles", aliases: ["alternative_titles", "別名", "別タイトル"], type: "array" },
+      { field: "original_publisher", aliases: ["original_publisher", "出版社", "原作出版社"] },
+      { field: "default_rights_holder", aliases: ["default_rights_holder", "権利者", "既定権利者"] },
+      { field: "default_credit_display", aliases: ["default_credit_display", "クレジット表記", "クレジット"] },
+      { field: "default_work_supplement", aliases: ["default_work_supplement", "作品補足"] },
+      { field: "default_approval_target", aliases: ["default_approval_target", "承認対象"] },
+      { field: "default_approval_timing", aliases: ["default_approval_timing", "承認タイミング"] },
+      { field: "remarks", aliases: ["remarks", "備考"] },
+      { field: "rights_holder_vendor_id", aliases: ["rights_holder_vendor_code", "権利者取引先コード"], type: "vendor" },
+    ],
+  },
+  works: {
+    table: "works",
+    codeColumn: "work_code",
+    seqKind: "W",
+    codePrefix: "W",
+    titleField: "title",
+    cols: [
+      { field: "work_code", aliases: ["work_code", "作品コード", "コード"] },
+      { field: "title", aliases: ["title", "タイトル", "作品名"] },
+      { field: "title_kana", aliases: ["title_kana", "タイトルカナ", "ヨミ", "よみ"] },
+      { field: "alternative_titles", aliases: ["alternative_titles", "別名", "別タイトル"], type: "array" },
+      { field: "division", aliases: ["division", "区分"], type: "array" },
+      { field: "work_type", aliases: ["work_type", "作品種別", "種別"] },
+      { field: "status", aliases: ["status", "ステータス", "状態"] },
+      { field: "is_original", aliases: ["is_original", "オリジナル", "完全オリジナル"], type: "bool" },
+      { field: "remarks", aliases: ["remarks", "備考"] },
+      { field: "publisher_vendor_id", aliases: ["publisher_vendor_code", "出版社取引先コード"], type: "vendor" },
+    ],
+  },
+  contracts: {
+    table: "contracts",
+    codeColumn: "document_number",
+    seqKind: "REG",
+    codePrefix: "ARC-REG",
+    titleField: "contract_title",
+    cols: [
+      { field: "document_number", aliases: ["document_number", "管理番号", "文書番号"] },
+      { field: "contract_title", aliases: ["contract_title", "契約名", "タイトル"] },
+      { field: "contract_level", aliases: ["contract_level", "契約レベル"] },
+      { field: "contract_category", aliases: ["contract_category", "契約カテゴリ", "カテゴリ"] },
+      { field: "contract_type", aliases: ["contract_type", "契約類型", "類型"] },
+      { field: "lifecycle_stage", aliases: ["lifecycle_stage", "ステータス", "進捗"] },
+      { field: "effective_date", aliases: ["effective_date", "発効日", "開始日"], type: "date" },
+      { field: "expiration_date", aliases: ["expiration_date", "満了日", "終了日"], type: "date" },
+      { field: "auto_renewal", aliases: ["auto_renewal", "自動更新"], type: "bool" },
+      { field: "primary_vendor_id", aliases: ["primary_vendor_code", "取引先コード", "相手方コード"], type: "vendor" },
+    ],
+    links: [
+      { field: "work_code", aliases: ["work_code", "作品コード"] },
+      { field: "source_code", aliases: ["source_code", "ipコード"] },
+    ],
+  },
+};
+
+const pad4 = (n: number) => String(n).padStart(4, "0");
+async function nextSeq(query: Query, kind: string, year: number): Promise<number> {
+  const r = await query(
+    `INSERT INTO master_sequences (kind, year, current_value) VALUES ($1, $2, 1)
+       ON CONFLICT (kind, year) DO UPDATE SET current_value = master_sequences.current_value + 1
+     RETURNING current_value`,
+    [kind, year]
+  );
+  return r.rows[0].current_value as number;
+}
+
+/** ヘッダ → フィールド名の対応表(ある CSV の実ヘッダから引く)。 */
+function buildHeaderIndex(cfg: EntityConfig, headers: string[]): Map<string, string> {
+  const idx = new Map<string, string>();
+  const specs = [...cfg.cols, ...(cfg.links || [])];
+  for (const h of headers) {
+    const nh = normHeader(h);
+    for (const c of specs) {
+      if (c.aliases.some((a) => normHeader(a) === nh)) {
+        idx.set(h, c.field);
+        break;
+      }
+    }
+  }
+  return idx;
+}
+
+function coerce(type: ColType | undefined, raw: unknown): any {
+  const s = String(raw ?? "").trim();
+  if (s === "") return type === "array" ? [] : null;
+  switch (type) {
+    case "int": {
+      const n = Number(s.replace(/,/g, ""));
+      return Number.isFinite(n) ? Math.trunc(n) : null;
+    }
+    case "bool":
+      return parseBool(s);
+    case "array":
+      return splitArray(s);
+    case "date":
+      return s; // Postgres が YYYY-MM-DD 等を解釈
+    default:
+      return s;
+  }
+}
+
+const vendorIdCache = new Map<string, number | null>();
+async function resolveVendorId(query: Query, code: string): Promise<number | null> {
+  const key = code.trim();
+  if (!key) return null;
+  if (vendorIdCache.has(key)) return vendorIdCache.get(key)!;
+  const r = await query(`SELECT id FROM vendors WHERE vendor_code = $1`, [key]);
+  const id = r.rows.length ? Number(r.rows[0].id) : null;
+  vendorIdCache.set(key, id);
+  return id;
+}
+
+export function parseWorkModelCsv(csvText: string): Record<string, any>[] {
+  const res = Papa.parse<Record<string, any>>(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (h) => String(h).trim(),
+  });
+  return (res.data || []).filter(
+    (row) => row && Object.values(row).some((v) => String(v ?? "").trim() !== "")
+  );
+}
+
+/** CSV テキストを取り込む。dry_run のときは DB 書き込みをしない。 */
+export async function importWorkModelCsv(
+  query: Query,
+  entity: V3Entity,
+  csvText: string,
+  opts: V3ImportOptions = {}
+): Promise<V3ImportResult> {
+  const cfg = CONFIGS[entity];
+  if (!cfg) throw new Error(`unknown entity: ${entity}`);
+  const dryRun = !!opts.dry_run;
+  const dupMode = opts.duplicate_mode || "overwrite";
+
+  const rows = parseWorkModelCsv(csvText);
+  const result: V3ImportResult = {
+    entity, dry_run: dryRun, duplicate_mode: dupMode,
+    total: rows.length, succeeded: 0, skipped: 0, failed: 0,
+    errors: [], preview: [],
+  };
+  if (rows.length === 0) return result;
+
+  const headerIdx = buildHeaderIndex(cfg, Object.keys(rows[0]));
+  vendorIdCache.clear();
+
+  for (let i = 0; i < rows.length; i++) {
+    const rowNo = i + 2; // 1=ヘッダ, データは 2 行目から
+    const raw = rows[i];
+    try {
+      // ヘッダ → フィールドへ写像
+      const rec: Record<string, any> = {};
+      const links: Record<string, string> = {};
+      for (const [header, field] of headerIdx) {
+        const spec = [...cfg.cols, ...(cfg.links || [])].find((c) => c.field === field)!;
+        if (cfg.links?.some((l) => l.field === field)) {
+          links[field] = String(raw[header] ?? "").trim();
+        } else if (spec.type === "vendor") {
+          rec[field] = await resolveVendorId(query, String(raw[header] ?? ""));
+        } else {
+          rec[field] = coerce(spec.type, raw[header]);
+        }
+      }
+
+      const title = String(rec[cfg.titleField] ?? "").trim();
+      if (!title) throw new Error(`${cfg.titleField}(タイトル)は必須です`);
+
+      let code = String(rec[cfg.codeColumn] ?? "").trim();
+      const existing = code
+        ? await query(`SELECT id FROM ${cfg.table} WHERE ${cfg.codeColumn} = $1`, [code])
+        : { rows: [] as any[] };
+      const exists = existing.rows.length > 0;
+
+      let action: string;
+      if (exists && dupMode === "skip") {
+        action = "skip";
+        result.skipped++;
+      } else if (!exists) {
+        action = "insert";
+        if (!code) {
+          code = dryRun
+            ? `(${cfg.codePrefix}-auto)`
+            : `${cfg.codePrefix}-${new Date().getFullYear()}-${pad4(await nextSeq(query, cfg.seqKind, new Date().getFullYear()))}`;
+          rec[cfg.codeColumn] = code;
+        }
+        if (!dryRun) await insertRow(query, cfg, rec, links);
+        result.succeeded++;
+      } else {
+        action = dupMode === "fill_only" ? "fill" : "update";
+        if (!dryRun) await updateRow(query, cfg, code, rec, links, dupMode === "fill_only");
+        result.succeeded++;
+      }
+
+      result.preview.push({ row: rowNo, action, code: code || "(auto)", title });
+    } catch (e: any) {
+      result.failed++;
+      result.errors.push({ row: rowNo, message: String(e?.message || e) });
+    }
+  }
+  return result;
+}
+
+async function insertRow(
+  query: Query, cfg: EntityConfig, rec: Record<string, any>, links: Record<string, string>
+) {
+  // null/undefined の列は省略し、DB 既定値(NOT NULL DEFAULT 等)を活かす。
+  const fields = cfg.cols.map((c) => c.field).filter((f) => rec[f] != null);
+  const vals = fields.map((f) => rec[f]);
+  const placeholders = fields.map((_, i) => `$${i + 1}`);
+  const r = await query(
+    `INSERT INTO ${cfg.table} (${fields.join(", ")}) VALUES (${placeholders.join(", ")}) RETURNING id`,
+    vals
+  );
+  if (cfg.links) await applyContractLinks(query, Number(r.rows[0].id), links);
+}
+
+async function updateRow(
+  query: Query, cfg: EntityConfig, code: string,
+  rec: Record<string, any>, links: Record<string, string>, fillOnly: boolean
+) {
+  // 空(null)セルは更新対象外。値のある列だけ反映(NOT NULL 列の破壊を防ぐ)。
+  const fields = cfg.cols
+    .map((c) => c.field)
+    .filter((f) => f !== cfg.codeColumn && rec[f] != null);
+  if (fields.length) {
+    // fill_only: 既存値があればそれを優先(空欄のみ新値で埋める)。
+    const setSql = fields.map((f, i) =>
+      fillOnly ? `${f} = COALESCE(${cfg.table}.${f}, $${i + 1})` : `${f} = $${i + 1}`
+    );
+    await query(
+      `UPDATE ${cfg.table} SET ${setSql.join(", ")}, updated_at = now() WHERE ${cfg.codeColumn} = $${fields.length + 1}`,
+      [...fields.map((f) => rec[f]), code]
+    );
+  }
+  if (cfg.links) {
+    const idRes = await query(`SELECT id FROM ${cfg.table} WHERE ${cfg.codeColumn} = $1`, [code]);
+    if (idRes.rows.length) await applyContractLinks(query, Number(idRes.rows[0].id), links);
+  }
+}
+
+/** contracts の work_code / source_code 列を contract_works に解決して紐付け。 */
+async function applyContractLinks(query: Query, contractId: number, links: Record<string, string>) {
+  const workCode = (links.work_code || "").trim();
+  const sourceCode = (links.source_code || "").trim();
+  if (!workCode && !sourceCode) return;
+  const workId = workCode
+    ? (await query(`SELECT id FROM works WHERE work_code = $1`, [workCode])).rows[0]?.id ?? null
+    : null;
+  const sourceId = sourceCode
+    ? (await query(`SELECT id FROM source_ips WHERE source_code = $1`, [sourceCode])).rows[0]?.id ?? null
+    : null;
+  if (workId == null && sourceId == null) return; // CHECK 制約: 少なくとも一方必要
+  // 重複登録を避けるため既存リンクを確認
+  const dup = await query(
+    `SELECT 1 FROM contract_works
+      WHERE contract_id = $1 AND work_id IS NOT DISTINCT FROM $2 AND source_ip_id IS NOT DISTINCT FROM $3`,
+    [contractId, workId, sourceId]
+  );
+  if (dup.rows.length) return;
+  await query(
+    `INSERT INTO contract_works (contract_id, work_id, source_ip_id) VALUES ($1, $2, $3)`,
+    [contractId, workId, sourceId]
+  );
+}
+
+/** ダウンロード用サンプル CSV(BOM 付き・Excel UTF-8 対応)。 */
+export function getWorkModelSampleCsv(entity: V3Entity): string {
+  const samples: Record<V3Entity, string> = {
+    "source-ips":
+      "source_code,title,title_kana,original_publisher,default_rights_holder,default_credit_display,remarks,rights_holder_vendor_code\n" +
+      ",サンプル原作,サンプルゲンサク,サンプル出版,サンプル権利者株式会社,(C)サンプル権利者,初回取込サンプル,\n",
+    works:
+      "work_code,title,title_kana,work_type,status,division,is_original,remarks,publisher_vendor_code\n" +
+      ",サンプルボードゲーム,サンプルボードゲーム,board_game,planning,BDG,true,初回取込サンプル,\n",
+    contracts:
+      "document_number,contract_title,contract_level,contract_category,contract_type,lifecycle_stage,effective_date,expiration_date,auto_renewal,primary_vendor_code,work_code,source_code\n" +
+      ",サンプル業務委託契約,standalone,service,service_master,requested,2026-04-01,2027-03-31,false,,,\n",
+  };
+  return "﻿" + samples[entity];
+}

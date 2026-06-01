@@ -4,6 +4,11 @@
 
 import express from "express";
 import type { Express } from "express";
+import {
+  importWorkModelCsv,
+  getWorkModelSampleCsv,
+  type V3Entity,
+} from "../services/workModelImportService.ts";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 type Middleware = (req: any, res: any, next: any) => void;
@@ -189,7 +194,7 @@ export function registerWorkModelRoutes(
             rights_holder_vendor_id, original_publisher, default_rights_holder,
             default_credit_display, default_work_supplement, default_approval_target,
             default_approval_timing, remarks)
-         VALUES ($1,$2,$3,COALESCE($4,'{}'),$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
         [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null,
          b.rights_holder_vendor_id ?? null, b.original_publisher ?? null, b.default_rights_holder ?? null,
          b.default_credit_display ?? null, b.default_work_supplement ?? null, b.default_approval_target ?? null,
@@ -209,7 +214,7 @@ export function registerWorkModelRoutes(
       const r = await query(
         `INSERT INTO works (work_code, title, title_kana, alternative_titles, division,
             work_type, status, publisher_vendor_id, origin_ringi_id, is_original, remarks)
-         VALUES ($1,$2,$3,COALESCE($4,'{}'),COALESCE($5,'{}'),$6,$7,$8,$9,COALESCE($10,TRUE),$11) RETURNING *`,
+         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),$6,$7,$8,$9,COALESCE($10,TRUE),$11) RETURNING *`,
         [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
          b.work_type ?? null, b.status ?? null, b.publisher_vendor_id ?? null, b.origin_ringi_id ?? null,
          b.is_original ?? null, b.remarks ?? null]
@@ -230,7 +235,7 @@ export function registerWorkModelRoutes(
         `INSERT INTO contracts (document_number, contract_level, contract_category, contract_type,
             contract_title, primary_vendor_id, origin, lifecycle_stage, effective_date, expiration_date,
             auto_renewal, purpose_codes)
-         VALUES ($1,$2,$3,$4,$5,$6,'registered',$7,$8,$9,COALESCE($10,FALSE),COALESCE($11,'{}'))
+         VALUES ($1,$2,$3,$4,$5,$6,'registered',$7,$8,$9,COALESCE($10,FALSE),COALESCE($11::text[],'{}'))
          RETURNING *`,
         [docNo, b.contract_level ?? "standalone", b.contract_category ?? null, b.contract_type ?? null,
          b.contract_title, b.primary_vendor_id ?? null, b.lifecycle_stage ?? "requested",
@@ -248,5 +253,102 @@ export function registerWorkModelRoutes(
       }
       res.status(201).json(contract);
     } catch (e) { fail(res, e); }
+  });
+
+  // ── 更新(PUT)─────────────────────────────────────────────
+  //   コード列(source_code / work_code / document_number)は不変。スカラ項目を更新。
+
+  app.put("/api/v3/source-ips/:id", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
+      const r = await query(
+        `UPDATE source_ips SET
+            title = $2, title_kana = $3, alternative_titles = COALESCE($4::text[],'{}'),
+            rights_holder_vendor_id = $5, original_publisher = $6, default_rights_holder = $7,
+            default_credit_display = $8, default_work_supplement = $9, default_approval_target = $10,
+            default_approval_timing = $11, remarks = $12, updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [id, b.title, b.title_kana ?? null, b.alternative_titles ?? null,
+         b.rights_holder_vendor_id ?? null, b.original_publisher ?? null, b.default_rights_holder ?? null,
+         b.default_credit_display ?? null, b.default_work_supplement ?? null, b.default_approval_target ?? null,
+         b.default_approval_timing ?? null, b.remarks ?? null]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      res.json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  app.put("/api/v3/works/:id", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
+      const r = await query(
+        `UPDATE works SET
+            title = $2, title_kana = $3, alternative_titles = COALESCE($4::text[],'{}'),
+            division = COALESCE($5::text[],'{}'), work_type = $6, status = $7,
+            publisher_vendor_id = $8, is_original = COALESCE($9, is_original),
+            remarks = $10, updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [id, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
+         b.work_type ?? null, b.status ?? null, b.publisher_vendor_id ?? null,
+         b.is_original ?? null, b.remarks ?? null]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      res.json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  app.put("/api/v3/contracts/:id", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      if (!b.contract_title) return res.status(400).json({ ok: false, error: "contract_title is required" });
+      const r = await query(
+        `UPDATE contracts SET
+            contract_level = $2, contract_category = $3, contract_type = $4, contract_title = $5,
+            primary_vendor_id = $6, lifecycle_stage = $7, effective_date = $8, expiration_date = $9,
+            auto_renewal = COALESCE($10, auto_renewal), purpose_codes = COALESCE($11::text[],'{}'), updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [id, b.contract_level ?? null, b.contract_category ?? null, b.contract_type ?? null, b.contract_title,
+         b.primary_vendor_id ?? null, b.lifecycle_stage ?? null, b.effective_date ?? null,
+         b.expiration_date ?? null, b.auto_renewal ?? null, b.purpose_codes ?? null]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      res.json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // ── CSV 一括取込 ───────────────────────────────────────────
+  //   POST /api/v3/import/:entity  body: { csv, dry_run, duplicate_mode }
+  //   GET  /api/v3/import/:entity/template.csv
+  const ENTITIES = new Set<V3Entity>(["source-ips", "works", "contracts"]);
+
+  app.post("/api/v3/import/:entity", ...requireWrite, express.json({ limit: "12mb" }), async (req, res) => {
+    try {
+      const entity = req.params.entity as V3Entity;
+      if (!ENTITIES.has(entity)) return res.status(400).json({ ok: false, error: "unknown entity" });
+      const b = req.body || {};
+      const csv = String(b.csv || "");
+      if (!csv.trim()) return res.status(400).json({ ok: false, error: "csv is required" });
+      const out = await importWorkModelCsv(query, entity, csv, {
+        dry_run: !!b.dry_run,
+        duplicate_mode: b.duplicate_mode,
+      });
+      res.json({ ok: true, ...out });
+    } catch (e) { fail(res, e); }
+  });
+
+  app.get("/api/v3/import/:entity/template.csv", ...requireRead, (req, res) => {
+    const entity = req.params.entity as V3Entity;
+    if (!ENTITIES.has(entity)) return res.status(400).json({ ok: false, error: "unknown entity" });
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename="${entity}-template.csv"`);
+    res.send(getWorkModelSampleCsv(entity));
   });
 }

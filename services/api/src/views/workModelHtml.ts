@@ -1,16 +1,18 @@
 /**
- * workModelHtml — 作品中心(work-centric)新モデルの閲覧ページ。
+ * workModelHtml — 作品中心(work-centric)新モデルの閲覧 + CRUD + CSV取込ページ。
  *
- * B1: もともと admin-ui(React)内に seed していた WorkModelPage を、
- *   新プラットフォームを所有する Search 側へ移設(D1 / サービス役割分担)。
+ * B1: もともと admin-ui(React)内に seed していた WorkModelPage を Search 側へ移設。
  *   /api/v3/* は search-api が提供するため、同一オリジンの client fetch で読む。
  *
  * 依存 endpoint(本サービス内):
- *   GET /api/v3/source-ips   → 原作IP一覧(material_count 付き)
- *   GET /api/v3/works        → 自社作品一覧(product_count 付き)
- *   GET /api/v3/contracts    → 契約一覧(新モデル)
+ *   GET    /api/v3/{source-ips,works,contracts}            一覧
+ *   GET    /api/v3/{source-ips,works,contracts}/:id        詳細(子コレクション込み)
+ *   POST   /api/v3/{source-ips,works,contracts}            新規(admin)
+ *   PUT    /api/v3/{source-ips,works,contracts}/:id        更新(admin)
+ *   POST   /api/v3/import/:entity                          CSV一括取込(admin)
+ *   GET    /api/v3/import/:entity/template.csv             サンプルCSV
  *
- * 認証: ルート側で requireIapUser。/api/v3 read も requireRead で揃える。
+ * 認証: ルート側で requireIapUser。/api/v3 read=requireRead, write=requireWrite(admin)。
  */
 
 const STYLE = `
@@ -37,18 +39,23 @@ h1 { margin: 0; font-size: 22px; letter-spacing: .02em; }
   font-weight: 600; font-size: 13px; white-space: nowrap;
 }
 .btn.secondary { background: #fff; color: #111827; }
+.btn.sm { padding: 4px 9px; font-size: 12px; }
+.btn.ghost { background: #fff; color: #374151; border-color: #d1d5db; font-weight: 500; }
 section.block { margin-top: 22px; }
 section.block > h2 {
   font-size: 14px; margin: 0 0 10px; font-weight: 700; color: #0f172a;
-  display: flex; align-items: center; gap: 8px;
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
 }
 section.block > h2 .count {
   font-family: ui-monospace, monospace; font-size: 12px; color: #64748b; font-weight: 600;
 }
+section.block > h2 .spacer { flex: 1; }
 .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); }
 .card {
   background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 12px 14px;
+  cursor: pointer; transition: border-color .12s, box-shadow .12s;
 }
+.card:hover { border-color: #111827; box-shadow: 0 1px 6px rgba(0,0,0,.08); }
 .card .row1 { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .card .name { font-weight: 600; color: #0f172a; }
 .card .sub { margin-top: 4px; font-size: 12px; color: #6b7280; }
@@ -59,6 +66,46 @@ section.block > h2 .count {
 .badge.outline { background: #fff; }
 .empty { color: #94a3b8; font-size: 13px; padding: 8px 2px; }
 #err { color: #b91c1c; font-size: 13px; margin-top: 8px; display: none; }
+
+/* modal */
+.backdrop {
+  position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none;
+  align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 50; overflow: auto;
+}
+.backdrop.open { display: flex; }
+.modal {
+  background: #fff; border-radius: 10px; width: 100%; max-width: 760px;
+  box-shadow: 0 20px 50px rgba(0,0,0,.25); overflow: hidden;
+}
+.modal .mhead {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 14px 18px; border-bottom: 1px solid #e5e7eb;
+}
+.modal .mhead h3 { margin: 0; font-size: 16px; }
+.modal .mbody { padding: 16px 18px; max-height: 70vh; overflow: auto; }
+.modal .mfoot {
+  display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid #e5e7eb;
+}
+.x { background: none; border: none; font-size: 20px; cursor: pointer; color: #6b7280; line-height: 1; }
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 12px; font-weight: 600; color: #374151; margin-bottom: 4px; }
+.field input[type=text], .field input[type=date], .field input[type=number], .field textarea, .field select {
+  width: 100%; padding: 7px 9px; border: 1px solid #d1d5db; border-radius: 4px; font-size: 13px; font-family: inherit;
+}
+.field textarea { min-height: 60px; resize: vertical; }
+.field .hint { font-size: 11px; color: #9ca3af; margin-top: 3px; }
+dl.kv { margin: 0; display: grid; grid-template-columns: 160px 1fr; gap: 6px 12px; }
+dl.kv dt { color: #6b7280; font-size: 12px; }
+dl.kv dd { margin: 0; color: #111827; font-size: 13px; word-break: break-word; }
+.sub-h { font-size: 12px; font-weight: 700; color: #0f172a; margin: 16px 0 6px; }
+table.sub { width: 100%; border-collapse: collapse; font-size: 12px; }
+table.sub th, table.sub td { border: 1px solid #e5e7eb; padding: 4px 7px; text-align: left; vertical-align: top; }
+table.sub th { background: #f8fafc; color: #475569; font-weight: 600; white-space: nowrap; }
+.result-stats { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 10px; }
+.result-stats .s { font-size: 13px; }
+.result-stats .s b { font-size: 16px; }
+.ok { color: #047857; } .skip { color: #b45309; } .bad { color: #b91c1c; }
+.row-flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 `;
 
 export function workModelPage(): string {
@@ -73,7 +120,7 @@ export function workModelPage(): string {
   <div class="header">
     <div>
       <h1>作品モデル(work-centric)</h1>
-      <div class="muted">原作IP・自社作品・契約を作品軸で閲覧(新プラットフォーム / <code>/api/v3</code>)</div>
+      <div class="muted">原作IP・自社作品・契約を作品軸で閲覧 / 編集(新プラットフォーム / <code>/api/v3</code>)</div>
     </div>
     <div class="actions">
       <button id="reloadBtn" class="btn">↻ 更新</button>
@@ -84,91 +131,342 @@ export function workModelPage(): string {
   <div id="err"></div>
 
   <section class="block">
-    <h2>📚 原作IP <span class="count" id="ipCount">…</span></h2>
+    <h2>📚 原作IP <span class="count" id="ipCount">…</span><span class="spacer"></span>
+      <button class="btn sm add-btn" data-type="source-ips">＋ 新規</button>
+      <button class="btn sm ghost imp-btn" data-type="source-ips">⇪ CSV取込</button>
+    </h2>
     <div class="grid" id="ipGrid"></div>
   </section>
 
   <section class="block">
-    <h2>🎲 自社作品 <span class="count" id="workCount">…</span></h2>
+    <h2>🎲 自社作品 <span class="count" id="workCount">…</span><span class="spacer"></span>
+      <button class="btn sm add-btn" data-type="works">＋ 新規</button>
+      <button class="btn sm ghost imp-btn" data-type="works">⇪ CSV取込</button>
+    </h2>
     <div class="grid" id="workGrid"></div>
   </section>
 
   <section class="block">
-    <h2>📜 契約 <span class="count" id="contractCount">…</span></h2>
+    <h2>📜 契約 <span class="count" id="contractCount">…</span><span class="spacer"></span>
+      <button class="btn sm add-btn" data-type="contracts">＋ 新規</button>
+      <button class="btn sm ghost imp-btn" data-type="contracts">⇪ CSV取込</button>
+    </h2>
     <div class="grid" id="contractGrid"></div>
   </section>
 </div>
 
+<div class="backdrop" id="backdrop">
+  <div class="modal">
+    <div class="mhead"><h3 id="mTitle"></h3><button class="x" id="mClose">×</button></div>
+    <div class="mbody" id="mBody"></div>
+    <div class="mfoot" id="mFoot"></div>
+  </div>
+</div>
+
 <script>
+  var API = { "source-ips": "/api/v3/source-ips", "works": "/api/v3/works", "contracts": "/api/v3/contracts" };
+  var LABEL = { "source-ips": "原作IP", "works": "自社作品", "contracts": "契約" };
+
+  // 各エンティティの編集/新規フォーム項目。type: text|textarea|date|bool|array|number|select
+  var SCHEMA = {
+    "source-ips": [
+      { name: "title", label: "タイトル", type: "text", required: true },
+      { name: "title_kana", label: "タイトル(カナ)", type: "text" },
+      { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
+      { name: "original_publisher", label: "原作出版社", type: "text" },
+      { name: "default_rights_holder", label: "既定権利者", type: "text" },
+      { name: "default_credit_display", label: "クレジット表記", type: "text" },
+      { name: "default_work_supplement", label: "作品補足", type: "textarea" },
+      { name: "default_approval_target", label: "承認対象", type: "text" },
+      { name: "default_approval_timing", label: "承認タイミング", type: "text" },
+      { name: "rights_holder_vendor_id", label: "権利者 取引先ID", type: "number", hint: "取引先マスタの内部ID(任意)" },
+      { name: "remarks", label: "備考", type: "textarea" }
+    ],
+    "works": [
+      { name: "title", label: "タイトル", type: "text", required: true },
+      { name: "title_kana", label: "タイトル(カナ)", type: "text" },
+      { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
+      { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB" },
+      { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"] },
+      { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"] },
+      { name: "is_original", label: "完全オリジナル", type: "bool" },
+      { name: "publisher_vendor_id", label: "出版社 取引先ID", type: "number" },
+      { name: "remarks", label: "備考", type: "textarea" }
+    ],
+    "contracts": [
+      { name: "contract_title", label: "契約名", type: "text", required: true },
+      { name: "contract_level", label: "契約レベル", type: "select", options: ["", "master", "individual", "standalone"] },
+      { name: "contract_category", label: "契約カテゴリ", type: "text", hint: "license_in / license_out / service / publication / sales / nda" },
+      { name: "contract_type", label: "契約類型", type: "text" },
+      { name: "lifecycle_stage", label: "ライフサイクル", type: "text", hint: "requested / under_review / executed 等" },
+      { name: "primary_vendor_id", label: "主取引先ID", type: "number" },
+      { name: "effective_date", label: "発効日", type: "date" },
+      { name: "expiration_date", label: "満了日", type: "date" },
+      { name: "auto_renewal", label: "自動更新", type: "bool" }
+    ]
+  };
+  // 一覧カード用の表示(name/badge/sub の組み立て)
+  function cardOf(type, x) {
+    if (type === "source-ips") {
+      return { id: x.id, name: x.title || ("#" + x.id), badge: x.source_code,
+        sub: "権利者: " + (x.default_rights_holder || "—") + " / 素材 " + (x.material_count || 0) };
+    }
+    if (type === "works") {
+      return { id: x.id, name: x.title || ("#" + x.id), badge: x.work_code,
+        sub: (x.work_type || "—") + " / " + (x.status || "—") + " / 製品 " + (x.product_count || 0) };
+    }
+    return { id: x.id, name: x.contract_title || x.document_number || ("#" + x.id), badge: x.contract_level || "—",
+      sub: (x.contract_category || "—") + " / " + (x.primary_vendor || "—") + " / " + (x.lifecycle_stage || "—") + " / 条件 " + (x.term_count || 0) };
+  }
+
   function esc(s) {
     return String(s == null ? "" : s)
-      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
-      .replace(/"/g, "&quot;");
+      .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
   }
-  function card(name, badge, sub, badgeClass) {
-    return '<div class="card"><div class="row1"><div class="name">' + esc(name) +
-      '</div>' + (badge ? '<span class="badge ' + (badgeClass || '') + '">' + esc(badge) + '</span>' : '') +
-      '</div><div class="sub">' + esc(sub) + '</div></div>';
+  function showErr(msg) {
+    var e = document.getElementById("err");
+    e.style.display = "block"; e.textContent = msg;
   }
-  function renderEmpty(el, msg) { el.innerHTML = '<div class="empty">' + esc(msg) + '</div>'; }
-
   async function getJson(url) {
-    const r = await fetch(url, { credentials: "same-origin" });
+    var r = await fetch(url, { credentials: "same-origin" });
     if (!r.ok) throw new Error(url + " → HTTP " + r.status);
     return r.json();
   }
+  async function sendJson(method, url, body) {
+    var r = await fetch(url, {
+      method: method, credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+    var data = null;
+    try { data = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error((data && (data.error || data.message)) || (method + " " + url + " → HTTP " + r.status));
+    return data;
+  }
+
+  /* ---------- modal helpers ---------- */
+  function openModal(title) {
+    document.getElementById("mTitle").textContent = title;
+    document.getElementById("backdrop").classList.add("open");
+  }
+  function closeModal() { document.getElementById("backdrop").classList.remove("open"); }
+  function setFoot(buttons) {
+    var f = document.getElementById("mFoot");
+    f.innerHTML = "";
+    buttons.forEach(function (b) {
+      var el = document.createElement("button");
+      el.className = "btn " + (b.cls || "");
+      el.textContent = b.label;
+      el.addEventListener("click", b.onClick);
+      f.appendChild(el);
+    });
+  }
+
+  /* ---------- list ---------- */
+  function renderList(type, gridId, countId, items) {
+    var grid = document.getElementById(gridId);
+    document.getElementById(countId).textContent = "(" + items.length + ")";
+    if (!items.length) { grid.innerHTML = '<div class="empty">データがありません</div>'; return; }
+    grid.innerHTML = items.map(function (x) {
+      var c = cardOf(type, x);
+      return '<div class="card" data-type="' + type + '" data-id="' + c.id + '">' +
+        '<div class="row1"><div class="name">' + esc(c.name) + '</div>' +
+        (c.badge ? '<span class="badge outline">' + esc(c.badge) + '</span>' : '') +
+        '</div><div class="sub">' + esc(c.sub) + '</div></div>';
+    }).join("");
+  }
 
   async function load() {
-    const err = document.getElementById("err");
-    err.style.display = "none"; err.textContent = "";
-    const ids = ["ipCount", "workCount", "contractCount"];
-    ids.forEach(function (id) { document.getElementById(id).textContent = "…"; });
+    document.getElementById("err").style.display = "none";
+    ["ipCount", "workCount", "contractCount"].forEach(function (id) { document.getElementById(id).textContent = "…"; });
     try {
-      const [ips, works, contracts] = await Promise.all([
-        getJson("/api/v3/source-ips"),
-        getJson("/api/v3/works"),
-        getJson("/api/v3/contracts"),
-      ]);
-
-      const ipGrid = document.getElementById("ipGrid");
-      document.getElementById("ipCount").textContent = "(" + ips.length + ")";
-      ipGrid.innerHTML = ips.length
-        ? ips.map(function (s) {
-            return card(s.title || ("#" + s.id), s.source_code,
-              "権利者: " + (s.default_rights_holder || "—") + " / 素材 " + (s.material_count || 0));
-          }).join("")
-        : "";
-      if (!ips.length) renderEmpty(ipGrid, "原作IPがありません");
-
-      const workGrid = document.getElementById("workGrid");
-      document.getElementById("workCount").textContent = "(" + works.length + ")";
-      workGrid.innerHTML = works.length
-        ? works.map(function (w) {
-            return card(w.title || ("#" + w.id), w.work_code,
-              (w.work_type || "—") + " / " + (w.status || "—") + " / 製品 " + (w.product_count || 0));
-          }).join("")
-        : "";
-      if (!works.length) renderEmpty(workGrid, "自社作品がありません");
-
-      const cGrid = document.getElementById("contractGrid");
-      document.getElementById("contractCount").textContent = "(" + contracts.length + ")";
-      cGrid.innerHTML = contracts.length
-        ? contracts.map(function (c) {
-            return card(c.contract_title || c.document_number || ("#" + c.id),
-              c.contract_level || "—",
-              (c.contract_category || "—") + " / " + (c.primary_vendor || "—") +
-                " / " + (c.lifecycle_stage || "—") + " / 条件 " + (c.term_count || 0), "outline");
-          }).join("")
-        : "";
-      if (!contracts.length) renderEmpty(cGrid, "契約がありません");
+      var r = await Promise.all([getJson(API["source-ips"]), getJson(API["works"]), getJson(API["contracts"])]);
+      renderList("source-ips", "ipGrid", "ipCount", r[0]);
+      renderList("works", "workGrid", "workCount", r[1]);
+      renderList("contracts", "contractGrid", "contractCount", r[2]);
     } catch (e) {
-      err.style.display = "block";
-      err.textContent = "読み込みに失敗しました: " + (e && e.message ? e.message : e);
-      ids.forEach(function (id) { document.getElementById(id).textContent = ""; });
+      showErr("読み込みに失敗しました: " + (e && e.message ? e.message : e));
     }
   }
 
+  /* ---------- detail ---------- */
+  function fmtVal(v) {
+    if (v == null || v === "") return "—";
+    if (Array.isArray(v)) return v.length ? v.join(", ") : "—";
+    if (typeof v === "boolean") return v ? "はい" : "いいえ";
+    if (typeof v === "string" && v.length >= 10 && /^\\d{4}-\\d{2}-\\d{2}T/.test(v)) return v.slice(0, 10);
+    return String(v);
+  }
+  function subTable(label, rows) {
+    if (!Array.isArray(rows) || rows.length === 0) return "";
+    var cols = Object.keys(rows[0]).filter(function (k) { return k !== "id"; }).slice(0, 8);
+    var head = "<tr>" + cols.map(function (c) { return "<th>" + esc(c) + "</th>"; }).join("") + "</tr>";
+    var body = rows.map(function (rw) {
+      return "<tr>" + cols.map(function (c) { return "<td>" + esc(fmtVal(rw[c])) + "</td>"; }).join("") + "</tr>";
+    }).join("");
+    return '<div class="sub-h">' + esc(label) + ' (' + rows.length + ')</div><table class="sub">' + head + body + "</table>";
+  }
+  var SUBKEYS = {
+    "source-ips": [["materials", "素材 / 権利者台帳"]],
+    "works": [["products", "製品"], ["rights", "権利台帳"], ["contracts", "紐づく契約"], ["payment_summary", "支払集計"]],
+    "contracts": [["works", "対象作品 / IP"], ["parties", "当事者"], ["financial_terms", "財務条件"], ["line_items", "明細"], ["royalty_statements", "ロイヤリティ"]]
+  };
+  async function openDetail(type, id) {
+    openModal(LABEL[type] + " 詳細");
+    var body = document.getElementById("mBody");
+    body.innerHTML = '<div class="muted">読み込み中…</div>';
+    setFoot([{ label: "閉じる", cls: "ghost", onClick: closeModal }]);
+    try {
+      var obj = await getJson(API[type] + "/" + id);
+      var dl = SCHEMA[type].map(function (f) {
+        return "<dt>" + esc(f.label) + "</dt><dd>" + esc(fmtVal(obj[f.name])) + "</dd>";
+      }).join("");
+      var codeKey = type === "source-ips" ? "source_code" : type === "works" ? "work_code" : "document_number";
+      var head = '<dl class="kv"><dt>コード</dt><dd>' + esc(obj[codeKey] || "—") + "</dd>" + dl + "</dl>";
+      var subs = (SUBKEYS[type] || []).map(function (p) { return subTable(p[1], obj[p[0]]); }).join("");
+      body.innerHTML = head + subs;
+      setFoot([
+        { label: "✎ 編集", cls: "", onClick: function () { openForm(type, "edit", obj); } },
+        { label: "閉じる", cls: "ghost", onClick: closeModal }
+      ]);
+    } catch (e) {
+      body.innerHTML = '<div class="bad">取得失敗: ' + esc(e && e.message ? e.message : e) + "</div>";
+    }
+  }
+
+  /* ---------- create / edit form ---------- */
+  function fieldHtml(f, val) {
+    var v = val == null ? "" : val;
+    var inner;
+    if (f.type === "textarea") {
+      inner = '<textarea id="f_' + f.name + '">' + esc(v) + "</textarea>";
+    } else if (f.type === "bool") {
+      inner = '<input type="checkbox" id="f_' + f.name + '"' + (v ? " checked" : "") + " style='width:auto'>";
+    } else if (f.type === "select") {
+      inner = '<select id="f_' + f.name + '">' + f.options.map(function (o) {
+        return '<option value="' + esc(o) + '"' + (String(v) === o ? " selected" : "") + ">" + (o === "" ? "(未設定)" : esc(o)) + "</option>";
+      }).join("") + "</select>";
+    } else if (f.type === "array") {
+      inner = '<input type="text" id="f_' + f.name + '" value="' + esc(Array.isArray(v) ? v.join(", ") : v) + '">';
+    } else if (f.type === "number") {
+      inner = '<input type="number" id="f_' + f.name + '" value="' + esc(v) + '">';
+    } else if (f.type === "date") {
+      inner = '<input type="date" id="f_' + f.name + '" value="' + esc(String(v).slice(0, 10)) + '">';
+    } else {
+      inner = '<input type="text" id="f_' + f.name + '" value="' + esc(v) + '">';
+    }
+    return '<div class="field"><label>' + esc(f.label) + (f.required ? ' <span class="bad">*</span>' : "") + "</label>" +
+      inner + (f.hint ? '<div class="hint">' + esc(f.hint) + "</div>" : "") + "</div>";
+  }
+  function gatherForm(type) {
+    var out = {};
+    SCHEMA[type].forEach(function (f) {
+      var el = document.getElementById("f_" + f.name);
+      if (!el) return;
+      if (f.type === "bool") out[f.name] = el.checked;
+      else if (f.type === "array") out[f.name] = el.value.split(/[,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
+      else if (f.type === "number") { var n = el.value.trim(); out[f.name] = n === "" ? null : Number(n); }
+      else { var s = el.value.trim(); out[f.name] = s === "" ? null : s; }
+    });
+    return out;
+  }
+  function openForm(type, mode, data) {
+    data = data || {};
+    openModal((mode === "edit" ? "✎ 編集 — " : "＋ 新規 — ") + LABEL[type]);
+    document.getElementById("mBody").innerHTML =
+      SCHEMA[type].map(function (f) { return fieldHtml(f, data[f.name]); }).join("");
+    setFoot([
+      { label: "キャンセル", cls: "ghost", onClick: closeModal },
+      { label: "保存", cls: "", onClick: function () { saveForm(type, mode, data.id); } }
+    ]);
+  }
+  async function saveForm(type, mode, id) {
+    var payload = gatherForm(type);
+    var titleField = type === "contracts" ? "contract_title" : "title";
+    if (!payload[titleField]) { alert((type === "contracts" ? "契約名" : "タイトル") + "は必須です"); return; }
+    try {
+      if (mode === "edit") await sendJson("PUT", API[type] + "/" + id, payload);
+      else await sendJson("POST", API[type], payload);
+      closeModal();
+      await load();
+    } catch (e) {
+      alert("保存に失敗しました: " + (e && e.message ? e.message : e));
+    }
+  }
+
+  /* ---------- CSV import ---------- */
+  function openImport(type) {
+    openModal("⇪ CSV取込 — " + LABEL[type]);
+    var tpl = "/api/v3/import/" + type + "/template.csv";
+    document.getElementById("mBody").innerHTML =
+      '<div class="field"><a class="btn sm ghost" href="' + tpl + '">⬇ サンプルCSVをダウンロード</a>' +
+      '<div class="hint">UTF-8。日本語/英語ヘッダ対応。コード列が空なら自動採番されます。</div></div>' +
+      '<div class="field"><label>CSVファイル</label><input type="file" id="imp_file" accept=".csv,text/csv"></div>' +
+      '<div class="field"><label>または CSV を貼り付け</label><textarea id="imp_text" style="min-height:120px;font-family:ui-monospace,monospace;"></textarea></div>' +
+      '<div class="row-flex">' +
+        '<label style="font-size:13px;"><input type="checkbox" id="imp_dry" checked> ドライラン(検証のみ・書込なし)</label>' +
+        '<label style="font-size:13px;">重複時: <select id="imp_dup"><option value="overwrite">上書き</option><option value="skip">スキップ</option><option value="fill_only">空欄のみ補完</option></select></label>' +
+      '</div>' +
+      '<div id="imp_result" style="margin-top:12px;"></div>';
+    var fileEl = document.getElementById("imp_file");
+    fileEl.addEventListener("change", function () {
+      var file = fileEl.files && fileEl.files[0];
+      if (!file) return;
+      var reader = new FileReader();
+      reader.onload = function () { document.getElementById("imp_text").value = String(reader.result || ""); };
+      reader.readAsText(file, "UTF-8");
+    });
+    setFoot([
+      { label: "閉じる", cls: "ghost", onClick: closeModal },
+      { label: "実行", cls: "", onClick: function () { runImport(type); } }
+    ]);
+  }
+  async function runImport(type) {
+    var csv = document.getElementById("imp_text").value;
+    var dry = document.getElementById("imp_dry").checked;
+    var dup = document.getElementById("imp_dup").value;
+    var box = document.getElementById("imp_result");
+    if (!csv.trim()) { box.innerHTML = '<div class="bad">CSV が空です</div>'; return; }
+    box.innerHTML = '<div class="muted">処理中…</div>';
+    try {
+      var r = await sendJson("POST", "/api/v3/import/" + type, { csv: csv, dry_run: dry, duplicate_mode: dup });
+      var stats = '<div class="result-stats">' +
+        '<div class="s">総数 <b>' + r.total + '</b></div>' +
+        '<div class="s ok">成功 <b>' + r.succeeded + '</b></div>' +
+        '<div class="s skip">スキップ <b>' + r.skipped + '</b></div>' +
+        '<div class="s bad">失敗 <b>' + r.failed + '</b></div>' +
+        '</div>';
+      var banner = r.dry_run
+        ? '<div class="skip" style="margin-bottom:8px;">🧪 ドライラン結果(DBには書き込んでいません)。問題なければドライランを外して再実行してください。</div>'
+        : '<div class="ok" style="margin-bottom:8px;">✅ 取込完了。</div>';
+      var errs = (r.errors && r.errors.length)
+        ? '<div class="sub-h">エラー</div><table class="sub"><tr><th>行</th><th>内容</th></tr>' +
+          r.errors.map(function (e) { return "<tr><td>" + e.row + "</td><td>" + esc(e.message) + "</td></tr>"; }).join("") + "</table>"
+        : "";
+      var prev = (r.preview && r.preview.length)
+        ? subTable("プレビュー", r.preview)
+        : "";
+      box.innerHTML = banner + stats + errs + prev;
+      if (!r.dry_run && r.succeeded > 0) await load();
+    } catch (e) {
+      box.innerHTML = '<div class="bad">取込に失敗しました: ' + esc(e && e.message ? e.message : e) + "</div>";
+    }
+  }
+
+  /* ---------- wiring ---------- */
   document.getElementById("reloadBtn").addEventListener("click", load);
+  document.getElementById("mClose").addEventListener("click", closeModal);
+  document.getElementById("backdrop").addEventListener("click", function (e) {
+    if (e.target === document.getElementById("backdrop")) closeModal();
+  });
+  document.addEventListener("click", function (e) {
+    var add = e.target.closest ? e.target.closest(".add-btn") : null;
+    if (add) { openForm(add.getAttribute("data-type"), "new", {}); return; }
+    var imp = e.target.closest ? e.target.closest(".imp-btn") : null;
+    if (imp) { openImport(imp.getAttribute("data-type")); return; }
+    var card = e.target.closest ? e.target.closest(".card") : null;
+    if (card) { openDetail(card.getAttribute("data-type"), card.getAttribute("data-id")); }
+  });
   load();
 </script>
 </body></html>`;

@@ -398,8 +398,9 @@ export async function getDocumentsByCategory(vendorId: number) {
   const groups: {
     basic: any[];
     individual: any[];
+    inspection: any[];
     other: any[];
-  } = { basic: [], individual: [], other: [] };
+  } = { basic: [], individual: [], inspection: [], other: [] };
 
   res.rows.forEach((r: any) => {
     const cat = (r.category || "other") as keyof typeof groups;
@@ -426,15 +427,22 @@ export async function getDocumentsByCategory(vendorId: number) {
       revision: Number(r.revision) || 0,
       is_primary: r.is_primary !== false,
     };
-    (groups[cat] || groups.other).push(item);
+    // 検収書は「契約」ではないため、個別契約から分離して専用グループへ。
+    if (/inspection_certificate/.test(String(r.contract_type || r.template_type || ""))) {
+      groups.inspection.push(item);
+    } else {
+      (groups[cat] || groups.other).push(item);
+    }
   });
 
   return {
     basic: groups.basic,
     individual: groups.individual,
+    inspection: groups.inspection,
     other: groups.other,
     total:
-      groups.basic.length + groups.individual.length + groups.other.length,
+      groups.basic.length + groups.individual.length +
+      groups.inspection.length + groups.other.length,
   };
 }
 
@@ -608,7 +616,7 @@ export async function searchByRingiNumber(ringiNumber: string) {
     [ringiNumber]
   );
   if (ringiRes.rows.length === 0) {
-    return { ok: true, ringi: null, documentsByCategory: { basic: [], individual: [], other: [], total: 0 } };
+    return { ok: true, ringi: null, documentsByCategory: { basic: [], individual: [], inspection: [], other: [], total: 0 } };
   }
   const ringi = ringiRes.rows[0];
   const docs = await query(
@@ -620,7 +628,7 @@ export async function searchByRingiNumber(ringiNumber: string) {
       ORDER BY d.created_at DESC`,
     [ringi.id]
   );
-  const groups: any = { basic: [], individual: [], other: [] };
+  const groups: any = { basic: [], individual: [], inspection: [], other: [] };
   docs.rows.forEach((r: any) => {
     const cat = (r.document_category || "other") as keyof typeof groups;
     const fd = r.form_data || {};
@@ -651,7 +659,12 @@ export async function searchByRingiNumber(ringiNumber: string) {
         "",
       created_at: r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
     };
-    (groups[cat] || groups.other).push(item);
+    // 検収書は契約から分離(getDocumentsByCategory と同じ扱い)。
+    if (/inspection_certificate/.test(String(r.template_type || ""))) {
+      groups.inspection.push(item);
+    } else {
+      (groups[cat] || groups.other).push(item);
+    }
   });
   return {
     ok: true,
@@ -665,8 +678,10 @@ export async function searchByRingiNumber(ringiNumber: string) {
     documentsByCategory: {
       basic: groups.basic,
       individual: groups.individual,
+      inspection: groups.inspection,
       other: groups.other,
-      total: groups.basic.length + groups.individual.length + groups.other.length,
+      total: groups.basic.length + groups.individual.length +
+        groups.inspection.length + groups.other.length,
     },
   };
 }
