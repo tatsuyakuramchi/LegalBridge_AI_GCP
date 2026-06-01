@@ -109,6 +109,7 @@ gcloud run services update $WORKER_SVC --region $REGION \
 | (なし) | worker | — | worker `renderHtml` は共有 `renderTemplate` 委譲(**フラグ非依存・常時**)。挙動一致は検証済 → **要スモーク** | — |
 | `RUN_INIT_DB=false` | worker | 未設定=initDb実行 | 起動時 initDb を停止 | migrate Job 成功後 |
 | `TEMPLATE_SOURCE=db` | worker / search-api | 未設定=disk/proxy | テンプレを DB から読取(C3/B2/B5b 有効化) | `document_templates` seed 済(0002/0003 適用) |
+| `VITE_API_READS_TO_WORKER=1` | **admin-ui(ビルド時)** | 未設定=read は search-api | admin-ui の GET を **worker** へ(C1)。worker は read superset(C2 完了)。マスター書込(vendors 等)は D1 どおり Search 維持 | worker に C2 read デプロイ済 + admin-ui 再ビルド・再デプロイ |
 
 ### デプロイ順序(推奨)
 1. **staging があれば staging を先に**。無ければ本番でもフラグOFFなら低リスク。

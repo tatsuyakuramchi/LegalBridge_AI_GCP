@@ -31,6 +31,15 @@
 const READ_URL = (import.meta as any).env?.VITE_API_READ_URL || "";
 const WRITE_URL = (import.meta as any).env?.VITE_API_WRITE_URL || "";
 
+// C1 (Phase 2): admin-ui の read を worker に寄せる切替フラグ。
+//   "1" のとき GET(WRITE_PATHS_ON_GET 以外)を READ_URL ではなく WRITE_URL
+//   (worker)へ振る。worker は read superset(C2 で 24 read 補完済み)。
+//   既定 OFF=従来どおり READ_URL(search-api)= 可逆。
+//   注: マスター書込(READ_PATHS_ON_POST の master/vendors 等)は D1「Search が
+//   マスター書込を所有」に従い、本フラグでも引き続き READ_URL(search-api)へ。
+const READS_TO_WORKER =
+  String((import.meta as any).env?.VITE_API_READS_TO_WORKER || "") === "1";
+
 // Phase 22: admin-ui が search-api/worker を直接 *.run.app URL で叩く際の
 // 共有シークレット。search-api 側の requireIapUser middleware が
 // X-LB-PORTAL-SECRET ヘッダを portal_secret fallback として受け入れる。
@@ -93,8 +102,10 @@ function resolveBaseUrl(method: string, path: string): string {
   const m = method.toUpperCase();
   if (m === "GET") {
     if (WRITE_PATHS_ON_GET.some((re) => re.test(path))) return WRITE_URL;
-    return READ_URL;
+    // C1: read を worker に寄せる(フラグ ON 時)。既定は READ_URL(search-api)。
+    return READS_TO_WORKER ? WRITE_URL : READ_URL;
   }
+  // マスター書込等(contract-check / master/vendors)は D1 に従い常に Search へ。
   if (READ_PATHS_ON_POST.some((re) => re.test(path))) return READ_URL;
   return WRITE_URL;
 }
