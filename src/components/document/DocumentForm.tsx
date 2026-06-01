@@ -343,7 +343,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   置くと、テンプレ切替時に hook 数が変わって React がクラッシュする
   //   (Rules of Hooks 違反)。実行ガードは effect 内の if 文で行う。
   useEffect(() => {
-    if (templateId !== 'purchase_order') return;
+    if (templateId !== 'purchase_order' && templateId !== 'intl_purchase_order') return;
     const items: any[] = Array.isArray(formData.items) ? formData.items : [];
 
     // FIXED/ROYALTY 明細から日付列を集約
@@ -422,15 +422,19 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       return fixed;
     })();
 
-    if (
-      formData.summaryDeliveryDate === nextDelivery &&
-      formData.summaryPaymentDate === nextPayment
-    ) {
+    // 海外発注書は納期キーに summaryCompletionDate を使う(国内は summaryDeliveryDate)。
+    const isIntl = templateId === 'intl_purchase_order';
+    const curDelivery = isIntl
+      ? formData.summaryCompletionDate
+      : formData.summaryDeliveryDate;
+    if (curDelivery === nextDelivery && formData.summaryPaymentDate === nextPayment) {
       return;
     }
     setFormData({
       ...formData,
-      summaryDeliveryDate: nextDelivery,
+      ...(isIntl
+        ? { summaryCompletionDate: nextDelivery, summaryDeliveryDate: nextDelivery }
+        : { summaryDeliveryDate: nextDelivery }),
       summaryPaymentDate: nextPayment,
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -4109,6 +4113,253 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               items={scopeOutItems}
               onChange={(next) => setFormData({ ...formData, scopeOutItems: next })}
             />
+          </div>
+        </details>
+      </div>
+    );
+  }
+
+  // 海外発注書 (intl_purchase_order) — 国内発注書と同じ「条件明細 (LineItemTable)」
+  //   構造を持たせる。明細は formData.items に保存、合計は grandTotalFees、
+  //   納期/支払日は summaryCompletionDate / summaryPaymentDate に自動集計
+  //   (上部の useEffect が intl_purchase_order も処理)。
+  if (templateId === 'intl_purchase_order') {
+    const fillContractor = () => {
+      if (!activeVendor) return;
+      const isCorp =
+        (activeVendor.entity_type || '').toLowerCase() === 'corporate' ||
+        activeVendor.entity_type === '法人';
+      setFormData({
+        ...formData,
+        CONTRACTOR_NAME: isCorp
+          ? activeVendor.vendor_name || ''
+          : activeVendor.pen_name || activeVendor.trade_name || activeVendor.vendor_name || '',
+        CONTRACTOR_ADDRESS: activeVendor.address || '',
+        CONTRACTOR_EMAIL: activeVendor.email || '',
+      });
+    };
+    const fillCompany = () => {
+      if (!companyProfile) return;
+      setFormData({
+        ...formData,
+        COMPANY_NAME: companyProfile.name || '',
+        COMPANY_ADDRESS: companyProfile.address || '',
+        COMPANY_REP: companyProfile.representative || '',
+      });
+    };
+    const fillStaff = () => {
+      if (!selectedStaff) return;
+      setFormData({
+        ...formData,
+        STAFF_NAME: selectedStaff.staff_name || '',
+        STAFF_DEPARTMENT: selectedStaff.department || '',
+        STAFF_PHONE: selectedStaff.phone || '',
+        STAFF_EMAIL: selectedStaff.email || '',
+      });
+    };
+    const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={disabled}
+        className={cn(
+          'text-[10px] font-mono px-2 py-0.5 uppercase border rounded-sm transition-colors',
+          disabled
+            ? 'border-input text-muted-foreground/40 cursor-not-allowed'
+            : 'border-foreground/30 text-foreground hover:bg-muted'
+        )}
+        title={disabled ? '上部で対象 (取引先 / 担当者) を選択してください' : undefined}
+      >
+        {label}
+      </button>
+    );
+    const fld = (id: string, label?: string) => renderField(id, label);
+
+    return (
+      <div className="space-y-10">
+        {/* I. 基本情報 */}
+        <FormSection
+          title="I. 基本情報 (Basic)"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+          headerActions={
+            <button
+              type="button"
+              onClick={onSync}
+              className="text-[10px] font-mono border border-foreground/30 px-2 py-0.5 uppercase rounded-sm hover:bg-muted"
+              title="Backlog 課題から自動補完"
+            >
+              <Database className="w-2 h-2 inline mr-1" />
+              Backlog Sync
+            </button>
+          }
+        >
+          {fld('OF_NO')}
+          {fld('OF_DATE')}
+          {fld('CURRENCY')}
+          {fld('PROJECT_TITLE')}
+        </FormSection>
+
+        {/* II/III. 受注者 / 自社 */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+          <FormSection
+            title="II. 受注者 (Contractor)"
+            variant="amber"
+            icon={<Building2 className="w-4 h-4" />}
+            headerActions={sideButton('取引先', fillContractor, !activeVendor)}
+          >
+            {fld('CONTRACTOR_NAME')}
+            {fld('CONTRACTOR_ADDRESS')}
+            {fld('CONTRACTOR_COUNTRY')}
+            {fld('CONTRACTOR_EMAIL')}
+          </FormSection>
+
+          <FormSection
+            title="III. 発注元・自社 (Company)"
+            variant="blue"
+            icon={<User className="w-4 h-4" />}
+            headerActions={
+              <>
+                {sideButton('自社', fillCompany, !companyProfile)}
+                {sideButton('Sync Staff', fillStaff, !selectedStaff)}
+              </>
+            }
+          >
+            {fld('COMPANY_NAME')}
+            {fld('COMPANY_ADDRESS')}
+            {fld('COMPANY_REP')}
+            {fld('STAFF_NAME')}
+            {fld('STAFF_DEPARTMENT')}
+            {fld('STAFF_PHONE')}
+            {fld('STAFF_EMAIL')}
+          </FormSection>
+        </div>
+
+        {/* IV. 条件明細 — 国内発注書と同じ LineItemTable。formData.items に保存 */}
+        <FormSection
+          title="IV. 条件明細 (Line Items)"
+          variant="indigo"
+          icon={<List className="w-4 h-4" />}
+        >
+          <LineItemTable
+            items={Array.isArray(formData.items) ? formData.items : []}
+            onChange={(items: LineItem[]) => {
+              const itemsTotal = items.reduce(
+                (sum, it) => sum + (Number(it.amount_ex_tax) || 0),
+                0
+              );
+              setFormData({ ...formData, items, grandTotalFees: itemsTotal });
+            }}
+            showPaymentColumns={true}
+          />
+        </FormSection>
+
+        {/* V. サマリ (明細から自動集計, read-only) */}
+        <FormSection
+          title="V. サマリ (明細から自動集計)"
+          variant="indigo"
+          icon={<Scale className="w-4 h-4" />}
+        >
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[11px] font-mono">
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                Total Fees (合計)
+              </div>
+              <div className="text-base font-bold">
+                {formData.CURRENCY ? formData.CURRENCY + ' ' : ''}
+                {Number(formData.grandTotalFees || 0).toLocaleString()}
+              </div>
+              <div className="text-[11px] text-muted-foreground/70 italic">明細の小計を合算</div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                Completion / Delivery (納期)
+              </div>
+              <div className="text-sm font-bold">
+                {formData.summaryCompletionDate || (
+                  <span className="text-muted-foreground/60 font-normal italic">
+                    明細の納期が未入力
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+                Payment Due (支払日)
+              </div>
+              <div className="text-sm font-bold">
+                {formData.summaryPaymentDate || (
+                  <span className="text-muted-foreground/60 font-normal italic">
+                    明細の支払日が未入力
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        </FormSection>
+
+        {/* VI. 振込先 (海外送金) */}
+        <FormSection
+          title="VI. 振込先 (Bank / Remittance)"
+          variant="emerald"
+          icon={<Coins className="w-4 h-4" />}
+        >
+          {fld('BANK_NAME')}
+          {fld('BRANCH_NAME')}
+          {fld('SWIFT_BIC')}
+          {fld('IBAN')}
+          {fld('INTERMEDIARY_BANK')}
+          {fld('ACCOUNT_TYPE')}
+          {fld('ACCOUNT_NUMBER')}
+          {fld('ACCOUNT_HOLDER')}
+          {fld('ACCOUNT_HOLDER_LOCAL')}
+          {fld('TAX_REGISTRATION_NO')}
+          {fld('TRANSFER_FEE_CODE')}
+        </FormSection>
+
+        {/* VII. 受諾・署名 */}
+        <FormSection
+          title="VII. 受諾・署名 (Acceptance)"
+          variant="default"
+          icon={<User className="w-4 h-4" />}
+        >
+          {fld('ACCEPT_METHOD')}
+          {fld('ACCEPT_REPLY_DUE_DATE')}
+          {fld('SHOW_SIGN_SECTION')}
+          {fld('CONTRACTOR_ACCEPT_DATE')}
+        </FormSection>
+
+        {/* VIII. 特約・準拠法・法的条項・備考 — 折りたたみ */}
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ VIII. 特約・準拠法・法的条項・備考 (任意) — クリックして展開
+          </summary>
+          <div className="p-4 border-t border-input space-y-3">
+            {fld('SPECIAL_TERMS')}
+            {fld('GOVERNING_LAW')}
+            {fld('DISPUTE_RESOLUTION')}
+            {fld('TERMS_VERSION_DATE')}
+            {fld('NDA_SURVIVAL_YEARS')}
+            {fld('LATE_PAYMENT_RATE')}
+            {fld('REMARKS')}
+          </div>
+        </details>
+
+        {/* 単一明細フォールバック — 明細表が空のときだけ PDF に反映 */}
+        <details className="group rounded-sm border border-input">
+          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+            ▶ 単一明細フォールバック (任意・上級者向け) — 明細表が空のときだけ参照される
+          </summary>
+          <div className="p-4 border-t border-input space-y-3">
+            <p className="text-[10px] font-mono text-muted-foreground italic">
+              通常は <strong>IV. 条件明細</strong> 表を使ってください。以下は明細表が空の
+              場合のみ PDF に反映される後方互換入力です。
+            </p>
+            {fld('grandTotalFees', 'Total Fees (合計) — 手入力 (明細表を使わない場合のみ)')}
+            {fld('summaryCompletionDate', 'Completion Date (完了日) — 手入力')}
+            {fld('summaryPaymentDate', 'Payment Due Date (支払期日) — 手入力')}
+            {fld('ITEM_NAME')}
+            {fld('PAYMENT_METHOD')}
           </div>
         </details>
       </div>
