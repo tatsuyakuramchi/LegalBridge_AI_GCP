@@ -533,8 +533,12 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       const items = Array.isArray(rows) && rows.length ? rows : [{
         account_scope: 'domestic', is_primary: true,
       }];
+      // DB 列幅に合わせた maxlength。value too long(VARCHAR 超過)による 500 を入力段階で防ぐ。
+      const ML = { swift_bic: 20, iban: 64, routing_number: 40, bank_country: 2, currency: 3,
+                   intermediary_bank_swift: 20, account_type: 50, account_number: 50 };
       const fld = (name, ph, val, span) =>
         '<input class="tech-input" data-bank-field="' + name + '" placeholder="' + ph + '" value="' + escAttr(val || '') + '"'
+          + (ML[name] ? ' maxlength="' + ML[name] + '"' : '')
           + (span ? ' style="grid-column: span ' + span + ';"' : '') + '>';
       const grpStyle = 'grid-template-columns:repeat(3,1fr);gap:8px;';
       list.innerHTML = items.map((a, idx) => {
@@ -564,8 +568,8 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
           +   fld('account_number', 'Account No.', a.account_number)
           +   fld('account_holder_name', 'Account holder (英字)', a.account_holder_name)
           +   fld('routing_number', 'Routing / ABA / sort', a.routing_number)
-          +   fld('bank_country', '国 (US / GB…)', a.bank_country)
-          +   fld('currency', '通貨 (USD / EUR…)', a.currency)
+          +   fld('bank_country', '国コード ISO 2文字 (US/GB/CN)', a.bank_country)
+          +   fld('currency', '通貨 ISO 3文字 (USD/EUR)', a.currency)
           +   fld('bank_address', 'Bank address', a.bank_address)
           +   fld('intermediary_bank_swift', '中継銀行 SWIFT', a.intermediary_bank_swift)
           +   fld('intermediary_bank_name', '中継銀行名', a.intermediary_bank_name, 2)
@@ -721,6 +725,18 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       const payload = readForm();
       if (!payload.vendor_code) { toast('取引先コードは必須です', 'error'); return; }
       if (!payload.vendor_name) { toast('正式名称は必須です', 'error'); return; }
+      // 海外口座の桁数チェック(DB列幅超過による保存失敗を分かりやすく前段で止める)。
+      for (const a of (payload.bank_accounts || [])) {
+        if (a.account_scope !== 'overseas') continue;
+        if (a.bank_country && a.bank_country.length > 2) {
+          toast('銀行の「国コード」は ISO の2文字で入力してください(例: US / GB / CN)。国名ではなくコードです。', 'error');
+          return;
+        }
+        if (a.currency && a.currency.length > 3) {
+          toast('「通貨」は ISO の3文字コードで入力してください(例: USD / EUR / JPY)。', 'error');
+          return;
+        }
+      }
       $('btn-save').disabled = true;
       try {
         const res = await fetch(apiListUrl, {
