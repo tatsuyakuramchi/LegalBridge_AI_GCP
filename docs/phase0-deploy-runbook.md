@@ -135,3 +135,165 @@ gcloud run services update $WORKER_SVC --region $REGION \
 
 > **本デプロイで完了しないこと**: C1(admin-ui→worker専用)/ C2 残バッチ /
 > 0007 互換ビュー / 0008 backfill / C5 worker書込先差替。これらは後続フェーズ。
+
+---
+
+## フラグ段階ON 完全手順 ― 基盤投入後に機能を1つずつ有効化
+
+> フラグOFFデプロイ(上記)が本番で安定したあと、**フラグを1つずつ立てて**
+> 新機能を有効化する手順。各フラグは**独立・可逆**で、ON→スモーク→NG なら
+> `--remove-env-vars` で即ロールバック。**この順序**(依存の浅い順)で進める。
+> 実行は GCP 認証のある環境。1ステップ完了・安定を確認してから次へ。
+>
+> **前提となるブランチ反映**(各 cloudbuild は対象ブランチの push で自動デプロイ):
+> | コミット | 内容 | 反映先ブランチ | 必要なステップ |
+> | :--- | :--- | :--- | :--- |
+> | `0211390` B3 | `/api/v3` write を admin ロール必須化 | `release/api`(search-api) | Step F4 の v3 write 前 |
+> | `361ed48` 0012 | 同期トリガ(old→新スキーマ) | migrate Job(`schema_migrations`) | Step F0 の migrate で適用 |
+>
+> ```bash
+> # B3(search-api)を release/api へ反映 → search-api 自動デプロイ(挙動はフラグ非依存で安全)
+> git push origin claude/game-company-schema-design-HSNYB:release/api
+> ```
+
+### 共通変数(再掲)
+```bash
+REGION=asia-northeast1
+WORKER_SVC=legalbridge-document-worker
+SEARCH_SVC=legalbridge-search-api
+```
+> リビジョン固定ロールバック用に、各 update 前の現リビジョンを控える:
+> `gcloud run services describe $SVC --region $REGION --format='value(status.latestReadyRevisionName)'`
+
+---
+
+### Step F0: migrations を最新まで適用(0001–0012)
+フラグを立てる前に、DB スキーマ・backfill・同期トリガを**先に**反映する。
+
+> ⚠️ **`.sql` を Cloud SQL Studio / GUI に手で貼って流さないこと。**
+> マイグレーションの適用順・冪等・重複ガードは **runner(`migrations/run.mjs`)が
+> `schema_migrations` で管理**する。`.sql` 自体は `schema_migrations` を作らないため、
+> 手動貼付では `relation "schema_migrations" does not exist` 等になり追跡も効かない。
+> さらに `0003_seed_templates.sql` は **約656KB** で GUI の貼付上限を超える。
+> **必ず runner(下記 A or B)で流す。** 全マイグレーションは冪等(`IF NOT EXISTS` /
+> `WHERE NOT EXISTS` / `CREATE OR REPLACE` + `DROP TRIGGER IF EXISTS`)なので、
+> 手動で一部オブジェクトが既にあっても runner 全件再実行で安全。
+
+**A) Cloud Shell から runner 直実行(最速・推奨。Job/Secret 不要)**
+```bash
+INSTANCE=<PROJECT:REGION:instance>   # Cloud SQL 接続名
+DB=legalbridge
+
+# Cloud SQL Auth Proxy で 127.0.0.1:5432 に DB を張る
+curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+chmod +x cloud-sql-proxy
+./cloud-sql-proxy "$INSTANCE" &
+
+cd migrations && npm install
+DATABASE_URL="postgresql://postgres:<PW>@127.0.0.1:5432/$DB" npm run migrate:dry   # pending 確認(0001-0012)
+DATABASE_URL="postgresql://postgres:<PW>@127.0.0.1:5432/$DB" npm run migrate        # 適用
+```
+> run.mjs は 127.0.0.1 を local 判定し ssl=false(proxy が Cloud SQL への TLS を担う)。
+
+**B) Cloud Run Job(CI/反復運用向け。Secret 前提=Step 1 が必要)**
+```bash
+gcloud builds submit --config cloudbuild-migrate.yaml \
+  --substitutions=_REGION=$REGION,_INSTANCE_CONNECTION_NAME=$INSTANCE .
+```
+
+> ⚠️ **GRANT 必須(0013)**: migrate を **postgres** で流すと新テーブルは postgres 所有になり、
+> アプリ接続ロール **`legalbridge`** に権限が無く、F1 で `permission denied for table
+> document_templates` になる(0012 トリガの新テーブル書込も失敗する)。`0013_grants.sql`
+> がこれを解消する(postgres 所有→legalbridge へ付与 + DEFAULT PRIVILEGES)。**0013 まで
+> 適用してから F1 へ進むこと。** 適用後は worker を**再起動**(新リビジョン)して
+> `loadFromDb` を再試行させる。
+- **検証**:
+  ```bash
+  gcloud run jobs executions list --job legalbridge-migrate --region $REGION   # 最新が Succeeded
+  # DB で:
+  #   SELECT version FROM schema_migrations ORDER BY version;  → 0001〜0012 が揃う
+  #   SELECT count(*) FROM document_templates;                 → seed 済(>0)
+  #   SELECT count(*) FROM works; SELECT count(*) FROM contracts;  → 0008–0010 backfill 反映
+  #   SELECT tgname FROM pg_trigger WHERE tgname LIKE 'trg_sync_%';  → 0012 トリガ 5本(関数名は lb_sync_*、トリガ名は trg_sync_*)
+  ```
+- **ロールバック**: backfill/トリガは**純追加・冪等**(既存テーブル不変)。問題時は
+  0012 のトリガのみ無効化可: `DROP TRIGGER lb_sync_contracts ON contract_capabilities;` 等
+  (旧フローは旧テーブルにそのまま書くため無影響)。
+
+---
+
+### Step F1: worker テンプレを DB 読取(`TEMPLATE_SOURCE=db`)
+**前提**: F0 成功(`document_templates` seed 済)。worker の文書生成をディスク→DB に切替。
+```bash
+gcloud run services update $WORKER_SVC --region $REGION \
+  --update-env-vars TEMPLATE_SOURCE=db
+```
+- **検証**: 新リビジョン起動ログに DB テンプレロード成功。**実際に文書を1本生成**し、
+  従来と同一HTML/PDFになること(renderHtml は既に共有 `renderTemplate` 委譲済=差分は出所のみ)。
+  Backlog webhook 経由の生成スモークも1件。
+- **ロールバック**(即時): `gcloud run services update $WORKER_SVC --region $REGION \
+  --remove-env-vars TEMPLATE_SOURCE` → ディスクテンプレに復帰。
+
+---
+
+### Step F2: worker の initDb を停止(`RUN_INIT_DB=false`)
+**前提**: F0 成功(schema は migrate Job が単一所有)。Step 3 と同一。
+```bash
+gcloud run services update $WORKER_SVC --region $REGION \
+  --update-env-vars RUN_INIT_DB=false
+```
+- **検証**: 起動ログに `⏭️  RUN_INIT_DB=false — skipping initDb`。Backlog webhook /
+  文書生成スモークOK。スキーマに変化なし。
+- **ロールバック**(即時): `--remove-env-vars RUN_INIT_DB` → 起動時 initDb 再開(冪等・無害)。
+
+> F1 と F2 は worker への env 追加なので、1リビジョンに**まとめて**当てても良い:
+> `--update-env-vars TEMPLATE_SOURCE=db,RUN_INIT_DB=false`。分けると切り分けが容易。
+
+---
+
+### Step F3: search-api テンプレを DB 読取(`TEMPLATE_SOURCE=db`)
+**前提**: F0 成功 + B3 が `release/api` へ反映済(search-api 最新コード)。
+```bash
+gcloud run services update $SEARCH_SVC --region $REGION \
+  --update-env-vars TEMPLATE_SOURCE=db
+```
+- **検証**: テンプレ一覧 API が DB 由来で返る。`/api/templates`(または該当エンドポイント)で
+  件数・内容が従来一致。B5b html プレビューがローカル生成される(worker proxy を使わない)。
+  ※ PDF は Chromium 同梱(B5b 残)まで proxy 継続=現状維持で可。
+- **ロールバック**(即時): `--remove-env-vars TEMPLATE_SOURCE` → proxy/disk に復帰。
+
+---
+
+### Step F4: admin-ui の read を worker へ寄せる(`VITE_API_READS_TO_WORKER=1`)
+**最後**に実施。これは**ビルド時**フラグ(Vite 埋め込み)なので env update では効かず、
+**再ビルド+再デプロイ**が必要。
+**前提**: worker に C2 read superset がデプロイ済(完了済)+ F1/F2 安定。
+```bash
+# admin-ui を read→worker でビルドして main へ(cloudbuild.yaml が VITE_API_READS_TO_WORKER を
+# ビルド substitution で受ける場合は --substitutions で、env 埋め込みなら下記のように cloudbuild 側で渡す)
+#   例) cloudbuild.yaml の Vite build step に: --build-arg VITE_API_READS_TO_WORKER=1
+#       もしくは substitutions=_VITE_API_READS_TO_WORKER=1
+git push origin claude/game-company-schema-design-HSNYB:main   # main push で admin-ui 自動デプロイ
+```
+> ⚠️ フラグの注入経路(cloudbuild substitution / build-arg / .env)を**反映前に確認**。
+> 値が埋まらないと既定OFF(=search-api 読取)のまま無害に出る。
+- **検証**: admin-ui の GET が worker を叩く(DevTools Network で WRITE_URL 宛を確認)。
+  一覧/詳細が従来一致。**マスター書込(vendors 等)は引き続き search-api**(D1, READ_PATHS_ON_POST)。
+- **ロールバック**: `VITE_API_READS_TO_WORKER` を外して再ビルド→ main 再 push
+  → read は search-api に復帰。
+
+---
+
+### フラグ段階ON DoD
+- [ ] F0: `schema_migrations` に 0001–0012、`document_templates` seed、works/contracts backfill、`lb_sync_*` トリガ。
+- [ ] F1: worker 文書生成が DB テンプレで従来一致。
+- [ ] F2: worker `RUN_INIT_DB=false` で initDb skip・スモークOK。
+- [ ] F3: search-api テンプレ list が DB 由来、B5b html ローカル生成。
+- [ ] F4: admin-ui read が worker、書込は search-api 維持。
+- [ ] 各フラグの**即時ロールバック**(remove-env-vars / 再ビルド)を確認済。
+
+### 順序の要点
+1. **F0(migrate)が全ての前提** ― スキーマ/seed が無いと TEMPLATE_SOURCE=db / RUN_INIT_DB=false が壊れる。
+2. **worker(F1/F2)→ search-api(F3)→ admin-ui(F4)** ― 読取の供給側(worker/search-api)を
+   先に安定させてから、消費側(admin-ui)の経路を切り替える。
+3. **B3(release/api)は F3/v3-write より前** ― admin ロール必須化が未反映だと書込権限が緩い。

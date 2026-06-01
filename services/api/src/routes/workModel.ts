@@ -22,7 +22,7 @@ const pad4 = (n: number) => String(n).padStart(4, "0");
 
 export function registerWorkModelRoutes(
   app: Express,
-  deps: { query: Query; requireWrite: Middleware }
+  deps: { query: Query; requireWrite: Middleware[] }
 ): void {
   const { query, requireWrite } = deps;
   const fail = (res: any, e: unknown) => res.status(500).json({ ok: false, error: String(e) });
@@ -173,10 +173,10 @@ export function registerWorkModelRoutes(
   });
 
   // ── 書込(D1: Search がマスター/新プラットフォームを所有)─────────────
-  //   IAP ゲート(requireWrite)。採番は master_sequences(worker と番号空間分離)。
+  //   IAP + admin ロール(requireWrite)。採番は master_sequences(worker と番号空間分離)。
 
   // POST /api/v3/source-ips — 原作IP登録
-  app.post("/api/v3/source-ips", requireWrite, express.json(), async (req, res) => {
+  app.post("/api/v3/source-ips", ...requireWrite, express.json(), async (req, res) => {
     try {
       const b = req.body || {};
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
@@ -198,7 +198,7 @@ export function registerWorkModelRoutes(
   });
 
   // POST /api/v3/works — 自社作品登録
-  app.post("/api/v3/works", requireWrite, express.json(), async (req, res) => {
+  app.post("/api/v3/works", ...requireWrite, express.json(), async (req, res) => {
     try {
       const b = req.body || {};
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
@@ -218,7 +218,7 @@ export function registerWorkModelRoutes(
 
   // POST /api/v3/contracts — 契約登録(origin='registered'、master_sequences 採番)
   //   body.works[] = [{ work_id?, source_ip_id?, product_id?, role? }] を contract_works へ。
-  app.post("/api/v3/contracts", requireWrite, express.json(), async (req, res) => {
+  app.post("/api/v3/contracts", ...requireWrite, express.json(), async (req, res) => {
     try {
       const b = req.body || {};
       if (!b.contract_title) return res.status(400).json({ ok: false, error: "contract_title is required" });
