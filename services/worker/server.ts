@@ -60,6 +60,8 @@ import {
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
+// C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
+import { registerSharedReads } from "./src/routes/sharedReads.ts";
 import {
   calculateTax,
   calculateOrderLineAmount,
@@ -5780,6 +5782,9 @@ ${details}
     linkRingiByDocNumber,
     requirePortalSecret,
   });
+
+  // C2 バッチ1: 単純マスター read(search-api からの移植)を worker に登録。
+  registerSharedReads(app, { query });
 
   /**
    * Bulk import: 業務委託基本契約書 (service_master)。
