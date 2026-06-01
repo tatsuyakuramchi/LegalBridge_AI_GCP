@@ -340,8 +340,10 @@ export function DocumentEditorPage() {
         )
         const context = await res.json()
         // Phase 22.11.2: 過去 doc のメタ情報を別 state に保存 (formData は汚さない)
-        if (context && context._previousDocument) {
-          setPreviousDocument(context._previousDocument)
+        const prevDoc =
+          context && context._previousDocument ? context._previousDocument : null
+        if (prevDoc) {
+          setPreviousDocument(prevDoc)
           // formData に流し込む前に削除 (context spread で残ると formData が膨らむ)
           delete context._previousDocument
         } else {
@@ -349,8 +351,6 @@ export function DocumentEditorPage() {
         }
         // Phase 22.21.29: prev をマージせず、フォームを 完全に置換 する。
         //   そうしないと直前の課題で入力したフィールドがリーク。
-        //   __local_* / __pdf_pending 等の制御フラグは ここでは入れない
-        //   (リセットが目的なので)。
         // Phase 22.21.79: draft があれば context をベースに draft で上書きする。
         //   draft は最新の編集状態 (= ユーザーが最後に入力した内容) なので、
         //   context の自動補完値で塗りつぶされないよう draft を後にスプレッドする。
@@ -360,14 +360,39 @@ export function DocumentEditorPage() {
           ...context,
         }
         if (draft?.form_data && typeof draft.form_data === "object") {
+          // 1) 一時保存 (DB draft) を最優先で復元 (直近の編集状態)。
           Object.assign(base, draft.form_data)
           const when = draft.updated_at
             ? new Date(draft.updated_at).toLocaleString("ja-JP")
             : ""
-          showNotification(
-            `📄 Draft restored from server (${when})`,
-            "success"
-          )
+          showNotification(`📄 一時保存を復元しました (${when})`, "success")
+        } else if (prevDoc?.document_number) {
+          // 2) 一時保存が無ければ、同じ課題・同テンプレの「前回発行文書」の
+          //    form_data を自動で呼び出してプリフィルする。課題を選ぶだけで
+          //    以前の入力内容が戻る。閲覧モードのままなので編集は [編集] ボタンで。
+          try {
+            const pRes = await fetch(
+              `/api/documents/by-number/${encodeURIComponent(prevDoc.document_number)}`
+            )
+            const pData = await pRes.json().catch(() => ({}))
+            if (
+              pRes.ok &&
+              pData?.ok &&
+              pData.form_data &&
+              typeof pData.form_data === "object"
+            ) {
+              Object.assign(base, pData.form_data)
+              const when = prevDoc.created_at
+                ? new Date(prevDoc.created_at).toLocaleString("ja-JP")
+                : ""
+              showNotification(
+                `📄 前回文書 ${prevDoc.document_number} の内容を呼び出しました (${when})`,
+                "success"
+              )
+            }
+          } catch (e) {
+            console.warn("[syncFromDatabase] previous doc autoload failed:", e)
+          }
         }
         setFormData(base)
       } catch (e) {
