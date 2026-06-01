@@ -77,6 +77,17 @@ export type VendorBankAccount = {
   account_holder_kana?: string | null;
   is_primary?: boolean;
   sort_order?: number;
+  // 0014: 海外送金用(account_scope='overseas' のとき使用)
+  account_scope?: string | null; // 'domestic' | 'overseas'
+  swift_bic?: string | null;
+  iban?: string | null;
+  routing_number?: string | null;
+  account_holder_name?: string | null;
+  bank_country?: string | null;
+  bank_address?: string | null;
+  currency?: string | null;
+  intermediary_bank_swift?: string | null;
+  intermediary_bank_name?: string | null;
 };
 
 export type VendorRow = {
@@ -226,7 +237,9 @@ async function fetchBankAccountsMap(
   try {
     const res = await query(
       `SELECT vendor_id, id, bank_label, bank_name, branch_name, account_type,
-              account_number, account_holder_kana, is_primary, sort_order
+              account_number, account_holder_kana, is_primary, sort_order,
+              account_scope, swift_bic, iban, routing_number, account_holder_name,
+              bank_country, bank_address, currency, intermediary_bank_swift, intermediary_bank_name
          FROM vendor_bank_accounts
         WHERE vendor_id = ANY($1::int[])
         ORDER BY vendor_id, is_primary DESC, sort_order ASC, id ASC`,
@@ -245,6 +258,16 @@ async function fetchBankAccountsMap(
         account_holder_kana: r.account_holder_kana || null,
         is_primary: !!r.is_primary,
         sort_order: Number(r.sort_order) || 0,
+        account_scope: r.account_scope || "domestic",
+        swift_bic: r.swift_bic || null,
+        iban: r.iban || null,
+        routing_number: r.routing_number || null,
+        account_holder_name: r.account_holder_name || null,
+        bank_country: r.bank_country || null,
+        bank_address: r.bank_address || null,
+        currency: r.currency || null,
+        intermediary_bank_swift: r.intermediary_bank_swift || null,
+        intermediary_bank_name: r.intermediary_bank_name || null,
       });
     });
   } catch (err: any) {
@@ -456,9 +479,11 @@ async function replaceVendorBankAccounts(
   const rows = bankAccounts
     .filter((a) =>
       a &&
-      [a.bank_name, a.branch_name, a.account_number, a.account_holder_kana].some((x) =>
-        String(x || "").trim()
-      )
+      // 国内・海外いずれかの主要項目が入っていれば保存対象。
+      [
+        a.bank_name, a.branch_name, a.account_number, a.account_holder_kana,
+        a.account_holder_name, a.iban, a.swift_bic,
+      ].some((x) => String(x || "").trim())
     )
     .map((a, idx) => ({
       bank_label: a.bank_label || null,
@@ -469,6 +494,16 @@ async function replaceVendorBankAccounts(
       account_holder_kana: a.account_holder_kana || null,
       is_primary: !!a.is_primary,
       sort_order: Number.isFinite(Number(a.sort_order)) ? Number(a.sort_order) : idx,
+      account_scope: a.account_scope === "overseas" ? "overseas" : "domestic",
+      swift_bic: a.swift_bic || null,
+      iban: a.iban || null,
+      routing_number: a.routing_number || null,
+      account_holder_name: a.account_holder_name || null,
+      bank_country: a.bank_country || null,
+      bank_address: a.bank_address || null,
+      currency: a.currency || null,
+      intermediary_bank_swift: a.intermediary_bank_swift || null,
+      intermediary_bank_name: a.intermediary_bank_name || null,
     }));
   if (rows.length > 0 && !rows.some((a) => a.is_primary)) rows[0].is_primary = true;
 
@@ -477,8 +512,11 @@ async function replaceVendorBankAccounts(
     await q.query(
       `INSERT INTO vendor_bank_accounts
         (vendor_id, bank_label, bank_name, branch_name, account_type,
-         account_number, account_holder_kana, is_primary, sort_order)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+         account_number, account_holder_kana, is_primary, sort_order,
+         account_scope, swift_bic, iban, routing_number, account_holder_name,
+         bank_country, bank_address, currency, intermediary_bank_swift, intermediary_bank_name)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9,
+               $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`,
       [
         vendorId,
         a.bank_label,
@@ -489,6 +527,16 @@ async function replaceVendorBankAccounts(
         a.account_holder_kana,
         a.is_primary,
         a.sort_order,
+        a.account_scope,
+        a.swift_bic,
+        a.iban,
+        a.routing_number,
+        a.account_holder_name,
+        a.bank_country,
+        a.bank_address,
+        a.currency,
+        a.intermediary_bank_swift,
+        a.intermediary_bank_name,
       ]
     );
   }

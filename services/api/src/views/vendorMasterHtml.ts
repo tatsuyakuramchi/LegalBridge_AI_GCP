@@ -110,9 +110,10 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
               <input class="tech-input" type="text" name="trade_name" maxlength="255">
             </div>
 
-            <div class="field">
+            <div class="field" data-entity="individual,sole_proprietor">
               <label class="tech-label">ペンネーム</label>
               <input class="tech-input" type="text" name="pen_name" maxlength="255">
+              <span class="field-help">作家・絵師等の個人。契約書/発注書のクレジット表記に使用。</span>
             </div>
 
             <div class="field">
@@ -129,13 +130,13 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
                  代表者欄に転記される。肩書込みの形式で記入 (例: 代表取締役 山田太郎)。
                  個人事業主の場合は空でよい。admin-ui の VendorsPanel に揃えるため
                  ここでは entity_type による表示切り替えはしない (空欄なら出力されない)。 -->
-            <div class="field col-2">
-              <label class="tech-label">代表者名</label>
+            <div class="field col-2" data-entity="corporate">
+              <label class="tech-label">代表者名 (法人代表者)</label>
               <input class="tech-input" type="text" name="vendor_rep" maxlength="100" placeholder="例: 代表取締役 山田 太郎">
-              <span class="field-help">法人の場合のみ記入。肩書込みで契約書 / 発注書の代表者欄に転記される。個人事業主は空欄でよい。</span>
+              <span class="field-help">肩書込みで契約書 / 発注書の代表者欄に転記される。</span>
             </div>
 
-            <div class="field">
+            <div class="field" data-entity="corporate">
               <label class="tech-label">&#27861;&#20154;&#30058;&#21495;</label>
               <input class="tech-input" type="text" name="corporate_number" maxlength="20" placeholder="13&#26689;">
             </div>
@@ -151,17 +152,17 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
               </select>
             </div>
 
-            <div class="field">
+            <div class="field" data-entity="corporate">
               <label class="tech-label">&#36039;&#26412;&#37329;&#65288;&#20870;&#65289;</label>
               <input class="tech-input" type="number" name="capital_yen" id="capital_yen" min="0" step="1">
             </div>
 
-            <div class="field">
+            <div class="field" data-entity="corporate">
               <label class="tech-label">&#24467;&#26989;&#21729;&#25968;&#65288;&#20154;&#65289;</label>
               <input class="tech-input" type="number" name="employee_count" id="employee_count" min="0" step="1">
             </div>
 
-            <div class="field">
+            <div class="field" data-entity="corporate">
               <label class="tech-label">&#21462;&#36969;&#27861;&#36969;&#29992;&#21028;&#23450;</label>
               <input class="tech-input" type="text" name="subcontract_act_applicable_display" id="subcontract_act_applicable_display" readonly>
             </div>
@@ -171,7 +172,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
               <input class="tech-input" type="date" name="master_updated_at">
             </div>
 
-            <div class="field col-2">
+            <div class="field col-2" data-entity="corporate">
               <label class="tech-label">&#21462;&#24341;&#20808;&#20027;&#35201;&#20107;&#26989;</label>
               <input class="tech-input" type="text" name="main_business">
             </div>
@@ -464,6 +465,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       renderAddresses([]);
       renderBankAccounts([]);
       updateSubcontractDisplay();
+      applyEntityVisibility();
       $('modal-backdrop').classList.add('open');
       setTimeout(() => form.querySelector('[name=vendor_code]').focus(), 50);
     }
@@ -529,31 +531,61 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     function renderBankAccounts(rows) {
       const list = $('bank-accounts-list');
       const items = Array.isArray(rows) && rows.length ? rows : [{
-        bank_label: 'primary',
-        bank_name: '',
-        branch_name: '',
-        account_type: '',
-        account_number: '',
-        account_holder_kana: '',
-        is_primary: true,
+        account_scope: 'domestic', is_primary: true,
       }];
-      list.innerHTML = items.map((a, idx) =>
-        '<div class="bank-row" style="border:1px solid var(--border);padding:10px;display:grid;grid-template-columns:80px repeat(3,1fr) 44px;gap:8px;align-items:center;">'
-        + '<label class="tech-label" style="display:flex;gap:6px;align-items:center;margin:0;"><input type="radio" name="primary_bank_account" ' + (a.is_primary || idx === 0 ? 'checked' : '') + '>代表</label>'
-        + '<input class="tech-input" data-bank-field="bank_name" placeholder="銀行名" value="' + escAttr(a.bank_name || '') + '">'
-        + '<input class="tech-input" data-bank-field="branch_name" placeholder="支店名" value="' + escAttr(a.branch_name || '') + '">'
-        + '<input class="tech-input" data-bank-field="account_number" placeholder="口座番号" value="' + escAttr(a.account_number || '') + '">'
-        + '<button type="button" class="btn ghost sm" data-remove-bank-account>' + ${JSON.stringify(SVG.x)} + '</button>'
-        + '<input class="tech-input" data-bank-field="account_type" placeholder="種別" value="' + escAttr(a.account_type || '') + '">'
-        + '<input class="tech-input" data-bank-field="account_holder_kana" placeholder="口座名義カナ" value="' + escAttr(a.account_holder_kana || '') + '" style="grid-column: span 3;">'
-        + '</div>'
-      ).join('');
+      const fld = (name, ph, val, span) =>
+        '<input class="tech-input" data-bank-field="' + name + '" placeholder="' + ph + '" value="' + escAttr(val || '') + '"'
+          + (span ? ' style="grid-column: span ' + span + ';"' : '') + '>';
+      const grpStyle = 'grid-template-columns:repeat(3,1fr);gap:8px;';
+      list.innerHTML = items.map((a, idx) => {
+        const scope = a.account_scope === 'overseas' ? 'overseas' : 'domestic';
+        return '<div class="bank-row" style="border:1px solid var(--border);padding:10px;display:grid;gap:8px;">'
+          + '<div style="display:flex;gap:12px;align-items:center;justify-content:space-between;">'
+          +   '<div style="display:flex;gap:12px;align-items:center;">'
+          +     '<label class="tech-label" style="display:flex;gap:6px;align-items:center;margin:0;"><input type="radio" name="primary_bank_account" ' + (a.is_primary || idx === 0 ? 'checked' : '') + '>代表</label>'
+          +     '<select class="tech-select" data-bank-field="account_scope" style="width:auto;">'
+          +       '<option value="domestic"' + (scope === 'domestic' ? ' selected' : '') + '>国内</option>'
+          +       '<option value="overseas"' + (scope === 'overseas' ? ' selected' : '') + '>海外</option>'
+          +     '</select>'
+          +   '</div>'
+          +   '<button type="button" class="btn ghost sm" data-remove-bank-account>' + ${JSON.stringify(SVG.x)} + '</button>'
+          + '</div>'
+          + '<div data-bank-group="domestic" style="display:' + (scope === 'domestic' ? 'grid' : 'none') + ';' + grpStyle + '">'
+          +   fld('bank_name', '銀行名', a.bank_name)
+          +   fld('branch_name', '支店名', a.branch_name)
+          +   fld('account_type', '種別 (普通/当座/貯蓄)', a.account_type)
+          +   fld('account_number', '口座番号', a.account_number)
+          +   fld('account_holder_kana', '口座名義 (カナ)', a.account_holder_kana, 2)
+          + '</div>'
+          + '<div data-bank-group="overseas" style="display:' + (scope === 'overseas' ? 'grid' : 'none') + ';' + grpStyle + '">'
+          +   fld('bank_name', 'Bank name (英字)', a.bank_name)
+          +   fld('swift_bic', 'SWIFT / BIC', a.swift_bic)
+          +   fld('iban', 'IBAN', a.iban)
+          +   fld('account_number', 'Account No.', a.account_number)
+          +   fld('account_holder_name', 'Account holder (英字)', a.account_holder_name)
+          +   fld('routing_number', 'Routing / ABA / sort', a.routing_number)
+          +   fld('bank_country', '国 (US / GB…)', a.bank_country)
+          +   fld('currency', '通貨 (USD / EUR…)', a.currency)
+          +   fld('bank_address', 'Bank address', a.bank_address)
+          +   fld('intermediary_bank_swift', '中継銀行 SWIFT', a.intermediary_bank_swift)
+          +   fld('intermediary_bank_name', '中継銀行名', a.intermediary_bank_name, 2)
+          + '</div>'
+          + '</div>';
+      }).join('');
       list.querySelectorAll('[data-remove-bank-account]').forEach((btn) => {
         btn.addEventListener('click', () => {
           btn.closest('.bank-row').remove();
           if (!list.querySelector('input[name=primary_bank_account]:checked') && list.querySelector('input[name=primary_bank_account]')) {
             list.querySelector('input[name=primary_bank_account]').checked = true;
           }
+        });
+      });
+      list.querySelectorAll('[data-bank-field=account_scope]').forEach((sel) => {
+        sel.addEventListener('change', () => {
+          const row = sel.closest('.bank-row');
+          const ov = sel.value === 'overseas';
+          row.querySelector('[data-bank-group=domestic]').style.display = ov ? 'none' : 'grid';
+          row.querySelector('[data-bank-group=overseas]').style.display = ov ? 'grid' : 'none';
         });
       });
     }
@@ -568,15 +600,36 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     }
 
     function readBankAccounts() {
-      return Array.from(document.querySelectorAll('.bank-row')).map((row, idx) => ({
-        bank_name: row.querySelector('[data-bank-field=bank_name]')?.value.trim() || '',
-        branch_name: row.querySelector('[data-bank-field=branch_name]')?.value.trim() || '',
-        account_type: row.querySelector('[data-bank-field=account_type]')?.value.trim() || '',
-        account_number: row.querySelector('[data-bank-field=account_number]')?.value.trim() || '',
-        account_holder_kana: row.querySelector('[data-bank-field=account_holder_kana]')?.value.trim() || '',
-        is_primary: !!row.querySelector('input[name=primary_bank_account]')?.checked,
-        sort_order: idx,
-      })).filter((a) => a.bank_name || a.branch_name || a.account_number || a.account_holder_kana);
+      return Array.from(document.querySelectorAll('.bank-row')).map((row, idx) => {
+        const scope = row.querySelector('[data-bank-field=account_scope]')?.value === 'overseas' ? 'overseas' : 'domestic';
+        const grp = row.querySelector('[data-bank-group=' + scope + ']');
+        const g = (name) => (grp && grp.querySelector('[data-bank-field=' + name + ']')?.value.trim()) || '';
+        const base = {
+          is_primary: !!row.querySelector('input[name=primary_bank_account]')?.checked,
+          sort_order: idx,
+          account_scope: scope,
+          bank_name: g('bank_name'),
+          account_number: g('account_number'),
+        };
+        if (scope === 'domestic') {
+          return Object.assign(base, {
+            branch_name: g('branch_name'),
+            account_type: g('account_type'),
+            account_holder_kana: g('account_holder_kana'),
+          });
+        }
+        return Object.assign(base, {
+          swift_bic: g('swift_bic'),
+          iban: g('iban'),
+          account_holder_name: g('account_holder_name'),
+          routing_number: g('routing_number'),
+          bank_country: g('bank_country'),
+          currency: g('currency'),
+          bank_address: g('bank_address'),
+          intermediary_bank_swift: g('intermediary_bank_swift'),
+          intermediary_bank_name: g('intermediary_bank_name'),
+        });
+      }).filter((a) => a.bank_name || a.account_number || a.account_holder_name || a.iban || a.swift_bic);
     }
 
     function fillForm(v) {
@@ -598,6 +651,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
         is_primary: true,
       }] : []));
       updateSubcontractDisplay();
+      applyEntityVisibility();
     }
 
     function readForm() {
@@ -633,8 +687,27 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     });
     $('btn-add-bank-account').addEventListener('click', () => {
       const rows = readBankAccounts();
-      rows.push({ bank_name: '', branch_name: '', account_type: '', account_number: '', account_holder_kana: '', is_primary: rows.length === 0, sort_order: rows.length });
+      rows.push({ account_scope: 'domestic', is_primary: rows.length === 0, sort_order: rows.length });
       renderBankAccounts(rows);
+    });
+
+    // 区分(法人/個人)による項目の表示切替。data-entity を持つ .field を出し分け。
+    //   未指定(空)時は全表示(既存データを隠さない)。
+    function applyEntityVisibility() {
+      const sel = $('form').querySelector('[name=entity_type]');
+      const et = (sel && sel.value) || '';
+      document.querySelectorAll('[data-entity]').forEach((el) => {
+        const allow = String(el.getAttribute('data-entity') || '').split(',').map((s) => s.trim());
+        el.style.display = (!et || allow.indexOf(et) >= 0) ? '' : 'none';
+      });
+    }
+    $('form').querySelector('[name=entity_type]').addEventListener('change', () => {
+      applyEntityVisibility();
+      // 新規作成時のみ: 個人/個人事業主は源泉徴収を既定ON(法人は触らない)。
+      if (creating) {
+        const et = $('form').querySelector('[name=entity_type]').value;
+        if (et === 'individual' || et === 'sole_proprietor') $('withholding_enabled').checked = true;
+      }
     });
     $('capital_yen').addEventListener('input', updateSubcontractDisplay);
     $('employee_count').addEventListener('input', updateSubcontractDisplay);
