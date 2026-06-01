@@ -305,8 +305,13 @@ export function DocumentEditorPage() {
   )
 
   const syncFromDatabase = React.useCallback(
-    async (issueKeyToUse?: string) => {
+    async (
+      issueKeyToUse?: string,
+      opts?: { skipRestore?: boolean; templateOverride?: string }
+    ) => {
       const key = issueKeyToUse || selectedIssue
+      const tmpl = opts?.templateOverride || selectedTemplate
+      const skipRestore = !!opts?.skipRestore
       if (!key) {
         showNotification("Please select a Backlog ticket first.", "error")
         return
@@ -316,12 +321,14 @@ export function DocumentEditorPage() {
       // Phase 22.21.79: まず document_drafts (一時保存) を確認。
       //   draft があれば form-context より優先して読み込む (= 直近の編集状態を復元)。
       //   無ければ従来通り backlog form-context へフォールバック。
+      //   skipRestore=true (テンプレ切替=新しい文書) のときは draft も前回文書も
+      //   引き継がず、フォームコンテキスト(自動補完)だけをロードする。
       let draft: any = null
-      if (selectedTemplate) {
+      if (!skipRestore && tmpl) {
         try {
           const dRes = await fetch(
             `/api/document-drafts/${encodeURIComponent(key)}?template_type=${encodeURIComponent(
-              selectedTemplate
+              tmpl
             )}`
           )
           if (dRes.ok) {
@@ -336,7 +343,7 @@ export function DocumentEditorPage() {
 
       try {
         const res = await fetch(
-          `/api/backlog/issues/${key}/form-context?template=${selectedTemplate}`
+          `/api/backlog/issues/${key}/form-context?template=${tmpl}`
         )
         const context = await res.json()
         // Phase 22.11.2: 過去 doc のメタ情報を別 state に保存 (formData は汚さない)
@@ -366,7 +373,7 @@ export function DocumentEditorPage() {
             ? new Date(draft.updated_at).toLocaleString("ja-JP")
             : ""
           showNotification(`📄 一時保存を復元しました (${when})`, "success")
-        } else if (prevDoc?.document_number) {
+        } else if (!skipRestore && prevDoc?.document_number) {
           // 2) 一時保存が無ければ、同じ課題・同テンプレの「前回発行文書」の
           //    form_data を自動で呼び出してプリフィルする。課題を選ぶだけで
           //    以前の入力内容が戻る。閲覧モードのままなので編集は [編集] ボタンで。
@@ -426,6 +433,24 @@ export function DocumentEditorPage() {
       .then((r) => r.json())
       .then((d) => setCaseHistory(d))
       .catch((e) => console.error("History fetch error:", e))
+  }
+
+  // 文書テンプレートを切り替えたとき = 新しい文書を作る操作。前テンプレの入力が
+  //   残らないようフォームをクリアする。課題が選択済みなら、その課題の自動補完
+  //   だけを再ロードする(前回文書 / 一時保存は引き継がない)。課題未選択なら空に。
+  //   ※ 文書の再編集ロード時の setSelectedTemplate(210) はこの関数を通さないので
+  //     読み込んだ内容は消えない。
+  const handleTemplateChange = (next: string) => {
+    setSelectedTemplate(next)
+    if (next && selectedIssue) {
+      void syncFromDatabase(selectedIssue, {
+        skipRestore: true,
+        templateOverride: next,
+      })
+    } else {
+      setFormData({})
+      setPreviousDocument(null)
+    }
   }
 
   // Phase 22.11.2: 「前回内容を読み込む」 — 過去 doc の form_data を
@@ -954,7 +979,7 @@ export function DocumentEditorPage() {
                   />
                   <NativeSelect
                     value={selectedTemplate}
-                    onChange={(e) => setSelectedTemplate(e.target.value)}
+                    onChange={(e) => handleTemplateChange(e.target.value)}
                   >
                     <option value="">— テンプレを選択 —</option>
                     {templateCategories.map((cat) => (
