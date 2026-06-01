@@ -118,7 +118,7 @@ import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
 import { workModelPage } from "./src/views/workModelHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
-import { listConditions } from "./src/services/conditionsService.ts";
+import { listConditions, updateConditionLinks } from "./src/services/conditionsService.ts";
 import {
   listStaff,
   getStaff,
@@ -2678,6 +2678,33 @@ async function startServer() {
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
+
+  // PUT /api/conditions/:id/links — 明細行の 原作/作品/マスター契約 紐付けを更新
+  app.put(
+    "/api/conditions/:id/links",
+    requireIapUser({ renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        const id = Number(req.params.id);
+        if (!Number.isFinite(id)) {
+          return res.status(400).json({ ok: false, error: "invalid id" });
+        }
+        const b = req.body || {};
+        const toIdOrNull = (v: any) =>
+          v == null || v === "" ? null : Number(v);
+        await updateConditionLinks(id, {
+          source_ip_id: toIdOrNull(b.source_ip_id),
+          work_id: toIdOrNull(b.work_id),
+          master_contract_id: toIdOrNull(b.master_contract_id),
+        });
+        res.json({ ok: true });
+      } catch (error: any) {
+        console.error("/api/conditions/:id/links failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
 
   // -------------------------------------------------------------------
   // /api/dashboard/*

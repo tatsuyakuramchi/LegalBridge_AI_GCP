@@ -108,8 +108,7 @@ export async function listConditions(
   const lp = (params.push(limit), params.length);
   const op = (params.push(offset), params.length);
 
-  const res = await query(
-    `SELECT
+  const baseCols = `
        cli.id, cli.line_no, cli.item_name, cli.spec, cli.calc_method, cli.payment_terms,
        cli.quantity, cli.unit_price, cli.amount_ex_tax,
        cli.delivery_date, cli.payment_date, cli.term_start, cli.term_end, cli.cycle,
@@ -117,14 +116,35 @@ export async function listConditions(
        cc.contract_category, cc.contract_type, cc.record_type,
        v.vendor_code, v.vendor_name,
        COALESCE(s.staff_name, d.created_by) AS owner_name,
-       d.created_by, d.issue_key
-     ${FROM_JOINS}
-     ${whereSql}
-     ORDER BY cli.payment_date DESC NULLS LAST, cli.delivery_date DESC NULLS LAST,
+       d.created_by, d.issue_key`;
+  // 0015: 原作 / 作品 / マスター契約(v3 contracts)への紐付け。
+  const linkCols = `,
+       cli.source_ip_id, si.title AS source_ip_title, si.source_code,
+       cli.work_id, w.title AS work_title, w.work_code,
+       cli.master_contract_id, mc.contract_title AS master_contract_title,
+       mc.document_number AS master_contract_number`;
+  const linkJoins = `
+    LEFT JOIN source_ips si ON si.id = cli.source_ip_id
+    LEFT JOIN works w ON w.id = cli.work_id
+    LEFT JOIN contracts mc ON mc.id = cli.master_contract_id`;
+  const order = `ORDER BY cli.payment_date DESC NULLS LAST, cli.delivery_date DESC NULLS LAST,
               cc.document_number DESC, cli.line_no ASC
-     LIMIT $${lp} OFFSET $${op}`,
-    params
-  );
+     LIMIT $${lp} OFFSET $${op}`;
+
+  let res: any;
+  try {
+    res = await query(
+      `SELECT ${baseCols}${linkCols} ${FROM_JOINS}${linkJoins} ${whereSql} ${order}`,
+      params
+    );
+  } catch (err: any) {
+    // 0015 未適用環境(紐付け列なし)では従来通り列なしで返す。
+    if (err && (err.code === "42703" || err.code === "42P01")) {
+      res = await query(`SELECT ${baseCols} ${FROM_JOINS} ${whereSql} ${order}`, params);
+    } else {
+      throw err;
+    }
+  }
 
   const rows = res.rows.map((r: any) => ({
     id: Number(r.id),
@@ -151,7 +171,36 @@ export async function listConditions(
     vendor_name: r.vendor_name || "",
     owner_name: r.owner_name || "",
     issue_key: r.issue_key || "",
+    // 紐付け(0015)
+    source_ip_id: r.source_ip_id == null ? null : Number(r.source_ip_id),
+    source_ip_title: r.source_ip_title || "",
+    source_code: r.source_code || "",
+    work_id: r.work_id == null ? null : Number(r.work_id),
+    work_title: r.work_title || "",
+    work_code: r.work_code || "",
+    master_contract_id: r.master_contract_id == null ? null : Number(r.master_contract_id),
+    master_contract_title: r.master_contract_title || "",
+    master_contract_number: r.master_contract_number || "",
   }));
 
   return { rows, total };
+}
+
+/** 明細行(capability_line_items)の 原作 / 作品 / マスター契約 紐付けを更新。 */
+export async function updateConditionLinks(
+  id: number,
+  links: { source_ip_id?: number | null; work_id?: number | null; master_contract_id?: number | null }
+): Promise<void> {
+  await query(
+    `UPDATE capability_line_items
+        SET source_ip_id = $2, work_id = $3, master_contract_id = $4,
+            updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1`,
+    [
+      id,
+      links.source_ip_id ?? null,
+      links.work_id ?? null,
+      links.master_contract_id ?? null,
+    ]
+  );
 }

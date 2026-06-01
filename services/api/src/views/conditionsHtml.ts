@@ -32,6 +32,22 @@ table.cond tr:hover td { background: var(--muted); }
 .badge-cat { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--background); white-space: nowrap; }
 .empty { color: var(--muted-foreground); padding: 24px; text-align: center; }
 .table-scroll { overflow: auto; max-height: calc(100vh - 320px); border: 1px solid var(--border); border-radius: 8px; }
+table.cond tr.clickable { cursor: pointer; }
+.link-pill { font-size: 10px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); display: inline-block; margin: 1px 0; white-space: nowrap; }
+.link-pill.work { background: #eef2ff; }
+.link-pill.ip { background: #ecfdf5; }
+.link-pill.master { background: #fef3c7; }
+.backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; align-items: flex-start; justify-content: center; padding: 48px 16px; z-index: 60; overflow: auto; }
+.backdrop.open { display: flex; }
+.modal { background: var(--card); border-radius: 10px; width: 100%; max-width: 560px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
+.modal .mhead { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+.modal .mhead h3 { margin: 0; font-size: 15px; }
+.modal .mbody { padding: 16px 18px; }
+.modal .mfoot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); }
+.modal .fld { margin-bottom: 14px; }
+.modal .fld label { display: block; font-size: 12px; font-weight: 600; color: var(--muted-foreground); margin-bottom: 4px; }
+.modal .meta { font-size: 11px; color: var(--muted-foreground); margin-bottom: 12px; line-height: 1.5; }
+.xbtn { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted-foreground); }
 `;
 
 export function conditionsPage(): string {
@@ -96,9 +112,36 @@ ${masterTabsHtml("conditions")}
   </div>
 </div>
 
+<div class="backdrop" id="backdrop">
+  <div class="modal">
+    <div class="mhead"><h3>紐付けを編集</h3><button class="xbtn" id="m-close">×</button></div>
+    <div class="mbody">
+      <div class="meta" id="m-meta"></div>
+      <div class="fld">
+        <label>原作 (source IP)</label>
+        <select class="tech-select" id="m-source"><option value="">— なし —</option></select>
+      </div>
+      <div class="fld">
+        <label>作品 (work)</label>
+        <select class="tech-select" id="m-work"><option value="">— なし —</option></select>
+      </div>
+      <div class="fld">
+        <label>マスター契約 (基本契約 / 作品モデル v3)</label>
+        <select class="tech-select" id="m-master"><option value="">— なし —</option></select>
+      </div>
+    </div>
+    <div class="mfoot">
+      <button class="btn outline" id="m-cancel">キャンセル</button>
+      <button class="btn" id="m-save">保存</button>
+    </div>
+  </div>
+</div>
+
 <script>
   var API = "/api/conditions/search";
   var CAT_LABEL = { service: "業務委託", license: "ライセンス", license_in: "ライセンス(IN)", license_out: "ライセンス(OUT)", publication: "出版", sales: "売買", nda: "NDA" };
+  var currentRows = [];
+  var PICK = { source: null, works: null, masters: null }; // ピッカーのキャッシュ
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -122,6 +165,7 @@ ${masterTabsHtml("conditions")}
   }
 
   function render(rows) {
+    currentRows = rows || [];
     var wrap = document.getElementById("list-wrap");
     if (!rows || rows.length === 0) {
       wrap.innerHTML = '<div class="empty">該当する条件明細がありません</div>';
@@ -130,7 +174,7 @@ ${masterTabsHtml("conditions")}
     var head = '<tr>' +
       '<th>支払日</th><th>納期</th><th>種類</th><th>取引先</th><th>担当</th>' +
       '<th>品目</th><th>計算</th><th class="num">数量</th><th class="num">単価</th>' +
-      '<th class="num">金額(税抜)</th><th>文書番号</th><th>契約名 / 課題</th>' +
+      '<th class="num">金額(税抜)</th><th>文書番号</th><th>契約名 / 課題</th><th>紐付け(クリックで編集)</th>' +
       '</tr>';
     var body = rows.map(function (r) {
       var typeCell = '<span class="badge-cat">' + esc(catLabel(r.contract_category)) + '</span>' +
@@ -140,7 +184,13 @@ ${masterTabsHtml("conditions")}
         (r.spec ? '<div style="font-size:10px;color:var(--muted-foreground);white-space:normal;">' + esc(r.spec) + '</div>' : '');
       var contract = esc(r.contract_title || "—") +
         (r.issue_key ? '<div style="font-size:10px;color:var(--muted-foreground);">' + esc(r.issue_key) + '</div>' : '');
-      return '<tr>' +
+      var link = "";
+      if (r.work_title) link += '<span class="link-pill work">作 ' + esc(r.work_title) + '</span> ';
+      if (r.source_ip_title) link += '<span class="link-pill ip">原 ' + esc(r.source_ip_title) + '</span> ';
+      if (r.master_contract_title || r.master_contract_number)
+        link += '<span class="link-pill master">基 ' + esc(r.master_contract_title || r.master_contract_number) + '</span>';
+      if (!link) link = '<span style="color:var(--muted-foreground);">＋ 未設定</span>';
+      return '<tr class="clickable" data-id="' + r.id + '">' +
         '<td>' + esc(r.payment_date || "—") + '</td>' +
         '<td>' + esc(r.delivery_date || "—") + '</td>' +
         '<td>' + typeCell + '</td>' +
@@ -153,6 +203,7 @@ ${masterTabsHtml("conditions")}
         '<td class="num">' + yen(r.amount_ex_tax) + '</td>' +
         '<td>' + esc(r.document_number || "—") + '</td>' +
         '<td class="wrap">' + contract + '</td>' +
+        '<td class="wrap">' + link + '</td>' +
         '</tr>';
     }).join("");
     wrap.innerHTML = '<table class="cond">' + head + body + '</table>';
@@ -182,12 +233,97 @@ ${masterTabsHtml("conditions")}
     load();
   }
 
+  /* ---------- 紐付け編集モーダル ---------- */
+  var editingId = null;
+  async function loadPickers() {
+    if (PICK.source && PICK.works && PICK.masters) return;
+    var get = function (u) {
+      return fetch(u, { credentials: "same-origin" }).then(function (x) { return x.ok ? x.json() : []; }).catch(function () { return []; });
+    };
+    var r = await Promise.all([get("/api/v3/source-ips"), get("/api/v3/works"), get("/api/v3/contracts")]);
+    PICK.source = Array.isArray(r[0]) ? r[0] : [];
+    PICK.works = Array.isArray(r[1]) ? r[1] : [];
+    // マスター契約 = contract_level === 'master'(level 不明な行も候補に含める)
+    PICK.masters = (Array.isArray(r[2]) ? r[2] : []).filter(function (c) {
+      var lv = c.contract_level || "";
+      return lv === "master" || lv === "";
+    });
+  }
+  function fillSelect(sel, items, getVal, getLabel, selectedId) {
+    var opts = ['<option value="">— なし —</option>'];
+    items.forEach(function (it) {
+      var v = getVal(it);
+      opts.push('<option value="' + v + '"' + (String(v) === String(selectedId) ? " selected" : "") + ">" + esc(getLabel(it)) + "</option>");
+    });
+    sel.innerHTML = opts.join("");
+  }
+  async function openEdit(id) {
+    var row = currentRows.filter(function (r) { return String(r.id) === String(id); })[0];
+    if (!row) return;
+    editingId = id;
+    document.getElementById("m-meta").innerHTML =
+      "品目: <b>" + esc(row.item_name || "—") + "</b><br>文書: " + esc(row.document_number || "—") +
+      " / 取引先: " + esc(row.vendor_name || "—") +
+      " / 支払日: " + esc(row.payment_date || "—");
+    document.getElementById("backdrop").classList.add("open");
+    await loadPickers();
+    fillSelect(document.getElementById("m-source"), PICK.source || [],
+      function (s) { return s.id; },
+      function (s) { return (s.source_code ? s.source_code + " : " : "") + (s.title || ("#" + s.id)); },
+      row.source_ip_id);
+    fillSelect(document.getElementById("m-work"), PICK.works || [],
+      function (w) { return w.id; },
+      function (w) { return (w.work_code ? w.work_code + " : " : "") + (w.title || ("#" + w.id)); },
+      row.work_id);
+    fillSelect(document.getElementById("m-master"), PICK.masters || [],
+      function (c) { return c.id; },
+      function (c) { return (c.document_number ? c.document_number + " : " : "") + (c.contract_title || ("#" + c.id)); },
+      row.master_contract_id);
+  }
+  function closeModal() { document.getElementById("backdrop").classList.remove("open"); editingId = null; }
+  async function saveLinks() {
+    if (!editingId) return;
+    var btn = document.getElementById("m-save");
+    btn.disabled = true;
+    try {
+      var res = await fetch("/api/conditions/" + encodeURIComponent(editingId) + "/links", {
+        method: "PUT",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_ip_id: document.getElementById("m-source").value || null,
+          work_id: document.getElementById("m-work").value || null,
+          master_contract_id: document.getElementById("m-master").value || null,
+        }),
+      });
+      var data = await res.json().catch(function () { return {}; });
+      if (!res.ok || data.ok === false) throw new Error(data.error || ("HTTP " + res.status));
+      closeModal();
+      load();
+    } catch (e) {
+      alert("保存に失敗しました: " + (e && e.message ? e.message : e));
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /* ---------- wiring ---------- */
   document.getElementById("btn-search").addEventListener("click", load);
   document.getElementById("btn-clear").addEventListener("click", clearAll);
   ["vendor", "owner", "q"].forEach(function (id) {
     document.getElementById(id).addEventListener("keydown", function (e) {
       if (e.key === "Enter") load();
     });
+  });
+  document.getElementById("list-wrap").addEventListener("click", function (e) {
+    var tr = e.target.closest ? e.target.closest("tr.clickable") : null;
+    if (tr && tr.getAttribute("data-id")) openEdit(tr.getAttribute("data-id"));
+  });
+  document.getElementById("m-close").addEventListener("click", closeModal);
+  document.getElementById("m-cancel").addEventListener("click", closeModal);
+  document.getElementById("m-save").addEventListener("click", saveLinks);
+  document.getElementById("backdrop").addEventListener("click", function (e) {
+    if (e.target === document.getElementById("backdrop")) closeModal();
   });
   load();
 </script>
