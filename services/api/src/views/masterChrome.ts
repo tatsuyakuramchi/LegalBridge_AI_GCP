@@ -9,7 +9,7 @@
  * 自分の本文と script だけを書く。
  */
 
-export type MasterTab = "contracts" | "vendors" | "staff";
+export type MasterTab = "contracts" | "vendors" | "staff" | "conditions";
 
 /**
  * 共通 CSS。各ページの <style> に展開する。
@@ -667,6 +667,7 @@ export function masterTabsHtml(active: MasterTab): string {
     { key: "contracts", href: "/master/contracts", icon: SVG.fileText, label: "Contracts" },
     { key: "vendors",   href: "/master/vendors",   icon: SVG.building, label: "Vendors" },
     { key: "staff",     href: "/master/staff",     icon: SVG.users,    label: "Staff" },
+    { key: "conditions", href: "/master/conditions", icon: SVG.fileText, label: "条件明細" },
   ];
   const items = tabs
     .map(

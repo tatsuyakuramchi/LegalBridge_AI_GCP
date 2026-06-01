@@ -117,6 +117,8 @@ import { masterContractsPage } from "./src/views/masterContractsHtml.ts";
 import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
 import { workModelPage } from "./src/views/workModelHtml.ts";
+import { conditionsPage } from "./src/views/conditionsHtml.ts";
+import { listConditions } from "./src/services/conditionsService.ts";
 import {
   listStaff,
   getStaff,
@@ -2641,6 +2643,39 @@ async function startServer() {
     } catch (error) {
       console.error("/work-model failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+
+  // 条件明細(capability_line_items)の横断一覧・検索ページ。
+  app.get("/master/conditions", requireIapUser({ renderErrorPage }), (_req, res) => {
+    try {
+      res.type("html").send(conditionsPage());
+    } catch (error) {
+      console.error("/master/conditions failed:", error);
+      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+
+  // GET /api/conditions/search — 条件明細の検索 (支払日/納期/種類/取引先/担当/キーワード)
+  app.get("/api/conditions/search", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const result = await listConditions({
+        payment_from: q.payment_from,
+        payment_to: q.payment_to,
+        delivery_from: q.delivery_from,
+        delivery_to: q.delivery_to,
+        category: q.category,
+        vendor: q.vendor,
+        owner: q.owner,
+        q: q.q,
+        limit: q.limit ? Number(q.limit) : undefined,
+        offset: q.offset ? Number(q.offset) : undefined,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error: any) {
+      console.error("/api/conditions/search failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
 
