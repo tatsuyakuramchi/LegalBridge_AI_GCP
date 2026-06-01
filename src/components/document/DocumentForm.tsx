@@ -1173,9 +1173,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         //   vendor_id が解決できず、法務検索（個別契約）に PO が
         //   表示されない原因になっていた。
         VENDOR_CODE: activeVendor.vendor_code || '',
-        VENDOR_NAME: activeVendor.vendor_name || '',
+        // 法人=正式名称、個人=ペンネーム/屋号優先。代表者「様」は法人のみ。
+        VENDOR_NAME: isCorp
+          ? activeVendor.vendor_name || ''
+          : activeVendor.pen_name || activeVendor.trade_name || activeVendor.vendor_name || '',
         VENDOR_ADDRESS: activeVendor.address || '',
-        VENDOR_REPRESENTATIVE_SAMA: activeVendor.vendor_rep
+        VENDOR_REPRESENTATIVE_SAMA: isCorp && activeVendor.vendor_rep
           ? `${activeVendor.vendor_rep} 様`
           : '',
         VENDOR_CONTACT_DEPARTMENT: activeVendor.contact_department || '',
@@ -3612,13 +3615,24 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         PARTY_A_REP: companyProfile?.representative || '',
       });
 
+    // 法人=正式名称+代表者、個人=ペンネーム/屋号優先・代表者は出さない。
+    const vendorIsCorp = () =>
+      (activeVendor?.entity_type || '').toLowerCase() === 'corporate' ||
+      (activeVendor?.entity_type || '') === '法人';
+    const vendorPartyName = () =>
+      vendorIsCorp()
+        ? activeVendor?.vendor_name || ''
+        : activeVendor?.pen_name || activeVendor?.trade_name || activeVendor?.vendor_name || '';
+    const vendorPartyRep = () =>
+      vendorIsCorp() ? activeVendor?.vendor_rep || activeVendor?.contact_name || '' : '';
+
     const fillPartyAFromPartner = () => {
       if (!activeVendor) return;
       setFormData({
         ...formData,
-        PARTY_A_NAME: activeVendor.vendor_name || '',
+        PARTY_A_NAME: vendorPartyName(),
         PARTY_A_ADDRESS: activeVendor.address || '',
-        PARTY_A_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        PARTY_A_REP: vendorPartyRep(),
       });
     };
 
@@ -3634,9 +3648,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       if (!activeVendor) return;
       setFormData({
         ...formData,
-        PARTY_B_NAME: activeVendor.vendor_name || '',
+        PARTY_B_NAME: vendorPartyName(),
         PARTY_B_ADDRESS: activeVendor.address || '',
-        PARTY_B_REP: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        PARTY_B_REP: vendorPartyRep(),
       });
     };
 
@@ -3759,11 +3773,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   if (templateId.startsWith('sales_master_')) {
     const fillPartyBFromPartner = () => {
       if (!activeVendor) return;
+      // 法人=正式名称+代表者、個人=ペンネーム/屋号優先・代表者は出さない。
+      const isCorp =
+        (activeVendor.entity_type || '').toLowerCase() === 'corporate' ||
+        (activeVendor.entity_type || '') === '法人';
       setFormData({
         ...formData,
-        PARTY_B_NAME: activeVendor.vendor_name || '',
+        PARTY_B_NAME: isCorp
+          ? activeVendor.vendor_name || ''
+          : activeVendor.pen_name || activeVendor.trade_name || activeVendor.vendor_name || '',
         PARTY_B_ADDRESS: activeVendor.address || '',
-        PARTY_B_REPRESENTATIVE: activeVendor.vendor_rep || activeVendor.contact_name || '',
+        PARTY_B_REPRESENTATIVE: isCorp ? activeVendor.vendor_rep || activeVendor.contact_name || '' : '',
       });
     };
 
