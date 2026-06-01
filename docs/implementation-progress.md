@@ -74,3 +74,6 @@
 - ~~**B3 admin ロール厳格化**~~ → 完了(`/api/v3` write を admin ロール必須化、commit `0211390`。`release/api` 反映待ち)。
 - **B1 専用フロント分離 / B5b PDF ローカル化(Chromium)**(infra 同梱が必要・サンドボックス検証不可)。
 - **フラグの段階 ON**: 手順整備済 → `docs/phase0-deploy-runbook.md`「フラグ段階ON 完全手順」(F0 migrate → F1/F2 worker → F3 search-api → F4 admin-ui)。各フラグ独立・可逆、ステップ毎にスモーク+即時ロールバックを明記。**実行は GCP 認証環境**(本サンドボックスは gcloud 不可)。
+  - **F0 完了**(本番 Cloud SQL `legalbridge-488506:asia-northeast1:legalbridge-db`、Cloud Shell の `cloud-sql-proxy` + runner で適用): `schema_migrations` 0001–0012(11行)、`document_templates`=18、`contracts`=118 / `source_ips`=12 / `payments`=10(backfill)、`trg_sync_*` トリガ5本。`works`=0(source_ip 中心 backfill のため、自社作品は今後 `/api/v3` 登録)。
+  - **B3 反映済**(`release/api`、commit `0211390`)。**worker(`release/worker` `ee59aee`)は F1/F2 前提コード(RUN_INIT_DB ゲート/C3/B5/C2)を保持** → env 切替のみで有効化可(再デプロイ不要)。
+  - 残: **F1** worker `TEMPLATE_SOURCE=db` → **F2** worker `RUN_INIT_DB=false` → **F3** search-api `TEMPLATE_SOURCE=db` → **F4** admin-ui `VITE_API_READS_TO_WORKER=1`(再ビルド)。

@@ -207,7 +207,7 @@ gcloud builds submit --config cloudbuild-migrate.yaml \
   #   SELECT version FROM schema_migrations ORDER BY version;  → 0001〜0012 が揃う
   #   SELECT count(*) FROM document_templates;                 → seed 済(>0)
   #   SELECT count(*) FROM works; SELECT count(*) FROM contracts;  → 0008–0010 backfill 反映
-  #   SELECT tgname FROM pg_trigger WHERE tgname LIKE 'lb_sync_%';  → 0012 トリガ存在
+  #   SELECT tgname FROM pg_trigger WHERE tgname LIKE 'trg_sync_%';  → 0012 トリガ 5本(関数名は lb_sync_*、トリガ名は trg_sync_*)
   ```
 - **ロールバック**: backfill/トリガは**純追加・冪等**(既存テーブル不変)。問題時は
   0012 のトリガのみ無効化可: `DROP TRIGGER lb_sync_contracts ON contract_capabilities;` 等
