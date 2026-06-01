@@ -62,6 +62,8 @@ import {
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 // C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
 import { registerSharedReads } from "./src/routes/sharedReads.ts";
+// C2 batch 3b: form-context / history(byte-exact 抽出。生成元 scripts/extract-form-routes.mjs)。
+import { registerFormReadRoutes } from "./src/routes/formReadRoutes.ts";
 import {
   calculateTax,
   calculateOrderLineAmount,
@@ -5785,6 +5787,8 @@ ${details}
 
   // C2: search-api からの read 移植(master / backlog / management / 他)を worker に登録。
   registerSharedReads(app, { query, backlogService, requirePortalSecret });
+  // C2 batch 3b: backlog form-context / history(byte-exact 移植)。
+  registerFormReadRoutes(app, { query, backlogService });
 
   /**
    * Bulk import: 業務委託基本契約書 (service_master)。
