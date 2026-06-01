@@ -727,6 +727,19 @@ export async function ensureVendorColumns(): Promise<void> {
       created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
     );`,
+    // 0014: 海外送金フィールド。migration が共有 DB に届く前でも overseas 口座を
+    //   保存できるよう、upsert 前に冪等に保証する(replaceVendorBankAccounts の
+    //   INSERT が参照する列)。
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS account_scope VARCHAR(20) DEFAULT 'domestic';`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS swift_bic VARCHAR(20);`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS iban VARCHAR(64);`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS routing_number VARCHAR(40);`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS account_holder_name TEXT;`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS bank_country VARCHAR(2);`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS bank_address TEXT;`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS currency VARCHAR(3);`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS intermediary_bank_swift VARCHAR(20);`,
+    `ALTER TABLE vendor_bank_accounts ADD COLUMN IF NOT EXISTS intermediary_bank_name TEXT;`,
   ];
   for (const sql of stmts) {
     await query(sql);

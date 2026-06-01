@@ -602,7 +602,7 @@ export async function upsertVendor(v: VendorRow): Promise<VendorRow> {
         account_type, account_number, account_holder_kana, is_invoice_issuer,
         invoice_registration_number
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,COALESCE($21, CURRENT_TIMESTAMP),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,COALESCE($21, CURRENT_TIMESTAMP),$22,$23,$24,$25,$26,$27,$28,$29,$30,$31,$32
       )
       ON CONFLICT (vendor_code) DO UPDATE SET
         vendor_name                 = EXCLUDED.vendor_name,
