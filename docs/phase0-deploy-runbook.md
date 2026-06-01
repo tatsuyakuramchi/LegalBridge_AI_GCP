@@ -200,6 +200,13 @@ DATABASE_URL="postgresql://postgres:<PW>@127.0.0.1:5432/$DB" npm run migrate    
 gcloud builds submit --config cloudbuild-migrate.yaml \
   --substitutions=_REGION=$REGION,_INSTANCE_CONNECTION_NAME=$INSTANCE .
 ```
+
+> ⚠️ **GRANT 必須(0013)**: migrate を **postgres** で流すと新テーブルは postgres 所有になり、
+> アプリ接続ロール **`legalbridge`** に権限が無く、F1 で `permission denied for table
+> document_templates` になる(0012 トリガの新テーブル書込も失敗する)。`0013_grants.sql`
+> がこれを解消する(postgres 所有→legalbridge へ付与 + DEFAULT PRIVILEGES)。**0013 まで
+> 適用してから F1 へ進むこと。** 適用後は worker を**再起動**(新リビジョン)して
+> `loadFromDb` を再試行させる。
 - **検証**:
   ```bash
   gcloud run jobs executions list --job legalbridge-migrate --region $REGION   # 最新が Succeeded

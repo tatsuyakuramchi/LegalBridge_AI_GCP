@@ -29,6 +29,7 @@
 | 0010 | backfill: ledgers→source_ips / materials→source_ip_materials / contract_works / contract_parties | backfill |
 | 0011 | backfill: royalty_payments → payments(snapshot、contract_id 導出、暫定 department) | backfill |
 | 0012 | **同期トリガ**: old(contract_capabilities / capability_* / royalty_*)→ 新スキーマへ AFTER INSERT/UPDATE で自動ミラー(C5 の狙いを worker 無改修で達成)+ Search serial の id 高レンジ分離 | トリガ |
+| 0013 | **GRANT**: migrate を postgres で流すと新テーブルが postgres 所有になりアプリロール `legalbridge` に権限が無い(F1 で permission denied)。postgres 所有テーブル/シーケンスを legalbridge へ付与 + `ALTER DEFAULT PRIVILEGES` で今後分も自動付与。冪等 | 権限 |
 
 > 全 backfill は **id保存・冪等・FK整合**。0007(互換ビュー)は旧テーブル名の読取置換用に予約。
 
