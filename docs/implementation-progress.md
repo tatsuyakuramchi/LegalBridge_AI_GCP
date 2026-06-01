@@ -85,3 +85,4 @@
     - ✅ **F3** search-api `TEMPLATE_SOURCE=db` — クリーン起動、GRANT 済で permission denied なし。
     - ✅ **F4** admin-ui `VITE_API_READS_TO_WORKER=1`(`.env.production` commit → PR #3 マージで main 反映 → 自動再ビルド)。GET read を worker(C2 superset)へ、マスター書込は search-api 維持(D1)。
   - **可逆**: 各フラグ `--remove-env-vars`(F1/F2/F3)/ `.env.production` の `0` 化+再ビルド(F4)で即ロールバック。
+  - ✅ **B5b PDF ローカル化 完了**(本番): search-api に chromium + 日本語フォント同梱、`puppeteer-core` で PDF をローカル生成(worker proxy 撤去)。Cloud Run メモリ 512Mi→1Gi(`cloudbuild-api.yaml`)。本番で PDF ダウンロード検証済(日本語フォントOK)。→ **search-api はテンプレプレビューで worker 非依存=完全独立**。
