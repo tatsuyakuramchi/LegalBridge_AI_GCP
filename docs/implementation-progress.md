@@ -73,8 +73,15 @@
 - **0007 互換ビュー**: 旧テーブル名を読取専用ビュー化(残存 reader 用。トリガ方式では旧テーブルは実体のまま残るため優先度低)。
 - **works への work_id 紐付け**: backfill は source_ip 中心のため、`__migrated_royalty__` payments 等の work 再分類は運用で実施。
 - ~~**B3 admin ロール厳格化**~~ → 完了(`/api/v3` write を admin ロール必須化、commit `0211390`。`release/api` 反映待ち)。
-- **B1 専用フロント分離 / B5b PDF ローカル化(Chromium)**(infra 同梱が必要・サンドボックス検証不可)。
+- **B1 専用フロント分離 / B5b PDF ローカル化(Chromium)**(infra 同梱が必要・サンドボックス検証不可。段階ON完了後の次候補)。
+- **運用メモ**: F0 適用時に使った Cloud SQL `postgres` パスワードはチャット履歴に露出したため**ローテーション推奨**(`gcloud sql users set-password postgres --instance=legalbridge-db ...`)。
 - **フラグの段階 ON**: 手順整備済 → `docs/phase0-deploy-runbook.md`「フラグ段階ON 完全手順」(F0 migrate → F1/F2 worker → F3 search-api → F4 admin-ui)。各フラグ独立・可逆、ステップ毎にスモーク+即時ロールバックを明記。**実行は GCP 認証環境**(本サンドボックスは gcloud 不可)。
   - **F0 完了**(本番 Cloud SQL `legalbridge-488506:asia-northeast1:legalbridge-db`、Cloud Shell の `cloud-sql-proxy` + runner で適用): `schema_migrations` 0001–0012(11行)、`document_templates`=18、`contracts`=118 / `source_ips`=12 / `payments`=10(backfill)、`trg_sync_*` トリガ5本。`works`=0(source_ip 中心 backfill のため、自社作品は今後 `/api/v3` 登録)。
   - **B3 反映済**(`release/api`、commit `0211390`)。**worker(`release/worker` `ee59aee`)は F1/F2 前提コード(RUN_INIT_DB ゲート/C3/B5/C2)を保持** → env 切替のみで有効化可(再デプロイ不要)。
-  - 残: **F1** worker `TEMPLATE_SOURCE=db` → **F2** worker `RUN_INIT_DB=false` → **F3** search-api `TEMPLATE_SOURCE=db` → **F4** admin-ui `VITE_API_READS_TO_WORKER=1`(再ビルド)。
+  - **0013 GRANT 追加**(F1 で判明): migrate を postgres で流すと新テーブルが postgres 所有になりアプリロール `legalbridge` が `permission denied`。postgres 所有を legalbridge へ付与 + DEFAULT PRIVILEGES。一時PG検証済 → 本番適用済。
+  - **段階ON 全完了**(本番):
+    - ✅ **F1** worker `TEMPLATE_SOURCE=db` — ログ `loaded templates from DB: 17 documents, 1 partials`(permission denied 解消)。
+    - ✅ **F2** worker `RUN_INIT_DB=false` — ログ `⏭️ RUN_INIT_DB=false — skipping initDb`(schema は runner 単一所有)。
+    - ✅ **F3** search-api `TEMPLATE_SOURCE=db` — クリーン起動、GRANT 済で permission denied なし。
+    - ✅ **F4** admin-ui `VITE_API_READS_TO_WORKER=1`(`.env.production` commit → PR #3 マージで main 反映 → 自動再ビルド)。GET read を worker(C2 superset)へ、マスター書込は search-api 維持(D1)。
+  - **可逆**: 各フラグ `--remove-env-vars`(F1/F2/F3)/ `.env.production` の `0` 化+再ビルド(F4)で即ロールバック。
