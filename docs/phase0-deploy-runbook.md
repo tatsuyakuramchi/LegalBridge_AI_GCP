@@ -167,8 +167,35 @@ SEARCH_SVC=legalbridge-search-api
 
 ---
 
-### Step F0: migrate Job を最新まで適用(0001–0012)
+### Step F0: migrations を最新まで適用(0001–0012)
 フラグを立てる前に、DB スキーマ・backfill・同期トリガを**先に**反映する。
+
+> ⚠️ **`.sql` を Cloud SQL Studio / GUI に手で貼って流さないこと。**
+> マイグレーションの適用順・冪等・重複ガードは **runner(`migrations/run.mjs`)が
+> `schema_migrations` で管理**する。`.sql` 自体は `schema_migrations` を作らないため、
+> 手動貼付では `relation "schema_migrations" does not exist` 等になり追跡も効かない。
+> さらに `0003_seed_templates.sql` は **約656KB** で GUI の貼付上限を超える。
+> **必ず runner(下記 A or B)で流す。** 全マイグレーションは冪等(`IF NOT EXISTS` /
+> `WHERE NOT EXISTS` / `CREATE OR REPLACE` + `DROP TRIGGER IF EXISTS`)なので、
+> 手動で一部オブジェクトが既にあっても runner 全件再実行で安全。
+
+**A) Cloud Shell から runner 直実行(最速・推奨。Job/Secret 不要)**
+```bash
+INSTANCE=<PROJECT:REGION:instance>   # Cloud SQL 接続名
+DB=legalbridge
+
+# Cloud SQL Auth Proxy で 127.0.0.1:5432 に DB を張る
+curl -o cloud-sql-proxy https://storage.googleapis.com/cloud-sql-connectors/cloud-sql-proxy/v2.14.1/cloud-sql-proxy.linux.amd64
+chmod +x cloud-sql-proxy
+./cloud-sql-proxy "$INSTANCE" &
+
+cd migrations && npm install
+DATABASE_URL="postgresql://postgres:<PW>@127.0.0.1:5432/$DB" npm run migrate:dry   # pending 確認(0001-0012)
+DATABASE_URL="postgresql://postgres:<PW>@127.0.0.1:5432/$DB" npm run migrate        # 適用
+```
+> run.mjs は 127.0.0.1 を local 判定し ssl=false(proxy が Cloud SQL への TLS を担う)。
+
+**B) Cloud Run Job(CI/反復運用向け。Secret 前提=Step 1 が必要)**
 ```bash
 gcloud builds submit --config cloudbuild-migrate.yaml \
   --substitutions=_REGION=$REGION,_INSTANCE_CONNECTION_NAME=$INSTANCE .
