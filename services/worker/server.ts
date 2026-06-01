@@ -129,11 +129,19 @@ const replaceSlackPlaceholders = (tmpl: string, data: any): string => {
 };
 
 async function startServer() {
-  try {
-    await initDb();
-    console.log("✅ Database initialized (worker has read-write role)");
-  } catch (dbErr) {
-    console.error("❌ Database initialization failed:", dbErr);
+  // Phase 0 (D2): schema は migration ランナー(migrations/)が単一所有する。
+  // 起動時 initDb は段階移行のため RUN_INIT_DB で制御する。
+  //   未設定 / "true": 現行どおり起動時に DDL を流す(後方互換)
+  //   "false"        : worker は DDL を触らない(ランナー検証後に切替 — §8.5 step3)
+  if (process.env.RUN_INIT_DB === "false") {
+    console.log("⏭️  RUN_INIT_DB=false — skipping initDb (schema owned by migrations/ runner)");
+  } else {
+    try {
+      await initDb();
+      console.log("✅ Database initialized (worker has read-write role)");
+    } catch (dbErr) {
+      console.error("❌ Database initialization failed:", dbErr);
+    }
   }
 
   const app = express();

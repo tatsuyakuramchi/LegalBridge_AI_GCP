@@ -1,0 +1,84 @@
+# Cloud Build pipeline for legalbridge-migrate (DDL migration runner / D2)
+#
+# Builds migrations/ into a Cloud Run Job and executes it. The job applies
+# pending migrations/NNNN_*.sql against the DB (schema_migrations tracked),
+# then exits. This is the SINGLE owner of DDL — app services do not migrate
+# at boot (see docs/service-architecture.md §8).
+#
+# Substitutions (override per-trigger):
+#   _REGION                   — Cloud Run / Artifact Registry region
+#   _REPO                     — Artifact Registry repository name
+#   _JOB_NAME                 — Cloud Run Job name
+#   _INSTANCE_CONNECTION_NAME — Cloud SQL instance (project:region:instance)
+#
+# Prereqs (out-of-band):
+#   - `lb_migrate` role exists (migrations/roles.template.sql)
+#   - Secret `lb-migrate-database-url` holds the lb_migrate DATABASE_URL,
+#     e.g. postgresql://lb_migrate:PW@localhost/legalbridge?host=/cloudsql/<INSTANCE>
+
+substitutions:
+  _REGION: asia-northeast1
+  _REPO: legalbridge
+  _JOB_NAME: legalbridge-migrate
+  _INSTANCE_CONNECTION_NAME: ""
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+
+images:
+  - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_JOB_NAME}:${SHORT_SHA}"
+
+steps:
+  - id: build
+    name: gcr.io/cloud-builders/docker
+    args:
+      - build
+      - --platform
+      - linux/amd64
+      - -t
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_JOB_NAME}:${SHORT_SHA}"
+      - migrations
+    dir: .
+
+  - id: push
+    name: gcr.io/cloud-builders/docker
+    args:
+      - push
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_JOB_NAME}:${SHORT_SHA}"
+
+  # Create or update the Cloud Run Job (idempotent via `jobs deploy`).
+  - id: deploy-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - deploy
+      - "${_JOB_NAME}"
+      - --image
+      - "${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO}/${_JOB_NAME}:${SHORT_SHA}"
+      - --region
+      - "${_REGION}"
+      - --set-cloudsql-instances
+      - "${_INSTANCE_CONNECTION_NAME}"
+      - --set-secrets
+      - "DATABASE_URL=lb-migrate-database-url:latest"
+      - --max-retries
+      - "1"
+      - --task-timeout
+      - "600"
+      - --quiet
+
+  # Execute now and wait — fails the build if a migration fails.
+  - id: execute-job
+    name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - jobs
+      - execute
+      - "${_JOB_NAME}"
+      - --region
+      - "${_REGION}"
+      - --wait
+      - --quiet
