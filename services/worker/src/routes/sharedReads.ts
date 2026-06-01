@@ -10,7 +10,7 @@
 
 import type { Express } from "express";
 
-type Query = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
+type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 
 // worker BacklogService の必要メソッドだけを構造的に要求(疎結合)。
 type BacklogSvc = {
@@ -357,6 +357,144 @@ export function registerSharedReads(
         }
       }
       res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // ── バッチ4: management ダッシュボード + dashboard/stats ──────────────
+  app.get("/api/management/alerts", async (_req, res) => {
+    try {
+      const overdue = await query(
+        `SELECT d.*, l.summary as issue_summary, l.counterparty
+         FROM delivery_events d
+         LEFT JOIN legal_requests l ON d.backlog_issue_key = l.backlog_issue_key
+         WHERE d.status = 'pending' AND d.inspection_deadline < CURRENT_TIMESTAMP`
+      );
+      res.json({ overdue: overdue.rows, totalAlerts: overdue.rowCount });
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/management/deliveries", async (_req, res) => {
+    try {
+      const result = await query(`
+        SELECT d.*, r.counterparty, r.summary
+        FROM delivery_events d
+        LEFT JOIN legal_requests r ON d.backlog_issue_key = r.backlog_issue_key
+        ORDER BY d.inspection_deadline ASC NULLS LAST
+      `);
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/management/royalties", async (_req, res) => {
+    try {
+      const result = await query(`
+        SELECT p.*, r.summary as project_name
+        FROM royalty_payments p
+        LEFT JOIN legal_requests r ON p.backlog_issue_key = r.backlog_issue_key
+        ORDER BY p.period DESC, project_name ASC
+      `);
+      if (result.rows.length === 0) {
+        return res.json([
+          { id: "m1", period: "2026-01", project_name: "Sample Game A", total_amount: 500000, status: "paid" },
+          { id: "m2", period: "2026-02", project_name: "Sample Game A", total_amount: 750000, status: "calculated" },
+          { id: "m3", period: "2026-03", project_name: "Sample Game B", total_amount: 1200000, status: "calculated" },
+        ]);
+      }
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/management/workflows", async (_req, res) => {
+    try {
+      const result = await query(`
+        SELECT w.*, r.summary, r.counterparty, r.contract_type
+        FROM issue_workflows w
+        LEFT JOIN legal_requests r ON w.backlog_issue_key = r.backlog_issue_key
+        ORDER BY w.updated_at DESC
+      `);
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/management/documents", async (_req, res) => {
+    try {
+      const result = await query("SELECT * FROM documents ORDER BY created_at DESC");
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/management/assets", async (req, res) => {
+    try {
+      const includeHistory = String(req.query.include_history || "") === "1";
+      let result: any;
+      try {
+        result = await query(
+          `SELECT ea.*,
+                  d.base_document_number,
+                  COALESCE(d.revision, 0) AS revision,
+                  COALESCE(d.is_primary, TRUE) AS is_primary,
+                  COALESCE(d.lifecycle_status, 'final') AS lifecycle_status,
+                  d.superseded_by,
+                  cc.contract_status,
+                  cc.expiration_date  AS cc_expiration_date,
+                  cc.effective_date   AS cc_effective_date
+             FROM external_assets ea
+             LEFT JOIN documents d
+               ON d.document_number = ea.asset_number
+             LEFT JOIN contract_capabilities cc
+               ON cc.document_number = ea.asset_number
+                  OR cc.document_number = COALESCE(d.base_document_number, ea.asset_number)
+            WHERE ${includeHistory ? "TRUE" : "COALESCE(d.lifecycle_status, 'final') = 'final'"}
+            ORDER BY ea.created_at DESC`
+        );
+      } catch (err: any) {
+        if (err && err.code === "42703") {
+          result = await query("SELECT * FROM external_assets ORDER BY created_at DESC");
+        } else {
+          throw err;
+        }
+      }
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/dashboard/stats", async (_req, res) => {
+    try {
+      const issues = await backlogService.getIssues();
+      const docs = await query("SELECT issue_key, template_type, created_at FROM documents");
+      const stats = {
+        totalIssues: issues.length,
+        totalDocuments: docs.rowCount,
+        byStatus: {} as Record<string, number>,
+        recentActivity: docs.rows.slice(0, 5),
+        issueDetails: issues.map((i: any) => {
+          const relatedDocs = docs.rows.filter((d: any) => d.issue_key === i.issueKey);
+          return {
+            ...i,
+            documentCount: relatedDocs.length,
+            lastDocDate: relatedDocs.length > 0 ? relatedDocs[0].created_at : null,
+          };
+        }),
+      };
+      issues.forEach((i: any) => {
+        const s = i.status?.name || "Unknown";
+        stats.byStatus[s] = (stats.byStatus[s] || 0) + 1;
+      });
+      res.json(stats);
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
