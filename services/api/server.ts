@@ -32,6 +32,45 @@ import {
   errorPage as renderErrorPage,
   ringiPage as renderRingiPage,
 } from "./src/views/contractSearchHtml.ts";
+// B5b: search-api ローカルレンダリング(② サンプルプレビュー)。共有モジュール
+//   (canonical: shared/rendering/render.mjs を同期コピー)で worker と同一出力。
+import Handlebars from "handlebars";
+import {
+  registerHelpers as registerRenderHelpers,
+  buildSampleData,
+  renderTemplate as renderSharedTemplate,
+} from "./src/lib/shared-rendering.mjs";
+
+// helper は起動時 1 回、partial は DB から遅延ロードして専用インスタンスに登録。
+const previewHb = Handlebars.create();
+registerRenderHelpers(previewHb);
+let previewPartialsLoaded = false;
+async function ensurePreviewPartials(): Promise<void> {
+  if (previewPartialsLoaded) return;
+  const r = await query(
+    `SELECT dt.template_key, v.html_source
+       FROM document_templates dt
+       JOIN document_template_versions v ON v.id = dt.current_version_id
+      WHERE dt.kind = 'partial' AND dt.is_active = true`
+  );
+  for (const row of r.rows as any[]) previewHb.registerPartial(row.template_key, row.html_source);
+  previewPartialsLoaded = true;
+}
+// TEMPLATE_SOURCE=db のとき、DB のテンプレ + サンプルデータでローカルレンダリング。
+async function renderSamplePreviewFromDb(type: string): Promise<string | null> {
+  const r = await query(
+    `SELECT dt.label, v.html_source, v.field_schema
+       FROM document_templates dt
+       JOIN document_template_versions v ON v.id = dt.current_version_id
+      WHERE dt.template_key = $1 AND dt.kind = 'document' AND dt.is_active = true`,
+    [type]
+  );
+  if (r.rows.length === 0) return null;
+  await ensurePreviewPartials();
+  const row = r.rows[0] as any;
+  const data = buildSampleData(row.field_schema || [], row.html_source, row.label || type);
+  return renderSharedTemplate(previewHb, row.html_source, data);
+}
 // Phase 17s: HMAC 短期署名 URL + IAP 2 層防御。
 // Phase 22.21.36: requireAppRole を追加 (staff.app_role ベース)。
 // Phase 17z-2: requireIapUser / requireDepartmentRole を追加 (恒久 URL 対応)。
@@ -548,15 +587,33 @@ async function startServer() {
     }
   );
 
-  // Phase 2 / B5 TODO: html/pdf プレビューはレンダリング(Handlebars+helper+PDF)が
-  //   要るため、共有レンダリングlib を search-api に入れる B5 まで worker proxy のまま。
-  //   B5 完了後、document_templates を DB 直読してローカルレンダリングに切替える。
+  // Phase 2 / B5b: html プレビューはローカルレンダリング(TEMPLATE_SOURCE=db)。
+  //   既定は従来 worker proxy = 可逆。PDF(:type/pdf)は Chromium 同梱が要るため
+  //   引き続き proxy(infra 整備後に同様にローカル化)。
   app.get(
     "/api/template-preview/:type/html",
     requireIapUser({ renderErrorPage }),
     async (req, res) => {
       try {
         const typeRaw = String(req.params.type || "");
+
+        if (process.env.TEMPLATE_SOURCE === "db") {
+          const html = await renderSamplePreviewFromDb(typeRaw);
+          if (html === null) {
+            res.status(404).type("text/plain").send(`Template not found: ${typeRaw}`);
+            return;
+          }
+          res.type("html");
+          if (String(req.query.download || "") === "1") {
+            res.setHeader(
+              "Content-Disposition",
+              `attachment; filename="${typeRaw.replace(/[^A-Za-z0-9_.-]+/g, "_")}_sample.html"`
+            );
+          }
+          res.send(html);
+          return;
+        }
+
         const type = encodeURIComponent(typeRaw);
         const upstream = await fetchWorker(`/api/templates/${type}/sample-preview`);
         const body = await upstream.text();

@@ -146,3 +146,110 @@ export function renderTemplate(Handlebars, html, data) {
   const context = { ...(data || {}), ...enriched };
   return Handlebars.compile(html)(context);
 }
+
+// ── サンプルプレビュー用データ生成(B5b)─────────────────────────────
+// worker documentService.getTemplateVariables / buildSampleDocumentData /
+// sampleValueForTemplateField から汎用部分を抽出。出版特化の
+// PUBLICATION_SAMPLE_OVERRIDES は worker 側に温存(プレビューは汎用値で表示)。
+
+/** テンプレ html から参照変数名を抽出(標準フィールドは除く)。 */
+export function extractTemplateVariables(html) {
+  const regex = /\{\{\{?[#\/!]?(?:if|each|unless|with)?\s*([^}\s]+)(?:\s+[^}\s]+)*\s*\}\}\}?/g;
+  const vars = new Set();
+  let m;
+  while ((m = regex.exec(html)) !== null) {
+    const name = m[1];
+    if (!["issueKey", "summary", "requester", "date", "details"].includes(name)) vars.add(name);
+  }
+  return [...vars];
+}
+
+/** フィールド定義(field_schema の1要素)から型/名称ヒューリスティックでサンプル値。 */
+export function sampleValueForField(fieldId, def) {
+  const id = String(fieldId || "");
+  const upper = id.toUpperCase();
+  const label = String(def?.label || "");
+  const placeholder = String(def?.placeholder || "");
+  if (def?.type === "boolean") return true;
+  if (def?.type === "number") {
+    if (upper.includes("DAYS")) return 10;
+    if (upper.includes("YEARS")) return 5;
+    if (upper.includes("RATE")) return 10;
+    if (upper.includes("AMOUNT") || upper.includes("TOTAL") || label.includes("金額")) return 100000;
+    return 1;
+  }
+  if (def?.type === "select" && Array.isArray(def.options) && def.options.length > 0) return def.options[0];
+  if (upper.includes("CONTRACT_NO") || upper.includes("ORDER_NO")) return "SAMPLE-2026-0001";
+  if (upper.includes("CONTRACT_DATE_FORMATTED")) return "2026年5月24日";
+  if (upper.includes("DATE")) return "2026-05-24";
+  if (upper.includes("PARTY_B_NAME") || upper.includes("VENDOR_NAME")) return "サンプル株式会社";
+  if (upper.includes("ADDRESS")) return "東京都千代田区サンプル1-2-3";
+  if (upper.includes("REPRESENTATIVE") || upper.includes("_REP")) return "代表取締役 山田 太郎";
+  if (upper.includes("EMAIL")) return "sample@example.com";
+  if (upper.includes("PHONE") || upper.includes("TEL")) return "03-1234-5678";
+  if (upper.includes("JURISDICTION")) return "東京地方裁判所";
+  if (upper.includes("CONFIDENTIALITY_YEARS")) return 5;
+  if (upper.includes("BREACH_CURE_DAYS")) return 14;
+  if (upper.includes("PAYMENT")) return "月末締め翌月末日払い";
+  if (upper.includes("DELIVERY_LOCATION")) return "甲指定倉庫";
+  if (upper.includes("PRODUCT_SCOPE")) return "アナログゲーム製品および関連商品";
+  if (upper.includes("WARRANTY_PERIOD")) return "引渡し後1年";
+  if (upper.includes("SPECIAL_TERMS") || upper.includes("REMARKS") || upper.includes("NOTES")) {
+    return "本欄はサンプル表示です。実運用では案件に応じて編集してください。";
+  }
+  if (placeholder) return placeholder.replace(/^例[:：]\s*/, "");
+  if (label) return `${label}サンプル`;
+  return `[${id}]`;
+}
+
+/**
+ * field_schema(配列)+ html からサンプル DocumentData を構築(汎用)。
+ * 出版テンプレの作り込み値は含めない(worker 側 PUBLICATION_SAMPLE_OVERRIDES)。
+ */
+export function buildSampleData(fieldSchema, html, label) {
+  const defs = {};
+  for (const f of fieldSchema || []) if (f && f.name) defs[f.name] = f;
+  const fieldIds = new Set([...Object.keys(defs), ...extractTemplateVariables(html || "")]);
+  const details = {};
+  for (const id of fieldIds) details[id] = sampleValueForField(id, defs[id]);
+
+  Object.assign(details, {
+    CONTRACT_NO: details.CONTRACT_NO || "SAMPLE-2026-0001",
+    ORDER_NO: details.ORDER_NO || "SAMPLE-2026-0001",
+    DOC_NO: details.DOC_NO || "SAMPLE-2026-0001",
+    items: [
+      { item_name: "サンプル品目A", spec: "仕様A", quantity: 10, unit_price: 10000, amount: 100000, remarks: "サンプル明細" },
+      { item_name: "サンプル品目B", spec: "仕様B", quantity: 5, unit_price: 20000, amount: 100000, remarks: "" },
+    ],
+    order_lines: [
+      { line_no: 1, item_name: "サンプル品目A", spec: "仕様A", quantity: 10, unit_price: 10000, amount_ex_tax: 100000 },
+      { line_no: 2, item_name: "サンプル品目B", spec: "仕様B", quantity: 5, unit_price: 20000, amount_ex_tax: 100000 },
+    ],
+    order_lines_for_inspection: [
+      { id: 1, line_no: 1, item_name: "サンプル成果物A", spec: "仕様A", quantity: 10, unit_price: 10000, amount_ex_tax: 100000 },
+    ],
+    delivery_line_items: [
+      { line_no: 1, item_name: "サンプル成果物A", spec: "仕様A", inspected_quantity: 10, acceptance_ratio: 1, inspected_amount_ex_tax: 100000 },
+    ],
+    expenses: [
+      { line_no: 1, expense_name: "サンプル経費", spent_date: "2026-05-24", amount_inc_tax: 11000, remarks: "交通費" },
+    ],
+    other_fees: [
+      { line_no: 1, fee_name: "サンプル手数料", amount: 10000, remarks: "任意手数料" },
+    ],
+    CHANGE_RECORDS: details.CHANGE_RECORDS || "2026-05-24|検収金額|100000|80000|一部不合格のため減額",
+  });
+
+  const documentNumber = String(
+    details.契約番号 || details.条件書番号 || details.追加条件書番号 ||
+    details.CONTRACT_NO || details.ORDER_NO || details.DOC_NO || "SAMPLE-2026-0001"
+  );
+  return {
+    issueKey: "SAMPLE-1",
+    documentNumber,
+    summary: `${label || ""} サンプル`,
+    requester: "LegalBridge Sample",
+    date: new Date().toLocaleDateString("ja-JP"),
+    details,
+  };
+}
