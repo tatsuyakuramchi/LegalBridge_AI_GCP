@@ -28,8 +28,9 @@
 | 0009 | backfill: royalty_calculations → royalty_statements | backfill |
 | 0010 | backfill: ledgers→source_ips / materials→source_ip_materials / contract_works / contract_parties | backfill |
 | 0011 | backfill: royalty_payments → payments(snapshot、contract_id 導出、暫定 department) | backfill |
+| 0012 | **同期トリガ**: old(contract_capabilities / capability_* / royalty_*)→ 新スキーマへ AFTER INSERT/UPDATE で自動ミラー(C5 の狙いを worker 無改修で達成)+ Search serial の id 高レンジ分離 | トリガ |
 
-> 全 backfill は **id保存・冪等・FK整合**。0007(互換ビュー)は C5 後に予約。
+> 全 backfill は **id保存・冪等・FK整合**。0007(互換ビュー)は旧テーブル名の読取置換用に予約。
 
 ## 3. テンプレ DB 化 + レンダリング分離(Phase 1 / C3 / B2 / B5 / B5b)
 - **A1/A2**: テンプレを DB 化(0002/0003)。`templates_config.json` + `services/worker/templates/*.html` + partials を忠実移植(byte一致検証済)。
@@ -67,8 +68,8 @@
 ---
 
 ## 7. 残作業
-- **C5**(worker 書込先差替): 契約・財務の書込を新スキーマへ。**実環境検証が必要・最大改修**。
-- **0007 互換ビュー**: C5 後に旧テーブル名を読取専用ビュー化。
+- ~~**C5**(worker 書込先差替)~~ → **0012 同期トリガで達成**(worker 無改修・SQL のみ・検証済)。worker が old に書くと新スキーマへ自動追従。
+- **0007 互換ビュー**: 旧テーブル名を読取専用ビュー化(残存 reader 用。トリガ方式では旧テーブルは実体のまま残るため優先度低)。
 - **works への work_id 紐付け**: backfill は source_ip 中心のため、`__migrated_royalty__` payments 等の work 再分類は運用で実施。
 - **B1 専用フロント分離 / B3 admin ロール厳格化 / B5b PDF ローカル化(Chromium)**。
 - **フラグの段階 ON**(デプロイ検証後)。
