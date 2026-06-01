@@ -86,9 +86,18 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/management\/issues\/[^/]+\/line-items(?:\?|$|\/)/,
 ];
 
+// Routes that must ALWAYS go to the READ service (search-api) on GET, even when
+// READS_TO_WORKER=1. worker にミラーが無い search-api 専用 read のため、ここで
+// 明示しないと READS_TO_WORKER 時に worker へ振られて 404 になる。
+//   - /api/contracts/search  : 親契約 picker (registerContractsV2)
+//   - /api/contracts/:id      : 契約詳細 (registerContractsV2)
+const READ_PATHS_ON_GET: RegExp[] = [
+  /^\/api\/contracts\/search(?:\?|$)/,
+  /^\/api\/contracts\/\d+(?:\/|\?|$)/,
+];
+
 // Routes that should go to the READ service even on POST.
-const READ_PATHS_ON_POST: RegExp[] = [
-  /^\/api\/contract-check(?:\/|$)/,
+const READ_PATHS_ON_POST: RegExp[] = [  /^\/api\/contract-check(?:\/|$)/,
   // Phase 25.1: 取引先 upsert は search-api の正規実装 (住所/口座 1:N +
   //   数値正規化 + トランザクション) を本体とする。admin-ui の保存 (POST
   //   /api/master/vendors の完全一致のみ) を search-api へ振り、worker の簡易
@@ -102,6 +111,8 @@ function resolveBaseUrl(method: string, path: string): string {
   const m = method.toUpperCase();
   if (m === "GET") {
     if (WRITE_PATHS_ON_GET.some((re) => re.test(path))) return WRITE_URL;
+    // worker にミラーが無い search-api 専用 read は常に READ_URL へ。
+    if (READ_PATHS_ON_GET.some((re) => re.test(path))) return READ_URL;
     // C1: read を worker に寄せる(フラグ ON 時)。既定は READ_URL(search-api)。
     return READS_TO_WORKER ? WRITE_URL : READ_URL;
   }
