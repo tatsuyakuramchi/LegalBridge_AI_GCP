@@ -71,5 +71,6 @@
 - ~~**C5**(worker 書込先差替)~~ → **0012 同期トリガで達成**(worker 無改修・SQL のみ・検証済)。worker が old に書くと新スキーマへ自動追従。
 - **0007 互換ビュー**: 旧テーブル名を読取専用ビュー化(残存 reader 用。トリガ方式では旧テーブルは実体のまま残るため優先度低)。
 - **works への work_id 紐付け**: backfill は source_ip 中心のため、`__migrated_royalty__` payments 等の work 再分類は運用で実施。
-- **B1 専用フロント分離 / B3 admin ロール厳格化 / B5b PDF ローカル化(Chromium)**。
-- **フラグの段階 ON**(デプロイ検証後)。
+- ~~**B3 admin ロール厳格化**~~ → 完了(`/api/v3` write を admin ロール必須化、commit `0211390`。`release/api` 反映待ち)。
+- **B1 専用フロント分離 / B5b PDF ローカル化(Chromium)**(infra 同梱が必要・サンドボックス検証不可)。
+- **フラグの段階 ON**: 手順整備済 → `docs/phase0-deploy-runbook.md`「フラグ段階ON 完全手順」(F0 migrate → F1/F2 worker → F3 search-api → F4 admin-ui)。各フラグ独立・可逆、ステップ毎にスモーク+即時ロールバックを明記。**実行は GCP 認証環境**(本サンドボックスは gcloud 不可)。
