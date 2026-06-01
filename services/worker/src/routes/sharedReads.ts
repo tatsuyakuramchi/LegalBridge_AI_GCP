@@ -77,11 +77,56 @@ function getStaffSampleCsv(): string {
   return csvJoin([header, ...rows]);
 }
 
+// search-api legalonImportService.getSampleCsv の忠実移植(RFC4180 / \r\n)
+function getLegalonSampleCsv(): string {
+  const headers = [
+    "管理番号", "契約書タイトル", "契約類型, 立場", "取引先名", "取引先コード",
+    "契約締結日", "契約開始日", "契約終了日", "自動更新", "契約状況", "URL", "ファイル名",
+  ];
+  const rows = [
+    ["SVC-2026-001", "業務委託基本契約書", "[業務委託契約（成果物あり）,委託者]", "株式会社サンプル", "V001", "2026/04/01", "2026/04/01", "2027/03/31", "あり", "契約期間中", "https://loc.legalon-cloud.com/document/sample-001", "業務委託基本契約書_サンプル.pdf"],
+    ["LIC-2026-001", "ライセンス基本契約書", "[利用許諾契約,被許諾者]", "Sample IP Holdings 株式会社", "V002", "2026/04/01", "2026/04/01", "", "あり", "契約期間中", "https://loc.legalon-cloud.com/document/sample-002", "ライセンス基本契約書_Sample IP Holdings.pdf"],
+    ["TRI-2026-001", "共同事業に関する業務委託契約書", "[業務委託契約（成果物あり）,委託者]", "株式会社A, 株式会社B, 株式会社C", "", "2026/05/01", "2026/05/01", "2027/04/30", "なし", "契約期間中", "https://loc.legalon-cloud.com/document/sample-003", "共同事業契約_A_B_C.pdf"],
+    ["NDA-2026-001", "秘密保持契約書", "[秘密保持契約,双方]", "株式会社サンプル B", "V003", "2026/03/15", "2026/03/15", "2027/03/14", "あり", "契約期間中", "https://loc.legalon-cloud.com/document/sample-004", "NDA_株式会社サンプルB.pdf"],
+    ["PO-2026-001", "発注書", "[業務委託契約（成果物あり）,委託者]", "株式会社サンプル", "V001", "2026/05/08", "2026/05/08", "", "なし", "契約期間中", "https://loc.legalon-cloud.com/document/sample-005", "発注書_PO-2026-001.pdf"],
+  ];
+  const escape = (v: string) => {
+    const s = String(v);
+    if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+    return s;
+  };
+  const lines = [headers.map(escape).join(","), ...rows.map((r) => r.map(escape).join(","))];
+  return lines.join("\r\n") + "\r\n";
+}
+
+type Middleware = (req: any, res: any, next: any) => void;
+
 export function registerSharedReads(
   app: Express,
-  deps: { query: Query; backlogService: BacklogSvc }
+  deps: { query: Query; backlogService: BacklogSvc; requirePortalSecret: Middleware }
 ): void {
-  const { query, backlogService } = deps;
+  const { query, backlogService, requirePortalSecret } = deps;
+
+  // ── バッチ5 ─────────────────────────────────────────────
+  // GET /api/contract-check/purposes — 契約目的マスター(Slack/admin-ui)。portal secret ゲート。
+  app.get("/api/contract-check/purposes", requirePortalSecret, async (_req, res) => {
+    try {
+      const result = await query(
+        `SELECT * FROM contract_purposes WHERE active = TRUE ORDER BY sort_order ASC`
+      );
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  // GET /api/imports/legalon-csv/template — LegalOn 取込 CSV テンプレ
+  app.get("/api/imports/legalon-csv/template", (_req, res) => {
+    const body = "﻿" + getLegalonSampleCsv();
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="legalon_sample.csv"');
+    res.send(body);
+  });
 
   // ── バッチ3: 単純 backlog read(backlogService 呼び出しのみ)─────────
   app.get("/api/backlog/issues", async (_req, res) => {
