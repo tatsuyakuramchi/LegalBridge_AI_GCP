@@ -138,6 +138,10 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
           <div class="title">Template Preview <span class="arrow">→</span></div>
           <div class="desc">現行テンプレートをサンプル情報で HTML 表示 / PDF ダウンロード</div>
         </a>
+        <a class="tile master" href="/work-model">
+          <div class="title">🎲 作品モデル <span class="arrow">→</span></div>
+          <div class="desc">原作IP・自社作品・契約を作品軸で閲覧 (新プラットフォーム /api/v3)</div>
+        </a>
       </div>
     </section>
 

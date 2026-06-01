@@ -22,13 +22,15 @@ const pad4 = (n: number) => String(n).padStart(4, "0");
 
 export function registerWorkModelRoutes(
   app: Express,
-  deps: { query: Query; requireWrite: Middleware[] }
+  deps: { query: Query; requireWrite: Middleware[]; requireRead?: Middleware[] }
 ): void {
   const { query, requireWrite } = deps;
+  // B1: read も Search 流の認証で固める(既定は無印=後方互換)。
+  const requireRead = deps.requireRead ?? [];
   const fail = (res: any, e: unknown) => res.status(500).json({ ok: false, error: String(e) });
 
   // ── 原作IP ───────────────────────────────────────────────
-  app.get("/api/v3/source-ips", async (_req, res) => {
+  app.get("/api/v3/source-ips", ...requireRead, async (_req, res) => {
     try {
       const r = await query(
         `SELECT s.*, COUNT(sim.id) AS material_count
@@ -41,7 +43,7 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
-  app.get("/api/v3/source-ips/:id", async (req, res) => {
+  app.get("/api/v3/source-ips/:id", ...requireRead, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
@@ -56,7 +58,7 @@ export function registerWorkModelRoutes(
   });
 
   // ── 自社作品 ─────────────────────────────────────────────
-  app.get("/api/v3/works", async (_req, res) => {
+  app.get("/api/v3/works", ...requireRead, async (_req, res) => {
     try {
       const r = await query(
         `SELECT w.*, COUNT(p.id) AS product_count
@@ -69,7 +71,7 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
-  app.get("/api/v3/works/:id", async (req, res) => {
+  app.get("/api/v3/works/:id", ...requireRead, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
@@ -112,7 +114,7 @@ export function registerWorkModelRoutes(
   });
 
   // ── 契約(新モデル)────────────────────────────────────────
-  app.get("/api/v3/contracts", async (_req, res) => {
+  app.get("/api/v3/contracts", ...requireRead, async (_req, res) => {
     try {
       const r = await query(
         `SELECT c.id, c.document_number, c.contract_level, c.contract_category, c.contract_type,
@@ -127,7 +129,7 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
-  app.get("/api/v3/contracts/:id", async (req, res) => {
+  app.get("/api/v3/contracts/:id", ...requireRead, async (req, res) => {
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });

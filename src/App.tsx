@@ -20,7 +20,6 @@ import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
 import { ExcelBatchPage } from "./pages/ExcelBatchPage"
 import { SettingsPage } from "./pages/SettingsPage"
-import { WorkModelPage } from "./pages/WorkModelPage" // B1: 新モデル(/api/v3)閲覧
 
 export default function App() {
   return (
@@ -51,8 +50,6 @@ export default function App() {
 
                 <Route path="templates" element={<TemplatesPage />} />
                 <Route path="templates/:id" element={<TemplateEditorPage />} />
-
-                <Route path="work-model" element={<WorkModelPage />} />
 
                 <Route path="settings" element={<SettingsPage />} />
 

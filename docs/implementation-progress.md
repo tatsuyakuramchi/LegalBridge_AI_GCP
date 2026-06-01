@@ -47,7 +47,7 @@
 ## 5. 新モデル read/write API + 最小フロント
 - **read API**(`services/api/src/routes/workModel.ts`, `/api/v3/*`): source-ips / works / contracts(作品軸の詳細・集計)。
 - **write API**(同): `POST /api/v3/source-ips` / `works` / `contracts`。`master_sequences` 採番(IP-/W-/ARC-REG- 、worker と番号空間分離)、IAP ゲート。
-- **B1 最小フロント**(`src/pages/WorkModelPage.tsx` + route + Sidebar): `/api/v3` を読む新モデル閲覧(admin-ui 内 seed。後で Search 専用フロントへ切出し)。
+- **B1 専用フロント分離 完了**: 新モデル閲覧を **Search 側へ移設**。`services/api/src/views/workModelHtml.ts`(server-rendered + 同一オリジン `/api/v3` fetch)+ ルート `GET /work-model`(`requireIapUser`)+ admin ダッシュボードにタイル。`/api/v3` の GET も `requireRead`(IAP)で固めた。admin-ui 側の `WorkModelPage.tsx` / route / Sidebar を撤去(F4 で read が worker へ振られ `/api/v3` が 404 になる問題も解消)。
 
 ## 6. デプロイ状況
 | サービス | ブランチ | 反映 |
@@ -73,7 +73,8 @@
 - **0007 互換ビュー**: 旧テーブル名を読取専用ビュー化(残存 reader 用。トリガ方式では旧テーブルは実体のまま残るため優先度低)。
 - **works への work_id 紐付け**: backfill は source_ip 中心のため、`__migrated_royalty__` payments 等の work 再分類は運用で実施。
 - ~~**B3 admin ロール厳格化**~~ → 完了(`/api/v3` write を admin ロール必須化、commit `0211390`。`release/api` 反映待ち)。
-- **B1 専用フロント分離 / B5b PDF ローカル化(Chromium)**(infra 同梱が必要・サンドボックス検証不可。段階ON完了後の次候補)。
+- ~~**B1 専用フロント分離**~~ → 完了(新モデル閲覧を Search `/work-model` へ移設、admin-ui から撤去)。
+- ~~**B5b PDF ローカル化**~~ → 完了(search-api に chromium 同梱、本番検証済)。
 - **運用メモ**: F0 適用時に使った Cloud SQL `postgres` パスワードはチャット履歴に露出したため**ローテーション推奨**(`gcloud sql users set-password postgres --instance=legalbridge-db ...`)。
 - **フラグの段階 ON**: 手順整備済 → `docs/phase0-deploy-runbook.md`「フラグ段階ON 完全手順」(F0 migrate → F1/F2 worker → F3 search-api → F4 admin-ui)。各フラグ独立・可逆、ステップ毎にスモーク+即時ロールバックを明記。**実行は GCP 認証環境**(本サンドボックスは gcloud 不可)。
   - **F0 完了**(本番 Cloud SQL `legalbridge-488506:asia-northeast1:legalbridge-db`、Cloud Shell の `cloud-sql-proxy` + runner で適用): `schema_migrations` 0001–0012(11行)、`document_templates`=18、`contracts`=118 / `source_ips`=12 / `payments`=10(backfill)、`trg_sync_*` トリガ5本。`works`=0(source_ip 中心 backfill のため、自社作品は今後 `/api/v3` 登録)。

@@ -45,7 +45,6 @@ const groups: NavGroup[] = [
     label: "Configuration",
     items: [
       { to: "/master", label: "Masters", icon: Building2, description: "Vendors / Staff / Contracts" },
-      { to: "/work-model", label: "Work Model", icon: Database, description: "新モデル(v3)閲覧" },
       { to: "/templates", label: "Templates", icon: FileCode2, description: "Blueprint studio" },
       { to: "/settings", label: "Settings", icon: SettingsIcon, description: "System" },
     ],

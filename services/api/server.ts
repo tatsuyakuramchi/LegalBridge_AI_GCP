@@ -115,6 +115,8 @@ import {
 import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
 import { masterContractsPage } from "./src/views/masterContractsHtml.ts";
 import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
+// B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
+import { workModelPage } from "./src/views/workModelHtml.ts";
 import {
   listStaff,
   getStaff,
@@ -2628,6 +2630,18 @@ async function startServer() {
       requireIapUser({ renderErrorPage }),
       requireAppRole({ resourceLabel: "v3:write", allowedRoles: ["admin"], renderErrorPage }),
     ],
+    // B1: read は IAP 認証で固める(全社参照だが要ログイン)。
+    requireRead: [requireIapUser({ renderErrorPage })],
+  });
+
+  // B1: 作品中心モデルの閲覧ページ(Search 専用フロント)。/api/v3 を同一オリジンで読む。
+  app.get("/work-model", requireIapUser({ renderErrorPage }), (_req, res) => {
+    try {
+      res.type("html").send(workModelPage());
+    } catch (error) {
+      console.error("/work-model failed:", error);
+      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
   });
 
   // -------------------------------------------------------------------
