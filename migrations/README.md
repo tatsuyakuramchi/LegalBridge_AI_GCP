@@ -15,6 +15,15 @@ DDL の**単一所有者**。アプリ(search-api / worker)は**起動時に mig
 > `0001_baseline.sql` は **手で編集しない**。再生成は `npm run extract-baseline`
 > (`scripts/extract-baseline.mjs` が worker db.ts から再抽出)。
 
+### Phase 1 追加分(テンプレDB化)
+| ファイル | 内容 |
+| :--- | :--- |
+| `0002_document_templates.sql` | `document_templates` / `document_template_versions` + `documents.template_version_id`(§3.5) |
+| `0003_seed_templates.sql` | 既存テンプレ(`templates_config.json` + `templates/*.html` + partials)を version 1 として投入(**自動生成**・冪等) |
+
+> `0003` は手編集しない。再生成は `node scripts/seed-templates.mjs`
+> (config + `services/worker/templates/` から再構築)。
+
 ## 使い方
 ```bash
 cd migrations
