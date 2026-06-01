@@ -235,6 +235,9 @@ async function startServer() {
     projectKey: dbSettings.BACKLOG_PROJECT_KEY || process.env.BACKLOG_PROJECT_KEY,
   });
   const documentService = new DocumentService();
+  // Phase 2 / C3: TEMPLATE_SOURCE=db のとき、起動時に DB からテンプレを一括ロード
+  //   (disk モードでは no-op)。失敗しても disk フォールバックで動作継続。
+  await documentService.loadFromDb();
   const googleDriveService = new GoogleDriveService();
   const excelService = new ExcelService();
   const csvImportService = new CsvImportService();

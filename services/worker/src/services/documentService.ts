@@ -2,7 +2,7 @@ import Handlebars from "handlebars";
 import fs from "fs";
 import path from "path";
 
-import { sanitizeForFilename } from "../lib/db.ts";
+import { sanitizeForFilename, query } from "../lib/db.ts";
 
 export interface DocumentData {
   issueKey: string;
@@ -42,15 +42,60 @@ export type DocumentType =
 export class DocumentService {
   private templatesDir: string;
 
+  // Phase 2 / C3: テンプレ読取元。TEMPLATE_SOURCE=db で DB(document_templates)
+  // から取得、それ以外は従来どおり disk(templates/*.html)。可逆フラグ。
+  private templateSource: "disk" | "db";
+  // db モード時、起動時に current version の html_source を template_key で保持。
+  private dbCache: Map<string, string> | null = null;
+
   constructor() {
     // Determine templates directory relative to project root
     this.templatesDir = path.join(process.cwd(), "templates");
+    this.templateSource = process.env.TEMPLATE_SOURCE === "db" ? "db" : "disk";
 
     // Register common Handlebars helpers
     this.registerHelpers();
 
-    // Register partials (約款テンプレ等)
-    this.registerPartials();
+    // disk モードは即 partial 登録。db モードは loadFromDb() で登録する。
+    if (this.templateSource === "disk") {
+      this.registerPartials();
+    }
+  }
+
+  /**
+   * Phase 2 / C3: DB(document_templates / _versions)から current version の
+   * テンプレ本体と partial を一括ロードしてキャッシュ・登録する。
+   * TEMPLATE_SOURCE=db のときに worker 起動時へ一度だけ呼ぶ(server.ts)。
+   * disk モードでは no-op。失敗時は disk フォールバックできるよう投げない。
+   */
+  async loadFromDb(): Promise<void> {
+    if (this.templateSource !== "db") return;
+    try {
+      const res = await query(
+        `SELECT dt.template_key, dt.kind, v.html_source
+           FROM document_templates dt
+           JOIN document_template_versions v ON v.id = dt.current_version_id
+          WHERE dt.is_active = true`
+      );
+      const cache = new Map<string, string>();
+      let docs = 0;
+      let partials = 0;
+      for (const row of res.rows as Array<{ template_key: string; kind: string; html_source: string }>) {
+        if (row.kind === "partial") {
+          Handlebars.registerPartial(row.template_key, row.html_source);
+          partials++;
+        } else {
+          cache.set(row.template_key, row.html_source);
+          docs++;
+        }
+      }
+      this.dbCache = cache;
+      console.log(`[documentService] loaded templates from DB: ${docs} documents, ${partials} partials`);
+    } catch (err) {
+      // DB 読取に失敗しても disk フォールバック(loadTemplate)で動作継続。
+      console.error("[documentService] loadFromDb failed — falling back to disk:", err);
+      this.registerPartials();
+    }
   }
 
   /**
@@ -237,6 +282,14 @@ export class DocumentService {
   }
 
   private loadTemplate(type: DocumentType): string {
+    // db モード: 起動時キャッシュ(current version)から取得。未ヒット時は
+    // 移行期の安全策として disk フォールバック。
+    if (this.templateSource === "db" && this.dbCache) {
+      const cached = this.dbCache.get(type);
+      if (cached !== undefined) return cached;
+      console.warn(`[documentService] template '${type}' not in DB cache — falling back to disk`);
+    }
+
     const filePath = path.join(this.templatesDir, `${type}.html`);
     try {
       if (fs.existsSync(filePath)) {
@@ -245,7 +298,7 @@ export class DocumentService {
     } catch (error) {
       console.error(`Error loading template ${type}:`, error);
     }
-    
+
     // Fallback or throw error
     throw new Error(`Template not found: ${type}`);
   }
