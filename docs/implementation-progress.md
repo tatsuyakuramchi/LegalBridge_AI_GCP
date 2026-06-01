@@ -38,7 +38,7 @@
 - **C3**: worker 文書生成を DB テンプレ取得に対応(`TEMPLATE_SOURCE=db`、既定 disk=可逆)。
 - **B2**: search-api テンプレ list を DB 直読(`TEMPLATE_SOURCE=db`)。
 - **B5**: 共有レンダリング `shared/rendering/render.mjs`(helper/日付展開/render)を切出し、worker を接続(`scripts/sync-shared.mjs` で両サービスへ同期)。
-- **B5b**: search-api が html プレビューをローカル生成(worker proxy 撤去)。PDF は Chromium 同梱(infra)まで proxy 継続。
+- **B5b**: search-api が html プレビュー**+ PDF** をローカル生成(worker proxy 撤去)。PDF は Dockerfile に chromium + 日本語フォント(noto-cjk / ipafont)同梱、`puppeteer-core` で HTML→PDF。worker の `pdfRenderer.ts` 忠実コピー(同一オプション=出力一致)。`TEMPLATE_SOURCE=db` 時のみローカル、既定は proxy=可逆。
 
 ## 4. サービス分離(Phase 2)
 - **C2 完了**: admin-ui が search-api から取得していた read **計24本を worker に補完**(`services/worker/src/routes/sharedReads.ts` + `formReadRoutes.ts`)。master/* / backlog/* / management/* / dashboard/stats / contract-check/purposes / legalon。form-context(710行)は `scripts/extract-form-routes.mjs` で **byte-exact 抽出**。

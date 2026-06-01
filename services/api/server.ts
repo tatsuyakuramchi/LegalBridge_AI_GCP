@@ -42,6 +42,8 @@ import {
   buildSampleData,
   renderTemplate as renderSharedTemplate,
 } from "./src/lib/shared-rendering.mjs";
+// B5b: プレビュー PDF をローカル生成(worker proxy 撤去)。chromium 同梱(Dockerfile)。
+import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
 
 // helper は起動時 1 回、partial は DB から遅延ロードして専用インスタンスに登録。
 const previewHb = Handlebars.create();
@@ -589,9 +591,9 @@ async function startServer() {
     }
   );
 
-  // Phase 2 / B5b: html プレビューはローカルレンダリング(TEMPLATE_SOURCE=db)。
-  //   既定は従来 worker proxy = 可逆。PDF(:type/pdf)は Chromium 同梱が要るため
-  //   引き続き proxy(infra 整備後に同様にローカル化)。
+  // Phase 2 / B5b: html プレビュー・PDF とも search-api ローカルレンダリング
+  //   (TEMPLATE_SOURCE=db)。PDF は chromium 同梱(Dockerfile)+ puppeteer-core。
+  //   既定は従来 worker proxy = 可逆。
   app.get(
     "/api/template-preview/:type/html",
     requireIapUser({ renderErrorPage }),
@@ -641,6 +643,26 @@ async function startServer() {
     async (req, res) => {
       try {
         const typeRaw = String(req.params.type || "");
+
+        // B5b: TEMPLATE_SOURCE=db のとき、html プレビューと同じローカルレンダリングで
+        //   HTML を作り、chromium(puppeteer-core)で PDF 化。worker proxy を使わない。
+        //   既定は従来 worker proxy = 可逆。
+        if (process.env.TEMPLATE_SOURCE === "db") {
+          const html = await renderSamplePreviewFromDb(typeRaw);
+          if (html === null) {
+            res.status(404).type("text/plain").send(`Template not found: ${typeRaw}`);
+            return;
+          }
+          const pdf = await renderHtmlToPdf(html);
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${typeRaw.replace(/[^A-Za-z0-9_.-]+/g, "_")}_sample.pdf"`
+          );
+          res.send(pdf);
+          return;
+        }
+
         const type = encodeURIComponent(typeRaw);
         const upstream = await fetchWorker(`/api/templates/${type}/sample.pdf`);
         const buffer = Buffer.from(await upstream.arrayBuffer());
