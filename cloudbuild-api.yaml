@@ -67,8 +67,10 @@ steps:
       - --allow-unauthenticated
       - --port
       - "8080"
+      # B5b: chromium(puppeteer-core)で PDF をローカル生成するため 1Gi に引き上げ。
+      #   512Mi だと PDF レンダリング時に OOM する(worker は 2Gi)。
       - --memory
-      - 512Mi
+      - 1Gi
       - --cpu
       - "1"
       - --min-instances
