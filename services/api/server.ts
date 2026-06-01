@@ -25,6 +25,8 @@ import dotenv from "dotenv";
 import { BacklogService } from "./src/services/backlogService.ts";
 import { query } from "./src/lib/db.ts";
 import { registerContractsV2 } from "./src/routes/contractsV2.ts";
+// 新スキーマ(work-centric)read API。/api/v3/*。
+import { registerWorkModelRoutes } from "./src/routes/workModel.ts";
 import * as contractCheckService from "./src/services/contractCheckService.ts";
 import {
   listPage as renderListPage,
@@ -2596,6 +2598,8 @@ async function startServer() {
   //   form-context など server 内部の SELECT 参照は Phase 23.6.2 で別途整理。
   // -----------------------------------------------------------------
   registerContractsV2(app, { query, requirePortalSecret });
+  // 新スキーマ(work-centric)read API。/api/v3/*。
+  registerWorkModelRoutes(app, { query });
 
   // -------------------------------------------------------------------
   // /api/dashboard/*
