@@ -3,6 +3,10 @@ import fs from "fs";
 import path from "path";
 
 import { sanitizeForFilename, query } from "../lib/db.ts";
+// B5: 共有レンダリング(canonical: shared/rendering/render.mjs を同期コピー)。
+// renderTemplate は date auto-expand + context マージ + compile を担う。
+// helper 群は当面 registerHelpers()(下記インライン)と共有版が同一内容。
+import { renderTemplate as sharedRenderTemplate } from "../lib/shared-rendering.mjs";
 
 export interface DocumentData {
   issueKey: string;
@@ -304,40 +308,11 @@ export class DocumentService {
   }
 
   renderHtml(data: DocumentData, type: DocumentType = "purchase_order"): string {
+    // B5: レンダリングは共有モジュールに委譲(date auto-expand + context マージ
+    //   + Handlebars.compile)。worker の Handlebars インスタンス(helper/partial
+    //   登録済み)を渡すため出力は従来と同一。
     const templateSource = this.loadTemplate(type);
-    const template = Handlebars.compile(templateSource);
-
-    // 日付フィールドの auto-expand:
-    //   フォーム側は単一の date input (例: CONTRACT_DATE = "2026-05-12") で
-    //   入力するが、既存テンプレ HTML は {{CONTRACT_DATE_YEAR}} 等のように
-    //   分割形式で参照しているケースがある。ここで自動展開する。
-    //
-    //   "YYYY-MM-DD" 形式 (または "YYYY-MM-DDTHH:MM:SS..." 形式) の値を持つ
-    //   キーに対して、{key}_YEAR / _MONTH / _DAY を補完する (既存値があれば上書きしない)。
-    const enrichedDetails: Record<string, any> = { ...(data.details || {}) };
-    for (const [key, val] of Object.entries(enrichedDetails)) {
-      if (typeof val !== "string") continue;
-      const m = val.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if (!m) continue;
-      const [, y, mo, d] = m;
-      // 1 ベース。先頭ゼロ落としで自然な表示にする (例: 5月 12日)
-      if (enrichedDetails[`${key}_YEAR`] == null) {
-        enrichedDetails[`${key}_YEAR`] = String(parseInt(y, 10));
-      }
-      if (enrichedDetails[`${key}_MONTH`] == null) {
-        enrichedDetails[`${key}_MONTH`] = String(parseInt(mo, 10));
-      }
-      if (enrichedDetails[`${key}_DAY`] == null) {
-        enrichedDetails[`${key}_DAY`] = String(parseInt(d, 10));
-      }
-    }
-
-    const context = {
-      ...data,
-      ...enrichedDetails,
-    };
-
-    return template(context);
+    return sharedRenderTemplate(Handlebars, templateSource, data);
   }
 
   async generateDocument(
