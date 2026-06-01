@@ -5783,8 +5783,8 @@ ${details}
     requirePortalSecret,
   });
 
-  // C2 バッチ1: 単純マスター read(search-api からの移植)を worker に登録。
-  registerSharedReads(app, { query });
+  // C2: search-api からの read 移植(master / backlog 系)を worker に登録。
+  registerSharedReads(app, { query, backlogService });
 
   /**
    * Bulk import: 業務委託基本契約書 (service_master)。

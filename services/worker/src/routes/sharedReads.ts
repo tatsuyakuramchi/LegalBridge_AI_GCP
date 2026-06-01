@@ -12,6 +12,14 @@ import type { Express } from "express";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[] }>;
 
+// worker BacklogService の必要メソッドだけを構造的に要求(疎結合)。
+type BacklogSvc = {
+  getIssues(): Promise<any>;
+  getIssueTypes(): Promise<any>;
+  getCustomFields(): Promise<any>;
+  getStatuses(): Promise<any>;
+};
+
 // CSV エスケープ(search-api の *MasterService と同一ロジック)
 function csvJoin(rows: (string | number)[][]): string {
   return rows
@@ -69,8 +77,41 @@ function getStaffSampleCsv(): string {
   return csvJoin([header, ...rows]);
 }
 
-export function registerSharedReads(app: Express, deps: { query: Query }): void {
-  const { query } = deps;
+export function registerSharedReads(
+  app: Express,
+  deps: { query: Query; backlogService: BacklogSvc }
+): void {
+  const { query, backlogService } = deps;
+
+  // ── バッチ3: 単純 backlog read(backlogService 呼び出しのみ)─────────
+  app.get("/api/backlog/issues", async (_req, res) => {
+    try {
+      res.json(await backlogService.getIssues());
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+  app.get("/api/backlog/issue-types", async (_req, res) => {
+    try {
+      res.json(await backlogService.getIssueTypes());
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+  app.get("/api/backlog/custom-fields", async (_req, res) => {
+    try {
+      res.json(await backlogService.getCustomFields());
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+  app.get("/api/backlog/statuses", async (_req, res) => {
+    try {
+      res.json(await backlogService.getStatuses());
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
 
   // CSV テンプレは動的ルート(/:code)より先に登録(順序依存。search-api と同様)。
   // GET /api/master/vendors/template.csv
