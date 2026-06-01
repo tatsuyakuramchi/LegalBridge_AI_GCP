@@ -507,6 +507,24 @@ async function startServer() {
     requireIapUser({ renderErrorPage }),
     async (_req, res) => {
       try {
+        // Phase 2 / B2: TEMPLATE_SOURCE=db で worker proxy を撤去し
+        //   document_templates を DB 直読(Search 独立)。既定は従来 proxy=可逆。
+        if (process.env.TEMPLATE_SOURCE === "db") {
+          const result = await query(
+            `SELECT template_key AS type, label, category
+               FROM document_templates
+              WHERE kind = 'document' AND is_active = true
+              ORDER BY template_key`
+          );
+          const templates = result.rows.map((r: any) => ({
+            type: r.type,
+            label: r.label || "",
+            category: r.category || "",
+          }));
+          res.json({ ok: true, templates });
+          return;
+        }
+
         const [templatesRes, metadataRes] = await Promise.all([
           fetchWorker("/api/templates"),
           fetchWorker("/api/templates/config/metadata"),
@@ -530,6 +548,9 @@ async function startServer() {
     }
   );
 
+  // Phase 2 / B5 TODO: html/pdf プレビューはレンダリング(Handlebars+helper+PDF)が
+  //   要るため、共有レンダリングlib を search-api に入れる B5 まで worker proxy のまま。
+  //   B5 完了後、document_templates を DB 直読してローカルレンダリングに切替える。
   app.get(
     "/api/template-preview/:type/html",
     requireIapUser({ renderErrorPage }),
