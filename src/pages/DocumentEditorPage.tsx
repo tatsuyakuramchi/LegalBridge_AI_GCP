@@ -505,35 +505,36 @@ export function DocumentEditorPage() {
     loadFields()
   }, [selectedTemplate])
 
-  // Restore draft on issue change
-  React.useEffect(() => {
-    if (!selectedIssue) return
-    const saved = localStorage.getItem(`draft_${selectedIssue}`)
-    if (saved) {
-      try {
-        const parsed = JSON.parse(saved)
-        if (Object.keys(formData).length <= 1) {
-          setFormData(parsed)
-          showNotification(`Draft restored for ${selectedIssue}`, "success")
-        }
-      } catch (e) {
-        console.error("Draft restore fail", e)
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedIssue])
+  // ドラフト復元は syncFromDatabase() に一本化する。
+  //   DB の document_drafts を (issue_key + template_type) で復元するので、
+  //   テンプレ種別ごとに正しい内容が戻る。
+  //   以前ここにあった localStorage 自動復元 effect は撤去した。理由:
+  //     (1) handleIssueSelect → syncFromDatabase の setFormData をレースで
+  //         上書きし、「編集済み文書が正しく呼び出せない」原因になっていた。
+  //     (2) キーが draft_<issue> のみでテンプレ種別を含まず、別テンプレで
+  //         入力したデータを誤って復元していた。
+  //   localStorage は下の auto-save でバックアップ書き込みのみ行う。
 
-  // Auto-save
+  // Auto-save (localStorage バックアップ)。
+  //   キーは issue + template で分離(別テンプレのデータ混入を防止)。
+  //   制御フラグ (__*) のみの空フォームは保存しない (saveDraftToServer と同条件)。
   React.useEffect(() => {
-    if (!selectedIssue || Object.keys(formData).length <= 1) return
+    if (!selectedIssue || !selectedTemplate) return
+    const hasContent = Object.keys(formData || {}).some(
+      (k) => !k.startsWith("__") && (formData as any)[k] != null && (formData as any)[k] !== ""
+    )
+    if (!hasContent) return
     const to = setTimeout(() => {
-      localStorage.setItem(`draft_${selectedIssue}`, JSON.stringify(formData))
+      localStorage.setItem(
+        `draft_${selectedIssue}__${selectedTemplate}`,
+        JSON.stringify(formData)
+      )
       setLastAutoSave(
         new Date().toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit" })
       )
     }, 2000)
     return () => clearTimeout(to)
-  }, [formData, selectedIssue])
+  }, [formData, selectedIssue, selectedTemplate])
 
   // Phase 23.2: プレビューを別タブで開く (Split preview は廃止)。
   //   - クリック時点の最新 formData で /api/documents/preview を呼ぶ
