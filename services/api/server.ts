@@ -2598,8 +2598,8 @@ async function startServer() {
   //   form-context など server 内部の SELECT 参照は Phase 23.6.2 で別途整理。
   // -----------------------------------------------------------------
   registerContractsV2(app, { query, requirePortalSecret });
-  // 新スキーマ(work-centric)read API。/api/v3/*。
-  registerWorkModelRoutes(app, { query });
+  // 新スキーマ(work-centric)read/write API。/api/v3/*。書込は IAP ゲート(D1: Search所有)。
+  registerWorkModelRoutes(app, { query, requireWrite: requireIapUser({ renderErrorPage }) });
 
   // -------------------------------------------------------------------
   // /api/dashboard/*
