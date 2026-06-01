@@ -93,3 +93,44 @@ gcloud run services update $WORKER_SVC --region $REGION \
 - `lb_search`/`lb_worker` の**テーブル単位 GRANT 厳格化**は Phase 3(C5/D1)で
   `migrations/00NN_grants.sql` として版管理する(本 Phase は `lb_migrate` のみ実利用)。
 - 新スキーマ(works/contracts/payments …)と互換ビューは Phase 1 以降、同 Job で適用。
+
+---
+
+## 段階デプロイ(フラグOFF)― 基盤を低リスクで本番投入
+
+> 現時点のブランチは **フラグ既定OFF=現行挙動** + **新スキーマは純追加・冪等**。
+> サービス分離(C1/C2)は未完だが、**動く基盤を本番に載せて、サンドボックスで
+> 検証できなかったランタイム(worker/search-api 起動・migrate の実DB適用)を実証**
+> できる。**フラグは立てず**に出すのが安全。
+
+### 制御フラグ一覧
+| フラグ | サービス | 既定 | 立てると | 立てる前提 |
+| :--- | :--- | :--- | :--- | :--- |
+| (なし) | worker | — | worker `renderHtml` は共有 `renderTemplate` 委譲(**フラグ非依存・常時**)。挙動一致は検証済 → **要スモーク** | — |
+| `RUN_INIT_DB=false` | worker | 未設定=initDb実行 | 起動時 initDb を停止 | migrate Job 成功後 |
+| `TEMPLATE_SOURCE=db` | worker / search-api | 未設定=disk/proxy | テンプレを DB から読取(C3/B2/B5b 有効化) | `document_templates` seed 済(0002/0003 適用) |
+
+### デプロイ順序(推奨)
+1. **staging があれば staging を先に**。無ければ本番でもフラグOFFなら低リスク。
+2. **migrate Job 実行**(上記 Step 1–2)。0001 は既存DBに冪等no-op、0002–0006 で
+   新テーブル追加 + `document_templates` seed。**既存フロー不変**。
+3. **コードデプロイ**(`cloudbuild.yaml` admin-ui / `cloudbuild-api.yaml` search-api /
+   `cloudbuild-worker.yaml` worker)。**環境変数フラグは未設定のまま**。
+   - search-api は Dockerfile の `npm install` で handlebars(B5b 依存)が入る。
+4. **スモークテスト**(下記)。
+5. 問題なければ**後日**フラグを段階ON: まず `TEMPLATE_SOURCE=db`(worker→search-api の順)、
+   さらに後で `RUN_INIT_DB=false`、最後に admin-ui の read 切替(C1, C2 完了後)。
+
+### スモークチェックリスト(フラグOFFデプロイ後)
+- [ ] worker 起動ログ正常、**文書生成が従来どおり**(renderHtml 共有化の確認=最重要)
+- [ ] search-api 起動正常、`/api/contract-check`(Slack法務検索)・`/api/master/vendors` 応答
+- [ ] migrate Job `Succeeded`、`SELECT version FROM schema_migrations`(0001–0006)、
+      `works`/`contracts`/`payments` 等が存在
+- [ ] admin-ui 既存操作が従来どおり
+
+### フラグ切替の可逆性
+- `TEMPLATE_SOURCE`: `--remove-env-vars TEMPLATE_SOURCE` で disk/proxy に即戻し。
+- `RUN_INIT_DB`: `--remove-env-vars RUN_INIT_DB` で initDb 再開(冪等・無害)。
+
+> **本デプロイで完了しないこと**: C1(admin-ui→worker専用)/ C2 残バッチ /
+> 0007 互換ビュー / 0008 backfill / C5 worker書込先差替。これらは後続フェーズ。
