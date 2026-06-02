@@ -350,6 +350,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // SUBSCRIPTION 明細は別建て (期間 + 周期サマリ) で集約
     const fixedItems = items.filter((it) => it?.calc_method !== 'SUBSCRIPTION');
     const subItems = items.filter((it) => it?.calc_method === 'SUBSCRIPTION');
+    // 海外発注書(intl_purchase_order)はサマリーも英語で組み立てる。
+    const isIntl = templateId === 'intl_purchase_order';
 
     const aggregateDates = (field: 'delivery_date' | 'payment_date'): string => {
       const dates = fixedItems
@@ -358,20 +360,46 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       if (dates.length === 0) return '';
       const unique = Array.from(new Set(dates)).sort();
       if (unique.length === 1) return unique[0];
-      return `${unique[0]} 〜 ${unique[unique.length - 1]} (明細参照)`;
+      return isIntl
+        ? `${unique[0]} – ${unique[unique.length - 1]} (see details)`
+        : `${unique[0]} 〜 ${unique[unique.length - 1]} (明細参照)`;
     };
 
     // SUBSCRIPTION 明細を 1 行 "毎月25日 (2026/01/01〜2026/12/31)" 形式で並べる
     const cycleShort = (c?: string) =>
-      c === 'QUARTERLY'
-        ? '四半期'
-        : c === 'SEMIANNUAL'
-          ? '半年'
-          : c === 'ANNUAL'
-            ? '年次'
-            : '月次';
+      isIntl
+        ? c === 'QUARTERLY'
+          ? 'Quarterly'
+          : c === 'SEMIANNUAL'
+            ? 'Semi-annual'
+            : c === 'ANNUAL'
+              ? 'Annual'
+              : c === 'CUSTOM'
+                ? 'Custom'
+                : 'Monthly'
+        : c === 'QUARTERLY'
+          ? '四半期'
+          : c === 'SEMIANNUAL'
+            ? '半年'
+            : c === 'ANNUAL'
+              ? '年次'
+              : c === 'CUSTOM'
+                ? 'カスタム'
+                : '月次';
     const billingDayDisplay = (day?: number, cycle?: string) => {
       if (day === undefined || day === null || Number.isNaN(Number(day))) return '';
+      const n = Number(day);
+      if (isIntl) {
+        const pw =
+          cycle === 'QUARTERLY'
+            ? 'quarter'
+            : cycle === 'SEMIANNUAL'
+              ? 'half-year'
+              : cycle === 'ANNUAL'
+                ? 'year'
+                : 'month';
+        return n === 0 || n > 30 ? `end of each ${pw}` : `day ${n} of each ${pw}`;
+      }
       const prefix =
         cycle === 'QUARTERLY'
           ? '毎四半期'
@@ -380,32 +408,38 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             : cycle === 'ANNUAL'
               ? '毎年'
               : '毎月';
-      const n = Number(day);
       if (n === 0 || n > 30) return `${prefix}末日`;
       return `${prefix}${n}日`;
     };
+    const dot = isIntl ? ' · ' : '・';
+    const sep = isIntl ? ' – ' : ' 〜 ';
+    const ongoing = isIntl ? 'ongoing' : '継続中';
+    const noBilling = isIntl ? '(payment day TBD)' : '(支払日未設定)';
     const subSummaryLines = subItems
       .map((it) => {
         const billing = billingDayDisplay(it.billing_day, it.cycle);
         const range =
-          (it.term_start ? it.term_start : '—') +
-          ' 〜 ' +
-          (it.term_end ? it.term_end : '継続中');
+          (it.term_start ? it.term_start : '—') + sep + (it.term_end ? it.term_end : ongoing);
         const cyc = cycleShort(it.cycle);
-        return `${cyc}・${billing || '(支払日未設定)'} (${range})`;
+        return `${cyc}${dot}${billing || noBilling} (${range})`;
       })
       .filter((s) => s && s.trim() !== '');
 
     const nextDelivery = (() => {
       const fixed = aggregateDates('delivery_date');
       if (subSummaryLines.length === 0) return fixed;
-      // SUBSCRIPTION 行は「期間で常時納品」扱い → 期間サマリを返す
+      // SUBSCRIPTION 行は「期間で常時納品/役務提供」扱い → 期間サマリを返す
       const subLabel = subSummaryLines
         .map((line, i) => `${subItems.length > 1 ? `[#${i + 1}] ` : ''}${line.split(' (')[1]?.replace(/\)$/, '') || ''}`)
         .filter(Boolean)
         .join(' / ');
-      if (fixed && subLabel) return `${fixed} (固定明細) + サブスク期間: ${subLabel}`;
-      if (subLabel) return `サブスク期間: ${subLabel}`;
+      if (isIntl) {
+        if (fixed && subLabel) return `${fixed} (fixed items) + Service period: ${subLabel}`;
+        if (subLabel) return `Service period: ${subLabel}`;
+        return fixed;
+      }
+      if (fixed && subLabel) return `${fixed} (固定明細) + 役務提供期間: ${subLabel}`;
+      if (subLabel) return `役務提供期間: ${subLabel}`;
       return fixed;
     })();
 
@@ -417,13 +451,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           `${subItems.length > 1 ? `[#${i + 1}] ` : ''}${line.split(' (')[0]}`
         )
         .join(' / ');
+      if (isIntl) {
+        if (fixed && subLabel) return `${fixed} (fixed items) + ${subLabel}`;
+        if (subLabel) return subLabel;
+        return fixed;
+      }
       if (fixed && subLabel) return `${fixed} (固定明細) + ${subLabel}`;
       if (subLabel) return subLabel;
       return fixed;
     })();
 
     // 海外発注書は納期キーに summaryCompletionDate を使う(国内は summaryDeliveryDate)。
-    const isIntl = templateId === 'intl_purchase_order';
     const curDelivery = isIntl
       ? formData.summaryCompletionDate
       : formData.summaryDeliveryDate;
