@@ -220,7 +220,13 @@ export class ExcelService {
         formData.description ||
         '';
       payment_date = isoDate(
-        formData.paymentDate || formData.payment_due_date || formData.documentDate
+        // 支払期日(検収書 PDF と同じ paymentDueDate)を最優先。
+        // 旧コードは paymentDate/payment_due_date しか見ず、実フィールド名
+        // paymentDueDate を拾えずに documentDate(発行日)へ誤フォールバックしていた。
+        formData.paymentDueDate ||
+          formData.paymentDate ||
+          formData.payment_due_date ||
+          formData.documentDate
       );
       department = formData.inspectorDept || formData.STAFF_DEPARTMENT || '';
 
@@ -295,6 +301,11 @@ export class ExcelService {
       }
 
       items = combined.slice(0, SLOT_COUNT);
+
+      // 件名(列A)は成果物・業務内容にする(旧: 課題サマリ「[納品報告]…」)。
+      // 明細の内容を連結。内容が無ければ PROJECT_TITLE/summary にフォールバック。
+      const contentTitle = items.map((it) => it.content).filter(Boolean).join(" / ");
+      if (contentTitle) summary = contentTitle;
 
       // 立替金 = 経費 (税込) 合算
       let reimburseSum = num(formData.expensesTotalIncTax);
