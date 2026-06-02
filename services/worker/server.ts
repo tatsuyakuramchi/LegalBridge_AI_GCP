@@ -8947,7 +8947,24 @@ ${details}
 
   app.post("/api/documents/export-excel", express.json(), async (req, res) => {
     try {
-      const data = req.body;
+      const body = req.body || {};
+      let data: any;
+      if (body && body.formData) {
+        // 新経路: 生 formData からバッチと同じ buildFromFormData で構築。
+        //   delivery_line_items・税込金額・支払期日(paymentDueDate)・件名=成果物内容 を反映。
+        //   旧経路はフロントが空の旧フラット項目(支払内容（i）等)を読んでおり値が入らなかった。
+        const templateType = body.templateType || "inspection_certificate";
+        const vendor = await resolveVendorForExcel(body.formData);
+        data = excelService.buildFromFormData(body.formData, templateType, vendor);
+        if (!data) {
+          return res
+            .status(400)
+            .json({ error: "Excel 出力対象の明細が見つかりません(検収内容/明細を入力してください)" });
+        }
+      } else {
+        // 後方互換: 事前構築済み InspectionExcelData をそのまま使う。
+        data = body;
+      }
       const buffer = excelService.generateInspectionExcel(data);
 
       res.setHeader(

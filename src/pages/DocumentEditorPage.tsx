@@ -859,34 +859,13 @@ export function DocumentEditorPage() {
   const handleExportExcel = async () => {
     setIsGenerating(true)
     try {
-      const excelItems: any[] = []
-      for (let i = 1; i <= 5; i++) {
-        excelItems.push({
-          content: formData[`支払内容（${i}）`] || "",
-          unit_price: Number(formData[`単価（${i}）`] || 0),
-          quantity: Number(formData[`数量（${i}）`] || 0),
-          amount: Number(formData[`金額（${i}）`] || 0),
-          delivery_date: formData[`納品日（${i}）`] || "",
-        })
-      }
-      const excelData = {
-        summary: formData.件名 || issueSummary?.summary || "",
-        payment_date: formData.支払日 || "",
-        department: formData.部署 || formData.inspectorDept || "",
-        vendor_code: formData.取引先コード || activeVendor?.vendor_code || "",
-        name: formData.氏名 || formData.counterparty || "",
-        name_kana: formData["氏名（カナ）"] || "",
-        items: excelItems,
-        reimbursement: Number(formData.立替金 || 0),
-        subtotal: Number(formData.小計 || 0),
-        withholding_tax: Number(formData.源泉税 || 0),
-        after_tax: Number(formData.税引後 || 0),
-        net_transfer_amount: Number(formData.差引振込額 || 0),
-      }
+      // Phase 27.x: 旧実装はフロントで空の旧フラット項目(支払内容（i）等)を読んで
+      //   いたため、明細(delivery_line_items)ベースの新フォームでは値が空になっていた。
+      //   バッチ出力と同じ buildFromFormData に寄せるため、生 formData をそのまま送る。
       const res = await fetch("/api/documents/export-excel", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(excelData),
+        body: JSON.stringify({ formData, templateType: selectedTemplate }),
       })
       if (res.ok) {
         const blob = await res.blob()
