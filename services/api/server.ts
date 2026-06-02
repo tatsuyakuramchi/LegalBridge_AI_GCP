@@ -118,7 +118,12 @@ import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
 import { workModelPage } from "./src/views/workModelHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
-import { listConditions, updateConditionLinks } from "./src/services/conditionsService.ts";
+import {
+  listConditions,
+  updateConditionLinks,
+  listRingiOptions,
+  exportConditionsCsv,
+} from "./src/services/conditionsService.ts";
 import {
   listStaff,
   getStaff,
@@ -2697,6 +2702,9 @@ async function startServer() {
           source_ip_id: toIdOrNull(b.source_ip_id),
           work_id: toIdOrNull(b.work_id),
           master_contract_id: toIdOrNull(b.master_contract_id),
+          ringi_id: toIdOrNull(b.ringi_id),
+          status_flags:
+            b.status_flags && typeof b.status_flags === "object" ? b.status_flags : null,
         });
         res.json({ ok: true });
       } catch (error: any) {
@@ -2705,6 +2713,51 @@ async function startServer() {
       }
     }
   );
+
+  // GET /api/conditions/ringi-options — 稟議ピッカー用一覧
+  app.get(
+    "/api/conditions/ringi-options",
+    requireIapUser({ renderErrorPage }),
+    async (_req, res) => {
+      try {
+        res.json(await listRingiOptions());
+      } catch (error: any) {
+        console.error("/api/conditions/ringi-options failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // GET /api/conditions/export — 条件明細を CSV 出力(全件 or ?ids=1,2,3 の選択)
+  app.get("/api/conditions/export", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const ids = q.ids
+        ? String(q.ids).split(",").map((s) => Number(s.trim())).filter((n) => Number.isFinite(n))
+        : undefined;
+      const csv = await exportConditionsCsv({
+        payment_from: q.payment_from,
+        payment_to: q.payment_to,
+        delivery_from: q.delivery_from,
+        delivery_to: q.delivery_to,
+        category: q.category,
+        vendor: q.vendor,
+        owner: q.owner,
+        q: q.q,
+        ids,
+      });
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="conditions_${stamp}.csv"`
+      );
+      res.send(csv);
+    } catch (error: any) {
+      console.error("/api/conditions/export failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
 
   // -------------------------------------------------------------------
   // /api/dashboard/*

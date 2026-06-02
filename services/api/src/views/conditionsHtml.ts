@@ -9,6 +9,7 @@
  */
 
 import { HEAD_FONTS, MASTER_CSS, topbarHtml, masterTabsHtml } from "./masterChrome.ts";
+import { LINE_ITEM_STATUS_DEFS } from "../services/conditionsService.ts";
 
 const EXTRA_CSS = `
 .filters {
@@ -37,6 +38,13 @@ table.cond tr.clickable { cursor: pointer; }
 .link-pill.work { background: #eef2ff; }
 .link-pill.ip { background: #ecfdf5; }
 .link-pill.master { background: #fef3c7; }
+.link-pill.ringi { background: #fce7f3; }
+.link-pill.status { background: #dcfce7; border-color: #86efac; }
+table.cond th.chk, table.cond td.chk { width: 34px; text-align: center; padding: 4px; }
+.csvbtns { display: flex; gap: 6px; }
+.modal .checks { display: flex; flex-direction: column; gap: 8px; }
+.modal .checks label { display: flex; gap: 7px; align-items: center; font-size: 13px; font-weight: 500; color: var(--foreground); margin: 0; }
+.modal .checks input { width: 15px; height: 15px; }
 .backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; align-items: flex-start; justify-content: center; padding: 48px 16px; z-index: 60; overflow: auto; }
 .backdrop.open { display: flex; }
 .modal { background: var(--card); border-radius: 10px; width: 100%; max-width: 560px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
@@ -102,9 +110,12 @@ ${masterTabsHtml("conditions")}
     </div>
   </div>
 
-  <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+  <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;">
     <span class="count-badge" id="count">—</span>
-    <span class="muted" style="font-size:11px;color:var(--muted-foreground);">明細行(capability_line_items)単位で表示</span>
+    <div class="csvbtns">
+      <button class="btn outline" id="btn-csv-sel">選択をCSV (<span id="sel-n">0</span>)</button>
+      <button class="btn outline" id="btn-csv-all">全件CSV</button>
+    </div>
   </div>
 
   <div class="table-scroll">
@@ -129,6 +140,14 @@ ${masterTabsHtml("conditions")}
         <label>マスター契約 (基本契約 / 作品モデル v3)</label>
         <select class="tech-select" id="m-master"><option value="">— なし —</option></select>
       </div>
+      <div class="fld">
+        <label>稟議 (ringi)</label>
+        <select class="tech-select" id="m-ringi"><option value="">— なし —</option></select>
+      </div>
+      <div class="fld">
+        <label>状態</label>
+        <div class="checks" id="m-status"></div>
+      </div>
     </div>
     <div class="mfoot">
       <button class="btn outline" id="m-cancel">キャンセル</button>
@@ -140,8 +159,9 @@ ${masterTabsHtml("conditions")}
 <script>
   var API = "/api/conditions/search";
   var CAT_LABEL = { service: "業務委託", license: "ライセンス", license_in: "ライセンス(IN)", license_out: "ライセンス(OUT)", publication: "出版", sales: "売買", nda: "NDA" };
+  var STATUS_DEFS = ${JSON.stringify(LINE_ITEM_STATUS_DEFS)};
   var currentRows = [];
-  var PICK = { source: null, works: null, masters: null }; // ピッカーのキャッシュ
+  var PICK = { source: null, works: null, masters: null, ringi: null }; // ピッカーのキャッシュ
 
   function esc(s) {
     return String(s == null ? "" : s)
@@ -172,9 +192,11 @@ ${masterTabsHtml("conditions")}
       return;
     }
     var head = '<tr>' +
+      '<th class="chk"><input type="checkbox" id="chk-all" title="全選択"></th>' +
       '<th>支払日</th><th>納期</th><th>種類</th><th>取引先</th><th>担当</th>' +
       '<th>品目</th><th>計算</th><th class="num">数量</th><th class="num">単価</th>' +
-      '<th class="num">金額(税抜)</th><th>文書番号</th><th>契約名 / 課題</th><th>紐付け(クリックで編集)</th>' +
+      '<th class="num">金額(税抜)</th><th>文書番号</th><th>契約名 / 課題</th>' +
+      '<th>紐付け(クリックで編集)</th><th>状態</th>' +
       '</tr>';
     var body = rows.map(function (r) {
       var typeCell = '<span class="badge-cat">' + esc(catLabel(r.contract_category)) + '</span>' +
@@ -188,9 +210,18 @@ ${masterTabsHtml("conditions")}
       if (r.work_title) link += '<span class="link-pill work">作 ' + esc(r.work_title) + '</span> ';
       if (r.source_ip_title) link += '<span class="link-pill ip">原 ' + esc(r.source_ip_title) + '</span> ';
       if (r.master_contract_title || r.master_contract_number)
-        link += '<span class="link-pill master">基 ' + esc(r.master_contract_title || r.master_contract_number) + '</span>';
+        link += '<span class="link-pill master">基 ' + esc(r.master_contract_title || r.master_contract_number) + '</span> ';
+      if (r.ringi_number || r.ringi_title)
+        link += '<span class="link-pill ringi">稟 ' + esc(r.ringi_number ? (r.ringi_number + (r.ringi_title ? " " + r.ringi_title : "")) : r.ringi_title) + '</span>';
       if (!link) link = '<span style="color:var(--muted-foreground);">＋ 未設定</span>';
+      var st = "";
+      var sf = r.status_flags || {};
+      STATUS_DEFS.forEach(function (d) {
+        if (sf[d.key]) st += '<span class="link-pill status">' + esc(d.label) + '</span> ';
+      });
+      if (!st) st = '<span style="color:var(--muted-foreground);">—</span>';
       return '<tr class="clickable" data-id="' + r.id + '">' +
+        '<td class="chk"><input type="checkbox" class="row-chk" value="' + r.id + '"></td>' +
         '<td>' + esc(r.payment_date || "—") + '</td>' +
         '<td>' + esc(r.delivery_date || "—") + '</td>' +
         '<td>' + typeCell + '</td>' +
@@ -204,9 +235,27 @@ ${masterTabsHtml("conditions")}
         '<td>' + esc(r.document_number || "—") + '</td>' +
         '<td class="wrap">' + contract + '</td>' +
         '<td class="wrap">' + link + '</td>' +
+        '<td class="wrap">' + st + '</td>' +
         '</tr>';
     }).join("");
     wrap.innerHTML = '<table class="cond">' + head + body + '</table>';
+    updateSelCount();
+  }
+
+  /* ---------- 選択(CSV)関連 ---------- */
+  function checkedIds() {
+    return Array.prototype.slice.call(document.querySelectorAll(".row-chk:checked"))
+      .map(function (c) { return c.value; });
+  }
+  function updateSelCount() {
+    var n = checkedIds().length;
+    var el = document.getElementById("sel-n");
+    if (el) el.textContent = n;
+  }
+  function csvExport(ids) {
+    var p = gather();
+    if (ids && ids.length) p.set("ids", ids.join(","));
+    window.location.href = "/api/conditions/export?" + p.toString();
   }
 
   async function load() {
@@ -236,11 +285,14 @@ ${masterTabsHtml("conditions")}
   /* ---------- 紐付け編集モーダル ---------- */
   var editingId = null;
   async function loadPickers() {
-    if (PICK.source && PICK.works && PICK.masters) return;
+    if (PICK.source && PICK.works && PICK.masters && PICK.ringi) return;
     var get = function (u) {
       return fetch(u, { credentials: "same-origin" }).then(function (x) { return x.ok ? x.json() : []; }).catch(function () { return []; });
     };
-    var r = await Promise.all([get("/api/v3/source-ips"), get("/api/v3/works"), get("/api/v3/contracts")]);
+    var r = await Promise.all([
+      get("/api/v3/source-ips"), get("/api/v3/works"), get("/api/v3/contracts"),
+      get("/api/conditions/ringi-options"),
+    ]);
     PICK.source = Array.isArray(r[0]) ? r[0] : [];
     PICK.works = Array.isArray(r[1]) ? r[1] : [];
     // マスター契約 = contract_level === 'master'(level 不明な行も候補に含める)
@@ -248,6 +300,7 @@ ${masterTabsHtml("conditions")}
       var lv = c.contract_level || "";
       return lv === "master" || lv === "";
     });
+    PICK.ringi = Array.isArray(r[3]) ? r[3] : [];
   }
   function fillSelect(sel, items, getVal, getLabel, selectedId) {
     var opts = ['<option value="">— なし —</option>'];
@@ -279,6 +332,16 @@ ${masterTabsHtml("conditions")}
       function (c) { return c.id; },
       function (c) { return (c.document_number ? c.document_number + " : " : "") + (c.contract_title || ("#" + c.id)); },
       row.master_contract_id);
+    fillSelect(document.getElementById("m-ringi"), PICK.ringi || [],
+      function (g) { return g.id; },
+      function (g) { return (g.ringi_number ? g.ringi_number + " : " : "") + (g.title || ("#" + g.id)); },
+      row.ringi_id);
+    // 状態チェックボックス(STATUS_DEFS から動的生成)
+    var sf = row.status_flags || {};
+    document.getElementById("m-status").innerHTML = STATUS_DEFS.map(function (d) {
+      return '<label><input type="checkbox" class="st-chk" value="' + esc(d.key) + '"' +
+        (sf[d.key] ? " checked" : "") + ">" + esc(d.label) + "</label>";
+    }).join("");
   }
   function closeModal() { document.getElementById("backdrop").classList.remove("open"); editingId = null; }
   async function saveLinks() {
@@ -294,6 +357,13 @@ ${masterTabsHtml("conditions")}
           source_ip_id: document.getElementById("m-source").value || null,
           work_id: document.getElementById("m-work").value || null,
           master_contract_id: document.getElementById("m-master").value || null,
+          ringi_id: document.getElementById("m-ringi").value || null,
+          status_flags: (function () {
+            var f = {};
+            Array.prototype.slice.call(document.querySelectorAll("#m-status .st-chk"))
+              .forEach(function (c) { if (c.checked) f[c.value] = true; });
+            return f;
+          })(),
         }),
       });
       var data = await res.json().catch(function () { return {}; });
@@ -316,8 +386,24 @@ ${masterTabsHtml("conditions")}
     });
   });
   document.getElementById("list-wrap").addEventListener("click", function (e) {
-    var tr = e.target.closest ? e.target.closest("tr.clickable") : null;
+    var t = e.target;
+    // チェックボックス(行選択/全選択)はモーダルを開かない
+    if (t && (t.classList.contains("row-chk") || t.id === "chk-all")) {
+      if (t.id === "chk-all") {
+        Array.prototype.slice.call(document.querySelectorAll(".row-chk"))
+          .forEach(function (c) { c.checked = t.checked; });
+      }
+      updateSelCount();
+      return;
+    }
+    var tr = t.closest ? t.closest("tr.clickable") : null;
     if (tr && tr.getAttribute("data-id")) openEdit(tr.getAttribute("data-id"));
+  });
+  document.getElementById("btn-csv-all").addEventListener("click", function () { csvExport(null); });
+  document.getElementById("btn-csv-sel").addEventListener("click", function () {
+    var ids = checkedIds();
+    if (!ids.length) { alert("CSV出力する明細を選択してください(チェックボックス)。"); return; }
+    csvExport(ids);
   });
   document.getElementById("m-close").addEventListener("click", closeModal);
   document.getElementById("m-cancel").addEventListener("click", closeModal);

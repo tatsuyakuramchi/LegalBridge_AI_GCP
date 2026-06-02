@@ -16,6 +16,17 @@
 
 import { query } from "../lib/db.ts";
 
+/**
+ * 明細の状態フラグ定義(複数フラグ・独立ON/OFF)。
+ * 項目を増やす場合はここに 1 行追加するだけ(マイグレーション不要 / status_flags JSONB にキー格納)。
+ * key は status_flags のキー、label は画面/CSV の見出し。
+ */
+export const LINE_ITEM_STATUS_DEFS: { key: string; label: string }[] = [
+  { key: "po_signed", label: "発注書締結済" },
+  { key: "inspection_issued", label: "検収書発行済" },
+  { key: "payment_exported", label: "支払申請ファイル出力済" },
+];
+
 export type ConditionFilters = {
   payment_from?: string;
   payment_to?: string;
@@ -25,6 +36,7 @@ export type ConditionFilters = {
   vendor?: string;
   owner?: string;
   q?: string;
+  ids?: number[]; // 指定時はこの明細 id のみ(CSV の選択出力用)
   limit?: number;
   offset?: number;
 };
@@ -77,6 +89,10 @@ function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
       `(cli.item_name ILIKE ${ph} OR cli.spec ILIKE ${ph} OR cc.contract_title ILIKE ${ph} OR cc.document_number ILIKE ${ph})`
     );
   }
+  if (Array.isArray(f.ids) && f.ids.length) {
+    const ids = f.ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
+    if (ids.length) where.push(`cli.id = ANY(${p(ids)}::int[])`);
+  }
 
   return { sql: where.length ? `WHERE ${where.join(" AND ")}` : "", params };
 }
@@ -117,16 +133,19 @@ export async function listConditions(
        v.vendor_code, v.vendor_name,
        COALESCE(s.staff_name, d.created_by) AS owner_name,
        d.created_by, d.issue_key`;
-  // 0015: 原作 / 作品 / マスター契約(v3 contracts)への紐付け。
+  // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
        cli.source_ip_id, si.title AS source_ip_title, si.source_code,
        cli.work_id, w.title AS work_title, w.work_code,
        cli.master_contract_id, mc.contract_title AS master_contract_title,
-       mc.document_number AS master_contract_number`;
+       mc.document_number AS master_contract_number,
+       cli.ringi_id, rr.ringi_number, rr.title AS ringi_title,
+       cli.status_flags`;
   const linkJoins = `
     LEFT JOIN source_ips si ON si.id = cli.source_ip_id
     LEFT JOIN works w ON w.id = cli.work_id
-    LEFT JOIN contracts mc ON mc.id = cli.master_contract_id`;
+    LEFT JOIN contracts mc ON mc.id = cli.master_contract_id
+    LEFT JOIN ringi_records rr ON rr.id = cli.ringi_id`;
   const order = `ORDER BY cli.payment_date DESC NULLS LAST, cli.delivery_date DESC NULLS LAST,
               cc.document_number DESC, cli.line_no ASC
      LIMIT $${lp} OFFSET $${op}`;
@@ -181,19 +200,63 @@ export async function listConditions(
     master_contract_id: r.master_contract_id == null ? null : Number(r.master_contract_id),
     master_contract_title: r.master_contract_title || "",
     master_contract_number: r.master_contract_number || "",
+    // 稟議 + 状態(0016)
+    ringi_id: r.ringi_id == null ? null : Number(r.ringi_id),
+    ringi_number: r.ringi_number || "",
+    ringi_title: r.ringi_title || "",
+    status_flags: normalizeFlags(r.status_flags),
   }));
 
   return { rows, total };
 }
 
-/** 明細行(capability_line_items)の 原作 / 作品 / マスター契約 紐付けを更新。 */
+/** status_flags(JSONB / text / null)を { key: true } 形に正規化(true のキーのみ)。 */
+function normalizeFlags(v: any): Record<string, boolean> {
+  let obj: any = v;
+  if (typeof v === "string") {
+    try {
+      obj = JSON.parse(v);
+    } catch {
+      obj = {};
+    }
+  }
+  const out: Record<string, boolean> = {};
+  if (obj && typeof obj === "object") {
+    for (const def of LINE_ITEM_STATUS_DEFS) {
+      if (obj[def.key] === true) out[def.key] = true;
+    }
+  }
+  return out;
+}
+
+/**
+ * 明細行(capability_line_items)の 原作/作品/マスター契約/稟議 の紐付けと
+ * 状態フラグを更新。status_flags は渡された場合のみ更新(未指定なら据え置き)。
+ */
 export async function updateConditionLinks(
   id: number,
-  links: { source_ip_id?: number | null; work_id?: number | null; master_contract_id?: number | null }
+  links: {
+    source_ip_id?: number | null;
+    work_id?: number | null;
+    master_contract_id?: number | null;
+    ringi_id?: number | null;
+    status_flags?: Record<string, boolean> | null;
+  }
 ): Promise<void> {
+  // status_flags は定義済みキーのうち true のものだけを残して JSON 化。
+  let flagsJson: string | null = null;
+  if (links.status_flags && typeof links.status_flags === "object") {
+    const clean: Record<string, boolean> = {};
+    for (const def of LINE_ITEM_STATUS_DEFS) {
+      if (links.status_flags[def.key] === true) clean[def.key] = true;
+    }
+    flagsJson = JSON.stringify(clean);
+  }
+
   await query(
     `UPDATE capability_line_items
-        SET source_ip_id = $2, work_id = $3, master_contract_id = $4,
+        SET source_ip_id = $2, work_id = $3, master_contract_id = $4, ringi_id = $5,
+            status_flags = COALESCE($6::jsonb, status_flags),
             updated_at = CURRENT_TIMESTAMP
       WHERE id = $1`,
     [
@@ -201,6 +264,63 @@ export async function updateConditionLinks(
       links.source_ip_id ?? null,
       links.work_id ?? null,
       links.master_contract_id ?? null,
+      links.ringi_id ?? null,
+      flagsJson,
     ]
   );
+}
+
+/** 稟議ピッカー用の一覧(新しい承認順)。 */
+export async function listRingiOptions(): Promise<any[]> {
+  try {
+    const res = await query(
+      `SELECT id, ringi_number, title, category, owner_name, approved_at
+         FROM ringi_records
+        ORDER BY approved_at DESC NULLS LAST, ringi_number DESC
+        LIMIT 2000`
+    );
+    return res.rows.map((r: any) => ({
+      id: Number(r.id),
+      ringi_number: r.ringi_number || "",
+      title: r.title || "",
+      category: r.category || "",
+      owner_name: r.owner_name || "",
+      approved_at: d2s(r.approved_at),
+    }));
+  } catch (err: any) {
+    if (err && (err.code === "42703" || err.code === "42P01")) return [];
+    throw err;
+  }
+}
+
+const csvCell = (v: any): string => {
+  const s = v == null ? "" : String(v);
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** 条件明細を CSV 文字列で返す(全件 or ids 指定。Excel 向け BOM 付き)。 */
+export async function exportConditionsCsv(f: ConditionFilters): Promise<string> {
+  const { rows } = await listConditions({ ...f, limit: 100000, offset: 0 });
+  const headers = [
+    "支払日", "納期", "種類", "取引先コード", "取引先", "担当",
+    "品目", "仕様", "計算方法", "支払条件", "数量", "単価", "金額(税抜)",
+    "文書番号", "契約名", "課題キー",
+    "原作コード", "原作", "作品コード", "作品",
+    "マスター契約番号", "マスター契約名", "稟議番号", "稟議件名",
+    ...LINE_ITEM_STATUS_DEFS.map((d) => d.label),
+  ];
+  const lines = [headers.map(csvCell).join(",")];
+  for (const r of rows) {
+    const cells = [
+      r.payment_date, r.delivery_date, r.contract_category, r.vendor_code, r.vendor_name, r.owner_name,
+      r.item_name, r.spec, r.calc_method, r.payment_terms, r.quantity, r.unit_price, r.amount_ex_tax,
+      r.document_number, r.contract_title, r.issue_key,
+      r.source_code, r.source_ip_title, r.work_code, r.work_title,
+      r.master_contract_number, r.master_contract_title, r.ringi_number, r.ringi_title,
+      ...LINE_ITEM_STATUS_DEFS.map((d) => (r.status_flags && r.status_flags[d.key] ? "済" : "")),
+    ];
+    lines.push(cells.map(csvCell).join(","));
+  }
+  // Excel(Windows)で文字化けしないよう BOM + CRLF。
+  return "﻿" + lines.join("\r\n");
 }
