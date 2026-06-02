@@ -877,13 +877,55 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </div>
 
-        {/* Phase 22.19: 原作 / 素材 セレクタ
-            原作 (ledger) を選ぶと配下の素材一覧が表示され、選択した素材の
-            material_code (例: LO-2026-0001-002) が 素材番号 に自動入力される。
-            原作本体 (-001) を選んだ場合は ledger.title を 原著作物名 に同期。
-            work_id は生成時にサーバ側で自動採番。 */}
+        {/* 1. 前提条件 */}
         <FormSection
-          title="0. 原作・素材"
+          title="1. 前提条件"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          {renderField('発行日')}
+          {renderField('台帳ID')}
+          {renderField('契約書番号')}
+        </FormSection>
+
+        {/* 2. 取引先・基本契約設定 — 基本契約の紐づけ(唯一の入力点) */}
+        <FormSection
+          title="2. 取引先・基本契約設定"
+          variant="default"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          <div className="col-span-full mb-2">
+            <DocumentNumberLookup
+              label="基本契約をマスタ・アーカイブから検索 (部分一致 / 空欄で最新一覧)"
+              placeholder="例: 株式会社X / GCT / ARC-LIC-2026-0001"
+              initialQuery={formData.基本契約番号 || ''}
+              filterTemplateTypes={[
+                'license_master',
+                'service_master',
+                'individual_license_terms',
+                'sales_master_buyer',
+                'sales_master_credit',
+                'sales_master_standard',
+              ]}
+              includeMaster={true}
+              onApply={(doc) => {
+                setFormData({
+                  ...formData,
+                  基本契約名: doc.derived_title,
+                  基本契約番号: doc.document_number,
+                  基本契約リンク: doc.drive_link || formData.基本契約リンク,
+                });
+              }}
+            />
+          </div>
+          {renderField('基本契約名')}
+        </FormSection>
+
+        {/* 3. マスター条件 — 原作 / 素材 セレクタ
+            原作 (ledger) を選ぶと配下の素材一覧が表示され、選択した素材の
+            material_code が 素材番号 に自動入力される。work_id は生成時に採番。 */}
+        <FormSection
+          title="3. マスター条件 — 原作・素材"
           variant="emerald"
           icon={<Briefcase className="w-4 h-4" />}
         >
@@ -970,49 +1012,10 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </FormSection>
 
-        {/* I. ヘッダ */}
-        <FormSection title="I. ヘッダ" variant="default" icon={<Briefcase className="w-4 h-4" />}>
-          {/* Phase 22.21: 基本契約名 を archived document から検索して反映。
-              文書番号 (ARC-LIC-2026-XXXX 等) を入れて「検索」→「適用」で
-              フォーム上の formData.基本契約名 / formData.基本契約番号 を一括補完。
-              ライセンス系の親契約 (license_master / 過去の individual_license_terms /
-              service_master 等) を再利用するときに便利。 */}
-          {/* Phase 22.21.92: 課題キー紐づけは不要 (文書作成時に issue_key はドキュメントレコード
-              に自動記録されるため)。基本契約は契約マスタ (Master) またはアーカイブから検索して
-              補完する。includeMaster=true で contract_capabilities も横断検索。 */}
-          <div className="col-span-full mb-2">
-            <DocumentNumberLookup
-              label="基本契約をマスタ・アーカイブから検索 (部分一致 / 空欄で最新一覧)"
-              placeholder="例: 株式会社X / GCT / ARC-LIC-2026-0001"
-              initialQuery={formData.基本契約番号 || ''}
-              filterTemplateTypes={[
-                'license_master',
-                'service_master',
-                'individual_license_terms',
-                'sales_master_buyer',
-                'sales_master_credit',
-                'sales_master_standard',
-              ]}
-              includeMaster={true}
-              onApply={(doc) => {
-                setFormData({
-                  ...formData,
-                  基本契約名: doc.derived_title,
-                  基本契約番号: doc.document_number,
-                  // 任意: 親契約の Drive リンクも保持しておくと PDF テンプレで
-                  // 参照可能。テンプレが拾わない場合は無害。
-                  基本契約リンク: doc.drive_link || formData.基本契約リンク,
-                });
-              }}
-            />
-          </div>
-          {renderGroup('I. ヘッダ')}
-        </FormSection>
-
-        {/* II/III. Licensor / Licensee — side-swappable parties */}
+        {/* 4. 当事者 (Licensor / Licensee) — 取引先・当社は各セクションの [自社]/[取引先] で充填 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           <FormSection
-            title="II. Licensor (許諾者)"
+            title="4. 当事者 — II. Licensor (許諾者)"
             variant="blue"
             icon={<Building2 className="w-4 h-4" />}
             headerActions={
@@ -1026,7 +1029,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
 
           <FormSection
-            title="III. Licensee (被許諾者)"
+            title="4. 当事者 — III. Licensee (被許諾者)"
             variant="amber"
             icon={<User className="w-4 h-4" />}
             headerActions={
@@ -1041,7 +1044,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         </div>
 
         {/* IV. 対象作品・期間 */}
-        <FormSection title="IV. 対象作品・期間" variant="emerald" icon={<Scale className="w-4 h-4" />}>
+        <FormSection title="5. 共通入力事項 — 対象作品・期間" variant="emerald" icon={<Scale className="w-4 h-4" />}>
           {renderGroup('IV. 対象作品・期間')}
         </FormSection>
 
@@ -1053,7 +1056,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             renderGroup の出力は変えず、その下にプリセット行を挿入することで
             既存の generic Field renderer の振る舞いに影響しない。 */}
         <FormSection
-          title="V. 素材・監修"
+          title="6. 専用入力事項 — 素材・監修"
           variant="default"
           icon={<ShieldCheck className="w-4 h-4" />}
           headerActions={sideButton(
@@ -1124,7 +1127,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             {{金銭条件1_料率}} 等に展開, (b) license_financial_conditions
             に upsert する。 */}
         <FormSection
-          title="VI. 金銭条件 (条件 1〜3)"
+          title="6. 専用入力事項 — 金銭条件 (条件 1〜3)"
           variant="indigo"
           icon={<Coins className="w-4 h-4" />}
           headerActions={
@@ -1184,7 +1187,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         </details>
 
         {/* IX. 特記事項 */}
-        <FormSection title="IX. 特記事項" variant="red" icon={<AlertCircle className="w-4 h-4" />}>
+        <FormSection title="7. その他の設定 — 特記事項" variant="red" icon={<AlertCircle className="w-4 h-4" />}>
           <div className="col-span-full">{renderGroup('IX. 特記事項')}</div>
         </FormSection>
       </div>
@@ -4457,7 +4460,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           原作の正式名称で自動入力する (config 側で 原著作物名 は readonly)。
           ※ 事業部の絞り込みは行わず全原作を表示 (運用判断)。 */}
       {templateId === 'pub_license_terms' && (
-        <FormSection title="0. 原作 (原作マスタ)" variant="default">
+        <FormSection title="1. 原作・基本契約 (マスタ検索)" variant="default">
           <div className="col-span-full space-y-1">
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
               原作 (Ledger) — 選択で「原著作物名」を自動入力
@@ -4533,11 +4536,47 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </FormSection>
       )}
-      {(Object.entries(groupedVars) as [string, string[]][]).map(([groupName, varIds]) => (
-        <FormSection key={groupName} title={groupName} variant="default">
-          {varIds.map(fid => renderField(fid))}
-        </FormSection>
-      ))}
+      {(() => {
+        // 出版個別条件 (pub_license_terms) を統一セクション順に並べ替え + ラベル付け。
+        // config の group 名は他の pub_* テンプレと共有のため、ここ(JSX)だけで
+        // pub 専用の順序/表示ラベルを与える(他テンプレートには影響しない)。
+        const PUB_SECTIONS: Record<string, { order: number; label: string }> =
+          templateId === 'pub_license_terms'
+            ? {
+                'I. 基本情報': { order: 2, label: '2. 取引先・基本契約設定 — 基本情報' },
+                'X. アークライト': { order: 3, label: '3. 当社情報 — アークライト' },
+                'II. 許諾期間': { order: 5, label: '5. 共通入力事項 — 許諾期間' },
+                'III. 対象著作物': { order: 5, label: '5. 共通入力事項 — 対象著作物' },
+                'IV. 許諾内容': { order: 6, label: '6. 専用入力事項 — 許諾内容' },
+                'V. 出版条件': { order: 6, label: '6. 専用入力事項 — 出版条件' },
+                'VI. 対価・支払条件': { order: 6, label: '6. 専用入力事項 — 対価・支払条件' },
+                'VII. 振込口座': { order: 6, label: '6. 専用入力事項 — 振込口座' },
+                'VIII. 第三者IP・著作権表示': { order: 6, label: '6. 専用入力事項 — 第三者IP・著作権表示' },
+                'IX. 旧合意・特記': { order: 7, label: '7. その他の設定 — 旧合意・特記' },
+              }
+            : {};
+        // 数字プレフィックス("2. ...")を持つグループはその昇順。数字なしは
+        // +Infinity で元の順序維持(他テンプレに無影響)。Array.sort は安定。
+        const lead = (s: string) => {
+          const m = /^\s*(\d+)/.exec(s);
+          return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
+        };
+        return (Object.entries(groupedVars) as [string, string[]][])
+          .sort((a, b) => {
+            const oa = PUB_SECTIONS[a[0]]?.order ?? lead(a[0]);
+            const ob = PUB_SECTIONS[b[0]]?.order ?? lead(b[0]);
+            return oa - ob;
+          })
+          .map(([groupName, varIds]) => (
+            <FormSection
+              key={groupName}
+              title={PUB_SECTIONS[groupName]?.label || groupName}
+              variant="default"
+            >
+              {varIds.map((fid) => renderField(fid))}
+            </FormSection>
+          ));
+      })()}
     </div>
   );
 };
