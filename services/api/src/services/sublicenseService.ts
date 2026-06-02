@@ -273,6 +273,60 @@ export async function deleteReport(dealId: number, periodDate: string): Promise<
   ]);
 }
 
+// ── 受領確定 → payments(inbound / sublicense_income)台帳 ───────────
+/** 確定済みの受領を `${deal_id}:${period_date}` で引けるマップ。 */
+async function confirmedMap(): Promise<Record<string, boolean>> {
+  const map: Record<string, boolean> = {};
+  try {
+    const res = await query(
+      `SELECT sublicense_deal_id, due_date FROM payments
+        WHERE direction = 'inbound' AND payment_kind = 'sublicense_income'
+          AND sublicense_deal_id IS NOT NULL`
+    );
+    for (const r of res.rows) map[`${Number(r.sublicense_deal_id)}:${d2s(r.due_date)}`] = true;
+  } catch (err: any) {
+    if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+  }
+  return map;
+}
+
+/** 受領を確定して payments に記録(冪等: payment_no = SLI-<deal>-<date>)。 */
+export async function confirmReceipt(dealId: number, periodDate: string): Promise<void> {
+  const deals = await listDeals();
+  const deal = deals.find((d: any) => d.id === dealId);
+  if (!deal) throw new Error("受領条件が見つかりません");
+  if (!deal.work_id) throw new Error("作品が未設定の条件は受領確定できません(条件に作品を設定してください)");
+  const reports = await listReportsByDeal(dealId);
+  const row = buildReceiptRows(deal, reports).find((r) => r.date === periodDate);
+  if (!row) throw new Error("該当の受領予定回が見つかりません");
+  const amount = row.amount;
+  const cur = deal.currency || "JPY";
+  const amountJpy = amount; // fx 換算は将来対応(JPY 前提)
+  const paymentNo = `SLI-${dealId}-${periodDate}`;
+  const period = periodDate.slice(0, 7);
+  await query(
+    `INSERT INTO payments
+       (payment_no, direction, payment_kind, work_id, period,
+        amount_ex_tax, total_amount, currency, amount_jpy, status, due_date, paid_date,
+        source_document_number, sublicense_deal_id)
+     VALUES ($1, 'inbound', 'sublicense_income', $2, $3, $4, $4, $5, $6, 'received', $7, CURRENT_DATE, $8, $9)
+     ON CONFLICT (payment_no) DO UPDATE SET
+       amount_ex_tax = EXCLUDED.amount_ex_tax,
+       total_amount  = EXCLUDED.total_amount,
+       amount_jpy    = EXCLUDED.amount_jpy,
+       currency      = EXCLUDED.currency,
+       status        = 'received',
+       paid_date     = CURRENT_DATE,
+       due_date      = EXCLUDED.due_date`,
+    [paymentNo, deal.work_id, period, amount, cur, amountJpy, periodDate, deal.source_contract_number || null, dealId]
+  );
+}
+
+/** 受領確定を取消(payments から削除)。 */
+export async function unconfirmReceipt(dealId: number, periodDate: string): Promise<void> {
+  await query(`DELETE FROM payments WHERE payment_no = $1`, [`SLI-${dealId}-${periodDate}`]);
+}
+
 const SELECT_DEAL = `
   SELECT d.*,
          w.title AS work_title, w.work_code,
@@ -382,6 +436,7 @@ export type ReceiptFilters = {
 export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; total: number }> {
   const deals = (await listDeals()).filter((d: any) => d.status !== "closed");
   const reportsMap = await loadReportsMap();
+  const confirmed = await confirmedMap();
   const rows: any[] = [];
   for (const d of deals) {
     const sched = buildReceiptRows(d, reportsMap[d.id] || []);
@@ -393,6 +448,7 @@ export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; to
         of: sched.length,
         receipt_date: s.date,
         amount: s.amount,
+        confirmed: confirmed[`${d.id}:${s.date}`] === true, // 受領確定(payments記録)済み
         estimated: s.estimated, // true=見込 / false=実績報告ベース
         mg_topup: s.mg_topup,
         advance_applied: s.advance_applied,
@@ -451,7 +507,7 @@ export async function exportReceiptsCsv(f: ReceiptFilters): Promise<string> {
   const { rows } = await listReceipts(f);
   const headers = [
     "受領予定日", "サブライセンシー", "作品コード", "作品", "参照契約番号",
-    "基準", "区分", "実売上/実数量", "料率(%)", "回", "金額", "通貨",
+    "基準", "状態", "区分", "実売上/実数量", "料率(%)", "回", "金額", "通貨",
     "MG上乗せ", "前払相殺", "MG総額", "前払",
   ];
   const lines = [headers.map(csvCell).join(",")];
@@ -460,6 +516,7 @@ export async function exportReceiptsCsv(f: ReceiptFilters): Promise<string> {
       [
         r.receipt_date, r.sublicensee_name, r.work_code, r.work_title, r.source_contract_number,
         r.basis === "manufacturing" ? "製造数" : "売上",
+        r.confirmed ? "受領済" : "予定",
         r.estimated ? "見込" : "実績",
         r.basis === "manufacturing" ? (r.reported_quantity ?? "") : (r.reported_sales ?? ""),
         r.rate_pct ?? "", `${r.seq}/${r.of}`, r.amount, r.currency,

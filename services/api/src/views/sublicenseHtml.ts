@@ -30,7 +30,8 @@ table.t tr:hover td { background: var(--muted); }
 .empty { color: var(--muted-foreground); padding: 18px; text-align: center; }
 .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
 .pill { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); white-space: nowrap; }
-.pill.mg { background: #fef3c7; } .pill.sales { background: #eef2ff; } .pill.adv { background: #fce7f3; }
+.pill.mg { background: #fef3c7; } .pill.sales { background: #eef2ff; } .pill.adv { background: #fce7f3; } .pill.ok { background: #dcfce7; border-color: #86efac; }
+table.t tr.confirmed td { background: #f0fdf4; }
 .backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 60; overflow: auto; }
 .backdrop.open { display: flex; }
 .modal { background: var(--card); border-radius: 10px; width: 100%; max-width: 620px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
@@ -138,9 +139,12 @@ ${masterTabsHtml("sublicense")}
       <div class="fld"><label>メモ</label><input class="tech-input" id="r-note"></div>
       <div class="calc full">入力すると、この回の受領予定が「実績(料率×実績)」で再計算されます。MG・前払は全体で調整されます。</div>
     </div>
-    <div class="mfoot">
-      <button class="btn outline" id="r-delete" style="color:#b91c1c;border-color:#b91c1c;">報告を削除</button>
-      <div style="display:flex;gap:8px;"><button class="btn outline" id="r-cancel">キャンセル</button><button class="btn" id="r-save">保存</button></div>
+    <div class="mfoot" style="flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;gap:8px;">
+        <button class="btn outline" id="r-delete" style="color:#b91c1c;border-color:#b91c1c;">報告を削除</button>
+        <button class="btn outline" id="r-confirm">受領確定</button>
+      </div>
+      <div style="display:flex;gap:8px;"><button class="btn outline" id="r-cancel">閉じる</button><button class="btn" id="r-save">報告を保存</button></div>
     </div>
   </div>
 </div>
@@ -291,12 +295,14 @@ ${masterTabsHtml("sublicense")}
   function renderReceipts(){
     var wrap=document.getElementById("receipts-wrap");
     if(RECEIPTS.length===0){wrap.innerHTML='<div class="empty">受領予定がありません(条件の開始日・周期・金額を設定してください)。</div>';updateSel();return;}
-    var head='<tr><th class="chk"><input type="checkbox" id="chk-all"></th><th>受領予定日</th><th>サブライセンシー</th><th>作品</th><th>参照契約</th><th>区分</th><th>実売上/数量</th><th>回</th><th class="num">金額</th></tr>';
+    var head='<tr><th class="chk"><input type="checkbox" id="chk-all"></th><th>状態</th><th>受領予定日</th><th>サブライセンシー</th><th>作品</th><th>参照契約</th><th>区分</th><th>実売上/数量</th><th>回</th><th class="num">金額</th></tr>';
     var body=RECEIPTS.map(function(r){
       var kubun=r.estimated?'<span class="pill">見込</span>':'<span class="pill sales">実績</span>';
+      var state=r.confirmed?'<span class="pill ok">受領済</span>':'<span class="pill">予定</span>';
       var reported=r.basis==="manufacturing"?(r.reported_quantity==null?"":yen(r.reported_quantity)):(r.reported_sales==null?"":yen(r.reported_sales));
       var note=(r.mg_topup?' <span class="pill mg">MG+'+yen(r.mg_topup)+'</span>':'')+(r.advance_applied?' <span class="pill adv">前払-'+yen(r.advance_applied)+'</span>':'');
-      return '<tr class="clickable" data-deal="'+r.deal_id+'" data-date="'+esc(r.receipt_date)+'" data-basis="'+esc(r.basis)+'">'+
+      return '<tr class="clickable'+(r.confirmed?' confirmed':'')+'" data-deal="'+r.deal_id+'" data-date="'+esc(r.receipt_date)+'" data-basis="'+esc(r.basis)+'" data-confirmed="'+(r.confirmed?'1':'')+'">'+
+        '<td>'+state+'</td>'+
         '<td class="chk"><input type="checkbox" class="rchk" value="'+esc(r.row_id)+'" onclick="event.stopPropagation()"></td>'+
         '<td>'+esc(r.receipt_date)+'</td>'+
         '<td class="wrap">'+esc(r.sublicensee_name||"—")+'</td>'+
@@ -311,10 +317,13 @@ ${masterTabsHtml("sublicense")}
     updateSel();
   }
   /* ---- 売上報告(実績)入力 ---- */
-  async function openReport(dealId, date, basis){
-    rCtx={deal_id:dealId,date:date,basis:basis};
+  async function openReport(dealId, date, basis, confirmed){
+    rCtx={deal_id:dealId,date:date,basis:basis,confirmed:!!confirmed};
     var deal=DEALS.filter(function(x){return x.id===dealId;})[0]||{};
-    document.getElementById("r-meta").innerHTML="作品: <b>"+esc(deal.work_title||"—")+"</b><br>相手: "+esc(deal.sublicensee_name||"—")+" / 受領予定日: <b>"+esc(date)+"</b>";
+    document.getElementById("r-meta").innerHTML="作品: <b>"+esc(deal.work_title||"—")+"</b><br>相手: "+esc(deal.sublicensee_name||"—")+" / 受領予定日: <b>"+esc(date)+"</b>"+(confirmed?' <span class="pill ok">受領済</span>':"");
+    var cb=document.getElementById("r-confirm");
+    cb.textContent=confirmed?"受領を取消":"受領確定";
+    cb.style.color=confirmed?"#b91c1c":"";cb.style.borderColor=confirmed?"#b91c1c":"";
     document.getElementById("r-sales-wrap").style.display=basis==="manufacturing"?"none":"";
     document.getElementById("r-qty-wrap").style.display=basis==="manufacturing"?"":"none";
     document.getElementById("r-sales").value="";document.getElementById("r-qty").value="";document.getElementById("r-note").value="";
@@ -348,6 +357,21 @@ ${masterTabsHtml("sublicense")}
     }catch(e){alert("削除に失敗しました: "+(e&&e.message?e.message:e));}
   }
 
+  async function toggleConfirm(){
+    if(!rCtx)return;var btn=document.getElementById("r-confirm");btn.disabled=true;
+    try{
+      var res;
+      if(rCtx.confirmed){
+        res=await fetch("/api/sublicense/receipts/confirm?deal_id="+rCtx.deal_id+"&period_date="+encodeURIComponent(rCtx.date),{method:"DELETE",credentials:"same-origin"});
+      }else{
+        res=await fetch("/api/sublicense/receipts/confirm",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:rCtx.deal_id,period_date:rCtx.date})});
+      }
+      var data=await res.json().catch(function(){return{};});
+      if(!res.ok||data.ok===false)throw new Error(data.error||("HTTP "+res.status));
+      closeReport();await loadReceipts();
+    }catch(e){alert("処理に失敗しました: "+(e&&e.message?e.message:e));}finally{btn.disabled=false;}
+  }
+
   function checkedIds(){return Array.prototype.slice.call(document.querySelectorAll(".rchk:checked")).map(function(c){return c.value;});}
   function updateSel(){var el=document.getElementById("sel-n");if(el)el.textContent=checkedIds().length;}
   function csvExport(ids){var p=rgather();if(ids&&ids.length)p.set("ids",ids.join(","));window.location.href="/api/sublicense/receipts/export?"+p.toString();}
@@ -369,12 +393,13 @@ ${masterTabsHtml("sublicense")}
     if(t&&t.id==="chk-all"){Array.prototype.slice.call(document.querySelectorAll(".rchk")).forEach(function(c){c.checked=t.checked;});updateSel();return;}
     if(t&&(t.classList.contains("rchk"))){updateSel();return;}
     var tr=t.closest?t.closest("tr.clickable"):null;
-    if(tr){openReport(Number(tr.getAttribute("data-deal")),tr.getAttribute("data-date"),tr.getAttribute("data-basis"));}
+    if(tr){openReport(Number(tr.getAttribute("data-deal")),tr.getAttribute("data-date"),tr.getAttribute("data-basis"),tr.getAttribute("data-confirmed")==="1");}
   });
   document.getElementById("r-close").addEventListener("click",closeReport);
   document.getElementById("r-cancel").addEventListener("click",closeReport);
   document.getElementById("r-save").addEventListener("click",saveReport);
   document.getElementById("r-delete").addEventListener("click",deleteReport);
+  document.getElementById("r-confirm").addEventListener("click",toggleConfirm);
   document.getElementById("rbackdrop").addEventListener("click",function(e){if(e.target===document.getElementById("rbackdrop"))closeReport();});
   document.getElementById("btn-csv-all").addEventListener("click",function(){csvExport(null);});
   document.getElementById("btn-csv-sel").addEventListener("click",function(){var ids=checkedIds();if(!ids.length){alert("CSV出力する行を選択してください。");return;}csvExport(ids);});

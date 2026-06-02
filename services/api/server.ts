@@ -130,6 +130,8 @@ import {
   listReportsByDeal as listSubReports,
   upsertReport as upsertSubReport,
   deleteReport as deleteSubReport,
+  confirmReceipt as confirmSubReceipt,
+  unconfirmReceipt as unconfirmSubReceipt,
 } from "./src/services/sublicenseService.ts";
 import {
   listConditions,
@@ -2883,6 +2885,36 @@ async function startServer() {
       res.json({ ok: true });
     } catch (error: any) {
       console.error("/api/sublicense/reports DELETE failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 受領確定 → payments(inbound / sublicense_income)記録 / 取消
+  app.post("/api/sublicense/receipts/confirm", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const dealId = Number(b.deal_id);
+      if (!Number.isFinite(dealId) || !b.period_date) {
+        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
+      }
+      await confirmSubReceipt(dealId, String(b.period_date));
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts/confirm POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.delete("/api/sublicense/receipts/confirm", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const dealId = Number(q.deal_id);
+      if (!Number.isFinite(dealId) || !q.period_date) {
+        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
+      }
+      await unconfirmSubReceipt(dealId, String(q.period_date));
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts/confirm DELETE failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
