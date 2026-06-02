@@ -9650,6 +9650,10 @@ ${details}
             //   あればそれを優先 (上書き目的)。これにより license_master.html
             //   の {{CONTRACT_NO}} が空欄になる問題を解消。
             CONTRACT_NO: formData.CONTRACT_NO || docNumber,
+            // 海外発注書(intl)ヘッダの Order Form No.。手入力が無ければ採番値を補完。
+            OF_NO: formData.OF_NO || docNumber,
+            // Issue Date も未入力なら本日。
+            OF_DATE: formData.OF_DATE || new Date().toISOString().slice(0, 10),
             hasChangeLogs: !!formData.CHANGE_RECORDS,
             changeLogs: formData.CHANGE_RECORDS
               ? formData.CHANGE_RECORDS.split(";").map((log: string) => {
