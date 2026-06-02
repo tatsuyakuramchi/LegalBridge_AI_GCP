@@ -9569,14 +9569,7 @@ ${details}
         console.warn("[generate] auto.docNumber field mapping failed:", metaErr);
       }
 
-      const { html, fileName } = await documentService.generateDocument(
-        {
-          issueKey,
-          documentNumber: docNumber,
-          summary: issue.summary,
-          requester: requesterEmail || "Legal Department",
-          date: new Date().toLocaleDateString("ja-JP"),
-          details: {
+      const renderDetails: Record<string, any> = {
             ...staffInfo,
             ...formData,
             // Phase 25.5: auto.docNumber フィールド (出版の 契約番号/条件書番号/
@@ -9626,7 +9619,61 @@ ${details}
             //   を最後にスプレッドして deliveredAmountStr / taxAmountStr /
             //   totalAmountStr / otherFeesTotalStr / grandTotalPayable 等を上書き。
             ...(generateInspectionSummary || {}),
-          },
+      };
+
+      // ── Oversea Purchase Order(intl_purchase_order)を完全英語化 ──
+      //   テンプレ本体は英語だが、注入値(自社情報/契約種別/支払条件/サブスク周期)が
+      //   日本語のため、海外発注書のときだけ英語へ差し替える。
+      if (templateType === "intl_purchase_order") {
+        try {
+          const en = await query(
+            `SELECT key, value FROM app_settings
+              WHERE key IN ('COMPANY_NAME_EN','COMPANY_ADDRESS_EN','COMPANY_REPRESENTATIVE_EN')`
+          );
+          const s: Record<string, string> = {};
+          for (const row of en.rows) s[row.key] = row.value;
+          if (s.COMPANY_NAME_EN) renderDetails.COMPANY_NAME = s.COMPANY_NAME_EN;
+          if (s.COMPANY_ADDRESS_EN) renderDetails.COMPANY_ADDRESS = s.COMPANY_ADDRESS_EN;
+          if (s.COMPANY_REPRESENTATIVE_EN) renderDetails.COMPANY_REP = s.COMPANY_REPRESENTATIVE_EN;
+        } catch (enErr) {
+          console.warn("[intl英語化] company *_EN 取得失敗:", enErr);
+        }
+        const PT: Record<string, string> = {
+          "請負": "Contract for Work (Ukeoi)",
+          "準委任": "Quasi-Mandate (Jun-inin)",
+        };
+        const CAT: Record<string, string> = {
+          "業務委託": "Service", "ライセンス": "License", "ライセンス(IN)": "License (In)",
+          "ライセンス(OUT)": "License (Out)", "出版": "Publishing", "売買": "Sale",
+          "NDA": "NDA", "請負": "Contract for Work", "準委任": "Quasi-Mandate",
+        };
+        const CYC: Record<string, string> = {
+          "MONTHLY": "Monthly", "QUARTERLY": "Quarterly", "SEMIANNUAL": "Semi-annual",
+          "ANNUAL": "Annual", "CUSTOM": "Custom",
+        };
+        const tr = (m: Record<string, string>, v: any) =>
+          v == null || v === "" ? v : m[String(v)] ?? v;
+        if (Array.isArray(renderDetails.items)) {
+          renderDetails.items = renderDetails.items.map((it: any) => ({
+            ...it,
+            category: tr(CAT, it.category),
+            payment_terms: tr(PT, it.payment_terms),
+            cycle: tr(CYC, it.cycle),
+          }));
+        }
+        if (renderDetails.PAYMENT_TERMS) renderDetails.PAYMENT_TERMS = tr(PT, renderDetails.PAYMENT_TERMS);
+        if (renderDetails.contract_category)
+          renderDetails.contract_category = tr(CAT, renderDetails.contract_category);
+      }
+
+      const { html, fileName } = await documentService.generateDocument(
+        {
+          issueKey,
+          documentNumber: docNumber,
+          summary: issue.summary,
+          requester: requesterEmail || "Legal Department",
+          date: new Date().toLocaleDateString("ja-JP"),
+          details: renderDetails,
         },
         templateType,
         { vendorName: vendorNameForFile }

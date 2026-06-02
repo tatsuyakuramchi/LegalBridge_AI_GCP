@@ -169,6 +169,26 @@
         </td>
       </tr>
       {{/if}}
+      {{#if payment_schedule}}
+      <tr class="detail-row">
+        <td></td>
+        <td colspan="6">
+          <div class="detail-cell">
+            <div class="detail-label">Payment Schedule</div>
+            <table class="prec-table" style="margin-top:2px;">
+              <tr><td style="width:8%;">No.</td><td>Payment Date</td><td style="text-align:right;width:30%;">Amount</td></tr>
+              {{#each payment_schedule}}
+              <tr>
+                <td style="text-align:center;">{{index1 @index}}</td>
+                <td>{{date}}</td>
+                <td style="text-align:right;">{{#if amount}}{{../../CURRENCY}} {{formatCurrency amount}}{{/if}}</td>
+              </tr>
+              {{/each}}
+            </table>
+          </div>
+        </td>
+      </tr>
+      {{/if}}
       {{/each}}
       {{else}}
       {{!-- 単一明細フォールバック — Phase 13 統一 --}}

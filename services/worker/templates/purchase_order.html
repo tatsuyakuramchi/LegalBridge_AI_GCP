@@ -437,6 +437,25 @@
         </td>
       </tr>
       {{/if}}
+      {{#if payment_schedule}}
+      <tr class="detail-row">
+        <td colspan="8">
+          <div class="detail-cell">
+            <div style="font-weight:700;margin-bottom:2px;">支払スケジュール</div>
+            <table style="width:100%;border-collapse:collapse;font-size:8.5pt;">
+              <tr><th style="text-align:left;width:8%;">回</th><th style="text-align:left;">支払予定日</th><th style="text-align:right;width:30%;">金額</th></tr>
+              {{#each payment_schedule}}
+              <tr>
+                <td style="text-align:center;">{{index1 @index}}</td>
+                <td>{{date}}</td>
+                <td style="text-align:right;">{{#if amount}}{{formatYen amount}}{{/if}}</td>
+              </tr>
+              {{/each}}
+            </table>
+          </div>
+        </td>
+      </tr>
+      {{/if}}
       {{/each}}
       {{else}}
       {{!-- 単一明細フォールバック (items[] が空のとき) — Phase 13: CALC_METHOD + PAYMENT_TERMS 統一 --}}

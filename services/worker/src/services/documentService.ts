@@ -236,6 +236,7 @@ export class DocumentService {
       if (c === "QUARTERLY") return "四半期";
       if (c === "SEMIANNUAL") return "半年";
       if (c === "ANNUAL") return "年次";
+      if (c === "CUSTOM") return "カスタム"; // 任意周期(支払スケジュール参照)
       return "月次"; // MONTHLY or unknown は月次扱い (default)
     });
 

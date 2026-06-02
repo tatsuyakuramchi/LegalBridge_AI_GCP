@@ -90,6 +90,7 @@ export function registerHelpers(Handlebars) {
     if (c === "QUARTERLY") return "四半期";
     if (c === "SEMIANNUAL") return "半年";
     if (c === "ANNUAL") return "年次";
+    if (c === "CUSTOM") return "カスタム";
     return "月次";
   });
 
