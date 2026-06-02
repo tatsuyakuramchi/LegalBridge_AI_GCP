@@ -1338,55 +1338,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </div>
 
-        {/* 0. 基本契約ピッカー (Phase 23: 統一ピッカー)
-            業務委託基本契約を選ぶと HAS_BASE_CONTRACT / MASTER_CONTRACT_REF /
-            MASTER_CONTRACT_NUMBER / MASTER_CONTRACT_LINK が埋まる。
-            折りたたみで「業務委託基本契約 (任意)」として配置。 */}
+        {/* 1. 前提条件 (発注概要) */}
         <FormSection
-          title="0. 業務委託基本契約を選ぶ (任意)"
-          variant="emerald"
-          icon={<Link className="w-4 h-4" />}
-        >
-          <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
-            この発注書を紐づけたい基本契約があれば選択してください。選択すると
-            PDF テンプレに「基本契約: …」として反映されます。
-            通常は取引先を選ぶと自動補完されます。
-          </p>
-          <UnifiedContractPicker
-            acceptableRecordTypes={["master_contract"]}
-            categoryFilter={["service"]}
-            currentContractId={
-              Number(formData.MASTER_CONTRACT_CAPABILITY_ID) || undefined
-            }
-            hasParent={!!formData.MASTER_CONTRACT_NUMBER}
-            label="業務委託基本契約を選ぶ"
-            onPick={(detail) => {
-              const c = detail.contract;
-              setFormData({
-                ...formData,
-                HAS_BASE_CONTRACT: true,
-                MASTER_CONTRACT_CAPABILITY_ID: c.id,
-                MASTER_CONTRACT_REF: `${c.contract_title} (${c.document_number})`,
-                MASTER_CONTRACT_NUMBER: c.document_number,
-                MASTER_CONTRACT_LINK: detail.drive_link || formData.MASTER_CONTRACT_LINK,
-              });
-            }}
-            onClear={() => {
-              setFormData({
-                ...formData,
-                HAS_BASE_CONTRACT: false,
-                MASTER_CONTRACT_CAPABILITY_ID: undefined,
-                MASTER_CONTRACT_REF: "",
-                MASTER_CONTRACT_NUMBER: "",
-                MASTER_CONTRACT_LINK: "",
-              });
-            }}
-          />
-        </FormSection>
-
-        {/* I. 発注概要 */}
-        <FormSection
-          title="I. 発注概要"
+          title="1. 前提条件 (発注概要)"
           variant="default"
           icon={<Briefcase className="w-4 h-4" />}
           headerActions={
@@ -1404,42 +1358,92 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderGroup('I. 発注概要')}
         </FormSection>
 
-        {/* II/III. Vendor / Issuer — side-swappable parties */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
-          <FormSection
-            title="II. 発注先 (取引先)"
-            variant="amber"
-            icon={<Building2 className="w-4 h-4" />}
-            headerActions={
-              <>
-                {sideButton('自社', fillVendorFromSelf, !companyProfile)}
-                {sideButton('取引先', fillVendorFromPartner, !activeVendor)}
-              </>
-            }
-          >
-            {renderGroup('II. 発注先 (取引先)')}
-          </FormSection>
+        {/* 2. 取引先・基本契約設定 — 発注先 + 基本契約ピッカー(唯一の入力点) */}
+        <FormSection
+          title="2. 取引先・基本契約設定"
+          variant="amber"
+          icon={<Building2 className="w-4 h-4" />}
+          headerActions={
+            <>
+              {sideButton('自社', fillVendorFromSelf, !companyProfile)}
+              {sideButton('取引先', fillVendorFromPartner, !activeVendor)}
+            </>
+          }
+        >
+          {renderGroup('II. 発注先 (取引先)')}
+          <div className="col-span-full mt-4 pt-3 border-t border-dashed border-input">
+            <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
+              基本契約の紐づけ — この発注書を紐づけたい基本契約があれば選択してください。
+              選択すると PDF テンプレに「基本契約: …」として反映されます。
+              通常は取引先を選ぶと自動補完されます。
+            </p>
+            <UnifiedContractPicker
+              acceptableRecordTypes={["master_contract"]}
+              categoryFilter={["service"]}
+              currentContractId={
+                Number(formData.MASTER_CONTRACT_CAPABILITY_ID) || undefined
+              }
+              hasParent={!!formData.MASTER_CONTRACT_NUMBER}
+              label="業務委託基本契約を選ぶ"
+              onPick={(detail) => {
+                const c = detail.contract;
+                setFormData({
+                  ...formData,
+                  HAS_BASE_CONTRACT: true,
+                  MASTER_CONTRACT_CAPABILITY_ID: c.id,
+                  MASTER_CONTRACT_REF: `${c.contract_title} (${c.document_number})`,
+                  MASTER_CONTRACT_NUMBER: c.document_number,
+                  MASTER_CONTRACT_LINK: detail.drive_link || formData.MASTER_CONTRACT_LINK,
+                });
+              }}
+              onClear={() => {
+                setFormData({
+                  ...formData,
+                  HAS_BASE_CONTRACT: false,
+                  MASTER_CONTRACT_CAPABILITY_ID: undefined,
+                  MASTER_CONTRACT_REF: "",
+                  MASTER_CONTRACT_NUMBER: "",
+                  MASTER_CONTRACT_LINK: "",
+                });
+              }}
+            />
+          </div>
+        </FormSection>
 
-          <FormSection
-            title="III. 発注元 (自社)"
-            variant="blue"
-            icon={<User className="w-4 h-4" />}
-            headerActions={
-              <>
-                {sideButton('自社', fillIssuerFromSelf, !companyProfile)}
-                {sideButton('取引先', fillIssuerFromPartner, !activeVendor)}
-                {sideButton('Sync Staff', fillStaff, !selectedStaff)}
-              </>
-            }
-          >
-            {renderGroup('III. 発注元 (自社)')}
-          </FormSection>
-        </div>
+        {/* 3. 当社情報 (発注元) */}
+        <FormSection
+          title="3. 当社情報 (発注元)"
+          variant="blue"
+          icon={<User className="w-4 h-4" />}
+          headerActions={
+            <>
+              {sideButton('自社', fillIssuerFromSelf, !companyProfile)}
+              {sideButton('取引先', fillIssuerFromPartner, !activeVendor)}
+            </>
+          }
+        >
+          {renderField('PARTY_A_NAME')}
+          {renderField('PARTY_A_ADDRESS')}
+          {renderField('PARTY_A_REP')}
+        </FormSection>
+
+        {/* 4. スタッフ情報 */}
+        <FormSection
+          title="4. スタッフ情報"
+          variant="blue"
+          icon={<User className="w-4 h-4" />}
+          headerActions={sideButton('Sync Staff', fillStaff, !selectedStaff)}
+        >
+          {renderField('STAFF_NAME')}
+          {renderField('STAFF_DEPARTMENT')}
+          {renderField('STAFF_PHONE')}
+          {renderField('STAFF_EMAIL')}
+        </FormSection>
 
         {/* IV. 明細 (Phase 7a/7b) — primary path; grandTotalExTax は自動集計
             Phase 22.21.56: grandTotalExTax = items 合計 + other_fees 合計 */}
         <FormSection
-          title="IV. 明細"
+          title="5. 共通入力事項 — 明細"
           variant="indigo"
           icon={<List className="w-4 h-4" />}
         >
@@ -1469,7 +1473,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {/* IV-a. その他手数料 (Phase 22.21.56) — 業務委託報酬以外の手数料。
             税抜表示で grandTotalExTax に加算される。経費 (IV-b 税込・別精算) とは別物。 */}
         <FormSection
-          title="IV-a. その他手数料（税抜・合計に加算）"
+          title="5-a. その他手数料（税抜・合計に加算）"
           variant="indigo"
           icon={<Coins className="w-4 h-4" />}
         >
@@ -1502,7 +1506,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             本体報酬とは別に行単位で経費を保持し、PDF にも経費表として
             出力される。データは order_expenses テーブルに保存。 */}
         <FormSection
-          title="IV-b. 経費（交通費等・税込み）"
+          title="5-b. 経費（交通費等・税込み）"
           variant="indigo"
           icon={<List className="w-4 h-4" />}
         >
@@ -1528,7 +1532,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             grandTotalExTax は既に明細から自動集計済 (LineItemTable onChange)。
             単一明細フォールバック (ITEM_NAME/CALC_METHOD/PAYMENT_TERMS/PAYMENT_METHOD)
             は下の Advanced 折り畳みに退避。 */}
-        <FormSection title="V. 金額サマリ・納期 (明細から自動集計)" variant="indigo" icon={<Scale className="w-4 h-4" />}>
+        <FormSection title="5-c. 金額サマリ・納期 (明細から自動集計)" variant="indigo" icon={<Scale className="w-4 h-4" />}>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[11px] font-mono">
             <div className="space-y-1">
               <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -1580,7 +1584,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             手入力できるようにする。 */}
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ IV-z. 単一明細用フォールバック (任意・上級者向け) — 明細表が空のときだけ参照される
+            ▶ 6. 専用入力事項 — 単一明細フォールバック (上級者向け・明細表が空のときだけ参照)
           </summary>
           <div className="p-4 border-t border-input space-y-3">
             <p className="text-[10px] font-mono text-muted-foreground italic">
@@ -1598,7 +1602,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
 
         {/* VI. 振込先 */}
         <FormSection
-          title="VI. 振込先 (取引先口座)"
+          title="5-d. 振込先 (取引先口座)"
           variant="emerald"
           headerActions={sideButton('取引先', fillVendorFromPartner, !activeVendor)}
         >
@@ -1608,7 +1612,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {/* VI. 特約・備考 — collapsed */}
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ VI. 特約・備考 (任意) — クリックして展開
+            ▶ 7. その他の設定 — 特約・備考 (任意)
           </summary>
           <div className="p-4 border-t border-input">
             {renderGroup('VI. 特約・備考 (任意)')}
@@ -1618,7 +1622,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {/* VII. 契約・署名 — collapsed */}
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ VII. 契約・署名 (任意) — クリックして展開
+            ▶ 7. その他の設定 — 契約・署名 (任意)
           </summary>
           <div className="p-4 border-t border-input space-y-3">
             {/* Phase 26: 基本契約の紐づけは「0. 業務委託基本契約を選ぶ」の
