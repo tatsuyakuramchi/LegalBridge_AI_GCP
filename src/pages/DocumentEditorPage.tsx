@@ -435,16 +435,17 @@ export function DocumentEditorPage() {
       .catch((e) => console.error("History fetch error:", e))
   }
 
-  // 文書テンプレートを切り替えたとき = 新しい文書を作る操作。前テンプレの入力が
-  //   残らないようフォームをクリアする。課題が選択済みなら、その課題の自動補完
-  //   だけを再ロードする(前回文書 / 一時保存は引き継がない)。課題未選択なら空に。
+  // 文書テンプレートを切り替えたとき。課題が選択済みなら、その課題 × 新テンプレの
+  //   「一時保存(下書き) → 前回発行文書」を自動で復元する(= 課題選択での自動
+  //   プリフィル。課題→テンプレの順でも前回内容が戻るようにする)。
+  //   syncFromDatabase はフォームを完全置換するため、前テンプレの入力が残る心配はない。
+  //   課題未選択なら空に。
   //   ※ 文書の再編集ロード時の setSelectedTemplate(210) はこの関数を通さないので
   //     読み込んだ内容は消えない。
   const handleTemplateChange = (next: string) => {
     setSelectedTemplate(next)
     if (next && selectedIssue) {
       void syncFromDatabase(selectedIssue, {
-        skipRestore: true,
         templateOverride: next,
       })
     } else {
