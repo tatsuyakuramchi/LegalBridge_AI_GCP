@@ -353,11 +353,24 @@ export class ExcelService {
       reimbursement = 0;
     }
 
-    // 小計（税抜合計）
-    const subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0);
-    // 消費税（最後に一度だけ）
-    const consumption_tax = taxOf(subtotal);
-    // 税込（源泉ベース）
+    // (A) 検収書は「金額=税込」で出力し、消費税の別計上はやめる(源泉は税込基準)。
+    //   各スロットの 単価・金額 を税込に変換し、小計=税込合計 / 消費税=0 とする。
+    //   利用許諾料計算書(royalty)は従来どおり 税抜小計+消費税 を維持。
+    let subtotal: number;
+    let consumption_tax: number;
+    if (isInspection) {
+      const factor = 1 + taxRatePct / 100;
+      for (const it of items) {
+        it.unit_price = Math.round((Number(it.unit_price) || 0) * factor);
+        it.amount = Math.round((Number(it.amount) || 0) * factor); // 金額=税込
+      }
+      subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0); // 税込合計
+      consumption_tax = 0; // 税込金額に含むため別計上しない
+    } else {
+      subtotal = items.reduce((s, it) => s + (Number(it.amount) || 0), 0); // 税抜合計
+      consumption_tax = taxOf(subtotal);
+    }
+    // 源泉ベース(検収書: 税込小計そのもの / royalty: 税抜+消費税)
     const taxIncluded = subtotal + consumption_tax;
 
     // 源泉徴収（税込ベース・現状ロジック踏襲）
