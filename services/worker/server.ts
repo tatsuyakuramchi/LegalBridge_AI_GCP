@@ -133,6 +133,48 @@ const replaceSlackPlaceholders = (tmpl: string, data: any): string => {
     .replace(/{{counterparty}}/g, data.counterparty || "");
 };
 
+/**
+ * サブスク明細(calc_method=SUBSCRIPTION かつ payment_schedule あり)を
+ * 「支払予定日ごとの 1 行」に展開する。条件明細(capability_line_items)へ
+ * ミラーするとき、各回の支払予定日が個別の行として並ぶようにする。
+ *   - 各行: payment_date=予定日, unit_price/amount_ex_tax=その回の金額, quantity=1
+ *   - cycle / term_start / term_end / billing_day は文脈として元の値を保持
+ *   - line_no は全体で連番に振り直す(キー衝突と keep/delete の整合のため)
+ * 非サブスクや schedule 無しの行はそのまま(連番のみ振り直し)。
+ */
+function expandLinesWithSchedule(rawLines: any[]): any[] {
+  if (!Array.isArray(rawLines)) return [];
+  const out: any[] = [];
+  let seq = 0;
+  for (const l of rawLines) {
+    const sched = Array.isArray(l?.payment_schedule)
+      ? l.payment_schedule.filter((s: any) => s && s.date)
+      : [];
+    if (l?.calc_method === "SUBSCRIPTION" && sched.length > 0) {
+      const total = sched.length;
+      sched.forEach((s: any, k: number) => {
+        seq++;
+        const amt =
+          s.amount != null && s.amount !== "" ? Number(s.amount) : Number(l.unit_price) || 0;
+        out.push({
+          ...l,
+          line_no: seq,
+          item_name: `${l.item_name || ""} (${k + 1}/${total})`,
+          unit_price: amt,
+          quantity: 1,
+          amount_ex_tax: amt,
+          payment_date: s.date || null,
+          payment_schedule: undefined,
+        });
+      });
+    } else {
+      seq++;
+      out.push({ ...l, line_no: seq, payment_schedule: undefined });
+    }
+  }
+  return out;
+}
+
 async function startServer() {
   // Phase 0 (D2): schema は migration ランナー(migrations/)が単一所有する。
   // 起動時 initDb は段階移行のため RUN_INIT_DB で制御する。
@@ -3864,7 +3906,7 @@ ${details}
     raw: any
   ): Promise<void> {
     if (raw === undefined) return;
-    const items: Array<any> = Array.isArray(raw) ? raw : [];
+    const items: Array<any> = Array.isArray(raw) ? expandLinesWithSchedule(raw) : [];
     try {
       if (items.length === 0) {
         await query(
@@ -10323,7 +10365,8 @@ ${details}
         // Phase 23: order_line_items → capability_line_items
         if (orderItemId && Array.isArray(formData.items) && formData.items.length > 0) {
           const taxRate = Number(formData.taxRate) || 10;
-          const incomingLines = formData.items as Array<any>;
+          // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー。
+          const incomingLines = expandLinesWithSchedule(formData.items as Array<any>);
           const keepNos = incomingLines
             .map((l, i) => Number(l.line_no) || i + 1)
             .filter((n) => n > 0);
