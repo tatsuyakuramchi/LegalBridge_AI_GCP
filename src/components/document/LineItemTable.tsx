@@ -53,14 +53,23 @@ export type LineItem = {
   // SaaS 月額・年額ライセンス等を「単価 × 数量 (期間数) = 期間総額」
   // で表しつつ、契約スケジュールも構造化して保持できるようにする。
   // ────────────────────────────────────────────────
-  /** 周期: 月次/四半期/半年/年次。default は MONTHLY。 */
-  cycle?: "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "ANNUAL";
+  /** 周期: 月次/四半期/半年/年次/カスタム。default は MONTHLY。 */
+  cycle?: "MONTHLY" | "QUARTERLY" | "SEMIANNUAL" | "ANNUAL" | "CUSTOM";
+  /** カスタム周期の間隔単位 (cycle=CUSTOM のとき)。MONTH=Nヶ月ごと / DAY=N日ごと。 */
+  interval_unit?: "MONTH" | "DAY";
+  /** カスタム周期の間隔数 N (cycle=CUSTOM のとき。例: 2ヶ月ごと→2)。 */
+  interval_count?: number;
   /** 契約開始日 (YYYY-MM-DD)。 */
   term_start?: string;
   /** 契約終了日 (YYYY-MM-DD)。空なら「継続中」扱いで PDF にもそう表記。 */
   term_end?: string;
   /** 毎周期の支払日 (例: 月次なら 1-31 の日。月末なら 31 or 0)。 */
   billing_day?: number;
+  /**
+   * 個別の支払予定日リスト。自動生成(周期から展開)または手入力で列挙する。
+   * これがあると PDF・条件明細に各回の支払予定日として展開される。
+   */
+  payment_schedule?: Array<{ date: string; amount?: number }>;
 };
 
 const CALC_METHOD_OPTIONS: Array<{
@@ -82,7 +91,63 @@ const CYCLE_OPTIONS: Array<{
   { value: "QUARTERLY", label: "四半期", short: "四半期" },
   { value: "SEMIANNUAL", label: "半年", short: "半年" },
   { value: "ANNUAL", label: "年次", short: "年次" },
+  { value: "CUSTOM", label: "カスタム (任意周期)", short: "カスタム" },
 ];
+
+// ── サブスク支払スケジュール 自動生成ヘルパー ──────────────────
+//   term_start を起点に、周期(月次/四半期/半年/年次/カスタムNヶ月・N日)ごとの
+//   支払予定日を生成する。月ベースのときは billing_day(毎期X日/月末)を適用。
+function toISODate(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function isDayBasedCycle(it: Pick<LineItem, "cycle" | "interval_unit">): boolean {
+  return it.cycle === "CUSTOM" && it.interval_unit === "DAY";
+}
+function stepDate(base: Date, it: Pick<LineItem, "cycle" | "interval_unit" | "interval_count">): Date {
+  const r = new Date(base);
+  if (it.cycle === "CUSTOM") {
+    const n = Math.max(1, Number(it.interval_count) || 1);
+    if (it.interval_unit === "DAY") r.setDate(r.getDate() + n);
+    else r.setMonth(r.getMonth() + n);
+  } else {
+    const m =
+      it.cycle === "QUARTERLY" ? 3 : it.cycle === "SEMIANNUAL" ? 6 : it.cycle === "ANNUAL" ? 12 : 1;
+    r.setMonth(r.getMonth() + m);
+  }
+  return r;
+}
+function applyBillingDay(d: Date, billingDay?: number): Date {
+  if (billingDay === undefined || billingDay === null) return d;
+  const lastDay = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  const day = billingDay === 0 || billingDay > 30 ? lastDay : Math.min(billingDay, lastDay);
+  return new Date(d.getFullYear(), d.getMonth(), day);
+}
+/** 周期から支払予定日を生成。term_end があればそこまで、無ければ periods 回分。 */
+function generatePaymentSchedule(
+  it: LineItem,
+  periods: number
+): Array<{ date: string; amount?: number }> {
+  if (!it.term_start) return [];
+  const start = new Date(`${it.term_start}T00:00:00`);
+  if (isNaN(start.getTime())) return [];
+  const end = it.term_end ? new Date(`${it.term_end}T00:00:00`) : null;
+  const dayBased = isDayBasedCycle(it);
+  const amount = Number(it.unit_price) || 0;
+  const out: Array<{ date: string; amount?: number }> = [];
+  let cursor = new Date(start);
+  const hardCap = 600; // 暴走防止
+  for (let i = 0; i < hardCap; i++) {
+    const payDate = dayBased ? cursor : applyBillingDay(cursor, it.billing_day);
+    if (end && payDate.getTime() > end.getTime()) break;
+    out.push({ date: toISODate(payDate), amount });
+    if (!end && out.length >= Math.max(1, periods)) break;
+    cursor = stepDate(cursor, it);
+  }
+  return out;
+}
 
 // Phase 22.21.44: 支払条件プルダウン候補。
 //   業務委託の基本類型 (請負 / 準委任) を 2 択で選ばせる。
@@ -107,7 +172,9 @@ function formatBillingDay(day?: number, cycle?: LineItem["cycle"]): string {
         ? "毎半期"
         : cycle === "ANNUAL"
           ? "毎年"
-          : "毎月";
+          : cycle === "CUSTOM"
+            ? "毎回"
+            : "毎月";
   if (day === 0 || day > 30) return `${cycleLabel}末日`;
   return `${cycleLabel}${day}日`;
 }
@@ -135,6 +202,8 @@ interface Props {
 const ceilProduct = (a: number, b: number) =>
   Math.ceil((Number(a) || 0) * (Number(b) || 0));
 
+const yenLI = (n: number) => "¥ " + (Number(n) || 0).toLocaleString("ja-JP");
+
 export const LineItemTable: React.FC<Props> = ({
   items,
   onChange,
@@ -152,6 +221,8 @@ export const LineItemTable: React.FC<Props> = ({
   // billing_day をひとまとめに編集できる。
   const [subEditIdx, setSubEditIdx] = React.useState<number | null>(null);
   const subEditItem = subEditIdx !== null ? items[subEditIdx] : null;
+  // 支払スケジュール自動生成の「回数」(終了日が無いときに使う)。
+  const [subPeriods, setSubPeriods] = React.useState<number>(12);
 
   const update = (idx: number, patch: Partial<LineItem>) => {
     const next = items.slice();
@@ -812,6 +883,47 @@ export const LineItemTable: React.FC<Props> = ({
                   ))}
                 </select>
               </div>
+              {/* カスタム周期: 間隔 (Nヶ月ごと / N日ごと) */}
+              {subEditItem.cycle === "CUSTOM" && (
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    任意周期の間隔
+                  </label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-muted-foreground">毎</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={subEditItem.interval_count ?? ""}
+                      onChange={(e) =>
+                        update(subEditIdx, {
+                          interval_count:
+                            e.target.value === "" ? undefined : Math.max(1, Number(e.target.value)),
+                        })
+                      }
+                      placeholder="2"
+                      className="w-20 text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                    />
+                    <select
+                      value={subEditItem.interval_unit || "MONTH"}
+                      onChange={(e) =>
+                        update(subEditIdx, {
+                          interval_unit: e.target.value as LineItem["interval_unit"],
+                        })
+                      }
+                      className="text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+                    >
+                      <option value="MONTH">ヶ月ごと</option>
+                      <option value="DAY">日ごと</option>
+                    </select>
+                  </div>
+                  <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                    例: 「毎 3 ヶ月ごと」=四半期相当 / 「毎 90 日ごと」。日ごとの場合、下の
+                    支払日(毎期X日)は使わず開始日からの経過日で計算します。
+                  </p>
+                </div>
+              )}
+
               {/* 開始日 / 終了日 */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
@@ -883,6 +995,135 @@ export const LineItemTable: React.FC<Props> = ({
                   </strong>
                 </p>
               </div>
+              {/* 支払予定日(任意の日に個別指定 / 周期から自動生成) */}
+              <div className="space-y-2 border-t border-border pt-4">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                    支払予定日(各回の支払日)
+                  </label>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[10px] font-mono text-muted-foreground">回数</span>
+                    <input
+                      type="number"
+                      min={1}
+                      max={600}
+                      value={subPeriods}
+                      onChange={(e) => setSubPeriods(Math.max(1, Number(e.target.value) || 1))}
+                      title="終了日が空のときに生成する回数"
+                      className="w-14 text-xs font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+                    />
+                    <button
+                      type="button"
+                      onClick={() =>
+                        update(subEditIdx, {
+                          payment_schedule: generatePaymentSchedule(subEditItem, subPeriods),
+                        })
+                      }
+                      className="text-[10px] font-mono uppercase tracking-wider border border-foreground/40 bg-foreground text-background hover:opacity-80 px-2.5 py-1 rounded-sm"
+                      title="周期・開始日・支払日から支払予定日を自動生成(既存リストは置換)"
+                    >
+                      ⟳ 自動生成
+                    </button>
+                  </div>
+                </div>
+
+                {(subEditItem.payment_schedule?.length ?? 0) === 0 ? (
+                  <p className="text-[10px] font-mono text-muted-foreground/70 italic">
+                    「⟳ 自動生成」で周期から展開するか、「+ 行追加」で支払日を個別に列挙できます。
+                  </p>
+                ) : (
+                  <div className="max-h-52 overflow-auto rounded-sm border border-border">
+                    <table className="w-full text-[11px] font-mono">
+                      <thead>
+                        <tr className="bg-muted/40 text-muted-foreground">
+                          <th className="text-left px-2 py-1 w-8">#</th>
+                          <th className="text-left px-2 py-1">支払予定日</th>
+                          <th className="text-right px-2 py-1">金額</th>
+                          <th className="w-8"></th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(subEditItem.payment_schedule || []).map((row, ri) => (
+                          <tr key={ri} className="border-t border-border">
+                            <td className="px-2 py-1 text-muted-foreground">{ri + 1}</td>
+                            <td className="px-2 py-1">
+                              <input
+                                type="date"
+                                value={row.date || ""}
+                                onChange={(e) => {
+                                  const next = (subEditItem.payment_schedule || []).slice();
+                                  next[ri] = { ...next[ri], date: e.target.value };
+                                  update(subEditIdx, { payment_schedule: next });
+                                }}
+                                className="w-full bg-transparent border-b border-input py-0.5 focus:outline-none focus:border-foreground"
+                              />
+                            </td>
+                            <td className="px-2 py-1 text-right">
+                              <input
+                                type="number"
+                                value={row.amount ?? ""}
+                                onChange={(e) => {
+                                  const next = (subEditItem.payment_schedule || []).slice();
+                                  next[ri] = {
+                                    ...next[ri],
+                                    amount: e.target.value === "" ? undefined : Number(e.target.value),
+                                  };
+                                  update(subEditIdx, { payment_schedule: next });
+                                }}
+                                className="w-24 text-right bg-transparent border-b border-input py-0.5 focus:outline-none focus:border-foreground"
+                              />
+                            </td>
+                            <td className="px-1 py-1 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  const next = (subEditItem.payment_schedule || []).filter(
+                                    (_, i) => i !== ri
+                                  );
+                                  update(subEditIdx, { payment_schedule: next });
+                                }}
+                                className="text-muted-foreground hover:text-destructive"
+                                title="この行を削除"
+                              >
+                                <X className="h-3 w-3" />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-border bg-muted/20">
+                          <td colSpan={2} className="px-2 py-1 text-right text-muted-foreground">
+                            合計 ({subEditItem.payment_schedule?.length || 0} 回)
+                          </td>
+                          <td className="px-2 py-1 text-right font-bold">
+                            {yenLI(
+                              (subEditItem.payment_schedule || []).reduce(
+                                (s, r) => s + (Number(r.amount) || 0),
+                                0
+                              )
+                            )}
+                          </td>
+                          <td></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const next = (subEditItem.payment_schedule || []).slice();
+                    next.push({ date: "", amount: Number(subEditItem.unit_price) || 0 });
+                    update(subEditIdx, { payment_schedule: next });
+                  }}
+                  className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 hover:bg-muted px-2.5 py-1 rounded-sm"
+                >
+                  + 行追加
+                </button>
+              </div>
+
               {/* 数量 ヒント */}
               <div className="rounded-sm bg-amber-50 border border-amber-200 px-3 py-2 text-[10px] font-mono text-amber-900 leading-relaxed">
                 ※ 単価=1周期あたりの料金、数量=期間内の周期数 で
