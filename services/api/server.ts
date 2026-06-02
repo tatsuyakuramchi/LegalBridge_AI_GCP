@@ -118,6 +118,16 @@ import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
 import { workModelPage } from "./src/views/workModelHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
+import { sublicensePage } from "./src/views/sublicenseHtml.ts";
+import {
+  listDeals as listSubDeals,
+  upsertDeal as upsertSubDeal,
+  deleteDeal as deleteSubDeal,
+  listReceipts as listSubReceipts,
+  exportReceiptsCsv as exportSubReceiptsCsv,
+  listSublicenseeOptions,
+  listWorkOptions as listSubWorkOptions,
+} from "./src/services/sublicenseService.ts";
 import {
   listConditions,
   updateConditionLinks,
@@ -2757,6 +2767,92 @@ async function startServer() {
       res.send(csv);
     } catch (error: any) {
       console.error("/api/conditions/export failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // ===================================================================
+  // サブライセンス受領管理(第1段)
+  // ===================================================================
+  app.get("/master/sublicense", requireIapUser({ renderErrorPage }), (_req, res) => {
+    try {
+      res.type("html").send(sublicensePage());
+    } catch (error) {
+      console.error("/master/sublicense failed:", error);
+      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+
+  // 条件(deal)一覧 / 作成・更新 / 削除
+  app.get("/api/sublicense/deals", requireIapUser({ renderErrorPage }), async (_req, res) => {
+    try {
+      res.json({ ok: true, rows: await listSubDeals() });
+    } catch (error: any) {
+      console.error("/api/sublicense/deals GET failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.post("/api/sublicense/deals", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
+    try {
+      const id = await upsertSubDeal(req.body || {});
+      res.json({ ok: true, id });
+    } catch (error: any) {
+      console.error("/api/sublicense/deals POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.delete("/api/sublicense/deals/:id", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      await deleteSubDeal(id);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/sublicense/deals DELETE failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // ピッカー用オプション(作品 / サブライセンシー)
+  app.get("/api/sublicense/options", requireIapUser({ renderErrorPage }), async (_req, res) => {
+    try {
+      const [sublicensees, works] = await Promise.all([listSublicenseeOptions(), listSubWorkOptions()]);
+      res.json({ ok: true, sublicensees, works });
+    } catch (error: any) {
+      console.error("/api/sublicense/options failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 受領予定一覧(deal を各回に展開)
+  app.get("/api/sublicense/receipts", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const result = await listSubReceipts({
+        from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
+      });
+      res.json({ ok: true, ...result });
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 受領予定 CSV(全件 or ?ids=deal:idx,...)
+  app.get("/api/sublicense/receipts/export", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const ids = q.ids ? String(q.ids).split(",").map((s) => s.trim()).filter(Boolean) : undefined;
+      const csv = await exportSubReceiptsCsv({
+        from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
+        ids: ids as any,
+      });
+      const stamp = new Date().toISOString().slice(0, 10);
+      res.setHeader("Content-Type", "text/csv; charset=utf-8");
+      res.setHeader("Content-Disposition", `attachment; filename="sublicense_receipts_${stamp}.csv"`);
+      res.send(csv);
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts/export failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
