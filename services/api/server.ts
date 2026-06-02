@@ -2674,6 +2674,7 @@ async function startServer() {
         vendor: q.vendor,
         owner: q.owner,
         q: q.q,
+        include_all: q.include_all === "1" || q.include_all === "true",
         limit: q.limit ? Number(q.limit) : undefined,
         offset: q.offset ? Number(q.offset) : undefined,
       });
@@ -2745,6 +2746,7 @@ async function startServer() {
         owner: q.owner,
         q: q.q,
         ids,
+        include_all: q.include_all === "1" || q.include_all === "true",
       });
       const stamp = new Date().toISOString().slice(0, 10);
       res.setHeader("Content-Type", "text/csv; charset=utf-8");

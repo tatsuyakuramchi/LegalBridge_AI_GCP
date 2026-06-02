@@ -108,6 +108,11 @@ ${masterTabsHtml("conditions")}
       <button class="btn" id="btn-search">検索</button>
       <button class="btn outline" id="btn-clear">クリア</button>
     </div>
+    <div class="f" style="justify-content:end;">
+      <label style="display:flex;gap:6px;align-items:center;cursor:pointer;">
+        <input type="checkbox" id="include_all"> 古い版・重複も表示
+      </label>
+    </div>
   </div>
 
   <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;">
@@ -181,6 +186,7 @@ ${masterTabsHtml("conditions")}
       var v = (document.getElementById(id).value || "").trim();
       if (v) p.set(id, v);
     });
+    if (document.getElementById("include_all").checked) p.set("include_all", "1");
     return p;
   }
 
@@ -279,6 +285,7 @@ ${masterTabsHtml("conditions")}
   function clearAll() {
     ["payment_from", "payment_to", "delivery_from", "delivery_to", "category", "vendor", "owner", "q"]
       .forEach(function (id) { document.getElementById(id).value = ""; });
+    document.getElementById("include_all").checked = false;
     load();
   }
 
@@ -380,6 +387,7 @@ ${masterTabsHtml("conditions")}
   /* ---------- wiring ---------- */
   document.getElementById("btn-search").addEventListener("click", load);
   document.getElementById("btn-clear").addEventListener("click", clearAll);
+  document.getElementById("include_all").addEventListener("change", load);
   ["vendor", "owner", "q"].forEach(function (id) {
     document.getElementById(id).addEventListener("keydown", function (e) {
       if (e.key === "Enter") load();

@@ -37,6 +37,7 @@ export type ConditionFilters = {
   owner?: string;
   q?: string;
   ids?: number[]; // 指定時はこの明細 id のみ(CSV の選択出力用)
+  include_all?: boolean; // true で古い版/非正本も含める(既定は正本=is_primary かつ final のみ)
   limit?: number;
   offset?: number;
 };
@@ -92,6 +93,13 @@ function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
   if (Array.isArray(f.ids) && f.ids.length) {
     const ids = f.ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
     if (ids.length) where.push(`cli.id = ANY(${p(ids)}::int[])`);
+  }
+
+  // 既定は正本(現行)のみ。重複・旧版・再発行前の行を一覧から除外する。
+  // include_all=true で全て表示(古い版の確認用)。
+  if (!f.include_all) {
+    where.push(`COALESCE(cc.is_primary, TRUE) = TRUE`);
+    where.push(`COALESCE(cc.lifecycle_status, 'final') = 'final'`);
   }
 
   return { sql: where.length ? `WHERE ${where.join(" AND ")}` : "", params };

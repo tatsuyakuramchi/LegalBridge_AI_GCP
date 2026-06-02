@@ -1,4 +1,24 @@
 import pg from 'pg';
+import { createHash } from 'node:crypto';
+
+/**
+ * 文書の「内容ハッシュ」。重複保存の検出に使う。
+ * __ で始まる制御フィールド(__reopen_doc_number 等)は除外し、キーを
+ * ソートして安定化したうえで template_type と結合して sha256。
+ */
+export function computeFormContentHash(
+  formData: Record<string, any> | null | undefined,
+  templateType: string
+): string {
+  const clean: Record<string, any> = {};
+  for (const k of Object.keys(formData || {}).sort()) {
+    if (k.startsWith('__')) continue;
+    clean[k] = (formData as any)[k];
+  }
+  return createHash('sha256')
+    .update(String(templateType || '') + '\n' + JSON.stringify(clean))
+    .digest('hex');
+}
 
 const { Pool } = pg;
 
@@ -1982,6 +2002,57 @@ export async function markPrimaryDocument(
  *                        — INSERT ではなく UPDATE で同 row を更新し、Drive PDF も
  *                        既存 fileId に content を差し替える経路を caller に伝える
  */
+/**
+ * 「同一文書とみなせる既存の正本(is_primary かつ lifecycle=final)」を 1 件返す。
+ * 判定: 同 template_type かつ ( 同 issue_key(MANUAL- と空は除外) OR content_hash 一致 )。
+ * content_hash 列が無い環境(0017 未適用)では起票×種別のみで判定(graceful)。
+ */
+async function findExistingPrimaryDocument(
+  issueKey: string,
+  templateType: string,
+  contentHash?: string
+): Promise<{ document_number: string; base_document_number: string; revision: number } | null> {
+  const ik = (issueKey || '').trim();
+  const issueUsable = ik !== '' && !ik.startsWith('MANUAL-');
+  // 起票でもハッシュでも引けない場合は判定しない。
+  if (!issueUsable && !contentHash) return null;
+
+  const withHash = `
+    SELECT document_number, base_document_number, revision
+      FROM documents
+     WHERE is_primary = TRUE
+       AND COALESCE(lifecycle_status, 'final') = 'final'
+       AND template_type = $2::text
+       AND (
+         ($1::text <> '' AND issue_key = $1::text)
+         OR ($3::text IS NOT NULL AND content_hash = $3::text)
+       )
+     ORDER BY revision DESC, created_at DESC
+     LIMIT 1`;
+  const noHash = `
+    SELECT document_number, base_document_number, revision
+      FROM documents
+     WHERE is_primary = TRUE
+       AND COALESCE(lifecycle_status, 'final') = 'final'
+       AND template_type = $2::text
+       AND $1::text <> '' AND issue_key = $1::text
+     ORDER BY revision DESC, created_at DESC
+     LIMIT 1`;
+
+  try {
+    const r = await query(withHash, [issueUsable ? ik : '', templateType, contentHash || null]);
+    return r.rows[0] || null;
+  } catch (err: any) {
+    if (err && err.code === '42703') {
+      // content_hash 未追加 → 起票×種別のみ
+      if (!issueUsable) return null;
+      const r = await query(noHash, [ik, templateType]);
+      return r.rows[0] || null;
+    }
+    throw err;
+  }
+}
+
 export async function getDocumentNumberForGenerate(opts: {
   issueKey: string;
   templateType: string;
@@ -1989,6 +2060,8 @@ export async function getDocumentNumberForGenerate(opts: {
   existingDocumentNumber?: string;
   /** Phase 23.1: 外部要請の再発行フラグ。true なら revision+1 で別 row 採番。 */
   reissue?: boolean;
+  /** 重複検出用の内容ハッシュ(computeFormContentHash)。Case① の再利用判定に使う。 */
+  contentHash?: string;
 }): Promise<{
   documentNumber: string;
   baseDocumentNumber: string;
@@ -1996,11 +2069,29 @@ export async function getDocumentNumberForGenerate(opts: {
   isReissue: boolean;
   overwrite: boolean;
 }> {
-  const { templateType, issueTypeName, existingDocumentNumber, reissue } = opts;
+  const { issueKey, templateType, issueTypeName, existingDocumentNumber, reissue, contentHash } = opts;
 
   // === Case ①: 完全新規 (existingDocumentNumber なし) ===
-  // 毎回新しい番号を採番。同 issueKey に対して 2 度目以降の発行も普通に新規扱い。
   if (!existingDocumentNumber || !existingDocumentNumber.trim()) {
+    // 重複防止: 再発行(reissue)でない通常保存では、新規採番の前に
+    //   「同一文書とみなせる既存の正本(final)」を探し、あればその番号を
+    //   上書き(overwrite)対象として返す。これにより
+    //   ・同じ起票(issue_key)× 同じ種別(template_type)
+    //   ・もしくは内容ハッシュ(content_hash)が同一
+    //   の保存し直しが、毎回あたらしい番号で重複登録されるのを防ぐ。
+    //   (MANUAL- 起票は毎回ユニークなので issue 一致は使わず content_hash で判定)
+    if (reissue !== true) {
+      const dup = await findExistingPrimaryDocument(issueKey, templateType, contentHash);
+      if (dup) {
+        return {
+          documentNumber: dup.document_number,
+          baseDocumentNumber: dup.base_document_number || dup.document_number,
+          revision: Number(dup.revision) || 0,
+          isReissue: false,
+          overwrite: true,
+        };
+      }
+    }
     const newNumber = await getNewDocumentNumber(templateType, issueTypeName);
     return {
       documentNumber: newNumber,

@@ -50,6 +50,7 @@ import {
   pool,
   getNewDocumentNumber,
   getDocumentNumberForGenerate,
+  computeFormContentHash,
   getNewLedgerId,
   getNewLedgerCode,
   getNewWorkId,
@@ -9270,6 +9271,8 @@ ${details}
           issueTypeName: issue.issueType.name,
           existingDocumentNumber,
           reissue: reissue === true,
+          // 重複防止: 内容ハッシュで「同一内容の保存し直し」を再採番せず上書きへ寄せる。
+          contentHash: computeFormContentHash(formData, templateType),
         });
         docNumber = numAssign.documentNumber;
         baseDocumentNumber = numAssign.baseDocumentNumber;
@@ -9688,35 +9691,76 @@ ${details}
         ...(formData || {}),
         __pdf_pending: false,
       };
-      const docInsert = await query(
-        `INSERT INTO documents (
-           document_number, issue_key, template_type, form_data, drive_link, created_by,
-           base_document_number, revision, vendor_name_snapshot, is_primary, lifecycle_status
-         )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 'final')
-         ON CONFLICT (document_number) DO UPDATE SET
-           form_data            = EXCLUDED.form_data,
-           drive_link           = EXCLUDED.drive_link,
-           template_type        = EXCLUDED.template_type,
-           base_document_number = EXCLUDED.base_document_number,
-           revision             = EXCLUDED.revision,
-           vendor_name_snapshot = EXCLUDED.vendor_name_snapshot,
-           is_primary           = TRUE,
-           lifecycle_status     = 'final',
-           superseded_by        = NULL
-         RETURNING id`,
-        [
-          docNumber,
-          issueKey,
-          templateType,
-          JSON.stringify(mergedFormData),
-          driveLink,
-          requesterEmail || "legal_user",
-          baseDocumentNumber,
-          revision,
-          vendorNameForFile || null,
-        ]
-      );
+      const docContentHash = computeFormContentHash(formData, templateType);
+      let docInsert: any;
+      try {
+        docInsert = await query(
+          `INSERT INTO documents (
+             document_number, issue_key, template_type, form_data, drive_link, created_by,
+             base_document_number, revision, vendor_name_snapshot, content_hash, is_primary, lifecycle_status
+           )
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE, 'final')
+           ON CONFLICT (document_number) DO UPDATE SET
+             form_data            = EXCLUDED.form_data,
+             drive_link           = EXCLUDED.drive_link,
+             template_type        = EXCLUDED.template_type,
+             base_document_number = EXCLUDED.base_document_number,
+             revision             = EXCLUDED.revision,
+             vendor_name_snapshot = EXCLUDED.vendor_name_snapshot,
+             content_hash         = EXCLUDED.content_hash,
+             is_primary           = TRUE,
+             lifecycle_status     = 'final',
+             superseded_by        = NULL
+           RETURNING id`,
+          [
+            docNumber,
+            issueKey,
+            templateType,
+            JSON.stringify(mergedFormData),
+            driveLink,
+            requesterEmail || "legal_user",
+            baseDocumentNumber,
+            revision,
+            vendorNameForFile || null,
+            docContentHash,
+          ]
+        );
+      } catch (insErr: any) {
+        // 0017 未適用環境(content_hash 列なし)では従来カラムで INSERT。
+        if (insErr && insErr.code === "42703") {
+          docInsert = await query(
+            `INSERT INTO documents (
+               document_number, issue_key, template_type, form_data, drive_link, created_by,
+               base_document_number, revision, vendor_name_snapshot, is_primary, lifecycle_status
+             )
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, TRUE, 'final')
+             ON CONFLICT (document_number) DO UPDATE SET
+               form_data            = EXCLUDED.form_data,
+               drive_link           = EXCLUDED.drive_link,
+               template_type        = EXCLUDED.template_type,
+               base_document_number = EXCLUDED.base_document_number,
+               revision             = EXCLUDED.revision,
+               vendor_name_snapshot = EXCLUDED.vendor_name_snapshot,
+               is_primary           = TRUE,
+               lifecycle_status     = 'final',
+               superseded_by        = NULL
+             RETURNING id`,
+            [
+              docNumber,
+              issueKey,
+              templateType,
+              JSON.stringify(mergedFormData),
+              driveLink,
+              requesterEmail || "legal_user",
+              baseDocumentNumber,
+              revision,
+              vendorNameForFile || null,
+            ]
+          );
+        } else {
+          throw insErr;
+        }
+      }
 
       // Phase 22.12: 新リビジョン生成時、同 base の旧 doc を全部 demote。
       //   markPrimaryDocument: 指定 target だけ is_primary=TRUE、それ以外は FALSE + superseded_by=target
