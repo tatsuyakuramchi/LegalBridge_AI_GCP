@@ -111,8 +111,8 @@
 
       "documentNumberOverride": { "label": "発注番号 手動上書き (任意)", "group": "VII. 契約・署名 (任意)", "helpText": "空欄なら自動採番。社内修正版を外部に出す場合、再発行リビジョン (_001 等) ではなく任意の番号を指定可能 (例: 元番号 ARC-PO-2026-0001 をそのまま使い続ける、A 案 / B 案でサフィックスを変える等)" },
       "showReissueBanner": { "label": "PDF に再発行版バナーを表示", "group": "VII. 契約・署名 (任意)", "type": "boolean", "helpText": "ON (デフォルト): 再発行版のとき PDF タイトル下に黄色バナーを表示。OFF: 社内修正のみで相手方には初版に見せたいとき。リビジョン番号は DB 側で常に管理されます" },
-      "HAS_BASE_CONTRACT": { "label": "基本契約あり", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
-      "MASTER_CONTRACT_REF": { "label": "基本契約名 / 番号", "group": "VII. 契約・署名 (任意)", "helpText": "基本契約ありの場合に記載" },
+      "HAS_BASE_CONTRACT": { "label": "基本契約あり", "group": "VII. 契約・署名 (任意)", "type": "hidden" },
+      "MASTER_CONTRACT_REF": { "label": "基本契約名 / 番号", "group": "VII. 契約・署名 (任意)", "type": "hidden", "helpText": "「0. 業務委託基本契約を選ぶ」のピッカーで自動入力" },
       "SHOW_ORDER_SIGN_SECTION": { "label": "発注署名欄を表示", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
       "ACCEPT_METHOD": { "label": "承諾方法", "group": "VII. 契約・署名 (任意)", "type": "textarea" },
       "ACCEPT_REPLY_DUE_DATE": { "label": "承諾返信期限", "group": "VII. 契約・署名 (任意)", "type": "date" },
