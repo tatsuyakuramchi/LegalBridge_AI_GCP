@@ -34,36 +34,55 @@ SELECT count(*)                  AS 重複グループ数,
   FROM grp;
 
 \echo ''
-\echo '==== C. うち form_data が実質同一(__系除外)で重複している余剰行数 ===='
+\echo '==== C. ★削除対象★ 内容が完全一致する重複の余剰行数(これが 0018 で消える数)===='
+-- 削除基準: 同 issue_key × template_type で、正規化 form_data(__系除外)が完全一致する
+--   クラスタごとに「現行(is_primary かつ final)→ 最新」を1件残し、残りを削除。
+--   → 削除される行には必ず内容同一の生存行があるため情報欠落なし。
+--   → 内容が異なる正規の再発行版(_NNN)は別クラスタなので残る。
 WITH norm AS (
-  SELECT id, issue_key, template_type, created_at,
-         (COALESCE(form_data, '{}'::jsonb)
-            - '__pdf_pending' - '__reopen_doc_number' - '__from_pending_doc_number') AS fd
+  SELECT id, document_number, issue_key, template_type, created_at,
+         (CASE WHEN jsonb_typeof(form_data) = 'object'
+               THEN form_data - '__pdf_pending' - '__reopen_doc_number' - '__from_pending_doc_number'
+               ELSE COALESCE(form_data, '{}'::jsonb) END) AS fd,
+         (COALESCE(is_primary, TRUE) AND COALESCE(lifecycle_status, 'final') = 'final') AS is_current
     FROM documents
    WHERE issue_key IS NOT NULL AND issue_key <> '' AND issue_key NOT LIKE 'MANUAL-%'
 ),
 ranked AS (
-  SELECT row_number() OVER (PARTITION BY issue_key, template_type, fd
-                            ORDER BY created_at DESC, id DESC) AS rn
+  SELECT document_number,
+         row_number() OVER (PARTITION BY issue_key, template_type, fd
+                            ORDER BY is_current DESC, created_at DESC, id DESC) AS rn
     FROM norm
 )
-SELECT count(*) FILTER (WHERE rn > 1) AS 内容同一の余剰行数
+SELECT count(*) FILTER (WHERE rn > 1) AS 削除対象_余剰行数
   FROM ranked;
 
 \echo ''
-\echo '==== D. content_hash が同一で重複している余剰行数(0017 以降の保存分) ===='
-WITH ranked AS (
-  SELECT row_number() OVER (PARTITION BY template_type, content_hash
-                            ORDER BY created_at DESC, id DESC) AS rn
+\echo '==== C-2. 削除対象の document_number サンプル(最大40件)===='
+WITH norm AS (
+  SELECT id, document_number, issue_key, template_type, created_at,
+         (CASE WHEN jsonb_typeof(form_data) = 'object'
+               THEN form_data - '__pdf_pending' - '__reopen_doc_number' - '__from_pending_doc_number'
+               ELSE COALESCE(form_data, '{}'::jsonb) END) AS fd,
+         (COALESCE(is_primary, TRUE) AND COALESCE(lifecycle_status, 'final') = 'final') AS is_current
     FROM documents
-   WHERE content_hash IS NOT NULL
+   WHERE issue_key IS NOT NULL AND issue_key <> '' AND issue_key NOT LIKE 'MANUAL-%'
+),
+ranked AS (
+  SELECT document_number, issue_key, template_type,
+         row_number() OVER (PARTITION BY issue_key, template_type, fd
+                            ORDER BY is_current DESC, created_at DESC, id DESC) AS rn
+    FROM norm
 )
-SELECT count(*) FILTER (WHERE rn > 1) AS 内容ハッシュ同一の余剰行数
-  FROM ranked;
+SELECT document_number AS 削除対象, issue_key, template_type
+  FROM ranked WHERE rn > 1
+ ORDER BY issue_key, template_type, document_number
+ LIMIT 40;
 
 \echo ''
-\echo '==== E. 重複グループ サンプル(上位20件)===='
+\echo '==== D. (参考)issue×種別 で複数あるグループの内訳(再発行版を含む生データ)===='
 SELECT issue_key, template_type, count(*) AS 行数,
+       count(DISTINCT base_document_number) AS base系列数,
        min(document_number) AS 例_最小番号, max(document_number) AS 例_最大番号
   FROM documents
  WHERE issue_key IS NOT NULL AND issue_key <> '' AND issue_key NOT LIKE 'MANUAL-%'
