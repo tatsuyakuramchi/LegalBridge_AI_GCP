@@ -109,19 +109,168 @@ export function computeNetTotal(deal: SublicenseDeal): { royalty: number; gross:
   return { royalty: Math.round(royalty), gross: Math.round(gross), net: Math.round(net) };
 }
 
-/** 1 deal を受領予定の各回(date, amount)に展開。 */
-export function expandReceipts(
-  deal: SublicenseDeal
-): Array<{ date: string; amount: number }> {
+/** 1 deal を受領予定の各回に展開(売上報告があれば実績ベース)。
+ *  モデル: 各回ロイヤリティ = 実績(料率×実売上[×単価]) or 見込の均等割り。
+ *          MG(最低保証)= 期末までの累計が MG 未満なら最終回に不足分を上乗せ(下限保証)。
+ *          前払/AG = 既受領の前払として最も早い回から相殺。
+ */
+export function buildReceiptRows(
+  deal: SublicenseDeal,
+  reports: any[]
+): Array<{
+  date: string;
+  amount: number;
+  estimated: boolean;
+  mg_topup: number;
+  advance_applied: number;
+  reported_sales: number | null;
+  reported_quantity: number | null;
+}> {
   const dates = receiptDates(deal);
   if (dates.length === 0) return [];
-  const { net } = computeNetTotal(deal);
-  const per = Math.floor(net / dates.length);
-  const rows = dates.map((date) => ({ date, amount: per }));
-  // 端数は最終回に寄せる
-  const remainder = net - per * dates.length;
-  if (rows.length > 0) rows[rows.length - 1].amount += remainder;
+  const rate = num(deal.rate_pct) / 100;
+  const isMfg = (deal.basis || "sales") === "manufacturing";
+  const repByDate: Record<string, any> = {};
+  (reports || []).forEach((r) => {
+    repByDate[d2s(r.period_date)] = r;
+  });
+
+  const rows = dates.map((date) => {
+    const rep = repByDate[date];
+    const hasActual =
+      rep != null && (rep.reported_sales != null || rep.reported_quantity != null);
+    if (hasActual) {
+      const royalty = isMfg
+        ? rate * num(deal.unit_price) * num(rep.reported_quantity)
+        : rate * num(rep.reported_sales);
+      return {
+        date,
+        amount: Math.round(royalty),
+        estimated: false,
+        mg_topup: 0,
+        advance_applied: 0,
+        reported_sales: rep.reported_sales == null ? null : Number(rep.reported_sales),
+        reported_quantity: rep.reported_quantity == null ? null : Number(rep.reported_quantity),
+      };
+    }
+    return {
+      date,
+      amount: 0,
+      estimated: true,
+      mg_topup: 0,
+      advance_applied: 0,
+      reported_sales: null as number | null,
+      reported_quantity: null as number | null,
+    };
+  });
+
+  // 見込ロイヤリティを未報告の回に均等配分
+  const forecastTotal = isMfg
+    ? rate * num(deal.unit_price) * num(deal.forecast_amount)
+    : rate * num(deal.forecast_amount);
+  if (forecastTotal > 0) {
+    const share = Math.floor(forecastTotal / dates.length);
+    rows.forEach((r) => {
+      if (r.estimated) r.amount = share;
+    });
+  }
+
+  // MG 最低保証: 累計 < MG なら最終回に不足分を上乗せ
+  let sum = rows.reduce((s, r) => s + r.amount, 0);
+  const mg = num(deal.mg_amount);
+  if (sum < mg && rows.length > 0) {
+    const topup = mg - sum;
+    rows[rows.length - 1].amount += topup;
+    rows[rows.length - 1].mg_topup = topup;
+    sum = mg;
+  }
+
+  // 前払/AG 相殺(最も早い回から)
+  let adv = num(deal.advance_amount);
+  for (const r of rows) {
+    if (adv <= 0) break;
+    const cut = Math.min(adv, r.amount);
+    r.amount -= cut;
+    r.advance_applied += cut;
+    adv -= cut;
+  }
+
   return rows;
+}
+
+/** 後方互換: 売上報告なしの展開(第1段)。 */
+export function expandReceipts(deal: SublicenseDeal): Array<{ date: string; amount: number }> {
+  return buildReceiptRows(deal, []).map((r) => ({ date: r.date, amount: r.amount }));
+}
+
+// ── 売上報告 CRUD ───────────────────────────────────────────────
+export async function listReportsByDeal(dealId: number): Promise<any[]> {
+  try {
+    const res = await query(
+      `SELECT id, deal_id, period_date, reported_sales, reported_quantity, note, reported_at
+         FROM sublicense_sales_reports WHERE deal_id = $1 ORDER BY period_date`,
+      [dealId]
+    );
+    return res.rows.map((r: any) => ({
+      id: Number(r.id),
+      deal_id: Number(r.deal_id),
+      period_date: d2s(r.period_date),
+      reported_sales: numOrNull(r.reported_sales),
+      reported_quantity: numOrNull(r.reported_quantity),
+      note: r.note || "",
+    }));
+  } catch (err: any) {
+    if (err && (err.code === "42P01" || err.code === "42703")) return [];
+    throw err;
+  }
+}
+
+async function loadReportsMap(): Promise<Record<number, any[]>> {
+  const map: Record<number, any[]> = {};
+  try {
+    const res = await query(
+      `SELECT deal_id, period_date, reported_sales, reported_quantity FROM sublicense_sales_reports`
+    );
+    for (const r of res.rows) {
+      const k = Number(r.deal_id);
+      (map[k] = map[k] || []).push(r);
+    }
+  } catch (err: any) {
+    if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+  }
+  return map;
+}
+
+export async function upsertReport(rep: {
+  deal_id: number;
+  period_date: string;
+  reported_sales?: number | null;
+  reported_quantity?: number | null;
+  note?: string | null;
+}): Promise<void> {
+  await query(
+    `INSERT INTO sublicense_sales_reports (deal_id, period_date, reported_sales, reported_quantity, note)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (deal_id, period_date) DO UPDATE SET
+       reported_sales = EXCLUDED.reported_sales,
+       reported_quantity = EXCLUDED.reported_quantity,
+       note = EXCLUDED.note,
+       updated_at = now()`,
+    [
+      rep.deal_id,
+      rep.period_date,
+      numOrNull(rep.reported_sales),
+      numOrNull(rep.reported_quantity),
+      rep.note || null,
+    ]
+  );
+}
+
+export async function deleteReport(dealId: number, periodDate: string): Promise<void> {
+  await query(`DELETE FROM sublicense_sales_reports WHERE deal_id = $1 AND period_date = $2`, [
+    dealId,
+    periodDate,
+  ]);
 }
 
 const SELECT_DEAL = `
@@ -232,9 +381,10 @@ export type ReceiptFilters = {
 /** 全 active deal を受領予定の各回に展開した一覧。 */
 export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; total: number }> {
   const deals = (await listDeals()).filter((d: any) => d.status !== "closed");
+  const reportsMap = await loadReportsMap();
   const rows: any[] = [];
   for (const d of deals) {
-    const sched = expandReceipts(d);
+    const sched = buildReceiptRows(d, reportsMap[d.id] || []);
     sched.forEach((s, idx) => {
       rows.push({
         row_id: `${d.id}:${idx}`,
@@ -243,6 +393,11 @@ export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; to
         of: sched.length,
         receipt_date: s.date,
         amount: s.amount,
+        estimated: s.estimated, // true=見込 / false=実績報告ベース
+        mg_topup: s.mg_topup,
+        advance_applied: s.advance_applied,
+        reported_sales: s.reported_sales,
+        reported_quantity: s.reported_quantity,
         currency: d.currency,
         work_title: d.work_title,
         work_code: d.work_code,
@@ -296,15 +451,19 @@ export async function exportReceiptsCsv(f: ReceiptFilters): Promise<string> {
   const { rows } = await listReceipts(f);
   const headers = [
     "受領予定日", "サブライセンシー", "作品コード", "作品", "参照契約番号",
-    "基準", "料率(%)", "回", "金額", "通貨", "MG総額", "前払", "受領予定総額(net)",
+    "基準", "区分", "実売上/実数量", "料率(%)", "回", "金額", "通貨",
+    "MG上乗せ", "前払相殺", "MG総額", "前払",
   ];
   const lines = [headers.map(csvCell).join(",")];
   for (const r of rows) {
     lines.push(
       [
         r.receipt_date, r.sublicensee_name, r.work_code, r.work_title, r.source_contract_number,
-        r.basis === "manufacturing" ? "製造数" : "売上", r.rate_pct ?? "",
-        `${r.seq}/${r.of}`, r.amount, r.currency, r.mg_amount ?? "", r.advance_amount ?? "", r.net_total,
+        r.basis === "manufacturing" ? "製造数" : "売上",
+        r.estimated ? "見込" : "実績",
+        r.basis === "manufacturing" ? (r.reported_quantity ?? "") : (r.reported_sales ?? ""),
+        r.rate_pct ?? "", `${r.seq}/${r.of}`, r.amount, r.currency,
+        r.mg_topup || "", r.advance_applied || "", r.mg_amount ?? "", r.advance_amount ?? "",
       ].map(csvCell).join(",")
     );
   }

@@ -127,6 +127,9 @@ import {
   exportReceiptsCsv as exportSubReceiptsCsv,
   listSublicenseeOptions,
   listWorkOptions as listSubWorkOptions,
+  listReportsByDeal as listSubReports,
+  upsertReport as upsertSubReport,
+  deleteReport as deleteSubReport,
 } from "./src/services/sublicenseService.ts";
 import {
   listConditions,
@@ -2834,6 +2837,52 @@ async function startServer() {
       res.json({ ok: true, ...result });
     } catch (error: any) {
       console.error("/api/sublicense/receipts failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 売上報告(deal × 受領予定日)— 一覧 / 登録更新 / 削除
+  app.get("/api/sublicense/deals/:id/reports", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      res.json({ ok: true, rows: await listSubReports(id) });
+    } catch (error: any) {
+      console.error("/api/sublicense/deals/:id/reports failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.post("/api/sublicense/reports", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const dealId = Number(b.deal_id);
+      if (!Number.isFinite(dealId) || !b.period_date) {
+        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
+      }
+      await upsertSubReport({
+        deal_id: dealId,
+        period_date: String(b.period_date),
+        reported_sales: b.reported_sales,
+        reported_quantity: b.reported_quantity,
+        note: b.note,
+      });
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/sublicense/reports POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.delete("/api/sublicense/reports", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const q = req.query as Record<string, string>;
+      const dealId = Number(q.deal_id);
+      if (!Number.isFinite(dealId) || !q.period_date) {
+        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
+      }
+      await deleteSubReport(dealId, String(q.period_date));
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/sublicense/reports DELETE failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
