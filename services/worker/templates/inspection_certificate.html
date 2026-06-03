@@ -228,7 +228,7 @@
     </div>
     <div class="doc-meta">
       <div>発注番号: <strong>{{or parent_po_number issueKey}}</strong></div>
-      <div>明細No.: {{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}</div>
+      <div>明細No.: {{#if itemAllInclusive}}全{{itemCount}}件{{else}}{{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}{{/if}}</div>
       <div>発行日: {{formatDate documentDate}}</div>
     </div>
   </div>
@@ -525,7 +525,7 @@
       <h3>■ 発注情報</h3>
       <p>発注日: {{formatDate orderDate}}</p>
       <p>発注番号: <strong>{{or parent_po_number issueKey}}</strong></p>
-      <p>明細No.: {{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}</p>
+      <p>明細No.: {{#if itemAllInclusive}}全{{itemCount}}件{{else}}{{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}{{/if}}</p>
     </div>
   </div>
 

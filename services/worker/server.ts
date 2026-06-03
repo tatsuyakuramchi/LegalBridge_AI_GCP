@@ -9729,6 +9729,22 @@ ${details}
           renderDetails.contract_category = tr(CAT, renderDetails.contract_category);
       }
 
+      // 検収書: 複数明細を1枚で検収する場合、「明細No.: 1 / 全N件中」だと
+      //   あたかも N 件中の 1 件目だけに見える。分納でも単一明細でもなければ、
+      //   明細No=検収行数にし、全件カバー時は「全N件」表記にする(itemAllInclusive)。
+      if (String(templateType || "").startsWith("inspection_certificate")) {
+        const inspectedCount = Array.isArray(formData?.delivery_line_items)
+          ? formData.delivery_line_items.length
+          : 0;
+        const totalCount = Number(renderDetails.itemCount) || inspectedCount || 1;
+        const isSplit =
+          Number(formData?.deliveryNo || renderDetails.DELIVERY_NUMBER || 0) > 1;
+        if (!isSplit && inspectedCount > 1) {
+          renderDetails.itemNo = String(inspectedCount);
+          renderDetails.itemAllInclusive = inspectedCount >= totalCount;
+        }
+      }
+
       const { html, fileName } = await documentService.generateDocument(
         {
           issueKey,
