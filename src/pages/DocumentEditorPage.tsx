@@ -187,6 +187,49 @@ export function DocumentEditorPage() {
     React.useState<((asset: any) => void) | null>(null)
   const [assetSearch, setAssetSearch] = React.useState("")
 
+  // 個人情報取得同意: 個人取引先の同意状況 + 同時作成スイッチ。
+  const [consentInfo, setConsentInfo] = React.useState<{
+    is_individual: boolean
+    pii_consent_obtained: boolean
+    pii_consent_date: string | null
+  } | null>(null)
+  const [createConsent, setCreateConsent] = React.useState(false)
+
+  // activeVendor 変更時に同意状況を取得し、個人かつ未同意ならスイッチを既定ON。
+  React.useEffect(() => {
+    const code = activeVendor?.vendor_code
+    if (!code) {
+      setConsentInfo(null)
+      setCreateConsent(false)
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await fetch(
+          `/api/master/vendors/${encodeURIComponent(code)}/pii-consent`
+        )
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const d = await res.json()
+        if (cancelled || !d?.ok) return
+        setConsentInfo({
+          is_individual: !!d.is_individual,
+          pii_consent_obtained: !!d.pii_consent_obtained,
+          pii_consent_date: d.pii_consent_date || null,
+        })
+        setCreateConsent(!!d.is_individual && !d.pii_consent_obtained)
+      } catch (e) {
+        if (!cancelled) {
+          setConsentInfo(null)
+          setCreateConsent(false)
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [activeVendor?.vendor_code])
+
   // Phase 15/16: URL クエリパラメータで既存ドキュメントを pre-fill。
   //   ?from_pending=<id>   PDF 未作成キュー由来 (Phase 15)
   //   ?reopen=<id>         既に生成済み文書を再編集 (Phase 16)
@@ -825,6 +868,65 @@ export function DocumentEditorPage() {
           "info"
         )
       }
+
+      // 個人情報取得同意書の同時作成(個人取引先・スイッチON時)。
+      //   本文書の生成成功後に、同意書を 2 通目として生成し、取引先の同意フラグを ON にする。
+      if (createConsent && consentInfo?.is_individual && activeVendor?.vendor_code) {
+        try {
+          const today = new Date().toISOString().slice(0, 10)
+          const cRes = await fetch("/api/documents/generate", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              issueKey: selectedIssue || "MANUAL-" + Date.now(),
+              templateType: "notice_consent_personal_info_freelance",
+              requesterEmail: selectedStaff?.email || "web-user",
+              formData: {
+                CONTRACT_NAME:
+                  templateMetadata[selectedTemplate]?.label || selectedTemplate,
+                CONTRACT_NO: data?.documentNumber || "",
+                CONTRACT_DATE: today,
+                CONSENT_DATE: today,
+                COUNTERPARTY_NAME: activeVendor?.vendor_name || "",
+                COMPANY_NAME: companyProfile?.name || "",
+                COMPANY_ADDRESS: companyProfile?.address || "",
+                COMPANY_REPRESENTATIVE: companyProfile?.representative || "",
+              },
+            }),
+          })
+          const cData = await cRes.json().catch(() => ({}))
+          if (cRes.ok && cData?.documentNumber) {
+            try {
+              await fetch(
+                `/api/master/vendors/${encodeURIComponent(activeVendor.vendor_code)}/pii-consent`,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ obtained: true, date: today }),
+                }
+              )
+            } catch (flagErr) {
+              console.warn("[consent] flag update failed:", flagErr)
+            }
+            setConsentInfo((p) =>
+              p ? { ...p, pii_consent_obtained: true, pii_consent_date: today } : p
+            )
+            setCreateConsent(false)
+            showNotification(
+              `個人情報取得同意書も作成しました (${cData.documentNumber})`,
+              "success"
+            )
+          } else {
+            showNotification(
+              `同意書の作成に失敗しました: ${cData?.error || "HTTP " + cRes.status}`,
+              "error"
+            )
+          }
+        } catch (ce: any) {
+          showNotification(`同意書の作成に失敗しました: ${ce?.message || ce}`, "error")
+        }
+      }
+
       // Phase 22.21.32: 生成成功直後に Archive のキャッシュを更新。
       //   これが無いと Archive ページに移動してもリロードしないと新文書が
       //   見えない (= "アーカイブに作成文章が反映されない" バグの修正)。
@@ -1500,6 +1602,29 @@ export function DocumentEditorPage() {
                       </span>
                     </label>
                   </div>
+                )}
+                {consentInfo?.is_individual && (
+                  <label
+                    className="flex items-center gap-1.5 cursor-pointer text-[12px] mr-2"
+                    title={
+                      consentInfo.pii_consent_obtained
+                        ? `この個人取引先は同意取得済${consentInfo.pii_consent_date ? ` (${consentInfo.pii_consent_date})` : ""}`
+                        : "個人情報取得同意書を本文書と同時に作成します"
+                    }
+                  >
+                    <input
+                      type="checkbox"
+                      checked={createConsent}
+                      onChange={(e) => setCreateConsent(e.target.checked)}
+                      className="cursor-pointer"
+                    />
+                    <span>
+                      個人情報取得同意書も作成
+                      {consentInfo.pii_consent_obtained && (
+                        <span className="text-emerald-600 ml-1">(同意取得済)</span>
+                      )}
+                    </span>
+                  </label>
                 )}
                 <Button onClick={handleGenerate} disabled={isGenerating}>
                   {isGenerating ? (

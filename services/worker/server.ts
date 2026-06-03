@@ -3296,6 +3296,67 @@ ${details}
     }
   });
 
+  // 個人情報取得同意フラグ(個人取引先): 参照 / 設定。
+  //   ※ search-api(/api/master/vendors)は自動デプロイ無しのため worker 側に置く。
+  app.get("/api/master/vendors/:code/pii-consent", async (req, res) => {
+    try {
+      const code = String(req.params.code || "").trim();
+      const r = await query(
+        `SELECT vendor_code, vendor_name, entity_type,
+                COALESCE(pii_consent_obtained, FALSE) AS pii_consent_obtained,
+                pii_consent_date
+           FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+        [code]
+      );
+      if (!r.rows[0]) return res.status(404).json({ ok: false, error: "vendor not found" });
+      const v = r.rows[0];
+      const et = String(v.entity_type || "").toLowerCase();
+      res.json({
+        ok: true,
+        vendor_code: v.vendor_code,
+        vendor_name: v.vendor_name,
+        entity_type: v.entity_type || "",
+        is_individual: et === "individual" || et === "個人" || et === "personal",
+        pii_consent_obtained: v.pii_consent_obtained === true,
+        pii_consent_date: v.pii_consent_date
+          ? new Date(v.pii_consent_date).toISOString().slice(0, 10)
+          : null,
+      });
+    } catch (error: any) {
+      console.error("/api/master/vendors/:code/pii-consent GET failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  app.post("/api/master/vendors/:code/pii-consent", express.json(), async (req, res) => {
+    try {
+      const code = String(req.params.code || "").trim();
+      const b = req.body || {};
+      const obtained = b.obtained === false ? false : true; // 既定は取得(true)
+      const date = b.date ? String(b.date) : null;
+      const r = await query(
+        `UPDATE vendors
+            SET pii_consent_obtained = $2,
+                pii_consent_date = CASE WHEN $2 THEN COALESCE($3::date, pii_consent_date, CURRENT_DATE) ELSE NULL END,
+                updated_at = CURRENT_TIMESTAMP
+          WHERE vendor_code = $1
+          RETURNING pii_consent_obtained, pii_consent_date`,
+        [code, obtained, date]
+      );
+      if (!r.rows[0]) return res.status(404).json({ ok: false, error: "vendor not found" });
+      res.json({
+        ok: true,
+        pii_consent_obtained: r.rows[0].pii_consent_obtained === true,
+        pii_consent_date: r.rows[0].pii_consent_date
+          ? new Date(r.rows[0].pii_consent_date).toISOString().slice(0, 10)
+          : null,
+      });
+    } catch (error: any) {
+      console.error("/api/master/vendors/:code/pii-consent POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   app.post("/api/master/vendors", express.json(), async (req, res) => {
     // Accept a row payload with vendor_code uniqueness enforced.
     // Phase 22.13: vendor_rep + contacts[] を受け取れるよう拡張。
