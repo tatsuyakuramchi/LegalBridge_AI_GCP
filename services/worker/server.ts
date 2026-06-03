@@ -176,6 +176,36 @@ function expandLinesWithSchedule(rawLines: any[]): any[] {
 }
 
 async function startServer() {
+  // 検収書の「明細No.」を列挙表示するための値を formData から算出。
+  //   分納(deliveryNo>1)・delivery_line_items 無し は null(従来表示)。
+  //   それ以外は { itemNoList: "1, 2", itemNoCovered: N, itemCount: M } を返し、
+  //   テンプレで『明細No.: 1, 2 （N/M件）』と表示する。
+  //   ※ 関数式(startServer 内ローカル)にして preview/generate 両経路から使う。
+  const computeInspectionItemNo = (
+    formData: any
+  ): { itemNoList?: string; itemNoCovered?: number; itemCount?: number } | null => {
+    const isSplit = Number(formData?.deliveryNo || formData?.DELIVERY_NUMBER || 0) > 1;
+    if (isSplit) return null;
+    const dlines = Array.isArray(formData?.delivery_line_items)
+      ? formData.delivery_line_items
+      : [];
+    if (dlines.length >= 1) {
+      // 明細別検収: 実際の親PO行番号(無ければ通し番号)を列挙。
+      const total = Number(formData?.itemCount) || dlines.length;
+      const lineNos = dlines.map((l: any, i: number) =>
+        l?.line_no != null ? l.line_no : l?.lineNo != null ? l.lineNo : i + 1
+      );
+      return { itemNoList: lineNos.join(", "), itemNoCovered: dlines.length, itemCount: total };
+    }
+    // 明細別入力が無い(whole-PO)検収: PO 全行をカバーとみなし 1..itemCount を列挙。
+    const total = Number(formData?.itemCount) || 0;
+    if (total > 1) {
+      const lineNos = Array.from({ length: total }, (_, i) => i + 1);
+      return { itemNoList: lineNos.join(", "), itemNoCovered: total, itemCount: total };
+    }
+    return null; // 単一明細 → 従来表示
+  };
+
   // Phase 0 (D2): schema は migration ランナー(migrations/)が単一所有する。
   // 起動時 initDb は段階移行のため RUN_INIT_DB で制御する。
   //   未設定 / "true": 現行どおり起動時に DDL を流す(後方互換)
@@ -8932,6 +8962,10 @@ ${details}
             expenses: previewExpenses,
             expensesTotalIncTax: previewExpensesTotal,
             ...(previewInspectionSummary || {}),
+            // 検収書: 明細No 列挙(generate と共通)。
+            ...(String(templateType || "").includes("inspection")
+              ? computeInspectionItemNo(formData) || {}
+              : {}),
             isLivePreview: true,
           },
         },
@@ -9729,26 +9763,9 @@ ${details}
           renderDetails.contract_category = tr(CAT, renderDetails.contract_category);
       }
 
-      // 検収書: 「明細No.: 1 / 全N件中」だと N 件中の 1 件目だけに見える。
-      //   検収対象の明細番号を列挙し「明細No.: 1, 2 （2/2件）」のように表示する。
-      //   分納(deliveryNo>1)は従来表示(分割納品バナーで表現)。
-      if (String(templateType || "").startsWith("inspection_certificate")) {
-        const dlines = Array.isArray(formData?.delivery_line_items)
-          ? formData.delivery_line_items
-          : [];
-        const inspectedCount = dlines.length;
-        const totalCount = Number(renderDetails.itemCount) || inspectedCount || 1;
-        const isSplit =
-          Number(formData?.deliveryNo || renderDetails.DELIVERY_NUMBER || 0) > 1;
-        if (!isSplit && inspectedCount >= 1) {
-          // 親PO行番号(無ければ通し番号)を列挙
-          const lineNos = dlines.map((l: any, i: number) =>
-            l?.line_no != null ? l.line_no : l?.lineNo != null ? l.lineNo : i + 1
-          );
-          renderDetails.itemNoList = lineNos.join(", ");
-          renderDetails.itemNoCovered = inspectedCount;
-          renderDetails.itemCount = totalCount;
-        }
+      // 検収書: 明細No を列挙表示(preview と共通の computeInspectionItemNo)。
+      if (String(templateType || "").includes("inspection")) {
+        Object.assign(renderDetails, computeInspectionItemNo(formData) || {});
       }
 
       const { html, fileName } = await documentService.generateDocument(
