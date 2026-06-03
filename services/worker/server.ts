@@ -9729,19 +9729,25 @@ ${details}
           renderDetails.contract_category = tr(CAT, renderDetails.contract_category);
       }
 
-      // 検収書: 複数明細を1枚で検収する場合、「明細No.: 1 / 全N件中」だと
-      //   あたかも N 件中の 1 件目だけに見える。分納でも単一明細でもなければ、
-      //   明細No=検収行数にし、全件カバー時は「全N件」表記にする(itemAllInclusive)。
+      // 検収書: 「明細No.: 1 / 全N件中」だと N 件中の 1 件目だけに見える。
+      //   検収対象の明細番号を列挙し「明細No.: 1, 2 （2/2件）」のように表示する。
+      //   分納(deliveryNo>1)は従来表示(分割納品バナーで表現)。
       if (String(templateType || "").startsWith("inspection_certificate")) {
-        const inspectedCount = Array.isArray(formData?.delivery_line_items)
-          ? formData.delivery_line_items.length
-          : 0;
+        const dlines = Array.isArray(formData?.delivery_line_items)
+          ? formData.delivery_line_items
+          : [];
+        const inspectedCount = dlines.length;
         const totalCount = Number(renderDetails.itemCount) || inspectedCount || 1;
         const isSplit =
           Number(formData?.deliveryNo || renderDetails.DELIVERY_NUMBER || 0) > 1;
-        if (!isSplit && inspectedCount > 1) {
-          renderDetails.itemNo = String(inspectedCount);
-          renderDetails.itemAllInclusive = inspectedCount >= totalCount;
+        if (!isSplit && inspectedCount >= 1) {
+          // 親PO行番号(無ければ通し番号)を列挙
+          const lineNos = dlines.map((l: any, i: number) =>
+            l?.line_no != null ? l.line_no : l?.lineNo != null ? l.lineNo : i + 1
+          );
+          renderDetails.itemNoList = lineNos.join(", ");
+          renderDetails.itemNoCovered = inspectedCount;
+          renderDetails.itemCount = totalCount;
         }
       }
 
