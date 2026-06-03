@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>macOS 風 UI 修正案モックアップ · Arcs Legal OS (search-api)</title>
+<style>
+  :root{
+    --accent:#007aff; --accent-press:#0060df;
+    --bg:#ececec; --content:#ffffff; --sidebar:rgba(245,245,247,.85);
+    --ink:#1d1d1f; --muted:#86868b; --line:#e3e3e6; --hover:#f2f2f4;
+    --radius:12px; --radius-sm:8px; --shadow:0 1px 2px rgba(0,0,0,.06),0 6px 20px rgba(0,0,0,.08);
+    --green:#34c759; --orange:#ff9f0a; --purple:#af52de; --teal:#30b0c7; --red:#ff3b30;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,"SF Pro Text","Hiragino Sans","Helvetica Neue",system-ui,sans-serif;background:var(--bg);color:var(--ink);font-size:13.5px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .win{max-width:1080px;margin:22px auto;background:var(--content);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;display:grid;grid-template-columns:220px 1fr;min-height:640px}
+  /* title + toolbar (unified) */
+  .sidebar{background:var(--sidebar);backdrop-filter:saturate(180%) blur(20px);border-right:1px solid var(--line);padding:0 0 12px}
+  .traffic{display:flex;gap:8px;padding:14px 14px 10px}
+  .traffic i{width:12px;height:12px;border-radius:50%}
+  .traffic .r{background:#ff5f57}.traffic .y{background:#febc2e}.traffic .g{background:#28c840}
+  .side-title{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.04em;padding:10px 16px 4px}
+  .nav{list-style:none}
+  .nav li{display:flex;align-items:center;gap:9px;padding:7px 14px;margin:1px 8px;border-radius:7px;cursor:pointer;color:var(--ink)}
+  .nav li:hover{background:rgba(0,0,0,.05)}
+  .nav li.on{background:var(--accent);color:#fff}
+  .nav li.on .badge{background:rgba(255,255,255,.3);color:#fff}
+  .nav li .ic{width:18px;text-align:center}
+  .nav li .badge{margin-left:auto;font-size:11px;background:#d9d9de;color:#555;border-radius:9px;padding:0 7px;line-height:17px}
+  .nav li.locked{color:var(--muted);cursor:not-allowed}
+  .mode{margin:14px 8px 0;border-top:1px solid var(--line);padding-top:10px}
+
+  .main{display:flex;flex-direction:column;min-width:0}
+  .toolbar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.7);backdrop-filter:blur(20px)}
+  .toolbar h1{font-size:15px;font-weight:600}
+  .toolbar .sp{flex:1}
+  .seg{display:flex;background:#e9e9ec;border-radius:8px;padding:2px}
+  .seg button{border:0;background:transparent;font:inherit;font-size:12px;padding:5px 12px;border-radius:6px;cursor:pointer;color:#333}
+  .seg button.on{background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.12);font-weight:600}
+  .btn{border:0;border-radius:8px;padding:6px 13px;font:inherit;font-size:12.5px;font-weight:600;cursor:pointer;background:var(--accent);color:#fff}
+  .btn:hover{background:var(--accent-press)} .btn:active{transform:translateY(.5px)}
+  .btn.sec{background:#fff;color:var(--accent);border:1px solid #d6d6db}
+  .btn.ghost{background:#f1f1f3;color:#333}
+  .btn[disabled]{background:#e6e6ea;color:#b5b5ba;cursor:not-allowed}
+  .body{padding:18px;overflow:auto}
+
+  /* admin grouped inset table */
+  .group{background:#fff;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:0 1px 1px rgba(0,0,0,.03)}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  thead th{text-align:left;color:var(--muted);font-weight:600;font-size:11.5px;padding:9px 14px;border-bottom:1px solid var(--line);background:#fafafa}
+  tbody td{padding:9px 14px;border-bottom:1px solid var(--line)}
+  tbody tr:last-child td{border-bottom:0}
+  tbody tr:hover td{background:var(--hover);cursor:pointer}
+  .pill{display:inline-block;font-size:11px;font-weight:600;padding:1px 9px;border-radius:20px}
+  .pill.corp{background:#e1f0ff;color:#0a63c2}.pill.ind{background:#fff0e0;color:#b56a00}
+  .pill.ok{background:#e3f8ea;color:#1e8e3e}
+  .summary{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px;box-shadow:0 1px 1px rgba(0,0,0,.03)}
+  .card .n{font-size:28px;font-weight:600} .card .l{color:var(--muted);font-size:12px;margin-top:2px}
+  .card .dot{width:10px;height:10px;border-radius:50%;display:inline-block;margin-right:6px}
+
+  /* view search */
+  .searchbar{padding:16px 18px 6px}
+  .sfield{display:flex;align-items:center;gap:8px;background:#fff;border:1px solid #d6d6db;border-radius:10px;padding:11px 14px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  .sfield input{flex:1;border:0;outline:none;font:inherit;font-size:16px;background:transparent}
+  .sfield .mag{color:var(--muted)}
+  .chips{display:flex;gap:7px;flex-wrap:wrap;padding:10px 18px 4px}
+  .chip{border:1px solid #d6d6db;background:#fff;border-radius:20px;padding:5px 13px;font-size:12.5px;cursor:pointer;color:#333}
+  .chip.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+  .res{background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin:0 18px 10px;display:flex;gap:12px;align-items:flex-start;box-shadow:0 1px 1px rgba(0,0,0,.03)}
+  .res:hover{box-shadow:var(--shadow)}
+  .res .tag{width:6px;align-self:stretch;border-radius:6px;background:var(--muted)}
+  .res.basic .tag{background:var(--accent)}.res.license .tag{background:var(--green)}
+  .res.inspection .tag{background:var(--orange)}.res.ringi .tag{background:var(--purple)}
+  .res h3{font-size:15.5px;font-weight:600}
+  .res .meta{color:var(--muted);font-size:12.5px;display:flex;gap:14px;flex-wrap:wrap;margin-top:5px}
+  .res .cat{font-size:11px;font-weight:600;border-radius:20px;padding:2px 9px;background:#eee;color:#555}
+  .res.basic .cat{background:#e1f0ff;color:#0a63c2}.res.license .cat{background:#e3f8ea;color:#1e8e3e}
+  .res.inspection .cat{background:#fff0e0;color:#b56a00}.res.ringi .cat{background:#f3e8fb;color:#7d3aad}
+  .note{color:var(--muted);font-size:12px;padding:8px 18px 16px}
+  .page{display:none}.page.on{display:block}
+</style>
+</head>
+<body>
+<div class="win">
+  <!-- Sidebar (source list) -->
+  <aside class="sidebar">
+    <div class="traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+    <div class="side-title">Master Console</div>
+    <ul class="nav" id="nav-admin">
+      <li class="on"><span class="ic">🏢</span>取引先<span class="badge">128</span></li>
+      <li><span class="ic">👥</span>スタッフ<span class="badge">24</span></li>
+      <li><span class="ic">📄</span>契約台帳<span class="badge">312</span></li>
+      <li><span class="ic">🎬</span>作品モデル<span class="badge">87</span></li>
+      <li><span class="ic">⬆</span>CSV 取込</li>
+      <li class="locked"><span class="ic">🔒</span>権限管理</li>
+    </ul>
+    <div class="side-title">Search &amp; Browse</div>
+    <ul class="nav" id="nav-view">
+      <li><span class="ic">⌕</span>取引先検索</li>
+      <li><span class="ic">🧾</span>条件明細</li>
+      <li><span class="ic">📌</span>稟議検索</li>
+    </ul>
+    <div class="mode side-title">表示モード切替 ↓（デモ）</div>
+    <ul class="nav">
+      <li onclick="show('admin')" id="m-admin" class="on">◧ Admin コンソール</li>
+      <li onclick="show('view')" id="m-view">⌕ View 検索</li>
+    </ul>
+  </aside>
+
+  <!-- Main -->
+  <div class="main">
+    <!-- ADMIN -->
+    <div id="p-admin" class="page on">
+      <div class="toolbar">
+        <h1>取引先マスタ</h1>
+        <div class="sp"></div>
+        <div class="seg"><button class="on">一覧</button><button>カード</button></div>
+        <button class="btn">＋ 追加</button>
+        <button class="btn ghost">CSV 取込</button>
+        <button class="btn sec">CSV 出力</button>
+        <button class="btn" disabled title="閲覧のみ">削除</button>
+      </div>
+      <div class="body">
+        <div class="summary">
+          <div class="card"><div class="n">128</div><div class="l"><span class="dot" style="background:var(--accent)"></span>取引先</div></div>
+          <div class="card"><div class="n">312</div><div class="l"><span class="dot" style="background:var(--green)"></span>契約</div></div>
+          <div class="card"><div class="n">9</div><div class="l"><span class="dot" style="background:var(--orange)"></span>同意未取得(個人)</div></div>
+        </div>
+        <div class="group">
+          <table>
+            <thead><tr><th>コード</th><th>取引先名</th><th>区分</th><th>個人情報同意</th><th>担当</th><th>更新日</th></tr></thead>
+            <tbody>
+              <tr><td>V-001</td><td>株式会社X</td><td><span class="pill corp">法人</span></td><td>—</td><td>梶原</td><td>2026-06-01</td></tr>
+              <tr><td>2-20-5124</td><td>原 友和</td><td><span class="pill ind">個人</span></td><td><span class="pill ok">同意済</span></td><td>梶原</td><td>2026-06-02</td></tr>
+              <tr><td>V-114</td><td>大滝 昂</td><td><span class="pill ind">個人</span></td><td>—</td><td>青柳</td><td>2026-05-28</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- VIEW -->
+    <div id="p-view" class="page">
+      <div class="toolbar"><h1>検索 &amp; 閲覧</h1><div class="sp"></div><button class="btn sec">CSV 出力</button></div>
+      <div class="searchbar">
+        <div class="sfield"><span class="mag">⌕</span><input placeholder="取引先名 / 契約番号 / 稟議番号…" value="アークライト"></div>
+      </div>
+      <div class="chips"><span class="chip on">すべて</span><span class="chip">基本契約</span><span class="chip">個別契約</span><span class="chip">検収書</span><span class="chip">稟議</span></div>
+      <div style="padding-top:6px"></div>
+      <div class="res basic"><div class="tag"></div><div><span class="cat">基本契約</span><h3>業務委託基本契約書 — 株式会社X</h3><div class="meta"><span>ARC-SVC-2026-0001</span><span>締結 2026-03-26</span><span>担当 梶原</span></div></div></div>
+      <div class="res license"><div class="tag"></div><div><span class="cat">個別契約</span><h3>個別利用許諾条件 — 原作「アレクサンデル６世」</h3><div class="meta"><span>ARC-ILT-2026-0007</span><span>許諾 2026-04-01〜</span><span>独占</span></div></div></div>
+      <div class="res inspection"><div class="tag"></div><div><span class="cat">検収書</span><h3>検収書 — 通常カードイラスト 一式</h3><div class="meta"><span>ARC-INS-2026-0017</span><span>検収 2026-06-02</span><span>¥198,000(税込)</span></div></div></div>
+      <div class="res ringi"><div class="tag"></div><div><span class="cat">稟議</span><h3>新規IP取得稟議</h3><div class="meta"><span>稟議 00042</span><span>承認 2026-05-20</span><span>山田</span></div></div></div>
+      <p class="note">※ view は角丸検索フィールド・サイドバー・カテゴリ色タグで可読性重視。編集系は出しません。</p>
+    </div>
+  </div>
+</div>
+<script>
+  function show(m){
+    document.getElementById('p-admin').classList.toggle('on',m==='admin');
+    document.getElementById('p-view').classList.toggle('on',m==='view');
+    document.getElementById('m-admin').classList.toggle('on',m==='admin');
+    document.getElementById('m-view').classList.toggle('on',m==='view');
+  }
+</script>
+</body>
+</html>
