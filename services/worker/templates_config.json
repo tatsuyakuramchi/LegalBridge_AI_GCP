@@ -793,5 +793,25 @@
       "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" , "dbField": "company.rep" }
     }
+  },
+  "notice_consent_personal_info_freelance": {
+    "label": "個人情報取得 通知・同意書（個人事業主・フリーランス）",
+    "category": "consent",
+    "_comment": "個人取引先との契約締結時に本文書と同時作成する個人情報取得 通知・同意書。",
+    "vars": {
+      "CONTRACT_NAME": { "label": "関連契約名称", "group": "I. 関連契約", "placeholder": "例: 業務委託基本契約書" },
+      "CONTRACT_NO": { "label": "契約番号", "group": "I. 関連契約" },
+      "CONTRACT_DATE": { "label": "契約締結日", "group": "I. 関連契約", "type": "date" },
+      "COUNTERPARTY_NAME": { "label": "相手方氏名", "group": "II. 相手方", "dbField": "vendor.vendor_name" },
+      "COUNTERPARTY_BIZNAME": { "label": "屋号(任意)", "group": "II. 相手方" },
+      "CONSENT_DATE": { "label": "同意日", "group": "II. 相手方", "type": "date" },
+      "COMPANY_NAME": { "label": "当社名", "group": "III. 当社", "dbField": "company.name" },
+      "COMPANY_ADDRESS": { "label": "当社所在地", "group": "III. 当社", "type": "textarea", "dbField": "company.address" },
+      "COMPANY_REPRESENTATIVE": { "label": "代表者", "group": "III. 当社", "dbField": "company.rep" },
+      "PRIVACY_MANAGER_DEPT": { "label": "個人情報管理責任部署", "group": "III. 当社", "placeholder": "総務人事部" },
+      "PRIVACY_CONTACT_NAME": { "label": "問い合わせ窓口名", "group": "III. 当社", "placeholder": "個人情報相談窓口" },
+      "PRIVACY_CONTACT": { "label": "問い合わせ先", "group": "III. 当社", "placeholder": "privacy@arclight.co.jp" },
+      "JOINT_USE_PARTIES": { "label": "共同利用先", "group": "IV. その他", "type": "textarea" }
+    }
   }
 }

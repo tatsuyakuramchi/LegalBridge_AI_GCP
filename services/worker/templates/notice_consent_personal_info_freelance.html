@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<!--
+  LegalBridge テンプレート: 個人情報の取扱いに関する通知・同意書(個人事業主・フリーランス向け)
+  template_key: notice_consent_personal_info_freelance
+  Handlebars 版(worker は Handlebars で描画)。値は {{or VAR "既定"}}。
+  変数: COMPANY_NAME / COMPANY_ADDRESS / COMPANY_REPRESENTATIVE / PRIVACY_MANAGER_DEPT /
+        PRIVACY_CONTACT_NAME / PRIVACY_CONTACT / COUNTERPARTY_NAME / COUNTERPARTY_BIZNAME /
+        CONSENT_DATE / CONTRACT_NAME / CONTRACT_NO / CONTRACT_DATE / JOINT_USE_PARTIES
+-->
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>個人情報の取扱いに関する通知・同意書</title>
+  <style>
+    @page { size: A4; margin: 18mm 20mm 20mm 20mm; }
+    @media print {
+      body { font-size: 10pt; }
+      .section-title { page-break-after: avoid; }
+      table, .clause, .notice-box, .contact-box, .consent-section { page-break-inside: avoid; }
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: "Yu Mincho","游明朝","Hiragino Mincho ProN","MS Mincho",serif; font-size: 10.2pt; line-height: 1.78; color: #1a1a1a; background: #fff; padding: 28px 38px; max-width: 780px; margin: 0 auto; }
+    .doc-header { text-align: center; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 2.5px solid #1a1a1a; }
+    .doc-header h1 { font-size: 16.5pt; font-weight: bold; letter-spacing: 0.1em; margin-bottom: 4px; }
+    .doc-subtitle { font-size: 9pt; color: #555; letter-spacing: 0.04em; }
+    .doc-meta { display: flex; justify-content: flex-end; margin-bottom: 18px; font-size: 9.4pt; color: #333; }
+    .doc-meta table { border-collapse: collapse; }
+    .doc-meta td { padding: 1px 6px 1px 0; vertical-align: top; }
+    .doc-meta td:first-child { color: #666; white-space: nowrap; }
+    .sender-block { text-align: right; margin-bottom: 20px; font-size: 9.6pt; line-height: 1.65; }
+    .sender-block .company-name { font-size: 11.2pt; font-weight: bold; margin-bottom: 2px; }
+    .preamble { margin-bottom: 20px; text-align: justify; font-size: 9.8pt; background: #f7f7f5; border-left: 3px solid #777; padding: 11px 15px; border-radius: 2px; }
+    .section-title { font-size: 10.4pt; font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin: 20px 0 9px; display: flex; align-items: center; gap: 8px; }
+    .section-num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #1a1a1a; color: #fff; font-size: 9pt; border-radius: 50%; flex-shrink: 0; }
+    .info-table, .purpose-table, .compact-table { width: 100%; border-collapse: collapse; font-size: 9.2pt; margin-bottom: 6px; }
+    .info-table th, .purpose-table th, .compact-table th { background: #2c2c2c; color: #fff; padding: 6px 9px; text-align: left; font-weight: bold; font-size: 8.9pt; letter-spacing: 0.03em; }
+    .info-table td, .purpose-table td, .compact-table td { padding: 5px 9px; border-bottom: 1px solid #e5e5e5; vertical-align: top; }
+    .info-table tr:nth-child(even) td, .purpose-table tr:nth-child(even) td, .compact-table tr:nth-child(even) td { background: #fafafa; }
+    .info-table .category { width: 28%; font-weight: bold; color: #333; }
+    .info-table .items { width: 72%; color: #444; }
+    .purpose-table .no-col { width: 8%; text-align: center; color: #666; font-weight: bold; }
+    .purpose-table .purpose-col { width: 92%; }
+    .compact-table .label-col { width: 30%; font-weight: bold; color: #333; }
+    .badge { display: inline-block; font-size: 7.2pt; padding: 1px 5px; border-radius: 2px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
+    .badge-required { background: #c0392b; color: #fff; }
+    .badge-conditional { background: #6c757d; color: #fff; }
+    .clause { font-size: 9.8pt; margin-bottom: 13px; text-align: justify; }
+    .clause strong { font-weight: bold; }
+    .notice-box { border: 1px solid #b96a2c; border-radius: 3px; padding: 9px 13px; font-size: 8.9pt; color: #333; margin: 16px 0; background: #fff9f3; }
+    .notice-box .notice-title { font-weight: bold; color: #9a4d10; margin-bottom: 4px; }
+    .contact-box { border: 1px solid #bbb; border-radius: 3px; padding: 10px 14px; font-size: 9pt; color: #333; margin: 16px 0; background: #f9f9f9; }
+    .contact-box .contact-title { font-weight: bold; margin-bottom: 4px; }
+    .contact-row { display: flex; gap: 14px; }
+    .contact-label { color: #666; width: 105px; flex-shrink: 0; }
+    .consent-section { margin-top: 28px; page-break-inside: avoid; }
+    .consent-statement { font-size: 10.2pt; font-weight: bold; text-align: justify; margin-bottom: 16px; padding: 11px 18px; border: 2px solid #1a1a1a; border-radius: 3px; background: #f5f5f3; line-height: 1.8; }
+    .sign-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    .sign-table th { background: #2c2c2c; color: #fff; padding: 7px 12px; font-size: 9.4pt; font-weight: bold; text-align: left; letter-spacing: 0.03em; }
+    .sign-table td { border: 1px solid #ccc; padding: 0; vertical-align: top; }
+    .sign-row { display: flex; }
+    .sign-label { background: #f0f0ed; padding: 8px 12px; font-size: 8.9pt; color: #555; width: 115px; flex-shrink: 0; border-right: 1px solid #ccc; display: flex; align-items: flex-start; }
+    .sign-value { padding: 8px 12px; flex: 1; min-height: 30px; }
+    .sign-divider { border-bottom: 1px solid #ddd; }
+    .sign-field-large { min-height: 44px; }
+    .inkan-cell { width: 80px; border-left: 1px solid #ccc; text-align: center; }
+    .inkan-box { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 118px; gap: 4px; }
+    .inkan-circle { width: 54px; height: 54px; border: 1.5px solid #bbb; border-radius: 50%; }
+    .inkan-text { font-size: 7.5pt; color: #888; }
+    .doc-footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 7.8pt; color: #888; display: flex; justify-content: space-between; gap: 10px; }
+  </style>
+</head>
+<body>
+
+  <div class="doc-header">
+    <h1>個人情報の取扱いに関する通知・同意書</h1>
+    <div class="doc-subtitle">（個人事業主・フリーランス向け）</div>
+  </div>
+
+  <div class="doc-meta">
+    <table>
+      <tr><td>関連契約：</td><td>{{or CONTRACT_NAME "【契約名称】"}}</td></tr>
+      <tr><td>契約番号：</td><td>{{or CONTRACT_NO "【番号】"}}</td></tr>
+      <tr><td>契約締結日：</td><td>{{or CONTRACT_DATE "　　年　　月　　日"}}</td></tr>
+    </table>
+  </div>
+
+  <div class="sender-block">
+    <div class="company-name">{{or COMPANY_NAME "株式会社アークライト"}}</div>
+    <div>{{or COMPANY_ADDRESS "東京都千代田区神田小川町1-2 風雲堂ビル2階"}}</div>
+    <div>{{or COMPANY_REPRESENTATIVE "代表取締役　青柳 昌行"}}</div>
+    <div>個人情報管理責任部署：{{or PRIVACY_MANAGER_DEPT "総務人事部"}}</div>
+  </div>
+
+  <div class="preamble">
+    {{or COUNTERPARTY_NAME "【氏名】"}}（以下「同意者」といいます。）は、
+    {{or COMPANY_NAME "株式会社アークライト"}}（以下「当社」といいます。）との間で
+    上記契約の締結または取引開始を行うにあたり、当社が本書記載の範囲で個人情報を取得、利用、保管、提供または共同利用することについて説明を受け、その内容を確認します。
+    また、本人確認書類の取得、第三者提供、共同利用その他本人の同意を要する取扱いについて、本書記載の範囲で同意します。
+  </div>
+
+  <div class="section-title"><span class="section-num">1</span>取得する個人情報の項目</div>
+  <table class="info-table">
+    <thead><tr><th>カテゴリ</th><th>取得項目</th></tr></thead>
+    <tbody>
+      <tr><td class="category">基本情報<span class="badge badge-required">必須</span></td><td class="items">氏名、フリガナ、住所、電話番号、メールアドレス</td></tr>
+      <tr><td class="category">事業者情報<span class="badge badge-conditional">該当する場合</span></td><td class="items">屋号、事業者名、事業内容、主たる営業所の所在地その他取引先登録に必要な情報</td></tr>
+      <tr><td class="category">生年月日等<span class="badge badge-conditional">必要な場合</span></td><td class="items">生年月日その他本人確認、取引先審査、反社会的勢力排除確認、与信確認に必要な情報</td></tr>
+      <tr><td class="category">本人確認情報<span class="badge badge-conditional">必要な場合</span></td><td class="items">運転免許証、マイナンバーカード、パスポートその他公的身分証明書に記載された氏名、住所、生年月日、有効期限その他本人確認に必要な情報およびその写し</td></tr>
+      <tr><td class="category">口座・振込先情報<span class="badge badge-conditional">支払時必須</span></td><td class="items">金融機関名、支店名、口座種別、口座番号、口座名義、口座名義カナその他支払処理に必要な情報</td></tr>
+      <tr><td class="category">インボイス関連<span class="badge badge-conditional">該当する場合</span></td><td class="items">適格請求書発行事業者登録番号、課税事業者・免税事業者の別その他消費税処理に必要な情報</td></tr>
+      <tr><td class="category">契約・取引情報<span class="badge badge-required">必須</span></td><td class="items">契約名称、契約番号、契約締結日、契約期間、業務内容、許諾対象、出版・売買その他取引条件、報酬・代金、納品、検収、請求、支払、契約上の署名・記名押印または電子署名に関する情報</td></tr>
+      <tr><td class="category">連絡・履歴情報<span class="badge badge-conditional">必要な場合</span></td><td class="items">メール、チャット、クラウドサイン、業務管理システムその他の方法による連絡履歴、取引履歴、対応履歴、問い合わせ履歴</td></tr>
+    </tbody>
+  </table>
+  <div class="notice-box"><div class="notice-title">マイナンバーの取扱いについて</div>本書は、契約締結・取引管理・支払管理等に関する個人情報の取扱いを定めるものです。マイナンバーその他特定個人情報を取得する場合は、当社所定の別手続・別書式により取得・管理します。</div>
+
+  <div class="section-title"><span class="section-num">2</span>利用目的</div>
+  <table class="purpose-table">
+    <thead><tr><th class="no-col">No.</th><th class="purpose-col">利用目的</th></tr></thead>
+    <tbody>
+      <tr><td class="no-col">①</td><td class="purpose-col">業務委託契約、ライセンス契約、出版契約、売買契約、秘密保持契約その他取引契約の締結、履行、変更、更新、終了および管理のため</td></tr>
+      <tr><td class="no-col">②</td><td class="purpose-col">発注、納品、検収、請求、支払、経費精算、源泉徴収、支払調書、インボイス対応その他会計・税務処理のため</td></tr>
+      <tr><td class="no-col">③</td><td class="purpose-col">取引先登録、取引先審査、与信確認、反社会的勢力排除確認、本人確認、社内承認その他取引開始・継続判断のため</td></tr>
+      <tr><td class="no-col">④</td><td class="purpose-col">業務上の連絡、進行管理、成果物・納品物・許諾対象物・出版物・商品・販売記録その他取引関連情報の管理のため</td></tr>
+      <tr><td class="no-col">⑤</td><td class="purpose-col">Google Drive、スプレッドシート、LegalBridge、クラウドサイン、会計システムその他当社が利用する業務管理システムへの登録、保存、連携および管理のため</td></tr>
+      <tr><td class="no-col">⑥</td><td class="purpose-col">法令、行政機関からの要請、監査、社内規程、コンプライアンス、内部統制その他管理上必要な対応のため</td></tr>
+      <tr><td class="no-col">⑦</td><td class="purpose-col">紛争、クレーム、事故、不正利用、債権債務管理その他法的手続またはこれに準ずる対応のため</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title"><span class="section-num">3</span>本人確認書類の取扱い</div>
+  <div class="clause">当社は、契約締結、取引先審査、反社会的勢力排除確認、与信確認、支払処理、税務処理その他取引管理上必要な場合、同意者に対し、運転免許証、マイナンバーカード、パスポートその他公的身分証明書の提示または写しの提出を求めることがあります。</div>
+  <div class="clause">当社が本人確認書類の写しを取得する場合、取得する情報は、氏名、住所、生年月日、有効期限その他本人確認に必要な範囲に限ります。マイナンバーカードを本人確認書類として利用する場合、当社は個人番号が記載された裏面の写しを取得しません。また、個人番号、健康情報その他本人確認に不要な情報は取得対象としません。</div>
+  <div class="clause">当社は、本人確認書類の写しについて、取得目的の達成に必要な範囲で保管し、保存の必要がなくなった場合には、当社の個人情報管理規程に従い、安全な方法で廃棄または削除します。</div>
+
+  <div class="section-title"><span class="section-num">4</span>第三者提供および取扱いの委託</div>
+  <div class="clause">当社は、利用目的の達成に必要な範囲で、同意者の個人情報を、業務委託先、税理士、公認会計士、会計事務所、弁護士その他の専門家、金融機関、決済事業者、電子契約サービス、クラウドサービス、会計システム提供事業者、外部調査会社、信用調査機関その他当社が必要と認める委託先に提供し、またはその取扱いを委託することがあります。</div>
+  <div class="clause">当社は、個人情報の取扱いを委託する場合、委託先に対して必要かつ適切な監督を行います。また、法令に基づく場合、人の生命・身体・財産の保護のために必要な場合、行政機関その他公的機関への提出・報告が必要な場合その他法令上認められる場合には、必要な範囲で個人情報を提供することがあります。</div>
+
+  <div class="section-title"><span class="section-num">5</span>共同利用</div>
+  <div class="clause">当社は、以下の範囲で、同意者の個人情報を共同利用することがあります。</div>
+  <table class="compact-table">
+    <tbody>
+      <tr><td class="label-col">共同利用する項目</td><td>氏名、住所、電話番号、メールアドレス、生年月日、屋号、事業者情報、契約情報、発注・納品・検収・支払に関する情報、銀行口座情報、インボイス登録番号、取引履歴、本人確認書類に記載された情報その他取引管理上必要な情報</td></tr>
+      <tr><td class="label-col">共同利用者の範囲</td><td>株式会社アークライト、{{or JOINT_USE_PARTIES "株式会社KADOKAWA、株式会社KADOKAWAのグループ会社（当社が別途提示または公表する範囲に限ります。）および株式会社新紀元社"}}</td></tr>
+      <tr><td class="label-col">共同利用の目的</td><td>契約締結、契約管理、取引先管理、発注・納品・検収・支払管理、会計・税務処理、法務・コンプライアンス対応、反社会的勢力排除確認、与信確認、社内監査、紛争・クレーム対応その他取引管理上必要な業務のため</td></tr>
+      <tr><td class="label-col">管理責任者</td><td>{{or COMPANY_NAME "株式会社アークライト"}}<br>{{or COMPANY_ADDRESS "東京都千代田区神田小川町1-2 風雲堂ビル2階"}}<br>{{or COMPANY_REPRESENTATIVE "代表取締役　青柳 昌行"}}<br>個人情報管理責任部署：{{or PRIVACY_MANAGER_DEPT "総務人事部"}}</td></tr>
+    </tbody>
+  </table>
+
+  <div class="section-title"><span class="section-num">6</span>保存期間および廃棄</div>
+  <div class="clause">当社は、取得した個人情報を、<strong>最終取引終了後または関連契約終了後のいずれか遅い日から、原則として7年間</strong>保存します。</div>
+  <div class="clause">ただし、法令上これを超える保存が必要な場合、税務調査、監査、紛争、クレーム、債権債務管理その他業務上必要な場合には、必要な範囲で保存期間を延長することがあります。</div>
+  <div class="clause">保存期間が経過し、または保存の必要がなくなった個人情報については、当社の個人情報管理規程に従い、安全な方法で廃棄または削除します。</div>
+
+  <div class="section-title"><span class="section-num">7</span>安全管理措置</div>
+  <div class="clause">当社は、取得した個人情報について、不正アクセス、漏えい、滅失、毀損、改ざん、不正利用の防止その他安全管理のために必要かつ適切な措置を講じます。また、個人情報を取り扱う従業者および委託先に対し、必要かつ適切な監督を行います。</div>
+
+  <div class="section-title"><span class="section-num">8</span>開示・訂正・利用停止等の請求</div>
+  <div class="clause">同意者は、個人情報の保護に関する法律その他適用法令に基づき、当社が保有する自己の個人情報について、開示、訂正、追加、削除、利用停止、消去、第三者提供の停止その他法令上認められる請求を行うことができます。請求は下記の問い合わせ窓口にご連絡ください。</div>
+
+  <div class="section-title"><span class="section-num">9</span>問い合わせ窓口</div>
+  <div class="contact-box">
+    <div class="contact-title">個人情報に関するお問い合わせ窓口</div>
+    <div class="contact-row"><span class="contact-label">会社名</span><span>{{or COMPANY_NAME "株式会社アークライト"}}</span></div>
+    <div class="contact-row"><span class="contact-label">所在地</span><span>{{or COMPANY_ADDRESS "東京都千代田区神田小川町1-2 風雲堂ビル2階"}}</span></div>
+    <div class="contact-row"><span class="contact-label">代表者</span><span>{{or COMPANY_REPRESENTATIVE "代表取締役　青柳 昌行"}}</span></div>
+    <div class="contact-row"><span class="contact-label">管理責任部署</span><span>{{or PRIVACY_MANAGER_DEPT "総務人事部"}}</span></div>
+    <div class="contact-row"><span class="contact-label">窓口</span><span>{{or PRIVACY_CONTACT_NAME "個人情報相談窓口"}}</span></div>
+    <div class="contact-row"><span class="contact-label">連絡先</span><span>{{or PRIVACY_CONTACT "privacy@arclight.co.jp"}}</span></div>
+  </div>
+  <div class="notice-box"><div class="notice-title">任意提供項目について</div>上記項目のうち、取引内容に応じて「該当する場合」または「必要な場合」と表示した項目については、取得が不要な場合があります。ただし、必要な情報をご提供いただけない場合、契約締結、取引先審査、支払処理、税務処理、取引管理その他必要な対応を行えない場合があります。</div>
+
+  <div class="consent-section">
+    <div class="section-title"><span class="section-num">10</span>同意欄</div>
+    <div class="consent-statement">
+      私は、本書の内容を確認し、{{or COMPANY_NAME "株式会社アークライト"}}が本書記載の利用目的の範囲で私の個人情報を取得、利用、保管、提供、委託および共同利用することに同意します。
+      本書への署名、記名押印、電子署名、クラウドサインその他電磁的方法による承諾をもって、本書記載の内容に同意したものとします。
+    </div>
+    <table class="sign-table">
+      <thead><tr><th colspan="3">同意者記入欄（紙で取得する場合。電子署名の場合は電子署名記録によります。）</th></tr></thead>
+      <tbody>
+        <tr>
+          <td style="width: calc(100% - 80px);">
+            <div class="sign-row sign-divider"><div class="sign-label">同意日</div><div class="sign-value">{{or CONSENT_DATE "　　　年　　月　　日"}}</div></div>
+            <div class="sign-row sign-divider"><div class="sign-label">氏名</div><div class="sign-value sign-field-large">{{COUNTERPARTY_NAME}}</div></div>
+            <div class="sign-row sign-divider"><div class="sign-label">フリガナ</div><div class="sign-value"></div></div>
+            <div class="sign-row sign-divider"><div class="sign-label">屋号</div><div class="sign-value">{{COUNTERPARTY_BIZNAME}}</div></div>
+            <div class="sign-row sign-divider"><div class="sign-label">住所</div><div class="sign-value sign-field-large"></div></div>
+            <div class="sign-row"><div class="sign-label">電話番号</div><div class="sign-value"></div></div>
+          </td>
+          <td class="inkan-cell"><div class="inkan-box"><div class="inkan-circle"></div><div class="inkan-text">印</div></div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="doc-footer">
+    <span>{{or COMPANY_NAME "株式会社アークライト"}} ／ {{or PRIVACY_MANAGER_DEPT "総務人事部"}} 作成</span>
+    <span>template: notice_consent_personal_info_freelance v2.0</span>
+  </div>
+
+</body>
+</html>
