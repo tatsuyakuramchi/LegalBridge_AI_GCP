@@ -6,84 +6,52 @@
  *             &delivery_to=&category=&vendor=&owner=&q=
  *
  * 検索軸: 支払日 / 納期 / 担当 / 種類(業務委託・ライセンス等) / 取引先。
+ *
+ * UI: search-api 共通テーマ popChrome(macOS風×ポップ)の view モード。
+ *     検索性・閲覧性を優先しつつ、紐付け編集モーダルは残す。
  */
 
-import { HEAD_FONTS, MASTER_CSS, topbarHtml, masterTabsHtml } from "./masterChrome.ts";
+import { popPage } from "./popChrome.ts";
 import { LINE_ITEM_STATUS_DEFS } from "../services/conditionsService.ts";
 
-const EXTRA_CSS = `
-.filters {
-  display: grid; gap: 10px 14px; align-items: end;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 14px 16px; margin-bottom: 14px;
-}
-.filters .f { display: flex; flex-direction: column; gap: 4px; }
-.filters .f.span2 { grid-column: span 2; }
-.filters label { font-size: 11px; color: var(--muted-foreground); font-weight: 600; }
-.filters .range { display: flex; gap: 6px; align-items: center; }
-.filters .range span { color: var(--muted-foreground); font-size: 11px; }
-.filters .actions { display: flex; gap: 8px; align-items: end; }
-table.cond { width: 100%; border-collapse: collapse; font-size: 12px; background: var(--card); }
-table.cond th, table.cond td { border: 1px solid var(--border); padding: 6px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
-table.cond th { background: var(--muted); color: var(--muted-foreground); font-weight: 600; position: sticky; top: 0; }
-table.cond td.num { text-align: right; font-variant-numeric: tabular-nums; }
-table.cond td.wrap { white-space: normal; min-width: 180px; }
-table.cond tr:hover td { background: var(--muted); }
-.badge-cat { font-size: 10px; padding: 1px 6px; border-radius: 4px; border: 1px solid var(--border); background: var(--background); white-space: nowrap; }
-.empty { color: var(--muted-foreground); padding: 24px; text-align: center; }
-.table-scroll { overflow: auto; max-height: calc(100vh - 320px); border: 1px solid var(--border); border-radius: 8px; }
-table.cond tr.clickable { cursor: pointer; }
-.link-pill { font-size: 10px; padding: 1px 5px; border-radius: 4px; border: 1px solid var(--border); display: inline-block; margin: 1px 0; white-space: nowrap; }
-.link-pill.work { background: #eef2ff; }
-.link-pill.ip { background: #ecfdf5; }
-.link-pill.master { background: #fef3c7; }
-.link-pill.ringi { background: #fce7f3; }
-.link-pill.status { background: #dcfce7; border-color: #86efac; }
-table.cond th.chk, table.cond td.chk { width: 34px; text-align: center; padding: 4px; }
-.csvbtns { display: flex; gap: 6px; }
-.modal .checks { display: flex; flex-direction: column; gap: 8px; }
-.modal .checks label { display: flex; gap: 7px; align-items: center; font-size: 13px; font-weight: 500; color: var(--foreground); margin: 0; }
-.modal .checks input { width: 15px; height: 15px; }
-.backdrop { position: fixed; inset: 0; background: rgba(15,23,42,.45); display: none; align-items: flex-start; justify-content: center; padding: 48px 16px; z-index: 60; overflow: auto; }
-.backdrop.open { display: flex; }
-.modal { background: var(--card); border-radius: 10px; width: 100%; max-width: 560px; box-shadow: 0 20px 50px rgba(0,0,0,.25); }
-.modal .mhead { display: flex; justify-content: space-between; align-items: center; padding: 14px 18px; border-bottom: 1px solid var(--border); }
-.modal .mhead h3 { margin: 0; font-size: 15px; }
-.modal .mbody { padding: 16px 18px; }
-.modal .mfoot { display: flex; gap: 8px; justify-content: flex-end; padding: 12px 18px; border-top: 1px solid var(--border); }
-.modal .fld { margin-bottom: 14px; }
-.modal .fld label { display: block; font-size: 12px; font-weight: 600; color: var(--muted-foreground); margin-bottom: 4px; }
-.modal .meta { font-size: 11px; color: var(--muted-foreground); margin-bottom: 12px; line-height: 1.5; }
-.xbtn { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--muted-foreground); }
-`;
+// 条件明細ページ固有の補助スタイル(共通 POP_CSS に無いリンクピル等)
+const EXTRA_CSS = `<style>
+.cond-link-pill{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:14px;display:inline-block;margin:1px 2px 1px 0;white-space:nowrap;border:1px solid transparent}
+.cond-link-pill.work{background:#eef2ff;color:#4f46e5;border-color:#dfe3ff}
+.cond-link-pill.ip{background:#ecfdf5;color:#0fa97c;border-color:#c8f4e4}
+.cond-link-pill.master{background:#fff7e6;color:#b97a09;border-color:#ffe9bf}
+.cond-link-pill.ringi{background:#fde9f3;color:#c43c80;border-color:#fbd0e6}
+.cond-link-pill.status{background:#dffbf0;color:#0fa97c;border-color:#bbf2dd}
+.sub10{font-size:10px;color:var(--muted);margin-top:2px}
+.badge-cat{font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:14px;background:#efeaff;color:#6c5ce7;white-space:nowrap}
+.pop-modal .checks{display:flex;flex-direction:column;gap:9px}
+.pop-modal .checks label{display:flex;gap:8px;align-items:center;font-size:13px;font-weight:600;color:var(--ink);margin:0}
+.pop-modal .checks input{width:15px;height:15px}
+.pop-modal .fld{margin-bottom:14px}
+.pop-modal .fld label{display:block;font-size:11.5px;font-weight:800;color:var(--muted);margin-bottom:4px}
+.pop-modal .meta{font-size:11.5px;color:var(--muted);margin-bottom:14px;line-height:1.6;background:#faf8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
+.filter-extra{display:flex;justify-content:flex-end;align-items:center}
+.filter-extra label{display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;color:var(--muted);font-weight:700}
+</style>`;
 
 export function conditionsPage(): string {
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>条件明細 · Arcs Legal OS</title>
-${HEAD_FONTS}
-<style>${MASTER_CSS}${EXTRA_CSS}</style>
-</head>
-<body>
-${topbarHtml("Conditions", "条件明細 · 支払日 / 納期 / 担当 / 種類 / 取引先で検索")}
-${masterTabsHtml("conditions")}
-<div class="container">
-  <div class="filters">
+  const toolbar = `
+      <button class="pop-btn sec sm" id="btn-csv-sel">⤓ 選択をCSV (<span id="sel-n">0</span>)</button>
+      <button class="pop-btn sm" id="btn-csv-all">⤓ 全件CSV</button>`;
+
+  const body = `
+  <div class="pop-filters">
     <div class="f">
       <label>支払日</label>
-      <div class="range"><input class="tech-input" type="date" id="payment_from"><span>〜</span><input class="tech-input" type="date" id="payment_to"></div>
+      <div class="range"><input class="pop-input" type="date" id="payment_from"><span class="muted">〜</span><input class="pop-input" type="date" id="payment_to"></div>
     </div>
     <div class="f">
       <label>納期</label>
-      <div class="range"><input class="tech-input" type="date" id="delivery_from"><span>〜</span><input class="tech-input" type="date" id="delivery_to"></div>
+      <div class="range"><input class="pop-input" type="date" id="delivery_from"><span class="muted">〜</span><input class="pop-input" type="date" id="delivery_to"></div>
     </div>
     <div class="f">
       <label>種類</label>
-      <select class="tech-select" id="category">
+      <select class="pop-select" id="category">
         <option value="">全種類</option>
         <option value="service">業務委託</option>
         <option value="license">ライセンス</option>
@@ -94,60 +62,54 @@ ${masterTabsHtml("conditions")}
     </div>
     <div class="f">
       <label>取引先(名称 / コード)</label>
-      <input class="tech-input" type="text" id="vendor" placeholder="例: 株式会社X / V-001">
+      <input class="pop-input" type="text" id="vendor" placeholder="例: 株式会社X / V-001">
     </div>
     <div class="f">
       <label>担当(作成者 / 氏名)</label>
-      <input class="tech-input" type="text" id="owner" placeholder="例: 山田 / メール">
+      <input class="pop-input" type="text" id="owner" placeholder="例: 山田 / メール">
     </div>
-    <div class="f span2">
+    <div class="f" style="grid-column:span 2;">
       <label>キーワード(品目 / 仕様 / 契約名 / 文書番号)</label>
-      <input class="tech-input" type="text" id="q" placeholder="フリーワード">
+      <input class="pop-input" type="text" id="q" placeholder="フリーワード">
     </div>
-    <div class="f actions">
-      <button class="btn" id="btn-search">検索</button>
-      <button class="btn outline" id="btn-clear">クリア</button>
+    <div class="f" style="flex-direction:row;gap:8px;align-items:end;">
+      <button class="pop-btn" id="btn-search">検索</button>
+      <button class="pop-btn sec" id="btn-clear">クリア</button>
     </div>
-    <div class="f" style="justify-content:end;">
-      <label style="display:flex;gap:6px;align-items:center;cursor:pointer;">
-        <input type="checkbox" id="include_all"> 古い版・重複も表示
-      </label>
+    <div class="f filter-extra">
+      <label><input type="checkbox" id="include_all"> 古い版・重複も表示</label>
     </div>
   </div>
 
-  <div class="toolbar" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;gap:12px;">
+  <div class="pop-toolbar2">
     <span class="count-badge" id="count">—</span>
-    <div class="csvbtns">
-      <button class="btn outline" id="btn-csv-sel">選択をCSV (<span id="sel-n">0</span>)</button>
-      <button class="btn outline" id="btn-csv-all">全件CSV</button>
-    </div>
+    <span class="muted" style="font-size:12px;">行をクリックで紐付け(原作 / 作品 / 基本契約 / 稟議 / 状態)を編集</span>
   </div>
 
-  <div class="table-scroll">
+  <div class="pop-tablewrap">
     <div id="list-wrap"><div class="empty">LOADING…</div></div>
   </div>
-</div>
 
-<div class="backdrop" id="backdrop">
-  <div class="modal">
+<div class="pop-modal-backdrop" id="backdrop">
+  <div class="pop-modal">
     <div class="mhead"><h3>紐付けを編集</h3><button class="xbtn" id="m-close">×</button></div>
     <div class="mbody">
       <div class="meta" id="m-meta"></div>
       <div class="fld">
         <label>原作 (source IP)</label>
-        <select class="tech-select" id="m-source"><option value="">— なし —</option></select>
+        <select class="pop-select" id="m-source" style="width:100%;"><option value="">— なし —</option></select>
       </div>
       <div class="fld">
         <label>作品 (work)</label>
-        <select class="tech-select" id="m-work"><option value="">— なし —</option></select>
+        <select class="pop-select" id="m-work" style="width:100%;"><option value="">— なし —</option></select>
       </div>
       <div class="fld">
         <label>マスター契約 (基本契約 / 作品モデル v3)</label>
-        <select class="tech-select" id="m-master"><option value="">— なし —</option></select>
+        <select class="pop-select" id="m-master" style="width:100%;"><option value="">— なし —</option></select>
       </div>
       <div class="fld">
         <label>稟議 (ringi)</label>
-        <select class="tech-select" id="m-ringi"><option value="">— なし —</option></select>
+        <select class="pop-select" id="m-ringi" style="width:100%;"><option value="">— なし —</option></select>
       </div>
       <div class="fld">
         <label>状態</label>
@@ -155,8 +117,8 @@ ${masterTabsHtml("conditions")}
       </div>
     </div>
     <div class="mfoot">
-      <button class="btn outline" id="m-cancel">キャンセル</button>
-      <button class="btn" id="m-save">保存</button>
+      <button class="pop-btn sec" id="m-cancel">キャンセル</button>
+      <button class="pop-btn" id="m-save">保存</button>
     </div>
   </div>
 </div>
@@ -204,28 +166,28 @@ ${masterTabsHtml("conditions")}
       '<th class="num">金額(税抜)</th><th>文書番号</th><th>契約名 / 課題</th>' +
       '<th>紐付け(クリックで編集)</th><th>状態</th>' +
       '</tr>';
-    var body = rows.map(function (r) {
+    var bodyHtml = rows.map(function (r) {
       var typeCell = '<span class="badge-cat">' + esc(catLabel(r.contract_category)) + '</span>' +
-        (r.contract_type ? '<div style="font-size:10px;color:var(--muted-foreground);margin-top:2px;">' + esc(r.contract_type) + '</div>' : '');
-      var vendor = esc(r.vendor_name || "—") + (r.vendor_code ? '<div style="font-size:10px;color:var(--muted-foreground);">' + esc(r.vendor_code) + '</div>' : '');
+        (r.contract_type ? '<div class="sub10">' + esc(r.contract_type) + '</div>' : '');
+      var vendor = esc(r.vendor_name || "—") + (r.vendor_code ? '<div class="sub10">' + esc(r.vendor_code) + '</div>' : '');
       var item = '<div>' + esc(r.item_name || "—") + '</div>' +
-        (r.spec ? '<div style="font-size:10px;color:var(--muted-foreground);white-space:normal;">' + esc(r.spec) + '</div>' : '');
+        (r.spec ? '<div class="sub10" style="white-space:normal;">' + esc(r.spec) + '</div>' : '');
       var contract = esc(r.contract_title || "—") +
-        (r.issue_key ? '<div style="font-size:10px;color:var(--muted-foreground);">' + esc(r.issue_key) + '</div>' : '');
+        (r.issue_key ? '<div class="sub10">' + esc(r.issue_key) + '</div>' : '');
       var link = "";
-      if (r.work_title) link += '<span class="link-pill work">作 ' + esc(r.work_title) + '</span> ';
-      if (r.source_ip_title) link += '<span class="link-pill ip">原 ' + esc(r.source_ip_title) + '</span> ';
+      if (r.work_title) link += '<span class="cond-link-pill work">作 ' + esc(r.work_title) + '</span> ';
+      if (r.source_ip_title) link += '<span class="cond-link-pill ip">原 ' + esc(r.source_ip_title) + '</span> ';
       if (r.master_contract_title || r.master_contract_number)
-        link += '<span class="link-pill master">基 ' + esc(r.master_contract_title || r.master_contract_number) + '</span> ';
+        link += '<span class="cond-link-pill master">基 ' + esc(r.master_contract_title || r.master_contract_number) + '</span> ';
       if (r.ringi_number || r.ringi_title)
-        link += '<span class="link-pill ringi">稟 ' + esc(r.ringi_number ? (r.ringi_number + (r.ringi_title ? " " + r.ringi_title : "")) : r.ringi_title) + '</span>';
-      if (!link) link = '<span style="color:var(--muted-foreground);">＋ 未設定</span>';
+        link += '<span class="cond-link-pill ringi">稟 ' + esc(r.ringi_number ? (r.ringi_number + (r.ringi_title ? " " + r.ringi_title : "")) : r.ringi_title) + '</span>';
+      if (!link) link = '<span class="muted">＋ 未設定</span>';
       var st = "";
       var sf = r.status_flags || {};
       STATUS_DEFS.forEach(function (d) {
-        if (sf[d.key]) st += '<span class="link-pill status">' + esc(d.label) + '</span> ';
+        if (sf[d.key]) st += '<span class="cond-link-pill status">' + esc(d.label) + '</span> ';
       });
-      if (!st) st = '<span style="color:var(--muted-foreground);">—</span>';
+      if (!st) st = '<span class="muted">—</span>';
       return '<tr class="clickable" data-id="' + r.id + '">' +
         '<td class="chk"><input type="checkbox" class="row-chk" value="' + r.id + '"></td>' +
         '<td>' + esc(r.payment_date || "—") + '</td>' +
@@ -234,7 +196,7 @@ ${masterTabsHtml("conditions")}
         '<td class="wrap">' + vendor + '</td>' +
         '<td>' + esc(r.owner_name || "—") + '</td>' +
         '<td class="wrap">' + item + '</td>' +
-        '<td>' + esc(r.calc_method || "") + (r.payment_terms ? '<div style="font-size:10px;color:var(--muted-foreground);">' + esc(r.payment_terms) + '</div>' : '') + '</td>' +
+        '<td>' + esc(r.calc_method || "") + (r.payment_terms ? '<div class="sub10">' + esc(r.payment_terms) + '</div>' : '') + '</td>' +
         '<td class="num">' + (r.quantity == null ? "" : esc(r.quantity)) + '</td>' +
         '<td class="num">' + yen(r.unit_price) + '</td>' +
         '<td class="num">' + yen(r.amount_ex_tax) + '</td>' +
@@ -244,7 +206,7 @@ ${masterTabsHtml("conditions")}
         '<td class="wrap">' + st + '</td>' +
         '</tr>';
     }).join("");
-    wrap.innerHTML = '<table class="cond">' + head + body + '</table>';
+    wrap.innerHTML = '<table class="pop-table">' + head + bodyHtml + '</table>';
     updateSelCount();
   }
 
@@ -420,7 +382,15 @@ ${masterTabsHtml("conditions")}
     if (e.target === document.getElementById("backdrop")) closeModal();
   });
   load();
-</script>
-</body>
-</html>`;
+</script>`;
+
+  return popPage({
+    active: "conditions",
+    mode: "view",
+    title: "条件明細",
+    subtitle: "支払日 / 納期 / 担当 / 種類 / 取引先で検索",
+    toolbar,
+    body,
+    headExtra: EXTRA_CSS,
+  });
 }

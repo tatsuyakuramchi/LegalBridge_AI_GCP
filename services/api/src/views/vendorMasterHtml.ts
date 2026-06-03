@@ -11,14 +11,8 @@
  * 共通 chrome (topbar, タブナビ, CSS) は masterChrome.ts から取得。
  */
 
-import {
-  MASTER_CSS,
-  SVG,
-  HEAD_FONTS,
-  topbarHtml,
-  pageHeaderHtml,
-  masterTabsHtml,
-} from "./masterChrome.ts";
+import { MASTER_CSS, SVG } from "./masterChrome.ts";
+import { popAdminPage } from "./popChrome.ts";
 
 export function vendorMasterPage(_authIgnored?: unknown): string {
   // Phase 17z-2 で恒久 URL 化したので _authIgnored は無視。
@@ -28,27 +22,8 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
   const apiImportUrl = "/api/master/vendors/import-csv";
   const apiTemplateUrl = "/api/master/vendors/template.csv";
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>Vendors · Arcs Legal OS</title>
-  ${HEAD_FONTS}
-  <style>${MASTER_CSS}</style>
-</head>
-<body>
-  ${topbarHtml("Vendors", "Master · External partners")}
-
-  <div class="container" style="padding-top: 24px; padding-bottom: 48px;">
-    ${pageHeaderHtml({
-      tag: "MST · INDEX",
-      title: "Master Systems",
-      desc: "Reference data — vendors, staff, and contracts.",
-    })}
-
-    ${masterTabsHtml("vendors")}
+  const body = `
+  <div class="container" style="padding:0 0 24px;">
 
     <!-- Toolbar -->
     <div class="toolbar">
@@ -840,7 +815,13 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
     /* ----- init ----- */
     loadList();
-  </script>
-</body>
-</html>`;
+  </script>`;
+
+  return popAdminPage({
+    active: "vendors",
+    masterCss: MASTER_CSS,
+    title: "取引先マスタ",
+    subtitle: "Master · External partners",
+    body,
+  });
 }
