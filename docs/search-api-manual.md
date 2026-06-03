@@ -1,6 +1,6 @@
 # LegalBridge search-api 操作マニュアル
 
-最終更新: 2026-05-24 / Phase 22.21.43
+最終更新: 2026-06-03 / Phase 22.21.92（macOS×ポップ UI リデザイン）
 
 本マニュアルは **`legalbridge-search-api`** (Cloud Run サービス) の運用・操作を網羅します。
 法務 / 経営管理本部 のメンバーがブラウザから利用する管理画面と、それを支える認証・取込・障害対応の手順をまとめています。
@@ -21,6 +21,9 @@
 | 管理ダッシュボード(admin) | <https://legalbridge.arclight.co.jp/admin> |
 | 検索 (取引先 / 契約) | <https://legalbridge.arclight.co.jp/search/vendor> |
 | 検索 (稟議番号) | <https://legalbridge.arclight.co.jp/search/ringi/00001> |
+| 条件明細 横断検索 | <https://legalbridge.arclight.co.jp/master/conditions> |
+| 受領予定(サブライセンス) | <https://legalbridge.arclight.co.jp/master/sublicense> |
+| 作品モデル | <https://legalbridge.arclight.co.jp/work-model> |
 
 > `*.run.app` 直 URL ではなく必ず `legalbridge.arclight.co.jp` を使ってください。
 > `*.run.app` は IAP の手前で 401 になるよう構成されています。
@@ -73,20 +76,37 @@ env 反映後は **すぐに** ログイン → `/admin/staff` から DB 側で 
 
 ## 3. ページ一覧
 
+### 3.0 画面デザイン（macOS×ポップ / サイドバーナビ）
+
+Phase 22.21.92 で search-api の SSR 画面を **macOS 風 × ポップ** デザインに刷新しました。
+
+- **左サイドバー（ソースリスト）でページ移動**します。従来の上部 breadcrumb バー + タブ（Contracts / Vendors / Staff …）は廃止し、サイドバーの2グループに集約しました。
+  - **⚙ Master Console**（編集・フルアクセス系 = admin）: 取引先 / スタッフ / 契約台帳 / 作品モデル / 受領(サブライセンス) / 管理
+  - **🔍 Search & Browse**（検索・閲覧系 = view）: 取引先検索 / 条件明細
+- **admin 系**は機能密度を優先（一覧・モーダル編集・CSV 取込ボタン等をそのまま表示）。
+- **view 系**は検索性・可読性を優先（大きめ検索フィルタ・popテーブル・カテゴリ色）。
+- 配色はインディゴ→バイオレットのグラデーションを単一アクセントとし、角丸・ソフト影・丸ゴシックで統一。
+
+> 実装メモ: 共通シェルは `services/api/src/views/popChrome.ts`。
+> - 新規 view 系ページは `popPage()` を使用。
+> - 既存 admin 系ページは `popAdminPage()` + `POP_ADMIN_BRIDGE`（旧 `masterChrome` クラスを本文無改変のまま pop 見た目へ上書き）で移行。
+> - 移行は段階展開中。基準実装は **view = `/master/conditions`**、**admin = `/master/vendors`**。
+
 ### 3.1 `/` ポータル
 - admin → `/admin` に 302 リダイレクト
 - viewer → 検索 URL を案内する静的ページ
 - `?preview=viewer` を付けると admin もリダイレクトせず viewer 画面を表示(プレビュー用)
 
 ### 3.2 `/admin` 管理ダッシュボード (admin 限定)
-ハブ画面。直接の機能はなくタイル経由で子ページへ遷移:
+ハブ画面。直接の機能はなくサイドバー / タイル経由で子ページへ遷移:
 
 | セクション | リンク先 | 説明 |
 |---|---|---|
 | 👥 ユーザー権限管理 | `/admin/staff` | スタッフ一覧 + admin/viewer 切替 |
 | 📥 データ取り込み | `/imports/legalon`, `/imports/vendor` | CSV 一括取込 |
 | 🗂️ マスター CRUD | `/master/staff`, `/master/vendors`, `/master/contracts` | 個別レコード CRUD |
-| 🔍 検索ポータル | `/search/vendor`, 稟議番号 prompt, viewer プレビュー | 検索系入口 |
+| 🎬 作品 / 受領管理 | `/work-model`, `/master/sublicense` | 作品モデル / 受領予定(サブライセンス) |
+| 🔍 検索ポータル | `/search/vendor`, `/master/conditions`, 稟議番号 prompt, viewer プレビュー | 検索系入口 |
 
 ### 3.3 `/admin/staff` スタッフ権限管理 (admin 限定)
 - スタッフ一覧 (氏名・メール・部署・ロール)
@@ -197,6 +217,18 @@ CSV 取込では、`address` と口座系の列は代表値として扱われま
 
 住所・口座を複数登録した場合、代表に指定した行が `vendors` の互換カラムにも反映されます。契約書生成や既存検索で使われる住所・口座は、この代表値です。
 
+#### 3.7.2 個人情報取得同意フラグ（個人取引先）
+
+個人（`entity_type = individual` / `sole_proprietor`）に限り、個人情報取得同意の取得状況を `vendors` に保持します（migration `0022_vendor_pii_consent.sql`）。
+
+| 列 | 内容 |
+|---|---|
+| `pii_consent_obtained` | 同意取得済みフラグ（既定 FALSE） |
+| `pii_consent_date` | 同意取得日 |
+
+- 文書作成（admin-ui の文書作成フォーム）で「同意書を同時に作成」を選んで生成すると、同意書テンプレート（`notice_consent_personal_info_freelance`）が本文書と同時に生成され、**このフラグが自動 ON ＋ 同意日が記録**されます。
+- フラグの参照／更新エンドポイント（`GET/POST /api/master/vendors/:code/pii-consent`）は **worker 側**に実装されています（search-api ではありません）。
+
 ### 3.8 `/master/staff` スタッフマスタ (admin 限定)
 `staff` の個別 CRUD + CSV 取込。**経営管理本部** または **法務** 部門のメンバーが操作対象。
 
@@ -208,6 +240,25 @@ CSV 取込では、`address` と口座系の列は代表値として扱われま
 ### 3.10 `/search/ringi/:no` 稟議番号検索 (viewer/admin 共通)
 - 5 桁ゼロ詰めの稟議番号で詳細表示(例: `/search/ringi/00001`)
 - admin ダッシュボードのタイルから prompt で番号入力可能
+
+### 3.11 `/master/conditions` 条件明細 横断検索 (view デザイン)
+`capability_line_items`（各文書の支払・成果物などの明細行）を横断検索する画面。view デザイン（大きめ検索フィルタ + popテーブル）。
+
+- **検索軸**: 支払日 / 納期 / 種類（業務委託・ライセンス・出版・売買・NDA）/ 取引先（名称・コード）/ 担当 / フリーワード（品目・仕様・契約名・文書番号）
+- **「古い版・重複も表示」** チェック … 既定は正本のみ。ONで旧版・重複も表示。
+- **行クリックで紐付け編集モーダル** … 原作(source IP) / 作品(work) / マスター契約(基本契約) / 稟議(ringi) / 状態フラグ（発注書締結済・検収書発行済・支払申請ファイル出力済 等）を編集。
+- **CSV 出力** … 「選択をCSV」（チェックした行のみ）/「全件CSV」。
+- API: `GET /api/conditions/search`, `GET /api/conditions/export`, `PUT /api/conditions/:id/links`, `GET /api/conditions/ringi-options`。
+
+### 3.12 `/master/sublicense` 受領予定(サブライセンス) (admin デザイン)
+当社が相手方（サブライセンシー）に**請求／受領する**ライセンス料を管理する画面。作品×サブライセンシー単位。
+
+- 売上料率 + MG（ミニマムギャランティ）+ 前払の組合せに対応。
+- 受領予定一覧（請求一覧）として表示し、確定すると `payments`（inbound）に記録され、作品モデルに連携。
+- API: `GET/POST /api/sublicense/deals`, `GET /api/sublicense/options`, `GET /api/sublicense/receipts`, `GET /api/sublicense/deals/:id/reports`, `POST /api/sublicense/reports`, `POST /api/sublicense/receipts/confirm`, `GET /api/sublicense/receipts/export`。
+
+### 3.13 `/work-model` 作品モデル (admin デザイン)
+作品（IP / タイトル）モデルの一覧・参照。条件明細やサブライセンスからの紐付け先。
 
 ---
 
@@ -293,10 +344,31 @@ Postgres (Cloud SQL)
 ### 構成
 
 - **Cloud Run サービス**: `legalbridge-search-api` (region: `asia-northeast1`)
-- **デプロイトリガー**: GitHub Actions が `release/worker` ブランチへの push を検知して自動デプロイ
-- **ブランチ運用**: `release/api` → `main` → `release/worker` の順に fast-forward merge
+- **デプロイトリガー**: Cloud Build トリガー `legalbridge-search-api-release`。**`release/api` ブランチへの push** を検知し、`cloudbuild-api.yaml`（`services/api/` をビルド）で自動デプロイ。
 - **ロードバランサ**: `34.36.159.230` (HTTPS, SSL 証明書 ACTIVE)
 - **ドメイン**: `legalbridge.arclight.co.jp`
+
+> ⚠️ worker（`legalbridge-document-worker`）とは別系統です。worker は `release/worker` への push で別トリガーがデプロイします。search-api を更新したいのに `release/worker` を触る、という取り違えに注意してください。
+
+### デプロイ手順（search-api）
+
+`release/api` に変更を載せて push するだけで自動デプロイされます。
+
+```bash
+# 変更が入っているブランチ（例: main や feature ブランチ）を release/api に反映
+git checkout release/api
+git merge <変更元ブランチ>        # fast-forward 可能ならそのまま FF
+git push origin release/api        # ← これでトリガー起動・自動デプロイ
+
+# ビルドの進行確認
+gcloud builds list --limit 3
+```
+
+> 手動でビルドを起こす場合（トリガーを使わない場合）は、`SHORT_SHA` がトリガー経由でないと補完されないため明示指定が必要です:
+> ```bash
+> gcloud builds submit --config=cloudbuild-api.yaml \
+>   --substitutions=SHORT_SHA=$(git rev-parse --short HEAD)
+> ```
 
 ### マイグレーション
 
@@ -362,6 +434,14 @@ gcloud run services update legalbridge-search-api \
 | `POST /api/master/vendors/import-csv` | 取引先一括取込 | admin |
 | `GET /api/master/vendors/template.csv` | 取引先サンプル CSV / インポートテンプレート | 制限なし |
 | `GET /api/imports/legalon-csv/template` | LegalOn サンプル CSV | admin |
+| `GET /api/conditions/search` | 条件明細 横断検索 | IAP |
+| `GET /api/conditions/export` | 条件明細 CSV 出力（選択 / 全件） | IAP |
+| `PUT /api/conditions/:id/links` | 明細行の紐付け（原作/作品/契約/稟議/状態）更新 | IAP |
+| `GET /api/conditions/ringi-options` | 稟議ピッカー用一覧 | IAP |
+| `GET/POST /api/sublicense/deals` | サブライセンス案件 一覧 / 登録 | IAP |
+| `GET /api/sublicense/receipts` | 受領予定 一覧 | IAP |
+| `POST /api/sublicense/receipts/confirm` | 受領確定（payments inbound へ記録） | IAP |
+| `GET /api/sublicense/receipts/export` | 受領予定 CSV 出力 | IAP |
 
 ### 関連ファイル(コード)
 
@@ -375,7 +455,14 @@ gcloud run services update legalbridge-search-api \
 | `services/api/src/views/legalonImportHtml.ts` | `/imports/legalon` ページ |
 | `services/api/src/views/vendorImportHtml.ts` | `/imports/vendor` ページ |
 | `services/api/src/services/vendorMasterService.ts` | 取引先 CSV parse / upsert / サンプル CSV 生成 |
-| `services/api/src/views/masterChrome.ts` | `/master/*` 共通レイアウト |
+| `services/api/src/views/popChrome.ts` | **macOS×ポップ 共通シェル**（サイドバー / `popPage` / `popAdminPage` / `POP_ADMIN_BRIDGE`） |
+| `services/api/src/views/masterChrome.ts` | 旧 `/master/*` 共通レイアウト（pop へ移行中。ブリッジで再利用） |
+| `services/api/src/views/conditionsHtml.ts` | `/master/conditions`（view 基準実装） |
+| `services/api/src/views/vendorMasterHtml.ts` | `/master/vendors`（admin 基準実装） |
+| `services/api/src/views/sublicenseHtml.ts` | `/master/sublicense` 受領予定 |
+| `services/api/src/views/workModelHtml.ts` | `/work-model` 作品モデル |
+| `services/api/src/services/conditionsService.ts` | 条件明細 検索 / CSV / 紐付け / 状態フラグ定義 |
+| `services/api/src/services/sublicenseService.ts` | サブライセンス案件 / 受領予定ロジック |
 | `services/api/src/services/staffMasterService.ts` | staff CRUD ロジック |
 | `services/worker/src/lib/db.ts` | スキーマ・マイグレーション(本丸) |
 
@@ -395,6 +482,10 @@ gcloud run services update legalbridge-search-api \
 | 22.21.41 | Master/Imports に「Admin に戻る」リンク |
 | 22.21.42 | `/admin/staff` サブページ分離 + viewer プレビュー動線 |
 | 22.21.43 | 取引先マスタ項目追加、住所/口座 1:N、CSV テンプレートダウンロード |
+| 22.21.9x | 条件明細 横断検索 + 紐付け編集 + 状態フラグ + CSV 出力（`/master/conditions`） |
+| 22.21.9x | 受領予定(サブライセンス) 管理（`/master/sublicense`）+ 受領確定→payments(inbound) 記録 |
+| 22.21.9x | 個人情報取得同意フラグ（`vendors.pii_consent_*`）+ 文書作成時の同意書同時生成 |
+| 22.21.92 | **macOS×ポップ UI リデザイン**（サイドバーナビ / admin・view デザイン分け / `popChrome.ts`）。view=条件明細・admin=取引先マスタを基準に段階展開 |
 
 ---
 
@@ -405,6 +496,7 @@ gcloud run services update legalbridge-search-api \
 | 画面が表示されない | Cloud Run のログ → IAP の OAuth consent → SSL 証明書のステータス |
 | 取込が途中で失敗 | Dry Run プレビューのエラー欄、Cloud Run のログ |
 | ロール切替が効かない | env `LB_APP_ADMIN_EMAILS` の上書き有無、ブラウザのキャッシュ |
-| デプロイされない | GitHub Actions の `release/worker` ブランチワークフロー実行履歴 |
+| デプロイされない | **`release/api` に push したか**、Cloud Build トリガー `legalbridge-search-api-release` の実行履歴（`gcloud builds list`）。worker 用の `release/worker` と取り違えていないか |
+| 画面が旧デザインのまま | Cloud Run の最新 revision が `release/api` 最新コミットを使っているか、ブラウザのハードリロード |
 
 実装の詳細を確認する場合は、上記「関連ファイル」テーブルから該当ソースを開いてください。
