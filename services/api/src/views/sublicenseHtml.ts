@@ -9,7 +9,8 @@
  * 受領は当社が「受け取る」側。条件明細(支払側)とは分離しつつ UX は統一。
  */
 
-import { HEAD_FONTS, MASTER_CSS, topbarHtml, masterTabsHtml } from "./masterChrome.ts";
+import { MASTER_CSS } from "./masterChrome.ts";
+import { popAdminPage } from "./popChrome.ts";
 
 const EXTRA_CSS = `
 .sec { margin-bottom: 18px; }
@@ -47,19 +48,8 @@ th.chk, td.chk { width: 30px; text-align: center; }
 `;
 
 export function sublicensePage(): string {
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>受領予定(サブライセンス) · Arcs Legal OS</title>
-${HEAD_FONTS}
-<style>${MASTER_CSS}${EXTRA_CSS}</style>
-</head>
-<body>
-${topbarHtml("Sublicense", "サブライセンス受領管理 · 受領予定(料率×売上 / MG / 前払)")}
-${masterTabsHtml("sublicense")}
-<div class="container">
+  const body = `
+<div class="container" style="padding:0 0 24px;">
 
   <div class="sec">
     <div class="toolbar">
@@ -405,7 +395,14 @@ ${masterTabsHtml("sublicense")}
   document.getElementById("btn-csv-sel").addEventListener("click",function(){var ids=checkedIds();if(!ids.length){alert("CSV出力する行を選択してください。");return;}csvExport(ids);});
 
   (async function(){await loadOptions();await loadDeals();await loadReceipts();})();
-</script>
-</body>
-</html>`;
+</script>`;
+
+  return popAdminPage({
+    active: "sublicense",
+    masterCss: MASTER_CSS,
+    title: "受領予定(サブライセンス)",
+    subtitle: "サブライセンス受領管理 · 受領予定(料率×売上 / MG / 前払)",
+    body,
+    headExtra: `<style>${EXTRA_CSS}</style>`,
+  });
 }
