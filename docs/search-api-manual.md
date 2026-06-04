@@ -429,11 +429,17 @@ gcloud builds list --limit 3
 >   --substitutions=SHORT_SHA=$(git rev-parse --short HEAD)
 > ```
 
-### マイグレーション
+### マイグレーション（スキーマ変更）
 
-`services/worker/src/lib/db.ts` の `initDb()` が起動時に冪等な `CREATE TABLE / ALTER … IF NOT EXISTS` を実行します。
-search-api 側の `db.ts` には `initDb` がありますが **実行されません** (search-api は read-mostly のため)。
-スキーマ変更は必ず worker 側に書いてください。
+**スキーマの単一所有者は `migrations/` ランナー**です。`migrations/NNNN_*.sql` を `schema_migrations` で追跡し、未適用分のみを順に適用します（冪等）。アプリ（search-api / worker）は**起動時に DDL を流しません**。
+
+- **適用タイミング**: `release/worker` への push で `cloudbuild-worker.yaml` の **① migration ステップ**が走り、成功してから worker をデプロイします（マイグレーションが失敗するとデプロイは止まり、旧 revision が生き続けます）。
+- **接続**: 最小権限ロール `lb_migrate`（Secret `lb-migrate-database-url`）で接続。アプリ実行時の DB ロールには DDL 権限を与えません。
+- **スキーマ変更の追加手順**: `migrations/` に次番号の `NNNN_*.sql` を追加 → `release/worker` に載せて push（→ 自動適用 → worker デプロイ）。
+- **worker `initDb()` は既定で実行しません**（`RUN_INIT_DB=true` の時だけ後方互換でローカル/緊急時に起動時 DDL）。search-api 側の `db.ts` も同様に実行されません。
+- **手動・緊急適用**: `cloudbuild-migrate.yaml` を `gcloud builds submit --config=cloudbuild-migrate.yaml --substitutions=SHORT_SHA=$(git rev-parse --short HEAD)` で単発実行できます。
+
+> 旧構成からの変更点（統合）: 以前は worker 起動時 `initDb()` と独立 `legalbridge-migrate` トリガーの 2 系統がありました。現在は **「`migrations/` ランナーを worker デプロイ・パイプラインに畳み込む」1 系統**に統合しています。独立 `legalbridge-migrate` トリガー（特に `_INSTANCE_CONNECTION_NAME` 未指定で Cloud SQL バインドが外れ socket `ENOENT` で失敗していたもの）は**無効化**してください。
 
 ### ログを見る
 

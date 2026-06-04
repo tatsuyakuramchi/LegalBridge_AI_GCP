@@ -206,19 +206,20 @@ async function startServer() {
     return null; // 単一明細 → 従来表示
   };
 
-  // Phase 0 (D2): schema は migration ランナー(migrations/)が単一所有する。
-  // 起動時 initDb は段階移行のため RUN_INIT_DB で制御する。
-  //   未設定 / "true": 現行どおり起動時に DDL を流す(後方互換)
-  //   "false"        : worker は DDL を触らない(ランナー検証後に切替 — §8.5 step3)
-  if (process.env.RUN_INIT_DB === "false") {
-    console.log("⏭️  RUN_INIT_DB=false — skipping initDb (schema owned by migrations/ runner)");
-  } else {
+  // schema は migrations/ ランナーが単一所有する(統合: worker デプロイ・パイプラインの
+  //   migrate ステップ = cloudbuild-worker.yaml ① で適用)。worker は既定では起動時に
+  //   DDL を触らない。boot-time DDL は複数インスタンス同時起動での競合・アプリロールへの
+  //   DDL 権限付与を招くため避ける。
+  //   RUN_INIT_DB="true" の時だけ後方互換で起動時 initDb を実行(ローカル/緊急用)。
+  if (process.env.RUN_INIT_DB === "true") {
     try {
       await initDb();
-      console.log("✅ Database initialized (worker has read-write role)");
+      console.log("✅ Database initialized via initDb (RUN_INIT_DB=true; legacy boot-time DDL)");
     } catch (dbErr) {
       console.error("❌ Database initialization failed:", dbErr);
     }
+  } else {
+    console.log("⏭️  initDb skipped — schema owned by migrations/ runner (applied in worker deploy pipeline)");
   }
 
   const app = express();
