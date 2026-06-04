@@ -74,10 +74,12 @@ export interface Vendor {
 }
 
 export interface Staff {
+  id?: number
   slack_user_id: string
   staff_name: string
   department?: string
   email?: string
+  app_role?: string
 }
 
 export interface Issue {
