@@ -98,6 +98,8 @@ const READ_PATHS_ON_GET: RegExp[] = [
   /^\/api\/conditions(?:\/|\?|$)/,
   // 紐付け編集モーダルのピッカー(原作/作品/契約)も search-api 専用 read。
   /^\/api\/v3\/(?:source-ips|works|contracts)(?:\/|\?|$)/,
+  // 統合 P3-5: 作品モデル CSV サンプル(template)も search-api 専用 read。
+  /^\/api\/v3\/import\/[^/]+\/template\.csv(?:\?|$)/,
   // 統合 P3-3: 請求権受領(sublicense)は search-api 専用。read/CSV を含む。
   /^\/api\/sublicense(?:\/|\?|$)/,
   // 統合 P3-4: 分配構造マップ(receivable-map)と作品別名(aliases)read。
@@ -127,6 +129,8 @@ const READ_PATHS_ON_POST: RegExp[] = [  /^\/api\/contract-check(?:\/|$)/,
   // 統合 P3-4: 作品別名(タイトル名寄せ)の追加/削除は search-api 正規実装へ。
   /^\/api\/works\/\d+\/aliases(?:\?|$)/,
   /^\/api\/work-aliases\/\d+(?:\?|$)/,
+  // 統合 P3-5: 作品モデル(v3)の write(POST/PUT/import)は search-api 正規実装へ。
+  /^\/api\/v3\//,
 ];
 
 function resolveBaseUrl(method: string, path: string): string {

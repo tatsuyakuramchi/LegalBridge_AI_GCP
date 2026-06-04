@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 import { Search, ArrowRight, ChevronDown, Plus } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
@@ -80,6 +81,16 @@ export function ReceivableMapPanel() {
     setWorkId(id)
     loadMap(id)
   }
+
+  // 作品モデル等からの deep-link (?work=<id>) を反映。
+  const [searchParams] = useSearchParams()
+  React.useEffect(() => {
+    const w = searchParams.get("work")
+    if (w) {
+      setWorkId(w)
+      loadMap(w)
+    }
+  }, [searchParams, loadMap])
 
   // ── 他社/改題タイトル → 作品 解決 (debounce) ──
   const [resolveQ, setResolveQ] = React.useState("")
