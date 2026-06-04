@@ -28,6 +28,7 @@ export type WorkDistribution = {
     source_ip_title: string;
     source_code: string;
     rate_pct: number | null;
+    rate_basis: string; // 料率の適用基礎(region_language_label: サブライセンス/翻訳・海外版 等)
     mg_amount: number | null;
     distribute_amount: number | null; // 受領(サブライセンス)× rate
   }>;
@@ -96,20 +97,39 @@ export async function getWorkDistribution(workId: number): Promise<WorkDistribut
   //   の親契約 + condition_no=2(サブライセンス)の料率。
   let upstream: WorkDistribution["upstream"] = [];
   try {
+    // 分配率 = 「当社の受領を基礎に上流へ分配する」金銭条件。
+    //   license:     condition_no=2(サブライセンス)
+    //   publication: condition_no=3(翻訳・海外版=被許諾者受取ライセンス収益×料率)
+    //                / 2(電子書籍=被許諾者受領額×料率)
+    //   契約類型で番号が違うため、condition_no 決め打ちではなく
+    //   「受領/受取ベース」や region ラベル(サブライセンス/翻訳/海外)で拾う。
     const ur = await query(
-      `SELECT DISTINCT cc.id AS capability_id, cc.document_number,
+      `SELECT DISTINCT cc.id AS capability_id, cc.document_number, cc.contract_category,
               v.vendor_name AS licensor_name,
               si.title AS source_ip_title, si.source_code,
-              fc.rate_pct, fc.mg_amount
+              fc.rate_pct, fc.mg_amount, fc.region_language_label AS rate_basis
          FROM capability_line_items cli
          JOIN contract_capabilities cc ON cc.id = cli.capability_id
          LEFT JOIN vendors v ON v.id = cc.vendor_id
          LEFT JOIN source_ips si ON si.id = cli.source_ip_id
-         LEFT JOIN capability_financial_conditions fc
-           ON fc.capability_id = cc.id AND fc.condition_no = 2
+         LEFT JOIN LATERAL (
+           SELECT f.rate_pct, f.mg_amount, f.region_language_label
+             FROM capability_financial_conditions f
+            WHERE f.capability_id = cc.id
+              AND (
+                f.region_language_label ILIKE '%サブライセンス%'
+                OR f.region_language_label ILIKE '%翻訳%'
+                OR f.region_language_label ILIKE '%海外%'
+                OR f.base_price_label ILIKE '%受領%' OR f.base_price_label ILIKE '%受取%'
+                OR f.formula_text ILIKE '%受領%'   OR f.formula_text ILIKE '%受取%'
+                OR (cc.contract_category ILIKE 'license%' AND f.condition_no = 2)
+              )
+            ORDER BY f.rate_pct DESC NULLS LAST
+            LIMIT 1
+         ) fc ON TRUE
         WHERE cli.work_id = $1
           AND COALESCE(cli.is_inbound, FALSE) = FALSE
-          AND cc.contract_category ILIKE 'license%'`,
+          AND (cc.contract_category ILIKE 'license%' OR cc.contract_category = 'publication')`,
       [workId]
     );
     upstream = ur.rows.map((r: any) => {
@@ -121,6 +141,7 @@ export async function getWorkDistribution(workId: number): Promise<WorkDistribut
         source_ip_title: r.source_ip_title || "",
         source_code: r.source_code || "",
         rate_pct: rate,
+        rate_basis: r.rate_basis || "",
         mg_amount: r.mg_amount == null ? null : Number(r.mg_amount),
         distribute_amount: rate == null ? null : Math.round(sublicenseReceived * (rate / 100)),
       };

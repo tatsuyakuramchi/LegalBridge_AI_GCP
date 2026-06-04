@@ -65,7 +65,7 @@ export function receivableMapPage(): string {
   }
 
   function nodeUp(u){
-    var rate=u.rate_pct==null?'<span class="rate">料率未設定</span>':'<span class="rate">料率 '+esc(u.rate_pct)+'%</span>';
+    var rate=u.rate_pct==null?'<span class="rate">料率未設定</span>':'<span class="rate">料率 '+esc(u.rate_pct)+'%</span>'+(u.rate_basis?' <span class="muted" style="font-size:10px;">('+esc(u.rate_basis)+')</span>':'');
     var dist=u.distribute_amount==null?'<small>(料率未設定のため算定不可)</small>':'¥'+yen(u.distribute_amount);
     return '<div class="node up"><div class="nm">'+esc(u.licensor_name||"(ライセンサー未設定)")+'</div>'+
       '<div class="meta">'+(u.source_ip_title?'原作: '+esc(u.source_ip_title)+' ':'')+(u.document_number?'· '+esc(u.document_number):'')+'</div>'+
