@@ -133,6 +133,7 @@ import {
   confirmReceipt as confirmSubReceipt,
   unconfirmReceipt as unconfirmSubReceipt,
   setReceiptStatus as setSubReceiptStatus,
+  importInboundConditions as importInboundReceivables,
 } from "./src/services/sublicenseService.ts";
 import {
   listConditions,
@@ -2722,6 +2723,7 @@ async function startServer() {
           ringi_id: toIdOrNull(b.ringi_id),
           status_flags:
             b.status_flags && typeof b.status_flags === "object" ? b.status_flags : null,
+          is_inbound: typeof b.is_inbound === "boolean" ? b.is_inbound : null,
         });
         res.json({ ok: true });
       } catch (error: any) {
@@ -2830,10 +2832,24 @@ async function startServer() {
     }
   });
 
-  // 受領予定一覧(deal を各回に展開)
+  // 条件明細(inbound)→ 請求権 自動取込(冪等)
+  app.post("/api/sublicense/receipts/import", requireIapUser({ renderErrorPage }), async (_req, res) => {
+    try {
+      const r = await importInboundReceivables();
+      res.json({ ok: true, ...r });
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts/import failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 受領予定一覧(deal を各回に展開)。?import=1 で取込を先に実行。
   app.get("/api/sublicense/receipts", requireIapUser({ renderErrorPage }), async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
+      if (q.import === "1") {
+        try { await importInboundReceivables(); } catch (e) { console.warn("inbound import skipped:", e); }
+      }
       const result = await listSubReceipts({
         from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
         kind: q.kind, status: q.status,

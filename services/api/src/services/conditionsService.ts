@@ -148,7 +148,7 @@ export async function listConditions(
        cli.master_contract_id, mc.contract_title AS master_contract_title,
        mc.document_number AS master_contract_number,
        cli.ringi_id, rr.ringi_number, rr.title AS ringi_title,
-       cli.status_flags`;
+       cli.status_flags, COALESCE(cli.is_inbound, FALSE) AS is_inbound`;
   const linkJoins = `
     LEFT JOIN source_ips si ON si.id = cli.source_ip_id
     LEFT JOIN works w ON w.id = cli.work_id
@@ -213,6 +213,7 @@ export async function listConditions(
     ringi_number: r.ringi_number || "",
     ringi_title: r.ringi_title || "",
     status_flags: normalizeFlags(r.status_flags),
+    is_inbound: r.is_inbound === true, // 当社の受領(請求権)明細か
   }));
 
   return { rows, total };
@@ -249,6 +250,7 @@ export async function updateConditionLinks(
     master_contract_id?: number | null;
     ringi_id?: number | null;
     status_flags?: Record<string, boolean> | null;
+    is_inbound?: boolean | null; // 受領(請求権)明細フラグ。未指定なら据え置き
   }
 ): Promise<void> {
   // status_flags は定義済みキーのうち true のものだけを残して JSON 化。
@@ -260,11 +262,14 @@ export async function updateConditionLinks(
     }
     flagsJson = JSON.stringify(clean);
   }
+  // is_inbound は明示指定(boolean)時のみ更新。null/undefined は据え置き。
+  const inbound = typeof links.is_inbound === "boolean" ? links.is_inbound : null;
 
   await query(
     `UPDATE capability_line_items
         SET source_ip_id = $2, work_id = $3, master_contract_id = $4, ringi_id = $5,
             status_flags = COALESCE($6::jsonb, status_flags),
+            is_inbound = COALESCE($7::boolean, is_inbound),
             updated_at = CURRENT_TIMESTAMP
       WHERE id = $1`,
     [
@@ -274,6 +279,7 @@ export async function updateConditionLinks(
       links.master_contract_id ?? null,
       links.ringi_id ?? null,
       flagsJson,
+      inbound,
     ]
   );
 }

@@ -416,6 +416,7 @@ function mapDeal(r: any) {
     counterparty_name: r.counterparty_name || "",
     counterparty_vendor_id: r.counterparty_vendor_id == null ? null : Number(r.counterparty_vendor_id),
     source_contract_id: r.source_contract_id == null ? null : Number(r.source_contract_id),
+    source_line_item_id: r.source_line_item_id == null ? null : Number(r.source_line_item_id),
     source_contract_number: r.source_contract_number || "",
     basis: r.basis || "sales",
     rate_pct: numOrNull(r.rate_pct),
@@ -497,6 +498,102 @@ export async function upsertDeal(deal: SublicenseDeal): Promise<number> {
 
 export async function deleteDeal(id: number): Promise<void> {
   await query(`DELETE FROM sublicense_deals WHERE id = $1`, [id]);
+}
+
+// ── 条件明細(inbound)→ 請求権 自動取込 ────────────────────────────
+/** contract_category → receivable_kind 既定マップ。 */
+function kindFromCategory(cat: string): string {
+  const c = String(cat || "").toLowerCase();
+  if (c.startsWith("license")) return "license_out"; // 当社が許諾者=ライセンスアウト
+  if (c === "publication") return "publication";
+  if (c === "service") return "service";
+  return "other";
+}
+
+/**
+ * 当社の受領(inbound)としてマークされた条件明細(capability_line_items.is_inbound=TRUE)
+ * から請求権 deal を自動生成/更新する。source_line_item_id で冪等(1明細=1 deal)。
+ *
+ * モデル: 各明細 = 受領1回(payment_date に amount_ex_tax を受領)。
+ *   deal は rate_pct=100 / forecast=amount で「単発・固定額」として展開する
+ *   (term_start=term_end=受領日, cycle=ANNUAL, billing_day=NULL → 1回 = amount)。
+ *   料率×売上の連動が必要な明細は、手動 deal で別途登録する想定。
+ *
+ * 戻り値: { imported, updated, skipped }。列/テーブル未整備時は no-op。
+ */
+export async function importInboundConditions(): Promise<{ imported: number; updated: number }> {
+  let rows: any[] = [];
+  try {
+    const res = await query(
+      `SELECT cli.id AS line_id, cli.amount_ex_tax, cli.payment_date, cli.delivery_date,
+              cli.term_start, cli.item_name, cli.work_id,
+              cc.id AS capability_id, cc.document_number, cc.contract_category,
+              cc.vendor_id, v.vendor_name
+         FROM capability_line_items cli
+         JOIN contract_capabilities cc ON cc.id = cli.capability_id
+         LEFT JOIN vendors v ON v.id = cc.vendor_id
+        WHERE cli.is_inbound = TRUE`
+    );
+    rows = res.rows;
+  } catch (err: any) {
+    if (err && (err.code === "42P01" || err.code === "42703")) return { imported: 0, updated: 0 };
+    throw err;
+  }
+
+  let imported = 0;
+  let updated = 0;
+  for (const r of rows) {
+    const lineId = Number(r.line_id);
+    const recvDate = d2s(r.payment_date) || d2s(r.delivery_date) || d2s(r.term_start) || "";
+    const kind = kindFromCategory(r.contract_category);
+    const amount = numOrNull(r.amount_ex_tax);
+    const fields = {
+      receivable_kind: kind,
+      work_id: r.work_id == null ? null : Number(r.work_id),
+      counterparty_name: r.vendor_name || null,
+      counterparty_vendor_id: r.vendor_id == null ? null : Number(r.vendor_id),
+      source_contract_number: r.document_number || null,
+      basis: "sales",
+      rate_pct: 100,
+      forecast_amount: amount,
+      currency: "JPY",
+      cycle: "ANNUAL",
+      billing_day: null as number | null,
+      term_start: recvDate || null,
+      term_end: recvDate || null,
+      remarks: `条件明細から自動取込(明細#${lineId} / ${r.item_name || ""})`,
+    };
+    // 既存(source_line_item_id)を引いて update / insert を分岐(冪等)。
+    const ex = await query(`SELECT id FROM sublicense_deals WHERE source_line_item_id = $1`, [lineId]);
+    if (ex.rows.length) {
+      await query(
+        `UPDATE sublicense_deals SET
+            receivable_kind=$2, work_id=$3, counterparty_name=$4, counterparty_vendor_id=$5,
+            source_contract_number=$6, basis=$7, rate_pct=$8, forecast_amount=$9, currency=$10,
+            cycle=$11, billing_day=$12, term_start=$13, term_end=$14, remarks=$15, updated_at=now()
+          WHERE id=$1`,
+        [ex.rows[0].id, fields.receivable_kind, fields.work_id, fields.counterparty_name,
+         fields.counterparty_vendor_id, fields.source_contract_number, fields.basis, fields.rate_pct,
+         fields.forecast_amount, fields.currency, fields.cycle, fields.billing_day,
+         fields.term_start, fields.term_end, fields.remarks]
+      );
+      updated++;
+    } else {
+      await query(
+        `INSERT INTO sublicense_deals
+           (receivable_kind, work_id, counterparty_name, counterparty_vendor_id, source_contract_number,
+            basis, rate_pct, forecast_amount, currency, cycle, billing_day, term_start, term_end,
+            remarks, source_line_item_id, status)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,'active')`,
+        [fields.receivable_kind, fields.work_id, fields.counterparty_name, fields.counterparty_vendor_id,
+         fields.source_contract_number, fields.basis, fields.rate_pct, fields.forecast_amount,
+         fields.currency, fields.cycle, fields.billing_day, fields.term_start, fields.term_end,
+         fields.remarks, lineId]
+      );
+      imported++;
+    }
+  }
+  return { imported, updated };
 }
 
 export type ReceiptFilters = {

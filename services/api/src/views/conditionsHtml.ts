@@ -115,6 +115,13 @@ export function conditionsPage(): string {
         <label>状態</label>
         <div class="checks" id="m-status"></div>
       </div>
+      <div class="fld">
+        <label>当社の受領(請求権)</label>
+        <div class="checks">
+          <label><input type="checkbox" id="m-inbound"> この明細は当社が相手方に請求/受領する(inbound)</label>
+          <div class="muted" style="font-size:11px;">ON にすると「請求権台帳(受領予定)」へ自動取込されます(ライセンスアウト・出版印税など)。</div>
+        </div>
+      </div>
     </div>
     <div class="mfoot">
       <button class="pop-btn sec" id="m-cancel">キャンセル</button>
@@ -168,6 +175,7 @@ export function conditionsPage(): string {
       '</tr>';
     var bodyHtml = rows.map(function (r) {
       var typeCell = '<span class="badge-cat">' + esc(catLabel(r.contract_category)) + '</span>' +
+        (r.is_inbound ? ' <span class="cond-link-pill ip">受領</span>' : '') +
         (r.contract_type ? '<div class="sub10">' + esc(r.contract_type) + '</div>' : '');
       var vendor = esc(r.vendor_name || "—") + (r.vendor_code ? '<div class="sub10">' + esc(r.vendor_code) + '</div>' : '');
       var item = '<div>' + esc(r.item_name || "—") + '</div>' +
@@ -311,6 +319,7 @@ export function conditionsPage(): string {
       return '<label><input type="checkbox" class="st-chk" value="' + esc(d.key) + '"' +
         (sf[d.key] ? " checked" : "") + ">" + esc(d.label) + "</label>";
     }).join("");
+    document.getElementById("m-inbound").checked = row.is_inbound === true;
   }
   function closeModal() { document.getElementById("backdrop").classList.remove("open"); editingId = null; }
   async function saveLinks() {
@@ -333,6 +342,7 @@ export function conditionsPage(): string {
               .forEach(function (c) { if (c.checked) f[c.value] = true; });
             return f;
           })(),
+          is_inbound: document.getElementById("m-inbound").checked,
         }),
       });
       var data = await res.json().catch(function () { return {}; });

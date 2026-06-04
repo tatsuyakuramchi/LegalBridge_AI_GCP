@@ -54,7 +54,10 @@ export function sublicensePage(): string {
   <div class="sec">
     <div class="toolbar">
       <h2>請求権の条件(種別 × 相手方 × 受領条件)<span class="muted" id="deal-count">—</span></h2>
-      <button class="btn" id="btn-add">＋ 条件を追加</button>
+      <div style="display:flex;gap:6px;">
+        <button class="btn outline" id="btn-import" title="条件明細で「受領(inbound)」ON の明細を請求権に取り込みます">⟳ 条件明細から取り込む</button>
+        <button class="btn" id="btn-add">＋ 条件を追加</button>
+      </div>
     </div>
     <div class="table-scroll">
       <div id="deals-wrap"><div class="empty">LOADING…</div></div>
@@ -397,7 +400,20 @@ export function sublicensePage(): string {
   function updateSel(){var el=document.getElementById("sel-n");if(el)el.textContent=checkedIds().length;}
   function csvExport(ids){var p=rgather();if(ids&&ids.length)p.set("ids",ids.join(","));window.location.href="/api/sublicense/receipts/export?"+p.toString();}
 
+  /* ---- 条件明細(inbound)→請求権 取込 ---- */
+  async function importInbound(silent){
+    var btn=document.getElementById("btn-import");if(btn)btn.disabled=true;
+    try{
+      var res=await fetch("/api/sublicense/receipts/import",{method:"POST",credentials:"same-origin"});
+      var data=await res.json().catch(function(){return{};});
+      if(!res.ok||data.ok===false)throw new Error(data.error||("HTTP "+res.status));
+      if(!silent)alert("取込完了: 新規 "+(data.imported||0)+" 件 / 更新 "+(data.updated||0)+" 件");
+      await loadDeals();await loadReceipts();
+    }catch(e){if(!silent)alert("取込に失敗しました: "+(e&&e.message?e.message:e));}finally{if(btn)btn.disabled=false;}
+  }
+
   /* ---- wiring ---- */
+  document.getElementById("btn-import").addEventListener("click",function(){importInbound(false);});
   document.getElementById("btn-add").addEventListener("click",function(){openEdit(null);});
   document.getElementById("deals-wrap").addEventListener("click",function(e){var tr=e.target.closest?e.target.closest("tr.clickable"):null;if(tr){var id=Number(tr.getAttribute("data-id"));var d=DEALS.filter(function(x){return x.id===id;})[0];if(d)openEdit(d);}});
   document.getElementById("m-close").addEventListener("click",closeModal);
@@ -432,7 +448,10 @@ export function sublicensePage(): string {
   document.getElementById("btn-csv-all").addEventListener("click",function(){csvExport(null);});
   document.getElementById("btn-csv-sel").addEventListener("click",function(){var ids=checkedIds();if(!ids.length){alert("CSV出力する行を選択してください。");return;}csvExport(ids);});
 
-  (async function(){await loadOptions();await loadDeals();await loadReceipts();})();
+  (async function(){
+    await loadOptions();await loadDeals();await loadReceipts();
+    importInbound(true); // 起動時に条件明細(inbound)を自動取込(冪等・サイレント)
+  })();
 </script>`;
 
   return popAdminPage({
