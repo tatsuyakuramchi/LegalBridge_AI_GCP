@@ -129,32 +129,57 @@ export function buildReceiptRows(
   advance_applied: number;
   reported_sales: number | null;
   reported_quantity: number | null;
+  report_count: number;
 }> {
   const dates = receiptDates(deal);
   if (dates.length === 0) return [];
   const rate = num(deal.rate_pct) / 100;
   const isMfg = (deal.basis || "sales") === "manufacturing";
-  const repByDate: Record<string, any> = {};
+
+  // 1 報告のロイヤリティ。reported_amount があれば最優先、無ければ基準で算定。
+  //   基準は報告単位(report_basis)を優先し、無ければ deal.basis。
+  const reportRoyalty = (r: any): number => {
+    if (r.reported_amount != null && r.reported_amount !== "") return num(r.reported_amount);
+    const basis = r.report_basis || deal.basis || "sales";
+    if (basis === "manufacturing") {
+      const up = r.unit_price != null && r.unit_price !== "" ? num(r.unit_price) : num(deal.unit_price);
+      return rate * up * num(r.reported_quantity);
+    }
+    return rate * num(r.reported_sales);
+  };
+  // 報告の代表日 = period_end(無ければ period_date)。
+  const reportDate = (r: any): string => d2s(r.period_end) || d2s(r.period_date) || "";
+
+  // 各利用報告を「利用期間末(reportDate)以降で最も早い受領回」に割り当てる
+  //   (受領は利用期間の後に発生する想定)。該当が無ければ最終受領回に巻き取る。
+  //   これで 月次報告→四半期受領 の集約(混在)も、1:1 も自然に動く。
+  const buckets: any[][] = dates.map(() => []);
   (reports || []).forEach((r) => {
-    repByDate[d2s(r.period_date)] = r;
+    const rd = reportDate(r);
+    if (!rd) return;
+    let idx = dates.findIndex((d) => d >= rd);
+    if (idx < 0) idx = dates.length - 1;
+    buckets[idx].push(r);
   });
 
-  const rows = dates.map((date) => {
-    const rep = repByDate[date];
-    const hasActual =
-      rep != null && (rep.reported_sales != null || rep.reported_quantity != null);
+  const rows = dates.map((date, idx) => {
+    const matched = buckets[idx];
+    const hasActual = matched.some(
+      (r) => r.reported_sales != null || r.reported_quantity != null || r.reported_amount != null
+    );
     if (hasActual) {
-      const royalty = isMfg
-        ? rate * num(deal.unit_price) * num(rep.reported_quantity)
-        : rate * num(rep.reported_sales);
+      const royalty = matched.reduce((s, r) => s + reportRoyalty(r), 0);
+      const sumSales = matched.reduce((s, r) => s + num(r.reported_sales), 0);
+      const sumQty = matched.reduce((s, r) => s + num(r.reported_quantity), 0);
       return {
         date,
         amount: Math.round(royalty),
         estimated: false,
         mg_topup: 0,
         advance_applied: 0,
-        reported_sales: rep.reported_sales == null ? null : Number(rep.reported_sales),
-        reported_quantity: rep.reported_quantity == null ? null : Number(rep.reported_quantity),
+        reported_sales: isMfg ? null : sumSales,
+        reported_quantity: isMfg ? sumQty : null,
+        report_count: matched.length,
       };
     }
     return {
@@ -165,6 +190,7 @@ export function buildReceiptRows(
       advance_applied: 0,
       reported_sales: null as number | null,
       reported_quantity: null as number | null,
+      report_count: 0,
     };
   });
 
@@ -207,22 +233,47 @@ export function expandReceipts(deal: SublicenseDeal): Array<{ date: string; amou
   return buildReceiptRows(deal, []).map((r) => ({ date: r.date, amount: r.amount }));
 }
 
-// ── 売上報告 CRUD ───────────────────────────────────────────────
+// ── 利用報告(売上報告) CRUD ────────────────────────────────────
+const REPORT_COLS_EXT =
+  "id, deal_id, period_date, period_label, period_start, period_end, report_basis, " +
+  "unit_price, reported_amount, reported_sales, reported_quantity, note, reported_at";
+const REPORT_COLS_BASE = "id, deal_id, period_date, reported_sales, reported_quantity, note, reported_at";
+
+function mapReport(r: any) {
+  return {
+    id: Number(r.id),
+    deal_id: Number(r.deal_id),
+    period_date: d2s(r.period_date),
+    period_label: r.period_label || "",
+    period_start: d2s(r.period_start) || null,
+    period_end: d2s(r.period_end) || null,
+    report_basis: r.report_basis || "",
+    unit_price: numOrNull(r.unit_price),
+    reported_amount: numOrNull(r.reported_amount),
+    reported_sales: numOrNull(r.reported_sales),
+    reported_quantity: numOrNull(r.reported_quantity),
+    note: r.note || "",
+  };
+}
+
 export async function listReportsByDeal(dealId: number): Promise<any[]> {
   try {
-    const res = await query(
-      `SELECT id, deal_id, period_date, reported_sales, reported_quantity, note, reported_at
-         FROM sublicense_sales_reports WHERE deal_id = $1 ORDER BY period_date`,
-      [dealId]
-    );
-    return res.rows.map((r: any) => ({
-      id: Number(r.id),
-      deal_id: Number(r.deal_id),
-      period_date: d2s(r.period_date),
-      reported_sales: numOrNull(r.reported_sales),
-      reported_quantity: numOrNull(r.reported_quantity),
-      note: r.note || "",
-    }));
+    let res: any;
+    try {
+      res = await query(
+        `SELECT ${REPORT_COLS_EXT} FROM sublicense_sales_reports
+          WHERE deal_id = $1 ORDER BY COALESCE(period_end, period_date), id`,
+        [dealId]
+      );
+    } catch (err: any) {
+      if (err && err.code === "42703") {
+        res = await query(
+          `SELECT ${REPORT_COLS_BASE} FROM sublicense_sales_reports WHERE deal_id = $1 ORDER BY period_date`,
+          [dealId]
+        );
+      } else throw err;
+    }
+    return res.rows.map(mapReport);
   } catch (err: any) {
     if (err && (err.code === "42P01" || err.code === "42703")) return [];
     throw err;
@@ -232,9 +283,20 @@ export async function listReportsByDeal(dealId: number): Promise<any[]> {
 async function loadReportsMap(): Promise<Record<number, any[]>> {
   const map: Record<number, any[]> = {};
   try {
-    const res = await query(
-      `SELECT deal_id, period_date, reported_sales, reported_quantity FROM sublicense_sales_reports`
-    );
+    let res: any;
+    try {
+      res = await query(
+        `SELECT deal_id, period_date, period_end, report_basis, unit_price, reported_amount,
+                reported_sales, reported_quantity
+           FROM sublicense_sales_reports`
+      );
+    } catch (err: any) {
+      if (err && err.code === "42703") {
+        res = await query(
+          `SELECT deal_id, period_date, reported_sales, reported_quantity FROM sublicense_sales_reports`
+        );
+      } else throw err;
+    }
     for (const r of res.rows) {
       const k = Number(r.deal_id);
       (map[k] = map[k] || []).push(r);
@@ -248,26 +310,54 @@ async function loadReportsMap(): Promise<Record<number, any[]>> {
 export async function upsertReport(rep: {
   deal_id: number;
   period_date: string;
+  period_label?: string | null;
+  period_start?: string | null;
+  period_end?: string | null;
+  report_basis?: string | null;
+  unit_price?: number | null;
+  reported_amount?: number | null;
   reported_sales?: number | null;
   reported_quantity?: number | null;
   note?: string | null;
 }): Promise<void> {
-  await query(
-    `INSERT INTO sublicense_sales_reports (deal_id, period_date, reported_sales, reported_quantity, note)
-     VALUES ($1, $2, $3, $4, $5)
-     ON CONFLICT (deal_id, period_date) DO UPDATE SET
-       reported_sales = EXCLUDED.reported_sales,
-       reported_quantity = EXCLUDED.reported_quantity,
-       note = EXCLUDED.note,
-       updated_at = now()`,
-    [
-      rep.deal_id,
-      rep.period_date,
-      numOrNull(rep.reported_sales),
-      numOrNull(rep.reported_quantity),
-      rep.note || null,
-    ]
-  );
+  try {
+    await query(
+      `INSERT INTO sublicense_sales_reports
+         (deal_id, period_date, period_label, period_start, period_end, report_basis,
+          unit_price, reported_amount, reported_sales, reported_quantity, note)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
+       ON CONFLICT (deal_id, period_date) DO UPDATE SET
+         period_label = EXCLUDED.period_label,
+         period_start = EXCLUDED.period_start,
+         period_end = EXCLUDED.period_end,
+         report_basis = EXCLUDED.report_basis,
+         unit_price = EXCLUDED.unit_price,
+         reported_amount = EXCLUDED.reported_amount,
+         reported_sales = EXCLUDED.reported_sales,
+         reported_quantity = EXCLUDED.reported_quantity,
+         note = EXCLUDED.note,
+         updated_at = now()`,
+      [
+        rep.deal_id, rep.period_date, rep.period_label || null,
+        rep.period_start || null, rep.period_end || null, rep.report_basis || null,
+        numOrNull(rep.unit_price), numOrNull(rep.reported_amount),
+        numOrNull(rep.reported_sales), numOrNull(rep.reported_quantity), rep.note || null,
+      ]
+    );
+  } catch (err: any) {
+    // 新カラム未整備(マイグレ前)は基本列のみで保存。
+    if (err && err.code === "42703") {
+      await query(
+        `INSERT INTO sublicense_sales_reports (deal_id, period_date, reported_sales, reported_quantity, note)
+         VALUES ($1,$2,$3,$4,$5)
+         ON CONFLICT (deal_id, period_date) DO UPDATE SET
+           reported_sales = EXCLUDED.reported_sales,
+           reported_quantity = EXCLUDED.reported_quantity,
+           note = EXCLUDED.note, updated_at = now()`,
+        [rep.deal_id, rep.period_date, numOrNull(rep.reported_sales), numOrNull(rep.reported_quantity), rep.note || null]
+      );
+    } else throw err;
+  }
 }
 
 export async function deleteReport(dealId: number, periodDate: string): Promise<void> {
@@ -631,6 +721,7 @@ export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; to
         received_date: st ? st.received_date : null,
         status_note: st ? st.note : "",
         estimated: s.estimated, // true=見込 / false=実績報告ベース
+        report_count: s.report_count, // 集約した利用報告の件数
         mg_topup: s.mg_topup,
         advance_applied: s.advance_applied,
         reported_sales: s.reported_sales,

@@ -132,22 +132,28 @@ export function sublicensePage(): string {
 </div>
 
 <div class="backdrop" id="rbackdrop">
-  <div class="modal" style="max-width:420px;">
-    <div class="mhead"><h3>売上報告(実績)</h3><button class="xbtn" id="r-close">×</button></div>
+  <div class="modal" style="max-width:720px;">
+    <div class="mhead"><h3>利用報告(期間別)</h3><button class="xbtn" id="r-close">×</button></div>
     <div class="mbody" style="grid-template-columns:1fr;">
       <div class="muted" id="r-meta"></div>
-      <div class="fld" id="r-sales-wrap"><label>実売上</label><input class="tech-input" type="number" id="r-sales" placeholder="この期の売上"></div>
-      <div class="fld" id="r-qty-wrap" style="display:none;"><label>実数量</label><input class="tech-input" type="number" id="r-qty" placeholder="この期の製造/販売数"></div>
-      <div class="fld"><label>メモ</label><input class="tech-input" id="r-note"></div>
-      <div class="calc full">入力すると、この回の受領予定が「実績(料率×実績)」で再計算されます。MG・前払は全体で調整されます。</div>
-    </div>
-    <div class="mfoot" style="flex-wrap:wrap;gap:8px;">
-      <div style="display:flex;gap:8px;">
-        <button class="btn outline" id="r-delete" style="color:#b91c1c;border-color:#b91c1c;">報告を削除</button>
-        <button class="btn outline" id="r-confirm">受領確定</button>
+      <div id="r-list"></div>
+      <div class="calc full">利用報告を期間別(例: 2026年4月分・5月分…)に登録すると、受領回の対象期間に入る報告を<b>合算</b>して金額が算定されます(月次報告→四半期受領 のような混在に対応)。</div>
+      <div style="border-top:1px solid var(--border);padding-top:10px;">
+        <b style="font-size:12px;">＋ 報告を追加</b>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px;">
+          <div class="fld"><label>期間ラベル</label><input class="tech-input" id="r-label" placeholder="例: 2026年4月分"></div>
+          <div class="fld"><label>基準</label><select class="tech-select" id="r-basis"><option value="">条件に従う</option><option value="sales">売上</option><option value="manufacturing">製造時</option><option value="usage">利用期間</option></select></div>
+          <div class="fld"><label>利用期間 開始</label><input class="tech-input" type="date" id="r-start"></div>
+          <div class="fld"><label>利用期間 終了(代表日・必須)</label><input class="tech-input" type="date" id="r-end"></div>
+          <div class="fld"><label>実売上</label><input class="tech-input" type="number" id="r-sales" placeholder="売上基準"></div>
+          <div class="fld"><label>実数量(製造時)</label><input class="tech-input" type="number" id="r-qty" placeholder="製造/販売数"></div>
+          <div class="fld"><label>単価(製造時・任意)</label><input class="tech-input" type="number" id="r-unit"></div>
+          <div class="fld"><label>金額直接(任意・最優先)</label><input class="tech-input" type="number" id="r-amount" placeholder="相手方が金額を提示した場合"></div>
+          <div class="fld full"><label>メモ</label><input class="tech-input" id="r-note"></div>
+        </div>
       </div>
-      <div style="display:flex;gap:8px;"><button class="btn outline" id="r-cancel">閉じる</button><button class="btn" id="r-save">報告を保存</button></div>
     </div>
+    <div class="mfoot"><button class="btn outline" id="r-cancel">閉じる</button><button class="btn" id="r-save">報告を保存</button></div>
   </div>
 </div>
 
@@ -306,7 +312,7 @@ export function sublicensePage(): string {
     if(RECEIPTS.length===0){wrap.innerHTML='<div class="empty">受領予定がありません(条件の開始日・周期・金額を設定してください)。</div>';updateSel();return;}
     var head='<tr><th class="chk"><input type="checkbox" id="chk-all"></th><th>請求状態</th><th>種別</th><th>受領予定日</th><th>相手方</th><th>作品</th><th>参照契約</th><th>区分</th><th>実売上/数量</th><th>回</th><th class="num">金額</th></tr>';
     var body=RECEIPTS.map(function(r){
-      var kubun=r.estimated?'<span class="pill">見込</span>':'<span class="pill sales">実績</span>';
+      var kubun=r.estimated?'<span class="pill">見込</span>':'<span class="pill sales">実績</span>'+(r.report_count?' <span class="muted" style="font-size:10px;">報告'+r.report_count+'件</span>':'');
       var st=r.status||"unbilled";
       var sel='<select class="tech-select stsel" data-deal="'+r.deal_id+'" data-date="'+esc(r.receipt_date)+'" onclick="event.stopPropagation()" style="font-size:11px;padding:2px 4px;">'+
         ['unbilled','billed','received'].map(function(k){return '<option value="'+k+'"'+(k===st?' selected':'')+'>'+STATUS_LABEL[k]+'</option>';}).join("")+'</select>';
@@ -328,60 +334,63 @@ export function sublicensePage(): string {
     wrap.innerHTML='<table class="t">'+head+body+'</table>';
     updateSel();
   }
-  /* ---- 売上報告(実績)入力 ---- */
-  async function openReport(dealId, date, basis, confirmed){
-    rCtx={deal_id:dealId,date:date,basis:basis,confirmed:!!confirmed};
+  /* ---- 利用報告(期間別)管理 ---- */
+  function reportRowHtml(rep){
+    var period=rep.period_label||((rep.period_start||"")+(rep.period_start||rep.period_end?"〜":"")+(rep.period_end||rep.period_date||""));
+    var basis=rep.report_basis?(rep.report_basis==="manufacturing"?"製造時":rep.report_basis==="usage"?"利用期間":"売上"):"";
+    var val=rep.reported_amount!=null?("金額 ¥"+yen(rep.reported_amount)):(rep.reported_quantity!=null?("数量 "+yen(rep.reported_quantity)):(rep.reported_sales!=null?("売上 ¥"+yen(rep.reported_sales)):""));
+    return '<div class="alias-row" style="display:flex;gap:8px;align-items:center;padding:5px 0;border-bottom:1px solid var(--border);font-size:12px;flex-wrap:wrap;">'+
+      '<b>'+esc(period||"(期間未設定)")+'</b>'+(basis?' <span class="pill">'+esc(basis)+'</span>':'')+
+      ' <span style="color:var(--muted-foreground);">'+esc(val)+'</span>'+(rep.note?' <span style="color:var(--muted-foreground);">'+esc(rep.note)+'</span>':'')+
+      '<span style="flex:1"></span><a href="javascript:void(0)" data-delrep="'+esc(rep.period_date)+'" style="color:#b91c1c;text-decoration:none;font-weight:700;">削除</a></div>';
+  }
+  async function openReport(dealId, date, basis){
+    rCtx={deal_id:dealId};
     var deal=DEALS.filter(function(x){return x.id===dealId;})[0]||{};
-    document.getElementById("r-meta").innerHTML="作品: <b>"+esc(deal.work_title||"—")+"</b><br>相手: "+esc(deal.sublicensee_name||"—")+" / 受領予定日: <b>"+esc(date)+"</b>"+(confirmed?' <span class="pill ok">受領済</span>':"");
-    var cb=document.getElementById("r-confirm");
-    cb.textContent=confirmed?"受領を取消":"受領確定";
-    cb.style.color=confirmed?"#b91c1c":"";cb.style.borderColor=confirmed?"#b91c1c":"";
-    document.getElementById("r-sales-wrap").style.display=basis==="manufacturing"?"none":"";
-    document.getElementById("r-qty-wrap").style.display=basis==="manufacturing"?"":"none";
-    document.getElementById("r-sales").value="";document.getElementById("r-qty").value="";document.getElementById("r-note").value="";
-    // 既存報告を取得して prefill
+    document.getElementById("r-meta").innerHTML="作品: <b>"+esc(deal.work_title||"—")+"</b> / 相手: "+esc(deal.sublicensee_name||"—")+" / 基準: "+(deal.basis==="manufacturing"?"製造数":"売上");
+    document.getElementById("r-basis").value="";
+    ["r-label","r-start","r-sales","r-qty","r-unit","r-amount","r-note"].forEach(function(id){document.getElementById(id).value="";});
+    document.getElementById("r-end").value=date||""; // クリックした受領回の日付を代表日に prefill
+    document.getElementById("r-list").innerHTML='<div class="muted">読み込み中…</div>';
+    document.getElementById("rbackdrop").classList.add("open");
+    await reloadReportList(dealId);
+  }
+  async function reloadReportList(dealId){
     try{
       var d=await jget("/api/sublicense/deals/"+dealId+"/reports");
-      var rep=(d.rows||[]).filter(function(x){return x.period_date===date;})[0];
-      if(rep){document.getElementById("r-sales").value=rep.reported_sales==null?"":rep.reported_sales;document.getElementById("r-qty").value=rep.reported_quantity==null?"":rep.reported_quantity;document.getElementById("r-note").value=rep.note||"";}
-    }catch(e){}
-    document.getElementById("rbackdrop").classList.add("open");
+      var rows=d.rows||[];
+      document.getElementById("r-list").innerHTML=rows.length
+        ? '<div style="font-size:11px;color:var(--muted-foreground);margin-bottom:4px;">登録済みの利用報告('+rows.length+'件):</div>'+rows.map(reportRowHtml).join("")
+        : '<div class="muted" style="font-size:12px;">利用報告は未登録です。下のフォームから期間別に追加してください。</div>';
+    }catch(e){document.getElementById("r-list").innerHTML='<div class="muted">報告の取得に失敗</div>';}
   }
   function closeReport(){document.getElementById("rbackdrop").classList.remove("open");rCtx=null;}
   async function saveReport(){
-    if(!rCtx)return;var btn=document.getElementById("r-save");btn.disabled=true;
+    if(!rCtx)return;
+    var end=gv("r-end");
+    if(!end){alert("利用期間の終了(代表日)は必須です");return;}
+    var btn=document.getElementById("r-save");btn.disabled=true;
     try{
-      var body={deal_id:rCtx.deal_id,period_date:rCtx.date,note:gv("r-note")||null};
-      if(rCtx.basis==="manufacturing")body.reported_quantity=gv("r-qty")||null;else body.reported_sales=gv("r-sales")||null;
+      var body={deal_id:rCtx.deal_id,period_date:end,period_end:end,
+        period_label:gv("r-label")||null,period_start:gv("r-start")||null,
+        report_basis:gv("r-basis")||null,
+        reported_sales:gv("r-sales")||null,reported_quantity:gv("r-qty")||null,
+        unit_price:gv("r-unit")||null,reported_amount:gv("r-amount")||null,note:gv("r-note")||null};
       var res=await fetch("/api/sublicense/reports",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
       var data=await res.json().catch(function(){return{};});
       if(!res.ok||data.ok===false)throw new Error(data.error||("HTTP "+res.status));
-      closeReport();await loadReceipts();
+      ["r-label","r-start","r-sales","r-qty","r-unit","r-amount","r-note"].forEach(function(id){document.getElementById(id).value="";});
+      await reloadReportList(rCtx.deal_id);await loadReceipts();
     }catch(e){alert("保存に失敗しました: "+(e&&e.message?e.message:e));}finally{btn.disabled=false;}
   }
-  async function deleteReport(){
-    if(!rCtx)return;if(!confirm("この期の売上報告を削除しますか?(受領予定は見込ベースに戻ります)"))return;
+  async function deleteReport(periodDate){
+    if(!rCtx)return;if(!confirm("この利用報告を削除しますか?"))return;
     try{
-      var res=await fetch("/api/sublicense/reports?deal_id="+rCtx.deal_id+"&period_date="+encodeURIComponent(rCtx.date),{method:"DELETE",credentials:"same-origin"});
+      var res=await fetch("/api/sublicense/reports?deal_id="+rCtx.deal_id+"&period_date="+encodeURIComponent(periodDate),{method:"DELETE",credentials:"same-origin"});
       var data=await res.json().catch(function(){return{};});
       if(!res.ok||data.ok===false)throw new Error(data.error||("HTTP "+res.status));
-      closeReport();await loadReceipts();
+      await reloadReportList(rCtx.deal_id);await loadReceipts();
     }catch(e){alert("削除に失敗しました: "+(e&&e.message?e.message:e));}
-  }
-
-  async function toggleConfirm(){
-    if(!rCtx)return;var btn=document.getElementById("r-confirm");btn.disabled=true;
-    try{
-      var res;
-      if(rCtx.confirmed){
-        res=await fetch("/api/sublicense/receipts/confirm?deal_id="+rCtx.deal_id+"&period_date="+encodeURIComponent(rCtx.date),{method:"DELETE",credentials:"same-origin"});
-      }else{
-        res=await fetch("/api/sublicense/receipts/confirm",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:rCtx.deal_id,period_date:rCtx.date})});
-      }
-      var data=await res.json().catch(function(){return{};});
-      if(!res.ok||data.ok===false)throw new Error(data.error||("HTTP "+res.status));
-      closeReport();await loadReceipts();
-    }catch(e){alert("処理に失敗しました: "+(e&&e.message?e.message:e));}finally{btn.disabled=false;}
   }
 
   /* ---- 請求状態(台帳)更新 ---- */
@@ -437,13 +446,15 @@ export function sublicensePage(): string {
     if(t&&(t.classList.contains("rchk"))){updateSel();return;}
     if(t&&t.classList&&t.classList.contains("stsel"))return; // 状態selectはモーダルを開かない
     var tr=t.closest?t.closest("tr.clickable"):null;
-    if(tr){openReport(Number(tr.getAttribute("data-deal")),tr.getAttribute("data-date"),tr.getAttribute("data-basis"),tr.getAttribute("data-confirmed")==="1");}
+    if(tr){openReport(Number(tr.getAttribute("data-deal")),tr.getAttribute("data-date"),tr.getAttribute("data-basis"));}
+  });
+  // 利用報告リストの削除(委譲)
+  document.getElementById("r-list").addEventListener("click",function(e){
+    var a=e.target;if(a&&a.getAttribute&&a.getAttribute("data-delrep")!=null){deleteReport(a.getAttribute("data-delrep"));}
   });
   document.getElementById("r-close").addEventListener("click",closeReport);
   document.getElementById("r-cancel").addEventListener("click",closeReport);
   document.getElementById("r-save").addEventListener("click",saveReport);
-  document.getElementById("r-delete").addEventListener("click",deleteReport);
-  document.getElementById("r-confirm").addEventListener("click",toggleConfirm);
   document.getElementById("rbackdrop").addEventListener("click",function(e){if(e.target===document.getElementById("rbackdrop"))closeReport();});
   document.getElementById("btn-csv-all").addEventListener("click",function(){csvExport(null);});
   document.getElementById("btn-csv-sel").addEventListener("click",function(){var ids=checkedIds();if(!ids.length){alert("CSV出力する行を選択してください。");return;}csvExport(ids);});

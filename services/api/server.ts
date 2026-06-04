@@ -2974,6 +2974,12 @@ async function startServer() {
       await upsertSubReport({
         deal_id: dealId,
         period_date: String(b.period_date),
+        period_label: b.period_label,
+        period_start: b.period_start,
+        period_end: b.period_end,
+        report_basis: b.report_basis,
+        unit_price: b.unit_price,
+        reported_amount: b.reported_amount,
         reported_sales: b.reported_sales,
         reported_quantity: b.reported_quantity,
         note: b.note,
