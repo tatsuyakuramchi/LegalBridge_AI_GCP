@@ -11,6 +11,7 @@
 
 import type { SignLink } from "./contractSearchHtml.ts";
 import { popPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
 const STYLE = `
 /* グローバル body/* リセットは pop 共通テーマ(POP_CSS)に委譲。ここではページ固有のみ。 */
@@ -146,7 +147,8 @@ table.preview thead {
  * legacy token、null なら認可なしモード (現状: IAP 直接保護)。
  */
 export function vendorImportPage(
-  auth: SignLink | string | null | undefined
+  auth: SignLink | string | null | undefined,
+  role: Role = "viewer"
 ): string {
   let apiUrl = "/api/master/vendors/import-csv";
   if (typeof auth === "function") {
@@ -351,6 +353,7 @@ export function vendorImportPage(
 
   return popPage({
     active: "vendors",
+    role,
     mode: "admin",
     title: "取引先マスター CSV 取り込み",
     subtitle: "vendors テーブルに upsert します (vendor_code を主キーとして判定)",

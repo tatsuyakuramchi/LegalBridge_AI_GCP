@@ -20,6 +20,8 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { verify as verifySig, hasSigningSecret } from "./signedUrl.ts";
 import { verifyIap, isIapEnforced } from "./iap.ts";
 import { query } from "./db.ts";
+import type { Role, ScreenKey } from "./screens.ts";
+import { screenByKey, roleAtLeast } from "./screens.ts";
 
 type ResourceIdGetter = (req: Request) => string;
 
@@ -177,7 +179,95 @@ export function requireSignedUrl(opts: Options): RequestHandler {
 }
 
 // ====================================================================
-// Phase 17z-2: IAP ユーザー識別 + 役割ベース認可 (恒久 URL 対応)
+// Phase 25: 署名URL OR IAP ログイン の二系統許可
+//
+//   /search/* は元々 Slack ディープリンク用に HMAC 署名URL必須だったが、
+//   admin-ui のサイドバーから「検索」をログインユーザーが直接踏めるよう、
+//   IAP 認証済みユーザー(Workspace ログイン)も許可する。
+//     - 署名URL有効 (Slack 経由)        → 通過 (従来どおり)
+//     - legacy token                    → 通過
+//     - IAP / dev / portal_secret 本人  → 通過 (サイドバー経由)
+//     - IAP 非強制環境では anonymous     → 通過
+//     - いずれも無し                    → 401
+//   req.user を必ずセットするので、後段に attachAppRole を繋げてサイドバーを
+//   役割で出し分けられる。
+// ====================================================================
+export function requireSignedUrlOrIap(opts: Options): RequestHandler {
+  const renderErr = opts.renderErrorPage || defaultErrorHtml;
+
+  return async (req: Request, res: Response, next: NextFunction) => {
+    // 1) 署名URL (Slack ディープリンク主経路)
+    let resourceId = "";
+    try {
+      resourceId = opts.resourceId(req);
+    } catch {
+      resourceId = "";
+    }
+    if (resourceId && hasSigningSecret()) {
+      const r = verifySig(resourceId, req.query.exp as any, req.query.sig as any);
+      if (r.ok) {
+        (req as any).user = { email: null, source: "anonymous" } as ReqUser;
+        logAccess(req, "allow_signed", { resourceId, via: "signed" });
+        return next();
+      }
+    }
+
+    // 2) legacy token
+    if (checkLegacyToken(req)) {
+      (req as any).user = { email: null, source: "portal_secret" } as ReqUser;
+      logAccess(req, "allow_legacy_token", { resourceId, deprecated: true });
+      return next();
+    }
+
+    // 3) IAP 本人 (サイドバー経由のログインユーザー)
+    try {
+      const iap = await verifyIap(req);
+      if (iap.ok) {
+        (req as any).user = { email: iap.email || null, source: "iap_jwt" } as ReqUser;
+        logAccess(req, "allow_signed", { resourceId, via: "iap_jwt" });
+        return next();
+      }
+    } catch {
+      /* fall through */
+    }
+    const emailHdr = req.header("x-goog-authenticated-user-email") || "";
+    const m = emailHdr.match(/^accounts\.google\.com:(.+)$/);
+    if (m && m[1]) {
+      (req as any).user = { email: m[1], source: "iap_header" } as ReqUser;
+      logAccess(req, "allow_signed", { resourceId, via: "iap_header" });
+      return next();
+    }
+    if (process.env.DEV_AS_USER) {
+      (req as any).user = {
+        email: process.env.DEV_AS_USER,
+        source: "dev_env",
+      } as ReqUser;
+      return next();
+    }
+
+    // 4) IAP 非強制 → anonymous で通過
+    if (!isIapEnforced()) {
+      (req as any).user = { email: null, source: "anonymous" } as ReqUser;
+      return next();
+    }
+
+    // 5) 全て不可 → 401
+    logAccess(req, "deny", { resourceId, layer: "signed_or_iap" });
+    return res
+      .status(401)
+      .type("html")
+      .send(
+        renderErr(
+          "Unauthorized",
+          "アクセス URL が無効か期限切れです。Workspace でログインするか、" +
+            "Slack /法務検索 から再度開いてください。",
+          401
+        )
+      );
+  };
+}
+
+// ====================================================================
 //
 // 目的:
 //   - HMAC 短期 URL の代わりに「IAP 認証ユーザー == 社内 Workspace 本人」を
@@ -546,5 +636,114 @@ export function requireAppRole(opts: {
       `app_role=${role || "viewer"} は ${opts.resourceLabel} へのアクセス権がありません`,
       role
     );
+  };
+}
+
+// ====================================================================
+// Phase 25: 役割解決 + 画面レジストリ連動ガード
+//
+//   - resolveAppRole : req.user から app_role を "admin"/"viewer" に正規化。
+//   - attachAppRole  : 上記を req.userRole に載せる middleware。サイドバーを
+//                      役割で出し分けるため、各 HTML 画面ルートに付ける。
+//   - requireScreen  : screens.ts の minRole で 403 判定する画面ガード。
+//
+//   役割は staff.app_role に一本化。department ベースの soft-role は廃止方針。
+// ====================================================================
+
+/**
+ * req.user から実効ロールを解決する。requireAppRole と同じ優先順位:
+ *   portal_secret → admin / bootstrap email → admin / DB app_role / 既定 viewer。
+ */
+export async function resolveAppRole(req: Request): Promise<Role> {
+  const user: ReqUser | undefined = (req as any).user;
+
+  // 既に解決済みなら再利用 (二重 DB 参照を避ける)
+  const cached = (req as any).userRole as Role | undefined;
+  if (cached) return cached;
+
+  // admin-ui からの内部呼び出し (portal_secret) は admin 扱い
+  if (user?.source === "portal_secret") return "admin";
+
+  const email = (user?.email || "").trim().toLowerCase();
+
+  const bootstrapAdmins = (process.env.LB_APP_ADMIN_EMAILS || "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  if (email && bootstrapAdmins.includes(email)) return "admin";
+
+  if (!email) return "viewer";
+
+  try {
+    const r = await query(
+      "SELECT app_role FROM staff WHERE LOWER(email) = $1 LIMIT 1",
+      [email]
+    );
+    const role = ((r.rows[0]?.app_role as string) || "").trim().toLowerCase();
+    return role === "admin" ? "admin" : "viewer";
+  } catch (err) {
+    console.warn(`[app_role] resolveAppRole lookup failed for ${email}:`, err);
+    return "viewer";
+  }
+}
+
+/**
+ * req.userRole に実効ロールを attach する。requireIapUser の後段で使う。
+ * サイドバーを役割で絞るため、HTML 画面ルート全てに付与する。
+ */
+export function attachAppRole(): RequestHandler {
+  return async (req: Request, _res: Response, next: NextFunction) => {
+    (req as any).userRole = await resolveAppRole(req);
+    next();
+  };
+}
+
+/**
+ * 画面レジストリ(screens.ts)の minRole に基づくルートガード。
+ *   - role >= screen.minRole なら通過。
+ *   - 不足なら 403 (HTML or JSON)。
+ * requireIapUser → (attachAppRole) → requireScreen の順で使う。
+ */
+export function requireScreen(opts: {
+  key: ScreenKey;
+  renderErrorPage?: (title: string, message: string, status: number) => string;
+}): RequestHandler {
+  const renderErr = opts.renderErrorPage || defaultErrorHtml;
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const role = await resolveAppRole(req);
+    (req as any).userRole = role;
+
+    const screen = screenByKey(opts.key);
+    const minRole: Role = screen?.minRole || "admin";
+
+    if (roleAtLeast(role, minRole)) {
+      logAccess(req, "allow_signed", {
+        layer: "screen",
+        resource: opts.key,
+        role,
+      });
+      return next();
+    }
+
+    logAccess(req, "deny", { layer: "screen", resource: opts.key, role });
+    const acceptsJson =
+      String(req.headers["accept"] || "").includes("application/json") ||
+      req.path.startsWith("/api/");
+    if (acceptsJson) {
+      return res.status(403).json({ ok: false, error: "forbidden (screen)" });
+    }
+    return res
+      .status(403)
+      .type("html")
+      .send(
+        renderErr(
+          "Forbidden",
+          `この画面 (${opts.key}) は ${minRole} 以上の権限が必要です。\n` +
+            "管理者にロール付与 (app_role=admin) を依頼してください。\n" +
+            "\n" +
+            `現在のロール: ${role}`,
+          403
+        )
+      );
   };
 }

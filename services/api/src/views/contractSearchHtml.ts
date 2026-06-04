@@ -15,6 +15,7 @@
  */
 
 import { popPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
 function esc(s: any): string {
   if (s == null) return "";
@@ -391,7 +392,8 @@ function authShim(
 export function listPage(
   query: string,
   results: any[],
-  auth: SignLink | string | null | undefined
+  auth: SignLink | string | null | undefined,
+  role: Role = "viewer"
 ): string {
   const a = authShim(auth);
   const cards = results
@@ -463,7 +465,7 @@ export function listPage(
   return popPage({
     active: "search-vendor",
     mode: "view",
-    navGroups: "view",
+    role,
     title: "取引先・契約検索",
     subtitle: `検索キーワード: 「${esc(query)}」 · ヒット ${results.length} 件`,
     body,
@@ -479,7 +481,8 @@ export function listPage(
 export function detailPage(
   payload: any,
   query: string,
-  auth: SignLink | string | null | undefined
+  auth: SignLink | string | null | undefined,
+  role: Role = "viewer"
 ): string {
   const cp = payload.counterparty || {};
   const masters = payload.masterContracts || {};
@@ -540,7 +543,7 @@ export function detailPage(
   return popPage({
     active: "search-vendor",
     mode: "view",
-    navGroups: "view",
+    role,
     title: `${cp.vendorName || "-"}`,
     subtitle: `取引先コード: ${cp.vendorCode || "-"}`,
     body,
@@ -556,7 +559,8 @@ export function detailPage(
  */
 export function ringiPage(
   payload: any,
-  auth: SignLink | string | null | undefined
+  auth: SignLink | string | null | undefined,
+  role: Role = "viewer"
 ): string {
   const r = payload.ringi || {};
   const cat = payload.documentsByCategory || {
@@ -614,7 +618,7 @@ export function ringiPage(
   return popPage({
     active: "search-vendor",
     mode: "view",
-    navGroups: "view",
+    role,
     title: `稟議 ${r.ringi_number || "-"}`,
     subtitle: r.title || "",
     body,
