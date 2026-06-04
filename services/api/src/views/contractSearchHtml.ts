@@ -14,6 +14,8 @@
  *   - 全リンクは target=_blank で新タブ。
  */
 
+import { popPage } from "./popChrome.ts";
+
 function esc(s: any): string {
   if (s == null) return "";
   return String(s)
@@ -25,17 +27,8 @@ function esc(s: any): string {
 }
 
 const STYLE = `
-*, *::before, *::after { box-sizing: border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
-               "Yu Gothic", sans-serif;
-  margin: 0; padding: 0;
-  color: #1f2937;
-  background: #f8fafc;
-  line-height: 1.6;
-  font-size: 14px;
-}
-.container { max-width: 1100px; margin: 0 auto; padding: 24px 20px 48px; }
+/* グローバル body/* リセットは pop 共通テーマ(POP_CSS)に委譲。ここではページ固有のみ。 */
+.container { max-width: 1100px; margin: 0 auto; padding: 0 0 24px; }
 header.page-header {
   border-bottom: 2px solid #1f2937;
   padding-bottom: 12px;
@@ -454,25 +447,8 @@ export function listPage(
     })
     .join("");
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>法務検索: 「${esc(query)}」の結果</title>
-  <style>${STYLE}</style>
-</head>
-<body>
+  const body = `
   <div class="container">
-    <header class="page-header">
-      <h1>📋 法務検索 — 結果一覧</h1>
-      <div class="breadcrumb">
-        検索キーワード: <strong>${esc(query)}</strong> ·
-        ヒット件数: <strong>${results.length}</strong>
-      </div>
-    </header>
-
     <form class="search-form" method="get" action="/search/vendor">
       <input type="text" name="q" value="${esc(query)}" placeholder="取引先名 / 屋号 / ベンダーコード" autofocus>
       ${a.hiddenInputs("list")}
@@ -482,9 +458,18 @@ export function listPage(
     ${results.length > 0 ? cards : `<div class="notfound">該当する取引先が見つかりませんでした。</div>`}
 
     <div class="footer">LegalBridge · Search API · ${new Date().toISOString().slice(0, 10)}</div>
-  </div>
-</body>
-</html>`;
+  </div>`;
+
+  return popPage({
+    active: "search-vendor",
+    mode: "view",
+    navGroups: "view",
+    title: "取引先・契約検索",
+    subtitle: `検索キーワード: 「${esc(query)}」 · ヒット ${results.length} 件`,
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    pageTitle: `法務検索: 「${esc(query)}」の結果`,
+  });
 }
 
 /**
@@ -510,23 +495,11 @@ export function detailPage(
     ? `/search/vendor?q=${encodeURIComponent(query)}${listQs ? `&${listQs}` : ""}`
     : `/search/vendor${listQs ? `?${listQs}` : ""}`;
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>法務検索: ${esc(cp.vendorName || "-")}</title>
-  <style>${STYLE}</style>
-</head>
-<body>
+  const body = `
   <div class="container">
-    <header class="page-header">
-      <h1>📋 ${esc(cp.vendorName || "-")} <span class="vendor-code">${esc(cp.vendorCode || "-")}</span></h1>
-      <div class="breadcrumb">
-        <a href="${esc(backUrl)}">← 検索結果に戻る</a>
-      </div>
-    </header>
+    <div class="breadcrumb" style="margin-bottom:12px;">
+      <a href="${esc(backUrl)}">← 検索結果に戻る</a>
+    </div>
 
     <div class="vendor-card">
       <h2>📊 基本契約サマリー</h2>
@@ -560,9 +533,18 @@ export function detailPage(
     </section>
 
     <div class="footer">LegalBridge · Search API · vendor #${esc(cp.vendorId || "-")}</div>
-  </div>
-</body>
-</html>`;
+  </div>`;
+
+  return popPage({
+    active: "search-vendor",
+    mode: "view",
+    navGroups: "view",
+    title: `${cp.vendorName || "-"}`,
+    subtitle: `取引先コード: ${cp.vendorCode || "-"}`,
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    pageTitle: `法務検索: ${esc(cp.vendorName || "-")}`,
+  });
 }
 
 /**
@@ -589,23 +571,11 @@ export function ringiPage(
   if (r.total_budget)
     metaLines.push(`予算: <strong>¥${Number(r.total_budget).toLocaleString("ja-JP")}</strong>`);
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>稟議 ${esc(r.ringi_number || "-")}: ${esc(r.title || "-")}</title>
-  <style>${STYLE}</style>
-</head>
-<body>
+  const body = `
   <div class="container">
-    <header class="page-header">
-      <h1>📋 稟議 ${esc(r.ringi_number || "-")} <span style="font-weight:normal; font-size:14px; color:#6b7280;">${esc(r.title || "")}</span></h1>
-      <div class="breadcrumb">
-        <a href="${esc(backUrl)}">← 検索に戻る</a>
-      </div>
-    </header>
+    <div class="breadcrumb" style="margin-bottom:12px;">
+      <a href="${esc(backUrl)}">← 検索に戻る</a>
+    </div>
 
     <div class="vendor-card">
       <h2>📊 稟議サマリー</h2>
@@ -636,9 +606,18 @@ export function ringiPage(
     </section>
 
     <div class="footer">LegalBridge · Ringi · #${esc(r.ringi_number || "-")}</div>
-  </div>
-</body>
-</html>`;
+  </div>`;
+
+  return popPage({
+    active: "search-vendor",
+    mode: "view",
+    navGroups: "view",
+    title: `稟議 ${r.ringi_number || "-"}`,
+    subtitle: r.title || "",
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    pageTitle: `稟議 ${esc(r.ringi_number || "-")}: ${esc(r.title || "-")}`,
+  });
 }
 
 /**
@@ -651,6 +630,8 @@ export function ringiPage(
 export function errorPage(title: string, message: string, status = 404): string {
   // \n → <br> 変換。これ以外の HTML は全て escape される。
   const messageHtml = esc(message).replace(/\n/g, "<br>");
+  // errorPage は認証前/403/404 でも出るため pop シェル(サイドバー)は付けず自己完結。
+  // STYLE からグローバル body リセットを外したので、ここで最小限を補う。
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
@@ -658,10 +639,15 @@ export function errorPage(title: string, message: string, status = 404): string 
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="robots" content="noindex, nofollow">
   <title>${esc(title)}</title>
-  <style>${STYLE}</style>
+  <style>
+    *,*::before,*::after{box-sizing:border-box}
+    body{margin:0;padding:0;background:#f4f1fb;color:#241f3a;line-height:1.6;font-size:14px;
+      font-family:-apple-system,"SF Pro Rounded","Hiragino Maru Gothic ProN","Hiragino Sans",system-ui,sans-serif}
+    ${STYLE}
+  </style>
 </head>
 <body>
-  <div class="container">
+  <div class="container" style="padding:24px 20px 48px;">
     <header class="page-header"><h1>${esc(title)}</h1></header>
     <div class="notfound">${messageHtml}</div>
     <div class="footer">LegalBridge · Search API · HTTP ${status}</div>

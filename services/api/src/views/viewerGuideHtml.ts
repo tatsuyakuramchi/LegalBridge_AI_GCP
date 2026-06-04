@@ -7,16 +7,10 @@
  * admin は /admin にリダイレクトされるので本ページは表示されない。
  */
 
+import { popPage } from "./popChrome.ts";
+
 const STYLE = `
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", sans-serif;
-  margin: 0;
-  padding: 32px 24px 64px;
-  background: #f8fafc;
-  color: #1f2937;
-  font-size: 14px;
-  line-height: 1.6;
-}
+/* グローバル body リセットは pop 共通テーマ(POP_CSS)に委譲。ここではページ固有のみ。 */
 .container { max-width: 760px; margin: 0 auto; }
 h1 { font-size: 22px; margin: 0 0 8px; }
 .muted { color: #6b7280; font-size: 12px; }
@@ -75,18 +69,8 @@ export function viewerGuidePage(opts: {
 }): string {
   const email = opts.currentEmail || "(不明)";
   const role = opts.currentRole || "viewer";
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>LegalBridge Search Portal</title>
-  <style>${STYLE}</style>
-</head>
-<body>
+  const body = `
   <div class="container">
-    <h1>🔍 LegalBridge Search Portal</h1>
     <div class="muted">
       ログイン: <strong>${esc(email)}</strong>
       <span class="role-pill">role: ${esc(role)}</span>
@@ -129,7 +113,16 @@ export function viewerGuidePage(opts: {
       管理者が <code>/admin</code> から該当ユーザーを admin に切り替えると、
       取込機能と <code>/admin</code> ダッシュボードが使えるようになります。
     </div>
-  </div>
-</body>
-</html>`;
+  </div>`;
+
+  return popPage({
+    active: "search-vendor",
+    mode: "view",
+    navGroups: "view",
+    title: "Search Portal",
+    subtitle: "検索機能のご案内",
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    pageTitle: "LegalBridge Search Portal",
+  });
 }
