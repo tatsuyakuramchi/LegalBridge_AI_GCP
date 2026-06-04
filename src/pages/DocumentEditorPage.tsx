@@ -114,6 +114,38 @@ export function DocumentEditorPage() {
   const [vendorSearch, setVendorSearch] = React.useState("")
   const [staffSearch, setStaffSearch] = React.useState("")
   const [templateSearch, setTemplateSearch] = React.useState("")
+
+  // 目的(方向) — 0028 で flow_direction を持たせた契約目的マスター。必須選択
+  //   (ユーザー決定)。選択した purpose_code を /api/documents/generate に送り、
+  //   worker が方向(in/out)を capability / 明細の flow_direction に反映する
+  //   (out=ライセンス/プロダクトアウト → 請求台帳へ自動取込)。
+  //   「方向で登録」グループに license_in/out・product_in/out の 4 ジャンル。
+  type PurposeRow = {
+    purpose_code: string
+    purpose_group?: string | null
+    purpose_label?: string | null
+    flow_direction?: string | null
+  }
+  const [purposes, setPurposes] = React.useState<PurposeRow[]>([])
+  const [selectedPurpose, setSelectedPurpose] = React.useState<string>("")
+  React.useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        // apiRouter が GET /api/contract-check/purposes を search-api へ振り、
+        //   X-LB-PORTAL-SECRET を自動付与する。レスポンスは行配列 (sort_order 順)。
+        const r = await fetch("/api/contract-check/purposes")
+        if (!r.ok) return
+        const j = await r.json()
+        if (!cancelled && Array.isArray(j)) setPurposes(j as PurposeRow[])
+      } catch {
+        /* 取得失敗時はセレクタ空 → 生成は必須ガードで止まる */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   // Phase 23.2: 旧 Split preview (画面を半分にして並べる) は狭幅で厳しいため
   //   廃止し、別タブでプレビューを開く方式に一本化。
@@ -699,6 +731,14 @@ export function DocumentEditorPage() {
   //   別タブで開く方式なのでクリック都度の発火だけ。
 
   const handleGenerate = async () => {
+    // 目的(方向)は必須 (ユーザー決定)。未選択なら送信を止める。
+    if (!selectedPurpose) {
+      showNotification(
+        "目的(方向)を選択してください。台帳の方向(in/out)確定に必須です。",
+        "error"
+      )
+      return
+    }
     // Phase 16: クライアント側プレ検証 — templates_config.json で required=true
     // のフィールドが未入力なら送信を止めて明確に伝える。
     //
@@ -810,13 +850,24 @@ export function DocumentEditorPage() {
       //   その他 (新規発行 / 内部修正 / PDF 未作成キュー再生成) は reissue=false。
       const isReopen = !!formData?.__reopen_doc_number
       const reissueFlag = isReopen && saveMode === "reissue"
+      // 目的(方向)を formData に載せて送る。worker は FLOW_DIRECTION を優先し、
+      //   無ければ PURPOSE_CODE から contract_purposes.flow_direction を解決する。
+      //   ここでは判明している方向も明示送付して二重に担保する。
+      const selPurpose = purposes.find((p) => p.purpose_code === selectedPurpose)
+      const formDataWithPurpose = {
+        ...formData,
+        PURPOSE_CODE: selectedPurpose,
+        ...(selPurpose?.flow_direction
+          ? { FLOW_DIRECTION: selPurpose.flow_direction }
+          : {}),
+      }
       const res = await fetch("/api/documents/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           issueKey: selectedIssue || "MANUAL-" + Date.now(),
           templateType: selectedTemplate,
-          formData,
+          formData: formDataWithPurpose,
           requesterEmail: selectedStaff?.email || "web-user",
           // Phase 15/16: 既存 doc の更新時は同じ document_number を渡す
           // (PDF 未作成キュー由来 or 再編集 reopen 由来の両方)。
@@ -1078,6 +1129,46 @@ export function DocumentEditorPage() {
                       </optgroup>
                     ))}
                   </NativeSelect>
+                </div>
+
+                {/* ②' 目的 / 方向 (必須) — 台帳の方向(in/out)を確定する */}
+                <div className="space-y-1.5">
+                  <Label className="flex items-center gap-1.5 text-[11px]">
+                    <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground text-background text-[9px] font-bold">
+                      ②′
+                    </span>
+                    目的 / 方向
+                    <span className="text-destructive font-bold">*</span>
+                  </Label>
+                  <NativeSelect
+                    value={selectedPurpose}
+                    onChange={(e) => setSelectedPurpose(e.target.value)}
+                  >
+                    <option value="">— 目的を選択 (必須) —</option>
+                    {Array.from(
+                      new Set(purposes.map((p) => p.purpose_group || "その他"))
+                    ).map((grp) => (
+                      <optgroup key={grp} label={grp}>
+                        {purposes
+                          .filter((p) => (p.purpose_group || "その他") === grp)
+                          .map((p) => (
+                            <option key={p.purpose_code} value={p.purpose_code}>
+                              {p.purpose_label || p.purpose_code}
+                              {p.flow_direction === "in"
+                                ? "〔IN〕"
+                                : p.flow_direction === "out"
+                                ? "〔OUT〕"
+                                : ""}
+                            </option>
+                          ))}
+                      </optgroup>
+                    ))}
+                  </NativeSelect>
+                  {!selectedPurpose && (
+                    <p className="text-[10px] font-mono text-destructive/80">
+                      ※ 目的(方向)は必須。OUT は請求台帳へ自動取込されます。
+                    </p>
+                  )}
                 </div>
 
                 {/* ③ 担当者 */}
@@ -1626,7 +1717,15 @@ export function DocumentEditorPage() {
                     </span>
                   </label>
                 )}
-                <Button onClick={handleGenerate} disabled={isGenerating}>
+                <Button
+                  onClick={handleGenerate}
+                  disabled={isGenerating || !selectedPurpose}
+                  title={
+                    !selectedPurpose
+                      ? "目的(方向)を選択すると生成できます"
+                      : undefined
+                  }
+                >
                   {isGenerating ? (
                     <Loader2 className="animate-spin" />
                   ) : (
