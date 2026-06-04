@@ -206,19 +206,20 @@ async function startServer() {
     return null; // 単一明細 → 従来表示
   };
 
-  // Phase 0 (D2): schema は migration ランナー(migrations/)が単一所有する。
-  // 起動時 initDb は段階移行のため RUN_INIT_DB で制御する。
-  //   未設定 / "true": 現行どおり起動時に DDL を流す(後方互換)
-  //   "false"        : worker は DDL を触らない(ランナー検証後に切替 — §8.5 step3)
-  if (process.env.RUN_INIT_DB === "false") {
-    console.log("⏭️  RUN_INIT_DB=false — skipping initDb (schema owned by migrations/ runner)");
-  } else {
+  // schema は migrations/ ランナーが単一所有する(統合: worker デプロイ・パイプラインの
+  //   migrate ステップ = cloudbuild-worker.yaml ① で適用)。worker は既定では起動時に
+  //   DDL を触らない。boot-time DDL は複数インスタンス同時起動での競合・アプリロールへの
+  //   DDL 権限付与を招くため避ける。
+  //   RUN_INIT_DB="true" の時だけ後方互換で起動時 initDb を実行(ローカル/緊急用)。
+  if (process.env.RUN_INIT_DB === "true") {
     try {
       await initDb();
-      console.log("✅ Database initialized (worker has read-write role)");
+      console.log("✅ Database initialized via initDb (RUN_INIT_DB=true; legacy boot-time DDL)");
     } catch (dbErr) {
       console.error("❌ Database initialization failed:", dbErr);
     }
+  } else {
+    console.log("⏭️  initDb skipped — schema owned by migrations/ runner (applied in worker deploy pipeline)");
   }
 
   const app = express();
@@ -4035,8 +4036,9 @@ ${details}
            quantity, unit_price, amount_ex_tax,
            delivery_date, payment_date,
            cycle, billing_day, term_start, term_end,
+           fee_type,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, line_no) DO UPDATE SET
            category       = EXCLUDED.category,
            item_name      = EXCLUDED.item_name,
@@ -4053,6 +4055,7 @@ ${details}
            billing_day    = EXCLUDED.billing_day,
            term_start     = EXCLUDED.term_start,
            term_end       = EXCLUDED.term_end,
+           fee_type       = EXCLUDED.fee_type,
            updated_at     = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -4072,6 +4075,7 @@ ${details}
           numOrNull(c.billing_day),
           dateOrNull(c.term_start),
           dateOrNull(c.term_end),
+          c.fee_type || "production",
         ]
       );
     }
@@ -4215,11 +4219,30 @@ ${details}
       ledger_code,
       // Phase 22.21.91: ライセンス系の金銭条件 (条件 1..3 配列)
       financial_conditions,
+      // 請求の方向(in/out)。admin-ui の契約マスター登録フォームの「目的/方向」から。
+      //   明示が無くても purpose_code があれば contract_purposes から解決する。
+      flow_direction, purpose_code,
+      // 成果物の権利帰属(company/counterparty/shared)。複合契約の根拠メタ。
+      deliverable_ownership,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
       const ledger = String(ledger_code || "").trim() || null;
+      // 方向の確定: 明示 flow_direction を優先、無ければ purpose_code から解決。
+      let flowDir: string | null =
+        flow_direction === "in" || flow_direction === "out" ? flow_direction : null;
+      if (!flowDir && purpose_code) {
+        try {
+          const pr = await query(
+            `SELECT flow_direction FROM contract_purposes WHERE purpose_code = $1`,
+            [purpose_code]
+          );
+          if (pr.rows[0]?.flow_direction) flowDir = pr.rows[0].flow_direction;
+        } catch (pdErr) {
+          console.warn("[flow_direction] purpose resolve skipped (POST contracts):", pdErr);
+        }
+      }
       const finalDocNumber = await ensureDocumentNumber(
         document_number,
         contract_type,
@@ -4236,8 +4259,8 @@ ${details}
           renewal_notice_months, alert_lead_months,
           is_active,
           alert_slack_channels, alert_slack_mentions,
-          ledger_code
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24)
+          ledger_code, flow_direction, deliverable_ownership
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25, $26)
         RETURNING id, document_number`,
         [
           vendor_id || null, record_type || "master_contract", contract_category || "service",
@@ -4254,6 +4277,8 @@ ${details}
           JSON.stringify(channels),
           JSON.stringify(mentions),
           ledger,
+          flowDir,
+          deliverable_ownership || null,
         ]
       );
       const newId = Number(result.rows[0].id);
@@ -4368,11 +4393,28 @@ ${details}
       ledger_code,
       // Phase 22.21.91: 金銭条件 (条件 1..3 配列)
       financial_conditions,
+      // 請求の方向(in/out)。明示が無ければ purpose_code から解決。
+      flow_direction, purpose_code,
+      // 成果物の権利帰属(company/counterparty/shared)。
+      deliverable_ownership,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
       const ledger = String(ledger_code || "").trim() || null;
+      let flowDir: string | null =
+        flow_direction === "in" || flow_direction === "out" ? flow_direction : null;
+      if (!flowDir && purpose_code) {
+        try {
+          const pr = await query(
+            `SELECT flow_direction FROM contract_purposes WHERE purpose_code = $1`,
+            [purpose_code]
+          );
+          if (pr.rows[0]?.flow_direction) flowDir = pr.rows[0].flow_direction;
+        } catch (pdErr) {
+          console.warn("[flow_direction] purpose resolve skipped (PUT contracts):", pdErr);
+        }
+      }
 
       // Phase 22.21.60: マスター側の番号変更を「正」にするため、変更前の
       // 番号を保持しておき、変更後に documents テーブル側にも伝播させる。
@@ -4405,8 +4447,11 @@ ${details}
           alert_slack_channels = $22::jsonb,
           alert_slack_mentions = $23::jsonb,
           ledger_code = $24,
+          -- null のときは既存値を保持(レガシー編集で方向を誤って消さない)
+          flow_direction = COALESCE($25, flow_direction),
+          deliverable_ownership = $26,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $25`,
+        WHERE id = $27`,
         [
           vendor_id || null, record_type, contract_category, contract_type, contract_title,
           finalDocNumber, contract_status, effective_date || null, expiration_date || null,
@@ -4420,6 +4465,8 @@ ${details}
           JSON.stringify(channels),
           JSON.stringify(mentions),
           ledger,
+          flowDir,
+          deliverable_ownership || null,
           id,
         ]
       );
