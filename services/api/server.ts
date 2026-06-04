@@ -2373,7 +2373,8 @@ async function startServer() {
                                  'cycle', cli.cycle,
                                  'billing_day', cli.billing_day,
                                  'term_start', cli.term_start,
-                                 'term_end', cli.term_end
+                                 'term_end', cli.term_end,
+                                 'fee_type', cli.fee_type
                                )
                                ORDER BY cli.line_no ASC
                              )

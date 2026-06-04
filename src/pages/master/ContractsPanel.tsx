@@ -164,6 +164,8 @@ const empty = {
   //   contract_capabilities.flow_direction へ記録する(out=当社受領→請求台帳)。
   purpose_code: "",
   flow_direction: "",
+  // 成果物の権利帰属(当社/相手方/共有)。帰属=相手方のとき利用許諾料の入力を促す。
+  deliverable_ownership: "",
 }
 
 // 金銭条件エディタの「区分」ラベル。方向中立(in/out どちらでも使える表現)。
@@ -548,10 +550,15 @@ export function ContractsPanel() {
               >
                 <option value="service">業務委託・サービス</option>
                 <option value="license">ライセンス・知的財産</option>
+                <option value="mixed">複合（業務委託＋ライセンス）</option>
                 <option value="sales">売買・プロダクト</option>
                 <option value="publication">出版関連</option>
                 <option value="nda">NDA・機密保持</option>
               </NativeSelect>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+                <strong>複合</strong>: 制作対価(業務明細)と利用許諾料(金銭条件)を
+                1 本で扱う場合に選択。両方のエディタが表示されます。
+              </p>
             </Field>
             {/* 目的 / 請求の方向。文書作成フォームと同じ purpose マスターから選び、
                 flow_direction(in/out) を確定して保存する(out=当社受領→請求台帳)。 */}
@@ -592,6 +599,25 @@ export function ContractsPanel() {
                   ? "OUT（当社が受領する側 → 請求台帳へ）"
                   : "未設定"}
               </p>
+            </Field>
+            {/* 成果物の権利帰属。帰属=相手方のとき、当社は利用許諾料を払って使う
+                構図になりやすいので利用許諾料(金銭条件)の入力を促す。 */}
+            <Field label="成果物の権利帰属">
+              <NativeSelect
+                value={data?.deliverable_ownership || ""}
+                onChange={(e) => set({ deliverable_ownership: e.target.value })}
+              >
+                <option value="">— 未設定 —</option>
+                <option value="company">当社に帰属</option>
+                <option value="counterparty">相手方に帰属</option>
+                <option value="shared">共有</option>
+              </NativeSelect>
+              {data?.deliverable_ownership === "counterparty" && (
+                <p className="text-[10px] font-mono text-amber-700 mt-1 leading-relaxed">
+                  成果物が相手方帰属です。制作対価に加えて<strong>利用許諾料</strong>が
+                  発生する場合は、カテゴリを「複合」にして金銭条件にも登録してください。
+                </p>
+              )}
             </Field>
             <Field label="契約書名 *" className="col-span-2">
               <Input
@@ -838,7 +864,9 @@ export function ContractsPanel() {
             {/* Phase 22.21.93: 金銭条件 (= 個別利用許諾条件と同じ shape) を
                 上部に移動。ライセンス系の単独/個別契約ではメイン情報なので、
                 Slack 設定や原作紐付けより前に表示する。 */}
-            {String(data?.contract_category || "").toLowerCase() === "license" && (
+            {["license", "mixed"].includes(
+              String(data?.contract_category || "").toLowerCase()
+            ) && (
               <Field
                 label="▍ 個別利用許諾条件 (金銭条件)"
                 className="col-span-2 md:col-span-3"
@@ -866,7 +894,9 @@ export function ContractsPanel() {
                 個別契約 / 単独契約に登録した明細は、検収書フォームから
                 「業務委託マスタから読み込む」で order_lines_for_inspection に
                 自動補完される。発注書 (purchase_order) フォームの items[] と同 shape。 */}
-            {String(data?.contract_category || "").toLowerCase() === "service" && (
+            {["service", "mixed"].includes(
+              String(data?.contract_category || "").toLowerCase()
+            ) && (
               <Field
                 label="▍ 業務明細 (検収書 自動補完用)"
                 className="col-span-2 md:col-span-3"
@@ -890,7 +920,9 @@ export function ContractsPanel() {
             )}
             {/* Phase 23.6.14: 経費 (capability_expenses) — 発注書フォーム IV-b と同 shape。
                 検収書フォームの「ステップ2-b 経費精算」で親契約連動として参照される。 */}
-            {String(data?.contract_category || "").toLowerCase() === "service" && (
+            {["service", "mixed"].includes(
+              String(data?.contract_category || "").toLowerCase()
+            ) && (
               <Field
                 label="▍ 経費（交通費等・税込み / 検収書 自動補完用）"
                 className="col-span-2 md:col-span-3"
@@ -910,7 +942,9 @@ export function ContractsPanel() {
             )}
             {/* Phase 23.6.14: その他手数料 (capability_other_fees) — 発注書フォーム IV-a と同 shape。
                 検収書フォームの「ステップ2-c その他手数料」で参照される (税抜)。 */}
-            {String(data?.contract_category || "").toLowerCase() === "service" && (
+            {["service", "mixed"].includes(
+              String(data?.contract_category || "").toLowerCase()
+            ) && (
               <Field
                 label="▍ その他手数料（税抜 / 検収書 自動補完用）"
                 className="col-span-2 md:col-span-3"
@@ -1564,6 +1598,8 @@ function LineItemsEditor({
       ...value,
       {
         line_no: nextLineNo,
+        // 費目区分。既定は制作対価。複合契約では利用許諾料/その他も選べる。
+        fee_type: "production",
         item_name: "",
         spec: "",
         calc_method: "FIXED",
@@ -1612,14 +1648,26 @@ function LineItemsEditor({
             <Badge variant="info" className="h-5">
               明細 {c.line_no || idx + 1}
             </Badge>
-            <Button
-              type="button"
-              size="icon-sm"
-              variant="destructive"
-              onClick={() => remove(idx)}
-            >
-              <Trash2 />
-            </Button>
+            <div className="flex items-center gap-1">
+              <Label className="text-[10px]">費目区分</Label>
+              <NativeSelect
+                className="h-7 text-[11px]"
+                value={c.fee_type || "production"}
+                onChange={(e) => update(idx, { fee_type: e.target.value })}
+              >
+                <option value="production">制作対価</option>
+                <option value="royalty">利用許諾料</option>
+                <option value="other">その他</option>
+              </NativeSelect>
+              <Button
+                type="button"
+                size="icon-sm"
+                variant="destructive"
+                onClick={() => remove(idx)}
+              >
+                <Trash2 />
+              </Button>
+            </div>
           </div>
           {/* Phase 22.21.114: 発注書 LineItemTable と項目を揃える。
               ・カテゴリ / 支払方法 を撤去
