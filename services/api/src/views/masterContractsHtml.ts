@@ -10,8 +10,9 @@
 
 import { MASTER_CSS, SVG } from "./masterChrome.ts";
 import { popAdminPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
-export function masterContractsPage(): string {
+export function masterContractsPage(role: Role = "viewer"): string {
   const apiImportUrl = "/api/imports/legalon-csv";
   const apiTemplateUrl = "/api/imports/legalon-csv/template";
 
@@ -169,6 +170,7 @@ export function masterContractsPage(): string {
 
   return popAdminPage({
     active: "contracts",
+    role,
     masterCss: MASTER_CSS,
     title: "契約マスタ",
     subtitle: "Master · LegalOn import",

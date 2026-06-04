@@ -12,6 +12,7 @@
  */
 
 import { popPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 import { LINE_ITEM_STATUS_DEFS } from "../services/conditionsService.ts";
 
 // 条件明細ページ固有の補助スタイル(共通 POP_CSS に無いリンクピル等)
@@ -34,7 +35,7 @@ const EXTRA_CSS = `<style>
 .filter-extra label{display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;color:var(--muted);font-weight:700}
 </style>`;
 
-export function conditionsPage(): string {
+export function conditionsPage(role: Role = "viewer"): string {
   const toolbar = `
       <button class="pop-btn sec sm" id="btn-csv-sel">⤓ 選択をCSV (<span id="sel-n">0</span>)</button>
       <button class="pop-btn sm" id="btn-csv-all">⤓ 全件CSV</button>`;
@@ -405,6 +406,7 @@ export function conditionsPage(): string {
 
   return popPage({
     active: "conditions",
+    role,
     mode: "view",
     title: "条件明細",
     subtitle: "支払日 / 納期 / 担当 / 種類 / 取引先で検索",

@@ -463,7 +463,7 @@ export function listPage(
   return popPage({
     active: "search-vendor",
     mode: "view",
-    navGroups: "view",
+    role: "viewer",
     title: "取引先・契約検索",
     subtitle: `検索キーワード: 「${esc(query)}」 · ヒット ${results.length} 件`,
     body,
@@ -540,7 +540,7 @@ export function detailPage(
   return popPage({
     active: "search-vendor",
     mode: "view",
-    navGroups: "view",
+    role: "viewer",
     title: `${cp.vendorName || "-"}`,
     subtitle: `取引先コード: ${cp.vendorCode || "-"}`,
     body,
@@ -614,7 +614,7 @@ export function ringiPage(
   return popPage({
     active: "search-vendor",
     mode: "view",
-    navGroups: "view",
+    role: "viewer",
     title: `稟議 ${r.ringi_number || "-"}`,
     subtitle: r.title || "",
     body,
