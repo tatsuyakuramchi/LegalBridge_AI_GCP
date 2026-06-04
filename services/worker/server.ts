@@ -4036,8 +4036,9 @@ ${details}
            quantity, unit_price, amount_ex_tax,
            delivery_date, payment_date,
            cycle, billing_day, term_start, term_end,
+           fee_type,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, line_no) DO UPDATE SET
            category       = EXCLUDED.category,
            item_name      = EXCLUDED.item_name,
@@ -4054,6 +4055,7 @@ ${details}
            billing_day    = EXCLUDED.billing_day,
            term_start     = EXCLUDED.term_start,
            term_end       = EXCLUDED.term_end,
+           fee_type       = EXCLUDED.fee_type,
            updated_at     = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -4073,6 +4075,7 @@ ${details}
           numOrNull(c.billing_day),
           dateOrNull(c.term_start),
           dateOrNull(c.term_end),
+          c.fee_type || "production",
         ]
       );
     }
@@ -4219,6 +4222,8 @@ ${details}
       // 請求の方向(in/out)。admin-ui の契約マスター登録フォームの「目的/方向」から。
       //   明示が無くても purpose_code があれば contract_purposes から解決する。
       flow_direction, purpose_code,
+      // 成果物の権利帰属(company/counterparty/shared)。複合契約の根拠メタ。
+      deliverable_ownership,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -4254,8 +4259,8 @@ ${details}
           renewal_notice_months, alert_lead_months,
           is_active,
           alert_slack_channels, alert_slack_mentions,
-          ledger_code, flow_direction
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25)
+          ledger_code, flow_direction, deliverable_ownership
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25, $26)
         RETURNING id, document_number`,
         [
           vendor_id || null, record_type || "master_contract", contract_category || "service",
@@ -4273,6 +4278,7 @@ ${details}
           JSON.stringify(mentions),
           ledger,
           flowDir,
+          deliverable_ownership || null,
         ]
       );
       const newId = Number(result.rows[0].id);
@@ -4389,6 +4395,8 @@ ${details}
       financial_conditions,
       // 請求の方向(in/out)。明示が無ければ purpose_code から解決。
       flow_direction, purpose_code,
+      // 成果物の権利帰属(company/counterparty/shared)。
+      deliverable_ownership,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -4441,8 +4449,9 @@ ${details}
           ledger_code = $24,
           -- null のときは既存値を保持(レガシー編集で方向を誤って消さない)
           flow_direction = COALESCE($25, flow_direction),
+          deliverable_ownership = $26,
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $26`,
+        WHERE id = $27`,
         [
           vendor_id || null, record_type, contract_category, contract_type, contract_title,
           finalDocNumber, contract_status, effective_date || null, expiration_date || null,
@@ -4457,6 +4466,7 @@ ${details}
           JSON.stringify(mentions),
           ledger,
           flowDir,
+          deliverable_ownership || null,
           id,
         ]
       );
