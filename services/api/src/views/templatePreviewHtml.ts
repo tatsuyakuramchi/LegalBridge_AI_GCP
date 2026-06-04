@@ -24,6 +24,7 @@
  */
 
 import { popPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
 const STYLE = `
 /* グローバル body/* リセットは pop 共通テーマ(POP_CSS)に委譲。ここではページ固有のみ。 */
@@ -130,7 +131,7 @@ iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 }
 `;
 
-export function templatePreviewPage(): string {
+export function templatePreviewPage(role: Role = "viewer"): string {
   const body = `
   <div class="shell">
 
@@ -315,7 +316,8 @@ export function templatePreviewPage(): string {
   </script>`;
 
   return popPage({
-    active: "admin",
+    active: "template-preview",
+    role,
     mode: "admin",
     title: "ひな型プレビュー",
     subtitle: "Slack キャンバスの個別リンクから開いてください。サンプル PDF / HTML をダウンロードできます。",

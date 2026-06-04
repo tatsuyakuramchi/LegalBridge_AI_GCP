@@ -12,6 +12,7 @@
 
 import type { SignLink } from "./contractSearchHtml.ts";
 import { popPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
 /**
  * 個人情報・URL 等を含まないインラインスタイル。法務系の落ち着いた配色。
@@ -165,7 +166,8 @@ function esc(s: any): string {
  * なら認可なしモードで動く。
  */
 export function legalonImportPage(
-  auth: SignLink | string | null | undefined
+  auth: SignLink | string | null | undefined,
+  role: Role = "viewer"
 ): string {
   // 内部 endpoint は同じ resourceId で署名する必要がある。
   let apiUrl = "/api/imports/legalon-csv";
@@ -383,6 +385,7 @@ export function legalonImportPage(
 
   return popPage({
     active: "contracts",
+    role,
     mode: "admin",
     title: "LegalOn 契約台帳 取り込み",
     subtitle: "contract_capabilities テーブルに upsert します",

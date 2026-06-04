@@ -7,8 +7,9 @@
 
 import { MASTER_CSS, SVG } from "./masterChrome.ts";
 import { popAdminPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
-export function staffMasterPage(): string {
+export function staffMasterPage(role: Role = "viewer"): string {
   const apiListUrl = "/api/master/staff";
   const apiDetailTpl = "/api/master/staff/__ID__";
   const apiImportUrl = "/api/master/staff/import-csv";
@@ -407,6 +408,7 @@ export function staffMasterPage(): string {
 
   return popAdminPage({
     active: "staff",
+    role,
     masterCss: MASTER_CSS,
     title: "スタッフマスタ",
     subtitle: "Master · Internal",

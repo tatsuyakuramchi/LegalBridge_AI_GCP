@@ -83,7 +83,10 @@ import {
   requireIapUser,
   requireDepartmentRole,
   requireAppRole,
+  attachAppRole,
+  requireScreen,
 } from "./src/lib/authMiddleware.ts";
+import type { Role } from "./src/lib/screens.ts";
 import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
 // Phase 17x: LegalOn 契約台帳 CSV 取り込み (search-api 内に閉じた書き込み機能)。
 import { legalonImportPage } from "./src/views/legalonImportHtml.ts";
@@ -424,7 +427,7 @@ async function startServer() {
     (req, res) => {
       try {
         // 恒久 URL: HMAC 不要 (null 渡し)。fetch は IAP セッションを継承。
-        res.type("html").send(legalonImportPage(null));
+        res.type("html").send(legalonImportPage(null, "admin"));
       } catch (error) {
         console.error("/imports/legalon failed:", error);
         res
@@ -572,9 +575,10 @@ async function startServer() {
   app.get(
     "/templates/preview",
     requireIapUser({ renderErrorPage }),
-    (_req, res) => {
+    attachAppRole(),
+    (req, res) => {
       try {
-        res.type("html").send(templatePreviewPage());
+        res.type("html").send(templatePreviewPage((req as any).userRole as Role));
       } catch (error) {
         console.error("/templates/preview failed:", error);
         res
@@ -795,7 +799,7 @@ async function startServer() {
     }),
     (req, res) => {
       try {
-        res.type("html").send(vendorImportPage(null));
+        res.type("html").send(vendorImportPage(null, "admin"));
       } catch (error) {
         console.error("/imports/vendor failed:", error);
         res
@@ -898,12 +902,14 @@ async function startServer() {
   app.get(
     "/master/vendors",
     requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "vendors", renderErrorPage }),
     (req, res) => {
       try {
         // 恒久 URL 化のため HMAC は付けない (null で渡す)。
         // 同一オリジン内の fetch は IAP セッションを継承するので、API も
         // 認証付き状態で叩ける。
-        res.type("html").send(vendorMasterPage(null));
+        res.type("html").send(vendorMasterPage(null, (req as any).userRole as Role));
       } catch (error) {
         console.error("/master/vendors failed:", error);
         res
@@ -974,9 +980,9 @@ async function startServer() {
   app.post(
     "/api/master/vendors",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    requireAppRole({
       resourceLabel: "master:vendors:write",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     express.json({ limit: "1mb" }),
@@ -1051,9 +1057,14 @@ async function startServer() {
   // -------------------------------------------------------------------
   // /master/staff — スタッフマスター CRUD + CSV 一括取込 (Phase 17z-4)
   // -------------------------------------------------------------------
-  app.get("/master/staff", requireIapUser({ renderErrorPage }), (req, res) => {
+  app.get(
+    "/master/staff",
+    requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "staff", renderErrorPage }),
+    (req, res) => {
     try {
-      res.type("html").send(staffMasterPage());
+      res.type("html").send(staffMasterPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/staff failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -1097,9 +1108,9 @@ async function startServer() {
   app.post(
     "/api/master/staff",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    requireAppRole({
       resourceLabel: "master:staff:write",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     express.json({ limit: "1mb" }),
@@ -1185,14 +1196,11 @@ async function startServer() {
   app.get(
     "/master/contracts",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
-      resourceLabel: "master:contracts:view",
-      allowedDepartments: ["経営管理本部", "法務"],
-      renderErrorPage,
-    }),
+    attachAppRole(),
+    requireScreen({ key: "contracts", renderErrorPage }),
     (req, res) => {
       try {
-        res.type("html").send(masterContractsPage());
+        res.type("html").send(masterContractsPage((req as any).userRole as Role));
       } catch (error) {
         console.error("/master/contracts failed:", error);
         res
@@ -2674,9 +2682,9 @@ async function startServer() {
   });
 
   // B1: 作品中心モデルの閲覧ページ(Search 専用フロント)。/api/v3 を同一オリジンで読む。
-  app.get("/work-model", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/work-model", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "work-model", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(workModelPage());
+      res.type("html").send(workModelPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/work-model failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -2684,9 +2692,9 @@ async function startServer() {
   });
 
   // 条件明細(capability_line_items)の横断一覧・検索ページ。
-  app.get("/master/conditions", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/master/conditions", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "conditions", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(conditionsPage());
+      res.type("html").send(conditionsPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/conditions failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -2798,9 +2806,9 @@ async function startServer() {
   // ===================================================================
   // サブライセンス受領管理(第1段)
   // ===================================================================
-  app.get("/master/sublicense", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/master/sublicense", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "sublicense", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(sublicensePage());
+      res.type("html").send(sublicensePage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/sublicense failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -2849,9 +2857,9 @@ async function startServer() {
   });
 
   // ── 分配構造マップ(作品中心)──────────────────────────────────
-  app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "receivable-map", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(receivableMapPage());
+      res.type("html").send(receivableMapPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/receivable-map failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));

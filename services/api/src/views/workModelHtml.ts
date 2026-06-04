@@ -16,6 +16,7 @@
  */
 
 import { popPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
 const STYLE = `
 .shell { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
@@ -103,7 +104,7 @@ table.sub th { background: #f8fafc; color: #475569; font-weight: 600; white-spac
 .row-flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 `;
 
-export function workModelPage(): string {
+export function workModelPage(role: Role = "viewer"): string {
   const body = `
 <div class="shell">
   <div class="header">
@@ -485,6 +486,7 @@ export function workModelPage(): string {
 
   return popPage({
     active: "work-model",
+    role,
     mode: "admin",
     title: "作品モデル",
     subtitle: "原作IP・自社作品・契約を作品軸で閲覧 (新プラットフォーム /api/v3)",

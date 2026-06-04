@@ -149,6 +149,7 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
 
   return popPage({
     active: "admin",
+    role: "admin",
     mode: "admin",
     title: "管理ダッシュボード",
     subtitle: "Master Console ハブ",

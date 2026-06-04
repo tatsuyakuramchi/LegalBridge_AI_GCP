@@ -13,8 +13,9 @@
 
 import { MASTER_CSS, SVG } from "./masterChrome.ts";
 import { popAdminPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
-export function vendorMasterPage(_authIgnored?: unknown): string {
+export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"): string {
   // Phase 17z-2 で恒久 URL 化したので _authIgnored は無視。
   // API は同一オリジン (IAP セッション継承) で素の URL を叩く。
   const apiListUrl = "/api/master/vendors";
@@ -958,6 +959,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
   return popAdminPage({
     active: "vendors",
+    role,
     masterCss: MASTER_CSS,
     title: "取引先マスタ",
     subtitle: "Master · External partners",
