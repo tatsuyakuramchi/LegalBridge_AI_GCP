@@ -80,6 +80,7 @@ async function renderSamplePreviewFromDb(type: string): Promise<string | null> {
 // Phase 17z-2: requireIapUser / requireDepartmentRole を追加 (恒久 URL 対応)。
 import {
   requireSignedUrl,
+  requireSignedUrlOrIap,
   requireIapUser,
   requireDepartmentRole,
   requireAppRole,
@@ -267,13 +268,15 @@ async function startServer() {
 
   app.get(
     "/search/vendor",
-    requireSignedUrl({ resourceId: () => "list", renderErrorPage }),
+    requireSignedUrlOrIap({ resourceId: () => "list", renderErrorPage }),
+    attachAppRole(),
     async (req, res) => {
     try {
+      const role = (req as any).userRole as Role;
       const query = String(req.query.q || "").trim();
       const auth = makeSignLink(req);
       if (!query) {
-        return res.type("html").send(renderListPage("", [], auth));
+        return res.type("html").send(renderListPage("", [], auth, role));
       }
       // 単一候補のときも一覧経由で見せる (UX 一貫性)。検索 -> リスト -> 詳細
       // の階層をユーザーに常に提示するため。
@@ -287,7 +290,7 @@ async function startServer() {
       } else if ((summary as any)?.counterparty) {
         results = [summary];
       }
-      res.type("html").send(renderListPage(query, results, auth));
+      res.type("html").send(renderListPage(query, results, auth, role));
     } catch (error) {
       console.error("/search/vendor failed:", error);
       res
@@ -326,12 +329,14 @@ async function startServer() {
   //   Phase 17s: /search/ringi/00001?exp=...&sig=...
   app.get(
     "/search/ringi/:number",
-    requireSignedUrl({
+    requireSignedUrlOrIap({
       resourceId: (req) => `ringi:${String(req.params.number || "").trim()}`,
       renderErrorPage,
     }),
+    attachAppRole(),
     async (req, res) => {
     try {
+      const role = (req as any).userRole as Role;
       const num = String(req.params.number || "").trim();
       const auth = makeSignLink(req);
       if (!/^[0-9]{5}$/.test(num)) {
@@ -349,7 +354,7 @@ async function startServer() {
       }
       // Phase 17d: Backlog ステータスを enrich
       await enrichWithBacklogStatus(payload);
-      res.type("html").send(renderRingiPage(payload, auth));
+      res.type("html").send(renderRingiPage(payload, auth, role));
     } catch (error) {
       console.error("/search/ringi/:number failed:", error);
       res
@@ -361,12 +366,14 @@ async function startServer() {
 
   app.get(
     "/search/vendor/:vendorId",
-    requireSignedUrl({
+    requireSignedUrlOrIap({
       resourceId: (req) => `vendor:${String(req.params.vendorId || "").trim()}`,
       renderErrorPage,
     }),
+    attachAppRole(),
     async (req, res) => {
     try {
+      const role = (req as any).userRole as Role;
       const vendorId = Number(req.params.vendorId);
       const auth = makeSignLink(req);
       const backQuery = String(req.query.q || "");
@@ -388,7 +395,7 @@ async function startServer() {
           .type("html")
           .send(renderErrorPage("Not Found", "取引先が見つかりませんでした", 404));
       }
-      res.type("html").send(renderDetailPage(payload, backQuery, auth));
+      res.type("html").send(renderDetailPage(payload, backQuery, auth, role));
     } catch (error) {
       console.error("/search/vendor/:vendorId failed:", error);
       res
