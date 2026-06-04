@@ -11,22 +11,14 @@
  */
 
 import type { SignLink } from "./contractSearchHtml.ts";
+import { popPage } from "./popChrome.ts";
 
 /**
  * 個人情報・URL 等を含まないインラインスタイル。法務系の落ち着いた配色。
  */
 const STYLE = `
-*, *::before, *::after { box-sizing: border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
-               "Yu Gothic", sans-serif;
-  margin: 0; padding: 0;
-  color: #1f2937;
-  background: #f8fafc;
-  line-height: 1.6;
-  font-size: 14px;
-}
-.container { max-width: 1100px; margin: 0 auto; padding: 24px 20px 48px; }
+/* グローバル body/* リセットは pop 共通テーマ(POP_CSS)に委譲。ここではページ固有のみ。 */
+.container { max-width: 1100px; margin: 0 auto; padding: 0 0 24px; }
 header.page-header {
   border-bottom: 2px solid #1f2937;
   padding-bottom: 16px;
@@ -188,24 +180,8 @@ export function legalonImportPage(
     apiUrl += "?token=" + encodeURIComponent(auth);
   }
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>LegalOn 契約台帳 取り込み</title>
-  <style>${STYLE}</style>
-</head>
-<body>
+  const body = `
   <div class="container">
-    <header class="page-header">
-      <div class="title-wrap">
-        <h1>📥 LegalOn 契約台帳 CSV 取り込み</h1>
-        <div class="muted">contract_capabilities テーブルに upsert します</div>
-      </div>
-      <a class="back-link" href="/admin" title="管理ダッシュボードに戻る">← Admin に戻る</a>
-    </header>
 
     <section class="card">
       <h2>0. (任意) サンプル CSV をダウンロード</h2>
@@ -403,7 +379,15 @@ export function legalonImportPage(
 
       $('result').innerHTML = modeBanner + stats + errorsHtml + previewHtml;
     }
-  </script>
-</body>
-</html>`;
+  </script>`;
+
+  return popPage({
+    active: "contracts",
+    mode: "admin",
+    title: "LegalOn 契約台帳 取り込み",
+    subtitle: "contract_capabilities テーブルに upsert します",
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    pageTitle: "LegalOn 契約台帳 取り込み",
+  });
 }
