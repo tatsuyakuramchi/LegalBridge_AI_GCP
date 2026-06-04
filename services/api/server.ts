@@ -2738,6 +2738,7 @@ async function startServer() {
           status_flags:
             b.status_flags && typeof b.status_flags === "object" ? b.status_flags : null,
           is_inbound: typeof b.is_inbound === "boolean" ? b.is_inbound : null,
+          flow_direction: b.flow_direction === undefined ? undefined : (b.flow_direction || ""),
         });
         res.json({ ok: true });
       } catch (error: any) {

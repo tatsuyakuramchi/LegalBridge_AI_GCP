@@ -622,7 +622,9 @@ export async function importInboundConditions(): Promise<{ imported: number; upd
          FROM capability_line_items cli
          JOIN contract_capabilities cc ON cc.id = cli.capability_id
          LEFT JOIN vendors v ON v.id = cc.vendor_id
-        WHERE cli.is_inbound = TRUE`
+        WHERE cli.is_inbound = TRUE
+           OR cli.flow_direction = 'out'
+           OR cc.flow_direction = 'out'`
     );
     rows = res.rows;
   } catch (err: any) {

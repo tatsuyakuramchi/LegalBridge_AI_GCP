@@ -116,11 +116,13 @@ export function conditionsPage(): string {
         <div class="checks" id="m-status"></div>
       </div>
       <div class="fld">
-        <label>当社の受領(請求権)</label>
-        <div class="checks">
-          <label><input type="checkbox" id="m-inbound"> この明細は当社が相手方に請求/受領する(inbound)</label>
-          <div class="muted" style="font-size:11px;">ON にすると「請求権台帳(受領予定)」へ自動取込されます(ライセンスアウト・出版印税など)。</div>
-        </div>
+        <label>方向(in/out)</label>
+        <select id="m-direction" class="pop-select" style="width:100%;">
+          <option value="">(未設定)</option>
+          <option value="in">イン — 当社が支払う(ライセンスイン/プロダクトイン・仕入)</option>
+          <option value="out">アウト — 当社が受領する(ライセンスアウト/プロダクトアウト)</option>
+        </select>
+        <div class="muted" style="font-size:11px;">「アウト」にすると当社の受領明細として「請求権台帳(受領予定)」へ自動取込されます。</div>
       </div>
     </div>
     <div class="mfoot">
@@ -174,8 +176,11 @@ export function conditionsPage(): string {
       '<th>紐付け(クリックで編集)</th><th>状態</th>' +
       '</tr>';
     var bodyHtml = rows.map(function (r) {
-      var typeCell = '<span class="badge-cat">' + esc(catLabel(r.contract_category)) + '</span>' +
-        (r.is_inbound ? ' <span class="cond-link-pill ip">受領</span>' : '') +
+      var dir = (r.flow_direction === "in" || r.flow_direction === "out")
+        ? r.flow_direction : (r.is_inbound ? "out" : "");
+      var dirPill = dir === "out" ? ' <span class="cond-link-pill ip">アウト(受領)</span>'
+        : dir === "in" ? ' <span class="cond-link-pill">イン(支払)</span>' : '';
+      var typeCell = '<span class="badge-cat">' + esc(catLabel(r.contract_category)) + '</span>' + dirPill +
         (r.contract_type ? '<div class="sub10">' + esc(r.contract_type) + '</div>' : '');
       var vendor = esc(r.vendor_name || "—") + (r.vendor_code ? '<div class="sub10">' + esc(r.vendor_code) + '</div>' : '');
       var item = '<div>' + esc(r.item_name || "—") + '</div>' +
@@ -319,7 +324,11 @@ export function conditionsPage(): string {
       return '<label><input type="checkbox" class="st-chk" value="' + esc(d.key) + '"' +
         (sf[d.key] ? " checked" : "") + ">" + esc(d.label) + "</label>";
     }).join("");
-    document.getElementById("m-inbound").checked = row.is_inbound === true;
+    // 方向: flow_direction 優先、無ければ is_inbound から out を推定。
+    document.getElementById("m-direction").value =
+      row.flow_direction === "in" || row.flow_direction === "out"
+        ? row.flow_direction
+        : (row.is_inbound ? "out" : "");
   }
   function closeModal() { document.getElementById("backdrop").classList.remove("open"); editingId = null; }
   async function saveLinks() {
@@ -342,7 +351,7 @@ export function conditionsPage(): string {
               .forEach(function (c) { if (c.checked) f[c.value] = true; });
             return f;
           })(),
-          is_inbound: document.getElementById("m-inbound").checked,
+          flow_direction: document.getElementById("m-direction").value,
         }),
       });
       var data = await res.json().catch(function () { return {}; });

@@ -148,7 +148,8 @@ export async function listConditions(
        cli.master_contract_id, mc.contract_title AS master_contract_title,
        mc.document_number AS master_contract_number,
        cli.ringi_id, rr.ringi_number, rr.title AS ringi_title,
-       cli.status_flags, COALESCE(cli.is_inbound, FALSE) AS is_inbound`;
+       cli.status_flags, COALESCE(cli.is_inbound, FALSE) AS is_inbound,
+       cli.flow_direction`;
   const linkJoins = `
     LEFT JOIN source_ips si ON si.id = cli.source_ip_id
     LEFT JOIN works w ON w.id = cli.work_id
@@ -213,7 +214,8 @@ export async function listConditions(
     ringi_number: r.ringi_number || "",
     ringi_title: r.ringi_title || "",
     status_flags: normalizeFlags(r.status_flags),
-    is_inbound: r.is_inbound === true, // 当社の受領(請求権)明細か
+    is_inbound: r.is_inbound === true, // 当社の受領(請求権)明細か(方向out相当)
+    flow_direction: r.flow_direction || "", // 'in'(当社支払) / 'out'(当社受領)
   }));
 
   return { rows, total };
@@ -251,6 +253,7 @@ export async function updateConditionLinks(
     ringi_id?: number | null;
     status_flags?: Record<string, boolean> | null;
     is_inbound?: boolean | null; // 受領(請求権)明細フラグ。未指定なら据え置き
+    flow_direction?: string | null; // 'in'|'out'|''(クリア)。未指定(undefined)なら据え置き
   }
 ): Promise<void> {
   // status_flags は定義済みキーのうち true のものだけを残して JSON 化。
@@ -262,14 +265,22 @@ export async function updateConditionLinks(
     }
     flagsJson = JSON.stringify(clean);
   }
-  // is_inbound は明示指定(boolean)時のみ更新。null/undefined は据え置き。
-  const inbound = typeof links.is_inbound === "boolean" ? links.is_inbound : null;
+  // 方向(flow_direction)が指定されたら、それを正とし is_inbound(out=受領)も同期。
+  //   undefined → 据え置き / '' → クリア / 'in'|'out' → 設定。
+  let dir: string | null | undefined = links.flow_direction;
+  let inbound = typeof links.is_inbound === "boolean" ? links.is_inbound : null;
+  const dirProvided = dir !== undefined;
+  if (dirProvided) {
+    dir = dir === "in" || dir === "out" ? dir : null;
+    inbound = dir === "out"; // out=当社受領=請求台帳対象
+  }
 
   await query(
     `UPDATE capability_line_items
         SET source_ip_id = $2, work_id = $3, master_contract_id = $4, ringi_id = $5,
             status_flags = COALESCE($6::jsonb, status_flags),
             is_inbound = COALESCE($7::boolean, is_inbound),
+            flow_direction = CASE WHEN $8::boolean THEN $9::varchar ELSE flow_direction END,
             updated_at = CURRENT_TIMESTAMP
       WHERE id = $1`,
     [
@@ -280,6 +291,8 @@ export async function updateConditionLinks(
       links.ringi_id ?? null,
       flagsJson,
       inbound,
+      dirProvided,
+      dirProvided ? dir : null,
     ]
   );
 }
