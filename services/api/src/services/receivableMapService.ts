@@ -73,36 +73,49 @@ export async function getWorkDistribution(workId: number): Promise<WorkDistribut
   }
   if (!work) return empty;
 
-  // 下流(当社受領)= この作品の請求権 deal
-  let deals: any[] = [];
-  try {
-    deals = (await listDeals()).filter((d: any) => Number(d.work_id) === workId && d.status !== "closed");
-  } catch {
-    deals = [];
-  }
-  const downstream = deals.map((d: any) => ({
-    deal_id: d.id,
-    receivable_kind: d.receivable_kind || "sublicense",
-    sublicensee_name: d.sublicensee_name || "",
-    source_contract_number: d.source_contract_number || "",
-    received: num(d.net),
-    currency: d.currency || "JPY",
-  }));
+  const allDeals = await loadAllDeals();
+  const node = await computeNode(work, allDeals);
+  return {
+    work,
+    upstream: node.upstream,
+    downstream: node.downstream,
+    totals: {
+      sublicense_received: node.sublicense_received,
+      all_received: node.all_received,
+      distributed: node.distributed,
+      retained: node.sublicense_received - node.distributed,
+      rate_known: node.rate_known,
+    },
+  };
+}
+
+// ── ノード(1作品)の上流分配・下流受領を計算(系譜マップで再利用)──────
+type WorkRow = { id: number; title: string; work_code: string; is_original: boolean; derivation_type?: string | null; parent_work_id?: number | null };
+
+async function loadAllDeals(): Promise<any[]> {
+  try { return await listDeals(); } catch { return []; }
+}
+
+async function computeNode(work: WorkRow, allDeals: any[]) {
+  const downstream = allDeals
+    .filter((d: any) => Number(d.work_id) === work.id && d.status !== "closed")
+    .map((d: any) => ({
+      deal_id: d.id,
+      receivable_kind: d.receivable_kind || "sublicense",
+      sublicensee_name: d.sublicensee_name || "",
+      source_contract_number: d.source_contract_number || "",
+      received: num(d.net),
+      currency: d.currency || "JPY",
+    }));
   const sublicenseReceived = downstream
     .filter((r) => r.receivable_kind === "sublicense")
     .reduce((s, r) => s + r.received, 0);
   const allReceived = downstream.reduce((s, r) => s + r.received, 0);
 
-  // 上流(当社→ライセンサー分配)= この作品の license-in 明細(NOT inbound, category license)
-  //   の親契約 + condition_no=2(サブライセンス)の料率。
+  // 上流(当社→ライセンサー分配)= この作品の license-in/publication 明細(NOT inbound)の親契約 +
+  //   「受領/受取ベース」金銭条件(サブライセンス/翻訳・海外版)の料率。
   let upstream: WorkDistribution["upstream"] = [];
   try {
-    // 分配率 = 「当社の受領を基礎に上流へ分配する」金銭条件。
-    //   license:     condition_no=2(サブライセンス)
-    //   publication: condition_no=3(翻訳・海外版=被許諾者受取ライセンス収益×料率)
-    //                / 2(電子書籍=被許諾者受領額×料率)
-    //   契約類型で番号が違うため、condition_no 決め打ちではなく
-    //   「受領/受取ベース」や region ラベル(サブライセンス/翻訳/海外)で拾う。
     const ur = await query(
       `SELECT DISTINCT cc.id AS capability_id, cc.document_number, cc.contract_category,
               v.vendor_name AS licensor_name,
@@ -130,7 +143,7 @@ export async function getWorkDistribution(workId: number): Promise<WorkDistribut
         WHERE cli.work_id = $1
           AND COALESCE(cli.is_inbound, FALSE) = FALSE
           AND (cc.contract_category ILIKE 'license%' OR cc.contract_category = 'publication')`,
-      [workId]
+      [work.id]
     );
     upstream = ur.rows.map((r: any) => {
       const rate = r.rate_pct == null ? null : Number(r.rate_pct);
@@ -150,22 +163,102 @@ export async function getWorkDistribution(workId: number): Promise<WorkDistribut
     if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
     upstream = [];
   }
-
   const distributed = upstream.reduce((s, u) => s + (u.distribute_amount || 0), 0);
-  const rateKnown = upstream.some((u) => u.rate_pct != null);
-
   return {
-    work,
     upstream,
     downstream,
-    totals: {
-      sublicense_received: sublicenseReceived,
-      all_received: allReceived,
-      distributed,
-      retained: sublicenseReceived - distributed,
-      rate_known: rateKnown,
-    },
+    sublicense_received: sublicenseReceived,
+    all_received: allReceived,
+    distributed,
+    rate_known: upstream.some((u) => u.rate_pct != null),
   };
+}
+
+export type WorkLineage = {
+  selected_work_id: number;
+  chain: Array<{
+    work: WorkRow;
+    derivation_type: string | null;
+    upstream: WorkDistribution["upstream"];
+    downstream: WorkDistribution["downstream"];
+    received: number;       // この作品のサブライセンス受領
+    all_received: number;
+    distributed: number;
+  }>;
+  children: Array<{ id: number; work_code: string; title: string; derivation_type: string | null }>;
+  totals: { received: number; distributed: number; retained: number };
+};
+
+async function loadWorkRow(id: number): Promise<WorkRow | null> {
+  try {
+    const r = await query(
+      `SELECT id, title, work_code, COALESCE(is_original, TRUE) AS is_original,
+              parent_work_id, derivation_type
+         FROM works WHERE id = $1`,
+      [id]
+    );
+    if (!r.rows.length) return null;
+    const x = r.rows[0];
+    return {
+      id: Number(x.id), title: x.title || "", work_code: x.work_code || "",
+      is_original: x.is_original === true,
+      parent_work_id: x.parent_work_id == null ? null : Number(x.parent_work_id),
+      derivation_type: x.derivation_type || null,
+    };
+  } catch (err: any) {
+    if (err && (err.code === "42P01" || err.code === "42703")) return null;
+    throw err;
+  }
+}
+
+/** 作品の派生系譜(root→selected)＋直下の派生作品。多段分配を段ごとに表示する用。 */
+export async function getWorkLineage(workId: number): Promise<WorkLineage> {
+  const empty: WorkLineage = { selected_work_id: workId, chain: [], children: [], totals: { received: 0, distributed: 0, retained: 0 } };
+  if (!Number.isFinite(workId)) return empty;
+  const selected = await loadWorkRow(workId);
+  if (!selected) return empty;
+
+  // 祖先チェーン(selected→…→root)を作り反転(root→selected)。循環/暴走ガード。
+  const chainRows: WorkRow[] = [];
+  const seen = new Set<number>();
+  let cur: WorkRow | null = selected;
+  for (let i = 0; i < 20 && cur; i++) {
+    if (seen.has(cur.id)) break;
+    seen.add(cur.id);
+    chainRows.push(cur);
+    cur = cur.parent_work_id ? await loadWorkRow(cur.parent_work_id) : null;
+  }
+  chainRows.reverse(); // root → selected
+
+  // 直下の派生作品(子)
+  let children: WorkLineage["children"] = [];
+  try {
+    const cr = await query(
+      `SELECT id, work_code, title, derivation_type FROM works WHERE parent_work_id = $1 ORDER BY id`,
+      [workId]
+    );
+    children = cr.rows.map((r: any) => ({
+      id: Number(r.id), work_code: r.work_code || "", title: r.title || "", derivation_type: r.derivation_type || null,
+    }));
+  } catch { children = []; }
+
+  const allDeals = await loadAllDeals();
+  const chain = [];
+  for (const w of chainRows) {
+    const node = await computeNode(w, allDeals);
+    chain.push({
+      work: w,
+      derivation_type: w.derivation_type || null,
+      upstream: node.upstream,
+      downstream: node.downstream,
+      received: node.sublicense_received,
+      all_received: node.all_received,
+      distributed: node.distributed,
+    });
+  }
+  const received = chain.reduce((s, n) => s + n.received, 0);
+  const distributed = chain.reduce((s, n) => s + n.distributed, 0);
+  return { selected_work_id: workId, chain, children, totals: { received, distributed, retained: received - distributed } };
 }
 
 /** マップ対象になりうる作品(請求権 deal がある作品)の一覧(ピッカー用)。 */

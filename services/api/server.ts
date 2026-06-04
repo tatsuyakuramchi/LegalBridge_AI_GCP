@@ -137,6 +137,7 @@ import {
 } from "./src/services/sublicenseService.ts";
 import {
   getWorkDistribution,
+  getWorkLineage,
   listMappableWorks,
 } from "./src/services/receivableMapService.ts";
 import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
@@ -2861,6 +2862,17 @@ async function startServer() {
       res.json({ ok: true, ...(await getWorkDistribution(workId)) });
     } catch (error: any) {
       console.error("/api/receivable-map failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  // 派生系譜(多段)マップ
+  app.get("/api/receivable-map/lineage", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const workId = Number((req.query as any).work);
+      if (!Number.isFinite(workId)) return res.status(400).json({ ok: false, error: "work required" });
+      res.json({ ok: true, ...(await getWorkLineage(workId)) });
+    } catch (error: any) {
+      console.error("/api/receivable-map/lineage failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });

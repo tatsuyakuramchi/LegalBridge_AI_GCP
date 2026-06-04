@@ -34,6 +34,19 @@ const EXTRA_CSS = `<style>
 .rate{font-size:11px;color:#a9700a;background:#fff4d6;border-radius:10px;padding:1px 7px;font-weight:800}
 .empty{color:var(--muted);padding:18px;text-align:center}
 .warn{background:#fff7e6;border:1px solid #ffe9bf;color:#a9700a;border-radius:12px;padding:8px 12px;font-size:12px;margin-top:12px}
+.tier{border:1px solid var(--line);border-radius:18px;padding:12px 14px;margin-bottom:0;background:#fbfaff}
+.tier.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(108,92,231,.18)}
+.tier-head{display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap}
+.tier-head .t{font-weight:800;font-size:14px}
+.deriv{display:inline-block;font-size:10.5px;font-weight:800;padding:1px 9px;border-radius:12px;background:#fff0e6;color:#e8810f}
+.deriv.sel{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff}
+.connector{display:flex;flex-direction:column;align-items:center;color:var(--accent);padding:6px 0}
+.connector .a{font-size:20px;line-height:1}
+.connector .lbl{font-size:10.5px;color:var(--muted);font-weight:700}
+.children{margin-top:14px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+.children a{display:inline-block;margin:3px 6px 3px 0;font-size:12px;font-weight:700;color:var(--accent);background:#efeaff;border-radius:12px;padding:3px 10px;text-decoration:none}
+.chain-totals{display:flex;gap:18px;flex-wrap:wrap;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;border-radius:16px;padding:12px 16px;margin-bottom:14px}
+.chain-totals .k{font-size:11px;opacity:.9} .chain-totals .v{font-size:18px;font-weight:800}
 </style>`;
 
 export function receivableMapPage(): string {
@@ -78,32 +91,61 @@ export function receivableMapPage(): string {
       '<div class="amt">受領 '+esc(r.currency)+' '+yen(r.received)+'</div></div>';
   }
 
+  var DERIV={translation:"翻訳",edition:"版",title_change:"改題",localization:"地域化",adaptation:"翻案"};
+  function renderTier(n, isSel){
+    var w=n.work||{};
+    var ups=(n.upstream||[]).length?n.upstream.map(nodeUp).join(""):'<div class="empty" style="padding:8px;">上流(license-in)なし</div>';
+    var downs=(n.downstream||[]).length?n.downstream.map(nodeDown).join(""):'<div class="empty" style="padding:8px;">受領(下流)なし</div>';
+    var deriv=n.derivation_type?'<span class="deriv'+(isSel?' sel':'')+'">'+esc(DERIV[n.derivation_type]||n.derivation_type)+'</span>':(w.is_original?'<span class="deriv">原版</span>':'');
+    var center='<div class="node center">'+
+      '<div class="nm">当社</div>'+
+      '<div class="big"><span>サブライセンス受領</span><b>¥'+yen(n.received)+'</b></div>'+
+      '<div class="big"><span>上流へ分配</span><b>− ¥'+yen(n.distributed)+'</b></div>'+
+      '<div class="big" style="border-top:1px solid rgba(255,255,255,.35);padding-top:6px;"><span>留保</span><b>¥'+yen((n.received||0)-(n.distributed||0))+'</b></div>'+
+      ((n.all_received||0)>(n.received||0)?'<div class="meta" style="margin-top:6px;">※ 全受領 ¥'+yen(n.all_received)+'</div>':'')+
+      '</div>';
+    return '<div class="tier'+(isSel?' sel':'')+'">'+
+      '<div class="tier-head"><span class="t">'+esc((w.work_code?w.work_code+" : ":"")+w.title)+'</span>'+deriv+(isSel?'<span class="kpill">選択中</span>':'')+'</div>'+
+      '<div class="map-flow">'+
+        '<div class="map-col"><h3>⬆ 上流(当社が分配)</h3>'+ups+'</div>'+
+        '<div class="map-arrow"><div class="a">→</div><div class="lbl">分配</div></div>'+
+        '<div class="map-col"><h3>● 当社</h3>'+center+'</div>'+
+        '<div class="map-arrow"><div class="a">→</div><div class="lbl">受領</div></div>'+
+        '<div class="map-col"><h3>⬇ 下流(当社が受領)</h3>'+downs+'</div>'+
+      '</div></div>';
+  }
+
   async function loadMap(id){
     var wrap=document.getElementById("map-wrap");
     if(!id){wrap.innerHTML='<div class="empty">作品を選択してください。</div>';return;}
     wrap.innerHTML='<div class="empty">読み込み中…</div>';
     try{
-      var d=await jget("/api/receivable-map?work="+encodeURIComponent(id));
-      if(!d.work){wrap.innerHTML='<div class="empty">作品が見つかりません。</div>';return;}
+      var d=await jget("/api/receivable-map/lineage?work="+encodeURIComponent(id));
+      var chain=d.chain||[];
+      if(!chain.length){wrap.innerHTML='<div class="empty">作品が見つかりません。</div>';return;}
       var t=d.totals||{};
-      var ups=(d.upstream||[]).length?d.upstream.map(nodeUp).join(""):'<div class="empty">上流(ライセンサー)の license-in 明細がありません。</div>';
-      var downs=(d.downstream||[]).length?d.downstream.map(nodeDown).join(""):'<div class="empty">下流(受領)の請求権がありません。</div>';
-      var center='<div class="node center">'+
-        '<div class="nm">当社(サブライセンサー)</div>'+
-        '<div class="meta">'+esc((d.work.work_code?d.work.work_code+" : ":"")+d.work.title)+(d.work.is_original?' · 自社オリジナル':'')+'</div>'+
-        '<div class="big"><span>サブライセンス受領</span><b>¥'+yen(t.sublicense_received)+'</b></div>'+
-        '<div class="big"><span>上流へ分配</span><b>− ¥'+yen(t.distributed)+'</b></div>'+
-        '<div class="big" style="border-top:1px solid rgba(255,255,255,.35);padding-top:6px;"><span>当社 留保</span><b>¥'+yen(t.retained)+'</b></div>'+
-        (t.all_received>t.sublicense_received?'<div class="meta" style="margin-top:8px;">※ 全請求権受領(他種別含む) ¥'+yen(t.all_received)+'</div>':'')+
+      var html='<div class="chain-totals">'+
+        '<div><div class="k">系譜合計 受領</div><div class="v">¥'+yen(t.received)+'</div></div>'+
+        '<div><div class="k">上流へ分配</div><div class="v">− ¥'+yen(t.distributed)+'</div></div>'+
+        '<div><div class="k">当社 留保</div><div class="v">¥'+yen(t.retained)+'</div></div>'+
         '</div>';
-      var html='<div class="map-flow">'+
-        '<div class="map-col"><h3>⬆ 上流 — 原権利者 / ライセンサー(当社が分配)</h3>'+ups+'</div>'+
-        '<div class="map-arrow"><div class="a">→</div><div class="lbl">分配<br>料率×受領</div></div>'+
-        '<div class="map-col"><h3>● 当社</h3>'+center+'</div>'+
-        '<div class="map-arrow"><div class="a">→</div><div class="lbl">受領<br>請求権</div></div>'+
-        '<div class="map-col"><h3>⬇ 下流 — サブライセンシー(当社が受領)</h3>'+downs+'</div>'+
-        '</div>';
-      if(!t.rate_known && (d.upstream||[]).length) html+='<div class="warn">上流の分配料率(サブライセンス条件 condition_no=2)が未設定です。利用許諾契約の金銭条件に料率を入れると分配額が自動算定されます。</div>';
+      // root → selected の順に段表示。段間に派生コネクタ。
+      for(var i=0;i<chain.length;i++){
+        var isSel=String(chain[i].work.id)===String(d.selected_work_id);
+        html+=renderTier(chain[i], isSel);
+        if(i<chain.length-1){
+          var next=chain[i+1];
+          html+='<div class="connector"><div class="a">▼</div><div class="lbl">派生: '+esc(DERIV[next.derivation_type]||next.derivation_type||"派生")+'</div></div>';
+        }
+      }
+      // 直下の派生作品(子)へのリンク
+      if((d.children||[]).length){
+        html+='<div class="children"><b style="font-size:12px;">この作品の派生(下位):</b> '+
+          d.children.map(function(c){return '<a href="?work='+c.id+'">'+esc((c.work_code?c.work_code+" : ":"")+c.title)+(c.derivation_type?' ('+esc(DERIV[c.derivation_type]||c.derivation_type)+')':'')+'</a>';}).join("")+
+          '</div>';
+      }
+      var anyRateUnknown=chain.some(function(n){return (n.upstream||[]).some(function(u){return u.rate_pct==null;});});
+      if(anyRateUnknown) html+='<div class="warn">一部の上流で分配料率が未設定です。利用許諾/出版条件の金銭条件(サブライセンス/翻訳・海外版)に料率を入れると分配額が自動算定されます。</div>';
       wrap.innerHTML=html;
     }catch(e){wrap.innerHTML='<div class="empty" style="color:#b91c1c;">読み込み失敗: '+esc(e&&e.message?e.message:e)+'</div>';}
   }
