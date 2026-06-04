@@ -5,14 +5,8 @@
  * 部署/メール/電話を管理する。CSV 一括インポート機能あり。
  */
 
-import {
-  MASTER_CSS,
-  SVG,
-  HEAD_FONTS,
-  topbarHtml,
-  pageHeaderHtml,
-  masterTabsHtml,
-} from "./masterChrome.ts";
+import { MASTER_CSS, SVG } from "./masterChrome.ts";
+import { popAdminPage } from "./popChrome.ts";
 
 export function staffMasterPage(): string {
   const apiListUrl = "/api/master/staff";
@@ -20,27 +14,8 @@ export function staffMasterPage(): string {
   const apiImportUrl = "/api/master/staff/import-csv";
   const apiTemplateUrl = "/api/master/staff/template.csv";
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>Staff · Arcs Legal OS</title>
-  ${HEAD_FONTS}
-  <style>${MASTER_CSS}</style>
-</head>
-<body>
-  ${topbarHtml("Staff", "Master · Internal")}
-
-  <div class="container" style="padding-top: 24px; padding-bottom: 48px;">
-    ${pageHeaderHtml({
-      tag: "MST · INDEX",
-      title: "Master Systems",
-      desc: "Reference data — vendors, staff, and contracts.",
-    })}
-
-    ${masterTabsHtml("staff")}
+  const body = `
+  <div class="container" style="padding:0 0 24px;">
 
     <div class="toolbar">
       <div class="search">
@@ -428,7 +403,13 @@ export function staffMasterPage(): string {
 
     /* ----- init ----- */
     loadList();
-  </script>
-</body>
-</html>`;
+  </script>`;
+
+  return popAdminPage({
+    active: "staff",
+    masterCss: MASTER_CSS,
+    title: "スタッフマスタ",
+    subtitle: "Master · Internal",
+    body,
+  });
 }

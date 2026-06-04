@@ -132,7 +132,23 @@ import {
   deleteReport as deleteSubReport,
   confirmReceipt as confirmSubReceipt,
   unconfirmReceipt as unconfirmSubReceipt,
+  setReceiptStatus as setSubReceiptStatus,
+  importInboundConditions as importInboundReceivables,
 } from "./src/services/sublicenseService.ts";
+import {
+  getWorkDistribution,
+  getWorkLineage,
+  listMappableWorks,
+  listWorkAliases,
+  addWorkAlias,
+  deleteWorkAlias,
+  resolveWorksByTitle,
+} from "./src/services/receivableMapService.ts";
+import {
+  importUsageReportsCsv,
+  getUsageReportSampleCsv,
+} from "./src/services/usageReportImportService.ts";
+import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
 import {
   listConditions,
   updateConditionLinks,
@@ -2721,6 +2737,8 @@ async function startServer() {
           ringi_id: toIdOrNull(b.ringi_id),
           status_flags:
             b.status_flags && typeof b.status_flags === "object" ? b.status_flags : null,
+          is_inbound: typeof b.is_inbound === "boolean" ? b.is_inbound : null,
+          flow_direction: b.flow_direction === undefined ? undefined : (b.flow_direction || ""),
         });
         res.json({ ok: true });
       } catch (error: any) {
@@ -2829,12 +2847,127 @@ async function startServer() {
     }
   });
 
-  // 受領予定一覧(deal を各回に展開)
+  // ── 分配構造マップ(作品中心)──────────────────────────────────
+  app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), (_req, res) => {
+    try {
+      res.type("html").send(receivableMapPage());
+    } catch (error) {
+      console.error("/master/receivable-map failed:", error);
+      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+  app.get("/api/receivable-map/works", requireIapUser({ renderErrorPage }), async (_req, res) => {
+    try {
+      res.json({ ok: true, rows: await listMappableWorks() });
+    } catch (error: any) {
+      console.error("/api/receivable-map/works failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.get("/api/receivable-map", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const workId = Number((req.query as any).work);
+      if (!Number.isFinite(workId)) return res.status(400).json({ ok: false, error: "work required" });
+      res.json({ ok: true, ...(await getWorkDistribution(workId)) });
+    } catch (error: any) {
+      console.error("/api/receivable-map failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  // 派生系譜(多段)マップ
+  app.get("/api/receivable-map/lineage", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const workId = Number((req.query as any).work);
+      if (!Number.isFinite(workId)) return res.status(400).json({ ok: false, error: "work required" });
+      res.json({ ok: true, ...(await getWorkLineage(workId)) });
+    } catch (error: any) {
+      console.error("/api/receivable-map/lineage failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  // タイトル(他社/改題)→作品 解決(利用報告の名寄せ)
+  app.get("/api/receivable-map/resolve", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      res.json({ ok: true, rows: await resolveWorksByTitle(String((req.query as any).q || "")) });
+    } catch (error: any) {
+      console.error("/api/receivable-map/resolve failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  // 作品タイトル別名(名寄せ)CRUD
+  app.get("/api/works/:id/aliases", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      res.json({ ok: true, rows: await listWorkAliases(id) });
+    } catch (error: any) {
+      console.error("/api/works/:id/aliases GET failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.post("/api/works/:id/aliases", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const b = req.body || {};
+      if (!Number.isFinite(id) || !b.alias_title) return res.status(400).json({ ok: false, error: "id and alias_title required" });
+      const aliasId = await addWorkAlias(id, String(b.alias_title), b.party_vendor_id, b.context);
+      res.json({ ok: true, id: aliasId });
+    } catch (error: any) {
+      console.error("/api/works/:id/aliases POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.delete("/api/work-aliases/:id", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      await deleteWorkAlias(id);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/work-aliases/:id DELETE failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 利用報告 CSV 一括取込(タイトル名寄せ自動解決)
+  app.get("/api/sublicense/reports/template.csv", requireIapUser({ renderErrorPage }), (_req, res) => {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="usage_report_sample.csv"');
+    res.send(getUsageReportSampleCsv());
+  });
+  app.post("/api/sublicense/reports/import-csv", requireIapUser({ renderErrorPage }), express.json({ limit: "8mb" }), async (req, res) => {
+    try {
+      const b = req.body || {};
+      if (!b.csv || typeof b.csv !== "string") return res.status(400).json({ ok: false, error: "csv required" });
+      const result = await importUsageReportsCsv(b.csv, { dryRun: b.dry_run !== false });
+      res.json({ ok: true, ...result });
+    } catch (error: any) {
+      console.error("/api/sublicense/reports/import-csv failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 条件明細(inbound)→ 請求権 自動取込(冪等)
+  app.post("/api/sublicense/receipts/import", requireIapUser({ renderErrorPage }), async (_req, res) => {
+    try {
+      const r = await importInboundReceivables();
+      res.json({ ok: true, ...r });
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts/import failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 受領予定一覧(deal を各回に展開)。?import=1 で取込を先に実行。
   app.get("/api/sublicense/receipts", requireIapUser({ renderErrorPage }), async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
+      if (q.import === "1") {
+        try { await importInboundReceivables(); } catch (e) { console.warn("inbound import skipped:", e); }
+      }
       const result = await listSubReceipts({
         from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
+        kind: q.kind, status: q.status,
       });
       res.json({ ok: true, ...result });
     } catch (error: any) {
@@ -2864,6 +2997,12 @@ async function startServer() {
       await upsertSubReport({
         deal_id: dealId,
         period_date: String(b.period_date),
+        period_label: b.period_label,
+        period_start: b.period_start,
+        period_end: b.period_end,
+        report_basis: b.report_basis,
+        unit_price: b.unit_price,
+        reported_amount: b.reported_amount,
         reported_sales: b.reported_sales,
         reported_quantity: b.reported_quantity,
         note: b.note,
@@ -2919,6 +3058,22 @@ async function startServer() {
     }
   });
 
+  // 請求状態(台帳)更新: 未請求/請求済/入金済
+  app.post("/api/sublicense/receipts/status", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const dealId = Number(b.deal_id);
+      if (!Number.isFinite(dealId) || !b.period_date || !b.status) {
+        return res.status(400).json({ ok: false, error: "deal_id, period_date, status required" });
+      }
+      await setSubReceiptStatus(dealId, String(b.period_date), String(b.status), b.note);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts/status POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   // 受領予定 CSV(全件 or ?ids=deal:idx,...)
   app.get("/api/sublicense/receipts/export", requireIapUser({ renderErrorPage }), async (req, res) => {
     try {
@@ -2926,6 +3081,7 @@ async function startServer() {
       const ids = q.ids ? String(q.ids).split(",").map((s) => s.trim()).filter(Boolean) : undefined;
       const csv = await exportSubReceiptsCsv({
         from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
+        kind: q.kind, status: q.status,
         ids: ids as any,
       });
       const stamp = new Date().toISOString().slice(0, 10);

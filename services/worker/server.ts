@@ -10145,6 +10145,24 @@ ${details}
         //     'license_condition'    : 利用許諾 (license / royalty)
         //     'delivery_record'      : 検収書 (mirror 用、picker には載らない)
         let recordType = "master_contract";
+        // 方向(in/out)の確定: フォームに方向の明示が無ければ purpose_code から
+        //   contract_purposes.flow_direction を解決し formData.FLOW_DIRECTION に載せる。
+        //   → admin-ui は「目的(4ジャンル含む)」を選ぶだけでよく、方向の別送が不要。
+        //   後段の capability / 明細反映ブロックが formData.FLOW_DIRECTION を拾う。
+        if (!formData.FLOW_DIRECTION && !formData["方向"] && !formData.flow_direction) {
+          const pc = formData.PURPOSE_CODE || formData.purpose_code || formData["目的"];
+          if (pc) {
+            try {
+              const pr = await query(
+                `SELECT flow_direction FROM contract_purposes WHERE purpose_code = $1`,
+                [pc]
+              );
+              if (pr.rows[0]?.flow_direction) formData.FLOW_DIRECTION = pr.rows[0].flow_direction;
+            } catch (pdErr) {
+              console.warn("[flow_direction] purpose resolve skipped:", pdErr);
+            }
+          }
+        }
         // Phase 25 / 25.6: 出版系を最優先で判定。pub_license_terms は "license" を
         //   含むため、後段の license 判定より前に分岐させないと誤分類になる。
         //   record_type は search-api (contractCheckService) の正仕様に合わせる:
@@ -10243,6 +10261,25 @@ ${details}
           ]
         );
         console.log(`✅ Sync to contract_capabilities successful for: ${docNumber}`);
+
+        // 方向(in/out): フォームが指定した場合に capability へ反映。
+        //   out(ライセンスアウト/プロダクトアウト)= 当社受領 → 請求台帳へ自動振分け。
+        //   列未整備(0027/0028 未適用)でも生成を止めないよう try/catch。
+        try {
+          const fd = String(
+            formData.FLOW_DIRECTION || formData["方向"] || formData.flow_direction || ""
+          ).trim();
+          const low = fd.toLowerCase();
+          const dir = low === "out" || fd === "アウト" ? "out" : low === "in" || fd === "イン" ? "in" : null;
+          if (dir) {
+            await query(
+              `UPDATE contract_capabilities SET flow_direction = $2 WHERE document_number = $1`,
+              [docNumber, dir]
+            );
+          }
+        } catch (flowErr) {
+          console.warn("[flow_direction] capability update skipped:", flowErr);
+        }
 
         // Phase 22.12: 旧版 demote (markPrimaryDocument は documents 側を既に
         // 更新済みだが、INSERT の ON CONFLICT で UPSERT した今の row が
@@ -10547,6 +10584,23 @@ ${details}
           }
           // Phase 23: recalculateOrderTotal → recalculateCapabilityTotal
           await recalculateCapabilityTotal(orderItemId, taxRate);
+
+          // 方向(in/out)を明細にも反映(capability と揃える)。out は請求台帳へ自動取込。
+          try {
+            const fd = String(
+              formData.FLOW_DIRECTION || formData["方向"] || formData.flow_direction || ""
+            ).trim();
+            const low = fd.toLowerCase();
+            const dir = low === "out" || fd === "アウト" ? "out" : low === "in" || fd === "イン" ? "in" : null;
+            if (dir) {
+              await query(
+                `UPDATE capability_line_items SET flow_direction = $2 WHERE capability_id = $1`,
+                [orderItemId, dir]
+              );
+            }
+          } catch (flowErr) {
+            console.warn("[flow_direction] line items update skipped:", flowErr);
+          }
         }
 
         // Phase 17i: 経費 (交通費等・税込み額) を upsert

@@ -15,14 +15,9 @@
  * 認証: ルート側で requireIapUser。/api/v3 read=requireRead, write=requireWrite(admin)。
  */
 
+import { popPage } from "./popChrome.ts";
+
 const STYLE = `
-*, *::before, *::after { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
-               "Yu Gothic", sans-serif;
-  color: #111827; background: #f8fafc; font-size: 14px;
-}
 .shell { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
 .header {
   display: flex; align-items: end; justify-content: space-between; gap: 16px;
@@ -109,19 +104,9 @@ table.sub th { background: #f8fafc; color: #475569; font-weight: 600; white-spac
 `;
 
 export function workModelPage(): string {
-  return `<!doctype html>
-<html lang="ja"><head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>作品モデル — LegalBridge Search</title>
-<style>${STYLE}</style>
-</head><body>
+  const body = `
 <div class="shell">
   <div class="header">
-    <div>
-      <h1>作品モデル(work-centric)</h1>
-      <div class="muted">原作IP・自社作品・契約を作品軸で閲覧 / 編集(新プラットフォーム / <code>/api/v3</code>)</div>
-    </div>
     <div class="actions">
       <button id="reloadBtn" class="btn">↻ 更新</button>
       <a class="btn secondary" href="/">← Search Portal に戻る</a>
@@ -166,6 +151,9 @@ export function workModelPage(): string {
 <script>
   var API = { "source-ips": "/api/v3/source-ips", "works": "/api/v3/works", "contracts": "/api/v3/contracts" };
   var LABEL = { "source-ips": "原作IP", "works": "自社作品", "contracts": "契約" };
+  var WORKS_OPT = [];     // 作品ピッカー用(派生元 parent_work_id)
+  var FORM_EDIT_ID = null; // 編集中の自分自身を派生元候補から除外する用
+  var DERIV_CHOICES = [["","(なし・原版)"],["translation","翻訳"],["edition","版"],["title_change","改題"],["localization","地域化"],["adaptation","翻案"]];
 
   // 各エンティティの編集/新規フォーム項目。type: text|textarea|date|bool|array|number|select
   var SCHEMA = {
@@ -191,6 +179,8 @@ export function workModelPage(): string {
       { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"] },
       { name: "is_original", label: "完全オリジナル", type: "bool" },
       { name: "publisher_vendor_id", label: "出版社 取引先ID", type: "number" },
+      { name: "parent_work_id", label: "派生元の作品(系譜)", type: "work-select", hint: "翻訳版・改題版などは派生元の自社作品を選ぶ(原作IPは別途、原版に紐付け)" },
+      { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV" },
       { name: "remarks", label: "備考", type: "textarea" }
     ],
     "contracts": [
@@ -269,10 +259,17 @@ export function workModelPage(): string {
     if (!items.length) { grid.innerHTML = '<div class="empty">データがありません</div>'; return; }
     grid.innerHTML = items.map(function (x) {
       var c = cardOf(type, x);
+      // 作品カードには分配構造マップへのリンクを添える(クリックで詳細は開かない)。
+      var mapLink = (type === "works")
+        ? '<a class="badge outline" href="/master/receivable-map?work=' + c.id + '" ' +
+          'onclick="event.stopPropagation()" title="分配構造マップ" style="text-decoration:none;">🔀 分配マップ</a>'
+        : '';
       return '<div class="card" data-type="' + type + '" data-id="' + c.id + '">' +
         '<div class="row1"><div class="name">' + esc(c.name) + '</div>' +
         (c.badge ? '<span class="badge outline">' + esc(c.badge) + '</span>' : '') +
-        '</div><div class="sub">' + esc(c.sub) + '</div></div>';
+        '</div><div class="sub">' + esc(c.sub) + '</div>' +
+        (mapLink ? '<div style="margin-top:8px;">' + mapLink + '</div>' : '') +
+        '</div>';
     }).join("");
   }
 
@@ -281,6 +278,7 @@ export function workModelPage(): string {
     ["ipCount", "workCount", "contractCount"].forEach(function (id) { document.getElementById(id).textContent = "…"; });
     try {
       var r = await Promise.all([getJson(API["source-ips"]), getJson(API["works"]), getJson(API["contracts"])]);
+      WORKS_OPT = Array.isArray(r[1]) ? r[1] : [];
       renderList("source-ips", "ipGrid", "ipCount", r[0]);
       renderList("works", "workGrid", "workCount", r[1]);
       renderList("contracts", "contractGrid", "contractCount", r[2]);
@@ -346,6 +344,20 @@ export function workModelPage(): string {
       inner = '<select id="f_' + f.name + '">' + f.options.map(function (o) {
         return '<option value="' + esc(o) + '"' + (String(v) === o ? " selected" : "") + ">" + (o === "" ? "(未設定)" : esc(o)) + "</option>";
       }).join("") + "</select>";
+    } else if (f.type === "options") {
+      // value/label ペアの select(f.choices = "DERIV" 等のキー)
+      var choices = f.choices === "DERIV" ? DERIV_CHOICES : (f.choices || []);
+      inner = '<select id="f_' + f.name + '">' + choices.map(function (c) {
+        return '<option value="' + esc(c[0]) + '"' + (String(v) === String(c[0]) ? " selected" : "") + ">" + esc(c[1]) + "</option>";
+      }).join("") + "</select>";
+    } else if (f.type === "work-select") {
+      var opts = ['<option value="">(なし)</option>'];
+      WORKS_OPT.forEach(function (w) {
+        if (FORM_EDIT_ID && String(w.id) === String(FORM_EDIT_ID)) return; // 自分自身は除外
+        opts.push('<option value="' + w.id + '"' + (String(v) === String(w.id) ? " selected" : "") + ">" +
+          esc((w.work_code ? w.work_code + " : " : "") + (w.title || ("#" + w.id))) + "</option>");
+      });
+      inner = '<select id="f_' + f.name + '">' + opts.join("") + "</select>";
     } else if (f.type === "array") {
       inner = '<input type="text" id="f_' + f.name + '" value="' + esc(Array.isArray(v) ? v.join(", ") : v) + '">';
     } else if (f.type === "number") {
@@ -365,13 +377,14 @@ export function workModelPage(): string {
       if (!el) return;
       if (f.type === "bool") out[f.name] = el.checked;
       else if (f.type === "array") out[f.name] = el.value.split(/[,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
-      else if (f.type === "number") { var n = el.value.trim(); out[f.name] = n === "" ? null : Number(n); }
+      else if (f.type === "number" || f.type === "work-select") { var n = el.value.trim(); out[f.name] = n === "" ? null : Number(n); }
       else { var s = el.value.trim(); out[f.name] = s === "" ? null : s; }
     });
     return out;
   }
   function openForm(type, mode, data) {
     data = data || {};
+    FORM_EDIT_ID = (mode === "edit" && data.id) ? data.id : null;
     openModal((mode === "edit" ? "✎ 編集 — " : "＋ 新規 — ") + LABEL[type]);
     document.getElementById("mBody").innerHTML =
       SCHEMA[type].map(function (f) { return fieldHtml(f, data[f.name]); }).join("");
@@ -468,6 +481,15 @@ export function workModelPage(): string {
     if (card) { openDetail(card.getAttribute("data-type"), card.getAttribute("data-id")); }
   });
   load();
-</script>
-</body></html>`;
+</script>`;
+
+  return popPage({
+    active: "work-model",
+    mode: "admin",
+    title: "作品モデル",
+    subtitle: "原作IP・自社作品・契約を作品軸で閲覧 (新プラットフォーム /api/v3)",
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
+  });
 }

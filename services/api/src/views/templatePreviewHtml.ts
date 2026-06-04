@@ -23,17 +23,11 @@
  *   GET /api/template-preview/:type/pdf
  */
 
+import { popPage } from "./popChrome.ts";
+
 const STYLE = `
-*, *::before, *::after { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
-               "Yu Gothic", sans-serif;
-  color: #111827;
-  background: #f8fafc;
-  font-size: 14px;
-}
-.shell { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
+/* グローバル body/* リセットは pop 共通テーマ(POP_CSS)に委譲。ここではページ固有のみ。 */
+.shell { max-width: 1280px; margin: 0 auto; padding: 0 0 24px; }
 .header {
   display: flex; align-items: end; justify-content: space-between; gap: 16px;
   border-bottom: 2px solid #111827; padding-bottom: 14px; margin-bottom: 18px;
@@ -137,24 +131,8 @@ iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 `;
 
 export function templatePreviewPage(): string {
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>ひな型プレビュー - LegalBridge</title>
-  <style>${STYLE}</style>
-</head>
-<body>
+  const body = `
   <div class="shell">
-    <header class="header">
-      <div>
-        <h1>📄 ひな型プレビュー</h1>
-        <div class="muted">Slack キャンバスの個別リンクから開いてください。サンプル PDF / HTML をダウンロードできます。</div>
-      </div>
-      <a class="btn secondary" href="/">← Search Portal に戻る</a>
-    </header>
 
     <div id="errorBanner" class="error-banner" style="display:none;"></div>
 
@@ -334,7 +312,16 @@ export function templatePreviewPage(): string {
     }
 
     init();
-  </script>
-</body>
-</html>`;
+  </script>`;
+
+  return popPage({
+    active: "admin",
+    mode: "admin",
+    title: "ひな型プレビュー",
+    subtitle: "Slack キャンバスの個別リンクから開いてください。サンプル PDF / HTML をダウンロードできます。",
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
+    pageTitle: "ひな型プレビュー - LegalBridge",
+  });
 }

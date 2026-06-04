@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Metro UI 修正案モックアップ · Arcs Legal OS (search-api)</title>
+<style>
+  :root{
+    /* Metro flat tokens */
+    --bg:#eceff1; --surface:#ffffff; --ink:#1c1c1c; --muted:#6b6b6b; --line:#d8dde0;
+    /* tile accents */
+    --t-orange:#d8741c; --t-teal:#00807e; --t-blue:#1271b5; --t-green:#3f8f29;
+    --t-purple:#5c4b8a; --t-red:#c0392b; --t-slate:#41525d;
+    --admin-bar:#2b3136; --view-bar:#0f5e8c;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:"Segoe UI","Yu Gothic UI","Hiragino Sans","Meiryo",system-ui,sans-serif;background:var(--bg);color:var(--ink);line-height:1.5;font-size:14px}
+  .wrap{max-width:1100px;margin:0 auto;padding:0 0 60px}
+  .switch{display:flex;gap:0;position:sticky;top:0;z-index:10}
+  .switch button{flex:1;border:0;padding:12px;font:inherit;font-weight:700;letter-spacing:.04em;cursor:pointer;color:#fff;background:#9aa3a8}
+  .switch button.on.admin{background:var(--admin-bar)}
+  .switch button.on.view{background:var(--view-bar)}
+  .page{display:none;padding:0 20px}
+  .page.on{display:block}
+
+  /* ===== ADMIN: console ===== */
+  .topbar{display:flex;align-items:baseline;gap:12px;background:var(--admin-bar);color:#fff;padding:14px 20px;margin:0 -20px 16px}
+  .topbar .brand{font-weight:300;font-size:22px;letter-spacing:.02em}
+  .topbar .brand b{font-weight:700}
+  .topbar .sub{color:#c8ced2;font-size:12px}
+  .topbar .role{margin-left:auto;font-size:11px;font-weight:700;background:var(--t-orange);padding:3px 8px}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin-bottom:20px}
+  .tile{color:#fff;padding:14px;min-height:92px;display:flex;flex-direction:column;justify-content:space-between;cursor:pointer;border:0;text-align:left;font:inherit}
+  .tile:hover{filter:brightness(1.08)}
+  .tile .ico{font-size:22px}
+  .tile .lbl{font-weight:700}
+  .tile .cnt{font-size:26px;font-weight:300;line-height:1}
+  .bg-orange{background:var(--t-orange)} .bg-teal{background:var(--t-teal)} .bg-blue{background:var(--t-blue)}
+  .bg-green{background:var(--t-green)} .bg-purple{background:var(--t-purple)} .bg-slate{background:var(--t-slate)}
+  .tile.locked{background:#b8c0c5;cursor:not-allowed} .tile.locked .lock{font-size:11px}
+
+  .sec-h{font-weight:300;font-size:20px;margin:6px 0 10px;border-left:5px solid var(--t-orange);padding-left:10px}
+  .toolbar{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px}
+  .btn{border:0;padding:8px 14px;font:inherit;font-weight:700;color:#fff;background:var(--t-teal);cursor:pointer}
+  .btn:hover{filter:brightness(1.1)} .btn.g{background:#5b6b75} .btn.r{background:var(--t-red)}
+  .btn.o{background:#fff;color:#41525d;border:2px solid #41525d;padding:6px 12px}
+  .btn[disabled]{background:#c3cacf;cursor:not-allowed}
+  table{width:100%;border-collapse:collapse;background:var(--surface);font-size:13px}
+  thead th{background:var(--t-slate);color:#fff;text-align:left;padding:8px 10px;font-weight:700;letter-spacing:.02em}
+  tbody td{padding:7px 10px;border-bottom:1px solid var(--line)}
+  tbody tr:hover td{background:#eef3f6;cursor:pointer}
+  .chip{display:inline-block;font-size:11px;font-weight:700;color:#fff;padding:2px 7px}
+  .chip.corp{background:var(--t-blue)} .chip.ind{background:var(--t-orange)} .chip.ok{background:var(--t-green)}
+
+  /* ===== VIEW: search & browse ===== */
+  .vbar{background:var(--view-bar);color:#fff;padding:16px 20px;margin:0 -20px 18px}
+  .vbar .brand{font-weight:300;font-size:22px}
+  .vbar .brand b{font-weight:700}
+  .searchwrap{position:sticky;top:44px;background:var(--bg);padding:10px 0 6px;z-index:5}
+  .search{display:flex;border:2px solid var(--view-bar);background:#fff}
+  .search input{flex:1;border:0;padding:16px;font:inherit;font-size:18px;outline:none}
+  .search button{border:0;background:var(--view-bar);color:#fff;padding:0 24px;font-weight:700;cursor:pointer}
+  .filters{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 16px}
+  .fchip{border:1px solid #b9c2c8;background:#fff;padding:6px 12px;font-size:13px;cursor:pointer}
+  .fchip.on{background:var(--view-bar);color:#fff;border-color:var(--view-bar)}
+  .result{background:var(--surface);border-left:6px solid var(--t-slate);padding:14px 18px;margin-bottom:8px}
+  .result.basic{border-color:var(--t-blue)} .result.license{border-color:var(--t-green)}
+  .result.inspection{border-color:var(--t-orange)} .result.ringi{border-color:var(--t-purple)}
+  .result h3{font-weight:600;font-size:17px;margin-bottom:2px}
+  .result .meta{color:var(--muted);font-size:13px;display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}
+  .result .cat{font-size:11px;font-weight:700;color:#fff;padding:2px 8px;background:var(--t-slate)}
+  .result.basic .cat{background:var(--t-blue)} .result.license .cat{background:var(--t-green)}
+  .result.inspection .cat{background:var(--t-orange)} .result.ringi .cat{background:var(--t-purple)}
+  .note{font-size:12px;color:var(--muted);margin:14px 0}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="switch">
+    <button id="b-admin" class="on admin" onclick="show('admin')">■ ADMIN コンソール（編集・フルアクセス）</button>
+    <button id="b-view" class="view" onclick="show('view')">⌕ VIEW 検索・閲覧</button>
+  </div>
+
+  <!-- ADMIN -->
+  <section id="p-admin" class="page on">
+    <div class="topbar">
+      <div class="brand">ARCS <b>Master Console</b></div>
+      <div class="sub">取引先・スタッフ・契約・作品マスタ / 取込・編集</div>
+      <div class="role">ROLE: ADMIN</div>
+    </div>
+
+    <div class="tiles">
+      <button class="tile bg-blue"><span class="ico">🏢</span><span class="lbl">取引先マスタ</span><span class="cnt">128</span></button>
+      <button class="tile bg-teal"><span class="ico">👥</span><span class="lbl">スタッフ</span><span class="cnt">24</span></button>
+      <button class="tile bg-green"><span class="ico">📄</span><span class="lbl">契約台帳</span><span class="cnt">312</span></button>
+      <button class="tile bg-purple"><span class="ico">🎬</span><span class="lbl">作品モデル</span><span class="cnt">87</span></button>
+      <button class="tile bg-orange"><span class="ico">⬆</span><span class="lbl">CSV 取込</span><span class="cnt">＋</span></button>
+      <button class="tile locked"><span class="ico">🔒</span><span class="lbl">権限管理</span><span class="lock">閲覧のみ</span></button>
+    </div>
+
+    <div class="sec-h">取引先マスタ</div>
+    <div class="toolbar">
+      <button class="btn">＋ 追加</button>
+      <button class="btn g">CSV 取込</button>
+      <button class="btn o">CSV 出力</button>
+      <button class="btn r" disabled title="閲覧のみ">削除（権限なし）</button>
+    </div>
+    <table>
+      <thead><tr><th>コード</th><th>取引先名</th><th>区分</th><th>同意</th><th>担当</th><th>更新日</th></tr></thead>
+      <tbody>
+        <tr><td>V-001</td><td>株式会社X</td><td><span class="chip corp">法人</span></td><td>—</td><td>梶原</td><td>2026-06-01</td></tr>
+        <tr><td>2-20-5124</td><td>原 友和</td><td><span class="chip ind">個人</span></td><td><span class="chip ok">同意済</span></td><td>梶原</td><td>2026-06-02</td></tr>
+        <tr><td>V-114</td><td>大滝 昂</td><td><span class="chip ind">個人</span></td><td>—</td><td>青柳</td><td>2026-05-28</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- VIEW -->
+  <section id="p-view" class="page">
+    <div class="vbar"><div class="brand">ARCS <b>Search &amp; Browse</b></div>
+      <div style="color:#cfe3f0;font-size:12px">取引先・稟議・条件明細を検索 / 閲覧</div></div>
+    <div class="searchwrap">
+      <div class="search"><input placeholder="取引先名 / 契約番号 / 稟議番号 で検索…" value="アークライト"><button>検索</button></div>
+      <div class="filters">
+        <span class="fchip on">すべて</span><span class="fchip">基本契約</span><span class="fchip">個別契約</span>
+        <span class="fchip">検収書</span><span class="fchip">稟議</span><span class="fchip">CSV出力</span>
+      </div>
+    </div>
+    <div class="result basic"><span class="cat">基本契約</span>
+      <h3>業務委託基本契約書 — 株式会社X</h3>
+      <div class="meta"><span>ARC-SVC-2026-0001</span><span>締結 2026-03-26</span><span>担当 梶原</span></div>
+    </div>
+    <div class="result license"><span class="cat">個別契約</span>
+      <h3>個別利用許諾条件 — 原作「アレクサンデル６世」</h3>
+      <div class="meta"><span>ARC-ILT-2026-0007</span><span>許諾 2026-04-01〜</span><span>独占</span></div>
+    </div>
+    <div class="result inspection"><span class="cat">検収書</span>
+      <h3>検収書 — 通常カードイラスト 一式</h3>
+      <div class="meta"><span>ARC-INS-2026-0017</span><span>検収 2026-06-02</span><span>¥198,000(税込)</span></div>
+    </div>
+    <div class="result ringi"><span class="cat">稟議</span>
+      <h3>新規IP取得稟議</h3>
+      <div class="meta"><span>稟議 00042</span><span>承認 2026-05-20</span><span>山田</span></div>
+    </div>
+    <p class="note">※ view は検索バー固定・大きめ文字・カテゴリ色ストライプで可読性重視。編集系ボタンは出しません。</p>
+  </section>
+</div>
+<script>
+  function show(m){
+    document.getElementById('p-admin').classList.toggle('on', m==='admin');
+    document.getElementById('p-view').classList.toggle('on', m==='view');
+    document.getElementById('b-admin').classList.toggle('on', m==='admin');
+    document.getElementById('b-view').classList.toggle('on', m==='view');
+  }
+</script>
+</body>
+</html>

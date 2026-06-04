@@ -11,14 +11,8 @@
  * 共通 chrome (topbar, タブナビ, CSS) は masterChrome.ts から取得。
  */
 
-import {
-  MASTER_CSS,
-  SVG,
-  HEAD_FONTS,
-  topbarHtml,
-  pageHeaderHtml,
-  masterTabsHtml,
-} from "./masterChrome.ts";
+import { MASTER_CSS, SVG } from "./masterChrome.ts";
+import { popAdminPage } from "./popChrome.ts";
 
 export function vendorMasterPage(_authIgnored?: unknown): string {
   // Phase 17z-2 で恒久 URL 化したので _authIgnored は無視。
@@ -28,27 +22,8 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
   const apiImportUrl = "/api/master/vendors/import-csv";
   const apiTemplateUrl = "/api/master/vendors/template.csv";
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>Vendors · Arcs Legal OS</title>
-  ${HEAD_FONTS}
-  <style>${MASTER_CSS}</style>
-</head>
-<body>
-  ${topbarHtml("Vendors", "Master · External partners")}
-
-  <div class="container" style="padding-top: 24px; padding-bottom: 48px;">
-    ${pageHeaderHtml({
-      tag: "MST · INDEX",
-      title: "Master Systems",
-      desc: "Reference data — vendors, staff, and contracts.",
-    })}
-
-    ${masterTabsHtml("vendors")}
+  const body = `
+  <div class="container" style="padding:0 0 24px;">
 
     <!-- Toolbar -->
     <div class="toolbar">
@@ -65,6 +40,24 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     <!-- List -->
     <div id="list-wrap">
       <div class="loading">LOADING</div>
+    </div>
+  </div>
+
+  <!-- View (read-only) Modal -->
+  <div class="modal-backdrop" id="view-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-tag">MST · VENDORS / VIEW</span>
+          <h3 class="modal-title" id="view-title">取引先の詳細</h3>
+        </div>
+        <button class="btn ghost sm" id="view-close" aria-label="閉じる">${SVG.x}</button>
+      </div>
+      <div class="modal-body" id="view-body"></div>
+      <div class="modal-footer">
+        <button class="btn outline" id="view-cancel">閉じる</button>
+        <button class="btn" id="view-edit">${SVG.fileText} 編集する</button>
+      </div>
     </div>
   </div>
 
@@ -448,7 +441,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
       $('list-wrap').innerHTML = '<div class="grid">' + cards + '</div>';
       $('list-wrap').querySelectorAll('.card[data-code]').forEach(card => {
-        card.addEventListener('click', () => openEdit(card.dataset.code));
+        card.addEventListener('click', () => openView(card.dataset.code));
       });
     }
 
@@ -469,6 +462,116 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       $('modal-backdrop').classList.add('open');
       setTimeout(() => form.querySelector('[name=vendor_code]').focus(), 50);
     }
+
+    /* ----- view (read-only) modal ----- */
+    let viewingCode = null;
+    const ENTITY_LABEL = { corporate: '法人', individual: '個人', sole_proprietor: '個人事業主' };
+    const TXN_LABEL = { goods_sale: '物品売買', service: '業務委託・役務', license: 'ライセンス', other: 'その他' };
+    const ANTI_LABEL = { clear: '問題なし', pending: '確認中', ng: 'NG' };
+
+    function dl(label, value) {
+      if (value == null || String(value).trim() === '') return '';
+      return '<div class="vw-dt">' + escHtml(label) + '</div><div class="vw-dd">' + escHtml(value) + '</div>';
+    }
+    function yenNum(v) {
+      const n = Number(String(v == null ? '' : v).replace(/,/g, ''));
+      return Number.isFinite(n) && String(v).trim() !== '' ? n.toLocaleString('ja-JP') : '';
+    }
+    function dateStr(v) { return v ? String(v).slice(0, 10) : ''; }
+    function renderView(v) {
+      const entity = ENTITY_LABEL[v.entity_type] || v.entity_type || '';
+      const isIndividual = v.entity_type === 'individual' || v.entity_type === 'sole_proprietor';
+      const isCorp = v.entity_type === 'corporate';
+      const consent = (v.pii_consent_obtained === true)
+        ? ('同意取得済' + (v.pii_consent_date ? '（' + dateStr(v.pii_consent_date) + '）' : ''))
+        : (isIndividual ? '未取得' : '');
+      const aliases = Array.isArray(v.aliases) ? v.aliases.join(', ') : (v.aliases || '');
+      // 取適法(下請法)適用判定: 資本金1000万超 or 従業員100人超 → 対象
+      const cap = Number(String(v.capital_yen || '').replace(/,/g, ''));
+      const emp = Number(String(v.employee_count || '').replace(/,/g, ''));
+      let subcontract = '';
+      if (v.subcontract_act_applicable === true) subcontract = '対象';
+      else if (v.subcontract_act_applicable === false) subcontract = '対象外';
+      else if (isCorp && (Number.isFinite(cap) || Number.isFinite(emp)) && (v.capital_yen || v.employee_count))
+        subcontract = ((Number.isFinite(cap) && cap >= 10000000) || (Number.isFinite(emp) && emp >= 100)) ? '対象' : '対象外';
+
+      const addrs = Array.isArray(v.addresses) ? v.addresses : [];
+      const banks = Array.isArray(v.bank_accounts) ? v.bank_accounts : [];
+      const addrHtml = addrs.length
+        ? addrs.map((a) => '<div>' + (a.is_primary ? '★ ' : '') + escHtml(a.address_label || '') + ' ' + escHtml(a.address || '') + '</div>').join('')
+        : escHtml(v.address || '');
+      const bankHtml = banks.length
+        ? banks.map((b) => '<div>' + (b.is_primary ? '★ ' : '') + escHtml((b.account_scope === 'overseas' ? '[海外] ' : '') + (b.bank_name || '')) + ' ' + escHtml(b.branch_name || '') + ' ' + escHtml(b.account_type || '') + ' ' + escHtml(b.account_number || b.iban || '') + ' ' + escHtml(b.account_holder_kana || b.account_holder_name || '') + (b.swift_bic ? ' SWIFT:' + escHtml(b.swift_bic) : '') + '</div>').join('')
+        : escHtml([v.bank_name, v.branch_name, v.account_type, v.account_number, v.account_holder_kana].filter(Boolean).join(' '));
+
+      let html = '<div class="vw-sec" style="border-top:none;padding-top:0;margin-top:0;">基本情報</div><div class="vw-grid">';
+      html += dl('取引先コード', v.vendor_code);
+      html += dl('区分', entity);
+      html += dl('正式名称', v.vendor_name);
+      html += dl('屋号 / 略称', v.trade_name);
+      if (isIndividual) html += dl('ペンネーム', v.pen_name);
+      html += dl('敬称', v.vendor_suffix);
+      html += dl('別名', aliases);
+      html += dl('代表者', v.vendor_rep);
+      html += dl('法人番号', v.corporate_number);
+      html += dl('取引内容区分', TXN_LABEL[v.transaction_category] || v.transaction_category);
+      html += dl('資本金(円)', yenNum(v.capital_yen));
+      html += dl('従業員数(人)', yenNum(v.employee_count));
+      html += dl('取適法 適用判定', subcontract);
+      html += dl('取引先主要事業', v.main_business);
+      html += dl('決済条件', v.payment_terms);
+      html += dl('評点', v.rating);
+      html += dl('反社チェック', ANTI_LABEL[v.antisocial_check_result] || v.antisocial_check_result);
+      html += dl('取引先マスタ更新日', dateStr(v.master_updated_at));
+      if (consent) html += dl('個人情報取得同意', consent);
+      html += '</div>';
+
+      const contact = [v.contact_department, v.contact_name, v.phone, v.email].some((x) => x && String(x).trim());
+      if (contact) {
+        html += '<div class="vw-sec">連絡先</div><div class="vw-grid">';
+        html += dl('担当部署', v.contact_department);
+        html += dl('担当者', v.contact_name);
+        html += dl('電話', v.phone);
+        html += dl('メール', v.email);
+        html += '</div>';
+      }
+      if (addrHtml) html += '<div class="vw-sec">住所</div><div class="vw-block">' + addrHtml + '</div>';
+
+      html += '<div class="vw-sec">税務・振込先</div><div class="vw-grid">';
+      html += dl('源泉徴収', v.withholding_enabled ? '行う' : '');
+      html += dl('適格請求書発行', v.is_invoice_issuer ? '対象' : '');
+      html += dl('インボイス登録番号', v.invoice_registration_number);
+      html += dl('口座種別', banks.length ? '' : v.account_type);
+      html += '</div>';
+      if (bankHtml) html += '<div class="vw-block">' + bankHtml + '</div>';
+
+      const other = [v.master_contract_ref, v.bank_info].some((x) => x && String(x).trim());
+      if (other) {
+        html += '<div class="vw-sec">その他</div><div class="vw-grid">';
+        html += dl('マスター契約参照', v.master_contract_ref);
+        html += dl('銀行情報メモ', v.bank_info);
+        html += '</div>';
+      }
+      return html;
+    }
+
+    async function openView(code) {
+      viewingCode = code;
+      $('view-title').textContent = code;
+      $('view-body').innerHTML = '<div class="loading">LOADING</div>';
+      $('view-backdrop').classList.add('open');
+      try {
+        const url = apiDetailTpl.replace('__CODE__', encodeURIComponent(code));
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const v = await res.json();
+        $('view-body').innerHTML = renderView(v);
+      } catch (e) {
+        toast('取得失敗: ' + (e?.message || e), 'error');
+        closeViewModal();
+      }
+    }
+    function closeViewModal() { $('view-backdrop').classList.remove('open'); }
 
     async function openEdit(code) {
       creating = false;
@@ -720,6 +823,17 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     $('modal-backdrop').addEventListener('click', (e) => {
       if (e.target === $('modal-backdrop')) closeEditModal();
     });
+    // View(閲覧)モーダル: 閉じる / 編集へ
+    $('view-close').addEventListener('click', closeViewModal);
+    $('view-cancel').addEventListener('click', closeViewModal);
+    $('view-edit').addEventListener('click', () => {
+      const code = viewingCode;
+      closeViewModal();
+      if (code) openEdit(code);
+    });
+    $('view-backdrop').addEventListener('click', (e) => {
+      if (e.target === $('view-backdrop')) closeViewModal();
+    });
 
     $('btn-save').addEventListener('click', async () => {
       const payload = readForm();
@@ -840,7 +954,20 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
     /* ----- init ----- */
     loadList();
-  </script>
-</body>
-</html>`;
+  </script>`;
+
+  return popAdminPage({
+    active: "vendors",
+    masterCss: MASTER_CSS,
+    title: "取引先マスタ",
+    subtitle: "Master · External partners",
+    body,
+    headExtra: `<style>
+.vw-grid{display:grid;grid-template-columns:120px 1fr;gap:6px 14px;align-items:baseline;margin:4px 0 6px}
+.vw-dt{color:var(--muted);font-size:11.5px;font-weight:800}
+.vw-dd{font-size:13px;color:var(--ink);word-break:break-word}
+.vw-sec{margin:14px 0 6px;font-size:11.5px;font-weight:800;color:var(--accent);border-top:1px solid var(--line);padding-top:10px}
+.vw-block{font-size:12.5px;color:var(--ink);line-height:1.7}
+</style>`,
+  });
 }

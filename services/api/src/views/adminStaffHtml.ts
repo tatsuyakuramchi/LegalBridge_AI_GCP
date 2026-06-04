@@ -7,17 +7,9 @@
  * 認可は server.ts 側で requireAppRole({allowedRoles:["admin"]}) を適用済み。
  */
 
+import { popPage } from "./popChrome.ts";
+
 const STYLE = `
-*, *::before, *::after { box-sizing: border-box; }
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
-               "Yu Gothic", sans-serif;
-  margin: 0; padding: 0;
-  color: #1f2937;
-  background: #f8fafc;
-  line-height: 1.6;
-  font-size: 14px;
-}
 .container { max-width: 1100px; margin: 0 auto; padding: 24px 20px 48px; }
 header.page-header {
   border-bottom: 2px solid #1f2937;
@@ -136,25 +128,8 @@ interface AdminStaffPageOpts {
 export function adminStaffPage(opts: AdminStaffPageOpts): string {
   const email = opts.currentEmail || "(unknown)";
 
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="robots" content="noindex, nofollow">
-  <title>ユーザー権限管理 — LegalBridge 管理</title>
-  <style>${STYLE}</style>
-</head>
-<body>
+  const body = `
   <div class="container">
-    <header class="page-header">
-      <div class="title-wrap">
-        <h1>👥 ユーザー権限管理</h1>
-        <div class="muted">あなたのログイン: <strong>${escHtml(email)}</strong> (app_role=admin)</div>
-      </div>
-      <a class="back-link" href="/admin" title="管理ダッシュボードに戻る">← Admin に戻る</a>
-    </header>
-
     <div class="warning-banner">
       ⚠️ <strong>注意:</strong> admin 昇格を行うと、対象ユーザーは
       <code>/admin</code> ダッシュボードと CSV 取込機能 (LegalOn / 取引先) を
@@ -273,7 +248,16 @@ export function adminStaffPage(opts: AdminStaffPageOpts): string {
 
     $('staff-search').addEventListener('input', renderStaff);
     loadStaff();
-  </script>
-</body>
-</html>`;
+  </script>`;
+
+  return popPage({
+    active: "admin",
+    mode: "admin",
+    title: "ユーザー権限管理",
+    subtitle: "staff の admin / viewer ロール切替",
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
+    pageTitle: "ユーザー権限管理 — LegalBridge 管理",
+  });
 }

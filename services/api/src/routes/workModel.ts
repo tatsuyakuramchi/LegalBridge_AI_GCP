@@ -213,11 +213,13 @@ export function registerWorkModelRoutes(
       const code = b.work_code || `W-${year}-${pad4(await nextMasterSeq(query, "W", year))}`;
       const r = await query(
         `INSERT INTO works (work_code, title, title_kana, alternative_titles, division,
-            work_type, status, publisher_vendor_id, origin_ringi_id, is_original, remarks)
-         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),$6,$7,$8,$9,COALESCE($10,TRUE),$11) RETURNING *`,
+            work_type, status, publisher_vendor_id, origin_ringi_id, is_original, remarks,
+            parent_work_id, derivation_type)
+         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),$6,$7,$8,$9,COALESCE($10,TRUE),$11,$12,$13) RETURNING *`,
         [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
          b.work_type ?? null, b.status ?? null, b.publisher_vendor_id ?? null, b.origin_ringi_id ?? null,
-         b.is_original ?? null, b.remarks ?? null]
+         b.is_original ?? null, b.remarks ?? null,
+         b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       res.status(201).json(r.rows[0]);
     } catch (e) { fail(res, e); }
@@ -292,11 +294,12 @@ export function registerWorkModelRoutes(
             title = $2, title_kana = $3, alternative_titles = COALESCE($4::text[],'{}'),
             division = COALESCE($5::text[],'{}'), work_type = $6, status = $7,
             publisher_vendor_id = $8, is_original = COALESCE($9, is_original),
-            remarks = $10, updated_at = now()
+            remarks = $10, parent_work_id = $11, derivation_type = $12, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [id, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
          b.work_type ?? null, b.status ?? null, b.publisher_vendor_id ?? null,
-         b.is_original ?? null, b.remarks ?? null]
+         b.is_original ?? null, b.remarks ?? null,
+         b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       res.json(r.rows[0]);
