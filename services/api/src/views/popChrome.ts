@@ -25,6 +25,25 @@ export type PopNavKey = ScreenKey;
 const esc = (s: string) =>
   String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 
+/**
+ * 統合 Phase 1: マスタ編集は React admin-ui に一本化していくため、search-api の
+ *   重複コンソール上部に「編集は admin-ui 推奨」バナーを出す。ADMIN_UI_URL が
+ *   設定されているときのみ表示(未設定なら従来どおり本ページで編集)。
+ *   reactPath は admin-ui 側の対応ルート(例: "/master/vendors")。
+ */
+export function adminUiEditBanner(reactPath: string): string {
+  const base = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  if (!base) return "";
+  const href = base + reactPath;
+  return `<a href="${esc(href)}" target="_blank" rel="noopener"
+    style="display:flex;gap:10px;align-items:center;justify-content:space-between;
+      background:linear-gradient(135deg,#efeaff,#f6f3ff);border:1px solid #e2dbfb;
+      border-radius:14px;padding:11px 15px;margin-bottom:14px;text-decoration:none;color:#241f3a;font-weight:700;font-size:12.5px">
+    <span>🖥 このマスタの<strong>編集</strong>は admin-ui に移行中です。admin-ui で開く方が高機能です。</span>
+    <span style="color:#6c5ce7;font-weight:800">admin-ui で開く ↗</span>
+  </a>`;
+}
+
 export const POP_CSS = `
 :root{
   --accent:#6c5ce7; --accent2:#a29bfe; --accent-press:#5a4bd6;
