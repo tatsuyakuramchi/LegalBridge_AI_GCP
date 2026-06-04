@@ -144,6 +144,10 @@ import {
   deleteWorkAlias,
   resolveWorksByTitle,
 } from "./src/services/receivableMapService.ts";
+import {
+  importUsageReportsCsv,
+  getUsageReportSampleCsv,
+} from "./src/services/usageReportImportService.ts";
 import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
 import {
   listConditions,
@@ -2920,6 +2924,24 @@ async function startServer() {
       res.json({ ok: true });
     } catch (error: any) {
       console.error("/api/work-aliases/:id DELETE failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 利用報告 CSV 一括取込(タイトル名寄せ自動解決)
+  app.get("/api/sublicense/reports/template.csv", requireIapUser({ renderErrorPage }), (_req, res) => {
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", 'attachment; filename="usage_report_sample.csv"');
+    res.send(getUsageReportSampleCsv());
+  });
+  app.post("/api/sublicense/reports/import-csv", requireIapUser({ renderErrorPage }), express.json({ limit: "8mb" }), async (req, res) => {
+    try {
+      const b = req.body || {};
+      if (!b.csv || typeof b.csv !== "string") return res.status(400).json({ ok: false, error: "csv required" });
+      const result = await importUsageReportsCsv(b.csv, { dryRun: b.dry_run !== false });
+      res.json({ ok: true, ...result });
+    } catch (error: any) {
+      console.error("/api/sublicense/reports/import-csv failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });

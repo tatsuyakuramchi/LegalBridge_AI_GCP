@@ -56,6 +56,7 @@ export function sublicensePage(): string {
       <h2>請求権の条件(種別 × 相手方 × 受領条件)<span class="muted" id="deal-count">—</span></h2>
       <div style="display:flex;gap:6px;">
         <button class="btn outline" id="btn-import" title="条件明細で「受領(inbound)」ON の明細を請求権に取り込みます">⟳ 条件明細から取り込む</button>
+        <button class="btn outline" id="btn-csv" title="相手方からの利用報告(2026年4月分…)をCSVで一括取込。タイトルから作品を自動名寄せします">⇪ 利用報告CSV取込</button>
         <button class="btn" id="btn-add">＋ 条件を追加</button>
       </div>
     </div>
@@ -154,6 +155,21 @@ export function sublicensePage(): string {
       </div>
     </div>
     <div class="mfoot"><button class="btn outline" id="r-cancel">閉じる</button><button class="btn" id="r-save">報告を保存</button></div>
+  </div>
+</div>
+
+<div class="backdrop" id="csvbackdrop">
+  <div class="modal" style="max-width:720px;">
+    <div class="mhead"><h3>利用報告 CSV 一括取込</h3><button class="xbtn" id="c-close">×</button></div>
+    <div class="mbody" style="grid-template-columns:1fr;">
+      <div class="calc full">CSV(UTF-8)の各行を、<b>タイトル→作品(改題タイトルの名寄せ含む)→請求権(deal)</b>に自動解決して利用報告を登録します。作品に複数の請求権がある場合は「相手方」または「契約番号」列で特定してください。</div>
+      <div class="fld"><a class="btn outline sm" href="/api/sublicense/reports/template.csv" download="usage_report_sample.csv">⬇ サンプルCSVをダウンロード</a></div>
+      <div class="fld"><label>CSVファイル</label><input type="file" id="c-file" accept=".csv,text/csv"></div>
+      <div class="fld"><label>または CSV を貼り付け</label><textarea class="tech-input" id="c-text" style="min-height:120px;font-family:ui-monospace,monospace;"></textarea></div>
+      <label style="display:flex;gap:6px;align-items:center;font-size:13px;"><input type="checkbox" id="c-dry" checked> ドライラン(検証のみ・DB書込なし)</label>
+      <div id="c-result"></div>
+    </div>
+    <div class="mfoot"><button class="btn outline" id="c-cancel">閉じる</button><button class="btn" id="c-run">取込実行</button></div>
   </div>
 </div>
 
@@ -421,8 +437,52 @@ export function sublicensePage(): string {
     }catch(e){if(!silent)alert("取込に失敗しました: "+(e&&e.message?e.message:e));}finally{if(btn)btn.disabled=false;}
   }
 
+  /* ---- 利用報告 CSV 取込 ---- */
+  function openCsv(){
+    document.getElementById("c-file").value="";document.getElementById("c-text").value="";
+    document.getElementById("c-dry").checked=true;document.getElementById("c-result").innerHTML="";
+    document.getElementById("csvbackdrop").classList.add("open");
+  }
+  function closeCsv(){document.getElementById("csvbackdrop").classList.remove("open");}
+  async function runCsv(){
+    var csv=(document.getElementById("c-text").value||"").trim();
+    if(!csv){alert("CSVファイルを選択するか貼り付けてください");return;}
+    var dry=document.getElementById("c-dry").checked;
+    var btn=document.getElementById("c-run");btn.disabled=true;
+    document.getElementById("c-result").innerHTML='<div class="muted">処理中…</div>';
+    try{
+      var res=await fetch("/api/sublicense/reports/import-csv",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({csv:csv,dry_run:dry})});
+      var d=await res.json().catch(function(){return{};});
+      if(!res.ok||d.ok===false)throw new Error(d.error||("HTTP "+res.status));
+      renderCsvResult(d);
+      if(!dry)await loadReceipts();
+    }catch(e){document.getElementById("c-result").innerHTML='<div style="color:#b91c1c;">失敗: '+esc(e&&e.message?e.message:e)+'</div>';}finally{btn.disabled=false;}
+  }
+  function renderCsvResult(d){
+    var stat='<div style="display:flex;gap:14px;flex-wrap:wrap;margin:8px 0;font-size:13px;">'+
+      '<span>'+(d.dry_run?'<b style="color:#a9700a;">ドライラン</b>':'<b style="color:#0fa97c;">本番取込</b>')+'</span>'+
+      '<span>総 '+d.total+'</span><span style="color:#0fa97c;">取込 '+d.imported+'</span>'+
+      '<span style="color:#a9700a;">スキップ '+d.skipped+'</span><span style="color:#b91c1c;">エラー '+d.failed+'</span></div>';
+    var rows=(d.rows||[]).map(function(r){
+      var c=r.status==="ok"?"#0fa97c":r.status==="skip"?"#a9700a":"#b91c1c";
+      var ic=r.status==="ok"?"✓":r.status==="skip"?"−":"✗";
+      return '<div style="border-bottom:1px solid var(--border);padding:3px 0;font-size:12px;"><span style="color:'+c+';font-weight:800;">'+ic+'</span> 行'+r.row+' '+esc(r.title)+(r.period?' / '+esc(r.period):'')+(r.deal?' → '+esc(r.deal):'')+(r.message?' <span style="color:var(--muted-foreground);">'+esc(r.message)+'</span>':'')+'</div>';
+    }).join("");
+    document.getElementById("c-result").innerHTML=stat+'<div style="max-height:260px;overflow:auto;margin-top:6px;">'+rows+'</div>'+
+      (d.dry_run&&d.imported>0?'<div class="calc full" style="margin-top:8px;">ドライランで '+d.imported+' 件が取込可能です。チェックを外して「取込実行」で確定してください。</div>':'');
+  }
+
   /* ---- wiring ---- */
   document.getElementById("btn-import").addEventListener("click",function(){importInbound(false);});
+  document.getElementById("btn-csv").addEventListener("click",openCsv);
+  document.getElementById("c-close").addEventListener("click",closeCsv);
+  document.getElementById("c-cancel").addEventListener("click",closeCsv);
+  document.getElementById("c-run").addEventListener("click",runCsv);
+  document.getElementById("c-file").addEventListener("change",function(){
+    var f=this.files&&this.files[0];if(!f)return;var rd=new FileReader();
+    rd.onload=function(){document.getElementById("c-text").value=String(rd.result||"");};rd.readAsText(f,"UTF-8");
+  });
+  document.getElementById("csvbackdrop").addEventListener("click",function(e){if(e.target===document.getElementById("csvbackdrop"))closeCsv();});
   document.getElementById("btn-add").addEventListener("click",function(){openEdit(null);});
   document.getElementById("deals-wrap").addEventListener("click",function(e){var tr=e.target.closest?e.target.closest("tr.clickable"):null;if(tr){var id=Number(tr.getAttribute("data-id"));var d=DEALS.filter(function(x){return x.id===id;})[0];if(d)openEdit(d);}});
   document.getElementById("m-close").addEventListener("click",closeModal);
