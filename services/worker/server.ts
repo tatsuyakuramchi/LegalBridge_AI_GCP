@@ -10244,6 +10244,25 @@ ${details}
         );
         console.log(`✅ Sync to contract_capabilities successful for: ${docNumber}`);
 
+        // 方向(in/out): フォームが指定した場合に capability へ反映。
+        //   out(ライセンスアウト/プロダクトアウト)= 当社受領 → 請求台帳へ自動振分け。
+        //   列未整備(0027/0028 未適用)でも生成を止めないよう try/catch。
+        try {
+          const fd = String(
+            formData.FLOW_DIRECTION || formData["方向"] || formData.flow_direction || ""
+          ).trim();
+          const low = fd.toLowerCase();
+          const dir = low === "out" || fd === "アウト" ? "out" : low === "in" || fd === "イン" ? "in" : null;
+          if (dir) {
+            await query(
+              `UPDATE contract_capabilities SET flow_direction = $2 WHERE document_number = $1`,
+              [docNumber, dir]
+            );
+          }
+        } catch (flowErr) {
+          console.warn("[flow_direction] capability update skipped:", flowErr);
+        }
+
         // Phase 22.12: 旧版 demote (markPrimaryDocument は documents 側を既に
         // 更新済みだが、INSERT の ON CONFLICT で UPSERT した今の row が
         // is_primary=TRUE に上書きされている。同 base の他 row の
@@ -10547,6 +10566,23 @@ ${details}
           }
           // Phase 23: recalculateOrderTotal → recalculateCapabilityTotal
           await recalculateCapabilityTotal(orderItemId, taxRate);
+
+          // 方向(in/out)を明細にも反映(capability と揃える)。out は請求台帳へ自動取込。
+          try {
+            const fd = String(
+              formData.FLOW_DIRECTION || formData["方向"] || formData.flow_direction || ""
+            ).trim();
+            const low = fd.toLowerCase();
+            const dir = low === "out" || fd === "アウト" ? "out" : low === "in" || fd === "イン" ? "in" : null;
+            if (dir) {
+              await query(
+                `UPDATE capability_line_items SET flow_direction = $2 WHERE capability_id = $1`,
+                [orderItemId, dir]
+              );
+            }
+          } catch (flowErr) {
+            console.warn("[flow_direction] line items update skipped:", flowErr);
+          }
         }
 
         // Phase 17i: 経費 (交通費等・税込み額) を upsert
