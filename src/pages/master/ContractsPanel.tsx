@@ -143,7 +143,7 @@ const empty = {
   // 設定すると、LIC-{ledger_code}-ILT-NNNN 形式で採番される。
   ledger_code: "",
   // Phase 22.21.91: 金銭条件 (ライセンス系の単独/個別契約で「個別利用許諾条件書」
-  //   と同形の条件配列)。条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト。
+  //   と同形の条件配列)。区分は方向中立(条件 1=製造ベース / 2=サブライセンス・再許諾 / 3=プロダクト)。
   //   後段の「利用許諾計算書」フォームから自動補完用に参照される。
   financial_conditions: [] as any[],
   // Phase 22.21.112: 業務明細 (業務委託系の単独/個別契約で「発注書 業務明細」
@@ -159,13 +159,28 @@ const empty = {
   // Phase 22.21.115: 稟議番号 (発注書・個別利用許諾と同じ shape: 5 桁数字の配列)。
   //   保存時に Worker 側で ringi_documents テーブルに N:N リンクされる。
   ringi_numbers: [] as string[],
+  // 目的 / 請求の方向。文書作成フォームと同じ contract_purposes ベース。
+  //   purpose_code を選ぶと flow_direction(in/out) も確定し、保存時に
+  //   contract_capabilities.flow_direction へ記録する(out=当社受領→請求台帳)。
+  purpose_code: "",
+  flow_direction: "",
 }
 
-// Phase 22.21.91: 金銭条件エディタで使う定数。
+// 金銭条件エディタの「区分」ラベル。方向中立(in/out どちらでも使える表現)。
+//   condition_no(1/2/3)の意味は維持(下流「利用許諾計算書」自動補完が参照)。
+//   旧: 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト(=アウト固定の偏り)を解消。
 const COND_LABELS: Record<number, string> = {
-  1: "条件 1: 自社製造",
-  2: "条件 2: サブライセンス",
-  3: "条件 3: プロダクトアウト",
+  1: "条件 1 (製造ベース)",
+  2: "条件 2 (サブライセンス / 再許諾)",
+  3: "条件 3 (プロダクト)",
+}
+
+// 目的マスター行(/api/contract-check/purposes)。
+type PurposeRow = {
+  purpose_code: string
+  purpose_group?: string | null
+  purpose_label?: string | null
+  flow_direction?: string | null
 }
 const CALC_METHOD_OPTIONS = [
   { value: "ROYALTY", label: "ロイヤリティ" },
@@ -186,6 +201,25 @@ export function ContractsPanel() {
   const [editing, setEditing] = React.useState<any>(null)
   const [creating, setCreating] = React.useState(false)
   const [draft, setDraft] = React.useState<any>(empty)
+
+  // 目的 / 方向マスター(/api/contract-check/purposes)。文書作成フォームと同源。
+  const [purposes, setPurposes] = React.useState<PurposeRow[]>([])
+  React.useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const r = await fetch("/api/contract-check/purposes")
+        if (!r.ok) return
+        const j = await r.json()
+        if (!cancelled && Array.isArray(j)) setPurposes(j as PurposeRow[])
+      } catch {
+        /* 取得失敗時は空。方向は任意項目なので登録自体は継続できる */
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   const filtered = contracts.filter((c) => {
     const q = search.toLowerCase()
@@ -514,8 +548,50 @@ export function ContractsPanel() {
               >
                 <option value="service">業務委託・サービス</option>
                 <option value="license">ライセンス・知的財産</option>
+                <option value="sales">売買・プロダクト</option>
                 <option value="publication">出版関連</option>
+                <option value="nda">NDA・機密保持</option>
               </NativeSelect>
+            </Field>
+            {/* 目的 / 請求の方向。文書作成フォームと同じ purpose マスターから選び、
+                flow_direction(in/out) を確定して保存する(out=当社受領→請求台帳)。 */}
+            <Field label="目的 / 方向">
+              <NativeSelect
+                value={data?.purpose_code || ""}
+                onChange={(e) => {
+                  const pc = e.target.value
+                  const row = purposes.find((p) => p.purpose_code === pc)
+                  set({ purpose_code: pc, flow_direction: row?.flow_direction || "" })
+                }}
+              >
+                <option value="">— 目的を選択（任意）—</option>
+                {Array.from(
+                  new Set(purposes.map((p) => p.purpose_group || "その他"))
+                ).map((grp) => (
+                  <optgroup key={grp} label={grp}>
+                    {purposes
+                      .filter((p) => (p.purpose_group || "その他") === grp)
+                      .map((p) => (
+                        <option key={p.purpose_code} value={p.purpose_code}>
+                          {p.purpose_label || p.purpose_code}
+                          {p.flow_direction === "in"
+                            ? "〔IN〕"
+                            : p.flow_direction === "out"
+                            ? "〔OUT〕"
+                            : ""}
+                        </option>
+                      ))}
+                  </optgroup>
+                ))}
+              </NativeSelect>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+                方向:{" "}
+                {data?.flow_direction === "in"
+                  ? "IN（当社が支払う側）"
+                  : data?.flow_direction === "out"
+                  ? "OUT（当社が受領する側 → 請求台帳へ）"
+                  : "未設定"}
+              </p>
             </Field>
             <Field label="契約書名 *" className="col-span-2">
               <Input
@@ -772,8 +848,8 @@ export function ContractsPanel() {
                   単独契約 / 個別契約に登録した条件は、後で「利用許諾計算書」を
                   作成するときに自動補完されます (別途 ILT 文書を発行する必要なし)。
                   <br />
-                  条件 1=自社製造 / 条件 2=サブライセンス / 条件 3=プロダクトアウト
-                  の 3 行まで登録可能。
+                  条件 1（製造ベース）/ 条件 2（サブライセンス・再許諾）/ 条件 3（プロダクト）
+                  の 3 行まで登録可能（方向に依らず使えます）。
                 </p>
                 <FinancialConditionsEditor
                   value={
@@ -1179,7 +1255,7 @@ function VendorPicker({
  *   個別利用許諾条件書と同じ shape (1..3 条件) の金銭条件を入力できる。
  *   後段の「利用許諾計算書」フォームから defaults として参照される。
  *
- *   - 条件は最大 3 行 (condition_no: 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト)
+ *   - 条件は最大 3 行 (condition_no: 1=製造ベース / 2=サブライセンス・再許諾 / 3=プロダクト。方向中立)
  *   - 行追加時は未使用の最小番号を自動採番
  *   - 行削除は完全削除 (保存時に DB 側からも消える)
  */
@@ -1273,9 +1349,9 @@ function FinancialConditionsEditor({
                   update(idx, { condition_no: Number(e.target.value) })
                 }
               >
-                <option value="1">1: 自社製造</option>
-                <option value="2">2: サブライセンス</option>
-                <option value="3">3: プロダクトアウト</option>
+                <option value="1">条件 1 (製造ベース)</option>
+                <option value="2">条件 2 (サブライセンス / 再許諾)</option>
+                <option value="3">条件 3 (プロダクト)</option>
               </NativeSelect>
             </div>
             <div className="space-y-0.5">

@@ -4216,11 +4216,28 @@ ${details}
       ledger_code,
       // Phase 22.21.91: ライセンス系の金銭条件 (条件 1..3 配列)
       financial_conditions,
+      // 請求の方向(in/out)。admin-ui の契約マスター登録フォームの「目的/方向」から。
+      //   明示が無くても purpose_code があれば contract_purposes から解決する。
+      flow_direction, purpose_code,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
       const ledger = String(ledger_code || "").trim() || null;
+      // 方向の確定: 明示 flow_direction を優先、無ければ purpose_code から解決。
+      let flowDir: string | null =
+        flow_direction === "in" || flow_direction === "out" ? flow_direction : null;
+      if (!flowDir && purpose_code) {
+        try {
+          const pr = await query(
+            `SELECT flow_direction FROM contract_purposes WHERE purpose_code = $1`,
+            [purpose_code]
+          );
+          if (pr.rows[0]?.flow_direction) flowDir = pr.rows[0].flow_direction;
+        } catch (pdErr) {
+          console.warn("[flow_direction] purpose resolve skipped (POST contracts):", pdErr);
+        }
+      }
       const finalDocNumber = await ensureDocumentNumber(
         document_number,
         contract_type,
@@ -4237,8 +4254,8 @@ ${details}
           renewal_notice_months, alert_lead_months,
           is_active,
           alert_slack_channels, alert_slack_mentions,
-          ledger_code
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24)
+          ledger_code, flow_direction
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25)
         RETURNING id, document_number`,
         [
           vendor_id || null, record_type || "master_contract", contract_category || "service",
@@ -4255,6 +4272,7 @@ ${details}
           JSON.stringify(channels),
           JSON.stringify(mentions),
           ledger,
+          flowDir,
         ]
       );
       const newId = Number(result.rows[0].id);
@@ -4369,11 +4387,26 @@ ${details}
       ledger_code,
       // Phase 22.21.91: 金銭条件 (条件 1..3 配列)
       financial_conditions,
+      // 請求の方向(in/out)。明示が無ければ purpose_code から解決。
+      flow_direction, purpose_code,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
       const mentions = normalizeAlertList(alert_slack_mentions);
       const ledger = String(ledger_code || "").trim() || null;
+      let flowDir: string | null =
+        flow_direction === "in" || flow_direction === "out" ? flow_direction : null;
+      if (!flowDir && purpose_code) {
+        try {
+          const pr = await query(
+            `SELECT flow_direction FROM contract_purposes WHERE purpose_code = $1`,
+            [purpose_code]
+          );
+          if (pr.rows[0]?.flow_direction) flowDir = pr.rows[0].flow_direction;
+        } catch (pdErr) {
+          console.warn("[flow_direction] purpose resolve skipped (PUT contracts):", pdErr);
+        }
+      }
 
       // Phase 22.21.60: マスター側の番号変更を「正」にするため、変更前の
       // 番号を保持しておき、変更後に documents テーブル側にも伝播させる。
@@ -4406,8 +4439,10 @@ ${details}
           alert_slack_channels = $22::jsonb,
           alert_slack_mentions = $23::jsonb,
           ledger_code = $24,
+          -- null のときは既存値を保持(レガシー編集で方向を誤って消さない)
+          flow_direction = COALESCE($25, flow_direction),
           updated_at = CURRENT_TIMESTAMP
-        WHERE id = $25`,
+        WHERE id = $26`,
         [
           vendor_id || null, record_type, contract_category, contract_type, contract_title,
           finalDocNumber, contract_status, effective_date || null, expiration_date || null,
@@ -4421,6 +4456,7 @@ ${details}
           JSON.stringify(channels),
           JSON.stringify(mentions),
           ledger,
+          flowDir,
           id,
         ]
       );
