@@ -388,6 +388,7 @@ export function legalonImportPage(
     subtitle: "contract_capabilities テーブルに upsert します",
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: "LegalOn 契約台帳 取り込み",
   });
 }

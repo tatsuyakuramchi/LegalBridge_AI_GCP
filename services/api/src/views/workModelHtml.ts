@@ -462,5 +462,6 @@ export function workModelPage(): string {
     subtitle: "原作IP・自社作品・契約を作品軸で閲覧 (新プラットフォーム /api/v3)",
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
   });
 }

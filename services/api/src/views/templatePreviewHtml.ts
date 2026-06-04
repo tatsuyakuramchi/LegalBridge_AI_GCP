@@ -321,6 +321,7 @@ export function templatePreviewPage(): string {
     subtitle: "Slack キャンバスの個別リンクから開いてください。サンプル PDF / HTML をダウンロードできます。",
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: "ひな型プレビュー - LegalBridge",
   });
 }

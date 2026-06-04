@@ -356,6 +356,7 @@ export function vendorImportPage(
     subtitle: "vendors テーブルに upsert します (vendor_code を主キーとして判定)",
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: "取引先マスター CSV 取り込み",
   });
 }

@@ -123,6 +123,7 @@ export function viewerGuidePage(opts: {
     subtitle: "検索機能のご案内",
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: "LegalBridge Search Portal",
   });
 }

@@ -468,6 +468,7 @@ export function listPage(
     subtitle: `検索キーワード: 「${esc(query)}」 · ヒット ${results.length} 件`,
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: `法務検索: 「${esc(query)}」の結果`,
   });
 }
@@ -543,6 +544,7 @@ export function detailPage(
     subtitle: `取引先コード: ${cp.vendorCode || "-"}`,
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: `法務検索: ${esc(cp.vendorName || "-")}`,
   });
 }
@@ -616,6 +618,7 @@ export function ringiPage(
     subtitle: r.title || "",
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: `稟議 ${esc(r.ringi_number || "-")}: ${esc(r.title || "-")}`,
   });
 }

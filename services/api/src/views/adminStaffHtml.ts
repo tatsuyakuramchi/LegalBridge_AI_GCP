@@ -257,6 +257,7 @@ export function adminStaffPage(opts: AdminStaffPageOpts): string {
     subtitle: "staff の admin / viewer ロール切替",
     body,
     headExtra: `<style>${STYLE}</style>`,
+    contentBridge: true,
     pageTitle: "ユーザー権限管理 — LegalBridge 管理",
   });
 }

@@ -245,6 +245,57 @@ h2.page-title{font-size:22px;font-weight:800;letter-spacing:0;color:var(--ink)}
 `;
 
 /**
+ * POP_CONTENT_BRIDGE — masterChrome を使わない独自CSSページ(取込・作品モデル・
+ *   検索結果・案内 等)の「本文」要素を pop トークンに揃えるブリッジ。
+ *
+ *   すべて `.pop-body` 配下にスコープし、レイアウト(grid/flex/列幅)には触れず
+ *   見た目(色・角丸・枠・影・余白の一部)だけを上書きする。popPage の <style>
+ *   では headExtra(ページ固有CSS)の「後」に読み込むことで確実に勝たせる。
+ *   (contentBridge:true を渡したページにのみ適用)
+ */
+export const POP_CONTENT_BRIDGE = `
+/* buttons */
+.pop-body .btn,.pop-body button:not(.x):not(.xbtn):not([class*=pop-]){
+  border:0;border-radius:12px;padding:8px 16px;font:inherit;font-size:12.5px;font-weight:800;
+  color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  box-shadow:0 6px 14px rgba(108,92,231,.3);cursor:pointer;display:inline-flex;align-items:center;gap:6px}
+.pop-body .btn:hover,.pop-body button:not(.x):not(.xbtn):not([class*=pop-]):hover{filter:brightness(1.05)}
+.pop-body .btn:active,.pop-body button:not(.x):not(.xbtn):not([class*=pop-]):active{transform:translateY(1px)}
+.pop-body .btn.secondary,.pop-body .btn.outline,.pop-body button.secondary,.pop-body button.outline{
+  background:#fff;color:var(--accent);border:2px solid #e2dbfb;box-shadow:none}
+.pop-body .btn.ghost,.pop-body button.ghost{background:#efeaff;color:var(--accent);box-shadow:none;border:0}
+.pop-body .btn.danger,.pop-body button.danger{background:linear-gradient(135deg,#ff7a8a,#ff5b78)}
+.pop-body .btn.sm,.pop-body button.sm{padding:6px 11px;font-size:11.5px;border-radius:10px}
+.pop-body button[disabled],.pop-body .btn[disabled]{background:#ece9f6;color:#bdb8d4;box-shadow:none;cursor:not-allowed}
+/* inputs */
+.pop-body input:not([type=checkbox]):not([type=radio]):not([type=file]),
+.pop-body select,.pop-body textarea{
+  border:1.5px solid #e2dbfb;border-radius:10px;padding:8px 10px;font:inherit;font-size:13px;
+  background:#fff;color:var(--ink)}
+.pop-body input:focus,.pop-body select:focus,.pop-body textarea:focus{outline:none;border-color:var(--accent)}
+.pop-body input[type=checkbox],.pop-body input[type=radio]{accent-color:var(--accent)}
+/* cards / sections */
+.pop-body .card,.pop-body .vendor-card,.pop-body section.card{
+  background:#fff;border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 2px 8px rgba(90,70,180,.05)}
+.pop-body .tile{border-radius:var(--radius);box-shadow:0 2px 8px rgba(90,70,180,.05)}
+.pop-body .tile:hover{box-shadow:var(--shadow)}
+/* modal(workModel 等) */
+.pop-body .backdrop{background:rgba(36,31,58,.4);backdrop-filter:blur(3px)}
+.pop-body .modal{border:0;border-radius:var(--radius);box-shadow:0 24px 60px rgba(40,20,90,.3)}
+.pop-body .modal .mhead,.pop-body .modal .mfoot{border-color:var(--line)}
+/* pills / badges */
+.pop-body .badge,.pop-body .role-pill,.pop-body .pill{border-radius:20px;font-weight:800}
+/* tables */
+.pop-body table th{background:#faf8ff;color:var(--muted);font-weight:800}
+.pop-body table th,.pop-body table td{border-color:var(--line)}
+/* misc */
+.pop-body h1,.pop-body h2,.pop-body h3{color:var(--ink)}
+.pop-body .muted{color:var(--muted)}
+.pop-body code{background:#f4f1fb;border-radius:6px;padding:1px 6px}
+.pop-body .footer{color:var(--muted)}
+`;
+
+/**
  * navGroups:
  *   "all"  — Master Console(admin) + Search & Browse(view) 両方(既定)。
  *   "view" — Search & Browse のみ。viewer 向けページ(/search/vendor 等)で、
@@ -279,6 +330,7 @@ export function popPage(opts: {
   headExtra?: string; // ページ固有 <style> 等
   pageTitle?: string;
   navGroups?: NavGroups; // "all"(既定) | "view"(viewer 向け)
+  contentBridge?: boolean; // 独自CSSページの本文要素を pop に揃える(headExtra の後に適用)
 }): string {
   const titleTag = opts.pageTitle || `${opts.title} · Arcs Legal OS`;
   return `<!DOCTYPE html>
@@ -288,6 +340,7 @@ ${POP_HEAD}
 <title>${esc(titleTag)}</title>
 <style>${POP_CSS}</style>
 ${opts.headExtra || ""}
+${opts.contentBridge ? `<style>${POP_CONTENT_BRIDGE}</style>` : ""}
 </head>
 <body>
 <div class="pop-shell">
