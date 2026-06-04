@@ -98,6 +98,8 @@ const READ_PATHS_ON_GET: RegExp[] = [
   /^\/api\/conditions(?:\/|\?|$)/,
   // 紐付け編集モーダルのピッカー(原作/作品/契約)も search-api 専用 read。
   /^\/api\/v3\/(?:source-ips|works|contracts)(?:\/|\?|$)/,
+  // 統合 P3-3: 請求権受領(sublicense)は search-api 専用。read/CSV を含む。
+  /^\/api\/sublicense(?:\/|\?|$)/,
 ];
 
 // Routes that should go to the READ service even on POST.
@@ -116,6 +118,9 @@ const READ_PATHS_ON_POST: RegExp[] = [  /^\/api\/contract-check(?:\/|$)/,
   // 統合 P3-2: 条件明細の紐付け更新 (PUT /api/conditions/:id/links) は
   //   search-api の正規実装。apiRouter は既定で PUT を worker へ振るため明示。
   /^\/api\/conditions\/\d+\/links(?:\?|$)/,
+  // 統合 P3-3: 請求権受領(sublicense)の書込(deals/reports/receipts/import)も
+  //   全て search-api 正規実装へ。
+  /^\/api\/sublicense(?:\/|\?|$)/,
 ];
 
 function resolveBaseUrl(method: string, path: string): string {

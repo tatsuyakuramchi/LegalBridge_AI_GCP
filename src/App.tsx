@@ -17,6 +17,7 @@ import { SubLicenseesPanel } from "./pages/master/SubLicenseesPanel" // Phase 22
 import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ConditionsPanel } from "./pages/master/ConditionsPanel" // 統合 P3-2
+import { SublicensePanel } from "./pages/master/SublicensePanel" // 統合 P3-3
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
 import { ExcelBatchPage } from "./pages/ExcelBatchPage"
@@ -46,6 +47,7 @@ export default function App() {
                   <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}
                   <Route path="drafts" element={<DraftsPanel />} />{/* Phase 22.21.81 */}
                   <Route path="conditions" element={<ConditionsPanel />} />{/* 統合 P3-2 */}
+                  <Route path="sublicense" element={<SublicensePanel />} />{/* 統合 P3-3 */}
                   <Route path="staff" element={<StaffPanel />} />
                   <Route path="rules" element={<RulesPanel />} />
                 </Route>
