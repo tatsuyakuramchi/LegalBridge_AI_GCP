@@ -31,6 +31,7 @@ export type WorkDistribution = {
     rate_basis: string; // 料率の適用基礎(region_language_label: サブライセンス/翻訳・海外版 等)
     mg_amount: number | null;
     distribute_amount: number | null; // 受領(サブライセンス)× rate
+    inherited?: boolean; // 上位段で計上済み(二重計上回避)
   }>;
   downstream: Array<{
     deal_id: number;
@@ -181,9 +182,10 @@ export type WorkLineage = {
     derivation_type: string | null;
     upstream: WorkDistribution["upstream"];
     downstream: WorkDistribution["downstream"];
-    received: number;       // この作品のサブライセンス受領
+    received: number;       // この作品のサブライセンス受領(直接)
     all_received: number;
-    distributed: number;
+    distributed: number;    // cascade 後の上流分配合計
+    cascade_base: number;   // この段の分配基礎(この段〜最下段の受領合計)
   }>;
   children: Array<{ id: number; work_code: string; title: string; derivation_type: string | null }>;
   totals: { received: number; distributed: number; retained: number };
@@ -243,7 +245,7 @@ export async function getWorkLineage(workId: number): Promise<WorkLineage> {
   } catch { children = []; }
 
   const allDeals = await loadAllDeals();
-  const chain = [];
+  const chain = [] as WorkLineage["chain"];
   for (const w of chainRows) {
     const node = await computeNode(w, allDeals);
     chain.push({
@@ -253,9 +255,33 @@ export async function getWorkLineage(workId: number): Promise<WorkLineage> {
       downstream: node.downstream,
       received: node.sublicense_received,
       all_received: node.all_received,
-      distributed: node.distributed,
+      distributed: node.distributed, // 直接(後で cascade に上書き)
+      cascade_base: 0,
     });
   }
+
+  // 段跨ぎの伝播(cascade): 下位(より派生)で受領した金額は上位の各段の上流へも
+  //   流れる。tier i の分配基礎 = i 段から最下段(selected)までの受領合計。
+  //   各段の上流分配 = 料率 × cascade_base。これで「K受領→A→C」が各段の料率で
+  //   伝播する(各段は当社が当事者なので並列の分配義務として算出)。
+  const seenCap = new Set<number>(); // 同一の上流契約(capability)を複数段で二重計上しない
+  for (let i = 0; i < chain.length; i++) {
+    let base = 0;
+    for (let j = i; j < chain.length; j++) base += chain[j].received;
+    chain[i].cascade_base = base;
+    chain[i].upstream = chain[i].upstream.map((u: any) => {
+      const cap = u.capability_id;
+      const inherited = cap != null && seenCap.has(cap); // 上位段で計上済み
+      if (cap != null) seenCap.add(cap);
+      return {
+        ...u,
+        inherited,
+        distribute_amount: inherited ? 0 : (u.rate_pct == null ? null : Math.round(base * (u.rate_pct / 100))),
+      };
+    });
+    chain[i].distributed = chain[i].upstream.reduce((s, u) => s + (u.distribute_amount || 0), 0);
+  }
+
   const received = chain.reduce((s, n) => s + n.received, 0);
   const distributed = chain.reduce((s, n) => s + n.distributed, 0);
   return { selected_work_id: workId, chain, children, totals: { received, distributed, retained: received - distributed } };
@@ -282,6 +308,81 @@ export async function listMappableWorks(): Promise<Array<{ id: number; work_code
     if (err && (err.code === "42P01" || err.code === "42703")) return [];
     throw err;
   }
+}
+
+// ── 作品タイトル別名(他社/改題タイトルの名寄せ)──────────────────
+export async function listWorkAliases(workId: number): Promise<any[]> {
+  try {
+    const res = await query(
+      `SELECT a.id, a.work_id, a.alias_title, a.party_vendor_id, v.vendor_name AS party_name, a.context
+         FROM work_title_aliases a
+         LEFT JOIN vendors v ON v.id = a.party_vendor_id
+        WHERE a.work_id = $1 ORDER BY a.id`,
+      [workId]
+    );
+    return res.rows.map((r: any) => ({
+      id: Number(r.id), work_id: Number(r.work_id), alias_title: r.alias_title || "",
+      party_vendor_id: r.party_vendor_id == null ? null : Number(r.party_vendor_id),
+      party_name: r.party_name || "", context: r.context || "",
+    }));
+  } catch (err: any) {
+    if (err && (err.code === "42P01" || err.code === "42703")) return [];
+    throw err;
+  }
+}
+
+export async function addWorkAlias(workId: number, aliasTitle: string, partyVendorId?: number | null, context?: string | null): Promise<number> {
+  const res = await query(
+    `INSERT INTO work_title_aliases (work_id, alias_title, party_vendor_id, context)
+     VALUES ($1, $2, $3, $4) RETURNING id`,
+    [workId, aliasTitle, partyVendorId ?? null, context ?? null]
+  );
+  return Number(res.rows[0].id);
+}
+
+export async function deleteWorkAlias(id: number): Promise<void> {
+  await query(`DELETE FROM work_title_aliases WHERE id = $1`, [id]);
+}
+
+/** タイトル文字列(他社/改題含む)から作品候補を解決する。利用報告の名寄せ用。 */
+export async function resolveWorksByTitle(q: string): Promise<Array<{ id: number; work_code: string; title: string; matched_via: string; matched_text: string }>> {
+  const term = (q || "").trim();
+  if (!term) return [];
+  const like = `%${term}%`;
+  const out: Record<number, any> = {};
+  // 正式タイトル / 別タイトル(alternative_titles)
+  try {
+    const r = await query(
+      `SELECT id, work_code, title,
+              CASE WHEN title ILIKE $1 THEN 'title' ELSE 'alternative_title' END AS matched_via,
+              title AS matched_text
+         FROM works
+        WHERE title ILIKE $1
+           OR EXISTS (SELECT 1 FROM unnest(COALESCE(alternative_titles,'{}')) t WHERE t ILIKE $1)
+        ORDER BY work_code DESC NULLS LAST LIMIT 50`,
+      [like]
+    );
+    for (const x of r.rows) out[Number(x.id)] = { id: Number(x.id), work_code: x.work_code || "", title: x.title || "", matched_via: x.matched_via, matched_text: x.matched_text || "" };
+  } catch (err: any) {
+    if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+  }
+  // 名寄せ別名(work_title_aliases)
+  try {
+    const r = await query(
+      `SELECT w.id, w.work_code, w.title, a.alias_title
+         FROM work_title_aliases a JOIN works w ON w.id = a.work_id
+        WHERE a.alias_title ILIKE $1 LIMIT 50`,
+      [like]
+    );
+    for (const x of r.rows) {
+      const id = Number(x.id);
+      // 別名ヒットは優先表示(matched_text にヒットした別名を出す)
+      out[id] = { id, work_code: x.work_code || "", title: x.title || "", matched_via: "alias", matched_text: x.alias_title || "" };
+    }
+  } catch (err: any) {
+    if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+  }
+  return Object.values(out);
 }
 
 /** 契約番号(document_number)から関連作品を引く(契約起点のマップ用)。 */

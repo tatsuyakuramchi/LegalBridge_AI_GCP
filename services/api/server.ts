@@ -139,6 +139,10 @@ import {
   getWorkDistribution,
   getWorkLineage,
   listMappableWorks,
+  listWorkAliases,
+  addWorkAlias,
+  deleteWorkAlias,
+  resolveWorksByTitle,
 } from "./src/services/receivableMapService.ts";
 import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
 import {
@@ -2873,6 +2877,49 @@ async function startServer() {
       res.json({ ok: true, ...(await getWorkLineage(workId)) });
     } catch (error: any) {
       console.error("/api/receivable-map/lineage failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  // タイトル(他社/改題)→作品 解決(利用報告の名寄せ)
+  app.get("/api/receivable-map/resolve", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      res.json({ ok: true, rows: await resolveWorksByTitle(String((req.query as any).q || "")) });
+    } catch (error: any) {
+      console.error("/api/receivable-map/resolve failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  // 作品タイトル別名(名寄せ)CRUD
+  app.get("/api/works/:id/aliases", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      res.json({ ok: true, rows: await listWorkAliases(id) });
+    } catch (error: any) {
+      console.error("/api/works/:id/aliases GET failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.post("/api/works/:id/aliases", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const b = req.body || {};
+      if (!Number.isFinite(id) || !b.alias_title) return res.status(400).json({ ok: false, error: "id and alias_title required" });
+      const aliasId = await addWorkAlias(id, String(b.alias_title), b.party_vendor_id, b.context);
+      res.json({ ok: true, id: aliasId });
+    } catch (error: any) {
+      console.error("/api/works/:id/aliases POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.delete("/api/work-aliases/:id", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      await deleteWorkAlias(id);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/work-aliases/:id DELETE failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });

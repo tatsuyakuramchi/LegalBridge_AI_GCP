@@ -47,17 +47,33 @@ const EXTRA_CSS = `<style>
 .children a{display:inline-block;margin:3px 6px 3px 0;font-size:12px;font-weight:700;color:var(--accent);background:#efeaff;border-radius:12px;padding:3px 10px;text-decoration:none}
 .chain-totals{display:flex;gap:18px;flex-wrap:wrap;background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;border-radius:16px;padding:12px 16px;margin-bottom:14px}
 .chain-totals .k{font-size:11px;opacity:.9} .chain-totals .v{font-size:18px;font-weight:800}
+#resolve-res{position:absolute;top:38px;left:0;z-index:30;background:#fff;border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);min-width:280px;max-height:280px;overflow:auto;display:none}
+#resolve-res.open{display:block}
+#resolve-res a{display:block;padding:8px 12px;font-size:12.5px;text-decoration:none;color:var(--ink);border-bottom:1px solid var(--line)}
+#resolve-res a:hover{background:var(--hover)}
+#resolve-res .via{font-size:10px;color:var(--accent);font-weight:800;margin-left:6px}
+.alias-card{margin-top:16px;background:#fff;border:1px solid var(--line);border-radius:16px;padding:14px 16px;box-shadow:0 2px 8px rgba(90,70,180,.05)}
+.alias-card h3{font-size:13px;font-weight:800;margin:0 0 8px}
+.alias-row{display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid var(--line);font-size:12.5px;flex-wrap:wrap}
+.alias-row .ctx{color:var(--muted);font-size:11px}
+.alias-add{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap}
+.alias-add input{border:1.5px solid #e2dbfb;border-radius:10px;padding:6px 10px;font:inherit;font-size:12.5px}
 </style>`;
 
 export function receivableMapPage(): string {
   const body = `
   <div class="map-picker">
     <label class="muted" style="font-weight:800;">作品:</label>
-    <select class="pop-select" id="work" style="min-width:280px;"><option value="">— 作品を選択 —</option></select>
-    <span class="muted" id="hint">請求権(受領)のある作品を選ぶと、上流(分配)・当社・下流(受領)のフローを表示します。</span>
+    <select class="pop-select" id="work" style="min-width:260px;"><option value="">— 作品を選択 —</option></select>
+    <span style="position:relative;">
+      <input class="pop-input" id="resolve" placeholder="🔎 他社/改題タイトルで作品検索…" style="min-width:240px;">
+      <div id="resolve-res"></div>
+    </span>
+    <span class="muted" id="hint">受領のある作品を選ぶと系譜(上流分配←当社←下流受領)を表示。他社が付けた改題タイトルでも検索できます。</span>
   </div>
 
   <div id="map-wrap"><div class="empty">作品を選択してください。</div></div>
+  <div id="alias-panel"></div>
 
 <script>
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");}
@@ -79,7 +95,7 @@ export function receivableMapPage(): string {
 
   function nodeUp(u){
     var rate=u.rate_pct==null?'<span class="rate">料率未設定</span>':'<span class="rate">料率 '+esc(u.rate_pct)+'%</span>'+(u.rate_basis?' <span class="muted" style="font-size:10px;">('+esc(u.rate_basis)+')</span>':'');
-    var dist=u.distribute_amount==null?'<small>(料率未設定のため算定不可)</small>':'¥'+yen(u.distribute_amount);
+    var dist=u.inherited?'<small>上位段で計上済</small>':(u.distribute_amount==null?'<small>(料率未設定のため算定不可)</small>':'¥'+yen(u.distribute_amount));
     return '<div class="node up"><div class="nm">'+esc(u.licensor_name||"(ライセンサー未設定)")+'</div>'+
       '<div class="meta">'+(u.source_ip_title?'原作: '+esc(u.source_ip_title)+' ':'')+(u.document_number?'· '+esc(u.document_number):'')+'</div>'+
       '<div class="meta">'+rate+'</div>'+
@@ -97,11 +113,14 @@ export function receivableMapPage(): string {
     var ups=(n.upstream||[]).length?n.upstream.map(nodeUp).join(""):'<div class="empty" style="padding:8px;">上流(license-in)なし</div>';
     var downs=(n.downstream||[]).length?n.downstream.map(nodeDown).join(""):'<div class="empty" style="padding:8px;">受領(下流)なし</div>';
     var deriv=n.derivation_type?'<span class="deriv'+(isSel?' sel':'')+'">'+esc(DERIV[n.derivation_type]||n.derivation_type)+'</span>':(w.is_original?'<span class="deriv">原版</span>':'');
+    var cascadeLine=((n.cascade_base||0)>(n.received||0))
+      ? '<div class="big"><span>分配基礎(累計)</span><b>¥'+yen(n.cascade_base)+'</b></div>' : '';
     var center='<div class="node center">'+
       '<div class="nm">当社</div>'+
-      '<div class="big"><span>サブライセンス受領</span><b>¥'+yen(n.received)+'</b></div>'+
+      '<div class="big"><span>受領(直接)</span><b>¥'+yen(n.received)+'</b></div>'+
+      cascadeLine+
       '<div class="big"><span>上流へ分配</span><b>− ¥'+yen(n.distributed)+'</b></div>'+
-      '<div class="big" style="border-top:1px solid rgba(255,255,255,.35);padding-top:6px;"><span>留保</span><b>¥'+yen((n.received||0)-(n.distributed||0))+'</b></div>'+
+      '<div class="big" style="border-top:1px solid rgba(255,255,255,.35);padding-top:6px;"><span>留保</span><b>¥'+yen((n.cascade_base||n.received||0)-(n.distributed||0))+'</b></div>'+
       ((n.all_received||0)>(n.received||0)?'<div class="meta" style="margin-top:6px;">※ 全受領 ¥'+yen(n.all_received)+'</div>':'')+
       '</div>';
     return '<div class="tier'+(isSel?' sel':'')+'">'+
@@ -147,8 +166,73 @@ export function receivableMapPage(): string {
       var anyRateUnknown=chain.some(function(n){return (n.upstream||[]).some(function(u){return u.rate_pct==null;});});
       if(anyRateUnknown) html+='<div class="warn">一部の上流で分配料率が未設定です。利用許諾/出版条件の金銭条件(サブライセンス/翻訳・海外版)に料率を入れると分配額が自動算定されます。</div>';
       wrap.innerHTML=html;
+      loadAliases(id);
     }catch(e){wrap.innerHTML='<div class="empty" style="color:#b91c1c;">読み込み失敗: '+esc(e&&e.message?e.message:e)+'</div>';}
   }
+
+  /* ---- タイトル別名(名寄せ)---- */
+  async function loadAliases(workId){
+    var p=document.getElementById("alias-panel");
+    try{
+      var d=await jget("/api/works/"+encodeURIComponent(workId)+"/aliases");
+      var rows=d.rows||[];
+      var list=rows.length?rows.map(function(a){
+        return '<div class="alias-row"><b>'+esc(a.alias_title)+'</b>'+
+          (a.party_name?' <span class="kpill">'+esc(a.party_name)+'</span>':'')+
+          (a.context?' <span class="ctx">'+esc(a.context)+'</span>':'')+
+          '<span style="flex:1"></span><a href="javascript:void(0)" onclick="delAlias('+a.id+','+workId+')" style="color:#c43c63;text-decoration:none;font-weight:800;">削除</a></div>';
+      }).join(""):'<div class="ctx">別名は未登録です。他社が付けた改題タイトル等を登録すると、その名称で作品を検索できます。</div>';
+      p.innerHTML='<div class="alias-card"><h3>📝 タイトル別名(他社/改題タイトルの名寄せ)</h3>'+list+
+        '<div class="alias-add">'+
+          '<input id="al-title" placeholder="別名(例: K社の出版タイトル)" style="min-width:220px;">'+
+          '<input id="al-ctx" placeholder="文脈(例: K社 海外出版版)" style="min-width:200px;">'+
+          '<button class="pop-btn sm" onclick="addAlias('+workId+')">＋ 別名を追加</button>'+
+        '</div></div>';
+    }catch(e){p.innerHTML='';}
+  }
+  window.addAlias=async function(workId){
+    var title=(document.getElementById("al-title").value||"").trim();
+    if(!title){alert("別名を入力してください");return;}
+    var ctx=(document.getElementById("al-ctx").value||"").trim();
+    try{
+      var res=await fetch("/api/works/"+encodeURIComponent(workId)+"/aliases",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({alias_title:title,context:ctx||null})});
+      var d=await res.json().catch(function(){return{};});
+      if(!res.ok||d.ok===false)throw new Error(d.error||("HTTP "+res.status));
+      loadAliases(workId);
+    }catch(e){alert("追加に失敗: "+(e&&e.message?e.message:e));}
+  };
+  window.delAlias=async function(id,workId){
+    if(!confirm("この別名を削除しますか?"))return;
+    try{
+      var res=await fetch("/api/work-aliases/"+id,{method:"DELETE",credentials:"same-origin"});
+      var d=await res.json().catch(function(){return{};});
+      if(!res.ok||d.ok===false)throw new Error(d.error||("HTTP "+res.status));
+      loadAliases(workId);
+    }catch(e){alert("削除に失敗: "+(e&&e.message?e.message:e));}
+  };
+
+  /* ---- 他社/改題タイトル → 作品 解決 ---- */
+  var resolveTimer=null;
+  function doResolve(){
+    var q=(document.getElementById("resolve").value||"").trim();
+    var box=document.getElementById("resolve-res");
+    if(!q){box.className="";box.innerHTML="";return;}
+    jget("/api/receivable-map/resolve?q="+encodeURIComponent(q)).then(function(d){
+      var rows=d.rows||[];
+      if(!rows.length){box.innerHTML='<a>該当作品なし</a>';box.className="open";return;}
+      var VIA={title:"正式",alternative_title:"別タイトル",alias:"名寄せ別名"};
+      box.innerHTML=rows.map(function(r){
+        return '<a href="?work='+r.id+'">'+esc((r.work_code?r.work_code+" : ":"")+r.title)+
+          '<span class="via">'+esc(VIA[r.matched_via]||r.matched_via)+(r.matched_via!=="title"&&r.matched_text?": "+esc(r.matched_text):"")+'</span></a>';
+      }).join("");
+      box.className="open";
+    }).catch(function(){box.className="";});
+  }
+  document.getElementById("resolve").addEventListener("input",function(){clearTimeout(resolveTimer);resolveTimer=setTimeout(doResolve,250);});
+  document.addEventListener("click",function(e){
+    var box=document.getElementById("resolve-res");
+    if(box && !box.contains(e.target) && e.target.id!=="resolve") box.className="";
+  });
 
   document.getElementById("work").addEventListener("change",function(){
     var id=this.value;
