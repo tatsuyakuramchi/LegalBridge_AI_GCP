@@ -104,6 +104,11 @@ const READ_PATHS_ON_POST: RegExp[] = [  /^\/api\/contract-check(?:\/|$)/,
   //   二重実装は使わない。サブパス (/:code 詳細 GET, /import-csv,
   //   /upload-change-request の multipart) は対象外なので末尾を厳密に判定。
   /^\/api\/master\/vendors(?:\?|$)/,
+  // 統合 Phase 3: スタッフ役割変更 (PATCH /api/master/staff/:email/role) は
+  //   search-api の正規実装(staff.app_role 更新 + 監査ログ)を本体とする。
+  //   apiRouter は既定で PATCH を worker へ振るため、ここで READ_URL(search-api)
+  //   へ明示する。portal_secret 経由で requireAppRole を無条件通過する。
+  /^\/api\/master\/staff\/[^/]+\/role(?:\?|$)/,
 ];
 
 function resolveBaseUrl(method: string, path: string): string {
