@@ -10145,6 +10145,24 @@ ${details}
         //     'license_condition'    : 利用許諾 (license / royalty)
         //     'delivery_record'      : 検収書 (mirror 用、picker には載らない)
         let recordType = "master_contract";
+        // 方向(in/out)の確定: フォームに方向の明示が無ければ purpose_code から
+        //   contract_purposes.flow_direction を解決し formData.FLOW_DIRECTION に載せる。
+        //   → admin-ui は「目的(4ジャンル含む)」を選ぶだけでよく、方向の別送が不要。
+        //   後段の capability / 明細反映ブロックが formData.FLOW_DIRECTION を拾う。
+        if (!formData.FLOW_DIRECTION && !formData["方向"] && !formData.flow_direction) {
+          const pc = formData.PURPOSE_CODE || formData.purpose_code || formData["目的"];
+          if (pc) {
+            try {
+              const pr = await query(
+                `SELECT flow_direction FROM contract_purposes WHERE purpose_code = $1`,
+                [pc]
+              );
+              if (pr.rows[0]?.flow_direction) formData.FLOW_DIRECTION = pr.rows[0].flow_direction;
+            } catch (pdErr) {
+              console.warn("[flow_direction] purpose resolve skipped:", pdErr);
+            }
+          }
+        }
         // Phase 25 / 25.6: 出版系を最優先で判定。pub_license_terms は "license" を
         //   含むため、後段の license 判定より前に分岐させないと誤分類になる。
         //   record_type は search-api (contractCheckService) の正仕様に合わせる:
