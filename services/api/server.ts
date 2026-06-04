@@ -106,7 +106,7 @@ import { vendorImportPage } from "./src/views/vendorImportHtml.ts";
 import { adminDashboardPage } from "./src/views/adminDashboardHtml.ts";
 import { adminStaffPage } from "./src/views/adminStaffHtml.ts";
 // Phase 22.21.37: viewer 用ルート案内ページ。
-import { viewerGuidePage } from "./src/views/viewerGuideHtml.ts";
+import { loginPage, viewerHomePage } from "./src/views/landingHtml.ts";
 import {
   listVendors,
   getVendor,
@@ -487,50 +487,54 @@ async function startServer() {
     requireIapUser({ renderErrorPage }),
     async (req, res) => {
       try {
-        const user = (req as any).user as { email?: string | null } | undefined;
+        const user = (req as any).user as
+          | { email?: string | null; source?: string }
+          | undefined;
         const email = (user?.email || "").trim().toLowerCase();
 
-        // Phase 22.21.42: admin が viewer ランディングを確認するためのプレビュー
-        //   /admin から「Viewer 用ポータルを開く」リンクで遷移してきたときに
-        //   admin リダイレクトをスキップする。
-        const previewViewer = String(req.query.preview || "").toLowerCase() === "viewer";
+        // #5: 未認証(anonymous かつ email 無し) → ブランドログインゲート。
+        //   IAP 配下なら通常ここに到達しない(IAP が前段でログインさせる)が、
+        //   非強制環境でも美しい入口を出す。
+        if (!email) {
+          return res.type("html").send(loginPage({ continueUrl: "/" }));
+        }
 
-        // bootstrap admin (env)
+        // admin が viewer ホームを確認するためのプレビュー(?preview=viewer)。
+        const previewViewer =
+          String(req.query.preview || "").toLowerCase() === "viewer";
+
+        // 実効ロール判定(bootstrap env or staff.app_role)。
         const bootstrapAdmins = (process.env.LB_APP_ADMIN_EMAILS || "")
           .split(",")
           .map((s) => s.trim().toLowerCase())
           .filter(Boolean);
-        if (email && bootstrapAdmins.includes(email) && !previewViewer) {
-          return res.redirect(302, "/admin");
-        }
-
-        // DB の app_role を引く
-        let role: string | null = null;
-        if (email) {
+        let role: string | null = bootstrapAdmins.includes(email) ? "admin" : null;
+        if (!role) {
           try {
             const r = await query(
               "SELECT COALESCE(app_role, 'viewer') AS app_role FROM staff WHERE LOWER(email) = $1 LIMIT 1",
               [email]
             );
-            role = (r.rows[0]?.app_role as string) || null;
+            role = (r.rows[0]?.app_role as string) || "viewer";
           } catch {
-            /* noop — column may not exist yet on first deploy */
+            role = "viewer";
           }
         }
 
+        // admin ログイン後の入口は React admin-ui に一本化(ADMIN_UI_URL があれば
+        //   そこへ、無ければ従来の管理ダッシュボード)。preview=viewer 指定時は除外。
         if (role === "admin" && !previewViewer) {
-          return res.redirect(302, "/admin");
+          const adminUi = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+          return res.redirect(302, adminUi || "/admin");
         }
 
-        // viewer or unregistered (or admin が preview=viewer 指定) → 案内ページ
-        res
-          .type("html")
-          .send(
-            viewerGuidePage({
-              currentEmail: user?.email || null,
-              currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
-            })
-          );
+        // viewer or unregistered(or admin の preview) → 美しい検索ポータルホーム。
+        res.type("html").send(
+          viewerHomePage({
+            currentEmail: user?.email || null,
+            currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
+          })
+        );
       } catch (error) {
         console.error("/ failed:", error);
         res
