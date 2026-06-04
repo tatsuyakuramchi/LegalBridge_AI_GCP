@@ -1,0 +1,546 @@
+import * as React from "react"
+import { Search, Download, X } from "lucide-react"
+
+import { useAppData } from "@/src/context/AppDataContext"
+import { Input } from "@/components/ui/input"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
+import { NativeSelect } from "@/components/ui/native-select"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog"
+
+// 統合 P3-2: 条件明細(capability_line_items)横断検索。
+//   search-api 専用だった /master/conditions を React へ移植。
+//   検索 + CSV + 紐付け編集(原作/作品/基本契約/稟議/状態/方向)を網羅。
+
+const STATUS_DEFS: { key: string; label: string }[] = [
+  { key: "po_signed", label: "発注書締結済" },
+  { key: "inspection_issued", label: "検収書発行済" },
+  { key: "payment_exported", label: "支払申請ファイル出力済" },
+]
+
+const CAT_LABEL: Record<string, string> = {
+  service: "業務委託",
+  license: "ライセンス",
+  license_in: "ライセンス(IN)",
+  license_out: "ライセンス(OUT)",
+  publication: "出版",
+  sales: "売買",
+  nda: "NDA",
+}
+
+const emptyFilters = {
+  payment_from: "",
+  payment_to: "",
+  delivery_from: "",
+  delivery_to: "",
+  category: "",
+  vendor: "",
+  owner: "",
+  q: "",
+  include_all: false,
+}
+
+type Filters = typeof emptyFilters
+type Row = Record<string, any>
+type PickItem = Record<string, any>
+
+const yen = (n: any) => {
+  if (n == null || n === "") return ""
+  const v = Number(n)
+  return isFinite(v) ? v.toLocaleString("ja-JP") : String(n)
+}
+const catLabel = (c: string) => CAT_LABEL[c] || c || "—"
+
+export function ConditionsPanel() {
+  const { showNotification } = useAppData()
+  const [filters, setFilters] = React.useState<Filters>(emptyFilters)
+  const [rows, setRows] = React.useState<Row[]>([])
+  const [total, setTotal] = React.useState<number | null>(null)
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const [selected, setSelected] = React.useState<Set<number>>(new Set())
+
+  const setF = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }))
+
+  const buildParams = (f: Filters) => {
+    const p = new URLSearchParams()
+    ;(
+      ["payment_from", "payment_to", "delivery_from", "delivery_to", "category", "vendor", "owner", "q"] as const
+    ).forEach((k) => {
+      const v = (f[k] || "").toString().trim()
+      if (v) p.set(k, v)
+    })
+    if (f.include_all) p.set("include_all", "1")
+    return p
+  }
+
+  const load = async (f: Filters = filters) => {
+    setLoading(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/conditions/search?" + buildParams(f).toString())
+      if (!res.ok) throw new Error("HTTP " + res.status)
+      const data = await res.json()
+      const list: Row[] = data.rows || []
+      setRows(list)
+      setTotal(typeof data.total === "number" ? data.total : null)
+      setSelected(new Set())
+    } catch (e: any) {
+      setError(e?.message || String(e))
+      setRows([])
+      setTotal(null)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // 初回ロード
+  React.useEffect(() => {
+    load(emptyFilters)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  const clear = () => {
+    setFilters(emptyFilters)
+    load(emptyFilters)
+  }
+
+  const toggle = (id: number) => {
+    setSelected((s) => {
+      const n = new Set(s)
+      n.has(id) ? n.delete(id) : n.add(id)
+      return n
+    })
+  }
+  const toggleAll = () => {
+    setSelected((s) =>
+      s.size === rows.length ? new Set() : new Set(rows.map((r) => Number(r.id)))
+    )
+  }
+
+  // CSV: admin-ui 同一オリジンへの直リンクは 410 になるため、fetch(→apiRouter で
+  //   search-api へ) の blob をダウンロードする。
+  const csvExport = async (ids?: number[]) => {
+    const p = buildParams(filters)
+    if (ids?.length) p.set("ids", ids.join(","))
+    try {
+      const res = await fetch("/api/conditions/export?" + p.toString())
+      if (!res.ok) throw new Error("HTTP " + res.status)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `conditions_${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      showNotification(`CSV出力に失敗しました: ${e?.message || e}`, "error")
+    }
+  }
+
+  // ── 紐付け編集モーダル ───────────────────────────────────────
+  const [editing, setEditing] = React.useState<Row | null>(null)
+  const [saving, setSaving] = React.useState(false)
+  const [form, setForm] = React.useState<any>(null)
+  const pickRef = React.useRef<{
+    source: PickItem[]
+    works: PickItem[]
+    masters: PickItem[]
+    ringi: PickItem[]
+  } | null>(null)
+  const [, forcePick] = React.useState(0)
+
+  const loadPickers = React.useCallback(async () => {
+    if (pickRef.current) return
+    const get = (u: string) =>
+      fetch(u).then((x) => (x.ok ? x.json() : [])).catch(() => [])
+    const [s, w, c, g] = await Promise.all([
+      get("/api/v3/source-ips"),
+      get("/api/v3/works"),
+      get("/api/v3/contracts"),
+      get("/api/conditions/ringi-options"),
+    ])
+    pickRef.current = {
+      source: Array.isArray(s) ? s : [],
+      works: Array.isArray(w) ? w : [],
+      masters: (Array.isArray(c) ? c : []).filter((x: any) => {
+        const lv = x.contract_level || ""
+        return lv === "master" || lv === ""
+      }),
+      ringi: Array.isArray(g) ? g : [],
+    }
+    forcePick((n) => n + 1)
+  }, [])
+
+  const openEdit = async (row: Row) => {
+    setEditing(row)
+    const dir =
+      row.flow_direction === "in" || row.flow_direction === "out"
+        ? row.flow_direction
+        : row.is_inbound
+        ? "out"
+        : ""
+    setForm({
+      source_ip_id: row.source_ip_id ?? "",
+      work_id: row.work_id ?? "",
+      master_contract_id: row.master_contract_id ?? "",
+      ringi_id: row.ringi_id ?? "",
+      flow_direction: dir,
+      status_flags: { ...(row.status_flags || {}) },
+    })
+    await loadPickers()
+  }
+
+  const saveLinks = async () => {
+    if (!editing) return
+    setSaving(true)
+    try {
+      const toNull = (v: any) => (v === "" || v == null ? null : Number(v))
+      const res = await fetch(
+        `/api/conditions/${encodeURIComponent(editing.id)}/links`,
+        {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_ip_id: toNull(form.source_ip_id),
+            work_id: toNull(form.work_id),
+            master_contract_id: toNull(form.master_contract_id),
+            ringi_id: toNull(form.ringi_id),
+            status_flags: form.status_flags || {},
+            flow_direction: form.flow_direction,
+          }),
+        }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false)
+        throw new Error(data.error || "HTTP " + res.status)
+      showNotification("紐付けを保存しました", "success")
+      setEditing(null)
+      await load()
+    } catch (e: any) {
+      showNotification(`保存に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const pick = pickRef.current
+
+  return (
+    <div className="space-y-4">
+      {/* フィルタ */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 border border-border rounded-lg bg-card/50">
+        <Field label="支払日">
+          <div className="flex items-center gap-1">
+            <Input type="date" value={filters.payment_from} onChange={(e) => setF({ payment_from: e.target.value })} />
+            <span className="text-muted-foreground text-xs">〜</span>
+            <Input type="date" value={filters.payment_to} onChange={(e) => setF({ payment_to: e.target.value })} />
+          </div>
+        </Field>
+        <Field label="納期">
+          <div className="flex items-center gap-1">
+            <Input type="date" value={filters.delivery_from} onChange={(e) => setF({ delivery_from: e.target.value })} />
+            <span className="text-muted-foreground text-xs">〜</span>
+            <Input type="date" value={filters.delivery_to} onChange={(e) => setF({ delivery_to: e.target.value })} />
+          </div>
+        </Field>
+        <Field label="種類">
+          <NativeSelect value={filters.category} onChange={(e) => setF({ category: e.target.value })}>
+            <option value="">全種類</option>
+            <option value="service">業務委託</option>
+            <option value="license">ライセンス</option>
+            <option value="publication">出版</option>
+            <option value="sales">売買</option>
+            <option value="nda">NDA</option>
+          </NativeSelect>
+        </Field>
+        <Field label="取引先 (名称 / コード)">
+          <Input value={filters.vendor} placeholder="例: 株式会社X / V-001" onChange={(e) => setF({ vendor: e.target.value })} onKeyDown={(e) => e.key === "Enter" && load()} />
+        </Field>
+        <Field label="担当 (作成者 / 氏名)">
+          <Input value={filters.owner} placeholder="例: 山田 / メール" onChange={(e) => setF({ owner: e.target.value })} onKeyDown={(e) => e.key === "Enter" && load()} />
+        </Field>
+        <Field label="キーワード (品目 / 仕様 / 契約名 / 文書番号)">
+          <Input value={filters.q} placeholder="フリーワード" onChange={(e) => setF({ q: e.target.value })} onKeyDown={(e) => e.key === "Enter" && load()} />
+        </Field>
+        <div className="flex items-end gap-2">
+          <Button onClick={load} disabled={loading}>
+            <Search />
+            検索
+          </Button>
+          <Button variant="outline" onClick={clear} disabled={loading}>
+            クリア
+          </Button>
+        </div>
+        <label className="flex items-end gap-2 text-xs font-mono text-muted-foreground cursor-pointer pb-2">
+          <input type="checkbox" className="h-4 w-4" checked={filters.include_all} onChange={(e) => setF({ include_all: e.target.checked })} />
+          古い版・重複も表示
+        </label>
+      </div>
+
+      {/* ツールバー */}
+      <div className="flex items-center gap-3 flex-wrap">
+        <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+          {loading ? "検索中…" : `${rows.length} 件${total && total > rows.length ? ` / 全 ${total} 件` : ""}`}
+        </span>
+        <span className="text-xs text-muted-foreground">行をクリックで紐付けを編集</span>
+        <div className="flex-1" />
+        <Button variant="outline" size="sm" onClick={() => csvExport(Array.from(selected))} disabled={selected.size === 0}>
+          <Download />
+          選択をCSV ({selected.size})
+        </Button>
+        <Button size="sm" onClick={() => csvExport()}>
+          <Download />
+          全件CSV
+        </Button>
+      </div>
+
+      {/* テーブル */}
+      <div className="border border-border rounded-lg overflow-x-auto">
+        {error ? (
+          <div className="p-8 text-center text-sm text-destructive">読み込みに失敗しました: {error}</div>
+        ) : rows.length === 0 && !loading ? (
+          <div className="p-12 text-center text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+            該当する条件明細がありません
+          </div>
+        ) : (
+          <table className="w-full text-xs">
+            <thead className="bg-muted/40 text-[10px] font-mono uppercase tracking-[0.1em] text-muted-foreground">
+              <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left [&>th]:whitespace-nowrap">
+                <th className="w-8">
+                  <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />
+                </th>
+                <th>支払日</th>
+                <th>納期</th>
+                <th>種類</th>
+                <th>取引先</th>
+                <th>担当</th>
+                <th>品目</th>
+                <th>計算</th>
+                <th className="text-right">数量</th>
+                <th className="text-right">単価</th>
+                <th className="text-right">金額(税抜)</th>
+                <th>文書番号</th>
+                <th>契約名 / 課題</th>
+                <th>紐付け</th>
+                <th>状態</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r) => {
+                const dir =
+                  r.flow_direction === "in" || r.flow_direction === "out"
+                    ? r.flow_direction
+                    : r.is_inbound
+                    ? "out"
+                    : ""
+                const sf = r.status_flags || {}
+                return (
+                  <tr
+                    key={r.id}
+                    className="border-t border-border hover:bg-muted/30 cursor-pointer align-top [&>td]:px-2 [&>td]:py-2"
+                    onClick={() => openEdit(r)}
+                  >
+                    <td onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(Number(r.id))} onChange={() => toggle(Number(r.id))} />
+                    </td>
+                    <td className="whitespace-nowrap">{r.payment_date || "—"}</td>
+                    <td className="whitespace-nowrap">{r.delivery_date || "—"}</td>
+                    <td className="whitespace-nowrap">
+                      <Badge className="bg-violet-100 text-violet-700 hover:bg-violet-100">{catLabel(r.contract_category)}</Badge>
+                      {dir === "out" ? (
+                        <Badge className="ml-1 bg-emerald-100 text-emerald-700 hover:bg-emerald-100">アウト(受領)</Badge>
+                      ) : dir === "in" ? (
+                        <Badge variant="outline" className="ml-1">イン(支払)</Badge>
+                      ) : null}
+                      {r.contract_type && <div className="text-[10px] text-muted-foreground mt-0.5">{r.contract_type}</div>}
+                    </td>
+                    <td className="min-w-[120px]">
+                      {r.vendor_name || "—"}
+                      {r.vendor_code && <div className="text-[10px] text-muted-foreground">{r.vendor_code}</div>}
+                    </td>
+                    <td className="whitespace-nowrap">{r.owner_name || "—"}</td>
+                    <td className="min-w-[140px]">
+                      <div>{r.item_name || "—"}</div>
+                      {r.spec && <div className="text-[10px] text-muted-foreground">{r.spec}</div>}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {r.calc_method || ""}
+                      {r.payment_terms && <div className="text-[10px] text-muted-foreground">{r.payment_terms}</div>}
+                    </td>
+                    <td className="text-right whitespace-nowrap">{r.quantity ?? ""}</td>
+                    <td className="text-right whitespace-nowrap">{yen(r.unit_price)}</td>
+                    <td className="text-right whitespace-nowrap font-mono">{yen(r.amount_ex_tax)}</td>
+                    <td className="whitespace-nowrap">{r.document_number || "—"}</td>
+                    <td className="min-w-[140px]">
+                      {r.contract_title || "—"}
+                      {r.issue_key && <div className="text-[10px] text-muted-foreground">{r.issue_key}</div>}
+                    </td>
+                    <td className="min-w-[160px]">
+                      <div className="flex flex-wrap gap-1">
+                        {r.work_title && <LinkPill tone="work">作 {r.work_title}</LinkPill>}
+                        {r.source_ip_title && <LinkPill tone="ip">原 {r.source_ip_title}</LinkPill>}
+                        {(r.master_contract_title || r.master_contract_number) && (
+                          <LinkPill tone="master">基 {r.master_contract_title || r.master_contract_number}</LinkPill>
+                        )}
+                        {(r.ringi_number || r.ringi_title) && (
+                          <LinkPill tone="ringi">
+                            稟 {r.ringi_number ? `${r.ringi_number}${r.ringi_title ? " " + r.ringi_title : ""}` : r.ringi_title}
+                          </LinkPill>
+                        )}
+                        {!r.work_title && !r.source_ip_title && !r.master_contract_title && !r.master_contract_number && !r.ringi_number && !r.ringi_title && (
+                          <span className="text-muted-foreground">＋ 未設定</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="min-w-[120px]">
+                      <div className="flex flex-wrap gap-1">
+                        {STATUS_DEFS.filter((d) => sf[d.key]).map((d) => (
+                          <React.Fragment key={d.key}>
+                            <LinkPill tone="status">{d.label}</LinkPill>
+                          </React.Fragment>
+                        ))}
+                        {!STATUS_DEFS.some((d) => sf[d.key]) && <span className="text-muted-foreground">—</span>}
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {/* 紐付け編集モーダル */}
+      <Dialog open={!!editing} onOpenChange={(v) => !v && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>紐付けを編集</DialogTitle>
+          </DialogHeader>
+          {editing && form && (
+            <DialogBody className="space-y-3">
+              <div className="text-[11px] text-muted-foreground bg-muted/40 border border-border rounded-md p-2.5 leading-relaxed">
+                品目: <b className="text-foreground">{editing.item_name || "—"}</b>
+                <br />
+                文書: {editing.document_number || "—"} / 取引先: {editing.vendor_name || "—"} / 支払日: {editing.payment_date || "—"}
+              </div>
+              <Field label="原作 (source IP)">
+                <NativeSelect value={form.source_ip_id} onChange={(e) => setForm({ ...form, source_ip_id: e.target.value })}>
+                  <option value="">— なし —</option>
+                  {(pick?.source || []).map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {(s.source_code ? s.source_code + " : " : "") + (s.title || "#" + s.id)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="作品 (work)">
+                <NativeSelect value={form.work_id} onChange={(e) => setForm({ ...form, work_id: e.target.value })}>
+                  <option value="">— なし —</option>
+                  {(pick?.works || []).map((w) => (
+                    <option key={w.id} value={w.id}>
+                      {(w.work_code ? w.work_code + " : " : "") + (w.title || "#" + w.id)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="マスター契約 (基本契約 / 作品モデル v3)">
+                <NativeSelect value={form.master_contract_id} onChange={(e) => setForm({ ...form, master_contract_id: e.target.value })}>
+                  <option value="">— なし —</option>
+                  {(pick?.masters || []).map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {(c.document_number ? c.document_number + " : " : "") + (c.contract_title || "#" + c.id)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="稟議 (ringi)">
+                <NativeSelect value={form.ringi_id} onChange={(e) => setForm({ ...form, ringi_id: e.target.value })}>
+                  <option value="">— なし —</option>
+                  {(pick?.ringi || []).map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {(g.ringi_number ? g.ringi_number + " : " : "") + (g.title || "#" + g.id)}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </Field>
+              <Field label="状態">
+                <div className="flex flex-col gap-2">
+                  {STATUS_DEFS.map((d) => (
+                    <label key={d.key} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="h-4 w-4"
+                        checked={!!form.status_flags?.[d.key]}
+                        onChange={(e) =>
+                          setForm({
+                            ...form,
+                            status_flags: { ...form.status_flags, [d.key]: e.target.checked },
+                          })
+                        }
+                      />
+                      {d.label}
+                    </label>
+                  ))}
+                </div>
+              </Field>
+              <Field label="方向 (in/out)">
+                <NativeSelect value={form.flow_direction} onChange={(e) => setForm({ ...form, flow_direction: e.target.value })}>
+                  <option value="">(未設定)</option>
+                  <option value="in">イン — 当社が支払う(ライセンスイン/プロダクトイン・仕入)</option>
+                  <option value="out">アウト — 当社が受領する(ライセンスアウト/プロダクトアウト)</option>
+                </NativeSelect>
+                <p className="text-[11px] text-muted-foreground mt-1">
+                  「アウト」にすると当社の受領明細として「請求権台帳(受領予定)」へ自動取込されます。
+                </p>
+              </Field>
+            </DialogBody>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)} disabled={saving}>
+              <X />
+              キャンセル
+            </Button>
+            <Button onClick={saveLinks} disabled={saving}>
+              {saving ? "保存中…" : "保存"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-1">
+      <Label className="text-[11px] text-muted-foreground">{label}</Label>
+      {children}
+    </div>
+  )
+}
+
+function LinkPill({ tone, children }: { tone: "work" | "ip" | "master" | "ringi" | "status"; children: React.ReactNode }) {
+  const tones: Record<string, string> = {
+    work: "bg-indigo-100 text-indigo-700",
+    ip: "bg-emerald-100 text-emerald-700",
+    master: "bg-amber-100 text-amber-700",
+    ringi: "bg-pink-100 text-pink-700",
+    status: "bg-teal-100 text-teal-700",
+  }
+  return (
+    <span className={`inline-block text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap ${tones[tone]}`}>
+      {children}
+    </span>
+  )
+}
