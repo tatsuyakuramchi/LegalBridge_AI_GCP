@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck, ListChecks, Coins } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck, ListChecks, Coins, Network } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -19,6 +19,8 @@ const tabs = [
   { to: "/master/conditions", label: "条件明細", icon: ListChecks },
   // 統合 P3-3: 請求権台帳 (受領予定 / サブライセンス等)
   { to: "/master/sublicense", label: "請求権(受領)", icon: Coins },
+  // 統合 P3-4: 分配構造マップ (作品中心の上流分配←当社←下流受領)
+  { to: "/master/receivable-map", label: "分配マップ", icon: Network },
   // Phase 22.21.81: 文書作成途中の draft (一時保存) の掃除タブ
   { to: "/master/drafts", label: "Drafts (一時保存)", icon: FileEdit },
   { to: "/master/staff", label: "Staff", icon: Users },
