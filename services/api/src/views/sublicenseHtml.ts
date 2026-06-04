@@ -53,7 +53,7 @@ export function sublicensePage(): string {
 
   <div class="sec">
     <div class="toolbar">
-      <h2>受領条件(作品 × サブライセンシー)<span class="muted" id="deal-count">—</span></h2>
+      <h2>請求権の条件(種別 × 相手方 × 受領条件)<span class="muted" id="deal-count">—</span></h2>
       <button class="btn" id="btn-add">＋ 条件を追加</button>
     </div>
     <div class="table-scroll">
@@ -65,7 +65,9 @@ export function sublicensePage(): string {
     <h2>受領予定一覧</h2>
     <div class="filters">
       <div class="f"><label>受領予定日</label><div class="range"><input class="tech-input" type="date" id="from"><span>〜</span><input class="tech-input" type="date" id="to"></div></div>
-      <div class="f"><label>サブライセンシー</label><input class="tech-input" type="text" id="sublicensee" placeholder="名称"></div>
+      <div class="f"><label>種別</label><select class="tech-select" id="kind"><option value="">全種別</option><option value="sublicense">サブライセンス</option><option value="publication">出版印税</option><option value="license_out">ライセンスアウト</option><option value="service">役務・その他</option><option value="other">その他</option></select></div>
+      <div class="f"><label>請求状態</label><select class="tech-select" id="status"><option value="">全状態</option><option value="unbilled">未請求</option><option value="billed">請求済</option><option value="received">入金済</option></select></div>
+      <div class="f"><label>相手方</label><input class="tech-input" type="text" id="sublicensee" placeholder="名称"></div>
       <div class="f"><label>作品</label><input class="tech-input" type="text" id="work" placeholder="作品名 / コード"></div>
       <div class="f"><label>キーワード</label><input class="tech-input" type="text" id="q" placeholder="作品/相手/契約番号"></div>
       <div class="f" style="justify-content:end;flex-direction:row;gap:8px;align-items:end;">
@@ -90,10 +92,17 @@ export function sublicensePage(): string {
   <div class="modal">
     <div class="mhead"><h3 id="m-title">受領条件</h3><button class="xbtn" id="m-close">×</button></div>
     <div class="mbody">
+      <div class="fld full"><label>種別(請求権の種類)</label><select class="tech-select" id="m-kind">
+        <option value="sublicense">サブライセンス受領</option>
+        <option value="publication">出版印税</option>
+        <option value="license_out">ライセンスアウト</option>
+        <option value="service">役務・その他受領</option>
+        <option value="other">その他</option>
+      </select></div>
       <div class="fld"><label>作品</label><select class="tech-select" id="m-work"><option value="">—</option></select></div>
-      <div class="fld"><label>サブライセンシー</label><select class="tech-select" id="m-sub"><option value="">— 手入力 —</option></select></div>
-      <div class="fld full"><label>サブライセンシー名(マスタ未登録時の手入力)</label><input class="tech-input" id="m-subname" placeholder="未登録の相手はこちらに名称"></div>
-      <div class="fld"><label>参照: 個別利用許諾契約番号</label><input class="tech-input" id="m-contract" placeholder="ARC-LIC-2026-0001"></div>
+      <div class="fld"><label>サブライセンシー(マスタ)</label><select class="tech-select" id="m-sub"><option value="">— 手入力 —</option></select></div>
+      <div class="fld full"><label>相手方名(手入力 / マスタ未登録・サブライセンシー以外)</label><input class="tech-input" id="m-cpname" placeholder="例: ○○出版 / 海外ライセンシー名"></div>
+      <div class="fld"><label>参照: 契約番号(個別利用許諾 等)</label><input class="tech-input" id="m-contract" placeholder="ARC-LIC-2026-0001"></div>
       <div class="fld"><label>算定基準</label><select class="tech-select" id="m-basis"><option value="sales">売上ベース(料率×売上)</option><option value="manufacturing">製造数ベース(料率×単価×数量)</option></select></div>
       <div class="fld"><label>料率 (%)</label><input class="tech-input" type="number" step="0.0001" id="m-rate" placeholder="10"></div>
       <div class="fld"><label>基準価格(製造数ベース時)</label><input class="tech-input" type="number" id="m-unit" placeholder="単価"></div>
@@ -145,6 +154,9 @@ export function sublicensePage(): string {
   var DEALS = [];
   var RECEIPTS = [];
   var editId = null;
+  var KIND_LABEL = { sublicense:"サブライセンス", publication:"出版印税", license_out:"ライセンスアウト", service:"役務・その他", other:"その他" };
+  var STATUS_LABEL = { unbilled:"未請求", billed:"請求済", received:"入金済" };
+  function kindLabel(k){return KIND_LABEL[k]||k||"";}
 
   function esc(s){return String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
   function yen(n){var v=Number(n);return isFinite(v)?v.toLocaleString("ja-JP"):"";}
@@ -166,11 +178,12 @@ export function sublicensePage(): string {
     document.getElementById("deal-count").textContent=DEALS.length+" 件";
     var wrap=document.getElementById("deals-wrap");
     if(DEALS.length===0){wrap.innerHTML='<div class="empty">受領条件がありません。「＋ 条件を追加」から登録してください。</div>';return;}
-    var head='<tr><th>作品</th><th>サブライセンシー</th><th>基準</th><th class="num">料率%</th><th class="num">MG</th><th class="num">前払</th><th class="num">受領予定(net)</th><th>周期/期間</th><th>参照契約</th></tr>';
+    var head='<tr><th>種別</th><th>作品</th><th>相手方</th><th>基準</th><th class="num">料率%</th><th class="num">MG</th><th class="num">前払</th><th class="num">受領予定(net)</th><th>周期/期間</th><th>参照契約</th></tr>';
     var body=DEALS.map(function(r){
       var basis=r.basis==="manufacturing"?'<span class="pill">製造数</span>':'<span class="pill sales">売上</span>';
       var term=(r.term_start||"—")+" 〜 "+(r.term_end||"継続");
       return '<tr class="clickable" data-id="'+r.id+'">'+
+        '<td><span class="pill">'+esc(kindLabel(r.receivable_kind))+'</span></td>'+
         '<td class="wrap">'+esc((r.work_code?r.work_code+" : ":"")+(r.work_title||"—"))+'</td>'+
         '<td class="wrap">'+esc(r.sublicensee_name||"—")+'</td>'+
         '<td>'+basis+'</td>'+
@@ -191,9 +204,10 @@ export function sublicensePage(): string {
     document.getElementById("m-title").textContent=editId?"受領条件を編集":"受領条件を追加";
     document.getElementById("m-delete").style.display=editId?"":"none";
     var d=deal||{};
+    document.getElementById("m-kind").value=d.receivable_kind||"sublicense";
     document.getElementById("m-work").value=d.work_id||"";
     document.getElementById("m-sub").value=d.sublicensee_id||"";
-    document.getElementById("m-subname").value=d.inline_sublicensee_name||"";
+    document.getElementById("m-cpname").value=d.counterparty_name||d.inline_sublicensee_name||"";
     document.getElementById("m-contract").value=d.source_contract_number||"";
     document.getElementById("m-basis").value=d.basis||"sales";
     document.getElementById("m-rate").value=d.rate_pct==null?"":d.rate_pct;
@@ -217,9 +231,11 @@ export function sublicensePage(): string {
   function collect(){
     return {
       id: editId||undefined,
+      receivable_kind: gv("m-kind")||"sublicense",
       work_id: gv("m-work")||null,
       sublicensee_id: gv("m-sub")||null,
-      inline_sublicensee_name: gv("m-subname")||null,
+      counterparty_name: gv("m-cpname")||null,
+      inline_sublicensee_name: null, // 手入力は counterparty_name に一本化(旧 inline は移行)
       source_contract_number: gv("m-contract")||null,
       basis: gv("m-basis")||"sales",
       rate_pct: gv("m-rate")||null,
@@ -269,7 +285,7 @@ export function sublicensePage(): string {
   /* ---- 受領予定一覧 ---- */
   function rgather(){
     var p=new URLSearchParams();
-    ["from","to","sublicensee","work","q"].forEach(function(id){var v=gv(id);if(v)p.set(id,v);});
+    ["from","to","kind","status","sublicensee","work","q"].forEach(function(id){var v=gv(id);if(v)p.set(id,v);});
     return p;
   }
   async function loadReceipts(){
@@ -285,15 +301,18 @@ export function sublicensePage(): string {
   function renderReceipts(){
     var wrap=document.getElementById("receipts-wrap");
     if(RECEIPTS.length===0){wrap.innerHTML='<div class="empty">受領予定がありません(条件の開始日・周期・金額を設定してください)。</div>';updateSel();return;}
-    var head='<tr><th class="chk"><input type="checkbox" id="chk-all"></th><th>状態</th><th>受領予定日</th><th>サブライセンシー</th><th>作品</th><th>参照契約</th><th>区分</th><th>実売上/数量</th><th>回</th><th class="num">金額</th></tr>';
+    var head='<tr><th class="chk"><input type="checkbox" id="chk-all"></th><th>請求状態</th><th>種別</th><th>受領予定日</th><th>相手方</th><th>作品</th><th>参照契約</th><th>区分</th><th>実売上/数量</th><th>回</th><th class="num">金額</th></tr>';
     var body=RECEIPTS.map(function(r){
       var kubun=r.estimated?'<span class="pill">見込</span>':'<span class="pill sales">実績</span>';
-      var state=r.confirmed?'<span class="pill ok">受領済</span>':'<span class="pill">予定</span>';
+      var st=r.status||"unbilled";
+      var sel='<select class="tech-select stsel" data-deal="'+r.deal_id+'" data-date="'+esc(r.receipt_date)+'" onclick="event.stopPropagation()" style="font-size:11px;padding:2px 4px;">'+
+        ['unbilled','billed','received'].map(function(k){return '<option value="'+k+'"'+(k===st?' selected':'')+'>'+STATUS_LABEL[k]+'</option>';}).join("")+'</select>';
       var reported=r.basis==="manufacturing"?(r.reported_quantity==null?"":yen(r.reported_quantity)):(r.reported_sales==null?"":yen(r.reported_sales));
       var note=(r.mg_topup?' <span class="pill mg">MG+'+yen(r.mg_topup)+'</span>':'')+(r.advance_applied?' <span class="pill adv">前払-'+yen(r.advance_applied)+'</span>':'');
-      return '<tr class="clickable'+(r.confirmed?' confirmed':'')+'" data-deal="'+r.deal_id+'" data-date="'+esc(r.receipt_date)+'" data-basis="'+esc(r.basis)+'" data-confirmed="'+(r.confirmed?'1':'')+'">'+
-        '<td>'+state+'</td>'+
+      return '<tr class="clickable'+(st==="received"?' confirmed':'')+'" data-deal="'+r.deal_id+'" data-date="'+esc(r.receipt_date)+'" data-basis="'+esc(r.basis)+'" data-confirmed="'+(r.confirmed?'1':'')+'">'+
         '<td class="chk"><input type="checkbox" class="rchk" value="'+esc(r.row_id)+'" onclick="event.stopPropagation()"></td>'+
+        '<td>'+sel+'</td>'+
+        '<td><span class="pill">'+esc(kindLabel(r.receivable_kind))+'</span></td>'+
         '<td>'+esc(r.receipt_date)+'</td>'+
         '<td class="wrap">'+esc(r.sublicensee_name||"—")+'</td>'+
         '<td class="wrap">'+esc((r.work_code?r.work_code+" : ":"")+(r.work_title||"—"))+'</td>'+
@@ -362,6 +381,18 @@ export function sublicensePage(): string {
     }catch(e){alert("処理に失敗しました: "+(e&&e.message?e.message:e));}finally{btn.disabled=false;}
   }
 
+  /* ---- 請求状態(台帳)更新 ---- */
+  async function setStatus(dealId, date, status){
+    try{
+      var res=await fetch("/api/sublicense/receipts/status",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json"},body:JSON.stringify({deal_id:dealId,period_date:date,status:status})});
+      var data=await res.json().catch(function(){return{};});
+      if(!res.ok||data.ok===false)throw new Error(data.error||("HTTP "+res.status));
+      // RECEIPTS 内の該当行を更新して再描画(全件再取得は不要)
+      RECEIPTS.forEach(function(r){if(r.deal_id===dealId&&r.receipt_date===date)r.status=status;});
+      renderReceipts();
+    }catch(e){alert("状態更新に失敗しました: "+(e&&e.message?e.message:e));loadReceipts();}
+  }
+
   function checkedIds(){return Array.prototype.slice.call(document.querySelectorAll(".rchk:checked")).map(function(c){return c.value;});}
   function updateSel(){var el=document.getElementById("sel-n");if(el)el.textContent=checkedIds().length;}
   function csvExport(ids){var p=rgather();if(ids&&ids.length)p.set("ids",ids.join(","));window.location.href="/api/sublicense/receipts/export?"+p.toString();}
@@ -377,11 +408,18 @@ export function sublicensePage(): string {
   ["m-basis","m-rate","m-unit","m-forecast","m-mg","m-adv","m-cur"].forEach(function(id){document.getElementById(id).addEventListener("input",updateCalc);});
   document.getElementById("backdrop").addEventListener("click",function(e){if(e.target===document.getElementById("backdrop"))closeModal();});
   document.getElementById("btn-search").addEventListener("click",loadReceipts);
-  document.getElementById("btn-clear").addEventListener("click",function(){["from","to","sublicensee","work","q"].forEach(function(id){document.getElementById(id).value="";});loadReceipts();});
+  document.getElementById("kind").addEventListener("change",loadReceipts);
+  document.getElementById("status").addEventListener("change",loadReceipts);
+  document.getElementById("btn-clear").addEventListener("click",function(){["from","to","kind","status","sublicensee","work","q"].forEach(function(id){document.getElementById(id).value="";});loadReceipts();});
+  document.getElementById("receipts-wrap").addEventListener("change",function(e){
+    var s=e.target;
+    if(s&&s.classList&&s.classList.contains("stsel")){setStatus(Number(s.getAttribute("data-deal")),s.getAttribute("data-date"),s.value);}
+  });
   document.getElementById("receipts-wrap").addEventListener("click",function(e){
     var t=e.target;
     if(t&&t.id==="chk-all"){Array.prototype.slice.call(document.querySelectorAll(".rchk")).forEach(function(c){c.checked=t.checked;});updateSel();return;}
     if(t&&(t.classList.contains("rchk"))){updateSel();return;}
+    if(t&&t.classList&&t.classList.contains("stsel"))return; // 状態selectはモーダルを開かない
     var tr=t.closest?t.closest("tr.clickable"):null;
     if(tr){openReport(Number(tr.getAttribute("data-deal")),tr.getAttribute("data-date"),tr.getAttribute("data-basis"),tr.getAttribute("data-confirmed")==="1");}
   });
@@ -400,8 +438,8 @@ export function sublicensePage(): string {
   return popAdminPage({
     active: "sublicense",
     masterCss: MASTER_CSS,
-    title: "受領予定(サブライセンス)",
-    subtitle: "サブライセンス受領管理 · 受領予定(料率×売上 / MG / 前払)",
+    title: "請求権台帳(受領予定)",
+    subtitle: "当社の請求権 · サブライセンス/出版印税/ライセンスアウト等の受領予定と請求状態(未請求/請求済/入金済)",
     body,
     headExtra: `<style>${EXTRA_CSS}</style>`,
   });

@@ -103,8 +103,8 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
         <div class="desc">支払日 / 納期 / 担当 / 種類 / 取引先で明細を検索・紐付け編集・CSV</div>
       </a>
       <a class="tile master" href="/master/sublicense">
-        <div class="title">💴 受領予定(サブライセンス) <span class="arrow">→</span></div>
-        <div class="desc">当社が請求/受領するライセンス料(料率×売上 / MG / 前払)</div>
+        <div class="title">💴 請求権台帳(受領予定) <span class="arrow">→</span></div>
+        <div class="desc">当社の請求権(サブライセンス/出版印税/ライセンスアウト等)の受領予定と請求状態</div>
       </a>
     </div>
   </section>

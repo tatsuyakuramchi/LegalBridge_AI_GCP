@@ -27,7 +27,7 @@ const NAV_ADMIN: NavItem[] = [
   { key: "staff", href: "/master/staff", icon: "👥", label: "スタッフ" },
   { key: "contracts", href: "/master/contracts", icon: "📄", label: "契約台帳" },
   { key: "work-model", href: "/work-model", icon: "🎬", label: "作品モデル" },
-  { key: "sublicense", href: "/master/sublicense", icon: "💴", label: "受領(サブライセンス)" },
+  { key: "sublicense", href: "/master/sublicense", icon: "💴", label: "請求権(受領予定)" },
   { key: "admin", href: "/admin", icon: "⚙️", label: "管理" },
 ];
 const NAV_VIEW: NavItem[] = [

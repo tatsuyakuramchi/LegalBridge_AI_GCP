@@ -132,6 +132,7 @@ import {
   deleteReport as deleteSubReport,
   confirmReceipt as confirmSubReceipt,
   unconfirmReceipt as unconfirmSubReceipt,
+  setReceiptStatus as setSubReceiptStatus,
 } from "./src/services/sublicenseService.ts";
 import {
   listConditions,
@@ -2835,6 +2836,7 @@ async function startServer() {
       const q = req.query as Record<string, string>;
       const result = await listSubReceipts({
         from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
+        kind: q.kind, status: q.status,
       });
       res.json({ ok: true, ...result });
     } catch (error: any) {
@@ -2919,6 +2921,22 @@ async function startServer() {
     }
   });
 
+  // 請求状態(台帳)更新: 未請求/請求済/入金済
+  app.post("/api/sublicense/receipts/status", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const dealId = Number(b.deal_id);
+      if (!Number.isFinite(dealId) || !b.period_date || !b.status) {
+        return res.status(400).json({ ok: false, error: "deal_id, period_date, status required" });
+      }
+      await setSubReceiptStatus(dealId, String(b.period_date), String(b.status), b.note);
+      res.json({ ok: true });
+    } catch (error: any) {
+      console.error("/api/sublicense/receipts/status POST failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   // 受領予定 CSV(全件 or ?ids=deal:idx,...)
   app.get("/api/sublicense/receipts/export", requireIapUser({ renderErrorPage }), async (req, res) => {
     try {
@@ -2926,6 +2944,7 @@ async function startServer() {
       const ids = q.ids ? String(q.ids).split(",").map((s) => s.trim()).filter(Boolean) : undefined;
       const csv = await exportSubReceiptsCsv({
         from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
+        kind: q.kind, status: q.status,
         ids: ids as any,
       });
       const stamp = new Date().toISOString().slice(0, 10);

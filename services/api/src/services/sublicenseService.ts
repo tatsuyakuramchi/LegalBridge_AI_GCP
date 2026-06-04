@@ -16,9 +16,13 @@ import { query } from "../lib/db.ts";
 
 export type SublicenseDeal = {
   id?: number;
+  receivable_kind?: string; // sublicense | publication | license_out | service | other
   work_id?: number | null;
   sublicensee_id?: number | null;
   inline_sublicensee_name?: string | null;
+  counterparty_name?: string | null; // サブライセンシー以外の相手方名
+  counterparty_vendor_id?: number | null;
+  source_contract_id?: number | null;
   source_contract_number?: string | null;
   basis?: string; // sales | manufacturing
   rate_pct?: number | null;
@@ -327,10 +331,72 @@ export async function unconfirmReceipt(dealId: number, periodDate: string): Prom
   await query(`DELETE FROM payments WHERE payment_no = $1`, [`SLI-${dealId}-${periodDate}`]);
 }
 
+// ── 請求状態(台帳)──────────────────────────────────────────────
+// 受領予定 各回(deal × period_date)の 未請求/請求済/入金済 を保持・更新する。
+// 金額・期日は deal から算出するため、ここでは状態のみ管理する(入金消込はしない)。
+export const RECEIVABLE_STATUSES = [
+  { key: "unbilled", label: "未請求" },
+  { key: "billed", label: "請求済" },
+  { key: "received", label: "入金済" },
+] as const;
+const VALID_STATUS = new Set(RECEIVABLE_STATUSES.map((s) => s.key));
+
+/** `${deal_id}:${period_date}` → 状態レコード のマップ。未登録は未請求扱い。 */
+async function loadStatusMap(): Promise<Record<string, any>> {
+  const map: Record<string, any> = {};
+  try {
+    const res = await query(
+      `SELECT deal_id, period_date, status, billed_date, received_date, note
+         FROM receivable_statuses`
+    );
+    for (const r of res.rows) {
+      map[`${Number(r.deal_id)}:${d2s(r.period_date)}`] = {
+        status: r.status || "unbilled",
+        billed_date: d2s(r.billed_date) || null,
+        received_date: d2s(r.received_date) || null,
+        note: r.note || "",
+      };
+    }
+  } catch (err: any) {
+    if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+  }
+  return map;
+}
+
+/** 受領予定1回の請求状態を設定。billed→billed_date、received→received_date を自動補完。 */
+export async function setReceiptStatus(
+  dealId: number,
+  periodDate: string,
+  status: string,
+  note?: string | null
+): Promise<void> {
+  if (!VALID_STATUS.has(status as any)) throw new Error("不正な状態です: " + status);
+  await query(
+    `INSERT INTO receivable_statuses (deal_id, period_date, status, billed_date, received_date, note)
+     VALUES ($1, $2, $3,
+             CASE WHEN $3 IN ('billed','received') THEN CURRENT_DATE END,
+             CASE WHEN $3 = 'received' THEN CURRENT_DATE END,
+             $4)
+     ON CONFLICT (deal_id, period_date) DO UPDATE SET
+       status = EXCLUDED.status,
+       billed_date = CASE
+         WHEN EXCLUDED.status IN ('billed','received')
+           THEN COALESCE(receivable_statuses.billed_date, CURRENT_DATE)
+         ELSE NULL END,
+       received_date = CASE
+         WHEN EXCLUDED.status = 'received'
+           THEN COALESCE(receivable_statuses.received_date, CURRENT_DATE)
+         ELSE NULL END,
+       note = COALESCE(EXCLUDED.note, receivable_statuses.note),
+       updated_at = now()`,
+    [dealId, periodDate, status, note ?? null]
+  );
+}
+
 const SELECT_DEAL = `
   SELECT d.*,
          w.title AS work_title, w.work_code,
-         COALESCE(s.name, d.inline_sublicensee_name) AS sublicensee_name,
+         COALESCE(s.name, d.counterparty_name, d.inline_sublicensee_name) AS sublicensee_name,
          s.category AS sublicensee_category
     FROM sublicense_deals d
     LEFT JOIN works w ON w.id = d.work_id
@@ -339,6 +405,7 @@ const SELECT_DEAL = `
 function mapDeal(r: any) {
   return {
     id: Number(r.id),
+    receivable_kind: r.receivable_kind || "sublicense",
     work_id: r.work_id == null ? null : Number(r.work_id),
     work_title: r.work_title || "",
     work_code: r.work_code || "",
@@ -346,6 +413,9 @@ function mapDeal(r: any) {
     sublicensee_name: r.sublicensee_name || "",
     sublicensee_category: r.sublicensee_category || "",
     inline_sublicensee_name: r.inline_sublicensee_name || "",
+    counterparty_name: r.counterparty_name || "",
+    counterparty_vendor_id: r.counterparty_vendor_id == null ? null : Number(r.counterparty_vendor_id),
+    source_contract_id: r.source_contract_id == null ? null : Number(r.source_contract_id),
     source_contract_number: r.source_contract_number || "",
     basis: r.basis || "sales",
     rate_pct: numOrNull(r.rate_pct),
@@ -377,15 +447,21 @@ export async function listDeals(): Promise<any[]> {
 
 export async function upsertDeal(deal: SublicenseDeal): Promise<number> {
   const cols = [
-    "work_id", "sublicensee_id", "inline_sublicensee_name", "source_contract_number",
+    "receivable_kind",
+    "work_id", "sublicensee_id", "inline_sublicensee_name",
+    "counterparty_name", "counterparty_vendor_id", "source_contract_id", "source_contract_number",
     "basis", "rate_pct", "unit_price", "forecast_amount", "mg_amount", "advance_amount",
     "currency", "cycle", "interval_unit", "interval_count", "billing_day",
     "term_start", "term_end", "status", "remarks",
   ];
   const vals = [
+    deal.receivable_kind || "sublicense",
     deal.work_id ?? null,
     deal.sublicensee_id ?? null,
     deal.inline_sublicensee_name || null,
+    deal.counterparty_name || null,
+    deal.counterparty_vendor_id ?? null,
+    deal.source_contract_id ?? null,
     deal.source_contract_number || null,
     deal.basis || "sales",
     numOrNull(deal.rate_pct),
@@ -429,18 +505,22 @@ export type ReceiptFilters = {
   sublicensee?: string;
   work?: string;
   q?: string;
+  kind?: string; // receivable_kind で絞り込み
+  status?: string; // unbilled | billed | received
   ids?: string[]; // 受領予定行の "deal:index" 形式 row_id(CSV選択用)
 };
 
-/** 全 active deal を受領予定の各回に展開した一覧。 */
+/** 全 active deal を受領予定(請求権)の各回に展開した一覧。 */
 export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; total: number }> {
   const deals = (await listDeals()).filter((d: any) => d.status !== "closed");
   const reportsMap = await loadReportsMap();
   const confirmed = await confirmedMap();
+  const statusMap = await loadStatusMap();
   const rows: any[] = [];
   for (const d of deals) {
     const sched = buildReceiptRows(d, reportsMap[d.id] || []);
     sched.forEach((s, idx) => {
+      const st = statusMap[`${d.id}:${s.date}`];
       rows.push({
         row_id: `${d.id}:${idx}`,
         deal_id: d.id,
@@ -448,13 +528,18 @@ export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; to
         of: sched.length,
         receipt_date: s.date,
         amount: s.amount,
-        confirmed: confirmed[`${d.id}:${s.date}`] === true, // 受領確定(payments記録)済み
+        confirmed: confirmed[`${d.id}:${s.date}`] === true, // 受領確定(payments記録)済み(旧)
+        status: st ? st.status : "unbilled", // 未請求/請求済/入金済(台帳)
+        billed_date: st ? st.billed_date : null,
+        received_date: st ? st.received_date : null,
+        status_note: st ? st.note : "",
         estimated: s.estimated, // true=見込 / false=実績報告ベース
         mg_topup: s.mg_topup,
         advance_applied: s.advance_applied,
         reported_sales: s.reported_sales,
         reported_quantity: s.reported_quantity,
         currency: d.currency,
+        receivable_kind: d.receivable_kind,
         work_title: d.work_title,
         work_code: d.work_code,
         sublicensee_name: d.sublicensee_name,
@@ -469,6 +554,8 @@ export async function listReceipts(f: ReceiptFilters): Promise<{ rows: any[]; to
   }
   // フィルタ
   let out = rows;
+  if (f.kind) out = out.filter((r) => r.receivable_kind === f.kind);
+  if (f.status) out = out.filter((r) => r.status === f.status);
   if (f.from) out = out.filter((r) => r.receipt_date >= f.from!);
   if (f.to) out = out.filter((r) => r.receipt_date <= f.to!);
   if (f.sublicensee) {
@@ -505,18 +592,26 @@ const csvCell = (v: any): string => {
 
 export async function exportReceiptsCsv(f: ReceiptFilters): Promise<string> {
   const { rows } = await listReceipts(f);
+  const statusLabel: Record<string, string> = { unbilled: "未請求", billed: "請求済", received: "入金済" };
+  const kindLabel: Record<string, string> = {
+    sublicense: "サブライセンス", publication: "出版印税", license_out: "ライセンスアウト",
+    service: "役務・その他", other: "その他",
+  };
   const headers = [
-    "受領予定日", "サブライセンシー", "作品コード", "作品", "参照契約番号",
-    "基準", "状態", "区分", "実売上/実数量", "料率(%)", "回", "金額", "通貨",
+    "受領予定日", "種別", "請求状態", "請求日", "入金日", "相手方", "作品コード", "作品", "参照契約番号",
+    "基準", "見込/実績", "実売上/実数量", "料率(%)", "回", "金額", "通貨",
     "MG上乗せ", "前払相殺", "MG総額", "前払",
   ];
   const lines = [headers.map(csvCell).join(",")];
   for (const r of rows) {
     lines.push(
       [
-        r.receipt_date, r.sublicensee_name, r.work_code, r.work_title, r.source_contract_number,
+        r.receipt_date,
+        kindLabel[r.receivable_kind] || r.receivable_kind || "",
+        statusLabel[r.status] || r.status || "",
+        r.billed_date || "", r.received_date || "",
+        r.sublicensee_name, r.work_code, r.work_title, r.source_contract_number,
         r.basis === "manufacturing" ? "製造数" : "売上",
-        r.confirmed ? "受領済" : "予定",
         r.estimated ? "見込" : "実績",
         r.basis === "manufacturing" ? (r.reported_quantity ?? "") : (r.reported_sales ?? ""),
         r.rate_pct ?? "", `${r.seq}/${r.of}`, r.amount, r.currency,
