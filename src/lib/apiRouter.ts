@@ -100,6 +100,9 @@ const READ_PATHS_ON_GET: RegExp[] = [
   /^\/api\/v3\/(?:source-ips|works|contracts)(?:\/|\?|$)/,
   // 統合 P3-3: 請求権受領(sublicense)は search-api 専用。read/CSV を含む。
   /^\/api\/sublicense(?:\/|\?|$)/,
+  // 統合 P3-4: 分配構造マップ(receivable-map)と作品別名(aliases)read。
+  /^\/api\/receivable-map(?:\/|\?|$)/,
+  /^\/api\/works\/\d+\/aliases(?:\?|$)/,
 ];
 
 // Routes that should go to the READ service even on POST.
@@ -121,6 +124,9 @@ const READ_PATHS_ON_POST: RegExp[] = [  /^\/api\/contract-check(?:\/|$)/,
   // 統合 P3-3: 請求権受領(sublicense)の書込(deals/reports/receipts/import)も
   //   全て search-api 正規実装へ。
   /^\/api\/sublicense(?:\/|\?|$)/,
+  // 統合 P3-4: 作品別名(タイトル名寄せ)の追加/削除は search-api 正規実装へ。
+  /^\/api\/works\/\d+\/aliases(?:\?|$)/,
+  /^\/api\/work-aliases\/\d+(?:\?|$)/,
 ];
 
 function resolveBaseUrl(method: string, path: string): string {
