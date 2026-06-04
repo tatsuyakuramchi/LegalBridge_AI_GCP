@@ -473,49 +473,85 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       if (value == null || String(value).trim() === '') return '';
       return '<div class="vw-dt">' + escHtml(label) + '</div><div class="vw-dd">' + escHtml(value) + '</div>';
     }
+    function yenNum(v) {
+      const n = Number(String(v == null ? '' : v).replace(/,/g, ''));
+      return Number.isFinite(n) && String(v).trim() !== '' ? n.toLocaleString('ja-JP') : '';
+    }
+    function dateStr(v) { return v ? String(v).slice(0, 10) : ''; }
     function renderView(v) {
       const entity = ENTITY_LABEL[v.entity_type] || v.entity_type || '';
       const isIndividual = v.entity_type === 'individual' || v.entity_type === 'sole_proprietor';
+      const isCorp = v.entity_type === 'corporate';
       const consent = (v.pii_consent_obtained === true)
-        ? ('同意取得済' + (v.pii_consent_date ? '（' + String(v.pii_consent_date).slice(0, 10) + '）' : ''))
+        ? ('同意取得済' + (v.pii_consent_date ? '（' + dateStr(v.pii_consent_date) + '）' : ''))
         : (isIndividual ? '未取得' : '');
+      const aliases = Array.isArray(v.aliases) ? v.aliases.join(', ') : (v.aliases || '');
+      // 取適法(下請法)適用判定: 資本金1000万超 or 従業員100人超 → 対象
+      const cap = Number(String(v.capital_yen || '').replace(/,/g, ''));
+      const emp = Number(String(v.employee_count || '').replace(/,/g, ''));
+      let subcontract = '';
+      if (v.subcontract_act_applicable === true) subcontract = '対象';
+      else if (v.subcontract_act_applicable === false) subcontract = '対象外';
+      else if (isCorp && (Number.isFinite(cap) || Number.isFinite(emp)) && (v.capital_yen || v.employee_count))
+        subcontract = ((Number.isFinite(cap) && cap >= 10000000) || (Number.isFinite(emp) && emp >= 100)) ? '対象' : '対象外';
+
       const addrs = Array.isArray(v.addresses) ? v.addresses : [];
       const banks = Array.isArray(v.bank_accounts) ? v.bank_accounts : [];
       const addrHtml = addrs.length
         ? addrs.map((a) => '<div>' + (a.is_primary ? '★ ' : '') + escHtml(a.address_label || '') + ' ' + escHtml(a.address || '') + '</div>').join('')
         : escHtml(v.address || '');
       const bankHtml = banks.length
-        ? banks.map((b) => '<div>' + (b.is_primary ? '★ ' : '') + escHtml(b.bank_name || '') + ' ' + escHtml(b.branch_name || '') + ' ' + escHtml(b.account_type || '') + ' ' + escHtml(b.account_number || '') + ' ' + escHtml(b.account_holder_kana || b.account_holder_name || '') + '</div>').join('')
+        ? banks.map((b) => '<div>' + (b.is_primary ? '★ ' : '') + escHtml((b.account_scope === 'overseas' ? '[海外] ' : '') + (b.bank_name || '')) + ' ' + escHtml(b.branch_name || '') + ' ' + escHtml(b.account_type || '') + ' ' + escHtml(b.account_number || b.iban || '') + ' ' + escHtml(b.account_holder_kana || b.account_holder_name || '') + (b.swift_bic ? ' SWIFT:' + escHtml(b.swift_bic) : '') + '</div>').join('')
         : escHtml([v.bank_name, v.branch_name, v.account_type, v.account_number, v.account_holder_kana].filter(Boolean).join(' '));
 
-      let html = '<div class="vw-grid">';
+      let html = '<div class="vw-sec" style="border-top:none;padding-top:0;margin-top:0;">基本情報</div><div class="vw-grid">';
       html += dl('取引先コード', v.vendor_code);
       html += dl('区分', entity);
       html += dl('正式名称', v.vendor_name);
       html += dl('屋号 / 略称', v.trade_name);
       if (isIndividual) html += dl('ペンネーム', v.pen_name);
       html += dl('敬称', v.vendor_suffix);
+      html += dl('別名', aliases);
       html += dl('代表者', v.vendor_rep);
       html += dl('法人番号', v.corporate_number);
       html += dl('取引内容区分', TXN_LABEL[v.transaction_category] || v.transaction_category);
+      html += dl('資本金(円)', yenNum(v.capital_yen));
+      html += dl('従業員数(人)', yenNum(v.employee_count));
+      html += dl('取適法 適用判定', subcontract);
+      html += dl('取引先主要事業', v.main_business);
       html += dl('決済条件', v.payment_terms);
       html += dl('評点', v.rating);
       html += dl('反社チェック', ANTI_LABEL[v.antisocial_check_result] || v.antisocial_check_result);
+      html += dl('取引先マスタ更新日', dateStr(v.master_updated_at));
       if (consent) html += dl('個人情報取得同意', consent);
       html += '</div>';
-      html += '<div class="vw-sec">連絡先</div><div class="vw-grid">';
-      html += dl('担当部署', v.contact_department);
-      html += dl('担当者', v.contact_name);
-      html += dl('電話', v.phone);
-      html += dl('メール', v.email);
-      html += '</div>';
+
+      const contact = [v.contact_department, v.contact_name, v.phone, v.email].some((x) => x && String(x).trim());
+      if (contact) {
+        html += '<div class="vw-sec">連絡先</div><div class="vw-grid">';
+        html += dl('担当部署', v.contact_department);
+        html += dl('担当者', v.contact_name);
+        html += dl('電話', v.phone);
+        html += dl('メール', v.email);
+        html += '</div>';
+      }
       if (addrHtml) html += '<div class="vw-sec">住所</div><div class="vw-block">' + addrHtml + '</div>';
+
       html += '<div class="vw-sec">税務・振込先</div><div class="vw-grid">';
       html += dl('源泉徴収', v.withholding_enabled ? '行う' : '');
       html += dl('適格請求書発行', v.is_invoice_issuer ? '対象' : '');
       html += dl('インボイス登録番号', v.invoice_registration_number);
+      html += dl('口座種別', banks.length ? '' : v.account_type);
       html += '</div>';
       if (bankHtml) html += '<div class="vw-block">' + bankHtml + '</div>';
+
+      const other = [v.master_contract_ref, v.bank_info].some((x) => x && String(x).trim());
+      if (other) {
+        html += '<div class="vw-sec">その他</div><div class="vw-grid">';
+        html += dl('マスター契約参照', v.master_contract_ref);
+        html += dl('銀行情報メモ', v.bank_info);
+        html += '</div>';
+      }
       return html;
     }
 
