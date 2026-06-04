@@ -244,14 +244,26 @@ h2.page-title{font-size:22px;font-weight:800;letter-spacing:0;color:var(--ink)}
 .toast.success{color:#0fa97c} .toast.error{color:#c43c63}
 `;
 
-function navHtml(active: PopNavKey): string {
+/**
+ * navGroups:
+ *   "all"  — Master Console(admin) + Search & Browse(view) 両方(既定)。
+ *   "view" — Search & Browse のみ。viewer 向けページ(/search/vendor 等)で、
+ *            viewer がアクセスできない admin リンクを出さないため。
+ */
+type NavGroups = "all" | "view";
+
+function navHtml(active: PopNavKey, groups: NavGroups = "all"): string {
   const item = (i: NavItem) =>
     `<a class="${i.key === active ? "on" : ""}" href="${i.href}"><span class="ic">${i.icon}</span>${esc(i.label)}</a>`;
+  const adminSection =
+    groups === "all"
+      ? `<div class="pop-side-title">⚙ Master Console</div>
+    <nav class="pop-nav">${NAV_ADMIN.map(item).join("")}</nav>`
+      : "";
   return `
   <aside class="pop-side">
     <div class="pop-brand">ARCS <b>Legal OS</b></div>
-    <div class="pop-side-title">⚙ Master Console</div>
-    <nav class="pop-nav">${NAV_ADMIN.map(item).join("")}</nav>
+    ${adminSection}
     <div class="pop-side-title">🔍 Search &amp; Browse</div>
     <nav class="pop-nav">${NAV_VIEW.map(item).join("")}</nav>
   </aside>`;
@@ -266,6 +278,7 @@ export function popPage(opts: {
   body: string;
   headExtra?: string; // ページ固有 <style> 等
   pageTitle?: string;
+  navGroups?: NavGroups; // "all"(既定) | "view"(viewer 向け)
 }): string {
   const titleTag = opts.pageTitle || `${opts.title} · Arcs Legal OS`;
   return `<!DOCTYPE html>
@@ -278,7 +291,7 @@ ${opts.headExtra || ""}
 </head>
 <body>
 <div class="pop-shell">
-${navHtml(opts.active)}
+${navHtml(opts.active, opts.navGroups || "all")}
   <div class="pop-main">
     <div class="pop-toolbar">
       <h1>${esc(opts.title)}</h1>
@@ -316,6 +329,7 @@ export function popAdminPage(opts: {
   body: string;
   headExtra?: string;
   pageTitle?: string;
+  navGroups?: NavGroups;
 }): string {
   const titleTag = opts.pageTitle || `${opts.title} · Arcs Legal OS`;
   return `<!DOCTYPE html>
@@ -329,7 +343,7 @@ ${opts.headExtra || ""}
 </head>
 <body>
 <div class="pop-shell">
-${navHtml(opts.active)}
+${navHtml(opts.active, opts.navGroups || "all")}
   <div class="pop-main">
     <div class="pop-toolbar">
       <h1>${esc(opts.title)}</h1>

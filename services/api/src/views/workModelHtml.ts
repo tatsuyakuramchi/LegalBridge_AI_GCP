@@ -15,14 +15,9 @@
  * 認証: ルート側で requireIapUser。/api/v3 read=requireRead, write=requireWrite(admin)。
  */
 
+import { popPage } from "./popChrome.ts";
+
 const STYLE = `
-*, *::before, *::after { box-sizing: border-box; }
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans",
-               "Yu Gothic", sans-serif;
-  color: #111827; background: #f8fafc; font-size: 14px;
-}
 .shell { max-width: 1280px; margin: 0 auto; padding: 20px 24px 48px; }
 .header {
   display: flex; align-items: end; justify-content: space-between; gap: 16px;
@@ -109,19 +104,9 @@ table.sub th { background: #f8fafc; color: #475569; font-weight: 600; white-spac
 `;
 
 export function workModelPage(): string {
-  return `<!doctype html>
-<html lang="ja"><head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>作品モデル — LegalBridge Search</title>
-<style>${STYLE}</style>
-</head><body>
+  const body = `
 <div class="shell">
   <div class="header">
-    <div>
-      <h1>作品モデル(work-centric)</h1>
-      <div class="muted">原作IP・自社作品・契約を作品軸で閲覧 / 編集(新プラットフォーム / <code>/api/v3</code>)</div>
-    </div>
     <div class="actions">
       <button id="reloadBtn" class="btn">↻ 更新</button>
       <a class="btn secondary" href="/">← Search Portal に戻る</a>
@@ -468,6 +453,14 @@ export function workModelPage(): string {
     if (card) { openDetail(card.getAttribute("data-type"), card.getAttribute("data-id")); }
   });
   load();
-</script>
-</body></html>`;
+</script>`;
+
+  return popPage({
+    active: "work-model",
+    mode: "admin",
+    title: "作品モデル",
+    subtitle: "原作IP・自社作品・契約を作品軸で閲覧 (新プラットフォーム /api/v3)",
+    body,
+    headExtra: `<style>${STYLE}</style>`,
+  });
 }
