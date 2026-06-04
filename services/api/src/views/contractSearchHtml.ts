@@ -498,8 +498,9 @@ export function detailPage(
 
   const body = `
   <div class="container">
-    <div class="breadcrumb" style="margin-bottom:12px;">
+    <div class="breadcrumb" style="margin-bottom:12px;display:flex;gap:14px;flex-wrap:wrap;">
       <a href="${esc(backUrl)}">← 検索結果に戻る</a>
+      <a href="/master/receivable-map">🔀 分配構造マップ</a>
     </div>
 
     <div class="vendor-card">

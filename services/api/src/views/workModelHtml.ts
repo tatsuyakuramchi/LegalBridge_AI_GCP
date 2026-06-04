@@ -254,10 +254,17 @@ export function workModelPage(): string {
     if (!items.length) { grid.innerHTML = '<div class="empty">データがありません</div>'; return; }
     grid.innerHTML = items.map(function (x) {
       var c = cardOf(type, x);
+      // 作品カードには分配構造マップへのリンクを添える(クリックで詳細は開かない)。
+      var mapLink = (type === "works")
+        ? '<a class="badge outline" href="/master/receivable-map?work=' + c.id + '" ' +
+          'onclick="event.stopPropagation()" title="分配構造マップ" style="text-decoration:none;">🔀 分配マップ</a>'
+        : '';
       return '<div class="card" data-type="' + type + '" data-id="' + c.id + '">' +
         '<div class="row1"><div class="name">' + esc(c.name) + '</div>' +
         (c.badge ? '<span class="badge outline">' + esc(c.badge) + '</span>' : '') +
-        '</div><div class="sub">' + esc(c.sub) + '</div></div>';
+        '</div><div class="sub">' + esc(c.sub) + '</div>' +
+        (mapLink ? '<div style="margin-top:8px;">' + mapLink + '</div>' : '') +
+        '</div>';
     }).join("");
   }
 

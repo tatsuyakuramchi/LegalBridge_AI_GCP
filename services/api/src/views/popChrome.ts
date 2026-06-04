@@ -17,7 +17,7 @@
  */
 
 export type PopNavKey =
-  | "vendors" | "staff" | "contracts" | "work-model" | "sublicense" | "admin"
+  | "vendors" | "staff" | "contracts" | "work-model" | "sublicense" | "receivable-map" | "admin"
   | "search-vendor" | "conditions" | "ringi";
 
 type NavItem = { key: PopNavKey; href: string; icon: string; label: string };
@@ -28,6 +28,7 @@ const NAV_ADMIN: NavItem[] = [
   { key: "contracts", href: "/master/contracts", icon: "📄", label: "契約台帳" },
   { key: "work-model", href: "/work-model", icon: "🎬", label: "作品モデル" },
   { key: "sublicense", href: "/master/sublicense", icon: "💴", label: "請求権(受領予定)" },
+  { key: "receivable-map", href: "/master/receivable-map", icon: "🔀", label: "分配構造マップ" },
   { key: "admin", href: "/admin", icon: "⚙️", label: "管理" },
 ];
 const NAV_VIEW: NavItem[] = [

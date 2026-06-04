@@ -136,6 +136,11 @@ import {
   importInboundConditions as importInboundReceivables,
 } from "./src/services/sublicenseService.ts";
 import {
+  getWorkDistribution,
+  listMappableWorks,
+} from "./src/services/receivableMapService.ts";
+import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
+import {
   listConditions,
   updateConditionLinks,
   listRingiOptions,
@@ -2828,6 +2833,34 @@ async function startServer() {
       res.json({ ok: true, sublicensees, works });
     } catch (error: any) {
       console.error("/api/sublicense/options failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // ── 分配構造マップ(作品中心)──────────────────────────────────
+  app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), (_req, res) => {
+    try {
+      res.type("html").send(receivableMapPage());
+    } catch (error) {
+      console.error("/master/receivable-map failed:", error);
+      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+    }
+  });
+  app.get("/api/receivable-map/works", requireIapUser({ renderErrorPage }), async (_req, res) => {
+    try {
+      res.json({ ok: true, rows: await listMappableWorks() });
+    } catch (error: any) {
+      console.error("/api/receivable-map/works failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+  app.get("/api/receivable-map", requireIapUser({ renderErrorPage }), async (req, res) => {
+    try {
+      const workId = Number((req.query as any).work);
+      if (!Number.isFinite(workId)) return res.status(400).json({ ok: false, error: "work required" });
+      res.json({ ok: true, ...(await getWorkDistribution(workId)) });
+    } catch (error: any) {
+      console.error("/api/receivable-map failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });

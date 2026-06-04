@@ -106,6 +106,10 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
         <div class="title">💴 請求権台帳(受領予定) <span class="arrow">→</span></div>
         <div class="desc">当社の請求権(サブライセンス/出版印税/ライセンスアウト等)の受領予定と請求状態</div>
       </a>
+      <a class="tile master" href="/master/receivable-map">
+        <div class="title">🔀 分配構造マップ <span class="arrow">→</span></div>
+        <div class="desc">作品中心に 上流(分配)←当社←下流(受領) のフローを可視化</div>
+      </a>
     </div>
   </section>
 
