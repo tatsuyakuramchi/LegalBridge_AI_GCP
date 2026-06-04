@@ -29,6 +29,25 @@ function useTitle() {
   return { title: "Arcs Legal OS", subtitle: "" }
 }
 
+// 統合 Phase 2: admin-ui ホストの /whoami から実ユーザー(email/role)を取得。
+//   IAP 配下なら IAP メール、未配下/ローカルでは null になり得る。
+function useWhoami() {
+  const [who, setWho] = React.useState<{ email: string | null; role: string } | null>(null)
+  React.useEffect(() => {
+    let cancelled = false
+    fetch("/whoami")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j) => {
+        if (!cancelled && j) setWho({ email: j.email ?? null, role: j.role || "viewer" })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
+  return who
+}
+
 function useTheme() {
   const [theme, setTheme] = React.useState<"light" | "dark">(() => {
     if (typeof window === "undefined") return "light"
@@ -44,7 +63,12 @@ function useTheme() {
 export function Topbar() {
   const { title, subtitle } = useTitle()
   const { theme, toggle } = useTheme()
+  const who = useWhoami()
   const now = new Date()
+  const displayName = who?.email ? who.email.split("@")[0] : "—"
+  const roleLabel =
+    who == null ? "…" : who.role === "admin" ? "Administrator" : "Viewer"
+  const initials = (who?.email ? who.email.slice(0, 2) : "KT").toUpperCase()
   return (
     <header className="sticky top-0 z-30 h-14 flex items-center gap-4 px-6 bg-background/80 backdrop-blur border-b border-border">
       {/* Breadcrumb */}
@@ -95,15 +119,15 @@ export function Topbar() {
       {/* User */}
       <div className="flex items-center gap-2.5 pl-3 border-l border-border">
         <div className="text-right leading-none hidden sm:block">
-          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.14em]">
-            Kuramochi T.
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] truncate max-w-[160px]">
+            {displayName}
           </p>
           <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground mt-0.5">
-            Administrator
+            {roleLabel}
           </p>
         </div>
         <Avatar>
-          <AvatarFallback>KT</AvatarFallback>
+          <AvatarFallback>{initials}</AvatarFallback>
         </Avatar>
       </div>
     </header>

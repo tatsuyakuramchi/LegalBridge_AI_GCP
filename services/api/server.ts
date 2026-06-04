@@ -244,6 +244,35 @@ async function startServer() {
     return next();
   }
 
+  // 統合 Phase 2: admin-ui ホスト(IAP配下)が IAP メールの app_role を解決するための
+  //   内部エンドポイント。portal_secret で保護。admin-ui を admin 限定にするゲートと
+  //   /whoami 表示に使う。{ email, role } を返す。
+  app.get("/api/staff/role", requirePortalSecret, async (req, res) => {
+    try {
+      const email = String(req.query.email || "").trim().toLowerCase();
+      if (!email) return res.json({ email: null, role: "viewer" });
+      const bootstrap = (process.env.LB_APP_ADMIN_EMAILS || "")
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      if (bootstrap.includes(email)) return res.json({ email, role: "admin" });
+      let role = "viewer";
+      try {
+        const r = await query(
+          "SELECT app_role FROM staff WHERE LOWER(email) = $1 LIMIT 1",
+          [email]
+        );
+        const v = ((r.rows[0]?.app_role as string) || "").trim().toLowerCase();
+        role = v === "admin" ? "admin" : "viewer";
+      } catch (lookupErr) {
+        console.warn("[/api/staff/role] lookup failed:", lookupErr);
+      }
+      res.json({ email, role });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e) });
+    }
+  });
+
   // -------------------------------------------------------------------
   // /search/* — Web 詳細ページ (Phase 12)
   //

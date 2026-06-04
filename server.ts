@@ -30,6 +30,59 @@ const SEARCH_API_URL =
 const DOCUMENT_WORKER_URL =
   "https://legalbridge-document-worker-988056987352.asia-northeast1.run.app";
 
+// 統合 Phase 2: admin-ui を「管理者(app_role=admin)専用エディタ」にするための
+//   IAP 身元ゲート。admin-ui を IAP 配下に置くと x-goog-authenticated-user-email
+//   が必ず入るので、それを read して app_role を search-api に問い合わせ、admin
+//   以外は 403(検索ポータルへ誘導)。viewer は search-api ポータルを使う。
+//
+//   ADMIN_UI_ENFORCE_ROLE=true のときだけ enforce(既定 OFF=従来どおり全通し)。
+//   IAP 配下化 + env 設定が揃ってから ON にすれば安全に切り替えられる。
+const ENFORCE_ROLE =
+  String(process.env.ADMIN_UI_ENFORCE_ROLE || "").toLowerCase() === "true";
+
+/** IAP ヘッダ(or DEV_AS_USER)からメールを取り出す。 */
+function iapEmail(req: express.Request): string | null {
+  const raw = String(req.header("x-goog-authenticated-user-email") || "");
+  const m = raw.match(/^accounts\.google\.com:(.+)$/);
+  if (m && m[1]) return m[1].trim().toLowerCase();
+  if (raw) return raw.trim().toLowerCase();
+  if (process.env.DEV_AS_USER) return String(process.env.DEV_AS_USER).toLowerCase();
+  return null;
+}
+
+/** search-api に email の app_role を問い合わせる(portal_secret で保護)。 */
+async function resolveRole(email: string): Promise<"admin" | "viewer"> {
+  try {
+    const url = `${SEARCH_API_URL}/api/staff/role?email=${encodeURIComponent(email)}`;
+    const r = await fetch(url, {
+      headers: { "x-lb-portal-secret": process.env.LB_PORTAL_SECRET || "" },
+    });
+    if (!r.ok) return "viewer";
+    const j: any = await r.json();
+    return j?.role === "admin" ? "admin" : "viewer";
+  } catch (err) {
+    console.warn("[admin-ui] resolveRole failed:", err);
+    return "viewer";
+  }
+}
+
+/** admin 以外に見せる 403 ページ(検索ポータルへ誘導)。 */
+function denyPage(email: string | null): string {
+  return `<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8">
+<title>アクセス権がありません</title>
+<style>body{font-family:-apple-system,"Hiragino Sans",sans-serif;max-width:560px;margin:64px auto;padding:0 24px;color:#241f3a}
+h1{font-size:20px}a{color:#6c5ce7;font-weight:700}.box{background:#f6f3ff;border:1px solid #e2dbfb;border-radius:14px;padding:18px 20px;margin-top:16px}</style>
+</head><body>
+<h1>admin-ui は管理者専用です</h1>
+<div class="box">
+<p>このアプリ(編集・文書生成)は <b>app_role=admin</b> のユーザーのみ利用できます。</p>
+<p>検索・閲覧は <a href="${SEARCH_API_URL}/">検索ポータル</a> をご利用ください。</p>
+<p style="color:#8a86a3;font-size:12px;margin-top:14px">ログイン: ${email || "(unknown)"}</p>
+</div>
+<p style="margin-top:18px"><a href="${SEARCH_API_URL}/">→ 検索ポータルを開く</a></p>
+</body></html>`;
+}
+
 async function startServer() {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = path.dirname(__filename);
@@ -78,6 +131,40 @@ async function startServer() {
         writes: DOCUMENT_WORKER_URL,
       },
     });
+  });
+
+  // 統合 Phase 2: React Topbar が実ユーザー(email/role)を表示するための
+  //   同一オリジンエンドポイント。IAP ヘッダから email を取り、role を解決。
+  app.get("/whoami", async (req, res) => {
+    const email = iapEmail(req);
+    const role = email ? await resolveRole(email) : "viewer";
+    res.json({ email, role, enforce: ENFORCE_ROLE });
+  });
+
+  // 統合 Phase 2: admin 限定ゲート(ENFORCE_ROLE=true のときのみ)。
+  //   トップレベルのページ遷移(HTML)だけを対象にし、assets/api/whoami/
+  //   拡張子付き静的ファイルは通す。admin 以外は 403(検索ポータルへ誘導)。
+  app.use(async (req, res, next) => {
+    if (!ENFORCE_ROLE) return next();
+    if (req.method !== "GET") return next();
+    if (
+      req.path.startsWith("/assets") ||
+      req.path.startsWith("/api") ||
+      req.path === "/whoami" ||
+      path.extname(req.path) // favicon.ico / sw.js 等
+    ) {
+      return next();
+    }
+    const email = iapEmail(req);
+    if (!email) {
+      return res
+        .status(401)
+        .type("html")
+        .send(denyPage(null));
+    }
+    const role = await resolveRole(email);
+    if (role === "admin") return next();
+    return res.status(403).type("html").send(denyPage(email));
   });
 
   // ── Static / SPA serving ───────────────────────────────────────────
