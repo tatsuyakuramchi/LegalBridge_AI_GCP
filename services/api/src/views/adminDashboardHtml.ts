@@ -42,8 +42,26 @@ interface AdminPageOpts {
 export function adminDashboardPage(opts: AdminPageOpts): string {
   const email = opts.currentEmail || "(unknown)";
 
+  // Phase 25(統合 Phase 1): 編集・文書生成は React admin-ui に一本化していく。
+  //   ADMIN_UI_URL が設定されていれば、マスタ編集タイルは admin-ui の対応
+  //   ルートへ誘導する。未設定なら従来どおり search-api の HTML へ(安全側)。
+  const ADMIN_UI = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  const masterHref = (reactPath: string, fallback: string) =>
+    ADMIN_UI ? ADMIN_UI + reactPath : fallback;
+  const adminUiBanner = ADMIN_UI
+    ? `<a class="tile preview" href="${ADMIN_UI}/" target="_blank" rel="noopener" style="--accent:#6c5ce7">
+        <div class="title">🖥 admin-ui を開く（編集・文書生成） <span class="arrow">↗</span></div>
+        <div class="desc">契約・取引先・スタッフ等の<strong>編集</strong>と<strong>文書生成</strong>は admin-ui に集約。本コンソールは検索・閲覧・取込のハブです。</div>
+      </a>`
+    : "";
+
   const body = `
   <div class="dash-hello">あなたのログイン: <b>${escapeHtml(email)}</b> (app_role=admin)</div>
+  ${
+    adminUiBanner
+      ? `<section class="dash-sec"><div class="tiles">${adminUiBanner}</div></section>`
+      : ""
+  }
 
   <!-- ==== 1. ユーザー権限管理 ==== -->
   <section class="dash-sec">
@@ -78,17 +96,17 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
     <h2>🗂️ マスター CRUD</h2>
     <p class="muted">個別レコードの追加・編集・削除。一括登録は上記「データ取り込み」を利用。</p>
     <div class="tiles">
-      <a class="tile master" href="/master/staff">
-        <div class="title">👤 スタッフマスタ <span class="arrow">→</span></div>
-        <div class="desc">staff CRUD + CSV 取込 (経営管理本部・法務のみ)</div>
+      <a class="tile master" href="${masterHref("/master/staff", "/master/staff")}"${ADMIN_UI ? ' target="_blank" rel="noopener"' : ""}>
+        <div class="title">👤 スタッフマスタ ${ADMIN_UI ? '<span class="arrow">↗</span>' : '<span class="arrow">→</span>'}</div>
+        <div class="desc">staff CRUD + 権限(admin/viewer)切替${ADMIN_UI ? "（admin-ui）" : ""}</div>
       </a>
-      <a class="tile master" href="/master/vendors">
-        <div class="title">🏢 取引先マスタ <span class="arrow">→</span></div>
-        <div class="desc">vendors CRUD (個別 1 件単位)</div>
+      <a class="tile master" href="${masterHref("/master/vendors", "/master/vendors")}"${ADMIN_UI ? ' target="_blank" rel="noopener"' : ""}>
+        <div class="title">🏢 取引先マスタ ${ADMIN_UI ? '<span class="arrow">↗</span>' : '<span class="arrow">→</span>'}</div>
+        <div class="desc">vendors CRUD (個別 1 件単位)${ADMIN_UI ? "（admin-ui）" : ""}</div>
       </a>
-      <a class="tile master" href="/master/contracts">
-        <div class="title">📜 契約マスタ <span class="arrow">→</span></div>
-        <div class="desc">contract_capabilities 詳細表示・LegalOn 統合</div>
+      <a class="tile master" href="${masterHref("/master/contracts", "/master/contracts")}"${ADMIN_UI ? ' target="_blank" rel="noopener"' : ""}>
+        <div class="title">📜 契約マスタ ${ADMIN_UI ? '<span class="arrow">↗</span>' : '<span class="arrow">→</span>'}</div>
+        <div class="desc">contract_capabilities 詳細・編集${ADMIN_UI ? "（admin-ui）" : "・LegalOn 統合"}</div>
       </a>
       <a class="tile preview" href="/templates/preview">
         <div class="title">Template Preview <span class="arrow">→</span></div>

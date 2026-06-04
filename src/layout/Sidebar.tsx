@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Database,
   FileSpreadsheet,
+  Search,
+  ExternalLink,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -49,6 +51,15 @@ const groups: NavGroup[] = [
       { to: "/settings", label: "Settings", icon: SettingsIcon, description: "System" },
     ],
   },
+]
+
+// 統合 Phase 1: 検索・閲覧は search-api の検索ポータル(IAP 配下)に集約。
+//   admin-ui からは外部リンクで導線を張る。VITE_API_READ_URL(=search-api)
+//   が設定されているときだけ表示する。
+const PORTAL_BASE = String((import.meta as any).env?.VITE_API_READ_URL || "").replace(/\/+$/, "")
+const portalLinks = [
+  { href: "/search/vendor", label: "Search Portal", description: "取引先・契約 検索" },
+  { href: "/templates/preview", label: "Template Preview", description: "ひな型プレビュー" },
 ]
 
 export function Sidebar() {
@@ -115,6 +126,36 @@ export function Sidebar() {
             </ul>
           </div>
         ))}
+
+        {/* 統合 Phase 1: search-api 検索ポータルへの外部リンク */}
+        {PORTAL_BASE && (
+          <div className="space-y-1.5">
+            <p className="px-2 text-[11px] font-mono font-bold uppercase tracking-[0.22em] text-muted-foreground/70">
+              ░ Search Portal
+            </p>
+            <ul className="space-y-0.5">
+              {portalLinks.map((item) => (
+                <li key={item.href}>
+                  <a
+                    href={PORTAL_BASE + item.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="group relative flex items-center gap-3 rounded-sm px-2.5 py-1.5 text-xs font-mono text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    <Search className="h-3.5 w-3.5 shrink-0" />
+                    <span className="flex-1 font-bold uppercase tracking-[0.1em]">
+                      {item.label}
+                    </span>
+                    <ExternalLink className="h-3 w-3 opacity-60" />
+                  </a>
+                  <p className="ml-9 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground/60">
+                    {item.description}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
       </nav>
 
       {/* Footer status */}

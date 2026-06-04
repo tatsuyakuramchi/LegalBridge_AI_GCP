@@ -12,7 +12,7 @@
  */
 
 import { MASTER_CSS, SVG } from "./masterChrome.ts";
-import { popAdminPage } from "./popChrome.ts";
+import { popAdminPage, adminUiEditBanner } from "./popChrome.ts";
 import type { Role } from "../lib/screens.ts";
 
 export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"): string {
@@ -963,7 +963,7 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
     masterCss: MASTER_CSS,
     title: "取引先マスタ",
     subtitle: "Master · External partners",
-    body,
+    body: adminUiEditBanner("/master/vendors") + body,
     headExtra: `<style>
 .vw-grid{display:grid;grid-template-columns:120px 1fr;gap:6px 14px;align-items:baseline;margin:4px 0 6px}
 .vw-dt{color:var(--muted);font-size:11.5px;font-weight:800}

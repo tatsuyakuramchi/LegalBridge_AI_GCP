@@ -9,7 +9,7 @@
  */
 
 import { MASTER_CSS, SVG } from "./masterChrome.ts";
-import { popAdminPage } from "./popChrome.ts";
+import { popAdminPage, adminUiEditBanner } from "./popChrome.ts";
 import type { Role } from "../lib/screens.ts";
 
 export function masterContractsPage(role: Role = "viewer"): string {
@@ -174,6 +174,6 @@ export function masterContractsPage(role: Role = "viewer"): string {
     masterCss: MASTER_CSS,
     title: "契約マスタ",
     subtitle: "Master · LegalOn import",
-    body,
+    body: adminUiEditBanner("/master/contracts") + body,
   });
 }

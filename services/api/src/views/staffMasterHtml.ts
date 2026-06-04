@@ -6,7 +6,7 @@
  */
 
 import { MASTER_CSS, SVG } from "./masterChrome.ts";
-import { popAdminPage } from "./popChrome.ts";
+import { popAdminPage, adminUiEditBanner } from "./popChrome.ts";
 import type { Role } from "../lib/screens.ts";
 
 export function staffMasterPage(role: Role = "viewer"): string {
@@ -412,6 +412,6 @@ export function staffMasterPage(role: Role = "viewer"): string {
     masterCss: MASTER_CSS,
     title: "スタッフマスタ",
     subtitle: "Master · Internal",
-    body,
+    body: adminUiEditBanner("/master/staff") + body,
   });
 }
