@@ -43,6 +43,24 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     </div>
   </div>
 
+  <!-- View (read-only) Modal -->
+  <div class="modal-backdrop" id="view-backdrop">
+    <div class="modal">
+      <div class="modal-header">
+        <div class="modal-title-wrap">
+          <span class="modal-tag">MST · VENDORS / VIEW</span>
+          <h3 class="modal-title" id="view-title">取引先の詳細</h3>
+        </div>
+        <button class="btn ghost sm" id="view-close" aria-label="閉じる">${SVG.x}</button>
+      </div>
+      <div class="modal-body" id="view-body"></div>
+      <div class="modal-footer">
+        <button class="btn outline" id="view-cancel">閉じる</button>
+        <button class="btn" id="view-edit">${SVG.fileText} 編集する</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Edit / Create Modal -->
   <div class="modal-backdrop" id="modal-backdrop">
     <div class="modal">
@@ -423,7 +441,7 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
 
       $('list-wrap').innerHTML = '<div class="grid">' + cards + '</div>';
       $('list-wrap').querySelectorAll('.card[data-code]').forEach(card => {
-        card.addEventListener('click', () => openEdit(card.dataset.code));
+        card.addEventListener('click', () => openView(card.dataset.code));
       });
     }
 
@@ -444,6 +462,80 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
       $('modal-backdrop').classList.add('open');
       setTimeout(() => form.querySelector('[name=vendor_code]').focus(), 50);
     }
+
+    /* ----- view (read-only) modal ----- */
+    let viewingCode = null;
+    const ENTITY_LABEL = { corporate: '法人', individual: '個人', sole_proprietor: '個人事業主' };
+    const TXN_LABEL = { goods_sale: '物品売買', service: '業務委託・役務', license: 'ライセンス', other: 'その他' };
+    const ANTI_LABEL = { clear: '問題なし', pending: '確認中', ng: 'NG' };
+
+    function dl(label, value) {
+      if (value == null || String(value).trim() === '') return '';
+      return '<div class="vw-dt">' + escHtml(label) + '</div><div class="vw-dd">' + escHtml(value) + '</div>';
+    }
+    function renderView(v) {
+      const entity = ENTITY_LABEL[v.entity_type] || v.entity_type || '';
+      const isIndividual = v.entity_type === 'individual' || v.entity_type === 'sole_proprietor';
+      const consent = (v.pii_consent_obtained === true)
+        ? ('同意取得済' + (v.pii_consent_date ? '（' + String(v.pii_consent_date).slice(0, 10) + '）' : ''))
+        : (isIndividual ? '未取得' : '');
+      const addrs = Array.isArray(v.addresses) ? v.addresses : [];
+      const banks = Array.isArray(v.bank_accounts) ? v.bank_accounts : [];
+      const addrHtml = addrs.length
+        ? addrs.map((a) => '<div>' + (a.is_primary ? '★ ' : '') + escHtml(a.address_label || '') + ' ' + escHtml(a.address || '') + '</div>').join('')
+        : escHtml(v.address || '');
+      const bankHtml = banks.length
+        ? banks.map((b) => '<div>' + (b.is_primary ? '★ ' : '') + escHtml(b.bank_name || '') + ' ' + escHtml(b.branch_name || '') + ' ' + escHtml(b.account_type || '') + ' ' + escHtml(b.account_number || '') + ' ' + escHtml(b.account_holder_kana || b.account_holder_name || '') + '</div>').join('')
+        : escHtml([v.bank_name, v.branch_name, v.account_type, v.account_number, v.account_holder_kana].filter(Boolean).join(' '));
+
+      let html = '<div class="vw-grid">';
+      html += dl('取引先コード', v.vendor_code);
+      html += dl('区分', entity);
+      html += dl('正式名称', v.vendor_name);
+      html += dl('屋号 / 略称', v.trade_name);
+      if (isIndividual) html += dl('ペンネーム', v.pen_name);
+      html += dl('敬称', v.vendor_suffix);
+      html += dl('代表者', v.vendor_rep);
+      html += dl('法人番号', v.corporate_number);
+      html += dl('取引内容区分', TXN_LABEL[v.transaction_category] || v.transaction_category);
+      html += dl('決済条件', v.payment_terms);
+      html += dl('評点', v.rating);
+      html += dl('反社チェック', ANTI_LABEL[v.antisocial_check_result] || v.antisocial_check_result);
+      if (consent) html += dl('個人情報取得同意', consent);
+      html += '</div>';
+      html += '<div class="vw-sec">連絡先</div><div class="vw-grid">';
+      html += dl('担当部署', v.contact_department);
+      html += dl('担当者', v.contact_name);
+      html += dl('電話', v.phone);
+      html += dl('メール', v.email);
+      html += '</div>';
+      if (addrHtml) html += '<div class="vw-sec">住所</div><div class="vw-block">' + addrHtml + '</div>';
+      html += '<div class="vw-sec">税務・振込先</div><div class="vw-grid">';
+      html += dl('源泉徴収', v.withholding_enabled ? '行う' : '');
+      html += dl('適格請求書発行', v.is_invoice_issuer ? '対象' : '');
+      html += dl('インボイス登録番号', v.invoice_registration_number);
+      html += '</div>';
+      if (bankHtml) html += '<div class="vw-block">' + bankHtml + '</div>';
+      return html;
+    }
+
+    async function openView(code) {
+      viewingCode = code;
+      $('view-title').textContent = code;
+      $('view-body').innerHTML = '<div class="loading">LOADING</div>';
+      $('view-backdrop').classList.add('open');
+      try {
+        const url = apiDetailTpl.replace('__CODE__', encodeURIComponent(code));
+        const res = await fetch(url);
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const v = await res.json();
+        $('view-body').innerHTML = renderView(v);
+      } catch (e) {
+        toast('取得失敗: ' + (e?.message || e), 'error');
+        closeViewModal();
+      }
+    }
+    function closeViewModal() { $('view-backdrop').classList.remove('open'); }
 
     async function openEdit(code) {
       creating = false;
@@ -695,6 +787,17 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     $('modal-backdrop').addEventListener('click', (e) => {
       if (e.target === $('modal-backdrop')) closeEditModal();
     });
+    // View(閲覧)モーダル: 閉じる / 編集へ
+    $('view-close').addEventListener('click', closeViewModal);
+    $('view-cancel').addEventListener('click', closeViewModal);
+    $('view-edit').addEventListener('click', () => {
+      const code = viewingCode;
+      closeViewModal();
+      if (code) openEdit(code);
+    });
+    $('view-backdrop').addEventListener('click', (e) => {
+      if (e.target === $('view-backdrop')) closeViewModal();
+    });
 
     $('btn-save').addEventListener('click', async () => {
       const payload = readForm();
@@ -823,5 +926,12 @@ export function vendorMasterPage(_authIgnored?: unknown): string {
     title: "取引先マスタ",
     subtitle: "Master · External partners",
     body,
+    headExtra: `<style>
+.vw-grid{display:grid;grid-template-columns:120px 1fr;gap:6px 14px;align-items:baseline;margin:4px 0 6px}
+.vw-dt{color:var(--muted);font-size:11.5px;font-weight:800}
+.vw-dd{font-size:13px;color:var(--ink);word-break:break-word}
+.vw-sec{margin:14px 0 6px;font-size:11.5px;font-weight:800;color:var(--accent);border-top:1px solid var(--line);padding-top:10px}
+.vw-block{font-size:12.5px;color:var(--ink);line-height:1.7}
+</style>`,
   });
 }
