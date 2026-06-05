@@ -118,7 +118,7 @@ export function viewerGuidePage(opts: {
   return popPage({
     active: "search-vendor",
     mode: "view",
-    navGroups: "view",
+    role: "viewer",
     title: "Search Portal",
     subtitle: "検索機能のご案内",
     body,

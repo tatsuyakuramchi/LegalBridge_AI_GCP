@@ -10,6 +10,7 @@
  */
 
 import { popPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
 const EXTRA_CSS = `<style>
 .map-picker{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:16px}
@@ -60,7 +61,7 @@ const EXTRA_CSS = `<style>
 .alias-add input{border:1.5px solid #e2dbfb;border-radius:10px;padding:6px 10px;font:inherit;font-size:12.5px}
 </style>`;
 
-export function receivableMapPage(): string {
+export function receivableMapPage(role: Role = "viewer"): string {
   const body = `
   <div class="map-picker">
     <label class="muted" style="font-weight:800;">作品:</label>
@@ -248,6 +249,7 @@ export function receivableMapPage(): string {
 
   return popPage({
     active: "receivable-map",
+    role,
     mode: "admin",
     title: "分配構造マップ",
     subtitle: "作品中心 · 上流(分配) ← 当社 ← 下流(受領)",

@@ -80,10 +80,14 @@ async function renderSamplePreviewFromDb(type: string): Promise<string | null> {
 // Phase 17z-2: requireIapUser / requireDepartmentRole を追加 (恒久 URL 対応)。
 import {
   requireSignedUrl,
+  requireSignedUrlOrIap,
   requireIapUser,
   requireDepartmentRole,
   requireAppRole,
+  attachAppRole,
+  requireScreen,
 } from "./src/lib/authMiddleware.ts";
+import type { Role } from "./src/lib/screens.ts";
 import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
 // Phase 17x: LegalOn 契約台帳 CSV 取り込み (search-api 内に閉じた書き込み機能)。
 import { legalonImportPage } from "./src/views/legalonImportHtml.ts";
@@ -102,7 +106,7 @@ import { vendorImportPage } from "./src/views/vendorImportHtml.ts";
 import { adminDashboardPage } from "./src/views/adminDashboardHtml.ts";
 import { adminStaffPage } from "./src/views/adminStaffHtml.ts";
 // Phase 22.21.37: viewer 用ルート案内ページ。
-import { viewerGuidePage } from "./src/views/viewerGuideHtml.ts";
+import { loginPage, viewerHomePage } from "./src/views/landingHtml.ts";
 import {
   listVendors,
   getVendor,
@@ -240,6 +244,35 @@ async function startServer() {
     return next();
   }
 
+  // 統合 Phase 2: admin-ui ホスト(IAP配下)が IAP メールの app_role を解決するための
+  //   内部エンドポイント。portal_secret で保護。admin-ui を admin 限定にするゲートと
+  //   /whoami 表示に使う。{ email, role } を返す。
+  app.get("/api/staff/role", requirePortalSecret, async (req, res) => {
+    try {
+      const email = String(req.query.email || "").trim().toLowerCase();
+      if (!email) return res.json({ email: null, role: "viewer" });
+      const bootstrap = (process.env.LB_APP_ADMIN_EMAILS || "")
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean);
+      if (bootstrap.includes(email)) return res.json({ email, role: "admin" });
+      let role = "viewer";
+      try {
+        const r = await query(
+          "SELECT app_role FROM staff WHERE LOWER(email) = $1 LIMIT 1",
+          [email]
+        );
+        const v = ((r.rows[0]?.app_role as string) || "").trim().toLowerCase();
+        role = v === "admin" ? "admin" : "viewer";
+      } catch (lookupErr) {
+        console.warn("[/api/staff/role] lookup failed:", lookupErr);
+      }
+      res.json({ email, role });
+    } catch (e) {
+      res.status(500).json({ ok: false, error: String(e) });
+    }
+  });
+
   // -------------------------------------------------------------------
   // /search/* — Web 詳細ページ (Phase 12)
   //
@@ -264,13 +297,15 @@ async function startServer() {
 
   app.get(
     "/search/vendor",
-    requireSignedUrl({ resourceId: () => "list", renderErrorPage }),
+    requireSignedUrlOrIap({ resourceId: () => "list", renderErrorPage }),
+    attachAppRole(),
     async (req, res) => {
     try {
+      const role = (req as any).userRole as Role;
       const query = String(req.query.q || "").trim();
       const auth = makeSignLink(req);
       if (!query) {
-        return res.type("html").send(renderListPage("", [], auth));
+        return res.type("html").send(renderListPage("", [], auth, role));
       }
       // 単一候補のときも一覧経由で見せる (UX 一貫性)。検索 -> リスト -> 詳細
       // の階層をユーザーに常に提示するため。
@@ -284,7 +319,7 @@ async function startServer() {
       } else if ((summary as any)?.counterparty) {
         results = [summary];
       }
-      res.type("html").send(renderListPage(query, results, auth));
+      res.type("html").send(renderListPage(query, results, auth, role));
     } catch (error) {
       console.error("/search/vendor failed:", error);
       res
@@ -323,12 +358,14 @@ async function startServer() {
   //   Phase 17s: /search/ringi/00001?exp=...&sig=...
   app.get(
     "/search/ringi/:number",
-    requireSignedUrl({
+    requireSignedUrlOrIap({
       resourceId: (req) => `ringi:${String(req.params.number || "").trim()}`,
       renderErrorPage,
     }),
+    attachAppRole(),
     async (req, res) => {
     try {
+      const role = (req as any).userRole as Role;
       const num = String(req.params.number || "").trim();
       const auth = makeSignLink(req);
       if (!/^[0-9]{5}$/.test(num)) {
@@ -346,7 +383,7 @@ async function startServer() {
       }
       // Phase 17d: Backlog ステータスを enrich
       await enrichWithBacklogStatus(payload);
-      res.type("html").send(renderRingiPage(payload, auth));
+      res.type("html").send(renderRingiPage(payload, auth, role));
     } catch (error) {
       console.error("/search/ringi/:number failed:", error);
       res
@@ -358,12 +395,14 @@ async function startServer() {
 
   app.get(
     "/search/vendor/:vendorId",
-    requireSignedUrl({
+    requireSignedUrlOrIap({
       resourceId: (req) => `vendor:${String(req.params.vendorId || "").trim()}`,
       renderErrorPage,
     }),
+    attachAppRole(),
     async (req, res) => {
     try {
+      const role = (req as any).userRole as Role;
       const vendorId = Number(req.params.vendorId);
       const auth = makeSignLink(req);
       const backQuery = String(req.query.q || "");
@@ -385,7 +424,7 @@ async function startServer() {
           .type("html")
           .send(renderErrorPage("Not Found", "取引先が見つかりませんでした", 404));
       }
-      res.type("html").send(renderDetailPage(payload, backQuery, auth));
+      res.type("html").send(renderDetailPage(payload, backQuery, auth, role));
     } catch (error) {
       console.error("/search/vendor/:vendorId failed:", error);
       res
@@ -424,7 +463,7 @@ async function startServer() {
     (req, res) => {
       try {
         // 恒久 URL: HMAC 不要 (null 渡し)。fetch は IAP セッションを継承。
-        res.type("html").send(legalonImportPage(null));
+        res.type("html").send(legalonImportPage(null, "admin"));
       } catch (error) {
         console.error("/imports/legalon failed:", error);
         res
@@ -448,50 +487,54 @@ async function startServer() {
     requireIapUser({ renderErrorPage }),
     async (req, res) => {
       try {
-        const user = (req as any).user as { email?: string | null } | undefined;
+        const user = (req as any).user as
+          | { email?: string | null; source?: string }
+          | undefined;
         const email = (user?.email || "").trim().toLowerCase();
 
-        // Phase 22.21.42: admin が viewer ランディングを確認するためのプレビュー
-        //   /admin から「Viewer 用ポータルを開く」リンクで遷移してきたときに
-        //   admin リダイレクトをスキップする。
-        const previewViewer = String(req.query.preview || "").toLowerCase() === "viewer";
+        // #5: 未認証(anonymous かつ email 無し) → ブランドログインゲート。
+        //   IAP 配下なら通常ここに到達しない(IAP が前段でログインさせる)が、
+        //   非強制環境でも美しい入口を出す。
+        if (!email) {
+          return res.type("html").send(loginPage({ continueUrl: "/" }));
+        }
 
-        // bootstrap admin (env)
+        // admin が viewer ホームを確認するためのプレビュー(?preview=viewer)。
+        const previewViewer =
+          String(req.query.preview || "").toLowerCase() === "viewer";
+
+        // 実効ロール判定(bootstrap env or staff.app_role)。
         const bootstrapAdmins = (process.env.LB_APP_ADMIN_EMAILS || "")
           .split(",")
           .map((s) => s.trim().toLowerCase())
           .filter(Boolean);
-        if (email && bootstrapAdmins.includes(email) && !previewViewer) {
-          return res.redirect(302, "/admin");
-        }
-
-        // DB の app_role を引く
-        let role: string | null = null;
-        if (email) {
+        let role: string | null = bootstrapAdmins.includes(email) ? "admin" : null;
+        if (!role) {
           try {
             const r = await query(
               "SELECT COALESCE(app_role, 'viewer') AS app_role FROM staff WHERE LOWER(email) = $1 LIMIT 1",
               [email]
             );
-            role = (r.rows[0]?.app_role as string) || null;
+            role = (r.rows[0]?.app_role as string) || "viewer";
           } catch {
-            /* noop — column may not exist yet on first deploy */
+            role = "viewer";
           }
         }
 
+        // admin ログイン後の入口は React admin-ui に一本化(ADMIN_UI_URL があれば
+        //   そこへ、無ければ従来の管理ダッシュボード)。preview=viewer 指定時は除外。
         if (role === "admin" && !previewViewer) {
-          return res.redirect(302, "/admin");
+          const adminUi = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+          return res.redirect(302, adminUi || "/admin");
         }
 
-        // viewer or unregistered (or admin が preview=viewer 指定) → 案内ページ
-        res
-          .type("html")
-          .send(
-            viewerGuidePage({
-              currentEmail: user?.email || null,
-              currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
-            })
-          );
+        // viewer or unregistered(or admin の preview) → 美しい検索ポータルホーム。
+        res.type("html").send(
+          viewerHomePage({
+            currentEmail: user?.email || null,
+            currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
+          })
+        );
       } catch (error) {
         console.error("/ failed:", error);
         res
@@ -572,9 +615,10 @@ async function startServer() {
   app.get(
     "/templates/preview",
     requireIapUser({ renderErrorPage }),
-    (_req, res) => {
+    attachAppRole(),
+    (req, res) => {
       try {
-        res.type("html").send(templatePreviewPage());
+        res.type("html").send(templatePreviewPage((req as any).userRole as Role));
       } catch (error) {
         console.error("/templates/preview failed:", error);
         res
@@ -795,7 +839,7 @@ async function startServer() {
     }),
     (req, res) => {
       try {
-        res.type("html").send(vendorImportPage(null));
+        res.type("html").send(vendorImportPage(null, "admin"));
       } catch (error) {
         console.error("/imports/vendor failed:", error);
         res
@@ -898,12 +942,14 @@ async function startServer() {
   app.get(
     "/master/vendors",
     requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "vendors", renderErrorPage }),
     (req, res) => {
       try {
         // 恒久 URL 化のため HMAC は付けない (null で渡す)。
         // 同一オリジン内の fetch は IAP セッションを継承するので、API も
         // 認証付き状態で叩ける。
-        res.type("html").send(vendorMasterPage(null));
+        res.type("html").send(vendorMasterPage(null, (req as any).userRole as Role));
       } catch (error) {
         console.error("/master/vendors failed:", error);
         res
@@ -974,9 +1020,9 @@ async function startServer() {
   app.post(
     "/api/master/vendors",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    requireAppRole({
       resourceLabel: "master:vendors:write",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     express.json({ limit: "1mb" }),
@@ -1051,9 +1097,14 @@ async function startServer() {
   // -------------------------------------------------------------------
   // /master/staff — スタッフマスター CRUD + CSV 一括取込 (Phase 17z-4)
   // -------------------------------------------------------------------
-  app.get("/master/staff", requireIapUser({ renderErrorPage }), (req, res) => {
+  app.get(
+    "/master/staff",
+    requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "staff", renderErrorPage }),
+    (req, res) => {
     try {
-      res.type("html").send(staffMasterPage());
+      res.type("html").send(staffMasterPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/staff failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -1097,9 +1148,9 @@ async function startServer() {
   app.post(
     "/api/master/staff",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
+    requireAppRole({
       resourceLabel: "master:staff:write",
-      allowedDepartments: ["経営管理本部", "法務"],
+      allowedRoles: ["admin"],
       renderErrorPage,
     }),
     express.json({ limit: "1mb" }),
@@ -1185,14 +1236,11 @@ async function startServer() {
   app.get(
     "/master/contracts",
     requireIapUser({ renderErrorPage }),
-    requireDepartmentRole({
-      resourceLabel: "master:contracts:view",
-      allowedDepartments: ["経営管理本部", "法務"],
-      renderErrorPage,
-    }),
+    attachAppRole(),
+    requireScreen({ key: "contracts", renderErrorPage }),
     (req, res) => {
       try {
-        res.type("html").send(masterContractsPage());
+        res.type("html").send(masterContractsPage((req as any).userRole as Role));
       } catch (error) {
         console.error("/master/contracts failed:", error);
         res
@@ -2674,9 +2722,9 @@ async function startServer() {
   });
 
   // B1: 作品中心モデルの閲覧ページ(Search 専用フロント)。/api/v3 を同一オリジンで読む。
-  app.get("/work-model", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/work-model", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "work-model", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(workModelPage());
+      res.type("html").send(workModelPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/work-model failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -2684,9 +2732,9 @@ async function startServer() {
   });
 
   // 条件明細(capability_line_items)の横断一覧・検索ページ。
-  app.get("/master/conditions", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/master/conditions", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "conditions", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(conditionsPage());
+      res.type("html").send(conditionsPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/conditions failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -2798,9 +2846,9 @@ async function startServer() {
   // ===================================================================
   // サブライセンス受領管理(第1段)
   // ===================================================================
-  app.get("/master/sublicense", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/master/sublicense", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "sublicense", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(sublicensePage());
+      res.type("html").send(sublicensePage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/sublicense failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -2849,9 +2897,9 @@ async function startServer() {
   });
 
   // ── 分配構造マップ(作品中心)──────────────────────────────────
-  app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), (_req, res) => {
+  app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "receivable-map", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(receivableMapPage());
+      res.type("html").send(receivableMapPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/master/receivable-map failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));

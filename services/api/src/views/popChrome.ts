@@ -16,28 +16,33 @@
  *   .pop-group .pill(.corp/.ind/.ok) .pop-modal-backdrop .pop-modal などを提供。
  */
 
-export type PopNavKey =
-  | "vendors" | "staff" | "contracts" | "work-model" | "sublicense" | "receivable-map" | "admin"
-  | "search-vendor" | "conditions" | "ringi";
+import type { Role, ScreenKey } from "../lib/screens.ts";
+import { navScreensForRole, SECTION_TITLES } from "../lib/screens.ts";
 
-type NavItem = { key: PopNavKey; href: string; icon: string; label: string };
-
-const NAV_ADMIN: NavItem[] = [
-  { key: "vendors", href: "/master/vendors", icon: "🏢", label: "取引先" },
-  { key: "staff", href: "/master/staff", icon: "👥", label: "スタッフ" },
-  { key: "contracts", href: "/master/contracts", icon: "📄", label: "契約台帳" },
-  { key: "work-model", href: "/work-model", icon: "🎬", label: "作品モデル" },
-  { key: "sublicense", href: "/master/sublicense", icon: "💴", label: "請求権(受領予定)" },
-  { key: "receivable-map", href: "/master/receivable-map", icon: "🔀", label: "分配構造マップ" },
-  { key: "admin", href: "/admin", icon: "⚙️", label: "管理" },
-];
-const NAV_VIEW: NavItem[] = [
-  { key: "search-vendor", href: "/search/vendor", icon: "⌕", label: "取引先検索" },
-  { key: "conditions", href: "/master/conditions", icon: "🧾", label: "条件明細" },
-];
+// 後方互換: 各 view が active 指定で使う型。画面レジストリの ScreenKey に統一。
+export type PopNavKey = ScreenKey;
 
 const esc = (s: string) =>
   String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+
+/**
+ * 統合 Phase 1: マスタ編集は React admin-ui に一本化していくため、search-api の
+ *   重複コンソール上部に「編集は admin-ui 推奨」バナーを出す。ADMIN_UI_URL が
+ *   設定されているときのみ表示(未設定なら従来どおり本ページで編集)。
+ *   reactPath は admin-ui 側の対応ルート(例: "/master/vendors")。
+ */
+export function adminUiEditBanner(reactPath: string): string {
+  const base = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  if (!base) return "";
+  const href = base + reactPath;
+  return `<a href="${esc(href)}" target="_blank" rel="noopener"
+    style="display:flex;gap:10px;align-items:center;justify-content:space-between;
+      background:linear-gradient(135deg,#efeaff,#f6f3ff);border:1px solid #e2dbfb;
+      border-radius:14px;padding:11px 15px;margin-bottom:14px;text-decoration:none;color:#241f3a;font-weight:700;font-size:12.5px">
+    <span>🖥 このマスタの<strong>編集</strong>は admin-ui に移行中です。admin-ui で開く方が高機能です。</span>
+    <span style="color:#6c5ce7;font-weight:800">admin-ui で開く ↗</span>
+  </a>`;
+}
 
 export const POP_CSS = `
 :root{
@@ -297,27 +302,31 @@ export const POP_CONTENT_BRIDGE = `
 `;
 
 /**
- * navGroups:
- *   "all"  — Master Console(admin) + Search & Browse(view) 両方(既定)。
- *   "view" — Search & Browse のみ。viewer 向けページ(/search/vendor 等)で、
- *            viewer がアクセスできない admin リンクを出さないため。
+ * サイドバーをログイン者の役割で生成する (Phase 25)。
+ *
+ * 旧 navGroups("all"/"view") を廃止し、画面レジストリ(screens.ts)を
+ * role でフィルタして描画する。これにより「ページごとにナビが変わる」
+ * 「viewer に admin リンクが漏れる」問題が解消する。console セクションは
+ * admin のみに項目が出るため、viewer では自然に非表示になる。
  */
-type NavGroups = "all" | "view";
-
-function navHtml(active: PopNavKey, groups: NavGroups = "all"): string {
-  const item = (i: NavItem) =>
-    `<a class="${i.key === active ? "on" : ""}" href="${i.href}"><span class="ic">${i.icon}</span>${esc(i.label)}</a>`;
-  const adminSection =
-    groups === "all"
-      ? `<div class="pop-side-title">⚙ Master Console</div>
-    <nav class="pop-nav">${NAV_ADMIN.map(item).join("")}</nav>`
-      : "";
+function navHtml(active: PopNavKey, role: Role): string {
+  const section = (key: "console" | "browse") => {
+    const screens = navScreensForRole(role, key);
+    if (screens.length === 0) return "";
+    const items = screens
+      .map(
+        (s) =>
+          `<a class="${s.key === active ? "on" : ""}" href="${s.path}"><span class="ic">${s.icon}</span>${esc(s.label)}</a>`
+      )
+      .join("");
+    return `<div class="pop-side-title">${SECTION_TITLES[key]}</div>
+    <nav class="pop-nav">${items}</nav>`;
+  };
   return `
   <aside class="pop-side">
     <div class="pop-brand">ARCS <b>Legal OS</b></div>
-    ${adminSection}
-    <div class="pop-side-title">🔍 Search &amp; Browse</div>
-    <nav class="pop-nav">${NAV_VIEW.map(item).join("")}</nav>
+    ${section("console")}
+    ${section("browse")}
   </aside>`;
 }
 
@@ -330,7 +339,7 @@ export function popPage(opts: {
   body: string;
   headExtra?: string; // ページ固有 <style> 等
   pageTitle?: string;
-  navGroups?: NavGroups; // "all"(既定) | "view"(viewer 向け)
+  role?: Role; // ログイン者の役割。サイドバーをこの役割で絞る(既定 viewer)。
   contentBridge?: boolean; // 独自CSSページの本文要素を pop に揃える(headExtra の後に適用)
 }): string {
   const titleTag = opts.pageTitle || `${opts.title} · Arcs Legal OS`;
@@ -345,7 +354,7 @@ ${opts.contentBridge ? `<style>${POP_CONTENT_BRIDGE}</style>` : ""}
 </head>
 <body>
 <div class="pop-shell">
-${navHtml(opts.active, opts.navGroups || "all")}
+${navHtml(opts.active, opts.role || "viewer")}
   <div class="pop-main">
     <div class="pop-toolbar">
       <h1>${esc(opts.title)}</h1>
@@ -383,7 +392,7 @@ export function popAdminPage(opts: {
   body: string;
   headExtra?: string;
   pageTitle?: string;
-  navGroups?: NavGroups;
+  role?: Role; // ログイン者の役割。サイドバーをこの役割で絞る(既定 viewer)。
 }): string {
   const titleTag = opts.pageTitle || `${opts.title} · Arcs Legal OS`;
   return `<!DOCTYPE html>
@@ -397,7 +406,7 @@ ${opts.headExtra || ""}
 </head>
 <body>
 <div class="pop-shell">
-${navHtml(opts.active, opts.navGroups || "all")}
+${navHtml(opts.active, opts.role || "viewer")}
   <div class="pop-main">
     <div class="pop-toolbar">
       <h1>${esc(opts.title)}</h1>

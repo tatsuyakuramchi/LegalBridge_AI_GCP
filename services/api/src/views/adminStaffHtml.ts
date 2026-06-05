@@ -252,6 +252,7 @@ export function adminStaffPage(opts: AdminStaffPageOpts): string {
 
   return popPage({
     active: "admin",
+    role: "admin",
     mode: "admin",
     title: "ユーザー権限管理",
     subtitle: "staff の admin / viewer ロール切替",

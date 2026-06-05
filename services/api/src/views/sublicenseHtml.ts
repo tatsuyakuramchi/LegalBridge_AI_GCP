@@ -11,6 +11,7 @@
 
 import { MASTER_CSS } from "./masterChrome.ts";
 import { popAdminPage } from "./popChrome.ts";
+import type { Role } from "../lib/screens.ts";
 
 const EXTRA_CSS = `
 .sec { margin-bottom: 18px; }
@@ -47,7 +48,7 @@ table.t tr.confirmed td { background: #f0fdf4; }
 th.chk, td.chk { width: 30px; text-align: center; }
 `;
 
-export function sublicensePage(): string {
+export function sublicensePage(role: Role = "viewer"): string {
   const body = `
 <div class="container" style="padding:0 0 24px;">
 
@@ -527,6 +528,7 @@ export function sublicensePage(): string {
 
   return popAdminPage({
     active: "sublicense",
+    role,
     masterCss: MASTER_CSS,
     title: "請求権台帳(受領予定)",
     subtitle: "当社の請求権 · サブライセンス/出版印税/ライセンスアウト等の受領予定と請求状態(未請求/請求済/入金済)",
