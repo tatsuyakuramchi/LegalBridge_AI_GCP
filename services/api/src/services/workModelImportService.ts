@@ -33,7 +33,7 @@ export type V3ImportResult = {
   preview: { row: number; action: string; code: string; title: string }[];
 };
 
-type ColType = "text" | "int" | "bool" | "date" | "array" | "vendor";
+type ColType = "text" | "int" | "bool" | "date" | "array" | "vendor" | "work";
 type ColSpec = { field: string; aliases: string[]; type?: ColType };
 
 type EntityConfig = {
@@ -97,6 +97,10 @@ const CONFIGS: Record<V3Entity, EntityConfig> = {
       { field: "work_type", aliases: ["work_type", "作品種別", "種別"] },
       { field: "status", aliases: ["status", "ステータス", "状態"] },
       { field: "is_original", aliases: ["is_original", "オリジナル", "完全オリジナル"], type: "bool" },
+      // 派生(系譜): parent_work_code を works.id に解決して parent_work_id に入れる。
+      //   未存在/空ならスキップ(後から作品フォームで紐付け可)。
+      { field: "parent_work_id", aliases: ["parent_work_code", "親作品コード", "派生元コード", "派生元作品コード", "派生元"], type: "work" },
+      { field: "derivation_type", aliases: ["derivation_type", "派生種別", "派生"] },
       { field: "remarks", aliases: ["remarks", "備考"] },
       { field: "publisher_vendor_id", aliases: ["publisher_vendor_code", "出版社取引先コード"], type: "vendor" },
     ],
@@ -183,6 +187,18 @@ async function resolveVendorId(query: Query, code: string): Promise<number | nul
   return id;
 }
 
+// parent_work_code → works.id 解決(派生品の親作品紐付け用)。未存在は null(非致命)。
+const workIdCache = new Map<string, number | null>();
+async function resolveWorkId(query: Query, code: string): Promise<number | null> {
+  const key = code.trim();
+  if (!key) return null;
+  if (workIdCache.has(key)) return workIdCache.get(key)!;
+  const r = await query(`SELECT id FROM works WHERE work_code = $1`, [key]);
+  const id = r.rows.length ? Number(r.rows[0].id) : null;
+  workIdCache.set(key, id);
+  return id;
+}
+
 export function parseWorkModelCsv(csvText: string): Record<string, any>[] {
   const res = Papa.parse<Record<string, any>>(csvText, {
     header: true,
@@ -216,6 +232,7 @@ export async function importWorkModelCsv(
 
   const headerIdx = buildHeaderIndex(cfg, Object.keys(rows[0]));
   vendorIdCache.clear();
+  workIdCache.clear();
 
   for (let i = 0; i < rows.length; i++) {
     const rowNo = i + 2; // 1=ヘッダ, データは 2 行目から
@@ -230,6 +247,8 @@ export async function importWorkModelCsv(
           links[field] = String(raw[header] ?? "").trim();
         } else if (spec.type === "vendor") {
           rec[field] = await resolveVendorId(query, String(raw[header] ?? ""));
+        } else if (spec.type === "work") {
+          rec[field] = await resolveWorkId(query, String(raw[header] ?? ""));
         } else {
           rec[field] = coerce(spec.type, raw[header]);
         }
@@ -343,8 +362,9 @@ export function getWorkModelSampleCsv(entity: V3Entity): string {
       "source_code,title,title_kana,original_publisher,default_rights_holder,default_credit_display,remarks,rights_holder_vendor_code\n" +
       ",サンプル原作,サンプルゲンサク,サンプル出版,サンプル権利者株式会社,(C)サンプル権利者,初回取込サンプル,\n",
     works:
-      "work_code,title,title_kana,work_type,status,division,is_original,remarks,publisher_vendor_code\n" +
-      ",サンプルボードゲーム,サンプルボードゲーム,board_game,planning,BDG,true,初回取込サンプル,\n",
+      "work_code,title,title_kana,work_type,status,division,is_original,parent_work_code,derivation_type,remarks,publisher_vendor_code\n" +
+      ",サンプルボードゲーム,サンプルボードゲーム,board_game,planning,BDG,true,,,初回取込サンプル,\n" +
+      ",サンプル現地版(派生),サンプルゲンチバン,board_game,planning,BDG,false,W-2026-0001,localization,親作品コードで紐付け(空でも可),\n",
     contracts:
       "document_number,contract_title,contract_level,contract_category,contract_type,lifecycle_stage,effective_date,expiration_date,auto_renewal,primary_vendor_code,work_code,source_code\n" +
       ",サンプル業務委託契約,standalone,service,service_master,requested,2026-04-01,2027-03-31,false,,,\n",
