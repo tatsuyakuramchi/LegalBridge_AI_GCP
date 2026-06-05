@@ -286,6 +286,28 @@ export function DocumentEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromPendingId, reopenId])
 
+  // ディープリンク: 未検収発注書インボックス等から
+  //   /documents/new?template=inspection_certificate&parent_po=<contract_capabilities.id>
+  //   で開くと、テンプレ=検収書 + 親発注書を事前選択する。
+  const templateParam = searchParams.get("template")
+  const parentPoParam = searchParams.get("parent_po")
+  React.useEffect(() => {
+    if (!templateParam && !parentPoParam) return
+    if (templateParam) setSelectedTemplate(templateParam)
+    if (parentPoParam) {
+      // DocumentForm の親POピッカーが autoPickContractId として拾い、自動選択する。
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        __preselect_parent_po_id: Number(parentPoParam) || undefined,
+      }))
+    }
+    const sp = searchParams
+    sp.delete("template")
+    sp.delete("parent_po")
+    setSearchParams(sp, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateParam, parentPoParam])
+
   // ---- Helpers --------------------------------------------------------
 
   /**

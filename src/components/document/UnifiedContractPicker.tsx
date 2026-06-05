@@ -133,6 +133,9 @@ interface Props {
   onClear: () => void;
   /** ボタンのラベル (例: "親PO/契約を選ぶ", "ライセンス契約を選ぶ") */
   label?: string;
+  /** 指定すると、その契約 ID を自動で詳細取得して onPick する(ディープリンク用)。
+      未検収発注書インボックス → 検収書作成 のように親POを事前選択して開くのに使う。 */
+  autoPickContractId?: number;
 }
 
 const yen = (n: number | null | undefined) =>
@@ -164,6 +167,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
   onPick,
   onClear,
   label,
+  autoPickContractId,
 }) => {
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -259,6 +263,21 @@ export const UnifiedContractPicker: React.FC<Props> = ({
       if (detailAbortRef.current === controller) setPicking(null);
     }
   };
+
+  // ディープリンク: autoPickContractId が来たら、その契約を一度だけ自動選択する。
+  //   (未検収発注書インボックス → 検収書作成 で親POを事前選択して開く用)
+  const autoPickedRef = React.useRef<number | null>(null);
+  React.useEffect(() => {
+    if (
+      autoPickContractId &&
+      !hasParent &&
+      autoPickedRef.current !== autoPickContractId
+    ) {
+      autoPickedRef.current = autoPickContractId;
+      loadDetail(autoPickContractId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoPickContractId, hasParent]);
 
   const loadByDocNumber = async (docNumber: string) => {
     if (!docNumber.trim()) return;

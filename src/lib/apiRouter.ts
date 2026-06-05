@@ -57,6 +57,9 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   // Phase 10: CSV テンプレ DL は worker に常駐 (text/csv レスポンス)
   /^\/api\/imports\/bulk\/templates(?:\/|$)/,
   /^\/api\/imports\/bulk\/inspection\/trigger-waiting\.csv(?:\?|$)/,
+  // 統合修正: v2 一括取込のテンプレ DL も worker のみが提供する(GET)。
+  //   これが無いと READ(search-api)へ振られて 404(発注書等のサンプルCSVが落ちない)。
+  /^\/api\/imports\/v2\/templates(?:\/|\?|$)/,
   // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ
   // (form_data 全件返却 + jsonb 操作のため)
   /^\/api\/documents\/pending-pdf(?:\?|$)/,

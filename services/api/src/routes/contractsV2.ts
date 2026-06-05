@@ -117,6 +117,14 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           (SELECT COUNT(*) FROM capability_financial_conditions cfc WHERE cfc.capability_id = cc.id) AS condition_count,
           (SELECT COALESCE(SUM(cli.inspected_amount_ex_tax), 0)
              FROM capability_line_items cli WHERE cli.capability_id = cc.id) AS inspected_amount,
+          -- 検収書未発行の明細数: status_flags.inspection_issued が true でなく、かつ
+          --   まだ全額検収されていない(残額あり)業務明細。検収待ち制御の主キー。
+          (SELECT COUNT(*) FROM capability_line_items cli
+             WHERE cli.capability_id = cc.id
+               AND COALESCE(cli.amount_ex_tax, 0) > 0
+               AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
+               AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
+          ) AS unissued_line_count,
           (cc.backlog_issue_key LIKE 'IMPORT-%') AS is_imported
         FROM contract_capabilities cc
         LEFT JOIN vendors v ON v.id = cc.vendor_id
@@ -161,6 +169,8 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           inspected_amount: Number(r.inspected_amount) || 0,
           remaining_amount:
             (Number(r.amount_ex_tax) || 0) - (Number(r.inspected_amount) || 0),
+          // 検収書未発行(=検収待ち)の業務明細数。0 なら検収待ちではない。
+          unissued_line_count: Number(r.unissued_line_count) || 0,
           is_imported: !!r.is_imported,
         }))
       );

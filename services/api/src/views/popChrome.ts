@@ -73,12 +73,12 @@ a{color:inherit;text-decoration:none}
 .pop-nav a .badge{margin-left:auto;font-size:11px;font-weight:800;background:#efeaff;color:#6c5ce7;border-radius:20px;padding:1px 9px}
 .pop-nav a.on .badge{background:rgba(255,255,255,.35);color:#fff}
 /* main */
-.pop-main{display:flex;flex-direction:column;min-width:0}
+.pop-main{display:flex;flex-direction:column;min-width:0;overflow-x:clip}
 .pop-toolbar{display:flex;align-items:center;gap:10px;padding:14px 22px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.75);backdrop-filter:blur(20px);position:sticky;top:0;z-index:20;flex-wrap:wrap}
 .pop-toolbar h1{font-size:17px;font-weight:800}
 .pop-toolbar .sub{color:var(--muted);font-size:12px}
 .pop-toolbar .sp{flex:1}
-.pop-body{padding:20px;overflow:auto}
+.pop-body{padding:20px;overflow:auto;min-width:0}
 /* buttons */
 .pop-btn{border:0;border-radius:12px;padding:8px 16px;font:inherit;font-size:12.5px;font-weight:800;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--accent),var(--accent2));box-shadow:0 6px 14px rgba(108,92,231,.3);display:inline-flex;align-items:center;gap:6px}
 .pop-btn:hover{filter:brightness(1.05)} .pop-btn:active{transform:translateY(1px)}
@@ -134,9 +134,11 @@ table.pop-table tbody tr:hover td{background:var(--hover)}
 .pop-modal .xbtn{background:none;border:0;font-size:22px;cursor:pointer;color:var(--muted)}
 /* filters / forms */
 .pop-filters{display:grid;gap:10px 14px;align-items:end;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));background:#fff;border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;box-shadow:0 2px 8px rgba(90,70,180,.05)}
-.pop-filters .f{display:flex;flex-direction:column;gap:4px}
+.pop-filters .f{display:flex;flex-direction:column;gap:4px;min-width:0}
 .pop-filters label{font-size:11px;color:var(--muted);font-weight:800}
-.pop-filters .range{display:flex;gap:6px;align-items:center}
+.pop-filters .range{display:flex;gap:6px;align-items:center;min-width:0}
+/* 日付入力等が縮まず本文を押し広げてサイドバーが横へ消える崩れを防ぐ。 */
+.pop-filters input,.pop-filters select,.pop-filters .pop-input,.pop-filters .pop-select{min-width:0;max-width:100%}
 .pop-input,.pop-select{border:1.5px solid #e2dbfb;border-radius:10px;background:#fff;padding:8px 10px;font:inherit;font-size:13px;color:var(--ink);outline:none}
 .pop-input:focus,.pop-select:focus{border-color:var(--accent)}
 .pop-toolbar2{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px;flex-wrap:wrap}
