@@ -2186,6 +2186,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             currentContractId={Number(formData.parent_po_id) || undefined}
             hasParent={!!formData.parent_po_id}
             label="親契約 (発注書 / 業務委託) を選ぶ"
+            autoPickContractId={Number(formData.__preselect_parent_po_id) || undefined}
             onPick={(detail: ContractDetail) => {
               const c = detail.contract;
               const v = detail.vendor || {};
