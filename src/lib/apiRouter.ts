@@ -94,6 +94,17 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
 const READ_PATHS_ON_GET: RegExp[] = [
   /^\/api\/contracts\/search(?:\?|$)/,
   /^\/api\/contracts\/\d+(?:\/|\?|$)/,
+  // 統合 P3-2: 条件明細横断検索は search-api 専用 read。
+  /^\/api\/conditions(?:\/|\?|$)/,
+  // 紐付け編集モーダルのピッカー(原作/作品/契約)も search-api 専用 read。
+  /^\/api\/v3\/(?:source-ips|works|contracts)(?:\/|\?|$)/,
+  // 統合 P3-5: 作品モデル CSV サンプル(template)も search-api 専用 read。
+  /^\/api\/v3\/import\/[^/]+\/template\.csv(?:\?|$)/,
+  // 統合 P3-3: 請求権受領(sublicense)は search-api 専用。read/CSV を含む。
+  /^\/api\/sublicense(?:\/|\?|$)/,
+  // 統合 P3-4: 分配構造マップ(receivable-map)と作品別名(aliases)read。
+  /^\/api\/receivable-map(?:\/|\?|$)/,
+  /^\/api\/works\/\d+\/aliases(?:\?|$)/,
 ];
 
 // Routes that should go to the READ service even on POST.
@@ -104,6 +115,22 @@ const READ_PATHS_ON_POST: RegExp[] = [  /^\/api\/contract-check(?:\/|$)/,
   //   二重実装は使わない。サブパス (/:code 詳細 GET, /import-csv,
   //   /upload-change-request の multipart) は対象外なので末尾を厳密に判定。
   /^\/api\/master\/vendors(?:\?|$)/,
+  // 統合 Phase 3: スタッフ役割変更 (PATCH /api/master/staff/:email/role) は
+  //   search-api の正規実装(staff.app_role 更新 + 監査ログ)を本体とする。
+  //   apiRouter は既定で PATCH を worker へ振るため、ここで READ_URL(search-api)
+  //   へ明示する。portal_secret 経由で requireAppRole を無条件通過する。
+  /^\/api\/master\/staff\/[^/]+\/role(?:\?|$)/,
+  // 統合 P3-2: 条件明細の紐付け更新 (PUT /api/conditions/:id/links) は
+  //   search-api の正規実装。apiRouter は既定で PUT を worker へ振るため明示。
+  /^\/api\/conditions\/\d+\/links(?:\?|$)/,
+  // 統合 P3-3: 請求権受領(sublicense)の書込(deals/reports/receipts/import)も
+  //   全て search-api 正規実装へ。
+  /^\/api\/sublicense(?:\/|\?|$)/,
+  // 統合 P3-4: 作品別名(タイトル名寄せ)の追加/削除は search-api 正規実装へ。
+  /^\/api\/works\/\d+\/aliases(?:\?|$)/,
+  /^\/api\/work-aliases\/\d+(?:\?|$)/,
+  // 統合 P3-5: 作品モデル(v3)の write(POST/PUT/import)は search-api 正規実装へ。
+  /^\/api\/v3\//,
 ];
 
 function resolveBaseUrl(method: string, path: string): string {

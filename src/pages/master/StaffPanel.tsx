@@ -49,6 +49,46 @@ export function StaffPanel() {
   }
 
   const [saving, setSaving] = React.useState(false)
+  const [roleSaving, setRoleSaving] = React.useState(false)
+
+  // 統合 Phase 3: 役割(app_role)変更。search-api の正規 PATCH を直接叩く
+  //   (apiRouter が当該パスを READ_URL=search-api へ振る)。
+  const changeRole = async (newRole: "admin" | "viewer") => {
+    if (!editing?.email) {
+      showNotification("メール未登録のため役割を変更できません", "error")
+      return
+    }
+    if ((editing.app_role || "viewer").toLowerCase() === newRole) return
+    setRoleSaving(true)
+    try {
+      const res = await fetch(
+        `/api/master/staff/${encodeURIComponent(editing.email)}/role`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ app_role: newRole }),
+        }
+      )
+      const j = await res.json().catch(() => null)
+      if (res.ok && j?.ok !== false) {
+        setEditing({ ...editing, app_role: newRole })
+        showNotification(
+          `「${editing.staff_name || editing.email}」を ${newRole} に変更しました`,
+          "success"
+        )
+        await refreshStaff()
+      } else {
+        showNotification(
+          `役割変更に失敗 (HTTP ${res.status})${j?.error ? ` — ${j.error}` : ""}`,
+          "error"
+        )
+      }
+    } catch (e: any) {
+      showNotification(`サーバーエラー: ${e?.message || e}`, "error")
+    } finally {
+      setRoleSaving(false)
+    }
+  }
 
   // Worker /api/master/staff は POST のみ。
   //   - 編集時: body.id を含めて UPDATE モード (Phase 22.21.120)
@@ -151,9 +191,16 @@ export function StaffPanel() {
                 <p className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground truncate">
                   {s.department || "—"}
                 </p>
-                <Badge variant="outline" className="mt-1">
-                  @{s.slack_user_id}
-                </Badge>
+                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                  <Badge variant="outline">@{s.slack_user_id}</Badge>
+                  {(s.app_role || "").toLowerCase() === "admin" ? (
+                    <Badge className="bg-violet-600 text-white hover:bg-violet-600">
+                      admin
+                    </Badge>
+                  ) : (
+                    <Badge variant="secondary">viewer</Badge>
+                  )}
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -203,6 +250,50 @@ export function StaffPanel() {
                 onChange={(e) => set({ email: e.target.value })}
               />
             </Field>
+            {/* 統合 Phase 3: 役割(app_role)管理。既存担当者かつメール有りのみ。 */}
+            {!creating && (
+              <Field label="役割 (app_role)">
+                {data?.email ? (
+                  <div className="flex items-center gap-2">
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        (data?.app_role || "viewer").toLowerCase() === "admin"
+                          ? "default"
+                          : "outline"
+                      }
+                      disabled={roleSaving}
+                      onClick={() => changeRole("admin")}
+                    >
+                      admin
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={
+                        (data?.app_role || "viewer").toLowerCase() !== "admin"
+                          ? "default"
+                          : "outline"
+                      }
+                      disabled={roleSaving}
+                      onClick={() => changeRole("viewer")}
+                    >
+                      viewer
+                    </Button>
+                    <span className="text-[11px] font-mono text-muted-foreground ml-1">
+                      {roleSaving
+                        ? "変更中…"
+                        : `現在: ${(data?.app_role || "viewer").toLowerCase()}`}
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-[11px] font-mono text-muted-foreground">
+                    メール登録後に役割を変更できます。
+                  </p>
+                )}
+              </Field>
+            )}
           </DialogBody>
           <DialogFooter>
             <Button variant="outline" onClick={close} disabled={saving}>

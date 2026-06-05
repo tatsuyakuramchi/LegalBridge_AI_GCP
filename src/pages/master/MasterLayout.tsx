@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck, ListChecks, Coins, Network, Boxes } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,14 @@ const tabs = [
   { to: "/master/sublicensees", label: "Sublicensees", icon: GitBranch },
   // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
   { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
+  // 統合 P3-2: 条件明細 横断検索 (capability_line_items)
+  { to: "/master/conditions", label: "条件明細", icon: ListChecks },
+  // 統合 P3-3: 請求権台帳 (受領予定 / サブライセンス等)
+  { to: "/master/sublicense", label: "請求権(受領)", icon: Coins },
+  // 統合 P3-4: 分配構造マップ (作品中心の上流分配←当社←下流受領)
+  { to: "/master/receivable-map", label: "分配マップ", icon: Network },
+  // 統合 P3-5: 作品モデル (原作IP / 自社作品 / 契約 · v3)
+  { to: "/master/work-model", label: "作品モデル", icon: Boxes },
   // Phase 22.21.81: 文書作成途中の draft (一時保存) の掃除タブ
   { to: "/master/drafts", label: "Drafts (一時保存)", icon: FileEdit },
   { to: "/master/staff", label: "Staff", icon: Users },
