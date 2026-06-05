@@ -39,6 +39,58 @@ type VendorContact = {
   remarks?: string
 }
 
+// 住所 (vendor_addresses) の型。is_primary が「メイン住所」= PDF/帳票に転記。
+type VendorAddress = {
+  id?: number
+  address_label?: string
+  postal_code?: string
+  address: string
+  is_primary?: boolean
+  sort_order?: number
+}
+
+// 振込先口座 (vendor_bank_accounts) の型。is_primary が「メイン振込先」= PDF/Excel に転記。
+type VendorBankAccount = {
+  id?: number
+  bank_label?: string
+  bank_name?: string
+  branch_name?: string
+  account_type?: string
+  account_number?: string
+  account_holder_kana?: string
+  is_primary?: boolean
+  sort_order?: number
+}
+
+// 取引先を編集用に正規化: 1:N の addresses / bank_accounts が空なら、レガシー単一
+//   カラム (address / bank_name 等) から 1 件をメインとしてシードする。これにより
+//   旧データ (単一欄のみ) を開いても優先フラグ付きリストとして扱え、保存で失われない。
+function withArrays<T extends Record<string, any>>(v: T): T {
+  const addresses: VendorAddress[] =
+    Array.isArray(v.addresses) && v.addresses.length > 0
+      ? v.addresses
+      : v.address
+      ? [{ address: v.address, is_primary: true, sort_order: 0 }]
+      : []
+  const bank_accounts: VendorBankAccount[] =
+    Array.isArray(v.bank_accounts) && v.bank_accounts.length > 0
+      ? v.bank_accounts
+      : v.bank_name || v.branch_name || v.account_number || v.account_holder_kana
+      ? [
+          {
+            bank_name: v.bank_name || "",
+            branch_name: v.branch_name || "",
+            account_type: v.account_type || "普通",
+            account_number: v.account_number || "",
+            account_holder_kana: v.account_holder_kana || "",
+            is_primary: true,
+            sort_order: 0,
+          },
+        ]
+      : []
+  return { ...v, addresses, bank_accounts }
+}
+
 const empty = {
   vendor_name: "",
   vendor_code: "",
@@ -66,6 +118,10 @@ const empty = {
   // Phase 22.13: 代表者 + 担当者 (1:N)
   vendor_rep: "",
   contacts: [] as VendorContact[],
+  // 住所・振込先 (1:N + 優先フラグ)。メイン (is_primary) がレガシー単一カラムへ
+  //   ミラーされ、PDF / Excel の住所・振込先に転記される。
+  addresses: [] as VendorAddress[],
+  bank_accounts: [] as VendorBankAccount[],
   // Phase 22.21.119: search-api 側に揃えて追加
   corporate_number: "",
   transaction_category: "",
@@ -127,10 +183,26 @@ export function VendorsPanel() {
     setSaving(true)
     try {
       const isEdit = !!editing
+      // メイン (is_primary) の住所・口座をレガシー単一カラムへ同期して送る。
+      //   search-api 側も replaceVendor* で primary をミラーするが、ここでも整合を
+      //   取っておくことで、配列が空のケースや他リーダーでも値がズレない。
+      const addrs: VendorAddress[] = Array.isArray(data?.addresses) ? data.addresses : []
+      const banks: VendorBankAccount[] = Array.isArray(data?.bank_accounts) ? data.bank_accounts : []
+      const primAddr = addrs.find((a) => a.is_primary) || addrs[0]
+      const primBank = banks.find((b) => b.is_primary) || banks[0]
+      const payload = {
+        ...data,
+        address: primAddr?.address ?? data?.address ?? "",
+        bank_name: primBank?.bank_name ?? "",
+        branch_name: primBank?.branch_name ?? "",
+        account_type: primBank?.account_type ?? data?.account_type ?? "普通",
+        account_number: primBank?.account_number ?? "",
+        account_holder_kana: primBank?.account_holder_kana ?? "",
+      }
       const res = await fetch("/api/master/vendors", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         showNotification(
@@ -209,16 +281,16 @@ export function VendorsPanel() {
               //   試みるが、404/エラー時は握りつぶす。
               //   (vendor_code に "/"・空白・"#" 等が含まれると encode しない URL で
               //    path 不一致になり 404 になる事故があったため encodeURIComponent。)
-              setDetail(v)
-              setEditing(v)
+              setDetail(withArrays(v))
+              setEditing(withArrays(v))
               const code = String(v.vendor_code || "").trim()
               if (!code) return
               fetch(`/api/master/vendors/${encodeURIComponent(code)}`)
                 .then((r) => (r.ok ? r.json() : null))
                 .then((d) => {
                   if (d && !d.error && (d.vendor_code || d.id)) {
-                    setDetail(d)
-                    setEditing(d)
+                    setDetail(withArrays(d))
+                    setEditing(withArrays(d))
                   }
                 })
                 .catch(() => {})
@@ -497,13 +569,108 @@ export function VendorsPanel() {
                 onChange={(e) => set({ email: e.target.value })}
               />
             </Field>
-            <Field label="住所" className="col-span-2">
-              <Input
-                value={data?.address || ""}
-                disabled={!creating && !editing}
-                onChange={(e) => set({ address: e.target.value })}
-              />
-            </Field>
+            {/* 住所 (1:N + 優先)。★ = メイン住所 → 発注書/検収書 PDF の住所欄に転記。 */}
+            <div className="col-span-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                  住所 ({Array.isArray(data?.addresses) ? data.addresses.length : 0} 件)
+                </Label>
+                {(creating || editing) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      const next: VendorAddress[] = Array.isArray(data?.addresses) ? [...data.addresses] : []
+                      next.push({ address_label: "", postal_code: "", address: "", is_primary: next.length === 0, sort_order: next.length })
+                      set({ addresses: next })
+                    }}
+                  >
+                    <Plus className="h-3 w-3" />
+                    住所を追加
+                  </Button>
+                )}
+              </div>
+              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+                ★ = メイン住所。発注書 / 検収書 PDF の住所欄に転記されます。複数登録時は 1 件だけ ★ にしてください (なければ先頭を自動で ★)。
+              </p>
+              {!Array.isArray(data?.addresses) || data.addresses.length === 0 ? (
+                <div className="text-[11px] font-mono text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
+                  住所が未登録です{creating || editing ? " — 上の「住所を追加」から登録してください" : ""}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {data.addresses.map((a: VendorAddress, idx: number) => (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "rounded-sm border p-2.5 space-y-2",
+                        a.is_primary ? "border-emerald-300 bg-emerald-50/50" : "border-border bg-card"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          disabled={!creating && !editing}
+                          onClick={() => set({ addresses: data.addresses.map((x: VendorAddress, i: number) => ({ ...x, is_primary: i === idx })) })}
+                          className={cn(
+                            "inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 border rounded-sm transition-colors",
+                            a.is_primary ? "border-emerald-500 bg-emerald-100 text-emerald-800" : "border-border text-muted-foreground hover:border-foreground"
+                          )}
+                          title="この住所をメイン住所にする"
+                        >
+                          <Star className={cn("h-3 w-3", a.is_primary && "fill-emerald-600")} />
+                          {a.is_primary ? "メイン住所" : "メインに設定"}
+                        </button>
+                        {(creating || editing) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = data.addresses.filter((_: any, i: number) => i !== idx)
+                              if (a.is_primary && next.length > 0 && !next.some((x: VendorAddress) => x.is_primary)) next[0].is_primary = true
+                              set({ addresses: next })
+                            }}
+                            className="text-muted-foreground hover:text-destructive p-1"
+                            title="この住所を削除"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">ラベル</Label>
+                          <Input
+                            placeholder="例: 本社 / 配送先"
+                            value={a.address_label || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.addresses]; next[idx] = { ...a, address_label: e.target.value }; set({ addresses: next }) }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">郵便番号</Label>
+                          <Input
+                            placeholder="例: 150-0001"
+                            value={a.postal_code || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.addresses]; next[idx] = { ...a, postal_code: e.target.value }; set({ addresses: next }) }}
+                          />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">住所 *</Label>
+                          <Input
+                            placeholder="例: 東京都渋谷区…"
+                            value={a.address || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.addresses]; next[idx] = { ...a, address: e.target.value }; set({ addresses: next }) }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* ── SEC 03 / 税務・インボイス ──────────────────────── */}
             <SectionHead label="SEC · 03 / 税務・インボイス" />
@@ -550,47 +717,136 @@ export function VendorsPanel() {
               />
             </Field>
 
-            {/* ── SEC 04 / 振込先 ──────────────────────────────────── */}
+            {/* ── SEC 04 / 振込先 (1:N + 優先) ─────────────────────────
+                 ★ = メイン振込先 → 検収書 PDF / 会計 Excel の振込先に転記。 */}
             <SectionHead label="SEC · 04 / 振込先" />
-            <Field label="銀行名">
-              <Input
-                value={data?.bank_name || ""}
-                disabled={!creating && !editing}
-                onChange={(e) => set({ bank_name: e.target.value })}
-              />
-            </Field>
-            <Field label="支店名">
-              <Input
-                value={data?.branch_name || ""}
-                disabled={!creating && !editing}
-                onChange={(e) => set({ branch_name: e.target.value })}
-              />
-            </Field>
-            <Field label="口座種別">
-              <NativeSelect
-                value={data?.account_type || "普通"}
-                disabled={!creating && !editing}
-                onChange={(e) => set({ account_type: e.target.value })}
-              >
-                <option value="普通">普通</option>
-                <option value="当座">当座</option>
-                <option value="貯蓄">貯蓄</option>
-              </NativeSelect>
-            </Field>
-            <Field label="口座番号">
-              <Input
-                value={data?.account_number || ""}
-                disabled={!creating && !editing}
-                onChange={(e) => set({ account_number: e.target.value })}
-              />
-            </Field>
-            <Field label="口座名義 (カナ)" className="col-span-2">
-              <Input
-                value={data?.account_holder_kana || ""}
-                disabled={!creating && !editing}
-                onChange={(e) => set({ account_holder_kana: e.target.value })}
-              />
-            </Field>
+            <div className="col-span-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <Label className="text-xs font-mono font-bold uppercase tracking-[0.16em]">
+                  振込先口座 ({Array.isArray(data?.bank_accounts) ? data.bank_accounts.length : 0} 件)
+                </Label>
+                {(creating || editing) && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      const next: VendorBankAccount[] = Array.isArray(data?.bank_accounts) ? [...data.bank_accounts] : []
+                      next.push({ bank_label: "", bank_name: "", branch_name: "", account_type: "普通", account_number: "", account_holder_kana: "", is_primary: next.length === 0, sort_order: next.length })
+                      set({ bank_accounts: next })
+                    }}
+                  >
+                    <Plus className="h-3 w-3" />
+                    振込先を追加
+                  </Button>
+                )}
+              </div>
+              <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+                ★ = メイン振込先。検収書 PDF / 会計 Excel の振込先に転記されます。複数登録時は 1 件だけ ★ にしてください (なければ先頭を自動で ★)。
+              </p>
+              {!Array.isArray(data?.bank_accounts) || data.bank_accounts.length === 0 ? (
+                <div className="text-[11px] font-mono text-muted-foreground italic py-3 text-center border border-dashed border-border rounded-sm">
+                  振込先が未登録です{creating || editing ? " — 上の「振込先を追加」から登録してください" : ""}
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {data.bank_accounts.map((b: VendorBankAccount, idx: number) => (
+                    <div
+                      key={idx}
+                      className={cn(
+                        "rounded-sm border p-2.5 space-y-2",
+                        b.is_primary ? "border-emerald-300 bg-emerald-50/50" : "border-border bg-card"
+                      )}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          disabled={!creating && !editing}
+                          onClick={() => set({ bank_accounts: data.bank_accounts.map((x: VendorBankAccount, i: number) => ({ ...x, is_primary: i === idx })) })}
+                          className={cn(
+                            "inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-wider px-2 py-0.5 border rounded-sm transition-colors",
+                            b.is_primary ? "border-emerald-500 bg-emerald-100 text-emerald-800" : "border-border text-muted-foreground hover:border-foreground"
+                          )}
+                          title="この口座をメイン振込先にする"
+                        >
+                          <Star className={cn("h-3 w-3", b.is_primary && "fill-emerald-600")} />
+                          {b.is_primary ? "メイン振込先" : "メインに設定"}
+                        </button>
+                        {(creating || editing) && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const next = data.bank_accounts.filter((_: any, i: number) => i !== idx)
+                              if (b.is_primary && next.length > 0 && !next.some((x: VendorBankAccount) => x.is_primary)) next[0].is_primary = true
+                              set({ bank_accounts: next })
+                            }}
+                            className="text-muted-foreground hover:text-destructive p-1"
+                            title="この振込先を削除"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        )}
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">ラベル</Label>
+                          <Input
+                            placeholder="例: メイン / 給与振込"
+                            value={b.bank_label || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_label: e.target.value }; set({ bank_accounts: next }) }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行名</Label>
+                          <Input
+                            value={b.bank_name || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_name: e.target.value }; set({ bank_accounts: next }) }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">支店名</Label>
+                          <Input
+                            value={b.branch_name || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, branch_name: e.target.value }; set({ bank_accounts: next }) }}
+                          />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座種別</Label>
+                          <NativeSelect
+                            value={b.account_type || "普通"}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_type: e.target.value }; set({ bank_accounts: next }) }}
+                          >
+                            <option value="普通">普通</option>
+                            <option value="当座">当座</option>
+                            <option value="貯蓄">貯蓄</option>
+                          </NativeSelect>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座番号</Label>
+                          <Input
+                            value={b.account_number || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_number: e.target.value }; set({ bank_accounts: next }) }}
+                          />
+                        </div>
+                        <div className="space-y-1 col-span-2">
+                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座名義 (カナ)</Label>
+                          <Input
+                            value={b.account_holder_kana || ""}
+                            disabled={!creating && !editing}
+                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_holder_kana: e.target.value }; set({ bank_accounts: next }) }}
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
 
             {/* ── SEC 05 / その他 ────────────────────────────────────── */}
             <SectionHead label="SEC · 05 / その他" />
