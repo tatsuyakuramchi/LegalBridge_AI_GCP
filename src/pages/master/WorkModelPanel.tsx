@@ -787,8 +787,9 @@ function ImportResult({ r }: { r: any }) {
       </div>
       {r.parent_unresolved > 0 && (
         <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2 mb-2">
-          親(派生元)コードが見つからなかった行が {r.parent_unresolved} 件あります（下表「親解決=未解決✗」）。
-          その行は親未紐付けで取り込まれます。親作品を先に取り込む／作品コードを確認のうえ、再取込で紐付けてください。
+          親(派生元)が見つからなかった行が {r.parent_unresolved} 件あります（下表「親解決=未解決✗」）。
+          親はコード(parent_work_code)または作品名(parent_work_title)で指定できます。
+          その行は親未紐付けで取り込まれます。親作品を先に取り込む／コード・作品名を確認のうえ、再取込や「🧬 派生元を設定」で紐付けてください。
         </div>
       )}
       {r.errors?.length > 0 && (

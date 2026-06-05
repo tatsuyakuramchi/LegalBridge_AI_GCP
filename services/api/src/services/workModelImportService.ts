@@ -35,7 +35,7 @@ export type V3ImportResult = {
 };
 
 type ColType = "text" | "int" | "bool" | "date" | "array" | "vendor" | "work";
-type ColSpec = { field: string; aliases: string[]; type?: ColType };
+type ColSpec = { field: string; aliases: string[]; type?: ColType; virtual?: boolean };
 
 type EntityConfig = {
   table: string;
@@ -99,8 +99,12 @@ const CONFIGS: Record<V3Entity, EntityConfig> = {
       { field: "status", aliases: ["status", "ステータス", "状態"] },
       { field: "is_original", aliases: ["is_original", "オリジナル", "完全オリジナル"], type: "bool" },
       // 派生(系譜): parent_work_code を works.id に解決して parent_work_id に入れる。
-      //   未存在/空ならスキップ(後から作品フォームで紐付け可)。
+      //   コードが無くても parent_work_title(親作品名)でも解決できる(下の virtual 列)。
+      //   いずれも未存在/空ならスキップ(後から作品フォームで紐付け可)。
       { field: "parent_work_id", aliases: ["parent_work_code", "親作品コード", "派生元コード", "派生元作品コード", "派生元"], type: "work" },
+      // 仮想列: テーブルには書かず、parent_work_id がコードで解決できないとき
+      //   タイトル一致で親を解決するために使う。
+      { field: "parent_work_title", aliases: ["parent_work_title", "親作品名", "親作品タイトル", "派生元作品名", "派生元名", "派生元タイトル"], virtual: true },
       { field: "derivation_type", aliases: ["derivation_type", "派生種別", "派生"] },
       { field: "remarks", aliases: ["remarks", "備考"] },
       { field: "publisher_vendor_id", aliases: ["publisher_vendor_code", "出版社取引先コード"], type: "vendor" },
@@ -200,6 +204,15 @@ async function resolveWorkId(query: Query, code: string): Promise<number | null>
   return id;
 }
 
+// 親作品名(タイトル)で works を解決。1件一致のみ採用。0件/複数件は未解決(count を返す)。
+async function resolveWorkByTitle(query: Query, title: string): Promise<{ id: number | null; count: number }> {
+  const t = title.trim();
+  if (!t) return { id: null, count: 0 };
+  const r = await query(`SELECT id FROM works WHERE LOWER(title) = LOWER($1)`, [t]);
+  if (r.rows.length === 1) return { id: Number(r.rows[0].id), count: 1 };
+  return { id: null, count: r.rows.length };
+}
+
 export function parseWorkModelCsv(csvText: string): Record<string, any>[] {
   const res = Papa.parse<Record<string, any>>(csvText, {
     header: true,
@@ -242,12 +255,16 @@ export async function importWorkModelCsv(
       // ヘッダ → フィールドへ写像
       const rec: Record<string, any> = {};
       const links: Record<string, string> = {};
-      let parentRaw = ""; // parent_work_code の入力値
+      const virtuals: Record<string, string> = {}; // テーブルに書かない補助列(親作品名 等)
+      let parentRaw = ""; // parent_work_code / parent_work_title の入力値
       let parentResolved: boolean | null = null; // true=解決 / false=未解決 / null=指定なし
+      let parentNote = "";
       for (const [header, field] of headerIdx) {
         const spec = [...cfg.cols, ...(cfg.links || [])].find((c) => c.field === field)!;
         if (cfg.links?.some((l) => l.field === field)) {
           links[field] = String(raw[header] ?? "").trim();
+        } else if (spec.virtual) {
+          virtuals[field] = String(raw[header] ?? "").trim();
         } else if (spec.type === "vendor") {
           rec[field] = await resolveVendorId(query, String(raw[header] ?? ""));
         } else if (spec.type === "work") {
@@ -260,6 +277,15 @@ export async function importWorkModelCsv(
         } else {
           rec[field] = coerce(spec.type, raw[header]);
         }
+      }
+
+      // 親がコードで解決できないとき、親作品名(タイトル)でフォールバック解決(works のみ)。
+      if (entity === "works" && rec.parent_work_id == null && virtuals.parent_work_title) {
+        const byTitle = await resolveWorkByTitle(query, virtuals.parent_work_title);
+        rec.parent_work_id = byTitle.id;
+        if (!parentRaw) parentRaw = virtuals.parent_work_title;
+        parentResolved = byTitle.id != null;
+        if (byTitle.count > 1) parentNote = "(同名複数)";
       }
 
       const title = String(rec[cfg.titleField] ?? "").trim();
@@ -293,9 +319,9 @@ export async function importWorkModelCsv(
 
       const previewRow: any = { row: rowNo, action, code: code || "(auto)", title };
       if (entity === "works") {
-        // 親(派生元)解決の成否を行ごとに表示。未解決は ✗。
-        previewRow["親コード"] = parentRaw || "—";
-        previewRow["親解決"] = parentRaw ? (parentResolved ? "OK" : "未解決✗") : "—";
+        // 親(派生元)解決の成否を行ごとに表示。未解決は ✗。コード/タイトル両対応。
+        previewRow["親指定"] = parentRaw || "—";
+        previewRow["親解決"] = parentRaw ? (parentResolved ? "OK" : "未解決✗" + parentNote) : "—";
         if (parentRaw && !parentResolved) result.parent_unresolved = (result.parent_unresolved || 0) + 1;
       }
       result.preview.push(previewRow);
@@ -310,8 +336,8 @@ export async function importWorkModelCsv(
 async function insertRow(
   query: Query, cfg: EntityConfig, rec: Record<string, any>, links: Record<string, string>
 ) {
-  // null/undefined の列は省略し、DB 既定値(NOT NULL DEFAULT 等)を活かす。
-  const fields = cfg.cols.map((c) => c.field).filter((f) => rec[f] != null);
+  // null/undefined の列は省略し、DB 既定値(NOT NULL DEFAULT 等)を活かす。virtual 列は除外。
+  const fields = cfg.cols.filter((c) => !c.virtual).map((c) => c.field).filter((f) => rec[f] != null);
   const vals = fields.map((f) => rec[f]);
   const placeholders = fields.map((_, i) => `$${i + 1}`);
   const r = await query(
@@ -327,6 +353,7 @@ async function updateRow(
 ) {
   // 空(null)セルは更新対象外。値のある列だけ反映(NOT NULL 列の破壊を防ぐ)。
   const fields = cfg.cols
+    .filter((c) => !c.virtual)
     .map((c) => c.field)
     .filter((f) => f !== cfg.codeColumn && rec[f] != null);
   if (fields.length) {
@@ -377,9 +404,10 @@ export function getWorkModelSampleCsv(entity: V3Entity): string {
       "source_code,title,title_kana,original_publisher,default_rights_holder,default_credit_display,remarks,rights_holder_vendor_code\n" +
       ",サンプル原作,サンプルゲンサク,サンプル出版,サンプル権利者株式会社,(C)サンプル権利者,初回取込サンプル,\n",
     works:
-      "work_code,title,title_kana,work_type,status,division,is_original,parent_work_code,derivation_type,remarks,publisher_vendor_code\n" +
-      ",サンプルボードゲーム,サンプルボードゲーム,board_game,planning,BDG,true,,,初回取込サンプル,\n" +
-      ",サンプル現地版(派生),サンプルゲンチバン,board_game,planning,BDG,false,W-2026-0001,localization,親作品コードで紐付け(空でも可),\n",
+      "work_code,title,title_kana,work_type,status,division,is_original,parent_work_code,parent_work_title,derivation_type,remarks,publisher_vendor_code\n" +
+      ",サンプルボードゲーム,サンプルボードゲーム,board_game,planning,BDG,true,,,,初回取込サンプル,\n" +
+      ",サンプル現地版(派生),サンプルゲンチバン,board_game,planning,BDG,false,W-2026-0001,,localization,親をコードで紐付け,\n" +
+      ",サンプル北米版(派生),サンプルホクベイバン,board_game,planning,BDG,false,,サンプルボードゲーム,localization,親を作品名で紐付け(空でも可),\n",
     contracts:
       "document_number,contract_title,contract_level,contract_category,contract_type,lifecycle_stage,effective_date,expiration_date,auto_renewal,primary_vendor_code,work_code,source_code\n" +
       ",サンプル業務委託契約,standalone,service,service_master,requested,2026-04-01,2027-03-31,false,,,\n",
