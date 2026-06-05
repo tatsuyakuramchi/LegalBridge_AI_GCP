@@ -1,4 +1,5 @@
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 import { Search, Download, Plus, RefreshCw, Upload, Trash2 } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
@@ -181,6 +182,21 @@ export function SublicensePanel() {
     )
     setDealOpen(true)
   }
+
+  // 統合: 作品モデルの「受領条件を作成」導線 (/master/sublicense?deal_work=<id>) で
+  //   遷移してきたら、その作品を選択済みの新規受領条件フォームを自動で開く。
+  //   実務: サブライセンス先から来た作品名を works に追加 → そのまま請求動線へ。
+  const [searchParams, setSearchParams] = useSearchParams()
+  React.useEffect(() => {
+    const w = searchParams.get("deal_work")
+    if (!w) return
+    setEditId(null)
+    setDealForm({ ...emptyDeal, work_id: w })
+    setDealOpen(true)
+    const next = new URLSearchParams(searchParams)
+    next.delete("deal_work")
+    setSearchParams(next, { replace: true })
+  }, [searchParams, setSearchParams])
 
   const calc = React.useMemo(() => {
     const rate = Number(dealForm.rate_pct) / 100 || 0
