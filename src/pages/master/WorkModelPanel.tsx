@@ -164,6 +164,8 @@ export function WorkModelPanel() {
     | { kind: "import"; type: EntityType }
     | null
   const [modal, setModal] = React.useState<Modal>(null)
+  // #2: 派生元(親作品)をインラインで素早く設定するクイックダイアログ対象。
+  const [quickParent, setQuickParent] = React.useState<Row | null>(null)
 
   return (
     <div className="space-y-5">
@@ -193,40 +195,41 @@ export function WorkModelPanel() {
               CSV取込
             </Button>
           </div>
-          <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
-            {lists[type].length === 0 ? (
+          {type === "works" ? (
+            // #3: 作品は親→派生のツリー表示。各ノードに #2 派生元設定の導線。
+            lists.works.length === 0 ? (
               <div className="text-xs text-muted-foreground py-2">データがありません</div>
             ) : (
-              lists[type].map((x) => {
-                const c = cardOf(type, x)
-                return (
-                  <div
-                    key={c.id}
-                    className="bg-card border border-border rounded-lg px-3.5 py-3 cursor-pointer hover:border-foreground hover:shadow-sm transition-all"
-                    onClick={() => setModal({ kind: "detail", type, id: c.id })}
-                  >
-                    <div className="flex items-center justify-between gap-2.5">
-                      <div className="font-semibold text-sm">{c.name}</div>
-                      {c.badge && <Badge variant="outline" className="font-mono">{c.badge}</Badge>}
-                    </div>
-                    <div className="mt-1 text-xs text-muted-foreground">{c.sub}</div>
-                    {type === "works" && (
-                      <div className="mt-2 flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
-                        <Link to={`/master/receivable-map?work=${c.id}`} className="inline-block text-[11px] font-bold text-violet-600 bg-violet-50 rounded px-2 py-0.5 hover:bg-violet-100">
-                          🔀 分配マップ
-                        </Link>
-                        {/* 統合: 派生作品等を登録したら、その場でサブライセンス受領条件を作成する導線。
-                            work_id を引き継いで請求権フォームを開く。 */}
-                        <Link to={`/master/sublicense?deal_work=${c.id}`} className="inline-block text-[11px] font-bold text-amber-700 bg-amber-50 rounded px-2 py-0.5 hover:bg-amber-100">
-                          💴 受領条件を作成
-                        </Link>
+              <WorkTree
+                works={lists.works}
+                onOpenDetail={(id) => setModal({ kind: "detail", type: "works", id })}
+                onQuickParent={(w) => setQuickParent(w)}
+              />
+            )
+          ) : (
+            <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
+              {lists[type].length === 0 ? (
+                <div className="text-xs text-muted-foreground py-2">データがありません</div>
+              ) : (
+                lists[type].map((x) => {
+                  const c = cardOf(type, x)
+                  return (
+                    <div
+                      key={c.id}
+                      className="bg-card border border-border rounded-lg px-3.5 py-3 cursor-pointer hover:border-foreground hover:shadow-sm transition-all"
+                      onClick={() => setModal({ kind: "detail", type, id: c.id })}
+                    >
+                      <div className="flex items-center justify-between gap-2.5">
+                        <div className="font-semibold text-sm">{c.name}</div>
+                        {c.badge && <Badge variant="outline" className="font-mono">{c.badge}</Badge>}
                       </div>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </div>
+                      <div className="mt-1 text-xs text-muted-foreground">{c.sub}</div>
+                    </div>
+                  )
+                })
+              )}
+            </div>
+          )}
         </section>
       ))}
 
@@ -255,7 +258,194 @@ export function WorkModelPanel() {
       {modal?.kind === "import" && (
         <ImportModal type={modal.type} onClose={() => setModal(null)} onImported={load} />
       )}
+      {quickParent && (
+        <QuickParentModal
+          work={quickParent}
+          works={lists.works}
+          onClose={() => setQuickParent(null)}
+          onSaved={async () => {
+            setQuickParent(null)
+            await load()
+          }}
+          showNotification={showNotification}
+        />
+      )}
     </div>
+  )
+}
+
+const DERIV_LABEL: Record<string, string> = Object.fromEntries(DERIV_CHOICES)
+
+// #3: 親→派生のツリー。parent_work_id が同リストに居るものは子として入れ子表示。
+function WorkTree({
+  works,
+  onOpenDetail,
+  onQuickParent,
+}: {
+  works: Row[]
+  onOpenDetail: (id: number) => void
+  onQuickParent: (w: Row) => void
+}) {
+  const byId = new Map<number, Row>(works.map((w) => [Number(w.id), w]))
+  const children = new Map<number, Row[]>()
+  const roots: Row[] = []
+  for (const w of works) {
+    const pid = w.parent_work_id != null ? Number(w.parent_work_id) : null
+    if (pid != null && byId.has(pid)) {
+      const arr = children.get(pid) || []
+      arr.push(w)
+      children.set(pid, arr)
+    } else {
+      roots.push(w)
+    }
+  }
+  const sortFn = (a: Row, b: Row) => String(a.work_code || "").localeCompare(String(b.work_code || ""))
+  roots.sort(sortFn)
+  const seen = new Set<number>()
+  const render = (w: Row, depth: number): React.ReactNode => {
+    const id = Number(w.id)
+    if (seen.has(id)) return null
+    seen.add(id)
+    const kids = (children.get(id) || []).sort(sortFn)
+    return (
+      <React.Fragment key={id}>
+        <WorkNode w={w} depth={depth} onOpenDetail={onOpenDetail} onQuickParent={onQuickParent} />
+        {kids.map((k) => render(k, depth + 1))}
+      </React.Fragment>
+    )
+  }
+  return <div className="space-y-1.5">{roots.map((r) => render(r, 0))}</div>
+}
+
+function WorkNode({
+  w,
+  depth,
+  onOpenDetail,
+  onQuickParent,
+}: {
+  w: Row
+  depth: number
+  onOpenDetail: (id: number) => void
+  onQuickParent: (w: Row) => void
+}) {
+  const deriv = w.derivation_type ? DERIV_LABEL[w.derivation_type] || w.derivation_type : w.is_original === false ? "派生" : null
+  return (
+    <div style={{ marginLeft: depth * 22 }} className="flex items-start gap-1.5">
+      {depth > 0 && <span className="mt-3 text-muted-foreground select-none text-xs">↳</span>}
+      <div
+        className="flex-1 bg-card border border-border rounded-lg px-3 py-2 cursor-pointer hover:border-foreground hover:shadow-sm transition-all"
+        onClick={() => onOpenDetail(Number(w.id))}
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div className="font-semibold text-sm">{w.title || "#" + w.id}</div>
+          <div className="flex items-center gap-1.5">
+            {deriv && <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">{deriv}</Badge>}
+            {w.work_code && <Badge variant="outline" className="font-mono">{w.work_code}</Badge>}
+          </div>
+        </div>
+        <div className="mt-1 text-xs text-muted-foreground">
+          {(w.work_type || "—") + " / " + (w.status || "—") + " / 製品 " + (w.product_count || 0)}
+        </div>
+        <div className="mt-2 flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
+          <Link to={`/master/receivable-map?work=${w.id}`} className="inline-block text-[11px] font-bold text-violet-600 bg-violet-50 rounded px-2 py-0.5 hover:bg-violet-100">
+            🔀 分配マップ
+          </Link>
+          <Link to={`/master/sublicense?deal_work=${w.id}`} className="inline-block text-[11px] font-bold text-amber-700 bg-amber-50 rounded px-2 py-0.5 hover:bg-amber-100">
+            💴 受領条件を作成
+          </Link>
+          <button
+            type="button"
+            onClick={() => onQuickParent(w)}
+            className="inline-block text-[11px] font-bold text-slate-600 bg-slate-100 rounded px-2 py-0.5 hover:bg-slate-200"
+          >
+            🧬 派生元を設定
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// #2: 派生元(親作品)をインラインで設定。既存の作品行をそのまま PUT で全置換し、
+//   parent_work_id / derivation_type / is_original のみ更新する(他項目は維持)。
+function QuickParentModal({
+  work,
+  works,
+  onClose,
+  onSaved,
+  showNotification,
+}: {
+  work: Row
+  works: Row[]
+  onClose: () => void
+  onSaved: () => void
+  showNotification: (m: string, t?: "info" | "success" | "error") => void
+}) {
+  const [parentId, setParentId] = React.useState<any>(work.parent_work_id ?? "")
+  const [deriv, setDeriv] = React.useState<string>(work.derivation_type || "")
+  const [saving, setSaving] = React.useState(false)
+  const save = async () => {
+    setSaving(true)
+    try {
+      const hasParent = String(parentId ?? "") !== ""
+      const body = {
+        ...work,
+        parent_work_id: hasParent ? Number(parentId) : null,
+        derivation_type: deriv || null,
+        // 親を設定したら派生品(is_original=false)。親を外したら従来値を維持。
+        is_original: hasParent ? false : work.is_original,
+        title: work.title,
+      }
+      const res = await fetch(`/api/v3/works/${work.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || "HTTP " + res.status)
+      showNotification(hasParent ? "派生元を設定しました" : "派生元を解除しました", "success")
+      onSaved()
+    } catch (e: any) {
+      showNotification(`保存に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setSaving(false)
+    }
+  }
+  return (
+    <Dialog open onOpenChange={(v) => !v && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>派生元を設定 — {work.title || "#" + work.id}</DialogTitle>
+        </DialogHeader>
+        <DialogBody className="space-y-3">
+          <div className="space-y-1">
+            <Label className="text-xs">派生元の作品 (親)</Label>
+            <WorkSelectField value={parentId} works={works} editId={Number(work.id)} onChange={setParentId} />
+          </div>
+          <div className="space-y-1">
+            <Label className="text-xs">派生種別</Label>
+            <NativeSelect value={deriv} onChange={(e) => setDeriv(e.target.value)}>
+              {DERIV_CHOICES.map(([v, l]) => (
+                <option key={v} value={v}>
+                  {l}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+          <p className="text-[11px] text-muted-foreground leading-relaxed">
+            親作品を設定すると派生品(is_original=false)になります。原作は親作品経由でチェーンするため、ここで原作を直接紐づける必要はありません。
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={saving}>
+            キャンセル
+          </Button>
+          <Button onClick={save} disabled={saving}>
+            {saving ? "保存中…" : "保存"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
