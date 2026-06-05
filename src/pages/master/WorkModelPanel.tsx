@@ -444,20 +444,48 @@ function FieldInput({ f, value, works, editId, onChange }: { f: FieldDef; value:
     )
   }
   if (f.type === "work-select")
-    return (
-      <NativeSelect value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
-        <option value="">(なし)</option>
-        {works
-          .filter((w) => !(editId && String(w.id) === String(editId)))
-          .map((w) => (
-            <option key={w.id} value={w.id}>
-              {(w.work_code ? w.work_code + " : " : "") + (w.title || "#" + w.id)}
-            </option>
-          ))}
-      </NativeSelect>
-    )
+    return <WorkSelectField value={value} works={works} editId={editId} onChange={onChange} />
   // text / array
   return <Input type="text" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
+}
+
+// 派生元(親作品)ピッカー。全作品の素のドロップダウンだと親を探しにくいので、
+//   コード/タイトルで絞り込める検索ボックスを付ける。選択中の作品は常に表示。
+function WorkSelectField({ value, works, editId, onChange }: { value: any; works: Row[]; editId: number | null; onChange: (v: any) => void }) {
+  const [q, setQ] = React.useState("")
+  const opts = works.filter((w) => !(editId && String(w.id) === String(editId)))
+  const kw = q.trim().toLowerCase()
+  const filtered = kw
+    ? opts.filter((w) => `${w.work_code || ""} ${w.title || ""}`.toLowerCase().includes(kw))
+    : opts
+  // 選択中の作品が絞り込みから外れても option を残す(値が消えないように)。
+  const selected = value ? opts.find((w) => String(w.id) === String(value)) : null
+  const list = selected && !filtered.some((w) => String(w.id) === String(selected.id))
+    ? [selected, ...filtered]
+    : filtered
+  const label = (w: Row) => (w.work_code ? w.work_code + " : " : "") + (w.title || "#" + w.id)
+  return (
+    <div className="space-y-1">
+      <Input
+        placeholder="親作品を検索 (コード / タイトル)…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <NativeSelect value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+        <option value="">(なし)</option>
+        {list.map((w) => (
+          <option key={w.id} value={w.id}>
+            {label(w)}
+          </option>
+        ))}
+      </NativeSelect>
+      {kw && (
+        <p className="text-[10px] font-mono text-muted-foreground">
+          {filtered.length} 件ヒット{filtered.length === 0 ? " — 別のキーワードで検索" : ""}
+        </p>
+      )}
+    </div>
+  )
 }
 
 function ImportModal({ type, onClose, onImported }: { type: EntityType; onClose: () => void; onImported: () => void }) {
