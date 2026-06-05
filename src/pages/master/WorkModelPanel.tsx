@@ -137,6 +137,9 @@ const sendJson = async (method: string, url: string, body: any) => {
 export function WorkModelPanel() {
   const { showNotification } = useAppData()
   const [lists, setLists] = React.useState<Record<EntityType, Row[]>>({ "source-ips": [], works: [], contracts: [] })
+  // 紐付け待ちインボックス用: サブライセンス受領条件(deals)。work_id 単位で
+  //   「受領はあるが親作品(再許諾元)が未設定」を抽出するのに使う。
+  const [deals, setDeals] = React.useState<Row[]>([])
   const [error, setError] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
 
@@ -146,6 +149,13 @@ export function WorkModelPanel() {
     try {
       const [ips, works, contracts] = await Promise.all([getJson(API["source-ips"]), getJson(API.works), getJson(API.contracts)])
       setLists({ "source-ips": ips || [], works: works || [], contracts: contracts || [] })
+      // 受領条件は best-effort(失敗してもメイン表示は止めない)。
+      try {
+        const d = await getJson("/api/sublicense/deals")
+        setDeals(Array.isArray(d?.rows) ? d.rows : [])
+      } catch {
+        setDeals([])
+      }
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
@@ -166,6 +176,24 @@ export function WorkModelPanel() {
   const [modal, setModal] = React.useState<Modal>(null)
   // #2: 派生元(親作品)をインラインで素早く設定するクイックダイアログ対象。
   const [quickParent, setQuickParent] = React.useState<Row | null>(null)
+
+  // 紐付け待ち: 受領条件(deal)があるのに親作品(再許諾元)が未設定の作品。
+  //   = 「サブライセンス作品は分かるが、どの権利を再許諾したか未確定」の作品。
+  const pendingLinks = React.useMemo(() => {
+    const byWork = new Map<number, { names: Set<string>; count: number }>()
+    for (const d of deals) {
+      const wid = Number(d.work_id)
+      if (!wid) continue
+      const e = byWork.get(wid) || { names: new Set<string>(), count: 0 }
+      const nm = d.sublicensee_name || d.counterparty_name || d.inline_sublicensee_name
+      if (nm) e.names.add(String(nm))
+      e.count++
+      byWork.set(wid, e)
+    }
+    return lists.works
+      .filter((w) => w.parent_work_id == null && byWork.has(Number(w.id)))
+      .map((w) => ({ work: w, info: byWork.get(Number(w.id))! }))
+  }, [deals, lists.works])
 
   return (
     <div className="space-y-5">
@@ -196,16 +224,55 @@ export function WorkModelPanel() {
             </Button>
           </div>
           {type === "works" ? (
-            // #3: 作品は親→派生のツリー表示。各ノードに #2 派生元設定の導線。
-            lists.works.length === 0 ? (
-              <div className="text-xs text-muted-foreground py-2">データがありません</div>
-            ) : (
-              <WorkTree
-                works={lists.works}
-                onOpenDetail={(id) => setModal({ kind: "detail", type: "works", id })}
-                onQuickParent={(w) => setQuickParent(w)}
-              />
-            )
+            <>
+              {/* 紐付け待ちインボックス: 受領はあるが親(再許諾元)未設定の作品 */}
+              {pendingLinks.length > 0 && (
+                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50/70 p-3">
+                  <div className="text-xs font-bold text-amber-800">
+                    🔗 紐付け待ち — 受領はあるが「どの権利を再許諾したか(親作品)」が未設定 ({pendingLinks.length})
+                  </div>
+                  <p className="text-[11px] text-amber-700 mt-1 mb-2 leading-relaxed">
+                    サブライセンス作品(受領)は登録済みだが、再許諾元の当社作品(親)が未確定の作品です。
+                    確認でき次第「🧬 派生元を設定」で紐づけると、原作までの分配チェーンがつながります。
+                  </p>
+                  <div className="space-y-1.5">
+                    {pendingLinks.map(({ work, info }) => (
+                      <div key={work.id} className="flex items-center justify-between gap-2 bg-card border border-border rounded-md px-2.5 py-1.5">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold truncate">
+                            {work.title || "#" + work.id}
+                            {work.work_code && (
+                              <span className="ml-1.5 text-[10px] font-mono text-muted-foreground">({work.work_code})</span>
+                            )}
+                          </div>
+                          <div className="text-[11px] text-muted-foreground truncate">
+                            受領先: {[...info.names].join(" / ") || "—"}（受領条件 {info.count} 件）
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <Link to={`/master/receivable-map?work=${work.id}`} className="text-[11px] font-bold text-violet-600 bg-violet-50 rounded px-2 py-0.5 hover:bg-violet-100">
+                            🔀
+                          </Link>
+                          <Button size="sm" variant="outline" onClick={() => setQuickParent(work)}>
+                            🧬 派生元を設定
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {/* #3: 作品は親→派生のツリー表示。各ノードに #2 派生元設定の導線。 */}
+              {lists.works.length === 0 ? (
+                <div className="text-xs text-muted-foreground py-2">データがありません</div>
+              ) : (
+                <WorkTree
+                  works={lists.works}
+                  onOpenDetail={(id) => setModal({ kind: "detail", type: "works", id })}
+                  onQuickParent={(w) => setQuickParent(w)}
+                />
+              )}
+            </>
           ) : (
             <div className="grid gap-2.5 [grid-template-columns:repeat(auto-fill,minmax(320px,1fr))]">
               {lists[type].length === 0 ? (
