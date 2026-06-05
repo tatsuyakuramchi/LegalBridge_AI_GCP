@@ -45,11 +45,13 @@ export function PendingInspectionsPage() {
     load()
   }, [load])
 
-  // 残額 > 0 = まだ全額検収されていない発注書。
+  // フラグ駆動: 「検収書未発行の明細(unissued_line_count>0)」を持つ発注書を検収待ちに。
+  //   未発行明細 = inspection_issued≠true かつ 全額検収されていない明細。
+  //   完全検収すると自動で発行済になり、手動でも条件明細から発行済/対象外にできる。
   const pending = React.useMemo(() => {
     const kw = q.trim().toLowerCase()
     return rows
-      .filter((r) => (Number(r.remaining_amount) || 0) > 0)
+      .filter((r) => (Number(r.unissued_line_count) || 0) > 0)
       .filter((r) => (onlyUninspected ? (Number(r.inspected_amount) || 0) === 0 : true))
       .filter((r) =>
         !kw
@@ -120,6 +122,7 @@ export function PendingInspectionsPage() {
                 <th className="text-right">発注額(税抜)</th>
                 <th className="text-right">既検収</th>
                 <th className="text-right">残額</th>
+                <th className="text-right">未発行明細</th>
                 <th className="text-right">検収率</th>
                 <th>発注日</th>
                 <th></th>
@@ -151,6 +154,10 @@ export function PendingInspectionsPage() {
                     <td className="text-right whitespace-nowrap font-mono">{yen(ordered)}</td>
                     <td className="text-right whitespace-nowrap font-mono text-muted-foreground">{yen(inspected)}</td>
                     <td className="text-right whitespace-nowrap font-mono font-bold">{yen(r.remaining_amount)}</td>
+                    <td className="text-right whitespace-nowrap font-mono">
+                      <span className="text-amber-700 font-bold">{r.unissued_line_count}</span>
+                      <span className="text-muted-foreground">/{r.line_count}</span>
+                    </td>
                     <td className="text-right whitespace-nowrap">{pct}%</td>
                     <td className="whitespace-nowrap text-muted-foreground">{r.issue_date_po || "—"}</td>
                     <td className="whitespace-nowrap text-right">
@@ -168,8 +175,10 @@ export function PendingInspectionsPage() {
       </div>
 
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        「検収書を作成」を押すと、検収書フォームがその発注書を親に事前選択した状態で開きます。
-        明細別の検収数量・検収日・検収者を確認して発行してください（分割検収にも対応）。
+        「検収待ち」は<b>検収書未発行の業務明細（status_flags.inspection_issued≠true かつ 未完了）</b>を持つ発注書です。
+        検収書を発行して<b>完全検収（残額0）</b>になると、その明細は自動で「発行済」になり一覧から外れます。
+        個別に「対象外／発行済」にしたい明細は、<b>マスター &gt; 条件明細</b>の行編集で「検収書発行済」を手動ON/OFFできます。
+        「検収書を作成」を押すと、検収書フォームがその発注書を親に事前選択した状態で開きます（分割検収にも対応）。
       </p>
     </div>
   )

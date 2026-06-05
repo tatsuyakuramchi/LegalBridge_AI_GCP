@@ -10924,6 +10924,29 @@ ${details}
               ]
             );
           }
+
+          // フラグ駆動制御: 完全検収(残額0)になった明細は「検収書発行済」として
+          //   status_flags.inspection_issued を自動 ON。手動で立てた分は維持(上書きしない)。
+          //   検収済は delivery_line_items の SUM(=確定値)で判定する。
+          const inspectedLineIds = incoming
+            .map((l) => l.capability_line_item_id)
+            .filter((n) => Number.isFinite(n) && n > 0);
+          if (inspectedLineIds.length > 0) {
+            await query(
+              `UPDATE capability_line_items cli
+                  SET status_flags = COALESCE(cli.status_flags, '{}'::jsonb)
+                                     || jsonb_build_object('inspection_issued', true)
+                WHERE cli.id = ANY($1::int[])
+                  AND cli.amount_ex_tax IS NOT NULL AND cli.amount_ex_tax > 0
+                  AND COALESCE(cli.status_flags->>'inspection_issued','') <> 'true'
+                  AND COALESCE((
+                        SELECT SUM(dli.inspected_amount_ex_tax)
+                          FROM delivery_line_items dli
+                         WHERE dli.capability_line_item_id = cli.id
+                      ), 0) >= cli.amount_ex_tax - 0.5`,
+              [inspectedLineIds]
+            );
+          }
         }
       } else if (templateType === "license_master") {
         // Phase 23: license_contracts → contract_capabilities (license, master_contract)
