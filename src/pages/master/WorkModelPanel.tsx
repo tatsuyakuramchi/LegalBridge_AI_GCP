@@ -211,9 +211,14 @@ export function WorkModelPanel() {
                     </div>
                     <div className="mt-1 text-xs text-muted-foreground">{c.sub}</div>
                     {type === "works" && (
-                      <div className="mt-2" onClick={(e) => e.stopPropagation()}>
+                      <div className="mt-2 flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
                         <Link to={`/master/receivable-map?work=${c.id}`} className="inline-block text-[11px] font-bold text-violet-600 bg-violet-50 rounded px-2 py-0.5 hover:bg-violet-100">
                           🔀 分配マップ
+                        </Link>
+                        {/* 統合: 派生作品等を登録したら、その場でサブライセンス受領条件を作成する導線。
+                            work_id を引き継いで請求権フォームを開く。 */}
+                        <Link to={`/master/sublicense?deal_work=${c.id}`} className="inline-block text-[11px] font-bold text-amber-700 bg-amber-50 rounded px-2 py-0.5 hover:bg-amber-100">
+                          💴 受領条件を作成
                         </Link>
                       </div>
                     )}
