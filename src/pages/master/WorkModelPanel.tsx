@@ -781,7 +781,16 @@ function ImportResult({ r }: { r: any }) {
         <span className="text-emerald-600">成功 <b>{r.succeeded}</b></span>
         <span className="text-amber-600">スキップ <b>{r.skipped}</b></span>
         <span className="text-destructive">失敗 <b>{r.failed}</b></span>
+        {r.parent_unresolved > 0 && (
+          <span className="text-amber-700">親未解決 <b>{r.parent_unresolved}</b></span>
+        )}
       </div>
+      {r.parent_unresolved > 0 && (
+        <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2 mb-2">
+          親(派生元)コードが見つからなかった行が {r.parent_unresolved} 件あります（下表「親解決=未解決✗」）。
+          その行は親未紐付けで取り込まれます。親作品を先に取り込む／作品コードを確認のうえ、再取込で紐付けてください。
+        </div>
+      )}
       {r.errors?.length > 0 && (
         <div>
           <div className="text-xs font-bold mt-2 mb-1">エラー</div>

@@ -30,7 +30,8 @@ export type V3ImportResult = {
   skipped: number;
   failed: number;
   errors: { row: number; message: string }[];
-  preview: { row: number; action: string; code: string; title: string }[];
+  preview: { row: number; action: string; code: string; title: string; [k: string]: any }[];
+  parent_unresolved?: number; // works: parent_work_code を解決できなかった行数
 };
 
 type ColType = "text" | "int" | "bool" | "date" | "array" | "vendor" | "work";
@@ -226,7 +227,7 @@ export async function importWorkModelCsv(
   const result: V3ImportResult = {
     entity, dry_run: dryRun, duplicate_mode: dupMode,
     total: rows.length, succeeded: 0, skipped: 0, failed: 0,
-    errors: [], preview: [],
+    errors: [], preview: [], parent_unresolved: 0,
   };
   if (rows.length === 0) return result;
 
@@ -241,6 +242,8 @@ export async function importWorkModelCsv(
       // ヘッダ → フィールドへ写像
       const rec: Record<string, any> = {};
       const links: Record<string, string> = {};
+      let parentRaw = ""; // parent_work_code の入力値
+      let parentResolved: boolean | null = null; // true=解決 / false=未解決 / null=指定なし
       for (const [header, field] of headerIdx) {
         const spec = [...cfg.cols, ...(cfg.links || [])].find((c) => c.field === field)!;
         if (cfg.links?.some((l) => l.field === field)) {
@@ -248,7 +251,12 @@ export async function importWorkModelCsv(
         } else if (spec.type === "vendor") {
           rec[field] = await resolveVendorId(query, String(raw[header] ?? ""));
         } else if (spec.type === "work") {
-          rec[field] = await resolveWorkId(query, String(raw[header] ?? ""));
+          const codeRaw = String(raw[header] ?? "").trim();
+          rec[field] = await resolveWorkId(query, codeRaw);
+          if (field === "parent_work_id") {
+            parentRaw = codeRaw;
+            parentResolved = codeRaw ? rec[field] != null : null;
+          }
         } else {
           rec[field] = coerce(spec.type, raw[header]);
         }
@@ -283,7 +291,14 @@ export async function importWorkModelCsv(
         result.succeeded++;
       }
 
-      result.preview.push({ row: rowNo, action, code: code || "(auto)", title });
+      const previewRow: any = { row: rowNo, action, code: code || "(auto)", title };
+      if (entity === "works") {
+        // 親(派生元)解決の成否を行ごとに表示。未解決は ✗。
+        previewRow["親コード"] = parentRaw || "—";
+        previewRow["親解決"] = parentRaw ? (parentResolved ? "OK" : "未解決✗") : "—";
+        if (parentRaw && !parentResolved) result.parent_unresolved = (result.parent_unresolved || 0) + 1;
+      }
+      result.preview.push(previewRow);
     } catch (e: any) {
       result.failed++;
       result.errors.push({ row: rowNo, message: String(e?.message || e) });
