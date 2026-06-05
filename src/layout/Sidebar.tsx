@@ -12,6 +12,7 @@ import {
   ChevronRight,
   Database,
   FileSpreadsheet,
+  ClipboardCheck,
   Search,
   ExternalLink,
 } from "lucide-react"
@@ -39,6 +40,7 @@ const groups: NavGroup[] = [
       { to: "/documents/new", label: "New Document", icon: FilePlus2, description: "Generate" },
       { to: "/imports", label: "Imports", icon: Database, description: "Past docs → DB" },
       { to: "/excel-batches", label: "Excel Export", icon: FileSpreadsheet, description: "未発行 検収/許諾" },
+      { to: "/pending-inspections", label: "検収待ち", icon: ClipboardCheck, description: "発注書→検収書 未作成" },
       { to: "/requests", label: "Requests", icon: Inbox, description: "Backlog" },
       { to: "/archive", label: "Archive", icon: Archive, description: "Concluded" },
     ],

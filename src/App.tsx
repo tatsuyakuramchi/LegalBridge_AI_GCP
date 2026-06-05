@@ -23,6 +23,7 @@ import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
 import { ExcelBatchPage } from "./pages/ExcelBatchPage"
+import { PendingInspectionsPage } from "./pages/PendingInspectionsPage"
 import { SettingsPage } from "./pages/SettingsPage"
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
                 <Route path="documents/new" element={<DocumentEditorPage />} />
                 <Route path="imports" element={<ImportPage />} />
                 <Route path="excel-batches" element={<ExcelBatchPage />} />
+                <Route path="pending-inspections" element={<PendingInspectionsPage />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="archive" element={<ArchivePage />} />
 
