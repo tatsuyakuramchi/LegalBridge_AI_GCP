@@ -9140,7 +9140,8 @@ ${details}
     if (masterId > 0) {
       const r = await query(
         `SELECT v.vendor_code, v.vendor_name, v.entity_type,
-                v.account_holder_kana, v.withholding_enabled
+                v.account_holder_kana, v.withholding_enabled,
+                v.invoice_registration_number
            FROM contract_capabilities cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.id = $1 LIMIT 1`,
@@ -9154,7 +9155,8 @@ ${details}
       if (poId > 0) {
         const r = await query(
           `SELECT v.vendor_code, v.vendor_name, v.entity_type,
-                  v.account_holder_kana, v.withholding_enabled
+                  v.account_holder_kana, v.withholding_enabled,
+                  v.invoice_registration_number
              FROM contract_capabilities cc
              LEFT JOIN vendors v ON v.id = cc.vendor_id
             WHERE cc.id = $1 AND cc.record_type = 'purchase_order'
@@ -9170,7 +9172,8 @@ ${details}
       if (vcode) {
         const r = await query(
           `SELECT vendor_code, vendor_name, entity_type,
-                  account_holder_kana, withholding_enabled
+                  account_holder_kana, withholding_enabled,
+                  invoice_registration_number
              FROM vendors WHERE vendor_code = $1 LIMIT 1`,
           [vcode]
         );
@@ -9187,7 +9190,8 @@ ${details}
       if (vname) {
         const r = await query(
           `SELECT vendor_code, vendor_name, entity_type,
-                  account_holder_kana, withholding_enabled
+                  account_holder_kana, withholding_enabled,
+                  invoice_registration_number
              FROM vendors WHERE vendor_name = $1 LIMIT 1`,
           [vname]
         );

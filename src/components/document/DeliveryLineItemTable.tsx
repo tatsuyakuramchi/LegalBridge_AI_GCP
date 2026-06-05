@@ -25,6 +25,7 @@ export type OrderLineForInspection = {
   unit_price: number;
   quantity: number; // 発注数量 (元)
   amount_ex_tax: number; // 発注額 (元)
+  delivery_date?: string; // 親 PO 明細の納期 (各明細ごとの既定値・プレフィル元)
   inspection?: {
     ordered_amount: number;
     ordered_quantity: number;
@@ -42,6 +43,9 @@ export type DeliveryLine = {
   inspected_quantity: number;
   acceptance_ratio: number; // 0.0-1.0
   rejection_reason?: string;
+  // 明細別の納品日。検収書 Excel / PDF はこの値を明細ごとに反映する。
+  //   未入力なら親 PO 明細の delivery_date にフォールバック (excelService 側)。
+  delivery_date?: string;
   // derived
   inspected_amount_ex_tax?: number;
 };
@@ -289,6 +293,22 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 )}
               </label>
             </div>
+            <label className="block mb-2">
+              <div className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground mb-1">
+                納品日 (この明細)
+              </div>
+              <input
+                type="date"
+                value={r.v?.delivery_date ?? r.line.delivery_date ?? ""}
+                onChange={(e) => update(r.line.id, { delivery_date: e.target.value })}
+                disabled={readOnly}
+                className={cn(
+                  "w-full text-[11px] font-mono bg-transparent",
+                  "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                  "disabled:opacity-60 disabled:cursor-not-allowed"
+                )}
+              />
+            </label>
             <div className="flex items-center justify-between pt-2 border-t border-border/40">
               <span className="text-[10px] uppercase tracking-wider text-muted-foreground">
                 今回検収額 (税抜)
@@ -322,6 +342,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
               </th>
               <th className="text-right p-2 w-20">今回数量</th>
               <th className="text-right p-2 w-16">歩留率</th>
+              <th className="text-left p-2 w-32">納品日</th>
               <th className="text-right p-2 w-28">今回検収額</th>
               <th className="text-left p-2 w-20">状態</th>
             </tr>
@@ -419,6 +440,21 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                       "0.01"
                     )}
                   </td>
+                  <td className="p-2">
+                    <input
+                      type="date"
+                      value={v?.delivery_date ?? line.delivery_date ?? ""}
+                      onChange={(e) =>
+                        update(line.id, { delivery_date: e.target.value })
+                      }
+                      disabled={readOnly}
+                      className={cn(
+                        "w-full text-[11px] font-mono bg-transparent",
+                        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                        "disabled:opacity-60 disabled:cursor-not-allowed"
+                      )}
+                    />
+                  </td>
                   <td className="p-2 text-right font-bold">
                     {yen(inspectedThisTime)}
                   </td>
@@ -452,7 +488,7 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-foreground/20 bg-muted/30 font-bold">
-              <td colSpan={5} className="p-2 text-right text-[10px] uppercase tracking-wider">
+              <td colSpan={6} className="p-2 text-right text-[10px] uppercase tracking-wider">
                 今回検収合計 (税抜)
               </td>
               <td className="p-2 text-right text-[13px]">{yen(grandTotal)}</td>

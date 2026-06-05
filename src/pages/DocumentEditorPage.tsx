@@ -115,37 +115,12 @@ export function DocumentEditorPage() {
   const [staffSearch, setStaffSearch] = React.useState("")
   const [templateSearch, setTemplateSearch] = React.useState("")
 
-  // 目的(方向) — 0028 で flow_direction を持たせた契約目的マスター。必須選択
-  //   (ユーザー決定)。選択した purpose_code を /api/documents/generate に送り、
-  //   worker が方向(in/out)を capability / 明細の flow_direction に反映する
-  //   (out=ライセンス/プロダクトアウト → 請求台帳へ自動取込)。
-  //   「方向で登録」グループに license_in/out・product_in/out の 4 ジャンル。
-  type PurposeRow = {
-    purpose_code: string
-    purpose_group?: string | null
-    purpose_label?: string | null
-    flow_direction?: string | null
-  }
-  const [purposes, setPurposes] = React.useState<PurposeRow[]>([])
-  const [selectedPurpose, setSelectedPurpose] = React.useState<string>("")
-  React.useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        // apiRouter が GET /api/contract-check/purposes を search-api へ振り、
-        //   X-LB-PORTAL-SECRET を自動付与する。レスポンスは行配列 (sort_order 順)。
-        const r = await fetch("/api/contract-check/purposes")
-        if (!r.ok) return
-        const j = await r.json()
-        if (!cancelled && Array.isArray(j)) setPurposes(j as PurposeRow[])
-      } catch {
-        /* 取得失敗時はセレクタ空 → 生成は必須ガードで止まる */
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  // 請求の向き(必須) — 「当社が払う(in)」/「当社が受け取る(out)」の2択。
+  //   生成時に formData.FLOW_DIRECTION として送り、worker が capability / 明細の
+  //   flow_direction に反映する(out=ライセンス/プロダクトアウト → 請求台帳へ自動取込)。
+  //   以前は contract_purposes の多数の目的をグループ表示していたが、文書生成フローで
+  //   実際に効くのは方向(in/out)だけなので、ユーザー要望により2択へ簡素化。
+  const [selectedDirection, setSelectedDirection] = React.useState<"" | "in" | "out">("")
   const [isRefreshingFields, setIsRefreshingFields] = React.useState(false)
   // Phase 23.2: 旧 Split preview (画面を半分にして並べる) は狭幅で厳しいため
   //   廃止し、別タブでプレビューを開く方式に一本化。
@@ -731,10 +706,10 @@ export function DocumentEditorPage() {
   //   別タブで開く方式なのでクリック都度の発火だけ。
 
   const handleGenerate = async () => {
-    // 目的(方向)は必須 (ユーザー決定)。未選択なら送信を止める。
-    if (!selectedPurpose) {
+    // 請求の向きは必須。未選択なら送信を止める。
+    if (!selectedDirection) {
       showNotification(
-        "目的(方向)を選択してください。台帳の方向(in/out)確定に必須です。",
+        "請求の向き(当社が払う / 当社が受け取る)を選択してください。台帳の方向(in/out)確定に必須です。",
         "error"
       )
       return
@@ -850,16 +825,11 @@ export function DocumentEditorPage() {
       //   その他 (新規発行 / 内部修正 / PDF 未作成キュー再生成) は reissue=false。
       const isReopen = !!formData?.__reopen_doc_number
       const reissueFlag = isReopen && saveMode === "reissue"
-      // 目的(方向)を formData に載せて送る。worker は FLOW_DIRECTION を優先し、
-      //   無ければ PURPOSE_CODE から contract_purposes.flow_direction を解決する。
-      //   ここでは判明している方向も明示送付して二重に担保する。
-      const selPurpose = purposes.find((p) => p.purpose_code === selectedPurpose)
+      // 請求の向き(in/out)を formData に載せて送る。worker は FLOW_DIRECTION を
+      //   そのまま capability / 明細の flow_direction に反映する(out=請求台帳へ)。
       const formDataWithPurpose = {
         ...formData,
-        PURPOSE_CODE: selectedPurpose,
-        ...(selPurpose?.flow_direction
-          ? { FLOW_DIRECTION: selPurpose.flow_direction }
-          : {}),
+        FLOW_DIRECTION: selectedDirection,
       }
       const res = await fetch("/api/documents/generate", {
         method: "POST",
@@ -1131,42 +1101,28 @@ export function DocumentEditorPage() {
                   </NativeSelect>
                 </div>
 
-                {/* ②' 目的 / 方向 (必須) — 台帳の方向(in/out)を確定する */}
+                {/* ②' 請求の向き (必須) — 台帳の方向(in/out)を確定する。2択 */}
                 <div className="space-y-1.5">
                   <Label className="flex items-center gap-1.5 text-[11px]">
                     <span className="inline-flex h-4 w-4 items-center justify-center rounded-sm bg-foreground text-background text-[9px] font-bold">
                       ②′
                     </span>
-                    目的 / 方向
+                    請求の向き
                     <span className="text-destructive font-bold">*</span>
                   </Label>
                   <NativeSelect
-                    value={selectedPurpose}
-                    onChange={(e) => setSelectedPurpose(e.target.value)}
+                    value={selectedDirection}
+                    onChange={(e) =>
+                      setSelectedDirection(e.target.value as "" | "in" | "out")
+                    }
                   >
-                    <option value="">— 目的を選択 (必須) —</option>
-                    {Array.from(
-                      new Set(purposes.map((p) => p.purpose_group || "その他"))
-                    ).map((grp) => (
-                      <optgroup key={grp} label={grp}>
-                        {purposes
-                          .filter((p) => (p.purpose_group || "その他") === grp)
-                          .map((p) => (
-                            <option key={p.purpose_code} value={p.purpose_code}>
-                              {p.purpose_label || p.purpose_code}
-                              {p.flow_direction === "in"
-                                ? "〔IN〕"
-                                : p.flow_direction === "out"
-                                ? "〔OUT〕"
-                                : ""}
-                            </option>
-                          ))}
-                      </optgroup>
-                    ))}
+                    <option value="">— 請求の向きを選択 (必須) —</option>
+                    <option value="in">当社が払う（支払・仕入・ライセンスイン）</option>
+                    <option value="out">当社が受け取る（請求・販売・ライセンスアウト）</option>
                   </NativeSelect>
-                  {!selectedPurpose && (
+                  {!selectedDirection && (
                     <p className="text-[10px] font-mono text-destructive/80">
-                      ※ 目的(方向)は必須。OUT は請求台帳へ自動取込されます。
+                      ※ 請求の向きは必須。「当社が受け取る」は請求台帳へ自動取込されます。
                     </p>
                   )}
                 </div>
@@ -1719,10 +1675,10 @@ export function DocumentEditorPage() {
                 )}
                 <Button
                   onClick={handleGenerate}
-                  disabled={isGenerating || !selectedPurpose}
+                  disabled={isGenerating || !selectedDirection}
                   title={
-                    !selectedPurpose
-                      ? "目的(方向)を選択すると生成できます"
+                    !selectedDirection
+                      ? "請求の向きを選択すると生成できます"
                       : undefined
                   }
                 >

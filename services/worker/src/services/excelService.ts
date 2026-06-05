@@ -20,6 +20,7 @@ export interface InspectionExcelData {
   withholding_tax: number; // 源泉税（税込ベース）
   after_tax: number; // 税引後（小計 + 消費税 − 源泉税）
   net_transfer_amount: number; // 差引振込額（税引後 + 立替金）
+  invoice_registration_number: string; // インボイス登録番号（適格請求書発行事業者 T番号）
 }
 
 // Phase 24: 支払スロットを 5 → 8 に拡張。
@@ -47,6 +48,8 @@ export class ExcelService {
       );
     }
     headers.push('立替金', '小計', '消費税', '源泉税', '税引後', '差引振込額');
+    // 末尾(一番右)に適格請求書(インボイス)の登録番号 = 取引先の T番号。
+    headers.push('インボイス登録');
     return headers;
   }
 
@@ -81,6 +84,8 @@ export class ExcelService {
     row.push(data.withholding_tax ?? 0);
     row.push(data.after_tax ?? 0);
     row.push(data.net_transfer_amount ?? 0);
+    // 一番右: インボイス登録番号(T番号)。未登録なら空欄。
+    row.push(safe(data.invoice_registration_number));
 
     return row;
   }
@@ -155,6 +160,7 @@ export class ExcelService {
       withholding_tax: 0,
       after_tax: 0,
       net_transfer_amount: 0,
+      invoice_registration_number: '',
     };
   }
 
@@ -181,6 +187,7 @@ export class ExcelService {
       vendor_name?: string;
       account_holder_kana?: string;
       withholding_enabled?: boolean;
+      invoice_registration_number?: string;
     } | null
   ): InspectionExcelData | null {
     if (!formData) return null;
@@ -411,6 +418,14 @@ export class ExcelService {
       withholding_tax,
       after_tax,
       net_transfer_amount,
+      // インボイス登録番号(T番号): vendor マスタを最優先、無ければフォーム context
+      //   (counterpartyTni / vendor_tni) にフォールバック。
+      invoice_registration_number:
+        vendor?.invoice_registration_number ||
+        formData.counterpartyTni ||
+        formData.vendor_tni ||
+        formData.INVOICE_REGISTRATION_NUMBER ||
+        '',
     };
   }
 }
