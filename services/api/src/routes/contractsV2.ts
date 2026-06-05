@@ -309,6 +309,12 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         remaining_amount_ex_tax:
           (Number(l.amount_ex_tax) || 0) -
           (Number(l.inspected_amount_so_far) || 0),
+        // 検収書発行済フラグ(一括検収で「対象外/発行済」明細をスキップするのに使う)。
+        inspection_issued: !!(
+          l.status_flags &&
+          typeof l.status_flags === "object" &&
+          (l.status_flags as any).inspection_issued === true
+        ),
       }));
 
       // Phase 23.6.6: capability_line_items が空のとき、documents.form_data
