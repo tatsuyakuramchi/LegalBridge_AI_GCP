@@ -50,6 +50,7 @@ type VendorAddress = {
 }
 
 // 振込先口座 (vendor_bank_accounts) の型。is_primary が「メイン振込先」= PDF/Excel に転記。
+//   account_scope = 'domestic'(国内) / 'overseas'(海外)。海外は SWIFT/IBAN 等を使う。
 type VendorBankAccount = {
   id?: number
   bank_label?: string
@@ -60,6 +61,17 @@ type VendorBankAccount = {
   account_holder_kana?: string
   is_primary?: boolean
   sort_order?: number
+  // 海外送金フィールド (account_scope='overseas' のとき使用)
+  account_scope?: "domestic" | "overseas"
+  swift_bic?: string
+  iban?: string
+  routing_number?: string
+  account_holder_name?: string // 英字名義
+  bank_country?: string // ISO 2文字 (例: US)
+  bank_address?: string
+  currency?: string // ISO 3文字 (例: USD)
+  intermediary_bank_swift?: string
+  intermediary_bank_name?: string
 }
 
 // 取引先を編集用に正規化: 1:N の addresses / bank_accounts が空なら、レガシー単一
@@ -83,6 +95,7 @@ function withArrays<T extends Record<string, any>>(v: T): T {
             account_type: v.account_type || "普通",
             account_number: v.account_number || "",
             account_holder_kana: v.account_holder_kana || "",
+            account_scope: "domestic",
             is_primary: true,
             sort_order: 0,
           },
@@ -732,7 +745,7 @@ export function VendorsPanel() {
                     type="button"
                     onClick={() => {
                       const next: VendorBankAccount[] = Array.isArray(data?.bank_accounts) ? [...data.bank_accounts] : []
-                      next.push({ bank_label: "", bank_name: "", branch_name: "", account_type: "普通", account_number: "", account_holder_kana: "", is_primary: next.length === 0, sort_order: next.length })
+                      next.push({ bank_label: "", bank_name: "", branch_name: "", account_type: "普通", account_number: "", account_holder_kana: "", account_scope: "domestic", is_primary: next.length === 0, sort_order: next.length })
                       set({ bank_accounts: next })
                     }}
                   >
@@ -787,60 +800,128 @@ export function VendorsPanel() {
                           </button>
                         )}
                       </div>
+                      {/* 区分: 国内 / 海外。海外は SWIFT/IBAN 等の項目に切替。 */}
+                      <div className="flex items-center gap-2">
+                        <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">区分</Label>
+                        <div className="inline-flex rounded-sm border border-border overflow-hidden">
+                          {(["domestic", "overseas"] as const).map((sc) => (
+                            <button
+                              key={sc}
+                              type="button"
+                              disabled={!creating && !editing}
+                              onClick={() => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_scope: sc }; set({ bank_accounts: next }) }}
+                              className={cn(
+                                "px-2.5 py-0.5 text-[10px] font-mono uppercase tracking-wider transition-colors",
+                                (b.account_scope || "domestic") === sc ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground"
+                              )}
+                            >
+                              {sc === "domestic" ? "国内" : "海外"}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 gap-2">
                         <div className="space-y-1 col-span-2">
                           <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">ラベル</Label>
                           <Input
-                            placeholder="例: メイン / 給与振込"
+                            placeholder="例: メイン / 給与振込 / USD口座"
                             value={b.bank_label || ""}
                             disabled={!creating && !editing}
                             onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_label: e.target.value }; set({ bank_accounts: next }) }}
                           />
                         </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行名</Label>
-                          <Input
-                            value={b.bank_name || ""}
-                            disabled={!creating && !editing}
-                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_name: e.target.value }; set({ bank_accounts: next }) }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">支店名</Label>
-                          <Input
-                            value={b.branch_name || ""}
-                            disabled={!creating && !editing}
-                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, branch_name: e.target.value }; set({ bank_accounts: next }) }}
-                          />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座種別</Label>
-                          <NativeSelect
-                            value={b.account_type || "普通"}
-                            disabled={!creating && !editing}
-                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_type: e.target.value }; set({ bank_accounts: next }) }}
-                          >
-                            <option value="普通">普通</option>
-                            <option value="当座">当座</option>
-                            <option value="貯蓄">貯蓄</option>
-                          </NativeSelect>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座番号</Label>
-                          <Input
-                            value={b.account_number || ""}
-                            disabled={!creating && !editing}
-                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_number: e.target.value }; set({ bank_accounts: next }) }}
-                          />
-                        </div>
-                        <div className="space-y-1 col-span-2">
-                          <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座名義 (カナ)</Label>
-                          <Input
-                            value={b.account_holder_kana || ""}
-                            disabled={!creating && !editing}
-                            onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_holder_kana: e.target.value }; set({ bank_accounts: next }) }}
-                          />
-                        </div>
+
+                        {(b.account_scope || "domestic") === "overseas" ? (
+                          <>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行名 (英字)</Label>
+                              <Input placeholder="Bank of Example" value={b.bank_name || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_name: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">SWIFT / BIC</Label>
+                              <Input placeholder="EXAMPLEXXX" value={b.swift_bic || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, swift_bic: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">IBAN</Label>
+                              <Input placeholder="(IBAN 制度のある国)" value={b.iban || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, iban: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">Routing No. / ABA</Label>
+                              <Input placeholder="(米国等)" value={b.routing_number || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, routing_number: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座番号 / Account No.</Label>
+                              <Input value={b.account_number || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_number: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座名義 (英字)</Label>
+                              <Input placeholder="ACCOUNT HOLDER NAME" value={b.account_holder_name || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_holder_name: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行所在国 (ISO 2字)</Label>
+                              <Input placeholder="US / GB / DE…" maxLength={2} value={b.bank_country || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_country: e.target.value.toUpperCase() }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">通貨 (ISO 3字)</Label>
+                              <Input placeholder="USD / EUR / JPY…" maxLength={3} value={b.currency || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, currency: e.target.value.toUpperCase() }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1 col-span-2">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行住所</Label>
+                              <Input value={b.bank_address || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_address: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">中継銀行 SWIFT</Label>
+                              <Input placeholder="(任意)" value={b.intermediary_bank_swift || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, intermediary_bank_swift: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">中継銀行名</Label>
+                              <Input placeholder="(任意)" value={b.intermediary_bank_name || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, intermediary_bank_name: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">銀行名</Label>
+                              <Input value={b.bank_name || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, bank_name: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">支店名</Label>
+                              <Input value={b.branch_name || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, branch_name: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座種別</Label>
+                              <NativeSelect value={b.account_type || "普通"} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_type: e.target.value }; set({ bank_accounts: next }) }}>
+                                <option value="普通">普通</option>
+                                <option value="当座">当座</option>
+                                <option value="貯蓄">貯蓄</option>
+                              </NativeSelect>
+                            </div>
+                            <div className="space-y-1">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座番号</Label>
+                              <Input value={b.account_number || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_number: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                            <div className="space-y-1 col-span-2">
+                              <Label className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">口座名義 (カナ)</Label>
+                              <Input value={b.account_holder_kana || ""} disabled={!creating && !editing}
+                                onChange={(e) => { const next = [...data.bank_accounts]; next[idx] = { ...b, account_holder_kana: e.target.value }; set({ bank_accounts: next }) }} />
+                            </div>
+                          </>
+                        )}
                       </div>
                     </div>
                   ))}
