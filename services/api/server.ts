@@ -997,9 +997,14 @@ async function startServer() {
   app.get(
     "/api/master/vendors/export.csv",
     requireIapUser({ renderErrorPage }),
-    async (_req, res) => {
+    async (req, res) => {
       try {
-        const csv = await getVendorExportCsv();
+        // ?codes=A,B,C で対象取引先を絞り込み(空なら全件)。
+        const codes = String((req.query as any).codes || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const csv = await getVendorExportCsv(codes);
         const stamp = new Date().toISOString().slice(0, 10);
         res.setHeader("Content-Type", "text/csv; charset=utf-8");
         res.setHeader(
