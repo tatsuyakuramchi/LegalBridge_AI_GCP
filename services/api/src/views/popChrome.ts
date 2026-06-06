@@ -332,6 +332,19 @@ function navHtml(active: PopNavKey, role: Role): string {
   </aside>`;
 }
 
+// ツールバー左の「← 戻る」ボタン。履歴があれば戻る、無ければ検索ポータル(/)へ。
+function backBtnHtml(): string {
+  return `<button type="button" class="pop-btn sec sm" title="前のページへ戻る" style="margin-right:6px;" onclick="if(window.history.length>1){window.history.back()}else{window.location.href='/'}">← 戻る</button>`;
+}
+
+// admin でログインしているときだけ表示する「管理画面へ」リンク(React admin-ui)。
+//   ADMIN_UI_URL(env)が設定されている場合のみ表示。
+function adminLinkHtml(role?: string): string {
+  const url = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  if (role !== "admin" || !url) return "";
+  return `<a class="pop-btn sm" href="${url}" title="管理画面(admin-ui)へ" style="margin-left:6px;text-decoration:none;">管理画面へ ↗</a>`;
+}
+
 export function popPage(opts: {
   active: PopNavKey;
   mode?: "admin" | "view";
@@ -359,9 +372,11 @@ ${opts.contentBridge ? `<style>${POP_CONTENT_BRIDGE}</style>` : ""}
 ${navHtml(opts.active, opts.role || "viewer")}
   <div class="pop-main">
     <div class="pop-toolbar">
+      ${backBtnHtml()}
       <h1>${esc(opts.title)}</h1>
       ${opts.subtitle ? `<span class="sub">${esc(opts.subtitle)}</span>` : ""}
       <span class="sp"></span>
+      ${adminLinkHtml(opts.role)}
       ${opts.toolbar || ""}
     </div>
     <div class="pop-body">
@@ -411,9 +426,11 @@ ${opts.headExtra || ""}
 ${navHtml(opts.active, opts.role || "viewer")}
   <div class="pop-main">
     <div class="pop-toolbar">
+      ${backBtnHtml()}
       <h1>${esc(opts.title)}</h1>
       ${opts.subtitle ? `<span class="sub">${esc(opts.subtitle)}</span>` : ""}
       <span class="sp"></span>
+      ${adminLinkHtml(opts.role)}
       ${opts.toolbar || ""}
     </div>
     <div class="pop-body">
