@@ -481,6 +481,7 @@ async function upsertContract(
           ...(p.form_data || {}),
           VENDOR_CODE: p.vendor_code || "",
           VENDOR_NAME: p.vendor_name || "",
+          CONTRACT_TITLE: p.contract_title || "",
           record_type: p.record_type,
           contract_category: p.contract_category,
           line_items: p.line_items || [],
@@ -489,6 +490,9 @@ async function upsertContract(
           other_fees: p.other_fees || [],
           __imported: true,
           __v2: true,
+          // PDF未作成キューに出すための明示フラグ。
+          // drive_link が空 (PDF未生成) のときだけ立てる。
+          __pdf_pending: !(p.drive_link && p.drive_link.trim()),
         }),
         p.drive_link || "",
         "import-v2",
@@ -758,8 +762,357 @@ function csvTemplate(recordType: RecordType): string {
   return uniq.join(",") + "\r\n" + sample + "\r\n";
 }
 
+/**
+ * 発注書(purchase_order)を 1 枚に統合する。
+ *
+ *   複数の発注書(= contract_capabilities)の業務明細・経費・その他手数料を統合先(target)に
+ *   寄せ、統合元(source)は削除する。「1明細=1発注書」で取り込んでしまったものを、
+ *   後から「複数明細の1枚」にまとめ直す用途。
+ *
+ * 制約(満たさない場合はエラーで中断):
+ *   - 対象は全て record_type='purchase_order'
+ *   - 全て同一 vendor_id(取引先)— 取引先が違うものは混ぜない
+ *   - 全て未発行(documents.drive_link が空)— PDF発行済は統合不可(安全策)
+ *   - いずれの業務明細にも検収/納品(delivery_line_items)が紐付いていないこと
+ *
+ * 動作(単一トランザクション):
+ *   1. target の業務明細/経費/その他手数料を全削除し、target+source 全件を結合して
+ *      line_no=1.. で target capability に再INSERT(import と同じ DELETE+INSERT 方式)。
+ *   2. target.amount_* を再計算、documents.form_data(line_items/expenses)も更新。
+ *   3. v3 ミラー(contract_line_items)を target 分だけ作り直し。
+ *   4. source の contract_capabilities / contracts / documents / external_assets を削除
+ *      (capability/contract の子テーブルは ON DELETE CASCADE)。
+ */
+async function mergePurchaseOrders(
+  deps: ImportsV2Deps,
+  targetDocNumber: string,
+  sourceDocNumbers: string[]
+): Promise<{
+  target_document_number: string;
+  merged_count: number;
+  line_item_count: number;
+  amount_ex_tax: number;
+}> {
+  const norm = (s: any) => String(s || "").trim();
+  const target = norm(targetDocNumber);
+  const sources = Array.from(
+    new Set(sourceDocNumbers.map(norm).filter((s) => s && s !== target))
+  );
+  if (!target) throw new Error("target_document_number is required");
+  if (sources.length === 0) {
+    throw new Error("統合元(source)が指定されていません");
+  }
+  const allDocNumbers = [target, ...sources];
+
+  const client = await deps.pool.connect();
+  try {
+    await client.query("BEGIN");
+
+    // 1. 対象を取得(documents + contract_capabilities)。documents をロック。
+    const { rows } = await client.query(
+      `SELECT d.id AS doc_id, d.document_number, d.drive_link, d.form_data,
+              cc.id AS cap_id, cc.vendor_id, cc.record_type,
+              cc.contract_category, cc.contract_title, cc.tax_rate
+         FROM documents d
+         LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+        WHERE d.document_number = ANY($1::text[])
+        FOR UPDATE OF d`,
+      [allDocNumbers]
+    );
+    const byNumber = new Map<string, any>(
+      rows.map((r: any) => [r.document_number, r])
+    );
+
+    // バリデーション
+    for (const dn of allDocNumbers) {
+      const r = byNumber.get(dn);
+      if (!r) throw new Error(`発注書が見つかりません: ${dn}`);
+      if (!r.cap_id) {
+        throw new Error(`契約データ(capability)が見つかりません: ${dn}`);
+      }
+      if (r.record_type !== "purchase_order") {
+        throw new Error(`発注書(purchase_order)以外は統合できません: ${dn}`);
+      }
+      if (r.drive_link && String(r.drive_link).trim()) {
+        throw new Error(`発行済(PDFあり)の発注書は統合できません: ${dn}`);
+      }
+    }
+    const targetRow = byNumber.get(target);
+    const sourceRows = sources.map((dn) => byNumber.get(dn));
+
+    // 取引先(vendor_id)が全件一致か
+    const vendorId = targetRow.vendor_id;
+    if (vendorId == null) {
+      throw new Error(`取引先が未設定の発注書は統合できません: ${target}`);
+    }
+    for (const r of sourceRows) {
+      if (r.vendor_id !== vendorId) {
+        throw new Error(
+          `取引先が異なるため統合できません(${r.document_number})。同じ取引先の発注書のみ統合できます。`
+        );
+      }
+    }
+
+    const capIds: number[] = allDocNumbers.map((dn) => byNumber.get(dn).cap_id);
+    const capOrder = new Map<number, number>(
+      capIds.map((id, idx) => [id, idx])
+    );
+
+    // 2. 検収/納品が紐付いた明細が無いことを確認(あると CASCADE 削除が RESTRICT で失敗)
+    const delChk = await client.query(
+      `SELECT COUNT(*)::int AS n
+         FROM delivery_line_items dli
+         JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+        WHERE cli.capability_id = ANY($1::int[])`,
+      [capIds]
+    );
+    if (Number(delChk.rows[0].n) > 0) {
+      throw new Error(
+        "検収/納品が紐付いた発注書が含まれるため統合できません。未検収の発注書のみ統合できます。"
+      );
+    }
+
+    // 3. 全件の業務明細を capability_line_items から取得(DB を正とする)
+    const cliRows = (
+      await client.query(
+        `SELECT capability_id, line_no, category, item_name, spec, calc_method,
+                payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
+                delivery_date, payment_date, cycle, billing_day, term_start, term_end
+           FROM capability_line_items
+          WHERE capability_id = ANY($1::int[])`,
+        [capIds]
+      )
+    ).rows;
+    cliRows.sort(
+      (a: any, b: any) =>
+        (capOrder.get(a.capability_id)! - capOrder.get(b.capability_id)!) ||
+        (Number(a.line_no) || 0) - (Number(b.line_no) || 0)
+    );
+
+    const expRows = (
+      await client.query(
+        `SELECT capability_id, line_no, expense_name, spec, spent_date,
+                amount_inc_tax, remarks
+           FROM capability_expenses
+          WHERE capability_id = ANY($1::int[])`,
+        [capIds]
+      )
+    ).rows;
+    expRows.sort(
+      (a: any, b: any) =>
+        (capOrder.get(a.capability_id)! - capOrder.get(b.capability_id)!) ||
+        (Number(a.line_no) || 0) - (Number(b.line_no) || 0)
+    );
+
+    const feeRows = (
+      await client.query(
+        `SELECT capability_id, line_no, fee_name, amount, remarks
+           FROM capability_other_fees
+          WHERE capability_id = ANY($1::int[])`,
+        [capIds]
+      )
+    ).rows;
+    feeRows.sort(
+      (a: any, b: any) =>
+        (capOrder.get(a.capability_id)! - capOrder.get(b.capability_id)!) ||
+        (Number(a.line_no) || 0) - (Number(b.line_no) || 0)
+    );
+
+    const targetCap: number = targetRow.cap_id;
+
+    // 4. target の子テーブルを全削除して結合済みを再INSERT
+    await client.query(
+      `DELETE FROM capability_line_items WHERE capability_id = $1`,
+      [targetCap]
+    );
+    await client.query(
+      `DELETE FROM capability_expenses WHERE capability_id = $1`,
+      [targetCap]
+    );
+    await client.query(
+      `DELETE FROM capability_other_fees WHERE capability_id = $1`,
+      [targetCap]
+    );
+
+    let totalExTax = 0;
+    const mergedLines: any[] = [];
+    for (let i = 0; i < cliRows.length; i++) {
+      const l = cliRows[i];
+      const lineNo = i + 1;
+      const amount = Number(l.amount_ex_tax) || 0;
+      totalExTax += amount;
+      await client.query(
+        `INSERT INTO capability_line_items (
+           capability_id, line_no, category, item_name, spec, calc_method,
+           payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
+           delivery_date, payment_date, cycle, billing_day, term_start, term_end
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17)`,
+        [
+          targetCap,
+          lineNo,
+          l.category,
+          l.item_name,
+          l.spec,
+          l.calc_method,
+          l.payment_method,
+          l.payment_terms,
+          l.quantity,
+          l.unit_price,
+          l.amount_ex_tax,
+          l.delivery_date,
+          l.payment_date,
+          l.cycle,
+          l.billing_day,
+          l.term_start,
+          l.term_end,
+        ]
+      );
+      mergedLines.push({
+        line_no: lineNo,
+        category: l.category || "",
+        item_name: l.item_name || "",
+        spec: l.spec || "",
+        calc_method: l.calc_method || "FIXED",
+        payment_method: l.payment_method || "",
+        payment_terms: l.payment_terms || "",
+        quantity: l.quantity == null ? undefined : Number(l.quantity),
+        unit_price: l.unit_price == null ? undefined : Number(l.unit_price),
+        amount_ex_tax: amount,
+        delivery_date: l.delivery_date || null,
+        payment_date: l.payment_date || null,
+        cycle: l.cycle || null,
+        billing_day: l.billing_day == null ? null : Number(l.billing_day),
+        term_start: l.term_start || null,
+        term_end: l.term_end || null,
+      });
+    }
+
+    const mergedExpenses: any[] = [];
+    for (let i = 0; i < expRows.length; i++) {
+      const e = expRows[i];
+      const lineNo = i + 1;
+      await client.query(
+        `INSERT INTO capability_expenses (
+           capability_id, line_no, expense_name, spec, spent_date,
+           amount_inc_tax, remarks
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [
+          targetCap,
+          lineNo,
+          e.expense_name,
+          e.spec,
+          e.spent_date,
+          e.amount_inc_tax,
+          e.remarks,
+        ]
+      );
+      mergedExpenses.push({
+        line_no: lineNo,
+        expense_name: e.expense_name || "",
+        spec: e.spec || "",
+        spent_date: e.spent_date || null,
+        amount_inc_tax: Number(e.amount_inc_tax) || 0,
+        remarks: e.remarks || "",
+      });
+    }
+
+    for (let i = 0; i < feeRows.length; i++) {
+      const f = feeRows[i];
+      await client.query(
+        `INSERT INTO capability_other_fees (
+           capability_id, line_no, fee_name, amount, remarks
+         ) VALUES ($1,$2,$3,$4,$5)`,
+        [targetCap, i + 1, f.fee_name, f.amount, f.remarks]
+      );
+    }
+
+    // 5. target の金額を再計算
+    const taxRate = Number(targetRow.tax_rate) || 10;
+    const taxAmount = Math.ceil((totalExTax * taxRate) / 100);
+    const incTax = totalExTax + taxAmount;
+    await client.query(
+      `UPDATE contract_capabilities
+          SET amount_ex_tax = $2, tax_amount = $3, amount_inc_tax = $4,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE id = $1`,
+      [targetCap, totalExTax, taxAmount, incTax]
+    );
+
+    // 6. documents.form_data を結合済みで更新(PDF生成は form_data を読むため必須)
+    const newFd = {
+      ...(targetRow.form_data || {}),
+      line_items: mergedLines,
+      expenses: mergedExpenses,
+      grandTotalExTax: totalExTax,
+      __merged_from: sources,
+      __pdf_pending: true,
+      __imported: true,
+    };
+    await client.query(`UPDATE documents SET form_data = $2 WHERE id = $1`, [
+      targetRow.doc_id,
+      JSON.stringify(newFd),
+    ]);
+
+    // 7. v3 ミラー(contract_line_items)を target 分だけ作り直し
+    const hasMirror =
+      (await client.query(`SELECT 1 FROM contracts WHERE id = $1`, [targetCap]))
+        .rows.length > 0;
+    if (hasMirror) {
+      await client.query(
+        `DELETE FROM contract_line_items WHERE contract_id = $1`,
+        [targetCap]
+      );
+      await client.query(
+        `INSERT INTO contract_line_items (
+           id, contract_id, line_no, category, item_name, spec, calc_method,
+           payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
+           delivery_date, payment_date, cycle, billing_day, term_start, term_end,
+           created_at, updated_at
+         )
+         SELECT id, capability_id, line_no, category, item_name, spec, calc_method,
+                payment_method, payment_terms, quantity, unit_price, amount_ex_tax,
+                delivery_date, payment_date, cycle, billing_day, term_start, term_end,
+                created_at, updated_at
+           FROM capability_line_items WHERE capability_id = $1
+         ON CONFLICT (id) DO NOTHING`,
+        [targetCap]
+      );
+    }
+
+    // 8. source を削除(子テーブルは ON DELETE CASCADE)
+    const sourceCaps = sourceRows.map((r) => r.cap_id);
+    await client.query(
+      `DELETE FROM contract_capabilities WHERE id = ANY($1::int[])`,
+      [sourceCaps]
+    );
+    await client.query(`DELETE FROM contracts WHERE id = ANY($1::int[])`, [
+      sourceCaps,
+    ]);
+    await client.query(
+      `DELETE FROM documents WHERE document_number = ANY($1::text[])`,
+      [sources]
+    );
+    await client.query(
+      `DELETE FROM external_assets WHERE asset_number = ANY($1::text[])`,
+      [sources]
+    );
+
+    await client.query("COMMIT");
+    return {
+      target_document_number: target,
+      merged_count: sources.length,
+      line_item_count: mergedLines.length,
+      amount_ex_tax: totalExTax,
+    };
+  } catch (e) {
+    await client.query("ROLLBACK");
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
 export function registerImportsV2(app: Express, deps: ImportsV2Deps) {
-  // 単発インポート
   app.post(
     "/api/imports/v2/contract",
     deps.requirePortalSecret,
@@ -812,6 +1165,44 @@ export function registerImportsV2(app: Express, deps: ImportsV2Deps) {
       } catch (e: any) {
         console.error("/api/imports/v2/bulk failed:", e);
         res.status(500).json({ ok: false, error: String(e?.message || e) });
+      }
+    }
+  );
+
+  // 発注書 統合(複数の発注書を1枚=複数明細にまとめる)
+  app.post(
+    "/api/imports/v2/merge-pos",
+    express.json({ limit: "5mb" }),
+    async (req, res) => {
+      try {
+        const targetDocNumber = String(
+          req.body?.target_document_number || ""
+        ).trim();
+        const sourceDocNumbers: string[] = Array.isArray(
+          req.body?.source_document_numbers
+        )
+          ? req.body.source_document_numbers
+          : [];
+        if (!targetDocNumber) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "target_document_number is required" });
+        }
+        if (sourceDocNumbers.length === 0) {
+          return res.status(400).json({
+            ok: false,
+            error: "source_document_numbers[] is required",
+          });
+        }
+        const r = await mergePurchaseOrders(
+          deps,
+          targetDocNumber,
+          sourceDocNumbers
+        );
+        res.json({ ok: true, ...r });
+      } catch (e: any) {
+        console.error("/api/imports/v2/merge-pos failed:", e);
+        res.status(400).json({ ok: false, error: String(e?.message || e) });
       }
     }
   );

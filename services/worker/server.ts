@@ -6939,8 +6939,17 @@ ${details}
       const templateFilter = String(req.query.template_type || "").trim();
       const limit = Math.min(Number(req.query.limit) || 100, 500);
       const params: any[] = [limit];
-      let where = `(form_data->>'__pdf_pending')::text = 'true'
-                    AND (drive_link IS NULL OR drive_link = '')`;
+      // PDF未作成キューに出す条件:
+      //   drive_link が空 (= まだPDFが無い) で、かつ
+      //   ・明示フラグ __pdf_pending=true、または
+      //   ・v2一括インポートで登録された __imported=true
+      //  → v2インポートは __pdf_pending を立てないため、__imported も拾わないと
+      //    一括インポートした未発行文書がキューに出てこない。
+      let where = `(drive_link IS NULL OR drive_link = '')
+                    AND (
+                      (form_data->>'__pdf_pending')::text = 'true'
+                      OR (form_data->>'__imported')::text = 'true'
+                    )`;
       if (templateFilter) {
         params.push(templateFilter);
         where += ` AND template_type = $${params.length}`;
@@ -6972,6 +6981,7 @@ ${details}
           summary: {
             counterparty:
               fd.vendor_name ||
+              fd.VENDOR_NAME || // v2一括インポート
               fd.party_b_name ||
               fd.licensor_name ||
               fd.licensee_name ||
@@ -6980,16 +6990,29 @@ ${details}
             title:
               fd.description ||
               fd.contract_title ||
+              fd.CONTRACT_TITLE || // v2一括インポート
               fd.basic_contract_name ||
               fd.original_work ||
               "",
             staff_email: fd.staff_email || "",
-            line_count: Array.isArray(fd.items) ? fd.items.length : null,
+            line_count: Array.isArray(fd.items)
+              ? fd.items.length
+              : Array.isArray(fd.line_items) // v2一括インポート
+                ? fd.line_items.length
+                : null,
             condition_count: Array.isArray(fd.financial_conditions)
               ? fd.financial_conditions.length
               : null,
             variant: fd.variant || null,
-            amount: fd.grandTotalExTax || null,
+            amount:
+              fd.grandTotalExTax ||
+              (Array.isArray(fd.line_items)
+                ? fd.line_items.reduce(
+                    (s: number, l: any) => s + (Number(l.amount_ex_tax) || 0),
+                    0
+                  )
+                : null) ||
+              null,
           },
         };
       });
@@ -6998,8 +7021,11 @@ ${details}
       const countsRes = await query(
         `SELECT template_type, COUNT(*) AS n
            FROM documents
-          WHERE (form_data->>'__pdf_pending')::text = 'true'
-            AND (drive_link IS NULL OR drive_link = '')
+          WHERE (drive_link IS NULL OR drive_link = '')
+            AND (
+              (form_data->>'__pdf_pending')::text = 'true'
+              OR (form_data->>'__imported')::text = 'true'
+            )
           GROUP BY template_type
           ORDER BY n DESC`
       );

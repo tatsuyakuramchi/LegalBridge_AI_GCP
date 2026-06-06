@@ -23,6 +23,7 @@ import {
   AlertTriangle,
   Loader2,
   PackageOpen,
+  Link2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -83,6 +84,10 @@ export const PendingPdfPanel: React.FC = () => {
     okCount: number
     failCount: number
   } | null>(null)
+  // Phase 23: 発注書統合 — 選択した発注書を1枚(複数明細)にまとめる。
+  const [mergeOpen, setMergeOpen] = React.useState(false)
+  const [mergeTargetId, setMergeTargetId] = React.useState<number | null>(null)
+  const [merging, setMerging] = React.useState(false)
   const [lastResult, setLastResult] = React.useState<{
     id: number
     document_number: string
@@ -364,6 +369,81 @@ export const PendingPdfPanel: React.FC = () => {
     })
   }
 
+  // Phase 23: 統合対象として選択されている行(タブをまたいで data.rows から拾う)
+  const selectedRowObjs = React.useMemo(
+    () => (data ? data.rows.filter((r) => selected.has(r.id)) : []),
+    [data, selected]
+  )
+
+  // 統合できない理由(空文字なら統合可)
+  const mergeDisabledReason = React.useMemo(() => {
+    if (selectedRowObjs.length < 2) return "2件以上の発注書を選択してください"
+    if (!selectedRowObjs.every((r) => r.template_type === "purchase_order"))
+      return "発注書(purchase_order)のみ統合できます"
+    const vendors = new Set(
+      selectedRowObjs.map((r) => (r.summary.counterparty || "").trim())
+    )
+    if (vendors.size !== 1 || (selectedRowObjs[0].summary.counterparty || "").trim() === "")
+      return "同じ取引先の発注書のみ統合できます"
+    return ""
+  }, [selectedRowObjs])
+  const mergeEligible = mergeDisabledReason === ""
+
+  const openMerge = () => {
+    if (!mergeEligible) return
+    setMergeTargetId(selectedRowObjs[0].id)
+    setMergeOpen(true)
+  }
+
+  const runMerge = async () => {
+    const target = selectedRowObjs.find((r) => r.id === mergeTargetId)
+    if (!target) return
+    const sourceRows = selectedRowObjs.filter((r) => r.id !== target.id)
+    if (sourceRows.length === 0) return
+    setMerging(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/imports/v2/merge-pos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_document_number: target.document_number,
+          source_document_numbers: sourceRows.map((r) => r.document_number),
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      // 統合元の行を一覧から除外し、選択をクリア
+      const sourceIds = new Set(sourceRows.map((r) => r.id))
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              rows: d.rows.filter((r) => !sourceIds.has(r.id)),
+              total: d.total - sourceIds.size,
+            }
+          : d
+      )
+      setSelected(new Set())
+      setMergeOpen(false)
+      setLastResult({
+        id: target.id,
+        document_number: `${target.document_number} に ${json.merged_count} 件を統合 (明細 ${json.line_item_count} 行 / 税抜 ¥${Number(
+          json.amount_ex_tax || 0
+        ).toLocaleString("ja-JP")})`,
+        action: "completed",
+      })
+      // target の明細数サマリを最新化
+      refresh()
+    } catch (e: any) {
+      setError(`統合失敗: ${e?.message || e}`)
+    } finally {
+      setMerging(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* ヘッダ */}
@@ -518,6 +598,20 @@ export const PendingPdfPanel: React.FC = () => {
                 )}
               </span>
             )}
+            <button
+              type="button"
+              onClick={openMerge}
+              disabled={bulkRunning || merging || !mergeEligible}
+              className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                mergeEligible
+                  ? "選択した同一取引先の発注書を1枚(複数明細)に統合します"
+                  : mergeDisabledReason
+              }
+            >
+              <Link2 className="w-3 h-3" />
+              🔗 選択を1枚に統合
+            </button>
             <button
               type="button"
               onClick={bulkGenerate}
@@ -694,6 +788,102 @@ export const PendingPdfPanel: React.FC = () => {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Phase 23: 発注書統合モーダル */}
+      {mergeOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => !merging && setMergeOpen(false)}
+        >
+          <div
+            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">
+              <Link2 className="w-4 h-4" />
+              <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+                発注書を1枚に統合
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                選択した {selectedRowObjs.length} 件の発注書を
+                <span className="font-bold text-foreground">統合先</span>
+                1枚にまとめます(明細を寄せ集めます)。
+                <span className="font-bold text-red-700">
+                  統合先以外の発注書は削除されます。
+                </span>
+                取引先:{" "}
+                <span className="font-bold text-foreground">
+                  {selectedRowObjs[0]?.summary.counterparty}
+                </span>
+              </p>
+              <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">
+                統合先(残す発注書)を選択
+              </div>
+              <div className="border border-input rounded-sm divide-y divide-border/50 max-h-[40vh] overflow-y-auto">
+                {selectedRowObjs.map((r) => (
+                  <label
+                    key={r.id}
+                    className="flex items-start gap-2 p-2.5 cursor-pointer hover:bg-muted/30"
+                  >
+                    <input
+                      type="radio"
+                      name="merge-target"
+                      checked={mergeTargetId === r.id}
+                      onChange={() => setMergeTargetId(r.id)}
+                      disabled={merging}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-mono font-bold flex items-center gap-2">
+                        {r.document_number}
+                        {mergeTargetId === r.id && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-sm">
+                            統合先 · 残す
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {r.summary.title || "(タイトル未設定)"}
+                        {r.summary.line_count != null &&
+                          ` · 明細 ${r.summary.line_count} 行`}
+                        {r.summary.amount != null &&
+                          ` · 税抜 ¥${Number(r.summary.amount).toLocaleString("ja-JP")}`}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="bg-muted/30 border-t border-border px-5 py-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMergeOpen(false)}
+                disabled={merging}
+                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={runMerge}
+                disabled={merging || mergeTargetId == null}
+                className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {merging ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Link2 className="w-3 h-3" />
+                )}
+                {merging
+                  ? "統合中..."
+                  : `${selectedRowObjs.length - 1} 件を統合先にまとめる`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
