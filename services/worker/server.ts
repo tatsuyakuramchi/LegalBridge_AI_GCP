@@ -5895,6 +5895,28 @@ ${details}
         0
       );
 
+      // 件名: 発注書テンプレ {{PROJECT_TITLE}} 用。インポート文書は form_data に
+      //   PROJECT_TITLE/CONTRACT_TITLE が無いことがあるため、最後の砦として
+      //   contract_capabilities.contract_title を引いて補完する。
+      let projectTitle =
+        rawData.PROJECT_TITLE ||
+        rawData.CONTRACT_TITLE ||
+        rawData.contract_title ||
+        rawData.description ||
+        "";
+      if (!projectTitle) {
+        try {
+          const capT = await query(
+            `SELECT contract_title FROM contract_capabilities
+              WHERE document_number = $1 LIMIT 1`,
+            [documentNumber]
+          );
+          projectTitle = capT.rows[0]?.contract_title || "";
+        } catch {
+          /* noop: 件名補完の失敗は PDF 生成自体を止めない */
+        }
+      }
+
       const details = {
         ...rawData,
         ...staffInfo,
@@ -5902,14 +5924,7 @@ ${details}
         expensesTotalIncTax: bulkExpensesTotal,
         DOC_NO: documentNumber,
         ORDER_NO: documentNumber,
-        // 件名: 発注書テンプレ {{PROJECT_TITLE}} 用。インポート文書は
-        //   PROJECT_TITLE 未設定のことがあるため CONTRACT_TITLE 等から補完。
-        PROJECT_TITLE:
-          rawData.PROJECT_TITLE ||
-          rawData.CONTRACT_TITLE ||
-          rawData.contract_title ||
-          rawData.description ||
-          "",
+        PROJECT_TITLE: projectTitle,
         hasChangeLogs: false,
         changeLogs: [],
       };
@@ -7468,15 +7483,27 @@ ${details}
         return res.status(400).json({ ok: false, error: "invalid id" });
       }
       const result = await query(
-        `SELECT id, document_number, issue_key, template_type, document_category,
-                form_data, drive_link, created_by, created_at
-           FROM documents WHERE id = $1`,
+        `SELECT d.id, d.document_number, d.issue_key, d.template_type,
+                d.document_category, d.form_data, d.drive_link, d.created_by,
+                d.created_at, cc.contract_title AS cap_contract_title
+           FROM documents d
+           LEFT JOIN contract_capabilities cc
+             ON cc.document_number = d.document_number
+          WHERE d.id = $1`,
         [id]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ ok: false, error: "document not found" });
       }
       const r = result.rows[0];
+      // インポート由来などで form_data に件名(CONTRACT_TITLE/PROJECT_TITLE)が
+      // 無い場合は、contract_capabilities.contract_title から補完する。
+      const fd = r.form_data || {};
+      const capTitle = r.cap_contract_title || "";
+      if (capTitle) {
+        if (!fd.CONTRACT_TITLE) fd.CONTRACT_TITLE = capTitle;
+        if (!fd.PROJECT_TITLE) fd.PROJECT_TITLE = capTitle;
+      }
       res.json({
         ok: true,
         id: Number(r.id),
@@ -7484,7 +7511,7 @@ ${details}
         issue_key: r.issue_key,
         template_type: r.template_type,
         document_category: r.document_category,
-        form_data: r.form_data || {},
+        form_data: fd,
         drive_link: r.drive_link || "",
         created_by: r.created_by,
         created_at: r.created_at,
