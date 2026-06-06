@@ -1083,3 +1083,44 @@ export function getVendorSampleCsv(): string {
     )
     .join("\n");
 }
+
+/**
+ * 既存の取引先データを「取込テンプレと同じ列」でCSV出力する(ラウンドトリップ用)。
+ *   これをDLして修正 → /api/master/vendors/import-csv で一括更新できる。
+ *   列は getVendorSampleCsv のヘッダと完全一致(vendor_code をキーに upsert)。
+ *   ※住所/振込先は「メイン(★)」の単一値(レガシー列)を出力する。複数住所・複数
+ *     口座の一括編集はこのCSVの対象外(取引先画面で編集)。
+ */
+const VENDOR_EXPORT_COLUMNS = [
+  "vendor_code", "corporate_number", "vendor_name", "trade_name", "pen_name", "entity_type",
+  "phone", "email", "payment_terms", "main_business", "transaction_category",
+  "capital_yen", "employee_count", "rating", "antisocial_check_result", "master_updated_at",
+  "contact_name", "address",
+  "bank_name", "branch_name", "account_type", "account_number", "account_holder_kana",
+  "is_invoice_issuer", "invoice_registration_number",
+] as const;
+
+export async function getVendorExportCsv(): Promise<string> {
+  const cols = VENDOR_EXPORT_COLUMNS;
+  const r = await query(
+    `SELECT ${cols.join(", ")} FROM vendors ORDER BY vendor_code`
+  );
+  const fmt = (col: string, v: any): string => {
+    if (v == null) return "";
+    if (col === "is_invoice_issuer") {
+      return v === true || v === "t" || v === "true" || v === "TRUE" ? "TRUE" : "FALSE";
+    }
+    if (col === "master_updated_at") {
+      const s = String(v);
+      return s.length >= 10 ? s.substring(0, 10) : s;
+    }
+    return String(v);
+  };
+  const esc = (s: string) =>
+    /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  const lines: string[] = [cols.join(",")];
+  for (const row of r.rows) {
+    lines.push(cols.map((c) => esc(fmt(c, (row as any)[c]))).join(","));
+  }
+  return lines.join("\n");
+}
