@@ -5902,6 +5902,14 @@ ${details}
         expensesTotalIncTax: bulkExpensesTotal,
         DOC_NO: documentNumber,
         ORDER_NO: documentNumber,
+        // 件名: 発注書テンプレ {{PROJECT_TITLE}} 用。インポート文書は
+        //   PROJECT_TITLE 未設定のことがあるため CONTRACT_TITLE 等から補完。
+        PROJECT_TITLE:
+          rawData.PROJECT_TITLE ||
+          rawData.CONTRACT_TITLE ||
+          rawData.contract_title ||
+          rawData.description ||
+          "",
         hasChangeLogs: false,
         changeLogs: [],
       };
