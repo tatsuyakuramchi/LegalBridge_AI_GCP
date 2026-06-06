@@ -1100,11 +1100,61 @@ const VENDOR_EXPORT_COLUMNS = [
   "is_invoice_issuer", "invoice_registration_number",
 ] as const;
 
-export async function getVendorExportCsv(): Promise<string> {
+export async function getVendorExportCsv(codes?: string[]): Promise<string> {
   const cols = VENDOR_EXPORT_COLUMNS;
-  const r = await query(
-    `SELECT ${cols.join(", ")} FROM vendors ORDER BY vendor_code`
-  );
+  const filter = (codes || []).map((c) => String(c).trim()).filter(Boolean);
+
+  // 住所/振込先/窓口担当は 1:N の primary(★メイン) を採用し、無ければレガシー単一
+  //   カラムにフォールバック。codes 指定時はその vendor_code のみ。
+  const primarySql = `
+    SELECT
+      v.vendor_code, v.corporate_number, v.vendor_name, v.trade_name, v.pen_name, v.entity_type,
+      v.phone, v.email, v.payment_terms, v.main_business, v.transaction_category,
+      v.capital_yen, v.employee_count, v.rating, v.antisocial_check_result, v.master_updated_at,
+      COALESCE(c.contact_name, v.contact_name)                 AS contact_name,
+      COALESCE(a.address, v.address)                           AS address,
+      COALESCE(ba.bank_name, v.bank_name)                      AS bank_name,
+      COALESCE(ba.branch_name, v.branch_name)                  AS branch_name,
+      COALESCE(ba.account_type, v.account_type)                AS account_type,
+      COALESCE(ba.account_number, v.account_number)            AS account_number,
+      COALESCE(ba.account_holder_kana, v.account_holder_kana)  AS account_holder_kana,
+      v.is_invoice_issuer, v.invoice_registration_number
+    FROM vendors v
+    LEFT JOIN LATERAL (
+      SELECT address FROM vendor_addresses
+       WHERE vendor_id = v.id AND is_primary = TRUE
+       ORDER BY sort_order ASC, id ASC LIMIT 1
+    ) a ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT bank_name, branch_name, account_type, account_number, account_holder_kana
+        FROM vendor_bank_accounts
+       WHERE vendor_id = v.id AND is_primary = TRUE
+       ORDER BY sort_order ASC, id ASC LIMIT 1
+    ) ba ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT contact_name FROM vendor_contacts
+       WHERE vendor_id = v.id AND is_primary = TRUE
+       ORDER BY sort_order ASC, id ASC LIMIT 1
+    ) c ON TRUE
+    WHERE (cardinality($1::text[]) = 0 OR v.vendor_code = ANY($1::text[]))
+    ORDER BY v.vendor_code`;
+
+  let r;
+  try {
+    r = await query(primarySql, [filter]);
+  } catch (err: any) {
+    // 1:N テーブル未作成等(42P01/42703)はレガシー単一カラムのみで出力。
+    if (err && (err.code === "42P01" || err.code === "42703")) {
+      r = await query(
+        `SELECT ${cols.join(", ")} FROM vendors
+          WHERE (cardinality($1::text[]) = 0 OR vendor_code = ANY($1::text[]))
+          ORDER BY vendor_code`,
+        [filter]
+      );
+    } else {
+      throw err;
+    }
+  }
   const fmt = (col: string, v: any): string => {
     if (v == null) return "";
     if (col === "is_invoice_issuer") {
