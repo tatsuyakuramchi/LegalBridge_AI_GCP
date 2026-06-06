@@ -1123,9 +1123,65 @@ async function startServer() {
     }
   );
 
-  // -------------------------------------------------------------------
-  // /master/staff — スタッフマスター CRUD + CSV 一括取込 (Phase 17z-4)
-  // -------------------------------------------------------------------
+  // POST /api/master/vendors/bulk-delete — 複数取引先を一括削除(admin)。
+  //   body: { codes: string[] }。住所/口座/担当(1:N)は ON DELETE CASCADE で自動削除。
+  //   文書/契約/作品等から参照中の取引先は FK 制約で削除不可 → スキップして報告。
+  app.post(
+    "/api/master/vendors/bulk-delete",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "master:vendors:delete",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "256kb" }),
+    async (req, res) => {
+      try {
+        const codes: string[] = Array.isArray(req.body?.codes)
+          ? req.body.codes.map((c: any) => String(c).trim()).filter(Boolean)
+          : [];
+        if (codes.length === 0) {
+          return res.status(400).json({ ok: false, error: "codes[] is required" });
+        }
+        const deleted: string[] = [];
+        const skipped: { code: string; reason: string }[] = [];
+        for (const code of codes) {
+          try {
+            const r = await query(
+              "DELETE FROM vendors WHERE vendor_code = $1 RETURNING vendor_code",
+              [code]
+            );
+            if (r.rows.length > 0) deleted.push(code);
+            else skipped.push({ code, reason: "見つかりません" });
+          } catch (e: any) {
+            if (e && e.code === "23503") {
+              skipped.push({
+                code,
+                reason: "文書・契約・作品などから参照されているため削除できません",
+              });
+            } else {
+              skipped.push({ code, reason: String(e?.message || e) });
+            }
+          }
+        }
+        console.log(
+          JSON.stringify({
+            evt: "vendor_bulk_delete",
+            requested: codes.length,
+            deleted: deleted.length,
+            skipped: skipped.length,
+            user: (req as any).user?.email || null,
+            ts: new Date().toISOString(),
+          })
+        );
+        res.json({ ok: true, deleted, skipped });
+      } catch (error: any) {
+        console.error("POST /api/master/vendors/bulk-delete failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
   app.get(
     "/master/staff",
     requireIapUser({ renderErrorPage }),
