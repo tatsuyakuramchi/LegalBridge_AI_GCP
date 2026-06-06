@@ -114,6 +114,10 @@ import {
   parseVendorCsv,
   importVendorRows,
   getVendorSampleCsv,
+  getVendorExportCsv,
+  deleteVendorForce,
+  listVendorOrphans,
+  attachVendorOrphan,
 } from "./src/services/vendorMasterService.ts";
 // Phase 17z-4: Staff マスター + Contracts (LegalOn 取込) を Master タブ群に統合。
 import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
@@ -990,6 +994,34 @@ async function startServer() {
     res.send(body);
   });
 
+  // GET /api/master/vendors/export.csv \u2014 \u65E2\u5B58\u30C7\u30FC\u30BF\u3092\u53D6\u8FBC\u30C6\u30F3\u30D7\u30EC\u5F62\u5F0F\u3067\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3002
+  //   DL\u2192\u4FEE\u6B63\u2192/api/master/vendors/import-csv \u3067\u4E00\u62EC\u66F4\u65B0(\u30E9\u30A6\u30F3\u30C9\u30C8\u30EA\u30C3\u30D7)\u3002
+  //   ":code" \u30EB\u30FC\u30C8\u3088\u308A\u524D\u306B\u7F6E\u304F(\u3067\u306A\u3044\u3068 "export.csv" \u304C code \u6271\u3044\u306B\u306A\u308B)\u3002
+  app.get(
+    "/api/master/vendors/export.csv",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        // ?codes=A,B,C で対象取引先を絞り込み(空なら全件)。
+        const codes = String((req.query as any).codes || "")
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean);
+        const csv = await getVendorExportCsv(codes);
+        const stamp = new Date().toISOString().slice(0, 10);
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="vendors_export_${stamp}.csv"`
+        );
+        res.send("\uFEFF" + csv);
+      } catch (error: any) {
+        console.error("GET /api/master/vendors/export.csv failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
   // GET /api/master/vendors/:code
   app.get(
     "/api/master/vendors/:code",
@@ -1094,9 +1126,137 @@ async function startServer() {
     }
   );
 
-  // -------------------------------------------------------------------
-  // /master/staff — スタッフマスター CRUD + CSV 一括取込 (Phase 17z-4)
-  // -------------------------------------------------------------------
+  // POST /api/master/vendors/bulk-delete — 複数取引先を一括削除(admin)。
+  //   body: { codes: string[] }。住所/口座/担当(1:N)は ON DELETE CASCADE で自動削除。
+  //   文書/契約/作品等から参照中の取引先は FK 制約で削除不可 → スキップして報告。
+  app.post(
+    "/api/master/vendors/bulk-delete",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "master:vendors:delete",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "256kb" }),
+    async (req, res) => {
+      try {
+        const codes: string[] = Array.isArray(req.body?.codes)
+          ? req.body.codes.map((c: any) => String(c).trim()).filter(Boolean)
+          : [];
+        if (codes.length === 0) {
+          return res.status(400).json({ ok: false, error: "codes[] is required" });
+        }
+        // mode: "skip"(既定/安全) = 参照中はスキップ。"force" = 参照をNULL(NOT NULL
+        //   参照行は削除)してから削除し、NULLにした参照は孤立ログに記録(後で再アタッチ可)。
+        const force = String(req.body?.mode || "").toLowerCase() === "force";
+        const deleted: string[] = [];
+        const skipped: { code: string; reason: string }[] = [];
+        let nulledTotal = 0,
+          removedTotal = 0,
+          orphanTotal = 0;
+        for (const code of codes) {
+          try {
+            if (force) {
+              const r = await deleteVendorForce(code);
+              if (r.deleted) {
+                deleted.push(code);
+                nulledTotal += r.nulled;
+                removedTotal += r.removed;
+                orphanTotal += r.orphans;
+              } else {
+                skipped.push({ code, reason: "見つかりません" });
+              }
+            } else {
+              const r = await query(
+                "DELETE FROM vendors WHERE vendor_code = $1 RETURNING vendor_code",
+                [code]
+              );
+              if (r.rows.length > 0) deleted.push(code);
+              else skipped.push({ code, reason: "見つかりません" });
+            }
+          } catch (e: any) {
+            if (!force && e && e.code === "23503") {
+              skipped.push({
+                code,
+                reason: "文書・契約・作品などから参照されているため削除できません",
+              });
+            } else {
+              skipped.push({ code, reason: String(e?.message || e) });
+            }
+          }
+        }
+        console.log(
+          JSON.stringify({
+            evt: "vendor_bulk_delete",
+            mode: force ? "force" : "skip",
+            requested: codes.length,
+            deleted: deleted.length,
+            skipped: skipped.length,
+            nulled: nulledTotal,
+            removed: removedTotal,
+            orphans: orphanTotal,
+            user: (req as any).user?.email || null,
+            ts: new Date().toISOString(),
+          })
+        );
+        res.json({
+          ok: true,
+          deleted,
+          skipped,
+          nulled: nulledTotal,
+          removed: removedTotal,
+          orphans: orphanTotal,
+        });
+      } catch (error: any) {
+        console.error("POST /api/master/vendors/bulk-delete failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // GET /api/master/vendor-orphans — 強制削除で取引先参照を失った(NULL化された)
+  //   レコード一覧。再アタッチ(救済)の対象。
+  app.get(
+    "/api/master/vendor-orphans",
+    requireIapUser({ renderErrorPage }),
+    async (_req, res) => {
+      try {
+        res.json({ ok: true, rows: await listVendorOrphans() });
+      } catch (error: any) {
+        console.error("GET /api/master/vendor-orphans failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // POST /api/master/vendor-orphans/attach — 孤立レコードに取引先を再アタッチ(admin)。
+  //   body: { id, vendor_code }
+  app.post(
+    "/api/master/vendor-orphans/attach",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "master:vendor-orphans:attach",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "16kb" }),
+    async (req, res) => {
+      try {
+        const id = Number(req.body?.id);
+        const vendorCode = String(req.body?.vendor_code || "").trim();
+        if (!Number.isFinite(id) || !vendorCode) {
+          return res.status(400).json({ ok: false, error: "id と vendor_code は必須です" });
+        }
+        await attachVendorOrphan(id, vendorCode);
+        res.json({ ok: true });
+      } catch (error: any) {
+        console.error("POST /api/master/vendor-orphans/attach failed:", error);
+        const msg = String(error?.message || error);
+        res.status(/見つから|不正|解決済/.test(msg) ? 400 : 500).json({ ok: false, error: msg });
+      }
+    }
+  );
+
   app.get(
     "/master/staff",
     requireIapUser({ renderErrorPage }),

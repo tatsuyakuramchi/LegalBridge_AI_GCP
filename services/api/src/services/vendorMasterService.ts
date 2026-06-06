@@ -1083,3 +1083,263 @@ export function getVendorSampleCsv(): string {
     )
     .join("\n");
 }
+
+/**
+ * 既存の取引先データを「取込テンプレと同じ列」でCSV出力する(ラウンドトリップ用)。
+ *   これをDLして修正 → /api/master/vendors/import-csv で一括更新できる。
+ *   列は getVendorSampleCsv のヘッダと完全一致(vendor_code をキーに upsert)。
+ *   ※住所/振込先は「メイン(★)」の単一値(レガシー列)を出力する。複数住所・複数
+ *     口座の一括編集はこのCSVの対象外(取引先画面で編集)。
+ */
+const VENDOR_EXPORT_COLUMNS = [
+  "vendor_code", "corporate_number", "vendor_name", "trade_name", "pen_name", "entity_type",
+  "phone", "email", "payment_terms", "main_business", "transaction_category",
+  "capital_yen", "employee_count", "rating", "antisocial_check_result", "master_updated_at",
+  "contact_name", "address",
+  "bank_name", "branch_name", "account_type", "account_number", "account_holder_kana",
+  "is_invoice_issuer", "invoice_registration_number",
+] as const;
+
+export async function getVendorExportCsv(codes?: string[]): Promise<string> {
+  const cols = VENDOR_EXPORT_COLUMNS;
+  const filter = (codes || []).map((c) => String(c).trim()).filter(Boolean);
+
+  // 住所/振込先/窓口担当は 1:N の primary(★メイン) を採用し、無ければレガシー単一
+  //   カラムにフォールバック。codes 指定時はその vendor_code のみ。
+  const primarySql = `
+    SELECT
+      v.vendor_code, v.corporate_number, v.vendor_name, v.trade_name, v.pen_name, v.entity_type,
+      v.phone, v.email, v.payment_terms, v.main_business, v.transaction_category,
+      v.capital_yen, v.employee_count, v.rating, v.antisocial_check_result, v.master_updated_at,
+      COALESCE(c.contact_name, v.contact_name)                 AS contact_name,
+      COALESCE(a.address, v.address)                           AS address,
+      COALESCE(ba.bank_name, v.bank_name)                      AS bank_name,
+      COALESCE(ba.branch_name, v.branch_name)                  AS branch_name,
+      COALESCE(ba.account_type, v.account_type)                AS account_type,
+      COALESCE(ba.account_number, v.account_number)            AS account_number,
+      COALESCE(ba.account_holder_kana, v.account_holder_kana)  AS account_holder_kana,
+      v.is_invoice_issuer, v.invoice_registration_number
+    FROM vendors v
+    LEFT JOIN LATERAL (
+      SELECT address FROM vendor_addresses
+       WHERE vendor_id = v.id AND is_primary = TRUE
+       ORDER BY sort_order ASC, id ASC LIMIT 1
+    ) a ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT bank_name, branch_name, account_type, account_number, account_holder_kana
+        FROM vendor_bank_accounts
+       WHERE vendor_id = v.id AND is_primary = TRUE
+       ORDER BY sort_order ASC, id ASC LIMIT 1
+    ) ba ON TRUE
+    LEFT JOIN LATERAL (
+      SELECT contact_name FROM vendor_contacts
+       WHERE vendor_id = v.id AND is_primary = TRUE
+       ORDER BY sort_order ASC, id ASC LIMIT 1
+    ) c ON TRUE
+    WHERE (cardinality($1::text[]) = 0 OR v.vendor_code = ANY($1::text[]))
+    ORDER BY v.vendor_code`;
+
+  let r;
+  try {
+    r = await query(primarySql, [filter]);
+  } catch (err: any) {
+    // 1:N テーブル未作成等(42P01/42703)はレガシー単一カラムのみで出力。
+    if (err && (err.code === "42P01" || err.code === "42703")) {
+      r = await query(
+        `SELECT ${cols.join(", ")} FROM vendors
+          WHERE (cardinality($1::text[]) = 0 OR vendor_code = ANY($1::text[]))
+          ORDER BY vendor_code`,
+        [filter]
+      );
+    } else {
+      throw err;
+    }
+  }
+  const fmt = (col: string, v: any): string => {
+    if (v == null) return "";
+    if (col === "is_invoice_issuer") {
+      return v === true || v === "t" || v === "true" || v === "TRUE" ? "TRUE" : "FALSE";
+    }
+    if (col === "master_updated_at") {
+      const s = String(v);
+      return s.length >= 10 ? s.substring(0, 10) : s;
+    }
+    return String(v);
+  };
+  const esc = (s: string) =>
+    /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+  const lines: string[] = [cols.join(",")];
+  for (const row of r.rows) {
+    lines.push(cols.map((c) => esc(fmt(c, (row as any)[c]))).join(","));
+  }
+  return lines.join("\n");
+}
+
+// ====================================================================
+// 取引先の強制削除 + 孤立レコード救済(再アタッチ)
+// ====================================================================
+
+// 主要な参照テーブルの「ラベル式」(救済画面で何のレコードか分かるように)。
+//   未登録テーブルは "table #id" を使う。
+const VENDOR_REF_LABELS: Record<string, string> = {
+  documents: "document_number",
+  contract_capabilities: "COALESCE(NULLIF(document_number,''), contract_title)",
+  contracts: "COALESCE(NULLIF(document_number,''), contract_title)",
+  works: "COALESCE(NULLIF(work_code,'') || ' : ' || title, title)",
+  source_ips: "COALESCE(NULLIF(source_code,'') || ' : ' || title, title)",
+  sublicense_deals: "COALESCE(counterparty_name, inline_sublicensee_name)",
+  work_title_aliases: "alias_title",
+};
+
+type VendorFk = { table: string; column: string; nullable: boolean; cascade: boolean };
+
+/** vendors(id) を参照している全 FK(子テーブル/列/NULL可否/ON DELETE) をカタログから取得。 */
+async function vendorReferencingFks(): Promise<VendorFk[]> {
+  const r = await query(
+    `SELECT tc.table_name AS child_table, kcu.column_name AS child_column,
+            col.is_nullable, rc.delete_rule
+       FROM information_schema.table_constraints tc
+       JOIN information_schema.key_column_usage kcu
+         ON kcu.constraint_name = tc.constraint_name AND kcu.constraint_schema = tc.constraint_schema
+       JOIN information_schema.constraint_column_usage ccu
+         ON ccu.constraint_name = tc.constraint_name AND ccu.constraint_schema = tc.constraint_schema
+       JOIN information_schema.columns col
+         ON col.table_name = tc.table_name AND col.column_name = kcu.column_name AND col.table_schema = tc.table_schema
+       JOIN information_schema.referential_constraints rc
+         ON rc.constraint_name = tc.constraint_name AND rc.constraint_schema = tc.constraint_schema
+      WHERE tc.constraint_type = 'FOREIGN KEY'
+        AND ccu.table_name = 'vendors' AND ccu.column_name = 'id'
+        AND tc.table_schema = 'public'`
+  );
+  return r.rows.map((x: any) => ({
+    table: String(x.child_table),
+    column: String(x.child_column),
+    nullable: String(x.is_nullable).toUpperCase() === "YES",
+    cascade: String(x.delete_rule || "").toUpperCase() === "CASCADE",
+  }));
+}
+
+/** 孤立ログ表(救済対象の記録)を冪等に用意。 */
+async function ensureVendorOrphanTable(): Promise<void> {
+  await query(`
+    CREATE TABLE IF NOT EXISTS vendor_delete_orphans (
+      id SERIAL PRIMARY KEY,
+      deleted_vendor_code TEXT,
+      deleted_vendor_name TEXT,
+      child_table  TEXT NOT NULL,
+      child_column TEXT NOT NULL,
+      child_id     INTEGER NOT NULL,
+      child_label  TEXT,
+      resolved_at  TIMESTAMPTZ,
+      resolved_vendor_code TEXT,
+      created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+    )`);
+}
+
+/**
+ * 取引先を強制削除。参照(FK)を:
+ *   - ON DELETE CASCADE(住所/口座/担当 等) → 取引先削除で自動
+ *   - NULL 可の参照     → NULL にし、孤立ログへ記録(後で再アタッチ可能)
+ *   - NOT NULL の参照行 → 行ごと削除(救済不可・関連も消す)
+ * テーブル/列名はカタログ由来(ユーザー入力ではない)ため安全。
+ */
+export async function deleteVendorForce(
+  code: string
+): Promise<{ deleted: boolean; nulled: number; removed: number; orphans: number }> {
+  await ensureVendorOrphanTable();
+  const fks = await vendorReferencingFks();
+  const client = await pool.connect();
+  let nulled = 0,
+    removed = 0,
+    orphans = 0;
+  try {
+    await client.query("BEGIN");
+    const vr = await client.query(
+      "SELECT id, vendor_name FROM vendors WHERE vendor_code = $1",
+      [code]
+    );
+    if (vr.rows.length === 0) {
+      await client.query("ROLLBACK");
+      return { deleted: false, nulled: 0, removed: 0, orphans: 0 };
+    }
+    const vid = Number(vr.rows[0].id);
+    const vname = String(vr.rows[0].vendor_name || "");
+    for (const fk of fks) {
+      if (fk.cascade) continue; // 取引先削除でカスケード
+      if (fk.nullable) {
+        const lbl = VENDOR_REF_LABELS[fk.table];
+        const rows = await client.query(
+          `SELECT id${lbl ? `, (${lbl}) AS label` : ""} FROM ${fk.table} WHERE ${fk.column} = $1`,
+          [vid]
+        );
+        for (const row of rows.rows) {
+          await client.query(
+            `INSERT INTO vendor_delete_orphans
+               (deleted_vendor_code, deleted_vendor_name, child_table, child_column, child_id, child_label)
+             VALUES ($1,$2,$3,$4,$5,$6)`,
+            [code, vname, fk.table, fk.column, Number(row.id), row.label || `${fk.table} #${row.id}`]
+          );
+          orphans++;
+        }
+        const up = await client.query(
+          `UPDATE ${fk.table} SET ${fk.column} = NULL WHERE ${fk.column} = $1`,
+          [vid]
+        );
+        nulled += up.rowCount || 0;
+      } else {
+        const del = await client.query(
+          `DELETE FROM ${fk.table} WHERE ${fk.column} = $1`,
+          [vid]
+        );
+        removed += del.rowCount || 0;
+      }
+    }
+    const dv = await client.query("DELETE FROM vendors WHERE id = $1 RETURNING id", [vid]);
+    await client.query("COMMIT");
+    return { deleted: dv.rows.length > 0, nulled, removed, orphans };
+  } catch (e) {
+    await client.query("ROLLBACK").catch(() => {});
+    throw e;
+  } finally {
+    client.release();
+  }
+}
+
+/** 未解決の孤立レコード(取引先参照を失ったもの)を一覧。 */
+export async function listVendorOrphans(): Promise<any[]> {
+  await ensureVendorOrphanTable();
+  const r = await query(
+    `SELECT id, deleted_vendor_code, deleted_vendor_name, child_table, child_column,
+            child_id, child_label, created_at
+       FROM vendor_delete_orphans
+      WHERE resolved_at IS NULL
+      ORDER BY created_at DESC, id DESC
+      LIMIT 1000`
+  );
+  return r.rows;
+}
+
+/** 孤立レコードに取引先を再アタッチ(救済)。child_table/column はFKカタログで検証。 */
+export async function attachVendorOrphan(orphanId: number, vendorCode: string): Promise<void> {
+  await ensureVendorOrphanTable();
+  const o = await query(
+    "SELECT * FROM vendor_delete_orphans WHERE id = $1 AND resolved_at IS NULL",
+    [orphanId]
+  );
+  if (o.rows.length === 0) throw new Error("孤立レコードが見つからないか、既に解決済みです");
+  const orphan = o.rows[0];
+  const fks = await vendorReferencingFks();
+  const valid = fks.some((f) => f.table === orphan.child_table && f.column === orphan.child_column);
+  if (!valid) throw new Error("不正な参照先です");
+  const vr = await query("SELECT id FROM vendors WHERE vendor_code = $1", [String(vendorCode).trim()]);
+  if (vr.rows.length === 0) throw new Error(`取引先が見つかりません: ${vendorCode}`);
+  const vid = Number(vr.rows[0].id);
+  await query(
+    `UPDATE ${orphan.child_table} SET ${orphan.child_column} = $1 WHERE id = $2`,
+    [vid, Number(orphan.child_id)]
+  );
+  await query(
+    "UPDATE vendor_delete_orphans SET resolved_at = now(), resolved_vendor_code = $1 WHERE id = $2",
+    [String(vendorCode).trim(), orphanId]
+  );
+}

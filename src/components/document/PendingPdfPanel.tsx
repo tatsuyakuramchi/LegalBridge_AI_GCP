@@ -72,6 +72,17 @@ export const PendingPdfPanel: React.FC = () => {
   const [busyRows, setBusyRows] = React.useState<Record<number, string>>({})
   // Phase 16: 行ごとの直近 PDF 生成エラーを永続表示 (トーストでは見逃すため)
   const [rowErrors, setRowErrors] = React.useState<Record<number, string>>({})
+  // Phase 23: 一括 PDF 生成 — チェックした行の drive_link をまとめて作る。
+  //   選択行を逐次 (sequential) で regenerate-pdf に流す。
+  //   並列だと Drive 連携 / Backlog のレート制限に当たりやすいので 1 件ずつ。
+  const [selected, setSelected] = React.useState<Set<number>>(new Set())
+  const [bulkRunning, setBulkRunning] = React.useState(false)
+  const [bulkProgress, setBulkProgress] = React.useState<{
+    done: number
+    total: number
+    okCount: number
+    failCount: number
+  } | null>(null)
   const [lastResult, setLastResult] = React.useState<{
     id: number
     document_number: string
@@ -250,6 +261,109 @@ export const PendingPdfPanel: React.FC = () => {
     return data.rows.filter((r) => r.template_type === selectedTpl)
   }, [data, selectedTpl])
 
+  // Phase 23: 選択トグル
+  const toggleRow = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // 表示中 (タブで絞り込んだ) 行をまとめて選択 / 解除
+  const allVisibleSelected =
+    filteredRows.length > 0 && filteredRows.every((r) => selected.has(r.id))
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        filteredRows.forEach((r) => next.delete(r.id))
+      } else {
+        filteredRows.forEach((r) => next.add(r.id))
+      }
+      return next
+    })
+  }
+
+  // Phase 23: 選択をまとめて発行 — 1 件ずつ regenerate-pdf を呼ぶ。
+  //   成功した行は一覧から消し、失敗した行は rowErrors に残して選択も維持する
+  //   (あとで「修正して再試行」できるように)。
+  const bulkGenerate = async () => {
+    const targets = filteredRows.filter((r) => selected.has(r.id))
+    if (targets.length === 0) return
+    if (
+      !window.confirm(
+        `選択した ${targets.length} 件の PDF をまとめて生成します。\n` +
+          `1 件ずつ Drive に出力するため、件数によっては数分かかります。よろしいですか?`
+      )
+    )
+      return
+    setBulkRunning(true)
+    setBulkProgress({ done: 0, total: targets.length, okCount: 0, failCount: 0 })
+    setError(null)
+    let okCount = 0
+    let failCount = 0
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i]
+      setBusyRows((b) => ({ ...b, [row.id]: "generating" }))
+      setRowErrors((e) => {
+        const copy = { ...e }
+        delete copy[row.id]
+        return copy
+      })
+      try {
+        const res = await fetch(`/api/documents/${row.id}/regenerate-pdf`, {
+          method: "POST",
+        })
+        const json = await res.json()
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || `HTTP ${res.status}`)
+        }
+        okCount++
+        // 成功 → 一覧 / 選択から除外
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                rows: d.rows.filter((r) => r.id !== row.id),
+                total: d.total - 1,
+              }
+            : d
+        )
+        setSelected((prev) => {
+          const next = new Set(prev)
+          next.delete(row.id)
+          return next
+        })
+      } catch (e: any) {
+        failCount++
+        setRowErrors((prev) => ({
+          ...prev,
+          [row.id]: String(e?.message || e),
+        }))
+      } finally {
+        setBusyRows((b) => {
+          const copy = { ...b }
+          delete copy[row.id]
+          return copy
+        })
+        setBulkProgress({
+          done: i + 1,
+          total: targets.length,
+          okCount,
+          failCount,
+        })
+      }
+    }
+    setBulkRunning(false)
+    setLastResult({
+      id: -1,
+      document_number: `一括生成: 成功 ${okCount} 件 / 失敗 ${failCount} 件`,
+      action: "generated",
+    })
+  }
+
   return (
     <div className="space-y-4">
       {/* ヘッダ */}
@@ -366,6 +480,62 @@ export const PendingPdfPanel: React.FC = () => {
         </div>
       )}
 
+      {/* Phase 23: 一括発行ツールバー */}
+      {data && data.total > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap border border-border rounded-sm bg-muted/20 px-3 py-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-1.5 text-[10px] font-mono cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleSelectAllVisible}
+                disabled={bulkRunning}
+                className="w-3.5 h-3.5"
+              />
+              表示中をすべて選択
+            </label>
+            <span className="text-[10px] font-mono text-muted-foreground">
+              選択 {selected.size} 件
+            </span>
+            {selected.size > 0 && !bulkRunning && (
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="text-[10px] font-mono text-muted-foreground underline hover:text-foreground"
+              >
+                選択解除
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {bulkProgress && (
+              <span className="text-[10px] font-mono text-muted-foreground">
+                {bulkRunning ? "生成中… " : "完了 "}
+                {bulkProgress.done}/{bulkProgress.total}
+                <span className="text-emerald-700"> ✓{bulkProgress.okCount}</span>
+                {bulkProgress.failCount > 0 && (
+                  <span className="text-red-700"> ✗{bulkProgress.failCount}</span>
+                )}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={bulkGenerate}
+              disabled={bulkRunning || selected.size === 0}
+              className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="チェックした文書の PDF を 1 件ずつまとめて生成 (Backlog ステータスは触りません)"
+            >
+              {bulkRunning ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <FileText className="w-3 h-3" />
+              )}
+              📄 選択をまとめて発行
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 一覧 */}
       {!data || data.total === 0 ? (
         <div className="text-center py-12 border border-dashed border-input rounded-sm bg-muted/10">
@@ -395,6 +565,14 @@ export const PendingPdfPanel: React.FC = () => {
                 )}
               >
                 <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(row.id)}
+                    onChange={() => toggleRow(row.id)}
+                    disabled={bulkRunning}
+                    className="w-3.5 h-3.5 flex-shrink-0"
+                    title="一括発行の対象に含める"
+                  />
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-mono px-1.5 py-0.5 bg-muted rounded-sm uppercase tracking-wider">
