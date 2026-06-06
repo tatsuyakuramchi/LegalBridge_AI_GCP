@@ -5895,27 +5895,42 @@ ${details}
         0
       );
 
-      // 件名: 発注書テンプレ {{PROJECT_TITLE}} 用。インポート文書は form_data に
-      //   PROJECT_TITLE/CONTRACT_TITLE が無いことがあるため、最後の砦として
-      //   contract_capabilities.contract_title を引いて補完する。
+      // 件名(PROJECT_TITLE)と発注日は、インポート文書だと form_data に無く
+      //   contract_capabilities 側にあることがあるため、足りなければ DB から補完する。
+      const toDateStr = (d: any): string => {
+        if (!d) return "";
+        if (typeof d === "string") return d.slice(0, 10);
+        try {
+          return new Date(d).toISOString().slice(0, 10);
+        } catch {
+          return "";
+        }
+      };
       let projectTitle =
         rawData.PROJECT_TITLE ||
         rawData.CONTRACT_TITLE ||
         rawData.contract_title ||
         rawData.description ||
         "";
-      if (!projectTitle) {
+      // 発注日: form_data の 発注日 / order_date を優先、無ければ capability。
+      let orderPoDate = toDateStr(rawData["発注日"] || rawData.order_date || "");
+      if (!projectTitle || !orderPoDate) {
         try {
           const capT = await query(
-            `SELECT contract_title FROM contract_capabilities
+            `SELECT contract_title, issue_date_po FROM contract_capabilities
               WHERE document_number = $1 LIMIT 1`,
             [documentNumber]
           );
-          projectTitle = capT.rows[0]?.contract_title || "";
+          if (!projectTitle)
+            projectTitle = capT.rows[0]?.contract_title || "";
+          if (!orderPoDate)
+            orderPoDate = toDateStr(capT.rows[0]?.issue_date_po);
         } catch {
-          /* noop: 件名補完の失敗は PDF 生成自体を止めない */
+          /* noop: 補完の失敗は PDF 生成自体を止めない */
         }
       }
+      // 発行日(ORDER_DATE)は作成日(今日)を既定とする(空だと PDF が空欄になるため)。
+      const issueDate = toDateStr(rawData.ORDER_DATE) || toDateStr(new Date());
 
       const details = {
         ...rawData,
@@ -5925,6 +5940,8 @@ ${details}
         DOC_NO: documentNumber,
         ORDER_NO: documentNumber,
         PROJECT_TITLE: projectTitle,
+        ORDER_DATE: issueDate,
+        発注日: orderPoDate,
         hasChangeLogs: false,
         changeLogs: [],
       };
@@ -7485,7 +7502,8 @@ ${details}
       const result = await query(
         `SELECT d.id, d.document_number, d.issue_key, d.template_type,
                 d.document_category, d.form_data, d.drive_link, d.created_by,
-                d.created_at, cc.contract_title AS cap_contract_title
+                d.created_at, cc.contract_title AS cap_contract_title,
+                cc.issue_date_po AS cap_issue_date_po
            FROM documents d
            LEFT JOIN contract_capabilities cc
              ON cc.document_number = d.document_number
@@ -7496,13 +7514,27 @@ ${details}
         return res.status(404).json({ ok: false, error: "document not found" });
       }
       const r = result.rows[0];
-      // インポート由来などで form_data に件名(CONTRACT_TITLE/PROJECT_TITLE)が
-      // 無い場合は、contract_capabilities.contract_title から補完する。
+      // インポート由来などで form_data に件名(CONTRACT_TITLE/PROJECT_TITLE)や
+      // 発注日が無い場合は、contract_capabilities から補完する。
       const fd = r.form_data || {};
       const capTitle = r.cap_contract_title || "";
       if (capTitle) {
         if (!fd.CONTRACT_TITLE) fd.CONTRACT_TITLE = capTitle;
         if (!fd.PROJECT_TITLE) fd.PROJECT_TITLE = capTitle;
+      }
+      // 発注日(form_data['発注日']): CSV の issue_date_po を編集画面に反映。
+      if (!fd["発注日"] && !fd.order_date && r.cap_issue_date_po) {
+        const d = r.cap_issue_date_po;
+        fd["発注日"] =
+          typeof d === "string"
+            ? d.slice(0, 10)
+            : (() => {
+                try {
+                  return new Date(d).toISOString().slice(0, 10);
+                } catch {
+                  return "";
+                }
+              })();
       }
       res.json({
         ok: true,
