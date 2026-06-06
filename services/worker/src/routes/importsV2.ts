@@ -481,6 +481,7 @@ async function upsertContract(
           ...(p.form_data || {}),
           VENDOR_CODE: p.vendor_code || "",
           VENDOR_NAME: p.vendor_name || "",
+          CONTRACT_TITLE: p.contract_title || "",
           record_type: p.record_type,
           contract_category: p.contract_category,
           line_items: p.line_items || [],
@@ -489,6 +490,9 @@ async function upsertContract(
           other_fees: p.other_fees || [],
           __imported: true,
           __v2: true,
+          // PDF未作成キューに出すための明示フラグ。
+          // drive_link が空 (PDF未生成) のときだけ立てる。
+          __pdf_pending: !(p.drive_link && p.drive_link.trim()),
         }),
         p.drive_link || "",
         "import-v2",
