@@ -484,6 +484,8 @@ async function upsertContract(
           CONTRACT_TITLE: p.contract_title || "",
           // 件名: 発注書テンプレ {{PROJECT_TITLE}} 用。CSV の contract_title を使う。
           PROJECT_TITLE: p.contract_title || "",
+          // 発注日: CSV の issue_date_po を発注書フォーム/PDFの発注日に反映。
+          発注日: p.issue_date_po || "",
           record_type: p.record_type,
           contract_category: p.contract_category,
           line_items: p.line_items || [],
