@@ -53,6 +53,10 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
         <input type="checkbox" id="chk-all" style="width:14px;height:14px;cursor:pointer;"> 全選択
       </label>
       <button class="btn" id="btn-delete" style="display:none;background:#c0392b;border-color:#c0392b;color:#fff;">🗑 選択を削除</button>
+      <label id="force-wrap" style="display:none;align-items:center;gap:4px;font-size:11px;color:#c0392b;cursor:pointer;" title="参照中の取引先も削除します。参照は NULL に(NOT NULL の関連行は削除)。NULL にした参照は『救済』で再アタッチ可能です。">
+        <input type="checkbox" id="force-del" style="width:14px;height:14px;cursor:pointer;"> 強制
+      </label>
+      <button class="btn outline" id="btn-rescue" style="display:none;" title="強制削除で取引先参照を失った(NULL化された)レコードに、取引先を再アタッチします">🩹 救済</button>
       <button class="btn outline" id="btn-export" title="絞り込み(無ければ全件)の既存データをCSV出力 → 修正 → CSV一括取込で一括更新。住所/振込先/担当はメイン(★)を出力">${SVG.fileText} 修正用CSV出力</button>
       <a class="btn outline" href="${apiTemplateUrl}" download="vendor_template_new.csv" title="新規登録用の空テンプレ(サンプル行入り)">${SVG.fileText} 新規テンプレ(空)</a>
       <button class="btn outline" id="btn-import">${SVG.upload} CSV一括取込</button>
@@ -384,6 +388,28 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
     </div>
   </div>
 
+  <!-- 孤立レコード救済(再アタッチ) Modal -->
+  <div class="modal-backdrop" id="orphan-backdrop">
+    <div class="modal" style="max-width:760px;">
+      <div class="modal-head">
+        <div>
+          <span class="modal-tag">MST · VENDORS / RESCUE</span>
+          <h3 style="margin:4px 0 0;">孤立レコードの救済（取引先の再アタッチ）</h3>
+        </div>
+        <button class="btn ghost sm" id="orphan-close" aria-label="閉じる">${SVG.x}</button>
+      </div>
+      <div class="modal-body" style="max-height:60vh;overflow:auto;">
+        <p class="muted" style="font-size:12px;margin:0 0 8px;">
+          強制削除で取引先参照を失った（NULL 化された）レコードです。各行で取引先を選んで「アタッチ」すると再接続されます。
+        </p>
+        <div id="orphan-list"><div class="loading">LOADING</div></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn outline" id="orphan-cancel">閉じる</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
 
   <script>
@@ -501,35 +527,105 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
       const n = selected.size;
       const btn = $('btn-delete');
       if (!btn) return;
-      btn.style.display = n > 0 ? '' : 'none';
+      const show = n > 0 ? '' : 'none';
+      btn.style.display = show;
       btn.textContent = '🗑 選択を削除 (' + n + ')';
+      const fw = $('force-wrap');
+      if (fw) fw.style.display = n > 0 ? 'flex' : 'none';
     }
 
     async function bulkDelete() {
       const codes = Array.from(selected);
       if (codes.length === 0) return;
-      if (!confirm(codes.length + ' 件の取引先を削除します。よろしいですか?\\n' +
-        '住所・口座・窓口担当も一緒に削除されます。文書・契約・作品などから参照中の取引先はスキップされます。')) return;
+      const force = $('force-del') && $('force-del').checked;
+      const warn = force
+        ? '【強制削除】' + codes.length + ' 件を削除します。参照中の取引先も削除し、参照は NULL に' +
+          '(NOT NULL の関連行は削除)します。NULL にした参照は後で「救済」で再アタッチできます。よろしいですか?'
+        : codes.length + ' 件の取引先を削除します。住所・口座・窓口担当も削除されます。' +
+          '文書・契約・作品などから参照中の取引先はスキップされます。よろしいですか?';
+      if (!confirm(warn)) return;
       try {
         const res = await fetch('/api/master/vendors/bulk-delete', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ codes }),
+          body: JSON.stringify({ codes, mode: force ? 'force' : 'skip' }),
         });
         const d = await res.json().catch(() => ({}));
         if (!res.ok || d.ok === false) throw new Error(d.error || ('HTTP ' + res.status));
         const del = (d.deleted || []).length, skip = (d.skipped || []).length;
         selected.clear();
+        if ($('force-del')) $('force-del').checked = false;
         await loadList();
         updateDeleteBtn();
+        loadOrphanCount();
         let msg = '削除 ' + del + ' 件';
-        if (skip > 0) msg += ' / スキップ ' + skip + ' 件(参照中など)';
+        if (force && (d.nulled || d.removed)) msg += '(参照NULL ' + (d.nulled||0) + ' / 関連削除 ' + (d.removed||0) + ')';
+        if (force && d.orphans) msg += ' ・救済対象 ' + d.orphans + ' 件';
+        if (skip > 0) msg += ' / スキップ ' + skip + ' 件';
         toast(msg, skip > 0 ? 'error' : 'success');
-        if (skip > 0) {
-          console.warn('削除スキップ:', d.skipped);
-        }
+        if (skip > 0) console.warn('削除スキップ:', d.skipped);
       } catch (e) {
         toast('削除に失敗: ' + (e?.message || e), 'error');
       }
+    }
+
+    /* ----- 孤立レコード救済(再アタッチ) ----- */
+    let orphans = [];
+    async function loadOrphanCount() {
+      try {
+        const res = await fetch('/api/master/vendor-orphans');
+        const d = await res.json();
+        orphans = d.rows || [];
+      } catch (e) { orphans = []; }
+      const b = $('btn-rescue');
+      if (b) {
+        b.textContent = '🩹 救済' + (orphans.length ? ' (' + orphans.length + ')' : '');
+        b.style.display = orphans.length ? '' : 'none';
+      }
+    }
+    function vendorOptions(selectedCode) {
+      return '<option value="">— 取引先を選択 —</option>' + cache.map(function(v){
+        const c = v.vendor_code;
+        return '<option value="' + escAttr(c) + '"' + (c === selectedCode ? ' selected' : '') + '>' +
+          escHtml((c ? c + ' : ' : '') + (v.vendor_name || '')) + '</option>';
+      }).join('');
+    }
+    function renderOrphans() {
+      const wrap = $('orphan-list');
+      if (!orphans.length) { wrap.innerHTML = '<div class="empty" style="padding:16px;">救済対象(取引先未設定)はありません。</div>'; return; }
+      wrap.innerHTML = orphans.map(function(o){
+        return '<div class="orphan-row" data-id="' + o.id + '" style="display:flex;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--border);flex-wrap:wrap;font-size:12px;">' +
+          '<div style="min-width:220px;flex:1;"><b>' + escHtml(o.child_label || (o.child_table + ' #' + o.child_id)) + '</b>' +
+            '<div style="color:var(--muted-foreground);font-size:11px;">' + escHtml(o.child_table) + ' · 旧取引先: ' + escHtml(o.deleted_vendor_name || o.deleted_vendor_code || '—') + '</div></div>' +
+          '<select class="tech-select orphan-vendor" style="min-width:220px;">' + vendorOptions(o.deleted_vendor_code) + '</select>' +
+          '<button class="btn sm orphan-attach" type="button">アタッチ</button>' +
+        '</div>';
+      }).join('');
+      wrap.querySelectorAll('.orphan-row').forEach(function(row){
+        row.querySelector('.orphan-attach').addEventListener('click', function(){
+          attachOrphan(Number(row.dataset.id), row.querySelector('.orphan-vendor').value);
+        });
+      });
+    }
+    async function openRescue() {
+      await loadOrphanCount();
+      renderOrphans();
+      $('orphan-backdrop').classList.add('open');
+    }
+    function closeRescue() { $('orphan-backdrop').classList.remove('open'); }
+    async function attachOrphan(id, code) {
+      if (!code) { toast('取引先を選択してください', 'error'); return; }
+      try {
+        const res = await fetch('/api/master/vendor-orphans/attach', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: id, vendor_code: code }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.ok === false) throw new Error(d.error || ('HTTP ' + res.status));
+        orphans = orphans.filter(function(o){ return o.id !== id; });
+        renderOrphans();
+        loadOrphanCount();
+        toast('再アタッチしました', 'success');
+      } catch (e) { toast('アタッチ失敗: ' + (e?.message || e), 'error'); }
     }
 
     $('search').addEventListener('input', renderList);
@@ -1060,8 +1156,17 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
         + errBlock;
     }
 
+    /* ----- 救済 modal wiring ----- */
+    $('btn-rescue').addEventListener('click', openRescue);
+    $('orphan-close').addEventListener('click', closeRescue);
+    $('orphan-cancel').addEventListener('click', closeRescue);
+    $('orphan-backdrop').addEventListener('click', (e) => {
+      if (e.target === $('orphan-backdrop')) closeRescue();
+    });
+
     /* ----- init ----- */
     loadList();
+    loadOrphanCount();
   </script>`;
 
   return popAdminPage({
