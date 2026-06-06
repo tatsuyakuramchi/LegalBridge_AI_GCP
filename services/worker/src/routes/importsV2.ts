@@ -482,6 +482,8 @@ async function upsertContract(
           VENDOR_CODE: p.vendor_code || "",
           VENDOR_NAME: p.vendor_name || "",
           CONTRACT_TITLE: p.contract_title || "",
+          // 件名: 発注書テンプレ {{PROJECT_TITLE}} 用。CSV の contract_title を使う。
+          PROJECT_TITLE: p.contract_title || "",
           record_type: p.record_type,
           contract_category: p.contract_category,
           line_items: p.line_items || [],

@@ -289,6 +289,10 @@ export function DocumentEditorPage() {
           if (!normalized.description)
             normalized.description =
               rawFd.CONTRACT_TITLE || rawFd.contract_title || ""
+          // 件名(発注書テンプレの {{PROJECT_TITLE}})は CSV の contract_title を使う
+          if (!normalized.PROJECT_TITLE)
+            normalized.PROJECT_TITLE =
+              rawFd.CONTRACT_TITLE || rawFd.contract_title || ""
           if (!normalized.vendor_code)
             normalized.vendor_code = rawFd.VENDOR_CODE || ""
           if (!normalized.vendor_name)
