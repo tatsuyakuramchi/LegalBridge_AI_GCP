@@ -259,8 +259,43 @@ export function DocumentEditorPage() {
         if (cancelled) return
         setSelectedTemplate(data.template_type)
         setSelectedIssue(data.issue_key || "")
+        // CSV一括インポート(v2)由来の form_data はキー名がエディタと異なるため正規化する。
+        //   - line_items → items (LineItemTable が読む)
+        //   - CONTRACT_TITLE → description (発注書タイトル)
+        //   - VENDOR_CODE/VENDOR_NAME → vendor_code/vendor_name (取引先解決用)
+        //   expenses / other_fees / financial_conditions はキーが一致するためそのまま。
+        const rawFd = data.form_data || {}
+        const isImported = !!(rawFd.__imported || rawFd.__v2)
+        const normalized: Record<string, any> = { ...rawFd }
+        if (isImported) {
+          if (
+            !Array.isArray(normalized.items) &&
+            Array.isArray(rawFd.line_items)
+          ) {
+            normalized.items = rawFd.line_items.map((l: any) => ({
+              line_no: l.line_no,
+              item_name: l.item_name || "",
+              spec: l.spec || "",
+              category: l.category || "",
+              calc_method: l.calc_method || "FIXED",
+              payment_terms: l.payment_terms || "",
+              unit_price: Number(l.unit_price) || 0,
+              quantity: Number(l.quantity) || 0,
+              amount_ex_tax: Number(l.amount_ex_tax) || 0,
+              delivery_date: l.delivery_date || "",
+              payment_date: l.payment_date || "",
+            }))
+          }
+          if (!normalized.description)
+            normalized.description =
+              rawFd.CONTRACT_TITLE || rawFd.contract_title || ""
+          if (!normalized.vendor_code)
+            normalized.vendor_code = rawFd.VENDOR_CODE || ""
+          if (!normalized.vendor_name)
+            normalized.vendor_name = rawFd.VENDOR_NAME || ""
+        }
         setFormData({
-          ...(data.form_data || {}),
+          ...normalized,
           __from_pending_id: fromPendingId ? Number(fromPendingId) : undefined,
           __from_pending_doc_number: data.document_number,
           // Phase 16: reopen の場合は既存 doc を更新する識別子
@@ -285,6 +320,19 @@ export function DocumentEditorPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromPendingId, reopenId])
+
+  // インポート由来 / 既存文書を読み込んだ際、form_data の取引先コードから
+  // activeVendor を解決して取引先プルダウンを自動選択する。
+  // (vendors は非同期ロードのため、揃ったタイミングで解決する。)
+  React.useEffect(() => {
+    if (activeVendor) return
+    const code =
+      (formData as any)?.vendor_code || (formData as any)?.VENDOR_CODE
+    if (!code || !Array.isArray(vendors) || vendors.length === 0) return
+    const v = vendors.find((x: any) => x.vendor_code === code)
+    if (v) setActiveVendor(v)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [(formData as any)?.vendor_code, (formData as any)?.VENDOR_CODE, vendors])
 
   // ディープリンク: 未検収発注書インボックス等から
   //   /documents/new?template=inspection_certificate&parent_po=<contract_capabilities.id>
