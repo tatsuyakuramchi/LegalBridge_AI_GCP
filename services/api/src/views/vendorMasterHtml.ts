@@ -49,6 +49,10 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
       </select>
       <span class="count-badge" id="count">— entries</span>
       <div class="spacer"></div>
+      <label style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted-foreground);cursor:pointer;">
+        <input type="checkbox" id="chk-all" style="width:14px;height:14px;cursor:pointer;"> 全選択
+      </label>
+      <button class="btn" id="btn-delete" style="display:none;background:#c0392b;border-color:#c0392b;color:#fff;">🗑 選択を削除</button>
       <button class="btn outline" id="btn-export" title="絞り込み(無ければ全件)の既存データをCSV出力 → 修正 → CSV一括取込で一括更新。住所/振込先/担当はメイン(★)を出力">${SVG.fileText} 修正用CSV出力</button>
       <a class="btn outline" href="${apiTemplateUrl}" download="vendor_template_new.csv" title="新規登録用の空テンプレ(サンプル行入り)">${SVG.fileText} 新規テンプレ(空)</a>
       <button class="btn outline" id="btn-import">${SVG.upload} CSV一括取込</button>
@@ -390,6 +394,7 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
 
     let cache = [];
     let filteredCodes = []; // 修正用CSV出力(絞り込み対象)用
+    let selected = new Set(); // 選択削除用の vendor_code 集合
     let creating = false;
 
     function toast(msg, kind) {
@@ -467,6 +472,7 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
         const sub = v.trade_name || v.pen_name || '—';
         return '<div class="card" data-code="' + escAttr(v.vendor_code) + '">'
           + '<div class="card-head">'
+          +   '<input type="checkbox" class="row-chk" data-code="' + escAttr(v.vendor_code) + '" title="削除に選択" onclick="event.stopPropagation()" style="width:15px;height:15px;margin-right:6px;cursor:pointer;">'
           +   ICON_BUILDING
           +   '<span class="badge">' + escHtml(v.vendor_code) + '</span>'
           + '</div>'
@@ -480,22 +486,74 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
       $('list-wrap').querySelectorAll('.card[data-code]').forEach(card => {
         card.addEventListener('click', () => openView(card.dataset.code));
       });
+      $('list-wrap').querySelectorAll('.row-chk').forEach(chk => {
+        chk.checked = selected.has(chk.dataset.code);
+        chk.addEventListener('change', () => {
+          if (chk.checked) selected.add(chk.dataset.code);
+          else selected.delete(chk.dataset.code);
+          updateDeleteBtn();
+        });
+      });
+      updateDeleteBtn();
+    }
+
+    function updateDeleteBtn() {
+      const n = selected.size;
+      const btn = $('btn-delete');
+      if (!btn) return;
+      btn.style.display = n > 0 ? '' : 'none';
+      btn.textContent = '🗑 選択を削除 (' + n + ')';
+    }
+
+    async function bulkDelete() {
+      const codes = Array.from(selected);
+      if (codes.length === 0) return;
+      if (!confirm(codes.length + ' 件の取引先を削除します。よろしいですか?\\n' +
+        '住所・口座・窓口担当も一緒に削除されます。文書・契約・作品などから参照中の取引先はスキップされます。')) return;
+      try {
+        const res = await fetch('/api/master/vendors/bulk-delete', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ codes }),
+        });
+        const d = await res.json().catch(() => ({}));
+        if (!res.ok || d.ok === false) throw new Error(d.error || ('HTTP ' + res.status));
+        const del = (d.deleted || []).length, skip = (d.skipped || []).length;
+        selected.clear();
+        await loadList();
+        updateDeleteBtn();
+        let msg = '削除 ' + del + ' 件';
+        if (skip > 0) msg += ' / スキップ ' + skip + ' 件(参照中など)';
+        toast(msg, skip > 0 ? 'error' : 'success');
+        if (skip > 0) {
+          console.warn('削除スキップ:', d.skipped);
+        }
+      } catch (e) {
+        toast('削除に失敗: ' + (e?.message || e), 'error');
+      }
     }
 
     $('search').addEventListener('input', renderList);
     ['f-entity', 'f-invoice', 'f-withhold'].forEach((id) =>
       $(id).addEventListener('change', renderList)
     );
-    // 修正用CSV出力: 絞り込み(無ければ全件)の vendor_code を ?codes= で渡す。
+    // 修正用CSV出力: 選択があれば選択、無ければ絞り込み(無ければ全件)を ?codes= で渡す。
     //   同一オリジン(search-api)なので直接ナビゲートでダウンロードできる。
     $('btn-export').addEventListener('click', () => {
-      const codes = filteredCodes || [];
+      const codes = selected.size > 0 ? Array.from(selected) : (filteredCodes || []);
       const all = codes.length === cache.length || codes.length === 0;
       const url = all
         ? '/api/master/vendors/export.csv'
         : '/api/master/vendors/export.csv?codes=' + encodeURIComponent(codes.join(','));
       window.location.href = url;
     });
+
+    // 全選択: 現在の絞り込み結果(表示中)を選択 / 解除。
+    $('chk-all').addEventListener('change', (e) => {
+      if (e.target.checked) filteredCodes.forEach(c => selected.add(c));
+      else selected.clear();
+      renderList(); // チェック状態を反映
+    });
+    $('btn-delete').addEventListener('click', bulkDelete);
 
     /* ----- edit modal ----- */
     function openCreate() {
