@@ -162,6 +162,8 @@ export function VendorsPanel() {
     return `${base.replace(/\/$/, "")}/imports/vendor`
   })()
   const [search, setSearch] = React.useState("")
+  // CSV出力対象に選ぶ vendor_code 集合(空なら全件)。
+  const [selected, setSelected] = React.useState<Set<string>>(new Set())
   const [editing, setEditing] = React.useState<any>(null)
   const [creating, setCreating] = React.useState(false)
   const [draft, setDraft] = React.useState<any>(empty)
@@ -247,9 +249,18 @@ export function VendorsPanel() {
   // 既存取引先データを取込テンプレ形式でCSV出力(blobダウンロード)。
   //   apiRouter が GET を search-api へ振り、X-LB-PORTAL-SECRET を付与する。
   //   同一オリジン直リンクは admin-ui の 410 になるため fetch+blob で取得。
+  const toggleSelect = (code: string) =>
+    setSelected((s) => {
+      const n = new Set(s)
+      n.has(code) ? n.delete(code) : n.add(code)
+      return n
+    })
+
   const exportCsv = async () => {
     try {
-      const res = await fetch("/api/master/vendors/export.csv")
+      const codes = Array.from(selected)
+      const qs = codes.length > 0 ? `?codes=${encodeURIComponent(codes.join(","))}` : ""
+      const res = await fetch(`/api/master/vendors/export.csv${qs}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
       const url = URL.createObjectURL(blob)
@@ -281,14 +292,25 @@ export function VendorsPanel() {
           {vendors.length} entries
         </span>
         <div className="flex-1" />
-        {/* 既存データを取込テンプレ形式でCSV出力 → 修正 → CSV一括取込 で一括更新 */}
+        {/* 選択(無ければ全件)の取引先をCSV出力 → 修正 → CSV一括取込 で一括更新 */}
+        <label className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground cursor-pointer">
+          <input
+            type="checkbox"
+            className="h-3.5 w-3.5"
+            checked={filtered.length > 0 && filtered.every((v) => selected.has(v.vendor_code))}
+            onChange={(e) =>
+              setSelected(e.target.checked ? new Set(filtered.map((v) => v.vendor_code)) : new Set())
+            }
+          />
+          全選択
+        </label>
         <Button
           variant="outline"
           onClick={exportCsv}
-          title="現在の取引先データをCSV出力(修正してCSV一括取込で一括更新できます)"
+          title="選択した取引先(無ければ全件)をCSV出力。住所/振込先/担当はメイン(★)を出力。修正してCSV一括取込で一括更新できます"
         >
           <Download />
-          CSV出力
+          {selected.size > 0 ? `CSV出力 (${selected.size})` : "CSV出力 (全件)"}
         </Button>
         {/* Phase 22.21.35: CSV 一括取込ボタン (search-api 側のページを新タブで開く) */}
         <Button
@@ -342,7 +364,16 @@ export function VendorsPanel() {
           >
             <CardContent className="px-4 space-y-2">
               <div className="flex items-start justify-between gap-2">
-                <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
+                  <input
+                    type="checkbox"
+                    className="h-3.5 w-3.5"
+                    checked={selected.has(v.vendor_code)}
+                    onChange={() => toggleSelect(v.vendor_code)}
+                    title="CSV出力に選択"
+                  />
+                  <Building2 className="h-4 w-4 text-muted-foreground shrink-0" />
+                </div>
                 <Badge variant="outline" className="h-4">
                   {v.vendor_code}
                 </Badge>
