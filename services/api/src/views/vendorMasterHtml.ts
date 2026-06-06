@@ -30,13 +30,33 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
     <div class="toolbar">
       <div class="search">
         ${SVG.search}
-        <input type="text" id="search" placeholder="取引先名・取引先コードで検索…" autocomplete="off">
+        <input type="text" id="search" placeholder="取引先名・コード・屋号・ペンネームで検索…" autocomplete="off">
       </div>
+      <select class="tech-select" id="f-entity" title="区分(法人/個人)">
+        <option value="">区分: すべて</option>
+        <option value="corporate">法人</option>
+        <option value="individual">個人</option>
+      </select>
+      <select class="tech-select" id="f-invoice" title="インボイス発行事業者">
+        <option value="">インボイス: すべて</option>
+        <option value="yes">対象</option>
+        <option value="no">非対象</option>
+      </select>
+      <select class="tech-select" id="f-withhold" title="源泉徴収">
+        <option value="">源泉: すべて</option>
+        <option value="yes">対象</option>
+        <option value="no">非対象</option>
+      </select>
       <span class="count-badge" id="count">— entries</span>
       <div class="spacer"></div>
-      <button class="btn outline" id="btn-import">${SVG.upload} CSV 一括取込</button>
+      <button class="btn outline" id="btn-export" title="絞り込み(無ければ全件)の既存データをCSV出力 → 修正 → CSV一括取込で一括更新。住所/振込先/担当はメイン(★)を出力">${SVG.fileText} 修正用CSV出力</button>
+      <a class="btn outline" href="${apiTemplateUrl}" download="vendor_template_new.csv" title="新規登録用の空テンプレ(サンプル行入り)">${SVG.fileText} 新規テンプレ(空)</a>
+      <button class="btn outline" id="btn-import">${SVG.upload} CSV一括取込</button>
       <button class="btn" id="btn-new">${SVG.plus} 取引先を追加</button>
     </div>
+    <p class="muted" style="font-size:11px;margin:-6px 2px 0;">
+      修正＝「修正用CSV出力」で既存を出す→編集→「CSV一括取込」 ／ 新規＝「新規テンプレ(空)」に追記→「CSV一括取込」。
+    </p>
 
     <!-- List -->
     <div id="list-wrap">
@@ -369,6 +389,7 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
     const $ = (id) => document.getElementById(id);
 
     let cache = [];
+    let filteredCodes = []; // 修正用CSV出力(絞り込み対象)用
     let creating = false;
 
     function toast(msg, kind) {
@@ -403,15 +424,30 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
 
     function renderList() {
       const q = $('search').value.trim().toLowerCase();
-      const rows = q
-        ? cache.filter(v => {
-            const hay = [v.vendor_code, v.vendor_name, v.trade_name, v.pen_name, v.aliases]
-              .filter(Boolean).join(' ').toLowerCase();
-            return hay.includes(q);
-          })
-        : cache;
+      const fe = $('f-entity').value;
+      const fi = $('f-invoice').value;
+      const fw = $('f-withhold').value;
+      const isCorp = (v) => v.entity_type === 'corporate' || v.entity_type === '法人';
+      const isInd = (v) =>
+        v.entity_type === 'individual' || v.entity_type === 'sole_proprietor' || v.entity_type === '個人';
+      const rows = cache.filter(v => {
+        if (q) {
+          const hay = [v.vendor_code, v.vendor_name, v.trade_name, v.pen_name, v.aliases]
+            .filter(Boolean).join(' ').toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        if (fe === 'corporate' && !isCorp(v)) return false;
+        if (fe === 'individual' && !isInd(v)) return false;
+        if (fi === 'yes' && !v.is_invoice_issuer) return false;
+        if (fi === 'no' && v.is_invoice_issuer) return false;
+        if (fw === 'yes' && !v.withholding_enabled) return false;
+        if (fw === 'no' && v.withholding_enabled) return false;
+        return true;
+      });
+      filteredCodes = rows.map(v => v.vendor_code).filter(Boolean);
 
-      $('count').textContent = q
+      const narrowed = q || fe || fi || fw;
+      $('count').textContent = narrowed
         ? rows.length + ' / ' + cache.length + ' ENTRIES'
         : cache.length + ' ENTRIES';
 
@@ -447,6 +483,19 @@ export function vendorMasterPage(_authIgnored?: unknown, role: Role = "viewer"):
     }
 
     $('search').addEventListener('input', renderList);
+    ['f-entity', 'f-invoice', 'f-withhold'].forEach((id) =>
+      $(id).addEventListener('change', renderList)
+    );
+    // 修正用CSV出力: 絞り込み(無ければ全件)の vendor_code を ?codes= で渡す。
+    //   同一オリジン(search-api)なので直接ナビゲートでダウンロードできる。
+    $('btn-export').addEventListener('click', () => {
+      const codes = filteredCodes || [];
+      const all = codes.length === cache.length || codes.length === 0;
+      const url = all
+        ? '/api/master/vendors/export.csv'
+        : '/api/master/vendors/export.csv?codes=' + encodeURIComponent(codes.join(','));
+      window.location.href = url;
+    });
 
     /* ----- edit modal ----- */
     function openCreate() {

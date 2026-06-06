@@ -8,6 +8,8 @@ import {
   FileSpreadsheet,
   Download,
   ExternalLink,
+  SlidersHorizontal,
+  FileText,
 } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
@@ -169,12 +171,42 @@ export function VendorsPanel() {
   const [draft, setDraft] = React.useState<any>(empty)
   const [detail, setDetail] = React.useState<any>(null)
 
-  const filtered = vendors.filter(
-    (v) =>
-      v.vendor_name.toLowerCase().includes(search.toLowerCase()) ||
-      v.vendor_code.toLowerCase().includes(search.toLowerCase()) ||
-      (v.trade_name && v.trade_name.toLowerCase().includes(search.toLowerCase()))
-  )
+  // 詳細検索（修正対象を絞る）。区分=法人/個人、インボイス、源泉、取引区分。
+  const [showFilters, setShowFilters] = React.useState(false)
+  const [fEntity, setFEntity] = React.useState<"" | "corporate" | "individual">("")
+  const [fInvoice, setFInvoice] = React.useState<"" | "yes" | "no">("")
+  const [fWithhold, setFWithhold] = React.useState<"" | "yes" | "no">("")
+  const [fCategory, setFCategory] = React.useState("")
+
+  const isCorporate = (v: any) => {
+    const e = String(v.entity_type || "").toLowerCase()
+    return e === "corporate" || e === "法人"
+  }
+  const isIndividual = (v: any) => {
+    const e = String(v.entity_type || "").toLowerCase()
+    return e === "individual" || e === "個人"
+  }
+
+  const filtered = vendors.filter((v) => {
+    const kw = search.toLowerCase()
+    const matchKw =
+      !kw ||
+      v.vendor_name.toLowerCase().includes(kw) ||
+      v.vendor_code.toLowerCase().includes(kw) ||
+      (v.trade_name && v.trade_name.toLowerCase().includes(kw)) ||
+      ((v as any).pen_name && String((v as any).pen_name).toLowerCase().includes(kw))
+    if (!matchKw) return false
+    if (fEntity === "corporate" && !isCorporate(v)) return false
+    if (fEntity === "individual" && !isIndividual(v)) return false
+    if (fInvoice === "yes" && !(v as any).is_invoice_issuer) return false
+    if (fInvoice === "no" && (v as any).is_invoice_issuer) return false
+    if (fWithhold === "yes" && !(v as any).withholding_enabled) return false
+    if (fWithhold === "no" && (v as any).withholding_enabled) return false
+    if (fCategory && !String((v as any).transaction_category || "").toLowerCase().includes(fCategory.toLowerCase()))
+      return false
+    return true
+  })
+  const filterActive = !!(fEntity || fInvoice || fWithhold || fCategory)
 
   const open = !!editing || creating || !!detail
   const data = creating ? draft : editing || detail
@@ -258,8 +290,13 @@ export function VendorsPanel() {
 
   const exportCsv = async () => {
     try {
-      const codes = Array.from(selected)
-      const qs = codes.length > 0 ? `?codes=${encodeURIComponent(codes.join(","))}` : ""
+      // 選択があれば選択、無ければ「現在の絞り込み結果」を出力（修正対象を絞れる）。
+      const codes =
+        selected.size > 0
+          ? Array.from(selected)
+          : filtered.map((v) => v.vendor_code).filter(Boolean)
+      const exportingAll = codes.length === vendors.length
+      const qs = exportingAll || codes.length === 0 ? "" : `?codes=${encodeURIComponent(codes.join(","))}`
       const res = await fetch(`/api/master/vendors/export.csv${qs}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const blob = await res.blob()
@@ -276,24 +313,111 @@ export function VendorsPanel() {
     }
   }
 
+  // 新規登録用の空テンプレ(サンプル)CSV をダウンロード。
+  const downloadTemplate = async () => {
+    try {
+      const res = await fetch("/api/master/vendors/template.csv")
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = "vendor_template_new.csv"
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      showNotification(`テンプレDLに失敗しました: ${e?.message || e}`, "error")
+    }
+  }
+
   return (
-    <div className="space-y-4">
-      <div className="flex items-center gap-3">
+    <div className="space-y-3">
+      {/* ── 検索 + 詳細検索トグル + 追加 ───────────────────────── */}
+      <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-md">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
           <Input
-            placeholder="取引先名・取引先コードで検索…"
+            placeholder="取引先名・コード・屋号・ペンネームで検索…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             className="pl-8"
           />
         </div>
+        <Button
+          variant={showFilters || filterActive ? "default" : "outline"}
+          size="sm"
+          onClick={() => setShowFilters((s) => !s)}
+          title="区分(法人/個人)・インボイス・源泉・取引区分で絞り込み"
+        >
+          <SlidersHorizontal />
+          詳細検索{filterActive ? " ●" : ""}
+        </Button>
         <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          {vendors.length} entries
+          {filtered.length} / {vendors.length} 件
         </span>
         <div className="flex-1" />
-        {/* 選択(無ければ全件)の取引先をCSV出力 → 修正 → CSV一括取込 で一括更新 */}
-        <label className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground cursor-pointer">
+        <Button
+          onClick={() => {
+            setDraft(empty)
+            setCreating(true)
+          }}
+        >
+          <Plus />
+          取引先を追加
+        </Button>
+      </div>
+
+      {/* ── 詳細検索（修正対象を絞る）─────────────────────────── */}
+      {showFilters && (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-3 border border-border rounded-lg bg-card/50">
+          <Field label="区分">
+            <NativeSelect value={fEntity} onChange={(e) => setFEntity(e.target.value as any)}>
+              <option value="">すべて</option>
+              <option value="corporate">法人</option>
+              <option value="individual">個人</option>
+            </NativeSelect>
+          </Field>
+          <Field label="インボイス発行事業者">
+            <NativeSelect value={fInvoice} onChange={(e) => setFInvoice(e.target.value as any)}>
+              <option value="">すべて</option>
+              <option value="yes">対象</option>
+              <option value="no">非対象</option>
+            </NativeSelect>
+          </Field>
+          <Field label="源泉徴収">
+            <NativeSelect value={fWithhold} onChange={(e) => setFWithhold(e.target.value as any)}>
+              <option value="">すべて</option>
+              <option value="yes">対象</option>
+              <option value="no">非対象</option>
+            </NativeSelect>
+          </Field>
+          <Field label="取引区分(含む)">
+            <Input value={fCategory} placeholder="例: service / goods_sale" onChange={(e) => setFCategory(e.target.value)} />
+          </Field>
+          <div className="col-span-2 lg:col-span-4 flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => { setFEntity(""); setFInvoice(""); setFWithhold(""); setFCategory("") }}
+              disabled={!filterActive}
+            >
+              フィルタをクリア
+            </Button>
+            <span className="text-[11px] text-muted-foreground">
+              絞り込んだ {filtered.length} 件が「修正用CSV出力」の対象になります（選択があればその分のみ）。
+            </span>
+          </div>
+        </div>
+      )}
+
+      {/* ── CSV：修正(既存出力) / 新規(空テンプレ) / 取込 を明確化 ─────── */}
+      <div className="flex items-center gap-2 flex-wrap p-2.5 border border-border rounded-lg bg-muted/20">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">CSV</span>
+
+        {/* 修正用：既存データを出力 → 修正 → 取込 */}
+        <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground cursor-pointer ml-1">
           <input
             type="checkbox"
             className="h-3.5 w-3.5"
@@ -306,33 +430,41 @@ export function VendorsPanel() {
         </label>
         <Button
           variant="outline"
+          size="sm"
           onClick={exportCsv}
-          title="選択した取引先(無ければ全件)をCSV出力。住所/振込先/担当はメイン(★)を出力。修正してCSV一括取込で一括更新できます"
+          title="既存データを出力(住所/振込先/担当はメイン★)。修正して『CSV一括取込』で一括更新します"
         >
           <Download />
-          {selected.size > 0 ? `CSV出力 (${selected.size})` : "CSV出力 (全件)"}
+          修正用CSV出力 {selected.size > 0 ? `(選択 ${selected.size})` : `(${filtered.length}件)`}
         </Button>
-        {/* Phase 22.21.35: CSV 一括取込ボタン (search-api 側のページを新タブで開く) */}
+
+        <span className="text-border">|</span>
+
+        {/* 新規用：空テンプレ */}
         <Button
           variant="outline"
-          asChild
-          title="取引先 CSV 一括取込 (search-api 側で dry-run プレビュー対応)"
+          size="sm"
+          onClick={downloadTemplate}
+          title="新規登録用の空テンプレ(サンプル行入り)。追記して『CSV一括取込』で登録します"
         >
+          <FileText />
+          新規テンプレ(空)
+        </Button>
+
+        <span className="text-border">|</span>
+
+        {/* 取込（修正・新規 共通の入口） */}
+        <Button variant="outline" size="sm" asChild title="取引先 CSV 一括取込 (dry-run プレビュー対応)">
           <a href={vendorImportUrl} target="_blank" rel="noreferrer">
             <FileSpreadsheet />
-            CSV 一括取込
+            CSV一括取込
             <ExternalLink className="ml-0.5 h-3 w-3 opacity-60" />
           </a>
         </Button>
-        <Button
-          onClick={() => {
-            setDraft(empty)
-            setCreating(true)
-          }}
-        >
-          <Plus />
-          取引先を追加
-        </Button>
+
+        <span className="text-[10px] text-muted-foreground ml-1 hidden lg:inline">
+          修正＝「修正用CSV出力」→ 編集 → 取込 ／ 新規＝「新規テンプレ」→ 追記 → 取込
+        </span>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
