@@ -281,8 +281,8 @@ export const LineItemTable: React.FC<Props> = ({
       placeholder={placeholder}
       disabled={readOnly}
       className={cn(
-        "w-full text-[11px] font-mono bg-transparent",
-        "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+        "w-full text-xs font-mono bg-transparent",
+        "border-b border-input py-1.5 px-1.5 focus:outline-none focus:border-foreground",
         "placeholder:text-muted-foreground/40 placeholder:text-[10px]",
         "disabled:opacity-60 disabled:cursor-not-allowed"
       )}
@@ -578,24 +578,25 @@ export const LineItemTable: React.FC<Props> = ({
             </div>
           </div>
           <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full text-[11px] font-mono border-collapse">
+            {/* min-w で各入力欄に十分な幅を確保。狭い画面では潰さずに横スクロール。 */}
+            <table className="w-full min-w-[1240px] text-xs font-mono border-collapse">
           <thead>
             <tr className="border-b border-border bg-muted/40 text-[10px] uppercase tracking-wider">
               <th className="w-8 text-left p-2">#</th>
-              <th className="text-left p-2 min-w-[140px]">品目名</th>
-              <th className="text-left p-2 min-w-[140px]">仕様</th>
-              <th className="text-right p-2 w-24">単価</th>
-              <th className="text-right p-2 w-20">数量</th>
-              <th className="text-right p-2 w-28">小計 (税抜)</th>
+              <th className="text-left p-2 min-w-[200px]">品目名</th>
+              <th className="text-left p-2 min-w-[220px]">仕様</th>
+              <th className="text-right p-2 w-28 min-w-[96px]">単価</th>
+              <th className="text-right p-2 w-24 min-w-[80px]">数量</th>
+              <th className="text-right p-2 w-28 min-w-[104px]">小計 (税抜)</th>
               {showPaymentColumns && (
                 <>
-                  <th className="text-left p-2 w-32">計算方式</th>
+                  <th className="text-left p-2 w-40 min-w-[160px]">計算方式</th>
                   {/* Phase 22.21.45: 「支払条件」→「契約種別」に名称変更。
                       請負/準委任 は民法上の契約類型なので "契約種別" のほうが正確。
                       内部フィールド名は後方互換のため payment_terms のまま維持。 */}
-                  <th className="text-left p-2 w-28">契約種別</th>
-                  <th className="text-left p-2 w-28">納期</th>
-                  <th className="text-left p-2 w-28">支払日</th>
+                  <th className="text-left p-2 w-32 min-w-[120px]">契約種別</th>
+                  <th className="text-left p-2 w-40 min-w-[150px]">納期</th>
+                  <th className="text-left p-2 w-40 min-w-[150px]">支払日</th>
                 </>
               )}
               {!readOnly && <th className="w-8 p-2"></th>}
@@ -665,8 +666,8 @@ export const LineItemTable: React.FC<Props> = ({
                               }
                               disabled={readOnly}
                               className={cn(
-                                "flex-1 min-w-0 text-[11px] font-mono bg-transparent",
-                                "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                                "flex-1 min-w-0 text-xs font-mono bg-transparent",
+                                "border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground",
                                 "disabled:opacity-60 disabled:cursor-not-allowed"
                               )}
                             >
@@ -721,8 +722,8 @@ export const LineItemTable: React.FC<Props> = ({
                               }
                               disabled={readOnly}
                               className={cn(
-                                "w-full text-[11px] font-mono bg-transparent",
-                                "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground",
+                                "w-full text-xs font-mono bg-transparent",
+                                "border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground",
                                 "disabled:opacity-60 disabled:cursor-not-allowed"
                               )}
                               title="業務委託の類型を選択 (請負: 成果物単位 / 準委任: 役務単位)"
