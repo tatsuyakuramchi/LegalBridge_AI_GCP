@@ -114,6 +114,7 @@ import {
   parseVendorCsv,
   importVendorRows,
   getVendorSampleCsv,
+  getVendorExportCsv,
 } from "./src/services/vendorMasterService.ts";
 // Phase 17z-4: Staff マスター + Contracts (LegalOn 取込) を Master タブ群に統合。
 import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
@@ -989,6 +990,29 @@ async function startServer() {
     res.setHeader("Content-Disposition", 'attachment; filename="vendor_sample.csv"');
     res.send(body);
   });
+
+  // GET /api/master/vendors/export.csv \u2014 \u65E2\u5B58\u30C7\u30FC\u30BF\u3092\u53D6\u8FBC\u30C6\u30F3\u30D7\u30EC\u5F62\u5F0F\u3067\u30A8\u30AF\u30B9\u30DD\u30FC\u30C8\u3002
+  //   DL\u2192\u4FEE\u6B63\u2192/api/master/vendors/import-csv \u3067\u4E00\u62EC\u66F4\u65B0(\u30E9\u30A6\u30F3\u30C9\u30C8\u30EA\u30C3\u30D7)\u3002
+  //   ":code" \u30EB\u30FC\u30C8\u3088\u308A\u524D\u306B\u7F6E\u304F(\u3067\u306A\u3044\u3068 "export.csv" \u304C code \u6271\u3044\u306B\u306A\u308B)\u3002
+  app.get(
+    "/api/master/vendors/export.csv",
+    requireIapUser({ renderErrorPage }),
+    async (_req, res) => {
+      try {
+        const csv = await getVendorExportCsv();
+        const stamp = new Date().toISOString().slice(0, 10);
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="vendors_export_${stamp}.csv"`
+        );
+        res.send("\uFEFF" + csv);
+      } catch (error: any) {
+        console.error("GET /api/master/vendors/export.csv failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
 
   // GET /api/master/vendors/:code
   app.get(

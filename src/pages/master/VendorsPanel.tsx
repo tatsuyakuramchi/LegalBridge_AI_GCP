@@ -6,6 +6,7 @@ import {
   Trash2,
   Star,
   FileSpreadsheet,
+  Download,
   ExternalLink,
 } from "lucide-react"
 
@@ -243,6 +244,27 @@ export function VendorsPanel() {
     }
   }
 
+  // 既存取引先データを取込テンプレ形式でCSV出力(blobダウンロード)。
+  //   apiRouter が GET を search-api へ振り、X-LB-PORTAL-SECRET を付与する。
+  //   同一オリジン直リンクは admin-ui の 410 になるため fetch+blob で取得。
+  const exportCsv = async () => {
+    try {
+      const res = await fetch("/api/master/vendors/export.csv")
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const blob = await res.blob()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = `vendors_export_${new Date().toISOString().slice(0, 10)}.csv`
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      showNotification(`CSV出力に失敗しました: ${e?.message || e}`, "error")
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -259,6 +281,15 @@ export function VendorsPanel() {
           {vendors.length} entries
         </span>
         <div className="flex-1" />
+        {/* 既存データを取込テンプレ形式でCSV出力 → 修正 → CSV一括取込 で一括更新 */}
+        <Button
+          variant="outline"
+          onClick={exportCsv}
+          title="現在の取引先データをCSV出力(修正してCSV一括取込で一括更新できます)"
+        >
+          <Download />
+          CSV出力
+        </Button>
         {/* Phase 22.21.35: CSV 一括取込ボタン (search-api 側のページを新タブで開く) */}
         <Button
           variant="outline"
