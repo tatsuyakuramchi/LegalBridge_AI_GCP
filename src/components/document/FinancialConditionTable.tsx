@@ -117,7 +117,7 @@ const DIVISION_PRESETS: Record<"PUB" | "BDG", DivPreset> = {
     conditions: [
       { no: 1, label: "紙書籍" },
       { no: 2, label: "電子書籍" },
-      { no: 3, label: "サブライセンス" },
+      { no: 3, label: "翻訳・海外版" },
     ],
     rateLabel: "印税率 (%)",
     basePricePlaceholder: "税抜定価",
