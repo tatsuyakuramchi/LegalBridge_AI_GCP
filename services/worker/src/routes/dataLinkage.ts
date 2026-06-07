@@ -87,6 +87,40 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
     }
   }
 
+  // レガシーテーブルの存在＋件数。先に to_regclass で存在確認してから COUNT する
+  //   (CASE 内に FROM を書くと解析時に "relation does not exist" になるため)。
+  async function legacyProbe(
+    base: Omit<CheckResult, "count" | "severity" | "sample" | "error">,
+    tableName: string
+  ): Promise<CheckResult> {
+    try {
+      const reg = await query(`SELECT to_regclass($1) AS reg`, [
+        `public.${tableName}`,
+      ]);
+      if (!reg.rows[0]?.reg) {
+        // テーブルが無い = 撤去済み(または新規DB)。問題なし。
+        return { ...base, count: 0, severity: "ok", sample: [] };
+      }
+      // 存在する場合のみ COUNT (tableName は固定リテラル、注入リスクなし)
+      const c = await query(`SELECT COUNT(*)::int AS n FROM ${tableName}`);
+      const count = Number(c.rows[0]?.n ?? 0);
+      return {
+        ...base,
+        count,
+        severity: count > 0 ? "warn" : "ok",
+        sample: count > 0 ? [{ table_name: tableName, rows: count }] : [],
+      };
+    } catch (e: any) {
+      return {
+        ...base,
+        count: -1,
+        severity: "error",
+        sample: [],
+        error: String(e?.message || e),
+      };
+    }
+  }
+
   app.get("/api/admin/data-linkage/check", async (_req, res) => {
     try {
       const checks = await Promise.all([
@@ -206,30 +240,26 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.document_number = cc.document_number)
             ORDER BY cc.id DESC LIMIT 8`
         ),
-        // ⑧ レガシーテーブル残存 (Step2撤去対象)
-        probe(
+        // ⑧ レガシーテーブル残存 (Step2撤去対象)。撤去後は to_regclass NULL → 0件(問題なし)
+        legacyProbe(
           {
             key: "legacy_order_items",
             label: "レガシー order_items 残存",
             description:
-              "Phase23で廃止予定の order_items に行が残存。Step2撤去の対象。",
+              "Phase23で廃止の order_items の残存件数。撤去済み(テーブル無し)なら0。",
             repair_action: null,
           },
-          `SELECT CASE WHEN to_regclass('public.order_items') IS NULL THEN 0
-                       ELSE (SELECT COUNT(*) FROM order_items) END::int AS n`,
-          `SELECT 'order_items' AS table_name LIMIT 1`
+          "order_items"
         ),
-        probe(
+        legacyProbe(
           {
             key: "legacy_license_contracts",
             label: "レガシー license_contracts 残存",
             description:
-              "Phase23で contract_capabilities に移行済の license_contracts に行が残存。Step2撤去の対象。",
+              "Phase23で contract_capabilities へ移行済の license_contracts の残存件数。撤去済みなら0。",
             repair_action: null,
           },
-          `SELECT CASE WHEN to_regclass('public.license_contracts') IS NULL THEN 0
-                       ELSE (SELECT COUNT(*) FROM license_contracts) END::int AS n`,
-          `SELECT 'license_contracts' AS table_name LIMIT 1`
+          "license_contracts"
         ),
       ]);
 
