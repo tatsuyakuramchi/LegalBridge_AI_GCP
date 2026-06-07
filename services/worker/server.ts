@@ -61,6 +61,8 @@ import {
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
+import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
+import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
 // C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
 import { registerSharedReads } from "./src/routes/sharedReads.ts";
 // C2 batch 3b: form-context / history(byte-exact 抽出。生成元 scripts/extract-form-routes.mjs)。
@@ -5884,10 +5886,13 @@ ${details}
     templateType: string,
     documentNumber: string,
     issueKey: string,
-    rawData: Record<string, any>,
+    rawDataIn: Record<string, any>,
     staffInfo: any
   ): Promise<{ generated: boolean; drive_link: string; error?: string }> {
     try {
+      // Step1(SSOT): 別名キーを揃える。発注書PDFは {{#each items}} を読むため、
+      //   インポートで line_items しか無い文書でも items を補完して明細表が出るようにする。
+      const rawData = normalizeDocumentFormData(templateType, rawDataIn);
       // Phase 17i: 経費合計をサーバ側で再計算 (テンプレ {{expensesTotalIncTax}} 用)
       const bulkExpenses = Array.isArray(rawData?.expenses) ? rawData.expenses : [];
       const bulkExpensesTotal = bulkExpenses.reduce(
@@ -6005,6 +6010,9 @@ ${details}
     linkRingiByDocNumber,
     requirePortalSecret,
   });
+
+  // データモデル整理: 連結チェック＆修復ツール (整合性点検 / 安全な修復)
+  registerDataLinkage(app, { query, pool });
 
   // C2: search-api からの read 移植(master / backlog / management / 他)を worker に登録。
   registerSharedReads(app, { query, backlogService, requirePortalSecret });
@@ -7226,7 +7234,14 @@ ${details}
       if (r.rows.length === 0) {
         return res.status(404).json({ ok: false, error: "draft not found" });
       }
-      res.json({ ok: true, draft: r.rows[0] });
+      // Step1(SSOT): 下書きの form_data も別名キーを揃えて返す。
+      //   旧い下書きでも、復元時に items/件名/発注日 が経路非依存で読める。
+      const draft = r.rows[0];
+      draft.form_data = normalizeDocumentFormData(
+        draft.template_type,
+        draft.form_data || {}
+      );
+      res.json({ ok: true, draft });
     } catch (err: any) {
       console.error("[document-drafts GET] failed:", err);
       res.status(500).json({ ok: false, error: String(err?.message || err) });
@@ -7256,6 +7271,8 @@ ${details}
           error: "form_data must be an object",
         });
       }
+      // Step1(SSOT): 下書き保存時も別名キーを揃えてから格納する。
+      const normForm = normalizeDocumentFormData(templateType, formData);
       const r = await query(
         `INSERT INTO document_drafts (issue_key, template_type, form_data, updated_by, updated_at)
          VALUES ($1, $2, $3::jsonb, $4, NOW())
@@ -7264,7 +7281,7 @@ ${details}
                 updated_by = EXCLUDED.updated_by,
                 updated_at = NOW()
          RETURNING id, issue_key, template_type, form_data, updated_at, updated_by`,
-        [issueKey, templateType, JSON.stringify(formData), updatedBy]
+        [issueKey, templateType, JSON.stringify(normForm), updatedBy]
       );
       res.json({ ok: true, draft: r.rows[0] });
     } catch (err: any) {
@@ -7583,7 +7600,9 @@ ${details}
         issue_key: r.issue_key,
         template_type: r.template_type,
         document_category: r.document_category,
-        form_data: fd,
+        // Step1(SSOT): 別名キー(items/line_items, 件名, 発注日)を揃えて返す。
+        //   経路(通常作成/インポート)に依らず編集画面が同じキーで読めるようにする。
+        form_data: normalizeDocumentFormData(r.template_type, fd),
         drive_link: r.drive_link || "",
         created_by: r.created_by,
         created_at: r.created_at,
@@ -9666,11 +9685,22 @@ ${details}
             paymentDate,
             count: 0,
             documentNumbers: [] as string[],
+            items: [] as any[],
           });
         }
         const g = groups.get(key);
         g.count += 1;
         g.documentNumbers.push(row.document_number);
+        // 担当者区切り表示の詳細用: 検収日・件名などを同梱。
+        //   検収日 = inspectionCompletedAt(検収完了日) を最優先、無ければ documentDate(発行日)。
+        g.items.push({
+          document_number: row.document_number,
+          inspection_date:
+            fd.inspectionCompletedAt || fd.documentDate || fd.deliveredAt || "",
+          title:
+            fd.description || fd.PROJECT_TITLE || fd.contract_title || "",
+          counterparty: fd.counterparty || fd.VENDOR_NAME || "",
+        });
       }
       res.json({ success: true, groups: Array.from(groups.values()) });
     } catch (e: any) {
@@ -10351,10 +10381,12 @@ ${details}
       // Phase 23.1: lifecycle_status='final' を明示。新規 / 内部修正 / 再発行
       //   いずれもこの行は「現在の正」として書く。過去 row の demote は
       //   isReissue=true のとき markPrimaryDocument 後に別途実行。
-      const mergedFormData = {
+      // Step1(SSOT): 別名キーを揃えて保存し、通常作成でも line_items/件名/発注日 が
+      //   インポート由来と同じ形で入るようにする(読み手の経路差をなくす)。
+      const mergedFormData = normalizeDocumentFormData(templateType, {
         ...(formData || {}),
         __pdf_pending: false,
-      };
+      });
       const docContentHash = computeFormContentHash(formData, templateType);
       let docInsert: any;
       try {

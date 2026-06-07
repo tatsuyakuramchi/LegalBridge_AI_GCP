@@ -24,6 +24,7 @@ import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
 import { ExcelBatchPage } from "./pages/ExcelBatchPage"
 import { PendingInspectionsPage } from "./pages/PendingInspectionsPage"
+import { DataLinkagePanel } from "./pages/DataLinkagePanel"
 import { SettingsPage } from "./pages/SettingsPage"
 
 export default function App() {
@@ -61,6 +62,7 @@ export default function App() {
                 <Route path="templates" element={<TemplatesPage />} />
                 <Route path="templates/:id" element={<TemplateEditorPage />} />
 
+                <Route path="data-linkage" element={<DataLinkagePanel />} />
                 <Route path="settings" element={<SettingsPage />} />
 
                 <Route path="*" element={<Navigate to="/" replace />} />
