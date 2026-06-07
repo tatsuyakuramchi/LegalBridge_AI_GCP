@@ -205,13 +205,13 @@ export function registerWorkModelRoutes(
         `INSERT INTO works (work_code, title, title_kana, alternative_titles, division,
             is_original, kind, rights_holder_vendor_id, original_publisher, default_rights_holder,
             default_credit_display, default_work_supplement, default_approval_target,
-            default_approval_timing, remarks)
-         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),FALSE,'licensed_in',$6,$7,$8,$9,$10,$11,$12,$13)
+            default_approval_timing, remarks, parent_work_id, derivation_type)
+         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),FALSE,'licensed_in',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
          RETURNING *, work_code AS source_code`,
         [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
          b.rights_holder_vendor_id ?? null, b.original_publisher ?? null, b.default_rights_holder ?? null,
          b.default_credit_display ?? null, b.default_work_supplement ?? null, b.default_approval_target ?? null,
-         b.default_approval_timing ?? null, b.remarks ?? null]
+         b.default_approval_timing ?? null, b.remarks ?? null, b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       res.status(201).json(r.rows[0]);
     } catch (e) { fail(res, e); }
@@ -286,12 +286,14 @@ export function registerWorkModelRoutes(
             division = COALESCE($13::text[],'{}'),
             rights_holder_vendor_id = $5, original_publisher = $6, default_rights_holder = $7,
             default_credit_display = $8, default_work_supplement = $9, default_approval_target = $10,
-            default_approval_timing = $11, remarks = $12, updated_at = now()
+            default_approval_timing = $11, remarks = $12,
+            parent_work_id = $14, derivation_type = $15, updated_at = now()
           WHERE id = $1 AND kind = 'licensed_in' RETURNING *, work_code AS source_code`,
         [id, b.title, b.title_kana ?? null, b.alternative_titles ?? null,
          b.rights_holder_vendor_id ?? null, b.original_publisher ?? null, b.default_rights_holder ?? null,
          b.default_credit_display ?? null, b.default_work_supplement ?? null, b.default_approval_target ?? null,
-         b.default_approval_timing ?? null, b.remarks ?? null, b.division ?? null]
+         b.default_approval_timing ?? null, b.remarks ?? null, b.division ?? null,
+         b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       res.json(r.rows[0]);
