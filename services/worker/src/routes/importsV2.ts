@@ -54,6 +54,7 @@
 import type { Express, RequestHandler } from "express";
 import express from "express";
 import type { Pool } from "pg";
+import { normalizeDocumentFormData } from "../lib/capabilityFormMapping";
 
 export type RecordType =
   | "purchase_order"
@@ -477,7 +478,8 @@ async function upsertContract(
         docNumber,
         issueKey,
         tmplType,
-        JSON.stringify({
+        JSON.stringify(
+          normalizeDocumentFormData(tmplType, {
           ...(p.form_data || {}),
           VENDOR_CODE: p.vendor_code || "",
           VENDOR_NAME: p.vendor_name || "",
@@ -497,7 +499,8 @@ async function upsertContract(
           // PDF未作成キューに出すための明示フラグ。
           // drive_link が空 (PDF未生成) のときだけ立てる。
           __pdf_pending: !(p.drive_link && p.drive_link.trim()),
-        }),
+          })
+        ),
         p.drive_link || "",
         "import-v2",
       ]

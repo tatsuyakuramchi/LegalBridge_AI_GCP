@@ -133,9 +133,23 @@
 
 | Step | 内容 | 状態 |
 | :-- | :-- | :-- |
-| 1 | SSOT 変換の集約（form_data ⇄ capability） | 未着手 |
+| 1 | SSOT 変換の集約（form_data ⇄ capability） | **実装中（発注書・検収書 完了）** |
 | 2 | レガシーテーブル撤去 | 未着手 |
 | 3 | v3 ミラー収束（読み手棚卸し → 廃止/DELETE同期） | 未着手 |
 | 4 | カラム整理・正準集約 | 未着手 |
 
-> 次アクション: **Step 1**（`capabilityFormMapping` モジュール新設 → 発注書・検収書から各経路を置換）。
+### Step 1 実装メモ（2026-06-07）
+- 新規: `services/worker/src/lib/capabilityFormMapping.ts`
+  - `normalizeDocumentFormData(templateType, fd)`: 別名キーを additive に相互補完
+    （発注書: items↔line_items / PROJECT_TITLE↔CONTRACT_TITLE↔contract_title / 発注日↔order_date、
+     検収書: orderDate↔order_date）。
+  - `extractCapabilityFields()`: 経路非依存で capability 構造化フィールドを抽出（Step 2 以降で使用）。
+- 配線:
+  - `importsV2.ts`（書込）: 保存 form_data を normalize → インポート発注書にも `items` が入る。
+  - `server.ts maybeGeneratePdfForImport`（PDF）: normalize → **インポート発注書PDFの明細表が空になる潜在バグを解消**
+    （テンプレは `{{#each items}}` を読むため）。
+  - `server.ts GET /api/documents/:id`（読込）: normalize → 経路に依らずエディタが同じキーで読める。
+  - `server.ts generate`（通常作成・書込）: 保存 form_data を normalize。
+- 残: Step 1 の対象拡大（他テンプレ）、`extractCapabilityFields` を使った各書込経路の capability 正準寄せは Step 4 で。
+
+> 次アクション: **Step 2**（レガシーテーブル `order_items`/`order_line_items`/`license_contracts` 等の使用実態棚卸し → 未使用確定後に冪等 DROP）。

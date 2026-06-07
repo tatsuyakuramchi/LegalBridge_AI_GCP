@@ -61,6 +61,7 @@ import {
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
+import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
 // C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
 import { registerSharedReads } from "./src/routes/sharedReads.ts";
 // C2 batch 3b: form-context / history(byte-exact 抽出。生成元 scripts/extract-form-routes.mjs)。
@@ -5884,10 +5885,13 @@ ${details}
     templateType: string,
     documentNumber: string,
     issueKey: string,
-    rawData: Record<string, any>,
+    rawDataIn: Record<string, any>,
     staffInfo: any
   ): Promise<{ generated: boolean; drive_link: string; error?: string }> {
     try {
+      // Step1(SSOT): 別名キーを揃える。発注書PDFは {{#each items}} を読むため、
+      //   インポートで line_items しか無い文書でも items を補完して明細表が出るようにする。
+      const rawData = normalizeDocumentFormData(templateType, rawDataIn);
       // Phase 17i: 経費合計をサーバ側で再計算 (テンプレ {{expensesTotalIncTax}} 用)
       const bulkExpenses = Array.isArray(rawData?.expenses) ? rawData.expenses : [];
       const bulkExpensesTotal = bulkExpenses.reduce(
@@ -7583,7 +7587,9 @@ ${details}
         issue_key: r.issue_key,
         template_type: r.template_type,
         document_category: r.document_category,
-        form_data: fd,
+        // Step1(SSOT): 別名キー(items/line_items, 件名, 発注日)を揃えて返す。
+        //   経路(通常作成/インポート)に依らず編集画面が同じキーで読めるようにする。
+        form_data: normalizeDocumentFormData(r.template_type, fd),
         drive_link: r.drive_link || "",
         created_by: r.created_by,
         created_at: r.created_at,
@@ -10351,10 +10357,12 @@ ${details}
       // Phase 23.1: lifecycle_status='final' を明示。新規 / 内部修正 / 再発行
       //   いずれもこの行は「現在の正」として書く。過去 row の demote は
       //   isReissue=true のとき markPrimaryDocument 後に別途実行。
-      const mergedFormData = {
+      // Step1(SSOT): 別名キーを揃えて保存し、通常作成でも line_items/件名/発注日 が
+      //   インポート由来と同じ形で入るようにする(読み手の経路差をなくす)。
+      const mergedFormData = normalizeDocumentFormData(templateType, {
         ...(formData || {}),
         __pdf_pending: false,
-      };
+      });
       const docContentHash = computeFormContentHash(formData, templateType);
       let docInsert: any;
       try {
