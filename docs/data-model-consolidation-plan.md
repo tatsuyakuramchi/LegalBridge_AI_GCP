@@ -135,8 +135,24 @@
 | :-- | :-- | :-- |
 | 1 | SSOT 変換の集約（form_data ⇄ capability） | **実装中（発注書・検収書 完了）** |
 | 2 | レガシーテーブル撤去 | **完了（0030 で DROP）** |
-| 3 | v3 ミラー収束（読み手棚卸し → 廃止/DELETE同期） | 未着手 |
+| 3 | v3 ミラー収束（読み手棚卸し → 廃止/DELETE同期） | **3a完了（DELETE同期+孤児掃除）／3b未着手（ミラー全廃）** |
 | 4 | カラム整理・正準集約 | 未着手 |
+
+### Step 3 実装メモ（2026-06-07）
+- 読み手棚卸し: v3ミラー(`contracts`/`contract_*`)の実機能読み手は
+  **作品モデル(`services/api/src/routes/workModel.ts` / `workModelImportService.ts`)** に集中。
+  条件明細(`conditionsService.ts`)は親基本契約名の表示用に `LEFT JOIN contracts` のみ。
+  → ミラーは現役のため即全廃は不可。安全側で 3a(DELETE同期) を先に実施。
+- 3a: `migrations/0031_mirror_delete_sync.sql`
+  - DELETE同期トリガ追加: contract_capabilities/capability_line_items/
+    capability_financial_conditions の DELETE を contracts/contract_line_items/
+    contract_financial_terms に伝播(0012 は INSERT/UPDATE のみだった)。
+  - 既存孤児を一括掃除 → 連結チェックの「v3ミラー孤児」が 0 になる。
+  - アプリ側の手動 contracts 削除(merge/bulk-delete)はトリガと二重だが冪等で無害。
+- 3b(未): 作品モデル/条件明細の読み手を capability 層へ移植 → `contracts`/`contract_*` と
+  5つの INSERT/UPDATE 同期トリガ + 今回の DELETE 同期トリガを撤去 → ミラー全廃(最終シンプル化)。
+
+> 次アクション: Step 3b（作品モデル読み手の capability 移植）または Step 4。3b はUI/機能の挙動確認が要るため、着手前に作品モデル画面の確認を推奨。
 
 ### Step 2 実装メモ（2026-06-07）
 - コード棚卸し結果: `order_items` / `order_line_items` / `license_financial_conditions` は
