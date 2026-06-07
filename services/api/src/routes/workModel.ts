@@ -456,6 +456,84 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // ── 作品のマテリアル(翻訳/イラスト/原作素材…) ────────────────────
+  //   モデル(あ): work_materials を中心に、帰属(rights_type)で
+  //     相手方(license/joint) → license_condition_id(利用許諾条件明細)
+  //     当社(owned/copyright_assignment) → service_line_item_id(業務委託明細)
+  //   へ繋ぐ。
+  app.get("/api/v3/works/:id/materials", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT wm.*, v.vendor_name AS rights_holder_name,
+                c.condition_no AS license_condition_no
+           FROM work_materials wm
+           LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
+           LEFT JOIN capability_financial_conditions c ON c.id = wm.license_condition_id
+          WHERE wm.work_id = $1
+          ORDER BY wm.id ASC`,
+        [id]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  app.post("/api/v3/works/:id/materials", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const r = await query(
+        `INSERT INTO work_materials (
+           work_id, material_name, material_type, rights_type, rights_holder_vendor_id,
+           rights_holder_label, is_royalty_bearing, license_condition_id, service_line_item_id,
+           scope, remarks
+         ) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11) RETURNING *`,
+        [
+          id, b.material_name ?? null, b.material_type ?? null, b.rights_type ?? null,
+          b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
+          b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null,
+        ]
+      );
+      res.status(201).json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  app.put("/api/v3/work-materials/:mid", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const mid = Number(req.params.mid);
+      if (!Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const r = await query(
+        `UPDATE work_materials SET
+            material_name = $2, material_type = $3, rights_type = $4,
+            rights_holder_vendor_id = $5, rights_holder_label = $6,
+            is_royalty_bearing = COALESCE($7,FALSE), license_condition_id = $8,
+            service_line_item_id = $9, scope = $10, remarks = $11, updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [
+          mid, b.material_name ?? null, b.material_type ?? null, b.rights_type ?? null,
+          b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
+          b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null,
+        ]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      res.json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  app.delete("/api/v3/work-materials/:mid", ...requireWrite, async (req, res) => {
+    try {
+      const mid = Number(req.params.mid);
+      if (!Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(`DELETE FROM work_materials WHERE id = $1`, [mid]);
+      res.json({ ok: true, deleted: r.rowCount || 0 });
+    } catch (e) { fail(res, e); }
+  });
+
   // ── CSV 一括取込 ───────────────────────────────────────────
   //   POST /api/v3/import/:entity  body: { csv, dry_run, duplicate_mode }
   //   GET  /api/v3/import/:entity/template.csv
