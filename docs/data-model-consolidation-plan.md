@@ -152,4 +152,15 @@
   - `server.ts generate`（通常作成・書込）: 保存 form_data を normalize。
 - 残: Step 1 の対象拡大（他テンプレ）、`extractCapabilityFields` を使った各書込経路の capability 正準寄せは Step 4 で。
 
-> 次アクション: **Step 2**（レガシーテーブル `order_items`/`order_line_items`/`license_contracts` 等の使用実態棚卸し → 未使用確定後に冪等 DROP）。
+### 連結チェック＆修復ツール（2026-06-07 追加）
+全 Step を横断する点検・修復の入口として **「連結チェック」画面**を新設。
+- 画面: 左メニュー Configuration → **連結チェック**（`/data-linkage`）
+- API(worker): `GET /api/admin/data-linkage/check` / `POST /api/admin/data-linkage/repair`
+- モジュール: `services/worker/src/routes/dataLinkage.ts`
+- 検出: form_data別名ドリフト(発注書) / v3ミラー孤児(contracts) / 発行済なのに残る下書き /
+  検収・請求権の孤児参照 / capability未連結の発注書 / documents未連結のcapability / レガシー残存(order_items, license_contracts)
+- 安全修復: normalize_documents / normalize_drafts / prune_orphan_contracts /
+  prune_stale_drafts / fix_orphan_refs（発行済正本は変更しない）
+- 用途: **将来テーブル統合を進める際の事前点検＆掃除の入口**（Step 2/3 の前提確認に使う）。
+
+> 次アクション: **Step 2**（レガシーテーブル `order_items`/`order_line_items`/`license_contracts` 等の使用実態棚卸し → 未使用確定後に冪等 DROP）。連結チェックの「レガシー残存」件数が 0 か、まずここで確認できる。
