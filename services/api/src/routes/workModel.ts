@@ -66,9 +66,12 @@ export function registerWorkModelRoutes(
   app.get("/api/v3/works", ...requireRead, async (_req, res) => {
     try {
       const r = await query(
+        // Part2 移行ガード: 自社作品一覧は kind='own' のみ。
+        //   backfill された原作IP(kind='licensed_in')は原作IPタブ側で扱う。
         `SELECT w.*, COUNT(p.id) AS product_count
            FROM works w
            LEFT JOIN products p ON p.work_id = w.id
+          WHERE COALESCE(w.kind, 'own') = 'own'
           GROUP BY w.id
           ORDER BY w.id DESC`
       );
