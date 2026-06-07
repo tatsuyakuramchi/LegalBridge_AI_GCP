@@ -53,6 +53,7 @@ const SCHEMA: Record<EntityType, FieldDef[]> = {
     { name: "title", label: "タイトル", type: "text", required: true },
     { name: "title_kana", label: "タイトル(カナ)", type: "text" },
     { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
+    { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB（この原作IPを使う事業部）" },
     { name: "original_publisher", label: "原作出版社", type: "text" },
     { name: "default_rights_holder", label: "既定権利者", type: "text" },
     { name: "default_credit_display", label: "クレジット表記", type: "text" },
@@ -69,8 +70,6 @@ const SCHEMA: Record<EntityType, FieldDef[]> = {
     { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB" },
     { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"] },
     { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"] },
-    { name: "is_original", label: "完全オリジナル", type: "bool" },
-    { name: "publisher_vendor_id", label: "出版社(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択" },
     { name: "parent_work_id", label: "派生元の作品(系譜)", type: "work-select", hint: "翻訳版・改題版などは派生元の自社作品を選ぶ" },
     { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV" },
     { name: "remarks", label: "備考", type: "textarea" },
@@ -760,7 +759,14 @@ function FormModal({
           rows
             .map((w: any) =>
               w.work_id
-                ? { kind: "work" as const, id: Number(w.work_id), role: w.role || "" }
+                ? {
+                    // P2-5: 原作IPも works(licensed_in)。work_kind で種別を判定。
+                    kind: (w.work_kind === "licensed_in" ? "source_ip" : "work") as
+                      | "work"
+                      | "source_ip",
+                    id: Number(w.work_id),
+                    role: w.role || "",
+                  }
                 : w.source_ip_id
                   ? { kind: "source_ip" as const, id: Number(w.source_ip_id), role: w.role || "" }
                   : null
@@ -811,11 +817,12 @@ function FormModal({
       showNotification(`${type === "contracts" ? "契約名" : "タイトル"}は必須です`, "error")
       return
     }
-    // (B) 契約は対象作品(contract_works)を works[] として同梱
+    // (B)/(P2-5) 契約の対象作品(contract_works)。原作IPも works(licensed_in)に統合済みのため
+    //   作品・原作IP いずれも work_id で送る(id は works.id)。
     if (type === "contracts") {
       payload.works = contractWorks.map((r) => ({
-        work_id: r.kind === "work" ? r.id : null,
-        source_ip_id: r.kind === "source_ip" ? r.id : null,
+        work_id: r.id,
+        source_ip_id: null,
         role: r.role.trim() || null,
       }))
     }

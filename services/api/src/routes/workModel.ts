@@ -34,15 +34,20 @@ export function registerWorkModelRoutes(
   const requireRead = deps.requireRead ?? [];
   const fail = (res: any, e: unknown) => res.status(500).json({ ok: false, error: String(e) });
 
-  // ── 原作IP ───────────────────────────────────────────────
+  // ── 原作IP (P2-5: works(kind='licensed_in') を正準として読み書き) ──────
+  //   応答 shape は従来の source_ips 互換(work_code→source_code 別名)。id は works.id。
   app.get("/api/v3/source-ips", ...requireRead, async (_req, res) => {
     try {
       const r = await query(
-        `SELECT s.*, COUNT(sim.id) AS material_count
-           FROM source_ips s
-           LEFT JOIN source_ip_materials sim ON sim.source_ip_id = s.id
-          GROUP BY s.id
-          ORDER BY s.id DESC`
+        `SELECT w.id, w.work_code AS source_code, w.title, w.title_kana, w.alternative_titles,
+                w.division,
+                w.rights_holder_vendor_id, w.original_publisher, w.default_rights_holder,
+                w.default_credit_display, w.default_work_supplement, w.default_approval_target,
+                w.default_approval_timing, w.remarks, w.is_active, w.created_at, w.updated_at,
+                (SELECT COUNT(*) FROM work_materials wm WHERE wm.work_id = w.id) AS material_count
+           FROM works w
+          WHERE w.kind = 'licensed_in'
+          ORDER BY w.id DESC`
       );
       res.json(r.rows);
     } catch (e) { fail(res, e); }
@@ -52,10 +57,14 @@ export function registerWorkModelRoutes(
     try {
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
-      const s = await query(`SELECT * FROM source_ips WHERE id = $1`, [id]);
+      const s = await query(
+        `SELECT w.*, w.work_code AS source_code FROM works w
+          WHERE w.id = $1 AND w.kind = 'licensed_in'`,
+        [id]
+      );
       if (s.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       const mats = await query(
-        `SELECT * FROM source_ip_materials WHERE source_ip_id = $1 ORDER BY material_no ASC NULLS LAST, id ASC`,
+        `SELECT * FROM work_materials WHERE work_id = $1 ORDER BY id ASC`,
         [id]
       );
       res.json({ ...s.rows[0], materials: mats.rows });
@@ -149,7 +158,7 @@ export function registerWorkModelRoutes(
       if (c.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       const [works, parties, terms, lineItems, royalties] = await Promise.all([
         query(
-          `SELECT cw.*, w.title AS work_title, s.title AS source_ip_title, p.product_name
+          `SELECT cw.*, w.title AS work_title, w.kind AS work_kind, s.title AS source_ip_title, p.product_name
              FROM contract_works cw
              LEFT JOIN works w ON w.id = cw.work_id
              LEFT JOIN source_ips s ON s.id = cw.source_ip_id
@@ -185,7 +194,7 @@ export function registerWorkModelRoutes(
   // ── 書込(D1: Search がマスター/新プラットフォームを所有)─────────────
   //   IAP + admin ロール(requireWrite)。採番は master_sequences(worker と番号空間分離)。
 
-  // POST /api/v3/source-ips — 原作IP登録
+  // POST /api/v3/source-ips — 原作IP登録 (P2-5: works(kind='licensed_in') へ書込)
   app.post("/api/v3/source-ips", ...requireWrite, express.json(), async (req, res) => {
     try {
       const b = req.body || {};
@@ -193,12 +202,13 @@ export function registerWorkModelRoutes(
       const year = new Date().getFullYear();
       const code = b.source_code || `IP-${year}-${pad4(await nextMasterSeq(query, "IP", year))}`;
       const r = await query(
-        `INSERT INTO source_ips (source_code, title, title_kana, alternative_titles,
-            rights_holder_vendor_id, original_publisher, default_rights_holder,
+        `INSERT INTO works (work_code, title, title_kana, alternative_titles, division,
+            is_original, kind, rights_holder_vendor_id, original_publisher, default_rights_holder,
             default_credit_display, default_work_supplement, default_approval_target,
             default_approval_timing, remarks)
-         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
-        [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null,
+         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),FALSE,'licensed_in',$6,$7,$8,$9,$10,$11,$12,$13)
+         RETURNING *, work_code AS source_code`,
+        [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
          b.rights_holder_vendor_id ?? null, b.original_publisher ?? null, b.default_rights_holder ?? null,
          b.default_credit_display ?? null, b.default_work_supplement ?? null, b.default_approval_target ?? null,
          b.default_approval_timing ?? null, b.remarks ?? null]
@@ -214,15 +224,14 @@ export function registerWorkModelRoutes(
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
       const year = new Date().getFullYear();
       const code = b.work_code || `W-${year}-${pad4(await nextMasterSeq(query, "W", year))}`;
+      // 整理①: publisher_vendor_id / is_original は廃止(列はdefault/既存値のまま)。kind='own'。
       const r = await query(
         `INSERT INTO works (work_code, title, title_kana, alternative_titles, division,
-            work_type, status, publisher_vendor_id, origin_ringi_id, is_original, remarks,
-            parent_work_id, derivation_type)
-         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),$6,$7,$8,$9,COALESCE($10,TRUE),$11,$12,$13) RETURNING *`,
+            work_type, status, origin_ringi_id, remarks, parent_work_id, derivation_type, kind)
+         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),$6,$7,$8,$9,$10,$11,'own') RETURNING *`,
         [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
-         b.work_type ?? null, b.status ?? null, b.publisher_vendor_id ?? null, b.origin_ringi_id ?? null,
-         b.is_original ?? null, b.remarks ?? null,
-         b.parent_work_id ?? null, b.derivation_type ?? null]
+         b.work_type ?? null, b.status ?? null, b.origin_ringi_id ?? null,
+         b.remarks ?? null, b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       res.status(201).json(r.rows[0]);
     } catch (e) { fail(res, e); }
@@ -271,16 +280,18 @@ export function registerWorkModelRoutes(
       const b = req.body || {};
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
       const r = await query(
-        `UPDATE source_ips SET
+        // P2-5: 原作IP は works(kind='licensed_in') を更新。
+        `UPDATE works SET
             title = $2, title_kana = $3, alternative_titles = COALESCE($4::text[],'{}'),
+            division = COALESCE($13::text[],'{}'),
             rights_holder_vendor_id = $5, original_publisher = $6, default_rights_holder = $7,
             default_credit_display = $8, default_work_supplement = $9, default_approval_target = $10,
             default_approval_timing = $11, remarks = $12, updated_at = now()
-          WHERE id = $1 RETURNING *`,
+          WHERE id = $1 AND kind = 'licensed_in' RETURNING *, work_code AS source_code`,
         [id, b.title, b.title_kana ?? null, b.alternative_titles ?? null,
          b.rights_holder_vendor_id ?? null, b.original_publisher ?? null, b.default_rights_holder ?? null,
          b.default_credit_display ?? null, b.default_work_supplement ?? null, b.default_approval_target ?? null,
-         b.default_approval_timing ?? null, b.remarks ?? null]
+         b.default_approval_timing ?? null, b.remarks ?? null, b.division ?? null]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       res.json(r.rows[0]);
@@ -293,16 +304,15 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
+      // 整理①: publisher_vendor_id / is_original は更新対象から除外(廃止)。
       const r = await query(
         `UPDATE works SET
             title = $2, title_kana = $3, alternative_titles = COALESCE($4::text[],'{}'),
             division = COALESCE($5::text[],'{}'), work_type = $6, status = $7,
-            publisher_vendor_id = $8, is_original = COALESCE($9, is_original),
-            remarks = $10, parent_work_id = $11, derivation_type = $12, updated_at = now()
+            remarks = $8, parent_work_id = $9, derivation_type = $10, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [id, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
-         b.work_type ?? null, b.status ?? null, b.publisher_vendor_id ?? null,
-         b.is_original ?? null, b.remarks ?? null,
+         b.work_type ?? null, b.status ?? null, b.remarks ?? null,
          b.parent_work_id ?? null, b.derivation_type ?? null]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
