@@ -94,6 +94,7 @@ export const PendingPdfPanel: React.FC = () => {
   const [bulkEditOpen, setBulkEditOpen] = React.useState(false)
   const [savingEdit, setSavingEdit] = React.useState(false)
   const [deleting, setDeleting] = React.useState(false)
+  const [forceDelete, setForceDelete] = React.useState(false)
   const [staffOptions, setStaffOptions] = React.useState<
     Array<{ email: string; staff_name: string; department?: string }>
   >([])
@@ -551,21 +552,24 @@ export const PendingPdfPanel: React.FC = () => {
   // Phase 23: 不要な取り込みレコードを選択して削除
   const bulkDelete = async () => {
     if (selectedRowObjs.length === 0) return
-    if (
-      !window.confirm(
-        `選択した ${selectedRowObjs.length} 件をレコードごと削除します。\n` +
-          `この操作は取り消せません。発行済(PDFあり)や検収済のものは安全のため自動でスキップします。\n` +
-          `よろしいですか?`
-      )
-    )
-      return
+    const confirmMsg = forceDelete
+      ? `【強制削除】選択した ${selectedRowObjs.length} 件をレコードごと削除します。\n` +
+        `発行済(PDFあり)・検収/納品が紐付いたものも削除します(紐付く検収/納品データも除去)。\n` +
+        `この操作は取り消せません。本当によろしいですか?`
+      : `選択した ${selectedRowObjs.length} 件をレコードごと削除します。\n` +
+        `この操作は取り消せません。発行済(PDFあり)や検収済のものは安全のため自動でスキップします。\n` +
+        `よろしいですか?`
+    if (!window.confirm(confirmMsg)) return
     setDeleting(true)
     setError(null)
     try {
       const res = await fetch("/api/documents/bulk-delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: selectedRowObjs.map((r) => r.id) }),
+        body: JSON.stringify({
+          ids: selectedRowObjs.map((r) => r.id),
+          force: forceDelete,
+        }),
       })
       const json = await res.json()
       if (!res.ok || !json.ok) {
@@ -777,8 +781,17 @@ export const PendingPdfPanel: React.FC = () => {
               type="button"
               onClick={bulkDelete}
               disabled={bulkRunning || merging || deleting || selected.size === 0}
-              className="text-[10px] font-mono uppercase tracking-wider border border-red-300 text-red-700 rounded-sm px-3 py-1.5 hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
-              title="不要な取り込みレコードを選択してまとめて削除します(発行済・検収済はスキップ)"
+              className={cn(
+                "text-[10px] font-mono uppercase tracking-wider rounded-sm px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed",
+                forceDelete
+                  ? "bg-red-600 text-white hover:bg-red-700 border border-red-600"
+                  : "border border-red-300 text-red-700 hover:bg-red-50"
+              )}
+              title={
+                forceDelete
+                  ? "【強制】発行済・検収済も含めて削除します"
+                  : "不要な取り込みレコードを選択してまとめて削除します(発行済・検収済はスキップ)"
+              }
             >
               {deleting ? (
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -787,6 +800,19 @@ export const PendingPdfPanel: React.FC = () => {
               )}
               🗑 選択を削除
             </button>
+            <label
+              className="flex items-center gap-1 text-[10px] font-mono text-red-700 cursor-pointer select-none"
+              title="発行済(PDFあり)・検収/納品が紐付いたものも強制的に削除します"
+            >
+              <input
+                type="checkbox"
+                checked={forceDelete}
+                onChange={(e) => setForceDelete(e.target.checked)}
+                disabled={deleting}
+                className="w-3 h-3"
+              />
+              強制削除
+            </label>
             <button
               type="button"
               onClick={openMerge}
