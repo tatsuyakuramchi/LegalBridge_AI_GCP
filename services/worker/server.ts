@@ -10134,6 +10134,46 @@ ${details}
         });
       }
 
+      // Part1(共通化): pub_license_terms も共通 FinancialConditionTable
+      //   (formData.financial_conditions[]) を採用。HTML テンプレは旧 flat field
+      //   ({{紙書籍印税率}} 等) を読むため、ここで条件表→flat field へ逆展開する。
+      //   condition_no: 1=紙書籍 / 2=電子書籍 / 3=翻訳・海外版。料率は表を真正として上書き、
+      //   計算式は表優先 (空ならテンプレ側の既定文が出る)。
+      if (
+        templateType === "pub_license_terms" &&
+        Array.isArray(formData.financial_conditions) &&
+        formData.financial_conditions.length > 0
+      ) {
+        const byNo: Record<number, any> = {};
+        formData.financial_conditions.forEach((c: any) => {
+          const n = Number(c.condition_no);
+          if (Number.isFinite(n)) byNo[n] = c;
+        });
+        const rateStr = (c: any) =>
+          c &&
+          c.rate_pct !== undefined &&
+          c.rate_pct !== null &&
+          String(c.rate_pct) !== ""
+            ? String(c.rate_pct)
+            : "";
+        const paper = byNo[1];
+        const ebook = byNo[2];
+        const trans = byNo[3];
+        if (paper) {
+          formData["紙書籍印税率"] = rateStr(paper);
+          formData["紙媒体計算式"] = paper.formula_text || formData["紙媒体計算式"] || "";
+        }
+        if (ebook) {
+          formData["電子書籍印税率"] = rateStr(ebook);
+          formData["電子書籍計算式"] = ebook.formula_text || formData["電子書籍計算式"] || "";
+        }
+        if (trans) {
+          formData["翻訳海外版料率"] = rateStr(trans);
+          formData["翻訳海外版計算式"] =
+            trans.formula_text || formData["翻訳海外版計算式"] || "";
+        }
+      }
+
       // Phase 17i: 経費の合計 (税込) を確実にテンプレに渡す
       //   フロントが既に計算済みでも、念のためサーバ側で再計算して上書きする。
       const expensesForRender = Array.isArray(formData.expenses) ? formData.expenses : [];
