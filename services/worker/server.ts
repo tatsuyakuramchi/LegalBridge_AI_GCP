@@ -7969,6 +7969,10 @@ ${details}
     if (ids.length === 0) {
       return res.status(400).json({ ok: false, error: "ids[] is required" });
     }
+    // 強制削除: 発行済(PDFあり)・検収/納品紐付きでも削除する。
+    //   検収/納品は delivery_line_items が RESTRICT FK で削除を止めるため、
+    //   先に該当 delivery_line_items を削除し、空になった delivery_events も掃除する。
+    const force = !!req.body?.force;
     const client = await pool.connect();
     const deleted: string[] = [];
     const skipped: Array<{ document_number: string; reason: string }> = [];
@@ -7986,7 +7990,7 @@ ${details}
         )
       ).rows;
       for (const d of docs) {
-        if (d.drive_link && String(d.drive_link).trim()) {
+        if (!force && d.drive_link && String(d.drive_link).trim()) {
           skipped.push({
             document_number: d.document_number,
             reason: "発行済(PDFあり)のため削除しません",
@@ -8001,12 +8005,44 @@ ${details}
               WHERE cli.capability_id = $1`,
             [d.cap_id]
           );
-          if (Number(del.rows[0].n) > 0) {
+          const hasDelivery = Number(del.rows[0].n) > 0;
+          if (hasDelivery && !force) {
             skipped.push({
               document_number: d.document_number,
               reason: "検収/納品が紐付いているため削除しません",
             });
             continue;
+          }
+          if (hasDelivery && force) {
+            // 削除を阻む delivery_line_items を先に除去し、空の delivery_events を掃除
+            const ev = await client.query(
+              `SELECT DISTINCT dli.delivery_event_id AS eid
+                 FROM delivery_line_items dli
+                 JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+                WHERE cli.capability_id = $1`,
+              [d.cap_id]
+            );
+            const eventIds = ev.rows
+              .map((r: any) => r.eid)
+              .filter((x: any) => x != null);
+            await client.query(
+              `DELETE FROM delivery_line_items dli
+                 USING capability_line_items cli
+                WHERE dli.capability_line_item_id = cli.id
+                  AND cli.capability_id = $1`,
+              [d.cap_id]
+            );
+            if (eventIds.length > 0) {
+              await client.query(
+                `DELETE FROM delivery_events de
+                  WHERE de.id = ANY($1::int[])
+                    AND NOT EXISTS (
+                      SELECT 1 FROM delivery_line_items dli
+                       WHERE dli.delivery_event_id = de.id
+                    )`,
+                [eventIds]
+              );
+            }
           }
           await client.query(
             `DELETE FROM contract_capabilities WHERE id = $1`,
