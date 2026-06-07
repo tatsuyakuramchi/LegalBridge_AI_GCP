@@ -134,9 +134,19 @@
 | Step | 内容 | 状態 |
 | :-- | :-- | :-- |
 | 1 | SSOT 変換の集約（form_data ⇄ capability） | **実装中（発注書・検収書 完了）** |
-| 2 | レガシーテーブル撤去 | 未着手 |
+| 2 | レガシーテーブル撤去 | **完了（0030 で DROP）** |
 | 3 | v3 ミラー収束（読み手棚卸し → 廃止/DELETE同期） | 未着手 |
 | 4 | カラム整理・正準集約 | 未着手 |
+
+### Step 2 実装メモ（2026-06-07）
+- コード棚卸し結果: `order_items` / `order_line_items` / `license_financial_conditions` は
+  実 SQL 参照ゼロ。`license_contracts` は唯一 to_regclass ガード付きバックフィル（royalty_calculations）
+  からのみ参照。いずれも CREATE 文なし・残存 FK なし・新規 DB に存在しない。
+- 新規マイグレーション `migrations/0030_drop_legacy_tables.sql`:
+  - 撤去前に license_contracts→royalty_calculations.capability_id バックフィルを最終再実行(idempotent)
+  - `DROP TABLE IF EXISTS order_line_items / order_items / license_financial_conditions / license_contracts CASCADE`
+- 適用: schema は `migrations/` ランナー（worker デプロイ・パイプライン）が単一所有（`initDb` は実行スキップ）。
+- 確認: 連結チェック画面の「レガシー残存」は、撤去後 to_regclass NULL → 0 件表示になる。
 
 ### Step 1 実装メモ（2026-06-07）
 - 新規: `services/worker/src/lib/capabilityFormMapping.ts`
