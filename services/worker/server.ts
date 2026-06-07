@@ -7839,6 +7839,115 @@ ${details}
   });
 
   /**
+   * 複数文書(主に PDF未作成キューの発注書)の発注日 / 担当者 / 支払日 を一括修正し、
+   * 備考(自由備考)を一律追記する。納品後に遡って発行する場合など、選択した文書に
+   * 同じ値をまとめて適用する用途。
+   *
+   *   body: {
+   *     ids: number[],                     // documents.id
+   *     set?: {
+   *       "発注日"?: string,               // YYYY-MM-DD (空なら変更しない)
+   *       staff_email?: string,            // 担当者(staff.email を解決して STAFF_* を反映)
+   *       payment_date?: string,           // 支払日(全明細 + summaryPaymentDate に適用)
+   *     },
+   *     remarks_append?: string,           // 自由備考(REMARKS_FREE)に追記
+   *   }
+   *
+   * 空欄の項目は変更しない(誤って消さない)。発注日/支払日は capability 側にも反映。
+   */
+  app.post("/api/documents/bulk-update-fields", express.json(), async (req, res) => {
+    try {
+      const ids: number[] = Array.isArray(req.body?.ids)
+        ? req.body.ids.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+        : [];
+      if (ids.length === 0) {
+        return res.status(400).json({ ok: false, error: "ids[] is required" });
+      }
+      const set = req.body?.set || {};
+      const orderDate = set["発注日"] != null ? String(set["発注日"]).trim() : "";
+      const staffEmail = set.staff_email != null ? String(set.staff_email).trim() : "";
+      const paymentDate = set.payment_date != null ? String(set.payment_date).trim() : "";
+      const remarksAppend =
+        req.body?.remarks_append != null ? String(req.body.remarks_append).trim() : "";
+
+      if (!orderDate && !staffEmail && !paymentDate && !remarksAppend) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "更新する項目がありません" });
+      }
+
+      // 担当者は一度だけ解決
+      let staff: { staff_name: string; department: string; email: string; phone: string } | null =
+        null;
+      if (staffEmail) {
+        staff = await lookupStaffByEmail(staffEmail);
+      }
+
+      const docs = (
+        await query(
+          `SELECT id, document_number, form_data FROM documents WHERE id = ANY($1::int[])`,
+          [ids]
+        )
+      ).rows;
+
+      let updated = 0;
+      for (const d of docs) {
+        const fd = d.form_data || {};
+        if (orderDate) fd["発注日"] = orderDate;
+        if (staff) {
+          fd.staff_email = staff.email || staffEmail;
+          fd.STAFF_NAME = staff.staff_name || fd.STAFF_NAME || "";
+          fd.STAFF_EMAIL = staff.email || staffEmail;
+          fd.STAFF_DEPARTMENT = staff.department || fd.STAFF_DEPARTMENT || "";
+          fd.STAFF_PHONE = staff.phone || fd.STAFF_PHONE || "";
+        } else if (staffEmail) {
+          // staff レコードが見つからなくても email だけは反映
+          fd.staff_email = staffEmail;
+          fd.STAFF_EMAIL = staffEmail;
+        }
+        if (paymentDate) {
+          if (Array.isArray(fd.line_items)) {
+            fd.line_items = fd.line_items.map((l: any) => ({
+              ...l,
+              payment_date: paymentDate,
+            }));
+          }
+          fd.summaryPaymentDate = paymentDate;
+        }
+        if (remarksAppend) {
+          const cur = String(fd.REMARKS_FREE || "");
+          fd.REMARKS_FREE = cur ? `${cur}\n${remarksAppend}` : remarksAppend;
+        }
+        await query(`UPDATE documents SET form_data = $2 WHERE id = $1`, [
+          d.id,
+          JSON.stringify(fd),
+        ]);
+        // capability 側にも反映(検収/条件明細・台帳の整合)
+        if (orderDate) {
+          await query(
+            `UPDATE contract_capabilities SET issue_date_po = $2, updated_at = now()
+              WHERE document_number = $1`,
+            [d.document_number, orderDate]
+          );
+        }
+        if (paymentDate) {
+          await query(
+            `UPDATE capability_line_items cli SET payment_date = $2, updated_at = now()
+               FROM contract_capabilities cc
+              WHERE cli.capability_id = cc.id AND cc.document_number = $1`,
+            [d.document_number, paymentDate]
+          );
+        }
+        updated++;
+      }
+      res.json({ ok: true, updated, total: ids.length });
+    } catch (error) {
+      console.error("/api/documents/bulk-update-fields failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
    * Phase 17e: 稟議マスタの一括インポート (ringi_records への upsert)。
    * 文書とのリンクは作らない (これは「マスタ事前登録」のためのもの。
    * 個別文書からのリンクは別経路 bulk/order 等の ringi_numbers 列で行う)。
