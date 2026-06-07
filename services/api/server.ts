@@ -126,23 +126,6 @@ import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
 import { workModelEmbedPage } from "./src/views/workModelHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
-import { sublicensePage } from "./src/views/sublicenseHtml.ts";
-import {
-  listDeals as listSubDeals,
-  upsertDeal as upsertSubDeal,
-  deleteDeal as deleteSubDeal,
-  listReceipts as listSubReceipts,
-  exportReceiptsCsv as exportSubReceiptsCsv,
-  listSublicenseeOptions,
-  listWorkOptions as listSubWorkOptions,
-  listReportsByDeal as listSubReports,
-  upsertReport as upsertSubReport,
-  deleteReport as deleteSubReport,
-  confirmReceipt as confirmSubReceipt,
-  unconfirmReceipt as unconfirmSubReceipt,
-  setReceiptStatus as setSubReceiptStatus,
-  importInboundConditions as importInboundReceivables,
-} from "./src/services/sublicenseService.ts";
 import {
   getWorkDistribution,
   getWorkLineage,
@@ -152,10 +135,6 @@ import {
   deleteWorkAlias,
   resolveWorksByTitle,
 } from "./src/services/receivableMapService.ts";
-import {
-  importUsageReportsCsv,
-  getUsageReportSampleCsv,
-} from "./src/services/usageReportImportService.ts";
 import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
 import {
   listConditions,
@@ -3004,59 +2983,6 @@ async function startServer() {
     }
   });
 
-  // ===================================================================
-  // サブライセンス受領管理(第1段)
-  // ===================================================================
-  app.get("/master/sublicense", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "sublicense", renderErrorPage }), (req, res) => {
-    try {
-      res.type("html").send(sublicensePage((req as any).userRole as Role));
-    } catch (error) {
-      console.error("/master/sublicense failed:", error);
-      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
-    }
-  });
-
-  // 条件(deal)一覧 / 作成・更新 / 削除
-  app.get("/api/sublicense/deals", requireIapUser({ renderErrorPage }), async (_req, res) => {
-    try {
-      res.json({ ok: true, rows: await listSubDeals() });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals GET failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.post("/api/sublicense/deals", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const id = await upsertSubDeal(req.body || {});
-      res.json({ ok: true, id });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.delete("/api/sublicense/deals/:id", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
-      await deleteSubDeal(id);
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals DELETE failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // ピッカー用オプション(作品 / サブライセンシー)
-  app.get("/api/sublicense/options", requireIapUser({ renderErrorPage }), async (_req, res) => {
-    try {
-      const [sublicensees, works] = await Promise.all([listSublicenseeOptions(), listSubWorkOptions()]);
-      res.json({ ok: true, sublicensees, works });
-    } catch (error: any) {
-      console.error("/api/sublicense/options failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
   // ── 分配構造マップ(作品中心)──────────────────────────────────
   app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "receivable-map", renderErrorPage }), (req, res) => {
     try {
@@ -3139,170 +3065,6 @@ async function startServer() {
     }
   });
 
-  // 利用報告 CSV 一括取込(タイトル名寄せ自動解決)
-  app.get("/api/sublicense/reports/template.csv", requireIapUser({ renderErrorPage }), (_req, res) => {
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", 'attachment; filename="usage_report_sample.csv"');
-    res.send(getUsageReportSampleCsv());
-  });
-  app.post("/api/sublicense/reports/import-csv", requireIapUser({ renderErrorPage }), express.json({ limit: "8mb" }), async (req, res) => {
-    try {
-      const b = req.body || {};
-      if (!b.csv || typeof b.csv !== "string") return res.status(400).json({ ok: false, error: "csv required" });
-      const result = await importUsageReportsCsv(b.csv, { dryRun: b.dry_run !== false });
-      res.json({ ok: true, ...result });
-    } catch (error: any) {
-      console.error("/api/sublicense/reports/import-csv failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 条件明細(inbound)→ 請求権 自動取込(冪等)
-  app.post("/api/sublicense/receipts/import", requireIapUser({ renderErrorPage }), async (_req, res) => {
-    try {
-      const r = await importInboundReceivables();
-      res.json({ ok: true, ...r });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/import failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 受領予定一覧(deal を各回に展開)。?import=1 で取込を先に実行。
-  app.get("/api/sublicense/receipts", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      if (q.import === "1") {
-        try { await importInboundReceivables(); } catch (e) { console.warn("inbound import skipped:", e); }
-      }
-      const result = await listSubReceipts({
-        from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
-        kind: q.kind, status: q.status,
-      });
-      res.json({ ok: true, ...result });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 売上報告(deal × 受領予定日)— 一覧 / 登録更新 / 削除
-  app.get("/api/sublicense/deals/:id/reports", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
-      res.json({ ok: true, rows: await listSubReports(id) });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals/:id/reports failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.post("/api/sublicense/reports", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const b = req.body || {};
-      const dealId = Number(b.deal_id);
-      if (!Number.isFinite(dealId) || !b.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await upsertSubReport({
-        deal_id: dealId,
-        period_date: String(b.period_date),
-        period_label: b.period_label,
-        period_start: b.period_start,
-        period_end: b.period_end,
-        report_basis: b.report_basis,
-        unit_price: b.unit_price,
-        reported_amount: b.reported_amount,
-        reported_sales: b.reported_sales,
-        reported_quantity: b.reported_quantity,
-        note: b.note,
-      });
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/reports POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.delete("/api/sublicense/reports", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      const dealId = Number(q.deal_id);
-      if (!Number.isFinite(dealId) || !q.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await deleteSubReport(dealId, String(q.period_date));
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/reports DELETE failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 受領確定 → payments(inbound / sublicense_income)記録 / 取消
-  app.post("/api/sublicense/receipts/confirm", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const b = req.body || {};
-      const dealId = Number(b.deal_id);
-      if (!Number.isFinite(dealId) || !b.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await confirmSubReceipt(dealId, String(b.period_date));
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/confirm POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.delete("/api/sublicense/receipts/confirm", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      const dealId = Number(q.deal_id);
-      if (!Number.isFinite(dealId) || !q.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await unconfirmSubReceipt(dealId, String(q.period_date));
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/confirm DELETE failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 請求状態(台帳)更新: 未請求/請求済/入金済
-  app.post("/api/sublicense/receipts/status", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const b = req.body || {};
-      const dealId = Number(b.deal_id);
-      if (!Number.isFinite(dealId) || !b.period_date || !b.status) {
-        return res.status(400).json({ ok: false, error: "deal_id, period_date, status required" });
-      }
-      await setSubReceiptStatus(dealId, String(b.period_date), String(b.status), b.note);
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/status POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 受領予定 CSV(全件 or ?ids=deal:idx,...)
-  app.get("/api/sublicense/receipts/export", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      const ids = q.ids ? String(q.ids).split(",").map((s) => s.trim()).filter(Boolean) : undefined;
-      const csv = await exportSubReceiptsCsv({
-        from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
-        kind: q.kind, status: q.status,
-        ids: ids as any,
-      });
-      const stamp = new Date().toISOString().slice(0, 10);
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="sublicense_receipts_${stamp}.csv"`);
-      res.send(csv);
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/export failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
 
   // -------------------------------------------------------------------
   // /api/dashboard/*

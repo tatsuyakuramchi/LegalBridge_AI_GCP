@@ -496,6 +496,44 @@ export function registerWorkModelRoutes(
     return Math.round(base * (rate / 100) * 100) / 100;
   };
 
+  // 受領記録 → 入金台帳(payments: inbound / sublicense_income)同期。
+  //   received_amount があれば payments を upsert し payment_id を保持。空なら削除。
+  //   cond は { work_id, counterparty_vendor_id, currency }。receipt は condition_receipts 行。
+  const syncReceiptPayment = async (receipt: any, cond: any): Promise<number | null> => {
+    const recv = receipt.received_amount;
+    const hasRecv = recv != null && Number(recv) !== 0;
+    if (hasRecv) {
+      if (receipt.payment_id) {
+        await query(
+          `UPDATE payments SET amount_ex_tax = $2, total_amount = $2, paid_date = $3,
+                  period = $4, counterparty_vendor_id = $5, currency = $6
+             WHERE id = $1`,
+          [receipt.payment_id, recv, receipt.received_date ?? null, receipt.period ?? null,
+            cond.counterparty_vendor_id ?? null, cond.currency || "JPY"]
+        );
+        return receipt.payment_id;
+      }
+      const p = await query(
+        `INSERT INTO payments (
+           payment_no, direction, payment_kind, work_id, counterparty_vendor_id,
+           period, amount_ex_tax, total_amount, currency, status, paid_date, source_document_number
+         ) VALUES ($1, 'inbound', 'sublicense_income', $2, $3, $4, $5, $5, $6, 'received', $7, $8)
+         RETURNING id`,
+        [`SLRCV-${receipt.id}`, cond.work_id ?? null, cond.counterparty_vendor_id ?? null,
+          receipt.period ?? null, recv, cond.currency || "JPY",
+          receipt.received_date ?? null, `condition_receipt#${receipt.id}`]
+      );
+      const pid = Number(p.rows[0].id);
+      await query(`UPDATE condition_receipts SET payment_id = $2 WHERE id = $1`, [receipt.id, pid]);
+      return pid;
+    }
+    if (receipt.payment_id) {
+      await query(`DELETE FROM payments WHERE id = $1`, [receipt.payment_id]);
+      await query(`UPDATE condition_receipts SET payment_id = NULL WHERE id = $1`, [receipt.id]);
+    }
+    return null;
+  };
+
   // GET: 作品配下の OUT 条件 × 受領記録 を一覧(条件情報を同梱)
   app.get("/api/v3/works/:id/receipts", ...requireRead, async (req, res) => {
     try {
@@ -537,7 +575,8 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
       const c = await query(
-        `SELECT rate_pct, basis, unit_price FROM capability_financial_conditions WHERE id = $1`,
+        `SELECT work_id, counterparty_vendor_id, currency, rate_pct, basis, unit_price
+           FROM capability_financial_conditions WHERE id = $1`,
         [cid]
       );
       if (c.rows.length === 0) return res.status(404).json({ ok: false, error: "condition not found" });
@@ -554,7 +593,9 @@ export function registerWorkModelRoutes(
           b.received_amount != null ? "received" : "reported", b.note ?? null,
         ]
       );
-      res.status(201).json(r.rows[0]);
+      const receipt = r.rows[0];
+      receipt.payment_id = await syncReceiptPayment(receipt, c.rows[0]);
+      res.status(201).json(receipt);
     } catch (e) { fail(res, e); }
   });
 
@@ -565,7 +606,8 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(rid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
       const cur = await query(
-        `SELECT cr.condition_id, cfc.rate_pct, cfc.basis, cfc.unit_price
+        `SELECT cr.condition_id, cfc.work_id, cfc.counterparty_vendor_id, cfc.currency,
+                cfc.rate_pct, cfc.basis, cfc.unit_price
            FROM condition_receipts cr
            JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
           WHERE cr.id = $1`,
@@ -586,7 +628,9 @@ export function registerWorkModelRoutes(
           b.received_amount != null ? "received" : "reported", b.note ?? null,
         ]
       );
-      res.json(r.rows[0]);
+      const receipt = r.rows[0];
+      receipt.payment_id = await syncReceiptPayment(receipt, cur.rows[0]);
+      res.json(receipt);
     } catch (e) { fail(res, e); }
   });
 
@@ -595,7 +639,11 @@ export function registerWorkModelRoutes(
     try {
       const rid = Number(req.params.rid);
       if (!Number.isFinite(rid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      // 紐づく入金台帳(payments)も掃除してから削除。
+      const pr = await query(`SELECT payment_id FROM condition_receipts WHERE id = $1`, [rid]);
+      const pid = pr.rows[0]?.payment_id;
       const r = await query(`DELETE FROM condition_receipts WHERE id = $1`, [rid]);
+      if (pid) await query(`DELETE FROM payments WHERE id = $1`, [pid]);
       res.json({ ok: true, deleted: r.rowCount || 0 });
     } catch (e) { fail(res, e); }
   });
