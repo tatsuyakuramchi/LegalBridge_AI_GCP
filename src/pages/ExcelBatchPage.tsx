@@ -75,6 +75,7 @@ export const ExcelBatchPage: React.FC = () => {
     label: string
     files: number
     failed: number
+    links: Array<{ fileName: string; excelLink: string }>
   } | null>(null)
 
   const refresh = React.useCallback(async () => {
@@ -121,7 +122,10 @@ export const ExcelBatchPage: React.FC = () => {
   }, [groups])
 
   // 1 グループ(担当者×支払期日×種別)を 1 ファイル出力。成功で state から除外。
-  const exportOneGroup = async (group: Group): Promise<boolean> => {
+  //   出力ファイル名と Drive リンクを返す。
+  const exportOneGroup = async (
+    group: Group
+  ): Promise<{ fileName: string; excelLink: string }> => {
     const res = await fetch("/api/excel-batches/export", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -132,7 +136,10 @@ export const ExcelBatchPage: React.FC = () => {
       throw new Error(json.error || `HTTP ${res.status}`)
     }
     setGroups((g) => (g ? g.filter((x) => x.key !== group.key) : g))
-    return true
+    return {
+      fileName: json.fileName || group.key,
+      excelLink: json.excelLink || "",
+    }
   }
 
   // 担当者単位で作成(サブグループを順次出力 = 支払期日/種別ごとに別ファイル)
@@ -149,10 +156,12 @@ export const ExcelBatchPage: React.FC = () => {
     setError(null)
     let ok = 0
     let fail = 0
+    const links: Array<{ fileName: string; excelLink: string }> = []
     for (const g of [...insp.groups]) {
       try {
-        await exportOneGroup(g)
+        const r = await exportOneGroup(g)
         ok++
+        links.push(r)
       } catch (e: any) {
         fail++
         setError(`${insp.name} の出力で失敗: ${e?.message || e}`)
@@ -163,7 +172,7 @@ export const ExcelBatchPage: React.FC = () => {
       delete copy[insp.email]
       return copy
     })
-    setLastResult({ label: insp.name, files: ok, failed: fail })
+    setLastResult({ label: insp.name, files: ok, failed: fail, links })
   }
 
   const total = groups?.reduce((s, g) => s + g.count, 0) || 0
@@ -201,19 +210,43 @@ export const ExcelBatchPage: React.FC = () => {
         </button>
       </div>
 
-      {/* 直近結果 */}
+      {/* 直近結果 + 保管先リンク */}
       {lastResult && (
         <div
           className={cn(
-            "border rounded-sm px-4 py-2 text-[11px] font-mono flex items-center gap-2",
+            "border rounded-sm px-4 py-2 text-[11px] font-mono flex flex-col gap-1.5",
             lastResult.failed > 0
               ? "bg-amber-50 border-amber-200 text-amber-900"
               : "bg-emerald-50 border-emerald-200 text-emerald-900"
           )}
         >
-          <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
-          {lastResult.label}: Excel {lastResult.files} ファイル出力
-          {lastResult.failed > 0 && ` / 失敗 ${lastResult.failed}`}
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+            {lastResult.label}: Excel {lastResult.files} ファイル出力
+            {lastResult.failed > 0 && ` / 失敗 ${lastResult.failed}`}
+          </div>
+          {lastResult.links.length > 0 && (
+            <div className="flex flex-col gap-0.5 pl-6">
+              {lastResult.links.map((l, i) =>
+                l.excelLink ? (
+                  <a
+                    key={i}
+                    href={l.excelLink}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1 underline w-fit"
+                  >
+                    <ExternalLink className="w-3 h-3 flex-shrink-0" />
+                    {l.fileName} を Drive で開く
+                  </a>
+                ) : (
+                  <span key={i} className="text-muted-foreground">
+                    {l.fileName}（リンク取得不可）
+                  </span>
+                )
+              )}
+            </div>
+          )}
         </div>
       )}
 
