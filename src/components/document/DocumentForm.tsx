@@ -227,6 +227,60 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVendor?.vendor_code, templateId, allContracts.length]);
 
+  // Part1(共通化): 出版等利用許諾の「対価・支払条件」を共通 FinancialConditionTable に統一。
+  //   個別利用許諾と同じ条件表 UI を使い、紙書籍/電子書籍/翻訳・海外版 を 3 行で表現。
+  //   既存doc(旧フラットfield)/新規いずれも、フラットfieldから条件表を一度だけ初期化する。
+  //   ※ financial_conditions が既にあれば尊重 (再編集での二重初期化を防止)。
+  //   生成時に worker が条件表→flat field {{紙書籍印税率}} 等へ逆展開し PDF テンプレは不変。
+  const pubCondSeededRef = React.useRef(false);
+  useEffect(() => {
+    if (templateId !== 'pub_license_terms') return;
+    if (pubCondSeededRef.current) return;
+    if (
+      Array.isArray(formData.financial_conditions) &&
+      formData.financial_conditions.length > 0
+    ) {
+      pubCondSeededRef.current = true;
+      return;
+    }
+    const toNum = (v: any) => {
+      const n = parseFloat(String(v ?? '').replace(/[^0-9.]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const seed: FinancialCondition[] = [
+      {
+        condition_no: 1,
+        region_language_label: '紙書籍出版',
+        calc_method: 'ROYALTY',
+        rate_pct: toNum(formData['紙書籍印税率']),
+        base_price_label: '税抜定価',
+        formula_text: formData['紙媒体計算式'] || '',
+        currency: 'JPY',
+      },
+      {
+        condition_no: 2,
+        region_language_label: '電子書籍配信',
+        calc_method: 'ROYALTY',
+        rate_pct: toNum(formData['電子書籍印税率']),
+        base_price_label: '被許諾者受領額',
+        formula_text: formData['電子書籍計算式'] || '',
+        currency: 'JPY',
+      },
+      {
+        condition_no: 3,
+        region_language_label: formData['翻訳海外版対象地域言語'] || '翻訳・海外版',
+        calc_method: 'ROYALTY',
+        rate_pct: toNum(formData['翻訳海外版料率']),
+        base_price_label: '被許諾者受取ライセンス収益',
+        formula_text: formData['翻訳海外版計算式'] || '',
+        currency: 'JPY',
+      },
+    ];
+    pubCondSeededRef.current = true;
+    setFormData({ ...formData, financial_conditions: seed });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.financial_conditions]);
+
   // ---------------------------------------------------------------
   // Phase 22.21.3: 原作 / 素材 マスター由来の auto-fill を初回マウント時にも実行。
   //   `onLedgerChange` / `onMaterialChange` はユーザーが選択し直したときしか
@@ -4569,21 +4623,62 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           const m = /^\s*(\d+)/.exec(s);
           return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
         };
+        // Part1(共通化): 出版の「対価・支払条件」の料率/計算式は共通
+        //   FinancialConditionTable(条件表)で編集。表に無い出版固有field
+        //   (部数区分/報告明細/消費税/源泉/インボイス)は従来どおり並べる。
+        const PUB_TABLE_OWNED = new Set([
+          '紙媒体計算式', '紙書籍印税率',
+          '電子書籍計算式', '電子書籍印税率',
+          '翻訳海外版計算式', '翻訳海外版料率',
+        ]);
         return (Object.entries(groupedVars) as [string, string[]][])
           .sort((a, b) => {
             const oa = PUB_SECTIONS[a[0]]?.order ?? lead(a[0]);
             const ob = PUB_SECTIONS[b[0]]?.order ?? lead(b[0]);
             return oa - ob;
           })
-          .map(([groupName, varIds]) => (
-            <FormSection
-              key={groupName}
-              title={PUB_SECTIONS[groupName]?.label || groupName}
-              variant="default"
-            >
-              {varIds.map((fid) => renderField(fid))}
-            </FormSection>
-          ));
+          .map(([groupName, varIds]) => {
+            if (
+              templateId === 'pub_license_terms' &&
+              groupName === 'VI. 対価・支払条件'
+            ) {
+              const remaining = varIds.filter((fid) => !PUB_TABLE_OWNED.has(fid));
+              return (
+                <FormSection
+                  key={groupName}
+                  title={PUB_SECTIONS[groupName]?.label || groupName}
+                  variant="default"
+                  headerActions={
+                    <span className="text-[11px] font-mono text-muted-foreground italic">
+                      条件 1=紙書籍 / 2=電子書籍 / 3=翻訳・海外版 (許諾有無は「許諾内容」で制御)
+                    </span>
+                  }
+                >
+                  <FinancialConditionTable
+                    conditions={
+                      Array.isArray(formData.financial_conditions)
+                        ? (formData.financial_conditions as FinancialCondition[])
+                        : []
+                    }
+                    onChange={(conditions: FinancialCondition[]) =>
+                      setFormData({ ...formData, financial_conditions: conditions })
+                    }
+                    division="PUB"
+                  />
+                  {remaining.map((fid) => renderField(fid))}
+                </FormSection>
+              );
+            }
+            return (
+              <FormSection
+                key={groupName}
+                title={PUB_SECTIONS[groupName]?.label || groupName}
+                variant="default"
+              >
+                {varIds.map((fid) => renderField(fid))}
+              </FormSection>
+            );
+          });
       })()}
     </div>
   );
