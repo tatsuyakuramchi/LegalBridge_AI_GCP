@@ -250,9 +250,10 @@ export function registerWorkModelRoutes(
       const works = Array.isArray(b.works) ? b.works : [];
       for (const w of works) {
         if (w.work_id == null && w.source_ip_id == null) continue; // CHECK 制約
+        // P2-3: source_ip_id しか無いときは works(legacy_source_ip_id)から work_id を補完(統一)
         await query(
           `INSERT INTO contract_works (contract_id, work_id, source_ip_id, product_id, role)
-           VALUES ($1,$2,$3,$4,$5)`,
+           VALUES ($1, COALESCE($2, (SELECT id FROM works WHERE legacy_source_ip_id = $3)), $3, $4, $5)`,
           [contract.id, w.work_id ?? null, w.source_ip_id ?? null, w.product_id ?? null, w.role ?? null]
         );
       }
@@ -332,9 +333,10 @@ export function registerWorkModelRoutes(
         await query(`DELETE FROM contract_works WHERE contract_id = $1`, [id]);
         for (const w of b.works) {
           if (w.work_id == null && w.source_ip_id == null) continue; // CHECK 制約
+          // P2-3: source_ip_id しか無いときは works(legacy_source_ip_id)から work_id を補完
           await query(
             `INSERT INTO contract_works (contract_id, work_id, source_ip_id, product_id, role)
-             VALUES ($1,$2,$3,$4,$5)`,
+             VALUES ($1, COALESCE($2, (SELECT id FROM works WHERE legacy_source_ip_id = $3)), $3, $4, $5)`,
             [id, w.work_id ?? null, w.source_ip_id ?? null, w.product_id ?? null, w.role ?? null]
           );
         }
