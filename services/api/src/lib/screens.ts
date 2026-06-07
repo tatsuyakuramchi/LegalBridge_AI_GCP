@@ -34,7 +34,6 @@ export type ScreenKey =
   | "vendors"
   | "contracts"
   | "staff"
-  | "sublicense"
   | "work-model"
   | "receivable-map"
   | "admin";
@@ -62,7 +61,6 @@ export const SCREENS: Screen[] = [
   { key: "staff",          path: "/master/staff",          label: "スタッフ",          icon: "👥", section: "console", minRole: "admin", nav: true },
   { key: "contracts",      path: "/master/contracts",      label: "契約台帳",          icon: "📄", section: "console", minRole: "admin", nav: true },
   { key: "work-model",     path: "/work-model",            label: "作品モデル",        icon: "🎬", section: "console", minRole: "admin", nav: true },
-  { key: "sublicense",     path: "/master/sublicense",     label: "請求権(受領予定)",  icon: "💴", section: "console", minRole: "admin", nav: true },
   { key: "receivable-map", path: "/master/receivable-map", label: "分配構造マップ",    icon: "🔀", section: "console", minRole: "admin", nav: true },
   { key: "conditions",     path: "/master/conditions",     label: "条件明細",          icon: "🧾", section: "console", minRole: "admin", nav: true },
   { key: "admin",          path: "/admin",                 label: "管理",              icon: "⚙️", section: "console", minRole: "admin", nav: true },
