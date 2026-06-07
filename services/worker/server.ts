@@ -61,6 +61,7 @@ import {
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
+import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
 // C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
 import { registerSharedReads } from "./src/routes/sharedReads.ts";
@@ -6009,6 +6010,9 @@ ${details}
     linkRingiByDocNumber,
     requirePortalSecret,
   });
+
+  // データモデル整理: 連結チェック＆修復ツール (整合性点検 / 安全な修復)
+  registerDataLinkage(app, { query, pool });
 
   // C2: search-api からの read 移植(master / backlog / management / 他)を worker に登録。
   registerSharedReads(app, { query, backlogService, requirePortalSecret });

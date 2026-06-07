@@ -60,6 +60,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   // 統合修正: v2 一括取込のテンプレ DL も worker のみが提供する(GET)。
   //   これが無いと READ(search-api)へ振られて 404(発注書等のサンプルCSVが落ちない)。
   /^\/api\/imports\/v2\/templates(?:\/|\?|$)/,
+  // データモデル整理: 連結チェック(整合性点検)は worker のみ実装。
+  /^\/api\/admin\/data-linkage\/check(?:\?|$)/,
   // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ
   // (form_data 全件返却 + jsonb 操作のため)
   /^\/api\/documents\/pending-pdf(?:\?|$)/,
