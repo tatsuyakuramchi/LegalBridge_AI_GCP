@@ -9685,11 +9685,22 @@ ${details}
             paymentDate,
             count: 0,
             documentNumbers: [] as string[],
+            items: [] as any[],
           });
         }
         const g = groups.get(key);
         g.count += 1;
         g.documentNumbers.push(row.document_number);
+        // 担当者区切り表示の詳細用: 検収日・件名などを同梱。
+        //   検収日 = inspectionCompletedAt(検収完了日) を最優先、無ければ documentDate(発行日)。
+        g.items.push({
+          document_number: row.document_number,
+          inspection_date:
+            fd.inspectionCompletedAt || fd.documentDate || fd.deliveredAt || "",
+          title:
+            fd.description || fd.PROJECT_TITLE || fd.contract_title || "",
+          counterparty: fd.counterparty || fd.VENDOR_NAME || "",
+        });
       }
       res.json({ success: true, groups: Array.from(groups.values()) });
     } catch (e: any) {
