@@ -17,8 +17,6 @@ const tabs = [
   { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
   // 統合 P3-2: 条件明細 横断検索 (capability_line_items)
   { to: "/master/conditions", label: "条件明細", icon: ListChecks },
-  // 統合 P3-3: 請求権台帳 (受領予定 / サブライセンス等)
-  { to: "/master/sublicense", label: "請求権(受領)", icon: Coins },
   // 統合 P3-4: 分配構造マップ (作品中心の上流分配←当社←下流受領)
   { to: "/master/receivable-map", label: "分配マップ", icon: Network },
   // 統合 P3-5: 作品モデル (原作IP / 自社作品 / 契約 · v3)
