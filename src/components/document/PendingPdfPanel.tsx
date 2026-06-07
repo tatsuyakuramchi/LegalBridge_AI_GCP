@@ -24,6 +24,7 @@ import {
   Loader2,
   PackageOpen,
   Link2,
+  Pencil,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -88,6 +89,16 @@ export const PendingPdfPanel: React.FC = () => {
   const [mergeOpen, setMergeOpen] = React.useState(false)
   const [mergeTargetId, setMergeTargetId] = React.useState<number | null>(null)
   const [merging, setMerging] = React.useState(false)
+  // Phase 23: 一括修正(発注日 / 担当者 / 支払日 / 備考追記)
+  const [bulkEditOpen, setBulkEditOpen] = React.useState(false)
+  const [savingEdit, setSavingEdit] = React.useState(false)
+  const [staffOptions, setStaffOptions] = React.useState<
+    Array<{ email: string; staff_name: string; department?: string }>
+  >([])
+  const [editOrderDate, setEditOrderDate] = React.useState("")
+  const [editStaffEmail, setEditStaffEmail] = React.useState("")
+  const [editPaymentDate, setEditPaymentDate] = React.useState("")
+  const [editRemarks, setEditRemarks] = React.useState("")
   const [lastResult, setLastResult] = React.useState<{
     id: number
     document_number: string
@@ -444,6 +455,80 @@ export const PendingPdfPanel: React.FC = () => {
     }
   }
 
+  // Phase 23: 担当者プルダウン用にスタッフ一覧を取得
+  React.useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetch("/api/master/staff")
+        if (!res.ok) return
+        const rows = await res.json()
+        if (Array.isArray(rows)) {
+          setStaffOptions(
+            rows
+              .filter((r: any) => r?.email)
+              .map((r: any) => ({
+                email: r.email,
+                staff_name: r.staff_name || r.email,
+                department: r.department || "",
+              }))
+          )
+        }
+      } catch {
+        /* 取得失敗時は手入力にフォールバック */
+      }
+    })()
+  }, [])
+
+  const openBulkEdit = () => {
+    if (selectedRowObjs.length === 0) return
+    setEditOrderDate("")
+    setEditStaffEmail("")
+    setEditPaymentDate("")
+    setEditRemarks("")
+    setBulkEditOpen(true)
+  }
+
+  const runBulkEdit = async () => {
+    if (selectedRowObjs.length === 0) return
+    const set: Record<string, string> = {}
+    if (editOrderDate) set["発注日"] = editOrderDate
+    if (editStaffEmail) set.staff_email = editStaffEmail
+    if (editPaymentDate) set.payment_date = editPaymentDate
+    const remarks = editRemarks.trim()
+    if (Object.keys(set).length === 0 && !remarks) {
+      setError("更新する項目を1つ以上入力してください。")
+      return
+    }
+    setSavingEdit(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/documents/bulk-update-fields", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedRowObjs.map((r) => r.id),
+          set,
+          remarks_append: remarks,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      setBulkEditOpen(false)
+      setLastResult({
+        id: -1,
+        document_number: `一括修正: ${json.updated} 件を更新`,
+        action: "completed",
+      })
+      refresh()
+    } catch (e: any) {
+      setError(`一括修正失敗: ${e?.message || e}`)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* ヘッダ */}
@@ -598,6 +683,16 @@ export const PendingPdfPanel: React.FC = () => {
                 )}
               </span>
             )}
+            <button
+              type="button"
+              onClick={openBulkEdit}
+              disabled={bulkRunning || merging || selected.size === 0}
+              className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="選択した文書の 発注日 / 担当者 / 支払日 を一括修正し、備考を一律追記します"
+            >
+              <Pencil className="w-3 h-3" />
+              ✏️ 選択を一括修正
+            </button>
             <button
               type="button"
               onClick={openMerge}
@@ -788,6 +883,132 @@ export const PendingPdfPanel: React.FC = () => {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Phase 23: 一括修正モーダル (発注日 / 担当者 / 支払日 / 備考追記) */}
+      {bulkEditOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => !savingEdit && setBulkEditOpen(false)}
+        >
+          <div
+            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">
+              <Pencil className="w-4 h-4" />
+              <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+                選択 {selectedRowObjs.length} 件を一括修正
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                空欄の項目は変更しません。納品後に遡って発行する場合などに、
+                発注日・担当者・支払日をまとめて修正し、遡及理由を備考(自由備考)へ
+                一律で追記できます。
+              </p>
+
+              <label className="block space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  発注日
+                </span>
+                <input
+                  type="date"
+                  value={editOrderDate}
+                  onChange={(e) => setEditOrderDate(e.target.value)}
+                  disabled={savingEdit}
+                  className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                />
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  担当者
+                </span>
+                {staffOptions.length > 0 ? (
+                  <select
+                    value={editStaffEmail}
+                    onChange={(e) => setEditStaffEmail(e.target.value)}
+                    disabled={savingEdit}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  >
+                    <option value="">— 変更しない —</option>
+                    {staffOptions.map((s) => (
+                      <option key={s.email} value={s.email}>
+                        {s.staff_name}
+                        {s.department ? ` (${s.department})` : ""} · {s.email}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <input
+                    type="email"
+                    value={editStaffEmail}
+                    onChange={(e) => setEditStaffEmail(e.target.value)}
+                    placeholder="担当者の E-mail"
+                    disabled={savingEdit}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  />
+                )}
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  支払日（全明細に適用）
+                </span>
+                <input
+                  type="date"
+                  value={editPaymentDate}
+                  onChange={(e) => setEditPaymentDate(e.target.value)}
+                  disabled={savingEdit}
+                  className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                />
+              </label>
+
+              <label className="block space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  備考に追記（自由備考・遡及理由など）
+                </span>
+                <textarea
+                  value={editRemarks}
+                  onChange={(e) => setEditRemarks(e.target.value)}
+                  rows={3}
+                  placeholder="例: 納品検収後に発行のため、発注日を遡及して記載。"
+                  disabled={savingEdit}
+                  className="w-full text-xs font-mono bg-transparent border border-input rounded-sm py-1.5 px-2 focus:outline-none focus:border-foreground resize-y"
+                />
+                <span className="text-[10px] font-mono text-muted-foreground/70">
+                  既存の自由備考がある場合は改行して末尾に追記されます。
+                </span>
+              </label>
+            </div>
+            <div className="bg-muted/30 border-t border-border px-5 py-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkEditOpen(false)}
+                disabled={savingEdit}
+                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={runBulkEdit}
+                disabled={savingEdit}
+                className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {savingEdit ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Pencil className="w-3 h-3" />
+                )}
+                {savingEdit
+                  ? "更新中..."
+                  : `${selectedRowObjs.length} 件に適用`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
