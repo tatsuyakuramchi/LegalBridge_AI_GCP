@@ -304,6 +304,7 @@ export function WorkModelPanel() {
         <DetailModal
           type={modal.type}
           id={modal.id}
+          sourceIps={lists["source-ips"]}
           onClose={() => setModal(null)}
           onEdit={(obj) => setModal({ kind: "form", type: modal.type, mode: "edit", data: obj })}
         />
@@ -539,7 +540,7 @@ function SubTable({ label, rows }: { label: string; rows: any }) {
   )
 }
 
-function DetailModal({ type, id, onClose, onEdit }: { type: EntityType; id: number; onClose: () => void; onEdit: (obj: Row) => void }) {
+function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityType; id: number; sourceIps: Row[]; onClose: () => void; onEdit: (obj: Row) => void }) {
   const [obj, setObj] = React.useState<Row | null>(null)
   const [err, setErr] = React.useState<string | null>(null)
   React.useEffect(() => {
@@ -574,6 +575,11 @@ function DetailModal({ type, id, onClose, onEdit }: { type: EntityType; id: numb
                 ))}
               </dl>
               {SUBKEYS[type].map(([k, lbl]) => <React.Fragment key={k}><SubTable label={lbl} rows={obj[k]} /></React.Fragment>)}
+              {/* モデル(A): 自社作品に「利用許諾条件(条件明細・契約レス可)」を直接ぶら下げて
+                  原作IPと料率を紐付ける。作品先行→後から紐付けの実務フローに対応。 */}
+              {type === "works" && (
+                <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+              )}
             </>
           )}
         </DialogBody>
@@ -583,6 +589,139 @@ function DetailModal({ type, id, onClose, onEdit }: { type: EntityType; id: numb
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+// モデル(A): 作品 → 条件明細(契約レス可) → 原作IP の紐付けエディタ。
+//   /api/v3/works/:id/conditions と /api/v3/work-conditions/:cid を使用。
+function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps: Row[] }) {
+  const { showNotification } = useAppData()
+  const [rows, setRows] = React.useState<Row[] | null>(null)
+  const [busy, setBusy] = React.useState(false)
+  // 新規/編集フォーム(インライン)
+  const blank = { id: 0, source_work_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
+  const [form, setForm] = React.useState<Row>(blank)
+  const [ipq, setIpq] = React.useState("")
+
+  const load = React.useCallback(async () => {
+    try {
+      setRows(await getJson(`/api/v3/works/${workId}/conditions`))
+    } catch (e: any) {
+      showNotification(`条件明細の取得に失敗: ${e?.message || e}`, "error")
+      setRows([])
+    }
+  }, [workId, showNotification])
+  React.useEffect(() => { load() }, [load])
+
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }))
+  const reset = () => { setForm(blank); setIpq("") }
+
+  const save = async () => {
+    setBusy(true)
+    try {
+      const body = {
+        source_work_id: form.source_work_id ? Number(form.source_work_id) : null,
+        rate_pct: form.rate_pct === "" ? null : Number(form.rate_pct),
+        base_price_label: form.base_price_label || null,
+        calc_method: form.calc_method || "ROYALTY",
+        formula_text: form.formula_text || null,
+        region_language_label: form.region_language_label || null,
+      }
+      if (form.id) await sendJson("PUT", `/api/v3/work-conditions/${form.id}`, body)
+      else await sendJson("POST", `/api/v3/works/${workId}/conditions`, body)
+      showNotification(form.id ? "条件明細を更新しました" : "条件明細を追加しました", "success")
+      reset()
+      await load()
+    } catch (e: any) {
+      showNotification(`保存に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setBusy(false)
+    }
+  }
+  const del = async (cid: number) => {
+    if (!window.confirm("この条件明細を削除しますか？")) return
+    try {
+      await sendJson("DELETE", `/api/v3/work-conditions/${cid}`, {})
+      await load()
+    } catch (e: any) {
+      showNotification(`削除に失敗: ${e?.message || e}`, "error")
+    }
+  }
+
+  const ipLabel = (id: any) => {
+    const o = sourceIps.find((s) => String(s.id) === String(id))
+    return o ? `${o.source_code ? o.source_code + " : " : ""}${o.title || "#" + id}` : (id ? `#${id}` : "—")
+  }
+  const kw = ipq.trim().toLowerCase()
+  const ipList = (kw
+    ? sourceIps.filter((s) => `${s.source_code || ""} ${s.title || ""}`.toLowerCase().includes(kw))
+    : sourceIps
+  ).slice(0, 50)
+
+  return (
+    <div className="mt-4 border-t pt-3 space-y-2">
+      <div className="text-xs font-bold">利用許諾条件（条件明細・原作IP紐付け）</div>
+      {rows === null ? (
+        <div className="text-xs text-muted-foreground">読み込み中…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-[11px] text-muted-foreground">まだありません。下のフォームで追加してください。</div>
+      ) : (
+        <table className="w-full text-[11px] border-collapse">
+          <thead>
+            <tr className="text-muted-foreground text-left [&>th]:py-1 [&>th]:pr-2">
+              <th>#</th><th>原作IP</th><th>料率%</th><th>基準価格</th><th>計算式</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((c) => (
+              <tr key={c.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
+                <td>{c.condition_no}</td>
+                <td className="min-w-[120px]">{c.source_work_title ? `${c.source_work_code ? c.source_work_code + " : " : ""}${c.source_work_title}` : ipLabel(c.source_work_id)}</td>
+                <td>{c.rate_pct ?? "—"}</td>
+                <td>{c.base_price_label || "—"}</td>
+                <td className="max-w-[200px] truncate">{c.formula_text || "—"}</td>
+                <td className="whitespace-nowrap text-right">
+                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "" }) }}>編集</button>
+                  <button className="text-[10px] underline text-destructive" onClick={() => del(Number(c.id))}>削除</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {/* 追加/編集フォーム */}
+      <div className="rounded-sm border border-input bg-muted/20 p-2 space-y-2">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+          {form.id ? `条件 #${form.id} を編集` : "条件明細を追加"}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">原作IP</span>
+            <Input placeholder="原作IPを検索…" value={ipq} onChange={(e) => setIpq(e.target.value)} className="h-7 text-xs" />
+            <NativeSelect value={form.source_work_id} onChange={(e) => set("source_work_id", e.target.value)} className="h-7 text-xs">
+              <option value="">(なし)</option>
+              {ipList.map((s) => <option key={s.id} value={s.id}>{(s.source_code ? s.source_code + " : " : "") + (s.title || "#" + s.id)}</option>)}
+            </NativeSelect>
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">料率 (%)</span>
+            <Input type="number" step="0.0001" value={form.rate_pct} onChange={(e) => set("rate_pct", e.target.value)} className="h-7 text-xs" />
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">基準価格</span>
+            <Input value={form.base_price_label} onChange={(e) => set("base_price_label", e.target.value)} placeholder="上代 / 税抜定価 等" className="h-7 text-xs" />
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">計算式</span>
+            <Input value={form.formula_text} onChange={(e) => set("formula_text", e.target.value)} placeholder="上代 × 料率 × 製造数 等" className="h-7 text-xs" />
+          </label>
+        </div>
+        <div className="flex justify-end gap-2">
+          {form.id ? <Button variant="outline" size="sm" onClick={reset} disabled={busy}>キャンセル</Button> : null}
+          <Button size="sm" onClick={save} disabled={busy}>{busy ? "保存中…" : form.id ? "更新" : "＋追加"}</Button>
+        </div>
+      </div>
+    </div>
   )
 }
 
