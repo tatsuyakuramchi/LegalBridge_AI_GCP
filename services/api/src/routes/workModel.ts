@@ -397,13 +397,20 @@ export function registerWorkModelRoutes(
         );
         condNo = Number(m.rows[0]?.n) || 1;
       }
+      // 方向(condition_kind): 明示が無ければ所有 work の kind から既定化。
+      //   原作IP(licensed_in) → 利用許諾(license_in) / 自社作品(own) → サブライセンス(sublicense_out)。
+      let condKind = b.condition_kind ?? null;
+      if (!condKind) {
+        const wk = await query(`SELECT kind FROM works WHERE id = $1`, [id]);
+        condKind = wk.rows[0]?.kind === "licensed_in" ? "license_in" : "sublicense_out";
+      }
       const r = await query(
         `INSERT INTO capability_financial_conditions (
            work_id, capability_id, source_work_id, source_material_id, condition_no,
            region_language_label, calc_method, rate_pct, base_price_label,
            calc_period, calc_period_kind, calc_period_close_month, currency,
-           formula_text, payment_terms, mg_amount, ag_amount
-         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+           formula_text, payment_terms, mg_amount, ag_amount, condition_kind
+         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
          RETURNING *`,
         [
           id, b.source_work_id ?? null, b.source_material_id ?? null, condNo,
@@ -412,7 +419,7 @@ export function registerWorkModelRoutes(
           b.calc_period ?? null, b.calc_period_kind ?? null,
           b.calc_period_close_month ?? null, b.currency ?? "JPY",
           b.formula_text ?? null, b.payment_terms ?? null,
-          Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
+          Number(b.mg_amount) || 0, Number(b.ag_amount) || 0, condKind,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -431,7 +438,8 @@ export function registerWorkModelRoutes(
             rate_pct = $5, base_price_label = $6, calc_period = $7,
             calc_period_kind = $8, calc_period_close_month = $9, currency = $10,
             formula_text = $11, payment_terms = $12, mg_amount = $13, ag_amount = $14,
-            condition_no = COALESCE($15, condition_no), source_material_id = $16, updated_at = now()
+            condition_no = COALESCE($15, condition_no), source_material_id = $16,
+            condition_kind = COALESCE($17, condition_kind), updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
           cid, b.source_work_id ?? null, b.region_language_label ?? null,
@@ -439,7 +447,7 @@ export function registerWorkModelRoutes(
           b.calc_period ?? null, b.calc_period_kind ?? null, b.calc_period_close_month ?? null,
           b.currency ?? "JPY", b.formula_text ?? null, b.payment_terms ?? null,
           Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
-          b.condition_no ?? null, b.source_material_id ?? null,
+          b.condition_no ?? null, b.source_material_id ?? null, b.condition_kind ?? null,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });

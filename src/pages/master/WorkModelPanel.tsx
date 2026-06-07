@@ -595,14 +595,16 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
               {type === "source-ips" && (
                 <>
                   <MaterialsEditor workId={id} />
-                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                  {/* 原作IP = 利用許諾条件(IN): 原作IPを借りる条件(我々が支払う料率)。 */}
+                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} kind="license_in" />
                 </>
               )}
               {type === "works" && (
                 <>
                   {/* 当社帰属(業務委託成果物=マテリアル)の置き場。検収済の業務委託明細から生成。 */}
                   <MaterialsEditor workId={id} />
-                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                  {/* 自社作品 = サブライセンス条件(OUT): 作品を再許諾する条件(我々が受け取る料率)。 */}
+                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} kind="sublicense_out" />
                 </>
               )}
             </>
@@ -805,7 +807,13 @@ function MaterialsEditor({ workId }: { workId: number }) {
 
 // モデル(A): 作品 → 条件明細(契約レス可) → 原作IP の紐付けエディタ。
 //   /api/v3/works/:id/conditions と /api/v3/work-conditions/:cid を使用。
-function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps: Row[] }) {
+function WorkConditionsEditor({ workId, sourceIps, kind }: { workId: number; sourceIps: Row[]; kind: "license_in" | "sublicense_out" }) {
+  const isIn = kind === "license_in"
+  // 方向で見出し・補足を出し分け。利用許諾(IN)=原作IPを借りる / サブライセンス(OUT)=作品を再許諾。
+  const sectionTitle = isIn ? "利用許諾条件（IN・原作IPからの許諾）" : "サブライセンス条件（OUT・自社作品の再許諾）"
+  const sectionNote = isIn
+    ? "原作IPを借りる条件（当社が支払う料率）。原作IP＋素材を参照します。"
+    : "自社作品を第三者へ再許諾する条件（当社が受け取る料率）。原資となる原作IP＋素材も任意で参照できます。"
   const { showNotification } = useAppData()
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [busy, setBusy] = React.useState(false)
@@ -851,6 +859,7 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
     setBusy(true)
     try {
       const body = {
+        condition_kind: kind,
         source_work_id: form.source_work_id ? Number(form.source_work_id) : null,
         source_material_id: form.source_material_id ? Number(form.source_material_id) : null,
         rate_pct: form.rate_pct === "" ? null : Number(form.rate_pct),
@@ -877,6 +886,7 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
     try {
       for (const ipId of sel) {
         await sendJson("POST", `/api/v3/works/${workId}/conditions`, {
+          condition_kind: kind,
           source_work_id: ipId,
           rate_pct: bulk.rate_pct === "" ? null : Number(bulk.rate_pct),
           base_price_label: bulk.base_price_label || null,
@@ -920,7 +930,13 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
 
   return (
     <div className="mt-4 border-t pt-3 space-y-2">
-      <div className="text-xs font-bold">利用許諾条件（条件明細・原作IP紐付け）</div>
+      <div className="text-xs font-bold">
+        {sectionTitle}
+        <span className={`ml-2 align-middle text-[9px] font-mono px-1.5 py-0.5 rounded-sm ${isIn ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+          {isIn ? "IN" : "OUT"}
+        </span>
+      </div>
+      <p className="text-[10px] text-muted-foreground">{sectionNote}</p>
       {rows === null ? (
         <div className="text-xs text-muted-foreground">読み込み中…</div>
       ) : rows.length === 0 ? (
