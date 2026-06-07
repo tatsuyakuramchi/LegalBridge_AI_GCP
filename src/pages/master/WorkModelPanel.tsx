@@ -576,11 +576,16 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
               {SUBKEYS[type].map(([k, lbl]) => <React.Fragment key={k}><SubTable label={lbl} rows={obj[k]} /></React.Fragment>)}
               {/* モデル(A): 自社作品に「利用許諾条件(条件明細・契約レス可)」を直接ぶら下げて
                   原作IPと料率を紐付ける。作品先行→後から紐付けの実務フローに対応。 */}
-              {type === "works" && (
+              {/* モデル(あ): 素材(マテリアル)は原作IPに帰属。原作IP詳細に素材エディタ。
+                  条件明細は原作IP・自社作品どちらにも持てる(原作IP＋素材を参照)。 */}
+              {type === "source-ips" && (
                 <>
                   <MaterialsEditor workId={id} />
                   <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
                 </>
+              )}
+              {type === "works" && (
+                <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
               )}
             </>
           )}
@@ -776,9 +781,11 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [busy, setBusy] = React.useState(false)
   // 新規/編集フォーム(インライン)
-  const blank = { id: 0, source_work_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
+  const blank = { id: 0, source_work_id: "", source_material_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
   const [form, setForm] = React.useState<Row>(blank)
   const [ipq, setIpq] = React.useState("")
+  // 選択した原作IPの素材(マテリアル)候補
+  const [srcMats, setSrcMats] = React.useState<Row[]>([])
   // 複数選択まとめて追加
   const [sel, setSel] = React.useState<Set<number>>(new Set())
   const [bulk, setBulk] = React.useState({ rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "" })
@@ -794,6 +801,20 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
   }, [workId, showNotification])
   React.useEffect(() => { load() }, [load])
 
+  // 選択中の原作IP(source_work_id)の素材一覧を取得 → source_material_id 選択用
+  React.useEffect(() => {
+    const sid = Number(form.source_work_id)
+    if (!sid) { setSrcMats([]); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const d = await getJson(`/api/v3/works/${sid}/materials`)
+        if (!cancelled) setSrcMats(Array.isArray(d) ? d : [])
+      } catch { if (!cancelled) setSrcMats([]) }
+    })()
+    return () => { cancelled = true }
+  }, [form.source_work_id])
+
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }))
   const reset = () => { setForm(blank); setIpq("") }
 
@@ -802,6 +823,7 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
     try {
       const body = {
         source_work_id: form.source_work_id ? Number(form.source_work_id) : null,
+        source_material_id: form.source_material_id ? Number(form.source_material_id) : null,
         rate_pct: form.rate_pct === "" ? null : Number(form.rate_pct),
         base_price_label: form.base_price_label || null,
         calc_method: form.calc_method || "ROYALTY",
@@ -885,12 +907,15 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
             {rows.map((c) => (
               <tr key={c.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
                 <td>{c.condition_no}</td>
-                <td className="min-w-[120px]">{c.source_work_title ? `${c.source_work_code ? c.source_work_code + " : " : ""}${c.source_work_title}` : ipLabel(c.source_work_id)}</td>
+                <td className="min-w-[120px]">
+                  {c.source_work_title ? `${c.source_work_code ? c.source_work_code + " : " : ""}${c.source_work_title}` : ipLabel(c.source_work_id)}
+                  {c.source_material_name ? <span className="text-muted-foreground"> / {c.source_material_name}</span> : null}
+                </td>
                 <td>{c.rate_pct ?? "—"}</td>
                 <td>{c.base_price_label || "—"}</td>
                 <td className="max-w-[200px] truncate">{c.formula_text || "—"}</td>
                 <td className="whitespace-nowrap text-right">
-                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "" }) }}>編集</button>
+                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", source_material_id: c.source_material_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "" }) }}>編集</button>
                   <button className="text-[10px] underline text-destructive" onClick={() => del(Number(c.id))}>削除</button>
                 </td>
               </tr>
@@ -940,9 +965,16 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
           <label className="space-y-0.5">
             <span className="text-[10px] text-muted-foreground">原作IP</span>
             <Input placeholder="原作IPを検索…" value={ipq} onChange={(e) => setIpq(e.target.value)} className="h-7 text-xs" />
-            <NativeSelect value={form.source_work_id} onChange={(e) => set("source_work_id", e.target.value)} className="h-7 text-xs">
+            <NativeSelect value={form.source_work_id} onChange={(e) => { set("source_work_id", e.target.value); set("source_material_id", "") }} className="h-7 text-xs">
               <option value="">(なし)</option>
               {ipList.map((s) => <option key={s.id} value={s.id}>{(s.source_code ? s.source_code + " : " : "") + (s.title || "#" + s.id)}</option>)}
+            </NativeSelect>
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">素材（原作IPの）</span>
+            <NativeSelect value={form.source_material_id} onChange={(e) => set("source_material_id", e.target.value)} disabled={!form.source_work_id} className="h-7 text-xs">
+              <option value="">{form.source_work_id ? "(指定なし)" : "(先に原作IPを選択)"}</option>
+              {srcMats.map((m) => <option key={m.id} value={m.id}>{m.material_name || ("素材#" + m.id)}{m.material_type ? ` (${m.material_type})` : ""}</option>)}
             </NativeSelect>
           </label>
           <label className="space-y-0.5">
