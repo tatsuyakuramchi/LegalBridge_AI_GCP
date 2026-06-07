@@ -760,7 +760,14 @@ function FormModal({
           rows
             .map((w: any) =>
               w.work_id
-                ? { kind: "work" as const, id: Number(w.work_id), role: w.role || "" }
+                ? {
+                    // P2-5: 原作IPも works(licensed_in)。work_kind で種別を判定。
+                    kind: (w.work_kind === "licensed_in" ? "source_ip" : "work") as
+                      | "work"
+                      | "source_ip",
+                    id: Number(w.work_id),
+                    role: w.role || "",
+                  }
                 : w.source_ip_id
                   ? { kind: "source_ip" as const, id: Number(w.source_ip_id), role: w.role || "" }
                   : null
@@ -811,11 +818,12 @@ function FormModal({
       showNotification(`${type === "contracts" ? "契約名" : "タイトル"}は必須です`, "error")
       return
     }
-    // (B) 契約は対象作品(contract_works)を works[] として同梱
+    // (B)/(P2-5) 契約の対象作品(contract_works)。原作IPも works(licensed_in)に統合済みのため
+    //   作品・原作IP いずれも work_id で送る(id は works.id)。
     if (type === "contracts") {
       payload.works = contractWorks.map((r) => ({
-        work_id: r.kind === "work" ? r.id : null,
-        source_ip_id: r.kind === "source_ip" ? r.id : null,
+        work_id: r.id,
+        source_ip_id: null,
         role: r.role.trim() || null,
       }))
     }
