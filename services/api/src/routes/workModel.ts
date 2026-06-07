@@ -366,9 +366,11 @@ export function registerWorkModelRoutes(
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(
-        `SELECT cfc.*, sw.title AS source_work_title, sw.work_code AS source_work_code
+        `SELECT cfc.*, sw.title AS source_work_title, sw.work_code AS source_work_code,
+                sm.material_name AS source_material_name
            FROM capability_financial_conditions cfc
            LEFT JOIN works sw ON sw.id = cfc.source_work_id
+           LEFT JOIN work_materials sm ON sm.id = cfc.source_material_id
           WHERE cfc.work_id = $1
           ORDER BY cfc.condition_no ASC, cfc.id ASC`,
         [id]
@@ -395,14 +397,14 @@ export function registerWorkModelRoutes(
       }
       const r = await query(
         `INSERT INTO capability_financial_conditions (
-           work_id, capability_id, source_work_id, condition_no,
+           work_id, capability_id, source_work_id, source_material_id, condition_no,
            region_language_label, calc_method, rate_pct, base_price_label,
            calc_period, calc_period_kind, calc_period_close_month, currency,
            formula_text, payment_terms, mg_amount, ag_amount
-         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
          RETURNING *`,
         [
-          id, b.source_work_id ?? null, condNo,
+          id, b.source_work_id ?? null, b.source_material_id ?? null, condNo,
           b.region_language_label ?? null, b.calc_method ?? "ROYALTY",
           b.rate_pct ?? null, b.base_price_label ?? null,
           b.calc_period ?? null, b.calc_period_kind ?? null,
@@ -427,7 +429,7 @@ export function registerWorkModelRoutes(
             rate_pct = $5, base_price_label = $6, calc_period = $7,
             calc_period_kind = $8, calc_period_close_month = $9, currency = $10,
             formula_text = $11, payment_terms = $12, mg_amount = $13, ag_amount = $14,
-            condition_no = COALESCE($15, condition_no), updated_at = now()
+            condition_no = COALESCE($15, condition_no), source_material_id = $16, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
           cid, b.source_work_id ?? null, b.region_language_label ?? null,
@@ -435,7 +437,7 @@ export function registerWorkModelRoutes(
           b.calc_period ?? null, b.calc_period_kind ?? null, b.calc_period_close_month ?? null,
           b.currency ?? "JPY", b.formula_text ?? null, b.payment_terms ?? null,
           Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
-          b.condition_no ?? null,
+          b.condition_no ?? null, b.source_material_id ?? null,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
@@ -467,10 +469,14 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(
         `SELECT wm.*, v.vendor_name AS rights_holder_name,
-                c.condition_no AS license_condition_no
+                c.condition_no AS license_condition_no,
+                sli.item_name AS service_line_name,
+                scc.document_number AS service_doc_number
            FROM work_materials wm
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
            LEFT JOIN capability_financial_conditions c ON c.id = wm.license_condition_id
+           LEFT JOIN capability_line_items sli ON sli.id = wm.service_line_item_id
+           LEFT JOIN contract_capabilities scc ON scc.id = sli.capability_id
           WHERE wm.work_id = $1
           ORDER BY wm.id ASC`,
         [id]
@@ -531,6 +537,32 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(`DELETE FROM work_materials WHERE id = $1`, [mid]);
       res.json({ ok: true, deleted: r.rowCount || 0 });
+    } catch (e) { fail(res, e); }
+  });
+
+  // 業務委託明細(capability_line_items)の候補検索 — 当社帰属マテリアルの紐付け用。
+  //   発注書(purchase_order) または fee_type='production'(制作対価) の明細を対象。
+  app.get("/api/v3/service-line-items", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const params: any[] = [];
+      let where = `(cc.record_type = 'purchase_order' OR cli.fee_type = 'production')`;
+      if (q) {
+        params.push(`%${q}%`);
+        where += ` AND (cli.item_name ILIKE $1 OR cc.document_number ILIKE $1 OR v.vendor_name ILIKE $1)`;
+      }
+      const r = await query(
+        `SELECT cli.id, cli.item_name, cli.amount_ex_tax, cli.work_id,
+                cc.document_number, cc.contract_title, v.vendor_name
+           FROM capability_line_items cli
+           JOIN contract_capabilities cc ON cc.id = cli.capability_id
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE ${where}
+          ORDER BY cli.id DESC
+          LIMIT 50`,
+        params
+      );
+      res.json(r.rows);
     } catch (e) { fail(res, e); }
   });
 

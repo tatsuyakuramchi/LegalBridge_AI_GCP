@@ -576,11 +576,16 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
               {SUBKEYS[type].map(([k, lbl]) => <React.Fragment key={k}><SubTable label={lbl} rows={obj[k]} /></React.Fragment>)}
               {/* モデル(A): 自社作品に「利用許諾条件(条件明細・契約レス可)」を直接ぶら下げて
                   原作IPと料率を紐付ける。作品先行→後から紐付けの実務フローに対応。 */}
-              {type === "works" && (
+              {/* モデル(あ): 素材(マテリアル)は原作IPに帰属。原作IP詳細に素材エディタ。
+                  条件明細は原作IP・自社作品どちらにも持てる(原作IP＋素材を参照)。 */}
+              {type === "source-ips" && (
                 <>
                   <MaterialsEditor workId={id} />
                   <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
                 </>
+              )}
+              {type === "works" && (
+                <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
               )}
             </>
           )}
@@ -611,15 +616,31 @@ function MaterialsEditor({ workId }: { workId: number }) {
   const { showNotification } = useAppData()
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [conds, setConds] = React.useState<Row[]>([])
-  const blank = { id: 0, material_name: "", material_type: "", rights_type: "", rights_holder_vendor_id: "", is_royalty_bearing: false, license_condition_id: "" }
+  const blank = { id: 0, material_name: "", material_type: "", rights_type: "", rights_holder_vendor_id: "", is_royalty_bearing: false, license_condition_id: "", service_line_item_id: "" }
   const [form, setForm] = React.useState<Row>(blank)
   const [busy, setBusy] = React.useState(false)
+  const [svc, setSvc] = React.useState<Row[]>([])
+  const [svcq, setSvcq] = React.useState("")
 
   const load = React.useCallback(async () => {
     try { setRows(await getJson(`/api/v3/works/${workId}/materials`)) } catch { setRows([]) }
     try { setConds(await getJson(`/api/v3/works/${workId}/conditions`)) } catch { setConds([]) }
   }, [workId])
   React.useEffect(() => { load() }, [load])
+
+  // 当社帰属(owned/譲渡)選択時に業務委託明細候補を取得(検索語変化でも再取得)
+  const ownSelected = !!form.rights_type && !isCounterpartyRights(form.rights_type)
+  React.useEffect(() => {
+    if (!ownSelected) return
+    let cancelled = false
+    ;(async () => {
+      try {
+        const d = await getJson(`/api/v3/service-line-items?q=${encodeURIComponent(svcq)}`)
+        if (!cancelled) setSvc(Array.isArray(d) ? d : [])
+      } catch { if (!cancelled) setSvc([]) }
+    })()
+    return () => { cancelled = true }
+  }, [ownSelected, svcq])
 
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }))
   const reset = () => setForm(blank)
@@ -634,6 +655,7 @@ function MaterialsEditor({ workId }: { workId: number }) {
         rights_holder_vendor_id: form.rights_holder_vendor_id ? Number(form.rights_holder_vendor_id) : null,
         is_royalty_bearing: !!form.is_royalty_bearing,
         license_condition_id: cp && form.license_condition_id ? Number(form.license_condition_id) : null,
+        service_line_item_id: !cp && form.rights_type && form.service_line_item_id ? Number(form.service_line_item_id) : null,
       }
       if (form.id) await sendJson("PUT", `/api/v3/work-materials/${form.id}`, body)
       else await sendJson("POST", `/api/v3/works/${workId}/materials`, body)
@@ -674,10 +696,14 @@ function MaterialsEditor({ workId }: { workId: number }) {
                 <td>{rtLabel(m.rights_type)}</td>
                 <td className="min-w-[100px]">{m.rights_holder_name || (m.rights_holder_vendor_id ? `#${m.rights_holder_vendor_id}` : "—")}</td>
                 <td className="text-[10px]">
-                  {m.license_condition_id ? `利用許諾 #${m.license_condition_no ?? m.license_condition_id}` : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "業務委託"}
+                  {m.license_condition_id
+                    ? `利用許諾 #${m.license_condition_no ?? m.license_condition_id}`
+                    : m.service_line_item_id
+                      ? `業務委託 ${m.service_doc_number || ""}${m.service_line_name ? "/" + m.service_line_name : ""}`
+                      : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "(業務委託未設定)"}
                 </td>
                 <td className="whitespace-nowrap text-right">
-                  <button className="text-[10px] underline mr-2" onClick={() => setForm({ id: m.id, material_name: m.material_name || "", material_type: m.material_type || "", rights_type: m.rights_type || "", rights_holder_vendor_id: m.rights_holder_vendor_id || "", is_royalty_bearing: !!m.is_royalty_bearing, license_condition_id: m.license_condition_id || "" })}>編集</button>
+                  <button className="text-[10px] underline mr-2" onClick={() => setForm({ id: m.id, material_name: m.material_name || "", material_type: m.material_type || "", rights_type: m.rights_type || "", rights_holder_vendor_id: m.rights_holder_vendor_id || "", is_royalty_bearing: !!m.is_royalty_bearing, license_condition_id: m.license_condition_id || "", service_line_item_id: m.service_line_item_id || "" })}>編集</button>
                   <button className="text-[10px] underline text-destructive" onClick={() => del(Number(m.id))}>削除</button>
                 </td>
               </tr>
@@ -721,7 +747,19 @@ function MaterialsEditor({ workId }: { workId: number }) {
             {conds.length === 0 && <span className="text-[10px] text-amber-600">先に「利用許諾条件」を追加してください。</span>}
           </label>
         ) : form.rights_type ? (
-          <p className="text-[10px] text-muted-foreground">当社帰属のため業務委託でつなぎます（業務委託明細リンクは今後対応）。</p>
+          <label className="block space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">つなぐ業務委託明細（当社帰属＝制作対価）</span>
+            <Input placeholder="発注書番号・取引先・品目で検索…" value={svcq} onChange={(e) => setSvcq(e.target.value)} className="h-7 text-xs" />
+            <NativeSelect value={form.service_line_item_id} onChange={(e) => set("service_line_item_id", e.target.value)} className="h-7 text-xs">
+              <option value="">(未設定)</option>
+              {svc.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {`${s.document_number || "—"} / ${s.item_name || "明細#" + s.id}${s.vendor_name ? " / " + s.vendor_name : ""}${s.amount_ex_tax != null ? " / ¥" + Number(s.amount_ex_tax).toLocaleString("ja-JP") : ""}`}
+                </option>
+              ))}
+            </NativeSelect>
+            {svc.length === 0 && <span className="text-[10px] text-amber-600">候補がありません（発注書/業務委託明細を先に作成）。</span>}
+          </label>
         ) : null}
         <label className="flex items-center gap-2 text-[11px]">
           <input type="checkbox" className="h-3 w-3" checked={!!form.is_royalty_bearing} onChange={(e) => set("is_royalty_bearing", e.target.checked)} />
@@ -743,9 +781,11 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [busy, setBusy] = React.useState(false)
   // 新規/編集フォーム(インライン)
-  const blank = { id: 0, source_work_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
+  const blank = { id: 0, source_work_id: "", source_material_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
   const [form, setForm] = React.useState<Row>(blank)
   const [ipq, setIpq] = React.useState("")
+  // 選択した原作IPの素材(マテリアル)候補
+  const [srcMats, setSrcMats] = React.useState<Row[]>([])
   // 複数選択まとめて追加
   const [sel, setSel] = React.useState<Set<number>>(new Set())
   const [bulk, setBulk] = React.useState({ rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "" })
@@ -761,6 +801,20 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
   }, [workId, showNotification])
   React.useEffect(() => { load() }, [load])
 
+  // 選択中の原作IP(source_work_id)の素材一覧を取得 → source_material_id 選択用
+  React.useEffect(() => {
+    const sid = Number(form.source_work_id)
+    if (!sid) { setSrcMats([]); return }
+    let cancelled = false
+    ;(async () => {
+      try {
+        const d = await getJson(`/api/v3/works/${sid}/materials`)
+        if (!cancelled) setSrcMats(Array.isArray(d) ? d : [])
+      } catch { if (!cancelled) setSrcMats([]) }
+    })()
+    return () => { cancelled = true }
+  }, [form.source_work_id])
+
   const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }))
   const reset = () => { setForm(blank); setIpq("") }
 
@@ -769,6 +823,7 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
     try {
       const body = {
         source_work_id: form.source_work_id ? Number(form.source_work_id) : null,
+        source_material_id: form.source_material_id ? Number(form.source_material_id) : null,
         rate_pct: form.rate_pct === "" ? null : Number(form.rate_pct),
         base_price_label: form.base_price_label || null,
         calc_method: form.calc_method || "ROYALTY",
@@ -852,12 +907,15 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
             {rows.map((c) => (
               <tr key={c.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
                 <td>{c.condition_no}</td>
-                <td className="min-w-[120px]">{c.source_work_title ? `${c.source_work_code ? c.source_work_code + " : " : ""}${c.source_work_title}` : ipLabel(c.source_work_id)}</td>
+                <td className="min-w-[120px]">
+                  {c.source_work_title ? `${c.source_work_code ? c.source_work_code + " : " : ""}${c.source_work_title}` : ipLabel(c.source_work_id)}
+                  {c.source_material_name ? <span className="text-muted-foreground"> / {c.source_material_name}</span> : null}
+                </td>
                 <td>{c.rate_pct ?? "—"}</td>
                 <td>{c.base_price_label || "—"}</td>
                 <td className="max-w-[200px] truncate">{c.formula_text || "—"}</td>
                 <td className="whitespace-nowrap text-right">
-                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "" }) }}>編集</button>
+                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", source_material_id: c.source_material_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "" }) }}>編集</button>
                   <button className="text-[10px] underline text-destructive" onClick={() => del(Number(c.id))}>削除</button>
                 </td>
               </tr>
@@ -907,9 +965,16 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
           <label className="space-y-0.5">
             <span className="text-[10px] text-muted-foreground">原作IP</span>
             <Input placeholder="原作IPを検索…" value={ipq} onChange={(e) => setIpq(e.target.value)} className="h-7 text-xs" />
-            <NativeSelect value={form.source_work_id} onChange={(e) => set("source_work_id", e.target.value)} className="h-7 text-xs">
+            <NativeSelect value={form.source_work_id} onChange={(e) => { set("source_work_id", e.target.value); set("source_material_id", "") }} className="h-7 text-xs">
               <option value="">(なし)</option>
               {ipList.map((s) => <option key={s.id} value={s.id}>{(s.source_code ? s.source_code + " : " : "") + (s.title || "#" + s.id)}</option>)}
+            </NativeSelect>
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">素材（原作IPの）</span>
+            <NativeSelect value={form.source_material_id} onChange={(e) => set("source_material_id", e.target.value)} disabled={!form.source_work_id} className="h-7 text-xs">
+              <option value="">{form.source_work_id ? "(指定なし)" : "(先に原作IPを選択)"}</option>
+              {srcMats.map((m) => <option key={m.id} value={m.id}>{m.material_name || ("素材#" + m.id)}{m.material_type ? ` (${m.material_type})` : ""}</option>)}
             </NativeSelect>
           </label>
           <label className="space-y-0.5">
