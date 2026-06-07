@@ -23,6 +23,9 @@ import {
   AlertTriangle,
   Loader2,
   PackageOpen,
+  Link2,
+  Pencil,
+  Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -72,6 +75,49 @@ export const PendingPdfPanel: React.FC = () => {
   const [busyRows, setBusyRows] = React.useState<Record<number, string>>({})
   // Phase 16: 行ごとの直近 PDF 生成エラーを永続表示 (トーストでは見逃すため)
   const [rowErrors, setRowErrors] = React.useState<Record<number, string>>({})
+  // Phase 23: 一括 PDF 生成 — チェックした行の drive_link をまとめて作る。
+  //   選択行を逐次 (sequential) で regenerate-pdf に流す。
+  //   並列だと Drive 連携 / Backlog のレート制限に当たりやすいので 1 件ずつ。
+  const [selected, setSelected] = React.useState<Set<number>>(new Set())
+  const [bulkRunning, setBulkRunning] = React.useState(false)
+  const [bulkProgress, setBulkProgress] = React.useState<{
+    done: number
+    total: number
+    okCount: number
+    failCount: number
+  } | null>(null)
+  // Phase 23: 発注書統合 — 選択した発注書を1枚(複数明細)にまとめる。
+  const [mergeOpen, setMergeOpen] = React.useState(false)
+  const [mergeTargetId, setMergeTargetId] = React.useState<number | null>(null)
+  const [merging, setMerging] = React.useState(false)
+  // Phase 23: 一括修正(発注日 / 担当者 / 支払日 / 備考追記)
+  const [bulkEditOpen, setBulkEditOpen] = React.useState(false)
+  const [savingEdit, setSavingEdit] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
+  const [forceDelete, setForceDelete] = React.useState(false)
+  const [staffOptions, setStaffOptions] = React.useState<
+    Array<{ email: string; staff_name: string; department?: string }>
+  >([])
+  const [editOrderDate, setEditOrderDate] = React.useState("")
+  const [editStaffEmail, setEditStaffEmail] = React.useState("")
+  const [editPaymentDate, setEditPaymentDate] = React.useState("")
+  const [editInspectionDate, setEditInspectionDate] = React.useState("")
+  const [editRemarks, setEditRemarks] = React.useState("")
+  // 担当者 検索コンボボックス
+  const [staffSearch, setStaffSearch] = React.useState("")
+  const [staffDropdownOpen, setStaffDropdownOpen] = React.useState(false)
+  const filteredStaff = React.useMemo(() => {
+    const q = staffSearch.trim().toLowerCase()
+    const base = q
+      ? staffOptions.filter(
+          (s) =>
+            s.staff_name.toLowerCase().includes(q) ||
+            s.email.toLowerCase().includes(q) ||
+            (s.department || "").toLowerCase().includes(q)
+        )
+      : staffOptions
+    return base.slice(0, 50)
+  }, [staffOptions, staffSearch])
   const [lastResult, setLastResult] = React.useState<{
     id: number
     document_number: string
@@ -250,6 +296,348 @@ export const PendingPdfPanel: React.FC = () => {
     return data.rows.filter((r) => r.template_type === selectedTpl)
   }, [data, selectedTpl])
 
+  // Phase 23: 選択トグル
+  const toggleRow = (id: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // 表示中 (タブで絞り込んだ) 行をまとめて選択 / 解除
+  const allVisibleSelected =
+    filteredRows.length > 0 && filteredRows.every((r) => selected.has(r.id))
+  const toggleSelectAllVisible = () => {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      if (allVisibleSelected) {
+        filteredRows.forEach((r) => next.delete(r.id))
+      } else {
+        filteredRows.forEach((r) => next.add(r.id))
+      }
+      return next
+    })
+  }
+
+  // Phase 23: 選択をまとめて発行 — 1 件ずつ regenerate-pdf を呼ぶ。
+  //   成功した行は一覧から消し、失敗した行は rowErrors に残して選択も維持する
+  //   (あとで「修正して再試行」できるように)。
+  const bulkGenerate = async () => {
+    const targets = filteredRows.filter((r) => selected.has(r.id))
+    if (targets.length === 0) return
+    if (
+      !window.confirm(
+        `選択した ${targets.length} 件の PDF をまとめて生成します。\n` +
+          `1 件ずつ Drive に出力するため、件数によっては数分かかります。よろしいですか?`
+      )
+    )
+      return
+    setBulkRunning(true)
+    setBulkProgress({ done: 0, total: targets.length, okCount: 0, failCount: 0 })
+    setError(null)
+    let okCount = 0
+    let failCount = 0
+    for (let i = 0; i < targets.length; i++) {
+      const row = targets[i]
+      setBusyRows((b) => ({ ...b, [row.id]: "generating" }))
+      setRowErrors((e) => {
+        const copy = { ...e }
+        delete copy[row.id]
+        return copy
+      })
+      try {
+        const res = await fetch(`/api/documents/${row.id}/regenerate-pdf`, {
+          method: "POST",
+        })
+        const json = await res.json()
+        if (!res.ok || !json.ok) {
+          throw new Error(json.error || `HTTP ${res.status}`)
+        }
+        okCount++
+        // 成功 → 一覧 / 選択から除外
+        setData((d) =>
+          d
+            ? {
+                ...d,
+                rows: d.rows.filter((r) => r.id !== row.id),
+                total: d.total - 1,
+              }
+            : d
+        )
+        setSelected((prev) => {
+          const next = new Set(prev)
+          next.delete(row.id)
+          return next
+        })
+      } catch (e: any) {
+        failCount++
+        setRowErrors((prev) => ({
+          ...prev,
+          [row.id]: String(e?.message || e),
+        }))
+      } finally {
+        setBusyRows((b) => {
+          const copy = { ...b }
+          delete copy[row.id]
+          return copy
+        })
+        setBulkProgress({
+          done: i + 1,
+          total: targets.length,
+          okCount,
+          failCount,
+        })
+      }
+    }
+    setBulkRunning(false)
+    setLastResult({
+      id: -1,
+      document_number: `一括生成: 成功 ${okCount} 件 / 失敗 ${failCount} 件`,
+      action: "generated",
+    })
+  }
+
+  // Phase 23: 統合対象として選択されている行(タブをまたいで data.rows から拾う)
+  const selectedRowObjs = React.useMemo(
+    () => (data ? data.rows.filter((r) => selected.has(r.id)) : []),
+    [data, selected]
+  )
+
+  // 統合できない理由(空文字なら統合可)
+  const mergeDisabledReason = React.useMemo(() => {
+    if (selectedRowObjs.length < 2) return "2件以上の発注書を選択してください"
+    if (!selectedRowObjs.every((r) => r.template_type === "purchase_order"))
+      return "発注書(purchase_order)のみ統合できます"
+    const vendors = new Set(
+      selectedRowObjs.map((r) => (r.summary.counterparty || "").trim())
+    )
+    if (vendors.size !== 1 || (selectedRowObjs[0].summary.counterparty || "").trim() === "")
+      return "同じ取引先の発注書のみ統合できます"
+    return ""
+  }, [selectedRowObjs])
+  const mergeEligible = mergeDisabledReason === ""
+
+  // Phase 23: 一括修正の対象種別を判定(検収書 / 発注書 / 混在)
+  const editAllInspection =
+    selectedRowObjs.length > 0 &&
+    selectedRowObjs.every((r) => r.template_type === "inspection_certificate")
+  const editHasInspection = selectedRowObjs.some(
+    (r) => r.template_type === "inspection_certificate"
+  )
+  const editMixed = editHasInspection && !editAllInspection
+
+  const openMerge = () => {
+    if (!mergeEligible) return
+    setMergeTargetId(selectedRowObjs[0].id)
+    setMergeOpen(true)
+  }
+
+  const runMerge = async () => {
+    const target = selectedRowObjs.find((r) => r.id === mergeTargetId)
+    if (!target) return
+    const sourceRows = selectedRowObjs.filter((r) => r.id !== target.id)
+    if (sourceRows.length === 0) return
+    setMerging(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/imports/v2/merge-pos", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_document_number: target.document_number,
+          source_document_numbers: sourceRows.map((r) => r.document_number),
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      // 統合元の行を一覧から除外し、選択をクリア
+      const sourceIds = new Set(sourceRows.map((r) => r.id))
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              rows: d.rows.filter((r) => !sourceIds.has(r.id)),
+              total: d.total - sourceIds.size,
+            }
+          : d
+      )
+      setSelected(new Set())
+      setMergeOpen(false)
+      setLastResult({
+        id: target.id,
+        document_number: `${target.document_number} に ${json.merged_count} 件を統合 (明細 ${json.line_item_count} 行 / 税抜 ¥${Number(
+          json.amount_ex_tax || 0
+        ).toLocaleString("ja-JP")})`,
+        action: "completed",
+      })
+      // target の明細数サマリを最新化
+      refresh()
+    } catch (e: any) {
+      setError(`統合失敗: ${e?.message || e}`)
+    } finally {
+      setMerging(false)
+    }
+  }
+
+  // Phase 23: 担当者プルダウン用にスタッフ一覧を取得
+  React.useEffect(() => {
+    ;(async () => {
+      try {
+        const res = await fetch("/api/master/staff")
+        if (!res.ok) return
+        const rows = await res.json()
+        if (Array.isArray(rows)) {
+          setStaffOptions(
+            rows
+              .filter((r: any) => r?.email)
+              .map((r: any) => ({
+                email: r.email,
+                staff_name: r.staff_name || r.email,
+                department: r.department || "",
+              }))
+          )
+        }
+      } catch {
+        /* 取得失敗時は手入力にフォールバック */
+      }
+    })()
+  }, [])
+
+  const openBulkEdit = () => {
+    if (selectedRowObjs.length === 0) return
+    setEditOrderDate("")
+    setEditStaffEmail("")
+    setEditPaymentDate("")
+    setEditInspectionDate("")
+    setEditRemarks("")
+    setStaffSearch("")
+    setStaffDropdownOpen(false)
+    setBulkEditOpen(true)
+  }
+
+  const runBulkEdit = async () => {
+    if (selectedRowObjs.length === 0) return
+    if (editMixed) {
+      setError(
+        "発注書と検収書が混在しています。種別ごとに選択して一括修正してください。"
+      )
+      return
+    }
+    const set: Record<string, string> = {}
+    let remarks = ""
+    if (editAllInspection) {
+      // 検収書: 検収日(検収完了日) / 検収者
+      if (editInspectionDate) set.inspection_date = editInspectionDate
+      if (editStaffEmail) set.inspector_email = editStaffEmail
+    } else {
+      // 発注書(既定): 発注日 / 担当者 / 支払日 / 備考追記
+      if (editOrderDate) set["発注日"] = editOrderDate
+      if (editStaffEmail) set.staff_email = editStaffEmail
+      if (editPaymentDate) set.payment_date = editPaymentDate
+      remarks = editRemarks.trim()
+    }
+    if (Object.keys(set).length === 0 && !remarks) {
+      setError("更新する項目を1つ以上入力してください。")
+      return
+    }
+    setSavingEdit(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/documents/bulk-update-fields", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedRowObjs.map((r) => r.id),
+          set,
+          remarks_append: remarks,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      setBulkEditOpen(false)
+      setLastResult({
+        id: -1,
+        document_number: `一括修正: ${json.updated} 件を更新`,
+        action: "completed",
+      })
+      refresh()
+    } catch (e: any) {
+      setError(`一括修正失敗: ${e?.message || e}`)
+    } finally {
+      setSavingEdit(false)
+    }
+  }
+
+  // Phase 23: 不要な取り込みレコードを選択して削除
+  const bulkDelete = async () => {
+    if (selectedRowObjs.length === 0) return
+    const confirmMsg = forceDelete
+      ? `【強制削除】選択した ${selectedRowObjs.length} 件をレコードごと削除します。\n` +
+        `発行済(PDFあり)・検収/納品が紐付いたものも削除します(紐付く検収/納品データも除去)。\n` +
+        `この操作は取り消せません。本当によろしいですか?`
+      : `選択した ${selectedRowObjs.length} 件をレコードごと削除します。\n` +
+        `この操作は取り消せません。発行済(PDFあり)や検収済のものは安全のため自動でスキップします。\n` +
+        `よろしいですか?`
+    if (!window.confirm(confirmMsg)) return
+    setDeleting(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/documents/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          ids: selectedRowObjs.map((r) => r.id),
+          force: forceDelete,
+        }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      const deletedNums: string[] = Array.isArray(json.deleted_numbers)
+        ? json.deleted_numbers
+        : []
+      const deletedSet = new Set(deletedNums)
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              rows: d.rows.filter((r) => !deletedSet.has(r.document_number)),
+              total: d.total - deletedSet.size,
+            }
+          : d
+      )
+      setSelected(new Set())
+      const skipped: Array<{ document_number: string; reason: string }> =
+        Array.isArray(json.skipped) ? json.skipped : []
+      setLastResult({
+        id: -1,
+        document_number:
+          `削除: ${json.deleted} 件` +
+          (skipped.length > 0 ? ` / スキップ ${skipped.length} 件` : ""),
+        action: skipped.length > 0 ? "skipped" : "completed",
+      })
+      if (skipped.length > 0) {
+        setError(
+          "削除しなかった文書: " +
+            skipped
+              .map((s) => `${s.document_number}(${s.reason})`)
+              .join(" / ")
+        )
+      }
+    } catch (e: any) {
+      setError(`削除失敗: ${e?.message || e}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* ヘッダ */}
@@ -366,6 +754,122 @@ export const PendingPdfPanel: React.FC = () => {
         </div>
       )}
 
+      {/* Phase 23: 一括発行ツールバー */}
+      {data && data.total > 0 && (
+        <div className="flex items-center justify-between gap-3 flex-wrap border border-border rounded-sm bg-muted/20 px-3 py-2">
+          <div className="flex items-center gap-3 flex-wrap">
+            <label className="flex items-center gap-1.5 text-[10px] font-mono cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={allVisibleSelected}
+                onChange={toggleSelectAllVisible}
+                disabled={bulkRunning}
+                className="w-3.5 h-3.5"
+              />
+              表示中をすべて選択
+            </label>
+            <span className="text-[10px] font-mono text-muted-foreground">
+              選択 {selected.size} 件
+            </span>
+            {selected.size > 0 && !bulkRunning && (
+              <button
+                type="button"
+                onClick={() => setSelected(new Set())}
+                className="text-[10px] font-mono text-muted-foreground underline hover:text-foreground"
+              >
+                選択解除
+              </button>
+            )}
+          </div>
+          <div className="flex items-center gap-3 flex-wrap">
+            {bulkProgress && (
+              <span className="text-[10px] font-mono text-muted-foreground">
+                {bulkRunning ? "生成中… " : "完了 "}
+                {bulkProgress.done}/{bulkProgress.total}
+                <span className="text-emerald-700"> ✓{bulkProgress.okCount}</span>
+                {bulkProgress.failCount > 0 && (
+                  <span className="text-red-700"> ✗{bulkProgress.failCount}</span>
+                )}
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={openBulkEdit}
+              disabled={bulkRunning || merging || selected.size === 0}
+              className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="選択した文書の 発注日 / 担当者 / 支払日 を一括修正し、備考を一律追記します"
+            >
+              <Pencil className="w-3 h-3" />
+              ✏️ 選択を一括修正
+            </button>
+            <button
+              type="button"
+              onClick={bulkDelete}
+              disabled={bulkRunning || merging || deleting || selected.size === 0}
+              className={cn(
+                "text-[10px] font-mono uppercase tracking-wider rounded-sm px-3 py-1.5 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed",
+                forceDelete
+                  ? "bg-red-600 text-white hover:bg-red-700 border border-red-600"
+                  : "border border-red-300 text-red-700 hover:bg-red-50"
+              )}
+              title={
+                forceDelete
+                  ? "【強制】発行済・検収済も含めて削除します"
+                  : "不要な取り込みレコードを選択してまとめて削除します(発行済・検収済はスキップ)"
+              }
+            >
+              {deleting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Trash2 className="w-3 h-3" />
+              )}
+              🗑 選択を削除
+            </button>
+            <label
+              className="flex items-center gap-1 text-[10px] font-mono text-red-700 cursor-pointer select-none"
+              title="発行済(PDFあり)・検収/納品が紐付いたものも強制的に削除します"
+            >
+              <input
+                type="checkbox"
+                checked={forceDelete}
+                onChange={(e) => setForceDelete(e.target.checked)}
+                disabled={deleting}
+                className="w-3 h-3"
+              />
+              強制削除
+            </label>
+            <button
+              type="button"
+              onClick={openMerge}
+              disabled={bulkRunning || merging || !mergeEligible}
+              className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title={
+                mergeEligible
+                  ? "選択した同一取引先の発注書を1枚(複数明細)に統合します"
+                  : mergeDisabledReason
+              }
+            >
+              <Link2 className="w-3 h-3" />
+              🔗 選択を1枚に統合
+            </button>
+            <button
+              type="button"
+              onClick={bulkGenerate}
+              disabled={bulkRunning || selected.size === 0}
+              className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="チェックした文書の PDF を 1 件ずつまとめて生成 (Backlog ステータスは触りません)"
+            >
+              {bulkRunning ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <FileText className="w-3 h-3" />
+              )}
+              📄 選択をまとめて発行
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 一覧 */}
       {!data || data.total === 0 ? (
         <div className="text-center py-12 border border-dashed border-input rounded-sm bg-muted/10">
@@ -395,6 +899,14 @@ export const PendingPdfPanel: React.FC = () => {
                 )}
               >
                 <div className="flex items-center justify-between gap-4 flex-wrap">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(row.id)}
+                    onChange={() => toggleRow(row.id)}
+                    disabled={bulkRunning}
+                    className="w-3.5 h-3.5 flex-shrink-0"
+                    title="一括発行の対象に含める"
+                  />
                   <div className="space-y-1 flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-[10px] font-mono px-1.5 py-0.5 bg-muted rounded-sm uppercase tracking-wider">
@@ -516,6 +1028,320 @@ export const PendingPdfPanel: React.FC = () => {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Phase 23: 一括修正モーダル (発注日 / 担当者 / 支払日 / 備考追記) */}
+      {bulkEditOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => !savingEdit && setBulkEditOpen(false)}
+        >
+          <div
+            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">
+              <Pencil className="w-4 h-4" />
+              <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+                選択 {selectedRowObjs.length} 件を一括修正
+              </span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-muted rounded-sm">
+                {editMixed
+                  ? "混在"
+                  : editAllInspection
+                    ? "検収書"
+                    : "発注書"}
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-4">
+              {editMixed ? (
+                <div className="border border-amber-300 bg-amber-50 text-amber-900 rounded-sm px-3 py-2 text-[11px] font-mono leading-relaxed">
+                  発注書と検収書が混在しています。種別ごとに選択して一括修正してください。
+                </div>
+              ) : editAllInspection ? (
+                <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                  空欄の項目は変更しません。検収書の
+                  <b>検収日（検収完了日）</b>と<b>検収者</b>をまとめて修正できます。
+                  発注日は親発注書から自動補完されます。
+                </p>
+              ) : (
+                <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                  空欄の項目は変更しません。納品後に遡って発行する場合などに、
+                  発注日・担当者・支払日をまとめて修正し、遡及理由を備考(自由備考)へ
+                  一律で追記できます。
+                </p>
+              )}
+
+              {!editMixed && editAllInspection && (
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                    検収日（検収完了日）
+                  </span>
+                  <input
+                    type="date"
+                    value={editInspectionDate}
+                    onChange={(e) => setEditInspectionDate(e.target.value)}
+                    disabled={savingEdit}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  />
+                </label>
+              )}
+
+              {!editMixed && !editAllInspection && (
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                    発注日
+                  </span>
+                  <input
+                    type="date"
+                    value={editOrderDate}
+                    onChange={(e) => setEditOrderDate(e.target.value)}
+                    disabled={savingEdit}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  />
+                </label>
+              )}
+
+              {!editMixed && (
+              <div className="block space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  {editAllInspection ? "検収者" : "担当者"}
+                </span>
+                <div className="relative">
+                  <input
+                    type="text"
+                    value={staffSearch}
+                    onChange={(e) => {
+                      setStaffSearch(e.target.value)
+                      setStaffDropdownOpen(true)
+                      // スタッフ一覧が取れない環境ではメール直接入力として扱う
+                      if (staffOptions.length === 0)
+                        setEditStaffEmail(e.target.value)
+                    }}
+                    onFocus={() => setStaffDropdownOpen(true)}
+                    onBlur={() =>
+                      // クリック選択を拾うため少し遅延して閉じる
+                      setTimeout(() => setStaffDropdownOpen(false), 150)
+                    }
+                    placeholder={
+                      staffOptions.length > 0
+                        ? "氏名・部署・メールで検索…"
+                        : "担当者の E-mail"
+                    }
+                    disabled={savingEdit}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  />
+                  {staffDropdownOpen && staffOptions.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto border border-border rounded-sm bg-card shadow-lg">
+                      {filteredStaff.length === 0 ? (
+                        <div className="px-2 py-2 text-[10px] font-mono text-muted-foreground">
+                          該当する担当者がいません
+                        </div>
+                      ) : (
+                        filteredStaff.map((s) => (
+                          <button
+                            key={s.email}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setEditStaffEmail(s.email)
+                              setStaffSearch(
+                                `${s.staff_name}${s.department ? ` (${s.department})` : ""} · ${s.email}`
+                              )
+                              setStaffDropdownOpen(false)
+                            }}
+                            className={cn(
+                              "w-full text-left px-2 py-1.5 text-xs font-mono hover:bg-muted",
+                              editStaffEmail === s.email && "bg-muted/60"
+                            )}
+                          >
+                            {s.staff_name}
+                            {s.department ? ` (${s.department})` : ""}
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · {s.email}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                {editStaffEmail && (
+                  <div className="text-[10px] font-mono text-emerald-700 flex items-center gap-2">
+                    選択中: {editStaffEmail}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditStaffEmail("")
+                        setStaffSearch("")
+                      }}
+                      className="underline text-muted-foreground hover:text-foreground"
+                    >
+                      解除
+                    </button>
+                  </div>
+                )}
+              </div>
+              )}
+
+              {!editMixed && !editAllInspection && (
+              <label className="block space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  支払日（全明細に適用）
+                </span>
+                <input
+                  type="date"
+                  value={editPaymentDate}
+                  onChange={(e) => setEditPaymentDate(e.target.value)}
+                  disabled={savingEdit}
+                  className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                />
+              </label>
+              )}
+
+              {!editMixed && !editAllInspection && (
+              <label className="block space-y-1">
+                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                  備考に追記（自由備考・遡及理由など）
+                </span>
+                <textarea
+                  value={editRemarks}
+                  onChange={(e) => setEditRemarks(e.target.value)}
+                  rows={3}
+                  placeholder="例: 納品検収後に発行のため、発注日を遡及して記載。"
+                  disabled={savingEdit}
+                  className="w-full text-xs font-mono bg-transparent border border-input rounded-sm py-1.5 px-2 focus:outline-none focus:border-foreground resize-y"
+                />
+                <span className="text-[10px] font-mono text-muted-foreground/70">
+                  既存の自由備考がある場合は改行して末尾に追記されます。
+                </span>
+              </label>
+              )}
+            </div>
+            <div className="bg-muted/30 border-t border-border px-5 py-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setBulkEditOpen(false)}
+                disabled={savingEdit}
+                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={runBulkEdit}
+                disabled={savingEdit || editMixed}
+                className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {savingEdit ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Pencil className="w-3 h-3" />
+                )}
+                {savingEdit
+                  ? "更新中..."
+                  : `${selectedRowObjs.length} 件に適用`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Phase 23: 発注書統合モーダル */}
+      {mergeOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm p-4"
+          onClick={() => !merging && setMergeOpen(false)}
+        >
+          <div
+            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">
+              <Link2 className="w-4 h-4" />
+              <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
+                発注書を1枚に統合
+              </span>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5 space-y-3">
+              <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                選択した {selectedRowObjs.length} 件の発注書を
+                <span className="font-bold text-foreground">統合先</span>
+                1枚にまとめます(明細を寄せ集めます)。
+                <span className="font-bold text-red-700">
+                  統合先以外の発注書は削除されます。
+                </span>
+                取引先:{" "}
+                <span className="font-bold text-foreground">
+                  {selectedRowObjs[0]?.summary.counterparty}
+                </span>
+              </p>
+              <div className="text-[10px] font-mono uppercase tracking-wider font-bold text-muted-foreground">
+                統合先(残す発注書)を選択
+              </div>
+              <div className="border border-input rounded-sm divide-y divide-border/50 max-h-[40vh] overflow-y-auto">
+                {selectedRowObjs.map((r) => (
+                  <label
+                    key={r.id}
+                    className="flex items-start gap-2 p-2.5 cursor-pointer hover:bg-muted/30"
+                  >
+                    <input
+                      type="radio"
+                      name="merge-target"
+                      checked={mergeTargetId === r.id}
+                      onChange={() => setMergeTargetId(r.id)}
+                      disabled={merging}
+                      className="mt-0.5"
+                    />
+                    <div className="min-w-0 flex-1">
+                      <div className="text-[11px] font-mono font-bold flex items-center gap-2">
+                        {r.document_number}
+                        {mergeTargetId === r.id && (
+                          <span className="text-[10px] px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-sm">
+                            統合先 · 残す
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground truncate">
+                        {r.summary.title || "(タイトル未設定)"}
+                        {r.summary.line_count != null &&
+                          ` · 明細 ${r.summary.line_count} 行`}
+                        {r.summary.amount != null &&
+                          ` · 税抜 ¥${Number(r.summary.amount).toLocaleString("ja-JP")}`}
+                      </div>
+                    </div>
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="bg-muted/30 border-t border-border px-5 py-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setMergeOpen(false)}
+                disabled={merging}
+                className="text-[10px] font-mono uppercase tracking-wider border border-foreground/30 rounded-sm px-3 py-1.5 hover:bg-muted disabled:opacity-50"
+              >
+                キャンセル
+              </button>
+              <button
+                type="button"
+                onClick={runMerge}
+                disabled={merging || mergeTargetId == null}
+                className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {merging ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Link2 className="w-3 h-3" />
+                )}
+                {merging
+                  ? "統合中..."
+                  : `${selectedRowObjs.length - 1} 件を統合先にまとめる`}
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

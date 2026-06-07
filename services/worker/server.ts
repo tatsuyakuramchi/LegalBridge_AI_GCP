@@ -5895,6 +5895,43 @@ ${details}
         0
       );
 
+      // 件名(PROJECT_TITLE)と発注日は、インポート文書だと form_data に無く
+      //   contract_capabilities 側にあることがあるため、足りなければ DB から補完する。
+      const toDateStr = (d: any): string => {
+        if (!d) return "";
+        if (typeof d === "string") return d.slice(0, 10);
+        try {
+          return new Date(d).toISOString().slice(0, 10);
+        } catch {
+          return "";
+        }
+      };
+      let projectTitle =
+        rawData.PROJECT_TITLE ||
+        rawData.CONTRACT_TITLE ||
+        rawData.contract_title ||
+        rawData.description ||
+        "";
+      // 発注日: form_data の 発注日 / order_date を優先、無ければ capability。
+      let orderPoDate = toDateStr(rawData["発注日"] || rawData.order_date || "");
+      if (!projectTitle || !orderPoDate) {
+        try {
+          const capT = await query(
+            `SELECT contract_title, issue_date_po FROM contract_capabilities
+              WHERE document_number = $1 LIMIT 1`,
+            [documentNumber]
+          );
+          if (!projectTitle)
+            projectTitle = capT.rows[0]?.contract_title || "";
+          if (!orderPoDate)
+            orderPoDate = toDateStr(capT.rows[0]?.issue_date_po);
+        } catch {
+          /* noop: 補完の失敗は PDF 生成自体を止めない */
+        }
+      }
+      // 発行日(ORDER_DATE)は作成日(今日)を既定とする(空だと PDF が空欄になるため)。
+      const issueDate = toDateStr(rawData.ORDER_DATE) || toDateStr(new Date());
+
       const details = {
         ...rawData,
         ...staffInfo,
@@ -5902,6 +5939,9 @@ ${details}
         expensesTotalIncTax: bulkExpensesTotal,
         DOC_NO: documentNumber,
         ORDER_NO: documentNumber,
+        PROJECT_TITLE: projectTitle,
+        ORDER_DATE: issueDate,
+        発注日: orderPoDate,
         hasChangeLogs: false,
         changeLogs: [],
       };
@@ -6939,8 +6979,17 @@ ${details}
       const templateFilter = String(req.query.template_type || "").trim();
       const limit = Math.min(Number(req.query.limit) || 100, 500);
       const params: any[] = [limit];
-      let where = `(form_data->>'__pdf_pending')::text = 'true'
-                    AND (drive_link IS NULL OR drive_link = '')`;
+      // PDF未作成キューに出す条件:
+      //   drive_link が空 (= まだPDFが無い) で、かつ
+      //   ・明示フラグ __pdf_pending=true、または
+      //   ・v2一括インポートで登録された __imported=true
+      //  → v2インポートは __pdf_pending を立てないため、__imported も拾わないと
+      //    一括インポートした未発行文書がキューに出てこない。
+      let where = `(drive_link IS NULL OR drive_link = '')
+                    AND (
+                      (form_data->>'__pdf_pending')::text = 'true'
+                      OR (form_data->>'__imported')::text = 'true'
+                    )`;
       if (templateFilter) {
         params.push(templateFilter);
         where += ` AND template_type = $${params.length}`;
@@ -6972,6 +7021,7 @@ ${details}
           summary: {
             counterparty:
               fd.vendor_name ||
+              fd.VENDOR_NAME || // v2一括インポート
               fd.party_b_name ||
               fd.licensor_name ||
               fd.licensee_name ||
@@ -6980,16 +7030,29 @@ ${details}
             title:
               fd.description ||
               fd.contract_title ||
+              fd.CONTRACT_TITLE || // v2一括インポート
               fd.basic_contract_name ||
               fd.original_work ||
               "",
-            staff_email: fd.staff_email || "",
-            line_count: Array.isArray(fd.items) ? fd.items.length : null,
+            staff_email: fd.staff_email || fd.inspectorEmail || "",
+            line_count: Array.isArray(fd.items)
+              ? fd.items.length
+              : Array.isArray(fd.line_items) // v2一括インポート
+                ? fd.line_items.length
+                : null,
             condition_count: Array.isArray(fd.financial_conditions)
               ? fd.financial_conditions.length
               : null,
             variant: fd.variant || null,
-            amount: fd.grandTotalExTax || null,
+            amount:
+              fd.grandTotalExTax ||
+              (Array.isArray(fd.line_items)
+                ? fd.line_items.reduce(
+                    (s: number, l: any) => s + (Number(l.amount_ex_tax) || 0),
+                    0
+                  )
+                : null) ||
+              null,
           },
         };
       });
@@ -6998,8 +7061,11 @@ ${details}
       const countsRes = await query(
         `SELECT template_type, COUNT(*) AS n
            FROM documents
-          WHERE (form_data->>'__pdf_pending')::text = 'true'
-            AND (drive_link IS NULL OR drive_link = '')
+          WHERE (drive_link IS NULL OR drive_link = '')
+            AND (
+              (form_data->>'__pdf_pending')::text = 'true'
+              OR (form_data->>'__imported')::text = 'true'
+            )
           GROUP BY template_type
           ORDER BY n DESC`
       );
@@ -7434,15 +7500,82 @@ ${details}
         return res.status(400).json({ ok: false, error: "invalid id" });
       }
       const result = await query(
-        `SELECT id, document_number, issue_key, template_type, document_category,
-                form_data, drive_link, created_by, created_at
-           FROM documents WHERE id = $1`,
+        `SELECT d.id, d.document_number, d.issue_key, d.template_type,
+                d.document_category, d.form_data, d.drive_link, d.created_by,
+                d.created_at, cc.contract_title AS cap_contract_title,
+                cc.issue_date_po AS cap_issue_date_po
+           FROM documents d
+           LEFT JOIN contract_capabilities cc
+             ON cc.document_number = d.document_number
+          WHERE d.id = $1`,
         [id]
       );
       if (result.rows.length === 0) {
         return res.status(404).json({ ok: false, error: "document not found" });
       }
       const r = result.rows[0];
+      // インポート由来などで form_data に件名(CONTRACT_TITLE/PROJECT_TITLE)や
+      // 発注日が無い場合は、contract_capabilities から補完する。
+      const fd = r.form_data || {};
+      const capTitle = r.cap_contract_title || "";
+      if (capTitle) {
+        if (!fd.CONTRACT_TITLE) fd.CONTRACT_TITLE = capTitle;
+        if (!fd.PROJECT_TITLE) fd.PROJECT_TITLE = capTitle;
+      }
+      // 発注日(form_data['発注日']): CSV の issue_date_po を編集画面に反映。
+      if (!fd["発注日"] && !fd.order_date && r.cap_issue_date_po) {
+        const d = r.cap_issue_date_po;
+        fd["発注日"] =
+          typeof d === "string"
+            ? d.slice(0, 10)
+            : (() => {
+                try {
+                  return new Date(d).toISOString().slice(0, 10);
+                } catch {
+                  return "";
+                }
+              })();
+      }
+      // 検収書: 発注日(orderDate)を親発注書(PO)の issue_date_po から補完。
+      if (r.template_type === "inspection_certificate" && !fd.orderDate) {
+        try {
+          let poDate: any = null;
+          if (fd.parent_po_id) {
+            const q = await query(
+              `SELECT issue_date_po FROM contract_capabilities WHERE id = $1 LIMIT 1`,
+              [Number(fd.parent_po_id)]
+            );
+            poDate = q.rows[0]?.issue_date_po || null;
+          }
+          if (!poDate && fd.parent_po_issue_key) {
+            const q = await query(
+              `SELECT issue_date_po FROM contract_capabilities
+                WHERE backlog_issue_key = $1 AND record_type = 'purchase_order' LIMIT 1`,
+              [String(fd.parent_po_issue_key)]
+            );
+            poDate = q.rows[0]?.issue_date_po || null;
+          }
+          if (!poDate && fd.parent_po_number) {
+            const q = await query(
+              `SELECT cc.issue_date_po
+                 FROM documents d
+                 JOIN contract_capabilities cc ON cc.backlog_issue_key = d.issue_key
+                  AND cc.record_type = 'purchase_order'
+                WHERE d.document_number = $1 LIMIT 1`,
+              [String(fd.parent_po_number)]
+            );
+            poDate = q.rows[0]?.issue_date_po || null;
+          }
+          if (poDate) {
+            fd.orderDate =
+              typeof poDate === "string"
+                ? poDate.slice(0, 10)
+                : new Date(poDate).toISOString().slice(0, 10);
+          }
+        } catch {
+          /* noop: 発注日補完の失敗は読込を止めない */
+        }
+      }
       res.json({
         ok: true,
         id: Number(r.id),
@@ -7450,7 +7583,7 @@ ${details}
         issue_key: r.issue_key,
         template_type: r.template_type,
         document_category: r.document_category,
-        form_data: r.form_data || {},
+        form_data: fd,
         drive_link: r.drive_link || "",
         created_by: r.created_by,
         created_at: r.created_at,
@@ -7742,6 +7875,270 @@ ${details}
     } catch (error) {
       console.error("/api/documents/:id/mark-as-imported failed:", error);
       res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 複数文書(主に PDF未作成キューの発注書)の発注日 / 担当者 / 支払日 を一括修正し、
+   * 備考(自由備考)を一律追記する。納品後に遡って発行する場合など、選択した文書に
+   * 同じ値をまとめて適用する用途。
+   *
+   *   body: {
+   *     ids: number[],                     // documents.id
+   *     set?: {
+   *       "発注日"?: string,               // YYYY-MM-DD (空なら変更しない)
+   *       staff_email?: string,            // 担当者(staff.email を解決して STAFF_* を反映)
+   *       payment_date?: string,           // 支払日(全明細 + summaryPaymentDate に適用)
+   *     },
+   *     remarks_append?: string,           // 自由備考(REMARKS_FREE)に追記
+   *   }
+   *
+   * 空欄の項目は変更しない(誤って消さない)。発注日/支払日は capability 側にも反映。
+   */
+  app.post("/api/documents/bulk-update-fields", express.json(), async (req, res) => {
+    try {
+      const ids: number[] = Array.isArray(req.body?.ids)
+        ? req.body.ids.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+        : [];
+      if (ids.length === 0) {
+        return res.status(400).json({ ok: false, error: "ids[] is required" });
+      }
+      const set = req.body?.set || {};
+      // 発注書(purchase_order)向け
+      const orderDate = set["発注日"] != null ? String(set["発注日"]).trim() : "";
+      const staffEmail = set.staff_email != null ? String(set.staff_email).trim() : "";
+      const paymentDate = set.payment_date != null ? String(set.payment_date).trim() : "";
+      // 検収書(inspection_certificate)向け
+      const inspectionDate =
+        set.inspection_date != null ? String(set.inspection_date).trim() : "";
+      const inspectorEmail =
+        set.inspector_email != null ? String(set.inspector_email).trim() : "";
+      const remarksAppend =
+        req.body?.remarks_append != null ? String(req.body.remarks_append).trim() : "";
+
+      if (
+        !orderDate &&
+        !staffEmail &&
+        !paymentDate &&
+        !inspectionDate &&
+        !inspectorEmail &&
+        !remarksAppend
+      ) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "更新する項目がありません" });
+      }
+
+      // 担当者(発注元) / 検収者 をそれぞれ一度だけ解決
+      let staff: { staff_name: string; department: string; email: string; phone: string } | null =
+        null;
+      if (staffEmail) {
+        staff = await lookupStaffByEmail(staffEmail);
+      }
+      let inspector: { staff_name: string; department: string; email: string; phone: string } | null =
+        null;
+      if (inspectorEmail) {
+        inspector = await lookupStaffByEmail(inspectorEmail);
+      }
+
+      const docs = (
+        await query(
+          `SELECT id, document_number, form_data FROM documents WHERE id = ANY($1::int[])`,
+          [ids]
+        )
+      ).rows;
+
+      let updated = 0;
+      for (const d of docs) {
+        const fd = d.form_data || {};
+        if (orderDate) fd["発注日"] = orderDate;
+        if (staff) {
+          fd.staff_email = staff.email || staffEmail;
+          fd.STAFF_NAME = staff.staff_name || fd.STAFF_NAME || "";
+          fd.STAFF_EMAIL = staff.email || staffEmail;
+          fd.STAFF_DEPARTMENT = staff.department || fd.STAFF_DEPARTMENT || "";
+          fd.STAFF_PHONE = staff.phone || fd.STAFF_PHONE || "";
+        } else if (staffEmail) {
+          // staff レコードが見つからなくても email だけは反映
+          fd.staff_email = staffEmail;
+          fd.STAFF_EMAIL = staffEmail;
+        }
+        if (paymentDate) {
+          if (Array.isArray(fd.line_items)) {
+            fd.line_items = fd.line_items.map((l: any) => ({
+              ...l,
+              payment_date: paymentDate,
+            }));
+          }
+          fd.summaryPaymentDate = paymentDate;
+        }
+        // 検収書: 検収日(検収完了日) / 検収者
+        if (inspectionDate) fd.inspectionCompletedAt = inspectionDate;
+        if (inspector) {
+          fd.inspectorName = inspector.staff_name || fd.inspectorName || "";
+          fd.inspectorDept = inspector.department || fd.inspectorDept || "";
+          fd.inspectorEmail = inspector.email || inspectorEmail;
+        } else if (inspectorEmail) {
+          fd.inspectorEmail = inspectorEmail;
+        }
+        if (remarksAppend) {
+          const cur = String(fd.REMARKS_FREE || "");
+          fd.REMARKS_FREE = cur ? `${cur}\n${remarksAppend}` : remarksAppend;
+        }
+        await query(`UPDATE documents SET form_data = $2 WHERE id = $1`, [
+          d.id,
+          JSON.stringify(fd),
+        ]);
+        // capability 側にも反映(検収/条件明細・台帳の整合)
+        if (orderDate) {
+          await query(
+            `UPDATE contract_capabilities SET issue_date_po = $2, updated_at = now()
+              WHERE document_number = $1`,
+            [d.document_number, orderDate]
+          );
+        }
+        if (paymentDate) {
+          await query(
+            `UPDATE capability_line_items cli SET payment_date = $2, updated_at = now()
+               FROM contract_capabilities cc
+              WHERE cli.capability_id = cc.id AND cc.document_number = $1`,
+            [d.document_number, paymentDate]
+          );
+        }
+        updated++;
+      }
+      res.json({ ok: true, updated, total: ids.length });
+    } catch (error) {
+      console.error("/api/documents/bulk-update-fields failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 不要な取り込み文書をまとめて削除する。
+   *   主に「不要なものを取り込んでしまった」発注書を PDF未作成キューから
+   *   レコードごと削除する用途。
+   *
+   *   body: { ids: number[] }   // documents.id
+   *
+   * 安全策(満たさないものはスキップして理由を返す):
+   *   - 発行済(drive_link あり)は削除しない
+   *   - 検収/納品(delivery_line_items)が紐付くものは削除しない
+   *
+   * 削除対象: documents + contract_capabilities(子テーブルは ON DELETE CASCADE)
+   *           + contracts ミラー(子テーブル CASCADE) + external_assets。
+   *   全体を単一トランザクションで実行。スキップは個別に握って継続。
+   */
+  app.post("/api/documents/bulk-delete", express.json(), async (req, res) => {
+    const ids: number[] = Array.isArray(req.body?.ids)
+      ? req.body.ids.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ ok: false, error: "ids[] is required" });
+    }
+    // 強制削除: 発行済(PDFあり)・検収/納品紐付きでも削除する。
+    //   検収/納品は delivery_line_items が RESTRICT FK で削除を止めるため、
+    //   先に該当 delivery_line_items を削除し、空になった delivery_events も掃除する。
+    const force = !!req.body?.force;
+    const client = await pool.connect();
+    const deleted: string[] = [];
+    const skipped: Array<{ document_number: string; reason: string }> = [];
+    try {
+      await client.query("BEGIN");
+      const docs = (
+        await client.query(
+          `SELECT d.id, d.document_number, d.drive_link, cc.id AS cap_id
+             FROM documents d
+             LEFT JOIN contract_capabilities cc
+               ON cc.document_number = d.document_number
+            WHERE d.id = ANY($1::int[])
+            FOR UPDATE OF d`,
+          [ids]
+        )
+      ).rows;
+      for (const d of docs) {
+        if (!force && d.drive_link && String(d.drive_link).trim()) {
+          skipped.push({
+            document_number: d.document_number,
+            reason: "発行済(PDFあり)のため削除しません",
+          });
+          continue;
+        }
+        if (d.cap_id) {
+          const del = await client.query(
+            `SELECT COUNT(*)::int AS n
+               FROM delivery_line_items dli
+               JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+              WHERE cli.capability_id = $1`,
+            [d.cap_id]
+          );
+          const hasDelivery = Number(del.rows[0].n) > 0;
+          if (hasDelivery && !force) {
+            skipped.push({
+              document_number: d.document_number,
+              reason: "検収/納品が紐付いているため削除しません",
+            });
+            continue;
+          }
+          if (hasDelivery && force) {
+            // 削除を阻む delivery_line_items を先に除去し、空の delivery_events を掃除
+            const ev = await client.query(
+              `SELECT DISTINCT dli.delivery_event_id AS eid
+                 FROM delivery_line_items dli
+                 JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+                WHERE cli.capability_id = $1`,
+              [d.cap_id]
+            );
+            const eventIds = ev.rows
+              .map((r: any) => r.eid)
+              .filter((x: any) => x != null);
+            await client.query(
+              `DELETE FROM delivery_line_items dli
+                 USING capability_line_items cli
+                WHERE dli.capability_line_item_id = cli.id
+                  AND cli.capability_id = $1`,
+              [d.cap_id]
+            );
+            if (eventIds.length > 0) {
+              await client.query(
+                `DELETE FROM delivery_events de
+                  WHERE de.id = ANY($1::int[])
+                    AND NOT EXISTS (
+                      SELECT 1 FROM delivery_line_items dli
+                       WHERE dli.delivery_event_id = de.id
+                    )`,
+                [eventIds]
+              );
+            }
+          }
+          await client.query(
+            `DELETE FROM contract_capabilities WHERE id = $1`,
+            [d.cap_id]
+          );
+          await client.query(`DELETE FROM contracts WHERE id = $1`, [d.cap_id]);
+        }
+        await client.query(`DELETE FROM documents WHERE id = $1`, [d.id]);
+        await client.query(
+          `DELETE FROM external_assets WHERE asset_number = $1`,
+          [d.document_number]
+        );
+        deleted.push(d.document_number);
+      }
+      await client.query("COMMIT");
+      res.json({
+        ok: true,
+        deleted: deleted.length,
+        deleted_numbers: deleted,
+        skipped,
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("/api/documents/bulk-delete failed:", error);
+      res
+        .status(500)
+        .json({ ok: false, error: String((error as any)?.message || error) });
+    } finally {
+      client.release();
     }
   });
 
@@ -8109,7 +8506,7 @@ ${details}
             `SELECT cc.id, cc.backlog_issue_key,
                     cc.contract_title AS description,
                     v.vendor_code,
-                    cc.tax_rate, cc.due_date,
+                    cc.tax_rate, cc.due_date, cc.issue_date_po,
                     (SELECT d.document_number FROM documents d
                       WHERE d.issue_key = cc.backlog_issue_key
                         AND d.template_type LIKE '%purchase_order%'
@@ -8273,6 +8670,12 @@ ${details}
             parent_po_issue_key: parentPoIssueKey,
             parent_po_number: first.parent_po_number || order.parent_po_number || "",
             documentDate: first.document_date || first.documentDate || new Date().toISOString().slice(0, 10),
+            // 発注日: 親発注書(PO)の issue_date_po から補完(検収書テンプレの orderDate)
+            orderDate: (() => {
+              const d = first.order_date || first.orderDate || order.issue_date_po || "";
+              if (!d) return "";
+              return typeof d === "string" ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10);
+            })(),
             deliveredAt: first.delivered_at || first.deliveredAt || "",
             inspectionCompletedAt:
               first.inspection_completed_at || first.inspectionCompletedAt || "",
