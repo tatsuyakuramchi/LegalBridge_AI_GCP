@@ -101,6 +101,7 @@ export const PendingPdfPanel: React.FC = () => {
   const [editOrderDate, setEditOrderDate] = React.useState("")
   const [editStaffEmail, setEditStaffEmail] = React.useState("")
   const [editPaymentDate, setEditPaymentDate] = React.useState("")
+  const [editInspectionDate, setEditInspectionDate] = React.useState("")
   const [editRemarks, setEditRemarks] = React.useState("")
   // 担当者 検索コンボボックス
   const [staffSearch, setStaffSearch] = React.useState("")
@@ -418,6 +419,15 @@ export const PendingPdfPanel: React.FC = () => {
   }, [selectedRowObjs])
   const mergeEligible = mergeDisabledReason === ""
 
+  // Phase 23: 一括修正の対象種別を判定(検収書 / 発注書 / 混在)
+  const editAllInspection =
+    selectedRowObjs.length > 0 &&
+    selectedRowObjs.every((r) => r.template_type === "inspection_certificate")
+  const editHasInspection = selectedRowObjs.some(
+    (r) => r.template_type === "inspection_certificate"
+  )
+  const editMixed = editHasInspection && !editAllInspection
+
   const openMerge = () => {
     if (!mergeEligible) return
     setMergeTargetId(selectedRowObjs[0].id)
@@ -502,6 +512,7 @@ export const PendingPdfPanel: React.FC = () => {
     setEditOrderDate("")
     setEditStaffEmail("")
     setEditPaymentDate("")
+    setEditInspectionDate("")
     setEditRemarks("")
     setStaffSearch("")
     setStaffDropdownOpen(false)
@@ -510,11 +521,25 @@ export const PendingPdfPanel: React.FC = () => {
 
   const runBulkEdit = async () => {
     if (selectedRowObjs.length === 0) return
+    if (editMixed) {
+      setError(
+        "発注書と検収書が混在しています。種別ごとに選択して一括修正してください。"
+      )
+      return
+    }
     const set: Record<string, string> = {}
-    if (editOrderDate) set["発注日"] = editOrderDate
-    if (editStaffEmail) set.staff_email = editStaffEmail
-    if (editPaymentDate) set.payment_date = editPaymentDate
-    const remarks = editRemarks.trim()
+    let remarks = ""
+    if (editAllInspection) {
+      // 検収書: 検収日(検収完了日) / 検収者
+      if (editInspectionDate) set.inspection_date = editInspectionDate
+      if (editStaffEmail) set.inspector_email = editStaffEmail
+    } else {
+      // 発注書(既定): 発注日 / 担当者 / 支払日 / 備考追記
+      if (editOrderDate) set["発注日"] = editOrderDate
+      if (editStaffEmail) set.staff_email = editStaffEmail
+      if (editPaymentDate) set.payment_date = editPaymentDate
+      remarks = editRemarks.trim()
+    }
     if (Object.keys(set).length === 0 && !remarks) {
       setError("更新する項目を1つ以上入力してください。")
       return
@@ -1021,30 +1046,67 @@ export const PendingPdfPanel: React.FC = () => {
               <span className="text-[11px] font-mono uppercase tracking-wider font-bold">
                 選択 {selectedRowObjs.length} 件を一括修正
               </span>
+              <span className="text-[10px] font-mono px-1.5 py-0.5 bg-muted rounded-sm">
+                {editMixed
+                  ? "混在"
+                  : editAllInspection
+                    ? "検収書"
+                    : "発注書"}
+              </span>
             </div>
             <div className="flex-1 overflow-y-auto p-5 space-y-4">
-              <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
-                空欄の項目は変更しません。納品後に遡って発行する場合などに、
-                発注日・担当者・支払日をまとめて修正し、遡及理由を備考(自由備考)へ
-                一律で追記できます。
-              </p>
+              {editMixed ? (
+                <div className="border border-amber-300 bg-amber-50 text-amber-900 rounded-sm px-3 py-2 text-[11px] font-mono leading-relaxed">
+                  発注書と検収書が混在しています。種別ごとに選択して一括修正してください。
+                </div>
+              ) : editAllInspection ? (
+                <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                  空欄の項目は変更しません。検収書の
+                  <b>検収日（検収完了日）</b>と<b>検収者</b>をまとめて修正できます。
+                  発注日は親発注書から自動補完されます。
+                </p>
+              ) : (
+                <p className="text-[11px] font-mono text-muted-foreground leading-relaxed">
+                  空欄の項目は変更しません。納品後に遡って発行する場合などに、
+                  発注日・担当者・支払日をまとめて修正し、遡及理由を備考(自由備考)へ
+                  一律で追記できます。
+                </p>
+              )}
 
-              <label className="block space-y-1">
-                <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  発注日
-                </span>
-                <input
-                  type="date"
-                  value={editOrderDate}
-                  onChange={(e) => setEditOrderDate(e.target.value)}
-                  disabled={savingEdit}
-                  className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
-                />
-              </label>
+              {!editMixed && editAllInspection && (
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                    検収日（検収完了日）
+                  </span>
+                  <input
+                    type="date"
+                    value={editInspectionDate}
+                    onChange={(e) => setEditInspectionDate(e.target.value)}
+                    disabled={savingEdit}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  />
+                </label>
+              )}
 
+              {!editMixed && !editAllInspection && (
+                <label className="block space-y-1">
+                  <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+                    発注日
+                  </span>
+                  <input
+                    type="date"
+                    value={editOrderDate}
+                    onChange={(e) => setEditOrderDate(e.target.value)}
+                    disabled={savingEdit}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  />
+                </label>
+              )}
+
+              {!editMixed && (
               <div className="block space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-                  担当者
+                  {editAllInspection ? "検収者" : "担当者"}
                 </span>
                 <div className="relative">
                   <input
@@ -1122,7 +1184,9 @@ export const PendingPdfPanel: React.FC = () => {
                   </div>
                 )}
               </div>
+              )}
 
+              {!editMixed && !editAllInspection && (
               <label className="block space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   支払日（全明細に適用）
@@ -1135,7 +1199,9 @@ export const PendingPdfPanel: React.FC = () => {
                   className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
                 />
               </label>
+              )}
 
+              {!editMixed && !editAllInspection && (
               <label className="block space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   備考に追記（自由備考・遡及理由など）
@@ -1152,6 +1218,7 @@ export const PendingPdfPanel: React.FC = () => {
                   既存の自由備考がある場合は改行して末尾に追記されます。
                 </span>
               </label>
+              )}
             </div>
             <div className="bg-muted/30 border-t border-border px-5 py-3 flex justify-end gap-2">
               <button
@@ -1165,7 +1232,7 @@ export const PendingPdfPanel: React.FC = () => {
               <button
                 type="button"
                 onClick={runBulkEdit}
-                disabled={savingEdit}
+                disabled={savingEdit || editMixed}
                 className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-4 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50"
               >
                 {savingEdit ? (
