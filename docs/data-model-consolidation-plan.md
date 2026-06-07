@@ -135,8 +135,22 @@
 | :-- | :-- | :-- |
 | 1 | SSOT 変換の集約（form_data ⇄ capability） | **実装中（発注書・検収書 完了）** |
 | 2 | レガシーテーブル撤去 | **完了（0030 で DROP）** |
-| 3 | v3 ミラー収束（読み手棚卸し → 廃止/DELETE同期） | **3a完了（DELETE同期+孤児掃除）／3b未着手（ミラー全廃）** |
+| 3 | v3 ミラー収束（DELETE同期で孤児防止。**全廃は不可と判明**） | **3a完了（DELETE同期）／3b中止** |
 | 4 | カラム整理・正準集約 | 未着手 |
+
+### Step 3b 中止の判断（2026-06-07・重要）
+`workModel.ts` 精査の結果、**`contracts` は純粋ミラーではない**ことが判明:
+- `POST /api/v3/contracts` が `origin='registered'` で **作品モデル独自の契約を直接 contracts に作成**（capability 無し）。
+- `contract_works`/`contract_parties` もそれにぶら下がる作品モデル独自データ。
+- よって `contracts`/`contract_*` の**全廃は作品モデルを壊す → 3b 中止**。v3層は維持する。
+
+### Step 3a の補正（0032・重要）
+- 0031 の DELETE 同期 `DELETE FROM contracts WHERE id=OLD.id` と一括掃除
+  `DELETE FROM contracts WHERE NOT EXISTS(capability)` は **origin を区別しておらず、
+  registered(作品モデル登録契約)を誤削除する恐れ**があった。
+- 0032 で DELETE 同期を `origin='workflow'` 限定に修正。連結チェックの孤児判定/修復も
+  `origin='workflow'` 限定に修正（registered は孤児扱いしない・保護）。
+- ⚠️ 0031 の一括掃除が既に走った環境では registered 契約が消えた可能性 → 作品モデル画面で要確認。
 
 ### Step 3 実装メモ（2026-06-07）
 - 読み手棚卸し: v3ミラー(`contracts`/`contract_*`)の実機能読み手は

@@ -136,19 +136,22 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           `SELECT COUNT(*)::int AS n FROM documents WHERE ${PO_DRIFT_WHERE}`,
           `SELECT document_number FROM documents WHERE ${PO_DRIFT_WHERE} ORDER BY created_at DESC LIMIT 8`
         ),
-        // ② v3 ミラー孤児 (capability が無い contracts)
+        // ② v3 ミラー孤児 (capability が無い workflow 由来の contracts)
+        //    ※ origin='registered' は作品モデルが直接作る独自契約なので孤児ではない。
         probe(
           {
             key: "orphan_contracts",
             label: "v3ミラー孤児 (contracts)",
             description:
-              "対応する contract_capabilities が無い contracts 行。DELETE非同期トリガの残骸。掃除可能。",
+              "対応する contract_capabilities が無い workflow 由来の contracts 行(ミラー残骸)。掃除可能。registered(作品モデル登録契約)は対象外。",
             repair_action: "prune_orphan_contracts",
           },
           `SELECT COUNT(*)::int AS n FROM contracts c
-            WHERE NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)`,
+            WHERE c.origin = 'workflow'
+              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)`,
           `SELECT c.id, c.document_number FROM contracts c
-            WHERE NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)
+            WHERE c.origin = 'workflow'
+              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)
             ORDER BY c.id DESC LIMIT 8`
         ),
         // ③ 発行済なのに残っている下書き
@@ -318,9 +321,11 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
         }
 
         if (action === "prune_orphan_contracts") {
+          // origin='workflow'(ミラー)のみ削除。registered(作品モデル独自契約)は保護。
           const r = await query(
             `DELETE FROM contracts c
-              WHERE NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)`
+              WHERE c.origin = 'workflow'
+                AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.id = c.id)`
           );
           return res.json({ ok: true, action, affected: r.rowCount || 0 });
         }
