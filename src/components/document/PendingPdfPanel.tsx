@@ -99,6 +99,21 @@ export const PendingPdfPanel: React.FC = () => {
   const [editStaffEmail, setEditStaffEmail] = React.useState("")
   const [editPaymentDate, setEditPaymentDate] = React.useState("")
   const [editRemarks, setEditRemarks] = React.useState("")
+  // 担当者 検索コンボボックス
+  const [staffSearch, setStaffSearch] = React.useState("")
+  const [staffDropdownOpen, setStaffDropdownOpen] = React.useState(false)
+  const filteredStaff = React.useMemo(() => {
+    const q = staffSearch.trim().toLowerCase()
+    const base = q
+      ? staffOptions.filter(
+          (s) =>
+            s.staff_name.toLowerCase().includes(q) ||
+            s.email.toLowerCase().includes(q) ||
+            (s.department || "").toLowerCase().includes(q)
+        )
+      : staffOptions
+    return base.slice(0, 50)
+  }, [staffOptions, staffSearch])
   const [lastResult, setLastResult] = React.useState<{
     id: number
     document_number: string
@@ -485,6 +500,8 @@ export const PendingPdfPanel: React.FC = () => {
     setEditStaffEmail("")
     setEditPaymentDate("")
     setEditRemarks("")
+    setStaffSearch("")
+    setStaffDropdownOpen(false)
     setBulkEditOpen(true)
   }
 
@@ -922,36 +939,86 @@ export const PendingPdfPanel: React.FC = () => {
                 />
               </label>
 
-              <label className="block space-y-1">
+              <div className="block space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   担当者
                 </span>
-                {staffOptions.length > 0 ? (
-                  <select
-                    value={editStaffEmail}
-                    onChange={(e) => setEditStaffEmail(e.target.value)}
-                    disabled={savingEdit}
-                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
-                  >
-                    <option value="">— 変更しない —</option>
-                    {staffOptions.map((s) => (
-                      <option key={s.email} value={s.email}>
-                        {s.staff_name}
-                        {s.department ? ` (${s.department})` : ""} · {s.email}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+                <div className="relative">
                   <input
-                    type="email"
-                    value={editStaffEmail}
-                    onChange={(e) => setEditStaffEmail(e.target.value)}
-                    placeholder="担当者の E-mail"
+                    type="text"
+                    value={staffSearch}
+                    onChange={(e) => {
+                      setStaffSearch(e.target.value)
+                      setStaffDropdownOpen(true)
+                      // スタッフ一覧が取れない環境ではメール直接入力として扱う
+                      if (staffOptions.length === 0)
+                        setEditStaffEmail(e.target.value)
+                    }}
+                    onFocus={() => setStaffDropdownOpen(true)}
+                    onBlur={() =>
+                      // クリック選択を拾うため少し遅延して閉じる
+                      setTimeout(() => setStaffDropdownOpen(false), 150)
+                    }
+                    placeholder={
+                      staffOptions.length > 0
+                        ? "氏名・部署・メールで検索…"
+                        : "担当者の E-mail"
+                    }
                     disabled={savingEdit}
                     className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
                   />
+                  {staffDropdownOpen && staffOptions.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto border border-border rounded-sm bg-card shadow-lg">
+                      {filteredStaff.length === 0 ? (
+                        <div className="px-2 py-2 text-[10px] font-mono text-muted-foreground">
+                          該当する担当者がいません
+                        </div>
+                      ) : (
+                        filteredStaff.map((s) => (
+                          <button
+                            key={s.email}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setEditStaffEmail(s.email)
+                              setStaffSearch(
+                                `${s.staff_name}${s.department ? ` (${s.department})` : ""} · ${s.email}`
+                              )
+                              setStaffDropdownOpen(false)
+                            }}
+                            className={cn(
+                              "w-full text-left px-2 py-1.5 text-xs font-mono hover:bg-muted",
+                              editStaffEmail === s.email && "bg-muted/60"
+                            )}
+                          >
+                            {s.staff_name}
+                            {s.department ? ` (${s.department})` : ""}
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · {s.email}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                {editStaffEmail && (
+                  <div className="text-[10px] font-mono text-emerald-700 flex items-center gap-2">
+                    選択中: {editStaffEmail}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditStaffEmail("")
+                        setStaffSearch("")
+                      }}
+                      className="underline text-muted-foreground hover:text-foreground"
+                    >
+                      解除
+                    </button>
+                  </div>
                 )}
-              </label>
+              </div>
 
               <label className="block space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
