@@ -48,32 +48,32 @@ type FieldDef = {
   choices?: "DERIV"
 }
 
+// ③ kindで1フォーム化: 原作IP(licensed_in)と自社作品(own)のフィールドを単一定義に統合し、
+//   kind で出し分ける。SCHEMA はここから生成(定義の重複を解消)。
+type WorkKind = "own" | "licensed_in"
+const WORK_FIELDS: Array<FieldDef & { kinds: WorkKind[] }> = [
+  { name: "title", label: "タイトル", type: "text", required: true, kinds: ["own", "licensed_in"] },
+  { name: "title_kana", label: "タイトル(カナ)", type: "text", kinds: ["own", "licensed_in"] },
+  { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array", kinds: ["own", "licensed_in"] },
+  { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB", kinds: ["own", "licensed_in"] },
+  { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"], kinds: ["own"] },
+  { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"], kinds: ["own"] },
+  { name: "original_publisher", label: "原作出版社", type: "text", kinds: ["licensed_in"] },
+  { name: "default_rights_holder", label: "既定権利者", type: "text", kinds: ["licensed_in"] },
+  { name: "default_credit_display", label: "クレジット表記", type: "text", kinds: ["licensed_in"] },
+  { name: "default_work_supplement", label: "作品補足", type: "textarea", kinds: ["licensed_in"] },
+  { name: "default_approval_target", label: "承認対象", type: "text", kinds: ["licensed_in"] },
+  { name: "default_approval_timing", label: "承認タイミング", type: "text", kinds: ["licensed_in"] },
+  { name: "rights_holder_vendor_id", label: "権利者(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択", kinds: ["licensed_in"] },
+  { name: "parent_work_id", label: "派生元(系譜)", type: "work-select", hint: "翻訳版・改題版などの派生元を選ぶ(原作IPは A原作→B翻訳 等)", kinds: ["own", "licensed_in"] },
+  { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV", kinds: ["own", "licensed_in"] },
+  { name: "remarks", label: "備考", type: "textarea", kinds: ["own", "licensed_in"] },
+]
+const kindOfType = (t: EntityType): WorkKind => (t === "source-ips" ? "licensed_in" : "own")
+
 const SCHEMA: Record<EntityType, FieldDef[]> = {
-  "source-ips": [
-    { name: "title", label: "タイトル", type: "text", required: true },
-    { name: "title_kana", label: "タイトル(カナ)", type: "text" },
-    { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
-    { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB（この原作IPを使う事業部）" },
-    { name: "original_publisher", label: "原作出版社", type: "text" },
-    { name: "default_rights_holder", label: "既定権利者", type: "text" },
-    { name: "default_credit_display", label: "クレジット表記", type: "text" },
-    { name: "default_work_supplement", label: "作品補足", type: "textarea" },
-    { name: "default_approval_target", label: "承認対象", type: "text" },
-    { name: "default_approval_timing", label: "承認タイミング", type: "text" },
-    { name: "rights_holder_vendor_id", label: "権利者(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択" },
-    { name: "remarks", label: "備考", type: "textarea" },
-  ],
-  works: [
-    { name: "title", label: "タイトル", type: "text", required: true },
-    { name: "title_kana", label: "タイトル(カナ)", type: "text" },
-    { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
-    { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB" },
-    { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"] },
-    { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"] },
-    { name: "parent_work_id", label: "派生元の作品(系譜)", type: "work-select", hint: "翻訳版・改題版などは派生元の自社作品を選ぶ" },
-    { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV" },
-    { name: "remarks", label: "備考", type: "textarea" },
-  ],
+  "source-ips": WORK_FIELDS.filter((f) => f.kinds.includes("licensed_in")),
+  works: WORK_FIELDS.filter((f) => f.kinds.includes("own")),
   contracts: [
     { name: "contract_title", label: "契約名", type: "text", required: true },
     { name: "contract_level", label: "契約レベル", type: "select", options: ["", "master", "individual", "standalone"] },
@@ -1125,7 +1125,7 @@ function FormModal({
                 {f.label}
                 {f.required && <span className="text-destructive"> *</span>}
               </Label>
-              <FieldInput f={f} value={form[f.name]} works={works} editId={editId} onChange={(v) => set(f.name, v)} />
+              <FieldInput f={f} value={form[f.name]} works={type === "source-ips" ? sourceIps : works} editId={editId} onChange={(v) => set(f.name, v)} />
               {f.hint && <p className="text-[11px] text-muted-foreground">{f.hint}</p>}
             </div>
           ))}
