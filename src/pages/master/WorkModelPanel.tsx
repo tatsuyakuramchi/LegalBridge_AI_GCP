@@ -89,7 +89,7 @@ const SCHEMA: Record<EntityType, FieldDef[]> = {
 
 const SUBKEYS: Record<EntityType, [string, string][]> = {
   "source-ips": [["materials", "素材 / 権利者台帳"]],
-  works: [["products", "製品"], ["rights", "権利台帳"], ["contracts", "紐づく契約"], ["payment_summary", "支払集計"]],
+  works: [["products", "製品"], ["contracts", "紐づく契約"], ["payment_summary", "支払集計"]],
   contracts: [["works", "対象作品 / IP"], ["parties", "当事者"], ["financial_terms", "財務条件"], ["line_items", "明細"], ["royalty_statements", "ロイヤリティ"]],
 }
 
@@ -577,7 +577,10 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
               {/* モデル(A): 自社作品に「利用許諾条件(条件明細・契約レス可)」を直接ぶら下げて
                   原作IPと料率を紐付ける。作品先行→後から紐付けの実務フローに対応。 */}
               {type === "works" && (
-                <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                <>
+                  <MaterialsEditor workId={id} />
+                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                </>
               )}
             </>
           )}
@@ -591,6 +594,148 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
   )
 }
 
+// モデル(あ): 作品のマテリアル(翻訳/イラスト/原作素材…)。帰属(rights_type)で
+//   相手方(license/joint)=利用許諾条件にリンク、当社(owned/譲渡)=業務委託(後続)。
+const MATERIAL_TYPES: [string, string][] = [
+  ["", "(種別)"], ["translation", "翻訳"], ["illustration", "イラスト"],
+  ["scenario", "シナリオ"], ["design", "デザイン"], ["music", "音楽"],
+  ["text", "テキスト"], ["data", "データ"], ["other", "その他"],
+]
+const RIGHTS_TYPES: [string, string][] = [
+  ["", "(帰属)"], ["license", "相手方(許諾)"], ["joint", "共有"],
+  ["owned", "当社保有"], ["copyright_assignment", "譲渡(当社へ)"],
+]
+const isCounterpartyRights = (rt: string) => rt === "license" || rt === "joint"
+
+function MaterialsEditor({ workId }: { workId: number }) {
+  const { showNotification } = useAppData()
+  const [rows, setRows] = React.useState<Row[] | null>(null)
+  const [conds, setConds] = React.useState<Row[]>([])
+  const blank = { id: 0, material_name: "", material_type: "", rights_type: "", rights_holder_vendor_id: "", is_royalty_bearing: false, license_condition_id: "" }
+  const [form, setForm] = React.useState<Row>(blank)
+  const [busy, setBusy] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    try { setRows(await getJson(`/api/v3/works/${workId}/materials`)) } catch { setRows([]) }
+    try { setConds(await getJson(`/api/v3/works/${workId}/conditions`)) } catch { setConds([]) }
+  }, [workId])
+  React.useEffect(() => { load() }, [load])
+
+  const set = (k: string, v: any) => setForm((f) => ({ ...f, [k]: v }))
+  const reset = () => setForm(blank)
+  const save = async () => {
+    setBusy(true)
+    try {
+      const cp = isCounterpartyRights(form.rights_type)
+      const body = {
+        material_name: form.material_name || null,
+        material_type: form.material_type || null,
+        rights_type: form.rights_type || null,
+        rights_holder_vendor_id: form.rights_holder_vendor_id ? Number(form.rights_holder_vendor_id) : null,
+        is_royalty_bearing: !!form.is_royalty_bearing,
+        license_condition_id: cp && form.license_condition_id ? Number(form.license_condition_id) : null,
+      }
+      if (form.id) await sendJson("PUT", `/api/v3/work-materials/${form.id}`, body)
+      else await sendJson("POST", `/api/v3/works/${workId}/materials`, body)
+      showNotification(form.id ? "マテリアルを更新しました" : "マテリアルを追加しました", "success")
+      reset(); await load()
+    } catch (e: any) {
+      showNotification(`保存に失敗: ${e?.message || e}`, "error")
+    } finally { setBusy(false) }
+  }
+  const del = async (mid: number) => {
+    if (!window.confirm("このマテリアルを削除しますか？")) return
+    try { await sendJson("DELETE", `/api/v3/work-materials/${mid}`, {}); await load() }
+    catch (e: any) { showNotification(`削除に失敗: ${e?.message || e}`, "error") }
+  }
+  const condLabel = (c: Row) => `#${c.condition_no} ${c.source_work_title ? c.source_work_title : ""}${c.rate_pct != null ? ` (${c.rate_pct}%)` : ""}`
+  const rtLabel = (rt: string) => RIGHTS_TYPES.find(([v]) => v === rt)?.[1] || rt || "—"
+  const mtLabel = (mt: string) => MATERIAL_TYPES.find(([v]) => v === mt)?.[1] || mt || "—"
+
+  return (
+    <div className="mt-4 border-t pt-3 space-y-2">
+      <div className="text-xs font-bold">マテリアル（翻訳・イラスト・原作素材 等）</div>
+      {rows === null ? (
+        <div className="text-xs text-muted-foreground">読み込み中…</div>
+      ) : rows.length === 0 ? (
+        <div className="text-[11px] text-muted-foreground">まだありません。下のフォームで追加してください。</div>
+      ) : (
+        <table className="w-full text-[11px] border-collapse">
+          <thead>
+            <tr className="text-muted-foreground text-left [&>th]:py-1 [&>th]:pr-2">
+              <th>名称</th><th>種別</th><th>帰属</th><th>権利者</th><th>つなぎ</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((m) => (
+              <tr key={m.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
+                <td className="min-w-[100px]">{m.material_name || "—"}</td>
+                <td>{mtLabel(m.material_type)}</td>
+                <td>{rtLabel(m.rights_type)}</td>
+                <td className="min-w-[100px]">{m.rights_holder_name || (m.rights_holder_vendor_id ? `#${m.rights_holder_vendor_id}` : "—")}</td>
+                <td className="text-[10px]">
+                  {m.license_condition_id ? `利用許諾 #${m.license_condition_no ?? m.license_condition_id}` : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "業務委託"}
+                </td>
+                <td className="whitespace-nowrap text-right">
+                  <button className="text-[10px] underline mr-2" onClick={() => setForm({ id: m.id, material_name: m.material_name || "", material_type: m.material_type || "", rights_type: m.rights_type || "", rights_holder_vendor_id: m.rights_holder_vendor_id || "", is_royalty_bearing: !!m.is_royalty_bearing, license_condition_id: m.license_condition_id || "" })}>編集</button>
+                  <button className="text-[10px] underline text-destructive" onClick={() => del(Number(m.id))}>削除</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <div className="rounded-sm border border-input bg-muted/20 p-2 space-y-2">
+        <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+          {form.id ? `マテリアル #${form.id} を編集` : "マテリアルを追加"}
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">名称</span>
+            <Input value={form.material_name} onChange={(e) => set("material_name", e.target.value)} placeholder="例: 日本語翻訳 / 表紙イラスト" className="h-7 text-xs" />
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">種別</span>
+            <NativeSelect value={form.material_type} onChange={(e) => set("material_type", e.target.value)} className="h-7 text-xs">
+              {MATERIAL_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </NativeSelect>
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">帰属</span>
+            <NativeSelect value={form.rights_type} onChange={(e) => set("rights_type", e.target.value)} className="h-7 text-xs">
+              {RIGHTS_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </NativeSelect>
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">権利者(取引先)</span>
+            <VendorSelectField value={form.rights_holder_vendor_id} onChange={(v) => set("rights_holder_vendor_id", v)} />
+          </label>
+        </div>
+        {isCounterpartyRights(form.rights_type) ? (
+          <label className="block space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">つなぐ利用許諾条件（相手方帰属）</span>
+            <NativeSelect value={form.license_condition_id} onChange={(e) => set("license_condition_id", e.target.value)} className="h-7 text-xs">
+              <option value="">(未設定)</option>
+              {conds.map((c) => <option key={c.id} value={c.id}>{condLabel(c)}</option>)}
+            </NativeSelect>
+            {conds.length === 0 && <span className="text-[10px] text-amber-600">先に「利用許諾条件」を追加してください。</span>}
+          </label>
+        ) : form.rights_type ? (
+          <p className="text-[10px] text-muted-foreground">当社帰属のため業務委託でつなぎます（業務委託明細リンクは今後対応）。</p>
+        ) : null}
+        <label className="flex items-center gap-2 text-[11px]">
+          <input type="checkbox" className="h-3 w-3" checked={!!form.is_royalty_bearing} onChange={(e) => set("is_royalty_bearing", e.target.checked)} />
+          ロイヤリティ対象
+        </label>
+        <div className="flex justify-end gap-2">
+          {form.id ? <Button variant="outline" size="sm" onClick={reset} disabled={busy}>キャンセル</Button> : null}
+          <Button size="sm" onClick={save} disabled={busy}>{busy ? "保存中…" : form.id ? "更新" : "＋追加"}</Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // モデル(A): 作品 → 条件明細(契約レス可) → 原作IP の紐付けエディタ。
 //   /api/v3/works/:id/conditions と /api/v3/work-conditions/:cid を使用。
 function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps: Row[] }) {
@@ -601,6 +746,10 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
   const blank = { id: 0, source_work_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
   const [form, setForm] = React.useState<Row>(blank)
   const [ipq, setIpq] = React.useState("")
+  // 複数選択まとめて追加
+  const [sel, setSel] = React.useState<Set<number>>(new Set())
+  const [bulk, setBulk] = React.useState({ rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "" })
+  const [bulkBusy, setBulkBusy] = React.useState(false)
 
   const load = React.useCallback(async () => {
     try {
@@ -637,6 +786,34 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
       setBusy(false)
     }
   }
+  // 複数の原作IPを選んで、共通条件で一括追加(1原作IP=1条件明細)
+  const bulkAdd = async () => {
+    if (sel.size === 0) return
+    setBulkBusy(true)
+    try {
+      for (const ipId of sel) {
+        await sendJson("POST", `/api/v3/works/${workId}/conditions`, {
+          source_work_id: ipId,
+          rate_pct: bulk.rate_pct === "" ? null : Number(bulk.rate_pct),
+          base_price_label: bulk.base_price_label || null,
+          calc_method: bulk.calc_method || "ROYALTY",
+          formula_text: bulk.formula_text || null,
+        })
+      }
+      showNotification(`${sel.size}件の条件明細を追加しました`, "success")
+      setSel(new Set())
+      setBulk({ rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "" })
+      setIpq("")
+      await load()
+    } catch (e: any) {
+      showNotification(`一括追加に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setBulkBusy(false)
+    }
+  }
+  const toggleSel = (id: number) =>
+    setSel((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+
   const del = async (cid: number) => {
     if (!window.confirm("この条件明細を削除しますか？")) return
     try {
@@ -688,10 +865,43 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
           </tbody>
         </table>
       )}
-      {/* 追加/編集フォーム */}
+      {/* 複数選択まとめて追加(原作IPを複数選んで1原作=1条件で一括作成) */}
+      {!form.id && (
+        <div className="rounded-sm border border-dashed border-input bg-muted/10 p-2 space-y-2">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+            複数の原作IPをまとめて条件追加（A原作＋B翻訳など）
+          </div>
+          <Input placeholder="原作IPを検索…" value={ipq} onChange={(e) => setIpq(e.target.value)} className="h-7 text-xs" />
+          <div className="max-h-36 overflow-y-auto border border-input rounded-sm bg-card">
+            {ipList.length === 0 ? (
+              <div className="px-2 py-2 text-[10px] text-muted-foreground">該当なし</div>
+            ) : (
+              ipList.map((s) => (
+                <label key={s.id} className="flex items-center gap-2 px-2 py-1 text-[11px] hover:bg-muted/40 cursor-pointer">
+                  <input type="checkbox" className="h-3 w-3" checked={sel.has(Number(s.id))} onChange={() => toggleSel(Number(s.id))} />
+                  <span className="truncate">{(s.source_code ? s.source_code + " : " : "") + (s.title || "#" + s.id)}</span>
+                </label>
+              ))
+            )}
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <Input type="number" step="0.0001" placeholder="料率% (共通)" value={bulk.rate_pct} onChange={(e) => setBulk((x) => ({ ...x, rate_pct: e.target.value }))} className="h-7 text-xs" />
+            <Input placeholder="基準価格 (共通)" value={bulk.base_price_label} onChange={(e) => setBulk((x) => ({ ...x, base_price_label: e.target.value }))} className="h-7 text-xs" />
+            <Input placeholder="計算式 (共通)" value={bulk.formula_text} onChange={(e) => setBulk((x) => ({ ...x, formula_text: e.target.value }))} className="h-7 text-xs" />
+          </div>
+          <div className="flex justify-end">
+            <Button size="sm" onClick={bulkAdd} disabled={bulkBusy || sel.size === 0}>
+              {bulkBusy ? "追加中…" : `選択 ${sel.size} 件をまとめて追加`}
+            </Button>
+          </div>
+          <p className="text-[10px] text-muted-foreground">各原作IPごとに1条件を作成（料率等は後から個別調整可）。</p>
+        </div>
+      )}
+
+      {/* 追加/編集フォーム(単一) */}
       <div className="rounded-sm border border-input bg-muted/20 p-2 space-y-2">
         <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
-          {form.id ? `条件 #${form.id} を編集` : "条件明細を追加"}
+          {form.id ? `条件 #${form.id} を編集` : "条件明細を1件追加"}
         </div>
         <div className="grid grid-cols-2 gap-2">
           <label className="space-y-0.5">
