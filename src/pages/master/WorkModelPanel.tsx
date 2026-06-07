@@ -605,6 +605,8 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
                   <MaterialsEditor workId={id} />
                   {/* 自社作品 = サブライセンス条件(OUT): 作品を再許諾する条件(我々が受け取る料率)。 */}
                   <WorkConditionsEditor workId={id} sourceIps={sourceIps} kind="sublicense_out" />
+                  {/* 条件(OUT) → 受領記録: 報告売上/数量から料率計算し受領を記録。 */}
+                  <ReceiptsEditor workId={id} />
                 </>
               )}
             </>
@@ -818,7 +820,7 @@ function WorkConditionsEditor({ workId, sourceIps, kind }: { workId: number; sou
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [busy, setBusy] = React.useState(false)
   // 新規/編集フォーム(インライン)
-  const blank = { id: 0, source_work_id: "", source_material_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
+  const blank = { id: 0, source_work_id: "", source_material_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "", counterparty_vendor_id: "", basis: "sales", unit_price: "" }
   const [form, setForm] = React.useState<Row>(blank)
   const [ipq, setIpq] = React.useState("")
   // 選択した原作IPの素材(マテリアル)候補
@@ -867,6 +869,12 @@ function WorkConditionsEditor({ workId, sourceIps, kind }: { workId: number; sou
         calc_method: form.calc_method || "ROYALTY",
         formula_text: form.formula_text || null,
         region_language_label: form.region_language_label || null,
+        // OUT(サブライセンス)の受領計算用。IN(利用許諾)では送らない。
+        ...(isIn ? {} : {
+          counterparty_vendor_id: form.counterparty_vendor_id ? Number(form.counterparty_vendor_id) : null,
+          basis: form.basis || "sales",
+          unit_price: form.unit_price === "" ? null : Number(form.unit_price),
+        }),
       }
       if (form.id) await sendJson("PUT", `/api/v3/work-conditions/${form.id}`, body)
       else await sendJson("POST", `/api/v3/works/${workId}/conditions`, body)
@@ -960,7 +968,7 @@ function WorkConditionsEditor({ workId, sourceIps, kind }: { workId: number; sou
                 <td>{c.base_price_label || "—"}</td>
                 <td className="max-w-[200px] truncate">{c.formula_text || "—"}</td>
                 <td className="whitespace-nowrap text-right">
-                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", source_material_id: c.source_material_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "" }) }}>編集</button>
+                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", source_material_id: c.source_material_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "", counterparty_vendor_id: c.counterparty_vendor_id || "", basis: c.basis || "sales", unit_price: c.unit_price ?? "" }) }}>編集</button>
                   <button className="text-[10px] underline text-destructive" onClick={() => del(Number(c.id))}>削除</button>
                 </td>
               </tr>
@@ -1035,11 +1043,144 @@ function WorkConditionsEditor({ workId, sourceIps, kind }: { workId: number; sou
             <Input value={form.formula_text} onChange={(e) => set("formula_text", e.target.value)} placeholder="上代 × 料率 × 製造数 等" className="h-7 text-xs" />
           </label>
         </div>
+        {/* OUT(サブライセンス)のみ: 受領先・計算根拠・単価。受領記録の計算に使う。 */}
+        {!isIn && (
+          <div className="grid grid-cols-3 gap-2 border-t border-border/40 pt-2">
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">受領先(取引先)</span>
+              <VendorSelectField value={form.counterparty_vendor_id} onChange={(v) => set("counterparty_vendor_id", v)} />
+            </label>
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">計算根拠</span>
+              <NativeSelect value={form.basis} onChange={(e) => set("basis", e.target.value)} className="h-7 text-xs">
+                <option value="sales">報告売上 × 料率</option>
+                <option value="manufacturing">報告数量 × 単価 × 料率</option>
+              </NativeSelect>
+            </label>
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">単価(数量基準時)</span>
+              <Input type="number" step="0.01" value={form.unit_price} onChange={(e) => set("unit_price", e.target.value)} disabled={form.basis !== "manufacturing"} className="h-7 text-xs" />
+            </label>
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           {form.id ? <Button variant="outline" size="sm" onClick={reset} disabled={busy}>キャンセル</Button> : null}
           <Button size="sm" onClick={save} disabled={busy}>{busy ? "保存中…" : form.id ? "更新" : "＋追加"}</Button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// サブライセンス受領記録(OUT)。自社作品配下の sublicense_out 条件ごとに、
+//   期(period)単位で「報告売上/数量 → 料率計算 → 受領額」を入力(数字計算のみ・文書発行なし)。
+function ReceiptsEditor({ workId }: { workId: number }) {
+  const { showNotification } = useAppData()
+  const [conds, setConds] = React.useState<Row[]>([])
+  const [receipts, setReceipts] = React.useState<Row[] | null>(null)
+  const [forms, setForms] = React.useState<Record<number, Row>>({})
+  const [busy, setBusy] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    try {
+      const cs = await getJson(`/api/v3/works/${workId}/conditions`)
+      setConds((Array.isArray(cs) ? cs : []).filter((c: Row) => c.condition_kind === "sublicense_out"))
+    } catch { setConds([]) }
+    try { setReceipts(await getJson(`/api/v3/works/${workId}/receipts`)) } catch { setReceipts([]) }
+  }, [workId])
+  React.useEffect(() => { load() }, [load])
+
+  const fset = (cid: number, k: string, v: any) => setForms((f) => ({ ...f, [cid]: { ...(f[cid] || {}), [k]: v } }))
+  const yen = (n: any) => "¥" + (Number(n) || 0).toLocaleString("ja-JP")
+  const preview = (cond: Row, f: Row) => {
+    const rate = Number(cond.rate_pct) || 0
+    const base = cond.basis === "manufacturing"
+      ? (Number(f?.reported_quantity) || 0) * (Number(cond.unit_price) || 0)
+      : (Number(f?.reported_sales) || 0)
+    return Math.round(base * rate / 100 * 100) / 100
+  }
+  const add = async (cid: number) => {
+    const f = forms[cid] || {}
+    setBusy(true)
+    try {
+      await sendJson("POST", `/api/v3/work-conditions/${cid}/receipts`, {
+        period: f.period || null,
+        period_date: f.period_date || null,
+        reported_sales: f.reported_sales === "" || f.reported_sales == null ? null : Number(f.reported_sales),
+        reported_quantity: f.reported_quantity === "" || f.reported_quantity == null ? null : Number(f.reported_quantity),
+        received_amount: f.received_amount === "" || f.received_amount == null ? null : Number(f.received_amount),
+        received_date: f.received_date || null,
+        note: f.note || null,
+      })
+      showNotification("受領記録を追加しました", "success")
+      setForms((x) => ({ ...x, [cid]: {} }))
+      await load()
+    } catch (e: any) { showNotification(`追加に失敗: ${e?.message || e}`, "error") }
+    finally { setBusy(false) }
+  }
+  const del = async (rid: number) => {
+    if (!window.confirm("この受領記録を削除しますか？")) return
+    try { await sendJson("DELETE", `/api/v3/condition-receipts/${rid}`, {}); await load() }
+    catch (e: any) { showNotification(`削除に失敗: ${e?.message || e}`, "error") }
+  }
+  const byCond = (cid: number) => (receipts || []).filter((r) => Number(r.condition_id) === cid)
+  const condLabel = (c: Row) => `条件#${c.condition_no ?? c.id}${c.region_language_label ? " " + c.region_language_label : ""}`
+
+  return (
+    <div className="mt-4 border-t pt-3 space-y-3">
+      <div className="text-xs font-bold">
+        サブライセンス受領記録（OUT・数字計算）
+        <span className="ml-2 align-middle text-[9px] font-mono px-1.5 py-0.5 rounded-sm bg-amber-100 text-amber-700">受領</span>
+      </div>
+      {conds.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">先に「サブライセンス条件（OUT）」を追加してください。</p>
+      ) : receipts === null ? (
+        <div className="text-xs text-muted-foreground">読み込み中…</div>
+      ) : conds.map((c) => {
+        const f = forms[c.id] || {}
+        const rows = byCond(c.id)
+        const isMfg = c.basis === "manufacturing"
+        return (
+          <div key={c.id} className="rounded-sm border border-input">
+            <div className="px-2 py-1.5 bg-muted/30 text-[11px] flex items-center gap-2 flex-wrap">
+              <span className="font-bold">{condLabel(c)}</span>
+              <span className="text-muted-foreground">
+                料率 {c.rate_pct ?? "—"}% / {isMfg ? "数量×単価" : "売上"}基準{c.counterparty_name ? " / 受領先 " + c.counterparty_name : ""}
+              </span>
+            </div>
+            <div className="p-2 space-y-2">
+              {rows.length > 0 && (
+                <table className="w-full text-[11px] border-collapse">
+                  <thead><tr className="text-muted-foreground text-left [&>th]:py-1 [&>th]:pr-2">
+                    <th>期</th><th>{isMfg ? "報告数量" : "報告売上"}</th><th>計算(税抜)</th><th>受領額</th><th>受領日</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2">
+                        <td>{r.period || (r.period_date ? String(r.period_date).slice(0, 10) : "—")}</td>
+                        <td>{isMfg ? (r.reported_quantity ?? "—") : yen(r.reported_sales)}</td>
+                        <td className="font-bold">{yen(r.computed_royalty_ex_tax)}</td>
+                        <td>{r.received_amount != null ? yen(r.received_amount) : "—"}</td>
+                        <td>{r.received_date ? String(r.received_date).slice(0, 10) : "—"}</td>
+                        <td className="text-right"><button className="text-[10px] underline text-destructive" onClick={() => del(Number(r.id))}>削除</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="grid grid-cols-5 gap-1.5 items-end">
+                <Input placeholder="期(例 2026-Q1)" value={f.period || ""} onChange={(e) => fset(c.id, "period", e.target.value)} className="h-7 text-xs" />
+                {isMfg
+                  ? <Input type="number" placeholder="報告数量" value={f.reported_quantity || ""} onChange={(e) => fset(c.id, "reported_quantity", e.target.value)} className="h-7 text-xs" />
+                  : <Input type="number" placeholder="報告売上(税抜)" value={f.reported_sales || ""} onChange={(e) => fset(c.id, "reported_sales", e.target.value)} className="h-7 text-xs" />}
+                <Input type="number" placeholder="受領額(任意)" value={f.received_amount || ""} onChange={(e) => fset(c.id, "received_amount", e.target.value)} className="h-7 text-xs" />
+                <Input type="date" value={f.received_date || ""} onChange={(e) => fset(c.id, "received_date", e.target.value)} className="h-7 text-xs" />
+                <Button size="sm" onClick={() => add(c.id)} disabled={busy}>＋計算 {yen(preview(c, f))}</Button>
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
