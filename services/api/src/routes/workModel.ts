@@ -345,6 +345,107 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // ── 作品の利用許諾条件(条件明細・契約レス可) ───────────────────
+  //   作品(work_id) に直接ぶら下げる capability_financial_conditions を CRUD。
+  //   capability_id=NULL(契約レス)、source_work_id=原作IP(works kind='licensed_in')。
+  //   モデル(A): 作品 → 条件明細 → 原作IP。
+
+  // GET: 作品の条件明細一覧(原作IPの表示名も同梱)
+  app.get("/api/v3/works/:id/conditions", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT cfc.*, sw.title AS source_work_title, sw.work_code AS source_work_code
+           FROM capability_financial_conditions cfc
+           LEFT JOIN works sw ON sw.id = cfc.source_work_id
+          WHERE cfc.work_id = $1
+          ORDER BY cfc.condition_no ASC, cfc.id ASC`,
+        [id]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // POST: 作品に条件明細を追加(契約レス)
+  app.post("/api/v3/works/:id/conditions", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      // condition_no 未指定なら max+1
+      let condNo = Number(b.condition_no);
+      if (!Number.isFinite(condNo) || condNo <= 0) {
+        const m = await query(
+          `SELECT COALESCE(MAX(condition_no), 0) + 1 AS n
+             FROM capability_financial_conditions WHERE work_id = $1`,
+          [id]
+        );
+        condNo = Number(m.rows[0]?.n) || 1;
+      }
+      const r = await query(
+        `INSERT INTO capability_financial_conditions (
+           work_id, capability_id, source_work_id, condition_no,
+           region_language_label, calc_method, rate_pct, base_price_label,
+           calc_period, calc_period_kind, calc_period_close_month, currency,
+           formula_text, payment_terms, mg_amount, ag_amount
+         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+         RETURNING *`,
+        [
+          id, b.source_work_id ?? null, condNo,
+          b.region_language_label ?? null, b.calc_method ?? "ROYALTY",
+          b.rate_pct ?? null, b.base_price_label ?? null,
+          b.calc_period ?? null, b.calc_period_kind ?? null,
+          b.calc_period_close_month ?? null, b.currency ?? "JPY",
+          b.formula_text ?? null, b.payment_terms ?? null,
+          Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
+        ]
+      );
+      res.status(201).json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // PUT: 条件明細を更新(契約レス条件 = work_id 紐付き想定)
+  app.put("/api/v3/work-conditions/:cid", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const cid = Number(req.params.cid);
+      if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const r = await query(
+        `UPDATE capability_financial_conditions SET
+            source_work_id = $2, region_language_label = $3, calc_method = $4,
+            rate_pct = $5, base_price_label = $6, calc_period = $7,
+            calc_period_kind = $8, calc_period_close_month = $9, currency = $10,
+            formula_text = $11, payment_terms = $12, mg_amount = $13, ag_amount = $14,
+            condition_no = COALESCE($15, condition_no), updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [
+          cid, b.source_work_id ?? null, b.region_language_label ?? null,
+          b.calc_method ?? "ROYALTY", b.rate_pct ?? null, b.base_price_label ?? null,
+          b.calc_period ?? null, b.calc_period_kind ?? null, b.calc_period_close_month ?? null,
+          b.currency ?? "JPY", b.formula_text ?? null, b.payment_terms ?? null,
+          Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
+          b.condition_no ?? null,
+        ]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      res.json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // DELETE: 条件明細を削除
+  app.delete("/api/v3/work-conditions/:cid", ...requireWrite, async (req, res) => {
+    try {
+      const cid = Number(req.params.cid);
+      if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `DELETE FROM capability_financial_conditions WHERE id = $1`,
+        [cid]
+      );
+      res.json({ ok: true, deleted: r.rowCount || 0 });
+    } catch (e) { fail(res, e); }
+  });
+
   // ── CSV 一括取込 ───────────────────────────────────────────
   //   POST /api/v3/import/:entity  body: { csv, dry_run, duplicate_mode }
   //   GET  /api/v3/import/:entity/template.csv
