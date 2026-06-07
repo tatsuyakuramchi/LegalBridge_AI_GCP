@@ -157,11 +157,8 @@ export const FinancialConditionTable: React.FC<Props> = ({
         calc_method: "ROYALTY",
         rate_pct: 0,
         mg_amount: 0,
-        // division プリセットの既定値(保存先は共通カラム)
-        base_price_label: preset.basePriceDefault,
-        formula_text: preset.formulaDefault,
-        calc_period_kind: preset.periodKindDefault,
-        calc_period: buildCalcPeriodLabel(preset.periodKindDefault, undefined),
+        // 出力ニュートラル維持のため、基準価格/計算式/計算期間は事前入力しない。
+        //   (division プリセットは下のプレースホルダで案内のみ。保存値は空のまま=従来どおり)
       },
     ]);
   };
