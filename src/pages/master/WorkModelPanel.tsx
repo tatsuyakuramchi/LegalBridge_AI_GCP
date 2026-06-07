@@ -585,7 +585,11 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
                 </>
               )}
               {type === "works" && (
-                <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                <>
+                  {/* 当社帰属(業務委託成果物=マテリアル)の置き場。検収済の業務委託明細から生成。 */}
+                  <MaterialsEditor workId={id} />
+                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                </>
               )}
             </>
           )}
@@ -611,6 +615,9 @@ const RIGHTS_TYPES: [string, string][] = [
   ["owned", "当社保有"], ["copyright_assignment", "譲渡(当社へ)"],
 ]
 const isCounterpartyRights = (rt: string) => rt === "license" || rt === "joint"
+// 検収状況ラベル(業務委託明細): accepted=検収済 / partial=一部検収 / pending=未検収
+const inspLabel = (status?: string | null): string =>
+  status === "accepted" ? "✅ 検収済" : status === "partial" ? "🟡 一部検収" : status === "pending" ? "⬜ 未検収" : ""
 
 function MaterialsEditor({ workId }: { workId: number }) {
   const { showNotification } = useAppData()
@@ -699,7 +706,10 @@ function MaterialsEditor({ workId }: { workId: number }) {
                   {m.license_condition_id
                     ? `利用許諾 #${m.license_condition_no ?? m.license_condition_id}`
                     : m.service_line_item_id
-                      ? `業務委託 ${m.service_doc_number || ""}${m.service_line_name ? "/" + m.service_line_name : ""}`
+                      ? <>
+                          {`業務委託 ${m.service_doc_number || ""}${m.service_line_name ? "/" + m.service_line_name : ""}`}
+                          {m.service_inspection_status ? <span className="ml-1">{inspLabel(m.service_inspection_status)}</span> : null}
+                        </>
                       : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "(業務委託未設定)"}
                 </td>
                 <td className="whitespace-nowrap text-right">
@@ -750,11 +760,16 @@ function MaterialsEditor({ workId }: { workId: number }) {
           <label className="block space-y-0.5">
             <span className="text-[10px] text-muted-foreground">つなぐ業務委託明細（当社帰属＝制作対価）</span>
             <Input placeholder="発注書番号・取引先・品目で検索…" value={svcq} onChange={(e) => setSvcq(e.target.value)} className="h-7 text-xs" />
-            <NativeSelect value={form.service_line_item_id} onChange={(e) => set("service_line_item_id", e.target.value)} className="h-7 text-xs">
+            <NativeSelect value={form.service_line_item_id} onChange={(e) => {
+              const v = e.target.value
+              // 成果物→マテリアル生成: 業務委託明細を選んだら、名称が空なら品目名で補完。
+              const picked = svc.find((s) => String(s.id) === v)
+              setForm((f) => ({ ...f, service_line_item_id: v, material_name: f.material_name?.trim() ? f.material_name : (picked?.item_name || f.material_name) }))
+            }} className="h-7 text-xs">
               <option value="">(未設定)</option>
               {svc.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {`${s.document_number || "—"} / ${s.item_name || "明細#" + s.id}${s.vendor_name ? " / " + s.vendor_name : ""}${s.amount_ex_tax != null ? " / ¥" + Number(s.amount_ex_tax).toLocaleString("ja-JP") : ""}`}
+                  {`${s.document_number || "—"} / ${s.item_name || "明細#" + s.id}${s.vendor_name ? " / " + s.vendor_name : ""}${s.amount_ex_tax != null ? " / ¥" + Number(s.amount_ex_tax).toLocaleString("ja-JP") : ""}${s.inspection_status ? " / " + inspLabel(s.inspection_status) : ""}`}
                 </option>
               ))}
             </NativeSelect>
