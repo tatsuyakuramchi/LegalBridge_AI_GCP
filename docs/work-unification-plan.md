@@ -32,10 +32,20 @@
 ### 1.2 残作業（仕上げ）
 | # | 作業 | 種別 |
 | :-- | :-- | :-- |
-| 1a | 条件エディタを **division(PUB/BDG) 駆動プリセット**化（ラベル/既定計算式のみ切替、保存は汎用列） | UI ✅完了(2026-06-07) |
-| 1b | PUB の紙/電子は **condition_no で複数条件行**として表現（紙=条件1, 電子=条件2、calc_type='sales' 期次） | 運用/UI |
-| 1c | PUB フローの利用許諾計算書生成を **calc_license + royalty_statement の共通経路**へ集約（出版専用計算フィールドはプリセットへ吸収） | ロジック |
-| 1d | 任意: 条件行に `division`/`preset` ヒント列を追加(additive)、または work.division から導出 | スキーマ(任意) |
+| 1a | 条件エディタを **division(PUB/BDG) 駆動プリセット**化（ラベル/既定計算式のみ切替、保存は汎用列） | UI ✅完了(2026-06-07・表示のみ/出力ニュートラル) |
+| 1b | PUB の紙/電子は **condition_no で複数条件行**（紙=条件1, 電子=条件2, 翻訳=条件3） | ✅既実装(Phase 26.9: pub_license_terms 確定時に自動同期) |
+| 1c | PUB フローの利用許諾計算書生成を **calc_license + royalty_statement の共通経路**へ集約 | ✅既実装(Phase 28: calc_type='sales'/'manufacturing'/'sublicense' で分岐、出力は共通 royalty_statement) |
+| 1d | 任意: 条件行に `division`/`preset` ヒント列を追加(additive)、または work.division から導出 | 任意・未着手 |
+
+#### Part 1 調査結論（2026-06-07）
+**条件・計算の共通化は、データ/計算/出力の各層で既に達成済み**だった:
+- 条件保管: `capability_financial_conditions`(汎用1本)。出版 `pub_license_terms` も確定時に Phase 26.9 が
+  紙=条件1/電子=条件2/翻訳=条件3 として同テーブルへ同期。
+- 計算: `calc_license.ts`(worker) / `RoyaltyPreviewPanel`(UI) が `calc_type`(manufacturing=製造 / sales=売上・印税 / sublicense)で分岐。
+- 出力: `royalty_statement`(利用許諾計算書) の共通テンプレが calcType で表示分岐。
+- 残る差異は **入力フォームのみ**(PUB=`pub_license_terms`の専用フィールド、BDG=汎用 FinancialConditionTable)。
+  これは確定時同期で吸収済みのため、フォーム統一は output リスクがあり**任意**(やるなら別途慎重に)。
+- 1a の division 判定バグ修正: `publication` だけでなく実テンプレ接頭辞 `pub_` も PUB と判定するよう修正。
 
 ### 1.3 プリセット対応表（タグ駆動）
 | 汎用列 | BDG(own/製造) | PUB(出版/販売) |
