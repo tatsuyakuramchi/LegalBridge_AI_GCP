@@ -15,6 +15,7 @@ import {
   ClipboardCheck,
   Search,
   ExternalLink,
+  Link2,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -50,6 +51,7 @@ const groups: NavGroup[] = [
     items: [
       { to: "/master", label: "Masters", icon: Building2, description: "Vendors / Staff / Contracts" },
       { to: "/templates", label: "Templates", icon: FileCode2, description: "Blueprint studio" },
+      { to: "/data-linkage", label: "連結チェック", icon: Link2, description: "データ整合性 点検/修復" },
       { to: "/settings", label: "Settings", icon: SettingsIcon, description: "System" },
     ],
   },
