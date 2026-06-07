@@ -467,10 +467,14 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(
         `SELECT wm.*, v.vendor_name AS rights_holder_name,
-                c.condition_no AS license_condition_no
+                c.condition_no AS license_condition_no,
+                sli.item_name AS service_line_name,
+                scc.document_number AS service_doc_number
            FROM work_materials wm
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
            LEFT JOIN capability_financial_conditions c ON c.id = wm.license_condition_id
+           LEFT JOIN capability_line_items sli ON sli.id = wm.service_line_item_id
+           LEFT JOIN contract_capabilities scc ON scc.id = sli.capability_id
           WHERE wm.work_id = $1
           ORDER BY wm.id ASC`,
         [id]
@@ -531,6 +535,32 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(`DELETE FROM work_materials WHERE id = $1`, [mid]);
       res.json({ ok: true, deleted: r.rowCount || 0 });
+    } catch (e) { fail(res, e); }
+  });
+
+  // 業務委託明細(capability_line_items)の候補検索 — 当社帰属マテリアルの紐付け用。
+  //   発注書(purchase_order) または fee_type='production'(制作対価) の明細を対象。
+  app.get("/api/v3/service-line-items", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const params: any[] = [];
+      let where = `(cc.record_type = 'purchase_order' OR cli.fee_type = 'production')`;
+      if (q) {
+        params.push(`%${q}%`);
+        where += ` AND (cli.item_name ILIKE $1 OR cc.document_number ILIKE $1 OR v.vendor_name ILIKE $1)`;
+      }
+      const r = await query(
+        `SELECT cli.id, cli.item_name, cli.amount_ex_tax, cli.work_id,
+                cc.document_number, cc.contract_title, v.vendor_name
+           FROM capability_line_items cli
+           JOIN contract_capabilities cc ON cc.id = cli.capability_id
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE ${where}
+          ORDER BY cli.id DESC
+          LIMIT 50`,
+        params
+      );
+      res.json(r.rows);
     } catch (e) { fail(res, e); }
   });
 
