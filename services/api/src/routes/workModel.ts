@@ -473,12 +473,27 @@ export function registerWorkModelRoutes(
         `SELECT wm.*, v.vendor_name AS rights_holder_name,
                 c.condition_no AS license_condition_no,
                 sli.item_name AS service_line_name,
-                scc.document_number AS service_doc_number
+                sli.amount_ex_tax AS service_line_amount,
+                scc.document_number AS service_doc_number,
+                COALESCE(sli.status_flags->>'inspection_issued','') = 'true' AS service_inspection_issued,
+                COALESCE(sli_dli.inspected_amount, 0) AS service_inspected_amount,
+                CASE
+                  WHEN sli.id IS NULL THEN NULL
+                  WHEN COALESCE(sli_dli.inspected_amount,0) <= 0 THEN 'pending'
+                  WHEN COALESCE(sli.amount_ex_tax,0) > 0
+                       AND COALESCE(sli_dli.inspected_amount,0) >= COALESCE(sli.amount_ex_tax,0) THEN 'accepted'
+                  ELSE 'partial'
+                END AS service_inspection_status
            FROM work_materials wm
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
            LEFT JOIN capability_financial_conditions c ON c.id = wm.license_condition_id
            LEFT JOIN capability_line_items sli ON sli.id = wm.service_line_item_id
            LEFT JOIN contract_capabilities scc ON scc.id = sli.capability_id
+           LEFT JOIN LATERAL (
+             SELECT SUM(d.inspected_amount_ex_tax) AS inspected_amount
+               FROM delivery_line_items d
+              WHERE d.capability_line_item_id = sli.id
+           ) sli_dli ON TRUE
           WHERE wm.work_id = $1
           ORDER BY wm.id ASC`,
         [id]
@@ -555,10 +570,23 @@ export function registerWorkModelRoutes(
       }
       const r = await query(
         `SELECT cli.id, cli.item_name, cli.amount_ex_tax, cli.work_id,
-                cc.document_number, cc.contract_title, v.vendor_name
+                cc.document_number, cc.contract_title, v.vendor_name,
+                COALESCE(cli.status_flags->>'inspection_issued','') = 'true' AS inspection_issued,
+                COALESCE(dli.inspected_amount, 0) AS inspected_amount,
+                CASE
+                  WHEN COALESCE(dli.inspected_amount,0) <= 0 THEN 'pending'
+                  WHEN COALESCE(cli.amount_ex_tax,0) > 0
+                       AND COALESCE(dli.inspected_amount,0) >= COALESCE(cli.amount_ex_tax,0) THEN 'accepted'
+                  ELSE 'partial'
+                END AS inspection_status
            FROM capability_line_items cli
            JOIN contract_capabilities cc ON cc.id = cli.capability_id
            LEFT JOIN vendors v ON v.id = cc.vendor_id
+           LEFT JOIN LATERAL (
+             SELECT SUM(d.inspected_amount_ex_tax) AS inspected_amount
+               FROM delivery_line_items d
+              WHERE d.capability_line_item_id = cli.id
+           ) dli ON TRUE
           WHERE ${where}
           ORDER BY cli.id DESC
           LIMIT 50`,
