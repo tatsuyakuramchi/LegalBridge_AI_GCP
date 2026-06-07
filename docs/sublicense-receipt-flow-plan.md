@@ -125,7 +125,14 @@
   - **受領記録テーブル `condition_receipts`**（condition_id 紐付け・period/報告売上/報告数量/計算royalty/受領額/受領日）を新設。
   - API `/api/v3`: 条件 write に OUT 項目追加 + 受領記録 CRUD（計算込み: royalty = 報告売上×料率 or 報告数量×単価）。
   - UI: 自社作品詳細に **受領記録エディタ**（条件ごとに period 行＋数字計算）。
-- **P2**: receivableMap / dataLinkage を `condition_receipts`(新) 参照へ寄せ替え。受領→`payments(inbound, sublicense_income)`台帳連携。
-- **P3（撤去）**: 旧 `/api/sublicense/*`・`sublicenseHtml`・SublicensePanel・WorkModelPanel インボックスを撤去し、`sublicense_deals`/`sublicense_sales_reports` を DROP。
+- **P2（完了）**: 受領→`payments(inbound, sublicense_income)`台帳連携（受領記録 upsert/delete で payments を同期）。
+  `receivableMap`(分配マップ)の下流受領を `sublicense_deals`(listDeals) → `condition_kind='sublicense_out'` + `condition_receipts` へ寄せ替え。
+- **P3（完了・撤去）**: 旧モジュールを撤去。
+  - search-api: `/api/sublicense/*`・`/master/sublicense`・利用報告CSV取込ルート、`sublicenseService.ts`・`sublicenseHtml.ts`・`usageReportImportService.ts` を削除。
+  - admin-ui: `SublicensePanel` ・ナビ「請求権(受領)」・WorkModelPanel の deals インボックス/受領条件リンクを削除。
+  - nav/screen: masterChrome・adminDashboard・screens から `sublicense` を除去。
+  - worker: dataLinkage の sublicense_deals 孤児チェック/修復を除去。vendorMasterService の参照ラベルを除去。
+  - migration `0043`: `sublicense_sales_reports` / `sublicense_deals` を DROP（`payments.sublicense_deal_id` も撤去）。
+  - ※ `sublicensees`(サブライセンシー マスタ) / `work_sublicensees` は別物のため**残置**。
 
-> ※ P1 は完全 additive（旧 deals 並走・ビルドグリーン維持）。P3 で一本化・撤去。
+> 受領フローは「サブライセンス条件明細(OUT) → 受領記録(condition_receipts・計算) → 入金台帳(payments inbound)／分配マップ」に一本化済み。
