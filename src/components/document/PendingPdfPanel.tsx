@@ -25,6 +25,7 @@ import {
   PackageOpen,
   Link2,
   Pencil,
+  Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -92,6 +93,7 @@ export const PendingPdfPanel: React.FC = () => {
   // Phase 23: 一括修正(発注日 / 担当者 / 支払日 / 備考追記)
   const [bulkEditOpen, setBulkEditOpen] = React.useState(false)
   const [savingEdit, setSavingEdit] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
   const [staffOptions, setStaffOptions] = React.useState<
     Array<{ email: string; staff_name: string; department?: string }>
   >([])
@@ -546,6 +548,67 @@ export const PendingPdfPanel: React.FC = () => {
     }
   }
 
+  // Phase 23: 不要な取り込みレコードを選択して削除
+  const bulkDelete = async () => {
+    if (selectedRowObjs.length === 0) return
+    if (
+      !window.confirm(
+        `選択した ${selectedRowObjs.length} 件をレコードごと削除します。\n` +
+          `この操作は取り消せません。発行済(PDFあり)や検収済のものは安全のため自動でスキップします。\n` +
+          `よろしいですか?`
+      )
+    )
+      return
+    setDeleting(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/documents/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedRowObjs.map((r) => r.id) }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      const deletedNums: string[] = Array.isArray(json.deleted_numbers)
+        ? json.deleted_numbers
+        : []
+      const deletedSet = new Set(deletedNums)
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              rows: d.rows.filter((r) => !deletedSet.has(r.document_number)),
+              total: d.total - deletedSet.size,
+            }
+          : d
+      )
+      setSelected(new Set())
+      const skipped: Array<{ document_number: string; reason: string }> =
+        Array.isArray(json.skipped) ? json.skipped : []
+      setLastResult({
+        id: -1,
+        document_number:
+          `削除: ${json.deleted} 件` +
+          (skipped.length > 0 ? ` / スキップ ${skipped.length} 件` : ""),
+        action: skipped.length > 0 ? "skipped" : "completed",
+      })
+      if (skipped.length > 0) {
+        setError(
+          "削除しなかった文書: " +
+            skipped
+              .map((s) => `${s.document_number}(${s.reason})`)
+              .join(" / ")
+        )
+      }
+    } catch (e: any) {
+      setError(`削除失敗: ${e?.message || e}`)
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="space-y-4">
       {/* ヘッダ */}
@@ -709,6 +772,20 @@ export const PendingPdfPanel: React.FC = () => {
             >
               <Pencil className="w-3 h-3" />
               ✏️ 選択を一括修正
+            </button>
+            <button
+              type="button"
+              onClick={bulkDelete}
+              disabled={bulkRunning || merging || deleting || selected.size === 0}
+              className="text-[10px] font-mono uppercase tracking-wider border border-red-300 text-red-700 rounded-sm px-3 py-1.5 hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="不要な取り込みレコードを選択してまとめて削除します(発行済・検収済はスキップ)"
+            >
+              {deleting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Trash2 className="w-3 h-3" />
+              )}
+              🗑 選択を削除
             </button>
             <button
               type="button"
