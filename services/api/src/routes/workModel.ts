@@ -409,8 +409,11 @@ export function registerWorkModelRoutes(
            work_id, capability_id, source_work_id, source_material_id, condition_no,
            region_language_label, calc_method, rate_pct, base_price_label,
            calc_period, calc_period_kind, calc_period_close_month, currency,
-           formula_text, payment_terms, mg_amount, ag_amount, condition_kind
-         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+           formula_text, payment_terms, mg_amount, ag_amount, condition_kind,
+           counterparty_vendor_id, basis, unit_price, cycle, billing_day,
+           term_start, term_end, advance_amount, forecast_amount
+         ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+           $18, $19, $20, $21, $22, $23, $24, $25, $26)
          RETURNING *`,
         [
           id, b.source_work_id ?? null, b.source_material_id ?? null, condNo,
@@ -420,6 +423,10 @@ export function registerWorkModelRoutes(
           b.calc_period_close_month ?? null, b.currency ?? "JPY",
           b.formula_text ?? null, b.payment_terms ?? null,
           Number(b.mg_amount) || 0, Number(b.ag_amount) || 0, condKind,
+          b.counterparty_vendor_id ?? null, b.basis ?? null,
+          b.unit_price ?? null, b.cycle ?? null, b.billing_day ?? null,
+          b.term_start ?? null, b.term_end ?? null,
+          b.advance_amount ?? null, b.forecast_amount ?? null,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -439,7 +446,10 @@ export function registerWorkModelRoutes(
             calc_period_kind = $8, calc_period_close_month = $9, currency = $10,
             formula_text = $11, payment_terms = $12, mg_amount = $13, ag_amount = $14,
             condition_no = COALESCE($15, condition_no), source_material_id = $16,
-            condition_kind = COALESCE($17, condition_kind), updated_at = now()
+            condition_kind = COALESCE($17, condition_kind),
+            counterparty_vendor_id = $18, basis = $19, unit_price = $20, cycle = $21,
+            billing_day = $22, term_start = $23, term_end = $24,
+            advance_amount = $25, forecast_amount = $26, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
           cid, b.source_work_id ?? null, b.region_language_label ?? null,
@@ -448,6 +458,9 @@ export function registerWorkModelRoutes(
           b.currency ?? "JPY", b.formula_text ?? null, b.payment_terms ?? null,
           Number(b.mg_amount) || 0, Number(b.ag_amount) || 0,
           b.condition_no ?? null, b.source_material_id ?? null, b.condition_kind ?? null,
+          b.counterparty_vendor_id ?? null, b.basis ?? null, b.unit_price ?? null,
+          b.cycle ?? null, b.billing_day ?? null, b.term_start ?? null, b.term_end ?? null,
+          b.advance_amount ?? null, b.forecast_amount ?? null,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
@@ -464,6 +477,125 @@ export function registerWorkModelRoutes(
         `DELETE FROM capability_financial_conditions WHERE id = $1`,
         [cid]
       );
+      res.json({ ok: true, deleted: r.rowCount || 0 });
+    } catch (e) { fail(res, e); }
+  });
+
+  // ── サブライセンス受領記録(condition_receipts) ───────────────────
+  //   サブライセンス条件明細(OUT) → 受領記録(計算のみ・文書発行なし)。
+  //   royalty = basis='manufacturing' ? 報告数量×単価×料率 : 報告売上×料率。
+  //   サーバ側で computed_royalty_ex_tax を算出して保存(フロントの計算と二重化)。
+  const computeRoyalty = (cond: any, rep: { reported_sales?: any; reported_quantity?: any }) => {
+    const rate = Number(cond?.rate_pct) || 0;
+    let base = 0;
+    if (cond?.basis === "manufacturing") {
+      base = (Number(rep.reported_quantity) || 0) * (Number(cond?.unit_price) || 0);
+    } else {
+      base = Number(rep.reported_sales) || 0;
+    }
+    return Math.round(base * (rate / 100) * 100) / 100;
+  };
+
+  // GET: 作品配下の OUT 条件 × 受領記録 を一覧(条件情報を同梱)
+  app.get("/api/v3/works/:id/receipts", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT cr.*, cfc.condition_no, cfc.region_language_label, cfc.rate_pct,
+                cfc.basis, cfc.unit_price, cfc.currency, cfc.counterparty_vendor_id,
+                v.vendor_name AS counterparty_name
+           FROM condition_receipts cr
+           JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
+           LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
+          WHERE cfc.work_id = $1 AND cfc.condition_kind = 'sublicense_out'
+          ORDER BY cr.condition_id ASC, cr.period_date ASC NULLS LAST, cr.id ASC`,
+        [id]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // GET: 条件単位の受領記録
+  app.get("/api/v3/work-conditions/:cid/receipts", ...requireRead, async (req, res) => {
+    try {
+      const cid = Number(req.params.cid);
+      if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT * FROM condition_receipts WHERE condition_id = $1
+          ORDER BY period_date ASC NULLS LAST, id ASC`,
+        [cid]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // POST: 受領記録を追加(計算込み)
+  app.post("/api/v3/work-conditions/:cid/receipts", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const cid = Number(req.params.cid);
+      if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const c = await query(
+        `SELECT rate_pct, basis, unit_price FROM capability_financial_conditions WHERE id = $1`,
+        [cid]
+      );
+      if (c.rows.length === 0) return res.status(404).json({ ok: false, error: "condition not found" });
+      const royalty = computeRoyalty(c.rows[0], b);
+      const r = await query(
+        `INSERT INTO condition_receipts (
+           condition_id, period, period_date, reported_sales, reported_quantity,
+           computed_royalty_ex_tax, received_amount, received_date, status, note
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING *`,
+        [
+          cid, b.period ?? null, b.period_date ?? null,
+          b.reported_sales ?? null, b.reported_quantity ?? null, royalty,
+          b.received_amount ?? null, b.received_date ?? null,
+          b.received_amount != null ? "received" : "reported", b.note ?? null,
+        ]
+      );
+      res.status(201).json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // PUT: 受領記録を更新(再計算)
+  app.put("/api/v3/condition-receipts/:rid", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const rid = Number(req.params.rid);
+      if (!Number.isFinite(rid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const cur = await query(
+        `SELECT cr.condition_id, cfc.rate_pct, cfc.basis, cfc.unit_price
+           FROM condition_receipts cr
+           JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
+          WHERE cr.id = $1`,
+        [rid]
+      );
+      if (cur.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      const royalty = computeRoyalty(cur.rows[0], b);
+      const r = await query(
+        `UPDATE condition_receipts SET
+            period = $2, period_date = $3, reported_sales = $4, reported_quantity = $5,
+            computed_royalty_ex_tax = $6, received_amount = $7, received_date = $8,
+            status = $9, note = $10, updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [
+          rid, b.period ?? null, b.period_date ?? null,
+          b.reported_sales ?? null, b.reported_quantity ?? null, royalty,
+          b.received_amount ?? null, b.received_date ?? null,
+          b.received_amount != null ? "received" : "reported", b.note ?? null,
+        ]
+      );
+      res.json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // DELETE: 受領記録を削除
+  app.delete("/api/v3/condition-receipts/:rid", ...requireWrite, async (req, res) => {
+    try {
+      const rid = Number(req.params.rid);
+      if (!Number.isFinite(rid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(`DELETE FROM condition_receipts WHERE id = $1`, [rid]);
       res.json({ ok: true, deleted: r.rowCount || 0 });
     } catch (e) { fail(res, e); }
   });

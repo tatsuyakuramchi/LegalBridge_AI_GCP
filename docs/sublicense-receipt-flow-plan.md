@@ -101,25 +101,31 @@
 
 ---
 
-## 6. 決めること（Open Questions）
+## 6. 決定事項（2026-06-07 確定）
 
-1. **「請求明細」を明示エンティティにするか**
-   - 案a: 受領予定を `invoices(direction=issued)` として発行管理（請求書発行まで含む）。
-   - 案b: 軽量な「受領予定スケジュール」だけ持ち、入金で実績化（請求書は出さない）。
-2. **`sublicense_deals`(A) の扱い**
-   - 案a: 条件を `capability_financial_conditions(OUT)` に移行し deals は読み取り専用→廃止。
-   - 案b: 当面 deals を残し、新条件明細(OUT)から deals を生成/同期(ブリッジ)。
-3. **受領種別**: プロダクトアウト料を `payment_kind` で分けるか(`sublicense_income` 一本か)。
-4. **計算根拠**: 受領は「報告売上×料率」(sales)か「製造数×単価」(manufacturing)か、条件の `calc_method`/`basis` で両対応するか。
-5. **MG/AG(前払相殺)**: 既存 royalty_statements の MG/AG 消化ロジックを OUT 受領でも使うか。
+1. **「請求明細」**: 🔵 **数字計算ができればOK。請求書(invoices)の文書発行は不要。**
+   → 軽量な「受領予定/受領記録(計算のみ)」で実装。`invoices(issued)` は使わない。
+2. **`sublicense_deals`(A)**: 🔵 **条件明細(OUT)へ移行して廃止。現状データ無し → 一気に刷新。**
+   → `capability_financial_conditions(condition_kind='sublicense_out')` を条件SSOTにし、`sublicense_deals`/`sublicense_sales_reports` は撤去。
+3. 受領種別（プロダクトアウト料 vs サブライセンス料）: 条件明細の `condition_no`/ラベルで区別（台帳 `payment_kind` は当面 `sublicense_income` 一本で可）。
+4. 計算根拠: `basis`='sales'(報告売上×料率) / 'manufacturing'(報告数量×単価) の両対応。
+5. MG/AG: 受領でも MG(floor)/AG(前払相殺) を将来踏襲（Phase で対応）。
+
+### 安全な刷新順（重要）
+旧モジュールは migrations 0019–0026・sublicenseService・receivableMapService・server.ts(~250行)・
+フロント複数画面に**深く依存**。一括削除はビルド破壊リスクが高いため、
+**「新フローを additive で先に作る → 依存(receivableMap/dataLinkage)を新条件明細へ寄せる → 旧 deals 撤去」** の順で、各段デプロイをグリーンに保つ。
 
 ---
 
-## 7. 実装フェーズ案（合意後）
+## 7. 実装フェーズ（確定）
 
-- **P1**: マイグレーション(additive) — 条件明細(OUT)に受領先/周期等、sales_reports/payments に condition_id 参照を追加。
-- **P2**: 条件明細(OUT) → 受領予定(請求明細)展開 API + 一覧 UI（既存 receipts ロジック流用）。
-- **P3**: 受領記録(報告→入金 payments inbound) を条件明細に紐付け。利用許諾料計算書(任意)発行。
-- **P4**: `sublicense_deals`(A) からの移行(条件の寄せ替え)・重複解消。
+- **P1（本実装・additive）**: 
+  - 条件明細(OUT)に受領用カラム追加（`counterparty_vendor_id`/`basis`/`cycle`/`billing_day`/`term_start`/`term_end`/`advance_amount`/`forecast_amount`）。
+  - **受領記録テーブル `condition_receipts`**（condition_id 紐付け・period/報告売上/報告数量/計算royalty/受領額/受領日）を新設。
+  - API `/api/v3`: 条件 write に OUT 項目追加 + 受領記録 CRUD（計算込み: royalty = 報告売上×料率 or 報告数量×単価）。
+  - UI: 自社作品詳細に **受領記録エディタ**（条件ごとに period 行＋数字計算）。
+- **P2**: receivableMap / dataLinkage を `condition_receipts`(新) 参照へ寄せ替え。受領→`payments(inbound, sublicense_income)`台帳連携。
+- **P3（撤去）**: 旧 `/api/sublicense/*`・`sublicenseHtml`・SublicensePanel・WorkModelPanel インボックスを撤去し、`sublicense_deals`/`sublicense_sales_reports` を DROP。
 
-> ※ 既存(A)モジュールは P1〜P3 の間も並走し、利用を止めない。P4 で一本化。
+> ※ P1 は完全 additive（旧 deals 並走・ビルドグリーン維持）。P3 で一本化・撤去。
