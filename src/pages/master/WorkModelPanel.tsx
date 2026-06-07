@@ -41,7 +41,7 @@ const DERIV_CHOICES: [string, string][] = [
 type FieldDef = {
   name: string
   label: string
-  type: "text" | "textarea" | "date" | "bool" | "array" | "number" | "select" | "options" | "work-select"
+  type: "text" | "textarea" | "date" | "bool" | "array" | "number" | "select" | "options" | "work-select" | "vendor-select"
   required?: boolean
   hint?: string
   options?: string[]
@@ -59,7 +59,7 @@ const SCHEMA: Record<EntityType, FieldDef[]> = {
     { name: "default_work_supplement", label: "作品補足", type: "textarea" },
     { name: "default_approval_target", label: "承認対象", type: "text" },
     { name: "default_approval_timing", label: "承認タイミング", type: "text" },
-    { name: "rights_holder_vendor_id", label: "権利者 取引先ID", type: "number", hint: "取引先マスタの内部ID(任意)" },
+    { name: "rights_holder_vendor_id", label: "権利者(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択" },
     { name: "remarks", label: "備考", type: "textarea" },
   ],
   works: [
@@ -70,7 +70,7 @@ const SCHEMA: Record<EntityType, FieldDef[]> = {
     { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"] },
     { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"] },
     { name: "is_original", label: "完全オリジナル", type: "bool" },
-    { name: "publisher_vendor_id", label: "出版社 取引先ID", type: "number" },
+    { name: "publisher_vendor_id", label: "出版社(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択" },
     { name: "parent_work_id", label: "派生元の作品(系譜)", type: "work-select", hint: "翻訳版・改題版などは派生元の自社作品を選ぶ" },
     { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV" },
     { name: "remarks", label: "備考", type: "textarea" },
@@ -81,7 +81,7 @@ const SCHEMA: Record<EntityType, FieldDef[]> = {
     { name: "contract_category", label: "契約カテゴリ", type: "text", hint: "license_in / license_out / service / publication / sales / nda" },
     { name: "contract_type", label: "契約類型", type: "text" },
     { name: "lifecycle_stage", label: "ライフサイクル", type: "text", hint: "requested / under_review / executed 等" },
-    { name: "primary_vendor_id", label: "主取引先ID", type: "number" },
+    { name: "primary_vendor_id", label: "主取引先", type: "vendor-select", hint: "取引先を名称/コードで検索して選択" },
     { name: "effective_date", label: "発効日", type: "date" },
     { name: "expiration_date", label: "満了日", type: "date" },
     { name: "auto_renewal", label: "自動更新", type: "bool" },
@@ -314,6 +314,7 @@ export function WorkModelPanel() {
           mode={modal.mode}
           data={modal.data}
           works={lists.works}
+          sourceIps={lists["source-ips"]}
           onClose={() => setModal(null)}
           onSaved={async () => {
             setModal(null)
@@ -590,6 +591,7 @@ function FormModal({
   mode,
   data,
   works,
+  sourceIps,
   onClose,
   onSaved,
   showNotification,
@@ -598,11 +600,39 @@ function FormModal({
   mode: "new" | "edit"
   data: Row
   works: Row[]
+  sourceIps: Row[]
   onClose: () => void
   onSaved: () => void
   showNotification: (m: string, t?: "info" | "success" | "error") => void
 }) {
   const editId = mode === "edit" ? data.id : null
+  // (B) 契約フォームの対象作品(contract_works)。{ kind, id, role }[]
+  const [contractWorks, setContractWorks] = React.useState<
+    Array<{ kind: "work" | "source_ip"; id: number; role: string }>
+  >([])
+  // 編集時は詳細を取得して既存の対象作品を prefill。
+  React.useEffect(() => {
+    if (type !== "contracts" || mode !== "edit" || !editId) return
+    ;(async () => {
+      try {
+        const d = await getJson(`/api/v3/contracts/${editId}`)
+        const rows = Array.isArray(d?.works) ? d.works : []
+        setContractWorks(
+          rows
+            .map((w: any) =>
+              w.work_id
+                ? { kind: "work" as const, id: Number(w.work_id), role: w.role || "" }
+                : w.source_ip_id
+                  ? { kind: "source_ip" as const, id: Number(w.source_ip_id), role: w.role || "" }
+                  : null
+            )
+            .filter(Boolean)
+        )
+      } catch {
+        /* prefill 失敗は無視(空で開始) */
+      }
+    })()
+  }, [type, mode, editId])
   const [form, setForm] = React.useState<Row>(() => {
     const init: Row = {}
     SCHEMA[type].forEach((f) => {
@@ -624,7 +654,7 @@ function FormModal({
       const v = form[f.name]
       if (f.type === "bool") out[f.name] = !!v
       else if (f.type === "array") out[f.name] = String(v || "").split(/[,、]/).map((s) => s.trim()).filter(Boolean)
-      else if (f.type === "number" || f.type === "work-select") {
+      else if (f.type === "number" || f.type === "work-select" || f.type === "vendor-select") {
         const n = String(v ?? "").trim()
         out[f.name] = n === "" ? null : Number(n)
       } else {
@@ -641,6 +671,14 @@ function FormModal({
     if (!payload[titleField]) {
       showNotification(`${type === "contracts" ? "契約名" : "タイトル"}は必須です`, "error")
       return
+    }
+    // (B) 契約は対象作品(contract_works)を works[] として同梱
+    if (type === "contracts") {
+      payload.works = contractWorks.map((r) => ({
+        work_id: r.kind === "work" ? r.id : null,
+        source_ip_id: r.kind === "source_ip" ? r.id : null,
+        role: r.role.trim() || null,
+      }))
     }
     setSaving(true)
     try {
@@ -670,6 +708,14 @@ function FormModal({
               {f.hint && <p className="text-[11px] text-muted-foreground">{f.hint}</p>}
             </div>
           ))}
+          {type === "contracts" && (
+            <ContractWorksPicker
+              works={works}
+              sourceIps={sourceIps}
+              rows={contractWorks}
+              onChange={setContractWorks}
+            />
+          )}
         </DialogBody>
         <DialogFooter>
           <Button variant="outline" onClick={onClose} disabled={saving}>キャンセル</Button>
@@ -702,6 +748,8 @@ function FieldInput({ f, value, works, editId, onChange }: { f: FieldDef; value:
   }
   if (f.type === "work-select")
     return <WorkSelectField value={value} works={works} editId={editId} onChange={onChange} />
+  if (f.type === "vendor-select")
+    return <VendorSelectField value={value} onChange={onChange} />
   // text / array
   return <Input type="text" value={value ?? ""} onChange={(e) => onChange(e.target.value)} />
 }
@@ -741,6 +789,172 @@ function WorkSelectField({ value, works, editId, onChange }: { value: any; works
           {filtered.length} 件ヒット{filtered.length === 0 ? " — 別のキーワードで検索" : ""}
         </p>
       )}
+    </div>
+  )
+}
+
+// 取引先ピッカー(名称/コードで検索して vendor_id を選ぶ)。
+//   従来は ID 手入力だったのを検索選択に置換((A))。/api/master/vendors を一度取得。
+type VendorOpt = { id: number; vendor_code: string; vendor_name: string }
+let __vendorCache: VendorOpt[] | null = null
+function VendorSelectField({ value, onChange }: { value: any; onChange: (v: any) => void }) {
+  const [vendors, setVendors] = React.useState<VendorOpt[]>(__vendorCache || [])
+  const [q, setQ] = React.useState("")
+  React.useEffect(() => {
+    if (__vendorCache) return
+    ;(async () => {
+      try {
+        const r = await fetch("/api/master/vendors")
+        if (!r.ok) return
+        const rows = await r.json()
+        const opts: VendorOpt[] = (Array.isArray(rows) ? rows : [])
+          .filter((v: any) => v?.id)
+          .map((v: any) => ({
+            id: Number(v.id),
+            vendor_code: v.vendor_code || "",
+            vendor_name: v.vendor_name || "",
+          }))
+        __vendorCache = opts
+        setVendors(opts)
+      } catch {
+        /* 取得失敗時は空(手入力フォールバックは下のID直接欄) */
+      }
+    })()
+  }, [])
+  const kw = q.trim().toLowerCase()
+  const filtered = kw
+    ? vendors.filter((v) => `${v.vendor_code} ${v.vendor_name}`.toLowerCase().includes(kw))
+    : vendors
+  const selected = value ? vendors.find((v) => String(v.id) === String(value)) : null
+  // 選択中が絞り込みから外れても候補に残す(値が消えないように)
+  const list = selected && !filtered.some((v) => String(v.id) === String(selected.id))
+    ? [selected, ...filtered.slice(0, 50)]
+    : filtered.slice(0, 50)
+  const label = (v: VendorOpt) => (v.vendor_code ? v.vendor_code + " : " : "") + (v.vendor_name || "#" + v.id)
+  return (
+    <div className="space-y-1">
+      <Input
+        placeholder="取引先を検索 (名称 / コード)…"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+      />
+      <NativeSelect value={value ?? ""} onChange={(e) => onChange(e.target.value)}>
+        <option value="">(なし)</option>
+        {list.map((v) => (
+          <option key={v.id} value={v.id}>
+            {label(v)}
+          </option>
+        ))}
+      </NativeSelect>
+      {vendors.length === 0 && (
+        <p className="text-[10px] font-mono text-muted-foreground">
+          取引先一覧を取得できませんでした。ID直接入力:{" "}
+          <input
+            type="number"
+            className="border-b border-input bg-transparent w-24 px-1 text-xs"
+            value={value ?? ""}
+            onChange={(e) => onChange(e.target.value)}
+          />
+        </p>
+      )}
+    </div>
+  )
+}
+
+// (B) 契約フォームの「対象作品 / 原作IP」ピッカー。
+//   contract_works を作る。自社作品(work)または原作IP(source_ip)を検索選択して行追加。
+type CWRow = { kind: "work" | "source_ip"; id: number; role: string }
+function ContractWorksPicker({
+  works,
+  sourceIps,
+  rows,
+  onChange,
+}: {
+  works: Row[]
+  sourceIps: Row[]
+  rows: CWRow[]
+  onChange: (rows: CWRow[]) => void
+}) {
+  const [kind, setKind] = React.useState<"work" | "source_ip">("work")
+  const [pick, setPick] = React.useState("")
+  const [q, setQ] = React.useState("")
+  const pool = kind === "work" ? works : sourceIps
+  const codeKey = kind === "work" ? "work_code" : "source_code"
+  const kw = q.trim().toLowerCase()
+  const filtered = (kw
+    ? pool.filter((p) => `${p[codeKey] || ""} ${p.title || ""}`.toLowerCase().includes(kw))
+    : pool
+  ).slice(0, 50)
+  const labelOf = (kind: "work" | "source_ip", id: number) => {
+    const src = kind === "work" ? works : sourceIps
+    const ck = kind === "work" ? "work_code" : "source_code"
+    const o = src.find((x) => String(x.id) === String(id))
+    return o ? `${o[ck] ? o[ck] + " : " : ""}${o.title || "#" + id}` : `#${id}`
+  }
+  const add = () => {
+    const id = Number(pick)
+    if (!id) return
+    if (rows.some((r) => r.kind === kind && r.id === id)) return
+    onChange([...rows, { kind, id, role: "" }])
+    setPick("")
+    setQ("")
+  }
+  const removeAt = (i: number) => onChange(rows.filter((_, idx) => idx !== i))
+  const setRole = (i: number, role: string) =>
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, role } : r)))
+  return (
+    <div className="space-y-2 border-t pt-3">
+      <Label className="text-xs font-bold">対象作品 / 原作IP（契約の紐付け）</Label>
+      {rows.length > 0 && (
+        <div className="space-y-1">
+          {rows.map((r, i) => (
+            <div key={`${r.kind}-${r.id}`} className="flex items-center gap-2 text-xs">
+              <Badge variant="outline">{r.kind === "work" ? "作品" : "原作IP"}</Badge>
+              <span className="flex-1 min-w-0 truncate">{labelOf(r.kind, r.id)}</span>
+              <Input
+                className="w-28 h-7 text-xs"
+                placeholder="役割(任意)"
+                value={r.role}
+                onChange={(e) => setRole(i, e.target.value)}
+              />
+              <Button variant="outline" size="sm" onClick={() => removeAt(i)}>削除</Button>
+            </div>
+          ))}
+        </div>
+      )}
+      <div className="flex items-end gap-2 flex-wrap">
+        <NativeSelect
+          className="w-24"
+          value={kind}
+          onChange={(e) => {
+            setKind(e.target.value as "work" | "source_ip")
+            setPick("")
+            setQ("")
+          }}
+        >
+          <option value="work">作品</option>
+          <option value="source_ip">原作IP</option>
+        </NativeSelect>
+        <div className="flex-1 min-w-[180px] space-y-1">
+          <Input
+            placeholder={`${kind === "work" ? "作品" : "原作IP"}を検索 (コード/タイトル)…`}
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <NativeSelect value={pick} onChange={(e) => setPick(e.target.value)}>
+            <option value="">(選択)</option>
+            {filtered.map((p) => (
+              <option key={p.id} value={p.id}>
+                {(p[codeKey] ? p[codeKey] + " : " : "") + (p.title || "#" + p.id)}
+              </option>
+            ))}
+          </NativeSelect>
+        </div>
+        <Button variant="outline" size="sm" onClick={add} disabled={!pick}>＋追加</Button>
+      </div>
+      <p className="text-[11px] text-muted-foreground">
+        契約が対象とする自社作品・原作IPを紐付けます（contract_works）。役割は任意（例: 原作 / 翻訳 等）。
+      </p>
     </div>
   )
 }
