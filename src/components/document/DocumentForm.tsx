@@ -1145,6 +1145,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             onChange={(conditions: FinancialCondition[]) =>
               setFormData({ ...formData, financial_conditions: conditions })
             }
+            // Part1(共通化): 出版テンプレは PUB プリセット、それ以外(BDG等)は BDG。
+            division={String(templateId || "").includes("publication") ? "PUB" : "BDG"}
           />
         </FormSection>
 
