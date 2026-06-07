@@ -66,9 +66,12 @@ export function registerWorkModelRoutes(
   app.get("/api/v3/works", ...requireRead, async (_req, res) => {
     try {
       const r = await query(
+        // Part2 移行ガード: 自社作品一覧は kind='own' のみ。
+        //   backfill された原作IP(kind='licensed_in')は原作IPタブ側で扱う。
         `SELECT w.*, COUNT(p.id) AS product_count
            FROM works w
            LEFT JOIN products p ON p.work_id = w.id
+          WHERE COALESCE(w.kind, 'own') = 'own'
           GROUP BY w.id
           ORDER BY w.id DESC`
       );
@@ -323,6 +326,19 @@ export function registerWorkModelRoutes(
          b.expiration_date ?? null, b.auto_renewal ?? null, b.purpose_codes ?? null]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      // 対象作品(contract_works)の更新。works[] が渡されたときだけ置換する
+      //   (未指定のスカラ更新では既存の紐付けを壊さない)。
+      if (Array.isArray(b.works)) {
+        await query(`DELETE FROM contract_works WHERE contract_id = $1`, [id]);
+        for (const w of b.works) {
+          if (w.work_id == null && w.source_ip_id == null) continue; // CHECK 制約
+          await query(
+            `INSERT INTO contract_works (contract_id, work_id, source_ip_id, product_id, role)
+             VALUES ($1,$2,$3,$4,$5)`,
+            [id, w.work_id ?? null, w.source_ip_id ?? null, w.product_id ?? null, w.role ?? null]
+          );
+        }
+      }
       res.json(r.rows[0]);
     } catch (e) { fail(res, e); }
   });
