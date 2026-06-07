@@ -81,13 +81,52 @@ interface Props {
   conditions: FinancialCondition[];
   onChange: (conditions: FinancialCondition[]) => void;
   readOnly?: boolean;
+  /**
+   * Part1(共通化): 出版(PUB)/ボードゲーム(BDG) で「保管は同じ汎用列のまま、
+   * ラベル・既定値・条件プリセットだけ」切替える。未指定は BDG 相当(従来挙動)。
+   */
+  division?: "PUB" | "BDG";
 }
 
-const CONDITION_PRESETS = [
-  { no: 1, label: "自社製造" },
-  { no: 2, label: "サブライセンス" },
-  { no: 3, label: "プロダクトアウト" },
-];
+// division 駆動プリセット。保存先カラムは共通(rate_pct / base_price_label /
+//   calc_period_kind / formula_text …)。ここは表示ラベルと既定値だけを切替える。
+type DivPreset = {
+  conditions: { no: number; label: string }[];
+  rateLabel: string;
+  basePricePlaceholder: string;
+  basePriceDefault: string;
+  formulaPlaceholder: string;
+  formulaDefault: string;
+  periodKindDefault: NonNullable<FinancialCondition["calc_period_kind"]>;
+};
+const DIVISION_PRESETS: Record<"PUB" | "BDG", DivPreset> = {
+  BDG: {
+    conditions: [
+      { no: 1, label: "自社製造" },
+      { no: 2, label: "サブライセンス" },
+      { no: 3, label: "プロダクトアウト" },
+    ],
+    rateLabel: "料率 (%)",
+    basePricePlaceholder: "上代 (MSRP)",
+    basePriceDefault: "上代 (MSRP)",
+    formulaPlaceholder: "例: 上代 × 5.0% × 製造数",
+    formulaDefault: "上代 × 料率 × 製造数",
+    periodKindDefault: "MANUFACTURING",
+  },
+  PUB: {
+    conditions: [
+      { no: 1, label: "紙書籍" },
+      { no: 2, label: "電子書籍" },
+      { no: 3, label: "サブライセンス" },
+    ],
+    rateLabel: "印税率 (%)",
+    basePricePlaceholder: "税抜定価",
+    basePriceDefault: "税抜定価",
+    formulaPlaceholder: "例: 税抜定価 × 印税対象部数(実売/刷) × 印税率",
+    formulaDefault: "税抜定価 × 印税対象部数 × 印税率",
+    periodKindDefault: "QUARTERLY",
+  },
+};
 
 const yen = (n: number) =>
   "¥ " + (Number(n) || 0).toLocaleString("ja-JP");
@@ -96,7 +135,9 @@ export const FinancialConditionTable: React.FC<Props> = ({
   conditions,
   onChange,
   readOnly = false,
+  division,
 }) => {
+  const preset = DIVISION_PRESETS[division || "BDG"];
   const update = (idx: number, patch: Partial<FinancialCondition>) => {
     const next = conditions.slice();
     next[idx] = { ...next[idx], ...patch };
@@ -116,6 +157,11 @@ export const FinancialConditionTable: React.FC<Props> = ({
         calc_method: "ROYALTY",
         rate_pct: 0,
         mg_amount: 0,
+        // division プリセットの既定値(保存先は共通カラム)
+        base_price_label: preset.basePriceDefault,
+        formula_text: preset.formulaDefault,
+        calc_period_kind: preset.periodKindDefault,
+        calc_period: buildCalcPeriodLabel(preset.periodKindDefault, undefined),
       },
     ]);
   };
@@ -148,7 +194,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
   );
 
   const presetLabel = (no: number) =>
-    CONDITION_PRESETS.find((p) => p.no === no)?.label || `条件 ${no}`;
+    preset.conditions.find((p) => p.no === no)?.label || `条件 ${no}`;
 
   return (
     <div className="col-span-full space-y-3">
@@ -214,7 +260,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                 </div>
                 <div>
                   <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                    料率 (%)
+                    {preset.rateLabel}
                   </div>
                   {cellInput(
                     c.rate_pct,
@@ -232,7 +278,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     c.base_price_label,
                     (v) => update(idx, { base_price_label: v }),
                     "text",
-                    "上代 (MSRP)"
+                    preset.basePricePlaceholder
                   )}
                 </div>
                 <div>
@@ -341,7 +387,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                   <textarea
                     value={c.formula_text || ""}
                     onChange={(e) => update(idx, { formula_text: e.target.value })}
-                    placeholder="例: 上代 × 5.0% × 製造数"
+                    placeholder={preset.formulaPlaceholder}
                     disabled={readOnly}
                     rows={1}
                     className={cn(
@@ -379,7 +425,9 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     value={c.summary || ""}
                     onChange={(e) => update(idx, { summary: e.target.value })}
                     placeholder={
-                      condNo === 1
+                      division === "PUB"
+                        ? `この金銭条件(${presetLabel(condNo)})の概要を入力 (PDF Section 3 に表示)`
+                        : condNo === 1
                         ? "標準文: Licensee 自らが販売する国内販売において、基準価格に料率と販売数を乗じた金額をロイヤリティとして支払います。"
                         : condNo === 2
                         ? "標準文: 国内・海外パートナーにサブライセンスし、Licensee が受領したサブライセンス料を料率に応じて分配します。"
@@ -412,7 +460,10 @@ export const FinancialConditionTable: React.FC<Props> = ({
             <Plus className="w-3 h-3" />
             条件追加
           </button>
-          <div className="text-[10px] font-mono text-muted-foreground italic">
+          <div className="text-[10px] font-mono text-muted-foreground italic flex items-center gap-2">
+            <span className="not-italic px-1.5 py-0.5 rounded-sm bg-muted text-foreground/70">
+              {division === "PUB" ? "出版(PUB)プリセット" : "ボードゲーム(BDG)プリセット"}
+            </span>
             利用許諾料計算書はこのテーブルの条件 1 行を指して計算します。
           </div>
         </div>
