@@ -104,6 +104,33 @@ table.sub th { background: #f8fafc; color: #475569; font-weight: 600; white-spac
 .row-flex { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
 `;
 
+// 統合: 登録UIは admin-ui の作品モデル(React)に一本化し、Search Portal 側は
+//   それを iframe で埋め込んで共有する。ADMIN_UI_URL 未設定時は旧コンソールに自動フォールバック。
+export function workModelEmbedPage(role: Role = "viewer"): string {
+  const admin = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  if (!admin) return workModelPage(role); // フォールバック(旧バニラコンソール)
+  const url = admin + "/master/work-model";
+  const body = `
+<div class="shell" style="display:flex;flex-direction:column;gap:10px;height:calc(100vh - 130px);">
+  <div class="header"><div class="actions">
+    <a class="btn secondary" href="/">← Search Portal に戻る</a>
+    <a class="btn" href="${url}" target="_blank" rel="noopener">↗ 別タブで開く</a>
+  </div></div>
+  <iframe src="${url}" title="作品モデル"
+          style="flex:1;width:100%;border:1px solid #e2e2e2;border-radius:8px;background:#fff;"></iframe>
+  <p class="muted" style="font-size:11px;">作品モデルの登録・編集は admin-ui を埋め込んで表示しています（登録APIは search-api 所有）。表示されない場合は「↗ 別タブで開く」をご利用ください。</p>
+</div>`;
+  return popPage({
+    active: "work-model",
+    role,
+    mode: "admin",
+    title: "作品モデル",
+    subtitle: "原作IP・自社作品・契約（admin-ui を埋め込み・登録は共通）",
+    body,
+    contentBridge: true,
+  });
+}
+
 export function workModelPage(role: Role = "viewer"): string {
   const body = `
 <div class="shell">

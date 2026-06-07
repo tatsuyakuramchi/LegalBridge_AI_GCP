@@ -124,7 +124,7 @@ import { staffMasterPage } from "./src/views/staffMasterHtml.ts";
 import { masterContractsPage } from "./src/views/masterContractsHtml.ts";
 import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
-import { workModelPage } from "./src/views/workModelHtml.ts";
+import { workModelEmbedPage } from "./src/views/workModelHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
 import { sublicensePage } from "./src/views/sublicenseHtml.ts";
 import {
@@ -2884,7 +2884,8 @@ async function startServer() {
   // B1: 作品中心モデルの閲覧ページ(Search 専用フロント)。/api/v3 を同一オリジンで読む。
   app.get("/work-model", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "work-model", renderErrorPage }), (req, res) => {
     try {
-      res.type("html").send(workModelPage((req as any).userRole as Role));
+      // 統合: admin-ui の作品モデル(React)を iframe で埋め込む(ADMIN_UI_URL 未設定なら旧コンソール)
+      res.type("html").send(workModelEmbedPage((req as any).userRole as Role));
     } catch (error) {
       console.error("/work-model failed:", error);
       res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
