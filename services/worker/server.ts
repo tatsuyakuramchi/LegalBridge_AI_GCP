@@ -7034,7 +7034,7 @@ ${details}
               fd.basic_contract_name ||
               fd.original_work ||
               "",
-            staff_email: fd.staff_email || "",
+            staff_email: fd.staff_email || fd.inspectorEmail || "",
             line_count: Array.isArray(fd.items)
               ? fd.items.length
               : Array.isArray(fd.line_items) // v2一括インポート
@@ -7536,6 +7536,46 @@ ${details}
                 }
               })();
       }
+      // 検収書: 発注日(orderDate)を親発注書(PO)の issue_date_po から補完。
+      if (r.template_type === "inspection_certificate" && !fd.orderDate) {
+        try {
+          let poDate: any = null;
+          if (fd.parent_po_id) {
+            const q = await query(
+              `SELECT issue_date_po FROM contract_capabilities WHERE id = $1 LIMIT 1`,
+              [Number(fd.parent_po_id)]
+            );
+            poDate = q.rows[0]?.issue_date_po || null;
+          }
+          if (!poDate && fd.parent_po_issue_key) {
+            const q = await query(
+              `SELECT issue_date_po FROM contract_capabilities
+                WHERE backlog_issue_key = $1 AND record_type = 'purchase_order' LIMIT 1`,
+              [String(fd.parent_po_issue_key)]
+            );
+            poDate = q.rows[0]?.issue_date_po || null;
+          }
+          if (!poDate && fd.parent_po_number) {
+            const q = await query(
+              `SELECT cc.issue_date_po
+                 FROM documents d
+                 JOIN contract_capabilities cc ON cc.backlog_issue_key = d.issue_key
+                  AND cc.record_type = 'purchase_order'
+                WHERE d.document_number = $1 LIMIT 1`,
+              [String(fd.parent_po_number)]
+            );
+            poDate = q.rows[0]?.issue_date_po || null;
+          }
+          if (poDate) {
+            fd.orderDate =
+              typeof poDate === "string"
+                ? poDate.slice(0, 10)
+                : new Date(poDate).toISOString().slice(0, 10);
+          }
+        } catch {
+          /* noop: 発注日補完の失敗は読込を止めない */
+        }
+      }
       res.json({
         ok: true,
         id: Number(r.id),
@@ -7864,23 +7904,41 @@ ${details}
         return res.status(400).json({ ok: false, error: "ids[] is required" });
       }
       const set = req.body?.set || {};
+      // 発注書(purchase_order)向け
       const orderDate = set["発注日"] != null ? String(set["発注日"]).trim() : "";
       const staffEmail = set.staff_email != null ? String(set.staff_email).trim() : "";
       const paymentDate = set.payment_date != null ? String(set.payment_date).trim() : "";
+      // 検収書(inspection_certificate)向け
+      const inspectionDate =
+        set.inspection_date != null ? String(set.inspection_date).trim() : "";
+      const inspectorEmail =
+        set.inspector_email != null ? String(set.inspector_email).trim() : "";
       const remarksAppend =
         req.body?.remarks_append != null ? String(req.body.remarks_append).trim() : "";
 
-      if (!orderDate && !staffEmail && !paymentDate && !remarksAppend) {
+      if (
+        !orderDate &&
+        !staffEmail &&
+        !paymentDate &&
+        !inspectionDate &&
+        !inspectorEmail &&
+        !remarksAppend
+      ) {
         return res
           .status(400)
           .json({ ok: false, error: "更新する項目がありません" });
       }
 
-      // 担当者は一度だけ解決
+      // 担当者(発注元) / 検収者 をそれぞれ一度だけ解決
       let staff: { staff_name: string; department: string; email: string; phone: string } | null =
         null;
       if (staffEmail) {
         staff = await lookupStaffByEmail(staffEmail);
+      }
+      let inspector: { staff_name: string; department: string; email: string; phone: string } | null =
+        null;
+      if (inspectorEmail) {
+        inspector = await lookupStaffByEmail(inspectorEmail);
       }
 
       const docs = (
@@ -7913,6 +7971,15 @@ ${details}
             }));
           }
           fd.summaryPaymentDate = paymentDate;
+        }
+        // 検収書: 検収日(検収完了日) / 検収者
+        if (inspectionDate) fd.inspectionCompletedAt = inspectionDate;
+        if (inspector) {
+          fd.inspectorName = inspector.staff_name || fd.inspectorName || "";
+          fd.inspectorDept = inspector.department || fd.inspectorDept || "";
+          fd.inspectorEmail = inspector.email || inspectorEmail;
+        } else if (inspectorEmail) {
+          fd.inspectorEmail = inspectorEmail;
         }
         if (remarksAppend) {
           const cur = String(fd.REMARKS_FREE || "");
@@ -8439,7 +8506,7 @@ ${details}
             `SELECT cc.id, cc.backlog_issue_key,
                     cc.contract_title AS description,
                     v.vendor_code,
-                    cc.tax_rate, cc.due_date,
+                    cc.tax_rate, cc.due_date, cc.issue_date_po,
                     (SELECT d.document_number FROM documents d
                       WHERE d.issue_key = cc.backlog_issue_key
                         AND d.template_type LIKE '%purchase_order%'
@@ -8603,6 +8670,12 @@ ${details}
             parent_po_issue_key: parentPoIssueKey,
             parent_po_number: first.parent_po_number || order.parent_po_number || "",
             documentDate: first.document_date || first.documentDate || new Date().toISOString().slice(0, 10),
+            // 発注日: 親発注書(PO)の issue_date_po から補完(検収書テンプレの orderDate)
+            orderDate: (() => {
+              const d = first.order_date || first.orderDate || order.issue_date_po || "";
+              if (!d) return "";
+              return typeof d === "string" ? d.slice(0, 10) : new Date(d).toISOString().slice(0, 10);
+            })(),
             deliveredAt: first.delivered_at || first.deliveredAt || "",
             inspectionCompletedAt:
               first.inspection_completed_at || first.inspectionCompletedAt || "",
