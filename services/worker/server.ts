@@ -7230,7 +7230,14 @@ ${details}
       if (r.rows.length === 0) {
         return res.status(404).json({ ok: false, error: "draft not found" });
       }
-      res.json({ ok: true, draft: r.rows[0] });
+      // Step1(SSOT): 下書きの form_data も別名キーを揃えて返す。
+      //   旧い下書きでも、復元時に items/件名/発注日 が経路非依存で読める。
+      const draft = r.rows[0];
+      draft.form_data = normalizeDocumentFormData(
+        draft.template_type,
+        draft.form_data || {}
+      );
+      res.json({ ok: true, draft });
     } catch (err: any) {
       console.error("[document-drafts GET] failed:", err);
       res.status(500).json({ ok: false, error: String(err?.message || err) });
@@ -7260,6 +7267,8 @@ ${details}
           error: "form_data must be an object",
         });
       }
+      // Step1(SSOT): 下書き保存時も別名キーを揃えてから格納する。
+      const normForm = normalizeDocumentFormData(templateType, formData);
       const r = await query(
         `INSERT INTO document_drafts (issue_key, template_type, form_data, updated_by, updated_at)
          VALUES ($1, $2, $3::jsonb, $4, NOW())
@@ -7268,7 +7277,7 @@ ${details}
                 updated_by = EXCLUDED.updated_by,
                 updated_at = NOW()
          RETURNING id, issue_key, template_type, form_data, updated_at, updated_by`,
-        [issueKey, templateType, JSON.stringify(formData), updatedBy]
+        [issueKey, templateType, JSON.stringify(normForm), updatedBy]
       );
       res.json({ ok: true, draft: r.rows[0] });
     } catch (err: any) {
