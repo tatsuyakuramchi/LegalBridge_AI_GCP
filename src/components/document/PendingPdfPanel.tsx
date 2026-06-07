@@ -25,6 +25,7 @@ import {
   PackageOpen,
   Link2,
   Pencil,
+  Trash2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 
@@ -92,6 +93,7 @@ export const PendingPdfPanel: React.FC = () => {
   // Phase 23: 一括修正(発注日 / 担当者 / 支払日 / 備考追記)
   const [bulkEditOpen, setBulkEditOpen] = React.useState(false)
   const [savingEdit, setSavingEdit] = React.useState(false)
+  const [deleting, setDeleting] = React.useState(false)
   const [staffOptions, setStaffOptions] = React.useState<
     Array<{ email: string; staff_name: string; department?: string }>
   >([])
@@ -99,6 +101,21 @@ export const PendingPdfPanel: React.FC = () => {
   const [editStaffEmail, setEditStaffEmail] = React.useState("")
   const [editPaymentDate, setEditPaymentDate] = React.useState("")
   const [editRemarks, setEditRemarks] = React.useState("")
+  // 担当者 検索コンボボックス
+  const [staffSearch, setStaffSearch] = React.useState("")
+  const [staffDropdownOpen, setStaffDropdownOpen] = React.useState(false)
+  const filteredStaff = React.useMemo(() => {
+    const q = staffSearch.trim().toLowerCase()
+    const base = q
+      ? staffOptions.filter(
+          (s) =>
+            s.staff_name.toLowerCase().includes(q) ||
+            s.email.toLowerCase().includes(q) ||
+            (s.department || "").toLowerCase().includes(q)
+        )
+      : staffOptions
+    return base.slice(0, 50)
+  }, [staffOptions, staffSearch])
   const [lastResult, setLastResult] = React.useState<{
     id: number
     document_number: string
@@ -485,6 +502,8 @@ export const PendingPdfPanel: React.FC = () => {
     setEditStaffEmail("")
     setEditPaymentDate("")
     setEditRemarks("")
+    setStaffSearch("")
+    setStaffDropdownOpen(false)
     setBulkEditOpen(true)
   }
 
@@ -526,6 +545,67 @@ export const PendingPdfPanel: React.FC = () => {
       setError(`一括修正失敗: ${e?.message || e}`)
     } finally {
       setSavingEdit(false)
+    }
+  }
+
+  // Phase 23: 不要な取り込みレコードを選択して削除
+  const bulkDelete = async () => {
+    if (selectedRowObjs.length === 0) return
+    if (
+      !window.confirm(
+        `選択した ${selectedRowObjs.length} 件をレコードごと削除します。\n` +
+          `この操作は取り消せません。発行済(PDFあり)や検収済のものは安全のため自動でスキップします。\n` +
+          `よろしいですか?`
+      )
+    )
+      return
+    setDeleting(true)
+    setError(null)
+    try {
+      const res = await fetch("/api/documents/bulk-delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: selectedRowObjs.map((r) => r.id) }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`)
+      }
+      const deletedNums: string[] = Array.isArray(json.deleted_numbers)
+        ? json.deleted_numbers
+        : []
+      const deletedSet = new Set(deletedNums)
+      setData((d) =>
+        d
+          ? {
+              ...d,
+              rows: d.rows.filter((r) => !deletedSet.has(r.document_number)),
+              total: d.total - deletedSet.size,
+            }
+          : d
+      )
+      setSelected(new Set())
+      const skipped: Array<{ document_number: string; reason: string }> =
+        Array.isArray(json.skipped) ? json.skipped : []
+      setLastResult({
+        id: -1,
+        document_number:
+          `削除: ${json.deleted} 件` +
+          (skipped.length > 0 ? ` / スキップ ${skipped.length} 件` : ""),
+        action: skipped.length > 0 ? "skipped" : "completed",
+      })
+      if (skipped.length > 0) {
+        setError(
+          "削除しなかった文書: " +
+            skipped
+              .map((s) => `${s.document_number}(${s.reason})`)
+              .join(" / ")
+        )
+      }
+    } catch (e: any) {
+      setError(`削除失敗: ${e?.message || e}`)
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -692,6 +772,20 @@ export const PendingPdfPanel: React.FC = () => {
             >
               <Pencil className="w-3 h-3" />
               ✏️ 選択を一括修正
+            </button>
+            <button
+              type="button"
+              onClick={bulkDelete}
+              disabled={bulkRunning || merging || deleting || selected.size === 0}
+              className="text-[10px] font-mono uppercase tracking-wider border border-red-300 text-red-700 rounded-sm px-3 py-1.5 hover:bg-red-50 flex items-center gap-1.5 disabled:opacity-40 disabled:cursor-not-allowed"
+              title="不要な取り込みレコードを選択してまとめて削除します(発行済・検収済はスキップ)"
+            >
+              {deleting ? (
+                <Loader2 className="w-3 h-3 animate-spin" />
+              ) : (
+                <Trash2 className="w-3 h-3" />
+              )}
+              🗑 選択を削除
             </button>
             <button
               type="button"
@@ -922,36 +1016,86 @@ export const PendingPdfPanel: React.FC = () => {
                 />
               </label>
 
-              <label className="block space-y-1">
+              <div className="block space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
                   担当者
                 </span>
-                {staffOptions.length > 0 ? (
-                  <select
-                    value={editStaffEmail}
-                    onChange={(e) => setEditStaffEmail(e.target.value)}
-                    disabled={savingEdit}
-                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
-                  >
-                    <option value="">— 変更しない —</option>
-                    {staffOptions.map((s) => (
-                      <option key={s.email} value={s.email}>
-                        {s.staff_name}
-                        {s.department ? ` (${s.department})` : ""} · {s.email}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
+                <div className="relative">
                   <input
-                    type="email"
-                    value={editStaffEmail}
-                    onChange={(e) => setEditStaffEmail(e.target.value)}
-                    placeholder="担当者の E-mail"
+                    type="text"
+                    value={staffSearch}
+                    onChange={(e) => {
+                      setStaffSearch(e.target.value)
+                      setStaffDropdownOpen(true)
+                      // スタッフ一覧が取れない環境ではメール直接入力として扱う
+                      if (staffOptions.length === 0)
+                        setEditStaffEmail(e.target.value)
+                    }}
+                    onFocus={() => setStaffDropdownOpen(true)}
+                    onBlur={() =>
+                      // クリック選択を拾うため少し遅延して閉じる
+                      setTimeout(() => setStaffDropdownOpen(false), 150)
+                    }
+                    placeholder={
+                      staffOptions.length > 0
+                        ? "氏名・部署・メールで検索…"
+                        : "担当者の E-mail"
+                    }
                     disabled={savingEdit}
                     className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
                   />
+                  {staffDropdownOpen && staffOptions.length > 0 && (
+                    <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto border border-border rounded-sm bg-card shadow-lg">
+                      {filteredStaff.length === 0 ? (
+                        <div className="px-2 py-2 text-[10px] font-mono text-muted-foreground">
+                          該当する担当者がいません
+                        </div>
+                      ) : (
+                        filteredStaff.map((s) => (
+                          <button
+                            key={s.email}
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              setEditStaffEmail(s.email)
+                              setStaffSearch(
+                                `${s.staff_name}${s.department ? ` (${s.department})` : ""} · ${s.email}`
+                              )
+                              setStaffDropdownOpen(false)
+                            }}
+                            className={cn(
+                              "w-full text-left px-2 py-1.5 text-xs font-mono hover:bg-muted",
+                              editStaffEmail === s.email && "bg-muted/60"
+                            )}
+                          >
+                            {s.staff_name}
+                            {s.department ? ` (${s.department})` : ""}
+                            <span className="text-muted-foreground">
+                              {" "}
+                              · {s.email}
+                            </span>
+                          </button>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
+                {editStaffEmail && (
+                  <div className="text-[10px] font-mono text-emerald-700 flex items-center gap-2">
+                    選択中: {editStaffEmail}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditStaffEmail("")
+                        setStaffSearch("")
+                      }}
+                      className="underline text-muted-foreground hover:text-foreground"
+                    >
+                      解除
+                    </button>
+                  </div>
                 )}
-              </label>
+              </div>
 
               <label className="block space-y-1">
                 <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">

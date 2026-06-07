@@ -7948,6 +7948,98 @@ ${details}
   });
 
   /**
+   * 不要な取り込み文書をまとめて削除する。
+   *   主に「不要なものを取り込んでしまった」発注書を PDF未作成キューから
+   *   レコードごと削除する用途。
+   *
+   *   body: { ids: number[] }   // documents.id
+   *
+   * 安全策(満たさないものはスキップして理由を返す):
+   *   - 発行済(drive_link あり)は削除しない
+   *   - 検収/納品(delivery_line_items)が紐付くものは削除しない
+   *
+   * 削除対象: documents + contract_capabilities(子テーブルは ON DELETE CASCADE)
+   *           + contracts ミラー(子テーブル CASCADE) + external_assets。
+   *   全体を単一トランザクションで実行。スキップは個別に握って継続。
+   */
+  app.post("/api/documents/bulk-delete", express.json(), async (req, res) => {
+    const ids: number[] = Array.isArray(req.body?.ids)
+      ? req.body.ids.map(Number).filter((n: number) => Number.isFinite(n) && n > 0)
+      : [];
+    if (ids.length === 0) {
+      return res.status(400).json({ ok: false, error: "ids[] is required" });
+    }
+    const client = await pool.connect();
+    const deleted: string[] = [];
+    const skipped: Array<{ document_number: string; reason: string }> = [];
+    try {
+      await client.query("BEGIN");
+      const docs = (
+        await client.query(
+          `SELECT d.id, d.document_number, d.drive_link, cc.id AS cap_id
+             FROM documents d
+             LEFT JOIN contract_capabilities cc
+               ON cc.document_number = d.document_number
+            WHERE d.id = ANY($1::int[])
+            FOR UPDATE OF d`,
+          [ids]
+        )
+      ).rows;
+      for (const d of docs) {
+        if (d.drive_link && String(d.drive_link).trim()) {
+          skipped.push({
+            document_number: d.document_number,
+            reason: "発行済(PDFあり)のため削除しません",
+          });
+          continue;
+        }
+        if (d.cap_id) {
+          const del = await client.query(
+            `SELECT COUNT(*)::int AS n
+               FROM delivery_line_items dli
+               JOIN capability_line_items cli ON cli.id = dli.capability_line_item_id
+              WHERE cli.capability_id = $1`,
+            [d.cap_id]
+          );
+          if (Number(del.rows[0].n) > 0) {
+            skipped.push({
+              document_number: d.document_number,
+              reason: "検収/納品が紐付いているため削除しません",
+            });
+            continue;
+          }
+          await client.query(
+            `DELETE FROM contract_capabilities WHERE id = $1`,
+            [d.cap_id]
+          );
+          await client.query(`DELETE FROM contracts WHERE id = $1`, [d.cap_id]);
+        }
+        await client.query(`DELETE FROM documents WHERE id = $1`, [d.id]);
+        await client.query(
+          `DELETE FROM external_assets WHERE asset_number = $1`,
+          [d.document_number]
+        );
+        deleted.push(d.document_number);
+      }
+      await client.query("COMMIT");
+      res.json({
+        ok: true,
+        deleted: deleted.length,
+        deleted_numbers: deleted,
+        skipped,
+      });
+    } catch (error) {
+      await client.query("ROLLBACK");
+      console.error("/api/documents/bulk-delete failed:", error);
+      res
+        .status(500)
+        .json({ ok: false, error: String((error as any)?.message || error) });
+    } finally {
+      client.release();
+    }
+  });
+
+  /**
    * Phase 17e: 稟議マスタの一括インポート (ringi_records への upsert)。
    * 文書とのリンクは作らない (これは「マスタ事前登録」のためのもの。
    * 個別文書からのリンクは別経路 bulk/order 等の ringi_numbers 列で行う)。
