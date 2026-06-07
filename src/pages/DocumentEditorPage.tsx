@@ -325,6 +325,26 @@ export function DocumentEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fromPendingId, reopenId])
 
+  // 請求の向き(selectedDirection)の既定値。未選択だと Finalize & Sync が押せないため、
+  //   - form_data.FLOW_DIRECTION があればそれを採用
+  //   - 発注書 / 検収書 は「当社が払う(in)」を既定にする(仕入・支払のため)
+  // ユーザーは必要に応じてプルダウンで変更可能。
+  React.useEffect(() => {
+    if (selectedDirection) return
+    const fd = (formData as any)?.FLOW_DIRECTION
+    if (fd === "in" || fd === "out") {
+      setSelectedDirection(fd)
+      return
+    }
+    if (
+      selectedTemplate === "purchase_order" ||
+      (selectedTemplate || "").startsWith("inspection_certificate")
+    ) {
+      setSelectedDirection("in")
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTemplate, (formData as any)?.FLOW_DIRECTION])
+
   // インポート由来 / 既存文書を読み込んだ際、form_data の取引先コードから
   // activeVendor を解決して取引先プルダウンを自動選択する。
   // (vendors は非同期ロードのため、揃ったタイミングで解決する。)

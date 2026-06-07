@@ -464,7 +464,14 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           due_date: cc.due_date,
           // Phase 23.5: 発注書系の「発注日」。検収書 onPick で orderDate 補完の
           //   最優先キーとして使う。
-          issue_date_po: cc.issue_date_po,
+          //   通常作成の発注書は issue_date_po(capability列)が空で、発注日が
+          //   発注書ドキュメントの form_data['発注日'] にしか無いことがあるため、
+          //   そこからもフォールバック補完する。
+          issue_date_po:
+            cc.issue_date_po ||
+            formData["発注日"] ||
+            formData.order_date ||
+            null,
           effective_date: cc.effective_date,
           expiration_date: cc.expiration_date,
           original_work: cc.original_work || "",
