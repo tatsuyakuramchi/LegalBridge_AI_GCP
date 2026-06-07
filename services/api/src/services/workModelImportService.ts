@@ -107,7 +107,7 @@ const CONFIGS: Record<V3Entity, EntityConfig> = {
       { field: "parent_work_title", aliases: ["parent_work_title", "親作品名", "親作品タイトル", "派生元作品名", "派生元名", "派生元タイトル"], virtual: true },
       { field: "derivation_type", aliases: ["derivation_type", "派生種別", "派生"] },
       { field: "remarks", aliases: ["remarks", "備考"] },
-      { field: "publisher_vendor_id", aliases: ["publisher_vendor_code", "出版社取引先コード"], type: "vendor" },
+      // 整理①: publisher_vendor_id(自社作品の出版社)は廃止のため CSV 取込からも除外。
     ],
   },
   contracts: {
@@ -404,8 +404,8 @@ export function getWorkModelSampleCsv(entity: V3Entity): string {
       "source_code,title,title_kana,original_publisher,default_rights_holder,default_credit_display,remarks,rights_holder_vendor_code\n" +
       ",サンプル原作,サンプルゲンサク,サンプル出版,サンプル権利者株式会社,(C)サンプル権利者,初回取込サンプル,\n",
     works:
-      "work_code,title,title_kana,work_type,status,division,is_original,parent_work_code,parent_work_title,derivation_type,remarks,publisher_vendor_code\n" +
-      ",サンプルボードゲーム,サンプルボードゲーム,board_game,planning,BDG,true,,,,初回取込サンプル,\n" +
+      "work_code,title,title_kana,work_type,status,division,is_original,parent_work_code,parent_work_title,derivation_type,remarks\n" +
+      ",サンプルボードゲーム,サンプルボードゲーム,board_game,planning,BDG,true,,,,初回取込サンプル\n" +
       ",サンプル現地版(派生),サンプルゲンチバン,board_game,planning,BDG,false,W-2026-0001,,localization,親をコードで紐付け,\n" +
       ",サンプル北米版(派生),サンプルホクベイバン,board_game,planning,BDG,false,,サンプルボードゲーム,localization,親を作品名で紐付け(空でも可),\n",
     contracts:
