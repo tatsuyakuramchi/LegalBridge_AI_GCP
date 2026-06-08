@@ -14,7 +14,7 @@ function DialogOverlay({ className, ...props }: React.ComponentProps<typeof Dial
     <DialogPrimitive.Backdrop
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-foreground/40 backdrop-blur-sm",
+        "fixed inset-0 z-50 bg-foreground/70 backdrop-blur-md",
         "data-[starting-style]:opacity-0 data-[ending-style]:opacity-0 transition-opacity duration-200",
         className
       )}
