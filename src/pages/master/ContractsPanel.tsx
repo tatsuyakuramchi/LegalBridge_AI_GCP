@@ -159,9 +159,9 @@ const empty = {
   // Phase 22.21.115: 稟議番号 (発注書・個別利用許諾と同じ shape: 5 桁数字の配列)。
   //   保存時に Worker 側で ringi_documents テーブルに N:N リンクされる。
   ringi_numbers: [] as string[],
-  // 目的 / 請求の方向。文書作成フォームと同じ contract_purposes ベース。
-  //   purpose_code を選ぶと flow_direction(in/out) も確定し、保存時に
+  // 請求の向き(2択)。文書作成フォームと同じ in/out。保存時に
   //   contract_capabilities.flow_direction へ記録する(out=当社受領→請求台帳)。
+  //   purpose_code は後方互換のため残置(UI からは設定しない)。
   purpose_code: "",
   flow_direction: "",
   // 成果物の権利帰属(当社/相手方/共有)。帰属=相手方のとき利用許諾料の入力を促す。
@@ -177,13 +177,6 @@ const COND_LABELS: Record<number, string> = {
   3: "条件 3 (プロダクト)",
 }
 
-// 目的マスター行(/api/contract-check/purposes)。
-type PurposeRow = {
-  purpose_code: string
-  purpose_group?: string | null
-  purpose_label?: string | null
-  flow_direction?: string | null
-}
 const CALC_METHOD_OPTIONS = [
   { value: "ROYALTY", label: "ロイヤリティ" },
   { value: "FIXED", label: "固定額" },
@@ -204,24 +197,6 @@ export function ContractsPanel() {
   const [creating, setCreating] = React.useState(false)
   const [draft, setDraft] = React.useState<any>(empty)
 
-  // 目的 / 方向マスター(/api/contract-check/purposes)。文書作成フォームと同源。
-  const [purposes, setPurposes] = React.useState<PurposeRow[]>([])
-  React.useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await fetch("/api/contract-check/purposes")
-        if (!r.ok) return
-        const j = await r.json()
-        if (!cancelled && Array.isArray(j)) setPurposes(j as PurposeRow[])
-      } catch {
-        /* 取得失敗時は空。方向は任意項目なので登録自体は継続できる */
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const filtered = contracts.filter((c) => {
     const q = search.toLowerCase()
@@ -560,36 +535,16 @@ export function ContractsPanel() {
                 1 本で扱う場合に選択。両方のエディタが表示されます。
               </p>
             </Field>
-            {/* 目的 / 請求の方向。文書作成フォームと同じ purpose マスターから選び、
-                flow_direction(in/out) を確定して保存する(out=当社受領→請求台帳)。 */}
-            <Field label="目的 / 方向">
+            {/* 請求の向き(2択) — 文書作成フォームと同じ in/out。
+                out=当社受領→請求台帳。purpose マスターの多数選択は廃止し2択に統一。 */}
+            <Field label="請求の向き">
               <NativeSelect
-                value={data?.purpose_code || ""}
-                onChange={(e) => {
-                  const pc = e.target.value
-                  const row = purposes.find((p) => p.purpose_code === pc)
-                  set({ purpose_code: pc, flow_direction: row?.flow_direction || "" })
-                }}
+                value={data?.flow_direction || ""}
+                onChange={(e) => set({ flow_direction: e.target.value })}
               >
-                <option value="">— 目的を選択（任意）—</option>
-                {Array.from(
-                  new Set(purposes.map((p) => p.purpose_group || "その他"))
-                ).map((grp) => (
-                  <optgroup key={grp} label={grp}>
-                    {purposes
-                      .filter((p) => (p.purpose_group || "その他") === grp)
-                      .map((p) => (
-                        <option key={p.purpose_code} value={p.purpose_code}>
-                          {p.purpose_label || p.purpose_code}
-                          {p.flow_direction === "in"
-                            ? "〔IN〕"
-                            : p.flow_direction === "out"
-                            ? "〔OUT〕"
-                            : ""}
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
+                <option value="">— 請求の向きを選択 —</option>
+                <option value="in">当社が払う（支払・仕入・ライセンスイン）</option>
+                <option value="out">当社が受け取る（請求・販売・ライセンスアウト）</option>
               </NativeSelect>
               <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
                 方向:{" "}
