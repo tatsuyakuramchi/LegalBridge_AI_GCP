@@ -15,6 +15,7 @@ substitutions:
   _REPO: legalbridge
   _SERVICE_NAME: legalbridge-search-api
   # 検索ポータル /work-model が admin-ui のフル機能版(作品モデル)を iframe 埋め込みするための URL。
+  #   ※ work-model 埋め込み専用。ADMIN_UI_URL とは分離(あちらは管理トップの admin-ui 移行用)。
   _ADMIN_UI_URL: https://legalbridge-admin-ui-988056987352.asia-northeast1.run.app
 
 options:
@@ -81,9 +82,12 @@ steps:
       - "5"
       - --timeout
       - "60"
-      # 既存 env/secret は維持したまま ADMIN_UI_URL のみ追加/更新(set ではなく update)。
+      # 既存 env/secret は維持したまま、work-model 埋め込み専用の WORK_MODEL_UI_URL を設定。
+      #   先に誤って設定した ADMIN_UI_URL(=ポータル全体が admin-ui へ移行する副作用)は除去する。
       - --update-env-vars
-      - "ADMIN_UI_URL=${_ADMIN_UI_URL}"
+      - "WORK_MODEL_UI_URL=${_ADMIN_UI_URL}"
+      - --remove-env-vars
+      - "ADMIN_UI_URL"
       - --quiet
 
   - id: promote
