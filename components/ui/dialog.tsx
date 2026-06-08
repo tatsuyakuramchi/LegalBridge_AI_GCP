@@ -35,6 +35,9 @@ function DialogContent({
         data-slot="dialog-content"
         className={cn(
           "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2",
+          // 画面より高い内容でもスクロールできるよう、高さを viewport 以内に制限し
+          //   ヘッダ/フッタ固定・ボディ(DialogBody)だけスクロールさせる(flex column)。
+          "max-h-[90vh] flex flex-col overflow-hidden",
           "bg-card border border-border shadow-2xl rounded-md outline-none",
           "data-[starting-style]:opacity-0 data-[starting-style]:scale-95",
           "data-[ending-style]:opacity-0 data-[ending-style]:scale-95",
@@ -99,7 +102,7 @@ function DialogDescription({
 }
 
 function DialogBody({ className, ...props }: React.ComponentProps<"div">) {
-  return <div data-slot="dialog-body" className={cn("px-6 py-4", className)} {...props} />
+  return <div data-slot="dialog-body" className={cn("px-6 py-4 min-h-0 overflow-y-auto", className)} {...props} />
 }
 
 export {
