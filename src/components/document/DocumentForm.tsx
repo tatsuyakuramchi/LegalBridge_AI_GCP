@@ -1852,6 +1852,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderGroup('IV. 振込先口座 (ロイヤリティ送金先)')}
         </FormSection>
 
+        {/* 通知条項(第23条)の通知先 — 相手方の担当者/電話/メール。頭書きに反映。 */}
+        <FormSection title="VII. 通知先 (相手方)" variant="default">
+          {renderGroup('VII. 通知先 (相手方)')}
+        </FormSection>
+
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
             ▶ V. 備考 (任意) — クリックして展開
@@ -2069,6 +2074,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           headerActions={sideButton('取引先', fillVendorFromPartner, !activeVendor)}
         >
           {renderGroup('IV. 振込先銀行口座 (乙)')}
+        </FormSection>
+
+        {/* 通知条項(第23条)の通知先 — 相手方(乙)の担当者/電話/メール。頭書きに反映。 */}
+        <FormSection title="VII. 通知先 (乙)" variant="default">
+          {renderGroup('VII. 通知先 (乙)')}
         </FormSection>
 
         <FormSection title="V. インボイス制度関連" variant="indigo">
