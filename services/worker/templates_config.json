@@ -154,6 +154,10 @@
 
       "documentNumberOverride": { "label": "契約番号 手動上書き (任意)", "group": "VI. 発行オプション (任意)", "helpText": "空欄なら自動採番。社内修正版を外部に出す場合、再発行リビジョン (_001 等) ではなく任意の番号を指定可能 (例: 元番号 ARC-LIC-2026-0001 をそのまま使い続ける)" },
       "showReissueBanner": { "label": "PDF に再発行版バナーを表示", "group": "VI. 発行オプション (任意)", "type": "boolean", "helpText": "ON (デフォルト): 再発行版のとき PDF に黄色バナーを表示。OFF: 社内修正のみで相手方には初版に見せたいとき。リビジョン番号は DB 側で常に管理されます" }
+    ,
+      "NOTICE_CONTACT_NAME": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (相手方)", "helpText": "本契約上の通知の宛先(相手方の担当者)" },
+      "NOTICE_CONTACT_PHONE": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (相手方)" },
+      "NOTICE_CONTACT_EMAIL": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (相手方)" }
     }
   },
 
@@ -186,6 +190,10 @@
       "CONTRACT_PERIOD_SUMMARY": { "label": "\u5951\u7d04\u671f\u9593", "group": "V. \u30a4\u30f3\u30dc\u30a4\u30b9\u5236\u5ea6\u95a2\u9023", "placeholder": "\u4f8b: \u5951\u7d04\u7de0\u7d50\u65e5\u304b\u30891\u5e74\u9593\uff08\u671f\u9593\u6e80\u4e861\u304b\u6708\u524d\u307e\u3067\u306e\u89e3\u7d04\u901a\u77e5\u304c\u306a\u3044\u5834\u5408\u306f\u540c\u4e00\u6761\u4ef6\u30671\u5e74\u9593\u66f4\u65b0\uff09" },
 
       "REMARKS": { "label": "特約・特記事項", "group": "VI. 特約 (任意)", "type": "textarea", "helpText": "未入力なら PDF に該当ブロックが表示されません" }
+    ,
+      "NOTICE_CONTACT_NAME": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (乙)", "helpText": "本契約上の通知の宛先(相手方の担当者)" },
+      "NOTICE_CONTACT_PHONE": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (乙)" },
+      "NOTICE_CONTACT_EMAIL": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (乙)" }
     }
   },
 
@@ -599,6 +607,10 @@
       "再発行フラグ": { "label": "再発行版バナーを表示", "group": "VI. 特記・発行オプション", "type": "boolean", "helpText": "ON で PDF 冒頭に「再発行版」バナーを表示" },
       "改訂番号": { "label": "改訂番号 (Rev.)", "group": "VI. 特記・発行オプション", "placeholder": "1", "helpText": "再発行版のとき表示" },
       "元契約番号": { "label": "元契約番号", "group": "VI. 特記・発行オプション", "placeholder": "ARC-PUB-2026-0001", "helpText": "再発行版のとき表示" }
+    ,
+      "通知先担当者": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (許諾者)", "helpText": "本契約上の通知の宛先(許諾者の担当者)" },
+      "通知先電話": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (許諾者)" },
+      "通知先メール": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (許諾者)" }
     }
   },
 
@@ -633,6 +645,10 @@
       "再発行フラグ": { "label": "再発行版バナーを表示", "group": "VI. 特記・発行オプション", "type": "boolean", "helpText": "ON で PDF 冒頭に「再発行版」バナーを表示" },
       "改訂番号": { "label": "改訂番号 (Rev.)", "group": "VI. 特記・発行オプション", "placeholder": "1" },
       "元契約番号": { "label": "元契約番号", "group": "VI. 特記・発行オプション", "placeholder": "ARC-PUB-2026-0001" }
+    ,
+      "通知先担当者": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (許諾者)", "helpText": "本契約上の通知の宛先(許諾者の担当者)" },
+      "通知先電話": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (許諾者)" },
+      "通知先メール": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (許諾者)" }
     }
   },
 
