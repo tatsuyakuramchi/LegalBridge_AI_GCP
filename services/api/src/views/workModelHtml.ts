@@ -105,9 +105,11 @@ table.sub th { background: #f8fafc; color: #475569; font-weight: 600; white-spac
 `;
 
 // 統合: 登録UIは admin-ui の作品モデル(React)に一本化し、Search Portal 側は
-//   それを iframe で埋め込んで共有する。ADMIN_UI_URL 未設定時は旧コンソールに自動フォールバック。
+//   それを iframe で埋め込んで共有する。
+//   ★ 専用変数 WORK_MODEL_UI_URL のみを使う(ADMIN_UI_URL は別用途=管理トップの
+//     admin-ui リダイレクト等に使われるため、ここでは参照しない)。未設定時は旧コンソールに自動フォールバック。
 export function workModelEmbedPage(role: Role = "viewer"): string {
-  const admin = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  const admin = (process.env.WORK_MODEL_UI_URL || "").replace(/\/+$/, "");
   if (!admin) return workModelPage(role); // フォールバック(旧バニラコンソール)
   const url = admin + "/master/work-model";
   const body = `
