@@ -809,6 +809,10 @@
 
       "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" , "dbField": "company.rep" }
+    ,
+      "許諾者担当者": { "type": "text", "label": "許諾者 担当者", "group": "8. 通知先 (許諾者)", "helpText": "通知先の担当者(相手方)" },
+      "許諾者電話": { "type": "text", "label": "許諾者 電話", "group": "8. 通知先 (許諾者)" },
+      "許諾者メール": { "type": "text", "label": "許諾者 メール", "group": "8. 通知先 (許諾者)" }
     }
   },
   "notice_consent_personal_info_freelance": {
