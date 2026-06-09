@@ -3947,8 +3947,10 @@ ${details}
            capability_id, condition_no,
            region_language_label, calc_method, rate_pct,
            base_price_label, calc_period, calc_period_kind, calc_period_close_month,
-           currency, formula_text, payment_terms, mg_amount, ag_amount, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+           currency, formula_text, payment_terms, mg_amount, ag_amount,
+           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
+           updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, condition_no) DO UPDATE SET
            region_language_label   = EXCLUDED.region_language_label,
            calc_method             = EXCLUDED.calc_method,
@@ -3962,6 +3964,12 @@ ${details}
            payment_terms           = EXCLUDED.payment_terms,
            mg_amount               = EXCLUDED.mg_amount,
            ag_amount               = EXCLUDED.ag_amount,
+           condition_name          = EXCLUDED.condition_name,
+           calc_type               = EXCLUDED.calc_type,
+           fixed_kind              = EXCLUDED.fixed_kind,
+           subscription_cycle      = EXCLUDED.subscription_cycle,
+           unit_amount             = EXCLUDED.unit_amount,
+           guarantee_type          = EXCLUDED.guarantee_type,
            updated_at              = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -3981,6 +3989,13 @@ ${details}
           c.mg_amount != null && c.mg_amount !== "" ? Number(c.mg_amount) : 0,
           // Phase 22.21.95: AG (前払い保証 = 累積消化)
           c.ag_amount != null && c.ag_amount !== "" ? Number(c.ag_amount) : 0,
+          // 0045: 金銭条件の柔軟化 (名称 / 構造化計算式タイプ / 保証種別)
+          c.condition_name || null,
+          c.calc_type || null,
+          c.fixed_kind || null,
+          c.subscription_cycle || null,
+          c.unit_amount != null && c.unit_amount !== "" ? Number(c.unit_amount) : null,
+          c.guarantee_type || null,
         ]
       );
     }

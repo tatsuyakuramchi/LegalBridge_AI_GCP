@@ -294,11 +294,11 @@
       {{#each financial_conditions}}
       <div class="box payment-box">
         <div style="font-weight:900; margin-bottom:5px;">
-          金銭条件 {{condition_no}}：{{#if title}}{{title}}{{else}}{{#if (eq condition_no 1)}}自社製造・直接販売{{/if}}{{#if (eq condition_no 2)}}国内・海外展開（ライセンスアウト型）{{/if}}{{#if (eq condition_no 3)}}海外展開（プロダクトアウト型）{{/if}}{{/if}}{{#if region_language_label}}（{{region_language_label}}）{{/if}}
+          金銭条件 {{condition_no}}：{{#if condition_name}}{{condition_name}}{{else}}{{#if title}}{{title}}{{else}}{{#if (eq condition_no 1)}}自社製造・直接販売{{/if}}{{#if (eq condition_no 2)}}国内・海外展開（ライセンスアウト型）{{/if}}{{#if (eq condition_no 3)}}海外展開（プロダクトアウト型）{{/if}}{{/if}}{{/if}}{{#if region_language_label}}（{{region_language_label}}）{{/if}}
         </div>
         <div class="row-info">
           <span class="row-label">計算方式</span>
-          <span class="row-val" style="font-weight:900;">{{#if calc_method}}{{calc_method}}{{else}}—{{/if}}</span>
+          <span class="row-val" style="font-weight:900;">{{#if calc_type}}{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスクリプション（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{else}}{{#if calc_method}}{{calc_method}}{{else}}—{{/if}}{{/if}}</span>
         </div>
         {{!-- 概要: row.summary を優先、なければ condition_no ベースのデフォルト文 --}}
         {{#if summary}}
@@ -359,7 +359,7 @@
         {{/if}}
         <div class="payment-chip payment-guarantee">
           <div style="font-weight:900; color:#333; margin-bottom:1px;">MG/AG・最低保証等</div>
-          <div class="small payment-body">{{#if mg_amount}}{{#if (gt mg_amount 0)}}{{formatYen mg_amount}}{{else}}（別途定めなし）{{/if}}{{else}}{{#if mg_text}}{{mg_text}}{{else}}（別途定めなし）{{/if}}{{/if}}</div>
+          <div class="small payment-body">{{#if (eq guarantee_type "AG")}}AG（前払い保証・累積消化）：{{#if ag_amount}}{{formatYen ag_amount}}{{else}}（別途定めなし）{{/if}}{{else}}{{#if (eq guarantee_type "MG")}}MG（最低保証）：{{#if mg_amount}}{{formatYen mg_amount}}{{else}}（別途定めなし）{{/if}}{{else}}{{#if mg_amount}}{{#if (gt mg_amount 0)}}{{formatYen mg_amount}}{{else}}（別途定めなし）{{/if}}{{else}}{{#if mg_text}}{{mg_text}}{{else}}（別途定めなし）{{/if}}{{/if}}{{/if}}{{/if}}</div>
         </div>
         {{#if calc_note}}
         <div class="payment-chip payment-note-chip">
