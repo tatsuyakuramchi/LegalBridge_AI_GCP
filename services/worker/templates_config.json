@@ -120,6 +120,8 @@
       "SHOW_SIGN_SECTION": { "label": "承諾署名欄を表示", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
       "VENDOR_ACCEPT_DATE": { "label": "受注者承諾日", "group": "VII. 契約・署名 (任意)", "type": "date" },
       "VENDOR_ACCEPT_NAME": { "label": "受注者署名", "group": "VII. 契約・署名 (任意)" }
+    ,
+      "VENDOR_CONTACT_PHONE": { "type": "text", "label": "TEL", "group": "II. 発注先 (取引先)", "helpText": "発注先 通知先 電話" }
     }
   },
 
@@ -487,6 +489,10 @@
       "金銭条件3_支払条件": { "label": "支払条件", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
 
       "特記事項_本文": { "label": "特記事項", "group": "IX. 特記事項", "type": "textarea", "placeholder": "個別契約に固有の追加条件など" }
+    ,
+      "Licensor_担当者": { "type": "text", "label": "Licensor 担当者", "group": "II. Licensor (許諾者)", "helpText": "通知先の担当者(相手方)" },
+      "Licensor_電話": { "type": "text", "label": "Licensor 電話", "group": "II. Licensor (許諾者)" },
+      "Licensor_メール": { "type": "text", "label": "Licensor メール", "group": "II. Licensor (許諾者)" }
     }
   },
 
@@ -705,6 +711,10 @@
 
       "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" , "dbField": "company.rep" }
+    ,
+      "許諾者担当者": { "type": "text", "label": "許諾者 担当者", "group": "8. 通知先 (許諾者)", "helpText": "通知先の担当者(相手方)" },
+      "許諾者電話": { "type": "text", "label": "許諾者 電話", "group": "8. 通知先 (許諾者)" },
+      "許諾者メール": { "type": "text", "label": "許諾者 メール", "group": "8. 通知先 (許諾者)" }
     }
   },
 
