@@ -166,6 +166,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       'license_master',
       'pub_master_individual',
       'pub_master_corporate',
+      'individual_license_terms',
+      'pub_license_terms',
     ];
     if (!noticeTemplates.includes(templateId) || !selectedStaff) return;
     const name = selectedStaff.staff_name || '';
