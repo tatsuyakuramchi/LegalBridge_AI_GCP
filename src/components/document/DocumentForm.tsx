@@ -156,6 +156,36 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, selectedStaff?.staff_name]);
 
+  // 通知先: 業務委託 / ライセンス / 出版(個人・法人)基本契約で、当社側
+  //   (委託者 / ライセンシー / 被許諾者) の通知先担当者を、選択中の担当者
+  //   (selectedStaff) から STAFF_NAME / STAFF_PHONE / STAFF_EMAIL に引用する。
+  //   テンプレ頭書きの「通知先」欄および通知条項に反映される。
+  useEffect(() => {
+    const noticeTemplates = [
+      'service_master',
+      'license_master',
+      'pub_master_individual',
+      'pub_master_corporate',
+    ];
+    if (!noticeTemplates.includes(templateId) || !selectedStaff) return;
+    const name = selectedStaff.staff_name || '';
+    const phone = selectedStaff.phone || '';
+    const email = selectedStaff.email || '';
+    if (
+      formData.STAFF_NAME === name &&
+      formData.STAFF_PHONE === phone &&
+      formData.STAFF_EMAIL === email
+    )
+      return;
+    setFormData({
+      ...formData,
+      STAFF_NAME: name,
+      STAFF_PHONE: phone,
+      STAFF_EMAIL: email,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, selectedStaff?.staff_name, selectedStaff?.phone, selectedStaff?.email]);
+
   // Phase 22.9: 取引先 (activeVendor) が選ばれたら、その vendor に紐づく
   //             基本契約 (contract_capabilities) を自動補完。
   //   - 発注書 (purchase_order)               → category="service" の有効な基本契約
