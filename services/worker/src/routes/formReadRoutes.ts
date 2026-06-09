@@ -557,8 +557,10 @@ export function registerFormReadRoutes(
               conds = await query(
                 `SELECT id, condition_no, region_language_label, calc_method,
                         rate_pct, base_price_label, calc_period, currency,
-                        formula_text, payment_terms, mg_amount,
-                        calc_period_kind, calc_period_close_month
+                        formula_text, payment_terms, mg_amount, ag_amount,
+                        calc_period_kind, calc_period_close_month,
+                        condition_name, calc_type, fixed_kind,
+                        subscription_cycle, unit_amount, guarantee_type
                    FROM capability_financial_conditions
                   WHERE capability_id = $1
                   ORDER BY condition_no ASC`,
@@ -596,6 +598,14 @@ export function registerFormReadRoutes(
               formula_text: r.formula_text || "",
               payment_terms: r.payment_terms || "",
               mg_amount: r.mg_amount !== null ? Number(r.mg_amount) : 0,
+              ag_amount: r.ag_amount != null ? Number(r.ag_amount) : 0,
+              // 0045: 金銭条件の柔軟化フィールド (名称/計算式タイプ/保証種別)
+              condition_name: r.condition_name || "",
+              calc_type: r.calc_type || undefined,
+              fixed_kind: r.fixed_kind || undefined,
+              subscription_cycle: r.subscription_cycle || undefined,
+              unit_amount: r.unit_amount != null ? Number(r.unit_amount) : undefined,
+              guarantee_type: r.guarantee_type || undefined,
             }));
 
             // Phase 22.20-D: work_sublicensees を読み出して
