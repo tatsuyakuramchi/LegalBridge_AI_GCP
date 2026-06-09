@@ -633,6 +633,19 @@
   {{/if}}
 
   {{#if SHOW_ORDER_SIGN_SECTION}}
+  <div class="section-mark">■ 通知先</div>
+  <table class="summary">
+    <tr>
+      <th style="width:30%;">発注先（受注者）</th>
+      <td>担当：{{VENDOR_CONTACT_NAME}}　／　TEL：{{VENDOR_CONTACT_PHONE}}　／　E-mail：{{VENDOR_EMAIL}}</td>
+    </tr>
+    <tr>
+      <th>発注元（当社）</th>
+      <td>担当：{{STAFF_NAME}}　／　TEL：{{STAFF_PHONE}}　／　E-mail：{{STAFF_EMAIL}}</td>
+    </tr>
+  </table>
+  <div style="margin-top:6px; font-size:9pt; color:#555;">本発注に関する通知その他の連絡は、上記の通知先に対して行うものとします。基本契約がある場合は、その通知条項に従います。</div>
+
   <div class="section-mark">■ 署名欄</div>
   <table class="sign-table" style="margin-top: 6px;">
     <tr>

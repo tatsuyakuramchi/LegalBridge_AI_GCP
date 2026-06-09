@@ -173,6 +173,13 @@
           {{#if 許諾期間注記}}<div style="font-size:8pt; color:#666; margin-top:2px;">{{許諾期間注記}}</div>{{/if}}
         </span>
       </div>
+      <div class="meta-row-item">
+        <span class="meta-label-h">通知先</span>
+        <span class="meta-val-h">
+          Licensor: 担当 {{Licensor_担当者}} ／ TEL {{Licensor_電話}} ／ Email {{Licensor_メール}}<br>
+          Licensee: 担当 {{STAFF_NAME}} ／ TEL {{STAFF_PHONE}} ／ Email {{STAFF_EMAIL}}
+        </span>
+      </div>
     </div>
     <div class="meta-note">本別紙の定めと基本契約の定めが抵触する場合、本別紙の定めが優先する。</div>
   </div>
@@ -594,6 +601,7 @@
     <div class="section-title">6. 特記事項</div>
     <div class="box" style="line-height:1.8;">
       １．基本契約に基づく個別利用許諾条件であり、当該基本契約と一体的に効力を有する。<br><br>
+      ２．本書に関する通知その他の連絡は、基本契約の通知条項に従い、頭書き「通知先」に記載の宛先に対して行う。<br><br>
       {{#if 特記事項_本文}}{{{特記事項_本文}}}{{else}}{{#if 特記事項}}{{特記事項}}{{/if}}{{/if}}
     </div>
   </div>
