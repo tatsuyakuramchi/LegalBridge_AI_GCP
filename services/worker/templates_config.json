@@ -133,8 +133,6 @@
       "VENDOR_NAME": { "label": "ライセンサー名称", "group": "II. ライセンサー (許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "VENDOR_ADDRESS": { "label": "ライセンサー住所", "group": "II. ライセンサー (許諾者)", "type": "textarea", "required": true },
       "VENDOR_REP": { "label": "ライセンサー代表者", "group": "II. ライセンサー (許諾者)", "required": true },
-      "VENDOR_PHONE": { "label": "TEL", "group": "II. ライセンサー (許諾者)" },
-      "VENDOR_EMAIL": { "label": "E-mail", "group": "II. ライセンサー (許諾者)" },
 
       "PARTY_A_NAME": { "label": "ライセンシー名称", "group": "III. ライセンシー (被許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "PARTY_A_ADDRESS": { "label": "ライセンシー住所", "group": "III. ライセンシー (被許諾者)", "type": "textarea", "required": true },
@@ -176,8 +174,6 @@
       "VENDOR_NAME": { "label": "乙 (受託者) 商号 / 氏名", "group": "III. 乙 (受託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力。法人=商号、個人=氏名" },
       "VENDOR_ADDRESS": { "label": "乙 (受託者) 住所", "group": "III. 乙 (受託者)", "type": "textarea", "required": true },
       "VENDOR_REP": { "label": "乙 (受託者) 代表者", "group": "III. 乙 (受託者)", "required": true, "helpText": "法人の場合のみ必須。「代表取締役 山田太郎」のような肩書込みの形式。個人を選択すると非表示になります" },
-      "VENDOR_PHONE": { "label": "乙 (受託者) TEL", "group": "III. 乙 (受託者)" },
-      "VENDOR_EMAIL": { "label": "乙 (受託者) E-mail", "group": "III. 乙 (受託者)" },
 
       "BANK_NAME": { "label": "銀行名", "group": "IV. 振込先銀行口座 (乙)", "helpText": "[取引先] ボタンで自動入力" },
       "BRANCH_NAME": { "label": "支店名", "group": "IV. 振込先銀行口座 (乙)" },
@@ -588,8 +584,6 @@
 
       "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・個人)", "type": "textarea", "required": true , "dbField": "vendor.address" },
       "許諾者氏名": { "label": "許諾者 氏名", "group": "II. 許諾者 (甲・個人)", "required": true , "dbField": "vendor.vendor_name" },
-      "許諾者電話番号": { "label": "許諾者 電話番号", "group": "II. 許諾者 (甲・個人)" , "dbField": "vendor.phone" },
-      "許諾者メール": { "label": "許諾者 メール", "group": "II. 許諾者 (甲・個人)" , "dbField": "vendor.email" },
 
       "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true , "dbField": "company.rep" },
@@ -625,9 +619,6 @@
       "許諾者法人名": { "label": "許諾者 法人名", "group": "II. 許諾者 (甲・法人)", "required": true , "dbField": "vendor.vendor_name" },
       "代表者職名": { "label": "代表者 職名", "group": "II. 許諾者 (甲・法人)", "placeholder": "例: 代表取締役" },
       "代表者氏名": { "label": "代表者 氏名", "group": "II. 許諾者 (甲・法人)", "required": true , "dbField": "vendor.vendor_rep" },
-      "担当者氏名": { "label": "担当者 氏名", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.contact_name" },
-      "担当者電話番号": { "label": "担当者 電話番号", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.phone" },
-      "担当者メール": { "label": "担当者 メール", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.email" },
 
       "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true , "dbField": "company.rep" },
