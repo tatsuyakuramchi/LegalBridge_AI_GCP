@@ -1,4 +1,17 @@
-<!DOCTYPE html>
+-- 0047_fix_service_master_template.sql
+-- 0044 で service_master(業務委託基本契約書) の DB テンプレを更新した際、頭書きの
+-- 通知先行の挿入で {{#if REMARKS}} の開きタグが欠落し、孤立した {{/if}} により
+-- Handlebars パースエラー(検索側プレビューが表示不可)となっていた。修正版HTMLで新版へ更新する。
+-- disk テンプレ(services/worker/templates/service_master.html)と整合。
+
+WITH t AS (
+  SELECT id FROM document_templates WHERE template_key = 'service_master'
+), nv AS (
+  INSERT INTO document_template_versions
+      (template_id, version_no, html_source, field_schema, comment, created_by)
+  SELECT t.id,
+         COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = t.id), 0) + 1,
+         $html_sm$<!DOCTYPE html>
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
@@ -735,3 +748,14 @@
 
 </body>
 </html>
+$html_sm$,
+         $schema_sm$[{"name": "CONTRACT_NO", "label": "契約番号", "type": "text", "group": "I. 契約締結日", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます"}, {"name": "CONTRACT_DATE", "label": "契約締結日", "type": "date", "group": "I. 契約締結日", "required": true}, {"name": "PARTY_A_NAME", "label": "甲 (委託者) 商号", "group": "II. 甲 (委託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力"}, {"name": "PARTY_A_ADDRESS", "label": "甲 (委託者) 住所", "group": "II. 甲 (委託者)", "type": "textarea", "required": true}, {"name": "PARTY_A_REP", "label": "甲 (委託者) 代表者", "group": "II. 甲 (委託者)", "required": true}, {"name": "VENDOR_IS_CORPORATION", "label": "乙 種別", "group": "III. 乙 (受託者)", "type": "select", "options": ["法人", "個人"], "required": true, "helpText": "法人=商号+代表者を表示 / 個人=氏名のみ。[取引先] ボタンで vendor.entity_type から自動判定"}, {"name": "VENDOR_NAME", "label": "乙 (受託者) 商号 / 氏名", "group": "III. 乙 (受託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力。法人=商号、個人=氏名"}, {"name": "VENDOR_ADDRESS", "label": "乙 (受託者) 住所", "group": "III. 乙 (受託者)", "type": "textarea", "required": true}, {"name": "VENDOR_REP", "label": "乙 (受託者) 代表者", "group": "III. 乙 (受託者)", "required": true, "helpText": "法人の場合のみ必須。「代表取締役 山田太郎」のような肩書込みの形式。個人を選択すると非表示になります"}, {"name": "VENDOR_PHONE", "label": "乙 (受託者) TEL", "group": "III. 乙 (受託者)"}, {"name": "VENDOR_EMAIL", "label": "乙 (受託者) E-mail", "group": "III. 乙 (受託者)"}, {"name": "BANK_NAME", "label": "銀行名", "group": "IV. 振込先銀行口座 (乙)", "helpText": "[取引先] ボタンで自動入力"}, {"name": "BRANCH_NAME", "label": "支店名", "group": "IV. 振込先銀行口座 (乙)"}, {"name": "ACCOUNT_TYPE", "label": "口座種別", "group": "IV. 振込先銀行口座 (乙)", "type": "select", "options": ["普通", "当座"]}, {"name": "ACCOUNT_NUMBER", "label": "口座番号", "group": "IV. 振込先銀行口座 (乙)"}, {"name": "ACCOUNT_HOLDER_KANA", "label": "口座名義 (カナ)", "group": "IV. 振込先銀行口座 (乙)"}, {"name": "IS_INVOICE_ISSUER", "label": "適格請求書発行事業者 (該当/非該当)", "group": "V. インボイス制度関連", "placeholder": "該当 / 非該当"}, {"name": "invoiceRegistrationDisplay", "label": "登録番号 (T-)", "group": "V. インボイス制度関連", "helpText": "[取引先] ボタンで自動入力 (T プレフィクス付与)"}, {"name": "CONTRACT_PERIOD_SUMMARY", "label": "契約期間", "group": "V. インボイス制度関連", "placeholder": "例: 契約締結日から1年間（期間満了1か月前までの解約通知がない場合は同一条件で1年間更新）"}, {"name": "REMARKS", "label": "特約・特記事項", "group": "VI. 特約 (任意)", "type": "textarea", "helpText": "未入力なら PDF に該当ブロックが表示されません"}, {"name": "NOTICE_CONTACT_NAME", "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (乙)", "helpText": "本契約上の通知の宛先(相手方の担当者)"}, {"name": "NOTICE_CONTACT_PHONE", "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (乙)"}, {"name": "NOTICE_CONTACT_EMAIL", "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (乙)"}]$schema_sm$::jsonb,
+         '通知先行挿入で欠落した #if REMARKS を修正 (0047)',
+         'migration-0047'
+    FROM t
+  RETURNING id, template_id
+)
+UPDATE document_templates dt
+   SET current_version_id = nv.id, updated_at = now()
+  FROM nv
+ WHERE dt.id = nv.template_id;
