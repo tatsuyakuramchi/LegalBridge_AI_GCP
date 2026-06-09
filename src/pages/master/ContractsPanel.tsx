@@ -25,6 +25,11 @@ import {
 import { NativeSelect } from "@/components/ui/native-select"
 // Phase 22.21.115: 稟議番号 selector (発注書・個別利用許諾と同 UI)
 import { RingiSelector } from "@/src/components/document/RingiSelector"
+import {
+  CALC_TYPE_OPTIONS,
+  calcMethodFromType,
+  buildFormulaText,
+} from "@/src/components/document/FinancialConditionTable"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 
@@ -177,11 +182,6 @@ const COND_LABELS: Record<number, string> = {
   3: "条件 3 (プロダクト)",
 }
 
-const CALC_METHOD_OPTIONS = [
-  { value: "ROYALTY", label: "ロイヤリティ" },
-  { value: "FIXED", label: "固定額" },
-  { value: "SUBSCRIPTION", label: "サブスク" },
-] as const
 const PERIOD_KIND_OPTIONS = [
   { value: "MANUFACTURING", label: "製造ごと" },
   { value: "MONTHLY", label: "月次" },
@@ -1270,17 +1270,34 @@ function FinancialConditionsEditor({
   const update = (idx: number, patch: any) => {
     onChange(value.map((c, i) => (i === idx ? { ...c, ...patch } : c)))
   }
+  // 構造化フィールド変更時: calc_method(互換) と計算式テキストを自動再計算。
+  const recalc = (idx: number, patch: any) => {
+    const merged = { ...value[idx], ...patch }
+    update(idx, {
+      ...patch,
+      calc_method: calcMethodFromType(merged.calc_type),
+      formula_text: buildFormulaText(merged),
+    })
+  }
+  const isBaseRate = (t?: string) =>
+    t === "BASE_QTY_RATE" || t === "BASE_RATE"
   const add = () => {
     if (!nextNo) return
     onChange([
       ...value,
       {
         condition_no: nextNo,
+        condition_name: "",
+        calc_type: "BASE_QTY_RATE",
         calc_method: "ROYALTY",
+        guarantee_type: "NONE",
         currency: "JPY",
         rate_pct: "",
         mg_amount: "",
         ag_amount: "",
+        unit_amount: "",
+        fixed_kind: "LUMP",
+        subscription_cycle: "MONTHLY",
         region_language_label: "",
         base_price_label: "上代",
         calc_period: "",
@@ -1330,6 +1347,16 @@ function FinancialConditionsEditor({
             </Button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="col-span-2 md:col-span-4 space-y-0.5">
+              <Label className="text-[10px]">条件名称 (任意)</Label>
+              <Input
+                value={c.condition_name || ""}
+                onChange={(e) =>
+                  update(idx, { condition_name: e.target.value })
+                }
+                placeholder="任意の条件名称 (空欄なら標準見出し)"
+              />
+            </div>
             <div className="space-y-0.5">
               <Label className="text-[10px]">区分</Label>
               <NativeSelect
@@ -1343,30 +1370,21 @@ function FinancialConditionsEditor({
                 <option value="3">条件 3 (プロダクト)</option>
               </NativeSelect>
             </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">計算方法</Label>
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">計算式タイプ</Label>
               <NativeSelect
-                value={c.calc_method || ""}
-                onChange={(e) => update(idx, { calc_method: e.target.value })}
+                value={c.calc_type || ""}
+                onChange={(e) =>
+                  recalc(idx, { calc_type: e.target.value || undefined })
+                }
               >
                 <option value="">—</option>
-                {CALC_METHOD_OPTIONS.map((m) => (
+                {CALC_TYPE_OPTIONS.map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
                   </option>
                 ))}
               </NativeSelect>
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">料率 (%)</Label>
-              <Input
-                type="number"
-                step="0.0001"
-                min="0"
-                value={c.rate_pct ?? ""}
-                onChange={(e) => update(idx, { rate_pct: e.target.value })}
-                placeholder="例: 5.0"
-              />
             </div>
             <div className="space-y-0.5">
               <Label className="text-[10px]">通貨</Label>
@@ -1375,16 +1393,95 @@ function FinancialConditionsEditor({
                 onChange={(e) => update(idx, { currency: e.target.value })}
               />
             </div>
-            <div className="col-span-2 space-y-0.5">
-              <Label className="text-[10px]">基準価格ラベル</Label>
-              <Input
-                value={c.base_price_label || ""}
-                onChange={(e) =>
-                  update(idx, { base_price_label: e.target.value })
-                }
-                placeholder="例: 上代 (MSRP)"
-              />
-            </div>
+
+            {/* ①② 基準価格×(個数×)料率: 料率 + 基準価格ラベル */}
+            {isBaseRate(c.calc_type) && (
+              <>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">料率 (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    value={c.rate_pct ?? ""}
+                    onChange={(e) => recalc(idx, { rate_pct: e.target.value })}
+                    placeholder="例: 5.0"
+                  />
+                </div>
+                <div className="col-span-2 space-y-0.5">
+                  <Label className="text-[10px]">基準価格ラベル</Label>
+                  <Input
+                    value={c.base_price_label || ""}
+                    onChange={(e) =>
+                      recalc(idx, { base_price_label: e.target.value })
+                    }
+                    placeholder="例: 上代 (MSRP)"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ③ 固定値: 支払区分(一括/分割) + 固定額 */}
+            {c.calc_type === "FIXED" && (
+              <>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">支払区分</Label>
+                  <NativeSelect
+                    value={c.fixed_kind || "LUMP"}
+                    onChange={(e) =>
+                      recalc(idx, { fixed_kind: e.target.value })
+                    }
+                  >
+                    <option value="LUMP">一括</option>
+                    <option value="INSTALLMENT">分割</option>
+                  </NativeSelect>
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">固定額</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={c.unit_amount ?? ""}
+                    onChange={(e) =>
+                      recalc(idx, { unit_amount: e.target.value })
+                    }
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ④ サブスク: 課金サイクル(月/年) + 単価 */}
+            {c.calc_type === "SUBSCRIPTION" && (
+              <>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">課金サイクル</Label>
+                  <NativeSelect
+                    value={c.subscription_cycle || "MONTHLY"}
+                    onChange={(e) =>
+                      recalc(idx, { subscription_cycle: e.target.value })
+                    }
+                  >
+                    <option value="MONTHLY">月払い</option>
+                    <option value="ANNUAL">年払い</option>
+                  </NativeSelect>
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">
+                    単価 ({c.subscription_cycle === "ANNUAL" ? "年額" : "月額"})
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={c.unit_amount ?? ""}
+                    onChange={(e) =>
+                      recalc(idx, { unit_amount: e.target.value })
+                    }
+                  />
+                </div>
+              </>
+            )}
             <div className="space-y-0.5">
               <Label className="text-[10px]">計算期間 種別</Label>
               <NativeSelect
@@ -1424,32 +1521,70 @@ function FinancialConditionsEditor({
                 placeholder="例: 国内・日本語"
               />
             </div>
-            <div className="col-span-1 space-y-0.5">
-              <Label className="text-[10px]">MG (最低保証 floor)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                value={c.mg_amount ?? ""}
-                onChange={(e) => update(idx, { mg_amount: e.target.value })}
-              />
-              <p className="text-[11px] font-mono text-muted-foreground">
-                ロイヤリティ &lt; MG なら MG を採用 (毎期 floor)
-              </p>
-            </div>
-            <div className="col-span-1 space-y-0.5">
-              <Label className="text-[10px]">AG (前払い保証額)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                value={c.ag_amount ?? ""}
-                onChange={(e) => update(idx, { ag_amount: e.target.value })}
-              />
-              <p className="text-[11px] font-mono text-muted-foreground">
-                前払い済み額。各計算で消化していく
-              </p>
-            </div>
+            {/* MG/AG 保証 (①②型のみ・排他)。MG=floor(mg_amount), AG=前払い(ag_amount)。 */}
+            {isBaseRate(c.calc_type) && (
+              <>
+                <div className="col-span-1 space-y-0.5">
+                  <Label className="text-[10px]">保証 (MG/AG)</Label>
+                  <NativeSelect
+                    value={c.guarantee_type || "NONE"}
+                    onChange={(e) => {
+                      const g = e.target.value
+                      if (g === "MG")
+                        update(idx, { guarantee_type: "MG", ag_amount: "" })
+                      else if (g === "AG")
+                        update(idx, { guarantee_type: "AG", mg_amount: "" })
+                      else
+                        update(idx, {
+                          guarantee_type: "NONE",
+                          mg_amount: "",
+                          ag_amount: "",
+                        })
+                    }}
+                  >
+                    <option value="NONE">なし</option>
+                    <option value="MG">MG (最低保証)</option>
+                    <option value="AG">AG (前払い保証)</option>
+                  </NativeSelect>
+                </div>
+                <div className="col-span-1 space-y-0.5">
+                  <Label className="text-[10px]">
+                    {c.guarantee_type === "AG" ? "AG (前払い保証額)" : "MG (最低保証額)"}
+                  </Label>
+                  {c.guarantee_type === "MG" || c.guarantee_type === "AG" ? (
+                    <>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={
+                          (c.guarantee_type === "AG"
+                            ? c.ag_amount
+                            : c.mg_amount) ?? ""
+                        }
+                        onChange={(e) =>
+                          update(
+                            idx,
+                            c.guarantee_type === "AG"
+                              ? { ag_amount: e.target.value }
+                              : { mg_amount: e.target.value }
+                          )
+                        }
+                      />
+                      <p className="text-[11px] font-mono text-muted-foreground">
+                        {c.guarantee_type === "AG"
+                          ? "前払い済み額。各計算で消化していく"
+                          : "ロイヤリティ < MG なら MG を採用 (毎期 floor)"}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] font-mono text-muted-foreground">
+                      保証なし
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
             <div className="col-span-2 md:col-span-4 space-y-0.5">
               <Label className="text-[10px]">計算式テキスト</Label>
               <Input
