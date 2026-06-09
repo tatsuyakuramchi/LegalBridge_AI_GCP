@@ -173,14 +173,10 @@ const empty = {
   deliverable_ownership: "",
 }
 
-// 金銭条件エディタの「区分」ラベル。方向中立(in/out どちらでも使える表現)。
-//   condition_no(1/2/3)の意味は維持(下流「利用許諾計算書」自動補完が参照)。
-//   旧: 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト(=アウト固定の偏り)を解消。
-const COND_LABELS: Record<number, string> = {
-  1: "条件 1 (製造ベース)",
-  2: "条件 2 (サブライセンス / 再許諾)",
-  3: "条件 3 (プロダクト)",
-}
+// 金銭条件エディタの区分は「条件番号 + 任意の条件名称」で表す。
+//   旧来の固定意味(1=製造ベース / 2=サブライセンス / 3=プロダクト)は廃止し、
+//   出版/電子出版のように同じ計算ロジックの条件を複数並べられるようにした。
+//   condition_no は付番(順序・一意キー)であり、意味は condition_name で表現する。
 
 const PERIOD_KIND_OPTIONS = [
   { value: "MANUFACTURING", label: "製造ごと" },
@@ -831,8 +827,8 @@ export function ContractsPanel() {
                   単独契約 / 個別契約に登録した条件は、後で「利用許諾計算書」を
                   作成するときに自動補完されます (別途 ILT 文書を発行する必要なし)。
                   <br />
-                  条件 1（製造ベース）/ 条件 2（サブライセンス・再許諾）/ 条件 3（プロダクト）
-                  の 3 行まで登録可能（方向に依らず使えます）。
+                  各条件は「条件名称（任意）＋計算式タイプ」で表します。出版/電子出版の
+                  ように同じ計算ロジックの条件を必要な数だけ追加できます。
                 </p>
                 <FinancialConditionsEditor
                   value={
@@ -1258,7 +1254,16 @@ function FinancialConditionsEditor({
   recordType: string
 }) {
   const usedNos = new Set(value.map((c) => Number(c.condition_no)))
-  const nextNo = [1, 2, 3].find((n) => !usedNos.has(n))
+  // 次の条件番号 = 未使用の最小番号(上限なし)。出版/電子出版など同ロジックの
+  //   条件を複数並べられるよう、従来の 1〜3 固定を撤廃。
+  const nextNo = (() => {
+    let n = 1
+    while (usedNos.has(n)) n++
+    return n
+  })()
+  // 区分(条件番号)プルダウンの選択肢。現在の最大番号 +2 まで出して付け替え可能に。
+  const maxNo = Math.max(3, ...value.map((c) => Number(c.condition_no) || 0))
+  const numOptions = Array.from({ length: maxNo + 2 }, (_, i) => i + 1)
 
   // 基本契約 (master_contract) で金銭条件を入れる意味は薄いので軽い警告を出す。
   // ただし入力自体は許す (将来の柔軟性のため)。
@@ -1322,7 +1327,7 @@ function FinancialConditionsEditor({
       )}
       {value.length === 0 && (
         <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
-          金銭条件が未設定です。「条件を追加」で 1〜3 件まで登録できます。
+          金銭条件が未設定です。「条件を追加」で必要な数だけ登録できます。
           単独契約/個別契約で入力しておくと、利用許諾計算書 を作成するときに
           自動補完されます。
         </div>
@@ -1334,8 +1339,9 @@ function FinancialConditionsEditor({
         >
           <div className="flex items-center justify-between gap-2">
             <Badge variant="info" className="h-5">
-              {COND_LABELS[Number(c.condition_no)] ||
-                `条件 ${c.condition_no}`}
+              {c.condition_name && String(c.condition_name).trim()
+                ? `条件 ${c.condition_no}：${c.condition_name}`
+                : `条件 ${c.condition_no}`}
             </Badge>
             <Button
               type="button"
@@ -1358,16 +1364,18 @@ function FinancialConditionsEditor({
               />
             </div>
             <div className="space-y-0.5">
-              <Label className="text-[10px]">区分</Label>
+              <Label className="text-[10px]">条件番号</Label>
               <NativeSelect
                 value={String(c.condition_no || "")}
                 onChange={(e) =>
                   update(idx, { condition_no: Number(e.target.value) })
                 }
               >
-                <option value="1">条件 1 (製造ベース)</option>
-                <option value="2">条件 2 (サブライセンス / 再許諾)</option>
-                <option value="3">条件 3 (プロダクト)</option>
+                {numOptions.map((n) => (
+                  <option key={n} value={n}>
+                    条件 {n}
+                  </option>
+                ))}
               </NativeSelect>
             </div>
             <div className="col-span-2 space-y-0.5">
@@ -1614,10 +1622,9 @@ function FinancialConditionsEditor({
           variant="outline"
           size="sm"
           onClick={add}
-          disabled={!nextNo}
         >
           <Plus />
-          条件を追加 {nextNo ? `(条件 ${nextNo})` : "(上限)"}
+          条件を追加 (条件 {nextNo})
         </Button>
         <p className="text-[10px] font-mono text-muted-foreground">
           単独契約/個別契約で入力した条件は、利用許諾計算書 フォームで
