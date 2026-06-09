@@ -10860,6 +10860,8 @@ ${details}
                   condition_no: 1,
                   region_language_label: "紙書籍出版",
                   calc_method: "ROYALTY",
+                  calc_type: "BASE_QTY_RATE",
+                  guarantee_type: "NONE",
                   rate_pct: toPct(formData["紙書籍印税率"]),
                   base_price_label: "税抜定価",
                   formula_text:
@@ -10876,6 +10878,8 @@ ${details}
                   condition_no: 2,
                   region_language_label: "電子書籍配信",
                   calc_method: "ROYALTY",
+                  calc_type: "BASE_QTY_RATE",
+                  guarantee_type: "NONE",
                   rate_pct: toPct(formData["電子書籍印税率"]),
                   base_price_label: "被許諾者受領額",
                   formula_text:
@@ -10893,6 +10897,8 @@ ${details}
                   region_language_label:
                     formData["翻訳海外版対象地域言語"] || "翻訳・海外版",
                   calc_method: "ROYALTY",
+                  calc_type: "BASE_QTY_RATE",
+                  guarantee_type: "NONE",
                   rate_pct: toPct(formData["翻訳海外版料率"]),
                   base_price_label: "被許諾者受取ライセンス収益",
                   formula_text:
