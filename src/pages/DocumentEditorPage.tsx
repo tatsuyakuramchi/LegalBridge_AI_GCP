@@ -1784,6 +1784,11 @@ export function DocumentEditorPage() {
                   Finalize & Sync
                 </Button>
               </div>
+              {!selectedDirection && !isGenerating && (
+                <p className="mt-2 text-[11px] font-mono text-destructive/80">
+                  ※「請求の向き（②′・上部）」が未選択のため「Finalize &amp; Sync」は無効です。請求の向きを選択すると有効になります。
+                </p>
+              )}
             </div>
           </Card>
         </section>
