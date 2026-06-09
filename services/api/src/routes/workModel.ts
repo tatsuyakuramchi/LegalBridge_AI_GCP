@@ -411,9 +411,10 @@ export function registerWorkModelRoutes(
            calc_period, calc_period_kind, calc_period_close_month, currency,
            formula_text, payment_terms, mg_amount, ag_amount, condition_kind,
            counterparty_vendor_id, basis, unit_price, cycle, billing_day,
-           term_start, term_end, advance_amount, forecast_amount
+           term_start, term_end, advance_amount, forecast_amount,
+           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type
          ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-           $18, $19, $20, $21, $22, $23, $24, $25, $26)
+           $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
          RETURNING *`,
         [
           id, b.source_work_id ?? null, b.source_material_id ?? null, condNo,
@@ -427,6 +428,11 @@ export function registerWorkModelRoutes(
           b.unit_price ?? null, b.cycle ?? null, b.billing_day ?? null,
           b.term_start ?? null, b.term_end ?? null,
           b.advance_amount ?? null, b.forecast_amount ?? null,
+          // 0045: 金銭条件の柔軟化フィールド
+          b.condition_name ?? null, b.calc_type ?? null, b.fixed_kind ?? null,
+          b.subscription_cycle ?? null,
+          b.unit_amount != null && b.unit_amount !== "" ? Number(b.unit_amount) : null,
+          b.guarantee_type ?? null,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -449,7 +455,10 @@ export function registerWorkModelRoutes(
             condition_kind = COALESCE($17, condition_kind),
             counterparty_vendor_id = $18, basis = $19, unit_price = $20, cycle = $21,
             billing_day = $22, term_start = $23, term_end = $24,
-            advance_amount = $25, forecast_amount = $26, updated_at = now()
+            advance_amount = $25, forecast_amount = $26,
+            condition_name = $27, calc_type = $28, fixed_kind = $29,
+            subscription_cycle = $30, unit_amount = $31, guarantee_type = $32,
+            updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
           cid, b.source_work_id ?? null, b.region_language_label ?? null,
@@ -461,6 +470,11 @@ export function registerWorkModelRoutes(
           b.counterparty_vendor_id ?? null, b.basis ?? null, b.unit_price ?? null,
           b.cycle ?? null, b.billing_day ?? null, b.term_start ?? null, b.term_end ?? null,
           b.advance_amount ?? null, b.forecast_amount ?? null,
+          // 0045: 金銭条件の柔軟化フィールド
+          b.condition_name ?? null, b.calc_type ?? null, b.fixed_kind ?? null,
+          b.subscription_cycle ?? null,
+          b.unit_amount != null && b.unit_amount !== "" ? Number(b.unit_amount) : null,
+          b.guarantee_type ?? null,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });

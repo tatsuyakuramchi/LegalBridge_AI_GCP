@@ -511,6 +511,13 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           payment_terms: c.payment_terms || "",
           mg_amount: Number(c.mg_amount) || 0,
           ag_amount: Number(c.ag_amount) || 0,
+          // 0045: 金銭条件の柔軟化フィールド (名称/計算式タイプ/保証種別)
+          condition_name: c.condition_name || "",
+          calc_type: c.calc_type || null,
+          fixed_kind: c.fixed_kind || null,
+          subscription_cycle: c.subscription_cycle || null,
+          unit_amount: c.unit_amount == null ? null : Number(c.unit_amount),
+          guarantee_type: c.guarantee_type || null,
         })),
         expenses: expenses.rows.map((e: any) => ({
           id: Number(e.id),
