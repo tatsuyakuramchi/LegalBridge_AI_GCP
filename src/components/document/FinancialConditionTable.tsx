@@ -16,11 +16,30 @@ import React from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
+// 構造化した計算式タイプ。条件明細 DB の calc_type に対応。
+//   BASE_QTY_RATE : 基準価格 × 個数 × 料率
+//   BASE_RATE     : 基準価格 × 料率
+//   FIXED         : 固定値 (一括/分割)
+//   SUBSCRIPTION  : サブスクリプション (月払い/年払い)
+export type CalcType = "BASE_QTY_RATE" | "BASE_RATE" | "FIXED" | "SUBSCRIPTION";
+
 export type FinancialCondition = {
   id?: number; // DB の license_financial_conditions.id (新規は未設定)
   condition_no: number; // 1=自社製造, 2=サブライセンス, 3=プロダクトアウト, ...
+  // 任意の条件名称 (PDF 見出しに反映)。空なら condition_no ベースの既定文。
+  condition_name?: string;
   region_language_label?: string; // 例: 国内・日本語
-  calc_method?: string; // ROYALTY / FIXED / SUBSCRIPTION
+  // 構造化した計算式タイプ。calc_method は互換のため calc_type から自動導出。
+  calc_type?: CalcType;
+  calc_method?: string; // ROYALTY / FIXED / SUBSCRIPTION (calc_type から自動設定)
+  // FIXED 用: LUMP(一括) / INSTALLMENT(分割)
+  fixed_kind?: "LUMP" | "INSTALLMENT";
+  // SUBSCRIPTION 用: MONTHLY(月払い) / ANNUAL(年払い)
+  subscription_cycle?: "MONTHLY" | "ANNUAL";
+  // 固定額 / サブスク単価
+  unit_amount?: number;
+  // 保証種別 (BASE_QTY_RATE / BASE_RATE に適用・排他): NONE / MG / AG
+  guarantee_type?: "NONE" | "MG" | "AG";
   rate_pct?: number; // 例: 5.0 (%)
   base_price_label?: string; // 例: 上代 (MSRP)
   calc_period?: string; // 表示用 free-text label (自動生成 / 手動上書き可)
@@ -30,7 +49,8 @@ export type FinancialCondition = {
   currency?: string; // JPY / USD ...
   formula_text?: string; // 例: 上代 × 5.0% × 製造数
   payment_terms?: string;
-  mg_amount?: number; // MG 総額 (この条件単位)
+  mg_amount?: number; // MG 総額 (最低保証 floor)
+  ag_amount?: number; // AG 総額 (前払い保証 = 累積消化)
   // Phase 22.21.11: 概要 (フリーテキスト)。空のときは
   //   condition_no ベースのデフォルト文が PDF 側で表示される。
   summary?: string;
@@ -65,6 +85,50 @@ export function buildCalcPeriodLabel(
   if (kind === "ANNUAL") return `年次${monthLabel}`;
   return "";
 }
+
+// 計算式タイプの選択肢 (4種)。
+export const CALC_TYPE_OPTIONS: Array<{ value: CalcType; label: string }> = [
+  { value: "BASE_QTY_RATE", label: "① 基準価格 × 個数 × 料率" },
+  { value: "BASE_RATE", label: "② 基準価格 × 料率" },
+  { value: "FIXED", label: "③ 固定値 (一括/分割)" },
+  { value: "SUBSCRIPTION", label: "④ サブスクリプション (月/年)" },
+];
+
+// calc_type → calc_method (後方互換: ROYALTY / FIXED / SUBSCRIPTION)。
+export function calcMethodFromType(t?: CalcType): string {
+  if (t === "FIXED") return "FIXED";
+  if (t === "SUBSCRIPTION") return "SUBSCRIPTION";
+  if (t === "BASE_QTY_RATE" || t === "BASE_RATE") return "ROYALTY";
+  return "";
+}
+
+// 構造化フィールドから計算式テキストを自動生成 (ユーザーが手動編集していなければ上書き)。
+export function buildFormulaText(c: Partial<FinancialCondition>): string {
+  const base = c.base_price_label || "基準価格";
+  const rate =
+    c.rate_pct != null && !Number.isNaN(Number(c.rate_pct))
+      ? `${c.rate_pct}%`
+      : "料率";
+  const amt =
+    c.unit_amount != null && !Number.isNaN(Number(c.unit_amount))
+      ? `¥${(Number(c.unit_amount) || 0).toLocaleString("ja-JP")}`
+      : "固定額";
+  switch (c.calc_type) {
+    case "BASE_QTY_RATE":
+      return `${base} × 個数 × ${rate}`;
+    case "BASE_RATE":
+      return `${base} × ${rate}`;
+    case "FIXED":
+      return `${amt}（${c.fixed_kind === "INSTALLMENT" ? "分割" : "一括"}）`;
+    case "SUBSCRIPTION":
+      return `${amt} / ${c.subscription_cycle === "ANNUAL" ? "年" : "月"}`;
+    default:
+      return c.formula_text || "";
+  }
+}
+
+const isBaseRate = (t?: CalcType) =>
+  t === "BASE_QTY_RATE" || t === "BASE_RATE";
 
 const CALC_PERIOD_KIND_OPTIONS: Array<{
   value: NonNullable<FinancialCondition["calc_period_kind"]>;
@@ -144,6 +208,16 @@ export const FinancialConditionTable: React.FC<Props> = ({
     onChange(next);
   };
 
+  // 構造化フィールド変更時: calc_method(互換) と計算式テキストを自動再計算して反映。
+  const recalc = (idx: number, patch: Partial<FinancialCondition>) => {
+    const merged = { ...conditions[idx], ...patch };
+    update(idx, {
+      ...patch,
+      calc_method: calcMethodFromType(merged.calc_type),
+      formula_text: buildFormulaText(merged),
+    });
+  };
+
   const addRow = () => {
     // Next condition_no = max + 1 (持っていない最小番号でも良いが、付番は単純化)
     const usedNos = new Set(conditions.map((c) => Number(c.condition_no)));
@@ -154,9 +228,12 @@ export const FinancialConditionTable: React.FC<Props> = ({
       {
         condition_no: nextNo,
         currency: "JPY",
+        calc_type: "BASE_QTY_RATE",
         calc_method: "ROYALTY",
+        guarantee_type: "NONE",
         rate_pct: 0,
         mg_amount: 0,
+        ag_amount: 0,
         // 出力ニュートラル維持のため、基準価格/計算式/計算期間は事前入力しない。
         //   (division プリセットは下のプレースホルダで案内のみ。保存値は空のまま=従来どおり)
       },
@@ -212,9 +289,17 @@ export const FinancialConditionTable: React.FC<Props> = ({
                   <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-foreground text-background">
                     条件 {condNo}
                   </span>
-                  <span className="text-[10px] font-mono text-muted-foreground">
-                    {presetLabel(condNo)}
-                  </span>
+                  <input
+                    type="text"
+                    value={c.condition_name || ""}
+                    onChange={(e) =>
+                      update(idx, { condition_name: e.target.value })
+                    }
+                    placeholder={`条件名称 (任意・例: ${presetLabel(condNo)})`}
+                    disabled={readOnly}
+                    title="任意の条件名称。空欄なら標準の見出しを表示。"
+                    className="flex-1 min-w-[140px] text-[11px] font-mono font-semibold bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+                  />
                   <input
                     type="text"
                     value={c.region_language_label || ""}
@@ -223,7 +308,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     }
                     placeholder="地域・言語ラベル (例: 国内・日本語)"
                     disabled={readOnly}
-                    className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+                    className="flex-1 min-w-[120px] text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
                   />
                 </div>
                 {!readOnly && (
@@ -239,45 +324,133 @@ export const FinancialConditionTable: React.FC<Props> = ({
               </header>
 
               <div className="grid grid-cols-2 md:grid-cols-4 gap-x-4 gap-y-2 p-3 text-[10px] font-mono">
-                <div>
+                <div className="col-span-2">
                   <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                    計算方式
+                    計算式タイプ
                   </div>
                   <select
-                    value={c.calc_method || ""}
-                    onChange={(e) => update(idx, { calc_method: e.target.value })}
+                    value={c.calc_type || ""}
+                    onChange={(e) =>
+                      recalc(idx, {
+                        calc_type: (e.target.value || undefined) as
+                          | CalcType
+                          | undefined,
+                      })
+                    }
                     disabled={readOnly}
                     className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
                   >
                     <option value="">— 選択 —</option>
-                    <option value="ROYALTY">ROYALTY (業績連動)</option>
-                    <option value="FIXED">FIXED (固定額)</option>
-                    <option value="SUBSCRIPTION">SUBSCRIPTION (サブスク)</option>
+                    {CALC_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
-                <div>
-                  <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                    {preset.rateLabel}
-                  </div>
-                  {cellInput(
-                    c.rate_pct,
-                    (v) => update(idx, { rate_pct: Number(v) || 0 }),
-                    "number",
-                    "5.0",
-                    "0.0001"
-                  )}
-                </div>
-                <div>
-                  <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                    基準価格
-                  </div>
-                  {cellInput(
-                    c.base_price_label,
-                    (v) => update(idx, { base_price_label: v }),
-                    "text",
-                    preset.basePricePlaceholder
-                  )}
-                </div>
+
+                {/* ① ② 基準価格×(個数×)料率 系: 料率 + 基準価格 */}
+                {isBaseRate(c.calc_type) && (
+                  <>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        {preset.rateLabel}
+                      </div>
+                      {cellInput(
+                        c.rate_pct,
+                        (v) => recalc(idx, { rate_pct: Number(v) || 0 }),
+                        "number",
+                        "5.0",
+                        "0.0001"
+                      )}
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        基準価格
+                      </div>
+                      {cellInput(
+                        c.base_price_label,
+                        (v) => recalc(idx, { base_price_label: v }),
+                        "text",
+                        preset.basePricePlaceholder
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* ③ 固定値: 一括/分割 + 固定額 */}
+                {c.calc_type === "FIXED" && (
+                  <>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        支払区分
+                      </div>
+                      <select
+                        value={c.fixed_kind || "LUMP"}
+                        onChange={(e) =>
+                          recalc(idx, {
+                            fixed_kind: e.target.value as "LUMP" | "INSTALLMENT",
+                          })
+                        }
+                        disabled={readOnly}
+                        className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+                      >
+                        <option value="LUMP">一括</option>
+                        <option value="INSTALLMENT">分割</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        固定額
+                      </div>
+                      {cellInput(
+                        c.unit_amount,
+                        (v) => recalc(idx, { unit_amount: Number(v) || 0 }),
+                        "number",
+                        "0",
+                        "1"
+                      )}
+                    </div>
+                  </>
+                )}
+
+                {/* ④ サブスク: 月払い/年払い + 単価 */}
+                {c.calc_type === "SUBSCRIPTION" && (
+                  <>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        課金サイクル
+                      </div>
+                      <select
+                        value={c.subscription_cycle || "MONTHLY"}
+                        onChange={(e) =>
+                          recalc(idx, {
+                            subscription_cycle: e.target.value as
+                              | "MONTHLY"
+                              | "ANNUAL",
+                          })
+                        }
+                        disabled={readOnly}
+                        className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+                      >
+                        <option value="MONTHLY">月払い</option>
+                        <option value="ANNUAL">年払い</option>
+                      </select>
+                    </div>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        単価 ({c.subscription_cycle === "ANNUAL" ? "年額" : "月額"})
+                      </div>
+                      {cellInput(
+                        c.unit_amount,
+                        (v) => recalc(idx, { unit_amount: Number(v) || 0 }),
+                        "number",
+                        "0",
+                        "1"
+                      )}
+                    </div>
+                  </>
+                )}
                 <div>
                   <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
                     計算期間 種別
@@ -394,23 +567,74 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     )}
                   />
                 </div>
-                <div>
-                  <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                    MG 額
-                  </div>
-                  {cellInput(
-                    c.mg_amount,
-                    (v) => update(idx, { mg_amount: Number(v) || 0 }),
-                    "number",
-                    "0",
-                    "1"
-                  )}
-                  {c.mg_amount && c.mg_amount > 0 ? (
-                    <div className="text-[11px] text-muted-foreground mt-0.5">
-                      {yen(c.mg_amount)}
+                {/* MG/AG 保証 (①②型のみ・排他)。
+                    MG=最低保証 floor(mg_amount), AG=前払い保証 累積消化(ag_amount)。 */}
+                {isBaseRate(c.calc_type) ? (
+                  <>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        保証 (MG/AG)
+                      </div>
+                      <select
+                        value={c.guarantee_type || "NONE"}
+                        onChange={(e) => {
+                          const g = e.target.value as "NONE" | "MG" | "AG";
+                          if (g === "NONE")
+                            update(idx, {
+                              guarantee_type: "NONE",
+                              mg_amount: 0,
+                              ag_amount: 0,
+                            });
+                          else if (g === "MG")
+                            update(idx, { guarantee_type: "MG", ag_amount: 0 });
+                          else
+                            update(idx, { guarantee_type: "AG", mg_amount: 0 });
+                        }}
+                        disabled={readOnly}
+                        className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+                      >
+                        <option value="NONE">なし</option>
+                        <option value="MG">MG (最低保証)</option>
+                        <option value="AG">AG (前払い保証)</option>
+                      </select>
                     </div>
-                  ) : null}
-                </div>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        {c.guarantee_type === "AG" ? "AG 額" : "MG 額"}
+                      </div>
+                      {c.guarantee_type === "MG" || c.guarantee_type === "AG" ? (
+                        <>
+                          {cellInput(
+                            c.guarantee_type === "AG" ? c.ag_amount : c.mg_amount,
+                            (v) =>
+                              update(
+                                idx,
+                                c.guarantee_type === "AG"
+                                  ? { ag_amount: Number(v) || 0 }
+                                  : { mg_amount: Number(v) || 0 }
+                              ),
+                            "number",
+                            "0",
+                            "1"
+                          )}
+                          {(() => {
+                            const amt =
+                              c.guarantee_type === "AG" ? c.ag_amount : c.mg_amount;
+                            return amt && amt > 0 ? (
+                              <div className="text-[11px] text-muted-foreground mt-0.5">
+                                {yen(amt)}
+                              </div>
+                            ) : null;
+                          })()}
+                        </>
+                      ) : (
+                        <div className="text-[10px] font-mono text-muted-foreground/60 py-1 px-1 border-b border-dashed border-input/50">
+                          (保証なし)
+                        </div>
+                      )}
+                    </div>
+                  </>
+                ) : null}
                 {/* Phase 22.21.11: 概要 (フリーテキスト)。
                     空のときは PDF テンプレ側で condition_no ベースの
                     デフォルト文が自動表示される。 */}
