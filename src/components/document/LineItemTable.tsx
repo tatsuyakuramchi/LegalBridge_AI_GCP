@@ -235,19 +235,21 @@ interface Props {
 const ceilProduct = (a: number, b: number) =>
   Math.ceil((Number(a) || 0) * (Number(b) || 0));
 
-// 行小計の計算。
-//   - 受注者帰属(利用許諾料)は変動・継続のため確定額外 = 0(発注書の合計に含めない)。
-//   - ROYALTY は 単価(基準価格) × 数量 × 料率% を切り上げ。
-//   - それ以外(FIXED / SUBSCRIPTION)は従来どおり 単価 × 数量。
+// 行小計(業務報酬・確定額)の計算。
+//   - 受注者帰属でも「業務報酬(執筆料等)」は 単価×数量 で確定額に計上する。
+//     ※ 利用許諾料(料率・MG/AG)は別建て(確定額外)で、amount には含めない。
+//   - 発注者帰属の ROYALTY は 単価×数量×料率%。
+//   - それ以外(FIXED / SUBSCRIPTION)は 単価×数量。
 const computeAmount = (
   it: Pick<
     LineItem,
     "unit_price" | "quantity" | "calc_method" | "rate_pct" | "deliverable_ownership"
   >
 ): number => {
-  if (it.deliverable_ownership === "受注者") return 0;
   const up = Number(it.unit_price) || 0;
   const qty = Number(it.quantity) || 0;
+  // 受注者帰属の業務報酬は FIXED(単価×数量)。料率は利用許諾条件側で使うため amount には反映しない。
+  if (it.deliverable_ownership === "受注者") return ceilProduct(up, qty);
   if (it.calc_method === "ROYALTY") {
     const rate = Number(it.rate_pct) || 0;
     return Math.ceil((up * qty * rate) / 100);
@@ -591,6 +593,48 @@ export const LineItemTable: React.FC<Props> = ({
     </div>
   );
 
+  // 受注者帰属の行の「業務報酬(執筆料等・確定額)」入力。単価×数量で確定額に計上。
+  //   報酬が無く利用許諾料のみの場合は単価=0のままでよい。
+  const renderServiceFeeFields = (it: LineItem, idx: number) => {
+    const amount = it.amount_ex_tax ?? computeAmount(it);
+    return (
+      <div className="rounded-sm border border-input bg-muted/20 p-2 space-y-1">
+        <div className="text-[10px] font-mono font-bold text-foreground/70">
+          業務報酬（確定額・任意）
+        </div>
+        <div className="grid grid-cols-3 gap-3 items-end">
+          <label className="block">
+            <span className={labelCls}>単価</span>
+            {cellInput(
+              it.unit_price,
+              (v) => update(idx, { unit_price: Number(v) || 0 }),
+              "number",
+              "0"
+            )}
+          </label>
+          <label className="block">
+            <span className={labelCls}>数量</span>
+            {cellInput(
+              it.quantity,
+              (v) => update(idx, { quantity: Number(v) || 0 }),
+              "number",
+              "1"
+            )}
+          </label>
+          <div>
+            <span className={labelCls}>業務報酬 小計</span>
+            <div className="text-right text-sm font-mono font-bold py-1">
+              ¥ {Number(amount).toLocaleString("ja-JP")}
+            </div>
+          </div>
+        </div>
+        <div className="text-[9px] font-mono text-muted-foreground/70">
+          報酬が無く利用許諾料のみの場合は単価=0のままにしてください。
+        </div>
+      </div>
+    );
+  };
+
   // 成果物帰属セレクト(発注者/受注者)。両ビュー共通。
   const ownershipSelect = (it: LineItem, idx: number) => (
     <div className="flex flex-col gap-0.5">
@@ -675,7 +719,12 @@ export const LineItemTable: React.FC<Props> = ({
           </span>
           {ownershipSelect(it, idx)}
         </label>
-        {it.deliverable_ownership === "受注者" && renderLicenseFields(it, idx)}
+        {it.deliverable_ownership === "受注者" && (
+          <>
+            {renderServiceFeeFields(it, idx)}
+            {renderLicenseFields(it, idx)}
+          </>
+        )}
         {it.deliverable_ownership !== "受注者" && (
         <>
         <div className="grid grid-cols-3 gap-3 items-end">
@@ -941,6 +990,7 @@ export const LineItemTable: React.FC<Props> = ({
                         colSpan={showPaymentColumns ? 7 : 3}
                         className="p-2 align-top"
                       >
+                        {renderServiceFeeFields(it, idx)}
                         {renderLicenseFields(it, idx)}
                       </td>
                     ) : (
