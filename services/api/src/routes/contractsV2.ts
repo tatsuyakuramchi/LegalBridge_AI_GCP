@@ -275,6 +275,10 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           `[contracts/${id}] form_data fallback: ${cc.document_number} → ${docRow.rows[0].document_number} (base=${cc.base_document_number})`
         );
       }
+      // form_data は下の lineRows 空フォールバックと issue_date_po フォールバックの
+      //   両方で使うため、ここで外側スコープに宣言する(以前は if ブロック内のみで、
+      //   明細ありかつ issue_date_po が null の契約で ReferenceError → 500 になっていた)。
+      const formData: any = docRow.rows[0]?.form_data || {};
 
       // 検収件数 (delivery_events.capability_id) と次の delivery_no
       const delivCount = await deps.query(
@@ -326,7 +330,6 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       //   - 無ければ cc.amount_ex_tax / form_data.amount から 1 行合成
       //   - synthetic な行は id を負の値にして DB の行と区別 (検収時の参照用)
       if (lineRows.length === 0) {
-        const formData = docRow.rows[0]?.form_data || {};
         // Phase 23.6.11: worker (/api/documents/generate) は formData.items
         //   (アンダースコアなし) で明細を保存している (server.ts:9595)。
         //   従来 Phase 23.6.6 のここは formData.line_items / delivery_line_items
