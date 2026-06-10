@@ -10762,7 +10762,9 @@ ${details}
             ledger_ref_id = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
             ledger_code = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
             superseded_by = NULL,
-            updated_at = CURRENT_TIMESTAMP`,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE contract_capabilities.record_type = 'delivery_record'
+             OR EXCLUDED.record_type <> 'delivery_record'`,
           [
             vendorId,
             recordType,
