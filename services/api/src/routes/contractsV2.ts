@@ -298,6 +298,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         quantity: Number(l.quantity) || 0,
         unit_price: Number(l.unit_price) || 0,
         amount_ex_tax: Number(l.amount_ex_tax) || 0,
+        rate_pct: l.rate_pct == null ? undefined : Number(l.rate_pct),
         delivery_date: l.delivery_date,
         payment_date: l.payment_date,
         cycle: l.cycle || "",
