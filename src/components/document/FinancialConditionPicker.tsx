@@ -54,6 +54,7 @@ const RECORD_TYPE_LABEL: Record<string, string> = {
   publication_condition: "出版条件",
   master_contract: "基本契約",
   license_condition: "利用許諾条件",
+  delivery_record: "発注書(検収済)",
 };
 
 export const FinancialConditionPicker: React.FC<Props> = ({
