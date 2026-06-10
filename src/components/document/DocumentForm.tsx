@@ -1566,7 +1566,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 items,
                 itemsSubtotalExTax: itemsTotal,
                 otherFeesTotal: feesTotal,
+                // 受注者帰属(利用許諾料)は確定額外なので合計には不算入(amount_ex_tax=0)。
                 grandTotalExTax: itemsTotal + feesTotal,
+                // 利用許諾条件セクション(発注書)の表示要否フラグ。
+                has_license_conditions: items.some(
+                  (it) => it.deliverable_ownership === '受注者'
+                ),
               });
             }}
             showPaymentColumns={true}
