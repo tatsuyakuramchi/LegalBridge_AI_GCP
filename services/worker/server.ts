@@ -11189,6 +11189,8 @@ ${details}
               mg_amount: it.mg_amount ?? 0,
               ag_amount: it.ag_amount ?? 0,
               formula_text: it.formula_text || null,
+              // 利用許諾条件の支払条件 → 利用許諾料計算書の支払条件に引用される。
+              payment_terms: it.payment_terms || null,
               currency: "JPY",
             }));
             try {

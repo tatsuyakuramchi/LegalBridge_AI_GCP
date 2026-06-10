@@ -432,6 +432,18 @@ export const LineItemTable: React.FC<Props> = ({
             "例: 訳者印税 / 既存イラスト利用許諾"
           )}
         </label>
+        <label className="col-span-2 block">
+          <span className={labelCls}>支払条件 (任意)</span>
+          {cellInput(
+            it.payment_terms,
+            (v) => update(idx, { payment_terms: v }),
+            "text",
+            "例: 半期締め翌月末払い / 検収後30日以内"
+          )}
+          <span className="text-[9px] font-mono text-muted-foreground/70 block mt-0.5">
+            ※ 利用許諾料計算書の「支払条件」に引用されます。
+          </span>
+        </label>
         <label className="block">
           <span className={labelCls}>計算式タイプ</span>
           <select
