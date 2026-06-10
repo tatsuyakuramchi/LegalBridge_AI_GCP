@@ -11075,13 +11075,22 @@ ${details}
           // 成果物帰属で振り分け: 発注者帰属=業務委託明細(capability_line_items),
           //   受注者帰属=利用許諾料(capability_financial_conditions)。
           const allFormItems = formData.items as Array<any>;
-          // 受注者帰属でも「業務報酬(執筆料等)」は確定額として line_items に入れる。
-          //   利用許諾料(料率/MG/AG)は別途 financial_conditions へも振り分ける。
+          // 受注者帰属でも「業務報酬(執筆料等)」が有る行は確定額として line_items に入れる。
+          //   ただし業務報酬0(=利用許諾料のみ)の受注者行は検収対象にならない(0円明細が
+          //   検収待ちに居座る不具合の原因)ため line_items には作らない。利用許諾料(料率/
+          //   MG/AG)は下の licenseItems で financial_conditions へ振り分ける。
           const licenseItems = allFormItems.filter(
             (it) => it?.deliverable_ownership === "受注者"
           );
-          // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー(全明細)。
-          const incomingLines = expandLinesWithSchedule(allFormItems);
+          const lineItemsSource = allFormItems.filter((it) => {
+            if (it?.deliverable_ownership !== "受注者") return true;
+            const amt =
+              Number(it?.amount_ex_tax) ||
+              (Number(it?.unit_price) || 0) * (Number(it?.quantity) || 0);
+            return amt > 0; // 受注者は業務報酬>0のときだけ line_items に計上(検収対象)。
+          });
+          // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー。
+          const incomingLines = expandLinesWithSchedule(lineItemsSource);
           const keepNos = incomingLines
             .map((l, i) => Number(l.line_no) || i + 1)
             .filter((n) => n > 0);
