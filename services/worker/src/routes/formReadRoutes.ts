@@ -582,7 +582,8 @@ export function registerFormReadRoutes(
                         formula_text, payment_terms, mg_amount, ag_amount,
                         calc_period_kind, calc_period_close_month,
                         condition_name, calc_type, fixed_kind,
-                        subscription_cycle, unit_amount, guarantee_type
+                        subscription_cycle, unit_amount, guarantee_type,
+                        region_territory, region_language
                    FROM capability_financial_conditions
                   WHERE capability_id = $1
                   ORDER BY condition_no ASC`,
@@ -603,9 +604,25 @@ export function registerFormReadRoutes(
                 throw colErr2;
               }
             }
-            context["financial_conditions"] = conds.rows.map((r: any) => ({
+            context["financial_conditions"] = conds.rows.map((r: any) => {
+              // テリトリー / 言語 を別項目で返す。未設定の行は合成ラベルを
+              //   最初の '・' で分割してフォールバック (API と同じロジック)。
+              let territory = (r.region_territory || "").trim();
+              let language = (r.region_language || "").trim();
+              if (!territory && !language && r.region_language_label) {
+                const s = String(r.region_language_label).trim();
+                const idx = s.indexOf("・");
+                if (idx < 0) territory = s;
+                else {
+                  territory = s.slice(0, idx).trim();
+                  language = s.slice(idx + 1).trim();
+                }
+              }
+              return {
               id: Number(r.id),
               condition_no: Number(r.condition_no),
+              region_territory: territory,
+              region_language: language,
               region_language_label: r.region_language_label || "",
               calc_method: r.calc_method || "",
               rate_pct: r.rate_pct !== null ? Number(r.rate_pct) : undefined,
@@ -628,7 +645,8 @@ export function registerFormReadRoutes(
               subscription_cycle: r.subscription_cycle || undefined,
               unit_amount: r.unit_amount != null ? Number(r.unit_amount) : undefined,
               guarantee_type: r.guarantee_type || undefined,
-            }));
+              };
+            });
 
             // Phase 22.20-D: work_sublicensees を読み出して
             //   formData.サブライセンシー一覧 と同じ shape で返却。
