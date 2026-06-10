@@ -160,6 +160,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, selectedStaff?.staff_name]);
 
+  // 利用許諾料計算書: 税率が未設定なら 10% を form_data に初期化する。
+  //   select の表示は `formData.taxRate || '10'` で 10 に見えるが、未操作だと
+  //   formData.taxRate 自体は undefined のまま保存され、テンプレの {{taxRate}} が
+  //   空欄で出力されてしまう。これを防ぐため明示的に '10' を書き込む。
+  useEffect(() => {
+    if (templateId !== 'royalty_statement') return;
+    if (formData.taxRate) return;
+    setFormData({ ...formData, taxRate: '10' });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
+
   // 通知先: 業務委託 / ライセンス / 出版(個人・法人)基本契約で、当社側
   //   (委託者 / ライセンシー / 被許諾者) の通知先担当者を、選択中の担当者
   //   (selectedStaff) から STAFF_NAME / STAFF_PHONE / STAFF_EMAIL に引用する。
