@@ -585,7 +585,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       try {
         const q = String(req.query.q || "").trim();
         const limit = Math.min(Number(req.query.limit) || 100, 300);
-        const where: string[] = ["COALESCE(cc.is_active, TRUE) = TRUE"];
+        // is_active で絞らない: 検収完了や archive 済みでも、利用許諾料計算の条件としては
+        //   選べるべき(印税は継続課金で発注書の状態とは独立)。
+        const where: string[] = ["TRUE"];
         const params: any[] = [];
         if (q) {
           params.push(`%${q}%`);
