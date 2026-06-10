@@ -34,6 +34,12 @@ export type LineItem = {
    */
   calc_method?: "FIXED" | "SUBSCRIPTION" | "ROYALTY" | string;
   /**
+   * ROYALTY 用: 料率(%)。calc_method='ROYALTY' のとき
+   *   小計 = ⌈ 単価(基準価格) × 数量 × 料率% ⌉ で計算する。
+   *   FIXED/SUBSCRIPTION では未使用。
+   */
+  rate_pct?: number;
+  /**
    * Phase 13: 支払条件 (自由テキスト)。例: '翌月末', '検収後即時', '月額更新'。
    */
   payment_terms?: string;
@@ -202,6 +208,20 @@ interface Props {
 const ceilProduct = (a: number, b: number) =>
   Math.ceil((Number(a) || 0) * (Number(b) || 0));
 
+// 行小計の計算。ROYALTY は 単価(基準価格) × 数量 × 料率% を切り上げ、
+//   それ以外(FIXED / SUBSCRIPTION)は従来どおり 単価 × 数量。
+const computeAmount = (
+  it: Pick<LineItem, "unit_price" | "quantity" | "calc_method" | "rate_pct">
+): number => {
+  const up = Number(it.unit_price) || 0;
+  const qty = Number(it.quantity) || 0;
+  if (it.calc_method === "ROYALTY") {
+    const rate = Number(it.rate_pct) || 0;
+    return Math.ceil((up * qty * rate) / 100);
+  }
+  return ceilProduct(up, qty);
+};
+
 const yenLI = (n: number) => "¥ " + (Number(n) || 0).toLocaleString("ja-JP");
 
 export const LineItemTable: React.FC<Props> = ({
@@ -227,12 +247,14 @@ export const LineItemTable: React.FC<Props> = ({
   const update = (idx: number, patch: Partial<LineItem>) => {
     const next = items.slice();
     next[idx] = { ...next[idx], ...patch };
-    // Auto-recompute subtotal if either unit_price or quantity changed
-    if (patch.unit_price !== undefined || patch.quantity !== undefined) {
-      next[idx].amount_ex_tax = ceilProduct(
-        next[idx].unit_price ?? 0,
-        next[idx].quantity ?? 0
-      );
+    // Auto-recompute subtotal when 単価/数量/料率/計算方式 のいずれかが変わったとき。
+    if (
+      patch.unit_price !== undefined ||
+      patch.quantity !== undefined ||
+      patch.rate_pct !== undefined ||
+      patch.calc_method !== undefined
+    ) {
+      next[idx].amount_ex_tax = computeAmount(next[idx]);
     }
     onChange(next);
   };
@@ -264,7 +286,7 @@ export const LineItemTable: React.FC<Props> = ({
   };
 
   const grandTotal = items.reduce((sum, it) => {
-    const amt = it.amount_ex_tax ?? ceilProduct(it.unit_price ?? 0, it.quantity ?? 0);
+    const amt = it.amount_ex_tax ?? computeAmount(it);
     return sum + amt;
   }, 0);
 
@@ -345,7 +367,7 @@ export const LineItemTable: React.FC<Props> = ({
   //   1 行 = 1 カードで縦並び。spec のモーダル / サブスク詳細モーダルは共通利用。
   const renderCard = (it: LineItem, idx: number) => {
     const amount =
-      it.amount_ex_tax ?? ceilProduct(it.unit_price ?? 0, it.quantity ?? 0);
+      it.amount_ex_tax ?? computeAmount(it);
     return (
       <div
         key={idx}
@@ -464,6 +486,22 @@ export const LineItemTable: React.FC<Props> = ({
                 )}
               </div>
             </label>
+            {it.calc_method === "ROYALTY" && (
+              <label className="block">
+                <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+                  料率 (%)
+                </span>
+                {cellInput(
+                  it.rate_pct,
+                  (v) => update(idx, { rate_pct: Number(v) || 0 }),
+                  "number",
+                  "例: 5.0"
+                )}
+                <span className="text-[10px] font-mono text-muted-foreground/70 block mt-1">
+                  小計 = 単価(基準価格) × 数量 × 料率%（切り上げ）
+                </span>
+              </label>
+            )}
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
                 <span className="text-[10px] font-mono text-muted-foreground block mb-1">
@@ -605,7 +643,7 @@ export const LineItemTable: React.FC<Props> = ({
           <tbody>
             {items.map((it, idx) => {
                 const amount =
-                  it.amount_ex_tax ?? ceilProduct(it.unit_price ?? 0, it.quantity ?? 0);
+                  it.amount_ex_tax ?? computeAmount(it);
                 return (
                   <tr
                     key={idx}
@@ -688,6 +726,25 @@ export const LineItemTable: React.FC<Props> = ({
                               </button>
                             )}
                           </div>
+                          {it.calc_method === "ROYALTY" && (
+                            <div className="mt-1">
+                              <input
+                                type="number"
+                                value={it.rate_pct ?? ""}
+                                onChange={(e) =>
+                                  update(idx, {
+                                    rate_pct: Number(e.target.value) || 0,
+                                  })
+                                }
+                                placeholder="料率% 例: 5.0"
+                                disabled={readOnly}
+                                className="w-full text-xs font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px] disabled:opacity-60"
+                              />
+                              <span className="text-[9px] font-mono text-muted-foreground/70 block mt-0.5">
+                                単価×数量×料率%
+                              </span>
+                            </div>
+                          )}
                         </td>
                         {/* Phase 22.8: SUBSCRIPTION なら 周期 ラベル
                             Phase 22.21.44: それ以外は 請負/準委任 のプルダウン (旧自由テキスト廃止) */}
