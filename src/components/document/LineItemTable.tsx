@@ -19,6 +19,12 @@ import React from "react";
 import { Plus, Trash2, Maximize2, X, Repeat, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
+import {
+  CALC_TYPE_OPTIONS,
+  calcMethodFromType,
+  buildFormulaText,
+  type CalcType,
+} from "@/src/components/document/FinancialConditionTable";
 
 export type LineItem = {
   line_no?: number;
@@ -28,6 +34,14 @@ export type LineItem = {
   quantity: number;
   // amount_ex_tax is derived in render — kept in state for round-trips
   amount_ex_tax?: number;
+  /**
+   * 成果物の帰属先(当事者は発注書表現)。
+   *   '発注者' = 当社がIP取得(work-for-hire/著作権譲渡) → 業務委託明細(確定額)。
+   *   '受注者' = 相手がIP保有 → 利用許諾(利用許諾料) → 金銭条件構造で持ち、
+   *             確定額には含めず、worker 保存時に capability_financial_conditions へ振り分け。
+   *   未設定は '発注者' 扱い(従来挙動)。
+   */
+  deliverable_ownership?: "発注者" | "受注者";
   /**
    * Phase 13: 計算方式 (FIXED / SUBSCRIPTION / ROYALTY)。
    * license_financial_conditions と同じ語彙。default は 'FIXED'。
@@ -39,6 +53,19 @@ export type LineItem = {
    *   FIXED/SUBSCRIPTION では未使用。
    */
   rate_pct?: number;
+  // ── 受注者帰属(利用許諾料)の行が持つ金銭条件フィールド ──────────
+  //   deliverable_ownership='受注者' のときに使う。FinancialCondition と同じ語彙。
+  calc_type?: CalcType;
+  base_price_label?: string;
+  fixed_kind?: "LUMP" | "INSTALLMENT";
+  subscription_cycle?: "MONTHLY" | "ANNUAL";
+  unit_amount?: number;
+  guarantee_type?: "NONE" | "MG" | "AG";
+  mg_amount?: number;
+  ag_amount?: number;
+  condition_name?: string;
+  region_language_label?: string;
+  formula_text?: string;
   /**
    * Phase 13: 支払条件 (自由テキスト)。例: '翌月末', '検収後即時', '月額更新'。
    */
@@ -208,11 +235,17 @@ interface Props {
 const ceilProduct = (a: number, b: number) =>
   Math.ceil((Number(a) || 0) * (Number(b) || 0));
 
-// 行小計の計算。ROYALTY は 単価(基準価格) × 数量 × 料率% を切り上げ、
-//   それ以外(FIXED / SUBSCRIPTION)は従来どおり 単価 × 数量。
+// 行小計の計算。
+//   - 受注者帰属(利用許諾料)は変動・継続のため確定額外 = 0(発注書の合計に含めない)。
+//   - ROYALTY は 単価(基準価格) × 数量 × 料率% を切り上げ。
+//   - それ以外(FIXED / SUBSCRIPTION)は従来どおり 単価 × 数量。
 const computeAmount = (
-  it: Pick<LineItem, "unit_price" | "quantity" | "calc_method" | "rate_pct">
+  it: Pick<
+    LineItem,
+    "unit_price" | "quantity" | "calc_method" | "rate_pct" | "deliverable_ownership"
+  >
 ): number => {
+  if (it.deliverable_ownership === "受注者") return 0;
   const up = Number(it.unit_price) || 0;
   const qty = Number(it.quantity) || 0;
   if (it.calc_method === "ROYALTY") {
@@ -247,12 +280,13 @@ export const LineItemTable: React.FC<Props> = ({
   const update = (idx: number, patch: Partial<LineItem>) => {
     const next = items.slice();
     next[idx] = { ...next[idx], ...patch };
-    // Auto-recompute subtotal when 単価/数量/料率/計算方式 のいずれかが変わったとき。
+    // Auto-recompute subtotal when 単価/数量/料率/計算方式/帰属 のいずれかが変わったとき。
     if (
       patch.unit_price !== undefined ||
       patch.quantity !== undefined ||
       patch.rate_pct !== undefined ||
-      patch.calc_method !== undefined
+      patch.calc_method !== undefined ||
+      patch.deliverable_ownership !== undefined
     ) {
       next[idx].amount_ex_tax = computeAmount(next[idx]);
     }
@@ -271,12 +305,27 @@ export const LineItemTable: React.FC<Props> = ({
         amount_ex_tax: 0,
         // Phase 13: 新規行は FIXED で初期化 (PO は通常固定額)
         calc_method: "FIXED",
+        // 既定は成果物=発注者帰属(業務委託明細)。
+        deliverable_ownership: "発注者",
         payment_terms: "",
         payment_date: "",
         delivery_date: "",
       },
     ]);
   };
+
+  // 受注者帰属(利用許諾料)の行で、金銭条件フィールド変更時に
+  //   calc_method(互換) と計算式テキストを再計算する。
+  const recalcCond = (idx: number, patch: Partial<LineItem>) => {
+    const merged = { ...items[idx], ...patch };
+    update(idx, {
+      ...patch,
+      calc_method: calcMethodFromType(merged.calc_type) || merged.calc_method,
+      formula_text: buildFormulaText(merged as any),
+    });
+  };
+  const isBaseRateLI = (t?: CalcType) =>
+    t === "BASE_QTY_RATE" || t === "BASE_RATE";
 
   const removeRow = (idx: number) => {
     const next = items
@@ -362,6 +411,204 @@ export const LineItemTable: React.FC<Props> = ({
     </div>
   );
 
+  // 受注者帰属(利用許諾料)の行の金銭条件入力。カード/テーブル両ビューで共通利用。
+  const labelCls =
+    "text-[10px] font-mono text-muted-foreground block mb-1";
+  const selCls =
+    "w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground disabled:opacity-60";
+  const renderLicenseFields = (it: LineItem, idx: number) => (
+    <div className="rounded-sm border border-amber-300/60 bg-amber-50/30 p-2 space-y-2">
+      <div className="text-[10px] font-mono font-bold text-amber-700">
+        利用許諾条件（受注者帰属）— 確定額には含めません
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="col-span-2 block">
+          <span className={labelCls}>条件名称 (任意)</span>
+          {cellInput(
+            it.condition_name,
+            (v) => update(idx, { condition_name: v }),
+            "text",
+            "例: 訳者印税 / 既存イラスト利用許諾"
+          )}
+        </label>
+        <label className="block">
+          <span className={labelCls}>計算式タイプ</span>
+          <select
+            value={it.calc_type || ""}
+            onChange={(e) =>
+              recalcCond(idx, {
+                calc_type: (e.target.value || undefined) as CalcType | undefined,
+              })
+            }
+            disabled={readOnly}
+            className={selCls}
+          >
+            <option value="">— 選択 —</option>
+            {CALC_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>
+                {o.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {isBaseRateLI(it.calc_type) && (
+          <label className="block">
+            <span className={labelCls}>料率 (%)</span>
+            {cellInput(
+              it.rate_pct,
+              (v) => recalcCond(idx, { rate_pct: Number(v) || 0 }),
+              "number",
+              "例: 8.0"
+            )}
+          </label>
+        )}
+        {isBaseRateLI(it.calc_type) && (
+          <label className="col-span-2 block">
+            <span className={labelCls}>基準価格ラベル</span>
+            {cellInput(
+              it.base_price_label,
+              (v) => recalcCond(idx, { base_price_label: v }),
+              "text",
+              "例: 税抜定価 / 受領額"
+            )}
+          </label>
+        )}
+        {it.calc_type === "FIXED" && (
+          <>
+            <label className="block">
+              <span className={labelCls}>支払区分</span>
+              <select
+                value={it.fixed_kind || "LUMP"}
+                onChange={(e) =>
+                  recalcCond(idx, {
+                    fixed_kind: e.target.value as "LUMP" | "INSTALLMENT",
+                  })
+                }
+                disabled={readOnly}
+                className={selCls}
+              >
+                <option value="LUMP">一括</option>
+                <option value="INSTALLMENT">分割</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className={labelCls}>固定額</span>
+              {cellInput(
+                it.unit_amount,
+                (v) => recalcCond(idx, { unit_amount: Number(v) || 0 }),
+                "number",
+                "0"
+              )}
+            </label>
+          </>
+        )}
+        {it.calc_type === "SUBSCRIPTION" && (
+          <>
+            <label className="block">
+              <span className={labelCls}>課金サイクル</span>
+              <select
+                value={it.subscription_cycle || "MONTHLY"}
+                onChange={(e) =>
+                  recalcCond(idx, {
+                    subscription_cycle: e.target.value as "MONTHLY" | "ANNUAL",
+                  })
+                }
+                disabled={readOnly}
+                className={selCls}
+              >
+                <option value="MONTHLY">月払い</option>
+                <option value="ANNUAL">年払い</option>
+              </select>
+            </label>
+            <label className="block">
+              <span className={labelCls}>単価</span>
+              {cellInput(
+                it.unit_amount,
+                (v) => recalcCond(idx, { unit_amount: Number(v) || 0 }),
+                "number",
+                "0"
+              )}
+            </label>
+          </>
+        )}
+        {isBaseRateLI(it.calc_type) && (
+          <>
+            <label className="block">
+              <span className={labelCls}>保証 (MG/AG)</span>
+              <select
+                value={it.guarantee_type || "NONE"}
+                onChange={(e) => {
+                  const g = e.target.value as "NONE" | "MG" | "AG";
+                  if (g === "MG")
+                    update(idx, { guarantee_type: "MG", ag_amount: 0 });
+                  else if (g === "AG")
+                    update(idx, { guarantee_type: "AG", mg_amount: 0 });
+                  else
+                    update(idx, {
+                      guarantee_type: "NONE",
+                      mg_amount: 0,
+                      ag_amount: 0,
+                    });
+                }}
+                disabled={readOnly}
+                className={selCls}
+              >
+                <option value="NONE">なし</option>
+                <option value="MG">MG (最低保証)</option>
+                <option value="AG">AG (前払い保証)</option>
+              </select>
+            </label>
+            {(it.guarantee_type === "MG" || it.guarantee_type === "AG") && (
+              <label className="block">
+                <span className={labelCls}>
+                  {it.guarantee_type === "AG" ? "AG 額" : "MG 額"}
+                </span>
+                {cellInput(
+                  it.guarantee_type === "AG" ? it.ag_amount : it.mg_amount,
+                  (v) =>
+                    update(
+                      idx,
+                      it.guarantee_type === "AG"
+                        ? { ag_amount: Number(v) || 0 }
+                        : { mg_amount: Number(v) || 0 }
+                    ),
+                  "number",
+                  "0"
+                )}
+              </label>
+            )}
+          </>
+        )}
+      </div>
+      {it.formula_text && (
+        <div className="text-[10px] font-mono text-muted-foreground/80">
+          計算式: {it.formula_text}
+        </div>
+      )}
+      <div className="text-[10px] font-mono text-amber-700/80">
+        ※ 保存時に「利用許諾条件」へ振り分け、利用許諾料計算書・分配に連動します。
+      </div>
+    </div>
+  );
+
+  // 成果物帰属セレクト(発注者/受注者)。両ビュー共通。
+  const ownershipSelect = (it: LineItem, idx: number) => (
+    <select
+      value={it.deliverable_ownership || "発注者"}
+      onChange={(e) =>
+        update(idx, {
+          deliverable_ownership: e.target.value as "発注者" | "受注者",
+        })
+      }
+      disabled={readOnly}
+      className={selCls}
+      title="成果物のIP帰属。受注者帰属は利用許諾料(金銭条件)として扱い、確定額に含めません。"
+    >
+      <option value="発注者">発注者帰属（業務委託）</option>
+      <option value="受注者">受注者帰属（利用許諾）</option>
+    </select>
+  );
+
   // Phase 23.0.4: カード型レンダラ (lg 未満で使う)。
   //   <table> は狭幅で列が潰れて読めなくなるため、モバイル/タブレット用に
   //   1 行 = 1 カードで縦並び。spec のモーダル / サブスク詳細モーダルは共通利用。
@@ -411,6 +658,15 @@ export const LineItemTable: React.FC<Props> = ({
             "規格・モデル (3行まで表示)"
           )}
         </label>
+        <label className="block">
+          <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+            成果物帰属
+          </span>
+          {ownershipSelect(it, idx)}
+        </label>
+        {it.deliverable_ownership === "受注者" && renderLicenseFields(it, idx)}
+        {it.deliverable_ownership !== "受注者" && (
+        <>
         <div className="grid grid-cols-3 gap-3 items-end">
           <label className="block">
             <span className="text-[10px] font-mono text-muted-foreground block mb-1">
@@ -587,6 +843,8 @@ export const LineItemTable: React.FC<Props> = ({
             </label>
           </>
         )}
+        </>
+        )}
       </div>
     );
   };
@@ -623,6 +881,7 @@ export const LineItemTable: React.FC<Props> = ({
               <th className="w-8 text-left p-2">#</th>
               <th className="text-left p-2 min-w-[200px]">品目名</th>
               <th className="text-left p-2 min-w-[220px]">仕様</th>
+              <th className="text-left p-2 w-44 min-w-[150px]">成果物帰属</th>
               <th className="text-right p-2 w-28 min-w-[96px]">単価</th>
               <th className="text-right p-2 w-24 min-w-[80px]">数量</th>
               <th className="text-right p-2 w-28 min-w-[104px]">小計 (税抜)</th>
@@ -663,6 +922,18 @@ export const LineItemTable: React.FC<Props> = ({
                         "規格・モデル (3行まで表示)"
                       )}
                     </td>
+                    <td className="p-2 align-top">
+                      {ownershipSelect(it, idx)}
+                    </td>
+                    {it.deliverable_ownership === "受注者" ? (
+                      <td
+                        colSpan={showPaymentColumns ? 7 : 3}
+                        className="p-2 align-top"
+                      >
+                        {renderLicenseFields(it, idx)}
+                      </td>
+                    ) : (
+                      <>
                     <td className="p-2 text-right">
                       {cellInput(
                         it.unit_price,
@@ -831,6 +1102,8 @@ export const LineItemTable: React.FC<Props> = ({
                         </td>
                       </>
                     )}
+                      </>
+                    )}
                     {!readOnly && (
                       <td className="p-2 text-center">
                         <button
@@ -849,7 +1122,7 @@ export const LineItemTable: React.FC<Props> = ({
           </tbody>
           <tfoot>
             <tr className="border-t-2 border-foreground/20 bg-muted/30 font-bold">
-              <td colSpan={5} className="p-2 text-right text-[10px] uppercase tracking-wider">
+              <td colSpan={6} className="p-2 text-right text-[10px] uppercase tracking-wider">
                 合計 (税抜)
               </td>
               <td className="p-2 text-right text-[13px]">
