@@ -499,9 +499,25 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             }
           : null,
         line_items: lineRows,
-        financial_conditions: conds.rows.map((c: any) => ({
+        financial_conditions: conds.rows.map((c: any) => {
+          // テリトリー / 言語 を別項目で返す。古い行(2項目なし)は
+          //   合成ラベル region_language_label を最初の '・' で分割してフォールバック。
+          let territory = (c.region_territory || "").trim();
+          let language = (c.region_language || "").trim();
+          if (!territory && !language && c.region_language_label) {
+            const s = String(c.region_language_label).trim();
+            const idx = s.indexOf("・");
+            if (idx < 0) territory = s;
+            else {
+              territory = s.slice(0, idx).trim();
+              language = s.slice(idx + 1).trim();
+            }
+          }
+          return {
           id: Number(c.id),
           condition_no: Number(c.condition_no),
+          region_territory: territory,
+          region_language: language,
           region_language_label: c.region_language_label || "",
           calc_method: c.calc_method || "",
           rate_pct: c.rate_pct == null ? null : Number(c.rate_pct),
@@ -522,7 +538,8 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           subscription_cycle: c.subscription_cycle || null,
           unit_amount: c.unit_amount == null ? null : Number(c.unit_amount),
           guarantee_type: c.guarantee_type || null,
-        })),
+          };
+        }),
         expenses: expenses.rows.map((e: any) => ({
           id: Number(e.id),
           line_no: Number(e.line_no),
