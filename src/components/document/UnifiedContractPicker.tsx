@@ -311,10 +311,15 @@ export const UnifiedContractPicker: React.FC<Props> = ({
     }
   };
 
+  // requireConditions は「発注書(service)を金銭条件付きのものだけに絞る」用途。
+  //   ライセンス契約等(個別/単独/出版条件)は条件が capability_financial_conditions に
+  //   無い(=condition_count 0)場合もあるため、ここでは絞らず従来どおり全件表示する。
   const filteredList = list.filter(
     (it) =>
       acceptableRecordTypes.includes(it.record_type) &&
-      (!requireConditions || (Number(it.condition_count) || 0) > 0)
+      (!requireConditions ||
+        it.record_type !== "purchase_order" ||
+        (Number(it.condition_count) || 0) > 0)
   );
 
   return (
