@@ -3010,8 +3010,6 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   "purchase_order",
                 ]}
                 categoryFilter={["license", "publication", "service"]}
-                // 金銭条件(印税率)を持つ契約のみ候補表示(発注書の大量表示を避ける)。
-                requireConditions={true}
                 currentContractId={selectedContractId || undefined}
                 hasParent={selectedContractId > 0}
                 label={
