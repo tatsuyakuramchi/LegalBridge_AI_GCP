@@ -306,6 +306,20 @@ export function DocumentEditorPage() {
           __reopen_id: reopenId ? Number(reopenId) : undefined,
           __reopen_doc_number: reopenId ? data.document_number : undefined,
         })
+        // 前文書のセッション状態が居座らないよう、文書固有の選択をリセットする。
+        //   - activeVendor: null にして下の解決 effect が読み込んだ doc の
+        //     vendor_code から再解決できるようにする (if(activeVendor)return ガード対策)。
+        //   - selectedStaff: null にして、通知系テンプレの STAFF 自動補完 effect が
+        //     前担当者で読み込んだ doc の STAFF_* を上書きするのを防ぐ
+        //     (doc の form_data には STAFF_* が既に含まれている)。
+        //   - selectedDirection: "" にして読み込んだ FLOW_DIRECTION から再解決。
+        //   - previousDocument: 前文書バナーをクリア。
+        //   - isReadOnly: 再編集 / キュー再生成は編集意図ありなので編集可に。
+        setActiveVendor(null)
+        setSelectedStaff(null)
+        setSelectedDirection("")
+        setPreviousDocument(null)
+        setIsReadOnly(false)
         const verb = fromPendingId ? "PDF 未作成キューから" : "既存文書を再編集モードで"
         showNotification(
           `「${data.document_number}」を${verb}読み込みました。`,
@@ -511,40 +525,18 @@ export function DocumentEditorPage() {
           ...context,
         }
         if (draft?.form_data && typeof draft.form_data === "object") {
-          // 1) 一時保存 (DB draft) を最優先で復元 (直近の編集状態)。
+          // 一時保存 (DB draft = 作業中の下書き) があれば復元する。
+          //   これはユーザー自身が直前に編集していた内容なので安全。
           Object.assign(base, draft.form_data)
           const when = draft.updated_at
             ? new Date(draft.updated_at).toLocaleString("ja-JP")
             : ""
           showNotification(`📄 一時保存を復元しました (${when})`, "success")
-        } else if (!skipRestore && prevDoc?.document_number) {
-          // 2) 一時保存が無ければ、同じ課題・同テンプレの「前回発行文書」の
-          //    form_data を自動で呼び出してプリフィルする。課題を選ぶだけで
-          //    以前の入力内容が戻る。閲覧モードのままなので編集は [編集] ボタンで。
-          try {
-            const pRes = await fetch(
-              `/api/documents/by-number/${encodeURIComponent(prevDoc.document_number)}`
-            )
-            const pData = await pRes.json().catch(() => ({}))
-            if (
-              pRes.ok &&
-              pData?.ok &&
-              pData.form_data &&
-              typeof pData.form_data === "object"
-            ) {
-              Object.assign(base, pData.form_data)
-              const when = prevDoc.created_at
-                ? new Date(prevDoc.created_at).toLocaleString("ja-JP")
-                : ""
-              showNotification(
-                `📄 前回文書 ${prevDoc.document_number} の内容を呼び出しました (${when})`,
-                "success"
-              )
-            }
-          } catch (e) {
-            console.warn("[syncFromDatabase] previous doc autoload failed:", e)
-          }
         }
+        // ※ 旧挙動: 一時保存が無ければ「前回発行文書」の form_data を自動で
+        //   プリフィルしていたが、新しい文書を作るつもりでも過去内容が黙って
+        //   入り込み危ういため撤去。代わりに previousDocument バナーの
+        //   「前回内容を引き継ぐ」/「再編集モードで開く」ボタンで明示的に選ぶ。
         setFormData(base)
       } catch (e) {
         setPreviousDocument(null)
@@ -1065,11 +1057,22 @@ export function DocumentEditorPage() {
 
   // Phase 9g: サクセスモーダル経由の「新しい文書を作成」 — フォームを
   // リセットして次の起票へ。
+  //   セッション (useDocumentSession) はアプリ全体で永続するため、文書固有の
+  //   状態を明示的に全てクリアしないと前文書の内容が次文書に引き継がれてしまう
+  //   (特にテンプレ種別が残ると、課題選択時に前回文書が自動で引き込まれる)。
+  //   担当者 (selectedStaff) は操作者として継続利用するため意図的に残す。
   const handleStartNew = () => {
     setFormData({})
     setSelectedIssue("")
+    setSelectedTemplate("")
+    setSelectedDirection("")
+    setActiveVendor(null)
+    setPreviousDocument(null)
     setIssueSummary(null)
     setCompletionResult(null)
+    setIsReadOnly(false)
+    setSaveMode("internal")
+    setCaseHistory([])
     showNotification("New document started.", "info")
   }
 
