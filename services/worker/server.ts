@@ -11075,14 +11075,13 @@ ${details}
           // 成果物帰属で振り分け: 発注者帰属=業務委託明細(capability_line_items),
           //   受注者帰属=利用許諾料(capability_financial_conditions)。
           const allFormItems = formData.items as Array<any>;
-          const ownerItems = allFormItems.filter(
-            (it) => it?.deliverable_ownership !== "受注者"
-          );
+          // 受注者帰属でも「業務報酬(執筆料等)」は確定額として line_items に入れる。
+          //   利用許諾料(料率/MG/AG)は別途 financial_conditions へも振り分ける。
           const licenseItems = allFormItems.filter(
             (it) => it?.deliverable_ownership === "受注者"
           );
-          // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー(発注者帰属のみ)。
-          const incomingLines = expandLinesWithSchedule(ownerItems);
+          // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー(全明細)。
+          const incomingLines = expandLinesWithSchedule(allFormItems);
           const keepNos = incomingLines
             .map((l, i) => Number(l.line_no) || i + 1)
             .filter((n) => n > 0);

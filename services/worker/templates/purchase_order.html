@@ -377,13 +377,8 @@
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
+          {{#if (eq deliverable_ownership "受注者")}}<div style="font-size:7.5pt; color:#92400e; margin-top:2px; font-weight:700;">＋利用許諾条件あり（下段「利用許諾条件」参照{{#if condition_name}}：{{condition_name}}{{/if}}）</div>{{/if}}
         </td>
-        {{#if (eq deliverable_ownership "受注者")}}
-        <td colspan="6" style="font-size:8.5pt; color:#92400e; vertical-align:middle;">
-          <span class="pay-method-badge" style="background:#fde68a; color:#92400e;">利用許諾</span>
-          委託報酬は利用許諾料に含む（下段「利用許諾条件」参照{{#if condition_name}}：{{condition_name}}{{/if}}）
-        </td>
-        {{else}}
         <td class="center">
           {{!-- Phase 13: 計算方式バッジ + 支払条件
                Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
@@ -430,8 +425,7 @@
         </td>
         <td class="right">{{or quantity qty}}</td>
         <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
-        <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
-        {{/if}}
+        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}{{else}}<span style="font-size:7.5pt;color:#92400e;">利用許諾料のみ</span>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
       </tr>
       {{#if (or spec detailText)}}
       {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
