@@ -382,10 +382,10 @@
         <td class="center">
           {{!-- Phase 13: 計算方式バッジ + 支払条件
                Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
-          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
-          {{#if (eq calc_method "ROYALTY")}}
+          <span class="pay-method-badge">{{#if (eq deliverable_ownership "受注者")}}FIXED{{else}}{{or calc_method payment_method_display payment_method "FIXED"}}{{/if}}</span>
+          {{#if (eq calc_method "ROYALTY")}}{{#unless (eq deliverable_ownership "受注者")}}
           <div style="font-size:7pt; color:#666; margin-top:2px;">料率 {{rate_pct}}%（単価×数量×料率）</div>
-          {{/if}}
+          {{/unless}}{{/if}}
           {{#if (eq calc_method "SUBSCRIPTION")}}
           <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
           {{else}}
@@ -423,9 +423,9 @@
             {{formatDate payment_date}}
           {{/if}}
         </td>
-        <td class="right">{{or quantity qty}}</td>
-        <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
-        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}{{else}}<span style="font-size:7.5pt;color:#92400e;">利用許諾料のみ</span>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
+        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{or quantity qty}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{or quantity qty}}{{/if}}</td>
+        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
+        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}{{else}}<span style="color:#888;">-</span><div style="font-size:7pt;color:#92400e;">業務委託報酬は利用許諾料に含まれる</div>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
       </tr>
       {{#if (or spec detailText)}}
       {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
