@@ -4050,12 +4050,12 @@ ${details}
            capability_id, line_no,
            category, item_name, spec,
            calc_method, payment_method, payment_terms,
-           quantity, unit_price, amount_ex_tax,
+           quantity, unit_price, amount_ex_tax, rate_pct,
            delivery_date, payment_date,
            cycle, billing_day, term_start, term_end,
            fee_type,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, line_no) DO UPDATE SET
            category       = EXCLUDED.category,
            item_name      = EXCLUDED.item_name,
@@ -4066,6 +4066,7 @@ ${details}
            quantity       = EXCLUDED.quantity,
            unit_price     = EXCLUDED.unit_price,
            amount_ex_tax  = EXCLUDED.amount_ex_tax,
+           rate_pct       = EXCLUDED.rate_pct,
            delivery_date  = EXCLUDED.delivery_date,
            payment_date   = EXCLUDED.payment_date,
            cycle          = EXCLUDED.cycle,
@@ -4086,6 +4087,7 @@ ${details}
           numOrNull(c.quantity),
           numOrNull(c.unit_price),
           numOrNull(c.amount_ex_tax),
+          numOrNull(c.rate_pct),
           dateOrNull(c.delivery_date),
           dateOrNull(c.payment_date),
           c.cycle || null,

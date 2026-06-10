@@ -380,6 +380,9 @@
           {{!-- Phase 13: 計算方式バッジ + 支払条件
                Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
           <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          {{#if (eq calc_method "ROYALTY")}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">料率 {{rate_pct}}%（単価×数量×料率）</div>
+          {{/if}}
           {{#if (eq calc_method "SUBSCRIPTION")}}
           <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
           {{else}}

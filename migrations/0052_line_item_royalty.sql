@@ -1,4 +1,16 @@
-<!DOCTYPE html>
+-- 0052_line_item_royalty.sql
+-- 業務明細(capability_line_items)に料率(rate_pct)を追加し、ROYALTY 計算に対応。
+--   小計 = ⌈ 単価(基準価格) × 数量 × 料率% ⌉ (フォーム LineItemTable で算出)。
+-- 発注書テンプレ(purchase_order)に ROYALTY 行の料率表示を追加(db モード反映)。
+
+ALTER TABLE capability_line_items
+  ADD COLUMN IF NOT EXISTS rate_pct DECIMAL(7, 4);
+
+-- 発注書テンプレ(document_templates)を現行 disk テンプレ + field_schema の新版へ更新。
+WITH t AS (SELECT id FROM document_templates WHERE template_key='purchase_order'), nv AS (
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  SELECT t.id, COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id=t.id),0)+1,
+         $html_purchase_order$<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -339,7 +351,7 @@
       <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
     </tr>
     <tr>
-      <th>納期</th>
+      <th>納期<br><span style="font-size:8pt;color:#888;font-weight:400;">(または役務提供期間)</span></th>
       <td>{{or summaryDeliveryDate "—"}}</td>
     </tr>
     <tr>
@@ -436,6 +448,25 @@
           <div class="detail-cell">
             {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
             {{#if detailText}}<div class="item-spec-block"{{#if spec}} style="margin-top:2px;"{{/if}}>{{detailText}}</div>{{/if}}
+          </div>
+        </td>
+      </tr>
+      {{/if}}
+      {{#if payment_schedule}}
+      <tr class="detail-row">
+        <td colspan="8">
+          <div class="detail-cell">
+            <div style="font-weight:700;margin-bottom:2px;">支払スケジュール</div>
+            <table style="width:100%;border-collapse:collapse;font-size:8.5pt;">
+              <tr><th style="text-align:left;width:8%;">回</th><th style="text-align:left;">支払予定日</th><th style="text-align:right;width:30%;">金額</th></tr>
+              {{#each payment_schedule}}
+              <tr>
+                <td style="text-align:center;">{{index1 @index}}</td>
+                <td>{{date}}</td>
+                <td style="text-align:right;">{{#if amount}}{{formatYen amount}}{{/if}}</td>
+              </tr>
+              {{/each}}
+            </table>
           </div>
         </td>
       </tr>
@@ -709,3 +740,6 @@
   {{/unless}}
 </body>
 </html>
+$html_purchase_order$, $schema_purchase_order$[{"name": "ORDER_NO", "label": "発注番号", "group": "I. 発注概要", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます"}, {"name": "ORDER_DATE", "label": "発行日", "group": "I. 発注概要", "type": "date", "required": true, "dbField": "auto.today", "helpText": "PDF には YYYY年MM月DD日 で表示。年月日は自動分解"}, {"name": "発注日", "label": "発注日", "group": "I. 発注概要", "type": "date", "helpText": "実際に発注を行った日付。空欄なら PDF では発行日 で代替表示"}, {"name": "PROJECT_TITLE", "label": "件名", "group": "I. 発注概要", "required": true, "dbField": "backlog.summary", "placeholder": "例: ノートPC 5台調達"}, {"name": "VENDOR_NAME", "label": "発注先 名称", "group": "II. 発注先 (取引先)", "required": true, "helpText": "[取引先] ボタンで自動入力"}, {"name": "VENDOR_IS_CORPORATION", "label": "発注先区分", "group": "II. 発注先 (取引先)", "type": "select", "options": ["法人", "個人"], "helpText": "[取引先] ボタンで vendor.entity_type から自動判定。法人は敬称『御中』+ 代表者『様』、個人は『様』のみ"}, {"name": "VENDOR_SUFFIX", "label": "敬称", "group": "II. 発注先 (取引先)", "type": "select", "options": ["御中", "様", "殿"], "placeholder": "御中", "helpText": "発注先区分から自動設定。手動上書きも可"}, {"name": "VENDOR_ADDRESS", "label": "発注先 住所", "group": "II. 発注先 (取引先)", "type": "textarea", "required": true}, {"name": "VENDOR_REPRESENTATIVE_SAMA", "label": "代表者名 (＋様)", "group": "II. 発注先 (取引先)", "placeholder": "例: 代表取締役 山田 太郎 様"}, {"name": "VENDOR_CONTACT_DEPARTMENT", "label": "担当部署", "group": "II. 発注先 (取引先)"}, {"name": "VENDOR_CONTACT_NAME", "label": "担当者名", "group": "II. 発注先 (取引先)"}, {"name": "VENDOR_EMAIL", "label": "E-mail", "group": "II. 発注先 (取引先)"}, {"name": "PARTY_A_NAME", "label": "発注元 名称", "group": "III. 発注元 (自社)", "required": true, "helpText": "[自社] ボタンで自動入力"}, {"name": "PARTY_A_ADDRESS", "label": "発注元 住所", "group": "III. 発注元 (自社)", "type": "textarea", "required": true}, {"name": "PARTY_A_REP", "label": "発注元 代表者", "group": "III. 発注元 (自社)", "required": true}, {"name": "STAFF_NAME", "label": "担当者名", "group": "III. 発注元 (自社)", "dbField": "staff.staff_name", "helpText": "[Sync Staff] で自動入力"}, {"name": "STAFF_DEPARTMENT", "label": "担当部署", "group": "III. 発注元 (自社)", "dbField": "staff.department"}, {"name": "STAFF_PHONE", "label": "TEL", "group": "III. 発注元 (自社)", "dbField": "staff.phone"}, {"name": "STAFF_EMAIL", "label": "E-mail", "group": "III. 発注元 (自社)", "dbField": "staff.email"}, {"name": "grandTotalExTax", "label": "合計金額 (税抜)", "group": "IV. 金額・納期", "type": "number", "required": true, "placeholder": "1000000", "helpText": "明細から自動集計 (単価×数量の合計)"}, {"name": "summaryDeliveryDate", "label": "納期 (自動: 明細から集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "明細の delivery_date を自動集計するので入力不要"}, {"name": "summaryPaymentDate", "label": "支払日 (自動: 明細から集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "明細の payment_date を自動集計するので入力不要"}, {"name": "summaryPaymentTerms", "label": "支払条件 (廃止予定)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "type": "hidden", "helpText": "明細の payment_terms に置換予定。旧テンプレ互換のため残置"}, {"name": "itemsSubtotalExTax", "label": "業務委託小計 (税抜・自動集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "明細から自動集計"}, {"name": "otherFeesTotal", "label": "手数料小計 (税抜・自動集計)", "group": "IV. 金額・納期", "type": "hidden", "helpText": "その他手数料テーブルから自動集計"}, {"name": "other_fees", "label": "その他手数料 (動的配列)", "group": "_DYNAMIC", "type": "hidden", "helpText": "OtherFeesTable から編集"}, {"name": "ITEM_NAME", "label": "品目名 (単一明細フォールバック)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "helpText": "明細表が空のときだけ参照される互換用入力。通常は IV. 明細表を使用"}, {"name": "CALC_METHOD", "label": "計算方式 (単一明細)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "type": "select", "options": ["FIXED", "SUBSCRIPTION", "ROYALTY"], "helpText": "FIXED=固定額 / SUBSCRIPTION=サブスク / ROYALTY=業績連動"}, {"name": "PAYMENT_TERMS", "label": "支払条件 (単一明細)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "placeholder": "例: 翌月末"}, {"name": "PAYMENT_METHOD", "label": "支払方法 (レガシー)", "group": "IV-z. 単一明細用 (任意・上級者向け)", "helpText": "Phase 13 で CALC_METHOD + PAYMENT_TERMS に分離。後方互換のため残置"}, {"name": "BANK_NAME", "label": "金融機関名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.bank_name", "helpText": "[取引先] ボタンで自動入力"}, {"name": "BRANCH_NAME", "label": "支店名", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.branch_name"}, {"name": "ACCOUNT_TYPE", "label": "口座種別", "group": "V. 振込先 (取引先口座)", "type": "select", "options": ["普通", "当座"], "dbField": "vendor.account_type"}, {"name": "ACCOUNT_NUMBER", "label": "口座番号", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.account_number"}, {"name": "ACCOUNT_HOLDER_KANA", "label": "口座名義 (カナ)", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.account_holder_kana"}, {"name": "INVOICE_REGISTRATION_NUMBER", "label": "インボイス登録番号 (T-)", "group": "V. 振込先 (取引先口座)", "dbField": "vendor.invoice_registration_number"}, {"name": "TRANSFER_FEE_PAYER", "label": "振込手数料 負担", "group": "V. 振込先 (取引先口座)", "type": "select", "options": ["当社", "取引先"]}, {"name": "SPECIAL_TERMS", "label": "特約事項", "group": "VI. 特約・備考 (任意)", "type": "textarea"}, {"name": "REMARKS_FIXED", "label": "定型備考", "group": "VI. 特約・備考 (任意)", "type": "textarea"}, {"name": "REMARKS_FREE", "label": "自由備考", "group": "VI. 特約・備考 (任意)", "type": "textarea"}, {"name": "documentNumberOverride", "label": "発注番号 手動上書き (任意)", "group": "VII. 契約・署名 (任意)", "helpText": "空欄なら自動採番。社内修正版を外部に出す場合、再発行リビジョン (_001 等) ではなく任意の番号を指定可能 (例: 元番号 ARC-PO-2026-0001 をそのまま使い続ける、A 案 / B 案でサフィックスを変える等)"}, {"name": "showReissueBanner", "label": "PDF に再発行版バナーを表示", "group": "VII. 契約・署名 (任意)", "type": "boolean", "helpText": "ON (デフォルト): 再発行版のとき PDF タイトル下に黄色バナーを表示。OFF: 社内修正のみで相手方には初版に見せたいとき。リビジョン番号は DB 側で常に管理されます"}, {"name": "HAS_BASE_CONTRACT", "label": "基本契約あり", "group": "VII. 契約・署名 (任意)", "type": "hidden"}, {"name": "MASTER_CONTRACT_REF", "label": "基本契約名 / 番号", "group": "VII. 契約・署名 (任意)", "type": "hidden", "helpText": "「0. 業務委託基本契約を選ぶ」のピッカーで自動入力"}, {"name": "SHOW_ORDER_SIGN_SECTION", "label": "発注署名欄を表示", "group": "VII. 契約・署名 (任意)", "type": "boolean"}, {"name": "ACCEPT_METHOD", "label": "承諾方法", "group": "VII. 契約・署名 (任意)", "type": "textarea"}, {"name": "ACCEPT_REPLY_DUE_DATE", "label": "承諾返信期限", "group": "VII. 契約・署名 (任意)", "type": "date"}, {"name": "ACCEPT_BY_PERFORMANCE", "label": "履行による承諾", "group": "VII. 契約・署名 (任意)", "type": "boolean"}, {"name": "SHOW_SIGN_SECTION", "label": "承諾署名欄を表示", "group": "VII. 契約・署名 (任意)", "type": "boolean"}, {"name": "VENDOR_ACCEPT_DATE", "label": "受注者承諾日", "group": "VII. 契約・署名 (任意)", "type": "date"}, {"name": "VENDOR_ACCEPT_NAME", "label": "受注者署名", "group": "VII. 契約・署名 (任意)"}, {"name": "VENDOR_CONTACT_PHONE", "type": "text", "label": "TEL", "group": "II. 発注先 (取引先)", "helpText": "発注先 通知先 電話"}]$schema_purchase_order$::jsonb, '業務明細 ROYALTY 料率表示を追加 (0052)', 'migration-0052'
+    FROM t RETURNING id, template_id)
+UPDATE document_templates dt SET current_version_id=nv.id, updated_at=now() FROM nv WHERE dt.id=nv.template_id;

@@ -77,7 +77,7 @@ export function registerFormReadRoutes(
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
           const lines = await query(
             `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, calc_method, payment_terms,
+                    amount_ex_tax, rate_pct, calc_method, payment_terms,
                     payment_method, payment_date, delivery_date,
                     cycle, term_start, term_end, billing_day
                FROM capability_line_items
@@ -92,6 +92,8 @@ export function registerFormReadRoutes(
             unit_price: Number(r.unit_price) || 0,
             quantity: Number(r.quantity) || 0,
             amount_ex_tax: Number(r.amount_ex_tax) || 0,
+            // ROYALTY 用料率(%)。小計 = 単価 × 数量 × 料率%。
+            rate_pct: r.rate_pct == null ? undefined : Number(r.rate_pct),
             // Phase 13: calc_method + payment_terms 統一
             calc_method: r.calc_method || "FIXED",
             payment_terms: r.payment_terms || r.payment_method || "",
