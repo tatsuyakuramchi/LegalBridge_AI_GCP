@@ -574,4 +574,75 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       res.status(500).json({ error: String(e?.message || e) });
     }
   });
+
+  // 利用許諾料計算書の「条件一覧」ピッカー用。
+  //   capability_financial_conditions を契約 + 取引先と JOIN して一覧返す。
+  //   発注書由来(受注者帰属)の印税条件も、ライセンス契約の条件も同じ土俵で選べる。
+  app.get(
+    "/api/financial-conditions/search",
+    deps.requirePortalSecret,
+    async (req, res) => {
+      try {
+        const q = String(req.query.q || "").trim();
+        const limit = Math.min(Number(req.query.limit) || 100, 300);
+        const where: string[] = ["COALESCE(cc.is_active, TRUE) = TRUE"];
+        const params: any[] = [];
+        if (q) {
+          params.push(`%${q}%`);
+          const i = params.length;
+          where.push(
+            `(cfc.condition_name ILIKE $${i}
+               OR cc.contract_title ILIKE $${i}
+               OR cc.document_number ILIKE $${i}
+               OR cfc.region_language_label ILIKE $${i}
+               OR v.vendor_name ILIKE $${i}
+               OR v.vendor_code ILIKE $${i})`
+          );
+        }
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        const sql = `
+          SELECT cfc.id, cfc.condition_no, cfc.condition_name, cfc.region_language_label,
+                 cfc.calc_type, cfc.calc_method, cfc.rate_pct, cfc.base_price_label,
+                 cfc.mg_amount, cfc.ag_amount, cfc.guarantee_type, cfc.currency,
+                 cc.id AS capability_id, cc.document_number, cc.contract_title,
+                 cc.contract_category, cc.record_type,
+                 v.vendor_name, v.vendor_code
+            FROM capability_financial_conditions cfc
+            JOIN contract_capabilities cc ON cc.id = cfc.capability_id
+            LEFT JOIN vendors v ON v.id = cc.vendor_id
+           WHERE ${where.join(" AND ")}
+           ORDER BY cc.updated_at DESC NULLS LAST, cc.id DESC, cfc.condition_no ASC
+           LIMIT ${limitParam}
+        `;
+        const r = await deps.query(sql, params);
+        res.json(
+          r.rows.map((c: any) => ({
+            id: Number(c.id),
+            condition_no: Number(c.condition_no),
+            condition_name: c.condition_name || "",
+            region_language_label: c.region_language_label || "",
+            calc_type: c.calc_type || null,
+            calc_method: c.calc_method || "",
+            rate_pct: c.rate_pct == null ? null : Number(c.rate_pct),
+            base_price_label: c.base_price_label || "",
+            mg_amount: Number(c.mg_amount) || 0,
+            ag_amount: Number(c.ag_amount) || 0,
+            guarantee_type: c.guarantee_type || null,
+            currency: c.currency || "JPY",
+            capability_id: Number(c.capability_id),
+            document_number: c.document_number || "",
+            contract_title: c.contract_title || "",
+            contract_category: c.contract_category || "",
+            record_type: c.record_type || "",
+            vendor_name: c.vendor_name || "",
+            vendor_code: c.vendor_code || "",
+          }))
+        );
+      } catch (e: any) {
+        console.error("/api/financial-conditions/search failed:", e);
+        res.status(500).json({ error: String(e?.message || e) });
+      }
+    }
+  );
 }
