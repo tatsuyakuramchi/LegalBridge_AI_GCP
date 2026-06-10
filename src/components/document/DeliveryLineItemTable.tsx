@@ -40,6 +40,10 @@ export type OrderLineForInspection = {
 
 export type DeliveryLine = {
   order_line_item_id: number;
+  // 親 PO 明細の品目名 / 仕様。検収書テンプレが行ごとに表示するため保持する
+  //   (未保持だと全行が親の description にフォールバックして同名表示になる)。
+  item_name?: string;
+  spec?: string;
   inspected_quantity: number;
   acceptance_ratio: number; // 0.0-1.0
   rejection_reason?: string;
@@ -86,6 +90,9 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
     // recompute inspected_amount_ex_tax based on the parent's unit_price
     const parent = orderLines.find((l) => l.id === orderLineItemId);
     if (parent) {
+      // 親 PO 明細から品目名/仕様を引き継ぐ(検収書の行ごと品目名表示のため)。
+      next.item_name = parent.item_name;
+      next.spec = (parent as any).spec;
       next.inspected_amount_ex_tax = ceilFee(
         parent.unit_price,
         next.inspected_quantity,
