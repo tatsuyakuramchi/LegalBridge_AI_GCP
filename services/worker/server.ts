@@ -3942,6 +3942,20 @@ ${details}
     for (const c of conditions) {
       const condNo = Number(c?.condition_no);
       if (!Number.isFinite(condNo) || condNo < 1) continue;
+      // テリトリー / 言語 を別項目で保存し、表示用の合成ラベルを再計算する。
+      //   2項目が無い旧データはクライアントから来た region_language_label をそのまま使う。
+      const regionTerritory =
+        c.region_territory != null && String(c.region_territory).trim() !== ""
+          ? String(c.region_territory).trim()
+          : null;
+      const regionLanguage =
+        c.region_language != null && String(c.region_language).trim() !== ""
+          ? String(c.region_language).trim()
+          : null;
+      const regionLabel =
+        [regionTerritory, regionLanguage].filter(Boolean).join("・") ||
+        c.region_language_label ||
+        null;
       await query(
         `INSERT INTO capability_financial_conditions (
            capability_id, condition_no,
@@ -3949,8 +3963,9 @@ ${details}
            base_price_label, calc_period, calc_period_kind, calc_period_close_month,
            currency, formula_text, payment_terms, mg_amount, ag_amount,
            condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
+           region_territory, region_language,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, condition_no) DO UPDATE SET
            region_language_label   = EXCLUDED.region_language_label,
            calc_method             = EXCLUDED.calc_method,
@@ -3970,11 +3985,13 @@ ${details}
            subscription_cycle      = EXCLUDED.subscription_cycle,
            unit_amount             = EXCLUDED.unit_amount,
            guarantee_type          = EXCLUDED.guarantee_type,
+           region_territory        = EXCLUDED.region_territory,
+           region_language         = EXCLUDED.region_language,
            updated_at              = CURRENT_TIMESTAMP`,
         [
           capabilityId,
           condNo,
-          c.region_language_label || null,
+          regionLabel,
           c.calc_method || null,
           c.rate_pct != null && c.rate_pct !== "" ? Number(c.rate_pct) : null,
           c.base_price_label || null,
@@ -3996,6 +4013,8 @@ ${details}
           c.subscription_cycle || null,
           c.unit_amount != null && c.unit_amount !== "" ? Number(c.unit_amount) : null,
           c.guarantee_type || null,
+          regionTerritory,
+          regionLanguage,
         ]
       );
     }
@@ -11168,6 +11187,8 @@ ${details}
             const mappedConds = licenseItems.map((it: any, i: number) => ({
               condition_no: Number(it.line_no) || i + 1,
               condition_name: it.condition_name || it.item_name || null,
+              region_territory: it.region_territory || null,
+              region_language: it.region_language || null,
               region_language_label: it.region_language_label || null,
               calc_type: it.calc_type || null,
               // 利用許諾条件の calc_method は計算式タイプから導出(業務報酬の FIXED とは別)。

@@ -22,6 +22,8 @@ import { EmptyState } from "@/components/EmptyState";
 import {
   CALC_TYPE_OPTIONS,
   buildFormulaText,
+  composeRegionLabel,
+  readRegionParts,
   type CalcType,
 } from "@/src/components/document/FinancialConditionTable";
 
@@ -63,6 +65,9 @@ export type LineItem = {
   mg_amount?: number;
   ag_amount?: number;
   condition_name?: string;
+  // テリトリー(地域) / 言語 を別項目で保持。region_language_label は合成表示用。
+  region_territory?: string;
+  region_language?: string;
   region_language_label?: string;
   formula_text?: string;
   /**
@@ -430,6 +435,38 @@ export const LineItemTable: React.FC<Props> = ({
             (v) => update(idx, { condition_name: v }),
             "text",
             "例: 訳者印税 / 既存イラスト利用許諾"
+          )}
+        </label>
+        <label className="block">
+          <span className={labelCls}>テリトリー (任意)</span>
+          {cellInput(
+            readRegionParts(it).territory,
+            (v) => {
+              const language = readRegionParts(it).language;
+              update(idx, {
+                region_territory: v,
+                region_language: language,
+                region_language_label: composeRegionLabel(v, language),
+              });
+            },
+            "text",
+            "例: 国内 / 北米 / 全世界"
+          )}
+        </label>
+        <label className="block">
+          <span className={labelCls}>言語 (任意)</span>
+          {cellInput(
+            readRegionParts(it).language,
+            (v) => {
+              const territory = readRegionParts(it).territory;
+              update(idx, {
+                region_territory: territory,
+                region_language: v,
+                region_language_label: composeRegionLabel(territory, v),
+              });
+            },
+            "text",
+            "例: 日本語 / 英語 / 全言語"
           )}
         </label>
         <label className="col-span-2 block">
