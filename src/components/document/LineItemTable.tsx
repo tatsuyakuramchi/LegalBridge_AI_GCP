@@ -593,20 +593,31 @@ export const LineItemTable: React.FC<Props> = ({
 
   // 成果物帰属セレクト(発注者/受注者)。両ビュー共通。
   const ownershipSelect = (it: LineItem, idx: number) => (
-    <select
-      value={it.deliverable_ownership || "発注者"}
-      onChange={(e) =>
-        update(idx, {
-          deliverable_ownership: e.target.value as "発注者" | "受注者",
-        })
-      }
-      disabled={readOnly}
-      className={selCls}
-      title="成果物のIP帰属。受注者帰属は利用許諾料(金銭条件)として扱い、確定額に含めません。"
-    >
-      <option value="発注者">発注者帰属（業務委託）</option>
-      <option value="受注者">受注者帰属（利用許諾）</option>
-    </select>
+    <div className="flex flex-col gap-0.5">
+      <select
+        value={it.deliverable_ownership || "発注者"}
+        onChange={(e) =>
+          update(idx, {
+            deliverable_ownership: e.target.value as "発注者" | "受注者",
+          })
+        }
+        disabled={readOnly}
+        className={cn(
+          "w-full text-[11px] font-mono rounded-sm border px-2 py-1.5 cursor-pointer",
+          "focus:outline-none focus:ring-1 focus:ring-foreground/40 disabled:opacity-60",
+          it.deliverable_ownership === "受注者"
+            ? "border-amber-400 bg-amber-50 text-amber-800 font-semibold"
+            : "border-input bg-muted/50 text-foreground"
+        )}
+        title="成果物のIP帰属を切り替えます。受注者帰属は利用許諾料(金銭条件)として扱い、確定額には含めません。"
+      >
+        <option value="発注者">発注者帰属（業務委託）</option>
+        <option value="受注者">受注者帰属（利用許諾）</option>
+      </select>
+      <span className="text-[9px] font-mono text-muted-foreground/70">
+        ▼ 帰属を切替
+      </span>
+    </div>
   );
 
   // Phase 23.0.4: カード型レンダラ (lg 未満で使う)。
