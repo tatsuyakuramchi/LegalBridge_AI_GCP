@@ -11072,8 +11072,17 @@ ${details}
         // Phase 23: order_line_items → capability_line_items
         if (orderItemId && Array.isArray(formData.items) && formData.items.length > 0) {
           const taxRate = Number(formData.taxRate) || 10;
-          // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー。
-          const incomingLines = expandLinesWithSchedule(formData.items as Array<any>);
+          // 成果物帰属で振り分け: 発注者帰属=業務委託明細(capability_line_items),
+          //   受注者帰属=利用許諾料(capability_financial_conditions)。
+          const allFormItems = formData.items as Array<any>;
+          const ownerItems = allFormItems.filter(
+            (it) => it?.deliverable_ownership !== "受注者"
+          );
+          const licenseItems = allFormItems.filter(
+            (it) => it?.deliverable_ownership === "受注者"
+          );
+          // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー(発注者帰属のみ)。
+          const incomingLines = expandLinesWithSchedule(ownerItems);
           const keepNos = incomingLines
             .map((l, i) => Number(l.line_no) || i + 1)
             .filter((n) => n > 0);
@@ -11092,23 +11101,31 @@ ${details}
             const lineNo = Number(l.line_no) || i + 1;
             const unit = Number(l.unit_price) || 0;
             const qty = Number(l.quantity) || 0;
-            const lineAmt = calculateOrderLineAmount(unit, qty);
+            const ratePct = Number(l.rate_pct) || 0;
+            // ROYALTY は 単価×数量×料率%(切上げ)。フォーム計算値があればそれを優先。
+            const lineAmt =
+              l.amount_ex_tax != null && l.amount_ex_tax !== ""
+                ? Number(l.amount_ex_tax) || 0
+                : l.calc_method === "ROYALTY"
+                  ? Math.ceil((unit * qty * ratePct) / 100)
+                  : calculateOrderLineAmount(unit, qty);
             // Phase 13: calc_method + payment_terms 統一
             const payTerms = l.payment_terms || l.payment_method || null;
             const calcMethod = l.calc_method || "FIXED";
             await query(
               `INSERT INTO capability_line_items (
                  capability_id, line_no, item_name, spec,
-                 unit_price, quantity, amount_ex_tax,
+                 unit_price, quantity, amount_ex_tax, rate_pct,
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
                ON CONFLICT (capability_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
                  unit_price     = EXCLUDED.unit_price,
                  quantity       = EXCLUDED.quantity,
                  amount_ex_tax  = EXCLUDED.amount_ex_tax,
+                 rate_pct       = EXCLUDED.rate_pct,
                  calc_method    = EXCLUDED.calc_method,
                  payment_terms  = EXCLUDED.payment_terms,
                  payment_method = EXCLUDED.payment_method,
@@ -11123,6 +11140,7 @@ ${details}
                 unit,
                 qty,
                 lineAmt,
+                ratePct || null,
                 calcMethod,
                 payTerms,
                 payTerms, // legacy mirror
@@ -11132,7 +11150,37 @@ ${details}
             );
           }
           // Phase 23: recalculateOrderTotal → recalculateCapabilityTotal
+          //   (発注者帰属=確定額のみ。受注者帰属は line_items に入れていないため不算入。)
           await recalculateCapabilityTotal(orderItemId, taxRate);
+
+          // 受注者帰属(利用許諾料)を金銭条件へ振り分け → 利用許諾料計算書・分配に連動。
+          if (licenseItems.length > 0) {
+            const mappedConds = licenseItems.map((it: any, i: number) => ({
+              condition_no: Number(it.line_no) || i + 1,
+              condition_name: it.condition_name || it.item_name || null,
+              region_language_label: it.region_language_label || null,
+              calc_type: it.calc_type || null,
+              calc_method: it.calc_method || null,
+              rate_pct: it.rate_pct ?? null,
+              base_price_label: it.base_price_label || null,
+              fixed_kind: it.fixed_kind || null,
+              subscription_cycle: it.subscription_cycle || null,
+              unit_amount: it.unit_amount ?? null,
+              guarantee_type: it.guarantee_type || null,
+              mg_amount: it.mg_amount ?? 0,
+              ag_amount: it.ag_amount ?? 0,
+              formula_text: it.formula_text || null,
+              currency: "JPY",
+            }));
+            try {
+              await upsertCapabilityFinancialConditions(orderItemId, mappedConds);
+            } catch (condErr) {
+              console.warn(
+                "[deliverable_ownership] 受注者帰属→金銭条件 sync skipped:",
+                condErr
+              );
+            }
+          }
 
           // 方向(in/out)を明細にも反映(capability と揃える)。out は請求台帳へ自動取込。
           try {

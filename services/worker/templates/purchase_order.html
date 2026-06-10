@@ -367,6 +367,8 @@
     <tbody>
       {{#if items}}
       {{#each items}}
+      {{!-- 受注者帰属(利用許諾料)の行は業務委託明細に出さず、後段の「利用許諾条件」へ。 --}}
+      {{#unless (eq deliverable_ownership "受注者")}}
       {{!-- Phase 17n: 仕様の文章量に影響されず narrow 列が間延びしないよう、
            本行（数値・日付など）と仕様詳細行を分けて描画。 --}}
       {{!-- Phase 17n: spec か detailText があるときだけ detail-row を表示 --}}
@@ -459,6 +461,7 @@
         </td>
       </tr>
       {{/if}}
+      {{/unless}}
       {{/each}}
       {{else}}
       {{!-- 単一明細フォールバック (items[] が空のとき) — Phase 13: CALC_METHOD + PAYMENT_TERMS 統一 --}}
@@ -488,6 +491,37 @@
       </tr>
     </tbody>
   </table>
+
+  {{!-- 受注者帰属(利用許諾料)の条件。成果物のIPが受注者に帰属するため利用許諾料として扱い、
+       発注の確定額には含めない。利用許諾料計算書・分配に連動(worker 保存時に金銭条件へ振り分け)。 --}}
+  {{#if has_license_conditions}}
+  <div class="section-mark">■ 利用許諾条件（受注者帰属・確定額外）</div>
+  <table class="items">
+    <thead>
+      <tr>
+        <th style="width:4%;">#</th>
+        <th style="width:26%;">条件名称 / 区分</th>
+        <th style="width:34%;">計算式</th>
+        <th style="width:18%;">料率 / 基準</th>
+        <th style="width:18%;">MG / AG</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      {{#if (eq deliverable_ownership "受注者")}}
+      <tr>
+        <td class="center">{{or line_no (index1 @index)}}</td>
+        <td>{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+        <td>{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+        <td class="right">{{#if rate_pct}}{{rate_pct}}%{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">{{base_price_label}}</div>{{/if}}</td>
+        <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
+      </tr>
+      {{/if}}
+      {{/each}}
+    </tbody>
+  </table>
+  <div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は成果物のIPが受注者に帰属するための利用許諾料条件です。発注の確定額（業務委託小計）には含まれず、別途、利用許諾料計算書により算定・支払われます。</div>
+  {{/if}}
 
   {{!-- Phase 22.21.56: その他手数料 (税抜・合計に加算)。コーディネート費・
        振込手数料 等、業務委託報酬とは別の手数料項目。経費 (税込・別精算) とは
