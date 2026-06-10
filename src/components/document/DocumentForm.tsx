@@ -31,6 +31,7 @@ import {
   UnifiedContractPicker,
   type ContractDetail,
 } from './UnifiedContractPicker';
+import { FinancialConditionPicker } from './FinancialConditionPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
@@ -85,6 +86,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   に載っていないケース (新規 import 直後 等) のために、最後に選んだ detail を保持。
   //   selectedContract の lookup で fallback として使う。
   const [royaltyPickedDetail, setRoyaltyPickedDetail] = useState<any>(null);
+  // 条件一覧ピッカーで条件を直接選んだとき、契約読込(financial_conditions)後に
+  //   その条件を確定するための pending id。0 のとき無効。
+  const [pendingRoyaltyCondId, setPendingRoyaltyCondId] = useState<number>(0);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -628,6 +632,44 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     formData.isReducedTax,
     formData.expensesTotalIncTax,
   ]);
+
+  // 条件一覧ピッカーで条件を直接選んだとき、契約の financial_conditions が読み込まれた
+  //   タイミングで、その条件を確定(capability_financial_condition_id + 計算系を auto-fill)する。
+  useEffect(() => {
+    if (templateId !== 'royalty_statement' || !pendingRoyaltyCondId) return;
+    const fcs = Array.isArray(formData.financial_conditions)
+      ? (formData.financial_conditions as any[])
+      : [];
+    const fc = fcs.find((c) => Number(c.id) === pendingRoyaltyCondId);
+    if (!fc) return; // まだ契約条件が読み込まれていない
+    if (Number(formData.capability_financial_condition_id) === pendingRoyaltyCondId) {
+      setPendingRoyaltyCondId(0);
+      return;
+    }
+    const calcType =
+      fc.calc_method === 'SUBSCRIPTION'
+        ? 'sublicense'
+        : fc.calc_method === 'FIXED'
+        ? 'sales'
+        : 'manufacturing';
+    setFormData({
+      ...formData,
+      capability_financial_condition_id: pendingRoyaltyCondId,
+      license_financial_condition_id: 0,
+      calcType,
+      royaltyRatePct: fc.rate_pct != null ? String(fc.rate_pct) : '',
+      mgAmount:
+        fc.mg_amount != null && Number(fc.mg_amount) > 0 ? String(fc.mg_amount) : '',
+      agAmount:
+        fc.ag_amount != null && Number(fc.ag_amount) > 0 ? String(fc.ag_amount) : '',
+      currency: fc.currency || formData.currency || 'JPY',
+      paymentConditionSummary:
+        fc.payment_terms || formData.paymentConditionSummary || '',
+      料率: fc.rate_pct != null ? String(fc.rate_pct) : formData.料率,
+    });
+    setPendingRoyaltyCondId(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, pendingRoyaltyCondId, formData.financial_conditions]);
 
   // Phase 22.21.101: royalty_statement で contract master を選択済みなら、
   //   PDF ヘッダ用フィールド (linked_contract_number / LICENSOR_SUFFIX /
@@ -3027,6 +3069,27 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 onClear={() => {
                   setRoyaltyPickedDetail(null);
                   selectMasterContract(0);
+                }}
+              />
+              {/* 条件一覧から直接選ぶ（発注書由来の印税も同じ土俵で選べる）。 */}
+              <div className="text-[10px] font-mono text-muted-foreground">
+                — または —
+              </div>
+              <FinancialConditionPicker
+                currentConditionId={selectedConditionId || undefined}
+                label="利用許諾条件（印税）を一覧から選ぶ"
+                onPick={(detail, conditionId) => {
+                  setRoyaltyPickedDetail(detail);
+                  selectMasterContract(detail.contract.id, detail);
+                  // financial_conditions 読込後に effect で条件を確定。
+                  setPendingRoyaltyCondId(conditionId);
+                }}
+                onClear={() => {
+                  setPendingRoyaltyCondId(0);
+                  setFormData({
+                    ...formData,
+                    capability_financial_condition_id: 0,
+                  });
                 }}
               />
               {licenseMasters.length === 0 && (
