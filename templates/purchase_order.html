@@ -367,7 +367,6 @@
     <tbody>
       {{#if items}}
       {{#each items}}
-      {{#unless (eq deliverable_ownership "受注者")}}
       {{!-- Phase 17n: 仕様の文章量に影響されず narrow 列が間延びしないよう、
            本行（数値・日付など）と仕様詳細行を分けて描画。 --}}
       {{!-- Phase 17n: spec か detailText があるときだけ detail-row を表示 --}}
@@ -377,6 +376,12 @@
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
         </td>
+        {{#if (eq deliverable_ownership "受注者")}}
+        <td colspan="6" style="font-size:8.5pt; color:#92400e; vertical-align:middle;">
+          <span class="pay-method-badge" style="background:#fde68a; color:#92400e;">利用許諾</span>
+          委託報酬は利用許諾料に含む（下段「利用許諾条件」参照{{#if condition_name}}：{{condition_name}}{{/if}}）
+        </td>
+        {{else}}
         <td class="center">
           {{!-- Phase 13: 計算方式バッジ + 支払条件
                Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
@@ -424,6 +429,7 @@
         <td class="right">{{or quantity qty}}</td>
         <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
         <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
+        {{/if}}
       </tr>
       {{#if (or spec detailText)}}
       {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
@@ -441,7 +447,6 @@
         </td>
       </tr>
       {{/if}}
-      {{/unless}}
       {{/each}}
       {{else}}
       {{!-- 単一明細フォールバック (items[] が空のとき) — Phase 13: CALC_METHOD + PAYMENT_TERMS 統一 --}}
