@@ -21,7 +21,6 @@ import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
 import {
   CALC_TYPE_OPTIONS,
-  calcMethodFromType,
   buildFormulaText,
   type CalcType,
 } from "@/src/components/document/FinancialConditionTable";
@@ -316,13 +315,13 @@ export const LineItemTable: React.FC<Props> = ({
     ]);
   };
 
-  // 受注者帰属(利用許諾料)の行で、金銭条件フィールド変更時に
-  //   calc_method(互換) と計算式テキストを再計算する。
+  // 受注者帰属の利用許諾条件フィールド変更時の再計算。
+  //   ※ 業務報酬の calc_method(=FIXED) は変更しない。料率(計算式タイプ)は利用許諾条件側の
+  //     概念で、業務明細の計算方式表示や業務報酬の金額には影響させない。
   const recalcCond = (idx: number, patch: Partial<LineItem>) => {
     const merged = { ...items[idx], ...patch };
     update(idx, {
       ...patch,
-      calc_method: calcMethodFromType(merged.calc_type) || merged.calc_method,
       formula_text: buildFormulaText(merged as any),
     });
   };

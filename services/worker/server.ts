@@ -11159,7 +11159,16 @@ ${details}
               condition_name: it.condition_name || it.item_name || null,
               region_language_label: it.region_language_label || null,
               calc_type: it.calc_type || null,
-              calc_method: it.calc_method || null,
+              // 利用許諾条件の calc_method は計算式タイプから導出(業務報酬の FIXED とは別)。
+              calc_method:
+                it.calc_type === "FIXED"
+                  ? "FIXED"
+                  : it.calc_type === "SUBSCRIPTION"
+                    ? "SUBSCRIPTION"
+                    : it.calc_type === "BASE_QTY_RATE" ||
+                        it.calc_type === "BASE_RATE"
+                      ? "ROYALTY"
+                      : it.calc_method || null,
               rate_pct: it.rate_pct ?? null,
               base_price_label: it.base_price_label || null,
               fixed_kind: it.fixed_kind || null,
