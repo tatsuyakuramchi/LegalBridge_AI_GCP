@@ -28,6 +28,11 @@ export type FinancialCondition = {
   condition_no: number; // 1=自社製造, 2=サブライセンス, 3=プロダクトアウト, ...
   // 任意の条件名称 (PDF 見出しに反映)。空なら condition_no ベースの既定文。
   condition_name?: string;
+  // テリトリー(地域)と言語を別項目で保持。
+  region_territory?: string; // 例: 国内 / 北米 / 全世界
+  region_language?: string; // 例: 日本語 / 英語 / 全言語
+  // 後方互換・表示用の合成ラベル。region_territory・region_language から自動生成。
+  //   旧データ(2項目が無い行)はこのラベルを '・' で分割してフォールバックする。
   region_language_label?: string; // 例: 国内・日本語
   // 構造化した計算式タイプ。calc_method は互換のため calc_type から自動導出。
   calc_type?: CalcType;
@@ -127,6 +132,43 @@ export function buildFormulaText(c: Partial<FinancialCondition>): string {
   }
 }
 
+// テリトリー + 言語 → 合成ラベル ("国内・日本語")。空項目は除外。
+export function composeRegionLabel(territory?: string, language?: string): string {
+  return [territory, language]
+    .map((s) => (s == null ? "" : String(s).trim()))
+    .filter(Boolean)
+    .join("・");
+}
+
+// 合成ラベル "国内・日本語" を テリトリー / 言語 に分割するフォールバック。
+//   最初の '・' で分割し、前半=テリトリー、後半=言語とする。
+//   '・' が無い場合は全体をテリトリー扱い。
+export function splitRegionLabel(label?: string): {
+  territory: string;
+  language: string;
+} {
+  const s = (label || "").trim();
+  if (!s) return { territory: "", language: "" };
+  const idx = s.indexOf("・");
+  if (idx < 0) return { territory: s, language: "" };
+  return {
+    territory: s.slice(0, idx).trim(),
+    language: s.slice(idx + 1).trim(),
+  };
+}
+
+// 構造化2項目が無い行は合成ラベルから補完して読み出す。
+export function readRegionParts(c: {
+  region_territory?: string;
+  region_language?: string;
+  region_language_label?: string;
+}): { territory: string; language: string } {
+  const t = (c.region_territory || "").trim();
+  const l = (c.region_language || "").trim();
+  if (t || l) return { territory: t, language: l };
+  return splitRegionLabel(c.region_language_label);
+}
+
 const isBaseRate = (t?: CalcType) =>
   t === "BASE_QTY_RATE" || t === "BASE_RATE";
 
@@ -206,6 +248,19 @@ export const FinancialConditionTable: React.FC<Props> = ({
     const next = conditions.slice();
     next[idx] = { ...next[idx], ...patch };
     onChange(next);
+  };
+
+  // テリトリー / 言語 のいずれかを更新し、合成ラベル(region_language_label)も
+  //   自動再計算する。古い行で構造化2項目が未設定なら label から補完して合成。
+  const updateRegion = (idx: number, patch: { region_territory?: string; region_language?: string }) => {
+    const cur = readRegionParts(conditions[idx]);
+    const territory = patch.region_territory ?? cur.territory;
+    const language = patch.region_language ?? cur.language;
+    update(idx, {
+      region_territory: territory,
+      region_language: language,
+      region_language_label: composeRegionLabel(territory, language),
+    });
   };
 
   // 構造化フィールド変更時: calc_method(互換) と計算式テキストを自動再計算して反映。
@@ -302,13 +357,25 @@ export const FinancialConditionTable: React.FC<Props> = ({
                   />
                   <input
                     type="text"
-                    value={c.region_language_label || ""}
+                    value={readRegionParts(c).territory}
                     onChange={(e) =>
-                      update(idx, { region_language_label: e.target.value })
+                      updateRegion(idx, { region_territory: e.target.value })
                     }
-                    placeholder="地域・言語ラベル (例: 国内・日本語)"
+                    placeholder="テリトリー (例: 国内)"
+                    title="許諾テリトリー(地域)。例: 国内 / 北米 / 全世界"
                     disabled={readOnly}
-                    className="flex-1 min-w-[120px] text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+                    className="flex-1 min-w-[90px] text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+                  />
+                  <input
+                    type="text"
+                    value={readRegionParts(c).language}
+                    onChange={(e) =>
+                      updateRegion(idx, { region_language: e.target.value })
+                    }
+                    placeholder="言語 (例: 日本語)"
+                    title="許諾言語。例: 日本語 / 英語 / 全言語"
+                    disabled={readOnly}
+                    className="flex-1 min-w-[90px] text-[11px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
                   />
                 </div>
                 {!readOnly && (

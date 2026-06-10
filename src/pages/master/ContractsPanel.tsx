@@ -29,6 +29,8 @@ import {
   CALC_TYPE_OPTIONS,
   calcMethodFromType,
   buildFormulaText,
+  composeRegionLabel,
+  readRegionParts,
 } from "@/src/components/document/FinancialConditionTable"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
@@ -1303,6 +1305,8 @@ function FinancialConditionsEditor({
         unit_amount: "",
         fixed_kind: "LUMP",
         subscription_cycle: "MONTHLY",
+        region_territory: "",
+        region_language: "",
         region_language_label: "",
         base_price_label: "上代",
         calc_period: "",
@@ -1519,14 +1523,40 @@ function FinancialConditionsEditor({
                 }
               />
             </div>
-            <div className="col-span-2 space-y-0.5">
-              <Label className="text-[10px]">地域・言語ラベル</Label>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">テリトリー</Label>
               <Input
-                value={c.region_language_label || ""}
-                onChange={(e) =>
-                  update(idx, { region_language_label: e.target.value })
-                }
-                placeholder="例: 国内・日本語"
+                value={readRegionParts(c).territory}
+                onChange={(e) => {
+                  const language = readRegionParts(c).language
+                  update(idx, {
+                    region_territory: e.target.value,
+                    region_language: language,
+                    region_language_label: composeRegionLabel(
+                      e.target.value,
+                      language
+                    ),
+                  })
+                }}
+                placeholder="例: 国内 / 北米 / 全世界"
+              />
+            </div>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">言語</Label>
+              <Input
+                value={readRegionParts(c).language}
+                onChange={(e) => {
+                  const territory = readRegionParts(c).territory
+                  update(idx, {
+                    region_territory: territory,
+                    region_language: e.target.value,
+                    region_language_label: composeRegionLabel(
+                      territory,
+                      e.target.value
+                    ),
+                  })
+                }}
+                placeholder="例: 日本語 / 英語 / 全言語"
               />
             </div>
             {/* MG/AG 保証 (①②型のみ・排他)。MG=floor(mg_amount), AG=前払い(ag_amount)。 */}
