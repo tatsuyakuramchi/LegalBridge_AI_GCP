@@ -75,16 +75,35 @@ export function registerFormReadRoutes(
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          const lines = await query(
-            `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, rate_pct, calc_method, payment_terms,
-                    payment_method, payment_date, delivery_date,
-                    cycle, term_start, term_end, billing_day
-               FROM capability_line_items
-              WHERE capability_id = $1
-              ORDER BY line_no ASC`,
-            [orderItemId]
-          );
+          // rate_pct 列が未マイグレーションの環境でも 500 にしないよう 2 段 fallback。
+          let lines: any;
+          try {
+            lines = await query(
+              `SELECT line_no, item_name, spec, unit_price, quantity,
+                      amount_ex_tax, rate_pct, calc_method, payment_terms,
+                      payment_method, payment_date, delivery_date,
+                      cycle, term_start, term_end, billing_day
+                 FROM capability_line_items
+                WHERE capability_id = $1
+                ORDER BY line_no ASC`,
+              [orderItemId]
+            );
+          } catch (colErr: any) {
+            if (colErr && colErr.code === "42703") {
+              lines = await query(
+                `SELECT line_no, item_name, spec, unit_price, quantity,
+                        amount_ex_tax, calc_method, payment_terms,
+                        payment_method, payment_date, delivery_date,
+                        cycle, term_start, term_end, billing_day
+                   FROM capability_line_items
+                  WHERE capability_id = $1
+                  ORDER BY line_no ASC`,
+                [orderItemId]
+              );
+            } else {
+              throw colErr;
+            }
+          }
           context["items"] = lines.rows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
