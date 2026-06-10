@@ -329,7 +329,7 @@
               {{/if}}
             </td>
             <td class="center">{{formatDate (or delivery_date ../deliveredAt)}}</td>
-            <td class="right">{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}</td>
+            <td class="right">{{#if (gt (or inspected_amount_ex_tax amount_ex_tax) 0)}}{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}{{else}}<span style="font-size:8pt;color:#92400e;">利用許諾料に含む</span>{{/if}}</td>
           </tr>
         {{/each}}
       {{else}}
