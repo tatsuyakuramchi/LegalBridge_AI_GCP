@@ -133,6 +133,9 @@ interface Props {
   onClear: () => void;
   /** ボタンのラベル (例: "親PO/契約を選ぶ", "ライセンス契約を選ぶ") */
   label?: string;
+  /** true のとき、金銭条件(condition_count>0)を持つ契約のみ候補に出す。
+      利用許諾料計算書で「条件を持つ発注書/契約」だけを選ばせるのに使う。 */
+  requireConditions?: boolean;
   /** 指定すると、その契約 ID を自動で詳細取得して onPick する(ディープリンク用)。
       未検収発注書インボックス → 検収書作成 のように親POを事前選択して開くのに使う。 */
   autoPickContractId?: number;
@@ -168,6 +171,7 @@ export const UnifiedContractPicker: React.FC<Props> = ({
   onClear,
   label,
   autoPickContractId,
+  requireConditions,
 }) => {
   const [open, setOpen] = React.useState(false);
   const [q, setQ] = React.useState("");
@@ -307,8 +311,10 @@ export const UnifiedContractPicker: React.FC<Props> = ({
     }
   };
 
-  const filteredList = list.filter((it) =>
-    acceptableRecordTypes.includes(it.record_type)
+  const filteredList = list.filter(
+    (it) =>
+      acceptableRecordTypes.includes(it.record_type) &&
+      (!requireConditions || (Number(it.condition_count) || 0) > 0)
   );
 
   return (

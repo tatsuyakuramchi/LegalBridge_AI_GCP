@@ -3006,14 +3006,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   "individual_contract",
                   "standalone_contract",
                   "publication_condition",
+                  // 受注者帰属の利用許諾(印税)を持つ発注書も計算対象にできるよう含める。
+                  "purchase_order",
                 ]}
-                categoryFilter={["license", "publication"]}
+                categoryFilter={["license", "publication", "service"]}
+                // 金銭条件(印税率)を持つ契約のみ候補表示(発注書の大量表示を避ける)。
+                requireConditions={true}
                 currentContractId={selectedContractId || undefined}
                 hasParent={selectedContractId > 0}
                 label={
                   selectedContractId > 0
                     ? "契約・条件を切り替える"
-                    : "ライセンス契約／出版条件を選ぶ"
+                    : "ライセンス契約／出版条件／印税付き発注書を選ぶ"
                 }
                 onPick={(detail) => {
                   // Phase 23.0.4: detail を pickedDetail state に保存。

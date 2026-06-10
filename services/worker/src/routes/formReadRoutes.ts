@@ -171,6 +171,7 @@ export function registerFormReadRoutes(
                         payment_method, payment_date, delivery_date
                    FROM capability_line_items
                   WHERE capability_id = $1
+                    AND COALESCE(amount_ex_tax, 0) > 0
                   ORDER BY line_no ASC`,
                 [poId]
               );
