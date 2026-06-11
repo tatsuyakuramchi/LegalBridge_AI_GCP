@@ -45,6 +45,50 @@ import {
 // B5b: プレビュー PDF をローカル生成(worker proxy 撤去)。chromium 同梱(Dockerfile)。
 import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
 
+/**
+ * Phase E-2: 検収フォーム向け発注明細を coverage-gated dual-read で取得。
+ *   condition_lines が当該 capability の line_item 由来明細を完全カバー(件数一致)
+ *   する場合のみ condition_lines(faithful superset) から読む。1件でも欠ければ /
+ *   未作成なら capability_line_items にフォールバック → 無回帰。
+ *   id = source_line_item_id (= 旧 capability_line_item_id) なので、
+ *   delivery_line_items 経由の検収累計(inspMap)参照もそのまま機能する。
+ */
+async function readCapabilityLinesForInspectionDisplay(
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT source_line_item_id AS id, line_no, subject AS item_name, spec,
+              unit_price, quantity, amount_ex_tax, calc_method, payment_terms,
+              payment_method, payment_date, delivery_date,
+              cycle, term_start, term_end, billing_day
+         FROM condition_lines
+        WHERE capability_id = $1 AND source_line_item_id IS NOT NULL
+        ORDER BY line_no ASC`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_line_items WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  const li = await query(
+    `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax,
+            calc_method, payment_terms, payment_method, payment_date, delivery_date,
+            cycle, term_start, term_end, billing_day
+       FROM capability_line_items
+      WHERE capability_id = $1
+      ORDER BY line_no ASC`,
+    [capabilityId]
+  );
+  return li.rows;
+}
+
 // helper は起動時 1 回、partial は DB から遅延ロードして専用インスタンスに登録。
 const previewHb = Handlebars.create();
 registerRenderHelpers(previewHb);
@@ -1570,16 +1614,10 @@ async function startServer() {
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          const lines = await query(
-            `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, calc_method, payment_terms,
-                    payment_method, payment_date, delivery_date,
-                    cycle, term_start, term_end, billing_day
-               FROM capability_line_items
-              WHERE capability_id = $1
-              ORDER BY line_no ASC`,
-            [orderItemId]
-          );
+          // Phase E-2: condition_lines 優先の coverage-gated dual-read
+          const lines = {
+            rows: await readCapabilityLinesForInspectionDisplay(orderItemId),
+          };
           context["items"] = lines.rows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
@@ -1639,15 +1677,10 @@ async function startServer() {
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              const lines = await query(
-                `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                        amount_ex_tax, calc_method, payment_terms,
-                        payment_method, payment_date, delivery_date
-                   FROM capability_line_items
-                  WHERE capability_id = $1
-                  ORDER BY line_no ASC`,
-                [poId]
-              );
+              // Phase E-2: condition_lines 優先の coverage-gated dual-read
+              const lines = {
+                rows: await readCapabilityLinesForInspectionDisplay(poId),
+              };
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
