@@ -704,6 +704,41 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     formData.expensesTotalIncTax,
   ]);
 
+  // 検収書: 受注者帰属で業務報酬0(=利用許諾料に含む)の成果物を検収対象に自動取り込み。
+  //   Backlog 親PO自動検出(form-context)経路でも自動で載るようにする。
+  //   delivery_line_items が空のとき(初期)だけ取り込み、ユーザーの手動削除とは競合しない
+  //   (依存は order_lines_for_inspection のみなので、削除後に再追加されない)。
+  useEffect(() => {
+    if (!templateId.startsWith('inspection_certificate')) return;
+    const orderLines = Array.isArray(formData.order_lines_for_inspection)
+      ? (formData.order_lines_for_inspection as any[])
+      : [];
+    if (orderLines.length === 0) return;
+    const existing = Array.isArray(formData.delivery_line_items)
+      ? (formData.delivery_line_items as any[])
+      : [];
+    if (existing.length > 0) return; // 既に検収入力があれば自動取込しない
+    const licenseZero = orderLines.filter(
+      (l: any) =>
+        l?.deliverable_ownership === '受注者' &&
+        (Number(l?.amount_ex_tax) || 0) === 0
+    );
+    if (licenseZero.length === 0) return;
+    setFormData({
+      ...formData,
+      delivery_line_items: licenseZero.map((l: any) => ({
+        order_line_item_id: Number(l.id),
+        item_name: l.item_name || '',
+        spec: l.spec || '',
+        inspected_quantity: Number(l.quantity) || 1,
+        acceptance_ratio: 1.0,
+        inspected_amount_ex_tax: 0,
+        delivery_date: l.delivery_date || undefined,
+      })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.order_lines_for_inspection]);
+
   // 条件一覧ピッカーで条件を直接選んだとき、契約の financial_conditions が読み込まれた
   //   タイミングで、その条件を確定(capability_financial_condition_id + 計算系を auto-fill)する。
   useEffect(() => {
@@ -2463,6 +2498,24 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               const todayIso = new Date().toISOString().slice(0, 10);
               const firstLine = detail.line_items?.[0];
               const prog = detail.delivery_progress;
+              // 受注者帰属で業務報酬0(=利用許諾料に含む)の成果物は、検収数量を
+              //   発注数量で自動セットして検収対象に自動取り込みする(手入力不要)。
+              //   金額は0のまま → 検収書に「利用許諾料に含む」で表示される。
+              const autoLicenseLines = ((detail.line_items as any[]) || [])
+                .filter(
+                  (l: any) =>
+                    l?.deliverable_ownership === "受注者" &&
+                    (Number(l?.amount_ex_tax) || 0) === 0
+                )
+                .map((l: any) => ({
+                  order_line_item_id: Number(l.id),
+                  item_name: l.item_name || "",
+                  spec: l.spec || "",
+                  inspected_quantity: Number(l.quantity) || 1,
+                  acceptance_ratio: 1.0,
+                  inspected_amount_ex_tax: 0,
+                  delivery_date: l.delivery_date || undefined,
+                }));
 
               setFormData({
                 ...formData,
@@ -2530,7 +2583,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   accountHolder:
                     formData.accountHolder || v.account_holder_kana || "",
                 }),
-                delivery_line_items: [],
+                // 利用許諾料に含む(0円)成果物は自動で検収対象に取り込む。
+                delivery_line_items: autoLicenseLines,
                 deliveredAmountStr: "",
                 po_expenses: detail.expenses || [],
                 selectedExpenseLineNos: [],
