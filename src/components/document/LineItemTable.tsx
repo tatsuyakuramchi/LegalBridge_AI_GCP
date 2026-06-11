@@ -19,13 +19,7 @@ import React from "react";
 import { Plus, Trash2, Maximize2, X, Repeat, Settings } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { EmptyState } from "@/components/EmptyState";
-import {
-  CALC_TYPE_OPTIONS,
-  buildFormulaText,
-  composeRegionLabel,
-  readRegionParts,
-  type CalcType,
-} from "@/src/components/document/FinancialConditionTable";
+import { type CalcType } from "@/src/components/document/FinancialConditionTable";
 
 export type LineItem = {
   line_no?: number;
@@ -320,19 +314,6 @@ export const LineItemTable: React.FC<Props> = ({
     ]);
   };
 
-  // 受注者帰属の利用許諾条件フィールド変更時の再計算。
-  //   ※ 業務報酬の calc_method(=FIXED) は変更しない。料率(計算式タイプ)は利用許諾条件側の
-  //     概念で、業務明細の計算方式表示や業務報酬の金額には影響させない。
-  const recalcCond = (idx: number, patch: Partial<LineItem>) => {
-    const merged = { ...items[idx], ...patch };
-    update(idx, {
-      ...patch,
-      formula_text: buildFormulaText(merged as any),
-    });
-  };
-  const isBaseRateLI = (t?: CalcType) =>
-    t === "BASE_QTY_RATE" || t === "BASE_RATE";
-
   const removeRow = (idx: number) => {
     const next = items
       .filter((_, i) => i !== idx)
@@ -420,223 +401,18 @@ export const LineItemTable: React.FC<Props> = ({
   // 受注者帰属(利用許諾料)の行の金銭条件入力。カード/テーブル両ビューで共通利用。
   const labelCls =
     "text-[10px] font-mono text-muted-foreground block mb-1";
-  const selCls =
-    "w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground disabled:opacity-60";
+  //   利用許諾条件そのもの (計算式・料率・テリトリー等) は明細では持たず、
+  //   発注書フォームの「利用許諾条件（共通）」セクションで一括定義する。
+  //   この明細は「受注者帰属＝共通利用許諾の対象」という選択を表すのみ。
   const renderLicenseFields = (it: LineItem, idx: number) => (
-    <div className="rounded-sm border border-amber-300/60 bg-amber-50/30 p-2 space-y-2">
+    <div className="rounded-sm border border-amber-300/60 bg-amber-50/30 p-2 space-y-1">
       <div className="text-[10px] font-mono font-bold text-amber-700">
-        利用許諾条件（受注者帰属）— 確定額には含めません
+        利用許諾の対象（受注者帰属）— 確定額には含めません
       </div>
-      <div className="grid grid-cols-2 gap-2">
-        <label className="col-span-2 block">
-          <span className={labelCls}>条件名称 (任意)</span>
-          {cellInput(
-            it.condition_name,
-            (v) => update(idx, { condition_name: v }),
-            "text",
-            "例: 訳者印税 / 既存イラスト利用許諾"
-          )}
-        </label>
-        <label className="block">
-          <span className={labelCls}>テリトリー (任意)</span>
-          {cellInput(
-            readRegionParts(it).territory,
-            (v) => {
-              const language = readRegionParts(it).language;
-              update(idx, {
-                region_territory: v,
-                region_language: language,
-                region_language_label: composeRegionLabel(v, language),
-              });
-            },
-            "text",
-            "例: 国内 / 北米 / 全世界"
-          )}
-        </label>
-        <label className="block">
-          <span className={labelCls}>言語 (任意)</span>
-          {cellInput(
-            readRegionParts(it).language,
-            (v) => {
-              const territory = readRegionParts(it).territory;
-              update(idx, {
-                region_territory: territory,
-                region_language: v,
-                region_language_label: composeRegionLabel(territory, v),
-              });
-            },
-            "text",
-            "例: 日本語 / 英語 / 全言語"
-          )}
-        </label>
-        <label className="col-span-2 block">
-          <span className={labelCls}>支払条件 (任意)</span>
-          {cellInput(
-            it.payment_terms,
-            (v) => update(idx, { payment_terms: v }),
-            "text",
-            "例: 半期締め翌月末払い / 検収後30日以内"
-          )}
-          <span className="text-[9px] font-mono text-muted-foreground/70 block mt-0.5">
-            ※ 利用許諾料計算書の「支払条件」に引用されます。
-          </span>
-        </label>
-        <label className="block">
-          <span className={labelCls}>計算式タイプ</span>
-          <select
-            value={it.calc_type || ""}
-            onChange={(e) =>
-              recalcCond(idx, {
-                calc_type: (e.target.value || undefined) as CalcType | undefined,
-              })
-            }
-            disabled={readOnly}
-            className={selCls}
-          >
-            <option value="">— 選択 —</option>
-            {CALC_TYPE_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        {isBaseRateLI(it.calc_type) && (
-          <label className="block">
-            <span className={labelCls}>料率 (%)</span>
-            {cellInput(
-              it.rate_pct,
-              (v) => recalcCond(idx, { rate_pct: Number(v) || 0 }),
-              "number",
-              "例: 8.0"
-            )}
-          </label>
-        )}
-        {isBaseRateLI(it.calc_type) && (
-          <label className="col-span-2 block">
-            <span className={labelCls}>基準価格ラベル</span>
-            {cellInput(
-              it.base_price_label,
-              (v) => recalcCond(idx, { base_price_label: v }),
-              "text",
-              "例: 税抜定価 / 受領額"
-            )}
-          </label>
-        )}
-        {it.calc_type === "FIXED" && (
-          <>
-            <label className="block">
-              <span className={labelCls}>支払区分</span>
-              <select
-                value={it.fixed_kind || "LUMP"}
-                onChange={(e) =>
-                  recalcCond(idx, {
-                    fixed_kind: e.target.value as "LUMP" | "INSTALLMENT",
-                  })
-                }
-                disabled={readOnly}
-                className={selCls}
-              >
-                <option value="LUMP">一括</option>
-                <option value="INSTALLMENT">分割</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className={labelCls}>固定額</span>
-              {cellInput(
-                it.unit_amount,
-                (v) => recalcCond(idx, { unit_amount: Number(v) || 0 }),
-                "number",
-                "0"
-              )}
-            </label>
-          </>
-        )}
-        {it.calc_type === "SUBSCRIPTION" && (
-          <>
-            <label className="block">
-              <span className={labelCls}>課金サイクル</span>
-              <select
-                value={it.subscription_cycle || "MONTHLY"}
-                onChange={(e) =>
-                  recalcCond(idx, {
-                    subscription_cycle: e.target.value as "MONTHLY" | "ANNUAL",
-                  })
-                }
-                disabled={readOnly}
-                className={selCls}
-              >
-                <option value="MONTHLY">月払い</option>
-                <option value="ANNUAL">年払い</option>
-              </select>
-            </label>
-            <label className="block">
-              <span className={labelCls}>単価</span>
-              {cellInput(
-                it.unit_amount,
-                (v) => recalcCond(idx, { unit_amount: Number(v) || 0 }),
-                "number",
-                "0"
-              )}
-            </label>
-          </>
-        )}
-        {isBaseRateLI(it.calc_type) && (
-          <>
-            <label className="block">
-              <span className={labelCls}>保証 (MG/AG)</span>
-              <select
-                value={it.guarantee_type || "NONE"}
-                onChange={(e) => {
-                  const g = e.target.value as "NONE" | "MG" | "AG";
-                  if (g === "MG")
-                    update(idx, { guarantee_type: "MG", ag_amount: 0 });
-                  else if (g === "AG")
-                    update(idx, { guarantee_type: "AG", mg_amount: 0 });
-                  else
-                    update(idx, {
-                      guarantee_type: "NONE",
-                      mg_amount: 0,
-                      ag_amount: 0,
-                    });
-                }}
-                disabled={readOnly}
-                className={selCls}
-              >
-                <option value="NONE">なし</option>
-                <option value="MG">MG (最低保証)</option>
-                <option value="AG">AG (前払い保証)</option>
-              </select>
-            </label>
-            {(it.guarantee_type === "MG" || it.guarantee_type === "AG") && (
-              <label className="block">
-                <span className={labelCls}>
-                  {it.guarantee_type === "AG" ? "AG 額" : "MG 額"}
-                </span>
-                {cellInput(
-                  it.guarantee_type === "AG" ? it.ag_amount : it.mg_amount,
-                  (v) =>
-                    update(
-                      idx,
-                      it.guarantee_type === "AG"
-                        ? { ag_amount: Number(v) || 0 }
-                        : { mg_amount: Number(v) || 0 }
-                    ),
-                  "number",
-                  "0"
-                )}
-              </label>
-            )}
-          </>
-        )}
-      </div>
-      {it.formula_text && (
-        <div className="text-[10px] font-mono text-muted-foreground/80">
-          計算式: {it.formula_text}
-        </div>
-      )}
-      <div className="text-[10px] font-mono text-amber-700/80">
-        ※ 保存時に「利用許諾条件」へ振り分け、利用許諾料計算書・分配に連動します。
+      <div className="text-[10px] font-mono text-amber-700/80 leading-relaxed">
+        この成果物は<strong>共通の利用許諾条件</strong>の対象です。料率・基準価格・
+        テリトリー等の条件は、フォーム下部の<strong>「利用許諾条件（共通）」</strong>
+        セクションで定義してください（適用範囲にこの明細が自動で列挙されます）。
       </div>
     </div>
   );

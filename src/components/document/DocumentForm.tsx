@@ -23,6 +23,7 @@ import {
 } from './DeliveryLineItemTable';
 import {
   FinancialConditionTable,
+  calcMethodFromType,
   type FinancialCondition,
 } from './FinancialConditionTable';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
@@ -585,6 +586,65 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, formData.items]);
+
+  // 発注書: 受注者帰属の明細を「共通の利用許諾条件」(formData.financial_conditions)
+  //   に紐づける。条件が無ければ1本シードし、適用範囲(applies_scope)を受注者帰属
+  //   明細名から自動補完する。旧 per-line 条件を持つ既存発注書は、最初の受注者明細の
+  //   条件フィールドから移行する(後方互換)。
+  useEffect(() => {
+    if (templateId !== 'purchase_order' && templateId !== 'intl_purchase_order')
+      return;
+    const items: any[] = Array.isArray(formData.items) ? formData.items : [];
+    const ownerItems = items.filter(
+      (it) => it?.deliverable_ownership === '受注者'
+    );
+    if (ownerItems.length === 0) return; // 受注者帰属が無ければ何もしない
+    const scopeNames = ownerItems
+      .map((it) => it.condition_name || it.item_name)
+      .filter(Boolean)
+      .join('、');
+    const defaultScope = scopeNames
+      ? `本発注の受注者帰属成果物（${scopeNames}）`
+      : '本発注の受注者帰属成果物';
+    const conds: any[] = Array.isArray(formData.financial_conditions)
+      ? formData.financial_conditions
+      : [];
+    if (conds.length === 0) {
+      // 旧 per-line 条件を持つ明細があれば、そこから共通条件を1本移行。
+      const src: any = ownerItems.find((it) => it.calc_type) || ownerItems[0] || {};
+      const seeded: FinancialCondition & { applies_scope?: string } = {
+        condition_no: 1,
+        condition_name: src.condition_name || '利用許諾条件',
+        region_territory: src.region_territory || '',
+        region_language: src.region_language || '',
+        region_language_label: src.region_language_label || '',
+        calc_type: src.calc_type || 'BASE_QTY_RATE',
+        calc_method: calcMethodFromType(src.calc_type) || 'ROYALTY',
+        rate_pct: src.rate_pct ?? 0,
+        base_price_label: src.base_price_label || '',
+        guarantee_type: src.guarantee_type || 'NONE',
+        mg_amount: src.mg_amount ?? 0,
+        ag_amount: src.ag_amount ?? 0,
+        payment_terms: src.payment_terms || '',
+        formula_text: src.formula_text || '',
+        applies_scope: defaultScope,
+        currency: 'JPY',
+      };
+      setFormData({ ...formData, financial_conditions: [seeded] });
+      return;
+    }
+    // 既存条件のうち applies_scope が空のものだけ既定値を補完(上書きはしない)。
+    let changed = false;
+    const next = conds.map((c) => {
+      if (((c.applies_scope || '') as string).trim() === '') {
+        changed = true;
+        return { ...c, applies_scope: defaultScope };
+      }
+      return c;
+    });
+    if (changed) setFormData({ ...formData, financial_conditions: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.items, formData.financial_conditions]);
 
   // Phase 9h: 検収書 — delivery_line_items / taxRate / isReducedTax の
   // どれかが変わったら 税抜合計 / 消費税 / 税込合計 を再計算して
@@ -1630,6 +1690,44 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             showPaymentColumns={true}
           />
         </FormSection>
+
+        {/* 5-L. 利用許諾条件（共通）— 受注者帰属の成果物に適用する利用許諾条件を
+            1本(複数も可)で定義する。各受注者帰属明細は「この共通条件の対象」となり、
+            条件の「適用範囲」に該当明細名が自動補完される。確定額(業務委託小計)には
+            含まれず、利用許諾料計算書・分配に連動する。 */}
+        {Array.isArray(formData.items) &&
+          formData.items.some(
+            (it: any) => it?.deliverable_ownership === '受注者'
+          ) && (
+            <FormSection
+              title="5-L. 利用許諾条件（共通）— 受注者帰属の成果物に適用"
+              variant="amber"
+              icon={<Coins className="w-4 h-4" />}
+            >
+              <div className="mb-2 text-[11px] font-mono text-amber-800 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2 leading-relaxed">
+                受注者帰属（利用許諾）にした成果物:{' '}
+                <strong>
+                  {formData.items
+                    .filter((it: any) => it?.deliverable_ownership === '受注者')
+                    .map((it: any) => it.condition_name || it.item_name)
+                    .filter(Boolean)
+                    .join('、') || '（品目名未入力）'}
+                </strong>
+                <br />
+                これらに適用する利用許諾条件を以下で定義します（1本にまとめて全体許諾も可）。
+              </div>
+              <FinancialConditionTable
+                conditions={
+                  Array.isArray(formData.financial_conditions)
+                    ? (formData.financial_conditions as FinancialCondition[])
+                    : []
+                }
+                onChange={(conditions: FinancialCondition[]) =>
+                  setFormData({ ...formData, financial_conditions: conditions })
+                }
+              />
+            </FormSection>
+          )}
 
         {/* IV-a. その他手数料 (Phase 22.21.56) — 業務委託報酬以外の手数料。
             税抜表示で grandTotalExTax に加算される。経費 (IV-b 税込・別精算) とは別物。 */}

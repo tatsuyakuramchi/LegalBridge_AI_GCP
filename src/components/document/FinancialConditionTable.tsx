@@ -53,6 +53,9 @@ export type FinancialCondition = {
   calc_period_close_month?: number; // 1-12 (MANUFACTURING / MONTHLY は未設定)
   currency?: string; // JPY / USD ...
   formula_text?: string; // 例: 上代 × 5.0% × 製造数
+  // 適用範囲(対象成果物)。この条件がどの成果物・明細を対象に許諾するかを明示。
+  //   発注書の共通利用許諾条件では、受注者帰属の明細名から自動補完される。
+  applies_scope?: string;
   payment_terms?: string;
   mg_amount?: number; // MG 総額 (最低保証 floor)
   ag_amount?: number; // AG 総額 (前払い保証 = 累積消化)
@@ -625,6 +628,23 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     value={c.formula_text || ""}
                     onChange={(e) => update(idx, { formula_text: e.target.value })}
                     placeholder={preset.formulaPlaceholder}
+                    disabled={readOnly}
+                    rows={1}
+                    className={cn(
+                      "w-full text-[11px] font-mono bg-card border border-input rounded-sm px-2 py-1 resize-y",
+                      "focus:outline-none focus:border-foreground",
+                      "placeholder:text-muted-foreground/40 placeholder:text-[10px]"
+                    )}
+                  />
+                </div>
+                <div className="col-span-2 md:col-span-4">
+                  <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                    適用範囲（対象成果物）
+                  </div>
+                  <textarea
+                    value={c.applies_scope || ""}
+                    onChange={(e) => update(idx, { applies_scope: e.target.value })}
+                    placeholder="例: 本発注の受注者帰属成果物（翻訳執筆 等）／本制作物一式の出版・販売"
                     disabled={readOnly}
                     rows={1}
                     className={cn(
