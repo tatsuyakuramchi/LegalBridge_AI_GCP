@@ -11105,13 +11105,12 @@ ${details}
           const licenseItems = allFormItems.filter(
             (it) => it?.deliverable_ownership === "受注者"
           );
-          const lineItemsSource = allFormItems.filter((it) => {
-            if (it?.deliverable_ownership !== "受注者") return true;
-            const amt =
-              Number(it?.amount_ex_tax) ||
-              (Number(it?.unit_price) || 0) * (Number(it?.quantity) || 0);
-            return amt > 0; // 受注者は業務報酬>0のときだけ line_items に計上(検収対象)。
-          });
+          // 全明細を capability_line_items に保存する。受注者帰属で業務報酬0
+          //   (=利用許諾料に含む)の明細も検収書に「利用許諾料に含む」として出すため
+          //   line_items に作る。検収待ち判定(unissued_line_count)は amount>0 のみを
+          //   数えるので、0円明細が検収待ちに居座ることはない。確定額(業務委託小計)も
+          //   0円明細は 0 加算で総額に影響しない。
+          const lineItemsSource = allFormItems;
           // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー。
           const incomingLines = expandLinesWithSchedule(lineItemsSource);
           const keepNos = incomingLines
@@ -11148,8 +11147,9 @@ ${details}
                  capability_id, line_no, item_name, spec,
                  unit_price, quantity, amount_ex_tax, rate_pct,
                  calc_method, payment_terms,
-                 payment_method, payment_date, delivery_date, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, CURRENT_TIMESTAMP)
+                 payment_method, payment_date, delivery_date,
+                 deliverable_ownership, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
                ON CONFLICT (capability_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
@@ -11162,6 +11162,7 @@ ${details}
                  payment_method = EXCLUDED.payment_method,
                  payment_date   = EXCLUDED.payment_date,
                  delivery_date  = EXCLUDED.delivery_date,
+                 deliverable_ownership = EXCLUDED.deliverable_ownership,
                  updated_at     = CURRENT_TIMESTAMP`,
               [
                 orderItemId,
@@ -11177,6 +11178,7 @@ ${details}
                 payTerms, // legacy mirror
                 l.payment_date || null,
                 l.delivery_date || null, // Phase 17h
+                l.deliverable_ownership || "発注者",
               ]
             );
           }

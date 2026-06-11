@@ -165,16 +165,40 @@ export function registerFormReadRoutes(
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              const lines = await query(
-                `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                        amount_ex_tax, calc_method, payment_terms,
-                        payment_method, payment_date, delivery_date
-                   FROM capability_line_items
-                  WHERE capability_id = $1
-                    AND COALESCE(amount_ex_tax, 0) > 0
-                  ORDER BY line_no ASC`,
-                [poId]
-              );
+              // 検収対象明細: amount>0 の業務委託に加え、受注者帰属(利用許諾料に含む=0円)
+              //   の明細も含める。検収書に「利用許諾料に含む」として出すため。
+              //   発注者帰属の0円明細は除外したままにする。
+              //   deliverable_ownership 列が未追加の環境(0060前)は 42703 で旧挙動に fallback。
+              let lines: any;
+              try {
+                lines = await query(
+                  `SELECT id, line_no, item_name, spec, unit_price, quantity,
+                          amount_ex_tax, calc_method, payment_terms,
+                          payment_method, payment_date, delivery_date,
+                          deliverable_ownership
+                     FROM capability_line_items
+                    WHERE capability_id = $1
+                      AND (COALESCE(amount_ex_tax, 0) > 0
+                           OR deliverable_ownership = '受注者')
+                    ORDER BY line_no ASC`,
+                  [poId]
+                );
+              } catch (colErr: any) {
+                if (colErr && colErr.code === "42703") {
+                  lines = await query(
+                    `SELECT id, line_no, item_name, spec, unit_price, quantity,
+                            amount_ex_tax, calc_method, payment_terms,
+                            payment_method, payment_date, delivery_date
+                       FROM capability_line_items
+                      WHERE capability_id = $1
+                        AND COALESCE(amount_ex_tax, 0) > 0
+                      ORDER BY line_no ASC`,
+                    [poId]
+                  );
+                } else {
+                  throw colErr;
+                }
+              }
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
@@ -269,6 +293,8 @@ export function registerFormReadRoutes(
                   unit_price: Number(l.unit_price) || 0,
                   quantity: ordQty,
                   amount_ex_tax: ordAmt,
+                  // 成果物帰属。受注者帰属かつ0円は検収書で「利用許諾料に含む」表示。
+                  deliverable_ownership: l.deliverable_ownership || "発注者",
                   // Phase 23.0.4: 検収書 Excel / PDF 生成時に納品日列が空に
                   //   なる問題を解消するため delivery_date / payment_date を追加。
                   //   excelService.findParentLine が l.delivery_date を読む。
