@@ -2378,6 +2378,54 @@ async function startServer() {
     }
   });
 
+  // Phase A (データ構造刷新): 課題詳細ページ向け — 1 課題に紐づく文書一覧。
+  //   form_data は重く UI で不要なため返さない。lifecycle/採番系の列は
+  //   worker initDb で追加されるため、未適用環境では 42703 フォールバックする
+  //   (/api/management/assets と同じ流儀)。
+  app.get("/api/issues/:issueKey/documents", async (req, res) => {
+    try {
+      const issueKey = String(req.params.issueKey || "").trim();
+      if (!issueKey) return res.json([]);
+      let result: any;
+      try {
+        result = await query(
+          `SELECT id,
+                  document_number,
+                  template_type,
+                  created_at,
+                  created_by,
+                  drive_link,
+                  COALESCE(lifecycle_status, 'final') AS lifecycle_status,
+                  COALESCE(is_primary, TRUE)          AS is_primary,
+                  base_document_number,
+                  COALESCE(revision, 0)               AS revision
+             FROM documents
+            WHERE issue_key = $1
+            ORDER BY created_at DESC`,
+          [issueKey]
+        );
+      } catch (err: any) {
+        if (err && err.code === "42703") {
+          console.warn(
+            "[/api/issues/:issueKey/documents] schema migration 未適用 — legacy 形式で返却"
+          );
+          result = await query(
+            `SELECT id, document_number, template_type, created_at, created_by, drive_link
+               FROM documents
+              WHERE issue_key = $1
+              ORDER BY created_at DESC`,
+            [issueKey]
+          );
+        } else {
+          throw err;
+        }
+      }
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   app.get("/api/management/assets", async (req, res) => {
     try {
       // Phase 22.12: documents の base_document_number / revision / is_primary を JOIN。

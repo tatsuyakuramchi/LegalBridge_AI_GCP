@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, ArrowRight, User, Calendar, Inbox, Plus, GitBranch } from "lucide-react"
+import { Search, ArrowRight, User, Calendar, Inbox, Plus, GitBranch, FileText } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
@@ -60,9 +60,10 @@ export function RequestsPage() {
     return true
   })
 
+  // データ構造刷新 Phase A: 文書作成画面へ直行せず、課題詳細ページへ遷移する。
+  //   (課題で作った文書一覧・進捗をまず見られるようにする)
   const open = (key: string) => {
-    setSelectedIssue(key)
-    navigate("/documents/new")
+    navigate(`/issues/${encodeURIComponent(key)}`)
   }
 
   const toggleBatch = (key: string) => {
@@ -228,6 +229,13 @@ export function RequestsPage() {
                       <Calendar className="h-3 w-3" />{" "}
                       {new Date().toLocaleDateString("ja-JP")}
                     </span>
+                    {/* データ構造刷新 Phase A-3: 文書件数 (Dashboard と同じデータ源) */}
+                    {typeof issue.documentCount === "number" &&
+                      issue.documentCount > 0 && (
+                        <span className="flex items-center gap-1">
+                          <FileText className="h-3 w-3" /> {issue.documentCount}
+                        </span>
+                      )}
                   </div>
                   {/* Phase 18: 行内ステータス変更ドロップダウン。click は
                       stopPropagation で Card 自体の navigate を抑止。

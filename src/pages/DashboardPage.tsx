@@ -62,9 +62,9 @@ export function DashboardPage() {
     },
   ]
 
+  // データ構造刷新 Phase A: 課題行クリックは課題詳細ページへ。
   const openIssue = (key: string) => {
-    setSelectedIssue(key)
-    navigate("/documents/new")
+    navigate(`/issues/${encodeURIComponent(key)}`)
   }
 
   return (
