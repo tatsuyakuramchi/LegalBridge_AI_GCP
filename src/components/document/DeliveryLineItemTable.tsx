@@ -25,6 +25,9 @@ export type OrderLineForInspection = {
   unit_price: number;
   quantity: number; // 発注数量 (元)
   amount_ex_tax: number; // 発注額 (元)
+  // 成果物帰属。受注者帰属かつ発注額0は利用許諾料に含むため、金額表示を
+  //   「利用許諾料に含む」に切り替える(0円とは出さない)。
+  deliverable_ownership?: string;
   delivery_date?: string; // 親 PO 明細の納期 (各明細ごとの既定値・プレフィル元)
   inspection?: {
     ordered_amount: number;
@@ -68,6 +71,11 @@ const ceilFee = (unit: number, qty: number, ratio: number) =>
 
 const yen = (n: number) =>
   "¥ " + (Number(n) || 0).toLocaleString("ja-JP");
+
+// 受注者帰属かつ発注額0の明細は「利用許諾料に含む」と表示(0円とは出さない)。
+//   それ以外は通常の金額表示。
+const isLicenseIncluded = (line: OrderLineForInspection) =>
+  line.deliverable_ownership === "受注者" && (Number(line.amount_ex_tax) || 0) === 0;
 
 export const DeliveryLineItemTable: React.FC<Props> = ({
   orderLines,
@@ -241,7 +249,13 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                 <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
                   発注
                 </div>
-                <div className="font-medium">{yen(r.insp.ordered_amount)}</div>
+                <div className="font-medium">
+                  {isLicenseIncluded(r.line) ? (
+                    <span className="text-[10px] text-amber-700">利用許諾料に含む</span>
+                  ) : (
+                    yen(r.insp.ordered_amount)
+                  )}
+                </div>
               </div>
               <div>
                 <div className="text-[11px] text-muted-foreground uppercase tracking-wider">
@@ -407,7 +421,13 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
                     )}
                   </td>
                   <td className="p-2 text-right text-[10px]">
-                    <div>{yen(insp.ordered_amount)}</div>
+                    <div>
+                      {isLicenseIncluded(line) ? (
+                        <span className="text-amber-700">利用許諾料に含む</span>
+                      ) : (
+                        yen(insp.ordered_amount)
+                      )}
+                    </div>
                     <div className="text-muted-foreground">
                       / {yen(insp.inspected_amount)}
                     </div>
