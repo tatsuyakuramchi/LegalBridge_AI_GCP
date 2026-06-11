@@ -282,37 +282,37 @@ initDb 内の記述順は works → condition_lines → 以降）。
 `--dry-run`（デフォルト）と `--apply` の2モード、実行前後の件数突合ログ、冪等（再実行安全）。
 
 ### C-1. 契約ヘッダ分解バックフィル `scripts/restructure_c1_contract_roles.ts`
-- [ ] structural_role:
+- [x] structural_role:
   - record_type='master_contract' → 'master'
   - record_type IN ('individual_contract','standalone_contract') → 'terms'
   - record_type IN ('purchase_order','delivery_record','license_condition','publication_condition') →
     'terms'（これらは将来 condition_lines/documents に吸収されるが、当面 terms 扱いで保全）
-- [ ] contract_scopes:
+- [x] contract_scopes:
   - contract_category='service' → ('service')
   - contract_category IN ('license','publication') → ('license_use')
   - contract_category='mixed' → 一覧を CSV 出力して手動確認（件数を実態調査。少数なら個別指定）
   - 旧 *_allowed フラグが TRUE のものは対応 scope を補完
     （purchase_order_allowed → service / license_condition_allowed・publication_condition_allowed → license_use）
-- [ ] template_family: contract_category='publication' → 'publication'、'license' → 'license'、
+- [x] template_family: contract_category='publication' → 'publication'、'license' → 'license'、
   'service' → 'service'（テンプレ選択ロジックが参照するのは license/publication の別のみ）
-- [ ] parent_capability_id: documents.form_data->>'selected_master_contract_id' を全文書から走査し、
+- [x] parent_capability_id: documents.form_data->>'selected_master_contract_id' を全文書から走査し、
   individual_contract に親をバックフィル（参照先不在・複数候補は CSV でレポートし手動解決）。
 - 検証: role 別件数 = 旧 record_type 別件数と一致。scope 0 件の契約一覧を出力（手動補完対象）。
 
 ### C-2. 条件明細バックフィル `scripts/restructure_c2_condition_lines.ts`
-- [ ] capability_line_items → condition_lines:
+- [x] capability_line_items → condition_lines:
   - scheme 判定: cycle IS NOT NULL OR billing_day IS NOT NULL → 'subscription'
     / quantity IS NOT NULL AND unit_price IS NOT NULL → 'per_unit' / それ以外 → 'lump_sum'
   - calc_method 列の値があれば優先判定材料にする（SUBSCRIPTION → subscription 等。値の実態を先に
     `SELECT DISTINCT calc_method` で確認しマッピング表をスクリプト冒頭に明記）
   - direction='payable'、source_line_item_id に元 id、列は同名コピー
-- [ ] capability_financial_conditions → condition_lines:
+- [x] capability_financial_conditions → condition_lines:
   - 原則 scheme='royalty'。calc_method='FIXED' かつ rate_pct IS NULL は 'lump_sum'（一括許諾）
   - mg_amount/ag_amount/rate_pct/calc_period_* をコピー、source_condition_id に元 id
   - term_start/term_end は親 contract_capabilities の effective_date/expiration_date をコピー
-- [ ] line_no は契約内で 1 から振り直し（line_items 由来 → financial_conditions 由来の順）。
+- [x] line_no は契約内で 1 から振り直し（line_items 由来 → financial_conditions 由来の順）。
   line_code は B-6 の採番関数で全行に付与。
-- [ ] A案対応: structural_role='master' の契約に condition_lines がぶら下がる場合
+- [x] A案対応: structural_role='master' の契約に condition_lines がぶら下がる場合
   （ライセンス基本契約直付き条件）、暗黙の terms 契約を生成して切り出す:
   - 新規 contract_capabilities 行: structural_role='terms', parent_capability_id=master.id,
     contract_title='（基本契約内条件）'+master.contract_title, 日付・vendor は master からコピー,
@@ -321,7 +321,7 @@ initDb 内の記述順は works → condition_lines → 以降）。
 - 検証: 旧2テーブルの行数合計 = condition_lines の行数。金額合計（amount_ex_tax / mg_amount）が新旧一致。
 
 ### C-3. 実績バックフィル `scripts/restructure_c3_condition_events.ts`
-- [ ] delivery_line_items → condition_events(event_type='inspection'):
+- [x] delivery_line_items → condition_events(event_type='inspection'):
   - condition_line_id = source_line_item_id 経由で解決
   - amount_ex_tax = inspected_amount_ex_tax、occurred_at = 親 delivery_events.delivered_at
     （NULL なら created_at）、backlog_issue_key = 親の値
@@ -332,28 +332,28 @@ initDb 内の記述順は works → condition_lines → 以降）。
     event_type='payment' ではなく「document_id 解決保留リスト」に残し、INSERT を保留する
     （⚠ 件数次第でユーザーと相談）
   - delivery_line_items.condition_event_id / condition_line_id に逆 FK を書き戻す
-- [ ] royalty_calculations → condition_events(event_type='royalty_calc'):
+- [x] royalty_calculations → condition_events(event_type='royalty_calc'):
   - condition_line_id = capability_financial_condition_id → source_condition_id 経由で解決
   - amount_ex_tax = actual_royalty_ex_tax、period・backlog_issue_key コピー、
     occurred_at = created_at
   - document_id: documents の template_type IN ('royalty_statement','利用許諾料計算書') かつ
     issue_key 一致 かつ form_data の capabilityFinancialConditionId / manufacturingEventId 一致で解決
   - royalty_calculations.condition_event_id / condition_line_id に逆 FK を書き戻す
-- [ ] event_no は condition_line_id 内で occurred_at 昇順に 1 から採番。
+- [x] event_no は condition_line_id 内で occurred_at 昇順に 1 から採番。
 - 検証: イベント数 = 旧実績行数（保留分を除く）。明細ごとの SUM(amount_ex_tax) が
   旧集計（getInspectionAvailability / getMgConsumedToDate 相当 SQL）と一致することを突合表で出力。
 
 ### C-4. sublicensees 統合・works 起票 `scripts/restructure_c4_works.ts`
-- [ ] sublicensees → vendors: vendor_name 完全一致 + name_kana で名寄せ。
+- [x] sublicensees → vendors: vendor_name 完全一致 + name_kana で名寄せ。
   一致なし → vendors 新規作成（vendor_code は既存採番規則に従う。entity_type は corporate 仮置き）。
   対応表（sublicensee_id → vendor_id）を一時テーブル `_migration_sublicensee_vendor` に保存。
-- [ ] work_sublicensees → works + アウト側契約:
+- [x] work_sublicensees → works + アウト側契約:
   - work_id 文字列（LIC-{ledger}-W-... 形式）ごとに works を 1 件起票（title は対応する個別許諾契約の
     original_work / contract_title から取得、work_code は新採番）
   - 各 work_sublicensees 行 → アウト側 terms 契約（structural_role='terms', scope='license_use',
     vendor_id=対応表で解決）+ condition_lines 1 行（direction='receivable', scheme='royalty',
     rate_label/mg_ag_label/payment_terms_label は notes に退避）+ work_id 参照
-- [ ] contract_capabilities.original_work / product_name のユニーク値一覧を CSV 出力し、
+- [x] contract_capabilities.original_work / product_name のユニーク値一覧を CSV 出力し、
   works への名寄せドラフト（完全一致のみ自動、残りは人間が確認する surveyシート）を生成。
   ⚠ 自動確定はしない。確認済み CSV を入力に work_id を書き戻す `--apply-mapping` モードを用意。
 - 検証: sublicensees 全行が vendor に対応。work_sublicensees 全行がアウト側明細に対応。
@@ -376,7 +376,7 @@ initDb 内の記述順は works → condition_lines → 以降）。
 依存: Phase C 完了（実績が condition_events に揃っていること）。
 
 ### D-1. ステータス導出ビュー
-- [ ] initDb に `CREATE OR REPLACE VIEW` で追加:
+- [x] initDb に `CREATE OR REPLACE VIEW` で追加:
 ```sql
 CREATE OR REPLACE VIEW condition_line_status_v AS
 SELECT
@@ -406,12 +406,12 @@ LEFT JOIN (
    GROUP BY condition_line_id
 ) e ON e.condition_line_id = cl.id;
 ```
-- [ ] MG/AG 残高ビュー `condition_line_balance_v`:
+- [x] MG/AG 残高ビュー `condition_line_balance_v`:
   mg_remaining = GREATEST(0, cl.mg_amount - Σ有効 royalty_calc 実績の MG 消化)。
   MG 消化額は detail（royalty_calculations.mg_consumed_this_time）ではなく、
   イベント金額から再計算するのが最終形だが、移行期は detail の SUM を採用し、
   突合ビュー `condition_line_balance_check_v`（detail SUM と旧 getMgConsumedToDate の比較）を併設。
-- [ ] スケジュールビュー `condition_line_schedule_v`:
+- [x] スケジュールビュー `condition_line_schedule_v`:
   - 対象: scheme='subscription'（cycle/billing_day/term から期待期を generate_series で生成）と
     scheme='royalty' かつ calc_period_kind IN ('MONTHLY','QUARTERLY','SEMIANNUAL','ANNUAL')（定期報告型のみ。
     'MANUFACTURING' は対象外）

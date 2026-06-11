@@ -1725,6 +1725,100 @@ export async function initDb() {
     `ALTER TABLE delivery_line_items ADD COLUMN IF NOT EXISTS condition_line_id INTEGER REFERENCES condition_lines(id);`,
     `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS condition_event_id INTEGER REFERENCES condition_events(id);`,
     `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS condition_line_id INTEGER REFERENCES condition_lines(id);`,
+
+    // -----------------------------------------------------------------
+    // データ構造刷新 Phase D-1: 状態・残高・スケジュールの導出ビュー。
+    //   状態/残高はテーブル列で持たず、有効実績(condition_events)の集計から
+    //   SQL ビューで導出する (真実の源 = 実績台帳)。CREATE OR REPLACE で冪等。
+    //   実装設計: docs/condition_lines_implementation_plan.md (Phase D)
+    //   注意: cron/calc の読み取り切替 (D-2〜D-4) は段階実装 (本ビュー追加が前提)。
+    // -----------------------------------------------------------------
+    `CREATE OR REPLACE VIEW condition_line_status_v AS
+     SELECT
+       cl.id, cl.line_code, cl.capability_id, cl.payment_scheme, cl.direction,
+       CASE
+         WHEN cl.cancelled_at IS NOT NULL THEN 'cancelled'
+         WHEN cl.closed_at IS NOT NULL THEN 'closed_short'
+         WHEN cl.payment_scheme IN ('lump_sum','per_unit','installment') THEN
+           CASE WHEN COALESCE(e.sum_amount,0) >= COALESCE(cl.amount_ex_tax,0) THEN 'fulfilled'
+                WHEN COALESCE(e.sum_amount,0) > 0 THEN 'partially_fulfilled'
+                ELSE 'open' END
+         ELSE
+           CASE WHEN cl.term_start IS NOT NULL AND CURRENT_DATE < cl.term_start THEN 'pending'
+                WHEN cl.term_end IS NOT NULL AND CURRENT_DATE > cl.term_end THEN 'expired'
+                ELSE 'active' END
+       END AS status,
+       COALESCE(e.sum_amount,0) AS consumed_amount,
+       CASE WHEN cl.amount_ex_tax IS NOT NULL
+            THEN cl.amount_ex_tax - COALESCE(e.sum_amount,0) END AS remaining_amount,
+       COALESCE(e.event_count,0) AS event_count,
+       e.last_event_at
+     FROM condition_lines cl
+     LEFT JOIN (
+       SELECT condition_line_id, SUM(amount_ex_tax) AS sum_amount,
+              COUNT(*) AS event_count, MAX(occurred_at) AS last_event_at
+         FROM condition_events
+        WHERE voided_at IS NULL
+        GROUP BY condition_line_id
+     ) e ON e.condition_line_id = cl.id;`,
+
+    // MG/AG 残高ビュー。移行期は detail (royalty_calculations.mg/ag_consumed_this_time)
+    //   の SUM を採用 (有効 royalty_calc イベントに紐づく detail のみ)。
+    `CREATE OR REPLACE VIEW condition_line_balance_v AS
+     SELECT cl.id AS condition_line_id, cl.line_code,
+            cl.mg_amount, cl.ag_amount,
+            COALESCE(d.mg_consumed,0) AS mg_consumed,
+            GREATEST(0, COALESCE(cl.mg_amount,0) - COALESCE(d.mg_consumed,0)) AS mg_remaining,
+            COALESCE(d.ag_consumed,0) AS ag_consumed,
+            GREATEST(0, COALESCE(cl.ag_amount,0) - COALESCE(d.ag_consumed,0)) AS ag_remaining
+       FROM condition_lines cl
+       LEFT JOIN (
+         SELECT ev.condition_line_id,
+                SUM(COALESCE(rc.mg_consumed_this_time,0)) AS mg_consumed,
+                SUM(COALESCE(rc.ag_consumed_this_time,0)) AS ag_consumed
+           FROM condition_events ev
+           JOIN royalty_calculations rc ON rc.condition_event_id = ev.id
+          WHERE ev.voided_at IS NULL AND ev.event_type = 'royalty_calc'
+          GROUP BY ev.condition_line_id
+       ) d ON d.condition_line_id = cl.id
+      WHERE cl.payment_scheme = 'royalty';`,
+
+    // スケジュールビュー: 期待される期 (expected_period) を生成し、有効イベントの
+    //   period と突き合わせて当期未発行/期限超過を導出。対象は subscription と
+    //   定期報告型 royalty (calc_period_kind が MONTHLY/QUARTERLY/SEMIANNUAL/ANNUAL)。
+    //   製造イベント駆動 (MANUFACTURING) は対象外。
+    `CREATE OR REPLACE VIEW condition_line_schedule_v AS
+     WITH sched AS (
+       SELECT cl.id AS condition_line_id, cl.line_code, cl.payment_scheme,
+              cl.term_start,
+              LEAST(COALESCE(cl.term_end, CURRENT_DATE), CURRENT_DATE) AS term_until,
+              CASE
+                WHEN cl.payment_scheme = 'subscription' THEN INTERVAL '1 month'
+                WHEN cl.calc_period_kind = 'MONTHLY'    THEN INTERVAL '1 month'
+                WHEN cl.calc_period_kind = 'QUARTERLY'  THEN INTERVAL '3 months'
+                WHEN cl.calc_period_kind = 'SEMIANNUAL' THEN INTERVAL '6 months'
+                WHEN cl.calc_period_kind = 'ANNUAL'     THEN INTERVAL '12 months'
+              END AS step
+         FROM condition_lines cl
+        WHERE cl.term_start IS NOT NULL
+          AND (cl.payment_scheme = 'subscription'
+               OR (cl.payment_scheme = 'royalty'
+                   AND cl.calc_period_kind IN ('MONTHLY','QUARTERLY','SEMIANNUAL','ANNUAL')))
+     )
+     SELECT s.condition_line_id, s.line_code, s.payment_scheme,
+            to_char(gs, 'YYYY-MM') AS expected_period,
+            EXISTS (
+              SELECT 1 FROM condition_events e
+               WHERE e.condition_line_id = s.condition_line_id
+                 AND e.voided_at IS NULL
+                 AND e.period = to_char(gs, 'YYYY-MM')
+            ) AS issued,
+            (gs < date_trunc('month', CURRENT_DATE)) AS overdue
+       FROM sched s
+       CROSS JOIN LATERAL generate_series(
+         date_trunc('month', s.term_start), date_trunc('month', s.term_until), s.step
+       ) AS gs
+      WHERE s.step IS NOT NULL;`,
   ];
 
   try {
