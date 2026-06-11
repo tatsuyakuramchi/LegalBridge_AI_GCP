@@ -1574,6 +1574,157 @@ export async function initDb() {
      );`,
     `CREATE INDEX IF NOT EXISTS idx_document_drafts_issue
        ON document_drafts(issue_key);`,
+
+    // =================================================================
+    // データ構造刷新 Phase B: 統一条件明細 (condition_lines) 新スキーマ。
+    //   追加のみ・既存無影響 (expand)。状態・残高・MG/AG はテーブル列では
+    //   なく condition_events からの導出ビュー (Phase D) で提供する設計。
+    //   概念設計: docs/condition_lines_unification_design.md
+    //   実装設計: docs/condition_lines_implementation_plan.md (Phase B)
+    //
+    //   注意: condition_lines は materials / works / contract_capabilities /
+    //   documents を FK 参照するため、worker db.ts を「正」として定義する
+    //   (api db.ts には materials 等が無く FK が張れないため、api は同一 DB を
+    //    実行時参照する。documents 追加列と同じ運用)。
+    //   CREATE 順序: works → condition_lines → work_component_lines →
+    //   installments → condition_events (FK 依存順)。
+    // =================================================================
+
+    // --- B-1. 契約ヘッダの直交分解 (structural_role × scope × template_family)
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS structural_role VARCHAR(10);`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS parent_capability_id INTEGER REFERENCES contract_capabilities(id);`,
+    `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS template_family VARCHAR(20);`,
+    `CREATE INDEX IF NOT EXISTS idx_cc_parent ON contract_capabilities(parent_capability_id);`,
+    `CREATE TABLE IF NOT EXISTS contract_scopes (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      scope VARCHAR(20) NOT NULL CHECK (scope IN ('service','license_use')),
+      UNIQUE (capability_id, scope)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cs_capability ON contract_scopes(capability_id);`,
+
+    // --- B-5 (前半). 作品層 — condition_lines.work_id が参照するため先に CREATE
+    `CREATE TABLE IF NOT EXISTS works (
+      id SERIAL PRIMARY KEY,
+      work_code VARCHAR(40) UNIQUE NOT NULL,
+      title TEXT NOT NULL,
+      parent_work_id INTEGER REFERENCES works(id),
+      ledger_code VARCHAR(40),
+      remarks TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    );`,
+    `CREATE TABLE IF NOT EXISTS work_components (
+      id SERIAL PRIMARY KEY,
+      work_id INTEGER NOT NULL REFERENCES works(id) ON DELETE CASCADE,
+      component_no INTEGER NOT NULL,
+      component_kind VARCHAR(50),
+      material_id INTEGER REFERENCES materials(id),
+      notes TEXT,
+      UNIQUE (work_id, component_no)
+    );`,
+
+    // --- B-2. 統一条件明細
+    `CREATE TABLE IF NOT EXISTS condition_lines (
+      id SERIAL PRIMARY KEY,
+      capability_id INTEGER NOT NULL REFERENCES contract_capabilities(id) ON DELETE CASCADE,
+      line_no INTEGER NOT NULL,
+      line_code VARCHAR(60) UNIQUE,
+      subject TEXT,
+      ledger_code VARCHAR(40),
+      material_id INTEGER REFERENCES materials(id),
+      work_id INTEGER REFERENCES works(id),
+      direction VARCHAR(10) NOT NULL DEFAULT 'payable'
+        CHECK (direction IN ('payable','receivable')),
+      payment_scheme VARCHAR(20) NOT NULL
+        CHECK (payment_scheme IN ('lump_sum','per_unit','installment','subscription','royalty')),
+      rights_attribution VARCHAR(20)
+        CHECK (rights_attribution IN ('transfer','retained_license','license_only','joint')),
+      currency VARCHAR(10) DEFAULT 'JPY',
+      notes TEXT,
+      quantity DECIMAL(15,4),
+      unit_price DECIMAL(15,2),
+      amount_ex_tax DECIMAL(15,2),
+      delivery_date DATE,
+      term_start DATE,
+      term_end DATE,
+      cycle VARCHAR(50),
+      billing_day INTEGER,
+      calc_period_kind VARCHAR(20),
+      calc_period_close_month SMALLINT,
+      rate_pct DECIMAL(7,4),
+      base_price_label TEXT,
+      mg_amount DECIMAL(15,2),
+      ag_amount DECIMAL(15,2),
+      closed_at TIMESTAMP WITH TIME ZONE,
+      closed_reason TEXT,
+      cancelled_at TIMESTAMP WITH TIME ZONE,
+      source_line_item_id INTEGER,
+      source_condition_id INTEGER,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (capability_id, line_no),
+      CONSTRAINT cl_scheme_royalty_cols CHECK (
+        payment_scheme = 'royalty'
+        OR (rate_pct IS NULL AND mg_amount IS NULL AND ag_amount IS NULL)),
+      CONSTRAINT cl_scheme_depletable_target CHECK (
+        payment_scheme IN ('subscription','royalty') OR amount_ex_tax IS NOT NULL)
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_cl_capability ON condition_lines(capability_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_cl_work ON condition_lines(work_id);`,
+
+    // --- B-5 (後半). 構成要素 ↔ イン側条件明細 N:M (condition_lines を参照)
+    `CREATE TABLE IF NOT EXISTS work_component_lines (
+      component_id INTEGER NOT NULL REFERENCES work_components(id) ON DELETE CASCADE,
+      condition_line_id INTEGER NOT NULL REFERENCES condition_lines(id),
+      PRIMARY KEY (component_id, condition_line_id)
+    );`,
+
+    // --- B-3. 分割予定 (installment scheme)
+    `CREATE TABLE IF NOT EXISTS condition_line_installments (
+      id SERIAL PRIMARY KEY,
+      condition_line_id INTEGER NOT NULL REFERENCES condition_lines(id) ON DELETE CASCADE,
+      installment_no INTEGER NOT NULL,
+      trigger_kind VARCHAR(20) NOT NULL
+        CHECK (trigger_kind IN ('on_signing','on_delivery','on_inspection','fixed_date')),
+      planned_amount_ex_tax DECIMAL(15,2) NOT NULL,
+      due_date DATE,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (condition_line_id, installment_no)
+    );`,
+
+    // --- B-4. 統一実績台帳
+    `CREATE TABLE IF NOT EXISTS condition_events (
+      id SERIAL PRIMARY KEY,
+      condition_line_id INTEGER NOT NULL REFERENCES condition_lines(id),
+      event_no INTEGER NOT NULL,
+      event_type VARCHAR(20) NOT NULL
+        CHECK (event_type IN ('inspection','royalty_calc','payment')),
+      installment_id INTEGER REFERENCES condition_line_installments(id),
+      document_id INTEGER REFERENCES documents(id),
+      backlog_issue_key VARCHAR(50),
+      occurred_at TIMESTAMP WITH TIME ZONE NOT NULL,
+      period VARCHAR(7),
+      amount_ex_tax DECIMAL(15,2) NOT NULL DEFAULT 0,
+      voided_at TIMESTAMP WITH TIME ZONE,
+      void_reason TEXT,
+      source_delivery_line_item_id INTEGER,
+      source_royalty_calculation_id INTEGER,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (condition_line_id, event_no),
+      CONSTRAINT ce_document_pairing CHECK (
+        (event_type IN ('inspection','royalty_calc') AND document_id IS NOT NULL)
+        OR (event_type = 'payment' AND document_id IS NULL))
+    );`,
+    `CREATE INDEX IF NOT EXISTS idx_ce_line ON condition_events(condition_line_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_ce_document ON condition_events(document_id);`,
+    `CREATE INDEX IF NOT EXISTS idx_ce_line_period ON condition_events(condition_line_id, period);`,
+    // 既存 detail テーブルに実績 FK を追加 (detail は残す)
+    `ALTER TABLE delivery_line_items ADD COLUMN IF NOT EXISTS condition_event_id INTEGER REFERENCES condition_events(id);`,
+    `ALTER TABLE delivery_line_items ADD COLUMN IF NOT EXISTS condition_line_id INTEGER REFERENCES condition_lines(id);`,
+    `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS condition_event_id INTEGER REFERENCES condition_events(id);`,
+    `ALTER TABLE royalty_calculations ADD COLUMN IF NOT EXISTS condition_line_id INTEGER REFERENCES condition_lines(id);`,
   ];
 
   try {
@@ -1750,6 +1901,32 @@ export async function getNewWorkId(
   const kind = `W_${ledgerCode}`;
   const val = await getNextSequenceValue(kind, y);
   return `LIC-${ledgerCode}-W-${y}-${val.toString().padStart(4, "0")}`;
+}
+
+/**
+ * データ構造刷新 Phase B-6: 条件明細の公開採番 line_code。
+ *
+ * 形式 (仮決め / ⚠ Q1): CL-{YYYY}-{NNNNN}
+ *   契約再発行・契約改版で番号が変わらないことが要件のため、契約番号従属では
+ *   なく **独立採番**。document_sequences に kind='condition_line' / year=YYYY。
+ */
+export async function issueConditionLineCode(year?: number): Promise<string> {
+  const y = year || new Date().getFullYear();
+  const val = await getNextSequenceValue("condition_line", y);
+  return `CL-${y}-${val.toString().padStart(5, "0")}`;
+}
+
+/**
+ * データ構造刷新 Phase B-6: 作品マスター works.work_code の採番。
+ *
+ * 形式 (仮決め / ⚠ Q2): WK-{YYYY}-{NNNN}
+ *   document_sequences に kind='work' / year=YYYY で独立採番。
+ *   (既存の getNewWorkId = license_contracts.work_id とは別概念)
+ */
+export async function issueWorkCode(year?: number): Promise<string> {
+  const y = year || new Date().getFullYear();
+  const val = await getNextSequenceValue("work", y);
+  return `WK-${y}-${val.toString().padStart(4, "0")}`;
 }
 
 /**
