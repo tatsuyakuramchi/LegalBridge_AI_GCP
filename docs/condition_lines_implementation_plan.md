@@ -364,7 +364,7 @@ initDb 内の記述順は works → condition_lines → 以降）。
   condition_line_id は capability_line_item_id → source_line_item_id 逆引き。document_id は
   検収書 documents 生成時に既知のため、文書生成 → イベント INSERT の順で同一 Tx に入れる。
 - [x] ロイヤリティ計算確定（POST /api/royalty-calculations）にも同様に condition_events(royalty_calc) を追加。
-- [ ] 新規契約の登録経路（インポート importsV2.ts・フォーム登録 API）で
+- [x] 新規契約の登録経路（インポート importsV2.ts・フォーム登録 API）で
   capability_line_items / capability_financial_conditions を書く箇所すべてに condition_lines の
   二重書き込みを追加（C-2 と同じ変換ルールを関数化して共用: `lib/conditionLineMapper.ts` を新設）。
 - 受け入れ基準: 新規に検収・計算・契約登録を行うと、旧テーブルと新テーブルの両方に整合した行が入る。

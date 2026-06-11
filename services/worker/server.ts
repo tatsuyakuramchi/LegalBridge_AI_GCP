@@ -4006,6 +4006,11 @@ ${details}
         ]
       );
     }
+    // Phase C-5: 旧金銭条件(capability_financial_conditions)書き込み後、
+    //   condition_lines にも非致命で二重書き込み(冪等)。
+    await safeSync("CL(capability)", () =>
+      syncConditionLinesForCapability({ query }, capabilityId)
+    );
   }
 
   /**
@@ -4103,6 +4108,11 @@ ${details}
         ]
       );
     }
+    // Phase C-5: 旧明細(capability_line_items)書き込み後、condition_lines にも
+    //   非致命で二重書き込み(冪等)。新規/既存契約の保存いずれもここを通る。
+    await safeSync("CL(capability)", () =>
+      syncConditionLinesForCapability({ query }, capabilityId)
+    );
   }
 
   /**
