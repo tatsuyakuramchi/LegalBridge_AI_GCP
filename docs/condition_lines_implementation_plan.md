@@ -359,11 +359,11 @@ initDb 内の記述順は works → condition_lines → 以降）。
 - 検証: sublicensees 全行が vendor に対応。work_sublicensees 全行がアウト側明細に対応。
 
 ### C-5. 二重書き込みの開始（バックフィル後の新規データ対策）
-- [ ] worker の検収明細保存（POST /api/delivery-events/:id/line-items 実装箇所）に、
+- [x] worker の検収明細保存（POST /api/delivery-events/:id/line-items 実装箇所）に、
   delivery_line_items UPSERT と同一トランザクションで condition_events(inspection) を書く処理を追加。
   condition_line_id は capability_line_item_id → source_line_item_id 逆引き。document_id は
   検収書 documents 生成時に既知のため、文書生成 → イベント INSERT の順で同一 Tx に入れる。
-- [ ] ロイヤリティ計算確定（POST /api/royalty-calculations）にも同様に condition_events(royalty_calc) を追加。
+- [x] ロイヤリティ計算確定（POST /api/royalty-calculations）にも同様に condition_events(royalty_calc) を追加。
 - [ ] 新規契約の登録経路（インポート importsV2.ts・フォーム登録 API）で
   capability_line_items / capability_financial_conditions を書く箇所すべてに condition_lines の
   二重書き込みを追加（C-2 と同じ変換ルールを関数化して共用: `lib/conditionLineMapper.ts` を新設）。
@@ -418,7 +418,7 @@ LEFT JOIN (
   - 出力: condition_line_id, expected_period, 実績有無, overdue 判定
 
 ### D-2. 「全量検収」判定の置換（既知バグ修正込み）
-- [ ] `services/worker/server.ts` 納期アラート cron（L2170-2260 付近）の
+- [x] `services/worker/server.ts` 納期アラート cron（L2170-2260 付近）の
   `EXISTS (... acceptance_ratio >= 1.0)` 判定を `condition_line_status_v.status = 'fulfilled'` 参照に変更。
   これにより「比率1.0の部分検収1件で全量扱い」になる誤判定が解消される。
   切替前に新旧判定の差分件数をログ出力し、差分行を確認すること（修正対象の実データが何件あるか）。
@@ -426,17 +426,17 @@ LEFT JOIN (
   SUM に切替（または同等の値を返すことを突合テストで確認してから内部実装を差し替え）。
 
 ### D-3. MG/AG 読み取り切替
-- [ ] `services/worker/src/lib/calc_license.ts` getMgConsumedToDate を condition_events /
+- [x] `services/worker/src/lib/calc_license.ts` getMgConsumedToDate を condition_events /
   condition_line_balance_v 参照に切替。royalty_calculations の mg_consumed_before/_after は
   以後「書き込みのみ（互換）・読み取り禁止」とする（grep で読み取り箇所を列挙し全件置換）。
 
 ### D-4. delivery_events.status の整理
-- [ ] cron が status='overdue' へ UPDATE している箇所を削除し、overdue はクエリ時に
+- [x] cron が status='overdue' へ UPDATE している箇所を削除し、overdue はクエリ時に
   `inspection_deadline < now() AND status='pending'` で導出。UI/API で 'overdue' を参照している箇所を
   grep（'overdue'）して導出式に置換。status 列の値域は pending/completed のみになる。
 
 ### D-5. 受け入れ基準
-- [ ] 突合スクリプト `scripts/restructure_d_verify.ts`: 全 condition_line について
+- [x] 突合スクリプト `scripts/restructure_d_verify.ts`: 全 condition_line について
   旧ロジックと新ビューの (consumed, remaining, mg_remaining, fulfilled判定) を比較し、
   既知バグ（D-2）由来以外の差分ゼロ。
 - [ ] アラート cron が新ビューで従来同等の通知を出す（ドライランログで比較）。

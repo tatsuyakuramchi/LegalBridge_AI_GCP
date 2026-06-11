@@ -60,6 +60,13 @@ import {
   addMaterialToLedger,
   markPrimaryDocument,
 } from "./src/lib/db.ts";
+// データ構造刷新 Phase C-5: 新スキーマへの二重書き込み (冪等・非致命)
+import {
+  syncConditionLinesForCapability,
+  syncInspectionEventsForDelivery,
+  syncRoyaltyCalcEvent,
+  safeSync,
+} from "./src/lib/conditionSync.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
@@ -2279,10 +2286,25 @@ ${details}
            ON cc.id = cli.capability_id
           AND cc.record_type = 'purchase_order'
          WHERE cli.delivery_date IS NOT NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM delivery_line_items dli
-              WHERE dli.capability_line_item_id = cli.id
-                AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+           -- Phase D-2 (dual-read): 全量検収の除外判定。
+           --   移行済み(condition_lines あり) → 導出ビュー status='fulfilled' で正確に判定
+           --     (旧来の「比率1.0の部分検収1件で全量扱い」誤判定を解消)。
+           --   未移行 → 従来の acceptance_ratio>=1.0 EXISTS にフォールバック。
+           AND NOT (
+             CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM condition_lines cl WHERE cl.source_line_item_id = cli.id
+               ) THEN EXISTS (
+                 SELECT 1 FROM condition_lines cl
+                   JOIN condition_line_status_v s ON s.id = cl.id
+                  WHERE cl.source_line_item_id = cli.id AND s.status = 'fulfilled'
+               )
+               ELSE EXISTS (
+                 SELECT 1 FROM delivery_line_items dli
+                  WHERE dli.capability_line_item_id = cli.id
+                    AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+               )
+             END
            )
            AND (
              (cli.delivery_date - CURRENT_DATE) IN (7, 3, 1)
@@ -5510,6 +5532,22 @@ ${details}
             ]
           );
         }
+
+        // Phase C-5: 新スキーマへ非致命で二重書き込み。
+        //   親 capability の condition_lines を用意 → 検収 events を起票。
+        //   condition_line / 検収書 document が未解決なら skip (既存挙動に無影響)。
+        const capRow = await query(
+          "SELECT capability_id FROM delivery_events WHERE id = $1",
+          [deliveryEventId]
+        );
+        const capId = Number(capRow.rows[0]?.capability_id);
+        if (capId)
+          await safeSync("CL(capability)", () =>
+            syncConditionLinesForCapability({ query }, capId)
+          );
+        await safeSync("inspection events", () =>
+          syncInspectionEventsForDelivery({ query }, deliveryEventId)
+        );
 
         res.json({ ok: true, line_count: lines.length });
       } catch (error) {
@@ -8762,6 +8800,16 @@ ${details}
 
           await client.query("COMMIT");
 
+          // Phase C-5: COMMIT 後に新スキーマへ非致命同期 (pool 経由・別接続なので
+          //   本体 Tx を汚さない)。orderItemId = capability_id。
+          if (orderItemId)
+            await safeSync("CL(capability)", () =>
+              syncConditionLinesForCapability({ query }, Number(orderItemId))
+            );
+          await safeSync("inspection events", () =>
+            syncInspectionEventsForDelivery({ query }, deliveryEventId)
+          );
+
           succeeded.push({
             import_key: importKey,
             issue_key: issueKey,
@@ -9364,6 +9412,12 @@ ${details}
           body.notes || null,
         ]
       );
+      // Phase C-5: 新スキーマへ非致命で二重書き込み (royalty_calc event)。
+      //   condition_line / 計算書 document が未解決なら skip。
+      await safeSync("royalty_calc event", () =>
+        syncRoyaltyCalcEvent({ query }, Number(result.rows[0].id))
+      );
+
       res.json({ ok: true, id: result.rows[0].id, computed });
     } catch (error) {
       console.error("/api/royalty-calculations failed:", error);

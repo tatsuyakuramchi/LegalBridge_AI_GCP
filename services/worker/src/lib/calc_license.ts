@@ -112,10 +112,19 @@ export async function getMgConsumedToDate(
     params.push(excludeCalculationId);
     conditions.push(`id <> $${params.length}`);
   }
+  // Phase D-3 (dual-read): MG 消化累計を void 対応に。
+  //   旧 SUM をベースに、取消済み(voided) condition_event に紐づく行のみ除外する。
+  //   未移行 (condition_event 無し) の行は従来どおり集計されるため後方互換。
+  //   これにより文書 void → 残高自動復元 (E-1) が MG にも効くようになる。
   const res = await query(
     `SELECT COALESCE(SUM(mg_consumed_this_time), 0) AS consumed
-       FROM royalty_calculations
-      WHERE ${conditions.join(" AND ")}`,
+       FROM royalty_calculations rc
+      WHERE ${conditions.join(" AND ")}
+        AND NOT EXISTS (
+          SELECT 1 FROM condition_events ev
+           WHERE ev.source_royalty_calculation_id = rc.id
+             AND ev.voided_at IS NOT NULL
+        )`,
     params
   );
   return Number(res.rows[0].consumed) || 0;
@@ -144,10 +153,16 @@ export async function getAgConsumedToDate(
     conditions.push(`id <> $${params.length}`);
   }
   try {
+    // Phase D-3 (dual-read): MG と対称に AG も void 対応 (取消イベント紐づき行を除外)。
     const res = await query(
       `SELECT COALESCE(SUM(ag_consumed_this_time), 0) AS consumed
-         FROM royalty_calculations
-        WHERE ${conditions.join(" AND ")}`,
+         FROM royalty_calculations rc
+        WHERE ${conditions.join(" AND ")}
+          AND NOT EXISTS (
+            SELECT 1 FROM condition_events ev
+             WHERE ev.source_royalty_calculation_id = rc.id
+               AND ev.voided_at IS NOT NULL
+          )`,
       params
     );
     return Number(res.rows[0].consumed) || 0;
