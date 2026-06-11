@@ -43,8 +43,12 @@ export interface LineItemLike {
   id?: number | null;
   item_name?: any;
   spec?: any;
+  category?: any;
   calc_method?: any;
+  payment_method?: any;
   payment_terms?: any;
+  payment_date?: any;
+  fee_type?: any;
   quantity?: any;
   unit_price?: any;
   amount_ex_tax?: any;
@@ -87,6 +91,16 @@ export function mapLineItemToConditionLine(
     rights_attribution: null,
     currency: "JPY",
     notes: isPresent(li.spec) ? String(li.spec) : null,
+    // Phase E-2(a) 表示用フィールド (旧 capability_line_items 由来)
+    spec: isPresent(li.spec) ? String(li.spec) : null,
+    category: isPresent(li.category) ? String(li.category) : null,
+    calc_method: isPresent(li.calc_method) ? String(li.calc_method) : null,
+    payment_method: isPresent(li.payment_method) ? String(li.payment_method) : null,
+    payment_terms: isPresent(li.payment_terms) ? String(li.payment_terms) : null,
+    payment_date: isPresent(li.payment_date) ? li.payment_date : null,
+    fee_type: isPresent(li.fee_type) ? String(li.fee_type) : null,
+    calc_period: null,
+    formula_text: null,
     // 消化型の数量・単価・金額
     quantity: recurring ? null : num(li.quantity),
     unit_price: recurring ? null : num(li.unit_price),
@@ -115,6 +129,7 @@ export interface FinancialConditionLike {
   calc_method?: any;
   rate_pct?: any;
   base_price_label?: any;
+  calc_period?: any;
   calc_period_kind?: any;
   calc_period_close_month?: any;
   currency?: any;
@@ -168,6 +183,16 @@ export function mapFinancialConditionToConditionLine(
         .filter((x) => isPresent(x))
         .map((x) => String(x))
         .join(" / ") || null,
+    // Phase E-2(a) 表示用フィールド (旧 capability_financial_conditions 由来)
+    spec: null,
+    category: null,
+    calc_method: isPresent(fc.calc_method) ? String(fc.calc_method) : null,
+    payment_method: null,
+    payment_terms: isPresent(fc.payment_terms) ? String(fc.payment_terms) : null,
+    payment_date: null,
+    fee_type: null,
+    calc_period: isPresent(fc.calc_period) ? String(fc.calc_period) : null,
+    formula_text: isPresent(fc.formula_text) ? String(fc.formula_text) : null,
     quantity: null,
     unit_price: null,
     // lump_sum は金額必須 → mg_amount を転記(無ければ0)。royalty は null。
@@ -207,6 +232,15 @@ export const CONDITION_LINE_COLUMNS = [
   "rights_attribution",
   "currency",
   "notes",
+  "spec",
+  "category",
+  "calc_method",
+  "payment_method",
+  "payment_terms",
+  "payment_date",
+  "fee_type",
+  "calc_period",
+  "formula_text",
   "quantity",
   "unit_price",
   "amount_ex_tax",

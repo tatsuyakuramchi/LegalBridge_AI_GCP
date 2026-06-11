@@ -1673,6 +1673,19 @@ export async function initDb() {
     );`,
     `CREATE INDEX IF NOT EXISTS idx_cl_capability ON condition_lines(capability_id);`,
     `CREATE INDEX IF NOT EXISTS idx_cl_work ON condition_lines(work_id);`,
+    // Phase E-2(a): 表示用フィールド。旧明細テーブル(capability_line_items /
+    //   capability_financial_conditions)の表示列を condition_lines に保持し、
+    //   表示/フォーム供給リーダーが condition_lines だけで完結できるようにする
+    //   (= 旧テーブル DROP の前提)。値は C-2/C-5 マッパー + 再backfill(E2a)で充填。
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS spec TEXT;`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS category VARCHAR(100);`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS calc_method VARCHAR(50);`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS payment_method VARCHAR(50);`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS payment_terms TEXT;`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS payment_date DATE;`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS fee_type VARCHAR(50);`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS calc_period VARCHAR(50);`,
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS formula_text TEXT;`,
 
     // --- B-5 (後半). 構成要素 ↔ イン側条件明細 N:M (condition_lines を参照)
     `CREATE TABLE IF NOT EXISTS work_component_lines (
