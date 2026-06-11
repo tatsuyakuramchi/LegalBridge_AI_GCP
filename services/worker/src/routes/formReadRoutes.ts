@@ -238,6 +238,8 @@ export function registerFormReadRoutes(
               context["parent_po_issue_key"] = parentKey;
               context["parent_po_id"] = poId;
               context["parent_po_number"] = parentPoNumber;
+              // 件名(親POの contract_title) を検収確認文の先頭に表示する。
+              context["projectTitle"] = poRow.contract_title || "";
               if (firstLine?.item_name) {
                 context["description"] = firstLine.item_name;
               }
