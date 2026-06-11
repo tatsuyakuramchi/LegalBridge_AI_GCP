@@ -2782,7 +2782,40 @@ async function startServer() {
                     ),
                     '{}'::text[]
                   ) AS ringi_numbers,
+                  -- Phase E-2: 純表示(status非依存) json_agg を condition_lines 優先の
+                  --   coverage-gated dual-source 化 (sharedReads と対称)。新 json_agg は
+                  --   「移行済み件数 = 旧件数 かつ >0」のときだけ行を返し、でなければ NULL→
+                  --   COALESCE で旧 json_agg にフォールバック。
                   COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cl.source_condition_id,
+                                 'condition_no', cl.source_seq_no,
+                                 'region_language_label', cl.subject,
+                                 'calc_method', cl.calc_method,
+                                 'rate_pct', cl.rate_pct,
+                                 'base_price_label', cl.base_price_label,
+                                 'calc_period', cl.calc_period,
+                                 'calc_period_kind', cl.calc_period_kind,
+                                 'calc_period_close_month', cl.calc_period_close_month,
+                                 'currency', cl.currency,
+                                 'formula_text', cl.formula_text,
+                                 'payment_terms', cl.payment_terms,
+                                 'mg_amount', cl.mg_amount,
+                                 'ag_amount', COALESCE(cl.ag_amount, 0)
+                               )
+                               ORDER BY cl.source_seq_no ASC
+                             )
+                        FROM condition_lines cl
+                       WHERE cl.source_condition_id IN (
+                               SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM condition_lines x
+                               WHERE x.source_condition_id IN (
+                                 SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id))
+                             = (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id) > 0
+                    ),
                     (
                       SELECT json_agg(
                                json_build_object(
@@ -2809,6 +2842,37 @@ async function startServer() {
                     '[]'::json
                   ) AS financial_conditions,
                   COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cl.source_line_item_id,
+                                 'line_no', COALESCE(cl.source_seq_no, cl.line_no),
+                                 'category', cl.category,
+                                 'item_name', cl.subject,
+                                 'spec', cl.spec,
+                                 'calc_method', cl.calc_method,
+                                 'payment_method', cl.payment_method,
+                                 'payment_terms', cl.payment_terms,
+                                 'quantity', cl.quantity,
+                                 'unit_price', cl.unit_price,
+                                 'amount_ex_tax', cl.amount_ex_tax,
+                                 'delivery_date', cl.delivery_date,
+                                 'payment_date', cl.payment_date,
+                                 'cycle', cl.cycle,
+                                 'billing_day', cl.billing_day,
+                                 'term_start', cl.term_start,
+                                 'term_end', cl.term_end,
+                                 'fee_type', cl.fee_type
+                               )
+                               ORDER BY COALESCE(cl.source_seq_no, cl.line_no) ASC
+                             )
+                        FROM condition_lines cl
+                       WHERE cl.capability_id = cc.id AND cl.source_line_item_id IS NOT NULL
+                         AND (SELECT COUNT(*) FROM condition_lines x
+                               WHERE x.capability_id = cc.id AND x.source_line_item_id IS NOT NULL)
+                             = (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id) > 0
+                    ),
                     (
                       SELECT json_agg(
                                json_build_object(

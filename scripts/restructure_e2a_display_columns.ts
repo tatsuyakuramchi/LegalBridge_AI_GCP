@@ -79,6 +79,23 @@ async function main() {
     client.release();
   }
 
+  // fee_type は capability_line_items に列が無い環境があるため、COMMIT 後に別接続で
+  //   42703 ガードして充填 (列があれば埋め、無ければ skip。本体 Tx を汚さない)。
+  try {
+    const rf = await pool.query(`
+      UPDATE condition_lines cl SET fee_type = li.fee_type
+      FROM capability_line_items li
+      WHERE cl.source_line_item_id = li.id
+    `);
+    console.log(`  fee_type 充填: ${rf.rowCount}`);
+  } catch (e: any) {
+    if (e && e.code === "42703") {
+      console.log("  fee_type: capability_line_items に列なし → skip");
+    } else {
+      throw e;
+    }
+  }
+
   // 検証: 充填漏れ(NULL のまま)の確認
   const missing = (
     await pool.query(`
