@@ -500,7 +500,7 @@ LEFT JOIN (
 
 ## 8. Phase G: クリーンアップ（全 Phase 完了後）
 
-- [ ] G-1: データ補正完了後の制約強化:
+- [x] G-1: データ補正完了後の制約強化:
   - structural_role に NOT NULL + CHECK ('master','terms')
   - condition_lines に `cl_scheme_recurring_term` CHECK を付与
   - 「terms のみ condition_lines を持てる」「master のみ親になれる」をトリガで強制

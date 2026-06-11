@@ -69,11 +69,18 @@ export async function syncConditionLinesForCapability(
 
   const cap = (
     await db.query(
-      `SELECT id, effective_date, expiration_date FROM contract_capabilities WHERE id = $1`,
+      `SELECT id, record_type, structural_role, contract_category, contract_type,
+              contract_title, vendor_id, effective_date, expiration_date,
+              template_family, backlog_issue_key
+         FROM contract_capabilities WHERE id = $1`,
       [capabilityId]
     )
   ).rows[0];
   if (!cap) return 0;
+
+  // A案: master 直付けの明細は暗黙 terms 契約に切り出して付ける
+  //   (master は枠組みのみ・条件明細を持たない原則。C-2 バックフィルと同じ挙動)。
+  const targetId = await resolveTermsCapability(db, cap);
 
   const liRows = await db.query(
     `SELECT li.* FROM capability_line_items li
@@ -83,9 +90,9 @@ export async function syncConditionLinesForCapability(
     [capabilityId]
   );
   for (const li of liRows.rows) {
-    const lineNo = await nextLineNo(db, capabilityId);
+    const lineNo = await nextLineNo(db, targetId);
     const code = `CL-${year}-${String(await nextSeq(db, "condition_line", year)).padStart(5, "0")}`;
-    const row = mapLineItemToConditionLine(li, capabilityId, lineNo, code);
+    const row = mapLineItemToConditionLine(li, targetId, lineNo, code);
     await db.query(INSERT_CL, conditionLineInsertValues(row));
     added++;
   }
@@ -98,12 +105,12 @@ export async function syncConditionLinesForCapability(
     [capabilityId]
   );
   for (const fc of fcRows.rows) {
-    const lineNo = await nextLineNo(db, capabilityId);
+    const lineNo = await nextLineNo(db, targetId);
     const code = `CL-${year}-${String(await nextSeq(db, "condition_line", year)).padStart(5, "0")}`;
     const row = mapFinancialConditionToConditionLine(
       fc,
       { effective_date: cap.effective_date, expiration_date: cap.expiration_date },
-      capabilityId,
+      targetId,
       lineNo,
       code
     );
@@ -111,6 +118,56 @@ export async function syncConditionLinesForCapability(
     added++;
   }
   return added;
+}
+
+const IMPLICIT_PREFIX = "（基本契約内条件）";
+
+/**
+ * A案: structural_role='master'(or record_type='master_contract') の契約に
+ * 条件明細を付ける場合、暗黙の terms 契約を 1 件生成 (or 再利用) して返す。
+ * terms / その他はそのまま自身を返す。C-2 バックフィルの resolveTargetCapability と同等。
+ */
+async function resolveTermsCapability(db: Db, cap: any): Promise<number> {
+  const role =
+    cap.structural_role ||
+    (cap.record_type === "master_contract" ? "master" : "terms");
+  if (role !== "master") return cap.id;
+
+  const existing = await db.query(
+    `SELECT id FROM contract_capabilities
+      WHERE parent_capability_id = $1 AND contract_title LIKE $2
+      ORDER BY id LIMIT 1`,
+    [cap.id, IMPLICIT_PREFIX + "%"]
+  );
+  if (existing.rows.length) return existing.rows[0].id;
+
+  const ins = await db.query(
+    `INSERT INTO contract_capabilities
+       (record_type, contract_category, contract_type, contract_title,
+        vendor_id, effective_date, expiration_date,
+        structural_role, parent_capability_id, template_family, backlog_issue_key)
+     VALUES ('standalone_contract', $1, $2, $3, $4, $5, $6, 'terms', $7, $8, $9)
+     RETURNING id`,
+    [
+      cap.contract_category,
+      cap.contract_type,
+      IMPLICIT_PREFIX + (cap.contract_title || ""),
+      cap.vendor_id,
+      cap.effective_date,
+      cap.expiration_date,
+      cap.id,
+      cap.template_family,
+      cap.backlog_issue_key,
+    ]
+  );
+  const newId = ins.rows[0].id;
+  await db.query(
+    `INSERT INTO contract_scopes (capability_id, scope)
+       SELECT $1, scope FROM contract_scopes WHERE capability_id = $2
+     ON CONFLICT (capability_id, scope) DO NOTHING`,
+    [newId, cap.id]
+  );
+  return newId;
 }
 
 /**
