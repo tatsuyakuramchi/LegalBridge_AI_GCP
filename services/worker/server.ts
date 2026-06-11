@@ -7311,10 +7311,11 @@ ${details}
       }
       // Step1(SSOT): 下書き保存時も別名キーを揃えてから格納する。
       const normForm = normalizeDocumentFormData(templateType, formData);
-      // 発番タイミング: 「初回保存時に採番」。この (issue_key, template_type) の
-      //   下書きにまだ document_number が無ければ、ここで採番して固定する。
-      //   既に番号がある(再保存)場合は維持する。manual override / reopen 等で
-      //   form_data 側に番号が来ている場合はそれを優先採用する。
+      // 発番タイミング: 明示的な「保存」操作 (assign_number=true) のときだけ採番する。
+      //   暗黙の保存 (編集モード切替・自動保存) では採番せず form_data だけ更新する。
+      //   これにより「編集に入っただけで番号を消費する」のを防ぐ。
+      //   既に番号がある場合は維持。form_data 側に番号が来ていればそれを優先採用。
+      const assignNumber = req.body?.assign_number === true;
       let assignedDocNumber: string | null = null;
       try {
         const existing = await query(
@@ -7330,7 +7331,8 @@ ${details}
             typeof (formData as any)?.__draft_doc_number === "string"
               ? String((formData as any).__draft_doc_number).trim()
               : "";
-          assignedDocNumber = fromForm || (await getNewDocumentNumber(templateType));
+          // 明示保存のときだけ新規採番する。暗黙保存では番号を採らない(null)。
+          assignedDocNumber = fromForm || (assignNumber ? await getNewDocumentNumber(templateType) : null);
         }
       } catch (numErr) {
         console.warn("[document-drafts POST] 採番に失敗(番号なしで保存):", numErr);

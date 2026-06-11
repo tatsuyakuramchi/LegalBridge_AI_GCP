@@ -167,6 +167,8 @@ export function DocumentEditorPage() {
   const [isGenerating, setIsGenerating] = React.useState(false)
   // 過去文書/下書きを番号で呼び出すフォーム(Sheet)の開閉。
   const [recallOpen, setRecallOpen] = React.useState(false)
+  // 明示的な「保存」(= 初回保存で採番) の進行状態。
+  const [isSavingDraft, setIsSavingDraft] = React.useState(false)
   // Phase 9g: 文書生成完了後の達成感のあるサクセス画面用
   // Phase 22.21.104: 検収書 / 利用許諾料計算書では excelLink も返るので保持
   const [completionResult, setCompletionResult] = React.useState<{
@@ -420,7 +422,7 @@ export function DocumentEditorPage() {
    * draft とは独立 (両方走らせて二重に保護)。
    */
   const saveDraftToServer = React.useCallback(
-    async (silent = false): Promise<boolean> => {
+    async (silent = false, assignNumber = false): Promise<boolean> => {
       if (!selectedIssue || !selectedTemplate) return false
       // 中身が空 (or 制御フラグのみ) なら保存しない
       const hasContent = Object.keys(formData || {}).some(
@@ -435,6 +437,8 @@ export function DocumentEditorPage() {
             issue_key: selectedIssue,
             template_type: selectedTemplate,
             form_data: formData,
+            // 採番は明示的な「保存」操作のときだけ行う(暗黙保存では採番しない)。
+            assign_number: assignNumber,
           }),
         })
         const data = await res.json().catch(() => ({}))
@@ -1108,6 +1112,21 @@ export function DocumentEditorPage() {
     showNotification("New document started.", "info")
   }
 
+  // 明示的な「保存」ボタン。下書きをサーバ保存し、初回はここで採番する。
+  //   暗黙保存(編集モード切替・自動保存)では採番しないため、番号は保存ボタンで確定。
+  const handleExplicitSave = React.useCallback(async () => {
+    if (!selectedIssue || !selectedTemplate) {
+      showNotification("課題とテンプレートを選択してください。", "error")
+      return
+    }
+    setIsSavingDraft(true)
+    try {
+      await saveDraftToServer(/* silent */ false, /* assignNumber */ true)
+    } finally {
+      setIsSavingDraft(false)
+    }
+  }, [selectedIssue, selectedTemplate, saveDraftToServer, showNotification])
+
   // 過去文書/下書きを番号で呼び出してフォームに読み込む。
   //   - draft : form_data + 採番済み番号(__draft_doc_number) を引き継いで編集を再開。
   //   - 確定文書: 再編集(reopen)として開く(生成時は同番号上書き=内部修正)。
@@ -1470,7 +1489,7 @@ export function DocumentEditorPage() {
                   return (
                     <span
                       className="inline-flex items-center gap-1 rounded-md border border-amber-300 bg-amber-50 px-2 py-1 text-[10px] font-mono font-bold text-amber-800"
-                      title="未採番 Draft — 生成ボタン押下時に自動採番されます"
+                      title="未採番 Draft — 「保存」ボタンまたは生成時に採番されます"
                     >
                       <span className="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse" />
                       未採番 Draft
@@ -1482,6 +1501,17 @@ export function DocumentEditorPage() {
                     Saved {lastAutoSave}
                   </span>
                 )}
+                {/* 明示的な「保存」: 下書きをサーバ保存し、初回はここで採番する。 */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleExplicitSave}
+                  disabled={isSavingDraft || !selectedIssue || !selectedTemplate}
+                  title="下書きを保存します。初めての保存時にこのタイミングで採番されます。"
+                >
+                  {isSavingDraft ? <Loader2 className="animate-spin" /> : <History />}
+                  保存
+                </Button>
                 {/* 過去文書/下書きを番号で呼び出す。 */}
                 <Button
                   variant="outline"
