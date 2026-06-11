@@ -2470,6 +2470,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 parent_po_issue_key: c.backlog_issue_key,
                 parent_po_number: c.document_number || "",
                 parent_contract_record_type: c.record_type,
+                // 件名(親POの件名) を検収確認文の先頭に表示するため保持。
+                projectTitle: c.contract_title || formData.projectTitle || "",
                 order_lines_for_inspection: detail.line_items,
                 // Phase 23.5: 「発注日」は issue_date_po (PO header の発行日)
                 //   を最優先。due_date は支払期限、effective_date は契約発効日
