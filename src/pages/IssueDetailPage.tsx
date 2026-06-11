@@ -46,7 +46,7 @@ function LifecycleBadge({ status }: { status?: string }) {
       </Badge>
     )
   }
-  if (s === "archived_draft") {
+  if (s === "archived_draft" || s === "voided") {
     return (
       <Badge variant="outline" className="text-muted-foreground line-through">
         {s}

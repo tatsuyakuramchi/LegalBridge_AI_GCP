@@ -448,14 +448,14 @@ LEFT JOIN (
 依存: Phase D。
 
 ### E-1. 文書 void / reissue API
-- [ ] `POST /api/documents/:id/void`（worker）: 同一トランザクションで
+- [x] `POST /api/documents/:id/void`（worker）: 同一トランザクションで
   documents.lifecycle_status='archived_draft'（既存値域に合わせる。void 専用値を追加する場合は
   'voided' を lifecycle_status の値域に追加）+ 対応する condition_events.voided_at = now(),
   void_reason 記録。Backlog コメント投稿（既存 backlogService の流儀）。
-- [ ] 再発行（既存の reissue 処理 L2066 付近）に、旧文書のイベントを void → 新文書で
+- [x] 再発行（既存の reissue 処理 L2066 付近）に、旧文書のイベントを void → 新文書で
   イベント再作成（または document_id 付け替え）の処理を統合。
   「有効実績1件 = final文書1件」の不変条件をこの API 層で保証する。
-- [ ] 受け入れ基準: void すると残額・MG 残が即座に復元される（ビュー導出なので自動）。
+- [x] 受け入れ基準: void すると残額・MG 残が即座に復元される（ビュー導出なので自動）。
   void → 再発行 → 再 void のシーケンスで残高が正しく往復する統合テストを scripts/ に追加。
 
 ### E-2. 旧テーブルへの書き込み停止（読み取りは互換ビューへ）
@@ -466,7 +466,7 @@ LEFT JOIN (
   condition_lines 参照へ書き換える方を優先（ビューより明示的）。書き換え完了後、旧テーブルは凍結。
 
 ### E-3. 支払記録イベント
-- [ ] subscription / installment 用の `POST /api/condition-lines/:id/payments`
+- [x] subscription / installment 用の `POST /api/condition-lines/:id/payments`
   （event_type='payment', document_id なし）を追加。着手金の記録もこれを使う。
 
 ---

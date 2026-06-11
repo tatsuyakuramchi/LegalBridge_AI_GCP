@@ -9436,6 +9436,139 @@ ${details}
   });
 
   // -------------------------------------------------------------------
+  // データ構造刷新 Phase E-1: 文書 void。
+  //   documents.lifecycle_status='voided' に倒し、同一トランザクションで
+  //   その文書に紐づく有効 condition_events の voided_at をセットする。
+  //   消化額・MG/AG・残高は導出ビュー / dual-read 集計なので、void と同時に
+  //   自動的に復元される (D-3 で実証済み)。Backlog コメントは best-effort。
+  // -------------------------------------------------------------------
+  app.post("/api/documents/:id/void", express.json(), async (req, res) => {
+    const documentId = Number(req.params.id);
+    if (!Number.isFinite(documentId)) {
+      return res.status(400).json({ ok: false, error: "invalid document id" });
+    }
+    const reason = String(req.body?.reason || "").trim() || null;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const docRes = await client.query(
+        `SELECT id, document_number, issue_key, lifecycle_status FROM documents WHERE id = $1`,
+        [documentId]
+      );
+      if (!docRes.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ ok: false, error: "document not found" });
+      }
+      const doc = docRes.rows[0];
+      // 文書を void 状態に (lifecycle_status に CHECK は無いので 'voided' を採用。
+      //   既存の final フィルタは 'final' 以外を一律除外するため後方互換)。
+      await client.query(
+        `UPDATE documents SET lifecycle_status = 'voided', is_primary = FALSE WHERE id = $1`,
+        [documentId]
+      );
+      // 紐づく有効実績を取消 (同一 Tx)。
+      const ev = await client.query(
+        `UPDATE condition_events
+            SET voided_at = CURRENT_TIMESTAMP, void_reason = $2
+          WHERE document_id = $1 AND voided_at IS NULL
+          RETURNING id, condition_line_id`,
+        [documentId, reason]
+      );
+      await client.query("COMMIT");
+
+      if (doc.issue_key) {
+        try {
+          await backlogService.addComment(
+            doc.issue_key,
+            `🗑️ 文書を void しました: ${doc.document_number || "(採番なし)"}` +
+              (reason ? `\n理由: ${reason}` : "") +
+              `\n→ 紐づく実績 ${ev.rowCount} 件を取消し、残高を復元しました。`
+          );
+        } catch (e) {
+          console.warn(`[void] backlog comment failed (${doc.issue_key}):`, e);
+        }
+      }
+      res.json({
+        ok: true,
+        document_id: documentId,
+        document_number: doc.document_number,
+        voided_events: ev.rowCount,
+        affected_lines: [...new Set(ev.rows.map((r: any) => r.condition_line_id))],
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("/api/documents/:id/void failed:", error);
+      res.status(500).json({ error: String(error) });
+    } finally {
+      client.release();
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // データ構造刷新 Phase E-3: 条件明細への支払記録イベント。
+  //   subscription / installment / 着手金 など「文書を伴わない支払」の記録。
+  //   event_type='payment' は document_id を持たない (CHECK ce_document_pairing)。
+  // -------------------------------------------------------------------
+  app.post(
+    "/api/condition-lines/:id/payments",
+    express.json(),
+    async (req, res) => {
+      const conditionLineId = Number(req.params.id);
+      if (!Number.isFinite(conditionLineId)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "invalid condition_line id" });
+      }
+      const body = req.body || {};
+      const amount = Number(body.amount_ex_tax);
+      if (!Number.isFinite(amount)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "amount_ex_tax is required" });
+      }
+      try {
+        const clRes = await query(
+          `SELECT id FROM condition_lines WHERE id = $1`,
+          [conditionLineId]
+        );
+        if (!clRes.rows.length) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "condition_line not found" });
+        }
+        const eventNoRes = await query(
+          `SELECT COALESCE(MAX(event_no),0)+1 AS n FROM condition_events WHERE condition_line_id = $1`,
+          [conditionLineId]
+        );
+        const ins = await query(
+          `INSERT INTO condition_events
+             (condition_line_id, event_no, event_type, installment_id,
+              backlog_issue_key, occurred_at, period, amount_ex_tax)
+           VALUES ($1,$2,'payment',$3,$4,$5,$6,$7)
+           RETURNING id, event_no`,
+          [
+            conditionLineId,
+            Number(eventNoRes.rows[0].n),
+            body.installment_id != null ? Number(body.installment_id) : null,
+            body.backlog_issue_key ? String(body.backlog_issue_key) : null,
+            body.occurred_at || new Date().toISOString(),
+            body.period || null,
+            amount,
+          ]
+        );
+        res.json({
+          ok: true,
+          event_id: ins.rows[0].id,
+          event_no: ins.rows[0].event_no,
+        });
+      } catch (error) {
+        console.error("/api/condition-lines/:id/payments failed:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
   // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
   // -------------------------------------------------------------------
 
@@ -10555,6 +10688,19 @@ ${details}
               WHERE base_document_number = $1
                 AND document_number <> $2
                 AND lifecycle_status = 'final'`,
+            [baseDocumentNumber, docNumber]
+          );
+          // Phase E-1: 旧版に紐づく有効 condition_events を新版へ付け替える。
+          //   「有効実績1件 = final文書1件」の不変条件を維持 (実績は同一内容のまま
+          //   現行 final 文書を指す)。void ではなく付け替えなので残高は不変。
+          await query(
+            `UPDATE condition_events
+                SET document_id = (SELECT id FROM documents WHERE document_number = $2)
+              WHERE voided_at IS NULL
+                AND document_id IN (
+                  SELECT id FROM documents
+                   WHERE base_document_number = $1 AND document_number <> $2
+                )`,
             [baseDocumentNumber, docNumber]
           );
         } catch (reissueErr) {
