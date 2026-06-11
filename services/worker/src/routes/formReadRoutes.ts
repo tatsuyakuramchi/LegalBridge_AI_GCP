@@ -583,7 +583,7 @@ export function registerFormReadRoutes(
                         calc_period_kind, calc_period_close_month,
                         condition_name, calc_type, fixed_kind,
                         subscription_cycle, unit_amount, guarantee_type,
-                        region_territory, region_language
+                        region_territory, region_language, applies_scope
                    FROM capability_financial_conditions
                   WHERE capability_id = $1
                   ORDER BY condition_no ASC`,
@@ -635,6 +635,7 @@ export function registerFormReadRoutes(
                   : undefined,
               currency: r.currency || "JPY",
               formula_text: r.formula_text || "",
+              applies_scope: r.applies_scope || "",
               payment_terms: r.payment_terms || "",
               mg_amount: r.mg_amount !== null ? Number(r.mg_amount) : 0,
               ag_amount: r.ag_amount != null ? Number(r.ag_amount) : 0,
