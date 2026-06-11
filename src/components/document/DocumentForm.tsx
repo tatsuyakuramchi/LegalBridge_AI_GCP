@@ -161,14 +161,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, selectedStaff?.staff_name]);
 
-  // 利用許諾料計算書: 税率が未設定なら 10% を form_data に初期化する。
+  // 利用許諾料計算書: 税率/発行日が未設定なら既定値を form_data に初期化する。
   //   select の表示は `formData.taxRate || '10'` で 10 に見えるが、未操作だと
   //   formData.taxRate 自体は undefined のまま保存され、テンプレの {{taxRate}} が
-  //   空欄で出力されてしまう。これを防ぐため明示的に '10' を書き込む。
+  //   空欄で出力されてしまう。発行日(documentDate) も入力欄/初期化が無く {{documentDate}}
+  //   が空欄になっていたため、本日日付で初期化する。
   useEffect(() => {
     if (templateId !== 'royalty_statement') return;
-    if (formData.taxRate) return;
-    setFormData({ ...formData, taxRate: '10' });
+    const patch: Record<string, any> = {};
+    if (!formData.taxRate) patch.taxRate = '10';
+    if (!formData.documentDate)
+      patch.documentDate = new Date().toISOString().slice(0, 10);
+    if (Object.keys(patch).length > 0) setFormData({ ...formData, ...patch });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
 
@@ -3882,6 +3886,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             ▼ ステップ 5 — 報告・支払・備考
           </summary>
           <div className="p-4 border-t border-input grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">
+                発行日 <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                type="date"
+                value={formData.documentDate || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, documentDate: e.target.value })
+                }
+              />
+            </div>
             <div className="space-y-1">
               <Label className="text-[11px] font-mono">
                 通貨 <span className="text-red-600">*</span>
