@@ -302,6 +302,8 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         quantity: Number(l.quantity) || 0,
         unit_price: Number(l.unit_price) || 0,
         amount_ex_tax: Number(l.amount_ex_tax) || 0,
+        // 成果物帰属。受注者帰属かつ0円は検収書で「利用許諾料に含む」表示。
+        deliverable_ownership: l.deliverable_ownership || "発注者",
         rate_pct: l.rate_pct == null ? undefined : Number(l.rate_pct),
         delivery_date: l.delivery_date,
         payment_date: l.payment_date,
