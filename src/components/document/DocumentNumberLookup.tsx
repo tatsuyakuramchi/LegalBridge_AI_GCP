@@ -47,8 +47,9 @@ export type LookedUpDocument = {
   // 個別利用許諾条件書の「基本契約名」等に流し込みやすいよう前処理しておく。
   derived_title: string
   // Phase 22.21.76: 'archive' = /api/documents/search 由来 (PDF アーカイブ),
-  //                 'master'  = /api/master/contracts 由来 (Master 契約マスタ)
-  source: "archive" | "master"
+  //                 'master'  = /api/master/contracts 由来 (Master 契約マスタ),
+  //                 'draft'   = document_drafts 由来 (作成途中の下書き・番号採番済)
+  source: "archive" | "master" | "draft"
   // Phase 22.21.76: Master 行のみ。Vendor 名等の補足情報を表示するため保持。
   master_meta?: {
     vendor_name?: string
@@ -82,6 +83,10 @@ interface Props {
    * Master 契約番号で参照したい」ケース向け。
    */
   includeMaster?: boolean
+  /** 作成途中の下書き(document_drafts)も検索結果に含める (include_drafts=1)。 */
+  includeDrafts?: boolean
+  /** 下書き行の削除ハンドラ (指定時のみ下書き行に削除ボタンを表示)。 */
+  onDeleteDraft?: (doc: LookedUpDocument) => void
 }
 
 // Phase 22.21.2: テンプレ種別ごとの「契約類型名」前置ラベル。
@@ -223,6 +228,8 @@ export const DocumentNumberLookup: React.FC<Props> = ({
   disabled = false,
   limit = 20,
   includeMaster = false,
+  includeDrafts = false,
+  onDeleteDraft,
 }) => {
   const [query, setQuery] = React.useState(initialQuery)
   const [searching, setSearching] = React.useState(false)
@@ -245,6 +252,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
           params.set("template_types", filterTemplateTypes.join(","))
         }
         params.set("limit", String(limit))
+        if (includeDrafts) params.set("include_drafts", "1")
         const archiveUrl = `/api/documents/search?${params.toString()}`
 
         // 2) Master 検索 (search-api /api/master/contracts)
@@ -271,9 +279,9 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                 derived_title: deriveTitle(
                   r.template_type,
                   fd,
-                  r.document_number
+                  r.document_number || "(下書き・番号未採番)"
                 ),
-                source: "archive",
+                source: r.source === "draft" ? "draft" : "archive",
               }
             })
           })
@@ -353,7 +361,7 @@ export const DocumentNumberLookup: React.FC<Props> = ({
         setSearching(false)
       }
     },
-    [filterTemplateTypes, limit, includeMaster]
+    [filterTemplateTypes, limit, includeMaster, includeDrafts]
   )
 
   // 初回マウントで一度走らせる (initialQuery 有無に関わらず一覧を出す)。
@@ -488,7 +496,8 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                   問題を防ぐため max-h を拡大 (260→400)。 */}
               {(() => {
                 const masterRows = results.filter((d) => d.source === "master")
-                const archiveRows = results.filter((d) => d.source === "archive")
+                // Archive セクションに下書き(draft)も含めて表示する。
+                const archiveRows = results.filter((d) => d.source !== "master")
                 const renderRow = (doc: LookedUpDocument) => (
                   <button
                     key={`${doc.source}:${doc.id}`}
@@ -509,15 +518,23 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                               "text-[10px] font-mono px-1 py-px rounded uppercase tracking-wider border",
                               doc.source === "master"
                                 ? "bg-sky-50 border-sky-300 text-sky-800"
-                                : "bg-muted/60 border-input text-muted-foreground"
+                                : doc.source === "draft"
+                                  ? "bg-amber-50 border-amber-300 text-amber-800"
+                                  : "bg-muted/60 border-input text-muted-foreground"
                             )}
                             title={
                               doc.source === "master"
                                 ? "契約マスタ (Master) 由来"
-                                : "PDF アーカイブ (Archive) 由来"
+                                : doc.source === "draft"
+                                  ? "作成途中の下書き (Draft) 由来"
+                                  : "PDF アーカイブ (Archive) 由来"
                             }
                           >
-                            {doc.source === "master" ? "Master" : "Archive"}
+                            {doc.source === "master"
+                              ? "Master"
+                              : doc.source === "draft"
+                                ? "Draft"
+                                : "Archive"}
                           </span>
                           <span className="text-foreground truncate">
                             {doc.document_number || "(番号未設定)"}
@@ -570,6 +587,27 @@ export const DocumentNumberLookup: React.FC<Props> = ({
                           <ExternalLink className="h-2.5 w-2.5" />
                           {doc.source === "master" ? "Link" : "PDF"}
                         </a>
+                      )}
+                      {doc.source === "draft" && onDeleteDraft && (
+                        <span
+                          role="button"
+                          tabIndex={0}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onDeleteDraft(doc)
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter" || e.key === " ") {
+                              e.stopPropagation()
+                              onDeleteDraft(doc)
+                            }
+                          }}
+                          className="text-muted-foreground hover:text-destructive text-[11px] font-mono uppercase tracking-wider flex items-center gap-0.5 flex-shrink-0 cursor-pointer"
+                          title="この下書きを削除"
+                        >
+                          <X className="h-3 w-3" />
+                          削除
+                        </span>
                       )}
                     </div>
                   </button>

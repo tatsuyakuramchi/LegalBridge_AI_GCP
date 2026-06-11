@@ -7230,7 +7230,7 @@ ${details}
       }
       params.push(limit);
       const r = await query(
-        `SELECT id, issue_key, template_type, updated_at, updated_by,
+        `SELECT id, issue_key, template_type, document_number, updated_at, updated_by,
                 (SELECT COUNT(*) FROM jsonb_object_keys(form_data)) AS keys_count,
                 octet_length(form_data::text) AS size_bytes
            FROM document_drafts
@@ -7263,7 +7263,7 @@ ${details}
         });
       }
       const r = await query(
-        `SELECT id, issue_key, template_type, form_data, updated_at, updated_by
+        `SELECT id, issue_key, template_type, form_data, document_number, updated_at, updated_by
            FROM document_drafts
           WHERE issue_key = $1 AND template_type = $2
           LIMIT 1`,
@@ -7311,15 +7311,41 @@ ${details}
       }
       // Step1(SSOT): 下書き保存時も別名キーを揃えてから格納する。
       const normForm = normalizeDocumentFormData(templateType, formData);
+      // 発番タイミング: 「初回保存時に採番」。この (issue_key, template_type) の
+      //   下書きにまだ document_number が無ければ、ここで採番して固定する。
+      //   既に番号がある(再保存)場合は維持する。manual override / reopen 等で
+      //   form_data 側に番号が来ている場合はそれを優先採用する。
+      let assignedDocNumber: string | null = null;
+      try {
+        const existing = await query(
+          `SELECT document_number FROM document_drafts
+            WHERE issue_key = $1 AND template_type = $2`,
+          [issueKey, templateType]
+        );
+        const cur = existing.rows[0]?.document_number;
+        if (cur && String(cur).trim()) {
+          assignedDocNumber = String(cur).trim();
+        } else {
+          const fromForm =
+            typeof (formData as any)?.__draft_doc_number === "string"
+              ? String((formData as any).__draft_doc_number).trim()
+              : "";
+          assignedDocNumber = fromForm || (await getNewDocumentNumber(templateType));
+        }
+      } catch (numErr) {
+        console.warn("[document-drafts POST] 採番に失敗(番号なしで保存):", numErr);
+        assignedDocNumber = null;
+      }
       const r = await query(
-        `INSERT INTO document_drafts (issue_key, template_type, form_data, updated_by, updated_at)
-         VALUES ($1, $2, $3::jsonb, $4, NOW())
+        `INSERT INTO document_drafts (issue_key, template_type, form_data, document_number, updated_by, updated_at)
+         VALUES ($1, $2, $3::jsonb, $4, $5, NOW())
          ON CONFLICT (issue_key, template_type) DO UPDATE
             SET form_data = EXCLUDED.form_data,
+                document_number = COALESCE(document_drafts.document_number, EXCLUDED.document_number),
                 updated_by = EXCLUDED.updated_by,
                 updated_at = NOW()
-         RETURNING id, issue_key, template_type, form_data, updated_at, updated_by`,
-        [issueKey, templateType, JSON.stringify(normForm), updatedBy]
+         RETURNING id, issue_key, template_type, form_data, document_number, updated_at, updated_by`,
+        [issueKey, templateType, JSON.stringify(normForm), assignedDocNumber, updatedBy]
       );
       res.json({ ok: true, draft: r.rows[0] });
     } catch (err: any) {
@@ -7487,23 +7513,72 @@ ${details}
         }
       }
 
-      res.json({
-        ok: true,
-        total: rows.length,
-        results: rows.map((r) => ({
-          id: Number(r.id),
-          document_number: r.document_number,
-          issue_key: r.issue_key,
-          template_type: r.template_type,
-          document_category: r.document_category,
-          form_data: r.form_data || {},
-          drive_link: r.drive_link || "",
-          created_by: r.created_by,
-          created_at: r.created_at,
-          base_document_number: r.base_document_number || null,
-          revision: r.revision != null ? Number(r.revision) : null,
-        })),
-      });
+      const results: any[] = rows.map((r) => ({
+        id: Number(r.id),
+        source: "document",
+        document_number: r.document_number,
+        issue_key: r.issue_key,
+        template_type: r.template_type,
+        document_category: r.document_category,
+        form_data: r.form_data || {},
+        drive_link: r.drive_link || "",
+        created_by: r.created_by,
+        created_at: r.created_at,
+        base_document_number: r.base_document_number || null,
+        revision: r.revision != null ? Number(r.revision) : null,
+      }));
+
+      // include_drafts=1 のとき、作成途中の下書き(document_drafts)も併せて返す。
+      //   初回保存で採番済みなので document_number で呼び出せる。source='draft'。
+      if (String(req.query.include_drafts || "") === "1") {
+        try {
+          const dConds: string[] = [];
+          const dParams: any[] = [];
+          if (q) {
+            dParams.push(`%${q}%`);
+            const i = dParams.length;
+            dConds.push(
+              `(COALESCE(document_number,'') ILIKE $${i}
+                 OR issue_key ILIKE $${i}
+                 OR form_data::text ILIKE $${i})`
+            );
+          }
+          if (templateTypes.length > 0) {
+            dParams.push(templateTypes);
+            dConds.push(`template_type = ANY($${dParams.length}::text[])`);
+          }
+          dParams.push(limit);
+          const dRes = await query(
+            `SELECT id, document_number, issue_key, template_type,
+                    form_data, updated_at, updated_by
+               FROM document_drafts
+               ${dConds.length > 0 ? `WHERE ${dConds.join(" AND ")}` : ""}
+              ORDER BY updated_at DESC
+              LIMIT $${dParams.length}`,
+            dParams
+          );
+          for (const d of dRes.rows) {
+            results.push({
+              id: Number(d.id),
+              source: "draft",
+              document_number: d.document_number || "",
+              issue_key: d.issue_key,
+              template_type: d.template_type,
+              document_category: null,
+              form_data: d.form_data || {},
+              drive_link: "",
+              created_by: d.updated_by,
+              created_at: d.updated_at,
+              base_document_number: null,
+              revision: null,
+            });
+          }
+        } catch (draftErr) {
+          console.warn("[documents/search] draft merge skipped:", draftErr);
+        }
+      }
+
+      res.json({ ok: true, total: results.length, results });
     } catch (error) {
       console.error("/api/documents/search failed:", error);
       res.status(500).json({ ok: false, error: String(error) });

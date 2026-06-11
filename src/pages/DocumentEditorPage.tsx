@@ -165,6 +165,8 @@ export function DocumentEditorPage() {
   const [previewError, setPreviewError] = React.useState<string | null>(null)
   const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isGenerating, setIsGenerating] = React.useState(false)
+  // 過去文書/下書きを番号で呼び出すフォーム(Sheet)の開閉。
+  const [recallOpen, setRecallOpen] = React.useState(false)
   // Phase 9g: 文書生成完了後の達成感のあるサクセス画面用
   // Phase 22.21.104: 検収書 / 利用許諾料計算書では excelLink も返るので保持
   const [completionResult, setCompletionResult] = React.useState<{
@@ -439,8 +441,20 @@ export function DocumentEditorPage() {
         if (!res.ok || data?.ok === false) {
           throw new Error(data?.error || `HTTP ${res.status}`)
         }
+        // 発番タイミング: 初回保存で採番された document_number を formData に保持し、
+        //   生成(Finalize)時に existingDocumentNumber として流用する。
+        const assignedNo = data?.draft?.document_number
+        if (assignedNo && (formData as any).__draft_doc_number !== assignedNo) {
+          setFormData((prev: any) => ({
+            ...(prev || {}),
+            __draft_doc_number: assignedNo,
+          }))
+        }
         if (!silent) {
-          showNotification(`📄 Draft saved (${selectedIssue})`, "success")
+          showNotification(
+            `📄 Draft saved (${selectedIssue})${assignedNo ? ` — ${assignedNo}` : ""}`,
+            "success"
+          )
         }
         return true
       } catch (e: any) {
@@ -539,6 +553,10 @@ export function DocumentEditorPage() {
           // 一時保存 (DB draft = 作業中の下書き) があれば復元する。
           //   これはユーザー自身が直前に編集していた内容なので安全。
           Object.assign(base, draft.form_data)
+          // 初回保存で採番済みの番号を引き継ぐ(生成時に流用する)。
+          if (draft.document_number) {
+            base.__draft_doc_number = draft.document_number
+          }
           const when = draft.updated_at
             ? new Date(draft.updated_at).toLocaleString("ja-JP")
             : ""
@@ -937,9 +955,13 @@ export function DocumentEditorPage() {
           requesterEmail: selectedStaff?.email || "web-user",
           // Phase 15/16: 既存 doc の更新時は同じ document_number を渡す
           // (PDF 未作成キュー由来 or 再編集 reopen 由来の両方)。
+          //   さらに「初回保存で採番済みの下書き番号」(__draft_doc_number) も
+          //   流用する。documents 行が未作成なら初版として採用され、以降の再生成は
+          //   同番号上書き(内部修正)になる(getDocumentNumberForGenerate)。
           existingDocumentNumber:
             formData?.__from_pending_doc_number ||
-            formData?.__reopen_doc_number,
+            formData?.__reopen_doc_number ||
+            formData?.__draft_doc_number,
           reissue: reissueFlag,
         }),
       })
@@ -1084,6 +1106,56 @@ export function DocumentEditorPage() {
     setSaveMode("internal")
     setCaseHistory([])
     showNotification("New document started.", "info")
+  }
+
+  // 過去文書/下書きを番号で呼び出してフォームに読み込む。
+  //   - draft : form_data + 採番済み番号(__draft_doc_number) を引き継いで編集を再開。
+  //   - 確定文書: 再編集(reopen)として開く(生成時は同番号上書き=内部修正)。
+  const handleRecallDocument = (doc: LookedUpDocument) => {
+    setSelectedTemplate(doc.template_type)
+    setSelectedIssue(doc.issue_key || "")
+    const base: Record<string, any> = { ...(doc.form_data || {}) }
+    if (doc.source === "draft") {
+      if (doc.document_number) base.__draft_doc_number = doc.document_number
+    } else {
+      base.__reopen_id = doc.id
+      base.__reopen_doc_number = doc.document_number
+    }
+    setFormData(base)
+    // 前文書のセッション状態が居座らないようリセット(読み込んだ doc から再解決)。
+    setActiveVendor(null)
+    setSelectedStaff(null)
+    setSelectedDirection("")
+    setPreviousDocument(null)
+    setIsReadOnly(false)
+    setRecallOpen(false)
+    showNotification(
+      `${doc.document_number || doc.issue_key || "文書"} を呼び出しました`,
+      "info"
+    )
+  }
+
+  const handleDeleteDraft = async (doc: LookedUpDocument) => {
+    if (!doc.issue_key || !doc.template_type) return
+    const label = doc.document_number || doc.issue_key
+    if (!window.confirm(`下書き「${label}」を削除しますか？ (元に戻せません)`)) return
+    try {
+      const res = await fetch(
+        `/api/document-drafts/${encodeURIComponent(
+          doc.issue_key
+        )}?template_type=${encodeURIComponent(doc.template_type)}`,
+        { method: "DELETE" }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      showNotification(`下書き「${label}」を削除しました`, "success")
+      // 一覧を更新するため Sheet を一旦閉じる(再オープンで再検索される)。
+      setRecallOpen(false)
+    } catch (e: any) {
+      showNotification(`下書き削除に失敗: ${e?.message || e}`, "error")
+    }
   }
 
   const handleExportExcel = async () => {
@@ -1360,6 +1432,19 @@ export function DocumentEditorPage() {
                 {(() => {
                   const docNum = formData.documentNumber as string | undefined;
                   const reopenId = formData.__reopen_id as number | undefined;
+                  const draftNo = formData.__draft_doc_number as string | undefined;
+                  if (!docNum && !reopenId && draftNo) {
+                    // 初回保存で採番済みの下書き。生成時にこの番号を流用する。
+                    return (
+                      <span
+                        className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-emerald-50 px-2 py-1 text-[10px] font-mono font-bold text-emerald-800"
+                        title={`採番済(下書き): ${draftNo} — 生成時にこの番号で確定します`}
+                      >
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                        採番済 · {draftNo}
+                      </span>
+                    );
+                  }
                   if (docNum) {
                     return (
                       <span
@@ -1397,6 +1482,16 @@ export function DocumentEditorPage() {
                     Saved {lastAutoSave}
                   </span>
                 )}
+                {/* 過去文書/下書きを番号で呼び出す。 */}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setRecallOpen(true)}
+                  title="文書番号・タイトルで過去文書/下書きを検索して呼び出します"
+                >
+                  <Search />
+                  番号で呼び出す
+                </Button>
                 {/* Phase 23.2: Split preview 廃止 → 別タブで開く方式に。 */}
                 <Button
                   variant="outline"
@@ -2221,6 +2316,33 @@ export function DocumentEditorPage() {
           Finalize & Sync 成功時に表示。ユーザーに「できた!」という
           達成感を返しつつ、次のアクション (Drive で開く / 新規作成 /
           ダッシュボードへ) を 1 クリックで選べる。 */}
+
+      {/* 過去文書/下書きを番号で呼び出すフォーム。確定文書(Archive)と
+          作成途中の下書き(Draft・初回保存で採番済)を横断検索して、選択で
+          フォームに読み込む。下書きは削除も可能。 */}
+      <Sheet open={recallOpen} onOpenChange={setRecallOpen}>
+        <SheetContent side="right" className="w-full sm:max-w-xl">
+          <SheetHeader>
+            <SheetTitle>過去文書・下書きを番号で呼び出す</SheetTitle>
+          </SheetHeader>
+          <SheetBody>
+            <p className="text-[11px] font-mono text-muted-foreground mb-3 leading-relaxed">
+              文書番号・タイトル・取引先名で検索できます。選ぶとフォームに読み込みます。
+              <br />
+              <span className="text-amber-700">Draft</span> は作成途中の下書き（初回保存で採番済）、
+              <span className="text-muted-foreground"> Archive</span> は確定済み文書です。
+            </p>
+            <DocumentNumberLookup
+              label="番号・タイトル・取引先で検索 (空欄で最新一覧)"
+              includeDrafts
+              limit={30}
+              onApply={handleRecallDocument}
+              onDeleteDraft={handleDeleteDraft}
+            />
+          </SheetBody>
+        </SheetContent>
+      </Sheet>
+
       {completionResult && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm"
