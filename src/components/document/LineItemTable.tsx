@@ -452,6 +452,26 @@ export const LineItemTable: React.FC<Props> = ({
             </div>
           </div>
         </div>
+        {/* 受注者帰属でも業務報酬(確定額)には納期・支払日が必要。
+            発注者帰属の明細と同じく delivery_date / payment_date を入力できる。 */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="block">
+            <span className={labelCls}>納期</span>
+            {cellInput(
+              it.delivery_date,
+              (v) => update(idx, { delivery_date: v }),
+              "date"
+            )}
+          </label>
+          <label className="block">
+            <span className={labelCls}>支払日</span>
+            {cellInput(
+              it.payment_date,
+              (v) => update(idx, { payment_date: v }),
+              "date"
+            )}
+          </label>
+        </div>
         <div className="text-[9px] font-mono text-muted-foreground/70">
           報酬が無く利用許諾料のみの場合は単価=0のままにしてください。
         </div>
