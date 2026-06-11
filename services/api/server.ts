@@ -90,6 +90,69 @@ async function readCapabilityLinesForInspectionDisplay(
   return li.rows;
 }
 
+/**
+ * Phase E-2: 利用許諾条件(財務条件)の表示行を coverage-gated dual-read で取得 (api)。
+ *   worker/formReadRoutes の同名ヘルパーと対称。A案で暗黙 terms に切り出された分も
+ *   source_condition_id 経由で連結し、condition_no は source_seq_no で faithful 復元。
+ *   完全カバー時のみ condition_lines、欠ければ capability_financial_conditions。
+ */
+async function readCapabilityFinancialRowsForDisplay(
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT cl.source_condition_id AS id, cl.source_seq_no AS condition_no,
+              cl.subject AS region_language_label, cl.calc_method, cl.rate_pct,
+              cl.base_price_label, cl.calc_period, cl.currency, cl.formula_text,
+              cl.payment_terms, cl.mg_amount, COALESCE(cl.ag_amount, 0) AS ag_amount,
+              cl.calc_period_kind, cl.calc_period_close_month
+         FROM condition_lines cl
+        WHERE cl.source_condition_id IN (
+                SELECT id FROM capability_financial_conditions WHERE capability_id = $1)
+        ORDER BY cl.source_seq_no ASC NULLS LAST, cl.id`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_financial_conditions WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  try {
+    return (
+      await query(
+        `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                base_price_label, calc_period, currency, formula_text, payment_terms,
+                mg_amount, COALESCE(ag_amount, 0) AS ag_amount,
+                calc_period_kind, calc_period_close_month
+           FROM capability_financial_conditions
+          WHERE capability_id = $1
+          ORDER BY condition_no ASC`,
+        [capabilityId]
+      )
+    ).rows;
+  } catch (e2: any) {
+    if (e2 && e2.code === "42703") {
+      return (
+        await query(
+          `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                  base_price_label, calc_period, currency, formula_text, payment_terms,
+                  mg_amount, COALESCE(ag_amount, 0) AS ag_amount
+             FROM capability_financial_conditions
+            WHERE capability_id = $1
+            ORDER BY condition_no ASC`,
+          [capabilityId]
+        )
+      ).rows;
+    }
+    throw e2;
+  }
+}
+
 // helper は起動時 1 回、partial は DB から遅延ロードして専用インスタンスに登録。
 const previewHb = Handlebars.create();
 registerRenderHelpers(previewHb);
@@ -2079,35 +2142,10 @@ async function startServer() {
               context["work_id"] = row.work_id;
               context["WORK_ID"] = row.work_id;
             }
-            // Phase 22.20-B: calc_period_kind / calc_period_close_month を含める
-            //   schema 未追加環境では 42703 を catch して legacy SELECT に fallback
-            let conds: any;
-            try {
-              conds = await query(
-                `SELECT id, condition_no, region_language_label, calc_method,
-                        rate_pct, base_price_label, calc_period, currency,
-                        formula_text, payment_terms, mg_amount,
-                        calc_period_kind, calc_period_close_month
-                   FROM capability_financial_conditions
-                  WHERE capability_id = $1
-                  ORDER BY condition_no ASC`,
-                [lcId]
-              );
-            } catch (colErr2: any) {
-              if (colErr2 && colErr2.code === "42703") {
-                conds = await query(
-                  `SELECT id, condition_no, region_language_label, calc_method,
-                          rate_pct, base_price_label, calc_period, currency,
-                          formula_text, payment_terms, mg_amount
-                     FROM capability_financial_conditions
-                    WHERE capability_id = $1
-                    ORDER BY condition_no ASC`,
-                  [lcId]
-                );
-              } else {
-                throw colErr2;
-              }
-            }
+            // Phase E-2: condition_lines 優先の coverage-gated dual-read
+            const conds = {
+              rows: await readCapabilityFinancialRowsForDisplay(lcId),
+            };
             context["financial_conditions"] = conds.rows.map((r: any) => ({
               id: Number(r.id),
               condition_no: Number(r.condition_no),
@@ -2888,17 +2926,10 @@ async function startServer() {
         if (!Number.isFinite(id) || id <= 0) {
           return res.status(400).json({ error: "invalid id" });
         }
-        const result = await query(
-          `SELECT id, condition_no, region_language_label, calc_method,
-                  rate_pct, base_price_label, calc_period, calc_period_kind,
-                  calc_period_close_month, currency, formula_text,
-                  payment_terms, mg_amount,
-                  COALESCE(ag_amount, 0) AS ag_amount
-             FROM capability_financial_conditions
-            WHERE capability_id = $1
-            ORDER BY condition_no ASC`,
-          [id]
-        );
+        // Phase E-2: condition_lines 優先の coverage-gated dual-read
+        const result = {
+          rows: await readCapabilityFinancialRowsForDisplay(id),
+        };
         // source='capability' をつけることで、フロント側の radio handler が
         // license_financial_condition_id ではなく capability_financial_condition_id
         // を formData にセットできるようにする。
