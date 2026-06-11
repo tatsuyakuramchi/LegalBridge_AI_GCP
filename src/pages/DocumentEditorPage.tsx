@@ -173,7 +173,18 @@ export function DocumentEditorPage() {
     documentNumber: string;
     templateLabel: string;
   } | null>(null)
-  const [issueSummary, setIssueSummary] = React.useState<any>(null)
+  // 選択中 Backlog 課題のオブジェクト (件名/本文/ステータス)。
+  //   旧実装は課題プルダウン操作時のみセットされる useState だったため、
+  //   ページ再訪 (再マウント) や reopen 経由では null のままになり
+  //   「Backlog 課題内容」パネルが消えていた。selectedIssue は共有セッションで
+  //   永続するので、常に issues から導出する (ワークフローパネルと同方式)。
+  const issueSummary = React.useMemo(
+    () =>
+      selectedIssue
+        ? issues.find((i) => i.issueKey === selectedIssue) || null
+        : null,
+    [issues, selectedIssue]
+  )
   // Phase 22.11.2: 課題選択時、同 (issue, template) で過去 doc があれば
   // バナーで提示して「前回内容を読み込む」or「再編集モードで開く」を選ばせる。
   // form-context endpoint の _previousDocument から得る (上書きされないよう
@@ -562,8 +573,7 @@ export function DocumentEditorPage() {
     // Phase 22.21.29: 課題切替時に「閲覧モード」をオン。編集はユーザーが
     //   [編集] ボタンを押した時のみ可能になる (誤編集防止)。
     setIsReadOnly(true)
-    const issue = issues.find((i) => i.issueKey === issueKey)
-    if (issue) setIssueSummary(issue)
+    // issueSummary は selectedIssue から useMemo で導出されるためセット不要。
     await syncFromDatabase(issueKey)
     fetch(`/api/backlog/issues/${issueKey}/history`)
       .then((r) => r.json())
@@ -1068,7 +1078,7 @@ export function DocumentEditorPage() {
     setSelectedDirection("")
     setActiveVendor(null)
     setPreviousDocument(null)
-    setIssueSummary(null)
+    // issueSummary は selectedIssue から導出されるため、上の setSelectedIssue("") で消える。
     setCompletionResult(null)
     setIsReadOnly(false)
     setSaveMode("internal")
