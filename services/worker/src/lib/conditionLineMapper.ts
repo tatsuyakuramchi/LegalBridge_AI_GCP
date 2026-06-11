@@ -41,6 +41,7 @@ const num = (v: any): number | null =>
 
 export interface LineItemLike {
   id?: number | null;
+  line_no?: any;
   item_name?: any;
   spec?: any;
   category?: any;
@@ -101,6 +102,7 @@ export function mapLineItemToConditionLine(
     fee_type: isPresent(li.fee_type) ? String(li.fee_type) : null,
     calc_period: null,
     formula_text: null,
+    source_seq_no: num(li.line_no),
     // 消化型の数量・単価・金額
     quantity: recurring ? null : num(li.quantity),
     unit_price: recurring ? null : num(li.unit_price),
@@ -125,6 +127,7 @@ export function mapLineItemToConditionLine(
 
 export interface FinancialConditionLike {
   id?: number | null;
+  condition_no?: any;
   region_language_label?: any;
   calc_method?: any;
   rate_pct?: any;
@@ -193,6 +196,7 @@ export function mapFinancialConditionToConditionLine(
     fee_type: null,
     calc_period: isPresent(fc.calc_period) ? String(fc.calc_period) : null,
     formula_text: isPresent(fc.formula_text) ? String(fc.formula_text) : null,
+    source_seq_no: num(fc.condition_no),
     quantity: null,
     unit_price: null,
     // lump_sum は金額必須 → mg_amount を転記(無ければ0)。royalty は null。
@@ -241,6 +245,7 @@ export const CONDITION_LINE_COLUMNS = [
   "fee_type",
   "calc_period",
   "formula_text",
+  "source_seq_no",
   "quantity",
   "unit_price",
   "amount_ex_tax",

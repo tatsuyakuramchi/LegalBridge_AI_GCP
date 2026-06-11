@@ -58,13 +58,14 @@ async function readCapabilityLinesForInspectionDisplay(
 ): Promise<any[]> {
   try {
     const cl = await query(
-      `SELECT source_line_item_id AS id, line_no, subject AS item_name, spec,
+      `SELECT source_line_item_id AS id,
+              COALESCE(source_seq_no, line_no) AS line_no, subject AS item_name, spec,
               unit_price, quantity, amount_ex_tax, calc_method, payment_terms,
               payment_method, payment_date, delivery_date,
               cycle, term_start, term_end, billing_day
          FROM condition_lines
         WHERE capability_id = $1 AND source_line_item_id IS NOT NULL
-        ORDER BY line_no ASC`,
+        ORDER BY COALESCE(source_seq_no, line_no) ASC`,
       [capabilityId]
     );
     const oldCount = await query(

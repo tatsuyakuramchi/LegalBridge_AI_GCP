@@ -1686,6 +1686,10 @@ export async function initDb() {
     `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS fee_type VARCHAR(50);`,
     `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS calc_period VARCHAR(50);`,
     `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS formula_text TEXT;`,
+    // Phase E-2(a): 元明細の連番 (line_item は元 line_no / financial は元 condition_no)。
+    //   condition_lines.line_no は再採番されるため、表示系が元の番号を faithful に
+    //   出せるよう保持する。財務条件リーダーの condition_no 等に使う。
+    `ALTER TABLE condition_lines ADD COLUMN IF NOT EXISTS source_seq_no INTEGER;`,
 
     // --- B-5 (後半). 構成要素 ↔ イン側条件明細 N:M (condition_lines を参照)
     `CREATE TABLE IF NOT EXISTS work_component_lines (

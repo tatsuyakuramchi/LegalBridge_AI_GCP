@@ -52,7 +52,8 @@ async function main() {
         calc_method    = li.calc_method,
         payment_method = li.payment_method,
         payment_terms  = li.payment_terms,
-        payment_date   = li.payment_date
+        payment_date   = li.payment_date,
+        source_seq_no  = li.line_no
       FROM capability_line_items li
       WHERE cl.source_line_item_id = li.id
     `);
@@ -61,7 +62,8 @@ async function main() {
         calc_method   = fc.calc_method,
         payment_terms = fc.payment_terms,
         calc_period   = fc.calc_period,
-        formula_text  = fc.formula_text
+        formula_text  = fc.formula_text,
+        source_seq_no = fc.condition_no
       FROM capability_financial_conditions fc
       WHERE cl.source_condition_id = fc.id
     `);
