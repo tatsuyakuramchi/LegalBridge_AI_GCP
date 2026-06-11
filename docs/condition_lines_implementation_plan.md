@@ -476,16 +476,16 @@ LEFT JOIN (
 依存: Phase D（ビュー）。B-6 の line_code 採番確定が前提。
 
 ### F-1. API
-- [ ] `GET /api/condition-lines`（一覧）: condition_line_status_v + 契約・取引先 JOIN。
+- [x] `GET /api/condition-lines`（一覧）: condition_line_status_v + 契約・取引先 JOIN。
   クエリパラメータ: status / direction / scheme / vendor_id / capability_id / q（line_code・subject 部分一致）。
-- [ ] `GET /api/condition-lines/:lineCode`（詳細）: 明細本体 + status + balance +
+- [x] `GET /api/condition-lines/:lineCode`（詳細）: 明細本体 + status + balance +
   events（document_number, lifecycle, issue_key 付き、voided 含む）+ 関連（契約・課題・作品）。
 
 ### F-2. 画面
-- [ ] ルート `/condition-lines`（一覧）と `/condition-lines/:lineCode`（詳細）。
-- [ ] 一覧: ステータスチップフィルタ（RequestsPage の statusBuckets パターン流用）+ テーブル
+- [x] ルート `/condition-lines`（一覧）と `/condition-lines/:lineCode`（詳細）。
+- [x] 一覧: ステータスチップフィルタ（RequestsPage の statusBuckets パターン流用）+ テーブル
   （line_code / subject / 契約 / 取引先 / scheme / direction / status / 残額・MG残 / 当期発行状況）。
-- [ ] 詳細: VendorsPanel のセクションパターンで:
+- [x] 詳細: VendorsPanel のセクションパターンで:
   - ヘッダ: line_code（mono）/ ステータスバッジ / scheme・direction・rights_attribution・取引先・納期
   - メトリクスカード: 消化型 = 目標額・消化済（プログレスバー）・残 / 継続型 = MG残・AG残・当期発行状況
   - SEC・01 実績と対になる文書: 有効イベント行（金額・日付・document_number・課題キー・final バッジ・
@@ -493,7 +493,7 @@ LEFT JOIN (
     （consumed < target の消化型、当期未発行の継続型のとき表示。クリックで該当テンプレを
     事前選択して DocumentEditorPage へ）
   - SEC・02 関連: 契約 / 実績発生元の課題（複数）/ 作品・素材 へのリンクチップ
-- [ ] Phase A の課題詳細ページ: 文書行に「条件明細を見る」リンクを追加
+- [x] Phase A の課題詳細ページ: 文書行に「条件明細を見る」リンクを追加
   （document_id → condition_events → line_code で解決。API は A-1 のレスポンスに line_code を追加）。
 
 ---

@@ -7,6 +7,8 @@ import { DashboardPage } from "./pages/DashboardPage"
 import { DocumentEditorPage } from "./pages/DocumentEditorPage"
 import { RequestsPage } from "./pages/RequestsPage"
 import { IssueDetailPage } from "./pages/IssueDetailPage" // データ構造刷新 Phase A
+import { ConditionLinesPage } from "./pages/ConditionLinesPage" // データ構造刷新 Phase F
+import { ConditionLineDetailPage } from "./pages/ConditionLineDetailPage" // データ構造刷新 Phase F
 import { ArchivePage } from "./pages/ArchivePage"
 import { MasterLayout } from "./pages/master/MasterLayout"
 import { ContractsPanel } from "./pages/master/ContractsPanel"
@@ -42,6 +44,8 @@ export default function App() {
                 <Route path="pending-inspections" element={<PendingInspectionsPage />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="issues/:issueKey" element={<IssueDetailPage />} />{/* データ構造刷新 Phase A */}
+                <Route path="condition-lines" element={<ConditionLinesPage />} />{/* データ構造刷新 Phase F */}
+                <Route path="condition-lines/:lineCode" element={<ConditionLineDetailPage />} />{/* データ構造刷新 Phase F */}
                 <Route path="archive" element={<ArchivePage />} />
 
                 <Route path="master" element={<MasterLayout />}>

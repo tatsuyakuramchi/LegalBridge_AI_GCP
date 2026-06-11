@@ -10,6 +10,7 @@ import {
   Plus,
   User,
   Calendar,
+  ListChecks,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -34,6 +35,7 @@ type IssueDocument = {
   is_primary?: boolean
   base_document_number?: string | null
   revision?: number
+  line_code?: string | null // Phase F: 対応する条件明細
 }
 
 // lifecycle_status → バッジ表示。final=緑 / reissued=グレー / archived_draft=打ち消し。
@@ -224,6 +226,19 @@ export function IssueDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {d.line_code && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          navigate(`/condition-lines/${encodeURIComponent(d.line_code!)}`)
+                        }
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-1.5 py-1 rounded-sm"
+                        title="対応する条件明細を見る"
+                      >
+                        <ListChecks className="h-3 w-3" />
+                        条件明細
+                      </button>
+                    )}
                     {d.drive_link && (
                       <a
                         href={d.drive_link}

@@ -2398,7 +2398,14 @@ async function startServer() {
                   COALESCE(lifecycle_status, 'final') AS lifecycle_status,
                   COALESCE(is_primary, TRUE)          AS is_primary,
                   base_document_number,
-                  COALESCE(revision, 0)               AS revision
+                  COALESCE(revision, 0)               AS revision,
+                  -- Phase F: 文書 → condition_events → condition_line.line_code を解決
+                  --   (課題詳細から「条件明細を見る」リンクに使う)。
+                  (SELECT cl.line_code
+                     FROM condition_events ce
+                     JOIN condition_lines cl ON cl.id = ce.condition_line_id
+                    WHERE ce.document_id = documents.id
+                    ORDER BY ce.id LIMIT 1)             AS line_code
              FROM documents
             WHERE issue_key = $1
             ORDER BY created_at DESC`,
@@ -2421,6 +2428,126 @@ async function startServer() {
         }
       }
       res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // データ構造刷新 Phase F: 条件明細管理 UI 向け API。
+  //   導出ビュー(condition_line_status_v / _balance_v / _schedule_v)+ 契約・
+  //   取引先 JOIN。新スキーマ未適用環境では undefined_table(42P01)を空配列で返す。
+  // -------------------------------------------------------------------
+  app.get("/api/condition-lines", async (req, res) => {
+    try {
+      const where: string[] = [];
+      const params: any[] = [];
+      const add = (cond: string, val: any) => {
+        params.push(val);
+        where.push(cond.replace("?", `$${params.length}`));
+      };
+      if (req.query.status) add("s.status = ?", String(req.query.status));
+      if (req.query.direction) add("cl.direction = ?", String(req.query.direction));
+      if (req.query.scheme) add("cl.payment_scheme = ?", String(req.query.scheme));
+      if (req.query.vendor_id) add("cc.vendor_id = ?", Number(req.query.vendor_id));
+      if (req.query.capability_id) add("cl.capability_id = ?", Number(req.query.capability_id));
+      if (req.query.q) {
+        params.push(`%${String(req.query.q)}%`);
+        where.push(
+          `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length})`
+        );
+      }
+      const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      try {
+        const result = await query(
+          `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.direction,
+                  cl.rights_attribution, cl.capability_id, cl.amount_ex_tax, cl.currency,
+                  cl.delivery_date, cl.term_start, cl.term_end,
+                  s.status, s.consumed_amount, s.remaining_amount, s.event_count,
+                  b.mg_remaining, b.ag_remaining,
+                  cc.contract_title, cc.document_number AS contract_number,
+                  v.vendor_name, v.vendor_code,
+                  sch.has_overdue
+             FROM condition_lines cl
+             LEFT JOIN condition_line_status_v  s ON s.id = cl.id
+             LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN (
+               SELECT condition_line_id, bool_or(overdue AND NOT issued) AS has_overdue
+                 FROM condition_line_schedule_v GROUP BY condition_line_id
+             ) sch ON sch.condition_line_id = cl.id
+             ${whereSql}
+            ORDER BY cl.line_code NULLS LAST, cl.id`,
+          params
+        );
+        res.json(result.rows);
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          console.warn("[/api/condition-lines] 新スキーマ未適用 — 空配列で返却");
+          return res.json([]);
+        }
+        throw err;
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/condition-lines/:lineCode", async (req, res) => {
+    try {
+      const lineCode = String(req.params.lineCode || "").trim();
+      if (!lineCode) return res.status(400).json({ ok: false, error: "lineCode required" });
+      try {
+        const main = await query(
+          `SELECT cl.*, s.status, s.consumed_amount, s.remaining_amount,
+                  s.event_count, s.last_event_at,
+                  b.mg_consumed, b.mg_remaining, b.ag_consumed, b.ag_remaining,
+                  cc.contract_title, cc.document_number AS contract_number,
+                  cc.structural_role, cc.parent_capability_id,
+                  v.vendor_name, v.vendor_code,
+                  w.work_code, w.title AS work_title
+             FROM condition_lines cl
+             LEFT JOIN condition_line_status_v  s ON s.id = cl.id
+             LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN works w ON w.id = cl.work_id
+            WHERE cl.line_code = $1
+            LIMIT 1`,
+          [lineCode]
+        );
+        if (!main.rows.length) {
+          return res.status(404).json({ ok: false, error: "condition_line not found" });
+        }
+        const line = main.rows[0];
+        // 有効/取消含む全イベント + 対の文書。
+        const events = await query(
+          `SELECT e.id, e.event_no, e.event_type, e.occurred_at, e.period,
+                  e.amount_ex_tax, e.voided_at, e.void_reason, e.backlog_issue_key,
+                  e.installment_id,
+                  d.document_number, d.lifecycle_status, d.drive_link, d.issue_key
+             FROM condition_events e
+             LEFT JOIN documents d ON d.id = e.document_id
+            WHERE e.condition_line_id = $1
+            ORDER BY e.occurred_at NULLS LAST, e.event_no`,
+          [line.id]
+        );
+        // 当期スケジュール(継続型のみ)。
+        const schedule = await query(
+          `SELECT expected_period, issued, overdue
+             FROM condition_line_schedule_v
+            WHERE condition_line_id = $1
+            ORDER BY expected_period`,
+          [line.id]
+        );
+        res.json({ ok: true, line, events: events.rows, schedule: schedule.rows });
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          return res.status(404).json({ ok: false, error: "新スキーマ未適用" });
+        }
+        throw err;
+      }
     } catch (error) {
       res.status(500).json({ error: String(error) });
     }
