@@ -225,21 +225,23 @@ export function registerFormReadRoutes(
               //   - 仕様   ← capability_line_items 1 行目の spec
               //   - 発注日 ← contract_capabilities.created_at (due_date 優先)
               const docRow = await query(
-                `SELECT document_number FROM documents
+                `SELECT document_number, form_data FROM documents
                   WHERE issue_key = $1
                     AND template_type LIKE '%purchase_order%'
                   ORDER BY created_at DESC LIMIT 1`,
                 [parentKey]
               );
               const parentPoNumber = docRow.rows[0]?.document_number || "";
+              const parentPoForm = docRow.rows[0]?.form_data || {};
               const poRow = poHeader.rows[0];
               const firstLine = lines.rows[0];
 
               context["parent_po_issue_key"] = parentKey;
               context["parent_po_id"] = poId;
               context["parent_po_number"] = parentPoNumber;
-              // 件名(親POの contract_title) を検収確認文の先頭に表示する。
-              context["projectTitle"] = poRow.contract_title || "";
+              // 件名: 発注書フォームで入力した件名(PROJECT_TITLE)を優先。無ければ contract_title。
+              context["projectTitle"] =
+                parentPoForm?.PROJECT_TITLE || poRow.contract_title || "";
               if (firstLine?.item_name) {
                 context["description"] = firstLine.item_name;
               }
