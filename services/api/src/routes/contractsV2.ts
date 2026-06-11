@@ -461,6 +461,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           contract_category: cc.contract_category,
           contract_type: cc.contract_type,
           contract_title: cc.contract_title || "",
+          // 検収書の件名引用用: 発注書フォームで入力した件名(PROJECT_TITLE)を優先。
+          //   無ければ contract_title にフォールバック。
+          project_title: formData.PROJECT_TITLE || cc.contract_title || "",
           document_number: cc.document_number || "",
           backlog_issue_key: cc.backlog_issue_key || "",
           amount_ex_tax: cc.amount_ex_tax == null ? null : Number(cc.amount_ex_tax),

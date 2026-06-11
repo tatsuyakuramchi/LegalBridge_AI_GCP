@@ -40,6 +40,11 @@ import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 
+// インボイス登録番号は発注書テンプレ等が先頭に "T" を付与するため、取引先DB値に
+//   既に T が付いていると "TT…" になる。引用時に先頭の T(半角/全角) を1つ除去する。
+const stripLeadingT = (s?: string | null): string =>
+  String(s || '').replace(/^[TtＴｔ]\s*/, '').trim();
+
 interface DocumentFormProps {
   templateId: string;
   metadata: TemplateMetadata;
@@ -1489,7 +1494,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ACCOUNT_TYPE: activeVendor.account_type || '',
         ACCOUNT_NUMBER: activeVendor.account_number || '',
         ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
-        INVOICE_REGISTRATION_NUMBER: activeVendor.invoice_registration_number || '',
+        INVOICE_REGISTRATION_NUMBER: stripLeadingT(activeVendor.invoice_registration_number),
       });
     };
 
@@ -1969,7 +1974,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
         IS_INVOICE_ISSUER: !!activeVendor.is_invoice_issuer,
         invoiceRegistrationDisplay: activeVendor.invoice_registration_number
-          ? `T${activeVendor.invoice_registration_number}`
+          ? `T${stripLeadingT(activeVendor.invoice_registration_number)}`
           : '',
       });
     };
@@ -2185,7 +2190,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
         IS_INVOICE_ISSUER: activeVendor.is_invoice_issuer ? '該当' : '非該当',
         invoiceRegistrationDisplay: activeVendor.invoice_registration_number
-          ? `T${activeVendor.invoice_registration_number}`
+          ? `T${stripLeadingT(activeVendor.invoice_registration_number)}`
           : '',
       });
     };
@@ -2527,8 +2532,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 parent_po_issue_key: c.backlog_issue_key,
                 parent_po_number: c.document_number || "",
                 parent_contract_record_type: c.record_type,
-                // 件名(親POの件名) を検収確認文の先頭に表示するため保持。
-                projectTitle: c.contract_title || formData.projectTitle || "",
+                // 件名: 発注書フォームで入力した件名(PROJECT_TITLE=project_title)を優先。
+                //   無ければ契約タイトルにフォールバック。検収確認文の先頭に表示する。
+                projectTitle:
+                  (c as any).project_title ||
+                  c.contract_title ||
+                  formData.projectTitle ||
+                  "",
                 order_lines_for_inspection: detail.line_items,
                 // Phase 23.5: 「発注日」は issue_date_po (PO header の発行日)
                 //   を最優先。due_date は支払期限、effective_date は契約発効日
