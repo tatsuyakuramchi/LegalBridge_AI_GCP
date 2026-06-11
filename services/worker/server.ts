@@ -84,6 +84,7 @@ import {
   recalculateCapabilityTotal,
   getCapabilityLineAvailability,
   previewInspectionOverflow,
+  getOrderedLineEconomics, // Phase E-2: 発注側 economics の dual-read
 } from "./src/lib/calc.ts";
 import {
   previewRoyaltyCalculation,
@@ -5514,12 +5515,9 @@ ${details}
           const ratio =
             l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio);
 
-          // unit_price を引いて金額計算 (Phase 23: capability_line_items)
-          const unitRes = await query(
-            "SELECT unit_price FROM capability_line_items WHERE id = $1",
-            [capLineId]
-          );
-          const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
+          // unit_price を引いて金額計算 (Phase E-2: condition_lines 優先 dual-read)
+          const econ = await getOrderedLineEconomics(capLineId);
+          const unitPrice = econ?.unit_price || 0;
           const amount = calculateInspectedAmount(unitPrice, qty, ratio);
 
           await query(
@@ -11537,12 +11535,9 @@ ${details}
           }
 
           for (const l of incoming) {
-            // Phase 23: capability_line_items
-            const unitRes = await query(
-              "SELECT unit_price FROM capability_line_items WHERE id = $1",
-              [l.capability_line_item_id]
-            );
-            const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
+            // Phase E-2: condition_lines 優先 dual-read
+            const econ = await getOrderedLineEconomics(l.capability_line_item_id);
+            const unitPrice = econ?.unit_price || 0;
             const amt = calculateInspectedAmount(
               unitPrice,
               l.inspected_quantity,
