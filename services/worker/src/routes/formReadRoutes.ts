@@ -3,6 +3,51 @@
 // 依存: query, backlogService(getIssue / extractCustomFields)。
 import type { Express } from "express";
 
+type QueryFn = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
+
+/**
+ * Phase E-2: 発注明細の表示行を coverage-gated dual-read で取得する。
+ *   condition_lines が当該 capability の line_item 由来明細を「完全カバー」
+ *   (件数一致) する場合のみ condition_lines(faithful superset)から読む。
+ *   1件でも欠ければ / 未作成なら 旧 capability_line_items にフォールバック。
+ *   → 最悪でも旧挙動なので無回帰。返す行は capability_line_items と同一 shape。
+ */
+async function readCapabilityLineRowsForDisplay(
+  query: QueryFn,
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT line_no, subject AS item_name, spec, unit_price, quantity,
+              amount_ex_tax, calc_method, payment_terms, payment_method,
+              payment_date, delivery_date, cycle, term_start, term_end, billing_day
+         FROM condition_lines
+        WHERE capability_id = $1 AND source_line_item_id IS NOT NULL
+        ORDER BY line_no ASC`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_line_items WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows; // 完全カバー → 新スキーマを使用
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  const li = await query(
+    `SELECT line_no, item_name, spec, unit_price, quantity,
+            amount_ex_tax, calc_method, payment_terms, payment_method,
+            payment_date, delivery_date, cycle, term_start, term_end, billing_day
+       FROM capability_line_items
+      WHERE capability_id = $1
+      ORDER BY line_no ASC`,
+    [capabilityId]
+  );
+  return li.rows;
+}
+
 export function registerFormReadRoutes(
   app: Express,
   deps: { query: (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>; backlogService: any }
@@ -75,17 +120,13 @@ export function registerFormReadRoutes(
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          const lines = await query(
-            `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, calc_method, payment_terms,
-                    payment_method, payment_date, delivery_date,
-                    cycle, term_start, term_end, billing_day
-               FROM capability_line_items
-              WHERE capability_id = $1
-              ORDER BY line_no ASC`,
-            [orderItemId]
+          // Phase E-2: condition_lines 優先の coverage-gated dual-read
+          //   (完全カバー時のみ新スキーマ、欠ければ旧テーブル。shape は同一)
+          const lineRows = await readCapabilityLineRowsForDisplay(
+            query,
+            orderItemId
           );
-          context["items"] = lines.rows.map((r: any) => ({
+          context["items"] = lineRows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
             spec: r.spec || "",
