@@ -3963,9 +3963,9 @@ ${details}
            base_price_label, calc_period, calc_period_kind, calc_period_close_month,
            currency, formula_text, payment_terms, mg_amount, ag_amount,
            condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
-           region_territory, region_language,
+           region_territory, region_language, applies_scope,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, condition_no) DO UPDATE SET
            region_language_label   = EXCLUDED.region_language_label,
            calc_method             = EXCLUDED.calc_method,
@@ -3987,6 +3987,7 @@ ${details}
            guarantee_type          = EXCLUDED.guarantee_type,
            region_territory        = EXCLUDED.region_territory,
            region_language         = EXCLUDED.region_language,
+           applies_scope           = EXCLUDED.applies_scope,
            updated_at              = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -4015,6 +4016,7 @@ ${details}
           c.guarantee_type || null,
           regionTerritory,
           regionLanguage,
+          c.applies_scope || null,
         ]
       );
     }
@@ -11182,8 +11184,61 @@ ${details}
           //   (発注者帰属=確定額のみ。受注者帰属は line_items に入れていないため不算入。)
           await recalculateCapabilityTotal(orderItemId, taxRate);
 
-          // 受注者帰属(利用許諾料)を金銭条件へ振り分け → 利用許諾料計算書・分配に連動。
-          if (licenseItems.length > 0) {
+          // 利用許諾条件を capability_financial_conditions へ保存。
+          //   新方式: 発注書フォームの「利用許諾条件（共通）」= formData.financial_conditions
+          //     を 1 本以上の共通条件として保存する(受注者帰属の成果物に一括適用)。
+          //   旧方式(後方互換): 共通条件が無ければ、受注者帰属明細ごとの per-line 条件を
+          //     そのまま振り分ける(過去発注書の再保存・既存挙動の維持)。
+          const commonConds: any[] = Array.isArray(formData.financial_conditions)
+            ? (formData.financial_conditions as any[]).filter(
+                (c) =>
+                  c &&
+                  (c.calc_type ||
+                    c.condition_name ||
+                    c.rate_pct != null ||
+                    c.applies_scope ||
+                    c.region_language_label)
+              )
+            : [];
+          const deriveCalcMethod = (ct: any, fallback: any) =>
+            ct === "FIXED"
+              ? "FIXED"
+              : ct === "SUBSCRIPTION"
+                ? "SUBSCRIPTION"
+                : ct === "BASE_QTY_RATE" || ct === "BASE_RATE"
+                  ? "ROYALTY"
+                  : fallback || null;
+          if (commonConds.length > 0 && licenseItems.length > 0) {
+            const mappedCommon = commonConds.map((c: any, i: number) => ({
+              condition_no: Number(c.condition_no) || i + 1,
+              condition_name: c.condition_name || null,
+              region_territory: c.region_territory || null,
+              region_language: c.region_language || null,
+              region_language_label: c.region_language_label || null,
+              calc_type: c.calc_type || null,
+              calc_method: c.calc_method || deriveCalcMethod(c.calc_type, null),
+              rate_pct: c.rate_pct ?? null,
+              base_price_label: c.base_price_label || null,
+              fixed_kind: c.fixed_kind || null,
+              subscription_cycle: c.subscription_cycle || null,
+              unit_amount: c.unit_amount ?? null,
+              guarantee_type: c.guarantee_type || null,
+              mg_amount: c.mg_amount ?? 0,
+              ag_amount: c.ag_amount ?? 0,
+              formula_text: c.formula_text || null,
+              payment_terms: c.payment_terms || null,
+              applies_scope: c.applies_scope || null,
+              calc_period: c.calc_period || null,
+              calc_period_kind: c.calc_period_kind || null,
+              calc_period_close_month: c.calc_period_close_month ?? null,
+              currency: c.currency || "JPY",
+            }));
+            try {
+              await upsertCapabilityFinancialConditions(orderItemId, mappedCommon);
+            } catch (condErr) {
+              console.warn("[license] 共通利用許諾条件 sync skipped:", condErr);
+            }
+          } else if (licenseItems.length > 0) {
             const mappedConds = licenseItems.map((it: any, i: number) => ({
               condition_no: Number(it.line_no) || i + 1,
               condition_name: it.condition_name || it.item_name || null,
@@ -11192,15 +11247,7 @@ ${details}
               region_language_label: it.region_language_label || null,
               calc_type: it.calc_type || null,
               // 利用許諾条件の calc_method は計算式タイプから導出(業務報酬の FIXED とは別)。
-              calc_method:
-                it.calc_type === "FIXED"
-                  ? "FIXED"
-                  : it.calc_type === "SUBSCRIPTION"
-                    ? "SUBSCRIPTION"
-                    : it.calc_type === "BASE_QTY_RATE" ||
-                        it.calc_type === "BASE_RATE"
-                      ? "ROYALTY"
-                      : it.calc_method || null,
+              calc_method: deriveCalcMethod(it.calc_type, it.calc_method),
               rate_pct: it.rate_pct ?? null,
               base_price_label: it.base_price_label || null,
               fixed_kind: it.fixed_kind || null,

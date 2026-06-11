@@ -528,6 +528,7 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             c.calc_period_close_month == null ? null : Number(c.calc_period_close_month),
           currency: c.currency || "JPY",
           formula_text: c.formula_text || "",
+          applies_scope: c.applies_scope || "",
           payment_terms: c.payment_terms || "",
           mg_amount: Number(c.mg_amount) || 0,
           ag_amount: Number(c.ag_amount) || 0,
