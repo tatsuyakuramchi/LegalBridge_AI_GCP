@@ -18,7 +18,8 @@ async function readCapabilityLineRowsForDisplay(
 ): Promise<any[]> {
   try {
     const cl = await query(
-      `SELECT COALESCE(source_seq_no, line_no) AS line_no, subject AS item_name,
+      `SELECT source_line_item_id AS id,
+              COALESCE(source_seq_no, line_no) AS line_no, subject AS item_name,
               spec, unit_price, quantity, amount_ex_tax, calc_method, payment_terms,
               payment_method, payment_date, delivery_date, cycle, term_start,
               term_end, billing_day
@@ -38,7 +39,7 @@ async function readCapabilityLineRowsForDisplay(
     if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
   }
   const li = await query(
-    `SELECT line_no, item_name, spec, unit_price, quantity,
+    `SELECT id, line_no, item_name, spec, unit_price, quantity,
             amount_ex_tax, calc_method, payment_terms, payment_method,
             payment_date, delivery_date, cycle, term_start, term_end, billing_day
        FROM capability_line_items
@@ -249,15 +250,11 @@ export function registerFormReadRoutes(
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              const lines = await query(
-                `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                        amount_ex_tax, calc_method, payment_terms,
-                        payment_method, payment_date, delivery_date
-                   FROM capability_line_items
-                  WHERE capability_id = $1
-                  ORDER BY line_no ASC`,
-                [poId]
-              );
+              // Phase E-2: condition_lines 優先の coverage-gated dual-read
+              //   (id=source_line_item_id なので inspMap 参照もそのまま機能)
+              const lines = {
+                rows: await readCapabilityLineRowsForDisplay(query, poId),
+              };
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
