@@ -55,6 +55,8 @@ import type { Express, RequestHandler } from "express";
 import express from "express";
 import type { Pool } from "pg";
 import { normalizeDocumentFormData } from "../lib/capabilityFormMapping";
+// データ構造刷新 Phase C-5: 契約登録後に condition_lines へ二重書き込み (冪等・非致命)
+import { syncConditionLinesForCapability, safeSync } from "../lib/conditionSync";
 
 export type RecordType =
   | "purchase_order"
@@ -543,6 +545,11 @@ async function upsertContract(
   if (p.ringi_numbers) {
     await deps.linkRingiByDocNumber(docNumber, p.ringi_numbers);
   }
+
+  // Phase C-5: COMMIT 後に condition_lines へ非致命で二重書き込み (pool 経由・別接続)。
+  await safeSync("CL(capability)", () =>
+    syncConditionLinesForCapability({ query: deps.query }, capabilityId)
+  );
 
   return { capability_id: capabilityId, document_number: docNumber };
 }
@@ -1105,6 +1112,12 @@ async function mergePurchaseOrders(
     );
 
     await client.query("COMMIT");
+    // Phase C-5: 統合先 capability の condition_lines を非致命で同期 (pool 経由)。
+    //   統合元 capability は CASCADE 削除済みで、その condition_lines も
+    //   ON DELETE CASCADE で除去されるため、統合先のみ同期すれば整合する。
+    await safeSync("CL(merge target)", () =>
+      syncConditionLinesForCapability({ query: deps.query }, targetCap)
+    );
     return {
       target_document_number: target,
       merged_count: sources.length,

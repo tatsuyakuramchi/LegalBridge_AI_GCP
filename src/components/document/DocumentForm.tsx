@@ -23,6 +23,7 @@ import {
 } from './DeliveryLineItemTable';
 import {
   FinancialConditionTable,
+  calcMethodFromType,
   type FinancialCondition,
 } from './FinancialConditionTable';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
@@ -31,12 +32,18 @@ import {
   UnifiedContractPicker,
   type ContractDetail,
 } from './UnifiedContractPicker';
+import { FinancialConditionPicker } from './FinancialConditionPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+
+// インボイス登録番号は発注書テンプレ等が先頭に "T" を付与するため、取引先DB値に
+//   既に T が付いていると "TT…" になる。引用時に先頭の T(半角/全角) を1つ除去する。
+const stripLeadingT = (s?: string | null): string =>
+  String(s || '').replace(/^[TtＴｔ]\s*/, '').trim();
 
 interface DocumentFormProps {
   templateId: string;
@@ -85,6 +92,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   に載っていないケース (新規 import 直後 等) のために、最後に選んだ detail を保持。
   //   selectedContract の lookup で fallback として使う。
   const [royaltyPickedDetail, setRoyaltyPickedDetail] = useState<any>(null);
+  // 条件一覧ピッカーで条件を直接選んだとき、契約読込(financial_conditions)後に
+  //   その条件を確定するための pending id。0 のとき無効。
+  const [pendingRoyaltyCondId, setPendingRoyaltyCondId] = useState<number>(0);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -156,6 +166,54 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, selectedStaff?.staff_name]);
 
+  // 利用許諾料計算書: 税率/発行日が未設定なら既定値を form_data に初期化する。
+  //   select の表示は `formData.taxRate || '10'` で 10 に見えるが、未操作だと
+  //   formData.taxRate 自体は undefined のまま保存され、テンプレの {{taxRate}} が
+  //   空欄で出力されてしまう。発行日(documentDate) も入力欄/初期化が無く {{documentDate}}
+  //   が空欄になっていたため、本日日付で初期化する。
+  useEffect(() => {
+    if (templateId !== 'royalty_statement') return;
+    const patch: Record<string, any> = {};
+    if (!formData.taxRate) patch.taxRate = '10';
+    if (!formData.documentDate)
+      patch.documentDate = new Date().toISOString().slice(0, 10);
+    if (Object.keys(patch).length > 0) setFormData({ ...formData, ...patch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
+
+  // 通知先: 業務委託 / ライセンス / 出版(個人・法人)基本契約で、当社側
+  //   (委託者 / ライセンシー / 被許諾者) の通知先担当者を、選択中の担当者
+  //   (selectedStaff) から STAFF_NAME / STAFF_PHONE / STAFF_EMAIL に引用する。
+  //   テンプレ頭書きの「通知先」欄および通知条項に反映される。
+  useEffect(() => {
+    const noticeTemplates = [
+      'service_master',
+      'license_master',
+      'pub_master_individual',
+      'pub_master_corporate',
+      'individual_license_terms',
+      'pub_license_terms',
+      'pub_additional_terms',
+    ];
+    if (!noticeTemplates.includes(templateId) || !selectedStaff) return;
+    const name = selectedStaff.staff_name || '';
+    const phone = selectedStaff.phone || '';
+    const email = selectedStaff.email || '';
+    if (
+      formData.STAFF_NAME === name &&
+      formData.STAFF_PHONE === phone &&
+      formData.STAFF_EMAIL === email
+    )
+      return;
+    setFormData({
+      ...formData,
+      STAFF_NAME: name,
+      STAFF_PHONE: phone,
+      STAFF_EMAIL: email,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, selectedStaff?.staff_name, selectedStaff?.phone, selectedStaff?.email]);
+
   // Phase 22.9: 取引先 (activeVendor) が選ばれたら、その vendor に紐づく
   //             基本契約 (contract_capabilities) を自動補完。
   //   - 発注書 (purchase_order)               → category="service" の有効な基本契約
@@ -226,6 +284,66 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     lastAutoFilledRef.current = key;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeVendor?.vendor_code, templateId, allContracts.length]);
+
+  // Part1(共通化): 出版等利用許諾の「対価・支払条件」を共通 FinancialConditionTable に統一。
+  //   個別利用許諾と同じ条件表 UI を使い、紙書籍/電子書籍/翻訳・海外版 を 3 行で表現。
+  //   既存doc(旧フラットfield)/新規いずれも、フラットfieldから条件表を一度だけ初期化する。
+  //   ※ financial_conditions が既にあれば尊重 (再編集での二重初期化を防止)。
+  //   生成時に worker が条件表→flat field {{紙書籍印税率}} 等へ逆展開し PDF テンプレは不変。
+  const pubCondSeededRef = React.useRef(false);
+  useEffect(() => {
+    if (templateId !== 'pub_license_terms') return;
+    if (pubCondSeededRef.current) return;
+    if (
+      Array.isArray(formData.financial_conditions) &&
+      formData.financial_conditions.length > 0
+    ) {
+      pubCondSeededRef.current = true;
+      return;
+    }
+    const toNum = (v: any) => {
+      const n = parseFloat(String(v ?? '').replace(/[^0-9.]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    };
+    const seed: FinancialCondition[] = [
+      {
+        condition_no: 1,
+        region_language_label: '紙書籍出版',
+        calc_method: 'ROYALTY',
+        calc_type: 'BASE_QTY_RATE',
+        guarantee_type: 'NONE',
+        rate_pct: toNum(formData['紙書籍印税率']),
+        base_price_label: '税抜定価',
+        formula_text: formData['紙媒体計算式'] || '',
+        currency: 'JPY',
+      },
+      {
+        condition_no: 2,
+        region_language_label: '電子書籍配信',
+        calc_method: 'ROYALTY',
+        calc_type: 'BASE_QTY_RATE',
+        guarantee_type: 'NONE',
+        rate_pct: toNum(formData['電子書籍印税率']),
+        base_price_label: '被許諾者受領額',
+        formula_text: formData['電子書籍計算式'] || '',
+        currency: 'JPY',
+      },
+      {
+        condition_no: 3,
+        region_language_label: formData['翻訳海外版対象地域言語'] || '翻訳・海外版',
+        calc_method: 'ROYALTY',
+        calc_type: 'BASE_QTY_RATE',
+        guarantee_type: 'NONE',
+        rate_pct: toNum(formData['翻訳海外版料率']),
+        base_price_label: '被許諾者受取ライセンス収益',
+        formula_text: formData['翻訳海外版計算式'] || '',
+        currency: 'JPY',
+      },
+    ];
+    pubCondSeededRef.current = true;
+    setFormData({ ...formData, financial_conditions: seed });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.financial_conditions]);
 
   // ---------------------------------------------------------------
   // Phase 22.21.3: 原作 / 素材 マスター由来の auto-fill を初回マウント時にも実行。
@@ -478,6 +596,65 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, formData.items]);
 
+  // 発注書: 受注者帰属の明細を「共通の利用許諾条件」(formData.financial_conditions)
+  //   に紐づける。条件が無ければ1本シードし、適用範囲(applies_scope)を受注者帰属
+  //   明細名から自動補完する。旧 per-line 条件を持つ既存発注書は、最初の受注者明細の
+  //   条件フィールドから移行する(後方互換)。
+  useEffect(() => {
+    if (templateId !== 'purchase_order' && templateId !== 'intl_purchase_order')
+      return;
+    const items: any[] = Array.isArray(formData.items) ? formData.items : [];
+    const ownerItems = items.filter(
+      (it) => it?.deliverable_ownership === '受注者'
+    );
+    if (ownerItems.length === 0) return; // 受注者帰属が無ければ何もしない
+    const scopeNames = ownerItems
+      .map((it) => it.condition_name || it.item_name)
+      .filter(Boolean)
+      .join('、');
+    const defaultScope = scopeNames
+      ? `本発注の受注者帰属成果物（${scopeNames}）`
+      : '本発注の受注者帰属成果物';
+    const conds: any[] = Array.isArray(formData.financial_conditions)
+      ? formData.financial_conditions
+      : [];
+    if (conds.length === 0) {
+      // 旧 per-line 条件を持つ明細があれば、そこから共通条件を1本移行。
+      const src: any = ownerItems.find((it) => it.calc_type) || ownerItems[0] || {};
+      const seeded: FinancialCondition & { applies_scope?: string } = {
+        condition_no: 1,
+        condition_name: src.condition_name || '利用許諾条件',
+        region_territory: src.region_territory || '',
+        region_language: src.region_language || '',
+        region_language_label: src.region_language_label || '',
+        calc_type: src.calc_type || 'BASE_QTY_RATE',
+        calc_method: calcMethodFromType(src.calc_type) || 'ROYALTY',
+        rate_pct: src.rate_pct ?? 0,
+        base_price_label: src.base_price_label || '',
+        guarantee_type: src.guarantee_type || 'NONE',
+        mg_amount: src.mg_amount ?? 0,
+        ag_amount: src.ag_amount ?? 0,
+        payment_terms: src.payment_terms || '',
+        formula_text: src.formula_text || '',
+        applies_scope: defaultScope,
+        currency: 'JPY',
+      };
+      setFormData({ ...formData, financial_conditions: [seeded] });
+      return;
+    }
+    // 既存条件のうち applies_scope が空のものだけ既定値を補完(上書きはしない)。
+    let changed = false;
+    const next = conds.map((c) => {
+      if (((c.applies_scope || '') as string).trim() === '') {
+        changed = true;
+        return { ...c, applies_scope: defaultScope };
+      }
+      return c;
+    });
+    if (changed) setFormData({ ...formData, financial_conditions: next });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.items, formData.financial_conditions]);
+
   // Phase 9h: 検収書 — delivery_line_items / taxRate / isReducedTax の
   // どれかが変わったら 税抜合計 / 消費税 / 税込合計 を再計算して
   // テンプレ用フィールド (deliveredAmountStr / taxAmountStr / totalAmountStr)
@@ -535,6 +712,79 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     formData.isReducedTax,
     formData.expensesTotalIncTax,
   ]);
+
+  // 検収書: 受注者帰属で業務報酬0(=利用許諾料に含む)の成果物を検収対象に自動取り込み。
+  //   Backlog 親PO自動検出(form-context)経路でも自動で載るようにする。
+  //   delivery_line_items が空のとき(初期)だけ取り込み、ユーザーの手動削除とは競合しない
+  //   (依存は order_lines_for_inspection のみなので、削除後に再追加されない)。
+  useEffect(() => {
+    if (!templateId.startsWith('inspection_certificate')) return;
+    const orderLines = Array.isArray(formData.order_lines_for_inspection)
+      ? (formData.order_lines_for_inspection as any[])
+      : [];
+    if (orderLines.length === 0) return;
+    const existing = Array.isArray(formData.delivery_line_items)
+      ? (formData.delivery_line_items as any[])
+      : [];
+    if (existing.length > 0) return; // 既に検収入力があれば自動取込しない
+    const licenseZero = orderLines.filter(
+      (l: any) =>
+        l?.deliverable_ownership === '受注者' &&
+        (Number(l?.amount_ex_tax) || 0) === 0
+    );
+    if (licenseZero.length === 0) return;
+    setFormData({
+      ...formData,
+      delivery_line_items: licenseZero.map((l: any) => ({
+        order_line_item_id: Number(l.id),
+        item_name: l.item_name || '',
+        spec: l.spec || '',
+        inspected_quantity: Number(l.quantity) || 1,
+        acceptance_ratio: 1.0,
+        inspected_amount_ex_tax: 0,
+        delivery_date: l.delivery_date || undefined,
+      })),
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, formData.order_lines_for_inspection]);
+
+  // 条件一覧ピッカーで条件を直接選んだとき、契約の financial_conditions が読み込まれた
+  //   タイミングで、その条件を確定(capability_financial_condition_id + 計算系を auto-fill)する。
+  useEffect(() => {
+    if (templateId !== 'royalty_statement' || !pendingRoyaltyCondId) return;
+    const fcs = Array.isArray(formData.financial_conditions)
+      ? (formData.financial_conditions as any[])
+      : [];
+    const fc = fcs.find((c) => Number(c.id) === pendingRoyaltyCondId);
+    if (!fc) return; // まだ契約条件が読み込まれていない
+    if (Number(formData.capability_financial_condition_id) === pendingRoyaltyCondId) {
+      setPendingRoyaltyCondId(0);
+      return;
+    }
+    const calcType =
+      fc.calc_method === 'SUBSCRIPTION'
+        ? 'sublicense'
+        : fc.calc_method === 'FIXED'
+        ? 'sales'
+        : 'manufacturing';
+    setFormData({
+      ...formData,
+      capability_financial_condition_id: pendingRoyaltyCondId,
+      license_financial_condition_id: 0,
+      calcType,
+      royaltyRatePct: fc.rate_pct != null ? String(fc.rate_pct) : '',
+      mgAmount:
+        fc.mg_amount != null && Number(fc.mg_amount) > 0 ? String(fc.mg_amount) : '',
+      agAmount:
+        fc.ag_amount != null && Number(fc.ag_amount) > 0 ? String(fc.ag_amount) : '',
+      currency: fc.currency || formData.currency || 'JPY',
+      paymentConditionSummary:
+        fc.payment_terms || formData.paymentConditionSummary || '',
+      料率: fc.rate_pct != null ? String(fc.rate_pct) : formData.料率,
+    });
+    setPendingRoyaltyCondId(0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId, pendingRoyaltyCondId, formData.financial_conditions]);
 
   // Phase 22.21.101: royalty_statement で contract master を選択済みなら、
   //   PDF ヘッダ用フィールド (linked_contract_number / LICENSOR_SUFFIX /
@@ -1244,7 +1494,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ACCOUNT_TYPE: activeVendor.account_type || '',
         ACCOUNT_NUMBER: activeVendor.account_number || '',
         ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
-        INVOICE_REGISTRATION_NUMBER: activeVendor.invoice_registration_number || '',
+        INVOICE_REGISTRATION_NUMBER: stripLeadingT(activeVendor.invoice_registration_number),
       });
     };
 
@@ -1473,12 +1723,55 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 items,
                 itemsSubtotalExTax: itemsTotal,
                 otherFeesTotal: feesTotal,
+                // 受注者帰属(利用許諾料)は確定額外なので合計には不算入(amount_ex_tax=0)。
                 grandTotalExTax: itemsTotal + feesTotal,
+                // 利用許諾条件セクション(発注書)の表示要否フラグ。
+                has_license_conditions: items.some(
+                  (it) => it.deliverable_ownership === '受注者'
+                ),
               });
             }}
             showPaymentColumns={true}
           />
         </FormSection>
+
+        {/* 5-L. 利用許諾条件（共通）— 受注者帰属の成果物に適用する利用許諾条件を
+            1本(複数も可)で定義する。各受注者帰属明細は「この共通条件の対象」となり、
+            条件の「適用範囲」に該当明細名が自動補完される。確定額(業務委託小計)には
+            含まれず、利用許諾料計算書・分配に連動する。 */}
+        {Array.isArray(formData.items) &&
+          formData.items.some(
+            (it: any) => it?.deliverable_ownership === '受注者'
+          ) && (
+            <FormSection
+              title="5-L. 利用許諾条件（共通）— 受注者帰属の成果物に適用"
+              variant="amber"
+              icon={<Coins className="w-4 h-4" />}
+            >
+              <div className="mb-2 text-[11px] font-mono text-amber-800 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2 leading-relaxed">
+                受注者帰属（利用許諾）にした成果物:{' '}
+                <strong>
+                  {formData.items
+                    .filter((it: any) => it?.deliverable_ownership === '受注者')
+                    .map((it: any) => it.condition_name || it.item_name)
+                    .filter(Boolean)
+                    .join('、') || '（品目名未入力）'}
+                </strong>
+                <br />
+                これらに適用する利用許諾条件を以下で定義します（1本にまとめて全体許諾も可）。
+              </div>
+              <FinancialConditionTable
+                conditions={
+                  Array.isArray(formData.financial_conditions)
+                    ? (formData.financial_conditions as FinancialCondition[])
+                    : []
+                }
+                onChange={(conditions: FinancialCondition[]) =>
+                  setFormData({ ...formData, financial_conditions: conditions })
+                }
+              />
+            </FormSection>
+          )}
 
         {/* IV-a. その他手数料 (Phase 22.21.56) — 業務委託報酬以外の手数料。
             税抜表示で grandTotalExTax に加算される。経費 (IV-b 税込・別精算) とは別物。 */}
@@ -1681,7 +1974,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
         IS_INVOICE_ISSUER: !!activeVendor.is_invoice_issuer,
         invoiceRegistrationDisplay: activeVendor.invoice_registration_number
-          ? `T${activeVendor.invoice_registration_number}`
+          ? `T${stripLeadingT(activeVendor.invoice_registration_number)}`
           : '',
       });
     };
@@ -1798,6 +2091,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderGroup('IV. 振込先口座 (ロイヤリティ送金先)')}
         </FormSection>
 
+        {/* 通知条項(第23条)の通知先 — 相手方の担当者/電話/メール。頭書きに反映。 */}
+        <FormSection title="VII. 通知先 (相手方)" variant="default">
+          {renderGroup('VII. 通知先 (相手方)')}
+        </FormSection>
+
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
             ▶ V. 備考 (任意) — クリックして展開
@@ -1892,7 +2190,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
         IS_INVOICE_ISSUER: activeVendor.is_invoice_issuer ? '該当' : '非該当',
         invoiceRegistrationDisplay: activeVendor.invoice_registration_number
-          ? `T${activeVendor.invoice_registration_number}`
+          ? `T${stripLeadingT(activeVendor.invoice_registration_number)}`
           : '',
       });
     };
@@ -2015,6 +2313,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           headerActions={sideButton('取引先', fillVendorFromPartner, !activeVendor)}
         >
           {renderGroup('IV. 振込先銀行口座 (乙)')}
+        </FormSection>
+
+        {/* 通知条項(第23条)の通知先 — 相手方(乙)の担当者/電話/メール。頭書きに反映。 */}
+        <FormSection title="VII. 通知先 (乙)" variant="default">
+          {renderGroup('VII. 通知先 (乙)')}
         </FormSection>
 
         <FormSection title="V. インボイス制度関連" variant="indigo">
@@ -2204,6 +2507,24 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               const todayIso = new Date().toISOString().slice(0, 10);
               const firstLine = detail.line_items?.[0];
               const prog = detail.delivery_progress;
+              // 受注者帰属で業務報酬0(=利用許諾料に含む)の成果物は、検収数量を
+              //   発注数量で自動セットして検収対象に自動取り込みする(手入力不要)。
+              //   金額は0のまま → 検収書に「利用許諾料に含む」で表示される。
+              const autoLicenseLines = ((detail.line_items as any[]) || [])
+                .filter(
+                  (l: any) =>
+                    l?.deliverable_ownership === "受注者" &&
+                    (Number(l?.amount_ex_tax) || 0) === 0
+                )
+                .map((l: any) => ({
+                  order_line_item_id: Number(l.id),
+                  item_name: l.item_name || "",
+                  spec: l.spec || "",
+                  inspected_quantity: Number(l.quantity) || 1,
+                  acceptance_ratio: 1.0,
+                  inspected_amount_ex_tax: 0,
+                  delivery_date: l.delivery_date || undefined,
+                }));
 
               setFormData({
                 ...formData,
@@ -2211,6 +2532,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 parent_po_issue_key: c.backlog_issue_key,
                 parent_po_number: c.document_number || "",
                 parent_contract_record_type: c.record_type,
+                // 件名: 発注書フォームで入力した件名(PROJECT_TITLE=project_title)を優先。
+                //   無ければ契約タイトルにフォールバック。検収確認文の先頭に表示する。
+                projectTitle:
+                  (c as any).project_title ||
+                  c.contract_title ||
+                  formData.projectTitle ||
+                  "",
                 order_lines_for_inspection: detail.line_items,
                 // Phase 23.5: 「発注日」は issue_date_po (PO header の発行日)
                 //   を最優先。due_date は支払期限、effective_date は契約発効日
@@ -2269,7 +2597,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   accountHolder:
                     formData.accountHolder || v.account_holder_kana || "",
                 }),
-                delivery_line_items: [],
+                // 利用許諾料に含む(0円)成果物は自動で検収対象に取り込む。
+                delivery_line_items: autoLicenseLines,
                 deliveredAmountStr: "",
                 po_expenses: detail.expenses || [],
                 selectedExpenseLineNos: [],
@@ -2898,14 +3227,16 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   "individual_contract",
                   "standalone_contract",
                   "publication_condition",
+                  // 受注者帰属の利用許諾(印税)を持つ発注書も計算対象にできるよう含める。
+                  "purchase_order",
                 ]}
-                categoryFilter={["license", "publication"]}
+                categoryFilter={["license", "publication", "service"]}
                 currentContractId={selectedContractId || undefined}
                 hasParent={selectedContractId > 0}
                 label={
                   selectedContractId > 0
                     ? "契約・条件を切り替える"
-                    : "ライセンス契約／出版条件を選ぶ"
+                    : "ライセンス契約／出版条件／印税付き発注書を選ぶ"
                 }
                 onPick={(detail) => {
                   // Phase 23.0.4: detail を pickedDetail state に保存。
@@ -2917,6 +3248,27 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 onClear={() => {
                   setRoyaltyPickedDetail(null);
                   selectMasterContract(0);
+                }}
+              />
+              {/* 条件一覧から直接選ぶ（発注書由来の印税も同じ土俵で選べる）。 */}
+              <div className="text-[10px] font-mono text-muted-foreground">
+                — または —
+              </div>
+              <FinancialConditionPicker
+                currentConditionId={selectedConditionId || undefined}
+                label="利用許諾条件（印税）を一覧から選ぶ"
+                onPick={(detail, conditionId) => {
+                  setRoyaltyPickedDetail(detail);
+                  selectMasterContract(detail.contract.id, detail);
+                  // financial_conditions 読込後に effect で条件を確定。
+                  setPendingRoyaltyCondId(conditionId);
+                }}
+                onClear={() => {
+                  setPendingRoyaltyCondId(0);
+                  setFormData({
+                    ...formData,
+                    capability_financial_condition_id: 0,
+                  });
                 }}
               />
               {licenseMasters.length === 0 && (
@@ -3544,6 +3896,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             ▼ ステップ 5 — 報告・支払・備考
           </summary>
           <div className="p-4 border-t border-input grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div className="space-y-1">
+              <Label className="text-[11px] font-mono">
+                発行日 <span className="text-red-600">*</span>
+              </Label>
+              <Input
+                type="date"
+                value={formData.documentDate || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, documentDate: e.target.value })
+                }
+              />
+            </div>
             <div className="space-y-1">
               <Label className="text-[11px] font-mono">
                 通貨 <span className="text-red-600">*</span>
@@ -4569,21 +4933,62 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           const m = /^\s*(\d+)/.exec(s);
           return m ? Number(m[1]) : Number.POSITIVE_INFINITY;
         };
+        // Part1(共通化): 出版の「対価・支払条件」の料率/計算式は共通
+        //   FinancialConditionTable(条件表)で編集。表に無い出版固有field
+        //   (部数区分/報告明細/消費税/源泉/インボイス)は従来どおり並べる。
+        const PUB_TABLE_OWNED = new Set([
+          '紙媒体計算式', '紙書籍印税率',
+          '電子書籍計算式', '電子書籍印税率',
+          '翻訳海外版計算式', '翻訳海外版料率',
+        ]);
         return (Object.entries(groupedVars) as [string, string[]][])
           .sort((a, b) => {
             const oa = PUB_SECTIONS[a[0]]?.order ?? lead(a[0]);
             const ob = PUB_SECTIONS[b[0]]?.order ?? lead(b[0]);
             return oa - ob;
           })
-          .map(([groupName, varIds]) => (
-            <FormSection
-              key={groupName}
-              title={PUB_SECTIONS[groupName]?.label || groupName}
-              variant="default"
-            >
-              {varIds.map((fid) => renderField(fid))}
-            </FormSection>
-          ));
+          .map(([groupName, varIds]) => {
+            if (
+              templateId === 'pub_license_terms' &&
+              groupName === 'VI. 対価・支払条件'
+            ) {
+              const remaining = varIds.filter((fid) => !PUB_TABLE_OWNED.has(fid));
+              return (
+                <FormSection
+                  key={groupName}
+                  title={PUB_SECTIONS[groupName]?.label || groupName}
+                  variant="default"
+                  headerActions={
+                    <span className="text-[11px] font-mono text-muted-foreground italic">
+                      条件 1=紙書籍 / 2=電子書籍 / 3=翻訳・海外版 (許諾有無は「許諾内容」で制御)
+                    </span>
+                  }
+                >
+                  <FinancialConditionTable
+                    conditions={
+                      Array.isArray(formData.financial_conditions)
+                        ? (formData.financial_conditions as FinancialCondition[])
+                        : []
+                    }
+                    onChange={(conditions: FinancialCondition[]) =>
+                      setFormData({ ...formData, financial_conditions: conditions })
+                    }
+                    division="PUB"
+                  />
+                  {remaining.map((fid) => renderField(fid))}
+                </FormSection>
+              );
+            }
+            return (
+              <FormSection
+                key={groupName}
+                title={PUB_SECTIONS[groupName]?.label || groupName}
+                variant="default"
+              >
+                {varIds.map((fid) => renderField(fid))}
+              </FormSection>
+            );
+          });
       })()}
     </div>
   );

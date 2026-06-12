@@ -21,6 +21,49 @@ export interface ContractsV2Deps {
   requirePortalSecret: RequestHandler;
 }
 
+/**
+ * Phase E-2: 契約詳細の利用許諾(財務)条件を coverage-gated dual-read で取得。
+ *   財務条件は status_flags 等の運用状態を持たない純表示データなので安全に
+ *   condition_lines 優先へ切替可能。A案で暗黙 terms に切り出された分も
+ *   source_condition_id 経由で連結、condition_no は source_seq_no で faithful 復元。
+ *   完全カバー時のみ condition_lines、欠ければ capability_financial_conditions。
+ */
+async function readFinancialConditionsForDisplay(
+  query: (text: string, params?: any[]) => Promise<any>,
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT cl.source_condition_id AS id, cl.source_seq_no AS condition_no,
+              cl.subject AS region_language_label, cl.calc_method, cl.rate_pct,
+              cl.base_price_label, cl.calc_period, cl.currency, cl.formula_text,
+              cl.payment_terms, cl.mg_amount, COALESCE(cl.ag_amount, 0) AS ag_amount,
+              cl.calc_period_kind, cl.calc_period_close_month
+         FROM condition_lines cl
+        WHERE cl.source_condition_id IN (
+                SELECT id FROM capability_financial_conditions WHERE capability_id = $1)
+        ORDER BY cl.source_seq_no ASC NULLS LAST, cl.id`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_financial_conditions WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  return (
+    await query(
+      `SELECT * FROM capability_financial_conditions
+        WHERE capability_id = $1 ORDER BY condition_no`,
+      [capabilityId]
+    )
+  ).rows;
+}
+
 export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
   /**
    * 統一検索。
@@ -217,11 +260,10 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           ORDER BY cli.line_no`,
         [id]
       );
-      const conds = await deps.query(
-        `SELECT * FROM capability_financial_conditions
-          WHERE capability_id = $1 ORDER BY condition_no`,
-        [id]
-      );
+      // Phase E-2: condition_lines 優先の coverage-gated dual-read (状態非依存)
+      const conds = {
+        rows: await readFinancialConditionsForDisplay(deps.query, id),
+      };
       const expenses = await deps.query(
         `SELECT * FROM capability_expenses
           WHERE capability_id = $1 ORDER BY line_no`,

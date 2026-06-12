@@ -179,6 +179,45 @@ export const recalculateOrderTotal = recalculateCapabilityTotal;
  * Phase 23 で order_line_items → capability_line_items にリネーム。
  * delivery_line_items.order_line_item_id → capability_line_item_id を参照する。
  */
+/**
+ * Phase E-2 (dual-read): 発注側の金額・数量・単価を condition_lines 優先で読む。
+ *   移行済み(source_line_item_id 一致)はそちら、未移行 / 未作成(42P01/42703)は
+ *   capability_line_items にフォールバック。値は C-2/C-5 で同名コピーのため挙動不変。
+ *   (api 側 calc.ts の getOrderedLineEconomics と同等。worker は別 calc.ts のためミラー。)
+ */
+export async function getOrderedLineEconomics(
+  capabilityLineItemId: number
+): Promise<{ amount_ex_tax: number; quantity: number; unit_price: number } | null> {
+  try {
+    const cl = await query(
+      `SELECT amount_ex_tax, quantity, unit_price
+         FROM condition_lines
+        WHERE source_line_item_id = $1
+        LIMIT 1`,
+      [capabilityLineItemId]
+    );
+    if (cl.rows.length) {
+      return {
+        amount_ex_tax: Number(cl.rows[0].amount_ex_tax) || 0,
+        quantity: Number(cl.rows[0].quantity) || 0,
+        unit_price: Number(cl.rows[0].unit_price) || 0,
+      };
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  const li = await query(
+    `SELECT amount_ex_tax, quantity, unit_price FROM capability_line_items WHERE id = $1`,
+    [capabilityLineItemId]
+  );
+  if (!li.rows.length) return null;
+  return {
+    amount_ex_tax: Number(li.rows[0].amount_ex_tax) || 0,
+    quantity: Number(li.rows[0].quantity) || 0,
+    unit_price: Number(li.rows[0].unit_price) || 0,
+  };
+}
+
 export async function getCapabilityLineAvailability(
   capabilityLineItemId: number
 ): Promise<{
@@ -191,17 +230,12 @@ export async function getCapabilityLineAvailability(
   overflow_amount: boolean;
   overflow_quantity: boolean;
 }> {
-  const orderedRes = await query(
-    `SELECT amount_ex_tax, quantity
-       FROM capability_line_items
-      WHERE id = $1`,
-    [capabilityLineItemId]
-  );
-  if (orderedRes.rows.length === 0) {
+  const ordered = await getOrderedLineEconomics(capabilityLineItemId);
+  if (!ordered) {
     throw new Error(`capability_line_item ${capabilityLineItemId} not found`);
   }
-  const orderedAmount = Number(orderedRes.rows[0].amount_ex_tax) || 0;
-  const orderedQuantity = Number(orderedRes.rows[0].quantity) || 0;
+  const orderedAmount = ordered.amount_ex_tax;
+  const orderedQuantity = ordered.quantity;
 
   const inspectedRes = await query(
     `SELECT COALESCE(SUM(inspected_amount_ex_tax), 0) AS amt,
@@ -265,11 +299,8 @@ export async function previewInspectionOverflow(
     const lineId = Number(
       p.capability_line_item_id ?? p.order_line_item_id ?? 0
     );
-    const lineRes = await query(
-      "SELECT unit_price FROM capability_line_items WHERE id = $1",
-      [lineId]
-    );
-    const unitPrice = Number(lineRes.rows[0]?.unit_price) || 0;
+    const econ = await getOrderedLineEconomics(lineId);
+    const unitPrice = econ?.unit_price || 0;
     const proposedAmount = calculateInspectedAmount(
       unitPrice,
       p.inspected_quantity,

@@ -46,45 +46,59 @@ type FieldDef = {
   hint?: string
   options?: string[]
   choices?: "DERIV"
+  group?: string
 }
 
+// ③ kindで1フォーム化: 原作IP(licensed_in)と自社作品(own)のフィールドを単一定義に統合し、
+//   kind で出し分ける。SCHEMA はここから生成(定義の重複を解消)。
+//   入力しやすさのため group でセクション分け(検索側 vanilla と同一構成)。
+type WorkKind = "own" | "licensed_in"
+const WORK_FIELDS: Array<FieldDef & { kinds: WorkKind[] }> = [
+  { name: "title", label: "タイトル", type: "text", required: true, group: "基本情報", kinds: ["own", "licensed_in"] },
+  { name: "title_kana", label: "タイトル(カナ)", type: "text", group: "基本情報", kinds: ["own", "licensed_in"] },
+  { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array", group: "基本情報", kinds: ["own", "licensed_in"] },
+  { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB", group: "基本情報", kinds: ["own", "licensed_in"] },
+  { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"], group: "区分・状態", kinds: ["own"] },
+  { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"], group: "区分・状態", kinds: ["own"] },
+  { name: "rights_holder_vendor_id", label: "権利者(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択", group: "権利・既定値", kinds: ["licensed_in"] },
+  { name: "original_publisher", label: "原作出版社", type: "text", group: "権利・既定値", kinds: ["licensed_in"] },
+  { name: "default_rights_holder", label: "既定権利者", type: "text", group: "権利・既定値", kinds: ["licensed_in"] },
+  { name: "default_credit_display", label: "クレジット表記", type: "text", group: "権利・既定値", kinds: ["licensed_in"] },
+  { name: "default_work_supplement", label: "作品補足", type: "textarea", group: "権利・既定値", kinds: ["licensed_in"] },
+  { name: "default_approval_target", label: "承認対象", type: "text", group: "権利・既定値", kinds: ["licensed_in"] },
+  { name: "default_approval_timing", label: "承認タイミング", type: "text", group: "権利・既定値", kinds: ["licensed_in"] },
+  { name: "parent_work_id", label: "派生元(系譜)", type: "work-select", hint: "翻訳版・改題版などの派生元を選ぶ(原作IPは A原作→B翻訳 等)", group: "系譜・備考", kinds: ["own", "licensed_in"] },
+  { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV", group: "系譜・備考", kinds: ["own", "licensed_in"] },
+  { name: "remarks", label: "備考", type: "textarea", group: "系譜・備考", kinds: ["own", "licensed_in"] },
+]
+const kindOfType = (t: EntityType): WorkKind => (t === "source-ips" ? "licensed_in" : "own")
+
 const SCHEMA: Record<EntityType, FieldDef[]> = {
-  "source-ips": [
-    { name: "title", label: "タイトル", type: "text", required: true },
-    { name: "title_kana", label: "タイトル(カナ)", type: "text" },
-    { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
-    { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB（この原作IPを使う事業部）" },
-    { name: "original_publisher", label: "原作出版社", type: "text" },
-    { name: "default_rights_holder", label: "既定権利者", type: "text" },
-    { name: "default_credit_display", label: "クレジット表記", type: "text" },
-    { name: "default_work_supplement", label: "作品補足", type: "textarea" },
-    { name: "default_approval_target", label: "承認対象", type: "text" },
-    { name: "default_approval_timing", label: "承認タイミング", type: "text" },
-    { name: "rights_holder_vendor_id", label: "権利者(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択" },
-    { name: "remarks", label: "備考", type: "textarea" },
-  ],
-  works: [
-    { name: "title", label: "タイトル", type: "text", required: true },
-    { name: "title_kana", label: "タイトル(カナ)", type: "text" },
-    { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
-    { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB" },
-    { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"] },
-    { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"] },
-    { name: "parent_work_id", label: "派生元の作品(系譜)", type: "work-select", hint: "翻訳版・改題版などは派生元の自社作品を選ぶ" },
-    { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV" },
-    { name: "remarks", label: "備考", type: "textarea" },
-  ],
+  "source-ips": WORK_FIELDS.filter((f) => f.kinds.includes("licensed_in")),
+  works: WORK_FIELDS.filter((f) => f.kinds.includes("own")),
   contracts: [
-    { name: "contract_title", label: "契約名", type: "text", required: true },
-    { name: "contract_level", label: "契約レベル", type: "select", options: ["", "master", "individual", "standalone"] },
-    { name: "contract_category", label: "契約カテゴリ", type: "text", hint: "license_in / license_out / service / publication / sales / nda" },
-    { name: "contract_type", label: "契約類型", type: "text" },
-    { name: "lifecycle_stage", label: "ライフサイクル", type: "text", hint: "requested / under_review / executed 等" },
-    { name: "primary_vendor_id", label: "主取引先", type: "vendor-select", hint: "取引先を名称/コードで検索して選択" },
-    { name: "effective_date", label: "発効日", type: "date" },
-    { name: "expiration_date", label: "満了日", type: "date" },
-    { name: "auto_renewal", label: "自動更新", type: "bool" },
+    { name: "contract_title", label: "契約名", type: "text", required: true, group: "基本情報" },
+    { name: "contract_level", label: "契約レベル", type: "select", options: ["", "master", "individual", "standalone"], group: "基本情報" },
+    { name: "contract_category", label: "契約カテゴリ", type: "text", hint: "license_in / license_out / service / publication / sales / nda", group: "基本情報" },
+    { name: "contract_type", label: "契約類型", type: "text", group: "基本情報" },
+    { name: "lifecycle_stage", label: "ライフサイクル", type: "text", hint: "requested / under_review / executed 等", group: "基本情報" },
+    { name: "primary_vendor_id", label: "主取引先", type: "vendor-select", hint: "取引先を名称/コードで検索して選択", group: "当事者・期間" },
+    { name: "effective_date", label: "発効日", type: "date", group: "当事者・期間" },
+    { name: "expiration_date", label: "満了日", type: "date", group: "当事者・期間" },
+    { name: "auto_renewal", label: "自動更新", type: "bool", group: "当事者・期間" },
   ],
+}
+
+// フォーム項目を group ごとに分割(定義順を維持)。group 未指定はまとめて末尾の "" に。
+const groupFields = (fields: FieldDef[]): Array<[string, FieldDef[]]> => {
+  const order: string[] = []
+  const map = new Map<string, FieldDef[]>()
+  fields.forEach((f) => {
+    const g = f.group || ""
+    if (!map.has(g)) { map.set(g, []); order.push(g) }
+    map.get(g)!.push(f)
+  })
+  return order.map((g) => [g, map.get(g)!])
 }
 
 const SUBKEYS: Record<EntityType, [string, string][]> = {
@@ -136,9 +150,6 @@ const sendJson = async (method: string, url: string, body: any) => {
 export function WorkModelPanel() {
   const { showNotification } = useAppData()
   const [lists, setLists] = React.useState<Record<EntityType, Row[]>>({ "source-ips": [], works: [], contracts: [] })
-  // 紐付け待ちインボックス用: サブライセンス受領条件(deals)。work_id 単位で
-  //   「受領はあるが親作品(再許諾元)が未設定」を抽出するのに使う。
-  const [deals, setDeals] = React.useState<Row[]>([])
   const [error, setError] = React.useState<string | null>(null)
   const [loading, setLoading] = React.useState(false)
 
@@ -148,13 +159,6 @@ export function WorkModelPanel() {
     try {
       const [ips, works, contracts] = await Promise.all([getJson(API["source-ips"]), getJson(API.works), getJson(API.contracts)])
       setLists({ "source-ips": ips || [], works: works || [], contracts: contracts || [] })
-      // 受領条件は best-effort(失敗してもメイン表示は止めない)。
-      try {
-        const d = await getJson("/api/sublicense/deals")
-        setDeals(Array.isArray(d?.rows) ? d.rows : [])
-      } catch {
-        setDeals([])
-      }
     } catch (e: any) {
       setError(e?.message || String(e))
     } finally {
@@ -175,24 +179,6 @@ export function WorkModelPanel() {
   const [modal, setModal] = React.useState<Modal>(null)
   // #2: 派生元(親作品)をインラインで素早く設定するクイックダイアログ対象。
   const [quickParent, setQuickParent] = React.useState<Row | null>(null)
-
-  // 紐付け待ち: 受領条件(deal)があるのに親作品(再許諾元)が未設定の作品。
-  //   = 「サブライセンス作品は分かるが、どの権利を再許諾したか未確定」の作品。
-  const pendingLinks = React.useMemo(() => {
-    const byWork = new Map<number, { names: Set<string>; count: number }>()
-    for (const d of deals) {
-      const wid = Number(d.work_id)
-      if (!wid) continue
-      const e = byWork.get(wid) || { names: new Set<string>(), count: 0 }
-      const nm = d.sublicensee_name || d.counterparty_name || d.inline_sublicensee_name
-      if (nm) e.names.add(String(nm))
-      e.count++
-      byWork.set(wid, e)
-    }
-    return lists.works
-      .filter((w) => w.parent_work_id == null && byWork.has(Number(w.id)))
-      .map((w) => ({ work: w, info: byWork.get(Number(w.id))! }))
-  }, [deals, lists.works])
 
   return (
     <div className="space-y-5">
@@ -224,43 +210,6 @@ export function WorkModelPanel() {
           </div>
           {type === "works" ? (
             <>
-              {/* 紐付け待ちインボックス: 受領はあるが親(再許諾元)未設定の作品 */}
-              {pendingLinks.length > 0 && (
-                <div className="mb-3 rounded-lg border border-amber-300 bg-amber-50/70 p-3">
-                  <div className="text-xs font-bold text-amber-800">
-                    🔗 紐付け待ち — 受領はあるが「どの権利を再許諾したか(親作品)」が未設定 ({pendingLinks.length})
-                  </div>
-                  <p className="text-[11px] text-amber-700 mt-1 mb-2 leading-relaxed">
-                    サブライセンス作品(受領)は登録済みだが、再許諾元の当社作品(親)が未確定の作品です。
-                    確認でき次第「🧬 派生元を設定」で紐づけると、原作までの分配チェーンがつながります。
-                  </p>
-                  <div className="space-y-1.5">
-                    {pendingLinks.map(({ work, info }) => (
-                      <div key={work.id} className="flex items-center justify-between gap-2 bg-card border border-border rounded-md px-2.5 py-1.5">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold truncate">
-                            {work.title || "#" + work.id}
-                            {work.work_code && (
-                              <span className="ml-1.5 text-[10px] font-mono text-muted-foreground">({work.work_code})</span>
-                            )}
-                          </div>
-                          <div className="text-[11px] text-muted-foreground truncate">
-                            受領先: {[...info.names].join(" / ") || "—"}（受領条件 {info.count} 件）
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <Link to={`/master/receivable-map?work=${work.id}`} className="text-[11px] font-bold text-violet-600 bg-violet-50 rounded px-2 py-0.5 hover:bg-violet-100">
-                            🔀
-                          </Link>
-                          <Button size="sm" variant="outline" onClick={() => setQuickParent(work)}>
-                            🧬 派生元を設定
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
               {/* #3: 作品は親→派生のツリー表示。各ノードに #2 派生元設定の導線。 */}
               {lists.works.length === 0 ? (
                 <div className="text-xs text-muted-foreground py-2">データがありません</div>
@@ -417,9 +366,6 @@ function WorkNode({
         <div className="mt-2 flex gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
           <Link to={`/master/receivable-map?work=${w.id}`} className="inline-block text-[11px] font-bold text-violet-600 bg-violet-50 rounded px-2 py-0.5 hover:bg-violet-100">
             🔀 分配マップ
-          </Link>
-          <Link to={`/master/sublicense?deal_work=${w.id}`} className="inline-block text-[11px] font-bold text-amber-700 bg-amber-50 rounded px-2 py-0.5 hover:bg-amber-100">
-            💴 受領条件を作成
           </Link>
           <button
             type="button"
@@ -581,11 +527,19 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
               {type === "source-ips" && (
                 <>
                   <MaterialsEditor workId={id} />
-                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                  {/* 原作IP = 利用許諾条件(IN): 原作IPを借りる条件(我々が支払う料率)。 */}
+                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} kind="license_in" />
                 </>
               )}
               {type === "works" && (
-                <WorkConditionsEditor workId={id} sourceIps={sourceIps} />
+                <>
+                  {/* 当社帰属(業務委託成果物=マテリアル)の置き場。検収済の業務委託明細から生成。 */}
+                  <MaterialsEditor workId={id} />
+                  {/* 自社作品 = サブライセンス条件(OUT): 作品を再許諾する条件(我々が受け取る料率)。 */}
+                  <WorkConditionsEditor workId={id} sourceIps={sourceIps} kind="sublicense_out" />
+                  {/* 条件(OUT) → 受領記録: 報告売上/数量から料率計算し受領を記録。 */}
+                  <ReceiptsEditor workId={id} />
+                </>
               )}
             </>
           )}
@@ -611,6 +565,9 @@ const RIGHTS_TYPES: [string, string][] = [
   ["owned", "当社保有"], ["copyright_assignment", "譲渡(当社へ)"],
 ]
 const isCounterpartyRights = (rt: string) => rt === "license" || rt === "joint"
+// 検収状況ラベル(業務委託明細): accepted=検収済 / partial=一部検収 / pending=未検収
+const inspLabel = (status?: string | null): string =>
+  status === "accepted" ? "✅ 検収済" : status === "partial" ? "🟡 一部検収" : status === "pending" ? "⬜ 未検収" : ""
 
 function MaterialsEditor({ workId }: { workId: number }) {
   const { showNotification } = useAppData()
@@ -699,7 +656,10 @@ function MaterialsEditor({ workId }: { workId: number }) {
                   {m.license_condition_id
                     ? `利用許諾 #${m.license_condition_no ?? m.license_condition_id}`
                     : m.service_line_item_id
-                      ? `業務委託 ${m.service_doc_number || ""}${m.service_line_name ? "/" + m.service_line_name : ""}`
+                      ? <>
+                          {`業務委託 ${m.service_doc_number || ""}${m.service_line_name ? "/" + m.service_line_name : ""}`}
+                          {m.service_inspection_status ? <span className="ml-1">{inspLabel(m.service_inspection_status)}</span> : null}
+                        </>
                       : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "(業務委託未設定)"}
                 </td>
                 <td className="whitespace-nowrap text-right">
@@ -750,11 +710,16 @@ function MaterialsEditor({ workId }: { workId: number }) {
           <label className="block space-y-0.5">
             <span className="text-[10px] text-muted-foreground">つなぐ業務委託明細（当社帰属＝制作対価）</span>
             <Input placeholder="発注書番号・取引先・品目で検索…" value={svcq} onChange={(e) => setSvcq(e.target.value)} className="h-7 text-xs" />
-            <NativeSelect value={form.service_line_item_id} onChange={(e) => set("service_line_item_id", e.target.value)} className="h-7 text-xs">
+            <NativeSelect value={form.service_line_item_id} onChange={(e) => {
+              const v = e.target.value
+              // 成果物→マテリアル生成: 業務委託明細を選んだら、名称が空なら品目名で補完。
+              const picked = svc.find((s) => String(s.id) === v)
+              setForm((f) => ({ ...f, service_line_item_id: v, material_name: f.material_name?.trim() ? f.material_name : (picked?.item_name || f.material_name) }))
+            }} className="h-7 text-xs">
               <option value="">(未設定)</option>
               {svc.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {`${s.document_number || "—"} / ${s.item_name || "明細#" + s.id}${s.vendor_name ? " / " + s.vendor_name : ""}${s.amount_ex_tax != null ? " / ¥" + Number(s.amount_ex_tax).toLocaleString("ja-JP") : ""}`}
+                  {`${s.document_number || "—"} / ${s.item_name || "明細#" + s.id}${s.vendor_name ? " / " + s.vendor_name : ""}${s.amount_ex_tax != null ? " / ¥" + Number(s.amount_ex_tax).toLocaleString("ja-JP") : ""}${s.inspection_status ? " / " + inspLabel(s.inspection_status) : ""}`}
                 </option>
               ))}
             </NativeSelect>
@@ -776,12 +741,18 @@ function MaterialsEditor({ workId }: { workId: number }) {
 
 // モデル(A): 作品 → 条件明細(契約レス可) → 原作IP の紐付けエディタ。
 //   /api/v3/works/:id/conditions と /api/v3/work-conditions/:cid を使用。
-function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps: Row[] }) {
+function WorkConditionsEditor({ workId, sourceIps, kind }: { workId: number; sourceIps: Row[]; kind: "license_in" | "sublicense_out" }) {
+  const isIn = kind === "license_in"
+  // 方向で見出し・補足を出し分け。利用許諾(IN)=原作IPを借りる / サブライセンス(OUT)=作品を再許諾。
+  const sectionTitle = isIn ? "利用許諾条件（IN・原作IPからの許諾）" : "サブライセンス条件（OUT・自社作品の再許諾）"
+  const sectionNote = isIn
+    ? "原作IPを借りる条件（当社が支払う料率）。原作IP＋素材を参照します。"
+    : "自社作品を第三者へ再許諾する条件（当社が受け取る料率）。原資となる原作IP＋素材も任意で参照できます。"
   const { showNotification } = useAppData()
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [busy, setBusy] = React.useState(false)
   // 新規/編集フォーム(インライン)
-  const blank = { id: 0, source_work_id: "", source_material_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "" }
+  const blank = { id: 0, source_work_id: "", source_material_id: "", rate_pct: "", base_price_label: "", calc_method: "ROYALTY", formula_text: "", region_language_label: "", counterparty_vendor_id: "", basis: "sales", unit_price: "" }
   const [form, setForm] = React.useState<Row>(blank)
   const [ipq, setIpq] = React.useState("")
   // 選択した原作IPの素材(マテリアル)候補
@@ -822,6 +793,7 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
     setBusy(true)
     try {
       const body = {
+        condition_kind: kind,
         source_work_id: form.source_work_id ? Number(form.source_work_id) : null,
         source_material_id: form.source_material_id ? Number(form.source_material_id) : null,
         rate_pct: form.rate_pct === "" ? null : Number(form.rate_pct),
@@ -829,6 +801,12 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
         calc_method: form.calc_method || "ROYALTY",
         formula_text: form.formula_text || null,
         region_language_label: form.region_language_label || null,
+        // OUT(サブライセンス)の受領計算用。IN(利用許諾)では送らない。
+        ...(isIn ? {} : {
+          counterparty_vendor_id: form.counterparty_vendor_id ? Number(form.counterparty_vendor_id) : null,
+          basis: form.basis || "sales",
+          unit_price: form.unit_price === "" ? null : Number(form.unit_price),
+        }),
       }
       if (form.id) await sendJson("PUT", `/api/v3/work-conditions/${form.id}`, body)
       else await sendJson("POST", `/api/v3/works/${workId}/conditions`, body)
@@ -848,6 +826,7 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
     try {
       for (const ipId of sel) {
         await sendJson("POST", `/api/v3/works/${workId}/conditions`, {
+          condition_kind: kind,
           source_work_id: ipId,
           rate_pct: bulk.rate_pct === "" ? null : Number(bulk.rate_pct),
           base_price_label: bulk.base_price_label || null,
@@ -891,7 +870,13 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
 
   return (
     <div className="mt-4 border-t pt-3 space-y-2">
-      <div className="text-xs font-bold">利用許諾条件（条件明細・原作IP紐付け）</div>
+      <div className="text-xs font-bold">
+        {sectionTitle}
+        <span className={`ml-2 align-middle text-[9px] font-mono px-1.5 py-0.5 rounded-sm ${isIn ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"}`}>
+          {isIn ? "IN" : "OUT"}
+        </span>
+      </div>
+      <p className="text-[10px] text-muted-foreground">{sectionNote}</p>
       {rows === null ? (
         <div className="text-xs text-muted-foreground">読み込み中…</div>
       ) : rows.length === 0 ? (
@@ -915,7 +900,7 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
                 <td>{c.base_price_label || "—"}</td>
                 <td className="max-w-[200px] truncate">{c.formula_text || "—"}</td>
                 <td className="whitespace-nowrap text-right">
-                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", source_material_id: c.source_material_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "" }) }}>編集</button>
+                  <button className="text-[10px] underline mr-2" onClick={() => { setForm({ id: c.id, source_work_id: c.source_work_id || "", source_material_id: c.source_material_id || "", rate_pct: c.rate_pct ?? "", base_price_label: c.base_price_label || "", calc_method: c.calc_method || "ROYALTY", formula_text: c.formula_text || "", region_language_label: c.region_language_label || "", counterparty_vendor_id: c.counterparty_vendor_id || "", basis: c.basis || "sales", unit_price: c.unit_price ?? "" }) }}>編集</button>
                   <button className="text-[10px] underline text-destructive" onClick={() => del(Number(c.id))}>削除</button>
                 </td>
               </tr>
@@ -990,11 +975,144 @@ function WorkConditionsEditor({ workId, sourceIps }: { workId: number; sourceIps
             <Input value={form.formula_text} onChange={(e) => set("formula_text", e.target.value)} placeholder="上代 × 料率 × 製造数 等" className="h-7 text-xs" />
           </label>
         </div>
+        {/* OUT(サブライセンス)のみ: 受領先・計算根拠・単価。受領記録の計算に使う。 */}
+        {!isIn && (
+          <div className="grid grid-cols-3 gap-2 border-t border-border/40 pt-2">
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">受領先(取引先)</span>
+              <VendorSelectField value={form.counterparty_vendor_id} onChange={(v) => set("counterparty_vendor_id", v)} />
+            </label>
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">計算根拠</span>
+              <NativeSelect value={form.basis} onChange={(e) => set("basis", e.target.value)} className="h-7 text-xs">
+                <option value="sales">報告売上 × 料率</option>
+                <option value="manufacturing">報告数量 × 単価 × 料率</option>
+              </NativeSelect>
+            </label>
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">単価(数量基準時)</span>
+              <Input type="number" step="0.01" value={form.unit_price} onChange={(e) => set("unit_price", e.target.value)} disabled={form.basis !== "manufacturing"} className="h-7 text-xs" />
+            </label>
+          </div>
+        )}
         <div className="flex justify-end gap-2">
           {form.id ? <Button variant="outline" size="sm" onClick={reset} disabled={busy}>キャンセル</Button> : null}
           <Button size="sm" onClick={save} disabled={busy}>{busy ? "保存中…" : form.id ? "更新" : "＋追加"}</Button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// サブライセンス受領記録(OUT)。自社作品配下の sublicense_out 条件ごとに、
+//   期(period)単位で「報告売上/数量 → 料率計算 → 受領額」を入力(数字計算のみ・文書発行なし)。
+function ReceiptsEditor({ workId }: { workId: number }) {
+  const { showNotification } = useAppData()
+  const [conds, setConds] = React.useState<Row[]>([])
+  const [receipts, setReceipts] = React.useState<Row[] | null>(null)
+  const [forms, setForms] = React.useState<Record<number, Row>>({})
+  const [busy, setBusy] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    try {
+      const cs = await getJson(`/api/v3/works/${workId}/conditions`)
+      setConds((Array.isArray(cs) ? cs : []).filter((c: Row) => c.condition_kind === "sublicense_out"))
+    } catch { setConds([]) }
+    try { setReceipts(await getJson(`/api/v3/works/${workId}/receipts`)) } catch { setReceipts([]) }
+  }, [workId])
+  React.useEffect(() => { load() }, [load])
+
+  const fset = (cid: number, k: string, v: any) => setForms((f) => ({ ...f, [cid]: { ...(f[cid] || {}), [k]: v } }))
+  const yen = (n: any) => "¥" + (Number(n) || 0).toLocaleString("ja-JP")
+  const preview = (cond: Row, f: Row) => {
+    const rate = Number(cond.rate_pct) || 0
+    const base = cond.basis === "manufacturing"
+      ? (Number(f?.reported_quantity) || 0) * (Number(cond.unit_price) || 0)
+      : (Number(f?.reported_sales) || 0)
+    return Math.round(base * rate / 100 * 100) / 100
+  }
+  const add = async (cid: number) => {
+    const f = forms[cid] || {}
+    setBusy(true)
+    try {
+      await sendJson("POST", `/api/v3/work-conditions/${cid}/receipts`, {
+        period: f.period || null,
+        period_date: f.period_date || null,
+        reported_sales: f.reported_sales === "" || f.reported_sales == null ? null : Number(f.reported_sales),
+        reported_quantity: f.reported_quantity === "" || f.reported_quantity == null ? null : Number(f.reported_quantity),
+        received_amount: f.received_amount === "" || f.received_amount == null ? null : Number(f.received_amount),
+        received_date: f.received_date || null,
+        note: f.note || null,
+      })
+      showNotification("受領記録を追加しました", "success")
+      setForms((x) => ({ ...x, [cid]: {} }))
+      await load()
+    } catch (e: any) { showNotification(`追加に失敗: ${e?.message || e}`, "error") }
+    finally { setBusy(false) }
+  }
+  const del = async (rid: number) => {
+    if (!window.confirm("この受領記録を削除しますか？")) return
+    try { await sendJson("DELETE", `/api/v3/condition-receipts/${rid}`, {}); await load() }
+    catch (e: any) { showNotification(`削除に失敗: ${e?.message || e}`, "error") }
+  }
+  const byCond = (cid: number) => (receipts || []).filter((r) => Number(r.condition_id) === cid)
+  const condLabel = (c: Row) => `条件#${c.condition_no ?? c.id}${c.region_language_label ? " " + c.region_language_label : ""}`
+
+  return (
+    <div className="mt-4 border-t pt-3 space-y-3">
+      <div className="text-xs font-bold">
+        サブライセンス受領記録（OUT・数字計算）
+        <span className="ml-2 align-middle text-[9px] font-mono px-1.5 py-0.5 rounded-sm bg-amber-100 text-amber-700">受領</span>
+      </div>
+      {conds.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">先に「サブライセンス条件（OUT）」を追加してください。</p>
+      ) : receipts === null ? (
+        <div className="text-xs text-muted-foreground">読み込み中…</div>
+      ) : conds.map((c) => {
+        const f = forms[c.id] || {}
+        const rows = byCond(c.id)
+        const isMfg = c.basis === "manufacturing"
+        return (
+          <div key={c.id} className="rounded-sm border border-input">
+            <div className="px-2 py-1.5 bg-muted/30 text-[11px] flex items-center gap-2 flex-wrap">
+              <span className="font-bold">{condLabel(c)}</span>
+              <span className="text-muted-foreground">
+                料率 {c.rate_pct ?? "—"}% / {isMfg ? "数量×単価" : "売上"}基準{c.counterparty_name ? " / 受領先 " + c.counterparty_name : ""}
+              </span>
+            </div>
+            <div className="p-2 space-y-2">
+              {rows.length > 0 && (
+                <table className="w-full text-[11px] border-collapse">
+                  <thead><tr className="text-muted-foreground text-left [&>th]:py-1 [&>th]:pr-2">
+                    <th>期</th><th>{isMfg ? "報告数量" : "報告売上"}</th><th>計算(税抜)</th><th>受領額</th><th>受領日</th><th></th>
+                  </tr></thead>
+                  <tbody>
+                    {rows.map((r) => (
+                      <tr key={r.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2">
+                        <td>{r.period || (r.period_date ? String(r.period_date).slice(0, 10) : "—")}</td>
+                        <td>{isMfg ? (r.reported_quantity ?? "—") : yen(r.reported_sales)}</td>
+                        <td className="font-bold">{yen(r.computed_royalty_ex_tax)}</td>
+                        <td>{r.received_amount != null ? yen(r.received_amount) : "—"}</td>
+                        <td>{r.received_date ? String(r.received_date).slice(0, 10) : "—"}</td>
+                        <td className="text-right"><button className="text-[10px] underline text-destructive" onClick={() => del(Number(r.id))}>削除</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <div className="grid grid-cols-5 gap-1.5 items-end">
+                <Input placeholder="期(例 2026-Q1)" value={f.period || ""} onChange={(e) => fset(c.id, "period", e.target.value)} className="h-7 text-xs" />
+                {isMfg
+                  ? <Input type="number" placeholder="報告数量" value={f.reported_quantity || ""} onChange={(e) => fset(c.id, "reported_quantity", e.target.value)} className="h-7 text-xs" />
+                  : <Input type="number" placeholder="報告売上(税抜)" value={f.reported_sales || ""} onChange={(e) => fset(c.id, "reported_sales", e.target.value)} className="h-7 text-xs" />}
+                <Input type="number" placeholder="受領額(任意)" value={f.received_amount || ""} onChange={(e) => fset(c.id, "received_amount", e.target.value)} className="h-7 text-xs" />
+                <Input type="date" value={f.received_date || ""} onChange={(e) => fset(c.id, "received_date", e.target.value)} className="h-7 text-xs" />
+                <Button size="sm" onClick={() => add(c.id)} disabled={busy}>＋計算 {yen(preview(c, f))}</Button>
+              </div>
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }
@@ -1118,15 +1236,25 @@ function FormModal({
     <Dialog open onOpenChange={(v) => !v && onClose()}>
       <DialogContent className="sm:max-w-[640px]">
         <DialogHeader><DialogTitle>{mode === "edit" ? "✎ 編集" : "＋ 新規"} — {LABEL[type]}</DialogTitle></DialogHeader>
-        <DialogBody className="space-y-3">
-          {SCHEMA[type].map((f) => (
-            <div key={f.name} className="space-y-1">
-              <Label className="text-xs">
-                {f.label}
-                {f.required && <span className="text-destructive"> *</span>}
-              </Label>
-              <FieldInput f={f} value={form[f.name]} works={works} editId={editId} onChange={(v) => set(f.name, v)} />
-              {f.hint && <p className="text-[11px] text-muted-foreground">{f.hint}</p>}
+        <DialogBody className="space-y-4">
+          {/* 入力しやすさのため group ごとにセクション見出しを付けて並べる。 */}
+          {groupFields(SCHEMA[type]).map(([groupName, fields]) => (
+            <div key={groupName} className="space-y-3">
+              {groupName && (
+                <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground border-b border-border/60 pb-1">
+                  {groupName}
+                </div>
+              )}
+              {fields.map((f) => (
+                <div key={f.name} className="space-y-1">
+                  <Label className="text-xs">
+                    {f.label}
+                    {f.required && <span className="text-destructive"> *</span>}
+                  </Label>
+                  <FieldInput f={f} value={form[f.name]} works={type === "source-ips" ? sourceIps : works} editId={editId} onChange={(v) => set(f.name, v)} />
+                  {f.hint && <p className="text-[11px] text-muted-foreground">{f.hint}</p>}
+                </div>
+              ))}
             </div>
           ))}
           {type === "contracts" && (

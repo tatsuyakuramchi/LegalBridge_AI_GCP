@@ -112,10 +112,19 @@ export async function getMgConsumedToDate(
     params.push(excludeCalculationId);
     conditions.push(`id <> $${params.length}`);
   }
+  // Phase D-3 (dual-read): MG 消化累計を void 対応に。
+  //   旧 SUM をベースに、取消済み(voided) condition_event に紐づく行のみ除外する。
+  //   未移行 (condition_event 無し) の行は従来どおり集計されるため後方互換。
+  //   これにより文書 void → 残高自動復元 (E-1) が MG にも効くようになる。
   const res = await query(
     `SELECT COALESCE(SUM(mg_consumed_this_time), 0) AS consumed
-       FROM royalty_calculations
-      WHERE ${conditions.join(" AND ")}`,
+       FROM royalty_calculations rc
+      WHERE ${conditions.join(" AND ")}
+        AND NOT EXISTS (
+          SELECT 1 FROM condition_events ev
+           WHERE ev.source_royalty_calculation_id = rc.id
+             AND ev.voided_at IS NOT NULL
+        )`,
     params
   );
   return Number(res.rows[0].consumed) || 0;
@@ -144,10 +153,16 @@ export async function getAgConsumedToDate(
     conditions.push(`id <> $${params.length}`);
   }
   try {
+    // Phase D-3 (dual-read): MG と対称に AG も void 対応 (取消イベント紐づき行を除外)。
     const res = await query(
       `SELECT COALESCE(SUM(ag_consumed_this_time), 0) AS consumed
-         FROM royalty_calculations
-        WHERE ${conditions.join(" AND ")}`,
+         FROM royalty_calculations rc
+        WHERE ${conditions.join(" AND ")}
+          AND NOT EXISTS (
+            SELECT 1 FROM condition_events ev
+             WHERE ev.source_royalty_calculation_id = rc.id
+               AND ev.voided_at IS NOT NULL
+          )`,
       params
     );
     return Number(res.rows[0].consumed) || 0;
@@ -156,6 +171,49 @@ export async function getAgConsumedToDate(
     if (err && err.code === "42703") return 0;
     throw err;
   }
+}
+
+/**
+ * Phase E-2 (dual-read): 発注側の利用許諾条件(料率/MG/AG/通貨)を condition_lines
+ * 優先で読む。移行済み(source_condition_id 一致)はそちらを正とし、未移行 /
+ * condition_lines 未作成環境は capability_financial_conditions にフォールバック。
+ * 値は C-2/C-5 で同名コピーのため挙動不変。旧テーブルへの硬い依存を緩める。
+ */
+async function getRoyaltyConditionEconomics(
+  cfcId: number
+): Promise<{ rate_pct: number; mg_amount: number; ag_amount: number; currency: string } | null> {
+  try {
+    const cl = await query(
+      `SELECT rate_pct, mg_amount, COALESCE(ag_amount, 0) AS ag_amount, currency
+         FROM condition_lines
+        WHERE source_condition_id = $1
+        LIMIT 1`,
+      [cfcId]
+    );
+    if (cl.rows.length) {
+      return {
+        rate_pct: Number(cl.rows[0].rate_pct) || 0,
+        mg_amount: Number(cl.rows[0].mg_amount) || 0,
+        ag_amount: Number(cl.rows[0].ag_amount) || 0,
+        currency: cl.rows[0].currency || "JPY",
+      };
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  const r = await query(
+    `SELECT rate_pct, mg_amount, COALESCE(ag_amount, 0) AS ag_amount, currency
+       FROM capability_financial_conditions
+      WHERE id = $1`,
+    [cfcId]
+  );
+  if (!r.rows.length) return null;
+  return {
+    rate_pct: Number(r.rows[0].rate_pct) || 0,
+    mg_amount: Number(r.rows[0].mg_amount) || 0,
+    ag_amount: Number(r.rows[0].ag_amount) || 0,
+    currency: r.rows[0].currency || "JPY",
+  };
 }
 
 /**
@@ -233,15 +291,8 @@ export async function previewRoyaltyCalculation(params: {
     params.capability_financial_condition_id > 0
       ? params.capability_financial_condition_id
       : params.license_financial_condition_id;
-  const condRes = await query(
-    `SELECT rate_pct, mg_amount,
-            COALESCE(ag_amount, 0) AS ag_amount,
-            currency
-       FROM capability_financial_conditions
-      WHERE id = $1`,
-    [cfcId]
-  );
-  if (condRes.rows.length === 0) {
+  const cond = await getRoyaltyConditionEconomics(cfcId);
+  if (!cond) {
     throw new Error(
       `capability_financial_condition ${cfcId} not found`
     );
@@ -251,14 +302,12 @@ export async function previewRoyaltyCalculation(params: {
   //   ベースの単独 preview なら履歴なし、として扱う。
   const hasLicenseHistory =
     !!params.license_contract_id && params.license_contract_id > 0;
-  const ratePct = Number(condRes.rows[0].rate_pct) || 0;
-  const mgAmount = Number(condRes.rows[0].mg_amount) || 0;
+  const ratePct = cond.rate_pct;
+  const mgAmount = cond.mg_amount;
   // Phase 22.21.95: AG = DB の ag_amount。フォームから明示的に渡された場合は上書き。
   const agAmount =
-    params.ag_amount != null
-      ? Number(params.ag_amount) || 0
-      : Number(condRes.rows[0].ag_amount) || 0;
-  const currency = condRes.rows[0].currency || "JPY";
+    params.ag_amount != null ? Number(params.ag_amount) || 0 : cond.ag_amount;
+  const currency = cond.currency;
 
   // Phase 28: calc_type で「製造/印刷契機 (数量あり)」と「売上報告ベース
   //   (金額 × 料率)」を分ける。manufacturing 以外 (sales / sublicense) は

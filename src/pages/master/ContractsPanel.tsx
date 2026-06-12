@@ -25,6 +25,13 @@ import {
 import { NativeSelect } from "@/components/ui/native-select"
 // Phase 22.21.115: 稟議番号 selector (発注書・個別利用許諾と同 UI)
 import { RingiSelector } from "@/src/components/document/RingiSelector"
+import {
+  CALC_TYPE_OPTIONS,
+  calcMethodFromType,
+  buildFormulaText,
+  composeRegionLabel,
+  readRegionParts,
+} from "@/src/components/document/FinancialConditionTable"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 
@@ -32,6 +39,19 @@ import { cn } from "@/lib/utils"
 //   を Boolean に正規化する。Switch 等の制御コンポーネントが期待する型に揃える。
 const toBool = (v: any): boolean =>
   v === true || v === "t" || v === "true" || v === 1 || v === "1";
+
+// データ構造刷新 (設計 第8章): contract_category からスコープ(service/license_use)を
+//   導出。出版/ライセンスはどちらも license_use (区別は template_family)。
+//   契約データに明示 scopes[] があればそちらを優先(複数選択 UI)。
+const deriveScopes = (category: any): string[] => {
+  const c = String(category || "").toLowerCase();
+  if (c === "service") return ["service"];
+  if (c === "license" || c === "publication") return ["license_use"];
+  if (c === "mixed") return ["service", "license_use"];
+  return [];
+};
+const currentScopes = (data: any): string[] =>
+  Array.isArray(data?.scopes) ? data.scopes : deriveScopes(data?.contract_category);
 
 // Phase 22.21.66: contract_status (5 段階) を日本語ラベル + Badge variant に。
 //   draft               作成中
@@ -159,36 +179,20 @@ const empty = {
   // Phase 22.21.115: 稟議番号 (発注書・個別利用許諾と同じ shape: 5 桁数字の配列)。
   //   保存時に Worker 側で ringi_documents テーブルに N:N リンクされる。
   ringi_numbers: [] as string[],
-  // 目的 / 請求の方向。文書作成フォームと同じ contract_purposes ベース。
-  //   purpose_code を選ぶと flow_direction(in/out) も確定し、保存時に
+  // 請求の向き(2択)。文書作成フォームと同じ in/out。保存時に
   //   contract_capabilities.flow_direction へ記録する(out=当社受領→請求台帳)。
+  //   purpose_code は後方互換のため残置(UI からは設定しない)。
   purpose_code: "",
   flow_direction: "",
   // 成果物の権利帰属(当社/相手方/共有)。帰属=相手方のとき利用許諾料の入力を促す。
   deliverable_ownership: "",
 }
 
-// 金銭条件エディタの「区分」ラベル。方向中立(in/out どちらでも使える表現)。
-//   condition_no(1/2/3)の意味は維持(下流「利用許諾計算書」自動補完が参照)。
-//   旧: 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト(=アウト固定の偏り)を解消。
-const COND_LABELS: Record<number, string> = {
-  1: "条件 1 (製造ベース)",
-  2: "条件 2 (サブライセンス / 再許諾)",
-  3: "条件 3 (プロダクト)",
-}
+// 金銭条件エディタの区分は「条件番号 + 任意の条件名称」で表す。
+//   旧来の固定意味(1=製造ベース / 2=サブライセンス / 3=プロダクト)は廃止し、
+//   出版/電子出版のように同じ計算ロジックの条件を複数並べられるようにした。
+//   condition_no は付番(順序・一意キー)であり、意味は condition_name で表現する。
 
-// 目的マスター行(/api/contract-check/purposes)。
-type PurposeRow = {
-  purpose_code: string
-  purpose_group?: string | null
-  purpose_label?: string | null
-  flow_direction?: string | null
-}
-const CALC_METHOD_OPTIONS = [
-  { value: "ROYALTY", label: "ロイヤリティ" },
-  { value: "FIXED", label: "固定額" },
-  { value: "SUBSCRIPTION", label: "サブスク" },
-] as const
 const PERIOD_KIND_OPTIONS = [
   { value: "MANUFACTURING", label: "製造ごと" },
   { value: "MONTHLY", label: "月次" },
@@ -204,24 +208,6 @@ export function ContractsPanel() {
   const [creating, setCreating] = React.useState(false)
   const [draft, setDraft] = React.useState<any>(empty)
 
-  // 目的 / 方向マスター(/api/contract-check/purposes)。文書作成フォームと同源。
-  const [purposes, setPurposes] = React.useState<PurposeRow[]>([])
-  React.useEffect(() => {
-    let cancelled = false
-    ;(async () => {
-      try {
-        const r = await fetch("/api/contract-check/purposes")
-        if (!r.ok) return
-        const j = await r.json()
-        if (!cancelled && Array.isArray(j)) setPurposes(j as PurposeRow[])
-      } catch {
-        /* 取得失敗時は空。方向は任意項目なので登録自体は継続できる */
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-  }, [])
 
   const filtered = contracts.filter((c) => {
     const q = search.toLowerCase()
@@ -560,36 +546,55 @@ export function ContractsPanel() {
                 1 本で扱う場合に選択。両方のエディタが表示されます。
               </p>
             </Field>
-            {/* 目的 / 請求の方向。文書作成フォームと同じ purpose マスターから選び、
-                flow_direction(in/out) を確定して保存する(out=当社受領→請求台帳)。 */}
-            <Field label="目的 / 方向">
+            {/* データ構造刷新: 契約スコープの複数選択。基本契約は複数スコープを
+                持てる(例: ライセンス基本契約＋業務委託)。出版はカテゴリ「出版関連」で
+                テンプレート(template_family)が切替わる。未操作ならカテゴリから導出。 */}
+            <Field label="スコープ (複数選択可)">
+              <div className="flex items-center gap-5">
+                {[
+                  { v: "service", l: "業務委託" },
+                  { v: "license_use", l: "利用許諾 (ライセンス/出版)" },
+                ].map((opt) => {
+                  const cur = currentScopes(data)
+                  const checked = cur.includes(opt.v)
+                  return (
+                    <label
+                      key={opt.v}
+                      className="flex items-center gap-1.5 text-xs font-mono cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const base = currentScopes(data)
+                          const next = e.target.checked
+                            ? Array.from(new Set([...base, opt.v]))
+                            : base.filter((s) => s !== opt.v)
+                          set({ scopes: next })
+                        }}
+                        className="h-4 w-4"
+                      />
+                      {opt.l}
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+                基本契約は <strong>業務委託＋利用許諾</strong> のように複数スコープを
+                併せ持てます。出版はカテゴリで「出版関連」を選ぶとテンプレートが
+                切り替わります(スコープは利用許諾)。
+              </p>
+            </Field>
+            {/* 請求の向き(2択) — 文書作成フォームと同じ in/out。
+                out=当社受領→請求台帳。purpose マスターの多数選択は廃止し2択に統一。 */}
+            <Field label="請求の向き">
               <NativeSelect
-                value={data?.purpose_code || ""}
-                onChange={(e) => {
-                  const pc = e.target.value
-                  const row = purposes.find((p) => p.purpose_code === pc)
-                  set({ purpose_code: pc, flow_direction: row?.flow_direction || "" })
-                }}
+                value={data?.flow_direction || ""}
+                onChange={(e) => set({ flow_direction: e.target.value })}
               >
-                <option value="">— 目的を選択（任意）—</option>
-                {Array.from(
-                  new Set(purposes.map((p) => p.purpose_group || "その他"))
-                ).map((grp) => (
-                  <optgroup key={grp} label={grp}>
-                    {purposes
-                      .filter((p) => (p.purpose_group || "その他") === grp)
-                      .map((p) => (
-                        <option key={p.purpose_code} value={p.purpose_code}>
-                          {p.purpose_label || p.purpose_code}
-                          {p.flow_direction === "in"
-                            ? "〔IN〕"
-                            : p.flow_direction === "out"
-                            ? "〔OUT〕"
-                            : ""}
-                        </option>
-                      ))}
-                  </optgroup>
-                ))}
+                <option value="">— 請求の向きを選択 —</option>
+                <option value="in">当社が払う（支払・仕入・ライセンスイン）</option>
+                <option value="out">当社が受け取る（請求・販売・ライセンスアウト）</option>
               </NativeSelect>
               <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
                 方向:{" "}
@@ -876,8 +881,8 @@ export function ContractsPanel() {
                   単独契約 / 個別契約に登録した条件は、後で「利用許諾計算書」を
                   作成するときに自動補完されます (別途 ILT 文書を発行する必要なし)。
                   <br />
-                  条件 1（製造ベース）/ 条件 2（サブライセンス・再許諾）/ 条件 3（プロダクト）
-                  の 3 行まで登録可能（方向に依らず使えます）。
+                  各条件は「条件名称（任意）＋計算式タイプ」で表します。出版/電子出版の
+                  ように同じ計算ロジックの条件を必要な数だけ追加できます。
                 </p>
                 <FinancialConditionsEditor
                   value={
@@ -1303,7 +1308,16 @@ function FinancialConditionsEditor({
   recordType: string
 }) {
   const usedNos = new Set(value.map((c) => Number(c.condition_no)))
-  const nextNo = [1, 2, 3].find((n) => !usedNos.has(n))
+  // 次の条件番号 = 未使用の最小番号(上限なし)。出版/電子出版など同ロジックの
+  //   条件を複数並べられるよう、従来の 1〜3 固定を撤廃。
+  const nextNo = (() => {
+    let n = 1
+    while (usedNos.has(n)) n++
+    return n
+  })()
+  // 区分(条件番号)プルダウンの選択肢。現在の最大番号 +2 まで出して付け替え可能に。
+  const maxNo = Math.max(3, ...value.map((c) => Number(c.condition_no) || 0))
+  const numOptions = Array.from({ length: maxNo + 2 }, (_, i) => i + 1)
 
   // 基本契約 (master_contract) で金銭条件を入れる意味は薄いので軽い警告を出す。
   // ただし入力自体は許す (将来の柔軟性のため)。
@@ -1315,17 +1329,36 @@ function FinancialConditionsEditor({
   const update = (idx: number, patch: any) => {
     onChange(value.map((c, i) => (i === idx ? { ...c, ...patch } : c)))
   }
+  // 構造化フィールド変更時: calc_method(互換) と計算式テキストを自動再計算。
+  const recalc = (idx: number, patch: any) => {
+    const merged = { ...value[idx], ...patch }
+    update(idx, {
+      ...patch,
+      calc_method: calcMethodFromType(merged.calc_type),
+      formula_text: buildFormulaText(merged),
+    })
+  }
+  const isBaseRate = (t?: string) =>
+    t === "BASE_QTY_RATE" || t === "BASE_RATE"
   const add = () => {
     if (!nextNo) return
     onChange([
       ...value,
       {
         condition_no: nextNo,
+        condition_name: "",
+        calc_type: "BASE_QTY_RATE",
         calc_method: "ROYALTY",
+        guarantee_type: "NONE",
         currency: "JPY",
         rate_pct: "",
         mg_amount: "",
         ag_amount: "",
+        unit_amount: "",
+        fixed_kind: "LUMP",
+        subscription_cycle: "MONTHLY",
+        region_territory: "",
+        region_language: "",
         region_language_label: "",
         base_price_label: "上代",
         calc_period: "",
@@ -1350,7 +1383,7 @@ function FinancialConditionsEditor({
       )}
       {value.length === 0 && (
         <div className="text-[10px] font-mono text-muted-foreground border border-dashed border-border rounded-sm p-3">
-          金銭条件が未設定です。「条件を追加」で 1〜3 件まで登録できます。
+          金銭条件が未設定です。「条件を追加」で必要な数だけ登録できます。
           単独契約/個別契約で入力しておくと、利用許諾計算書 を作成するときに
           自動補完されます。
         </div>
@@ -1362,8 +1395,9 @@ function FinancialConditionsEditor({
         >
           <div className="flex items-center justify-between gap-2">
             <Badge variant="info" className="h-5">
-              {COND_LABELS[Number(c.condition_no)] ||
-                `条件 ${c.condition_no}`}
+              {c.condition_name && String(c.condition_name).trim()
+                ? `条件 ${c.condition_no}：${c.condition_name}`
+                : `条件 ${c.condition_no}`}
             </Badge>
             <Button
               type="button"
@@ -1375,43 +1409,46 @@ function FinancialConditionsEditor({
             </Button>
           </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
+            <div className="col-span-2 md:col-span-4 space-y-0.5">
+              <Label className="text-[10px]">条件名称 (任意)</Label>
+              <Input
+                value={c.condition_name || ""}
+                onChange={(e) =>
+                  update(idx, { condition_name: e.target.value })
+                }
+                placeholder="任意の条件名称 (空欄なら標準見出し)"
+              />
+            </div>
             <div className="space-y-0.5">
-              <Label className="text-[10px]">区分</Label>
+              <Label className="text-[10px]">条件番号</Label>
               <NativeSelect
                 value={String(c.condition_no || "")}
                 onChange={(e) =>
                   update(idx, { condition_no: Number(e.target.value) })
                 }
               >
-                <option value="1">条件 1 (製造ベース)</option>
-                <option value="2">条件 2 (サブライセンス / 再許諾)</option>
-                <option value="3">条件 3 (プロダクト)</option>
+                {numOptions.map((n) => (
+                  <option key={n} value={n}>
+                    条件 {n}
+                  </option>
+                ))}
               </NativeSelect>
             </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">計算方法</Label>
+            <div className="col-span-2 space-y-0.5">
+              <Label className="text-[10px]">計算式タイプ</Label>
               <NativeSelect
-                value={c.calc_method || ""}
-                onChange={(e) => update(idx, { calc_method: e.target.value })}
+                value={c.calc_type || ""}
+                onChange={(e) =>
+                  recalc(idx, { calc_type: e.target.value || undefined })
+                }
               >
                 <option value="">—</option>
-                {CALC_METHOD_OPTIONS.map((m) => (
+                {CALC_TYPE_OPTIONS.map((m) => (
                   <option key={m.value} value={m.value}>
                     {m.label}
                   </option>
                 ))}
               </NativeSelect>
-            </div>
-            <div className="space-y-0.5">
-              <Label className="text-[10px]">料率 (%)</Label>
-              <Input
-                type="number"
-                step="0.0001"
-                min="0"
-                value={c.rate_pct ?? ""}
-                onChange={(e) => update(idx, { rate_pct: e.target.value })}
-                placeholder="例: 5.0"
-              />
             </div>
             <div className="space-y-0.5">
               <Label className="text-[10px]">通貨</Label>
@@ -1420,16 +1457,95 @@ function FinancialConditionsEditor({
                 onChange={(e) => update(idx, { currency: e.target.value })}
               />
             </div>
-            <div className="col-span-2 space-y-0.5">
-              <Label className="text-[10px]">基準価格ラベル</Label>
-              <Input
-                value={c.base_price_label || ""}
-                onChange={(e) =>
-                  update(idx, { base_price_label: e.target.value })
-                }
-                placeholder="例: 上代 (MSRP)"
-              />
-            </div>
+
+            {/* ①② 基準価格×(個数×)料率: 料率 + 基準価格ラベル */}
+            {isBaseRate(c.calc_type) && (
+              <>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">料率 (%)</Label>
+                  <Input
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    value={c.rate_pct ?? ""}
+                    onChange={(e) => recalc(idx, { rate_pct: e.target.value })}
+                    placeholder="例: 5.0"
+                  />
+                </div>
+                <div className="col-span-2 space-y-0.5">
+                  <Label className="text-[10px]">基準価格ラベル</Label>
+                  <Input
+                    value={c.base_price_label || ""}
+                    onChange={(e) =>
+                      recalc(idx, { base_price_label: e.target.value })
+                    }
+                    placeholder="例: 上代 (MSRP)"
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ③ 固定値: 支払区分(一括/分割) + 固定額 */}
+            {c.calc_type === "FIXED" && (
+              <>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">支払区分</Label>
+                  <NativeSelect
+                    value={c.fixed_kind || "LUMP"}
+                    onChange={(e) =>
+                      recalc(idx, { fixed_kind: e.target.value })
+                    }
+                  >
+                    <option value="LUMP">一括</option>
+                    <option value="INSTALLMENT">分割</option>
+                  </NativeSelect>
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">固定額</Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={c.unit_amount ?? ""}
+                    onChange={(e) =>
+                      recalc(idx, { unit_amount: e.target.value })
+                    }
+                  />
+                </div>
+              </>
+            )}
+
+            {/* ④ サブスク: 課金サイクル(月/年) + 単価 */}
+            {c.calc_type === "SUBSCRIPTION" && (
+              <>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">課金サイクル</Label>
+                  <NativeSelect
+                    value={c.subscription_cycle || "MONTHLY"}
+                    onChange={(e) =>
+                      recalc(idx, { subscription_cycle: e.target.value })
+                    }
+                  >
+                    <option value="MONTHLY">月払い</option>
+                    <option value="ANNUAL">年払い</option>
+                  </NativeSelect>
+                </div>
+                <div className="space-y-0.5">
+                  <Label className="text-[10px]">
+                    単価 ({c.subscription_cycle === "ANNUAL" ? "年額" : "月額"})
+                  </Label>
+                  <Input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={c.unit_amount ?? ""}
+                    onChange={(e) =>
+                      recalc(idx, { unit_amount: e.target.value })
+                    }
+                  />
+                </div>
+              </>
+            )}
             <div className="space-y-0.5">
               <Label className="text-[10px]">計算期間 種別</Label>
               <NativeSelect
@@ -1459,42 +1575,106 @@ function FinancialConditionsEditor({
                 }
               />
             </div>
-            <div className="col-span-2 space-y-0.5">
-              <Label className="text-[10px]">地域・言語ラベル</Label>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">テリトリー</Label>
               <Input
-                value={c.region_language_label || ""}
-                onChange={(e) =>
-                  update(idx, { region_language_label: e.target.value })
-                }
-                placeholder="例: 国内・日本語"
+                value={readRegionParts(c).territory}
+                onChange={(e) => {
+                  const language = readRegionParts(c).language
+                  update(idx, {
+                    region_territory: e.target.value,
+                    region_language: language,
+                    region_language_label: composeRegionLabel(
+                      e.target.value,
+                      language
+                    ),
+                  })
+                }}
+                placeholder="例: 国内 / 北米 / 全世界"
               />
             </div>
-            <div className="col-span-1 space-y-0.5">
-              <Label className="text-[10px]">MG (最低保証 floor)</Label>
+            <div className="space-y-0.5">
+              <Label className="text-[10px]">言語</Label>
               <Input
-                type="number"
-                min="0"
-                step="1"
-                value={c.mg_amount ?? ""}
-                onChange={(e) => update(idx, { mg_amount: e.target.value })}
+                value={readRegionParts(c).language}
+                onChange={(e) => {
+                  const territory = readRegionParts(c).territory
+                  update(idx, {
+                    region_territory: territory,
+                    region_language: e.target.value,
+                    region_language_label: composeRegionLabel(
+                      territory,
+                      e.target.value
+                    ),
+                  })
+                }}
+                placeholder="例: 日本語 / 英語 / 全言語"
               />
-              <p className="text-[11px] font-mono text-muted-foreground">
-                ロイヤリティ &lt; MG なら MG を採用 (毎期 floor)
-              </p>
             </div>
-            <div className="col-span-1 space-y-0.5">
-              <Label className="text-[10px]">AG (前払い保証額)</Label>
-              <Input
-                type="number"
-                min="0"
-                step="1"
-                value={c.ag_amount ?? ""}
-                onChange={(e) => update(idx, { ag_amount: e.target.value })}
-              />
-              <p className="text-[11px] font-mono text-muted-foreground">
-                前払い済み額。各計算で消化していく
-              </p>
-            </div>
+            {/* MG/AG 保証 (①②型のみ・排他)。MG=floor(mg_amount), AG=前払い(ag_amount)。 */}
+            {isBaseRate(c.calc_type) && (
+              <>
+                <div className="col-span-1 space-y-0.5">
+                  <Label className="text-[10px]">保証 (MG/AG)</Label>
+                  <NativeSelect
+                    value={c.guarantee_type || "NONE"}
+                    onChange={(e) => {
+                      const g = e.target.value
+                      if (g === "MG")
+                        update(idx, { guarantee_type: "MG", ag_amount: "" })
+                      else if (g === "AG")
+                        update(idx, { guarantee_type: "AG", mg_amount: "" })
+                      else
+                        update(idx, {
+                          guarantee_type: "NONE",
+                          mg_amount: "",
+                          ag_amount: "",
+                        })
+                    }}
+                  >
+                    <option value="NONE">なし</option>
+                    <option value="MG">MG (最低保証)</option>
+                    <option value="AG">AG (前払い保証)</option>
+                  </NativeSelect>
+                </div>
+                <div className="col-span-1 space-y-0.5">
+                  <Label className="text-[10px]">
+                    {c.guarantee_type === "AG" ? "AG (前払い保証額)" : "MG (最低保証額)"}
+                  </Label>
+                  {c.guarantee_type === "MG" || c.guarantee_type === "AG" ? (
+                    <>
+                      <Input
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={
+                          (c.guarantee_type === "AG"
+                            ? c.ag_amount
+                            : c.mg_amount) ?? ""
+                        }
+                        onChange={(e) =>
+                          update(
+                            idx,
+                            c.guarantee_type === "AG"
+                              ? { ag_amount: e.target.value }
+                              : { mg_amount: e.target.value }
+                          )
+                        }
+                      />
+                      <p className="text-[11px] font-mono text-muted-foreground">
+                        {c.guarantee_type === "AG"
+                          ? "前払い済み額。各計算で消化していく"
+                          : "ロイヤリティ < MG なら MG を採用 (毎期 floor)"}
+                      </p>
+                    </>
+                  ) : (
+                    <p className="text-[11px] font-mono text-muted-foreground">
+                      保証なし
+                    </p>
+                  )}
+                </div>
+              </>
+            )}
             <div className="col-span-2 md:col-span-4 space-y-0.5">
               <Label className="text-[10px]">計算式テキスト</Label>
               <Input
@@ -1524,10 +1704,9 @@ function FinancialConditionsEditor({
           variant="outline"
           size="sm"
           onClick={add}
-          disabled={!nextNo}
         >
           <Plus />
-          条件を追加 {nextNo ? `(条件 ${nextNo})` : "(上限)"}
+          条件を追加 (条件 {nextNo})
         </Button>
         <p className="text-[10px] font-mono text-muted-foreground">
           単独契約/個別契約で入力した条件は、利用許諾計算書 フォームで

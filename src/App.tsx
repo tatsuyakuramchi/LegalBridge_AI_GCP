@@ -6,6 +6,9 @@ import { AppShell } from "./layout/AppShell"
 import { DashboardPage } from "./pages/DashboardPage"
 import { DocumentEditorPage } from "./pages/DocumentEditorPage"
 import { RequestsPage } from "./pages/RequestsPage"
+import { IssueDetailPage } from "./pages/IssueDetailPage" // データ構造刷新 Phase A
+import { ConditionLinesPage } from "./pages/ConditionLinesPage" // データ構造刷新 Phase F
+import { ConditionLineDetailPage } from "./pages/ConditionLineDetailPage" // データ構造刷新 Phase F
 import { ArchivePage } from "./pages/ArchivePage"
 import { MasterLayout } from "./pages/master/MasterLayout"
 import { ContractsPanel } from "./pages/master/ContractsPanel"
@@ -17,7 +20,6 @@ import { SubLicenseesPanel } from "./pages/master/SubLicenseesPanel" // Phase 22
 import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ConditionsPanel } from "./pages/master/ConditionsPanel" // 統合 P3-2
-import { SublicensePanel } from "./pages/master/SublicensePanel" // 統合 P3-3
 import { ReceivableMapPanel } from "./pages/master/ReceivableMapPanel" // 統合 P3-4
 import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
@@ -41,6 +43,9 @@ export default function App() {
                 <Route path="excel-batches" element={<ExcelBatchPage />} />
                 <Route path="pending-inspections" element={<PendingInspectionsPage />} />
                 <Route path="requests" element={<RequestsPage />} />
+                <Route path="issues/:issueKey" element={<IssueDetailPage />} />{/* データ構造刷新 Phase A */}
+                <Route path="condition-lines" element={<ConditionLinesPage />} />{/* データ構造刷新 Phase F */}
+                <Route path="condition-lines/:lineCode" element={<ConditionLineDetailPage />} />{/* データ構造刷新 Phase F */}
                 <Route path="archive" element={<ArchivePage />} />
 
                 <Route path="master" element={<MasterLayout />}>
@@ -52,7 +57,6 @@ export default function App() {
                   <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}
                   <Route path="drafts" element={<DraftsPanel />} />{/* Phase 22.21.81 */}
                   <Route path="conditions" element={<ConditionsPanel />} />{/* 統合 P3-2 */}
-                  <Route path="sublicense" element={<SublicensePanel />} />{/* 統合 P3-3 */}
                   <Route path="receivable-map" element={<ReceivableMapPanel />} />{/* 統合 P3-4 */}
                   <Route path="work-model" element={<WorkModelPanel />} />{/* 統合 P3-5 */}
                   <Route path="staff" element={<StaffPanel />} />

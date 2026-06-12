@@ -45,6 +45,114 @@ import {
 // B5b: プレビュー PDF をローカル生成(worker proxy 撤去)。chromium 同梱(Dockerfile)。
 import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
 
+/**
+ * Phase E-2: 検収フォーム向け発注明細を coverage-gated dual-read で取得。
+ *   condition_lines が当該 capability の line_item 由来明細を完全カバー(件数一致)
+ *   する場合のみ condition_lines(faithful superset) から読む。1件でも欠ければ /
+ *   未作成なら capability_line_items にフォールバック → 無回帰。
+ *   id = source_line_item_id (= 旧 capability_line_item_id) なので、
+ *   delivery_line_items 経由の検収累計(inspMap)参照もそのまま機能する。
+ */
+async function readCapabilityLinesForInspectionDisplay(
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT source_line_item_id AS id,
+              COALESCE(source_seq_no, line_no) AS line_no, subject AS item_name, spec,
+              unit_price, quantity, amount_ex_tax, calc_method, payment_terms,
+              payment_method, payment_date, delivery_date,
+              cycle, term_start, term_end, billing_day
+         FROM condition_lines
+        WHERE capability_id = $1 AND source_line_item_id IS NOT NULL
+        ORDER BY COALESCE(source_seq_no, line_no) ASC`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_line_items WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  const li = await query(
+    `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax,
+            calc_method, payment_terms, payment_method, payment_date, delivery_date,
+            cycle, term_start, term_end, billing_day
+       FROM capability_line_items
+      WHERE capability_id = $1
+      ORDER BY line_no ASC`,
+    [capabilityId]
+  );
+  return li.rows;
+}
+
+/**
+ * Phase E-2: 利用許諾条件(財務条件)の表示行を coverage-gated dual-read で取得 (api)。
+ *   worker/formReadRoutes の同名ヘルパーと対称。A案で暗黙 terms に切り出された分も
+ *   source_condition_id 経由で連結し、condition_no は source_seq_no で faithful 復元。
+ *   完全カバー時のみ condition_lines、欠ければ capability_financial_conditions。
+ */
+async function readCapabilityFinancialRowsForDisplay(
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT cl.source_condition_id AS id, cl.source_seq_no AS condition_no,
+              cl.subject AS region_language_label, cl.calc_method, cl.rate_pct,
+              cl.base_price_label, cl.calc_period, cl.currency, cl.formula_text,
+              cl.payment_terms, cl.mg_amount, COALESCE(cl.ag_amount, 0) AS ag_amount,
+              cl.calc_period_kind, cl.calc_period_close_month
+         FROM condition_lines cl
+        WHERE cl.source_condition_id IN (
+                SELECT id FROM capability_financial_conditions WHERE capability_id = $1)
+        ORDER BY cl.source_seq_no ASC NULLS LAST, cl.id`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_financial_conditions WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  try {
+    return (
+      await query(
+        `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                base_price_label, calc_period, currency, formula_text, payment_terms,
+                mg_amount, COALESCE(ag_amount, 0) AS ag_amount,
+                calc_period_kind, calc_period_close_month
+           FROM capability_financial_conditions
+          WHERE capability_id = $1
+          ORDER BY condition_no ASC`,
+        [capabilityId]
+      )
+    ).rows;
+  } catch (e2: any) {
+    if (e2 && e2.code === "42703") {
+      return (
+        await query(
+          `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                  base_price_label, calc_period, currency, formula_text, payment_terms,
+                  mg_amount, COALESCE(ag_amount, 0) AS ag_amount
+             FROM capability_financial_conditions
+            WHERE capability_id = $1
+            ORDER BY condition_no ASC`,
+          [capabilityId]
+        )
+      ).rows;
+    }
+    throw e2;
+  }
+}
+
 // helper は起動時 1 回、partial は DB から遅延ロードして専用インスタンスに登録。
 const previewHb = Handlebars.create();
 registerRenderHelpers(previewHb);
@@ -1570,16 +1678,10 @@ async function startServer() {
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          const lines = await query(
-            `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, calc_method, payment_terms,
-                    payment_method, payment_date, delivery_date,
-                    cycle, term_start, term_end, billing_day
-               FROM capability_line_items
-              WHERE capability_id = $1
-              ORDER BY line_no ASC`,
-            [orderItemId]
-          );
+          // Phase E-2: condition_lines 優先の coverage-gated dual-read
+          const lines = {
+            rows: await readCapabilityLinesForInspectionDisplay(orderItemId),
+          };
           context["items"] = lines.rows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
@@ -1639,15 +1741,10 @@ async function startServer() {
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              const lines = await query(
-                `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                        amount_ex_tax, calc_method, payment_terms,
-                        payment_method, payment_date, delivery_date
-                   FROM capability_line_items
-                  WHERE capability_id = $1
-                  ORDER BY line_no ASC`,
-                [poId]
-              );
+              // Phase E-2: condition_lines 優先の coverage-gated dual-read
+              const lines = {
+                rows: await readCapabilityLinesForInspectionDisplay(poId),
+              };
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
@@ -2045,35 +2142,10 @@ async function startServer() {
               context["work_id"] = row.work_id;
               context["WORK_ID"] = row.work_id;
             }
-            // Phase 22.20-B: calc_period_kind / calc_period_close_month を含める
-            //   schema 未追加環境では 42703 を catch して legacy SELECT に fallback
-            let conds: any;
-            try {
-              conds = await query(
-                `SELECT id, condition_no, region_language_label, calc_method,
-                        rate_pct, base_price_label, calc_period, currency,
-                        formula_text, payment_terms, mg_amount,
-                        calc_period_kind, calc_period_close_month
-                   FROM capability_financial_conditions
-                  WHERE capability_id = $1
-                  ORDER BY condition_no ASC`,
-                [lcId]
-              );
-            } catch (colErr2: any) {
-              if (colErr2 && colErr2.code === "42703") {
-                conds = await query(
-                  `SELECT id, condition_no, region_language_label, calc_method,
-                          rate_pct, base_price_label, calc_period, currency,
-                          formula_text, payment_terms, mg_amount
-                     FROM capability_financial_conditions
-                    WHERE capability_id = $1
-                    ORDER BY condition_no ASC`,
-                  [lcId]
-                );
-              } else {
-                throw colErr2;
-              }
-            }
+            // Phase E-2: condition_lines 優先の coverage-gated dual-read
+            const conds = {
+              rows: await readCapabilityFinancialRowsForDisplay(lcId),
+            };
             context["financial_conditions"] = conds.rows.map((r: any) => ({
               id: Number(r.id),
               condition_no: Number(r.condition_no),
@@ -2378,6 +2450,181 @@ async function startServer() {
     }
   });
 
+  // Phase A (データ構造刷新): 課題詳細ページ向け — 1 課題に紐づく文書一覧。
+  //   form_data は重く UI で不要なため返さない。lifecycle/採番系の列は
+  //   worker initDb で追加されるため、未適用環境では 42703 フォールバックする
+  //   (/api/management/assets と同じ流儀)。
+  app.get("/api/issues/:issueKey/documents", async (req, res) => {
+    try {
+      const issueKey = String(req.params.issueKey || "").trim();
+      if (!issueKey) return res.json([]);
+      let result: any;
+      try {
+        result = await query(
+          `SELECT id,
+                  document_number,
+                  template_type,
+                  created_at,
+                  created_by,
+                  drive_link,
+                  COALESCE(lifecycle_status, 'final') AS lifecycle_status,
+                  COALESCE(is_primary, TRUE)          AS is_primary,
+                  base_document_number,
+                  COALESCE(revision, 0)               AS revision,
+                  -- Phase F: 文書 → condition_events → condition_line.line_code を解決
+                  --   (課題詳細から「条件明細を見る」リンクに使う)。
+                  (SELECT cl.line_code
+                     FROM condition_events ce
+                     JOIN condition_lines cl ON cl.id = ce.condition_line_id
+                    WHERE ce.document_id = documents.id
+                    ORDER BY ce.id LIMIT 1)             AS line_code
+             FROM documents
+            WHERE issue_key = $1
+            ORDER BY created_at DESC`,
+          [issueKey]
+        );
+      } catch (err: any) {
+        if (err && err.code === "42703") {
+          console.warn(
+            "[/api/issues/:issueKey/documents] schema migration 未適用 — legacy 形式で返却"
+          );
+          result = await query(
+            `SELECT id, document_number, template_type, created_at, created_by, drive_link
+               FROM documents
+              WHERE issue_key = $1
+              ORDER BY created_at DESC`,
+            [issueKey]
+          );
+        } else {
+          throw err;
+        }
+      }
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // データ構造刷新 Phase F: 条件明細管理 UI 向け API。
+  //   導出ビュー(condition_line_status_v / _balance_v / _schedule_v)+ 契約・
+  //   取引先 JOIN。新スキーマ未適用環境では undefined_table(42P01)を空配列で返す。
+  // -------------------------------------------------------------------
+  app.get("/api/condition-lines", async (req, res) => {
+    try {
+      const where: string[] = [];
+      const params: any[] = [];
+      const add = (cond: string, val: any) => {
+        params.push(val);
+        where.push(cond.replace("?", `$${params.length}`));
+      };
+      if (req.query.status) add("s.status = ?", String(req.query.status));
+      if (req.query.direction) add("cl.direction = ?", String(req.query.direction));
+      if (req.query.scheme) add("cl.payment_scheme = ?", String(req.query.scheme));
+      if (req.query.vendor_id) add("cc.vendor_id = ?", Number(req.query.vendor_id));
+      if (req.query.capability_id) add("cl.capability_id = ?", Number(req.query.capability_id));
+      if (req.query.q) {
+        params.push(`%${String(req.query.q)}%`);
+        where.push(
+          `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length})`
+        );
+      }
+      const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      try {
+        const result = await query(
+          `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.direction,
+                  cl.rights_attribution, cl.capability_id, cl.amount_ex_tax, cl.currency,
+                  cl.delivery_date, cl.term_start, cl.term_end,
+                  s.status, s.consumed_amount, s.remaining_amount, s.event_count,
+                  b.mg_remaining, b.ag_remaining,
+                  cc.contract_title, cc.document_number AS contract_number,
+                  v.vendor_name, v.vendor_code,
+                  sch.has_overdue
+             FROM condition_lines cl
+             LEFT JOIN condition_line_status_v  s ON s.id = cl.id
+             LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN (
+               SELECT condition_line_id, bool_or(overdue AND NOT issued) AS has_overdue
+                 FROM condition_line_schedule_v GROUP BY condition_line_id
+             ) sch ON sch.condition_line_id = cl.id
+             ${whereSql}
+            ORDER BY cl.line_code NULLS LAST, cl.id`,
+          params
+        );
+        res.json(result.rows);
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          console.warn("[/api/condition-lines] 新スキーマ未適用 — 空配列で返却");
+          return res.json([]);
+        }
+        throw err;
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  app.get("/api/condition-lines/:lineCode", async (req, res) => {
+    try {
+      const lineCode = String(req.params.lineCode || "").trim();
+      if (!lineCode) return res.status(400).json({ ok: false, error: "lineCode required" });
+      try {
+        const main = await query(
+          `SELECT cl.*, s.status, s.consumed_amount, s.remaining_amount,
+                  s.event_count, s.last_event_at,
+                  b.mg_consumed, b.mg_remaining, b.ag_consumed, b.ag_remaining,
+                  cc.contract_title, cc.document_number AS contract_number,
+                  cc.structural_role, cc.parent_capability_id,
+                  v.vendor_name, v.vendor_code,
+                  w.work_code, w.title AS work_title
+             FROM condition_lines cl
+             LEFT JOIN condition_line_status_v  s ON s.id = cl.id
+             LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN works w ON w.id = cl.work_id
+            WHERE cl.line_code = $1
+            LIMIT 1`,
+          [lineCode]
+        );
+        if (!main.rows.length) {
+          return res.status(404).json({ ok: false, error: "condition_line not found" });
+        }
+        const line = main.rows[0];
+        // 有効/取消含む全イベント + 対の文書。
+        const events = await query(
+          `SELECT e.id, e.event_no, e.event_type, e.occurred_at, e.period,
+                  e.amount_ex_tax, e.voided_at, e.void_reason, e.backlog_issue_key,
+                  e.installment_id,
+                  d.document_number, d.lifecycle_status, d.drive_link, d.issue_key
+             FROM condition_events e
+             LEFT JOIN documents d ON d.id = e.document_id
+            WHERE e.condition_line_id = $1
+            ORDER BY e.occurred_at NULLS LAST, e.event_no`,
+          [line.id]
+        );
+        // 当期スケジュール(継続型のみ)。
+        const schedule = await query(
+          `SELECT expected_period, issued, overdue
+             FROM condition_line_schedule_v
+            WHERE condition_line_id = $1
+            ORDER BY expected_period`,
+          [line.id]
+        );
+        res.json({ ok: true, line, events: events.rows, schedule: schedule.rows });
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          return res.status(404).json({ ok: false, error: "新スキーマ未適用" });
+        }
+        throw err;
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
   app.get("/api/management/assets", async (req, res) => {
     try {
       // Phase 22.12: documents の base_document_number / revision / is_primary を JOIN。
@@ -2535,7 +2782,46 @@ async function startServer() {
                     ),
                     '{}'::text[]
                   ) AS ringi_numbers,
+                  -- データ構造刷新: 契約スコープ(複数可)。UI の複数選択チェックボックスが復元に使う。
                   COALESCE(
+                    (SELECT array_agg(s.scope ORDER BY s.scope)
+                       FROM contract_scopes s WHERE s.capability_id = cc.id),
+                    '{}'::text[]
+                  ) AS scopes,
+                  -- Phase E-2: 純表示(status非依存) json_agg を condition_lines 優先の
+                  --   coverage-gated dual-source 化 (sharedReads と対称)。新 json_agg は
+                  --   「移行済み件数 = 旧件数 かつ >0」のときだけ行を返し、でなければ NULL→
+                  --   COALESCE で旧 json_agg にフォールバック。
+                  COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cl.source_condition_id,
+                                 'condition_no', cl.source_seq_no,
+                                 'region_language_label', cl.subject,
+                                 'calc_method', cl.calc_method,
+                                 'rate_pct', cl.rate_pct,
+                                 'base_price_label', cl.base_price_label,
+                                 'calc_period', cl.calc_period,
+                                 'calc_period_kind', cl.calc_period_kind,
+                                 'calc_period_close_month', cl.calc_period_close_month,
+                                 'currency', cl.currency,
+                                 'formula_text', cl.formula_text,
+                                 'payment_terms', cl.payment_terms,
+                                 'mg_amount', cl.mg_amount,
+                                 'ag_amount', COALESCE(cl.ag_amount, 0)
+                               )
+                               ORDER BY cl.source_seq_no ASC
+                             )
+                        FROM condition_lines cl
+                       WHERE cl.source_condition_id IN (
+                               SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM condition_lines x
+                               WHERE x.source_condition_id IN (
+                                 SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id))
+                             = (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id) > 0
+                    ),
                     (
                       SELECT json_agg(
                                json_build_object(
@@ -2562,6 +2848,37 @@ async function startServer() {
                     '[]'::json
                   ) AS financial_conditions,
                   COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cl.source_line_item_id,
+                                 'line_no', COALESCE(cl.source_seq_no, cl.line_no),
+                                 'category', cl.category,
+                                 'item_name', cl.subject,
+                                 'spec', cl.spec,
+                                 'calc_method', cl.calc_method,
+                                 'payment_method', cl.payment_method,
+                                 'payment_terms', cl.payment_terms,
+                                 'quantity', cl.quantity,
+                                 'unit_price', cl.unit_price,
+                                 'amount_ex_tax', cl.amount_ex_tax,
+                                 'delivery_date', cl.delivery_date,
+                                 'payment_date', cl.payment_date,
+                                 'cycle', cl.cycle,
+                                 'billing_day', cl.billing_day,
+                                 'term_start', cl.term_start,
+                                 'term_end', cl.term_end,
+                                 'fee_type', cl.fee_type
+                               )
+                               ORDER BY COALESCE(cl.source_seq_no, cl.line_no) ASC
+                             )
+                        FROM condition_lines cl
+                       WHERE cl.capability_id = cc.id AND cl.source_line_item_id IS NOT NULL
+                         AND (SELECT COUNT(*) FROM condition_lines x
+                               WHERE x.capability_id = cc.id AND x.source_line_item_id IS NOT NULL)
+                             = (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id) > 0
+                    ),
                     (
                       SELECT json_agg(
                                json_build_object(
@@ -2679,17 +2996,10 @@ async function startServer() {
         if (!Number.isFinite(id) || id <= 0) {
           return res.status(400).json({ error: "invalid id" });
         }
-        const result = await query(
-          `SELECT id, condition_no, region_language_label, calc_method,
-                  rate_pct, base_price_label, calc_period, calc_period_kind,
-                  calc_period_close_month, currency, formula_text,
-                  payment_terms, mg_amount,
-                  COALESCE(ag_amount, 0) AS ag_amount
-             FROM capability_financial_conditions
-            WHERE capability_id = $1
-            ORDER BY condition_no ASC`,
-          [id]
-        );
+        // Phase E-2: condition_lines 優先の coverage-gated dual-read
+        const result = {
+          rows: await readCapabilityFinancialRowsForDisplay(id),
+        };
         // source='capability' をつけることで、フロント側の radio handler が
         // license_financial_condition_id ではなく capability_financial_condition_id
         // を formData にセットできるようにする。

@@ -10,3 +10,6 @@ coverage/
 # These end up baked into the public JS bundle anyway, so they're safe
 # to commit and need to be present at build time.
 !.env.production
+
+# データ構造刷新バックフィルのレポート出力 (実行時生成・コミットしない)
+restructure_reports/
