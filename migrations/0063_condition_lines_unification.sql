@@ -1,4 +1,4 @@
--- 0041_condition_lines_unification.sql
+-- 0063_condition_lines_unification.sql
 -- データ構造刷新: 統一条件明細(condition_lines)スキーマを本番DDLとして追加。
 --   契約・条件・実績を condition_lines / condition_events / works 中心に統一する。
 --   設計: docs/condition_lines_unification_design.md / _implementation_plan.md
