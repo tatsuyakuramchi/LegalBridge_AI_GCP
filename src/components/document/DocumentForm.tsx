@@ -1483,8 +1483,10 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         VENDOR_REPRESENTATIVE_SAMA: isCorp && activeVendor.vendor_rep
           ? `${activeVendor.vendor_rep} 様`
           : '',
-        VENDOR_CONTACT_DEPARTMENT: activeVendor.contact_department || '',
-        VENDOR_CONTACT_NAME: activeVendor.contact_name || '',
+        // 担当者・部署は法人の概念。個人取引先では宛名(VENDOR_NAME=本人)と
+        //   二重になり「○○様」が二人並ぶため、個人では空にする(代表者様と同方針)。
+        VENDOR_CONTACT_DEPARTMENT: isCorp ? activeVendor.contact_department || '' : '',
+        VENDOR_CONTACT_NAME: isCorp ? activeVendor.contact_name || '' : '',
         VENDOR_EMAIL: activeVendor.email || '',
         VENDOR_IS_CORPORATION: isCorp ? '法人' : '個人',
         VENDOR_SUFFIX: isCorp ? '御中' : '様',
