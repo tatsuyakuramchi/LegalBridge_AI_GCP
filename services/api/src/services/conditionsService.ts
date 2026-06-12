@@ -42,9 +42,7 @@ export type ConditionFilters = {
   offset?: number;
 };
 
-const FROM_JOINS = `
-  FROM capability_line_items cli
-  JOIN contract_capabilities cc ON cc.id = cli.capability_id
+const COMMON_JOINS = `
   LEFT JOIN vendors v ON v.id = cc.vendor_id
   LEFT JOIN documents d ON d.document_number = cc.document_number
   LEFT JOIN staff s
@@ -53,7 +51,19 @@ const FROM_JOINS = `
     OR s.staff_name = d.created_by
 `;
 
-function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
+// 2c-2: 横断検索の読取元(列参照)。新台帳(cl)と旧(cli)で切替。
+type LineCols = {
+  payment_date: string;
+  delivery_date: string;
+  item_name: string;
+  spec: string;
+  id: string;
+};
+
+function buildWhere(
+  f: ConditionFilters,
+  cols: LineCols
+): { sql: string; params: any[] } {
   const where: string[] = [];
   const params: any[] = [];
   const p = (v: any) => {
@@ -61,10 +71,10 @@ function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
     return `$${params.length}`;
   };
 
-  if (f.payment_from) where.push(`cli.payment_date >= ${p(f.payment_from)}`);
-  if (f.payment_to) where.push(`cli.payment_date <= ${p(f.payment_to)}`);
-  if (f.delivery_from) where.push(`cli.delivery_date >= ${p(f.delivery_from)}`);
-  if (f.delivery_to) where.push(`cli.delivery_date <= ${p(f.delivery_to)}`);
+  if (f.payment_from) where.push(`${cols.payment_date} >= ${p(f.payment_from)}`);
+  if (f.payment_to) where.push(`${cols.payment_date} <= ${p(f.payment_to)}`);
+  if (f.delivery_from) where.push(`${cols.delivery_date} >= ${p(f.delivery_from)}`);
+  if (f.delivery_to) where.push(`${cols.delivery_date} <= ${p(f.delivery_to)}`);
 
   if (f.category) {
     const c = String(f.category).trim().toLowerCase();
@@ -87,12 +97,12 @@ function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
   if (f.q) {
     const ph = p(`%${f.q}%`);
     where.push(
-      `(cli.item_name ILIKE ${ph} OR cli.spec ILIKE ${ph} OR cc.contract_title ILIKE ${ph} OR cc.document_number ILIKE ${ph})`
+      `(${cols.item_name} ILIKE ${ph} OR ${cols.spec} ILIKE ${ph} OR cc.contract_title ILIKE ${ph} OR cc.document_number ILIKE ${ph})`
     );
   }
   if (Array.isArray(f.ids) && f.ids.length) {
     const ids = f.ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
-    if (ids.length) where.push(`cli.id = ANY(${p(ids)}::int[])`);
+    if (ids.length) where.push(`${cols.id} = ANY(${p(ids)}::int[])`);
   }
 
   // 既定は正本(現行)のみ。重複・旧版・再発行前の行を一覧から除外する。
@@ -109,17 +119,57 @@ const d2s = (v: any): string =>
   v instanceof Date ? v.toISOString().slice(0, 10) : v ? String(v).slice(0, 10) : "";
 const num = (v: any): number | null => (v == null ? null : Number(v));
 
+/**
+ * 新台帳(condition_lines, line item 由来)で横断検索を満たせるか。
+ * line item 由来 condition_lines が capability_line_items を完全カバーしていれば true。
+ * 未充足/スキーマ未適用なら false(旧 capability_line_items を読む)。
+ */
+async function canUseLedger(): Promise<boolean> {
+  try {
+    const r = await query(
+      `SELECT
+         (SELECT COUNT(*) FROM condition_lines WHERE source_line_item_id IS NOT NULL) AS new_n,
+         (SELECT COUNT(*) FROM capability_line_items) AS old_n`
+    );
+    return Number(r.rows[0].new_n) >= Number(r.rows[0].old_n);
+  } catch (err: any) {
+    if (err && (err.code === "42703" || err.code === "42P01")) return false;
+    throw err;
+  }
+}
+
 export async function listConditions(
   f: ConditionFilters
 ): Promise<{ rows: any[]; total: number }> {
-  const { sql: whereSql, params } = buildWhere(f);
+  // 2c-2: 新台帳優先(line item 由来 condition_lines)。カバレッジ未充足/スキーマ未適用は
+  //   旧 capability_line_items にフォールバック。出力列名は新旧で揃え row マッピング共通。
+  //   id は常に capability_line_item.id(新は cl.source_line_item_id)に固定し、編集
+  //   /api/conditions/:id/links の id 解釈を read 経路に依存させない。
+  const useNew = await canUseLedger();
+  const LT = useNew ? "cl" : "cli";
+
+  const cols: LineCols = useNew
+    ? { payment_date: "cl.payment_date", delivery_date: "cl.delivery_date",
+        item_name: "cl.subject", spec: "cl.spec", id: "cl.source_line_item_id" }
+    : { payment_date: "cli.payment_date", delivery_date: "cli.delivery_date",
+        item_name: "cli.item_name", spec: "cli.spec", id: "cli.id" };
+
+  const fromJoins = useNew
+    ? `FROM condition_lines cl
+       JOIN contract_capabilities cc ON cc.id = cl.capability_id ${COMMON_JOINS}`
+    : `FROM capability_line_items cli
+       JOIN contract_capabilities cc ON cc.id = cli.capability_id ${COMMON_JOINS}`;
+
+  const { sql: whereSql0, params } = buildWhere(f, cols);
+  // 新経路は line item 由来行に限定(財務由来 condition_lines を除外=旧 横断検索と等価)。
+  const whereSql = useNew
+    ? (whereSql0 ? `${whereSql0} AND cl.source_line_item_id IS NOT NULL`
+                 : `WHERE cl.source_line_item_id IS NOT NULL`)
+    : whereSql0;
 
   let total = 0;
   try {
-    const cnt = await query(
-      `SELECT COUNT(*)::int AS c ${FROM_JOINS} ${whereSql}`,
-      params
-    );
+    const cnt = await query(`SELECT COUNT(*)::int AS c ${fromJoins} ${whereSql}`, params);
     total = Number(cnt.rows[0]?.c || 0);
   } catch (err: any) {
     // 列/テーブル未整備(42703/42P01)なら空で返す(worker 未デプロイ環境)
@@ -132,10 +182,13 @@ export async function listConditions(
   const lp = (params.push(limit), params.length);
   const op = (params.push(offset), params.length);
 
+  // 出力名は旧と一致させる(id=capability_line_item.id, line_no=元の連番, item_name=件名)。
   const baseCols = `
-       cli.id, cli.line_no, cli.item_name, cli.spec, cli.calc_method, cli.payment_terms,
-       cli.quantity, cli.unit_price, cli.amount_ex_tax,
-       cli.delivery_date, cli.payment_date, cli.term_start, cli.term_end, cli.cycle,
+       ${cols.id} AS id, ${useNew ? "cl.source_seq_no AS line_no" : "cli.line_no"},
+       ${useNew ? "cl.subject AS item_name" : "cli.item_name"},
+       ${LT}.spec, ${LT}.calc_method, ${LT}.payment_terms,
+       ${LT}.quantity, ${LT}.unit_price, ${LT}.amount_ex_tax,
+       ${LT}.delivery_date, ${LT}.payment_date, ${LT}.term_start, ${LT}.term_end, ${LT}.cycle,
        cc.id AS capability_id, cc.document_number, cc.contract_title,
        cc.contract_category, cc.contract_type, cc.record_type,
        v.vendor_code, v.vendor_name,
@@ -143,32 +196,32 @@ export async function listConditions(
        d.created_by, d.issue_key`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
-       cli.source_ip_id, si.title AS source_ip_title, si.source_code,
-       cli.work_id, w.title AS work_title, w.work_code,
-       cli.master_contract_id, mc.contract_title AS master_contract_title,
+       ${LT}.source_ip_id, si.title AS source_ip_title, si.source_code,
+       ${LT}.work_id, w.title AS work_title, w.work_code,
+       ${LT}.master_contract_id, mc.contract_title AS master_contract_title,
        mc.document_number AS master_contract_number,
-       cli.ringi_id, rr.ringi_number, rr.title AS ringi_title,
-       cli.status_flags, COALESCE(cli.is_inbound, FALSE) AS is_inbound,
-       cli.flow_direction`;
+       ${LT}.ringi_id, rr.ringi_number, rr.title AS ringi_title,
+       ${LT}.status_flags, COALESCE(${LT}.is_inbound, FALSE) AS is_inbound,
+       ${LT}.flow_direction`;
   const linkJoins = `
-    LEFT JOIN source_ips si ON si.id = cli.source_ip_id
-    LEFT JOIN works w ON w.id = cli.work_id
-    LEFT JOIN contracts mc ON mc.id = cli.master_contract_id
-    LEFT JOIN ringi_records rr ON rr.id = cli.ringi_id`;
-  const order = `ORDER BY cli.payment_date DESC NULLS LAST, cli.delivery_date DESC NULLS LAST,
-              cc.document_number DESC, cli.line_no ASC
+    LEFT JOIN source_ips si ON si.id = ${LT}.source_ip_id
+    LEFT JOIN works w ON w.id = ${LT}.work_id
+    LEFT JOIN contracts mc ON mc.id = ${LT}.master_contract_id
+    LEFT JOIN ringi_records rr ON rr.id = ${LT}.ringi_id`;
+  const order = `ORDER BY ${LT}.payment_date DESC NULLS LAST, ${LT}.delivery_date DESC NULLS LAST,
+              cc.document_number DESC, ${useNew ? "cl.source_seq_no" : "cli.line_no"} ASC
      LIMIT $${lp} OFFSET $${op}`;
 
   let res: any;
   try {
     res = await query(
-      `SELECT ${baseCols}${linkCols} ${FROM_JOINS}${linkJoins} ${whereSql} ${order}`,
+      `SELECT ${baseCols}${linkCols} ${fromJoins}${linkJoins} ${whereSql} ${order}`,
       params
     );
   } catch (err: any) {
     // 0015 未適用環境(紐付け列なし)では従来通り列なしで返す。
     if (err && (err.code === "42703" || err.code === "42P01")) {
-      res = await query(`SELECT ${baseCols} ${FROM_JOINS} ${whereSql} ${order}`, params);
+      res = await query(`SELECT ${baseCols} ${fromJoins} ${whereSql} ${order}`, params);
     } else {
       throw err;
     }
@@ -295,6 +348,34 @@ export async function updateConditionLinks(
       dirProvided ? dir : null,
     ]
   );
+
+  // 2c-2: 新台帳にも即時反映(横断検索の読取が新台帳ベースのため)。旧
+  //   capability_line_items も上で更新済みなので、old→new 同期に上書きされない。
+  //   condition_lines 未適用環境(42P01/42703)では非致命でスキップ。
+  try {
+    await query(
+      `UPDATE condition_lines
+          SET source_ip_id = $2, work_id = $3, master_contract_id = $4, ringi_id = $5,
+              status_flags = COALESCE($6::jsonb, status_flags),
+              is_inbound = COALESCE($7::boolean, is_inbound),
+              flow_direction = CASE WHEN $8::boolean THEN $9::varchar ELSE flow_direction END,
+              updated_at = CURRENT_TIMESTAMP
+        WHERE source_line_item_id = $1`,
+      [
+        id,
+        links.source_ip_id ?? null,
+        links.work_id ?? null,
+        links.master_contract_id ?? null,
+        links.ringi_id ?? null,
+        flagsJson,
+        inbound,
+        dirProvided,
+        dirProvided ? dir : null,
+      ]
+    );
+  } catch (err: any) {
+    if (!(err && (err.code === "42P01" || err.code === "42703"))) throw err;
+  }
 }
 
 /** 稟議ピッカー用の一覧(新しい承認順)。 */
