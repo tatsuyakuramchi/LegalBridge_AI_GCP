@@ -11753,6 +11753,17 @@ ${details}
             );
           }
         }
+
+        // データ構造刷新: 発注書生成ミラーの子テーブル書込後、condition_lines にも
+        //   非致命で同期する。登録エンドポイント(upsertCapabilityLineItems)は
+        //   safeSync を呼ぶが、この発注書生成ミラーは直接 INSERT で safeSync を
+        //   通っていなかったため、新規発注書が条件明細に出ない不具合があった。
+        //   orderItemId = capability_id。冪等。
+        if (orderItemId) {
+          await safeSync("CL(capability/po-mirror)", () =>
+            syncConditionLinesForCapability({ query }, Number(orderItemId))
+          );
+        }
       } else if (templateType.includes("inspection")) {
         // Phase 22.21.20: contract_type を 'delivery_inspec' でセット。
         //   ON CONFLICT は DO NOTHING を継続 (検収書側は既存行があれば触らない)。
