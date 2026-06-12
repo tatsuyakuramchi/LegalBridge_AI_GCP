@@ -212,7 +212,12 @@ export async function syncInspectionEventsForDelivery(
   );
   for (const row of rows.rows) {
     if (!row.condition_line_id) continue; // 未バックフィル → skip
-    const doc = await db.query(
+    // 検収書 document の解決。手動/取込の検収書(ARC-*)は form_data に
+    //   delivery_event_id を持たないため、精密一致(delivery_event_id) だけでは
+    //   解決できず保留になっていた(これがステータス未更新の主因)。
+    //   フォールバックとして delivery_event の課題(backlog_issue_key)で検収書を
+    //   解決し、誤リンク回避のため「ちょうど1件」のときだけ採用する(C-3 相当)。
+    let doc = await db.query(
       `SELECT id FROM documents
         WHERE template_type IN ('inspection_certificate','delivery_inspec')
           AND form_data->>'delivery_event_id' = $1::text
@@ -220,6 +225,16 @@ export async function syncInspectionEventsForDelivery(
         ORDER BY created_at DESC LIMIT 1`,
       [deliveryEventId]
     );
+    if (!doc.rows.length && row.backlog_issue_key) {
+      const byIssue = await db.query(
+        `SELECT id FROM documents
+          WHERE template_type IN ('inspection_certificate','delivery_inspec')
+            AND issue_key = $1
+            AND COALESCE(lifecycle_status,'final') = 'final'`,
+        [row.backlog_issue_key]
+      );
+      if (byIssue.rows.length === 1) doc = byIssue;
+    }
     if (!doc.rows.length) continue; // 文書未解決 → skip (CHECK 回避)
     const eventNo = await nextEventNo(db, row.condition_line_id);
     await db.query(
