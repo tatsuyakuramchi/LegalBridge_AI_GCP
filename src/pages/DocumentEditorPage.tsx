@@ -216,6 +216,9 @@ export function DocumentEditorPage() {
     pii_consent_date: string | null
   } | null>(null)
   const [createConsent, setCreateConsent] = React.useState(false)
+  // 文書ごとのオプション: 個人取引先の宛名に「ペンネーム/屋号 こと 正式名称」を併記する。
+  //   既定 OFF=正式名称のみ。DocumentForm の取引先オートフィルが参照する。
+  const [combineVendorAlias, setCombineVendorAlias] = React.useState(false)
 
   // activeVendor 変更時に同意状況を取得し、個人かつ未同意ならスイッチを既定ON。
   React.useEffect(() => {
@@ -1412,6 +1415,21 @@ export function DocumentEditorPage() {
                         </option>
                       ))}
                   </NativeSelect>
+                  {/* 個人取引先のみ: 宛名に筆名/屋号を併記するオプション。
+                      OFF=正式名称のみ / ON=「ペンネーム/屋号 こと 正式名称」。 */}
+                  {activeVendor &&
+                    String(activeVendor.entity_type || "").toLowerCase() !== "corporate" &&
+                    activeVendor.entity_type !== "法人" && (
+                      <label className="flex items-start gap-1.5 text-[10px] text-muted-foreground cursor-pointer pt-0.5">
+                        <input
+                          type="checkbox"
+                          className="h-3 w-3 mt-0.5"
+                          checked={combineVendorAlias}
+                          onChange={(e) => setCombineVendorAlias(e.target.checked)}
+                        />
+                        <span>筆名/屋号を併記（ペンネーム こと 正式名称）</span>
+                      </label>
+                    )}
                 </div>
               </div>
             </CardContent>
@@ -1782,6 +1800,7 @@ export function DocumentEditorPage() {
                         companyProfile={companyProfile}
                         activeVendor={activeVendor}
                         selectedStaff={selectedStaff}
+                        combineVendorAlias={combineVendorAlias}
                       />
                     </div>
                   </div>
