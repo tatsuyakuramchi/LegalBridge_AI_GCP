@@ -3,6 +3,116 @@
 // 依存: query, backlogService(getIssue / extractCustomFields)。
 import type { Express } from "express";
 
+type QueryFn = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
+
+/**
+ * Phase E-2: 発注明細の表示行を coverage-gated dual-read で取得する。
+ *   condition_lines が当該 capability の line_item 由来明細を「完全カバー」
+ *   (件数一致) する場合のみ condition_lines(faithful superset)から読む。
+ *   1件でも欠ければ / 未作成なら 旧 capability_line_items にフォールバック。
+ *   → 最悪でも旧挙動なので無回帰。返す行は capability_line_items と同一 shape。
+ */
+async function readCapabilityLineRowsForDisplay(
+  query: QueryFn,
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT source_line_item_id AS id,
+              COALESCE(source_seq_no, line_no) AS line_no, subject AS item_name,
+              spec, unit_price, quantity, amount_ex_tax, calc_method, payment_terms,
+              payment_method, payment_date, delivery_date, cycle, term_start,
+              term_end, billing_day
+         FROM condition_lines
+        WHERE capability_id = $1 AND source_line_item_id IS NOT NULL
+        ORDER BY COALESCE(source_seq_no, line_no) ASC`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_line_items WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows; // 完全カバー → 新スキーマを使用
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  const li = await query(
+    `SELECT id, line_no, item_name, spec, unit_price, quantity,
+            amount_ex_tax, calc_method, payment_terms, payment_method,
+            payment_date, delivery_date, cycle, term_start, term_end, billing_day
+       FROM capability_line_items
+      WHERE capability_id = $1
+      ORDER BY line_no ASC`,
+    [capabilityId]
+  );
+  return li.rows;
+}
+
+/**
+ * Phase E-2: 利用許諾条件(財務条件)の表示行を coverage-gated dual-read で取得。
+ *   condition_lines が当該 capability の financial 由来明細を完全カバーする場合のみ
+ *   condition_lines から読む。A案で暗黙 terms に切り出された分も拾えるよう
+ *   source_condition_id 経由で連結 (capability_id 非依存)。condition_no は
+ *   source_seq_no(元の condition_no)で faithful に復元。欠ければ旧テーブル。
+ */
+async function readCapabilityFinancialRowsForDisplay(
+  query: QueryFn,
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT cl.source_condition_id AS id, cl.source_seq_no AS condition_no,
+              cl.subject AS region_language_label, cl.calc_method, cl.rate_pct,
+              cl.base_price_label, cl.calc_period, cl.currency, cl.formula_text,
+              cl.payment_terms, cl.mg_amount, cl.calc_period_kind, cl.calc_period_close_month
+         FROM condition_lines cl
+        WHERE cl.source_condition_id IN (
+                SELECT id FROM capability_financial_conditions WHERE capability_id = $1)
+        ORDER BY cl.source_seq_no ASC NULLS LAST, cl.id`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_financial_conditions WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  // 旧テーブル (古い DB は calc_period_kind/close_month が無く 42703 → 簡易版)
+  try {
+    return (
+      await query(
+        `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                base_price_label, calc_period, currency, formula_text, payment_terms,
+                mg_amount, calc_period_kind, calc_period_close_month
+           FROM capability_financial_conditions
+          WHERE capability_id = $1
+          ORDER BY condition_no ASC`,
+        [capabilityId]
+      )
+    ).rows;
+  } catch (e2: any) {
+    if (e2 && e2.code === "42703") {
+      return (
+        await query(
+          `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                  base_price_label, calc_period, currency, formula_text, payment_terms, mg_amount
+             FROM capability_financial_conditions
+            WHERE capability_id = $1
+            ORDER BY condition_no ASC`,
+          [capabilityId]
+        )
+      ).rows;
+    }
+    throw e2;
+  }
+}
+
 export function registerFormReadRoutes(
   app: Express,
   deps: { query: (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>; backlogService: any }
@@ -75,17 +185,13 @@ export function registerFormReadRoutes(
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          const lines = await query(
-            `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, calc_method, payment_terms,
-                    payment_method, payment_date, delivery_date,
-                    cycle, term_start, term_end, billing_day
-               FROM capability_line_items
-              WHERE capability_id = $1
-              ORDER BY line_no ASC`,
-            [orderItemId]
+          // Phase E-2: condition_lines 優先の coverage-gated dual-read
+          //   (完全カバー時のみ新スキーマ、欠ければ旧テーブル。shape は同一)
+          const lineRows = await readCapabilityLineRowsForDisplay(
+            query,
+            orderItemId
           );
-          context["items"] = lines.rows.map((r: any) => ({
+          context["items"] = lineRows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
             spec: r.spec || "",
@@ -144,15 +250,11 @@ export function registerFormReadRoutes(
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              const lines = await query(
-                `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                        amount_ex_tax, calc_method, payment_terms,
-                        payment_method, payment_date, delivery_date
-                   FROM capability_line_items
-                  WHERE capability_id = $1
-                  ORDER BY line_no ASC`,
-                [poId]
-              );
+              // Phase E-2: condition_lines 優先の coverage-gated dual-read
+              //   (id=source_line_item_id なので inspMap 参照もそのまま機能)
+              const lines = {
+                rows: await readCapabilityLineRowsForDisplay(query, poId),
+              };
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
@@ -552,33 +654,10 @@ export function registerFormReadRoutes(
             }
             // Phase 22.20-B: calc_period_kind / calc_period_close_month を含める
             //   schema 未追加環境では 42703 を catch して legacy SELECT に fallback
-            let conds: any;
-            try {
-              conds = await query(
-                `SELECT id, condition_no, region_language_label, calc_method,
-                        rate_pct, base_price_label, calc_period, currency,
-                        formula_text, payment_terms, mg_amount,
-                        calc_period_kind, calc_period_close_month
-                   FROM capability_financial_conditions
-                  WHERE capability_id = $1
-                  ORDER BY condition_no ASC`,
-                [lcId]
-              );
-            } catch (colErr2: any) {
-              if (colErr2 && colErr2.code === "42703") {
-                conds = await query(
-                  `SELECT id, condition_no, region_language_label, calc_method,
-                          rate_pct, base_price_label, calc_period, currency,
-                          formula_text, payment_terms, mg_amount
-                     FROM capability_financial_conditions
-                    WHERE capability_id = $1
-                    ORDER BY condition_no ASC`,
-                  [lcId]
-                );
-              } else {
-                throw colErr2;
-              }
-            }
+            // Phase E-2: condition_lines 優先の coverage-gated dual-read
+            const conds = {
+              rows: await readCapabilityFinancialRowsForDisplay(query, lcId),
+            };
             context["financial_conditions"] = conds.rows.map((r: any) => ({
               id: Number(r.id),
               condition_no: Number(r.condition_no),

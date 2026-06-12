@@ -60,6 +60,13 @@ import {
   addMaterialToLedger,
   markPrimaryDocument,
 } from "./src/lib/db.ts";
+// データ構造刷新 Phase C-5: 新スキーマへの二重書き込み (冪等・非致命)
+import {
+  syncConditionLinesForCapability,
+  syncInspectionEventsForDelivery,
+  syncRoyaltyCalcEvent,
+  safeSync,
+} from "./src/lib/conditionSync.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
@@ -77,6 +84,7 @@ import {
   recalculateCapabilityTotal,
   getCapabilityLineAvailability,
   previewInspectionOverflow,
+  getOrderedLineEconomics, // Phase E-2: 発注側 economics の dual-read
 } from "./src/lib/calc.ts";
 import {
   previewRoyaltyCalculation,
@@ -2279,10 +2287,25 @@ ${details}
            ON cc.id = cli.capability_id
           AND cc.record_type = 'purchase_order'
          WHERE cli.delivery_date IS NOT NULL
-           AND NOT EXISTS (
-             SELECT 1 FROM delivery_line_items dli
-              WHERE dli.capability_line_item_id = cli.id
-                AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+           -- Phase D-2 (dual-read): 全量検収の除外判定。
+           --   移行済み(condition_lines あり) → 導出ビュー status='fulfilled' で正確に判定
+           --     (旧来の「比率1.0の部分検収1件で全量扱い」誤判定を解消)。
+           --   未移行 → 従来の acceptance_ratio>=1.0 EXISTS にフォールバック。
+           AND NOT (
+             CASE
+               WHEN EXISTS (
+                 SELECT 1 FROM condition_lines cl WHERE cl.source_line_item_id = cli.id
+               ) THEN EXISTS (
+                 SELECT 1 FROM condition_lines cl
+                   JOIN condition_line_status_v s ON s.id = cl.id
+                  WHERE cl.source_line_item_id = cli.id AND s.status = 'fulfilled'
+               )
+               ELSE EXISTS (
+                 SELECT 1 FROM delivery_line_items dli
+                  WHERE dli.capability_line_item_id = cli.id
+                    AND COALESCE(dli.acceptance_ratio, 1.0) >= 1.0
+               )
+             END
            )
            AND (
              (cli.delivery_date - CURRENT_DATE) IN (7, 3, 1)
@@ -3984,6 +4007,11 @@ ${details}
         ]
       );
     }
+    // Phase C-5: 旧金銭条件(capability_financial_conditions)書き込み後、
+    //   condition_lines にも非致命で二重書き込み(冪等)。
+    await safeSync("CL(capability)", () =>
+      syncConditionLinesForCapability({ query }, capabilityId)
+    );
   }
 
   /**
@@ -4081,6 +4109,11 @@ ${details}
         ]
       );
     }
+    // Phase C-5: 旧明細(capability_line_items)書き込み後、condition_lines にも
+    //   非致命で二重書き込み(冪等)。新規/既存契約の保存いずれもここを通る。
+    await safeSync("CL(capability)", () =>
+      syncConditionLinesForCapability({ query }, capabilityId)
+    );
   }
 
   /**
@@ -4204,6 +4237,75 @@ ${details}
     }
   }
 
+  // データ構造刷新 (設計 第8章): 契約のスコープ(service/license_use)を
+  //   contract_scopes に upsert + template_family を設定。基本契約が複数スコープを
+  //   持てる (例: ライセンス基本契約＋業務委託)。
+  //   - rawScopes 配列があればそれを正に (UI 複数選択)。無ければ contract_category 導出。
+  //   - 出版は別スコープでなく license_use + template_family='publication' (設計準拠)。
+  //   非致命: 失敗しても契約保存本体は止めない。
+  async function upsertContractScopes(
+    capabilityId: number,
+    rawScopes: any,
+    contractCategory: any,
+    rawTemplateFamily: any
+  ): Promise<void> {
+    const cat = String(contractCategory || "").toLowerCase();
+    let scopes: string[];
+    if (Array.isArray(rawScopes)) {
+      scopes = rawScopes
+        .map((s) => String(s).trim())
+        .filter((s) => s === "service" || s === "license_use");
+    } else {
+      scopes =
+        cat === "service"
+          ? ["service"]
+          : cat === "license" || cat === "publication"
+            ? ["license_use"]
+            : cat === "mixed"
+              ? ["service", "license_use"]
+              : [];
+    }
+    scopes = [...new Set(scopes)];
+    const tf =
+      rawTemplateFamily && String(rawTemplateFamily).trim()
+        ? String(rawTemplateFamily).trim()
+        : cat === "publication"
+          ? "publication"
+          : cat === "license"
+            ? "license"
+            : cat === "service"
+              ? "service"
+              : null;
+    try {
+      if (scopes.length === 0) {
+        await query(`DELETE FROM contract_scopes WHERE capability_id = $1`, [capabilityId]);
+      } else {
+        await query(
+          `DELETE FROM contract_scopes WHERE capability_id = $1 AND scope <> ALL($2::text[])`,
+          [capabilityId, scopes]
+        );
+        for (const s of scopes) {
+          await query(
+            `INSERT INTO contract_scopes (capability_id, scope) VALUES ($1, $2)
+               ON CONFLICT (capability_id, scope) DO NOTHING`,
+            [capabilityId, s]
+          );
+        }
+      }
+      if (tf) {
+        await query(
+          `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS template_family VARCHAR(20)`
+        ).catch(() => {});
+        await query(
+          `UPDATE contract_capabilities SET template_family = $2 WHERE id = $1`,
+          [capabilityId, tf]
+        );
+      }
+    } catch (e) {
+      console.warn("[contract_scopes] upsert failed (non-fatal):", e);
+    }
+  }
+
   app.post("/api/master/contracts", express.json(), async (req, res) => {
     const {
       vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -4226,6 +4328,10 @@ ${details}
       flow_direction, purpose_code,
       // 成果物の権利帰属(company/counterparty/shared)。複合契約の根拠メタ。
       deliverable_ownership,
+      // データ構造刷新: 契約スコープ複数選択 (service / license_use)。
+      //   明示があれば正、無ければ contract_category から導出。template_family は
+      //   出版/ライセンスの区別 (UI から明示 or category 由来)。
+      scopes, template_family,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -4296,6 +4402,8 @@ ${details}
       //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
       await upsertCapabilityExpenses(newId, req.body?.expenses);
       await upsertCapabilityOtherFees(newId, req.body?.other_fees);
+      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
+      await upsertContractScopes(newId, scopes, contract_category, template_family);
 
       // Phase 22.21.115: 稟議番号 N:N リンク + documents 行同期。
       //   稟議リンクは ringi_documents.document_id 経由なので documents 行が必須。
@@ -4399,6 +4507,8 @@ ${details}
       flow_direction, purpose_code,
       // 成果物の権利帰属(company/counterparty/shared)。
       deliverable_ownership,
+      // データ構造刷新: 契約スコープ複数選択 + template_family。
+      scopes, template_family,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -4483,6 +4593,8 @@ ${details}
       // Phase 23.6.14: 経費 / その他手数料 (検収書 自動補完用)。同 semantics。
       await upsertCapabilityExpenses(Number(id), req.body?.expenses);
       await upsertCapabilityOtherFees(Number(id), req.body?.other_fees);
+      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
+      await upsertContractScopes(Number(id), scopes, contract_category, template_family);
 
       // Phase 22.21.115: 稟議番号リンクを更新 (POST と同じパターン)。
       //   ringi_numbers が undefined なら触らない。[] なら全削除。
@@ -5482,12 +5594,9 @@ ${details}
           const ratio =
             l.acceptance_ratio == null ? 1.0 : Number(l.acceptance_ratio);
 
-          // unit_price を引いて金額計算 (Phase 23: capability_line_items)
-          const unitRes = await query(
-            "SELECT unit_price FROM capability_line_items WHERE id = $1",
-            [capLineId]
-          );
-          const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
+          // unit_price を引いて金額計算 (Phase E-2: condition_lines 優先 dual-read)
+          const econ = await getOrderedLineEconomics(capLineId);
+          const unitPrice = econ?.unit_price || 0;
           const amount = calculateInspectedAmount(unitPrice, qty, ratio);
 
           await query(
@@ -5510,6 +5619,22 @@ ${details}
             ]
           );
         }
+
+        // Phase C-5: 新スキーマへ非致命で二重書き込み。
+        //   親 capability の condition_lines を用意 → 検収 events を起票。
+        //   condition_line / 検収書 document が未解決なら skip (既存挙動に無影響)。
+        const capRow = await query(
+          "SELECT capability_id FROM delivery_events WHERE id = $1",
+          [deliveryEventId]
+        );
+        const capId = Number(capRow.rows[0]?.capability_id);
+        if (capId)
+          await safeSync("CL(capability)", () =>
+            syncConditionLinesForCapability({ query }, capId)
+          );
+        await safeSync("inspection events", () =>
+          syncInspectionEventsForDelivery({ query }, deliveryEventId)
+        );
 
         res.json({ ok: true, line_count: lines.length });
       } catch (error) {
@@ -8762,6 +8887,16 @@ ${details}
 
           await client.query("COMMIT");
 
+          // Phase C-5: COMMIT 後に新スキーマへ非致命同期 (pool 経由・別接続なので
+          //   本体 Tx を汚さない)。orderItemId = capability_id。
+          if (orderItemId)
+            await safeSync("CL(capability)", () =>
+              syncConditionLinesForCapability({ query }, Number(orderItemId))
+            );
+          await safeSync("inspection events", () =>
+            syncInspectionEventsForDelivery({ query }, deliveryEventId)
+          );
+
           succeeded.push({
             import_key: importKey,
             issue_key: issueKey,
@@ -9364,12 +9499,151 @@ ${details}
           body.notes || null,
         ]
       );
+      // Phase C-5: 新スキーマへ非致命で二重書き込み (royalty_calc event)。
+      //   condition_line / 計算書 document が未解決なら skip。
+      await safeSync("royalty_calc event", () =>
+        syncRoyaltyCalcEvent({ query }, Number(result.rows[0].id))
+      );
+
       res.json({ ok: true, id: result.rows[0].id, computed });
     } catch (error) {
       console.error("/api/royalty-calculations failed:", error);
       res.status(500).json({ error: String(error) });
     }
   });
+
+  // -------------------------------------------------------------------
+  // データ構造刷新 Phase E-1: 文書 void。
+  //   documents.lifecycle_status='voided' に倒し、同一トランザクションで
+  //   その文書に紐づく有効 condition_events の voided_at をセットする。
+  //   消化額・MG/AG・残高は導出ビュー / dual-read 集計なので、void と同時に
+  //   自動的に復元される (D-3 で実証済み)。Backlog コメントは best-effort。
+  // -------------------------------------------------------------------
+  app.post("/api/documents/:id/void", express.json(), async (req, res) => {
+    const documentId = Number(req.params.id);
+    if (!Number.isFinite(documentId)) {
+      return res.status(400).json({ ok: false, error: "invalid document id" });
+    }
+    const reason = String(req.body?.reason || "").trim() || null;
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const docRes = await client.query(
+        `SELECT id, document_number, issue_key, lifecycle_status FROM documents WHERE id = $1`,
+        [documentId]
+      );
+      if (!docRes.rows.length) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ ok: false, error: "document not found" });
+      }
+      const doc = docRes.rows[0];
+      // 文書を void 状態に (lifecycle_status に CHECK は無いので 'voided' を採用。
+      //   既存の final フィルタは 'final' 以外を一律除外するため後方互換)。
+      await client.query(
+        `UPDATE documents SET lifecycle_status = 'voided', is_primary = FALSE WHERE id = $1`,
+        [documentId]
+      );
+      // 紐づく有効実績を取消 (同一 Tx)。
+      const ev = await client.query(
+        `UPDATE condition_events
+            SET voided_at = CURRENT_TIMESTAMP, void_reason = $2
+          WHERE document_id = $1 AND voided_at IS NULL
+          RETURNING id, condition_line_id`,
+        [documentId, reason]
+      );
+      await client.query("COMMIT");
+
+      if (doc.issue_key) {
+        try {
+          await backlogService.addComment(
+            doc.issue_key,
+            `🗑️ 文書を void しました: ${doc.document_number || "(採番なし)"}` +
+              (reason ? `\n理由: ${reason}` : "") +
+              `\n→ 紐づく実績 ${ev.rowCount} 件を取消し、残高を復元しました。`
+          );
+        } catch (e) {
+          console.warn(`[void] backlog comment failed (${doc.issue_key}):`, e);
+        }
+      }
+      res.json({
+        ok: true,
+        document_id: documentId,
+        document_number: doc.document_number,
+        voided_events: ev.rowCount,
+        affected_lines: [...new Set(ev.rows.map((r: any) => r.condition_line_id))],
+      });
+    } catch (error) {
+      await client.query("ROLLBACK").catch(() => {});
+      console.error("/api/documents/:id/void failed:", error);
+      res.status(500).json({ error: String(error) });
+    } finally {
+      client.release();
+    }
+  });
+
+  // -------------------------------------------------------------------
+  // データ構造刷新 Phase E-3: 条件明細への支払記録イベント。
+  //   subscription / installment / 着手金 など「文書を伴わない支払」の記録。
+  //   event_type='payment' は document_id を持たない (CHECK ce_document_pairing)。
+  // -------------------------------------------------------------------
+  app.post(
+    "/api/condition-lines/:id/payments",
+    express.json(),
+    async (req, res) => {
+      const conditionLineId = Number(req.params.id);
+      if (!Number.isFinite(conditionLineId)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "invalid condition_line id" });
+      }
+      const body = req.body || {};
+      const amount = Number(body.amount_ex_tax);
+      if (!Number.isFinite(amount)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "amount_ex_tax is required" });
+      }
+      try {
+        const clRes = await query(
+          `SELECT id FROM condition_lines WHERE id = $1`,
+          [conditionLineId]
+        );
+        if (!clRes.rows.length) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "condition_line not found" });
+        }
+        const eventNoRes = await query(
+          `SELECT COALESCE(MAX(event_no),0)+1 AS n FROM condition_events WHERE condition_line_id = $1`,
+          [conditionLineId]
+        );
+        const ins = await query(
+          `INSERT INTO condition_events
+             (condition_line_id, event_no, event_type, installment_id,
+              backlog_issue_key, occurred_at, period, amount_ex_tax)
+           VALUES ($1,$2,'payment',$3,$4,$5,$6,$7)
+           RETURNING id, event_no`,
+          [
+            conditionLineId,
+            Number(eventNoRes.rows[0].n),
+            body.installment_id != null ? Number(body.installment_id) : null,
+            body.backlog_issue_key ? String(body.backlog_issue_key) : null,
+            body.occurred_at || new Date().toISOString(),
+            body.period || null,
+            amount,
+          ]
+        );
+        res.json({
+          ok: true,
+          event_id: ins.rows[0].id,
+          event_no: ins.rows[0].event_no,
+        });
+      } catch (error) {
+        console.error("/api/condition-lines/:id/payments failed:", error);
+        res.status(500).json({ error: String(error) });
+      }
+    }
+  );
 
   // -------------------------------------------------------------------
   // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
@@ -10493,6 +10767,19 @@ ${details}
                 AND lifecycle_status = 'final'`,
             [baseDocumentNumber, docNumber]
           );
+          // Phase E-1: 旧版に紐づく有効 condition_events を新版へ付け替える。
+          //   「有効実績1件 = final文書1件」の不変条件を維持 (実績は同一内容のまま
+          //   現行 final 文書を指す)。void ではなく付け替えなので残高は不変。
+          await query(
+            `UPDATE condition_events
+                SET document_id = (SELECT id FROM documents WHERE document_number = $2)
+              WHERE voided_at IS NULL
+                AND document_id IN (
+                  SELECT id FROM documents
+                   WHERE base_document_number = $1 AND document_number <> $2
+                )`,
+            [baseDocumentNumber, docNumber]
+          );
         } catch (reissueErr) {
           console.warn(
             `[reissue-demote] failed for ${docNumber} (base=${baseDocumentNumber}):`,
@@ -11327,12 +11614,9 @@ ${details}
           }
 
           for (const l of incoming) {
-            // Phase 23: capability_line_items
-            const unitRes = await query(
-              "SELECT unit_price FROM capability_line_items WHERE id = $1",
-              [l.capability_line_item_id]
-            );
-            const unitPrice = Number(unitRes.rows[0]?.unit_price) || 0;
+            // Phase E-2: condition_lines 優先 dual-read
+            const econ = await getOrderedLineEconomics(l.capability_line_item_id);
+            const unitPrice = econ?.unit_price || 0;
             const amt = calculateInspectedAmount(
               unitPrice,
               l.inspected_quantity,
