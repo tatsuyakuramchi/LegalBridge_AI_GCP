@@ -212,6 +212,19 @@ export async function listConditions(
   const statusJoin = useNew
     ? ` LEFT JOIN condition_line_status_v sv ON sv.id = cl.id`
     : "";
+  // 成就文書(対の検収書/計算書): 最新番号 + 件数。新台帳経路のみ(condition_events)。
+  //   fulfillment_status は上の statusCols(sv.status)に集約済み。
+  const fulfillCols = useNew
+    ? `,
+       (SELECT d2.document_number
+          FROM condition_events ce JOIN documents d2 ON d2.id = ce.document_id
+         WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+         ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
+         LIMIT 1) AS fulfilling_doc_number,
+       (SELECT COUNT(*)::int FROM condition_events ce
+         WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+           AND ce.document_id IS NOT NULL) AS fulfilling_doc_count`
+    : `, NULL::text AS fulfilling_doc_number, 0::int AS fulfilling_doc_count`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
        ${LT}.source_ip_id, si.title AS source_ip_title, si.source_code,
@@ -233,14 +246,14 @@ export async function listConditions(
   let res: any;
   try {
     res = await query(
-      `SELECT ${baseCols}${statusCols}${linkCols} ${fromJoins}${statusJoin}${linkJoins} ${whereSql} ${order}`,
+      `SELECT ${baseCols}${statusCols}${fulfillCols}${linkCols} ${fromJoins}${statusJoin}${linkJoins} ${whereSql} ${order}`,
       params
     );
   } catch (err: any) {
     // 0015 未適用環境(紐付け列なし)では従来通り列なしで返す。
     if (err && (err.code === "42703" || err.code === "42P01")) {
       res = await query(
-        `SELECT ${baseCols}${statusCols} ${fromJoins}${statusJoin} ${whereSql} ${order}`,
+        `SELECT ${baseCols}${statusCols}${fulfillCols} ${fromJoins}${statusJoin} ${whereSql} ${order}`,
         params
       );
     } else {
@@ -294,6 +307,9 @@ export async function listConditions(
     status_flags: normalizeFlags(r.status_flags),
     is_inbound: r.is_inbound === true, // 当社の受領(請求権)明細か(方向out相当)
     flow_direction: r.flow_direction || "", // 'in'(当社支払) / 'out'(当社受領)
+    // 成就(fulfillment): fulfillment_status は上(経理照合)で設定済み。対の成就文書のみ。
+    fulfilling_doc_number: r.fulfilling_doc_number || "",
+    fulfilling_doc_count: Number(r.fulfilling_doc_count) || 0,
   }));
 
   return { rows, total };

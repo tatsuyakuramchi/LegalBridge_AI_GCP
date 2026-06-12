@@ -2527,7 +2527,15 @@ async function startServer() {
                   b.mg_remaining, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
                   v.vendor_name, v.vendor_code,
-                  sch.has_overdue
+                  sch.has_overdue,
+                  (SELECT d.document_number
+                     FROM condition_events ce JOIN documents d ON d.id = ce.document_id
+                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                    ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
+                    LIMIT 1) AS fulfilling_doc_number,
+                  (SELECT COUNT(*)::int FROM condition_events ce
+                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                      AND ce.document_id IS NOT NULL) AS fulfilling_doc_count
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
