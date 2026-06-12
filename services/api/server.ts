@@ -45,6 +45,114 @@ import {
 // B5b: プレビュー PDF をローカル生成(worker proxy 撤去)。chromium 同梱(Dockerfile)。
 import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
 
+/**
+ * Phase E-2: 検収フォーム向け発注明細を coverage-gated dual-read で取得。
+ *   condition_lines が当該 capability の line_item 由来明細を完全カバー(件数一致)
+ *   する場合のみ condition_lines(faithful superset) から読む。1件でも欠ければ /
+ *   未作成なら capability_line_items にフォールバック → 無回帰。
+ *   id = source_line_item_id (= 旧 capability_line_item_id) なので、
+ *   delivery_line_items 経由の検収累計(inspMap)参照もそのまま機能する。
+ */
+async function readCapabilityLinesForInspectionDisplay(
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT source_line_item_id AS id,
+              COALESCE(source_seq_no, line_no) AS line_no, subject AS item_name, spec,
+              unit_price, quantity, amount_ex_tax, calc_method, payment_terms,
+              payment_method, payment_date, delivery_date,
+              cycle, term_start, term_end, billing_day
+         FROM condition_lines
+        WHERE capability_id = $1 AND source_line_item_id IS NOT NULL
+        ORDER BY COALESCE(source_seq_no, line_no) ASC`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_line_items WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  const li = await query(
+    `SELECT id, line_no, item_name, spec, unit_price, quantity, amount_ex_tax,
+            calc_method, payment_terms, payment_method, payment_date, delivery_date,
+            cycle, term_start, term_end, billing_day
+       FROM capability_line_items
+      WHERE capability_id = $1
+      ORDER BY line_no ASC`,
+    [capabilityId]
+  );
+  return li.rows;
+}
+
+/**
+ * Phase E-2: 利用許諾条件(財務条件)の表示行を coverage-gated dual-read で取得 (api)。
+ *   worker/formReadRoutes の同名ヘルパーと対称。A案で暗黙 terms に切り出された分も
+ *   source_condition_id 経由で連結し、condition_no は source_seq_no で faithful 復元。
+ *   完全カバー時のみ condition_lines、欠ければ capability_financial_conditions。
+ */
+async function readCapabilityFinancialRowsForDisplay(
+  capabilityId: number
+): Promise<any[]> {
+  try {
+    const cl = await query(
+      `SELECT cl.source_condition_id AS id, cl.source_seq_no AS condition_no,
+              cl.subject AS region_language_label, cl.calc_method, cl.rate_pct,
+              cl.base_price_label, cl.calc_period, cl.currency, cl.formula_text,
+              cl.payment_terms, cl.mg_amount, COALESCE(cl.ag_amount, 0) AS ag_amount,
+              cl.calc_period_kind, cl.calc_period_close_month
+         FROM condition_lines cl
+        WHERE cl.source_condition_id IN (
+                SELECT id FROM capability_financial_conditions WHERE capability_id = $1)
+        ORDER BY cl.source_seq_no ASC NULLS LAST, cl.id`,
+      [capabilityId]
+    );
+    const oldCount = await query(
+      `SELECT COUNT(*)::int AS c FROM capability_financial_conditions WHERE capability_id = $1`,
+      [capabilityId]
+    );
+    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
+      return cl.rows;
+    }
+  } catch (err: any) {
+    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
+  }
+  try {
+    return (
+      await query(
+        `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                base_price_label, calc_period, currency, formula_text, payment_terms,
+                mg_amount, COALESCE(ag_amount, 0) AS ag_amount,
+                calc_period_kind, calc_period_close_month
+           FROM capability_financial_conditions
+          WHERE capability_id = $1
+          ORDER BY condition_no ASC`,
+        [capabilityId]
+      )
+    ).rows;
+  } catch (e2: any) {
+    if (e2 && e2.code === "42703") {
+      return (
+        await query(
+          `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
+                  base_price_label, calc_period, currency, formula_text, payment_terms,
+                  mg_amount, COALESCE(ag_amount, 0) AS ag_amount
+             FROM capability_financial_conditions
+            WHERE capability_id = $1
+            ORDER BY condition_no ASC`,
+          [capabilityId]
+        )
+      ).rows;
+    }
+    throw e2;
+  }
+}
+
 // helper は起動時 1 回、partial は DB から遅延ロードして専用インスタンスに登録。
 const previewHb = Handlebars.create();
 registerRenderHelpers(previewHb);
@@ -1549,16 +1657,10 @@ async function startServer() {
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          const lines = await query(
-            `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, calc_method, payment_terms,
-                    payment_method, payment_date, delivery_date,
-                    cycle, term_start, term_end, billing_day
-               FROM capability_line_items
-              WHERE capability_id = $1
-              ORDER BY line_no ASC`,
-            [orderItemId]
-          );
+          // Phase E-2: condition_lines 優先の coverage-gated dual-read
+          const lines = {
+            rows: await readCapabilityLinesForInspectionDisplay(orderItemId),
+          };
           context["items"] = lines.rows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
@@ -1618,37 +1720,10 @@ async function startServer() {
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              // 検収対象明細: amount>0 の業務委託 + 受注者帰属(利用許諾料に含む=0円)。
-              //   発注者帰属の0円は除外。deliverable_ownership 未追加環境は 42703 fallback。
-              let lines: any;
-              try {
-                lines = await query(
-                  `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                          amount_ex_tax, calc_method, payment_terms,
-                          payment_method, payment_date, delivery_date,
-                          deliverable_ownership
-                     FROM capability_line_items
-                    WHERE capability_id = $1
-                      AND (COALESCE(amount_ex_tax, 0) > 0
-                           OR deliverable_ownership = '受注者')
-                    ORDER BY line_no ASC`,
-                  [poId]
-                );
-              } catch (colErr: any) {
-                if (colErr && colErr.code === "42703") {
-                  lines = await query(
-                    `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                            amount_ex_tax, calc_method, payment_terms,
-                            payment_method, payment_date, delivery_date
-                       FROM capability_line_items
-                      WHERE capability_id = $1
-                      ORDER BY line_no ASC`,
-                    [poId]
-                  );
-                } else {
-                  throw colErr;
-                }
-              }
+              // Phase E-2: condition_lines 優先の coverage-gated dual-read
+              const lines = {
+                rows: await readCapabilityLinesForInspectionDisplay(poId),
+              };
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
@@ -2052,35 +2127,10 @@ async function startServer() {
               context["work_id"] = row.work_id;
               context["WORK_ID"] = row.work_id;
             }
-            // Phase 22.20-B: calc_period_kind / calc_period_close_month を含める
-            //   schema 未追加環境では 42703 を catch して legacy SELECT に fallback
-            let conds: any;
-            try {
-              conds = await query(
-                `SELECT id, condition_no, region_language_label, calc_method,
-                        rate_pct, base_price_label, calc_period, currency,
-                        formula_text, payment_terms, mg_amount,
-                        calc_period_kind, calc_period_close_month
-                   FROM capability_financial_conditions
-                  WHERE capability_id = $1
-                  ORDER BY condition_no ASC`,
-                [lcId]
-              );
-            } catch (colErr2: any) {
-              if (colErr2 && colErr2.code === "42703") {
-                conds = await query(
-                  `SELECT id, condition_no, region_language_label, calc_method,
-                          rate_pct, base_price_label, calc_period, currency,
-                          formula_text, payment_terms, mg_amount
-                     FROM capability_financial_conditions
-                    WHERE capability_id = $1
-                    ORDER BY condition_no ASC`,
-                  [lcId]
-                );
-              } else {
-                throw colErr2;
-              }
-            }
+            // Phase E-2: condition_lines 優先の coverage-gated dual-read
+            const conds = {
+              rows: await readCapabilityFinancialRowsForDisplay(lcId),
+            };
             context["financial_conditions"] = conds.rows.map((r: any) => ({
               id: Number(r.id),
               condition_no: Number(r.condition_no),
@@ -2727,7 +2777,46 @@ async function startServer() {
                     ),
                     '{}'::text[]
                   ) AS ringi_numbers,
+                  -- データ構造刷新: 契約スコープ(複数可)。UI の複数選択チェックボックスが復元に使う。
                   COALESCE(
+                    (SELECT array_agg(s.scope ORDER BY s.scope)
+                       FROM contract_scopes s WHERE s.capability_id = cc.id),
+                    '{}'::text[]
+                  ) AS scopes,
+                  -- Phase E-2: 純表示(status非依存) json_agg を condition_lines 優先の
+                  --   coverage-gated dual-source 化 (sharedReads と対称)。新 json_agg は
+                  --   「移行済み件数 = 旧件数 かつ >0」のときだけ行を返し、でなければ NULL→
+                  --   COALESCE で旧 json_agg にフォールバック。
+                  COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cl.source_condition_id,
+                                 'condition_no', cl.source_seq_no,
+                                 'region_language_label', cl.subject,
+                                 'calc_method', cl.calc_method,
+                                 'rate_pct', cl.rate_pct,
+                                 'base_price_label', cl.base_price_label,
+                                 'calc_period', cl.calc_period,
+                                 'calc_period_kind', cl.calc_period_kind,
+                                 'calc_period_close_month', cl.calc_period_close_month,
+                                 'currency', cl.currency,
+                                 'formula_text', cl.formula_text,
+                                 'payment_terms', cl.payment_terms,
+                                 'mg_amount', cl.mg_amount,
+                                 'ag_amount', COALESCE(cl.ag_amount, 0)
+                               )
+                               ORDER BY cl.source_seq_no ASC
+                             )
+                        FROM condition_lines cl
+                       WHERE cl.source_condition_id IN (
+                               SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM condition_lines x
+                               WHERE x.source_condition_id IN (
+                                 SELECT id FROM capability_financial_conditions WHERE capability_id = cc.id))
+                             = (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM capability_financial_conditions y WHERE y.capability_id = cc.id) > 0
+                    ),
                     (
                       SELECT json_agg(
                                json_build_object(
@@ -2754,6 +2843,37 @@ async function startServer() {
                     '[]'::json
                   ) AS financial_conditions,
                   COALESCE(
+                    (
+                      SELECT json_agg(
+                               json_build_object(
+                                 'id', cl.source_line_item_id,
+                                 'line_no', COALESCE(cl.source_seq_no, cl.line_no),
+                                 'category', cl.category,
+                                 'item_name', cl.subject,
+                                 'spec', cl.spec,
+                                 'calc_method', cl.calc_method,
+                                 'payment_method', cl.payment_method,
+                                 'payment_terms', cl.payment_terms,
+                                 'quantity', cl.quantity,
+                                 'unit_price', cl.unit_price,
+                                 'amount_ex_tax', cl.amount_ex_tax,
+                                 'delivery_date', cl.delivery_date,
+                                 'payment_date', cl.payment_date,
+                                 'cycle', cl.cycle,
+                                 'billing_day', cl.billing_day,
+                                 'term_start', cl.term_start,
+                                 'term_end', cl.term_end,
+                                 'fee_type', cl.fee_type
+                               )
+                               ORDER BY COALESCE(cl.source_seq_no, cl.line_no) ASC
+                             )
+                        FROM condition_lines cl
+                       WHERE cl.capability_id = cc.id AND cl.source_line_item_id IS NOT NULL
+                         AND (SELECT COUNT(*) FROM condition_lines x
+                               WHERE x.capability_id = cc.id AND x.source_line_item_id IS NOT NULL)
+                             = (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id)
+                         AND (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id) > 0
+                    ),
                     (
                       SELECT json_agg(
                                json_build_object(
@@ -2892,17 +3012,10 @@ async function startServer() {
         if (!Number.isFinite(id) || id <= 0) {
           return res.status(400).json({ error: "invalid id" });
         }
-        const result = await query(
-          `SELECT id, condition_no, region_language_label, calc_method,
-                  rate_pct, base_price_label, calc_period, calc_period_kind,
-                  calc_period_close_month, currency, formula_text,
-                  payment_terms, mg_amount,
-                  COALESCE(ag_amount, 0) AS ag_amount
-             FROM capability_financial_conditions
-            WHERE capability_id = $1
-            ORDER BY condition_no ASC`,
-          [id]
-        );
+        // Phase E-2: condition_lines 優先の coverage-gated dual-read
+        const result = {
+          rows: await readCapabilityFinancialRowsForDisplay(id),
+        };
         // source='capability' をつけることで、フロント側の radio handler が
         // license_financial_condition_id ではなく capability_financial_condition_id
         // を formData にセットできるようにする。

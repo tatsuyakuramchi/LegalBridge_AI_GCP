@@ -313,7 +313,34 @@ export class DocumentService {
     //   + Handlebars.compile)。worker の Handlebars インスタンス(helper/partial
     //   登録済み)を渡すため出力は従来と同一。
     const templateSource = this.loadTemplate(type);
-    return sharedRenderTemplate(Handlebars, templateSource, data);
+    // 検収書: delivery_line_items に item_name が無い(旧データ/フォーム未保持)場合、
+    //   order_lines_for_inspection(親PO明細)から品目名/仕様を補完する。これが無いと
+    //   テンプレが全行 ../description にフォールバックして同名表示になる。
+    let renderData: any = data;
+    const d: any = data;
+    if (
+      type === "inspection_certificate" &&
+      d &&
+      Array.isArray(d.delivery_line_items)
+    ) {
+      const ol: any[] = Array.isArray(d.order_lines_for_inspection)
+        ? d.order_lines_for_inspection
+        : [];
+      const byId = new Map<number, any>();
+      for (const l of ol) byId.set(Number(l.id), l);
+      renderData = {
+        ...d,
+        delivery_line_items: d.delivery_line_items.map((dl: any) => {
+          if (dl && (dl.item_name == null || dl.item_name === "")) {
+            const p = byId.get(Number(dl.order_line_item_id));
+            if (p)
+              return { ...dl, item_name: p.item_name, spec: dl.spec || p.spec };
+          }
+          return dl;
+        }),
+      };
+    }
+    return sharedRenderTemplate(Handlebars, templateSource, renderData);
   }
 
   async generateDocument(

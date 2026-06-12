@@ -75,16 +75,35 @@ export function registerFormReadRoutes(
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          const lines = await query(
-            `SELECT line_no, item_name, spec, unit_price, quantity,
-                    amount_ex_tax, calc_method, payment_terms,
-                    payment_method, payment_date, delivery_date,
-                    cycle, term_start, term_end, billing_day
-               FROM capability_line_items
-              WHERE capability_id = $1
-              ORDER BY line_no ASC`,
-            [orderItemId]
-          );
+          // rate_pct 列が未マイグレーションの環境でも 500 にしないよう 2 段 fallback。
+          let lines: any;
+          try {
+            lines = await query(
+              `SELECT line_no, item_name, spec, unit_price, quantity,
+                      amount_ex_tax, rate_pct, calc_method, payment_terms,
+                      payment_method, payment_date, delivery_date,
+                      cycle, term_start, term_end, billing_day
+                 FROM capability_line_items
+                WHERE capability_id = $1
+                ORDER BY line_no ASC`,
+              [orderItemId]
+            );
+          } catch (colErr: any) {
+            if (colErr && colErr.code === "42703") {
+              lines = await query(
+                `SELECT line_no, item_name, spec, unit_price, quantity,
+                        amount_ex_tax, calc_method, payment_terms,
+                        payment_method, payment_date, delivery_date,
+                        cycle, term_start, term_end, billing_day
+                   FROM capability_line_items
+                  WHERE capability_id = $1
+                  ORDER BY line_no ASC`,
+                [orderItemId]
+              );
+            } else {
+              throw colErr;
+            }
+          }
           context["items"] = lines.rows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
@@ -92,6 +111,8 @@ export function registerFormReadRoutes(
             unit_price: Number(r.unit_price) || 0,
             quantity: Number(r.quantity) || 0,
             amount_ex_tax: Number(r.amount_ex_tax) || 0,
+            // ROYALTY 用料率(%)。小計 = 単価 × 数量 × 料率%。
+            rate_pct: r.rate_pct == null ? undefined : Number(r.rate_pct),
             // Phase 13: calc_method + payment_terms 統一
             calc_method: r.calc_method || "FIXED",
             payment_terms: r.payment_terms || r.payment_method || "",
@@ -144,15 +165,40 @@ export function registerFormReadRoutes(
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              const lines = await query(
-                `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                        amount_ex_tax, calc_method, payment_terms,
-                        payment_method, payment_date, delivery_date
-                   FROM capability_line_items
-                  WHERE capability_id = $1
-                  ORDER BY line_no ASC`,
-                [poId]
-              );
+              // 検収対象明細: amount>0 の業務委託に加え、受注者帰属(利用許諾料に含む=0円)
+              //   の明細も含める。検収書に「利用許諾料に含む」として出すため。
+              //   発注者帰属の0円明細は除外したままにする。
+              //   deliverable_ownership 列が未追加の環境(0060前)は 42703 で旧挙動に fallback。
+              let lines: any;
+              try {
+                lines = await query(
+                  `SELECT id, line_no, item_name, spec, unit_price, quantity,
+                          amount_ex_tax, calc_method, payment_terms,
+                          payment_method, payment_date, delivery_date,
+                          deliverable_ownership
+                     FROM capability_line_items
+                    WHERE capability_id = $1
+                      AND (COALESCE(amount_ex_tax, 0) > 0
+                           OR deliverable_ownership = '受注者')
+                    ORDER BY line_no ASC`,
+                  [poId]
+                );
+              } catch (colErr: any) {
+                if (colErr && colErr.code === "42703") {
+                  lines = await query(
+                    `SELECT id, line_no, item_name, spec, unit_price, quantity,
+                            amount_ex_tax, calc_method, payment_terms,
+                            payment_method, payment_date, delivery_date
+                       FROM capability_line_items
+                      WHERE capability_id = $1
+                        AND COALESCE(amount_ex_tax, 0) > 0
+                      ORDER BY line_no ASC`,
+                    [poId]
+                  );
+                } else {
+                  throw colErr;
+                }
+              }
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
@@ -179,19 +225,23 @@ export function registerFormReadRoutes(
               //   - 仕様   ← capability_line_items 1 行目の spec
               //   - 発注日 ← contract_capabilities.created_at (due_date 優先)
               const docRow = await query(
-                `SELECT document_number FROM documents
+                `SELECT document_number, form_data FROM documents
                   WHERE issue_key = $1
                     AND template_type LIKE '%purchase_order%'
                   ORDER BY created_at DESC LIMIT 1`,
                 [parentKey]
               );
               const parentPoNumber = docRow.rows[0]?.document_number || "";
+              const parentPoForm = docRow.rows[0]?.form_data || {};
               const poRow = poHeader.rows[0];
               const firstLine = lines.rows[0];
 
               context["parent_po_issue_key"] = parentKey;
               context["parent_po_id"] = poId;
               context["parent_po_number"] = parentPoNumber;
+              // 件名: 発注書フォームで入力した件名(PROJECT_TITLE)を優先。無ければ contract_title。
+              context["projectTitle"] =
+                parentPoForm?.PROJECT_TITLE || poRow.contract_title || "";
               if (firstLine?.item_name) {
                 context["description"] = firstLine.item_name;
               }
@@ -247,6 +297,8 @@ export function registerFormReadRoutes(
                   unit_price: Number(l.unit_price) || 0,
                   quantity: ordQty,
                   amount_ex_tax: ordAmt,
+                  // 成果物帰属。受注者帰属かつ0円は検収書で「利用許諾料に含む」表示。
+                  deliverable_ownership: l.deliverable_ownership || "発注者",
                   // Phase 23.0.4: 検収書 Excel / PDF 生成時に納品日列が空に
                   //   なる問題を解消するため delivery_date / payment_date を追加。
                   //   excelService.findParentLine が l.delivery_date を読む。
@@ -557,8 +609,11 @@ export function registerFormReadRoutes(
               conds = await query(
                 `SELECT id, condition_no, region_language_label, calc_method,
                         rate_pct, base_price_label, calc_period, currency,
-                        formula_text, payment_terms, mg_amount,
-                        calc_period_kind, calc_period_close_month
+                        formula_text, payment_terms, mg_amount, ag_amount,
+                        calc_period_kind, calc_period_close_month,
+                        condition_name, calc_type, fixed_kind,
+                        subscription_cycle, unit_amount, guarantee_type,
+                        region_territory, region_language, applies_scope
                    FROM capability_financial_conditions
                   WHERE capability_id = $1
                   ORDER BY condition_no ASC`,
@@ -579,9 +634,25 @@ export function registerFormReadRoutes(
                 throw colErr2;
               }
             }
-            context["financial_conditions"] = conds.rows.map((r: any) => ({
+            context["financial_conditions"] = conds.rows.map((r: any) => {
+              // テリトリー / 言語 を別項目で返す。未設定の行は合成ラベルを
+              //   最初の '・' で分割してフォールバック (API と同じロジック)。
+              let territory = (r.region_territory || "").trim();
+              let language = (r.region_language || "").trim();
+              if (!territory && !language && r.region_language_label) {
+                const s = String(r.region_language_label).trim();
+                const idx = s.indexOf("・");
+                if (idx < 0) territory = s;
+                else {
+                  territory = s.slice(0, idx).trim();
+                  language = s.slice(idx + 1).trim();
+                }
+              }
+              return {
               id: Number(r.id),
               condition_no: Number(r.condition_no),
+              region_territory: territory,
+              region_language: language,
               region_language_label: r.region_language_label || "",
               calc_method: r.calc_method || "",
               rate_pct: r.rate_pct !== null ? Number(r.rate_pct) : undefined,
@@ -594,9 +665,19 @@ export function registerFormReadRoutes(
                   : undefined,
               currency: r.currency || "JPY",
               formula_text: r.formula_text || "",
+              applies_scope: r.applies_scope || "",
               payment_terms: r.payment_terms || "",
               mg_amount: r.mg_amount !== null ? Number(r.mg_amount) : 0,
-            }));
+              ag_amount: r.ag_amount != null ? Number(r.ag_amount) : 0,
+              // 0045: 金銭条件の柔軟化フィールド (名称/計算式タイプ/保証種別)
+              condition_name: r.condition_name || "",
+              calc_type: r.calc_type || undefined,
+              fixed_kind: r.fixed_kind || undefined,
+              subscription_cycle: r.subscription_cycle || undefined,
+              unit_amount: r.unit_amount != null ? Number(r.unit_amount) : undefined,
+              guarantee_type: r.guarantee_type || undefined,
+              };
+            });
 
             // Phase 22.20-D: work_sublicensees を読み出して
             //   formData.サブライセンシー一覧 と同じ shape で返却。

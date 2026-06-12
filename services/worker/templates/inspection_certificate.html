@@ -274,9 +274,9 @@
     </div>
   </div>
 
-  {{!-- 検収確認文 — 日付は YYYY年MM月DD日 (formatDate) --}}
+  {{!-- 検収確認文 — 日付は YYYY年MM月DD日 (formatDate)。件名を先頭に表示。 --}}
   <div class="confirmation-text">
-    　納品日 （役務完了日）<strong>{{formatDate deliveredAt}}</strong> に納品（役務提供完了）された下記成果物（役務内容）について検収を行い、
+    　{{#if projectTitle}}件名「{{projectTitle}}」に関して、{{/if}}納品日 （役務完了日）<strong>{{formatDate deliveredAt}}</strong> に納品（役務提供完了）された下記成果物（役務内容）について検収を行い、
     検収日 <strong>{{formatDate inspectionCompletedAt}}</strong> に検収完了致しましたのでご通知します。
     {{#if (or (eq isPartial "分割") (eq isPartial true))}}本書は分割納品（第{{deliveryNo}}回）に係る検収書です。{{/if}}
   </div>
@@ -329,7 +329,7 @@
               {{/if}}
             </td>
             <td class="center">{{formatDate (or delivery_date ../deliveredAt)}}</td>
-            <td class="right">{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}</td>
+            <td class="right">{{#if (gt (or inspected_amount_ex_tax amount_ex_tax) 0)}}{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}{{else}}<span style="font-size:8pt;color:#92400e;">利用許諾料に含む</span>{{/if}}</td>
           </tr>
         {{/each}}
       {{else}}
