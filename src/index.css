@@ -114,6 +114,80 @@
   --grid: 220 14% 14%;
 }
 
+/*
+ * EVA / MAGI skin — NERV terminal. Activated via [data-skin="eva"] on <html>.
+ * Self-contained dark palette (overrides both light & dark) so it reads the
+ * same regardless of the light/dark toggle. Green phosphor + NERV orange +
+ * Unit-01 purple, with heavy "予告(next-episode preview)" headings.
+ */
+[data-skin="eva"] {
+  --background: 150 25% 4%;
+  --foreground: 120 78% 72%;
+  --card: 150 22% 6%;
+  --card-foreground: 120 78% 78%;
+  --popover: 150 22% 6%;
+  --popover-foreground: 120 78% 78%;
+  --primary: 22 100% 52%;            /* NERV orange */
+  --primary-foreground: 150 40% 5%;
+  --secondary: 270 45% 22%;          /* Unit-01 purple (dim) */
+  --secondary-foreground: 270 70% 90%;
+  --muted: 150 16% 10%;
+  --muted-foreground: 120 26% 60%;
+  --accent: 22 85% 28%;
+  --accent-foreground: 28 100% 72%;
+  --destructive: 0 95% 56%;          /* red alert */
+  --destructive-foreground: 150 40% 6%;
+  --border: 120 38% 16%;             /* dim green grid */
+  --input: 120 32% 14%;
+  --ring: 22 100% 52%;
+
+  --phosphor: 120 100% 50%;          /* green phosphor */
+  --phosphor-foreground: 150 40% 5%;
+  --amber: 28 100% 54%;              /* NERV orange */
+  --amber-foreground: 150 40% 5%;
+  --cyan: 175 90% 50%;
+  --grid: 120 40% 12%;
+
+  /* 予告フォント: 重い・縦長ゴシックを優先(無ければ角ゴ/サンセリフへフォールバック)。 */
+  --font-heading: 'Impact', 'Haettenschweiler', 'Franklin Gothic Bold',
+    'Arial Narrow', 'Hiragino Sans', 'Yu Gothic', system-ui, sans-serif;
+}
+
+/* 予告(next-episode preview)の質感: 重く・広く・大文字の見出し。 */
+[data-skin="eva"] h1,
+[data-skin="eva"] h2,
+[data-skin="eva"] h3,
+[data-skin="eva"] h4 {
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+/* CRT ターミナル: 緑のスキャンライン + 四隅ビネットを全体へ薄く重ねる。 */
+[data-skin="eva"] body {
+  background-image:
+    repeating-linear-gradient(
+      to bottom,
+      transparent 0, transparent 2px,
+      hsl(120 100% 50% / 0.035) 2px, hsl(120 100% 50% / 0.035) 3px),
+    radial-gradient(120% 80% at 50% 0%, transparent 58%, hsl(150 45% 2% / 0.85) 100%);
+}
+
+/* MAGI のヘックス/グリッド地紋(サイドバー等のパネル面)。 */
+[data-skin="eva"] .eva-panel {
+  background-image:
+    linear-gradient(hsl(120 40% 12% / 0.55) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(120 40% 12% / 0.55) 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+/* アクティブなナビは NERV オレンジのスラブに。 */
+[data-skin="eva"] .eva-panel [aria-current="page"] {
+  background-color: hsl(var(--amber)) !important;
+  color: hsl(var(--amber-foreground)) !important;
+  box-shadow: 0 0 10px hsl(28 100% 54% / 0.4);
+}
+
 @layer utilities {
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
