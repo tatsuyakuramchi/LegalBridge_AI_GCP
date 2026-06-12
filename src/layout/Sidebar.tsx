@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Database,
   FileSpreadsheet,
-  ClipboardCheck,
   Search,
   ExternalLink,
   Link2,
@@ -34,18 +33,29 @@ interface NavGroup {
   items: NavItem[]
 }
 
+// データ構造刷新: タスク指向に再編。日次フロー(Operate)を業務順に並べ、
+//   検収待ちは「条件明細」ハブの検収待ちタブへ集約したのでトップから除去。
 const groups: NavGroup[] = [
   {
-    label: "Workspace",
+    label: "Overview",
     items: [
       { to: "/", label: "Dashboard", icon: LayoutDashboard, description: "Overview", end: true },
+    ],
+  },
+  {
+    label: "Operate",
+    items: [
+      { to: "/requests", label: "Requests", icon: Inbox, description: "Backlog" },
+      { to: "/condition-lines", label: "条件明細", icon: ListChecks, description: "消化・残高 / 検収待ち / 検索" },
+      { to: "/excel-batches", label: "Excel Export", icon: FileSpreadsheet, description: "未発行 検収/許諾" },
+      { to: "/archive", label: "Archive", icon: Archive, description: "Concluded" },
+    ],
+  },
+  {
+    label: "Create",
+    items: [
       { to: "/documents/new", label: "New Document", icon: FilePlus2, description: "Generate" },
       { to: "/imports", label: "Imports", icon: Database, description: "Past docs → DB" },
-      { to: "/excel-batches", label: "Excel Export", icon: FileSpreadsheet, description: "未発行 検収/許諾" },
-      { to: "/pending-inspections", label: "検収待ち", icon: ClipboardCheck, description: "発注書→検収書 未作成" },
-      { to: "/requests", label: "Requests", icon: Inbox, description: "Backlog" },
-      { to: "/condition-lines", label: "条件明細", icon: ListChecks, description: "消化・残高コックピット" },
-      { to: "/archive", label: "Archive", icon: Archive, description: "Concluded" },
     ],
   },
   {
