@@ -59,6 +59,14 @@ const yen = (n: any) => {
 }
 const catLabel = (c: string) => CAT_LABEL[c] || c || "—"
 
+// 経理照合: 成就/未了(二値中心)。一部は未了寄りの中間色で示す。
+const FULFILL: Record<string, { label: string; cls: string }> = {
+  fulfilled: { label: "成就", cls: "bg-emerald-100 text-emerald-700 hover:bg-emerald-100" },
+  partially_fulfilled: { label: "一部", cls: "bg-amber-100 text-amber-800 hover:bg-amber-100" },
+  open: { label: "未了", cls: "bg-slate-100 text-slate-600 hover:bg-slate-100" },
+}
+const fulfillOf = (s: any) => FULFILL[String(s || "open")] || FULFILL.open
+
 export function ConditionsPanel() {
   const { showNotification } = useAppData()
   const [filters, setFilters] = React.useState<Filters>(emptyFilters)
@@ -67,6 +75,8 @@ export function ConditionsPanel() {
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
+  // 経理照合: 成就/未了の絞り込み(読込済みページに対するクライアントフィルタ)。
+  const [fulfill, setFulfill] = React.useState<"" | "open" | "partially_fulfilled" | "fulfilled">("")
 
   const setF = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }))
 
@@ -294,6 +304,33 @@ export function ConditionsPanel() {
           {loading ? "検索中…" : `${rows.length} 件${total && total > rows.length ? ` / 全 ${total} 件` : ""}`}
         </span>
         <span className="text-xs text-muted-foreground">行をクリックで紐付けを編集</span>
+        {/* 経理照合: 成就/未了の絞り込み(読込済みページ) */}
+        <div className="flex items-center gap-1 text-[11px] font-mono">
+          {([
+            { k: "", label: "すべて" },
+            { k: "open", label: "未了" },
+            { k: "partially_fulfilled", label: "一部" },
+            { k: "fulfilled", label: "成就" },
+          ] as const).map((b) => {
+            const n =
+              b.k === ""
+                ? rows.length
+                : rows.filter((r) => (r.fulfillment_status || "open") === b.k).length
+            const on = fulfill === b.k
+            return (
+              <button
+                key={b.k || "all"}
+                type="button"
+                onClick={() => setFulfill(b.k as any)}
+                className={`px-2 py-0.5 rounded-full border ${
+                  on ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground"
+                }`}
+              >
+                {b.label} ({n})
+              </button>
+            )
+          })}
+        </div>
         <div className="flex-1" />
         <Button variant="outline" size="sm" onClick={() => csvExport(Array.from(selected))} disabled={selected.size === 0}>
           <Download />
@@ -329,7 +366,9 @@ export function ConditionsPanel() {
                 <th>計算</th>
                 <th className="text-right">数量</th>
                 <th className="text-right">単価</th>
-                <th className="text-right">金額(税抜)</th>
+                <th className="text-right">発注額(税抜)</th>
+                <th className="text-right">検収額</th>
+                <th>成就/未了</th>
                 <th>文書番号</th>
                 <th>契約名 / 課題</th>
                 <th>紐付け</th>
@@ -337,7 +376,7 @@ export function ConditionsPanel() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
+              {(fulfill ? rows.filter((r) => (r.fulfillment_status || "open") === fulfill) : rows).map((r) => {
                 const dir =
                   r.flow_direction === "in" || r.flow_direction === "out"
                     ? r.flow_direction
@@ -381,6 +420,15 @@ export function ConditionsPanel() {
                     <td className="text-right whitespace-nowrap">{r.quantity ?? ""}</td>
                     <td className="text-right whitespace-nowrap">{yen(r.unit_price)}</td>
                     <td className="text-right whitespace-nowrap font-mono">{yen(r.amount_ex_tax)}</td>
+                    <td className="text-right whitespace-nowrap font-mono text-muted-foreground">
+                      {r.consumed_amount != null ? yen(r.consumed_amount) : "—"}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {(() => {
+                        const fb = fulfillOf(r.fulfillment_status)
+                        return <Badge className={fb.cls}>{fb.label}</Badge>
+                      })()}
+                    </td>
                     <td className="whitespace-nowrap">{r.document_number || "—"}</td>
                     <td className="min-w-[140px]">
                       {r.contract_title || "—"}
