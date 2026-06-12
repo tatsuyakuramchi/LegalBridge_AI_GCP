@@ -28,6 +28,31 @@ const yen = (n: any) => {
   return isFinite(v) ? "¥" + v.toLocaleString("ja-JP") : "—"
 }
 
+const fmtDate = (v: any): string | null => {
+  if (!v) return null
+  const d = new Date(v)
+  return isFinite(d.getTime()) ? d.toISOString().slice(0, 10) : null
+}
+
+// 法務の検収タスク状態。優先度順に判定(納品報告 delivered_at / 納期 inspection_deadline
+//   は delivery_events 由来、capability_id 結線のベストエフォート)。
+type TaskKey = "overdue" | "inspect" | "partial" | "waiting"
+const BUCKETS: { key: TaskKey; label: string; short: string; chip: string; badge: string }[] = [
+  { key: "overdue", label: "納期超過・未報告", short: "納期超過", chip: "border-red-300 text-red-700 data-[on=true]:bg-red-600 data-[on=true]:text-white data-[on=true]:border-red-600", badge: "bg-red-100 text-red-800 hover:bg-red-100" },
+  { key: "inspect", label: "検収書作成（報告あり）", short: "要検収", chip: "border-amber-300 text-amber-700 data-[on=true]:bg-amber-500 data-[on=true]:text-white data-[on=true]:border-amber-500", badge: "bg-amber-100 text-amber-800 hover:bg-amber-100" },
+  { key: "partial", label: "一部検収", short: "一部検収", chip: "border-sky-300 text-sky-700 data-[on=true]:bg-sky-600 data-[on=true]:text-white data-[on=true]:border-sky-600", badge: "bg-sky-100 text-sky-800 hover:bg-sky-100" },
+  { key: "waiting", label: "報告待ち", short: "報告待ち", chip: "border-slate-300 text-slate-600 data-[on=true]:bg-slate-600 data-[on=true]:text-white data-[on=true]:border-slate-600", badge: "bg-slate-100 text-slate-700 hover:bg-slate-100" },
+]
+const bucketOf = (k: TaskKey) => BUCKETS.find((b) => b.key === k)!
+function taskStateOf(r: Row): TaskKey {
+  const ordered = Number(r.amount_ex_tax) || 0
+  const inspected = Number(r.inspected_amount) || 0
+  if (r.overdue_no_report) return "overdue"
+  if (r.has_delivery_report) return "inspect"
+  if (inspected > 0.5 && inspected < ordered - 0.5) return "partial"
+  return "waiting"
+}
+
 export function PendingInspectionsPage() {
   const navigate = useNavigate()
   const { staffList } = useAppData()
@@ -36,6 +61,7 @@ export function PendingInspectionsPage() {
   const [error, setError] = React.useState<string | null>(null)
   const [q, setQ] = React.useState("")
   const [onlyUninspected, setOnlyUninspected] = React.useState(false)
+  const [bucket, setBucket] = React.useState<TaskKey | null>(null)
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   const [bulkOpen, setBulkOpen] = React.useState(false)
 
@@ -59,13 +85,26 @@ export function PendingInspectionsPage() {
     load()
   }, [load])
 
-  // フラグ駆動: 「検収書未発行の明細(unissued_line_count>0)」を持つ発注書を検収待ちに。
-  //   未発行明細 = inspection_issued≠true かつ 全額検収されていない明細。
-  //   完全検収すると自動で発行済になり、手動でも条件明細から発行済/対象外にできる。
+  // 検収待ちの母集団: 検収書未発行の明細(unissued_line_count>0)を持つ発注書、または
+  //   納期超過・未報告の発注書。各行に法務タスク状態(_task)を付与する。
+  const withState = React.useMemo(
+    () =>
+      rows
+        .filter((r) => (Number(r.unissued_line_count) || 0) > 0 || r.overdue_no_report)
+        .map((r) => ({ ...r, _task: taskStateOf(r) as TaskKey })),
+    [rows]
+  )
+
+  const counts = React.useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const r of withState) m[r._task] = (m[r._task] || 0) + 1
+    return m
+  }, [withState])
+
   const pending = React.useMemo(() => {
     const kw = q.trim().toLowerCase()
-    return rows
-      .filter((r) => (Number(r.unissued_line_count) || 0) > 0)
+    return withState
+      .filter((r) => (bucket ? r._task === bucket : true))
       .filter((r) => (onlyUninspected ? (Number(r.inspected_amount) || 0) === 0 : true))
       .filter((r) =>
         !kw
@@ -74,8 +113,17 @@ export function PendingInspectionsPage() {
               .toLowerCase()
               .includes(kw)
       )
-      .sort((a, b) => String(b.issue_date_po || "").localeCompare(String(a.issue_date_po || "")))
-  }, [rows, q, onlyUninspected])
+      .sort((a, b) => {
+        // 納期超過を最優先 → 納期(昇順) → 発注日(降順)。
+        if ((a._task === "overdue") !== (b._task === "overdue"))
+          return a._task === "overdue" ? -1 : 1
+        const da = a.nearest_inspection_deadline || ""
+        const db = b.nearest_inspection_deadline || ""
+        if (da && db && da !== db) return da < db ? -1 : 1
+        if (da !== db) return da ? -1 : 1
+        return String(b.issue_date_po || "").localeCompare(String(a.issue_date_po || ""))
+      })
+  }, [withState, q, onlyUninspected, bucket])
 
   const totalRemaining = pending.reduce((s, r) => s + (Number(r.remaining_amount) || 0), 0)
 
@@ -87,9 +135,9 @@ export function PendingInspectionsPage() {
     <div className="p-6 space-y-4 max-w-[1400px] mx-auto">
       <div className="flex items-center gap-3 flex-wrap">
         <ClipboardCheck className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-sm font-mono font-bold uppercase tracking-[0.14em]">検収待ち 発注書</h1>
+        <h1 className="text-sm font-mono font-bold uppercase tracking-[0.14em]">検収タスク 発注書</h1>
         <span className="text-[11px] font-mono text-muted-foreground">
-          発注書はあるが検収書が未作成 / 未完了のもの
+          納品報告に応じた検収書作成 / 納期超過・未報告の督促コントロール
         </span>
         <div className="flex-1" />
         <Button variant="outline" size="sm" onClick={load} disabled={loading}>
@@ -122,6 +170,29 @@ export function PendingInspectionsPage() {
         </span>
       </div>
 
+      {/* タスクバケット(クリックで絞り込み) */}
+      <div className="flex items-center gap-2 flex-wrap text-[11px] font-mono">
+        <button
+          type="button"
+          onClick={() => setBucket(null)}
+          data-on={bucket === null}
+          className="px-2.5 py-1 rounded-full border border-border text-muted-foreground data-[on=true]:bg-foreground data-[on=true]:text-background data-[on=true]:border-foreground"
+        >
+          すべて ({withState.length})
+        </button>
+        {BUCKETS.map((b) => (
+          <button
+            key={b.key}
+            type="button"
+            onClick={() => setBucket(bucket === b.key ? null : b.key)}
+            data-on={bucket === b.key}
+            className={`px-2.5 py-1 rounded-full border ${b.chip}`}
+          >
+            {b.label} ({counts[b.key] || 0})
+          </button>
+        ))}
+      </div>
+
       <div className="border border-border rounded-lg overflow-x-auto">
         {error ? (
           <div className="p-8 text-center text-sm text-destructive">読み込み失敗: {error}</div>
@@ -151,6 +222,8 @@ export function PendingInspectionsPage() {
                 <th className="text-right">残額</th>
                 <th className="text-right">未発行明細</th>
                 <th className="text-right">検収率</th>
+                <th>納品報告</th>
+                <th>納期</th>
                 <th>発注日</th>
                 <th></th>
               </tr>
@@ -160,7 +233,9 @@ export function PendingInspectionsPage() {
                 const ordered = Number(r.amount_ex_tax) || 0
                 const inspected = Number(r.inspected_amount) || 0
                 const pct = ordered > 0 ? Math.round((inspected / ordered) * 100) : 0
-                const uninspected = inspected === 0
+                const b = bucketOf(r._task)
+                const reportDate = fmtDate(r.latest_delivered_at)
+                const deadline = fmtDate(r.nearest_inspection_deadline)
                 return (
                   <tr key={r.id} className="border-t border-border hover:bg-muted/30 [&>td]:px-2 [&>td]:py-2 align-top">
                     <td>
@@ -177,11 +252,10 @@ export function PendingInspectionsPage() {
                       />
                     </td>
                     <td className="whitespace-nowrap">
-                      {uninspected ? (
-                        <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">未検収</Badge>
-                      ) : (
-                        <Badge className="bg-sky-100 text-sky-800 hover:bg-sky-100">一部検収 {pct}%</Badge>
-                      )}
+                      <Badge className={b.badge}>
+                        {b.short}
+                        {r._task === "partial" ? ` ${pct}%` : ""}
+                      </Badge>
                     </td>
                     <td className="whitespace-nowrap font-mono">
                       {r.document_number || "—"}
@@ -199,6 +273,22 @@ export function PendingInspectionsPage() {
                       <span className="text-muted-foreground">/{r.line_count}</span>
                     </td>
                     <td className="text-right whitespace-nowrap">{pct}%</td>
+                    <td className="whitespace-nowrap">
+                      {reportDate ? (
+                        <span className="text-muted-foreground">{reportDate}</span>
+                      ) : (
+                        <span className="text-slate-400">未報告</span>
+                      )}
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {deadline ? (
+                        <span className={r._task === "overdue" ? "text-red-600 font-bold" : "text-muted-foreground"}>
+                          {deadline}
+                        </span>
+                      ) : (
+                        <span className="text-muted-foreground">—</span>
+                      )}
+                    </td>
                     <td className="whitespace-nowrap text-muted-foreground">{r.issue_date_po || "—"}</td>
                     <td className="whitespace-nowrap text-right">
                       <Button size="sm" onClick={() => createInspection(Number(r.id))}>
@@ -215,10 +305,11 @@ export function PendingInspectionsPage() {
       </div>
 
       <p className="text-[11px] text-muted-foreground leading-relaxed">
-        「検収待ち」は<b>検収書未発行の業務明細（status_flags.inspection_issued≠true かつ 未完了）</b>を持つ発注書です。
+        タスク区分は <b className="text-red-700">納期超過・未報告</b>（納期 inspection_deadline を過ぎても納品報告 delivered_at が無い → 督促）、
+        <b className="text-amber-700">検収書作成（報告あり）</b>（納品報告あり・未検収の明細あり → 検収書を作成）、
+        <b className="text-sky-700">一部検収</b>、<b>報告待ち</b> です。納品報告・納期は delivery_events 由来（発注書への結線が取れているものに表示）。
         検収書を発行して<b>完全検収（残額0）</b>になると、その明細は自動で「発行済」になり一覧から外れます。
-        個別に「対象外／発行済」にしたい明細は、<b>マスター &gt; 条件明細</b>の行編集で「検収書発行済」を手動ON/OFFできます。
-        「検収書を作成」を押すと、検収書フォームがその発注書を親に事前選択した状態で開きます（分割検収にも対応）。
+        「検収書を作成」で検収書フォームがその発注書を親に事前選択した状態で開きます（分割検収にも対応）。
       </p>
 
       {bulkOpen && (
