@@ -9,6 +9,8 @@ import {
   Building2,
   Inbox,
   Package,
+  ChevronRight,
+  ClipboardCheck,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -35,6 +37,48 @@ type Event = {
 }
 
 const yen = (v: any) => (v == null ? "—" : `¥${Number(v).toLocaleString("ja-JP")}`)
+
+const RECORD_LABEL: Record<string, string> = {
+  purchase_order: "発注書",
+  inspection_certificate: "検収書",
+  contract: "契約",
+}
+const recordLabel = (t: any) => RECORD_LABEL[String(t || "")] || "契約"
+
+// トレースの一構成要素(契約 / 発注書)。drive_link があれば PDF を新規タブで開く。
+function TraceChip({
+  icon: Icon,
+  label,
+  title,
+  sub,
+  href,
+}: {
+  icon: any
+  label: string
+  title: string
+  sub?: string
+  href?: string | null
+}) {
+  const inner = (
+    <>
+      <Icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="flex flex-col items-start leading-tight min-w-0">
+        <span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">{label}</span>
+        <span className="font-bold truncate max-w-[220px]">{title}</span>
+        {sub && sub !== title && <span className="text-[9px] text-muted-foreground">{sub}</span>}
+      </span>
+      {href && <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />}
+    </>
+  )
+  const cls = "inline-flex items-center gap-2 border border-border rounded-md px-2.5 py-1.5"
+  return href ? (
+    <a href={href} target="_blank" rel="noreferrer" className={`${cls} hover:border-foreground`}>
+      {inner}
+    </a>
+  ) : (
+    <div className={cls}>{inner}</div>
+  )
+}
 
 function SectionHead({ label }: { label: string }) {
   return (
@@ -226,30 +270,68 @@ export function ConditionLineDetailPage() {
         </div>
       </section>
 
-      {/* SEC 02: 関連 */}
+      {/* SEC 02: トレース(契約 → 発注書 → 検収) */}
       <section className="space-y-2">
-        <SectionHead label="SEC · 02 / 関連" />
+        <SectionHead label="SEC · 02 / トレース 契約 → 発注書 → 検収" />
         <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
-          {line.contract_number && (
-            <span className="inline-flex items-center gap-1 border border-border rounded-sm px-2 py-1">
-              <Building2 className="h-3 w-3" /> {line.contract_title || line.contract_number}
-            </span>
+          {/* 上位(マスター)契約 — 親 capability がある場合 */}
+          {line.parent_contract_number && (
+            <>
+              <TraceChip
+                icon={Building2}
+                label={recordLabel(line.parent_record_type)}
+                title={line.parent_contract_title || line.parent_contract_number}
+                sub={line.parent_contract_number}
+                href={line.parent_drive_link}
+              />
+              <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </>
           )}
-          {issues.map((k) => (
-            <button
-              key={String(k)}
-              onClick={() => navigate(`/issues/${encodeURIComponent(String(k))}`)}
-              className="inline-flex items-center gap-1 border border-border rounded-sm px-2 py-1 hover:border-foreground"
-            >
-              <Inbox className="h-3 w-3" /> {String(k)}
-            </button>
-          ))}
-          {line.work_code && (
-            <span className="inline-flex items-center gap-1 border border-border rounded-sm px-2 py-1">
-              <Package className="h-3 w-3" /> {line.work_title || line.work_code}
-            </span>
+          {/* この明細が属する 発注書 / 契約 */}
+          {line.contract_number ? (
+            <TraceChip
+              icon={line.contract_record_type === "purchase_order" ? FileText : Building2}
+              label={recordLabel(line.contract_record_type)}
+              title={line.contract_title || line.contract_number}
+              sub={line.contract_number}
+              href={line.contract_drive_link}
+            />
+          ) : (
+            <span className="text-muted-foreground">契約未紐付け</span>
           )}
+          <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+          {/* 検収・実績(下の SEC·01 に対応) */}
+          <div className="inline-flex items-center gap-2 border border-border rounded-md px-2.5 py-1.5">
+            <ClipboardCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="flex flex-col items-start leading-tight">
+              <span className="text-[9px] uppercase tracking-[0.14em] text-muted-foreground">検収・実績</span>
+              <span className="font-bold">
+                {events.filter((e) => !e.voided_at).length} 件
+                {depletable && target > 0 ? ` · ${pct}%` : ""}
+              </span>
+            </span>
+          </div>
         </div>
+
+        {/* 課題 / 作品 */}
+        {(issues.length > 0 || line.work_code) && (
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono pt-1">
+            {issues.map((k) => (
+              <button
+                key={String(k)}
+                onClick={() => navigate(`/issues/${encodeURIComponent(String(k))}`)}
+                className="inline-flex items-center gap-1 border border-border rounded-sm px-2 py-1 hover:border-foreground"
+              >
+                <Inbox className="h-3 w-3" /> {String(k)}
+              </button>
+            ))}
+            {line.work_code && (
+              <span className="inline-flex items-center gap-1 border border-border rounded-sm px-2 py-1">
+                <Package className="h-3 w-3" /> {line.work_title || line.work_code}
+              </span>
+            )}
+          </div>
+        )}
       </section>
     </div>
   )
