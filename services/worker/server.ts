@@ -9932,6 +9932,190 @@ ${details}
   );
 
   // -------------------------------------------------------------------
+  // POST /api/condition-lines/:id/link-document
+  //   調整(手動): 既存文書(検収書 / 利用許諾料計算書)を明細に「対の実績」として
+  //   手動リンクする。文書種別から event_type を導出する:
+  //     inspection_certificate → 'inspection'   (発注書系の明細 ⇄ 検収書)
+  //     royalty_statement      → 'royalty_calc' (利用許諾系の明細 ⇄ 利用許諾料計算書)
+  //   (CHECK ce_document_pairing: これらは document_id 必須)。
+  //   amount_ex_tax 未指定時は明細の残額を既定にし、1 リンクで成就へ寄せる。
+  //   ステータス(open/partially_fulfilled/fulfilled)は condition_line_status_v が
+  //   実績合計から自動再計算するため、ここでの明示更新は不要。
+  // -------------------------------------------------------------------
+  app.post(
+    "/api/condition-lines/:id/link-document",
+    express.json(),
+    async (req, res) => {
+      const conditionLineId = Number(req.params.id);
+      if (!Number.isFinite(conditionLineId)) {
+        return res
+          .status(400)
+          .json({ ok: false, error: "invalid condition_line id" });
+      }
+      const body = req.body || {};
+      try {
+        const clRes = await query(
+          `SELECT cl.id, cl.amount_ex_tax,
+                  COALESCE(s.consumed_amount, 0) AS consumed_amount
+             FROM condition_lines cl
+             LEFT JOIN condition_line_status_v s ON s.id = cl.id
+            WHERE cl.id = $1`,
+          [conditionLineId]
+        );
+        if (!clRes.rows.length) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "condition_line not found" });
+        }
+        const line = clRes.rows[0];
+
+        // 文書を解決 (document_id 優先、なければ document_number)。
+        const byId = body.document_id != null;
+        const docKey = byId
+          ? Number(body.document_id)
+          : String(body.document_number || "").trim();
+        if (!docKey) {
+          return res.status(400).json({
+            ok: false,
+            error: "document_id or document_number is required",
+          });
+        }
+        const docRes = await query(
+          `SELECT id, document_number, template_type, issue_key
+             FROM documents WHERE ${byId ? "id" : "document_number"} = $1 LIMIT 1`,
+          [docKey]
+        );
+        if (!docRes.rows.length) {
+          return res.status(404).json({ ok: false, error: "document not found" });
+        }
+        const doc = docRes.rows[0];
+
+        // 文書種別 → event_type。
+        const tt = String(doc.template_type || "");
+        let eventType: string | null = null;
+        if (tt.startsWith("inspection_certificate")) eventType = "inspection";
+        else if (tt === "royalty_statement") eventType = "royalty_calc";
+        if (!eventType) {
+          return res.status(400).json({
+            ok: false,
+            error: `この文書種別(${tt || "不明"})は明細にリンクできません(検収書 / 利用許諾料計算書のみ)`,
+          });
+        }
+
+        // 重複防止: 同一文書の有効リンクが既にあれば idempotent に返す。
+        const dup = await query(
+          `SELECT id, event_no FROM condition_events
+            WHERE condition_line_id = $1 AND document_id = $2 AND voided_at IS NULL
+            LIMIT 1`,
+          [conditionLineId, doc.id]
+        );
+        if (dup.rows.length) {
+          return res.json({
+            ok: true,
+            already_linked: true,
+            event_id: dup.rows[0].id,
+            event_no: dup.rows[0].event_no,
+          });
+        }
+
+        // amount: 明示指定 > 残額 > 0。
+        const remaining =
+          Number(line.amount_ex_tax || 0) - Number(line.consumed_amount || 0);
+        const amount =
+          body.amount_ex_tax != null && Number.isFinite(Number(body.amount_ex_tax))
+            ? Number(body.amount_ex_tax)
+            : Math.max(0, remaining);
+
+        const eventNoRes = await query(
+          `SELECT COALESCE(MAX(event_no),0)+1 AS n FROM condition_events WHERE condition_line_id = $1`,
+          [conditionLineId]
+        );
+        const ins = await query(
+          `INSERT INTO condition_events
+             (condition_line_id, event_no, event_type, document_id,
+              backlog_issue_key, occurred_at, period, amount_ex_tax)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+           RETURNING id, event_no`,
+          [
+            conditionLineId,
+            Number(eventNoRes.rows[0].n),
+            eventType,
+            doc.id,
+            doc.issue_key ||
+              (body.backlog_issue_key ? String(body.backlog_issue_key) : null),
+            body.occurred_at || new Date().toISOString(),
+            body.period || null,
+            amount,
+          ]
+        );
+
+        const st = await query(
+          `SELECT status, consumed_amount, remaining_amount
+             FROM condition_line_status_v WHERE id = $1`,
+          [conditionLineId]
+        );
+        res.json({
+          ok: true,
+          event_id: ins.rows[0].id,
+          event_no: ins.rows[0].event_no,
+          event_type: eventType,
+          document_number: doc.document_number,
+          status: st.rows[0] || null,
+        });
+      } catch (error) {
+        console.error("/api/condition-lines/:id/link-document failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // POST /api/condition-events/:eventId/void
+  //   調整(手動): 明細 ⇄ 文書の対(実績イベント)を 1 件だけ取消(リンク解除)する。
+  //   文書自体は void しない(文書全体の取消は /api/documents/:id/void)。
+  //   ステータスは condition_line_status_v が再計算する。
+  // -------------------------------------------------------------------
+  app.post(
+    "/api/condition-events/:eventId/void",
+    express.json(),
+    async (req, res) => {
+      const eventId = Number(req.params.eventId);
+      if (!Number.isFinite(eventId)) {
+        return res.status(400).json({ ok: false, error: "invalid event id" });
+      }
+      const reason = String(req.body?.reason || "").trim() || "manual unlink";
+      try {
+        const upd = await query(
+          `UPDATE condition_events
+              SET voided_at = CURRENT_TIMESTAMP, void_reason = $2
+            WHERE id = $1 AND voided_at IS NULL
+            RETURNING condition_line_id`,
+          [eventId, reason]
+        );
+        if (!upd.rows.length) {
+          return res
+            .status(404)
+            .json({ ok: false, error: "event not found or already voided" });
+        }
+        const lineId = upd.rows[0].condition_line_id;
+        const st = await query(
+          `SELECT status, consumed_amount, remaining_amount
+             FROM condition_line_status_v WHERE id = $1`,
+          [lineId]
+        );
+        res.json({
+          ok: true,
+          condition_line_id: lineId,
+          status: st.rows[0] || null,
+        });
+      } catch (error) {
+        console.error("/api/condition-events/:eventId/void failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
   // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
   // -------------------------------------------------------------------
 
