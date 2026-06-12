@@ -23,6 +23,10 @@ const EXTRA_CSS = `<style>
 .cond-link-pill.master{background:#fff7e6;color:#b97a09;border-color:#ffe9bf}
 .cond-link-pill.ringi{background:#fde9f3;color:#c43c80;border-color:#fbd0e6}
 .cond-link-pill.status{background:#dffbf0;color:#0fa97c;border-color:#bbf2dd}
+.fulfill-pill{font-size:10.5px;font-weight:800;padding:2px 8px;border-radius:14px;display:inline-block;white-space:nowrap;border:1px solid #e3e3e3;background:#f4f4f5;color:#52525b}
+.fulfill-pill.fulfilled{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
+.fulfill-pill.ongoing{background:#fef3c7;color:#b45309;border-color:#fde68a}
+.fulfill-pill.dead{background:#f4f4f5;color:#9ca3af;border-color:#e5e7eb;text-decoration:line-through}
 .sub10{font-size:10px;color:var(--muted);margin-top:2px}
 .badge-cat{font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:14px;background:#efeaff;color:#6c5ce7;white-space:nowrap}
 .pop-modal .checks{display:flex;flex-direction:column;gap:9px}
@@ -173,9 +177,30 @@ export function conditionsPage(role: Role = "viewer"): string {
       '<th class="chk"><input type="checkbox" id="chk-all" title="全選択"></th>' +
       '<th>支払日</th><th>納期</th><th>種類</th><th>取引先</th><th>担当</th>' +
       '<th>品目</th><th>計算</th><th class="num">数量</th><th class="num">単価</th>' +
-      '<th class="num">金額(税抜)</th><th>文書番号</th><th>契約名 / 課題</th>' +
+      '<th class="num">金額(税抜)</th><th>文書番号</th><th>成就</th><th>成就文書</th><th>契約名 / 課題</th>' +
       '<th>紐付け(クリックで編集)</th><th>状態</th>' +
       '</tr>';
+    // 成就状態 → ラベル(契約期間型は 履行中 / 成就(満了))。
+    var FULFILL_LABEL = {
+      open: "未成就", partially_fulfilled: "一部成就", fulfilled: "成就",
+      pending: "開始前", active: "履行中", expired: "成就(満了)",
+      cancelled: "取消", closed_short: "中途終了"
+    };
+    function fulfillBadge(s) {
+      if (!s) return '<span class="muted">—</span>';
+      var label = FULFILL_LABEL[s] || s;
+      var done = (s === "fulfilled" || s === "expired");           // 成就 / 成就(満了)
+      var ongoing = (s === "partially_fulfilled" || s === "active");
+      var dead = (s === "cancelled" || s === "closed_short");
+      var cls = done ? "fulfilled" : ongoing ? "ongoing" : dead ? "dead" : "";
+      return '<span class="fulfill-pill ' + cls + '">' + esc(label) + '</span>';
+    }
+    function fulfillDocCell(r) {
+      if (!r.fulfilling_doc_number) return '<span class="muted">—</span>';
+      var more = (r.fulfilling_doc_count && r.fulfilling_doc_count > 1)
+        ? '<span class="sub10">ほか' + (r.fulfilling_doc_count - 1) + '件</span>' : '';
+      return esc(r.fulfilling_doc_number) + more;
+    }
     var bodyHtml = rows.map(function (r) {
       var dir = (r.flow_direction === "in" || r.flow_direction === "out")
         ? r.flow_direction : (r.is_inbound ? "out" : "");
@@ -215,6 +240,8 @@ export function conditionsPage(role: Role = "viewer"): string {
         '<td class="num">' + yen(r.unit_price) + '</td>' +
         '<td class="num">' + yen(r.amount_ex_tax) + '</td>' +
         '<td>' + esc(r.document_number || "—") + '</td>' +
+        '<td>' + fulfillBadge(r.fulfillment_status) + '</td>' +
+        '<td class="wrap">' + fulfillDocCell(r) + '</td>' +
         '<td class="wrap">' + contract + '</td>' +
         '<td class="wrap">' + link + '</td>' +
         '<td class="wrap">' + st + '</td>' +

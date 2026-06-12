@@ -194,6 +194,21 @@ export async function listConditions(
        v.vendor_code, v.vendor_name,
        COALESCE(s.staff_name, d.created_by) AS owner_name,
        d.created_by, d.issue_key`;
+  // 成就(fulfillment): 新台帳経路のみ。状態(成就/履行中/成就(満了)…)と、対の成就文書
+  //   (検収書/計算書) の最新番号 + 件数。旧経路は condition_events を持たないため NULL。
+  const fulfillCols = useNew
+    ? `,
+       (SELECT status FROM condition_line_status_v WHERE id = cl.id) AS fulfillment_status,
+       (SELECT d2.document_number
+          FROM condition_events ce JOIN documents d2 ON d2.id = ce.document_id
+         WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+         ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
+         LIMIT 1) AS fulfilling_doc_number,
+       (SELECT COUNT(*)::int FROM condition_events ce
+         WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+           AND ce.document_id IS NOT NULL) AS fulfilling_doc_count`
+    : `, NULL::text AS fulfillment_status, NULL::text AS fulfilling_doc_number,
+       0::int AS fulfilling_doc_count`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
        ${LT}.source_ip_id, si.title AS source_ip_title, si.source_code,
@@ -215,13 +230,13 @@ export async function listConditions(
   let res: any;
   try {
     res = await query(
-      `SELECT ${baseCols}${linkCols} ${fromJoins}${linkJoins} ${whereSql} ${order}`,
+      `SELECT ${baseCols}${fulfillCols}${linkCols} ${fromJoins}${linkJoins} ${whereSql} ${order}`,
       params
     );
   } catch (err: any) {
     // 0015 未適用環境(紐付け列なし)では従来通り列なしで返す。
     if (err && (err.code === "42703" || err.code === "42P01")) {
-      res = await query(`SELECT ${baseCols} ${fromJoins} ${whereSql} ${order}`, params);
+      res = await query(`SELECT ${baseCols}${fulfillCols} ${fromJoins} ${whereSql} ${order}`, params);
     } else {
       throw err;
     }
@@ -269,6 +284,10 @@ export async function listConditions(
     status_flags: normalizeFlags(r.status_flags),
     is_inbound: r.is_inbound === true, // 当社の受領(請求権)明細か(方向out相当)
     flow_direction: r.flow_direction || "", // 'in'(当社支払) / 'out'(当社受領)
+    // 成就(fulfillment)
+    fulfillment_status: r.fulfillment_status || "",
+    fulfilling_doc_number: r.fulfilling_doc_number || "",
+    fulfilling_doc_count: Number(r.fulfilling_doc_count) || 0,
   }));
 
   return { rows, total };
