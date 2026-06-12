@@ -17,21 +17,25 @@
     @media print {
       body { font-size: 10pt; }
       .section-title { page-break-after: avoid; }
-      table, .clause, .notice-box, .contact-box, .consent-section { page-break-inside: avoid; }
+      /* 大きな表(項目/利用目的)はページ跨ぎを許可し、末尾の空白を抑える。
+         まとまりを保つ囲み・署名欄のみ分割禁止。 */
+      .notice-box, .contact-box, .consent-section, .sign-table, .compact-table { page-break-inside: avoid; }
     }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: "Yu Mincho","游明朝","Hiragino Mincho ProN","MS Mincho",serif; font-size: 10.2pt; line-height: 1.78; color: #1a1a1a; background: #fff; padding: 28px 38px; max-width: 780px; margin: 0 auto; }
-    .doc-header { text-align: center; margin-bottom: 24px; padding-bottom: 12px; border-bottom: 2.5px solid #1a1a1a; }
+    /* レンダラ(puppeteer)が 12mm の外余白を付けるため、body の内側 padding は最小限に
+       (二重マージンで「余白が多い」状態だった)。縦アキも全体に圧縮。 */
+    body { font-family: "Yu Mincho","游明朝","Hiragino Mincho ProN","MS Mincho",serif; font-size: 10.2pt; line-height: 1.62; color: #1a1a1a; background: #fff; padding: 2px 14px; max-width: 800px; margin: 0 auto; }
+    .doc-header { text-align: center; margin-bottom: 14px; padding-bottom: 9px; border-bottom: 2.5px solid #1a1a1a; }
     .doc-header h1 { font-size: 16.5pt; font-weight: bold; letter-spacing: 0.1em; margin-bottom: 4px; }
     .doc-subtitle { font-size: 9pt; color: #555; letter-spacing: 0.04em; }
-    .doc-meta { display: flex; justify-content: flex-end; margin-bottom: 18px; font-size: 9.4pt; color: #333; }
+    .doc-meta { display: flex; justify-content: flex-end; margin-bottom: 12px; font-size: 9.4pt; color: #333; }
     .doc-meta table { border-collapse: collapse; }
     .doc-meta td { padding: 1px 6px 1px 0; vertical-align: top; }
     .doc-meta td:first-child { color: #666; white-space: nowrap; }
-    .sender-block { text-align: right; margin-bottom: 20px; font-size: 9.6pt; line-height: 1.65; }
+    .sender-block { text-align: right; margin-bottom: 12px; font-size: 9.6pt; line-height: 1.55; }
     .sender-block .company-name { font-size: 11.2pt; font-weight: bold; margin-bottom: 2px; }
-    .preamble { margin-bottom: 20px; text-align: justify; font-size: 9.8pt; background: #f7f7f5; border-left: 3px solid #777; padding: 11px 15px; border-radius: 2px; }
-    .section-title { font-size: 10.4pt; font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 4px; margin: 20px 0 9px; display: flex; align-items: center; gap: 8px; }
+    .preamble { margin-bottom: 13px; text-align: justify; font-size: 9.8pt; background: #f7f7f5; border-left: 3px solid #777; padding: 9px 13px; border-radius: 2px; }
+    .section-title { font-size: 10.4pt; font-weight: bold; border-bottom: 1px solid #ccc; padding-bottom: 3px; margin: 12px 0 6px; display: flex; align-items: center; gap: 8px; }
     .section-num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #1a1a1a; color: #fff; font-size: 9pt; border-radius: 50%; flex-shrink: 0; }
     .info-table, .purpose-table, .compact-table { width: 100%; border-collapse: collapse; font-size: 9.2pt; margin-bottom: 6px; }
     .info-table th, .purpose-table th, .compact-table th { background: #2c2c2c; color: #fff; padding: 6px 9px; text-align: left; font-weight: bold; font-size: 8.9pt; letter-spacing: 0.03em; }
@@ -45,16 +49,16 @@
     .badge { display: inline-block; font-size: 7.2pt; padding: 1px 5px; border-radius: 2px; margin-left: 4px; vertical-align: middle; white-space: nowrap; }
     .badge-required { background: #c0392b; color: #fff; }
     .badge-conditional { background: #6c757d; color: #fff; }
-    .clause { font-size: 9.8pt; margin-bottom: 13px; text-align: justify; }
+    .clause { font-size: 9.8pt; margin-bottom: 8px; text-align: justify; }
     .clause strong { font-weight: bold; }
-    .notice-box { border: 1px solid #b96a2c; border-radius: 3px; padding: 9px 13px; font-size: 8.9pt; color: #333; margin: 16px 0; background: #fff9f3; }
+    .notice-box { border: 1px solid #b96a2c; border-radius: 3px; padding: 8px 13px; font-size: 8.9pt; color: #333; margin: 11px 0; background: #fff9f3; }
     .notice-box .notice-title { font-weight: bold; color: #9a4d10; margin-bottom: 4px; }
-    .contact-box { border: 1px solid #bbb; border-radius: 3px; padding: 10px 14px; font-size: 9pt; color: #333; margin: 16px 0; background: #f9f9f9; }
+    .contact-box { border: 1px solid #bbb; border-radius: 3px; padding: 9px 14px; font-size: 9pt; color: #333; margin: 11px 0; background: #f9f9f9; }
     .contact-box .contact-title { font-weight: bold; margin-bottom: 4px; }
     .contact-row { display: flex; gap: 14px; }
     .contact-label { color: #666; width: 105px; flex-shrink: 0; }
-    .consent-section { margin-top: 28px; page-break-inside: avoid; }
-    .consent-statement { font-size: 10.2pt; font-weight: bold; text-align: justify; margin-bottom: 16px; padding: 11px 18px; border: 2px solid #1a1a1a; border-radius: 3px; background: #f5f5f3; line-height: 1.8; }
+    .consent-section { margin-top: 16px; page-break-inside: avoid; }
+    .consent-statement { font-size: 10.2pt; font-weight: bold; text-align: justify; margin-bottom: 12px; padding: 10px 16px; border: 2px solid #1a1a1a; border-radius: 3px; background: #f5f5f3; line-height: 1.7; }
     .sign-table { width: 100%; border-collapse: collapse; margin-top: 10px; }
     .sign-table th { background: #2c2c2c; color: #fff; padding: 7px 12px; font-size: 9.4pt; font-weight: bold; text-align: left; letter-spacing: 0.03em; }
     .sign-table td { border: 1px solid #ccc; padding: 0; vertical-align: top; }
@@ -64,10 +68,10 @@
     .sign-divider { border-bottom: 1px solid #ddd; }
     .sign-field-large { min-height: 44px; }
     .inkan-cell { width: 80px; border-left: 1px solid #ccc; text-align: center; }
-    .inkan-box { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 118px; gap: 4px; }
-    .inkan-circle { width: 54px; height: 54px; border: 1.5px solid #bbb; border-radius: 50%; }
+    .inkan-box { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 100px; gap: 4px; }
+    .inkan-circle { width: 50px; height: 50px; border: 1.5px solid #bbb; border-radius: 50%; }
     .inkan-text { font-size: 7.5pt; color: #888; }
-    .doc-footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #ccc; font-size: 7.8pt; color: #888; display: flex; justify-content: space-between; gap: 10px; }
+    .doc-footer { margin-top: 14px; padding-top: 8px; border-top: 1px solid #ccc; font-size: 7.8pt; color: #888; display: flex; justify-content: space-between; gap: 10px; }
   </style>
 </head>
 <body>
@@ -198,7 +202,7 @@
 
   <div class="doc-footer">
     <span>{{or COMPANY_NAME "株式会社アークライト"}} ／ {{or PRIVACY_MANAGER_DEPT "総務人事部"}} 作成</span>
-    <span>template: notice_consent_personal_info_freelance v2.0</span>
+    <span>template: notice_consent_personal_info_freelance v2.1</span>
   </div>
 
 </body>
