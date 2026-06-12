@@ -88,7 +88,7 @@ async function main() {
         heldInspection.push([row.id, row.delivery_event_id, "condition_line 未解決(C-2先行要)"]);
         continue;
       }
-      // document_id 解決: 検収書 final, form_data.delivery_event_id 一致
+      // document_id 解決: ① 検収書 final で form_data.delivery_event_id 一致(精密)
       const doc = await client.query(
         `SELECT id FROM documents
           WHERE template_type IN ('inspection_certificate','delivery_inspec')
@@ -97,11 +97,24 @@ async function main() {
           ORDER BY created_at DESC LIMIT 1`,
         [row.delivery_event_id]
       );
-      if (!doc.rows.length) {
+      let documentId: number | null = doc.rows.length ? doc.rows[0].id : null;
+      // ② フォールバック: form_data に delivery_event_id を持たない(取込/手動登録 ARC-*)
+      //   検収書を issue_key で解決。誤リンク回避のため、その課題の検収書が
+      //   「ちょうど1件」のときだけ採用する。
+      if (documentId == null && row.backlog_issue_key) {
+        const byIssue = await client.query(
+          `SELECT id FROM documents
+            WHERE issue_key = $1
+              AND template_type IN ('inspection_certificate','delivery_inspec')
+              AND COALESCE(lifecycle_status,'final') = 'final'`,
+          [row.backlog_issue_key]
+        );
+        if (byIssue.rows.length === 1) documentId = byIssue.rows[0].id;
+      }
+      if (documentId == null) {
         heldInspection.push([row.id, row.delivery_event_id, "document_id 解決不能"]);
         continue;
       }
-      const documentId = doc.rows[0].id;
       const occurredAt = row.delivered_at || row.de_created;
       const eventNo = await nextEventNo(client, row.condition_line_id);
       const ev = await client.query(
