@@ -80,6 +80,163 @@ function TraceChip({
   )
 }
 
+// 明細の性質から、対になる文書の既定種別を決める。
+//   発注書系(消化型/record_type=purchase_order) → 検収書
+//   それ以外(利用許諾/MG・AG 等)               → 利用許諾料計算書
+type DocType = "inspection_certificate" | "royalty_statement"
+const DOC_TYPE_LABEL: Record<DocType, string> = {
+  inspection_certificate: "検収書",
+  royalty_statement: "利用許諾料計算書",
+}
+function defaultDocType(line: Line): DocType {
+  const depletable = ["lump_sum", "per_unit", "installment"].includes(line.payment_scheme)
+  if (line.contract_record_type === "purchase_order" || depletable) return "inspection_certificate"
+  if (line.contract_category && String(line.contract_category).includes("license")) return "royalty_statement"
+  if (Number(line.mg_amount || 0) > 0 || Number(line.ag_remaining || 0) > 0) return "royalty_statement"
+  return "inspection_certificate"
+}
+
+// 調整: 既存文書(検収書 / 利用許諾料計算書)を検索して明細にリンクするパネル。
+function LinkDocumentPanel({
+  lineId,
+  defaultType,
+  remaining,
+  onDone,
+}: {
+  lineId: number
+  defaultType: DocType
+  remaining: number
+  onDone: () => void
+}) {
+  const [docType, setDocType] = React.useState<DocType>(defaultType)
+  const [q, setQ] = React.useState("")
+  const [results, setResults] = React.useState<any[]>([])
+  const [searching, setSearching] = React.useState(false)
+  const [sel, setSel] = React.useState<any>(null)
+  const [amount, setAmount] = React.useState<string>(remaining > 0.5 ? String(Math.round(remaining)) : "")
+  const [busy, setBusy] = React.useState(false)
+  const [msg, setMsg] = React.useState<string | null>(null)
+
+  const search = React.useCallback(async () => {
+    setSearching(true)
+    setMsg(null)
+    try {
+      const u = `/api/documents/search?template_types=${encodeURIComponent(docType)}&q=${encodeURIComponent(q)}&limit=20`
+      const r = await fetch(u)
+      const d = await r.json()
+      const list = Array.isArray(d?.results) ? d.results : Array.isArray(d) ? d : []
+      setResults(list)
+      if (list.length === 0) setMsg("該当する文書がありません。")
+    } catch (e: any) {
+      setMsg("検索に失敗しました: " + (e?.message || e))
+      setResults([])
+    } finally {
+      setSearching(false)
+    }
+  }, [docType, q])
+
+  // 種別を変えたら選択と結果をリセット。
+  React.useEffect(() => {
+    setSel(null)
+    setResults([])
+  }, [docType])
+
+  const link = async () => {
+    if (!sel || busy) return
+    setBusy(true)
+    setMsg(null)
+    try {
+      const r = await fetch(`/api/condition-lines/${lineId}/link-document`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document_id: sel.id,
+          amount_ex_tax: amount === "" ? undefined : Number(amount),
+        }),
+      })
+      const d = await r.json()
+      if (!r.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${r.status}`)
+      onDone()
+    } catch (e: any) {
+      setMsg("リンクに失敗しました: " + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="border border-dashed border-border rounded-md p-3 space-y-2 bg-muted/20">
+      <div className="flex items-center gap-2 flex-wrap text-xs font-mono">
+        <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">対になる文書の種別</span>
+        {(["inspection_certificate", "royalty_statement"] as DocType[]).map((t) => (
+          <button
+            key={t}
+            type="button"
+            onClick={() => setDocType(t)}
+            className={`px-2 py-0.5 rounded-full border ${
+              docType === t ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground"
+            }`}
+          >
+            {DOC_TYPE_LABEL[t]}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          onKeyDown={(e) => e.key === "Enter" && search()}
+          placeholder={`${DOC_TYPE_LABEL[docType]}を文書番号・課題で検索…`}
+          className="flex-1 h-8 px-2 text-xs font-mono border border-border rounded-md bg-background"
+        />
+        <Button size="sm" variant="outline" onClick={search} disabled={searching}>
+          {searching ? "検索中…" : "検索"}
+        </Button>
+      </div>
+      {results.length > 0 && (
+        <div className="max-h-48 overflow-y-auto border border-border rounded-md divide-y divide-border">
+          {results.map((doc) => (
+            <button
+              key={doc.id}
+              type="button"
+              onClick={() => setSel(doc)}
+              className={`w-full text-left px-2.5 py-1.5 text-xs font-mono flex items-center gap-2 hover:bg-muted/40 ${
+                sel?.id === doc.id ? "bg-muted/60" : ""
+              }`}
+            >
+              <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+              <span className="flex-1 min-w-0">
+                <span className="font-bold">{doc.document_number || "(採番なし)"}</span>
+                <span className="text-muted-foreground">
+                  {doc.issue_key ? ` · ${doc.issue_key}` : ""}
+                  {doc.created_at ? ` · ${String(doc.created_at).slice(0, 10)}` : ""}
+                </span>
+              </span>
+              {sel?.id === doc.id && <Badge className="bg-foreground text-background">選択</Badge>}
+            </button>
+          ))}
+        </div>
+      )}
+      {sel && (
+        <div className="flex items-center gap-2 flex-wrap text-xs font-mono pt-1">
+          <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">計上額(税抜)</span>
+          <input
+            type="number"
+            value={amount}
+            onChange={(e) => setAmount(e.target.value)}
+            placeholder="未指定=残額全額"
+            className="w-36 h-8 px-2 text-xs font-mono border border-border rounded-md bg-background text-right"
+          />
+          <Button size="sm" onClick={link} disabled={busy}>
+            {busy ? "リンク中…" : `${sel.document_number || "文書"} をリンク`}
+          </Button>
+        </div>
+      )}
+      {msg && <p className="text-[11px] font-mono text-muted-foreground">{msg}</p>}
+    </div>
+  )
+}
+
 function SectionHead({ label }: { label: string }) {
   return (
     <div className="mt-2 pt-2 border-t border-border">
@@ -110,28 +267,51 @@ export function ConditionLineDetailPage() {
   const [schedule, setSchedule] = React.useState<any[]>([])
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  // 調整(手動リンク)モード
+  const [adjust, setAdjust] = React.useState(false)
+  const [busy, setBusy] = React.useState(false)
 
-  React.useEffect(() => {
-    let cancelled = false
+  const load = React.useCallback(async () => {
     setLoading(true)
-    fetch(`/api/condition-lines/${encodeURIComponent(lineCode)}`)
-      .then(async (r) => {
-        const d = await r.json()
-        if (!r.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${r.status}`)
-        return d
-      })
-      .then((d) => {
-        if (cancelled) return
-        setLine(d.line)
-        setEvents(d.events || [])
-        setSchedule(d.schedule || [])
-      })
-      .catch((e) => !cancelled && setError(e.message))
-      .finally(() => !cancelled && setLoading(false))
-    return () => {
-      cancelled = true
+    try {
+      const r = await fetch(`/api/condition-lines/${encodeURIComponent(lineCode)}`)
+      const d = await r.json()
+      if (!r.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${r.status}`)
+      setLine(d.line)
+      setEvents(d.events || [])
+      setSchedule(d.schedule || [])
+      setError(null)
+    } catch (e: any) {
+      setError(e?.message || String(e))
+    } finally {
+      setLoading(false)
     }
   }, [lineCode])
+
+  React.useEffect(() => {
+    load()
+  }, [load])
+
+  // 文書リンクを 1 件だけ解除(イベント void)。文書自体は残る。
+  const unlink = async (eventId: number) => {
+    if (busy) return
+    if (!window.confirm("この文書リンクを解除します（文書は残ります）。よろしいですか？")) return
+    setBusy(true)
+    try {
+      const r = await fetch(`/api/condition-events/${eventId}/void`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "manual unlink" }),
+      })
+      const d = await r.json()
+      if (!r.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${r.status}`)
+      await load()
+    } catch (e: any) {
+      alert("解除に失敗しました: " + (e?.message || e))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   if (loading) {
     return (
@@ -219,6 +399,22 @@ export function ConditionLineDetailPage() {
       {/* SEC 01: 実績と対になる文書 */}
       <section className="space-y-2">
         <SectionHead label="SEC · 01 / 実績と対になる文書" />
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-mono text-muted-foreground">
+            検収書 / 利用許諾料計算書を明細に手作業でリンクし、ステータスを調整できます。
+          </span>
+          <button
+            type="button"
+            onClick={() => setAdjust((v) => !v)}
+            className={`text-[10px] font-mono uppercase tracking-[0.16em] px-2 py-1 rounded-md border shrink-0 ${
+              adjust
+                ? "bg-foreground text-background border-foreground"
+                : "border-border text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            {adjust ? "調整モード ON" : "調整(手動リンク)"}
+          </button>
+        </div>
         <div className="space-y-1.5">
           {events.length === 0 && (
             <p className="text-xs font-mono text-muted-foreground py-2">実績はまだありません。</p>
@@ -251,6 +447,16 @@ export function ConditionLineDetailPage() {
                   <ExternalLink className="h-3.5 w-3.5" />
                 </a>
               )}
+              {adjust && !e.voided_at && (
+                <button
+                  type="button"
+                  onClick={() => unlink(e.id)}
+                  disabled={busy}
+                  className="text-[10px] font-mono px-2 py-1 rounded-md border border-destructive/40 text-destructive hover:bg-destructive/10 shrink-0"
+                >
+                  リンク解除
+                </button>
+              )}
             </div>
           ))}
           {/* ghost「未実施」行 */}
@@ -266,6 +472,14 @@ export function ConditionLineDetailPage() {
             >
               <Plus className="h-3.5 w-3.5" /> 未実施 — 文書を作成
             </button>
+          )}
+          {adjust && (
+            <LinkDocumentPanel
+              lineId={Number(line.id)}
+              defaultType={defaultDocType(line)}
+              remaining={Number(line.remaining_amount || 0)}
+              onDone={load}
+            />
           )}
         </div>
       </section>
