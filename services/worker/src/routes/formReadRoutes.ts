@@ -3,116 +3,6 @@
 // 依存: query, backlogService(getIssue / extractCustomFields)。
 import type { Express } from "express";
 
-type QueryFn = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
-
-/**
- * Phase E-2: 発注明細の表示行を coverage-gated dual-read で取得する。
- *   condition_lines が当該 capability の line_item 由来明細を「完全カバー」
- *   (件数一致) する場合のみ condition_lines(faithful superset)から読む。
- *   1件でも欠ければ / 未作成なら 旧 capability_line_items にフォールバック。
- *   → 最悪でも旧挙動なので無回帰。返す行は capability_line_items と同一 shape。
- */
-async function readCapabilityLineRowsForDisplay(
-  query: QueryFn,
-  capabilityId: number
-): Promise<any[]> {
-  try {
-    const cl = await query(
-      `SELECT source_line_item_id AS id,
-              COALESCE(source_seq_no, line_no) AS line_no, subject AS item_name,
-              spec, unit_price, quantity, amount_ex_tax, calc_method, payment_terms,
-              payment_method, payment_date, delivery_date, cycle, term_start,
-              term_end, billing_day
-         FROM condition_lines
-        WHERE capability_id = $1 AND source_line_item_id IS NOT NULL
-        ORDER BY COALESCE(source_seq_no, line_no) ASC`,
-      [capabilityId]
-    );
-    const oldCount = await query(
-      `SELECT COUNT(*)::int AS c FROM capability_line_items WHERE capability_id = $1`,
-      [capabilityId]
-    );
-    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
-      return cl.rows; // 完全カバー → 新スキーマを使用
-    }
-  } catch (err: any) {
-    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
-  }
-  const li = await query(
-    `SELECT id, line_no, item_name, spec, unit_price, quantity,
-            amount_ex_tax, calc_method, payment_terms, payment_method,
-            payment_date, delivery_date, cycle, term_start, term_end, billing_day
-       FROM capability_line_items
-      WHERE capability_id = $1
-      ORDER BY line_no ASC`,
-    [capabilityId]
-  );
-  return li.rows;
-}
-
-/**
- * Phase E-2: 利用許諾条件(財務条件)の表示行を coverage-gated dual-read で取得。
- *   condition_lines が当該 capability の financial 由来明細を完全カバーする場合のみ
- *   condition_lines から読む。A案で暗黙 terms に切り出された分も拾えるよう
- *   source_condition_id 経由で連結 (capability_id 非依存)。condition_no は
- *   source_seq_no(元の condition_no)で faithful に復元。欠ければ旧テーブル。
- */
-async function readCapabilityFinancialRowsForDisplay(
-  query: QueryFn,
-  capabilityId: number
-): Promise<any[]> {
-  try {
-    const cl = await query(
-      `SELECT cl.source_condition_id AS id, cl.source_seq_no AS condition_no,
-              cl.subject AS region_language_label, cl.calc_method, cl.rate_pct,
-              cl.base_price_label, cl.calc_period, cl.currency, cl.formula_text,
-              cl.payment_terms, cl.mg_amount, cl.calc_period_kind, cl.calc_period_close_month
-         FROM condition_lines cl
-        WHERE cl.source_condition_id IN (
-                SELECT id FROM capability_financial_conditions WHERE capability_id = $1)
-        ORDER BY cl.source_seq_no ASC NULLS LAST, cl.id`,
-      [capabilityId]
-    );
-    const oldCount = await query(
-      `SELECT COUNT(*)::int AS c FROM capability_financial_conditions WHERE capability_id = $1`,
-      [capabilityId]
-    );
-    if (cl.rows.length > 0 && cl.rows.length === Number(oldCount.rows[0].c)) {
-      return cl.rows;
-    }
-  } catch (err: any) {
-    if (!err || (err.code !== "42P01" && err.code !== "42703")) throw err;
-  }
-  // 旧テーブル (古い DB は calc_period_kind/close_month が無く 42703 → 簡易版)
-  try {
-    return (
-      await query(
-        `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
-                base_price_label, calc_period, currency, formula_text, payment_terms,
-                mg_amount, calc_period_kind, calc_period_close_month
-           FROM capability_financial_conditions
-          WHERE capability_id = $1
-          ORDER BY condition_no ASC`,
-        [capabilityId]
-      )
-    ).rows;
-  } catch (e2: any) {
-    if (e2 && e2.code === "42703") {
-      return (
-        await query(
-          `SELECT id, condition_no, region_language_label, calc_method, rate_pct,
-                  base_price_label, calc_period, currency, formula_text, payment_terms, mg_amount
-             FROM capability_financial_conditions
-            WHERE capability_id = $1
-            ORDER BY condition_no ASC`,
-          [capabilityId]
-        )
-      ).rows;
-    }
-    throw e2;
-  }
-}
-
 export function registerFormReadRoutes(
   app: Express,
   deps: { query: (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>; backlogService: any }
@@ -185,19 +75,44 @@ export function registerFormReadRoutes(
           const orderItemId = orderHeader.rows[0].id;
           context["taxRate"] = orderHeader.rows[0].tax_rate || 10;
           context["grandTotalExTax"] = Number(orderHeader.rows[0].amount_ex_tax) || 0;
-          // Phase E-2: condition_lines 優先の coverage-gated dual-read
-          //   (完全カバー時のみ新スキーマ、欠ければ旧テーブル。shape は同一)
-          const lineRows = await readCapabilityLineRowsForDisplay(
-            query,
-            orderItemId
-          );
-          context["items"] = lineRows.map((r: any) => ({
+          // rate_pct 列が未マイグレーションの環境でも 500 にしないよう 2 段 fallback。
+          let lines: any;
+          try {
+            lines = await query(
+              `SELECT line_no, item_name, spec, unit_price, quantity,
+                      amount_ex_tax, rate_pct, calc_method, payment_terms,
+                      payment_method, payment_date, delivery_date,
+                      cycle, term_start, term_end, billing_day
+                 FROM capability_line_items
+                WHERE capability_id = $1
+                ORDER BY line_no ASC`,
+              [orderItemId]
+            );
+          } catch (colErr: any) {
+            if (colErr && colErr.code === "42703") {
+              lines = await query(
+                `SELECT line_no, item_name, spec, unit_price, quantity,
+                        amount_ex_tax, calc_method, payment_terms,
+                        payment_method, payment_date, delivery_date,
+                        cycle, term_start, term_end, billing_day
+                   FROM capability_line_items
+                  WHERE capability_id = $1
+                  ORDER BY line_no ASC`,
+                [orderItemId]
+              );
+            } else {
+              throw colErr;
+            }
+          }
+          context["items"] = lines.rows.map((r: any) => ({
             line_no: Number(r.line_no),
             item_name: r.item_name || "",
             spec: r.spec || "",
             unit_price: Number(r.unit_price) || 0,
             quantity: Number(r.quantity) || 0,
             amount_ex_tax: Number(r.amount_ex_tax) || 0,
+            // ROYALTY 用料率(%)。小計 = 単価 × 数量 × 料率%。
+            rate_pct: r.rate_pct == null ? undefined : Number(r.rate_pct),
             // Phase 13: calc_method + payment_terms 統一
             calc_method: r.calc_method || "FIXED",
             payment_terms: r.payment_terms || r.payment_method || "",
@@ -250,11 +165,40 @@ export function registerFormReadRoutes(
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              // Phase E-2: condition_lines 優先の coverage-gated dual-read
-              //   (id=source_line_item_id なので inspMap 参照もそのまま機能)
-              const lines = {
-                rows: await readCapabilityLineRowsForDisplay(query, poId),
-              };
+              // 検収対象明細: amount>0 の業務委託に加え、受注者帰属(利用許諾料に含む=0円)
+              //   の明細も含める。検収書に「利用許諾料に含む」として出すため。
+              //   発注者帰属の0円明細は除外したままにする。
+              //   deliverable_ownership 列が未追加の環境(0060前)は 42703 で旧挙動に fallback。
+              let lines: any;
+              try {
+                lines = await query(
+                  `SELECT id, line_no, item_name, spec, unit_price, quantity,
+                          amount_ex_tax, calc_method, payment_terms,
+                          payment_method, payment_date, delivery_date,
+                          deliverable_ownership
+                     FROM capability_line_items
+                    WHERE capability_id = $1
+                      AND (COALESCE(amount_ex_tax, 0) > 0
+                           OR deliverable_ownership = '受注者')
+                    ORDER BY line_no ASC`,
+                  [poId]
+                );
+              } catch (colErr: any) {
+                if (colErr && colErr.code === "42703") {
+                  lines = await query(
+                    `SELECT id, line_no, item_name, spec, unit_price, quantity,
+                            amount_ex_tax, calc_method, payment_terms,
+                            payment_method, payment_date, delivery_date
+                       FROM capability_line_items
+                      WHERE capability_id = $1
+                        AND COALESCE(amount_ex_tax, 0) > 0
+                      ORDER BY line_no ASC`,
+                    [poId]
+                  );
+                } else {
+                  throw colErr;
+                }
+              }
               const lineIds = lines.rows.map((l: any) => l.id);
               const inspMap: Record<number, { amt: number; qty: number }> = {};
               if (lineIds.length > 0) {
@@ -281,19 +225,23 @@ export function registerFormReadRoutes(
               //   - 仕様   ← capability_line_items 1 行目の spec
               //   - 発注日 ← contract_capabilities.created_at (due_date 優先)
               const docRow = await query(
-                `SELECT document_number FROM documents
+                `SELECT document_number, form_data FROM documents
                   WHERE issue_key = $1
                     AND template_type LIKE '%purchase_order%'
                   ORDER BY created_at DESC LIMIT 1`,
                 [parentKey]
               );
               const parentPoNumber = docRow.rows[0]?.document_number || "";
+              const parentPoForm = docRow.rows[0]?.form_data || {};
               const poRow = poHeader.rows[0];
               const firstLine = lines.rows[0];
 
               context["parent_po_issue_key"] = parentKey;
               context["parent_po_id"] = poId;
               context["parent_po_number"] = parentPoNumber;
+              // 件名: 発注書フォームで入力した件名(PROJECT_TITLE)を優先。無ければ contract_title。
+              context["projectTitle"] =
+                parentPoForm?.PROJECT_TITLE || poRow.contract_title || "";
               if (firstLine?.item_name) {
                 context["description"] = firstLine.item_name;
               }
@@ -349,6 +297,8 @@ export function registerFormReadRoutes(
                   unit_price: Number(l.unit_price) || 0,
                   quantity: ordQty,
                   amount_ex_tax: ordAmt,
+                  // 成果物帰属。受注者帰属かつ0円は検収書で「利用許諾料に含む」表示。
+                  deliverable_ownership: l.deliverable_ownership || "発注者",
                   // Phase 23.0.4: 検収書 Excel / PDF 生成時に納品日列が空に
                   //   なる問題を解消するため delivery_date / payment_date を追加。
                   //   excelService.findParentLine が l.delivery_date を読む。
@@ -654,13 +604,55 @@ export function registerFormReadRoutes(
             }
             // Phase 22.20-B: calc_period_kind / calc_period_close_month を含める
             //   schema 未追加環境では 42703 を catch して legacy SELECT に fallback
-            // Phase E-2: condition_lines 優先の coverage-gated dual-read
-            const conds = {
-              rows: await readCapabilityFinancialRowsForDisplay(query, lcId),
-            };
-            context["financial_conditions"] = conds.rows.map((r: any) => ({
+            let conds: any;
+            try {
+              conds = await query(
+                `SELECT id, condition_no, region_language_label, calc_method,
+                        rate_pct, base_price_label, calc_period, currency,
+                        formula_text, payment_terms, mg_amount, ag_amount,
+                        calc_period_kind, calc_period_close_month,
+                        condition_name, calc_type, fixed_kind,
+                        subscription_cycle, unit_amount, guarantee_type,
+                        region_territory, region_language, applies_scope
+                   FROM capability_financial_conditions
+                  WHERE capability_id = $1
+                  ORDER BY condition_no ASC`,
+                [lcId]
+              );
+            } catch (colErr2: any) {
+              if (colErr2 && colErr2.code === "42703") {
+                conds = await query(
+                  `SELECT id, condition_no, region_language_label, calc_method,
+                          rate_pct, base_price_label, calc_period, currency,
+                          formula_text, payment_terms, mg_amount
+                     FROM capability_financial_conditions
+                    WHERE capability_id = $1
+                    ORDER BY condition_no ASC`,
+                  [lcId]
+                );
+              } else {
+                throw colErr2;
+              }
+            }
+            context["financial_conditions"] = conds.rows.map((r: any) => {
+              // テリトリー / 言語 を別項目で返す。未設定の行は合成ラベルを
+              //   最初の '・' で分割してフォールバック (API と同じロジック)。
+              let territory = (r.region_territory || "").trim();
+              let language = (r.region_language || "").trim();
+              if (!territory && !language && r.region_language_label) {
+                const s = String(r.region_language_label).trim();
+                const idx = s.indexOf("・");
+                if (idx < 0) territory = s;
+                else {
+                  territory = s.slice(0, idx).trim();
+                  language = s.slice(idx + 1).trim();
+                }
+              }
+              return {
               id: Number(r.id),
               condition_no: Number(r.condition_no),
+              region_territory: territory,
+              region_language: language,
               region_language_label: r.region_language_label || "",
               calc_method: r.calc_method || "",
               rate_pct: r.rate_pct !== null ? Number(r.rate_pct) : undefined,
@@ -673,9 +665,19 @@ export function registerFormReadRoutes(
                   : undefined,
               currency: r.currency || "JPY",
               formula_text: r.formula_text || "",
+              applies_scope: r.applies_scope || "",
               payment_terms: r.payment_terms || "",
               mg_amount: r.mg_amount !== null ? Number(r.mg_amount) : 0,
-            }));
+              ag_amount: r.ag_amount != null ? Number(r.ag_amount) : 0,
+              // 0045: 金銭条件の柔軟化フィールド (名称/計算式タイプ/保証種別)
+              condition_name: r.condition_name || "",
+              calc_type: r.calc_type || undefined,
+              fixed_kind: r.fixed_kind || undefined,
+              subscription_cycle: r.subscription_cycle || undefined,
+              unit_amount: r.unit_amount != null ? Number(r.unit_amount) : undefined,
+              guarantee_type: r.guarantee_type || undefined,
+              };
+            });
 
             // Phase 22.20-D: work_sublicensees を読み出して
             //   formData.サブライセンシー一覧 と同じ shape で返却。

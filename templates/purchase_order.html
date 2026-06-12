@@ -375,11 +375,15 @@
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
+          {{#if (eq deliverable_ownership "受注者")}}<div style="font-size:7.5pt; color:#92400e; margin-top:2px; font-weight:700;">＋利用許諾条件あり（下段「利用許諾条件」参照{{#if condition_name}}：{{condition_name}}{{/if}}）</div>{{/if}}
         </td>
         <td class="center">
           {{!-- Phase 13: 計算方式バッジ + 支払条件
                Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
-          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          <span class="pay-method-badge">{{#if (eq deliverable_ownership "受注者")}}FIXED{{else}}{{or calc_method payment_method_display payment_method "FIXED"}}{{/if}}</span>
+          {{#if (eq calc_method "ROYALTY")}}{{#unless (eq deliverable_ownership "受注者")}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">料率 {{rate_pct}}%（単価×数量×料率）</div>
+          {{/unless}}{{/if}}
           {{#if (eq calc_method "SUBSCRIPTION")}}
           <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
           {{else}}
@@ -417,9 +421,9 @@
             {{formatDate payment_date}}
           {{/if}}
         </td>
-        <td class="right">{{or quantity qty}}</td>
-        <td class="right">{{formatYen (or unit_price unitPrice)}}</td>
-        <td class="right">{{formatYen (or amount_ex_tax amount)}}</td>
+        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{or quantity qty}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{or quantity qty}}{{/if}}</td>
+        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
+        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}{{else}}<span style="color:#888;">-</span><div style="font-size:7pt;color:#92400e;">業務委託報酬は利用許諾料に含まれる</div>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
       </tr>
       {{#if (or spec detailText)}}
       {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
@@ -466,6 +470,29 @@
       </tr>
     </tbody>
   </table>
+
+  {{#if has_license_conditions}}
+  <div class="section-mark">■ 利用許諾条件（受注者帰属・確定額外）</div>
+  <table class="items">
+    <thead>
+      <tr><th style="width:4%;">#</th><th style="width:26%;">条件名称 / 区分</th><th style="width:34%;">計算式</th><th style="width:18%;">料率 / 基準</th><th style="width:18%;">MG / AG</th></tr>
+    </thead>
+    <tbody>
+      {{#each items}}
+      {{#if (eq deliverable_ownership "受注者")}}
+      <tr>
+        <td class="center">{{or line_no (index1 @index)}}</td>
+        <td>{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+        <td>{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+        <td class="right">{{#if rate_pct}}{{rate_pct}}%{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">{{base_price_label}}</div>{{/if}}</td>
+        <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
+      </tr>
+      {{/if}}
+      {{/each}}
+    </tbody>
+  </table>
+  <div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 成果物のIPが受注者帰属のための利用許諾料条件です。確定額には含まれず、別途 利用許諾料計算書により算定・支払われます。</div>
+  {{/if}}
 
   {{!-- Phase 22.21.56: その他手数料 (税抜・合計に加算)。コーディネート費・
        振込手数料 等、業務委託報酬とは別の手数料項目。経費 (税込・別精算) とは
@@ -614,6 +641,19 @@
   {{/if}}
 
   {{#if SHOW_ORDER_SIGN_SECTION}}
+  <div class="section-mark">■ 通知先</div>
+  <table class="summary">
+    <tr>
+      <th style="width:30%;">発注先（受注者）</th>
+      <td>担当：{{VENDOR_CONTACT_NAME}}　／　TEL：{{VENDOR_CONTACT_PHONE}}　／　E-mail：{{VENDOR_EMAIL}}</td>
+    </tr>
+    <tr>
+      <th>発注元（当社）</th>
+      <td>担当：{{STAFF_NAME}}　／　TEL：{{STAFF_PHONE}}　／　E-mail：{{STAFF_EMAIL}}</td>
+    </tr>
+  </table>
+  <div style="margin-top:6px; font-size:9pt; color:#555;">本発注に関する通知その他の連絡は、上記の通知先に対して行うものとします。基本契約がある場合は、その通知条項に従います。</div>
+
   <div class="section-mark">■ 署名欄</div>
   <table class="sign-table" style="margin-top: 6px;">
     <tr>

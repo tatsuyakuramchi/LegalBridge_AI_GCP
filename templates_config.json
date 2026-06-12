@@ -120,6 +120,8 @@
       "SHOW_SIGN_SECTION": { "label": "承諾署名欄を表示", "group": "VII. 契約・署名 (任意)", "type": "boolean" },
       "VENDOR_ACCEPT_DATE": { "label": "受注者承諾日", "group": "VII. 契約・署名 (任意)", "type": "date" },
       "VENDOR_ACCEPT_NAME": { "label": "受注者署名", "group": "VII. 契約・署名 (任意)" }
+    ,
+      "VENDOR_CONTACT_PHONE": { "type": "text", "label": "TEL", "group": "II. 発注先 (取引先)", "helpText": "発注先 通知先 電話" }
     }
   },
 
@@ -133,8 +135,6 @@
       "VENDOR_NAME": { "label": "ライセンサー名称", "group": "II. ライセンサー (許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "VENDOR_ADDRESS": { "label": "ライセンサー住所", "group": "II. ライセンサー (許諾者)", "type": "textarea", "required": true },
       "VENDOR_REP": { "label": "ライセンサー代表者", "group": "II. ライセンサー (許諾者)", "required": true },
-      "VENDOR_PHONE": { "label": "TEL", "group": "II. ライセンサー (許諾者)" },
-      "VENDOR_EMAIL": { "label": "E-mail", "group": "II. ライセンサー (許諾者)" },
 
       "PARTY_A_NAME": { "label": "ライセンシー名称", "group": "III. ライセンシー (被許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "PARTY_A_ADDRESS": { "label": "ライセンシー住所", "group": "III. ライセンシー (被許諾者)", "type": "textarea", "required": true },
@@ -154,6 +154,10 @@
 
       "documentNumberOverride": { "label": "契約番号 手動上書き (任意)", "group": "VI. 発行オプション (任意)", "helpText": "空欄なら自動採番。社内修正版を外部に出す場合、再発行リビジョン (_001 等) ではなく任意の番号を指定可能 (例: 元番号 ARC-LIC-2026-0001 をそのまま使い続ける)" },
       "showReissueBanner": { "label": "PDF に再発行版バナーを表示", "group": "VI. 発行オプション (任意)", "type": "boolean", "helpText": "ON (デフォルト): 再発行版のとき PDF に黄色バナーを表示。OFF: 社内修正のみで相手方には初版に見せたいとき。リビジョン番号は DB 側で常に管理されます" }
+    ,
+      "NOTICE_CONTACT_NAME": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (相手方)", "helpText": "本契約上の通知の宛先(相手方の担当者)" },
+      "NOTICE_CONTACT_PHONE": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (相手方)" },
+      "NOTICE_CONTACT_EMAIL": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (相手方)" }
     }
   },
 
@@ -172,8 +176,6 @@
       "VENDOR_NAME": { "label": "乙 (受託者) 商号 / 氏名", "group": "III. 乙 (受託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力。法人=商号、個人=氏名" },
       "VENDOR_ADDRESS": { "label": "乙 (受託者) 住所", "group": "III. 乙 (受託者)", "type": "textarea", "required": true },
       "VENDOR_REP": { "label": "乙 (受託者) 代表者", "group": "III. 乙 (受託者)", "required": true, "helpText": "法人の場合のみ必須。「代表取締役 山田太郎」のような肩書込みの形式。個人を選択すると非表示になります" },
-      "VENDOR_PHONE": { "label": "乙 (受託者) TEL", "group": "III. 乙 (受託者)" },
-      "VENDOR_EMAIL": { "label": "乙 (受託者) E-mail", "group": "III. 乙 (受託者)" },
 
       "BANK_NAME": { "label": "銀行名", "group": "IV. 振込先銀行口座 (乙)", "helpText": "[取引先] ボタンで自動入力" },
       "BRANCH_NAME": { "label": "支店名", "group": "IV. 振込先銀行口座 (乙)" },
@@ -186,6 +188,10 @@
       "CONTRACT_PERIOD_SUMMARY": { "label": "\u5951\u7d04\u671f\u9593", "group": "V. \u30a4\u30f3\u30dc\u30a4\u30b9\u5236\u5ea6\u95a2\u9023", "placeholder": "\u4f8b: \u5951\u7d04\u7de0\u7d50\u65e5\u304b\u30891\u5e74\u9593\uff08\u671f\u9593\u6e80\u4e861\u304b\u6708\u524d\u307e\u3067\u306e\u89e3\u7d04\u901a\u77e5\u304c\u306a\u3044\u5834\u5408\u306f\u540c\u4e00\u6761\u4ef6\u30671\u5e74\u9593\u66f4\u65b0\uff09" },
 
       "REMARKS": { "label": "特約・特記事項", "group": "VI. 特約 (任意)", "type": "textarea", "helpText": "未入力なら PDF に該当ブロックが表示されません" }
+    ,
+      "NOTICE_CONTACT_NAME": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (乙)", "helpText": "本契約上の通知の宛先(相手方の担当者)" },
+      "NOTICE_CONTACT_PHONE": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (乙)" },
+      "NOTICE_CONTACT_EMAIL": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (乙)" }
     }
   },
 
@@ -483,6 +489,10 @@
       "金銭条件3_支払条件": { "label": "支払条件", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)" },
 
       "特記事項_本文": { "label": "特記事項", "group": "IX. 特記事項", "type": "textarea", "placeholder": "個別契約に固有の追加条件など" }
+    ,
+      "Licensor_担当者": { "type": "text", "label": "Licensor 担当者", "group": "II. Licensor (許諾者)", "helpText": "通知先の担当者(相手方)" },
+      "Licensor_電話": { "type": "text", "label": "Licensor 電話", "group": "II. Licensor (許諾者)" },
+      "Licensor_メール": { "type": "text", "label": "Licensor メール", "group": "II. Licensor (許諾者)" }
     }
   },
 
@@ -580,8 +590,6 @@
 
       "許諾者住所": { "label": "許諾者 住所", "group": "II. 許諾者 (甲・個人)", "type": "textarea", "required": true , "dbField": "vendor.address" },
       "許諾者氏名": { "label": "許諾者 氏名", "group": "II. 許諾者 (甲・個人)", "required": true , "dbField": "vendor.vendor_name" },
-      "許諾者電話番号": { "label": "許諾者 電話番号", "group": "II. 許諾者 (甲・個人)" , "dbField": "vendor.phone" },
-      "許諾者メール": { "label": "許諾者 メール", "group": "II. 許諾者 (甲・個人)" , "dbField": "vendor.email" },
 
       "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true , "dbField": "company.rep" },
@@ -599,6 +607,10 @@
       "再発行フラグ": { "label": "再発行版バナーを表示", "group": "VI. 特記・発行オプション", "type": "boolean", "helpText": "ON で PDF 冒頭に「再発行版」バナーを表示" },
       "改訂番号": { "label": "改訂番号 (Rev.)", "group": "VI. 特記・発行オプション", "placeholder": "1", "helpText": "再発行版のとき表示" },
       "元契約番号": { "label": "元契約番号", "group": "VI. 特記・発行オプション", "placeholder": "ARC-PUB-2026-0001", "helpText": "再発行版のとき表示" }
+    ,
+      "通知先担当者": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (許諾者)", "helpText": "本契約上の通知の宛先(許諾者の担当者)" },
+      "通知先電話": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (許諾者)" },
+      "通知先メール": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (許諾者)" }
     }
   },
 
@@ -613,9 +625,6 @@
       "許諾者法人名": { "label": "許諾者 法人名", "group": "II. 許諾者 (甲・法人)", "required": true , "dbField": "vendor.vendor_name" },
       "代表者職名": { "label": "代表者 職名", "group": "II. 許諾者 (甲・法人)", "placeholder": "例: 代表取締役" },
       "代表者氏名": { "label": "代表者 氏名", "group": "II. 許諾者 (甲・法人)", "required": true , "dbField": "vendor.vendor_rep" },
-      "担当者氏名": { "label": "担当者 氏名", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.contact_name" },
-      "担当者電話番号": { "label": "担当者 電話番号", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.phone" },
-      "担当者メール": { "label": "担当者 メール", "group": "II. 許諾者 (甲・法人)" , "dbField": "vendor.email" },
 
       "アークライト住所": { "label": "アークライト 住所", "group": "III. アークライト (乙)", "type": "textarea", "required": true, "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "III. アークライト (乙)", "required": true , "dbField": "company.rep" },
@@ -633,6 +642,10 @@
       "再発行フラグ": { "label": "再発行版バナーを表示", "group": "VI. 特記・発行オプション", "type": "boolean", "helpText": "ON で PDF 冒頭に「再発行版」バナーを表示" },
       "改訂番号": { "label": "改訂番号 (Rev.)", "group": "VI. 特記・発行オプション", "placeholder": "1" },
       "元契約番号": { "label": "元契約番号", "group": "VI. 特記・発行オプション", "placeholder": "ARC-PUB-2026-0001" }
+    ,
+      "通知先担当者": { "type": "text", "label": "通知先 担当者", "group": "VII. 通知先 (許諾者)", "helpText": "本契約上の通知の宛先(許諾者の担当者)" },
+      "通知先電話": { "type": "text", "label": "通知先 電話", "group": "VII. 通知先 (許諾者)" },
+      "通知先メール": { "type": "text", "label": "通知先 メール", "group": "VII. 通知先 (許諾者)" }
     }
   },
 
@@ -698,6 +711,10 @@
 
       "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" , "dbField": "company.rep" }
+    ,
+      "許諾者担当者": { "type": "text", "label": "許諾者 担当者", "group": "8. 通知先 (許諾者)", "helpText": "通知先の担当者(相手方)" },
+      "許諾者電話": { "type": "text", "label": "許諾者 電話", "group": "8. 通知先 (許諾者)" },
+      "許諾者メール": { "type": "text", "label": "許諾者 メール", "group": "8. 通知先 (許諾者)" }
     }
   },
 
@@ -792,6 +809,10 @@
 
       "アークライト住所": { "label": "アークライト 住所", "group": "X. アークライト", "type": "textarea", "helpText": "[自社] ボタンで自動入力" , "dbField": "company.address" },
       "アークライト代表者氏名": { "label": "アークライト 代表者氏名", "group": "X. アークライト" , "dbField": "company.rep" }
+    ,
+      "許諾者担当者": { "type": "text", "label": "許諾者 担当者", "group": "8. 通知先 (許諾者)", "helpText": "通知先の担当者(相手方)" },
+      "許諾者電話": { "type": "text", "label": "許諾者 電話", "group": "8. 通知先 (許諾者)" },
+      "許諾者メール": { "type": "text", "label": "許諾者 メール", "group": "8. 通知先 (許諾者)" }
     }
   },
   "notice_consent_personal_info_freelance": {

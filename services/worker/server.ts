@@ -3965,13 +3965,30 @@ ${details}
     for (const c of conditions) {
       const condNo = Number(c?.condition_no);
       if (!Number.isFinite(condNo) || condNo < 1) continue;
+      // テリトリー / 言語 を別項目で保存し、表示用の合成ラベルを再計算する。
+      //   2項目が無い旧データはクライアントから来た region_language_label をそのまま使う。
+      const regionTerritory =
+        c.region_territory != null && String(c.region_territory).trim() !== ""
+          ? String(c.region_territory).trim()
+          : null;
+      const regionLanguage =
+        c.region_language != null && String(c.region_language).trim() !== ""
+          ? String(c.region_language).trim()
+          : null;
+      const regionLabel =
+        [regionTerritory, regionLanguage].filter(Boolean).join("・") ||
+        c.region_language_label ||
+        null;
       await query(
         `INSERT INTO capability_financial_conditions (
            capability_id, condition_no,
            region_language_label, calc_method, rate_pct,
            base_price_label, calc_period, calc_period_kind, calc_period_close_month,
-           currency, formula_text, payment_terms, mg_amount, ag_amount, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+           currency, formula_text, payment_terms, mg_amount, ag_amount,
+           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
+           region_territory, region_language, applies_scope,
+           updated_at
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, condition_no) DO UPDATE SET
            region_language_label   = EXCLUDED.region_language_label,
            calc_method             = EXCLUDED.calc_method,
@@ -3985,11 +4002,20 @@ ${details}
            payment_terms           = EXCLUDED.payment_terms,
            mg_amount               = EXCLUDED.mg_amount,
            ag_amount               = EXCLUDED.ag_amount,
+           condition_name          = EXCLUDED.condition_name,
+           calc_type               = EXCLUDED.calc_type,
+           fixed_kind              = EXCLUDED.fixed_kind,
+           subscription_cycle      = EXCLUDED.subscription_cycle,
+           unit_amount             = EXCLUDED.unit_amount,
+           guarantee_type          = EXCLUDED.guarantee_type,
+           region_territory        = EXCLUDED.region_territory,
+           region_language         = EXCLUDED.region_language,
+           applies_scope           = EXCLUDED.applies_scope,
            updated_at              = CURRENT_TIMESTAMP`,
         [
           capabilityId,
           condNo,
-          c.region_language_label || null,
+          regionLabel,
           c.calc_method || null,
           c.rate_pct != null && c.rate_pct !== "" ? Number(c.rate_pct) : null,
           c.base_price_label || null,
@@ -4004,6 +4030,16 @@ ${details}
           c.mg_amount != null && c.mg_amount !== "" ? Number(c.mg_amount) : 0,
           // Phase 22.21.95: AG (前払い保証 = 累積消化)
           c.ag_amount != null && c.ag_amount !== "" ? Number(c.ag_amount) : 0,
+          // 0045: 金銭条件の柔軟化 (名称 / 構造化計算式タイプ / 保証種別)
+          c.condition_name || null,
+          c.calc_type || null,
+          c.fixed_kind || null,
+          c.subscription_cycle || null,
+          c.unit_amount != null && c.unit_amount !== "" ? Number(c.unit_amount) : null,
+          c.guarantee_type || null,
+          regionTerritory,
+          regionLanguage,
+          c.applies_scope || null,
         ]
       );
     }
@@ -4063,12 +4099,12 @@ ${details}
            capability_id, line_no,
            category, item_name, spec,
            calc_method, payment_method, payment_terms,
-           quantity, unit_price, amount_ex_tax,
+           quantity, unit_price, amount_ex_tax, rate_pct,
            delivery_date, payment_date,
            cycle, billing_day, term_start, term_end,
            fee_type,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, line_no) DO UPDATE SET
            category       = EXCLUDED.category,
            item_name      = EXCLUDED.item_name,
@@ -4079,6 +4115,7 @@ ${details}
            quantity       = EXCLUDED.quantity,
            unit_price     = EXCLUDED.unit_price,
            amount_ex_tax  = EXCLUDED.amount_ex_tax,
+           rate_pct       = EXCLUDED.rate_pct,
            delivery_date  = EXCLUDED.delivery_date,
            payment_date   = EXCLUDED.payment_date,
            cycle          = EXCLUDED.cycle,
@@ -4099,6 +4136,7 @@ ${details}
           numOrNull(c.quantity),
           numOrNull(c.unit_price),
           numOrNull(c.amount_ex_tax),
+          numOrNull(c.rate_pct),
           dateOrNull(c.delivery_date),
           dateOrNull(c.payment_date),
           c.cycle || null,
@@ -7317,7 +7355,7 @@ ${details}
       }
       params.push(limit);
       const r = await query(
-        `SELECT id, issue_key, template_type, updated_at, updated_by,
+        `SELECT id, issue_key, template_type, document_number, updated_at, updated_by,
                 (SELECT COUNT(*) FROM jsonb_object_keys(form_data)) AS keys_count,
                 octet_length(form_data::text) AS size_bytes
            FROM document_drafts
@@ -7350,7 +7388,7 @@ ${details}
         });
       }
       const r = await query(
-        `SELECT id, issue_key, template_type, form_data, updated_at, updated_by
+        `SELECT id, issue_key, template_type, form_data, document_number, updated_at, updated_by
            FROM document_drafts
           WHERE issue_key = $1 AND template_type = $2
           LIMIT 1`,
@@ -7398,15 +7436,43 @@ ${details}
       }
       // Step1(SSOT): 下書き保存時も別名キーを揃えてから格納する。
       const normForm = normalizeDocumentFormData(templateType, formData);
+      // 発番タイミング: 明示的な「保存」操作 (assign_number=true) のときだけ採番する。
+      //   暗黙の保存 (編集モード切替・自動保存) では採番せず form_data だけ更新する。
+      //   これにより「編集に入っただけで番号を消費する」のを防ぐ。
+      //   既に番号がある場合は維持。form_data 側に番号が来ていればそれを優先採用。
+      const assignNumber = req.body?.assign_number === true;
+      let assignedDocNumber: string | null = null;
+      try {
+        const existing = await query(
+          `SELECT document_number FROM document_drafts
+            WHERE issue_key = $1 AND template_type = $2`,
+          [issueKey, templateType]
+        );
+        const cur = existing.rows[0]?.document_number;
+        if (cur && String(cur).trim()) {
+          assignedDocNumber = String(cur).trim();
+        } else {
+          const fromForm =
+            typeof (formData as any)?.__draft_doc_number === "string"
+              ? String((formData as any).__draft_doc_number).trim()
+              : "";
+          // 明示保存のときだけ新規採番する。暗黙保存では番号を採らない(null)。
+          assignedDocNumber = fromForm || (assignNumber ? await getNewDocumentNumber(templateType) : null);
+        }
+      } catch (numErr) {
+        console.warn("[document-drafts POST] 採番に失敗(番号なしで保存):", numErr);
+        assignedDocNumber = null;
+      }
       const r = await query(
-        `INSERT INTO document_drafts (issue_key, template_type, form_data, updated_by, updated_at)
-         VALUES ($1, $2, $3::jsonb, $4, NOW())
+        `INSERT INTO document_drafts (issue_key, template_type, form_data, document_number, updated_by, updated_at)
+         VALUES ($1, $2, $3::jsonb, $4, $5, NOW())
          ON CONFLICT (issue_key, template_type) DO UPDATE
             SET form_data = EXCLUDED.form_data,
+                document_number = COALESCE(document_drafts.document_number, EXCLUDED.document_number),
                 updated_by = EXCLUDED.updated_by,
                 updated_at = NOW()
-         RETURNING id, issue_key, template_type, form_data, updated_at, updated_by`,
-        [issueKey, templateType, JSON.stringify(normForm), updatedBy]
+         RETURNING id, issue_key, template_type, form_data, document_number, updated_at, updated_by`,
+        [issueKey, templateType, JSON.stringify(normForm), assignedDocNumber, updatedBy]
       );
       res.json({ ok: true, draft: r.rows[0] });
     } catch (err: any) {
@@ -7574,23 +7640,72 @@ ${details}
         }
       }
 
-      res.json({
-        ok: true,
-        total: rows.length,
-        results: rows.map((r) => ({
-          id: Number(r.id),
-          document_number: r.document_number,
-          issue_key: r.issue_key,
-          template_type: r.template_type,
-          document_category: r.document_category,
-          form_data: r.form_data || {},
-          drive_link: r.drive_link || "",
-          created_by: r.created_by,
-          created_at: r.created_at,
-          base_document_number: r.base_document_number || null,
-          revision: r.revision != null ? Number(r.revision) : null,
-        })),
-      });
+      const results: any[] = rows.map((r) => ({
+        id: Number(r.id),
+        source: "document",
+        document_number: r.document_number,
+        issue_key: r.issue_key,
+        template_type: r.template_type,
+        document_category: r.document_category,
+        form_data: r.form_data || {},
+        drive_link: r.drive_link || "",
+        created_by: r.created_by,
+        created_at: r.created_at,
+        base_document_number: r.base_document_number || null,
+        revision: r.revision != null ? Number(r.revision) : null,
+      }));
+
+      // include_drafts=1 のとき、作成途中の下書き(document_drafts)も併せて返す。
+      //   初回保存で採番済みなので document_number で呼び出せる。source='draft'。
+      if (String(req.query.include_drafts || "") === "1") {
+        try {
+          const dConds: string[] = [];
+          const dParams: any[] = [];
+          if (q) {
+            dParams.push(`%${q}%`);
+            const i = dParams.length;
+            dConds.push(
+              `(COALESCE(document_number,'') ILIKE $${i}
+                 OR issue_key ILIKE $${i}
+                 OR form_data::text ILIKE $${i})`
+            );
+          }
+          if (templateTypes.length > 0) {
+            dParams.push(templateTypes);
+            dConds.push(`template_type = ANY($${dParams.length}::text[])`);
+          }
+          dParams.push(limit);
+          const dRes = await query(
+            `SELECT id, document_number, issue_key, template_type,
+                    form_data, updated_at, updated_by
+               FROM document_drafts
+               ${dConds.length > 0 ? `WHERE ${dConds.join(" AND ")}` : ""}
+              ORDER BY updated_at DESC
+              LIMIT $${dParams.length}`,
+            dParams
+          );
+          for (const d of dRes.rows) {
+            results.push({
+              id: Number(d.id),
+              source: "draft",
+              document_number: d.document_number || "",
+              issue_key: d.issue_key,
+              template_type: d.template_type,
+              document_category: null,
+              form_data: d.form_data || {},
+              drive_link: "",
+              created_by: d.updated_by,
+              created_at: d.updated_at,
+              base_document_number: null,
+              revision: null,
+            });
+          }
+        } catch (draftErr) {
+          console.warn("[documents/search] draft merge skipped:", draftErr);
+        }
+      }
+
+      res.json({ ok: true, total: results.length, results });
     } catch (error) {
       console.error("/api/documents/search failed:", error);
       res.status(500).json({ ok: false, error: String(error) });
@@ -10408,6 +10523,46 @@ ${details}
         });
       }
 
+      // Part1(共通化): pub_license_terms も共通 FinancialConditionTable
+      //   (formData.financial_conditions[]) を採用。HTML テンプレは旧 flat field
+      //   ({{紙書籍印税率}} 等) を読むため、ここで条件表→flat field へ逆展開する。
+      //   condition_no: 1=紙書籍 / 2=電子書籍 / 3=翻訳・海外版。料率は表を真正として上書き、
+      //   計算式は表優先 (空ならテンプレ側の既定文が出る)。
+      if (
+        templateType === "pub_license_terms" &&
+        Array.isArray(formData.financial_conditions) &&
+        formData.financial_conditions.length > 0
+      ) {
+        const byNo: Record<number, any> = {};
+        formData.financial_conditions.forEach((c: any) => {
+          const n = Number(c.condition_no);
+          if (Number.isFinite(n)) byNo[n] = c;
+        });
+        const rateStr = (c: any) =>
+          c &&
+          c.rate_pct !== undefined &&
+          c.rate_pct !== null &&
+          String(c.rate_pct) !== ""
+            ? String(c.rate_pct)
+            : "";
+        const paper = byNo[1];
+        const ebook = byNo[2];
+        const trans = byNo[3];
+        if (paper) {
+          formData["紙書籍印税率"] = rateStr(paper);
+          formData["紙媒体計算式"] = paper.formula_text || formData["紙媒体計算式"] || "";
+        }
+        if (ebook) {
+          formData["電子書籍印税率"] = rateStr(ebook);
+          formData["電子書籍計算式"] = ebook.formula_text || formData["電子書籍計算式"] || "";
+        }
+        if (trans) {
+          formData["翻訳海外版料率"] = rateStr(trans);
+          formData["翻訳海外版計算式"] =
+            trans.formula_text || formData["翻訳海外版計算式"] || "";
+        }
+      }
+
       // Phase 17i: 経費の合計 (税込) を確実にテンプレに渡す
       //   フロントが既に計算済みでも、念のためサーバ側で再計算して上書きする。
       const expensesForRender = Array.isArray(formData.expenses) ? formData.expenses : [];
@@ -10992,7 +11147,9 @@ ${details}
             ledger_ref_id = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
             ledger_code = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
             superseded_by = NULL,
-            updated_at = CURRENT_TIMESTAMP`,
+            updated_at = CURRENT_TIMESTAMP
+          WHERE contract_capabilities.record_type = 'delivery_record'
+             OR EXCLUDED.record_type <> 'delivery_record'`,
           [
             vendorId,
             recordType,
@@ -11092,6 +11249,8 @@ ${details}
                   condition_no: 1,
                   region_language_label: "紙書籍出版",
                   calc_method: "ROYALTY",
+                  calc_type: "BASE_QTY_RATE",
+                  guarantee_type: "NONE",
                   rate_pct: toPct(formData["紙書籍印税率"]),
                   base_price_label: "税抜定価",
                   formula_text:
@@ -11108,6 +11267,8 @@ ${details}
                   condition_no: 2,
                   region_language_label: "電子書籍配信",
                   calc_method: "ROYALTY",
+                  calc_type: "BASE_QTY_RATE",
+                  guarantee_type: "NONE",
                   rate_pct: toPct(formData["電子書籍印税率"]),
                   base_price_label: "被許諾者受領額",
                   formula_text:
@@ -11125,6 +11286,8 @@ ${details}
                   region_language_label:
                     formData["翻訳海外版対象地域言語"] || "翻訳・海外版",
                   calc_method: "ROYALTY",
+                  calc_type: "BASE_QTY_RATE",
+                  guarantee_type: "NONE",
                   rate_pct: toPct(formData["翻訳海外版料率"]),
                   base_price_label: "被許諾者受取ライセンス収益",
                   formula_text:
@@ -11296,8 +11459,24 @@ ${details}
         // Phase 23: order_line_items → capability_line_items
         if (orderItemId && Array.isArray(formData.items) && formData.items.length > 0) {
           const taxRate = Number(formData.taxRate) || 10;
+          // 成果物帰属で振り分け: 発注者帰属=業務委託明細(capability_line_items),
+          //   受注者帰属=利用許諾料(capability_financial_conditions)。
+          const allFormItems = formData.items as Array<any>;
+          // 受注者帰属でも「業務報酬(執筆料等)」が有る行は確定額として line_items に入れる。
+          //   ただし業務報酬0(=利用許諾料のみ)の受注者行は検収対象にならない(0円明細が
+          //   検収待ちに居座る不具合の原因)ため line_items には作らない。利用許諾料(料率/
+          //   MG/AG)は下の licenseItems で financial_conditions へ振り分ける。
+          const licenseItems = allFormItems.filter(
+            (it) => it?.deliverable_ownership === "受注者"
+          );
+          // 全明細を capability_line_items に保存する。受注者帰属で業務報酬0
+          //   (=利用許諾料に含む)の明細も検収書に「利用許諾料に含む」として出すため
+          //   line_items に作る。検収待ち判定(unissued_line_count)は amount>0 のみを
+          //   数えるので、0円明細が検収待ちに居座ることはない。確定額(業務委託小計)も
+          //   0円明細は 0 加算で総額に影響しない。
+          const lineItemsSource = allFormItems;
           // サブスクの支払スケジュールを支払予定日ごとの行に展開してミラー。
-          const incomingLines = expandLinesWithSchedule(formData.items as Array<any>);
+          const incomingLines = expandLinesWithSchedule(lineItemsSource);
           const keepNos = incomingLines
             .map((l, i) => Number(l.line_no) || i + 1)
             .filter((n) => n > 0);
@@ -11316,28 +11495,38 @@ ${details}
             const lineNo = Number(l.line_no) || i + 1;
             const unit = Number(l.unit_price) || 0;
             const qty = Number(l.quantity) || 0;
-            const lineAmt = calculateOrderLineAmount(unit, qty);
+            const ratePct = Number(l.rate_pct) || 0;
+            // ROYALTY は 単価×数量×料率%(切上げ)。フォーム計算値があればそれを優先。
+            const lineAmt =
+              l.amount_ex_tax != null && l.amount_ex_tax !== ""
+                ? Number(l.amount_ex_tax) || 0
+                : l.calc_method === "ROYALTY"
+                  ? Math.ceil((unit * qty * ratePct) / 100)
+                  : calculateOrderLineAmount(unit, qty);
             // Phase 13: calc_method + payment_terms 統一
             const payTerms = l.payment_terms || l.payment_method || null;
             const calcMethod = l.calc_method || "FIXED";
             await query(
               `INSERT INTO capability_line_items (
                  capability_id, line_no, item_name, spec,
-                 unit_price, quantity, amount_ex_tax,
+                 unit_price, quantity, amount_ex_tax, rate_pct,
                  calc_method, payment_terms,
-                 payment_method, payment_date, delivery_date, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, CURRENT_TIMESTAMP)
+                 payment_method, payment_date, delivery_date,
+                 deliverable_ownership, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
                ON CONFLICT (capability_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
                  unit_price     = EXCLUDED.unit_price,
                  quantity       = EXCLUDED.quantity,
                  amount_ex_tax  = EXCLUDED.amount_ex_tax,
+                 rate_pct       = EXCLUDED.rate_pct,
                  calc_method    = EXCLUDED.calc_method,
                  payment_terms  = EXCLUDED.payment_terms,
                  payment_method = EXCLUDED.payment_method,
                  payment_date   = EXCLUDED.payment_date,
                  delivery_date  = EXCLUDED.delivery_date,
+                 deliverable_ownership = EXCLUDED.deliverable_ownership,
                  updated_at     = CURRENT_TIMESTAMP`,
               [
                 orderItemId,
@@ -11347,16 +11536,106 @@ ${details}
                 unit,
                 qty,
                 lineAmt,
+                ratePct || null,
                 calcMethod,
                 payTerms,
                 payTerms, // legacy mirror
                 l.payment_date || null,
                 l.delivery_date || null, // Phase 17h
+                l.deliverable_ownership || "発注者",
               ]
             );
           }
           // Phase 23: recalculateOrderTotal → recalculateCapabilityTotal
+          //   (発注者帰属=確定額のみ。受注者帰属は line_items に入れていないため不算入。)
           await recalculateCapabilityTotal(orderItemId, taxRate);
+
+          // 利用許諾条件を capability_financial_conditions へ保存。
+          //   新方式: 発注書フォームの「利用許諾条件（共通）」= formData.financial_conditions
+          //     を 1 本以上の共通条件として保存する(受注者帰属の成果物に一括適用)。
+          //   旧方式(後方互換): 共通条件が無ければ、受注者帰属明細ごとの per-line 条件を
+          //     そのまま振り分ける(過去発注書の再保存・既存挙動の維持)。
+          const commonConds: any[] = Array.isArray(formData.financial_conditions)
+            ? (formData.financial_conditions as any[]).filter(
+                (c) =>
+                  c &&
+                  (c.calc_type ||
+                    c.condition_name ||
+                    c.rate_pct != null ||
+                    c.applies_scope ||
+                    c.region_language_label)
+              )
+            : [];
+          const deriveCalcMethod = (ct: any, fallback: any) =>
+            ct === "FIXED"
+              ? "FIXED"
+              : ct === "SUBSCRIPTION"
+                ? "SUBSCRIPTION"
+                : ct === "BASE_QTY_RATE" || ct === "BASE_RATE"
+                  ? "ROYALTY"
+                  : fallback || null;
+          if (commonConds.length > 0 && licenseItems.length > 0) {
+            const mappedCommon = commonConds.map((c: any, i: number) => ({
+              condition_no: Number(c.condition_no) || i + 1,
+              condition_name: c.condition_name || null,
+              region_territory: c.region_territory || null,
+              region_language: c.region_language || null,
+              region_language_label: c.region_language_label || null,
+              calc_type: c.calc_type || null,
+              calc_method: c.calc_method || deriveCalcMethod(c.calc_type, null),
+              rate_pct: c.rate_pct ?? null,
+              base_price_label: c.base_price_label || null,
+              fixed_kind: c.fixed_kind || null,
+              subscription_cycle: c.subscription_cycle || null,
+              unit_amount: c.unit_amount ?? null,
+              guarantee_type: c.guarantee_type || null,
+              mg_amount: c.mg_amount ?? 0,
+              ag_amount: c.ag_amount ?? 0,
+              formula_text: c.formula_text || null,
+              payment_terms: c.payment_terms || null,
+              applies_scope: c.applies_scope || null,
+              calc_period: c.calc_period || null,
+              calc_period_kind: c.calc_period_kind || null,
+              calc_period_close_month: c.calc_period_close_month ?? null,
+              currency: c.currency || "JPY",
+            }));
+            try {
+              await upsertCapabilityFinancialConditions(orderItemId, mappedCommon);
+            } catch (condErr) {
+              console.warn("[license] 共通利用許諾条件 sync skipped:", condErr);
+            }
+          } else if (licenseItems.length > 0) {
+            const mappedConds = licenseItems.map((it: any, i: number) => ({
+              condition_no: Number(it.line_no) || i + 1,
+              condition_name: it.condition_name || it.item_name || null,
+              region_territory: it.region_territory || null,
+              region_language: it.region_language || null,
+              region_language_label: it.region_language_label || null,
+              calc_type: it.calc_type || null,
+              // 利用許諾条件の calc_method は計算式タイプから導出(業務報酬の FIXED とは別)。
+              calc_method: deriveCalcMethod(it.calc_type, it.calc_method),
+              rate_pct: it.rate_pct ?? null,
+              base_price_label: it.base_price_label || null,
+              fixed_kind: it.fixed_kind || null,
+              subscription_cycle: it.subscription_cycle || null,
+              unit_amount: it.unit_amount ?? null,
+              guarantee_type: it.guarantee_type || null,
+              mg_amount: it.mg_amount ?? 0,
+              ag_amount: it.ag_amount ?? 0,
+              formula_text: it.formula_text || null,
+              // 利用許諾条件の支払条件 → 利用許諾料計算書の支払条件に引用される。
+              payment_terms: it.payment_terms || null,
+              currency: "JPY",
+            }));
+            try {
+              await upsertCapabilityFinancialConditions(orderItemId, mappedConds);
+            } catch (condErr) {
+              console.warn(
+                "[deliverable_ownership] 受注者帰属→金銭条件 sync skipped:",
+                condErr
+              );
+            }
+          }
 
           // 方向(in/out)を明細にも反映(capability と揃える)。out は請求台帳へ自動取込。
           try {

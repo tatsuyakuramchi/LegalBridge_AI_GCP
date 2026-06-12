@@ -1,4 +1,14 @@
-<!DOCTYPE html>
+-- 0061_inspection_subject_prefix.sql
+-- 検収書: 検収確認文の先頭に件名(親POの contract_title=projectTitle) を表示する。
+--   「件名「○○」に関して、納品日（役務完了日）… に検収完了致しましたのでご通知します。」
+-- projectTitle は worker/api の form-context(親PO) と admin-ui の親POピッカーで供給。
+-- disk テンプレ(services/worker/templates/inspection_certificate.html)と整合。
+-- field_schema はフラット項目に変更が無いため 0057 と同一。
+
+WITH t AS (SELECT id FROM document_templates WHERE template_key='inspection_certificate'), nv AS (
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  SELECT t.id, COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id=t.id),0)+1,
+         $html_inspection_certificate$<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -228,7 +238,7 @@
     </div>
     <div class="doc-meta">
       <div>発注番号: <strong>{{or parent_po_number issueKey}}</strong></div>
-      <div>明細No.: {{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}</div>
+      <div>明細No.: {{#if itemNoList}}{{itemNoList}} （{{itemNoCovered}}/{{itemCount}}件）{{else}}{{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}{{/if}}</div>
       <div>発行日: {{formatDate documentDate}}</div>
     </div>
   </div>
@@ -274,9 +284,9 @@
     </div>
   </div>
 
-  {{!-- 検収確認文 — 日付は YYYY年MM月DD日 (formatDate) --}}
+  {{!-- 検収確認文 — 日付は YYYY年MM月DD日 (formatDate)。件名を先頭に表示。 --}}
   <div class="confirmation-text">
-    　納品日 （役務完了日）<strong>{{formatDate deliveredAt}}</strong> に納品（役務提供完了）された下記成果物（役務内容）について検収を行い、
+    　{{#if projectTitle}}件名「{{projectTitle}}」に関して、{{/if}}納品日 （役務完了日）<strong>{{formatDate deliveredAt}}</strong> に納品（役務提供完了）された下記成果物（役務内容）について検収を行い、
     検収日 <strong>{{formatDate inspectionCompletedAt}}</strong> に検収完了致しましたのでご通知します。
     {{#if (or (eq isPartial "分割") (eq isPartial true))}}本書は分割納品（第{{deliveryNo}}回）に係る検収書です。{{/if}}
   </div>
@@ -525,7 +535,7 @@
       <h3>■ 発注情報</h3>
       <p>発注日: {{formatDate orderDate}}</p>
       <p>発注番号: <strong>{{or parent_po_number issueKey}}</strong></p>
-      <p>明細No.: {{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}</p>
+      <p>明細No.: {{#if itemNoList}}{{itemNoList}} （{{itemNoCovered}}/{{itemCount}}件）{{else}}{{itemNo}}{{#if itemCount}} / 全{{itemCount}}件中{{/if}}{{/if}}</p>
     </div>
   </div>
 
@@ -546,3 +556,6 @@
 
 </body>
 </html>
+$html_inspection_certificate$, $schema_inspection_certificate$[{"name": "issueKey", "label": "Backlog 課題キー", "group": "I. 基本情報", "dbField": "backlog.issueKey", "helpText": "Backlog 課題から文書を作成した場合に自動補完されます。手動作成時は空欄のままで問題ありません (課題との紐づけは文書作成側で記録されます)。"}, {"name": "parent_po_number", "label": "発注番号 (親 PO 文書番号)", "group": "I. 基本情報", "helpText": "親 PO を選択 / 自動発見すると document_number が入る。PDF ヘッダ「発注番号」に表示"}, {"name": "documentDate", "label": "検収書発行日", "group": "I. 基本情報", "type": "date", "required": true, "dbField": "auto.today", "helpText": "未入力だと PDF の発行日が空欄になります"}, {"name": "orderDate", "label": "発注日", "group": "I. 基本情報", "type": "date", "helpText": "親 PO を選択すると created_at / due_date から自動補完"}, {"name": "itemNo", "label": "明細番号", "group": "I. 基本情報", "placeholder": "1"}, {"name": "itemCount", "label": "総明細数", "group": "I. 基本情報", "placeholder": "1"}, {"name": "deliveryNo", "label": "今回の納品回数", "group": "I. 基本情報", "placeholder": "1"}, {"name": "totalDeliveries", "label": "総予定回数", "group": "I. 基本情報", "placeholder": "1"}, {"name": "isPartial", "label": "分割納品", "group": "I. 基本情報", "type": "select", "options": ["分割", "完了"], "helpText": "親 PO 選択時に既存検収件数から自動判定。手動でも変更可"}, {"name": "counterparty", "label": "受託者名", "group": "II. 受託者 (取引先)", "required": true, "dbField": "vendor.vendor_name", "helpText": "[取引先] ボタンで自動入力"}, {"name": "COUNTERPARTY_IS_CORPORATION", "label": "受託者種別", "group": "II. 受託者 (取引先)", "type": "select", "options": ["法人", "個人"], "helpText": "法人=「御中」+代表者「様」 / 個人=「様」のみ。[取引先] ボタンで vendor.entity_type から自動判定"}, {"name": "counterpartyRep", "label": "受託者代表者名", "group": "II. 受託者 (取引先)", "placeholder": "例: 代表取締役 山田 太郎", "helpText": "法人の場合のみ表示。「様」は自動付与"}, {"name": "counterpartyTni", "label": "インボイス登録番号 (T-)", "group": "II. 受託者 (取引先)", "dbField": "vendor.invoice_registration_number"}, {"name": "inspectorDept", "label": "検収者部署", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.department", "helpText": "[Sync Staff] で自動入力"}, {"name": "inspectorName", "label": "検収者氏名", "group": "III. 検収者 (自社)", "required": true, "dbField": "staff.staff_name"}, {"name": "inspectorEmail", "label": "検収者メールアドレス", "group": "III. 検収者 (自社)", "dbField": "staff.email", "helpText": "みなし同意ブロックの連絡先に出力。[Sync Staff] で自動入力"}, {"name": "deliveredAt", "label": "実納品日", "group": "III. 検収者 (自社)", "type": "date", "required": true}, {"name": "inspectionCompletedAt", "label": "検収完了日", "group": "III. 検収者 (自社)", "type": "date", "required": true}, {"name": "paymentDueDate", "label": "支払期日", "group": "III. 検収者 (自社)", "type": "date"}, {"name": "description", "label": "成果物・業務内容", "group": "IV. 納品明細", "type": "textarea", "required": true}, {"name": "spec", "label": "仕様・内容詳細", "group": "IV. 納品明細", "type": "textarea"}, {"name": "linked_po_number", "label": "紐付け発注番号 (PO)", "group": "IV. 納品明細", "helpText": "[PO紐付] ボタンで External Asset から取得"}, {"name": "isReducedTax", "label": "軽減税率対象", "group": "IV. 納品明細", "type": "boolean"}, {"name": "deliveredAmountStr", "label": "納品額 (税抜)", "group": "IV. 納品明細", "required": true, "placeholder": "1,000,000"}, {"name": "taxRate", "label": "税率", "group": "IV. 納品明細", "type": "select", "options": ["10", "8"], "placeholder": "10"}, {"name": "taxAmountStr", "label": "消費税額", "group": "IV. 納品明細", "placeholder": "100,000"}, {"name": "totalAmountStr", "label": "合計額 (税込)", "group": "IV. 納品明細", "placeholder": "1,100,000"}, {"name": "inspectedPct", "label": "検収率 (%)", "group": "V. 進捗・財務 (任意)", "placeholder": "100"}, {"name": "inspectedAmountStr", "label": "検収済額", "group": "V. 進捗・財務 (任意)"}, {"name": "totalOrderAmountStr", "label": "発注総額", "group": "V. 進捗・財務 (任意)"}, {"name": "pendingAmountStr", "label": "未検収額", "group": "V. 進捗・財務 (任意)", "placeholder": "0"}, {"name": "paymentConditionSummary", "label": "支払条件", "group": "V. 進捗・財務 (任意)", "placeholder": "例: 検収月の翌月末日払い"}, {"name": "CHANGE_RECORDS", "label": "変更履歴", "group": "V. 進捗・財務 (任意)", "type": "textarea", "placeholder": "2026-05-24|検収金額|100,000|80,000|一部不合格のため減額", "helpText": "PDF の「変更履歴（当初発注条件からの変更）」に出力。複数件は ; 区切り。形式: 日付|項目名|変更前|変更後|理由"}, {"name": "bankName", "label": "金融機関", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.bank_name"}, {"name": "branchName", "label": "支店名", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.branch_name"}, {"name": "accountType", "label": "口座種別", "group": "VI. 振込先 (受託者口座, 任意)", "type": "select", "options": ["普通", "当座"], "dbField": "vendor.account_type"}, {"name": "accountNo", "label": "口座番号", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.account_number"}, {"name": "accountHolder", "label": "口座名義", "group": "VI. 振込先 (受託者口座, 任意)", "dbField": "vendor.account_holder_kana"}]$schema_inspection_certificate$::jsonb, '検収確認文の先頭に件名(projectTitle)を表示 (0061)', 'migration-0061'
+    FROM t RETURNING id, template_id)
+UPDATE document_templates dt SET current_version_id=nv.id, updated_at=now() FROM nv WHERE dt.id=nv.template_id;

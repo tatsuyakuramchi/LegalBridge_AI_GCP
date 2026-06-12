@@ -192,23 +192,6 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = dli.capability_line_item_id)
             ORDER BY dli.id DESC LIMIT 8`
         ),
-        // ⑤ 実体の無い明細を指す請求権参照
-        probe(
-          {
-            key: "orphan_sublicense_refs",
-            label: "請求権台帳の孤児参照 (sublicense_deals)",
-            description:
-              "存在しない capability_line_items を指す請求権の由来。参照を NULL 化して整合化。",
-            repair_action: "fix_orphan_refs",
-          },
-          `SELECT COUNT(*)::int AS n FROM sublicense_deals sd
-            WHERE sd.source_line_item_id IS NOT NULL
-              AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = sd.source_line_item_id)`,
-          `SELECT sd.id, sd.source_line_item_id FROM sublicense_deals sd
-            WHERE sd.source_line_item_id IS NOT NULL
-              AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = sd.source_line_item_id)
-            ORDER BY sd.id DESC LIMIT 8`
-        ),
         // ⑥ capability の無い発注書(documents) — 連結欠落(検出のみ)
         probe(
           {
@@ -350,17 +333,12 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                 WHERE dli.capability_line_item_id IS NOT NULL
                   AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = dli.capability_line_item_id)`
             );
-            const s = await client.query(
-              `UPDATE sublicense_deals sd SET source_line_item_id = NULL
-                WHERE sd.source_line_item_id IS NOT NULL
-                  AND NOT EXISTS (SELECT 1 FROM capability_line_items cl WHERE cl.id = sd.source_line_item_id)`
-            );
             await client.query("COMMIT");
             return res.json({
               ok: true,
               action,
-              affected: (d.rowCount || 0) + (s.rowCount || 0),
-              detail: { delivery: d.rowCount || 0, sublicense: s.rowCount || 0 },
+              affected: d.rowCount || 0,
+              detail: { delivery: d.rowCount || 0 },
             });
           } catch (e) {
             await client.query("ROLLBACK");

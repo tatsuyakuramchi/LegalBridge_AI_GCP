@@ -1,4 +1,19 @@
-<!--
+-- 0046_individual_license_terms_flex.sql
+-- 文書テンプレ individual_license_terms(個別利用許諾条件書) を、金銭条件の柔軟化対応版へ更新。
+--   - 条件名称(condition_name) を見出しに反映
+--   - 構造化計算式タイプ(calc_type: 基準価格×個数×料率 / 基準価格×料率 / 固定値 / サブスク)を計算方式行に表示
+--   - MG/AG 保証(guarantee_type)の排他表示
+-- TEMPLATE_SOURCE=db の Search/worker が読む document_templates の現行版を新版へ付替える(0044 と同方式)。
+-- disk テンプレ(services/worker/templates/individual_license_terms.html)と整合。
+
+WITH t AS (
+  SELECT id FROM document_templates WHERE template_key = 'individual_license_terms'
+), nv AS (
+  INSERT INTO document_template_versions
+      (template_id, version_no, html_source, field_schema, comment, created_by)
+  SELECT t.id,
+         COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = t.id), 0) + 1,
+         $html_ilt$<!--
 ================================================================================
   個別利用許諾条件テンプレート v6 (Phase 22.21.15)
   v5 ベース (legalbrigde-proto_GCP/templates/template_ledger_v5.html) に
@@ -171,13 +186,6 @@
         <span class="meta-val-h">
           契約開始日：{{許諾開始日}}
           {{#if 許諾期間注記}}<div style="font-size:8pt; color:#666; margin-top:2px;">{{許諾期間注記}}</div>{{/if}}
-        </span>
-      </div>
-      <div class="meta-row-item">
-        <span class="meta-label-h">通知先</span>
-        <span class="meta-val-h">
-          Licensor: 担当 {{Licensor_担当者}} ／ TEL {{Licensor_電話}} ／ Email {{Licensor_メール}}<br>
-          Licensee: 担当 {{STAFF_NAME}} ／ TEL {{STAFF_PHONE}} ／ Email {{STAFF_EMAIL}}
         </span>
       </div>
     </div>
@@ -601,7 +609,6 @@
     <div class="section-title">6. 特記事項</div>
     <div class="box" style="line-height:1.8;">
       １．基本契約に基づく個別利用許諾条件であり、当該基本契約と一体的に効力を有する。<br><br>
-      ２．本書に関する通知その他の連絡は、基本契約の通知条項に従い、頭書き「通知先」に記載の宛先に対して行う。<br><br>
       {{#if 特記事項_本文}}{{{特記事項_本文}}}{{else}}{{#if 特記事項}}{{特記事項}}{{/if}}{{/if}}
     </div>
   </div>
@@ -700,3 +707,14 @@
 
 </body>
 </html>
+$html_ilt$,
+         $schema_ilt$[{"name": "発行日", "label": "発行日", "group": "I. ヘッダ", "type": "date", "required": true, "dbField": "auto.today"}, {"name": "台帳ID", "label": "台帳ID", "group": "I. ヘッダ", "placeholder": "(空欄で自動採番)", "helpText": "空欄で生成時に LIC-YYYY-NNNN 形式で自動採番。同じ Backlog 課題で再発行する場合は既存の台帳ID を維持"}, {"name": "契約書番号", "label": "契約書番号", "group": "I. ヘッダ", "dbField": "auto.docNumber", "helpText": "生成時に自動採番されます"}, {"name": "基本契約名", "label": "基本契約名", "group": "I. ヘッダ", "type": "textarea", "required": true, "helpText": "上の「マスタ・アーカイブから検索」で選択すると自動入力されます。手入力も可。"}, {"name": "Licensor_名称", "label": "Licensor 名称", "group": "II. Licensor (許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力"}, {"name": "Licensor_住所", "label": "Licensor 住所", "group": "II. Licensor (許諾者)", "type": "textarea", "required": true}, {"name": "Licensor_氏名会社名", "label": "Licensor 氏名/会社名 (PDF表示用)", "group": "II. Licensor (許諾者)", "required": true}, {"name": "Licensor_代表者名", "label": "Licensor 代表者名", "group": "II. Licensor (許諾者)", "helpText": "法人の場合のみ"}, {"name": "LICENSOR_IS_CORPORATION", "label": "Licensor は法人", "group": "II. Licensor (許諾者)", "type": "boolean"}, {"name": "Licensee_名称", "label": "Licensee 名称", "group": "III. Licensee (被許諾者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力"}, {"name": "Licensee_住所", "label": "Licensee 住所", "group": "III. Licensee (被許諾者)", "type": "textarea", "required": true}, {"name": "Licensee_氏名会社名", "label": "Licensee 氏名/会社名 (PDF表示用)", "group": "III. Licensee (被許諾者)", "required": true}, {"name": "Licensee_代表者名", "label": "Licensee 代表者名", "group": "III. Licensee (被許諾者)", "helpText": "法人の場合のみ"}, {"name": "LICENSEE_IS_CORPORATION", "label": "Licensee は法人", "group": "III. Licensee (被許諾者)", "type": "boolean"}, {"name": "許諾開始日", "label": "許諾開始日", "group": "IV. 対象作品・期間", "type": "date", "required": true}, {"name": "許諾期間注記", "label": "許諾期間 注記", "group": "IV. 対象作品・期間", "type": "textarea", "placeholder": "例: 基本契約の満了日まで"}, {"name": "原著作物名", "label": "原著作物名", "group": "IV. 対象作品・期間", "required": true}, {"name": "原著作物補記", "label": "原著作物 補記", "group": "IV. 対象作品・期間", "helpText": "例: 原作および派生作品を含む"}, {"name": "対象製品予定名", "label": "対象製品（予定）名", "group": "IV. 対象作品・期間", "required": true}, {"name": "独占性", "label": "独占性", "group": "IV. 対象作品・期間", "type": "select", "options": ["独占", "非独占"], "required": true}, {"name": "素材番号", "label": "素材番号", "group": "V. 素材・監修", "placeholder": "LIC-01"}, {"name": "素材名", "label": "素材名", "group": "V. 素材・監修"}, {"name": "素材権利者", "label": "素材権利者", "group": "V. 素材・監修"}, {"name": "監修者", "label": "監修者", "group": "V. 素材・監修", "dbField": "staff.staff_name", "helpText": "[Sync Staff] で選択中の担当者を流し込み"}, {"name": "クレジット表示", "label": "クレジット表示", "group": "V. 素材・監修"}, {"name": "承認対象", "label": "承認対象 (承認条件)", "group": "V. 素材・監修", "type": "textarea", "helpText": "原作マスター > 承認条件デフォルトから自動入力 (上書き可)"}, {"name": "承認時期", "label": "承認時期", "group": "V. 素材・監修", "helpText": "原作マスター > 承認時期デフォルトから自動入力 (上書き可)"}, {"name": "金銭条件1_地域言語ラベル", "label": "金銭条件1 地域・言語ラベル", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 国内・日本語"}, {"name": "金銭条件1_計算方式", "label": "計算方式", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "ROYALTY / FIXED 等"}, {"name": "金銭条件1_料率", "label": "料率", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 5.0%"}, {"name": "金銭条件1_基準価格ラベル", "label": "基準価格", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 上代（MSRP）"}, {"name": "金銭条件1_計算期間", "label": "計算期間", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "例: 四半期"}, {"name": "金銭条件1_通貨", "label": "通貨", "group": "VI. 金銭条件 1 (自社製造)", "placeholder": "JPY"}, {"name": "金銭条件1_計算式", "label": "計算式", "group": "VI. 金銭条件 1 (自社製造)", "type": "textarea", "placeholder": "例: 上代 × 5.0% × 製造数"}, {"name": "金銭条件1_支払条件", "label": "支払条件", "group": "VI. 金銭条件 1 (自社製造)"}, {"name": "金銭条件2_地域言語ラベル", "label": "金銭条件2 地域・言語ラベル", "group": "VII. 金銭条件 2 (サブライセンス, 任意)"}, {"name": "金銭条件2_計算方式", "label": "計算方式", "group": "VII. 金銭条件 2 (サブライセンス, 任意)"}, {"name": "金銭条件2_料率", "label": "料率", "group": "VII. 金銭条件 2 (サブライセンス, 任意)"}, {"name": "金銭条件2_基準価格ラベル", "label": "基準価格", "group": "VII. 金銭条件 2 (サブライセンス, 任意)"}, {"name": "金銭条件2_計算期間", "label": "計算期間", "group": "VII. 金銭条件 2 (サブライセンス, 任意)"}, {"name": "金銭条件2_通貨", "label": "通貨", "group": "VII. 金銭条件 2 (サブライセンス, 任意)"}, {"name": "金銭条件2_計算式", "label": "計算式", "group": "VII. 金銭条件 2 (サブライセンス, 任意)", "type": "textarea"}, {"name": "金銭条件2_支払条件", "label": "支払条件", "group": "VII. 金銭条件 2 (サブライセンス, 任意)"}, {"name": "金銭条件3_地域言語ラベル", "label": "金銭条件3 地域・言語ラベル", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)"}, {"name": "金銭条件3_計算方式", "label": "計算方式", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)"}, {"name": "金銭条件3_料率", "label": "料率", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)"}, {"name": "金銭条件3_基準価格ラベル", "label": "基準価格", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)"}, {"name": "金銭条件3_計算期間", "label": "計算期間", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)"}, {"name": "金銭条件3_通貨", "label": "通貨", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)"}, {"name": "金銭条件3_計算式", "label": "計算式", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)", "type": "textarea"}, {"name": "金銭条件3_支払条件", "label": "支払条件", "group": "VIII. 金銭条件 3 (プロダクトアウト, 任意)"}, {"name": "特記事項_本文", "label": "特記事項", "group": "IX. 特記事項", "type": "textarea", "placeholder": "個別契約に固有の追加条件など"}]$schema_ilt$::jsonb,
+         '金銭条件の柔軟化(名称/計算式タイプ/MG·AG) (0046)',
+         'migration-0046'
+    FROM t
+  RETURNING id, template_id
+)
+UPDATE document_templates dt
+   SET current_version_id = nv.id, updated_at = now()
+  FROM nv
+ WHERE dt.id = nv.template_id;
