@@ -2523,12 +2523,19 @@ async function startServer() {
                   b.mg_consumed, b.mg_remaining, b.ag_consumed, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
                   cc.structural_role, cc.parent_capability_id,
+                  cc.record_type AS contract_record_type,
+                  cc.drive_url AS contract_drive_link,
+                  pcc.contract_title  AS parent_contract_title,
+                  pcc.document_number AS parent_contract_number,
+                  pcc.record_type     AS parent_record_type,
+                  pcc.drive_url       AS parent_drive_link,
                   v.vendor_name, v.vendor_code,
                   w.work_code, w.title AS work_title
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN contract_capabilities pcc ON pcc.id = cc.parent_capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN works w ON w.id = cl.work_id
             WHERE cl.line_code = $1

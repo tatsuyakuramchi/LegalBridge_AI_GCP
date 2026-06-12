@@ -160,6 +160,18 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           -- 検収書未発行の明細数(検収待ち制御の主キー)。算出式は下で組み立て、
           --   新台帳テーブル未適用環境では旧 status_flags 方式へフォールバックする。
           ${unissuedExpr},
+          -- 法務タスク制御: 納品報告(delivered_at)・納期(inspection_deadline)・
+          --   「納期超過かつ未報告」を delivery_events(capability_id 結線) から導出。
+          (SELECT MAX(de.delivered_at) FROM delivery_events de
+             WHERE de.capability_id = cc.id) AS latest_delivered_at,
+          (SELECT MIN(de.inspection_deadline) FROM delivery_events de
+             WHERE de.capability_id = cc.id AND de.status = 'pending') AS nearest_inspection_deadline,
+          EXISTS (SELECT 1 FROM delivery_events de
+                   WHERE de.capability_id = cc.id AND de.delivered_at IS NOT NULL) AS has_delivery_report,
+          EXISTS (SELECT 1 FROM delivery_events de
+                   WHERE de.capability_id = cc.id AND de.status = 'pending'
+                     AND de.delivered_at IS NULL
+                     AND de.inspection_deadline < CURRENT_TIMESTAMP) AS overdue_no_report,
           (cc.backlog_issue_key LIKE 'IMPORT-%') AS is_imported
         FROM contract_capabilities cc
         LEFT JOIN vendors v ON v.id = cc.vendor_id
@@ -220,6 +232,11 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             (Number(r.amount_ex_tax) || 0) - (Number(r.inspected_amount) || 0),
           // 検収書未発行(=検収待ち)の業務明細数。0 なら検収待ちではない。
           unissued_line_count: Number(r.unissued_line_count) || 0,
+          // 法務タスク制御(検収待ち再構成)。delivery_events 由来。
+          latest_delivered_at: r.latest_delivered_at || null,
+          nearest_inspection_deadline: r.nearest_inspection_deadline || null,
+          has_delivery_report: !!r.has_delivery_report,
+          overdue_no_report: !!r.overdue_no_report,
           is_imported: !!r.is_imported,
         }))
       );
