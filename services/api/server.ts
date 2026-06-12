@@ -2782,6 +2782,12 @@ async function startServer() {
                     ),
                     '{}'::text[]
                   ) AS ringi_numbers,
+                  -- データ構造刷新: 契約スコープ(複数可)。UI の複数選択チェックボックスが復元に使う。
+                  COALESCE(
+                    (SELECT array_agg(s.scope ORDER BY s.scope)
+                       FROM contract_scopes s WHERE s.capability_id = cc.id),
+                    '{}'::text[]
+                  ) AS scopes,
                   -- Phase E-2: 純表示(status非依存) json_agg を condition_lines 優先の
                   --   coverage-gated dual-source 化 (sharedReads と対称)。新 json_agg は
                   --   「移行済み件数 = 旧件数 かつ >0」のときだけ行を返し、でなければ NULL→

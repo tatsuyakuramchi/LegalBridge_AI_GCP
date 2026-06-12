@@ -4237,6 +4237,75 @@ ${details}
     }
   }
 
+  // データ構造刷新 (設計 第8章): 契約のスコープ(service/license_use)を
+  //   contract_scopes に upsert + template_family を設定。基本契約が複数スコープを
+  //   持てる (例: ライセンス基本契約＋業務委託)。
+  //   - rawScopes 配列があればそれを正に (UI 複数選択)。無ければ contract_category 導出。
+  //   - 出版は別スコープでなく license_use + template_family='publication' (設計準拠)。
+  //   非致命: 失敗しても契約保存本体は止めない。
+  async function upsertContractScopes(
+    capabilityId: number,
+    rawScopes: any,
+    contractCategory: any,
+    rawTemplateFamily: any
+  ): Promise<void> {
+    const cat = String(contractCategory || "").toLowerCase();
+    let scopes: string[];
+    if (Array.isArray(rawScopes)) {
+      scopes = rawScopes
+        .map((s) => String(s).trim())
+        .filter((s) => s === "service" || s === "license_use");
+    } else {
+      scopes =
+        cat === "service"
+          ? ["service"]
+          : cat === "license" || cat === "publication"
+            ? ["license_use"]
+            : cat === "mixed"
+              ? ["service", "license_use"]
+              : [];
+    }
+    scopes = [...new Set(scopes)];
+    const tf =
+      rawTemplateFamily && String(rawTemplateFamily).trim()
+        ? String(rawTemplateFamily).trim()
+        : cat === "publication"
+          ? "publication"
+          : cat === "license"
+            ? "license"
+            : cat === "service"
+              ? "service"
+              : null;
+    try {
+      if (scopes.length === 0) {
+        await query(`DELETE FROM contract_scopes WHERE capability_id = $1`, [capabilityId]);
+      } else {
+        await query(
+          `DELETE FROM contract_scopes WHERE capability_id = $1 AND scope <> ALL($2::text[])`,
+          [capabilityId, scopes]
+        );
+        for (const s of scopes) {
+          await query(
+            `INSERT INTO contract_scopes (capability_id, scope) VALUES ($1, $2)
+               ON CONFLICT (capability_id, scope) DO NOTHING`,
+            [capabilityId, s]
+          );
+        }
+      }
+      if (tf) {
+        await query(
+          `ALTER TABLE contract_capabilities ADD COLUMN IF NOT EXISTS template_family VARCHAR(20)`
+        ).catch(() => {});
+        await query(
+          `UPDATE contract_capabilities SET template_family = $2 WHERE id = $1`,
+          [capabilityId, tf]
+        );
+      }
+    } catch (e) {
+      console.warn("[contract_scopes] upsert failed (non-fatal):", e);
+    }
+  }
+
   app.post("/api/master/contracts", express.json(), async (req, res) => {
     const {
       vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -4259,6 +4328,10 @@ ${details}
       flow_direction, purpose_code,
       // 成果物の権利帰属(company/counterparty/shared)。複合契約の根拠メタ。
       deliverable_ownership,
+      // データ構造刷新: 契約スコープ複数選択 (service / license_use)。
+      //   明示があれば正、無ければ contract_category から導出。template_family は
+      //   出版/ライセンスの区別 (UI から明示 or category 由来)。
+      scopes, template_family,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -4329,6 +4402,8 @@ ${details}
       //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
       await upsertCapabilityExpenses(newId, req.body?.expenses);
       await upsertCapabilityOtherFees(newId, req.body?.other_fees);
+      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
+      await upsertContractScopes(newId, scopes, contract_category, template_family);
 
       // Phase 22.21.115: 稟議番号 N:N リンク + documents 行同期。
       //   稟議リンクは ringi_documents.document_id 経由なので documents 行が必須。
@@ -4432,6 +4507,8 @@ ${details}
       flow_direction, purpose_code,
       // 成果物の権利帰属(company/counterparty/shared)。
       deliverable_ownership,
+      // データ構造刷新: 契約スコープ複数選択 + template_family。
+      scopes, template_family,
     } = req.body;
     try {
       const channels = normalizeAlertList(alert_slack_channels);
@@ -4516,6 +4593,8 @@ ${details}
       // Phase 23.6.14: 経費 / その他手数料 (検収書 自動補完用)。同 semantics。
       await upsertCapabilityExpenses(Number(id), req.body?.expenses);
       await upsertCapabilityOtherFees(Number(id), req.body?.other_fees);
+      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
+      await upsertContractScopes(Number(id), scopes, contract_category, template_family);
 
       // Phase 22.21.115: 稟議番号リンクを更新 (POST と同じパターン)。
       //   ringi_numbers が undefined なら触らない。[] なら全削除。

@@ -40,6 +40,19 @@ import { cn } from "@/lib/utils"
 const toBool = (v: any): boolean =>
   v === true || v === "t" || v === "true" || v === 1 || v === "1";
 
+// データ構造刷新 (設計 第8章): contract_category からスコープ(service/license_use)を
+//   導出。出版/ライセンスはどちらも license_use (区別は template_family)。
+//   契約データに明示 scopes[] があればそちらを優先(複数選択 UI)。
+const deriveScopes = (category: any): string[] => {
+  const c = String(category || "").toLowerCase();
+  if (c === "service") return ["service"];
+  if (c === "license" || c === "publication") return ["license_use"];
+  if (c === "mixed") return ["service", "license_use"];
+  return [];
+};
+const currentScopes = (data: any): string[] =>
+  Array.isArray(data?.scopes) ? data.scopes : deriveScopes(data?.contract_category);
+
 // Phase 22.21.66: contract_status (5 段階) を日本語ラベル + Badge variant に。
 //   draft               作成中
 //   awaiting_signature  締結待ち
@@ -531,6 +544,45 @@ export function ContractsPanel() {
               <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
                 <strong>複合</strong>: 制作対価(業務明細)と利用許諾料(金銭条件)を
                 1 本で扱う場合に選択。両方のエディタが表示されます。
+              </p>
+            </Field>
+            {/* データ構造刷新: 契約スコープの複数選択。基本契約は複数スコープを
+                持てる(例: ライセンス基本契約＋業務委託)。出版はカテゴリ「出版関連」で
+                テンプレート(template_family)が切替わる。未操作ならカテゴリから導出。 */}
+            <Field label="スコープ (複数選択可)">
+              <div className="flex items-center gap-5">
+                {[
+                  { v: "service", l: "業務委託" },
+                  { v: "license_use", l: "利用許諾 (ライセンス/出版)" },
+                ].map((opt) => {
+                  const cur = currentScopes(data)
+                  const checked = cur.includes(opt.v)
+                  return (
+                    <label
+                      key={opt.v}
+                      className="flex items-center gap-1.5 text-xs font-mono cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={(e) => {
+                          const base = currentScopes(data)
+                          const next = e.target.checked
+                            ? Array.from(new Set([...base, opt.v]))
+                            : base.filter((s) => s !== opt.v)
+                          set({ scopes: next })
+                        }}
+                        className="h-4 w-4"
+                      />
+                      {opt.l}
+                    </label>
+                  )
+                })}
+              </div>
+              <p className="text-[10px] font-mono text-muted-foreground mt-1 leading-relaxed">
+                基本契約は <strong>業務委託＋利用許諾</strong> のように複数スコープを
+                併せ持てます。出版はカテゴリで「出版関連」を選ぶとテンプレートが
+                切り替わります(スコープは利用許諾)。
               </p>
             </Field>
             {/* 請求の向き(2択) — 文書作成フォームと同じ in/out。
