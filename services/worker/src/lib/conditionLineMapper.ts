@@ -110,10 +110,13 @@ export function mapLineItemToConditionLine(
     calc_period: null,
     formula_text: null,
     source_seq_no: num(li.line_no),
-    // 消化型の数量・単価・金額
-    quantity: recurring ? null : num(li.quantity),
-    unit_price: recurring ? null : num(li.unit_price),
-    amount_ex_tax: recurring ? null : num(li.amount_ex_tax) ?? 0,
+    // 2c-2: 数量・単価・金額は全方式で保存(subscription も生値を持つ)。横断検索が
+    //   raw 明細として表示するため。CHECK cl_scheme_depletable_target は subscription の
+    //   amount を許容(NULL/値どちらでも可)。コックピットの remaining は status_v 側で
+    //   消化型のみに限定(0066)するので subscription は「残—」を維持。
+    quantity: num(li.quantity),
+    unit_price: num(li.unit_price),
+    amount_ex_tax: num(li.amount_ex_tax) ?? 0,
     delivery_date: isPresent(li.delivery_date) ? li.delivery_date : null,
     // 継続型(subscription)の期間・サイクル
     term_start: recurring && isPresent(li.term_start) ? li.term_start : null,
