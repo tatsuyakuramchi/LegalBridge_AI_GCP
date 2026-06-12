@@ -137,6 +137,39 @@ async function main() {
       "イベントは文書とペア必須(CHECK)のため、これは正常な未同期。"
   );
 
+  // G5(2c-1): メタ列ドリフト(新台帳の値が旧 source と食い違う)。同期は保存ごとに
+  //   追従するが、status_flags 更新等 sync を通らない経路の取りこぼしをここで検出・修復。
+  const g5 = await pool.query(`
+    SELECT
+      (SELECT COUNT(*) FROM condition_lines cl
+         JOIN capability_line_items cli ON cli.id = cl.source_line_item_id
+        WHERE cl.source_ip_id       IS DISTINCT FROM cli.source_ip_id
+           OR cl.master_contract_id IS DISTINCT FROM cli.master_contract_id
+           OR cl.ringi_id           IS DISTINCT FROM cli.ringi_id
+           OR cl.status_flags       IS DISTINCT FROM COALESCE(cli.status_flags,'{}'::jsonb)
+           OR cl.is_inbound         IS DISTINCT FROM COALESCE(cli.is_inbound,FALSE)
+           OR cl.flow_direction     IS DISTINCT FROM cli.flow_direction)            AS cl_meta,
+      (SELECT COUNT(*) FROM condition_events ev
+         JOIN delivery_line_items dli ON dli.id = ev.source_delivery_line_item_id
+        WHERE ev.event_type='inspection'
+          AND (ev.inspected_quantity IS DISTINCT FROM dli.inspected_quantity
+            OR ev.acceptance_ratio   IS DISTINCT FROM dli.acceptance_ratio))        AS ev_insp,
+      (SELECT COUNT(*) FROM condition_events ev
+         JOIN royalty_calculations rc ON rc.id = ev.source_royalty_calculation_id
+        WHERE ev.event_type='royalty_calc'
+          AND (ev.manufacturing_event_id IS DISTINCT FROM rc.manufacturing_event_id
+            OR ev.mg_consumed_this_time  IS DISTINCT FROM rc.mg_consumed_this_time
+            OR ev.ag_consumed_this_time  IS DISTINCT FROM rc.ag_consumed_this_time)) AS ev_roy
+  `);
+  const g5cl = Number(g5.rows[0].cl_meta);
+  const g5ei = Number(g5.rows[0].ev_insp);
+  const g5er = Number(g5.rows[0].ev_roy);
+  const g5Total = g5cl + g5ei + g5er;
+  console.log(
+    `  G5 メタ列ドリフト              : ${g5Total} 行 ` +
+      `(condition_lines ${g5cl} / 検収 ${g5ei} / ロイヤリティ ${g5er})`
+  );
+
   // 金額整合(同期済み分の旧集計 = 新集計か)
   const amt = await pool.query(`
     SELECT
@@ -157,11 +190,11 @@ async function main() {
   writeCsv("reconcile_g4_held.csv", ["royalty_calculation_id", "has_line"],
     g4Held.map((r) => [r.id, r.has_line]));
 
-  const syncableDrift = capsToSync.length + g3Syncable.length + g4Syncable.length;
+  const syncableDrift = capsToSync.length + g3Syncable.length + g4Syncable.length + g5Total;
 
   if (!REPAIR) {
     console.log(
-      `\n同期可能なドリフト: ${syncableDrift} (契約 ${capsToSync.length} / 検収 ${g3Syncable.length} / ロイヤリティ ${g4Syncable.length})`
+      `\n同期可能なドリフト: ${syncableDrift} (契約 ${capsToSync.length} / 検収 ${g3Syncable.length} / ロイヤリティ ${g4Syncable.length} / メタ ${g5Total})`
     );
     console.log(syncableDrift > 0 ? "→ --repair で冪等同期できます。" : "→ クリーン(同期可能なドリフトなし)。");
     await pool.end();
@@ -192,9 +225,54 @@ async function main() {
     else failures.push(["royalty_calculation", rcId, r.error]);
   }
 
+  // G5: メタ列の取りこぼしを旧から再コピー(2c-0 backfill と同じ・冪等)。
+  const m1 = await repairEntity("meta(condition_lines)", async (db) => {
+    const r = await db.query(`
+      UPDATE condition_lines cl
+         SET source_ip_id = cli.source_ip_id, master_contract_id = cli.master_contract_id,
+             ringi_id = cli.ringi_id, status_flags = COALESCE(cli.status_flags,'{}'::jsonb),
+             is_inbound = COALESCE(cli.is_inbound,FALSE), flow_direction = cli.flow_direction,
+             updated_at = CURRENT_TIMESTAMP
+        FROM capability_line_items cli
+       WHERE cl.source_line_item_id = cli.id
+         AND (cl.source_ip_id IS DISTINCT FROM cli.source_ip_id
+           OR cl.master_contract_id IS DISTINCT FROM cli.master_contract_id
+           OR cl.ringi_id IS DISTINCT FROM cli.ringi_id
+           OR cl.status_flags IS DISTINCT FROM COALESCE(cli.status_flags,'{}'::jsonb)
+           OR cl.is_inbound IS DISTINCT FROM COALESCE(cli.is_inbound,FALSE)
+           OR cl.flow_direction IS DISTINCT FROM cli.flow_direction)`);
+    return r.rowCount || 0;
+  });
+  const m2 = await repairEntity("meta(inspection)", async (db) => {
+    const r = await db.query(`
+      UPDATE condition_events ev
+         SET inspected_quantity = dli.inspected_quantity, acceptance_ratio = dli.acceptance_ratio
+        FROM delivery_line_items dli
+       WHERE ev.source_delivery_line_item_id = dli.id AND ev.event_type='inspection'
+         AND (ev.inspected_quantity IS DISTINCT FROM dli.inspected_quantity
+           OR ev.acceptance_ratio IS DISTINCT FROM dli.acceptance_ratio)`);
+    return r.rowCount || 0;
+  });
+  const m3 = await repairEntity("meta(royalty)", async (db) => {
+    const r = await db.query(`
+      UPDATE condition_events ev
+         SET manufacturing_event_id = rc.manufacturing_event_id,
+             mg_consumed_this_time = rc.mg_consumed_this_time,
+             ag_consumed_this_time = rc.ag_consumed_this_time
+        FROM royalty_calculations rc
+       WHERE ev.source_royalty_calculation_id = rc.id AND ev.event_type='royalty_calc'
+         AND (ev.manufacturing_event_id IS DISTINCT FROM rc.manufacturing_event_id
+           OR ev.mg_consumed_this_time IS DISTINCT FROM rc.mg_consumed_this_time
+           OR ev.ag_consumed_this_time IS DISTINCT FROM rc.ag_consumed_this_time)`);
+    return r.rowCount || 0;
+  });
+  const metaFixed = m1.added + m2.added + m3.added;
+  for (const m of [m1, m2, m3]) if (!m.ok) failures.push(["meta", 0, m.error]);
+
   console.log(`  condition_lines  +${capAdded}`);
   console.log(`  inspection events +${insAdded}`);
   console.log(`  royalty events    +${royAdded}`);
+  console.log(`  メタ列 修復        ${metaFixed}`);
   if (failures.length) {
     console.log(`  失敗 ${failures.length} 件:`);
     writeCsv("reconcile_repair_failures.csv", ["kind", "id", "error"], failures);
