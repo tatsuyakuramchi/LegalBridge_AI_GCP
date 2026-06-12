@@ -2419,7 +2419,10 @@ async function startServer() {
           [issueKey]
         );
       } catch (err: any) {
-        if (err && err.code === "42703") {
+        // 42703=列未追加(lifecycle_status 等) / 42P01=Phase F テーブル未作成
+        //   (condition_events/condition_lines サブクエリ)。どちらの移行ウィンドウでも
+        //   documents 単独の legacy 応答にフォールバックする。
+        if (err && (err.code === "42703" || err.code === "42P01")) {
           console.warn(
             "[/api/issues/:issueKey/documents] schema migration 未適用 — legacy 形式で返却"
           );
@@ -2717,13 +2720,6 @@ async function startServer() {
                     ),
                     '{}'::text[]
                   ) AS ringi_numbers,
-                  -- データ構造刷新: 契約スコープ(複数可)。UI の複数選択チェックボックスが復元に使う。
-                  --   contract_scopes 未追加環境では下の財務条件と同じ 42P01 fallback に乗る。
-                  COALESCE(
-                    (SELECT array_agg(s.scope ORDER BY s.scope)
-                       FROM contract_scopes s WHERE s.capability_id = cc.id),
-                    '{}'::text[]
-                  ) AS scopes,
                   COALESCE(
                     (
                       SELECT json_agg(
@@ -2837,7 +2833,6 @@ async function startServer() {
                     v.account_holder_kana AS vendor_account_holder_kana,
                     v.invoice_registration_number AS vendor_invoice_registration_number,
                     v.withholding_enabled AS vendor_withholding_enabled,
-                    '{}'::text[] AS scopes,
                     '[]'::json AS financial_conditions,
                     '[]'::json AS line_items,
                     '[]'::json AS expenses,
@@ -2848,6 +2843,27 @@ async function startServer() {
           );
         } else {
           throw err;
+        }
+      }
+      // データ構造刷新: 契約スコープ(複数可)を別クエリで付与。UI の複数選択
+      //   チェックボックスの復元に使う。optional な contract_scopes を本体 SELECT に
+      //   インライン化すると、未追加環境(42P01)で契約本体まで degraded fallback に
+      //   巻き込まれ財務条件等が空になる。そのため独立クエリにし、テーブル不在時は
+      //   scopes だけを空配列にして契約データは保持する。
+      try {
+        const sc = await query(
+          `SELECT capability_id, array_agg(scope ORDER BY scope) AS scopes
+             FROM contract_scopes GROUP BY capability_id`
+        );
+        const scopeMap = new Map<number, string[]>(
+          sc.rows.map((r: any) => [Number(r.capability_id), r.scopes])
+        );
+        for (const row of result.rows) row.scopes = scopeMap.get(Number(row.id)) || [];
+      } catch (scErr: any) {
+        if (scErr && (scErr.code === "42P01" || scErr.code === "42703")) {
+          for (const row of result.rows) row.scopes = [];
+        } else {
+          throw scErr;
         }
       }
       res.json(result.rows);
