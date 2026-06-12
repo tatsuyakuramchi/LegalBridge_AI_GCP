@@ -85,7 +85,47 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       params.push(limit);
       const limitParam = `$${params.length}`;
 
-      const sql = `
+      // 検収待ち(unissued_line_count)の算出式。
+      //   新台帳優先の coverage-gated dual-read。検収(消化型: lump_sum/per_unit/installment)
+      //   で未消化(status open/partially_fulfilled)の行のみ数える。subscription/royalty は
+      //   消化型ステータスにならず自然に除外され、旧ロジックが継続役務(顧問/月額保守等)を
+      //   検収待ちに混入させていた過剰カウントを是正する。カバレッジ未充足(条件明細の
+      //   line item 由来件数 ≠ 旧明細件数, または 0)は CASE が NULL を返し、COALESCE で
+      //   旧 status_flags 方式へフォールバック。
+      const unissuedNewExpr = `
+          COALESCE(
+            (SELECT CASE
+               WHEN (SELECT COUNT(*) FROM condition_lines x
+                      WHERE x.capability_id = cc.id AND x.source_line_item_id IS NOT NULL)
+                    = (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id)
+                AND (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id) > 0
+               THEN (
+                 SELECT COUNT(*)::int FROM condition_lines cl
+                   JOIN condition_line_status_v s ON s.id = cl.id
+                  WHERE cl.capability_id = cc.id
+                    AND cl.source_line_item_id IS NOT NULL
+                    AND cl.payment_scheme IN ('lump_sum','per_unit','installment')
+                    AND COALESCE(cl.amount_ex_tax, 0) > 0
+                    AND s.status IN ('open','partially_fulfilled')
+               )
+               ELSE NULL END),
+            (SELECT COUNT(*) FROM capability_line_items cli
+               WHERE cli.capability_id = cc.id
+                 AND COALESCE(cli.amount_ex_tax, 0) > 0
+                 AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
+                 AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
+            )
+          ) AS unissued_line_count`;
+      // 旧式(新台帳テーブル未適用環境向けフォールバック)。
+      const unissuedLegacyExpr = `
+          (SELECT COUNT(*) FROM capability_line_items cli
+             WHERE cli.capability_id = cc.id
+               AND COALESCE(cli.amount_ex_tax, 0) > 0
+               AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
+               AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
+          ) AS unissued_line_count`;
+
+      const buildSql = (unissuedExpr: string) => `
         SELECT
           cc.id,
           cc.record_type,
@@ -117,14 +157,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           (SELECT COUNT(*) FROM capability_financial_conditions cfc WHERE cfc.capability_id = cc.id) AS condition_count,
           (SELECT COALESCE(SUM(cli.inspected_amount_ex_tax), 0)
              FROM capability_line_items cli WHERE cli.capability_id = cc.id) AS inspected_amount,
-          -- 検収書未発行の明細数: status_flags.inspection_issued が true でなく、かつ
-          --   まだ全額検収されていない(残額あり)業務明細。検収待ち制御の主キー。
-          (SELECT COUNT(*) FROM capability_line_items cli
-             WHERE cli.capability_id = cc.id
-               AND COALESCE(cli.amount_ex_tax, 0) > 0
-               AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
-               AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
-          ) AS unissued_line_count,
+          -- 検収書未発行の明細数(検収待ち制御の主キー)。算出式は下で組み立て、
+          --   新台帳テーブル未適用環境では旧 status_flags 方式へフォールバックする。
+          ${unissuedExpr},
           (cc.backlog_issue_key LIKE 'IMPORT-%') AS is_imported
         FROM contract_capabilities cc
         LEFT JOIN vendors v ON v.id = cc.vendor_id
@@ -133,7 +168,21 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         LIMIT ${limitParam}
       `;
 
-      const rows = await deps.query(sql, params);
+      // 新台帳優先で実行。condition_lines/condition_line_status_v 未適用環境
+      //   (42P01/42703)では旧式に切り替えて再実行(検収待ち一覧を落とさない)。
+      let rows: any;
+      try {
+        rows = await deps.query(buildSql(unissuedNewExpr), params);
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          console.warn(
+            "[/api/contracts/search] 新台帳未適用 — 検収待ちを旧 status_flags 方式で算出"
+          );
+          rows = await deps.query(buildSql(unissuedLegacyExpr), params);
+        } else {
+          throw err;
+        }
+      }
       res.json(
         rows.rows.map((r: any) => ({
           id: Number(r.id),
