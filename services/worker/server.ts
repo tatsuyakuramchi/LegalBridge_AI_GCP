@@ -5390,6 +5390,55 @@ ${details}
    *
    * body: { dry_run?: boolean }
    */
+  /**
+   * 検収 event 補完リカバリ。delivery_line_items を持つ delivery_event を走査し、
+   * 未起票の検収 condition_events を冪等に補完する(C-3 のランタイム版)。
+   * 検収書 document の解決に issue_key フォールバックが効くため、過去に保留に
+   * なっていた分(form_data に delivery_event_id 不在)もここで成就反映される。
+   * body: { dry_run?: boolean }
+   */
+  app.post("/api/admin/resync-inspection-events", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run === true;
+    try {
+      if (dryRun) {
+        const pending = await query(
+          `SELECT COUNT(DISTINCT de.id)::int AS n
+             FROM delivery_events de
+             JOIN delivery_line_items dli ON dli.delivery_event_id = de.id
+            WHERE NOT EXISTS (
+                    SELECT 1 FROM condition_events ce
+                     WHERE ce.source_delivery_line_item_id = dli.id)
+              AND EXISTS (
+                    SELECT 1 FROM condition_lines cl
+                     WHERE cl.source_line_item_id = dli.capability_line_item_id)`
+        );
+        return res.json({ ok: true, dry_run: true, pending_delivery_events: pending.rows[0].n });
+      }
+      const evs = await query(
+        `SELECT DISTINCT de.id
+           FROM delivery_events de
+           JOIN delivery_line_items dli ON dli.delivery_event_id = de.id
+          ORDER BY de.id`
+      );
+      let added = 0;
+      const touched: number[] = [];
+      for (const e of evs.rows) {
+        const n = await syncInspectionEventsForDelivery({ query }, Number(e.id));
+        if (n > 0) { added += n; touched.push(Number(e.id)); }
+      }
+      res.json({
+        ok: true,
+        dry_run: false,
+        delivery_events_scanned: evs.rows.length,
+        events_added: added,
+        touched,
+      });
+    } catch (error) {
+      console.error("/api/admin/resync-inspection-events failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.post("/api/admin/resync-contract-capabilities", express.json(), async (req, res) => {
     const dryRun = req.body?.dry_run === true;
     try {
