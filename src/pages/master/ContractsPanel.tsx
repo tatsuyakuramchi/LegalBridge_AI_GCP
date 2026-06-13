@@ -365,6 +365,26 @@ export function ContractsPanel() {
     }
   }
 
+  // テーブル上で契約状態だけをインライン更新(軽量 PATCH。他項目は変更しない)。
+  const [statusSaving, setStatusSaving] = React.useState<number | null>(null)
+  const updateStatus = async (id: number, contract_status: string) => {
+    setStatusSaving(id)
+    try {
+      const res = await fetch(`/api/master/contracts/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contract_status }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      showNotification("契約状態を更新しました", "success")
+      await refreshContracts()
+    } catch (e: any) {
+      showNotification(`状態の更新に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setStatusSaving(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -410,12 +430,29 @@ export function ContractsPanel() {
                     <Badge variant="outline" className="h-4">
                       {c.document_number || "N/A"}
                     </Badge>
-                    <Badge
-                      variant={statusToVariant(c.contract_status)}
-                      className="h-4"
+                    {/* 契約状態をテーブル上でインライン変更(軽量 PATCH) */}
+                    <select
+                      value={c.contract_status || "executed"}
+                      disabled={statusSaving === c.id}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => updateStatus(c.id!, e.target.value)}
+                      title="契約状態をテーブル上で変更"
+                      className={`h-5 rounded-full border bg-card px-1.5 text-[10px] font-mono font-bold disabled:opacity-50 ${
+                        c.contract_status === "executed"
+                          ? "border-emerald-300 text-emerald-700"
+                          : c.contract_status === "terminated"
+                            ? "border-red-300 text-red-700"
+                            : c.contract_status === "awaiting_signature"
+                              ? "border-amber-300 text-amber-700"
+                              : "border-border text-muted-foreground"
+                      }`}
                     >
-                      {statusToLabel(c.contract_status)}
-                    </Badge>
+                      {STATUS_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                     {/* Phase 22.9: 有効/無効バッジ — 自動補完候補に含まれるかどうか */}
                     <Badge
                       variant={c.is_active === false ? "phosphor" : "success"}

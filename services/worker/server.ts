@@ -4695,6 +4695,30 @@ ${details}
     }
   });
 
+  // 契約状態だけを軽量に更新する PATCH。マスター一覧テーブルからのインライン編集用。
+  //   フル PUT は全列を置換するため、状態のみ変えたいときはこちらを使う(他項目を消さない)。
+  app.patch("/api/master/contracts/:id/status", express.json(), async (req, res) => {
+    const { id } = req.params;
+    const { contract_status } = req.body || {};
+    const ALLOWED = ["draft", "awaiting_signature", "executed", "expired", "terminated"];
+    if (!ALLOWED.includes(String(contract_status))) {
+      return res.status(400).json({ ok: false, error: "invalid contract_status" });
+    }
+    try {
+      const r = await query(
+        `UPDATE contract_capabilities
+            SET contract_status = $2, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        RETURNING id, contract_status`,
+        [id, contract_status]
+      );
+      if (!r.rows[0]) return res.status(404).json({ ok: false, error: "not found" });
+      res.json({ ok: true, id: Number(r.rows[0].id), contract_status: r.rows[0].contract_status });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   app.put("/api/master/contracts/:id", express.json(), async (req, res) => {
     const { id } = req.params;
     const {

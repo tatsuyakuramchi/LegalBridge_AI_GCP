@@ -127,6 +127,11 @@ export function conditionsPage(role: Role = "viewer"): string {
       <button data-axis="vendor">取引先</button>
       <button data-axis="department">部署</button>
     </div>
+    <div class="pop-seg" id="status-seg" style="display:none;">
+      <button data-stat="all" class="on">すべて</button>
+      <button data-stat="executed">有効中</button>
+      <button data-stat="terminated">解約済</button>
+    </div>
     <span class="muted" id="tree-hint" style="font-size:11.5px;display:none;">作品はイン(受けている権利/支払)・アウト(提供している権利/受領)で分岐</span>
   </div>
 
@@ -197,6 +202,7 @@ export function conditionsPage(role: Role = "viewer"): string {
   /* ---------- ツリー表示(作品/原作/取引先/部署) ---------- */
   var VIEW = "table";   // table | tree
   var AXIS = "work";    // work | source_ip | vendor | department
+  var STATFILT = "all"; // all | executed(有効中) | terminated(解約済)
   function draw() {
     if (VIEW === "tree") renderTree(currentRows, AXIS);
     else render(currentRows);
@@ -256,6 +262,7 @@ export function conditionsPage(role: Role = "viewer"): string {
   }
   function renderTree(rows, axis) {
     var wrap = document.getElementById("list-wrap");
+    if (STATFILT !== "all") rows = (rows || []).filter(function (r) { return r.contract_status === STATFILT; });
     if (!rows || !rows.length) { wrap.innerHTML = '<div class="empty">該当する条件明細がありません</div>'; return; }
     var groups = {}, order = [];
     rows.forEach(function (r) {
@@ -533,7 +540,14 @@ export function conditionsPage(role: Role = "viewer"): string {
     VIEW = b.getAttribute("data-view"); setSeg("view-seg", "data-view", VIEW);
     var tree = VIEW === "tree";
     document.getElementById("axis-seg").style.display = tree ? "" : "none";
+    document.getElementById("status-seg").style.display = tree ? "" : "none";
     document.getElementById("tree-hint").style.display = (tree && AXIS === "work") ? "" : "none";
+    draw();
+  });
+  document.getElementById("status-seg").addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("button") : null;
+    if (!b) return;
+    STATFILT = b.getAttribute("data-stat"); setSeg("status-seg", "data-stat", STATFILT);
     draw();
   });
   document.getElementById("axis-seg").addEventListener("click", function (e) {
