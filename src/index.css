@@ -195,6 +195,78 @@
 /* 角ゼロは --radius:0 が radius 系ユーティリティ(rounded-sm/md/lg)へ波及。
  * rounded-full(9999px) は対象外なのでアバター/ドット/リングゲージは円のまま。 */
 
+/*
+ * macOS / Search skin — search-api(popChrome/landing)と同じ Big Sur テイスト。
+ * 薄いラベンダー地 + オーロラ放射グラデ + インディゴ accent + フロストガラス +
+ * 大きめ角丸 + SF Pro Rounded。light テーマとして dark を上書きする自己完結型。
+ */
+[data-skin="macos"] {
+  --background: 255 46% 96%;         /* #f4f1fb lavender */
+  --foreground: 250 30% 17%;         /* #241f3a ink */
+  --card: 0 0% 100%;
+  --card-foreground: 250 30% 17%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 250 30% 17%;
+  --primary: 247 74% 63%;            /* #6c5ce7 indigo */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 252 100% 98%;         /* #f6f3ff */
+  --secondary-foreground: 247 55% 42%;
+  --muted: 255 60% 97%;
+  --muted-foreground: 248 14% 56%;   /* #8a86a3 */
+  --accent: 250 100% 96%;
+  --accent-foreground: 247 68% 50%;
+  --destructive: 350 100% 68%;       /* #ff5b78 */
+  --destructive-foreground: 0 0% 100%;
+  --border: 255 42% 93%;             /* #ece8f6 */
+  --input: 255 40% 91%;
+  --ring: 247 74% 63%;
+
+  --phosphor: 247 74% 63%;           /* indigo glow / selection */
+  --phosphor-foreground: 0 0% 100%;
+  --amber: 28 100% 63%;              /* #ff9f43 */
+  --amber-foreground: 250 30% 17%;
+  --cyan: 187 100% 41%;              /* #00d2d3 teal */
+  --grid: 255 40% 92%;
+
+  --radius: 0.75rem;                 /* macOS の大きめ角丸 */
+
+  --font-sans: -apple-system, 'SF Pro Rounded', 'SF Pro Text',
+    'Hiragino Maru Gothic ProN', 'Hiragino Sans', 'Geist Variable', system-ui, sans-serif;
+  --font-heading: var(--font-sans); /* 見出しも丸ゴシック(mono をやめて柔らかく) */
+}
+
+/* Big Sur 風オーロラ背景(固定)。 */
+[data-skin="macos"] body {
+  background-image:
+    radial-gradient(1100px 520px at 88% -8%, hsl(330 100% 93% / 0.85) 0, transparent 58%),
+    radial-gradient(980px 520px at -8% 4%, hsl(205 100% 91% / 0.85) 0, transparent 56%),
+    radial-gradient(820px 600px at 50% 120%, hsl(255 100% 93% / 0.85) 0, transparent 60%);
+  background-attachment: fixed;
+}
+
+/* サイドバー/トップバーをフロストガラスに。 */
+[data-skin="macos"] aside,
+[data-skin="macos"] header {
+  background-color: hsl(0 0% 100% / 0.72) !important;
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* 見出しは太め・字間タイト(等幅/大文字の癖を出さない)。 */
+[data-skin="macos"] h1,
+[data-skin="macos"] h2,
+[data-skin="macos"] h3 {
+  letter-spacing: -0.01em;
+  font-weight: 700;
+}
+
+/* アクティブなナビは pop テーマ同様インディゴのグラデ + ソフトグロー。 */
+[data-skin="macos"] .eva-panel [aria-current="page"] {
+  background-image: linear-gradient(135deg, hsl(247 74% 63%), hsl(248 96% 80%)) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 16px hsl(247 74% 63% / 0.32);
+}
+
 @layer utilities {
   .scrollbar-hide::-webkit-scrollbar { display: none; }
   .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
