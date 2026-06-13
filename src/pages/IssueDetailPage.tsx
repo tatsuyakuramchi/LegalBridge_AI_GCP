@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
@@ -47,6 +48,7 @@ type IssueDocument = {
   base_document_number?: string | null
   revision?: number
   line_code?: string | null // Phase F: 対応する条件明細
+  cloudsign_target?: boolean // クラウドサイン対象か(紙/相手方電子契約のとき false)
 }
 
 // lifecycle_status → バッジ表示。final=緑 / reissued=グレー / archived_draft=打ち消し。
@@ -122,6 +124,26 @@ export function IssueDetailPage() {
       showNotification(`送信に失敗しました: ${e?.message || e}`, "error")
     } finally {
       setCsSending(false)
+    }
+  }
+
+  // 文書の「クラウドサイン対象 / 対象外」を切替(楽観更新)。
+  const toggleCsTarget = async (d: any, target: boolean) => {
+    if (!d?.document_number) return
+    setDocs((prev) => prev.map((x) => (x.id === d.id ? { ...x, cloudsign_target: target } : x)))
+    try {
+      const res = await fetch(
+        `/api/documents/${encodeURIComponent(d.document_number)}/cloudsign-target`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cloudsign_target: target }),
+        }
+      )
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    } catch (e: any) {
+      setDocs((prev) => prev.map((x) => (x.id === d.id ? { ...x, cloudsign_target: !target } : x)))
+      showNotification(`対象の切替に失敗しました: ${e?.message || e}`, "error")
     }
   }
 
@@ -271,6 +293,17 @@ export function IssueDetailPage() {
                     </div>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
+                    {/* クラウドサイン対象スイッチ(紙/相手方電子契約のときオフ) */}
+                    <label
+                      className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground mr-1 cursor-pointer"
+                      title="クラウドサイン対象（紙や相手方の電子契約のときはオフ）"
+                    >
+                      <Switch
+                        checked={d.cloudsign_target !== false}
+                        onCheckedChange={(v) => toggleCsTarget(d, !!v)}
+                      />
+                      CS対象
+                    </label>
                     {d.line_code && (
                       <button
                         type="button"
@@ -296,7 +329,7 @@ export function IssueDetailPage() {
                         Drive
                       </a>
                     )}
-                    {d.drive_link && (
+                    {d.drive_link && d.cloudsign_target !== false && (
                       <button
                         type="button"
                         onClick={() => {

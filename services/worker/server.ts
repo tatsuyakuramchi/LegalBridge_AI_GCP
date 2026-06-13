@@ -435,7 +435,9 @@ async function startServer() {
                 (SELECT drive_link FROM documents d WHERE d.document_number = cc.document_number
                   ORDER BY created_at DESC LIMIT 1) AS drive_link,
                 (SELECT template_type FROM documents d WHERE d.document_number = cc.document_number
-                  ORDER BY created_at DESC LIMIT 1) AS template_type
+                  ORDER BY created_at DESC LIMIT 1) AS template_type,
+                (SELECT COALESCE(cloudsign_target, TRUE) FROM documents d WHERE d.document_number = cc.document_number
+                  ORDER BY created_at DESC LIMIT 1) AS cloudsign_target
            FROM contract_capabilities cc
            LEFT JOIN vendors v ON v.id = cc.vendor_id
           WHERE cc.id = $1`,
@@ -443,6 +445,8 @@ async function startServer() {
       );
       const row = c.rows[0];
       if (!row) return res.status(404).json({ ok: false, error: "契約が見つかりません" });
+      if (row.cloudsign_target === false)
+        return res.status(400).json({ ok: false, error: "この文書はクラウドサイン対象外です（紙/相手方電子契約）" });
       let participants: any[] = Array.isArray(req.body?.participants) ? req.body.participants : [];
       if (!participants.length) participants = await defaultVendorParticipant(row.vendor_id, row.vendor_name);
       const r = await performCloudSignSend({
@@ -467,6 +471,7 @@ async function startServer() {
       const docNumber = String(req.params.docNumber || "");
       const d = await query(
         `SELECT d.document_number, d.template_type, d.issue_key, d.drive_link, d.form_data,
+                COALESCE(d.cloudsign_target, TRUE) AS cloudsign_target,
                 cc.id AS capability_id, cc.contract_title, cc.vendor_id, v.vendor_name
            FROM documents d
            LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
@@ -477,6 +482,8 @@ async function startServer() {
       );
       const row = d.rows[0];
       if (!row) return res.status(404).json({ ok: false, error: "文書が見つかりません" });
+      if (row.cloudsign_target === false)
+        return res.status(400).json({ ok: false, error: "この文書はクラウドサイン対象外です（紙/相手方電子契約）" });
       let participants: any[] = Array.isArray(req.body?.participants) ? req.body.participants : [];
       if (!participants.length) participants = await defaultVendorParticipant(row.vendor_id, row.vendor_name);
       // 取引先連絡先が無ければ form_data の VENDOR_EMAIL を試す。
@@ -508,6 +515,22 @@ async function startServer() {
     try {
       const r = await query(`SELECT * FROM cloudsign_requests ORDER BY created_at DESC LIMIT 500`);
       res.json(r.rows);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 文書の「クラウドサイン対象 / 対象外」を切替(紙・相手方電子契約のとき対象外にする)。
+  app.patch("/api/documents/:docNumber/cloudsign-target", express.json(), async (req, res) => {
+    try {
+      const docNumber = String(req.params.docNumber || "");
+      const target = req.body?.cloudsign_target === true || req.body?.cloudsign_target === "true";
+      const r = await query(
+        `UPDATE documents SET cloudsign_target = $2 WHERE document_number = $1 RETURNING id`,
+        [docNumber, target]
+      );
+      if (!r.rows[0]) return res.status(404).json({ ok: false, error: "文書が見つかりません" });
+      res.json({ ok: true, document_number: docNumber, cloudsign_target: target });
     } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }

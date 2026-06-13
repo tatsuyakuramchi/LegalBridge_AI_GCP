@@ -2471,6 +2471,7 @@ async function startServer() {
                   COALESCE(is_primary, TRUE)          AS is_primary,
                   base_document_number,
                   COALESCE(revision, 0)               AS revision,
+                  COALESCE(cloudsign_target, TRUE)    AS cloudsign_target,
                   -- Phase F: 文書 → condition_events → condition_line.line_code を解決
                   --   (課題詳細から「条件明細を見る」リンクに使う)。
                   (SELECT cl.line_code
