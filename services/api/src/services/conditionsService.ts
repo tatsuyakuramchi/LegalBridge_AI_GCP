@@ -140,6 +140,7 @@ export async function listConditions(
        cc.contract_category, cc.contract_type, cc.record_type,
        v.vendor_code, v.vendor_name,
        COALESCE(s.staff_name, d.created_by) AS owner_name,
+       s.department AS department,
        d.created_by, d.issue_key`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
@@ -198,6 +199,7 @@ export async function listConditions(
     vendor_code: r.vendor_code || "",
     vendor_name: r.vendor_name || "",
     owner_name: r.owner_name || "",
+    department: r.department || "",
     issue_key: r.issue_key || "",
     // 紐付け(0015)
     source_ip_id: r.source_ip_id == null ? null : Number(r.source_ip_id),

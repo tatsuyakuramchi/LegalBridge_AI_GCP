@@ -33,6 +33,30 @@ const EXTRA_CSS = `<style>
 .pop-modal .meta{font-size:11.5px;color:var(--muted);margin-bottom:14px;line-height:1.6;background:#faf8ff;border:1px solid var(--line);border-radius:12px;padding:10px 12px}
 .filter-extra{display:flex;justify-content:flex-end;align-items:center}
 .filter-extra label{display:flex;gap:6px;align-items:center;cursor:pointer;font-size:12px;color:var(--muted);font-weight:700}
+/* ツリー表示(作品/原作/取引先/部署 で分類。作品は IN/OUT 段あり) */
+.view-switch{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:0 0 10px}
+.tree{font-size:12.5px}
+.tnode{border-radius:10px}
+.tnode>summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:10px}
+.tnode>summary::-webkit-details-marker{display:none}
+.tnode>summary:hover{background:var(--hover)}
+.tnode>summary .tw{flex:1;min-width:0;font-weight:800;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tnode>summary .cnt{background:#efeaff;color:#6c5ce7;border-radius:14px;padding:1px 9px;font-weight:800;font-size:11px;flex-shrink:0}
+.tnode>summary .amt{color:var(--muted);font-variant-numeric:tabular-nums;min-width:120px;text-align:right;font-size:11.5px;flex-shrink:0}
+.tnode>summary .caret{transition:transform .15s;color:var(--muted);font-size:11px;width:12px;flex-shrink:0}
+.tnode[open]>summary .caret{transform:rotate(90deg)}
+.tchildren{margin-left:16px;border-left:1px solid var(--line);padding-left:6px}
+.tleaf{display:flex;align-items:center;gap:10px;padding:6px 8px;border-top:1px solid var(--line);cursor:pointer}
+.tleaf:hover{background:var(--hover)}
+.tleaf .d{width:80px;color:var(--muted);font-size:11px;flex-shrink:0;font-variant-numeric:tabular-nums}
+.tleaf .nm{flex:1;min-width:0}
+.tleaf .nm .t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tleaf .nm .s{font-size:10.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tleaf .a{width:112px;text-align:right;font-weight:800;font-variant-numeric:tabular-nums;flex-shrink:0}
+.dirpill{font-size:9.5px;font-weight:800;border-radius:12px;padding:1px 8px;white-space:nowrap;flex-shrink:0}
+.dirpill.out{background:#ecfdf5;color:#0fa97c}
+.dirpill.in{background:#eef2ff;color:#4f46e5}
+.accent{width:4px;align-self:stretch;border-radius:3px;flex-shrink:0;min-height:18px}
 </style>`;
 
 export function conditionsPage(role: Role = "viewer"): string {
@@ -85,6 +109,20 @@ export function conditionsPage(role: Role = "viewer"): string {
   <div class="pop-toolbar2">
     <span class="count-badge" id="count">—</span>
     <span class="muted" style="font-size:12px;">行をクリックで紐付け(原作 / 作品 / 基本契約 / 稟議 / 状態)を編集</span>
+  </div>
+
+  <div class="view-switch">
+    <div class="pop-seg" id="view-seg">
+      <button data-view="table" class="on">テーブル</button>
+      <button data-view="tree">ツリー</button>
+    </div>
+    <div class="pop-seg" id="axis-seg" style="display:none;">
+      <button data-axis="work" class="on">作品</button>
+      <button data-axis="source_ip">原作</button>
+      <button data-axis="vendor">取引先</button>
+      <button data-axis="department">部署</button>
+    </div>
+    <span class="muted" id="tree-hint" style="font-size:11.5px;display:none;">作品はイン(受けている権利/支払)・アウト(提供している権利/受領)で分岐</span>
   </div>
 
   <div class="pop-tablewrap">
@@ -150,6 +188,81 @@ export function conditionsPage(role: Role = "viewer"): string {
     return isFinite(v) ? v.toLocaleString("ja-JP") : esc(n);
   }
   function catLabel(c) { return CAT_LABEL[c] || (c || "—"); }
+
+  /* ---------- ツリー表示(作品/原作/取引先/部署) ---------- */
+  var VIEW = "table";   // table | tree
+  var AXIS = "work";    // work | source_ip | vendor | department
+  function draw() {
+    if (VIEW === "tree") renderTree(currentRows, AXIS);
+    else render(currentRows);
+  }
+  function dirOf(r) {
+    if (r.flow_direction === "in" || r.flow_direction === "out") return r.flow_direction;
+    if (r.is_inbound) return "out";
+    var c = (r.contract_category || "").toLowerCase();
+    if (/_in$/.test(c)) return "in";
+    if (/_out$/.test(c)) return "out";
+    return "";
+  }
+  function axisKey(axis, r) {
+    if (axis === "work") return r.work_id != null ? "w:" + r.work_id : "none";
+    if (axis === "source_ip") return r.source_ip_id != null ? "s:" + r.source_ip_id : "none";
+    if (axis === "vendor") return (r.vendor_code || r.vendor_name) ? "v:" + (r.vendor_code || r.vendor_name) : "none";
+    return r.department ? "d:" + r.department : "none";
+  }
+  function axisLabel(axis, r) {
+    if (axis === "work") return r.work_title ? ((r.work_code ? r.work_code + " " : "") + r.work_title) : "（作品なし）";
+    if (axis === "source_ip") return r.source_ip_title ? ((r.source_code ? r.source_code + " " : "") + r.source_ip_title) : "（原作なし）";
+    if (axis === "vendor") return r.vendor_name || r.vendor_code || "（取引先なし）";
+    return r.department || "（部署なし）";
+  }
+  function sumAmt(rows) { return rows.reduce(function (a, r) { return a + (Number(r.amount_ex_tax) || 0); }, 0); }
+  function leafHtml(r) {
+    var dir = dirOf(r);
+    var dp = dir === "out" ? '<span class="dirpill out">OUT 提供</span>'
+      : dir === "in" ? '<span class="dirpill in">IN 受領中</span>' : '';
+    var sub = [catLabel(r.contract_category), r.vendor_name, r.document_number]
+      .filter(Boolean).map(esc).join(" · ");
+    return '<div class="tleaf" data-id="' + r.id + '">' +
+      '<span class="d">' + esc(r.payment_date || r.delivery_date || "—") + '</span>' +
+      '<div class="nm"><div class="t">' + esc(r.item_name || r.contract_title || "—") + '</div>' +
+      (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>' + dp +
+      '<span class="a">' + (r.amount_ex_tax != null ? "¥" + yen(r.amount_ex_tax) : "—") + '</span></div>';
+  }
+  function nodeHtml(label, rows, childrenHtml, opts) {
+    opts = opts || {};
+    var accent = opts.accent ? '<span class="accent" style="background:' + opts.accent + '"></span>' : '';
+    return '<details class="tnode"' + (opts.open ? " open" : "") + '><summary>' +
+      '<span class="caret">▶</span>' + accent +
+      '<span class="tw">' + esc(label) + '</span>' +
+      '<span class="cnt">' + rows.length + '</span>' +
+      '<span class="amt">¥' + yen(sumAmt(rows)) + '</span></summary>' +
+      '<div class="tchildren">' + childrenHtml + '</div></details>';
+  }
+  function renderTree(rows, axis) {
+    var wrap = document.getElementById("list-wrap");
+    if (!rows || !rows.length) { wrap.innerHTML = '<div class="empty">該当する条件明細がありません</div>'; return; }
+    var groups = {}, order = [];
+    rows.forEach(function (r) {
+      var k = axisKey(axis, r);
+      if (!groups[k]) { groups[k] = { label: axisLabel(axis, r), rows: [] }; order.push(k); }
+      groups[k].rows.push(r);
+    });
+    order.sort(function (a, b) { return groups[b].rows.length - groups[a].rows.length; });
+    var html = order.map(function (k) {
+      var g = groups[k];
+      if (axis !== "work") return nodeHtml(g.label, g.rows, g.rows.map(leafHtml).join(""), {});
+      var outR = g.rows.filter(function (r) { return dirOf(r) === "out"; });
+      var inR = g.rows.filter(function (r) { return dirOf(r) === "in"; });
+      var naR = g.rows.filter(function (r) { return dirOf(r) === ""; });
+      var kids = "";
+      if (outR.length) kids += nodeHtml("OUT ・ 当社が提供している権利（受領）", outR, outR.map(leafHtml).join(""), { accent: "#0fa97c", open: true });
+      if (inR.length) kids += nodeHtml("IN ・ 当社が受けている権利（支払）", inR, inR.map(leafHtml).join(""), { accent: "#4f46e5", open: true });
+      if (naR.length) kids += nodeHtml("方向未設定", naR, naR.map(leafHtml).join(""), { accent: "#cbd5e1" });
+      return nodeHtml(g.label, g.rows, kids, {});
+    }).join("");
+    wrap.innerHTML = '<div class="tree">' + html + '</div>';
+  }
 
   function gather() {
     var ids = ["payment_from", "payment_to", "delivery_from", "delivery_to", "category", "vendor", "owner", "q"];
@@ -251,7 +364,8 @@ export function conditionsPage(role: Role = "viewer"): string {
       var rows = data.rows || [];
       document.getElementById("count").textContent =
         rows.length + " 件" + (data.total && data.total > rows.length ? " / 全 " + data.total + " 件" : "");
-      render(rows);
+      currentRows = rows;
+      draw();
     } catch (e) {
       wrap.innerHTML = '<div class="empty" style="color:#b91c1c;">読み込みに失敗しました: ' + esc(e && e.message ? e.message : e) + '</div>';
       document.getElementById("count").textContent = "—";
@@ -386,8 +500,33 @@ export function conditionsPage(role: Role = "viewer"): string {
       updateSelCount();
       return;
     }
+    var leaf = t.closest ? t.closest(".tleaf") : null;
+    if (leaf && leaf.getAttribute("data-id")) { openEdit(leaf.getAttribute("data-id")); return; }
     var tr = t.closest ? t.closest("tr.clickable") : null;
     if (tr && tr.getAttribute("data-id")) openEdit(tr.getAttribute("data-id"));
+  });
+
+  /* ---------- 表示モード/切り口の切替 ---------- */
+  function setSeg(segId, attr, val) {
+    Array.prototype.slice.call(document.querySelectorAll("#" + segId + " button")).forEach(function (b) {
+      b.classList.toggle("on", b.getAttribute(attr) === val);
+    });
+  }
+  document.getElementById("view-seg").addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("button") : null;
+    if (!b) return;
+    VIEW = b.getAttribute("data-view"); setSeg("view-seg", "data-view", VIEW);
+    var tree = VIEW === "tree";
+    document.getElementById("axis-seg").style.display = tree ? "" : "none";
+    document.getElementById("tree-hint").style.display = (tree && AXIS === "work") ? "" : "none";
+    draw();
+  });
+  document.getElementById("axis-seg").addEventListener("click", function (e) {
+    var b = e.target.closest ? e.target.closest("button") : null;
+    if (!b) return;
+    AXIS = b.getAttribute("data-axis"); setSeg("axis-seg", "data-axis", AXIS);
+    document.getElementById("tree-hint").style.display = (AXIS === "work") ? "" : "none";
+    draw();
   });
   document.getElementById("btn-csv-all").addEventListener("click", function () { csvExport(null); });
   document.getElementById("btn-csv-sel").addEventListener("click", function () {
