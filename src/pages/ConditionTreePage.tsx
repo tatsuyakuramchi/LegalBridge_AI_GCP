@@ -190,6 +190,7 @@ export function ConditionTreePage() {
   const [q, setQ] = React.useState("")
   const [category, setCategory] = React.useState("")
   const [includeAll, setIncludeAll] = React.useState(false)
+  const [statusFilter, setStatusFilter] = React.useState<"all" | "executed" | "terminated">("all")
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
 
   const fetchRows = React.useCallback(() => {
@@ -215,10 +216,16 @@ export function ConditionTreePage() {
       return n
     })
 
+  // 契約状態フィルタ(有効中=executed / 解約済=terminated)。
+  const shown = React.useMemo(
+    () => (statusFilter === "all" ? rows : rows.filter((r) => r.contract_status === statusFilter)),
+    [rows, statusFilter]
+  )
+
   // 選択中の切り口でグループ化(キー順は件数→ラベル)。
   const groups = React.useMemo(() => {
     const m = new Map<string, { label: string; rows: Row[] }>()
-    for (const r of rows) {
+    for (const r of shown) {
       const k = axisKey(axis, r)
       if (!m.has(k)) m.set(k, { label: axisLabel(axis, r), rows: [] })
       m.get(k)!.rows.push(r)
@@ -226,7 +233,7 @@ export function ConditionTreePage() {
     return Array.from(m.entries())
       .map(([key, g]) => ({ key, ...g }))
       .sort((a, b) => b.rows.length - a.rows.length || a.label.localeCompare(b.label, "ja"))
-  }, [rows, axis])
+  }, [shown, axis])
 
   const expandAll = () => {
     const all = new Set<string>()
@@ -253,6 +260,27 @@ export function ConditionTreePage() {
               )}
             >
               {a.label}
+            </button>
+          ))}
+        </div>
+
+        {/* 契約状態フィルタ(有効中 / 解約済) */}
+        <div className="flex items-center gap-1 rounded-md border border-border p-0.5">
+          {([
+            ["all", "すべて", "bg-foreground text-background"],
+            ["executed", "有効中", "bg-emerald-600 text-white"],
+            ["terminated", "解約済", "bg-red-600 text-white"],
+          ] as const).map(([v, label, onCls]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setStatusFilter(v)}
+              className={cn(
+                "px-3 py-1.5 text-[11px] font-mono font-bold tracking-[0.08em] rounded-sm transition-colors",
+                statusFilter === v ? onCls : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {label}
             </button>
           ))}
         </div>
@@ -292,7 +320,7 @@ export function ConditionTreePage() {
           検索
         </button>
         <div className="ml-auto flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
-          <span>{rows.length} 件 / {groups.length} {AXES.find((a) => a.key === axis)?.label}</span>
+          <span>{shown.length} 件 / {groups.length} {AXES.find((a) => a.key === axis)?.label}</span>
           <button type="button" onClick={expandAll} className="underline hover:text-foreground">全展開</button>
           <button type="button" onClick={() => setExpanded(new Set())} className="underline hover:text-foreground">全閉じ</button>
         </div>
