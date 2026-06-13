@@ -56,6 +56,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/contracts\/\d+\/cloudsign(?:\/|\?|$)/,
   // CloudSign 送信一覧 GET も worker のみ実装。
   /^\/api\/cloudsign(?:\/|\?|$)/,
+  // 文書の CloudSign 対象フラグ一覧(文書制御は worker 側で完結)。
+  /^\/api\/issues\/[^/]+\/cloudsign-targets(?:\?|$)/,
   /^\/api\/templates(?:\/|$)/,
   /^\/api\/master\/workflow-settings(?:\/|$)/,
   /^\/api\/numbering(?:\/|$)/,

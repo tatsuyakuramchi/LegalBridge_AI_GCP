@@ -168,7 +168,29 @@ export function IssueDetailPage() {
         )
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
         const data = await res.json()
-        if (!cancelled) setDocs(Array.isArray(data) ? data : [])
+        const list: IssueDocument[] = Array.isArray(data) ? data : []
+        // 文書制御(クラウドサイン対象フラグ)は worker から取得して合流する。
+        try {
+          const tRes = await fetch(
+            `/api/issues/${encodeURIComponent(issueKey)}/cloudsign-targets`
+          )
+          if (tRes.ok) {
+            const targets = await tRes.json()
+            const map = new Map<string, boolean>(
+              (Array.isArray(targets) ? targets : []).map((t: any) => [
+                t.document_number,
+                t.cloudsign_target !== false,
+              ])
+            )
+            for (const d of list) {
+              if (d.document_number && map.has(d.document_number))
+                d.cloudsign_target = map.get(d.document_number)
+            }
+          }
+        } catch {
+          /* 取得失敗時は既定(対象)で表示 */
+        }
+        if (!cancelled) setDocs(list)
       } catch (e: any) {
         if (!cancelled) setError(e?.message || String(e))
       } finally {

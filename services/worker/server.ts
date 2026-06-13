@@ -520,6 +520,21 @@ async function startServer() {
     }
   });
 
+  // 課題配下の文書の cloudsign_target 一覧(文書制御は admin-ui=worker 側で完結させる)。
+  app.get("/api/issues/:issueKey/cloudsign-targets", async (req, res) => {
+    try {
+      const issueKey = String(req.params.issueKey || "");
+      const r = await query(
+        `SELECT document_number, COALESCE(cloudsign_target, TRUE) AS cloudsign_target
+           FROM documents WHERE issue_key = $1`,
+        [issueKey]
+      );
+      res.json(r.rows);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // 文書の「クラウドサイン対象 / 対象外」を切替(紙・相手方電子契約のとき対象外にする)。
   app.patch("/api/documents/:docNumber/cloudsign-target", express.json(), async (req, res) => {
     try {
