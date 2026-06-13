@@ -56,6 +56,11 @@ const EXTRA_CSS = `<style>
 .dirpill{font-size:9.5px;font-weight:800;border-radius:12px;padding:1px 8px;white-space:nowrap;flex-shrink:0}
 .dirpill.out{background:#ecfdf5;color:#0fa97c}
 .dirpill.in{background:#eef2ff;color:#4f46e5}
+.statpill{font-size:9.5px;font-weight:800;border-radius:12px;padding:1px 8px;white-space:nowrap;flex-shrink:0}
+.statpill.s-ok{background:#ecfdf5;color:#0fa97c}
+.statpill.s-term{background:#fef2f2;color:#dc2626;text-decoration:line-through}
+.statpill.s-warn{background:#fff7e6;color:#b97a09}
+.statpill.s-mut{background:#f1f0f6;color:#8a86a3}
 .accent{width:4px;align-self:stretch;border-radius:3px;flex-shrink:0;min-height:18px}
 </style>`;
 
@@ -217,6 +222,16 @@ export function conditionsPage(role: Role = "viewer"): string {
     return r.department || "（部署なし）";
   }
   function sumAmt(rows) { return rows.reduce(function (a, r) { return a + (Number(r.amount_ex_tax) || 0); }, 0); }
+  // 契約状態(contract_status)。マスター(ContractsPanel)と同一語彙。
+  var CSTAT = {
+    draft: ["作成中", "s-mut"], awaiting_signature: ["締結待ち", "s-warn"],
+    executed: ["締結中", "s-ok"], expired: ["満了", "s-mut"], terminated: ["解約済", "s-term"],
+  };
+  function statPill(r) {
+    var s = r.contract_status; if (!s) return "";
+    var m = CSTAT[s] || [s, "s-mut"];
+    return '<span class="statpill ' + m[1] + '">' + esc(m[0]) + '</span>';
+  }
   function leafHtml(r) {
     var dir = dirOf(r);
     var dp = dir === "out" ? '<span class="dirpill out">OUT 提供</span>'
@@ -226,7 +241,7 @@ export function conditionsPage(role: Role = "viewer"): string {
     return '<div class="tleaf" data-id="' + r.id + '">' +
       '<span class="d">' + esc(r.payment_date || r.delivery_date || "—") + '</span>' +
       '<div class="nm"><div class="t">' + esc(r.item_name || r.contract_title || "—") + '</div>' +
-      (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>' + dp +
+      (sub ? '<div class="s">' + sub + '</div>' : '') + '</div>' + statPill(r) + dp +
       '<span class="a">' + (r.amount_ex_tax != null ? "¥" + yen(r.amount_ex_tax) : "—") + '</span></div>';
   }
   function nodeHtml(label, rows, childrenHtml, opts) {

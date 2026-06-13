@@ -19,6 +19,7 @@ type Row = {
   payment_date: string
   delivery_date: string
   contract_category: string
+  contract_status: string
   contract_title: string
   document_number: string
   issue_key: string
@@ -81,6 +82,24 @@ const axisLabel = (axis: Axis, r: Row): string => {
 const yen = (v: any) => (v == null ? "—" : `¥${Number(v).toLocaleString("ja-JP")}`)
 const sum = (rows: Row[]) => rows.reduce((a, r) => a + (Number(r.amount_ex_tax) || 0), 0)
 
+// 契約状態(contract_capabilities.contract_status)。マスター(ContractsPanel)と同一語彙。
+const CONTRACT_STATUS: Record<string, { label: string; cls: string }> = {
+  draft: { label: "作成中", cls: "bg-muted text-muted-foreground" },
+  awaiting_signature: { label: "締結待ち", cls: "bg-amber-500/15 text-amber-600" },
+  executed: { label: "締結中", cls: "bg-emerald-500/15 text-emerald-600" },
+  expired: { label: "満了", cls: "bg-muted text-muted-foreground" },
+  terminated: { label: "解約済", cls: "bg-red-500/15 text-red-600 line-through" },
+}
+function StatusPill({ s }: { s: string }) {
+  if (!s) return null
+  const m = CONTRACT_STATUS[s] || { label: s, cls: "bg-muted text-muted-foreground" }
+  return (
+    <span className={cn("shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-mono font-bold", m.cls)}>
+      {m.label}
+    </span>
+  )
+}
+
 function DirPill({ dir }: { dir: "in" | "out" | "" }) {
   if (!dir) return null
   const isOut = dir === "out"
@@ -112,6 +131,7 @@ function LeafRow({ r }: { key?: React.Key; r: Row }) {
             .join(" · ")}
         </p>
       </div>
+      <StatusPill s={r.contract_status} />
       <DirPill dir={dirOf(r)} />
       <span className="text-xs font-mono font-bold tab-mono w-24 text-right shrink-0">
         {yen(r.amount_ex_tax)}
