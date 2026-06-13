@@ -336,26 +336,36 @@ async function startServer() {
   //   CLOUDSIGN_ENABLED が true のときだけ送信を許可(既定は無効=誤起動防止)。
   //   CLOUDSIGN_ALLOWED_RECIPIENTS(カンマ区切り)を設定すると、その宛先のみ送信可
   //   = 「社内宛だけで締結まで」テストのガード。
-  const cloudSign = new CloudSignService({
-    baseUrl: dbSettings.CLOUDSIGN_BASE_URL || process.env.CLOUDSIGN_BASE_URL,
-    clientId: dbSettings.CLOUDSIGN_CLIENT_ID || process.env.CLOUDSIGN_CLIENT_ID,
-  });
-  const cloudSignEnabled =
-    String(dbSettings.CLOUDSIGN_ENABLED ?? process.env.CLOUDSIGN_ENABLED ?? "").toLowerCase() === "true";
-  const cloudSignAllow = String(
-    dbSettings.CLOUDSIGN_ALLOWED_RECIPIENTS ?? process.env.CLOUDSIGN_ALLOWED_RECIPIENTS ?? ""
-  )
-    .split(",")
-    .map((s) => s.trim().toLowerCase())
-    .filter(Boolean);
+  const loadCloudSignCfg = async () => {
+    const keys = ["CLOUDSIGN_CLIENT_ID", "CLOUDSIGN_ENABLED", "CLOUDSIGN_ALLOWED_RECIPIENTS", "CLOUDSIGN_BASE_URL"];
+    const m: Record<string, any> = {};
+    try {
+      const r = await query(`SELECT key, value FROM app_settings WHERE key = ANY($1)`, [keys]);
+      for (const row of r.rows) {
+        try { m[row.key] = JSON.parse(row.value); } catch { m[row.key] = row.value; }
+      }
+    } catch {
+      /* app_settings 未整備でも env で動作継続 */
+    }
+    const get = (k: string) => (m[k] ?? process.env[k] ?? "");
+    return {
+      clientId: String(get("CLOUDSIGN_CLIENT_ID") || ""),
+      baseUrl: String(get("CLOUDSIGN_BASE_URL") || "") || undefined,
+      enabled: String(get("CLOUDSIGN_ENABLED") || "").toLowerCase() === "true",
+      allow: String(get("CLOUDSIGN_ALLOWED_RECIPIENTS") || "")
+        .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+    };
+  };
 
   // 契約(contract_capabilities)を CloudSign へ送信(下書き作成→PDF添付→宛先→送信確定)。
   app.post("/api/contracts/:id/cloudsign/send", express.json(), async (req, res) => {
     try {
-      if (!cloudSignEnabled)
-        return res.status(403).json({ ok: false, error: "CloudSign 連携が無効です (CLOUDSIGN_ENABLED)" });
-      if (!cloudSign.configured)
-        return res.status(400).json({ ok: false, error: "client_id 未設定 (CLOUDSIGN_CLIENT_ID)" });
+      const cfg = await loadCloudSignCfg();
+      if (!cfg.enabled)
+        return res.status(403).json({ ok: false, error: "CloudSign 連携が無効です (設定でオンにしてください)" });
+      if (!cfg.clientId)
+        return res.status(400).json({ ok: false, error: "client_id 未設定 (設定画面で入力してください)" });
+      const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
       const capId = Number(req.params.id);
       if (!Number.isFinite(capId)) return res.status(400).json({ ok: false, error: "invalid id" });
 
@@ -394,9 +404,9 @@ async function startServer() {
         return res.status(400).json({ ok: false, error: "宛先(署名者メール)がありません" });
 
       // テストガード: allowlist 設定時は全宛先がその集合内であること。
-      const isTest = cloudSignAllow.length > 0;
+      const isTest = cfg.allow.length > 0;
       if (isTest) {
-        const bad = participants.find((p) => !cloudSignAllow.includes(String(p.email).toLowerCase()));
+        const bad = participants.find((p) => !cfg.allow.includes(String(p.email).toLowerCase()));
         if (bad)
           return res
             .status(400)
