@@ -2,12 +2,14 @@ import * as React from "react"
 
 // スキン(外観テーマ)切替。light/dark とは独立した軸として <html> の data-skin で
 //   管理し、CSS 変数(index.css の [data-skin="..."])で全体を再スキンする。
-//   retro = 既定(ペーパー/CRT ターミナル)、eva = NERV/MAGI ターミナル風。
-export type Skin = "retro" | "eva"
+//   retro = 既定(ペーパー/CRT ターミナル)、eva = NERV/MAGI ターミナル風、
+//   macos = search-api と同じ macOS(Big Sur) テイスト。
+export type Skin = "retro" | "eva" | "macos"
 
 export const SKINS: { id: Skin; label: string; tag: string }[] = [
   { id: "retro", label: "Retro Terminal", tag: "STD" },
   { id: "eva", label: "NERV / MAGI", tag: "EVA" },
+  { id: "macos", label: "Search · macOS", tag: "MAC" },
 ]
 
 type SkinCtx = { skin: Skin; setSkin: (s: Skin) => void }

@@ -115,38 +115,42 @@
 }
 
 /*
- * EVA / MAGI skin — NERV terminal. Activated via [data-skin="eva"] on <html>.
- * Self-contained dark palette (overrides both light & dark) so it reads the
- * same regardless of the light/dark toggle. Green phosphor + NERV orange +
- * Unit-01 purple, with heavy "予告(next-episode preview)" headings.
+ * EVA / MAGI skin — NERV operations terminal. Activated via [data-skin="eva"]
+ * on <html>. Self-contained palette (overrides both light & dark) so it reads
+ * the same regardless of the light/dark toggle. Matches the NERV dashboard look:
+ * pure black, NERV-orange accents, near-white mono data, sharp (radius 0) panels.
+ * Green/red/amber are reserved for status (OK / alert / warning) via existing
+ * emerald/red/amber utilities already used across components.
  */
 [data-skin="eva"] {
-  --background: 150 25% 4%;
-  --foreground: 120 78% 72%;
-  --card: 150 22% 6%;
-  --card-foreground: 120 78% 78%;
-  --popover: 150 22% 6%;
-  --popover-foreground: 120 78% 78%;
-  --primary: 22 100% 52%;            /* NERV orange */
-  --primary-foreground: 150 40% 5%;
-  --secondary: 270 45% 22%;          /* Unit-01 purple (dim) */
-  --secondary-foreground: 270 70% 90%;
-  --muted: 150 16% 10%;
-  --muted-foreground: 120 26% 60%;
-  --accent: 22 85% 28%;
-  --accent-foreground: 28 100% 72%;
-  --destructive: 0 95% 56%;          /* red alert */
-  --destructive-foreground: 150 40% 6%;
-  --border: 120 38% 16%;             /* dim green grid */
-  --input: 120 32% 14%;
-  --ring: 22 100% 52%;
+  --background: 20 16% 4%;           /* near-black, faint warm tint */
+  --foreground: 30 14% 88%;          /* near-white warm gray (data text) */
+  --card: 20 16% 6%;
+  --card-foreground: 30 14% 90%;
+  --popover: 20 16% 6%;
+  --popover-foreground: 30 14% 90%;
+  --primary: 16 90% 52%;             /* NERV orange */
+  --primary-foreground: 20 40% 5%;
+  --secondary: 20 10% 14%;
+  --secondary-foreground: 30 14% 88%;
+  --muted: 20 10% 12%;
+  --muted-foreground: 28 16% 62%;
+  --accent: 16 72% 26%;              /* dim orange */
+  --accent-foreground: 22 100% 72%;
+  --destructive: 4 88% 56%;          /* red alert */
+  --destructive-foreground: 20 40% 6%;
+  --border: 18 50% 22%;              /* dim orange rule */
+  --input: 18 32% 16%;
+  --ring: 16 90% 52%;
 
-  --phosphor: 120 100% 50%;          /* green phosphor */
-  --phosphor-foreground: 150 40% 5%;
-  --amber: 28 100% 54%;              /* NERV orange */
-  --amber-foreground: 150 40% 5%;
-  --cyan: 175 90% 50%;
-  --grid: 120 40% 12%;
+  --phosphor: 16 95% 52%;            /* orange phosphor / glow */
+  --phosphor-foreground: 20 40% 5%;
+  --amber: 35 95% 55%;               /* warning amber */
+  --amber-foreground: 20 40% 6%;
+  --cyan: 175 80% 50%;
+  --grid: 18 45% 14%;
+
+  --radius: 0px;                     /* sharp, bordered panels like NERV */
 
   /* 予告フォント: 重い・縦長ゴシックを優先(無ければ角ゴ/サンセリフへフォールバック)。 */
   --font-heading: 'Impact', 'Haettenschweiler', 'Franklin Gothic Bold',
@@ -163,29 +167,104 @@
   text-transform: uppercase;
 }
 
-/* CRT ターミナル: 緑のスキャンライン + 四隅ビネットを全体へ薄く重ねる。 */
+/* CRT ターミナル: 薄いスキャンライン + 四隅ビネットを全体へ重ねる。 */
 [data-skin="eva"] body {
   background-image:
     repeating-linear-gradient(
       to bottom,
       transparent 0, transparent 2px,
-      hsl(120 100% 50% / 0.035) 2px, hsl(120 100% 50% / 0.035) 3px),
-    radial-gradient(120% 80% at 50% 0%, transparent 58%, hsl(150 45% 2% / 0.85) 100%);
+      hsl(16 95% 52% / 0.028) 2px, hsl(16 95% 52% / 0.028) 3px),
+    radial-gradient(120% 80% at 50% 0%, transparent 56%, hsl(20 45% 1% / 0.9) 100%);
 }
 
-/* MAGI のヘックス/グリッド地紋(サイドバー等のパネル面)。 */
+/* MAGI のグリッド地紋(サイドバー等のパネル面)。 */
 [data-skin="eva"] .eva-panel {
   background-image:
-    linear-gradient(hsl(120 40% 12% / 0.55) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(120 40% 12% / 0.55) 1px, transparent 1px);
+    linear-gradient(hsl(18 45% 16% / 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(18 45% 16% / 0.5) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
-/* アクティブなナビは NERV オレンジのスラブに。 */
+/* アクティブなナビは NERV オレンジのスラブ + 発光。 */
 [data-skin="eva"] .eva-panel [aria-current="page"] {
-  background-color: hsl(var(--amber)) !important;
-  color: hsl(var(--amber-foreground)) !important;
-  box-shadow: 0 0 10px hsl(28 100% 54% / 0.4);
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  box-shadow: 0 0 10px hsl(16 95% 52% / 0.45);
+}
+
+/* 角ゼロは --radius:0 が radius 系ユーティリティ(rounded-sm/md/lg)へ波及。
+ * rounded-full(9999px) は対象外なのでアバター/ドット/リングゲージは円のまま。 */
+
+/*
+ * macOS / Search skin — search-api(popChrome/landing)と同じ Big Sur テイスト。
+ * 薄いラベンダー地 + オーロラ放射グラデ + インディゴ accent + フロストガラス +
+ * 大きめ角丸 + SF Pro Rounded。light テーマとして dark を上書きする自己完結型。
+ */
+[data-skin="macos"] {
+  --background: 255 46% 96%;         /* #f4f1fb lavender */
+  --foreground: 250 30% 17%;         /* #241f3a ink */
+  --card: 0 0% 100%;
+  --card-foreground: 250 30% 17%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 250 30% 17%;
+  --primary: 247 74% 63%;            /* #6c5ce7 indigo */
+  --primary-foreground: 0 0% 100%;
+  --secondary: 252 100% 98%;         /* #f6f3ff */
+  --secondary-foreground: 247 55% 42%;
+  --muted: 255 60% 97%;
+  --muted-foreground: 248 14% 56%;   /* #8a86a3 */
+  --accent: 250 100% 96%;
+  --accent-foreground: 247 68% 50%;
+  --destructive: 350 100% 68%;       /* #ff5b78 */
+  --destructive-foreground: 0 0% 100%;
+  --border: 255 42% 93%;             /* #ece8f6 */
+  --input: 255 40% 91%;
+  --ring: 247 74% 63%;
+
+  --phosphor: 247 74% 63%;           /* indigo glow / selection */
+  --phosphor-foreground: 0 0% 100%;
+  --amber: 28 100% 63%;              /* #ff9f43 */
+  --amber-foreground: 250 30% 17%;
+  --cyan: 187 100% 41%;              /* #00d2d3 teal */
+  --grid: 255 40% 92%;
+
+  --radius: 0.75rem;                 /* macOS の大きめ角丸 */
+
+  --font-sans: -apple-system, 'SF Pro Rounded', 'SF Pro Text',
+    'Hiragino Maru Gothic ProN', 'Hiragino Sans', 'Geist Variable', system-ui, sans-serif;
+  --font-heading: var(--font-sans); /* 見出しも丸ゴシック(mono をやめて柔らかく) */
+}
+
+/* Big Sur 風オーロラ背景(固定)。 */
+[data-skin="macos"] body {
+  background-image:
+    radial-gradient(1100px 520px at 88% -8%, hsl(330 100% 93% / 0.85) 0, transparent 58%),
+    radial-gradient(980px 520px at -8% 4%, hsl(205 100% 91% / 0.85) 0, transparent 56%),
+    radial-gradient(820px 600px at 50% 120%, hsl(255 100% 93% / 0.85) 0, transparent 60%);
+  background-attachment: fixed;
+}
+
+/* サイドバー/トップバーをフロストガラスに。 */
+[data-skin="macos"] aside,
+[data-skin="macos"] header {
+  background-color: hsl(0 0% 100% / 0.72) !important;
+  backdrop-filter: saturate(180%) blur(20px);
+  -webkit-backdrop-filter: saturate(180%) blur(20px);
+}
+
+/* 見出しは太め・字間タイト(等幅/大文字の癖を出さない)。 */
+[data-skin="macos"] h1,
+[data-skin="macos"] h2,
+[data-skin="macos"] h3 {
+  letter-spacing: -0.01em;
+  font-weight: 700;
+}
+
+/* アクティブなナビは pop テーマ同様インディゴのグラデ + ソフトグロー。 */
+[data-skin="macos"] .eva-panel [aria-current="page"] {
+  background-image: linear-gradient(135deg, hsl(247 74% 63%), hsl(248 96% 80%)) !important;
+  color: #fff !important;
+  box-shadow: 0 6px 16px hsl(247 74% 63% / 0.32);
 }
 
 @layer utilities {
