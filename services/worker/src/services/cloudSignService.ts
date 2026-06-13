@@ -140,4 +140,42 @@ export class CloudSignService {
       return res.data;
     });
   }
+
+  /** 締結済み書類の全ファイル(署名済みPDF / 合意締結証明書)を取得。失敗ファイルはスキップ。 */
+  async downloadCompletedFiles(documentId: string): Promise<{ fileName: string; buffer: Buffer }[]> {
+    const doc = await this.getDocument(documentId);
+    // CONFIRM: 書類詳細の files 配列のキー名とファイルID(id)。
+    const files: any[] = Array.isArray(doc?.files)
+      ? doc.files
+      : Array.isArray(doc?.documents)
+        ? doc.documents
+        : [];
+    const out: { fileName: string; buffer: Buffer }[] = [];
+    for (const f of files) {
+      const fileId = f?.id ?? f?.fileID;
+      if (!fileId) continue;
+      try {
+        const buffer = await this.downloadFile(documentId, String(fileId));
+        const name = String(f?.name || fileId).replace(/\.pdf$/i, "");
+        out.push({ fileName: `${name}.pdf`, buffer });
+      } catch (e: any) {
+        console.warn("[cloudsign] file download failed:", fileId, e?.message || e);
+      }
+    }
+    return out;
+  }
+
+  /** 単一ファイルのバイナリ取得。 */
+  private async downloadFile(documentId: string, fileId: string): Promise<Buffer> {
+    return this.call(async () => {
+      // CONFIRM: 署名済みファイルのDL手段。直接バイナリ(GET .../files/{id})を想定。
+      //   download_url を返す実装なら一段挟む(ここを調整)。
+      const res = await axios.get(`${this.base}/documents/${documentId}/files/${fileId}`, {
+        headers: { ...(await this.authHeader()) },
+        responseType: "arraybuffer",
+        timeout: 60_000,
+      });
+      return Buffer.from(res.data as any);
+    });
+  }
 }

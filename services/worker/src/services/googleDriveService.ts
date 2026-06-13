@@ -129,6 +129,26 @@ export class GoogleDriveService {
     }
   }
 
+  /** 既に PDF バイト列があるものをそのまま Drive へアップロード(締結済みPDF保存等)。 */
+  async uploadPdfBuffer(pdfBuffer: Buffer, fileName: string, folderId?: string): Promise<string> {
+    const folder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID;
+    const name = fileName.replace(/\.pdf$/i, "") + ".pdf";
+    const response = await this.drive.files.create({
+      requestBody: {
+        name,
+        parents: folder ? [folder] : [],
+        mimeType: "application/pdf",
+      },
+      media: { mimeType: "application/pdf", body: Readable.from(pdfBuffer) },
+      fields: "id, webViewLink",
+      supportsAllDrives: true,
+    });
+    return (
+      response.data.webViewLink ||
+      (response.data.id ? `https://drive.google.com/file/d/${response.data.id}/view` : "")
+    );
+  }
+
   async uploadMarkdown(markdown: string, fileName: string, folderId?: string): Promise<string> {
     // Cloud Run環境（ADC）または環境変数を自動認識します
     const folder = folderId || process.env.GOOGLE_DRIVE_FOLDER_ID;

@@ -590,14 +590,57 @@ async function startServer() {
         [reqRow.id, newStatus, isCompleted]
       );
 
-      if (isCompleted && reqRow.capability_id) {
+      if (isCompleted) {
         // 締結完了 → 契約状態を executed(締結中)へ。
-        await query(
-          `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
-          [reqRow.capability_id]
-        );
-        // TODO(実環境): 締結済みPDF + 合意締結証明書を DL → Drive 保存 → signed_drive_link 更新。
-        // TODO: notifyIssueEvent で Slack / Backlog へ締結完了通知。
+        if (reqRow.capability_id) {
+          await query(
+            `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+            [reqRow.capability_id]
+          );
+        }
+        // 締結済みPDF + 合意締結証明書を取得 → Drive 保存 → signed_drive_link 更新。
+        try {
+          const cfg = await loadCloudSignCfg();
+          if (cfg.clientId) {
+            const cs = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+            const files = await cs.downloadCompletedFiles(csId);
+            let signedLink: string | null = null;
+            for (const f of files) {
+              const link = await googleDriveService.uploadPdfBuffer(
+                f.buffer,
+                `締結済_${reqRow.document_number || csId}_${f.fileName}`
+              );
+              if (link && !signedLink) signedLink = link; // 代表リンク(最初の1つ)
+            }
+            if (signedLink) {
+              await query(`UPDATE cloudsign_requests SET signed_drive_link=$2, updated_at=now() WHERE id=$1`, [
+                reqRow.id,
+                signedLink,
+              ]);
+            }
+          }
+        } catch (dlErr: any) {
+          console.warn("[cloudsign webhook] 署名済みPDFの保存に失敗:", dlErr?.message || dlErr);
+        }
+        // Slack / Backlog へ締結完了を通知(document_number から issue_key を解決)。
+        try {
+          let issueKey = "";
+          if (reqRow.document_number) {
+            const dr = await query(`SELECT issue_key FROM documents WHERE document_number = $1 LIMIT 1`, [
+              reqRow.document_number,
+            ]);
+            issueKey = dr.rows[0]?.issue_key || "";
+          }
+          if (issueKey) {
+            await notifyIssueEvent(issueKey, {
+              type: "status_changed",
+              from: "署名依頼中",
+              to: "締結済み（クラウドサイン）",
+            });
+          }
+        } catch (nErr: any) {
+          console.warn("[cloudsign webhook] 締結通知に失敗:", nErr?.message || nErr);
+        }
       }
       res.json({ ok: true, status: newStatus });
     } catch (e: any) {
