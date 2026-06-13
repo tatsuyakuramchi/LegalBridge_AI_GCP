@@ -178,6 +178,61 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* クラウドサイン(電子契約) */}
+          <Card>
+            <CardContent className="px-5 space-y-4">
+              <div className="flex items-center gap-2 border-b border-border pb-2.5">
+                <ShieldCheck className="h-4 w-4 text-cyan-700 dark:text-cyan-300" />
+                <p className="retro-tag">クラウドサイン</p>
+                <div className="flex-1" />
+                <StatusPill
+                  ok={!!appSettings.CLOUDSIGN_CLIENT_ID && String(appSettings.CLOUDSIGN_ENABLED) === "true"}
+                />
+              </div>
+              <div className="space-y-3">
+                <Field label="Client ID">
+                  <Input
+                    type="password"
+                    value={appSettings.CLOUDSIGN_CLIENT_ID || ""}
+                    onChange={(e) => setField("CLOUDSIGN_CLIENT_ID", e.target.value)}
+                    placeholder="CloudSign 管理画面で発行した client_id"
+                  />
+                </Field>
+                <Field label="連携の有効化">
+                  <select
+                    value={String(appSettings.CLOUDSIGN_ENABLED) === "true" ? "true" : "false"}
+                    onChange={(e) => setField("CLOUDSIGN_ENABLED", e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm font-mono"
+                  >
+                    <option value="false">無効（送信しない）</option>
+                    <option value="true">有効（送信を許可）</option>
+                  </select>
+                </Field>
+                <Field label="テスト送信の許可宛先（カンマ区切り）">
+                  <Input
+                    value={appSettings.CLOUDSIGN_ALLOWED_RECIPIENTS || ""}
+                    onChange={(e) => setField("CLOUDSIGN_ALLOWED_RECIPIENTS", e.target.value)}
+                    placeholder="社内宛のみ: a@example.co.jp, b@example.co.jp"
+                  />
+                </Field>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  ※ 許可宛先を設定している間は、その宛先以外への送信は拒否されます（社内宛で締結まで検証する用）。空にすると本番宛先へ送信できます。
+                </p>
+                <Field label="API ベースURL（任意）">
+                  <Input
+                    value={appSettings.CLOUDSIGN_BASE_URL || ""}
+                    onChange={(e) => setField("CLOUDSIGN_BASE_URL", e.target.value)}
+                    placeholder="https://api.cloudsign.jp"
+                  />
+                </Field>
+                <Button onClick={() => persist("CloudSign")}>
+                  <Save />
+                  Apply
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Slack templates */}

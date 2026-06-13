@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Plus, Search, Edit2, Trash2, ExternalLink, RefreshCw } from "lucide-react"
+import { Plus, Search, Edit2, Trash2, ExternalLink, RefreshCw, Send } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -334,6 +334,37 @@ export function ContractsPanel() {
     }
   }
 
+  // クラウドサイン送信(ダイアログ)。空メールなら取引先の主担当を worker 側で自動補完。
+  const [csTarget, setCsTarget] = React.useState<any>(null)
+  const [csName, setCsName] = React.useState("")
+  const [csEmail, setCsEmail] = React.useState("")
+  const [csSending, setCsSending] = React.useState(false)
+  const sendCloudSign = async () => {
+    if (!csTarget) return
+    setCsSending(true)
+    try {
+      const participants = csEmail.trim()
+        ? [{ name: csName.trim() || csTarget.vendor_name || "署名者", email: csEmail.trim(), order: 1 }]
+        : []
+      const res = await fetch(`/api/contracts/${csTarget.id}/cloudsign/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ participants }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
+      showNotification(
+        data.is_test ? "クラウドサインへ送信しました（テスト許可宛先）" : "クラウドサインへ送信しました",
+        "success"
+      )
+      setCsTarget(null)
+    } catch (e: any) {
+      showNotification(`送信に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setCsSending(false)
+    }
+  }
+
   // テーブル上で契約状態だけをインライン更新(軽量 PATCH。他項目は変更しない)。
   const [statusSaving, setStatusSaving] = React.useState<number | null>(null)
   const updateStatus = async (id: number, contract_status: string) => {
@@ -487,6 +518,18 @@ export function ContractsPanel() {
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                     )}
+                    <Button
+                      size="icon-sm"
+                      variant="outline"
+                      title="クラウドサインで送信"
+                      onClick={() => {
+                        setCsTarget(c)
+                        setCsName("")
+                        setCsEmail("")
+                      }}
+                    >
+                      <Send />
+                    </Button>
                     <Button
                       size="icon-sm"
                       variant="outline"
@@ -1123,6 +1166,54 @@ export function ContractsPanel() {
             </Button>
             <Button onClick={save} disabled={saving}>
               {saving ? "保存中…" : "保存して同期"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* クラウドサイン送信ダイアログ */}
+      <Dialog open={!!csTarget} onOpenChange={(v) => !v && setCsTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>クラウドサインで送信</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground leading-relaxed">
+              契約:{" "}
+              <span className="font-bold text-foreground">
+                {csTarget?.contract_title || csTarget?.document_number || "—"}
+              </span>
+              <br />
+              取引先: {csTarget?.vendor_name || "—"}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">署名者 氏名（任意）</Label>
+              <Input
+                value={csName}
+                onChange={(e) => setCsName(e.target.value)}
+                placeholder={csTarget?.vendor_name || "山田 太郎"}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">署名者 メール（空欄なら取引先の主担当を自動使用）</Label>
+              <Input
+                type="email"
+                value={csEmail}
+                onChange={(e) => setCsEmail(e.target.value)}
+                placeholder="signer@example.co.jp"
+              />
+            </div>
+            <p className="text-[11px] font-mono text-muted-foreground">
+              ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、その宛先（社内テスト用）のみ送信できます。
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCsTarget(null)} disabled={csSending}>
+              キャンセル
+            </Button>
+            <Button onClick={sendCloudSign} disabled={csSending}>
+              <Send />
+              {csSending ? "送信中…" : "送信"}
             </Button>
           </DialogFooter>
         </DialogContent>
