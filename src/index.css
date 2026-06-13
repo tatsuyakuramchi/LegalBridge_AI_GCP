@@ -115,38 +115,42 @@
 }
 
 /*
- * EVA / MAGI skin — NERV terminal. Activated via [data-skin="eva"] on <html>.
- * Self-contained dark palette (overrides both light & dark) so it reads the
- * same regardless of the light/dark toggle. Green phosphor + NERV orange +
- * Unit-01 purple, with heavy "予告(next-episode preview)" headings.
+ * EVA / MAGI skin — NERV operations terminal. Activated via [data-skin="eva"]
+ * on <html>. Self-contained palette (overrides both light & dark) so it reads
+ * the same regardless of the light/dark toggle. Matches the NERV dashboard look:
+ * pure black, NERV-orange accents, near-white mono data, sharp (radius 0) panels.
+ * Green/red/amber are reserved for status (OK / alert / warning) via existing
+ * emerald/red/amber utilities already used across components.
  */
 [data-skin="eva"] {
-  --background: 150 25% 4%;
-  --foreground: 120 78% 72%;
-  --card: 150 22% 6%;
-  --card-foreground: 120 78% 78%;
-  --popover: 150 22% 6%;
-  --popover-foreground: 120 78% 78%;
-  --primary: 22 100% 52%;            /* NERV orange */
-  --primary-foreground: 150 40% 5%;
-  --secondary: 270 45% 22%;          /* Unit-01 purple (dim) */
-  --secondary-foreground: 270 70% 90%;
-  --muted: 150 16% 10%;
-  --muted-foreground: 120 26% 60%;
-  --accent: 22 85% 28%;
-  --accent-foreground: 28 100% 72%;
-  --destructive: 0 95% 56%;          /* red alert */
-  --destructive-foreground: 150 40% 6%;
-  --border: 120 38% 16%;             /* dim green grid */
-  --input: 120 32% 14%;
-  --ring: 22 100% 52%;
+  --background: 20 16% 4%;           /* near-black, faint warm tint */
+  --foreground: 30 14% 88%;          /* near-white warm gray (data text) */
+  --card: 20 16% 6%;
+  --card-foreground: 30 14% 90%;
+  --popover: 20 16% 6%;
+  --popover-foreground: 30 14% 90%;
+  --primary: 16 90% 52%;             /* NERV orange */
+  --primary-foreground: 20 40% 5%;
+  --secondary: 20 10% 14%;
+  --secondary-foreground: 30 14% 88%;
+  --muted: 20 10% 12%;
+  --muted-foreground: 28 16% 62%;
+  --accent: 16 72% 26%;              /* dim orange */
+  --accent-foreground: 22 100% 72%;
+  --destructive: 4 88% 56%;          /* red alert */
+  --destructive-foreground: 20 40% 6%;
+  --border: 18 50% 22%;              /* dim orange rule */
+  --input: 18 32% 16%;
+  --ring: 16 90% 52%;
 
-  --phosphor: 120 100% 50%;          /* green phosphor */
-  --phosphor-foreground: 150 40% 5%;
-  --amber: 28 100% 54%;              /* NERV orange */
-  --amber-foreground: 150 40% 5%;
-  --cyan: 175 90% 50%;
-  --grid: 120 40% 12%;
+  --phosphor: 16 95% 52%;            /* orange phosphor / glow */
+  --phosphor-foreground: 20 40% 5%;
+  --amber: 35 95% 55%;               /* warning amber */
+  --amber-foreground: 20 40% 6%;
+  --cyan: 175 80% 50%;
+  --grid: 18 45% 14%;
+
+  --radius: 0px;                     /* sharp, bordered panels like NERV */
 
   /* 予告フォント: 重い・縦長ゴシックを優先(無ければ角ゴ/サンセリフへフォールバック)。 */
   --font-heading: 'Impact', 'Haettenschweiler', 'Franklin Gothic Bold',
@@ -163,30 +167,33 @@
   text-transform: uppercase;
 }
 
-/* CRT ターミナル: 緑のスキャンライン + 四隅ビネットを全体へ薄く重ねる。 */
+/* CRT ターミナル: 薄いスキャンライン + 四隅ビネットを全体へ重ねる。 */
 [data-skin="eva"] body {
   background-image:
     repeating-linear-gradient(
       to bottom,
       transparent 0, transparent 2px,
-      hsl(120 100% 50% / 0.035) 2px, hsl(120 100% 50% / 0.035) 3px),
-    radial-gradient(120% 80% at 50% 0%, transparent 58%, hsl(150 45% 2% / 0.85) 100%);
+      hsl(16 95% 52% / 0.028) 2px, hsl(16 95% 52% / 0.028) 3px),
+    radial-gradient(120% 80% at 50% 0%, transparent 56%, hsl(20 45% 1% / 0.9) 100%);
 }
 
-/* MAGI のヘックス/グリッド地紋(サイドバー等のパネル面)。 */
+/* MAGI のグリッド地紋(サイドバー等のパネル面)。 */
 [data-skin="eva"] .eva-panel {
   background-image:
-    linear-gradient(hsl(120 40% 12% / 0.55) 1px, transparent 1px),
-    linear-gradient(90deg, hsl(120 40% 12% / 0.55) 1px, transparent 1px);
+    linear-gradient(hsl(18 45% 16% / 0.5) 1px, transparent 1px),
+    linear-gradient(90deg, hsl(18 45% 16% / 0.5) 1px, transparent 1px);
   background-size: 22px 22px;
 }
 
-/* アクティブなナビは NERV オレンジのスラブに。 */
+/* アクティブなナビは NERV オレンジのスラブ + 発光。 */
 [data-skin="eva"] .eva-panel [aria-current="page"] {
-  background-color: hsl(var(--amber)) !important;
-  color: hsl(var(--amber-foreground)) !important;
-  box-shadow: 0 0 10px hsl(28 100% 54% / 0.4);
+  background-color: hsl(var(--primary)) !important;
+  color: hsl(var(--primary-foreground)) !important;
+  box-shadow: 0 0 10px hsl(16 95% 52% / 0.45);
 }
+
+/* 角ゼロは --radius:0 が radius 系ユーティリティ(rounded-sm/md/lg)へ波及。
+ * rounded-full(9999px) は対象外なのでアバター/ドット/リングゲージは円のまま。 */
 
 @layer utilities {
   .scrollbar-hide::-webkit-scrollbar { display: none; }
