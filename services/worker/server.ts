@@ -357,18 +357,79 @@ async function startServer() {
     };
   };
 
-  // 契約(contract_capabilities)を CloudSign へ送信(下書き作成→PDF添付→宛先→送信確定)。
+  // 共通送信処理: 指定 PDF(driveLink)を CloudSign へ 下書き作成→添付→宛先→送信確定 し、
+  //   cloudsign_requests に記録する。戻り値は { httpStatus, body } で呼び出し側がそのまま返す。
+  const performCloudSignSend = async (opts: {
+    title: string;
+    driveLink: string | null;
+    documentNumber: string | null;
+    capabilityId: number | null;
+    templateType: string | null;
+    participants: any[];
+    user: string;
+  }): Promise<{ httpStatus: number; body: any }> => {
+    const cfg = await loadCloudSignCfg();
+    if (!cfg.enabled)
+      return { httpStatus: 403, body: { ok: false, error: "CloudSign 連携が無効です (設定でオンにしてください)" } };
+    if (!cfg.clientId)
+      return { httpStatus: 400, body: { ok: false, error: "client_id 未設定 (設定画面で入力してください)" } };
+    if (!opts.driveLink)
+      return { httpStatus: 400, body: { ok: false, error: "生成済みPDFがありません(先に文書生成が必要)" } };
+    const participants = (opts.participants || []).filter((p) => p && p.email);
+    if (!participants.length)
+      return { httpStatus: 400, body: { ok: false, error: "宛先(署名者メール)がありません" } };
+    const isTest = cfg.allow.length > 0;
+    if (isTest) {
+      const bad = participants.find((p) => !cfg.allow.includes(String(p.email).toLowerCase()));
+      if (bad)
+        return { httpStatus: 400, body: { ok: false, error: `テスト中は許可された宛先のみ送信できます: ${bad.email}` } };
+    }
+    const ins = await query(
+      `INSERT INTO cloudsign_requests
+         (document_number, capability_id, template_type, status, title, participants, is_test, created_by)
+       VALUES ($1,$2,$3,'sending',$4,$5::jsonb,$6,$7) RETURNING id`,
+      [opts.documentNumber, opts.capabilityId, opts.templateType, opts.title, JSON.stringify(participants), isTest, opts.user]
+    );
+    const reqId = ins.rows[0].id;
+    try {
+      const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+      const pdf = await googleDriveService.downloadPdf(opts.driveLink);
+      const csId = await cloudSign.createDocument(opts.title);
+      await cloudSign.attachFile(csId, pdf, `${opts.documentNumber || "document"}.pdf`);
+      for (const p of participants) await cloudSign.addParticipant(csId, p);
+      await cloudSign.sendDocument(csId);
+      await query(
+        `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
+        [reqId, csId]
+      );
+      return { httpStatus: 200, body: { ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest } };
+    } catch (e: any) {
+      await query(`UPDATE cloudsign_requests SET status='error', error=$2, updated_at=now() WHERE id=$1`, [
+        reqId,
+        String(e?.message || e),
+      ]);
+      return { httpStatus: 500, body: { ok: false, error: String(e?.message || e) } };
+    }
+  };
+
+  // 取引先の主担当メールを宛先 1 名に整形(無ければ空配列)。
+  const defaultVendorParticipant = async (vendorId: any, vendorName: any): Promise<any[]> => {
+    if (!vendorId) return [];
+    const vc = await query(
+      `SELECT contact_name, email FROM vendor_contacts
+        WHERE vendor_id = $1 AND email IS NOT NULL AND email <> ''
+        ORDER BY is_primary DESC, sort_order ASC LIMIT 1`,
+      [vendorId]
+    );
+    if (!vc.rows[0]) return [];
+    return [{ name: vc.rows[0].contact_name || vendorName, email: vc.rows[0].email, organization: vendorName, order: 1 }];
+  };
+
+  // 契約(contract_capabilities)を CloudSign へ送信。
   app.post("/api/contracts/:id/cloudsign/send", express.json(), async (req, res) => {
     try {
-      const cfg = await loadCloudSignCfg();
-      if (!cfg.enabled)
-        return res.status(403).json({ ok: false, error: "CloudSign 連携が無効です (設定でオンにしてください)" });
-      if (!cfg.clientId)
-        return res.status(400).json({ ok: false, error: "client_id 未設定 (設定画面で入力してください)" });
-      const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
       const capId = Number(req.params.id);
       if (!Number.isFinite(capId)) return res.status(400).json({ ok: false, error: "invalid id" });
-
       const c = await query(
         `SELECT cc.id, cc.document_number, cc.contract_title, cc.vendor_id, v.vendor_name,
                 (SELECT drive_link FROM documents d WHERE d.document_number = cc.document_number
@@ -382,67 +443,72 @@ async function startServer() {
       );
       const row = c.rows[0];
       if (!row) return res.status(404).json({ ok: false, error: "契約が見つかりません" });
-      if (!row.drive_link)
-        return res.status(400).json({ ok: false, error: "生成済みPDFがありません(先に文書生成が必要)" });
-
-      // 宛先: body.participants 優先、無ければ取引先の主担当を採用。
       let participants: any[] = Array.isArray(req.body?.participants) ? req.body.participants : [];
-      if (!participants.length) {
-        const vc = await query(
-          `SELECT contact_name, email FROM vendor_contacts
-            WHERE vendor_id = $1 AND email IS NOT NULL AND email <> ''
-            ORDER BY is_primary DESC, sort_order ASC LIMIT 1`,
-          [row.vendor_id]
-        );
-        if (vc.rows[0])
-          participants = [
-            { name: vc.rows[0].contact_name || row.vendor_name, email: vc.rows[0].email, organization: row.vendor_name, order: 1 },
-          ];
-      }
-      participants = participants.filter((p) => p && p.email);
-      if (!participants.length)
-        return res.status(400).json({ ok: false, error: "宛先(署名者メール)がありません" });
-
-      // テストガード: allowlist 設定時は全宛先がその集合内であること。
-      const isTest = cfg.allow.length > 0;
-      if (isTest) {
-        const bad = participants.find((p) => !cfg.allow.includes(String(p.email).toLowerCase()));
-        if (bad)
-          return res
-            .status(400)
-            .json({ ok: false, error: `テスト中は許可された宛先のみ送信できます: ${bad.email}` });
-      }
-
-      const user = (req.headers["x-user-email"] as string) || "cloudsign";
-      const title = row.contract_title || row.document_number || `契約 ${capId}`;
-      const ins = await query(
-        `INSERT INTO cloudsign_requests
-           (document_number, capability_id, template_type, status, title, participants, is_test, created_by)
-         VALUES ($1,$2,$3,'sending',$4,$5::jsonb,$6,$7) RETURNING id`,
-        [row.document_number, capId, row.template_type || null, title, JSON.stringify(participants), isTest, user]
-      );
-      const reqId = ins.rows[0].id;
-
-      try {
-        const pdf = await googleDriveService.downloadPdf(row.drive_link);
-        const csId = await cloudSign.createDocument(title);
-        await cloudSign.attachFile(csId, pdf, `${row.document_number || "contract"}.pdf`);
-        for (const p of participants) await cloudSign.addParticipant(csId, p);
-        await cloudSign.sendDocument(csId);
-        await query(
-          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
-          [reqId, csId]
-        );
-        res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest });
-      } catch (e: any) {
-        await query(`UPDATE cloudsign_requests SET status='error', error=$2, updated_at=now() WHERE id=$1`, [
-          reqId,
-          String(e?.message || e),
-        ]);
-        throw e;
-      }
+      if (!participants.length) participants = await defaultVendorParticipant(row.vendor_id, row.vendor_name);
+      const r = await performCloudSignSend({
+        title: row.contract_title || row.document_number || `契約 ${capId}`,
+        driveLink: row.drive_link,
+        documentNumber: row.document_number,
+        capabilityId: capId,
+        templateType: row.template_type || null,
+        participants,
+        user: (req.headers["x-user-email"] as string) || "cloudsign",
+      });
+      res.status(r.httpStatus).json(r.body);
     } catch (e: any) {
-      console.error("[cloudsign send] failed:", e?.message || e);
+      console.error("[cloudsign send contract] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 文書番号(documents)を CloudSign へ送信(Request 文書一覧などから)。
+  app.post("/api/documents/:docNumber/cloudsign/send", express.json(), async (req, res) => {
+    try {
+      const docNumber = String(req.params.docNumber || "");
+      const d = await query(
+        `SELECT d.document_number, d.template_type, d.issue_key, d.drive_link, d.form_data,
+                cc.id AS capability_id, cc.contract_title, cc.vendor_id, v.vendor_name
+           FROM documents d
+           LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE d.document_number = $1
+          ORDER BY d.created_at DESC LIMIT 1`,
+        [docNumber]
+      );
+      const row = d.rows[0];
+      if (!row) return res.status(404).json({ ok: false, error: "文書が見つかりません" });
+      let participants: any[] = Array.isArray(req.body?.participants) ? req.body.participants : [];
+      if (!participants.length) participants = await defaultVendorParticipant(row.vendor_id, row.vendor_name);
+      // 取引先連絡先が無ければ form_data の VENDOR_EMAIL を試す。
+      if (!participants.length && row.form_data) {
+        try {
+          const fd = typeof row.form_data === "string" ? JSON.parse(row.form_data) : row.form_data;
+          const email = fd?.VENDOR_EMAIL || fd?.vendor_email;
+          if (email) participants = [{ name: fd?.VENDOR_NAME || row.vendor_name || "署名者", email, order: 1 }];
+        } catch { /* ignore */ }
+      }
+      const r = await performCloudSignSend({
+        title: row.contract_title || docNumber,
+        driveLink: row.drive_link,
+        documentNumber: docNumber,
+        capabilityId: row.capability_id ?? null,
+        templateType: row.template_type ?? null,
+        participants,
+        user: (req.headers["x-user-email"] as string) || "cloudsign",
+      });
+      res.status(r.httpStatus).json(r.body);
+    } catch (e: any) {
+      console.error("[cloudsign send doc] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // CloudSign 送信一覧(サイドメニューの送信リスト用)。
+  app.get("/api/cloudsign/requests", async (_req, res) => {
+    try {
+      const r = await query(`SELECT * FROM cloudsign_requests ORDER BY created_at DESC LIMIT 500`);
+      res.json(r.rows);
+    } catch (e: any) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

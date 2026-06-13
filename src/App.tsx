@@ -9,6 +9,7 @@ import { RequestsPage } from "./pages/RequestsPage"
 import { IssueDetailPage } from "./pages/IssueDetailPage" // データ構造刷新 Phase A
 import { ConditionsHubPage } from "./pages/ConditionsHubPage" // データ構造刷新: 条件明細 統合ハブ
 import { ConditionLineDetailPage } from "./pages/ConditionLineDetailPage" // データ構造刷新 Phase F
+import { CloudSignListPage } from "./pages/CloudSignListPage"
 import { ArchivePage } from "./pages/ArchivePage"
 import { MasterLayout } from "./pages/master/MasterLayout"
 import { ContractsPanel } from "./pages/master/ContractsPanel"
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="issues/:issueKey" element={<IssueDetailPage />} />{/* データ構造刷新 Phase A */}
                 <Route path="condition-lines" element={<ConditionsHubPage />} />{/* データ構造刷新: 統合ハブ(Cockpit/検収待ち/横断検索) */}
                 <Route path="condition-lines/:lineCode" element={<ConditionLineDetailPage />} />{/* データ構造刷新 Phase F */}
+                <Route path="cloudsign" element={<CloudSignListPage />} />{/* クラウドサイン送信一覧 */}
                 <Route path="archive" element={<ArchivePage />} />
 
                 <Route path="master" element={<MasterLayout />}>

@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Link2,
   ListChecks,
+  PenLine,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -49,6 +50,7 @@ const groups: NavGroup[] = [
       { to: "/requests", label: "Requests", icon: Inbox, description: "Backlog" },
       { to: "/condition-lines", label: "条件明細", icon: ListChecks, description: "消化・残高 / 検収待ち / 検索" },
       { to: "/excel-batches", label: "Excel Export", icon: FileSpreadsheet, description: "未発行 検収/許諾" },
+      { to: "/cloudsign", label: "CloudSign送信", icon: PenLine, description: "電子契約 送信一覧" },
       { to: "/archive", label: "Archive", icon: Archive, description: "Concluded" },
     ],
   },

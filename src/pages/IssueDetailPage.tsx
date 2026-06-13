@@ -11,12 +11,23 @@ import {
   User,
   Calendar,
   ListChecks,
+  PenLine,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 
 // データ構造刷新 Phase A: 課題詳細ページ。
@@ -77,8 +88,42 @@ function SectionHead({ label }: { label: string }) {
 export function IssueDetailPage() {
   const { issueKey = "" } = useParams()
   const navigate = useNavigate()
-  const { issues, templateMetadata } = useAppData()
+  const { issues, templateMetadata, showNotification } = useAppData()
   const { setSelectedIssue } = useDocumentSession()
+
+  // クラウドサイン送信(文書一覧から)。空メールなら取引先の主担当を worker 側で補完。
+  const [csDoc, setCsDoc] = React.useState<any>(null)
+  const [csName, setCsName] = React.useState("")
+  const [csEmail, setCsEmail] = React.useState("")
+  const [csSending, setCsSending] = React.useState(false)
+  const sendCloudSign = async () => {
+    if (!csDoc?.document_number) return
+    setCsSending(true)
+    try {
+      const participants = csEmail.trim()
+        ? [{ name: csName.trim() || "署名者", email: csEmail.trim(), order: 1 }]
+        : []
+      const res = await fetch(
+        `/api/documents/${encodeURIComponent(csDoc.document_number)}/cloudsign/send`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ participants }),
+        }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
+      showNotification(
+        data.is_test ? "クラウドサインへ送信しました（テスト許可宛先）" : "クラウドサインへ送信しました",
+        "success"
+      )
+      setCsDoc(null)
+    } catch (e: any) {
+      showNotification(`送信に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setCsSending(false)
+    }
+  }
 
   const issue = React.useMemo(
     () => issues.find((i) => i.issueKey === issueKey),
@@ -251,6 +296,21 @@ export function IssueDetailPage() {
                         Drive
                       </a>
                     )}
+                    {d.drive_link && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setCsDoc(d)
+                          setCsName("")
+                          setCsEmail("")
+                        }}
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-1.5 py-1 rounded-sm"
+                        title="クラウドサインで送信"
+                      >
+                        <PenLine className="h-3 w-3" />
+                        送信
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => reopen(d.id)}
@@ -267,6 +327,46 @@ export function IssueDetailPage() {
           </div>
         )}
       </section>
+
+      {/* クラウドサイン送信ダイアログ */}
+      <Dialog open={!!csDoc} onOpenChange={(v) => !v && setCsDoc(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>クラウドサインで送信</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground leading-relaxed">
+              文書:{" "}
+              <span className="font-bold text-foreground">{csDoc?.document_number || "—"}</span>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">署名者 氏名（任意）</Label>
+              <Input value={csName} onChange={(e) => setCsName(e.target.value)} placeholder="山田 太郎" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">署名者 メール（空欄なら取引先の主担当を自動使用）</Label>
+              <Input
+                type="email"
+                value={csEmail}
+                onChange={(e) => setCsEmail(e.target.value)}
+                placeholder="signer@example.co.jp"
+              />
+            </div>
+            <p className="text-[11px] font-mono text-muted-foreground">
+              ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、その宛先（社内テスト用）のみ送信できます。
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCsDoc(null)} disabled={csSending}>
+              キャンセル
+            </Button>
+            <Button onClick={sendCloudSign} disabled={csSending}>
+              <PenLine className="h-3.5 w-3.5" />
+              {csSending ? "送信中…" : "送信"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
