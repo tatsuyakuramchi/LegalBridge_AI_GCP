@@ -230,6 +230,12 @@ export function SettingsPage() {
                   <Save />
                   Apply
                 </Button>
+                <div className="pt-1">
+                  <CloudSignHealthButton />
+                </div>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  ※ 接続テストは保存済みの設定で実行します。Client ID を変えたら先に Apply してください（書類は送信されません）。
+                </p>
               </div>
             </CardContent>
           </Card>
@@ -344,5 +350,43 @@ function SlackField({
         </p>
       )}
     </div>
+  )
+}
+
+// CloudSign 接続テスト: 保存済み設定の client_id で /token を取得できるか確認する
+//   (書類は送信しない)。結果(base / client_id / 有効化 / token取得可否)を表示。
+function CloudSignHealthButton() {
+  const [loading, setLoading] = React.useState(false)
+  const [result, setResult] = React.useState<any>(null)
+  const run = async () => {
+    setLoading(true)
+    setResult(null)
+    try {
+      const r = await fetch("/api/cloudsign/health", { credentials: "same-origin" })
+      setResult(await r.json())
+    } catch (e: any) {
+      setResult({ ok: false, error: String(e?.message || e) })
+    } finally {
+      setLoading(false)
+    }
+  }
+  const tokenOk = result?.token?.ok
+  return (
+    <>
+      <Button variant="outline" onClick={run} disabled={loading}>
+        {loading ? "確認中…" : "接続テスト"}
+      </Button>
+      {result && (
+        <div className="mt-2 w-full text-[11px] font-mono rounded-md border border-border p-2.5 space-y-0.5">
+          <div>base: {result.base || "—"}</div>
+          <div>client_id: {result.client_id_masked || "未設定"}</div>
+          <div>有効化: {String(result.enabled)} / 許可宛先: {result.allow_count ?? 0} 件</div>
+          <div className={tokenOk ? "text-emerald-600" : "text-red-600"}>
+            token取得: {tokenOk ? "OK ✓" : `NG — ${result?.token?.error || result?.error || "失敗"}`}
+            {result?.token?.status ? ` (HTTP ${result.token.status})` : ""}
+          </div>
+        </div>
+      )}
+    </>
   )
 }

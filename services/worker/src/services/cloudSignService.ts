@@ -37,6 +37,12 @@ export class CloudSignService {
     return !!this.clientId;
   }
 
+  /** 接続確認: client_id で /token を取得できるか試す(書類は送らない)。実接続テスト用。 */
+  async verifyConnection(): Promise<{ ok: true }> {
+    await this.getToken();
+    return { ok: true };
+  }
+
   /** POST /token: access_token をキャッシュ(expires_in をバッファして更新)。 */
   private async getToken(): Promise<string> {
     const now = Date.now();
