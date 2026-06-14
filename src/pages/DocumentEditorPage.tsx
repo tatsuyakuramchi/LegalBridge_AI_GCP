@@ -20,6 +20,7 @@ import {
   PartyPopper,
   Plus,
   ClipboardList,
+  Hash,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -1586,7 +1587,9 @@ export function DocumentEditorPage() {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {/* ステータス(採番バッジ + 自動保存)は1つのまとまりとして扱う。 */}
+                <div className="flex items-center gap-2">
                 {/* Phase 23 UX-A: 採番ステータスバッジ
                     formData.documentNumber が存在 → 採番済 (緑)
                     formData.__reopen_id がある → 既存編集 (青)
@@ -1645,6 +1648,7 @@ export function DocumentEditorPage() {
                     Saved {lastAutoSave}
                   </span>
                 )}
+                </div>
                 {/* 明示的な「保存」: 下書きをサーバ保存し、初回はここで採番する。 */}
                 <Button
                   variant="outline"
@@ -1679,7 +1683,7 @@ export function DocumentEditorPage() {
                   ) : (
                     <Eye />
                   )}
-                  プレビュー (別タブ)
+                  プレビュー
                 </Button>
                 {selectedTemplate === "purchase_order" && (
                   <Button
@@ -1689,7 +1693,7 @@ export function DocumentEditorPage() {
                     title="この課題に保存済みの条件明細(品目・数量・金額)を明細欄に読み込みます。明細だけを入れるので他の入力は消えません。"
                   >
                     <ClipboardList />
-                    条件明細を読み込む
+                    条件明細
                   </Button>
                 )}
                 {selectedTemplate === "purchase_order" && (
@@ -1699,8 +1703,8 @@ export function DocumentEditorPage() {
                     onClick={loadLineItemsById}
                     title="条件明細コード(line_code)や明細行ID/capability ID を指定して明細を読み込みます。課題×種別で引けないときに使えます。"
                   >
-                    <ClipboardList />
-                    ラインIDで読み込む
+                    <Hash />
+                    ラインID
                   </Button>
                 )}
                 <Button
