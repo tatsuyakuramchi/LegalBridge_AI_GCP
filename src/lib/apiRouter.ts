@@ -54,6 +54,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   // CloudSign 送信履歴 GET は worker のみ実装。READ_PATHS_ON_GET の
   //   /api/contracts/\d+ より先に評価されるのでここで WRITE に明示する。
   /^\/api\/contracts\/\d+\/cloudsign(?:\/|\?|$)/,
+  // ラインIDでの明細 lookup は worker のみ実装。
+  /^\/api\/line-items(?:\/|\?|$)/,
   // CloudSign の接続テスト(/api/cloudsign/health)等の GET も worker のみ実装。
   /^\/api\/cloudsign(?:\/|\?|$)/,
   /^\/api\/templates(?:\/|$)/,

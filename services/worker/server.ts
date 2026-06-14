@@ -2859,6 +2859,121 @@ ${details}
     }
   );
 
+  // ラインIDで明細を引く: 条件明細コード(line_code)/明細行ID/condition_lines.id/
+  //   capability ID のいずれかから capability を解決し、その capability_line_items を
+  //   items[] (form-context と同じ shape) で返す。課題キー×種別で引けない場合
+  //   (record_type 化け・複数PO)でもピンポイントに明細を呼び出せる。
+  app.get("/api/line-items/lookup", async (req, res) => {
+    try {
+      const key = String(req.query.key || "").trim();
+      if (!key) return res.status(400).json({ ok: false, error: "key required" });
+
+      let capId: number | null = null;
+      let lineCode: string | null = null;
+
+      // 1) 条件明細コード line_code 一致
+      let r = await query(
+        `SELECT capability_id, line_code FROM condition_lines WHERE line_code = $1 LIMIT 1`,
+        [key]
+      );
+      if (r.rows[0]) {
+        capId = Number(r.rows[0].capability_id);
+        lineCode = r.rows[0].line_code;
+      }
+      // 2) 数値なら 明細行ID → condition_lines.id → capability ID の順に解決
+      if (capId == null && /^\d+$/.test(key)) {
+        const idNum = Number(key);
+        r = await query(
+          `SELECT capability_id FROM capability_line_items WHERE id = $1 LIMIT 1`,
+          [idNum]
+        );
+        if (r.rows[0]) capId = Number(r.rows[0].capability_id);
+        if (capId == null) {
+          r = await query(
+            `SELECT capability_id, line_code FROM condition_lines WHERE id = $1 LIMIT 1`,
+            [idNum]
+          );
+          if (r.rows[0]) {
+            capId = Number(r.rows[0].capability_id);
+            lineCode = r.rows[0].line_code;
+          }
+        }
+        if (capId == null) {
+          r = await query(
+            `SELECT id FROM contract_capabilities WHERE id = $1 LIMIT 1`,
+            [idNum]
+          );
+          if (r.rows[0]) capId = Number(r.rows[0].id);
+        }
+      }
+      if (capId == null) {
+        return res
+          .status(404)
+          .json({ ok: false, error: `ラインID '${key}' に該当する明細が見つかりません` });
+      }
+
+      // capability_line_items → items[] (form-context purchase_order と同じ整形)。
+      //   rate_pct 列が無い環境向けに 2 段 fallback。
+      let lines: any;
+      try {
+        lines = await query(
+          `SELECT line_no, item_name, spec, unit_price, quantity, amount_ex_tax, rate_pct,
+                  calc_method, payment_terms, payment_method, payment_date, delivery_date,
+                  cycle, term_start, term_end, billing_day
+             FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
+          [capId]
+        );
+      } catch (colErr: any) {
+        if (colErr && colErr.code === "42703") {
+          lines = await query(
+            `SELECT line_no, item_name, spec, unit_price, quantity, amount_ex_tax,
+                    calc_method, payment_terms, payment_method, payment_date, delivery_date,
+                    cycle, term_start, term_end, billing_day
+               FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
+            [capId]
+          );
+        } else {
+          throw colErr;
+        }
+      }
+      const items = lines.rows.map((x: any) => ({
+        line_no: Number(x.line_no),
+        item_name: x.item_name || "",
+        spec: x.spec || "",
+        unit_price: Number(x.unit_price) || 0,
+        quantity: Number(x.quantity) || 0,
+        amount_ex_tax: Number(x.amount_ex_tax) || 0,
+        rate_pct: x.rate_pct == null ? undefined : Number(x.rate_pct),
+        calc_method: x.calc_method || "FIXED",
+        payment_terms: x.payment_terms || x.payment_method || "",
+        payment_method: x.payment_method || x.payment_terms || "",
+        payment_date: x.payment_date || "",
+        delivery_date: x.delivery_date || "",
+        cycle: x.cycle || "",
+        term_start: x.term_start || "",
+        term_end: x.term_end || "",
+        billing_day: x.billing_day ?? "",
+      }));
+
+      const hdr = await query(
+        `SELECT amount_ex_tax, tax_rate FROM contract_capabilities WHERE id = $1`,
+        [capId]
+      );
+      res.json({
+        ok: true,
+        capability_id: capId,
+        line_code: lineCode,
+        count: items.length,
+        taxRate: hdr.rows[0]?.tax_rate ?? 10,
+        grandTotalExTax: Number(hdr.rows[0]?.amount_ex_tax) || 0,
+        items,
+      });
+    } catch (e: any) {
+      console.error("GET /api/line-items/lookup failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   /**
    * Phase 22.2: Slack /法務依頼 V2 select 用候補取得エンドポイント。
    *

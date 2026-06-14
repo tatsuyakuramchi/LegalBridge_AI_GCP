@@ -691,6 +691,48 @@ export function DocumentEditorPage() {
     }
   }, [selectedIssue, formData, setFormData, showNotification])
 
+  // 「ラインIDで読み込む」: 条件明細コード(line_code)/明細行ID/capability ID のいずれかを
+  //   指定して、その明細セット(capability_line_items)を items[] として取り込む。
+  //   課題キー×種別で引けない場合(record_type 化け・複数PO)でもピンポイントで呼べる。
+  const loadLineItemsById = React.useCallback(async () => {
+    const key = window.prompt(
+      "条件明細のラインID を入力してください\n(条件明細コード line_code / 明細行ID / capability ID のいずれか)"
+    )
+    if (!key || !key.trim()) return
+    const cur = (formData as any)?.items
+    const hasItems = Array.isArray(cur) && cur.length > 0
+    if (
+      hasItems &&
+      !window.confirm("現在の明細を、指定したラインIDの明細で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    try {
+      const res = await fetch(`/api/line-items/lookup?key=${encodeURIComponent(key.trim())}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      const items = Array.isArray(data?.items) ? data.items : []
+      if (items.length === 0) {
+        showNotification("指定したラインIDに明細がありませんでした。", "error")
+        return
+      }
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        items,
+        ...(data?.taxRate != null ? { taxRate: data.taxRate } : {}),
+        ...(data?.grandTotalExTax != null ? { grandTotalExTax: data.grandTotalExTax } : {}),
+      }))
+      showNotification(
+        `📋 ラインID ${data.line_code || key.trim()} の明細を ${items.length} 行読み込みました。`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(`ラインIDでの明細読み込みに失敗しました: ${e?.message || e}`, "error")
+    }
+  }, [formData, setFormData, showNotification])
+
   // Backlog Sync は formData を全置換するため、入力済みなら確認してから実行。
   //   (入力途中に押して打った内容が消える事故を防ぐ。)
   const handleManualSync = React.useCallback(() => {
@@ -1648,6 +1690,17 @@ export function DocumentEditorPage() {
                   >
                     <ClipboardList />
                     条件明細を読み込む
+                  </Button>
+                )}
+                {selectedTemplate === "purchase_order" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadLineItemsById}
+                    title="条件明細コード(line_code)や明細行ID/capability ID を指定して明細を読み込みます。課題×種別で引けないときに使えます。"
+                  >
+                    <ClipboardList />
+                    ラインIDで読み込む
                   </Button>
                 )}
                 <Button
