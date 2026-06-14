@@ -520,6 +520,33 @@ async function startServer() {
     }
   });
 
+  // 未送信リスト: CS対象(cloudsign_target)・PDFあり・正本で、まだ送信していない文書。
+  //   (sending/sent/completed の送信が無いもの)。ここから直接送信できる作業リスト。
+  app.get("/api/cloudsign/unsent", async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT d.document_number, d.template_type, d.issue_key, d.drive_link, d.created_at,
+                cc.contract_title, v.vendor_name
+           FROM documents d
+           LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE COALESCE(d.cloudsign_target, TRUE) = TRUE
+            AND d.drive_link IS NOT NULL AND d.drive_link <> ''
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND NOT EXISTS (
+              SELECT 1 FROM cloudsign_requests cr
+               WHERE cr.document_number = d.document_number
+                 AND cr.status IN ('sending', 'sent', 'completed')
+            )
+          ORDER BY d.created_at DESC
+          LIMIT 500`
+      );
+      res.json(r.rows);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // 課題配下の文書の cloudsign_target 一覧(文書制御は admin-ui=worker 側で完結させる)。
   app.get("/api/issues/:issueKey/cloudsign-targets", async (req, res) => {
     try {
