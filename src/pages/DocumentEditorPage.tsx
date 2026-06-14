@@ -20,6 +20,7 @@ import {
   PartyPopper,
   Plus,
   ClipboardList,
+  Hash,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -690,6 +691,48 @@ export function DocumentEditorPage() {
       showNotification(`条件明細の読み込みに失敗しました: ${e?.message || e}`, "error")
     }
   }, [selectedIssue, formData, setFormData, showNotification])
+
+  // 「ラインIDで読み込む」: 条件明細コード(line_code)/明細行ID/capability ID のいずれかを
+  //   指定して、その明細セット(capability_line_items)を items[] として取り込む。
+  //   課題キー×種別で引けない場合(record_type 化け・複数PO)でもピンポイントで呼べる。
+  const loadLineItemsById = React.useCallback(async () => {
+    const key = window.prompt(
+      "条件明細のラインID を入力してください\n(条件明細コード line_code / 明細行ID / capability ID のいずれか)"
+    )
+    if (!key || !key.trim()) return
+    const cur = (formData as any)?.items
+    const hasItems = Array.isArray(cur) && cur.length > 0
+    if (
+      hasItems &&
+      !window.confirm("現在の明細を、指定したラインIDの明細で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    try {
+      const res = await fetch(`/api/line-items/lookup?key=${encodeURIComponent(key.trim())}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      const items = Array.isArray(data?.items) ? data.items : []
+      if (items.length === 0) {
+        showNotification("指定したラインIDに明細がありませんでした。", "error")
+        return
+      }
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        items,
+        ...(data?.taxRate != null ? { taxRate: data.taxRate } : {}),
+        ...(data?.grandTotalExTax != null ? { grandTotalExTax: data.grandTotalExTax } : {}),
+      }))
+      showNotification(
+        `📋 ラインID ${data.line_code || key.trim()} の明細を ${items.length} 行読み込みました。`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(`ラインIDでの明細読み込みに失敗しました: ${e?.message || e}`, "error")
+    }
+  }, [formData, setFormData, showNotification])
 
   // Backlog Sync は formData を全置換するため、入力済みなら確認してから実行。
   //   (入力途中に押して打った内容が消える事故を防ぐ。)
@@ -1544,7 +1587,9 @@ export function DocumentEditorPage() {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {/* ステータス(採番バッジ + 自動保存)は1つのまとまりとして扱う。 */}
+                <div className="flex items-center gap-2">
                 {/* Phase 23 UX-A: 採番ステータスバッジ
                     formData.documentNumber が存在 → 採番済 (緑)
                     formData.__reopen_id がある → 既存編集 (青)
@@ -1603,6 +1648,7 @@ export function DocumentEditorPage() {
                     Saved {lastAutoSave}
                   </span>
                 )}
+                </div>
                 {/* 明示的な「保存」: 下書きをサーバ保存し、初回はここで採番する。 */}
                 <Button
                   variant="outline"
@@ -1637,7 +1683,7 @@ export function DocumentEditorPage() {
                   ) : (
                     <Eye />
                   )}
-                  プレビュー (別タブ)
+                  プレビュー
                 </Button>
                 {selectedTemplate === "purchase_order" && (
                   <Button
@@ -1647,7 +1693,18 @@ export function DocumentEditorPage() {
                     title="この課題に保存済みの条件明細(品目・数量・金額)を明細欄に読み込みます。明細だけを入れるので他の入力は消えません。"
                   >
                     <ClipboardList />
-                    条件明細を読み込む
+                    条件明細
+                  </Button>
+                )}
+                {selectedTemplate === "purchase_order" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadLineItemsById}
+                    title="条件明細コード(line_code)や明細行ID/capability ID を指定して明細を読み込みます。課題×種別で引けないときに使えます。"
+                  >
+                    <Hash />
+                    ラインID
                   </Button>
                 )}
                 <Button
