@@ -19,6 +19,7 @@ import {
   ExternalLink,
   PartyPopper,
   Plus,
+  ClipboardList,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -624,6 +625,63 @@ export function DocumentEditorPage() {
       setPreviousDocument(null)
     }
   }
+
+  // 「条件明細を読み込む」: この課題の発注書(capability_line_items)を items[] として
+  //   取り込む。Backlog Sync(全置換)と違い「明細だけ」を入れる非破壊操作なので、
+  //   発注書の作り直しでも保存済み明細を一から打ち直さずに済む。
+  //   取得元は form-context の items[] (= capability_line_items を整形済み)。
+  const loadConditionLineItems = React.useCallback(async () => {
+    if (!selectedIssue) {
+      showNotification("先に Backlog 課題を選択してください。", "error")
+      return
+    }
+    const cur = (formData as any)?.items
+    const hasItems = Array.isArray(cur) && cur.length > 0
+    if (
+      hasItems &&
+      !window.confirm("現在の明細を、この課題の保存済み条件明細で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    try {
+      const res = await fetch(
+        `/api/backlog/issues/${encodeURIComponent(selectedIssue)}/form-context?template=purchase_order`
+      )
+      const ctx = await res.json().catch(() => ({}))
+      const items = Array.isArray(ctx?.items) ? ctx.items : []
+      if (items.length === 0) {
+        showNotification("この課題に保存済みの条件明細が見つかりませんでした。", "error")
+        return
+      }
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        items,
+        ...(ctx?.taxRate != null ? { taxRate: ctx.taxRate } : {}),
+        ...(ctx?.grandTotalExTax != null ? { grandTotalExTax: ctx.grandTotalExTax } : {}),
+      }))
+      showNotification(`📋 条件明細を ${items.length} 行読み込みました。`, "success")
+    } catch (e: any) {
+      showNotification(`条件明細の読み込みに失敗しました: ${e?.message || e}`, "error")
+    }
+  }, [selectedIssue, formData, setFormData, showNotification])
+
+  // Backlog Sync は formData を全置換するため、入力済みなら確認してから実行。
+  //   (入力途中に押して打った内容が消える事故を防ぐ。)
+  const handleManualSync = React.useCallback(() => {
+    const hasContent = Object.keys(formData || {}).some(
+      (k) =>
+        !k.startsWith("__") &&
+        (formData as any)[k] != null &&
+        (formData as any)[k] !== ""
+    )
+    if (
+      hasContent &&
+      !window.confirm("現在の入力内容を破棄して、DB(課題/下書き)の内容で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    void syncFromDatabase()
+  }, [formData, syncFromDatabase])
 
   // Phase 22.11.2: 「前回内容を読み込む」 — 過去 doc の form_data を
   // 取得して formData に反映 (内部の __reopen_doc_number 等は付けない →
@@ -1555,11 +1613,22 @@ export function DocumentEditorPage() {
                   )}
                   プレビュー (別タブ)
                 </Button>
+                {selectedTemplate === "purchase_order" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadConditionLineItems}
+                    title="この課題に保存済みの条件明細(品目・数量・金額)を明細欄に読み込みます。明細だけを入れるので他の入力は消えません。"
+                  >
+                    <ClipboardList />
+                    条件明細を読み込む
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => syncFromDatabase()}
-                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します"
+                  onClick={handleManualSync}
+                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します(現在の入力は置き換わります)"
                 >
                   <Database />
                   Backlog Sync
