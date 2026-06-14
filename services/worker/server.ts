@@ -357,6 +357,44 @@ async function startServer() {
     };
   };
 
+  // 接続テスト: 設定中の client_id で /token を取得できるか確認する(書類は送らない)。
+  //   実接続テストの第一歩。設定は app_settings から読むので「保存後」に叩く。
+  app.get("/api/cloudsign/health", async (_req, res) => {
+    try {
+      const cfg = await loadCloudSignCfg();
+      const base = (cfg.baseUrl || process.env.CLOUDSIGN_BASE_URL || "https://api.cloudsign.jp").replace(/\/+$/, "");
+      const out: any = {
+        ok: true,
+        configured: !!cfg.clientId,
+        enabled: cfg.enabled,
+        base,
+        allow_count: cfg.allow.length,
+        client_id_masked: cfg.clientId
+          ? `${cfg.clientId.slice(0, 4)}…${cfg.clientId.slice(-2)}`
+          : null,
+      };
+      if (!cfg.clientId) {
+        out.token = { ok: false, error: "client_id 未設定" };
+        return res.json(out);
+      }
+      try {
+        const cs = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+        await cs.verifyConnection();
+        out.token = { ok: true };
+      } catch (e: any) {
+        const data = e?.response?.data;
+        out.token = {
+          ok: false,
+          status: e?.response?.status,
+          error: typeof data === "string" ? data : data ? JSON.stringify(data).slice(0, 300) : String(e?.message || e),
+        };
+      }
+      res.json(out);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // 契約(contract_capabilities)を CloudSign へ送信(下書き作成→PDF添付→宛先→送信確定)。
   app.post("/api/contracts/:id/cloudsign/send", express.json(), async (req, res) => {
     try {
