@@ -263,6 +263,11 @@ export function DocumentEditorPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const fromPendingId = searchParams.get("from_pending")
   const reopenId = searchParams.get("reopen")
+  // ハブ(課題詳細)由来のディープリンク(?template=...&prefill=1)を初回マウント時に
+  //   ref へ退避する。後段のプリフィル effect が消費する前に、別の effect が
+  //   searchParams から template を削除するため、初期値を保持しておく。
+  const initialTemplateParamRef = React.useRef(searchParams.get("template"))
+  const initialPrefillRef = React.useRef(searchParams.get("prefill") === "1")
   React.useEffect(() => {
     const targetId = fromPendingId || reopenId
     if (!targetId) return
@@ -409,6 +414,7 @@ export function DocumentEditorPage() {
     const sp = searchParams
     sp.delete("template")
     sp.delete("parent_po")
+    sp.delete("prefill")
     setSearchParams(sp, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam, parentPoParam])
@@ -593,6 +599,23 @@ export function DocumentEditorPage() {
     },
     [issues, selectedTemplate, selectedIssue, setFormData, showNotification]
   )
+
+  // ハブ(課題詳細)から ?template=purchase_order&prefill=1 で来たとき、着地時に
+  //   form-context を自動プリフィルする(取引先・件名・条件明細)。skipRestore=true で
+  //   下書きは引かない = クリーンな新規作成なので識別子の持ち越し無し(上書き事故なし)。
+  //   発注書のみ自動(ユーザー合意)。他種別はテンプレ事前選択のみ。
+  const didHubPrefillRef = React.useRef(false)
+  React.useEffect(() => {
+    if (didHubPrefillRef.current) return
+    if (!initialPrefillRef.current) return
+    if (initialTemplateParamRef.current !== "purchase_order") return
+    if (!selectedIssue) return
+    didHubPrefillRef.current = true
+    void syncFromDatabase(selectedIssue, {
+      templateOverride: "purchase_order",
+      skipRestore: true,
+    })
+  }, [selectedIssue, syncFromDatabase])
 
   const handleIssueSelect = async (issueKey: string) => {
     setSelectedIssue(issueKey)
