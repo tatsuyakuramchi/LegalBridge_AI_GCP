@@ -78,7 +78,7 @@ export function IssueDetailPage() {
   const { issueKey = "" } = useParams()
   const navigate = useNavigate()
   const { issues, templateMetadata } = useAppData()
-  const { setSelectedIssue } = useDocumentSession()
+  const { setSelectedIssue, setFormData } = useDocumentSession()
 
   const issue = React.useMemo(
     () => issues.find((i) => i.issueKey === issueKey),
@@ -113,9 +113,14 @@ export function IssueDetailPage() {
     }
   }, [issueKey])
 
-  // 「文書を作成」: 現在の課題をセッションにセットして従来の作成フローへ。
+  // 「文書を作成」: 現在の課題をセッションにセットして作成フローへ。
+  //   新規作成は必ずクリーンな状態で開始する。直前に作った文書の識別子
+  //   (__draft_doc_number / __reopen_doc_number 等)が formData に残っていると、
+  //   別種別の文書を上書きしてしまう(発注書→検収書の上書き事故)。ここで formData を
+  //   初期化して持ち越しを断つ。
   const createDocument = () => {
     setSelectedIssue(issueKey)
+    setFormData({ サブライセンシー一覧: [] })
     navigate("/documents/new")
   }
 
