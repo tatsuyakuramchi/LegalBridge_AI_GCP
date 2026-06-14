@@ -2,6 +2,7 @@ import * as React from "react"
 import { useParams, useNavigate } from "react-router-dom"
 import {
   ArrowLeft,
+  Check,
   ExternalLink,
   FileText,
   Inbox,
@@ -12,6 +13,8 @@ import {
   Calendar,
   ListChecks,
 } from "lucide-react"
+
+import { cn } from "@/lib/utils"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
@@ -143,12 +146,22 @@ export function IssueDetailPage() {
   const PRIMARY_TYPES = [
     "purchase_order",
     "inspection_certificate",
+    "service_master",
     "individual_license_terms",
   ]
   const primaryTypes = PRIMARY_TYPES.filter((t) => templateList?.includes(t))
   const otherTypes = (templateList || [])
     .filter((t) => !primaryTypes.includes(t))
     .sort((a, b) => templateLabel(a).localeCompare(templateLabel(b), "ja"))
+
+  // 作成状況バッジ用: この課題で既に作成済み(final)の種別集合。
+  const createdTypes = React.useMemo(() => {
+    const s = new Set<string>()
+    for (const d of docs) {
+      if ((d.lifecycle_status || "final") === "final") s.add(d.template_type)
+    }
+    return s
+  }, [docs])
 
   return (
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
@@ -225,6 +238,34 @@ export function IssueDetailPage() {
             )}
           </div>
         </div>
+
+        {/* 作成状況: 主要種別の作成済み(緑) / 未作成(グレー) を一目で。 */}
+        {primaryTypes.length > 0 && (
+          <div className="flex items-center gap-1.5 flex-wrap pt-1">
+            {primaryTypes.map((t) => {
+              const done = createdTypes.has(t)
+              return (
+                <span
+                  key={`cov-${t}`}
+                  className={cn(
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-sm text-[10px] font-mono border",
+                    done
+                      ? "border-emerald-600/40 text-emerald-700 bg-emerald-500/10"
+                      : "border-border text-muted-foreground"
+                  )}
+                  title={done ? "作成済み" : "未作成"}
+                >
+                  {done ? (
+                    <Check className="h-3 w-3" />
+                  ) : (
+                    <span className="inline-block w-3 text-center leading-none">—</span>
+                  )}
+                  {templateLabel(t)}
+                </span>
+              )
+            })}
+          </div>
+        )}
 
         {/* Backlog ステータス操作 (compact)。 */}
         <div className="pt-1">

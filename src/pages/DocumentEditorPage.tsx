@@ -600,21 +600,24 @@ export function DocumentEditorPage() {
     [issues, selectedTemplate, selectedIssue, setFormData, showNotification]
   )
 
-  // ハブ(課題詳細)から ?template=purchase_order&prefill=1 で来たとき、着地時に
+  // ハブ(課題詳細)から ?template=<type>&prefill=1 で来たとき、着地時に
   //   form-context を自動プリフィルする(取引先・件名・条件明細)。skipRestore=true で
   //   下書きは引かない = クリーンな新規作成なので識別子の持ち越し無し(上書き事故なし)。
-  //   発注書のみ自動(ユーザー合意)。他種別はテンプレ事前選択のみ。
+  //   発注書・検収書のみ自動(ユーザー合意)。他種別はテンプレ事前選択のみ。
+  const HUB_PREFILL_TYPES = ["purchase_order", "inspection_certificate"]
   const didHubPrefillRef = React.useRef(false)
   React.useEffect(() => {
     if (didHubPrefillRef.current) return
     if (!initialPrefillRef.current) return
-    if (initialTemplateParamRef.current !== "purchase_order") return
+    const tmpl = initialTemplateParamRef.current || ""
+    if (!HUB_PREFILL_TYPES.includes(tmpl)) return
     if (!selectedIssue) return
     didHubPrefillRef.current = true
     void syncFromDatabase(selectedIssue, {
-      templateOverride: "purchase_order",
+      templateOverride: tmpl,
       skipRestore: true,
     })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedIssue, syncFromDatabase])
 
   const handleIssueSelect = async (issueKey: string) => {
