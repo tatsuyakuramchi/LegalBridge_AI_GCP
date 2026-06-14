@@ -17,6 +17,7 @@ import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { NativeSelect } from "@/components/ui/native-select"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 
 // データ構造刷新 Phase A: 課題詳細ページ。
@@ -77,7 +78,7 @@ function SectionHead({ label }: { label: string }) {
 export function IssueDetailPage() {
   const { issueKey = "" } = useParams()
   const navigate = useNavigate()
-  const { issues, templateMetadata } = useAppData()
+  const { issues, templateMetadata, templateList } = useAppData()
   const { setSelectedIssue, setFormData } = useDocumentSession()
 
   const issue = React.useMemo(
@@ -118,10 +119,15 @@ export function IssueDetailPage() {
   //   (__draft_doc_number / __reopen_doc_number 等)が formData に残っていると、
   //   別種別の文書を上書きしてしまう(発注書→検収書の上書き事故)。ここで formData を
   //   初期化して持ち越しを断つ。
-  const createDocument = () => {
+  //   種別を指定すると ?template=<type> でエディタが事前選択。発注書は
+  //   &prefill=1 でエディタ着地時に条件明細・取引先を自動ロードする。
+  const createDocument = (template?: string) => {
     setSelectedIssue(issueKey)
     setFormData({ サブライセンシー一覧: [] })
-    navigate("/documents/new")
+    const qs = template
+      ? `?template=${encodeURIComponent(template)}&prefill=1`
+      : ""
+    navigate(`/documents/new${qs}`)
   }
 
   // 「再編集」: 既存の reopen ディープリンクを再利用 (DocumentEditorPage が
@@ -131,6 +137,18 @@ export function IssueDetailPage() {
   }
 
   const templateLabel = (t: string) => templateMetadata?.[t]?.label || t
+
+  // ハブの「文書を作成」: 主要種別はボタン、残りは「その他」プルダウンで。
+  //   存在するテンプレだけ出す(templateList で実在チェック)。
+  const PRIMARY_TYPES = [
+    "purchase_order",
+    "inspection_certificate",
+    "individual_license_terms",
+  ]
+  const primaryTypes = PRIMARY_TYPES.filter((t) => templateList?.includes(t))
+  const otherTypes = (templateList || [])
+    .filter((t) => !primaryTypes.includes(t))
+    .sort((a, b) => templateLabel(a).localeCompare(templateLabel(b), "ja"))
 
   return (
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
@@ -166,10 +184,46 @@ export function IssueDetailPage() {
               )}
             </div>
           </div>
-          <Button size="sm" onClick={createDocument} className="gap-1.5 shrink-0">
-            <Plus className="h-3.5 w-3.5" />
-            文書を作成
-          </Button>
+          <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+            {primaryTypes.length === 0 ? (
+              <Button size="sm" onClick={() => createDocument()} className="gap-1.5">
+                <Plus className="h-3.5 w-3.5" />
+                文書を作成
+              </Button>
+            ) : (
+              <>
+                {primaryTypes.map((t) => (
+                  <Button
+                    key={t}
+                    size="sm"
+                    onClick={() => createDocument(t)}
+                    className="gap-1.5"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    {templateLabel(t)}
+                  </Button>
+                ))}
+                {otherTypes.length > 0 && (
+                  <NativeSelect
+                    aria-label="その他の種別で作成"
+                    value=""
+                    onChange={(e) => {
+                      const v = e.target.value
+                      if (v) createDocument(v)
+                    }}
+                    className="h-9 w-[150px]"
+                  >
+                    <option value="">その他で作成…</option>
+                    {otherTypes.map((t) => (
+                      <option key={t} value={t}>
+                        {templateLabel(t)}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         {/* Backlog ステータス操作 (compact)。 */}
