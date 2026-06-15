@@ -19,6 +19,8 @@ export type CsParticipant = {
   name: string;
   organization?: string;
   order?: number;
+  /** 署名画面・通知メールの言語。ja|en。 */
+  languageCode?: string;
 };
 
 export class CloudSignService {
@@ -111,13 +113,30 @@ export class CloudSignService {
   /** 宛先(署名者)を追加 → 参加者ID。 */
   async addParticipant(documentId: string, p: CsParticipant): Promise<string> {
     return this.call(async () => {
-      // CONFIRM: participants の body フィールド名(email/name/organization/order)。
+      // participants の body: email/name/organization/order/language_code。
+      //   language_code = ja|en(署名画面・通知メールの言語)。※callback(webhook)有効時は ja のみ。
       const body = new URLSearchParams();
       body.set("email", p.email);
       body.set("name", p.name);
       if (p.organization) body.set("organization", p.organization);
       if (p.order != null) body.set("order", String(p.order));
+      if (p.languageCode) body.set("language_code", p.languageCode);
       const res = await axios.post(`${this.base}/documents/${documentId}/participants`, body.toString(), {
+        headers: { ...(await this.authHeader()), "Content-Type": "application/x-www-form-urlencoded" },
+        timeout: 20_000,
+      });
+      return String(res.data?.id ?? "");
+    });
+  }
+
+  /** 共有先(CC=reportees)を追加。締結情報を署名フロー外の宛先に共有する。 */
+  async addReportee(documentId: string, r: { email: string; name?: string }): Promise<string> {
+    return this.call(async () => {
+      // CONFIRM(実環境): reportees の body フィールド名(email/name)。
+      const body = new URLSearchParams();
+      body.set("email", r.email);
+      if (r.name) body.set("name", r.name);
+      const res = await axios.post(`${this.base}/documents/${documentId}/reportees`, body.toString(), {
         headers: { ...(await this.authHeader()), "Content-Type": "application/x-www-form-urlencoded" },
         timeout: 20_000,
       });
