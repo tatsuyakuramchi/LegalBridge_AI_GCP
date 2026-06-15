@@ -346,6 +346,7 @@ export function ContractsPanel() {
   const [csRelay, setCsRelay] = React.useState<"internal_first" | "vendor_first">("internal_first")
   const [csLang, setCsLang] = React.useState<"ja" | "en">("ja")
   const [csCc, setCsCc] = React.useState("")
+  const [csDraft, setCsDraft] = React.useState(false)
   const [csRouteLoading, setCsRouteLoading] = React.useState(false)
   const [csSending, setCsSending] = React.useState(false)
 
@@ -358,6 +359,7 @@ export function ContractsPanel() {
     setCsRelay("internal_first")
     setCsLang("ja")
     setCsCc("")
+    setCsDraft(false)
     setCsRouteLoading(true)
     try {
       const res = await fetch(`/api/contracts/${c.id}/cloudsign/route`)
@@ -411,6 +413,7 @@ export function ContractsPanel() {
         body: JSON.stringify({
           participants,
           language: csLang,
+          draft: csDraft,
           cc: csCc
             .split(/[,\s]+/)
             .map((e) => e.trim())
@@ -420,10 +423,15 @@ export function ContractsPanel() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
-      showNotification(
-        data.is_test ? "クラウドサインへ送信しました（テスト許可宛先）" : "クラウドサインへ送信しました",
-        "success"
-      )
+      if (data.draft && data.cloudsign_url) {
+        showNotification("下書きを作成しました。CloudSign で署名欄/印影を配置して送信してください。", "success")
+        window.open(data.cloudsign_url, "_blank", "noopener,noreferrer")
+      } else {
+        showNotification(
+          data.is_test ? "クラウドサインへ送信しました（テスト許可宛先）" : "クラウドサインへ送信しました",
+          "success"
+        )
+      }
       setCsTarget(null)
     } catch (e: any) {
       showNotification(`送信に失敗しました: ${e?.message || e}`, "error")
@@ -1367,8 +1375,18 @@ export function ContractsPanel() {
                 placeholder="cc1@example.co.jp, cc2@example.co.jp"
               />
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">送信方法</Label>
+              <NativeSelect
+                value={csDraft ? "draft" : "send"}
+                onChange={(e) => setCsDraft(e.target.value === "draft")}
+              >
+                <option value="send">即時送信（API でそのまま送る）</option>
+                <option value="draft">CloudSign で署名欄/印影を配置してから送信（下書き作成）</option>
+              </NativeSelect>
+            </div>
             <p className="text-[11px] font-mono text-muted-foreground">
-              ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、<b>全署名者（社内含む）のメールが許可宛先に入っている必要</b>があります（社内テスト用）。
+              ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、<b>全署名者（社内含む）のメールが許可宛先に入っている必要</b>があります（社内テスト用）。「下書き作成」を選ぶと CloudSign の編集画面が開きます。
             </p>
           </DialogBody>
           <DialogFooter>
@@ -1377,7 +1395,7 @@ export function ContractsPanel() {
             </Button>
             <Button onClick={sendCloudSign} disabled={csSending}>
               <Send />
-              {csSending ? "送信中…" : "送信"}
+              {csSending ? "処理中…" : csDraft ? "下書き作成" : "送信"}
             </Button>
           </DialogFooter>
         </DialogContent>
