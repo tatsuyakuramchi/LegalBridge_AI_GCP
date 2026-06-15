@@ -12000,7 +12000,15 @@ ${details}
           details: renderDetails,
         },
         templateType,
-        { vendorName: vendorNameForFile }
+        {
+          vendorName: vendorNameForFile,
+          // 検収書はファイル名に親発注書番号を入れる: 検収書番号_発注書番号(_取引先)。
+          parentDocNumber: String(templateType || "").includes("inspection")
+            ? String(
+                (formData as any)?.linked_contract_number || parentOrderNumber || ""
+              ).trim() || undefined
+            : undefined,
+        }
       );
 
       // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
