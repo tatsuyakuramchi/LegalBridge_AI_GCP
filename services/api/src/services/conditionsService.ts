@@ -51,6 +51,11 @@ const FROM_JOINS = `
     ON s.email = d.created_by
     OR s.slack_user_id = d.created_by
     OR s.staff_name = d.created_by
+  -- 新モデル(condition_lines + 導出ステータス)を 1:1 で結合し、成就/未了・検収額を
+  --   condition_events 由来の正しい値で返す(横断検索を Cockpit と整合させる)。
+  LEFT JOIN condition_lines cl
+    ON cl.capability_id = cli.capability_id AND cl.line_no = cli.line_no
+  LEFT JOIN condition_line_status_v sv ON sv.id = cl.id
 `;
 
 function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
@@ -141,7 +146,9 @@ export async function listConditions(
        v.vendor_code, v.vendor_name,
        COALESCE(s.staff_name, d.created_by) AS owner_name,
        s.department AS department,
-       d.created_by, d.issue_key`;
+       d.created_by, d.issue_key,
+       cl.id AS condition_line_id, cl.line_code,
+       sv.status AS fulfillment_status, sv.consumed_amount, sv.remaining_amount`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
        cli.source_ip_id, si.title AS source_ip_title, si.source_code,
@@ -202,6 +209,12 @@ export async function listConditions(
     owner_name: r.owner_name || "",
     department: r.department || "",
     issue_key: r.issue_key || "",
+    // 新モデル(condition_lines + 導出ステータス)。成就/未了・検収額・検収書紐付けに使う。
+    condition_line_id: r.condition_line_id == null ? null : Number(r.condition_line_id),
+    line_code: r.line_code || "",
+    fulfillment_status: r.fulfillment_status || "open",
+    consumed_amount: num(r.consumed_amount),
+    remaining_amount: r.remaining_amount == null ? null : num(r.remaining_amount),
     // 紐付け(0015)
     source_ip_id: r.source_ip_id == null ? null : Number(r.source_ip_id),
     source_ip_title: r.source_ip_title || "",
