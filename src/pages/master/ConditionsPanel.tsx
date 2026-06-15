@@ -77,6 +77,8 @@ export function ConditionsPanel() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   // 経理照合: 成就/未了の絞り込み(読込済みページに対するクライアントフィルタ)。
   const [fulfill, setFulfill] = React.useState<"" | "open" | "partially_fulfilled" | "fulfilled">("")
+  // 成就させた検収書/利用許諾料計算書の紐付け (condition_line_id → [{document_number}])。
+  const [inspDocs, setInspDocs] = React.useState<Record<string, any[]>>({})
 
   const setF = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }))
 
@@ -103,6 +105,23 @@ export function ConditionsPanel() {
       setRows(list)
       setTotal(typeof data.total === "number" ? data.total : null)
       setSelected(new Set())
+      // 成就させた検収書/利用許諾料計算書の文書番号を取得して列表示する。
+      const ids = list.map((r) => Number(r.id)).filter((n) => Number.isFinite(n))
+      if (ids.length) {
+        try {
+          const ir = await fetch("/api/condition-lines/inspection-docs", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ids }),
+          })
+          const idata = await ir.json().catch(() => ({}))
+          setInspDocs(idata?.map && typeof idata.map === "object" ? idata.map : {})
+        } catch {
+          setInspDocs({})
+        }
+      } else {
+        setInspDocs({})
+      }
     } catch (e: any) {
       setError(e?.message || String(e))
       setRows([])
@@ -370,6 +389,7 @@ export function ConditionsPanel() {
                 <th className="text-right">検収額</th>
                 <th>成就/未了</th>
                 <th>文書番号</th>
+                <th>検収書</th>
                 <th>契約名 / 課題</th>
                 <th>紐付け</th>
                 <th>状態</th>
@@ -430,6 +450,11 @@ export function ConditionsPanel() {
                       })()}
                     </td>
                     <td className="whitespace-nowrap">{r.document_number || "—"}</td>
+                    <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {(inspDocs[String(r.id)] || []).length > 0
+                        ? (inspDocs[String(r.id)] || []).map((d: any) => d.document_number).join(", ")
+                        : "—"}
+                    </td>
                     <td className="min-w-[140px]">
                       {r.contract_title || "—"}
                       {r.issue_key && <div className="text-[10px] text-muted-foreground">{r.issue_key}</div>}
