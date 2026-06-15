@@ -569,6 +569,44 @@ async function startServer() {
     }
   });
 
+  // 部署ルートによる社内署名者の自動解決。
+  //   契約 → 起票課題 → 申請者(legal_requests.slack_user_id) → staff.department →
+  //   department_workflow_rules(承認者/押印担当/責任者) → 各ロールを staff(email/name)へ解決。
+  //   返した順(承認者→押印担当→責任者)を既定の社内署名ルートとして送信ダイアログがプリフィルする。
+  app.get("/api/contracts/:id/cloudsign/route", async (req, res) => {
+    try {
+      const capId = Number(req.params.id);
+      if (!Number.isFinite(capId)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT COALESCE(s.department, lr.dept) AS department,
+                ap.staff_name AS approver_name, ap.email AS approver_email,
+                so.staff_name AS stamp_name,    so.email AS stamp_email,
+                mg.staff_name AS manager_name,  mg.email AS manager_email
+           FROM contract_capabilities cc
+           LEFT JOIN legal_requests lr ON lr.backlog_issue_key = cc.backlog_issue_key
+           LEFT JOIN staff s  ON s.slack_user_id = lr.slack_user_id
+           LEFT JOIN department_workflow_rules dwr ON dwr.department = COALESCE(s.department, lr.dept)
+           LEFT JOIN staff ap ON ap.slack_user_id = dwr.approver_slack_id
+           LEFT JOIN staff so ON so.slack_user_id = dwr.stamp_operator_slack_id
+           LEFT JOIN staff mg ON mg.slack_user_id = dwr.manager_slack_id
+          WHERE cc.id = $1
+          LIMIT 1`,
+        [capId]
+      );
+      const row: any = r.rows[0] || {};
+      const signers: any[] = [];
+      if (row.approver_email)
+        signers.push({ role: "承認者", name: row.approver_name || "承認者", email: row.approver_email });
+      if (row.stamp_email)
+        signers.push({ role: "押印担当", name: row.stamp_name || "押印担当", email: row.stamp_email });
+      if (row.manager_email)
+        signers.push({ role: "責任者", name: row.manager_name || "責任者", email: row.manager_email });
+      res.json({ ok: true, department: row.department || null, signers });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // CloudSign Webhook 受信(締結完了等で状態を反映)。
   app.post("/api/webhooks/cloudsign", express.json(), async (req, res) => {
     try {
