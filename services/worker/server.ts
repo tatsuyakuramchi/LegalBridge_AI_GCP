@@ -510,10 +510,18 @@ async function startServer() {
       if (!participants.length)
         return res.status(400).json({ ok: false, error: "宛先(署名者メール)がありません" });
 
-      // テストガード: allowlist 設定時は全宛先がその集合内であること。
+      // 言語(ja|en)と CC(共有先 reportees)。
+      const language = String(req.body?.language || "").trim().toLowerCase();
+      const cc: any[] = Array.isArray(req.body?.cc)
+        ? req.body.cc.filter((c: any) => c && c.email).map((c: any) => ({ email: String(c.email), name: c.name }))
+        : [];
+
+      // テストガード: allowlist 設定時は全宛先(署名者+CC)がその集合内であること。
       const isTest = cfg.allow.length > 0;
       if (isTest) {
-        const bad = participants.find((p) => !cfg.allow.includes(String(p.email).toLowerCase()));
+        const bad = [...participants, ...cc].find(
+          (p) => !cfg.allow.includes(String(p.email).toLowerCase())
+        );
         if (bad)
           return res
             .status(400)
@@ -534,7 +542,9 @@ async function startServer() {
         const pdf = await googleDriveService.downloadPdf(row.drive_link);
         const csId = await cloudSign.createDocument(title);
         await cloudSign.attachFile(csId, pdf, `${row.document_number || "contract"}.pdf`);
-        for (const p of participants) await cloudSign.addParticipant(csId, p);
+        for (const p of participants)
+          await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
+        for (const c of cc) await cloudSign.addReportee(csId, c);
         await cloudSign.sendDocument(csId);
         await query(
           `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
@@ -710,9 +720,15 @@ async function startServer() {
         docs.push(row);
       }
 
+      const language = String(req.body?.language || "").trim().toLowerCase();
+      const cc: any[] = Array.isArray(req.body?.cc)
+        ? req.body.cc.filter((c: any) => c && c.email).map((c: any) => ({ email: String(c.email), name: c.name }))
+        : [];
       const isTest = cfg.allow.length > 0;
       if (isTest) {
-        const bad = participants.find((p) => !cfg.allow.includes(String(p.email).toLowerCase()));
+        const bad = [...participants, ...cc].find(
+          (p) => !cfg.allow.includes(String(p.email).toLowerCase())
+        );
         if (bad)
           return res
             .status(400)
@@ -749,7 +765,9 @@ async function startServer() {
           const pdf = await googleDriveService.downloadPdf(d.drive_link);
           await cloudSign.attachFile(csId, pdf, `${d.document_number || "doc"}.pdf`);
         }
-        for (const p of participants) await cloudSign.addParticipant(csId, p);
+        for (const p of participants)
+          await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
+        for (const c of cc) await cloudSign.addReportee(csId, c);
         await cloudSign.sendDocument(csId);
         await query(
           `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
