@@ -344,6 +344,8 @@ export function ContractsPanel() {
     { name: string; email: string; role?: string }[]
   >([])
   const [csRelay, setCsRelay] = React.useState<"internal_first" | "vendor_first">("internal_first")
+  const [csLang, setCsLang] = React.useState<"ja" | "en">("ja")
+  const [csCc, setCsCc] = React.useState("")
   const [csRouteLoading, setCsRouteLoading] = React.useState(false)
   const [csSending, setCsSending] = React.useState(false)
 
@@ -354,6 +356,8 @@ export function ContractsPanel() {
     setCsEmail("")
     setCsInternal([])
     setCsRelay("internal_first")
+    setCsLang("ja")
+    setCsCc("")
     setCsRouteLoading(true)
     try {
       const res = await fetch(`/api/contracts/${c.id}/cloudsign/route`)
@@ -404,7 +408,15 @@ export function ContractsPanel() {
       const res = await fetch(`/api/contracts/${csTarget.id}/cloudsign/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ participants }),
+        body: JSON.stringify({
+          participants,
+          language: csLang,
+          cc: csCc
+            .split(/[,\s]+/)
+            .map((e) => e.trim())
+            .filter((e) => e.includes("@"))
+            .map((email) => ({ email })),
+        }),
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
@@ -1340,6 +1352,21 @@ export function ContractsPanel() {
                 </NativeSelect>
               </div>
             )}
+            <div className="space-y-1">
+              <Label className="text-xs">言語（署名画面・通知メール）</Label>
+              <NativeSelect value={csLang} onChange={(e) => setCsLang(e.target.value as "ja" | "en")}>
+                <option value="ja">日本語</option>
+                <option value="en">英語（English）</option>
+              </NativeSelect>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">CC（共有先メール・カンマ区切り・任意）</Label>
+              <Input
+                value={csCc}
+                onChange={(e) => setCsCc(e.target.value)}
+                placeholder="cc1@example.co.jp, cc2@example.co.jp"
+              />
+            </div>
             <p className="text-[11px] font-mono text-muted-foreground">
               ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、<b>全署名者（社内含む）のメールが許可宛先に入っている必要</b>があります（社内テスト用）。
             </p>
