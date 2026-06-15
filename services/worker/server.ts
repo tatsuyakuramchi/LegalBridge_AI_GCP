@@ -607,6 +607,168 @@ async function startServer() {
     }
   });
 
+  // 課題ベースの部署ルート解決(社内署名者) + 取引先主担当。まとめ送信ダイアログのプリフィル用。
+  app.get("/api/issues/:key/cloudsign/route", async (req, res) => {
+    try {
+      const key = String(req.params.key || "").trim();
+      if (!key) return res.status(400).json({ ok: false, error: "key required" });
+      const r = await query(
+        `SELECT COALESCE(s.department, lr.dept) AS department,
+                ap.staff_name AS approver_name, ap.email AS approver_email,
+                so.staff_name AS stamp_name,    so.email AS stamp_email,
+                mg.staff_name AS manager_name,  mg.email AS manager_email
+           FROM legal_requests lr
+           LEFT JOIN staff s ON s.slack_user_id = lr.slack_user_id
+           LEFT JOIN department_workflow_rules dwr ON dwr.department = COALESCE(s.department, lr.dept)
+           LEFT JOIN staff ap ON ap.slack_user_id = dwr.approver_slack_id
+           LEFT JOIN staff so ON so.slack_user_id = dwr.stamp_operator_slack_id
+           LEFT JOIN staff mg ON mg.slack_user_id = dwr.manager_slack_id
+          WHERE lr.backlog_issue_key = $1 LIMIT 1`,
+        [key]
+      );
+      const row: any = r.rows[0] || {};
+      const signers: any[] = [];
+      if (row.approver_email)
+        signers.push({ role: "承認者", name: row.approver_name || "承認者", email: row.approver_email });
+      if (row.stamp_email)
+        signers.push({ role: "押印担当", name: row.stamp_name || "押印担当", email: row.stamp_email });
+      if (row.manager_email)
+        signers.push({ role: "責任者", name: row.manager_name || "責任者", email: row.manager_email });
+      // 取引先主担当(この課題の capability から)。
+      let vendor: any = null;
+      const v = await query(
+        `SELECT v.vendor_name, vc.contact_name, vc.email
+           FROM contract_capabilities cc
+           JOIN vendors v ON v.id = cc.vendor_id
+           LEFT JOIN LATERAL (
+             SELECT contact_name, email FROM vendor_contacts
+              WHERE vendor_id = cc.vendor_id AND email IS NOT NULL AND email <> ''
+              ORDER BY is_primary DESC, sort_order ASC LIMIT 1
+           ) vc ON TRUE
+          WHERE cc.backlog_issue_key = $1 AND cc.vendor_id IS NOT NULL
+          LIMIT 1`,
+        [key]
+      );
+      if (v.rows[0])
+        vendor = {
+          name: v.rows[0].contact_name || v.rows[0].vendor_name || "",
+          email: v.rows[0].email || "",
+          vendor_name: v.rows[0].vendor_name || "",
+        };
+      res.json({ ok: true, department: row.department || null, signers, vendor });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 課題の複数文書を 1 つの CloudSign 書類にまとめて送信(発注書+検収書 等)。
+  app.post("/api/issues/:key/cloudsign/send-bundle", express.json(), async (req, res) => {
+    try {
+      const cfg = await loadCloudSignCfg();
+      if (!cfg.enabled)
+        return res.status(403).json({ ok: false, error: "CloudSign 連携が無効です (設定でオンに)" });
+      if (!cfg.clientId)
+        return res.status(400).json({ ok: false, error: "client_id 未設定" });
+      const key = String(req.params.key || "").trim();
+      const docNumbers: string[] = Array.isArray(req.body?.document_numbers)
+        ? req.body.document_numbers.map((s: any) => String(s)).filter(Boolean)
+        : [];
+      if (docNumbers.length === 0)
+        return res.status(400).json({ ok: false, error: "文書が選択されていません" });
+      let participants: any[] = Array.isArray(req.body?.participants)
+        ? req.body.participants.filter((p: any) => p && p.email)
+        : [];
+      if (!participants.length)
+        return res.status(400).json({ ok: false, error: "宛先(署名者メール)がありません" });
+
+      // 各文書の PDF を取得 + Drive URL 検証。
+      const docs: any[] = [];
+      for (const dn of docNumbers) {
+        const d = await query(
+          `SELECT document_number, template_type, drive_link FROM documents
+            WHERE document_number = $1 ORDER BY created_at DESC LIMIT 1`,
+          [dn]
+        );
+        const row = d.rows[0];
+        if (!row || !row.drive_link)
+          return res.status(400).json({ ok: false, error: `生成済みPDFがありません: ${dn}` });
+        const dl = String(row.drive_link);
+        const isDriveUrl =
+          /\/file\/d\/[a-zA-Z0-9_-]+/.test(dl) || /(drive|docs)\.google\.com/.test(dl);
+        if (!isDriveUrl) {
+          let host = "";
+          try {
+            host = new URL(dl).host;
+          } catch {
+            /* noop */
+          }
+          return res.status(400).json({
+            ok: false,
+            error: `${dn} のPDFは Google Drive 上にありません${host ? `（${host}）` : ""}。`,
+          });
+        }
+        docs.push(row);
+      }
+
+      const isTest = cfg.allow.length > 0;
+      if (isTest) {
+        const bad = participants.find((p) => !cfg.allow.includes(String(p.email).toLowerCase()));
+        if (bad)
+          return res
+            .status(400)
+            .json({ ok: false, error: `テスト中は許可された宛先のみ送信できます: ${bad.email}` });
+      }
+
+      const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+      const user = (req.headers["x-user-email"] as string) || "cloudsign";
+      const title =
+        String(req.body?.title || "").trim() || `${key} まとめ送信（${docs.length}件）`;
+      const capRow = await query(
+        `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+        [docs[0].document_number]
+      );
+      const capId = capRow.rows[0]?.id ?? null;
+      const ins = await query(
+        `INSERT INTO cloudsign_requests
+           (document_number, capability_id, template_type, status, title, participants, is_test, created_by)
+         VALUES ($1,$2,$3,'sending',$4,$5::jsonb,$6,$7) RETURNING id`,
+        [
+          docs[0].document_number,
+          capId,
+          docs.map((d) => d.template_type).filter(Boolean).join(","),
+          title,
+          JSON.stringify(participants),
+          isTest,
+          user,
+        ]
+      );
+      const reqId = ins.rows[0].id;
+      try {
+        const csId = await cloudSign.createDocument(title);
+        for (const d of docs) {
+          const pdf = await googleDriveService.downloadPdf(d.drive_link);
+          await cloudSign.attachFile(csId, pdf, `${d.document_number || "doc"}.pdf`);
+        }
+        for (const p of participants) await cloudSign.addParticipant(csId, p);
+        await cloudSign.sendDocument(csId);
+        await query(
+          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
+          [reqId, csId]
+        );
+        res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest, count: docs.length });
+      } catch (e: any) {
+        await query(`UPDATE cloudsign_requests SET status='error', error=$2, updated_at=now() WHERE id=$1`, [
+          reqId,
+          String(e?.message || e),
+        ]);
+        throw e;
+      }
+    } catch (e: any) {
+      console.error("[cloudsign send-bundle] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // CloudSign Webhook 受信(締結完了等で状態を反映)。
   app.post("/api/webhooks/cloudsign", express.json(), async (req, res) => {
     try {
