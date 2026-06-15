@@ -10744,6 +10744,86 @@ ${details}
     }
   );
 
+  // 条件明細に「対になる文書(検収書/利用許諾料計算書)」をリンクして実績(condition_events)を
+  //   記録する = 検収済化。発注明細の検収管理(手動リンク)用。document_id の種別で
+  //   event_type を決める(検収書→inspection / 利用許諾料計算書→royalty_calc)。
+  app.post("/api/condition-lines/:id/link-document", express.json(), async (req, res) => {
+    try {
+      const lineId = Number(req.params.id);
+      const documentId = Number(req.body?.document_id);
+      if (!Number.isFinite(lineId) || !Number.isFinite(documentId))
+        return res.status(400).json({ ok: false, error: "id / document_id required" });
+
+      const lq = await query(`SELECT id, amount_ex_tax FROM condition_lines WHERE id = $1`, [lineId]);
+      const line = lq.rows[0];
+      if (!line) return res.status(404).json({ ok: false, error: "条件明細が見つかりません" });
+
+      const dq = await query(
+        `SELECT id, document_number, template_type, issue_key FROM documents WHERE id = $1`,
+        [documentId]
+      );
+      const doc = dq.rows[0];
+      if (!doc) return res.status(404).json({ ok: false, error: "文書が見つかりません" });
+      const eventType =
+        doc.template_type === "royalty_statement" ? "royalty_calc" : "inspection";
+
+      // 既存の有効実績合計 → 残額。amount 指定が無ければ残額全部。
+      const sq = await query(
+        `SELECT COALESCE(SUM(amount_ex_tax),0) AS consumed, COALESCE(MAX(event_no),0) AS maxno
+           FROM condition_events WHERE condition_line_id = $1 AND voided_at IS NULL`,
+        [lineId]
+      );
+      const consumed = Number(sq.rows[0].consumed) || 0;
+      const total = Number(line.amount_ex_tax) || 0;
+      const remaining = total - consumed;
+      let amount =
+        req.body?.amount_ex_tax === undefined || req.body?.amount_ex_tax === null
+          ? remaining
+          : Number(req.body.amount_ex_tax);
+      if (!Number.isFinite(amount) || amount <= 0)
+        return res.status(400).json({ ok: false, error: `金額が不正、または残額がありません(残 ${remaining})` });
+
+      const ins = await query(
+        `INSERT INTO condition_events
+           (condition_line_id, event_no, event_type, document_id, backlog_issue_key, occurred_at, amount_ex_tax)
+         VALUES ($1, $2, $3, $4, $5, now(), $6) RETURNING id`,
+        [lineId, Number(sq.rows[0].maxno) + 1, eventType, documentId, doc.issue_key || null, amount]
+      );
+      res.json({
+        ok: true,
+        event_id: ins.rows[0].id,
+        event_type: eventType,
+        document_number: doc.document_number,
+        amount_ex_tax: amount,
+      });
+    } catch (e: any) {
+      console.error("/api/condition-lines/:id/link-document failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 実績(condition_events)を void = 文書リンク解除(未成就に戻す)。文書自体は残る。
+  app.post("/api/condition-events/:id/void", express.json(), async (req, res) => {
+    try {
+      const eventId = Number(req.params.id);
+      if (!Number.isFinite(eventId)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const reason = String(req.body?.reason || "").trim() || null;
+      const r = await query(
+        `UPDATE condition_events
+            SET voided_at = CURRENT_TIMESTAMP, void_reason = $2
+          WHERE id = $1 AND voided_at IS NULL
+          RETURNING id, condition_line_id`,
+        [eventId, reason]
+      );
+      if (!r.rows[0])
+        return res.status(404).json({ ok: false, error: "実績が見つからない、または既に void 済み" });
+      res.json({ ok: true, event_id: r.rows[0].id, condition_line_id: r.rows[0].condition_line_id });
+    } catch (e: any) {
+      console.error("/api/condition-events/:id/void failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // -------------------------------------------------------------------
   // POST /api/condition-lines/:id/link-document
   //   調整(手動): 既存文書(検収書 / 利用許諾料計算書)を明細に「対の実績」として
