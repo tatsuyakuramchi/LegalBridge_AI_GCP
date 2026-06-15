@@ -395,6 +395,54 @@ async function startServer() {
     }
   });
 
+  // 手動ステータス同期: CloudSign から書類の現在状態(status)を取得して反映する。
+  //   webhook が飛ばない/取りこぼした場合でも、署名済みなら締結を確実に反映できる。
+  //   (status: 1=先方確認中 / 2=締結済 / 3=取消・却下)
+  app.get("/api/cloudsign/sync/:id", async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const found = await query(`SELECT * FROM cloudsign_requests WHERE id = $1`, [id]);
+      const reqRow = found.rows[0];
+      if (!reqRow) return res.status(404).json({ ok: false, error: "送信レコードが見つかりません" });
+      if (!reqRow.cloudsign_document_id)
+        return res.status(400).json({ ok: false, error: "cloudsign_document_id が無い(未送信)" });
+
+      const cfg = await loadCloudSignCfg();
+      if (!cfg.clientId) return res.status(400).json({ ok: false, error: "client_id 未設定" });
+      const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+      const doc = await cloudSign.getDocument(reqRow.cloudsign_document_id);
+
+      const statusNum = Number(doc?.status);
+      const isCompleted = statusNum === 2;
+      const isDeclined = statusNum === 3;
+      const newStatus = isCompleted
+        ? "completed"
+        : isDeclined
+        ? "declined"
+        : statusNum === 1
+        ? "sent"
+        : reqRow.status;
+
+      await query(
+        `UPDATE cloudsign_requests
+            SET status=$2, completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
+          WHERE id=$1`,
+        [reqRow.id, newStatus, isCompleted]
+      );
+      if (isCompleted && reqRow.capability_id) {
+        await query(
+          `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+          [reqRow.capability_id]
+        );
+      }
+      res.json({ ok: true, id: reqRow.id, cloudsign_status: doc?.status, status: newStatus });
+    } catch (e: any) {
+      console.error("[cloudsign sync] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // 契約(contract_capabilities)を CloudSign へ送信(下書き作成→PDF添付→宛先→送信確定)。
   app.post("/api/contracts/:id/cloudsign/send", express.json(), async (req, res) => {
     try {
