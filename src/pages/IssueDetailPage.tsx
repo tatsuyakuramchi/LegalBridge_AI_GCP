@@ -191,6 +191,7 @@ export function IssueDetailPage() {
   const [csRelay, setCsRelay] = React.useState<"internal_first" | "vendor_first">("internal_first")
   const [csLang, setCsLang] = React.useState<"ja" | "en">("ja")
   const [csCc, setCsCc] = React.useState("")
+  const [csDraft, setCsDraft] = React.useState(false)
   const [csRouteLoading, setCsRouteLoading] = React.useState(false)
   const [csSending, setCsSending] = React.useState(false)
 
@@ -209,6 +210,7 @@ export function IssueDetailPage() {
     setCsRelay("internal_first")
     setCsLang("ja")
     setCsCc("")
+    setCsDraft(false)
     setCsRouteLoading(true)
     try {
       const res = await fetch(`/api/issues/${encodeURIComponent(issueKey)}/cloudsign/route`)
@@ -248,6 +250,7 @@ export function IssueDetailPage() {
           document_numbers: Array.from(selDocs),
           participants,
           language: csLang,
+          draft: csDraft,
           cc: csCc
             .split(/[,\s]+/)
             .map((e) => e.trim())
@@ -257,10 +260,18 @@ export function IssueDetailPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
-      showNotification?.(
-        `クラウドサインへ送信しました（${data.count ?? selDocs.size}件まとめ）${data.is_test ? "（テスト許可宛先）" : ""}`,
-        "success"
-      )
+      if (data.draft && data.cloudsign_url) {
+        showNotification?.(
+          "下書きを作成しました。CloudSign で署名欄/印影を配置して送信してください。",
+          "success"
+        )
+        window.open(data.cloudsign_url, "_blank", "noopener,noreferrer")
+      } else {
+        showNotification?.(
+          `クラウドサインへ送信しました（${data.count ?? selDocs.size}件まとめ）${data.is_test ? "（テスト許可宛先）" : ""}`,
+          "success"
+        )
+      }
       setBundleOpen(false)
       setSelDocs(new Set())
     } catch (e: any) {
@@ -631,8 +642,18 @@ export function IssueDetailPage() {
                 placeholder="cc1@example.co.jp, cc2@example.co.jp"
               />
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">送信方法</Label>
+              <NativeSelect
+                value={csDraft ? "draft" : "send"}
+                onChange={(e) => setCsDraft(e.target.value === "draft")}
+              >
+                <option value="send">即時送信（API でそのまま送る）</option>
+                <option value="draft">CloudSign で署名欄/印影を配置してから送信（下書き作成）</option>
+              </NativeSelect>
+            </div>
             <p className="text-[11px] font-mono text-muted-foreground">
-              ※ 各文書は Drive 上のPDFが必要。設定で「許可宛先」を設定中は、<b>全署名者・CC（社内含む）のメールが許可宛先に入っている必要</b>があります。英語は webhook 有効時に制限される場合あり。
+              ※ 各文書は Drive 上のPDFが必要。設定で「許可宛先」を設定中は、<b>全署名者・CC（社内含む）のメールが許可宛先に入っている必要</b>があります。「下書き作成」を選ぶと CloudSign の編集画面が開きます。英語は webhook 有効時に制限される場合あり。
             </p>
           </DialogBody>
           <DialogFooter>
@@ -641,7 +662,7 @@ export function IssueDetailPage() {
             </Button>
             <Button onClick={sendBundle} disabled={csSending || selDocs.size === 0}>
               <Send className="h-3.5 w-3.5" />
-              {csSending ? "送信中…" : `送信（${selDocs.size}件）`}
+              {csSending ? "処理中…" : csDraft ? `下書き作成（${selDocs.size}件）` : `送信（${selDocs.size}件）`}
             </Button>
           </DialogFooter>
         </DialogContent>
