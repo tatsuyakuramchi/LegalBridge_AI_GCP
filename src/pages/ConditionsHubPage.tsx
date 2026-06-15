@@ -1,11 +1,12 @@
 import * as React from "react"
 import { useSearchParams } from "react-router-dom"
-import { ListChecks, ClipboardCheck, Search } from "lucide-react"
+import { ListChecks, ClipboardCheck, Search, Network } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { ConditionLinesPage } from "./ConditionLinesPage"
 import { PendingInspectionsPage } from "./PendingInspectionsPage"
 import { ConditionsPanel } from "./master/ConditionsPanel"
+import { ConditionTreePage } from "./ConditionTreePage"
 
 // データ構造刷新: 条件明細の統合ハブ。
 //   旧「条件明細(コックピット)」「検収待ち」「マスター > 条件明細(横断検索/編集)」を
@@ -17,6 +18,7 @@ const TABS = [
   { key: "cockpit", label: "Cockpit", sub: "消化・残高", icon: ListChecks },
   { key: "inspections", label: "検収待ち", sub: "発注書→検収書 一括", icon: ClipboardCheck },
   { key: "search", label: "横断検索・編集", sub: "検索 / CSV / 紐付け", icon: Search },
+  { key: "tree", label: "ツリー", sub: "作品/原作/取引先/部署 で分類", icon: Network },
 ] as const
 
 type TabKey = (typeof TABS)[number]["key"]
@@ -66,6 +68,7 @@ export function ConditionsHubPage() {
       {active === "cockpit" && <ConditionLinesPage />}
       {active === "inspections" && <PendingInspectionsPage />}
       {active === "search" && <ConditionsPanel />}
+      {active === "tree" && <ConditionTreePage />}
     </div>
   )
 }

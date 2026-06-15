@@ -19,6 +19,8 @@ import {
   ExternalLink,
   PartyPopper,
   Plus,
+  ClipboardList,
+  Hash,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -208,6 +210,10 @@ export function DocumentEditorPage() {
   const [assetPickerCallback, setAssetPickerCallback] =
     React.useState<((asset: any) => void) | null>(null)
   const [assetSearch, setAssetSearch] = React.useState("")
+  // 法務アセットを「ラインID」で検索(条件明細コード/明細行ID/capability ID → 契約解決)。
+  const [lineIdQuery, setLineIdQuery] = React.useState("")
+  const [lineIdLoading, setLineIdLoading] = React.useState(false)
+  const [lineIdHit, setLineIdHit] = React.useState<any>(null)
 
   // 個人情報取得同意: 個人取引先の同意状況 + 同時作成スイッチ。
   const [consentInfo, setConsentInfo] = React.useState<{
@@ -262,6 +268,11 @@ export function DocumentEditorPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const fromPendingId = searchParams.get("from_pending")
   const reopenId = searchParams.get("reopen")
+  // ハブ(課題詳細)由来のディープリンク(?template=...&prefill=1)を初回マウント時に
+  //   ref へ退避する。後段のプリフィル effect が消費する前に、別の effect が
+  //   searchParams から template を削除するため、初期値を保持しておく。
+  const initialTemplateParamRef = React.useRef(searchParams.get("template"))
+  const initialPrefillRef = React.useRef(searchParams.get("prefill") === "1")
   React.useEffect(() => {
     const targetId = fromPendingId || reopenId
     if (!targetId) return
@@ -408,6 +419,7 @@ export function DocumentEditorPage() {
     const sp = searchParams
     sp.delete("template")
     sp.delete("parent_po")
+    sp.delete("prefill")
     setSearchParams(sp, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam, parentPoParam])
@@ -593,6 +605,26 @@ export function DocumentEditorPage() {
     [issues, selectedTemplate, selectedIssue, setFormData, showNotification]
   )
 
+  // ハブ(課題詳細)から ?template=<type>&prefill=1 で来たとき、着地時に
+  //   form-context を自動プリフィルする(取引先・件名・条件明細)。skipRestore=true で
+  //   下書きは引かない = クリーンな新規作成なので識別子の持ち越し無し(上書き事故なし)。
+  //   発注書・検収書のみ自動(ユーザー合意)。他種別はテンプレ事前選択のみ。
+  const HUB_PREFILL_TYPES = ["purchase_order", "inspection_certificate"]
+  const didHubPrefillRef = React.useRef(false)
+  React.useEffect(() => {
+    if (didHubPrefillRef.current) return
+    if (!initialPrefillRef.current) return
+    const tmpl = initialTemplateParamRef.current || ""
+    if (!HUB_PREFILL_TYPES.includes(tmpl)) return
+    if (!selectedIssue) return
+    didHubPrefillRef.current = true
+    void syncFromDatabase(selectedIssue, {
+      templateOverride: tmpl,
+      skipRestore: true,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIssue, syncFromDatabase])
+
   const handleIssueSelect = async (issueKey: string) => {
     setSelectedIssue(issueKey)
     // Phase 22.21.29: 課題切替時に「閲覧モード」をオン。編集はユーザーが
@@ -624,6 +656,169 @@ export function DocumentEditorPage() {
       setPreviousDocument(null)
     }
   }
+
+  // 「条件明細を読み込む」: この課題の発注書(capability_line_items)を items[] として
+  //   取り込む。Backlog Sync(全置換)と違い「明細だけ」を入れる非破壊操作なので、
+  //   発注書の作り直しでも保存済み明細を一から打ち直さずに済む。
+  //   取得元は form-context の items[] (= capability_line_items を整形済み)。
+  const loadConditionLineItems = React.useCallback(async () => {
+    if (!selectedIssue) {
+      showNotification("先に Backlog 課題を選択してください。", "error")
+      return
+    }
+    const cur = (formData as any)?.items
+    const hasItems = Array.isArray(cur) && cur.length > 0
+    if (
+      hasItems &&
+      !window.confirm("現在の明細を、この課題の保存済み条件明細で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    try {
+      const res = await fetch(
+        `/api/backlog/issues/${encodeURIComponent(selectedIssue)}/form-context?template=purchase_order`
+      )
+      const ctx = await res.json().catch(() => ({}))
+      const items = Array.isArray(ctx?.items) ? ctx.items : []
+      if (items.length === 0) {
+        showNotification("この課題に保存済みの条件明細が見つかりませんでした。", "error")
+        return
+      }
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        items,
+        ...(ctx?.taxRate != null ? { taxRate: ctx.taxRate } : {}),
+        ...(ctx?.grandTotalExTax != null ? { grandTotalExTax: ctx.grandTotalExTax } : {}),
+      }))
+      showNotification(`📋 条件明細を ${items.length} 行読み込みました。`, "success")
+    } catch (e: any) {
+      showNotification(`条件明細の読み込みに失敗しました: ${e?.message || e}`, "error")
+    }
+  }, [selectedIssue, formData, setFormData, showNotification])
+
+  // 「ラインIDで読み込む」: 条件明細コード(line_code)/明細行ID/capability ID のいずれかを
+  //   指定して、その明細セット(capability_line_items)を items[] として取り込む。
+  //   課題キー×種別で引けない場合(record_type 化け・複数PO)でもピンポイントで呼べる。
+  const loadLineItemsById = React.useCallback(async () => {
+    const key = window.prompt(
+      "条件明細のラインID を入力してください\n(条件明細コード line_code / 明細行ID / capability ID のいずれか)"
+    )
+    if (!key || !key.trim()) return
+    const cur = (formData as any)?.items
+    const hasItems = Array.isArray(cur) && cur.length > 0
+    if (
+      hasItems &&
+      !window.confirm("現在の明細を、指定したラインIDの明細で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    try {
+      const res = await fetch(`/api/line-items/lookup?key=${encodeURIComponent(key.trim())}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      const items = Array.isArray(data?.items) ? data.items : []
+      if (items.length === 0) {
+        showNotification("指定したラインIDに明細がありませんでした。", "error")
+        return
+      }
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        items,
+        ...(data?.taxRate != null ? { taxRate: data.taxRate } : {}),
+        ...(data?.grandTotalExTax != null ? { grandTotalExTax: data.grandTotalExTax } : {}),
+      }))
+      showNotification(
+        `📋 ラインID ${data.line_code || key.trim()} の明細を ${items.length} 行読み込みました。`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(`ラインIDでの明細読み込みに失敗しました: ${e?.message || e}`, "error")
+    }
+  }, [formData, setFormData, showNotification])
+
+  // 法務アセットを「ラインID」で検索: lineID → /api/line-items/lookup で capability を
+  //   解決し、契約マスタ(allContracts)から該当契約(=法務アセット)を引き当てる。
+  const searchAssetByLineId = async () => {
+    const key = lineIdQuery.trim()
+    if (!key) return
+    setLineIdLoading(true)
+    setLineIdHit(null)
+    try {
+      const res = await fetch(`/api/line-items/lookup?key=${encodeURIComponent(key)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        showNotification(data?.error || `HTTP ${res.status}`, "error")
+        return
+      }
+      const capId = Number(data.capability_id)
+      const contract =
+        (allContracts as any[] | undefined)?.find((c: any) => Number(c.id) === capId) || null
+      setLineIdHit({
+        capId,
+        line_code: data.line_code || key,
+        count: data.count ?? (Array.isArray(data.items) ? data.items.length : 0),
+        contract,
+      })
+    } catch (e: any) {
+      showNotification(`ラインID検索に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setLineIdLoading(false)
+    }
+  }
+
+  // 解決した法務アセット(契約)を反映する。callback ありはそれを優先、無ければ
+  //   契約番号/名称を formData に流し込む(汎用リンク)。
+  const applyAssetByLineId = () => {
+    const c = lineIdHit?.contract
+    if (!c) {
+      showNotification("ラインIDに対応する契約(法務アセット)が契約マスタに見つかりませんでした。", "error")
+      return
+    }
+    if (assetPickerCallback) {
+      assetPickerCallback({
+        id: Number(c.id),
+        asset_number: c.document_number || "",
+        asset_name: c.contract_title || "",
+        counterparty: c.vendor_name || "",
+        asset_type: "contract",
+      } as any)
+      setAssetPickerCallback(null)
+    } else {
+      setFormData((prev: any) => ({
+        ...prev,
+        ["契約書番号"]: c.document_number || prev["契約書番号"] || "",
+        ["基本契約名"]: c.contract_title || prev["基本契約名"] || "",
+        linked_contract_number: c.document_number || prev.linked_contract_number || "",
+      }))
+    }
+    showNotification(
+      `法務アセット ${c.document_number || c.contract_title || lineIdHit.line_code} を反映しました。`,
+      "success"
+    )
+    setLineIdQuery("")
+    setLineIdHit(null)
+    setIsAssetPickerOpen(false)
+  }
+
+  // Backlog Sync は formData を全置換するため、入力済みなら確認してから実行。
+  //   (入力途中に押して打った内容が消える事故を防ぐ。)
+  const handleManualSync = React.useCallback(() => {
+    const hasContent = Object.keys(formData || {}).some(
+      (k) =>
+        !k.startsWith("__") &&
+        (formData as any)[k] != null &&
+        (formData as any)[k] !== ""
+    )
+    if (
+      hasContent &&
+      !window.confirm("現在の入力内容を破棄して、DB(課題/下書き)の内容で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    void syncFromDatabase()
+  }, [formData, syncFromDatabase])
 
   // Phase 22.11.2: 「前回内容を読み込む」 — 過去 doc の form_data を
   // 取得して formData に反映 (内部の __reopen_doc_number 等は付けない →
@@ -1460,7 +1655,9 @@ export function DocumentEditorPage() {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {/* ステータス(採番バッジ + 自動保存)は1つのまとまりとして扱う。 */}
+                <div className="flex items-center gap-2">
                 {/* Phase 23 UX-A: 採番ステータスバッジ
                     formData.documentNumber が存在 → 採番済 (緑)
                     formData.__reopen_id がある → 既存編集 (青)
@@ -1519,6 +1716,7 @@ export function DocumentEditorPage() {
                     Saved {lastAutoSave}
                   </span>
                 )}
+                </div>
                 {/* 明示的な「保存」: 下書きをサーバ保存し、初回はここで採番する。 */}
                 <Button
                   variant="outline"
@@ -1553,13 +1751,35 @@ export function DocumentEditorPage() {
                   ) : (
                     <Eye />
                   )}
-                  プレビュー (別タブ)
+                  プレビュー
                 </Button>
+                {selectedTemplate === "purchase_order" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadConditionLineItems}
+                    title="この課題に保存済みの条件明細(品目・数量・金額)を明細欄に読み込みます。明細だけを入れるので他の入力は消えません。"
+                  >
+                    <ClipboardList />
+                    条件明細
+                  </Button>
+                )}
+                {selectedTemplate === "purchase_order" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadLineItemsById}
+                    title="条件明細コード(line_code)や明細行ID/capability ID を指定して明細を読み込みます。課題×種別で引けないときに使えます。"
+                  >
+                    <Hash />
+                    ラインID
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => syncFromDatabase()}
-                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します"
+                  onClick={handleManualSync}
+                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します(現在の入力は置き換わります)"
                 >
                   <Database />
                   Backlog Sync
@@ -2038,6 +2258,62 @@ export function DocumentEditorPage() {
             </SheetTitle>
           </SheetHeader>
           <SheetBody className="space-y-3 pt-2">
+
+            {/* ── ラインIDで法務アセットを検索(全モード共通) ── */}
+            <div className="space-y-2 pb-3 border-b border-border">
+              <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                ラインIDで検索
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={lineIdQuery}
+                  onChange={(e) => setLineIdQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      void searchAssetByLineId()
+                    }
+                  }}
+                  placeholder="条件明細コード(line_code) / 明細行ID / capability ID"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void searchAssetByLineId()}
+                  disabled={lineIdLoading}
+                >
+                  {lineIdLoading ? <Loader2 className="animate-spin" /> : <ScanSearch />}
+                  検索
+                </Button>
+              </div>
+              {lineIdHit && (
+                <div className="rounded-md border border-border p-2.5 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    {lineIdHit.contract ? (
+                      <>
+                        <p className="text-xs font-mono font-bold truncate">
+                          {lineIdHit.contract.document_number || "(番号なし)"} ·{" "}
+                          {lineIdHit.contract.contract_title || "—"}
+                        </p>
+                        <p className="text-[10px] font-mono text-muted-foreground truncate">
+                          {lineIdHit.contract.vendor_name || "—"} · ラインID {lineIdHit.line_code} · 明細
+                          {lineIdHit.count}行
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] font-mono text-amber-600">
+                        capability #{lineIdHit.capId} は契約マスタに未登録（明細{lineIdHit.count}行）。法務アセットとして反映できません。
+                      </p>
+                    )}
+                  </div>
+                  {lineIdHit.contract && (
+                    <Button size="xs" variant="outline" onClick={applyAssetByLineId}>
+                      選択
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* ── royalty_statement: 個別利用許諾条件書 + ライセンスマスタを横断検索 ── */}
             {selectedTemplate === "royalty_statement" && !assetPickerCallback ? (

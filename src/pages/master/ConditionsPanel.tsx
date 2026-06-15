@@ -77,7 +77,6 @@ export function ConditionsPanel() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   // 経理照合: 成就/未了の絞り込み(読込済みページに対するクライアントフィルタ)。
   const [fulfill, setFulfill] = React.useState<"" | "open" | "partially_fulfilled" | "fulfilled">("")
-
   const setF = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }))
 
   const buildParams = (f: Filters) => {
@@ -103,6 +102,8 @@ export function ConditionsPanel() {
       setRows(list)
       setTotal(typeof data.total === "number" ? data.total : null)
       setSelected(new Set())
+      // 成就させた検収書/利用許諾料計算書の文書番号は listConditions が
+      //   fulfilling_doc_number として行に同梱して返すため、別途取得は不要。
     } catch (e: any) {
       setError(e?.message || String(e))
       setRows([])
@@ -370,6 +371,7 @@ export function ConditionsPanel() {
                 <th className="text-right">検収額</th>
                 <th>成就/未了</th>
                 <th>文書番号</th>
+                <th>検収書</th>
                 <th>契約名 / 課題</th>
                 <th>紐付け</th>
                 <th>状態</th>
@@ -430,6 +432,14 @@ export function ConditionsPanel() {
                       })()}
                     </td>
                     <td className="whitespace-nowrap">{r.document_number || "—"}</td>
+                    <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      {(() => {
+                        const doc = (r as any).fulfilling_doc_number || ""
+                        const cnt = Number((r as any).fulfilling_doc_count) || 0
+                        if (!doc) return "—"
+                        return cnt > 1 ? `${doc} 他${cnt - 1}件` : doc
+                      })()}
+                    </td>
                     <td className="min-w-[140px]">
                       {r.contract_title || "—"}
                       {r.issue_key && <div className="text-[10px] text-muted-foreground">{r.issue_key}</div>}

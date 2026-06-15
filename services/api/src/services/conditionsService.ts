@@ -5,6 +5,12 @@
  * ミラーした明細行を、親契約(contract_capabilities)・取引先(vendors)・
  * 作成者(documents.created_by → staff)と結合して一覧する。
  *
+ * 成就/未了・検収額は「行ごとに新台帳優先」で導出する:
+ *   明細に対応する condition_lines(cl)があれば導出ステータス
+ *   (condition_line_status_v)と condition_events 由来の検収書番号を採り、
+ *   無ければ旧 capability_line_items.inspected_amount_ex_tax から導出する。
+ *   → 新台帳への移行が 100% でなくても Cockpit と整合した成就表示になる。
+ *
  * 検索軸:
  *   - 支払日 (payment_date)   範囲
  *   - 納期   (delivery_date)  範囲
@@ -51,19 +57,7 @@ const COMMON_JOINS = `
     OR s.staff_name = d.created_by
 `;
 
-// 2c-2: 横断検索の読取元(列参照)。新台帳(cl)と旧(cli)で切替。
-type LineCols = {
-  payment_date: string;
-  delivery_date: string;
-  item_name: string;
-  spec: string;
-  id: string;
-};
-
-function buildWhere(
-  f: ConditionFilters,
-  cols: LineCols
-): { sql: string; params: any[] } {
+function buildWhere(f: ConditionFilters): { sql: string; params: any[] } {
   const where: string[] = [];
   const params: any[] = [];
   const p = (v: any) => {
@@ -71,10 +65,10 @@ function buildWhere(
     return `$${params.length}`;
   };
 
-  if (f.payment_from) where.push(`${cols.payment_date} >= ${p(f.payment_from)}`);
-  if (f.payment_to) where.push(`${cols.payment_date} <= ${p(f.payment_to)}`);
-  if (f.delivery_from) where.push(`${cols.delivery_date} >= ${p(f.delivery_from)}`);
-  if (f.delivery_to) where.push(`${cols.delivery_date} <= ${p(f.delivery_to)}`);
+  if (f.payment_from) where.push(`cli.payment_date >= ${p(f.payment_from)}`);
+  if (f.payment_to) where.push(`cli.payment_date <= ${p(f.payment_to)}`);
+  if (f.delivery_from) where.push(`cli.delivery_date >= ${p(f.delivery_from)}`);
+  if (f.delivery_to) where.push(`cli.delivery_date <= ${p(f.delivery_to)}`);
 
   if (f.category) {
     const c = String(f.category).trim().toLowerCase();
@@ -97,12 +91,12 @@ function buildWhere(
   if (f.q) {
     const ph = p(`%${f.q}%`);
     where.push(
-      `(${cols.item_name} ILIKE ${ph} OR ${cols.spec} ILIKE ${ph} OR cc.contract_title ILIKE ${ph} OR cc.document_number ILIKE ${ph})`
+      `(cli.item_name ILIKE ${ph} OR cli.spec ILIKE ${ph} OR cc.contract_title ILIKE ${ph} OR cc.document_number ILIKE ${ph})`
     );
   }
   if (Array.isArray(f.ids) && f.ids.length) {
     const ids = f.ids.map((n) => Number(n)).filter((n) => Number.isFinite(n));
-    if (ids.length) where.push(`${cols.id} = ANY(${p(ids)}::int[])`);
+    if (ids.length) where.push(`cli.id = ANY(${p(ids)}::int[])`);
   }
 
   // 既定は正本(現行)のみ。重複・旧版・再発行前の行を一覧から除外する。
@@ -119,53 +113,18 @@ const d2s = (v: any): string =>
   v instanceof Date ? v.toISOString().slice(0, 10) : v ? String(v).slice(0, 10) : "";
 const num = (v: any): number | null => (v == null ? null : Number(v));
 
-/**
- * 新台帳(condition_lines, line item 由来)で横断検索を満たせるか。
- * line item 由来 condition_lines が capability_line_items を完全カバーしていれば true。
- * 未充足/スキーマ未適用なら false(旧 capability_line_items を読む)。
- */
-async function canUseLedger(): Promise<boolean> {
-  try {
-    const r = await query(
-      `SELECT
-         (SELECT COUNT(*) FROM condition_lines WHERE source_line_item_id IS NOT NULL) AS new_n,
-         (SELECT COUNT(*) FROM capability_line_items) AS old_n`
-    );
-    return Number(r.rows[0].new_n) >= Number(r.rows[0].old_n);
-  } catch (err: any) {
-    if (err && (err.code === "42703" || err.code === "42P01")) return false;
-    throw err;
-  }
-}
-
 export async function listConditions(
   f: ConditionFilters
 ): Promise<{ rows: any[]; total: number }> {
-  // 2c-2: 新台帳優先(line item 由来 condition_lines)。カバレッジ未充足/スキーマ未適用は
-  //   旧 capability_line_items にフォールバック。出力列名は新旧で揃え row マッピング共通。
-  //   id は常に capability_line_item.id(新は cl.source_line_item_id)に固定し、編集
-  //   /api/conditions/:id/links の id 解釈を read 経路に依存させない。
-  const useNew = await canUseLedger();
-  const LT = useNew ? "cl" : "cli";
+  // 背骨は capability_line_items(cli)。全明細を出した上で、行ごとに新台帳
+  //   (condition_lines=cl, source_line_item_id で対応)があれば成就/検収額を
+  //   そちらから採る(新優先)。id は常に cli.id(= cl.source_line_item_id)に固定。
+  const { sql: whereSql, params } = buildWhere(f);
 
-  const cols: LineCols = useNew
-    ? { payment_date: "cl.payment_date", delivery_date: "cl.delivery_date",
-        item_name: "cl.subject", spec: "cl.spec", id: "cl.source_line_item_id" }
-    : { payment_date: "cli.payment_date", delivery_date: "cli.delivery_date",
-        item_name: "cli.item_name", spec: "cli.spec", id: "cli.id" };
-
-  const fromJoins = useNew
-    ? `FROM condition_lines cl
-       JOIN contract_capabilities cc ON cc.id = cl.capability_id ${COMMON_JOINS}`
-    : `FROM capability_line_items cli
-       JOIN contract_capabilities cc ON cc.id = cli.capability_id ${COMMON_JOINS}`;
-
-  const { sql: whereSql0, params } = buildWhere(f, cols);
-  // 新経路は line item 由来行に限定(財務由来 condition_lines を除外=旧 横断検索と等価)。
-  const whereSql = useNew
-    ? (whereSql0 ? `${whereSql0} AND cl.source_line_item_id IS NOT NULL`
-                 : `WHERE cl.source_line_item_id IS NOT NULL`)
-    : whereSql0;
+  const fromJoins = `FROM capability_line_items cli
+       JOIN contract_capabilities cc ON cc.id = cli.capability_id
+       LEFT JOIN condition_lines cl ON cl.source_line_item_id = cli.id
+       LEFT JOIN condition_line_status_v sv ON sv.id = cl.id ${COMMON_JOINS}`;
 
   let total = 0;
   try {
@@ -182,40 +141,31 @@ export async function listConditions(
   const lp = (params.push(limit), params.length);
   const op = (params.push(offset), params.length);
 
-  // 出力名は旧と一致させる(id=capability_line_item.id, line_no=元の連番, item_name=件名)。
   const baseCols = `
-       ${cols.id} AS id, ${useNew ? "cl.source_seq_no AS line_no" : "cli.line_no"},
-       ${useNew ? "cl.subject AS item_name" : "cli.item_name"},
-       ${LT}.spec, ${LT}.calc_method, ${LT}.payment_terms,
-       ${LT}.quantity, ${LT}.unit_price, ${LT}.amount_ex_tax,
-       ${LT}.delivery_date, ${LT}.payment_date, ${LT}.term_start, ${LT}.term_end, ${LT}.cycle,
+       cli.id, cli.line_no, cli.item_name, cli.spec, cli.calc_method, cli.payment_terms,
+       cli.quantity, cli.unit_price, cli.amount_ex_tax,
+       cli.delivery_date, cli.payment_date, cli.term_start, cli.term_end, cli.cycle,
        cc.id AS capability_id, cc.document_number, cc.contract_title,
        cc.contract_category, cc.contract_type, cc.record_type,
        v.vendor_code, v.vendor_name,
        COALESCE(s.staff_name, d.created_by) AS owner_name,
        d.created_by, d.issue_key`;
-  // 経理照合: 検収額(消化額) と 成就/未了。新台帳は condition_line_status_v、
-  //   旧台帳は capability_line_items.inspected_amount_ex_tax から導出する。
-  const statusCols = useNew
-    ? `,
-       sv.status AS fulfillment_status,
-       COALESCE(sv.consumed_amount, 0) AS consumed_amount,
-       sv.remaining_amount AS remaining_amount`
-    : `,
-       CASE
-         WHEN COALESCE(cli.amount_ex_tax,0) > 0
-              AND COALESCE(cli.inspected_amount_ex_tax,0) >= cli.amount_ex_tax - 0.5 THEN 'fulfilled'
-         WHEN COALESCE(cli.inspected_amount_ex_tax,0) > 0 THEN 'partially_fulfilled'
-         ELSE 'open' END AS fulfillment_status,
-       COALESCE(cli.inspected_amount_ex_tax, 0) AS consumed_amount,
-       (COALESCE(cli.amount_ex_tax,0) - COALESCE(cli.inspected_amount_ex_tax,0)) AS remaining_amount`;
-  const statusJoin = useNew
-    ? ` LEFT JOIN condition_line_status_v sv ON sv.id = cl.id`
-    : "";
-  // 成就文書(対の検収書/計算書): 最新番号 + 件数。新台帳経路のみ(condition_events)。
-  //   fulfillment_status は上の statusCols(sv.status)に集約済み。
-  const fulfillCols = useNew
-    ? `,
+  // 経理照合: 検収額(消化額)と 成就/未了。行に新台帳(cl)があれば導出ステータス
+  //   (condition_line_status_v)、無ければ旧 inspected_amount_ex_tax から導出する。
+  const statusCols = `,
+       cl.id AS condition_line_id,
+       CASE WHEN cl.id IS NOT NULL THEN COALESCE(sv.status, 'open')
+            WHEN COALESCE(cli.amount_ex_tax,0) > 0
+                 AND COALESCE(cli.inspected_amount_ex_tax,0) >= cli.amount_ex_tax - 0.5 THEN 'fulfilled'
+            WHEN COALESCE(cli.inspected_amount_ex_tax,0) > 0 THEN 'partially_fulfilled'
+            ELSE 'open' END AS fulfillment_status,
+       CASE WHEN cl.id IS NOT NULL THEN COALESCE(sv.consumed_amount, 0)
+            ELSE COALESCE(cli.inspected_amount_ex_tax, 0) END AS consumed_amount,
+       CASE WHEN cl.id IS NOT NULL THEN sv.remaining_amount
+            ELSE (COALESCE(cli.amount_ex_tax,0) - COALESCE(cli.inspected_amount_ex_tax,0)) END AS remaining_amount`;
+  // 成就文書(対の検収書/利用許諾料計算書): 最新番号 + 件数。新台帳(condition_events)由来。
+  //   cl が無い行は subquery が NULL/0 を返す。
+  const fulfillCols = `,
        (SELECT d2.document_number
           FROM condition_events ce JOIN documents d2 ON d2.id = ce.document_id
          WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
@@ -223,37 +173,36 @@ export async function listConditions(
          LIMIT 1) AS fulfilling_doc_number,
        (SELECT COUNT(*)::int FROM condition_events ce
          WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
-           AND ce.document_id IS NOT NULL) AS fulfilling_doc_count`
-    : `, NULL::text AS fulfilling_doc_number, 0::int AS fulfilling_doc_count`;
+           AND ce.document_id IS NOT NULL) AS fulfilling_doc_count`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
-       ${LT}.source_ip_id, si.title AS source_ip_title, si.source_code,
-       ${LT}.work_id, w.title AS work_title, w.work_code,
-       ${LT}.master_contract_id, mc.contract_title AS master_contract_title,
+       cli.source_ip_id, si.title AS source_ip_title, si.source_code,
+       cli.work_id, w.title AS work_title, w.work_code,
+       cli.master_contract_id, mc.contract_title AS master_contract_title,
        mc.document_number AS master_contract_number,
-       ${LT}.ringi_id, rr.ringi_number, rr.title AS ringi_title,
-       ${LT}.status_flags, COALESCE(${LT}.is_inbound, FALSE) AS is_inbound,
-       ${LT}.flow_direction`;
+       cli.ringi_id, rr.ringi_number, rr.title AS ringi_title,
+       cli.status_flags, COALESCE(cli.is_inbound, FALSE) AS is_inbound,
+       cli.flow_direction`;
   const linkJoins = `
-    LEFT JOIN source_ips si ON si.id = ${LT}.source_ip_id
-    LEFT JOIN works w ON w.id = ${LT}.work_id
-    LEFT JOIN contracts mc ON mc.id = ${LT}.master_contract_id
-    LEFT JOIN ringi_records rr ON rr.id = ${LT}.ringi_id`;
-  const order = `ORDER BY ${LT}.payment_date DESC NULLS LAST, ${LT}.delivery_date DESC NULLS LAST,
-              cc.document_number DESC, ${useNew ? "cl.source_seq_no" : "cli.line_no"} ASC
+    LEFT JOIN source_ips si ON si.id = cli.source_ip_id
+    LEFT JOIN works w ON w.id = cli.work_id
+    LEFT JOIN contracts mc ON mc.id = cli.master_contract_id
+    LEFT JOIN ringi_records rr ON rr.id = cli.ringi_id`;
+  const order = `ORDER BY cli.payment_date DESC NULLS LAST, cli.delivery_date DESC NULLS LAST,
+              cc.document_number DESC, cli.line_no ASC
      LIMIT $${lp} OFFSET $${op}`;
 
   let res: any;
   try {
     res = await query(
-      `SELECT ${baseCols}${statusCols}${fulfillCols}${linkCols} ${fromJoins}${statusJoin}${linkJoins} ${whereSql} ${order}`,
+      `SELECT ${baseCols}${statusCols}${fulfillCols}${linkCols} ${fromJoins}${linkJoins} ${whereSql} ${order}`,
       params
     );
   } catch (err: any) {
     // 0015 未適用環境(紐付け列なし)では従来通り列なしで返す。
     if (err && (err.code === "42703" || err.code === "42P01")) {
       res = await query(
-        `SELECT ${baseCols}${statusCols}${fulfillCols} ${fromJoins}${statusJoin} ${whereSql} ${order}`,
+        `SELECT ${baseCols}${statusCols}${fulfillCols} ${fromJoins} ${whereSql} ${order}`,
         params
       );
     } else {
@@ -271,7 +220,8 @@ export async function listConditions(
     quantity: num(r.quantity),
     unit_price: num(r.unit_price),
     amount_ex_tax: num(r.amount_ex_tax),
-    // 経理照合: 検収額(消化) / 残額 / 成就・未了。
+    // 経理照合: 検収額(消化) / 残額 / 成就・未了。行ごとに新台帳優先で導出。
+    condition_line_id: r.condition_line_id == null ? null : Number(r.condition_line_id),
     consumed_amount: num(r.consumed_amount),
     remaining_amount: num(r.remaining_amount),
     fulfillment_status: r.fulfillment_status || "open",
@@ -307,7 +257,7 @@ export async function listConditions(
     status_flags: normalizeFlags(r.status_flags),
     is_inbound: r.is_inbound === true, // 当社の受領(請求権)明細か(方向out相当)
     flow_direction: r.flow_direction || "", // 'in'(当社支払) / 'out'(当社受領)
-    // 成就(fulfillment): fulfillment_status は上(経理照合)で設定済み。対の成就文書のみ。
+    // 成就(fulfillment): 対の成就文書(検収書/利用許諾料計算書)の最新番号 + 件数。
     fulfilling_doc_number: r.fulfilling_doc_number || "",
     fulfilling_doc_count: Number(r.fulfilling_doc_count) || 0,
   }));
@@ -453,7 +403,7 @@ export async function exportConditionsCsv(f: ConditionFilters): Promise<string> 
   const headers = [
     "支払日", "納期", "種類", "取引先コード", "取引先", "担当",
     "品目", "仕様", "計算方法", "支払条件", "数量", "単価", "金額(税抜)",
-    "検収額(税抜)", "残額(税抜)", "成就状態",
+    "検収額(税抜)", "残額(税抜)", "成就状態", "成就文書",
     "文書番号", "契約名", "課題キー",
     "原作コード", "原作", "作品コード", "作品",
     "マスター契約番号", "マスター契約名", "稟議番号", "稟議件名",
@@ -467,6 +417,7 @@ export async function exportConditionsCsv(f: ConditionFilters): Promise<string> 
       r.consumed_amount, r.remaining_amount,
       r.fulfillment_status === "fulfilled" ? "成就"
         : r.fulfillment_status === "partially_fulfilled" ? "一部" : "未了",
+      r.fulfilling_doc_number,
       r.document_number, r.contract_title, r.issue_key,
       r.source_code, r.source_ip_title, r.work_code, r.work_title,
       r.master_contract_number, r.master_contract_title, r.ringi_number, r.ringi_title,

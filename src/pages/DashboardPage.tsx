@@ -16,9 +16,12 @@ import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { useSkin } from "@/src/lib/skin"
+import { NervDashboard } from "@/src/components/nerv/NervDashboard"
 
 export function DashboardPage() {
   const navigate = useNavigate()
+  const { skin } = useSkin()
   const {
     dashboardStats,
     refreshDashboardStats,
@@ -30,6 +33,11 @@ export function DashboardPage() {
   React.useEffect(() => {
     refreshDashboardStats()
   }, [refreshDashboardStats])
+
+  // EVA スキン時は NERV ダッシュボード(実データ配線済み)を表示。retro は従来版。
+  if (skin === "eva") {
+    return <NervDashboard />
+  }
 
   const stats = [
     {

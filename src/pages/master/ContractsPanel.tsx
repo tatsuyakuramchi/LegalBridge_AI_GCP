@@ -1,5 +1,5 @@
 import * as React from "react"
-import { Plus, Search, Edit2, Trash2, ExternalLink, RefreshCw } from "lucide-react"
+import { Plus, Search, Edit2, Trash2, ExternalLink, RefreshCw, Send } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -23,6 +23,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { NativeSelect } from "@/components/ui/native-select"
+import { StaffPicker } from "@/src/components/cloudsign/StaffPicker"
 // Phase 22.21.115: 稟議番号 selector (発注書・個別利用許諾と同 UI)
 import { RingiSelector } from "@/src/components/document/RingiSelector"
 import {
@@ -202,7 +203,7 @@ const PERIOD_KIND_OPTIONS = [
 ] as const
 
 export function ContractsPanel() {
-  const { contracts, vendors, ledgers, refreshContracts, showNotification } = useAppData()
+  const { contracts, vendors, ledgers, staffList, refreshContracts, showNotification } = useAppData()
   const [search, setSearch] = React.useState("")
   const [editing, setEditing] = React.useState<any>(null)
   const [creating, setCreating] = React.useState(false)
@@ -334,6 +335,131 @@ export function ContractsPanel() {
     }
   }
 
+  // クラウドサイン送信(ダイアログ)。空メールなら取引先の主担当を worker 側で自動補完。
+  const [csTarget, setCsTarget] = React.useState<any>(null)
+  const [csName, setCsName] = React.useState("")
+  const [csEmail, setCsEmail] = React.useState("")
+  // 社内署名者リスト(部署ルートでプリフィル・編集可)とリレー順(社内先/取引先先)。
+  const [csInternal, setCsInternal] = React.useState<
+    { name: string; email: string; role?: string }[]
+  >([])
+  const [csRelay, setCsRelay] = React.useState<"internal_first" | "vendor_first">("internal_first")
+  const [csLang, setCsLang] = React.useState<"ja" | "en">("ja")
+  const [csCc, setCsCc] = React.useState("")
+  const [csDraft, setCsDraft] = React.useState(false)
+  const [csRouteLoading, setCsRouteLoading] = React.useState(false)
+  const [csSending, setCsSending] = React.useState(false)
+
+  // 送信ダイアログを開く: 状態を初期化し、起票者の部署ルートで社内署名者をプリフィル。
+  const openCloudSign = async (c: any) => {
+    setCsTarget(c)
+    setCsName("")
+    setCsEmail("")
+    setCsInternal([])
+    setCsRelay("internal_first")
+    setCsLang("ja")
+    setCsCc("")
+    setCsDraft(false)
+    setCsRouteLoading(true)
+    try {
+      const res = await fetch(`/api/contracts/${c.id}/cloudsign/route`)
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.ok && Array.isArray(data.signers) && data.signers.length > 0) {
+        setCsInternal(
+          data.signers.map((s: any) => ({ name: s.name, email: s.email, role: s.role }))
+        )
+      }
+    } catch {
+      /* ルート未設定は無視(手動で追加可能) */
+    } finally {
+      setCsRouteLoading(false)
+    }
+  }
+
+  const sendCloudSign = async () => {
+    if (!csTarget) return
+    setCsSending(true)
+    try {
+      // 取引先署名者: 入力メール優先、空なら取引先マスタの主担当メールを補完。
+      const vendorEmail =
+        csEmail.trim() ||
+        (vendors as any[]).find((v) => Number(v.id) === Number(csTarget.vendor_id))?.email ||
+        ""
+      const vendorP = vendorEmail
+        ? {
+            name: csName.trim() || csTarget.vendor_name || "署名者",
+            email: vendorEmail,
+            organization: csTarget.vendor_name || undefined,
+          }
+        : null
+      // 社内署名者リスト(順序はリストの並び順)。
+      const internalPs = csInternal
+        .filter((s) => s.email)
+        .map((s) => ({ name: s.name || "社内署名者", email: s.email }))
+      // リレー順: internal_first=社内→取引先、vendor_first=取引先→社内。
+      let ordered: any[] = []
+      if (internalPs.length && vendorP) {
+        ordered =
+          csRelay === "vendor_first" ? [vendorP, ...internalPs] : [...internalPs, vendorP]
+      } else if (internalPs.length) {
+        ordered = [...internalPs]
+      } else if (vendorP) {
+        ordered = [vendorP]
+      }
+      const participants = ordered.map((p, i) => ({ ...p, order: i + 1 }))
+      const res = await fetch(`/api/contracts/${csTarget.id}/cloudsign/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          participants,
+          language: csLang,
+          draft: csDraft,
+          cc: csCc
+            .split(/[,\s]+/)
+            .map((e) => e.trim())
+            .filter((e) => e.includes("@"))
+            .map((email) => ({ email })),
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
+      if (data.draft && data.cloudsign_url) {
+        showNotification("下書きを作成しました。CloudSign で署名欄/印影を配置して送信してください。", "success")
+        window.open(data.cloudsign_url, "_blank", "noopener,noreferrer")
+      } else {
+        showNotification(
+          data.is_test ? "クラウドサインへ送信しました（テスト許可宛先）" : "クラウドサインへ送信しました",
+          "success"
+        )
+      }
+      setCsTarget(null)
+    } catch (e: any) {
+      showNotification(`送信に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setCsSending(false)
+    }
+  }
+
+  // テーブル上で契約状態だけをインライン更新(軽量 PATCH。他項目は変更しない)。
+  const [statusSaving, setStatusSaving] = React.useState<number | null>(null)
+  const updateStatus = async (id: number, contract_status: string) => {
+    setStatusSaving(id)
+    try {
+      const res = await fetch(`/api/master/contracts/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contract_status }),
+      })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      showNotification("契約状態を更新しました", "success")
+      await refreshContracts()
+    } catch (e: any) {
+      showNotification(`状態の更新に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setStatusSaving(null)
+    }
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
@@ -379,12 +505,29 @@ export function ContractsPanel() {
                     <Badge variant="outline" className="h-4">
                       {c.document_number || "N/A"}
                     </Badge>
-                    <Badge
-                      variant={statusToVariant(c.contract_status)}
-                      className="h-4"
+                    {/* 契約状態をテーブル上でインライン変更(軽量 PATCH) */}
+                    <select
+                      value={c.contract_status || "executed"}
+                      disabled={statusSaving === c.id}
+                      onClick={(e) => e.stopPropagation()}
+                      onChange={(e) => updateStatus(c.id!, e.target.value)}
+                      title="契約状態をテーブル上で変更"
+                      className={`h-5 rounded-full border bg-card px-1.5 text-[10px] font-mono font-bold disabled:opacity-50 ${
+                        c.contract_status === "executed"
+                          ? "border-emerald-300 text-emerald-700"
+                          : c.contract_status === "terminated"
+                            ? "border-red-300 text-red-700"
+                            : c.contract_status === "awaiting_signature"
+                              ? "border-amber-300 text-amber-700"
+                              : "border-border text-muted-foreground"
+                      }`}
                     >
-                      {statusToLabel(c.contract_status)}
-                    </Badge>
+                      {STATUS_OPTIONS.map((o) => (
+                        <option key={o.value} value={o.value}>
+                          {o.label}
+                        </option>
+                      ))}
+                    </select>
                     {/* Phase 22.9: 有効/無効バッジ — 自動補完候補に含まれるかどうか */}
                     <Badge
                       variant={c.is_active === false ? "phosphor" : "success"}
@@ -450,6 +593,14 @@ export function ContractsPanel() {
                         <ExternalLink className="h-3.5 w-3.5" />
                       </a>
                     )}
+                    <Button
+                      size="icon-sm"
+                      variant="outline"
+                      title="クラウドサインで送信"
+                      onClick={() => openCloudSign(c)}
+                    >
+                      <Send />
+                    </Button>
                     <Button
                       size="icon-sm"
                       variant="outline"
@@ -1086,6 +1237,165 @@ export function ContractsPanel() {
             </Button>
             <Button onClick={save} disabled={saving}>
               {saving ? "保存中…" : "保存して同期"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* クラウドサイン送信ダイアログ */}
+      <Dialog open={!!csTarget} onOpenChange={(v) => !v && setCsTarget(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>クラウドサインで送信</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground leading-relaxed">
+              契約:{" "}
+              <span className="font-bold text-foreground">
+                {csTarget?.contract_title || csTarget?.document_number || "—"}
+              </span>
+              <br />
+              取引先: {csTarget?.vendor_name || "—"}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">署名者 氏名（任意）</Label>
+              <Input
+                value={csName}
+                onChange={(e) => setCsName(e.target.value)}
+                placeholder={csTarget?.vendor_name || "山田 太郎"}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">取引先 署名者 メール（空欄なら取引先の主担当を自動使用）</Label>
+              <Input
+                type="email"
+                value={csEmail}
+                onChange={(e) => setCsEmail(e.target.value)}
+                placeholder="signer@example.co.jp"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                社内 署名者（部署ルートで自動設定・編集可。上から署名順）
+                {csRouteLoading && <span className="ml-2 text-muted-foreground">ルート取得中…</span>}
+              </Label>
+              {csInternal.length === 0 ? (
+                <p className="text-[11px] font-mono text-muted-foreground">
+                  社内署名者なし（起票者の部署ルート未設定 or 無し）。下で追加できます。
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {csInternal.map((s, idx) => (
+                    <div
+                      key={`${s.email}-${idx}`}
+                      className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-xs font-mono"
+                    >
+                      <span className="text-muted-foreground w-4 text-center">{idx + 1}</span>
+                      {s.role && <Badge variant="outline" className="shrink-0">{s.role}</Badge>}
+                      <span className="min-w-0 flex-1 truncate">
+                        {s.name}（{s.email}）
+                      </span>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                        title="上へ"
+                        disabled={idx === 0}
+                        onClick={() =>
+                          setCsInternal((prev) => {
+                            const a = [...prev]
+                            ;[a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]
+                            return a
+                          })
+                        }
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                        title="下へ"
+                        disabled={idx === csInternal.length - 1}
+                        onClick={() =>
+                          setCsInternal((prev) => {
+                            const a = [...prev]
+                            ;[a[idx + 1], a[idx]] = [a[idx], a[idx + 1]]
+                            return a
+                          })
+                        }
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="text-destructive hover:opacity-70"
+                        title="削除"
+                        onClick={() => setCsInternal((prev) => prev.filter((_, i) => i !== idx))}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <StaffPicker
+                staff={staffList as any[]}
+                exclude={csInternal.map((s) => s.email)}
+                onPick={(st) =>
+                  setCsInternal((prev) => [
+                    ...prev,
+                    { name: st.staff_name || "社内署名者", email: st.email! },
+                  ])
+                }
+              />
+            </div>
+            {csInternal.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs">署名順（リレー）</Label>
+                <NativeSelect
+                  value={csRelay}
+                  onChange={(e) => setCsRelay(e.target.value as "internal_first" | "vendor_first")}
+                >
+                  <option value="internal_first">社内（上から）→ 取引先</option>
+                  <option value="vendor_first">取引先 → 社内（上から）</option>
+                </NativeSelect>
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label className="text-xs">言語（署名画面・通知メール）</Label>
+              <NativeSelect value={csLang} onChange={(e) => setCsLang(e.target.value as "ja" | "en")}>
+                <option value="ja">日本語</option>
+                <option value="en">英語（English）</option>
+              </NativeSelect>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">CC（共有先メール・カンマ区切り・任意）</Label>
+              <Input
+                value={csCc}
+                onChange={(e) => setCsCc(e.target.value)}
+                placeholder="cc1@example.co.jp, cc2@example.co.jp"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">送信方法</Label>
+              <NativeSelect
+                value={csDraft ? "draft" : "send"}
+                onChange={(e) => setCsDraft(e.target.value === "draft")}
+              >
+                <option value="send">即時送信（API でそのまま送る）</option>
+                <option value="draft">CloudSign で署名欄/印影を配置してから送信（下書き作成）</option>
+              </NativeSelect>
+            </div>
+            <p className="text-[11px] font-mono text-muted-foreground">
+              ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、<b>全署名者（社内含む）のメールが許可宛先に入っている必要</b>があります（社内テスト用）。「下書き作成」を選ぶと CloudSign の編集画面が開きます。
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setCsTarget(null)} disabled={csSending}>
+              キャンセル
+            </Button>
+            <Button onClick={sendCloudSign} disabled={csSending}>
+              <Send />
+              {csSending ? "処理中…" : csDraft ? "下書き作成" : "送信"}
             </Button>
           </DialogFooter>
         </DialogContent>

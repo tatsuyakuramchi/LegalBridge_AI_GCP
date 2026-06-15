@@ -178,6 +178,67 @@ export function SettingsPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* クラウドサイン(電子契約) */}
+          <Card>
+            <CardContent className="px-5 space-y-4">
+              <div className="flex items-center gap-2 border-b border-border pb-2.5">
+                <ShieldCheck className="h-4 w-4 text-cyan-700 dark:text-cyan-300" />
+                <p className="retro-tag">クラウドサイン</p>
+                <div className="flex-1" />
+                <StatusPill
+                  ok={!!appSettings.CLOUDSIGN_CLIENT_ID && String(appSettings.CLOUDSIGN_ENABLED) === "true"}
+                />
+              </div>
+              <div className="space-y-3">
+                <Field label="Client ID">
+                  <Input
+                    type="password"
+                    value={appSettings.CLOUDSIGN_CLIENT_ID || ""}
+                    onChange={(e) => setField("CLOUDSIGN_CLIENT_ID", e.target.value)}
+                    placeholder="CloudSign 管理画面で発行した client_id"
+                  />
+                </Field>
+                <Field label="連携の有効化">
+                  <select
+                    value={String(appSettings.CLOUDSIGN_ENABLED) === "true" ? "true" : "false"}
+                    onChange={(e) => setField("CLOUDSIGN_ENABLED", e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm font-mono"
+                  >
+                    <option value="false">無効（送信しない）</option>
+                    <option value="true">有効（送信を許可）</option>
+                  </select>
+                </Field>
+                <Field label="テスト送信の許可宛先（カンマ区切り）">
+                  <Input
+                    value={appSettings.CLOUDSIGN_ALLOWED_RECIPIENTS || ""}
+                    onChange={(e) => setField("CLOUDSIGN_ALLOWED_RECIPIENTS", e.target.value)}
+                    placeholder="社内宛のみ: a@example.co.jp, b@example.co.jp"
+                  />
+                </Field>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  ※ 許可宛先を設定している間は、その宛先以外への送信は拒否されます（社内宛で締結まで検証する用）。空にすると本番宛先へ送信できます。
+                </p>
+                <Field label="API ベースURL（任意）">
+                  <Input
+                    value={appSettings.CLOUDSIGN_BASE_URL || ""}
+                    onChange={(e) => setField("CLOUDSIGN_BASE_URL", e.target.value)}
+                    placeholder="https://api.cloudsign.jp"
+                  />
+                </Field>
+                <Button onClick={() => persist("CloudSign")}>
+                  <Save />
+                  Apply
+                </Button>
+                <div className="pt-1">
+                  <CloudSignHealthButton />
+                </div>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  ※ 接続テストは保存済みの設定で実行します。Client ID を変えたら先に Apply してください（書類は送信されません）。
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         </TabsContent>
 
         {/* Slack templates */}
@@ -289,5 +350,43 @@ function SlackField({
         </p>
       )}
     </div>
+  )
+}
+
+// CloudSign 接続テスト: 保存済み設定の client_id で /token を取得できるか確認する
+//   (書類は送信しない)。結果(base / client_id / 有効化 / token取得可否)を表示。
+function CloudSignHealthButton() {
+  const [loading, setLoading] = React.useState(false)
+  const [result, setResult] = React.useState<any>(null)
+  const run = async () => {
+    setLoading(true)
+    setResult(null)
+    try {
+      const r = await fetch("/api/cloudsign/health", { credentials: "same-origin" })
+      setResult(await r.json())
+    } catch (e: any) {
+      setResult({ ok: false, error: String(e?.message || e) })
+    } finally {
+      setLoading(false)
+    }
+  }
+  const tokenOk = result?.token?.ok
+  return (
+    <>
+      <Button variant="outline" onClick={run} disabled={loading}>
+        {loading ? "確認中…" : "接続テスト"}
+      </Button>
+      {result && (
+        <div className="mt-2 w-full text-[11px] font-mono rounded-md border border-border p-2.5 space-y-0.5">
+          <div>base: {result.base || "—"}</div>
+          <div>client_id: {result.client_id_masked || "未設定"}</div>
+          <div>有効化: {String(result.enabled)} / 許可宛先: {result.allow_count ?? 0} 件</div>
+          <div className={tokenOk ? "text-emerald-600" : "text-red-600"}>
+            token取得: {tokenOk ? "OK ✓" : `NG — ${result?.token?.error || result?.error || "失敗"}`}
+            {result?.token?.status ? ` (HTTP ${result.token.status})` : ""}
+          </div>
+        </div>
+      )}
+    </>
   )
 }

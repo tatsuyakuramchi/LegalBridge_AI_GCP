@@ -346,7 +346,7 @@ export class DocumentService {
   async generateDocument(
     data: DocumentData,
     type: DocumentType = "purchase_order",
-    opts?: { vendorName?: string }
+    opts?: { vendorName?: string; parentDocNumber?: string }
   ): Promise<{ html: string; fileName: string }> {
     const html = this.renderHtml(data, type);
     const prefix = type.toUpperCase();
@@ -354,12 +354,16 @@ export class DocumentService {
     //   取引先名は filesystem 安全に sanitize し、空のときはサフィックスなし。
     //   例: "ARC-PO-2026-0001_株式会社サンプル.html"
     //       "ARC-PO-2026-0001_001_株式会社サンプル.html" (再発行版)
+    //   検収書は親発注書番号も含める: "ARC-INS-2026-0001_ARC-PO-2026-0001_株式会社サンプル.html"
     const vendorPart = opts?.vendorName
       ? `_${sanitizeForFilename(opts.vendorName)}`
       : "";
+    const parentPart = opts?.parentDocNumber
+      ? `_${sanitizeForFilename(opts.parentDocNumber)}`
+      : "";
     const fileName = data.documentNumber
-      ? `${data.documentNumber}${vendorPart}.html`
-      : `${prefix}_${data.issueKey}${vendorPart}_${Date.now()}.html`;
+      ? `${data.documentNumber}${parentPart}${vendorPart}.html`
+      : `${prefix}_${data.issueKey}${parentPart}${vendorPart}_${Date.now()}.html`;
     return { html, fileName };
   }
 
