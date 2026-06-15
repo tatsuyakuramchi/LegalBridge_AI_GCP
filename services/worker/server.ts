@@ -504,18 +504,35 @@ async function startServer() {
   app.post("/api/webhooks/cloudsign", express.json(), async (req, res) => {
     try {
       const ev: any = req.body || {};
-      // CONFIRM: Webhook ペイロードの実フィールド名(documentID / status / event)。
+      // CloudSign Webhook ペイロード(実環境で確認):
+      //   { documentID, status(整数: 1=先方確認中 / 2=締結済 / 3=取消・却下 / 13=インポート),
+      //     userID, email, text("COMPLETED : ..." / "REJECTED : ..." 等) }
       const csId = String(ev.documentID || ev.document_id || ev.id || "");
-      const status = String(ev.status || ev.event || "").toLowerCase();
+      const statusNum = Number(ev.status);
+      const text = String(ev.text || ev.event || "").toLowerCase();
+      const statusStr = String(ev.status ?? "").toLowerCase();
       console.log("📝 CloudSign Webhook:", JSON.stringify(ev).slice(0, 300));
       if (!csId) return res.json({ ok: true, skipped: "no document id" });
       const found = await query(`SELECT * FROM cloudsign_requests WHERE cloudsign_document_id = $1`, [csId]);
       const reqRow = found.rows[0];
       if (!reqRow) return res.json({ ok: true, skipped: "unknown document" });
 
-      const isCompleted = /complete|done|finish|締結/.test(status);
-      const isDeclined = /declin|reject|却下|cancel|取消/.test(status);
-      const newStatus = isCompleted ? "completed" : isDeclined ? "declined" : status ? "sent" : reqRow.status;
+      // 締結済=2 / 取消・却下=3 / 先方確認中=1。text(COMPLETED/REJECTED/CANCELED)も併用して堅牢化。
+      const isCompleted =
+        statusNum === 2 ||
+        /complete|done|finish|締結/.test(text) ||
+        /complete|done|finish|締結/.test(statusStr);
+      const isDeclined =
+        statusNum === 3 ||
+        /declin|reject|却下|cancel|取消/.test(text) ||
+        /declin|reject|却下|cancel|取消/.test(statusStr);
+      const newStatus = isCompleted
+        ? "completed"
+        : isDeclined
+        ? "declined"
+        : statusNum === 1
+        ? "sent"
+        : reqRow.status;
 
       await query(
         `UPDATE cloudsign_requests
