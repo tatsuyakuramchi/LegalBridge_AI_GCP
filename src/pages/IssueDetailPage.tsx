@@ -24,6 +24,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import { StaffPicker } from "@/src/components/cloudsign/StaffPicker"
 import {
   Dialog,
   DialogContent,
@@ -188,7 +189,6 @@ export function IssueDetailPage() {
     { name: string; email: string; role?: string }[]
   >([])
   const [csRelay, setCsRelay] = React.useState<"internal_first" | "vendor_first">("internal_first")
-  const [csAddStaff, setCsAddStaff] = React.useState("")
   const [csRouteLoading, setCsRouteLoading] = React.useState(false)
   const [csSending, setCsSending] = React.useState(false)
 
@@ -205,7 +205,6 @@ export function IssueDetailPage() {
     setCsEmail("")
     setCsInternal([])
     setCsRelay("internal_first")
-    setCsAddStaff("")
     setCsRouteLoading(true)
     try {
       const res = await fetch(`/api/issues/${encodeURIComponent(issueKey)}/cloudsign/route`)
@@ -581,26 +580,16 @@ export function IssueDetailPage() {
                   ))}
                 </div>
               )}
-              <NativeSelect
-                value={csAddStaff}
-                onChange={(e) => {
-                  const email = e.target.value
-                  setCsAddStaff("")
-                  if (!email) return
-                  const st = (staffList as any[]).find((x) => x.email === email)
-                  if (st && !csInternal.some((s) => s.email === email))
-                    setCsInternal((prev) => [...prev, { name: st.staff_name || "社内署名者", email }])
-                }}
-              >
-                <option value="">＋ 社内署名者を追加（スタッフ）…</option>
-                {(staffList as any[])
-                  .filter((s) => s.email && !csInternal.some((c) => c.email === s.email))
-                  .map((s) => (
-                    <option key={s.email} value={s.email}>
-                      {s.staff_name}（{s.email}）
-                    </option>
-                  ))}
-              </NativeSelect>
+              <StaffPicker
+                staff={staffList as any[]}
+                exclude={csInternal.map((s) => s.email)}
+                onPick={(st) =>
+                  setCsInternal((prev) => [
+                    ...prev,
+                    { name: st.staff_name || "社内署名者", email: st.email! },
+                  ])
+                }
+              />
             </div>
             {csInternal.length > 0 && (
               <div className="space-y-1">
