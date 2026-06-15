@@ -422,6 +422,27 @@ async function startServer() {
       if (!row) return res.status(404).json({ ok: false, error: "契約が見つかりません" });
       if (!row.drive_link)
         return res.status(400).json({ ok: false, error: "生成済みPDFがありません(先に文書生成が必要)" });
+      // PDF の取得元は Google Drive 限定。LegalOn 等の外部リンクは添付できないので
+      //   分かりやすいエラーで返す(cryptic な「fileId を抽出できません」を回避)。
+      {
+        const dl = String(row.drive_link);
+        const isDriveUrl =
+          /\/file\/d\/[a-zA-Z0-9_-]+/.test(dl) || /(drive|docs)\.google\.com/.test(dl);
+        if (!isDriveUrl) {
+          let host = "";
+          try {
+            host = new URL(dl).host;
+          } catch {
+            /* noop */
+          }
+          return res.status(400).json({
+            ok: false,
+            error: `この契約のPDFは Google Drive 上にありません${
+              host ? `（リンク先: ${host}）` : ""
+            }。クラウドサイン送信には Drive 上のPDFが必要です。文書を生成して Drive に保存してから送信してください。`,
+          });
+        }
+      }
 
       // 宛先: body.participants 優先、無ければ取引先の主担当を採用。
       let participants: any[] = Array.isArray(req.body?.participants) ? req.body.participants : [];
