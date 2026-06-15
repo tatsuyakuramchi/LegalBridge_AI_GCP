@@ -202,7 +202,7 @@ const PERIOD_KIND_OPTIONS = [
 ] as const
 
 export function ContractsPanel() {
-  const { contracts, vendors, ledgers, refreshContracts, showNotification } = useAppData()
+  const { contracts, vendors, ledgers, staffList, refreshContracts, showNotification } = useAppData()
   const [search, setSearch] = React.useState("")
   const [editing, setEditing] = React.useState<any>(null)
   const [creating, setCreating] = React.useState(false)
@@ -338,14 +338,43 @@ export function ContractsPanel() {
   const [csTarget, setCsTarget] = React.useState<any>(null)
   const [csName, setCsName] = React.useState("")
   const [csEmail, setCsEmail] = React.useState("")
+  // 社内署名者(スタッフから選択)とリレー順(社内先/取引先先)。
+  const [csStaffEmail, setCsStaffEmail] = React.useState("")
+  const [csRelay, setCsRelay] = React.useState<"internal_first" | "vendor_first">("internal_first")
   const [csSending, setCsSending] = React.useState(false)
   const sendCloudSign = async () => {
     if (!csTarget) return
     setCsSending(true)
     try {
-      const participants = csEmail.trim()
-        ? [{ name: csName.trim() || csTarget.vendor_name || "署名者", email: csEmail.trim(), order: 1 }]
-        : []
+      // 取引先署名者: 入力メール優先、空なら取引先マスタの主担当メールを補完。
+      const vendorEmail =
+        csEmail.trim() ||
+        (vendors as any[]).find((v) => Number(v.id) === Number(csTarget.vendor_id))?.email ||
+        ""
+      const vendorP = vendorEmail
+        ? {
+            name: csName.trim() || csTarget.vendor_name || "署名者",
+            email: vendorEmail,
+            organization: csTarget.vendor_name || undefined,
+          }
+        : null
+      // 社内署名者: スタッフから選択(任意)。
+      const internal = (staffList as any[]).find((s) => s.email && s.email === csStaffEmail)
+      const internalP = internal?.email
+        ? { name: internal.staff_name || "社内署名者", email: internal.email }
+        : null
+      // リレー順で order を付与。両方あればその順、片方ならそれ、無ければ空(worker が主担当補完)。
+      let participants: any[] = []
+      if (internalP && vendorP) {
+        participants =
+          csRelay === "vendor_first"
+            ? [{ ...vendorP, order: 1 }, { ...internalP, order: 2 }]
+            : [{ ...internalP, order: 1 }, { ...vendorP, order: 2 }]
+      } else if (internalP) {
+        participants = [{ ...internalP, order: 1 }]
+      } else if (vendorP) {
+        participants = [{ ...vendorP, order: 1 }]
+      }
       const res = await fetch(`/api/contracts/${csTarget.id}/cloudsign/send`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1195,7 +1224,7 @@ export function ContractsPanel() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-xs">署名者 メール（空欄なら取引先の主担当を自動使用）</Label>
+              <Label className="text-xs">取引先 署名者 メール（空欄なら取引先の主担当を自動使用）</Label>
               <Input
                 type="email"
                 value={csEmail}
@@ -1203,8 +1232,36 @@ export function ContractsPanel() {
                 placeholder="signer@example.co.jp"
               />
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">社内 署名者（スタッフから選択・任意。リレー署名）</Label>
+              <NativeSelect
+                value={csStaffEmail}
+                onChange={(e) => setCsStaffEmail(e.target.value)}
+              >
+                <option value="">（社内署名者なし）</option>
+                {(staffList as any[])
+                  .filter((s) => s.email)
+                  .map((s) => (
+                    <option key={s.email} value={s.email}>
+                      {s.staff_name}（{s.email}）
+                    </option>
+                  ))}
+              </NativeSelect>
+            </div>
+            {csStaffEmail && (
+              <div className="space-y-1">
+                <Label className="text-xs">署名順（リレー）</Label>
+                <NativeSelect
+                  value={csRelay}
+                  onChange={(e) => setCsRelay(e.target.value as "internal_first" | "vendor_first")}
+                >
+                  <option value="internal_first">社内 → 取引先</option>
+                  <option value="vendor_first">取引先 → 社内</option>
+                </NativeSelect>
+              </div>
+            )}
             <p className="text-[11px] font-mono text-muted-foreground">
-              ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、その宛先（社内テスト用）のみ送信できます。
+              ※ 生成済みPDFが必要です。設定で「許可宛先」を設定中は、<b>全署名者（社内含む）のメールが許可宛先に入っている必要</b>があります（社内テスト用）。
             </p>
           </DialogBody>
           <DialogFooter>
