@@ -9,6 +9,7 @@ import {
   Loader2,
   Pencil,
   Plus,
+  Send,
   User,
   Calendar,
   ListChecks,
@@ -20,7 +21,17 @@ import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 
 // データ構造刷新 Phase A: 課題詳細ページ。
@@ -81,7 +92,7 @@ function SectionHead({ label }: { label: string }) {
 export function IssueDetailPage() {
   const { issueKey = "" } = useParams()
   const navigate = useNavigate()
-  const { issues, templateMetadata, templateList } = useAppData()
+  const { issues, templateMetadata, templateList, staffList, showNotification } = useAppData()
   const { setSelectedIssue, setFormData } = useDocumentSession()
 
   const issue = React.useMemo(
@@ -162,6 +173,90 @@ export function IssueDetailPage() {
     }
     return s
   }, [docs])
+
+  // ── まとめてクラウドサイン送信(課題ベース) ──────────────────
+  //   Drive 上にPDFがある文書だけ選択可能。1書類に全PDFを添付して送る。
+  const isDrivePdf = (link?: string | null) => {
+    const dl = String(link || "")
+    return /\/file\/d\/[a-zA-Z0-9_-]+/.test(dl) || /(drive|docs)\.google\.com/.test(dl)
+  }
+  const [selDocs, setSelDocs] = React.useState<Set<string>>(new Set())
+  const [bundleOpen, setBundleOpen] = React.useState(false)
+  const [csName, setCsName] = React.useState("")
+  const [csEmail, setCsEmail] = React.useState("")
+  const [csInternal, setCsInternal] = React.useState<
+    { name: string; email: string; role?: string }[]
+  >([])
+  const [csRelay, setCsRelay] = React.useState<"internal_first" | "vendor_first">("internal_first")
+  const [csAddStaff, setCsAddStaff] = React.useState("")
+  const [csRouteLoading, setCsRouteLoading] = React.useState(false)
+  const [csSending, setCsSending] = React.useState(false)
+
+  const toggleSel = (dn: string) =>
+    setSelDocs((prev) => {
+      const n = new Set(prev)
+      n.has(dn) ? n.delete(dn) : n.add(dn)
+      return n
+    })
+
+  const openBundle = async () => {
+    setBundleOpen(true)
+    setCsName("")
+    setCsEmail("")
+    setCsInternal([])
+    setCsRelay("internal_first")
+    setCsAddStaff("")
+    setCsRouteLoading(true)
+    try {
+      const res = await fetch(`/api/issues/${encodeURIComponent(issueKey)}/cloudsign/route`)
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data?.ok) {
+        if (Array.isArray(data.signers))
+          setCsInternal(data.signers.map((s: any) => ({ name: s.name, email: s.email, role: s.role })))
+        if (data.vendor?.email) setCsEmail(data.vendor.email)
+        if (data.vendor?.name) setCsName(data.vendor.name)
+      }
+    } catch {
+      /* ルート未設定は無視 */
+    } finally {
+      setCsRouteLoading(false)
+    }
+  }
+
+  const sendBundle = async () => {
+    setCsSending(true)
+    try {
+      const internalPs = csInternal
+        .filter((s) => s.email)
+        .map((s) => ({ name: s.name || "社内署名者", email: s.email }))
+      const vendorP = csEmail.trim()
+        ? { name: csName.trim() || "署名者", email: csEmail.trim() }
+        : null
+      let ordered: any[] = []
+      if (internalPs.length && vendorP)
+        ordered = csRelay === "vendor_first" ? [vendorP, ...internalPs] : [...internalPs, vendorP]
+      else if (internalPs.length) ordered = [...internalPs]
+      else if (vendorP) ordered = [vendorP]
+      const participants = ordered.map((p, i) => ({ ...p, order: i + 1 }))
+      const res = await fetch(`/api/issues/${encodeURIComponent(issueKey)}/cloudsign/send-bundle`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ document_numbers: Array.from(selDocs), participants }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
+      showNotification?.(
+        `クラウドサインへ送信しました（${data.count ?? selDocs.size}件まとめ）${data.is_test ? "（テスト許可宛先）" : ""}`,
+        "success"
+      )
+      setBundleOpen(false)
+      setSelDocs(new Set())
+    } catch (e: any) {
+      showNotification?.(`送信に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setCsSending(false)
+    }
+  }
 
   return (
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
@@ -283,7 +378,15 @@ export function IssueDetailPage() {
 
       {/* ── 文書一覧 ─────────────────────────────────────────── */}
       <section className="space-y-3">
-        <SectionHead label="SEC · 01 / この課題で作成した文書" />
+        <div className="flex items-center justify-between gap-3">
+          <SectionHead label="SEC · 01 / この課題で作成した文書" />
+          {selDocs.size > 0 && (
+            <Button size="sm" onClick={openBundle} className="gap-1.5 shrink-0">
+              <Send className="h-3.5 w-3.5" />
+              まとめてクラウドサイン送信（{selDocs.size}）
+            </Button>
+          )}
+        </div>
 
         {loading ? (
           <div className="p-12 text-center text-muted-foreground">
@@ -307,6 +410,20 @@ export function IssueDetailPage() {
             {docs.map((d) => (
               <Card key={`doc-${d.id}`} className="transition-colors hover:border-foreground">
                 <CardContent className="px-4 py-3 flex items-center gap-4">
+                  {d.document_number && isDrivePdf(d.drive_link) ? (
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 shrink-0 accent-foreground cursor-pointer"
+                      checked={selDocs.has(d.document_number)}
+                      onChange={() => toggleSel(d.document_number!)}
+                      title="まとめ送信に含める"
+                    />
+                  ) : (
+                    <span
+                      className="h-4 w-4 shrink-0"
+                      title="Drive上のPDFがある正本のみ まとめ送信できます"
+                    />
+                  )}
                   <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                   <div className="min-w-0 flex-1 space-y-1">
                     <div className="flex items-center gap-2 flex-wrap">
@@ -367,6 +484,151 @@ export function IssueDetailPage() {
           </div>
         )}
       </section>
+
+      {/* まとめてクラウドサイン送信ダイアログ */}
+      <Dialog open={bundleOpen} onOpenChange={(v) => !v && setBundleOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>まとめてクラウドサインで送信</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground leading-relaxed">
+              対象 {selDocs.size} 件を 1 つの書類にまとめて送信します：
+              <ul className="mt-1 space-y-0.5">
+                {Array.from(selDocs).map((dn) => {
+                  const d = docs.find((x) => x.document_number === dn)
+                  return (
+                    <li key={dn} className="text-foreground">
+                      ・{d ? templateLabel(d.template_type) : ""} {dn}
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">取引先 署名者 氏名（任意）</Label>
+              <Input value={csName} onChange={(e) => setCsName(e.target.value)} placeholder="山田 太郎" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs">取引先 署名者 メール</Label>
+              <Input
+                type="email"
+                value={csEmail}
+                onChange={(e) => setCsEmail(e.target.value)}
+                placeholder="signer@example.co.jp"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label className="text-xs">
+                社内 署名者（部署ルートで自動設定・編集可。上から署名順）
+                {csRouteLoading && <span className="ml-2 text-muted-foreground">ルート取得中…</span>}
+              </Label>
+              {csInternal.length === 0 ? (
+                <p className="text-[11px] font-mono text-muted-foreground">
+                  社内署名者なし（部署ルート未設定 or 無し）。下で追加できます。
+                </p>
+              ) : (
+                <div className="space-y-1">
+                  {csInternal.map((s, idx) => (
+                    <div
+                      key={`${s.email}-${idx}`}
+                      className="flex items-center gap-2 rounded-md border border-border px-2 py-1.5 text-xs font-mono"
+                    >
+                      <span className="text-muted-foreground w-4 text-center">{idx + 1}</span>
+                      {s.role && <Badge variant="outline" className="shrink-0">{s.role}</Badge>}
+                      <span className="min-w-0 flex-1 truncate">
+                        {s.name}（{s.email}）
+                      </span>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                        title="上へ"
+                        disabled={idx === 0}
+                        onClick={() =>
+                          setCsInternal((prev) => {
+                            const a = [...prev]
+                            ;[a[idx - 1], a[idx]] = [a[idx], a[idx - 1]]
+                            return a
+                          })
+                        }
+                      >
+                        ↑
+                      </button>
+                      <button
+                        type="button"
+                        className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                        title="下へ"
+                        disabled={idx === csInternal.length - 1}
+                        onClick={() =>
+                          setCsInternal((prev) => {
+                            const a = [...prev]
+                            ;[a[idx + 1], a[idx]] = [a[idx], a[idx + 1]]
+                            return a
+                          })
+                        }
+                      >
+                        ↓
+                      </button>
+                      <button
+                        type="button"
+                        className="text-destructive hover:opacity-70"
+                        title="削除"
+                        onClick={() => setCsInternal((prev) => prev.filter((_, i) => i !== idx))}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <NativeSelect
+                value={csAddStaff}
+                onChange={(e) => {
+                  const email = e.target.value
+                  setCsAddStaff("")
+                  if (!email) return
+                  const st = (staffList as any[]).find((x) => x.email === email)
+                  if (st && !csInternal.some((s) => s.email === email))
+                    setCsInternal((prev) => [...prev, { name: st.staff_name || "社内署名者", email }])
+                }}
+              >
+                <option value="">＋ 社内署名者を追加（スタッフ）…</option>
+                {(staffList as any[])
+                  .filter((s) => s.email && !csInternal.some((c) => c.email === s.email))
+                  .map((s) => (
+                    <option key={s.email} value={s.email}>
+                      {s.staff_name}（{s.email}）
+                    </option>
+                  ))}
+              </NativeSelect>
+            </div>
+            {csInternal.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs">署名順（リレー）</Label>
+                <NativeSelect
+                  value={csRelay}
+                  onChange={(e) => setCsRelay(e.target.value as "internal_first" | "vendor_first")}
+                >
+                  <option value="internal_first">社内（上から）→ 取引先</option>
+                  <option value="vendor_first">取引先 → 社内（上から）</option>
+                </NativeSelect>
+              </div>
+            )}
+            <p className="text-[11px] font-mono text-muted-foreground">
+              ※ 各文書は Drive 上のPDFが必要。設定で「許可宛先」を設定中は、<b>全署名者（社内含む）のメールが許可宛先に入っている必要</b>があります。
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBundleOpen(false)} disabled={csSending}>
+              キャンセル
+            </Button>
+            <Button onClick={sendBundle} disabled={csSending || selDocs.size === 0}>
+              <Send className="h-3.5 w-3.5" />
+              {csSending ? "送信中…" : `送信（${selDocs.size}件）`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
