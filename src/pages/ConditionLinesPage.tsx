@@ -25,27 +25,30 @@ type ConditionLine = {
   contract_number: string | null
   vendor_name: string | null
   has_overdue: boolean | null
+  fulfilling_doc_number: string | null
+  fulfilling_doc_count: number | null
 }
 
+// 一括/従量/分割 は 成就/一部成就/未成就、契約期間型(利用許諾) は 履行中/成就（満了）。
 const STATUS_LABEL: Record<string, string> = {
-  open: "未消化",
-  partially_fulfilled: "一部",
+  open: "未成就",
+  partially_fulfilled: "一部成就",
   fulfilled: "成就",
-  closed_short: "打切",
+  closed_short: "中途終了",
   cancelled: "取消",
   pending: "開始前",
-  active: "進行中",
-  expired: "終了",
+  active: "履行中",
+  expired: "成就（満了）",
 }
 
 function StatusBadge({ status }: { status: string | null }) {
   const s = status || "—"
   const cls =
-    s === "fulfilled"
+    s === "fulfilled" || s === "expired" // 成就 / 成就（満了）= 完了
       ? "bg-emerald-600 text-white"
       : s === "partially_fulfilled" || s === "active"
         ? "bg-amber-500 text-white"
-        : s === "cancelled" || s === "closed_short" || s === "expired"
+        : s === "cancelled" || s === "closed_short"
           ? "bg-muted text-muted-foreground line-through"
           : ""
   return (
@@ -184,6 +187,7 @@ export function ConditionLinesPage() {
                 <th className="text-left px-3 py-2">方式</th>
                 <th className="text-left px-3 py-2">向き</th>
                 <th className="text-left px-3 py-2">状態</th>
+                <th className="text-left px-3 py-2">成就文書</th>
                 <th className="text-right px-3 py-2">残額 / MG残</th>
                 <th className="text-center px-3 py-2">当期</th>
                 <th></th>
@@ -198,13 +202,30 @@ export function ConditionLinesPage() {
                 >
                   <td className="px-3 py-2 font-bold">{r.line_code || "—"}</td>
                   <td className="px-3 py-2 max-w-[200px] truncate">{r.subject || "—"}</td>
-                  <td className="px-3 py-2 text-muted-foreground max-w-[220px] truncate">
-                    {r.contract_title || r.contract_number || "—"}
-                    {r.vendor_name ? ` / ${r.vendor_name}` : ""}
+                  <td className="px-3 py-2 text-muted-foreground max-w-[220px]">
+                    <div className="truncate">
+                      {r.contract_title || "—"}
+                      {r.vendor_name ? ` / ${r.vendor_name}` : ""}
+                    </div>
+                    {r.contract_number ? (
+                      <div className="text-[10px] truncate">{r.contract_number}</div>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2">{r.payment_scheme}</td>
                   <td className="px-3 py-2">{r.direction === "receivable" ? "受取" : "支払"}</td>
                   <td className="px-3 py-2"><StatusBadge status={r.status} /></td>
+                  <td className="px-3 py-2 text-muted-foreground max-w-[160px]">
+                    {r.fulfilling_doc_number ? (
+                      <span className="truncate inline-block max-w-full align-bottom">
+                        {r.fulfilling_doc_number}
+                        {r.fulfilling_doc_count && r.fulfilling_doc_count > 1 ? (
+                          <span className="text-[10px] ml-1">ほか{r.fulfilling_doc_count - 1}件</span>
+                        ) : null}
+                      </span>
+                    ) : (
+                      "—"
+                    )}
+                  </td>
                   <td className="px-3 py-2 text-right">
                     {r.payment_scheme === "royalty"
                       ? `MG ${yen(r.mg_remaining)}`

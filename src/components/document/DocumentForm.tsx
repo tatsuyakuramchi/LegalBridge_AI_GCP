@@ -45,6 +45,16 @@ import { Label } from '@/components/ui/label';
 const stripLeadingT = (s?: string | null): string =>
   String(s || '').replace(/^[TtＴｔ]\s*/, '').trim();
 
+// 個人取引先の宛名表記。既定は正式名称(vendor_name)優先。
+//   combine=true かつ 別名(ペンネーム→屋号)があれば「別名 こと 正式名称」を併記。
+//   正式名称が無い場合は別名にフォールバック(従来挙動の保険)。
+const individualVendorName = (v: any, combine: boolean): string => {
+  const formal = String(v?.vendor_name || '').trim();
+  const alias = String(v?.pen_name || v?.trade_name || '').trim();
+  if (combine && alias && formal && alias !== formal) return `${alias} こと ${formal}`;
+  return formal || alias;
+};
+
 interface DocumentFormProps {
   templateId: string;
   metadata: TemplateMetadata;
@@ -60,6 +70,8 @@ interface DocumentFormProps {
   companyProfile?: any;
   activeVendor?: any;
   selectedStaff?: any;
+  // 個人取引先の宛名に「ペンネーム/屋号 こと 正式名称」を併記するか (文書ごと)。
+  combineVendorAlias?: boolean;
 }
 
 export const DocumentForm: React.FC<DocumentFormProps> = ({
@@ -72,7 +84,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   onOpenLegalAssetSearch,
   companyProfile,
   activeVendor,
-  selectedStaff
+  selectedStaff,
+  combineVendorAlias = false
 }) => {
   // Group variables by their group property
   const groupedVars = useMemo(() => {
@@ -1478,13 +1491,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         // 法人=正式名称、個人=ペンネーム/屋号優先。代表者「様」は法人のみ。
         VENDOR_NAME: isCorp
           ? activeVendor.vendor_name || ''
-          : activeVendor.pen_name || activeVendor.trade_name || activeVendor.vendor_name || '',
+          : individualVendorName(activeVendor, combineVendorAlias),
         VENDOR_ADDRESS: activeVendor.address || '',
         VENDOR_REPRESENTATIVE_SAMA: isCorp && activeVendor.vendor_rep
           ? `${activeVendor.vendor_rep} 様`
           : '',
-        VENDOR_CONTACT_DEPARTMENT: activeVendor.contact_department || '',
-        VENDOR_CONTACT_NAME: activeVendor.contact_name || '',
+        // 担当者・部署は法人の概念。個人取引先では宛名(VENDOR_NAME=本人)と
+        //   二重になり「○○様」が二人並ぶため、個人では空にする(代表者様と同方針)。
+        VENDOR_CONTACT_DEPARTMENT: isCorp ? activeVendor.contact_department || '' : '',
+        VENDOR_CONTACT_NAME: isCorp ? activeVendor.contact_name || '' : '',
         VENDOR_EMAIL: activeVendor.email || '',
         VENDOR_IS_CORPORATION: isCorp ? '法人' : '個人',
         VENDOR_SUFFIX: isCorp ? '御中' : '様',
@@ -2170,10 +2185,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         // Phase 22.5: 法人=正式名 (vendor_name) / 個人=屋号 or 氏名 (pen_name → trade_name → vendor_name)
         VENDOR_NAME: isCorp
           ? activeVendor.vendor_name || ''
-          : activeVendor.pen_name ||
-            activeVendor.trade_name ||
-            activeVendor.vendor_name ||
-            '',
+          : individualVendorName(activeVendor, combineVendorAlias),
         VENDOR_ADDRESS: activeVendor.address || '',
         // 個人の場合、代表者欄は非表示なので空文字で OK
         VENDOR_REP: isCorp
@@ -4019,7 +4031,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     const vendorPartyName = () =>
       vendorIsCorp()
         ? activeVendor?.vendor_name || ''
-        : activeVendor?.pen_name || activeVendor?.trade_name || activeVendor?.vendor_name || '';
+        : individualVendorName(activeVendor, combineVendorAlias);
     const vendorPartyRep = () =>
       vendorIsCorp() ? activeVendor?.vendor_rep || activeVendor?.contact_name || '' : '';
 
@@ -4178,7 +4190,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ...formData,
         PARTY_B_NAME: isCorp
           ? activeVendor.vendor_name || ''
-          : activeVendor.pen_name || activeVendor.trade_name || activeVendor.vendor_name || '',
+          : individualVendorName(activeVendor, combineVendorAlias),
         PARTY_B_ADDRESS: activeVendor.address || '',
         PARTY_B_REPRESENTATIVE: isCorp ? activeVendor.vendor_rep || activeVendor.contact_name || '' : '',
       });
@@ -4337,10 +4349,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         // 法人なら正式商号、個人なら屋号/筆名/氏名の優先順
         VENDOR_NAME: isCorp
           ? activeVendor.vendor_name || ''
-          : activeVendor.pen_name ||
-            activeVendor.trade_name ||
-            activeVendor.vendor_name ||
-            '',
+          : individualVendorName(activeVendor, combineVendorAlias),
       });
     };
     const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
@@ -4526,7 +4535,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         ...formData,
         CONTRACTOR_NAME: isCorp
           ? activeVendor.vendor_name || ''
-          : activeVendor.pen_name || activeVendor.trade_name || activeVendor.vendor_name || '',
+          : individualVendorName(activeVendor, combineVendorAlias),
         CONTRACTOR_ADDRESS: activeVendor.address || '',
         CONTRACTOR_EMAIL: activeVendor.email || '',
       });

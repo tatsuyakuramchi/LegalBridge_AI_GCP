@@ -2399,7 +2399,7 @@ export async function getDocumentNumberForGenerate(opts: {
   // 渡された番号が base そのものでも、_001 等のリビジョン版でも、
   // 同じ base に属する最新リビジョンを取得する。
   const existingRow = await query(
-    `SELECT base_document_number, revision, drive_link, document_number
+    `SELECT base_document_number, revision, drive_link, document_number, template_type
        FROM documents
       WHERE document_number = $1
          OR base_document_number = $1
@@ -2424,6 +2424,34 @@ export async function getDocumentNumberForGenerate(opts: {
   }
 
   const existing = existingRow.rows[0];
+
+  // === 安全ガード: existingDocumentNumber の行と「生成種別」が異なる場合 ===
+  //   その番号は流用しない(別種別の文書を誤って上書き=データ消失するのを防ぐ)。
+  //   フロントが前の文書番号(__draft_doc_number 等)を持ち越しても、ここで握りつぶす。
+  //   → 同種別の正本があればそれを上書き対象に、無ければ新規採番する。
+  if (existing.template_type && templateType && existing.template_type !== templateType) {
+    if (reissue !== true) {
+      const dup = await findExistingPrimaryDocument(issueKey, templateType, contentHash);
+      if (dup) {
+        return {
+          documentNumber: dup.document_number,
+          baseDocumentNumber: dup.base_document_number || dup.document_number,
+          revision: Number(dup.revision) || 0,
+          isReissue: false,
+          overwrite: true,
+        };
+      }
+    }
+    const newNumber = await getNewDocumentNumber(templateType, issueTypeName);
+    return {
+      documentNumber: newNumber,
+      baseDocumentNumber: newNumber,
+      revision: 0,
+      isReissue: false,
+      overwrite: false,
+    };
+  }
+
   const base = existing.base_document_number || existing.document_number || docNum;
   const existingDocNumber = existing.document_number || docNum;
   const isUnfinishedDraft =

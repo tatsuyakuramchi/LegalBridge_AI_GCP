@@ -5,6 +5,8 @@ import { Sun, Moon, Search, ChevronRight } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
+import { NativeSelect } from "@/components/ui/native-select"
+import { useSkin, SKINS } from "@/src/lib/skin"
 
 const TITLES: Array<[RegExp, string, string]> = [
   [/^\/$/, "Dashboard", "Operations Overview"],
@@ -63,6 +65,7 @@ function useTheme() {
 export function Topbar() {
   const { title, subtitle } = useTitle()
   const { theme, toggle } = useTheme()
+  const { skin, setSkin } = useSkin()
   const who = useWhoami()
   const now = new Date()
   const displayName = who?.email ? who.email.split("@")[0] : "—"
@@ -74,7 +77,7 @@ export function Topbar() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 min-w-0">
         <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
-          ARCS
+          {skin === "eva" ? "NERV" : "ARCS"}
         </span>
         <ChevronRight className="h-3 w-3 text-muted-foreground" />
         <div className="leading-none">
@@ -110,6 +113,21 @@ export function Topbar() {
           {now.toLocaleDateString("ja-JP", { month: "short", day: "2-digit", weekday: "short" })}
         </span>
       </div>
+
+      {/* Skin switcher (外観テーマ。新スキンは src/lib/skin.tsx の SKINS に追加) */}
+      <NativeSelect
+        value={skin}
+        onChange={(e) => setSkin(e.target.value as any)}
+        aria-label="Skin"
+        className="h-8 w-auto px-2 text-[10px] font-mono font-bold uppercase tracking-[0.12em]"
+        title="スキン(外観)を切り替え"
+      >
+        {SKINS.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.tag} · {s.label}
+          </option>
+        ))}
+      </NativeSelect>
 
       {/* Theme toggle */}
       <Button variant="ghost" size="icon-sm" onClick={toggle} aria-label="Toggle theme">

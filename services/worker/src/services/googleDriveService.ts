@@ -198,10 +198,26 @@ export class GoogleDriveService {
    * ようにする (DB rename は既に確定しているので、Drive 側だけ失敗しても
    * 警告ログだけで継続したい)。
    */
+  /** webViewLink から fileId を抽出。 */
+  private fileIdFromLink(driveLink: string): string | null {
+    const m = (driveLink || "").match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+    return m?.[1] || null;
+  }
+
+  /** CloudSign 送信用に、既存 Drive ファイル(PDF)の中身を取得する。 */
+  async downloadPdf(driveLink: string): Promise<Buffer> {
+    const fileId = this.fileIdFromLink(driveLink);
+    if (!fileId) throw new Error(`Drive リンクから fileId を抽出できません: ${driveLink}`);
+    const res = await this.drive.files.get(
+      { fileId, alt: "media", supportsAllDrives: true },
+      { responseType: "arraybuffer" }
+    );
+    return Buffer.from(res.data as any);
+  }
+
   async renameFile(driveLink: string, newName: string): Promise<string | null> {
     if (!driveLink || !newName) return null;
-    const m = driveLink.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-    const fileId = m?.[1];
+    const fileId = this.fileIdFromLink(driveLink);
     if (!fileId) {
       console.warn(`[GoogleDriveService.renameFile] cannot extract fileId from: ${driveLink}`);
       return null;

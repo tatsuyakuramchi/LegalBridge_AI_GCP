@@ -41,6 +41,7 @@ import { BacklogService } from "./src/services/backlogService.ts";
 import { DocumentService } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
+import { CloudSignService } from "./src/services/cloudSignService.ts";
 import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
 import { ExcelService } from "./src/services/excelService.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
@@ -329,6 +330,215 @@ async function startServer() {
   const googleDriveService = new GoogleDriveService();
   const excelService = new ExcelService();
   const csvImportService = new CsvImportService();
+
+  // ── クラウドサイン(電子契約)連携 ───────────────────────────────
+  //   送信は必ずここ(worker)経由。client_id は app_settings or env。
+  //   CLOUDSIGN_ENABLED が true のときだけ送信を許可(既定は無効=誤起動防止)。
+  //   CLOUDSIGN_ALLOWED_RECIPIENTS(カンマ区切り)を設定すると、その宛先のみ送信可
+  //   = 「社内宛だけで締結まで」テストのガード。
+  const loadCloudSignCfg = async () => {
+    const keys = ["CLOUDSIGN_CLIENT_ID", "CLOUDSIGN_ENABLED", "CLOUDSIGN_ALLOWED_RECIPIENTS", "CLOUDSIGN_BASE_URL"];
+    const m: Record<string, any> = {};
+    try {
+      const r = await query(`SELECT key, value FROM app_settings WHERE key = ANY($1)`, [keys]);
+      for (const row of r.rows) {
+        try { m[row.key] = JSON.parse(row.value); } catch { m[row.key] = row.value; }
+      }
+    } catch {
+      /* app_settings 未整備でも env で動作継続 */
+    }
+    const get = (k: string) => (m[k] ?? process.env[k] ?? "");
+    return {
+      clientId: String(get("CLOUDSIGN_CLIENT_ID") || ""),
+      baseUrl: String(get("CLOUDSIGN_BASE_URL") || "") || undefined,
+      enabled: String(get("CLOUDSIGN_ENABLED") || "").toLowerCase() === "true",
+      allow: String(get("CLOUDSIGN_ALLOWED_RECIPIENTS") || "")
+        .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+    };
+  };
+
+  // 接続テスト: 設定中の client_id で /token を取得できるか確認する(書類は送らない)。
+  //   実接続テストの第一歩。設定は app_settings から読むので「保存後」に叩く。
+  app.get("/api/cloudsign/health", async (_req, res) => {
+    try {
+      const cfg = await loadCloudSignCfg();
+      const base = (cfg.baseUrl || process.env.CLOUDSIGN_BASE_URL || "https://api.cloudsign.jp").replace(/\/+$/, "");
+      const out: any = {
+        ok: true,
+        configured: !!cfg.clientId,
+        enabled: cfg.enabled,
+        base,
+        allow_count: cfg.allow.length,
+        client_id_masked: cfg.clientId
+          ? `${cfg.clientId.slice(0, 4)}…${cfg.clientId.slice(-2)}`
+          : null,
+      };
+      if (!cfg.clientId) {
+        out.token = { ok: false, error: "client_id 未設定" };
+        return res.json(out);
+      }
+      try {
+        const cs = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+        await cs.verifyConnection();
+        out.token = { ok: true };
+      } catch (e: any) {
+        const data = e?.response?.data;
+        out.token = {
+          ok: false,
+          status: e?.response?.status,
+          error: typeof data === "string" ? data : data ? JSON.stringify(data).slice(0, 300) : String(e?.message || e),
+        };
+      }
+      res.json(out);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 契約(contract_capabilities)を CloudSign へ送信(下書き作成→PDF添付→宛先→送信確定)。
+  app.post("/api/contracts/:id/cloudsign/send", express.json(), async (req, res) => {
+    try {
+      const cfg = await loadCloudSignCfg();
+      if (!cfg.enabled)
+        return res.status(403).json({ ok: false, error: "CloudSign 連携が無効です (設定でオンにしてください)" });
+      if (!cfg.clientId)
+        return res.status(400).json({ ok: false, error: "client_id 未設定 (設定画面で入力してください)" });
+      const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+      const capId = Number(req.params.id);
+      if (!Number.isFinite(capId)) return res.status(400).json({ ok: false, error: "invalid id" });
+
+      const c = await query(
+        `SELECT cc.id, cc.document_number, cc.contract_title, cc.vendor_id, v.vendor_name,
+                (SELECT drive_link FROM documents d WHERE d.document_number = cc.document_number
+                  ORDER BY created_at DESC LIMIT 1) AS drive_link,
+                (SELECT template_type FROM documents d WHERE d.document_number = cc.document_number
+                  ORDER BY created_at DESC LIMIT 1) AS template_type
+           FROM contract_capabilities cc
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE cc.id = $1`,
+        [capId]
+      );
+      const row = c.rows[0];
+      if (!row) return res.status(404).json({ ok: false, error: "契約が見つかりません" });
+      if (!row.drive_link)
+        return res.status(400).json({ ok: false, error: "生成済みPDFがありません(先に文書生成が必要)" });
+
+      // 宛先: body.participants 優先、無ければ取引先の主担当を採用。
+      let participants: any[] = Array.isArray(req.body?.participants) ? req.body.participants : [];
+      if (!participants.length) {
+        const vc = await query(
+          `SELECT contact_name, email FROM vendor_contacts
+            WHERE vendor_id = $1 AND email IS NOT NULL AND email <> ''
+            ORDER BY is_primary DESC, sort_order ASC LIMIT 1`,
+          [row.vendor_id]
+        );
+        if (vc.rows[0])
+          participants = [
+            { name: vc.rows[0].contact_name || row.vendor_name, email: vc.rows[0].email, organization: row.vendor_name, order: 1 },
+          ];
+      }
+      participants = participants.filter((p) => p && p.email);
+      if (!participants.length)
+        return res.status(400).json({ ok: false, error: "宛先(署名者メール)がありません" });
+
+      // テストガード: allowlist 設定時は全宛先がその集合内であること。
+      const isTest = cfg.allow.length > 0;
+      if (isTest) {
+        const bad = participants.find((p) => !cfg.allow.includes(String(p.email).toLowerCase()));
+        if (bad)
+          return res
+            .status(400)
+            .json({ ok: false, error: `テスト中は許可された宛先のみ送信できます: ${bad.email}` });
+      }
+
+      const user = (req.headers["x-user-email"] as string) || "cloudsign";
+      const title = row.contract_title || row.document_number || `契約 ${capId}`;
+      const ins = await query(
+        `INSERT INTO cloudsign_requests
+           (document_number, capability_id, template_type, status, title, participants, is_test, created_by)
+         VALUES ($1,$2,$3,'sending',$4,$5::jsonb,$6,$7) RETURNING id`,
+        [row.document_number, capId, row.template_type || null, title, JSON.stringify(participants), isTest, user]
+      );
+      const reqId = ins.rows[0].id;
+
+      try {
+        const pdf = await googleDriveService.downloadPdf(row.drive_link);
+        const csId = await cloudSign.createDocument(title);
+        await cloudSign.attachFile(csId, pdf, `${row.document_number || "contract"}.pdf`);
+        for (const p of participants) await cloudSign.addParticipant(csId, p);
+        await cloudSign.sendDocument(csId);
+        await query(
+          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
+          [reqId, csId]
+        );
+        res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest });
+      } catch (e: any) {
+        await query(`UPDATE cloudsign_requests SET status='error', error=$2, updated_at=now() WHERE id=$1`, [
+          reqId,
+          String(e?.message || e),
+        ]);
+        throw e;
+      }
+    } catch (e: any) {
+      console.error("[cloudsign send] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 契約に紐づく CloudSign 送信履歴(UI の状態表示用)。
+  app.get("/api/contracts/:id/cloudsign", async (req, res) => {
+    try {
+      const capId = Number(req.params.id);
+      if (!Number.isFinite(capId)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT * FROM cloudsign_requests WHERE capability_id = $1 ORDER BY created_at DESC`,
+        [capId]
+      );
+      res.json(r.rows);
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // CloudSign Webhook 受信(締結完了等で状態を反映)。
+  app.post("/api/webhooks/cloudsign", express.json(), async (req, res) => {
+    try {
+      const ev: any = req.body || {};
+      // CONFIRM: Webhook ペイロードの実フィールド名(documentID / status / event)。
+      const csId = String(ev.documentID || ev.document_id || ev.id || "");
+      const status = String(ev.status || ev.event || "").toLowerCase();
+      console.log("📝 CloudSign Webhook:", JSON.stringify(ev).slice(0, 300));
+      if (!csId) return res.json({ ok: true, skipped: "no document id" });
+      const found = await query(`SELECT * FROM cloudsign_requests WHERE cloudsign_document_id = $1`, [csId]);
+      const reqRow = found.rows[0];
+      if (!reqRow) return res.json({ ok: true, skipped: "unknown document" });
+
+      const isCompleted = /complete|done|finish|締結/.test(status);
+      const isDeclined = /declin|reject|却下|cancel|取消/.test(status);
+      const newStatus = isCompleted ? "completed" : isDeclined ? "declined" : status ? "sent" : reqRow.status;
+
+      await query(
+        `UPDATE cloudsign_requests
+            SET status=$2, completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
+          WHERE id=$1`,
+        [reqRow.id, newStatus, isCompleted]
+      );
+
+      if (isCompleted && reqRow.capability_id) {
+        // 締結完了 → 契約状態を executed(締結中)へ。
+        await query(
+          `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+          [reqRow.capability_id]
+        );
+        // TODO(実環境): 締結済みPDF + 合意締結証明書を DL → Drive 保存 → signed_drive_link 更新。
+        // TODO: notifyIssueEvent で Slack / Backlog へ締結完了通知。
+      }
+      res.json({ ok: true, status: newStatus });
+    } catch (e: any) {
+      console.error("[cloudsign webhook] error:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
 
   // Turndown for /api/test-generate-markdown (HTML → Markdown).
   const turndownService = new TurndownService({
@@ -2649,6 +2859,121 @@ ${details}
     }
   );
 
+  // ラインIDで明細を引く: 条件明細コード(line_code)/明細行ID/condition_lines.id/
+  //   capability ID のいずれかから capability を解決し、その capability_line_items を
+  //   items[] (form-context と同じ shape) で返す。課題キー×種別で引けない場合
+  //   (record_type 化け・複数PO)でもピンポイントに明細を呼び出せる。
+  app.get("/api/line-items/lookup", async (req, res) => {
+    try {
+      const key = String(req.query.key || "").trim();
+      if (!key) return res.status(400).json({ ok: false, error: "key required" });
+
+      let capId: number | null = null;
+      let lineCode: string | null = null;
+
+      // 1) 条件明細コード line_code 一致
+      let r = await query(
+        `SELECT capability_id, line_code FROM condition_lines WHERE line_code = $1 LIMIT 1`,
+        [key]
+      );
+      if (r.rows[0]) {
+        capId = Number(r.rows[0].capability_id);
+        lineCode = r.rows[0].line_code;
+      }
+      // 2) 数値なら 明細行ID → condition_lines.id → capability ID の順に解決
+      if (capId == null && /^\d+$/.test(key)) {
+        const idNum = Number(key);
+        r = await query(
+          `SELECT capability_id FROM capability_line_items WHERE id = $1 LIMIT 1`,
+          [idNum]
+        );
+        if (r.rows[0]) capId = Number(r.rows[0].capability_id);
+        if (capId == null) {
+          r = await query(
+            `SELECT capability_id, line_code FROM condition_lines WHERE id = $1 LIMIT 1`,
+            [idNum]
+          );
+          if (r.rows[0]) {
+            capId = Number(r.rows[0].capability_id);
+            lineCode = r.rows[0].line_code;
+          }
+        }
+        if (capId == null) {
+          r = await query(
+            `SELECT id FROM contract_capabilities WHERE id = $1 LIMIT 1`,
+            [idNum]
+          );
+          if (r.rows[0]) capId = Number(r.rows[0].id);
+        }
+      }
+      if (capId == null) {
+        return res
+          .status(404)
+          .json({ ok: false, error: `ラインID '${key}' に該当する明細が見つかりません` });
+      }
+
+      // capability_line_items → items[] (form-context purchase_order と同じ整形)。
+      //   rate_pct 列が無い環境向けに 2 段 fallback。
+      let lines: any;
+      try {
+        lines = await query(
+          `SELECT line_no, item_name, spec, unit_price, quantity, amount_ex_tax, rate_pct,
+                  calc_method, payment_terms, payment_method, payment_date, delivery_date,
+                  cycle, term_start, term_end, billing_day
+             FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
+          [capId]
+        );
+      } catch (colErr: any) {
+        if (colErr && colErr.code === "42703") {
+          lines = await query(
+            `SELECT line_no, item_name, spec, unit_price, quantity, amount_ex_tax,
+                    calc_method, payment_terms, payment_method, payment_date, delivery_date,
+                    cycle, term_start, term_end, billing_day
+               FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
+            [capId]
+          );
+        } else {
+          throw colErr;
+        }
+      }
+      const items = lines.rows.map((x: any) => ({
+        line_no: Number(x.line_no),
+        item_name: x.item_name || "",
+        spec: x.spec || "",
+        unit_price: Number(x.unit_price) || 0,
+        quantity: Number(x.quantity) || 0,
+        amount_ex_tax: Number(x.amount_ex_tax) || 0,
+        rate_pct: x.rate_pct == null ? undefined : Number(x.rate_pct),
+        calc_method: x.calc_method || "FIXED",
+        payment_terms: x.payment_terms || x.payment_method || "",
+        payment_method: x.payment_method || x.payment_terms || "",
+        payment_date: x.payment_date || "",
+        delivery_date: x.delivery_date || "",
+        cycle: x.cycle || "",
+        term_start: x.term_start || "",
+        term_end: x.term_end || "",
+        billing_day: x.billing_day ?? "",
+      }));
+
+      const hdr = await query(
+        `SELECT amount_ex_tax, tax_rate FROM contract_capabilities WHERE id = $1`,
+        [capId]
+      );
+      res.json({
+        ok: true,
+        capability_id: capId,
+        line_code: lineCode,
+        count: items.length,
+        taxRate: hdr.rows[0]?.tax_rate ?? 10,
+        grandTotalExTax: Number(hdr.rows[0]?.amount_ex_tax) || 0,
+        items,
+      });
+    } catch (e: any) {
+      console.error("GET /api/line-items/lookup failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   /**
    * Phase 22.2: Slack /法務依頼 V2 select 用候補取得エンドポイント。
    *
@@ -4520,6 +4845,30 @@ ${details}
         });
       }
       res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // 契約状態だけを軽量に更新する PATCH。マスター一覧テーブルからのインライン編集用。
+  //   フル PUT は全列を置換するため、状態のみ変えたいときはこちらを使う(他項目を消さない)。
+  app.patch("/api/master/contracts/:id/status", express.json(), async (req, res) => {
+    const { id } = req.params;
+    const { contract_status } = req.body || {};
+    const ALLOWED = ["draft", "awaiting_signature", "executed", "expired", "terminated"];
+    if (!ALLOWED.includes(String(contract_status))) {
+      return res.status(400).json({ ok: false, error: "invalid contract_status" });
+    }
+    try {
+      const r = await query(
+        `UPDATE contract_capabilities
+            SET contract_status = $2, updated_at = CURRENT_TIMESTAMP
+          WHERE id = $1
+        RETURNING id, contract_status`,
+        [id, contract_status]
+      );
+      if (!r.rows[0]) return res.status(404).json({ ok: false, error: "not found" });
+      res.json({ ok: true, id: Number(r.rows[0].id), contract_status: r.rows[0].contract_status });
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
     }
   });
 

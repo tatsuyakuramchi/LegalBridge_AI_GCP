@@ -19,6 +19,8 @@ import {
   ExternalLink,
   PartyPopper,
   Plus,
+  ClipboardList,
+  Hash,
 } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
@@ -216,6 +218,9 @@ export function DocumentEditorPage() {
     pii_consent_date: string | null
   } | null>(null)
   const [createConsent, setCreateConsent] = React.useState(false)
+  // 文書ごとのオプション: 個人取引先の宛名に「ペンネーム/屋号 こと 正式名称」を併記する。
+  //   既定 OFF=正式名称のみ。DocumentForm の取引先オートフィルが参照する。
+  const [combineVendorAlias, setCombineVendorAlias] = React.useState(false)
 
   // activeVendor 変更時に同意状況を取得し、個人かつ未同意ならスイッチを既定ON。
   React.useEffect(() => {
@@ -259,6 +264,11 @@ export function DocumentEditorPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const fromPendingId = searchParams.get("from_pending")
   const reopenId = searchParams.get("reopen")
+  // ハブ(課題詳細)由来のディープリンク(?template=...&prefill=1)を初回マウント時に
+  //   ref へ退避する。後段のプリフィル effect が消費する前に、別の effect が
+  //   searchParams から template を削除するため、初期値を保持しておく。
+  const initialTemplateParamRef = React.useRef(searchParams.get("template"))
+  const initialPrefillRef = React.useRef(searchParams.get("prefill") === "1")
   React.useEffect(() => {
     const targetId = fromPendingId || reopenId
     if (!targetId) return
@@ -405,6 +415,7 @@ export function DocumentEditorPage() {
     const sp = searchParams
     sp.delete("template")
     sp.delete("parent_po")
+    sp.delete("prefill")
     setSearchParams(sp, { replace: true })
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam, parentPoParam])
@@ -590,6 +601,26 @@ export function DocumentEditorPage() {
     [issues, selectedTemplate, selectedIssue, setFormData, showNotification]
   )
 
+  // ハブ(課題詳細)から ?template=<type>&prefill=1 で来たとき、着地時に
+  //   form-context を自動プリフィルする(取引先・件名・条件明細)。skipRestore=true で
+  //   下書きは引かない = クリーンな新規作成なので識別子の持ち越し無し(上書き事故なし)。
+  //   発注書・検収書のみ自動(ユーザー合意)。他種別はテンプレ事前選択のみ。
+  const HUB_PREFILL_TYPES = ["purchase_order", "inspection_certificate"]
+  const didHubPrefillRef = React.useRef(false)
+  React.useEffect(() => {
+    if (didHubPrefillRef.current) return
+    if (!initialPrefillRef.current) return
+    const tmpl = initialTemplateParamRef.current || ""
+    if (!HUB_PREFILL_TYPES.includes(tmpl)) return
+    if (!selectedIssue) return
+    didHubPrefillRef.current = true
+    void syncFromDatabase(selectedIssue, {
+      templateOverride: tmpl,
+      skipRestore: true,
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedIssue, syncFromDatabase])
+
   const handleIssueSelect = async (issueKey: string) => {
     setSelectedIssue(issueKey)
     // Phase 22.21.29: 課題切替時に「閲覧モード」をオン。編集はユーザーが
@@ -621,6 +652,105 @@ export function DocumentEditorPage() {
       setPreviousDocument(null)
     }
   }
+
+  // 「条件明細を読み込む」: この課題の発注書(capability_line_items)を items[] として
+  //   取り込む。Backlog Sync(全置換)と違い「明細だけ」を入れる非破壊操作なので、
+  //   発注書の作り直しでも保存済み明細を一から打ち直さずに済む。
+  //   取得元は form-context の items[] (= capability_line_items を整形済み)。
+  const loadConditionLineItems = React.useCallback(async () => {
+    if (!selectedIssue) {
+      showNotification("先に Backlog 課題を選択してください。", "error")
+      return
+    }
+    const cur = (formData as any)?.items
+    const hasItems = Array.isArray(cur) && cur.length > 0
+    if (
+      hasItems &&
+      !window.confirm("現在の明細を、この課題の保存済み条件明細で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    try {
+      const res = await fetch(
+        `/api/backlog/issues/${encodeURIComponent(selectedIssue)}/form-context?template=purchase_order`
+      )
+      const ctx = await res.json().catch(() => ({}))
+      const items = Array.isArray(ctx?.items) ? ctx.items : []
+      if (items.length === 0) {
+        showNotification("この課題に保存済みの条件明細が見つかりませんでした。", "error")
+        return
+      }
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        items,
+        ...(ctx?.taxRate != null ? { taxRate: ctx.taxRate } : {}),
+        ...(ctx?.grandTotalExTax != null ? { grandTotalExTax: ctx.grandTotalExTax } : {}),
+      }))
+      showNotification(`📋 条件明細を ${items.length} 行読み込みました。`, "success")
+    } catch (e: any) {
+      showNotification(`条件明細の読み込みに失敗しました: ${e?.message || e}`, "error")
+    }
+  }, [selectedIssue, formData, setFormData, showNotification])
+
+  // 「ラインIDで読み込む」: 条件明細コード(line_code)/明細行ID/capability ID のいずれかを
+  //   指定して、その明細セット(capability_line_items)を items[] として取り込む。
+  //   課題キー×種別で引けない場合(record_type 化け・複数PO)でもピンポイントで呼べる。
+  const loadLineItemsById = React.useCallback(async () => {
+    const key = window.prompt(
+      "条件明細のラインID を入力してください\n(条件明細コード line_code / 明細行ID / capability ID のいずれか)"
+    )
+    if (!key || !key.trim()) return
+    const cur = (formData as any)?.items
+    const hasItems = Array.isArray(cur) && cur.length > 0
+    if (
+      hasItems &&
+      !window.confirm("現在の明細を、指定したラインIDの明細で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    try {
+      const res = await fetch(`/api/line-items/lookup?key=${encodeURIComponent(key.trim())}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        throw new Error(data?.error || `HTTP ${res.status}`)
+      }
+      const items = Array.isArray(data?.items) ? data.items : []
+      if (items.length === 0) {
+        showNotification("指定したラインIDに明細がありませんでした。", "error")
+        return
+      }
+      setFormData((prev: any) => ({
+        ...(prev || {}),
+        items,
+        ...(data?.taxRate != null ? { taxRate: data.taxRate } : {}),
+        ...(data?.grandTotalExTax != null ? { grandTotalExTax: data.grandTotalExTax } : {}),
+      }))
+      showNotification(
+        `📋 ラインID ${data.line_code || key.trim()} の明細を ${items.length} 行読み込みました。`,
+        "success"
+      )
+    } catch (e: any) {
+      showNotification(`ラインIDでの明細読み込みに失敗しました: ${e?.message || e}`, "error")
+    }
+  }, [formData, setFormData, showNotification])
+
+  // Backlog Sync は formData を全置換するため、入力済みなら確認してから実行。
+  //   (入力途中に押して打った内容が消える事故を防ぐ。)
+  const handleManualSync = React.useCallback(() => {
+    const hasContent = Object.keys(formData || {}).some(
+      (k) =>
+        !k.startsWith("__") &&
+        (formData as any)[k] != null &&
+        (formData as any)[k] !== ""
+    )
+    if (
+      hasContent &&
+      !window.confirm("現在の入力内容を破棄して、DB(課題/下書き)の内容で置き換えます。よろしいですか?")
+    ) {
+      return
+    }
+    void syncFromDatabase()
+  }, [formData, syncFromDatabase])
 
   // Phase 22.11.2: 「前回内容を読み込む」 — 過去 doc の form_data を
   // 取得して formData に反映 (内部の __reopen_doc_number 等は付けない →
@@ -1412,6 +1542,21 @@ export function DocumentEditorPage() {
                         </option>
                       ))}
                   </NativeSelect>
+                  {/* 個人取引先のみ: 宛名に筆名/屋号を併記するオプション。
+                      OFF=正式名称のみ / ON=「ペンネーム/屋号 こと 正式名称」。 */}
+                  {activeVendor &&
+                    String(activeVendor.entity_type || "").toLowerCase() !== "corporate" &&
+                    activeVendor.entity_type !== "法人" && (
+                      <label className="flex items-start gap-1.5 text-[10px] text-muted-foreground cursor-pointer pt-0.5">
+                        <input
+                          type="checkbox"
+                          className="h-3 w-3 mt-0.5"
+                          checked={combineVendorAlias}
+                          onChange={(e) => setCombineVendorAlias(e.target.checked)}
+                        />
+                        <span>筆名/屋号を併記（ペンネーム こと 正式名称）</span>
+                      </label>
+                    )}
                 </div>
               </div>
             </CardContent>
@@ -1442,7 +1587,9 @@ export function DocumentEditorPage() {
                   </Badge>
                 )}
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2">
+                {/* ステータス(採番バッジ + 自動保存)は1つのまとまりとして扱う。 */}
+                <div className="flex items-center gap-2">
                 {/* Phase 23 UX-A: 採番ステータスバッジ
                     formData.documentNumber が存在 → 採番済 (緑)
                     formData.__reopen_id がある → 既存編集 (青)
@@ -1501,6 +1648,7 @@ export function DocumentEditorPage() {
                     Saved {lastAutoSave}
                   </span>
                 )}
+                </div>
                 {/* 明示的な「保存」: 下書きをサーバ保存し、初回はここで採番する。 */}
                 <Button
                   variant="outline"
@@ -1535,13 +1683,35 @@ export function DocumentEditorPage() {
                   ) : (
                     <Eye />
                   )}
-                  プレビュー (別タブ)
+                  プレビュー
                 </Button>
+                {selectedTemplate === "purchase_order" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadConditionLineItems}
+                    title="この課題に保存済みの条件明細(品目・数量・金額)を明細欄に読み込みます。明細だけを入れるので他の入力は消えません。"
+                  >
+                    <ClipboardList />
+                    条件明細
+                  </Button>
+                )}
+                {selectedTemplate === "purchase_order" && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={loadLineItemsById}
+                    title="条件明細コード(line_code)や明細行ID/capability ID を指定して明細を読み込みます。課題×種別で引けないときに使えます。"
+                  >
+                    <Hash />
+                    ラインID
+                  </Button>
+                )}
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() => syncFromDatabase()}
-                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します"
+                  onClick={handleManualSync}
+                  title="Backlog 課題 / 過去の draft から件名・取引先・明細などを取得して入力欄に反映します(現在の入力は置き換わります)"
                 >
                   <Database />
                   Backlog Sync
@@ -1782,6 +1952,7 @@ export function DocumentEditorPage() {
                         companyProfile={companyProfile}
                         activeVendor={activeVendor}
                         selectedStaff={selectedStaff}
+                        combineVendorAlias={combineVendorAlias}
                       />
                     </div>
                   </div>
