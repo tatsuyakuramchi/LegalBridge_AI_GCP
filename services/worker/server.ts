@@ -510,8 +510,10 @@ async function startServer() {
       if (!participants.length)
         return res.status(400).json({ ok: false, error: "宛先(署名者メール)がありません" });
 
-      // 言語(ja|en)と CC(共有先 reportees)。
+      // 言語(ja|en)と CC(共有先 reportees)。draft=true なら送信せず下書きのままにし、
+      //   CloudSign の編集画面で署名欄/印影を配置→送信してもらう。
       const language = String(req.body?.language || "").trim().toLowerCase();
+      const draft = req.body?.draft === true;
       const cc: any[] = Array.isArray(req.body?.cc)
         ? req.body.cc.filter((c: any) => c && c.email).map((c: any) => ({ email: String(c.email), name: c.name }))
         : [];
@@ -545,12 +547,24 @@ async function startServer() {
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
         for (const c of cc) await cloudSign.addReportee(csId, c);
-        await cloudSign.sendDocument(csId);
-        await query(
-          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
-          [reqId, csId]
-        );
-        res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest });
+        const appBase = (cfg.baseUrl || "https://api.cloudsign.jp")
+          .replace(/\/\/api(-sandbox)?\./, "//app$1.")
+          .replace(/\/+$/, "");
+        const csUrl = `${appBase}/documents/${csId}`;
+        if (draft) {
+          await query(
+            `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='draft', updated_at=now() WHERE id=$1`,
+            [reqId, csId]
+          );
+          res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest, draft: true, cloudsign_url: csUrl });
+        } else {
+          await cloudSign.sendDocument(csId);
+          await query(
+            `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
+            [reqId, csId]
+          );
+          res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest });
+        }
       } catch (e: any) {
         await query(`UPDATE cloudsign_requests SET status='error', error=$2, updated_at=now() WHERE id=$1`, [
           reqId,
@@ -721,6 +735,7 @@ async function startServer() {
       }
 
       const language = String(req.body?.language || "").trim().toLowerCase();
+      const draft = req.body?.draft === true;
       const cc: any[] = Array.isArray(req.body?.cc)
         ? req.body.cc.filter((c: any) => c && c.email).map((c: any) => ({ email: String(c.email), name: c.name }))
         : [];
@@ -768,12 +783,24 @@ async function startServer() {
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
         for (const c of cc) await cloudSign.addReportee(csId, c);
-        await cloudSign.sendDocument(csId);
-        await query(
-          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
-          [reqId, csId]
-        );
-        res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest, count: docs.length });
+        const appBase = (cfg.baseUrl || "https://api.cloudsign.jp")
+          .replace(/\/\/api(-sandbox)?\./, "//app$1.")
+          .replace(/\/+$/, "");
+        const csUrl = `${appBase}/documents/${csId}`;
+        if (draft) {
+          await query(
+            `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='draft', updated_at=now() WHERE id=$1`,
+            [reqId, csId]
+          );
+          res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest, count: docs.length, draft: true, cloudsign_url: csUrl });
+        } else {
+          await cloudSign.sendDocument(csId);
+          await query(
+            `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='sent', sent_at=now(), updated_at=now() WHERE id=$1`,
+            [reqId, csId]
+          );
+          res.json({ ok: true, id: reqId, cloudsign_document_id: csId, is_test: isTest, count: docs.length });
+        }
       } catch (e: any) {
         await query(`UPDATE cloudsign_requests SET status='error', error=$2, updated_at=now() WHERE id=$1`, [
           reqId,
