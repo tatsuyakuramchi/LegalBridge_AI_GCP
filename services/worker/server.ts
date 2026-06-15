@@ -443,6 +443,88 @@ async function startServer() {
     }
   });
 
+  // 修復ツール: 上書き事故で「検収書(inspection_certificate)だが発注書番号」になった文書を
+  //   検収書として再採番(ARC-INS-…)し、紐づく条件明細を検収済(inspection イベント=金額分)にする。
+  //   contract_capabilities(発注書側)はそのまま(record_type/番号は触らない)。
+  app.post("/api/admin/documents/:docNumber/repair-inspection", express.json(), async (req, res) => {
+    const client = await pool.connect();
+    try {
+      const docNumber = String(req.params.docNumber || "").trim();
+      if (!docNumber) {
+        return res.status(400).json({ ok: false, error: "docNumber required" });
+      }
+      await client.query("BEGIN");
+      const dq = await client.query(
+        `SELECT id, document_number, template_type, issue_key FROM documents WHERE document_number = $1 LIMIT 1`,
+        [docNumber]
+      );
+      const doc = dq.rows[0];
+      if (!doc) {
+        await client.query("ROLLBACK");
+        return res.status(404).json({ ok: false, error: "文書が見つかりません" });
+      }
+      if (doc.template_type !== "inspection_certificate") {
+        await client.query("ROLLBACK");
+        return res
+          .status(400)
+          .json({ ok: false, error: `検収書(inspection_certificate)ではありません: ${doc.template_type}` });
+      }
+      // この番号の capability 配下の条件明細
+      const clq = await client.query(
+        `SELECT cl.id, cl.amount_ex_tax
+           FROM contract_capabilities cc
+           JOIN condition_lines cl ON cl.capability_id = cc.id
+          WHERE cc.document_number = $1`,
+        [docNumber]
+      );
+      // 検収済化: 未充足分を inspection イベントで埋める
+      let eventsInserted = 0;
+      for (const line of clq.rows) {
+        const sumq = await client.query(
+          `SELECT COALESCE(SUM(amount_ex_tax),0) AS consumed, COALESCE(MAX(event_no),0) AS maxno
+             FROM condition_events WHERE condition_line_id = $1 AND voided_at IS NULL`,
+          [line.id]
+        );
+        const consumed = Number(sumq.rows[0].consumed) || 0;
+        const amount = Number(line.amount_ex_tax) || 0;
+        const remaining = amount - consumed;
+        if (remaining <= 0) continue;
+        await client.query(
+          `INSERT INTO condition_events
+             (condition_line_id, event_no, event_type, document_id, backlog_issue_key, occurred_at, amount_ex_tax)
+           VALUES ($1, $2, 'inspection', $3, $4, now(), $5)`,
+          [line.id, Number(sumq.rows[0].maxno) + 1, doc.id, doc.issue_key || null, remaining]
+        );
+        eventsInserted++;
+      }
+      // 検収書の新番号で再採番(documents のみ。capability=発注書はそのまま)
+      const newNumber = await getNewDocumentNumber("inspection_certificate", undefined);
+      await client.query(
+        `UPDATE documents SET document_number = $1, base_document_number = $1 WHERE id = $2`,
+        [newNumber, doc.id]
+      );
+      await client.query("COMMIT");
+      res.json({
+        ok: true,
+        doc_id: doc.id,
+        old_number: docNumber,
+        new_number: newNumber,
+        condition_lines: clq.rows.length,
+        events_inserted: eventsInserted,
+      });
+    } catch (e: any) {
+      try {
+        await client.query("ROLLBACK");
+      } catch {
+        /* noop */
+      }
+      console.error("[repair-inspection] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    } finally {
+      client.release();
+    }
+  });
+
   // 契約(contract_capabilities)を CloudSign へ送信(下書き作成→PDF添付→宛先→送信確定)。
   app.post("/api/contracts/:id/cloudsign/send", express.json(), async (req, res) => {
     try {
