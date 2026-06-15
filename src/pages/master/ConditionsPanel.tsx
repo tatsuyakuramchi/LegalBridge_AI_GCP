@@ -77,9 +77,6 @@ export function ConditionsPanel() {
   const [selected, setSelected] = React.useState<Set<number>>(new Set())
   // 経理照合: 成就/未了の絞り込み(読込済みページに対するクライアントフィルタ)。
   const [fulfill, setFulfill] = React.useState<"" | "open" | "partially_fulfilled" | "fulfilled">("")
-  // 成就させた検収書/利用許諾料計算書の紐付け (condition_line_id → [{document_number}])。
-  const [inspDocs, setInspDocs] = React.useState<Record<string, any[]>>({})
-
   const setF = (patch: Partial<Filters>) => setFilters((f) => ({ ...f, ...patch }))
 
   const buildParams = (f: Filters) => {
@@ -105,23 +102,8 @@ export function ConditionsPanel() {
       setRows(list)
       setTotal(typeof data.total === "number" ? data.total : null)
       setSelected(new Set())
-      // 成就させた検収書/利用許諾料計算書の文書番号を取得して列表示する。
-      const ids = list.map((r) => Number(r.id)).filter((n) => Number.isFinite(n))
-      if (ids.length) {
-        try {
-          const ir = await fetch("/api/condition-lines/inspection-docs", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ids }),
-          })
-          const idata = await ir.json().catch(() => ({}))
-          setInspDocs(idata?.map && typeof idata.map === "object" ? idata.map : {})
-        } catch {
-          setInspDocs({})
-        }
-      } else {
-        setInspDocs({})
-      }
+      // 成就させた検収書/利用許諾料計算書の文書番号は listConditions が
+      //   fulfilling_doc_number として行に同梱して返すため、別途取得は不要。
     } catch (e: any) {
       setError(e?.message || String(e))
       setRows([])
@@ -451,9 +433,12 @@ export function ConditionsPanel() {
                     </td>
                     <td className="whitespace-nowrap">{r.document_number || "—"}</td>
                     <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      {(inspDocs[String(r.id)] || []).length > 0
-                        ? (inspDocs[String(r.id)] || []).map((d: any) => d.document_number).join(", ")
-                        : "—"}
+                      {(() => {
+                        const doc = (r as any).fulfilling_doc_number || ""
+                        const cnt = Number((r as any).fulfilling_doc_count) || 0
+                        if (!doc) return "—"
+                        return cnt > 1 ? `${doc} 他${cnt - 1}件` : doc
+                      })()}
                     </td>
                     <td className="min-w-[140px]">
                       {r.contract_title || "—"}

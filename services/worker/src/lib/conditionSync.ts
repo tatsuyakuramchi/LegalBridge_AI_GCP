@@ -331,6 +331,40 @@ export async function syncRoyaltyCalcEvent(
 }
 
 /**
+ * capability_line_items を削除/間引いた際に、ミラーした condition_lines も
+ * 連動して削除する(旧来は syncConditionLinesForCapability が追加のみで、
+ * 明細削除時に condition_lines が孤児化し横断検索に未了行として残っていた)。
+ *
+ * ただし検収/計算イベント(condition_events)や成果物紐付け(work_component_lines)
+ * を持つ行は履歴保全のため残す。capability_line_item が消えても、これらの
+ * condition_line と実績は Cockpit/監査に残る(横断検索は明細(cli)が背骨のため
+ * 表示はされなくなる)。condition_line_installments は ON DELETE CASCADE。
+ *
+ * @param removedLineItemIds 削除した capability_line_items.id の配列
+ * @returns 連動削除した condition_lines 件数
+ */
+export async function pruneOrphanConditionLines(
+  db: Db,
+  removedLineItemIds: number[]
+): Promise<number> {
+  const ids = (removedLineItemIds || []).filter((n) => Number.isFinite(n));
+  if (ids.length === 0) return 0;
+  const orphan = await db.query(
+    `SELECT cl.id FROM condition_lines cl
+      WHERE cl.source_line_item_id = ANY($1::int[])
+        AND NOT EXISTS (SELECT 1 FROM condition_events e WHERE e.condition_line_id = cl.id)
+        AND NOT EXISTS (SELECT 1 FROM work_component_lines wcl WHERE wcl.condition_line_id = cl.id)`,
+    [ids]
+  );
+  const orphanIds = orphan.rows
+    .map((r: any) => Number(r.id))
+    .filter((n: number) => Number.isFinite(n));
+  if (orphanIds.length === 0) return 0;
+  await db.query(`DELETE FROM condition_lines WHERE id = ANY($1::int[])`, [orphanIds]);
+  return orphanIds.length;
+}
+
+/**
  * 二重書き込みは「あれば良い」副作用。失敗しても本体処理を止めないラッパ。
  */
 export async function safeSync(
