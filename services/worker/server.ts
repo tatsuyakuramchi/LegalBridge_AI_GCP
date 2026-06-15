@@ -12195,6 +12195,58 @@ ${details}
       // 既存リンクは削除して入れ直し (送信値を正とする)。
       const documentId = Number(docInsert.rows[0]?.id);
 
+      // 検収書を作成したら、親発注書(parent PO)の条件明細を自動で成就(fulfilled)にする。
+      //   キー: フォームの parent_po_id(capability id) / linked_contract_number(親発注書番号)を優先、
+      //        無ければ issue 内の最新発注書(parentOrderNumber)。
+      //   残額のある明細だけ inspection イベントを入れる(再生成/再発行でも二重成就しない)。
+      //   部分検収は条件明細詳細の「調整(手動リンク)」で後から調整可能。
+      if (String(templateType || "").includes("inspection")) {
+        try {
+          const fd: any = mergedFormData || {};
+          let poCapId: number | null =
+            fd.parent_po_id && Number.isFinite(Number(fd.parent_po_id)) ? Number(fd.parent_po_id) : null;
+          if (!poCapId) {
+            const poNum = String(fd.linked_contract_number || parentOrderNumber || "").trim();
+            if (poNum) {
+              const cq = await query(
+                `SELECT id FROM contract_capabilities
+                  WHERE document_number = $1 AND record_type = 'purchase_order' LIMIT 1`,
+                [poNum]
+              );
+              poCapId = cq.rows[0]?.id ?? null;
+            }
+          }
+          if (poCapId && Number.isFinite(documentId)) {
+            const lines = await query(
+              `SELECT id, amount_ex_tax FROM condition_lines WHERE capability_id = $1`,
+              [poCapId]
+            );
+            let filled = 0;
+            for (const line of lines.rows) {
+              const sq = await query(
+                `SELECT COALESCE(SUM(amount_ex_tax),0) AS consumed, COALESCE(MAX(event_no),0) AS maxno
+                   FROM condition_events WHERE condition_line_id = $1 AND voided_at IS NULL`,
+                [line.id]
+              );
+              const remaining =
+                (Number(line.amount_ex_tax) || 0) - (Number(sq.rows[0].consumed) || 0);
+              if (remaining <= 0) continue;
+              await query(
+                `INSERT INTO condition_events
+                   (condition_line_id, event_no, event_type, document_id, backlog_issue_key, occurred_at, amount_ex_tax)
+                 VALUES ($1, $2, 'inspection', $3, $4, now(), $5)`,
+                [line.id, Number(sq.rows[0].maxno) + 1, documentId, issueKey || null, remaining]
+              );
+              filled++;
+            }
+            if (filled > 0)
+              console.log(`✅ [auto-inspection] ${docNumber}: 親PO cap=${poCapId} の条件明細 ${filled} 件を成就`);
+          }
+        } catch (autoErr: any) {
+          console.warn(`[auto-inspection] failed for ${docNumber}:`, autoErr?.message || autoErr);
+        }
+      }
+
       // Phase 17q: 文書本体 (documents 行 + Drive PDF) が成功した時点で
       // 「文書作成」自体は完了。以降の各種同期処理 (ringi / external_assets /
       // contract_capabilities / order_items / legal_requests /
