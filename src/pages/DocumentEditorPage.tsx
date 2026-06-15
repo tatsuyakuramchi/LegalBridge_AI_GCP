@@ -210,6 +210,10 @@ export function DocumentEditorPage() {
   const [assetPickerCallback, setAssetPickerCallback] =
     React.useState<((asset: any) => void) | null>(null)
   const [assetSearch, setAssetSearch] = React.useState("")
+  // 法務アセットを「ラインID」で検索(条件明細コード/明細行ID/capability ID → 契約解決)。
+  const [lineIdQuery, setLineIdQuery] = React.useState("")
+  const [lineIdLoading, setLineIdLoading] = React.useState(false)
+  const [lineIdHit, setLineIdHit] = React.useState<any>(null)
 
   // 個人情報取得同意: 個人取引先の同意状況 + 同時作成スイッチ。
   const [consentInfo, setConsentInfo] = React.useState<{
@@ -733,6 +737,70 @@ export function DocumentEditorPage() {
       showNotification(`ラインIDでの明細読み込みに失敗しました: ${e?.message || e}`, "error")
     }
   }, [formData, setFormData, showNotification])
+
+  // 法務アセットを「ラインID」で検索: lineID → /api/line-items/lookup で capability を
+  //   解決し、契約マスタ(allContracts)から該当契約(=法務アセット)を引き当てる。
+  const searchAssetByLineId = async () => {
+    const key = lineIdQuery.trim()
+    if (!key) return
+    setLineIdLoading(true)
+    setLineIdHit(null)
+    try {
+      const res = await fetch(`/api/line-items/lookup?key=${encodeURIComponent(key)}`)
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        showNotification(data?.error || `HTTP ${res.status}`, "error")
+        return
+      }
+      const capId = Number(data.capability_id)
+      const contract =
+        (allContracts as any[] | undefined)?.find((c: any) => Number(c.id) === capId) || null
+      setLineIdHit({
+        capId,
+        line_code: data.line_code || key,
+        count: data.count ?? (Array.isArray(data.items) ? data.items.length : 0),
+        contract,
+      })
+    } catch (e: any) {
+      showNotification(`ラインID検索に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setLineIdLoading(false)
+    }
+  }
+
+  // 解決した法務アセット(契約)を反映する。callback ありはそれを優先、無ければ
+  //   契約番号/名称を formData に流し込む(汎用リンク)。
+  const applyAssetByLineId = () => {
+    const c = lineIdHit?.contract
+    if (!c) {
+      showNotification("ラインIDに対応する契約(法務アセット)が契約マスタに見つかりませんでした。", "error")
+      return
+    }
+    if (assetPickerCallback) {
+      assetPickerCallback({
+        id: Number(c.id),
+        asset_number: c.document_number || "",
+        asset_name: c.contract_title || "",
+        counterparty: c.vendor_name || "",
+        asset_type: "contract",
+      } as any)
+      setAssetPickerCallback(null)
+    } else {
+      setFormData((prev: any) => ({
+        ...prev,
+        ["契約書番号"]: c.document_number || prev["契約書番号"] || "",
+        ["基本契約名"]: c.contract_title || prev["基本契約名"] || "",
+        linked_contract_number: c.document_number || prev.linked_contract_number || "",
+      }))
+    }
+    showNotification(
+      `法務アセット ${c.document_number || c.contract_title || lineIdHit.line_code} を反映しました。`,
+      "success"
+    )
+    setLineIdQuery("")
+    setLineIdHit(null)
+    setIsAssetPickerOpen(false)
+  }
 
   // Backlog Sync は formData を全置換するため、入力済みなら確認してから実行。
   //   (入力途中に押して打った内容が消える事故を防ぐ。)
@@ -2190,6 +2258,62 @@ export function DocumentEditorPage() {
             </SheetTitle>
           </SheetHeader>
           <SheetBody className="space-y-3 pt-2">
+
+            {/* ── ラインIDで法務アセットを検索(全モード共通) ── */}
+            <div className="space-y-2 pb-3 border-b border-border">
+              <p className="text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground">
+                ラインIDで検索
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  value={lineIdQuery}
+                  onChange={(e) => setLineIdQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault()
+                      void searchAssetByLineId()
+                    }
+                  }}
+                  placeholder="条件明細コード(line_code) / 明細行ID / capability ID"
+                />
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => void searchAssetByLineId()}
+                  disabled={lineIdLoading}
+                >
+                  {lineIdLoading ? <Loader2 className="animate-spin" /> : <ScanSearch />}
+                  検索
+                </Button>
+              </div>
+              {lineIdHit && (
+                <div className="rounded-md border border-border p-2.5 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    {lineIdHit.contract ? (
+                      <>
+                        <p className="text-xs font-mono font-bold truncate">
+                          {lineIdHit.contract.document_number || "(番号なし)"} ·{" "}
+                          {lineIdHit.contract.contract_title || "—"}
+                        </p>
+                        <p className="text-[10px] font-mono text-muted-foreground truncate">
+                          {lineIdHit.contract.vendor_name || "—"} · ラインID {lineIdHit.line_code} · 明細
+                          {lineIdHit.count}行
+                        </p>
+                      </>
+                    ) : (
+                      <p className="text-[11px] font-mono text-amber-600">
+                        capability #{lineIdHit.capId} は契約マスタに未登録（明細{lineIdHit.count}行）。法務アセットとして反映できません。
+                      </p>
+                    )}
+                  </div>
+                  {lineIdHit.contract && (
+                    <Button size="xs" variant="outline" onClick={applyAssetByLineId}>
+                      選択
+                    </Button>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* ── royalty_statement: 個別利用許諾条件書 + ライセンスマスタを横断検索 ── */}
             {selectedTemplate === "royalty_statement" && !assetPickerCallback ? (
