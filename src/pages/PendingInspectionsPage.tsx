@@ -115,10 +115,11 @@ export function PendingInspectionsPage() {
       )
       .sort((a, b) => {
         // 納期超過を最優先 → 納期(昇順) → 発注日(降順)。
+        //   納期は inspection_deadline 優先、無ければ発注書の予定納期で代替。
         if ((a._task === "overdue") !== (b._task === "overdue"))
           return a._task === "overdue" ? -1 : 1
-        const da = a.nearest_inspection_deadline || ""
-        const db = b.nearest_inspection_deadline || ""
+        const da = a.nearest_inspection_deadline || a.nearest_line_delivery_date || ""
+        const db = b.nearest_inspection_deadline || b.nearest_line_delivery_date || ""
         if (da && db && da !== db) return da < db ? -1 : 1
         if (da !== db) return da ? -1 : 1
         return String(b.issue_date_po || "").localeCompare(String(a.issue_date_po || ""))
@@ -236,6 +237,9 @@ export function PendingInspectionsPage() {
                 const b = bucketOf(r._task)
                 const reportDate = fmtDate(r.latest_delivered_at)
                 const deadline = fmtDate(r.nearest_inspection_deadline)
+                // 納品報告がまだ無く inspection_deadline が出ない行は、発注書の
+                //   予定納期(明細 delivery_date)をフォールバック表示する。
+                const plannedDue = fmtDate(r.nearest_line_delivery_date)
                 return (
                   <tr key={r.id} className="border-t border-border hover:bg-muted/30 [&>td]:px-2 [&>td]:py-2 align-top">
                     <td>
@@ -285,6 +289,11 @@ export function PendingInspectionsPage() {
                         <span className={r._task === "overdue" ? "text-red-600 font-bold" : "text-muted-foreground"}>
                           {deadline}
                         </span>
+                      ) : plannedDue ? (
+                        <span className="text-muted-foreground" title="発注書の予定納期(納品報告前)">
+                          {plannedDue}
+                          <span className="ml-1 text-[9px] text-slate-400 align-middle">予定</span>
+                        </span>
                       ) : (
                         <span className="text-muted-foreground">—</span>
                       )}
@@ -307,7 +316,7 @@ export function PendingInspectionsPage() {
       <p className="text-[11px] text-muted-foreground leading-relaxed">
         タスク区分は <b className="text-red-700">納期超過・未報告</b>（納期 inspection_deadline を過ぎても納品報告 delivered_at が無い → 督促）、
         <b className="text-amber-700">検収書作成（報告あり）</b>（納品報告あり・未検収の明細あり → 検収書を作成）、
-        <b className="text-sky-700">一部検収</b>、<b>報告待ち</b> です。納品報告・納期は delivery_events 由来（発注書への結線が取れているものに表示）。
+        <b className="text-sky-700">一部検収</b>、<b>報告待ち</b> です。納品報告・納期は delivery_events 由来（発注書への結線が取れているものに表示）。納品報告前で納期が無い行は、発注書の予定納期（明細の納期）を <span className="text-slate-400">予定</span> として表示します。
         検収書を発行して<b>完全検収（残額0）</b>になると、その明細は自動で「発行済」になり一覧から外れます。
         「検収書を作成」で検収書フォームがその発注書を親に事前選択した状態で開きます（分割検収にも対応）。
       </p>
