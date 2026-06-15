@@ -10524,6 +10524,44 @@ ${details}
     }
   );
 
+  // 複数の条件明細について、成就させた文書(検収書/利用許諾料計算書)の番号を一括取得。
+  //   横断検索の「検収書」列表示用。voided でない inspection/royalty_calc イベントの document を返す。
+  app.post("/api/condition-lines/inspection-docs", express.json(), async (req, res) => {
+    try {
+      const ids: number[] = Array.isArray(req.body?.ids)
+        ? req.body.ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n))
+        : [];
+      if (!ids.length) return res.json({ ok: true, map: {} });
+      const r = await query(
+        `SELECT ce.condition_line_id, ce.event_type,
+                d.id AS document_id, d.document_number, d.template_type
+           FROM condition_events ce
+           JOIN documents d ON d.id = ce.document_id
+          WHERE ce.condition_line_id = ANY($1::int[])
+            AND ce.voided_at IS NULL
+            AND ce.event_type IN ('inspection', 'royalty_calc')
+          ORDER BY ce.occurred_at DESC`,
+        [ids]
+      );
+      const map: Record<string, any[]> = {};
+      for (const row of r.rows) {
+        const k = String(row.condition_line_id);
+        if (!map[k]) map[k] = [];
+        if (!map[k].some((x) => x.document_number === row.document_number))
+          map[k].push({
+            document_id: row.document_id,
+            document_number: row.document_number,
+            template_type: row.template_type,
+            event_type: row.event_type,
+          });
+      }
+      res.json({ ok: true, map });
+    } catch (e: any) {
+      console.error("/api/condition-lines/inspection-docs failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // 条件明細に「対になる文書(検収書/利用許諾料計算書)」をリンクして実績(condition_events)を
   //   記録する = 検収済化。発注明細の検収管理(手動リンク)用。document_id の種別で
   //   event_type を決める(検収書→inspection / 利用許諾料計算書→royalty_calc)。
