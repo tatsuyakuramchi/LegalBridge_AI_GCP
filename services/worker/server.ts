@@ -66,6 +66,7 @@ import {
   syncConditionLinesForCapability,
   syncInspectionEventsForDelivery,
   syncRoyaltyCalcEvent,
+  pruneOrphanConditionLines,
   safeSync,
 } from "./src/lib/conditionSync.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
@@ -4805,22 +4806,44 @@ ${details}
   ): Promise<void> {
     if (raw === undefined) return;
     const items: Array<any> = Array.isArray(raw) ? expandLinesWithSchedule(raw) : [];
+    const keepNos = items
+      .map((c) => Number(c?.line_no))
+      .filter((n) => Number.isFinite(n) && n > 0);
     try {
+      // 削除/間引き対象の capability_line_items.id を先に把握する
+      //   (ミラーした condition_lines を連動削除するため)。
+      const removedRes =
+        items.length === 0
+          ? await query(
+              `SELECT id FROM capability_line_items WHERE capability_id = $1`,
+              [capabilityId]
+            )
+          : await query(
+              `SELECT id FROM capability_line_items
+                WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
+              [capabilityId, keepNos]
+            );
+      const removedLiIds = removedRes.rows
+        .map((r: any) => Number(r.id))
+        .filter((n: number) => Number.isFinite(n));
+
       if (items.length === 0) {
         await query(
           `DELETE FROM capability_line_items WHERE capability_id = $1`,
           [capabilityId]
         );
       } else {
-        const keepNos = items
-          .map((c) => Number(c?.line_no))
-          .filter((n) => Number.isFinite(n) && n > 0);
         await query(
           `DELETE FROM capability_line_items
             WHERE capability_id = $1 AND line_no <> ALL($2::int[])`,
           [capabilityId, keepNos]
         );
       }
+
+      // 明細削除に追従して孤児 condition_lines も連動削除(非致命)。
+      await safeSync("CL prune(capability)", () =>
+        pruneOrphanConditionLines({ query }, removedLiIds)
+      );
     } catch (delErr) {
       console.warn(
         "[capability_line_items] prune failed:",
@@ -12395,6 +12418,32 @@ ${details}
         );
         const orderItemId = orderItemRes.rows[0]?.id;
 
+        // 明細が空配列で送信された(= 全明細削除)場合は capability_line_items を
+        //   全削除し、ミラーした condition_lines も連動削除する。旧来は下の
+        //   length>0 ガードで素通りして capability_line_items が残り、condition_lines
+        //   も孤児化して横断検索に未了行が居座る原因になっていた。
+        if (orderItemId && Array.isArray(formData.items) && formData.items.length === 0) {
+          try {
+            const removedRes = await query(
+              `SELECT id FROM capability_line_items WHERE capability_id = $1`,
+              [orderItemId]
+            );
+            const removedLiIds = removedRes.rows
+              .map((r: any) => Number(r.id))
+              .filter((n: number) => Number.isFinite(n));
+            await query(
+              `DELETE FROM capability_line_items WHERE capability_id = $1`,
+              [orderItemId]
+            );
+            await recalculateCapabilityTotal(orderItemId, Number(formData.taxRate) || 10);
+            await safeSync("CL prune(order empty)", () =>
+              pruneOrphanConditionLines({ query }, removedLiIds)
+            );
+          } catch (e) {
+            console.warn("[order line items] empty prune skipped:", e);
+          }
+        }
+
         // Phase 7b: 発注書フォームから items[] が送信されていれば
         // capability_line_items を upsert し, recalculateCapabilityTotal で
         // ヘッダ総額を「明細合計」と整合させる。
@@ -12423,7 +12472,19 @@ ${details}
             .map((l, i) => Number(l.line_no) || i + 1)
             .filter((n) => n > 0);
 
+          // 間引きで削除される capability_line_items.id を把握しておき、
+          //   後段でミラーした condition_lines を連動削除する(孤児化防止)。
+          let removedLiIds: number[] = [];
           if (keepNos.length > 0) {
+            const removedRes = await query(
+              `SELECT id FROM capability_line_items
+                WHERE capability_id = $1
+                  AND line_no NOT IN (${keepNos.map((_, i) => `$${i + 2}`).join(",")})`,
+              [orderItemId, ...keepNos]
+            );
+            removedLiIds = removedRes.rows
+              .map((r: any) => Number(r.id))
+              .filter((n: number) => Number.isFinite(n));
             await query(
               `DELETE FROM capability_line_items
                 WHERE capability_id = $1
@@ -12491,6 +12552,11 @@ ${details}
           // Phase 23: recalculateOrderTotal → recalculateCapabilityTotal
           //   (発注者帰属=確定額のみ。受注者帰属は line_items に入れていないため不算入。)
           await recalculateCapabilityTotal(orderItemId, taxRate);
+
+          // 明細を間引いた場合、孤児 condition_lines も連動削除(非致命)。
+          await safeSync("CL prune(order)", () =>
+            pruneOrphanConditionLines({ query }, removedLiIds)
+          );
 
           // 利用許諾条件を capability_financial_conditions へ保存。
           //   新方式: 発注書フォームの「利用許諾条件（共通）」= formData.financial_conditions

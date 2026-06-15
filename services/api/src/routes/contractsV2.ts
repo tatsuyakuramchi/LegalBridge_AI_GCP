@@ -215,6 +215,16 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
                    WHERE de.capability_id = cc.id AND de.status = 'pending'
                      AND de.delivered_at IS NULL
                      AND de.inspection_deadline < CURRENT_TIMESTAMP) AS overdue_no_report,
+          -- 発注書由来の予定納期: 納品報告(delivery_events)が無く inspection_deadline が
+          --   出ない検収待ち行向けに、未検収明細(capability_line_items.delivery_date)の
+          --   最も近い納期を返す。画面は inspection_deadline が無い時のフォールバック表示に使う。
+          (SELECT MIN(cli.delivery_date) FROM capability_line_items cli
+             WHERE cli.capability_id = cc.id
+               AND cli.delivery_date IS NOT NULL
+               AND COALESCE(cli.amount_ex_tax, 0) > 0
+               AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
+               AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
+          ) AS nearest_line_delivery_date,
           (cc.backlog_issue_key LIKE 'IMPORT-%') AS is_imported
         FROM contract_capabilities cc
         LEFT JOIN vendors v ON v.id = cc.vendor_id
@@ -278,6 +288,8 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           // 法務タスク制御(検収待ち再構成)。delivery_events 由来。
           latest_delivered_at: r.latest_delivered_at || null,
           nearest_inspection_deadline: r.nearest_inspection_deadline || null,
+          // 発注書由来の予定納期(納品報告前のフォールバック表示用)。
+          nearest_line_delivery_date: r.nearest_line_delivery_date || null,
           has_delivery_report: !!r.has_delivery_report,
           overdue_no_report: !!r.overdue_no_report,
           is_imported: !!r.is_imported,
