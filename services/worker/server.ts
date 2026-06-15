@@ -766,7 +766,9 @@ async function startServer() {
         [
           docs[0].document_number,
           capId,
-          docs.map((d) => d.template_type).filter(Boolean).join(","),
+          // template_type は VARCHAR(50)。まとめ送信は複数種別なので先頭1件を保存
+          //   (全種別は title に記載)。50字超過(value too long)を防ぐ。
+          docs[0].template_type || null,
           title,
           JSON.stringify(participants),
           isTest,
