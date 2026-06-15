@@ -106,7 +106,9 @@ export function ConditionsPanel() {
       setTotal(typeof data.total === "number" ? data.total : null)
       setSelected(new Set())
       // 成就させた検収書/利用許諾料計算書の文書番号を取得して列表示する。
-      const ids = list.map((r) => Number(r.id)).filter((n) => Number.isFinite(n))
+      const ids = list
+        .map((r) => Number((r as any).condition_line_id))
+        .filter((n) => Number.isFinite(n))
       if (ids.length) {
         try {
           const ir = await fetch("/api/condition-lines/inspection-docs", {
@@ -451,9 +453,13 @@ export function ConditionsPanel() {
                     </td>
                     <td className="whitespace-nowrap">{r.document_number || "—"}</td>
                     <td className="whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                      {(inspDocs[String(r.id)] || []).length > 0
-                        ? (inspDocs[String(r.id)] || []).map((d: any) => d.document_number).join(", ")
-                        : "—"}
+                      {(() => {
+                        const key = String((r as any).condition_line_id ?? "")
+                        const docs = inspDocs[key] || []
+                        return docs.length > 0
+                          ? docs.map((d: any) => d.document_number).join(", ")
+                          : "—"
+                      })()}
                     </td>
                     <td className="min-w-[140px]">
                       {r.contract_title || "—"}
