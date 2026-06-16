@@ -6264,7 +6264,7 @@ ${details}
       if (doFiles) {
         const docs = await query(
           `SELECT id, document_number, template_type, drive_link,
-                  vendor_name_snapshot, form_data, created_at
+                  vendor_name_snapshot, base_document_number, form_data, created_at
              FROM documents
             WHERE drive_link IS NOT NULL AND drive_link <> ''
             ORDER BY id` + (limit > 0 ? ` LIMIT ${limit}` : "")
@@ -6278,14 +6278,42 @@ ${details}
         };
         for (const d of docs.rows) {
           const fd = d.form_data || {};
-          const vendorName =
+          // 取引先名: snapshot → form_data(生成時と同じキー群) → 取引先マスタ救済。
+          let vendorName: string | null =
             d.vendor_name_snapshot ||
             fd.VENDOR_NAME ||
+            fd.counterparty ||
+            fd["Licensor_名称"] ||
+            fd["Licensor_氏名会社名"] ||
+            fd.licensor ||
             fd.PARTY_B_NAME ||
             fd.partyBName ||
             null;
+          if (!vendorName) {
+            // legacy bulk import 分は form_data に取引先が無いので
+            // contract_capabilities → vendors を document_number で引いて救済。
+            const vr = await query(
+              `SELECT COALESCE(NULLIF(v.vendor_name,''), NULLIF(v.trade_name,''),
+                               NULLIF(v.pen_name,'')) AS name
+                 FROM contract_capabilities cc
+                 JOIN vendors v ON v.id = cc.vendor_id
+                WHERE cc.document_number = $1
+                LIMIT 1`,
+              [d.document_number]
+            );
+            vendorName = vr.rows[0]?.name || null;
+          }
+          // 親文書番号(検収書/利用許諾料計算書のみ buildDocumentFileName が使用):
+          //   form_data の明示リンク → ORDER_NO 系 → base_document_number。
           const parentDocNumber =
-            String(fd.linked_contract_number || "").trim() || null;
+            String(
+              fd.linked_contract_number || fd.ORDER_NO || fd.orderNumber || ""
+            ).trim() ||
+            (d.base_document_number &&
+            d.base_document_number !== d.document_number
+              ? String(d.base_document_number)
+              : null) ||
+            null;
           const newName = buildDocumentFileName(d.template_type, {
             documentNumber: d.document_number,
             vendorName,
