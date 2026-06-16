@@ -11095,7 +11095,14 @@ ${details}
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
                      AND d.email_to IS NOT NULL AND d.email_to <> '') AS email_to,
                  (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
-                   WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at
+                   WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
+                 (SELECT d.document_number FROM condition_events ce
+                    JOIN documents d ON d.id = ce.document_id
+                   WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                     AND (d.template_type ILIKE 'inspection%'
+                          OR d.template_type IN ('royalty_statement','license_calculation_sheet'))
+                   ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
+                   LIMIT 1) AS send_doc_number
                  FROM condition_lines cl
                  LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
                 WHERE cl.id = ANY($1::int[])`,
@@ -11108,6 +11115,7 @@ ${details}
               r.email_sent_at = s.email_sent_at || null;
               r.email_to = s.email_to || null;
               r.cloudsign_sent_at = s.cloudsign_sent_at || null;
+              r.send_doc_number = s.send_doc_number || null;
               // 表示用の代表値(メール優先 → CloudSign)。
               r.sent_at = s.email_sent_at || s.cloudsign_sent_at || null;
               r.sent_channel = s.email_sent_at ? "メール" : s.cloudsign_sent_at ? "CloudSign" : null;
