@@ -361,7 +361,7 @@
         <td class="right">¥{{taxAmountStr}}</td>
       </tr>
       <tr class="total-row">
-        <td colspan="3" class="right">今回検収金額(税込)</td>
+        <td colspan="3" class="right">源泉徴収税計算前　検収金額(税込)</td>
         <td class="right">¥{{totalAmountStr}}</td>
       </tr>
       {{/if}}
@@ -441,7 +441,7 @@
        記載要件に対応）。検収書は発注者が発行する書類のため「請求書」とは名乗らない。
        検収金額(税抜) と その他手数料(税抜) を税率ごとに区分して合算し、消費税を
        1 回だけ計算する。経費(税込)は課税対象外の立替として別掲。手数料がある
-       ときのみ表示 (手数料が無ければ上の「今回検収金額(税込)」で完結する)。 --}}
+       ときのみ表示 (手数料が無ければ上の「源泉徴収税計算前　検収金額(税込)」で完結する)。 --}}
   {{#if otherFeesTaxable}}
   <div class="section-title">■ 支払額サマリー</div>
   <table style="margin-bottom:4px;">
@@ -484,7 +484,7 @@
   <table style="margin-top:8px;margin-bottom:4px;">
     <tbody>
       <tr class="total-row" style="background:#eef6ff;">
-        <td style="width:85%;" class="right"><strong>本検収書に基づく総支払額（税込・経費 / 手数料含む）</strong></td>
+        <td style="width:85%;" class="right"><strong>源泉徴収税計算前　本検収書に基づく総支払額（税込・経費 / 手数料含む）</strong></td>
         <td style="width:15%;" class="right"><strong>¥{{grandTotalPayableStr}}</strong></td>
       </tr>
     </tbody>
