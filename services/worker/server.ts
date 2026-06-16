@@ -10665,9 +10665,49 @@ ${details}
     }
   });
 
-  // -------------------------------------------------------------------
-  // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
-  // -------------------------------------------------------------------
+  // 条件明細の手動削除(物理)。重複・誤作成の整理用。
+  //   ガード: 検収/計算/支払の実績(condition_events)がある明細は削除しない(履歴保全)。
+  //   作品コンポーネント紐付け(work_component_lines)がある場合も拒否。
+  //   分割予定(condition_line_installments)は ON DELETE CASCADE で同時削除。
+  app.post("/api/condition-lines/:id/delete", express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0)
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      const ev = await query(
+        `SELECT COUNT(*)::int AS n FROM condition_events WHERE condition_line_id = $1`,
+        [id]
+      );
+      if (Number(ev.rows[0]?.n) > 0) {
+        return res.status(409).json({
+          ok: false,
+          error:
+            "この明細には実績(検収/計算/支払)があるため削除できません。先に該当実績を取消(void)してください。",
+        });
+      }
+      const wc = await query(
+        `SELECT COUNT(*)::int AS n FROM work_component_lines WHERE condition_line_id = $1`,
+        [id]
+      );
+      if (Number(wc.rows[0]?.n) > 0) {
+        return res.status(409).json({
+          ok: false,
+          error: "作品コンポーネントに紐付いているため削除できません。先に紐付けを解除してください。",
+        });
+      }
+      const del = await query(
+        `DELETE FROM condition_lines WHERE id = $1 RETURNING line_code`,
+        [id]
+      );
+      if (!del.rows.length)
+        return res.status(404).json({ ok: false, error: "明細が見つかりません" });
+      res.json({ ok: true, deleted: id, line_code: del.rows[0].line_code || null });
+    } catch (e: any) {
+      console.error("/api/condition-lines/:id/delete failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
 
   /**
    * Phase 23.6.15: 検収書の金額サマリーをサーバ側で一元計算する (適格請求書対応)。
@@ -11219,6 +11259,36 @@ ${details}
           console.log(
             `📝 [overwrite] ${issueKey} ${templateType}: docNumber=${docNumber} rev=${revision} (内部修正)`
           );
+        }
+      }
+
+      // 二重作成ガード: 完全新規(再発行でも内部修正の上書きでもない)で、同一
+      //   課題(issue_key)× 同一種別(template_type)の正本(final)が既にある場合は
+      //   ブロックし、「修正なら再発行、別物なら許可フラグ」を促す。条件明細
+      //   (condition_lines)が重複生成される源流(別 capability の二重作成)を抑止する。
+      //   formData.allowDuplicateDocument===true で明示的に上書き許可。
+      if (!isReissue && !overwrite && !manualOverride) {
+        const allowDup = formData?.allowDuplicateDocument === true;
+        const ik = (issueKey || "").trim();
+        if (!allowDup && ik && !ik.startsWith("MANUAL-")) {
+          const dupCheck = await query(
+            `SELECT document_number FROM documents
+              WHERE is_primary = TRUE
+                AND COALESCE(lifecycle_status, 'final') = 'final'
+                AND template_type = $1 AND issue_key = $2
+              ORDER BY revision DESC, created_at DESC LIMIT 1`,
+            [templateType, ik]
+          );
+          if (dupCheck.rows.length) {
+            return res.status(409).json({
+              ok: false,
+              error: "duplicate_document",
+              existing_document_number: dupCheck.rows[0].document_number,
+              message:
+                `この課題には既に同種の文書(${dupCheck.rows[0].document_number})が存在します。` +
+                `修正する場合は「再発行」を、別物として新規作成する場合は許可(allowDuplicateDocument)を付けて再実行してください。`,
+            });
+          }
         }
       }
 
