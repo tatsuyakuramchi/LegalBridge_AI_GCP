@@ -168,6 +168,10 @@ export async function initDb() {
     // -----------------------------------------------------------------
     `ALTER TABLE documents ADD COLUMN IF NOT EXISTS excel_issued_at TIMESTAMP WITH TIME ZONE;`,
     `ALTER TABLE documents ADD COLUMN IF NOT EXISTS excel_link TEXT;`,
+    // メール送信(検収書 / 利用許諾料計算書)の送信時刻・宛先・Gmail messageId。
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP WITH TIME ZONE;`,
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS email_to TEXT;`,
+    `ALTER TABLE documents ADD COLUMN IF NOT EXISTS email_message_id TEXT;`,
     `CREATE INDEX IF NOT EXISTS idx_documents_excel_pending
        ON documents(template_type)
        WHERE excel_issued_at IS NULL;`,

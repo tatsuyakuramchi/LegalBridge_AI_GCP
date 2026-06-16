@@ -311,9 +311,9 @@ export const POP_CONTENT_BRIDGE = `
  * 「viewer に admin リンクが漏れる」問題が解消する。console セクションは
  * admin のみに項目が出るため、viewer では自然に非表示になる。
  */
-function navHtml(active: PopNavKey, role: Role): string {
+function navHtml(active: PopNavKey, role: Role, deptCode?: string | null): string {
   const section = (key: "console" | "browse") => {
-    const screens = navScreensForRole(role, key);
+    const screens = navScreensForRole(role, key, deptCode);
     if (screens.length === 0) return "";
     const items = screens
       .map(
@@ -355,6 +355,7 @@ export function popPage(opts: {
   headExtra?: string; // ページ固有 <style> 等
   pageTitle?: string;
   role?: Role; // ログイン者の役割。サイドバーをこの役割で絞る(既定 viewer)。
+  deptCode?: string | null; // ログイン者の部署コード。departments 指定画面の表示判定に使う。
   contentBridge?: boolean; // 独自CSSページの本文要素を pop に揃える(headExtra の後に適用)
 }): string {
   const titleTag = opts.pageTitle || `${opts.title} · Arcs Legal OS`;
@@ -369,7 +370,7 @@ ${opts.contentBridge ? `<style>${POP_CONTENT_BRIDGE}</style>` : ""}
 </head>
 <body>
 <div class="pop-shell">
-${navHtml(opts.active, opts.role || "viewer")}
+${navHtml(opts.active, opts.role || "viewer", opts.deptCode)}
   <div class="pop-main">
     <div class="pop-toolbar">
       ${backBtnHtml()}
@@ -410,6 +411,7 @@ export function popAdminPage(opts: {
   headExtra?: string;
   pageTitle?: string;
   role?: Role; // ログイン者の役割。サイドバーをこの役割で絞る(既定 viewer)。
+  deptCode?: string | null; // ログイン者の部署コード(departments 指定画面の表示判定)。
 }): string {
   const titleTag = opts.pageTitle || `${opts.title} · Arcs Legal OS`;
   return `<!DOCTYPE html>
@@ -423,7 +425,7 @@ ${opts.headExtra || ""}
 </head>
 <body>
 <div class="pop-shell">
-${navHtml(opts.active, opts.role || "viewer")}
+${navHtml(opts.active, opts.role || "viewer", opts.deptCode)}
   <div class="pop-main">
     <div class="pop-toolbar">
       ${backBtnHtml()}

@@ -31,6 +31,7 @@ export type ScreenKey =
   | "ringi"
   | "template-preview"
   | "conditions"
+  | "conditions-fin"
   | "vendors"
   | "contracts"
   | "staff"
@@ -48,6 +49,12 @@ export type Screen = {
   minRole: Role;
   /** サイドバーに出すか (false でもルートは存在する。例: 稟議は番号入力式)。 */
   nav: boolean;
+  /**
+   * 指定時、admin 以外はここに挙げた部署コード(staff.department_code)を持つ
+   * ユーザーのみ閲覧可。サイドバー表示・ルートガードの両方がこの条件で絞る。
+   * 例: ["FIN"] = 財務部署の viewer のみ(+ admin)。
+   */
+  departments?: string[];
 };
 
 /**
@@ -68,6 +75,8 @@ export const SCREENS: Screen[] = [
   // ── Search & Browse (viewer 可) ───────────────────────────
   { key: "search-vendor",    path: "/search/vendor",     label: "取引先・契約検索", icon: "⌕",  section: "browse", minRole: "viewer", nav: true },
   { key: "template-preview", path: "/templates/preview", label: "ひな型プレビュー", icon: "📄", section: "browse", minRole: "viewer", nav: true },
+  // 条件明細(閲覧専用)。FIN 部署の viewer のみサイドバー表示・閲覧可(admin は console 側)。
+  { key: "conditions-fin",   path: "/view/conditions",   label: "条件明細",         icon: "🧾", section: "browse", minRole: "viewer", departments: ["FIN"], nav: true },
   { key: "ringi",            path: "/search/ringi",      label: "稟議番号検索",     icon: "📋", section: "browse", minRole: "viewer", nav: false },
 ];
 
@@ -81,9 +90,21 @@ export function screenByKey(key: ScreenKey): Screen | undefined {
   return SCREENS.find((s) => s.key === key);
 }
 
-/** 役割が閲覧でき、かつナビ表示対象の画面を、セクション順で返す。 */
-export function navScreensForRole(role: Role, section: NavSection): Screen[] {
+/**
+ * 役割(と部署コード)が閲覧でき、かつナビ表示対象の画面を、セクション順で返す。
+ *   departments 指定画面は、その部署コードを持つユーザーにのみ表示する
+ *   (admin バイパスはしない = console 側と二重表示にならないようにする)。
+ */
+export function navScreensForRole(
+  role: Role,
+  section: NavSection,
+  deptCode?: string | null
+): Screen[] {
   return SCREENS.filter(
-    (s) => s.section === section && s.nav && roleAtLeast(role, s.minRole)
+    (s) =>
+      s.section === section &&
+      s.nav &&
+      roleAtLeast(role, s.minRole) &&
+      (!s.departments || (!!deptCode && s.departments.includes(deptCode)))
   );
 }

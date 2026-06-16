@@ -428,3 +428,326 @@ export async function exportConditionsCsv(f: ConditionFilters): Promise<string> 
   // Excel(Windows)で文字化けしないよう BOM + CRLF。
   return "﻿" + lines.join("\r\n");
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  自動紐付け(auto-link)
+//   条件明細の 原作 / 作品 / 基本契約 / 稟議 を、保守的なヒューリスティクスで
+//   自動推定する。既定は「空欄のみ補完」= 手動設定は温存(上書きしない)。
+//   - 基本契約: 取引先一致の master 契約が一意なら採用(複数なら種別で絞る)。
+//   - 作品 / 原作: 品目・仕様・契約名・文書番号テキストに作品/原作タイトルが
+//     部分一致し、かつ一意に定まるもののみ採用(複数該当は曖昧として不採用)。
+//   - 稟議: テキスト中の 5 桁番号が ringi_records に存在すれば採用。
+//   書込先 id 空間は手動モーダルと同一(work_id/source_ip_id=works.id,
+//   master_contract_id=contracts.id, ringi_id=ringi_records.id)。
+// ════════════════════════════════════════════════════════════════════
+export type AutoLinkProposal = {
+  id: number;
+  document_number: string | null;
+  item_name: string | null;
+  set: {
+    source_ip_id?: number;
+    work_id?: number;
+    master_contract_id?: number;
+    ringi_id?: number;
+  };
+};
+
+export async function autoLinkConditions(opts: {
+  ids?: number[];
+  overwrite?: boolean; // true で既存の手動設定も上書き(既定 false=空欄のみ)
+  dryRun?: boolean; // 既定 true(提案のみ・書込なし)
+}): Promise<{
+  dry_run: boolean;
+  scanned: number;
+  changed: number;
+  counts: { master: number; work: number; source_ip: number; ringi: number };
+  proposals: AutoLinkProposal[];
+}> {
+  const overwrite = opts.overwrite === true;
+  const dryRun = opts.dryRun !== false;
+
+  // 1) 対象明細(現在の紐付け + 突合用テキスト)を取得。
+  const params: any[] = [];
+  let idsClause = "";
+  if (opts.ids && opts.ids.length) {
+    params.push(opts.ids);
+    idsClause = `AND cli.id = ANY($1::int[])`;
+  }
+  const linesRes = await query(
+    `SELECT cli.id, cli.item_name, cli.spec,
+            cli.source_ip_id, cli.work_id, cli.master_contract_id, cli.ringi_id,
+            cc.vendor_id, cc.document_number, cc.contract_title, cc.contract_category
+       FROM capability_line_items cli
+       JOIN contract_capabilities cc ON cc.id = cli.capability_id
+      WHERE 1=1 ${idsClause}
+      ORDER BY cli.id`,
+    params
+  );
+  const lines = linesRes.rows;
+
+  // 2) 突合用マスターを一括ロード。
+  const [mcRes, ownRes, ipRes, ringiRes] = await Promise.all([
+    query(
+      `SELECT id, primary_vendor_id, contract_category, contract_title
+         FROM contracts WHERE contract_level = 'master'`
+    ),
+    query(
+      `SELECT id, title FROM works
+        WHERE COALESCE(kind,'own') = 'own' AND title IS NOT NULL AND length(title) >= 2`
+    ),
+    query(
+      `SELECT id, title FROM works
+        WHERE kind = 'licensed_in' AND title IS NOT NULL AND length(title) >= 2`
+    ),
+    query(`SELECT id, ringi_number FROM ringi_records WHERE ringi_number IS NOT NULL`),
+  ]);
+
+  const mcByVendor = new Map<number, any[]>();
+  for (const r of mcRes.rows) {
+    if (r.primary_vendor_id == null) continue;
+    const k = Number(r.primary_vendor_id);
+    if (!mcByVendor.has(k)) mcByVendor.set(k, []);
+    mcByVendor.get(k)!.push(r);
+  }
+  const ownWorks = ownRes.rows as Array<{ id: number; title: string }>;
+  const ipWorks = ipRes.rows as Array<{ id: number; title: string }>;
+  const ringiByNum = new Map<string, number>();
+  for (const r of ringiRes.rows) ringiByNum.set(String(r.ringi_number).trim(), Number(r.id));
+
+  // タイトル部分一致(一意のみ採用)。複数該当は曖昧として null。
+  const uniqueTitleMatch = (
+    text: string,
+    items: Array<{ id: number; title: string }>
+  ): number | null => {
+    let hit: number | null = null;
+    for (const it of items) {
+      const t = (it.title || "").trim();
+      if (t.length < 2) continue;
+      if (text.indexOf(t) >= 0) {
+        if (hit != null && hit !== it.id) return null; // 複数該当
+        hit = it.id;
+      }
+    }
+    return hit;
+  };
+
+  const proposals: AutoLinkProposal[] = [];
+  const counts = { master: 0, work: 0, source_ip: 0, ringi: 0 };
+
+  for (const ln of lines) {
+    const text = [ln.item_name, ln.spec, ln.contract_title, ln.document_number]
+      .filter(Boolean)
+      .join(" ");
+    const set: AutoLinkProposal["set"] = {};
+
+    // 基本契約: 取引先一致 → 一意なら採用。複数は contract_category で絞る。
+    if (overwrite || ln.master_contract_id == null) {
+      const cands = ln.vendor_id != null ? mcByVendor.get(Number(ln.vendor_id)) || [] : [];
+      let pick: any = null;
+      if (cands.length === 1) pick = cands[0];
+      else if (cands.length > 1 && ln.contract_category) {
+        const byCat = cands.filter(
+          (c: any) => c.contract_category && String(c.contract_category) === String(ln.contract_category)
+        );
+        if (byCat.length === 1) pick = byCat[0];
+      }
+      if (pick) set.master_contract_id = Number(pick.id);
+    }
+    // 作品(自社作品)
+    if (overwrite || ln.work_id == null) {
+      const wid = uniqueTitleMatch(text, ownWorks);
+      if (wid != null) set.work_id = wid;
+    }
+    // 原作(licensed_in works)
+    if (overwrite || ln.source_ip_id == null) {
+      const sid = uniqueTitleMatch(text, ipWorks);
+      if (sid != null) set.source_ip_id = sid;
+    }
+    // 稟議: テキスト中の 5 桁番号
+    if (overwrite || ln.ringi_id == null) {
+      const m = text.match(/(?:^|[^0-9])(\d{5})(?:[^0-9]|$)/);
+      if (m) {
+        const rid = ringiByNum.get(m[1]);
+        if (rid != null) set.ringi_id = rid;
+      }
+    }
+
+    if (Object.keys(set).length === 0) continue;
+    if (set.master_contract_id != null) counts.master++;
+    if (set.work_id != null) counts.work++;
+    if (set.source_ip_id != null) counts.source_ip++;
+    if (set.ringi_id != null) counts.ringi++;
+    proposals.push({
+      id: Number(ln.id),
+      document_number: ln.document_number || null,
+      item_name: ln.item_name || null,
+      set,
+    });
+  }
+
+  // 3) 適用(dryRun でなければ)。updateConditionLinks は 4 リンクを無条件 SET する
+  //    ため、変更しないスロットは現在値を温存してマージする。
+  if (!dryRun) {
+    const byId = new Map<number, any>();
+    for (const l of lines) byId.set(Number(l.id), l);
+    for (const p of proposals) {
+      const ln = byId.get(p.id);
+      const merge = (cur: any, prop: number | undefined) =>
+        overwrite ? prop ?? cur ?? null : cur ?? prop ?? null;
+      await updateConditionLinks(p.id, {
+        source_ip_id: merge(ln.source_ip_id, p.set.source_ip_id),
+        work_id: merge(ln.work_id, p.set.work_id),
+        master_contract_id: merge(ln.master_contract_id, p.set.master_contract_id),
+        ringi_id: merge(ln.ringi_id, p.set.ringi_id),
+        status_flags: null, // 据え置き
+        is_inbound: null, // 据え置き
+        // flow_direction 未指定 → 据え置き
+      });
+    }
+  }
+
+  return {
+    dry_run: dryRun,
+    scanned: lines.length,
+    changed: proposals.length,
+    counts,
+    proposals: proposals.slice(0, 100),
+  };
+}
+
+// ════════════════════════════════════════════════════════════════════
+//  状態フラグの自動判定(auto-status)
+//   po_signed / inspection_issued / payment_exported を実データから判定し、
+//   完全同期(証拠あり=ON / 証拠なし=OFF)で status_flags を上書きする。
+//   手動切替は引き続きモーダルから可能(本処理はボタン実行時のみ走る)。
+//   判定根拠:
+//     po_signed          … contract_capabilities.contract_status='executed'
+//     inspection_issued  … 検収満額(inspected_amount_ex_tax >= amount_ex_tax)
+//     payment_exported   … 対の検収書/計算書が Excel 出力済(documents.excel_issued_at)
+//   ※ payment の証拠取得に失敗する環境(condition_lines 未適用)では payment は
+//     据え置き(誤って OFF にしない)。
+// ════════════════════════════════════════════════════════════════════
+
+/** 状態フラグのみを上書き更新(紐付け列には触れない)。完全同期用。 */
+export async function updateConditionStatusFlags(
+  id: number,
+  flags: Record<string, boolean>
+): Promise<void> {
+  const clean: Record<string, boolean> = {};
+  for (const def of LINE_ITEM_STATUS_DEFS) {
+    if (flags[def.key] === true) clean[def.key] = true;
+  }
+  const json = JSON.stringify(clean);
+  await query(
+    `UPDATE capability_line_items
+        SET status_flags = $2::jsonb, updated_at = CURRENT_TIMESTAMP
+      WHERE id = $1`,
+    [id, json]
+  );
+  // 新台帳へも反映(未適用環境 42P01/42703 は非致命でスキップ)。
+  try {
+    await query(
+      `UPDATE condition_lines
+          SET status_flags = $2::jsonb, updated_at = CURRENT_TIMESTAMP
+        WHERE source_line_item_id = $1`,
+      [id, json]
+    );
+  } catch (e: any) {
+    if (!(e && (e.code === "42P01" || e.code === "42703"))) throw e;
+  }
+}
+
+export async function autoStatusConditions(opts: {
+  ids?: number[];
+  dryRun?: boolean; // 既定 true(提案のみ)
+}): Promise<{
+  dry_run: boolean;
+  scanned: number;
+  changed: number;
+  on: { po_signed: number; inspection_issued: number; payment_exported: number };
+  off: { po_signed: number; inspection_issued: number; payment_exported: number };
+  payment_evidence: boolean;
+}> {
+  const dryRun = opts.dryRun !== false;
+  const hasIds = !!(opts.ids && opts.ids.length);
+  const params: any[] = [];
+  let idsClause = "";
+  if (hasIds) {
+    params.push(opts.ids);
+    idsClause = `AND cli.id = ANY($1::int[])`;
+  }
+
+  const linesRes = await query(
+    `SELECT cli.id, cli.status_flags,
+            COALESCE(cc.contract_status = 'executed', false) AS ev_po,
+            COALESCE(
+              cli.amount_ex_tax > 0
+              AND COALESCE(cli.inspected_amount_ex_tax, 0) >= cli.amount_ex_tax - 0.5,
+              false
+            ) AS ev_insp
+       FROM capability_line_items cli
+       JOIN contract_capabilities cc ON cc.id = cli.capability_id
+      WHERE 1=1 ${idsClause}
+      ORDER BY cli.id`,
+    params
+  );
+  const lines = linesRes.rows;
+
+  // 支払申請出力済の証拠: 対の文書(検収書/計算書)が Excel 出力済。
+  let paymentEvidence = true;
+  const paidSet = new Set<number>();
+  try {
+    const pr = await query(
+      `SELECT DISTINCT cl.source_line_item_id AS cli_id
+         FROM condition_lines cl
+         JOIN condition_events ce ON ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+         JOIN documents d ON d.id = ce.document_id
+        WHERE d.excel_issued_at IS NOT NULL
+          AND cl.source_line_item_id IS NOT NULL
+          ${hasIds ? "AND cl.source_line_item_id = ANY($1::int[])" : ""}`,
+      hasIds ? [opts.ids] : []
+    );
+    for (const r of pr.rows) paidSet.add(Number(r.cli_id));
+  } catch (e: any) {
+    if (e && (e.code === "42P01" || e.code === "42703")) paymentEvidence = false;
+    else throw e;
+  }
+
+  const on = { po_signed: 0, inspection_issued: 0, payment_exported: 0 };
+  const off = { po_signed: 0, inspection_issued: 0, payment_exported: 0 };
+  const updates: Array<{ id: number; flags: Record<string, boolean> }> = [];
+
+  for (const ln of lines) {
+    const cur = normalizeFlags(ln.status_flags);
+    const desired: Record<string, boolean> = {
+      po_signed: !!ln.ev_po,
+      inspection_issued: !!ln.ev_insp,
+      // 証拠が取れない環境では payment は現状維持(誤 OFF を避ける)。
+      payment_exported: paymentEvidence ? paidSet.has(Number(ln.id)) : !!cur.payment_exported,
+    };
+    let changed = false;
+    (["po_signed", "inspection_issued", "payment_exported"] as const).forEach((k) => {
+      const was = !!cur[k];
+      const now = desired[k];
+      if (was !== now) {
+        changed = true;
+        if (now) on[k]++;
+        else off[k]++;
+      }
+    });
+    if (changed) updates.push({ id: Number(ln.id), flags: desired });
+  }
+
+  if (!dryRun) {
+    for (const u of updates) await updateConditionStatusFlags(u.id, u.flags);
+  }
+
+  return {
+    dry_run: dryRun,
+    scanned: lines.length,
+    changed: updates.length,
+    on,
+    off,
+    payment_evidence: paymentEvidence,
+  };
+}
