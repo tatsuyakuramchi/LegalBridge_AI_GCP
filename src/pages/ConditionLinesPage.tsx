@@ -29,6 +29,10 @@ type ConditionLine = {
   fulfilling_doc_count: number | null
   // 実績(検収/計算/支払)件数。0 のときだけ手動削除を許可する。
   event_count: number | null
+  // 送信履歴(メール / CloudSign)。worker が付与。
+  sent_at: string | null
+  sent_channel: string | null
+  email_to: string | null
 }
 
 // 一括/従量/分割 は 成就/一部成就/未成就、契約期間型(利用許諾) は 履行中/成就（満了）。
@@ -62,6 +66,19 @@ function StatusBadge({ status }: { status: string | null }) {
 
 const yen = (v: any) =>
   v == null ? "—" : `¥${Number(v).toLocaleString("ja-JP")}`
+
+// 送信時刻を JST の短い表記に。
+const fmtSent = (iso: string | null): string => {
+  if (!iso) return ""
+  try {
+    return new Date(iso).toLocaleString("ja-JP", {
+      month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+      timeZone: "Asia/Tokyo",
+    })
+  } catch {
+    return iso
+  }
+}
 
 export function ConditionLinesPage() {
   const navigate = useNavigate()
@@ -211,6 +228,7 @@ export function ConditionLinesPage() {
                 <th className="text-left px-3 py-2">向き</th>
                 <th className="text-left px-3 py-2">状態</th>
                 <th className="text-left px-3 py-2">成就文書</th>
+                <th className="text-left px-3 py-2">送信</th>
                 <th className="text-right px-3 py-2">残額 / MG残</th>
                 <th className="text-center px-3 py-2">当期</th>
                 <th></th>
@@ -247,6 +265,25 @@ export function ConditionLinesPage() {
                       </span>
                     ) : (
                       "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-2 max-w-[150px]">
+                    {r.sent_at ? (
+                      <span title={r.email_to || r.sent_channel || ""}>
+                        <Badge
+                          variant="outline"
+                          className={
+                            r.sent_channel === "メール"
+                              ? "border-emerald-300 text-emerald-700"
+                              : "border-sky-300 text-sky-700"
+                          }
+                        >
+                          {r.sent_channel === "メール" ? "✉" : "✍"} {r.sent_channel}
+                        </Badge>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">未送信</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
