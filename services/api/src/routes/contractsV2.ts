@@ -128,7 +128,47 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       params.push(limit);
       const limitParam = `$${params.length}`;
 
-      const sql = `
+      // 検収待ち(unissued_line_count)の算出式。
+      //   新台帳優先の coverage-gated dual-read。検収(消化型: lump_sum/per_unit/installment)
+      //   で未消化(status open/partially_fulfilled)の行のみ数える。subscription/royalty は
+      //   消化型ステータスにならず自然に除外され、旧ロジックが継続役務(顧問/月額保守等)を
+      //   検収待ちに混入させていた過剰カウントを是正する。カバレッジ未充足(条件明細の
+      //   line item 由来件数 ≠ 旧明細件数, または 0)は CASE が NULL を返し、COALESCE で
+      //   旧 status_flags 方式へフォールバック。
+      const unissuedNewExpr = `
+          COALESCE(
+            (SELECT CASE
+               WHEN (SELECT COUNT(*) FROM condition_lines x
+                      WHERE x.capability_id = cc.id AND x.source_line_item_id IS NOT NULL)
+                    = (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id)
+                AND (SELECT COUNT(*) FROM capability_line_items y WHERE y.capability_id = cc.id) > 0
+               THEN (
+                 SELECT COUNT(*)::int FROM condition_lines cl
+                   JOIN condition_line_status_v s ON s.id = cl.id
+                  WHERE cl.capability_id = cc.id
+                    AND cl.source_line_item_id IS NOT NULL
+                    AND cl.payment_scheme IN ('lump_sum','per_unit','installment')
+                    AND COALESCE(cl.amount_ex_tax, 0) > 0
+                    AND s.status IN ('open','partially_fulfilled')
+               )
+               ELSE NULL END),
+            (SELECT COUNT(*) FROM capability_line_items cli
+               WHERE cli.capability_id = cc.id
+                 AND COALESCE(cli.amount_ex_tax, 0) > 0
+                 AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
+                 AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
+            )
+          ) AS unissued_line_count`;
+      // 旧式(新台帳テーブル未適用環境向けフォールバック)。
+      const unissuedLegacyExpr = `
+          (SELECT COUNT(*) FROM capability_line_items cli
+             WHERE cli.capability_id = cc.id
+               AND COALESCE(cli.amount_ex_tax, 0) > 0
+               AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
+               AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
+          ) AS unissued_line_count`;
+
+      const buildSql = (unissuedExpr: string) => `
         SELECT
           cc.id,
           cc.record_type,
@@ -160,14 +200,31 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           (SELECT COUNT(*) FROM capability_financial_conditions cfc WHERE cfc.capability_id = cc.id) AS condition_count,
           (SELECT COALESCE(SUM(cli.inspected_amount_ex_tax), 0)
              FROM capability_line_items cli WHERE cli.capability_id = cc.id) AS inspected_amount,
-          -- 検収書未発行の明細数: status_flags.inspection_issued が true でなく、かつ
-          --   まだ全額検収されていない(残額あり)業務明細。検収待ち制御の主キー。
-          (SELECT COUNT(*) FROM capability_line_items cli
+          -- 検収書未発行の明細数(検収待ち制御の主キー)。算出式は下で組み立て、
+          --   新台帳テーブル未適用環境では旧 status_flags 方式へフォールバックする。
+          ${unissuedExpr},
+          -- 法務タスク制御: 納品報告(delivered_at)・納期(inspection_deadline)・
+          --   「納期超過かつ未報告」を delivery_events(capability_id 結線) から導出。
+          (SELECT MAX(de.delivered_at) FROM delivery_events de
+             WHERE de.capability_id = cc.id) AS latest_delivered_at,
+          (SELECT MIN(de.inspection_deadline) FROM delivery_events de
+             WHERE de.capability_id = cc.id AND de.status = 'pending') AS nearest_inspection_deadline,
+          EXISTS (SELECT 1 FROM delivery_events de
+                   WHERE de.capability_id = cc.id AND de.delivered_at IS NOT NULL) AS has_delivery_report,
+          EXISTS (SELECT 1 FROM delivery_events de
+                   WHERE de.capability_id = cc.id AND de.status = 'pending'
+                     AND de.delivered_at IS NULL
+                     AND de.inspection_deadline < CURRENT_TIMESTAMP) AS overdue_no_report,
+          -- 発注書由来の予定納期: 納品報告(delivery_events)が無く inspection_deadline が
+          --   出ない検収待ち行向けに、未検収明細(capability_line_items.delivery_date)の
+          --   最も近い納期を返す。画面は inspection_deadline が無い時のフォールバック表示に使う。
+          (SELECT MIN(cli.delivery_date) FROM capability_line_items cli
              WHERE cli.capability_id = cc.id
+               AND cli.delivery_date IS NOT NULL
                AND COALESCE(cli.amount_ex_tax, 0) > 0
                AND (cli.status_flags->>'inspection_issued') IS DISTINCT FROM 'true'
                AND COALESCE(cli.inspected_amount_ex_tax, 0) < cli.amount_ex_tax - 0.5
-          ) AS unissued_line_count,
+          ) AS nearest_line_delivery_date,
           (cc.backlog_issue_key LIKE 'IMPORT-%') AS is_imported
         FROM contract_capabilities cc
         LEFT JOIN vendors v ON v.id = cc.vendor_id
@@ -176,7 +233,21 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         LIMIT ${limitParam}
       `;
 
-      const rows = await deps.query(sql, params);
+      // 新台帳優先で実行。condition_lines/condition_line_status_v 未適用環境
+      //   (42P01/42703)では旧式に切り替えて再実行(検収待ち一覧を落とさない)。
+      let rows: any;
+      try {
+        rows = await deps.query(buildSql(unissuedNewExpr), params);
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          console.warn(
+            "[/api/contracts/search] 新台帳未適用 — 検収待ちを旧 status_flags 方式で算出"
+          );
+          rows = await deps.query(buildSql(unissuedLegacyExpr), params);
+        } else {
+          throw err;
+        }
+      }
       res.json(
         rows.rows.map((r: any) => ({
           id: Number(r.id),
@@ -214,6 +285,13 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             (Number(r.amount_ex_tax) || 0) - (Number(r.inspected_amount) || 0),
           // 検収書未発行(=検収待ち)の業務明細数。0 なら検収待ちではない。
           unissued_line_count: Number(r.unissued_line_count) || 0,
+          // 法務タスク制御(検収待ち再構成)。delivery_events 由来。
+          latest_delivered_at: r.latest_delivered_at || null,
+          nearest_inspection_deadline: r.nearest_inspection_deadline || null,
+          // 発注書由来の予定納期(納品報告前のフォールバック表示用)。
+          nearest_line_delivery_date: r.nearest_line_delivery_date || null,
+          has_delivery_report: !!r.has_delivery_report,
+          overdue_no_report: !!r.overdue_no_report,
           is_imported: !!r.is_imported,
         }))
       );
@@ -317,6 +395,10 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           `[contracts/${id}] form_data fallback: ${cc.document_number} → ${docRow.rows[0].document_number} (base=${cc.base_document_number})`
         );
       }
+      // form_data は下の lineRows 空フォールバックと issue_date_po フォールバックの
+      //   両方で使うため、ここで外側スコープに宣言する(以前は if ブロック内のみで、
+      //   明細ありかつ issue_date_po が null の契約で ReferenceError → 500 になっていた)。
+      const formData: any = docRow.rows[0]?.form_data || {};
 
       // 検収件数 (delivery_events.capability_id) と次の delivery_no
       const delivCount = await deps.query(
@@ -340,6 +422,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
         quantity: Number(l.quantity) || 0,
         unit_price: Number(l.unit_price) || 0,
         amount_ex_tax: Number(l.amount_ex_tax) || 0,
+        // 成果物帰属。受注者帰属かつ0円は検収書で「利用許諾料に含む」表示。
+        deliverable_ownership: l.deliverable_ownership || "発注者",
+        rate_pct: l.rate_pct == null ? undefined : Number(l.rate_pct),
         delivery_date: l.delivery_date,
         payment_date: l.payment_date,
         cycle: l.cycle || "",
@@ -367,7 +452,6 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       //   - 無ければ cc.amount_ex_tax / form_data.amount から 1 行合成
       //   - synthetic な行は id を負の値にして DB の行と区別 (検収時の参照用)
       if (lineRows.length === 0) {
-        const formData = docRow.rows[0]?.form_data || {};
         // Phase 23.6.11: worker (/api/documents/generate) は formData.items
         //   (アンダースコアなし) で明細を保存している (server.ts:9595)。
         //   従来 Phase 23.6.6 のここは formData.line_items / delivery_line_items
@@ -497,6 +581,9 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
           contract_category: cc.contract_category,
           contract_type: cc.contract_type,
           contract_title: cc.contract_title || "",
+          // 検収書の件名引用用: 発注書フォームで入力した件名(PROJECT_TITLE)を優先。
+          //   無ければ contract_title にフォールバック。
+          project_title: formData.PROJECT_TITLE || cc.contract_title || "",
           document_number: cc.document_number || "",
           backlog_issue_key: cc.backlog_issue_key || "",
           amount_ex_tax: cc.amount_ex_tax == null ? null : Number(cc.amount_ex_tax),
@@ -537,9 +624,25 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             }
           : null,
         line_items: lineRows,
-        financial_conditions: conds.rows.map((c: any) => ({
+        financial_conditions: conds.rows.map((c: any) => {
+          // テリトリー / 言語 を別項目で返す。古い行(2項目なし)は
+          //   合成ラベル region_language_label を最初の '・' で分割してフォールバック。
+          let territory = (c.region_territory || "").trim();
+          let language = (c.region_language || "").trim();
+          if (!territory && !language && c.region_language_label) {
+            const s = String(c.region_language_label).trim();
+            const idx = s.indexOf("・");
+            if (idx < 0) territory = s;
+            else {
+              territory = s.slice(0, idx).trim();
+              language = s.slice(idx + 1).trim();
+            }
+          }
+          return {
           id: Number(c.id),
           condition_no: Number(c.condition_no),
+          region_territory: territory,
+          region_language: language,
           region_language_label: c.region_language_label || "",
           calc_method: c.calc_method || "",
           rate_pct: c.rate_pct == null ? null : Number(c.rate_pct),
@@ -550,10 +653,19 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
             c.calc_period_close_month == null ? null : Number(c.calc_period_close_month),
           currency: c.currency || "JPY",
           formula_text: c.formula_text || "",
+          applies_scope: c.applies_scope || "",
           payment_terms: c.payment_terms || "",
           mg_amount: Number(c.mg_amount) || 0,
           ag_amount: Number(c.ag_amount) || 0,
-        })),
+          // 0045: 金銭条件の柔軟化フィールド (名称/計算式タイプ/保証種別)
+          condition_name: c.condition_name || "",
+          calc_type: c.calc_type || null,
+          fixed_kind: c.fixed_kind || null,
+          subscription_cycle: c.subscription_cycle || null,
+          unit_amount: c.unit_amount == null ? null : Number(c.unit_amount),
+          guarantee_type: c.guarantee_type || null,
+          };
+        }),
         expenses: expenses.rows.map((e: any) => ({
           id: Number(e.id),
           line_no: Number(e.line_no),
@@ -605,4 +717,77 @@ export function registerContractsV2(app: Express, deps: ContractsV2Deps) {
       res.status(500).json({ error: String(e?.message || e) });
     }
   });
+
+  // 利用許諾料計算書の「条件一覧」ピッカー用。
+  //   capability_financial_conditions を契約 + 取引先と JOIN して一覧返す。
+  //   発注書由来(受注者帰属)の印税条件も、ライセンス契約の条件も同じ土俵で選べる。
+  app.get(
+    "/api/financial-conditions/search",
+    deps.requirePortalSecret,
+    async (req, res) => {
+      try {
+        const q = String(req.query.q || "").trim();
+        const limit = Math.min(Number(req.query.limit) || 100, 300);
+        // is_active で絞らない: 検収完了や archive 済みでも、利用許諾料計算の条件としては
+        //   選べるべき(印税は継続課金で発注書の状態とは独立)。
+        const where: string[] = ["TRUE"];
+        const params: any[] = [];
+        if (q) {
+          params.push(`%${q}%`);
+          const i = params.length;
+          where.push(
+            `(cfc.condition_name ILIKE $${i}
+               OR cc.contract_title ILIKE $${i}
+               OR cc.document_number ILIKE $${i}
+               OR cfc.region_language_label ILIKE $${i}
+               OR v.vendor_name ILIKE $${i}
+               OR v.vendor_code ILIKE $${i})`
+          );
+        }
+        params.push(limit);
+        const limitParam = `$${params.length}`;
+        const sql = `
+          SELECT cfc.id, cfc.condition_no, cfc.condition_name, cfc.region_language_label,
+                 cfc.calc_type, cfc.calc_method, cfc.rate_pct, cfc.base_price_label,
+                 cfc.mg_amount, cfc.ag_amount, cfc.guarantee_type, cfc.currency,
+                 cc.id AS capability_id, cc.document_number, cc.contract_title,
+                 cc.contract_category, cc.record_type,
+                 v.vendor_name, v.vendor_code
+            FROM capability_financial_conditions cfc
+            JOIN contract_capabilities cc ON cc.id = cfc.capability_id
+            LEFT JOIN vendors v ON v.id = cc.vendor_id
+           WHERE ${where.join(" AND ")}
+           ORDER BY cc.updated_at DESC NULLS LAST, cc.id DESC, cfc.condition_no ASC
+           LIMIT ${limitParam}
+        `;
+        const r = await deps.query(sql, params);
+        res.json(
+          r.rows.map((c: any) => ({
+            id: Number(c.id),
+            condition_no: Number(c.condition_no),
+            condition_name: c.condition_name || "",
+            region_language_label: c.region_language_label || "",
+            calc_type: c.calc_type || null,
+            calc_method: c.calc_method || "",
+            rate_pct: c.rate_pct == null ? null : Number(c.rate_pct),
+            base_price_label: c.base_price_label || "",
+            mg_amount: Number(c.mg_amount) || 0,
+            ag_amount: Number(c.ag_amount) || 0,
+            guarantee_type: c.guarantee_type || null,
+            currency: c.currency || "JPY",
+            capability_id: Number(c.capability_id),
+            document_number: c.document_number || "",
+            contract_title: c.contract_title || "",
+            contract_category: c.contract_category || "",
+            record_type: c.record_type || "",
+            vendor_name: c.vendor_name || "",
+            vendor_code: c.vendor_code || "",
+          }))
+        );
+      } catch (e: any) {
+        console.error("/api/financial-conditions/search failed:", e);
+        res.status(500).json({ error: String(e?.message || e) });
+      }
+    }
+  );
 }

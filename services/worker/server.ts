@@ -10885,193 +10885,49 @@ ${details}
     }
   });
 
-  // -------------------------------------------------------------------
-  // POST /api/condition-lines/:id/link-document
-  //   調整(手動): 既存文書(検収書 / 利用許諾料計算書)を明細に「対の実績」として
-  //   手動リンクする。文書種別から event_type を導出する:
-  //     inspection_certificate → 'inspection'   (発注書系の明細 ⇄ 検収書)
-  //     royalty_statement      → 'royalty_calc' (利用許諾系の明細 ⇄ 利用許諾料計算書)
-  //   (CHECK ce_document_pairing: これらは document_id 必須)。
-  //   amount_ex_tax 未指定時は明細の残額を既定にし、1 リンクで成就へ寄せる。
-  //   ステータス(open/partially_fulfilled/fulfilled)は condition_line_status_v が
-  //   実績合計から自動再計算するため、ここでの明示更新は不要。
-  // -------------------------------------------------------------------
-  app.post(
-    "/api/condition-lines/:id/link-document",
-    express.json(),
-    async (req, res) => {
-      const conditionLineId = Number(req.params.id);
-      if (!Number.isFinite(conditionLineId)) {
-        return res
-          .status(400)
-          .json({ ok: false, error: "invalid condition_line id" });
-      }
-      const body = req.body || {};
-      try {
-        const clRes = await query(
-          `SELECT cl.id, cl.amount_ex_tax,
-                  COALESCE(s.consumed_amount, 0) AS consumed_amount
-             FROM condition_lines cl
-             LEFT JOIN condition_line_status_v s ON s.id = cl.id
-            WHERE cl.id = $1`,
-          [conditionLineId]
-        );
-        if (!clRes.rows.length) {
-          return res
-            .status(404)
-            .json({ ok: false, error: "condition_line not found" });
-        }
-        const line = clRes.rows[0];
-
-        // 文書を解決 (document_id 優先、なければ document_number)。
-        const byId = body.document_id != null;
-        const docKey = byId
-          ? Number(body.document_id)
-          : String(body.document_number || "").trim();
-        if (!docKey) {
-          return res.status(400).json({
-            ok: false,
-            error: "document_id or document_number is required",
-          });
-        }
-        const docRes = await query(
-          `SELECT id, document_number, template_type, issue_key
-             FROM documents WHERE ${byId ? "id" : "document_number"} = $1 LIMIT 1`,
-          [docKey]
-        );
-        if (!docRes.rows.length) {
-          return res.status(404).json({ ok: false, error: "document not found" });
-        }
-        const doc = docRes.rows[0];
-
-        // 文書種別 → event_type。
-        const tt = String(doc.template_type || "");
-        let eventType: string | null = null;
-        if (tt.startsWith("inspection_certificate")) eventType = "inspection";
-        else if (tt === "royalty_statement") eventType = "royalty_calc";
-        if (!eventType) {
-          return res.status(400).json({
-            ok: false,
-            error: `この文書種別(${tt || "不明"})は明細にリンクできません(検収書 / 利用許諾料計算書のみ)`,
-          });
-        }
-
-        // 重複防止: 同一文書の有効リンクが既にあれば idempotent に返す。
-        const dup = await query(
-          `SELECT id, event_no FROM condition_events
-            WHERE condition_line_id = $1 AND document_id = $2 AND voided_at IS NULL
-            LIMIT 1`,
-          [conditionLineId, doc.id]
-        );
-        if (dup.rows.length) {
-          return res.json({
-            ok: true,
-            already_linked: true,
-            event_id: dup.rows[0].id,
-            event_no: dup.rows[0].event_no,
-          });
-        }
-
-        // amount: 明示指定 > 残額 > 0。
-        const remaining =
-          Number(line.amount_ex_tax || 0) - Number(line.consumed_amount || 0);
-        const amount =
-          body.amount_ex_tax != null && Number.isFinite(Number(body.amount_ex_tax))
-            ? Number(body.amount_ex_tax)
-            : Math.max(0, remaining);
-
-        const eventNoRes = await query(
-          `SELECT COALESCE(MAX(event_no),0)+1 AS n FROM condition_events WHERE condition_line_id = $1`,
-          [conditionLineId]
-        );
-        const ins = await query(
-          `INSERT INTO condition_events
-             (condition_line_id, event_no, event_type, document_id,
-              backlog_issue_key, occurred_at, period, amount_ex_tax)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
-           RETURNING id, event_no`,
-          [
-            conditionLineId,
-            Number(eventNoRes.rows[0].n),
-            eventType,
-            doc.id,
-            doc.issue_key ||
-              (body.backlog_issue_key ? String(body.backlog_issue_key) : null),
-            body.occurred_at || new Date().toISOString(),
-            body.period || null,
-            amount,
-          ]
-        );
-
-        const st = await query(
-          `SELECT status, consumed_amount, remaining_amount
-             FROM condition_line_status_v WHERE id = $1`,
-          [conditionLineId]
-        );
-        res.json({
-          ok: true,
-          event_id: ins.rows[0].id,
-          event_no: ins.rows[0].event_no,
-          event_type: eventType,
-          document_number: doc.document_number,
-          status: st.rows[0] || null,
+  // 条件明細の手動削除(物理)。重複・誤作成の整理用。
+  //   ガード: 検収/計算/支払の実績(condition_events)がある明細は削除しない(履歴保全)。
+  //   作品コンポーネント紐付け(work_component_lines)がある場合も拒否。
+  //   分割予定(condition_line_installments)は ON DELETE CASCADE で同時削除。
+  app.post("/api/condition-lines/:id/delete", express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0)
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      const ev = await query(
+        `SELECT COUNT(*)::int AS n FROM condition_events WHERE condition_line_id = $1`,
+        [id]
+      );
+      if (Number(ev.rows[0]?.n) > 0) {
+        return res.status(409).json({
+          ok: false,
+          error:
+            "この明細には実績(検収/計算/支払)があるため削除できません。先に該当実績を取消(void)してください。",
         });
-      } catch (error) {
-        console.error("/api/condition-lines/:id/link-document failed:", error);
-        res.status(500).json({ ok: false, error: String(error) });
       }
-    }
-  );
-
-  // -------------------------------------------------------------------
-  // POST /api/condition-events/:eventId/void
-  //   調整(手動): 明細 ⇄ 文書の対(実績イベント)を 1 件だけ取消(リンク解除)する。
-  //   文書自体は void しない(文書全体の取消は /api/documents/:id/void)。
-  //   ステータスは condition_line_status_v が再計算する。
-  // -------------------------------------------------------------------
-  app.post(
-    "/api/condition-events/:eventId/void",
-    express.json(),
-    async (req, res) => {
-      const eventId = Number(req.params.eventId);
-      if (!Number.isFinite(eventId)) {
-        return res.status(400).json({ ok: false, error: "invalid event id" });
-      }
-      const reason = String(req.body?.reason || "").trim() || "manual unlink";
-      try {
-        const upd = await query(
-          `UPDATE condition_events
-              SET voided_at = CURRENT_TIMESTAMP, void_reason = $2
-            WHERE id = $1 AND voided_at IS NULL
-            RETURNING condition_line_id`,
-          [eventId, reason]
-        );
-        if (!upd.rows.length) {
-          return res
-            .status(404)
-            .json({ ok: false, error: "event not found or already voided" });
-        }
-        const lineId = upd.rows[0].condition_line_id;
-        const st = await query(
-          `SELECT status, consumed_amount, remaining_amount
-             FROM condition_line_status_v WHERE id = $1`,
-          [lineId]
-        );
-        res.json({
-          ok: true,
-          condition_line_id: lineId,
-          status: st.rows[0] || null,
+      const wc = await query(
+        `SELECT COUNT(*)::int AS n FROM work_component_lines WHERE condition_line_id = $1`,
+        [id]
+      );
+      if (Number(wc.rows[0]?.n) > 0) {
+        return res.status(409).json({
+          ok: false,
+          error: "作品コンポーネントに紐付いているため削除できません。先に紐付けを解除してください。",
         });
-      } catch (error) {
-        console.error("/api/condition-events/:eventId/void failed:", error);
-        res.status(500).json({ ok: false, error: String(error) });
       }
+      const del = await query(
+        `DELETE FROM condition_lines WHERE id = $1 RETURNING line_code`,
+        [id]
+      );
+      if (!del.rows.length)
+        return res.status(404).json({ ok: false, error: "明細が見つかりません" });
+      res.json({ ok: true, deleted: id, line_code: del.rows[0].line_code || null });
+    } catch (e: any) {
+      console.error("/api/condition-lines/:id/delete failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
-  );
+  });
 
-  // -------------------------------------------------------------------
-  // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
-  // -------------------------------------------------------------------
 
   /**
    * Phase 23.6.15: 検収書の金額サマリーをサーバ側で一元計算する (適格請求書対応)。
@@ -11623,6 +11479,36 @@ ${details}
           console.log(
             `📝 [overwrite] ${issueKey} ${templateType}: docNumber=${docNumber} rev=${revision} (内部修正)`
           );
+        }
+      }
+
+      // 二重作成ガード: 完全新規(再発行でも内部修正の上書きでもない)で、同一
+      //   課題(issue_key)× 同一種別(template_type)の正本(final)が既にある場合は
+      //   ブロックし、「修正なら再発行、別物なら許可フラグ」を促す。条件明細
+      //   (condition_lines)が重複生成される源流(別 capability の二重作成)を抑止する。
+      //   formData.allowDuplicateDocument===true で明示的に上書き許可。
+      if (!isReissue && !overwrite && !manualOverride) {
+        const allowDup = formData?.allowDuplicateDocument === true;
+        const ik = (issueKey || "").trim();
+        if (!allowDup && ik && !ik.startsWith("MANUAL-")) {
+          const dupCheck = await query(
+            `SELECT document_number FROM documents
+              WHERE is_primary = TRUE
+                AND COALESCE(lifecycle_status, 'final') = 'final'
+                AND template_type = $1 AND issue_key = $2
+              ORDER BY revision DESC, created_at DESC LIMIT 1`,
+            [templateType, ik]
+          );
+          if (dupCheck.rows.length) {
+            return res.status(409).json({
+              ok: false,
+              error: "duplicate_document",
+              existing_document_number: dupCheck.rows[0].document_number,
+              message:
+                `この課題には既に同種の文書(${dupCheck.rows[0].document_number})が存在します。` +
+                `修正する場合は「再発行」を、別物として新規作成する場合は許可(allowDuplicateDocument)を付けて再実行してください。`,
+            });
+          }
         }
       }
 
