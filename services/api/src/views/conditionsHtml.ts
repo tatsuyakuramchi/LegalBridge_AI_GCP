@@ -77,6 +77,7 @@ export function conditionsPage(
   const canEdit = opts.canEdit ?? role === "admin";
   const toolbar = `
       ${canEdit ? '<button class="pop-btn sm" id="btn-autolink" title="原作/作品/基本契約/稟議を自動推定して空欄を補完(手動設定は温存)">🔗 自動紐付け</button>' : ""}
+      ${canEdit ? '<button class="pop-btn sm" id="btn-autostatus" title="発注書締結済/検収書発行済/支払申請出力済 を実データから自動判定して同期(手動切替も可)">✅ 状態 自動判定</button>' : ""}
       <button class="pop-btn sec sm" id="btn-csv-sel">⤓ 選択をCSV (<span id="sel-n">0</span>)</button>
       <button class="pop-btn sm" id="btn-csv-all">⤓ 全件CSV</button>`;
 
@@ -681,6 +682,40 @@ export function conditionsPage(
   }
   var _alb = document.getElementById("btn-autolink");
   if (_alb) _alb.addEventListener("click", autoLink);
+
+  /* ---------- 状態の自動判定(完全同期 / admin のみ) ---------- */
+  function autoStatus() {
+    var btn = document.getElementById("btn-autostatus");
+    if (!btn) return;
+    var sel = checkedIds();
+    var ids = (sel.length ? sel : (currentRows || []).map(function (r) { return r.id; }))
+      .map(Number).filter(function (n) { return !isNaN(n); });
+    if (!ids.length) { alert("対象の明細がありません。先に検索してください。"); return; }
+    var scope = sel.length ? ("選択した " + ids.length + " 行") : ("表示中の " + ids.length + " 行");
+    btn.disabled = true;
+    postJSON("/api/conditions/auto-status", { ids: ids, dryRun: true })
+      .then(function (d) {
+        if (!d || d.ok === false) throw new Error((d && d.error) || "提案の取得に失敗");
+        if (!d.changed) { alert(scope + "は既に実態と一致しています(変更なし)。"); return null; }
+        var on = d.on || {}, off = d.off || {};
+        var pe = d.payment_evidence === false ? "\\n※支払出力の証拠が取得できないため payment は据え置き" : "";
+        var msg = "【状態の自動判定(完全同期)】" + scope + "が対象\\n"
+          + d.changed + " 行を実態に同期します:\\n"
+          + "ON  → 締結 " + (on.po_signed || 0) + " / 検収 " + (on.inspection_issued || 0) + " / 支払 " + (on.payment_exported || 0) + "\\n"
+          + "OFF → 締結 " + (off.po_signed || 0) + " / 検収 " + (off.inspection_issued || 0) + " / 支払 " + (off.payment_exported || 0) + "\\n"
+          + "(証拠の無い手動ONはOFFになります)" + pe + "\\n\\n適用しますか?";
+        if (!confirm(msg)) return null;
+        return postJSON("/api/conditions/auto-status", { ids: ids, dryRun: false }).then(function (r) {
+          if (!r || r.ok === false) throw new Error((r && r.error) || "適用に失敗");
+          alert("状態を同期しました(" + r.changed + " 行を更新)。");
+          load();
+        });
+      })
+      .catch(function (e) { alert("状態自動判定エラー: " + (e && e.message ? e.message : e)); })
+      .then(function () { btn.disabled = false; });
+  }
+  var _asb = document.getElementById("btn-autostatus");
+  if (_asb) _asb.addEventListener("click", autoStatus);
 
   load();
 </script>`;
