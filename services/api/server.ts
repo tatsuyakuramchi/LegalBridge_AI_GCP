@@ -250,6 +250,7 @@ import {
   listConditions,
   updateConditionLinks,
   autoLinkConditions,
+  autoStatusConditions,
   listRingiOptions,
   exportConditionsCsv,
 } from "./src/services/conditionsService.ts";
@@ -3362,6 +3363,30 @@ async function startServer() {
         res.json({ ok: true, ...result });
       } catch (error: any) {
         console.error("/api/conditions/auto-link failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // POST /api/conditions/auto-status — 状態フラグを実データから自動判定(完全同期)。
+  //   admin 専用。body: { ids?:number[], dryRun?:boolean(既定true) }
+  //   po_signed=締結済 / inspection_issued=検収満額 / payment_exported=Excel出力済。
+  app.post(
+    "/api/conditions/auto-status",
+    requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "conditions", renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        const b = req.body || {};
+        const ids = Array.isArray(b.ids)
+          ? b.ids.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+          : undefined;
+        const result = await autoStatusConditions({ ids, dryRun: b.dryRun !== false });
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("/api/conditions/auto-status failed:", error);
         res.status(500).json({ ok: false, error: String(error?.message || error) });
       }
     }
