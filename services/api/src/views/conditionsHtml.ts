@@ -76,6 +76,7 @@ export function conditionsPage(
   // 編集(紐付けモーダル)は admin のみ。FIN viewer 等の閲覧専用ビューでは無効化。
   const canEdit = opts.canEdit ?? role === "admin";
   const toolbar = `
+      ${canEdit ? '<button class="pop-btn sm" id="btn-autolink" title="原作/作品/基本契約/稟議を自動推定して空欄を補完(手動設定は温存)">🔗 自動紐付け</button>' : ""}
       <button class="pop-btn sec sm" id="btn-csv-sel">⤓ 選択をCSV (<span id="sel-n">0</span>)</button>
       <button class="pop-btn sm" id="btn-csv-all">⤓ 全件CSV</button>`;
 
@@ -214,6 +215,7 @@ export function conditionsPage(
   var VIEW = "table";   // table | tree
   var AXIS = "work";    // work | source_ip | vendor | department
   var STATFILT = "all"; // all | executed(有効中) | terminated(解約済)
+  var SORT = { key: null, dir: 1 }; // テーブル列の並び替え(key=行フィールド, dir=1昇順/-1降順)
   function draw() {
     if (VIEW === "tree") renderTree(currentRows, AXIS);
     else render(currentRows);
@@ -308,6 +310,24 @@ export function conditionsPage(
     return p;
   }
 
+  // 列見出しクリックでテーブルを並び替え(同列再クリックで昇順/降順トグル)。
+  function applySort(key, type) {
+    if (!key) return;
+    if (SORT.key === key) SORT.dir = -SORT.dir;
+    else { SORT.key = key; SORT.dir = 1; }
+    var d = SORT.dir;
+    currentRows.sort(function (a, b) {
+      var av = a[key], bv = b[key];
+      var ae = (av == null || av === ""), be = (bv == null || bv === "");
+      if (ae && be) return 0;
+      if (ae) return 1;   // 空は常に末尾
+      if (be) return -1;
+      if (type === "num") return ((parseFloat(av) || 0) - (parseFloat(bv) || 0)) * d;
+      return String(av).localeCompare(String(bv), "ja") * d;
+    });
+    render(currentRows);
+  }
+
   function render(rows) {
     currentRows = rows || [];
     var wrap = document.getElementById("list-wrap");
@@ -315,12 +335,24 @@ export function conditionsPage(
       wrap.innerHTML = '<div class="empty">該当する条件明細がありません</div>';
       return;
     }
+    // 並び替え可能な列見出し。data-sort=行フィールド, data-type=str|num|date。
+    function thc(label, key, type, cls) {
+      var ind = SORT.key === key ? (SORT.dir > 0 ? ' ▲' : ' ▼') : '';
+      var c = cls ? (' class="' + cls + '"') : '';
+      return '<th' + c + ' data-sort="' + key + '" data-type="' + (type || 'str') +
+        '" style="cursor:pointer;user-select:none;white-space:nowrap;" title="クリックで並び替え">' +
+        label + '<span class="sort-ind">' + ind + '</span></th>';
+    }
     var head = '<tr>' +
       '<th class="chk"><input type="checkbox" id="chk-all" title="全選択"></th>' +
-      '<th>支払日</th><th>納期</th><th>種類</th><th>取引先</th><th>担当</th>' +
-      '<th>品目</th><th>計算</th><th class="num">数量</th><th class="num">単価</th>' +
-      '<th class="num">金額(税抜)</th><th>文書番号</th><th>成就</th><th>成就文書</th><th>契約名 / 課題</th>' +
-      '<th>紐付け(クリックで編集)</th><th>状態</th>' +
+      thc('支払日', 'payment_date', 'date') + thc('納期', 'delivery_date', 'date') +
+      thc('種類', 'contract_category', 'str') + thc('取引先', 'vendor_name', 'str') +
+      thc('担当', 'owner_name', 'str') + thc('品目', 'item_name', 'str') +
+      thc('計算', 'calc_method', 'str') + thc('数量', 'quantity', 'num', 'num') +
+      thc('単価', 'unit_price', 'num', 'num') + thc('金額(税抜)', 'amount_ex_tax', 'num', 'num') +
+      thc('文書番号', 'document_number', 'str') + thc('成就', 'fulfillment_status', 'str') +
+      '<th>成就文書</th>' + thc('契約名 / 課題', 'contract_title', 'str') +
+      '<th>紐付け' + (CAN_EDIT ? '(クリックで編集)' : '') + '</th><th>状態</th>' +
       '</tr>';
     // 成就状態 → ラベル(契約期間型は 履行中 / 成就(満了))。
     var FULFILL_LABEL = {
@@ -547,6 +579,9 @@ export function conditionsPage(
   });
   document.getElementById("list-wrap").addEventListener("click", function (e) {
     var t = e.target;
+    // 列見出しクリック → 並び替え(編集権限に関係なく動作)。
+    var th = t.closest ? t.closest("th[data-sort]") : null;
+    if (th) { applySort(th.getAttribute("data-sort"), th.getAttribute("data-type")); return; }
     // チェックボックス(行選択/全選択)はモーダルを開かない
     if (t && (t.classList.contains("row-chk") || t.id === "chk-all")) {
       if (t.id === "chk-all") {
@@ -604,6 +639,49 @@ export function conditionsPage(
   document.getElementById("backdrop").addEventListener("click", function (e) {
     if (e.target === document.getElementById("backdrop")) closeModal();
   });
+
+  /* ---------- 自動紐付け(admin のみ) ---------- */
+  function postJSON(url, body) {
+    return fetch(url, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body || {}),
+    }).then(function (r) { return r.json().catch(function () { return {}; }); });
+  }
+  function autoLink() {
+    var btn = document.getElementById("btn-autolink");
+    if (!btn) return;
+    var sel = checkedIds();
+    var ids = (sel.length ? sel : (currentRows || []).map(function (r) { return r.id; }))
+      .map(Number).filter(function (n) { return !isNaN(n); });
+    if (!ids.length) { alert("対象の明細がありません。先に検索してください。"); return; }
+    var scope = sel.length ? ("選択した " + ids.length + " 行") : ("表示中の " + ids.length + " 行");
+    btn.disabled = true;
+    // 1) まず提案(dry-run)。
+    postJSON("/api/conditions/auto-link", { ids: ids, dryRun: true })
+      .then(function (d) {
+        if (!d || d.ok === false) throw new Error((d && d.error) || "提案の取得に失敗");
+        var c = d.counts || {};
+        if (!d.changed) { alert(scope + "に紐付け候補は見つかりませんでした。"); return null; }
+        var msg = "【自動紐付けの候補】" + scope + "が対象\\n"
+          + d.changed + " 行に候補があります(空欄のみ補完・手動設定は温存):\\n"
+          + "・基本契約 " + (c.master || 0) + " / 作品 " + (c.work || 0)
+          + " / 原作 " + (c.source_ip || 0) + " / 稟議 " + (c.ringi || 0) + "\\n\\n適用しますか?";
+        if (!confirm(msg)) return null;
+        // 2) 適用。
+        return postJSON("/api/conditions/auto-link", { ids: ids, dryRun: false }).then(function (r) {
+          if (!r || r.ok === false) throw new Error((r && r.error) || "適用に失敗");
+          alert("自動紐付けを適用しました(" + r.changed + " 行を更新)。");
+          load();
+        });
+      })
+      .catch(function (e) { alert("自動紐付けエラー: " + (e && e.message ? e.message : e)); })
+      .then(function () { btn.disabled = false; });
+  }
+  var _alb = document.getElementById("btn-autolink");
+  if (_alb) _alb.addEventListener("click", autoLink);
+
   load();
 </script>`;
 

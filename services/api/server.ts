@@ -249,6 +249,7 @@ import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
 import {
   listConditions,
   updateConditionLinks,
+  autoLinkConditions,
   listRingiOptions,
   exportConditionsCsv,
 } from "./src/services/conditionsService.ts";
@@ -3333,6 +3334,34 @@ async function startServer() {
         res.json({ ok: true });
       } catch (error: any) {
         console.error("/api/conditions/:id/links failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // POST /api/conditions/auto-link — 原作/作品/基本契約/稟議 を自動推定して紐付け。
+  //   admin 専用(書込)。body: { ids?:number[], dryRun?:boolean(既定true), overwrite?:boolean }
+  //   dryRun=true は提案のみ(書込なし)。既定は空欄のみ補完(手動設定を温存)。
+  app.post(
+    "/api/conditions/auto-link",
+    requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "conditions", renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        const b = req.body || {};
+        const ids = Array.isArray(b.ids)
+          ? b.ids.map((n: any) => Number(n)).filter((n: number) => Number.isFinite(n))
+          : undefined;
+        const result = await autoLinkConditions({
+          ids,
+          overwrite: b.overwrite === true,
+          dryRun: b.dryRun !== false,
+        });
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("/api/conditions/auto-link failed:", error);
         res.status(500).json({ ok: false, error: String(error?.message || error) });
       }
     }
