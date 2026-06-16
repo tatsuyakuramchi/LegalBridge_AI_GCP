@@ -333,6 +333,11 @@ export async function getDocumentsByCategory(vendorId: number) {
       d.issue_key,
       COALESCE(d.drive_link, ea.file_link, vd.document_url) AS file_link,
       d.created_at,
+      d.email_sent_at,
+      d.excel_issued_at,
+      (SELECT cr.sent_at FROM cloudsign_requests cr
+         WHERE cr.document_number = vd.document_number AND cr.sent_at IS NOT NULL
+         ORDER BY cr.sent_at DESC LIMIT 1) AS cloudsign_sent_at,
       vd.base_document_number,
       COALESCE(vd.revision, 0) AS revision,
       vd.is_primary
@@ -371,6 +376,9 @@ export async function getDocumentsByCategory(vendorId: number) {
       d.issue_key,
       COALESCE(d.drive_link, ea.file_link, vd.document_url) AS file_link,
       d.created_at,
+      NULL::timestamptz AS email_sent_at,
+      NULL::timestamptz AS excel_issued_at,
+      NULL::timestamptz AS cloudsign_sent_at,
       NULL::text AS base_document_number,
       0 AS revision,
       TRUE AS is_primary
@@ -422,6 +430,15 @@ export async function getDocumentsByCategory(vendorId: number) {
       issue_key: r.issue_key || "",
       created_at:
         r.created_at instanceof Date ? r.created_at.toISOString() : r.created_at,
+      // 送信時刻: メール(検収書/計算書) / CloudSign / Excel出力 のいずれか。
+      email_sent_at: r.email_sent_at instanceof Date ? r.email_sent_at.toISOString() : (r.email_sent_at || ""),
+      cloudsign_sent_at: r.cloudsign_sent_at instanceof Date ? r.cloudsign_sent_at.toISOString() : (r.cloudsign_sent_at || ""),
+      excel_issued_at: r.excel_issued_at instanceof Date ? r.excel_issued_at.toISOString() : (r.excel_issued_at || ""),
+      sent_at:
+        (r.email_sent_at instanceof Date ? r.email_sent_at.toISOString() : (r.email_sent_at || "")) ||
+        (r.cloudsign_sent_at instanceof Date ? r.cloudsign_sent_at.toISOString() : (r.cloudsign_sent_at || "")) ||
+        (r.excel_issued_at instanceof Date ? r.excel_issued_at.toISOString() : (r.excel_issued_at || "")),
+      sent_channel: r.email_sent_at ? "メール" : r.cloudsign_sent_at ? "CloudSign" : r.excel_issued_at ? "Excel" : "",
       // Phase 22.12: リビジョン情報も含める
       base_document_number: r.base_document_number || r.document_number || "",
       revision: Number(r.revision) || 0,
