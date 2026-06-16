@@ -194,6 +194,8 @@ import {
   requireAppRole,
   attachAppRole,
   requireScreen,
+  requireAdminOrDepartment,
+  resolveDepartmentCode,
 } from "./src/lib/authMiddleware.ts";
 import type { Role } from "./src/lib/screens.ts";
 import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
@@ -393,10 +395,11 @@ async function startServer() {
     async (req, res) => {
     try {
       const role = (req as any).userRole as Role;
+      const deptCode = await resolveDepartmentCode(req);
       const query = String(req.query.q || "").trim();
       const auth = makeSignLink(req);
       if (!query) {
-        return res.type("html").send(renderListPage("", [], auth, role));
+        return res.type("html").send(renderListPage("", [], auth, role, deptCode));
       }
       // 単一候補のときも一覧経由で見せる (UX 一貫性)。検索 -> リスト -> 詳細
       // の階層をユーザーに常に提示するため。
@@ -410,7 +413,7 @@ async function startServer() {
       } else if ((summary as any)?.counterparty) {
         results = [summary];
       }
-      res.type("html").send(renderListPage(query, results, auth, role));
+      res.type("html").send(renderListPage(query, results, auth, role, deptCode));
     } catch (error) {
       console.error("/search/vendor failed:", error);
       res
@@ -474,7 +477,8 @@ async function startServer() {
       }
       // Phase 17d: Backlog ステータスを enrich
       await enrichWithBacklogStatus(payload);
-      res.type("html").send(renderRingiPage(payload, auth, role));
+      const deptCode = await resolveDepartmentCode(req);
+      res.type("html").send(renderRingiPage(payload, auth, role, deptCode));
     } catch (error) {
       console.error("/search/ringi/:number failed:", error);
       res
@@ -515,7 +519,8 @@ async function startServer() {
           .type("html")
           .send(renderErrorPage("Not Found", "取引先が見つかりませんでした", 404));
       }
-      res.type("html").send(renderDetailPage(payload, backQuery, auth, role));
+      const deptCode = await resolveDepartmentCode(req);
+      res.type("html").send(renderDetailPage(payload, backQuery, auth, role, deptCode));
     } catch (error) {
       console.error("/search/vendor/:vendorId failed:", error);
       res
@@ -620,10 +625,13 @@ async function startServer() {
         }
 
         // viewer or unregistered(or admin の preview) → 美しい検索ポータルホーム。
+        //   FIN 部署のみ「条件明細」タイルを出すため部署コードを解決して渡す。
+        const deptCode = await resolveDepartmentCode(req);
         res.type("html").send(
           viewerHomePage({
             currentEmail: user?.email || null,
             currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
+            deptCode,
           })
         );
       } catch (error) {
@@ -707,9 +715,10 @@ async function startServer() {
     "/templates/preview",
     requireIapUser({ renderErrorPage }),
     attachAppRole(),
-    (req, res) => {
+    async (req, res) => {
       try {
-        res.type("html").send(templatePreviewPage((req as any).userRole as Role));
+        const deptCode = await resolveDepartmentCode(req);
+        res.type("html").send(templatePreviewPage((req as any).userRole as Role, deptCode));
       } catch (error) {
         console.error("/templates/preview failed:", error);
         res
@@ -3243,8 +3252,35 @@ async function startServer() {
     }
   });
 
+  // 条件明細(閲覧専用)。VIEW 側に公開しつつ、部署コード FIN(+admin)のみ閲覧可。
+  //   編集(紐付け)は無効化し、検索・CSV のみ。
+  app.get(
+    "/view/conditions",
+    requireIapUser({ renderErrorPage }),
+    requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }),
+    async (req, res) => {
+      try {
+        const role = (req as any).userRole as Role;
+        const deptCode = await resolveDepartmentCode(req);
+        res
+          .type("html")
+          .send(
+            conditionsPage(role, {
+              active: "conditions-fin",
+              deptCode,
+              canEdit: false,
+            })
+          );
+      } catch (error) {
+        console.error("/view/conditions failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
   // GET /api/conditions/search — 条件明細の検索 (支払日/納期/種類/取引先/担当/キーワード)
-  app.get("/api/conditions/search", requireIapUser({ renderErrorPage }), async (req, res) => {
+  //   admin または FIN 部署のみ(VIEW 側の閲覧専用ビューと整合)。
+  app.get("/api/conditions/search", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
       const result = await listConditions({
@@ -3268,9 +3304,12 @@ async function startServer() {
   });
 
   // PUT /api/conditions/:id/links — 明細行の 原作/作品/マスター契約 紐付けを更新
+  //   書き込みは admin 専用(FIN viewer の閲覧専用ビューからは編集不可)。
   app.put(
     "/api/conditions/:id/links",
     requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "conditions", renderErrorPage }),
     express.json(),
     async (req, res) => {
       try {
@@ -3314,7 +3353,8 @@ async function startServer() {
   );
 
   // GET /api/conditions/export — 条件明細を CSV 出力(全件 or ?ids=1,2,3 の選択)
-  app.get("/api/conditions/export", requireIapUser({ renderErrorPage }), async (req, res) => {
+  //   admin または FIN 部署のみ。
+  app.get("/api/conditions/export", requireIapUser({ renderErrorPage }), requireAdminOrDepartment({ departments: ["FIN"], renderErrorPage }), async (req, res) => {
     try {
       const q = req.query as Record<string, string>;
       const ids = q.ids

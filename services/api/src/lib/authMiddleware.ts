@@ -699,6 +699,85 @@ export function attachAppRole(): RequestHandler {
 }
 
 /**
+ * ログイン者の部署コード(staff.department_code)を解決する。
+ *   email が無い/未登録なら null。結果は req.userDeptCode にキャッシュ。
+ */
+export async function resolveDepartmentCode(
+  req: Request
+): Promise<string | null> {
+  const cached = (req as any).userDeptCode;
+  if (cached !== undefined) return cached as string | null;
+
+  const user: ReqUser | undefined = (req as any).user;
+  const email = (user?.email || "").trim().toLowerCase();
+  let code: string | null = null;
+  if (email) {
+    try {
+      const r = await query(
+        "SELECT department_code FROM staff WHERE LOWER(email) = $1 LIMIT 1",
+        [email]
+      );
+      code = ((r.rows[0]?.department_code as string) || "").trim() || null;
+    } catch (err) {
+      console.warn(`[dept] resolveDepartmentCode lookup failed for ${email}:`, err);
+    }
+  }
+  (req as any).userDeptCode = code;
+  return code;
+}
+
+/**
+ * admin、または指定部署コードを持つユーザーのみ通すルートガード。
+ *   - app_role=admin は常に通過。
+ *   - それ以外は staff.department_code が departments に含まれれば通過。
+ *   - 不足なら 403 (HTML or JSON)。条件明細など「部署限定の閲覧」に使う。
+ * requireIapUser → requireAdminOrDepartment の順で使う(role/dept を attach する)。
+ */
+export function requireAdminOrDepartment(opts: {
+  departments: string[];
+  renderErrorPage?: (title: string, message: string, status: number) => string;
+}): RequestHandler {
+  const renderErr = opts.renderErrorPage || defaultErrorHtml;
+  const allow = opts.departments.map((d) => d.trim()).filter(Boolean);
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const role = await resolveAppRole(req);
+    (req as any).userRole = role;
+    const dept = await resolveDepartmentCode(req);
+
+    if (role === "admin" || (dept && allow.includes(dept))) {
+      logAccess(req, "allow_signed", {
+        layer: "department",
+        resource: allow.join(","),
+        role,
+      });
+      return next();
+    }
+
+    logAccess(req, "deny", {
+      layer: "department",
+      resource: allow.join(","),
+      role,
+    });
+    const acceptsJson =
+      String(req.headers["accept"] || "").includes("application/json") ||
+      req.path.startsWith("/api/");
+    if (acceptsJson) {
+      return res.status(403).json({ ok: false, error: "forbidden (department)" });
+    }
+    return res
+      .status(403)
+      .type("html")
+      .send(
+        renderErr(
+          "Forbidden",
+          `この画面は ${allow.join(" / ")} 部署のメンバーのみ閲覧できます。`,
+          403
+        )
+      );
+  };
+}
+
+/**
  * 画面レジストリ(screens.ts)の minRole に基づくルートガード。
  *   - role >= screen.minRole なら通過。
  *   - 不足なら 403 (HTML or JSON)。
