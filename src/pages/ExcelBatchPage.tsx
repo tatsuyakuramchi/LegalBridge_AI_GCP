@@ -77,6 +77,43 @@ export const ExcelBatchPage: React.FC = () => {
     failed: number
     links: Array<{ fileName: string; excelLink: string }>
   } | null>(null)
+  // 文書番号 → メール送信中 / 送信済み(sent_at)
+  const [emailBusy, setEmailBusy] = React.useState<Record<string, boolean>>({})
+  const [emailDone, setEmailDone] = React.useState<Record<string, string>>({})
+
+  // 検収書 / 計算書を取引先へメール送信(宛先は空欄で主担当、入力で上書き)。
+  const sendEmail = async (docNumber: string) => {
+    const to = window.prompt(
+      "送信先メール（空欄なら取引先の主担当）。複数はカンマ区切り:",
+      ""
+    )
+    if (to === null) return // キャンセル
+    setEmailBusy((s) => ({ ...s, [docNumber]: true }))
+    try {
+      const res = await fetch(
+        `/api/documents/${encodeURIComponent(docNumber)}/email/send`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(to.trim() ? { to: to.trim() } : {}),
+        }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false)
+        throw new Error(data.error || `HTTP ${res.status}`)
+      setEmailDone((s) => ({
+        ...s,
+        [docNumber]: data.sent_at || new Date().toISOString(),
+      }))
+      window.alert(
+        `送信しました: ${(data.to || []).join(", ")}${data.attached ? "（PDF添付）" : "（本文リンクのみ）"}`
+      )
+    } catch (e: any) {
+      window.alert(`メール送信に失敗: ${e?.message || e}`)
+    } finally {
+      setEmailBusy((s) => ({ ...s, [docNumber]: false }))
+    }
+  }
 
   const refresh = React.useCallback(async () => {
     setLoading(true)
@@ -352,7 +389,8 @@ export const ExcelBatchPage: React.FC = () => {
                             <tr className="text-muted-foreground/70 text-left">
                               <th className="py-0.5 pr-3 font-normal">検収書番号</th>
                               <th className="py-0.5 pr-3 font-normal">検収日</th>
-                              <th className="py-0.5 font-normal">件名 / 取引先</th>
+                              <th className="py-0.5 pr-3 font-normal">件名 / 取引先</th>
+                              <th className="py-0.5 font-normal">メール</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -364,8 +402,23 @@ export const ExcelBatchPage: React.FC = () => {
                                 <td className="py-0.5 pr-3 whitespace-nowrap">
                                   {it.inspection_date || "—"}
                                 </td>
-                                <td className="py-0.5 text-muted-foreground truncate max-w-[280px]">
+                                <td className="py-0.5 pr-3 text-muted-foreground truncate max-w-[240px]">
                                   {it.title || it.counterparty || "—"}
+                                </td>
+                                <td className="py-0.5 whitespace-nowrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => sendEmail(it.document_number)}
+                                    disabled={!!emailBusy[it.document_number]}
+                                    className="text-[10px] underline text-emerald-700 dark:text-emerald-300 disabled:opacity-50"
+                                    title="検収書/計算書を取引先へメール送信"
+                                  >
+                                    {emailBusy[it.document_number]
+                                      ? "送信中…"
+                                      : emailDone[it.document_number]
+                                        ? "✓ 再送信"
+                                        : "✉ 送信"}
+                                  </button>
                                 </td>
                               </tr>
                             ))}
