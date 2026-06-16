@@ -1944,6 +1944,9 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       legal_consult: "LG",
       "法務相談": "LG",
       "事務手続": "LG",
+      // 通知・同意 (個人情報取得 通知・同意書) → ARC-PR-YYYY-NNNN
+      notice_consent_personal_info_freelance: "PR",
+      "個人情報取得 通知・同意書": "PR",
       // その他
       nda: "NDA",
       "NDA": "NDA",

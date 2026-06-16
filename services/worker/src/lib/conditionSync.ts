@@ -117,6 +117,24 @@ export async function syncConditionLinesForCapability(
     await db.query(INSERT_CL, conditionLineInsertValues(row));
     added++;
   }
+
+  // 2c-1: 既存 condition_lines のメタを旧 line item から再同期(変更の追従)。
+  //   status_flags(検収書発行済 等)・紐付け編集・方向が source 側で変わっても
+  //   新台帳へ反映する。新台帳が旧の忠実なスーパーセットであり続けるため。
+  await db.query(
+    `UPDATE condition_lines cl
+        SET source_ip_id       = cli.source_ip_id,
+            master_contract_id = cli.master_contract_id,
+            ringi_id           = cli.ringi_id,
+            status_flags       = COALESCE(cli.status_flags, '{}'::jsonb),
+            is_inbound         = COALESCE(cli.is_inbound, FALSE),
+            flow_direction     = cli.flow_direction,
+            updated_at         = CURRENT_TIMESTAMP
+       FROM capability_line_items cli
+      WHERE cl.source_line_item_id = cli.id
+        AND cli.capability_id = $1`,
+    [capabilityId]
+  );
   return added;
 }
 
@@ -182,6 +200,7 @@ export async function syncInspectionEventsForDelivery(
   let added = 0;
   const rows = await db.query(
     `SELECT dli.id, dli.capability_line_item_id, dli.inspected_amount_ex_tax,
+            dli.inspected_quantity, dli.acceptance_ratio,
             de.delivered_at, de.created_at AS de_created, de.backlog_issue_key,
             cl.id AS condition_line_id
        FROM delivery_line_items dli
@@ -193,7 +212,12 @@ export async function syncInspectionEventsForDelivery(
   );
   for (const row of rows.rows) {
     if (!row.condition_line_id) continue; // 未バックフィル → skip
-    const doc = await db.query(
+    // 検収書 document の解決。手動/取込の検収書(ARC-*)は form_data に
+    //   delivery_event_id を持たないため、精密一致(delivery_event_id) だけでは
+    //   解決できず保留になっていた(これがステータス未更新の主因)。
+    //   フォールバックとして delivery_event の課題(backlog_issue_key)で検収書を
+    //   解決し、誤リンク回避のため「ちょうど1件」のときだけ採用する(C-3 相当)。
+    let doc = await db.query(
       `SELECT id FROM documents
         WHERE template_type IN ('inspection_certificate','delivery_inspec')
           AND form_data->>'delivery_event_id' = $1::text
@@ -201,13 +225,24 @@ export async function syncInspectionEventsForDelivery(
         ORDER BY created_at DESC LIMIT 1`,
       [deliveryEventId]
     );
+    if (!doc.rows.length && row.backlog_issue_key) {
+      const byIssue = await db.query(
+        `SELECT id FROM documents
+          WHERE template_type IN ('inspection_certificate','delivery_inspec')
+            AND issue_key = $1
+            AND COALESCE(lifecycle_status,'final') = 'final'`,
+        [row.backlog_issue_key]
+      );
+      if (byIssue.rows.length === 1) doc = byIssue;
+    }
     if (!doc.rows.length) continue; // 文書未解決 → skip (CHECK 回避)
     const eventNo = await nextEventNo(db, row.condition_line_id);
     await db.query(
       `INSERT INTO condition_events
          (condition_line_id, event_no, event_type, document_id, backlog_issue_key,
-          occurred_at, amount_ex_tax, source_delivery_line_item_id)
-       VALUES ($1,$2,'inspection',$3,$4,$5,$6,$7)`,
+          occurred_at, amount_ex_tax, inspected_quantity, acceptance_ratio,
+          source_delivery_line_item_id)
+       VALUES ($1,$2,'inspection',$3,$4,$5,$6,$7,$8,$9)`,
       [
         row.condition_line_id,
         eventNo,
@@ -215,6 +250,8 @@ export async function syncInspectionEventsForDelivery(
         row.backlog_issue_key,
         row.delivered_at || row.de_created,
         Number(row.inspected_amount_ex_tax) || 0,
+        row.inspected_quantity ?? null,
+        row.acceptance_ratio ?? null,
         row.id,
       ]
     );
@@ -240,7 +277,8 @@ export async function syncRoyaltyCalcEvent(
 ): Promise<number> {
   const rcRes = await db.query(
     `SELECT rc.id, rc.capability_financial_condition_id, rc.manufacturing_event_id,
-            rc.actual_royalty_ex_tax, rc.period, rc.backlog_issue_key, rc.created_at,
+            rc.actual_royalty_ex_tax, rc.mg_consumed_this_time, rc.ag_consumed_this_time,
+            rc.period, rc.backlog_issue_key, rc.created_at,
             cl.id AS condition_line_id
        FROM royalty_calculations rc
        LEFT JOIN condition_lines cl ON cl.source_condition_id = rc.capability_financial_condition_id
@@ -266,8 +304,9 @@ export async function syncRoyaltyCalcEvent(
   await db.query(
     `INSERT INTO condition_events
        (condition_line_id, event_no, event_type, document_id, backlog_issue_key,
-        occurred_at, period, amount_ex_tax, source_royalty_calculation_id)
-     VALUES ($1,$2,'royalty_calc',$3,$4,$5,$6,$7,$8)`,
+        occurred_at, period, amount_ex_tax, manufacturing_event_id,
+        mg_consumed_this_time, ag_consumed_this_time, source_royalty_calculation_id)
+     VALUES ($1,$2,'royalty_calc',$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
     [
       row.condition_line_id,
       eventNo,
@@ -276,6 +315,9 @@ export async function syncRoyaltyCalcEvent(
       row.created_at,
       row.period,
       Number(row.actual_royalty_ex_tax) || 0,
+      row.manufacturing_event_id ?? null,
+      row.mg_consumed_this_time ?? null,
+      row.ag_consumed_this_time ?? null,
       row.id,
     ]
   );

@@ -58,6 +58,13 @@ export interface LineItemLike {
   billing_day?: any;
   term_start?: any;
   term_end?: any;
+  // 2c: 横断検索・編集メタ(capability_line_items 固有)
+  source_ip_id?: any;
+  master_contract_id?: any;
+  ringi_id?: any;
+  status_flags?: any;
+  is_inbound?: any;
+  flow_direction?: any;
 }
 
 export function determineLineItemScheme(li: LineItemLike): PaymentScheme {
@@ -103,10 +110,13 @@ export function mapLineItemToConditionLine(
     calc_period: null,
     formula_text: null,
     source_seq_no: num(li.line_no),
-    // 消化型の数量・単価・金額
-    quantity: recurring ? null : num(li.quantity),
-    unit_price: recurring ? null : num(li.unit_price),
-    amount_ex_tax: recurring ? null : num(li.amount_ex_tax) ?? 0,
+    // 2c-2: 数量・単価・金額は全方式で保存(subscription も生値を持つ)。横断検索が
+    //   raw 明細として表示するため。CHECK cl_scheme_depletable_target は subscription の
+    //   amount を許容(NULL/値どちらでも可)。コックピットの remaining は status_v 側で
+    //   消化型のみに限定(0066)するので subscription は「残—」を維持。
+    quantity: num(li.quantity),
+    unit_price: num(li.unit_price),
+    amount_ex_tax: num(li.amount_ex_tax) ?? 0,
     delivery_date: isPresent(li.delivery_date) ? li.delivery_date : null,
     // 継続型(subscription)の期間・サイクル
     term_start: recurring && isPresent(li.term_start) ? li.term_start : null,
@@ -118,6 +128,14 @@ export function mapLineItemToConditionLine(
     base_price_label: null,
     mg_amount: null,
     ag_amount: null,
+    // 2c: 横断検索・編集メタ(旧 capability_line_items 由来)。status_flags は
+    //   JSONB(NOT NULL DEFAULT '{}')なので欠損は '{}'、is_inbound は false。
+    source_ip_id: li.source_ip_id ?? null,
+    master_contract_id: li.master_contract_id ?? null,
+    ringi_id: li.ringi_id ?? null,
+    status_flags: li.status_flags != null ? JSON.stringify(li.status_flags) : "{}",
+    is_inbound: li.is_inbound === true,
+    flow_direction: isPresent(li.flow_direction) ? String(li.flow_direction) : null,
     source_line_item_id: li.id ?? null,
     source_condition_id: null,
   };
@@ -218,6 +236,13 @@ export function mapFinancialConditionToConditionLine(
         : null,
     mg_amount: royalty ? num(fc.mg_amount) : null,
     ag_amount: royalty ? num(fc.ag_amount) : null,
+    // 2c: 紐付け/状態は line item 固有。financial 由来は既定値。
+    source_ip_id: null,
+    master_contract_id: null,
+    ringi_id: null,
+    status_flags: "{}",
+    is_inbound: false,
+    flow_direction: null,
     source_line_item_id: null,
     source_condition_id: fc.id ?? null,
   };
@@ -260,6 +285,12 @@ export const CONDITION_LINE_COLUMNS = [
   "base_price_label",
   "mg_amount",
   "ag_amount",
+  "source_ip_id",
+  "master_contract_id",
+  "ringi_id",
+  "status_flags",
+  "is_inbound",
+  "flow_direction",
   "source_line_item_id",
   "source_condition_id",
 ] as const;
