@@ -6353,6 +6353,17 @@ ${details}
             const map = await ensureIssueMap();
             vendorName = vendorFromSummary(map.get(d.issue_key)) || null;
           }
+          if (
+            !vendorName &&
+            d.issue_key &&
+            String(d.template_type || "").includes("notice")
+          ) {
+            // 通知書は "[納品報告] <親PO> / <取引先名>" 形式で 】…｜ に合致しない。
+            //   タイトル末尾(スラッシュ区切りの最後)を取引先として拾う。
+            const s = (await ensureIssueMap()).get(d.issue_key);
+            const tail = s && s.includes("/") ? s.split("/").pop()?.trim() : "";
+            if (tail) vendorName = tail;
+          }
           if (!vendorName) {
             files.unresolved_vendor++;
             if (files.unresolved_samples.length < 20) {
