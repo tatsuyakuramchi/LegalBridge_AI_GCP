@@ -148,6 +148,7 @@ function tile(t: Tool, cls = ""): string {
 export function viewerHomePage(opts: {
   currentEmail: string | null;
   currentRole?: string | null;
+  deptCode?: string | null;
 }): string {
   const email = opts.currentEmail || "(不明)";
   const role = opts.currentRole || "viewer";
@@ -165,6 +166,15 @@ export function viewerHomePage(opts: {
       desc: "全ひな型をサンプル表示・PDF 化。Slack 貼付け用リンクもここで。",
     },
   ];
+  // 条件明細(閲覧専用)は FIN 部署のみ。検索ポータルにもタイルを出す。
+  if ((opts.deptCode || "").trim() === "FIN") {
+    tools.push({
+      href: "/view/conditions",
+      icon: "🧾",
+      title: "条件明細 検索",
+      desc: "支払日・納期・担当・種類・取引先で条件明細を横断検索(FIN 部署専用の閲覧ビュー)。",
+    });
+  }
   const body = `
   <div class="wrap" style="max-width:880px">
     <div class="rise" style="text-align:center;margin-top:18px;margin-bottom:30px">

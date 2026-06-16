@@ -12,6 +12,7 @@
  */
 
 import { popPage } from "./popChrome.ts";
+import type { PopNavKey } from "./popChrome.ts";
 import type { Role } from "../lib/screens.ts";
 import { LINE_ITEM_STATUS_DEFS } from "../services/conditionsService.ts";
 
@@ -68,7 +69,12 @@ const EXTRA_CSS = `<style>
 .accent{width:4px;align-self:stretch;border-radius:3px;flex-shrink:0;min-height:18px}
 </style>`;
 
-export function conditionsPage(role: Role = "viewer"): string {
+export function conditionsPage(
+  role: Role = "viewer",
+  opts: { active?: PopNavKey; deptCode?: string | null; canEdit?: boolean } = {}
+): string {
+  // 編集(紐付けモーダル)は admin のみ。FIN viewer 等の閲覧専用ビューでは無効化。
+  const canEdit = opts.canEdit ?? role === "admin";
   const toolbar = `
       <button class="pop-btn sec sm" id="btn-csv-sel">⤓ 選択をCSV (<span id="sel-n">0</span>)</button>
       <button class="pop-btn sm" id="btn-csv-all">⤓ 全件CSV</button>`;
@@ -117,7 +123,7 @@ export function conditionsPage(role: Role = "viewer"): string {
 
   <div class="pop-toolbar2">
     <span class="count-badge" id="count">—</span>
-    <span class="muted" style="font-size:12px;">行をクリックで紐付け(原作 / 作品 / 基本契約 / 稟議 / 状態)を編集</span>
+    <span class="muted" style="font-size:12px;">${canEdit ? "行をクリックで紐付け(原作 / 作品 / 基本契約 / 稟議 / 状態)を編集" : "閲覧専用ビュー(検索・CSV出力のみ)"}</span>
   </div>
 
   <div class="view-switch">
@@ -187,6 +193,7 @@ export function conditionsPage(role: Role = "viewer"): string {
 
 <script>
   var API = "/api/conditions/search";
+  var CAN_EDIT = ${canEdit ? "true" : "false"}; // 閲覧専用ビューでは紐付け編集を無効化
   var CAT_LABEL = { service: "業務委託", license: "ライセンス", license_in: "ライセンス(IN)", license_out: "ライセンス(OUT)", publication: "出版", sales: "売買", nda: "NDA" };
   var STATUS_DEFS = ${JSON.stringify(LINE_ITEM_STATUS_DEFS)};
   var currentRows = [];
@@ -549,6 +556,7 @@ export function conditionsPage(role: Role = "viewer"): string {
       updateSelCount();
       return;
     }
+    if (!CAN_EDIT) return; // 閲覧専用: 行クリックでの編集を無効化(チェックボックス選択は上で処理済)
     var leaf = t.closest ? t.closest(".tleaf") : null;
     if (leaf && leaf.getAttribute("data-id")) { openEdit(leaf.getAttribute("data-id")); return; }
     var tr = t.closest ? t.closest("tr.clickable") : null;
@@ -600,11 +608,14 @@ export function conditionsPage(role: Role = "viewer"): string {
 </script>`;
 
   return popPage({
-    active: "conditions",
+    active: opts.active || "conditions",
     role,
+    deptCode: opts.deptCode,
     mode: "view",
     title: "条件明細",
-    subtitle: "支払日 / 納期 / 担当 / 種類 / 取引先で検索",
+    subtitle: canEdit
+      ? "支払日 / 納期 / 担当 / 種類 / 取引先で検索"
+      : "支払日 / 納期 / 担当 / 種類 / 取引先で検索(閲覧専用)",
     toolbar,
     body,
     headExtra: EXTRA_CSS,

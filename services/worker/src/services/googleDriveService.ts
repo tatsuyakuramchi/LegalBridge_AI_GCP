@@ -198,10 +198,18 @@ export class GoogleDriveService {
    * ようにする (DB rename は既に確定しているので、Drive 側だけ失敗しても
    * 警告ログだけで継続したい)。
    */
-  /** webViewLink から fileId を抽出。 */
+  /** webViewLink から fileId を抽出。複数 URL 形式に対応。 */
   private fileIdFromLink(driveLink: string): string | null {
-    const m = (driveLink || "").match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
-    return m?.[1] || null;
+    const s = driveLink || "";
+    //   /file/d/<id>/... , /d/<id>(docs/sheets), open?id=<id>, uc?id=<id>
+    const m =
+      s.match(/\/file\/d\/([a-zA-Z0-9_-]+)/) ||
+      s.match(/\/d\/([a-zA-Z0-9_-]+)/) ||
+      s.match(/[?&]id=([a-zA-Z0-9_-]+)/);
+    if (m) return m[1];
+    // URL でなく fileId そのものが保存されているケース。
+    if (/^[a-zA-Z0-9_-]{20,}$/.test(s)) return s;
+    return null;
   }
 
   /** CloudSign 送信用に、既存 Drive ファイル(PDF)の中身を取得する。 */
@@ -216,12 +224,24 @@ export class GoogleDriveService {
   }
 
   async renameFile(driveLink: string, newName: string): Promise<string | null> {
-    if (!driveLink || !newName) return null;
-    const fileId = this.fileIdFromLink(driveLink);
-    if (!fileId) {
-      console.warn(`[GoogleDriveService.renameFile] cannot extract fileId from: ${driveLink}`);
-      return null;
+    const r = await this.renameFileVerbose(driveLink, newName);
+    if (!r.ok && r.error) {
+      console.warn(`[GoogleDriveService.renameFile] ${r.error}`);
     }
+    return r.ok ? r.name || newName : null;
+  }
+
+  /**
+   * renameFile の詳細版。失敗理由を呼び出し側に返す (backfill 診断用)。
+   * 失敗は throw せず { ok:false, error } を返す。
+   */
+  async renameFileVerbose(
+    driveLink: string,
+    newName: string
+  ): Promise<{ ok: boolean; name?: string; error?: string }> {
+    if (!driveLink || !newName) return { ok: false, error: "empty driveLink/newName" };
+    const fileId = this.fileIdFromLink(driveLink);
+    if (!fileId) return { ok: false, error: `cannot extract fileId from: ${driveLink}` };
     try {
       const response = await this.drive.files.update({
         fileId,
@@ -229,13 +249,12 @@ export class GoogleDriveService {
         fields: "id, name",
         supportsAllDrives: true,
       });
-      return response.data.name || null;
+      return { ok: !!response.data.name, name: response.data.name || undefined };
     } catch (error: any) {
-      console.warn(
-        `[GoogleDriveService.renameFile] failed to rename fileId=${fileId} to "${newName}":`,
-        error?.message || error
-      );
-      return null;
+      return {
+        ok: false,
+        error: `fileId=${fileId}: ${error?.message || String(error)}`,
+      };
     }
   }
 

@@ -43,6 +43,53 @@ export type DocumentType =
   | "pub_additional_terms" // Phase 25: 追加利用許諾条件書 (商品化・映像化・デジタルゲーム化)
   | "license_calculation_sheet"; // legacy alias (= royalty_statement 系の旧名)
 
+/**
+ * 文書ファイル名の単一ソース (generateDocument と過去分 backfill が共用)。
+ * 命名ルール(作成日 YYYYMMDD を必ず付与):
+ *   検収書 / 利用許諾料計算書 → 文書番号_親文書番号_YYYYMMDD
+ *     (親文書番号が不明な場合は取引先名にフォールバック)
+ *   それ以外(契約書/発注書/出版等利用許諾条件書/個別利用許諾条件書 等)
+ *                            → 文書番号_取引先名_YYYYMMDD
+ *   例: "ARC-PO-2026-0001_株式会社サンプル_20260616.html"
+ *       "ARC-INS-2026-0001_ARC-PO-2026-0001_20260616.html"
+ * 文書番号が無い場合は "TYPE_issueKey..." の旧フォールバックを踏襲。
+ */
+export function buildDocumentFileName(
+  type: DocumentType | string,
+  opts: {
+    documentNumber?: string;
+    issueKey?: string;
+    vendorName?: string | null;
+    parentDocNumber?: string | null;
+    date?: Date;
+  }
+): string {
+  const t = String(type || "");
+  // 検収書 / 利用許諾料計算書(legacy alias 含む) は親文書番号で命名。
+  const isParentNamed =
+    t.includes("inspection") ||
+    t === "royalty_statement" ||
+    t === "license_calculation_sheet";
+  const vendorPart = opts.vendorName
+    ? `_${sanitizeForFilename(opts.vendorName)}`
+    : "";
+  const parentPart = opts.parentDocNumber
+    ? `_${sanitizeForFilename(opts.parentDocNumber)}`
+    : "";
+  const midPart = isParentNamed ? parentPart || vendorPart : vendorPart;
+  // 作成日 YYYYMMDD (JST)。date 未指定は現在時刻。
+  const base = opts.date instanceof Date && !isNaN(opts.date.getTime())
+    ? opts.date
+    : new Date();
+  const ymd = new Date(base.getTime() + 9 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "");
+  return opts.documentNumber
+    ? `${opts.documentNumber}${midPart}_${ymd}.html`
+    : `${t.toUpperCase()}_${opts.issueKey}${midPart}_${ymd}.html`;
+}
+
 export class DocumentService {
   private templatesDir: string;
 
@@ -349,21 +396,13 @@ export class DocumentService {
     opts?: { vendorName?: string; parentDocNumber?: string }
   ): Promise<{ html: string; fileName: string }> {
     const html = this.renderHtml(data, type);
-    const prefix = type.toUpperCase();
-    // Phase 22.10: ファイル名に取引先名を含める。
-    //   取引先名は filesystem 安全に sanitize し、空のときはサフィックスなし。
-    //   例: "ARC-PO-2026-0001_株式会社サンプル.html"
-    //       "ARC-PO-2026-0001_001_株式会社サンプル.html" (再発行版)
-    //   検収書は親発注書番号も含める: "ARC-INS-2026-0001_ARC-PO-2026-0001_株式会社サンプル.html"
-    const vendorPart = opts?.vendorName
-      ? `_${sanitizeForFilename(opts.vendorName)}`
-      : "";
-    const parentPart = opts?.parentDocNumber
-      ? `_${sanitizeForFilename(opts.parentDocNumber)}`
-      : "";
-    const fileName = data.documentNumber
-      ? `${data.documentNumber}${parentPart}${vendorPart}.html`
-      : `${prefix}_${data.issueKey}${parentPart}${vendorPart}_${Date.now()}.html`;
+    // ファイル名は buildDocumentFileName に集約 (過去分 backfill と完全共用)。
+    const fileName = buildDocumentFileName(type, {
+      documentNumber: data.documentNumber,
+      issueKey: data.issueKey,
+      vendorName: opts?.vendorName,
+      parentDocNumber: opts?.parentDocNumber,
+    });
     return { html, fileName };
   }
 

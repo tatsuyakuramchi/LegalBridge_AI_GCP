@@ -7,7 +7,8 @@
  *   Slack 起票と違って PDF 自動生成も Slack DM もしない最小フロー。
  *
  * 課題名の均一化:
- *   フォーマットは固定で `【${typeLabel}】${counterparty}｜${subTopic}` を生成。
+ *   フォーマットは固定で `【${titleLabel}】${counterparty}_${subTopic}_${YYYYMMDD}` を生成。
+ *   titleLabel は 契約審査→文書作成 に置換(Backlog の issue type 名は温存)。
  *   ユーザーは自由入力できず、選択肢と短いテキストフィールドの組み合わせで
  *   組み上げる (= 案件管理側で課題名ばらつきが起きないようにする)。
  *
@@ -298,9 +299,20 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
     return manualCounterparty.trim()
   }, [counterpartyMode, selectedVendor, manualCounterparty])
 
-  const previewTitle = `【${currentTemplate.issueTypeLabel}】${
+  // 課題名 prefix: 「契約審査」は文書作成と質が異なるため【文書作成】に置換
+  //   (文書レビューは別途【法務相談】)。Backlog の issue type 名は契約審査のまま。
+  const titleLabel =
+    currentTemplate.issueTypeLabel === "契約審査"
+      ? "文書作成"
+      : currentTemplate.issueTypeLabel
+  // 作成日 YYYYMMDD (JST)。
+  const ymdPreview = new Date(Date.now() + 9 * 3600 * 1000)
+    .toISOString()
+    .slice(0, 10)
+    .replace(/-/g, "")
+  const previewTitle = `【${titleLabel}】${
     counterpartyDisplay || "(相手方未指定)"
-  }｜${subTopic.trim() || "(内容未指定)"}`
+  }_${subTopic.trim() || "(内容未指定)"}_${ymdPreview}`
 
   const canSubmit =
     !submitting &&
@@ -369,7 +381,7 @@ export const QuickCreateIssueModal: React.FC<QuickCreateIssueModalProps> = ({
           <DialogDescription>
             {parentIssueKey
               ? `${parentIssueKey} の子課題として登録します。相手方は親課題から自動継承されます。`
-              : "口頭 / メール依頼を受けた案件を Backlog 課題として登録します。課題名は自動で 【タイプ】相手方｜サブテーマ の形式で組み立てられます。"}
+              : "口頭 / メール依頼を受けた案件を Backlog 課題として登録します。課題名は自動で 【タイプ】相手方_件名_作成日 の形式で組み立てられます。"}
           </DialogDescription>
         </DialogHeader>
 

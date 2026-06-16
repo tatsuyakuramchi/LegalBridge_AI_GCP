@@ -38,7 +38,7 @@ import TurndownService from "turndown";
 // @ts-ignore — turndown-plugin-gfm has no types
 import { gfm } from "turndown-plugin-gfm";
 import { BacklogService } from "./src/services/backlogService.ts";
-import { DocumentService } from "./src/services/documentService.ts";
+import { DocumentService, buildDocumentFileName } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { CloudSignService } from "./src/services/cloudSignService.ts";
@@ -2007,8 +2007,9 @@ ${details}
    * 口頭/メール依頼を受けた法務担当が、UI 上でクイックに起案する用途。
    *
    * 課題名フォーマットは均一化のため固定:
-   *   【${issueTypeLabel}】${counterpartyDisplay}｜${subTopicDisplay}
-   *   例: 【契約審査】株式会社サンプル商事｜業務委託基本契約書
+   *   【${titleLabel}】${counterpartyDisplay}_${subTopicDisplay}_${YYYYMMDD}
+   *   ※ titleLabel: 契約審査→文書作成 に置換(Backlog の issue type 名は温存)。
+   *   例: 【文書作成】株式会社サンプル商事_業務委託基本契約書_20260616
    *
    * 課題作成後は legal_requests + issue_workflows にも INSERT して、
    * 既存の workflow state machine と連動するようにする。
@@ -2072,7 +2073,16 @@ ${details}
         // ---- 課題名 (均一フォーマット) ----
         const counterpartyDisplay = counterpartyName.trim() || "(相手方未指定)";
         const subTopicDisplay = subTopic.trim() || "(内容未指定)";
-        const summary = `【${issueTypeLabel}】${counterpartyDisplay}｜${subTopicDisplay}`;
+        // 表示用ラベル: 「契約審査」は文書作成と質が異なるため課題名の prefix を
+        //   「文書作成」に変える(文書レビューは別途【法務相談】)。Backlog の
+        //   issue type 名は契約審査のまま温存(下の type 解決には issueTypeLabel を使う)。
+        const titleLabel = issueTypeLabel === "契約審査" ? "文書作成" : issueTypeLabel;
+        // 作成日 YYYYMMDD (JST)。
+        const ymd = new Date(Date.now() + 9 * 3600 * 1000)
+          .toISOString()
+          .slice(0, 10)
+          .replace(/-/g, "");
+        const summary = `【${titleLabel}】${counterpartyDisplay}_${subTopicDisplay}_${ymd}`;
 
         // ---- description (起案元と起案者情報を明示) ----
         const requester =
@@ -6177,6 +6187,293 @@ ${details}
    *
    * body: { dry_run?: boolean }
    */
+  /**
+   * 検収 event 補完リカバリ。delivery_line_items を持つ delivery_event を走査し、
+   * 未起票の検収 condition_events を冪等に補完する(C-3 のランタイム版)。
+   * 検収書 document の解決に issue_key フォールバックが効くため、過去に保留に
+   * なっていた分(form_data に delivery_event_id 不在)もここで成就反映される。
+   * body: { dry_run?: boolean }
+   */
+  app.post("/api/admin/resync-inspection-events", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run === true;
+    try {
+      if (dryRun) {
+        const pending = await query(
+          `SELECT COUNT(DISTINCT de.id)::int AS n
+             FROM delivery_events de
+             JOIN delivery_line_items dli ON dli.delivery_event_id = de.id
+            WHERE NOT EXISTS (
+                    SELECT 1 FROM condition_events ce
+                     WHERE ce.source_delivery_line_item_id = dli.id)
+              AND EXISTS (
+                    SELECT 1 FROM condition_lines cl
+                     WHERE cl.source_line_item_id = dli.capability_line_item_id)`
+        );
+        return res.json({ ok: true, dry_run: true, pending_delivery_events: pending.rows[0].n });
+      }
+      const evs = await query(
+        `SELECT DISTINCT de.id
+           FROM delivery_events de
+           JOIN delivery_line_items dli ON dli.delivery_event_id = de.id
+          ORDER BY de.id`
+      );
+      let added = 0;
+      const touched: number[] = [];
+      for (const e of evs.rows) {
+        const n = await syncInspectionEventsForDelivery({ query }, Number(e.id));
+        if (n > 0) { added += n; touched.push(Number(e.id)); }
+      }
+      res.json({
+        ok: true,
+        dry_run: false,
+        delivery_events_scanned: evs.rows.length,
+        events_added: added,
+        touched,
+      });
+    } catch (error) {
+      console.error("/api/admin/resync-inspection-events failed:", error);
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 過去分の命名を新ルールに統一する一括 backfill (冪等・dry-run 既定)。
+   *
+   * body:
+   *   - dry_run (default true)   … true なら変更せず計画だけ返す
+   *   - scope ("files"|"issues"|"both", default "both")
+   *   - limit (number, 0=無制限) … files の処理上限 (段階適用用)
+   *
+   * files: documents.drive_link を持つ行の Drive ファイル名を
+   *        buildDocumentFileName で再計算 (日付 = created_at, JST)。
+   *        親番号命名の検収書/利用許諾料計算書は form_data.linked_contract_number を親に使う。
+   * issues: Backlog 課題のうち summary が "【契約審査】" で始まるものの prefix だけを
+   *        "【文書作成】" に置換 (本文・区切りは温存)。
+   */
+  app.post("/api/admin/backfill-naming", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run !== false; // 既定 dry-run
+    const scope = String(req.body?.scope || "both");
+    const limit = Number(req.body?.limit) || 0;
+    const doFiles = scope === "files" || scope === "both";
+    const doIssues = scope === "issues" || scope === "both";
+
+    const result: any = { dry_run: dryRun, scope };
+
+    // Backlog 課題一覧は files の取引先補完にも issues の改名にも使うので一度だけ取得。
+    let _allIssues: any[] | null = null;
+    const loadIssues = async (): Promise<any[]> => {
+      if (_allIssues) return _allIssues;
+      const acc: any[] = [];
+      for (let offset = 0; ; offset += 100) {
+        const page = await backlogService.searchIssues({ count: 100, offset });
+        acc.push(...page);
+        if (page.length < 100 || offset > 5000) break; // 安全弁
+      }
+      _allIssues = acc;
+      return acc;
+    };
+    // "【...】<取引先>｜<文書種別>" の <取引先> を抽出 (全角/半角パイプ両対応)。
+    const vendorFromSummary = (summary?: string): string | null => {
+      if (typeof summary !== "string") return null;
+      const m = summary.match(/】\s*([^｜|]+?)\s*[｜|]/);
+      return m ? m[1].trim() || null : null;
+    };
+
+    try {
+      // ---- 1. Drive ファイル名 ----
+      if (doFiles) {
+        const docs = await query(
+          `SELECT id, document_number, template_type, drive_link, issue_key,
+                  vendor_name_snapshot, base_document_number, form_data, created_at
+             FROM documents
+            WHERE drive_link IS NOT NULL AND drive_link <> ''
+            ORDER BY id` + (limit > 0 ? ` LIMIT ${limit}` : "")
+        );
+        const files = {
+          total: docs.rows.length,
+          renamed: 0,
+          failed: 0,
+          skipped_external: 0,
+          unresolved_vendor: 0,
+          samples: [] as Array<{
+            document_number: string;
+            template_type: string;
+            issue_key: string | null;
+            vendor: string | null;
+            new_name: string;
+          }>,
+          unresolved_samples: [] as Array<{
+            document_number: string;
+            template_type: string;
+            issue_key: string | null;
+            summary: string | null;
+          }>,
+          errors: [] as Array<{ document_number: string; error: string }>,
+        };
+        // issue_key → summary マップ (取引先補完用、遅延構築)。
+        let issueMap: Map<string, string> | null = null;
+        const ensureIssueMap = async (): Promise<Map<string, string>> => {
+          if (!issueMap) {
+            issueMap = new Map();
+            for (const it of await loadIssues()) {
+              if (it?.issueKey) issueMap.set(it.issueKey, it.summary);
+            }
+          }
+          return issueMap;
+        };
+        for (const d of docs.rows) {
+          const fd = d.form_data || {};
+          // 取引先名: snapshot → form_data(生成時と同じキー群) → 取引先マスタ →
+          //   Backlog 課題タイトルの取引先セグメント、の順で救済。
+          let vendorName: string | null =
+            d.vendor_name_snapshot ||
+            fd.VENDOR_NAME ||
+            fd.counterparty ||
+            fd["Licensor_名称"] ||
+            fd["Licensor_氏名会社名"] ||
+            fd.licensor ||
+            fd.PARTY_B_NAME ||
+            fd.partyBName ||
+            null;
+          if (!vendorName) {
+            // legacy bulk import 分は form_data に取引先が無いので
+            // contract_capabilities → vendors を document_number で引いて救済。
+            const vr = await query(
+              `SELECT COALESCE(NULLIF(v.vendor_name,''), NULLIF(v.trade_name,''),
+                               NULLIF(v.pen_name,'')) AS name
+                 FROM contract_capabilities cc
+                 JOIN vendors v ON v.id = cc.vendor_id
+                WHERE cc.document_number = $1
+                LIMIT 1`,
+              [d.document_number]
+            );
+            vendorName = vr.rows[0]?.name || null;
+          }
+          if (!vendorName && d.issue_key) {
+            // 最終手段: Backlog 課題タイトル "【…】<取引先>｜…" から抽出。
+            const map = await ensureIssueMap();
+            vendorName = vendorFromSummary(map.get(d.issue_key)) || null;
+          }
+          if (
+            !vendorName &&
+            d.issue_key &&
+            String(d.template_type || "").includes("notice")
+          ) {
+            // 通知書は "[納品報告] <親PO> / <取引先名>" 形式で 】…｜ に合致しない。
+            //   タイトル末尾(スラッシュ区切りの最後)を取引先として拾う。
+            const s = (await ensureIssueMap()).get(d.issue_key);
+            const tail = s && s.includes("/") ? s.split("/").pop()?.trim() : "";
+            if (tail) vendorName = tail;
+          }
+          if (!vendorName) {
+            files.unresolved_vendor++;
+            if (files.unresolved_samples.length < 20) {
+              const map = d.issue_key ? await ensureIssueMap() : null;
+              files.unresolved_samples.push({
+                document_number: d.document_number,
+                template_type: String(d.template_type || ""),
+                issue_key: d.issue_key || null,
+                summary: (d.issue_key && map?.get(d.issue_key)) || null,
+              });
+            }
+          }
+          // 親文書番号(検収書/利用許諾料計算書のみ buildDocumentFileName が使用):
+          //   form_data の明示リンク → ORDER_NO 系 → base_document_number。
+          const parentDocNumber =
+            String(
+              fd.linked_contract_number || fd.ORDER_NO || fd.orderNumber || ""
+            ).trim() ||
+            (d.base_document_number &&
+            d.base_document_number !== d.document_number
+              ? String(d.base_document_number)
+              : null) ||
+            null;
+          const newName = buildDocumentFileName(d.template_type, {
+            documentNumber: d.document_number,
+            vendorName,
+            parentDocNumber,
+            date: d.created_at ? new Date(d.created_at) : new Date(),
+          });
+          if (files.samples.length < 20)
+            files.samples.push({
+              document_number: d.document_number,
+              template_type: String(d.template_type || ""),
+              issue_key: d.issue_key || null,
+              vendor: vendorName,
+              new_name: newName,
+            });
+          // LegalOn Cloud 等の外部 SaaS 文書は Drive リネーム対象外。
+          //   (drive_link が Google Drive/Docs 以外のホスト)
+          const isExternal =
+            !!d.drive_link &&
+            !/(drive|docs)\.google\.com/.test(String(d.drive_link));
+          if (isExternal) files.skipped_external++;
+          if (dryRun || isExternal) continue;
+          try {
+            const r = await googleDriveService.renameFileVerbose(
+              d.drive_link,
+              newName
+            );
+            if (r.ok) files.renamed++;
+            else {
+              files.failed++;
+              if (files.errors.length < 40)
+                files.errors.push({
+                  document_number: d.document_number,
+                  error: r.error || "rename returned not-ok",
+                });
+            }
+          } catch (err: any) {
+            files.failed++;
+            if (files.errors.length < 40)
+              files.errors.push({
+                document_number: d.document_number,
+                error: err?.message || String(err),
+              });
+          }
+        }
+        result.files = files;
+      }
+
+      // ---- 2. Backlog 課題名 prefix ----
+      if (doIssues) {
+        const all = await loadIssues();
+        const FROM = "【契約審査】";
+        const TO = "【文書作成】";
+        const targets = all.filter(
+          (i: any) => typeof i?.summary === "string" && i.summary.startsWith(FROM)
+        );
+        const issues = {
+          scanned: all.length,
+          matched: targets.length,
+          updated: 0,
+          failed: 0,
+          samples: [] as Array<{ key: string; from: string; to: string }>,
+          errors: [] as Array<{ key: string; error: string }>,
+        };
+        for (const it of targets) {
+          const newSummary = TO + it.summary.slice(FROM.length);
+          if (issues.samples.length < 20)
+            issues.samples.push({ key: it.issueKey, from: it.summary, to: newSummary });
+          if (dryRun) continue;
+          try {
+            await backlogService.updateIssue(it.issueKey, { summary: newSummary });
+            issues.updated++;
+          } catch (err: any) {
+            issues.failed++;
+            issues.errors.push({ key: it.issueKey, error: err?.message || String(err) });
+          }
+        }
+        result.issues = issues;
+      }
+
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[backfill-naming] failed:", err);
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
+    }
+  });
+
   app.post("/api/admin/resync-contract-capabilities", express.json(), async (req, res) => {
     const dryRun = req.body?.dry_run === true;
     try {
@@ -10484,6 +10781,177 @@ ${details}
   });
 
   // -------------------------------------------------------------------
+  // データ構造刷新: 条件明細 read エンドポイント(worker read superset 補完)。
+  //   admin-ui は VITE_API_READS_TO_WORKER=1 で GET を worker に寄せるため、
+  //   search-api 側に追加した条件明細リードを worker にも実装する(同一SQL)。
+  // -------------------------------------------------------------------
+
+  // 課題詳細ページ向け — 1 課題に紐づく文書一覧。
+  app.get("/api/issues/:issueKey/documents", async (req, res) => {
+    try {
+      const issueKey = String(req.params.issueKey || "").trim();
+      if (!issueKey) return res.json([]);
+      let result: any;
+      try {
+        result = await query(
+          `SELECT id,
+                  document_number,
+                  template_type,
+                  created_at,
+                  created_by,
+                  drive_link,
+                  COALESCE(lifecycle_status, 'final') AS lifecycle_status,
+                  COALESCE(is_primary, TRUE)          AS is_primary,
+                  base_document_number,
+                  COALESCE(revision, 0)               AS revision,
+                  (SELECT cl.line_code
+                     FROM condition_events ce
+                     JOIN condition_lines cl ON cl.id = ce.condition_line_id
+                    WHERE ce.document_id = documents.id
+                    ORDER BY ce.id LIMIT 1)             AS line_code
+             FROM documents
+            WHERE issue_key = $1
+            ORDER BY created_at DESC`,
+          [issueKey]
+        );
+      } catch (err: any) {
+        if (err && (err.code === "42703" || err.code === "42P01")) {
+          console.warn(
+            "[/api/issues/:issueKey/documents] schema migration 未適用 — legacy 形式で返却"
+          );
+          result = await query(
+            `SELECT id, document_number, template_type, created_at, created_by, drive_link
+               FROM documents
+              WHERE issue_key = $1
+              ORDER BY created_at DESC`,
+            [issueKey]
+          );
+        } else {
+          throw err;
+        }
+      }
+      res.json(result.rows);
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // 条件明細一覧(導出ビュー status/balance/schedule + 契約・取引先 JOIN)。
+  app.get("/api/condition-lines", async (req, res) => {
+    try {
+      const where: string[] = [];
+      const params: any[] = [];
+      const add = (cond: string, val: any) => {
+        params.push(val);
+        where.push(cond.replace("?", `$${params.length}`));
+      };
+      if (req.query.status) add("s.status = ?", String(req.query.status));
+      if (req.query.direction) add("cl.direction = ?", String(req.query.direction));
+      if (req.query.scheme) add("cl.payment_scheme = ?", String(req.query.scheme));
+      if (req.query.vendor_id) add("cc.vendor_id = ?", Number(req.query.vendor_id));
+      if (req.query.capability_id) add("cl.capability_id = ?", Number(req.query.capability_id));
+      if (req.query.q) {
+        params.push(`%${String(req.query.q)}%`);
+        where.push(
+          `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length})`
+        );
+      }
+      const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
+      try {
+        const result = await query(
+          `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.direction,
+                  cl.rights_attribution, cl.capability_id, cl.amount_ex_tax, cl.currency,
+                  cl.delivery_date, cl.term_start, cl.term_end,
+                  s.status, s.consumed_amount, s.remaining_amount, s.event_count,
+                  b.mg_remaining, b.ag_remaining,
+                  cc.contract_title, cc.document_number AS contract_number,
+                  v.vendor_name, v.vendor_code,
+                  sch.has_overdue
+             FROM condition_lines cl
+             LEFT JOIN condition_line_status_v  s ON s.id = cl.id
+             LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN (
+               SELECT condition_line_id, bool_or(overdue AND NOT issued) AS has_overdue
+                 FROM condition_line_schedule_v GROUP BY condition_line_id
+             ) sch ON sch.condition_line_id = cl.id
+             ${whereSql}
+            ORDER BY cl.line_code NULLS LAST, cl.id`,
+          params
+        );
+        res.json(result.rows);
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          console.warn("[/api/condition-lines] 新スキーマ未適用 — 空配列で返却");
+          return res.json([]);
+        }
+        throw err;
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // 条件明細詳細(events / schedule 同梱)。:id/payments と段数が違うため衝突しない。
+  app.get("/api/condition-lines/:lineCode", async (req, res) => {
+    try {
+      const lineCode = String(req.params.lineCode || "").trim();
+      if (!lineCode) return res.status(400).json({ ok: false, error: "lineCode required" });
+      try {
+        const main = await query(
+          `SELECT cl.*, s.status, s.consumed_amount, s.remaining_amount,
+                  s.event_count, s.last_event_at,
+                  b.mg_consumed, b.mg_remaining, b.ag_consumed, b.ag_remaining,
+                  cc.contract_title, cc.document_number AS contract_number,
+                  cc.structural_role, cc.parent_capability_id,
+                  v.vendor_name, v.vendor_code,
+                  w.work_code, w.title AS work_title
+             FROM condition_lines cl
+             LEFT JOIN condition_line_status_v  s ON s.id = cl.id
+             LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN works w ON w.id = cl.work_id
+            WHERE cl.line_code = $1
+            LIMIT 1`,
+          [lineCode]
+        );
+        if (!main.rows.length) {
+          return res.status(404).json({ ok: false, error: "condition_line not found" });
+        }
+        const line = main.rows[0];
+        const events = await query(
+          `SELECT e.id, e.event_no, e.event_type, e.occurred_at, e.period,
+                  e.amount_ex_tax, e.voided_at, e.void_reason, e.backlog_issue_key,
+                  e.installment_id,
+                  d.document_number, d.lifecycle_status, d.drive_link, d.issue_key
+             FROM condition_events e
+             LEFT JOIN documents d ON d.id = e.document_id
+            WHERE e.condition_line_id = $1
+            ORDER BY e.occurred_at NULLS LAST, e.event_no`,
+          [line.id]
+        );
+        const schedule = await query(
+          `SELECT expected_period, issued, overdue
+             FROM condition_line_schedule_v
+            WHERE condition_line_id = $1
+            ORDER BY expected_period`,
+          [line.id]
+        );
+        res.json({ ok: true, line, events: events.rows, schedule: schedule.rows });
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          return res.status(404).json({ ok: false, error: "新スキーマ未適用" });
+        }
+        throw err;
+      }
+    } catch (error) {
+      res.status(500).json({ error: String(error) });
+    }
+  });
+
+  // -------------------------------------------------------------------
   // データ構造刷新 Phase E-3: 条件明細への支払記録イベント。
   //   subscription / installment / 着手金 など「文書を伴わない支払」の記録。
   //   event_type='payment' は document_id を持たない (CHECK ce_document_pairing)。
@@ -10665,9 +11133,49 @@ ${details}
     }
   });
 
-  // -------------------------------------------------------------------
-  // /api/documents/* — generation / preview / export (Phase 2d-2 batch A)
-  // -------------------------------------------------------------------
+  // 条件明細の手動削除(物理)。重複・誤作成の整理用。
+  //   ガード: 検収/計算/支払の実績(condition_events)がある明細は削除しない(履歴保全)。
+  //   作品コンポーネント紐付け(work_component_lines)がある場合も拒否。
+  //   分割予定(condition_line_installments)は ON DELETE CASCADE で同時削除。
+  app.post("/api/condition-lines/:id/delete", express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id) || id <= 0)
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      const ev = await query(
+        `SELECT COUNT(*)::int AS n FROM condition_events WHERE condition_line_id = $1`,
+        [id]
+      );
+      if (Number(ev.rows[0]?.n) > 0) {
+        return res.status(409).json({
+          ok: false,
+          error:
+            "この明細には実績(検収/計算/支払)があるため削除できません。先に該当実績を取消(void)してください。",
+        });
+      }
+      const wc = await query(
+        `SELECT COUNT(*)::int AS n FROM work_component_lines WHERE condition_line_id = $1`,
+        [id]
+      );
+      if (Number(wc.rows[0]?.n) > 0) {
+        return res.status(409).json({
+          ok: false,
+          error: "作品コンポーネントに紐付いているため削除できません。先に紐付けを解除してください。",
+        });
+      }
+      const del = await query(
+        `DELETE FROM condition_lines WHERE id = $1 RETURNING line_code`,
+        [id]
+      );
+      if (!del.rows.length)
+        return res.status(404).json({ ok: false, error: "明細が見つかりません" });
+      res.json({ ok: true, deleted: id, line_code: del.rows[0].line_code || null });
+    } catch (e: any) {
+      console.error("/api/condition-lines/:id/delete failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
 
   /**
    * Phase 23.6.15: 検収書の金額サマリーをサーバ側で一元計算する (適格請求書対応)。
@@ -11222,6 +11730,36 @@ ${details}
         }
       }
 
+      // 二重作成ガード: 完全新規(再発行でも内部修正の上書きでもない)で、同一
+      //   課題(issue_key)× 同一種別(template_type)の正本(final)が既にある場合は
+      //   ブロックし、「修正なら再発行、別物なら許可フラグ」を促す。条件明細
+      //   (condition_lines)が重複生成される源流(別 capability の二重作成)を抑止する。
+      //   formData.allowDuplicateDocument===true で明示的に上書き許可。
+      if (!isReissue && !overwrite && !manualOverride) {
+        const allowDup = formData?.allowDuplicateDocument === true;
+        const ik = (issueKey || "").trim();
+        if (!allowDup && ik && !ik.startsWith("MANUAL-")) {
+          const dupCheck = await query(
+            `SELECT document_number FROM documents
+              WHERE is_primary = TRUE
+                AND COALESCE(lifecycle_status, 'final') = 'final'
+                AND template_type = $1 AND issue_key = $2
+              ORDER BY revision DESC, created_at DESC LIMIT 1`,
+            [templateType, ik]
+          );
+          if (dupCheck.rows.length) {
+            return res.status(409).json({
+              ok: false,
+              error: "duplicate_document",
+              existing_document_number: dupCheck.rows[0].document_number,
+              message:
+                `この課題には既に同種の文書(${dupCheck.rows[0].document_number})が存在します。` +
+                `修正する場合は「再発行」を、別物として新規作成する場合は許可(allowDuplicateDocument)を付けて再実行してください。`,
+            });
+          }
+        }
+      }
+
       // Phase 18 (Manual Workflow): 文書生成時に Backlog status を
       // 自動進行させる挙動は撤去した。
       //
@@ -11659,12 +12197,15 @@ ${details}
         templateType,
         {
           vendorName: vendorNameForFile,
-          // 検収書はファイル名に親発注書番号を入れる: 検収書番号_発注書番号(_取引先)。
-          parentDocNumber: String(templateType || "").includes("inspection")
-            ? String(
-                (formData as any)?.linked_contract_number || parentOrderNumber || ""
-              ).trim() || undefined
-            : undefined,
+          // 親文書番号でファイル名を作るグループ(検収書 / 利用許諾料計算書)。
+          //   検収書: 検収書番号_発注書番号_作成日 / 計算書: 計算書番号_親契約番号_作成日。
+          parentDocNumber:
+            String(templateType || "").includes("inspection") ||
+            templateType === "royalty_statement"
+              ? String(
+                  (formData as any)?.linked_contract_number || parentOrderNumber || ""
+                ).trim() || undefined
+              : undefined,
         }
       );
 
@@ -12760,6 +13301,17 @@ ${details}
               [orderItemId, f.line_no, f.fee_name, f.amount, f.remarks]
             );
           }
+        }
+
+        // データ構造刷新: 発注書生成ミラーの子テーブル書込後、condition_lines にも
+        //   非致命で同期する。登録エンドポイント(upsertCapabilityLineItems)は
+        //   safeSync を呼ぶが、この発注書生成ミラーは直接 INSERT で safeSync を
+        //   通っていなかったため、新規発注書が条件明細に出ない不具合があった。
+        //   orderItemId = capability_id。冪等。
+        if (orderItemId) {
+          await safeSync("CL(capability/po-mirror)", () =>
+            syncConditionLinesForCapability({ query }, Number(orderItemId))
+          );
         }
       } else if (templateType.includes("inspection")) {
         // Phase 22.21.20: contract_type を 'delivery_inspec' でセット。

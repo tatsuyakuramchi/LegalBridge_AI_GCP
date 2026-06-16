@@ -131,7 +131,10 @@ iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 }
 `;
 
-export function templatePreviewPage(role: Role = "viewer"): string {
+export function templatePreviewPage(
+  role: Role = "viewer",
+  deptCode?: string | null
+): string {
   const body = `
   <div class="shell">
 
@@ -318,6 +321,7 @@ export function templatePreviewPage(role: Role = "viewer"): string {
   return popPage({
     active: "template-preview",
     role,
+    deptCode,
     mode: "admin",
     title: "ひな型プレビュー",
     subtitle: "Slack キャンバスの個別リンクから開いてください。サンプル PDF / HTML をダウンロードできます。",
