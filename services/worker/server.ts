@@ -2007,8 +2007,9 @@ ${details}
    * 口頭/メール依頼を受けた法務担当が、UI 上でクイックに起案する用途。
    *
    * 課題名フォーマットは均一化のため固定:
-   *   【${issueTypeLabel}】${counterpartyDisplay}｜${subTopicDisplay}
-   *   例: 【契約審査】株式会社サンプル商事｜業務委託基本契約書
+   *   【${titleLabel}】${counterpartyDisplay}_${subTopicDisplay}_${YYYYMMDD}
+   *   ※ titleLabel: 契約審査→文書作成 に置換(Backlog の issue type 名は温存)。
+   *   例: 【文書作成】株式会社サンプル商事_業務委託基本契約書_20260616
    *
    * 課題作成後は legal_requests + issue_workflows にも INSERT して、
    * 既存の workflow state machine と連動するようにする。
@@ -2072,7 +2073,16 @@ ${details}
         // ---- 課題名 (均一フォーマット) ----
         const counterpartyDisplay = counterpartyName.trim() || "(相手方未指定)";
         const subTopicDisplay = subTopic.trim() || "(内容未指定)";
-        const summary = `【${issueTypeLabel}】${counterpartyDisplay}｜${subTopicDisplay}`;
+        // 表示用ラベル: 「契約審査」は文書作成と質が異なるため課題名の prefix を
+        //   「文書作成」に変える(文書レビューは別途【法務相談】)。Backlog の
+        //   issue type 名は契約審査のまま温存(下の type 解決には issueTypeLabel を使う)。
+        const titleLabel = issueTypeLabel === "契約審査" ? "文書作成" : issueTypeLabel;
+        // 作成日 YYYYMMDD (JST)。
+        const ymd = new Date(Date.now() + 9 * 3600 * 1000)
+          .toISOString()
+          .slice(0, 10)
+          .replace(/-/g, "");
+        const summary = `【${titleLabel}】${counterpartyDisplay}_${subTopicDisplay}_${ymd}`;
 
         // ---- description (起案元と起案者情報を明示) ----
         const requester =
@@ -11729,12 +11739,15 @@ ${details}
         templateType,
         {
           vendorName: vendorNameForFile,
-          // 検収書はファイル名に親発注書番号を入れる: 検収書番号_発注書番号(_取引先)。
-          parentDocNumber: String(templateType || "").includes("inspection")
-            ? String(
-                (formData as any)?.linked_contract_number || parentOrderNumber || ""
-              ).trim() || undefined
-            : undefined,
+          // 親文書番号でファイル名を作るグループ(検収書 / 利用許諾料計算書)。
+          //   検収書: 検収書番号_発注書番号_作成日 / 計算書: 計算書番号_親契約番号_作成日。
+          parentDocNumber:
+            String(templateType || "").includes("inspection") ||
+            templateType === "royalty_statement"
+              ? String(
+                  (formData as any)?.linked_contract_number || parentOrderNumber || ""
+                ).trim() || undefined
+              : undefined,
         }
       );
 
