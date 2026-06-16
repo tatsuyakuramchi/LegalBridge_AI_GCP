@@ -393,7 +393,8 @@ export function listPage(
   query: string,
   results: any[],
   auth: SignLink | string | null | undefined,
-  role: Role = "viewer"
+  role: Role = "viewer",
+  deptCode?: string | null
 ): string {
   const a = authShim(auth);
   const cards = results
@@ -466,6 +467,7 @@ export function listPage(
     active: "search-vendor",
     mode: "view",
     role,
+    deptCode,
     title: "取引先・契約検索",
     subtitle: `検索キーワード: 「${esc(query)}」 · ヒット ${results.length} 件`,
     body,
@@ -482,7 +484,8 @@ export function detailPage(
   payload: any,
   query: string,
   auth: SignLink | string | null | undefined,
-  role: Role = "viewer"
+  role: Role = "viewer",
+  deptCode?: string | null
 ): string {
   const cp = payload.counterparty || {};
   const masters = payload.masterContracts || {};
@@ -544,6 +547,7 @@ export function detailPage(
     active: "search-vendor",
     mode: "view",
     role,
+    deptCode,
     title: `${cp.vendorName || "-"}`,
     subtitle: `取引先コード: ${cp.vendorCode || "-"}`,
     body,
@@ -560,7 +564,8 @@ export function detailPage(
 export function ringiPage(
   payload: any,
   auth: SignLink | string | null | undefined,
-  role: Role = "viewer"
+  role: Role = "viewer",
+  deptCode?: string | null
 ): string {
   const r = payload.ringi || {};
   const cat = payload.documentsByCategory || {
@@ -619,6 +624,7 @@ export function ringiPage(
     active: "search-vendor",
     mode: "view",
     role,
+    deptCode,
     title: `稟議 ${r.ringi_number || "-"}`,
     subtitle: r.title || "",
     body,
