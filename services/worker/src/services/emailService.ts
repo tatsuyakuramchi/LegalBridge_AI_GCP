@@ -11,6 +11,9 @@
  */
 import { google } from "googleapis";
 import fs from "fs";
+import axios from "axios";
+
+const GMAIL_SEND_SCOPE = "https://www.googleapis.com/auth/gmail.send";
 
 export type EmailAttachment = {
   filename: string;
@@ -30,40 +33,90 @@ export class EmailService {
     return !!this.sender;
   }
 
-  private gmail() {
-    return google.gmail({ version: "v1", auth: this.buildAuth() as any });
-  }
-
   /**
-   * ドメイン全体委任で EMAIL_SENDER を代理する GoogleAuth を組む。
-   *   代理送信(subject)には SA の秘密鍵が必要なので、Drive と同じ
-   *   GOOGLE_SERVICE_ACCOUNT_KEY_PATH(例: /secrets/gws-service-account.json)を
-   *   優先的に使う。無ければ ADC(GOOGLE_APPLICATION_CREDENTIALS)へフォールバック。
+   * EMAIL_SENDER を代理(ドメイン全体委任)して gmail.send のアクセストークンを得る。
+   *   - 鍵ファイル(GOOGLE_SERVICE_ACCOUNT_KEY_PATH)が実在すれば GoogleAuth(subject)。
+   *   - 無ければ「鍵レス」: ランタイム SA(Compute SA, metadata)で IAM signJwt を行い、
+   *     JWT-bearer で token 交換する。Cloud Run で鍵を持たない構成でも代理送信できる。
+   *   前提(鍵レス時): ランタイム SA に roles/iam.serviceAccountTokenCreator(自分自身)、
+   *     その SA の client_id を Workspace で gmail.send にドメイン全体委任。
    */
-  private buildAuth() {
-    const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
-    const keyFileUsable = !!keyFile && fs.existsSync(keyFile);
-    return new google.auth.GoogleAuth({
-      ...(keyFileUsable ? { keyFile } : {}),
-      scopes: ["https://www.googleapis.com/auth/gmail.send"],
-      // ドメイン全体委任: EMAIL_SENDER を代理して送る。
-      clientOptions: this.sender ? { subject: this.sender } : undefined,
-    });
-  }
-
-  /**
-   * 接続確認: 代理ユーザーのアクセストークンを取得できるか試す(送信はしない)。
-   *   委任/スコープが未設定なら token 取得で失敗する(unauthorized_client 等)ので、
-   *   gmail.send だけで権限不足になる getProfile より確実に検証できる。
-   */
-  async verifyConnection(): Promise<{ ok: true; sender: string }> {
+  private async getDelegatedAccessToken(): Promise<string> {
     if (!this.sender) throw new Error("EMAIL_SENDER(送信元メール)が未設定です");
-    const client = await this.buildAuth().getClient();
-    const token = await (client as any).getAccessToken();
-    if (!token || !token.token)
+
+    const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
+    if (keyFile && fs.existsSync(keyFile)) {
+      // 鍵あり経路: GoogleAuth が subject 代理で署名できる。
+      const auth = new google.auth.GoogleAuth({
+        keyFile,
+        scopes: [GMAIL_SEND_SCOPE],
+        clientOptions: { subject: this.sender },
+      });
+      const client = await auth.getClient();
+      const t = await (client as any).getAccessToken();
+      if (!t || !t.token) throw new Error("アクセストークンを取得できません(鍵あり経路)");
+      return t.token as string;
+    }
+
+    // 鍵レス経路: Compute SA の signJwt → JWT-bearer 交換。
+    const baseAuth = new google.auth.GoogleAuth({
+      scopes: ["https://www.googleapis.com/auth/cloud-platform"],
+    });
+    const saEmail = await this.resolveRuntimeSaEmail(baseAuth);
+    const iam = google.iamcredentials({ version: "v1", auth: baseAuth as any });
+    const now = Math.floor(Date.now() / 1000);
+    const claims = {
+      iss: saEmail,
+      sub: this.sender, // 代理する送信元メールボックス
+      scope: GMAIL_SEND_SCOPE,
+      aud: "https://oauth2.googleapis.com/token",
+      iat: now,
+      exp: now + 3600,
+    };
+    const signed = await iam.projects.serviceAccounts.signJwt({
+      name: `projects/-/serviceAccounts/${saEmail}`,
+      requestBody: { payload: JSON.stringify(claims) },
+    });
+    const assertion = signed.data.signedJwt;
+    if (!assertion) throw new Error("signJwt が空応答(tokenCreator 権限を確認)");
+    const tok = await axios.post(
+      "https://oauth2.googleapis.com/token",
+      new URLSearchParams({
+        grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+        assertion,
+      }).toString(),
+      { headers: { "Content-Type": "application/x-www-form-urlencoded" }, timeout: 15000 }
+    );
+    const at = tok.data?.access_token;
+    if (!at)
       throw new Error(
-        "アクセストークンを取得できません(ドメイン全体委任 / gmail.send スコープ / 送信元メールを確認してください)"
+        "JWT-bearer のトークン交換に失敗(ドメイン全体委任 / gmail.send スコープ / 送信元メールを確認): " +
+          JSON.stringify(tok.data || {})
       );
+    return at as string;
+  }
+
+  /** ランタイム SA のメールを特定(EMAIL_DELEGATION_SA → metadata → ADC)。 */
+  private async resolveRuntimeSaEmail(baseAuth: any): Promise<string> {
+    const override = (process.env.EMAIL_DELEGATION_SA || "").trim();
+    if (override) return override;
+    try {
+      const r = await axios.get(
+        "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/email",
+        { headers: { "Metadata-Flavor": "Google" }, timeout: 3000 }
+      );
+      if (r.data) return String(r.data).trim();
+    } catch {
+      /* metadata 不可(ローカル等)→ ADC へ */
+    }
+    const creds = await baseAuth.getCredentials();
+    if (creds?.client_email) return String(creds.client_email);
+    throw new Error("ランタイム SA のメールを特定できません(EMAIL_DELEGATION_SA を設定してください)");
+  }
+
+  /** 接続確認: 代理トークンを取得できるか試す(送信はしない)。 */
+  async verifyConnection(): Promise<{ ok: true; sender: string }> {
+    await this.getDelegatedAccessToken();
     return { ok: true, sender: this.sender };
   }
 
@@ -77,7 +130,10 @@ export class EmailService {
     if (!this.sender) throw new Error("EMAIL_SENDER(送信元メール)が未設定です");
     const to = (opts.to || []).filter(Boolean);
     if (!to.length) throw new Error("宛先がありません");
-    const gmail = this.gmail();
+    const accessToken = await this.getDelegatedAccessToken();
+    const oauth2 = new google.auth.OAuth2();
+    oauth2.setCredentials({ access_token: accessToken });
+    const gmail = google.gmail({ version: "v1", auth: oauth2 });
     const raw = buildRawMessage({
       from: this.sender,
       to,
