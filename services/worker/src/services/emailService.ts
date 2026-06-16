@@ -10,6 +10,7 @@
  *   添付ありは multipart/mixed、無しは text/html 単体で MIME を組む。
  */
 import { google } from "googleapis";
+import fs from "fs";
 
 export type EmailAttachment = {
   filename: string;
@@ -30,19 +31,39 @@ export class EmailService {
   }
 
   private gmail() {
-    const auth = new google.auth.GoogleAuth({
+    return google.gmail({ version: "v1", auth: this.buildAuth() as any });
+  }
+
+  /**
+   * ドメイン全体委任で EMAIL_SENDER を代理する GoogleAuth を組む。
+   *   代理送信(subject)には SA の秘密鍵が必要なので、Drive と同じ
+   *   GOOGLE_SERVICE_ACCOUNT_KEY_PATH(例: /secrets/gws-service-account.json)を
+   *   優先的に使う。無ければ ADC(GOOGLE_APPLICATION_CREDENTIALS)へフォールバック。
+   */
+  private buildAuth() {
+    const keyFile = process.env.GOOGLE_SERVICE_ACCOUNT_KEY_PATH;
+    const keyFileUsable = !!keyFile && fs.existsSync(keyFile);
+    return new google.auth.GoogleAuth({
+      ...(keyFileUsable ? { keyFile } : {}),
       scopes: ["https://www.googleapis.com/auth/gmail.send"],
       // ドメイン全体委任: EMAIL_SENDER を代理して送る。
       clientOptions: this.sender ? { subject: this.sender } : undefined,
     });
-    return google.gmail({ version: "v1", auth: auth as any });
   }
 
-  /** 接続確認: プロフィール取得で認証/委任が通るか試す(送信はしない)。 */
+  /**
+   * 接続確認: 代理ユーザーのアクセストークンを取得できるか試す(送信はしない)。
+   *   委任/スコープが未設定なら token 取得で失敗する(unauthorized_client 等)ので、
+   *   gmail.send だけで権限不足になる getProfile より確実に検証できる。
+   */
   async verifyConnection(): Promise<{ ok: true; sender: string }> {
     if (!this.sender) throw new Error("EMAIL_SENDER(送信元メール)が未設定です");
-    const gmail = this.gmail();
-    await gmail.users.getProfile({ userId: "me" });
+    const client = await this.buildAuth().getClient();
+    const token = await (client as any).getAccessToken();
+    if (!token || !token.token)
+      throw new Error(
+        "アクセストークンを取得できません(ドメイン全体委任 / gmail.send スコープ / 送信元メールを確認してください)"
+      );
     return { ok: true, sender: this.sender };
   }
 

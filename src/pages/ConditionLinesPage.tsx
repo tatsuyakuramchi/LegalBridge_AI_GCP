@@ -29,6 +29,10 @@ type ConditionLine = {
   fulfilling_doc_count: number | null
   // 実績(検収/計算/支払)件数。0 のときだけ手動削除を許可する。
   event_count: number | null
+  // 送信履歴(メール / CloudSign)。worker が付与。
+  sent_at: string | null
+  sent_channel: string | null
+  email_to: string | null
 }
 
 // 一括/従量/分割 は 成就/一部成就/未成就、契約期間型(利用許諾) は 履行中/成就（満了）。
@@ -63,6 +67,61 @@ function StatusBadge({ status }: { status: string | null }) {
 const yen = (v: any) =>
   v == null ? "—" : `¥${Number(v).toLocaleString("ja-JP")}`
 
+// 並び替え対象列のアクセサと型。
+const SORT_ACCESSORS: Record<
+  string,
+  { get: (r: ConditionLine) => any; type: "str" | "num" | "date" }
+> = {
+  line_code: { get: (r) => r.line_code, type: "str" },
+  subject: { get: (r) => r.subject, type: "str" },
+  contract: { get: (r) => `${r.contract_title || ""} ${r.vendor_name || ""}`.trim(), type: "str" },
+  payment_scheme: { get: (r) => r.payment_scheme, type: "str" },
+  direction: { get: (r) => r.direction, type: "str" },
+  status: { get: (r) => r.status, type: "str" },
+  fulfilling: { get: (r) => r.fulfilling_doc_number, type: "str" },
+  sent_at: { get: (r) => r.sent_at, type: "date" },
+  remaining: {
+    get: (r) => (r.payment_scheme === "royalty" ? r.mg_remaining : r.remaining_amount),
+    type: "num",
+  },
+  has_overdue: { get: (r) => (r.has_overdue ? 1 : 0), type: "num" },
+}
+
+function sortRows(
+  list: ConditionLine[],
+  sort: { key: string; dir: 1 | -1 } | null
+): ConditionLine[] {
+  if (!sort) return list
+  const acc = SORT_ACCESSORS[sort.key]
+  if (!acc) return list
+  const d = sort.dir
+  return [...list].sort((a, b) => {
+    const av = acc.get(a)
+    const bv = acc.get(b)
+    const ae = av == null || av === ""
+    const be = bv == null || bv === ""
+    if (ae && be) return 0
+    if (ae) return 1 // 空は末尾
+    if (be) return -1
+    if (acc.type === "num") return ((Number(av) || 0) - (Number(bv) || 0)) * d
+    if (acc.type === "date") return (new Date(av).getTime() - new Date(bv).getTime()) * d
+    return String(av).localeCompare(String(bv), "ja") * d
+  })
+}
+
+// 送信時刻を JST の短い表記に。
+const fmtSent = (iso: string | null): string => {
+  if (!iso) return ""
+  try {
+    return new Date(iso).toLocaleString("ja-JP", {
+      month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+      timeZone: "Asia/Tokyo",
+    })
+  } catch {
+    return iso
+  }
+}
+
 export function ConditionLinesPage() {
   const navigate = useNavigate()
   const [rows, setRows] = React.useState<ConditionLine[]>([])
@@ -70,6 +129,10 @@ export function ConditionLinesPage() {
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string | null>(null)
   const [dirFilter, setDirFilter] = React.useState<string | null>(null)
+  // 列の並び替え(クリックで昇順/降順トグル)。
+  const [sort, setSort] = React.useState<{ key: string; dir: 1 | -1 } | null>(null)
+  const toggleSort = (key: string) =>
+    setSort((s) => (s && s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
 
   React.useEffect(() => {
     let cancelled = false
@@ -107,6 +170,30 @@ export function ConditionLinesPage() {
     }
     return true
   })
+  const sorted = sortRows(filtered, sort)
+
+  // 並び替え可能な見出しセル。
+  const Th = ({
+    sk,
+    label,
+    align = "left",
+  }: {
+    sk?: string
+    label: string
+    align?: "left" | "right" | "center"
+  }) => {
+    const alignCls = align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left"
+    const ind = sk && sort?.key === sk ? (sort.dir === 1 ? " ▲" : " ▼") : ""
+    return (
+      <th
+        className={`px-3 py-2 ${alignCls} ${sk ? "cursor-pointer select-none hover:text-foreground" : ""}`}
+        onClick={sk ? () => toggleSort(sk) : undefined}
+      >
+        {label}
+        {ind}
+      </th>
+    )
+  }
 
   const open = (lineCode: string | null) => {
     if (lineCode) navigate(`/condition-lines/${encodeURIComponent(lineCode)}`)
@@ -204,20 +291,21 @@ export function ConditionLinesPage() {
           <table className="w-full text-xs font-mono">
             <thead className="bg-muted/50 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
               <tr>
-                <th className="text-left px-3 py-2">line_code</th>
-                <th className="text-left px-3 py-2">件名</th>
-                <th className="text-left px-3 py-2">契約 / 取引先</th>
-                <th className="text-left px-3 py-2">方式</th>
-                <th className="text-left px-3 py-2">向き</th>
-                <th className="text-left px-3 py-2">状態</th>
-                <th className="text-left px-3 py-2">成就文書</th>
-                <th className="text-right px-3 py-2">残額 / MG残</th>
-                <th className="text-center px-3 py-2">当期</th>
+                <Th sk="line_code" label="line_code" />
+                <Th sk="subject" label="件名" />
+                <Th sk="contract" label="契約 / 取引先" />
+                <Th sk="payment_scheme" label="方式" />
+                <Th sk="direction" label="向き" />
+                <Th sk="status" label="状態" />
+                <Th sk="fulfilling" label="成就文書" />
+                <Th sk="sent_at" label="送信" />
+                <Th sk="remaining" label="残額 / MG残" align="right" />
+                <Th sk="has_overdue" label="当期" align="center" />
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((r) => (
+              {sorted.map((r) => (
                 <tr
                   key={r.id}
                   onClick={() => open(r.line_code)}
@@ -247,6 +335,25 @@ export function ConditionLinesPage() {
                       </span>
                     ) : (
                       "—"
+                    )}
+                  </td>
+                  <td className="px-3 py-2 max-w-[150px]">
+                    {r.sent_at ? (
+                      <span title={r.email_to || r.sent_channel || ""}>
+                        <Badge
+                          variant="outline"
+                          className={
+                            r.sent_channel === "メール"
+                              ? "border-emerald-300 text-emerald-700"
+                              : "border-sky-300 text-sky-700"
+                          }
+                        >
+                          {r.sent_channel === "メール" ? "✉" : "✍"} {r.sent_channel}
+                        </Badge>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">未送信</span>
                     )}
                   </td>
                   <td className="px-3 py-2 text-right">
