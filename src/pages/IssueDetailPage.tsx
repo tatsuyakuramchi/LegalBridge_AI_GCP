@@ -16,6 +16,7 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { promptAndSendDocumentEmail } from "@/src/lib/emailSend"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
@@ -102,6 +103,13 @@ export function IssueDetailPage() {
   )
 
   const [docs, setDocs] = React.useState<IssueDocument[]>([])
+  // 検収書/計算書の取引先メール送信。
+  const [sendingDoc, setSendingDoc] = React.useState<string | null>(null)
+  const sendDoc = async (documentNumber: string) => {
+    setSendingDoc(documentNumber)
+    await promptAndSendDocumentEmail(documentNumber)
+    setSendingDoc(null)
+  }
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
 
@@ -491,6 +499,20 @@ export function IssueDetailPage() {
                         Drive
                       </a>
                     )}
+                    {(d.template_type.includes("inspection") ||
+                      d.template_type === "royalty_statement" ||
+                      d.template_type === "license_calculation_sheet") &&
+                      d.document_number && (
+                        <button
+                          type="button"
+                          onClick={() => sendDoc(d.document_number!)}
+                          disabled={sendingDoc === d.document_number}
+                          className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-1.5 py-1 rounded-sm disabled:opacity-50"
+                          title="検収書/計算書を取引先へメール送信"
+                        >
+                          {sendingDoc === d.document_number ? "送信中…" : "✉ 送信"}
+                        </button>
+                      )}
                     <button
                       type="button"
                       onClick={() => reopen(d.id)}

@@ -4,6 +4,7 @@ import { Search, Inbox, Loader2, ArrowRight, Trash2 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
+import { promptAndSendDocumentEmail } from "@/src/lib/emailSend"
 
 // データ構造刷新 Phase F: 条件明細管理 UI(一覧)。
 //   消化・残高・当期発行状況のコックピット。アラート cron が見ているのと同じ
@@ -33,6 +34,8 @@ type ConditionLine = {
   sent_at: string | null
   sent_channel: string | null
   email_to: string | null
+  // メール送信対象の代表 検収書/計算書 文書番号(無ければ送信不可)。
+  send_doc_number: string | null
 }
 
 // 一括/従量/分割 は 成就/一部成就/未成就、契約期間型(利用許諾) は 履行中/成就（満了）。
@@ -199,6 +202,22 @@ export function ConditionLinesPage() {
     if (lineCode) navigate(`/condition-lines/${encodeURIComponent(lineCode)}`)
   }
 
+  // メール送信(検収書/計算書)。送信対象文書番号を持つ明細のみ。
+  const [sendingDoc, setSendingDoc] = React.useState<string | null>(null)
+  const sendRow = async (r: ConditionLine) => {
+    if (!r.send_doc_number) return
+    setSendingDoc(r.send_doc_number)
+    const ok = await promptAndSendDocumentEmail(r.send_doc_number)
+    setSendingDoc(null)
+    if (ok) {
+      setRows((rs) =>
+        rs.map((x) =>
+          x.id === r.id ? { ...x, sent_at: new Date().toISOString(), sent_channel: "メール" } : x,
+        ),
+      )
+    }
+  }
+
   // 重複・誤作成の整理: 実績(condition_events)が無い明細のみ物理削除できる。
   const [deletingId, setDeletingId] = React.useState<number | null>(null)
   const deleteLine = async (r: ConditionLine) => {
@@ -337,7 +356,10 @@ export function ConditionLinesPage() {
                       "—"
                     )}
                   </td>
-                  <td className="px-3 py-2 max-w-[150px]">
+                  <td
+                    className="px-3 py-2 max-w-[160px]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
                     {r.sent_at ? (
                       <span title={r.email_to || r.sent_channel || ""}>
                         <Badge
@@ -355,6 +377,21 @@ export function ConditionLinesPage() {
                     ) : (
                       <span className="text-muted-foreground">未送信</span>
                     )}
+                    {r.send_doc_number ? (
+                      <button
+                        type="button"
+                        onClick={() => sendRow(r)}
+                        disabled={sendingDoc === r.send_doc_number}
+                        title={`${r.send_doc_number} を取引先へメール送信`}
+                        className="block mt-1 text-[10px] underline text-emerald-700 dark:text-emerald-300 disabled:opacity-50"
+                      >
+                        {sendingDoc === r.send_doc_number
+                          ? "送信中…"
+                          : r.sent_at
+                            ? "✉ 再送信"
+                            : "✉ 送信"}
+                      </button>
+                    ) : null}
                   </td>
                   <td className="px-3 py-2 text-right">
                     {r.payment_scheme === "royalty"
