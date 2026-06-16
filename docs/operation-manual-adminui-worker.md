@@ -295,7 +295,34 @@ gcloud iam service-accounts describe "$SA" --project=$PROJECT --format='value(un
 
 ---
 
-## 11. 付録
+## 11. ひな型 見本（サンプル）
+
+主要なひな型をサンプル値でレンダリングした見本です（実際の「ひな型プレビュー」と同じ
+レンダリング機構で生成）。検収書・利用許諾料計算書は最新の文言（「源泉徴収税計算前…」）を反映。
+
+### 検収書（inspection_certificate）
+![検収書 見本](images/sample_inspection_certificate.png)
+
+> 金額ラベルが「**源泉徴収税計算前　検収金額(税込)**」「**源泉徴収税計算前　本検収書に基づく総支払額（税込・経費 / 手数料含む）**」になっている点に注目。
+
+### 利用許諾料計算書（royalty_statement）
+![利用許諾料計算書 見本](images/sample_royalty_statement.png)
+
+> 「**源泉徴収税計算前　お支払予定額合計（税込）**」「**源泉徴収税計算前　お支払予定額（税込）**」を反映。
+
+### 発注書（purchase_order）
+![発注書 見本](images/sample_purchase_order.png)
+
+### 秘密保持契約書（NDA）
+![NDA 見本](images/sample_nda.png)
+
+> 見本は**サンプル値**での表示です。実運用の値・レイアウトは案件データに依存します。
+> 見本画像の再生成は `node scripts/render-template-samples.mjs`
+> （`handlebars` / `puppeteer-core` と `PUPPETEER_EXECUTABLE_PATH`、日本語フォントが必要）。
+
+---
+
+## 12. 付録
 
 ### 命名規則（Drive ファイル名 / Backlog 課題）
 - Drive ファイル名: `文書番号_取引先名_作成日YYYYMMDD.html`（検収書/計算書は親番号 or 取引先名）。
