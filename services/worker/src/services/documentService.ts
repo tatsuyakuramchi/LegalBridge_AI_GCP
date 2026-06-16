@@ -47,6 +47,7 @@ export type DocumentType =
  * 文書ファイル名の単一ソース (generateDocument と過去分 backfill が共用)。
  * 命名ルール(作成日 YYYYMMDD を必ず付与):
  *   検収書 / 利用許諾料計算書 → 文書番号_親文書番号_YYYYMMDD
+ *     (親文書番号が不明な場合は取引先名にフォールバック)
  *   それ以外(契約書/発注書/出版等利用許諾条件書/個別利用許諾条件書 等)
  *                            → 文書番号_取引先名_YYYYMMDD
  *   例: "ARC-PO-2026-0001_株式会社サンプル_20260616.html"
@@ -75,7 +76,7 @@ export function buildDocumentFileName(
   const parentPart = opts.parentDocNumber
     ? `_${sanitizeForFilename(opts.parentDocNumber)}`
     : "";
-  const midPart = isParentNamed ? parentPart : vendorPart;
+  const midPart = isParentNamed ? parentPart || vendorPart : vendorPart;
   // 作成日 YYYYMMDD (JST)。date 未指定は現在時刻。
   const base = opts.date instanceof Date && !isNaN(opts.date.getTime())
     ? opts.date

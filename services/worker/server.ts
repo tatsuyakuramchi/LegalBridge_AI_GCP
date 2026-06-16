@@ -6296,14 +6296,30 @@ ${details}
           unresolved_vendor: 0,
           samples: [] as Array<{
             document_number: string;
+            template_type: string;
             issue_key: string | null;
             vendor: string | null;
             new_name: string;
+          }>,
+          unresolved_samples: [] as Array<{
+            document_number: string;
+            template_type: string;
+            issue_key: string | null;
+            summary: string | null;
           }>,
           errors: [] as Array<{ document_number: string; error: string }>,
         };
         // issue_key → summary マップ (取引先補完用、遅延構築)。
         let issueMap: Map<string, string> | null = null;
+        const ensureIssueMap = async (): Promise<Map<string, string>> => {
+          if (!issueMap) {
+            issueMap = new Map();
+            for (const it of await loadIssues()) {
+              if (it?.issueKey) issueMap.set(it.issueKey, it.summary);
+            }
+          }
+          return issueMap;
+        };
         for (const d of docs.rows) {
           const fd = d.form_data || {};
           // 取引先名: snapshot → form_data(生成時と同じキー群) → 取引先マスタ →
@@ -6334,15 +6350,21 @@ ${details}
           }
           if (!vendorName && d.issue_key) {
             // 最終手段: Backlog 課題タイトル "【…】<取引先>｜…" から抽出。
-            if (!issueMap) {
-              issueMap = new Map();
-              for (const it of await loadIssues()) {
-                if (it?.issueKey) issueMap.set(it.issueKey, it.summary);
-              }
-            }
-            vendorName = vendorFromSummary(issueMap.get(d.issue_key)) || null;
+            const map = await ensureIssueMap();
+            vendorName = vendorFromSummary(map.get(d.issue_key)) || null;
           }
-          if (!vendorName) files.unresolved_vendor++;
+          if (!vendorName) {
+            files.unresolved_vendor++;
+            if (files.unresolved_samples.length < 20) {
+              const map = d.issue_key ? await ensureIssueMap() : null;
+              files.unresolved_samples.push({
+                document_number: d.document_number,
+                template_type: String(d.template_type || ""),
+                issue_key: d.issue_key || null,
+                summary: (d.issue_key && map?.get(d.issue_key)) || null,
+              });
+            }
+          }
           // 親文書番号(検収書/利用許諾料計算書のみ buildDocumentFileName が使用):
           //   form_data の明示リンク → ORDER_NO 系 → base_document_number。
           const parentDocNumber =
@@ -6363,6 +6385,7 @@ ${details}
           if (files.samples.length < 20)
             files.samples.push({
               document_number: d.document_number,
+              template_type: String(d.template_type || ""),
               issue_key: d.issue_key || null,
               vendor: vendorName,
               new_name: newName,
