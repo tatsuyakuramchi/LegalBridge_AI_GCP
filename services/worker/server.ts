@@ -6259,11 +6259,31 @@ ${details}
 
     const result: any = { dry_run: dryRun, scope };
 
+    // Backlog 課題一覧は files の取引先補完にも issues の改名にも使うので一度だけ取得。
+    let _allIssues: any[] | null = null;
+    const loadIssues = async (): Promise<any[]> => {
+      if (_allIssues) return _allIssues;
+      const acc: any[] = [];
+      for (let offset = 0; ; offset += 100) {
+        const page = await backlogService.searchIssues({ count: 100, offset });
+        acc.push(...page);
+        if (page.length < 100 || offset > 5000) break; // 安全弁
+      }
+      _allIssues = acc;
+      return acc;
+    };
+    // "【...】<取引先>｜<文書種別>" の <取引先> を抽出 (全角/半角パイプ両対応)。
+    const vendorFromSummary = (summary?: string): string | null => {
+      if (typeof summary !== "string") return null;
+      const m = summary.match(/】\s*([^｜|]+?)\s*[｜|]/);
+      return m ? m[1].trim() || null : null;
+    };
+
     try {
       // ---- 1. Drive ファイル名 ----
       if (doFiles) {
         const docs = await query(
-          `SELECT id, document_number, template_type, drive_link,
+          `SELECT id, document_number, template_type, drive_link, issue_key,
                   vendor_name_snapshot, base_document_number, form_data, created_at
              FROM documents
             WHERE drive_link IS NOT NULL AND drive_link <> ''
@@ -6273,12 +6293,21 @@ ${details}
           total: docs.rows.length,
           renamed: 0,
           failed: 0,
-          samples: [] as Array<{ document_number: string; new_name: string }>,
+          unresolved_vendor: 0,
+          samples: [] as Array<{
+            document_number: string;
+            issue_key: string | null;
+            vendor: string | null;
+            new_name: string;
+          }>,
           errors: [] as Array<{ document_number: string; error: string }>,
         };
+        // issue_key → summary マップ (取引先補完用、遅延構築)。
+        let issueMap: Map<string, string> | null = null;
         for (const d of docs.rows) {
           const fd = d.form_data || {};
-          // 取引先名: snapshot → form_data(生成時と同じキー群) → 取引先マスタ救済。
+          // 取引先名: snapshot → form_data(生成時と同じキー群) → 取引先マスタ →
+          //   Backlog 課題タイトルの取引先セグメント、の順で救済。
           let vendorName: string | null =
             d.vendor_name_snapshot ||
             fd.VENDOR_NAME ||
@@ -6303,6 +6332,17 @@ ${details}
             );
             vendorName = vr.rows[0]?.name || null;
           }
+          if (!vendorName && d.issue_key) {
+            // 最終手段: Backlog 課題タイトル "【…】<取引先>｜…" から抽出。
+            if (!issueMap) {
+              issueMap = new Map();
+              for (const it of await loadIssues()) {
+                if (it?.issueKey) issueMap.set(it.issueKey, it.summary);
+              }
+            }
+            vendorName = vendorFromSummary(issueMap.get(d.issue_key)) || null;
+          }
+          if (!vendorName) files.unresolved_vendor++;
           // 親文書番号(検収書/利用許諾料計算書のみ buildDocumentFileName が使用):
           //   form_data の明示リンク → ORDER_NO 系 → base_document_number。
           const parentDocNumber =
@@ -6321,7 +6361,12 @@ ${details}
             date: d.created_at ? new Date(d.created_at) : new Date(),
           });
           if (files.samples.length < 20)
-            files.samples.push({ document_number: d.document_number, new_name: newName });
+            files.samples.push({
+              document_number: d.document_number,
+              issue_key: d.issue_key || null,
+              vendor: vendorName,
+              new_name: newName,
+            });
           if (dryRun) continue;
           try {
             const ok = await googleDriveService.renameFile(d.drive_link, newName);
@@ -6340,14 +6385,7 @@ ${details}
 
       // ---- 2. Backlog 課題名 prefix ----
       if (doIssues) {
-        // 全件ページング取得 (Backlog count 上限 100)。
-        const all: any[] = [];
-        for (let offset = 0; ; offset += 100) {
-          const page = await backlogService.searchIssues({ count: 100, offset });
-          all.push(...page);
-          if (page.length < 100) break;
-          if (offset > 5000) break; // 安全弁
-        }
+        const all = await loadIssues();
         const FROM = "【契約審査】";
         const TO = "【文書作成】";
         const targets = all.filter(
