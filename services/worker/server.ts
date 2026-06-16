@@ -38,7 +38,7 @@ import TurndownService from "turndown";
 // @ts-ignore — turndown-plugin-gfm has no types
 import { gfm } from "turndown-plugin-gfm";
 import { BacklogService } from "./src/services/backlogService.ts";
-import { DocumentService } from "./src/services/documentService.ts";
+import { DocumentService, buildDocumentFileName } from "./src/services/documentService.ts";
 import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { CloudSignService } from "./src/services/cloudSignService.ts";
@@ -6233,6 +6233,126 @@ ${details}
     } catch (error) {
       console.error("/api/admin/resync-inspection-events failed:", error);
       res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
+  /**
+   * 過去分の命名を新ルールに統一する一括 backfill (冪等・dry-run 既定)。
+   *
+   * body:
+   *   - dry_run (default true)   … true なら変更せず計画だけ返す
+   *   - scope ("files"|"issues"|"both", default "both")
+   *   - limit (number, 0=無制限) … files の処理上限 (段階適用用)
+   *
+   * files: documents.drive_link を持つ行の Drive ファイル名を
+   *        buildDocumentFileName で再計算 (日付 = created_at, JST)。
+   *        親番号命名の検収書/利用許諾料計算書は form_data.linked_contract_number を親に使う。
+   * issues: Backlog 課題のうち summary が "【契約審査】" で始まるものの prefix だけを
+   *        "【文書作成】" に置換 (本文・区切りは温存)。
+   */
+  app.post("/api/admin/backfill-naming", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run !== false; // 既定 dry-run
+    const scope = String(req.body?.scope || "both");
+    const limit = Number(req.body?.limit) || 0;
+    const doFiles = scope === "files" || scope === "both";
+    const doIssues = scope === "issues" || scope === "both";
+
+    const result: any = { dry_run: dryRun, scope };
+
+    try {
+      // ---- 1. Drive ファイル名 ----
+      if (doFiles) {
+        const docs = await query(
+          `SELECT id, document_number, template_type, drive_link,
+                  vendor_name_snapshot, form_data, created_at
+             FROM documents
+            WHERE drive_link IS NOT NULL AND drive_link <> ''
+            ORDER BY id` + (limit > 0 ? ` LIMIT ${limit}` : "")
+        );
+        const files = {
+          total: docs.rows.length,
+          renamed: 0,
+          failed: 0,
+          samples: [] as Array<{ document_number: string; new_name: string }>,
+          errors: [] as Array<{ document_number: string; error: string }>,
+        };
+        for (const d of docs.rows) {
+          const fd = d.form_data || {};
+          const vendorName =
+            d.vendor_name_snapshot ||
+            fd.VENDOR_NAME ||
+            fd.PARTY_B_NAME ||
+            fd.partyBName ||
+            null;
+          const parentDocNumber =
+            String(fd.linked_contract_number || "").trim() || null;
+          const newName = buildDocumentFileName(d.template_type, {
+            documentNumber: d.document_number,
+            vendorName,
+            parentDocNumber,
+            date: d.created_at ? new Date(d.created_at) : new Date(),
+          });
+          if (files.samples.length < 20)
+            files.samples.push({ document_number: d.document_number, new_name: newName });
+          if (dryRun) continue;
+          try {
+            const ok = await googleDriveService.renameFile(d.drive_link, newName);
+            if (ok) files.renamed++;
+            else files.failed++;
+          } catch (err: any) {
+            files.failed++;
+            files.errors.push({
+              document_number: d.document_number,
+              error: err?.message || String(err),
+            });
+          }
+        }
+        result.files = files;
+      }
+
+      // ---- 2. Backlog 課題名 prefix ----
+      if (doIssues) {
+        // 全件ページング取得 (Backlog count 上限 100)。
+        const all: any[] = [];
+        for (let offset = 0; ; offset += 100) {
+          const page = await backlogService.searchIssues({ count: 100, offset });
+          all.push(...page);
+          if (page.length < 100) break;
+          if (offset > 5000) break; // 安全弁
+        }
+        const FROM = "【契約審査】";
+        const TO = "【文書作成】";
+        const targets = all.filter(
+          (i: any) => typeof i?.summary === "string" && i.summary.startsWith(FROM)
+        );
+        const issues = {
+          scanned: all.length,
+          matched: targets.length,
+          updated: 0,
+          failed: 0,
+          samples: [] as Array<{ key: string; from: string; to: string }>,
+          errors: [] as Array<{ key: string; error: string }>,
+        };
+        for (const it of targets) {
+          const newSummary = TO + it.summary.slice(FROM.length);
+          if (issues.samples.length < 20)
+            issues.samples.push({ key: it.issueKey, from: it.summary, to: newSummary });
+          if (dryRun) continue;
+          try {
+            await backlogService.updateIssue(it.issueKey, { summary: newSummary });
+            issues.updated++;
+          } catch (err: any) {
+            issues.failed++;
+            issues.errors.push({ key: it.issueKey, error: err?.message || String(err) });
+          }
+        }
+        result.issues = issues;
+      }
+
+      res.json({ ok: true, ...result });
+    } catch (err: any) {
+      console.error("[backfill-naming] failed:", err);
+      res.status(500).json({ ok: false, error: err?.message || String(err) });
     }
   });
 
