@@ -57,6 +57,7 @@ export function SettingsPage() {
           <TabsTrigger value="company">Company</TabsTrigger>
           <TabsTrigger value="integrations">Integrations</TabsTrigger>
           <TabsTrigger value="slack">Slack templates</TabsTrigger>
+          <TabsTrigger value="email">メール送信</TabsTrigger>
           <TabsTrigger value="database">Database</TabsTrigger>
         </TabsList>
 
@@ -282,6 +283,100 @@ export function SettingsPage() {
           </Card>
         </TabsContent>
 
+        {/* メール送信(Gmail API) — 検収書 / 利用許諾料計算書 */}
+        <TabsContent value="email" className="space-y-4">
+          <Card>
+            <CardContent className="px-5 space-y-4">
+              <div className="flex items-center gap-2 border-b border-border pb-2.5">
+                <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-300" />
+                <p className="retro-tag">メール送信（Gmail API）</p>
+                <div className="flex-1" />
+                <StatusPill
+                  ok={!!appSettings.EMAIL_SENDER && String(appSettings.EMAIL_ENABLED) === "true"}
+                />
+              </div>
+              <div className="space-y-3">
+                <Field label="送信元アドレス（EMAIL_SENDER）">
+                  <Input
+                    value={appSettings.EMAIL_SENDER || ""}
+                    onChange={(e) => setField("EMAIL_SENDER", e.target.value)}
+                    placeholder="差出人にする Workspace ユーザー: legal@example.co.jp"
+                  />
+                </Field>
+                <Field label="連携の有効化">
+                  <select
+                    value={String(appSettings.EMAIL_ENABLED) === "true" ? "true" : "false"}
+                    onChange={(e) => setField("EMAIL_ENABLED", e.target.value)}
+                    className="h-9 w-full rounded-md border border-input bg-card px-2 text-sm font-mono"
+                  >
+                    <option value="false">無効（送信しない）</option>
+                    <option value="true">有効（送信を許可）</option>
+                  </select>
+                </Field>
+                <Field label="テスト送信の許可宛先（カンマ区切り）">
+                  <Input
+                    value={appSettings.EMAIL_ALLOWED_RECIPIENTS || ""}
+                    onChange={(e) => setField("EMAIL_ALLOWED_RECIPIENTS", e.target.value)}
+                    placeholder="社内宛のみ: a@example.co.jp, b@example.co.jp"
+                  />
+                </Field>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  ※ 許可宛先を設定している間は、その宛先以外への送信は拒否されます（社内宛で検証する用）。空にすると本番宛先へ送信できます。
+                </p>
+              </div>
+
+              <div className="border-t border-border pt-3 space-y-3">
+                <p className="retro-tag">本文テンプレート（検収書）</p>
+                <Field label="件名（検収書）">
+                  <Input
+                    value={appSettings.email_subject_inspection ?? ""}
+                    onChange={(e) => setField("email_subject_inspection", e.target.value)}
+                    placeholder="【検収書送付】{{documentNumber}}（{{vendorName}} 御中）"
+                  />
+                </Field>
+                <Field label="本文（検収書）">
+                  <Textarea
+                    rows={6}
+                    value={appSettings.email_body_inspection ?? ""}
+                    onChange={(e) => setField("email_body_inspection", e.target.value)}
+                    placeholder="{{vendorName}} 御中…"
+                  />
+                </Field>
+                <p className="retro-tag">本文テンプレート（利用許諾料計算書）</p>
+                <Field label="件名（計算書）">
+                  <Input
+                    value={appSettings.email_subject_royalty ?? ""}
+                    onChange={(e) => setField("email_subject_royalty", e.target.value)}
+                    placeholder="【利用許諾料計算書送付】{{documentNumber}}（{{vendorName}} 御中）"
+                  />
+                </Field>
+                <Field label="本文（計算書）">
+                  <Textarea
+                    rows={6}
+                    value={appSettings.email_body_royalty ?? ""}
+                    onChange={(e) => setField("email_body_royalty", e.target.value)}
+                    placeholder="{{vendorName}} 御中…"
+                  />
+                </Field>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  使用可能トークン: {"{{vendorName}}"} {"{{documentNumber}}"} {"{{amount}}"} {"{{date}}"} {"{{link}}"}（空欄なら既定テンプレを使用）
+                </p>
+              </div>
+
+              <Button onClick={() => persist("メール設定")}>
+                <Save />
+                Apply
+              </Button>
+              <div className="pt-1">
+                <EmailHealthButton />
+              </div>
+              <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                ※ 接続テストは保存済みの設定で実行します（メールは送信されません）。送信には gws サービスアカウントへの gmail.send ドメイン全体委任が必要です。
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
         {/* Database */}
         <TabsContent value="database" className="space-y-4">
           <Card>
@@ -355,6 +450,38 @@ function SlackField({
 
 // CloudSign 接続テスト: 保存済み設定の client_id で /token を取得できるか確認する
 //   (書類は送信しない)。結果(base / client_id / 有効化 / token取得可否)を表示。
+function EmailHealthButton() {
+  const [loading, setLoading] = React.useState(false)
+  const [result, setResult] = React.useState<any>(null)
+  const run = async () => {
+    setLoading(true)
+    setResult(null)
+    try {
+      const r = await fetch("/api/email/health", { credentials: "same-origin" })
+      setResult(await r.json())
+    } catch (e: any) {
+      setResult({ ok: false, error: String(e?.message || e) })
+    } finally {
+      setLoading(false)
+    }
+  }
+  return (
+    <>
+      <Button variant="outline" onClick={run} disabled={loading}>
+        {loading ? "確認中…" : "接続テスト"}
+      </Button>
+      {result && (
+        <div className="mt-2 w-full text-[11px] font-mono rounded-md border border-border p-2.5 space-y-0.5">
+          <div>有効化: {String(result.enabled)}</div>
+          <div className={result.ok ? "text-emerald-600" : "text-red-600"}>
+            認証: {result.ok ? `OK ✓ (送信元: ${result.sender || "—"})` : `NG — ${result.error || "失敗"}`}
+          </div>
+        </div>
+      )}
+    </>
+  )
+}
+
 function CloudSignHealthButton() {
   const [loading, setLoading] = React.useState(false)
   const [result, setResult] = React.useState<any>(null)
