@@ -350,20 +350,34 @@ export class DocumentService {
   ): Promise<{ html: string; fileName: string }> {
     const html = this.renderHtml(data, type);
     const prefix = type.toUpperCase();
-    // Phase 22.10: ファイル名に取引先名を含める。
-    //   取引先名は filesystem 安全に sanitize し、空のときはサフィックスなし。
-    //   例: "ARC-PO-2026-0001_株式会社サンプル.html"
-    //       "ARC-PO-2026-0001_001_株式会社サンプル.html" (再発行版)
-    //   検収書は親発注書番号も含める: "ARC-INS-2026-0001_ARC-PO-2026-0001_株式会社サンプル.html"
+    // ファイル命名ルール(作成日 YYYYMMDD を必ず付与):
+    //   検収書 / 利用許諾料計算書 → 文書番号_親文書番号_YYYYMMDD
+    //   それ以外(契約書/発注書/出版等利用許諾条件書/個別利用許諾条件書 等)
+    //                            → 文書番号_取引先名_YYYYMMDD
+    //   例: "ARC-PO-2026-0001_株式会社サンプル_20260616.html"
+    //       "ARC-INS-2026-0001_ARC-PO-2026-0001_20260616.html"
+    const PARENT_NAMED_TYPES = new Set([
+      "inspection_certificate",
+      "delivery_inspec",
+      "royalty_statement",
+    ]);
+    const isParentNamed = PARENT_NAMED_TYPES.has(type);
     const vendorPart = opts?.vendorName
       ? `_${sanitizeForFilename(opts.vendorName)}`
       : "";
     const parentPart = opts?.parentDocNumber
       ? `_${sanitizeForFilename(opts.parentDocNumber)}`
       : "";
+    // 親番号命名グループは親文書番号、それ以外は取引先名を中間パートに使う。
+    const midPart = isParentNamed ? parentPart : vendorPart;
+    // 作成日 YYYYMMDD (JST)。
+    const ymd = new Date(Date.now() + 9 * 3600 * 1000)
+      .toISOString()
+      .slice(0, 10)
+      .replace(/-/g, "");
     const fileName = data.documentNumber
-      ? `${data.documentNumber}${parentPart}${vendorPart}.html`
-      : `${prefix}_${data.issueKey}${parentPart}${vendorPart}_${Date.now()}.html`;
+      ? `${data.documentNumber}${midPart}_${ymd}.html`
+      : `${prefix}_${data.issueKey}${midPart}_${ymd}.html`;
     return { html, fileName };
   }
 
