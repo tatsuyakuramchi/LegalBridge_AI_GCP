@@ -6403,15 +6403,26 @@ ${details}
             });
           if (dryRun) continue;
           try {
-            const ok = await googleDriveService.renameFile(d.drive_link, newName);
-            if (ok) files.renamed++;
-            else files.failed++;
+            const r = await googleDriveService.renameFileVerbose(
+              d.drive_link,
+              newName
+            );
+            if (r.ok) files.renamed++;
+            else {
+              files.failed++;
+              if (files.errors.length < 40)
+                files.errors.push({
+                  document_number: d.document_number,
+                  error: r.error || "rename returned not-ok",
+                });
+            }
           } catch (err: any) {
             files.failed++;
-            files.errors.push({
-              document_number: d.document_number,
-              error: err?.message || String(err),
-            });
+            if (files.errors.length < 40)
+              files.errors.push({
+                document_number: d.document_number,
+                error: err?.message || String(err),
+              });
           }
         }
         result.files = files;
