@@ -60,6 +60,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/line-items(?:\/|\?|$)/,
   // CloudSign の接続テスト(/api/cloudsign/health)等の GET も worker のみ実装。
   /^\/api\/cloudsign(?:\/|\?|$)/,
+  // メール送信の接続テスト(/api/email/health)も worker のみ実装。
+  /^\/api\/email(?:\/|\?|$)/,
   /^\/api\/templates(?:\/|$)/,
   /^\/api\/master\/workflow-settings(?:\/|$)/,
   /^\/api\/numbering(?:\/|$)/,
