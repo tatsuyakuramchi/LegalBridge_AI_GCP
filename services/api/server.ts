@@ -2517,6 +2517,13 @@ async function startServer() {
           `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length})`
         );
       }
+      // 重複対策(読取ガード): 既定は正本(is_primary)かつ final の契約の明細のみ返す。
+      //   再発行で残る旧版(非正本/reissued)capability の condition_lines を隠し、
+      //   Cockpit の重複表示を防ぐ(横断検索と同じ絞り込み)。include_history=1 で旧版も表示。
+      if (String(req.query.include_history || "") !== "1") {
+        where.push(`COALESCE(cc.is_primary, TRUE) = TRUE`);
+        where.push(`COALESCE(cc.lifecycle_status, 'final') = 'final'`);
+      }
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
       try {
         const result = await query(
