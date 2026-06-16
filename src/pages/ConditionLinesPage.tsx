@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Inbox, Loader2, ArrowRight } from "lucide-react"
+import { Search, Inbox, Loader2, ArrowRight, Trash2 } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -27,6 +27,8 @@ type ConditionLine = {
   has_overdue: boolean | null
   fulfilling_doc_number: string | null
   fulfilling_doc_count: number | null
+  // 実績(検収/計算/支払)件数。0 のときだけ手動削除を許可する。
+  event_count: number | null
 }
 
 // 一括/従量/分割 は 成就/一部成就/未成就、契約期間型(利用許諾) は 履行中/成就（満了）。
@@ -108,6 +110,27 @@ export function ConditionLinesPage() {
 
   const open = (lineCode: string | null) => {
     if (lineCode) navigate(`/condition-lines/${encodeURIComponent(lineCode)}`)
+  }
+
+  // 重複・誤作成の整理: 実績(condition_events)が無い明細のみ物理削除できる。
+  const [deletingId, setDeletingId] = React.useState<number | null>(null)
+  const deleteLine = async (r: ConditionLine) => {
+    if ((r.event_count || 0) > 0) return
+    if (!window.confirm(`条件明細 ${r.line_code || r.id} を削除します。よろしいですか？\n(検収/計算実績が無い明細のみ削除できます)`)) return
+    setDeletingId(r.id)
+    try {
+      const res = await fetch(`/api/condition-lines/${r.id}/delete`, { method: "POST" })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data?.ok === false) {
+        window.alert(data?.error || `削除に失敗しました (HTTP ${res.status})`)
+        return
+      }
+      setRows((prev) => prev.filter((x) => x.id !== r.id))
+    } catch (e: any) {
+      window.alert(`削除に失敗しました: ${e?.message || e}`)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   return (
@@ -238,8 +261,26 @@ export function ConditionLinesPage() {
                       <span className="text-muted-foreground">—</span>
                     )}
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    <ArrowRight className="h-3.5 w-3.5 text-muted-foreground inline" />
+                  <td className="px-3 py-2 text-right whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                    {(r.event_count || 0) === 0 ? (
+                      <button
+                        type="button"
+                        title="この明細を削除(実績が無い明細のみ)"
+                        onClick={() => deleteLine(r)}
+                        disabled={deletingId === r.id}
+                        className="text-muted-foreground hover:text-red-600 disabled:opacity-40 mr-2 align-middle"
+                      >
+                        {deletingId === r.id ? (
+                          <Loader2 className="h-3.5 w-3.5 inline animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5 inline" />
+                        )}
+                      </button>
+                    ) : null}
+                    <ArrowRight
+                      className="h-3.5 w-3.5 text-muted-foreground inline cursor-pointer align-middle"
+                      onClick={() => open(r.line_code)}
+                    />
                   </td>
                 </tr>
               ))}
