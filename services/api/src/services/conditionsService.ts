@@ -428,3 +428,189 @@ export async function exportConditionsCsv(f: ConditionFilters): Promise<string> 
   // Excel(Windows)で文字化けしないよう BOM + CRLF。
   return "﻿" + lines.join("\r\n");
 }
+
+// ════════════════════════════════════════════════════════════════════
+//  自動紐付け(auto-link)
+//   条件明細の 原作 / 作品 / 基本契約 / 稟議 を、保守的なヒューリスティクスで
+//   自動推定する。既定は「空欄のみ補完」= 手動設定は温存(上書きしない)。
+//   - 基本契約: 取引先一致の master 契約が一意なら採用(複数なら種別で絞る)。
+//   - 作品 / 原作: 品目・仕様・契約名・文書番号テキストに作品/原作タイトルが
+//     部分一致し、かつ一意に定まるもののみ採用(複数該当は曖昧として不採用)。
+//   - 稟議: テキスト中の 5 桁番号が ringi_records に存在すれば採用。
+//   書込先 id 空間は手動モーダルと同一(work_id/source_ip_id=works.id,
+//   master_contract_id=contracts.id, ringi_id=ringi_records.id)。
+// ════════════════════════════════════════════════════════════════════
+export type AutoLinkProposal = {
+  id: number;
+  document_number: string | null;
+  item_name: string | null;
+  set: {
+    source_ip_id?: number;
+    work_id?: number;
+    master_contract_id?: number;
+    ringi_id?: number;
+  };
+};
+
+export async function autoLinkConditions(opts: {
+  ids?: number[];
+  overwrite?: boolean; // true で既存の手動設定も上書き(既定 false=空欄のみ)
+  dryRun?: boolean; // 既定 true(提案のみ・書込なし)
+}): Promise<{
+  dry_run: boolean;
+  scanned: number;
+  changed: number;
+  counts: { master: number; work: number; source_ip: number; ringi: number };
+  proposals: AutoLinkProposal[];
+}> {
+  const overwrite = opts.overwrite === true;
+  const dryRun = opts.dryRun !== false;
+
+  // 1) 対象明細(現在の紐付け + 突合用テキスト)を取得。
+  const params: any[] = [];
+  let idsClause = "";
+  if (opts.ids && opts.ids.length) {
+    params.push(opts.ids);
+    idsClause = `AND cli.id = ANY($1::int[])`;
+  }
+  const linesRes = await query(
+    `SELECT cli.id, cli.item_name, cli.spec,
+            cli.source_ip_id, cli.work_id, cli.master_contract_id, cli.ringi_id,
+            cc.vendor_id, cc.document_number, cc.contract_title, cc.contract_category
+       FROM capability_line_items cli
+       JOIN contract_capabilities cc ON cc.id = cli.capability_id
+      WHERE 1=1 ${idsClause}
+      ORDER BY cli.id`,
+    params
+  );
+  const lines = linesRes.rows;
+
+  // 2) 突合用マスターを一括ロード。
+  const [mcRes, ownRes, ipRes, ringiRes] = await Promise.all([
+    query(
+      `SELECT id, primary_vendor_id, contract_category, contract_title
+         FROM contracts WHERE contract_level = 'master'`
+    ),
+    query(
+      `SELECT id, title FROM works
+        WHERE COALESCE(kind,'own') = 'own' AND title IS NOT NULL AND length(title) >= 2`
+    ),
+    query(
+      `SELECT id, title FROM works
+        WHERE kind = 'licensed_in' AND title IS NOT NULL AND length(title) >= 2`
+    ),
+    query(`SELECT id, ringi_number FROM ringi_records WHERE ringi_number IS NOT NULL`),
+  ]);
+
+  const mcByVendor = new Map<number, any[]>();
+  for (const r of mcRes.rows) {
+    if (r.primary_vendor_id == null) continue;
+    const k = Number(r.primary_vendor_id);
+    if (!mcByVendor.has(k)) mcByVendor.set(k, []);
+    mcByVendor.get(k)!.push(r);
+  }
+  const ownWorks = ownRes.rows as Array<{ id: number; title: string }>;
+  const ipWorks = ipRes.rows as Array<{ id: number; title: string }>;
+  const ringiByNum = new Map<string, number>();
+  for (const r of ringiRes.rows) ringiByNum.set(String(r.ringi_number).trim(), Number(r.id));
+
+  // タイトル部分一致(一意のみ採用)。複数該当は曖昧として null。
+  const uniqueTitleMatch = (
+    text: string,
+    items: Array<{ id: number; title: string }>
+  ): number | null => {
+    let hit: number | null = null;
+    for (const it of items) {
+      const t = (it.title || "").trim();
+      if (t.length < 2) continue;
+      if (text.indexOf(t) >= 0) {
+        if (hit != null && hit !== it.id) return null; // 複数該当
+        hit = it.id;
+      }
+    }
+    return hit;
+  };
+
+  const proposals: AutoLinkProposal[] = [];
+  const counts = { master: 0, work: 0, source_ip: 0, ringi: 0 };
+
+  for (const ln of lines) {
+    const text = [ln.item_name, ln.spec, ln.contract_title, ln.document_number]
+      .filter(Boolean)
+      .join(" ");
+    const set: AutoLinkProposal["set"] = {};
+
+    // 基本契約: 取引先一致 → 一意なら採用。複数は contract_category で絞る。
+    if (overwrite || ln.master_contract_id == null) {
+      const cands = ln.vendor_id != null ? mcByVendor.get(Number(ln.vendor_id)) || [] : [];
+      let pick: any = null;
+      if (cands.length === 1) pick = cands[0];
+      else if (cands.length > 1 && ln.contract_category) {
+        const byCat = cands.filter(
+          (c: any) => c.contract_category && String(c.contract_category) === String(ln.contract_category)
+        );
+        if (byCat.length === 1) pick = byCat[0];
+      }
+      if (pick) set.master_contract_id = Number(pick.id);
+    }
+    // 作品(自社作品)
+    if (overwrite || ln.work_id == null) {
+      const wid = uniqueTitleMatch(text, ownWorks);
+      if (wid != null) set.work_id = wid;
+    }
+    // 原作(licensed_in works)
+    if (overwrite || ln.source_ip_id == null) {
+      const sid = uniqueTitleMatch(text, ipWorks);
+      if (sid != null) set.source_ip_id = sid;
+    }
+    // 稟議: テキスト中の 5 桁番号
+    if (overwrite || ln.ringi_id == null) {
+      const m = text.match(/(?:^|[^0-9])(\d{5})(?:[^0-9]|$)/);
+      if (m) {
+        const rid = ringiByNum.get(m[1]);
+        if (rid != null) set.ringi_id = rid;
+      }
+    }
+
+    if (Object.keys(set).length === 0) continue;
+    if (set.master_contract_id != null) counts.master++;
+    if (set.work_id != null) counts.work++;
+    if (set.source_ip_id != null) counts.source_ip++;
+    if (set.ringi_id != null) counts.ringi++;
+    proposals.push({
+      id: Number(ln.id),
+      document_number: ln.document_number || null,
+      item_name: ln.item_name || null,
+      set,
+    });
+  }
+
+  // 3) 適用(dryRun でなければ)。updateConditionLinks は 4 リンクを無条件 SET する
+  //    ため、変更しないスロットは現在値を温存してマージする。
+  if (!dryRun) {
+    const byId = new Map<number, any>();
+    for (const l of lines) byId.set(Number(l.id), l);
+    for (const p of proposals) {
+      const ln = byId.get(p.id);
+      const merge = (cur: any, prop: number | undefined) =>
+        overwrite ? prop ?? cur ?? null : cur ?? prop ?? null;
+      await updateConditionLinks(p.id, {
+        source_ip_id: merge(ln.source_ip_id, p.set.source_ip_id),
+        work_id: merge(ln.work_id, p.set.work_id),
+        master_contract_id: merge(ln.master_contract_id, p.set.master_contract_id),
+        ringi_id: merge(ln.ringi_id, p.set.ringi_id),
+        status_flags: null, // 据え置き
+        is_inbound: null, // 据え置き
+        // flow_direction 未指定 → 据え置き
+      });
+    }
+  }
+
+  return {
+    dry_run: dryRun,
+    scanned: lines.length,
+    changed: proposals.length,
+    counts,
+    proposals: proposals.slice(0, 100),
+  };
+}
