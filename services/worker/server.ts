@@ -43,6 +43,7 @@ import type { DocumentType } from "./src/services/documentService.ts";
 import { GoogleDriveService } from "./src/services/googleDriveService.ts";
 import { CloudSignService } from "./src/services/cloudSignService.ts";
 import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
+import { EmailService } from "./src/services/emailService.ts";
 import { ExcelService } from "./src/services/excelService.ts";
 import { CsvImportService } from "./src/services/csvImportService.ts";
 import {
@@ -358,6 +359,91 @@ async function startServer() {
     };
   };
 
+  // ── メール送信(Gmail API)連携 ───────────────────────────────
+  //   検収書 / 利用許諾料計算書 を取引先へメール送信する。送信は worker 経由。
+  //   設定は app_settings or env。EMAIL_ENABLED=true のときだけ送信可(誤起動防止)。
+  //   EMAIL_ALLOWED_RECIPIENTS(カンマ区切り)で宛先を社内に限定するテストガード。
+  //   本文/件名テンプレは設定画面で編集可(email_subject_* / email_body_*)。
+  const DEFAULT_EMAIL_TPL = {
+    inspection: {
+      subject: "【検収書送付】{{documentNumber}}（{{vendorName}} 御中）",
+      body:
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n検収書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+    },
+    royalty: {
+      subject: "【利用許諾料計算書送付】{{documentNumber}}（{{vendorName}} 御中）",
+      body:
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n利用許諾料計算書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+    },
+  };
+  const loadEmailCfg = async () => {
+    const keys = [
+      "EMAIL_ENABLED", "EMAIL_SENDER", "EMAIL_ALLOWED_RECIPIENTS",
+      "email_subject_inspection", "email_body_inspection",
+      "email_subject_royalty", "email_body_royalty",
+    ];
+    const m: Record<string, any> = {};
+    try {
+      const r = await query(`SELECT key, value FROM app_settings WHERE key = ANY($1)`, [keys]);
+      for (const row of r.rows) {
+        try { m[row.key] = JSON.parse(row.value); } catch { m[row.key] = row.value; }
+      }
+    } catch {
+      /* app_settings 未整備でも env で継続 */
+    }
+    const get = (k: string) => (m[k] ?? process.env[k] ?? "");
+    return {
+      enabled: String(get("EMAIL_ENABLED") || "").toLowerCase() === "true",
+      sender: String(get("EMAIL_SENDER") || ""),
+      allow: String(get("EMAIL_ALLOWED_RECIPIENTS") || "")
+        .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+      tpl: {
+        inspection: {
+          subject: String(get("email_subject_inspection") || "") || DEFAULT_EMAIL_TPL.inspection.subject,
+          body: String(get("email_body_inspection") || "") || DEFAULT_EMAIL_TPL.inspection.body,
+        },
+        royalty: {
+          subject: String(get("email_subject_royalty") || "") || DEFAULT_EMAIL_TPL.royalty.subject,
+          body: String(get("email_body_royalty") || "") || DEFAULT_EMAIL_TPL.royalty.body,
+        },
+      },
+    };
+  };
+
+  // メール本文(プレーンテキスト)を簡易 HTML 化。URL はリンク化。
+  const emailTextToHtml = (text: string): string => {
+    const esc = (s: string) =>
+      s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const linked = esc(text).replace(
+      /(https?:\/\/[^\s<]+)/g,
+      '<a href="$1">$1</a>'
+    );
+    return `<div style="white-space:pre-wrap;font-family:'Hiragino Sans',sans-serif;font-size:14px;line-height:1.7;color:#1a1a1a">${linked}</div>`;
+  };
+  const applyEmailTokens = (
+    tpl: string,
+    vars: { vendorName: string; documentNumber: string; amount: string; date: string; link: string }
+  ): string =>
+    String(tpl)
+      .replace(/\{\{\s*vendorName\s*\}\}/g, vars.vendorName)
+      .replace(/\{\{\s*documentNumber\s*\}\}/g, vars.documentNumber)
+      .replace(/\{\{\s*amount\s*\}\}/g, vars.amount)
+      .replace(/\{\{\s*date\s*\}\}/g, vars.date)
+      .replace(/\{\{\s*link\s*\}\}/g, vars.link);
+
+  // 接続テスト: 送信元(EMAIL_SENDER)でプロフィール取得できるか(送信はしない)。
+  app.get("/api/email/health", async (_req, res) => {
+    try {
+      const cfg = await loadEmailCfg();
+      if (!cfg.sender)
+        return res.json({ ok: false, enabled: cfg.enabled, error: "EMAIL_SENDER 未設定" });
+      const r = await new EmailService({ sender: cfg.sender }).verifyConnection();
+      res.json({ ok: true, enabled: cfg.enabled, sender: r.sender });
+    } catch (e: any) {
+      res.json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // 接続テスト: 設定中の client_id で /token を取得できるか確認する(書類は送らない)。
   //   実接続テストの第一歩。設定は app_settings から読むので「保存後」に叩く。
   app.get("/api/cloudsign/health", async (_req, res) => {
@@ -657,6 +743,119 @@ async function startServer() {
       }
     } catch (e: any) {
       console.error("[cloudsign send] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 検収書 / 利用許諾料計算書 をメール送信(Gmail API)。手動送信ボタン用。
+  //   body: { to?: string|string[], cc?: string[] }  to 未指定なら取引先主担当。
+  //   PDF は Drive 上の HTML を取得して描画し添付(best-effort)。
+  app.post("/api/documents/:docNumber/email/send", express.json(), async (req, res) => {
+    try {
+      const docNumber = String(req.params.docNumber || "").trim();
+      if (!docNumber) return res.status(400).json({ ok: false, error: "document_number が必要です" });
+      const cfg = await loadEmailCfg();
+      if (!cfg.enabled)
+        return res.status(400).json({ ok: false, error: "メール送信が無効です(設定で EMAIL_ENABLED を true に)" });
+      if (!cfg.sender)
+        return res.status(400).json({ ok: false, error: "送信元(EMAIL_SENDER)が未設定です" });
+
+      // 文書 + 取引先を解決。
+      const dr = await query(
+        `SELECT d.document_number, d.template_type, d.form_data, d.drive_link, d.issue_key,
+                cc.vendor_id, v.vendor_name
+           FROM documents d
+           LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE d.document_number = $1
+          ORDER BY cc.is_primary DESC NULLS LAST
+          LIMIT 1`,
+        [docNumber]
+      );
+      if (!dr.rows[0]) return res.status(404).json({ ok: false, error: "文書が見つかりません" });
+      const doc = dr.rows[0];
+      const tt = String(doc.template_type || "");
+      const isInspection = tt.includes("inspection");
+      const isRoyalty = tt === "royalty_statement" || tt === "license_calculation_sheet";
+      if (!isInspection && !isRoyalty)
+        return res.status(400).json({ ok: false, error: `メール送信対象外の文書種別です: ${tt}` });
+
+      // 宛先: body.to 優先(上書き)、無ければ取引先の主担当メール。
+      let to: string[] = [];
+      if (Array.isArray(req.body?.to)) to = req.body.to.map((s: any) => String(s).trim()).filter(Boolean);
+      else if (typeof req.body?.to === "string" && req.body.to.trim())
+        to = req.body.to.split(",").map((s: string) => s.trim()).filter(Boolean);
+      if (!to.length && doc.vendor_id) {
+        const vc = await query(
+          `SELECT email FROM vendor_contacts
+            WHERE vendor_id = $1 AND email IS NOT NULL AND email <> ''
+            ORDER BY is_primary DESC, sort_order ASC LIMIT 1`,
+          [doc.vendor_id]
+        );
+        if (vc.rows[0]?.email) to = [String(vc.rows[0].email)];
+      }
+      to = to.filter(Boolean);
+      if (!to.length)
+        return res.status(400).json({ ok: false, error: "宛先メールがありません(取引先の主担当が未設定)" });
+      const cc: string[] = Array.isArray(req.body?.cc)
+        ? req.body.cc.map((s: any) => String(s).trim()).filter(Boolean)
+        : [];
+
+      // テストガード: allowlist 設定時は全宛先がその集合内であること。
+      if (cfg.allow.length) {
+        const bad = [...to, ...cc].find((e) => !cfg.allow.includes(String(e).toLowerCase()));
+        if (bad)
+          return res
+            .status(400)
+            .json({ ok: false, error: `テスト中は許可された宛先のみ送信できます: ${bad}` });
+      }
+
+      // 件名/本文(テンプレ + トークン置換)。
+      const fd = doc.form_data || {};
+      const amount = String(
+        fd.grandTotalPayable || fd.totalAmount || fd.GRAND_TOTAL || fd.TOTAL_AMOUNT || ""
+      );
+      const vars = {
+        vendorName: String(doc.vendor_name || ""),
+        documentNumber: String(doc.document_number || ""),
+        amount,
+        date: new Date().toLocaleDateString("ja-JP"),
+        link: String(doc.drive_link || ""),
+      };
+      const t = isInspection ? cfg.tpl.inspection : cfg.tpl.royalty;
+      const subject = applyEmailTokens(t.subject, vars);
+      const html = emailTextToHtml(applyEmailTokens(t.body, vars));
+
+      // 添付: Drive 上の文書(HTML)を取得し PDF 化(best-effort)。
+      let attachments: any[] = [];
+      let attached = false;
+      try {
+        const buf = await googleDriveService.downloadPdf(doc.drive_link);
+        const pdf = await renderHtmlToPdf(buf.toString("utf8"));
+        attachments = [{ filename: `${doc.document_number}.pdf`, content: pdf, mimeType: "application/pdf" }];
+        attached = true;
+      } catch (e: any) {
+        console.warn("[email] PDF 添付の生成に失敗(リンクのみで送信):", e?.message || e);
+      }
+
+      const { messageId } = await new EmailService({ sender: cfg.sender }).sendEmail({
+        to, cc, subject, html, attachments,
+      });
+
+      await query(
+        `UPDATE documents SET email_sent_at = now(), email_to = $2, email_message_id = $3
+          WHERE document_number = $1`,
+        [doc.document_number, to.join(", "), messageId || null]
+      );
+
+      res.json({
+        ok: true,
+        to, cc, attached,
+        message_id: messageId,
+        sent_at: new Date().toISOString(),
+      });
+    } catch (e: any) {
+      console.error("[email send] failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });

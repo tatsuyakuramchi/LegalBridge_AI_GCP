@@ -273,13 +273,26 @@ function categoryTable(rows: any[], cat: "basic" | "individual" | "inspection" |
     return `<div class="empty-note">該当なし</div>`;
   }
   const headRow = `<tr>
-    <th style="width: 30%">タイトル</th>
-    <th style="width: 18%">番号</th>
-    <th style="width: 12%">ステータス</th>
-    <th style="width: 16%">Backlog 状態</th>
-    <th style="width: 12%">有効期限</th>
-    <th style="width: 12%">リンク</th>
+    <th style="width: 26%">タイトル</th>
+    <th style="width: 16%">番号</th>
+    <th style="width: 11%">ステータス</th>
+    <th style="width: 14%">Backlog 状態</th>
+    <th style="width: 11%">有効期限</th>
+    <th style="width: 13%">送信時間</th>
+    <th style="width: 9%">リンク</th>
   </tr>`;
+  // 送信時刻(メール/CloudSign/Excel)を JST で表示。チャネル名を小さく添える。
+  const fmtSent = (iso: string, ch: string): string => {
+    if (!iso) return `<span style="color:#9ca3af">—</span>`;
+    let s = iso;
+    try {
+      s = new Date(iso).toLocaleString("ja-JP", {
+        year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo",
+      });
+    } catch { /* keep iso */ }
+    return `${esc(s)}${ch ? `<div style="color:#9ca3af;font-size:10px">${esc(ch)}</div>` : ""}`;
+  };
   const bodyRows = rows
     .map((d) => {
       const title = d.contract_title || d.template_type || "(無題)";
@@ -300,6 +313,7 @@ function categoryTable(rows: any[], cat: "basic" | "individual" | "inspection" |
         <td class="status">${statusBadge(d.contract_status)}</td>
         <td class="status">${backlogCell}</td>
         <td class="docno">${esc(expiry)}</td>
+        <td class="docno">${fmtSent(d.sent_at || "", d.sent_channel || "")}</td>
         <td class="link">${linkCell}</td>
       </tr>`;
     })
