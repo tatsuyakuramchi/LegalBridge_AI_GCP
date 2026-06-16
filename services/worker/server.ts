@@ -6293,6 +6293,7 @@ ${details}
           total: docs.rows.length,
           renamed: 0,
           failed: 0,
+          skipped_external: 0,
           unresolved_vendor: 0,
           samples: [] as Array<{
             document_number: string;
@@ -6401,7 +6402,13 @@ ${details}
               vendor: vendorName,
               new_name: newName,
             });
-          if (dryRun) continue;
+          // LegalOn Cloud 等の外部 SaaS 文書は Drive リネーム対象外。
+          //   (drive_link が Google Drive/Docs 以外のホスト)
+          const isExternal =
+            !!d.drive_link &&
+            !/(drive|docs)\.google\.com/.test(String(d.drive_link));
+          if (isExternal) files.skipped_external++;
+          if (dryRun || isExternal) continue;
           try {
             const r = await googleDriveService.renameFileVerbose(
               d.drive_link,
