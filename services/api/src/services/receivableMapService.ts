@@ -4,16 +4,16 @@
  * 当社がサブライセンサーとなる構造を 3 層で表す:
  *   上流(原権利者/ライセンサー)  ← 当社が分配・支払(料率×受領額)
  *   当社(サブライセンサー)
- *   下流(サブライセンシー)        → 当社が受領(請求権 sublicense_deals)
+ *   下流(サブライセンシー)        → 当社が受領(サブライセンス条件明細 OUT + condition_receipts)
  *
  * 分配額(ユーザー決定): 料率 × 受領額。
  *   料率 = 上流の個別利用許諾(license-in)の capability_financial_conditions
  *          condition_no=2(サブライセンス)の rate_pct。
- *   受領額 = その作品のサブライセンス受領(deal.net)合計。
+ *   受領額 = その作品のサブライセンス受領(condition_kind='sublicense_out' の
+ *           condition_receipts 受領/計算合計)。
  */
 
 import { query } from "../lib/db.ts";
-import { listDeals } from "./sublicenseService.ts";
 
 const num = (v: any): number => (v == null || v === "" ? 0 : Number(v) || 0);
 const d2s = (v: any): string =>
@@ -93,8 +93,30 @@ export async function getWorkDistribution(workId: number): Promise<WorkDistribut
 // ── ノード(1作品)の上流分配・下流受領を計算(系譜マップで再利用)──────
 type WorkRow = { id: number; title: string; work_code: string; is_original: boolean; derivation_type?: string | null; parent_work_id?: number | null };
 
+// 下流受領 = サブライセンス条件明細(OUT) ごとの受領合計(condition_receipts)。
+//   旧 sublicense_deals から condition_kind='sublicense_out' + condition_receipts へ刷新。
+//   返却 shape は従来 deal 互換({ id, work_id, receivable_kind, sublicensee_name, net, currency, status })。
 async function loadAllDeals(): Promise<any[]> {
-  try { return await listDeals(); } catch { return []; }
+  try {
+    const r = await query(
+      `SELECT cfc.id, cfc.work_id,
+              'sublicense' AS receivable_kind,
+              COALESCE(v.vendor_name, '') AS sublicensee_name,
+              '' AS source_contract_number,
+              COALESCE(cfc.currency, 'JPY') AS currency,
+              'active' AS status,
+              COALESCE(SUM(COALESCE(cr.received_amount, cr.computed_royalty_ex_tax)), 0) AS net
+         FROM capability_financial_conditions cfc
+         LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
+         LEFT JOIN condition_receipts cr ON cr.condition_id = cfc.id
+        WHERE cfc.condition_kind = 'sublicense_out'
+        GROUP BY cfc.id, cfc.work_id, v.vendor_name, cfc.currency`
+    );
+    return r.rows.map((d: any) => ({ ...d, net: Number(d.net) || 0 }));
+  } catch (err: any) {
+    if (err && (err.code === "42P01" || err.code === "42703")) return [];
+    return [];
+  }
 }
 
 async function computeNode(work: WorkRow, allDeals: any[]) {
@@ -293,7 +315,7 @@ export async function listMappableWorks(): Promise<Array<{ id: number; work_code
     const res = await query(
       `SELECT w.id, w.work_code, w.title, COUNT(d.id)::int AS deal_count
          FROM works w
-         JOIN sublicense_deals d ON d.work_id = w.id AND d.status <> 'closed'
+         JOIN capability_financial_conditions d ON d.work_id = w.id AND d.condition_kind = 'sublicense_out'
         GROUP BY w.id, w.work_code, w.title
         ORDER BY w.work_code DESC NULLS LAST, w.id DESC
         LIMIT 1000`

@@ -827,6 +827,9 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
       "出版等利用許諾条件書": "PUBT",
       pub_additional_terms: "PUBA",
       "追加利用許諾条件書": "PUBA",
+      // 通知・同意 (個人情報取得 通知・同意書) → ARC-PR-YYYY-NNNN
+      notice_consent_personal_info_freelance: "PR",
+      "個人情報取得 通知・同意書": "PR",
       // その他
       nda: "NDA",
       "NDA": "NDA",

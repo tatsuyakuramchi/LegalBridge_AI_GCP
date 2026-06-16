@@ -234,23 +234,6 @@ import { templatePreviewPage } from "./src/views/templatePreviewHtml.ts";
 // B1: 作品中心モデルの閲覧ページ(admin-ui の WorkModelPage を Search へ移設)。
 import { workModelEmbedPage } from "./src/views/workModelHtml.ts";
 import { conditionsPage } from "./src/views/conditionsHtml.ts";
-import { sublicensePage } from "./src/views/sublicenseHtml.ts";
-import {
-  listDeals as listSubDeals,
-  upsertDeal as upsertSubDeal,
-  deleteDeal as deleteSubDeal,
-  listReceipts as listSubReceipts,
-  exportReceiptsCsv as exportSubReceiptsCsv,
-  listSublicenseeOptions,
-  listWorkOptions as listSubWorkOptions,
-  listReportsByDeal as listSubReports,
-  upsertReport as upsertSubReport,
-  deleteReport as deleteSubReport,
-  confirmReceipt as confirmSubReceipt,
-  unconfirmReceipt as unconfirmSubReceipt,
-  setReceiptStatus as setSubReceiptStatus,
-  importInboundConditions as importInboundReceivables,
-} from "./src/services/sublicenseService.ts";
 import {
   getWorkDistribution,
   getWorkLineage,
@@ -260,10 +243,6 @@ import {
   deleteWorkAlias,
   resolveWorksByTitle,
 } from "./src/services/receivableMapService.ts";
-import {
-  importUsageReportsCsv,
-  getUsageReportSampleCsv,
-} from "./src/services/usageReportImportService.ts";
 import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
 import {
   listConditions,
@@ -1771,19 +1750,23 @@ async function startServer() {
               //   - 仕様   ← capability_line_items 1 行目の spec
               //   - 発注日 ← contract_capabilities.created_at (due_date 優先)
               const docRow = await query(
-                `SELECT document_number FROM documents
+                `SELECT document_number, form_data FROM documents
                   WHERE issue_key = $1
                     AND template_type LIKE '%purchase_order%'
                   ORDER BY created_at DESC LIMIT 1`,
                 [parentKey]
               );
               const parentPoNumber = docRow.rows[0]?.document_number || "";
+              const parentPoForm = docRow.rows[0]?.form_data || {};
               const poRow = poHeader.rows[0];
               const firstLine = lines.rows[0];
 
               context["parent_po_issue_key"] = parentKey;
               context["parent_po_id"] = poId;
               context["parent_po_number"] = parentPoNumber;
+              // 件名: 発注書フォームで入力した件名(PROJECT_TITLE)を優先。無ければ contract_title。
+              context["projectTitle"] =
+                parentPoForm?.PROJECT_TITLE || poRow.contract_title || "";
               if (firstLine?.item_name) {
                 context["description"] = firstLine.item_name;
               }
@@ -1839,6 +1822,8 @@ async function startServer() {
                   unit_price: Number(l.unit_price) || 0,
                   quantity: ordQty,
                   amount_ex_tax: ordAmt,
+                  // 成果物帰属。受注者帰属かつ0円は検収書で「利用許諾料に含む」表示。
+                  deliverable_ownership: l.deliverable_ownership || "発注者",
                   // Phase 23.0.4: 検収書 Excel / PDF 生成時に納品日列が空に
                   //   なる問題を解消するため delivery_date / payment_date を追加。
                   //   excelService.findParentLine が l.delivery_date を読む。
@@ -2484,7 +2469,10 @@ async function startServer() {
           [issueKey]
         );
       } catch (err: any) {
-        if (err && err.code === "42703") {
+        // 42703=列未追加(lifecycle_status 等) / 42P01=Phase F テーブル未作成
+        //   (condition_events/condition_lines サブクエリ)。どちらの移行ウィンドウでも
+        //   documents 単独の legacy 応答にフォールバックする。
+        if (err && (err.code === "42703" || err.code === "42P01")) {
           console.warn(
             "[/api/issues/:issueKey/documents] schema migration 未適用 — legacy 形式で返却"
           );
@@ -2529,6 +2517,13 @@ async function startServer() {
           `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length})`
         );
       }
+      // 重複対策(読取ガード): 既定は正本(is_primary)かつ final の契約の明細のみ返す。
+      //   再発行で残る旧版(非正本/reissued)capability の condition_lines を隠し、
+      //   Cockpit の重複表示を防ぐ(横断検索と同じ絞り込み)。include_history=1 で旧版も表示。
+      if (String(req.query.include_history || "") !== "1") {
+        where.push(`COALESCE(cc.is_primary, TRUE) = TRUE`);
+        where.push(`COALESCE(cc.lifecycle_status, 'final') = 'final'`);
+      }
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
       try {
         const result = await query(
@@ -2539,7 +2534,15 @@ async function startServer() {
                   b.mg_remaining, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
                   v.vendor_name, v.vendor_code,
-                  sch.has_overdue
+                  sch.has_overdue,
+                  (SELECT d.document_number
+                     FROM condition_events ce JOIN documents d ON d.id = ce.document_id
+                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                    ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
+                    LIMIT 1) AS fulfilling_doc_number,
+                  (SELECT COUNT(*)::int FROM condition_events ce
+                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                      AND ce.document_id IS NOT NULL) AS fulfilling_doc_count
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
@@ -2577,12 +2580,19 @@ async function startServer() {
                   b.mg_consumed, b.mg_remaining, b.ag_consumed, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
                   cc.structural_role, cc.parent_capability_id,
+                  cc.record_type AS contract_record_type,
+                  cc.drive_url AS contract_drive_link,
+                  pcc.contract_title  AS parent_contract_title,
+                  pcc.document_number AS parent_contract_number,
+                  pcc.record_type     AS parent_record_type,
+                  pcc.drive_url       AS parent_drive_link,
                   v.vendor_name, v.vendor_code,
                   w.work_code, w.title AS work_title
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN contract_capabilities pcc ON pcc.id = cc.parent_capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
              LEFT JOIN works w ON w.id = cl.work_id
             WHERE cl.line_code = $1
@@ -2977,6 +2987,27 @@ async function startServer() {
           throw err;
         }
       }
+      // データ構造刷新: 契約スコープ(複数可)を別クエリで付与。UI の複数選択
+      //   チェックボックスの復元に使う。optional な contract_scopes を本体 SELECT に
+      //   インライン化すると、未追加環境(42P01)で契約本体まで degraded fallback に
+      //   巻き込まれ財務条件等が空になる。そのため独立クエリにし、テーブル不在時は
+      //   scopes だけを空配列にして契約データは保持する。
+      try {
+        const sc = await query(
+          `SELECT capability_id, array_agg(scope ORDER BY scope) AS scopes
+             FROM contract_scopes GROUP BY capability_id`
+        );
+        const scopeMap = new Map<number, string[]>(
+          sc.rows.map((r: any) => [Number(r.capability_id), r.scopes])
+        );
+        for (const row of result.rows) row.scopes = scopeMap.get(Number(row.id)) || [];
+      } catch (scErr: any) {
+        if (scErr && (scErr.code === "42P01" || scErr.code === "42703")) {
+          for (const row of result.rows) row.scopes = [];
+        } else {
+          throw scErr;
+        }
+      }
       res.json(result.rows);
     } catch (error) {
       res.status(500).json({ error: String(error) });
@@ -3314,59 +3345,6 @@ async function startServer() {
     }
   });
 
-  // ===================================================================
-  // サブライセンス受領管理(第1段)
-  // ===================================================================
-  app.get("/master/sublicense", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "sublicense", renderErrorPage }), (req, res) => {
-    try {
-      res.type("html").send(sublicensePage((req as any).userRole as Role));
-    } catch (error) {
-      console.error("/master/sublicense failed:", error);
-      res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
-    }
-  });
-
-  // 条件(deal)一覧 / 作成・更新 / 削除
-  app.get("/api/sublicense/deals", requireIapUser({ renderErrorPage }), async (_req, res) => {
-    try {
-      res.json({ ok: true, rows: await listSubDeals() });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals GET failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.post("/api/sublicense/deals", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const id = await upsertSubDeal(req.body || {});
-      res.json({ ok: true, id });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.delete("/api/sublicense/deals/:id", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
-      await deleteSubDeal(id);
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals DELETE failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // ピッカー用オプション(作品 / サブライセンシー)
-  app.get("/api/sublicense/options", requireIapUser({ renderErrorPage }), async (_req, res) => {
-    try {
-      const [sublicensees, works] = await Promise.all([listSublicenseeOptions(), listSubWorkOptions()]);
-      res.json({ ok: true, sublicensees, works });
-    } catch (error: any) {
-      console.error("/api/sublicense/options failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
   // ── 分配構造マップ(作品中心)──────────────────────────────────
   app.get("/master/receivable-map", requireIapUser({ renderErrorPage }), attachAppRole(), requireScreen({ key: "receivable-map", renderErrorPage }), (req, res) => {
     try {
@@ -3449,170 +3427,6 @@ async function startServer() {
     }
   });
 
-  // 利用報告 CSV 一括取込(タイトル名寄せ自動解決)
-  app.get("/api/sublicense/reports/template.csv", requireIapUser({ renderErrorPage }), (_req, res) => {
-    res.setHeader("Content-Type", "text/csv; charset=utf-8");
-    res.setHeader("Content-Disposition", 'attachment; filename="usage_report_sample.csv"');
-    res.send(getUsageReportSampleCsv());
-  });
-  app.post("/api/sublicense/reports/import-csv", requireIapUser({ renderErrorPage }), express.json({ limit: "8mb" }), async (req, res) => {
-    try {
-      const b = req.body || {};
-      if (!b.csv || typeof b.csv !== "string") return res.status(400).json({ ok: false, error: "csv required" });
-      const result = await importUsageReportsCsv(b.csv, { dryRun: b.dry_run !== false });
-      res.json({ ok: true, ...result });
-    } catch (error: any) {
-      console.error("/api/sublicense/reports/import-csv failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 条件明細(inbound)→ 請求権 自動取込(冪等)
-  app.post("/api/sublicense/receipts/import", requireIapUser({ renderErrorPage }), async (_req, res) => {
-    try {
-      const r = await importInboundReceivables();
-      res.json({ ok: true, ...r });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/import failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 受領予定一覧(deal を各回に展開)。?import=1 で取込を先に実行。
-  app.get("/api/sublicense/receipts", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      if (q.import === "1") {
-        try { await importInboundReceivables(); } catch (e) { console.warn("inbound import skipped:", e); }
-      }
-      const result = await listSubReceipts({
-        from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
-        kind: q.kind, status: q.status,
-      });
-      res.json({ ok: true, ...result });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 売上報告(deal × 受領予定日)— 一覧 / 登録更新 / 削除
-  app.get("/api/sublicense/deals/:id/reports", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const id = Number(req.params.id);
-      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
-      res.json({ ok: true, rows: await listSubReports(id) });
-    } catch (error: any) {
-      console.error("/api/sublicense/deals/:id/reports failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.post("/api/sublicense/reports", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const b = req.body || {};
-      const dealId = Number(b.deal_id);
-      if (!Number.isFinite(dealId) || !b.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await upsertSubReport({
-        deal_id: dealId,
-        period_date: String(b.period_date),
-        period_label: b.period_label,
-        period_start: b.period_start,
-        period_end: b.period_end,
-        report_basis: b.report_basis,
-        unit_price: b.unit_price,
-        reported_amount: b.reported_amount,
-        reported_sales: b.reported_sales,
-        reported_quantity: b.reported_quantity,
-        note: b.note,
-      });
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/reports POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.delete("/api/sublicense/reports", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      const dealId = Number(q.deal_id);
-      if (!Number.isFinite(dealId) || !q.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await deleteSubReport(dealId, String(q.period_date));
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/reports DELETE failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 受領確定 → payments(inbound / sublicense_income)記録 / 取消
-  app.post("/api/sublicense/receipts/confirm", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const b = req.body || {};
-      const dealId = Number(b.deal_id);
-      if (!Number.isFinite(dealId) || !b.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await confirmSubReceipt(dealId, String(b.period_date));
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/confirm POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-  app.delete("/api/sublicense/receipts/confirm", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      const dealId = Number(q.deal_id);
-      if (!Number.isFinite(dealId) || !q.period_date) {
-        return res.status(400).json({ ok: false, error: "deal_id and period_date required" });
-      }
-      await unconfirmSubReceipt(dealId, String(q.period_date));
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/confirm DELETE failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 請求状態(台帳)更新: 未請求/請求済/入金済
-  app.post("/api/sublicense/receipts/status", requireIapUser({ renderErrorPage }), express.json(), async (req, res) => {
-    try {
-      const b = req.body || {};
-      const dealId = Number(b.deal_id);
-      if (!Number.isFinite(dealId) || !b.period_date || !b.status) {
-        return res.status(400).json({ ok: false, error: "deal_id, period_date, status required" });
-      }
-      await setSubReceiptStatus(dealId, String(b.period_date), String(b.status), b.note);
-      res.json({ ok: true });
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/status POST failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
-
-  // 受領予定 CSV(全件 or ?ids=deal:idx,...)
-  app.get("/api/sublicense/receipts/export", requireIapUser({ renderErrorPage }), async (req, res) => {
-    try {
-      const q = req.query as Record<string, string>;
-      const ids = q.ids ? String(q.ids).split(",").map((s) => s.trim()).filter(Boolean) : undefined;
-      const csv = await exportSubReceiptsCsv({
-        from: q.from, to: q.to, sublicensee: q.sublicensee, work: q.work, q: q.q,
-        kind: q.kind, status: q.status,
-        ids: ids as any,
-      });
-      const stamp = new Date().toISOString().slice(0, 10);
-      res.setHeader("Content-Type", "text/csv; charset=utf-8");
-      res.setHeader("Content-Disposition", `attachment; filename="sublicense_receipts_${stamp}.csv"`);
-      res.send(csv);
-    } catch (error: any) {
-      console.error("/api/sublicense/receipts/export failed:", error);
-      res.status(500).json({ ok: false, error: String(error?.message || error) });
-    }
-  });
 
   // -------------------------------------------------------------------
   // /api/dashboard/*

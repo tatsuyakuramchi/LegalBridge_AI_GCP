@@ -105,9 +105,11 @@ table.sub th { background: #f8fafc; color: #475569; font-weight: 600; white-spac
 `;
 
 // 統合: 登録UIは admin-ui の作品モデル(React)に一本化し、Search Portal 側は
-//   それを iframe で埋め込んで共有する。ADMIN_UI_URL 未設定時は旧コンソールに自動フォールバック。
+//   それを iframe で埋め込んで共有する。
+//   ★ 専用変数 WORK_MODEL_UI_URL のみを使う(ADMIN_UI_URL は別用途=管理トップの
+//     admin-ui リダイレクト等に使われるため、ここでは参照しない)。未設定時は旧コンソールに自動フォールバック。
 export function workModelEmbedPage(role: Role = "viewer"): string {
-  const admin = (process.env.ADMIN_UI_URL || "").replace(/\/+$/, "");
+  const admin = (process.env.WORK_MODEL_UI_URL || "").replace(/\/+$/, "");
   if (!admin) return workModelPage(role); // フォールバック(旧バニラコンソール)
   const url = admin + "/master/work-model";
   const body = `
@@ -180,47 +182,51 @@ export function workModelPage(role: Role = "viewer"): string {
   var API = { "source-ips": "/api/v3/source-ips", "works": "/api/v3/works", "contracts": "/api/v3/contracts" };
   var LABEL = { "source-ips": "原作IP", "works": "自社作品", "contracts": "契約" };
   var WORKS_OPT = [];     // 作品ピッカー用(派生元 parent_work_id)
+  var VENDORS_OPT = [];   // 取引先ピッカー用(vendor-select)。{ id, vendor_code, vendor_name }
   var FORM_EDIT_ID = null; // 編集中の自分自身を派生元候補から除外する用
   var DERIV_CHOICES = [["","(なし・原版)"],["translation","翻訳"],["edition","版"],["title_change","改題"],["localization","地域化"],["adaptation","翻案"]];
 
-  // 各エンティティの編集/新規フォーム項目。type: text|textarea|date|bool|array|number|select
+  // 各エンティティの編集/新規フォーム項目。type: text|textarea|date|bool|array|number|select|options|work-select|vendor-select
+  //   ★ admin-ui(WorkModelPanel)の WORK_FIELDS / SCHEMA と項目・group を一致させる(統一化)。
+  //   group でセクション分けして入力しやすくする。取引先は ID 直入力ではなく vendor-select(検索)。
   var SCHEMA = {
     "source-ips": [
-      { name: "title", label: "タイトル", type: "text", required: true },
-      { name: "title_kana", label: "タイトル(カナ)", type: "text" },
-      { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
-      { name: "original_publisher", label: "原作出版社", type: "text" },
-      { name: "default_rights_holder", label: "既定権利者", type: "text" },
-      { name: "default_credit_display", label: "クレジット表記", type: "text" },
-      { name: "default_work_supplement", label: "作品補足", type: "textarea" },
-      { name: "default_approval_target", label: "承認対象", type: "text" },
-      { name: "default_approval_timing", label: "承認タイミング", type: "text" },
-      { name: "rights_holder_vendor_id", label: "権利者 取引先ID", type: "number", hint: "取引先マスタの内部ID(任意)" },
-      { name: "remarks", label: "備考", type: "textarea" }
+      { name: "title", label: "タイトル", type: "text", required: true, group: "基本情報" },
+      { name: "title_kana", label: "タイトル(カナ)", type: "text", group: "基本情報" },
+      { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array", group: "基本情報" },
+      { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB", group: "基本情報" },
+      { name: "rights_holder_vendor_id", label: "権利者(取引先)", type: "vendor-select", hint: "取引先を名称/コードで検索して選択", group: "権利・既定値" },
+      { name: "original_publisher", label: "原作出版社", type: "text", group: "権利・既定値" },
+      { name: "default_rights_holder", label: "既定権利者", type: "text", group: "権利・既定値" },
+      { name: "default_credit_display", label: "クレジット表記", type: "text", group: "権利・既定値" },
+      { name: "default_work_supplement", label: "作品補足", type: "textarea", group: "権利・既定値" },
+      { name: "default_approval_target", label: "承認対象", type: "text", group: "権利・既定値" },
+      { name: "default_approval_timing", label: "承認タイミング", type: "text", group: "権利・既定値" },
+      { name: "parent_work_id", label: "派生元(系譜)", type: "work-select", hint: "翻訳版・改題版などの派生元を選ぶ(原作IPは A原作→B翻訳 等)", group: "系譜・備考" },
+      { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV", group: "系譜・備考" },
+      { name: "remarks", label: "備考", type: "textarea", group: "系譜・備考" }
     ],
     "works": [
-      { name: "title", label: "タイトル", type: "text", required: true },
-      { name: "title_kana", label: "タイトル(カナ)", type: "text" },
-      { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array" },
-      { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB" },
-      { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"] },
-      { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"] },
-      { name: "is_original", label: "完全オリジナル", type: "bool" },
-      { name: "publisher_vendor_id", label: "出版社 取引先ID", type: "number" },
-      { name: "parent_work_id", label: "派生元の作品(系譜)", type: "work-select", hint: "翻訳版・改題版などは派生元の自社作品を選ぶ(原作IPは別途、原版に紐付け)" },
-      { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV" },
-      { name: "remarks", label: "備考", type: "textarea" }
+      { name: "title", label: "タイトル", type: "text", required: true, group: "基本情報" },
+      { name: "title_kana", label: "タイトル(カナ)", type: "text", group: "基本情報" },
+      { name: "alternative_titles", label: "別タイトル(, 区切り)", type: "array", group: "基本情報" },
+      { name: "division", label: "区分(, 区切り)", type: "array", hint: "例: BDG, PUB", group: "基本情報" },
+      { name: "work_type", label: "作品種別", type: "select", options: ["", "board_game", "trpg_book", "supplement", "digital"], group: "区分・状態" },
+      { name: "status", label: "ステータス", type: "select", options: ["", "planning", "in_production", "released", "suspended", "discontinued"], group: "区分・状態" },
+      { name: "parent_work_id", label: "派生元(系譜)", type: "work-select", hint: "翻訳版・改題版などの派生元を選ぶ(原作IPは A原作→B翻訳 等)", group: "系譜・備考" },
+      { name: "derivation_type", label: "派生種別", type: "options", choices: "DERIV", group: "系譜・備考" },
+      { name: "remarks", label: "備考", type: "textarea", group: "系譜・備考" }
     ],
     "contracts": [
-      { name: "contract_title", label: "契約名", type: "text", required: true },
-      { name: "contract_level", label: "契約レベル", type: "select", options: ["", "master", "individual", "standalone"] },
-      { name: "contract_category", label: "契約カテゴリ", type: "text", hint: "license_in / license_out / service / publication / sales / nda" },
-      { name: "contract_type", label: "契約類型", type: "text" },
-      { name: "lifecycle_stage", label: "ライフサイクル", type: "text", hint: "requested / under_review / executed 等" },
-      { name: "primary_vendor_id", label: "主取引先ID", type: "number" },
-      { name: "effective_date", label: "発効日", type: "date" },
-      { name: "expiration_date", label: "満了日", type: "date" },
-      { name: "auto_renewal", label: "自動更新", type: "bool" }
+      { name: "contract_title", label: "契約名", type: "text", required: true, group: "基本情報" },
+      { name: "contract_level", label: "契約レベル", type: "select", options: ["", "master", "individual", "standalone"], group: "基本情報" },
+      { name: "contract_category", label: "契約カテゴリ", type: "text", hint: "license_in / license_out / service / publication / sales / nda", group: "基本情報" },
+      { name: "contract_type", label: "契約類型", type: "text", group: "基本情報" },
+      { name: "lifecycle_stage", label: "ライフサイクル", type: "text", hint: "requested / under_review / executed 等", group: "基本情報" },
+      { name: "primary_vendor_id", label: "主取引先", type: "vendor-select", hint: "取引先を名称/コードで検索して選択", group: "当事者・期間" },
+      { name: "effective_date", label: "発効日", type: "date", group: "当事者・期間" },
+      { name: "expiration_date", label: "満了日", type: "date", group: "当事者・期間" },
+      { name: "auto_renewal", label: "自動更新", type: "bool", group: "当事者・期間" }
     ]
   };
   // 一覧カード用の表示(name/badge/sub の組み立て)
@@ -307,6 +313,13 @@ export function workModelPage(role: Role = "viewer"): string {
     try {
       var r = await Promise.all([getJson(API["source-ips"]), getJson(API["works"]), getJson(API["contracts"])]);
       WORKS_OPT = Array.isArray(r[1]) ? r[1] : [];
+      // 取引先一覧(vendor-select 用)。失敗しても本体表示は続行。
+      try {
+        var vr = await getJson("/api/master/vendors");
+        VENDORS_OPT = (Array.isArray(vr) ? vr : [])
+          .filter(function (v) { return v && v.id; })
+          .map(function (v) { return { id: Number(v.id), vendor_code: v.vendor_code || "", vendor_name: v.vendor_name || "" }; });
+      } catch (e) { VENDORS_OPT = []; }
       renderList("source-ips", "ipGrid", "ipCount", r[0]);
       renderList("works", "workGrid", "workCount", r[1]);
       renderList("contracts", "contractGrid", "contractCount", r[2]);
@@ -345,7 +358,17 @@ export function workModelPage(role: Role = "viewer"): string {
     try {
       var obj = await getJson(API[type] + "/" + id);
       var dl = SCHEMA[type].map(function (f) {
-        return "<dt>" + esc(f.label) + "</dt><dd>" + esc(fmtVal(obj[f.name])) + "</dd>";
+        var disp;
+        if (f.type === "vendor-select" && obj[f.name]) {
+          var vm = VENDORS_OPT.filter(function (v) { return String(v.id) === String(obj[f.name]); })[0];
+          disp = vm ? ((vm.vendor_code ? vm.vendor_code + " : " : "") + vm.vendor_name) : fmtVal(obj[f.name]);
+        } else if (f.type === "work-select" && obj[f.name]) {
+          var wm = WORKS_OPT.filter(function (w) { return String(w.id) === String(obj[f.name]); })[0];
+          disp = wm ? ((wm.work_code ? wm.work_code + " : " : "") + (wm.title || ("#" + wm.id))) : fmtVal(obj[f.name]);
+        } else {
+          disp = fmtVal(obj[f.name]);
+        }
+        return "<dt>" + esc(f.label) + "</dt><dd>" + esc(disp) + "</dd>";
       }).join("");
       var codeKey = type === "source-ips" ? "source_code" : type === "works" ? "work_code" : "document_number";
       var head = '<dl class="kv"><dt>コード</dt><dd>' + esc(obj[codeKey] || "—") + "</dd>" + dl + "</dl>";
@@ -361,6 +384,28 @@ export function workModelPage(role: Role = "viewer"): string {
   }
 
   /* ---------- create / edit form ---------- */
+  // 取引先 select の <option> 群を組み立てる。kw で絞り込み、選択中(sel)は常に残す。
+  function vendorOptions(sel, kw) {
+    kw = (kw || "").trim().toLowerCase();
+    var selStr = sel == null ? "" : String(sel);
+    var list = VENDORS_OPT.filter(function (v) {
+      if (!kw) return true;
+      return (String(v.vendor_code) + " " + String(v.vendor_name)).toLowerCase().indexOf(kw) >= 0;
+    });
+    // 選択中が絞り込みから外れても候補に残す(値が消えないように)
+    var hasSel = !selStr || list.some(function (v) { return String(v.id) === selStr; });
+    if (!hasSel) {
+      var cur = VENDORS_OPT.filter(function (v) { return String(v.id) === selStr; });
+      list = cur.concat(list);
+    }
+    list = list.slice(0, 80);
+    var out = ['<option value="">(なし)</option>'];
+    list.forEach(function (v) {
+      var label = (v.vendor_code ? v.vendor_code + " : " : "") + (v.vendor_name || ("#" + v.id));
+      out.push('<option value="' + v.id + '"' + (selStr === String(v.id) ? " selected" : "") + ">" + esc(label) + "</option>");
+    });
+    return out.join("");
+  }
   function fieldHtml(f, val) {
     var v = val == null ? "" : val;
     var inner;
@@ -386,6 +431,16 @@ export function workModelPage(role: Role = "viewer"): string {
           esc((w.work_code ? w.work_code + " : " : "") + (w.title || ("#" + w.id))) + "</option>");
       });
       inner = '<select id="f_' + f.name + '">' + opts.join("") + "</select>";
+    } else if (f.type === "vendor-select") {
+      // 取引先を ID 直入力ではなく「検索 + 選択」で。検索ボックスは選択肢を絞り込む。
+      if (VENDORS_OPT.length === 0) {
+        // 一覧取得に失敗したときは従来どおり ID 直接入力でフォールバック。
+        inner = '<input type="number" id="f_' + f.name + '" value="' + esc(v) + '" placeholder="取引先ID(一覧取得不可)">';
+      } else {
+        inner =
+          '<input type="text" class="vsel-q" data-target="f_' + f.name + '" placeholder="取引先を検索 (名称 / コード)…" style="margin-bottom:6px;">' +
+          '<select id="f_' + f.name + '" class="vsel">' + vendorOptions(v) + "</select>";
+      }
     } else if (f.type === "array") {
       inner = '<input type="text" id="f_' + f.name + '" value="' + esc(Array.isArray(v) ? v.join(", ") : v) + '">';
     } else if (f.type === "number") {
@@ -405,17 +460,32 @@ export function workModelPage(role: Role = "viewer"): string {
       if (!el) return;
       if (f.type === "bool") out[f.name] = el.checked;
       else if (f.type === "array") out[f.name] = el.value.split(/[,、]/).map(function (s) { return s.trim(); }).filter(Boolean);
-      else if (f.type === "number" || f.type === "work-select") { var n = el.value.trim(); out[f.name] = n === "" ? null : Number(n); }
+      else if (f.type === "number" || f.type === "work-select" || f.type === "vendor-select") { var n = el.value.trim(); out[f.name] = n === "" ? null : Number(n); }
       else { var s = el.value.trim(); out[f.name] = s === "" ? null : s; }
     });
     return out;
+  }
+  // 入力しやすさのため group ごとにセクション見出しを付けて項目を並べる(定義順を維持)。
+  function renderFormFields(type, data) {
+    var order = [];
+    var byGroup = {};
+    SCHEMA[type].forEach(function (f) {
+      var g = f.group || "";
+      if (!byGroup[g]) { byGroup[g] = []; order.push(g); }
+      byGroup[g].push(f);
+    });
+    return order.map(function (g) {
+      var head = g
+        ? '<div style="font-size:11px;font-weight:700;letter-spacing:.12em;color:#64748b;text-transform:uppercase;border-bottom:1px solid #e5e7eb;padding-bottom:4px;margin:16px 0 10px;">' + esc(g) + "</div>"
+        : "";
+      return head + byGroup[g].map(function (f) { return fieldHtml(f, data[f.name]); }).join("");
+    }).join("");
   }
   function openForm(type, mode, data) {
     data = data || {};
     FORM_EDIT_ID = (mode === "edit" && data.id) ? data.id : null;
     openModal((mode === "edit" ? "✎ 編集 — " : "＋ 新規 — ") + LABEL[type]);
-    document.getElementById("mBody").innerHTML =
-      SCHEMA[type].map(function (f) { return fieldHtml(f, data[f.name]); }).join("");
+    document.getElementById("mBody").innerHTML = renderFormFields(type, data);
     setFoot([
       { label: "キャンセル", cls: "ghost", onClick: closeModal },
       { label: "保存", cls: "", onClick: function () { saveForm(type, mode, data.id); } }
@@ -495,6 +565,16 @@ export function workModelPage(role: Role = "viewer"): string {
   }
 
   /* ---------- wiring ---------- */
+  // vendor-select の検索ボックス: 入力に応じて対象 select の選択肢を再構築(選択値は維持)。
+  document.addEventListener("input", function (e) {
+    var q = e.target && e.target.classList && e.target.classList.contains("vsel-q") ? e.target : null;
+    if (!q) return;
+    var sel = document.getElementById(q.getAttribute("data-target"));
+    if (!sel) return;
+    var cur = sel.value;
+    sel.innerHTML = vendorOptions(cur, q.value);
+    sel.value = cur; // 現選択を維持
+  });
   document.getElementById("reloadBtn").addEventListener("click", load);
   document.getElementById("mClose").addEventListener("click", closeModal);
   document.getElementById("backdrop").addEventListener("click", function (e) {
