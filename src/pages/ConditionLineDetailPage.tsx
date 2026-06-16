@@ -34,6 +34,23 @@ type Event = {
   lifecycle_status: string | null
   drive_link: string | null
   issue_key: string | null
+  // 送信履歴(メール / CloudSign)。worker が付与。
+  email_sent_at: string | null
+  email_to: string | null
+  cloudsign_sent_at: string | null
+}
+
+// 送信時刻を JST の短い表記に。
+const fmtSent2 = (iso: string | null): string => {
+  if (!iso) return ""
+  try {
+    return new Date(iso).toLocaleString("ja-JP", {
+      month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit",
+      timeZone: "Asia/Tokyo",
+    })
+  } catch {
+    return iso
+  }
 }
 
 const yen = (v: any) => (v == null ? "—" : `¥${Number(v).toLocaleString("ja-JP")}`)
@@ -435,11 +452,22 @@ export function ConditionLineDetailPage() {
                     <Badge className="bg-emerald-600 text-white">final</Badge>
                   )}
                   {e.voided_at && <Badge variant="outline" className="text-muted-foreground">取消</Badge>}
+                  {e.email_sent_at && (
+                    <Badge variant="outline" className="border-emerald-300 text-emerald-700" title={e.email_to || ""}>
+                      ✉ メール送信済 {fmtSent2(e.email_sent_at)}
+                    </Badge>
+                  )}
+                  {e.cloudsign_sent_at && (
+                    <Badge variant="outline" className="border-sky-300 text-sky-700">
+                      ✍ CloudSign送信済 {fmtSent2(e.cloudsign_sent_at)}
+                    </Badge>
+                  )}
                 </div>
                 <div className="text-[10px] text-muted-foreground">
                   {e.occurred_at ? String(e.occurred_at).slice(0, 10) : ""}
                   {e.issue_key ? ` · ${e.issue_key}` : ""}
                   {e.void_reason ? ` · ${e.void_reason}` : ""}
+                  {e.email_to ? ` · 宛先 ${e.email_to}` : ""}
                 </div>
               </div>
               {e.drive_link && (
