@@ -1187,7 +1187,6 @@ const VENDOR_REF_LABELS: Record<string, string> = {
   contracts: "COALESCE(NULLIF(document_number,''), contract_title)",
   works: "COALESCE(NULLIF(work_code,'') || ' : ' || title, title)",
   source_ips: "COALESCE(NULLIF(source_code,'') || ' : ' || title, title)",
-  sublicense_deals: "COALESCE(counterparty_name, inline_sublicensee_name)",
   work_title_aliases: "alias_title",
 };
 
