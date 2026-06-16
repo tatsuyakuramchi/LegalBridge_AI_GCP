@@ -11474,7 +11474,7 @@ ${details}
       0
     );
 
-    // 検収単体の税 (手数料が無いときの「今回検収金額(税込)」用)
+    // 検収単体の税 (手数料が無いときの「源泉徴収税計算前　検収金額(税込)」用)
     const deliveryTaxOnly = Math.ceil((deliveredExTax * taxRate) / 100);
     const deliveryTotalIncTax = deliveredExTax + deliveryTaxOnly;
 
