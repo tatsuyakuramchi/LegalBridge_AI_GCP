@@ -110,12 +110,19 @@ export function IssueDetailPage() {
   const [emailTo, setEmailTo] = React.useState("")
   const [emailCc, setEmailCc] = React.useState("")
   const [emailVendorCode, setEmailVendorCode] = React.useState("")
+  const [emailContactIdx, setEmailContactIdx] = React.useState(0)
   const [emailSending, setEmailSending] = React.useState(false)
   const openEmail = (d: IssueDocument) => {
     setEmailDoc(d)
     setEmailTo("")
     setEmailCc("")
     setEmailVendorCode("")
+    setEmailContactIdx(0)
+  }
+  // 取引先の連絡先配列(主担当を先頭にしたい場合の補助)。
+  const primaryContactIdx = (contacts: any[]) => {
+    const i = (contacts || []).findIndex((c) => c && c.is_primary)
+    return i >= 0 ? i : 0
   }
   const sendEmailNow = async () => {
     if (!emailDoc?.document_number) return
@@ -235,6 +242,7 @@ export function IssueDetailPage() {
   const [csName, setCsName] = React.useState("")
   const [csEmail, setCsEmail] = React.useState("")
   const [csVendorCode, setCsVendorCode] = React.useState("")
+  const [csContactIdx, setCsContactIdx] = React.useState(0)
   const [csInternal, setCsInternal] = React.useState<
     { name: string; email: string; role?: string }[]
   >([])
@@ -257,6 +265,7 @@ export function IssueDetailPage() {
     setCsName("")
     setCsEmail("")
     setCsVendorCode("")
+    setCsContactIdx(0)
     setCsInternal([])
     setCsRelay("internal_first")
     setCsLang("ja")
@@ -595,17 +604,52 @@ export function IssueDetailPage() {
                 vendors={vendors}
                 selectedCode={csVendorCode}
                 onSelect={(v) => {
-                  if (v) {
-                    setCsVendorCode(v.vendor_code || "")
-                    setCsName(v.contact_name || v.vendor_rep || v.vendor_name || "")
-                    setCsEmail(v.email || "")
-                  } else {
+                  if (!v) {
                     setCsVendorCode("")
+                    return
                   }
+                  setCsVendorCode(v.vendor_code || "")
+                  const contacts = Array.isArray(v.contacts) ? v.contacts : []
+                  const idx = primaryContactIdx(contacts)
+                  setCsContactIdx(idx)
+                  const c = contacts[idx]
+                  setCsName(c?.contact_name || v.contact_name || v.vendor_rep || v.vendor_name || "")
+                  setCsEmail(c?.email || v.email || "")
                 }}
                 placeholder="取引先を検索 (コード / 名称 / 屋号)"
               />
             </div>
+            {(() => {
+              const cv = vendors.find((x: any) => x.vendor_code === csVendorCode)
+              const contacts: any[] = Array.isArray(cv?.contacts) ? cv!.contacts : []
+              if (contacts.length < 1) return null
+              return (
+                <div className="space-y-1">
+                  <Label className="text-xs">担当者（連絡先）を選択</Label>
+                  <NativeSelect
+                    value={String(csContactIdx)}
+                    onChange={(e) => {
+                      const i = Number(e.target.value)
+                      setCsContactIdx(i)
+                      const c = contacts[i]
+                      if (c) {
+                        setCsName(c.contact_name || "")
+                        setCsEmail(c.email || "")
+                      }
+                    }}
+                  >
+                    {contacts.map((c, i) => (
+                      <option key={i} value={i}>
+                        {(c.contact_name || "（氏名なし）") +
+                          (c.title ? `（${c.title}）` : "") +
+                          (c.email ? ` <${c.email}>` : "") +
+                          (c.is_primary ? " ★主担当" : "")}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              )
+            })()}
             <div className="space-y-1">
               <Label className="text-xs">取引先 署名者 氏名（任意）</Label>
               <Input value={csName} onChange={(e) => setCsName(e.target.value)} placeholder="山田 太郎" />
@@ -806,16 +850,46 @@ export function IssueDetailPage() {
                 vendors={vendors}
                 selectedCode={emailVendorCode}
                 onSelect={(v) => {
-                  if (v) {
-                    setEmailVendorCode(v.vendor_code || "")
-                    setEmailTo(v.email || "")
-                  } else {
+                  if (!v) {
                     setEmailVendorCode("")
+                    return
                   }
+                  setEmailVendorCode(v.vendor_code || "")
+                  const contacts = Array.isArray(v.contacts) ? v.contacts : []
+                  const idx = primaryContactIdx(contacts)
+                  setEmailContactIdx(idx)
+                  setEmailTo(contacts[idx]?.email || v.email || "")
                 }}
                 placeholder="取引先を検索 (コード / 名称 / 屋号)"
               />
             </div>
+            {(() => {
+              const ev = vendors.find((x: any) => x.vendor_code === emailVendorCode)
+              const contacts: any[] = Array.isArray(ev?.contacts) ? ev!.contacts : []
+              if (contacts.length < 1) return null
+              return (
+                <div className="space-y-1">
+                  <Label className="text-[11px]">担当者（連絡先）を選択</Label>
+                  <NativeSelect
+                    value={String(emailContactIdx)}
+                    onChange={(e) => {
+                      const i = Number(e.target.value)
+                      setEmailContactIdx(i)
+                      if (contacts[i]?.email) setEmailTo(contacts[i].email)
+                    }}
+                  >
+                    {contacts.map((c, i) => (
+                      <option key={i} value={i}>
+                        {(c.contact_name || "（氏名なし）") +
+                          (c.title ? `（${c.title}）` : "") +
+                          (c.email ? ` <${c.email}>` : "") +
+                          (c.is_primary ? " ★主担当" : "")}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              )
+            })()}
             <div className="space-y-1">
               <Label className="text-[11px]">送信先（空欄なら取引先の主担当・複数可カンマ区切り）</Label>
               <Input
