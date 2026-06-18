@@ -393,7 +393,8 @@ export function conditionsPage(
           (r.send_email_to ? '<div class="sub10">' + esc(r.send_email_to) + '</div>' : '');
       }
       if (r.send_cloudsign_sent_at) {
-        return '<span class="cond-link-pill" style="border-color:#38bdf8;color:#0369a1;">✍ クラウドサイン</span>';
+        return '<span class="cond-link-pill" style="border-color:#38bdf8;color:#0369a1;">✍ クラウドサイン</span>' +
+          '<div class="sub10">' + esc(fmtJst(r.send_cloudsign_sent_at)) + '</div>';
       }
       return '<span class="muted">—</span>';
     }
