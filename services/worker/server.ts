@@ -808,6 +808,12 @@ async function startServer() {
       try {
         const pdf = await googleDriveService.downloadPdf(row.drive_link);
         const csId = await cloudSign.createDocument(title);
+        // 作成直後に書類IDを保存(以降の attach/participants/reportees で失敗しても
+        //   CloudSign 上の書類との紐付けを失わない → 後から sync で回収・整合できる)。
+        await query(
+          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, updated_at=now() WHERE id=$1`,
+          [reqId, csId]
+        );
         await cloudSign.attachFile(csId, pdf, `${row.document_number || "contract"}.pdf`);
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
@@ -1168,6 +1174,12 @@ async function startServer() {
       const reqId = ins.rows[0].id;
       try {
         const csId = await cloudSign.createDocument(title);
+        // 作成直後に書類IDを保存(以降の attach/participants/reportees で失敗しても
+        //   CloudSign 上の書類との紐付けを失わない → 後から sync で回収・整合できる)。
+        await query(
+          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, updated_at=now() WHERE id=$1`,
+          [reqId, csId]
+        );
         for (const d of docs) {
           const pdf = await googleDriveService.downloadPdf(d.drive_link);
           await cloudSign.attachFile(csId, pdf, `${d.document_number || "doc"}.pdf`);
@@ -11206,13 +11218,29 @@ ${details}
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
                      AND d.email_to IS NOT NULL AND d.email_to <> '') AS email_to,
                  (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
-                   WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
+                   WHERE (cr.document_number = cc.document_number
+                          OR cr.document_number IN (
+                            SELECT d3.document_number FROM condition_events ce3
+                              JOIN documents d3 ON d3.id = ce3.document_id
+                             WHERE ce3.condition_line_id = cl.id AND ce3.voided_at IS NULL
+                               AND d3.document_number IS NOT NULL))
+                     AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
                  (SELECT MAX(cr.completed_at) FROM cloudsign_requests cr
-                   WHERE cr.document_number = cc.document_number AND cr.status = 'completed'
-                     AND cr.completed_at IS NOT NULL) AS cloudsign_completed_at,
+                   WHERE (cr.document_number = cc.document_number
+                          OR cr.document_number IN (
+                            SELECT d3.document_number FROM condition_events ce3
+                              JOIN documents d3 ON d3.id = ce3.document_id
+                             WHERE ce3.condition_line_id = cl.id AND ce3.voided_at IS NULL
+                               AND d3.document_number IS NOT NULL))
+                     AND cr.status = 'completed' AND cr.completed_at IS NOT NULL) AS cloudsign_completed_at,
                  (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
-                   WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
-                     AND cr.sent_at IS NULL) AS cloudsign_draft_at,
+                   WHERE (cr.document_number = cc.document_number
+                          OR cr.document_number IN (
+                            SELECT d3.document_number FROM condition_events ce3
+                              JOIN documents d3 ON d3.id = ce3.document_id
+                             WHERE ce3.condition_line_id = cl.id AND ce3.voided_at IS NULL
+                               AND d3.document_number IS NOT NULL))
+                     AND cr.status = 'draft' AND cr.sent_at IS NULL) AS cloudsign_draft_at,
                  (SELECT d.document_number FROM condition_events ce
                     JOIN documents d ON d.id = ce.document_id
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
