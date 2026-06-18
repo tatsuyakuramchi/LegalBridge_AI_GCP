@@ -141,6 +141,15 @@ export async function listConditions(
   const lp = (params.push(limit), params.length);
   const op = (params.push(offset), params.length);
 
+  // CloudSign 送信履歴の紐付け: 契約番号(cc) と、その明細の成就文書(condition_events
+  //   由来の document_number)のいずれかに一致する cloudsign_requests を対象にする。
+  //   明細詳細(per-event)と一覧(per-line)の表示を揃えるため、両方を見る。
+  const CS_DOC_MATCH = `(cr.document_number = cc.document_number
+         OR cr.document_number IN (
+           SELECT d3.document_number FROM condition_events ce
+             JOIN documents d3 ON d3.id = ce.document_id
+            WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+              AND d3.document_number IS NOT NULL))`;
   const baseCols = `
        cli.id, cli.line_no, cli.item_name, cli.spec, cli.calc_method, cli.payment_terms,
        cli.quantity, cli.unit_price, cli.amount_ex_tax,
@@ -182,12 +191,12 @@ export async function listConditions(
          WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
            AND d3.email_to IS NOT NULL AND d3.email_to <> '') AS fulfill_email_to,
        (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
-         WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS fulfill_cloudsign_sent_at,
+         WHERE ${CS_DOC_MATCH} AND cr.sent_at IS NOT NULL) AS fulfill_cloudsign_sent_at,
        (SELECT MAX(cr.completed_at) FROM cloudsign_requests cr
-         WHERE cr.document_number = cc.document_number AND cr.status = 'completed'
+         WHERE ${CS_DOC_MATCH} AND cr.status = 'completed'
            AND cr.completed_at IS NOT NULL) AS fulfill_cloudsign_completed_at,
        (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
-         WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
+         WHERE ${CS_DOC_MATCH} AND cr.status = 'draft'
            AND cr.sent_at IS NULL) AS fulfill_cloudsign_draft_at`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
