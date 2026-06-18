@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Inbox, Loader2, ArrowRight, Trash2 } from "lucide-react"
+import { Search, Inbox, Loader2, ArrowRight, Trash2, RefreshCw } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -141,20 +141,46 @@ export function ConditionLinesPage() {
   const toggleSort = (key: string) =>
     setSort((s) => (s && s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
 
-  React.useEffect(() => {
-    let cancelled = false
+  const [syncing, setSyncing] = React.useState(false)
+
+  const load = React.useCallback(async () => {
     setLoading(true)
-    fetch("/api/condition-lines")
-      .then((r) => r.json())
-      .then((d) => {
-        if (!cancelled) setRows(Array.isArray(d) ? d : [])
-      })
-      .catch(() => {})
-      .finally(() => !cancelled && setLoading(false))
-    return () => {
-      cancelled = true
+    try {
+      const r = await fetch("/api/condition-lines")
+      const d = await r.json()
+      setRows(Array.isArray(d) ? d : [])
+    } catch {
+      /* noop */
+    } finally {
+      setLoading(false)
     }
   }, [])
+
+  React.useEffect(() => {
+    void load()
+  }, [load])
+
+  // CloudSign の送信/締結状態を一括取込(既存の送信済データに履歴を後付け)。
+  const syncCloudSign = async () => {
+    if (syncing) return
+    if (!window.confirm("CloudSign の送信・締結状態を一括取込します。\n(本システム経由で送った書類の送信日時・締結日時を反映します)")) return
+    setSyncing(true)
+    try {
+      const res = await fetch("/api/cloudsign/sync-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
+      window.alert(`同期完了: 確認 ${d.checked} 件 / 更新 ${d.updated} 件${d.failed ? ` / 失敗 ${d.failed} 件` : ""}`)
+      await load()
+    } catch (e: any) {
+      window.alert(`同期に失敗しました: ${e?.message || e}`)
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const statusBuckets = React.useMemo(() => {
     const m = new Map<string, number>()
@@ -253,15 +279,27 @@ export function ConditionLinesPage() {
             消化・残高・当期発行状況の運用コックピット（導出ビュー駆動）。
           </p>
         </div>
-        <div className="relative w-72">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
-          <Input
-            type="search"
-            placeholder="line_code / 件名 / 取引先…"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="pl-8"
-          />
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={syncCloudSign}
+            disabled={syncing}
+            title="CloudSign の送信・締結状態を一括取込して送信履歴に反映"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border text-[11px] font-mono text-muted-foreground hover:border-foreground disabled:opacity-50"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
+            {syncing ? "同期中…" : "送信履歴を同期"}
+          </button>
+          <div className="relative w-72">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              type="search"
+              placeholder="line_code / 件名 / 取引先…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8"
+            />
+          </div>
         </div>
       </header>
 
