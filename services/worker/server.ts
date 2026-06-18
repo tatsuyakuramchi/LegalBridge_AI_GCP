@@ -808,6 +808,12 @@ async function startServer() {
       try {
         const pdf = await googleDriveService.downloadPdf(row.drive_link);
         const csId = await cloudSign.createDocument(title);
+        // 作成直後に書類IDを保存(以降の attach/participants/reportees で失敗しても
+        //   CloudSign 上の書類との紐付けを失わない → 後から sync で回収・整合できる)。
+        await query(
+          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, updated_at=now() WHERE id=$1`,
+          [reqId, csId]
+        );
         await cloudSign.attachFile(csId, pdf, `${row.document_number || "contract"}.pdf`);
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
@@ -1168,6 +1174,12 @@ async function startServer() {
       const reqId = ins.rows[0].id;
       try {
         const csId = await cloudSign.createDocument(title);
+        // 作成直後に書類IDを保存(以降の attach/participants/reportees で失敗しても
+        //   CloudSign 上の書類との紐付けを失わない → 後から sync で回収・整合できる)。
+        await query(
+          `UPDATE cloudsign_requests SET cloudsign_document_id=$2, updated_at=now() WHERE id=$1`,
+          [reqId, csId]
+        );
         for (const d of docs) {
           const pdf = await googleDriveService.downloadPdf(d.drive_link);
           await cloudSign.attachFile(csId, pdf, `${d.document_number || "doc"}.pdf`);
