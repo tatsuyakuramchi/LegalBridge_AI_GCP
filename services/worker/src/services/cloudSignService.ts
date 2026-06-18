@@ -74,10 +74,43 @@ export class CloudSignService {
       const err = e as AxiosError;
       if (err.response?.status === 401) {
         this.token = null;
-        return await fn();
+        try {
+          return await fn();
+        } catch (e2) {
+          throw this.enrich(e2);
+        }
       }
-      throw e;
+      throw this.enrich(e);
     }
+  }
+
+  /**
+   * CloudSign API のエラーを診断可能なメッセージに変換する。
+   *   axios の既定メッセージ("Request failed with status code 400")だけだと、
+   *   どのエンドポイントが何の理由で弾いたか分からないため、
+   *   呼び出し先 URL・HTTPステータス・レスポンス本文を含めて投げ直す。
+   */
+  private enrich(e: any): Error {
+    const err = e as AxiosError;
+    if (err?.isAxiosError) {
+      const status = err.response?.status;
+      const data = err.response?.data as any;
+      const detail =
+        data == null ? "" : typeof data === "string" ? data : JSON.stringify(data);
+      // method + path(ホストは伏せる)で「どの操作か」を示す。
+      let path = "";
+      try {
+        path = err.config?.url ? new URL(err.config.url).pathname : "";
+      } catch {
+        path = err.config?.url || "";
+      }
+      const method = String(err.config?.method || "").toUpperCase();
+      const head = status
+        ? `CloudSign API ${status} ${method} ${path}`.trim()
+        : `CloudSign API 接続エラー ${method} ${path}`.trim();
+      return new Error(detail ? `${head}: ${detail.slice(0, 600)}` : head);
+    }
+    return e instanceof Error ? e : new Error(String(e));
   }
 
   /** 書類(送信単位)を下書き作成 → CloudSign 書類ID。 */
@@ -132,10 +165,12 @@ export class CloudSignService {
   /** 共有先(CC=reportees)を追加。締結情報を署名フロー外の宛先に共有する。 */
   async addReportee(documentId: string, r: { email: string; name?: string }): Promise<string> {
     return this.call(async () => {
-      // CONFIRM(実環境): reportees の body フィールド名(email/name)。
+      // reportees は name が必須(空だと CloudSign が 400 "invalid value for name")。
+      //   氏名指定が無い CC でも送れるよう、メールのローカル部 → "共有先" にフォールバック。
+      const name = (r.name && r.name.trim()) || r.email.split("@")[0] || "共有先";
       const body = new URLSearchParams();
       body.set("email", r.email);
-      if (r.name) body.set("name", r.name);
+      body.set("name", name);
       const res = await axios.post(`${this.base}/documents/${documentId}/reportees`, body.toString(), {
         headers: { ...(await this.authHeader()), "Content-Type": "application/x-www-form-urlencoded" },
         timeout: 20_000,

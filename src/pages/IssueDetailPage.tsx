@@ -16,7 +16,6 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { promptAndSendDocumentEmail } from "@/src/lib/emailSend"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
@@ -26,6 +25,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { StaffPicker } from "@/src/components/cloudsign/StaffPicker"
+import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import {
   Dialog,
   DialogContent,
@@ -94,7 +94,7 @@ function SectionHead({ label }: { label: string }) {
 export function IssueDetailPage() {
   const { issueKey = "" } = useParams()
   const navigate = useNavigate()
-  const { issues, templateMetadata, templateList, staffList, showNotification } = useAppData()
+  const { issues, templateMetadata, templateList, staffList, vendors, showNotification } = useAppData()
   const { setSelectedIssue, setFormData } = useDocumentSession()
 
   const issue = React.useMemo(
@@ -103,12 +103,80 @@ export function IssueDetailPage() {
   )
 
   const [docs, setDocs] = React.useState<IssueDocument[]>([])
-  // 検収書/計算書の取引先メール送信。
-  const [sendingDoc, setSendingDoc] = React.useState<string | null>(null)
-  const sendDoc = async (documentNumber: string) => {
-    setSendingDoc(documentNumber)
-    await promptAndSendDocumentEmail(documentNumber)
-    setSendingDoc(null)
+  // 個別送信: 送信方法の選択(クラウドサイン/メール) → 各フォーム。
+  const [chooserDoc, setChooserDoc] = React.useState<IssueDocument | null>(null)
+  // メール送信ダイアログ
+  const [emailDoc, setEmailDoc] = React.useState<IssueDocument | null>(null)
+  const [emailTo, setEmailTo] = React.useState("")
+  const [emailCc, setEmailCc] = React.useState("")
+  const [emailVendorCode, setEmailVendorCode] = React.useState("")
+  const [emailContactIdx, setEmailContactIdx] = React.useState(0)
+  const [emailContacts, setEmailContacts] = React.useState<any[]>([])
+  const [emailSending, setEmailSending] = React.useState(false)
+  const openEmail = (d: IssueDocument) => {
+    setEmailDoc(d)
+    setEmailTo("")
+    setEmailCc("")
+    setEmailVendorCode("")
+    setEmailContactIdx(0)
+    setEmailContacts([])
+  }
+  // 取引先の連絡先配列(主担当を先頭にしたい場合の補助)。
+  const primaryContactIdx = (contacts: any[]) => {
+    const i = (contacts || []).findIndex((c) => c && c.is_primary)
+    return i >= 0 ? i : 0
+  }
+  // 一覧の取引先に連絡先メールが無いことがあるため、詳細を取得して連絡先を補う。
+  const loadVendorContacts = async (v: any): Promise<any[]> => {
+    let contacts = Array.isArray(v?.contacts) ? v.contacts : []
+    if (!contacts.length || !contacts.some((c: any) => c && c.email)) {
+      try {
+        const res = await fetch(`/api/master/vendors/${encodeURIComponent(v.vendor_code)}`)
+        if (res.ok) {
+          const d = await res.json()
+          const detail = d?.data ?? d
+          if (Array.isArray(detail?.contacts)) contacts = detail.contacts
+          if (!v.email && detail?.email) v.email = detail.email
+        }
+      } catch {
+        /* 詳細取得失敗は無視(一覧の値で続行) */
+      }
+    }
+    return contacts
+  }
+  const sendEmailNow = async () => {
+    if (!emailDoc?.document_number) return
+    setEmailSending(true)
+    try {
+      const body: any = {}
+      const to = emailTo.split(",").map((s) => s.trim()).filter(Boolean)
+      const cc = emailCc.split(",").map((s) => s.trim()).filter(Boolean)
+      if (to.length) body.to = to
+      if (cc.length) body.cc = cc
+      const res = await fetch(
+        `/api/documents/${encodeURIComponent(emailDoc.document_number)}/email/send`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
+      showNotification(
+        `メール送信しました: ${(data.to || []).join(", ")}` +
+          (data.cc && data.cc.length ? ` / CC: ${data.cc.join(", ")}` : "") +
+          (data.attached ? "（PDF添付）" : "（本文リンクのみ）"),
+        "success"
+      )
+      setEmailDoc(null)
+    } catch (e: any) {
+      showNotification(`メール送信に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setEmailSending(false)
+    }
+  }
+  // クラウドサイン: 単一文書を選択状態にして既存のまとめ送信モーダルを開く。
+  const openCloudSignFor = (d: IssueDocument) => {
+    if (!d.document_number) return
+    setSelDocs(new Set([d.document_number]))
+    openBundle()
   }
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -193,6 +261,9 @@ export function IssueDetailPage() {
   const [bundleOpen, setBundleOpen] = React.useState(false)
   const [csName, setCsName] = React.useState("")
   const [csEmail, setCsEmail] = React.useState("")
+  const [csVendorCode, setCsVendorCode] = React.useState("")
+  const [csContactIdx, setCsContactIdx] = React.useState(0)
+  const [csContacts, setCsContacts] = React.useState<any[]>([])
   const [csInternal, setCsInternal] = React.useState<
     { name: string; email: string; role?: string }[]
   >([])
@@ -214,6 +285,9 @@ export function IssueDetailPage() {
     setBundleOpen(true)
     setCsName("")
     setCsEmail("")
+    setCsVendorCode("")
+    setCsContactIdx(0)
+    setCsContacts([])
     setCsInternal([])
     setCsRelay("internal_first")
     setCsLang("ja")
@@ -499,20 +573,16 @@ export function IssueDetailPage() {
                         Drive
                       </a>
                     )}
-                    {(d.template_type.includes("inspection") ||
-                      d.template_type === "royalty_statement" ||
-                      d.template_type === "license_calculation_sheet") &&
-                      d.document_number && (
-                        <button
-                          type="button"
-                          onClick={() => sendDoc(d.document_number!)}
-                          disabled={sendingDoc === d.document_number}
-                          className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-1.5 py-1 rounded-sm disabled:opacity-50"
-                          title="検収書/計算書を取引先へメール送信"
-                        >
-                          {sendingDoc === d.document_number ? "送信中…" : "✉ 送信"}
-                        </button>
-                      )}
+                    {d.document_number && (
+                      <button
+                        type="button"
+                        onClick={() => setChooserDoc(d)}
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-1.5 py-1 rounded-sm"
+                        title="この文書を送信（クラウドサイン / メール）"
+                      >
+                        ✉ 送信
+                      </button>
+                    )}
                     <button
                       type="button"
                       onClick={() => reopen(d.id)}
@@ -550,6 +620,55 @@ export function IssueDetailPage() {
                 })}
               </ul>
             </div>
+            <div className="space-y-1">
+              <Label className="text-xs">取引先を検索（選択で氏名・メールを自動補完）</Label>
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode={csVendorCode}
+                onSelect={async (v) => {
+                  if (!v) {
+                    setCsVendorCode("")
+                    setCsContacts([])
+                    return
+                  }
+                  setCsVendorCode(v.vendor_code || "")
+                  const contacts = await loadVendorContacts(v)
+                  setCsContacts(contacts)
+                  const idx = primaryContactIdx(contacts)
+                  setCsContactIdx(idx)
+                  const c = contacts[idx]
+                  setCsName(c?.contact_name || v.contact_name || v.vendor_rep || v.vendor_name || "")
+                  setCsEmail(c?.email || contacts.find((x: any) => x?.email)?.email || v.email || "")
+                }}
+                placeholder="取引先を検索 (コード / 名称 / 屋号)"
+              />
+            </div>
+            {csContacts.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs">担当者（連絡先）を選択</Label>
+                <NativeSelect
+                  value={String(csContactIdx)}
+                  onChange={(e) => {
+                    const i = Number(e.target.value)
+                    setCsContactIdx(i)
+                    const c = csContacts[i]
+                    if (c) {
+                      setCsName(c.contact_name || "")
+                      setCsEmail(c.email || "")
+                    }
+                  }}
+                >
+                  {csContacts.map((c, i) => (
+                    <option key={i} value={i}>
+                      {(c.contact_name || "（氏名なし）") +
+                        (c.title ? `（${c.title}）` : "") +
+                        (c.email ? ` <${c.email}>` : "") +
+                        (c.is_primary ? " ★主担当" : "")}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-xs">取引先 署名者 氏名（任意）</Label>
               <Input value={csName} onChange={(e) => setCsName(e.target.value)} placeholder="山田 太郎" />
@@ -685,6 +804,146 @@ export function IssueDetailPage() {
             <Button onClick={sendBundle} disabled={csSending || selDocs.size === 0}>
               <Send className="h-3.5 w-3.5" />
               {csSending ? "処理中…" : csDraft ? `下書き作成（${selDocs.size}件）` : `送信（${selDocs.size}件）`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 送信方法の選択(クラウドサイン / メール) */}
+      <Dialog open={!!chooserDoc} onOpenChange={(v) => !v && setChooserDoc(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>送信方法を選択</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-2.5">
+            <div className="text-xs font-mono text-muted-foreground">
+              {chooserDoc ? templateLabel(chooserDoc.template_type) : ""}{" "}
+              {chooserDoc?.document_number}
+            </div>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              onClick={() => {
+                const d = chooserDoc!
+                setChooserDoc(null)
+                openEmail(d)
+              }}
+            >
+              ✉ メールで送信
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              disabled={!isDrivePdf(chooserDoc?.drive_link)}
+              onClick={() => {
+                const d = chooserDoc!
+                setChooserDoc(null)
+                openCloudSignFor(d)
+              }}
+            >
+              ✍ クラウドサインで送信
+            </Button>
+            {!isDrivePdf(chooserDoc?.drive_link) && (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                ※ クラウドサインは Drive 上に PDF がある正本のみ送信できます。
+              </p>
+            )}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      {/* メール送信(宛先・CC 入力 + 確認) */}
+      <Dialog open={!!emailDoc} onOpenChange={(v) => !v && setEmailDoc(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>メールで送信</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground">
+              {emailDoc ? templateLabel(emailDoc.template_type) : ""}{" "}
+              {emailDoc?.document_number}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">取引先を検索（選択で送信先メールを自動補完）</Label>
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode={emailVendorCode}
+                onSelect={async (v) => {
+                  if (!v) {
+                    setEmailVendorCode("")
+                    setEmailContacts([])
+                    return
+                  }
+                  setEmailVendorCode(v.vendor_code || "")
+                  const contacts = await loadVendorContacts(v)
+                  setEmailContacts(contacts)
+                  const idx = primaryContactIdx(contacts)
+                  setEmailContactIdx(idx)
+                  setEmailTo(
+                    contacts[idx]?.email || contacts.find((x: any) => x?.email)?.email || v.email || ""
+                  )
+                }}
+                placeholder="取引先を検索 (コード / 名称 / 屋号)"
+              />
+            </div>
+            {emailContacts.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-[11px]">担当者（連絡先）を選択</Label>
+                <NativeSelect
+                  value={String(emailContactIdx)}
+                  onChange={(e) => {
+                    const i = Number(e.target.value)
+                    setEmailContactIdx(i)
+                    if (emailContacts[i]?.email) setEmailTo(emailContacts[i].email)
+                  }}
+                >
+                  {emailContacts.map((c, i) => (
+                    <option key={i} value={i}>
+                      {(c.contact_name || "（氏名なし）") +
+                        (c.title ? `（${c.title}）` : "") +
+                        (c.email ? ` <${c.email}>` : "") +
+                        (c.is_primary ? " ★主担当" : "")}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            )}
+            <div className="space-y-1">
+              <Label className="text-[11px]">送信先（空欄なら取引先の主担当・複数可カンマ区切り）</Label>
+              <Input
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="vendor@example.co.jp"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">CC（複数可・カンマ区切り。設定の既定CCにも追加されます）</Label>
+              <StaffPicker
+                staff={staffList as any}
+                placeholder="スタッフを検索して CC に追加（氏名 / メール / 部署）"
+                onPick={(s) => {
+                  if (!s.email) return
+                  const cur = emailCc.split(",").map((x) => x.trim()).filter(Boolean)
+                  if (!cur.includes(s.email)) setEmailCc([...cur, s.email].join(", "))
+                }}
+              />
+              <Input
+                value={emailCc}
+                onChange={(e) => setEmailCc(e.target.value)}
+                placeholder="cc@example.co.jp"
+              />
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              内容を確認のうえ「送信」を押してください。PDF を添付して送信します。
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailDoc(null)}>
+              キャンセル
+            </Button>
+            <Button onClick={sendEmailNow} disabled={emailSending}>
+              <Send className="h-3.5 w-3.5" />
+              {emailSending ? "送信中…" : "送信"}
             </Button>
           </DialogFooter>
         </DialogContent>

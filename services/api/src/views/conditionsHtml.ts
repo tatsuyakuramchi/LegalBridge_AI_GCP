@@ -396,6 +396,11 @@ export function conditionsPage(
         return '<span class="cond-link-pill" style="border-color:#38bdf8;color:#0369a1;">✍ クラウドサイン</span>' +
           '<div class="sub10">' + esc(fmtJst(r.send_cloudsign_sent_at)) + '</div>';
       }
+      // ②: 未送信の下書きは「下書き」を弱表示(送信準備中の可視化)。
+      if (r.send_cloudsign_draft_at) {
+        return '<span class="cond-link-pill" style="border-color:#cbd5e1;color:#64748b;">✍ 下書き</span>' +
+          '<div class="sub10">' + esc(fmtJst(r.send_cloudsign_draft_at)) + '</div>';
+      }
       return '<span class="muted">—</span>';
     }
     var bodyHtml = rows.map(function (r) {

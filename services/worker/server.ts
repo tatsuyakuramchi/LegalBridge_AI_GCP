@@ -339,7 +339,7 @@ async function startServer() {
   //   CLOUDSIGN_ALLOWED_RECIPIENTS(カンマ区切り)を設定すると、その宛先のみ送信可
   //   = 「社内宛だけで締結まで」テストのガード。
   const loadCloudSignCfg = async () => {
-    const keys = ["CLOUDSIGN_CLIENT_ID", "CLOUDSIGN_ENABLED", "CLOUDSIGN_ALLOWED_RECIPIENTS", "CLOUDSIGN_BASE_URL"];
+    const keys = ["CLOUDSIGN_CLIENT_ID", "CLOUDSIGN_ENABLED", "CLOUDSIGN_ALLOWED_RECIPIENTS", "CLOUDSIGN_BASE_URL", "CLOUDSIGN_APP_URL"];
     const m: Record<string, any> = {};
     try {
       const r = await query(`SELECT key, value FROM app_settings WHERE key = ANY($1)`, [keys]);
@@ -353,10 +353,22 @@ async function startServer() {
     return {
       clientId: String(get("CLOUDSIGN_CLIENT_ID") || ""),
       baseUrl: String(get("CLOUDSIGN_BASE_URL") || "") || undefined,
+      appUrl: String(get("CLOUDSIGN_APP_URL") || "") || undefined,
       enabled: String(get("CLOUDSIGN_ENABLED") || "").toLowerCase() === "true",
       allow: String(get("CLOUDSIGN_ALLOWED_RECIPIENTS") || "")
         .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
     };
+  };
+
+  // クラウドサインの「書類を開く」Web画面のベースURLを決定する。
+  //   本番:  api.cloudsign.jp        → app.cloudsign.jp
+  //   検証:  api-sandbox.cloudsign.jp → sandbox.cloudsign.jp  (app-sandbox は存在しない)
+  //   CLOUDSIGN_APP_URL を設定すると明示上書き(導出より優先)。
+  const cloudSignAppBase = (cfg: { baseUrl?: string; appUrl?: string }) => {
+    if (cfg.appUrl) return cfg.appUrl.replace(/\/+$/, "");
+    const b = (cfg.baseUrl || "https://api.cloudsign.jp").replace(/\/+$/, "");
+    if (/\/\/api-sandbox\./.test(b)) return b.replace(/\/\/api-sandbox\./, "//sandbox.");
+    return b.replace(/\/\/api\./, "//app.");
   };
 
   // ── メール送信(Gmail API)連携 ───────────────────────────────
@@ -375,12 +387,18 @@ async function startServer() {
       body:
         "{{vendorName}} 御中\n\nいつもお世話になっております。\n利用許諾料計算書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
     },
+    general: {
+      subject: "【書類送付】{{documentNumber}}（{{vendorName}} 御中）",
+      body:
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n書類（文書番号: {{documentNumber}}）を送付いたします。\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+    },
   };
   const loadEmailCfg = async () => {
     const keys = [
       "EMAIL_ENABLED", "EMAIL_SENDER", "EMAIL_ALLOWED_RECIPIENTS", "EMAIL_CC",
       "email_subject_inspection", "email_body_inspection",
       "email_subject_royalty", "email_body_royalty",
+      "email_subject_general", "email_body_general",
     ];
     const m: Record<string, any> = {};
     try {
@@ -408,6 +426,10 @@ async function startServer() {
         royalty: {
           subject: String(get("email_subject_royalty") || "") || DEFAULT_EMAIL_TPL.royalty.subject,
           body: String(get("email_body_royalty") || "") || DEFAULT_EMAIL_TPL.royalty.body,
+        },
+        general: {
+          subject: String(get("email_subject_general") || "") || DEFAULT_EMAIL_TPL.general.subject,
+          body: String(get("email_body_general") || "") || DEFAULT_EMAIL_TPL.general.body,
         },
       },
     };
@@ -514,11 +536,15 @@ async function startServer() {
         ? "sent"
         : reqRow.status;
 
+      // ①: 先方確認中(1)/締結済(2) は実送信済み。下書き運用で sent_at が未設定なら補完。
+      const wasSent = statusNum === 1 || isCompleted;
       await query(
         `UPDATE cloudsign_requests
-            SET status=$2, completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
+            SET status=$2,
+                sent_at = CASE WHEN $4 AND sent_at IS NULL THEN now() ELSE sent_at END,
+                completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
           WHERE id=$1`,
-        [reqRow.id, newStatus, isCompleted]
+        [reqRow.id, newStatus, isCompleted, wasSent]
       );
       if (isCompleted && reqRow.capability_id) {
         await query(
@@ -703,7 +729,10 @@ async function startServer() {
       }
 
       const user = (req.headers["x-user-email"] as string) || "cloudsign";
-      const title = row.contract_title || row.document_number || `契約 ${capId}`;
+      // タイトルは「取引先名, 文書番号」のカンマ区切り(運用要望)。
+      const title =
+        [row.vendor_name, row.document_number].filter(Boolean).join(", ") ||
+        row.contract_title || row.document_number || `契約 ${capId}`;
       const ins = await query(
         `INSERT INTO cloudsign_requests
            (document_number, capability_id, template_type, status, title, participants, is_test, created_by)
@@ -719,10 +748,7 @@ async function startServer() {
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
         for (const c of cc) await cloudSign.addReportee(csId, c);
-        const appBase = (cfg.baseUrl || "https://api.cloudsign.jp")
-          .replace(/\/\/api(-sandbox)?\./, "//app$1.")
-          .replace(/\/+$/, "");
-        const csUrl = `${appBase}/documents/${csId}`;
+        const csUrl = `${cloudSignAppBase(cfg)}/documents/${csId}`;
         if (draft) {
           await query(
             `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='draft', updated_at=now() WHERE id=$1`,
@@ -780,8 +806,8 @@ async function startServer() {
       const tt = String(doc.template_type || "");
       const isInspection = tt.includes("inspection");
       const isRoyalty = tt === "royalty_statement" || tt === "license_calculation_sheet";
-      if (!isInspection && !isRoyalty)
-        return res.status(400).json({ ok: false, error: `メール送信対象外の文書種別です: ${tt}` });
+      // 種別制限は撤廃: 全文書を個別メール送信可。本文テンプレは種別で選ぶ
+      //   (検収書/計算書は専用、その他は汎用)。契約書は CloudSign 推奨だが送信は可。
 
       // 宛先: body.to 優先(上書き)、無ければ取引先の主担当メール。
       let to: string[] = [];
@@ -829,7 +855,7 @@ async function startServer() {
         date: new Date().toLocaleDateString("ja-JP"),
         link: String(doc.drive_link || ""),
       };
-      const t = isInspection ? cfg.tpl.inspection : cfg.tpl.royalty;
+      const t = isInspection ? cfg.tpl.inspection : isRoyalty ? cfg.tpl.royalty : cfg.tpl.general;
       const subject = applyEmailTokens(t.subject, vars);
       const html = emailTextToHtml(applyEmailTokens(t.body, vars));
 
@@ -998,8 +1024,11 @@ async function startServer() {
       const docs: any[] = [];
       for (const dn of docNumbers) {
         const d = await query(
-          `SELECT document_number, template_type, drive_link FROM documents
-            WHERE document_number = $1 ORDER BY created_at DESC LIMIT 1`,
+          `SELECT d.document_number, d.template_type, d.drive_link, v.vendor_name
+             FROM documents d
+             LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+            WHERE d.document_number = $1 ORDER BY d.created_at DESC LIMIT 1`,
           [dn]
         );
         const row = d.rows[0];
@@ -1041,8 +1070,16 @@ async function startServer() {
 
       const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
       const user = (req.headers["x-user-email"] as string) || "cloudsign";
+      // タイトルは「取引先名, 文書番号, 文書番号…」のカンマ区切り(運用要望)。
+      //   取引先名は重複排除して先頭に並べ、続けて全文書番号を列挙する。
+      const titleVendors = Array.from(
+        new Set(docs.map((d) => d.vendor_name).filter(Boolean))
+      );
+      const titleDocNumbers = docs.map((d) => d.document_number).filter(Boolean);
       const title =
-        String(req.body?.title || "").trim() || `${key} まとめ送信（${docs.length}件）`;
+        String(req.body?.title || "").trim() ||
+        [...titleVendors, ...titleDocNumbers].join(", ") ||
+        `${key} まとめ送信（${docs.length}件）`;
       const capRow = await query(
         `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
         [docs[0].document_number]
@@ -1074,10 +1111,7 @@ async function startServer() {
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
         for (const c of cc) await cloudSign.addReportee(csId, c);
-        const appBase = (cfg.baseUrl || "https://api.cloudsign.jp")
-          .replace(/\/\/api(-sandbox)?\./, "//app$1.")
-          .replace(/\/+$/, "");
-        const csUrl = `${appBase}/documents/${csId}`;
+        const csUrl = `${cloudSignAppBase(cfg)}/documents/${csId}`;
         if (draft) {
           await query(
             `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='draft', updated_at=now() WHERE id=$1`,
@@ -1139,11 +1173,17 @@ async function startServer() {
         ? "sent"
         : reqRow.status;
 
+      // ①: 下書き運用では worker が sent_at を入れない(実送信は CloudSign 上で人が確定)。
+      //   「先方確認中(1)」「締結済(2)」の webhook は実際に送信済みを意味するので、
+      //   sent_at が未設定なら now() で補完し、送信履歴に反映されるようにする。
+      const wasSent = statusNum === 1 || isCompleted;
       await query(
         `UPDATE cloudsign_requests
-            SET status=$2, completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
+            SET status=$2,
+                sent_at = CASE WHEN $4 AND sent_at IS NULL THEN now() ELSE sent_at END,
+                completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
           WHERE id=$1`,
-        [reqRow.id, newStatus, isCompleted]
+        [reqRow.id, newStatus, isCompleted, wasSent]
       );
 
       if (isCompleted && reqRow.capability_id) {
@@ -11103,6 +11143,9 @@ ${details}
                      AND d.email_to IS NOT NULL AND d.email_to <> '') AS email_to,
                  (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
                    WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
+                 (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
+                   WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
+                     AND cr.sent_at IS NULL) AS cloudsign_draft_at,
                  (SELECT d.document_number FROM condition_events ce
                     JOIN documents d ON d.id = ce.document_id
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
@@ -11123,6 +11166,8 @@ ${details}
               r.email_to = s.email_to || null;
               r.cloudsign_sent_at = s.cloudsign_sent_at || null;
               r.send_doc_number = s.send_doc_number || null;
+              // ②: 未送信の下書き作成日時(下書保存運用で「送信準備中」を可視化)。
+              r.cloudsign_draft_at = s.cloudsign_draft_at || null;
               // 表示用の代表値(メール優先 → CloudSign)。
               r.sent_at = s.email_sent_at || s.cloudsign_sent_at || null;
               r.sent_channel = s.email_sent_at ? "メール" : s.cloudsign_sent_at ? "CloudSign" : null;

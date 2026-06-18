@@ -34,6 +34,8 @@ type ConditionLine = {
   sent_at: string | null
   sent_channel: string | null
   email_to: string | null
+  // 未送信の CloudSign 下書き作成日時(下書保存運用の「送信準備中」表示用)。
+  cloudsign_draft_at: string | null
   // メール送信対象の代表 検収書/計算書 文書番号(無ければ送信不可)。
   send_doc_number: string | null
 }
@@ -379,6 +381,13 @@ export function ConditionLinesPage() {
                           <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
                         </div>
                       )
+                    ) : r.cloudsign_draft_at ? (
+                      <div>
+                        <Badge variant="outline" className="border-slate-300 text-slate-500">
+                          ✍ 下書き
+                        </Badge>
+                        <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.cloudsign_draft_at)}</div>
+                      </div>
                     ) : (
                       <span className="text-muted-foreground">未送信</span>
                     )}
