@@ -183,6 +183,9 @@ export async function listConditions(
            AND d3.email_to IS NOT NULL AND d3.email_to <> '') AS fulfill_email_to,
        (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
          WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS fulfill_cloudsign_sent_at,
+       (SELECT MAX(cr.completed_at) FROM cloudsign_requests cr
+         WHERE cr.document_number = cc.document_number AND cr.status = 'completed'
+           AND cr.completed_at IS NOT NULL) AS fulfill_cloudsign_completed_at,
        (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
          WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
            AND cr.sent_at IS NULL) AS fulfill_cloudsign_draft_at`;
@@ -282,6 +285,11 @@ export async function listConditions(
       r.fulfill_cloudsign_sent_at instanceof Date
         ? r.fulfill_cloudsign_sent_at.toISOString()
         : (r.fulfill_cloudsign_sent_at || ""),
+    // 締結完了日時(締結済 → 「✅ 締結済」表示用)。
+    send_cloudsign_completed_at:
+      r.fulfill_cloudsign_completed_at instanceof Date
+        ? r.fulfill_cloudsign_completed_at.toISOString()
+        : (r.fulfill_cloudsign_completed_at || ""),
     // ②: 未送信の下書き作成日時(下書保存運用で「送信準備中」を可視化)。
     send_cloudsign_draft_at:
       r.fulfill_cloudsign_draft_at instanceof Date

@@ -11143,6 +11143,9 @@ ${details}
                      AND d.email_to IS NOT NULL AND d.email_to <> '') AS email_to,
                  (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
                    WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
+                 (SELECT MAX(cr.completed_at) FROM cloudsign_requests cr
+                   WHERE cr.document_number = cc.document_number AND cr.status = 'completed'
+                     AND cr.completed_at IS NOT NULL) AS cloudsign_completed_at,
                  (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
                    WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
                      AND cr.sent_at IS NULL) AS cloudsign_draft_at,
@@ -11166,6 +11169,8 @@ ${details}
               r.email_to = s.email_to || null;
               r.cloudsign_sent_at = s.cloudsign_sent_at || null;
               r.send_doc_number = s.send_doc_number || null;
+              // 締結完了日時(締結済 → 「✅ 締結済」表示用)。
+              r.cloudsign_completed_at = s.cloudsign_completed_at || null;
               // ②: 未送信の下書き作成日時(下書保存運用で「送信準備中」を可視化)。
               r.cloudsign_draft_at = s.cloudsign_draft_at || null;
               // 表示用の代表値(メール優先 → CloudSign)。
