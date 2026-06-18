@@ -173,7 +173,16 @@ export async function listConditions(
          LIMIT 1) AS fulfilling_doc_number,
        (SELECT COUNT(*)::int FROM condition_events ce
          WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
-           AND ce.document_id IS NOT NULL) AS fulfilling_doc_count`;
+           AND ce.document_id IS NOT NULL) AS fulfilling_doc_count,
+       (SELECT MAX(d3.email_sent_at) FROM condition_events ce
+          JOIN documents d3 ON d3.id = ce.document_id
+         WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL) AS fulfill_email_sent_at,
+       (SELECT string_agg(DISTINCT d3.email_to, ', ') FROM condition_events ce
+          JOIN documents d3 ON d3.id = ce.document_id
+         WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+           AND d3.email_to IS NOT NULL AND d3.email_to <> '') AS fulfill_email_to,
+       (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
+         WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS fulfill_cloudsign_sent_at`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
        cli.source_ip_id, si.title AS source_ip_title, si.source_code,
@@ -260,6 +269,16 @@ export async function listConditions(
     // 成就(fulfillment): 対の成就文書(検収書/利用許諾料計算書)の最新番号 + 件数。
     fulfilling_doc_number: r.fulfilling_doc_number || "",
     fulfilling_doc_count: Number(r.fulfilling_doc_count) || 0,
+    // 送信履歴(成就文書のメール / 契約の CloudSign)。
+    send_email_sent_at:
+      r.fulfill_email_sent_at instanceof Date
+        ? r.fulfill_email_sent_at.toISOString()
+        : (r.fulfill_email_sent_at || ""),
+    send_email_to: r.fulfill_email_to || "",
+    send_cloudsign_sent_at:
+      r.fulfill_cloudsign_sent_at instanceof Date
+        ? r.fulfill_cloudsign_sent_at.toISOString()
+        : (r.fulfill_cloudsign_sent_at || ""),
   }));
 
   return { rows, total };
