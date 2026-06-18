@@ -378,7 +378,7 @@ async function startServer() {
   };
   const loadEmailCfg = async () => {
     const keys = [
-      "EMAIL_ENABLED", "EMAIL_SENDER", "EMAIL_ALLOWED_RECIPIENTS",
+      "EMAIL_ENABLED", "EMAIL_SENDER", "EMAIL_ALLOWED_RECIPIENTS", "EMAIL_CC",
       "email_subject_inspection", "email_body_inspection",
       "email_subject_royalty", "email_body_royalty",
     ];
@@ -397,6 +397,9 @@ async function startServer() {
       sender: String(get("EMAIL_SENDER") || ""),
       allow: String(get("EMAIL_ALLOWED_RECIPIENTS") || "")
         .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+      // 既定 CC 送信先(設定画面で複数指定可・カンマ区切り)。
+      cc: String(get("EMAIL_CC") || "")
+        .split(",").map((s) => s.trim()).filter(Boolean),
       tpl: {
         inspection: {
           subject: String(get("email_subject_inspection") || "") || DEFAULT_EMAIL_TPL.inspection.subject,
@@ -797,9 +800,13 @@ async function startServer() {
       to = to.filter(Boolean);
       if (!to.length)
         return res.status(400).json({ ok: false, error: "宛先メールがありません(取引先の主担当が未設定)" });
-      const cc: string[] = Array.isArray(req.body?.cc)
+      // CC: 設定の既定 CC(EMAIL_CC) + body.cc をマージして重複除去。
+      const bodyCc: string[] = Array.isArray(req.body?.cc)
         ? req.body.cc.map((s: any) => String(s).trim()).filter(Boolean)
         : [];
+      const cc: string[] = Array.from(
+        new Set([...cfg.cc, ...bodyCc].map((s) => s.trim()).filter(Boolean))
+      ).filter((e) => !to.includes(e)); // 宛先と重複する CC は除外
 
       // テストガード: allowlist 設定時は全宛先がその集合内であること。
       if (cfg.allow.length) {

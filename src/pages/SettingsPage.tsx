@@ -323,6 +323,16 @@ export function SettingsPage() {
                 <p className="text-[11px] font-mono text-muted-foreground -mt-1">
                   ※ 許可宛先を設定している間は、その宛先以外への送信は拒否されます（社内宛で検証する用）。空にすると本番宛先へ送信できます。
                 </p>
+                <Field label="CC 送信先（複数可・カンマ区切り）">
+                  <Input
+                    value={appSettings.EMAIL_CC || ""}
+                    onChange={(e) => setField("EMAIL_CC", e.target.value)}
+                    placeholder="cc1@example.co.jp, cc2@example.co.jp"
+                  />
+                </Field>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  ※ メール送信時に常にこの宛先を CC します（複数可）。許可宛先を設定中は CC も許可宛先内である必要があります。
+                </p>
               </div>
 
               <div className="border-t border-border pt-3 space-y-3">
