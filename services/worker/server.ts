@@ -725,7 +725,10 @@ async function startServer() {
       }
 
       const user = (req.headers["x-user-email"] as string) || "cloudsign";
-      const title = row.contract_title || row.document_number || `契約 ${capId}`;
+      // タイトルは「取引先名, 文書番号」のカンマ区切り(運用要望)。
+      const title =
+        [row.vendor_name, row.document_number].filter(Boolean).join(", ") ||
+        row.contract_title || row.document_number || `契約 ${capId}`;
       const ins = await query(
         `INSERT INTO cloudsign_requests
            (document_number, capability_id, template_type, status, title, participants, is_test, created_by)
@@ -1017,8 +1020,11 @@ async function startServer() {
       const docs: any[] = [];
       for (const dn of docNumbers) {
         const d = await query(
-          `SELECT document_number, template_type, drive_link FROM documents
-            WHERE document_number = $1 ORDER BY created_at DESC LIMIT 1`,
+          `SELECT d.document_number, d.template_type, d.drive_link, v.vendor_name
+             FROM documents d
+             LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+            WHERE d.document_number = $1 ORDER BY d.created_at DESC LIMIT 1`,
           [dn]
         );
         const row = d.rows[0];
@@ -1060,8 +1066,16 @@ async function startServer() {
 
       const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
       const user = (req.headers["x-user-email"] as string) || "cloudsign";
+      // タイトルは「取引先名, 文書番号, 文書番号…」のカンマ区切り(運用要望)。
+      //   取引先名は重複排除して先頭に並べ、続けて全文書番号を列挙する。
+      const titleVendors = Array.from(
+        new Set(docs.map((d) => d.vendor_name).filter(Boolean))
+      );
+      const titleDocNumbers = docs.map((d) => d.document_number).filter(Boolean);
       const title =
-        String(req.body?.title || "").trim() || `${key} まとめ送信（${docs.length}件）`;
+        String(req.body?.title || "").trim() ||
+        [...titleVendors, ...titleDocNumbers].join(", ") ||
+        `${key} まとめ送信（${docs.length}件）`;
       const capRow = await query(
         `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
         [docs[0].document_number]
