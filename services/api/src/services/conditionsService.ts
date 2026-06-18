@@ -182,7 +182,10 @@ export async function listConditions(
          WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
            AND d3.email_to IS NOT NULL AND d3.email_to <> '') AS fulfill_email_to,
        (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
-         WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS fulfill_cloudsign_sent_at`;
+         WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS fulfill_cloudsign_sent_at,
+       (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
+         WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
+           AND cr.sent_at IS NULL) AS fulfill_cloudsign_draft_at`;
   // 0015: 原作 / 作品 / マスター契約(v3 contracts)。 0016: 稟議 + 状態フラグ。
   const linkCols = `,
        cli.source_ip_id, si.title AS source_ip_title, si.source_code,
@@ -279,6 +282,11 @@ export async function listConditions(
       r.fulfill_cloudsign_sent_at instanceof Date
         ? r.fulfill_cloudsign_sent_at.toISOString()
         : (r.fulfill_cloudsign_sent_at || ""),
+    // ②: 未送信の下書き作成日時(下書保存運用で「送信準備中」を可視化)。
+    send_cloudsign_draft_at:
+      r.fulfill_cloudsign_draft_at instanceof Date
+        ? r.fulfill_cloudsign_draft_at.toISOString()
+        : (r.fulfill_cloudsign_draft_at || ""),
   }));
 
   return { rows, total };
