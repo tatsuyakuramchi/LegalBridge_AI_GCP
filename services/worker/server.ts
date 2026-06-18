@@ -339,7 +339,7 @@ async function startServer() {
   //   CLOUDSIGN_ALLOWED_RECIPIENTS(カンマ区切り)を設定すると、その宛先のみ送信可
   //   = 「社内宛だけで締結まで」テストのガード。
   const loadCloudSignCfg = async () => {
-    const keys = ["CLOUDSIGN_CLIENT_ID", "CLOUDSIGN_ENABLED", "CLOUDSIGN_ALLOWED_RECIPIENTS", "CLOUDSIGN_BASE_URL"];
+    const keys = ["CLOUDSIGN_CLIENT_ID", "CLOUDSIGN_ENABLED", "CLOUDSIGN_ALLOWED_RECIPIENTS", "CLOUDSIGN_BASE_URL", "CLOUDSIGN_APP_URL"];
     const m: Record<string, any> = {};
     try {
       const r = await query(`SELECT key, value FROM app_settings WHERE key = ANY($1)`, [keys]);
@@ -353,10 +353,22 @@ async function startServer() {
     return {
       clientId: String(get("CLOUDSIGN_CLIENT_ID") || ""),
       baseUrl: String(get("CLOUDSIGN_BASE_URL") || "") || undefined,
+      appUrl: String(get("CLOUDSIGN_APP_URL") || "") || undefined,
       enabled: String(get("CLOUDSIGN_ENABLED") || "").toLowerCase() === "true",
       allow: String(get("CLOUDSIGN_ALLOWED_RECIPIENTS") || "")
         .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
     };
+  };
+
+  // クラウドサインの「書類を開く」Web画面のベースURLを決定する。
+  //   本番:  api.cloudsign.jp        → app.cloudsign.jp
+  //   検証:  api-sandbox.cloudsign.jp → sandbox.cloudsign.jp  (app-sandbox は存在しない)
+  //   CLOUDSIGN_APP_URL を設定すると明示上書き(導出より優先)。
+  const cloudSignAppBase = (cfg: { baseUrl?: string; appUrl?: string }) => {
+    if (cfg.appUrl) return cfg.appUrl.replace(/\/+$/, "");
+    const b = (cfg.baseUrl || "https://api.cloudsign.jp").replace(/\/+$/, "");
+    if (/\/\/api-sandbox\./.test(b)) return b.replace(/\/\/api-sandbox\./, "//sandbox.");
+    return b.replace(/\/\/api\./, "//app.");
   };
 
   // ── メール送信(Gmail API)連携 ───────────────────────────────
@@ -729,10 +741,7 @@ async function startServer() {
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
         for (const c of cc) await cloudSign.addReportee(csId, c);
-        const appBase = (cfg.baseUrl || "https://api.cloudsign.jp")
-          .replace(/\/\/api(-sandbox)?\./, "//app$1.")
-          .replace(/\/+$/, "");
-        const csUrl = `${appBase}/documents/${csId}`;
+        const csUrl = `${cloudSignAppBase(cfg)}/documents/${csId}`;
         if (draft) {
           await query(
             `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='draft', updated_at=now() WHERE id=$1`,
@@ -1084,10 +1093,7 @@ async function startServer() {
         for (const p of participants)
           await cloudSign.addParticipant(csId, { ...p, languageCode: language || undefined });
         for (const c of cc) await cloudSign.addReportee(csId, c);
-        const appBase = (cfg.baseUrl || "https://api.cloudsign.jp")
-          .replace(/\/\/api(-sandbox)?\./, "//app$1.")
-          .replace(/\/+$/, "");
-        const csUrl = `${appBase}/documents/${csId}`;
+        const csUrl = `${cloudSignAppBase(cfg)}/documents/${csId}`;
         if (draft) {
           await query(
             `UPDATE cloudsign_requests SET cloudsign_document_id=$2, status='draft', updated_at=now() WHERE id=$1`,
