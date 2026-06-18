@@ -375,12 +375,18 @@ async function startServer() {
       body:
         "{{vendorName}} 御中\n\nいつもお世話になっております。\n利用許諾料計算書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
     },
+    general: {
+      subject: "【書類送付】{{documentNumber}}（{{vendorName}} 御中）",
+      body:
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n書類（文書番号: {{documentNumber}}）を送付いたします。\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+    },
   };
   const loadEmailCfg = async () => {
     const keys = [
       "EMAIL_ENABLED", "EMAIL_SENDER", "EMAIL_ALLOWED_RECIPIENTS", "EMAIL_CC",
       "email_subject_inspection", "email_body_inspection",
       "email_subject_royalty", "email_body_royalty",
+      "email_subject_general", "email_body_general",
     ];
     const m: Record<string, any> = {};
     try {
@@ -408,6 +414,10 @@ async function startServer() {
         royalty: {
           subject: String(get("email_subject_royalty") || "") || DEFAULT_EMAIL_TPL.royalty.subject,
           body: String(get("email_body_royalty") || "") || DEFAULT_EMAIL_TPL.royalty.body,
+        },
+        general: {
+          subject: String(get("email_subject_general") || "") || DEFAULT_EMAIL_TPL.general.subject,
+          body: String(get("email_body_general") || "") || DEFAULT_EMAIL_TPL.general.body,
         },
       },
     };
@@ -780,8 +790,8 @@ async function startServer() {
       const tt = String(doc.template_type || "");
       const isInspection = tt.includes("inspection");
       const isRoyalty = tt === "royalty_statement" || tt === "license_calculation_sheet";
-      if (!isInspection && !isRoyalty)
-        return res.status(400).json({ ok: false, error: `メール送信対象外の文書種別です: ${tt}` });
+      // 種別制限は撤廃: 全文書を個別メール送信可。本文テンプレは種別で選ぶ
+      //   (検収書/計算書は専用、その他は汎用)。契約書は CloudSign 推奨だが送信は可。
 
       // 宛先: body.to 優先(上書き)、無ければ取引先の主担当メール。
       let to: string[] = [];
@@ -829,7 +839,7 @@ async function startServer() {
         date: new Date().toLocaleDateString("ja-JP"),
         link: String(doc.drive_link || ""),
       };
-      const t = isInspection ? cfg.tpl.inspection : cfg.tpl.royalty;
+      const t = isInspection ? cfg.tpl.inspection : isRoyalty ? cfg.tpl.royalty : cfg.tpl.general;
       const subject = applyEmailTokens(t.subject, vars);
       const html = emailTextToHtml(applyEmailTokens(t.body, vars));
 

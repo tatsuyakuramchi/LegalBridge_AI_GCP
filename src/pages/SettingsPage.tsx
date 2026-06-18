@@ -368,6 +368,22 @@ export function SettingsPage() {
                     placeholder="{{vendorName}} 御中…"
                   />
                 </Field>
+                <p className="retro-tag">本文テンプレート（その他文書・発注書等）</p>
+                <Field label="件名（その他文書）">
+                  <Input
+                    value={appSettings.email_subject_general ?? ""}
+                    onChange={(e) => setField("email_subject_general", e.target.value)}
+                    placeholder="【書類送付】{{documentNumber}}（{{vendorName}} 御中）"
+                  />
+                </Field>
+                <Field label="本文（その他文書）">
+                  <Textarea
+                    rows={6}
+                    value={appSettings.email_body_general ?? ""}
+                    onChange={(e) => setField("email_body_general", e.target.value)}
+                    placeholder="{{vendorName}} 御中…"
+                  />
+                </Field>
                 <p className="text-[11px] font-mono text-muted-foreground -mt-1">
                   使用可能トークン: {"{{vendorName}}"} {"{{documentNumber}}"} {"{{amount}}"} {"{{date}}"} {"{{link}}"}（空欄なら既定テンプレを使用）
                 </p>
