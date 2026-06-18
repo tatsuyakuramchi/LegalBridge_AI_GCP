@@ -165,10 +165,12 @@ export class CloudSignService {
   /** 共有先(CC=reportees)を追加。締結情報を署名フロー外の宛先に共有する。 */
   async addReportee(documentId: string, r: { email: string; name?: string }): Promise<string> {
     return this.call(async () => {
-      // CONFIRM(実環境): reportees の body フィールド名(email/name)。
+      // reportees は name が必須(空だと CloudSign が 400 "invalid value for name")。
+      //   氏名指定が無い CC でも送れるよう、メールのローカル部 → "共有先" にフォールバック。
+      const name = (r.name && r.name.trim()) || r.email.split("@")[0] || "共有先";
       const body = new URLSearchParams();
       body.set("email", r.email);
-      if (r.name) body.set("name", r.name);
+      body.set("name", name);
       const res = await axios.post(`${this.base}/documents/${documentId}/reportees`, body.toString(), {
         headers: { ...(await this.authHeader()), "Content-Type": "application/x-www-form-urlencoded" },
         timeout: 20_000,
