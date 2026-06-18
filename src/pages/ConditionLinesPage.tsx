@@ -361,19 +361,21 @@ export function ConditionLinesPage() {
                     onClick={(e) => e.stopPropagation()}
                   >
                     {r.sent_at ? (
-                      <span title={r.email_to || r.sent_channel || ""}>
-                        <Badge
-                          variant="outline"
-                          className={
-                            r.sent_channel === "メール"
-                              ? "border-emerald-300 text-emerald-700"
-                              : "border-sky-300 text-sky-700"
-                          }
-                        >
-                          {r.sent_channel === "メール" ? "✉" : "✍"} {r.sent_channel}
+                      r.sent_channel === "メール" ? (
+                        <div>
+                          <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+                            ✉ メール
+                          </Badge>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
+                          {r.email_to ? (
+                            <div className="text-[10px] text-muted-foreground break-all">{r.email_to}</div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <Badge variant="outline" className="border-sky-300 text-sky-700">
+                          ✍ クラウドサイン
                         </Badge>
-                        <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
-                      </span>
+                      )
                     ) : (
                       <span className="text-muted-foreground">未送信</span>
                     )}

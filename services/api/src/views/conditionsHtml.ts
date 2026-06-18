@@ -352,7 +352,7 @@ export function conditionsPage(
       thc('計算', 'calc_method', 'str') + thc('数量', 'quantity', 'num', 'num') +
       thc('単価', 'unit_price', 'num', 'num') + thc('金額(税抜)', 'amount_ex_tax', 'num', 'num') +
       thc('文書番号', 'document_number', 'str') + thc('成就', 'fulfillment_status', 'str') +
-      '<th>成就文書</th>' + thc('契約名 / 課題', 'contract_title', 'str') +
+      '<th>成就文書</th><th>送信</th>' + thc('契約名 / 課題', 'contract_title', 'str') +
       '<th>紐付け' + (CAN_EDIT ? '(クリックで編集)' : '') + '</th><th>状態</th>' +
       '</tr>';
     // 成就状態 → ラベル(契約期間型は 履行中 / 成就(満了))。
@@ -375,6 +375,27 @@ export function conditionsPage(
       var more = (r.fulfilling_doc_count && r.fulfilling_doc_count > 1)
         ? '<span class="sub10">ほか' + (r.fulfilling_doc_count - 1) + '件</span>' : '';
       return esc(r.fulfilling_doc_number) + more;
+    }
+    // 送信履歴: メール送信済 → 送信日時 + 送信先 / CloudSign 送信済 → クラウドサイン。
+    function fmtJst(iso) {
+      if (!iso) return "";
+      try {
+        return new Date(iso).toLocaleString("ja-JP", {
+          year: "numeric", month: "2-digit", day: "2-digit",
+          hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo"
+        });
+      } catch (e) { return iso; }
+    }
+    function sendCell(r) {
+      if (r.send_email_sent_at) {
+        return '<span class="cond-link-pill" style="border-color:#34d399;color:#047857;">✉ メール</span>' +
+          '<div class="sub10">' + esc(fmtJst(r.send_email_sent_at)) + '</div>' +
+          (r.send_email_to ? '<div class="sub10">' + esc(r.send_email_to) + '</div>' : '');
+      }
+      if (r.send_cloudsign_sent_at) {
+        return '<span class="cond-link-pill" style="border-color:#38bdf8;color:#0369a1;">✍ クラウドサイン</span>';
+      }
+      return '<span class="muted">—</span>';
     }
     var bodyHtml = rows.map(function (r) {
       var dir = (r.flow_direction === "in" || r.flow_direction === "out")
@@ -417,6 +438,7 @@ export function conditionsPage(
         '<td>' + esc(r.document_number || "—") + '</td>' +
         '<td>' + fulfillBadge(r.fulfillment_status) + '</td>' +
         '<td class="wrap">' + fulfillDocCell(r) + '</td>' +
+        '<td class="wrap">' + sendCell(r) + '</td>' +
         '<td class="wrap">' + contract + '</td>' +
         '<td class="wrap">' + link + '</td>' +
         '<td class="wrap">' + st + '</td>' +
