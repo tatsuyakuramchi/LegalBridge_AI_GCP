@@ -622,6 +622,89 @@ async function startServer() {
     }
   });
 
+  // 送信履歴の手動取得: ある文書(document_number)の最新 cloudsign_requests を返す。
+  //   手動編集フォームの初期値表示に使う。
+  app.get("/api/cloudsign/history/:docNumber", async (req, res) => {
+    try {
+      const docNumber = String(req.params.docNumber || "").trim();
+      if (!docNumber) return res.status(400).json({ ok: false, error: "document_number required" });
+      const r = await query(
+        `SELECT id, document_number, status, title, cloudsign_document_id,
+                sent_at, completed_at, created_by, created_at
+           FROM cloudsign_requests
+          WHERE document_number = $1
+          ORDER BY created_at DESC LIMIT 1`,
+        [docNumber]
+      );
+      res.json({ ok: true, history: r.rows[0] || null });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  // 送信履歴の手動編集: 過去に(システム外でも)送信/締結したものを手で記録・修正する。
+  //   既存レコードがあれば最新を更新、無ければ手動レコードを作成する。
+  //   status: draft(未送信) / sent(送信済) / completed(締結済) / declined(却下)
+  app.post("/api/cloudsign/manual-history", express.json(), async (req, res) => {
+    try {
+      const docNumber = String(req.body?.document_number || "").trim();
+      if (!docNumber) return res.status(400).json({ ok: false, error: "document_number required" });
+      const allowed = ["draft", "sent", "completed", "declined"];
+      const status = allowed.includes(String(req.body?.status)) ? String(req.body.status) : "sent";
+      const toTs = (v: any) => {
+        if (!v) return null;
+        const d = new Date(v);
+        return isNaN(d.getTime()) ? null : d;
+      };
+      let sentAt = toTs(req.body?.sent_at);
+      let completedAt = toTs(req.body?.completed_at);
+      // 締結済は送信済みを含意。送信日時が空なら締結日時で補完して送信履歴にも出す。
+      if (status === "completed" && !sentAt) sentAt = completedAt;
+      if (status === "draft") { sentAt = null; completedAt = null; }
+      // 契約番号なら capability に紐付ける。
+      const capRow = await query(
+        `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+        [docNumber]
+      );
+      const capId = capRow.rows[0]?.id ?? null;
+      const existing = await query(
+        `SELECT id FROM cloudsign_requests WHERE document_number = $1 ORDER BY created_at DESC LIMIT 1`,
+        [docNumber]
+      );
+      let id: number;
+      if (existing.rows[0]) {
+        id = existing.rows[0].id;
+        await query(
+          `UPDATE cloudsign_requests
+              SET status = $2, sent_at = $3, completed_at = $4,
+                  capability_id = COALESCE(capability_id, $5), updated_at = now()
+            WHERE id = $1`,
+          [id, status, sentAt, completedAt, capId]
+        );
+      } else {
+        const user = (req.headers["x-user-email"] as string) || "manual-edit";
+        const ins = await query(
+          `INSERT INTO cloudsign_requests
+             (document_number, capability_id, status, title, sent_at, completed_at, is_test, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,false,$7) RETURNING id`,
+          [docNumber, capId, status, `手動記録 ${docNumber}`, sentAt, completedAt, user]
+        );
+        id = ins.rows[0].id;
+      }
+      // 締結済なら契約状態も executed に反映(自動送信と同じ挙動)。
+      if (status === "completed" && capId) {
+        await query(
+          `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+          [capId]
+        );
+      }
+      res.json({ ok: true, id, status, sent_at: sentAt, completed_at: completedAt });
+    } catch (e: any) {
+      console.error("[cloudsign manual-history] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
 
   // 修復ツール: 上書き事故で「検収書(inspection_certificate)だが発注書番号」になった文書を
   //   検収書として再採番(ARC-INS-…)し、紐づく条件明細を検収済(inspection イベント=金額分)にする。
