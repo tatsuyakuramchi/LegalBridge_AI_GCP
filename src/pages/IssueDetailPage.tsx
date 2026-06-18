@@ -16,7 +16,6 @@ import {
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { promptAndSendDocumentEmail } from "@/src/lib/emailSend"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Badge } from "@/components/ui/badge"
@@ -103,12 +102,51 @@ export function IssueDetailPage() {
   )
 
   const [docs, setDocs] = React.useState<IssueDocument[]>([])
-  // 検収書/計算書の取引先メール送信。
-  const [sendingDoc, setSendingDoc] = React.useState<string | null>(null)
-  const sendDoc = async (documentNumber: string) => {
-    setSendingDoc(documentNumber)
-    await promptAndSendDocumentEmail(documentNumber)
-    setSendingDoc(null)
+  // 個別送信: 送信方法の選択(クラウドサイン/メール) → 各フォーム。
+  const [chooserDoc, setChooserDoc] = React.useState<IssueDocument | null>(null)
+  // メール送信ダイアログ
+  const [emailDoc, setEmailDoc] = React.useState<IssueDocument | null>(null)
+  const [emailTo, setEmailTo] = React.useState("")
+  const [emailCc, setEmailCc] = React.useState("")
+  const [emailSending, setEmailSending] = React.useState(false)
+  const openEmail = (d: IssueDocument) => {
+    setEmailDoc(d)
+    setEmailTo("")
+    setEmailCc("")
+  }
+  const sendEmailNow = async () => {
+    if (!emailDoc?.document_number) return
+    setEmailSending(true)
+    try {
+      const body: any = {}
+      const to = emailTo.split(",").map((s) => s.trim()).filter(Boolean)
+      const cc = emailCc.split(",").map((s) => s.trim()).filter(Boolean)
+      if (to.length) body.to = to
+      if (cc.length) body.cc = cc
+      const res = await fetch(
+        `/api/documents/${encodeURIComponent(emailDoc.document_number)}/email/send`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      )
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok || data.ok === false) throw new Error(data.error || `HTTP ${res.status}`)
+      showNotification(
+        `メール送信しました: ${(data.to || []).join(", ")}` +
+          (data.cc && data.cc.length ? ` / CC: ${data.cc.join(", ")}` : "") +
+          (data.attached ? "（PDF添付）" : "（本文リンクのみ）"),
+        "success"
+      )
+      setEmailDoc(null)
+    } catch (e: any) {
+      showNotification(`メール送信に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setEmailSending(false)
+    }
+  }
+  // クラウドサイン: 単一文書を選択状態にして既存のまとめ送信モーダルを開く。
+  const openCloudSignFor = (d: IssueDocument) => {
+    if (!d.document_number) return
+    setSelDocs(new Set([d.document_number]))
+    openBundle()
   }
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
@@ -502,12 +540,11 @@ export function IssueDetailPage() {
                     {d.document_number && (
                       <button
                         type="button"
-                        onClick={() => sendDoc(d.document_number!)}
-                        disabled={sendingDoc === d.document_number}
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-1.5 py-1 rounded-sm disabled:opacity-50"
-                        title="この文書を取引先へメール送信"
+                        onClick={() => setChooserDoc(d)}
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-1.5 py-1 rounded-sm"
+                        title="この文書を送信（クラウドサイン / メール）"
                       >
-                        {sendingDoc === d.document_number ? "送信中…" : "✉ 送信"}
+                        ✉ 送信
                       </button>
                     )}
                     <button
@@ -682,6 +719,92 @@ export function IssueDetailPage() {
             <Button onClick={sendBundle} disabled={csSending || selDocs.size === 0}>
               <Send className="h-3.5 w-3.5" />
               {csSending ? "処理中…" : csDraft ? `下書き作成（${selDocs.size}件）` : `送信（${selDocs.size}件）`}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 送信方法の選択(クラウドサイン / メール) */}
+      <Dialog open={!!chooserDoc} onOpenChange={(v) => !v && setChooserDoc(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>送信方法を選択</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-2.5">
+            <div className="text-xs font-mono text-muted-foreground">
+              {chooserDoc ? templateLabel(chooserDoc.template_type) : ""}{" "}
+              {chooserDoc?.document_number}
+            </div>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              onClick={() => {
+                const d = chooserDoc!
+                setChooserDoc(null)
+                openEmail(d)
+              }}
+            >
+              ✉ メールで送信
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              disabled={!isDrivePdf(chooserDoc?.drive_link)}
+              onClick={() => {
+                const d = chooserDoc!
+                setChooserDoc(null)
+                openCloudSignFor(d)
+              }}
+            >
+              ✍ クラウドサインで送信
+            </Button>
+            {!isDrivePdf(chooserDoc?.drive_link) && (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                ※ クラウドサインは Drive 上に PDF がある正本のみ送信できます。
+              </p>
+            )}
+          </DialogBody>
+        </DialogContent>
+      </Dialog>
+
+      {/* メール送信(宛先・CC 入力 + 確認) */}
+      <Dialog open={!!emailDoc} onOpenChange={(v) => !v && setEmailDoc(null)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>メールで送信</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <div className="text-xs font-mono text-muted-foreground">
+              {emailDoc ? templateLabel(emailDoc.template_type) : ""}{" "}
+              {emailDoc?.document_number}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">送信先（空欄なら取引先の主担当・複数可カンマ区切り）</Label>
+              <Input
+                value={emailTo}
+                onChange={(e) => setEmailTo(e.target.value)}
+                placeholder="vendor@example.co.jp"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">CC（複数可・カンマ区切り。設定の既定CCにも追加されます）</Label>
+              <Input
+                value={emailCc}
+                onChange={(e) => setEmailCc(e.target.value)}
+                placeholder="cc@example.co.jp"
+              />
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              内容を確認のうえ「送信」を押してください。PDF を添付して送信します。
+            </p>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailDoc(null)}>
+              キャンセル
+            </Button>
+            <Button onClick={sendEmailNow} disabled={emailSending}>
+              <Send className="h-3.5 w-3.5" />
+              {emailSending ? "送信中…" : "送信"}
             </Button>
           </DialogFooter>
         </DialogContent>
