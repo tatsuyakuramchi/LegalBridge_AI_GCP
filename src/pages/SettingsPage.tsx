@@ -227,6 +227,16 @@ export function SettingsPage() {
                     placeholder="https://api.cloudsign.jp"
                   />
                 </Field>
+                <Field label="書類画面URL（任意・下書きリンク用）">
+                  <Input
+                    value={appSettings.CLOUDSIGN_APP_URL || ""}
+                    onChange={(e) => setField("CLOUDSIGN_APP_URL", e.target.value)}
+                    placeholder="https://app.cloudsign.jp"
+                  />
+                </Field>
+                <p className="text-[11px] font-mono text-muted-foreground -mt-1">
+                  ※ 下書き保存後に表示する「書類を開く」リンクのドメイン。空欄なら自動判定（本番 app.cloudsign.jp / 検証 sandbox.cloudsign.jp）。
+                </p>
                 <Button onClick={() => persist("CloudSign")}>
                   <Save />
                   Apply
