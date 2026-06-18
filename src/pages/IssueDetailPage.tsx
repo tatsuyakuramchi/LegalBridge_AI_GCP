@@ -25,6 +25,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { StaffPicker } from "@/src/components/cloudsign/StaffPicker"
+import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import {
   Dialog,
   DialogContent,
@@ -93,7 +94,7 @@ function SectionHead({ label }: { label: string }) {
 export function IssueDetailPage() {
   const { issueKey = "" } = useParams()
   const navigate = useNavigate()
-  const { issues, templateMetadata, templateList, staffList, showNotification } = useAppData()
+  const { issues, templateMetadata, templateList, staffList, vendors, showNotification } = useAppData()
   const { setSelectedIssue, setFormData } = useDocumentSession()
 
   const issue = React.useMemo(
@@ -108,11 +109,13 @@ export function IssueDetailPage() {
   const [emailDoc, setEmailDoc] = React.useState<IssueDocument | null>(null)
   const [emailTo, setEmailTo] = React.useState("")
   const [emailCc, setEmailCc] = React.useState("")
+  const [emailVendorCode, setEmailVendorCode] = React.useState("")
   const [emailSending, setEmailSending] = React.useState(false)
   const openEmail = (d: IssueDocument) => {
     setEmailDoc(d)
     setEmailTo("")
     setEmailCc("")
+    setEmailVendorCode("")
   }
   const sendEmailNow = async () => {
     if (!emailDoc?.document_number) return
@@ -231,6 +234,7 @@ export function IssueDetailPage() {
   const [bundleOpen, setBundleOpen] = React.useState(false)
   const [csName, setCsName] = React.useState("")
   const [csEmail, setCsEmail] = React.useState("")
+  const [csVendorCode, setCsVendorCode] = React.useState("")
   const [csInternal, setCsInternal] = React.useState<
     { name: string; email: string; role?: string }[]
   >([])
@@ -252,6 +256,7 @@ export function IssueDetailPage() {
     setBundleOpen(true)
     setCsName("")
     setCsEmail("")
+    setCsVendorCode("")
     setCsInternal([])
     setCsRelay("internal_first")
     setCsLang("ja")
@@ -585,6 +590,23 @@ export function IssueDetailPage() {
               </ul>
             </div>
             <div className="space-y-1">
+              <Label className="text-xs">取引先を検索（選択で氏名・メールを自動補完）</Label>
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode={csVendorCode}
+                onSelect={(v) => {
+                  if (v) {
+                    setCsVendorCode(v.vendor_code || "")
+                    setCsName(v.contact_name || v.vendor_rep || v.vendor_name || "")
+                    setCsEmail(v.email || "")
+                  } else {
+                    setCsVendorCode("")
+                  }
+                }}
+                placeholder="取引先を検索 (コード / 名称 / 屋号)"
+              />
+            </div>
+            <div className="space-y-1">
               <Label className="text-xs">取引先 署名者 氏名（任意）</Label>
               <Input value={csName} onChange={(e) => setCsName(e.target.value)} placeholder="山田 太郎" />
             </div>
@@ -777,6 +799,22 @@ export function IssueDetailPage() {
             <div className="text-xs font-mono text-muted-foreground">
               {emailDoc ? templateLabel(emailDoc.template_type) : ""}{" "}
               {emailDoc?.document_number}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">取引先を検索（選択で送信先メールを自動補完）</Label>
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode={emailVendorCode}
+                onSelect={(v) => {
+                  if (v) {
+                    setEmailVendorCode(v.vendor_code || "")
+                    setEmailTo(v.email || "")
+                  } else {
+                    setEmailVendorCode("")
+                  }
+                }}
+                placeholder="取引先を検索 (コード / 名称 / 屋号)"
+              />
             </div>
             <div className="space-y-1">
               <Label className="text-[11px]">送信先（空欄なら取引先の主担当・複数可カンマ区切り）</Label>
