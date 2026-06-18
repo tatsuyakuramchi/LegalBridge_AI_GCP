@@ -11218,13 +11218,29 @@ ${details}
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
                      AND d.email_to IS NOT NULL AND d.email_to <> '') AS email_to,
                  (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
-                   WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
+                   WHERE (cr.document_number = cc.document_number
+                          OR cr.document_number IN (
+                            SELECT d3.document_number FROM condition_events ce3
+                              JOIN documents d3 ON d3.id = ce3.document_id
+                             WHERE ce3.condition_line_id = cl.id AND ce3.voided_at IS NULL
+                               AND d3.document_number IS NOT NULL))
+                     AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
                  (SELECT MAX(cr.completed_at) FROM cloudsign_requests cr
-                   WHERE cr.document_number = cc.document_number AND cr.status = 'completed'
-                     AND cr.completed_at IS NOT NULL) AS cloudsign_completed_at,
+                   WHERE (cr.document_number = cc.document_number
+                          OR cr.document_number IN (
+                            SELECT d3.document_number FROM condition_events ce3
+                              JOIN documents d3 ON d3.id = ce3.document_id
+                             WHERE ce3.condition_line_id = cl.id AND ce3.voided_at IS NULL
+                               AND d3.document_number IS NOT NULL))
+                     AND cr.status = 'completed' AND cr.completed_at IS NOT NULL) AS cloudsign_completed_at,
                  (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
-                   WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
-                     AND cr.sent_at IS NULL) AS cloudsign_draft_at,
+                   WHERE (cr.document_number = cc.document_number
+                          OR cr.document_number IN (
+                            SELECT d3.document_number FROM condition_events ce3
+                              JOIN documents d3 ON d3.id = ce3.document_id
+                             WHERE ce3.condition_line_id = cl.id AND ce3.voided_at IS NULL
+                               AND d3.document_number IS NOT NULL))
+                     AND cr.status = 'draft' AND cr.sent_at IS NULL) AS cloudsign_draft_at,
                  (SELECT d.document_number FROM condition_events ce
                     JOIN documents d ON d.id = ce.document_id
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
