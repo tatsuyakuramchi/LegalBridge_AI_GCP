@@ -392,6 +392,10 @@ export function conditionsPage(
           '<div class="sub10">' + esc(fmtJst(r.send_email_sent_at)) + '</div>' +
           (r.send_email_to ? '<div class="sub10">' + esc(r.send_email_to) + '</div>' : '');
       }
+      if (r.send_cloudsign_completed_at) {
+        return '<span class="cond-link-pill" style="border-color:#34d399;color:#047857;">✅ 締結済</span>' +
+          '<div class="sub10">' + esc(fmtJst(r.send_cloudsign_completed_at)) + '</div>';
+      }
       if (r.send_cloudsign_sent_at) {
         return '<span class="cond-link-pill" style="border-color:#38bdf8;color:#0369a1;">✍ クラウドサイン</span>' +
           '<div class="sub10">' + esc(fmtJst(r.send_cloudsign_sent_at)) + '</div>';
