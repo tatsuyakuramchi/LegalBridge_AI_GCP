@@ -276,6 +276,156 @@ function Metric({ label, value, sub }: { label: string; value: string; sub?: str
   )
 }
 
+// CloudSign 送信履歴の手動編集。過去に(システム外でも)送信/締結したものを
+//   document_number 単位で記録・修正できる。日時は JST で入出力する。
+function CloudSignHistoryEditor({
+  documentNumber,
+  onSaved,
+}: {
+  documentNumber: string
+  onSaved: () => void
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [loading, setLoading] = React.useState(false)
+  const [saving, setSaving] = React.useState(false)
+  const [status, setStatus] = React.useState("sent")
+  const [sentAt, setSentAt] = React.useState("")
+  const [completedAt, setCompletedAt] = React.useState("")
+  const [msg, setMsg] = React.useState<string | null>(null)
+
+  // ISO(UTC) → datetime-local(JST 表示) / 入力(JST) → ISO。
+  const toLocalInput = (iso: string | null) => {
+    if (!iso) return ""
+    const d = new Date(iso)
+    if (isNaN(d.getTime())) return ""
+    return new Date(d.getTime() + 9 * 3600 * 1000).toISOString().slice(0, 16)
+  }
+  const fromLocalInput = (s: string) => (s ? new Date(s + ":00+09:00").toISOString() : null)
+
+  const openEditor = async () => {
+    setOpen(true)
+    setMsg(null)
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/cloudsign/history/${encodeURIComponent(documentNumber)}`)
+      const d = await r.json().catch(() => ({}))
+      const h = d?.history
+      if (h) {
+        setStatus(["draft", "sent", "completed", "declined"].includes(h.status) ? h.status : "sent")
+        setSentAt(toLocalInput(h.sent_at))
+        setCompletedAt(toLocalInput(h.completed_at))
+      } else {
+        setStatus("sent")
+        setSentAt("")
+        setCompletedAt("")
+      }
+    } catch {
+      /* noop */
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setMsg(null)
+    try {
+      const r = await fetch(`/api/cloudsign/manual-history`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          document_number: documentNumber,
+          status,
+          sent_at: fromLocalInput(sentAt),
+          completed_at: fromLocalInput(completedAt),
+        }),
+      })
+      const d = await r.json().catch(() => ({}))
+      if (!r.ok || d.ok === false) throw new Error(d.error || `HTTP ${r.status}`)
+      setOpen(false)
+      onSaved()
+    } catch (e: any) {
+      setMsg(String(e?.message || e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={openEditor}
+        className="text-[10px] font-mono px-2 py-0.5 rounded border border-border text-muted-foreground hover:border-foreground"
+      >
+        ✎ 送信履歴
+      </button>
+    )
+  }
+  return (
+    <div className="mt-1.5 border border-border rounded-md p-2 space-y-1.5 bg-muted/30 text-[11px] font-mono w-full">
+      <div className="font-bold text-muted-foreground">CloudSign 送信履歴の編集 — {documentNumber}</div>
+      {loading ? (
+        <div className="text-muted-foreground">読込中…</div>
+      ) : (
+        <>
+          <label className="flex items-center gap-2">
+            <span className="w-16 text-muted-foreground shrink-0">状態</span>
+            <select
+              value={status}
+              onChange={(e) => setStatus(e.target.value)}
+              className="border-b border-input bg-transparent py-0.5 flex-1"
+            >
+              <option value="draft">未送信(下書き)</option>
+              <option value="sent">送信済</option>
+              <option value="completed">締結済</option>
+              <option value="declined">却下・取消</option>
+            </select>
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="w-16 text-muted-foreground shrink-0">送信日時</span>
+            <input
+              type="datetime-local"
+              value={sentAt}
+              disabled={status === "draft"}
+              onChange={(e) => setSentAt(e.target.value)}
+              className="border-b border-input bg-transparent py-0.5 flex-1 disabled:opacity-40"
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            <span className="w-16 text-muted-foreground shrink-0">締結日時</span>
+            <input
+              type="datetime-local"
+              value={completedAt}
+              disabled={status === "draft"}
+              onChange={(e) => setCompletedAt(e.target.value)}
+              className="border-b border-input bg-transparent py-0.5 flex-1 disabled:opacity-40"
+            />
+          </label>
+          {msg && <div className="text-destructive">{msg}</div>}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="button"
+              onClick={save}
+              disabled={saving}
+              className="px-2 py-0.5 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+            >
+              {saving ? "保存中…" : "保存"}
+            </button>
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              className="px-2 py-0.5 rounded border border-border text-muted-foreground hover:border-foreground"
+            >
+              キャンセル
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 export function ConditionLineDetailPage() {
   const { lineCode = "" } = useParams()
   const navigate = useNavigate()
@@ -469,6 +619,11 @@ export function ConditionLineDetailPage() {
                   {e.void_reason ? ` · ${e.void_reason}` : ""}
                   {e.email_to ? ` · 宛先 ${e.email_to}` : ""}
                 </div>
+                {e.document_number && (
+                  <div className="mt-1">
+                    <CloudSignHistoryEditor documentNumber={e.document_number} onSaved={load} />
+                  </div>
+                )}
               </div>
               {e.drive_link && (
                 <a href={e.drive_link} target="_blank" rel="noreferrer" className="text-muted-foreground hover:text-foreground">
@@ -554,6 +709,16 @@ export function ConditionLineDetailPage() {
             </span>
           </div>
         </div>
+
+        {/* 契約書(発注書/契約)の CloudSign 送信履歴を手動編集 */}
+        {line.contract_number && (
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono pt-1">
+            <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+              契約書のCloudSign送信履歴
+            </span>
+            <CloudSignHistoryEditor documentNumber={line.contract_number} onSaved={load} />
+          </div>
+        )}
 
         {/* 課題 / 作品 */}
         {(issues.length > 0 || line.work_code) && (
