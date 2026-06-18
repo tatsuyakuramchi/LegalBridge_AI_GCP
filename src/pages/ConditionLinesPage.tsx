@@ -372,9 +372,12 @@ export function ConditionLinesPage() {
                           ) : null}
                         </div>
                       ) : (
-                        <Badge variant="outline" className="border-sky-300 text-sky-700">
-                          ✍ クラウドサイン
-                        </Badge>
+                        <div>
+                          <Badge variant="outline" className="border-sky-300 text-sky-700">
+                            ✍ クラウドサイン
+                          </Badge>
+                          <div className="text-[10px] text-muted-foreground mt-0.5">{fmtSent(r.sent_at)}</div>
+                        </div>
                       )
                     ) : (
                       <span className="text-muted-foreground">未送信</span>
