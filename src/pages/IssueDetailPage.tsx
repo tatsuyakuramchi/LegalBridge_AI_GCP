@@ -111,6 +111,7 @@ export function IssueDetailPage() {
   const [emailCc, setEmailCc] = React.useState("")
   const [emailVendorCode, setEmailVendorCode] = React.useState("")
   const [emailContactIdx, setEmailContactIdx] = React.useState(0)
+  const [emailContacts, setEmailContacts] = React.useState<any[]>([])
   const [emailSending, setEmailSending] = React.useState(false)
   const openEmail = (d: IssueDocument) => {
     setEmailDoc(d)
@@ -118,11 +119,30 @@ export function IssueDetailPage() {
     setEmailCc("")
     setEmailVendorCode("")
     setEmailContactIdx(0)
+    setEmailContacts([])
   }
   // 取引先の連絡先配列(主担当を先頭にしたい場合の補助)。
   const primaryContactIdx = (contacts: any[]) => {
     const i = (contacts || []).findIndex((c) => c && c.is_primary)
     return i >= 0 ? i : 0
+  }
+  // 一覧の取引先に連絡先メールが無いことがあるため、詳細を取得して連絡先を補う。
+  const loadVendorContacts = async (v: any): Promise<any[]> => {
+    let contacts = Array.isArray(v?.contacts) ? v.contacts : []
+    if (!contacts.length || !contacts.some((c: any) => c && c.email)) {
+      try {
+        const res = await fetch(`/api/master/vendors/${encodeURIComponent(v.vendor_code)}`)
+        if (res.ok) {
+          const d = await res.json()
+          const detail = d?.data ?? d
+          if (Array.isArray(detail?.contacts)) contacts = detail.contacts
+          if (!v.email && detail?.email) v.email = detail.email
+        }
+      } catch {
+        /* 詳細取得失敗は無視(一覧の値で続行) */
+      }
+    }
+    return contacts
   }
   const sendEmailNow = async () => {
     if (!emailDoc?.document_number) return
@@ -243,6 +263,7 @@ export function IssueDetailPage() {
   const [csEmail, setCsEmail] = React.useState("")
   const [csVendorCode, setCsVendorCode] = React.useState("")
   const [csContactIdx, setCsContactIdx] = React.useState(0)
+  const [csContacts, setCsContacts] = React.useState<any[]>([])
   const [csInternal, setCsInternal] = React.useState<
     { name: string; email: string; role?: string }[]
   >([])
@@ -266,6 +287,7 @@ export function IssueDetailPage() {
     setCsEmail("")
     setCsVendorCode("")
     setCsContactIdx(0)
+    setCsContacts([])
     setCsInternal([])
     setCsRelay("internal_first")
     setCsLang("ja")
@@ -603,53 +625,50 @@ export function IssueDetailPage() {
               <VendorSearchSelect
                 vendors={vendors}
                 selectedCode={csVendorCode}
-                onSelect={(v) => {
+                onSelect={async (v) => {
                   if (!v) {
                     setCsVendorCode("")
+                    setCsContacts([])
                     return
                   }
                   setCsVendorCode(v.vendor_code || "")
-                  const contacts = Array.isArray(v.contacts) ? v.contacts : []
+                  const contacts = await loadVendorContacts(v)
+                  setCsContacts(contacts)
                   const idx = primaryContactIdx(contacts)
                   setCsContactIdx(idx)
                   const c = contacts[idx]
                   setCsName(c?.contact_name || v.contact_name || v.vendor_rep || v.vendor_name || "")
-                  setCsEmail(c?.email || v.email || "")
+                  setCsEmail(c?.email || contacts.find((x: any) => x?.email)?.email || v.email || "")
                 }}
                 placeholder="取引先を検索 (コード / 名称 / 屋号)"
               />
             </div>
-            {(() => {
-              const cv = vendors.find((x: any) => x.vendor_code === csVendorCode)
-              const contacts: any[] = Array.isArray(cv?.contacts) ? cv!.contacts : []
-              if (contacts.length < 1) return null
-              return (
-                <div className="space-y-1">
-                  <Label className="text-xs">担当者（連絡先）を選択</Label>
-                  <NativeSelect
-                    value={String(csContactIdx)}
-                    onChange={(e) => {
-                      const i = Number(e.target.value)
-                      setCsContactIdx(i)
-                      const c = contacts[i]
-                      if (c) {
-                        setCsName(c.contact_name || "")
-                        setCsEmail(c.email || "")
-                      }
-                    }}
-                  >
-                    {contacts.map((c, i) => (
-                      <option key={i} value={i}>
-                        {(c.contact_name || "（氏名なし）") +
-                          (c.title ? `（${c.title}）` : "") +
-                          (c.email ? ` <${c.email}>` : "") +
-                          (c.is_primary ? " ★主担当" : "")}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </div>
-              )
-            })()}
+            {csContacts.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-xs">担当者（連絡先）を選択</Label>
+                <NativeSelect
+                  value={String(csContactIdx)}
+                  onChange={(e) => {
+                    const i = Number(e.target.value)
+                    setCsContactIdx(i)
+                    const c = csContacts[i]
+                    if (c) {
+                      setCsName(c.contact_name || "")
+                      setCsEmail(c.email || "")
+                    }
+                  }}
+                >
+                  {csContacts.map((c, i) => (
+                    <option key={i} value={i}>
+                      {(c.contact_name || "（氏名なし）") +
+                        (c.title ? `（${c.title}）` : "") +
+                        (c.email ? ` <${c.email}>` : "") +
+                        (c.is_primary ? " ★主担当" : "")}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-xs">取引先 署名者 氏名（任意）</Label>
               <Input value={csName} onChange={(e) => setCsName(e.target.value)} placeholder="山田 太郎" />
@@ -849,47 +868,46 @@ export function IssueDetailPage() {
               <VendorSearchSelect
                 vendors={vendors}
                 selectedCode={emailVendorCode}
-                onSelect={(v) => {
+                onSelect={async (v) => {
                   if (!v) {
                     setEmailVendorCode("")
+                    setEmailContacts([])
                     return
                   }
                   setEmailVendorCode(v.vendor_code || "")
-                  const contacts = Array.isArray(v.contacts) ? v.contacts : []
+                  const contacts = await loadVendorContacts(v)
+                  setEmailContacts(contacts)
                   const idx = primaryContactIdx(contacts)
                   setEmailContactIdx(idx)
-                  setEmailTo(contacts[idx]?.email || v.email || "")
+                  setEmailTo(
+                    contacts[idx]?.email || contacts.find((x: any) => x?.email)?.email || v.email || ""
+                  )
                 }}
                 placeholder="取引先を検索 (コード / 名称 / 屋号)"
               />
             </div>
-            {(() => {
-              const ev = vendors.find((x: any) => x.vendor_code === emailVendorCode)
-              const contacts: any[] = Array.isArray(ev?.contacts) ? ev!.contacts : []
-              if (contacts.length < 1) return null
-              return (
-                <div className="space-y-1">
-                  <Label className="text-[11px]">担当者（連絡先）を選択</Label>
-                  <NativeSelect
-                    value={String(emailContactIdx)}
-                    onChange={(e) => {
-                      const i = Number(e.target.value)
-                      setEmailContactIdx(i)
-                      if (contacts[i]?.email) setEmailTo(contacts[i].email)
-                    }}
-                  >
-                    {contacts.map((c, i) => (
-                      <option key={i} value={i}>
-                        {(c.contact_name || "（氏名なし）") +
-                          (c.title ? `（${c.title}）` : "") +
-                          (c.email ? ` <${c.email}>` : "") +
-                          (c.is_primary ? " ★主担当" : "")}
-                      </option>
-                    ))}
-                  </NativeSelect>
-                </div>
-              )
-            })()}
+            {emailContacts.length > 0 && (
+              <div className="space-y-1">
+                <Label className="text-[11px]">担当者（連絡先）を選択</Label>
+                <NativeSelect
+                  value={String(emailContactIdx)}
+                  onChange={(e) => {
+                    const i = Number(e.target.value)
+                    setEmailContactIdx(i)
+                    if (emailContacts[i]?.email) setEmailTo(emailContacts[i].email)
+                  }}
+                >
+                  {emailContacts.map((c, i) => (
+                    <option key={i} value={i}>
+                      {(c.contact_name || "（氏名なし）") +
+                        (c.title ? `（${c.title}）` : "") +
+                        (c.email ? ` <${c.email}>` : "") +
+                        (c.is_primary ? " ★主担当" : "")}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </div>
+            )}
             <div className="space-y-1">
               <Label className="text-[11px]">送信先（空欄なら取引先の主担当・複数可カンマ区切り）</Label>
               <Input
@@ -900,6 +918,15 @@ export function IssueDetailPage() {
             </div>
             <div className="space-y-1">
               <Label className="text-[11px]">CC（複数可・カンマ区切り。設定の既定CCにも追加されます）</Label>
+              <StaffPicker
+                staff={staffList as any}
+                placeholder="スタッフを検索して CC に追加（氏名 / メール / 部署）"
+                onPick={(s) => {
+                  if (!s.email) return
+                  const cur = emailCc.split(",").map((x) => x.trim()).filter(Boolean)
+                  if (!cur.includes(s.email)) setEmailCc([...cur, s.email].join(", "))
+                }}
+              />
               <Input
                 value={emailCc}
                 onChange={(e) => setEmailCc(e.target.value)}
