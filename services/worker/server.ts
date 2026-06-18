@@ -507,6 +507,57 @@ async function startServer() {
     }
   });
 
+  // CloudSign 応答から日時を取り出す(キー名の表記揺れに耐えるよう複数候補を試す)。
+  const pickCsDate = (obj: any, keys: string[]): Date | null => {
+    for (const k of keys) {
+      const v = obj?.[k];
+      if (v) {
+        const d = new Date(v);
+        if (!isNaN(d.getTime())) return d;
+      }
+    }
+    return null;
+  };
+
+  // CloudSign の getDocument 応答を cloudsign_requests に反映する共通処理。
+  //   sent_at / completed_at は CloudSign の実日時(updatedAt/createdAt)を採用し、
+  //   取れない場合のみ now() にフォールバック(過去書類でも正しい日時で履歴化できる)。
+  //   既に値があるカラムは上書きしない(冪等)。
+  const applyCloudSignDocStatus = async (reqRow: any, doc: any) => {
+    const statusNum = Number(doc?.status);
+    const isCompleted = statusNum === 2;
+    const isDeclined = statusNum === 3;
+    const newStatus = isCompleted
+      ? "completed"
+      : isDeclined
+      ? "declined"
+      : statusNum === 1
+      ? "sent"
+      : reqRow.status;
+    const wasSent = statusNum === 1 || isCompleted;
+    const updatedTs = pickCsDate(doc, ["updatedAt", "updated_at", "updateDate", "updatedDate"]);
+    const createdTs = pickCsDate(doc, ["createdAt", "created_at", "createDate", "createdDate"]);
+    const completedTs = updatedTs || new Date();
+    const sentTs = (statusNum === 1 ? updatedTs : createdTs || updatedTs) || new Date();
+    await query(
+      `UPDATE cloudsign_requests
+          SET status=$2,
+              sent_at = CASE WHEN $4 AND sent_at IS NULL THEN $5 ELSE sent_at END,
+              completed_at = CASE WHEN $3 AND completed_at IS NULL THEN $6 ELSE completed_at END,
+              updated_at=now()
+        WHERE id=$1`,
+      [reqRow.id, newStatus, isCompleted, wasSent, sentTs, completedTs]
+    );
+    if (isCompleted && reqRow.capability_id) {
+      await query(
+        `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
+        [reqRow.capability_id]
+      );
+    }
+    const changed = newStatus !== reqRow.status || (wasSent && !reqRow.sent_at) || (isCompleted && !reqRow.completed_at);
+    return { status: newStatus, statusNum, changed };
+  };
+
   // 手動ステータス同期: CloudSign から書類の現在状態(status)を取得して反映する。
   //   webhook が飛ばない/取りこぼした場合でも、署名済みなら締結を確実に反映できる。
   //   (status: 1=先方確認中 / 2=締結済 / 3=取消・却下)
@@ -525,39 +576,52 @@ async function startServer() {
       const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
       const doc = await cloudSign.getDocument(reqRow.cloudsign_document_id);
 
-      const statusNum = Number(doc?.status);
-      const isCompleted = statusNum === 2;
-      const isDeclined = statusNum === 3;
-      const newStatus = isCompleted
-        ? "completed"
-        : isDeclined
-        ? "declined"
-        : statusNum === 1
-        ? "sent"
-        : reqRow.status;
-
-      // ①: 先方確認中(1)/締結済(2) は実送信済み。下書き運用で sent_at が未設定なら補完。
-      const wasSent = statusNum === 1 || isCompleted;
-      await query(
-        `UPDATE cloudsign_requests
-            SET status=$2,
-                sent_at = CASE WHEN $4 AND sent_at IS NULL THEN now() ELSE sent_at END,
-                completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
-          WHERE id=$1`,
-        [reqRow.id, newStatus, isCompleted, wasSent]
-      );
-      if (isCompleted && reqRow.capability_id) {
-        await query(
-          `UPDATE contract_capabilities SET contract_status='executed', updated_at=CURRENT_TIMESTAMP WHERE id=$1`,
-          [reqRow.capability_id]
-        );
-      }
-      res.json({ ok: true, id: reqRow.id, cloudsign_status: doc?.status, status: newStatus });
+      const result = await applyCloudSignDocStatus(reqRow, doc);
+      res.json({ ok: true, id: reqRow.id, cloudsign_status: doc?.status, status: result.status });
     } catch (e: any) {
       console.error("[cloudsign sync] failed:", e?.message || e);
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
+
+  // 一括ステータス同期: cloudsign_document_id を持つ未確定レコードをまとめて CloudSign へ
+  //   問い合わせ、送信日時/締結日時を取り込む(既存の送信済データに履歴を後付けする用)。
+  //   token レート保護のため逐次処理し、上限件数を設ける。
+  app.post("/api/cloudsign/sync-all", express.json(), async (req, res) => {
+    try {
+      const cfg = await loadCloudSignCfg();
+      if (!cfg.clientId) return res.status(400).json({ ok: false, error: "client_id 未設定" });
+      const limit = Math.min(Math.max(Number(req.body?.limit) || 300, 1), 1000);
+      // 未確定 or 送信日時が未取得のレコードを対象(締結済/却下で日時も揃っていれば除外)。
+      const rows = (await query(
+        `SELECT * FROM cloudsign_requests
+          WHERE cloudsign_document_id IS NOT NULL
+            AND (status NOT IN ('completed','declined') OR sent_at IS NULL OR completed_at IS NULL)
+          ORDER BY created_at DESC
+          LIMIT $1`,
+        [limit]
+      )).rows;
+      const cloudSign = new CloudSignService({ baseUrl: cfg.baseUrl, clientId: cfg.clientId });
+      let checked = 0, updated = 0, failed = 0;
+      const errors: string[] = [];
+      for (const reqRow of rows) {
+        checked++;
+        try {
+          const doc = await cloudSign.getDocument(reqRow.cloudsign_document_id);
+          const result = await applyCloudSignDocStatus(reqRow, doc);
+          if (result.changed) updated++;
+        } catch (e: any) {
+          failed++;
+          if (errors.length < 5) errors.push(`#${reqRow.id}: ${String(e?.message || e).slice(0, 200)}`);
+        }
+      }
+      res.json({ ok: true, checked, updated, failed, errors });
+    } catch (e: any) {
+      console.error("[cloudsign sync-all] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
 
   // 修復ツール: 上書き事故で「検収書(inspection_certificate)だが発注書番号」になった文書を
   //   検収書として再採番(ARC-INS-…)し、紐づく条件明細を検収済(inspection イベント=金額分)にする。
