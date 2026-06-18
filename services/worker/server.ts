@@ -536,11 +536,15 @@ async function startServer() {
         ? "sent"
         : reqRow.status;
 
+      // ①: 先方確認中(1)/締結済(2) は実送信済み。下書き運用で sent_at が未設定なら補完。
+      const wasSent = statusNum === 1 || isCompleted;
       await query(
         `UPDATE cloudsign_requests
-            SET status=$2, completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
+            SET status=$2,
+                sent_at = CASE WHEN $4 AND sent_at IS NULL THEN now() ELSE sent_at END,
+                completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
           WHERE id=$1`,
-        [reqRow.id, newStatus, isCompleted]
+        [reqRow.id, newStatus, isCompleted, wasSent]
       );
       if (isCompleted && reqRow.capability_id) {
         await query(
@@ -1169,11 +1173,17 @@ async function startServer() {
         ? "sent"
         : reqRow.status;
 
+      // ①: 下書き運用では worker が sent_at を入れない(実送信は CloudSign 上で人が確定)。
+      //   「先方確認中(1)」「締結済(2)」の webhook は実際に送信済みを意味するので、
+      //   sent_at が未設定なら now() で補完し、送信履歴に反映されるようにする。
+      const wasSent = statusNum === 1 || isCompleted;
       await query(
         `UPDATE cloudsign_requests
-            SET status=$2, completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
+            SET status=$2,
+                sent_at = CASE WHEN $4 AND sent_at IS NULL THEN now() ELSE sent_at END,
+                completed_at = CASE WHEN $3 THEN now() ELSE completed_at END, updated_at=now()
           WHERE id=$1`,
-        [reqRow.id, newStatus, isCompleted]
+        [reqRow.id, newStatus, isCompleted, wasSent]
       );
 
       if (isCompleted && reqRow.capability_id) {
@@ -11133,6 +11143,9 @@ ${details}
                      AND d.email_to IS NOT NULL AND d.email_to <> '') AS email_to,
                  (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
                    WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
+                 (SELECT MAX(cr.created_at) FROM cloudsign_requests cr
+                   WHERE cr.document_number = cc.document_number AND cr.status = 'draft'
+                     AND cr.sent_at IS NULL) AS cloudsign_draft_at,
                  (SELECT d.document_number FROM condition_events ce
                     JOIN documents d ON d.id = ce.document_id
                    WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
@@ -11153,6 +11166,8 @@ ${details}
               r.email_to = s.email_to || null;
               r.cloudsign_sent_at = s.cloudsign_sent_at || null;
               r.send_doc_number = s.send_doc_number || null;
+              // ②: 未送信の下書き作成日時(下書保存運用で「送信準備中」を可視化)。
+              r.cloudsign_draft_at = s.cloudsign_draft_at || null;
               // 表示用の代表値(メール優先 → CloudSign)。
               r.sent_at = s.email_sent_at || s.cloudsign_sent_at || null;
               r.sent_channel = s.email_sent_at ? "メール" : s.cloudsign_sent_at ? "CloudSign" : null;
