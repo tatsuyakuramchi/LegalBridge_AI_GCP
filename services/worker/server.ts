@@ -378,7 +378,7 @@ async function startServer() {
   };
   const loadEmailCfg = async () => {
     const keys = [
-      "EMAIL_ENABLED", "EMAIL_SENDER", "EMAIL_ALLOWED_RECIPIENTS",
+      "EMAIL_ENABLED", "EMAIL_SENDER", "EMAIL_ALLOWED_RECIPIENTS", "EMAIL_CC",
       "email_subject_inspection", "email_body_inspection",
       "email_subject_royalty", "email_body_royalty",
     ];
@@ -397,6 +397,9 @@ async function startServer() {
       sender: String(get("EMAIL_SENDER") || ""),
       allow: String(get("EMAIL_ALLOWED_RECIPIENTS") || "")
         .split(",").map((s) => s.trim().toLowerCase()).filter(Boolean),
+      // 既定 CC 送信先(設定画面で複数指定可・カンマ区切り)。
+      cc: String(get("EMAIL_CC") || "")
+        .split(",").map((s) => s.trim()).filter(Boolean),
       tpl: {
         inspection: {
           subject: String(get("email_subject_inspection") || "") || DEFAULT_EMAIL_TPL.inspection.subject,
@@ -797,9 +800,13 @@ async function startServer() {
       to = to.filter(Boolean);
       if (!to.length)
         return res.status(400).json({ ok: false, error: "宛先メールがありません(取引先の主担当が未設定)" });
-      const cc: string[] = Array.isArray(req.body?.cc)
+      // CC: 設定の既定 CC(EMAIL_CC) + body.cc をマージして重複除去。
+      const bodyCc: string[] = Array.isArray(req.body?.cc)
         ? req.body.cc.map((s: any) => String(s).trim()).filter(Boolean)
         : [];
+      const cc: string[] = Array.from(
+        new Set([...cfg.cc, ...bodyCc].map((s) => s.trim()).filter(Boolean))
+      ).filter((e) => !to.includes(e)); // 宛先と重複する CC は除外
 
       // テストガード: allowlist 設定時は全宛先がその集合内であること。
       if (cfg.allow.length) {
@@ -11079,7 +11086,52 @@ ${details}
             ORDER BY cl.line_code NULLS LAST, cl.id`,
           params
         );
-        res.json(result.rows);
+        const rows = result.rows;
+        // 送信履歴(メール / CloudSign)を別クエリで付与。失敗してもリストは返す
+        //   (列・テーブル未整備でも本体一覧を壊さないため try/catch で分離)。
+        try {
+          const ids = rows.map((r: any) => r.id).filter((n: any) => Number.isFinite(n));
+          if (ids.length) {
+            const send = await query(
+              `SELECT cl.id,
+                 (SELECT MAX(d.email_sent_at) FROM condition_events ce
+                    JOIN documents d ON d.id = ce.document_id
+                   WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL) AS email_sent_at,
+                 (SELECT string_agg(DISTINCT d.email_to, ', ') FROM condition_events ce
+                    JOIN documents d ON d.id = ce.document_id
+                   WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                     AND d.email_to IS NOT NULL AND d.email_to <> '') AS email_to,
+                 (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
+                   WHERE cr.document_number = cc.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at,
+                 (SELECT d.document_number FROM condition_events ce
+                    JOIN documents d ON d.id = ce.document_id
+                   WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                     AND (d.template_type ILIKE 'inspection%'
+                          OR d.template_type IN ('royalty_statement','license_calculation_sheet'))
+                   ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
+                   LIMIT 1) AS send_doc_number
+                 FROM condition_lines cl
+                 LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+                WHERE cl.id = ANY($1::int[])`,
+              [ids]
+            );
+            const m = new Map<number, any>(send.rows.map((r: any) => [Number(r.id), r]));
+            for (const r of rows) {
+              const s = m.get(Number(r.id));
+              if (!s) continue;
+              r.email_sent_at = s.email_sent_at || null;
+              r.email_to = s.email_to || null;
+              r.cloudsign_sent_at = s.cloudsign_sent_at || null;
+              r.send_doc_number = s.send_doc_number || null;
+              // 表示用の代表値(メール優先 → CloudSign)。
+              r.sent_at = s.email_sent_at || s.cloudsign_sent_at || null;
+              r.sent_channel = s.email_sent_at ? "メール" : s.cloudsign_sent_at ? "CloudSign" : null;
+            }
+          }
+        } catch (enrichErr: any) {
+          console.warn("[/api/condition-lines] 送信履歴の付与に失敗:", enrichErr?.message || enrichErr);
+        }
+        res.json(rows);
       } catch (err: any) {
         if (err && (err.code === "42P01" || err.code === "42703")) {
           console.warn("[/api/condition-lines] 新スキーマ未適用 — 空配列で返却");
@@ -11124,7 +11176,10 @@ ${details}
           `SELECT e.id, e.event_no, e.event_type, e.occurred_at, e.period,
                   e.amount_ex_tax, e.voided_at, e.void_reason, e.backlog_issue_key,
                   e.installment_id,
-                  d.document_number, d.lifecycle_status, d.drive_link, d.issue_key
+                  d.document_number, d.lifecycle_status, d.drive_link, d.issue_key,
+                  d.email_sent_at, d.email_to,
+                  (SELECT MAX(cr.sent_at) FROM cloudsign_requests cr
+                    WHERE cr.document_number = d.document_number AND cr.sent_at IS NOT NULL) AS cloudsign_sent_at
              FROM condition_events e
              LEFT JOIN documents d ON d.id = e.document_id
             WHERE e.condition_line_id = $1
@@ -11426,7 +11481,7 @@ ${details}
       0
     );
 
-    // 検収単体の税 (手数料が無いときの「今回検収金額(税込)」用)
+    // 検収単体の税 (手数料が無いときの「源泉徴収税計算前　検収金額(税込)」用)
     const deliveryTaxOnly = Math.ceil((deliveredExTax * taxRate) / 100);
     const deliveryTotalIncTax = deliveredExTax + deliveryTaxOnly;
 

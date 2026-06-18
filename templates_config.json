@@ -167,6 +167,7 @@
     "vars": {
       "CONTRACT_NO": { "label": "\u5951\u7d04\u756a\u53f7", "type": "text", "group": "I. \u5951\u7d04\u7de0\u7d50\u65e5", "dbField": "auto.docNumber", "helpText": "\u751f\u6210\u6642\u306b\u81ea\u52d5\u63a1\u756a\u3055\u308c\u307e\u3059" },
       "CONTRACT_DATE": { "label": "契約締結日", "type": "date", "group": "I. 契約締結日", "required": true },
+      "CONTRACT_START_DATE": { "label": "契約開始日", "type": "date", "group": "I. 契約締結日", "required": true, "helpText": "頭書の契約期間と第14条に反映されます（同日から1年間）" },
 
       "PARTY_A_NAME": { "label": "甲 (委託者) 商号", "group": "II. 甲 (委託者)", "required": true, "helpText": "[自社] または [取引先] ボタンで自動入力" },
       "PARTY_A_ADDRESS": { "label": "甲 (委託者) 住所", "group": "II. 甲 (委託者)", "type": "textarea", "required": true },
