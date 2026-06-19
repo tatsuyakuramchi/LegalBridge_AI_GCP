@@ -15,6 +15,8 @@ type ConditionLine = {
   line_code: string | null
   subject: string | null
   payment_scheme: string
+  // 取引種別(統合Phase3): license=利用許諾 / product=物販 / service=委託
+  transaction_kind: string | null
   direction: string
   status: string | null
   consumed_amount: number | null
@@ -70,6 +72,22 @@ function StatusBadge({ status }: { status: string | null }) {
   return (
     <Badge variant={cls ? "default" : "outline"} className={cls}>
       {STATUS_LABEL[s] || s}
+    </Badge>
+  )
+}
+
+// 取引種別バッジ(統合Phase3): license=利用許諾 / product=物販 / service=委託
+const KIND_META: Record<string, { label: string; cls: string }> = {
+  license: { label: "利用許諾", cls: "border-sky-300 text-sky-700" },
+  product: { label: "物販", cls: "border-violet-300 text-violet-700" },
+  service: { label: "委託", cls: "border-amber-300 text-amber-700" },
+}
+function KindBadge({ kind }: { kind: string }) {
+  const m = KIND_META[kind]
+  if (!m) return <span className="text-[10px] text-muted-foreground">{kind}</span>
+  return (
+    <Badge variant="outline" className={m.cls}>
+      {m.label}
     </Badge>
   )
 }
@@ -445,7 +463,10 @@ export function ConditionLinesPage() {
                       <div className="text-[10px] truncate">{r.contract_number}</div>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2">{r.payment_scheme}</td>
+                  <td className="px-3 py-2">
+                    {r.transaction_kind ? <KindBadge kind={r.transaction_kind} /> : null}
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{r.payment_scheme}</div>
+                  </td>
                   <td className="px-3 py-2">{r.direction === "receivable" ? "受取" : "支払"}</td>
                   <td className="px-3 py-2"><StatusBadge status={r.status} /></td>
                   <td className="px-3 py-2 text-muted-foreground max-w-[160px]">

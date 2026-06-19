@@ -11630,6 +11630,7 @@ ${details}
       try {
         const result = await query(
           `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.direction,
+                  cl.transaction_kind,
                   cl.rights_attribution, cl.capability_id, cl.amount_ex_tax, cl.currency,
                   cl.delivery_date, cl.term_start, cl.term_end,
                   s.status, s.consumed_amount, s.remaining_amount, s.event_count,
