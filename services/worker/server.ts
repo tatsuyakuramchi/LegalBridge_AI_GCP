@@ -705,6 +705,105 @@ async function startServer() {
     }
   });
 
+  // ── A+C: 検収待ち / 期限超過のダイジェスト ───────────────────────────
+  //   検収書の自動課題を廃した代わりに、未検収(検収書未発行)の支払明細を
+  //   発注書(PO)単位でまとめて取得する。GET=一覧取得 / POST=Slack 日次通知。
+  async function loadInspectionPending() {
+    const r = await query(
+      `SELECT cc.id AS po_id, cc.document_number AS po_number, cc.contract_title,
+              v.vendor_name,
+              cl.id AS line_id, cl.line_code, cl.subject, cl.delivery_date, cl.amount_ex_tax,
+              (cl.delivery_date IS NOT NULL AND cl.delivery_date <= CURRENT_DATE) AS overdue
+         FROM condition_lines cl
+         JOIN condition_line_status_v s ON s.id = cl.id
+         LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+         LEFT JOIN vendors v ON v.id = cc.vendor_id
+        WHERE s.status IN ('open','partially_fulfilled')
+          AND cl.payment_scheme IN ('lump_sum','per_unit','installment')
+          AND NOT EXISTS (
+            SELECT 1 FROM condition_events ce
+             WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+               AND ce.event_type = 'inspection')
+          AND COALESCE(cc.is_primary, TRUE) = TRUE
+          AND COALESCE(cc.lifecycle_status, 'final') = 'final'
+        ORDER BY overdue DESC, cl.delivery_date ASC NULLS LAST, cc.document_number`
+    );
+    return r.rows;
+  }
+
+  app.get("/api/management/inspection-pending", async (_req, res) => {
+    try {
+      const rows = await loadInspectionPending();
+      const overdue = rows.filter((r: any) => r.overdue).length;
+      res.json({ ok: true, total: rows.length, overdue, rows });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post("/api/management/inspection-digest", express.json(), async (req, res) => {
+    try {
+      if (!slackWebClient) return res.status(400).json({ ok: false, error: "Slack 未設定(SLACK_BOT_TOKEN)" });
+      // 通知先: body.channel > app_settings.SLACK_INSPECTION_DIGEST_CHANNEL > env。
+      let channel = String(req.body?.channel || "").trim();
+      if (!channel) {
+        try {
+          const s = await query(`SELECT value FROM app_settings WHERE key = 'SLACK_INSPECTION_DIGEST_CHANNEL'`);
+          let v: any = s.rows[0]?.value;
+          if (v != null) { try { v = JSON.parse(v); } catch { /* str */ } }
+          channel = String(v || process.env.SLACK_INSPECTION_DIGEST_CHANNEL || "").trim();
+        } catch {
+          channel = String(process.env.SLACK_INSPECTION_DIGEST_CHANNEL || "").trim();
+        }
+      }
+      if (!channel) return res.status(400).json({ ok: false, error: "通知先チャンネル未設定(SLACK_INSPECTION_DIGEST_CHANNEL)" });
+
+      const rows = await loadInspectionPending();
+      const overdueRows = rows.filter((r: any) => r.overdue);
+      const today = new Date().toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" });
+      const yen = (v: any) => (v == null ? "" : `¥${Number(v).toLocaleString("ja-JP")}`);
+      const fmtDate = (d: any) => (d ? String(d).slice(0, 10) : "—");
+
+      // PO 単位にグループ化(超過を優先表示)。
+      const byPo = new Map<string, { po: string; title: string; vendor: string; lines: any[] }>();
+      for (const r of rows) {
+        const key = r.po_number || `cap-${r.po_id}`;
+        if (!byPo.has(key)) byPo.set(key, { po: r.po_number || "(契約番号なし)", title: r.contract_title || "", vendor: r.vendor_name || "", lines: [] });
+        byPo.get(key)!.lines.push(r);
+      }
+      // 超過を含む PO を先に並べる。
+      const groups = Array.from(byPo.values()).sort((a, b) => {
+        const ao = a.lines.some((l) => l.overdue) ? 0 : 1;
+        const bo = b.lines.some((l) => l.overdue) ? 0 : 1;
+        return ao - bo;
+      });
+
+      const lines: string[] = [];
+      lines.push(`📋 *検収待ちダイジェスト* (${today})`);
+      lines.push(`検収待ち: *${rows.length}件* ／ うち期限超過: *${overdueRows.length}件*`);
+      if (rows.length === 0) lines.push("✅ 検収待ちはありません。");
+      let shown = 0;
+      const MAX = 40;
+      for (const g of groups) {
+        if (shown >= MAX) { lines.push(`…ほか ${rows.length - shown} 件`); break; }
+        const hasOver = g.lines.some((l) => l.overdue);
+        lines.push(`\n${hasOver ? "🔴" : "🟡"} *[${g.po}]* ${g.vendor}${g.title ? ` — ${g.title}` : ""}（${g.lines.length}件）`);
+        for (const l of g.lines) {
+          if (shown >= MAX) break;
+          const flag = l.overdue ? "⏰超過 " : "";
+          lines.push(`   • ${flag}${l.subject || l.line_code || ""} (納期 ${fmtDate(l.delivery_date)}${l.amount_ex_tax != null ? `, ${yen(l.amount_ex_tax)}` : ""})`);
+          shown++;
+        }
+      }
+      const text = lines.join("\n");
+      await slackWebClient.chat.postMessage({ channel, text });
+      res.json({ ok: true, total: rows.length, overdue: overdueRows.length, channel });
+    } catch (e: any) {
+      console.error("[inspection-digest] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
 
   // 修復ツール: 上書き事故で「検収書(inspection_certificate)だが発注書番号」になった文書を
   //   検収書として再採番(ARC-INS-…)し、紐づく条件明細を検収済(inspection イベント=金額分)にする。
@@ -1627,6 +1726,32 @@ async function startServer() {
       console.log(
         `🔗 [auto-chain] matched rule: ${rule.parentRequestType} → ${rule.childRequestType} (${rule.childIssueTypeName})`
       );
+
+      // A+C 運用: 発注書→検収(delivery_inspec) の子課題自動生成は既定で停止する。
+      //   検収は「検収待ち」ビュー + 期限超過アラートで管理し、課題の乱立を防ぐ。
+      //   AUTO_CHAIN_INSPECTION_ENABLED=true(app_settings or env) で従来どおり
+      //   子課題を生成する(可逆)。利用許諾計算(license_calc)はこの停止の対象外。
+      if (rule.childRequestType === "delivery_inspec") {
+        let enabled = false;
+        try {
+          const r = await query(
+            `SELECT value FROM app_settings WHERE key = 'AUTO_CHAIN_INSPECTION_ENABLED'`
+          );
+          let v: any = r.rows[0]?.value;
+          if (v != null) { try { v = JSON.parse(v); } catch { /* 文字列のまま */ } }
+          else v = process.env.AUTO_CHAIN_INSPECTION_ENABLED;
+          enabled = String(v).toLowerCase() === "true";
+        } catch {
+          enabled = String(process.env.AUTO_CHAIN_INSPECTION_ENABLED || "").toLowerCase() === "true";
+        }
+        if (!enabled) {
+          console.log(
+            `🔗 [auto-chain] SKIP(検収): inspection auto-chain disabled (A+C 運用)。` +
+              `検収待ちビュー/アラートで管理。AUTO_CHAIN_INSPECTION_ENABLED=true で再有効化可。`
+          );
+          return;
+        }
+      }
 
       // 既に同型の子課題があれば skip (二重生成防止)
       let existingChildren: any[] = [];
@@ -11330,13 +11455,19 @@ ${details}
                      AND (d.template_type ILIKE 'inspection%'
                           OR d.template_type IN ('royalty_statement','license_calculation_sheet'))
                    ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
-                   LIMIT 1) AS send_doc_number
+                   LIMIT 1) AS send_doc_number,
+                 (SELECT COUNT(*)::int FROM condition_events ce
+                    JOIN documents d ON d.id = ce.document_id
+                   WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                     AND ce.event_type = 'inspection') AS inspection_event_count
                  FROM condition_lines cl
                  LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
                 WHERE cl.id = ANY($1::int[])`,
               [ids]
             );
             const m = new Map<number, any>(send.rows.map((r: any) => [Number(r.id), r]));
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
             for (const r of rows) {
               const s = m.get(Number(r.id));
               if (!s) continue;
@@ -11351,6 +11482,16 @@ ${details}
               // 表示用の代表値(メール優先 → CloudSign)。
               r.sent_at = s.email_sent_at || s.cloudsign_sent_at || null;
               r.sent_channel = s.email_sent_at ? "メール" : s.cloudsign_sent_at ? "CloudSign" : null;
+              // A+C: 検収待ち / 期限超過(検収書の自動課題を廃し、ここで可視化)。
+              //   対象: 検収を要する支払明細(一括/従量/分割)で、未成就かつ
+              //   inspection イベントが無いもの。利用許諾(royalty)等は計算書管理なので対象外。
+              const needsInspection = ["lump_sum", "per_unit", "installment"].includes(
+                String(r.payment_scheme || "")
+              );
+              const unfulfilled = r.status === "open" || r.status === "partially_fulfilled";
+              r.inspection_pending = needsInspection && unfulfilled && Number(s.inspection_event_count || 0) === 0;
+              r.inspection_overdue =
+                r.inspection_pending && !!r.delivery_date && new Date(r.delivery_date) <= today;
             }
           }
         } catch (enrichErr: any) {
