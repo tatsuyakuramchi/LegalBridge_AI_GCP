@@ -21,6 +21,7 @@ import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ReceivableMapPanel } from "./pages/master/ReceivableMapPanel" // 統合 P3-4
 import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
+import { WorkGraphPanel } from "./pages/master/WorkGraphPanel" // 統合 Phase3c
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
 import { ExcelBatchPage } from "./pages/ExcelBatchPage"
@@ -59,6 +60,7 @@ export default function App() {
                   <Route path="conditions" element={<Navigate to="/condition-lines?tab=search" replace />} />
                   <Route path="receivable-map" element={<ReceivableMapPanel />} />{/* 統合 P3-4 */}
                   <Route path="work-model" element={<WorkModelPanel />} />{/* 統合 P3-5 */}
+                  <Route path="work-graph" element={<WorkGraphPanel />} />{/* 統合 Phase3c: 3カード統合エディタ */}
                   <Route path="staff" element={<StaffPanel />} />
                   <Route path="rules" element={<RulesPanel />} />
                 </Route>

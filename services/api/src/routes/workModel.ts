@@ -130,6 +130,64 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 統合Phase3c: 3カード統合エディタ用の権利フロー(グラフ)を返す。
+  //   中=この作品(own) / 右=原作・素材調達(支払エッジ) / 左=受取(受取エッジ)。
+  app.get("/api/v3/works/:id/graph", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const w = await query(`SELECT * FROM works WHERE id = $1`, [id]);
+      if (w.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      const edgeCols = `cl.id, cl.line_code, cl.subject, cl.transaction_kind, cl.direction,
+                        cl.payment_scheme, cl.amount_ex_tax, cl.rate_pct, cl.mg_amount,
+                        cl.source_work_id, cl.source_material_id, cl.product_id,
+                        cc.document_number, cc.contract_title,
+                        v.vendor_name AS counterparty`;
+      const [products, materials, upstream, downstream] = await Promise.all([
+        query(`SELECT * FROM products WHERE work_id = $1 ORDER BY id`, [id]),
+        query(
+          `SELECT wm.*, v.vendor_name AS rights_holder
+             FROM work_materials wm LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
+            WHERE wm.work_id = $1 ORDER BY wm.material_no NULLS LAST, wm.id`,
+          [id]
+        ),
+        // 右=原作/素材調達(支払エッジ: ライセンスイン原作 / 委託素材)
+        query(
+          `SELECT ${edgeCols},
+                  sw.work_code AS source_work_code, sw.title AS source_work_title,
+                  wm.material_code AS source_material_code, wm.material_name AS source_material_name
+             FROM condition_lines cl
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN works sw ON sw.id = cl.source_work_id
+             LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
+             LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
+            WHERE cl.work_id = $1 AND cl.direction = 'payable'
+            ORDER BY cl.id`,
+          [id]
+        ),
+        // 左=受取(受取エッジ: ライセンスアウト派生物 / 物販アウト)
+        query(
+          `SELECT ${edgeCols},
+                  p.product_code, p.product_name
+             FROM condition_lines cl
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN products p ON p.id = cl.product_id
+             LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
+            WHERE cl.work_id = $1 AND cl.direction = 'receivable'
+            ORDER BY cl.id`,
+          [id]
+        ),
+      ]);
+      res.json({
+        work: w.rows[0],
+        products: products.rows,
+        materials: materials.rows,
+        upstream: upstream.rows,
+        downstream: downstream.rows,
+      });
+    } catch (e) { fail(res, e); }
+  });
+
   // ── 契約(新モデル)────────────────────────────────────────
   app.get("/api/v3/contracts", ...requireRead, async (_req, res) => {
     try {
@@ -709,17 +767,32 @@ export function registerWorkModelRoutes(
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
+      // 統合: 取得経路を推定(明示指定が無ければ rights_type / 発注書紐付けから)。
+      const acq =
+        b.acquisition_type ??
+        (b.service_line_item_id ? "buyout_commission" : b.rights_type === "license" ? "license" : "in_house");
+      // material_no / material_code({work_code}-NNN) を採番して挿入。
       const r = await query(
         `INSERT INTO work_materials (
            work_id, material_name, material_type, rights_type, rights_holder_vendor_id,
            rights_holder_label, is_royalty_bearing, license_condition_id, service_line_item_id,
-           scope, remarks
-         ) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11) RETURNING *`,
+           scope, remarks, acquisition_type, material_no, material_code, is_default
+         )
+         SELECT $1,$2,$3,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11,$12,
+                nextno.n,
+                w.work_code || '-' || lpad(nextno.n::text, 3, '0'),
+                FALSE
+           FROM works w
+           CROSS JOIN LATERAL (
+             SELECT COALESCE(MAX(material_no), 0) + 1 AS n FROM work_materials WHERE work_id = $1
+           ) nextno
+          WHERE w.id = $1
+         RETURNING *`,
         [
           id, b.material_name ?? null, b.material_type ?? null, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, acq,
         ]
       );
       res.status(201).json(r.rows[0]);
