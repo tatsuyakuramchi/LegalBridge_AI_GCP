@@ -6598,6 +6598,24 @@ ${details}
           id,
         ]
       );
+      // 統合Phase3b: works(source) ミラーへ同期(同コードの licensed_in)。
+      try {
+        await query(
+          `UPDATE works w SET
+              title=$1, title_kana=$2, default_rights_holder=$3,
+              default_credit_display=$4, default_work_supplement=$5,
+              default_approval_target=$6, default_approval_timing=$7, updated_at=now()
+             FROM ledgers l
+            WHERE l.id=$8 AND w.kind='licensed_in' AND w.work_code=l.ledger_code`,
+          [
+            body.title, body.title_kana || null, body.default_rights_holder || null,
+            body.default_credit_display || null, body.default_work_supplement || null,
+            body.default_approval_target || null, body.default_approval_timing || null, id,
+          ]
+        );
+      } catch (e: any) {
+        console.warn(`[ledger] works mirror sync (update) failed:`, e?.message || e);
+      }
       res.json({ ok: true });
     } catch (error) {
       console.error("PUT /api/master/ledgers/:id failed:", error);

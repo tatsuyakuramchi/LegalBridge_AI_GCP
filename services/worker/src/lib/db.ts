@@ -2164,6 +2164,45 @@ export async function createLedgerWithDefaultMaterial(payload: {
       payload.default_rights_holder || null,
     ]
   );
+  // 統合Phase3b: 原作の正本 works(source=licensed_in) へ同コードでミラー。
+  //   Ledger と works が乖離しないよう常に同期する(form は当面 ledgers を読むが、
+  //   条件明細/受取マップ/将来の3カードエディタは works を正本として参照できる)。
+  //   ミラー失敗は Ledger 作成を妨げない(best-effort・ログのみ)。
+  try {
+    const wk = await query(
+      `INSERT INTO works (work_code, title, title_kana, alternative_titles, kind, is_original,
+          original_publisher, default_rights_holder, default_credit_display, default_work_supplement,
+          default_approval_target, default_approval_timing, remarks, division, is_active)
+       VALUES ($1,$2,$3,$4,'licensed_in',FALSE,$5,$6,$7,$8,$9,$10,$11,$12,TRUE)
+       ON CONFLICT (work_code) DO UPDATE SET
+          title=EXCLUDED.title, title_kana=EXCLUDED.title_kana,
+          default_rights_holder=EXCLUDED.default_rights_holder,
+          default_credit_display=EXCLUDED.default_credit_display,
+          default_work_supplement=EXCLUDED.default_work_supplement,
+          default_approval_target=EXCLUDED.default_approval_target,
+          default_approval_timing=EXCLUDED.default_approval_timing,
+          updated_at=now()
+       RETURNING id`,
+      [
+        ledgerCode, payload.title, payload.title_kana || null, payload.alternative_titles || [],
+        payload.publisher_name || null, payload.default_rights_holder || null,
+        payload.default_credit_display || null, payload.default_work_supplement || null,
+        payload.default_approval_target || null, payload.default_approval_timing || null,
+        payload.remarks || null, division,
+      ]
+    );
+    const workId = Number(wk.rows[0].id);
+    await query(
+      `INSERT INTO work_materials (work_id, material_name, material_type, rights_holder_label,
+          is_default, material_no, material_code, acquisition_type)
+       VALUES ($1,$2,'original',$3,TRUE,1,$4,'license')
+       ON CONFLICT DO NOTHING`,
+      [workId, payload.title, payload.default_rights_holder || null, defaultMaterialCode]
+    );
+  } catch (e: any) {
+    console.warn(`[ledger] works(source) mirror failed for ${ledgerCode}:`, e?.message || e);
+  }
+
   return {
     id: ledgerId,
     ledger_code: ledgerCode,
