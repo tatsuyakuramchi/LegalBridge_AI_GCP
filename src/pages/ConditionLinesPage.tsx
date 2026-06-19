@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Inbox, Loader2, ArrowRight, Trash2, RefreshCw } from "lucide-react"
+import { Search, Inbox, Loader2, ArrowRight, Trash2, RefreshCw, Bell } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -15,6 +15,8 @@ type ConditionLine = {
   line_code: string | null
   subject: string | null
   payment_scheme: string
+  // 取引種別(統合Phase3): license=利用許諾 / product=物販 / service=委託
+  transaction_kind: string | null
   direction: string
   status: string | null
   consumed_amount: number | null
@@ -40,6 +42,9 @@ type ConditionLine = {
   cloudsign_draft_at: string | null
   // メール送信対象の代表 検収書/計算書 文書番号(無ければ送信不可)。
   send_doc_number: string | null
+  // A+C: 検収待ち / 期限超過(検収書未発行の支払明細)。worker が付与。
+  inspection_pending: boolean | null
+  inspection_overdue: boolean | null
 }
 
 // 一括/従量/分割 は 成就/一部成就/未成就、契約期間型(利用許諾) は 履行中/成就（満了）。
@@ -67,6 +72,22 @@ function StatusBadge({ status }: { status: string | null }) {
   return (
     <Badge variant={cls ? "default" : "outline"} className={cls}>
       {STATUS_LABEL[s] || s}
+    </Badge>
+  )
+}
+
+// 取引種別バッジ(統合Phase3): license=利用許諾 / product=物販 / service=委託
+const KIND_META: Record<string, { label: string; cls: string }> = {
+  license: { label: "利用許諾", cls: "border-sky-300 text-sky-700" },
+  product: { label: "物販", cls: "border-violet-300 text-violet-700" },
+  service: { label: "委託", cls: "border-amber-300 text-amber-700" },
+}
+function KindBadge({ kind }: { kind: string }) {
+  const m = KIND_META[kind]
+  if (!m) return <span className="text-[10px] text-muted-foreground">{kind}</span>
+  return (
+    <Badge variant="outline" className={m.cls}>
+      {m.label}
     </Badge>
   )
 }
@@ -136,12 +157,34 @@ export function ConditionLinesPage() {
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string | null>(null)
   const [dirFilter, setDirFilter] = React.useState<string | null>(null)
+  const [inspectionFilter, setInspectionFilter] = React.useState<"all" | "pending" | "overdue">("all")
   // 列の並び替え(クリックで昇順/降順トグル)。
   const [sort, setSort] = React.useState<{ key: string; dir: 1 | -1 } | null>(null)
   const toggleSort = (key: string) =>
     setSort((s) => (s && s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
 
   const [syncing, setSyncing] = React.useState(false)
+  const [digesting, setDigesting] = React.useState(false)
+
+  // 検収待ち/期限超過を Slack に通知(日次ダイジェスト)。
+  const sendInspectionDigest = async () => {
+    if (digesting) return
+    setDigesting(true)
+    try {
+      const res = await fetch("/api/management/inspection-digest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
+      window.alert(`Slack 通知しました: 検収待ち ${d.total} 件 / 期限超過 ${d.overdue} 件`)
+    } catch (e: any) {
+      window.alert(`Slack 通知に失敗しました: ${e?.message || e}`)
+    } finally {
+      setDigesting(false)
+    }
+  }
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -193,9 +236,21 @@ export function ConditionLinesPage() {
       .sort((a, b) => b.count - a.count)
   }, [rows])
 
+  // A+C: 検収待ち / 期限超過の件数。
+  const inspectionCounts = React.useMemo(() => {
+    let pending = 0, overdue = 0
+    for (const r of rows) {
+      if (r.inspection_pending) pending++
+      if (r.inspection_overdue) overdue++
+    }
+    return { pending, overdue }
+  }, [rows])
+
   const filtered = rows.filter((r) => {
     if (statusFilter && (r.status || "—") !== statusFilter) return false
     if (dirFilter && r.direction !== dirFilter) return false
+    if (inspectionFilter === "pending" && !r.inspection_pending) return false
+    if (inspectionFilter === "overdue" && !r.inspection_overdue) return false
     const q = search.trim().toLowerCase()
     if (q) {
       const hay = `${r.line_code || ""} ${r.subject || ""} ${r.vendor_name || ""} ${r.contract_title || ""}`.toLowerCase()
@@ -290,6 +345,16 @@ export function ConditionLinesPage() {
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "同期中…" : "送信履歴を同期"}
           </button>
+          <button
+            type="button"
+            onClick={sendInspectionDigest}
+            disabled={digesting}
+            title="検収待ち/期限超過の件数を Slack に通知(日次ダイジェスト)"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border text-[11px] font-mono text-muted-foreground hover:border-foreground disabled:opacity-50"
+          >
+            <Bell className={`h-3.5 w-3.5 ${digesting ? "animate-pulse" : ""}`} />
+            {digesting ? "送信中…" : "検収待ちをSlack通知"}
+          </button>
           <div className="relative w-72">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
@@ -334,6 +399,21 @@ export function ConditionLinesPage() {
             {d === "payable" ? "支払" : "受取"}
           </button>
         ))}
+        <span className="text-muted-foreground ml-3">検収:</span>
+        <button
+          type="button"
+          onClick={() => setInspectionFilter(inspectionFilter === "pending" ? "all" : "pending")}
+          className={`px-2 py-1 rounded-sm border ${inspectionFilter === "pending" ? "bg-amber-500 text-white border-amber-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+        >
+          検収待ち ({inspectionCounts.pending})
+        </button>
+        <button
+          type="button"
+          onClick={() => setInspectionFilter(inspectionFilter === "overdue" ? "all" : "overdue")}
+          className={`px-2 py-1 rounded-sm border ${inspectionFilter === "overdue" ? "bg-red-600 text-white border-red-700" : inspectionCounts.overdue > 0 ? "border-red-400 text-red-600 hover:border-red-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+        >
+          期限超過 ({inspectionCounts.overdue})
+        </button>
       </div>
 
       {loading ? (
@@ -383,7 +463,10 @@ export function ConditionLinesPage() {
                       <div className="text-[10px] truncate">{r.contract_number}</div>
                     ) : null}
                   </td>
-                  <td className="px-3 py-2">{r.payment_scheme}</td>
+                  <td className="px-3 py-2">
+                    {r.transaction_kind ? <KindBadge kind={r.transaction_kind} /> : null}
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{r.payment_scheme}</div>
+                  </td>
                   <td className="px-3 py-2">{r.direction === "receivable" ? "受取" : "支払"}</td>
                   <td className="px-3 py-2"><StatusBadge status={r.status} /></td>
                   <td className="px-3 py-2 text-muted-foreground max-w-[160px]">
@@ -394,6 +477,14 @@ export function ConditionLinesPage() {
                           <span className="text-[10px] ml-1">ほか{r.fulfilling_doc_count - 1}件</span>
                         ) : null}
                       </span>
+                    ) : r.inspection_overdue ? (
+                      <Badge variant="outline" className="border-red-400 text-red-600">
+                        検収待ち·超過
+                      </Badge>
+                    ) : r.inspection_pending ? (
+                      <Badge variant="outline" className="border-amber-400 text-amber-700">
+                        検収待ち
+                      </Badge>
                     ) : (
                       "—"
                     )}

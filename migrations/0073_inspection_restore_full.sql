@@ -1,4 +1,20 @@
-<!DOCTYPE html>
+-- 0073_inspection_restore_full.sql
+-- 是正: 0072 の regexp_replace が PostgreSQL の貪欲/非貪欲ルールにより過剰マッチし、
+--   発注情報ボックス以降(みなし同意・連絡先等)まで削除した恐れがある。
+-- regex に頼らず、正しい完全版HTML(明細No.行と発注情報ボックスのみ削除済)で
+--   current_version の html_source を確定的に上書きする。
+WITH t AS (
+  SELECT id, current_version_id FROM document_templates WHERE template_key = 'inspection_certificate'
+),
+cur AS (
+  SELECT v.template_id, v.field_schema
+    FROM document_template_versions v JOIN t ON t.current_version_id = v.id
+),
+nv AS (
+  INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+  SELECT cur.template_id,
+         COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = cur.template_id), 0) + 1,
+         $tpl0073$<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="UTF-8">
@@ -539,3 +555,11 @@
 
 </body>
 </html>
+$tpl0073$,
+         cur.field_schema,
+         '検収書テンプレを完全版で再同期(0072是正) (0073)', 'migration-0073'
+    FROM cur
+  RETURNING id, template_id
+)
+UPDATE document_templates dt SET current_version_id = nv.id, updated_at = now()
+  FROM nv WHERE dt.id = nv.template_id;

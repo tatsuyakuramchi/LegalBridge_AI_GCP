@@ -163,6 +163,7 @@ export async function listConditions(
   //   (condition_line_status_v)、無ければ旧 inspected_amount_ex_tax から導出する。
   const statusCols = `,
        cl.id AS condition_line_id,
+       cl.transaction_kind,
        CASE WHEN cl.id IS NOT NULL THEN COALESCE(sv.status, 'open')
             WHEN COALESCE(cli.amount_ex_tax,0) > 0
                  AND COALESCE(cli.inspected_amount_ex_tax,0) >= cli.amount_ex_tax - 0.5 THEN 'fulfilled'
@@ -281,6 +282,7 @@ export async function listConditions(
     status_flags: normalizeFlags(r.status_flags),
     is_inbound: r.is_inbound === true, // 当社の受領(請求権)明細か(方向out相当)
     flow_direction: r.flow_direction || "", // 'in'(当社支払) / 'out'(当社受領)
+    transaction_kind: r.transaction_kind || "", // license / product / service
     // 成就(fulfillment): 対の成就文書(検収書/利用許諾料計算書)の最新番号 + 件数。
     fulfilling_doc_number: r.fulfilling_doc_number || "",
     fulfilling_doc_count: Number(r.fulfilling_doc_count) || 0,
