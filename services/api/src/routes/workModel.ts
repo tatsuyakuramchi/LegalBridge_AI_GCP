@@ -766,17 +766,32 @@ export function registerWorkModelRoutes(
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
+      // 統合: 取得経路を推定(明示指定が無ければ rights_type / 発注書紐付けから)。
+      const acq =
+        b.acquisition_type ??
+        (b.service_line_item_id ? "buyout_commission" : b.rights_type === "license" ? "license" : "in_house");
+      // material_no / material_code({work_code}-NNN) を採番して挿入。
       const r = await query(
         `INSERT INTO work_materials (
            work_id, material_name, material_type, rights_type, rights_holder_vendor_id,
            rights_holder_label, is_royalty_bearing, license_condition_id, service_line_item_id,
-           scope, remarks
-         ) VALUES ($1,$2,$3,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11) RETURNING *`,
+           scope, remarks, acquisition_type, material_no, material_code, is_default
+         )
+         SELECT $1,$2,$3,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11,$12,
+                nextno.n,
+                w.work_code || '-' || lpad(nextno.n::text, 3, '0'),
+                FALSE
+           FROM works w
+           CROSS JOIN LATERAL (
+             SELECT COALESCE(MAX(material_no), 0) + 1 AS n FROM work_materials WHERE work_id = $1
+           ) nextno
+          WHERE w.id = $1
+         RETURNING *`,
         [
           id, b.material_name ?? null, b.material_type ?? null, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, acq,
         ]
       );
       res.status(201).json(r.rows[0]);

@@ -82,6 +82,44 @@ export function WorkGraphPanel() {
   const [workId, setWorkId] = React.useState<string>("")
   const [graph, setGraph] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(false)
+  // 増分②: 中カードからの素材追加。
+  const [matName, setMatName] = React.useState("")
+  const [matType, setMatType] = React.useState("illustration")
+  const [adding, setAdding] = React.useState(false)
+
+  const loadGraph = React.useCallback(async (id: string) => {
+    if (!id) return
+    setLoading(true)
+    try {
+      const r = await fetch(`/api/v3/works/${encodeURIComponent(id)}/graph`)
+      const d = await r.json()
+      setGraph(d && !d.error ? d : null)
+    } catch {
+      setGraph(null)
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  const addMaterial = async () => {
+    if (!workId || !matName.trim()) return
+    setAdding(true)
+    try {
+      const r = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/materials`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ material_name: matName.trim(), material_type: matType, rights_type: "owned" }),
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setMatName("")
+      await loadGraph(workId)
+    } catch (e) {
+      // 失敗時は静かに(エディタ増分。詳細通知は後続)
+      console.error("addMaterial failed", e)
+    } finally {
+      setAdding(false)
+    }
+  }
 
   React.useEffect(() => {
     fetch("/api/v3/works")
@@ -96,14 +134,8 @@ export function WorkGraphPanel() {
   }, [])
 
   React.useEffect(() => {
-    if (!workId) return
-    setLoading(true)
-    fetch(`/api/v3/works/${encodeURIComponent(workId)}/graph`)
-      .then((r) => r.json())
-      .then((d) => setGraph(d && !d.error ? d : null))
-      .catch(() => setGraph(null))
-      .finally(() => setLoading(false))
-  }, [workId])
+    void loadGraph(workId)
+  }, [workId, loadGraph])
 
   const work = graph?.work
   const upstream: Edge[] = graph?.upstream || []
@@ -172,6 +204,38 @@ export function WorkGraphPanel() {
                   ))}
                 </div>
               )}
+              {/* 増分②: 素材を追加(work_material)。{work_code}-NNN を自動採番。 */}
+              <div className="border-t border-border/60 pt-2 space-y-1.5">
+                <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">素材を追加</div>
+                <div className="flex items-center gap-1.5">
+                  <input
+                    value={matName}
+                    onChange={(e) => setMatName(e.target.value)}
+                    placeholder="素材名 (例: カバーイラスト)"
+                    className="flex-1 text-[11px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+                  />
+                  <select
+                    value={matType}
+                    onChange={(e) => setMatType(e.target.value)}
+                    className="text-[11px] font-mono border-b border-input bg-transparent py-1"
+                  >
+                    <option value="original">原作</option>
+                    <option value="translation">翻訳</option>
+                    <option value="illustration">イラスト</option>
+                    <option value="scenario">シナリオ</option>
+                    <option value="design">デザイン</option>
+                    <option value="music">音楽</option>
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addMaterial}
+                    disabled={adding || !matName.trim()}
+                    className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                  >
+                    {adding ? "追加中…" : "追加"}
+                  </button>
+                </div>
+              </div>
               {products.length > 0 && (
                 <div className="space-y-1">
                   <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">製品(SKU)</div>
