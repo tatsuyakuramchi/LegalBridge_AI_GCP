@@ -1,21 +1,69 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, ArrowRight, User, Calendar, Inbox, Plus, GitBranch, FileText } from "lucide-react"
+import { Search, ArrowRight, User, Calendar, Inbox, Plus, GitBranch, FileText, GitMerge } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { NativeSelect } from "@/components/ui/native-select"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 import { QuickCreateIssueModal } from "@/src/components/backlog/QuickCreateIssueModal"
 
 export function RequestsPage() {
   const navigate = useNavigate()
-  const { issues } = useAppData()
+  const { issues, refreshIssues, showNotification } = useAppData()
   const { setSelectedIssue, selectedTemplate } = useDocumentSession()
   const [search, setSearch] = React.useState("")
   const [batch, setBatch] = React.useState<string[]>([])
+  // 一括統合(複数の重複課題を1つへまとめる)。
+  const [mergeOpen, setMergeOpen] = React.useState(false)
+  const [mergeTarget, setMergeTarget] = React.useState("")
+  const [mergeMode, setMergeMode] = React.useState<"child" | "delete">("child")
+  const [mergeMoveData, setMergeMoveData] = React.useState(false)
+  const [mergeReason, setMergeReason] = React.useState("")
+  const [merging, setMerging] = React.useState(false)
+  const doBulkMerge = async () => {
+    const target = mergeTarget.trim().toUpperCase()
+    if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(target)) {
+      showNotification?.("統合先の課題キーを入力してください (例: LEGAL-100)", "error")
+      return
+    }
+    const sources = batch.filter((k) => k.toUpperCase() !== target)
+    if (sources.length === 0) {
+      showNotification?.("統合元がありません(統合先と同じものは除外されます)", "error")
+      return
+    }
+    if (mergeMode === "delete" && !window.confirm(`選択した ${sources.length} 件を Backlog から削除して ${target} に統合します。\nこの操作は元に戻せません。よろしいですか？`)) return
+    setMerging(true)
+    try {
+      const res = await fetch(`/api/backlog/issues/merge-bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_key: target, source_keys: sources, mode: mergeMode, move_data: mergeMoveData, reason: mergeReason.trim() || undefined }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
+      showNotification?.(`${d.merged}/${d.total} 件を ${target} へ統合しました${d.failed ? `（失敗 ${d.failed} 件）` : ""}`, d.failed ? "error" : "success")
+      setMergeOpen(false)
+      setBatch([])
+      await refreshIssues?.()
+    } catch (e: any) {
+      showNotification?.(`一括統合に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setMerging(false)
+    }
+  }
   // Phase 22.6: 口頭/メール起案用のクイック起案 modal
   const [quickCreateOpen, setQuickCreateOpen] = React.useState(false)
   // Phase 22.6.2: 子課題起案時にプリセットする親 issueKey (undefined なら新規起案)
@@ -98,6 +146,16 @@ export function RequestsPage() {
               >
                 Open with {selectedTemplate}
               </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setMergeOpen(true)}
+                className="gap-1.5"
+                title="選択した課題を1つの課題へ統合する"
+              >
+                <GitMerge className="h-3.5 w-3.5" />
+                一括統合
+              </Button>
               <Button size="sm" variant="ghost" onClick={() => setBatch([])}>
                 Clear
               </Button>
@@ -137,6 +195,54 @@ export function RequestsPage() {
         }}
         defaultParentIssueKey={quickCreateParent}
       />
+
+      {/* 一括統合ダイアログ */}
+      <Dialog open={mergeOpen} onOpenChange={(v) => !v && setMergeOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>課題を一括統合（{batch.length}件選択中）</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <p className="text-[11px] text-muted-foreground">
+              選択した重複/誤起票の課題を、1つの課題へまとめて統合します。統合先と同じキーは自動で除外されます。
+            </p>
+            <div className="text-[10px] font-mono text-muted-foreground break-all">
+              対象: {batch.join(", ")}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">統合先の課題キー（残す側）</Label>
+              <Input value={mergeTarget} onChange={(e) => setMergeTarget(e.target.value)} placeholder="例: LEGAL-100" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">選択課題の処理</Label>
+              <NativeSelect value={mergeMode} onChange={(e) => setMergeMode(e.target.value as "child" | "delete")}>
+                <option value="child">子課題化＋終結（非破壊・推奨）</option>
+                <option value="delete">Backlog から削除（不可逆）</option>
+              </NativeSelect>
+              <p className="text-[10px] text-muted-foreground">
+                {mergeMode === "delete"
+                  ? "選択課題は完全に削除されます。統合先にコメントのみ残ります。"
+                  : "選択課題を統合先の子課題にし「終結」にします。履歴が残ります。"}
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-[11px]">
+              <input type="checkbox" checked={mergeMoveData} onChange={(e) => setMergeMoveData(e.target.checked)} />
+              紐づく文書・明細も統合先へ付け替える（中身がある場合）
+            </label>
+            <div className="space-y-1">
+              <Label className="text-[11px]">理由（任意）</Label>
+              <Input value={mergeReason} onChange={(e) => setMergeReason(e.target.value)} placeholder="重複起票のため 等" />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(false)} disabled={merging}>キャンセル</Button>
+            <Button size="sm" onClick={doBulkMerge} disabled={merging} className="gap-1.5">
+              <GitMerge className="h-3.5 w-3.5" />
+              {merging ? "統合中…" : "一括統合を実行"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Phase 22.21.54: ステータスフィルタ chip 群。
           ALL + 各ステータス名(件数) をクリックで絞り込み。選択中は緑塗り。
