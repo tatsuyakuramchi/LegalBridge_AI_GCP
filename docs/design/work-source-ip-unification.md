@@ -1,6 +1,6 @@
 # 設計書：作品・原作マスター統合（Work / Source-IP Unification）
 
-- 版: **v2**（権利フロー・グラフモデル反映）
+- 版: **v2.1**（権利フロー・グラフモデル ＋ 3カード統合エディタUI反映）
 - 対象: LegalBridge AI GCP（admin-ui / worker / search-api / DB）
 - 目的: 「作品登録」と「原作登録」の二重化を解消し、**ノード（作品・原作・素材・製品）を向き付き・種別付きの取引条件明細でつなぐ単一グラフ**に統合する。
 
@@ -187,11 +187,54 @@ condition_lines (エッジ＝取引条件明細)  ★ここに2軸
 4. `transaction_kind` 自動判定の業務ルール（per_unit/lump_sum をどこまで product と見なすか）。
 5. 進め方：**Phase 0 即時 → 原作/素材統合 → エッジ2軸化** の順で先行リリースするか、全体を一括設計してから着手するか。
 
-> 確定済み（本版で反映）: 正本=`works` 集約 / 原作採番=`LO-` / 派生物・卸先・仕入先=取引先＋製品で表現 / 4象限は単一 `condition_lines`（direction×transaction_kind）。
+> 確定済み（本版で反映）: 正本=`works` 集約 / 原作採番=`LO-` / 派生物・卸先・仕入先=取引先＋製品で表現 / 4象限は単一 `condition_lines`（direction×transaction_kind） / **入力=3カード統合エディタ** / **条件の源泉=個別条件書(出版等個別条件書)の condition_lines を参照（マスター契約は条件を持たない）** / エッジ単位の license/product トグル。
 
 ---
 
-## 10. 付録：主な参照ファイル
+## 10. 入力フォーム：3カード統合エディタ
+
+### 10.1 方針
+**原作→作品→派生物の連鎖を1画面で登録/編集する統合エディタ**とする。3カード＝グラフのノード、カード間＝向き×種別の条件明細(エッジ)。これにより「どこで登録しても参照先に出ない」という構造的問題が原理的に起きない。
+
+### 10.2 レイアウト（右→中→左 ＝ 原作→作品→派生物）
+```
+ ┌── 左: 派生物 ──┐   ┌── 中: 作品 ──┐   ┌── 右: 原作 ──┐
+ │ 派生物/受取先   │   │ 作品(own)     │   │ 原作(source)            │
+ │ 取引先 + 製品   │   │ ・原作を参照   │   │ ・メインマテリアル(原作本体)│
+ │ 受取エッジ      │   │   表示         │   │ ・サブマテリアル(イラスト/翻訳…)│
+ │                 │   │               │   │ 支払エッジ                  │
+ └────────┘   └───────┘   └──────────┘
+        ◀── 受取×(license|product) ──     ◀── 支払×(license|product) ──
+        条件明細(condition_line)を参照     条件明細(condition_line)を参照
+```
+
+### 10.3 各カードの入力/参照
+| カード | ノード | 入力項目 | エッジ(条件明細) |
+|---|---|---|---|
+| **右＝原作** | `works(kind='source')` ＋ `work_materials` | 原作の基本情報・デフォルト権利者/クレジット等。メイン=`is_default(-001)`(原作本体)、サブ=イラスト/翻訳…(material_type) | **支払**エッジ。該当**個別条件書の condition_lines を参照リンク** |
+| **中＝作品** | `works(kind='own')` | 自社作品の基本情報。右(原作)を参照表示 | （実体ノード。条件は両隣のエッジが持つ） |
+| **左＝派生物** | 取引先(vendor) ＋ `products` | 受取先・製品(SKU)情報 | **受取**エッジ。該当**個別条件書の condition_lines を参照リンク** |
+
+### 10.4 条件の源泉（★重要・本版での確定）
+- **マスター契約（基本契約）には金銭条件を持たない。** 条件の唯一の真実源は **個別利用許諾条件書 / 出版等利用許諾条件書** が生成する **`condition_lines`**。
+- カードの「条件明細」欄は、**該当する個別条件書を選択 → その `condition_lines` をエッジに参照リンク**する（再入力しない）。
+- 旧表現「文書番号から引用」は曖昧だったため、本仕様では **「個別条件書の条件明細を参照(リンク)」** と定義する。条件明細は別途(個別条件書フローで)定義済みの前提。
+
+### 10.5 種別トグル（エッジ単位）
+- 各エッジ(条件明細)に **license / product** トグル。`license`＝料率(%)系の金銭欄、`product`＝単価×数量(買取/卸)系の金銭欄を表示切替（裏では `condition_lines.transaction_kind` ＋ `payment_scheme`）。
+
+### 10.6 既存実装の流用
+- 個別条件書/文書番号ルックアップ＝`src/components/document/DocumentNumberLookup.tsx`。
+- 条件明細＝`condition_lines`(2軸)。受取マップ＝同グラフのビュー(`receivableMapService`)。
+- カードUIは `DocumentForm` の SectionHead/カード構造を踏襲。
+
+### 10.7 留意
+- エッジは「条件明細を参照」する関係なので、**エディタは condition_lines を新規作成しない**（参照リンクのみ）。新規条件は個別条件書フローで作る、という責務分離を維持。
+- ただし将来的に「このエディタから個別条件書を起票→その場で条件明細を作る」導線も追加可能（オプション）。
+
+---
+
+## 11. 付録：主な参照ファイル
 - スキーマ: `migrations/0001_baseline.sql`(ledgers/materials), `0004_work_ip_masters.sql`(works/source_ips/products), `0005_contracts.sql`(contract_works), `0006_financial_deliverables.sql`(work_materials), `0033`〜`0040`(統合P2), `0063_condition_lines_unification.sql`
 - 採番: `services/worker/src/lib/db.ts`(LO), `services/api/src/routes/workModel.ts`(IP/W), `workModelImportService.ts`(CSV)
 - フォーム: `src/components/document/DocumentForm.tsx`（原作=ledger 参照）
