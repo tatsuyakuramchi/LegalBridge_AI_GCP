@@ -871,6 +871,17 @@ async function startServer() {
           `SELECT payment_scheme, COUNT(*)::int n
              FROM condition_lines WHERE transaction_kind IS NULL
             GROUP BY 1 ORDER BY n DESC`),
+        // 種別NULLの明細を個別分類するための内訳(方向/契約/取引先/金額)。
+        null_lines: await rowsOf(
+          `SELECT cl.id, cl.line_code, cl.subject, cl.direction, cl.payment_scheme,
+                  cl.amount_ex_tax, cl.quantity, cl.unit_price,
+                  cc.document_number, cc.record_type, cc.contract_title,
+                  v.vendor_name
+             FROM condition_lines cl
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+            WHERE cl.transaction_kind IS NULL
+            ORDER BY cl.id LIMIT 50`),
         counterparty_null: await scalar(`SELECT COUNT(*)::int n FROM condition_lines WHERE counterparty_vendor_id IS NULL`),
       };
 
