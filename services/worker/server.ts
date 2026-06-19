@@ -705,6 +705,105 @@ async function startServer() {
     }
   });
 
+  // ── A+C: 検収待ち / 期限超過のダイジェスト ───────────────────────────
+  //   検収書の自動課題を廃した代わりに、未検収(検収書未発行)の支払明細を
+  //   発注書(PO)単位でまとめて取得する。GET=一覧取得 / POST=Slack 日次通知。
+  async function loadInspectionPending() {
+    const r = await query(
+      `SELECT cc.id AS po_id, cc.document_number AS po_number, cc.contract_title,
+              v.vendor_name,
+              cl.id AS line_id, cl.line_code, cl.subject, cl.delivery_date, cl.amount_ex_tax,
+              (cl.delivery_date IS NOT NULL AND cl.delivery_date <= CURRENT_DATE) AS overdue
+         FROM condition_lines cl
+         JOIN condition_line_status_v s ON s.id = cl.id
+         LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+         LEFT JOIN vendors v ON v.id = cc.vendor_id
+        WHERE s.status IN ('open','partially_fulfilled')
+          AND cl.payment_scheme IN ('lump_sum','per_unit','installment')
+          AND NOT EXISTS (
+            SELECT 1 FROM condition_events ce
+             WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+               AND ce.event_type = 'inspection')
+          AND COALESCE(cc.is_primary, TRUE) = TRUE
+          AND COALESCE(cc.lifecycle_status, 'final') = 'final'
+        ORDER BY overdue DESC, cl.delivery_date ASC NULLS LAST, cc.document_number`
+    );
+    return r.rows;
+  }
+
+  app.get("/api/management/inspection-pending", async (_req, res) => {
+    try {
+      const rows = await loadInspectionPending();
+      const overdue = rows.filter((r: any) => r.overdue).length;
+      res.json({ ok: true, total: rows.length, overdue, rows });
+    } catch (e: any) {
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
+  app.post("/api/management/inspection-digest", express.json(), async (req, res) => {
+    try {
+      if (!slackWebClient) return res.status(400).json({ ok: false, error: "Slack 未設定(SLACK_BOT_TOKEN)" });
+      // 通知先: body.channel > app_settings.SLACK_INSPECTION_DIGEST_CHANNEL > env。
+      let channel = String(req.body?.channel || "").trim();
+      if (!channel) {
+        try {
+          const s = await query(`SELECT value FROM app_settings WHERE key = 'SLACK_INSPECTION_DIGEST_CHANNEL'`);
+          let v: any = s.rows[0]?.value;
+          if (v != null) { try { v = JSON.parse(v); } catch { /* str */ } }
+          channel = String(v || process.env.SLACK_INSPECTION_DIGEST_CHANNEL || "").trim();
+        } catch {
+          channel = String(process.env.SLACK_INSPECTION_DIGEST_CHANNEL || "").trim();
+        }
+      }
+      if (!channel) return res.status(400).json({ ok: false, error: "通知先チャンネル未設定(SLACK_INSPECTION_DIGEST_CHANNEL)" });
+
+      const rows = await loadInspectionPending();
+      const overdueRows = rows.filter((r: any) => r.overdue);
+      const today = new Date().toLocaleDateString("ja-JP", { timeZone: "Asia/Tokyo" });
+      const yen = (v: any) => (v == null ? "" : `¥${Number(v).toLocaleString("ja-JP")}`);
+      const fmtDate = (d: any) => (d ? String(d).slice(0, 10) : "—");
+
+      // PO 単位にグループ化(超過を優先表示)。
+      const byPo = new Map<string, { po: string; title: string; vendor: string; lines: any[] }>();
+      for (const r of rows) {
+        const key = r.po_number || `cap-${r.po_id}`;
+        if (!byPo.has(key)) byPo.set(key, { po: r.po_number || "(契約番号なし)", title: r.contract_title || "", vendor: r.vendor_name || "", lines: [] });
+        byPo.get(key)!.lines.push(r);
+      }
+      // 超過を含む PO を先に並べる。
+      const groups = Array.from(byPo.values()).sort((a, b) => {
+        const ao = a.lines.some((l) => l.overdue) ? 0 : 1;
+        const bo = b.lines.some((l) => l.overdue) ? 0 : 1;
+        return ao - bo;
+      });
+
+      const lines: string[] = [];
+      lines.push(`📋 *検収待ちダイジェスト* (${today})`);
+      lines.push(`検収待ち: *${rows.length}件* ／ うち期限超過: *${overdueRows.length}件*`);
+      if (rows.length === 0) lines.push("✅ 検収待ちはありません。");
+      let shown = 0;
+      const MAX = 40;
+      for (const g of groups) {
+        if (shown >= MAX) { lines.push(`…ほか ${rows.length - shown} 件`); break; }
+        const hasOver = g.lines.some((l) => l.overdue);
+        lines.push(`\n${hasOver ? "🔴" : "🟡"} *[${g.po}]* ${g.vendor}${g.title ? ` — ${g.title}` : ""}（${g.lines.length}件）`);
+        for (const l of g.lines) {
+          if (shown >= MAX) break;
+          const flag = l.overdue ? "⏰超過 " : "";
+          lines.push(`   • ${flag}${l.subject || l.line_code || ""} (納期 ${fmtDate(l.delivery_date)}${l.amount_ex_tax != null ? `, ${yen(l.amount_ex_tax)}` : ""})`);
+          shown++;
+        }
+      }
+      const text = lines.join("\n");
+      await slackWebClient.chat.postMessage({ channel, text });
+      res.json({ ok: true, total: rows.length, overdue: overdueRows.length, channel });
+    } catch (e: any) {
+      console.error("[inspection-digest] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
 
   // 修復ツール: 上書き事故で「検収書(inspection_certificate)だが発注書番号」になった文書を
   //   検収書として再採番(ARC-INS-…)し、紐づく条件明細を検収済(inspection イベント=金額分)にする。
@@ -1627,6 +1726,32 @@ async function startServer() {
       console.log(
         `🔗 [auto-chain] matched rule: ${rule.parentRequestType} → ${rule.childRequestType} (${rule.childIssueTypeName})`
       );
+
+      // A+C 運用: 発注書→検収(delivery_inspec) の子課題自動生成は既定で停止する。
+      //   検収は「検収待ち」ビュー + 期限超過アラートで管理し、課題の乱立を防ぐ。
+      //   AUTO_CHAIN_INSPECTION_ENABLED=true(app_settings or env) で従来どおり
+      //   子課題を生成する(可逆)。利用許諾計算(license_calc)はこの停止の対象外。
+      if (rule.childRequestType === "delivery_inspec") {
+        let enabled = false;
+        try {
+          const r = await query(
+            `SELECT value FROM app_settings WHERE key = 'AUTO_CHAIN_INSPECTION_ENABLED'`
+          );
+          let v: any = r.rows[0]?.value;
+          if (v != null) { try { v = JSON.parse(v); } catch { /* 文字列のまま */ } }
+          else v = process.env.AUTO_CHAIN_INSPECTION_ENABLED;
+          enabled = String(v).toLowerCase() === "true";
+        } catch {
+          enabled = String(process.env.AUTO_CHAIN_INSPECTION_ENABLED || "").toLowerCase() === "true";
+        }
+        if (!enabled) {
+          console.log(
+            `🔗 [auto-chain] SKIP(検収): inspection auto-chain disabled (A+C 運用)。` +
+              `検収待ちビュー/アラートで管理。AUTO_CHAIN_INSPECTION_ENABLED=true で再有効化可。`
+          );
+          return;
+        }
+      }
 
       // 既に同型の子課題があれば skip (二重生成防止)
       let existingChildren: any[] = [];
@@ -2909,6 +3034,117 @@ ${details}
       }
     }
   );
+
+  /**
+   * 課題統合: 重複/誤起票の課題(source)を survivor(target)へ統合する。
+   *   mode='child' (既定): source を target の子課題にし、ステータスを「終結」に。
+   *                        両課題へ統合コメント。非破壊で履歴が残る。
+   *   mode='delete': source を Backlog から削除。target に統合コメント。不可逆。
+   *   move_data=true: source に紐づく文書/明細/イベントを target 課題へ付け替える。
+   *   いずれも DB は legal_requests.merged_into_issue_key と issue_workflows='終結' を更新。
+   */
+  app.post("/api/backlog/issues/:key/merge", express.json(), async (req, res) => {
+    try {
+      const source = String(req.params.key || "").trim().toUpperCase();
+      const target = String(req.body?.target_key || "").trim().toUpperCase();
+      const mode = req.body?.mode === "delete" ? "delete" : "child";
+      const moveData = req.body?.move_data === true;
+      const reason = req.body?.reason ? String(req.body.reason).slice(0, 500) : "";
+      const issueKeyRe = /^[A-Z][A-Z0-9_]*-\d+$/;
+      if (!issueKeyRe.test(source)) return res.status(400).json({ ok: false, error: "source キー不正" });
+      if (!issueKeyRe.test(target)) return res.status(400).json({ ok: false, error: "統合先(target)のキーが不正です (例: LEGAL-100)" });
+      if (source === target) return res.status(400).json({ ok: false, error: "統合元と統合先が同じです" });
+
+      const moved: Record<string, number> = {};
+      // 1) DB: 文書/明細/イベントの付け替え(任意)。
+      if (moveData) {
+        try {
+          // documents は UNIQUE(issue_key, template_type)。target に同種が無いものだけ移す。
+          const d = await query(
+            `UPDATE documents d SET issue_key = $1
+              WHERE d.issue_key = $2
+                AND NOT EXISTS (SELECT 1 FROM documents d2
+                                 WHERE d2.issue_key = $1 AND d2.template_type = d.template_type)`,
+            [target, source]
+          );
+          moved.documents = d.rowCount || 0;
+          const c = await query(
+            `UPDATE contract_capabilities SET backlog_issue_key = $1 WHERE backlog_issue_key = $2`,
+            [target, source]
+          );
+          moved.capabilities = c.rowCount || 0;
+          const ce = await query(
+            `UPDATE condition_events SET backlog_issue_key = $1 WHERE backlog_issue_key = $2`,
+            [target, source]
+          );
+          moved.condition_events = ce.rowCount || 0;
+        } catch (e: any) {
+          console.warn(`[merge] move_data failed (${source}→${target}):`, e?.message || e);
+        }
+      }
+
+      // 2) DB: 統合記録 + 作業キューから除外(終結)。
+      try {
+        await query(`UPDATE legal_requests SET merged_into_issue_key = $1 WHERE backlog_issue_key = $2`, [target, source]);
+      } catch (e) { console.warn(`[merge] legal_requests update failed:`, e); }
+      try {
+        await query(`UPDATE issue_workflows SET current_status_name = '終結', updated_at = now() WHERE backlog_issue_key = $1`, [source]);
+      } catch { /* noop */ }
+
+      // 3) Backlog 操作。
+      const warnings: string[] = [];
+      let targetId: number | null = null;
+      try {
+        const t = await backlogService.getIssue(target);
+        targetId = t?.id ?? null;
+      } catch (e: any) {
+        warnings.push(`統合先 ${target} を Backlog で取得できませんでした(子課題化はスキップ)`);
+      }
+      const reasonLine = reason ? `\n*理由:* ${reason}` : "";
+
+      // 統合先へコメント(常に)。
+      try {
+        await backlogService.addComment(target, `🔗 *${source} を本課題へ統合しました*（重複/誤起票の整理）。${reasonLine}`);
+      } catch (e: any) { warnings.push(`統合先コメント失敗: ${e?.message || e}`); }
+
+      if (mode === "delete") {
+        try {
+          await backlogService.deleteIssue(source);
+        } catch (e: any) {
+          return res.status(500).json({ ok: false, error: `Backlog 課題の削除に失敗: ${e?.message || e}`, moved });
+        }
+      } else {
+        // child: 子課題化 + 終結 + 統合元コメント。
+        if (targetId) {
+          try {
+            await backlogService.setParent(source, targetId);
+          } catch (e: any) {
+            warnings.push(`子課題化に失敗(階層制約の可能性)。終結のみ実施: ${e?.message || e}`);
+          }
+        }
+        try {
+          const statuses = await backlogService.getStatuses();
+          const shuketsu = statuses.find((s: any) => s?.name === "終結");
+          if (shuketsu) await backlogService.updateIssueStatus(source, shuketsu.id);
+          else warnings.push(`Backlog に「終結」ステータスが見つかりません`);
+        } catch (e: any) { warnings.push(`終結ステータス設定失敗: ${e?.message || e}`); }
+        try {
+          await backlogService.addComment(source, `🔁 *本課題は ${target} へ統合終結しました*。${reasonLine}`);
+        } catch (e: any) { warnings.push(`統合元コメント失敗: ${e?.message || e}`); }
+      }
+
+      // 4) Slack(best-effort)。
+      try {
+        await notifyIssueEvent(source, { type: "status_changed", from: "(進行中)", to: `${target} に統合${mode === "delete" ? "(削除)" : "(終結)"}` });
+      } catch { /* noop */ }
+
+      res.json({ ok: true, source, target, mode, moved, warnings });
+    } catch (error: any) {
+      console.error("POST /api/backlog/issues/:key/merge failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
 
   // -------------------------------------------------------------------
   // /api/management/* — write operations
@@ -11330,13 +11566,19 @@ ${details}
                      AND (d.template_type ILIKE 'inspection%'
                           OR d.template_type IN ('royalty_statement','license_calculation_sheet'))
                    ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
-                   LIMIT 1) AS send_doc_number
+                   LIMIT 1) AS send_doc_number,
+                 (SELECT COUNT(*)::int FROM condition_events ce
+                    JOIN documents d ON d.id = ce.document_id
+                   WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL
+                     AND ce.event_type = 'inspection') AS inspection_event_count
                  FROM condition_lines cl
                  LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
                 WHERE cl.id = ANY($1::int[])`,
               [ids]
             );
             const m = new Map<number, any>(send.rows.map((r: any) => [Number(r.id), r]));
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
             for (const r of rows) {
               const s = m.get(Number(r.id));
               if (!s) continue;
@@ -11351,6 +11593,16 @@ ${details}
               // 表示用の代表値(メール優先 → CloudSign)。
               r.sent_at = s.email_sent_at || s.cloudsign_sent_at || null;
               r.sent_channel = s.email_sent_at ? "メール" : s.cloudsign_sent_at ? "CloudSign" : null;
+              // A+C: 検収待ち / 期限超過(検収書の自動課題を廃し、ここで可視化)。
+              //   対象: 検収を要する支払明細(一括/従量/分割)で、未成就かつ
+              //   inspection イベントが無いもの。利用許諾(royalty)等は計算書管理なので対象外。
+              const needsInspection = ["lump_sum", "per_unit", "installment"].includes(
+                String(r.payment_scheme || "")
+              );
+              const unfulfilled = r.status === "open" || r.status === "partially_fulfilled";
+              r.inspection_pending = needsInspection && unfulfilled && Number(s.inspection_event_count || 0) === 0;
+              r.inspection_overdue =
+                r.inspection_pending && !!r.delivery_date && new Date(r.delivery_date) <= today;
             }
           }
         } catch (enrichErr: any) {
