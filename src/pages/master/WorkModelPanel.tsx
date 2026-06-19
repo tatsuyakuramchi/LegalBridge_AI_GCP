@@ -199,15 +199,33 @@ export function WorkModelPanel() {
             </h2>
             <span className="text-xs font-mono text-muted-foreground">({lists[type].length})</span>
             <div className="flex-1" />
-            <Button size="sm" onClick={() => setModal({ kind: "form", type, mode: "new", data: {} })}>
-              <Plus />
-              新規
-            </Button>
-            <Button variant="outline" size="sm" onClick={() => setModal({ kind: "import", type })}>
-              <Upload />
-              CSV取込
-            </Button>
+            {type === "source-ips" ? (
+              // Phase 0(統合): 原作の新規登録は原作マスター(Ledgers, LO-)へ一本化。
+              //   ここは閲覧専用にし、誤登録(IP-採番)を防ぐ。
+              <Link
+                to="/master/ledgers"
+                className="text-[11px] font-mono px-3 py-1.5 rounded border border-amber-400 text-amber-700 hover:bg-amber-50"
+              >
+                原作の新規登録は「原作マスター (Ledgers)」へ →
+              </Link>
+            ) : (
+              <>
+                <Button size="sm" onClick={() => setModal({ kind: "form", type, mode: "new", data: {} })}>
+                  <Plus />
+                  新規
+                </Button>
+                <Button variant="outline" size="sm" onClick={() => setModal({ kind: "import", type })}>
+                  <Upload />
+                  CSV取込
+                </Button>
+              </>
+            )}
           </div>
+          {type === "source-ips" && (
+            <div className="text-[11px] font-mono text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2">
+              原作の登録先は <Link to="/master/ledgers" className="underline font-bold">原作マスター (Ledgers)</Link> に一本化しました（採番 <code>LO-</code>）。ここは<strong>閲覧専用</strong>です。既存の <code>IP-</code> 原作は今後の統合で移行対象になります。
+            </div>
+          )}
           {type === "works" ? (
             <>
               {/* #3: 作品は親→派生のツリー表示。各ノードに #2 派生元設定の導線。 */}
