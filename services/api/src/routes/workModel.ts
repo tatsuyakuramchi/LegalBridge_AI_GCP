@@ -140,6 +140,7 @@ export function registerWorkModelRoutes(
       if (w.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       const edgeCols = `cl.id, cl.line_code, cl.subject, cl.transaction_kind, cl.direction,
                         cl.payment_scheme, cl.amount_ex_tax, cl.rate_pct, cl.mg_amount,
+                        cl.source_work_id, cl.source_material_id, cl.product_id,
                         cc.document_number, cc.contract_title,
                         v.vendor_name AS counterparty`;
       const [products, materials, upstream, downstream] = await Promise.all([
