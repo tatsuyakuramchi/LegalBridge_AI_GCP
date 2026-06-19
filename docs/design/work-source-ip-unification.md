@@ -1,6 +1,6 @@
 # 設計書：作品・原作マスター統合（Work / Source-IP Unification）
 
-- 版: **v2.1**（権利フロー・グラフモデル ＋ 3カード統合エディタUI反映）
+- 版: **v2.2**（取引種別に service＝委託買い切り を追加 / 素材の取得経路を明文化）
 - 対象: LegalBridge AI GCP（admin-ui / worker / search-api / DB）
 - 目的: 「作品登録」と「原作登録」の二重化を解消し、**ノード（作品・原作・素材・製品）を向き付き・種別付きの取引条件明細でつなぐ単一グラフ**に統合する。
 
@@ -44,17 +44,33 @@
 | 軸 | 値 | 既存対応 |
 |---|---|---|
 | **方向 (direction)** | 支払（当社が払う）/ 受取（当社が受け取る） | `flow_direction`(in/out) / `is_inbound` |
-| **取引種別 (transaction_kind)** | `license`（料率%）/ `product`（単価×数量・買取/卸） | **新規列**。料率様式は `payment_scheme`(`royalty`/`per_unit`/`lump_sum`) で吸収 |
+| **取引種別 (transaction_kind)** | `license`（料率%）/ `product`（物販・卸/買取）/ **`service`（委託・買い切り＝発注書）** | **新規列**。料率様式は `payment_scheme`(`royalty`/`per_unit`/`lump_sum`) で吸収 |
 
-### 2.3 4象限の定義（1つの `condition_lines` に集約）
-| 象限 | 方向 | 種別 | from（源） | to（先） | 取引先 | 連結列 |
+> `service`＝**発注書(委託)→検収書** の既存フロー。買い切り委託成果物（素材を外注して買い取る等）はこの支払×service エッジ。
+
+### 2.2.1 condition_lines は 1対N
+works/原作は「1」、`condition_lines` は「N」。1原作→複数支払明細（作品/素材/期間ごと）、1作品→複数受取明細（派生物/卸先ごと）。`work_id`/`source_work_id`/`source_material_id` は FK 参照で1ノードに複数行がぶら下がる。
+
+### 2.2.2 素材の取得経路（provenance）
+素材(`work_materials`)自身がノードで、「どう取得したか」のエッジを持つ。
+| 取得経路 | エッジ | 紐付け |
+|---|---|---|
+| ライセンスイン（原作の素材を許諾） | 支払×license（料率） | 原作の利用許諾 condition_line |
+| **買い切り委託成果物（発注書で外注→買取）** | 支払×service（単価/一括） | **発注書明細**（purchase_order 配下） |
+| 自社制作 | （外部条件なし） | — |
+
+紐付け列は統合P2-3/4で既に存在: `work_materials.service_line_item_id`(発注書=capability_line_items 明細)、`source_deliverable_id`、`source_contract_id`。
+
+### 2.3 取引マトリクス（1つの `condition_lines` に集約）
+| 取引 | 方向 | 種別 | from（源） | to（先） | 取引先 | 連結列 |
 |---|---|---|---|---|---|---|
 | ライセンスイン | 支払 | license | 原作 / 素材 | 作品 | 権利者 | `source_work_id` / `source_material_id` |
 | ライセンスアウト | 受取 | license | 作品 | 派生物 / 相手 | サブライセンシー | `work_id`（＋相手 vendor） |
 | プロダクトイン | 支払 | product | 仕入先の製品/部材 | 作品 / 製品 | サプライヤー | `work_id` ＋ `product_id` |
 | プロダクトアウト | 受取 | product | 作品 / 製品 | 卸先 | 卸/販売先 | `work_id` ＋ `product_id` |
+| **委託イン（買い切り）** | 支払 | **service** | 外注先の成果物 | **素材** / 作品 | 受託者(委託先) | `source_material_id` ＋ 発注書明細(`service_line_item_id`) |
 
-> 決定: **派生物・卸先・仕入先は「取引先(vendor)＋製品(product)」で表現**し、ノード種別は増やさない。**4象限は単一 `condition_lines`**（属性 `direction × transaction_kind` で区別）。受取マップ＝このグラフのビュー。
+> 決定: **派生物・卸先・仕入先・委託先は「取引先(vendor)＋製品/素材」で表現**し、ノード種別は増やさない。**全取引は単一 `condition_lines`**（属性 `direction × transaction_kind{license|product|service}` で区別）。`service`＝発注書(委託)→検収書の既存フロー。受取マップ＝このグラフのビュー。
 
 ---
 
@@ -73,7 +89,10 @@ works (正本ノード)
 work_materials (素材＝旧 materials/source_ip_materials)
   id, work_id, material_no, material_code({work_code}-NNN),
   material_name, material_type('original'|'translation'|'illustration'|'scenario'|…),
-  rights_holder_vendor_id, rights_holder_label, is_default, is_active, …
+  acquisition_type('license'|'buyout_commission'|'in_house'),  -- 取得経路
+  rights_holder_vendor_id, rights_holder_label, is_default, is_active,
+  service_line_item_id, source_deliverable_id, source_contract_id,  -- 買い切り委託=発注書明細への紐付け(既存)
+  …
 
 products (製品SKU・既存)
   id, work_id, product_code, product_name, format, msrp, jan/isbn, …
@@ -81,7 +100,7 @@ products (製品SKU・既存)
 condition_lines (エッジ＝取引条件明細)  ★ここに2軸
   id, capability_id/contract_id, line_no, subject,
   direction('pay'|'receive'),                 -- 請求方向(既存 flow_direction を正規化)
-  transaction_kind('license'|'product'),      -- ★新規
+  transaction_kind('license'|'product'|'service'),  -- ★新規(serviceは発注書委託・買い切り)
   payment_scheme('royalty'|'per_unit'|'lump_sum'|…),  -- 料率様式
   work_id,                 -- 主対象(作品/製品の作品)
   source_work_id,          -- 支払×license の原作
@@ -187,7 +206,7 @@ condition_lines (エッジ＝取引条件明細)  ★ここに2軸
 4. `transaction_kind` 自動判定の業務ルール（per_unit/lump_sum をどこまで product と見なすか）。
 5. 進め方：**Phase 0 即時 → 原作/素材統合 → エッジ2軸化** の順で先行リリースするか、全体を一括設計してから着手するか。
 
-> 確定済み（本版で反映）: 正本=`works` 集約 / 原作採番=`LO-` / 派生物・卸先・仕入先=取引先＋製品で表現 / 4象限は単一 `condition_lines`（direction×transaction_kind） / **入力=3カード統合エディタ** / **条件の源泉=個別条件書(出版等個別条件書)の condition_lines を参照（マスター契約は条件を持たない）** / エッジ単位の license/product トグル。
+> 確定済み（本版で反映）: 正本=`works` 集約 / 原作採番=`LO-` / 派生物・卸先・仕入先=取引先＋製品で表現 / 全取引は単一 `condition_lines`（direction × transaction_kind{license|product|**service**}） / 素材は取得経路(ライセンス/買い切り委託=発注書明細/自社制作)を持つ / condition_lines は works/原作に対し1対N / **入力=3カード統合エディタ** / **条件の源泉=個別条件書(出版等個別条件書)の condition_lines を参照（マスター契約は条件を持たない）** / エッジ単位の license/product トグル。
 
 ---
 
