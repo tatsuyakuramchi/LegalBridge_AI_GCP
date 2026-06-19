@@ -13,6 +13,7 @@ import {
   User,
   Calendar,
   ListChecks,
+  GitMerge,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -101,6 +102,40 @@ export function IssueDetailPage() {
     () => issues.find((i) => i.issueKey === issueKey),
     [issues, issueKey]
   )
+
+  // 課題統合(重複/誤起票の整理)。
+  const [mergeOpen, setMergeOpen] = React.useState(false)
+  const [mergeTarget, setMergeTarget] = React.useState("")
+  const [mergeMode, setMergeMode] = React.useState<"child" | "delete">("child")
+  const [mergeMoveData, setMergeMoveData] = React.useState(false)
+  const [mergeReason, setMergeReason] = React.useState("")
+  const [merging, setMerging] = React.useState(false)
+  const doMerge = async () => {
+    const target = mergeTarget.trim().toUpperCase()
+    if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(target)) {
+      showNotification?.("統合先の課題キーを入力してください (例: LEGAL-100)", "error")
+      return
+    }
+    if (mergeMode === "delete" && !window.confirm(`${issueKey} を Backlog から削除して ${target} に統合します。\nこの操作は元に戻せません。よろしいですか？`)) return
+    setMerging(true)
+    try {
+      const res = await fetch(`/api/backlog/issues/${encodeURIComponent(issueKey)}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ target_key: target, mode: mergeMode, move_data: mergeMoveData, reason: mergeReason.trim() || undefined }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
+      const warn = Array.isArray(d.warnings) && d.warnings.length ? `（注意: ${d.warnings.join(" / ")}）` : ""
+      showNotification?.(`${issueKey} を ${target} へ統合しました${mergeMode === "delete" ? "(削除)" : "(終結)"}${warn}`, "success")
+      setMergeOpen(false)
+      navigate(-1)
+    } catch (e: any) {
+      showNotification?.(`統合に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setMerging(false)
+    }
+  }
 
   const [docs, setDocs] = React.useState<IssueDocument[]>([])
   // 個別送信: 送信方法の選択(クラウドサイン/メール) → 各フォーム。
@@ -468,7 +503,7 @@ export function IssueDetailPage() {
         )}
 
         {/* Backlog ステータス操作 (compact)。 */}
-        <div className="pt-1">
+        <div className="pt-1 flex items-center gap-2 flex-wrap">
           <WorkflowPanel
             issueKey={issueKey}
             currentStatus={(issue as any)?.status}
@@ -478,6 +513,16 @@ export function IssueDetailPage() {
             }
             compact
           />
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={() => setMergeOpen(true)}
+            className="gap-1.5"
+            title="重複/誤起票の課題を別の課題へ統合する"
+          >
+            <GitMerge className="h-3.5 w-3.5" />
+            課題を統合
+          </Button>
         </div>
       </header>
 
@@ -944,6 +989,57 @@ export function IssueDetailPage() {
             <Button onClick={sendEmailNow} disabled={emailSending}>
               <Send className="h-3.5 w-3.5" />
               {emailSending ? "送信中…" : "送信"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 課題統合ダイアログ */}
+      <Dialog open={mergeOpen} onOpenChange={(v) => !v && setMergeOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>課題を統合 — {issueKey}</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <p className="text-[11px] text-muted-foreground">
+              重複/誤起票のこの課題を、別の課題へ統合します。両課題に統合コメントを残します。
+            </p>
+            <div className="space-y-1">
+              <Label className="text-[11px]">統合先の課題キー（残す側）</Label>
+              <Input
+                value={mergeTarget}
+                onChange={(e) => setMergeTarget(e.target.value)}
+                placeholder="例: LEGAL-100"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">この課題の処理</Label>
+              <NativeSelect value={mergeMode} onChange={(e) => setMergeMode(e.target.value as "child" | "delete")}>
+                <option value="child">子課題化＋終結（非破壊・推奨）</option>
+                <option value="delete">Backlog から削除（不可逆）</option>
+              </NativeSelect>
+              <p className="text-[10px] text-muted-foreground">
+                {mergeMode === "delete"
+                  ? "この課題は完全に削除されます。統合先にコメントのみ残ります。"
+                  : "この課題を統合先の子課題にし、ステータスを「終結」にします。履歴が残ります。"}
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-[11px]">
+              <input type="checkbox" checked={mergeMoveData} onChange={(e) => setMergeMoveData(e.target.checked)} />
+              この課題に紐づく文書・明細も統合先へ付け替える（中身がある場合）
+            </label>
+            <div className="space-y-1">
+              <Label className="text-[11px]">理由（任意）</Label>
+              <Input value={mergeReason} onChange={(e) => setMergeReason(e.target.value)} placeholder="重複起票のため 等" />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(false)} disabled={merging}>
+              キャンセル
+            </Button>
+            <Button size="sm" onClick={doMerge} disabled={merging} className="gap-1.5">
+              <GitMerge className="h-3.5 w-3.5" />
+              {merging ? "統合中…" : "統合を実行"}
             </Button>
           </DialogFooter>
         </DialogContent>

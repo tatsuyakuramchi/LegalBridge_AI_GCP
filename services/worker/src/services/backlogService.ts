@@ -394,6 +394,32 @@ export class BacklogService {
     }
   }
 
+  /** 課題の親を付け替える(子課題化)。Backlog は階層1段のみ対応。 */
+  async setParent(issueKey: string, parentIssueId: number): Promise<any> {
+    if (!this.apiKey || !this.baseUrl) return null;
+    try {
+      const body = new URLSearchParams();
+      body.append("parentIssueId", String(parentIssueId));
+      const response = await axios.patch(this.getUrl(`/issues/${issueKey}`), body);
+      return response.data;
+    } catch (error) {
+      console.error(`Error setting parent for ${issueKey}:`, error);
+      throw error;
+    }
+  }
+
+  /** 課題を削除(不可逆)。統合時の「削除」モード用。 */
+  async deleteIssue(issueKey: string): Promise<any> {
+    if (!this.apiKey || !this.baseUrl) return null;
+    try {
+      const response = await axios.delete(this.getUrl(`/issues/${issueKey}`));
+      return response.data;
+    } catch (error) {
+      console.error(`Error deleting Backlog issue ${issueKey}:`, error);
+      throw error;
+    }
+  }
+
   /**
    * Backlog 課題にコメントを追加 (Phase 20 で追加)。
    *

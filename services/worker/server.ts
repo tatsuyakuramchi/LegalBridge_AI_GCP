@@ -3035,6 +3035,117 @@ ${details}
     }
   );
 
+  /**
+   * 課題統合: 重複/誤起票の課題(source)を survivor(target)へ統合する。
+   *   mode='child' (既定): source を target の子課題にし、ステータスを「終結」に。
+   *                        両課題へ統合コメント。非破壊で履歴が残る。
+   *   mode='delete': source を Backlog から削除。target に統合コメント。不可逆。
+   *   move_data=true: source に紐づく文書/明細/イベントを target 課題へ付け替える。
+   *   いずれも DB は legal_requests.merged_into_issue_key と issue_workflows='終結' を更新。
+   */
+  app.post("/api/backlog/issues/:key/merge", express.json(), async (req, res) => {
+    try {
+      const source = String(req.params.key || "").trim().toUpperCase();
+      const target = String(req.body?.target_key || "").trim().toUpperCase();
+      const mode = req.body?.mode === "delete" ? "delete" : "child";
+      const moveData = req.body?.move_data === true;
+      const reason = req.body?.reason ? String(req.body.reason).slice(0, 500) : "";
+      const issueKeyRe = /^[A-Z][A-Z0-9_]*-\d+$/;
+      if (!issueKeyRe.test(source)) return res.status(400).json({ ok: false, error: "source キー不正" });
+      if (!issueKeyRe.test(target)) return res.status(400).json({ ok: false, error: "統合先(target)のキーが不正です (例: LEGAL-100)" });
+      if (source === target) return res.status(400).json({ ok: false, error: "統合元と統合先が同じです" });
+
+      const moved: Record<string, number> = {};
+      // 1) DB: 文書/明細/イベントの付け替え(任意)。
+      if (moveData) {
+        try {
+          // documents は UNIQUE(issue_key, template_type)。target に同種が無いものだけ移す。
+          const d = await query(
+            `UPDATE documents d SET issue_key = $1
+              WHERE d.issue_key = $2
+                AND NOT EXISTS (SELECT 1 FROM documents d2
+                                 WHERE d2.issue_key = $1 AND d2.template_type = d.template_type)`,
+            [target, source]
+          );
+          moved.documents = d.rowCount || 0;
+          const c = await query(
+            `UPDATE contract_capabilities SET backlog_issue_key = $1 WHERE backlog_issue_key = $2`,
+            [target, source]
+          );
+          moved.capabilities = c.rowCount || 0;
+          const ce = await query(
+            `UPDATE condition_events SET backlog_issue_key = $1 WHERE backlog_issue_key = $2`,
+            [target, source]
+          );
+          moved.condition_events = ce.rowCount || 0;
+        } catch (e: any) {
+          console.warn(`[merge] move_data failed (${source}→${target}):`, e?.message || e);
+        }
+      }
+
+      // 2) DB: 統合記録 + 作業キューから除外(終結)。
+      try {
+        await query(`UPDATE legal_requests SET merged_into_issue_key = $1 WHERE backlog_issue_key = $2`, [target, source]);
+      } catch (e) { console.warn(`[merge] legal_requests update failed:`, e); }
+      try {
+        await query(`UPDATE issue_workflows SET current_status_name = '終結', updated_at = now() WHERE backlog_issue_key = $1`, [source]);
+      } catch { /* noop */ }
+
+      // 3) Backlog 操作。
+      const warnings: string[] = [];
+      let targetId: number | null = null;
+      try {
+        const t = await backlogService.getIssue(target);
+        targetId = t?.id ?? null;
+      } catch (e: any) {
+        warnings.push(`統合先 ${target} を Backlog で取得できませんでした(子課題化はスキップ)`);
+      }
+      const reasonLine = reason ? `\n*理由:* ${reason}` : "";
+
+      // 統合先へコメント(常に)。
+      try {
+        await backlogService.addComment(target, `🔗 *${source} を本課題へ統合しました*（重複/誤起票の整理）。${reasonLine}`);
+      } catch (e: any) { warnings.push(`統合先コメント失敗: ${e?.message || e}`); }
+
+      if (mode === "delete") {
+        try {
+          await backlogService.deleteIssue(source);
+        } catch (e: any) {
+          return res.status(500).json({ ok: false, error: `Backlog 課題の削除に失敗: ${e?.message || e}`, moved });
+        }
+      } else {
+        // child: 子課題化 + 終結 + 統合元コメント。
+        if (targetId) {
+          try {
+            await backlogService.setParent(source, targetId);
+          } catch (e: any) {
+            warnings.push(`子課題化に失敗(階層制約の可能性)。終結のみ実施: ${e?.message || e}`);
+          }
+        }
+        try {
+          const statuses = await backlogService.getStatuses();
+          const shuketsu = statuses.find((s: any) => s?.name === "終結");
+          if (shuketsu) await backlogService.updateIssueStatus(source, shuketsu.id);
+          else warnings.push(`Backlog に「終結」ステータスが見つかりません`);
+        } catch (e: any) { warnings.push(`終結ステータス設定失敗: ${e?.message || e}`); }
+        try {
+          await backlogService.addComment(source, `🔁 *本課題は ${target} へ統合終結しました*。${reasonLine}`);
+        } catch (e: any) { warnings.push(`統合元コメント失敗: ${e?.message || e}`); }
+      }
+
+      // 4) Slack(best-effort)。
+      try {
+        await notifyIssueEvent(source, { type: "status_changed", from: "(進行中)", to: `${target} に統合${mode === "delete" ? "(削除)" : "(終結)"}` });
+      } catch { /* noop */ }
+
+      res.json({ ok: true, source, target, mode, moved, warnings });
+    } catch (error: any) {
+      console.error("POST /api/backlog/issues/:key/merge failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+
   // -------------------------------------------------------------------
   // /api/management/* — write operations
   // -------------------------------------------------------------------
