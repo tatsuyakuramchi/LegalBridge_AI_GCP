@@ -804,6 +804,93 @@ async function startServer() {
     }
   });
 
+  // ── 統合 Phase2 ドライラン: 移行の影響件数・衝突候補を読み取り専用で集計 ──
+  //   何も変更しない。Phase2 移行スクリプトの設計と件数照合に使う。
+  app.get("/api/admin/unify/phase2-dryrun", async (_req, res) => {
+    const scalar = async (sql: string): Promise<number | null> => {
+      try { const r = await query(sql); return Number(r.rows?.[0]?.n ?? 0); }
+      catch { return null; } // テーブル/列が無い環境では null
+    };
+    const rowsOf = async (sql: string): Promise<any[]> => {
+      try { return (await query(sql)).rows; } catch { return []; }
+    };
+    try {
+      const report: any = { generated_at: new Date().toISOString() };
+
+      // A) Ledgers / materials の移行対象
+      report.ledgers = {
+        total: await scalar(`SELECT COUNT(*)::int n FROM ledgers`),
+        active: await scalar(`SELECT COUNT(*)::int n FROM ledgers WHERE COALESCE(is_active,true)=true`),
+        materials: await scalar(`SELECT COUNT(*)::int n FROM materials`),
+        materials_default: await scalar(`SELECT COUNT(*)::int n FROM materials WHERE is_default=true`),
+      };
+
+      // B) works(原作=licensed_in, IP-) と名寄せ候補
+      report.works_source = {
+        licensed_in_total: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='licensed_in'`),
+        ip_coded: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='licensed_in' AND work_code LIKE 'IP-%'`),
+        own_total: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='own'`),
+      };
+      // ledgers.title ↔ works(licensed_in).title の正規化一致(=名寄せ要レビュー)
+      report.name_collisions = {
+        count: await scalar(
+          `SELECT COUNT(*)::int n FROM ledgers l
+             JOIN works w ON w.kind='licensed_in'
+              AND lower(btrim(w.title)) = lower(btrim(l.title))`
+        ),
+        sample: await rowsOf(
+          `SELECT l.ledger_code, w.work_code, l.title
+             FROM ledgers l
+             JOIN works w ON w.kind='licensed_in'
+              AND lower(btrim(w.title)) = lower(btrim(l.title))
+            ORDER BY l.ledger_code LIMIT 20`
+        ),
+      };
+
+      // C) IP→LO 再採番の影響(被参照件数=ブラスト半径)
+      report.ip_renumber = {
+        targets: await scalar(`SELECT COUNT(*)::int n FROM works WHERE kind='licensed_in' AND work_code LIKE 'IP-%'`),
+        ref_contract_works: await scalar(
+          `SELECT COUNT(*)::int n FROM contract_works cw JOIN works w ON w.id=cw.work_id
+            WHERE w.kind='licensed_in' AND w.work_code LIKE 'IP-%'`),
+        ref_condition_lines_work: await scalar(
+          `SELECT COUNT(*)::int n FROM condition_lines cl JOIN works w ON w.id=cl.work_id
+            WHERE w.kind='licensed_in' AND w.work_code LIKE 'IP-%'`),
+        ref_work_materials: await scalar(
+          `SELECT COUNT(*)::int n FROM work_materials wm JOIN works w ON w.id=wm.work_id
+            WHERE w.kind='licensed_in' AND w.work_code LIKE 'IP-%'`),
+      };
+
+      // D) condition_lines の取引種別 分類状況(Phase1 backfill 後)
+      report.condition_lines = {
+        total: await scalar(`SELECT COUNT(*)::int n FROM condition_lines`),
+        by_kind: await rowsOf(
+          `SELECT COALESCE(transaction_kind,'(NULL)') AS transaction_kind, COUNT(*)::int n
+             FROM condition_lines GROUP BY 1 ORDER BY n DESC`),
+        null_by_scheme: await rowsOf(
+          `SELECT payment_scheme, COUNT(*)::int n
+             FROM condition_lines WHERE transaction_kind IS NULL
+            GROUP BY 1 ORDER BY n DESC`),
+        counterparty_null: await scalar(`SELECT COUNT(*)::int n FROM condition_lines WHERE counterparty_vendor_id IS NULL`),
+      };
+
+      // E) work_materials の状態
+      report.work_materials = {
+        total: await scalar(`SELECT COUNT(*)::int n FROM work_materials`),
+        by_acquisition: await rowsOf(
+          `SELECT COALESCE(acquisition_type,'(NULL)') AS acquisition_type, COUNT(*)::int n
+             FROM work_materials GROUP BY 1 ORDER BY n DESC`),
+        missing_code: await scalar(`SELECT COUNT(*)::int n FROM work_materials WHERE material_code IS NULL`),
+        is_default: await scalar(`SELECT COUNT(*)::int n FROM work_materials WHERE is_default=true`),
+      };
+
+      res.json({ ok: true, report });
+    } catch (e: any) {
+      console.error("[phase2-dryrun] failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
 
   // 修復ツール: 上書き事故で「検収書(inspection_certificate)だが発注書番号」になった文書を
   //   検収書として再採番(ARC-INS-…)し、紐づく条件明細を検収済(inspection イベント=金額分)にする。
