@@ -2,9 +2,9 @@
  * WorkGraphPanel — 統合 Phase3c: 3カード統合エディタ（増分①: ビュー）。
  *
  * 作品(own)を選ぶと、権利フローを3カードで表示する:
- *   右 = 原作 / 素材調達（支払エッジ: ライセンスイン原作・委託素材）
+ *   左 = 原作 / 素材調達（支払エッジ: ライセンスイン原作・委託素材）
  *   中 = 作品（own）＋ 素材 ＋ 製品
- *   左 = 受取（受取エッジ: ライセンスアウト派生物・物販アウト）
+ *   右 = 受取（受取エッジ: ライセンスアウト派生物・物販アウト）
  *
  * カード間のエッジ = condition_lines（向き × 取引種別）。本増分は読み取り表示のみ。
  * 編集（ノード/エッジの作成・紐付け）は後続増分で追加する。
@@ -228,19 +228,19 @@ export function WorkGraphPanel() {
         <div className="text-xs font-mono text-muted-foreground py-8 text-center">作品を選択してください。</div>
       ) : (
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,1.1fr,1fr] gap-3 items-start">
-          {/* 左 = 受取（派生物 / 物販アウト）*/}
+          {/* 左 = 原作 / 素材調達（支払）*/}
           <Card>
             <CardContent className="px-3.5 py-3 space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-mono font-bold">◀ 受取（派生物 / 卸）</h3>
-                <Badge variant="outline" className="border-emerald-300 text-emerald-700">受取 {downstream.length}</Badge>
+                <h3 className="text-sm font-mono font-bold">原作 / 調達（支払）▶</h3>
+                <Badge variant="outline" className="border-amber-300 text-amber-700">支払 {upstream.length}</Badge>
               </div>
-              {downstream.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground py-1">受取エッジはありません。</p>
+              {upstream.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground py-1">支払エッジはありません。</p>
               ) : (
-                downstream.map((e) => (
+                upstream.map((e) => (
                   <React.Fragment key={e.id}>
-                    <EdgeRow e={e} side="down" materials={materials} products={products} onLink={linkEdge} />
+                    <EdgeRow e={e} side="up" materials={materials} products={products} onLink={linkEdge} />
                   </React.Fragment>
                 ))
               )}
@@ -312,19 +312,19 @@ export function WorkGraphPanel() {
             </CardContent>
           </Card>
 
-          {/* 右 = 原作 / 素材調達（支払）*/}
+          {/* 右 = 受取（派生物 / 物販アウト）*/}
           <Card>
             <CardContent className="px-3.5 py-3 space-y-2">
               <div className="flex items-center justify-between">
-                <h3 className="text-sm font-mono font-bold">原作 / 調達（支払）▶</h3>
-                <Badge variant="outline" className="border-amber-300 text-amber-700">支払 {upstream.length}</Badge>
+                <h3 className="text-sm font-mono font-bold">◀ 受取（派生物 / 卸）</h3>
+                <Badge variant="outline" className="border-emerald-300 text-emerald-700">受取 {downstream.length}</Badge>
               </div>
-              {upstream.length === 0 ? (
-                <p className="text-[11px] text-muted-foreground py-1">支払エッジはありません。</p>
+              {downstream.length === 0 ? (
+                <p className="text-[11px] text-muted-foreground py-1">受取エッジはありません。</p>
               ) : (
-                upstream.map((e) => (
+                downstream.map((e) => (
                   <React.Fragment key={e.id}>
-                    <EdgeRow e={e} side="up" materials={materials} products={products} onLink={linkEdge} />
+                    <EdgeRow e={e} side="down" materials={materials} products={products} onLink={linkEdge} />
                   </React.Fragment>
                 ))
               )}
