@@ -73,6 +73,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/imports\/v2\/templates(?:\/|\?|$)/,
   // データモデル整理: 連結チェック(整合性点検)は worker のみ実装。
   /^\/api\/admin\/data-linkage\/check(?:\?|$)/,
+  // 統合 Phase2 ドライラン(読み取り専用集計)は worker のみ実装。
+  /^\/api\/admin\/unify\/phase2-dryrun(?:\?|$)/,
   // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ
   // (form_data 全件返却 + jsonb 操作のため)
   /^\/api\/documents\/pending-pdf(?:\?|$)/,
