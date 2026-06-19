@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck, Network, Boxes } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck, Network, Boxes, Workflow } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -20,6 +20,8 @@ const tabs = [
   { to: "/master/receivable-map", label: "分配マップ", icon: Network },
   // 統合 P3-5: 作品モデル (原作IP / 自社作品 / 契約 · v3)
   { to: "/master/work-model", label: "作品モデル", icon: Boxes },
+  // 統合 Phase3c: 権利フロー 3カードビュー (原作→作品→派生物)
+  { to: "/master/work-graph", label: "権利フロー", icon: Workflow },
   // Phase 22.21.81: 文書作成途中の draft (一時保存) の掃除タブ
   { to: "/master/drafts", label: "Drafts (一時保存)", icon: FileEdit },
   { to: "/master/staff", label: "Staff", icon: Users },
