@@ -1,6 +1,6 @@
 # 設計書：作品・原作マスター統合（Work / Source-IP Unification）
 
-- 版: **v2.2**（取引種別に service＝委託買い切り を追加 / 素材の取得経路を明文化）
+- 版: **v3.0（確定版）** — 全決定事項を確定（IP→LO再採番 / master_sequences集約 / 段階リリース）
 - 対象: LegalBridge AI GCP（admin-ui / worker / search-api / DB）
 - 目的: 「作品登録」と「原作登録」の二重化を解消し、**ノード（作品・原作・素材・製品）を向き付き・種別付きの取引条件明細でつなぐ単一グラフ**に統合する。
 
@@ -119,7 +119,7 @@ condition_lines (エッジ＝取引条件明細)  ★ここに2軸
 | 対象 | 現状 | 追加/変更 |
 |---|---|---|
 | works.kind | own / licensed_in | `licensed_in` → **`source`** に呼称統一（LO採番） |
-| 原作採番 | IP-（master_seq） | **LO-** へ統一。既存IPは旧コードをエイリアス保持 |
+| 原作採番 | IP-（master_seq） | **LO-** へ統一。既存IPは **LO 再採番**（旧IPは `legacy_code` に保全＋被参照一括更新） |
 | work_materials | コードなし | `material_no`/`material_code`/`is_default(-001)` を補完 |
 | condition_lines | flow_direction/is_inbound, work_id, source_ip_id | `direction` 正規化、**`transaction_kind` 追加**、`source_work_id`/`source_material_id`/`product_id`/`counterparty_vendor_id` を正式採用 |
 | 採番権限 | document_sequences(LO) と master_sequences(IP/W) の2系統 | **1系統へ集約**（推奨: master_sequences を正、worker からも参照） |
@@ -181,7 +181,7 @@ condition_lines (エッジ＝取引条件明細)  ★ここに2軸
 |---|---|---|
 | ledger_code `LO-…` | works.work_code | そのまま継承（source） |
 | material_code `LO-…-NNN` | work_materials.material_code | そのまま継承 |
-| source_ips `IP-…` | works(source) | LO 再採番 or 旧IPをエイリアス列保持（決定事項③） |
+| source_ips `IP-…` | works(source) | **LO 再採番**。旧IPを `legacy_code` に保全し、被参照(contract_works/financial_conditions/condition_lines/form_data)を一括更新 |
 | works(own) `W-…` | works(own) | 不変 |
 | is_inbound=true | direction='receive' | 受取 |
 | is_inbound=false | direction='pay' | 支払 |
@@ -192,21 +192,25 @@ condition_lines (エッジ＝取引条件明細)  ★ここに2軸
 
 ## 8. リスク・留意点
 - **名寄せ**（ledgers↔works(licensed_in)）と **4象限分類**（payment_scheme→kind）は自動化しきれず人手レビューが残る。優先ルールを事前決定。
-- **採番再付与(IP→LO)** は被リンクへ影響 → 旧コードをエイリアス保持して安全側。
+- **採番再付与(IP→LO 再採番)** は被リンクへ影響 → 旧コードを `legacy_code` に保全し、被参照を**トランザクションで一括更新**（移行スクリプトで件数照合）。
 - **採番二系統の統合**は番号競合に注意（最大値取込で初期化）。
 - form_data(JSONB)の旧キー(`ledger_ref_id`等)は当面**読取互換**で維持。
 - condition_lines の P2-5/6 と合流するため、両者を**単一スケジュール**で管理。
 
 ---
 
-## 9. 未決事項（残り・要決定）
-1. 既存 `IP-` の扱い：**LO 再採番** か **旧コードのエイリアス保持**か（推奨: エイリアス保持）。
-2. 原作/作品/製品の編集UI：WorkModelPanel に統合（推奨）か、当面 LedgersPanel 併存か。
-3. 採番権限：`master_sequences` を正とする（推奨）か。
-4. `transaction_kind` 自動判定の業務ルール（per_unit/lump_sum をどこまで product と見なすか）。
-5. 進め方：**Phase 0 即時 → 原作/素材統合 → エッジ2軸化** の順で先行リリースするか、全体を一括設計してから着手するか。
+## 9. 確定事項（すべて決定済み）
+1. **正本** = `works` 集約（原作=`source`/`LO-`、自社作品=`own`/`W-`）。
+2. **既存 `IP-` の扱い** = **LO 再採番**。新 `LO-` を付与し、旧 `IP-` は `legacy_code` 列に保全。被参照（contract_works / capability_financial_conditions / condition_lines / form_data 等）を一括更新する。
+3. **採番権限** = **`master_sequences` に集約**（worker / search-api 双方から参照。移行時に既存最大値を取り込み初期化）。
+4. **取引種別** = `transaction_kind ∈ {license, product, service}`（service＝発注書委託・買い切り）。
+5. **素材の取得経路** = ライセンス / 買い切り委託(発注書明細) / 自社制作。`work_materials.acquisition_type` ＋ 既存連結列。
+6. **エッジ** = 全取引を単一 `condition_lines`（direction × transaction_kind）。works/原作に対し **1対N**。
+7. **入力** = 3カード統合エディタ。**条件の源泉** = 個別利用許諾条件書 / 出版等利用許諾条件書 の `condition_lines` を参照リンク（マスター契約は金銭条件を持たない）。
+8. **編集UI** = WorkModelPanel に「原作(source)/自社作品(own)/製品」を統合（LedgersPanel は移行後に廃止）。
+9. **リリース順** = **Phase 0（入口一本化）→ 原作/素材統合 → エッジ多軸化 → 3カード統合エディタ** の段階リリース。
 
-> 確定済み（本版で反映）: 正本=`works` 集約 / 原作採番=`LO-` / 派生物・卸先・仕入先=取引先＋製品で表現 / 全取引は単一 `condition_lines`（direction × transaction_kind{license|product|**service**}） / 素材は取得経路(ライセンス/買い切り委託=発注書明細/自社制作)を持つ / condition_lines は works/原作に対し1対N / **入力=3カード統合エディタ** / **条件の源泉=個別条件書(出版等個別条件書)の condition_lines を参照（マスター契約は条件を持たない）** / エッジ単位の license/product トグル。
+> 本設計書は確定版。以降は各 Phase の実装タスクに分解して着手する。
 
 ---
 
