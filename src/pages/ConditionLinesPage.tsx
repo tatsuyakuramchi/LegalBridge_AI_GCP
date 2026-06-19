@@ -40,6 +40,9 @@ type ConditionLine = {
   cloudsign_draft_at: string | null
   // メール送信対象の代表 検収書/計算書 文書番号(無ければ送信不可)。
   send_doc_number: string | null
+  // A+C: 検収待ち / 期限超過(検収書未発行の支払明細)。worker が付与。
+  inspection_pending: boolean | null
+  inspection_overdue: boolean | null
 }
 
 // 一括/従量/分割 は 成就/一部成就/未成就、契約期間型(利用許諾) は 履行中/成就（満了）。
@@ -136,6 +139,7 @@ export function ConditionLinesPage() {
   const [search, setSearch] = React.useState("")
   const [statusFilter, setStatusFilter] = React.useState<string | null>(null)
   const [dirFilter, setDirFilter] = React.useState<string | null>(null)
+  const [inspectionFilter, setInspectionFilter] = React.useState<"all" | "pending" | "overdue">("all")
   // 列の並び替え(クリックで昇順/降順トグル)。
   const [sort, setSort] = React.useState<{ key: string; dir: 1 | -1 } | null>(null)
   const toggleSort = (key: string) =>
@@ -193,9 +197,21 @@ export function ConditionLinesPage() {
       .sort((a, b) => b.count - a.count)
   }, [rows])
 
+  // A+C: 検収待ち / 期限超過の件数。
+  const inspectionCounts = React.useMemo(() => {
+    let pending = 0, overdue = 0
+    for (const r of rows) {
+      if (r.inspection_pending) pending++
+      if (r.inspection_overdue) overdue++
+    }
+    return { pending, overdue }
+  }, [rows])
+
   const filtered = rows.filter((r) => {
     if (statusFilter && (r.status || "—") !== statusFilter) return false
     if (dirFilter && r.direction !== dirFilter) return false
+    if (inspectionFilter === "pending" && !r.inspection_pending) return false
+    if (inspectionFilter === "overdue" && !r.inspection_overdue) return false
     const q = search.trim().toLowerCase()
     if (q) {
       const hay = `${r.line_code || ""} ${r.subject || ""} ${r.vendor_name || ""} ${r.contract_title || ""}`.toLowerCase()
@@ -334,6 +350,21 @@ export function ConditionLinesPage() {
             {d === "payable" ? "支払" : "受取"}
           </button>
         ))}
+        <span className="text-muted-foreground ml-3">検収:</span>
+        <button
+          type="button"
+          onClick={() => setInspectionFilter(inspectionFilter === "pending" ? "all" : "pending")}
+          className={`px-2 py-1 rounded-sm border ${inspectionFilter === "pending" ? "bg-amber-500 text-white border-amber-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+        >
+          検収待ち ({inspectionCounts.pending})
+        </button>
+        <button
+          type="button"
+          onClick={() => setInspectionFilter(inspectionFilter === "overdue" ? "all" : "overdue")}
+          className={`px-2 py-1 rounded-sm border ${inspectionFilter === "overdue" ? "bg-red-600 text-white border-red-700" : inspectionCounts.overdue > 0 ? "border-red-400 text-red-600 hover:border-red-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+        >
+          期限超過 ({inspectionCounts.overdue})
+        </button>
       </div>
 
       {loading ? (
@@ -394,6 +425,14 @@ export function ConditionLinesPage() {
                           <span className="text-[10px] ml-1">ほか{r.fulfilling_doc_count - 1}件</span>
                         ) : null}
                       </span>
+                    ) : r.inspection_overdue ? (
+                      <Badge variant="outline" className="border-red-400 text-red-600">
+                        検収待ち·超過
+                      </Badge>
+                    ) : r.inspection_pending ? (
+                      <Badge variant="outline" className="border-amber-400 text-amber-700">
+                        検収待ち
+                      </Badge>
                     ) : (
                       "—"
                     )}
