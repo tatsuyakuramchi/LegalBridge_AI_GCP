@@ -27,6 +27,9 @@ type Edge = {
   document_number: string | null
   contract_title: string | null
   counterparty: string | null
+  source_work_id?: number | null
+  source_material_id?: number | null
+  product_id?: number | null
   source_work_code?: string | null
   source_work_title?: string | null
   source_material_code?: string | null
@@ -46,7 +49,19 @@ const KindBadge = ({ kind }: { kind: string | null }) => {
 }
 const yen = (v: any) => (v == null || v === "" ? "" : `¥${Number(v).toLocaleString("ja-JP")}`)
 
-function EdgeRow({ e, side }: { e: Edge; side: "up" | "down" }) {
+function EdgeRow({
+  e,
+  side,
+  materials,
+  products,
+  onLink,
+}: {
+  e: Edge
+  side: "up" | "down"
+  materials: any[]
+  products: any[]
+  onLink: (edgeId: number, patch: any) => void
+}) {
   const node =
     side === "up"
       ? e.source_material_code
@@ -72,6 +87,36 @@ function EdgeRow({ e, side }: { e: Edge; side: "up" | "down" }) {
       </div>
       {e.document_number && (
         <div className="text-[10px] text-muted-foreground/70 truncate">{e.document_number}</div>
+      )}
+      {/* 増分③: エッジをノードへ参照リンク(支払→素材 / 受取→製品) */}
+      {side === "up" ? (
+        <select
+          value={e.source_material_id ?? ""}
+          onChange={(ev) => onLink(e.id, { source_material_id: ev.target.value ? Number(ev.target.value) : null })}
+          className="w-full text-[10px] font-mono border-b border-input bg-transparent py-0.5"
+          title="この支払を素材に紐付け"
+        >
+          <option value="">— 素材に紐付け —</option>
+          {materials.map((m) => (
+            <option key={m.id} value={m.id}>
+              {m.material_code || "—"} {m.material_name}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <select
+          value={e.product_id ?? ""}
+          onChange={(ev) => onLink(e.id, { product_id: ev.target.value ? Number(ev.target.value) : null })}
+          className="w-full text-[10px] font-mono border-b border-input bg-transparent py-0.5"
+          title="この受取を製品に紐付け"
+        >
+          <option value="">— 製品に紐付け —</option>
+          {products.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.product_code || "—"} {p.product_name}
+            </option>
+          ))}
+        </select>
       )}
     </div>
   )
@@ -100,6 +145,20 @@ export function WorkGraphPanel() {
       setLoading(false)
     }
   }, [])
+
+  const linkEdge = async (edgeId: number, patch: any) => {
+    try {
+      const r = await fetch(`/api/condition-lines/${edgeId}/graph-link`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(patch),
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await loadGraph(workId)
+    } catch (e) {
+      console.error("linkEdge failed", e)
+    }
+  }
 
   const addMaterial = async () => {
     if (!workId || !matName.trim()) return
@@ -179,7 +238,11 @@ export function WorkGraphPanel() {
               {downstream.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground py-1">受取エッジはありません。</p>
               ) : (
-                downstream.map((e) => <React.Fragment key={e.id}><EdgeRow e={e} side="down" /></React.Fragment>)
+                downstream.map((e) => (
+                  <React.Fragment key={e.id}>
+                    <EdgeRow e={e} side="down" materials={materials} products={products} onLink={linkEdge} />
+                  </React.Fragment>
+                ))
               )}
             </CardContent>
           </Card>
@@ -259,7 +322,11 @@ export function WorkGraphPanel() {
               {upstream.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground py-1">支払エッジはありません。</p>
               ) : (
-                upstream.map((e) => <React.Fragment key={e.id}><EdgeRow e={e} side="up" /></React.Fragment>)
+                upstream.map((e) => (
+                  <React.Fragment key={e.id}>
+                    <EdgeRow e={e} side="up" materials={materials} products={products} onLink={linkEdge} />
+                  </React.Fragment>
+                ))
               )}
             </CardContent>
           </Card>

@@ -12012,6 +12012,36 @@ ${details}
     }
   });
 
+  // 統合Phase3c 増分③: 条件明細(エッジ)をグラフのノードへ参照リンクする。
+  //   condition_lines を新規作成せず、既存明細の source_work_id / source_material_id /
+  //   product_id / counterparty_vendor_id を設定/解除するだけ(参照リンク)。
+  //   null を明示指定すると解除。未指定キーは変更しない。
+  app.patch("/api/condition-lines/:id/graph-link", express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const sets: string[] = [];
+      const vals: any[] = [];
+      const put = (col: string, val: any) => { vals.push(val); sets.push(`${col} = $${vals.length}`); };
+      if ("source_work_id" in b) put("source_work_id", b.source_work_id ?? null);
+      if ("source_material_id" in b) put("source_material_id", b.source_material_id ?? null);
+      if ("product_id" in b) put("product_id", b.product_id ?? null);
+      if ("counterparty_vendor_id" in b) put("counterparty_vendor_id", b.counterparty_vendor_id ?? null);
+      if (sets.length === 0) return res.status(400).json({ ok: false, error: "変更項目がありません" });
+      vals.push(id);
+      const r = await query(
+        `UPDATE condition_lines SET ${sets.join(", ")}, updated_at = now() WHERE id = $${vals.length} RETURNING id`,
+        vals
+      );
+      if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "条件明細が見つかりません" });
+      res.json({ ok: true, id });
+    } catch (e: any) {
+      console.error("/api/condition-lines/:id/graph-link failed:", e?.message || e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   // 条件明細の手動削除(物理)。重複・誤作成の整理用。
   //   ガード: 検収/計算/支払の実績(condition_events)がある明細は削除しない(履歴保全)。
   //   作品コンポーネント紐付け(work_component_lines)がある場合も拒否。
