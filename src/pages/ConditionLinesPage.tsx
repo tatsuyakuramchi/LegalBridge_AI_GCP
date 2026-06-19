@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Search, Inbox, Loader2, ArrowRight, Trash2, RefreshCw } from "lucide-react"
+import { Search, Inbox, Loader2, ArrowRight, Trash2, RefreshCw, Bell } from "lucide-react"
 
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -146,6 +146,27 @@ export function ConditionLinesPage() {
     setSort((s) => (s && s.key === key ? { key, dir: s.dir === 1 ? -1 : 1 } : { key, dir: 1 }))
 
   const [syncing, setSyncing] = React.useState(false)
+  const [digesting, setDigesting] = React.useState(false)
+
+  // 検収待ち/期限超過を Slack に通知(日次ダイジェスト)。
+  const sendInspectionDigest = async () => {
+    if (digesting) return
+    setDigesting(true)
+    try {
+      const res = await fetch("/api/management/inspection-digest", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
+      window.alert(`Slack 通知しました: 検収待ち ${d.total} 件 / 期限超過 ${d.overdue} 件`)
+    } catch (e: any) {
+      window.alert(`Slack 通知に失敗しました: ${e?.message || e}`)
+    } finally {
+      setDigesting(false)
+    }
+  }
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -305,6 +326,16 @@ export function ConditionLinesPage() {
           >
             <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
             {syncing ? "同期中…" : "送信履歴を同期"}
+          </button>
+          <button
+            type="button"
+            onClick={sendInspectionDigest}
+            disabled={digesting}
+            title="検収待ち/期限超過の件数を Slack に通知(日次ダイジェスト)"
+            className="flex items-center gap-1.5 px-3 py-2 rounded-sm border border-border text-[11px] font-mono text-muted-foreground hover:border-foreground disabled:opacity-50"
+          >
+            <Bell className={`h-3.5 w-3.5 ${digesting ? "animate-pulse" : ""}`} />
+            {digesting ? "送信中…" : "検収待ちをSlack通知"}
           </button>
           <div className="relative w-72">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
