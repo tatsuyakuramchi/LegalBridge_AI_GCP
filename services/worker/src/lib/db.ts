@@ -1984,16 +1984,29 @@ export async function getNewDocumentNumber(type: string, issueTypeName?: string)
  *   - ユーザーが Archive UI から手動で旧版を真の契約に戻す (override)
  */
 /**
- * Phase 22.18: 原作マスター (ledgers) の ledger_code 自動採番。
+ * Phase 22.18 / 採番統一(§9.3): 原作 (ledgers) の ledger_code 自動採番。
  *
  * 形式: LO-{YYYY}-{NNNN} (例: LO-2026-0001)
  *
- * document_sequences に kind="LO" / year=YYYY で連番。年単位リセット。
+ * 採番ロジック: **ledgers ∪ works の当年 LO 最大 +1** から導出する。
+ *   旧実装は document_sequences(kind="LO") の独立カウンタだったが、api 側
+ *   (POST /api/v3/source-ips) は ledgers∪works の max+1 で LO を振るため、
+ *   両系統が同一 LO 番号を二重採番しうる問題があった(移行0075も max+1)。
+ *   両者を同一の実コード由来ロジックに揃え、系統間衝突を構造的に解消する。
+ *   (残: 同時 INSERT の競合は ledger_code/work_code の UNIQUE 制約で検出。)
  */
 export async function getNewLedgerCode(year?: number): Promise<string> {
   const y = year || new Date().getFullYear();
-  const val = await getNextSequenceValue("LO", y);
-  return `LO-${y}-${val.toString().padStart(4, "0")}`;
+  const res = await query(
+    `SELECT COALESCE(MAX(
+              CASE WHEN code ~ ('^LO-' || $1 || '-[0-9]+$')
+                   THEN split_part(code, '-', 3)::int ELSE 0 END), 0) + 1 AS n
+       FROM (SELECT ledger_code AS code FROM ledgers
+             UNION ALL SELECT work_code AS code FROM works) c`,
+    [String(y)]
+  );
+  const n: number = res.rows[0]?.n ?? 1;
+  return `LO-${y}-${n.toString().padStart(4, "0")}`;
 }
 
 /**

@@ -17,6 +17,7 @@ import {
   DialogBody,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { LegacyWorksBanner } from "@/src/components/LegacyWorksBanner"
 
 // 統合 P3-5: 作品モデル(work-centric / v3) — search-api 専用だった /work-model を移植。
 //   原作IP・自社作品・契約を作品軸で 閲覧 + CRUD + CSV取込。スキーマ駆動フォーム。
@@ -182,6 +183,7 @@ export function WorkModelPanel() {
 
   return (
     <div className="space-y-5">
+      <LegacyWorksBanner what="原作・自社作品" />
       <div className="flex items-center gap-3">
         <Button variant="outline" size="sm" onClick={load} disabled={loading}>
           <RefreshCw />
