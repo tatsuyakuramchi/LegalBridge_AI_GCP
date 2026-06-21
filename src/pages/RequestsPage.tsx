@@ -19,6 +19,12 @@ import {
 } from "@/components/ui/dialog"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 import { QuickCreateIssueModal } from "@/src/components/backlog/QuickCreateIssueModal"
+import { TERMINAL_OFF_FLOW } from "@/src/lib/statusFlow"
+
+// 完了/終結/キャンセル を「クローズ済み」とみなす。デフォルトで一覧から隠す。
+const DONE_STATUSES = new Set<string>(["完了", ...TERMINAL_OFF_FLOW])
+const statusNameOf = (i: any) =>
+  String(i?.status?.name || "").trim() || "未設定"
 
 export function RequestsPage() {
   const navigate = useNavigate()
@@ -72,6 +78,9 @@ export function RequestsPage() {
   >(undefined)
   // Phase 22.21.54: ステータスフィルタ。null = ALL、それ以外は status.name で絞り込み
   const [statusFilter, setStatusFilter] = React.useState<string | null>(null)
+  // 完了/終結/キャンセル をデフォルトで非表示にする。
+  //   ステータスチップで明示選択したときは、その絞り込みを優先して表示する。
+  const [hideDone, setHideDone] = React.useState(true)
 
   const openQuickCreate = (parentKey?: string) => {
     setQuickCreateParent(parentKey)
@@ -102,8 +111,10 @@ export function RequestsPage() {
     if (!matchesText) return false
     // ステータス絞り込み
     if (statusFilter !== null) {
-      const sName = String((i as any)?.status?.name || "").trim() || "未設定"
-      if (sName !== statusFilter) return false
+      if (statusNameOf(i) !== statusFilter) return false
+    } else if (hideDone && DONE_STATUSES.has(statusNameOf(i))) {
+      // ALL 表示中はクローズ済み (完了/終結/キャンセル) を既定で隠す。
+      return false
     }
     return true
   })
@@ -184,6 +195,19 @@ export function RequestsPage() {
               className="pl-8"
             />
           </div>
+          {/* 完了/終結/キャンセル の表示切替 (デフォルト: 非表示) */}
+          <label
+            className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground cursor-pointer select-none"
+            title="完了・終結・キャンセルの課題を一覧に含めるか"
+          >
+            <input
+              type="checkbox"
+              className="h-3.5 w-3.5 accent-foreground cursor-pointer"
+              checked={hideDone}
+              onChange={(e) => setHideDone(e.target.checked)}
+            />
+            完了を隠す
+          </label>
         </div>
       </header>
 
@@ -259,7 +283,12 @@ export function RequestsPage() {
                 : "border-border text-muted-foreground hover:border-foreground hover:text-foreground"
             }`}
           >
-            ALL <span className="opacity-70">({issues.length})</span>
+            ALL{" "}
+            <span className="opacity-70">
+              ({hideDone
+                ? issues.filter((i) => !DONE_STATUSES.has(statusNameOf(i))).length
+                : issues.length})
+            </span>
           </button>
           {statusBuckets.map((b) => {
             const active = statusFilter === b.name

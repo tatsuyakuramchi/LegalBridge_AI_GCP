@@ -82,6 +82,15 @@ export interface Staff {
   app_role?: string
 }
 
+// Backlog 課題のカスタムフィールド 1 行。value は型により
+//   string(テキスト/日付) / { id, name }(単一選択) / [{ id, name }](複数選択)。
+export interface BacklogCustomField {
+  id: number
+  name: string
+  fieldTypeId?: number
+  value?: any
+}
+
 export interface Issue {
   issueKey: string
   summary: string
@@ -91,6 +100,9 @@ export interface Issue {
   registeredUser?: string
   documentCount?: number
   lastDocDate?: string
+  // Backlog 一覧 API が返す課題のカスタムフィールド
+  //   (取引先名称・依頼部署・締結方法・希望納期 等)。
+  customFields?: BacklogCustomField[]
 }
 
 export interface ExternalAsset {
