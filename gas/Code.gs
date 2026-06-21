@@ -35,13 +35,19 @@ const APP_CONFIG = Object.freeze({
   defaultPage: 'portal',
 
   pages: {
-    portal:        { file: 'legal_portal',   title: '法務部 実務ガイド ポータル' },
-    bg:            { file: 'guide_bg',       title: 'BG事業部 契約スキーム実務ガイド' },
-    pub:           { file: 'guide_pub',      title: '出版フロー実務ガイド' },
-    vendor:        { file: 'guide_vendor',   title: '取引先登録実務ガイド' },
-    torihiki:      { file: 'guide_torihiki', title: '取引適正化・フリーランス法 実務ガイド' },
-    clause:        { file: 'guide_clause',   title: '契約書 条文解説ガイド' },
-    contractcheck: { file: 'contract_check', title: '取引先契約状況確認' }
+    portal:        { file: 'legal_portal',     title: '法務部 実務ガイド ポータル' },
+    bg:            { file: 'guide_bg',         title: 'BG事業部 契約スキーム実務ガイド' },
+    pub:           { file: 'guide_pub',        title: '出版フロー実務ガイド' },
+    vendor:        { file: 'guide_vendor',     title: '取引先登録実務ガイド' },
+    torihiki:      { file: 'guide_torihiki',   title: '取引適正化・フリーランス法 実務ガイド' },
+    tetsuzuki:     { file: 'guide_tetsuzuki',  title: 'ライセンス契約・業務委託契約 取引社内手続きガイド' },
+    knowledge:     { file: 'guide_knowledge',  title: '法務ナレッジブック｜法務業務ドメインの実務基準' },
+    clause:        { file: 'guide_clause',     title: '契約書 条文解説ガイド' },
+    contractcheck: { file: 'contract_check',   title: '取引先契約状況確認' },
+    search:        { file: 'guide_search',     title: '法務データ検索ガイド' },
+    privacy:       { file: 'guide_privacy',    title: '個人情報 運用ガイド｜事業部向け' },   // ← この1行を追加
+    related_party:      { file: 'guide_related_party', title: '関連当事者取引 判定・決議 実務ガイド' },
+    related_party_tool: { file: 'related_party',       title: '関連当事者取引 判定ツール' }
   },
 
   downloadLinks: {
