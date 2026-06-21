@@ -71,6 +71,27 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 増分⑥(§3.4/§3.7): この原作を利用している自社作品(own)の逆引き。
+  //   condition_lines.source_work_id = :id を持つ支払エッジから work_id を集約。
+  //   原作中心ビュー / 左カードのクロスリンク表示に使う。
+  app.get("/api/v3/source-ips/:id/uses", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT w.id, w.work_code, w.title, w.work_type, w.status,
+                COUNT(cl.id) AS link_count
+           FROM condition_lines cl
+           JOIN works w ON w.id = cl.work_id
+          WHERE cl.source_work_id = $1 AND COALESCE(w.kind, 'own') = 'own'
+          GROUP BY w.id, w.work_code, w.title, w.work_type, w.status
+          ORDER BY w.work_code`,
+        [id]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
   // ── 自社作品 ─────────────────────────────────────────────
   app.get("/api/v3/works", ...requireRead, async (_req, res) => {
     try {
@@ -138,11 +159,20 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const w = await query(`SELECT * FROM works WHERE id = $1`, [id]);
       if (w.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      // ④' 許諾地域の引用: condition_lines.source_condition_id → capability_financial_conditions
+      //   の region_* を引用表示。無ければ contract_capabilities の territory/language にフォールバック。
       const edgeCols = `cl.id, cl.line_code, cl.subject, cl.transaction_kind, cl.direction,
                         cl.payment_scheme, cl.amount_ex_tax, cl.rate_pct, cl.mg_amount,
                         cl.source_work_id, cl.source_material_id, cl.product_id,
+                        cl.counterparty_vendor_id,
                         cc.document_number, cc.contract_title,
-                        v.vendor_name AS counterparty`;
+                        v.vendor_name AS counterparty,
+                        cfc.region_territory, cfc.region_language, cfc.region_language_label,
+                        COALESCE(
+                          cfc.region_language_label,
+                          NULLIF(btrim(concat_ws('・', cfc.region_territory, cfc.region_language)), ''),
+                          NULLIF(btrim(concat_ws('・', cc.territory, cc.language)), '')
+                        ) AS territory_label`;
       const [products, materials, upstream, downstream] = await Promise.all([
         query(`SELECT * FROM products WHERE work_id = $1 ORDER BY id`, [id]),
         query(
@@ -158,6 +188,7 @@ export function registerWorkModelRoutes(
                   wm.material_code AS source_material_code, wm.material_name AS source_material_name
              FROM condition_lines cl
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN works sw ON sw.id = cl.source_work_id
              LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
              LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
@@ -171,6 +202,7 @@ export function registerWorkModelRoutes(
                   p.product_code, p.product_name
              FROM condition_lines cl
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN products p ON p.id = cl.product_id
              LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
             WHERE cl.work_id = $1 AND cl.direction = 'receivable'
@@ -252,24 +284,59 @@ export function registerWorkModelRoutes(
   // ── 書込(D1: Search がマスター/新プラットフォームを所有)─────────────
   //   IAP + admin ロール(requireWrite)。採番は master_sequences(worker と番号空間分離)。
 
-  // POST /api/v3/source-ips — 原作IP登録 (P2-5: works(kind='licensed_in') へ書込)
+  // POST /api/v3/source-ips — 原作登録 (works(kind='licensed_in') へ書込)
+  //   原作IDの LO 統一: 採番を IP- → **LO-YYYY-NNNN** に変更 (設計書 §7/§9, 移行 0075 と同思想)。
+  //   - LO 番号は ledgers ∪ works の当年最大 +1。worker(document_sequences) と別カウンタだが
+  //     両表の実コードから直接導出するため、既存 LO とは衝突しない。
+  //   - 1文(CTE)で works + ledgers(LO) + 素材 -001 ミラーを原子的に作成
+  //     (このルートは pool 直結を持たず query() のみのため、トランザクションを単一文で表現)。
+  //   - 既存IP原作は移行 0075 で LO 再採番済み。本変更で新規も LO に統一。
+  //   注: worker 側 LedgersPanel 作成は引き続き document_sequences(LO)。採番系統の完全集約は §9.3。
   app.post("/api/v3/source-ips", ...requireWrite, express.json(), async (req, res) => {
     try {
       const b = req.body || {};
       if (!b.title) return res.status(400).json({ ok: false, error: "title is required" });
       const year = new Date().getFullYear();
-      const code = b.source_code || `IP-${year}-${pad4(await nextMasterSeq(query, "IP", year))}`;
       const r = await query(
-        `INSERT INTO works (work_code, title, title_kana, alternative_titles, division,
-            is_original, kind, rights_holder_vendor_id, original_publisher, default_rights_holder,
-            default_credit_display, default_work_supplement, default_approval_target,
-            default_approval_timing, remarks, parent_work_id, derivation_type)
-         VALUES ($1,$2,$3,COALESCE($4::text[],'{}'),COALESCE($5::text[],'{}'),FALSE,'licensed_in',$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
-         RETURNING *, work_code AS source_code`,
-        [code, b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
+        `WITH yr AS (SELECT $1::text AS y),
+         maxno AS (
+           SELECT COALESCE(MAX(
+                    CASE WHEN code ~ ('^LO-' || (SELECT y FROM yr) || '-[0-9]+$')
+                         THEN split_part(code, '-', 3)::int ELSE 0 END), 0) AS n
+             FROM (SELECT ledger_code AS code FROM ledgers
+                   UNION ALL SELECT work_code AS code FROM works) c
+         ),
+         newcode AS (
+           SELECT COALESCE($16,
+                    'LO-' || (SELECT y FROM yr) || '-' || lpad(((SELECT n FROM maxno) + 1)::text, 4, '0')) AS c
+         ),
+         ins_work AS (
+           INSERT INTO works (work_code, title, title_kana, alternative_titles, division,
+               is_original, kind, rights_holder_vendor_id, original_publisher, default_rights_holder,
+               default_credit_display, default_work_supplement, default_approval_target,
+               default_approval_timing, remarks, parent_work_id, derivation_type)
+           SELECT (SELECT c FROM newcode), $2, $3, COALESCE($4::text[],'{}'), COALESCE($5::text[],'{}'),
+                  FALSE, 'licensed_in', $6, $7, $8, $9, $10, $11, $12, $13, $14, $15
+           RETURNING *, work_code AS source_code
+         ),
+         ins_ledger AS (
+           INSERT INTO ledgers (ledger_code, title, is_active)
+           SELECT (SELECT c FROM newcode), $2, true
+           ON CONFLICT (ledger_code) DO NOTHING
+           RETURNING id
+         ),
+         ins_mat AS (
+           INSERT INTO materials (ledger_id, material_no, material_code, material_name, is_default, is_active)
+           SELECT (SELECT id FROM ins_ledger), 1, (SELECT c FROM newcode) || '-001', $2, true, true
+           WHERE EXISTS (SELECT 1 FROM ins_ledger)
+           RETURNING id
+         )
+         SELECT * FROM ins_work`,
+        [String(year), b.title, b.title_kana ?? null, b.alternative_titles ?? null, b.division ?? null,
          b.rights_holder_vendor_id ?? null, b.original_publisher ?? null, b.default_rights_holder ?? null,
          b.default_credit_display ?? null, b.default_work_supplement ?? null, b.default_approval_target ?? null,
-         b.default_approval_timing ?? null, b.remarks ?? null, b.parent_work_id ?? null, b.derivation_type ?? null]
+         b.default_approval_timing ?? null, b.remarks ?? null, b.parent_work_id ?? null, b.derivation_type ?? null,
+         b.source_code ?? null]
       );
       res.status(201).json(r.rows[0]);
     } catch (e) { fail(res, e); }
@@ -796,6 +863,88 @@ export function registerWorkModelRoutes(
         ]
       );
       res.status(201).json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // 増分⑦: 製品(SKU)追加。product_code は {work_code}-P-NNN で採番(未指定時)。
+  app.post("/api/v3/works/:id/products", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      if (!b.product_name) return res.status(400).json({ ok: false, error: "product_name is required" });
+      const r = await query(
+        `INSERT INTO products (work_id, product_code, product_name, edition, format, msrp, jan_code, isbn, release_date, status)
+         SELECT $1,
+                COALESCE($2, w.work_code || '-P-' || lpad(nextno.n::text, 3, '0')),
+                $3, $4, $5, $6, $7, $8, $9, $10
+           FROM works w
+           CROSS JOIN LATERAL (
+             SELECT COUNT(*) + 1 AS n FROM products WHERE work_id = $1
+           ) nextno
+          WHERE w.id = $1
+         RETURNING *`,
+        [id, b.product_code ?? null, b.product_name, b.edition ?? null, b.format ?? null,
+         b.msrp ?? null, b.jan_code ?? null, b.isbn ?? null, b.release_date ?? null, b.status ?? null]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "work not found" });
+      res.status(201).json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  // 増分⑦: 受取先(取引先) picker 用の簡易一覧(名称/コード部分一致)。
+  app.get("/api/v3/vendors", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q ?? "").trim();
+      const r = await query(
+        `SELECT id, vendor_code, vendor_name FROM vendors
+          WHERE ($1 = '' OR vendor_name ILIKE '%' || $1 || '%' OR vendor_code ILIKE '%' || $1 || '%')
+          ORDER BY vendor_name LIMIT 1000`,
+        [q]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // 増分⑧: 個別条件書(文書番号)に紐づく condition_lines を検索。
+  //   エディタは明細を新規作成せず、既存明細を作品へ参照リンク(work_id 結合)するための候補一覧(§3.6/§10.7)。
+  app.get("/api/v3/condition-lines/by-document", ...requireRead, async (req, res) => {
+    try {
+      const doc = String(req.query.document_number ?? "").trim();
+      if (!doc) return res.status(400).json({ ok: false, error: "document_number is required" });
+      const r = await query(
+        `SELECT cl.id, cl.line_code, cl.subject, cl.direction, cl.transaction_kind,
+                cl.payment_scheme, cl.amount_ex_tax, cl.rate_pct, cl.work_id,
+                cc.document_number, cc.contract_title,
+                w.work_code AS current_work_code, w.title AS current_work_title
+           FROM condition_lines cl
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN works w ON w.id = cl.work_id
+          WHERE cc.document_number ILIKE '%' || $1 || '%'
+          ORDER BY cc.document_number, cl.line_no, cl.id`,
+        [doc]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // 増分⑧: condition_line をこの作品へ参照リンク(付替え) / 解除。work_id のみ変更。
+  //   §10.7: エディタは明細を新規作成しない。既存明細の主対象(work_id)結合のみ。
+  app.patch("/api/v3/condition-lines/:id/attach-work", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const workId = b.work_id == null ? null : Number(b.work_id);
+      if (workId != null && !Number.isFinite(workId)) {
+        return res.status(400).json({ ok: false, error: "invalid work_id" });
+      }
+      const r = await query(
+        `UPDATE condition_lines SET work_id = $2, updated_at = now() WHERE id = $1 RETURNING id`,
+        [id, workId]
+      );
+      if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "condition_line not found" });
+      res.json({ ok: true, id });
     } catch (e) { fail(res, e); }
   });
 
