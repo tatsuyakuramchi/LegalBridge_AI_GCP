@@ -1,0 +1,685 @@
+<!-- ============================================================
+     related_party.html — 関連当事者取引 判定ページ（GASポータル / 方針B）
+     データ：google.script.run 経由で RPT.gs のブリッジを呼ぶ
+       読取（search-API） rptGetMasters / rptListAgenda
+       書込（worker）     rptSaveAgenda / rptUpdateAgendaStatus / rptSaveEntity /
+            rptReplaceShareholdings / rptSaveOfficer / rptVoidEntity / rptVoidOfficer
+     判定ロジックはこのページ内（クライアント）で完結
+     ============================================================ -->
+<div id="rpt-app"><div class="rpt-loading">読み込み中…</div></div>
+
+<style>
+#rpt-app{--ink:#1b2334;--ink2:#3a4256;--paper:#f5f2ea;--line:#ddd6c6;--line2:#ece7da;--muted:#776f5e;--neg:#a83524;--pos:#2f6b4f;--amber:#9a6b12;
+ font-family:'Hiragino Kaku Gothic ProN','Yu Gothic','Noto Sans JP',system-ui,sans-serif;color:var(--ink);line-height:1.6;}
+#rpt-app *{box-sizing:border-box;}
+#rpt-app .rpt-loading,#rpt-app .rpt-error{padding:50px 20px;text-align:center;color:var(--muted);}
+#rpt-app .rpt-error{color:var(--neg);}
+#rpt-app .tabs{display:flex;gap:2px;background:var(--ink2);border-radius:8px 8px 0 0;flex-wrap:wrap;}
+#rpt-app .tab{border:0;background:transparent;color:#cfc9ba;padding:11px 15px;font-size:14px;cursor:pointer;border-bottom:3px solid transparent;font-family:inherit;}
+#rpt-app .tab.on{color:#fff;border-bottom-color:#c9a24a;font-weight:700;}
+#rpt-app .grid2{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px;}
+@media(max-width:840px){#rpt-app .grid2{grid-template-columns:1fr;}}
+#rpt-app .card{background:#fff;border:1px solid var(--line);border-radius:10px;padding:16px;}
+#rpt-app .card-h{font-size:15px;margin:0 0 12px;padding-bottom:9px;border-bottom:1px solid var(--line2);font-weight:700;}
+#rpt-app .fl{display:block;font-size:12px;color:var(--muted);margin:11px 0 4px;font-weight:600;}
+#rpt-app .inp{width:100%;border:1px solid var(--line);border-radius:7px;padding:9px 11px;font-size:14px;background:#fdfcf8;font-family:inherit;color:var(--ink);}
+#rpt-app .inp:focus{outline:2px solid #c9a24a;border-color:#c9a24a;}
+#rpt-app textarea.inp{min-height:54px;resize:vertical;}
+#rpt-app .hint{font-size:11px;color:var(--muted);margin-top:4px;}
+#rpt-app .chk{display:flex;align-items:center;gap:8px;margin:12px 0 4px;font-size:13px;cursor:pointer;}
+#rpt-app .btn{border:1px solid var(--line);background:#fff;color:var(--ink);padding:9px 15px;border-radius:7px;font-size:14px;cursor:pointer;font-family:inherit;font-weight:600;margin-top:14px;}
+#rpt-app .btn.primary{background:var(--ink);color:#fff;border-color:var(--ink);width:100%;}
+#rpt-app .btn:disabled{opacity:.4;cursor:not-allowed;}
+#rpt-app .btn.mini{margin:0;padding:8px 12px;font-size:13px;}
+#rpt-app .empty{color:var(--muted);font-size:13px;padding:22px 6px;text-align:center;border:1px dashed var(--line);border-radius:8px;}
+#rpt-app .chip{display:inline-block;font-size:12px;font-weight:700;padding:4px 10px;border-radius:20px;border:1px solid;}
+#rpt-app .chip.neg{color:var(--neg);border-color:var(--neg);background:#faeeeb;}
+#rpt-app .chip.pos{color:var(--pos);border-color:var(--pos);background:#ecf3ef;}
+#rpt-app .chip.amber{color:var(--amber);border-color:var(--amber);background:#f8f1e2;}
+#rpt-app .vd-head{border-bottom:2px solid var(--ink);padding-bottom:9px;margin-bottom:11px;}
+#rpt-app .vd-parties{font-size:16px;font-weight:700;}
+#rpt-app .vd-parties .arr{color:#c9a24a;margin:0 6px;}
+#rpt-app .vd-txn{font-size:12px;color:var(--muted);margin-top:3px;}
+#rpt-app .vd-chips{display:flex;gap:7px;flex-wrap:wrap;margin-bottom:12px;}
+#rpt-app .ownbox{font-size:12.5px;background:#f1f4f8;border:1px solid #d6dde8;border-radius:7px;padding:8px 11px;margin-bottom:12px;color:var(--ink2);}
+#rpt-app .ownnote{font-size:12.5px;background:#f8f1e2;border:1px solid #e6d6ad;border-radius:7px;padding:9px 11px;margin-top:10px;color:var(--ink2);line-height:1.7;}
+#rpt-app .ownnote strong{color:var(--amber);}
+#rpt-app .vd-sec{margin:14px 0;}
+#rpt-app .vd-sec-h{font-size:13px;font-weight:700;background:var(--line2);padding:6px 10px;border-radius:6px;margin-bottom:9px;}
+#rpt-app .vd-body{font-size:13px;color:var(--ink2);margin:0;}
+#rpt-app .finding{border-left:3px solid var(--neg);padding:7px 0 7px 11px;margin-bottom:12px;}
+#rpt-app .finding-co{font-weight:700;font-size:14px;margin-bottom:5px;}
+#rpt-app .ft{display:inline-block;font-size:12px;font-weight:700;color:#fff;background:var(--neg);padding:2px 8px;border-radius:4px;margin-right:6px;}
+#rpt-app .ft.amber-t{background:var(--amber);}
+#rpt-app .fbasis{font-size:12px;color:var(--ink2);font-family:Georgia,serif;}
+#rpt-app .fdetail{font-size:13px;color:var(--ink2);margin-top:3px;}
+#rpt-app .todo{margin:7px 0 0;padding-left:18px;font-size:12.5px;color:var(--ink2);}
+#rpt-app .todo li{margin-bottom:3px;}
+#rpt-app .mat{background:#faf8f1;border:1px solid var(--line2);border-radius:7px;padding:9px 11px;margin:9px 0;}
+#rpt-app .mat-row{display:flex;justify-content:space-between;font-size:13px;padding:3px 0;}
+#rpt-app .mat-row.sub{font-size:12px;color:var(--muted);}
+#rpt-app .neg-t{color:var(--neg);}
+#rpt-app .list{margin-top:14px;display:flex;flex-direction:column;gap:8px;}
+#rpt-app .li{display:flex;flex-direction:column;gap:8px;border:1px solid var(--line2);border-radius:7px;padding:10px 11px;}
+#rpt-app .li-top{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;}
+#rpt-app .li-name{font-weight:700;font-size:14px;}
+#rpt-app .li-sub{font-size:12px;color:var(--muted);margin-top:3px;display:flex;flex-wrap:wrap;gap:5px;align-items:center;}
+#rpt-app .rolepill{background:#f3efe4;border-radius:4px;padding:1px 7px;font-size:11px;}
+#rpt-app .del{border:1px solid var(--line);background:#fff;color:var(--neg);font-size:12px;padding:5px 9px;border-radius:6px;cursor:pointer;font-family:inherit;white-space:nowrap;}
+#rpt-app .del.small{padding:2px 7px;font-size:11px;}
+#rpt-app .roletags{display:flex;flex-wrap:wrap;gap:5px;}
+#rpt-app .rtag{border:1px solid var(--line);background:#fff;font-size:12px;padding:4px 9px;border-radius:20px;cursor:pointer;font-family:inherit;color:var(--ink2);}
+#rpt-app .rtag.on{background:var(--ink);color:#fff;border-color:var(--ink);font-weight:700;}
+#rpt-app .rolecard{border:1px solid var(--line2);border-radius:7px;padding:7px 9px;margin-bottom:6px;}
+#rpt-app .rolecard-h{font-size:12px;font-weight:700;margin-bottom:5px;}
+#rpt-app .sh{border-top:1px dashed var(--line2);padding-top:8px;}
+#rpt-app .sh-row{display:flex;align-items:center;gap:8px;font-size:13px;background:#faf8f1;border-radius:5px;padding:4px 8px;margin-bottom:4px;}
+#rpt-app .sh-name{flex:1;}
+#rpt-app .sh-pct{font-family:ui-monospace,monospace;font-weight:700;}
+#rpt-app .sh-add{display:flex;gap:6px;align-items:center;margin-top:6px;}
+#rpt-app .sh-add .pct{width:64px;text-align:right;}
+#rpt-app .agenda{border:1px solid var(--line2);border-radius:8px;padding:11px;}
+#rpt-app .agenda-top{display:flex;align-items:center;gap:9px;flex-wrap:wrap;}
+#rpt-app .adate{font-family:ui-monospace,monospace;font-size:12px;background:var(--ink);color:#fff;padding:2px 8px;border-radius:4px;}
+#rpt-app .aco{font-size:12px;font-weight:700;color:var(--ink2);}
+#rpt-app .aflags{display:flex;gap:5px;margin-left:auto;}
+#rpt-app .atitle{font-size:14px;font-weight:700;margin:7px 0 3px;}
+#rpt-app .ameta{display:flex;flex-wrap:wrap;gap:10px;font-size:12px;color:var(--muted);}
+#rpt-app .atag{font-size:11px;background:#faeeeb;color:var(--neg);border-radius:4px;padding:2px 7px;margin:4px 4px 0 0;display:inline-block;}
+#rpt-app .aexcl{font-size:12px;color:var(--ink2);margin-top:5px;background:#f8f1e2;border-radius:5px;padding:5px 8px;}
+#rpt-app .astatus{display:flex;gap:5px;margin-top:9px;align-items:center;flex-wrap:wrap;}
+#rpt-app .sb{border:1px solid var(--line);background:#fff;font-size:11.5px;padding:4px 10px;border-radius:6px;cursor:pointer;font-family:inherit;color:var(--ink2);}
+#rpt-app .sb.on{background:var(--pos);color:#fff;border-color:var(--pos);font-weight:700;}
+#rpt-app .sb.on.neg{background:var(--neg);border-color:var(--neg);}
+#rpt-app .law dt{font-weight:700;font-size:13px;margin-top:11px;}
+#rpt-app .law dt:first-child{margin-top:0;}
+#rpt-app .law dd{margin:3px 0 0;font-size:13px;color:var(--ink2);}
+#rpt-app .disc{font-size:11px;color:var(--muted);margin-top:8px;}
+#rpt-app .toast{position:fixed;left:50%;bottom:22px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;z-index:9999;}
+</style>
+
+<script>
+(function () {
+  // ===== google.script.run を Promise 化 =====
+  function gcall(name) {
+    var args = [].slice.call(arguments, 1);
+    return new Promise(function (resolve, reject) {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[name].apply(google.script.run, args);
+    });
+  }
+
+  // ===== 定数 =====
+  var TXN_TYPES = [
+    // [id, ラベル, 会社法（取締役が相手側に立つ場合の類型）, 会計開示の区分]
+    ["sale","売買・物品提供","直接取引(356①二)","営業取引として開示対象"],
+    ["service","役務の提供・業務委託","直接取引(356①二)","営業取引として開示対象"],
+    ["license","ライセンス・知的財産の許諾","直接取引(356①二)","営業／営業外として開示対象"],
+    ["lease","賃貸借","直接取引(356①二)","営業外（賃借料）として開示対象"],
+    ["loan","金銭の貸借","直接取引(356①二)","営業外（利息・残高）。低利/無利息は時価で判定"],
+    ["guarantee","債務保証","間接取引(356①三)","営業外/オフバランス（被保証残高）"],
+    ["collateral","担保提供","間接取引(356①三)","対応債務残高で判定（担保受入も）"],
+    ["asset","資産の譲渡・譲受","直接取引(356①二)＋362条4項一の通常決議","特別損益。安値売却に注意"],
+    ["capital","出資・増減資・自己株式","場面により直接/間接","資本取引として開示（公募増資は対象外）"],
+    ["waiver","債権放棄・債務免除","間接取引(356①三)に当たり得る","特別損益（利益移転に注意）"],
+    ["other","その他","個別判断","関連当事者なら原則開示対象"]
+  ];
+  var TITLES = ["代表取締役","取締役","社外取締役","監査役","執行役員","会計参与"];
+  var DIRECTOR_TITLES = ["代表取締役","取締役","社外取締役"];
+  var TH_SUB = 50, TH_AFFIL = 20, TH_MAJOR = 10;
+  var STATUS_JP = { pending:"未上程", approved:"承認", rejected:"否決", deferred:"継続審議" };
+  var STATUS_KEYS = ["pending","approved","rejected","deferred"];
+
+  function txnLabel(id){ for (var i=0;i<TXN_TYPES.length;i++) if(TXN_TYPES[i][0]===id) return TXN_TYPES[i][1]; return id; }
+  function txnKaishaho(id){ for (var i=0;i<TXN_TYPES.length;i++) if(TXN_TYPES[i][0]===id) return TXN_TYPES[i][2]||"個別判断"; return "個別判断"; }
+  function txnDisclose(id){ for (var i=0;i<TXN_TYPES.length;i++) if(TXN_TYPES[i][0]===id) return TXN_TYPES[i][3]||""; return ""; }
+  function fmtYen(n){ if(n===""||n==null||isNaN(Number(n))) return "—"; return Number(n).toLocaleString("ja-JP")+" 円"; }
+  function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(c){return{"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];}); }
+
+  // ===== 状態 =====
+  var state = {
+    tab:"judge", embed:false, companies:[], directors:[], agenda:[],
+    settings:{ thresholdCompany:"", thresholdPerson:"10000000" },
+    judge:{ a:"", b:"", txn:"service", amount:"", competing:false, result:null },
+    addCo:{ name:"", board:true },
+    addDir:{ name:"", roles:[] }
+  };
+
+  // ===== APIデータ → エンジン用シェイプ =====
+  function buildMasters(m){
+    var entities = m.entities||[], officers = m.officers||[], sh = m.shareholdings||[];
+    state.companies = entities.map(function(e){
+      return { id:e.id, name:e.name, board:!!e.has_board,
+        shareholders: sh.filter(function(x){return x.entity_id===e.id;}).map(function(x){
+          return { holderKind: x.holder_kind==='entity'?'company':'person', holderId:x.holder_id, pct:Number(x.voting_pct)||0 };
+        }) };
+    });
+    state.directors = officers.map(function(o){
+      return { id:o.officer_key||o.id, name:o.name, staffId:o.staff_id||null, roles:(o.roles||[]).map(function(r){ return { companyId:r.entity_id, title:r.title }; }) };
+    });
+  }
+
+  // ===== サンプルデータ（KADOKAWAグループ主要連結子会社） =====
+  //  バックエンド未接続／法人マスタ未登録のときのデモ用シード。
+  //  社名は KADOKAWAグループ公式「グループ会社一覧」の主な連結子会社より。
+  //  ★持株比率は仮の値（要確認）。100=完全子会社想定、70/67=非完全子会社の例。
+  var SAMPLE_MASTERS = {
+    entities: [
+      { id:"kadokawa",      name:"株式会社KADOKAWA",                 has_board:true },
+      { id:"arclight",      name:"株式会社アークライト",             has_board:true },
+      { id:"shinkigensha",  name:"株式会社新紀元社",                 has_board:true },
+      { id:"dwango",        name:"株式会社ドワンゴ",                 has_board:true },
+      { id:"fromsoftware",  name:"株式会社フロム・ソフトウェア",     has_board:true },
+      { id:"spikechunsoft", name:"株式会社スパイク・チュンソフト",   has_board:true },
+      { id:"acquire",       name:"株式会社アクワイア",               has_board:true },
+      { id:"gotcha",        name:"株式会社Gotcha Gotcha Games",      has_board:true },
+      { id:"gamelinkage",   name:"株式会社KADOKAWA Game Linkage",    has_board:true },
+      { id:"bbc",           name:"株式会社ビルディング・ブックセンター", has_board:true },
+      { id:"daieistudio",   name:"株式会社角川大映スタジオ",         has_board:true },
+      { id:"vantan",        name:"株式会社バンタン",                 has_board:true },
+      { id:"dogakobo",      name:"株式会社動画工房",                 has_board:true },
+      { id:"engi",          name:"株式会社ENGI",                     has_board:true }
+    ],
+    officers: [],
+    shareholdings: [
+      { entity_id:"arclight",      holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"shinkigensha",  holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"dwango",        holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"fromsoftware",  holder_kind:"entity", holder_id:"kadokawa", voting_pct:70  },
+      { entity_id:"spikechunsoft", holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"acquire",       holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"gotcha",        holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"gamelinkage",   holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"bbc",           holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"daieistudio",   holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"vantan",        holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"dogakobo",      holder_kind:"entity", holder_id:"kadokawa", voting_pct:100 },
+      { entity_id:"engi",          holder_kind:"entity", holder_id:"kadokawa", voting_pct:67  }
+    ]
+  };
+  function loadSampleMasters(){ buildMasters(SAMPLE_MASTERS); state.sample=true; }
+  function showSampleBanner(){
+    if(document.getElementById("rpt-sample-banner")) return;
+    var b=document.createElement("div"); b.id="rpt-sample-banner";
+    b.style.cssText="position:fixed;left:0;right:0;bottom:0;z-index:4000;background:#c47d1a;color:#fff;font:600 12px/1.5 'Hiragino Sans','Noto Sans JP',sans-serif;padding:7px 14px;text-align:center;box-shadow:0 -2px 8px rgba(0,0,0,.18)";
+    b.textContent="サンプルデータ（KADOKAWAグループ主要連結子会社）を表示中です。持株比率は仮の値で、実データではありません。";
+    document.body.appendChild(b);
+  }
+
+  // ============================================================
+  // 判定エンジン
+  // ============================================================
+  function findCo(id){ for(var i=0;i<state.companies.length;i++) if(state.companies[i].id===id) return state.companies[i]; return null; }
+  function findDir(id){ for(var i=0;i<state.directors.length;i++) if(state.directors[i].id===id) return state.directors[i]; return null; }
+  function isDirectorOf(dir,coId){ return dir.roles.some(function(r){ return r.companyId===coId && DIRECTOR_TITLES.indexOf(r.title)>=0; }); }
+  function isRepOf(dir,coId){ return dir.roles.some(function(r){ return r.companyId===coId && r.title==="代表取締役"; }); }
+  function pctHeld(holderId,coId){ var co=findCo(coId); if(!co||!co.shareholders) return 0; var s=co.shareholders.filter(function(x){return x.holderId===holderId;})[0]; return s?(Number(s.pct)||0):0; }
+  function controllingParentId(coId){ var co=findCo(coId); if(!co||!co.shareholders) return null;
+    var top=co.shareholders.filter(function(x){return x.holderKind==='company';}).slice().sort(function(a,b){return (Number(b.pct)||0)-(Number(a.pct)||0);})[0];
+    return top&&(Number(top.pct)||0)>TH_SUB?top.holderId:null; }
+  function controlChain(coId){ var out=[],cur=coId,g=0; while(cur&&g<20){ var p=controllingParentId(cur); if(!p)break; out.push(p); cur=p; g++; } return out; }
+
+  function classifyOwnership(co){
+    if(!co.shareholders||!co.shareholders.length) return {label:"独立／親会社未設定",tone:""};
+    var topCo=co.shareholders.filter(function(x){return x.holderKind==='company';}).slice().sort(function(a,b){return (Number(b.pct)||0)-(Number(a.pct)||0);})[0];
+    var pct=topCo?(Number(topCo.pct)||0):0; var p=topCo?(findCo(topCo.holderId)||{}).name||"親会社":"";
+    if(pct===100) return {label:"完全子会社（"+p+" 100%）",tone:"neg"};
+    if(pct>TH_SUB) return {label:"子会社（"+p+" "+pct+"%）",tone:"amber"};
+    if(pct>=TH_AFFIL) return {label:"関連会社（"+p+" "+pct+"%）",tone:""};
+    return {label:"独立／支配株主なし",tone:""};
+  }
+
+  function ownershipContext(a,b){
+    if(a.kind!=="company"||b.kind!=="company") return null;
+    var ca=findCo(a.id),cb=findCo(b.id); if(!ca||!cb||ca.id===cb.id) return null;
+    var aOfb=pctHeld(ca.id,cb.id),bOfa=pctHeld(cb.id,ca.id);
+    if(bOfa>TH_SUB) return {relation:"parent-sub",parent:cb.name,child:ca.name,pct:bOfa,wholly:bOfa===100};
+    if(aOfb>TH_SUB) return {relation:"parent-sub",parent:ca.name,child:cb.name,pct:aOfb,wholly:aOfb===100};
+    var pa=controllingParentId(ca.id),pb=controllingParentId(cb.id);
+    if(pa&&pa===pb){ var p=findCo(pa); var w=pctHeld(pa,ca.id)===100&&pctHeld(pa,cb.id)===100; return {relation:"sibling",parent:p?p.name:"同一親会社",wholly:w}; }
+    return null;
+  }
+
+  function analyzeConflict(pa,pb,txn,competing){
+    var findings=[];
+    var coParties=[pa,pb].filter(function(p){return p.kind==="company";}).map(function(p){return findCo(p.id);}).filter(Boolean);
+    var personParties=[pa,pb].filter(function(p){return p.kind==="person";}).map(function(p){return findDir(p.id);}).filter(Boolean);
+
+    // ① 直接取引：取締役本人 ⇔ 自社
+    personParties.forEach(function(dir){ coParties.forEach(function(co){ if(isDirectorOf(dir,co.id))
+      findings.push({companyId:co.id,companyName:co.name,type:"直接取引",basis:"会社法356条1項2号",detail:dir.name+" は "+co.name+" の取締役で、自己のために当該会社と取引。",director:dir.name,self:true}); }); });
+
+    // ② 兼任（代表権で段階化：双方代表／片面代表／無代表）
+    if(coParties.length===2){ var c1=coParties[0],c2=coParties[1];
+      state.directors.forEach(function(dir){
+        if(isDirectorOf(dir,c1.id) && isDirectorOf(dir,c2.id)){
+          var r1=isRepOf(dir,c1.id), r2=isRepOf(dir,c2.id);
+          if(r1&&r2){
+            [c1,c2].forEach(function(co){ findings.push({companyId:co.id,companyName:co.name,type:"双方代表",basis:"会社法356条1項2号・民法108条",detail:dir.name+" は "+c1.name+" と "+c2.name+" の双方を代表（双方代理）。両社で承認を要する。",director:dir.name}); });
+          } else if(r1||r2){
+            var repCo=r1?c1:c2, otherCo=r1?c2:c1;
+            findings.push({companyId:otherCo.id,companyName:otherCo.name,type:"直接取引（相手方を代表）",basis:"会社法356条1項2号",detail:dir.name+" は "+otherCo.name+" の取締役であり、相手方 "+repCo.name+" を代表。"+otherCo.name+" で承認が必要。",director:dir.name});
+            findings.push({companyId:repCo.id,companyName:repCo.name,type:"利益相反（保守）",basis:"会社法356条1項3号参照",detail:dir.name+" は "+repCo.name+" を代表。利益相反のおそれがあり保守的に "+repCo.name+" でも承認が安全。",director:dir.name});
+          } else {
+            [c1,c2].forEach(function(co){ findings.push({companyId:co.id,companyName:co.name,type:"利益相反（無代表兼任）",basis:"会社法356条1項2号参照",detail:dir.name+" は "+c1.name+"・"+c2.name+" の平取締役を兼任。形式的該当性は弱いが意思決定関与のおそれから保守的に承認・除斥。",director:dir.name}); });
+          }
+        }
+      });
+    }
+
+    // ③ 支配経由（B＝資本構造）：取締役が相手方会社を支配＝計算説の実質自己取引
+    if(coParties.length===2){ var d1=coParties[0],d2=coParties[1];
+      state.directors.forEach(function(dir){
+        if(isDirectorOf(dir,d1.id) && !isDirectorOf(dir,d2.id) && pctHeld(dir.id,d2.id)>TH_SUB)
+          findings.push({companyId:d1.id,companyName:d1.name,type:"間接取引（支配）",basis:"会社法356条1項2号・3号",detail:dir.name+" は "+d1.name+" の取締役で、相手方 "+d2.name+" を議決権 "+pctHeld(dir.id,d2.id)+"% で支配。計算説により実質「自己のための取引」。",director:dir.name});
+        if(isDirectorOf(dir,d2.id) && !isDirectorOf(dir,d1.id) && pctHeld(dir.id,d1.id)>TH_SUB)
+          findings.push({companyId:d2.id,companyName:d2.name,type:"間接取引（支配）",basis:"会社法356条1項2号・3号",detail:dir.name+" は "+d2.name+" の取締役で、相手方 "+d1.name+" を議決権 "+pctHeld(dir.id,d1.id)+"% で支配。計算説により実質「自己のための取引」。",director:dir.name});
+      });
+    }
+
+    // ④ 間接取引（債務保証・担保提供）
+    if(txn==="guarantee"||txn==="collateral"){ personParties.forEach(function(dir){ coParties.forEach(function(co){ if(isDirectorOf(dir,co.id))
+      findings.push({companyId:co.id,companyName:co.name,type:"間接取引",basis:"会社法356条1項3号",detail:co.name+" が取締役 "+dir.name+" の債務を保証する等、会社と取締役の利益が相反する取引。",director:dir.name}); }); }); }
+
+    // ⑤ 競業取引
+    if(competing){ personParties.forEach(function(dir){ coParties.forEach(function(co){ if(isDirectorOf(dir,co.id))
+      findings.push({companyId:co.id,companyName:co.name,type:"競業取引",basis:"会社法356条1項1号",detail:dir.name+"（"+co.name+" 取締役）が会社の事業の部類に属する取引を行う。",director:dir.name}); }); }); }
+
+    var byCompany={};
+    findings.forEach(function(f){ if(!byCompany[f.companyId]) byCompany[f.companyId]={companyName:f.companyName,items:[]}; byCompany[f.companyId].items.push(f); });
+    return {hit:findings.length>0,findings:findings,byCompany:byCompany};
+  }
+
+  // 承認の方法：承認機関・除斥・定足数（除斥後に議決可能か）・役会不成立→株主総会
+  function approvalMethod(byCompany){
+    var out={};
+    Object.keys(byCompany).forEach(function(cid){
+      var co=findCo(cid), board=!!(co&&co.board);
+      var excluded=[]; byCompany[cid].items.forEach(function(f){ if(f.director&&excluded.indexOf(f.director)<0) excluded.push(f.director); });
+      var dirNames=state.directors.filter(function(d){return isDirectorOf(d,cid);}).map(function(d){return d.name;});
+      var baseCount=dirNames.filter(function(n){return excluded.indexOf(n)<0;}).length; // 議決に加われる取締役
+      var deadlock=board && baseCount===0;                                              // 役会不成立
+      out[cid]={board:board, organ:board?"取締役会":"株主総会", excluded:excluded, total:dirNames.length, baseCount:baseCount, deadlock:deadlock};
+    });
+    return out;
+  }
+
+  function relationBetween(a,b){
+    if(a.kind==="company"&&b.kind==="company"){
+      var ca=findCo(a.id),cb=findCo(b.id); if(!ca||!cb||ca.id===cb.id) return null;
+      var aOfb=pctHeld(ca.id,cb.id),bOfa=pctHeld(cb.id,ca.id);
+      if(bOfa>TH_SUB) return {category:"親会社"+(bOfa===100?"（完全子会社・連結相殺）":""),note:cb.name+" が "+ca.name+" の議決権 "+bOfa+"% を保有",ref:"基準5項(1)",wholly:bOfa===100};
+      if(aOfb>TH_SUB) return {category:"子会社"+(aOfb===100?"（完全子会社・連結相殺）":""),note:ca.name+" が "+cb.name+" の議決権 "+aOfb+"% を保有",ref:"基準5項(2)",wholly:aOfb===100};
+      var chainA=[ca.id].concat(controlChain(ca.id)),chainB=[cb.id].concat(controlChain(cb.id));
+      if(chainA.indexOf(cb.id)>=0) return {category:"親会社（間接）",note:cb.name+" は "+ca.name+" の支配株主チェーン上",ref:"基準5項(1)"};
+      if(chainB.indexOf(ca.id)>=0) return {category:"子会社（間接）",note:ca.name+" は "+cb.name+" の支配株主チェーン上",ref:"基準5項(2)"};
+      var pa=controllingParentId(ca.id),pb=controllingParentId(cb.id);
+      if(pa&&pa===pb){ var p=findCo(pa); return {category:"兄弟会社（同一の親会社をもつ会社）",note:"両社とも "+(p?p.name:"同一親会社")+" の子会社",ref:"基準5項(3)"}; }
+      if(bOfa>=TH_AFFIL) return {category:"関連会社（被影響側）",note:cb.name+" が "+ca.name+" の議決権 "+bOfa+"% を保有",ref:"基準5項(4)"};
+      if(aOfb>=TH_AFFIL) return {category:"関連会社",note:ca.name+" が "+cb.name+" の議決権 "+aOfb+"% を保有",ref:"基準5項(4)"};
+      return null;
+    }
+    var co=a.kind==="company"?a:b, per=a.kind==="person"?a:b;
+    if(co.kind==="company"&&per.kind==="person"){
+      var c=findCo(co.id),d=findDir(per.id); if(!c||!d) return null;
+      var role=d.roles.filter(function(r){return r.companyId===c.id;})[0];
+      var ownPct=pctHeld(d.id,c.id);
+      if(role&&ownPct>=TH_MAJOR) return {category:"役員かつ主要株主",note:d.name+" は "+c.name+" の"+role.title+"、かつ議決権 "+ownPct+"% を保有",ref:"基準5項(5)(6)"};
+      if(role) return {category:"役員（及びその近親者）",note:d.name+" は "+c.name+" の"+role.title,ref:"基準5項(6)"};
+      if(ownPct>=TH_MAJOR) return {category:"主要株主（及びその近親者）",note:d.name+" は "+c.name+" の議決権 "+ownPct+"% を保有",ref:"基準5項(5)"};
+      if(d.roles.length){ var chain=controlChain(c.id);
+        var linked=d.roles.map(function(r){return r.companyId;}).filter(function(cid){return chain.indexOf(cid)>=0||cid===controllingParentId(c.id);})[0];
+        if(linked){ var lp=findCo(linked); return {category:"親会社等の役員",note:d.name+" は "+(lp?lp.name:"親会社")+"（"+c.name+" の支配株主側）の役員",ref:"基準5項(6)・(8)参照"}; }
+      }
+      return null;
+    }
+    return null;
+  }
+
+  function analyzeDisclosure(a,b,amount){
+    var rel=relationBetween(a,b); if(!rel) return {related:false};
+    var personInvolved=a.kind==="person"||b.kind==="person";
+    var threshold=Number(personInvolved?state.settings.thresholdPerson:state.settings.thresholdCompany);
+    var amt=Number(amount), hasAmt=amount!==""&&!isNaN(amt), hasTh=threshold&&!isNaN(threshold)&&threshold>0;
+    var materiality="要判断";
+    if(hasAmt&&hasTh) materiality=amt>threshold?"重要（開示対象の目安）":"重要性基準未満（目安）";
+    return {related:true,rel:rel,personInvolved:personInvolved,threshold:hasTh?threshold:null,amount:hasAmt?amt:null,materiality:materiality};
+  }
+
+  // ============================================================
+  // レンダリング
+  // ============================================================
+  var root = document.getElementById("rpt-app");
+
+  function parseParty(v){ if(!v) return null; var p=v.split(":"); return {kind:p[0],id:p[1]}; }
+  function partyOptions(sel){
+    var o='<option value="">選択してください</option>';
+    state.companies.forEach(function(c){ o+='<option value="company:'+c.id+'"'+(sel==="company:"+c.id?" selected":"")+'>【法人】'+esc(c.name)+'</option>'; });
+    state.directors.forEach(function(d){ o+='<option value="person:'+d.id+'"'+(sel==="person:"+d.id?" selected":"")+'>【役員】'+esc(d.name)+'</option>'; });
+    return o;
+  }
+  function partyLabel(p){ if(!p) return "—"; return p.kind==="company"?((findCo(p.id)||{}).name||"?"):((findDir(p.id)||{}).name||"?"); }
+
+  function render(){
+    var tabs = state.embed
+      ? tabBtn("judge","取引判定")+tabBtn("basis","判定根拠")
+      : tabBtn("judge","取引判定")+tabBtn("master","法人・役員")+tabBtn("agenda","役会議案履歴")+tabBtn("basis","判定根拠");
+    var html='<div class="tabs">'+tabs+'</div>';
+    if(state.tab==="judge") html+=renderJudge();
+    else if(state.tab==="master"&&!state.embed) html+=renderMaster();
+    else if(state.tab==="agenda"&&!state.embed) html+=renderAgenda();
+    else html+=renderBasis();
+    root.innerHTML=html;
+    bind();
+  }
+  function tabBtn(k,l){ return '<button class="tab'+(state.tab===k?" on":"")+'" data-tab="'+k+'">'+l+'</button>'; }
+
+  function renderJudge(){
+    var j=state.judge;
+    var thr='<details class="card" style="margin-top:14px"><summary style="cursor:pointer;font-size:12px;color:var(--ink2);font-weight:600">重要性基準額（適用指針の目安・要確認）</summary>'+
+      '<label class="fl">法人との取引の基準額（円）</label><input class="inp" id="j-thc" inputmode="numeric" value="'+esc(j_thc())+'" placeholder="未設定（要設定）">'+
+      '<label class="fl">役員等個人との取引の基準額（円）</label><input class="inp" id="j-thp" inputmode="numeric" value="'+esc(state.settings.thresholdPerson)+'">'+
+      '<div class="hint">役員等個人は「1事業年度1,000万円超」が目安。法人取引は割合基準のため金額換算して設定してください。</div></details>';
+    var left='<section class="card"><h2 class="card-h">取引の入力</h2>'+
+      '<label class="fl">取引当事者 A</label><select class="inp" id="j-a">'+partyOptions(j.a)+'</select>'+
+      '<div style="text-align:center;color:var(--muted);margin:7px 0 -3px">⇅</div>'+
+      '<label class="fl">取引当事者 B</label><select class="inp" id="j-b">'+partyOptions(j.b)+'</select>'+
+      '<label class="fl">取引種別</label><select class="inp" id="j-txn">'+TXN_TYPES.map(function(t){return '<option value="'+t[0]+'"'+(j.txn===t[0]?" selected":"")+'>'+t[1]+'</option>';}).join("")+'</select>'+
+      '<label class="fl">取引金額（年間・税抜目安）</label><input class="inp" id="j-amt" inputmode="numeric" value="'+esc(j.amount)+'" placeholder="例：3000000">'+
+      '<div class="hint">'+(j.amount?fmtYen(j.amount):"金額未入力（重要性判定は保留）")+'</div>'+
+      '<label class="chk"><input type="checkbox" id="j-comp"'+(j.competing?" checked":"")+'><span>会社の事業の部類に属する取引（競業性あり）</span></label>'+
+      thr+
+      '<button class="btn primary" id="j-run"'+(j.a&&j.b?"":" disabled")+'>判定する</button></section>';
+    var right='<section class="card"><h2 class="card-h">判定書</h2>'+(j.result?renderVerdict():'<div class="empty">当事者と取引種別を入力して「判定する」を押すと判定が表示されます。</div>')+'</section>';
+    return '<div class="grid2">'+left+right+'</div>';
+  }
+  function j_thc(){ return state.settings.thresholdCompany; }
+
+  // ===== 判定プロセス（当事者→取引内容→関係値）の表現 =====
+  function funStep_(n,label,body){
+    return '<div style="border-left:3px solid var(--ink2);background:#fbfaf6;padding:7px 11px;margin:0 0 6px;border-radius:0 5px 5px 0">'
+      +'<div style="font-weight:700;color:var(--ink);font-size:12.5px;margin-bottom:2px"><span style="display:inline-block;min-width:20px;color:var(--muted)">'+n+'</span>'+label+'</div>'
+      +'<div style="font-size:12px;color:var(--ink2)">'+body+'</div></div>';
+  }
+  function relSummary_(r){
+    var o=r.ownership, c=r.conflict, parts=[];
+    if(o&&o.relation==="parent-sub") parts.push("資本："+esc(o.parent)+" → "+esc(o.child)+" "+o.pct+"%"+(o.wholly?"（完全子会社）":"（子会社）"));
+    else if(o&&o.relation==="sibling") parts.push("資本：兄弟会社（同一親 "+esc(o.parent)+"）"+(o.wholly?"／いずれも完全子会社":""));
+    var t={}; c.findings.forEach(function(f){ t[f.type]=true; });
+    var human=[];
+    if(t["双方代表"]) human.push("双方代表の兼任");
+    if(t["直接取引（相手方を代表）"]) human.push("片面代表の兼任");
+    if(t["利益相反（無代表兼任）"]||t["利益相反（保守）"]) human.push("兼任");
+    if(t["直接取引"]) human.push("取締役本人が当事者");
+    if(t["間接取引（支配）"]) human.push("取締役が相手方を支配");
+    if(t["間接取引"]) human.push("債務保証・担保");
+    if(t["競業取引"]) human.push("競業");
+    parts.push("人的："+(human.length?human.join("・"):"役員兼任・支配なし（マスタ上）"));
+    return parts.join(" ／ ");
+  }
+  function renderFunnel_(r){
+    var eff=[];
+    if(r.txn==="guarantee"||r.txn==="collateral") eff.push("間接取引（356条1項3号）を点灯");
+    if(r.conflict.findings.some(function(f){return f.type==="競業取引";})) eff.push("競業（356条1項1号）を点灯");
+    if(!eff.length) eff.push("間接・競業の追加点灯なし");
+    var mat = r.disclosure.related ? ("重要性："+esc(r.disclosure.materiality)) : "重要性：関連当事者非該当のため判定不要";
+    var s1 = esc(r.aLabel)+" ⇄ "+esc(r.bLabel)+"。"+relSummary_(r);
+    var s2 = "取引種別："+esc(txnLabel(r.txn))+"〔会社法："+esc(txnKaishaho(r.txn))+"／会計："+esc(txnDisclose(r.txn))+"〕。"+eff.join("・")+"。"+mat;
+    var s3 = "議決権・支配・代表権で確定 → 承認（会社法）："+(r.conflict.hit?"あり":"なし")+" ／ 開示（会計）："+(r.disclosure.related?"あり":"なし");
+    return funStep_("①","当事者で判定", s1)+funStep_("②","取引内容で判定", s2)+funStep_("③","関係値で判定", s3);
+  }
+
+  function renderVerdict(){
+    var r=state.judge.result, c=r.conflict, d=r.disclosure, o=r.ownership;
+    var h='<div class="vd-head"><div class="vd-parties">'+esc(r.aLabel)+' <span class="arr">⇄</span> '+esc(r.bLabel)+'</div>'+
+      '<div class="vd-txn">'+esc(txnLabel(r.txn))+(r.amount?'／'+fmtYen(r.amount):"")+'</div></div>';
+    h+='<div class="vd-chips">'+
+      (c.hit?'<span class="chip neg">利益相反取引 該当</span>':'<span class="chip pos">利益相反 非該当</span>')+
+      (d.related?'<span class="chip amber">関連当事者 該当</span>':'<span class="chip pos">関連当事者 非該当</span>')+
+      (o&&o.relation==="parent-sub"&&o.wholly?'<span class="chip neg">完全親子会社間</span>':"")+
+      (o&&o.relation==="parent-sub"&&!o.wholly?'<span class="chip amber">親子会社間</span>':"")+
+      (o&&o.relation==="sibling"?'<span class="chip amber">兄弟会社間</span>':"")+'</div>';
+    if(o) h+='<div class="ownbox">'+(o.relation==="parent-sub"
+      ?"資本関係："+esc(o.parent)+" が "+esc(o.child)+" の議決権 "+o.pct+"% を保有"+(o.wholly?"（完全子会社）":"")
+      :"資本関係：両社とも "+esc(o.parent)+" の支配下にある兄弟会社"+(o.wholly?"（いずれも完全子会社）":""))+'</div>';
+    // 判定プロセス（当事者→取引内容→関係値）
+    h+='<div class="vd-sec"><div class="vd-sec-h">判定プロセス（当事者 → 取引内容 → 関係値）</div>'+renderFunnel_(r)+'</div>';
+    // 会社法
+    h+='<div class="vd-sec"><div class="vd-sec-h">１．会社法上の利益相反取引</div>';
+    if(!c.hit){
+      h+='<p class="vd-body">取締役の兼任・自己取引・間接取引の関係は検出されませんでした（<strong>利益相反取引としての承認決議は不要</strong>）。</p>';
+      if(o&&(o.relation==="parent-sub"||o.relation==="sibling"))
+        h+='<div class="ownnote"><strong>ただし通常の決議は別途要否を確認：</strong>利益相反承認は不要でも、本取引が会社法362条4項の重要事項（重要な財産の処分・譲受け／多額の借財 等）に当たる場合は、<strong>通常の取締役会決議が別途必要</strong>です（特別利害関係がないため369条2項の除斥はかかりません）。また<strong>親会社から両社に派遣された共通取締役（兼任）の登録漏れ</strong>がないかご確認ください（兼任があれば承認が発生します）。</div>';
+    }
+    else { var method=r.method||{}; Object.keys(c.byCompany).forEach(function(cid){ var grp=c.byCompany[cid],co=findCo(cid),m=method[cid]||{};
+      h+='<div class="finding"><div class="finding-co">'+esc(grp.companyName)+'</div>';
+      grp.items.forEach(function(it){ h+='<div style="margin-bottom:7px"><span class="ft">'+esc(it.type)+'</span><span class="fbasis">'+esc(it.basis)+'</span><div class="fdetail">'+esc(it.detail)+'</div></div>'; });
+      var organ=m.board?"取締役会の承認":"株主総会の承認";
+      h+='<ul class="todo"><li>事前承認：'+organ+'（'+(m.board?"会社法365条1項・356条":"会社法356条")+'）。重要な事実を開示。</li>'+
+        (m.board?'<li>事後報告：取引後遅滞なく取締役会へ報告（365条2項）。</li>':"")+
+        '<li>特別利害関係取締役を議決から除斥（369条2項）'+(m.excluded&&m.excluded.length?'：'+m.excluded.map(esc).join("、"):"")+'。</li>'+
+        (m.board?'<li>除斥後に議決に加われる取締役：'+m.baseCount+' 名／登録 '+m.total+' 名。</li>':"")+
+        (grp.items.some(function(it){return it.self;})?'<li>自己のための直接取引：無過失責任・責任軽減不可（428条）。</li>':"")+
+        '<li>会社に損害が生じた場合、関与取締役の任務懈怠が推定（423条3項）。</li></ul>';
+      if(m.deadlock) h+='<div class="ownnote"><strong>役会不成立 → 株主総会へ：</strong>除斥の結果、議決に加われる取締役がいないため取締役会で決議できません。株主総会の承認に上げてください。株主総会では特別利害関係株主も議決できますが、著しく不当な決議は取消事由（831条1項3号）になり得ます。</div>';
+      h+='</div>';
+    }); }
+    if(o&&o.relation==="parent-sub"&&o.wholly) h+='<div class="ownnote"><strong>完全親子会社間取引の整理：</strong>保護すべき少数株主が存在しないため実質的利益相反性は限定的。完全子会社では唯一株主たる親会社の同意が株主全員の同意に当たり、356条承認は不要／瑕疵治癒との整理がある。ただし取締役会設置会社の承認・報告手続自体の要否は別途検討（包括承認等の運用）。</div>';
+    h+='</div>';
+    // 会計
+    h+='<div class="vd-sec"><div class="vd-sec-h">２．関連当事者の開示（会計基準）</div>';
+    if(!d.related) h+='<p class="vd-body">両当事者は関連当事者の範囲（基準5項）に該当しません。資本関係・役員兼任の登録漏れをご確認ください。</p>';
+    else { h+='<div style="margin-bottom:7px"><span class="ft amber-t">'+esc(d.rel.category)+'</span><span class="fbasis">'+esc(d.rel.ref)+'</span><div class="fdetail">'+esc(d.rel.note)+'</div></div>'+
+      '<div class="mat"><div class="mat-row"><span>重要性の判定</span><strong class="'+(d.materiality.indexOf("重要")===0?"neg-t":"")+'">'+esc(d.materiality)+'</strong></div>'+
+      '<div class="mat-row sub"><span>取引金額</span><span>'+(d.amount?fmtYen(d.amount):"未入力")+'</span></div>'+
+      '<div class="mat-row sub"><span>適用した基準額</span><span>'+(d.threshold?fmtYen(d.threshold):"未設定")+'</span></div></div>'+
+      '<ul class="todo"><li>個別財務諸表上の開示対象。重要な取引は内容・金額・取引条件の決定方針を注記（基準10項）。</li>'+
+      '<li>連結子会社との取引は連結上相殺消去され、連結注記では対象外。</li>'+
+      '<li>重要性は自社の損益・総資産に対する割合基準で最終確認。</li></ul>'; }
+    h+='</div>';
+    h+='<div style="margin-top:16px;border-top:1px solid var(--line2);padding-top:11px">'+
+      (state.embed?'':'<button class="btn primary" id="j-record">この判定を役会議案履歴に起票</button>')+
+      '<p class="disc">本判定は社内整理の補助です。最終判断は条文・最新の適用指針・個別事情に基づき行ってください。</p></div>';
+    return h;
+  }
+
+  function renderMaster(){
+    var coList=state.companies.map(function(c){ var cls=classifyOwnership(c);
+      return '<div class="li"><div class="li-top"><div><div class="li-name">'+esc(c.name)+'</div>'+
+        '<div class="li-sub"><span class="chip '+cls.tone+'">'+esc(cls.label)+'</span><span class="rolepill">'+(c.board?"取締役会設置":"非設置")+'</span></div></div>'+
+        '<button class="del" data-delco="'+c.id+'">削除</button></div>'+ shEditor(c) +'</div>';
+    }).join("");
+    var left='<section class="card"><h2 class="card-h">法人マスタ</h2>'+
+      '<label class="fl">名称</label><input class="inp" id="co-name" value="'+esc(state.addCo.name)+'" placeholder="例：株式会社○○">'+
+      '<label class="chk"><input type="checkbox" id="co-board"'+(state.addCo.board?" checked":"")+'><span>取締役会設置会社</span></label>'+
+      '<button class="btn primary" id="co-add">法人を登録</button><div class="list">'+coList+'</div></section>';
+
+    var roleGrid=state.companies.map(function(c){
+      return '<div class="rolecard"><div class="rolecard-h">'+esc(c.name)+'</div><div class="roletags">'+
+        TITLES.map(function(t){ var on=state.addDir.roles.some(function(r){return r.companyId===c.id&&r.title===t;});
+          return '<button class="rtag'+(on?" on":"")+'" data-role="'+c.id+'|'+t+'">'+t+'</button>'; }).join("")+'</div></div>';
+    }).join("");
+    var dirList=state.directors.length?state.directors.map(function(d){
+      return '<div class="li"><div class="li-top"><div><div class="li-name">'+esc(d.name)+'</div><div class="li-sub">'+
+        d.roles.map(function(r){return '<span class="rolepill">'+esc((findCo(r.companyId)||{}).name||"—")+'・'+esc(r.title)+'</span>';}).join("")+'</div></div>'+
+        '<button class="del" data-deldir="'+d.id+'">削除</button></div></div>';
+    }).join(""):'<div class="empty">役員は未登録です。</div>';
+    var right='<section class="card"><h2 class="card-h">役員マスタ</h2>'+
+      '<label class="fl">氏名</label><input class="inp" id="dir-name" value="'+esc(state.addDir.name)+'" placeholder="例：青柳 昌行">'+
+      '<label class="fl">就任（会社×役職）</label>'+(state.companies.length?roleGrid:'<div class="hint">先に法人を登録してください。</div>')+
+      '<button class="btn primary" id="dir-add"'+(state.addDir.name&&state.addDir.roles.length?"":" disabled")+'>役員を登録</button>'+
+      '<div class="list">'+dirList+'</div></section>';
+    return '<div class="grid2">'+left+right+'</div>';
+  }
+  function shEditor(c){
+    var sh=c.shareholders||[], total=sh.reduce(function(s,x){return s+(Number(x.pct)||0);},0);
+    var rows=sh.length?sh.map(function(x){ var nm=x.holderKind==="company"?((findCo(x.holderId)||{}).name||"?"):((findDir(x.holderId)||{}).name||"?");
+      return '<div class="sh-row"><span class="sh-name">'+esc(nm)+'</span><span class="sh-pct">'+x.pct+'%</span><button class="del small" data-shdel="'+c.id+'|'+x.holderId+'">×</button></div>'; }).join("")
+      :'<div class="hint">株主未登録。100%子会社などは親会社を100%で登録します。</div>';
+    var opts='<option value="">株主を選択</option>'+
+      state.companies.filter(function(o){return o.id!==c.id;}).map(function(o){return '<option value="company:'+o.id+'">【法人】'+esc(o.name)+'</option>';}).join("")+
+      state.directors.map(function(o){return '<option value="person:'+o.id+'">【個人】'+esc(o.name)+'</option>';}).join("");
+    return '<details class="sh"><summary style="cursor:pointer;font-size:12px;color:var(--ink2);font-weight:600">株主構成（'+sh.length+'件・計'+total+'%）</summary>'+
+      '<div style="margin:8px 0">'+rows+'</div>'+
+      '<div class="sh-add"><select class="inp" data-shsel="'+c.id+'">'+opts+'</select>'+
+      '<input class="inp pct" data-shpct="'+c.id+'" inputmode="numeric" placeholder="%">'+
+      '<button class="btn mini" data-shadd="'+c.id+'">追加</button></div>'+
+      (total>100?'<div style="font-size:11px;color:var(--neg);margin-top:6px">合計が100%を超えています。</div>':"")+'</details>';
+  }
+
+  function renderAgenda(){
+    var rows=state.agenda.length?state.agenda.map(function(a){
+      var ct=(a.conflict_types||[]).map(function(t){return '<span class="atag">'+esc(t)+'</span>';}).join("");
+      var ex=(a.excluded_officers||[]);
+      return '<div class="agenda"><div class="agenda-top"><span class="adate">'+esc(a.meeting_date||"")+'</span>'+
+        '<span class="aco">'+esc((findCo(a.entity_id)||{}).name||"—")+'</span><div class="aflags">'+
+        (a.is_conflict?'<span class="chip neg">利益相反</span>':"")+(a.is_related_party?'<span class="chip amber">関連当事者</span>':"")+'</div></div>'+
+        '<div class="atitle">'+esc(a.title)+'</div>'+
+        '<div class="ameta">'+(a.txn_type?'<span>'+esc(a.txn_type)+'</span>':"")+(a.amount_ex_tax?'<span>'+fmtYen(a.amount_ex_tax)+'</span>':"")+(a.related_category?'<span>区分：'+esc(a.related_category)+'</span>':"")+'</div>'+
+        (ct?'<div>'+ct+'</div>':"")+
+        (ex.length?'<div class="aexcl">議決除斥：'+ex.map(esc).join("、")+'（369条2項）</div>':"")+
+        (a.note?'<div style="font-size:12px;color:var(--muted);margin-top:5px;font-style:italic">'+esc(a.note)+'</div>':"")+
+        '<div class="astatus">'+STATUS_KEYS.map(function(s){return '<button class="sb'+(a.status===s?" on"+(s==="rejected"?" neg":""):"")+'" data-status="'+a.id+'|'+s+'">'+STATUS_JP[s]+'</button>';}).join("")+'</div></div>';
+    }).join(""):'<div class="empty">履歴はまだありません。取引判定から起票できます。</div>';
+    return '<div class="grid2"><section class="card"><h2 class="card-h">役会議案履歴（'+state.agenda.length+'件）</h2><div class="list">'+rows+'</div></section>'+
+      '<section class="card"><h2 class="card-h">読み込み</h2><p class="vd-body">履歴は保存時にDB（worker経由）へ書き込まれ、再読込で search-API から取得します。</p><button class="btn" id="ag-reload">再読み込み</button></section></div>';
+  }
+
+  function renderBasis(){
+    return '<div style="margin-top:14px;display:flex;flex-direction:column;gap:14px">'+
+      '<section class="card"><h2 class="card-h">会社法（利益相反・競業）</h2><dl class="law">'+
+      law("356条1項1号 — 競業取引","取締役が自己又は第三者のために会社の事業の部類に属する取引をするとき、重要事実を開示し承認を受ける。")+
+      law("356条1項2号 — 直接取引","取締役が自己又は第三者のために会社と取引をするとき。兼任取締役による会社間取引も第三者のための取引として該当しうる。")+
+      law("356条1項3号 — 間接取引","会社が取締役の債務を保証する等、会社と取締役の利益が相反する取引。担保提供等を含む。")+
+      law("365条 — 取締役会設置会社","1項：承認機関は取締役会。2項：取引をした取締役は遅滞なく重要事実を取締役会へ報告。")+
+      law("369条2項 — 特別利害関係人の除斥","当該取締役は議決に加わることができない。定足数・賛否の算定から除外。")+
+      law("完全親子会社間と株主全員の同意","完全子会社では少数株主が存在せず、唯一株主たる親会社の同意が株主全員の同意に当たり356条承認は不要／瑕疵治癒との整理がある。取締役会の手続自体の要否は別途検討。")+
+      law("423条3項 — 任務懈怠の推定","利益相反取引で会社に損害が生じた場合、関与・承認した取締役の任務懈怠が推定される。")+
+      law("428条 — 自己のための直接取引","無過失でも責任を負い、責任の一部免除規定は適用されない。")+'</dl></section>'+
+      '<section class="card"><h2 class="card-h">関連当事者の開示（企業会計基準第11号／適用指針第13号）</h2><dl class="law">'+
+      law("関連当事者の範囲（基準5項）","(1)親会社／(2)子会社／(3)同一の親会社をもつ会社／(4)関連会社及びその子会社／(5)主要株主（議決権10%以上）及びその近親者／(6)役員及びその近親者／(7)(5)(6)が議決権の過半数を所有する会社等／(8)重要な子会社の役員等。")+
+      law("議決権比率による区分","過半数＝子会社、20%以上＝関連会社、10%以上＝主要株主、100%＝完全子会社で連結相殺。登録した株主構成（%）から自動判定。")+
+      law("開示対象（基準10項）","関連当事者との重要な取引について、内容・金額・取引条件の決定方針等を注記。")+
+      law("重要性の判断（適用指針）","役員等個人は1事業年度1,000万円超が目安。法人は損益・貸借対照表項目の割合基準。本ツールは金額換算した基準額で簡易判定。")+
+      law("連結と個別","連結では連結子会社との取引は相殺消去され注記対象外。個別開示と区別。")+'</dl><p class="disc">条文・基準の要旨です。最新の改正状況は原典でご確認ください。</p></section></div>';
+  }
+  function law(t,d){ return '<dt>'+t+'</dt><dd>'+d+'</dd>'; }
+
+  // ============================================================
+  // イベント
+  // ============================================================
+  function bind(){
+    q("[data-tab]",true).forEach(function(b){ b.onclick=function(){ state.tab=b.getAttribute("data-tab"); render(); }; });
+    if(state.tab==="judge") bindJudge();
+    if(state.tab==="master") bindMaster();
+    if(state.tab==="agenda") bindAgenda();
+  }
+  function q(sel,all){ return all?[].slice.call(root.querySelectorAll(sel)):root.querySelector(sel); }
+
+  function bindJudge(){
+    var j=state.judge;
+    var a=q("#j-a"); if(a) a.onchange=function(){ j.a=a.value; render(); };
+    var b=q("#j-b"); if(b) b.onchange=function(){ j.b=b.value; render(); };
+    var t=q("#j-txn"); if(t) t.onchange=function(){ j.txn=t.value; };
+    var am=q("#j-amt"); if(am) am.oninput=function(){ j.amount=am.value.replace(/[^0-9]/g,""); var h=am.nextElementSibling; if(h) h.textContent=j.amount?fmtYen(j.amount):"金額未入力（重要性判定は保留）"; };
+    var cp=q("#j-comp"); if(cp) cp.onchange=function(){ j.competing=cp.checked; };
+    var thc=q("#j-thc"); if(thc) thc.oninput=function(){ state.settings.thresholdCompany=thc.value.replace(/[^0-9]/g,""); };
+    var thp=q("#j-thp"); if(thp) thp.oninput=function(){ state.settings.thresholdPerson=thp.value.replace(/[^0-9]/g,""); };
+    var run=q("#j-run"); if(run) run.onclick=function(){
+      var pa=parseParty(j.a),pb=parseParty(j.b); if(!pa||!pb) return;
+      var conflict=analyzeConflict(pa,pb,j.txn,j.competing);
+      j.result={ conflict:conflict, method:approvalMethod(conflict.byCompany), disclosure:analyzeDisclosure(pa,pb,j.amount),
+        ownership:ownershipContext(pa,pb), txn:j.txn, amount:j.amount?Number(j.amount):null,
+        aLabel:partyLabel(pa), bLabel:partyLabel(pb), pa:pa, pb:pb };
+      render();
+    };
+    var rec=q("#j-record"); if(rec) rec.onclick=function(){ recordAgenda(); };
+  }
+
+  function recordAgenda(){
+    var r=state.judge.result; if(!r) return;
+    var entityId = (r.pa.kind==="company"&&r.pa.id) || (r.pb.kind==="company"&&r.pb.id) || null;
+    var excluded=[]; r.conflict.findings.forEach(function(f){ if(f.director&&excluded.indexOf(f.director)<0) excluded.push(f.director); });
+    var record={
+      meeting_date:new Date().toISOString().slice(0,10),
+      entity_id:entityId, title:r.aLabel+" ⇄ "+r.bLabel+"（"+txnLabel(r.txn)+"）",
+      txn_type:txnLabel(r.txn), party_a:r.aLabel, party_b:r.bLabel,
+      amount_ex_tax:r.amount, is_conflict:r.conflict.hit, is_related_party:r.disclosure.related,
+      conflict_types:r.conflict.findings.map(function(f){return f.companyName+"："+f.type;}),
+      excluded_officers:excluded, related_category:r.disclosure.related?r.disclosure.rel.category:"",
+      status:"pending", note:"判定ページから起票"
+    };
+    toast("保存中…");
+    gcall("rptSaveAgenda",record).then(function(){ return gcall("rptListAgenda",{}); })
+      .then(function(list){ state.agenda=list||[]; state.tab="agenda"; render(); toast("役会議案履歴に保存しました"); })
+      .catch(function(e){ toast("保存に失敗：" + (e&&e.message||e)); });
+  }
+
+  function bindMaster(){
+    var nm=q("#co-name"); if(nm) nm.oninput=function(){ state.addCo.name=nm.value; };
+    var bd=q("#co-board"); if(bd) bd.onchange=function(){ state.addCo.board=bd.checked; };
+    var add=q("#co-add"); if(add) add.onclick=function(){ if(!state.addCo.name.trim()) return;
+      toast("登録中…");
+      gcall("rptSaveEntity",{name:state.addCo.name.trim(),has_board:state.addCo.board})
+        .then(reloadMasters).then(function(){ state.addCo={name:"",board:true}; render(); toast("法人を登録しました"); })
+        .catch(function(e){ toast("失敗："+(e&&e.message||e)); }); };
+    q("[data-delco]",true).forEach(function(x){ x.onclick=function(){ if(!confirm("削除しますか？")) return;
+      toast("削除中…"); gcall("rptVoidEntity",x.getAttribute("data-delco")).then(reloadMasters).then(render).then(function(){toast("削除しました");}).catch(function(e){toast("失敗："+(e&&e.message||e));}); }; });
+
+    // 株主構成
+    q("[data-shadd]",true).forEach(function(btn){ btn.onclick=function(){ var cid=btn.getAttribute("data-shadd");
+      var sel=q('[data-shsel="'+cid+'"]'), pctEl=q('[data-shpct="'+cid+'"]');
+      if(!sel.value||pctEl.value==="") return; var hk=sel.value.split(":")[0], hid=sel.value.split(":")[1];
+      var co=findCo(cid); var list=(co.shareholders||[]).filter(function(s){return s.holderId!==hid;});
+      list.push({holderKind:hk==="company"?"company":"person",holderId:hid,pct:Number(pctEl.value)});
+      saveShareholdings(cid,list); }; });
+    q("[data-shdel]",true).forEach(function(btn){ btn.onclick=function(){ var p=btn.getAttribute("data-shdel").split("|"),cid=p[0],hid=p[1];
+      var co=findCo(cid); var list=(co.shareholders||[]).filter(function(s){return s.holderId!==hid;}); saveShareholdings(cid,list); }; });
+
+    // 役員
+    var dn=q("#dir-name"); if(dn) dn.oninput=function(){ state.addDir.name=dn.value; };
+    q("[data-role]",true).forEach(function(btn){ btn.onclick=function(){ var p=btn.getAttribute("data-role").split("|"),cid=p[0],title=p[1];
+      var i=state.addDir.roles.findIndex(function(r){return r.companyId===cid&&r.title===title;});
+      if(i>=0) state.addDir.roles.splice(i,1); else state.addDir.roles.push({companyId:cid,title:title}); render(); }; });
+    var dadd=q("#dir-add"); if(dadd) dadd.onclick=function(){ if(!state.addDir.name.trim()||!state.addDir.roles.length) return;
+      var roles=state.addDir.roles.map(function(r){ return {entity_id:r.companyId,title:r.title,is_director:DIRECTOR_TITLES.indexOf(r.title)>=0}; });
+      toast("登録中…");
+      gcall("rptSaveOfficer",{name:state.addDir.name.trim(),roles:roles})
+        .then(reloadMasters).then(function(){ state.addDir={name:"",roles:[]}; render(); toast("役員を登録しました"); })
+        .catch(function(e){ toast("失敗："+(e&&e.message||e)); }); };
+    q("[data-deldir]",true).forEach(function(x){ x.onclick=function(){ if(!confirm("削除しますか？")) return;
+      toast("削除中…"); gcall("rptVoidOfficer",x.getAttribute("data-deldir")).then(reloadMasters).then(render).then(function(){toast("削除しました");}).catch(function(e){toast("失敗："+(e&&e.message||e));}); }; });
+  }
+  function saveShareholdings(entityId,list){
+    var payload=list.map(function(s){ return { holder_kind:s.holderKind==="company"?"entity":"officer",
+      holder_entity_id:s.holderKind==="company"?s.holderId:null, holder_officer_key:s.holderKind==="company"?null:s.holderId,
+      holder_name:(s.holderKind==="company"?(findCo(s.holderId)||{}).name:(findDir(s.holderId)||{}).name)||"", voting_pct:s.pct }; });
+    toast("保存中…");
+    gcall("rptReplaceShareholdings",entityId,payload).then(reloadMasters).then(render).then(function(){toast("株主構成を保存しました");}).catch(function(e){toast("失敗："+(e&&e.message||e));});
+  }
+
+  function bindAgenda(){
+    q("[data-status]",true).forEach(function(b){ b.onclick=function(){ var p=b.getAttribute("data-status").split("|"),id=p[0],s=p[1];
+      toast("更新中…"); gcall("rptUpdateAgendaStatus",id,s).then(function(){ var a=state.agenda.filter(function(x){return x.id===id;})[0]; if(a) a.status=s; render(); toast("ステータスを更新しました"); }).catch(function(e){toast("失敗："+(e&&e.message||e));}); }; });
+    var rl=q("#ag-reload"); if(rl) rl.onclick=function(){ toast("読み込み中…"); gcall("rptListAgenda",{}).then(function(l){ state.agenda=l||[]; render(); toast("更新しました"); }).catch(function(e){toast("失敗："+(e&&e.message||e));}); };
+  }
+
+  function toast(m){ var t=document.createElement("div"); t.className="toast"; t.textContent=m; document.body.appendChild(t); setTimeout(function(){ t.remove(); },2200); }
+
+  function reloadMasters(){ return gcall("rptGetMasters").then(function(m){ buildMasters(m); }); }
+
+  // ===== 初期化 =====
+  try { state.embed = (window.self !== window.top); } catch(e){ state.embed = true; } // iframe埋め込み=判定のみ
+  if(state.embed) state.tab = "judge";
+  var hasHost = (typeof google!=="undefined") && google.script && google.script.run;
+  if(!hasHost){
+    // バックエンド未接続（単体表示・デモ）→ サンプルで起動
+    loadSampleMasters(); state.agenda=[]; render(); showSampleBanner();
+  } else {
+    Promise.all([ gcall("rptGetMasters"), gcall("rptListAgenda",{}) ])
+      .then(function(res){ buildMasters(res[0]); state.agenda=res[1]||[];
+        if(!state.companies.length){ loadSampleMasters(); showSampleBanner(); } // 空マスタ→サンプル
+        render(); })
+      .catch(function(e){ root.innerHTML='<div class="rpt-error">読み込みに失敗しました：'+esc(e&&e.message||e)+'<br>（関連当事者ページは管理者限定です）</div>'; });
+  }
+})();
+</script>

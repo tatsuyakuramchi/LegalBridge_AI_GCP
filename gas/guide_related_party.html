@@ -1,0 +1,375 @@
+<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>関連当事者取引 判定・決議 実務ガイド</title>
+<style>
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--teal:#085041;--teal-s:#e1f5ee;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;--sw:228px;
+--ca:#27500a;--cb:#085041}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+#sidebar{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--navy);overflow-y:auto;display:flex;flex-direction:column;z-index:100}
+#sh{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+#sh h1{font-size:9px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-transform:uppercase}
+#sh p{font-size:11.5px;color:rgba(255,255,255,.92);font-weight:600;margin-top:3px;line-height:1.4}
+nav{padding:6px 0 20px}
+.ns{display:block;padding:5px 14px;font-size:9px;font-weight:700;color:rgba(255,255,255,.32);letter-spacing:.07em;text-transform:uppercase;margin-top:9px}
+.nl{display:block;padding:4px 14px;font-size:11.5px;color:rgba(255,255,255,.7);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nl:hover,.nl.active{color:#fff;background:rgba(255,255,255,.09);border-left-color:#e63946}
+.nsub{display:block;padding:3px 14px 3px 24px;font-size:10.5px;color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
+.nsub:hover{color:rgba(255,255,255,.82)}
+.bdg{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;margin-right:4px;vertical-align:middle}
+.bA{background:#eaf3de;color:var(--ca)}.bB{background:var(--teal-s);color:var(--cb)}.b3{background:#faeeda;color:var(--gold)}
+#main{margin-left:var(--sw);padding:36px 46px 80px;max-width:calc(var(--sw) + 850px)}
+h1.dt{font-size:21px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:9px;margin-bottom:5px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:28px}
+.chap{border-radius:8px;padding:16px 22px;margin:32px 0 14px;scroll-margin-top:16px}
+.chap.cA{background:var(--ca)}.chap.cB{background:var(--cb)}.chap.c3{background:var(--navy)}
+.chap .cn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px}
+.chap h2{font-size:16px;font-weight:700;color:#fff;margin:0}
+.chap .cdesc{font-size:12px;color:rgba(255,255,255,.65);margin-top:5px}
+h2.sec{font-size:16px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:28px 0 11px;scroll-margin-top:20px}
+h3.sub{font-size:13.5px;font-weight:700;color:var(--navy-l);margin:18px 0 9px;padding-bottom:4px;border-bottom:1px solid var(--g3);scroll-margin-top:20px}
+h4.sh4{font-size:12.5px;font-weight:700;color:var(--tx2);margin:11px 0 7px}
+p{margin-bottom:9px;color:var(--tx2)}strong{color:var(--tx)}
+ul,ol{padding-left:20px;margin-bottom:9px;color:var(--tx2)}li{margin-bottom:3px}
+.shb{border-radius:7px;padding:12px 16px;margin-bottom:14px;scroll-margin-top:16px}
+.shb h3{font-size:13.5px;font-weight:700;color:#fff;margin:0}
+.shb .sn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:2px}
+.sA{background:var(--ca)}.sB{background:var(--cb)}.s3{background:var(--navy)}
+.cl{border-left:3px solid;padding:8px 12px;border-radius:0 5px 5px 0;margin:9px 0;font-size:12.5px}
+.cl-w{border-color:var(--red);background:var(--red-s)}.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-t{border-color:var(--green);background:var(--green-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}
+.tw{overflow-x:auto;margin:9px 0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:var(--navy);color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:11.5px;white-space:nowrap}
+tbody tr:nth-child(even){background:var(--g1)}
+tbody td{padding:6px 9px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:hover{background:#f0f4ff}
+td.tc{font-weight:600;color:var(--navy);font-size:11.5px;white-space:nowrap}
+td.tcr{font-weight:700;color:var(--red)}
+td.tcg{font-weight:700;color:var(--green)}
+td.law{font-size:11px;color:var(--g5)}
+.case-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+.case-card{border-radius:7px;padding:16px 18px;border:2px solid}
+.case-card.A{border-color:var(--ca);background:#f4f9f0}
+.case-card.B{border-color:var(--cb);background:var(--teal-s)}
+.case-card h4{font-size:13px;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid}
+.case-card.A h4{color:var(--ca);border-color:var(--ca)}
+.case-card.B h4{color:var(--cb);border-color:var(--cb)}
+.case-card ul{padding-left:16px;font-size:12px;color:var(--tx2)}
+.step-tbl thead th{white-space:normal}
+.step-num-cell{font-weight:700;color:#fff;text-align:center;font-size:12px;padding:6px 8px;white-space:nowrap}
+.step-A{background:var(--ca)}.step-B{background:var(--cb)}.step-3{background:var(--navy)}
+.ck{list-style:none;padding:0;margin:7px 0}
+.ck li{padding:7px 10px 7px 30px;position:relative;border-bottom:1px solid var(--g2);font-size:12px;color:var(--tx2)}
+.ck li::before{content:"☐";position:absolute;left:7px;font-size:13px;color:var(--navy);line-height:1.5}
+.ck li:last-child{border-bottom:none}
+.badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:3px}
+.b-biz{background:#eaf3de;color:var(--ca)}.b-leg{background:#faeeda;color:var(--gold)}.b-au{background:var(--g2);color:#374151;border:1px solid var(--g3)}
+.tag{display:inline-block;font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:3px;margin-right:2px}
+.t-A{background:#eaf3de;color:var(--ca)}.t-B{background:var(--teal-s);color:var(--cb)}.t-red{background:var(--red-s);color:var(--red)}.t-law{background:#e6effa;color:var(--navy)}
+.doc-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;border:1px solid;margin-right:3px;white-space:nowrap}
+.doc-A{background:#eaf3de;color:var(--ca);border-color:var(--ca)}.doc-B{background:var(--teal-s);color:var(--cb);border-color:var(--cb)}.doc-both{background:#fef3e2;color:var(--gold);border-color:var(--gold)}
+.ap{background:var(--g1);border-radius:7px;padding:14px 18px;margin-bottom:14px;font-size:12.5px}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
+.faq-item{margin-bottom:12px}
+.faq-q{font-weight:700;color:var(--navy);margin-bottom:4px;font-size:13px}
+.faq-a{padding:9px 13px;background:var(--g1);border-radius:4px;font-size:12.5px;color:var(--tx2);border-left:3px solid var(--g3)}
+.cta{display:inline-flex;align-items:center;gap:8px;background:var(--navy);color:#fff;text-decoration:none;font-weight:700;font-size:13px;padding:11px 20px;border-radius:8px;margin:6px 0;transition:all .15s}
+.cta:hover{background:var(--navy-l);transform:translateY(-1px);box-shadow:0 3px 10px rgba(29,53,87,.25)}
+</style>
+
+<style id="gas-portal-back-style">
+.portal-back-button{position:fixed;right:16px;bottom:16px;z-index:3000;display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:#1d3557;color:#fff;text-decoration:none;font-size:12px;font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,.22);opacity:.92;transition:opacity .15s,transform .15s}
+.portal-back-button:hover{opacity:1;transform:translateY(-1px)}
+@media print{.portal-back-button{display:none}}
+</style>
+
+</head>
+<body>
+  <?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<aside id="sidebar">
+<div id="sh"><h1>法務部</h1><p>関連当事者取引<br>判定・決議 実務ガイド</p></div>
+<nav>
+<a class="nl" href="#top">概要</a>
+<a class="nl" href="#dual">2つの規律（開示・承認）</a>
+<a class="nl" href="#group">当社グループの前提</a>
+<a class="nl" href="#trigger">トリガーの見つけ方</a>
+<a class="nl" href="#flow">判定の流れ（3ステップ）</a>
+<span class="ns">出力① 開示（会計）</span>
+<a class="nl" href="#disclose"><span class="bdg bA">開</span>開示の判定</a>
+<span class="ns">出力② 承認（会社法）</span>
+<a class="nl" href="#approve"><span class="bdg bB">承</span>承認の組み合わせ</a>
+<a class="nsub" href="#repcontrol">代表権・支配権の効き</a>
+<span class="ns">承認の方法</span>
+<a class="nl" href="#method"><span class="bdg b3">決</span>決議の方法</a>
+<a class="nsub" href="#wholly">完全支配の特則</a>
+<a class="nl" href="#txntypes">取引の種類と区分</a>
+<span class="ns">参考・運用</span>
+<a class="nl" href="#tool">判定ツールの使い方</a>
+<a class="nl" href="#pitfalls">よくある落とし穴</a>
+<a class="nl" href="#laws">根拠条文・基準</a>
+<a class="nl" href="#faq">Q&amp;A</a>
+</nav>
+</aside>
+
+<main id="main">
+<h1 class="dt" id="top">関連当事者取引 判定・決議 実務ガイド</h1>
+<p class="dm">作成：法務部　｜　会社法（利益相反）と会計基準（関連当事者開示）の両面整理</p>
+
+<div class="cl cl-i">このガイドは、当社グループ（KADOKAWA・アークライト・新紀元社）の間の取引や役員が関係する取引について、必要な<strong>開示</strong>（会計）と<strong>承認決議</strong>（会社法）を漏れなく回すためのものです。まず<a href="#trigger" style="color:var(--blue)">トリガーの見つけ方</a>で自分の取引が候補かを確認し、判定そのものは<a href="#tool" style="color:var(--blue)">判定ツール</a>で行ってください。迷ったら必ず法務に相談を。</div>
+
+<hr class="sd">
+
+<!-- 2つの規律 -->
+<h2 class="sec" id="dual">押さえるべき2つの規律</h2>
+<p>「関連当事者取引」と「決議（承認）」は、似ているようで<strong>別の制度</strong>です。両方を別々に確認します。</p>
+
+<div class="case-grid">
+  <div class="case-card A">
+    <h4>開示（会計基準）</h4>
+    <ul>
+      <li><strong>根拠：</strong>企業会計基準第11号</li>
+      <li><strong>求められるもの：</strong>計算書類での<strong>注記</strong></li>
+      <li><strong>いつ：</strong>相手方が関連当事者で、取引が重要なとき</li>
+      <li><strong>留意：</strong>連結子会社との取引は連結上相殺消去</li>
+    </ul>
+  </div>
+  <div class="case-card B">
+    <h4>承認（会社法）</h4>
+    <ul>
+      <li><strong>根拠：</strong>会社法356条・365条</li>
+      <li><strong>求められるもの：</strong>取締役会／株主総会の<strong>決議</strong></li>
+      <li><strong>いつ：</strong>取引が利益相反取引に当たるとき</li>
+      <li><strong>留意：</strong>特別利害関係取締役は議決から除斥</li>
+    </ul>
+  </div>
+</div>
+
+<div class="cl cl-n"><strong>原則はひとつ：</strong> 取引の一方の会社からみて<strong>「自社の取締役」が相手側に立つ</strong>ときだけ、その会社で承認が発生します。それ以外の関連当事者（純粋な親子・兄弟・主要株主・近親者）は、<strong>開示だけ</strong>で承認は不要です。</div>
+
+<hr class="sd">
+
+<!-- グループの前提 -->
+<h2 class="sec" id="group">当社グループの前提</h2>
+<div class="tw"><table>
+<thead><tr><th>会社</th><th>位置づけ</th><th>判定上の意味</th></tr></thead>
+<tbody>
+<tr><td class="tc">KADOKAWA</td><td>親会社</td><td>アークライト・新紀元社の支配株主</td></tr>
+<tr><td class="tc">アークライト</td><td>子会社</td><td>KADOKAWAの完全子会社か否かがキーファクター</td></tr>
+<tr><td class="tc">新紀元社</td><td>子会社</td><td>アークライトとは<strong>兄弟会社</strong>（同一の親会社）</td></tr>
+</tbody></table></div>
+<div class="cl cl-i">子会社の議決権を親会社が<strong>100%</strong>保有する場合は<strong>完全子会社</strong>。完全子会社かどうかは会社法・会計の双方で効きます（→ <a href="#wholly" style="color:var(--blue)">完全支配の特則</a>）。実際の持株比率は判定ツールの「株主構成」マスタで管理し、最新に保ってください。</div>
+
+<hr class="sd">
+
+<!-- トリガー -->
+<h2 class="sec" id="trigger">まず疑う ── トリガーの見つけ方</h2>
+<p>次のいずれかに当てはまったら、関連当事者取引・利益相反取引の<strong>候補</strong>です。判定ツールにかけてください。</p>
+<div class="tw"><table>
+<thead><tr><th>トリガー</th><th>具体例</th></tr></thead>
+<tbody>
+<tr><td class="tc">グループ間取引</td><td>KADOKAWA ⇔ アークライト、アークライト ⇔ 新紀元社 等</td></tr>
+<tr><td class="tc">役員の兼任</td><td>取引する2社に<strong>同じ人が取締役で就いている</strong>（代表取締役なら特に注意）</td></tr>
+<tr><td class="tc">役員本人との取引</td><td>自社の取締役と会社が直接取引する</td></tr>
+<tr><td class="tc">近親者・役員の会社</td><td>取締役の家族、または取締役が支配する会社との取引</td></tr>
+<tr><td class="tc">債務保証・担保提供</td><td>会社が役員の債務を保証する／担保を提供する</td></tr>
+<tr><td class="tc">主要株主との取引</td><td>議決権を10%以上持つ株主との取引</td></tr>
+<tr><td class="tc">競業</td><td>取締役が会社の事業と同種の取引を自己／第三者のために行う</td></tr>
+</tbody></table></div>
+<div class="cl cl-w"><strong>「グループだから大丈夫」「いつもの取引だから」は禁物。</strong> <strong>兼任の有無</strong>と<strong>資本関係（持株比率）</strong>が判定を分けます。</div>
+
+<hr class="sd">
+
+<!-- 判定の流れ -->
+<h2 class="sec" id="flow">判定の流れ（3ステップ）</h2>
+<p>判定ツールは、次の順で当事者を絞り込み、最後に<strong>開示</strong>と<strong>承認</strong>の2つの結論を出します。各段は「絞る（減算）」だけでなく、新たなトリガーを「点灯（加算）」させる方向にも働きます。</p>
+<div class="dw" style="background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:12px 12px 9px;margin:9px 0"><svg viewBox="0 0 740 64" style="width:100%;display:block"><defs><marker id="flf" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#9CA3AF"></polygon></marker></defs>
+<rect x="0" y="1" width="168" height="62" rx="5" fill="#1d3557"></rect><text x="84" y="22" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">STEP 1</text><text x="84" y="38" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10.5" font-weight="700" fill="#fff">当事者で大枠</text>
+<line x1="170" y1="32" x2="182" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#flf)"></line>
+<rect x="182" y="1" width="168" height="62" rx="5" fill="#1d3557"></rect><text x="266" y="22" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">STEP 2</text><text x="266" y="38" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10.5" font-weight="700" fill="#fff">取引内容で加減</text>
+<line x1="352" y1="32" x2="364" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#flf)"></line>
+<rect x="364" y="1" width="168" height="62" rx="5" fill="#1d3557"></rect><text x="448" y="22" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">STEP 3</text><text x="448" y="38" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10.5" font-weight="700" fill="#fff">関係値で確定</text>
+<line x1="534" y1="32" x2="546" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#flf)"></line>
+<rect x="546" y="1" width="168" height="62" rx="5" fill="#27500a"></rect><text x="630" y="22" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">OUTPUT</text><text x="630" y="38" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10.5" font-weight="700" fill="#fff">開示／承認 判定</text>
+</svg></div>
+<div class="tw"><table>
+<thead><tr><th style="width:120px">ステップ</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="step-num-cell step-3">① 当事者</td><td>関連当事者・利益相反の候補があるか。なければ対象外。</td></tr>
+<tr><td class="step-num-cell step-3">② 取引内容</td><td>開示は対象外取引・重要性で絞る／承認は債務保証・担保提供（間接取引）や競業を点灯。</td></tr>
+<tr><td class="step-num-cell step-3">③ 関係値</td><td>議決権比率・支配・代表権で、開示区分（子会社／関連会社／主要株主、100%は連結相殺）と承認の所在を確定。</td></tr>
+</tbody></table></div>
+
+<hr class="sd">
+
+<!-- 出力① 開示 -->
+<div class="chap cA" id="disclose">
+  <div class="cn">Output 1 ・ 会計</div>
+  <h2>開示（会計基準）の判定</h2>
+  <div class="cdesc">関連当事者の範囲に入り、かつ重要なら、計算書類に注記する。</div>
+</div>
+
+<h3 class="sub">関連当事者の範囲（基準5項）</h3>
+<div class="tw"><table>
+<thead><tr><th>区分</th><th>該当</th><th>判定の基礎（議決権 等）</th></tr></thead>
+<tbody>
+<tr><td class="tc">親会社／子会社</td><td>該当</td><td>議決権の過半数（支配）</td></tr>
+<tr><td class="tc">兄弟会社</td><td>該当</td><td>同一の親会社をもつ会社</td></tr>
+<tr><td class="tc">関連会社</td><td>該当</td><td>議決権20%以上（重要な影響）</td></tr>
+<tr><td class="tc">主要株主・近親者</td><td>該当</td><td>議決権10%以上 及び二親等内の近親者</td></tr>
+<tr><td class="tc">役員・近親者</td><td>該当</td><td>役員、及び役員等が過半数を所有する会社</td></tr>
+</tbody></table></div>
+
+<h3 class="sub">重要性・連結相殺</h3>
+<div class="cl cl-i"><strong>重要性：</strong> 取引金額が基準額を超えるか。役員等個人との取引は<strong>1事業年度1,000万円超</strong>が目安、法人は損益・総資産の割合基準（金額換算して設定）。</div>
+<div class="cl cl-n"><strong>連結相殺：</strong> 連結子会社との取引は<strong>連結上相殺消去</strong>され、連結注記では対象外（個別では開示）。完全子会社・兄弟会社（同一連結グループ内）はここに該当します。</div>
+
+<hr class="sd">
+
+<!-- 出力② 承認 -->
+<div class="chap cB" id="approve">
+  <div class="cn">Output 2 ・ 会社法</div>
+  <h2>承認（会社法）の判定 ── 組み合わせ</h2>
+  <div class="cdesc">承認が発生するのは①〜⑦、開示だけで済むのは⑧〜⑩。</div>
+</div>
+
+<div class="tw"><table>
+<thead><tr><th style="width:46px">No.</th><th>組み合わせ</th><th>会社法の承認</th><th>除斥対象</th><th class="law">根拠</th></tr></thead>
+<tbody>
+<tr><td class="tc">①</td><td>会社 ⇔ 自社の取締役本人</td><td class="tcr">当該会社で承認</td><td>当該取締役</td><td class="law">356①二（自己取引）</td></tr>
+<tr><td class="tc">②</td><td>兼任・<strong>双方代表</strong></td><td class="tcr">両社で承認</td><td>両社で当該取締役</td><td class="law">356①二・民法108条</td></tr>
+<tr><td class="tc">③</td><td>兼任・<strong>片面代表</strong></td><td class="tcr">相手方会社で明確／代表側は保守的に</td><td>当該取締役</td><td class="law">356①二</td></tr>
+<tr><td class="tc">④</td><td>兼任・<strong>無代表</strong></td><td class="tcr">保守的に承認</td><td>当該取締役</td><td class="law">356①二</td></tr>
+<tr><td class="tc">⑤</td><td>取締役が相手方を<strong>支配</strong>（過半数保有）</td><td class="tcr">取締役側の会社で承認</td><td>当該取締役</td><td class="law">356①二/三（計算説）</td></tr>
+<tr><td class="tc">⑥</td><td>会社が取締役の債務保証・担保提供</td><td class="tcr">当該会社で承認</td><td>当該取締役</td><td class="law">356①三（間接取引）</td></tr>
+<tr><td class="tc">⑦</td><td>会社 ⇔ 役員の近親者／役員支配会社</td><td class="tcr">間接取引に当たれば承認</td><td>当該役員</td><td class="law">356①三</td></tr>
+<tr><td class="tc">⑧</td><td>完全親子・<strong>兼任なし</strong></td><td class="tcg">承認不要（開示のみ）</td><td>—</td><td class="law">兼任あれば②〜④</td></tr>
+<tr><td class="tc">⑨</td><td>兄弟会社・<strong>兼任なし</strong></td><td class="tcg">承認不要（開示のみ）</td><td>—</td><td class="law">共通取締役あれば②〜④</td></tr>
+<tr><td class="tc">⑩</td><td>主要株主（取締役でない）</td><td class="tcg">承認不要（開示のみ）</td><td>—</td><td class="law">取締役を介さない</td></tr>
+</tbody></table></div>
+
+<h3 class="sub" id="repcontrol">代表権・支配権の効き</h3>
+<div class="cl cl-i"><strong>代表権で確度が変わる：</strong> 双方代表が最も明確（民法108条の双方代理も及ぶ）。片面代表は相手方会社で直接取引が明確、代表する側は保守的に。無代表兼任は形式的該当性が弱く、安全側で承認・除斥。</div>
+<div class="cl cl-i"><strong>支配権でも承認が出る：</strong> 取締役が相手方会社を支配していれば、代表権がなくても相手方経由で実質「自己のため」の取引（計算説）になり、承認が必要になります（⑤）。</div>
+<div class="cl cl-w"><strong>⑧⑨（開示のみ）の注意 ── 「決議なしでOK」ではありません：</strong> 兄弟会社・完全親子で兼任がなければ<strong>利益相反取引としての承認決議は不要</strong>ですが、本取引が<strong>会社法362条4項の重要事項（重要な財産の処分・譲受け／多額の借財 等）</strong>に当たる場合は、利益相反とは別に<strong>通常の取締役会決議が必要</strong>です（特別利害関係がないため369条2項の除斥はかかりません）。また、グループ会社は<strong>親会社から両社に派遣された共通取締役（兼任）</strong>が生じやすく、その場合は②〜④に倒れて承認が発生します。兼任の登録漏れに注意。</div>
+
+<hr class="sd">
+
+<!-- 承認の方法 -->
+<div class="chap c3" id="method">
+  <div class="cn">Method</div>
+  <h2>承認の方法 ── 除斥から株主総会まで</h2>
+  <div class="cdesc">承認が要ると判定されたら、各社で次を行う。</div>
+</div>
+
+<div class="tw"><table>
+<thead><tr><th style="width:140px">手続</th><th>内容</th><th class="law">根拠</th></tr></thead>
+<tbody>
+<tr><td class="tc">① 承認機関</td><td>取締役会設置会社は<strong>取締役会</strong>、非設置は株主総会</td><td class="law">365条1項</td></tr>
+<tr><td class="tc">② 除斥</td><td>特別利害関係取締役は<strong>議決に加われない</strong>。議事録に除斥を明記</td><td class="law">369条2項</td></tr>
+<tr><td class="tc">③ 定足数の確認</td><td>除斥後に「議決に加われる取締役」で決議できるか</td><td class="law">369条1項</td></tr>
+<tr><td class="tcr">④ 役会不成立 → 株主総会</td><td>除斥の結果、議決に加われる取締役がいなくなり<strong>取締役会で決議できない場合は、株主総会の承認</strong>に上げる。株主総会では特別利害関係株主も議決できるが、著しく不当な決議は取消事由になり得る</td><td class="law">831条1項3号</td></tr>
+<tr><td class="tc">⑤ 事後報告</td><td>取引後、遅滞なく取締役会へ報告</td><td class="law">365条2項</td></tr>
+<tr><td class="tc">⑥ 責任</td><td>自己のための直接取引は無過失責任・責任軽減不可。会社に損害が生じれば任務懈怠が推定</td><td class="law">428条・423条3項</td></tr>
+</tbody></table></div>
+
+<h3 class="sub" id="wholly">完全支配の特則</h3>
+<div class="cl cl-t"><strong>完全子会社では、</strong>唯一株主たる親会社の同意が株主全員の同意に当たり、356条承認は不要／瑕疵が治癒するとの整理があります。</div>
+<div class="cl cl-w"><strong>ただし「安全」ではありません。</strong> <strong>多重代表訴訟（847条の3）・子会社取締役の善管注意義務・423条3項（条件が不公正なら承認があっても任務懈怠）</strong> は残ります。取締役会の手続自体の要否も別途検討してください。</div>
+
+<hr class="sd">
+
+<hr class="sd">
+
+<!-- 取引の種類と区分 -->
+<h2 class="sec" id="txntypes">取引の種類と区分（会社法／会計）</h2>
+<div class="cl cl-i"><strong>区分の原理：</strong> <strong>会計開示は「相手」で決まり</strong>（相手が関連当事者なら、種類を問わず重要性次第でほぼ全取引が開示候補）、<strong>会社法は「誰が相手側に立つか＋取引の性質」で決まります</strong>（自社の取締役が相手側に立つときだけ、性質に応じて直接356①二／間接356①三／競業356①一の号が立つ）。取締役が関与しなければ会社法は不発で、開示のみです。</div>
+<div class="tw"><table>
+<thead><tr><th style="width:140px">取引の種類</th><th>該当取引例</th><th style="width:190px">会社法（取締役が関与する場合）</th><th style="width:150px">会計（開示）</th></tr></thead>
+<tbody>
+<tr><td class="tc">売買（販売・仕入）</td><td>商品・製品の販売、原材料・製品の仕入、有償支給</td><td>直接取引（356①二）</td><td>営業取引として開示</td></tr>
+<tr><td class="tc">役務・業務委託</td><td>制作・編集・デザイン委託、経営指導料、ブランド使用料、出向、保守</td><td>直接取引（356①二）</td><td>営業取引として開示</td></tr>
+<tr><td class="tc">ライセンス・知財</td><td>著作権・商標の使用許諾、ロイヤリティ、サブライセンス</td><td>直接取引（356①二）</td><td>営業／営業外</td></tr>
+<tr><td class="tc">賃貸借</td><td>事務所・店舗・倉庫の賃貸借、設備リース</td><td>直接取引（356①二）</td><td>営業外（賃借料）</td></tr>
+<tr><td class="tc">金銭の貸借</td><td>グループ内貸付、CMS、短期借入、低利・無利息貸付</td><td>直接取引（356①二）</td><td>営業外（利息・残高）。低利/無利息は時価で判定</td></tr>
+<tr><td class="tc">債務保証</td><td>役員の借入・子会社債務の会社保証、経営者保証</td><td><strong>間接取引（356①三）</strong>＝条文の典型</td><td>被保証残高で判定</td></tr>
+<tr><td class="tc">担保提供</td><td>会社資産を役員・第三者の債務の担保に供する／担保受入</td><td><strong>間接取引（356①三）</strong></td><td>対応債務残高で判定</td></tr>
+<tr><td class="tc">資産の譲渡・譲受</td><td>不動産・設備の売買、株式・有価証券の譲渡、事業譲渡</td><td>直接（356①二）＋<strong>362条4項一の通常決議</strong></td><td>特別損益。安値売却に注意</td></tr>
+<tr><td class="tc">出資・増減資・自己株式</td><td>第三者割当増資の引受、増資、自己株式の取得</td><td>場面により直接／間接（新株発行は199条等）</td><td>資本取引（公募＝明白な取引は対象外となり得る）</td></tr>
+<tr><td class="tc">債権放棄・債務免除</td><td>子会社・役員への債権放棄、DES、債権譲渡</td><td>間接取引（356①三）に当たり得る</td><td>特別損益（利益移転に注意）</td></tr>
+<tr><td class="tc">競業取引</td><td>取締役が自己／第三者のため会社と同種事業の取引</td><td><strong>競業取引（356①一）</strong></td><td>相手が関連当事者なら別途開示</td></tr>
+<tr><td class="tc">役員報酬等</td><td>取締役報酬、賞与、退職慰労金</td><td><strong>361条（株主総会）</strong>。356条とは別枠</td><td><strong>関連当事者注記の対象外</strong>（役員報酬として別途）</td></tr>
+<tr><td class="tc">配当</td><td>親会社・株主への配当</td><td>454条の決議。利益相反ではない</td><td>受取は一般と同様で明白＝対象外</td></tr>
+</tbody></table></div>
+<div class="cl cl-w"><strong>会計開示の対象外：</strong> ①取引条件が一般の取引と同様であることが明白な取引（一般競争入札・預金利息・配当の受取等）　②役員報酬・賞与・退職慰労金　③連結相殺消去された取引　④連結会社が直接かかわらない関連当事者同士の取引。</div>
+<div class="cl cl-i"><strong>重要性（適用指針）：</strong> 法人＝営業損益は各科目総額の<strong>10%超</strong>／特別損益は<strong>1,000万円超</strong>／残高は各総額の<strong>1%超</strong>。個人＝損益・残高とも<strong>1,000万円超</strong>。無償・低廉は時価を見積って判定。判定ツールでは取引種別を選ぶと、判定書のステップ②に〔会社法／会計〕の区分が表示されます。</div>
+
+<!-- 判定ツール -->
+<h2 class="sec" id="tool">このページで判定する</h2>
+<p>下のフォームで当事者・取引種別を選んで「判定する」を押すと、その場で<strong>開示（会計）／承認（会社法）</strong>の判定書が出ます。当事者の候補（グループ法人・取引先・役員）と株主構成はLegalBridgeのデータと連動します。</p>
+<div class="cl cl-i">マスタの編集（法人・役員・株主構成の登録）や<strong>役会議案履歴への起票</strong>は、管理者向けの<a href="<?= appUrl ?>?page=related_party_tool" target="_top" style="color:var(--blue)">判定ツール本体</a>で行います。このフォームは判定専用です。</div>
+<div style="border:1px solid var(--g3);border-radius:8px;overflow:hidden;margin:12px 0;box-shadow:0 1px 4px rgba(0,0,0,.06)">
+  <iframe src="<?= appUrl ?>?page=related_party_tool" title="関連当事者取引 判定フォーム" style="width:100%;height:760px;border:0;display:block" loading="lazy"></iframe>
+</div>
+<a class="cta" href="<?= appUrl ?>?page=related_party_tool" target="_top">⚖ 判定ツール本体（マスタ編集・起票）を開く</a>
+<div class="tw"><table>
+<thead><tr><th style="width:160px">使い方</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="tc">当事者を選ぶ</td><td>当事者A・B（グループ法人／取引先／役員）と取引種別・金額を入力</td></tr>
+<tr><td class="tc">判定する</td><td>判定書に<strong>利益相反 該当（承認）／関連当事者 該当（開示）</strong>が、根拠条文・承認機関・除斥対象・定足数・役会不成立の有無つきで出る</td></tr>
+<tr><td class="tc">起票（管理ページ）</td><td>承認が必要な案件は、本体ツールから<strong>役会議案履歴（稟議）</strong>に起票・ステータス管理</td></tr>
+</tbody></table></div>
+
+<hr class="sd">
+
+<!-- 落とし穴 -->
+<h2 class="sec" id="pitfalls">よくある落とし穴</h2>
+<div class="cl cl-w"><strong>兼任の登録漏れ：</strong> マスタに兼任を入れ忘れると利益相反が検出されません。役員就任は会社ごとに必ず登録。</div>
+<div class="cl cl-w"><strong>「完全子会社だから手続不要」と即断：</strong> 承認の実質問題は軽くなっても、取締役会の手続自体の要否は別途検討。多重代表訴訟・善管注意の論点も残る。</div>
+<div class="cl cl-w"><strong>兄弟会社の連結相殺の誤解：</strong> 同一連結グループ内は連結注記では相殺されるが、<strong>個別</strong>では開示対象。承認（会社法）は兼任があれば別途発生。</div>
+<div class="cl cl-w"><strong>開示と承認の混同：</strong> 関連当事者＝開示、利益相反＝承認。<strong>別々に</strong>確認する。</div>
+<div class="cl cl-w"><strong>主要株主と取締役の取り違え：</strong> 取締役でない主要株主との取引は原則<strong>開示のみ</strong>（承認は不要）。ただし背後の取締役支配があれば別。</div>
+
+<hr class="sd">
+
+<!-- 根拠条文 -->
+<h2 class="sec" id="laws">根拠条文・基準</h2>
+<div class="tw"><table>
+<thead><tr><th>区分</th><th>条文・基準</th></tr></thead>
+<tbody>
+<tr><td class="tc">会社法</td><td>356条1項(1号競業／2号直接取引／3号間接取引)、365条（取締役会設置会社の承認・事後報告）、369条2項（特別利害関係人の除斥）、423条3項（任務懈怠の推定）、428条（自己のための直接取引）、831条1項3号（著しく不当な決議の取消）、847条の3（多重代表訴訟）</td></tr>
+<tr><td class="tc">民法</td><td>108条（自己契約・双方代理）</td></tr>
+<tr><td class="tc">会計</td><td>企業会計基準第11号「関連当事者の開示に関する会計基準」、同適用指針第13号</td></tr>
+<tr><td class="tc">参考（ガバナンス）</td><td>CGC補充原則4-8③（支配株主を有する上場会社＝独立社外取締役の過半数または利益相反管理委員会）。当社グループでは上場会社である親会社KADOKAWA側の論点</td></tr>
+</tbody></table></div>
+
+<hr class="sd">
+
+<!-- FAQ -->
+<h2 class="sec" id="faq">よくある疑問（Q&amp;A）</h2>
+<div class="faq-item">
+<div class="faq-q">Q1. グループ会社同士の取引は、いつも決議が必要か？</div>
+<div class="faq-a">いいえ。純粋な親子・兄弟会社間の取引（共通の取締役による兼任がない場合）は会社法上の承認は不要で、会計上の開示のみで足ります。決議が必要になるのは、取締役の兼任・代表、あるいは取締役が相手方を支配している等、自社の取締役が相手側に立つときです。まず判定ツールで兼任・資本関係を確認してください。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q2. 完全子会社（100%）との取引なら、何もしなくてよいか？</div>
+<div class="faq-a">完全子会社では唯一株主たる親会社の同意で承認の実質問題は解消するとの整理がありますが、「何もしなくてよい」ではありません。取締役会の手続自体の要否は別途検討が必要で、多重代表訴訟・子会社取締役の善管注意義務・取引条件の公正性（423条3項）の論点は残ります。会計上は連結注記では相殺されますが、個別では開示対象です。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q3. 開示は要るが承認は不要、という取引はあるか？</div>
+<div class="faq-a">あります。マトリクスの⑧〜⑩（完全親子・兄弟会社で兼任なし、取締役でない主要株主との取引）は、関連当事者として開示は必要でも、自社の取締役を介していないため会社法上の承認は発生しません。「関連当事者＝開示」「利益相反＝承認」を分けて考えてください。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q4. 除斥した結果、取締役会が成立しない場合は？</div>
+<div class="faq-a">除斥の結果、議決に加われる取締役がいなくなり取締役会で決議できない場合は、株主総会の承認に上げます。株主総会では特別利害関係株主も議決できますが、著しく不当な決議は取消事由（831条1項3号）になり得ます。判定ツールはこの「役会不成立 → 株主総会」を判定書上で表示します。</div>
+</div>
+
+<div style="background:var(--navy);border-radius:8px;padding:18px 22px;margin-top:28px;text-align:center">
+<div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:5px">お問い合わせ先</div>
+<div style="font-size:17px;font-weight:700;color:#fff;margin-bottom:3px">Arclight Inc. 経営管理本部 法務部</div>
+<div style="font-size:12px;color:rgba(255,255,255,.65)">個別事案についてはお気軽にご相談ください</div>
+</div>
+</main>
+
+</body></html>
