@@ -204,17 +204,18 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 <h3 class="sub">全体フロー（判定 → 開示／承認 → 決議）</h3>
 <p>当事者・取引内容・関係値の判定を経て、<strong>開示（会計）</strong>と<strong>承認（会社法）</strong>に分かれ、承認は承認機関→除斥→定足数を通って<strong>取締役会決議</strong>、または役会不成立なら<strong>株主総会承認</strong>に至ります。</p>
 <div class="dw" style="background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:14px;margin:9px 0">
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 860" role="img" style="width:100%;height:auto;max-width:680px;display:block;margin:0 auto">
+<svg id="rpt-flow" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 860" role="img" style="width:100%;height:auto;max-width:680px;display:block;margin:0 auto">
 <title>関連当事者取引 判定・承認の統合フロー</title>
 <desc>当事者→取引内容→関係値の判定の後、会計の開示と会社法の承認に分かれ、承認は承認機関・除斥・定足数を経て取締役会決議または役会不成立による株主総会承認に至る一体のフロー図</desc>
 <style>
-text{font-family:'Hiragino Kaku Gothic ProN','Yu Gothic','Noto Sans JP',sans-serif;fill:#2c2c2a}
-.t{font-size:14px}.th{font-size:14px;font-weight:500}.ts{font-size:12px}
-.lbl{font-size:12px;fill:#6b6b66}
-.n-gray rect{fill:#f1efe8;stroke:#5f5e5a;stroke-width:.5}.n-gray text{fill:#2c2c2a}
-.n-teal rect{fill:#e1f5ee;stroke:#0f6e56;stroke-width:.5}.n-teal text{fill:#04342c}
-.n-purple rect{fill:#eeedfe;stroke:#534ab7;stroke-width:.5}.n-purple text{fill:#26215c}
-.arr{stroke:#5f5e5a;stroke-width:1.5;fill:none}
+/* このSVG内だけにスコープ（#rpt-flow を前置）。無スコープだとページ全体の text に漏れて他図の文字色を壊すため。 */
+#rpt-flow text{font-family:'Hiragino Kaku Gothic ProN','Yu Gothic','Noto Sans JP',sans-serif;fill:#2c2c2a}
+#rpt-flow .t{font-size:14px}#rpt-flow .th{font-size:14px;font-weight:500}#rpt-flow .ts{font-size:12px}
+#rpt-flow .lbl{font-size:12px;fill:#6b6b66}
+#rpt-flow .n-gray rect{fill:#f1efe8;stroke:#5f5e5a;stroke-width:.5}#rpt-flow .n-gray text{fill:#2c2c2a}
+#rpt-flow .n-teal rect{fill:#e1f5ee;stroke:#0f6e56;stroke-width:.5}#rpt-flow .n-teal text{fill:#04342c}
+#rpt-flow .n-purple rect{fill:#eeedfe;stroke:#534ab7;stroke-width:.5}#rpt-flow .n-purple text{fill:#26215c}
+#rpt-flow .arr{stroke:#5f5e5a;stroke-width:1.5;fill:none}
 </style>
 <defs><marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f5e5a" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></marker></defs>
 
