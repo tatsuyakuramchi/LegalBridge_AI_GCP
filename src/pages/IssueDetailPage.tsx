@@ -264,6 +264,31 @@ export function IssueDetailPage() {
 
   const templateLabel = (t: string) => templateMetadata?.[t]?.label || t
 
+  // ── Backlog カスタムフィールドの表示用整形 ─────────────────────
+  //   一覧 API (`/api/backlog/issues`) が返す issue.customFields から、
+  //   起票時の主要属性 (取引先名称・依頼部署・締結方法・希望納期) を
+  //   名称マッチで取り出す。フィールド名は環境により別名運用もあり得るため
+  //   候補名を複数渡せるようにしておく。
+  const formatCfValue = (v: any): string => {
+    if (v == null || v === "") return ""
+    if (Array.isArray(v)) return v.map(formatCfValue).filter(Boolean).join(", ")
+    if (typeof v === "object") return String(v.name ?? v.value ?? "")
+    return String(v)
+  }
+  const getCustomField = (...names: string[]): string => {
+    const cfs = issue?.customFields
+    if (!Array.isArray(cfs)) return ""
+    const hit = cfs.find((cf) => names.includes(cf?.name))
+    return hit ? formatCfValue(hit.value) : ""
+  }
+  // ラベルと Backlog 上のフィールド名候補の対応。
+  const overviewFields = [
+    { label: "取引先名称", value: getCustomField("取引先名称", "取引先") },
+    { label: "依頼部署", value: getCustomField("依頼部署", "部署") },
+    { label: "締結方法", value: getCustomField("締結方法") },
+    { label: "希望納期", value: getCustomField("希望納期", "納期") },
+  ].filter((f) => f.value)
+
   // ハブの「文書を作成」: 主要種別はボタン、残りは「その他」プルダウンで。
   //   存在するテンプレだけ出す(templateList で実在チェック)。
   const PRIMARY_TYPES = [
@@ -525,6 +550,46 @@ export function IssueDetailPage() {
           </Button>
         </div>
       </header>
+
+      {/* ── 課題概要 (Backlog) ────────────────────────────────────
+          legalrequest からこの画面を開いたとき、Backlog に格納された
+          概要情報を表示する。
+            - 主要属性 (取引先名称・依頼部署・締結方法・希望納期) は
+              customFields からラベル付きで並べて表示。
+            - 課題本文 (description) はその下に全文表示。 */}
+      {overviewFields.length > 0 || issue?.description?.trim() ? (
+        <section className="space-y-3">
+          <SectionHead label="SEC · 00 / 課題概要（Backlog）" />
+          <Card>
+            <CardContent className="px-4 py-3 space-y-3">
+              {overviewFields.length > 0 && (
+                <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-2">
+                  {overviewFields.map((f) => (
+                    <div key={f.label} className="flex items-baseline gap-2">
+                      <dt className="shrink-0 w-20 text-[10px] font-mono uppercase tracking-[0.12em] text-muted-foreground">
+                        {f.label}
+                      </dt>
+                      <dd className="min-w-0 flex-1 text-xs font-mono break-words text-foreground">
+                        {f.value}
+                      </dd>
+                    </div>
+                  ))}
+                </dl>
+              )}
+              {issue?.description?.trim() ? (
+                <p
+                  className={cn(
+                    "text-xs font-mono leading-relaxed whitespace-pre-wrap break-words text-foreground/90",
+                    overviewFields.length > 0 && "pt-3 border-t border-border"
+                  )}
+                >
+                  {issue.description}
+                </p>
+              ) : null}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       {/* ── 文書一覧 ─────────────────────────────────────────── */}
       <section className="space-y-3">
