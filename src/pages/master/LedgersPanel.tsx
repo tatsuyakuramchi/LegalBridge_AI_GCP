@@ -42,6 +42,7 @@ import {
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { LegacyWorksBanner } from "@/src/components/LegacyWorksBanner"
+import { useNavigate } from "react-router-dom"
 
 type Material = {
   id?: number
@@ -107,6 +108,7 @@ const emptyMaterial: Material = {
 }
 
 export function LedgersPanel() {
+  const navigate = useNavigate()
   const { ledgers, refreshLedgers, showNotification } = useAppData()
   const [search, setSearch] = React.useState("")
   const [divFilter, setDivFilter] = React.useState<string>("")
@@ -277,15 +279,12 @@ export function LedgersPanel() {
             </option>
           ))}
         </NativeSelect>
-        <Button
-          onClick={() => {
-            setCreating(true)
-            setEditing(null)
-            setDraft(emptyLedger)
-          }}
-        >
+        {/* 回帰防止(§8 #4): 原作の新規作成は作品管理(/works)に一本化。
+            ここでの新規作成は works ミラーを作らず再びギャップを生むため無効化し誘導する。
+            既存原作の編集(カードの編集ボタン)は引き続き可能。 */}
+        <Button onClick={() => navigate("/works")}>
           <Plus className="h-3.5 w-3.5" />
-          新規原作登録
+          作品管理で原作を登録
         </Button>
       </div>
 
@@ -293,7 +292,7 @@ export function LedgersPanel() {
         <div className="p-16 text-center border border-dashed border-border rounded-md">
           <BookMarked className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
           <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
-            原作マスターは空です。「新規原作登録」から追加してください。
+            原作マスターは空です。原作の登録は「作品管理」(/works) から行ってください。
           </p>
         </div>
       ) : (

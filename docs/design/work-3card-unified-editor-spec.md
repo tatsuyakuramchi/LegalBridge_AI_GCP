@@ -320,7 +320,8 @@ condition_lines id, direction('pay'|'receive'), transaction_kind('license'|'prod
 ### 要決定（残）
 4. ✅（決定）旧 `LedgersPanel`/`WorkModelPanel` は **移行期は併存**。ナビから撤去＋移行バナーで `/works` へ誘導し、ルートは温存。物理廃止は **§8 #4（ledgers→works データ移行）完了後**。
    - ✅ **バックフィル移行を設計**: [`migrations/0076_ledgers_to_works_backfill.sql`](../migrations/0076_ledgers_to_works_backfill.sql)（additive・冪等。純 ledger 由来 LO 原作を works(licensed_in) へ、materials を work_materials へ取込）＋ 手順 [ledgers-to-works-backfill-runbook.md](../ledgers-to-works-backfill-runbook.md)。**適用待ち**（本番DBへは migration runner で適用＝要レビュー）。
-   - 残: 適用後の回帰防止（`LedgersPanel` 新規作成の一本化/無効化、runbook 参照）と、`ledgers/materials` 物理 DROP（デュアルリード期間後の別移行）。
+   - ✅ 回帰防止（`LedgersPanel` 新規作成を `/works` へ一本化）実装済み。
+   - 残: 0076 の本番適用、`ledgers/materials` 物理 DROP（デュアルリード期間後の別移行）。
 
 ### 決定済み（追加）
 3. ✅ **製品 CRUD API**: 既存に無かったため新規追加。`POST /api/v3/works/:id/products`（`product_code` 自動採番）＋ 受取先 picker 用 `GET /api/v3/vendors`（増分⑦）。製品の編集/削除UIは後続。

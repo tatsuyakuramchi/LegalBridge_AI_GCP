@@ -61,7 +61,7 @@ SELECT COUNT(*) FROM materials m JOIN ledgers l ON l.id=m.ledger_id
 ## 移行後の回帰防止（重要）
 `LedgersPanel`（原作台帳）の新規作成は現状 **ledger のみ**作成し works を作らないため、放置すると
 ギャップが再発する。次のいずれかで塞ぐこと（推奨は上から）:
-1. **原作作成を `/works` に一本化**（推奨）: `LedgersPanel` の新規作成ボタンを無効化/非表示にする（フロントのみ）。作成は作品管理（api `source-ips`= works+ledger ミラー両作成）に集約。
+1. ✅ **原作作成を `/works` に一本化（実装済み）**: `LedgersPanel` の「新規原作登録」を「作品管理で原作を登録」に変更し `/works` へ誘導（既存の新規作成ダイアログは起動しない）。作成は作品管理（api `source-ips`= works+ledger ミラー両作成）に集約。既存原作の編集は引き続き可能。
 2. worker のレジャー作成ハンドラに works(licensed_in) ミラー作成を追加（api と対称化）。
 3. 物理廃止フェーズで `LedgersPanel`/`ledgers` 自体を撤去。
 
