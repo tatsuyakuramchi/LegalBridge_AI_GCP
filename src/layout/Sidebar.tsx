@@ -16,6 +16,7 @@ import {
   ExternalLink,
   Link2,
   ListChecks,
+  Network,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -62,6 +63,8 @@ const groups: NavGroup[] = [
   {
     label: "Configuration",
     items: [
+      // 作品統合: 原作 / 自社作品 / 派生 を 3カードで一元管理 (work-3card-unified-editor-spec)
+      { to: "/works", label: "作品管理", icon: Network, description: "原作 / 作品 / 派生" },
       { to: "/master", label: "Masters", icon: Building2, description: "Vendors / Staff / Contracts" },
       { to: "/templates", label: "Templates", icon: FileCode2, description: "Blueprint studio" },
       { to: "/data-linkage", label: "連結チェック", icon: Link2, description: "データ整合性 点検/修復" },

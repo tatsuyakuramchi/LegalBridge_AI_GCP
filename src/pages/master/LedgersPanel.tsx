@@ -41,6 +41,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { LegacyWorksBanner } from "@/src/components/LegacyWorksBanner"
 
 type Material = {
   id?: number
@@ -251,6 +252,7 @@ export function LedgersPanel() {
 
   return (
     <div className="space-y-4">
+      <LegacyWorksBanner what="原作" />
       <div className="flex items-center justify-between gap-3">
         <div className="relative flex-1 max-w-md">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />

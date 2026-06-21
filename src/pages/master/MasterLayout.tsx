@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, BookMarked, FileEdit, ClipboardCheck, Network, Boxes, Workflow } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -9,8 +9,8 @@ import { cn } from "@/lib/utils"
 const tabs = [
   { to: "/master/contracts", label: "Contracts", icon: FileText },
   { to: "/master/vendors", label: "Vendors", icon: Building2 },
-  // Phase 22.18: 原作マスター (LO-YYYY-NNNN + 配下素材 -NNN)
-  { to: "/master/ledgers", label: "Ledgers (原作)", icon: BookMarked },
+  // 統合 増分⑨: 原作台帳(Ledgers)/作品モデル(work-model) はサイドバー「作品管理」(/works)へ統合。
+  //   ルートは温存(レガシー画面に移行バナー)。データ移行(§8 #4)完了後に物理廃止予定。
   // Phase 22.20-C: サブライセンシー マスター
   { to: "/master/sublicensees", label: "Sublicensees", icon: GitBranch },
   // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
@@ -18,10 +18,8 @@ const tabs = [
   // データ構造刷新: 条件明細 横断検索は「条件明細」ハブの検索タブへ集約 (旧URLはリダイレクト)
   // 統合 P3-4: 分配構造マップ (作品中心の上流分配←当社←下流受領)
   { to: "/master/receivable-map", label: "分配マップ", icon: Network },
-  // 統合 P3-5: 作品モデル (原作IP / 自社作品 / 契約 · v3)
-  { to: "/master/work-model", label: "作品モデル", icon: Boxes },
-  // 統合 Phase3c: 権利フロー 3カードビュー (原作→作品→派生物)
-  { to: "/master/work-graph", label: "権利フロー", icon: Workflow },
+  // 統合: 3カード統合エディタ(旧「権利フロー」)はサイドバー「作品管理」(/works)へ移設。
+  //   (work-3card-unified-editor-spec 増分④)
   // Phase 22.21.81: 文書作成途中の draft (一時保存) の掃除タブ
   { to: "/master/drafts", label: "Drafts (一時保存)", icon: FileEdit },
   { to: "/master/staff", label: "Staff", icon: Users },
