@@ -1154,12 +1154,37 @@ export function registerWorkModelRoutes(
         `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.rate_pct,
                 cl.mg_amount, cl.ag_amount, cl.amount_ex_tax, cl.rights_attribution,
                 cl.term_start, cl.term_end, cl.notes,
+                cc.document_number, cc.contract_title,
                 cfc.region_territory, cfc.region_language, cfc.region_language_label
            FROM condition_lines cl
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
            LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
           WHERE cl.source_work_id = $1 AND cl.source_material_id = $2
           ORDER BY cl.line_no, cl.id`,
         [id, mid]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // 利用許諾条件書(契約マスター, license カテゴリ)の検索 — マテリアル条件登録の「文書を選んで補完」用。
+  //   合成の MLC- 器(source_system='master_register')は候補から除外し、実在の条件書だけ返す。
+  app.get("/api/v3/license-capabilities", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const params: any[] = [];
+      let where = `cc.contract_category = 'license' AND COALESCE(cc.source_system,'') <> 'master_register'`;
+      if (q) {
+        params.push(`%${q}%`);
+        where += ` AND (cc.document_number ILIKE $1 OR cc.contract_title ILIKE $1)`;
+      }
+      const r = await query(
+        `SELECT cc.id, cc.document_number, cc.contract_title, cc.record_type
+           FROM contract_capabilities cc
+          WHERE ${where}
+          ORDER BY cc.id DESC
+          LIMIT 100`,
+        params
       );
       res.json(r.rows);
     } catch (e) { fail(res, e); }
@@ -1202,7 +1227,29 @@ export function registerWorkModelRoutes(
       const mat = await query(`SELECT id FROM work_materials WHERE id = $1 AND work_id = $2`, [mid, id]);
       if (mat.rows.length === 0) return res.status(404).json({ ok: false, error: "原作マテリアルが見つかりません" });
 
-      const capabilityId = await ensureMasterLicenseCapability(query, sw.rows[0]);
+      // 器(capability)の決定: body.capability_id で既存の利用許諾条件書を選んだらその配下に作り、
+      //   文書番号が紐づく(マスター契約から補完)。未指定なら原作ごとの MLC- 器にフォールバック。
+      let capabilityId: number;
+      let lineCodePrefix: string;
+      const chosenCap = b.capability_id == null || b.capability_id === "" ? null : Number(b.capability_id);
+      if (chosenCap != null) {
+        if (!Number.isFinite(chosenCap)) {
+          return res.status(400).json({ ok: false, error: "invalid capability_id" });
+        }
+        const cap = await query(
+          `SELECT id, document_number FROM contract_capabilities
+            WHERE id = $1 AND contract_category = 'license'`,
+          [chosenCap]
+        );
+        if (cap.rows.length === 0) {
+          return res.status(400).json({ ok: false, error: "選択した利用許諾条件書が見つかりません(license カテゴリ)" });
+        }
+        capabilityId = cap.rows[0].id as number;
+        lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
+      } else {
+        capabilityId = await ensureMasterLicenseCapability(query, sw.rows[0]);
+        lineCodePrefix = `MLC-${sw.rows[0].work_code}`;
+      }
 
       // 地域・言語: 指定があれば cfc を作り source_condition_id に使う(グラフの territory 引用元)。
       let sourceConditionId: number | null = null;
@@ -1222,18 +1269,18 @@ export function registerWorkModelRoutes(
         sourceConditionId = cfc.rows[0].id as number;
       }
 
-      // line_no = 器内 max+1(現行採番)。line_code = '<MLC-...>-L<line_no>'。
+      // line_no = 器内 max+1(現行採番)。line_code = '<文書番号>-L<line_no>'。
       const ins = await query(
         `INSERT INTO condition_lines
            (capability_id, line_no, line_code, subject, direction, transaction_kind,
             payment_scheme, amount_ex_tax, rate_pct, mg_amount, ag_amount, rights_attribution,
             term_start, term_end, notes, source_work_id, source_material_id, source_condition_id, work_id)
-         SELECT $1, ln, 'MLC-' || $2 || '-L' || ln, $3, 'payable', 'license',
+         SELECT $1, ln, $2 || '-L' || ln, $3, 'payable', 'license',
                 $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL
            FROM (SELECT COALESCE(MAX(line_no), 0) + 1 AS ln FROM condition_lines WHERE capability_id = $1) q
          RETURNING id, line_code`,
         [
-          capabilityId, sw.rows[0].work_code, b.subject ?? null, scheme, amount, rate, mg, ag,
+          capabilityId, lineCodePrefix, b.subject ?? null, scheme, amount, rate, mg, ag,
           b.rights_attribution ?? null, b.term_start ?? null, b.term_end ?? null, b.notes ?? null,
           id, mid, sourceConditionId,
         ]
