@@ -228,6 +228,9 @@ export function WorkGraphPanel() {
   const [pickerSource, setPickerSource] = React.useState("")
   const [pickerLines, setPickerLines] = React.useState<any[]>([])
   const [pickerLoading, setPickerLoading] = React.useState(false)
+  // ピッカー強化: 選んだ原作のマテリアル候補と、明細ごとに選んだ原作マテリアル(lineId→material_id)。
+  const [pickerMaterials, setPickerMaterials] = React.useState<any[]>([])
+  const [pickerLineMat, setPickerLineMat] = React.useState<Record<number, string>>({})
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -350,6 +353,8 @@ export function WorkGraphPanel() {
     // Stage3: 作品を切り替えたら原作ピッカーをリセット(別作品の明細が残らないように)。
     setPickerSource("")
     setPickerLines([])
+    setPickerMaterials([])
+    setPickerLineMat({})
   }, [workId, loadGraph])
 
   // 増分⑥(§3.4): 原作(licensed_in)を開いたら「利用している自社作品」を逆引き。
@@ -421,15 +426,26 @@ export function WorkGraphPanel() {
 
   // N:N活性化 Stage3: 選んだ原作にぶら下がる利用許諾条件明細を取得(現作品への結線済みフラグ付き)。
   const loadPicker = React.useCallback(async (sourceId: string, curWorkId: string) => {
-    if (!sourceId) { setPickerLines([]); return }
+    if (!sourceId) { setPickerLines([]); setPickerMaterials([]); setPickerLineMat({}); return }
     setPickerLoading(true)
     try {
       const q = curWorkId ? `?work_id=${encodeURIComponent(curWorkId)}` : ""
-      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(sourceId)}/condition-lines${q}`)
-      const d = await r.json()
-      setPickerLines(Array.isArray(d) ? d : [])
+      // 明細(条件)と原作マテリアル候補を同時取得。GET /source-ips/:id は materials を返す。
+      const [lr, sr] = await Promise.all([
+        fetch(`/api/v3/source-ips/${encodeURIComponent(sourceId)}/condition-lines${q}`),
+        fetch(`/api/v3/source-ips/${encodeURIComponent(sourceId)}`),
+      ])
+      const lines = await lr.json()
+      const src = await sr.json()
+      const arr = Array.isArray(lines) ? lines : []
+      setPickerLines(arr)
+      setPickerMaterials(Array.isArray(src?.materials) ? src.materials : [])
+      // 各明細のマテリアル選択を、既存の source_material_id で初期化(あれば)。
+      const init: Record<number, string> = {}
+      for (const l of arr) if (l.source_material_id != null) init[l.id] = String(l.source_material_id)
+      setPickerLineMat(init)
     } catch {
-      setPickerLines([])
+      setPickerLines([]); setPickerMaterials([]); setPickerLineMat({})
     } finally {
       setPickerLoading(false)
     }
@@ -438,11 +454,14 @@ export function WorkGraphPanel() {
   // N:N活性化 Stage3: 原作の利用許諾条件明細を、この作品へ加算結線(共有=他作品の結線は消えない)。
   const addComponentLine = async (line: any) => {
     if (!workId) return
+    // 行で選んだ原作マテリアル(無ければ既存 source_material_id)を橋に使う。N:N の単位はマテリアル。
+    const matId = pickerLineMat[line.id] || (line.source_material_id != null ? String(line.source_material_id) : "")
+    if (!matId) return
     try {
       const r = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/component-lines`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ condition_line_id: line.id, source_material_id: line.source_material_id ?? null }),
+        body: JSON.stringify({ condition_line_id: line.id, source_material_id: Number(matId) }),
       })
       if (!r.ok) {
         const e = await r.json().catch(() => ({}))
@@ -946,7 +965,7 @@ export function WorkGraphPanel() {
                 key={l.id}
                 className="flex items-center justify-between gap-2 text-[11px] font-mono border border-border/60 rounded px-2 py-1.5"
               >
-                <div className="min-w-0 space-y-0.5">
+                <div className="min-w-0 space-y-0.5 flex-1">
                   <div className="flex items-center gap-1.5 flex-wrap">
                     <KindBadge kind={l.transaction_kind} />
                     <span className="font-semibold truncate">{l.subject || l.line_code || `#${l.id}`}</span>
@@ -954,10 +973,31 @@ export function WorkGraphPanel() {
                       ? l.rate_pct != null && <span className="text-muted-foreground">{l.rate_pct}%</span>
                       : l.amount_ex_tax != null && <span className="text-muted-foreground">{yen(l.amount_ex_tax)}</span>}
                   </div>
-                  <div className="text-[10px] text-muted-foreground/80 truncate">
-                    {l.material_code ? `素材 ${l.material_code} ${l.material_name || ""}` : "素材未設定"}
-                    {l.document_number && ` · ${l.document_number}`}
-                  </div>
+                  {l.linked_here ? (
+                    <div className="text-[10px] text-muted-foreground/80 truncate">
+                      {l.material_code ? `素材 ${l.material_code} ${l.material_name || ""}` : "素材未設定"}
+                      {l.document_number && ` · ${l.document_number}`}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] text-muted-foreground shrink-0">原作素材:</span>
+                      <NativeSelect
+                        value={pickerLineMat[l.id] ?? ""}
+                        onChange={(e) => setPickerLineMat((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                        className="h-6 text-[10px] py-0 min-w-[10rem]"
+                      >
+                        <option value="">— マテリアルを選択 —</option>
+                        {pickerMaterials.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.material_code || "—"} {m.material_name || ""}
+                          </option>
+                        ))}
+                      </NativeSelect>
+                      {l.document_number && (
+                        <span className="text-[10px] text-muted-foreground/70 truncate">{l.document_number}</span>
+                      )}
+                    </div>
+                  )}
                 </div>
                 {l.linked_here ? (
                   <button
@@ -971,8 +1011,8 @@ export function WorkGraphPanel() {
                   <button
                     type="button"
                     onClick={() => void addComponentLine(l)}
-                    disabled={l.source_material_id == null}
-                    title={l.source_material_id == null ? "明細にマテリアルが紐付いていません" : undefined}
+                    disabled={!(pickerLineMat[l.id] || l.source_material_id != null)}
+                    title={!(pickerLineMat[l.id] || l.source_material_id != null) ? "原作マテリアルを選択してください" : undefined}
                     className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                   >
                     この作品に追加
@@ -981,7 +1021,7 @@ export function WorkGraphPanel() {
               </div>
             ))}
             <p className="text-[10px] text-muted-foreground/70">
-              ※ 原作マテリアルの利用許諾条件を中間表で結線します。同じ明細を複数の作品で共有でき（N:N）、「外す」はこの作品ぶんだけ解除します。
+              ※ 各明細に「原作素材」を選んでこの作品へ結線します（条件はマテリアルにぶら下がる）。同じ明細を複数の作品で共有でき（N:N）、「外す」はこの作品ぶんだけ解除します。明細が出ない場合は、支払エッジの「原作に紐付け」で出所原作を設定してください。
             </p>
           </div>
         )}
