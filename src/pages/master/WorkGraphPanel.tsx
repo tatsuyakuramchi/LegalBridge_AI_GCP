@@ -218,6 +218,10 @@ export function WorkGraphPanel() {
   const [edgeLines, setEdgeLines] = React.useState<any[]>([])
   const [edgeSearching, setEdgeSearching] = React.useState(false)
   const [edgeSearched, setEdgeSearched] = React.useState(false)
+  // N:N活性化 Stage3: 原作起点ピッカー — 原作を選ぶ→その利用許諾条件明細を共有結線。
+  const [pickerSource, setPickerSource] = React.useState("")
+  const [pickerLines, setPickerLines] = React.useState<any[]>([])
+  const [pickerLoading, setPickerLoading] = React.useState(false)
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -337,6 +341,9 @@ export function WorkGraphPanel() {
 
   React.useEffect(() => {
     void loadGraph(workId)
+    // Stage3: 作品を切り替えたら原作ピッカーをリセット(別作品の明細が残らないように)。
+    setPickerSource("")
+    setPickerLines([])
   }, [workId, loadGraph])
 
   // 増分⑥(§3.4): 原作(licensed_in)を開いたら「利用している自社作品」を逆引き。
@@ -403,6 +410,56 @@ export function WorkGraphPanel() {
       console.error("createSource failed", e)
     } finally {
       setCreatingSource(false)
+    }
+  }
+
+  // N:N活性化 Stage3: 選んだ原作にぶら下がる利用許諾条件明細を取得(現作品への結線済みフラグ付き)。
+  const loadPicker = React.useCallback(async (sourceId: string, curWorkId: string) => {
+    if (!sourceId) { setPickerLines([]); return }
+    setPickerLoading(true)
+    try {
+      const q = curWorkId ? `?work_id=${encodeURIComponent(curWorkId)}` : ""
+      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(sourceId)}/condition-lines${q}`)
+      const d = await r.json()
+      setPickerLines(Array.isArray(d) ? d : [])
+    } catch {
+      setPickerLines([])
+    } finally {
+      setPickerLoading(false)
+    }
+  }, [])
+
+  // N:N活性化 Stage3: 原作の利用許諾条件明細を、この作品へ加算結線(共有=他作品の結線は消えない)。
+  const addComponentLine = async (line: any) => {
+    if (!workId) return
+    try {
+      const r = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/component-lines`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ condition_line_id: line.id, source_material_id: line.source_material_id ?? null }),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await Promise.all([loadGraph(workId), loadPicker(pickerSource, workId)])
+    } catch (e) {
+      console.error("addComponentLine failed", e)
+    }
+  }
+
+  // N:N活性化 Stage3: この作品ぶんの結線だけ解除(共有他作品は残る)。
+  const removeComponentLine = async (line: any) => {
+    if (!workId) return
+    try {
+      const r = await fetch(
+        `/api/v3/works/${encodeURIComponent(workId)}/component-lines/${encodeURIComponent(line.id)}`,
+        { method: "DELETE" }
+      )
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await Promise.all([loadGraph(workId), loadPicker(pickerSource, workId)])
+    } catch (e) {
+      console.error("removeComponentLine failed", e)
     }
   }
 
@@ -838,6 +895,77 @@ export function WorkGraphPanel() {
             </CardContent>
           </Card>
         </div>
+        {/* N:N活性化 Stage3: 原作起点ピッカー — 原作を選ぶ→その利用許諾条件明細を共有結線 */}
+        {!isSource && (
+          <div className="rounded-md border border-dashed border-sky-300 p-3 space-y-2">
+            <div className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+              ＋ 原作から条件明細を選んで追加（複数作品で共有可）
+            </div>
+            <div className="flex items-center gap-1.5 flex-wrap">
+              <span className="text-[10px] text-muted-foreground">原作:</span>
+              <NativeSelect
+                value={pickerSource}
+                onChange={(e) => { setPickerSource(e.target.value); void loadPicker(e.target.value, workId) }}
+                className="h-7 text-[11px] min-w-[14rem]"
+              >
+                <option value="">— 原作を選択 —</option>
+                {sourceWorks.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.source_code || s.work_code || "—"} {s.title}
+                  </option>
+                ))}
+              </NativeSelect>
+              {pickerLoading && <span className="text-[10px] text-muted-foreground">読込中…</span>}
+            </div>
+            {pickerSource && !pickerLoading && pickerLines.length === 0 && (
+              <p className="text-[11px] font-mono text-muted-foreground">
+                この原作に紐づく利用許諾条件明細がありません（明細の出所原作が未設定の可能性）。
+              </p>
+            )}
+            {pickerLines.map((l) => (
+              <div
+                key={l.id}
+                className="flex items-center justify-between gap-2 text-[11px] font-mono border border-border/60 rounded px-2 py-1.5"
+              >
+                <div className="min-w-0 space-y-0.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <KindBadge kind={l.transaction_kind} />
+                    <span className="font-semibold truncate">{l.subject || l.line_code || `#${l.id}`}</span>
+                    {l.payment_scheme === "royalty"
+                      ? l.rate_pct != null && <span className="text-muted-foreground">{l.rate_pct}%</span>
+                      : l.amount_ex_tax != null && <span className="text-muted-foreground">{yen(l.amount_ex_tax)}</span>}
+                  </div>
+                  <div className="text-[10px] text-muted-foreground/80 truncate">
+                    {l.material_code ? `素材 ${l.material_code} ${l.material_name || ""}` : "素材未設定"}
+                    {l.document_number && ` · ${l.document_number}`}
+                  </div>
+                </div>
+                {l.linked_here ? (
+                  <button
+                    type="button"
+                    onClick={() => void removeComponentLine(l)}
+                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                  >
+                    外す
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => void addComponentLine(l)}
+                    disabled={l.source_material_id == null}
+                    title={l.source_material_id == null ? "明細にマテリアルが紐付いていません" : undefined}
+                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                  >
+                    この作品に追加
+                  </button>
+                )}
+              </div>
+            ))}
+            <p className="text-[10px] text-muted-foreground/70">
+              ※ 原作マテリアルの利用許諾条件を中間表で結線します。同じ明細を複数の作品で共有でき（N:N）、「外す」はこの作品ぶんだけ解除します。
+            </p>
+          </div>
+        )}
         {/* 増分⑧: 個別条件書から condition_lines をこの作品へ参照リンク(§3.6/§10.7: 明細は新規作成しない) */}
         <div className="rounded-md border border-dashed border-input p-3 space-y-2">
           <div className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
