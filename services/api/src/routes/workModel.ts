@@ -1157,7 +1157,9 @@ export function registerWorkModelRoutes(
       const r = await query(
         `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.rate_pct,
                 cl.mg_amount, cl.ag_amount, cl.amount_ex_tax, cl.rights_attribution,
-                cl.term_start, cl.term_end, cl.notes,
+                cl.term_start, cl.term_end, cl.notes, cl.source_seq_no,
+                cl.base_price_label, cl.calc_method, cl.calc_period, cl.calc_period_kind,
+                cl.calc_period_close_month, cl.currency, cl.formula_text, cl.payment_terms,
                 cc.document_number, cc.contract_title,
                 cfc.region_territory, cfc.region_language, cfc.region_language_label
            FROM condition_lines cl
@@ -1344,6 +1346,107 @@ export function registerWorkModelRoutes(
         await query(`UPDATE condition_lines SET source_condition_id = $2 WHERE id = $1`, [id, cfc.rows[0].id]);
       }
       res.json({ ok: true, id });
+    } catch (e) { fail(res, e); }
+  });
+
+  // 利用許諾明細(FinancialConditionTable)の一括保存。表の全行を condition_lines へ upsert:
+  //   __clid=既存 condition_line.id → UPDATE / 無し → INSERT / 提出に無い既存 → DELETE。
+  //   地域は cfc + source_condition_id。source_work_id=原作 / source_material_id=素材 / work_id=NULL。
+  app.put("/api/v3/source-ips/:id/materials/:mid/conditions", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const mid = Number(req.params.mid);
+      if (!Number.isFinite(id) || !Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const rows: any[] = Array.isArray(b.rows) ? b.rows : [];
+      const sw = await query(`SELECT id, work_code, title, rights_holder_vendor_id FROM works WHERE id = $1 AND kind = 'licensed_in'`, [id]);
+      if (sw.rows.length === 0) return res.status(404).json({ ok: false, error: "原作が見つかりません" });
+      const mat = await query(`SELECT id FROM work_materials WHERE id = $1 AND work_id = $2`, [mid, id]);
+      if (mat.rows.length === 0) return res.status(404).json({ ok: false, error: "原作マテリアルが見つかりません" });
+      let capabilityId: number;
+      let lineCodePrefix: string;
+      const chosenCap = b.capability_id == null || b.capability_id === "" ? null : Number(b.capability_id);
+      if (chosenCap != null) {
+        if (!Number.isFinite(chosenCap)) return res.status(400).json({ ok: false, error: "invalid capability_id" });
+        const cap = await query(`SELECT id, document_number FROM contract_capabilities WHERE id = $1 AND contract_category = 'license'`, [chosenCap]);
+        if (cap.rows.length === 0) return res.status(400).json({ ok: false, error: "選択した利用許諾条件書が見つかりません" });
+        capabilityId = cap.rows[0].id; lineCodePrefix = cap.rows[0].document_number || `CAP-${capabilityId}`;
+      } else {
+        capabilityId = await ensureMasterLicenseCapability(query, sw.rows[0]);
+        lineCodePrefix = `MLC-${sw.rows[0].work_code}`;
+      }
+      const existing = await query(`SELECT id, source_condition_id FROM condition_lines WHERE source_work_id = $1 AND source_material_id = $2`, [id, mid]);
+      const existingMap = new Map<number, number | null>(existing.rows.map((r: any) => [r.id, r.source_condition_id]));
+      const num = (v: any) => (v == null || v === "" ? null : Number(v));
+      const SCHEMES = ["lump_sum", "per_unit", "installment", "subscription", "royalty"];
+      const kept = new Set<number>();
+      for (const row of rows) {
+        const scheme = String(row.payment_scheme || "");
+        if (!SCHEMES.includes(scheme)) continue;
+        const royalty = scheme === "royalty";
+        const amount = royalty ? null : num(row.amount_ex_tax);
+        const rate = royalty ? num(row.rate_pct) : null;
+        const mg = royalty ? num(row.mg_amount) : null;
+        const ag = royalty ? num(row.ag_amount) : null;
+        if (!["subscription", "royalty"].includes(scheme) && amount == null) continue; // 金額必須行はスキップ
+        const territory = row.region_territory ? String(row.region_territory) : null;
+        const language = row.region_language ? String(row.region_language) : null;
+        const label = [territory, language].filter(Boolean).join("・") || null;
+        const clid = num(row.__clid);
+        let scid: number | null = clid != null ? (existingMap.get(clid) ?? null) : null;
+        if (territory || language) {
+          if (scid != null) {
+            await query(`UPDATE capability_financial_conditions SET region_territory = $2, region_language = $3, region_language_label = $4 WHERE id = $1`, [scid, territory, language, label]);
+          } else {
+            const cfc = await query(`INSERT INTO capability_financial_conditions (capability_id, condition_no, region_territory, region_language, region_language_label) SELECT $1, COALESCE((SELECT MAX(condition_no)+1 FROM capability_financial_conditions WHERE capability_id=$1),1), $2,$3,$4 RETURNING id`, [capabilityId, territory, language, label]);
+            scid = cfc.rows[0].id as number;
+          }
+        }
+        const vals = [
+          row.subject ?? null, scheme, amount, rate, mg, ag,
+          royalty ? (row.base_price_label ?? null) : null, row.calc_method ?? null, row.calc_period ?? null,
+          row.calc_period_kind ?? null, num(row.calc_period_close_month), row.currency ?? "JPY",
+          row.formula_text ?? null, row.payment_terms ?? null, row.rights_attribution ?? null,
+          row.term_start ?? null, row.term_end ?? null, row.notes ?? null,
+        ];
+        if (clid != null && existingMap.has(clid)) {
+          await query(
+            `UPDATE condition_lines SET subject=$2, payment_scheme=$3, amount_ex_tax=$4, rate_pct=$5, mg_amount=$6, ag_amount=$7,
+               base_price_label=$8, calc_method=$9, calc_period=$10, calc_period_kind=$11, calc_period_close_month=$12,
+               currency=$13, formula_text=$14, payment_terms=$15, rights_attribution=$16, term_start=$17, term_end=$18,
+               notes=$19, source_seq_no=$20, source_condition_id=$21, updated_at=now() WHERE id=$1`,
+            [clid, ...vals, num(row.source_seq_no), scid]
+          );
+          kept.add(clid);
+        } else {
+          const ins = await query(
+            `INSERT INTO condition_lines (capability_id, line_no, line_code, subject, direction, transaction_kind,
+               payment_scheme, amount_ex_tax, rate_pct, mg_amount, ag_amount, base_price_label, calc_method, calc_period,
+               calc_period_kind, calc_period_close_month, currency, formula_text, payment_terms, rights_attribution,
+               term_start, term_end, notes, source_seq_no, source_work_id, source_material_id, source_condition_id, work_id)
+             SELECT $1, ln, $2 || '-L' || ln, $3, 'payable', 'license', $4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24, NULL
+               FROM (SELECT COALESCE(MAX(line_no),0)+1 AS ln FROM condition_lines WHERE capability_id=$1) q RETURNING id`,
+            [capabilityId, lineCodePrefix, ...vals, num(row.source_seq_no), id, mid, scid]
+          );
+          kept.add(ins.rows[0].id as number);
+        }
+      }
+      for (const [eid, escid] of existingMap) {
+        if (kept.has(eid)) continue;
+        // 表から外された行: MLC マスター登録の器配下のみ物理削除。実在の利用許諾条件書由来は
+        //   文書データ保護のためリンク解除(source_material_id=NULL)のみ。
+        const cap = await query(
+          `SELECT cc.source_system FROM condition_lines cl JOIN contract_capabilities cc ON cc.id = cl.capability_id WHERE cl.id = $1`,
+          [eid]
+        );
+        if (cap.rows[0]?.source_system === "master_register") {
+          await query(`DELETE FROM condition_lines WHERE id = $1`, [eid]);
+          if (escid != null) await query(`DELETE FROM capability_financial_conditions WHERE id = $1`, [escid]);
+        } else {
+          await query(`UPDATE condition_lines SET source_material_id = NULL, updated_at = now() WHERE id = $1`, [eid]);
+        }
+      }
+      res.json({ ok: true, count: kept.size });
     } catch (e) { fail(res, e); }
   });
 

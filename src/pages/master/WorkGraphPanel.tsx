@@ -16,6 +16,71 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useDocumentSession } from "@/src/context/AppDataContext"
+import {
+  FinancialConditionTable,
+  calcMethodFromType,
+  buildFormulaText,
+  type FinancialCondition,
+  type CalcType,
+} from "@/src/components/document/FinancialConditionTable"
+
+// 条件明細(condition_lines) → FinancialCondition(利用許諾明細入力の行)へ逆マップ。
+//   __clid に condition_line.id を退避し保存時の upsert キーにする(FinancialCondition には無い項目)。
+function clToFc(c: any): any {
+  const scheme = c.payment_scheme
+  const royalty = scheme === "royalty"
+  const calc_type: CalcType = royalty ? "BASE_QTY_RATE" : scheme === "subscription" ? "SUBSCRIPTION" : "FIXED"
+  return {
+    __clid: c.id,
+    condition_no: c.source_seq_no ?? undefined,
+    condition_name: c.subject ?? "",
+    region_territory: c.region_territory ?? "",
+    region_language: c.region_language ?? "",
+    region_language_label: c.region_language_label ?? "",
+    calc_type,
+    calc_method: c.calc_method ?? calcMethodFromType(calc_type),
+    fixed_kind: scheme === "installment" ? "INSTALLMENT" : "LUMP",
+    unit_amount: !royalty && c.amount_ex_tax != null ? Number(c.amount_ex_tax) : undefined,
+    guarantee_type: c.mg_amount ? "MG" : c.ag_amount ? "AG" : "NONE",
+    rate_pct: c.rate_pct != null ? Number(c.rate_pct) : undefined,
+    base_price_label: c.base_price_label ?? "",
+    calc_period: c.calc_period ?? "",
+    calc_period_kind: c.calc_period_kind ?? undefined,
+    calc_period_close_month: c.calc_period_close_month ?? undefined,
+    currency: c.currency ?? "JPY",
+    formula_text: c.formula_text ?? "",
+    mg_amount: c.mg_amount != null ? Number(c.mg_amount) : undefined,
+    ag_amount: c.ag_amount != null ? Number(c.ag_amount) : undefined,
+    payment_terms: c.payment_terms ?? "",
+  }
+}
+
+// FinancialCondition → 一括保存用の行(condition_lines フィールド)へ順マップ。
+function fcToRow(fc: any): Record<string, any> {
+  const ct: CalcType | undefined = fc.calc_type
+  const royalty = ct === "BASE_QTY_RATE" || ct === "BASE_RATE"
+  const scheme = royalty ? "royalty" : ct === "SUBSCRIPTION" ? "subscription" : fc.fixed_kind === "INSTALLMENT" ? "installment" : "lump_sum"
+  return {
+    __clid: fc.__clid ?? null,
+    source_seq_no: fc.condition_no ?? null,
+    subject: fc.condition_name || fc.region_language_label || null,
+    payment_scheme: scheme,
+    rate_pct: royalty ? fc.rate_pct ?? null : null,
+    mg_amount: royalty ? fc.mg_amount ?? null : null,
+    ag_amount: royalty ? fc.ag_amount ?? null : null,
+    amount_ex_tax: !royalty ? fc.unit_amount ?? null : null,
+    base_price_label: royalty ? fc.base_price_label ?? null : null,
+    calc_method: fc.calc_method ?? calcMethodFromType(ct),
+    calc_period: fc.calc_period ?? null,
+    calc_period_kind: fc.calc_period_kind ?? null,
+    calc_period_close_month: fc.calc_period_close_month ?? null,
+    currency: fc.currency ?? "JPY",
+    formula_text: fc.formula_text || buildFormulaText(fc) || null,
+    payment_terms: fc.payment_terms ?? null,
+    region_territory: fc.region_territory || null,
+    region_language: fc.region_language || null,
+  }
+}
 
 type Edge = {
   id: number
@@ -239,6 +304,11 @@ export function WorkGraphPanel() {
   const [matErr, setMatErr] = React.useState<string | null>(null)
   // 利用許諾条件書(契約マスター)候補 — 登録時に文書を選んで補完するため。
   const [licenseCaps, setLicenseCaps] = React.useState<any[]>([])
+  // 利用許諾明細(FinancialConditionTable)で編集する行と保存状態。
+  const [matFcRows, setMatFcRows] = React.useState<any[]>([])
+  const [matFcCap, setMatFcCap] = React.useState("")
+  const [matFcSaving, setMatFcSaving] = React.useState(false)
+  const [matFcErr, setMatFcErr] = React.useState<string | null>(null)
   // 登録済み条件の編集(インライン)。
   const [matEditId, setMatEditId] = React.useState<number | null>(null)
   const [matEditForm, setMatEditForm] = React.useState<Record<string, string>>({})
@@ -515,9 +585,34 @@ export function WorkGraphPanel() {
     try {
       const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`)
       const d = await r.json()
-      setMatConds(Array.isArray(d) ? d : [])
+      const arr = Array.isArray(d) ? d : []
+      setMatConds(arr)
+      setMatFcRows(arr.map(clToFc)) // 利用許諾明細入力(表)用に逆マップ
     } catch {
       setMatConds([])
+      setMatFcRows([])
+    }
+  }
+  // 利用許諾明細(表)を condition_lines へ一括保存(upsert/delete)。
+  const saveMatFc = async (mid: number) => {
+    setMatFcSaving(true)
+    setMatFcErr(null)
+    try {
+      const rows = (matFcRows || []).map(fcToRow)
+      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/conditions`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ capability_id: matFcCap || null, rows }),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await Promise.all([loadMatConds(mid), loadGraph(workId)])
+    } catch (e: any) {
+      setMatFcErr(String(e?.message || e))
+    } finally {
+      setMatFcSaving(false)
     }
   }
   // マテリアルをクリック→登録パネルを開閉。開いたら既存条件を読み込む。
@@ -1072,144 +1167,37 @@ export function WorkGraphPanel() {
                               <p className="text-[9px] text-muted-foreground/70">複数の金銭条件(n, n+1, …)をそれぞれこのマテリアルに紐づけられます。</p>
                             )}
                           </div>
-                          {matConds.length > 0 && (
-                            <div className="space-y-1">
-                              <div className="text-[10px] text-muted-foreground">登録済みの利用許諾条件</div>
-                              {matConds.map((c) => (
-                                matEditId === c.id ? (
-                                  <div key={c.id} className="text-[10px] border border-sky-300 rounded p-1.5 space-y-1.5 bg-sky-50/30">
-                                    <input value={matEditForm.subject ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, subject: e.target.value }))} placeholder="条件名" className="w-full text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground" />
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      <NativeSelect value={matEditForm.payment_scheme ?? "royalty"} onChange={(e) => setMatEditForm((f) => ({ ...f, payment_scheme: e.target.value }))} className="h-6 text-[10px] py-0">
-                                        <option value="royalty">ロイヤリティ</option>
-                                        <option value="lump_sum">一括</option>
-                                        <option value="per_unit">単価</option>
-                                        <option value="installment">分割</option>
-                                        <option value="subscription">継続課金</option>
-                                      </NativeSelect>
-                                      {matEditForm.payment_scheme === "royalty" ? (
-                                        <>
-                                          <input value={matEditForm.rate_pct ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, rate_pct: e.target.value }))} placeholder="率%" className="w-14 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                          <input value={matEditForm.mg_amount ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, mg_amount: e.target.value }))} placeholder="MG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                          <input value={matEditForm.ag_amount ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, ag_amount: e.target.value }))} placeholder="AG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                        </>
-                                      ) : matEditForm.payment_scheme !== "subscription" ? (
-                                        <input value={matEditForm.amount_ex_tax ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, amount_ex_tax: e.target.value }))} placeholder="税抜金額¥ *" className="w-28 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                      ) : null}
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <input value={matEditForm.region_territory ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, region_territory: e.target.value }))} placeholder="地域" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                      <input value={matEditForm.region_language ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, region_language: e.target.value }))} placeholder="言語" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                    </div>
-                                    <div className="flex items-center gap-1.5">
-                                      <input type="date" value={matEditForm.term_start ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, term_start: e.target.value }))} className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                      <span className="text-[10px] text-muted-foreground">〜</span>
-                                      <input type="date" value={matEditForm.term_end ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, term_end: e.target.value }))} className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                      <NativeSelect value={matEditForm.rights_attribution ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, rights_attribution: e.target.value }))} className="h-6 text-[10px] py-0">
-                                        <option value="">権利帰属 —</option>
-                                        <option value="transfer">譲渡</option>
-                                        <option value="retained_license">留保許諾</option>
-                                        <option value="license_only">許諾のみ</option>
-                                        <option value="joint">共有</option>
-                                      </NativeSelect>
-                                    </div>
-                                    <textarea value={matEditForm.notes ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, notes: e.target.value }))} placeholder="備考" rows={2} className="w-full text-[10px] font-mono border border-input rounded bg-transparent px-1.5 py-1 focus:outline-none focus:border-foreground" />
-                                    {matEditErr && <p className="text-[10px] text-red-600">{matEditErr}</p>}
-                                    <div className="flex items-center gap-1.5">
-                                      <button type="button" onClick={() => void saveEditCond(m.id)} disabled={matEditSaving} className="text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50">{matEditSaving ? "保存中…" : "保存"}</button>
-                                      <button type="button" onClick={() => setMatEditId(null)} className="text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground">取消</button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <div key={c.id} className="flex items-center justify-between gap-2 text-[10px] border border-border/50 rounded px-1.5 py-1">
-                                    <div className="min-w-0">
-                                      <span className="font-semibold">{c.subject || c.line_code}</span>{" · "}
-                                      {c.payment_scheme === "royalty"
-                                        ? `${c.rate_pct ?? "—"}%${c.mg_amount ? ` MG${yen(c.mg_amount)}` : ""}${c.ag_amount ? ` AG${yen(c.ag_amount)}` : ""}`
-                                        : yen(c.amount_ex_tax) || c.payment_scheme}
-                                      {c.region_language_label && <span className="text-muted-foreground">{" · "}🌐 {c.region_language_label}</span>}
-                                      {c.document_number && <span className="text-muted-foreground/70">{" · "}{c.document_number}</span>}
-                                    </div>
-                                    <button type="button" onClick={() => startEditCond(c)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">編集</button>
-                                  </div>
-                                )
-                              ))}
-                            </div>
-                          )}
-                          {/* 登録フォーム */}
+                          {/* 利用許諾明細入力(FinancialConditionTable) → 条件明細(condition_lines)へ一括保存 */}
                           <div className="space-y-1.5">
-                            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">利用許諾条件を登録</div>
-                            <div>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-[10px] text-muted-foreground shrink-0">利用許諾条件書:</span>
                               <NativeSelect
-                                value={matForm.capability_id ?? ""}
-                                onChange={(e) => setMatForm((f) => ({ ...f, capability_id: e.target.value }))}
-                                className="h-6 text-[10px] py-0 w-full"
-                                title="利用許諾条件書(契約マスター)を選ぶと文書番号が紐づきます"
+                                value={matFcCap}
+                                onChange={(e) => setMatFcCap(e.target.value)}
+                                className="h-6 text-[10px] py-0 flex-1 min-w-[12rem]"
+                                title="選ぶと新規行がその文書配下に登録され文書番号が紐づきます。未選択は原作マスター(MLC)"
                               >
-                                <option value="">利用許諾条件書 — 未選択(原作マスターMLCに登録) —</option>
-                                {licenseCaps.map((c) => (
-                                  <option key={c.id} value={c.id}>
-                                    {c.document_number || `#${c.id}`} {c.contract_title || ""}
+                                <option value="">未選択(原作マスターMLCに登録)</option>
+                                {licenseCaps.map((cc) => (
+                                  <option key={cc.id} value={cc.id}>
+                                    {cc.document_number || `#${cc.id}`} {cc.contract_title || ""}
                                   </option>
                                 ))}
                               </NativeSelect>
-                              <p className="text-[9px] text-muted-foreground/70 mt-0.5">
-                                既存の利用許諾条件書を選ぶとその文書配下に登録され文書番号が紐づきます。未選択なら原作マスター(MLC)へ。
-                              </p>
                             </div>
-                            <input
-                              value={matForm.subject ?? ""}
-                              onChange={(e) => setMatForm((f) => ({ ...f, subject: e.target.value }))}
-                              placeholder="条件名 (例: 国内商品化 ロイヤリティ)"
-                              className="w-full text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+                            <FinancialConditionTable
+                              conditions={matFcRows}
+                              onChange={setMatFcRows}
+                              division={Array.isArray(work?.division) && work.division.includes("PUB") ? "PUB" : "BDG"}
                             />
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              <NativeSelect
-                                value={matForm.payment_scheme ?? "royalty"}
-                                onChange={(e) => setMatForm((f) => ({ ...f, payment_scheme: e.target.value }))}
-                                className="h-6 text-[10px] py-0"
-                              >
-                                <option value="royalty">ロイヤリティ</option>
-                                <option value="lump_sum">一括</option>
-                                <option value="per_unit">単価</option>
-                                <option value="installment">分割</option>
-                                <option value="subscription">継続課金</option>
-                              </NativeSelect>
-                              {matForm.payment_scheme === "royalty" ? (
-                                <>
-                                  <input value={matForm.rate_pct ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, rate_pct: e.target.value }))} placeholder="率%" className="w-14 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                  <input value={matForm.mg_amount ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, mg_amount: e.target.value }))} placeholder="MG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                  <input value={matForm.ag_amount ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, ag_amount: e.target.value }))} placeholder="AG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                                </>
-                              ) : matForm.payment_scheme !== "subscription" ? (
-                                <input value={matForm.amount_ex_tax ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, amount_ex_tax: e.target.value }))} placeholder="税抜金額¥ *" className="w-28 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                              ) : null}
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <input value={matForm.region_territory ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, region_territory: e.target.value }))} placeholder="地域 (例: 国内)" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                              <input value={matForm.region_language ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, region_language: e.target.value }))} placeholder="言語 (例: 日本語)" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <input type="date" value={matForm.term_start ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, term_start: e.target.value }))} title="開始" className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                              <span className="text-[10px] text-muted-foreground">〜</span>
-                              <input type="date" value={matForm.term_end ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, term_end: e.target.value }))} title="終了" className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
-                              <NativeSelect value={matForm.rights_attribution ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, rights_attribution: e.target.value }))} className="h-6 text-[10px] py-0">
-                                <option value="">権利帰属 —</option>
-                                <option value="transfer">譲渡</option>
-                                <option value="retained_license">留保許諾</option>
-                                <option value="license_only">許諾のみ</option>
-                                <option value="joint">共有</option>
-                              </NativeSelect>
-                            </div>
-                            <textarea value={matForm.notes ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, notes: e.target.value }))} placeholder="備考" rows={2} className="w-full text-[10px] font-mono border border-input rounded bg-transparent px-1.5 py-1 focus:outline-none focus:border-foreground" />
-                            {matErr && <p className="text-[10px] text-red-600">{matErr}</p>}
+                            {matFcErr && <p className="text-[10px] text-red-600">{matFcErr}</p>}
                             <button
                               type="button"
-                              onClick={() => void saveMatCond(m.id)}
-                              disabled={matSaving}
+                              onClick={() => void saveMatFc(m.id)}
+                              disabled={matFcSaving}
                               className="text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
                             >
-                              {matSaving ? "登録中…" : "この条件を登録"}
+                              {matFcSaving ? "保存中…" : "利用許諾条件を保存（条件明細へ）"}
                             </button>
                           </div>
                         </div>
