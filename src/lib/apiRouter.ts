@@ -114,8 +114,11 @@ const READ_PATHS_ON_GET: RegExp[] = [
   /^\/api\/contracts\/\d+(?:\/|\?|$)/,
   // 統合 P3-2: 条件明細横断検索は search-api 専用 read。
   /^\/api\/conditions(?:\/|\?|$)/,
-  // 紐付け編集モーダルのピッカー(原作/作品/契約)も search-api 専用 read。
-  /^\/api\/v3\/(?:source-ips|works|contracts)(?:\/|\?|$)/,
+  // /api/v3/* は全て search-api 専用 read(worker に v3 GET ミラーは無い)。
+  //   READS_TO_WORKER=1 でも worker へ振らず常に search-api へ。原作/作品/契約ピッカーに加え
+  //   vendors / license-capabilities / condition-lines(by-document) / source-ips 配下の
+  //   マテリアル条件等を含む(限定列挙だと新規 v3 read を都度足す必要があり 404 を招く)。
+  /^\/api\/v3\//,
   // 統合 P3-5: 作品モデル CSV サンプル(template)も search-api 専用 read。
   /^\/api\/v3\/import\/[^/]+\/template\.csv(?:\?|$)/,
   // 統合 P3-3: 請求権受領(sublicense)は search-api 専用。read/CSV を含む。
