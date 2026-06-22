@@ -186,7 +186,7 @@
   2. その条件書が生成した `condition_lines` を一覧表示 → エッジとして**参照リンク**（`source_work_id` / `source_material_id` / `product_id` / `counterparty_vendor_id` を埋める）。
   3. 既存 `PATCH /api/condition-lines/:id/graph-link`（[WorkGraphPanel.tsx:151](../src/pages/master/WorkGraphPanel.tsx)）で紐付けを保存。
 - 種別トグル（license/product/service）と金額様式（royalty=%表示 / per_unit・lump_sum=¥表示）は既存 `KIND_META` / `payment_scheme` 表示ロジックを流用。
-- （将来オプション）「このエディタから個別条件書を起票 → その場で条件明細を作る」導線。本版ではスコープ外。
+- ✅（実装済・増分⑩ A1-軽量）「このエディタから個別条件書を起票 → その場で条件明細を作る」導線。⑧ブロックに「個別条件書を起票 ↗」を追加し、テンプレ（`individual_license_terms` / `pub_license_terms`）を選んで既存の文書作成フロー `/documents/new?template=<type>` へ遷移。文書を保存すると既存フローで `condition_lines` が生成され（capability 配下＝invariant 維持）、戻って⑧（文書番号で検索→結合）で参照リンクする。スキーマ変更・新規 API なし。`condition_lines` をエディタが直接 INSERT する案（capability_id を緩和する方式）は真実源の二重化を招くため不採用。
 
 ### 3.7 「派生」の3概念の区別 — ★同一原作から当社が複数作品を作るケース
 
@@ -290,8 +290,10 @@ condition_lines id, direction('pay'|'receive'), transaction_kind('license'|'prod
 | **⑦** | **中カードに製品(SKU)追加**（`POST /api/v3/works/:id/products`、`product_code` = `{work_code}-P-NNN` 自動採番）＋ **右カードの受取先リンク**（受取エッジに「受取先に紐付け」select → `counterparty_vendor_id`、`GET /api/v3/vendors` を候補に）| ✅ 実装（`feat/works-unified-nav`）。※受取エッジ自体の起票（個別条件書からの参照リンク）は ⑧ |
 | **⑧** | **エッジ追加 UI**（文書番号で `GET /api/v3/condition-lines/by-document` 検索 → 明細を選択 → `PATCH /api/v3/condition-lines/:id/attach-work` で work_id 結合＝参照リンク。direction で支払/受取カードに自動振り分け）。§10.7 準拠＝明細は新規作成せず結合のみ | ✅ 実装（`feat/works-unified-nav`）。※文書番号は素の入力欄（`DocumentNumberLookup` 統合は後続）。付替え/解除に対応 |
 | **⑨** | 旧導線の整理: Master タブから「原作台帳」「作品モデル」を撤去し `/works`（作品管理）へ集約。両レガシー画面に移行バナー（`LegacyWorksBanner`）＋ `/works` に LO-原作(旧台帳)への導線。**ルートは温存**（データ移行 §8 #4 完了まで機能維持） | ✅ 実装（`feat/works-unified-nav`）。物理廃止は §8 #4 後 |
+| **⑥+** | **左カードから原作をその場で新規登録**（§3.2「+原作を参照/新規」/決定§8.2）。「＋原作を新規」→ `POST /api/v3/source-ips`（works(licensed_in)+ledgers(LO)+素材-001 を原子作成・LO-採番）→ 候補一覧再取得 → 各支払エッジの「原作に紐付け」で選択 | ✅ 実装（`feat/source-inline-create`） |
+| **⑩** | **エディタから個別条件書を起票**（§3.6/§10.7 の将来オプション・A1-軽量）。⑧ブロックに「個別条件書を起票 ↗」＋テンプレ選択（`individual_license_terms`/`pub_license_terms`）→ ドキュメントセッションをクリーン初期化 → `/documents/new?template=<type>` へ遷移。保存で `condition_lines` 生成（capability 配下＝invariant 維持）→ 戻って⑧で結合。スキーマ変更・新規API なし | ✅ 実装（`feat/inline-issue-condition-doc`） |
 
-> 推奨着手順: ④（一覧統合・効果が見える）→ ⑤⑥（原作・作品の統一の本体）→ ⑦⑧（派生物・エッジ）。
+> 推奨着手順: ④（一覧統合・効果が見える）→ ⑤⑥（原作・作品の統一の本体）→ ⑦⑧（派生物・エッジ）→ ⑥+⑩（その場新規）。
 
 ---
 
