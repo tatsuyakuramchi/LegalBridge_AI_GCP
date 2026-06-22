@@ -76,6 +76,68 @@ async function syncWorkComponentLink(query: Query, lineId: number): Promise<void
   );
 }
 
+// N:N活性化 Stage3: 中間表を「加算的(additive)」に結線する。Stage1 の syncWorkComponentLink が
+//   1明細=1作品(work_id 起点・他を除去)なのに対し、本ヘルパは「同じ原作マテリアルの利用許諾条件を
+//   複数作品で共有」を実現する＝他作品の結線を消さずにこの作品分を足す(ピッカーが使う)。
+//   - 単位はマテリアル(work_components.material_id)。material 不明なら結線しない(false)。
+//   - work_id は未設定時のみ主作品として補完(既存値=他作品共有は上書きしない)。
+async function linkWorkComponent(
+  query: Query, workId: number, lineId: number, materialIdArg: number | null
+): Promise<boolean> {
+  let materialId = materialIdArg;
+  if (materialId == null) {
+    const r = await query(`SELECT source_material_id FROM condition_lines WHERE id = $1`, [lineId]);
+    materialId = (r.rows[0]?.source_material_id as number | null) ?? null;
+  }
+  if (materialId == null) return false; // N:N の単位はマテリアル。未確定なら結線不可。
+  await query(
+    `INSERT INTO work_components (work_id, component_no, component_kind, material_id)
+       SELECT $1,
+              COALESCE((SELECT MAX(component_no) + 1 FROM work_components WHERE work_id = $1), 1),
+              'material', $2
+     ON CONFLICT (work_id, material_id) WHERE material_id IS NOT NULL DO NOTHING`,
+    [workId, materialId]
+  );
+  const comp = await query(
+    `SELECT id FROM work_components WHERE work_id = $1 AND material_id = $2`,
+    [workId, materialId]
+  );
+  const componentId = comp.rows[0]?.id as number | undefined;
+  if (componentId == null) return false;
+  await query(
+    `INSERT INTO work_component_lines (component_id, condition_line_id)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [componentId, lineId]
+  );
+  // フラット列は壊さない: work_id 未設定時のみ主作品として補完(共有=他作品の既存値は上書きしない)。
+  await query(
+    `UPDATE condition_lines SET work_id = $2,
+            source_material_id = COALESCE(source_material_id, $3), updated_at = now()
+      WHERE id = $1 AND work_id IS NULL`,
+    [lineId, workId, materialId]
+  );
+  return true;
+}
+
+// N:N活性化 Stage3: 加算結線の解除(この作品ぶんだけ外す。他作品の共有結線は残す)。
+async function unlinkWorkComponent(query: Query, workId: number, lineId: number): Promise<void> {
+  await query(
+    `DELETE FROM work_component_lines wcl USING work_components wc
+      WHERE wcl.component_id = wc.id AND wc.work_id = $1 AND wcl.condition_line_id = $2`,
+    [workId, lineId]
+  );
+  // この作品への結線が中間表から消えたのに work_id がまだこの作品を指していれば NULL 化
+  //   (フラット読みでの誤表示を防ぐ。他作品の共有結線・他の work_id は触らない)。
+  await query(
+    `UPDATE condition_lines SET work_id = NULL, updated_at = now()
+      WHERE id = $2 AND work_id = $1
+        AND NOT EXISTS (
+          SELECT 1 FROM work_component_lines wcl JOIN work_components wc ON wc.id = wcl.component_id
+           WHERE wcl.condition_line_id = $2 AND wc.work_id = $1)`,
+    [workId, lineId]
+  );
+}
+
 export function registerWorkModelRoutes(
   app: Express,
   deps: { query: Query; requireWrite: Middleware[]; requireRead?: Middleware[] }
@@ -1022,6 +1084,71 @@ export function registerWorkModelRoutes(
       // Stage1: 中間表(N:N)をフラット列とデュアル書込で同期。
       await syncWorkComponentLink(query, id);
       res.json({ ok: true, id });
+    } catch (e) { fail(res, e); }
+  });
+
+  // N:N活性化 Stage3: 原作(source)起点ピッカー — この原作にぶら下がる利用許諾条件明細を引く。
+  //   条件はマテリアルにぶら下がる前提(source_material_id)。source_work_id=原作 の明細を、
+  //   マテリアル順に返す。?work_id=<現作品> を渡すと、その作品に結線済みか(linked_here)も付く。
+  app.get("/api/v3/source-ips/:id/condition-lines", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const workId = req.query.work_id == null ? null : Number(req.query.work_id);
+      const r = await query(
+        `SELECT cl.id, cl.line_code, cl.subject, cl.direction, cl.transaction_kind,
+                cl.payment_scheme, cl.amount_ex_tax, cl.rate_pct,
+                cl.source_material_id, wm.material_code, wm.material_name,
+                cc.document_number, cc.contract_title,
+                EXISTS (
+                  SELECT 1 FROM work_component_lines wcl
+                    JOIN work_components wc ON wc.id = wcl.component_id
+                   WHERE wcl.condition_line_id = cl.id AND wc.work_id = $2
+                ) AS linked_here
+           FROM condition_lines cl
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
+          WHERE cl.source_work_id = $1
+          ORDER BY wm.material_no NULLS LAST, cl.line_no, cl.id`,
+        [id, workId]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // N:N活性化 Stage3: 加算結線 — この作品へ condition_line を中間表で結ぶ(共有=他作品の結線は消さない)。
+  app.post("/api/v3/works/:workId/component-lines", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const workId = Number(req.params.workId);
+      if (!Number.isFinite(workId)) return res.status(400).json({ ok: false, error: "invalid workId" });
+      const b = req.body || {};
+      const lineId = Number(b.condition_line_id);
+      if (!Number.isFinite(lineId)) return res.status(400).json({ ok: false, error: "invalid condition_line_id" });
+      const materialId = b.source_material_id == null ? null : Number(b.source_material_id);
+      if (materialId != null && !Number.isFinite(materialId)) {
+        return res.status(400).json({ ok: false, error: "invalid source_material_id" });
+      }
+      const ok = await linkWorkComponent(query, workId, lineId, materialId);
+      if (!ok) {
+        return res.status(400).json({
+          ok: false,
+          error: "source_material_id を特定できません(明細にマテリアルが紐付いていません)",
+        });
+      }
+      res.json({ ok: true });
+    } catch (e) { fail(res, e); }
+  });
+
+  // N:N活性化 Stage3: 加算結線の解除 — この作品ぶんだけ外す(他作品の共有結線は残す)。
+  app.delete("/api/v3/works/:workId/component-lines/:lineId", ...requireWrite, async (req, res) => {
+    try {
+      const workId = Number(req.params.workId);
+      const lineId = Number(req.params.lineId);
+      if (!Number.isFinite(workId) || !Number.isFinite(lineId)) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      await unlinkWorkComponent(query, workId, lineId);
+      res.json({ ok: true });
     } catch (e) { fail(res, e); }
   });
 
