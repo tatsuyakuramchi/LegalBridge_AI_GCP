@@ -25,6 +25,57 @@ async function nextMasterSeq(query: Query, kind: string, year: number): Promise<
 }
 const pad4 = (n: number) => String(n).padStart(4, "0");
 
+// N:N 中間表 活性化 Stage 1: condition_line の (work_id, source_material_id) から
+//   work_components / work_component_lines を同期する(設計:
+//   docs/design/work-nn-junction-activation-plan.md)。フラット列とのデュアル書込で、
+//   1つの利用許諾条件明細を「作品が使うマテリアル」として N:N に表現する受け皿を populate する。
+//   - work_id と source_material_id が両方そろう時のみ「1作品×1マテリアル=1コンポーネント」を
+//     ensure(0079 の部分ユニークで冪等)し、その component に明細を紐付ける。
+//   - work_id が外れた / マテリアル未設定なら、その明細のジャンクションを除去(デタッチ)。
+//   - 冪等。既存フラット列(work_id/source_material_id)は壊さない(本関数は中間表のみ操作)。
+async function syncWorkComponentLink(query: Query, lineId: number): Promise<void> {
+  const cur = await query(
+    `SELECT work_id, source_material_id FROM condition_lines WHERE id = $1`,
+    [lineId]
+  );
+  if (cur.rows.length === 0) return;
+  const workId = cur.rows[0].work_id as number | null;
+  const materialId = cur.rows[0].source_material_id as number | null;
+
+  // 不完全(作品未結合 or マテリアル未設定)なら、この明細の中間表リンクを除去して終了。
+  if (workId == null || materialId == null) {
+    await query(`DELETE FROM work_component_lines WHERE condition_line_id = $1`, [lineId]);
+    return;
+  }
+
+  // (work_id, material_id) のコンポーネントを冪等に ensure。component_no は作品内 max+1。
+  await query(
+    `INSERT INTO work_components (work_id, component_no, component_kind, material_id)
+       SELECT $1,
+              COALESCE((SELECT MAX(component_no) + 1 FROM work_components WHERE work_id = $1), 1),
+              'material', $2
+     ON CONFLICT (work_id, material_id) WHERE material_id IS NOT NULL DO NOTHING`,
+    [workId, materialId]
+  );
+  const comp = await query(
+    `SELECT id FROM work_components WHERE work_id = $1 AND material_id = $2`,
+    [workId, materialId]
+  );
+  const componentId = comp.rows[0]?.id as number | undefined;
+  if (componentId == null) return;
+
+  // 付替え対応: この明細が指していた別コンポーネントのリンクを除去してから現行を張る。
+  await query(
+    `DELETE FROM work_component_lines WHERE condition_line_id = $1 AND component_id <> $2`,
+    [lineId, componentId]
+  );
+  await query(
+    `INSERT INTO work_component_lines (component_id, condition_line_id)
+       VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+    [componentId, lineId]
+  );
+}
+
 export function registerWorkModelRoutes(
   app: Express,
   deps: { query: Query; requireWrite: Middleware[]; requireRead?: Middleware[] }
@@ -928,8 +979,11 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
-  // 増分⑧: condition_line をこの作品へ参照リンク(付替え) / 解除。work_id のみ変更。
+  // 増分⑧ + N:N活性化 Stage1: condition_line をこの作品へ参照リンク(付替え) / 解除。
   //   §10.7: エディタは明細を新規作成しない。既存明細の主対象(work_id)結合のみ。
+  //   Stage1: body に source_material_id を渡すと同時に素材も結合でき(ピッカーが
+  //   work+material を一発で渡せる)、結合後に中間表(work_components/work_component_lines)を
+  //   デュアル書込で同期する。source_material_id 未指定なら work_id のみ変更(後方互換)。
   app.patch("/api/v3/condition-lines/:id/attach-work", ...requireWrite, express.json(), async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -939,11 +993,24 @@ export function registerWorkModelRoutes(
       if (workId != null && !Number.isFinite(workId)) {
         return res.status(400).json({ ok: false, error: "invalid work_id" });
       }
-      const r = await query(
-        `UPDATE condition_lines SET work_id = $2, updated_at = now() WHERE id = $1 RETURNING id`,
-        [id, workId]
-      );
+      const hasMaterial = Object.prototype.hasOwnProperty.call(b, "source_material_id");
+      const materialId = !hasMaterial || b.source_material_id == null ? null : Number(b.source_material_id);
+      if (hasMaterial && materialId != null && !Number.isFinite(materialId)) {
+        return res.status(400).json({ ok: false, error: "invalid source_material_id" });
+      }
+      const r = hasMaterial
+        ? await query(
+            `UPDATE condition_lines SET work_id = $2, source_material_id = $3, updated_at = now()
+              WHERE id = $1 RETURNING id`,
+            [id, workId, materialId]
+          )
+        : await query(
+            `UPDATE condition_lines SET work_id = $2, updated_at = now() WHERE id = $1 RETURNING id`,
+            [id, workId]
+          );
       if (r.rowCount === 0) return res.status(404).json({ ok: false, error: "condition_line not found" });
+      // Stage1: 中間表(N:N)をフラット列とデュアル書込で同期。
+      await syncWorkComponentLink(query, id);
       res.json({ ok: true, id });
     } catch (e) { fail(res, e); }
   });
