@@ -231,6 +231,12 @@ export function WorkGraphPanel() {
   // ピッカー強化: 選んだ原作のマテリアル候補と、明細ごとに選んだ原作マテリアル(lineId→material_id)。
   const [pickerMaterials, setPickerMaterials] = React.useState<any[]>([])
   const [pickerLineMat, setPickerLineMat] = React.useState<Record<number, string>>({})
+  // マテリアル単位 利用許諾条件 登録(原作ビュー): 開いているマテリアルと既存条件・入力フォーム。
+  const [matCondOpen, setMatCondOpen] = React.useState<number | null>(null)
+  const [matConds, setMatConds] = React.useState<any[]>([])
+  const [matForm, setMatForm] = React.useState<Record<string, string>>({ payment_scheme: "royalty" })
+  const [matSaving, setMatSaving] = React.useState(false)
+  const [matErr, setMatErr] = React.useState<string | null>(null)
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -355,6 +361,8 @@ export function WorkGraphPanel() {
     setPickerLines([])
     setPickerMaterials([])
     setPickerLineMat({})
+    setMatCondOpen(null)
+    setMatConds([])
   }, [workId, loadGraph])
 
   // 増分⑥(§3.4): 原作(licensed_in)を開いたら「利用している自社作品」を逆引き。
@@ -485,6 +493,66 @@ export function WorkGraphPanel() {
       await Promise.all([loadGraph(workId), loadPicker(pickerSource, workId)])
     } catch (e) {
       console.error("removeComponentLine failed", e)
+    }
+  }
+
+  // マテリアル単位 利用許諾条件 登録: 原作マテリアルの既存条件を取得。
+  const loadMatConds = async (mid: number) => {
+    try {
+      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`)
+      const d = await r.json()
+      setMatConds(Array.isArray(d) ? d : [])
+    } catch {
+      setMatConds([])
+    }
+  }
+  // マテリアルをクリック→登録パネルを開閉。開いたら既存条件を読み込む。
+  const toggleMatCond = (mid: number) => {
+    if (matCondOpen === mid) { setMatCondOpen(null); return }
+    setMatCondOpen(mid)
+    setMatForm({ payment_scheme: "royalty" })
+    setMatErr(null)
+    setMatConds([])
+    void loadMatConds(mid)
+  }
+  // 利用許諾条件を登録(原作の器 capability 配下に condition_line 生成)。
+  const saveMatCond = async (mid: number) => {
+    setMatSaving(true)
+    setMatErr(null)
+    try {
+      const f = matForm
+      const body: Record<string, any> = {
+        payment_scheme: f.payment_scheme,
+        subject: f.subject || null,
+        rights_attribution: f.rights_attribution || null,
+        term_start: f.term_start || null,
+        term_end: f.term_end || null,
+        region_territory: f.region_territory || null,
+        region_language: f.region_language || null,
+        notes: f.notes || null,
+      }
+      if (f.payment_scheme === "royalty") {
+        body.rate_pct = f.rate_pct || null
+        body.mg_amount = f.mg_amount || null
+        body.ag_amount = f.ag_amount || null
+      } else if (f.payment_scheme !== "subscription") {
+        body.amount_ex_tax = f.amount_ex_tax || null
+      }
+      const r = await fetch(`/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      setMatForm({ payment_scheme: "royalty" })
+      await Promise.all([loadMatConds(mid), loadGraph(workId)])
+    } catch (e: any) {
+      setMatErr(String(e?.message || e))
+    } finally {
+      setMatSaving(false)
     }
   }
 
@@ -818,12 +886,107 @@ export function WorkGraphPanel() {
               )}
               {materials.length > 0 && (
                 <div className="space-y-1">
-                  <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">素材</div>
+                  <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+                    素材{isSource && "（クリックで利用許諾条件を登録）"}
+                  </div>
                   {materials.map((m) => (
-                    <div key={m.id} className="text-[11px] font-mono border border-border/60 rounded px-2 py-1">
-                      <span className="font-semibold">{m.material_code || "—"}</span>{" "}
-                      {m.material_name}
-                      {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
+                    <div key={m.id} className="text-[11px] font-mono border border-border/60 rounded overflow-hidden">
+                      {isSource ? (
+                        <button
+                          type="button"
+                          onClick={() => toggleMatCond(m.id)}
+                          className="w-full text-left px-2 py-1 hover:bg-muted/40 flex items-center justify-between gap-2"
+                        >
+                          <span className="truncate">
+                            <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
+                            {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
+                          </span>
+                          <span className="text-[10px] text-sky-700 shrink-0">
+                            {matCondOpen === m.id ? "▲ 閉じる" : "利用許諾条件 ▾"}
+                          </span>
+                        </button>
+                      ) : (
+                        <div className="px-2 py-1">
+                          <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
+                          {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
+                        </div>
+                      )}
+                      {isSource && matCondOpen === m.id && (
+                        <div className="border-t border-border/60 p-2 space-y-2 bg-muted/20">
+                          {matConds.length > 0 && (
+                            <div className="space-y-1">
+                              <div className="text-[10px] text-muted-foreground">登録済みの利用許諾条件</div>
+                              {matConds.map((c) => (
+                                <div key={c.id} className="text-[10px] border border-border/50 rounded px-1.5 py-1">
+                                  <span className="font-semibold">{c.subject || c.line_code}</span>{" · "}
+                                  {c.payment_scheme === "royalty"
+                                    ? `${c.rate_pct ?? "—"}%${c.mg_amount ? ` MG${yen(c.mg_amount)}` : ""}${c.ag_amount ? ` AG${yen(c.ag_amount)}` : ""}`
+                                    : yen(c.amount_ex_tax) || c.payment_scheme}
+                                  {c.region_language_label && <span className="text-muted-foreground">{" · "}🌐 {c.region_language_label}</span>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                          {/* 登録フォーム */}
+                          <div className="space-y-1.5">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">利用許諾条件を登録</div>
+                            <input
+                              value={matForm.subject ?? ""}
+                              onChange={(e) => setMatForm((f) => ({ ...f, subject: e.target.value }))}
+                              placeholder="条件名 (例: 国内商品化 ロイヤリティ)"
+                              className="w-full text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+                            />
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <NativeSelect
+                                value={matForm.payment_scheme ?? "royalty"}
+                                onChange={(e) => setMatForm((f) => ({ ...f, payment_scheme: e.target.value }))}
+                                className="h-6 text-[10px] py-0"
+                              >
+                                <option value="royalty">ロイヤリティ</option>
+                                <option value="lump_sum">一括</option>
+                                <option value="per_unit">単価</option>
+                                <option value="installment">分割</option>
+                                <option value="subscription">継続課金</option>
+                              </NativeSelect>
+                              {matForm.payment_scheme === "royalty" ? (
+                                <>
+                                  <input value={matForm.rate_pct ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, rate_pct: e.target.value }))} placeholder="率%" className="w-14 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                  <input value={matForm.mg_amount ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, mg_amount: e.target.value }))} placeholder="MG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                  <input value={matForm.ag_amount ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, ag_amount: e.target.value }))} placeholder="AG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                </>
+                              ) : matForm.payment_scheme !== "subscription" ? (
+                                <input value={matForm.amount_ex_tax ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, amount_ex_tax: e.target.value }))} placeholder="税抜金額¥ *" className="w-28 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                              ) : null}
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input value={matForm.region_territory ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, region_territory: e.target.value }))} placeholder="地域 (例: 国内)" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                              <input value={matForm.region_language ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, region_language: e.target.value }))} placeholder="言語 (例: 日本語)" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                            </div>
+                            <div className="flex items-center gap-1.5">
+                              <input type="date" value={matForm.term_start ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, term_start: e.target.value }))} title="開始" className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                              <span className="text-[10px] text-muted-foreground">〜</span>
+                              <input type="date" value={matForm.term_end ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, term_end: e.target.value }))} title="終了" className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                              <NativeSelect value={matForm.rights_attribution ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, rights_attribution: e.target.value }))} className="h-6 text-[10px] py-0">
+                                <option value="">権利帰属 —</option>
+                                <option value="transfer">譲渡</option>
+                                <option value="retained_license">留保許諾</option>
+                                <option value="license_only">許諾のみ</option>
+                                <option value="joint">共有</option>
+                              </NativeSelect>
+                            </div>
+                            <textarea value={matForm.notes ?? ""} onChange={(e) => setMatForm((f) => ({ ...f, notes: e.target.value }))} placeholder="備考" rows={2} className="w-full text-[10px] font-mono border border-input rounded bg-transparent px-1.5 py-1 focus:outline-none focus:border-foreground" />
+                            {matErr && <p className="text-[10px] text-red-600">{matErr}</p>}
+                            <button
+                              type="button"
+                              onClick={() => void saveMatCond(m.id)}
+                              disabled={matSaving}
+                              className="text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                            >
+                              {matSaving ? "登録中…" : "この条件を登録"}
+                            </button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
