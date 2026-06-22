@@ -15,6 +15,7 @@ import { Globe } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
+import { useDocumentSession } from "@/src/context/AppDataContext"
 
 type Edge = {
   id: number
@@ -185,6 +186,9 @@ export function WorkGraphPanel() {
   //   :id 無し(旧 /master/work-graph 直叩き等)のときは先頭作品にフォールバック。
   const { id: routeId } = useParams<{ id?: string }>()
   const navigate = useNavigate()
+  // (B) A1-軽量: 個別条件書の起票(既存の文書作成フロー)へ遷移する際、ドキュメントセッションを
+  //   クリーン初期化するために使う(IssueDetailPage.createDocument と同思想)。
+  const { setSelectedIssue, setFormData: setDocFormData } = useDocumentSession()
   const [works, setWorks] = React.useState<any[]>([])
   const [workId, setWorkId] = React.useState<string>(routeId ?? "")
   const [graph, setGraph] = React.useState<any>(null)
@@ -218,6 +222,8 @@ export function WorkGraphPanel() {
   const [edgeLines, setEdgeLines] = React.useState<any[]>([])
   const [edgeSearching, setEdgeSearching] = React.useState(false)
   const [edgeSearched, setEdgeSearched] = React.useState(false)
+  // (B) A1-軽量: エディタから起票する個別条件書のテンプレ種別。
+  const [newDocTemplate, setNewDocTemplate] = React.useState("individual_license_terms")
   // N:N活性化 Stage3: 原作起点ピッカー — 原作を選ぶ→その利用許諾条件明細を共有結線。
   const [pickerSource, setPickerSource] = React.useState("")
   const [pickerLines, setPickerLines] = React.useState<any[]>([])
@@ -461,6 +467,19 @@ export function WorkGraphPanel() {
     } catch (e) {
       console.error("removeComponentLine failed", e)
     }
+  }
+
+  // (B) A1-軽量(§10.7「将来オプション: このエディタから個別条件書を起票→その場で条件明細を作る」):
+  //   既存の文書作成フロー(/documents/new)を再利用して個別条件書を起票する。明細は文書(capability)
+  //   配下に作る invariant を維持(condition_lines.capability_id は NOT NULL)。文書を保存すると既存
+  //   フローで condition_lines が生成され、エディタに戻って下の⑧(文書番号で検索→結合)で参照リンクする。
+  const issueNewConditionDoc = () => {
+    // 新規起票は必ずクリーンな状態で開始(stale な下書き識別子による別文書上書き事故を防ぐ)。
+    setSelectedIssue("")
+    setDocFormData({ サブライセンシー一覧: [] })
+    // 課題コンテキストが無いので prefill は付けない(テンプレ事前選択は template パラメータのみで効く。
+    //   prefill=1 の自動プリフィルは purchase_order/inspection_certificate かつ課題ありの時だけ作動)。
+    navigate(`/documents/new?template=${encodeURIComponent(newDocTemplate)}`)
   }
 
   // 増分⑧: 文書番号で個別条件書の condition_lines を検索。
@@ -970,6 +989,26 @@ export function WorkGraphPanel() {
         <div className="rounded-md border border-dashed border-input p-3 space-y-2">
           <div className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
             ＋ 条件明細をこの作品に追加（個別条件書から参照）
+          </div>
+          {/* (B) A1-軽量(§10.7): ここから個別条件書を起票 → 保存で明細生成 → 戻って下の検索で結合 */}
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <span className="text-[10px] text-muted-foreground">新規に起票:</span>
+            <NativeSelect
+              value={newDocTemplate}
+              onChange={(e) => setNewDocTemplate(e.target.value)}
+              className="h-7 text-[11px]"
+            >
+              <option value="individual_license_terms">個別利用許諾条件書</option>
+              <option value="pub_license_terms">出版等利用許諾条件書</option>
+            </NativeSelect>
+            <button
+              type="button"
+              onClick={issueNewConditionDoc}
+              className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+            >
+              個別条件書を起票 ↗
+            </button>
+            <span className="text-[10px] text-muted-foreground/70">作成後、下の文書番号で検索して結合</span>
           </div>
           <div className="flex items-center gap-1.5 max-w-md">
             <input
