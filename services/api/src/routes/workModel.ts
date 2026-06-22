@@ -1064,11 +1064,15 @@ export function registerWorkModelRoutes(
       const r = await query(
         `SELECT cl.id, cl.line_code, cl.subject, cl.direction, cl.transaction_kind,
                 cl.payment_scheme, cl.amount_ex_tax, cl.rate_pct, cl.work_id,
+                cl.source_seq_no, cl.source_material_id, cl.source_work_id,
+                cl.mg_amount, cl.ag_amount,
+                cfc.region_language_label,
                 cc.document_number, cc.contract_title,
                 w.work_code AS current_work_code, w.title AS current_work_title
            FROM condition_lines cl
            JOIN contract_capabilities cc ON cc.id = cl.capability_id
            LEFT JOIN works w ON w.id = cl.work_id
+           LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
           WHERE cc.document_number ILIKE '%' || $1 || '%'
           ORDER BY cc.document_number, cl.line_no, cl.id`,
         [doc]

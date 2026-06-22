@@ -239,6 +239,10 @@ export function WorkGraphPanel() {
   const [matErr, setMatErr] = React.useState<string | null>(null)
   // 利用許諾条件書(契約マスター)候補 — 登録時に文書を選んで補完するため。
   const [licenseCaps, setLicenseCaps] = React.useState<any[]>([])
+  // 文書番号から既存の金銭条件(condition_lines)を呼び出してマテリアルへ紐づける。
+  const [matRecallDoc, setMatRecallDoc] = React.useState("")
+  const [matRecallLines, setMatRecallLines] = React.useState<any[]>([])
+  const [matRecallLoading, setMatRecallLoading] = React.useState(false)
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -365,6 +369,8 @@ export function WorkGraphPanel() {
     setPickerLineMat({})
     setMatCondOpen(null)
     setMatConds([])
+    setMatRecallLines([])
+    setMatRecallDoc("")
   }, [workId, loadGraph])
 
   // 増分⑥(§3.4): 原作(licensed_in)を開いたら「利用している自社作品」を逆引き。
@@ -515,6 +521,8 @@ export function WorkGraphPanel() {
     setMatForm({ payment_scheme: "royalty" })
     setMatErr(null)
     setMatConds([])
+    setMatRecallDoc("")
+    setMatRecallLines([])
     void loadMatConds(mid)
     // 利用許諾条件書候補を一度だけ取得(登録時に文書を選んで紐づけるため)。
     if (licenseCaps.length === 0) {
@@ -524,6 +532,39 @@ export function WorkGraphPanel() {
         .catch(() => {})
     }
   }
+  // 文書番号から既存金銭条件を呼び出す(by-document)。1文書=複数明細(金銭条件 n,n+1,…)。
+  const recallByDoc = async () => {
+    if (!matRecallDoc.trim()) return
+    setMatRecallLoading(true)
+    try {
+      const r = await fetch(`/api/v3/condition-lines/by-document?document_number=${encodeURIComponent(matRecallDoc.trim())}`)
+      const d = await r.json()
+      setMatRecallLines(Array.isArray(d) ? d : [])
+    } catch {
+      setMatRecallLines([])
+    } finally {
+      setMatRecallLoading(false)
+    }
+  }
+  // 呼び出した金銭条件を このマテリアルへ紐づけ/解除(source_work_id=原作 / source_material_id=mid)。
+  //   既存 worker graph-link を流用。複数件を個別に紐づけられる(金銭条件 n,n+1,…)。
+  const assignRecalled = async (mid: number, line: any, assign: boolean) => {
+    try {
+      const body = assign
+        ? { source_work_id: Number(workId), source_material_id: mid }
+        : { source_material_id: null }
+      const r = await fetch(`/api/condition-lines/${line.id}/graph-link`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      await Promise.all([loadMatConds(mid), loadGraph(workId), recallByDoc()])
+    } catch (e) {
+      console.error("assignRecalled failed", e)
+    }
+  }
+
   // 利用許諾条件を登録(原作の器 capability 配下に condition_line 生成)。
   const saveMatCond = async (mid: number) => {
     setMatSaving(true)
@@ -923,6 +964,46 @@ export function WorkGraphPanel() {
                       )}
                       {isSource && matCondOpen === m.id && (
                         <div className="border-t border-border/60 p-2 space-y-2 bg-muted/20">
+                          {/* 文書番号から既存の金銭条件を呼び出してこのマテリアルへ紐づけ(複数可) */}
+                          <div className="space-y-1.5 border border-sky-200 rounded p-1.5">
+                            <div className="text-[10px] uppercase tracking-[0.14em] text-sky-700">文書番号から金銭条件を呼び出す</div>
+                            <div className="flex items-center gap-1.5">
+                              <input
+                                value={matRecallDoc}
+                                onChange={(e) => setMatRecallDoc(e.target.value)}
+                                onKeyDown={(e) => { if (e.key === "Enter") void recallByDoc() }}
+                                placeholder="文書番号 (例: LIC-... / ARC-...)"
+                                className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+                              />
+                              <button type="button" onClick={() => void recallByDoc()} disabled={matRecallLoading || !matRecallDoc.trim()} className="text-[10px] font-mono px-2 py-1 rounded border border-border hover:border-foreground/40 disabled:opacity-50">
+                                {matRecallLoading ? "呼出中…" : "呼び出す"}
+                              </button>
+                            </div>
+                            {matRecallLines.map((l) => {
+                              const here = String(l.source_material_id ?? "") === String(m.id)
+                              return (
+                                <div key={l.id} className="flex items-center justify-between gap-2 text-[10px] border border-border/50 rounded px-1.5 py-1">
+                                  <div className="min-w-0">
+                                    <span className="font-semibold">金銭条件{l.source_seq_no ?? "—"}</span>{" · "}
+                                    {l.subject || l.line_code}{" · "}
+                                    {l.payment_scheme === "royalty"
+                                      ? `${l.rate_pct ?? "—"}%${l.mg_amount ? ` MG${yen(l.mg_amount)}` : ""}${l.ag_amount ? ` AG${yen(l.ag_amount)}` : ""}`
+                                      : yen(l.amount_ex_tax) || l.payment_scheme}
+                                    {l.region_language_label && <span className="text-muted-foreground">{" · 🌐 "}{l.region_language_label}</span>}
+                                    {!here && l.source_material_id != null && <span className="text-amber-600">{" · 他素材に紐付け済"}</span>}
+                                  </div>
+                                  {here ? (
+                                    <button type="button" onClick={() => void assignRecalled(m.id, l, false)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">外す</button>
+                                  ) : (
+                                    <button type="button" onClick={() => void assignRecalled(m.id, l, true)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50">紐づける</button>
+                                  )}
+                                </div>
+                              )
+                            })}
+                            {matRecallLines.length > 0 && (
+                              <p className="text-[9px] text-muted-foreground/70">複数の金銭条件(n, n+1, …)をそれぞれこのマテリアルに紐づけられます。</p>
+                            )}
+                          </div>
                           {matConds.length > 0 && (
                             <div className="space-y-1">
                               <div className="text-[10px] text-muted-foreground">登録済みの利用許諾条件</div>
