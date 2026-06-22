@@ -224,6 +224,16 @@ export function registerWorkModelRoutes(
                           NULLIF(btrim(concat_ws('・', cfc.region_territory, cfc.region_language)), ''),
                           NULLIF(btrim(concat_ws('・', cc.territory, cc.language)), '')
                         ) AS territory_label`;
+      // N:N活性化 Stage2: この作品に紐づく condition_line を「中間表(work_component_lines)経由」
+      //   ∪「フラット列(work_id)」で引く。中間表で 1明細→複数作品(N:N) が見え、移行期はフラット
+      //   経由(graph-link 素材後付け・既存データ)も拾うので欠落しない。$1 = この作品 id。
+      const linkedLineIds = `
+        SELECT wcl.condition_line_id AS line_id
+          FROM work_component_lines wcl
+          JOIN work_components wc ON wc.id = wcl.component_id
+         WHERE wc.work_id = $1
+        UNION
+        SELECT cl2.id AS line_id FROM condition_lines cl2 WHERE cl2.work_id = $1`;
       const [products, materials, upstream, downstream] = await Promise.all([
         query(`SELECT * FROM products WHERE work_id = $1 ORDER BY id`, [id]),
         query(
@@ -243,7 +253,7 @@ export function registerWorkModelRoutes(
              LEFT JOIN works sw ON sw.id = cl.source_work_id
              LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
              LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
-            WHERE cl.work_id = $1 AND cl.direction = 'payable'
+            WHERE cl.id IN (${linkedLineIds}) AND cl.direction = 'payable'
             ORDER BY cl.id`,
           [id]
         ),
@@ -256,7 +266,7 @@ export function registerWorkModelRoutes(
              LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
              LEFT JOIN products p ON p.id = cl.product_id
              LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
-            WHERE cl.work_id = $1 AND cl.direction = 'receivable'
+            WHERE cl.id IN (${linkedLineIds}) AND cl.direction = 'receivable'
             ORDER BY cl.id`,
           [id]
         ),
