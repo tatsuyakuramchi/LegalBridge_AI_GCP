@@ -237,6 +237,8 @@ export function WorkGraphPanel() {
   const [matForm, setMatForm] = React.useState<Record<string, string>>({ payment_scheme: "royalty" })
   const [matSaving, setMatSaving] = React.useState(false)
   const [matErr, setMatErr] = React.useState<string | null>(null)
+  // 利用許諾条件書(契約マスター)候補 — 登録時に文書を選んで補完するため。
+  const [licenseCaps, setLicenseCaps] = React.useState<any[]>([])
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -514,6 +516,13 @@ export function WorkGraphPanel() {
     setMatErr(null)
     setMatConds([])
     void loadMatConds(mid)
+    // 利用許諾条件書候補を一度だけ取得(登録時に文書を選んで紐づけるため)。
+    if (licenseCaps.length === 0) {
+      fetch("/api/v3/license-capabilities")
+        .then((r) => r.json())
+        .then((d) => setLicenseCaps(Array.isArray(d) ? d : []))
+        .catch(() => {})
+    }
   }
   // 利用許諾条件を登録(原作の器 capability 配下に condition_line 生成)。
   const saveMatCond = async (mid: number) => {
@@ -522,6 +531,7 @@ export function WorkGraphPanel() {
     try {
       const f = matForm
       const body: Record<string, any> = {
+        capability_id: f.capability_id || null,
         payment_scheme: f.payment_scheme,
         subject: f.subject || null,
         rights_attribution: f.rights_attribution || null,
@@ -923,6 +933,7 @@ export function WorkGraphPanel() {
                                     ? `${c.rate_pct ?? "—"}%${c.mg_amount ? ` MG${yen(c.mg_amount)}` : ""}${c.ag_amount ? ` AG${yen(c.ag_amount)}` : ""}`
                                     : yen(c.amount_ex_tax) || c.payment_scheme}
                                   {c.region_language_label && <span className="text-muted-foreground">{" · "}🌐 {c.region_language_label}</span>}
+                                  {c.document_number && <span className="text-muted-foreground/70">{" · "}{c.document_number}</span>}
                                 </div>
                               ))}
                             </div>
@@ -930,6 +941,24 @@ export function WorkGraphPanel() {
                           {/* 登録フォーム */}
                           <div className="space-y-1.5">
                             <div className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">利用許諾条件を登録</div>
+                            <div>
+                              <NativeSelect
+                                value={matForm.capability_id ?? ""}
+                                onChange={(e) => setMatForm((f) => ({ ...f, capability_id: e.target.value }))}
+                                className="h-6 text-[10px] py-0 w-full"
+                                title="利用許諾条件書(契約マスター)を選ぶと文書番号が紐づきます"
+                              >
+                                <option value="">利用許諾条件書 — 未選択(原作マスターMLCに登録) —</option>
+                                {licenseCaps.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.document_number || `#${c.id}`} {c.contract_title || ""}
+                                  </option>
+                                ))}
+                              </NativeSelect>
+                              <p className="text-[9px] text-muted-foreground/70 mt-0.5">
+                                既存の利用許諾条件書を選ぶとその文書配下に登録され文書番号が紐づきます。未選択なら原作マスター(MLC)へ。
+                              </p>
+                            </div>
                             <input
                               value={matForm.subject ?? ""}
                               onChange={(e) => setMatForm((f) => ({ ...f, subject: e.target.value }))}
