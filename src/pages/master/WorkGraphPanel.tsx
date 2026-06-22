@@ -203,6 +203,10 @@ export function WorkGraphPanel() {
   const [uses, setUses] = React.useState<any[]>([])
   const [newOwnTitle, setNewOwnTitle] = React.useState("")
   const [creatingOwn, setCreatingOwn] = React.useState(false)
+  // 増分⑥+(§3.2「+原作を参照/新規」/決定§8.2): 左カードから原作をその場で新規登録。
+  const [showNewSource, setShowNewSource] = React.useState(false)
+  const [newSourceTitle, setNewSourceTitle] = React.useState("")
+  const [creatingSource, setCreatingSource] = React.useState(false)
   // 増分⑦: 製品(SKU)追加 + 受取先(取引先)リンク。
   const [vendors, setVendors] = React.useState<any[]>([])
   const [prodName, setProdName] = React.useState("")
@@ -303,12 +307,20 @@ export function WorkGraphPanel() {
   }, [])
 
   // 増分⑥: 原作(source)候補一覧。左カードの「原作に紐付け」select に使う。
-  React.useEffect(() => {
-    fetch("/api/v3/source-ips")
-      .then((r) => r.json())
-      .then((d) => setSourceWorks(Array.isArray(d) ? d : []))
-      .catch(() => {})
+  //   その場新規(createSource)後にも再取得するため callback に切り出す。
+  const loadSourceWorks = React.useCallback(async () => {
+    try {
+      const r = await fetch("/api/v3/source-ips")
+      const d = await r.json()
+      setSourceWorks(Array.isArray(d) ? d : [])
+    } catch {
+      /* noop */
+    }
   }, [])
+
+  React.useEffect(() => {
+    void loadSourceWorks()
+  }, [loadSourceWorks])
 
   // 増分⑦: 受取先(取引先)候補一覧。右カードの「受取先に紐付け」select に使う。
   React.useEffect(() => {
@@ -368,6 +380,29 @@ export function WorkGraphPanel() {
       console.error("createOwnFromSource failed", e)
     } finally {
       setCreatingOwn(false)
+    }
+  }
+
+  // 増分⑥+(§3.2): 左カードから原作(source)をその場で新規登録。POST /api/v3/source-ips は
+  //   works(licensed_in)+ledgers(LO)+素材-001 を原子的に作成(LO- 採番)。作成後は候補一覧を
+  //   再取得し、各支払エッジの「原作に紐付け」から選べるようにする(エディタは condition_line を作らない)。
+  const createSource = async () => {
+    if (!newSourceTitle.trim()) return
+    setCreatingSource(true)
+    try {
+      const r = await fetch("/api/v3/source-ips", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: newSourceTitle.trim() }),
+      })
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      setNewSourceTitle("")
+      setShowNewSource(false)
+      await loadSourceWorks()
+    } catch (e) {
+      console.error("createSource failed", e)
+    } finally {
+      setCreatingSource(false)
     }
   }
 
@@ -491,6 +526,50 @@ export function WorkGraphPanel() {
                 <h3 className="text-sm font-mono font-bold">原作 / 調達（支払）▶</h3>
                 <Badge variant="outline" className="border-amber-300 text-amber-700">支払 {upstream.length}</Badge>
               </div>
+              {/* 増分⑥+(§3.2/決定§8.2): 原作をその場で新規登録 → 候補一覧に追加し各支払エッジで選択可に */}
+              {!isSource && (
+                <div className="border-b border-border/60 pb-2">
+                  {!showNewSource ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowNewSource(true)}
+                      className="text-[11px] font-mono px-2 py-0.5 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50"
+                    >
+                      ＋ 原作を新規
+                    </button>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          value={newSourceTitle}
+                          onChange={(e) => setNewSourceTitle(e.target.value)}
+                          placeholder="原作タイトル *"
+                          autoFocus
+                          className="flex-1 text-[11px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+                        />
+                        <button
+                          type="button"
+                          onClick={createSource}
+                          disabled={creatingSource || !newSourceTitle.trim()}
+                          className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                        >
+                          {creatingSource ? "作成中…" : "作成"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setShowNewSource(false); setNewSourceTitle("") }}
+                          className="text-[11px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                        >
+                          取消
+                        </button>
+                      </div>
+                      <p className="text-[10px] text-muted-foreground/70">
+                        作成後、各支払エッジの「原作に紐付け」から選べます（LO- 採番）。
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
               {upstream.length === 0 ? (
                 <p className="text-[11px] text-muted-foreground py-1">支払エッジはありません。</p>
               ) : (
