@@ -136,6 +136,23 @@ async function unlinkWorkComponent(query: Query, workId: number, lineId: number)
   );
 }
 
+// マテリアル単位 利用許諾条件 登録: 原作ごとに「マスター登録用」の器(contract_capabilities)を
+//   冪等に確保する(capability_id は NOT NULL ＝条件明細は必ず文書配下、という不変条件を維持)。
+//   document_number = 'MLC-<work_code>'(UNIQUE)で1原作1器。registered-origin の軽量文書。
+async function ensureMasterLicenseCapability(query: Query, sw: any): Promise<number> {
+  const docNo = `MLC-${sw.work_code}`;
+  await query(
+    `INSERT INTO contract_capabilities
+       (record_type, contract_category, contract_type, contract_title, document_number,
+        vendor_id, original_work, work_name, contract_status, source_system)
+     VALUES ('license_condition', 'license', 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register')
+     ON CONFLICT (document_number) DO NOTHING`,
+    [`原作利用許諾条件(マスター登録): ${sw.title}`, docNo, sw.rights_holder_vendor_id ?? null, sw.title ?? null]
+  );
+  const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [docNo]);
+  return r.rows[0].id as number;
+}
+
 export function registerWorkModelRoutes(
   app: Express,
   deps: { query: Query; requireWrite: Middleware[]; requireRead?: Middleware[] }
@@ -1111,6 +1128,106 @@ export function registerWorkModelRoutes(
         [id, workId]
       );
       res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // マテリアル単位の利用許諾条件: この原作マテリアルに登録済みの条件明細を一覧。
+  app.get("/api/v3/source-ips/:id/materials/:mid/condition-lines", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const mid = Number(req.params.mid);
+      if (!Number.isFinite(id) || !Number.isFinite(mid)) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const r = await query(
+        `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.rate_pct,
+                cl.mg_amount, cl.ag_amount, cl.amount_ex_tax, cl.rights_attribution,
+                cl.term_start, cl.term_end, cl.notes,
+                cfc.region_territory, cfc.region_language, cfc.region_language_label
+           FROM condition_lines cl
+           LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+          WHERE cl.source_work_id = $1 AND cl.source_material_id = $2
+          ORDER BY cl.line_no, cl.id`,
+        [id, mid]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // マテリアル単位の利用許諾条件 登録 (過去分登録の単一ルート)。原作の器(capability)配下に
+  //   condition_line を作る。direction='payable'/transaction_kind='license'/work_id=NULL(割当はピッカー)。
+  //   地域・言語は per-行の capability_financial_conditions を作り source_condition_id で紐付け。
+  app.post("/api/v3/source-ips/:id/materials/:mid/condition-lines", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const mid = Number(req.params.mid);
+      if (!Number.isFinite(id) || !Number.isFinite(mid)) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const b = req.body || {};
+      const scheme = String(b.payment_scheme || "");
+      const SCHEMES = ["lump_sum", "per_unit", "installment", "subscription", "royalty"];
+      if (!SCHEMES.includes(scheme)) {
+        return res.status(400).json({ ok: false, error: "payment_scheme is invalid" });
+      }
+      const num = (v: any) => (v == null || v === "" ? null : Number(v));
+      const amount = num(b.amount_ex_tax);
+      const rate = num(b.rate_pct);
+      const mg = num(b.mg_amount);
+      const ag = num(b.ag_amount);
+      // CHECK: royalty/subscription 以外は amount_ex_tax 必須。royalty 以外は rate/mg/ag を持てない。
+      if (!["subscription", "royalty"].includes(scheme) && amount == null) {
+        return res.status(400).json({ ok: false, error: "この支払方式では税抜金額(amount_ex_tax)が必須です" });
+      }
+      if (scheme !== "royalty" && (rate != null || mg != null || ag != null)) {
+        return res.status(400).json({ ok: false, error: "rate/MG/AG は royalty のときのみ指定できます" });
+      }
+      // 原作・マテリアルの存在確認。
+      const sw = await query(
+        `SELECT id, work_code, title, rights_holder_vendor_id FROM works WHERE id = $1 AND kind = 'licensed_in'`,
+        [id]
+      );
+      if (sw.rows.length === 0) return res.status(404).json({ ok: false, error: "原作が見つかりません" });
+      const mat = await query(`SELECT id FROM work_materials WHERE id = $1 AND work_id = $2`, [mid, id]);
+      if (mat.rows.length === 0) return res.status(404).json({ ok: false, error: "原作マテリアルが見つかりません" });
+
+      const capabilityId = await ensureMasterLicenseCapability(query, sw.rows[0]);
+
+      // 地域・言語: 指定があれば cfc を作り source_condition_id に使う(グラフの territory 引用元)。
+      let sourceConditionId: number | null = null;
+      const territory = b.region_territory ? String(b.region_territory) : null;
+      const language = b.region_language ? String(b.region_language) : null;
+      if (territory || language) {
+        const label = [territory, language].filter(Boolean).join("・");
+        const cfc = await query(
+          `INSERT INTO capability_financial_conditions
+             (capability_id, condition_no, region_territory, region_language, region_language_label)
+           SELECT $1,
+                  COALESCE((SELECT MAX(condition_no) + 1 FROM capability_financial_conditions WHERE capability_id = $1), 1),
+                  $2, $3, $4
+           RETURNING id`,
+          [capabilityId, territory, language, label || null]
+        );
+        sourceConditionId = cfc.rows[0].id as number;
+      }
+
+      // line_no = 器内 max+1(現行採番)。line_code = '<MLC-...>-L<line_no>'。
+      const ins = await query(
+        `INSERT INTO condition_lines
+           (capability_id, line_no, line_code, subject, direction, transaction_kind,
+            payment_scheme, amount_ex_tax, rate_pct, mg_amount, ag_amount, rights_attribution,
+            term_start, term_end, notes, source_work_id, source_material_id, source_condition_id, work_id)
+         SELECT $1, ln, 'MLC-' || $2 || '-L' || ln, $3, 'payable', 'license',
+                $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL
+           FROM (SELECT COALESCE(MAX(line_no), 0) + 1 AS ln FROM condition_lines WHERE capability_id = $1) q
+         RETURNING id, line_code`,
+        [
+          capabilityId, sw.rows[0].work_code, b.subject ?? null, scheme, amount, rate, mg, ag,
+          b.rights_attribution ?? null, b.term_start ?? null, b.term_end ?? null, b.notes ?? null,
+          id, mid, sourceConditionId,
+        ]
+      );
+      res.status(201).json({ ok: true, id: ins.rows[0].id, line_code: ins.rows[0].line_code });
     } catch (e) { fail(res, e); }
   });
 
