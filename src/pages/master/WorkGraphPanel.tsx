@@ -239,6 +239,11 @@ export function WorkGraphPanel() {
   const [matErr, setMatErr] = React.useState<string | null>(null)
   // 利用許諾条件書(契約マスター)候補 — 登録時に文書を選んで補完するため。
   const [licenseCaps, setLicenseCaps] = React.useState<any[]>([])
+  // 登録済み条件の編集(インライン)。
+  const [matEditId, setMatEditId] = React.useState<number | null>(null)
+  const [matEditForm, setMatEditForm] = React.useState<Record<string, string>>({})
+  const [matEditSaving, setMatEditSaving] = React.useState(false)
+  const [matEditErr, setMatEditErr] = React.useState<string | null>(null)
   // 文書番号から既存の金銭条件(condition_lines)を呼び出してマテリアルへ紐づける。
   const [matRecallDoc, setMatRecallDoc] = React.useState("")
   const [matRecallLines, setMatRecallLines] = React.useState<any[]>([])
@@ -371,6 +376,7 @@ export function WorkGraphPanel() {
     setMatConds([])
     setMatRecallLines([])
     setMatRecallDoc("")
+    setMatEditId(null)
   }, [workId, loadGraph])
 
   // 増分⑥(§3.4): 原作(licensed_in)を開いたら「利用している自社作品」を逆引き。
@@ -523,6 +529,7 @@ export function WorkGraphPanel() {
     setMatConds([])
     setMatRecallDoc("")
     setMatRecallLines([])
+    setMatEditId(null)
     void loadMatConds(mid)
     // 利用許諾条件書候補を一度だけ取得(登録時に文書を選んで紐づけるため)。
     if (licenseCaps.length === 0) {
@@ -562,6 +569,67 @@ export function WorkGraphPanel() {
       await Promise.all([loadMatConds(mid), loadGraph(workId), recallByDoc()])
     } catch (e) {
       console.error("assignRecalled failed", e)
+    }
+  }
+
+  // 登録済み条件の編集を開始(プリフィル)。
+  const startEditCond = (c: any) => {
+    setMatEditId(c.id)
+    setMatEditErr(null)
+    setMatEditForm({
+      subject: c.subject ?? "",
+      payment_scheme: c.payment_scheme ?? "royalty",
+      rate_pct: c.rate_pct != null ? String(c.rate_pct) : "",
+      mg_amount: c.mg_amount != null ? String(c.mg_amount) : "",
+      ag_amount: c.ag_amount != null ? String(c.ag_amount) : "",
+      amount_ex_tax: c.amount_ex_tax != null ? String(c.amount_ex_tax) : "",
+      rights_attribution: c.rights_attribution ?? "",
+      term_start: c.term_start ? String(c.term_start).slice(0, 10) : "",
+      term_end: c.term_end ? String(c.term_end).slice(0, 10) : "",
+      region_territory: c.region_territory ?? "",
+      region_language: c.region_language ?? "",
+      notes: c.notes ?? "",
+    })
+  }
+  // 編集を保存(PATCH master-condition)。
+  const saveEditCond = async (mid: number) => {
+    if (matEditId == null) return
+    setMatEditSaving(true)
+    setMatEditErr(null)
+    try {
+      const f = matEditForm
+      const body: Record<string, any> = {
+        payment_scheme: f.payment_scheme,
+        subject: f.subject || null,
+        rights_attribution: f.rights_attribution || null,
+        term_start: f.term_start || null,
+        term_end: f.term_end || null,
+        region_territory: f.region_territory || null,
+        region_language: f.region_language || null,
+        notes: f.notes || null,
+      }
+      if (f.payment_scheme === "royalty") {
+        body.rate_pct = f.rate_pct || null
+        body.mg_amount = f.mg_amount || null
+        body.ag_amount = f.ag_amount || null
+      } else if (f.payment_scheme !== "subscription") {
+        body.amount_ex_tax = f.amount_ex_tax || null
+      }
+      const r = await fetch(`/api/v3/condition-lines/${matEditId}/master-condition`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      })
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      setMatEditId(null)
+      await Promise.all([loadMatConds(mid), loadGraph(workId)])
+    } catch (e: any) {
+      setMatEditErr(String(e?.message || e))
+    } finally {
+      setMatEditSaving(false)
     }
   }
 
@@ -1008,14 +1076,63 @@ export function WorkGraphPanel() {
                             <div className="space-y-1">
                               <div className="text-[10px] text-muted-foreground">登録済みの利用許諾条件</div>
                               {matConds.map((c) => (
-                                <div key={c.id} className="text-[10px] border border-border/50 rounded px-1.5 py-1">
-                                  <span className="font-semibold">{c.subject || c.line_code}</span>{" · "}
-                                  {c.payment_scheme === "royalty"
-                                    ? `${c.rate_pct ?? "—"}%${c.mg_amount ? ` MG${yen(c.mg_amount)}` : ""}${c.ag_amount ? ` AG${yen(c.ag_amount)}` : ""}`
-                                    : yen(c.amount_ex_tax) || c.payment_scheme}
-                                  {c.region_language_label && <span className="text-muted-foreground">{" · "}🌐 {c.region_language_label}</span>}
-                                  {c.document_number && <span className="text-muted-foreground/70">{" · "}{c.document_number}</span>}
-                                </div>
+                                matEditId === c.id ? (
+                                  <div key={c.id} className="text-[10px] border border-sky-300 rounded p-1.5 space-y-1.5 bg-sky-50/30">
+                                    <input value={matEditForm.subject ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, subject: e.target.value }))} placeholder="条件名" className="w-full text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground" />
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <NativeSelect value={matEditForm.payment_scheme ?? "royalty"} onChange={(e) => setMatEditForm((f) => ({ ...f, payment_scheme: e.target.value }))} className="h-6 text-[10px] py-0">
+                                        <option value="royalty">ロイヤリティ</option>
+                                        <option value="lump_sum">一括</option>
+                                        <option value="per_unit">単価</option>
+                                        <option value="installment">分割</option>
+                                        <option value="subscription">継続課金</option>
+                                      </NativeSelect>
+                                      {matEditForm.payment_scheme === "royalty" ? (
+                                        <>
+                                          <input value={matEditForm.rate_pct ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, rate_pct: e.target.value }))} placeholder="率%" className="w-14 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                          <input value={matEditForm.mg_amount ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, mg_amount: e.target.value }))} placeholder="MG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                          <input value={matEditForm.ag_amount ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, ag_amount: e.target.value }))} placeholder="AG¥" className="w-20 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                        </>
+                                      ) : matEditForm.payment_scheme !== "subscription" ? (
+                                        <input value={matEditForm.amount_ex_tax ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, amount_ex_tax: e.target.value }))} placeholder="税抜金額¥ *" className="w-28 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                      ) : null}
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <input value={matEditForm.region_territory ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, region_territory: e.target.value }))} placeholder="地域" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                      <input value={matEditForm.region_language ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, region_language: e.target.value }))} placeholder="言語" className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                    </div>
+                                    <div className="flex items-center gap-1.5">
+                                      <input type="date" value={matEditForm.term_start ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, term_start: e.target.value }))} className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                      <span className="text-[10px] text-muted-foreground">〜</span>
+                                      <input type="date" value={matEditForm.term_end ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, term_end: e.target.value }))} className="text-[10px] font-mono border-b border-input bg-transparent py-1" />
+                                      <NativeSelect value={matEditForm.rights_attribution ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, rights_attribution: e.target.value }))} className="h-6 text-[10px] py-0">
+                                        <option value="">権利帰属 —</option>
+                                        <option value="transfer">譲渡</option>
+                                        <option value="retained_license">留保許諾</option>
+                                        <option value="license_only">許諾のみ</option>
+                                        <option value="joint">共有</option>
+                                      </NativeSelect>
+                                    </div>
+                                    <textarea value={matEditForm.notes ?? ""} onChange={(e) => setMatEditForm((f) => ({ ...f, notes: e.target.value }))} placeholder="備考" rows={2} className="w-full text-[10px] font-mono border border-input rounded bg-transparent px-1.5 py-1 focus:outline-none focus:border-foreground" />
+                                    {matEditErr && <p className="text-[10px] text-red-600">{matEditErr}</p>}
+                                    <div className="flex items-center gap-1.5">
+                                      <button type="button" onClick={() => void saveEditCond(m.id)} disabled={matEditSaving} className="text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50">{matEditSaving ? "保存中…" : "保存"}</button>
+                                      <button type="button" onClick={() => setMatEditId(null)} className="text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground">取消</button>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div key={c.id} className="flex items-center justify-between gap-2 text-[10px] border border-border/50 rounded px-1.5 py-1">
+                                    <div className="min-w-0">
+                                      <span className="font-semibold">{c.subject || c.line_code}</span>{" · "}
+                                      {c.payment_scheme === "royalty"
+                                        ? `${c.rate_pct ?? "—"}%${c.mg_amount ? ` MG${yen(c.mg_amount)}` : ""}${c.ag_amount ? ` AG${yen(c.ag_amount)}` : ""}`
+                                        : yen(c.amount_ex_tax) || c.payment_scheme}
+                                      {c.region_language_label && <span className="text-muted-foreground">{" · "}🌐 {c.region_language_label}</span>}
+                                      {c.document_number && <span className="text-muted-foreground/70">{" · "}{c.document_number}</span>}
+                                    </div>
+                                    <button type="button" onClick={() => startEditCond(c)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">編集</button>
+                                  </div>
+                                )
                               ))}
                             </div>
                           )}

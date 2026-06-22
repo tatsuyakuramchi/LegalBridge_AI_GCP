@@ -1293,6 +1293,60 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 登録済み利用許諾条件の編集。condition_line のスカラ項目を更新し、地域は cfc を更新/なければ作成。
+  //   器(capability)/採番/source_work_id/source_material_id は不変。
+  app.patch("/api/v3/condition-lines/:id/master-condition", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const scheme = String(b.payment_scheme || "");
+      const SCHEMES = ["lump_sum", "per_unit", "installment", "subscription", "royalty"];
+      if (!SCHEMES.includes(scheme)) return res.status(400).json({ ok: false, error: "payment_scheme is invalid" });
+      const num = (v: any) => (v == null || v === "" ? null : Number(v));
+      const amount = num(b.amount_ex_tax);
+      const rate = num(b.rate_pct);
+      const mg = num(b.mg_amount);
+      const ag = num(b.ag_amount);
+      if (!["subscription", "royalty"].includes(scheme) && amount == null) {
+        return res.status(400).json({ ok: false, error: "この支払方式では税抜金額(amount_ex_tax)が必須です" });
+      }
+      if (scheme !== "royalty" && (rate != null || mg != null || ag != null)) {
+        return res.status(400).json({ ok: false, error: "rate/MG/AG は royalty のときのみ指定できます" });
+      }
+      const upd = await query(
+        `UPDATE condition_lines SET subject = $2, payment_scheme = $3, amount_ex_tax = $4, rate_pct = $5,
+                mg_amount = $6, ag_amount = $7, rights_attribution = $8, term_start = $9, term_end = $10,
+                notes = $11, updated_at = now()
+          WHERE id = $1 RETURNING capability_id, source_condition_id`,
+        [id, b.subject ?? null, scheme, amount, rate, mg, ag, b.rights_attribution ?? null,
+         b.term_start ?? null, b.term_end ?? null, b.notes ?? null]
+      );
+      if (upd.rowCount === 0) return res.status(404).json({ ok: false, error: "condition_line not found" });
+      const capabilityId = upd.rows[0].capability_id as number;
+      const scid = upd.rows[0].source_condition_id as number | null;
+      const territory = b.region_territory ? String(b.region_territory) : null;
+      const language = b.region_language ? String(b.region_language) : null;
+      const label = [territory, language].filter(Boolean).join("・") || null;
+      if (scid != null) {
+        await query(
+          `UPDATE capability_financial_conditions SET region_territory = $2, region_language = $3, region_language_label = $4 WHERE id = $1`,
+          [scid, territory, language, label]
+        );
+      } else if (territory || language) {
+        const cfc = await query(
+          `INSERT INTO capability_financial_conditions
+             (capability_id, condition_no, region_territory, region_language, region_language_label)
+           SELECT $1, COALESCE((SELECT MAX(condition_no) + 1 FROM capability_financial_conditions WHERE capability_id = $1), 1),
+                  $2, $3, $4 RETURNING id`,
+          [capabilityId, territory, language, label]
+        );
+        await query(`UPDATE condition_lines SET source_condition_id = $2 WHERE id = $1`, [id, cfc.rows[0].id]);
+      }
+      res.json({ ok: true, id });
+    } catch (e) { fail(res, e); }
+  });
+
   // N:N活性化 Stage3: 加算結線 — この作品へ condition_line を中間表で結ぶ(共有=他作品の結線は消さない)。
   app.post("/api/v3/works/:workId/component-lines", ...requireWrite, express.json(), async (req, res) => {
     try {
