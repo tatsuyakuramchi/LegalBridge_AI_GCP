@@ -64,11 +64,9 @@ async function syncWorkComponentLink(query: Query, lineId: number): Promise<void
   const componentId = comp.rows[0]?.id as number | undefined;
   if (componentId == null) return;
 
-  // 付替え対応: この明細が指していた別コンポーネントのリンクを除去してから現行を張る。
-  await query(
-    `DELETE FROM work_component_lines WHERE condition_line_id = $1 AND component_id <> $2`,
-    [lineId, componentId]
-  );
+  // Stage4 経路一本化: 「他コンポーネントのリンク除去」は撤廃(加算 N:N に統一)。
+  //   同一明細を複数作品で共有する結線をピッカー(linkWorkComponent)が張っても、⑧ attach-work が
+  //   それを壊さないようにする。この明細ぶんの当該コンポーネント結線を冪等に足すだけ。
   await query(
     `INSERT INTO work_component_lines (component_id, condition_line_id)
        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
