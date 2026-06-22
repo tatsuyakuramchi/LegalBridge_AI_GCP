@@ -426,8 +426,10 @@ export function registerWorkModelRoutes(
   //   原作IDの LO 統一: 採番を IP- → **LO-YYYY-NNNN** に変更 (設計書 §7/§9, 移行 0075 と同思想)。
   //   - LO 番号は ledgers ∪ works の当年最大 +1。worker(document_sequences) と別カウンタだが
   //     両表の実コードから直接導出するため、既存 LO とは衝突しない。
-  //   - 1文(CTE)で works + ledgers(LO) + 素材 -001 ミラーを原子的に作成
-  //     (このルートは pool 直結を持たず query() のみのため、トランザクションを単一文で表現)。
+  //   - 1文(CTE)で works + ledgers(LO) + materials(台帳 -001) + work_materials(works系 -001) を
+  //     原子的に作成(このルートは pool 直結を持たず query() のみのため単一文で表現)。
+  //   - work_materials も作るのは、新規原作がピッカー/利用許諾条件登録の素材候補(work_materials 依存)
+  //     に出るようにするため(従来は台帳 materials のみで空になっていた)。
   //   - 既存IP原作は移行 0075 で LO 再採番済み。本変更で新規も LO に統一。
   //   注: worker 側 LedgersPanel 作成は引き続き document_sequences(LO)。採番系統の完全集約は §9.3。
   app.post("/api/v3/source-ips", ...requireWrite, express.json(), async (req, res) => {
@@ -467,6 +469,15 @@ export function registerWorkModelRoutes(
            INSERT INTO materials (ledger_id, material_no, material_code, material_name, is_default, is_active)
            SELECT (SELECT id FROM ins_ledger), 1, (SELECT c FROM newcode) || '-001', $2, true, true
            WHERE EXISTS (SELECT 1 FROM ins_ledger)
+           RETURNING id
+         ),
+         ins_work_mat AS (
+           -- works 系の素材も同時に作る(新規原作がピッカー/条件登録の素材候補に出るように)。
+           --   従来は materials(台帳)のみで work_materials が無く、新規原作の素材が空になっていた。
+           INSERT INTO work_materials (work_id, material_no, material_code, material_name,
+               material_type, is_default, acquisition_type, rights_holder_vendor_id)
+           SELECT (SELECT id FROM ins_work), 1, (SELECT c FROM newcode) || '-001', $2,
+                  'original', true, 'license', $6
            RETURNING id
          )
          SELECT * FROM ins_work`,
