@@ -638,6 +638,12 @@ export const LineItemTable: React.FC<Props> = ({
                       ...(e.target.value === "SUBSCRIPTION" && !it.cycle
                         ? { cycle: "MONTHLY" as const }
                         : {}),
+                      // ROYALTY 切替時、計算式方法が未設定なら表示デフォルト(製造)を
+                      // 明示的に永続化する。未設定のまま送信されると PDF が
+                      // フォールバック表示になり、フォーム表示と食い違うため。
+                      ...(e.target.value === "ROYALTY" && !it.royalty_calc_basis
+                        ? { royalty_calc_basis: "manufacturing" as const }
+                        : {}),
                     })
                   }
                   disabled={readOnly}

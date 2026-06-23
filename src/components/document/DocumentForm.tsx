@@ -609,25 +609,26 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId, formData.items]);
 
-  // 発注書: 受注者帰属の明細を「共通の利用許諾条件」(formData.financial_conditions)
-  //   に紐づける。条件が無ければ1本シードし、適用範囲(applies_scope)を受注者帰属
-  //   明細名から自動補完する。旧 per-line 条件を持つ既存発注書は、最初の受注者明細の
+  // 発注書: 利用許諾料(ROYALTY)明細を「共通の利用許諾条件」(formData.financial_conditions)
+  //   に紐づける。条件が無ければ1本シードし、適用範囲(applies_scope)をROYALTY
+  //   明細名から自動補完する。旧 per-line 条件を持つ既存発注書は、最初のROYALTY明細の
   //   条件フィールドから移行する(後方互換)。
+  //   3b: 帰属ではなく支払方法(ROYALTY)で駆動。②発注者×ROYALTYも対象。
   useEffect(() => {
     if (templateId !== 'purchase_order' && templateId !== 'intl_purchase_order')
       return;
     const items: any[] = Array.isArray(formData.items) ? formData.items : [];
     const ownerItems = items.filter(
-      (it) => it?.deliverable_ownership === '受注者'
+      (it) => it?.calc_method === 'ROYALTY'
     );
-    if (ownerItems.length === 0) return; // 受注者帰属が無ければ何もしない
+    if (ownerItems.length === 0) return; // ROYALTY明細が無ければ何もしない
     const scopeNames = ownerItems
       .map((it) => it.condition_name || it.item_name)
       .filter(Boolean)
       .join('、');
     const defaultScope = scopeNames
-      ? `本発注の受注者帰属成果物（${scopeNames}）`
-      : '本発注の受注者帰属成果物';
+      ? `本発注の利用許諾料（ROYALTY）成果物（${scopeNames}）`
+      : '本発注の利用許諾料（ROYALTY）成果物';
     const conds: any[] = Array.isArray(formData.financial_conditions)
       ? formData.financial_conditions
       : [];
@@ -1741,8 +1742,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 // 受注者帰属(利用許諾料)は確定額外なので合計には不算入(amount_ex_tax=0)。
                 grandTotalExTax: itemsTotal + feesTotal,
                 // 利用許諾条件セクション(発注書)の表示要否フラグ。
+                // 3b: 帰属ではなく支払方法(ROYALTY)で駆動。②発注者×ROYALTYも含む。
                 has_license_conditions: items.some(
-                  (it) => it.deliverable_ownership === '受注者'
+                  (it) => it.calc_method === 'ROYALTY'
                 ),
               });
             }}
@@ -1750,24 +1752,25 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           />
         </FormSection>
 
-        {/* 5-L. 利用許諾条件（共通）— 受注者帰属の成果物に適用する利用許諾条件を
-            1本(複数も可)で定義する。各受注者帰属明細は「この共通条件の対象」となり、
-            条件の「適用範囲」に該当明細名が自動補完される。確定額(業務委託小計)には
-            含まれず、利用許諾料計算書・分配に連動する。 */}
+        {/* 5-L. 利用許諾条件（共通）— 利用許諾料(ROYALTY)明細に適用する利用許諾条件を
+            1本(複数も可)で定義する。各ROYALTY明細は「この共通条件の対象」となり、
+            条件の「適用範囲」に該当明細名が自動補完される。確定額(小計)には
+            含まれず、利用許諾料計算書・分配に連動する。
+            3b: 帰属ではなく支払方法(ROYALTY)で駆動。②発注者×ROYALTYも対象。 */}
         {Array.isArray(formData.items) &&
           formData.items.some(
-            (it: any) => it?.deliverable_ownership === '受注者'
+            (it: any) => it?.calc_method === 'ROYALTY'
           ) && (
             <FormSection
-              title="5-L. 利用許諾条件（共通）— 受注者帰属の成果物に適用"
+              title="5-L. 利用許諾条件（共通）— 利用許諾料（ROYALTY）明細に適用"
               variant="amber"
               icon={<Coins className="w-4 h-4" />}
             >
               <div className="mb-2 text-[11px] font-mono text-amber-800 bg-amber-50 border border-amber-200 rounded-sm px-3 py-2 leading-relaxed">
-                受注者帰属（利用許諾）にした成果物:{' '}
+                利用許諾料（ROYALTY）にした成果物:{' '}
                 <strong>
                   {formData.items
-                    .filter((it: any) => it?.deliverable_ownership === '受注者')
+                    .filter((it: any) => it?.calc_method === 'ROYALTY')
                     .map((it: any) => it.condition_name || it.item_name)
                     .filter(Boolean)
                     .join('、') || '（品目名未入力）'}
