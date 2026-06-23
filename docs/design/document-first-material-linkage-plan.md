@@ -141,7 +141,7 @@
 - `ledger_ref_id`（原作。台帳id。Stage 0 で work_materials とコード同期済）
 - `condition_material_codes`：`{ [condition_no]: material_code | "" }`。空=その条件の件名で新規 work_material を作成、コード指定=既存 work_material を共有
 - `financial_conditions[]`：各条件の `condition_no` / `condition_name`(件名) / `calc_type`(→payment_scheme: BASE_*=royalty / FIXED=lump_sum=買切 / SUBSCRIPTION) / 料率・固定額
-| 2 | 保存経路で 各条件→`work_materials`解決/生成→`condition_lines`に source_work_id/source_material_id/work_id 結線→`work_components`＋`work_component_lines` ensure | server.ts（文書保存）/ conditionSync | ✅ 個別利用許諾条件書(individual_license_terms)で実装。再発行は既存素材を再利用(冪等)。残: 発注書/出版等の保存経路へ展開・台帳materialsへのミラー |
+| 2 | 保存経路で 各条件→`work_materials`解決/生成→`condition_lines`に source_work_id/source_material_id/work_id 結線→`work_components`＋`work_component_lines` ensure | server.ts（文書保存）/ conditionSync | ✅ 共通ヘルパ `linkWorkMaterialsForCapability` を実装し 個別利用許諾条件書＋発注書(受注者帰属の利用許諾条件)で適用。再発行は既存素材を再利用(冪等)。残: 出版等の保存経路へ展開／発注書 買切(発注者帰属)line_item の素材化／台帳materialsへのミラー |
 | 3 | `payment_scheme`（royalty / lump_sum 等）を明細の対価方式から確定。**ロイヤリティ計算/残高管理は royalty 系のみ走らせる**（買切固定額=lump_sum は固定額記録のみ）。マテリアル/条件明細/構成リンクの生成は全ケース共通。rights_type はマテリアルに記録のみ | DocumentForm.tsx / server.ts | ⬜ |
 | 4 | 既存文書（capability単位 ledger_ref_id/material_ref_id）からの移行・後方互換 | migration（冪等） | ⬜ |
 

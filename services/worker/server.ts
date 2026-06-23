@@ -5576,6 +5576,144 @@ ${details}
   }
 
   /**
+   * Stage 2(文書ファースト 原作マテリアル紐付けプラン): 作品連動 ON の文書保存で、
+   *   各利用許諾条件 → 原作マテリアル を結線し、対象作品(own)の構成へ組み込む共通ヘルパ。
+   *   個別利用許諾条件書 / 発注書(受注者帰属の利用許諾条件) など、
+   *   capability_financial_conditions → condition_lines 経路を持つ文書で共用する。
+   *
+   *   - マテリアル: conditionMaterialCodes に既存コードがあれば原作配下の work_materials を再利用、
+   *     無ければ件名で新規作成({原作code}-NNN 採番。Stage 0 で台帳とコード同期済)。
+   *   - condition_line(source_condition_id 経由で condition_no と対応)に
+   *     source_work_id(原作)/source_material_id/work_id(対象作品)を結線。
+   *   - 対象作品があれば work_components + work_component_lines を ensure(N:N)。
+   *   - 再発行の二重生成防止: 既にこの明細へ紐付く原作素材があれば再利用(冪等)。
+   *   設計: docs/design/document-first-material-linkage-plan.md
+   */
+  async function linkWorkMaterialsForCapability(opts: {
+    capabilityId: number;
+    ledgerCode: string | null | undefined;
+    ownWorkId: number | null;
+    conditionMaterialCodes: Record<string, string>;
+    financialConditions: any[];
+  }): Promise<number> {
+    const { capabilityId, ledgerCode, ownWorkId, conditionMaterialCodes, financialConditions } = opts;
+    if (!capabilityId || !ledgerCode || !Array.isArray(financialConditions)) return 0;
+    let linked = 0;
+    const srcRes = await query(
+      `SELECT id FROM works WHERE work_code = $1 AND kind = 'licensed_in' LIMIT 1`,
+      [ledgerCode]
+    );
+    const origWorkId = srcRes.rows[0]?.id ? Number(srcRes.rows[0].id) : null;
+    if (!origWorkId) return 0;
+
+    // この文書の各金銭条件 → 生成された condition_line を condition_no で対応付け。
+    const clRes = await query(
+      `SELECT cl.id AS line_id, cfc.condition_no
+         FROM capability_financial_conditions cfc
+         JOIN condition_lines cl ON cl.source_condition_id = cfc.id
+        WHERE cfc.capability_id = $1`,
+      [capabilityId]
+    );
+    const lineByNo = new Map<number, number>();
+    for (const r of clRes.rows) lineByNo.set(Number(r.condition_no), Number(r.line_id));
+
+    const cmCodes = conditionMaterialCodes || {};
+    for (const c of financialConditions) {
+      const condNo = Number(c?.condition_no);
+      if (!Number.isFinite(condNo) || condNo < 1) continue;
+      const lineId = lineByNo.get(condNo);
+      if (!lineId) continue;
+
+      // マテリアル解決: 指定コード=既存 / 未指定=件名で新規(原作配下)。
+      const pickedCode = String(cmCodes[String(condNo)] || "").trim();
+      let materialId: number | null = null;
+      if (pickedCode) {
+        const mr = await query(
+          `SELECT id FROM work_materials WHERE work_id = $1 AND material_code = $2 LIMIT 1`,
+          [origWorkId, pickedCode]
+        );
+        materialId = mr.rows[0]?.id ? Number(mr.rows[0].id) : null;
+      }
+      if (!materialId) {
+        // 再発行(再保存)の二重生成防止: 既にこの明細へ紐付く原作素材があれば再利用。
+        const cur = await query(
+          `SELECT source_material_id FROM condition_lines WHERE id = $1`,
+          [lineId]
+        );
+        const exMat = cur.rows[0]?.source_material_id
+          ? Number(cur.rows[0].source_material_id)
+          : null;
+        if (exMat) {
+          const chk = await query(
+            `SELECT id FROM work_materials WHERE id = $1 AND work_id = $2 LIMIT 1`,
+            [exMat, origWorkId]
+          );
+          if (chk.rows[0]) materialId = exMat;
+        }
+      }
+      if (!materialId) {
+        const name =
+          (c.condition_name && String(c.condition_name).trim()) || `条件${condNo}`;
+        // FIXED=買切固定額=ロイヤリティ計算なし。それ以外(royalty/subscription)は対象。
+        const isRoyalty = c.calc_type !== "FIXED";
+        const noRes = await query(
+          `SELECT COALESCE(MAX(material_no), 0) + 1 AS n FROM work_materials WHERE work_id = $1`,
+          [origWorkId]
+        );
+        const nextNo = Number(noRes.rows[0]?.n || 1);
+        const matCode = `${ledgerCode}-${String(nextNo).padStart(3, "0")}`;
+        const ins = await query(
+          `INSERT INTO work_materials (
+             work_id, material_no, material_code, material_name,
+             material_type, rights_type, is_royalty_bearing, acquisition_type
+           ) VALUES ($1, $2, $3, $4, 'derivative', 'license', $5, 'license')
+           RETURNING id`,
+          [origWorkId, nextNo, matCode, name, isRoyalty]
+        );
+        materialId = ins.rows[0]?.id ? Number(ins.rows[0].id) : null;
+      }
+      if (!materialId) continue;
+
+      // condition_line に 原作 / 素材 / 対象作品 を結線(フラット列)。
+      await query(
+        `UPDATE condition_lines
+            SET source_work_id = $2,
+                source_material_id = $3,
+                work_id = COALESCE($4, work_id),
+                updated_at = now()
+          WHERE id = $1`,
+        [lineId, origWorkId, materialId, ownWorkId]
+      );
+
+      // 作品構成(N:N): 対象作品があれば work_components + work_component_lines を ensure。
+      if (ownWorkId) {
+        await query(
+          `INSERT INTO work_components (work_id, component_no, component_kind, material_id)
+             SELECT $1,
+                    COALESCE((SELECT MAX(component_no) + 1 FROM work_components WHERE work_id = $1), 1),
+                    'material', $2
+           ON CONFLICT (work_id, material_id) WHERE material_id IS NOT NULL DO NOTHING`,
+          [ownWorkId, materialId]
+        );
+        const comp = await query(
+          `SELECT id FROM work_components WHERE work_id = $1 AND material_id = $2 LIMIT 1`,
+          [ownWorkId, materialId]
+        );
+        const compId = comp.rows[0]?.id ? Number(comp.rows[0].id) : null;
+        if (compId) {
+          await query(
+            `INSERT INTO work_component_lines (component_id, condition_line_id)
+               VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+            [compId, lineId]
+          );
+        }
+      }
+      linked++;
+    }
+    return linked;
+  }
+
+  /**
    * Phase 22.21.112: 契約マスタの業務明細 (capability_line_items) を
    *   配列で受け取って upsert する。upsertCapabilityFinancialConditions と
    *   同じ semantics:
@@ -14045,6 +14183,8 @@ ${details}
                 : ct === "BASE_QTY_RATE" || ct === "BASE_RATE"
                   ? "ROYALTY"
                   : fallback || null;
+          // Stage 2: 作品連動で原作マテリアルへ結線する、実際に保存した利用許諾条件の集合。
+          let poLinkConds: any[] = [];
           if (commonConds.length > 0 && licenseItems.length > 0) {
             const mappedCommon = commonConds.map((c: any, i: number) => ({
               condition_no: Number(c.condition_no) || i + 1,
@@ -14072,6 +14212,7 @@ ${details}
             }));
             try {
               await upsertCapabilityFinancialConditions(orderItemId, mappedCommon);
+              poLinkConds = mappedCommon;
             } catch (condErr) {
               console.warn("[license] 共通利用許諾条件 sync skipped:", condErr);
             }
@@ -14100,12 +14241,36 @@ ${details}
             }));
             try {
               await upsertCapabilityFinancialConditions(orderItemId, mappedConds);
+              poLinkConds = mappedConds;
             } catch (condErr) {
               console.warn(
                 "[deliverable_ownership] 受注者帰属→金銭条件 sync skipped:",
                 condErr
               );
             }
+          }
+
+          // Stage 2(文書ファースト紐付け): 発注書(受注者帰属の利用許諾条件)も作品連動 ON のとき
+          //   原作マテリアルへ結線し対象作品の構成へ組み込む。原作は capability の ledger_code で解決。
+          //   買切(発注者帰属)成果物の line_item→マテリアル化は別途(設計メモ §残)。best-effort。
+          if (formData.is_work_linked !== false && orderItemId && poLinkConds.length > 0) {
+            await safeSync("work-linkage(order)", () =>
+              linkWorkMaterialsForCapability({
+                capabilityId: orderItemId,
+                ledgerCode: formData.ledger_code || null,
+                ownWorkId:
+                  formData.linked_work_id != null &&
+                  String(formData.linked_work_id).trim() !== "" &&
+                  Number.isFinite(Number(formData.linked_work_id))
+                    ? Number(formData.linked_work_id)
+                    : null,
+                conditionMaterialCodes: (formData.condition_material_codes || {}) as Record<
+                  string,
+                  string
+                >,
+                financialConditions: poLinkConds,
+              })
+            );
           }
 
           // 方向(in/out)を明細にも反映(capability と揃える)。out は請求台帳へ自動取込。
@@ -14625,151 +14790,28 @@ ${details}
           );
         }
 
-        // Stage 2(文書ファースト 原作マテリアル紐付けプラン): 作品連動 ON のとき、
-        //   各利用許諾条件 → 原作マテリアル を結線し、対象作品(own)の構成へ組み込む。
-        //   - マテリアル: condition_material_codes に既存コードがあれば再利用、無ければ件名で新規作成
-        //     (原作 works(licensed_in) 配下の work_materials。Stage 0 で台帳とコード同期済)。
-        //   - condition_line(source_condition_id 経由で condition_no と対応)に
-        //     source_work_id(原作)/source_material_id/work_id(対象作品)を結線。
-        //   - 対象作品があれば work_components + work_component_lines を ensure(N:N)。
-        //   設計: docs/design/document-first-material-linkage-plan.md
-        //   全て best-effort(非致命)。失敗しても文書生成は継続する。
-        if (
-          formData.is_work_linked !== false &&
-          lcId &&
-          ledgerCodeForWork &&
-          Array.isArray(formData.financial_conditions)
-        ) {
-          try {
-            const srcRes = await query(
-              `SELECT id FROM works WHERE work_code = $1 AND kind = 'licensed_in' LIMIT 1`,
-              [ledgerCodeForWork]
-            );
-            const origWorkId = srcRes.rows[0]?.id ? Number(srcRes.rows[0].id) : null;
-            const ownWorkId =
-              formData.linked_work_id != null &&
-              String(formData.linked_work_id).trim() !== "" &&
-              Number.isFinite(Number(formData.linked_work_id))
-                ? Number(formData.linked_work_id)
-                : null;
-            if (origWorkId) {
-              // この文書の各金銭条件 → 生成された condition_line を condition_no で対応付け。
-              const clRes = await query(
-                `SELECT cl.id AS line_id, cfc.condition_no
-                   FROM capability_financial_conditions cfc
-                   JOIN condition_lines cl ON cl.source_condition_id = cfc.id
-                  WHERE cfc.capability_id = $1`,
-                [lcId]
-              );
-              const lineByNo = new Map<number, number>();
-              for (const r of clRes.rows)
-                lineByNo.set(Number(r.condition_no), Number(r.line_id));
-
-              const cmCodes = (formData.condition_material_codes || {}) as Record<
+        // Stage 2(文書ファースト 原作マテリアル紐付けプラン): 作品連動 ON のとき、各利用許諾条件を
+        //   原作マテリアルへ結線し対象作品(own)の構成へ組み込む(共通ヘルパ)。best-effort・非致命。
+        if (formData.is_work_linked !== false && lcId) {
+          await safeSync("work-linkage(license)", () =>
+            linkWorkMaterialsForCapability({
+              capabilityId: lcId,
+              ledgerCode: ledgerCodeForWork,
+              ownWorkId:
+                formData.linked_work_id != null &&
+                String(formData.linked_work_id).trim() !== "" &&
+                Number.isFinite(Number(formData.linked_work_id))
+                  ? Number(formData.linked_work_id)
+                  : null,
+              conditionMaterialCodes: (formData.condition_material_codes || {}) as Record<
                 string,
                 string
-              >;
-              for (const c of formData.financial_conditions) {
-                const condNo = Number(c?.condition_no);
-                if (!Number.isFinite(condNo) || condNo < 1) continue;
-                const lineId = lineByNo.get(condNo);
-                if (!lineId) continue;
-
-                // マテリアル解決: 指定コード=既存 / 未指定=件名で新規(原作配下)。
-                const pickedCode = String(cmCodes[String(condNo)] || "").trim();
-                let materialId: number | null = null;
-                if (pickedCode) {
-                  const mr = await query(
-                    `SELECT id FROM work_materials
-                      WHERE work_id = $1 AND material_code = $2 LIMIT 1`,
-                    [origWorkId, pickedCode]
-                  );
-                  materialId = mr.rows[0]?.id ? Number(mr.rows[0].id) : null;
-                }
-                if (!materialId) {
-                  // 再発行(再保存)の二重生成防止: 既にこの明細へ紐付く原作素材があれば再利用。
-                  const cur = await query(
-                    `SELECT source_material_id FROM condition_lines WHERE id = $1`,
-                    [lineId]
-                  );
-                  const exMat = cur.rows[0]?.source_material_id
-                    ? Number(cur.rows[0].source_material_id)
-                    : null;
-                  if (exMat) {
-                    const chk = await query(
-                      `SELECT id FROM work_materials WHERE id = $1 AND work_id = $2 LIMIT 1`,
-                      [exMat, origWorkId]
-                    );
-                    if (chk.rows[0]) materialId = exMat;
-                  }
-                }
-                if (!materialId) {
-                  const name =
-                    (c.condition_name && String(c.condition_name).trim()) ||
-                    `条件${condNo}`;
-                  // FIXED=買切固定額=ロイヤリティ計算なし。それ以外(royalty/subscription)は対象。
-                  const isRoyalty = c.calc_type !== "FIXED";
-                  const noRes = await query(
-                    `SELECT COALESCE(MAX(material_no), 0) + 1 AS n
-                       FROM work_materials WHERE work_id = $1`,
-                    [origWorkId]
-                  );
-                  const nextNo = Number(noRes.rows[0]?.n || 1);
-                  const matCode = `${ledgerCodeForWork}-${String(nextNo).padStart(3, "0")}`;
-                  const ins = await query(
-                    `INSERT INTO work_materials (
-                       work_id, material_no, material_code, material_name,
-                       material_type, rights_type, is_royalty_bearing, acquisition_type
-                     ) VALUES ($1, $2, $3, $4, 'derivative', 'license', $5, 'license')
-                     RETURNING id`,
-                    [origWorkId, nextNo, matCode, name, isRoyalty]
-                  );
-                  materialId = ins.rows[0]?.id ? Number(ins.rows[0].id) : null;
-                }
-                if (!materialId) continue;
-
-                // condition_line に 原作 / 素材 / 対象作品 を結線(フラット列)。
-                await query(
-                  `UPDATE condition_lines
-                      SET source_work_id = $2,
-                          source_material_id = $3,
-                          work_id = COALESCE($4, work_id),
-                          updated_at = now()
-                    WHERE id = $1`,
-                  [lineId, origWorkId, materialId, ownWorkId]
-                );
-
-                // 作品構成(N:N): 対象作品があれば work_components + work_component_lines を ensure。
-                if (ownWorkId) {
-                  await query(
-                    `INSERT INTO work_components (work_id, component_no, component_kind, material_id)
-                       SELECT $1,
-                              COALESCE((SELECT MAX(component_no) + 1 FROM work_components WHERE work_id = $1), 1),
-                              'material', $2
-                     ON CONFLICT (work_id, material_id) WHERE material_id IS NOT NULL DO NOTHING`,
-                    [ownWorkId, materialId]
-                  );
-                  const comp = await query(
-                    `SELECT id FROM work_components WHERE work_id = $1 AND material_id = $2 LIMIT 1`,
-                    [ownWorkId, materialId]
-                  );
-                  const compId = comp.rows[0]?.id ? Number(comp.rows[0].id) : null;
-                  if (compId) {
-                    await query(
-                      `INSERT INTO work_component_lines (component_id, condition_line_id)
-                         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-                      [compId, lineId]
-                    );
-                  }
-                }
-              }
-            }
-          } catch (e: any) {
-            console.warn(
-              `[work-linkage] failed for issue ${issueKey}:`,
-              e?.message || e
-            );
-          }
+              >,
+              financialConditions: Array.isArray(formData.financial_conditions)
+                ? formData.financial_conditions
+                : [],
+            })
+          );
         }
 
         // Phase 22.20-D: work_sublicensees (Work × サブライセンシー) を永続化
