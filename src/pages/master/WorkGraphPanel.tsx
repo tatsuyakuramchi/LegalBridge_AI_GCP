@@ -960,15 +960,21 @@ export function WorkGraphPanel() {
                     <span className="text-emerald-700">◦ マテリアル</span>{" "}
                     {g.matCode || ""} {g.matName || (g.matCode ? "" : "（未設定）")}
                   </div>
-                  <div className="space-y-0.5 pt-0.5 border-t border-border/50">
+                  <div className="space-y-1 pt-0.5 border-t border-border/50">
                     {g.edges.map((e) => (
-                      <div key={e.id} className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                        <span className="truncate">{e.subject || e.line_code || `条件#${e.id}`}</span>
-                        <span className="shrink-0 font-semibold text-foreground/80">
-                          {e.payment_scheme === "royalty"
-                            ? e.rate_pct != null ? `${e.rate_pct}%` : "—"
-                            : e.amount_ex_tax != null ? yen(e.amount_ex_tax) : "—"}
-                        </span>
+                      <div key={e.id} className="space-y-0.5">
+                        <div className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                          <span className="truncate">{e.subject || e.line_code || `条件#${e.id}`}</span>
+                          <span className="shrink-0 font-semibold text-foreground/80">
+                            {e.payment_scheme === "royalty"
+                              ? e.rate_pct != null ? `${e.rate_pct}%` : "—"
+                              : e.amount_ex_tax != null ? yen(e.amount_ex_tax) : "—"}
+                          </span>
+                        </div>
+                        {/* 相手方(支払先の取引先)。誰に利用料を払うかを明示し、3者の関係を補強する。 */}
+                        <div className="text-[10px] text-amber-700 truncate">
+                          相手方: {e.counterparty || "（未設定）"}
+                        </div>
                       </div>
                     ))}
                   </div>
@@ -1196,6 +1202,7 @@ export function WorkGraphPanel() {
                           <span className="truncate">
                             <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
                             {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
+                            {m.rights_holder && <span className="text-[10px] text-amber-700"> · 権利者: {m.rights_holder}</span>}
                           </span>
                           <span className="text-[10px] text-sky-700 shrink-0">
                             {matCondOpen === m.id ? "▲ 閉じる" : "利用許諾条件 ▾"}
@@ -1205,6 +1212,7 @@ export function WorkGraphPanel() {
                         <div className="px-2 py-1">
                           <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
                           {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
+                          {m.rights_holder && <span className="text-[10px] text-amber-700"> · 権利者: {m.rights_holder}</span>}
                         </div>
                       )}
                       {isSource && matCondOpen === m.id && (
@@ -1435,6 +1443,8 @@ export function WorkGraphPanel() {
                     {l.payment_scheme === "royalty"
                       ? l.rate_pct != null && <span className="text-muted-foreground">{l.rate_pct}%</span>
                       : l.amount_ex_tax != null && <span className="text-muted-foreground">{yen(l.amount_ex_tax)}</span>}
+                    {/* 相手方(この条件で利用料を払う取引先) */}
+                    {l.counterparty && <span className="text-[10px] text-amber-700">相手方: {l.counterparty}</span>}
                   </div>
                   {l.linked_here ? (
                     <div className="text-[10px] text-muted-foreground/80 truncate">
@@ -1452,7 +1462,7 @@ export function WorkGraphPanel() {
                         <option value="">— マテリアルを選択 —</option>
                         {pickerMaterials.map((m) => (
                           <option key={m.id} value={m.id}>
-                            {m.material_code || "—"} {m.material_name || ""}
+                            {m.material_code || "—"} {m.material_name || ""}{m.rights_holder_name ? `（権利者: ${m.rights_holder_name}）` : ""}
                           </option>
                         ))}
                       </NativeSelect>

@@ -191,8 +191,13 @@ export function registerWorkModelRoutes(
         [id]
       );
       if (s.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      // 権利者(取引先)名を併せて返す。原作=複数マテリアル(権利者が異なりうる)を
+      //   作品エディタのピッカーで「誰の権利か」と分かるようにするため。
       const mats = await query(
-        `SELECT * FROM work_materials WHERE work_id = $1 ORDER BY id ASC`,
+        `SELECT wm.*, v.vendor_name AS rights_holder_name
+           FROM work_materials wm
+           LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
+          WHERE wm.work_id = $1 ORDER BY wm.id ASC`,
         [id]
       );
       res.json({ ...s.rows[0], materials: mats.rows });
@@ -1129,6 +1134,7 @@ export function registerWorkModelRoutes(
         `SELECT cl.id, cl.line_code, cl.subject, cl.direction, cl.transaction_kind,
                 cl.payment_scheme, cl.amount_ex_tax, cl.rate_pct,
                 cl.source_material_id, wm.material_code, wm.material_name,
+                cl.counterparty_vendor_id, v.vendor_name AS counterparty,
                 cc.document_number, cc.contract_title,
                 EXISTS (
                   SELECT 1 FROM work_component_lines wcl
@@ -1138,6 +1144,7 @@ export function registerWorkModelRoutes(
            FROM condition_lines cl
            JOIN contract_capabilities cc ON cc.id = cl.capability_id
            LEFT JOIN work_materials wm ON wm.id = cl.source_material_id
+           LEFT JOIN vendors v ON v.id = cl.counterparty_vendor_id
           WHERE cl.source_work_id = $1
           ORDER BY wm.material_no NULLS LAST, cl.line_no, cl.id`,
         [id, workId]
