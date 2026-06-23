@@ -5647,6 +5647,21 @@ ${details}
         [origWorkId, nextNo, matCode, o.name, o.rightsType, o.isRoyaltyBearing, o.acquisitionType]
       );
       materialId = ins.rows[0]?.id ? Number(ins.rows[0].id) : null;
+      // 台帳(materials)へも逆ミラー(フォームの素材ドロップダウン候補に出すため)。
+      //   Stage 0 は台帳→work_materials の片方向。ここは work_materials→台帳 を同コードで補完。
+      //   ledger_code で台帳を解決し material_code で冪等。best-effort(失敗は無視)。
+      try {
+        await query(
+          `INSERT INTO materials (ledger_id, material_no, material_code, material_name, material_type, is_default)
+             SELECT l.id, $2, $3, $4, 'derivative', FALSE
+               FROM ledgers l
+              WHERE l.ledger_code = $1
+                AND NOT EXISTS (SELECT 1 FROM materials m WHERE m.material_code = $3)`,
+          [ledgerCode, nextNo, matCode, o.name]
+        );
+      } catch (e: any) {
+        console.warn(`[work-linkage] ledger materials mirror skipped for ${matCode}:`, e?.message || e);
+      }
     }
     if (!materialId) return false;
 
