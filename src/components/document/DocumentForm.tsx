@@ -1355,11 +1355,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
 
         {/* IV. 対象作品・期間 */}
         <FormSection title="5. 共通入力事項 — 対象作品・期間" variant="emerald" icon={<Scale className="w-4 h-4" />}>
-          {/* 対象作品名(原著作物名)を自社作品マスタ(works)から引用するセレクタ。
-              選択すると下の「原著作物名」フィールドに作品名を反映する。 */}
+          {/* 自社作品マスタ(works)から作品名を引用し「対象製品（予定）名」へ反映するセレクタ。
+              原著作物名はセクション3の原作(ledger)セレクタが原作名を反映する役割なので、
+              ここでは作品テーブルの作品名 → 対象製品予定名 に入れる。 */}
           <div className="col-span-full mb-3">
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground block mb-1">
-              対象作品を自社作品マスタから引用
+              対象作品（製品）を自社作品マスタから引用
             </label>
             <select
               value=""
@@ -1370,7 +1371,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 if (!w) return;
                 setFormData({
                   ...formData,
-                  原著作物名: w.title || formData.原著作物名 || '',
+                  対象製品予定名: w.title || formData.対象製品予定名 || '',
                 });
               }}
               disabled={worksList.length === 0}
@@ -1379,7 +1380,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               <option value="">
                 {worksList.length === 0
                   ? '— 自社作品が登録されていません —'
-                  : '— 作品を選択して原著作物名に反映 —'}
+                  : '— 作品を選択して対象製品（予定）名に反映 —'}
               </option>
               {worksList
                 .filter((w: any) => w.title)
@@ -1391,7 +1392,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 ))}
             </select>
             <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">
-              マスター &gt; 作品（自社作品）から選択すると、下の「原著作物名」に作品名を反映します。
+              マスター &gt; 作品（自社作品）から選択すると、下の「対象製品（予定）名」に作品名を反映します。
+              原著作物名はセクション3の原作（Ledger）選択から原作名が入ります。
             </p>
           </div>
           {renderGroup('IV. 対象作品・期間')}
