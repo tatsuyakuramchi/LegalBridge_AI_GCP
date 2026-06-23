@@ -667,20 +667,26 @@ export const LineItemTable: React.FC<Props> = ({
               </div>
             </label>
             {it.calc_method === "ROYALTY" && (
-              <label className="block">
-                <span className="text-[10px] font-mono text-muted-foreground block mb-1">
-                  料率 (%)
-                </span>
-                {cellInput(
-                  it.rate_pct,
-                  (v) => update(idx, { rate_pct: Number(v) || 0 }),
-                  "number",
-                  "例: 5.0"
-                )}
-                <span className="text-[10px] font-mono text-muted-foreground/70 block mt-1">
-                  小計 = 単価(基準価格) × 数量 × 料率%（切り上げ）
-                </span>
-              </label>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-[10px] font-mono text-muted-foreground block mb-1">計算式方法</span>
+                  <select
+                    value={it.royalty_calc_basis || "manufacturing"}
+                    onChange={(e) => update(idx, { royalty_calc_basis: e.target.value })}
+                    disabled={readOnly}
+                    className="w-full text-xs font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground disabled:opacity-60"
+                  >
+                    {CALC_BASIS_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}（{o.formula}）</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[10px] font-mono text-muted-foreground block mb-1">料率 (%)</span>
+                  {cellInput(it.rate_pct, (v) => update(idx, { rate_pct: Number(v) || 0 }), "number", "例: 5.0")}
+                  <span className="text-[10px] font-mono text-muted-foreground/70 block mt-1">利用許諾料は別途（利用許諾計算書による算定）</span>
+                </label>
+              </div>
             )}
             <div className="grid grid-cols-2 gap-3">
               <label className="block">
@@ -756,6 +762,10 @@ export const LineItemTable: React.FC<Props> = ({
                       未設定
                     </span>
                   )}
+                </span>
+              ) : it.calc_method === "ROYALTY" && computeAmount(it) <= 0 ? (
+                <span className="text-xs font-mono py-1 block text-amber-700">
+                  利用許諾料計算書の通り
                 </span>
               ) : (
                 cellInput(
@@ -920,7 +930,18 @@ export const LineItemTable: React.FC<Props> = ({
                             )}
                           </div>
                           {it.calc_method === "ROYALTY" && (
-                            <div className="mt-1">
+                            <div className="mt-1 space-y-1">
+                              <select
+                                value={it.royalty_calc_basis || "manufacturing"}
+                                onChange={(e) => update(idx, { royalty_calc_basis: e.target.value })}
+                                disabled={readOnly}
+                                className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground disabled:opacity-60"
+                                title="計算式方法(利用許諾計算書と共通)"
+                              >
+                                {CALC_BASIS_OPTIONS.map((o) => (
+                                  <option key={o.value} value={o.value}>{o.label}</option>
+                                ))}
+                              </select>
                               <input
                                 type="number"
                                 value={it.rate_pct ?? ""}
@@ -933,8 +954,8 @@ export const LineItemTable: React.FC<Props> = ({
                                 disabled={readOnly}
                                 className="w-full text-xs font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px] disabled:opacity-60"
                               />
-                              <span className="text-[9px] font-mono text-muted-foreground/70 block mt-0.5">
-                                単価×数量×料率%
+                              <span className="text-[9px] font-mono text-muted-foreground/70 block">
+                                利用許諾料は別途（利用許諾計算書）
                               </span>
                             </div>
                           )}
@@ -1004,7 +1025,7 @@ export const LineItemTable: React.FC<Props> = ({
                             )
                           )}
                         </td>
-                        {/* Phase 22.8: SUBSCRIPTION なら 期間サマリ (start〜end)、それ以外なら payment_date */}
+                        {/* 支払日: SUBSCRIPTION=期間 / ROYALTY固定報酬なし=利用許諾料計算書の通り / それ以外=日付 */}
                         <td className="p-2 align-top">
                           {it.calc_method === "SUBSCRIPTION" ? (
                             <span className="text-[10px] font-mono text-foreground/70 whitespace-nowrap">
@@ -1013,6 +1034,10 @@ export const LineItemTable: React.FC<Props> = ({
                                   期間未設定
                                 </span>
                               )}
+                            </span>
+                          ) : it.calc_method === "ROYALTY" && computeAmount(it) <= 0 ? (
+                            <span className="text-[10px] font-mono text-amber-700 whitespace-nowrap">
+                              利用許諾料計算書の通り
                             </span>
                           ) : (
                             cellInput(
