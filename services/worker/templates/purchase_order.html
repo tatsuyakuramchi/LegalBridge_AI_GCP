@@ -192,11 +192,16 @@
        空の小さなセルが残って境界線が「切れて」見えていた問題を解消するため、
        template 側を <td colspan="8"> の単一セルに統一。CSS で左パディングを
        業務内容列の開始位置に揃える。 */
+    /* 3b/修正: 仕様詳細行は本行と「独立した枠線付きの行」として描画する。
+       旧実装は border-top:0 + 本行 border-bottom:0 で両者をマージしていたが、
+       本行のカラム縦線が下端で閉じず、仕様欄がグリッドから外れて見える不具合が
+       あった。上に細い区切り線を入れ、本行カラムの下端を閉じて明確に囲む。 */
     table.items tr.detail-row > td {
-      border-top: 0;          /* 直前の本行と継続的に見える */
-      border-left: 1px solid #cfcfcf;   /* 外枠は普通の table border を踏襲 */
+      border-top: 1px solid #cfcfcf;   /* 本行カラムの下端を閉じる区切り線 */
+      border-left: 1px solid #cfcfcf;
       border-right: 1px solid #cfcfcf;
-      padding-top: 0;
+      border-bottom: 1px solid #cfcfcf;
+      padding-top: 4px;
       padding-bottom: 6px;
       /* 左パディングを No 列幅 (6mm) + 業務内容列の通常パディング (8px) に
          合わせて、品目名の文字位置から自然につながるよう揃える。 */
@@ -212,11 +217,9 @@
       white-space: pre-wrap;
       line-height: 1.35;
     }
-    /* 本行と詳細行は連続したものなので、間の境界線を消す。
-       次の明細との境界は次行 (`tr` 単体) の border-bottom で確保される。 */
-    table.items tr.has-detail > td {
-      border-bottom: 0;
-    }
+    /* 修正: 本行は自身の枠線(下端含む)を保持する。詳細行は border-top で
+       区切られた独立ブロックとして直下に続く。border-collapse によって
+       本行下端と詳細行上端は1本の線に統合される。 */
     table.items tr.detail-row .item-spec-block {
       font-size: 8.5pt;
       color: #333;
@@ -472,7 +475,9 @@
           {{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}<span style="color:#92400e; font-size:7.5pt;">利用許諾料計算書の通り</span>{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}
           {{/if}}
         </td>
-        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{or quantity qty}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{or quantity qty}}{{/if}}</td>
+        {{!-- 数量は確定額に関わらず常に表示。利用許諾料(ROYALTY)0円でも数量は
+             仕様で確定しているため(フォーム入力値)反映する。 --}}
+        <td class="right">{{or quantity qty}}</td>
         <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
         <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}<div style="font-size:7pt;color:#92400e;">執筆料（利用許諾料は別途）</div>{{else}}<div class="incl-note">報酬は<br>利用許諾料に含む</div>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
       </tr>
