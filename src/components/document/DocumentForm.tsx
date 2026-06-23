@@ -1440,6 +1440,71 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               </div>
             )}
           </div>
+
+          {/* Stage 1(文書ファースト紐付けプラン): 各利用許諾条件 → 原作マテリアル 対応。
+              未指定=条件の件名で新規マテリアルを作成 / 既存=共有(N:N)。material_code で持ち、
+              保存(Stage 2)が work_materials(Stage 0 で台帳とコード同期済)を生成/紐付けする。
+              payment_scheme は条件行の calc_type をそのまま使う(royalty/lump_sum=買切)。 */}
+          <div className="col-span-full mt-3 rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-2.5">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700 mb-1.5">
+              条件 → 原作マテリアル 対応
+            </div>
+            {!selectedLedger ? (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                先に上の「原作 (Ledger)」を選択してください。
+              </p>
+            ) : !Array.isArray(formData.financial_conditions) ||
+              formData.financial_conditions.length === 0 ? (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                下の「対価・支払条件」に条件を追加すると、各条件の原作マテリアルを指定できます。
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {formData.financial_conditions.map((c: any, idx: number) => {
+                  const key = String(c.condition_no ?? idx + 1);
+                  const cmCodes = (formData.condition_material_codes || {}) as Record<string, string>;
+                  const cur = cmCodes[key] ?? '';
+                  const schemeLabel =
+                    c.calc_type === 'FIXED'
+                      ? '買切/固定額'
+                      : c.calc_type === 'SUBSCRIPTION'
+                        ? 'サブスク'
+                        : 'ロイヤリティ';
+                  return (
+                    <div key={key} className="flex items-center gap-2 flex-wrap">
+                      <span className="text-[11px] font-mono min-w-[8rem] truncate">
+                        <span className="font-bold">条件{c.condition_no ?? idx + 1}</span>{' '}
+                        {c.condition_name || ''}
+                      </span>
+                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground">
+                        {schemeLabel}
+                      </span>
+                      <select
+                        value={cur}
+                        onChange={(e) =>
+                          setFormData({
+                            ...formData,
+                            condition_material_codes: { ...cmCodes, [key]: e.target.value },
+                          })
+                        }
+                        className="flex-1 min-w-[12rem] text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+                      >
+                        <option value="">（件名で原作マテリアルを新規作成）</option>
+                        {(selectedLedger.materials || []).map((m: any) => (
+                          <option key={m.id} value={m.material_code}>
+                            [{m.material_code}]{m.is_default ? ' ★' : ''} {m.material_name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  );
+                })}
+                <p className="text-[10px] font-mono text-muted-foreground/70">
+                  未指定は条件の件名で新規マテリアルを作成。既存を選ぶと複数作品で共有(N:N)。保存時に作品構成・条件明細へ連動します。
+                </p>
+              </div>
+            )}
+          </div>
         </FormSection>
         )}
 
