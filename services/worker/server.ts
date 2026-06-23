@@ -12782,23 +12782,13 @@ ${details}
             ? String(formData["台帳ID"]).trim()
             : "";
         if (!resolvedLedgerId) {
-          // Phase 23: license_contracts → contract_capabilities (license)
-          const existing = await query(
-            `SELECT ledger_id FROM contract_capabilities
-              WHERE backlog_issue_key = $1
-                AND contract_category = 'license'
-                AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
-              LIMIT 1`,
-            [issueKey]
+          // 台帳ID(LIC-...)は documents.form_data に保持される legacy/hidden 項目。
+          //   contract_capabilities に ledger_id 列は無いため、未指定なら新規採番する
+          //   (再生成時は formData.ledgerId が form_data から渡るので維持される)。
+          resolvedLedgerId = await getNewLedgerId();
+          console.log(
+            `📒 [ledger-id pre-render] auto-assigned ${resolvedLedgerId} for ${issueKey}`
           );
-          if (existing.rows[0]?.ledger_id) {
-            resolvedLedgerId = existing.rows[0].ledger_id;
-          } else {
-            resolvedLedgerId = await getNewLedgerId();
-            console.log(
-              `📒 [ledger-id pre-render] auto-assigned ${resolvedLedgerId} for ${issueKey}`
-            );
-          }
         }
         formData.ledgerId = resolvedLedgerId;
         formData["台帳ID"] = resolvedLedgerId;
@@ -12813,8 +12803,9 @@ ${details}
         // 既存 license 契約に紐付き情報があれば取り込む (再発行ケース)
         // Phase 23: license_contracts → contract_capabilities (license)
         if (!preResolvedWorkId) {
+          // 注: contract_capabilities に work_id 列は無い。ledger_ref_id のみ既存値を取り込む。
           const existingLc = await query(
-            `SELECT ledger_ref_id, work_id
+            `SELECT ledger_ref_id
                FROM contract_capabilities
               WHERE backlog_issue_key = $1
                 AND contract_category = 'license'
@@ -12822,9 +12813,6 @@ ${details}
               LIMIT 1`,
             [issueKey]
           );
-          if (existingLc.rows[0]?.work_id) {
-            preResolvedWorkId = existingLc.rows[0].work_id;
-          }
           // form から ledger_ref_id 来てないが DB にあれば取り込む
           if (!ledgerRefIdNum && existingLc.rows[0]?.ledger_ref_id) {
             formData.ledger_ref_id = Number(existingLc.rows[0].ledger_ref_id);
@@ -14443,22 +14431,21 @@ ${details}
       } else if (templateType === "license_master") {
         // Phase 23: license_contracts → contract_capabilities (license, master_contract)
         //   ON CONFLICT は document_number (contract_capabilities の UNIQUE) に変更。
+        // contract_capabilities は汎用レジストリ。ライセンサー名・台帳ID 等の
+        //   license 固有値は列が無く documents.form_data に保持されPDFはそこから描画。
+        //   ここでは実在列(原作名/文書番号/種別/タイトル)のみを登録する。
         await query(
           `INSERT INTO contract_capabilities
-             (backlog_issue_key, ledger_id, ledger_number, licensor, original_work,
+             (backlog_issue_key, original_work,
               document_number, record_type, contract_category, contract_type, contract_title)
-           VALUES ($1, $2, $3, $4, $5, $6, 'master_contract', 'license', 'license_basic', $7)
+           VALUES ($1, $2, $3, 'master_contract', 'license', 'license_basic', $4)
            ON CONFLICT (document_number) DO UPDATE SET
-             ledger_number = EXCLUDED.ledger_number,
-             licensor      = EXCLUDED.licensor,
-             original_work = EXCLUDED.original_work,
-             updated_at    = CURRENT_TIMESTAMP`,
+             original_work  = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
+             contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
+             updated_at     = CURRENT_TIMESTAMP`,
           [
             issueKey,
-            formData.ledgerId || docNumber,
-            docNumber,
-            formData.LICENSOR_NAME || formData.PARTY_B_NAME,
-            formData.WORK_TITLE,
+            formData.WORK_TITLE || "",
             docNumber,
             formData.WORK_TITLE || formData.LICENSOR_NAME || docNumber,
           ]
@@ -14480,23 +14467,12 @@ ${details}
           ? String(formData.ledgerId).trim()
           : "";
         if (!resolvedLedgerId) {
-          // Phase 23: license_contracts → contract_capabilities (license)
-          const existing = await query(
-            `SELECT ledger_id FROM contract_capabilities
-              WHERE backlog_issue_key = $1
-                AND contract_category = 'license'
-                AND record_type IN ('individual_contract', 'master_contract', 'standalone_contract')
-              LIMIT 1`,
-            [issueKey]
+          // contract_capabilities に ledger_id 列は無い。未指定なら新規採番
+          //   (再生成は formData.ledgerId が form_data から渡るので維持)。
+          resolvedLedgerId = await getNewLedgerId();
+          console.log(
+            `📒 [ledger-id] auto-assigned ${resolvedLedgerId} for ${issueKey}`
           );
-          if (existing.rows[0]?.ledger_id) {
-            resolvedLedgerId = existing.rows[0].ledger_id;
-          } else {
-            resolvedLedgerId = await getNewLedgerId();
-            console.log(
-              `📒 [ledger-id] auto-assigned ${resolvedLedgerId} for ${issueKey}`
-            );
-          }
         }
         // formData にも書き戻し、PDF テンプレートが {{台帳ID}} / {{ledgerId}} を
         // 参照できるようにする。
@@ -14520,8 +14496,10 @@ ${details}
 
         // 既存 license 契約に紐付き情報があれば取り込む (再発行ケース)
         // Phase 23: license_contracts → contract_capabilities (license)
+        // 注: contract_capabilities に work_id 列は無い(work_name のみ)。
+        //   ledger_ref_id / material_ref_id は実在列なので既存値を引き継ぐ。
         const existingLcRow = await query(
-          `SELECT ledger_ref_id, material_ref_id, work_id
+          `SELECT ledger_ref_id, material_ref_id
              FROM contract_capabilities
             WHERE backlog_issue_key = $1
               AND contract_category = 'license'
@@ -14537,9 +14515,6 @@ ${details}
           }
           if (!resolvedMaterialRefId && existingLc.material_ref_id) {
             resolvedMaterialRefId = Number(existingLc.material_ref_id);
-          }
-          if (!resolvedWorkId && existingLc.work_id) {
-            resolvedWorkId = existingLc.work_id;
           }
         }
 
@@ -14599,78 +14574,38 @@ ${details}
         //   contract_capabilities に ALTER ADD COLUMN 済みの想定。
         //   ON CONFLICT は document_number (UNIQUE INDEX) に変更。
         //   contract_title は original_work (なければ docNumber) で補完。
+        // contract_capabilities は汎用レジストリ。licensor_*/licensee_*/台帳ID/監修者/
+        //   クレジット/許諾期間注記/work_id 等の license 固有値は列が無く、
+        //   documents.form_data(JSON) に保持されPDFはそこから描画される。
+        //   ここでは実在列のみ登録(原作名/対象製品/許諾開始日/原作・素材参照/種別/タイトル/文書番号)。
         const lcUpsert = await query(
           `INSERT INTO contract_capabilities (
-             backlog_issue_key, ledger_id, ledger_number, contract_number,
-             licensor, original_work,
-             licensor_name, licensor_address, licensor_rep, licensor_is_corporation,
-             licensee_name, licensee_address, licensee_rep, licensee_is_corporation,
-             product_name_predicted,
-             license_start_date, license_period_note,
-             supervisor, credit_display, remarks,
-             ledger_ref_id, material_ref_id, work_id,
+             backlog_issue_key, original_work, product_name, effective_date,
+             ledger_ref_id, material_ref_id,
              record_type, contract_category, contract_type, contract_title, document_number
            )
            VALUES (
              $1, $2, $3, $4,
              $5, $6,
-             $7, $8, $9, $10,
-             $11, $12, $13, $14,
-             $15,
-             $16, $17,
-             $18, $19, $20,
-             $21, $22, $23,
-             'individual_contract', 'license', 'license_basic', COALESCE(NULLIF($6, ''), $4), $4
+             'individual_contract', 'license', 'license_basic', COALESCE(NULLIF($2, ''), $7), $7
            )
            ON CONFLICT (document_number) DO UPDATE SET
-             contract_number          = EXCLUDED.contract_number,
-             ledger_number            = COALESCE(NULLIF(EXCLUDED.ledger_number, ''), contract_capabilities.ledger_number),
-             licensor                 = COALESCE(NULLIF(EXCLUDED.licensor, ''), contract_capabilities.licensor),
-             original_work            = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
-             licensor_name            = COALESCE(NULLIF(EXCLUDED.licensor_name, ''), contract_capabilities.licensor_name),
-             licensor_address         = COALESCE(NULLIF(EXCLUDED.licensor_address, ''), contract_capabilities.licensor_address),
-             licensor_rep             = COALESCE(NULLIF(EXCLUDED.licensor_rep, ''), contract_capabilities.licensor_rep),
-             licensor_is_corporation  = EXCLUDED.licensor_is_corporation,
-             licensee_name            = COALESCE(NULLIF(EXCLUDED.licensee_name, ''), contract_capabilities.licensee_name),
-             licensee_address         = COALESCE(NULLIF(EXCLUDED.licensee_address, ''), contract_capabilities.licensee_address),
-             licensee_rep             = COALESCE(NULLIF(EXCLUDED.licensee_rep, ''), contract_capabilities.licensee_rep),
-             licensee_is_corporation  = EXCLUDED.licensee_is_corporation,
-             product_name_predicted   = COALESCE(NULLIF(EXCLUDED.product_name_predicted, ''), contract_capabilities.product_name_predicted),
-             license_start_date       = COALESCE(EXCLUDED.license_start_date, contract_capabilities.license_start_date),
-             license_period_note      = COALESCE(NULLIF(EXCLUDED.license_period_note, ''), contract_capabilities.license_period_note),
-             supervisor               = COALESCE(NULLIF(EXCLUDED.supervisor, ''), contract_capabilities.supervisor),
-             credit_display           = COALESCE(NULLIF(EXCLUDED.credit_display, ''), contract_capabilities.credit_display),
-             remarks                  = COALESCE(NULLIF(EXCLUDED.remarks, ''), contract_capabilities.remarks),
-             ledger_ref_id            = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
-             material_ref_id          = COALESCE(EXCLUDED.material_ref_id, contract_capabilities.material_ref_id),
-             work_id                  = COALESCE(NULLIF(EXCLUDED.work_id, ''), contract_capabilities.work_id),
-             updated_at               = CURRENT_TIMESTAMP
+             original_work   = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
+             product_name    = COALESCE(NULLIF(EXCLUDED.product_name, ''), contract_capabilities.product_name),
+             effective_date  = COALESCE(EXCLUDED.effective_date, contract_capabilities.effective_date),
+             ledger_ref_id   = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
+             material_ref_id = COALESCE(EXCLUDED.material_ref_id, contract_capabilities.material_ref_id),
+             contract_title  = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
+             updated_at      = CURRENT_TIMESTAMP
            RETURNING id`,
           [
             issueKey,
-            resolvedLedgerId,               // ledger_id (UNIQUE NOT NULL) — Phase 22.17 自動採番
-            docNumber,                      // ledger_number
-            docNumber,                      // contract_number
-            formData.Licensor_名称 || formData.Licensor_氏名会社名 || "", // legacy licensor
-            formData.原著作物名 || "",                                    // legacy original_work
-            formData.Licensor_名称 || formData.Licensor_氏名会社名 || "",
-            formData.Licensor_住所 || "",
-            formData.Licensor_代表者名 || "",
-            !!formData.LICENSOR_IS_CORPORATION,
-            formData.Licensee_名称 || formData.Licensee_氏名会社名 || "",
-            formData.Licensee_住所 || "",
-            formData.Licensee_代表者名 || "",
-            !!formData.LICENSEE_IS_CORPORATION,
+            formData.原著作物名 || "",
             formData.対象製品予定名 || "",
             formData.許諾開始日 || null,
-            formData.許諾期間注記 || "",
-            formData.監修者 || "",
-            formData.クレジット表示 || "",
-            formData.特記事項 || formData.remarks || "",
-            // Phase 22.19: ledger / material / work_id
             resolvedLedgerRefId,
             resolvedMaterialRefId,
-            resolvedWorkId || null,
+            docNumber,
           ]
         );
         const lcId = Number(lcUpsert.rows[0]?.id);
@@ -14680,77 +14615,14 @@ ${details}
         // で削除された condition は DB からも削除する。
         // Phase 23: license_financial_conditions → capability_financial_conditions
         //   (license_contract_id → capability_id)
+        // 金銭条件は実績ある共通ルートで保存。capability_financial_conditions への
+        //   upsert + 不要 condition_no の prune に加え、condition_lines(CL台帳)への
+        //   同期も内包する(発注書・出版条件書と同経路に統一し、個別利用許諾の CL 未連動も解消)。
         if (lcId && Array.isArray(formData.financial_conditions)) {
-          const keepNos = new Set<number>();
-          for (const c of formData.financial_conditions) {
-            const condNo = Number(c?.condition_no);
-            if (!Number.isFinite(condNo) || condNo < 1) continue;
-            keepNos.add(condNo);
-            await query(
-              `INSERT INTO capability_financial_conditions (
-                 capability_id, condition_no, region_language_label,
-                 calc_method, rate_pct, base_price_label, calc_period,
-                 currency, formula_text, payment_terms, mg_amount,
-                 calc_period_kind, calc_period_close_month
-               )
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-               ON CONFLICT (capability_id, condition_no) DO UPDATE SET
-                 region_language_label   = EXCLUDED.region_language_label,
-                 calc_method             = EXCLUDED.calc_method,
-                 rate_pct                = EXCLUDED.rate_pct,
-                 base_price_label        = EXCLUDED.base_price_label,
-                 calc_period             = EXCLUDED.calc_period,
-                 currency                = EXCLUDED.currency,
-                 formula_text            = EXCLUDED.formula_text,
-                 payment_terms           = EXCLUDED.payment_terms,
-                 mg_amount               = EXCLUDED.mg_amount,
-                 calc_period_kind        = EXCLUDED.calc_period_kind,
-                 calc_period_close_month = EXCLUDED.calc_period_close_month,
-                 updated_at              = CURRENT_TIMESTAMP`,
-              [
-                lcId,
-                condNo,
-                c.region_language_label || "",
-                c.calc_method || "",
-                c.rate_pct !== undefined && c.rate_pct !== null
-                  ? Number(c.rate_pct)
-                  : null,
-                c.base_price_label || "",
-                c.calc_period || "",
-                c.currency || "JPY",
-                c.formula_text || "",
-                c.payment_terms || "",
-                c.mg_amount !== undefined && c.mg_amount !== null
-                  ? Number(c.mg_amount)
-                  : 0,
-                // Phase 22.20-B
-                c.calc_period_kind || null,
-                c.calc_period_close_month !== undefined &&
-                c.calc_period_close_month !== null
-                  ? Number(c.calc_period_close_month)
-                  : null,
-              ]
-            );
-          }
-          // 表で削除された condition_no を DB からも削除。
-          // ただし royalty_calculations が参照していたら FK で守られるので
-          // ON DELETE は RESTRICT を期待。失敗時は黙って残す。
-          if (keepNos.size > 0) {
-            try {
-              // Phase 23: license_financial_conditions → capability_financial_conditions
-              await query(
-                `DELETE FROM capability_financial_conditions
-                  WHERE capability_id = $1
-                    AND condition_no <> ALL($2::int[])`,
-                [lcId, Array.from(keepNos)]
-              );
-            } catch (delErr) {
-              console.warn(
-                "Could not prune deleted financial conditions (likely FK from royalty_calculations):",
-                delErr
-              );
-            }
-          }
+          await upsertCapabilityFinancialConditions(
+            lcId,
+            formData.financial_conditions
+          );
         }
 
         // Phase 22.20-D: work_sublicensees (Work × サブライセンシー) を永続化
