@@ -1852,6 +1852,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 has_license_conditions: items.some(
                   (it) => it.calc_method === 'ROYALTY'
                 ),
+                // 概要「利用許諾料」行の表示判定。受注者帰属(利用許諾型=IP留保して許諾)が
+                // 1つでもあれば「別途算定(利用許諾計算書による)」、無ければ「—」(対象外)。
+                // 発注者帰属×ROYALTYは業績連動報酬(譲渡型)であり利用許諾料ではないため除外。
+                has_seller_owned_license: items.some(
+                  (it) => it.deliverable_ownership === '受注者'
+                ),
               });
             }}
             showPaymentColumns={true}
