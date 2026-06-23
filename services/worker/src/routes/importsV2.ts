@@ -155,6 +155,9 @@ export interface ContractImportPayload {
   issue_date_po?: string | null;
   original_work?: string;
   ledger_code?: string;
+  // 条件の方向(per-contract)。payable=自社が払う(イン側) / receivable=自社が受取る(アウト側・再許諾)。
+  //   condition_lines.direction に反映。既定 payable。
+  direction?: "payable" | "receivable";
   line_items?: LineItemIn[];
   financial_conditions?: FinCondIn[];
   expenses?: ExpenseIn[];
@@ -551,6 +554,19 @@ async function upsertContract(
     syncConditionLinesForCapability({ query: deps.query }, capabilityId)
   );
 
+  // 方向(direction)を per-contract で後設定。マッパーは payable 固定のため、
+  //   受取側(アウト側・再許諾)の過去条件は sync 後に condition_lines.direction を
+  //   'receivable' へ更新する(非致命)。payable は既定なので更新不要。
+  if (p.direction === "receivable") {
+    await safeSync("CL(direction)", () =>
+      deps.query(
+        `UPDATE condition_lines SET direction = 'receivable', updated_at = CURRENT_TIMESTAMP
+          WHERE capability_id = $1`,
+        [capabilityId]
+      )
+    );
+  }
+
   return { capability_id: capabilityId, document_number: docNumber };
 }
 
@@ -591,6 +607,7 @@ function groupRows(rows: any[]): Map<string, ContractImportPayload> {
         issue_date_po: raw.issue_date_po || raw.order_date,
         original_work: raw.original_work,
         ledger_code: raw.ledger_code,
+        direction: raw.direction === "receivable" ? "receivable" : "payable",
         line_items: [],
         financial_conditions: [],
         expenses: [],
@@ -674,6 +691,7 @@ function csvTemplate(recordType: RecordType): string {
     "auto_renewal",
     "drive_link",
     "ringi_numbers",
+    "direction",
   ];
   const poExtra = ["tax_rate", "due_date", "issue_date_po"];
   const licenseExtra = ["original_work", "ledger_code"];
