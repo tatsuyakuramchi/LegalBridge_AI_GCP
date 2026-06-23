@@ -583,13 +583,7 @@ export const LineItemTable: React.FC<Props> = ({
           </span>
           {ownershipSelect(it, idx)}
         </label>
-        {it.deliverable_ownership === "受注者" && (
-          <>
-            {renderServiceFeeFields(it, idx)}
-            {renderLicenseFields(it, idx)}
-          </>
-        )}
-        {it.deliverable_ownership !== "受注者" && (
+        {/* 仕様ロック: 帰属で分岐しない。全行で 単価/数量/確定額/支払方法 を表示。 */}
         <>
         <div className="grid grid-cols-3 gap-3 items-end">
           <label className="block">
@@ -616,11 +610,17 @@ export const LineItemTable: React.FC<Props> = ({
           </label>
           <div>
             <span className="text-[10px] font-mono text-muted-foreground block mb-1">
-              小計 (税抜)
+              確定額 (税抜)
             </span>
-            <div className="text-right text-sm font-mono font-bold py-1">
-              ¥ {Number(amount).toLocaleString("ja-JP")}
-            </div>
+            {(() => {
+              const d = formatAmountDisplay(it);
+              return (
+                <div className={cn("text-right text-sm font-mono py-1", d.muted ? "text-amber-700 text-[11px] font-semibold" : "font-bold")}>
+                  {d.primary}
+                  {d.note && <div className="text-[10px] text-amber-700 font-normal">{d.note}</div>}
+                </div>
+              );
+            })()}
           </div>
         </div>
         {showPaymentColumns && (
@@ -768,7 +768,6 @@ export const LineItemTable: React.FC<Props> = ({
           </>
         )}
         </>
-        )}
       </div>
     );
   };
@@ -849,16 +848,8 @@ export const LineItemTable: React.FC<Props> = ({
                     <td className="p-2 align-top">
                       {ownershipSelect(it, idx)}
                     </td>
-                    {it.deliverable_ownership === "受注者" ? (
-                      <td
-                        colSpan={showPaymentColumns ? 7 : 3}
-                        className="p-2 align-top"
-                      >
-                        {renderServiceFeeFields(it, idx)}
-                        {renderLicenseFields(it, idx)}
-                      </td>
-                    ) : (
-                      <>
+                    {/* 仕様ロック: 帰属で行を分岐しない。全行で 単価/数量/確定額/支払方法/計算式方法 を表示。 */}
+                    <>
                     <td className="p-2 text-right">
                       {cellInput(
                         it.unit_price,
@@ -875,9 +866,15 @@ export const LineItemTable: React.FC<Props> = ({
                         "1"
                       )}
                     </td>
-                    <td className="p-2 text-right font-bold">
-                      ¥ {Number(amount).toLocaleString("ja-JP")}
-                    </td>
+                    {(() => {
+                      const d = formatAmountDisplay(it);
+                      return (
+                        <td className={cn("p-2 text-right", d.muted ? "text-amber-700 text-[10px] font-semibold" : "font-bold")}>
+                          {d.primary}
+                          {d.note && <div className="text-[9px] text-amber-700 font-normal">{d.note}</div>}
+                        </td>
+                      );
+                    })()}
                     {showPaymentColumns && (
                       <>
                         {/* Phase 13: 計算方式 (FIXED / SUBSCRIPTION / ROYALTY)
@@ -1028,7 +1025,6 @@ export const LineItemTable: React.FC<Props> = ({
                       </>
                     )}
                       </>
-                    )}
                     {!readOnly && (
                       <td className="p-2 text-center">
                         <button
