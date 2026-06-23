@@ -325,10 +325,22 @@
   <div class="section-mark">■ 発注概要</div>
   <table class="summary">
     <tr>
-      <th>発注合計金額（税抜）</th>
+      <th>確定額 小計（税抜）</th>
       <td>
+        {{#if (gt grandTotalExTax 0)}}
         <div class="total-amount">¥ {{formatCurrency grandTotalExTax}}</div>
         <div class="amount-note">※ 消費税等の精算は、支払通知または請求処理にて行います。</div>
+        {{else}}
+        <div style="font-weight:800; color:#92400e;">報酬は利用許諾料に含む</div>
+        <div class="amount-note">算定方法は明細記載の計算方法の通り</div>
+        {{/if}}
+      </td>
+    </tr>
+    <tr>
+      <th>利用許諾料</th>
+      <td>
+        <span style="font-weight:800; color:#92400e;">別途算定</span>
+        <span style="font-size:8pt; color:#666;">／ 利用許諾計算書による（明細の ROYALTY 各行・計算式方法のとおり）</span>
       </td>
     </tr>
     {{!-- Phase 22.21.30: 発注日 行を追加。
@@ -340,13 +352,12 @@
     </tr>
     <tr>
       <th>納期<br><span style="font-size:8pt;color:#888;font-weight:400;">(または役務提供期間)</span></th>
-      <td>{{or summaryDeliveryDate "—"}}</td>
+      <td>明細のとおり</td>
     </tr>
     <tr>
       <th>支払日</th>
-      {{!-- Phase 22.7: 明細から自動集計した summaryPaymentDate を表示。
-           後方互換のため、空のときは旧 summaryPaymentTerms にフォールバック。 --}}
-      <td>{{or summaryPaymentDate summaryPaymentTerms "—"}}</td>
+      {{!-- 仕様ロック: 明細ごとに異なるため概要は明細参照。ROYALTY固定報酬なしは「利用許諾料計算書の通り」。 --}}
+      <td>明細のとおり</td>
     </tr>
   </table>
 
@@ -377,15 +388,16 @@
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
-          {{#if (eq deliverable_ownership "受注者")}}<div style="font-size:7.5pt; color:#92400e; margin-top:2px; font-weight:700;">＋利用許諾条件あり（下段「利用許諾条件」参照{{#if condition_name}}：{{condition_name}}{{/if}}）</div>{{/if}}
+          {{!-- 仕様ロック: 利用許諾条件の表示は帰属ではなく支払方法(ROYALTY)で駆動。帰属注記は出さない。 --}}
         </td>
         <td class="center">
           {{!-- Phase 13: 計算方式バッジ + 支払条件
                Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
-          <span class="pay-method-badge">{{#if (eq deliverable_ownership "受注者")}}FIXED{{else}}{{or calc_method payment_method_display payment_method "FIXED"}}{{/if}}</span>
-          {{#if (eq calc_method "ROYALTY")}}{{#unless (eq deliverable_ownership "受注者")}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">料率 {{rate_pct}}%（単価×数量×料率）</div>
-          {{/unless}}{{/if}}
+          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
+          {{#if (eq calc_method "ROYALTY")}}
+          <div style="font-size:7pt; color:#666; margin-top:2px;">{{#if (eq royalty_calc_basis "manufacturing")}}個数 × 基準価格 × 料率{{else}}{{#if (eq royalty_calc_basis "sublicense")}}受領額 × 料率{{else}}{{#if (eq royalty_calc_basis "fixed")}}固定額{{else}}売上高 × 料率{{/if}}{{/if}}{{/if}}{{#if rate_pct}}・料率 {{rate_pct}}%{{/if}}</div>
+          <div style="font-size:7pt; color:#92400e; margin-top:1px;">利用許諾料は別途（利用許諾計算書による算定）</div>
+          {{/if}}
           {{#if (eq calc_method "SUBSCRIPTION")}}
           <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
           {{else}}
@@ -419,13 +431,12 @@
             <div style="font-size:8pt; line-height:1.4; white-space:nowrap;">
               {{#if term_end}}{{formatDateCompact term_end}}{{else}}<span style="color:#666;">継続中</span>{{/if}}
             </div>
-          {{else}}
-            {{formatDate payment_date}}
+          {{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}<span style="color:#92400e; font-size:7.5pt;">利用許諾料計算書の通り</span>{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}
           {{/if}}
         </td>
-        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{or quantity qty}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{or quantity qty}}{{/if}}</td>
-        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
-        <td class="right">{{#if (eq deliverable_ownership "受注者")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}{{else}}<span style="color:#888;">-</span><div style="font-size:7pt;color:#92400e;">業務委託報酬は利用許諾料に含まれる</div>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
+        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{or quantity qty}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{or quantity qty}}{{/if}}</td>
+        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
+        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}<div style="font-size:7pt;color:#92400e;">執筆料（利用許諾料は別途）</div>{{else}}<span style="color:#92400e;font-size:8pt;">報酬は利用許諾料に含む</span>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
       </tr>
       {{#if (or spec detailText)}}
       {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
