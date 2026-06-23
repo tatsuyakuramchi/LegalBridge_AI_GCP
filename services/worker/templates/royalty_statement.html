@@ -266,7 +266,7 @@
     <tr>
       <td class="label">課税対象数量</td>
       <td class="right"><strong>{{billableQuantity}} 個</strong></td>
-      <td class="label">MSRP（税抜）</td>
+      <td class="label">基準価格（税抜）</td>
       <td class="right">¥{{msrpStr}}</td>
     </tr>
     {{else}}
@@ -279,8 +279,8 @@
     {{/if}}
   </table>
 
-  {{!-- ── ロイヤリティ計算明細 ── --}}
-  <div class="section-mark">■ ロイヤリティ計算明細</div>
+  {{!-- ── 利用許諾料計算明細 ── --}}
+  <div class="section-mark">■ 利用許諾料計算明細</div>
   <table style="margin-bottom:12px;">
     <thead>
       <tr>
@@ -291,7 +291,7 @@
     </thead>
     <tbody>
       <tr>
-        <td>当期ロイヤリティ（グロス）</td>
+        <td>当期利用許諾料（グロス）</td>
         <td class="center">
           {{#if (eq calcType "manufacturing")}}
             {{billableQuantity}}個 × ¥{{msrpStr}} × {{royaltyRatePct}}%
@@ -332,7 +332,7 @@
 
       <tr class="{{#if (eq actualRoyalty 0)}}zero-row{{else}}total-row{{/if}}">
         <td colspan="2">
-          実支払ロイヤリティ
+          実支払利用許諾料
           {{#if (eq actualRoyalty 0)}}
             <span class="badge-zero">AG充当のため今期支払なし</span>
           {{/if}}
