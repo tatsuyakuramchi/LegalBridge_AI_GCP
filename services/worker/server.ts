@@ -13864,6 +13864,42 @@ ${details}
               console.log(
                 `✅ Saved ${pubConditions.length} publication royalty condition(s) for: ${docNumber}`
               );
+
+              // Stage 2(文書ファースト紐付け): 出版等利用許諾も作品連動 ON のとき原作マテリアルへ
+              //   結線し対象作品の構成へ組み込む(共通ヘルパ)。原作は ledger_code / ledger_ref_id で解決。
+              //   pubConditions は condition_name を持たないため region_language_label を名称に補完。
+              if (formData.is_work_linked !== false) {
+                let pubLedgerCode: string | null = formData.ledger_code || null;
+                if (!pubLedgerCode && formData.ledger_ref_id) {
+                  try {
+                    const lr = await query(
+                      `SELECT ledger_code FROM ledgers WHERE id = $1`,
+                      [Number(formData.ledger_ref_id)]
+                    );
+                    pubLedgerCode = lr.rows[0]?.ledger_code || null;
+                  } catch {
+                    /* noop */
+                  }
+                }
+                await safeSync("work-linkage(pub)", () =>
+                  linkWorkMaterialsForCapability({
+                    capabilityId: capId,
+                    ledgerCode: pubLedgerCode,
+                    ownWorkId:
+                      formData.linked_work_id != null &&
+                      String(formData.linked_work_id).trim() !== "" &&
+                      Number.isFinite(Number(formData.linked_work_id))
+                        ? Number(formData.linked_work_id)
+                        : null,
+                    conditionMaterialCodes: (formData.condition_material_codes ||
+                      {}) as Record<string, string>,
+                    financialConditions: pubConditions.map((c) => ({
+                      ...c,
+                      condition_name: c.condition_name || c.region_language_label,
+                    })),
+                  })
+                );
+              }
             }
           } catch (pubFcErr) {
             console.warn(
