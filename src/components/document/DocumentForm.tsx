@@ -75,6 +75,15 @@ interface DocumentFormProps {
   combineVendorAlias?: boolean;
 }
 
+// Stage 1(文書ファースト紐付けプラン): 作品連動しうるテンプレート。対象作品(own)一覧の取得対象。
+const WORK_LINKED_TEMPLATES = [
+  'individual_license_terms',
+  'lic_individual',
+  'pub_license_terms',
+  'purchase_order',
+  'intl_purchase_order',
+];
+
 export const DocumentForm: React.FC<DocumentFormProps> = ({
   templateId,
   metadata,
@@ -109,6 +118,10 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 条件一覧ピッカーで条件を直接選んだとき、契約読込(financial_conditions)後に
   //   その条件を確定するための pending id。0 のとき無効。
   const [pendingRoyaltyCondId, setPendingRoyaltyCondId] = useState<number>(0);
+  // Stage 1(文書ファースト紐付けプラン): 「この契約の対象作品」をその場で新規作成するための入力状態。
+  //   作品連動スイッチ ON のセクション3で使用。作成後は worksList を再取得し linked_work_id に選択。
+  const [newWorkTitle, setNewWorkTitle] = useState('');
+  const [creatingWork, setCreatingWork] = useState(false);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -240,15 +253,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   const { contracts: allContracts, ledgers: allLedgers } = useAppData();
   const lastAutoFilledRef = React.useRef<string>('');
 
-  // 個別利用許諾条件書: 対象作品名(原著作物名)を自社作品(works)テーブルから引用する
-  //   ためのリスト。license フォームのときだけ /api/v3/works を取得する。
+  // 対象作品(own)の一覧。Stage 1(文書ファースト紐付け)で「対象作品」セレクタにも使うため、
+  //   作品連動しうるテンプレート(利用許諾・出版・発注書)で /api/v3/works を取得する。
   const [worksList, setWorksList] = React.useState<any[]>([]);
   useEffect(() => {
-    if (
-      templateId !== 'individual_license_terms' &&
-      templateId !== 'lic_individual'
-    )
-      return;
+    if (!WORK_LINKED_TEMPLATES.includes(templateId)) return;
     let cancelled = false;
     (async () => {
       try {
@@ -1076,6 +1085,39 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       });
     };
 
+    // Stage 1: 「どの作品のための契約か」を指定する作品(own)を、なければその場で作成する。
+    //   WorksListPanel と同じ POST /api/v3/works(title のみ)を使い、作成後に一覧を再取得して選択。
+    //   構造リンクは linked_work_id(works.id, kind='own')に保持。保存経路(Stage 2)が参照する。
+    const createOwnWork = async () => {
+      const title = newWorkTitle.trim();
+      if (!title) return;
+      setCreatingWork(true);
+      try {
+        const r = await fetch('/api/v3/works', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const created = await r.json();
+        try {
+          const listRes = await fetch('/api/v3/works');
+          const list = await listRes.json();
+          setWorksList(Array.isArray(list) ? list : []);
+        } catch {
+          /* 一覧再取得失敗は致命的でない */
+        }
+        setNewWorkTitle('');
+        if (created?.id != null) {
+          setFormData({ ...formData, linked_work_id: String(created.id) });
+        }
+      } catch (e) {
+        console.error('createOwnWork failed', e);
+      } finally {
+        setCreatingWork(false);
+      }
+    };
+
     const fillLicensorFromSelf = () =>
       setFormData({
         ...formData,
@@ -1269,6 +1311,55 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           icon={<Briefcase className="w-4 h-4" />}
         >
           <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-3">
+            {/* Stage 1: 「どの作品のための契約か」= 対象作品(own)。なければその場で作成。
+                構造リンクは linked_work_id に保持(works.id, kind='own')。 */}
+            <div className="space-y-1 md:col-span-2">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                対象作品（自社作品）
+              </label>
+              <select
+                value={formData.linked_work_id || ''}
+                onChange={(e) =>
+                  setFormData({ ...formData, linked_work_id: e.target.value || undefined })
+                }
+                className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+              >
+                <option value="">— この契約の対象作品を選択（任意）—</option>
+                {worksList
+                  .filter((w: any) => w.title)
+                  .map((w: any) => (
+                    <option key={w.id} value={String(w.id)}>
+                      {w.work_code ? `[${w.work_code}] ` : ''}
+                      {w.title}
+                    </option>
+                  ))}
+              </select>
+              <div className="flex items-center gap-1.5 pt-1">
+                <input
+                  value={newWorkTitle}
+                  onChange={(e) => setNewWorkTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      void createOwnWork();
+                    }
+                  }}
+                  placeholder="なければ作成: 作品タイトル"
+                  className="flex-1 text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+                />
+                <button
+                  type="button"
+                  onClick={() => void createOwnWork()}
+                  disabled={creatingWork || !newWorkTitle.trim()}
+                  className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                >
+                  {creatingWork ? '作成中…' : '＋作成'}
+                </button>
+              </div>
+              <p className="text-[10px] font-mono text-muted-foreground/70">
+                「どの作品のための契約か」を指定します。一覧に無ければ作品タイトルを入力して作成。
+              </p>
+            </div>
             <div className="space-y-1">
               <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
                 原作 (Ledger)

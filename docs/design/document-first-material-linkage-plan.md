@@ -133,7 +133,7 @@
 | Stage | 内容 | 主な変更 | 状態 |
 |---|---|---|---|
 | 0 | 素材表一本化の総仕上げ（決定3）。台帳 materials への全書込経路を work_materials へミラー＋既存差分を冪等トップアップ。 | migration 0082 ／ `addMaterialToLedger` ミラー追加（db.ts） | ✅ 実装 |
-| 1 | 文書フォーム明細に 作品/原作 セレクタ（なければ作成）＋ 素材欄（件名で新規 / 既存選択）を追加 | DocumentForm.tsx | 🚧 着手（作品連動スイッチ実装済）|
+| 1 | 文書フォーム明細に 作品/原作 セレクタ（なければ作成）＋ 素材欄（件名で新規 / 既存選択）を追加 | DocumentForm.tsx | 🚧 着手（作品連動スイッチ・対象作品セレクタ(なければ作成)実装済。残: 素材欄の件名生成/既存選択・payment_scheme の行入力）|
 | 2 | 保存経路で 全明細→`work_materials`生成→`condition_lines`(source_work_id/source_material_id/work_id, payment_scheme=明細の対価方式)生成→`attach-work`系で `work_components`＋`work_component_lines` ensure（条件明細起点の既存経路で全ケース対応）| server.ts（文書保存）/ conditionSync | ⬜ |
 | 3 | `payment_scheme`（royalty / lump_sum 等）を明細の対価方式から確定。**ロイヤリティ計算/残高管理は royalty 系のみ走らせる**（買切固定額=lump_sum は固定額記録のみ）。マテリアル/条件明細/構成リンクの生成は全ケース共通。rights_type はマテリアルに記録のみ | DocumentForm.tsx / server.ts | ⬜ |
 | 4 | 既存文書（capability単位 ledger_ref_id/material_ref_id）からの移行・後方互換 | migration（冪等） | ⬜ |
