@@ -659,12 +659,23 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       setFormData({ ...formData, financial_conditions: [seeded] });
       return;
     }
-    // 既存条件のうち applies_scope が空のものだけ既定値を補完(上書きはしない)。
+    // 既存条件の補完(上書きはしない):
+    //  - applies_scope が空 → 既定値(ROYALTY明細名)を補完。
+    //  - condition_name が空 or 旧 generic 既定「利用許諾条件」→ 業務委託明細名(scopeNames)に
+    //    リンク。ユーザーが明示的に付けた名称は generic 判定に該当しないため保持される。
     let changed = false;
     const next = conds.map((c) => {
+      const patch: any = {};
       if (((c.applies_scope || '') as string).trim() === '') {
+        patch.applies_scope = defaultScope;
+      }
+      const cname = ((c.condition_name || '') as string).trim();
+      if ((cname === '' || cname === '利用許諾条件') && scopeNames) {
+        patch.condition_name = scopeNames;
+      }
+      if (Object.keys(patch).length > 0) {
         changed = true;
-        return { ...c, applies_scope: defaultScope };
+        return { ...c, ...patch };
       }
       return c;
     });

@@ -541,7 +541,9 @@
       {{/if}}
       <tr>
         <td colspan="7" class="right"><strong>確定額 小計（税抜)</strong></td>
-        <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalExTax) 0)}}<strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong>{{else}}<span style="color:#92400e; font-weight:700; font-size:8pt;">報酬は利用許諾料に含む</span>{{/if}}</td>
+        {{!-- 文言重複の割愛: 確定額0のとき「報酬は利用許諾料に含む」は概要(確定額小計)と
+             明細の金額列で既に明示しているため、小計セルは「—」に留める。 --}}
+        <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalExTax) 0)}}<strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong>{{else}}<span style="color:#888;">—</span>{{/if}}</td>
       </tr>
     </tbody>
   </table>
@@ -568,7 +570,7 @@
         <td class="center">{{or condition_no (index1 @index)}}</td>
         <td>{{#if condition_name}}{{condition_name}}{{else}}利用許諾条件{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
         <td>{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
-        <td class="right">{{#if rate_pct}}{{rate_pct}}%{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">{{base_price_label}}</div>{{/if}}</td>
+        <td>{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
         <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
       </tr>
       {{#if applies_scope}}
@@ -584,7 +586,7 @@
         <td class="center">{{or line_no (index1 @index)}}</td>
         <td>{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
         <td>{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
-        <td class="right">{{#if rate_pct}}{{rate_pct}}%{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">{{base_price_label}}</div>{{/if}}</td>
+        <td>{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
         <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
       </tr>
       {{/if}}
