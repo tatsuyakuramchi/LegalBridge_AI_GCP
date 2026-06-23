@@ -470,6 +470,21 @@ export function WorkGraphPanel() {
   // 増分⑥: 開いているノードが原作(source)か。原作中心ビューに切替える。
   const isSource = work?.kind === "licensed_in"
 
+  // 関係の明確化: この作品が利用する原作マテリアル別に、履行すべき利用許諾条件(支払エッジ)をまとめる。
+  //   作品G が 原作A のマテリアルC・D を使う → C・D の条件が履行義務、という連鎖を一目で示すための再表示。
+  //   元データ(upstream)は壊さず、マテリアル単位にグルーピングするだけの読み取り専用ビュー。
+  const consumedGroups = React.useMemo(() => {
+    const groups = new Map<string, { workCode?: string | null; workTitle?: string | null; matCode?: string | null; matName?: string | null; edges: Edge[] }>()
+    for (const e of upstream) {
+      if (e.source_work_id == null && e.source_material_id == null) continue
+      const key = `${e.source_work_id ?? "?"}::${e.source_material_id ?? "?"}`
+      const g = groups.get(key)
+      if (g) g.edges.push(e)
+      else groups.set(key, { workCode: e.source_work_code, workTitle: e.source_work_title, matCode: e.source_material_code, matName: e.source_material_name, edges: [e] })
+    }
+    return Array.from(groups.values())
+  }, [upstream])
+
   // 増分⑥(§3.4): 原作中心ビューから自社作品を新規作成 → そのエディタへ遷移。
   //   原作→作品の実リンク(支払エッジの source_work_id)は、作成後その作品の
   //   支払エッジで「原作に紐付け」して張る(§3.6: エディタは condition_line を新規作成しない)。
@@ -877,6 +892,30 @@ export function WorkGraphPanel() {
         <p className="text-xs font-mono text-muted-foreground mt-1.5">
           原作 → 作品 → 派生物 を 向き×種別の条件明細でつなぐグラフ表示（統合Phase3c・ビュー）。
         </p>
+        {/* 関係の明確化: 原作=マテリアルの集合 / 許諾はマテリアル単位 / 作品=必要マテリアルを選んで構成。
+            利用者のメンタルモデル（作品G→C,D→条件）をそのまま図示して 3者の関係を伝える。 */}
+        <details className="mt-3 rounded-md border border-border bg-muted/30 text-[11px] font-mono">
+          <summary className="cursor-pointer px-3 py-1.5 font-bold text-foreground/90 select-none">
+            ℹ️ 原作・原作マテリアル・作品の関係（クリックで開く）
+          </summary>
+          <div className="px-3 pb-2.5 pt-0.5 space-y-1.5 text-muted-foreground leading-relaxed">
+            <p>
+              <span className="font-bold text-sky-700">原作</span> は1つ以上の{" "}
+              <span className="font-bold text-emerald-700">原作マテリアル</span>{" "}
+              で構成されます（マテリアルごとに権利者が異なる場合があります）。
+              <span className="font-bold">利用許諾条件はマテリアル単位</span>でぶら下がります。
+            </p>
+            <p>
+              <span className="font-bold text-violet-700">作品</span> は原作から
+              <span className="font-bold">必要なマテリアルだけを選んで</span>構成します。
+              選んだマテリアルの条件が、この作品の<span className="font-bold">履行義務（支払う利用料）</span>になります。
+            </p>
+            <div className="rounded border border-border bg-card px-2.5 py-1.5 text-[10px]">
+              例: 原作A（マテリアル B / C / D / F）から <span className="font-bold text-emerald-700">C・D</span> を使う作品G
+              → 作品Gの利用許諾条件書に載るのは <span className="font-bold text-emerald-700">C・D の条件</span>。
+            </div>
+          </div>
+        </details>
         <div className="mt-3 max-w-md">
           <NativeSelect value={workId} onChange={(e) => setWorkId(e.target.value)}>
             <option value="">— 作品を選択 —</option>
@@ -895,6 +934,49 @@ export function WorkGraphPanel() {
         <div className="text-xs font-mono text-muted-foreground py-8 text-center">作品を選択してください。</div>
       ) : (
         <>
+        {/* 関係の明確化: 作品(own)が「どの原作のどのマテリアルを利用し、何を履行するか」をマテリアル単位でまとめて先頭に表示。
+            これがこの作品の利用許諾条件書に載る条件（=支払う利用料）の実体であることを明示する。 */}
+        {!isSource && consumedGroups.length > 0 && (
+          <div className="rounded-md border border-sky-300 bg-sky-50/40 p-3 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+                この作品が利用する原作マテリアル／履行する利用許諾条件
+              </span>
+              <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+                マテリアル {consumedGroups.length}
+              </Badge>
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              下のマテリアルの条件を履行（利用料を支払う）ことで、この作品を販売できます。これがこの作品の利用許諾条件書に記載される条件です。
+            </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+              {consumedGroups.map((g, gi) => (
+                <div key={gi} className="rounded border border-border bg-card px-2.5 py-2 text-[11px] font-mono space-y-1">
+                  <div className="text-[10px] text-muted-foreground truncate">
+                    <span className="text-sky-700 font-bold">原作</span>{" "}
+                    {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
+                  </div>
+                  <div className="font-semibold truncate">
+                    <span className="text-emerald-700">◦ マテリアル</span>{" "}
+                    {g.matCode || ""} {g.matName || (g.matCode ? "" : "（未設定）")}
+                  </div>
+                  <div className="space-y-0.5 pt-0.5 border-t border-border/50">
+                    {g.edges.map((e) => (
+                      <div key={e.id} className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                        <span className="truncate">{e.subject || e.line_code || `条件#${e.id}`}</span>
+                        <span className="shrink-0 font-semibold text-foreground/80">
+                          {e.payment_scheme === "royalty"
+                            ? e.rate_pct != null ? `${e.rate_pct}%` : "—"
+                            : e.amount_ex_tax != null ? yen(e.amount_ex_tax) : "—"}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,1.1fr,1fr] gap-3 items-start">
           {/* 左 = 原作 / 素材調達（支払）*/}
           <Card>
@@ -1315,8 +1397,11 @@ export function WorkGraphPanel() {
         {!isSource && (
           <div className="rounded-md border border-dashed border-sky-300 p-3 space-y-2">
             <div className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
-              ＋ 原作から条件明細を選んで追加（複数作品で共有可）
+              ＋ 原作のマテリアル条件から、この作品で使うものを選ぶ
             </div>
+            <p className="text-[10px] font-mono text-muted-foreground -mt-1">
+              原作を選ぶ→各条件に「利用するマテリアル」を指定→「この作品に追加」。追加した条件がこの作品の履行義務（上のサマリー）になります。
+            </p>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] text-muted-foreground">原作:</span>
               <NativeSelect
@@ -1358,7 +1443,7 @@ export function WorkGraphPanel() {
                     </div>
                   ) : (
                     <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-muted-foreground shrink-0">原作素材:</span>
+                      <span className="text-[10px] text-muted-foreground shrink-0">利用するマテリアル:</span>
                       <NativeSelect
                         value={pickerLineMat[l.id] ?? ""}
                         onChange={(e) => setPickerLineMat((prev) => ({ ...prev, [l.id]: e.target.value }))}
