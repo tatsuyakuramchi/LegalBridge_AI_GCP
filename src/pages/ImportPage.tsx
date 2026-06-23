@@ -480,6 +480,8 @@ const initialLicenseForm = {
   supervisor: "",
   credit_display: "",
   remarks: "",
+  // 方向: payable=自社が払う(イン側) / receivable=自社が受取る(アウト側・再許諾)。
+  direction: "payable" as "payable" | "receivable",
   financial_conditions: [] as FinancialCondition[],
 }
 
@@ -575,6 +577,8 @@ const LicenseImportForm: React.FC<{
         drive_link: form.drive_link || undefined,
         original_work: form.original_work,
         ledger_code: form.ledger_id || undefined,
+        // 方向: 自社が払う(payable)/自社が受取る(receivable・再許諾アウト側)。
+        direction: form.direction === "receivable" ? "receivable" : "payable",
         financial_conditions: (form.financial_conditions || []).map(
           (c, idx) => ({
             condition_no: idx + 1,
@@ -695,6 +699,24 @@ const LicenseImportForm: React.FC<{
             onChange={(e) => setForm({ ...form, drive_link: e.target.value })}
             placeholder="https://drive.google.com/..."
           />
+        </Field>
+        <Field
+          label="方向"
+          hint="自社が払う=支払 / 自社が受取る=受取(再許諾アウト側)"
+        >
+          <select
+            className={inputClass}
+            value={form.direction}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                direction: e.target.value as "payable" | "receivable",
+              })
+            }
+          >
+            <option value="payable">支払（自社が払う・イン側）</option>
+            <option value="receivable">受取（自社が受取る・アウト側/再許諾）</option>
+          </select>
         </Field>
       </Section>
 

@@ -389,6 +389,30 @@ ALTER TABLE condition_lines ADD COLUMN work_id INTEGER REFERENCES works(id);
 - 作品は `parent_work_id` による親子（派生）関係を持ち、権利制約は祖先から継承する。
 - 課題詳細ページは文書一覧に限定する。消化・進捗の管理は条件明細番号（line_code）単位の専用 UI で行う。
 
+## 11b. 決定事項ログ（2026-06-23）— 条件入力の入口一本化
+
+最終目的: 条件明細の入口（フォーム）を1本化し、各画面はそこへ「リンク」するだけにする。
+データの混乱とテーブルの散乱を避ける。
+
+- 入口一本化の原則: 「条件入力」と「文書生成」を分離する。条件は **1フォーム → 1書き込み経路 →
+  condition_lines（＋installments/events）** に集約。文書（発注書/利用許諾/検収/計算書）は
+  「登録済みの条件を参照してPDF化」する下流処理にし、documents は条件を所有せず参照する。
+  各画面（発注作成・利用許諾・過去条件登録・課題詳細）はこの1フォームへリンク/埋め込みするだけ。
+- 用途: 登録した（過去）条件は「計算（利用許諾料計算書・検収・分配・残額）」と「横断検索」の
+  両方に使う＝フル・リンク（vendor / work・原作・素材 / direction / payment_scheme /
+  rights_attribution / 料率・MG/AG・金額・期間）を必須とする。
+- 書き先方式: **B案（現状整合・安全）を採用**。フォームは既存の upsert
+  （upsertCapabilityFinancialConditions / capability_line_items upsert）に通し、sync で
+  condition_lines を埋める。condition_lines への flip（source 化）は後回し（§7 の段階移行で実施）。
+  入口一本化はフォーム／書き込み関数のレベルで先行達成する。
+- 束ね方: 1過去契約 = 1 capability（structural_role='terms'）、その下に複数 condition_line。
+  条件をバラで入れず「契約の器」にぶら下げる（condition_lines.capability_id 必須）。
+- 過去条件は文書不要（データのみ）。原本があれば documents.document_url に添付するだけで、
+  PDFは作り直さない。
+- 実装の起点: 「過去条件登録」画面（capability セレクタ/軽量 terms 契約の新規作成 ＋
+  既存の条件/明細フォーム流用 ＋ PDFなし保存）を最初に作る。これが一本化入口の1個目になり、
+  そのまま過去条件の量産投入に使う。既存の文書作成画面は後続で同フォーム/同経路へリンクさせる。
+
 ## 12. オープン事項
 
 - 打ち切り検収（closed_short）の運用ルール・実行権限・理由記録の要件。
