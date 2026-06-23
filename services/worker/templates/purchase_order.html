@@ -175,6 +175,24 @@
       color: #92400e;
       white-space: nowrap;
     }
+    /* 権利帰属先(成果物のIP帰属)の行内ラベル。 */
+    .ownership-line {
+      margin-top: 3px;
+      font-size: 8pt;
+      color: #333;
+    }
+    .ownership-tag {
+      display: inline-block;
+      font-size: 7pt;
+      font-weight: 800;
+      color: #1f3a8a;
+      border: 1px solid #9bb0e0;
+      background: #eef2fb;
+      border-radius: 2px;
+      padding: 0 4px;
+      margin-right: 4px;
+      white-space: nowrap;
+    }
     /* 金額列「報酬は利用許諾料に含む」: 中央寄せ・改行位置を固定して
        「許 / 諾」のような途中折返しを防ぐ。 */
     .incl-note {
@@ -426,6 +444,9 @@
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
+          {{!-- 権利帰属先(成果物のIP帰属)。約款第7条の譲渡型/利用許諾型に対応。
+               受注者帰属=利用許諾型(IPは受注者に留保)、発注者帰属=譲渡型(IPは発注者へ移転)。 --}}
+          <div class="ownership-line"><span class="ownership-tag">IP帰属</span>{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}</div>
           {{!-- 仕様ロック: 利用許諾(ROYALTY)の計算式方法・料率・別途注記は、折返しが
                汚くなる狭い「支払方法」列ではなく、最も広いこの業務内容列に出す。 --}}
           {{#if (eq calc_method "ROYALTY")}}
