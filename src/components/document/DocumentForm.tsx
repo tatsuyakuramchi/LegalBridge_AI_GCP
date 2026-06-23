@@ -1491,15 +1491,20 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // 法人/個人 判定を堅牢化:
     //   ・entity_type は表記揺れ(corporate/法人/大小文字/別名 vendor_entity_type)を吸収。
     //   ・個人(individual/個人)が明示されていれば個人。
-    //   ・entity_type 未設定でも「法人番号」があれば法人とみなす(法人番号は法人のみ付番)。
-    //   これにより、取引先マスタで entity_type 未入力の法人でも代表者名等が反映される。
+    //   ・entity_type 未設定でも、法人番号 or 社名の法人格(株式会社 等)で法人とみなす。
+    //   取引先マスタの entity_type/corporate_number が未入力でも、社名から法人を判定できる。
     const isCorporation = (vendor: any) => {
       const et = String(vendor?.entity_type || vendor?.vendor_entity_type || '')
         .trim()
         .toLowerCase();
       if (et === 'individual' || et === '個人') return false;
       if (et.includes('corp') || et.includes('法人')) return true;
-      return !!String(vendor?.corporate_number || '').trim();
+      if (String(vendor?.corporate_number || '').trim()) return true;
+      // 社名に法人格を表す語が含まれれば法人とみなす(entity_type 未登録の救済)。
+      const name = String(vendor?.vendor_name || '');
+      return /株式会社|有限会社|合同会社|合名会社|合資会社|相互会社|社団法人|財団法人|学校法人|医療法人|宗教法人|協同組合|（株）|（有）|㈱|㈲|株式會社/.test(
+        name
+      );
     };
 
     const fillVendorFromPartner = () => {
