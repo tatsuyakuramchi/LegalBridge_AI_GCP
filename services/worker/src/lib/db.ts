@@ -2262,6 +2262,33 @@ export async function addMaterialToLedger(payload: {
       payload.remarks || null,
     ]
   );
+  // Stage 0(文書ファースト紐付けプラン 決定3): 正準表 work_materials へミラーし表の再二重化を防ぐ。
+  //   work_id は work_code = ledger_code(kind='licensed_in')で解決。material_code で冪等。
+  //   acquisition_type は 0076/移行0082 と同基準(original のみ license, それ以外 NULL)。
+  //   ミラー失敗は素材作成を妨げない(best-effort・ログのみ)。
+  try {
+    await query(
+      `INSERT INTO work_materials (
+         work_id, material_no, material_code, material_name, material_type,
+         rights_holder_label, is_default, remarks, acquisition_type
+       )
+       SELECT w.id, $2, $3, $4, $5, $6, FALSE, $7,
+              CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END
+         FROM works w WHERE w.work_code = $1 AND w.kind = 'licensed_in'
+       ON CONFLICT DO NOTHING`,
+      [
+        ledgerCode,
+        nextNo,
+        materialCode,
+        payload.material_name,
+        payload.material_type || "derivative",
+        payload.rights_holder || null,
+        payload.remarks || null,
+      ]
+    );
+  } catch (e: any) {
+    console.warn(`[ledger] work_materials mirror failed for ${materialCode}:`, e?.message || e);
+  }
   return {
     id: Number(res.rows[0].id),
     material_code: res.rows[0].material_code,

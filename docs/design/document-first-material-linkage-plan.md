@@ -104,13 +104,15 @@
 
 ## 5. 実装ステージ（後続で詳細化）
 
-| Stage | 内容 | 主な変更 |
-|---|---|---|
-| 0 | 素材表一本化の総仕上げ（決定3）。source-ips POST の素材を work_materials へ。 | workModel.ts ＋ migration top-up |
-| 1 | 文書フォーム明細に 作品/原作 セレクタ（なければ作成）＋ 素材欄（件名で新規 / 既存選択）を追加 | DocumentForm.tsx |
-| 2 | 保存経路で 明細→`work_materials`生成→`condition_lines`(source_work_id/source_material_id/work_id)結線→`attach-work`で中間表 ensure | server.ts（文書保存）/ conditionSync |
-| 3 | 当社帰属／相手方帰属の分岐（条件明細を作る/作らない）を rights_type 駆動で確定 | DocumentForm.tsx / server.ts |
-| 4 | 既存文書（capability単位 ledger_ref_id/material_ref_id）からの移行・後方互換 | migration（冪等） |
+| Stage | 内容 | 主な変更 | 状態 |
+|---|---|---|---|
+| 0 | 素材表一本化の総仕上げ（決定3）。台帳 materials への全書込経路を work_materials へミラー＋既存差分を冪等トップアップ。 | migration 0082 ／ `addMaterialToLedger` ミラー追加（db.ts） | ✅ 実装 |
+| 1 | 文書フォーム明細に 作品/原作 セレクタ（なければ作成）＋ 素材欄（件名で新規 / 既存選択）を追加 | DocumentForm.tsx | ⬜ |
+| 2 | 保存経路で 明細→`work_materials`生成→`condition_lines`(source_work_id/source_material_id/work_id)結線→`attach-work`で中間表 ensure | server.ts（文書保存）/ conditionSync | ⬜ |
+| 3 | 当社帰属／相手方帰属の分岐（条件明細を作る/作らない）を rights_type 駆動で確定 | DocumentForm.tsx / server.ts | ⬜ |
+| 4 | 既存文書（capability単位 ledger_ref_id/material_ref_id）からの移行・後方互換 | migration（冪等） | ⬜ |
+
+> Stage 0 メモ: 台帳 materials への書込経路は `createLedger`（ミラー既存）/ `addMaterialToLedger`（本Stageで追加）/ `POST /api/v3/source-ips`（ミラー既存）の3本に限定されることを確認。すべて work_materials へミラーするため、以後の表ドリフトは発生しない。既存差分は migration 0082（0076の冪等再実行）で解消。
 
 各 Stage は additive・冪等を原則とし、既存の文書発行フローを壊さない。
 
