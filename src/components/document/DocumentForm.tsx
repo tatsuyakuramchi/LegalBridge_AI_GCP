@@ -2536,14 +2536,16 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               const todayIso = new Date().toISOString().slice(0, 10);
               const firstLine = detail.line_items?.[0];
               const prog = detail.delivery_progress;
-              // 受注者帰属で業務報酬0(=利用許諾料に含む)の成果物は、検収数量を
-              //   発注数量で自動セットして検収対象に自動取り込みする(手入力不要)。
-              //   金額は0のまま → 検収書に「利用許諾料に含む」で表示される。
+              // 固定報酬0の利用許諾料/業績連動明細は、検収数量を発注数量で自動セットして
+              //   検収対象に自動取り込みする(手入力不要)。金額は0のまま:
+              //   ・受注者×ROYALTY/0円 → 検収書「利用許諾料に含む」(利用許諾型)
+              //   ・発注者×ROYALTY/0円 → 検収書「業績連動報酬（別途算定）」(譲渡型・業績連動)
               const autoLicenseLines = ((detail.line_items as any[]) || [])
                 .filter(
                   (l: any) =>
-                    l?.deliverable_ownership === "受注者" &&
-                    (Number(l?.amount_ex_tax) || 0) === 0
+                    (Number(l?.amount_ex_tax) || 0) === 0 &&
+                    (l?.deliverable_ownership === "受注者" ||
+                      l?.calc_method === "ROYALTY")
                 )
                 .map((l: any) => ({
                   order_line_item_id: Number(l.id),
@@ -2553,6 +2555,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   acceptance_ratio: 1.0,
                   inspected_amount_ex_tax: 0,
                   delivery_date: l.delivery_date || undefined,
+                  // 業績連動/利用許諾の出し分け・IP帰属表示に使用(検収書テンプレ)。
+                  deliverable_ownership: l.deliverable_ownership || "発注者",
+                  calc_method: l.calc_method || "FIXED",
+                  royalty_calc_basis: l.royalty_calc_basis || "",
+                  rate_pct: l.rate_pct == null ? undefined : Number(l.rate_pct),
                 }));
 
               setFormData({

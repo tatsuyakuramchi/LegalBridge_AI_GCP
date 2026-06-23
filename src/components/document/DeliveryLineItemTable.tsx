@@ -28,6 +28,10 @@ export type OrderLineForInspection = {
   // 成果物帰属。受注者帰属かつ発注額0は利用許諾料に含むため、金額表示を
   //   「利用許諾料に含む」に切り替える(0円とは出さない)。
   deliverable_ownership?: string;
+  // 業績連動型報酬版の判定・表示用(発注者×ROYALTY=業績連動)。
+  calc_method?: string;
+  royalty_calc_basis?: string;
+  rate_pct?: number;
   delivery_date?: string; // 親 PO 明細の納期 (各明細ごとの既定値・プレフィル元)
   inspection?: {
     ordered_amount: number;
@@ -53,6 +57,11 @@ export type DeliveryLine = {
   // 明細別の納品日。検収書 Excel / PDF はこの値を明細ごとに反映する。
   //   未入力なら親 PO 明細の delivery_date にフォールバック (excelService 側)。
   delivery_date?: string;
+  // 検収書テンプレの業績連動/利用許諾の出し分け・IP帰属表示に使用。親明細から複写。
+  deliverable_ownership?: string;
+  calc_method?: string;
+  royalty_calc_basis?: string;
+  rate_pct?: number;
   // derived
   inspected_amount_ex_tax?: number;
 };
@@ -98,9 +107,14 @@ export const DeliveryLineItemTable: React.FC<Props> = ({
     // recompute inspected_amount_ex_tax based on the parent's unit_price
     const parent = orderLines.find((l) => l.id === orderLineItemId);
     if (parent) {
-      // 親 PO 明細から品目名/仕様を引き継ぐ(検収書の行ごと品目名表示のため)。
+      // 親 PO 明細から品目名/仕様/帰属/計算方式を引き継ぐ(検収書の行ごと表示・
+      //   業績連動/利用許諾の出し分けのため)。
       next.item_name = parent.item_name;
       next.spec = (parent as any).spec;
+      next.deliverable_ownership = parent.deliverable_ownership;
+      next.calc_method = (parent as any).calc_method;
+      next.royalty_calc_basis = (parent as any).royalty_calc_basis;
+      next.rate_pct = (parent as any).rate_pct;
       next.inspected_amount_ex_tax = ceilFee(
         parent.unit_price,
         next.inspected_quantity,

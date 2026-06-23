@@ -328,7 +328,9 @@
               {{/if}}
             </td>
             <td class="center">{{formatDate (or delivery_date ../deliveredAt)}}</td>
-            <td class="right">{{#if (gt (or inspected_amount_ex_tax amount_ex_tax) 0)}}{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}{{else}}<span style="font-size:8pt;color:#92400e;">利用許諾料に含む</span>{{/if}}</td>
+            {{!-- 固定報酬0の対価表示: 発注者×ROYALTY=業績連動報酬(別途算定)、それ以外(受注者)=
+                 利用許諾料に含む。amount>0 は通常の金額表示。 --}}
+            <td class="right">{{#if (gt (or inspected_amount_ex_tax amount_ex_tax) 0)}}{{formatYen (or inspected_amount_ex_tax amount_ex_tax)}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#if (eq deliverable_ownership "発注者")}}<span style="font-size:8pt;color:#1f3a8a;">業績連動報酬（別途算定）</span>{{else}}<span style="font-size:8pt;color:#92400e;">利用許諾料に含む</span>{{/if}}{{else}}<span style="font-size:8pt;color:#92400e;">利用許諾料に含む</span>{{/if}}{{/if}}</td>
           </tr>
         {{/each}}
       {{else}}
@@ -368,6 +370,34 @@
   </table>
   {{#if isReducedTax}}
   <div class="reduced-note">※ 軽減税率（8%）対象品目</div>
+  {{/if}}
+
+  {{!-- 業績連動型報酬版: 発注者帰属×ROYALTY の成果物がある場合に表示。
+       IPは検収完了をもって発注者へ譲渡(譲渡型)、報酬は固定額でなく発注者の業績に
+       連動して別途算定・支払。利用許諾型(受注者帰属)とは明確に区別する。 --}}
+  {{#if hasPerformanceRoyalty}}
+  <div class="section-title">■ 業績連動型報酬（成果物のIPは発注者へ譲渡）</div>
+  <table style="margin-bottom:4px;">
+    <thead>
+      <tr>
+        <th style="width:6%">No.</th>
+        <th style="width:48%">成果物</th>
+        <th style="width:28%">報酬の算定方法</th>
+        <th style="width:18%">料率</th>
+      </tr>
+    </thead>
+    <tbody>
+      {{#each performanceRoyaltyLines}}
+      <tr>
+        <td class="center">{{index1 @index}}</td>
+        <td><div class="item-name">{{item_name}}</div></td>
+        <td>{{#if (eq royalty_calc_basis "manufacturing")}}個数 × 基準価格 × 料率{{else}}{{#if (eq royalty_calc_basis "sales")}}売上高 × 料率{{else}}{{#if (eq royalty_calc_basis "sublicense")}}受領額 × 料率{{else}}{{#if (eq royalty_calc_basis "fixed")}}固定額{{else}}個数 × 基準価格 × 料率{{/if}}{{/if}}{{/if}}{{/if}}</td>
+        <td class="right">{{#if rate_pct}}{{rate_pct}}%{{else}}—{{/if}}</td>
+      </tr>
+      {{/each}}
+    </tbody>
+  </table>
+  <div style="font-size:8.5pt;color:#555;margin-top:2px;">※ 上記成果物は、検収完了をもって知的財産権が発注者へ移転（譲渡型）します。これらに対する報酬は固定額ではなく、発注者の業績（売上・製造数量等）に連動する「業績連動型報酬」として、別途発行する算定書（利用許諾料計算書に準じた算定）により算定・支払われます。本検収書に基づく支払額には含まれません。</div>
   {{/if}}
 
   {{!-- Phase 17m: 経費精算 (税込み額) — 親 PO の order_expenses から
