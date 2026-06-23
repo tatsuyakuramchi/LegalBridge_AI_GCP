@@ -2,6 +2,7 @@
 import React, { useMemo, useEffect, useState } from 'react';
 import { useAppData } from '@/src/context/AppDataContext';
 import { FormSection } from './FormSection';
+import { Switch } from '@/components/ui/switch';
 import { FormField } from './FormField';
 import { PartySection, SubLicenseeTable } from './SpecializedParts';
 import * as MaintenanceSpecParts from './MaintenanceSpecParts';
@@ -1231,9 +1232,37 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderField('基本契約名')}
         </FormSection>
 
+        {/* 作品連動スイッチ — この契約が作品に連動するか(原作・素材を紐付けるか)。
+            全契約が作品に関わるわけではない(NDA・一般業務委託 等)ため、OFF で
+            原作・素材の紐付け(作品連動フロー)をスキップする。既定は ON(未設定=ON)。
+            設計: docs/design/document-first-material-linkage-plan.md */}
+        <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/20 px-4 py-3">
+          <div className="space-y-0.5">
+            <label
+              htmlFor="is_work_linked"
+              className="text-xs font-mono font-bold uppercase tracking-[0.14em] text-foreground cursor-pointer"
+            >
+              作品連動する契約
+            </label>
+            <p className="text-[11px] font-mono text-muted-foreground">
+              ON: 原作・原作マテリアルを紐付け、作品の構成・条件明細に連動させます。
+              OFF: 作品に関わらない契約（NDA・一般業務委託 等）として原作・素材の紐付けを行いません。
+            </p>
+          </div>
+          <Switch
+            id="is_work_linked"
+            checked={formData.is_work_linked !== false}
+            onCheckedChange={(checked: boolean) =>
+              setFormData({ ...formData, is_work_linked: checked })
+            }
+          />
+        </div>
+
         {/* 3. マスター条件 — 原作 / 素材 セレクタ
             原作 (ledger) を選ぶと配下の素材一覧が表示され、選択した素材の
-            material_code が 素材番号 に自動入力される。work_id は生成時に採番。 */}
+            material_code が 素材番号 に自動入力される。work_id は生成時に採番。
+            作品連動スイッチ OFF のときは非表示(作品連動フローをスキップ)。 */}
+        {formData.is_work_linked !== false && (
         <FormSection
           title="3. マスター条件 — 原作・素材"
           variant="emerald"
@@ -1321,6 +1350,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             )}
           </div>
         </FormSection>
+        )}
 
         {/* 4. 当事者 (Licensor / Licensee) — 取引先・当社は各セクションの [自社]/[取引先] で充填 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
