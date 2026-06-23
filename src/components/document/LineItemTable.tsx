@@ -48,6 +48,13 @@ export type LineItem = {
    *   FIXED/SUBSCRIPTION では未使用。
    */
   rate_pct?: number;
+  /**
+   * 計算式方法。利用許諾計算書(royalty_statement)の calcType と同一語彙にして、
+   *   発注書PDF・条件明細・計算書で計算式表記を一致させる。
+   *   manufacturing=個数×基準価格×料率 / sales=売上高×料率 /
+   *   sublicense=受領額×料率 / fixed=固定額。calc_method='ROYALTY' のとき意味を持つ。
+   */
+  royalty_calc_basis?: "manufacturing" | "sales" | "sublicense" | "fixed" | string;
   // ── 受注者帰属(利用許諾料)の行が持つ金銭条件フィールド ──────────
   //   deliverable_ownership='受注者' のときに使う。FinancialCondition と同じ語彙。
   calc_type?: CalcType;
@@ -110,6 +117,13 @@ const CALC_METHOD_OPTIONS: Array<{
   { value: "FIXED", label: "FIXED (固定額)" },
   { value: "SUBSCRIPTION", label: "SUBSCRIPTION (サブスク)" },
   { value: "ROYALTY", label: "ROYALTY (業績連動)" },
+];
+
+const CALC_BASIS_OPTIONS: Array<{ value: string; label: string; formula: string }> = [
+  { value: "manufacturing", label: "製造", formula: "個数 × 基準価格 × 料率" },
+  { value: "sales", label: "売上", formula: "売上高 × 料率" },
+  { value: "sublicense", label: "サブライセンス", formula: "受領額 × 料率" },
+  { value: "fixed", label: "固定額", formula: "固定額" },
 ];
 
 // Phase 22.8: サブスク周期。
@@ -233,26 +247,32 @@ interface Props {
 const ceilProduct = (a: number, b: number) =>
   Math.ceil((Number(a) || 0) * (Number(b) || 0));
 
-// 行小計(業務報酬・確定額)の計算。
-//   - 受注者帰属でも「業務報酬(執筆料等)」は 単価×数量 で確定額に計上する。
-//     ※ 利用許諾料(料率・MG/AG)は別建て(確定額外)で、amount には含めない。
-//   - 発注者帰属の ROYALTY は 単価×数量×料率%。
-//   - それ以外(FIXED / SUBSCRIPTION)は 単価×数量。
+// 確定額(税抜)の計算。仕様ロック(支払方法駆動):
+//   - 確定額 = 単価 × 数量(=固定報酬/執筆料・固定額・サブスク額)。帰属に依らず同一。
+//   - ROYALTY の料率(利用許諾料)は確定額に含めない(別途・利用許諾計算書で算定)。
+//     ※ 旧: 発注者ROYALTY=単価×数量×料率 は廃止(②も「報酬は利用許諾料に含む」へ)。
 const computeAmount = (
-  it: Pick<
-    LineItem,
-    "unit_price" | "quantity" | "calc_method" | "rate_pct" | "deliverable_ownership"
-  >
-): number => {
-  const up = Number(it.unit_price) || 0;
-  const qty = Number(it.quantity) || 0;
-  // 受注者帰属の業務報酬は FIXED(単価×数量)。料率は利用許諾条件側で使うため amount には反映しない。
-  if (it.deliverable_ownership === "受注者") return ceilProduct(up, qty);
+  it: Pick<LineItem, "unit_price" | "quantity">
+): number => ceilProduct(Number(it.unit_price) || 0, Number(it.quantity) || 0);
+
+// 確定額セルの表示(支払方法で分岐)。実装(フォーム/PDF)とロジックを一致させるため共通化。
+//   - ROYALTY: 固定報酬>0 なら ¥金額(＋利用許諾料は別途) / 0 なら「報酬は利用許諾料に含む」
+//   - FIXED:   ¥金額
+//   - SUBSCRIPTION: 月額/年額(¥金額)＋固定額(>0のみ)。固定額は将来の専用フィールド前提で本数=単価×数量。
+const formatAmountDisplay = (
+  it: Pick<LineItem, "unit_price" | "quantity" | "calc_method" | "subscription_cycle">
+): { primary: string; note?: string; muted?: boolean } => {
+  const amt = computeAmount(it);
   if (it.calc_method === "ROYALTY") {
-    const rate = Number(it.rate_pct) || 0;
-    return Math.ceil((up * qty * rate) / 100);
+    return amt > 0
+      ? { primary: yenLI(amt), note: "執筆料（利用許諾料は別途）" }
+      : { primary: "報酬は利用許諾料に含む", muted: true };
   }
-  return ceilProduct(up, qty);
+  if (it.calc_method === "SUBSCRIPTION") {
+    const cyc = it.subscription_cycle === "ANNUAL" ? "年額" : "月額";
+    return { primary: `${cyc} ${yenLI(amt)}` };
+  }
+  return { primary: yenLI(amt) };
 };
 
 const yenLI = (n: number) => "¥ " + (Number(n) || 0).toLocaleString("ja-JP");
