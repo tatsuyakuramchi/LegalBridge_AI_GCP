@@ -1488,14 +1488,27 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   - Bank info auto-fills from active vendor
   //   - Advanced sections (特約・備考, 契約・署名) collapsed by default
   if (templateId === 'purchase_order') {
-    const isCorporation = (vendor: any) =>
-      (vendor?.entity_type || '').toLowerCase() === 'corporate' ||
-      (vendor?.entity_type || '') === '法人';
+    // 法人/個人 判定を堅牢化:
+    //   ・entity_type は表記揺れ(corporate/法人/大小文字/別名 vendor_entity_type)を吸収。
+    //   ・個人(individual/個人)が明示されていれば個人。
+    //   ・entity_type 未設定でも「法人番号」があれば法人とみなす(法人番号は法人のみ付番)。
+    //   これにより、取引先マスタで entity_type 未入力の法人でも代表者名等が反映される。
+    const isCorporation = (vendor: any) => {
+      const et = String(vendor?.entity_type || vendor?.vendor_entity_type || '')
+        .trim()
+        .toLowerCase();
+      if (et === 'individual' || et === '個人') return false;
+      if (et.includes('corp') || et.includes('法人')) return true;
+      return !!String(vendor?.corporate_number || '').trim();
+    };
 
     const fillVendorFromPartner = () => {
       if (!activeVendor) return;
       // Phase 17h: 法人/個人 を判定して VENDOR_IS_CORPORATION も同期
       const isCorp = isCorporation(activeVendor);
+      // 代表者名: vendor_rep を優先し、未設定なら legacy の contact_name に
+      //   フォールバック(ライセンサー取込と同方針)。
+      const repName = activeVendor.vendor_rep || activeVendor.contact_name || '';
       setFormData({
         ...formData,
         // Phase 17o: VENDOR_CODE を必ず同期する。
@@ -1508,8 +1521,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           ? activeVendor.vendor_name || ''
           : individualVendorName(activeVendor, combineVendorAlias),
         VENDOR_ADDRESS: activeVendor.address || '',
-        VENDOR_REPRESENTATIVE_SAMA: isCorp && activeVendor.vendor_rep
-          ? `${activeVendor.vendor_rep} 様`
+        VENDOR_REPRESENTATIVE_SAMA: isCorp && repName
+          ? `${repName} 様`
           : '',
         // 担当者・部署は法人の概念。個人取引先では宛名(VENDOR_NAME=本人)と
         //   二重になり「○○様」が二人並ぶため、個人では空にする(代表者様と同方針)。
