@@ -238,6 +238,38 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // ★ 注意: この useEffect はコンポーネント最上部に置く (Rules of Hooks)。
   const { contracts: allContracts, ledgers: allLedgers } = useAppData();
   const lastAutoFilledRef = React.useRef<string>('');
+
+  // 個別利用許諾条件書: 対象作品名(原著作物名)を自社作品(works)テーブルから引用する
+  //   ためのリスト。license フォームのときだけ /api/v3/works を取得する。
+  const [worksList, setWorksList] = React.useState<any[]>([]);
+  useEffect(() => {
+    if (
+      templateId !== 'individual_license_terms' &&
+      templateId !== 'lic_individual'
+    )
+      return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/v3/works');
+        const data = await res.json();
+        const list = Array.isArray(data)
+          ? data
+          : Array.isArray(data?.rows)
+            ? data.rows
+            : Array.isArray(data?.items)
+              ? data.items
+              : [];
+        if (!cancelled) setWorksList(list);
+      } catch {
+        /* 取得失敗時は手入力にフォールバック */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [templateId]);
+
   useEffect(() => {
     if (!activeVendor || !Array.isArray(allContracts)) return;
     const key = `${activeVendor.vendor_code || activeVendor.id}:${templateId}`;
@@ -1323,6 +1355,45 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
 
         {/* IV. 対象作品・期間 */}
         <FormSection title="5. 共通入力事項 — 対象作品・期間" variant="emerald" icon={<Scale className="w-4 h-4" />}>
+          {/* 対象作品名(原著作物名)を自社作品マスタ(works)から引用するセレクタ。
+              選択すると下の「原著作物名」フィールドに作品名を反映する。 */}
+          <div className="col-span-full mb-3">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground block mb-1">
+              対象作品を自社作品マスタから引用
+            </label>
+            <select
+              value=""
+              onChange={(e) => {
+                const w = worksList.find(
+                  (x: any) => String(x.id) === e.target.value
+                );
+                if (!w) return;
+                setFormData({
+                  ...formData,
+                  原著作物名: w.title || formData.原著作物名 || '',
+                });
+              }}
+              disabled={worksList.length === 0}
+              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground disabled:opacity-50"
+            >
+              <option value="">
+                {worksList.length === 0
+                  ? '— 自社作品が登録されていません —'
+                  : '— 作品を選択して原著作物名に反映 —'}
+              </option>
+              {worksList
+                .filter((w: any) => w.title)
+                .map((w: any) => (
+                  <option key={w.id} value={String(w.id)}>
+                    {w.work_code ? `[${w.work_code}] ` : ''}
+                    {w.title}
+                  </option>
+                ))}
+            </select>
+            <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">
+              マスター &gt; 作品（自社作品）から選択すると、下の「原著作物名」に作品名を反映します。
+            </p>
+          </div>
           {renderGroup('IV. 対象作品・期間')}
         </FormSection>
 
