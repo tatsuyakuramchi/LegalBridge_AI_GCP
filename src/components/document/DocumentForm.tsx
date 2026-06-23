@@ -1667,14 +1667,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               選択すると PDF テンプレに「基本契約: …」として反映されます。
               通常は取引先を選ぶと自動補完されます。
             </p>
+            {/* 業務委託(service)に加えライセンス(license)基本契約も選べるようにする。 */}
             <UnifiedContractPicker
               acceptableRecordTypes={["master_contract"]}
-              categoryFilter={["service"]}
+              categoryFilter={["service", "license"]}
               currentContractId={
                 Number(formData.MASTER_CONTRACT_CAPABILITY_ID) || undefined
               }
               hasParent={!!formData.MASTER_CONTRACT_NUMBER}
-              label="業務委託基本契約を選ぶ"
+              label="基本契約を選ぶ（業務委託・ライセンス）"
               onPick={(detail) => {
                 const c = detail.contract;
                 setFormData({
