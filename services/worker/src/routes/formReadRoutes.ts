@@ -165,21 +165,24 @@ export function registerFormReadRoutes(
             );
             if (poHeader.rows.length > 0) {
               const poId = poHeader.rows[0].id;
-              // 検収対象明細: amount>0 の業務委託に加え、受注者帰属(利用許諾料に含む=0円)
-              //   の明細も含める。検収書に「利用許諾料に含む」として出すため。
-              //   発注者帰属の0円明細は除外したままにする。
+              // 検収対象明細: amount>0 の業務委託に加え、ROYALTY 明細(固定報酬0でも
+              //   成果物の検収は必要)と受注者帰属(利用許諾料に含む=0円)の明細も含める。
+              //   ・受注者×ROYALTY/0円 → 検収書「利用許諾料に含む」(利用許諾型)
+              //   ・発注者×ROYALTY/0円 → 検収書「業績連動報酬（別途算定）」(譲渡型・業績連動)
               //   deliverable_ownership 列が未追加の環境(0060前)は 42703 で旧挙動に fallback。
               let lines: any;
               try {
                 lines = await query(
                   `SELECT id, line_no, item_name, spec, unit_price, quantity,
-                          amount_ex_tax, calc_method, payment_terms,
+                          amount_ex_tax, calc_method, rate_pct, royalty_calc_basis,
+                          payment_terms,
                           payment_method, payment_date, delivery_date,
                           deliverable_ownership
                      FROM capability_line_items
                     WHERE capability_id = $1
                       AND (COALESCE(amount_ex_tax, 0) > 0
-                           OR deliverable_ownership = '受注者')
+                           OR deliverable_ownership = '受注者'
+                           OR calc_method = 'ROYALTY')
                     ORDER BY line_no ASC`,
                   [poId]
                 );
@@ -299,6 +302,10 @@ export function registerFormReadRoutes(
                   amount_ex_tax: ordAmt,
                   // 成果物帰属。受注者帰属かつ0円は検収書で「利用許諾料に含む」表示。
                   deliverable_ownership: l.deliverable_ownership || "発注者",
+                  // 業績連動型報酬版の判定・表示に使用(発注者×ROYALTY=業績連動)。
+                  calc_method: l.calc_method || "FIXED",
+                  royalty_calc_basis: l.royalty_calc_basis || "",
+                  rate_pct: l.rate_pct == null ? undefined : Number(l.rate_pct),
                   // Phase 23.0.4: 検収書 Excel / PDF 生成時に納品日列が空に
                   //   なる問題を解消するため delivery_date / payment_date を追加。
                   //   excelService.findParentLine が l.delivery_date を読む。

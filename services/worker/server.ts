@@ -12159,7 +12159,19 @@ ${details}
 
     const yen = (n: number) => Math.round(n).toLocaleString("ja-JP");
 
+    // 業績連動型報酬版: 発注者帰属×ROYALTY の明細を抽出。検収書テンプレで
+    //   「業績連動報酬（別途算定）」表示・専用条件セクションの出し分けに使う。
+    //   (IPは発注者へ譲渡=譲渡型、報酬は業績連動で別途算定・支払。)
+    const performanceRoyaltyLines = deliveryLines.filter(
+      (l: any) =>
+        l?.calc_method === "ROYALTY" && l?.deliverable_ownership === "発注者"
+    );
+    const hasPerformanceRoyalty = performanceRoyaltyLines.length > 0;
+
     return {
+      // 業績連動型報酬版フラグ・対象行
+      hasPerformanceRoyalty,
+      performanceRoyaltyLines,
       expenses,
       other_fees: otherFees,
       otherFeesTaxable,
