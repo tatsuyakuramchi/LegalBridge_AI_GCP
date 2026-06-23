@@ -141,7 +141,7 @@
 - `ledger_ref_id`（原作。台帳id。Stage 0 で work_materials とコード同期済）
 - `condition_material_codes`：`{ [condition_no]: material_code | "" }`。空=その条件の件名で新規 work_material を作成、コード指定=既存 work_material を共有
 - `financial_conditions[]`：各条件の `condition_no` / `condition_name`(件名) / `calc_type`(→payment_scheme: BASE_*=royalty / FIXED=lump_sum=買切 / SUBSCRIPTION) / 料率・固定額
-| 2 | 保存経路で 各条件→`work_materials`解決/生成→`condition_lines`に source_work_id/source_material_id/work_id 結線→`work_components`＋`work_component_lines` ensure | server.ts（文書保存）/ conditionSync | ✅ 共通ヘルパ `linkWorkMaterialsForCapability` を 個別利用許諾条件書／発注書(受注者帰属)／出版等利用許諾条件書 の3経路に適用。再発行は既存素材を再利用(冪等)。残: 発注書 買切(発注者帰属)line_item の素材化／台帳materialsへのミラー |
+| 2 | 保存経路で 各条件→`work_materials`解決/生成→`condition_lines`に source_work_id/source_material_id/work_id 結線→`work_components`＋`work_component_lines` ensure | server.ts（文書保存）/ conditionSync | ✅ 共通下請け `ensureMaterialAndCompose` を抽出し、利用許諾条件(license)＝`linkWorkMaterialsForCapability`／買切(owned/buyout_commission)＝`linkBuyoutMaterialsForCapability` を、個別利用許諾条件書・発注書(受注者帰属＋買取)・出版等の各経路に適用。再発行は既存素材を再利用(冪等)。残: 台帳materialsへのミラー |
 | 3 | `payment_scheme`（royalty / lump_sum 等）を明細の対価方式から確定。**ロイヤリティ計算/残高管理は royalty 系のみ走らせる**（買切固定額=lump_sum は固定額記録のみ）。マテリアル/条件明細/構成リンクの生成は全ケース共通。rights_type はマテリアルに記録のみ | DocumentForm.tsx / server.ts | ⬜ |
 | 4 | 既存文書（capability単位 ledger_ref_id/material_ref_id）からの移行・後方互換 | migration（冪等） | ⬜ |
 
@@ -154,6 +154,7 @@
 ## 6. 未解決・要決定
 
 - **自社原作の運用ルール**（決定2の派生）：自社原作を「作品ごとに1つ立てる」のか「自社レーベル単位で束ねる」のか。素材増殖を避けるなら原則 1作品=1自社原作だが、シリーズ共通素材は束ね原作に置くと共有しやすい。Stage1 のUI設計時に既定挙動を確定。
-- **発注書の条件明細生成経路**：現状 service 明細と condition_lines の関係を実装確認し、相手方帰属時の条件明細生成をどの保存パスに挿すか。
+- ~~**発注書の条件明細生成経路**~~ → 解決済。受注者帰属＝`capability_financial_conditions`、買取(発注者帰属)＝`capability_line_items`、どちらも `syncConditionLinesForCapability` で condition_lines 化され、`linkWorkMaterialsForCapability`／`linkBuyoutMaterialsForCapability` で結線。
+- **台帳 materials へのミラー**：保存経路で自動生成する `work_materials` を台帳 `materials` にも反映するか（フォームの素材ドロップダウン候補の一貫性。Stage 0 のミラーは台帳→work_materials の片方向）。
 - **件名の一意性**：同一原作内で同名素材を作らないためのガード（決定1のUI＋保存時 NOT EXISTS）。
 - **再発行時の冪等**：既存明細に紐付く素材を二重生成しない（line_code / source_seq_no 単位の upsert キー設計）。
