@@ -40,36 +40,40 @@
 
 ### 2.1 保存時マッピング（確定方針）
 
-明細1行ごとに、相手方帰属／利用許諾の場合：
+明細1行ごとに（全行共通。payment_scheme だけ条件で変わる）：
 
 | 生成物 | 値 |
 |---|---|
-| `work_materials` | `work_id` = **選択した原作の id**（決定2）, `material_name` = 明細件名, `rights_holder_vendor_id` = 相手方 or 受注者, `rights_type` = license/joint/**owned**, `is_royalty_bearing` = true |
-| `condition_lines` | `capability_id` = この文書の器, `source_work_id` = 原作, `source_material_id` = 上で作った素材, `work_id` = 作品, `direction` = payable, `transaction_kind` = license / service, `payment_scheme` = royalty, 料率等 = 明細の金銭条件 |
+| `work_materials` | `work_id` = **選択した原作の id**（決定2）, `material_name` = 明細件名, `rights_holder_vendor_id` = 相手方 or 受注者, `rights_type` = license/joint/owned, `is_royalty_bearing` = royalty系なら true / 買切固定額なら false |
+| `condition_lines` | `capability_id` = この文書の器, `source_work_id` = 原作, `source_material_id` = 上で作った素材, `work_id` = 作品, `direction` = payable, `transaction_kind` = license / service, `payment_scheme` = **royalty / lump_sum** など明細の対価方式, 料率/固定額 = 明細の金銭条件 |
 | N:N 中間表 | `attach-work` 経路で `work_components(work_id=作品, material_id)` ＋ `work_component_lines` を ensure（フラット列とデュアル書込。N:N計画 Stage1/4 準拠）|
 
-**2層に分けて考える（重要）：**
+**統一モデル：作品を構成する各原作マテリアルに、条件明細が必ず1本付く。違いは `payment_scheme`（＝ロイヤリティ計算をするか否か）だけ。**
 
-1. **作品構成（`work_components`）= その作品が使う全マテリアル。印税・買取を問わず常に組み込む。**
-   - スキーマ上 `work_components(work_id, material_id)` は条件明細なしで単独に張れる（`work_component_lines` は任意の子。FK確認: 0063/0078/0079）。
-2. **ロイヤリティ義務（`condition_lines` ＋ `work_component_lines`）= 印税のマテリアルにだけ付く。**
-   - 買取マテリアルは構成には入るが条件明細を持たない。対価は service line item（一括）で記録。
+```
+原作A ──────── 作品B（構成 = C・D・E）
+                 原作マテリアルC  利用許諾条件   （payment_scheme=royalty 系）
+                 原作マテリアルD  業績連動条件   （payment_scheme=royalty 系・売上連動）
+                 原作マテリアルE  買切固定額     （payment_scheme=lump_sum・ロイヤリティ計算なし）
+```
 
-文書種別ごと（◎=必ず実施 / —=しない）：
+- **買取も「業務委託の条件明細」を持つ**（完全になしではない）。`payment_scheme='lump_sum'` で固定額を記録し、ロイヤリティ計算だけ走らせない。
+- よって **全ケース共通で 原作マテリアル＋条件明細＋構成リンクを作る**。条件明細を「作る/作らない」で分岐しない。
+- → 既存の condition_line 起点の構成 populate（`attach-work` / `component-lines`）が全ケースで使える。**条件明細非依存の特別経路は不要**（前版の想定を撤回）。
 
-| 文書 / ケース | 権利帰属 | 対価 | 原作マテリアル生成 | 作品構成(work_components) | 条件明細＋work_component_lines |
-|---|---|---|---|---|---|
-| 個別/出版等 利用許諾条件書（原作を借りる）| 相手方 | ロイヤリティ | ◎ (rights_type=license/joint) | ◎ | ◎ (payable×license, royalty) |
-| 発注書 業務委託・相手方帰属 | 受注者 | ロイヤリティ | ◎ (license/joint, 権利者=受注者) | ◎ | ◎ (payable×service, royalty) |
-| **発注書 業務委託・発注者(当社)帰属だが印税** | **当社** | **ロイヤリティ** | ◎ (owned, is_royalty_bearing=true) | ◎ | ◎ (payable×service, royalty) |
-| **発注書 業務委託・当社帰属の買取** | **当社** | **一括(買取)** | ◎ (owned, is_royalty_bearing=false) | **◎** | **—**（対価は service line item）|
+各行が作るもの（全行で 原作マテリアル＋条件明細＋`work_component_lines` を生成）：
+
+| 条件タイプ | transaction_kind | payment_scheme | ロイヤリティ計算 | rights_type（記録のみ）|
+|---|---|---|---|---|
+| 利用許諾条件（原作を借りる）| license | royalty / lump_sum(一括許諾) | royalty系のみ実行 | license/joint |
+| 業績連動条件（業務委託・印税）| service | royalty | 実行 | owned or license/joint |
+| 買切固定額（業務委託・買取）| service | lump_sum | **しない**（固定額記録のみ）| owned |
 
 **判定ルール：**
-- **原作マテリアル生成と作品構成への組み込みは、対価方式に関係なく常に行う**（買取マテリアルも作品の構成要素だから）。
-- **条件明細（＋work_component_lines）の生成は「ロイヤリティ払いか否か（`is_royalty_bearing` / `payment_scheme='royalty'`）」で駆動。** 権利帰属（`rights_type`）は判定に使わずマテリアルへ記録のみ。既存の「②発注者×ROYALTY も対象・帰属ではなく支払方法で駆動」（`DocumentForm.tsx:648`）と一致。
-- 買取（lump_sum）は条件明細を作らず service line item で対価記録。**ただしマテリアルと構成リンクは作る。**
-
-⚠️ **新設が必要な経路：** 現状の中間表 populate（`syncWorkComponentLink` / `linkWorkComponent` / `attach-work`）は **すべて condition_line 起点**で、必ず `work_component_lines` を張る。買取マテリアルは条件明細を持たないため、**「マテリアルを作品構成へ直接組み込む（`work_components` 単独・条件明細非依存）」経路**を別途用意する（Stage 2）。
+- **原作マテリアル生成・条件明細生成・作品構成への組み込みは全ケース共通で常に行う。**
+- 分岐するのは **ロイヤリティ計算/残高管理を走らせるか否か**だけで、これは `payment_scheme`（royalty 系か）で駆動。`is_royalty_bearing` はその要約フラグ。
+- 権利帰属（`rights_type`）は判定に使わずマテリアルへ記録のみ。
+- 既存の「②発注者×ROYALTY も対象・帰属ではなく支払方法で駆動」（`DocumentForm.tsx:648`）と一致。
 
 ---
 
@@ -121,8 +125,8 @@
 |---|---|---|---|
 | 0 | 素材表一本化の総仕上げ（決定3）。台帳 materials への全書込経路を work_materials へミラー＋既存差分を冪等トップアップ。 | migration 0082 ／ `addMaterialToLedger` ミラー追加（db.ts） | ✅ 実装 |
 | 1 | 文書フォーム明細に 作品/原作 セレクタ（なければ作成）＋ 素材欄（件名で新規 / 既存選択）を追加 | DocumentForm.tsx | ⬜ |
-| 2 | 保存経路で 明細→`work_materials`生成→**作品構成へ組み込み(`work_components` 単独・条件明細非依存の新経路)**。印税明細はさらに `condition_lines` 生成＋`work_component_lines` 結線（`attach-work` 系を流用）| server.ts（文書保存）/ conditionSync / workModel.ts（構成追加API新設）| ⬜ |
-| 3 | 条件明細(＋work_component_lines)を作る/作らないの分岐を **ロイヤリティ駆動**（`is_royalty_bearing`/`payment_scheme='royalty'`）で確定。発注者帰属でも印税なら作る／買取は条件明細なし。**ただしマテリアル生成と作品構成への組み込みは全ケース共通**。rights_type はマテリアルに記録のみ | DocumentForm.tsx / server.ts | ⬜ |
+| 2 | 保存経路で 全明細→`work_materials`生成→`condition_lines`(source_work_id/source_material_id/work_id, payment_scheme=明細の対価方式)生成→`attach-work`系で `work_components`＋`work_component_lines` ensure（条件明細起点の既存経路で全ケース対応）| server.ts（文書保存）/ conditionSync | ⬜ |
+| 3 | `payment_scheme`（royalty / lump_sum 等）を明細の対価方式から確定。**ロイヤリティ計算/残高管理は royalty 系のみ走らせる**（買切固定額=lump_sum は固定額記録のみ）。マテリアル/条件明細/構成リンクの生成は全ケース共通。rights_type はマテリアルに記録のみ | DocumentForm.tsx / server.ts | ⬜ |
 | 4 | 既存文書（capability単位 ledger_ref_id/material_ref_id）からの移行・後方互換 | migration（冪等） | ⬜ |
 
 > Stage 0 メモ: 台帳 materials への書込経路は `createLedger`（ミラー既存）/ `addMaterialToLedger`（本Stageで追加）/ `POST /api/v3/source-ips`（ミラー既存）の3本に限定されることを確認。すべて work_materials へミラーするため、以後の表ドリフトは発生しない。既存差分は migration 0082（0076の冪等再実行）で解消。
