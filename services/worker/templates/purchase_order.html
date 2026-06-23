@@ -150,6 +150,41 @@
       line-height: 1.4;
     }
 
+    /* 3b: ROYALTY 行の利用許諾サマリ（計算式方法・料率・別途注記）。
+       狭い支払方法列ではなく最も広い業務内容列に出すことで、折返しの
+       みっともなさを避ける。 */
+    .royalty-summary {
+      margin-top: 4px;
+      font-size: 8pt;
+      line-height: 1.45;
+      color: #444;
+    }
+    .royalty-tag {
+      display: inline-block;
+      font-size: 7pt;
+      font-weight: 800;
+      color: #92400e;
+      border: 1px solid #d9a441;
+      background: #fff8ec;
+      border-radius: 2px;
+      padding: 0 4px;
+      margin-right: 4px;
+      white-space: nowrap;
+    }
+    .royalty-aside {
+      color: #92400e;
+      white-space: nowrap;
+    }
+    /* 金額列「報酬は利用許諾料に含む」: 中央寄せ・改行位置を固定して
+       「許 / 諾」のような途中折返しを防ぐ。 */
+    .incl-note {
+      font-size: 8pt;
+      color: #92400e;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.4;
+    }
+
     /* Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様を独立した「明細詳細行」
        として描画。これにより仕様の文章量が多くても narrow 列 (数量・単価等)
        が縦方向に間延びしない。
@@ -367,12 +402,12 @@
       <tr>
         <th style="width:6mm;">No</th>
         <th>業務内容・成果物</th>
-        <th style="width:18mm;">支払方法</th>
-        <th style="width:22mm;">納期</th>
-        <th style="width:22mm;">支払日</th>
-        <th style="width:13mm;">数量</th>
-        <th style="width:20mm;">単価</th>
-        <th style="width:22mm;">金額（税抜）</th>
+        <th style="width:15mm;">支払方法</th>
+        <th style="width:20mm;">納期</th>
+        <th style="width:20mm;">支払日</th>
+        <th style="width:12mm;">数量</th>
+        <th style="width:18mm;">単価</th>
+        <th style="width:24mm;">金額（税抜）</th>
       </tr>
     </thead>
     <tbody>
@@ -388,16 +423,19 @@
         <td>
           {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
           <div class="item-name-block">{{item_name}}</div>
-          {{!-- 仕様ロック: 利用許諾条件の表示は帰属ではなく支払方法(ROYALTY)で駆動。帰属注記は出さない。 --}}
+          {{!-- 仕様ロック: 利用許諾(ROYALTY)の計算式方法・料率・別途注記は、折返しが
+               汚くなる狭い「支払方法」列ではなく、最も広いこの業務内容列に出す。 --}}
+          {{#if (eq calc_method "ROYALTY")}}
+          <div class="royalty-summary">
+            <span class="royalty-tag">利用許諾</span>{{#if (eq royalty_calc_basis "manufacturing")}}個数 × 基準価格 × 料率{{else}}{{#if (eq royalty_calc_basis "sales")}}売上高 × 料率{{else}}{{#if (eq royalty_calc_basis "sublicense")}}受領額 × 料率{{else}}{{#if (eq royalty_calc_basis "fixed")}}固定額{{else}}個数 × 基準価格 × 料率{{/if}}{{/if}}{{/if}}{{/if}}{{#if rate_pct}} ・料率 {{rate_pct}}%{{/if}}
+            <span class="royalty-aside">／ 利用許諾料は別途（利用許諾計算書による算定）</span>
+          </div>
+          {{/if}}
         </td>
         <td class="center">
-          {{!-- Phase 13: 計算方式バッジ + 支払条件
-               Phase 22.8: SUBSCRIPTION は周期ラベル "月次" 等を補足表示 --}}
+          {{!-- Phase 13: 計算方式バッジ + 支払条件。Phase 22.8: SUBSCRIPTION は周期ラベル。
+               3b: ROYALTY の計算式方法・料率は業務内容列へ移動し、ここはバッジ＋支払条件のみ。 --}}
           <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
-          {{#if (eq calc_method "ROYALTY")}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{#if (eq royalty_calc_basis "manufacturing")}}個数 × 基準価格 × 料率{{else}}{{#if (eq royalty_calc_basis "sublicense")}}受領額 × 料率{{else}}{{#if (eq royalty_calc_basis "fixed")}}固定額{{else}}売上高 × 料率{{/if}}{{/if}}{{/if}}{{#if rate_pct}}・料率 {{rate_pct}}%{{/if}}</div>
-          <div style="font-size:7pt; color:#92400e; margin-top:1px;">利用許諾料は別途（利用許諾計算書による算定）</div>
-          {{/if}}
           {{#if (eq calc_method "SUBSCRIPTION")}}
           <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
           {{else}}
@@ -436,7 +474,7 @@
         </td>
         <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{or quantity qty}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{or quantity qty}}{{/if}}</td>
         <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
-        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}<div style="font-size:7pt;color:#92400e;">執筆料（利用許諾料は別途）</div>{{else}}<span style="color:#92400e;font-size:8pt;">報酬は利用許諾料に含む</span>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
+        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}<div style="font-size:7pt;color:#92400e;">執筆料（利用許諾料は別途）</div>{{else}}<div class="incl-note">報酬は<br>利用許諾料に含む</div>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
       </tr>
       {{#if (or spec detailText)}}
       {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
@@ -497,16 +535,16 @@
       </tr>
       {{/if}}
       <tr>
-        <td colspan="7" class="right"><strong>業務委託 小計（税抜)</strong></td>
-        <td class="right"><strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong></td>
+        <td colspan="7" class="right"><strong>確定額 小計（税抜)</strong></td>
+        <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalExTax) 0)}}<strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong>{{else}}<span style="color:#92400e; font-weight:700; font-size:8pt;">報酬は利用許諾料に含む</span>{{/if}}</td>
       </tr>
     </tbody>
   </table>
 
-  {{!-- 受注者帰属(利用許諾料)の条件。成果物のIPが受注者に帰属するため利用許諾料として扱い、
-       発注の確定額には含めない。利用許諾料計算書・分配に連動(worker 保存時に金銭条件へ振り分け)。 --}}
+  {{!-- 利用許諾料(ROYALTY)明細の条件。確定額には含めず、利用許諾料計算書・分配に連動。
+       3b: 表示駆動を帰属ではなく支払方法(ROYALTY)へ統一(②発注者×ROYALTYも対象)。 --}}
   {{#if has_license_conditions}}
-  <div class="section-mark">■ 利用許諾条件（受注者帰属・確定額外）</div>
+  <div class="section-mark">■ 利用許諾条件（利用許諾料・確定額外）</div>
   <table class="items">
     <thead>
       <tr>
@@ -533,9 +571,10 @@
       {{/if}}
       {{/each}}
       {{else}}
-      {{!-- 後方互換: 旧 per-line 条件(受注者帰属明細ごと)。共通条件が無い既存発注書向け。 --}}
+      {{!-- 後方互換: 旧 per-line 条件(ROYALTY明細ごと)。共通条件が無い既存発注書向け。
+           3b: 受注者帰属ゲート→ROYALTYゲート(②発注者×ROYALTYも明細に出す)。 --}}
       {{#each items}}
-      {{#if (eq deliverable_ownership "受注者")}}
+      {{#if (eq calc_method "ROYALTY")}}
       <tr>
         <td class="center">{{or line_no (index1 @index)}}</td>
         <td>{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
@@ -548,7 +587,7 @@
       {{/if}}
     </tbody>
   </table>
-  <div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は成果物のIPが受注者に帰属するための利用許諾料条件です。受注者帰属の各成果物に適用され、発注の確定額（業務委託小計）には含まれず、別途、利用許諾料計算書により算定・支払われます。</div>
+  <div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の利用許諾料（ROYALTY）明細に適用される条件です。発注の確定額（小計）には含まれず、別途、利用許諾料計算書により算定・支払われます。</div>
   {{/if}}
 
   {{!-- Phase 22.21.56: その他手数料 (税抜・合計に加算)。コーディネート費・

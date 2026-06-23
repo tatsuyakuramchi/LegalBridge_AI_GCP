@@ -4116,7 +4116,8 @@ ${details}
         lines = await query(
           `SELECT line_no, item_name, spec, unit_price, quantity, amount_ex_tax, rate_pct,
                   calc_method, payment_terms, payment_method, payment_date, delivery_date,
-                  cycle, term_start, term_end, billing_day
+                  cycle, term_start, term_end, billing_day,
+                  deliverable_ownership, royalty_calc_basis
              FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
           [capId]
         );
@@ -4150,6 +4151,8 @@ ${details}
         term_start: x.term_start || "",
         term_end: x.term_end || "",
         billing_day: x.billing_day ?? "",
+        deliverable_ownership: x.deliverable_ownership || "発注者",
+        royalty_calc_basis: x.royalty_calc_basis || "",
       }));
 
       const hdr = await query(
@@ -5646,9 +5649,9 @@ ${details}
            quantity, unit_price, amount_ex_tax, rate_pct,
            delivery_date, payment_date,
            cycle, billing_day, term_start, term_end,
-           fee_type,
+           fee_type, royalty_calc_basis,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, line_no) DO UPDATE SET
            category       = EXCLUDED.category,
            item_name      = EXCLUDED.item_name,
@@ -5667,6 +5670,7 @@ ${details}
            term_start     = EXCLUDED.term_start,
            term_end       = EXCLUDED.term_end,
            fee_type       = EXCLUDED.fee_type,
+           royalty_calc_basis = EXCLUDED.royalty_calc_basis,
            updated_at     = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -5688,6 +5692,7 @@ ${details}
           dateOrNull(c.term_start),
           dateOrNull(c.term_end),
           c.fee_type || "production",
+          c.royalty_calc_basis || null,
         ]
       );
     }
@@ -13911,8 +13916,10 @@ ${details}
           //   ただし業務報酬0(=利用許諾料のみ)の受注者行は検収対象にならない(0円明細が
           //   検収待ちに居座る不具合の原因)ため line_items には作らない。利用許諾料(料率/
           //   MG/AG)は下の licenseItems で financial_conditions へ振り分ける。
+          // 3b: 利用許諾(ROYALTY)明細を共通条件 sync のゲートにする。帰属では
+          //   なく支払方法で駆動するため、②発注者×ROYALTY も条件を持てる。
           const licenseItems = allFormItems.filter(
-            (it) => it?.deliverable_ownership === "受注者"
+            (it) => it?.calc_method === "ROYALTY"
           );
           // 全明細を capability_line_items に保存する。受注者帰属で業務報酬0
           //   (=利用許諾料に含む)の明細も検収書に「利用許諾料に含む」として出すため
@@ -13969,8 +13976,8 @@ ${details}
                  unit_price, quantity, amount_ex_tax, rate_pct,
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date,
-                 deliverable_ownership, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP)
+                 deliverable_ownership, royalty_calc_basis, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
                ON CONFLICT (capability_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
@@ -13984,6 +13991,7 @@ ${details}
                  payment_date   = EXCLUDED.payment_date,
                  delivery_date  = EXCLUDED.delivery_date,
                  deliverable_ownership = EXCLUDED.deliverable_ownership,
+                 royalty_calc_basis = EXCLUDED.royalty_calc_basis,
                  updated_at     = CURRENT_TIMESTAMP`,
               [
                 orderItemId,
@@ -14000,6 +14008,7 @@ ${details}
                 l.payment_date || null,
                 l.delivery_date || null, // Phase 17h
                 l.deliverable_ownership || "発注者",
+                l.royalty_calc_basis || null,
               ]
             );
           }
