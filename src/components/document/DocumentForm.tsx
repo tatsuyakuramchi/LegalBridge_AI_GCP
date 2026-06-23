@@ -635,9 +635,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     if (conds.length === 0) {
       // 旧 per-line 条件を持つ明細があれば、そこから共通条件を1本移行。
       const src: any = ownerItems.find((it) => it.calc_type) || ownerItems[0] || {};
+      // 条件名称は業務内容・成果物の名称に合わせる(ROYALTY明細名 → 共通条件名)。
+      // 単一明細なら品目名そのもの、複数なら連結名。明示の condition_name があれば尊重。
       const seeded: FinancialCondition & { applies_scope?: string } = {
         condition_no: 1,
-        condition_name: src.condition_name || '利用許諾条件',
+        condition_name:
+          src.condition_name || scopeNames || src.item_name || '利用許諾条件',
         region_territory: src.region_territory || '',
         region_language: src.region_language || '',
         region_language_label: src.region_language_label || '',
