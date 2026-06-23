@@ -394,9 +394,16 @@
     </tr>
     <tr>
       <th>利用許諾料</th>
+      {{!-- 受注者帰属(利用許諾型=IP留保して許諾)が1つでもあるときだけ「別途算定」。
+           発注者帰属(譲渡型)のみのときは利用許諾料は対象外なので「—」。
+           ※発注者×ROYALTYは業績連動報酬であって利用許諾料ではない。 --}}
       <td>
+        {{#if has_seller_owned_license}}
         <span style="font-weight:800; color:#92400e;">別途算定</span>
         <span style="font-size:8pt; color:#666;">／ 利用許諾計算書による（明細の ROYALTY 各行・計算式方法のとおり）</span>
+        {{else}}
+        <span style="color:#888;">—</span>
+        {{/if}}
       </td>
     </tr>
     {{!-- Phase 22.21.30: 発注日 行を追加。
