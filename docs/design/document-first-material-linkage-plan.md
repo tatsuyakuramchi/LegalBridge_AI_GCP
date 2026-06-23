@@ -44,19 +44,20 @@
 
 | 生成物 | 値 |
 |---|---|
-| `work_materials` | `work_id` = **選択した原作の id**（決定2）, `material_name` = 明細件名, `rights_holder_vendor_id` = 相手方, `rights_type` = license/joint |
-| `condition_lines` | `capability_id` = この文書の器, `source_work_id` = 原作, `source_material_id` = 上で作った素材, `work_id` = 作品, `direction` = payable, `transaction_kind` = license / service, 料率等 = 明細の金銭条件 |
+| `work_materials` | `work_id` = **選択した原作の id**（決定2）, `material_name` = 明細件名, `rights_holder_vendor_id` = 相手方 or 受注者, `rights_type` = license/joint/**owned**, `is_royalty_bearing` = true |
+| `condition_lines` | `capability_id` = この文書の器, `source_work_id` = 原作, `source_material_id` = 上で作った素材, `work_id` = 作品, `direction` = payable, `transaction_kind` = license / service, `payment_scheme` = royalty, 料率等 = 明細の金銭条件 |
 | N:N 中間表 | `attach-work` 経路で `work_components(work_id=作品, material_id)` ＋ `work_component_lines` を ensure（フラット列とデュアル書込。N:N計画 Stage1/4 準拠）|
 
 文書種別ごと：
 
-| 文書 | direction × kind | 行が作るもの |
-|---|---|---|
-| 個別利用許諾条件書 / 出版等個別利用許諾条件書 | payable × license | 原作マテリアル ＋ 条件明細（上表）|
-| 発注書（相手方帰属＝印税方式）| payable × service（またはlicense）| 原作マテリアル（権利者=受注者）＋ 条件明細 |
-| 発注書（当社帰属＝買取）| — | **条件明細・自動素材は作らない**。業務委託明細(service line item)のみ |
+| 文書 / ケース | 権利帰属 | 対価 | direction × kind | 条件明細＋原作マテリアル |
+|---|---|---|---|---|
+| 個別/出版等 利用許諾条件書（原作を借りる）| 相手方 | ロイヤリティ | payable × license | **作る**（rights_type=license/joint）|
+| 発注書 業務委託・相手方帰属 | 受注者 | ロイヤリティ | payable × service | **作る**（rights_type=license/joint, 権利者=受注者）|
+| **発注書 業務委託・発注者(当社)帰属だが印税** | **当社** | **ロイヤリティ** | **payable × service** | **作る**（rights_type=owned, is_royalty_bearing=true）|
+| 発注書 業務委託・当社帰属の買取 | 当社 | 一括(買取) | — | **作らない**（service line item のみ）|
 
-「相手方帰属のときだけ条件明細＋素材」は既存 `isCounterpartyRights`（license/joint＝相手方）ロジック（`WorkModelPanel.tsx:587`）と一致。整合的。
+**判定ルール（重要）：条件明細＋原作マテリアルを作るか否かは「権利帰属」ではなく「ロイヤリティ払いか否か（`is_royalty_bearing` / `payment_scheme='royalty'`）」で駆動する。** 権利帰属（`rights_type`）はマテリアルに別途記録するだけで、生成可否の判定には使わない。これは既存の「②発注者×ROYALTY も対象・帰属ではなく支払方法で駆動」ロジック（`DocumentForm.tsx:648`）と一致。買取（lump_sum・印税なし）のみ条件明細を作らず service line item に留める。
 
 ---
 
@@ -109,7 +110,7 @@
 | 0 | 素材表一本化の総仕上げ（決定3）。台帳 materials への全書込経路を work_materials へミラー＋既存差分を冪等トップアップ。 | migration 0082 ／ `addMaterialToLedger` ミラー追加（db.ts） | ✅ 実装 |
 | 1 | 文書フォーム明細に 作品/原作 セレクタ（なければ作成）＋ 素材欄（件名で新規 / 既存選択）を追加 | DocumentForm.tsx | ⬜ |
 | 2 | 保存経路で 明細→`work_materials`生成→`condition_lines`(source_work_id/source_material_id/work_id)結線→`attach-work`で中間表 ensure | server.ts（文書保存）/ conditionSync | ⬜ |
-| 3 | 当社帰属／相手方帰属の分岐（条件明細を作る/作らない）を rights_type 駆動で確定 | DocumentForm.tsx / server.ts | ⬜ |
+| 3 | 条件明細を作る/作らないの分岐を **ロイヤリティ駆動**（`is_royalty_bearing`/`payment_scheme='royalty'`）で確定。発注者帰属でも印税なら作る／買取のみ作らない。rights_type はマテリアルに記録のみ | DocumentForm.tsx / server.ts | ⬜ |
 | 4 | 既存文書（capability単位 ledger_ref_id/material_ref_id）からの移行・後方互換 | migration（冪等） | ⬜ |
 
 > Stage 0 メモ: 台帳 materials への書込経路は `createLedger`（ミラー既存）/ `addMaterialToLedger`（本Stageで追加）/ `POST /api/v3/source-ips`（ミラー既存）の3本に限定されることを確認。すべて work_materials へミラーするため、以後の表ドリフトは発生しない。既存差分は migration 0082（0076の冪等再実行）で解消。
