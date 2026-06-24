@@ -56,6 +56,40 @@ type IssueDocument = {
   line_code?: string | null // Phase F: 対応する条件明細
 }
 
+type IssueConditionLine = {
+  id: number
+  line_code: string | null
+  subject: string | null
+  payment_scheme: string | null
+  amount_ex_tax: number | string | null
+  currency: string | null
+  delivery_date: string | null
+  term_start: string | null
+  term_end: string | null
+  status: string | null
+  consumed_amount: number | string | null
+  remaining_amount: number | string | null
+  event_count: number | null
+  total_event_count: number | null
+  issue_event_count: number | null
+  contract_number: string | null
+  contracting_issue_key: string | null
+  relations: string[] | null
+  next_template_type: string | null
+  recent_events?: any[]
+}
+
+type IssueConditionLineSummary = {
+  ok: boolean
+  summary: {
+    total: number
+    open: number
+    completed: number
+    next_actions?: number
+  }
+  lines: IssueConditionLine[]
+}
+
 // lifecycle_status → バッジ表示。final=緑 / reissued=グレー / archived_draft=打ち消し。
 function LifecycleBadge({ status }: { status?: string }) {
   const s = status || "final"
@@ -138,6 +172,8 @@ export function IssueDetailPage() {
   }
 
   const [docs, setDocs] = React.useState<IssueDocument[]>([])
+  const [lineSummary, setLineSummary] = React.useState<IssueConditionLineSummary | null>(null)
+  const [lineSummaryError, setLineSummaryError] = React.useState<string | null>(null)
   // 個別送信: 送信方法の選択(クラウドサイン/メール) → 各フォーム。
   const [chooserDoc, setChooserDoc] = React.useState<IssueDocument | null>(null)
   // メール送信ダイアログ
@@ -221,14 +257,29 @@ export function IssueDetailPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
+    setLineSummaryError(null)
+    setLineSummary(null)
     ;(async () => {
       try {
-        const res = await fetch(
-          `/api/issues/${encodeURIComponent(issueKey)}/documents`
-        )
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const data = await res.json()
+        const [docsResult, summaryResult] = await Promise.allSettled([
+          fetch(`/api/issues/${encodeURIComponent(issueKey)}/documents`),
+          fetch(`/api/issues/${encodeURIComponent(issueKey)}/condition-line-summary`),
+        ])
+        if (docsResult.status === "rejected") {
+          throw docsResult.reason
+        }
+        if (!docsResult.value.ok) throw new Error(`HTTP ${docsResult.value.status}`)
+        const data = await docsResult.value.json()
         if (!cancelled) setDocs(Array.isArray(data) ? data : [])
+
+        if (summaryResult.status === "fulfilled" && summaryResult.value.ok) {
+          const summaryData = await summaryResult.value.json()
+          if (!cancelled) setLineSummary(summaryData)
+        } else if (summaryResult.status === "fulfilled") {
+          if (!cancelled) setLineSummaryError(`HTTP ${summaryResult.value.status}`)
+        } else if (!cancelled) {
+          setLineSummaryError(summaryResult.reason?.message || String(summaryResult.reason))
+        }
       } catch (e: any) {
         if (!cancelled) setError(e?.message || String(e))
       } finally {
@@ -423,6 +474,43 @@ export function IssueDetailPage() {
     }
   }
 
+  const fmtDate = (v?: string | null) =>
+    v ? new Date(v).toLocaleDateString("ja-JP") : "—"
+  const fmtAmount = (v: any, currency = "JPY") => {
+    const n = Number(v)
+    if (!Number.isFinite(n)) return "—"
+    return `${currency || "JPY"} ${Math.round(n).toLocaleString("ja-JP")}`
+  }
+  const progressPct = (line: IssueConditionLine) => {
+    const total = Number(line.amount_ex_tax || 0)
+    const consumed = Number(line.consumed_amount || 0)
+    if (!Number.isFinite(total) || total <= 0) return null
+    return Math.max(0, Math.min(100, Math.round((consumed / total) * 100)))
+  }
+  const statusText = (status?: string | null) => {
+    switch (status) {
+      case "fulfilled":
+        return "完了"
+      case "expired":
+        return "期間満了"
+      case "partially_fulfilled":
+        return "一部消化"
+      case "active":
+        return "有効"
+      case "open":
+        return "未消化"
+      default:
+        return status || "未判定"
+    }
+  }
+  const relationText = (relations?: string[] | null) => {
+    const r = new Set(relations || [])
+    if (r.has("contracting") && r.has("payment")) return "締結 + 支払準備"
+    if (r.has("contracting")) return "締結フェイズ"
+    if (r.has("payment")) return "支払準備フェイズ"
+    return "関連フェイズ"
+  }
+
   return (
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
       <button
@@ -591,10 +679,146 @@ export function IssueDetailPage() {
         </section>
       ) : null}
 
+      {/* ── 取引循環進捗 ─────────────────────────────────────── */}
+      <section className="space-y-3">
+        <SectionHead label="SEC · 01 / 取引循環進捗" />
+        {lineSummaryError ? (
+          <Card>
+            <CardContent className="px-4 py-3 text-xs font-mono text-destructive">
+              条件明細サマリの取得に失敗しました: {lineSummaryError}
+            </CardContent>
+          </Card>
+        ) : !lineSummary || lineSummary.lines.length === 0 ? (
+          <Card>
+            <CardContent className="px-4 py-6 text-center text-xs font-mono text-muted-foreground">
+              この課題に紐づく条件明細はまだありません。
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {[
+                ["明細", lineSummary.summary.total],
+                ["進行中", lineSummary.summary.open],
+                ["完了", lineSummary.summary.completed],
+                ["次アクション", lineSummary.summary.next_actions || 0],
+              ].map(([label, value]) => (
+                <div key={String(label)} className="border border-border rounded-sm px-3 py-2">
+                  <div className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                    {label}
+                  </div>
+                  <div className="text-lg font-mono font-bold">{value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="space-y-2">
+              {lineSummary.lines.map((line) => {
+                const pct = progressPct(line)
+                const isDone = ["fulfilled", "expired"].includes(String(line.status || ""))
+                return (
+                  <Card key={`line-${line.id}`} className="transition-colors hover:border-foreground">
+                    <CardContent className="px-4 py-3 space-y-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <Badge variant="outline" className="font-mono">
+                              {line.line_code || `CL-${line.id}`}
+                            </Badge>
+                            <span className="text-sm font-mono font-bold break-words">
+                              {line.subject || "(件名なし)"}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] font-mono text-muted-foreground">
+                            <span>{relationText(line.relations)}</span>
+                            <span>{line.payment_scheme || "scheme未設定"}</span>
+                            <span>{statusText(line.status)}</span>
+                            {line.contract_number && <span>契約 {line.contract_number}</span>}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
+                          {line.line_code && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() =>
+                                navigate(`/condition-lines/${encodeURIComponent(line.line_code!)}`)
+                              }
+                              className="h-8 gap-1.5 text-[10px] font-mono"
+                            >
+                              <ListChecks className="h-3.5 w-3.5" />
+                              明細
+                            </Button>
+                          )}
+                          {line.next_template_type && !isDone && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              onClick={() => createDocument(line.next_template_type!)}
+                              className="h-8 gap-1.5 text-[10px] font-mono"
+                            >
+                              <Plus className="h-3.5 w-3.5" />
+                              {templateLabel(line.next_template_type)}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-[10px] font-mono">
+                        <div>
+                          <div className="text-muted-foreground uppercase tracking-[0.14em]">
+                            金額 / 消化
+                          </div>
+                          <div className="text-foreground">
+                            {fmtAmount(line.consumed_amount, line.currency || "JPY")} /{" "}
+                            {fmtAmount(line.amount_ex_tax, line.currency || "JPY")}
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground uppercase tracking-[0.14em]">
+                            残額 / 実績
+                          </div>
+                          <div className="text-foreground">
+                            {fmtAmount(line.remaining_amount, line.currency || "JPY")} /{" "}
+                            {line.total_event_count || 0}件
+                          </div>
+                        </div>
+                        <div>
+                          <div className="text-muted-foreground uppercase tracking-[0.14em]">
+                            期間 / 納期
+                          </div>
+                          <div className="text-foreground">
+                            {line.term_start || line.term_end
+                              ? `${fmtDate(line.term_start)} → ${fmtDate(line.term_end)}`
+                              : fmtDate(line.delivery_date)}
+                          </div>
+                        </div>
+                      </div>
+
+                      {pct != null && (
+                        <div className="h-1.5 bg-muted rounded-sm overflow-hidden">
+                          <div
+                            className={cn(
+                              "h-full transition-all",
+                              isDone ? "bg-emerald-600" : "bg-foreground"
+                            )}
+                            style={{ width: `${pct}%` }}
+                          />
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )
+              })}
+            </div>
+          </div>
+        )}
+      </section>
+
       {/* ── 文書一覧 ─────────────────────────────────────────── */}
       <section className="space-y-3">
         <div className="flex items-center justify-between gap-3">
-          <SectionHead label="SEC · 01 / この課題で作成した文書" />
+          <SectionHead label="SEC · 02 / この課題で作成した文書" />
           {selDocs.size > 0 && (
             <Button size="sm" onClick={openBundle} className="gap-1.5 shrink-0">
               <Send className="h-3.5 w-3.5" />
