@@ -43,6 +43,7 @@ const REPAIR_LABELS: Record<string, string> = {
   prune_orphan_contracts: "孤児ミラーを削除",
   prune_stale_drafts: "古い下書きを削除",
   fix_orphan_refs: "孤児参照をNULL化",
+  backfill_condition_line_classification: "条件明細分類を補完",
 }
 
 export const DataLinkagePanel: React.FC = () => {

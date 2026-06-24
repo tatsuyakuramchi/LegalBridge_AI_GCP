@@ -233,7 +233,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           label: "条件明細の分類未完了",
           description:
             "transaction_kind または counterparty_vendor_id が NULL の condition_lines。分類補完の対象。",
-          repair_action: null,
+          repair_action: "backfill_condition_line_classification",
         },
         `SELECT COUNT(*)::int AS n
            FROM condition_lines
@@ -579,6 +579,74 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               action,
               affected: d.rowCount || 0,
               detail: { delivery: d.rowCount || 0 },
+            });
+          } catch (e) {
+            await client.query("ROLLBACK");
+            throw e;
+          } finally {
+            client.release();
+          }
+        }
+
+        if (action === "backfill_condition_line_classification") {
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+
+            const t = await client.query(
+              `WITH candidates AS (
+                 SELECT cl.id,
+                        CASE
+                          WHEN cc.record_type = 'purchase_order' THEN 'service'
+                          WHEN cc.contract_category = 'service' THEN 'service'
+                          WHEN cc.contract_category = 'sales' THEN 'product'
+                          WHEN cc.contract_category IN ('license', 'publication') THEN 'license'
+                          WHEN cc.record_type IN ('license_condition', 'publication_condition') THEN 'license'
+                          WHEN cl.payment_scheme = 'royalty' THEN 'license'
+                          WHEN cl.payment_scheme = 'per_unit' THEN 'service'
+                          ELSE NULL
+                        END AS suggested_transaction_kind
+                   FROM condition_lines cl
+                   LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+                  WHERE cl.transaction_kind IS NULL
+                  ORDER BY cl.id
+                  LIMIT $1
+               )
+               UPDATE condition_lines cl
+                  SET transaction_kind = c.suggested_transaction_kind
+                 FROM candidates c
+                WHERE cl.id = c.id
+                  AND c.suggested_transaction_kind IS NOT NULL`,
+              [limit]
+            );
+
+            const v = await client.query(
+              `WITH candidates AS (
+                 SELECT cl.id,
+                        cc.vendor_id AS suggested_counterparty_vendor_id
+                   FROM condition_lines cl
+                   LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+                  WHERE cl.counterparty_vendor_id IS NULL
+                    AND cc.vendor_id IS NOT NULL
+                  ORDER BY cl.id
+                  LIMIT $1
+               )
+               UPDATE condition_lines cl
+                  SET counterparty_vendor_id = c.suggested_counterparty_vendor_id
+                 FROM candidates c
+                WHERE cl.id = c.id`,
+              [limit]
+            );
+
+            await client.query("COMMIT");
+            return res.json({
+              ok: true,
+              action,
+              affected: (t.rowCount || 0) + (v.rowCount || 0),
+              detail: {
+                transaction_kind: t.rowCount || 0,
+                counterparty_vendor_id: v.rowCount || 0,
+              },
             });
           } catch (e) {
             await client.query("ROLLBACK");
