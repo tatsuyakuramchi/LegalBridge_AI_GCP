@@ -518,6 +518,27 @@ export function WorkGraphPanel() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSource, workId, graph])
 
+  // item2(作品ビュー): 原作ピッカーをツリー化 — 条件明細を「原作マテリアル」でグルーピング。
+  //   マテリアル確定済み(source_material_id あり)を上に、未割当を末尾に。
+  const pickerGroups = React.useMemo(() => {
+    const byMat = new Map<string, { mat: any | null; lines: any[] }>()
+    for (const l of pickerLines) {
+      const mid = l.source_material_id != null ? String(l.source_material_id) : ""
+      if (!byMat.has(mid)) {
+        const mat = mid
+          ? pickerMaterials.find((m: any) => String(m.id) === mid) || {
+              material_code: l.material_code,
+              material_name: l.material_name,
+              rights_holder_name: null,
+            }
+          : null
+        byMat.set(mid, { mat, lines: [] })
+      }
+      byMat.get(mid)!.lines.push(l)
+    }
+    return Array.from(byMat.values()).sort((a, b) => (a.mat ? 0 : 1) - (b.mat ? 0 : 1))
+  }, [pickerLines, pickerMaterials])
+
   // 増分⑥(§3.4): 原作中心ビューから自社作品を新規作成 → そのエディタへ遷移。
   //   原作→作品の実リンク(支払エッジの source_work_id)は、作成後その作品の
   //   支払エッジで「原作に紐付け」して張る(§3.6: エディタは condition_line を新規作成しない)。
@@ -681,6 +702,13 @@ export function WorkGraphPanel() {
         .then((d) => setLicenseCaps(Array.isArray(d) ? d : []))
         .catch(() => {})
     }
+  }
+  // 構成ツリー(原作ビュー)から、そのマテリアルの条件編集パネルを開いて中カードへスクロール。
+  const openMatEditor = (mid: number) => {
+    if (matCondOpen !== mid) toggleMatCond(mid)
+    setTimeout(() => {
+      document.getElementById(`srcmat-${mid}`)?.scrollIntoView({ behavior: "smooth", block: "center" })
+    }, 60)
   }
   // 文書番号から既存金銭条件を呼び出す(by-document)。1文書=複数明細(金銭条件 n,n+1,…)。
   const recallByDoc = async () => {
@@ -1041,12 +1069,22 @@ export function WorkGraphPanel() {
                   const conds = srcMatConds[m.id] || []
                   return (
                     <div key={m.id} className="rounded border border-border bg-card px-2.5 py-2 text-[11px] font-mono space-y-1">
-                      <div className="font-semibold truncate">
-                        <span className="text-emerald-700">◦ マテリアル</span>{" "}
-                        {m.material_code || "—"} {m.material_name}
-                        {m.is_default && (
-                          <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>
-                        )}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="font-semibold truncate">
+                          <span className="text-emerald-700">◦ マテリアル</span>{" "}
+                          {m.material_code || "—"} {m.material_name}
+                          {m.is_default && (
+                            <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => openMatEditor(m.id)}
+                          className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50"
+                          title="このマテリアルの条件明細を編集/追加"
+                        >
+                          条件編集 ▾
+                        </button>
                       </div>
                       {m.rights_holder && (
                         <div className="text-[10px] text-amber-700 truncate">権利者: {m.rights_holder}</div>
@@ -1284,7 +1322,7 @@ export function WorkGraphPanel() {
                     素材{isSource && "（クリックで利用許諾条件を登録）"}
                   </div>
                   {materials.map((m) => (
-                    <div key={m.id} className="text-[11px] font-mono border border-border/60 rounded overflow-hidden">
+                    <div key={m.id} id={`srcmat-${m.id}`} className="text-[11px] font-mono border border-border/60 rounded overflow-hidden scroll-mt-20">
                       {isSource ? (
                         <button
                           type="button"
@@ -1523,66 +1561,84 @@ export function WorkGraphPanel() {
                 この原作に紐づく利用許諾条件明細がありません（明細の出所原作が未設定の可能性）。
               </p>
             )}
-            {pickerLines.map((l) => (
-              <div
-                key={l.id}
-                className="flex items-center justify-between gap-2 text-[11px] font-mono border border-border/60 rounded px-2 py-1.5"
-              >
-                <div className="min-w-0 space-y-0.5 flex-1">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <KindBadge kind={l.transaction_kind} />
-                    <span className="font-semibold truncate">{l.subject || l.line_code || `#${l.id}`}</span>
-                    {l.payment_scheme === "royalty"
-                      ? l.rate_pct != null && <span className="text-muted-foreground">{l.rate_pct}%</span>
-                      : l.amount_ex_tax != null && <span className="text-muted-foreground">{yen(l.amount_ex_tax)}</span>}
-                    {/* 相手方(この条件で利用料を払う取引先) */}
-                    {l.counterparty && <span className="text-[10px] text-amber-700">相手方: {l.counterparty}</span>}
-                  </div>
-                  {l.linked_here ? (
-                    <div className="text-[10px] text-muted-foreground/80 truncate">
-                      {l.material_code ? `素材 ${l.material_code} ${l.material_name || ""}` : "素材未設定"}
-                      {l.document_number && ` · ${l.document_number}`}
-                    </div>
-                  ) : (
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-muted-foreground shrink-0">利用するマテリアル:</span>
-                      <NativeSelect
-                        value={pickerLineMat[l.id] ?? ""}
-                        onChange={(e) => setPickerLineMat((prev) => ({ ...prev, [l.id]: e.target.value }))}
-                        className="h-6 text-[10px] py-0 min-w-[10rem]"
-                      >
-                        <option value="">— マテリアルを選択 —</option>
-                        {pickerMaterials.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.material_code || "—"} {m.material_name || ""}{m.rights_holder_name ? `（権利者: ${m.rights_holder_name}）` : ""}
-                          </option>
-                        ))}
-                      </NativeSelect>
-                      {l.document_number && (
-                        <span className="text-[10px] text-muted-foreground/70 truncate">{l.document_number}</span>
+            {/* ツリー: 原作 → マテリアル → 条件明細。マテリアル確定済みはヘッダ配下に束ね、
+                未割当グループは各条件でマテリアルを選んでから追加する。 */}
+            {pickerGroups.map((g, gi) => (
+              <div key={gi} className="space-y-1 border border-border/50 rounded-md p-2">
+                <div className="text-[10px] font-mono font-bold flex items-center gap-1.5 flex-wrap">
+                  {g.mat ? (
+                    <>
+                      <span className="text-emerald-700">◦ マテリアル</span>
+                      <span>{g.mat.material_code || "—"} {g.mat.material_name || ""}</span>
+                      {g.mat.rights_holder_name && (
+                        <span className="text-amber-700">（権利者: {g.mat.rights_holder_name}）</span>
                       )}
-                    </div>
+                      <span className="text-muted-foreground/60">· 条件 {g.lines.length}件</span>
+                    </>
+                  ) : (
+                    <span className="text-muted-foreground">（マテリアル未割当 — 各条件で選択して追加）</span>
                   )}
                 </div>
-                {l.linked_here ? (
-                  <button
-                    type="button"
-                    onClick={() => void removeComponentLine(l)}
-                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
-                  >
-                    外す
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => void addComponentLine(l)}
-                    disabled={!(pickerLineMat[l.id] || l.source_material_id != null)}
-                    title={!(pickerLineMat[l.id] || l.source_material_id != null) ? "原作マテリアルを選択してください" : undefined}
-                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-                  >
-                    この作品に追加
-                  </button>
-                )}
+                {g.lines.map((l: any) => {
+                  const knownMat = !!g.mat
+                  return (
+                    <div
+                      key={l.id}
+                      className="flex items-center justify-between gap-2 text-[11px] font-mono border border-border/60 rounded px-2 py-1.5 ml-2"
+                    >
+                      <div className="min-w-0 space-y-0.5 flex-1">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <KindBadge kind={l.transaction_kind} />
+                          <span className="font-semibold truncate">{l.subject || l.line_code || `#${l.id}`}</span>
+                          {l.payment_scheme === "royalty"
+                            ? l.rate_pct != null && <span className="text-muted-foreground">{l.rate_pct}%</span>
+                            : l.amount_ex_tax != null && <span className="text-muted-foreground">{yen(l.amount_ex_tax)}</span>}
+                          {l.counterparty && <span className="text-[10px] text-amber-700">相手方: {l.counterparty}</span>}
+                          {l.linked_here && <span className="text-[10px] text-emerald-700">✓ 利用中</span>}
+                        </div>
+                        {!knownMat && !l.linked_here && (
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-[10px] text-muted-foreground shrink-0">利用するマテリアル:</span>
+                            <NativeSelect
+                              value={pickerLineMat[l.id] ?? ""}
+                              onChange={(e) => setPickerLineMat((prev) => ({ ...prev, [l.id]: e.target.value }))}
+                              className="h-6 text-[10px] py-0 min-w-[10rem]"
+                            >
+                              <option value="">— マテリアルを選択 —</option>
+                              {pickerMaterials.map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  {m.material_code || "—"} {m.material_name || ""}{m.rights_holder_name ? `（権利者: ${m.rights_holder_name}）` : ""}
+                                </option>
+                              ))}
+                            </NativeSelect>
+                          </div>
+                        )}
+                        {l.document_number && (
+                          <div className="text-[10px] text-muted-foreground/70 truncate">{l.document_number}</div>
+                        )}
+                      </div>
+                      {l.linked_here ? (
+                        <button
+                          type="button"
+                          onClick={() => void removeComponentLine(l)}
+                          className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                        >
+                          外す
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => void addComponentLine(l)}
+                          disabled={!(pickerLineMat[l.id] || l.source_material_id != null)}
+                          title={!(pickerLineMat[l.id] || l.source_material_id != null) ? "原作マテリアルを選択してください" : undefined}
+                          className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                        >
+                          この作品に追加
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
             ))}
             <p className="text-[10px] text-muted-foreground/70">

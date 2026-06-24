@@ -90,7 +90,7 @@ export function WorksListPanel() {
         code: w.source_code || w.work_code || `#${w.id}`,
         title: w.title || `#${w.id}`,
         title_kana: w.title_kana || undefined,
-        sub: `権利者: ${w.default_rights_holder || "—"} / 素材 ${w.material_count ?? 0}`,
+        sub: `権利者: ${w.default_rights_holder || "—"} / 素材 ${w.material_count ?? 0} / 条件 ${w.condition_count ?? 0}`,
         is_active: w.is_active !== false,
       }))
       setRows([...src, ...own])

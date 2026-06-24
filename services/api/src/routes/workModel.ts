@@ -172,7 +172,9 @@ export function registerWorkModelRoutes(
                 w.rights_holder_vendor_id, w.original_publisher, w.default_rights_holder,
                 w.default_credit_display, w.default_work_supplement, w.default_approval_target,
                 w.default_approval_timing, w.remarks, w.is_active, w.created_at, w.updated_at,
-                (SELECT COUNT(*) FROM work_materials wm WHERE wm.work_id = w.id) AS material_count
+                (SELECT COUNT(*) FROM work_materials wm WHERE wm.work_id = w.id) AS material_count,
+                -- 一覧サマリー: この原作にぶら下がる条件明細(マテリアル経由)の総数。
+                (SELECT COUNT(*) FROM condition_lines cl WHERE cl.source_work_id = w.id) AS condition_count
            FROM works w
           WHERE w.kind = 'licensed_in'
           ORDER BY w.id DESC`
