@@ -1441,94 +1441,131 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             )}
           </div>
 
-          {/* Stage 1(材料ファースト): 原作マテリアルへの紐づけ(1材料 : N条件)。
-              既定では、この文書の利用許諾条件は「軸マテリアル」(上で選んだ素材／無ければ原作本体★)へ
-              すべて束ねる(割当漏れ防止)。直販/サブライセンス等の算定違いも同一材料の複数条件として表現。
-              行で別マテリアルを指定したい時だけ上書きする。空=軸へ束ねる。
-              保存(Stage 2)が work_materials(Stage 0 で台帳とコード同期済)を解決/紐付けする。 */}
-          <div className="col-span-full mt-3 rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-2.5">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700 mb-1.5">
-              原作マテリアルへの紐づけ（1材料 : N条件）
-            </div>
-            {!selectedLedger ? (
-              <p className="text-[10px] font-mono text-muted-foreground">
-                先に上の「原作 (Ledger)」を選択してください。
-              </p>
-            ) : !Array.isArray(formData.financial_conditions) ||
-              formData.financial_conditions.length === 0 ? (
-              <p className="text-[10px] font-mono text-muted-foreground">
-                下の「対価・支払条件」に条件を追加すると、各条件の原作マテリアルを指定できます。
-              </p>
-            ) : (
-              (() => {
-                const mats: any[] = selectedLedger.materials || [];
-                const anchor =
-                  mats.find((m: any) => m.material_code === formData.素材番号) ||
-                  mats.find((m: any) => m.is_default) ||
-                  null;
-                return (
-                  <div className="space-y-1.5">
-                    <p className="text-[10px] font-mono text-emerald-800">
-                      既定の軸マテリアル：
-                      <span className="font-bold">
-                        {anchor
-                          ? `[${anchor.material_code}] ${anchor.material_name}`
-                          : '（原作本体。上の「素材」で変更可）'}
-                      </span>
-                      {' '}— 各条件は既定でここへ束ねます。
-                    </p>
-                {formData.financial_conditions.map((c: any, idx: number) => {
-                  const key = String(c.condition_no ?? idx + 1);
-                  const cmCodes = (formData.condition_material_codes || {}) as Record<string, string>;
-                  const cur = cmCodes[key] ?? '';
-                  const schemeLabel =
-                    c.calc_type === 'FIXED'
-                      ? '買切/固定額'
-                      : c.calc_type === 'SUBSCRIPTION'
-                        ? 'サブスク'
-                        : 'ロイヤリティ';
-                  return (
-                    <div key={key} className="flex items-center gap-2 flex-wrap">
-                      <span className="text-[11px] font-mono min-w-[8rem] truncate">
-                        <span className="font-bold">条件{c.condition_no ?? idx + 1}</span>{' '}
-                        {c.condition_name || ''}
-                      </span>
-                      <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground">
-                        {schemeLabel}
-                      </span>
-                      <select
-                        value={cur}
-                        onChange={(e) =>
-                          setFormData({
-                            ...formData,
-                            condition_material_codes: { ...cmCodes, [key]: e.target.value },
-                          })
-                        }
-                        className="flex-1 min-w-[12rem] text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
-                      >
-                        <option value="">
-                          （軸マテリアルに束ねる＝既定
-                          {anchor ? `：${anchor.material_name}` : ''}）
-                        </option>
-                        {mats.map((m: any) => (
-                          <option key={m.id} value={m.material_code}>
-                            [{m.material_code}]{m.is_default ? ' ★' : ''} {m.material_name}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  );
-                })}
-                <p className="text-[10px] font-mono text-muted-foreground/70">
-                  空欄＝軸マテリアルへ束ねる（1材料に複数条件）。別マテリアルにしたい行だけ選択。保存時に作品構成・条件明細へ連動します。
-                </p>
-                  </div>
-                );
-              })()
-            )}
-          </div>
+          {/* 紐づけ(原作マテリアル←条件明細)は、入力順(原作→マテリアル→条件)に沿わせるため
+              下の「金銭条件」セクションの直後へ移設。ここでは骨格(作品・原作・軸マテリアル)まで。 */}
+          <p className="col-span-full text-[10px] font-mono text-muted-foreground/70 mt-2">
+            ↓ 利用許諾の<strong>金銭条件（条件明細）</strong>と<strong>原作マテリアルへの紐づけ</strong>は、すぐ下のセクションで入力します（既定でこの素材に束ねます）。
+          </p>
         </FormSection>
         )}
+
+        {/* 3-2. 金銭条件（条件明細）＋ 原作マテリアルへの紐づけ。
+            入力順「作品 → 原作 → 軸マテリアル → 金銭条件 → 紐づけ」に沿わせ、条件入力の直後に
+            紐づけを置く（旧 §6 から移設）。金銭条件は作品連動 OFF(NDA等)でも必要なので常時表示。
+            紐づけのみ作品連動 ON で表示。 */}
+        <FormSection
+          title="3-2. 金銭条件（条件明細）— 対価・支払条件"
+          variant="indigo"
+          icon={<Coins className="w-4 h-4" />}
+          headerActions={
+            <span className="text-[11px] font-mono text-muted-foreground italic">
+              条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト (任意で追加可)
+            </span>
+          }
+        >
+          <FinancialConditionTable
+            conditions={
+              Array.isArray(formData.financial_conditions)
+                ? (formData.financial_conditions as FinancialCondition[])
+                : []
+            }
+            onChange={(conditions: FinancialCondition[]) =>
+              setFormData({ ...formData, financial_conditions: conditions })
+            }
+            division={
+              String(templateId || "").startsWith("pub_") ||
+              String(templateId || "").includes("publication")
+                ? "PUB"
+                : "BDG"
+            }
+          />
+
+          {/* 原作マテリアルへの紐づけ(1材料 : N条件) — 条件入力の直後。作品連動 ON のみ。
+              既定で軸マテリアル(上の素材／原作本体)へ束ね、行で別マテリアルに上書き可。 */}
+          {formData.is_work_linked !== false && (
+            <div className="col-span-full mt-4 pt-3 border-t border-border/60 rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-2.5">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700 mb-1.5">
+                原作マテリアルへの紐づけ（1材料 : N条件）
+              </div>
+              {!selectedLedger ? (
+                <p className="text-[10px] font-mono text-muted-foreground">
+                  先に上の「3. マスター条件」で原作 (Ledger) を選択してください。
+                </p>
+              ) : !Array.isArray(formData.financial_conditions) ||
+                formData.financial_conditions.length === 0 ? (
+                <p className="text-[10px] font-mono text-muted-foreground">
+                  上の表に条件を追加すると、各条件の原作マテリアルを指定できます（既定はこの素材に束ねます）。
+                </p>
+              ) : (
+                (() => {
+                  const mats: any[] = selectedLedger.materials || [];
+                  const anchor =
+                    mats.find((m: any) => m.material_code === formData.素材番号) ||
+                    mats.find((m: any) => m.is_default) ||
+                    null;
+                  return (
+                    <div className="space-y-1.5">
+                      <p className="text-[10px] font-mono text-emerald-800">
+                        既定の軸マテリアル：
+                        <span className="font-bold">
+                          {anchor
+                            ? `[${anchor.material_code}] ${anchor.material_name}`
+                            : '（原作本体。上の「素材」で変更可）'}
+                        </span>
+                        {' '}— 各条件は既定でここへ束ねます。
+                      </p>
+                      {formData.financial_conditions.map((c: any, idx: number) => {
+                        const key = String(c.condition_no ?? idx + 1);
+                        const cmCodes = (formData.condition_material_codes || {}) as Record<string, string>;
+                        const cur = cmCodes[key] ?? '';
+                        const schemeLabel =
+                          c.calc_type === 'FIXED'
+                            ? '買切/固定額'
+                            : c.calc_type === 'SUBSCRIPTION'
+                              ? 'サブスク'
+                              : 'ロイヤリティ';
+                        return (
+                          <div key={key} className="flex items-center gap-2 flex-wrap">
+                            <span className="text-[11px] font-mono min-w-[8rem] truncate">
+                              <span className="font-bold">条件{c.condition_no ?? idx + 1}</span>{' '}
+                              {c.condition_name || ''}
+                            </span>
+                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground">
+                              {schemeLabel}
+                            </span>
+                            <select
+                              value={cur}
+                              onChange={(e) =>
+                                setFormData({
+                                  ...formData,
+                                  condition_material_codes: { ...cmCodes, [key]: e.target.value },
+                                })
+                              }
+                              className="flex-1 min-w-[12rem] text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+                            >
+                              <option value="">
+                                （軸マテリアルに束ねる＝既定
+                                {anchor ? `：${anchor.material_name}` : ''}）
+                              </option>
+                              {mats.map((m: any) => (
+                                <option key={m.id} value={m.material_code}>
+                                  [{m.material_code}]{m.is_default ? ' ★' : ''} {m.material_name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        );
+                      })}
+                      <p className="text-[10px] font-mono text-muted-foreground/70">
+                        空欄＝軸マテリアルへ束ねる（1材料に複数条件）。別マテリアルにしたい行だけ選択。保存時に作品構成・条件明細へ連動します。
+                      </p>
+                    </div>
+                  );
+                })()
+              )}
+            </div>
+          )}
+        </FormSection>
 
         {/* 4. 当事者 (Licensor / Licensee) — 取引先・当社は各セクションの [自社]/[取引先] で充填 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
@@ -1679,40 +1716,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </FormSection>
 
-        {/* VI. 金銭条件 — Phase 7d: 統合された FinancialConditionTable。
-            DB の license_financial_conditions と同じ shape の rows を
-            formData.financial_conditions[] に持つ。worker 側は document
-            生成時にこれを (a) HTML テンプレ用 flat field
-            {{金銭条件1_料率}} 等に展開, (b) license_financial_conditions
-            に upsert する。 */}
-        <FormSection
-          title="6. 専用入力事項 — 金銭条件 (条件 1〜3)"
-          variant="indigo"
-          icon={<Coins className="w-4 h-4" />}
-          headerActions={
-            <span className="text-[11px] font-mono text-muted-foreground italic">
-              条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト (任意で追加可)
-            </span>
-          }
-        >
-          <FinancialConditionTable
-            conditions={
-              Array.isArray(formData.financial_conditions)
-                ? (formData.financial_conditions as FinancialCondition[])
-                : []
-            }
-            onChange={(conditions: FinancialCondition[]) =>
-              setFormData({ ...formData, financial_conditions: conditions })
-            }
-            // Part1(共通化): 出版テンプレ(pub_* / publication*)は PUB プリセット、それ以外は BDG。
-            division={
-              String(templateId || "").startsWith("pub_") ||
-              String(templateId || "").includes("publication")
-                ? "PUB"
-                : "BDG"
-            }
-          />
-        </FormSection>
+        {/* 金銭条件（FinancialConditionTable）は入力順整理のため §3 直後の「3-2. 金銭条件」へ移設。
+            ここには下位互換のレガシー自由入力のみ残す。 */}
 
         {/* 旧 VI/VII/VIII の自由入力グループは下位互換のため
             details で温存。新しい FinancialConditionTable が優先され、
