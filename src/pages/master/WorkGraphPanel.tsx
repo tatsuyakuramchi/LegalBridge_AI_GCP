@@ -318,6 +318,9 @@ export function WorkGraphPanel() {
   const [matRecallDoc, setMatRecallDoc] = React.useState("")
   const [matRecallLines, setMatRecallLines] = React.useState<any[]>([])
   const [matRecallLoading, setMatRecallLoading] = React.useState(false)
+  // 本丸(原作ビュー): 原作 → マテリアル → 条件明細(1:N:N)を常時ツリー表示するため、
+  //   各マテリアルの条件明細をまとめて取得して保持する(materialId → 条件明細[])。
+  const [srcMatConds, setSrcMatConds] = React.useState<Record<number, any[]>>({})
 
   const loadGraph = React.useCallback(async (id: string) => {
     if (!id) return
@@ -484,6 +487,36 @@ export function WorkGraphPanel() {
     }
     return Array.from(groups.values())
   }, [upstream])
+
+  // 本丸(原作ビュー): 原作 → マテリアル → 条件明細(1:N:N)を一目で見せるため、表示中マテリアルの
+  //   条件明細を一括取得。graph 依存にすることで、条件の登録/編集後(loadGraph 再取得)に自動更新される。
+  React.useEffect(() => {
+    if (!isSource || !workId || materials.length === 0) {
+      setSrcMatConds({})
+      return
+    }
+    let cancelled = false
+    ;(async () => {
+      const entries = await Promise.all(
+        materials.map(async (m: any) => {
+          try {
+            const r = await fetch(
+              `/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${m.id}/condition-lines`
+            )
+            const d = await r.json()
+            return [m.id, Array.isArray(d) ? d : []] as const
+          } catch {
+            return [m.id, [] as any[]] as const
+          }
+        })
+      )
+      if (!cancelled) setSrcMatConds(Object.fromEntries(entries))
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSource, workId, graph])
 
   // 増分⑥(§3.4): 原作中心ビューから自社作品を新規作成 → そのエディタへ遷移。
   //   原作→作品の実リンク(支払エッジの source_work_id)は、作成後その作品の
@@ -981,6 +1014,65 @@ export function WorkGraphPanel() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+        {/* 本丸(原作ビュー): 原作 → マテリアル(権利者) → 条件明細(算定) の 1原作:N材料:N条件 を
+            一目で見せる構成ツリー。クリックせずに全体構造が把握できる(下の中カードで編集)。 */}
+        {isSource && (
+          <div className="rounded-md border border-sky-300 bg-sky-50/40 p-3 space-y-2">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+                原作の構成（マテリアル → 条件明細）
+              </span>
+              <Badge variant="outline" className="border-emerald-300 text-emerald-700">
+                マテリアル {materials.length}
+              </Badge>
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground">
+              原作は複数の原作マテリアルで構成され（権利者が異なる場合あり）、各マテリアルに複数の条件明細（直販／サブライセンス等の算定）がぶら下がります（1原作 : N材料 : N条件）。
+            </p>
+            {materials.length === 0 ? (
+              <p className="text-[11px] font-mono text-muted-foreground">
+                まだマテリアルがありません。下の中カードの「素材を追加」から登録してください。
+              </p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {materials.map((m: any) => {
+                  const conds = srcMatConds[m.id] || []
+                  return (
+                    <div key={m.id} className="rounded border border-border bg-card px-2.5 py-2 text-[11px] font-mono space-y-1">
+                      <div className="font-semibold truncate">
+                        <span className="text-emerald-700">◦ マテリアル</span>{" "}
+                        {m.material_code || "—"} {m.material_name}
+                        {m.is_default && (
+                          <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>
+                        )}
+                      </div>
+                      {m.rights_holder && (
+                        <div className="text-[10px] text-amber-700 truncate">権利者: {m.rights_holder}</div>
+                      )}
+                      <div className="space-y-0.5 pt-0.5 border-t border-border/50">
+                        {conds.length === 0 ? (
+                          <div className="text-[10px] text-muted-foreground">条件明細なし</div>
+                        ) : (
+                          conds.map((c: any) => (
+                            <div key={c.id} className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
+                              <span className="truncate">{c.subject || c.line_code || `条件#${c.id}`}</span>
+                              <span className="shrink-0 font-semibold text-foreground/80">
+                                {c.payment_scheme === "royalty"
+                                  ? c.rate_pct != null ? `${c.rate_pct}%` : "—"
+                                  : c.amount_ex_tax != null ? yen(c.amount_ex_tax) : (c.payment_scheme || "—")}
+                              </span>
+                            </div>
+                          ))
+                        )}
+                        <div className="text-[9px] text-muted-foreground/60">条件 {conds.length}件</div>
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+            )}
           </div>
         )}
         <div className="grid grid-cols-1 lg:grid-cols-[1fr,1.1fr,1fr] gap-3 items-start">
