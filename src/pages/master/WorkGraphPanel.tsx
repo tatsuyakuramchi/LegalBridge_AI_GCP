@@ -123,6 +123,15 @@ const KindBadge = ({ kind }: { kind: string | null }) => {
 }
 const yen = (v: any) => (v == null || v === "" ? "" : `¥${Number(v).toLocaleString("ja-JP")}`)
 
+// マテリアル表示名: 「{コード} {原作名}　{マテリアル名}」。原作名が無い文脈では「{コード} {マテリアル名}」。
+//   例: LO-2026-0015-001 ＜原作名＞　原作ゲームデザイン
+const matDisplay = (code?: string | null, srcTitle?: string | null, name?: string | null) =>
+  (srcTitle
+    ? `${code || "—"} ${srcTitle}　${name || ""}`
+    : `${code || "—"} ${name || ""}`
+  ).trimEnd()
+
+
 // 増分⑤: 中カードの作品(own)基本情報インライン編集の選択肢(WorkModelPanel と同一)。
 const WORK_TYPES = ["board_game", "trpg_book", "supplement", "digital"]
 const WORK_STATUS = ["planning", "in_production", "released", "suspended", "discontinued"]
@@ -538,6 +547,12 @@ export function WorkGraphPanel() {
     }
     return Array.from(byMat.values()).sort((a, b) => (a.mat ? 0 : 1) - (b.mat ? 0 : 1))
   }, [pickerLines, pickerMaterials])
+
+  // ピッカーで選択中の原作の名称(マテリアル表示名「コード 原作名　マテリアル名」用)。
+  const pickerSrcTitle = React.useMemo(
+    () => sourceWorks.find((s: any) => String(s.id) === String(pickerSource))?.title || null,
+    [sourceWorks, pickerSource]
+  )
 
   // 増分⑥(§3.4): 原作中心ビューから自社作品を新規作成 → そのエディタへ遷移。
   //   原作→作品の実リンク(支払エッジの source_work_id)は、作成後その作品の
@@ -1103,7 +1118,7 @@ export function WorkGraphPanel() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-semibold truncate">
                           <span className="text-emerald-700">◦ マテリアル</span>{" "}
-                          {m.material_code || "—"} {m.material_name}
+                          {matDisplay(m.material_code, work?.title, m.material_name)}
                           {m.is_default && (
                             <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>
                           )}
@@ -1361,7 +1376,7 @@ export function WorkGraphPanel() {
                           className="w-full text-left px-2 py-1 hover:bg-muted/40 flex items-center justify-between gap-2"
                         >
                           <span className="truncate">
-                            <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
+                            <span className="font-semibold">{m.material_code || "—"}</span>{work?.title ? ` ${work.title}　` : " "}{m.material_name}
                             {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
                             {m.rights_holder && <span className="text-[10px] text-amber-700"> · 権利者: {m.rights_holder}</span>}
                           </span>
@@ -1621,7 +1636,7 @@ export function WorkGraphPanel() {
                   {g.mat ? (
                     <>
                       <span className="text-emerald-700">◦ マテリアル</span>
-                      <span>{g.mat.material_code || "—"} {g.mat.material_name || ""}</span>
+                      <span>{matDisplay(g.mat.material_code, pickerSrcTitle, g.mat.material_name)}</span>
                       {g.mat.rights_holder_name && (
                         <span className="text-amber-700">（権利者: {g.mat.rights_holder_name}）</span>
                       )}
@@ -1659,7 +1674,7 @@ export function WorkGraphPanel() {
                               <option value="">— マテリアルを選択 —</option>
                               {pickerMaterials.map((m) => (
                                 <option key={m.id} value={m.id}>
-                                  {m.material_code || "—"} {m.material_name || ""}{m.rights_holder_name ? `（権利者: ${m.rights_holder_name}）` : ""}
+                                  {matDisplay(m.material_code, pickerSrcTitle, m.material_name)}{m.rights_holder_name ? `（権利者: ${m.rights_holder_name}）` : ""}
                                 </option>
                               ))}
                             </NativeSelect>
