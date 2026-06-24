@@ -3148,42 +3148,143 @@ ${details}
     source: string,
     target: string,
     opts: { mode: "child" | "delete"; moveData: boolean; reason: string; shuketsuStatusId?: number | null; targetId?: number | null }
-  ): Promise<{ moved: Record<string, number>; warnings: string[] }> {
+  ): Promise<{ moved: Record<string, number>; warnings: string[]; document_report: { moved: string[]; primary: string[]; superseded: string[] } }> {
     const { mode, moveData, reason } = opts;
     const moved: Record<string, number> = {};
-    // 1) DB: 文書/明細/イベントの付け替え(任意)。
-    if (moveData) {
-      try {
-        const d = await query(
-          `UPDATE documents d SET issue_key = $1
-            WHERE d.issue_key = $2
-              AND NOT EXISTS (SELECT 1 FROM documents d2
-                               WHERE d2.issue_key = $1 AND d2.template_type = d.template_type)`,
+    const documentReport = { moved: [] as string[], primary: [] as string[], superseded: [] as string[] };
+
+    // 1) DB: 文書/明細/イベント/統合記録を単一トランザクションで更新。
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+
+      if (moveData) {
+        const sourceDocs = await client.query(
+          `SELECT DISTINCT template_type
+             FROM documents
+            WHERE issue_key = $1
+              AND template_type IS NOT NULL`,
+          [source]
+        );
+        const touchedTemplateTypes = sourceDocs.rows
+          .map((r: any) => String(r.template_type || "").trim())
+          .filter(Boolean);
+
+        const d = await client.query(
+          `UPDATE documents
+              SET issue_key = $1
+            WHERE issue_key = $2
+            RETURNING document_number`,
           [target, source]
         );
         moved.documents = d.rowCount || 0;
-        const c = await query(`UPDATE contract_capabilities SET backlog_issue_key = $1 WHERE backlog_issue_key = $2`, [target, source]);
-        moved.capabilities = c.rowCount || 0;
-        const ce = await query(`UPDATE condition_events SET backlog_issue_key = $1 WHERE backlog_issue_key = $2`, [target, source]);
-        moved.condition_events = ce.rowCount || 0;
-      } catch (e: any) {
-        console.warn(`[merge] move_data failed (${source}→${target}):`, e?.message || e);
-      }
-    }
-    // 2) DB: 統合記録 + 作業キューから除外(終結)。
-    try { await query(`UPDATE legal_requests SET merged_into_issue_key = $1 WHERE backlog_issue_key = $2`, [target, source]); }
-    catch (e) { console.warn(`[merge] legal_requests update failed:`, e); }
-    try { await query(`UPDATE issue_workflows SET current_status_name = '終結', updated_at = now() WHERE backlog_issue_key = $1`, [source]); }
-    catch { /* noop */ }
+        documentReport.moved = d.rows
+          .map((r: any) => String(r.document_number || ""))
+          .filter(Boolean);
 
-    // 3) Backlog 操作。
+        const c = await client.query(
+          `UPDATE contract_capabilities
+              SET backlog_issue_key = $1,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE backlog_issue_key = $2`,
+          [target, source]
+        );
+        moved.capabilities = c.rowCount || 0;
+
+        const ce = await client.query(
+          `UPDATE condition_events
+              SET backlog_issue_key = $1
+            WHERE backlog_issue_key = $2`,
+          [target, source]
+        );
+        moved.condition_events = ce.rowCount || 0;
+
+        if (touchedTemplateTypes.length > 0) {
+          const versions = await client.query(
+            `WITH ranked AS (
+               SELECT id,
+                      document_number,
+                      template_type,
+                      ROW_NUMBER() OVER w AS rn,
+                      FIRST_VALUE(document_number) OVER w AS primary_document_number
+                 FROM documents
+                WHERE issue_key = $1
+                  AND template_type = ANY($2::text[])
+                  AND COALESCE(lifecycle_status, 'final') = 'final'
+                WINDOW w AS (
+                  PARTITION BY template_type
+                  ORDER BY created_at DESC NULLS LAST, id DESC
+                )
+             )
+             UPDATE documents d
+                SET is_primary = (ranked.rn = 1),
+                    lifecycle_status = CASE WHEN ranked.rn = 1 THEN 'final' ELSE 'superseded' END,
+                    superseded_by = CASE WHEN ranked.rn = 1 THEN NULL ELSE ranked.primary_document_number END
+               FROM ranked
+              WHERE d.id = ranked.id
+              RETURNING d.document_number, d.is_primary, d.lifecycle_status`,
+            [target, touchedTemplateTypes]
+          );
+          documentReport.primary = versions.rows
+            .filter((r: any) => r.is_primary === true)
+            .map((r: any) => String(r.document_number || ""))
+            .filter(Boolean);
+          documentReport.superseded = versions.rows
+            .filter((r: any) => r.lifecycle_status === "superseded")
+            .map((r: any) => String(r.document_number || ""))
+            .filter(Boolean);
+
+          const synced = await client.query(
+            `UPDATE contract_capabilities cc
+                SET is_primary = d.is_primary,
+                    lifecycle_status = d.lifecycle_status,
+                    superseded_by = d.superseded_by,
+                    updated_at = CURRENT_TIMESTAMP
+               FROM documents d
+              WHERE cc.document_number = d.document_number
+                AND d.issue_key = $1
+                AND d.template_type = ANY($2::text[])`,
+            [target, touchedTemplateTypes]
+          );
+          moved.capability_versions = synced.rowCount || 0;
+        }
+      }
+
+      const lr = await client.query(
+        `UPDATE legal_requests
+            SET merged_into_issue_key = $1
+          WHERE backlog_issue_key = $2`,
+        [target, source]
+      );
+      moved.legal_requests = lr.rowCount || 0;
+
+      const wf = await client.query(
+        `UPDATE issue_workflows
+            SET current_status_name = '終結',
+                updated_at = now()
+          WHERE backlog_issue_key = $1`,
+        [source]
+      );
+      moved.issue_workflows = wf.rowCount || 0;
+
+      await client.query("COMMIT");
+    } catch (e: any) {
+      await client.query("ROLLBACK");
+      console.warn(`[merge] DB transaction failed (${source}→${target}):`, e?.message || e);
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    // 2) Backlog 操作。外部APIなのでDBコミット後にbest-effortで実施する。
     const warnings: string[] = [];
     const reasonLine = reason ? `\n*理由:* ${reason}` : "";
     try { await backlogService.addComment(target, `🔗 *${source} を本課題へ統合しました*（重複/誤起票の整理）。${reasonLine}`); }
     catch (e: any) { warnings.push(`統合先コメント失敗: ${e?.message || e}`); }
 
     if (mode === "delete") {
-      await backlogService.deleteIssue(source); // 失敗時は throw → 呼び出し側で捕捉
+      try { await backlogService.deleteIssue(source); }
+      catch (e: any) { warnings.push(`統合元削除失敗: ${e?.message || e}`); }
     } else {
       if (opts.targetId) {
         try { await backlogService.setParent(source, opts.targetId); }
@@ -3200,7 +3301,7 @@ ${details}
     }
     try { await notifyIssueEvent(source, { type: "status_changed", from: "(進行中)", to: `${target} に統合${mode === "delete" ? "(削除)" : "(終結)"}` }); }
     catch { /* noop */ }
-    return { moved, warnings };
+    return { moved, warnings, document_report: documentReport };
   }
 
   const ISSUE_KEY_RE = /^[A-Z][A-Z0-9_]*-\d+$/;
@@ -3261,7 +3362,7 @@ ${details}
       for (const source of sources) {
         try {
           const r = await mergeIssueInto(source, target, { mode, moveData, reason, shuketsuStatusId, targetId });
-          results.push({ source, ok: true, warnings: r.warnings, moved: r.moved });
+          results.push({ source, ok: true, warnings: r.warnings, moved: r.moved, document_report: r.document_report });
           ok++;
         } catch (e: any) {
           results.push({ source, ok: false, error: String(e?.message || e) });
