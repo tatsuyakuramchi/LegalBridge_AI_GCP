@@ -1399,7 +1399,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   .map((m: any) => (
                     <option key={m.id} value={m.id}>
                       [{m.material_code}]{m.is_default ? ' ★' : ''}{' '}
-                      {m.material_name}
+                      {selectedLedger?.title ? `${selectedLedger.title}　` : ''}{m.material_name}
                     </option>
                   ))}
               </select>
@@ -1509,7 +1509,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                         既定の軸マテリアル：
                         <span className="font-bold">
                           {anchor
-                            ? `[${anchor.material_code}] ${anchor.material_name}`
+                            ? `[${anchor.material_code}] ${selectedLedger?.title ? selectedLedger.title + '　' : ''}${anchor.material_name}`
                             : '（原作本体。上の「素材」で変更可）'}
                         </span>
                         {' '}— 各条件は既定でここへ束ねます。
@@ -1549,7 +1549,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                               </option>
                               {mats.map((m: any) => (
                                 <option key={m.id} value={m.material_code}>
-                                  [{m.material_code}]{m.is_default ? ' ★' : ''} {m.material_name}
+                                  [{m.material_code}]{m.is_default ? ' ★' : ''} {selectedLedger?.title ? `${selectedLedger.title}　` : ''}{m.material_name}
                                 </option>
                               ))}
                             </select>

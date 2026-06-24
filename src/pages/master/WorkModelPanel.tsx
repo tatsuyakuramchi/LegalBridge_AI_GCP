@@ -123,6 +123,13 @@ const cardOf = (type: EntityType, x: Row) => {
   }
 }
 
+// マテリアル表示名: 「{コード} {原作名}　{マテリアル名}」。原作名が無い文脈では「{コード} {マテリアル名}」。
+const matDisplay = (code?: string | null, srcTitle?: string | null, name?: string | null) =>
+  (srcTitle
+    ? `${code || "—"} ${srcTitle}　${name || ""}`
+    : `${code || "—"} ${name || ""}`
+  ).trimEnd()
+
 const fmtVal = (v: any) => {
   if (v == null || v === "") return "—"
   if (Array.isArray(v)) return v.length ? v.join(", ") : "—"
@@ -546,7 +553,7 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
                   条件明細は原作IP・自社作品どちらにも持てる(原作IP＋素材を参照)。 */}
               {type === "source-ips" && (
                 <>
-                  <MaterialsEditor workId={id} />
+                  <MaterialsEditor workId={id} srcTitle={obj?.title} />
                   {/* 原作IP = 利用許諾条件(IN): 原作IPを借りる条件(我々が支払う料率)。 */}
                   <WorkConditionsEditor workId={id} sourceIps={sourceIps} kind="license_in" />
                 </>
@@ -589,7 +596,7 @@ const isCounterpartyRights = (rt: string) => rt === "license" || rt === "joint"
 const inspLabel = (status?: string | null): string =>
   status === "accepted" ? "✅ 検収済" : status === "partial" ? "🟡 一部検収" : status === "pending" ? "⬜ 未検収" : ""
 
-function MaterialsEditor({ workId }: { workId: number }) {
+function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: string | null }) {
   const { showNotification } = useAppData()
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [conds, setConds] = React.useState<Row[]>([])
@@ -668,7 +675,7 @@ function MaterialsEditor({ workId }: { workId: number }) {
           <tbody>
             {rows.map((m) => (
               <tr key={m.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
-                <td className="min-w-[100px]">{m.material_name || "—"}</td>
+                <td className="min-w-[100px]">{matDisplay(m.material_code, srcTitle, m.material_name)}</td>
                 <td>{mtLabel(m.material_type)}</td>
                 <td>{rtLabel(m.rights_type)}</td>
                 <td className="min-w-[100px]">{m.rights_holder_name || (m.rights_holder_vendor_id ? `#${m.rights_holder_vendor_id}` : "—")}</td>
@@ -979,7 +986,10 @@ function WorkConditionsEditor({ workId, sourceIps, kind }: { workId: number; sou
             <span className="text-[10px] text-muted-foreground">素材（原作IPの）</span>
             <NativeSelect value={form.source_material_id} onChange={(e) => set("source_material_id", e.target.value)} disabled={!form.source_work_id} className="h-7 text-xs">
               <option value="">{form.source_work_id ? "(指定なし)" : "(先に原作IPを選択)"}</option>
-              {srcMats.map((m) => <option key={m.id} value={m.id}>{m.material_name || ("素材#" + m.id)}{m.material_type ? ` (${m.material_type})` : ""}</option>)}
+              {srcMats.map((m) => {
+                const st = sourceIps.find((x) => String(x.id) === String(form.source_work_id))?.title
+                return <option key={m.id} value={m.id}>{matDisplay(m.material_code, st, m.material_name || ("素材#" + m.id))}{m.material_type ? ` (${m.material_type})` : ""}</option>
+              })}
             </NativeSelect>
           </label>
           <label className="space-y-0.5">
