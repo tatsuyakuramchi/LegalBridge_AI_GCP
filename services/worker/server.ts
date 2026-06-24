@@ -5706,6 +5706,7 @@ ${details}
     ownWorkId: number | null;
     conditionMaterialCodes: Record<string, string>;
     financialConditions: any[];
+    defaultMaterialCode?: string | null;
   }): Promise<number> {
     const { capabilityId, ledgerCode, ownWorkId, conditionMaterialCodes, financialConditions } = opts;
     if (!capabilityId || !ledgerCode || !Array.isArray(financialConditions)) return 0;
@@ -5716,6 +5717,21 @@ ${details}
     );
     const origWorkId = srcRes.rows[0]?.id ? Number(srcRes.rows[0].id) : null;
     if (!origWorkId) return 0;
+
+    // 材料ファースト(1材料:N条件): この文書の利用許諾条件は既定で「軸マテリアル」へ束ねる。
+    //   軸 = 呼び出し側指定(素材番号) → 無ければ原作本体(is_default)。行ごとの上書き(condition
+    //   _material_codes)があればそれを優先。これにより「条件ごとに材料を選ぶ」割当漏れを無くし、
+    //   直販/サブライセンス等の算定違いを同一材料配下の複数条件として表現できる。
+    let anchorCode = String(opts.defaultMaterialCode || "").trim();
+    if (!anchorCode) {
+      const dm = await query(
+        `SELECT material_code FROM work_materials
+          WHERE work_id = $1 AND is_default = TRUE
+          ORDER BY material_no NULLS LAST, id LIMIT 1`,
+        [origWorkId]
+      );
+      anchorCode = dm.rows[0]?.material_code || "";
+    }
 
     // この文書の各金銭条件 → 生成された condition_line を condition_no で対応付け。
     const clRes = await query(
@@ -5734,6 +5750,9 @@ ${details}
       if (!Number.isFinite(condNo) || condNo < 1) continue;
       const lineId = lineByNo.get(condNo);
       if (!lineId) continue;
+      // 行で材料を上書き指定が無ければ軸マテリアルへ束ねる(1材料:N条件)。
+      const pickedCode = String(cmCodes[String(condNo)] || "").trim() || anchorCode;
+      // 軸も上書きも無い(原作に本体素材が無い等)ときだけ、件名で新規作成にフォールバック。
       const name =
         (c.condition_name && String(c.condition_name).trim()) || `条件${condNo}`;
       // 利用許諾=相手方帰属。FIXED=買切固定額=ロイヤリティ計算なし。それ以外は royalty 対象。
@@ -5746,7 +5765,7 @@ ${details}
         rightsType: "license",
         acquisitionType: "license",
         isRoyaltyBearing: c.calc_type !== "FIXED",
-        pickedCode: cmCodes[String(condNo)],
+        pickedCode,
       });
       if (ok) linked++;
     }
@@ -13985,6 +14004,7 @@ ${details}
                       ...c,
                       condition_name: c.condition_name || c.region_language_label,
                     })),
+                    defaultMaterialCode: formData.素材番号 || null,
                   })
                 );
               }
@@ -14395,6 +14415,7 @@ ${details}
                     string
                   >,
                   financialConditions: poLinkConds,
+                  defaultMaterialCode: formData.素材番号 || null,
                 })
               );
             }
@@ -14951,6 +14972,7 @@ ${details}
               financialConditions: Array.isArray(formData.financial_conditions)
                 ? formData.financial_conditions
                 : [],
+              defaultMaterialCode: formData.素材番号 || null,
             })
           );
         }

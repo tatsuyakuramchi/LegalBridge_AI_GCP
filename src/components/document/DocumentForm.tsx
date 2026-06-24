@@ -1441,13 +1441,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             )}
           </div>
 
-          {/* Stage 1(文書ファースト紐付けプラン): 各利用許諾条件 → 原作マテリアル 対応。
-              未指定=条件の件名で新規マテリアルを作成 / 既存=共有(N:N)。material_code で持ち、
-              保存(Stage 2)が work_materials(Stage 0 で台帳とコード同期済)を生成/紐付けする。
-              payment_scheme は条件行の calc_type をそのまま使う(royalty/lump_sum=買切)。 */}
+          {/* Stage 1(材料ファースト): 原作マテリアルへの紐づけ(1材料 : N条件)。
+              既定では、この文書の利用許諾条件は「軸マテリアル」(上で選んだ素材／無ければ原作本体★)へ
+              すべて束ねる(割当漏れ防止)。直販/サブライセンス等の算定違いも同一材料の複数条件として表現。
+              行で別マテリアルを指定したい時だけ上書きする。空=軸へ束ねる。
+              保存(Stage 2)が work_materials(Stage 0 で台帳とコード同期済)を解決/紐付けする。 */}
           <div className="col-span-full mt-3 rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-2.5">
             <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700 mb-1.5">
-              条件 → 原作マテリアル 対応
+              原作マテリアルへの紐づけ（1材料 : N条件）
             </div>
             {!selectedLedger ? (
               <p className="text-[10px] font-mono text-muted-foreground">
@@ -1459,7 +1460,23 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 下の「対価・支払条件」に条件を追加すると、各条件の原作マテリアルを指定できます。
               </p>
             ) : (
-              <div className="space-y-1.5">
+              (() => {
+                const mats: any[] = selectedLedger.materials || [];
+                const anchor =
+                  mats.find((m: any) => m.material_code === formData.素材番号) ||
+                  mats.find((m: any) => m.is_default) ||
+                  null;
+                return (
+                  <div className="space-y-1.5">
+                    <p className="text-[10px] font-mono text-emerald-800">
+                      既定の軸マテリアル：
+                      <span className="font-bold">
+                        {anchor
+                          ? `[${anchor.material_code}] ${anchor.material_name}`
+                          : '（原作本体。上の「素材」で変更可）'}
+                      </span>
+                      {' '}— 各条件は既定でここへ束ねます。
+                    </p>
                 {formData.financial_conditions.map((c: any, idx: number) => {
                   const key = String(c.condition_no ?? idx + 1);
                   const cmCodes = (formData.condition_material_codes || {}) as Record<string, string>;
@@ -1489,8 +1506,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                         }
                         className="flex-1 min-w-[12rem] text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
                       >
-                        <option value="">（件名で原作マテリアルを新規作成）</option>
-                        {(selectedLedger.materials || []).map((m: any) => (
+                        <option value="">
+                          （軸マテリアルに束ねる＝既定
+                          {anchor ? `：${anchor.material_name}` : ''}）
+                        </option>
+                        {mats.map((m: any) => (
                           <option key={m.id} value={m.material_code}>
                             [{m.material_code}]{m.is_default ? ' ★' : ''} {m.material_name}
                           </option>
@@ -1500,9 +1520,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   );
                 })}
                 <p className="text-[10px] font-mono text-muted-foreground/70">
-                  未指定は条件の件名で新規マテリアルを作成。既存を選ぶと複数作品で共有(N:N)。保存時に作品構成・条件明細へ連動します。
+                  空欄＝軸マテリアルへ束ねる（1材料に複数条件）。別マテリアルにしたい行だけ選択。保存時に作品構成・条件明細へ連動します。
                 </p>
-              </div>
+                  </div>
+                );
+              })()
             )}
           </div>
         </FormSection>
