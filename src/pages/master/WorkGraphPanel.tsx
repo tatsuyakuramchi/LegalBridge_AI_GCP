@@ -1378,48 +1378,15 @@ export function WorkGraphPanel() {
                       )}
                       {isSource && matCondOpen === m.id && (
                         <div className="border-t border-border/60 p-2 space-y-2 bg-muted/20">
-                          {/* 文書番号から既存の金銭条件を呼び出してこのマテリアルへ紐づけ(複数可) */}
-                          <div className="space-y-1.5 border border-sky-200 rounded p-1.5">
-                            <div className="text-[10px] uppercase tracking-[0.14em] text-sky-700">文書番号から金銭条件を呼び出す</div>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                value={matRecallDoc}
-                                onChange={(e) => setMatRecallDoc(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter") void recallByDoc() }}
-                                placeholder="文書番号 (例: LIC-... / ARC-...)"
-                                className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
-                              />
-                              <button type="button" onClick={() => void recallByDoc()} disabled={matRecallLoading || !matRecallDoc.trim()} className="text-[10px] font-mono px-2 py-1 rounded border border-border hover:border-foreground/40 disabled:opacity-50">
-                                {matRecallLoading ? "呼出中…" : "呼び出す"}
-                              </button>
-                            </div>
-                            {matRecallLines.map((l) => {
-                              const here = String(l.source_material_id ?? "") === String(m.id)
-                              return (
-                                <div key={l.id} className="flex items-center justify-between gap-2 text-[10px] border border-border/50 rounded px-1.5 py-1">
-                                  <div className="min-w-0">
-                                    <span className="font-semibold">金銭条件{l.source_seq_no ?? "—"}</span>{" · "}
-                                    {l.subject || l.line_code}{" · "}
-                                    {l.payment_scheme === "royalty"
-                                      ? `${l.rate_pct ?? "—"}%${l.mg_amount ? ` MG${yen(l.mg_amount)}` : ""}${l.ag_amount ? ` AG${yen(l.ag_amount)}` : ""}`
-                                      : yen(l.amount_ex_tax) || l.payment_scheme}
-                                    {l.region_language_label && <span className="text-muted-foreground">{" · 🌐 "}{l.region_language_label}</span>}
-                                    {!here && l.source_material_id != null && <span className="text-amber-600">{" · 他素材に紐付け済"}</span>}
-                                  </div>
-                                  {here ? (
-                                    <button type="button" onClick={() => void assignRecalled(m.id, l, false)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">外す</button>
-                                  ) : (
-                                    <button type="button" onClick={() => void assignRecalled(m.id, l, true)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50">紐づける</button>
-                                  )}
-                                </div>
-                              )
-                            })}
-                            {matRecallLines.length > 0 && (
-                              <p className="text-[9px] text-muted-foreground/70">複数の金銭条件(n, n+1, …)をそれぞれこのマテリアルに紐づけられます。</p>
-                            )}
-                          </div>
-                          {/* 利用許諾明細入力(FinancialConditionTable) → 条件明細(condition_lines)へ一括保存 */}
+                          {/* 主操作: この素材の利用許諾条件を表で追加/編集 → 条件明細へ一括保存。
+                              表は現在の条件をプリフィル。直販・サブライセンス等は行を分けて入力(1材料:N条件)。 */}
                           <div className="space-y-1.5">
+                            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+                              この素材の利用許諾条件（追加・編集）
+                            </div>
+                            <p className="text-[9px] text-muted-foreground/70">
+                              表は現在の条件をプリフィルしています。表内の「条件追加」で行を足し、編集して保存すると条件明細へ反映（直販・サブライセンス等で算定が違う場合は行を分けて入力＝1材料:N条件）。
+                            </p>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] text-muted-foreground shrink-0">利用許諾条件書:</span>
                               <NativeSelect
@@ -1442,15 +1409,69 @@ export function WorkGraphPanel() {
                               division={Array.isArray(work?.division) && work.division.includes("PUB") ? "PUB" : "BDG"}
                             />
                             {matFcErr && <p className="text-[10px] text-red-600">{matFcErr}</p>}
-                            <button
-                              type="button"
-                              onClick={() => void saveMatFc(m.id)}
-                              disabled={matFcSaving}
-                              className="text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-                            >
-                              {matFcSaving ? "保存中…" : "利用許諾条件を保存（条件明細へ）"}
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setMatCondOpen(null)}
+                                className="text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                              >
+                                閉じる
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void saveMatFc(m.id)}
+                                disabled={matFcSaving}
+                                className="text-[10px] font-mono px-2 py-1 rounded border border-sky-500 bg-sky-50 text-sky-700 font-bold hover:bg-sky-100 disabled:opacity-50"
+                              >
+                                {matFcSaving ? "保存中…" : "保存（条件明細へ）"}
+                              </button>
+                            </div>
                           </div>
+
+                          {/* 上級(任意): 既存の金銭条件を文書番号で呼び出してこのマテリアルへ紐づける(複数可) */}
+                          <details className="rounded border border-sky-200">
+                            <summary className="cursor-pointer px-1.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-sky-700 select-none">
+                              ▶ 既存の金銭条件を文書番号から呼び出して紐づける（任意）
+                            </summary>
+                            <div className="p-1.5 space-y-1.5 border-t border-sky-200">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  value={matRecallDoc}
+                                  onChange={(e) => setMatRecallDoc(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter") void recallByDoc() }}
+                                  placeholder="文書番号 (例: LIC-... / ARC-...)"
+                                  className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+                                />
+                                <button type="button" onClick={() => void recallByDoc()} disabled={matRecallLoading || !matRecallDoc.trim()} className="text-[10px] font-mono px-2 py-1 rounded border border-border hover:border-foreground/40 disabled:opacity-50">
+                                  {matRecallLoading ? "呼出中…" : "呼び出す"}
+                                </button>
+                              </div>
+                              {matRecallLines.map((l) => {
+                                const here = String(l.source_material_id ?? "") === String(m.id)
+                                return (
+                                  <div key={l.id} className="flex items-center justify-between gap-2 text-[10px] border border-border/50 rounded px-1.5 py-1">
+                                    <div className="min-w-0">
+                                      <span className="font-semibold">金銭条件{l.source_seq_no ?? "—"}</span>{" · "}
+                                      {l.subject || l.line_code}{" · "}
+                                      {l.payment_scheme === "royalty"
+                                        ? `${l.rate_pct ?? "—"}%${l.mg_amount ? ` MG${yen(l.mg_amount)}` : ""}${l.ag_amount ? ` AG${yen(l.ag_amount)}` : ""}`
+                                        : yen(l.amount_ex_tax) || l.payment_scheme}
+                                      {l.region_language_label && <span className="text-muted-foreground">{" · 🌐 "}{l.region_language_label}</span>}
+                                      {!here && l.source_material_id != null && <span className="text-amber-600">{" · 他素材に紐付け済"}</span>}
+                                    </div>
+                                    {here ? (
+                                      <button type="button" onClick={() => void assignRecalled(m.id, l, false)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">外す</button>
+                                    ) : (
+                                      <button type="button" onClick={() => void assignRecalled(m.id, l, true)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50">紐づける</button>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                              {matRecallLines.length > 0 && (
+                                <p className="text-[9px] text-muted-foreground/70">複数の金銭条件(n, n+1, …)をそれぞれこのマテリアルに紐づけられます。</p>
+                              )}
+                            </div>
+                          </details>
                         </div>
                       )}
                     </div>
