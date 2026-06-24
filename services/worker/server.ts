@@ -11937,6 +11937,135 @@ ${details}
     }
   });
 
+  // 課題詳細ページ向け — 条件明細を背骨にした循環進捗サマリ。
+  app.get("/api/issues/:issueKey/condition-line-summary", async (req, res) => {
+    try {
+      const issueKey = String(req.params.issueKey || "").trim();
+      if (!issueKey) {
+        return res.json({ ok: true, summary: { total: 0, open: 0, completed: 0 }, lines: [] });
+      }
+      try {
+        const result = await query(
+          `WITH issue_line_refs AS (
+             SELECT cl.id AS condition_line_id, 'contracting'::text AS relation
+               FROM condition_lines cl
+               JOIN contract_capabilities cc ON cc.id = cl.capability_id
+              WHERE cc.backlog_issue_key = $1
+             UNION ALL
+             SELECT ce.condition_line_id, 'payment'::text AS relation
+               FROM condition_events ce
+              WHERE ce.backlog_issue_key = $1
+                AND ce.condition_line_id IS NOT NULL
+           ),
+           issue_lines AS (
+             SELECT condition_line_id,
+                    array_agg(DISTINCT relation ORDER BY relation) AS relations
+               FROM issue_line_refs
+              GROUP BY condition_line_id
+           )
+           SELECT cl.id,
+                  cl.line_code,
+                  cl.subject,
+                  cl.payment_scheme,
+                  cl.amount_ex_tax,
+                  cl.currency,
+                  cl.delivery_date,
+                  cl.term_start,
+                  cl.term_end,
+                  s.status,
+                  s.consumed_amount,
+                  s.remaining_amount,
+                  s.event_count,
+                  s.last_event_at,
+                  b.mg_remaining,
+                  b.ag_remaining,
+                  cc.document_number AS contract_number,
+                  cc.backlog_issue_key AS contracting_issue_key,
+                  il.relations,
+                  CASE
+                    WHEN 'contracting' = ANY(il.relations) AND 'payment' = ANY(il.relations) THEN 'mixed'
+                    WHEN 'contracting' = ANY(il.relations) THEN 'contracting'
+                    WHEN 'payment' = ANY(il.relations) THEN 'payment'
+                    ELSE 'unknown'
+                  END AS issue_phase,
+                  ARRAY(
+                    SELECT DISTINCT x.issue_key
+                      FROM (
+                        SELECT cc2.backlog_issue_key AS issue_key
+                          FROM contract_capabilities cc2
+                         WHERE cc2.id = cl.capability_id
+                        UNION ALL
+                        SELECT ce2.backlog_issue_key AS issue_key
+                          FROM condition_events ce2
+                         WHERE ce2.condition_line_id = cl.id
+                           AND ce2.voided_at IS NULL
+                      ) x
+                     WHERE NULLIF(x.issue_key, '') IS NOT NULL
+                     ORDER BY x.issue_key
+                  ) AS related_issue_keys,
+                  CASE
+                    WHEN s.status IN ('fulfilled', 'expired') THEN NULL
+                    WHEN cl.payment_scheme IN ('lump_sum', 'per_unit', 'installment') THEN 'inspection_certificate'
+                    WHEN cl.payment_scheme IN ('subscription', 'royalty') THEN 'royalty_statement'
+                    ELSE NULL
+                  END AS next_template_type,
+                  (SELECT COUNT(*)::int
+                     FROM condition_events ce
+                    WHERE ce.condition_line_id = cl.id
+                      AND ce.voided_at IS NULL) AS total_event_count,
+                  (SELECT COUNT(*)::int
+                     FROM condition_events ce
+                    WHERE ce.condition_line_id = cl.id
+                      AND ce.backlog_issue_key = $1
+                      AND ce.voided_at IS NULL) AS issue_event_count,
+                  (SELECT COALESCE(json_agg(ev), '[]'::json)
+                     FROM (
+                       SELECT ce.event_no,
+                              ce.event_type,
+                              ce.occurred_at,
+                              ce.period,
+                              ce.amount_ex_tax,
+                              ce.backlog_issue_key,
+                              d.document_number,
+                              d.template_type
+                         FROM condition_events ce
+                         LEFT JOIN documents d ON d.id = ce.document_id
+                        WHERE ce.condition_line_id = cl.id
+                          AND ce.voided_at IS NULL
+                        ORDER BY ce.occurred_at DESC NULLS LAST, ce.event_no DESC
+                        LIMIT 5
+                     ) ev) AS recent_events
+             FROM issue_lines il
+             JOIN condition_lines cl ON cl.id = il.condition_line_id
+             LEFT JOIN condition_line_status_v s ON s.id = cl.id
+             LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
+             LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+            ORDER BY cl.line_code NULLS LAST, cl.id`,
+          [issueKey]
+        );
+        const lines = result.rows;
+        res.json({
+          ok: true,
+          summary: {
+            total: lines.length,
+            open: lines.filter((r: any) => !["fulfilled", "expired"].includes(String(r.status || ""))).length,
+            completed: lines.filter((r: any) => ["fulfilled", "expired"].includes(String(r.status || ""))).length,
+            next_actions: lines.filter((r: any) => r.next_template_type).length,
+          },
+          lines,
+        });
+      } catch (err: any) {
+        if (err && (err.code === "42P01" || err.code === "42703")) {
+          console.warn("[/api/issues/:issueKey/condition-line-summary] 新スキーマ未適用 — 空で返却");
+          return res.json({ ok: true, summary: { total: 0, open: 0, completed: 0, next_actions: 0 }, lines: [] });
+        }
+        throw err;
+      }
+    } catch (error) {
+      res.status(500).json({ ok: false, error: String(error) });
+    }
+  });
+
   // 条件明細一覧(導出ビュー status/balance/schedule + 契約・取引先 JOIN)。
   app.get("/api/condition-lines", async (req, res) => {
     try {
