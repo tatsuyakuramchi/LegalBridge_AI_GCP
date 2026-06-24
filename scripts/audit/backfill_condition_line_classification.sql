@@ -34,6 +34,7 @@ SELECT cl.id,
        cc.record_type,
        cc.contract_category,
        cc.vendor_id AS capability_vendor_id,
+       parent_cc.vendor_id AS parent_capability_vendor_id,
        CASE
          WHEN cc.record_type = 'purchase_order' THEN 'service'
          WHEN cc.contract_category = 'service' THEN 'service'
@@ -45,11 +46,12 @@ SELECT cl.id,
          ELSE NULL
        END AS suggested_transaction_kind,
        CASE
-         WHEN cc.vendor_id IS NOT NULL THEN cc.vendor_id
+         WHEN COALESCE(cc.vendor_id, parent_cc.vendor_id) IS NOT NULL THEN COALESCE(cc.vendor_id, parent_cc.vendor_id)
          ELSE NULL
        END AS suggested_counterparty_vendor_id
   FROM condition_lines cl
   LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+  LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
  WHERE cl.transaction_kind IS NULL
     OR cl.counterparty_vendor_id IS NULL;
 
@@ -78,10 +80,27 @@ SELECT id,
        payment_scheme,
        document_number,
        record_type,
-       contract_category
+       contract_category,
+       capability_vendor_id,
+       parent_capability_vendor_id
   FROM condition_line_classification_candidates
  WHERE current_transaction_kind IS NULL
    AND suggested_transaction_kind IS NULL
+ ORDER BY id
+ LIMIT 50;
+
+\echo 'counterparty unresolved samples'
+SELECT id,
+       line_code,
+       payment_scheme,
+       document_number,
+       record_type,
+       contract_category,
+       capability_vendor_id,
+       parent_capability_vendor_id
+  FROM condition_line_classification_candidates
+ WHERE current_counterparty_vendor_id IS NULL
+   AND suggested_counterparty_vendor_id IS NULL
  ORDER BY id
  LIMIT 50;
 
