@@ -75,6 +75,8 @@ type IssueConditionLine = {
   contract_number: string | null
   contracting_issue_key: string | null
   relations: string[] | null
+  issue_phase: "contracting" | "payment" | "mixed" | "unknown" | null
+  related_issue_keys: string[] | null
   next_template_type: string | null
   recent_events?: any[]
 }
@@ -357,7 +359,9 @@ export function IssueDetailPage() {
   const createdTypes = React.useMemo(() => {
     const s = new Set<string>()
     for (const d of docs) {
-      if ((d.lifecycle_status || "final") === "final") s.add(d.template_type)
+      if ((d.lifecycle_status || "final") === "final" && d.is_primary !== false) {
+        s.add(d.template_type)
+      }
     }
     return s
   }, [docs])
@@ -510,6 +514,59 @@ export function IssueDetailPage() {
     if (r.has("payment")) return "支払準備フェイズ"
     return "関連フェイズ"
   }
+  const allLineEvents = (lineSummary?.lines || []).flatMap((line) =>
+    Array.isArray(line.recent_events) ? line.recent_events : []
+  )
+  const hasEventLike = (...needles: string[]) =>
+    allLineEvents.some((ev) => {
+      const t = String(ev?.event_type || "").toLowerCase()
+      return needles.some((needle) => t.includes(needle))
+    })
+  const hasLineRelation = (relation: string) =>
+    (lineSummary?.lines || []).some((line) => (line.relations || []).includes(relation))
+  const stageItems = [
+    {
+      key: "contract",
+      label: "締結",
+      done:
+        hasLineRelation("contracting") ||
+        createdTypes.has("purchase_order") ||
+        createdTypes.has("intl_purchase_order") ||
+        createdTypes.has("individual_license_terms") ||
+        createdTypes.has("pub_license_terms"),
+    },
+    { key: "delivery", label: "納品", done: hasEventLike("delivery") },
+    {
+      key: "usage",
+      label: "利用",
+      done:
+        hasEventLike("usage", "royalty", "report") ||
+        (lineSummary?.lines || []).some((line) =>
+          ["subscription", "royalty"].includes(String(line.payment_scheme || ""))
+        ),
+    },
+    {
+      key: "inspection",
+      label: "検収",
+      done: createdTypes.has("inspection_certificate") || hasEventLike("inspection"),
+    },
+    {
+      key: "calculation",
+      label: "計算",
+      done:
+        createdTypes.has("royalty_statement") ||
+        createdTypes.has("license_calculation_sheet") ||
+        hasEventLike("calculation", "royalty"),
+    },
+  ]
+  const issuePhaseLabel = React.useMemo(() => {
+    const phases = new Set((lineSummary?.lines || []).map((line) => line.issue_phase))
+    if (phases.has("mixed")) return "締結 + 支払準備"
+    if (phases.has("contracting") && phases.has("payment")) return "締結 + 支払準備"
+    if (phases.has("contracting")) return "締結フェイズ"
+    if (phases.has("payment")) return "支払準備フェイズ"
+    return "フェイズ未判定"
+  }, [lineSummary])
 
   return (
     <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-6">
@@ -711,6 +768,32 @@ export function IssueDetailPage() {
                 </div>
               ))}
             </div>
+            <div className="border border-border rounded-sm px-3 py-2 space-y-2">
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <span className="text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                  現在フェイズ
+                </span>
+                <Badge variant="outline" className="font-mono">
+                  {issuePhaseLabel}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-5 gap-1">
+                {stageItems.map((stage) => (
+                  <div
+                    key={stage.key}
+                    className={cn(
+                      "h-8 border rounded-sm flex items-center justify-center text-[10px] font-mono",
+                      stage.done
+                        ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+                        : "border-border text-muted-foreground"
+                    )}
+                  >
+                    {stage.done && <Check className="h-3 w-3 mr-1" />}
+                    {stage.label}
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="space-y-2">
               {lineSummary.lines.map((line) => {
                 const pct = progressPct(line)
@@ -734,6 +817,23 @@ export function IssueDetailPage() {
                             <span>{statusText(line.status)}</span>
                             {line.contract_number && <span>契約 {line.contract_number}</span>}
                           </div>
+                          {(line.related_issue_keys || []).filter((key) => key !== issueKey).length > 0 && (
+                            <div className="flex flex-wrap items-center gap-1.5 text-[10px] font-mono">
+                              <span className="text-muted-foreground">兄弟課題</span>
+                              {(line.related_issue_keys || [])
+                                .filter((key) => key && key !== issueKey)
+                                .map((key) => (
+                                  <button
+                                    key={`${line.id}-${key}`}
+                                    type="button"
+                                    onClick={() => navigate(`/issues/${encodeURIComponent(key)}`)}
+                                    className="border border-border hover:border-foreground rounded-sm px-1.5 py-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                                  >
+                                    {key}
+                                  </button>
+                                ))}
+                            </div>
+                          )}
                         </div>
                         <div className="flex items-center gap-2 shrink-0">
                           {line.line_code && (
@@ -804,6 +904,24 @@ export function IssueDetailPage() {
                             )}
                             style={{ width: `${pct}%` }}
                           />
+                        </div>
+                      )}
+                      {Array.isArray(line.recent_events) && line.recent_events.length > 0 && (
+                        <div className="border-t border-border pt-2 space-y-1">
+                          <div className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">
+                            最近の実績
+                          </div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {line.recent_events.slice(0, 3).map((ev, index) => (
+                              <span
+                                key={`${line.id}-ev-${index}`}
+                                className="text-[10px] font-mono border border-border rounded-sm px-2 py-1 text-muted-foreground"
+                              >
+                                {ev.event_type || "event"} · {fmtDate(ev.occurred_at)} ·{" "}
+                                {ev.document_number || ev.backlog_issue_key || "文書なし"}
+                              </span>
+                            ))}
+                          </div>
                         </div>
                       )}
                     </CardContent>

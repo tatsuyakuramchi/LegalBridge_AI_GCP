@@ -11983,6 +11983,27 @@ ${details}
                   cc.backlog_issue_key AS contracting_issue_key,
                   il.relations,
                   CASE
+                    WHEN 'contracting' = ANY(il.relations) AND 'payment' = ANY(il.relations) THEN 'mixed'
+                    WHEN 'contracting' = ANY(il.relations) THEN 'contracting'
+                    WHEN 'payment' = ANY(il.relations) THEN 'payment'
+                    ELSE 'unknown'
+                  END AS issue_phase,
+                  ARRAY(
+                    SELECT DISTINCT x.issue_key
+                      FROM (
+                        SELECT cc2.backlog_issue_key AS issue_key
+                          FROM contract_capabilities cc2
+                         WHERE cc2.id = cl.capability_id
+                        UNION ALL
+                        SELECT ce2.backlog_issue_key AS issue_key
+                          FROM condition_events ce2
+                         WHERE ce2.condition_line_id = cl.id
+                           AND ce2.voided_at IS NULL
+                      ) x
+                     WHERE NULLIF(x.issue_key, '') IS NOT NULL
+                     ORDER BY x.issue_key
+                  ) AS related_issue_keys,
+                  CASE
                     WHEN s.status IN ('fulfilled', 'expired') THEN NULL
                     WHEN cl.payment_scheme IN ('lump_sum', 'per_unit', 'installment') THEN 'inspection_certificate'
                     WHEN cl.payment_scheme IN ('subscription', 'royalty') THEN 'royalty_statement'
