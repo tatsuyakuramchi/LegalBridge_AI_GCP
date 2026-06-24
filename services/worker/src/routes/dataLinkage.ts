@@ -121,6 +121,246 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
     }
   }
 
+  async function issueConsistencyChecks(): Promise<CheckResult[]> {
+    const contractingTemplates = `(
+      'purchase_order',
+      'intl_purchase_order',
+      'individual_license_terms',
+      'pub_license_terms'
+    )`;
+    const paymentPrepTemplates = `(
+      'inspection_certificate',
+      'royalty_statement',
+      'license_calculation_sheet'
+    )`;
+
+    return Promise.all([
+      probe(
+        {
+          key: "issue_capability_mismatch",
+          label: "文書とcapabilityの課題キー不一致",
+          description:
+            "documents.issue_key と contract_capabilities.backlog_issue_key が異なる文書。統合時の取り残し候補。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM documents d
+           JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+          WHERE d.issue_key IS NOT NULL
+            AND cc.backlog_issue_key IS NOT NULL
+            AND d.issue_key <> cc.backlog_issue_key`,
+        `SELECT d.document_number,
+                d.template_type,
+                d.issue_key AS document_issue_key,
+                cc.id AS capability_id,
+                cc.backlog_issue_key AS capability_issue_key
+           FROM documents d
+           JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+          WHERE d.issue_key IS NOT NULL
+            AND cc.backlog_issue_key IS NOT NULL
+            AND d.issue_key <> cc.backlog_issue_key
+          ORDER BY d.created_at DESC NULLS LAST
+          LIMIT 8`
+      ),
+      probe(
+        {
+          key: "final_contract_docs_without_lines",
+          label: "締結文書の条件明細未生成",
+          description:
+            "final/正本の発注書・条件書に紐づく condition_lines が無い。締結フェイズの空振り候補。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM documents d
+           LEFT JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+           LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+          WHERE d.template_type IN ${contractingTemplates}
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND cl.id IS NULL`,
+        `SELECT d.document_number,
+                d.issue_key,
+                d.template_type,
+                cc.id AS capability_id
+           FROM documents d
+           LEFT JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+           LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+          WHERE d.template_type IN ${contractingTemplates}
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND cl.id IS NULL
+          ORDER BY d.created_at DESC NULLS LAST
+          LIMIT 8`
+      ),
+      probe(
+        {
+          key: "payment_docs_without_events",
+          label: "支払準備文書の実績未結合",
+          description:
+            "検収書・計算書があるのに condition_events が無い。支払準備フェイズの結合漏れ候補。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM documents d
+          WHERE d.template_type IN ${paymentPrepTemplates}
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND NOT EXISTS (
+              SELECT 1 FROM condition_events ce WHERE ce.document_id = d.id
+            )`,
+        `SELECT d.id,
+                d.document_number,
+                d.issue_key,
+                d.template_type,
+                d.created_at
+           FROM documents d
+          WHERE d.template_type IN ${paymentPrepTemplates}
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND NOT EXISTS (
+              SELECT 1 FROM condition_events ce WHERE ce.document_id = d.id
+            )
+          ORDER BY d.created_at DESC NULLS LAST
+          LIMIT 8`
+      ),
+      probe(
+        {
+          key: "condition_line_classification_missing",
+          label: "条件明細の分類未完了",
+          description:
+            "transaction_kind または counterparty_vendor_id が NULL の condition_lines。分類補完の対象。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM condition_lines
+          WHERE transaction_kind IS NULL OR counterparty_vendor_id IS NULL`,
+        `SELECT payment_scheme,
+                COUNT(*)::int AS n,
+                COUNT(*) FILTER (WHERE transaction_kind IS NULL)::int AS transaction_kind_null,
+                COUNT(*) FILTER (WHERE counterparty_vendor_id IS NULL)::int AS counterparty_vendor_id_null
+           FROM condition_lines
+          WHERE transaction_kind IS NULL OR counterparty_vendor_id IS NULL
+          GROUP BY payment_scheme
+          ORDER BY n DESC
+          LIMIT 8`
+      ),
+      probe(
+        {
+          key: "merged_source_final_documents",
+          label: "統合済み課題に残るfinal文書",
+          description:
+            "legal_requests.merged_into_issue_key がある統合元課題に final 文書が残っている。統合取り残し候補。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM legal_requests lr
+           JOIN documents d ON d.issue_key = lr.backlog_issue_key
+          WHERE NULLIF(lr.merged_into_issue_key, '') IS NOT NULL
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'`,
+        `SELECT lr.backlog_issue_key AS source_issue_key,
+                lr.merged_into_issue_key,
+                d.document_number,
+                d.template_type
+           FROM legal_requests lr
+           JOIN documents d ON d.issue_key = lr.backlog_issue_key
+          WHERE NULLIF(lr.merged_into_issue_key, '') IS NOT NULL
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+          ORDER BY d.created_at DESC NULLS LAST
+          LIMIT 8`
+      ),
+      probe(
+        {
+          key: "non_primary_final_records",
+          label: "非正本なのにfinalの旧版",
+          description:
+            "is_primary=false なのに lifecycle_status=final の documents/capabilities。重複計上の温床。",
+          repair_action: null,
+        },
+        `WITH stale AS (
+            SELECT id FROM documents
+             WHERE COALESCE(is_primary, TRUE) = FALSE
+               AND COALESCE(lifecycle_status, 'final') = 'final'
+            UNION ALL
+            SELECT id FROM contract_capabilities
+             WHERE COALESCE(is_primary, TRUE) = FALSE
+               AND COALESCE(lifecycle_status, 'final') = 'final'
+          )
+          SELECT COUNT(*)::int AS n FROM stale`,
+        `WITH stale AS (
+            SELECT 'documents' AS source,
+                   id,
+                   document_number,
+                   issue_key AS issue_key,
+                   template_type AS record_type
+              FROM documents
+             WHERE COALESCE(is_primary, TRUE) = FALSE
+               AND COALESCE(lifecycle_status, 'final') = 'final'
+            UNION ALL
+            SELECT 'contract_capabilities' AS source,
+                   id,
+                   document_number,
+                   backlog_issue_key AS issue_key,
+                   record_type
+              FROM contract_capabilities
+             WHERE COALESCE(is_primary, TRUE) = FALSE
+               AND COALESCE(lifecycle_status, 'final') = 'final'
+          )
+          SELECT * FROM stale ORDER BY source, id DESC LIMIT 8`
+      ),
+      probe(
+        {
+          key: "pub_license_terms_without_lines",
+          label: "出版系条件書の明細未生成",
+          description:
+            "pub_license_terms の final/正本文書に condition_lines が無い。publication 系生成経路の確認対象。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM documents d
+           LEFT JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+           LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+          WHERE d.template_type = 'pub_license_terms'
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND cl.id IS NULL`,
+        `SELECT d.document_number,
+                d.issue_key,
+                cc.id AS capability_id
+           FROM documents d
+           LEFT JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+           LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+          WHERE d.template_type = 'pub_license_terms'
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND cl.id IS NULL
+          ORDER BY d.created_at DESC NULLS LAST
+          LIMIT 8`
+      ),
+    ]);
+  }
+
+  app.get("/api/audit/issue-consistency", async (_req, res) => {
+    try {
+      const checks = await issueConsistencyChecks();
+      const totalIssues = checks.filter((c) => c.count > 0).length;
+      res.json({
+        ok: true,
+        generated_at: new Date().toISOString(),
+        total_issue_categories: totalIssues,
+        checks,
+      });
+    } catch (e: any) {
+      console.error("/api/audit/issue-consistency failed:", e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
+
   app.get("/api/admin/data-linkage/check", async (_req, res) => {
     try {
       const checks = await Promise.all([
