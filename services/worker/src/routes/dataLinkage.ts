@@ -238,14 +238,27 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
         `SELECT COUNT(*)::int AS n
            FROM condition_lines
           WHERE transaction_kind IS NULL OR counterparty_vendor_id IS NULL`,
-        `SELECT payment_scheme,
-                COUNT(*)::int AS n,
-                COUNT(*) FILTER (WHERE transaction_kind IS NULL)::int AS transaction_kind_null,
-                COUNT(*) FILTER (WHERE counterparty_vendor_id IS NULL)::int AS counterparty_vendor_id_null
-           FROM condition_lines
-          WHERE transaction_kind IS NULL OR counterparty_vendor_id IS NULL
-          GROUP BY payment_scheme
-          ORDER BY n DESC
+        `SELECT cl.id,
+                cl.line_code,
+                cl.payment_scheme,
+                cl.transaction_kind,
+                cl.counterparty_vendor_id,
+                cc.document_number,
+                cc.backlog_issue_key AS issue_key,
+                cc.record_type,
+                cc.contract_category,
+                cc.vendor_id AS capability_vendor_id,
+                cv.vendor_name AS capability_vendor_name,
+                cc.parent_capability_id,
+                parent_cc.vendor_id AS parent_vendor_id,
+                pv.vendor_name AS parent_vendor_name
+           FROM condition_lines cl
+           LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
+           LEFT JOIN vendors cv ON cv.id = cc.vendor_id
+           LEFT JOIN vendors pv ON pv.id = parent_cc.vendor_id
+          WHERE cl.transaction_kind IS NULL OR cl.counterparty_vendor_id IS NULL
+          ORDER BY cl.id
           LIMIT 8`
       ),
       probe(
