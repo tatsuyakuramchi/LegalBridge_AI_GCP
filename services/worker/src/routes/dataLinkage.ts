@@ -623,11 +623,12 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             const v = await client.query(
               `WITH candidates AS (
                  SELECT cl.id,
-                        cc.vendor_id AS suggested_counterparty_vendor_id
+                        COALESCE(cc.vendor_id, parent_cc.vendor_id) AS suggested_counterparty_vendor_id
                    FROM condition_lines cl
                    LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+                   LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
                   WHERE cl.counterparty_vendor_id IS NULL
-                    AND cc.vendor_id IS NOT NULL
+                    AND COALESCE(cc.vendor_id, parent_cc.vendor_id) IS NOT NULL
                   ORDER BY cl.id
                   LIMIT $1
                )
