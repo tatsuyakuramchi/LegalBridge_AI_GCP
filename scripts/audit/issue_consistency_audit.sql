@@ -186,3 +186,37 @@ SELECT d.document_number,
    AND cl.id IS NULL
  ORDER BY d.created_at DESC NULLS LAST
  LIMIT 20;
+
+\echo 'A7 detail pub_license_terms generation coverage'
+SELECT COUNT(*)::int AS total_final_primary_pub_terms,
+       COUNT(*) FILTER (WHERE cc.id IS NOT NULL)::int AS with_capability,
+       COUNT(*) FILTER (WHERE cl.id IS NOT NULL)::int AS with_condition_lines,
+       COUNT(DISTINCT cl.id)::int AS condition_line_count
+  FROM documents d
+  LEFT JOIN contract_capabilities cc
+    ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+  LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+ WHERE d.template_type = 'pub_license_terms'
+   AND COALESCE(d.lifecycle_status, 'final') = 'final'
+   AND COALESCE(d.is_primary, TRUE) = TRUE;
+
+SELECT d.document_number,
+       d.issue_key,
+       cc.id AS capability_id,
+       cc.record_type,
+       cc.contract_category,
+       COUNT(cl.id)::int AS condition_line_count
+  FROM documents d
+  LEFT JOIN contract_capabilities cc
+    ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+  LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+ WHERE d.template_type = 'pub_license_terms'
+   AND COALESCE(d.lifecycle_status, 'final') = 'final'
+   AND COALESCE(d.is_primary, TRUE) = TRUE
+ GROUP BY d.document_number,
+          d.issue_key,
+          cc.id,
+          cc.record_type,
+          cc.contract_category
+ ORDER BY d.document_number
+ LIMIT 50;
