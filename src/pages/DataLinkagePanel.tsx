@@ -47,14 +47,17 @@ const REPAIR_LABELS: Record<string, string> = {
 
 export const DataLinkagePanel: React.FC = () => {
   const [data, setData] = React.useState<CheckResponse | null>(null)
+  const [issueAudit, setIssueAudit] = React.useState<CheckResponse | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [issueAuditError, setIssueAuditError] = React.useState<string | null>(null)
   const [busyAction, setBusyAction] = React.useState<string | null>(null)
   const [lastRepair, setLastRepair] = React.useState<string | null>(null)
 
   const refresh = React.useCallback(async () => {
     setLoading(true)
     setError(null)
+    setIssueAuditError(null)
     try {
       const res = await fetch("/api/admin/data-linkage/check")
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -62,6 +65,14 @@ export const DataLinkagePanel: React.FC = () => {
       setData(json)
     } catch (e: any) {
       setError(String(e?.message || e))
+    }
+    try {
+      const res = await fetch("/api/audit/issue-consistency")
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const json: CheckResponse = await res.json()
+      setIssueAudit(json)
+    } catch (e: any) {
+      setIssueAuditError(String(e?.message || e))
     } finally {
       setLoading(false)
     }
@@ -100,9 +111,12 @@ export const DataLinkagePanel: React.FC = () => {
     }
   }
 
-  const issues = data?.checks.filter((c) => c.count > 0) || []
+  const linkageIssues = data?.checks.filter((c) => c.count > 0) || []
   const cleans = data?.checks.filter((c) => c.count === 0) || []
   const errs = data?.checks.filter((c) => c.count < 0) || []
+  const issueAuditIssues = issueAudit?.checks.filter((c) => c.count > 0) || []
+  const issueAuditCleans = issueAudit?.checks.filter((c) => c.count === 0) || []
+  const issueAuditErrs = issueAudit?.checks.filter((c) => c.count < 0) || []
 
   return (
     <div className="space-y-4 p-1">
@@ -139,6 +153,107 @@ export const DataLinkagePanel: React.FC = () => {
         修復は安全側（正規化・孤児削除・孤児参照のNULL化）のみで、発行済の正本は変更しません。
       </p>
 
+      <div className="border border-border rounded-sm p-3 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <AlertTriangle className="w-4 h-4 text-muted-foreground" />
+          <span className="text-[12px] font-mono font-bold">
+            課題コントロール整合性監査
+          </span>
+          <span className="text-[10px] font-mono text-muted-foreground">
+            A1〜A7 / 読み取り専用
+          </span>
+          {issueAudit && (
+            <span
+              className={cn(
+                "text-[10px] font-mono px-1.5 py-0.5 rounded-sm",
+                issueAudit.total_issue_categories > 0
+                  ? "bg-amber-100 text-amber-900"
+                  : "bg-emerald-50 text-emerald-800"
+              )}
+            >
+              要確認 {issueAudit.total_issue_categories} / {issueAudit.checks.length}
+            </span>
+          )}
+        </div>
+        <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
+          課題 → 文書 → 条件明細 → 実績の紐づきを、文書取り残し・明細未生成・実績未結合・旧版finalの観点で点検します。
+        </p>
+        {issueAuditError && (
+          <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-3 py-2 text-[10px] font-mono">
+            監査取得失敗: {issueAuditError}
+          </div>
+        )}
+        {issueAudit && (
+          <>
+            <div className="text-[10px] font-mono text-muted-foreground">
+              点検時刻: {new Date(issueAudit.generated_at).toLocaleString("ja-JP")}
+            </div>
+            {issueAuditIssues.length > 0 ? (
+              <div className="space-y-2">
+                {issueAuditIssues.map((c) => (
+                  <div key={c.key} className="border border-amber-300 bg-amber-50/40 rounded-sm p-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span className="text-[12px] font-mono font-bold">{c.label}</span>
+                      <span className="text-[11px] font-mono px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded-sm">
+                        {c.count} 件
+                      </span>
+                      <span className="text-[10px] font-mono text-muted-foreground italic">
+                        手動確認
+                      </span>
+                    </div>
+                    <p className="text-[10px] font-mono text-muted-foreground mt-1">
+                      {c.description}
+                    </p>
+                    {c.sample.length > 0 && (
+                      <div className="mt-2 text-[10px] font-mono text-muted-foreground/80 bg-card border border-border rounded-sm p-2 overflow-x-auto">
+                        {c.sample.map((s, i) => (
+                          <div key={i} className="whitespace-nowrap">
+                            {Object.entries(s)
+                              .map(([k, v]) => `${k}=${v}`)
+                              .join("  ·  ")}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="text-[10px] font-mono text-emerald-700 flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3" />
+                課題コントロール監査の要確認カテゴリはありません。
+              </div>
+            )}
+            {issueAuditCleans.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {issueAuditCleans.map((c) => (
+                  <span
+                    key={c.key}
+                    className="text-[10px] font-mono px-2 py-1 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-sm flex items-center gap-1"
+                  >
+                    <CheckCircle2 className="w-3 h-3" />
+                    {c.label}
+                  </span>
+                ))}
+              </div>
+            )}
+            {issueAuditErrs.length > 0 && (
+              <div className="border border-border rounded-sm p-2">
+                <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-1">
+                  点検スキップ ({issueAuditErrs.length})
+                </div>
+                {issueAuditErrs.map((c) => (
+                  <div key={c.key} className="text-[10px] font-mono text-muted-foreground">
+                    {c.label}: {c.error}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+
       {error && (
         <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[11px] font-mono flex items-start gap-2">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0" />
@@ -163,9 +278,9 @@ export const DataLinkagePanel: React.FC = () => {
       )}
 
       {/* 要対応 */}
-      {issues.length > 0 && (
+      {linkageIssues.length > 0 && (
         <div className="space-y-2">
-          {issues.map((c) => (
+          {linkageIssues.map((c) => (
             <div
               key={c.key}
               className="border border-amber-300 bg-amber-50/40 rounded-sm p-3"
