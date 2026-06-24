@@ -477,13 +477,13 @@ export function WorkGraphPanel() {
   //   作品G が 原作A のマテリアルC・D を使う → C・D の条件が履行義務、という連鎖を一目で示すための再表示。
   //   元データ(upstream)は壊さず、マテリアル単位にグルーピングするだけの読み取り専用ビュー。
   const consumedGroups = React.useMemo(() => {
-    const groups = new Map<string, { workCode?: string | null; workTitle?: string | null; matCode?: string | null; matName?: string | null; edges: Edge[] }>()
+    const groups = new Map<string, { workId?: number | null; workCode?: string | null; workTitle?: string | null; matCode?: string | null; matName?: string | null; edges: Edge[] }>()
     for (const e of upstream) {
       if (e.source_work_id == null && e.source_material_id == null) continue
       const key = `${e.source_work_id ?? "?"}::${e.source_material_id ?? "?"}`
       const g = groups.get(key)
       if (g) g.edges.push(e)
-      else groups.set(key, { workCode: e.source_work_code, workTitle: e.source_work_title, matCode: e.source_material_code, matName: e.source_material_name, edges: [e] })
+      else groups.set(key, { workId: e.source_work_id, workCode: e.source_work_code, workTitle: e.source_work_title, matCode: e.source_material_code, matName: e.source_material_name, edges: [e] })
     }
     return Array.from(groups.values())
   }, [upstream])
@@ -1013,10 +1013,22 @@ export function WorkGraphPanel() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {consumedGroups.map((g, gi) => (
                 <div key={gi} className="rounded border border-border bg-card px-2.5 py-2 text-[11px] font-mono space-y-1">
-                  <div className="text-[10px] text-muted-foreground truncate">
-                    <span className="text-sky-700 font-bold">原作</span>{" "}
-                    {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
-                  </div>
+                  {g.workId != null ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/works/${g.workId}`)}
+                      className="block w-full text-left text-[10px] text-sky-700 truncate hover:underline"
+                      title="この原作を開く"
+                    >
+                      <span className="font-bold">原作 ↗</span>{" "}
+                      {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
+                    </button>
+                  ) : (
+                    <div className="text-[10px] text-muted-foreground truncate">
+                      <span className="text-sky-700 font-bold">原作</span>{" "}
+                      {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
+                    </div>
+                  )}
                   <div className="font-semibold truncate">
                     <span className="text-emerald-700">◦ マテリアル</span>{" "}
                     {g.matCode || ""} {g.matName || (g.matCode ? "" : "（未設定）")}
@@ -1059,6 +1071,25 @@ export function WorkGraphPanel() {
             <p className="text-[10px] font-mono text-muted-foreground">
               原作は複数の原作マテリアルで構成され（権利者が異なる場合あり）、各マテリアルに複数の条件明細（直販／サブライセンス等の算定）がぶら下がります（1原作 : N材料 : N条件）。
             </p>
+            {/* 原作⇄作品の往復: この原作を利用している自社作品へのクイックリンク（原作→作品）。 */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-mono">
+              <span className="text-muted-foreground">この原作を利用する作品:</span>
+              {uses.length === 0 ? (
+                <span className="text-muted-foreground/70">まだありません</span>
+              ) : (
+                uses.map((u: any) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => navigate(`/works/${u.id}`)}
+                    className="text-violet-700 hover:underline"
+                    title="この作品を開く"
+                  >
+                    {u.work_code || `#${u.id}`} {u.title} ↗
+                  </button>
+                ))
+              )}
+            </div>
             {materials.length === 0 ? (
               <p className="text-[11px] font-mono text-muted-foreground">
                 まだマテリアルがありません。下の中カードの「素材を追加」から登録してください。
