@@ -163,7 +163,7 @@ Codex により Phase 0/1/2/3-A4 を実装し `codex/issue-consistency-audit`→
   - **本番適用手順**: F1 適用済を前提に、監査カードの「支払実績を復元」ボタン or `POST /api/admin/data-linkage/repair {action:"backfill_payment_condition_events", dry_run:true}` でプレビュー → `dry_run:false` で適用 → 監査再実行で A3 減少を確認。冪等。
   - **残**: 計算書の form_data に `capabilityFinancialConditionId`/`manufacturingEventId` が無い等で文書解決できないものは sync が skip し A3 に残る。残数が出たら個別調査（F2b）。
 - **F3**: A6=40 の整理。superseded 化できるものと正本判定見直しを分離。
-- **F4**: 監査 SQL/API に **A8〜A10**（status_v ベース: 未完了明細の支払準備取りこぼし／完了済みなのに課題未終結）を追加。
+- **F4 — 実装済 (2026-06-25)**: 監査 API に **A8〜A10**（status_v ベース・読み取り専用 advisory）を追加。`dataLinkage.ts` の `issueConsistencyChecks` に3チェック: `condition_lines_stalled_no_events`(A8: 消化型 payable で status=open かつ event 0＝締結のみで支払実績ゼロ)／`condition_lines_overconsumed`(A9: 消化額が契約額超過＝過大計上/重複実績。F2b 重複排除の常時監視も兼ねる)／`completed_lines_open_issue`(A10: 明細 fulfilled/expired なのに課題が終端ステータス外)。監査カードのバッジ表記を A1〜A10 に更新。
 - **F5 (ドキュメント)**: 実施記録 `docs/design/issue-control-consistency-remediation-record.md` が **main に未収録**（ブランチのみ）。main へ復元する。
 - **F6 (運用)**: admin-ui/frontend の main 反映は済だが **Cloud Run 再デプロイと画面スモーク未確認**（課題詳細の進捗表示・監査カード・修復ボタン冪等）。
 
