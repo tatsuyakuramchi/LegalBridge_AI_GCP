@@ -199,6 +199,9 @@ export function UnifiedIssuePage() {
   const [data, setData] = React.useState<UnifiedDetail | null>(null)
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+  // U3-2: 支払フェイズの起票→作成。処理中の condition_line.id とエラー。
+  const [creatingLine, setCreatingLine] = React.useState<number | null>(null)
+  const [createError, setCreateError] = React.useState<string | null>(null)
 
   React.useEffect(() => {
     if (!capabilityId) return
@@ -222,13 +225,59 @@ export function UnifiedIssuePage() {
     }
   }, [capabilityId])
 
-  // 次に出すべき文書をその場で起案。締結課題をヒントにエディタへ(支払課題は
-  //   エディタ側で選び直せる)。直前 formData の持ち越しを断つ(上書き事故防止)。
+  // 締結課題をヒントに直接エディタへ(支払以外/フォールバック用)。
   const createDocument = (template: string) => {
     const hintIssue = data?.header?.backlog_issue_key || ""
     if (hintIssue) setSelectedIssue(hintIssue)
     setFormData({ サブライセンシー一覧: [] })
     navigate(`/documents/new?template=${encodeURIComponent(template)}&prefill=1`)
+  }
+
+  // U3-2: 支払フェイズを「起票してから作成」。
+  //   ① quick-create で支払 Backlog 課題を作成(締結課題の子課題に。無ければ独立)。
+  //   ② 新課題キーを選択状態にしてエディタへ。文書保存で condition_events に
+  //      その課題キーが入り、統一課題の構成課題(支払フェイズ)に出る。
+  //   これによりバラバラ起案を抑制し、締結↔支払が Backlog 上でも親子で繋がる。
+  const PAYMENT_TYPE_MAP: Record<string, { label: string; req: string }> = {
+    inspection_certificate: { label: "納品・検収", req: "delivery_inspec" },
+    royalty_statement: { label: "利用許諾計算", req: "license_calc" },
+  }
+  const startPaymentDoc = async (line: ULine) => {
+    const tmpl = line.next_template_type
+    if (!tmpl) return
+    const m = PAYMENT_TYPE_MAP[tmpl]
+    if (!m) {
+      // 支払系以外は従来どおり直接作成。
+      createDocument(tmpl)
+      return
+    }
+    const hdr = data?.header
+    setCreatingLine(line.id)
+    setCreateError(null)
+    try {
+      const res = await fetch("/api/backlog/issues/quick-create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueTypeLabel: m.label,
+          requestType: m.req,
+          counterpartyName: hdr?.vendor_name || "",
+          subTopic: `${hdr?.document_number || ""} ${line.line_code || ""}`.trim() || hdr?.contract_title || "",
+          parentIssueKey: hdr?.backlog_issue_key || "", // 締結課題の子課題に(無ければ top-level)
+          details: `統一課題(${hdr?.document_number || `cap${hdr?.id}`})の支払フェイズ起票。条件明細 ${line.line_code || ""}。`,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
+      const newKey: string | undefined = d.issueKey
+      if (newKey) setSelectedIssue(newKey)
+      setFormData({ サブライセンシー一覧: [] })
+      navigate(`/documents/new?template=${encodeURIComponent(tmpl)}&prefill=1`)
+    } catch (e: any) {
+      setCreateError(`起票に失敗: ${e?.message || e}`)
+    } finally {
+      setCreatingLine(null)
+    }
   }
 
   const h = data?.header
@@ -254,6 +303,11 @@ export function UnifiedIssuePage() {
       {error && (
         <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[12px] font-mono">
           取得失敗: {error}
+        </div>
+      )}
+      {createError && (
+        <div className="border border-red-200 bg-red-50 text-red-900 rounded-sm px-4 py-2 text-[12px] font-mono">
+          {createError}
         </div>
       )}
 
@@ -317,11 +371,12 @@ export function UnifiedIssuePage() {
                           size="sm"
                           variant="outline"
                           className="h-7 gap-1 text-[10px]"
-                          onClick={() => createDocument(l.next_template_type!)}
-                          title="次に出すべき文書を作成"
+                          onClick={() => startPaymentDoc(l)}
+                          disabled={creatingLine === l.id}
+                          title="支払フェイズ課題を起票してから文書を作成(締結課題の子課題)"
                         >
-                          <Plus className="w-3 h-3" />
-                          {l.next_template_type === "inspection_certificate" ? "検収書を作成" : l.next_template_type === "royalty_statement" ? "計算書を作成" : "次の文書"}
+                          {creatingLine === l.id ? <Loader2 className="w-3 h-3 animate-spin" /> : <Plus className="w-3 h-3" />}
+                          {l.next_template_type === "inspection_certificate" ? "検収書を起票して作成" : l.next_template_type === "royalty_statement" ? "計算書を起票して作成" : "次の文書を起票"}
                         </Button>
                       )}
                     </div>
