@@ -45,6 +45,20 @@ const REPAIR_LABELS: Record<string, string> = {
   fix_orphan_refs: "孤児参照をNULL化",
   backfill_condition_line_classification: "条件明細分類を補完",
   backfill_contract_condition_lines: "締結明細を復元",
+  backfill_payment_condition_events: "支払実績を復元",
+}
+
+// 修復プレビュー(dry_run)の detail 数値キー → 日本語ラベル。未知キーは生キー表示。
+const DETAIL_LABELS: Record<string, string> = {
+  documents_total: "対象文書",
+  regenerated_lines: "復元される条件明細(行)",
+  regenerated_documents: "復元される文書",
+  skipped_no_capability: "スキップ(capability無し)",
+  skipped_empty_source: "スキップ(明細がform_dataのみ)",
+  inspection_events: "復元される検収実績",
+  royalty_events: "復元される計算実績",
+  delivery_events_touched: "対象の納品イベント",
+  royalty_calcs_touched: "対象の計算レコード",
 }
 
 export const DataLinkagePanel: React.FC = () => {
@@ -130,13 +144,16 @@ export const DataLinkagePanel: React.FC = () => {
       if (!previewRes.ok || !preview.ok)
         throw new Error(preview.error || `HTTP ${previewRes.status}`)
       const d = preview.detail || {}
+      // detail の数値項目を日本語ラベルで列挙(アクション非依存)。
+      const detailLines = Object.entries(d)
+        .filter(([, v]) => typeof v === "number")
+        .map(([k, v]) => `  ${DETAIL_LABELS[k] || k}: ${v}`)
+        .join("\n")
       const ok = window.confirm(
         `修復「${REPAIR_LABELS[action] || action}」プレビュー(${label})\n\n` +
-          `対象文書: ${d.documents_total ?? 0} 件\n` +
-          `復元される条件明細: ${preview.affected ?? 0} 行 (${d.regenerated_documents ?? 0} 文書)\n` +
-          `スキップ(capability無し): ${d.skipped_no_capability ?? 0} 件\n` +
-          `スキップ(明細がform_dataのみ): ${d.skipped_empty_source ?? 0} 件\n\n` +
-          `この内容で本番に適用しますか?`
+          `復元される実績/明細: ${preview.affected ?? 0} 件\n` +
+          (detailLines ? `${detailLines}\n` : "") +
+          `\nこの内容で本番に適用しますか?`
       )
       if (!ok) {
         setLastRepair(`「${REPAIR_LABELS[action] || action}」プレビューのみ実行(未適用)。`)
@@ -152,7 +169,7 @@ export const DataLinkagePanel: React.FC = () => {
       if (!applyRes.ok || !applied.ok)
         throw new Error(applied.error || `HTTP ${applyRes.status}`)
       setLastRepair(
-        `「${REPAIR_LABELS[action] || action}」完了: ${applied.affected} 行の条件明細を復元しました。`
+        `「${REPAIR_LABELS[action] || action}」完了: ${applied.affected} 件を復元しました。`
       )
       await refresh()
     } catch (e: any) {
@@ -211,7 +228,7 @@ export const DataLinkagePanel: React.FC = () => {
             課題コントロール整合性監査
           </span>
           <span className="text-[10px] font-mono text-muted-foreground">
-            A1〜A7 / 読み取り専用
+            A1〜A7 / 一部はプレビュー付き修復可
           </span>
           {issueAudit && (
             <span
