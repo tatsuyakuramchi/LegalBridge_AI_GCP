@@ -7924,6 +7924,159 @@ ${details}
   });
 
   /**
+   * F2b(ハイブリッド・royalty 側のみ): A3 のうち計算書(royalty_statement /
+   *   license_calculation_sheet)で condition_events が無いものを form_data から復元。
+   *   検収側(inspection_certificate)は delivery_events 再構成が必要で legacy 受容(対象外)。
+   *
+   *   方式: 対象文書 d.id が既知なので syncRoyaltyCalcEvent の文書解決(form_data の
+   *   camelCase キー依存で孤立文書は解決不可)は使わず、
+   *     1) form_data.capability_financial_condition_id の財務条件 → 親 capability を
+   *        syncConditionLinesForCapability で同期し condition_line を確保、
+   *     2) その condition_line に royalty_calc の condition_event を d.id 直結で INSERT。
+   *   condition_events.source_royalty_calculation_id は使わず document_id で冪等判定。
+   *   dry_run(既定 true): 書き込まず per-doc 復元可否を返す。
+   *   body: { dry_run?: boolean }
+   */
+  app.post("/api/admin/backfill-royalty-events-from-formdata", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run !== false;
+    const ROYALTY_TEMPLATES = ["royalty_statement", "license_calculation_sheet"];
+    const num = (v: any) => {
+      if (v == null || v === "") return null;
+      const n = Number(String(v).replace(/[,\s]/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    try {
+      const docs = await query(
+        `SELECT d.id, d.document_number, d.issue_key, d.template_type, d.form_data, d.created_at
+           FROM documents d
+          WHERE d.template_type = ANY($1::text[])
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND NOT EXISTS (SELECT 1 FROM condition_events ce WHERE ce.document_id = d.id)
+          ORDER BY d.created_at DESC NULLS LAST`,
+        [ROYALTY_TEMPLATES]
+      );
+
+      const reconstructed: any[] = [];
+      const skipped: any[] = [];
+      let eventsTotal = 0;
+
+      for (const d of docs.rows) {
+        const fd = d.form_data || {};
+        const fcId =
+          Number(fd.capability_financial_condition_id || fd.capabilityFinancialConditionId || 0) || null;
+        if (!fcId) {
+          skipped.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            reason: "form_data に capability_financial_condition_id が無い",
+          });
+          continue;
+        }
+
+        const fcRow = (
+          await query(
+            `SELECT capability_id FROM capability_financial_conditions WHERE id = $1`,
+            [fcId]
+          )
+        ).rows[0];
+        if (!fcRow) {
+          skipped.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            reason: `financial_condition ${fcId} が存在しない`,
+          });
+          continue;
+        }
+        const capId = Number(fcRow.capability_id);
+
+        if (dryRun) {
+          reconstructed.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            capability_financial_condition_id: fcId,
+            capability_id: capId,
+            actual_royalty: fd.actualRoyalty ?? fd.actual_royalty ?? null,
+            period: fd.period ?? null,
+          });
+          continue;
+        }
+
+        try {
+          // 1) 財務条件 → condition_line を確保(冪等)。
+          await safeSync("F2b CL", () =>
+            syncConditionLinesForCapability({ query }, capId)
+          );
+          const cl = (
+            await query(
+              `SELECT id FROM condition_lines WHERE source_condition_id = $1 ORDER BY id LIMIT 1`,
+              [fcId]
+            )
+          ).rows[0];
+          if (!cl) {
+            skipped.push({
+              document_number: d.document_number,
+              issue_key: d.issue_key,
+              reason: `fc ${fcId} の condition_line を生成できず`,
+            });
+            continue;
+          }
+
+          // 2) royalty_calc の condition_event を d.id 直結で INSERT(冪等: doc 単位)。
+          const eventNoRes = await query(
+            `SELECT COALESCE(MAX(event_no), 0) + 1 AS n FROM condition_events WHERE condition_line_id = $1`,
+            [cl.id]
+          );
+          const eventNo = Number(eventNoRes.rows[0].n);
+          await query(
+            `INSERT INTO condition_events
+               (condition_line_id, event_no, event_type, document_id, backlog_issue_key,
+                occurred_at, period, amount_ex_tax, mg_consumed_this_time, ag_consumed_this_time)
+             VALUES ($1, $2, 'royalty_calc', $3, $4, $5, $6, $7, $8, $9)`,
+            [
+              cl.id,
+              eventNo,
+              d.id,
+              d.issue_key || null,
+              d.created_at,
+              fd.period || null,
+              num(fd.actualRoyalty ?? fd.actual_royalty) || 0,
+              num(fd.mgAmount ?? fd.mg_consumed_this_time),
+              num(fd.agAmount ?? fd.ag_consumed_this_time),
+            ]
+          );
+          eventsTotal += 1;
+          reconstructed.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            condition_line_id: cl.id,
+            amount_ex_tax: num(fd.actualRoyalty ?? fd.actual_royalty) || 0,
+          });
+        } catch (e: any) {
+          skipped.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            reason: String(e?.message || e),
+          });
+        }
+      }
+
+      res.json({
+        ok: true,
+        dry_run: dryRun,
+        documents_total: docs.rows.length,
+        reconstructed: reconstructed.length,
+        skipped: skipped.length,
+        condition_events: eventsTotal,
+        detail: { reconstructed, skipped },
+      });
+    } catch (error: any) {
+      console.error("/api/admin/backfill-royalty-events-from-formdata failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  /**
    * 検収書の事前 overflow チェック。検収書を確定保存する前に必ず叩く。
    * body:
    *   {
