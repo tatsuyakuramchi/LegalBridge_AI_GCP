@@ -60,6 +60,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/line-items(?:\/|\?|$)/,
   // 課題詳細の条件明細サマリは worker のみ実装。
   /^\/api\/issues\/[^/]+\/condition-line-summary(?:\?|$)/,
+  // 個別課題→所属する新課題(統一課題)リゾルバも worker のみ実装。
+  /^\/api\/issues\/[^/]+\/unified(?:\?|$)/,
   // CloudSign の接続テスト(/api/cloudsign/health)等の GET も worker のみ実装。
   /^\/api\/cloudsign(?:\/|\?|$)/,
   // メール送信の接続テスト(/api/email/health)も worker のみ実装。
