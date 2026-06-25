@@ -7925,6 +7925,148 @@ ${details}
   });
 
   /**
+   * 締結明細の「再同期」修復: capability_line_items を失った契約を form_data から
+   *   復元する。発注書の reopen 再保存バグ(空プルーンが生 formData.items を見て
+   *   capability_line_items を誤削除)で、capability_line_items=0 だが孤児の
+   *   condition_lines が残るケースを是正する。
+   *
+   *   対象: final/正本の締結文書で capability あり・capability_line_items=0・
+   *         form_data に line_items/items がある。
+   *   手順(各契約): condition_events を持つ明細があれば触らず skip(履歴保全)。
+   *         無ければ孤児 condition_lines(events無)を削除してから
+   *         upsertCapabilityLineItems で capability_line_items + condition_lines を
+   *         クリーンに再生成(重複防止)。
+   *   dry_run(既定 true): 書き込まず対象を返す。冪等。
+   *   body: { dry_run?: boolean, document_number?: string }(document_number 指定で1件のみ)
+   */
+  app.post("/api/admin/resync-contract-line-items", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run !== false;
+    const onlyDoc = req.body?.document_number ? String(req.body.document_number).trim() : "";
+    const CONTRACTING = [
+      "purchase_order",
+      "intl_purchase_order",
+      "individual_license_terms",
+      "pub_license_terms",
+    ];
+    try {
+      const targets = (
+        await query(
+          `SELECT d.document_number, d.issue_key, d.form_data, cc.id AS capability_id
+             FROM documents d
+             JOIN contract_capabilities cc
+               ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+            WHERE d.template_type = ANY($1::text[])
+              AND COALESCE(d.lifecycle_status, 'final') = 'final'
+              AND COALESCE(d.is_primary, TRUE) = TRUE
+              AND ($2 = '' OR d.document_number = $2)
+              -- バルク自動検出(document_number 未指定)時のみ「明細欠落」条件で絞る。
+              --   document_number 指定時は強制復旧(下の events 安全弁は維持)。
+              AND ($2 <> '' OR NOT EXISTS (SELECT 1 FROM capability_line_items li WHERE li.capability_id = cc.id))
+              AND ($2 <> '' OR EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id))
+            ORDER BY d.created_at DESC NULLS LAST`,
+          [CONTRACTING, onlyDoc]
+        )
+      ).rows;
+
+      const resynced: any[] = [];
+      const skipped: any[] = [];
+
+      for (const t of targets) {
+        const fd = t.form_data || {};
+        const lineItems =
+          Array.isArray(fd.line_items) && fd.line_items.length
+            ? fd.line_items
+            : Array.isArray(fd.items) && fd.items.length
+            ? fd.items
+            : null;
+        if (!lineItems) {
+          skipped.push({ document_number: t.document_number, reason: "form_data に line_items/items 無し" });
+          continue;
+        }
+        // events を持つ明細があるなら履歴保全のため触らない。
+        const hasEvents = Number(
+          (
+            await query(
+              `SELECT COUNT(*)::int AS n
+                 FROM condition_events ce
+                 JOIN condition_lines cl ON cl.id = ce.condition_line_id
+                WHERE cl.capability_id = $1 AND ce.voided_at IS NULL`,
+              [t.capability_id]
+            )
+          ).rows[0].n
+        );
+        if (hasEvents > 0) {
+          skipped.push({ document_number: t.document_number, reason: `実績(condition_events)があるため手動対応(events=${hasEvents})` });
+          continue;
+        }
+
+        if (dryRun) {
+          const orphan = Number(
+            (await query(`SELECT COUNT(*)::int AS n FROM condition_lines WHERE capability_id = $1`, [t.capability_id])).rows[0].n
+          );
+          resynced.push({
+            document_number: t.document_number,
+            issue_key: t.issue_key,
+            capability_id: t.capability_id,
+            line_items: lineItems.length,
+            orphan_condition_lines_to_clear: orphan,
+          });
+          continue;
+        }
+
+        try {
+          // 孤児 condition_lines(events無・成果物紐付け無)を削除。
+          await query(
+            `DELETE FROM condition_lines cl
+              WHERE cl.capability_id = $1
+                AND NOT EXISTS (SELECT 1 FROM condition_events e WHERE e.condition_line_id = cl.id)
+                AND NOT EXISTS (SELECT 1 FROM work_component_lines wcl WHERE wcl.condition_line_id = cl.id)`,
+            [t.capability_id]
+          );
+          // form_data の明細から capability_line_items + condition_lines を再生成。
+          await upsertCapabilityLineItems(Number(t.capability_id), lineItems);
+          // capability が課題に未連結なら文書の issue_key で補完する。
+          //   検収待ち/management line-items 等は cc.backlog_issue_key で絞るため、
+          //   未連結だと capability_line_items があっても表示されない。
+          await query(
+            `UPDATE contract_capabilities
+                SET backlog_issue_key = $2, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $1 AND NULLIF(backlog_issue_key, '') IS NULL`,
+            [t.capability_id, t.issue_key || null]
+          );
+          const made = Number(
+            (await query(`SELECT COUNT(*)::int AS n FROM condition_lines WHERE capability_id = $1`, [t.capability_id])).rows[0].n
+          );
+          const liCount = Number(
+            (await query(`SELECT COUNT(*)::int AS n FROM capability_line_items WHERE capability_id = $1`, [t.capability_id])).rows[0].n
+          );
+          resynced.push({
+            document_number: t.document_number,
+            issue_key: t.issue_key,
+            capability_id: t.capability_id,
+            capability_line_items: liCount,
+            condition_lines: made,
+          });
+        } catch (e: any) {
+          skipped.push({ document_number: t.document_number, reason: String(e?.message || e) });
+        }
+      }
+
+      res.json({
+        ok: true,
+        dry_run: dryRun,
+        documents_total: targets.length,
+        resynced: resynced.length,
+        skipped: skipped.length,
+        detail: { resynced, skipped },
+      });
+    } catch (error: any) {
+      console.error("/api/admin/resync-contract-line-items failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  /**
    * F2b(ハイブリッド・royalty 側のみ): A3 のうち計算書(royalty_statement /
    *   license_calculation_sheet)で condition_events が無いものを form_data から復元。
    *   検収側(inspection_certificate)は delivery_events 再構成が必要で legacy 受容(対象外)。
@@ -14703,11 +14845,23 @@ ${details}
         );
         const orderItemId = orderItemRes.rows[0]?.id;
 
+        // 明細は正規化済み mergedFormData を見る。フォームが line_items のみ
+        //   (items 空)で送ってきても、capability_line_items を正しく作る/誤って
+        //   消さないため。mergedFormData は normalizeDocumentFormData で
+        //   items↔line_items を揃え済み。
+        //   ※ 旧実装は生 formData.items を見ていたため、line_items のみ送信の
+        //     発注書で「明細が作られない」「再保存で既存明細が消える」不具合があった。
+        const poItems: any[] = Array.isArray((mergedFormData as any).items)
+          ? (mergedFormData as any).items
+          : Array.isArray((mergedFormData as any).line_items)
+          ? (mergedFormData as any).line_items
+          : [];
+
         // 明細が空配列で送信された(= 全明細削除)場合は capability_line_items を
         //   全削除し、ミラーした condition_lines も連動削除する。旧来は下の
         //   length>0 ガードで素通りして capability_line_items が残り、condition_lines
         //   も孤児化して横断検索に未了行が居座る原因になっていた。
-        if (orderItemId && Array.isArray(formData.items) && formData.items.length === 0) {
+        if (orderItemId && poItems.length === 0) {
           try {
             const removedRes = await query(
               `SELECT id FROM capability_line_items WHERE capability_id = $1`,
@@ -14733,11 +14887,11 @@ ${details}
         // capability_line_items を upsert し, recalculateCapabilityTotal で
         // ヘッダ総額を「明細合計」と整合させる。
         // Phase 23: order_line_items → capability_line_items
-        if (orderItemId && Array.isArray(formData.items) && formData.items.length > 0) {
+        if (orderItemId && poItems.length > 0) {
           const taxRate = Number(formData.taxRate) || 10;
           // 成果物帰属で振り分け: 発注者帰属=業務委託明細(capability_line_items),
           //   受注者帰属=利用許諾料(capability_financial_conditions)。
-          const allFormItems = formData.items as Array<any>;
+          const allFormItems = poItems;
           // 受注者帰属でも「業務報酬(執筆料等)」が有る行は確定額として line_items に入れる。
           //   ただし業務報酬0(=利用許諾料のみ)の受注者行は検収対象にならない(0円明細が
           //   検収待ちに居座る不具合の原因)ため line_items には作らない。利用許諾料(料率/
