@@ -158,7 +158,10 @@ Codex により Phase 0/1/2/3-A4 を実装し `codex/issue-consistency-audit`→
 - **F1 (最優先) — コード実装済・本番適用待ち (2026-06-25)**: A2=16 の補修。**正準生成経路 `syncConditionLinesForCapability` を再利用**する修復アクション `backfill_contract_condition_lines` を `dataLinkage.ts` に追加。`dry_run` 既定 true（同一トランザクションで生成→ROLLBACK＝本番無変更の正確なプレビュー）、`dry_run:false` で COMMIT。`final_contract_docs_without_lines` チェックに `repair_action` 設定。`DataLinkagePanel` 監査カードに preview→確認→apply ボタン追加。3分類で報告: ①regenerated（capability配下の明細から復元）②skipped_no_capability（capability未連結=要手動連結）③skipped_empty_source（明細が form_data のみ＝form_data 再構成が必要な別系統）。
   - **本番適用手順**: ① worker を `release/worker` へ反映しデプロイ → ② `POST /api/admin/data-linkage/repair {action:"backfill_contract_condition_lines", dry_run:true}` でプレビュー（または監査カードのボタン）→ ③ 件数確認後 `dry_run:false` で適用 → ④ 監査再実行で A2 件数の減少を確認。**①②③は冪等**（再実行しても二重生成しない）。
   - **注意**: `skipped_empty_source`（capability に line_items/financial_conditions が無く form_data にしか明細が無い文書）は本アクションでは復元不可。残数があれば form_data 再構成の別フォロー（F1b）を立てる。SQL 単体修復は TS マッパーロジックの二重化＝ドリフトを招くため**作らない**方針。
-- **F2**: A3=35 の補修。検収/計算書の既存生成情報から condition_events 復元ルールを作る。
+- **F2 — コード実装済・本番適用待ち (2026-06-25)**: A3=35 の補修。**正準同期 `syncInspectionEventsForDelivery`(検収)＋`syncRoyaltyCalcEvent`(計算書)を再利用**した統合修復アクション `backfill_payment_condition_events` を `dataLinkage.ts` に追加。検収側は既存 `/api/admin/resync-inspection-events` 相当を内包し、**従来欠けていた計算書(royalty)側の一括復元を新規追加**(従来 `syncRoyaltyCalcEvent` は文書保存時のみ)。`dry_run` 既定 true（tx内生成→ROLLBACK）。`payment_docs_without_events` チェックに `repair_action` 設定、監査カードに preview→apply ボタン（F1 と共通の汎用プレビュー）。
+  - **依存**: 両 sync は **condition_lines が前提**（`cl.source_line_item_id`/`source_condition_id` で解決できないと skip）。よって **F1(A2)を先に適用**してから F2 を実行する。
+  - **本番適用手順**: F1 適用済を前提に、監査カードの「支払実績を復元」ボタン or `POST /api/admin/data-linkage/repair {action:"backfill_payment_condition_events", dry_run:true}` でプレビュー → `dry_run:false` で適用 → 監査再実行で A3 減少を確認。冪等。
+  - **残**: 計算書の form_data に `capabilityFinancialConditionId`/`manufacturingEventId` が無い等で文書解決できないものは sync が skip し A3 に残る。残数が出たら個別調査（F2b）。
 - **F3**: A6=40 の整理。superseded 化できるものと正本判定見直しを分離。
 - **F4**: 監査 SQL/API に **A8〜A10**（status_v ベース: 未完了明細の支払準備取りこぼし／完了済みなのに課題未終結）を追加。
 - **F5 (ドキュメント)**: 実施記録 `docs/design/issue-control-consistency-remediation-record.md` が **main に未収録**（ブランチのみ）。main へ復元する。

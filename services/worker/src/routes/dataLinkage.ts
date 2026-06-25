@@ -19,7 +19,11 @@ import type { Express } from "express";
 import express from "express";
 import type { Pool } from "pg";
 import { normalizeDocumentFormData } from "../lib/capabilityFormMapping";
-import { syncConditionLinesForCapability } from "../lib/conditionSync";
+import {
+  syncConditionLinesForCapability,
+  syncInspectionEventsForDelivery,
+  syncRoyaltyCalcEvent,
+} from "../lib/conditionSync";
 
 // 締結文書(発注書/利用許諾条件書)の template_type 一覧。
 //   A2(締結フェイズで条件明細が未生成)の対象判定に使う。
@@ -211,8 +215,8 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           key: "payment_docs_without_events",
           label: "支払準備文書の実績未結合",
           description:
-            "検収書・計算書があるのに condition_events が無い。支払準備フェイズの結合漏れ候補。",
-          repair_action: null,
+            "検収書・計算書があるのに condition_events が無い。支払準備フェイズの結合漏れ候補。検収=delivery_events / 計算書=royalty_calculations から復元可能(condition_lines が前提のため F1 を先に適用)。",
+          repair_action: "backfill_payment_condition_events",
         },
         `SELECT COUNT(*)::int AS n
            FROM documents d
@@ -828,6 +832,101 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               skipped_no_capability: report.skipped_no_capability.length,
               skipped_empty_source: report.skipped_empty_source.length,
               report,
+            },
+          });
+        }
+
+        if (action === "backfill_payment_condition_events") {
+          // A3 修復: 検収書・計算書があるのに condition_events が無い文書の実績を、
+          //   正準同期経路で復元する。
+          //   - 検収: delivery_events 配下の検収明細 → syncInspectionEventsForDelivery。
+          //   - 計算書: royalty_calculations → syncRoyaltyCalcEvent。
+          //   いずれも condition_lines が存在することが前提(無ければ skip)＝F1(A2)を
+          //   先に適用しておくこと。両 sync は冪等(source_* の NOT EXISTS で二重生成しない)。
+          //   dry_run(既定 true): トランザクション内で生成→ROLLBACK し、生成件数だけ報告。
+          const dryRun = req.body?.dry_run !== false;
+
+          let inspectionEvents = 0;
+          let royaltyEvents = 0;
+          const deliveryEventsTouched: number[] = [];
+          const royaltyCalcsTouched: number[] = [];
+
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            const txDb = {
+              query: (text: string, params?: any[]) => client.query(text, params),
+            };
+
+            // 検収側: 実績未生成だが condition_lines がある delivery_event を走査。
+            const deRows = (
+              await client.query(
+                `SELECT DISTINCT de.id
+                   FROM delivery_events de
+                   JOIN delivery_line_items dli ON dli.delivery_event_id = de.id
+                  WHERE NOT EXISTS (
+                          SELECT 1 FROM condition_events ce
+                           WHERE ce.source_delivery_line_item_id = dli.id)
+                    AND EXISTS (
+                          SELECT 1 FROM condition_lines cl
+                           WHERE cl.source_line_item_id = dli.capability_line_item_id)
+                  ORDER BY de.id
+                  LIMIT $1`,
+                [limit]
+              )
+            ).rows;
+            for (const e of deRows) {
+              const n = await syncInspectionEventsForDelivery(txDb, Number(e.id));
+              if (n > 0) {
+                inspectionEvents += n;
+                deliveryEventsTouched.push(Number(e.id));
+              }
+            }
+
+            // 計算書側: 実績未生成だが condition_lines がある royalty_calculation を走査。
+            const rcRows = (
+              await client.query(
+                `SELECT rc.id
+                   FROM royalty_calculations rc
+                  WHERE NOT EXISTS (
+                          SELECT 1 FROM condition_events ce
+                           WHERE ce.source_royalty_calculation_id = rc.id)
+                    AND rc.capability_financial_condition_id IS NOT NULL
+                    AND EXISTS (
+                          SELECT 1 FROM condition_lines cl
+                           WHERE cl.source_condition_id = rc.capability_financial_condition_id)
+                  ORDER BY rc.id
+                  LIMIT $1`,
+                [limit]
+              )
+            ).rows;
+            for (const r of rcRows) {
+              const n = await syncRoyaltyCalcEvent(txDb, Number(r.id));
+              if (n > 0) {
+                royaltyEvents += n;
+                royaltyCalcsTouched.push(Number(r.id));
+              }
+            }
+
+            if (dryRun) await client.query("ROLLBACK");
+            else await client.query("COMMIT");
+          } catch (e) {
+            await client.query("ROLLBACK");
+            throw e;
+          } finally {
+            client.release();
+          }
+
+          return res.json({
+            ok: true,
+            action,
+            dry_run: dryRun,
+            affected: inspectionEvents + royaltyEvents,
+            detail: {
+              inspection_events: inspectionEvents,
+              royalty_events: royaltyEvents,
+              delivery_events_touched: deliveryEventsTouched.length,
+              royalty_calcs_touched: royaltyCalcsTouched.length,
             },
           });
         }

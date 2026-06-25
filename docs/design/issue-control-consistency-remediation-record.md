@@ -279,3 +279,25 @@ OKになった項目:
 5. `skipped_empty_source` の残があれば F1b(form_data 再構成)を別途立案。
 
 注: SQL 単体の復元スクリプトは TS マッパーの二重化=ドリフトを招くため作らない方針。
+
+## 追補: F2 (A3=35 支払実績の復元) — 2026-06-25 実装
+
+更新ファイル:
+
+- `services/worker/src/routes/dataLinkage.ts` — 修復アクション `backfill_payment_condition_events` 追加。
+- `src/pages/DataLinkagePanel.tsx` — 監査カードのプレビュー/ラベルを汎用化(F1/F2 共通)。
+
+実施内容:
+
+- **正準同期 `syncInspectionEventsForDelivery`(検収)＋ `syncRoyaltyCalcEvent`(計算書)を再利用**。
+- 検収側は実績未生成だが condition_lines がある `delivery_events` を走査(既存 `/api/admin/resync-inspection-events` 相当を内包)。**従来欠けていた計算書(royalty)側の一括復元を新規追加**(従来は文書保存時のみ `syncRoyaltyCalcEvent` を呼んでいた)。
+- `dry_run` 既定 true(tx内生成→ROLLBACK で件数プレビュー)、`dry_run:false` で COMMIT。冪等。
+- 報告: `inspection_events` / `royalty_events` / `delivery_events_touched` / `royalty_calcs_touched`。
+- `payment_docs_without_events` チェックに `repair_action` を設定。
+
+依存・注意:
+
+- 両 sync は **condition_lines が前提**。**F1(A2)を先に適用**してから F2 を実行する。
+- 計算書 form_data に `capabilityFinancialConditionId`/`manufacturingEventId` 等が無く文書解決できないものは skip し A3 に残る → 残数が出たら F2b で個別調査。
+
+本番適用手順(未実施): F1 適用後、監査カード「支払実績を復元」or `POST /api/admin/data-linkage/repair {action:"backfill_payment_condition_events", dry_run:true}` でプレビュー → `dry_run:false` 適用 → 監査再実行で A3 減少を確認。
