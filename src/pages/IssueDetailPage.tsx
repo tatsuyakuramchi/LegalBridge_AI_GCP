@@ -146,6 +146,12 @@ export function IssueDetailPage() {
   const [mergeMoveData, setMergeMoveData] = React.useState(false)
   const [mergeReason, setMergeReason] = React.useState("")
   const [merging, setMerging] = React.useState(false)
+
+  // この課題が属する新課題(統一課題=契約)。U3: 個別課題から統一課題への導線。
+  const [unifiedLinks, setUnifiedLinks] = React.useState<
+    Array<{ capability_id: number; document_number: string | null; contract_title: string | null; vendor_name: string | null; record_type: string | null }>
+  >([])
+
   const doMerge = async () => {
     const target = mergeTarget.trim().toUpperCase()
     if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(target)) {
@@ -263,10 +269,15 @@ export function IssueDetailPage() {
     setLineSummary(null)
     ;(async () => {
       try {
-        const [docsResult, summaryResult] = await Promise.allSettled([
+        const [docsResult, summaryResult, unifiedResult] = await Promise.allSettled([
           fetch(`/api/issues/${encodeURIComponent(issueKey)}/documents`),
           fetch(`/api/issues/${encodeURIComponent(issueKey)}/condition-line-summary`),
+          fetch(`/api/issues/${encodeURIComponent(issueKey)}/unified`),
         ])
+        if (unifiedResult.status === "fulfilled" && unifiedResult.value.ok) {
+          const ud = await unifiedResult.value.json().catch(() => null)
+          if (!cancelled && ud?.ok) setUnifiedLinks(Array.isArray(ud.unified_issues) ? ud.unified_issues : [])
+        }
         if (docsResult.status === "rejected") {
           throw docsResult.reason
         }
@@ -578,6 +589,26 @@ export function IssueDetailPage() {
         <ArrowLeft className="h-3.5 w-3.5" />
         Requests に戻る
       </button>
+
+      {/* ── 統一課題(契約)への導線。この課題が属する新課題へジャンプ ───── */}
+      {unifiedLinks.length > 0 && (
+        <div className="rounded-sm border border-indigo-200 bg-indigo-50/60 px-3 py-2 flex items-center gap-2 flex-wrap">
+          <GitMerge className="h-4 w-4 text-indigo-700 shrink-0" />
+          <span className="text-[11px] font-mono text-indigo-900">この課題が属する統一課題(契約):</span>
+          {unifiedLinks.map((u) => (
+            <button
+              key={u.capability_id}
+              type="button"
+              onClick={() => navigate(`/unified/${u.capability_id}`)}
+              className="text-[11px] font-mono font-bold underline text-indigo-800 hover:text-indigo-950"
+              title={`${u.vendor_name || ""} ${u.contract_title || ""}`.trim()}
+            >
+              {u.document_number || `cap${u.capability_id}`}
+            </button>
+          ))}
+          <span className="text-[10px] font-mono text-indigo-700/70">締結+支払を1画面で</span>
+        </div>
+      )}
 
       {/* ── ヘッダ: 課題キー / 件名 / ステータス / 担当・期日 ───────── */}
       <header className="border-b border-border pb-5 space-y-3">
