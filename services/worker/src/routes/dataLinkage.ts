@@ -291,8 +291,8 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           key: "non_primary_final_records",
           label: "非正本なのにfinalの旧版",
           description:
-            "is_primary=false なのに lifecycle_status=final の documents/capabilities。重複計上の温床。",
-          repair_action: null,
+            "is_primary=false なのに lifecycle_status=final の documents/capabilities。重複計上の温床。primary版がある旧版を superseded 化して整理。",
+          repair_action: "normalize_superseded_revisions",
         },
         `WITH stale AS (
             SELECT id FROM documents
@@ -865,6 +865,96 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               royalty_events: royaltyEvents,
               delivery_events_touched: deliveryEventsTouched.length,
               royalty_calcs_touched: royaltyCalcsTouched.length,
+            },
+          });
+        }
+
+        if (action === "normalize_superseded_revisions") {
+          // A6 修復: is_primary=false なのに lifecycle_status='final' の旧版を
+          //   'superseded' 化する。原因は baseline 移行で lifecycle_status を一律
+          //   'final' 初期化した一方 is_primary は新版優先で false にしたため、旧版が
+          //   final のまま残ったこと。base_document_number 家族に primary 版が存在する
+          //   ものだけを superseded 化(superseded_by = primary の document_number)。
+          //   primary 版が無い(=正本欠落)ものは触らず residual として報告(要手動)。
+          //   dry_run(既定 true): tx 内で UPDATE→件数取得→ROLLBACK。
+          const dryRun = req.body?.dry_run !== false;
+
+          let documentsSuperseded = 0;
+          let capabilitiesSuperseded = 0;
+          let residualDocuments = 0;
+          let residualCapabilities = 0;
+
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+
+            const d = await client.query(
+              `UPDATE documents d
+                  SET lifecycle_status = 'superseded',
+                      superseded_by = COALESCE(NULLIF(d.superseded_by, ''), p.document_number)
+                 FROM documents p
+                WHERE COALESCE(d.is_primary, TRUE) = FALSE
+                  AND COALESCE(d.lifecycle_status, 'final') = 'final'
+                  AND d.base_document_number IS NOT NULL
+                  AND p.base_document_number = d.base_document_number
+                  AND COALESCE(p.is_primary, TRUE) = TRUE
+                  AND COALESCE(p.lifecycle_status, 'final') = 'final'`
+            );
+            documentsSuperseded = d.rowCount || 0;
+
+            const c = await client.query(
+              `UPDATE contract_capabilities cc
+                  SET lifecycle_status = 'superseded',
+                      superseded_by = COALESCE(NULLIF(cc.superseded_by, ''), p.document_number)
+                 FROM contract_capabilities p
+                WHERE COALESCE(cc.is_primary, TRUE) = FALSE
+                  AND COALESCE(cc.lifecycle_status, 'final') = 'final'
+                  AND cc.base_document_number IS NOT NULL
+                  AND p.base_document_number = cc.base_document_number
+                  AND COALESCE(p.is_primary, TRUE) = TRUE
+                  AND COALESCE(p.lifecycle_status, 'final') = 'final'`
+            );
+            capabilitiesSuperseded = c.rowCount || 0;
+
+            // 残り(primary 版が無い等で superseded 化できなかった非primary final)。
+            residualDocuments = Number(
+              (
+                await client.query(
+                  `SELECT COUNT(*)::int AS n FROM documents
+                    WHERE COALESCE(is_primary, TRUE) = FALSE
+                      AND COALESCE(lifecycle_status, 'final') = 'final'`
+                )
+              ).rows[0].n
+            );
+            residualCapabilities = Number(
+              (
+                await client.query(
+                  `SELECT COUNT(*)::int AS n FROM contract_capabilities
+                    WHERE COALESCE(is_primary, TRUE) = FALSE
+                      AND COALESCE(lifecycle_status, 'final') = 'final'`
+                )
+              ).rows[0].n
+            );
+
+            if (dryRun) await client.query("ROLLBACK");
+            else await client.query("COMMIT");
+          } catch (e) {
+            await client.query("ROLLBACK");
+            throw e;
+          } finally {
+            client.release();
+          }
+
+          return res.json({
+            ok: true,
+            action,
+            dry_run: dryRun,
+            affected: documentsSuperseded + capabilitiesSuperseded,
+            detail: {
+              documents_superseded: documentsSuperseded,
+              capabilities_superseded: capabilitiesSuperseded,
+              residual_documents_no_primary: residualDocuments,
+              residual_capabilities_no_primary: residualCapabilities,
             },
           });
         }

@@ -46,6 +46,7 @@ const REPAIR_LABELS: Record<string, string> = {
   backfill_condition_line_classification: "条件明細分類を補完",
   backfill_contract_condition_lines: "締結明細を復元",
   backfill_payment_condition_events: "支払実績を復元",
+  normalize_superseded_revisions: "旧版をsuperseded化",
 }
 
 // 修復プレビュー(dry_run)の detail 数値キー → 日本語ラベル。未知キーは生キー表示。
@@ -59,6 +60,10 @@ const DETAIL_LABELS: Record<string, string> = {
   royalty_events: "復元される計算実績",
   delivery_events_touched: "対象の納品イベント",
   royalty_calcs_touched: "対象の計算レコード",
+  documents_superseded: "superseded化する文書",
+  capabilities_superseded: "superseded化する契約",
+  residual_documents_no_primary: "残(正本欠落の文書)",
+  residual_capabilities_no_primary: "残(正本欠落の契約)",
 }
 
 export const DataLinkagePanel: React.FC = () => {
