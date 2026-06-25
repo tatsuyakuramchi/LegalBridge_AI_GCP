@@ -7733,6 +7733,358 @@ ${details}
   });
 
   /**
+   * F1b: A2 補修(締結文書の条件明細を form_data から再構成)。
+   *   final/正本の発注書・条件書で condition_lines が無いものを対象に、
+   *   form_data の line_items/items(発注書)・financial_conditions(条件書)を
+   *   正準永続化関数 upsertCapabilityLineItems / upsertCapabilityFinancialConditions に
+   *   渡す。両者は末尾で syncConditionLinesForCapability を呼ぶため condition_lines が
+   *   生成される。capability が無い文書は form_data から最小ヘッダを作ってから永続化。
+   *
+   *   ※ upsert 系は query(プール)直書きで rollback できないため、dry_run は書き込まない
+   *      「浅いプレビュー」(各文書ごとに再構成予定の件数を返す)。冪等(line_no/condition_no
+   *      と source_* で二重生成しない)なので apply の再実行も安全。
+   *   body: { dry_run?: boolean }  (既定 true)
+   */
+  app.post("/api/admin/backfill-contract-lines-from-formdata", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run !== false;
+    const CONTRACTING = [
+      "purchase_order",
+      "intl_purchase_order",
+      "individual_license_terms",
+      "pub_license_terms",
+    ];
+    try {
+      const docs = await query(
+        `SELECT d.id, d.document_number, d.issue_key, d.template_type, d.form_data,
+                d.drive_link, d.base_document_number, cc.id AS capability_id
+           FROM documents d
+           LEFT JOIN contract_capabilities cc
+             ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+           LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+          WHERE d.template_type = ANY($1::text[])
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND cl.id IS NULL
+          ORDER BY d.created_at DESC NULLS LAST`,
+        [CONTRACTING]
+      );
+
+      const reconstructed: any[] = [];
+      const skipped: any[] = [];
+      let conditionLinesTotal = 0;
+
+      for (const d of docs.rows) {
+        const fd = d.form_data || {};
+        const lineItems =
+          Array.isArray(fd.line_items) && fd.line_items.length
+            ? fd.line_items
+            : Array.isArray(fd.items) && fd.items.length
+            ? fd.items
+            : null;
+        const finConds =
+          Array.isArray(fd.financial_conditions) && fd.financial_conditions.length
+            ? fd.financial_conditions
+            : null;
+
+        if (!lineItems && !finConds) {
+          skipped.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            template_type: d.template_type,
+            reason: "form_data に line_items/financial_conditions が無い",
+          });
+          continue;
+        }
+
+        if (dryRun) {
+          reconstructed.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            template_type: d.template_type,
+            will_create_capability: !d.capability_id,
+            line_items: lineItems?.length || 0,
+            financial_conditions: finConds?.length || 0,
+          });
+          continue;
+        }
+
+        try {
+          let capId: number | null = d.capability_id || null;
+
+          // capability が無ければ form_data から最小ヘッダを作る。
+          if (!capId) {
+            const templateType = String(d.template_type || "");
+            const category = templateType.startsWith("pub_")
+              ? "publication"
+              : templateType.includes("license")
+              ? "license"
+              : "service";
+            const recordType =
+              templateType.startsWith("pub_")
+                ? "publication_condition"
+                : templateType.includes("license")
+                ? "license_condition"
+                : "purchase_order";
+            // capability の document_number は A2 join キー(base 優先)に合わせる。
+            const capDocNo =
+              d.base_document_number && String(d.base_document_number).trim() !== ""
+                ? d.base_document_number
+                : d.document_number;
+
+            // vendor 解決(best-effort)。見つからなければ NULL(A4 補完に委ねる)。
+            let vendorId: number | null = null;
+            const vCode = String(fd.VENDOR_CODE || fd.vendorCode || "").trim();
+            const vName = String(
+              fd.VENDOR_NAME || fd.PARTY_B_NAME || fd.partyBName || ""
+            ).trim();
+            if (vCode && vCode.toUpperCase() !== "UNKNOWN") {
+              const r = await query(
+                "SELECT id FROM vendors WHERE vendor_code = $1 LIMIT 1",
+                [vCode]
+              );
+              if (r.rows[0]) vendorId = Number(r.rows[0].id);
+            }
+            if (!vendorId && vName) {
+              const r = await query(
+                "SELECT id FROM vendors WHERE vendor_name = $1 OR trade_name = $1 OR pen_name = $1 LIMIT 1",
+                [vName]
+              );
+              if (r.rows[0]) vendorId = Number(r.rows[0].id);
+            }
+
+            const ins = await query(
+              `INSERT INTO contract_capabilities
+                 (vendor_id, record_type, contract_category, contract_type, contract_title,
+                  document_number, base_document_number, backlog_issue_key, contract_status,
+                  effective_date, expiration_date, document_url, source_system)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')
+               ON CONFLICT (document_number) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
+               RETURNING id`,
+              [
+                vendorId,
+                recordType,
+                category,
+                templateType,
+                fd.CONTRACT_TITLE || fd.contract_title || fd.summary || fd.PROJECT_TITLE || capDocNo,
+                capDocNo,
+                d.base_document_number || capDocNo,
+                d.issue_key || null,
+                fd.EFFECTIVE_DATE || fd.effectiveDate || null,
+                fd.EXPIRATION_DATE || fd.expirationDate || null,
+                d.drive_link || "",
+              ]
+            );
+            capId = Number(ins.rows[0].id);
+          }
+
+          if (lineItems) await upsertCapabilityLineItems(capId!, lineItems);
+          if (finConds) await upsertCapabilityFinancialConditions(capId!, finConds);
+          // 念のため condition_lines 同期(両 upsert 内で呼ばれるが冪等)。
+          await safeSync("F1b CL", () =>
+            syncConditionLinesForCapability({ query }, capId!)
+          );
+
+          const cnt = await query(
+            `SELECT COUNT(*)::int AS n FROM condition_lines WHERE capability_id = $1`,
+            [capId]
+          );
+          const made = Number(cnt.rows[0]?.n || 0);
+          conditionLinesTotal += made;
+          reconstructed.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            template_type: d.template_type,
+            capability_id: capId,
+            created_capability: !d.capability_id,
+            condition_lines: made,
+          });
+        } catch (e: any) {
+          skipped.push({
+            document_number: d.document_number,
+            issue_key: d.issue_key,
+            template_type: d.template_type,
+            reason: String(e?.message || e),
+          });
+        }
+      }
+
+      res.json({
+        ok: true,
+        dry_run: dryRun,
+        documents_total: docs.rows.length,
+        reconstructed: reconstructed.length,
+        skipped: skipped.length,
+        condition_lines: conditionLinesTotal,
+        detail: { reconstructed, skipped },
+      });
+    } catch (error: any) {
+      console.error("/api/admin/backfill-contract-lines-from-formdata failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  /**
+   * F2b(ハイブリッド・royalty 側のみ): A3 のうち計算書(royalty_statement /
+   *   license_calculation_sheet)で condition_events が無いものを form_data から復元。
+   *   検収側(inspection_certificate)は delivery_events 再構成が必要で legacy 受容(対象外)。
+   *
+   *   方式: 対象文書 d.id が既知なので syncRoyaltyCalcEvent の文書解決(form_data の
+   *   camelCase キー依存で孤立文書は解決不可)は使わず、
+   *     1) form_data.capability_financial_condition_id の財務条件 → 親 capability を
+   *        syncConditionLinesForCapability で同期し condition_line を確保、
+   *     2) その condition_line に royalty_calc の condition_event を d.id 直結で INSERT。
+   *   condition_events.source_royalty_calculation_id は使わず document_id で冪等判定。
+   *   重複排除: (財務条件, period, 金額)でグループ化し、同一計算を重複 final 保存した
+   *     余剰文書(同 fc/同額/同期で period 無し等)は 1 event に集約、余剰は superseded 化。
+   *   dry_run(既定 true): 書き込まず、グループごとの代表/重複/event 予定を返す。
+   *   body: { dry_run?: boolean }
+   */
+  app.post("/api/admin/backfill-royalty-events-from-formdata", express.json(), async (req, res) => {
+    const dryRun = req.body?.dry_run !== false;
+    const ROYALTY_TEMPLATES = ["royalty_statement", "license_calculation_sheet"];
+    const num = (v: any) => {
+      if (v == null || v === "") return null;
+      const n = Number(String(v).replace(/[,\s]/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    try {
+      const docs = await query(
+        `SELECT d.id, d.document_number, d.issue_key, d.template_type, d.form_data, d.created_at
+           FROM documents d
+          WHERE d.template_type = ANY($1::text[])
+            AND COALESCE(d.lifecycle_status, 'final') = 'final'
+            AND COALESCE(d.is_primary, TRUE) = TRUE
+            AND NOT EXISTS (SELECT 1 FROM condition_events ce WHERE ce.document_id = d.id)
+          ORDER BY d.created_at DESC NULLS LAST`,
+        [ROYALTY_TEMPLATES]
+      );
+
+      type RDoc = {
+        id: number; document_number: string; issue_key: string | null; created_at: any;
+        fcId: number; capId: number; amount: number; period: string | null;
+        mg: number | null; ag: number | null;
+      };
+      const skipped: any[] = [];
+      // (財務条件, period, 金額)でグループ化。同一計算の重複文書(同 fc/同額/同期で
+      //   period 無し)を 1 event に集約し、重複の余剰文書は superseded 化する。
+      const groups = new Map<string, RDoc[]>();
+      for (const d of docs.rows) {
+        const fd = d.form_data || {};
+        const fcId =
+          Number(fd.capability_financial_condition_id || fd.capabilityFinancialConditionId || 0) || null;
+        if (!fcId) {
+          skipped.push({ document_number: d.document_number, issue_key: d.issue_key, reason: "form_data に capability_financial_condition_id が無い" });
+          continue;
+        }
+        const fcRow = (
+          await query(`SELECT capability_id FROM capability_financial_conditions WHERE id = $1`, [fcId])
+        ).rows[0];
+        if (!fcRow) {
+          skipped.push({ document_number: d.document_number, issue_key: d.issue_key, reason: `financial_condition ${fcId} が存在しない` });
+          continue;
+        }
+        const amount = num(fd.actualRoyalty ?? fd.actual_royalty) || 0;
+        const period = fd.period || null;
+        const rd: RDoc = {
+          id: d.id, document_number: d.document_number, issue_key: d.issue_key, created_at: d.created_at,
+          fcId, capId: Number(fcRow.capability_id), amount, period,
+          mg: num(fd.mgAmount ?? fd.mg_consumed_this_time), ag: num(fd.agAmount ?? fd.ag_consumed_this_time),
+        };
+        const key = `${fcId}|${period || ""}|${amount}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(rd);
+      }
+
+      const planned: any[] = [];
+      let eventsTotal = 0;
+      let dupSuperseded = 0;
+
+      for (const members of groups.values()) {
+        // 代表 = created_at 最新(同点は id 最大)。残りは重複。
+        members.sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return tb - ta || b.id - a.id;
+        });
+        const canonical = members[0];
+        const dups = members.slice(1);
+
+        if (dryRun) {
+          planned.push({
+            canonical: canonical.document_number, issue_key: canonical.issue_key,
+            capability_financial_condition_id: canonical.fcId, amount: canonical.amount, period: canonical.period,
+            will_create_event: true, duplicates_superseded: dups.map((x) => x.document_number),
+          });
+          eventsTotal += 1;
+          dupSuperseded += dups.length;
+          continue;
+        }
+
+        try {
+          // 1) 財務条件 → condition_line を確保(冪等)。
+          await safeSync("F2b CL", () => syncConditionLinesForCapability({ query }, canonical.capId));
+          const cl = (
+            await query(`SELECT id FROM condition_lines WHERE source_condition_id = $1 ORDER BY id LIMIT 1`, [canonical.fcId])
+          ).rows[0];
+          if (!cl) {
+            skipped.push({ document_number: canonical.document_number, issue_key: canonical.issue_key, reason: `fc ${canonical.fcId} の condition_line を生成できず` });
+            continue;
+          }
+
+          // 2) 代表文書に royalty_calc event を直結 INSERT(冪等: doc 単位)。
+          const already = (await query(`SELECT 1 FROM condition_events WHERE document_id = $1 LIMIT 1`, [canonical.id])).rows[0];
+          if (!already) {
+            const eventNo = Number(
+              (await query(`SELECT COALESCE(MAX(event_no), 0) + 1 AS n FROM condition_events WHERE condition_line_id = $1`, [cl.id])).rows[0].n
+            );
+            await query(
+              `INSERT INTO condition_events
+                 (condition_line_id, event_no, event_type, document_id, backlog_issue_key,
+                  occurred_at, period, amount_ex_tax, mg_consumed_this_time, ag_consumed_this_time)
+               VALUES ($1, $2, 'royalty_calc', $3, $4, $5, $6, $7, $8, $9)`,
+              [cl.id, eventNo, canonical.id, canonical.issue_key || null, canonical.created_at, canonical.period, canonical.amount, canonical.mg, canonical.ag]
+            );
+            eventsTotal += 1;
+          }
+
+          // 3) 重複の余剰文書を superseded 化(同 fc/同額/同期の重複と確認済)。
+          for (const dup of dups) {
+            const r = await query(
+              `UPDATE documents
+                  SET lifecycle_status = 'superseded', is_primary = FALSE,
+                      superseded_by = COALESCE(NULLIF(superseded_by, ''), $2)
+                WHERE id = $1 AND COALESCE(lifecycle_status, 'final') = 'final'`,
+              [dup.id, canonical.document_number]
+            );
+            dupSuperseded += r.rowCount || 0;
+          }
+
+          planned.push({
+            canonical: canonical.document_number, issue_key: canonical.issue_key, condition_line_id: cl.id,
+            amount: canonical.amount, duplicates_superseded: dups.map((x) => x.document_number),
+          });
+        } catch (e: any) {
+          skipped.push({ document_number: canonical.document_number, issue_key: canonical.issue_key, reason: String(e?.message || e) });
+        }
+      }
+
+      res.json({
+        ok: true,
+        dry_run: dryRun,
+        documents_total: docs.rows.length,
+        groups: groups.size,
+        events: eventsTotal,
+        duplicates_superseded: dupSuperseded,
+        skipped: skipped.length,
+        detail: { planned, skipped },
+      });
+    } catch (error: any) {
+      console.error("/api/admin/backfill-royalty-events-from-formdata failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  /**
    * 検収書の事前 overflow チェック。検収書を確定保存する前に必ず叩く。
    * body:
    *   {

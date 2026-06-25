@@ -301,3 +301,111 @@ OKになった項目:
 - 計算書 form_data に `capabilityFinancialConditionId`/`manufacturingEventId` 等が無く文書解決できないものは skip し A3 に残る → 残数が出たら F2b で個別調査。
 
 本番適用手順(未実施): F1 適用後、監査カード「支払実績を復元」or `POST /api/admin/data-linkage/repair {action:"backfill_payment_condition_events", dry_run:true}` でプレビュー → `dry_run:false` 適用 → 監査再実行で A3 減少を確認。
+
+## 追補: dry_run 結果と方針転換 — 2026-06-25
+
+worker(release/worker)デプロイ後に F1/F2 を dry_run 実行した結果、**現データには復元0件**だった。
+
+- A2=16 の内訳: capability 無し **14** / capability有るが明細が form_data のみ **2**(cap 3040/3034)。
+- A3=35: condition_lines 付きの未結合ソース(delivery_events/royalty_calculations)が **0**。
+- 根本原因: これら 51 件は「capability → 明細(line_items) → condition_lines → events」の連結チェーン自体が欠落。`resync-contract-capabilities` は capability ヘッダのみ作り line_items は作らない。
+
+form_data 実物調査(`GET /api/documents/by-number/:n`):
+- 発注書 → `items`/`line_items` あり。利用許諾条件書 → `financial_conditions` あり。
+- 検収書 → `delivery_line_items`/`order_lines_for_inspection` あり。計算書 → `capability_financial_condition_id`/mg/ag あり。
+
+⇒ **真の復元は form_data 再構成**(既存 `upsertCapabilityLineItems`/`upsertCapabilityFinancialConditions`/`syncConditionLinesForCapability` を再利用)。見積: A2 ~13-14/16 機械復元可(ノイズ MASTER404/MANUAL/旧版重複を除く)、A3 ~25-30/35 だが F1b 後＋delivery/royalty レコード再構成が必要で工数大。
+
+**合意した実施順: F3(A6整理)→ F1b(form_data→明細→condition_lines)→ F2b**。F1/F2 のコードは将来 chain が揃えば有効なので残置。
+
+## 追補: F3 (A6=40 旧版を superseded 化) — 2026-06-25 実装
+
+原因: baseline 移行が `lifecycle_status` を一律 'final' 初期化する一方、`is_primary` は新版優先で false にしたため、旧版が `is_primary=false` かつ `lifecycle_status='final'` のまま残った。
+
+更新ファイル: `services/worker/src/routes/dataLinkage.ts`(修復アクション `normalize_superseded_revisions`)/ `src/pages/DataLinkagePanel.tsx`(ボタン・ラベル)。
+
+実施内容:
+- `base_document_number` 家族に primary 版が存在する非primary final を `lifecycle_status='superseded'`＋`superseded_by`=primaryの文書番号 に更新(documents / contract_capabilities 両方)。
+- primary 版が無い(正本欠落)ものは触らず `residual_*_no_primary` として報告(要手動)。
+- `dry_run` 既定 true(tx内 UPDATE→件数取得→ROLLBACK)、`dry_run:false` で COMMIT。
+- `non_primary_final_records` チェックに `repair_action` を設定。
+
+効果: IssueDetailPage の「作成済み」二重計上(旧版が final で残る)を解消。F1b 前に実行することで A2 の ILT 重複ノイズも縮小する見込み。
+
+本番適用(未実施): 監査カード「旧版をsuperseded化」or `POST /api/admin/data-linkage/repair {action:"normalize_superseded_revisions", dry_run:true}` → 確認 → `dry_run:false` → 監査再実行で A6 減少を確認。
+
+### F3 本番適用結果(2026-06-25)
+
+- dry_run: affected=40(documents 22 / capabilities 18), residual=0。
+- apply 実行 → 再監査で **A6=40→0**。要確認カテゴリ 3→2。
+- A2 は 16 のまま(A2 の ILT 複数件 LEGAL-122/123 は is_primary=TRUE の別文書で F3 対象外と判明)。
+
+## 追補: F1b (A2 を form_data から再構成) — 2026-06-25 実装
+
+F1/F2 の dry_run で A2=16 が「capability 無し14/明細form_dataのみ2」と判明したため、
+form_data 再構成エンドポイントを新設。
+
+更新ファイル: `services/worker/server.ts`(`POST /api/admin/backfill-contract-lines-from-formdata`)。
+
+実施内容:
+- A2 文書(final/正本の締結文書で condition_lines 無し)を走査。
+- capability が無ければ form_data から最小ヘッダを作成(vendor は best-effort 解決、
+  document_number は A2 join キー=base 優先に合わせる)。
+- form_data の `line_items`/`items`(発注書)・`financial_conditions`(条件書)を
+  正準永続化 `upsertCapabilityLineItems`/`upsertCapabilityFinancialConditions` に渡す
+  (両者は末尾で `syncConditionLinesForCapability` を呼ぶ → condition_lines 生成)。
+- form_data 実物が既に正準形(line_no/item_name/amount_ex_tax、condition_no/rate_pct/mg_amount 等)
+  だったためマッパー不要。
+- `dry_run` 既定 true は「浅いプレビュー」(書き込まず、各文書の line_items/financial_conditions
+  件数と will_create_capability を返す)。upsert 系が query(プール)直書きで rollback 不可のため。
+- 冪等(line_no/condition_no と source_* の NOT EXISTS で二重生成しない)。per-doc 報告
+  (reconstructed/skipped、skipped は form_data に明細無し or エラー)。
+
+注意・残:
+- API 専用(監査パネルのボタンは現状 dataLinkage の F1=`backfill_contract_condition_lines` のみ。
+  そちらは「capability+明細が既にある」ケース用で現データには 0 件)。F1b は別エンドポイント。
+- MASTER-/MANUAL- 等のノイズは form_data に明細が無ければ自動 skip。dry_run で per-doc 確認してから apply。
+
+本番適用(未実施): `POST /api/admin/backfill-contract-lines-from-formdata {dry_run:true}` でプレビュー
+→ per-doc 確認 → `{dry_run:false}` で適用 → 監査再実行で A2 減少を確認 → 残れば個別調査。
+
+## 追補: F2b(hybrid・royalty)+ 本番適用結果 — 2026-06-25
+
+A3 の royalty 計算書のみ復元(検収側は delivery_events 再構成要のため legacy 受容)。
+
+エンドポイント: `POST /api/admin/backfill-royalty-events-from-formdata`(server.ts)。
+- 対象文書 d.id が既知のため `syncRoyaltyCalcEvent` の文書解決(form_data の camelCase
+  依存で孤立文書は解決不可)を使わず、`capability_financial_condition_id` → 親 capability を
+  `syncConditionLinesForCapability` で同期 → condition_line を確保 → `royalty_calc` の
+  condition_event を **d.id 直結**で INSERT(document_id 単位で冪等)。
+- **重複排除**: `(財務条件, period, 金額)` でグループ化。dry_run で LEGAL-141 が
+  同 fc=1/同額500625/period無しの **重複6件**(別期支払でなく同一計算の重複 final 保存)と判明。
+  全件 event 化は過大計上のため、グループごとに代表(created_at 最新)へ 1 event、
+  余剰重複は `superseded` 化(is_primary=FALSE/lifecycle_status='superseded'/superseded_by=代表)。
+
+本番適用結果:
+- dry_run: 8 文書 → 3 グループ / event 3 / 重複 superseded 5 / skip 0。
+- apply: event 3 作成(CL 143=LEGAL-170 4,128,000 / CL 118=LEGAL-141 500,625 / CL 112=LEGAL-142 100,000)、
+  重複 5(ARC-ROY-2026-0001〜0005)を superseded。
+- 再監査: **A3 = 35 → 27**(royalty 全消滅。残 27 = 検収 = legacy 受容)。
+
+## 最終到達点(2026-06-25)
+
+| 監査 | 当初 | 是正後 | 備考 |
+|---|---|---|---|
+| issue_capability_mismatch (A1) | 0 | 0 | |
+| condition_line_classification_missing (A4) | 0→(F1b副作用37) | 0 | F1b 後に再補完 |
+| merged_source_final_documents (A5) | 0 | 0 | |
+| non_primary_final_records (A6) | 40 | **0** | F3 |
+| pub_license_terms_without_lines (A7) | 0 | 0 | |
+| final_contract_docs_without_lines (A2) | 16 | **1** | F1b(15再構成)。残1=master系ノイズ(明細なし) |
+| payment_docs_without_events (A3) | 35 | **27** | F2b(royalty 8解消)。残27=検収=legacy 受容 |
+
+適用順: **F3 → F1b →(A4再補完)→ F2b**。全修復は worker を `release/worker` へ cherry-pick デプロイし、
+本番では各エンドポイントを dry_run プレビュー → apply の順で実施。
+
+残フォローアップ:
+- F4: 監査に A8〜A10(status_v ベースのフェイズ取りこぼし)を追加。
+- admin-ui(`DataLinkagePanel` のボタン)の Cloud Run 再デプロイ&スモーク(現状は API 直叩きで実施)。
+- 検収 27 件の legacy 注記(任意。delivery_events 再構成まで踏み込むなら別途 F2c)。
+- PR #192(F1/F2/F3/F1b/F2b + docs)のタイトル更新とマージ。
