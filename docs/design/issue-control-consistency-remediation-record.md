@@ -301,3 +301,35 @@ OKになった項目:
 - 計算書 form_data に `capabilityFinancialConditionId`/`manufacturingEventId` 等が無く文書解決できないものは skip し A3 に残る → 残数が出たら F2b で個別調査。
 
 本番適用手順(未実施): F1 適用後、監査カード「支払実績を復元」or `POST /api/admin/data-linkage/repair {action:"backfill_payment_condition_events", dry_run:true}` でプレビュー → `dry_run:false` 適用 → 監査再実行で A3 減少を確認。
+
+## 追補: dry_run 結果と方針転換 — 2026-06-25
+
+worker(release/worker)デプロイ後に F1/F2 を dry_run 実行した結果、**現データには復元0件**だった。
+
+- A2=16 の内訳: capability 無し **14** / capability有るが明細が form_data のみ **2**(cap 3040/3034)。
+- A3=35: condition_lines 付きの未結合ソース(delivery_events/royalty_calculations)が **0**。
+- 根本原因: これら 51 件は「capability → 明細(line_items) → condition_lines → events」の連結チェーン自体が欠落。`resync-contract-capabilities` は capability ヘッダのみ作り line_items は作らない。
+
+form_data 実物調査(`GET /api/documents/by-number/:n`):
+- 発注書 → `items`/`line_items` あり。利用許諾条件書 → `financial_conditions` あり。
+- 検収書 → `delivery_line_items`/`order_lines_for_inspection` あり。計算書 → `capability_financial_condition_id`/mg/ag あり。
+
+⇒ **真の復元は form_data 再構成**(既存 `upsertCapabilityLineItems`/`upsertCapabilityFinancialConditions`/`syncConditionLinesForCapability` を再利用)。見積: A2 ~13-14/16 機械復元可(ノイズ MASTER404/MANUAL/旧版重複を除く)、A3 ~25-30/35 だが F1b 後＋delivery/royalty レコード再構成が必要で工数大。
+
+**合意した実施順: F3(A6整理)→ F1b(form_data→明細→condition_lines)→ F2b**。F1/F2 のコードは将来 chain が揃えば有効なので残置。
+
+## 追補: F3 (A6=40 旧版を superseded 化) — 2026-06-25 実装
+
+原因: baseline 移行が `lifecycle_status` を一律 'final' 初期化する一方、`is_primary` は新版優先で false にしたため、旧版が `is_primary=false` かつ `lifecycle_status='final'` のまま残った。
+
+更新ファイル: `services/worker/src/routes/dataLinkage.ts`(修復アクション `normalize_superseded_revisions`)/ `src/pages/DataLinkagePanel.tsx`(ボタン・ラベル)。
+
+実施内容:
+- `base_document_number` 家族に primary 版が存在する非primary final を `lifecycle_status='superseded'`＋`superseded_by`=primaryの文書番号 に更新(documents / contract_capabilities 両方)。
+- primary 版が無い(正本欠落)ものは触らず `residual_*_no_primary` として報告(要手動)。
+- `dry_run` 既定 true(tx内 UPDATE→件数取得→ROLLBACK)、`dry_run:false` で COMMIT。
+- `non_primary_final_records` チェックに `repair_action` を設定。
+
+効果: IssueDetailPage の「作成済み」二重計上(旧版が final で残る)を解消。F1b 前に実行することで A2 の ILT 重複ノイズも縮小する見込み。
+
+本番適用(未実施): 監査カード「旧版をsuperseded化」or `POST /api/admin/data-linkage/repair {action:"normalize_superseded_revisions", dry_run:true}` → 確認 → `dry_run:false` → 監査再実行で A6 減少を確認。
