@@ -539,15 +539,21 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             key: "po_docs_without_capability",
             label: "capability未連結の発注書",
             description:
-              "documents(purchase_order) に対応する contract_capabilities が無い。検収待ち等に出ない。要手動連結。",
+              "final/正本の発注書(purchase_order)に対応する contract_capabilities が無い。検収待ち等に出ない。要手動連結。(superseded 旧版・枝番は除外)",
             repair_action: null,
           },
           `SELECT COUNT(*)::int AS n FROM documents d
             WHERE d.template_type = 'purchase_order'
-              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.document_number = d.document_number)`,
+              AND COALESCE(d.is_primary, TRUE) = TRUE
+              AND COALESCE(d.lifecycle_status, 'final') = 'final'
+              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc
+                               WHERE cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number))`,
           `SELECT d.document_number, d.issue_key FROM documents d
             WHERE d.template_type = 'purchase_order'
-              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc WHERE cc.document_number = d.document_number)
+              AND COALESCE(d.is_primary, TRUE) = TRUE
+              AND COALESCE(d.lifecycle_status, 'final') = 'final'
+              AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc
+                               WHERE cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number))
             ORDER BY d.created_at DESC LIMIT 8`
         ),
         // ⑦ documents の無い capability — 連結欠落(検出のみ)
@@ -556,14 +562,20 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             key: "capabilities_without_document",
             label: "documents未連結のcapability",
             description:
-              "contract_capabilities に対応する documents が無い。PDF/編集ができない。要確認。",
+              "final/正本の contract_capabilities に対応する documents が無い。PDF/編集ができない。要確認。(合成の MLC- 登録器 source_system='master_register'・superseded 旧版は除外)",
             repair_action: null,
           },
           `SELECT COUNT(*)::int AS n FROM contract_capabilities cc
             WHERE cc.document_number IS NOT NULL
+              AND COALESCE(cc.source_system, '') <> 'master_register'
+              AND COALESCE(cc.is_primary, TRUE) = TRUE
+              AND COALESCE(cc.lifecycle_status, 'final') = 'final'
               AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.document_number = cc.document_number)`,
           `SELECT cc.id, cc.document_number, cc.record_type FROM contract_capabilities cc
             WHERE cc.document_number IS NOT NULL
+              AND COALESCE(cc.source_system, '') <> 'master_register'
+              AND COALESCE(cc.is_primary, TRUE) = TRUE
+              AND COALESCE(cc.lifecycle_status, 'final') = 'final'
               AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.document_number = cc.document_number)
             ORDER BY cc.id DESC LIMIT 8`
         ),
