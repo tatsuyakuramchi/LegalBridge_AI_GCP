@@ -116,9 +116,60 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
         },
         completed:
           Number(r.line_count) > 0 && Number(r.open_lines) === 0,
+        pending: false,
       }));
 
-      res.json({ ok: true, total: rows.length, unified_issues: rows });
+      // 起案済・締結文書未作成の「未着手の新課題」。契約(capability)がまだ無い
+      //   締結フェイズの legal_requests を pending 行として並べる(起案段階から見える)。
+      //   支払/相談タイプ・統合済は除外。文書作成で capability に昇格し通常行になる。
+      const pendingRes = await query(
+        `SELECT lr.backlog_issue_key AS issue_key,
+                lr.contract_type AS request_type,
+                lr.counterparty,
+                lr.summary,
+                lr.created_at,
+                iw.current_status_name AS status_name
+           FROM legal_requests lr
+           LEFT JOIN issue_workflows iw ON iw.backlog_issue_key = lr.backlog_issue_key
+          WHERE NULLIF(lr.merged_into_issue_key, '') IS NULL
+            AND COALESCE(lr.contract_type, '') NOT IN
+                ('delivery_inspec','license_calc','legal_consult','legal_request')
+            AND NOT EXISTS (SELECT 1 FROM contract_capabilities cc
+                             WHERE cc.backlog_issue_key = lr.backlog_issue_key)
+            AND NOT EXISTS (SELECT 1 FROM documents d
+                             WHERE d.issue_key = lr.backlog_issue_key)
+          ORDER BY lr.created_at DESC NULLS LAST
+          LIMIT 500`
+      );
+      const pendingRows = pendingRes.rows.map((p: any) => ({
+        capability_id: null,
+        document_number: null,
+        contract_title: p.summary || null,
+        record_type: p.request_type || null,
+        contract_category: null,
+        contracting_issue_key: p.issue_key,
+        effective_date: null,
+        expiration_date: null,
+        vendor_name: p.counterparty || null,
+        has_contract_doc: false,
+        line_count: 0,
+        open_lines: 0,
+        completed_lines: 0,
+        remaining_amount: 0,
+        event_count: 0,
+        has_inspection: false,
+        has_royalty: false,
+        issue_count: 1,
+        next_action_lines: 0,
+        status_name: p.status_name || null,
+        created_at: p.created_at,
+        stage: { contracting: false, inspection: false, royalty: false },
+        completed: false,
+        pending: true,
+      }));
+
+      const all = [...pendingRows, ...rows];
+      res.json({ ok: true, total: all.length, pending: pendingRows.length, unified_issues: all });
     } catch (e: any) {
       if (isMissingSchema(e)) {
         return res.json({ ok: true, total: 0, unified_issues: [] });
