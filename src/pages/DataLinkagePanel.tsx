@@ -233,7 +233,7 @@ export const DataLinkagePanel: React.FC = () => {
             課題コントロール整合性監査
           </span>
           <span className="text-[10px] font-mono text-muted-foreground">
-            A1〜A7 / 一部はプレビュー付き修復可
+            A1〜A10 / 一部はプレビュー付き修復可
           </span>
           {issueAudit && (
             <span

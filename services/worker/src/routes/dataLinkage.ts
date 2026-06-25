@@ -400,6 +400,93 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           ORDER BY d.created_at DESC NULLS LAST
           LIMIT 8`
       ),
+      // A8: 締結のみで支払実績ゼロの条件明細(循環が止まっている候補)。
+      //   消化型(payable)で status='open'(消化額0)かつ event 0 = 締結後に検収/計算が
+      //   一度も来ていない。status_v 由来。advisory(自動修復なし)。
+      probe(
+        {
+          key: "condition_lines_stalled_no_events",
+          label: "締結のみ・支払実績ゼロの条件明細",
+          description:
+            "消化型(payable)で status=open かつ実績イベント0。締結したが支払準備フェイズが一度も来ていない=循環が途中で止まっている候補(advisory)。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM condition_line_status_v s
+           JOIN condition_lines cl ON cl.id = s.id
+          WHERE s.direction = 'payable'
+            AND s.payment_scheme IN ('lump_sum','per_unit','installment')
+            AND s.status = 'open'
+            AND s.event_count = 0
+            AND cl.cancelled_at IS NULL
+            AND cl.closed_at IS NULL`,
+        `SELECT s.line_code, s.payment_scheme, cl.amount_ex_tax,
+                cl.capability_id, cl.subject
+           FROM condition_line_status_v s
+           JOIN condition_lines cl ON cl.id = s.id
+          WHERE s.direction = 'payable'
+            AND s.payment_scheme IN ('lump_sum','per_unit','installment')
+            AND s.status = 'open'
+            AND s.event_count = 0
+            AND cl.cancelled_at IS NULL
+            AND cl.closed_at IS NULL
+          ORDER BY cl.id DESC
+          LIMIT 8`
+      ),
+      // A9: 実績が契約額を超過した条件明細(過大計上/重複実績の候補)。
+      //   消化型で consumed_amount > amount_ex_tax。重複検収/計算書を取り込むと発生。
+      //   ※ F2b の重複排除が効いていれば 0 のはず(整合性の常時監視)。
+      probe(
+        {
+          key: "condition_lines_overconsumed",
+          label: "実績が契約額を超過した条件明細",
+          description:
+            "消化型で消化額が契約額(amount_ex_tax)を超過。重複検収/重複計算書など実績の二重計上候補(advisory)。",
+          repair_action: null,
+        },
+        `SELECT COUNT(*)::int AS n
+           FROM condition_line_status_v s
+           JOIN condition_lines cl ON cl.id = s.id
+          WHERE s.payment_scheme IN ('lump_sum','per_unit','installment')
+            AND cl.amount_ex_tax IS NOT NULL
+            AND s.consumed_amount > cl.amount_ex_tax`,
+        `SELECT s.line_code, cl.amount_ex_tax, s.consumed_amount,
+                s.event_count, cl.capability_id
+           FROM condition_line_status_v s
+           JOIN condition_lines cl ON cl.id = s.id
+          WHERE s.payment_scheme IN ('lump_sum','per_unit','installment')
+            AND cl.amount_ex_tax IS NOT NULL
+            AND s.consumed_amount > cl.amount_ex_tax
+          ORDER BY (s.consumed_amount - cl.amount_ex_tax) DESC
+          LIMIT 8`
+      ),
+      // A10: 完了済みなのに課題が未終結(循環が閉じていない候補)。
+      //   条件明細が fulfilled/expired なのに、紐づく課題(issue_workflows)が
+      //   完了/終結/キャンセル/差戻し 以外のステータスのまま。
+      probe(
+        {
+          key: "completed_lines_open_issue",
+          label: "完了済みなのに課題が未終結",
+          description:
+            "条件明細が fulfilled/expired なのに、紐づく課題ワークフローが終端(完了/終結/キャンセル/差戻し)以外のまま。循環が閉じていない候補(advisory)。",
+          repair_action: null,
+        },
+        `SELECT COUNT(DISTINCT s.id)::int AS n
+           FROM condition_line_status_v s
+           JOIN contract_capabilities cc ON cc.id = s.capability_id
+           JOIN issue_workflows iw ON iw.backlog_issue_key = cc.backlog_issue_key
+          WHERE s.status IN ('fulfilled','expired')
+            AND COALESCE(iw.current_status_name, '') NOT IN ('完了','終結','キャンセル','差戻し')`,
+        `SELECT s.line_code, s.status, cc.backlog_issue_key,
+                iw.current_status_name
+           FROM condition_line_status_v s
+           JOIN contract_capabilities cc ON cc.id = s.capability_id
+           JOIN issue_workflows iw ON iw.backlog_issue_key = cc.backlog_issue_key
+          WHERE s.status IN ('fulfilled','expired')
+            AND COALESCE(iw.current_status_name, '') NOT IN ('完了','終結','キャンセル','差戻し')
+          ORDER BY cc.backlog_issue_key
+          LIMIT 8`
+      ),
     ]);
   }
 
