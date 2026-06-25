@@ -8025,13 +8025,26 @@ ${details}
           );
           // form_data の明細から capability_line_items + condition_lines を再生成。
           await upsertCapabilityLineItems(Number(t.capability_id), lineItems);
+          // capability が課題に未連結なら文書の issue_key で補完する。
+          //   検収待ち/management line-items 等は cc.backlog_issue_key で絞るため、
+          //   未連結だと capability_line_items があっても表示されない。
+          await query(
+            `UPDATE contract_capabilities
+                SET backlog_issue_key = $2, updated_at = CURRENT_TIMESTAMP
+              WHERE id = $1 AND NULLIF(backlog_issue_key, '') IS NULL`,
+            [t.capability_id, t.issue_key || null]
+          );
           const made = Number(
             (await query(`SELECT COUNT(*)::int AS n FROM condition_lines WHERE capability_id = $1`, [t.capability_id])).rows[0].n
+          );
+          const liCount = Number(
+            (await query(`SELECT COUNT(*)::int AS n FROM capability_line_items WHERE capability_id = $1`, [t.capability_id])).rows[0].n
           );
           resynced.push({
             document_number: t.document_number,
             issue_key: t.issue_key,
             capability_id: t.capability_id,
+            capability_line_items: liCount,
             condition_lines: made,
           });
         } catch (e: any) {
