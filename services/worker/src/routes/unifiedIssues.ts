@@ -50,6 +50,8 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
             WHERE COALESCE(cc.is_primary, TRUE) = TRUE
               AND COALESCE(cc.lifecycle_status, 'final') = 'final'
               AND COALESCE(cc.source_system, '') <> 'master_register'
+              -- delivery_record は検収/納品の支援 capability(締結契約でない・親POの支払側)。
+              AND cc.record_type <> 'delivery_record'
               AND ( EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id)
                  OR EXISTS (SELECT 1 FROM documents d WHERE d.document_number = cc.document_number) )
          )
