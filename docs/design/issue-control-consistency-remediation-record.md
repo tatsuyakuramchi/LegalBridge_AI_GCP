@@ -368,3 +368,44 @@ form_data 再構成エンドポイントを新設。
 
 本番適用(未実施): `POST /api/admin/backfill-contract-lines-from-formdata {dry_run:true}` でプレビュー
 → per-doc 確認 → `{dry_run:false}` で適用 → 監査再実行で A2 減少を確認 → 残れば個別調査。
+
+## 追補: F2b(hybrid・royalty)+ 本番適用結果 — 2026-06-25
+
+A3 の royalty 計算書のみ復元(検収側は delivery_events 再構成要のため legacy 受容)。
+
+エンドポイント: `POST /api/admin/backfill-royalty-events-from-formdata`(server.ts)。
+- 対象文書 d.id が既知のため `syncRoyaltyCalcEvent` の文書解決(form_data の camelCase
+  依存で孤立文書は解決不可)を使わず、`capability_financial_condition_id` → 親 capability を
+  `syncConditionLinesForCapability` で同期 → condition_line を確保 → `royalty_calc` の
+  condition_event を **d.id 直結**で INSERT(document_id 単位で冪等)。
+- **重複排除**: `(財務条件, period, 金額)` でグループ化。dry_run で LEGAL-141 が
+  同 fc=1/同額500625/period無しの **重複6件**(別期支払でなく同一計算の重複 final 保存)と判明。
+  全件 event 化は過大計上のため、グループごとに代表(created_at 最新)へ 1 event、
+  余剰重複は `superseded` 化(is_primary=FALSE/lifecycle_status='superseded'/superseded_by=代表)。
+
+本番適用結果:
+- dry_run: 8 文書 → 3 グループ / event 3 / 重複 superseded 5 / skip 0。
+- apply: event 3 作成(CL 143=LEGAL-170 4,128,000 / CL 118=LEGAL-141 500,625 / CL 112=LEGAL-142 100,000)、
+  重複 5(ARC-ROY-2026-0001〜0005)を superseded。
+- 再監査: **A3 = 35 → 27**(royalty 全消滅。残 27 = 検収 = legacy 受容)。
+
+## 最終到達点(2026-06-25)
+
+| 監査 | 当初 | 是正後 | 備考 |
+|---|---|---|---|
+| issue_capability_mismatch (A1) | 0 | 0 | |
+| condition_line_classification_missing (A4) | 0→(F1b副作用37) | 0 | F1b 後に再補完 |
+| merged_source_final_documents (A5) | 0 | 0 | |
+| non_primary_final_records (A6) | 40 | **0** | F3 |
+| pub_license_terms_without_lines (A7) | 0 | 0 | |
+| final_contract_docs_without_lines (A2) | 16 | **1** | F1b(15再構成)。残1=master系ノイズ(明細なし) |
+| payment_docs_without_events (A3) | 35 | **27** | F2b(royalty 8解消)。残27=検収=legacy 受容 |
+
+適用順: **F3 → F1b →(A4再補完)→ F2b**。全修復は worker を `release/worker` へ cherry-pick デプロイし、
+本番では各エンドポイントを dry_run プレビュー → apply の順で実施。
+
+残フォローアップ:
+- F4: 監査に A8〜A10(status_v ベースのフェイズ取りこぼし)を追加。
+- admin-ui(`DataLinkagePanel` のボタン)の Cloud Run 再デプロイ&スモーク(現状は API 直叩きで実施)。
+- 検収 27 件の legacy 注記(任意。delivery_events 再構成まで踏み込むなら別途 F2c)。
+- PR #192(F1/F2/F3/F1b/F2b + docs)のタイトル更新とマージ。
