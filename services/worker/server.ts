@@ -7959,8 +7959,10 @@ ${details}
               AND COALESCE(d.lifecycle_status, 'final') = 'final'
               AND COALESCE(d.is_primary, TRUE) = TRUE
               AND ($2 = '' OR d.document_number = $2)
-              AND NOT EXISTS (SELECT 1 FROM capability_line_items li WHERE li.capability_id = cc.id)
-              AND EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id)
+              -- バルク自動検出(document_number 未指定)時のみ「明細欠落」条件で絞る。
+              --   document_number 指定時は強制復旧(下の events 安全弁は維持)。
+              AND ($2 <> '' OR NOT EXISTS (SELECT 1 FROM capability_line_items li WHERE li.capability_id = cc.id))
+              AND ($2 <> '' OR EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id))
             ORDER BY d.created_at DESC NULLS LAST`,
           [CONTRACTING, onlyDoc]
         )
