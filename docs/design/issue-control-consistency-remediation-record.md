@@ -333,3 +333,38 @@ form_data 実物調査(`GET /api/documents/by-number/:n`):
 効果: IssueDetailPage の「作成済み」二重計上(旧版が final で残る)を解消。F1b 前に実行することで A2 の ILT 重複ノイズも縮小する見込み。
 
 本番適用(未実施): 監査カード「旧版をsuperseded化」or `POST /api/admin/data-linkage/repair {action:"normalize_superseded_revisions", dry_run:true}` → 確認 → `dry_run:false` → 監査再実行で A6 減少を確認。
+
+### F3 本番適用結果(2026-06-25)
+
+- dry_run: affected=40(documents 22 / capabilities 18), residual=0。
+- apply 実行 → 再監査で **A6=40→0**。要確認カテゴリ 3→2。
+- A2 は 16 のまま(A2 の ILT 複数件 LEGAL-122/123 は is_primary=TRUE の別文書で F3 対象外と判明)。
+
+## 追補: F1b (A2 を form_data から再構成) — 2026-06-25 実装
+
+F1/F2 の dry_run で A2=16 が「capability 無し14/明細form_dataのみ2」と判明したため、
+form_data 再構成エンドポイントを新設。
+
+更新ファイル: `services/worker/server.ts`(`POST /api/admin/backfill-contract-lines-from-formdata`)。
+
+実施内容:
+- A2 文書(final/正本の締結文書で condition_lines 無し)を走査。
+- capability が無ければ form_data から最小ヘッダを作成(vendor は best-effort 解決、
+  document_number は A2 join キー=base 優先に合わせる)。
+- form_data の `line_items`/`items`(発注書)・`financial_conditions`(条件書)を
+  正準永続化 `upsertCapabilityLineItems`/`upsertCapabilityFinancialConditions` に渡す
+  (両者は末尾で `syncConditionLinesForCapability` を呼ぶ → condition_lines 生成)。
+- form_data 実物が既に正準形(line_no/item_name/amount_ex_tax、condition_no/rate_pct/mg_amount 等)
+  だったためマッパー不要。
+- `dry_run` 既定 true は「浅いプレビュー」(書き込まず、各文書の line_items/financial_conditions
+  件数と will_create_capability を返す)。upsert 系が query(プール)直書きで rollback 不可のため。
+- 冪等(line_no/condition_no と source_* の NOT EXISTS で二重生成しない)。per-doc 報告
+  (reconstructed/skipped、skipped は form_data に明細無し or エラー)。
+
+注意・残:
+- API 専用(監査パネルのボタンは現状 dataLinkage の F1=`backfill_contract_condition_lines` のみ。
+  そちらは「capability+明細が既にある」ケース用で現データには 0 件)。F1b は別エンドポイント。
+- MASTER-/MANUAL- 等のノイズは form_data に明細が無ければ自動 skip。dry_run で per-doc 確認してから apply。
+
+本番適用(未実施): `POST /api/admin/backfill-contract-lines-from-formdata {dry_run:true}` でプレビュー
+→ per-doc 確認 → `{dry_run:false}` で適用 → 監査再実行で A2 減少を確認 → 残れば個別調査。
