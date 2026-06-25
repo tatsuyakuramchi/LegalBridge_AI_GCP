@@ -19,6 +19,20 @@ import type { Express } from "express";
 import express from "express";
 import type { Pool } from "pg";
 import { normalizeDocumentFormData } from "../lib/capabilityFormMapping";
+import {
+  syncConditionLinesForCapability,
+  syncInspectionEventsForDelivery,
+  syncRoyaltyCalcEvent,
+} from "../lib/conditionSync";
+
+// 締結文書(発注書/利用許諾条件書)の template_type 一覧。
+//   A2(締結フェイズで条件明細が未生成)の対象判定に使う。
+const CONTRACTING_TEMPLATE_TYPES = [
+  "purchase_order",
+  "intl_purchase_order",
+  "individual_license_terms",
+  "pub_license_terms",
+];
 
 export interface DataLinkageDeps {
   query: (text: string, params?: any[]) => Promise<any>;
@@ -169,8 +183,8 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           key: "final_contract_docs_without_lines",
           label: "締結文書の条件明細未生成",
           description:
-            "final/正本の発注書・条件書に紐づく condition_lines が無い。締結フェイズの空振り候補。",
-          repair_action: null,
+            "final/正本の発注書・条件書に紐づく condition_lines が無い。締結フェイズの空振り候補。capability配下の明細から復元可能。",
+          repair_action: "backfill_contract_condition_lines",
         },
         `SELECT COUNT(*)::int AS n
            FROM documents d
@@ -201,8 +215,8 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           key: "payment_docs_without_events",
           label: "支払準備文書の実績未結合",
           description:
-            "検収書・計算書があるのに condition_events が無い。支払準備フェイズの結合漏れ候補。",
-          repair_action: null,
+            "検収書・計算書があるのに condition_events が無い。支払準備フェイズの結合漏れ候補。検収=delivery_events / 計算書=royalty_calculations から復元可能(condition_lines が前提のため F1 を先に適用)。",
+          repair_action: "backfill_payment_condition_events",
         },
         `SELECT COUNT(*)::int AS n
            FROM documents d
@@ -655,6 +669,204 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
           } finally {
             client.release();
           }
+        }
+
+        if (action === "backfill_contract_condition_lines") {
+          // A2 修復: final/正本の締結文書(発注書・条件書)で condition_lines が
+          //   未生成のものを、正準生成経路 syncConditionLinesForCapability で復元する。
+          //   - capability 配下の capability_line_items / capability_financial_conditions
+          //     から冪等に condition_lines を生成(source_* の NOT EXISTS で二重生成防止)。
+          //   - dry_run(既定 true): 同一トランザクションで生成→ROLLBACK し、実際に
+          //     生成される件数を正確にプレビューする(本番DBは変更しない)。
+          //   - dry_run=false: COMMIT して確定。
+          const dryRun = req.body?.dry_run !== false;
+
+          const targets = (
+            await query(
+              `SELECT d.id AS document_id,
+                      d.document_number,
+                      d.issue_key,
+                      d.template_type,
+                      cc.id AS capability_id
+                 FROM documents d
+                 LEFT JOIN contract_capabilities cc
+                   ON cc.document_number = COALESCE(NULLIF(d.base_document_number, ''), d.document_number)
+                 LEFT JOIN condition_lines cl ON cl.capability_id = cc.id
+                WHERE d.template_type = ANY($1::text[])
+                  AND COALESCE(d.lifecycle_status, 'final') = 'final'
+                  AND COALESCE(d.is_primary, TRUE) = TRUE
+                  AND cl.id IS NULL
+                ORDER BY d.created_at DESC NULLS LAST
+                LIMIT $2`,
+              [CONTRACTING_TEMPLATE_TYPES, limit]
+            )
+          ).rows;
+
+          const report = {
+            regenerated: [] as any[],
+            skipped_no_capability: [] as any[],
+            skipped_empty_source: [] as any[],
+          };
+          let totalLines = 0;
+
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            // syncConditionLinesForCapability にトランザクション接続を渡す。
+            const txDb = {
+              query: (text: string, params?: any[]) => client.query(text, params),
+            };
+            // 同一 capability の二重処理を避ける(同一capabilityを指す文書が複数の場合)。
+            const processed = new Set<number>();
+            for (const t of targets) {
+              if (!t.capability_id) {
+                report.skipped_no_capability.push({
+                  document_number: t.document_number,
+                  issue_key: t.issue_key,
+                  template_type: t.template_type,
+                });
+                continue;
+              }
+              if (processed.has(t.capability_id)) continue;
+              processed.add(t.capability_id);
+              const n = await syncConditionLinesForCapability(txDb, t.capability_id);
+              if (n > 0) {
+                report.regenerated.push({
+                  document_number: t.document_number,
+                  issue_key: t.issue_key,
+                  capability_id: t.capability_id,
+                  lines: n,
+                });
+                totalLines += n;
+              } else {
+                // capability はあるが capability_line_items / financial_conditions が
+                //   無い = 明細が form_data にしか存在しない。form_data 再構成が必要な
+                //   別系統(手動/別フォロー)。ここでは生成せず分けて報告する。
+                report.skipped_empty_source.push({
+                  document_number: t.document_number,
+                  issue_key: t.issue_key,
+                  capability_id: t.capability_id,
+                });
+              }
+            }
+            if (dryRun) await client.query("ROLLBACK");
+            else await client.query("COMMIT");
+          } catch (e) {
+            await client.query("ROLLBACK");
+            throw e;
+          } finally {
+            client.release();
+          }
+
+          return res.json({
+            ok: true,
+            action,
+            dry_run: dryRun,
+            affected: totalLines,
+            detail: {
+              documents_total: targets.length,
+              regenerated_lines: totalLines,
+              regenerated_documents: report.regenerated.length,
+              skipped_no_capability: report.skipped_no_capability.length,
+              skipped_empty_source: report.skipped_empty_source.length,
+              report,
+            },
+          });
+        }
+
+        if (action === "backfill_payment_condition_events") {
+          // A3 修復: 検収書・計算書があるのに condition_events が無い文書の実績を、
+          //   正準同期経路で復元する。
+          //   - 検収: delivery_events 配下の検収明細 → syncInspectionEventsForDelivery。
+          //   - 計算書: royalty_calculations → syncRoyaltyCalcEvent。
+          //   いずれも condition_lines が存在することが前提(無ければ skip)＝F1(A2)を
+          //   先に適用しておくこと。両 sync は冪等(source_* の NOT EXISTS で二重生成しない)。
+          //   dry_run(既定 true): トランザクション内で生成→ROLLBACK し、生成件数だけ報告。
+          const dryRun = req.body?.dry_run !== false;
+
+          let inspectionEvents = 0;
+          let royaltyEvents = 0;
+          const deliveryEventsTouched: number[] = [];
+          const royaltyCalcsTouched: number[] = [];
+
+          const client = await pool.connect();
+          try {
+            await client.query("BEGIN");
+            const txDb = {
+              query: (text: string, params?: any[]) => client.query(text, params),
+            };
+
+            // 検収側: 実績未生成だが condition_lines がある delivery_event を走査。
+            const deRows = (
+              await client.query(
+                `SELECT DISTINCT de.id
+                   FROM delivery_events de
+                   JOIN delivery_line_items dli ON dli.delivery_event_id = de.id
+                  WHERE NOT EXISTS (
+                          SELECT 1 FROM condition_events ce
+                           WHERE ce.source_delivery_line_item_id = dli.id)
+                    AND EXISTS (
+                          SELECT 1 FROM condition_lines cl
+                           WHERE cl.source_line_item_id = dli.capability_line_item_id)
+                  ORDER BY de.id
+                  LIMIT $1`,
+                [limit]
+              )
+            ).rows;
+            for (const e of deRows) {
+              const n = await syncInspectionEventsForDelivery(txDb, Number(e.id));
+              if (n > 0) {
+                inspectionEvents += n;
+                deliveryEventsTouched.push(Number(e.id));
+              }
+            }
+
+            // 計算書側: 実績未生成だが condition_lines がある royalty_calculation を走査。
+            const rcRows = (
+              await client.query(
+                `SELECT rc.id
+                   FROM royalty_calculations rc
+                  WHERE NOT EXISTS (
+                          SELECT 1 FROM condition_events ce
+                           WHERE ce.source_royalty_calculation_id = rc.id)
+                    AND rc.capability_financial_condition_id IS NOT NULL
+                    AND EXISTS (
+                          SELECT 1 FROM condition_lines cl
+                           WHERE cl.source_condition_id = rc.capability_financial_condition_id)
+                  ORDER BY rc.id
+                  LIMIT $1`,
+                [limit]
+              )
+            ).rows;
+            for (const r of rcRows) {
+              const n = await syncRoyaltyCalcEvent(txDb, Number(r.id));
+              if (n > 0) {
+                royaltyEvents += n;
+                royaltyCalcsTouched.push(Number(r.id));
+              }
+            }
+
+            if (dryRun) await client.query("ROLLBACK");
+            else await client.query("COMMIT");
+          } catch (e) {
+            await client.query("ROLLBACK");
+            throw e;
+          } finally {
+            client.release();
+          }
+
+          return res.json({
+            ok: true,
+            action,
+            dry_run: dryRun,
+            affected: inspectionEvents + royaltyEvents,
+            detail: {
+              inspection_events: inspectionEvents,
+              royalty_events: royaltyEvents,
+              delivery_events_touched: deliveryEventsTouched.length,
+              royalty_calcs_touched: royaltyCalcsTouched.length,
+            },
+          });
         }
 
         return res

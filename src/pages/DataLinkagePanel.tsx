@@ -44,6 +44,21 @@ const REPAIR_LABELS: Record<string, string> = {
   prune_stale_drafts: "古い下書きを削除",
   fix_orphan_refs: "孤児参照をNULL化",
   backfill_condition_line_classification: "条件明細分類を補完",
+  backfill_contract_condition_lines: "締結明細を復元",
+  backfill_payment_condition_events: "支払実績を復元",
+}
+
+// 修復プレビュー(dry_run)の detail 数値キー → 日本語ラベル。未知キーは生キー表示。
+const DETAIL_LABELS: Record<string, string> = {
+  documents_total: "対象文書",
+  regenerated_lines: "復元される条件明細(行)",
+  regenerated_documents: "復元される文書",
+  skipped_no_capability: "スキップ(capability無し)",
+  skipped_empty_source: "スキップ(明細がform_dataのみ)",
+  inspection_events: "復元される検収実績",
+  royalty_events: "復元される計算実績",
+  delivery_events_touched: "対象の納品イベント",
+  royalty_calcs_touched: "対象の計算レコード",
 }
 
 export const DataLinkagePanel: React.FC = () => {
@@ -112,6 +127,58 @@ export const DataLinkagePanel: React.FC = () => {
     }
   }
 
+  // 課題コントロール監査の修復は preview(dry_run) → 確認 → apply の2段階で行う。
+  //   本番DBを変更する前に「実際に生成される件数」を提示してから実行する。
+  const runIssueRepair = async (action: string, label: string) => {
+    setBusyAction(action)
+    setError(null)
+    setLastRepair(null)
+    try {
+      // 1) プレビュー(dry_run): トランザクション内で生成→ROLLBACK した件数を取得。
+      const previewRes = await fetch("/api/admin/data-linkage/repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, dry_run: true }),
+      })
+      const preview = await previewRes.json()
+      if (!previewRes.ok || !preview.ok)
+        throw new Error(preview.error || `HTTP ${previewRes.status}`)
+      const d = preview.detail || {}
+      // detail の数値項目を日本語ラベルで列挙(アクション非依存)。
+      const detailLines = Object.entries(d)
+        .filter(([, v]) => typeof v === "number")
+        .map(([k, v]) => `  ${DETAIL_LABELS[k] || k}: ${v}`)
+        .join("\n")
+      const ok = window.confirm(
+        `修復「${REPAIR_LABELS[action] || action}」プレビュー(${label})\n\n` +
+          `復元される実績/明細: ${preview.affected ?? 0} 件\n` +
+          (detailLines ? `${detailLines}\n` : "") +
+          `\nこの内容で本番に適用しますか?`
+      )
+      if (!ok) {
+        setLastRepair(`「${REPAIR_LABELS[action] || action}」プレビューのみ実行(未適用)。`)
+        return
+      }
+      // 2) 適用(dry_run=false)。
+      const applyRes = await fetch("/api/admin/data-linkage/repair", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action, dry_run: false }),
+      })
+      const applied = await applyRes.json()
+      if (!applyRes.ok || !applied.ok)
+        throw new Error(applied.error || `HTTP ${applyRes.status}`)
+      setLastRepair(
+        `「${REPAIR_LABELS[action] || action}」完了: ${applied.affected} 件を復元しました。`
+      )
+      await refresh()
+    } catch (e: any) {
+      setError(`修復失敗 (${action}): ${e?.message || e}`)
+    } finally {
+      setBusyAction(null)
+    }
+  }
+
   const linkageIssues = data?.checks.filter((c) => c.count > 0) || []
   const cleans = data?.checks.filter((c) => c.count === 0) || []
   const errs = data?.checks.filter((c) => c.count < 0) || []
@@ -161,7 +228,7 @@ export const DataLinkagePanel: React.FC = () => {
             課題コントロール整合性監査
           </span>
           <span className="text-[10px] font-mono text-muted-foreground">
-            A1〜A7 / 読み取り専用
+            A1〜A7 / 一部はプレビュー付き修復可
           </span>
           {issueAudit && (
             <span
@@ -199,9 +266,26 @@ export const DataLinkagePanel: React.FC = () => {
                       <span className="text-[11px] font-mono px-1.5 py-0.5 bg-amber-200 text-amber-900 rounded-sm">
                         {c.count} 件
                       </span>
-                      <span className="text-[10px] font-mono text-muted-foreground italic">
-                        手動確認
-                      </span>
+                      <div className="flex-1" />
+                      {c.repair_action ? (
+                        <button
+                          type="button"
+                          onClick={() => runIssueRepair(c.repair_action!, c.label)}
+                          disabled={!!busyAction}
+                          className="text-[10px] font-mono uppercase tracking-wider bg-foreground text-background rounded-sm px-3 py-1.5 hover:opacity-80 flex items-center gap-1.5 disabled:opacity-50 flex-shrink-0"
+                        >
+                          {busyAction === c.repair_action ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Wrench className="w-3 h-3" />
+                          )}
+                          {REPAIR_LABELS[c.repair_action] || "修復"}（プレビュー付）
+                        </button>
+                      ) : (
+                        <span className="text-[10px] font-mono text-muted-foreground italic">
+                          手動確認
+                        </span>
+                      )}
                     </div>
                     <p className="text-[10px] font-mono text-muted-foreground mt-1">
                       {c.description}
