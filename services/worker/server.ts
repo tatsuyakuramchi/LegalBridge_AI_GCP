@@ -7934,7 +7934,9 @@ ${details}
    *        syncConditionLinesForCapability で同期し condition_line を確保、
    *     2) その condition_line に royalty_calc の condition_event を d.id 直結で INSERT。
    *   condition_events.source_royalty_calculation_id は使わず document_id で冪等判定。
-   *   dry_run(既定 true): 書き込まず per-doc 復元可否を返す。
+   *   重複排除: (財務条件, period, 金額)でグループ化し、同一計算を重複 final 保存した
+   *     余剰文書(同 fc/同額/同期で period 無し等)は 1 event に集約、余剰は superseded 化。
+   *   dry_run(既定 true): 書き込まず、グループごとの代表/重複/event 予定を返す。
    *   body: { dry_run?: boolean }
    */
   app.post("/api/admin/backfill-royalty-events-from-formdata", express.json(), async (req, res) => {
@@ -7957,107 +7959,112 @@ ${details}
         [ROYALTY_TEMPLATES]
       );
 
-      const reconstructed: any[] = [];
+      type RDoc = {
+        id: number; document_number: string; issue_key: string | null; created_at: any;
+        fcId: number; capId: number; amount: number; period: string | null;
+        mg: number | null; ag: number | null;
+      };
       const skipped: any[] = [];
-      let eventsTotal = 0;
-
+      // (財務条件, period, 金額)でグループ化。同一計算の重複文書(同 fc/同額/同期で
+      //   period 無し)を 1 event に集約し、重複の余剰文書は superseded 化する。
+      const groups = new Map<string, RDoc[]>();
       for (const d of docs.rows) {
         const fd = d.form_data || {};
         const fcId =
           Number(fd.capability_financial_condition_id || fd.capabilityFinancialConditionId || 0) || null;
         if (!fcId) {
-          skipped.push({
-            document_number: d.document_number,
-            issue_key: d.issue_key,
-            reason: "form_data に capability_financial_condition_id が無い",
-          });
+          skipped.push({ document_number: d.document_number, issue_key: d.issue_key, reason: "form_data に capability_financial_condition_id が無い" });
           continue;
         }
-
         const fcRow = (
-          await query(
-            `SELECT capability_id FROM capability_financial_conditions WHERE id = $1`,
-            [fcId]
-          )
+          await query(`SELECT capability_id FROM capability_financial_conditions WHERE id = $1`, [fcId])
         ).rows[0];
         if (!fcRow) {
-          skipped.push({
-            document_number: d.document_number,
-            issue_key: d.issue_key,
-            reason: `financial_condition ${fcId} が存在しない`,
-          });
+          skipped.push({ document_number: d.document_number, issue_key: d.issue_key, reason: `financial_condition ${fcId} が存在しない` });
           continue;
         }
-        const capId = Number(fcRow.capability_id);
+        const amount = num(fd.actualRoyalty ?? fd.actual_royalty) || 0;
+        const period = fd.period || null;
+        const rd: RDoc = {
+          id: d.id, document_number: d.document_number, issue_key: d.issue_key, created_at: d.created_at,
+          fcId, capId: Number(fcRow.capability_id), amount, period,
+          mg: num(fd.mgAmount ?? fd.mg_consumed_this_time), ag: num(fd.agAmount ?? fd.ag_consumed_this_time),
+        };
+        const key = `${fcId}|${period || ""}|${amount}`;
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key)!.push(rd);
+      }
+
+      const planned: any[] = [];
+      let eventsTotal = 0;
+      let dupSuperseded = 0;
+
+      for (const members of groups.values()) {
+        // 代表 = created_at 最新(同点は id 最大)。残りは重複。
+        members.sort((a, b) => {
+          const ta = a.created_at ? new Date(a.created_at).getTime() : 0;
+          const tb = b.created_at ? new Date(b.created_at).getTime() : 0;
+          return tb - ta || b.id - a.id;
+        });
+        const canonical = members[0];
+        const dups = members.slice(1);
 
         if (dryRun) {
-          reconstructed.push({
-            document_number: d.document_number,
-            issue_key: d.issue_key,
-            capability_financial_condition_id: fcId,
-            capability_id: capId,
-            actual_royalty: fd.actualRoyalty ?? fd.actual_royalty ?? null,
-            period: fd.period ?? null,
+          planned.push({
+            canonical: canonical.document_number, issue_key: canonical.issue_key,
+            capability_financial_condition_id: canonical.fcId, amount: canonical.amount, period: canonical.period,
+            will_create_event: true, duplicates_superseded: dups.map((x) => x.document_number),
           });
+          eventsTotal += 1;
+          dupSuperseded += dups.length;
           continue;
         }
 
         try {
           // 1) 財務条件 → condition_line を確保(冪等)。
-          await safeSync("F2b CL", () =>
-            syncConditionLinesForCapability({ query }, capId)
-          );
+          await safeSync("F2b CL", () => syncConditionLinesForCapability({ query }, canonical.capId));
           const cl = (
-            await query(
-              `SELECT id FROM condition_lines WHERE source_condition_id = $1 ORDER BY id LIMIT 1`,
-              [fcId]
-            )
+            await query(`SELECT id FROM condition_lines WHERE source_condition_id = $1 ORDER BY id LIMIT 1`, [canonical.fcId])
           ).rows[0];
           if (!cl) {
-            skipped.push({
-              document_number: d.document_number,
-              issue_key: d.issue_key,
-              reason: `fc ${fcId} の condition_line を生成できず`,
-            });
+            skipped.push({ document_number: canonical.document_number, issue_key: canonical.issue_key, reason: `fc ${canonical.fcId} の condition_line を生成できず` });
             continue;
           }
 
-          // 2) royalty_calc の condition_event を d.id 直結で INSERT(冪等: doc 単位)。
-          const eventNoRes = await query(
-            `SELECT COALESCE(MAX(event_no), 0) + 1 AS n FROM condition_events WHERE condition_line_id = $1`,
-            [cl.id]
-          );
-          const eventNo = Number(eventNoRes.rows[0].n);
-          await query(
-            `INSERT INTO condition_events
-               (condition_line_id, event_no, event_type, document_id, backlog_issue_key,
-                occurred_at, period, amount_ex_tax, mg_consumed_this_time, ag_consumed_this_time)
-             VALUES ($1, $2, 'royalty_calc', $3, $4, $5, $6, $7, $8, $9)`,
-            [
-              cl.id,
-              eventNo,
-              d.id,
-              d.issue_key || null,
-              d.created_at,
-              fd.period || null,
-              num(fd.actualRoyalty ?? fd.actual_royalty) || 0,
-              num(fd.mgAmount ?? fd.mg_consumed_this_time),
-              num(fd.agAmount ?? fd.ag_consumed_this_time),
-            ]
-          );
-          eventsTotal += 1;
-          reconstructed.push({
-            document_number: d.document_number,
-            issue_key: d.issue_key,
-            condition_line_id: cl.id,
-            amount_ex_tax: num(fd.actualRoyalty ?? fd.actual_royalty) || 0,
+          // 2) 代表文書に royalty_calc event を直結 INSERT(冪等: doc 単位)。
+          const already = (await query(`SELECT 1 FROM condition_events WHERE document_id = $1 LIMIT 1`, [canonical.id])).rows[0];
+          if (!already) {
+            const eventNo = Number(
+              (await query(`SELECT COALESCE(MAX(event_no), 0) + 1 AS n FROM condition_events WHERE condition_line_id = $1`, [cl.id])).rows[0].n
+            );
+            await query(
+              `INSERT INTO condition_events
+                 (condition_line_id, event_no, event_type, document_id, backlog_issue_key,
+                  occurred_at, period, amount_ex_tax, mg_consumed_this_time, ag_consumed_this_time)
+               VALUES ($1, $2, 'royalty_calc', $3, $4, $5, $6, $7, $8, $9)`,
+              [cl.id, eventNo, canonical.id, canonical.issue_key || null, canonical.created_at, canonical.period, canonical.amount, canonical.mg, canonical.ag]
+            );
+            eventsTotal += 1;
+          }
+
+          // 3) 重複の余剰文書を superseded 化(同 fc/同額/同期の重複と確認済)。
+          for (const dup of dups) {
+            const r = await query(
+              `UPDATE documents
+                  SET lifecycle_status = 'superseded', is_primary = FALSE,
+                      superseded_by = COALESCE(NULLIF(superseded_by, ''), $2)
+                WHERE id = $1 AND COALESCE(lifecycle_status, 'final') = 'final'`,
+              [dup.id, canonical.document_number]
+            );
+            dupSuperseded += r.rowCount || 0;
+          }
+
+          planned.push({
+            canonical: canonical.document_number, issue_key: canonical.issue_key, condition_line_id: cl.id,
+            amount: canonical.amount, duplicates_superseded: dups.map((x) => x.document_number),
           });
         } catch (e: any) {
-          skipped.push({
-            document_number: d.document_number,
-            issue_key: d.issue_key,
-            reason: String(e?.message || e),
-          });
+          skipped.push({ document_number: canonical.document_number, issue_key: canonical.issue_key, reason: String(e?.message || e) });
         }
       }
 
@@ -8065,10 +8072,11 @@ ${details}
         ok: true,
         dry_run: dryRun,
         documents_total: docs.rows.length,
-        reconstructed: reconstructed.length,
+        groups: groups.size,
+        events: eventsTotal,
+        duplicates_superseded: dupSuperseded,
         skipped: skipped.length,
-        condition_events: eventsTotal,
-        detail: { reconstructed, skipped },
+        detail: { planned, skipped },
       });
     } catch (error: any) {
       console.error("/api/admin/backfill-royalty-events-from-formdata failed:", error);
