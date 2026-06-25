@@ -1182,6 +1182,71 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // WMC-1: 原作素材(material_code)を跨いだ「条件コピー元候補」一覧。
+  //   既存 GET .../materials/:mid/condition-lines は work_materials.id(行スコープ)で絞るため、
+  //   同じ原作素材に登録した別作品の条件を引けない。ここでは安定キー material_code で
+  //   横断する。material_code は ledgers.materials / work_materials の双方でミラーされる
+  //   グローバル一意キー(=`<ledger_code>-NNN`)で、source_ip_material_id が未設定の
+  //   新規素材でも確実にマッチする。フォームは選択中素材の material_code をそのまま渡せる。
+  //   返却 shape はフォームの FinancialCondition にそのまま流し込める cfc 列で構成する。
+  //   - is_template: 原作登録器(MLC-, source_system='master_register')由来 = L1 テンプレ。
+  //     O6 によりコピー元は L1 を優先表示する(is_template DESC)。
+  //   - source_condition_id / source_condition_line_id: コピー痕跡(O4)用の参照。
+  //   query: ?exclude_capability_id= でコピー先(編集中の文書)自身の既存条件を除外できる。
+  app.get(
+    "/api/v3/materials/by-code/:materialCode/copy-source-conditions",
+    ...requireRead,
+    async (req, res) => {
+      try {
+        const materialCode = String(req.params.materialCode || "").trim();
+        if (!materialCode) {
+          return res.status(400).json({ ok: false, error: "invalid materialCode" });
+        }
+        const excludeCapId =
+          req.query.exclude_capability_id == null ||
+          req.query.exclude_capability_id === ""
+            ? null
+            : Number(req.query.exclude_capability_id);
+        const params: any[] = [materialCode];
+        let excludeClause = "";
+        if (excludeCapId != null && Number.isFinite(excludeCapId)) {
+          params.push(excludeCapId);
+          excludeClause = ` AND cl.capability_id <> $${params.length}`;
+        }
+        const r = await query(
+          `SELECT
+                  cl.id                          AS source_condition_line_id,
+                  cl.source_work_id,
+                  cl.capability_id,
+                  cfc.id                         AS source_condition_id,
+                  cc.document_number, cc.contract_title,
+                  (COALESCE(cc.source_system,'') = 'master_register') AS is_template,
+                  w.work_code                    AS origin_work_code,
+                  w.title                        AS origin_work_title,
+                  wm.id                          AS work_material_id,
+                  wm.material_code, wm.material_name,
+                  -- フォーム FinancialCondition へコピーする金銭条件フィールド
+                  cfc.condition_no, cfc.condition_name,
+                  cfc.region_territory, cfc.region_language, cfc.region_language_label,
+                  cfc.calc_method, cfc.calc_type, cfc.fixed_kind, cfc.subscription_cycle,
+                  cfc.unit_amount, cfc.guarantee_type, cfc.rate_pct, cfc.base_price_label,
+                  cfc.calc_period, cfc.calc_period_kind, cfc.calc_period_close_month,
+                  cfc.currency, cfc.formula_text, cfc.payment_terms,
+                  cfc.mg_amount, cfc.ag_amount, cfc.applies_scope
+             FROM condition_lines cl
+             JOIN work_materials wm ON wm.id = cl.source_material_id
+             JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+             LEFT JOIN works w ON w.id = wm.work_id
+            WHERE wm.material_code = $1${excludeClause}
+            ORDER BY is_template DESC, cc.id DESC, cfc.condition_no NULLS LAST, cl.id`,
+          params
+        );
+        res.json(r.rows);
+      } catch (e) { fail(res, e); }
+    }
+  );
+
   // 利用許諾条件書(契約マスター, license カテゴリ)の検索 — マテリアル条件登録の「文書を選んで補完」用。
   //   合成の MLC- 器(source_system='master_register')は候補から除外し、実在の条件書だけ返す。
   app.get("/api/v3/license-capabilities", ...requireRead, async (req, res) => {
