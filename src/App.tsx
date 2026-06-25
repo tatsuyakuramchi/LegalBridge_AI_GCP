@@ -7,6 +7,7 @@ import { DashboardPage } from "./pages/DashboardPage"
 import { DocumentEditorPage } from "./pages/DocumentEditorPage"
 import { RequestsPage } from "./pages/RequestsPage"
 import { IssueDetailPage } from "./pages/IssueDetailPage" // データ構造刷新 Phase A
+import { UnifiedIssuePage } from "./pages/UnifiedIssuePage" // 新課題(統一課題)UI
 import { ConditionsHubPage } from "./pages/ConditionsHubPage" // データ構造刷新: 条件明細 統合ハブ
 import { ConditionLineDetailPage } from "./pages/ConditionLineDetailPage" // データ構造刷新 Phase F
 import { ArchivePage } from "./pages/ArchivePage"
@@ -45,6 +46,7 @@ export default function App() {
                 <Route path="pending-inspections" element={<Navigate to="/condition-lines?tab=inspections" replace />} />
                 <Route path="requests" element={<RequestsPage />} />
                 <Route path="issues/:issueKey" element={<IssueDetailPage />} />{/* データ構造刷新 Phase A */}
+                <Route path="unified/:capabilityId" element={<UnifiedIssuePage />} />{/* 新課題(統一課題)UI */}
                 <Route path="condition-lines" element={<ConditionsHubPage />} />{/* データ構造刷新: 統合ハブ(Cockpit/検収待ち/横断検索) */}
                 <Route path="condition-lines/:lineCode" element={<ConditionLineDetailPage />} />{/* データ構造刷新 Phase F */}
                 <Route path="archive" element={<ArchivePage />} />
