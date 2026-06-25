@@ -267,4 +267,43 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
       res.status(500).json({ ok: false, error: String(e?.message || e) });
     }
   });
+
+  /**
+   * リゾルバ: 個別 Backlog 課題 → 所属する新課題(契約=capability)。
+   *   締結課題(cc.backlog_issue_key)と支払課題(condition_events.backlog_issue_key)の
+   *   両経路から該当 capability を引く。IssueDetailPage から「統一課題で見る」導線に使う。
+   */
+  app.get("/api/issues/:issueKey/unified", async (req, res) => {
+    const issueKey = String(req.params.issueKey || "").trim();
+    if (!issueKey) return res.json({ ok: true, unified_issues: [] });
+    try {
+      const result = await query(
+        `SELECT DISTINCT cc.id AS capability_id, cc.document_number,
+                cc.contract_title, cc.record_type, v.vendor_name
+           FROM contract_capabilities cc
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE cc.backlog_issue_key = $1
+            AND COALESCE(cc.source_system, '') <> 'master_register'
+            AND cc.record_type <> 'delivery_record'
+          UNION
+         SELECT DISTINCT cc.id AS capability_id, cc.document_number,
+                cc.contract_title, cc.record_type, v.vendor_name
+           FROM condition_events ce
+           JOIN condition_lines cl ON cl.id = ce.condition_line_id
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+          WHERE ce.backlog_issue_key = $1
+            AND ce.voided_at IS NULL
+            AND COALESCE(cc.source_system, '') <> 'master_register'
+            AND cc.record_type <> 'delivery_record'
+          ORDER BY capability_id`,
+        [issueKey]
+      );
+      res.json({ ok: true, unified_issues: result.rows });
+    } catch (e: any) {
+      if (isMissingSchema(e)) return res.json({ ok: true, unified_issues: [] });
+      console.error("/api/issues/:issueKey/unified failed:", e);
+      res.status(500).json({ ok: false, error: String(e?.message || e) });
+    }
+  });
 }
