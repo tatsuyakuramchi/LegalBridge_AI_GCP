@@ -188,6 +188,9 @@ export function mapFinancialConditionToConditionLine(
 ): Record<string, any> {
   const scheme = determineFinancialScheme(fc);
   const royalty = scheme === "royalty";
+  // 取引区分: calc_type='SUPPLY_QTY'(供給価格×個数)= プロダクトイン(完成品の仕入)。
+  //   それ以外の金銭条件はライセンスイン。プロダクトインは inbound(仕入=in)。
+  const isProductIn = String((fc as any).calc_type ?? "").trim().toUpperCase() === "SUPPLY_QTY";
   return {
     capability_id: capabilityId,
     line_no: lineNo,
@@ -241,8 +244,9 @@ export function mapFinancialConditionToConditionLine(
     master_contract_id: null,
     ringi_id: null,
     status_flags: "{}",
-    is_inbound: false,
-    flow_direction: null,
+    is_inbound: isProductIn ? true : false,
+    flow_direction: isProductIn ? "in" : null,
+    transaction_kind: isProductIn ? "product" : "license",
     source_line_item_id: null,
     source_condition_id: fc.id ?? null,
   };
@@ -291,6 +295,7 @@ export const CONDITION_LINE_COLUMNS = [
   "status_flags",
   "is_inbound",
   "flow_direction",
+  "transaction_kind",
   "source_line_item_id",
   "source_condition_id",
 ] as const;
