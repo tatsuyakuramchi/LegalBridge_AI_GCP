@@ -475,7 +475,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             key: "capabilities_without_document",
             label: "documents未連結のcapability",
             description:
-              "final/正本の contract_capabilities に対応する documents が無い。PDF/編集ができない。要確認。(合成の MLC- 登録器 source_system='master_register'・superseded 旧版は除外)",
+              "final/正本の空 contract_capabilities(条件明細なし)に対応する documents が無い。PDF/編集できない孤立 capability の候補。(除外: 合成 MLC- 登録器 source_system='master_register' / superseded 旧版 / condition_lines を持つ登録条件=文書なしが正常)",
             repair_action: null,
           },
           `SELECT COUNT(*)::int AS n FROM contract_capabilities cc
@@ -483,12 +483,14 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
               AND COALESCE(cc.source_system, '') <> 'master_register'
               AND COALESCE(cc.is_primary, TRUE) = TRUE
               AND COALESCE(cc.lifecycle_status, 'final') = 'final'
+              AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id)
               AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.document_number = cc.document_number)`,
           `SELECT cc.id, cc.document_number, cc.record_type FROM contract_capabilities cc
             WHERE cc.document_number IS NOT NULL
               AND COALESCE(cc.source_system, '') <> 'master_register'
               AND COALESCE(cc.is_primary, TRUE) = TRUE
               AND COALESCE(cc.lifecycle_status, 'final') = 'final'
+              AND NOT EXISTS (SELECT 1 FROM condition_lines cl WHERE cl.capability_id = cc.id)
               AND NOT EXISTS (SELECT 1 FROM documents d WHERE d.document_number = cc.document_number)
             ORDER BY cc.id DESC LIMIT 8`
         ),
