@@ -73,6 +73,7 @@ import {
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
+import { registerUnifiedIssues } from "./src/routes/unifiedIssues.ts";
 import { normalizeDocumentFormData } from "./src/lib/capabilityFormMapping.ts";
 // C2: admin-ui を worker 専用化(C1)するため、search-api の read を worker に補完。
 import { registerSharedReads } from "./src/routes/sharedReads.ts";
@@ -8710,6 +8711,9 @@ ${details}
 
   // データモデル整理: 連結チェック＆修復ツール (整合性点検 / 安全な修復)
   registerDataLinkage(app, { query, pool });
+
+  // 新課題(統一課題)導出API。docs/design/unified-issue-ui-plan.md
+  registerUnifiedIssues(app, { query });
 
   // 関連当事者取引 判定 (/rpt/*): RPT.gs の書込 (法人/役員/株主構成/議案)。読取は search-API。
   registerRelatedParty(app, { query, pool });
