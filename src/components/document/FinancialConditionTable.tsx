@@ -21,11 +21,19 @@ import { cn } from "@/lib/utils";
 //   BASE_RATE     : 基準価格 × 料率
 //   FIXED         : 固定値 (一括/分割)
 //   SUBSCRIPTION  : サブスクリプション (月払い/年払い)
-export type CalcType = "BASE_QTY_RATE" | "BASE_RATE" | "FIXED" | "SUBSCRIPTION";
+//   SUPPLY_QTY    : 供給価格 × 個数 (プロダクトイン: 海外等から作品を仕入れる際の計算。料率なし)
+export type CalcType = "BASE_QTY_RATE" | "BASE_RATE" | "FIXED" | "SUBSCRIPTION" | "SUPPLY_QTY";
+
+// 取引区分。ライセンスイン(原作の利用許諾を受ける)/ プロダクトイン(完成品=作品を
+//   海外等から仕入れる)。プロダクトインは目的=当社が他社に販売、計算は供給価格×個数(新)＋従来型。
+export type TransactionKind = "license" | "product";
 
 export type FinancialCondition = {
   id?: number; // DB の license_financial_conditions.id (新規は未設定)
   condition_no: number; // 1=自社製造, 2=サブライセンス, 3=プロダクトアウト, ...
+  // 取引区分。'license'(=ライセンスイン, 省略時) / 'product'(=プロダクトイン)。
+  //   condition_lines.transaction_kind に反映。
+  transaction_kind?: TransactionKind;
   // 任意の条件名称 (PDF 見出しに反映)。空なら condition_no ベースの既定文。
   condition_name?: string;
   // テリトリー(地域)と言語を別項目で保持。
@@ -94,19 +102,40 @@ export function buildCalcPeriodLabel(
   return "";
 }
 
-// 計算式タイプの選択肢 (4種)。
+// 計算式タイプの選択肢。ライセンスインは従来の4種、プロダクトインは供給価格×個数(新)＋従来型。
+const CALC_TYPE_OPTION_MAP: Record<CalcType, string> = {
+  BASE_QTY_RATE: "① 基準価格 × 個数 × 料率",
+  BASE_RATE: "② 基準価格 × 料率",
+  FIXED: "③ 固定値 (一括/分割)",
+  SUBSCRIPTION: "④ サブスクリプション (月/年)",
+  SUPPLY_QTY: "⑤ 供給価格 × 個数 (プロダクトイン)",
+};
 export const CALC_TYPE_OPTIONS: Array<{ value: CalcType; label: string }> = [
-  { value: "BASE_QTY_RATE", label: "① 基準価格 × 個数 × 料率" },
-  { value: "BASE_RATE", label: "② 基準価格 × 料率" },
-  { value: "FIXED", label: "③ 固定値 (一括/分割)" },
-  { value: "SUBSCRIPTION", label: "④ サブスクリプション (月/年)" },
+  { value: "BASE_QTY_RATE", label: CALC_TYPE_OPTION_MAP.BASE_QTY_RATE },
+  { value: "BASE_RATE", label: CALC_TYPE_OPTION_MAP.BASE_RATE },
+  { value: "FIXED", label: CALC_TYPE_OPTION_MAP.FIXED },
+  { value: "SUBSCRIPTION", label: CALC_TYPE_OPTION_MAP.SUBSCRIPTION },
 ];
+// 取引区分に応じた calc_type 選択肢。プロダクトインは SUPPLY_QTY を先頭に + 従来型も可。
+export function calcTypeOptionsFor(kind?: TransactionKind): Array<{ value: CalcType; label: string }> {
+  if (kind === "product") {
+    return [
+      { value: "SUPPLY_QTY", label: CALC_TYPE_OPTION_MAP.SUPPLY_QTY },
+      { value: "BASE_QTY_RATE", label: CALC_TYPE_OPTION_MAP.BASE_QTY_RATE },
+      { value: "BASE_RATE", label: CALC_TYPE_OPTION_MAP.BASE_RATE },
+      { value: "FIXED", label: CALC_TYPE_OPTION_MAP.FIXED },
+      { value: "SUBSCRIPTION", label: CALC_TYPE_OPTION_MAP.SUBSCRIPTION },
+    ];
+  }
+  return CALC_TYPE_OPTIONS;
+}
 
 // calc_type → calc_method (後方互換: ROYALTY / FIXED / SUBSCRIPTION)。
+//   SUPPLY_QTY(供給価格×個数)は数量駆動・供給時計算なので ROYALTY 扱い(payment_scheme=royalty)。
 export function calcMethodFromType(t?: CalcType): string {
   if (t === "FIXED") return "FIXED";
   if (t === "SUBSCRIPTION") return "SUBSCRIPTION";
-  if (t === "BASE_QTY_RATE" || t === "BASE_RATE") return "ROYALTY";
+  if (t === "BASE_QTY_RATE" || t === "BASE_RATE" || t === "SUPPLY_QTY") return "ROYALTY";
   return "";
 }
 
@@ -122,6 +151,9 @@ export function buildFormulaText(c: Partial<FinancialCondition>): string {
       ? `¥${(Number(c.unit_amount) || 0).toLocaleString("ja-JP")}`
       : "固定額";
   switch (c.calc_type) {
+    case "SUPPLY_QTY":
+      // プロダクトイン: 供給価格 × 個数 (料率なし)。
+      return `${c.base_price_label || "供給価格"} × 個数`;
     case "BASE_QTY_RATE":
       return `${base} × 個数 × ${rate}`;
     case "BASE_RATE":
@@ -347,6 +379,40 @@ export const FinancialConditionTable: React.FC<Props> = ({
                   <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded-sm bg-foreground text-background">
                     条件 {condNo}
                   </span>
+                  {/* 取引区分: ライセンスイン / プロダクトイン。プロダクトインは供給価格×個数を既定に。 */}
+                  <select
+                    value={c.transaction_kind || "license"}
+                    onChange={(e) => {
+                      const tk = e.target.value as TransactionKind;
+                      if (tk === "product") {
+                        recalc(idx, {
+                          transaction_kind: tk,
+                          calc_type: "SUPPLY_QTY",
+                          base_price_label: c.base_price_label || "供給価格",
+                        });
+                      } else {
+                        // ライセンスインに戻す: SUPPLY_QTY はライセンスインの選択肢に
+                        //   無いため、残っていれば従来既定(BASE_QTY_RATE)へ戻す。
+                        recalc(idx, {
+                          transaction_kind: tk,
+                          ...(c.calc_type === "SUPPLY_QTY"
+                            ? { calc_type: "BASE_QTY_RATE" as CalcType }
+                            : {}),
+                        });
+                      }
+                    }}
+                    disabled={readOnly}
+                    title="取引区分。プロダクトイン=完成品(作品)を仕入れる(供給価格×個数)。"
+                    className={cn(
+                      "text-[10px] font-mono rounded-sm border px-1.5 py-0.5 bg-transparent focus:outline-none",
+                      c.transaction_kind === "product"
+                        ? "border-amber-300 text-amber-800"
+                        : "border-indigo-300 text-indigo-800"
+                    )}
+                  >
+                    <option value="license">ライセンスイン</option>
+                    <option value="product">プロダクトイン</option>
+                  </select>
                   <input
                     type="text"
                     value={c.condition_name || ""}
@@ -411,13 +477,28 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     className="w-full text-[11px] font-mono bg-transparent border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
                   >
                     <option value="">— 選択 —</option>
-                    {CALC_TYPE_OPTIONS.map((opt) => (
+                    {calcTypeOptionsFor(c.transaction_kind).map((opt) => (
                       <option key={opt.value} value={opt.value}>
                         {opt.label}
                       </option>
                     ))}
                   </select>
                 </div>
+
+                {/* ⑤ プロダクトイン: 供給価格 × 個数 (料率なし)。供給価格ラベルのみ */}
+                {c.calc_type === "SUPPLY_QTY" && (
+                  <div>
+                    <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                      供給価格
+                    </div>
+                    {cellInput(
+                      c.base_price_label,
+                      (v) => recalc(idx, { base_price_label: v }),
+                      "text",
+                      "供給価格 (仕入単価)"
+                    )}
+                  </div>
+                )}
 
                 {/* ① ② 基準価格×(個数×)料率 系: 料率 + 基準価格 */}
                 {isBaseRate(c.calc_type) && (
