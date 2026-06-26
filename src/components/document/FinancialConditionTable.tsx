@@ -81,6 +81,9 @@ export type FinancialCondition = {
   //   コピー元 capability_financial_conditions.id を保持する。保存時 cfc の
   //   copied_from_condition_id に永続化される。NULL/未設定 = 通常入力。
   copied_from_condition_id?: number;
+  // 明細(条件)ごとの作品(作品1:文書N:明細N)。NULL/未設定は文書単位の作品にフォールバック。
+  //   発注書の受注者帰属明細から自動継承される(D2)ほか、利用許諾条件書で行ごとに指定可。
+  work_id?: number;
 };
 
 // Phase 22.20-B: kind + close_month から表示ラベルを組み立てる。
@@ -222,6 +225,9 @@ const CALC_PERIOD_KIND_OPTIONS: Array<{
   { value: "ANNUAL", label: "年毎" },
 ];
 
+// 条件ごとの作品割当用の作品候補(既存作品のみ)。
+export type WorkOption = { id: number; work_code?: string; title?: string };
+
 interface Props {
   conditions: FinancialCondition[];
   onChange: (conditions: FinancialCondition[]) => void;
@@ -231,6 +237,11 @@ interface Props {
    * ラベル・既定値・条件プリセットだけ」切替える。未指定は BDG 相当(従来挙動)。
    */
   division?: "PUB" | "BDG";
+  /**
+   * 条件ごとに割り当て可能な作品候補。複数作品が混在する受注者帰属の利用許諾条件で、
+   * 条件(明細)ごとに作品を指定できる。未指定の条件は文書単位の作品にフォールバック。
+   */
+  works?: WorkOption[];
 }
 
 // division 駆動プリセット。保存先カラムは共通(rate_pct / base_price_label /
@@ -281,6 +292,7 @@ export const FinancialConditionTable: React.FC<Props> = ({
   onChange,
   readOnly = false,
   division,
+  works = [],
 }) => {
   const preset = DIVISION_PRESETS[division || "BDG"];
   const update = (idx: number, patch: Partial<FinancialCondition>) => {
@@ -437,6 +449,36 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     title="任意の条件名称。空欄なら標準の見出しを表示。"
                     className="flex-1 min-w-[140px] text-[11px] font-mono font-semibold bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground placeholder:text-muted-foreground/40 placeholder:text-[10px]"
                   />
+                  {/* 条件ごとの作品(作品1:文書N:明細N)。複数作品混在の受注者帰属で行ごとに指定。
+                      未選択は文書の作品にフォールバック。works が無ければ非表示。 */}
+                  {works.length > 0 && (
+                    <select
+                      value={c.work_id != null ? String(c.work_id) : ""}
+                      onChange={(e) =>
+                        update(idx, {
+                          work_id: e.target.value
+                            ? Number(e.target.value)
+                            : undefined,
+                        })
+                      }
+                      disabled={readOnly}
+                      title="この条件の作品。未選択なら文書の作品に従います。"
+                      className={cn(
+                        "text-[10px] font-mono rounded-sm border px-1.5 py-0.5 bg-transparent focus:outline-none",
+                        c.work_id != null
+                          ? "border-sky-300 text-sky-800"
+                          : "border-input text-muted-foreground"
+                      )}
+                    >
+                      <option value="">作品: 文書に従う</option>
+                      {works.map((w) => (
+                        <option key={w.id} value={String(w.id)}>
+                          {w.work_code ? `[${w.work_code}] ` : ""}
+                          {w.title || `作品#${w.id}`}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <input
                     type="text"
                     value={readRegionParts(c).territory}

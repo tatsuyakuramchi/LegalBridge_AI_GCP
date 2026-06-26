@@ -23,6 +23,7 @@ import {
   type FinancialCondition,
   type CalcType,
 } from "@/src/components/document/FinancialConditionTable"
+import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
 
 // 条件明細(condition_lines) → FinancialCondition(利用許諾明細入力の行)へ逆マップ。
 //   __clid に condition_line.id を退避し保存時の upsert キーにする(FinancialCondition には無い項目)。
@@ -1010,6 +1011,8 @@ export function WorkGraphPanel() {
         <div className="text-xs font-mono text-muted-foreground py-8 text-center">作品を選択してください。</div>
       ) : (
         <>
+        {/* PLW-D: 作品1:文書N:明細N — この作品に明細単位で帰属する文書/明細/条件を集約。 */}
+        <WorkAttributionsPanel workId={workId} />
         {/* 関係の明確化: 作品(own)が「どの原作のどのマテリアルを利用し、何を履行するか」をマテリアル単位でまとめて先頭に表示。
             これがこの作品の利用許諾条件書に載る条件（=支払う利用料）の実体であることを明示する。 */}
         {!isSource && consumedGroups.length > 0 && (

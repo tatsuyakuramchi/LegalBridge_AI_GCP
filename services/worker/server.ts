@@ -5572,9 +5572,9 @@ ${details}
            currency, formula_text, payment_terms, mg_amount, ag_amount,
            condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
            region_territory, region_language, applies_scope,
-           copied_from_condition_id,
+           copied_from_condition_id, work_id,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, condition_no) DO UPDATE SET
            region_language_label   = EXCLUDED.region_language_label,
            calc_method             = EXCLUDED.calc_method,
@@ -5602,6 +5602,7 @@ ${details}
              EXCLUDED.copied_from_condition_id,
              capability_financial_conditions.copied_from_condition_id
            ),
+           work_id                 = EXCLUDED.work_id,
            updated_at              = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -5635,6 +5636,8 @@ ${details}
           c.copied_from_condition_id != null && c.copied_from_condition_id !== ""
             ? Number(c.copied_from_condition_id)
             : null,
+          // 明細(条件)ごとの作品。未指定は NULL(文書 work へフォールバック)。
+          c.work_id != null && c.work_id !== "" ? Number(c.work_id) : null,
         ]
       );
     }
@@ -5826,10 +5829,16 @@ ${details}
       const name =
         (c.condition_name && String(c.condition_name).trim()) || `条件${condNo}`;
       // 利用許諾=相手方帰属。FIXED=買切固定額=ロイヤリティ計算なし。それ以外は royalty 対象。
+      // 作品1:文書N:明細N — 条件ごとに作品が指定されていればそれを優先し、
+      //   未指定なら文書単位の ownWorkId にフォールバック。
+      const condWorkId =
+        c?.work_id != null && String(c.work_id).trim() !== "" && Number.isFinite(Number(c.work_id))
+          ? Number(c.work_id)
+          : ownWorkId;
       const ok = await ensureMaterialAndCompose({
         lineId,
         origWorkId,
-        ownWorkId,
+        ownWorkId: condWorkId,
         ledgerCode,
         name,
         rightsType: "license",
@@ -5964,9 +5973,9 @@ ${details}
            quantity, unit_price, amount_ex_tax, rate_pct,
            delivery_date, payment_date,
            cycle, billing_day, term_start, term_end,
-           fee_type, royalty_calc_basis,
+           fee_type, royalty_calc_basis, work_id,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, line_no) DO UPDATE SET
            category       = EXCLUDED.category,
            item_name      = EXCLUDED.item_name,
@@ -5986,6 +5995,7 @@ ${details}
            term_end       = EXCLUDED.term_end,
            fee_type       = EXCLUDED.fee_type,
            royalty_calc_basis = EXCLUDED.royalty_calc_basis,
+           work_id        = EXCLUDED.work_id,
            updated_at     = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -6008,6 +6018,7 @@ ${details}
           dateOrNull(c.term_end),
           c.fee_type || "production",
           c.royalty_calc_basis || null,
+          numOrNull(c.work_id),
         ]
       );
     }
@@ -14966,8 +14977,8 @@ ${details}
                  unit_price, quantity, amount_ex_tax, rate_pct,
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date,
-                 deliverable_ownership, royalty_calc_basis, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, CURRENT_TIMESTAMP)
+                 deliverable_ownership, royalty_calc_basis, work_id, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
                ON CONFLICT (capability_id, line_no) DO UPDATE SET
                  item_name      = EXCLUDED.item_name,
                  spec           = EXCLUDED.spec,
@@ -14982,6 +14993,7 @@ ${details}
                  delivery_date  = EXCLUDED.delivery_date,
                  deliverable_ownership = EXCLUDED.deliverable_ownership,
                  royalty_calc_basis = EXCLUDED.royalty_calc_basis,
+                 work_id        = EXCLUDED.work_id,
                  updated_at     = CURRENT_TIMESTAMP`,
               [
                 orderItemId,
@@ -14999,6 +15011,10 @@ ${details}
                 l.delivery_date || null, // Phase 17h
                 l.deliverable_ownership || "発注者",
                 l.royalty_calc_basis || null,
+                // 明細ごとの成果物作品(作品1:文書N:明細N)。未指定は NULL。
+                l.work_id != null && String(l.work_id).trim() !== ""
+                  ? Number(l.work_id)
+                  : null,
               ]
             );
           }
@@ -15061,6 +15077,8 @@ ${details}
               calc_period_kind: c.calc_period_kind || null,
               calc_period_close_month: c.calc_period_close_month ?? null,
               currency: c.currency || "JPY",
+              // 条件ごとの作品(作品1:文書N:明細N)。未指定は NULL。
+              work_id: c.work_id ?? null,
             }));
             try {
               await upsertCapabilityFinancialConditions(orderItemId, mappedCommon);
@@ -15090,6 +15108,9 @@ ${details}
               // 利用許諾条件の支払条件 → 利用許諾料計算書の支払条件に引用される。
               payment_terms: it.payment_terms || null,
               currency: "JPY",
+              // D2: 受注者帰属明細の作品を、対応する利用許諾条件へ自動継承
+              //   (condition_no=line_no で 1:1)。明細側の作品割当だけで連動する。
+              work_id: it.work_id ?? null,
             }));
             try {
               await upsertCapabilityFinancialConditions(orderItemId, mappedConds);
