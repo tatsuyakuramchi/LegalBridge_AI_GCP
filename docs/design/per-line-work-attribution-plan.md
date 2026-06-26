@@ -75,6 +75,10 @@
 - 発注書の**共通利用許諾条件**(formData.financial_conditions あり)は明細と1:1でないため、条件ごとに作品セレクタで指定(独立)。
 - 個別利用許諾条件書も条件ごとにセレクタで指定。
 
+### E: 既存データ backfill【済】
+- `0085_backfill_per_line_work_id.sql`: 既存の `condition_lines.work_id`(旧来の文書単位リンクで設定済)を、`source_line_item_id`/`source_condition_id` をたどって `capability_line_items.work_id` / `capability_financial_conditions.work_id` へ逆伝播。これで集約ビューが既存明細も拾える。NULL のままでも文書 work フォールバックで安全(冪等)。
+- 検証SQL: `scripts/audit/per_line_work_check.sql`(列存在・充足率・複数作品混在発注書・作品集約)。
+
 ### 残(任意)
-- 既存データの work_id backfill(現状 NULL は文書 work フォールバック表示)。
-- 集約ビューに「文書単位帰属(linked_work_id)のみの文書」も含めるか(現状は明細単位帰属のみ)。
+- 集約ビューに「文書単位帰属(linked_work_id)のみで明細未割当の文書」も含めるか(現状は明細単位帰属のみ)。
+- 実データ検証(複数タイトル発注書で行ごと割当→保存→集約確認)はバックエンド+シード環境が必要。
