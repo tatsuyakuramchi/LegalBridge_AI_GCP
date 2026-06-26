@@ -65,7 +65,16 @@
 - フロント(型・セレクタ・集約画面) → main。
 
 ## 6. Phase 進捗
-- [ ] A: migration 0084
-- [ ] B: mapper + 保存 + 読取
-- [ ] C: フォーム(明細/条件の作品セレクタ)
-- [ ] D: 集約ビュー
+- [x] A: migration 0084(capability_line_items/cfc.work_id)
+- [x] B: conditionLineMapper(work_id列)＋ capability_line_items/cfc upsert ＋ 受注者帰属継承(D2)＋ linkWorkMaterialsForCapability per-condition化
+- [x] C: LineItemTable/FinancialConditionTable に作品セレクタ、DocumentForm で worksList→workOptions 配線
+- [x] D: GET /api/v3/works/:id/attributions(集約API)＋ WorkAttributionsPanel を WorkGraphPanel に組込み
+
+### 補足(D2 連動の適用範囲)
+- 受注者帰属明細→**派生型**条件(共通条件なし)は `condition_no=line_no` で work_id をサーバ側自動継承。
+- 発注書の**共通利用許諾条件**(formData.financial_conditions あり)は明細と1:1でないため、条件ごとに作品セレクタで指定(独立)。
+- 個別利用許諾条件書も条件ごとにセレクタで指定。
+
+### 残(任意)
+- 既存データの work_id backfill(現状 NULL は文書 work フォールバック表示)。
+- 集約ビューに「文書単位帰属(linked_work_id)のみの文書」も含めるか(現状は明細単位帰属のみ)。
