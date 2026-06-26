@@ -5572,8 +5572,9 @@ ${details}
            currency, formula_text, payment_terms, mg_amount, ag_amount,
            condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
            region_territory, region_language, applies_scope,
+           copied_from_condition_id,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, CURRENT_TIMESTAMP)
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, CURRENT_TIMESTAMP)
          ON CONFLICT (capability_id, condition_no) DO UPDATE SET
            region_language_label   = EXCLUDED.region_language_label,
            calc_method             = EXCLUDED.calc_method,
@@ -5596,6 +5597,11 @@ ${details}
            region_territory        = EXCLUDED.region_territory,
            region_language         = EXCLUDED.region_language,
            applies_scope           = EXCLUDED.applies_scope,
+           -- O4: 痕跡は一度付いたら消さない(後続保存が値を運ばなくても保持)。
+           copied_from_condition_id = COALESCE(
+             EXCLUDED.copied_from_condition_id,
+             capability_financial_conditions.copied_from_condition_id
+           ),
            updated_at              = CURRENT_TIMESTAMP`,
         [
           capabilityId,
@@ -5625,6 +5631,10 @@ ${details}
           regionTerritory,
           regionLanguage,
           c.applies_scope || null,
+          // O4: コピー痕跡(コピー元 cfc.id)。通常入力は NULL。
+          c.copied_from_condition_id != null && c.copied_from_condition_id !== ""
+            ? Number(c.copied_from_condition_id)
+            : null,
         ]
       );
     }
