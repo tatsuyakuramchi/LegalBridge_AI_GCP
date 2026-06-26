@@ -18,7 +18,7 @@ import { Input } from "@/components/ui/input"
 //   API: GET /api/unified-issues
 
 type UnifiedRow = {
-  capability_id: number
+  capability_id: number | null
   document_number: string | null
   contract_title: string | null
   record_type: string | null
@@ -39,6 +39,9 @@ type UnifiedRow = {
   next_action_lines: number
   stage: { contracting: boolean; inspection: boolean; royalty: boolean }
   completed: boolean
+  // 起案済・締結文書未作成の「未着手」新課題(capability 未昇格)。詳細は未生成。
+  pending?: boolean
+  status_name?: string | null
 }
 
 const yen = (n: number | null | undefined) =>
@@ -176,13 +179,30 @@ export function UnifiedIssuesListPage() {
           ) : (
             filtered.map((r) => (
               <button
-                key={r.capability_id}
-                onClick={() => navigate(`/unified/${r.capability_id}`)}
-                className="w-full grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 px-3 py-2.5 items-center text-left border-b border-border last:border-0 hover:bg-muted/40"
+                key={r.capability_id ?? `pending:${r.contracting_issue_key}`}
+                onClick={() =>
+                  navigate(
+                    // 未着手(capability 未生成)は新課題詳細が無いので、起案元の
+                    //   Backlog 課題詳細へ飛ばす(そこから文書作成 → 契約に昇格)。
+                    r.pending && r.contracting_issue_key
+                      ? `/issues/${encodeURIComponent(r.contracting_issue_key)}`
+                      : `/unified/${r.capability_id}`
+                  )
+                }
+                disabled={!r.pending && r.capability_id == null}
+                className={cn(
+                  "w-full grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-3 px-3 py-2.5 items-center text-left border-b border-border last:border-0 hover:bg-muted/40",
+                  r.pending && "bg-amber-50/40"
+                )}
               >
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="text-[12px] font-mono font-bold truncate">{r.document_number || `cap${r.capability_id}`}</span>
+                    <span className="text-[12px] font-mono font-bold truncate">
+                      {r.pending
+                        ? r.contracting_issue_key
+                        : r.document_number || `cap${r.capability_id}`}
+                    </span>
+                    {r.pending && <Badge className="bg-amber-500 text-white hover:bg-amber-500 text-[9px]">未着手</Badge>}
                     {r.record_type && <Badge variant="outline" className="text-[9px]">{r.record_type}</Badge>}
                     {r.completed && <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 text-[9px]">完了</Badge>}
                   </div>
@@ -197,7 +217,9 @@ export function UnifiedIssuesListPage() {
                   {r.open_lines > 0 && <span className="text-sky-700"> / 開{r.open_lines}</span>}
                 </span>
                 <span className="text-[11px] font-mono text-right tabular-nums">
-                  {Number(r.remaining_amount) > 0 ? (
+                  {r.pending ? (
+                    <span className="text-amber-700">{r.status_name || "起案済"}</span>
+                  ) : Number(r.remaining_amount) > 0 ? (
                     <span className="text-amber-700 font-bold">残{yen(r.remaining_amount)}</span>
                   ) : (
                     <span className="text-muted-foreground">{r.event_count}実績</span>
@@ -217,6 +239,7 @@ export function UnifiedIssuesListPage() {
       <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
         段階レーン: 締=締結文書 / 検=検収書 / 計=計算書。残=固定費の未消化額、実績=支払イベント数。
         課題列の ▲ は「次に出すべき文書がある明細数」。行クリックで新課題詳細へ。
+        「未着手」= 起案済だが締結文書が未作成の課題(クリックで課題詳細→文書作成へ)。文書作成で通常の契約に昇格。
       </p>
     </div>
   )
