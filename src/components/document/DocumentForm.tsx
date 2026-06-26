@@ -257,6 +257,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 対象作品(own)の一覧。Stage 1(文書ファースト紐付け)で「対象作品」セレクタにも使うため、
   //   作品連動しうるテンプレート(利用許諾・出版・発注書)で /api/v3/works を取得する。
   const [worksList, setWorksList] = React.useState<any[]>([]);
+  // 明細/条件ごとの作品割当(作品1:文書N:明細N)用の作品候補。worksList(GET /api/v3/works)
+  //   を {id, work_code, title} に整形。WORK_LINKED_TEMPLATES 以外は空 → セレクタ非表示。
+  const workOptions = useMemo(
+    () =>
+      (Array.isArray(worksList) ? worksList : []).map((w: any) => ({
+        id: Number(w.id),
+        work_code: w.work_code || undefined,
+        title: w.title || undefined,
+      })),
+    [worksList]
+  );
   useEffect(() => {
     if (!WORK_LINKED_TEMPLATES.includes(templateId)) return;
     let cancelled = false;
@@ -1479,6 +1490,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 ? "PUB"
                 : "BDG"
             }
+            works={workOptions}
           />
 
           {/* WMC-2: 同一原作素材に登録済みの条件を引用してコピー(値コピー = テンプレ→インスタンス)。
@@ -2109,6 +2121,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               });
             }}
             showPaymentColumns={true}
+            works={workOptions}
           />
         </FormSection>
 
@@ -2147,6 +2160,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 onChange={(conditions: FinancialCondition[]) =>
                   setFormData({ ...formData, financial_conditions: conditions })
                 }
+                works={workOptions}
               />
             </FormSection>
           )}
