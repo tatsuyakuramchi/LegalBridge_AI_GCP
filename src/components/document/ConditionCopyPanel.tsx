@@ -74,7 +74,8 @@ interface Props {
 }
 
 // 候補(cfc shape) → フォームの FinancialCondition へ変換。
-//   id は付けない(= 新規行)。source/トレースは付けず純粋な値コピーにする。
+//   id は付けない(= 新規行 = 値コピー。共有でない)。
+//   O4: コピー元 cfc.id を copied_from_condition_id に保持し、保存時に痕跡を残す。
 function candidateToCondition(
   cand: CopyCandidate,
   nextNo: number
@@ -106,6 +107,8 @@ function candidateToCondition(
     mg_amount: cand.mg_amount ?? undefined,
     ag_amount: cand.ag_amount ?? undefined,
     applies_scope: cand.applies_scope || undefined,
+    // O4: コピー元 cfc.id を痕跡として保持(保存時 cfc.copied_from_condition_id へ)。
+    copied_from_condition_id: cand.source_condition_id ?? undefined,
   };
   // 計算式テキストは構造化値から再生成(無ければ元の formula_text を踏襲)。
   c.formula_text = buildFormulaText(c) || cand.formula_text || undefined;

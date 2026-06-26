@@ -77,6 +77,10 @@ export type FinancialCondition = {
   //   license_financial_condition_id か capability_financial_condition_id か
   //   どちらに id をセットするか分岐する。
   source?: "license" | "capability";
+  // WMC O4(コピー痕跡): この条件を「原作素材の既存条件からコピー」して作った場合、
+  //   コピー元 capability_financial_conditions.id を保持する。保存時 cfc の
+  //   copied_from_condition_id に永続化される。NULL/未設定 = 通常入力。
+  copied_from_condition_id?: number;
 };
 
 // Phase 22.20-B: kind + close_month から表示ラベルを組み立てる。
@@ -413,6 +417,15 @@ export const FinancialConditionTable: React.FC<Props> = ({
                     <option value="license">ライセンスイン</option>
                     <option value="product">プロダクトイン</option>
                   </select>
+                  {/* O4: 原作素材の既存条件からコピーした行であることの痕跡バッジ。 */}
+                  {c.copied_from_condition_id != null && (
+                    <span
+                      className="text-[8px] font-mono font-bold px-1 py-0.5 rounded-sm bg-sky-100 text-sky-700 border border-sky-300 whitespace-nowrap"
+                      title={`原作素材の既存条件(#${c.copied_from_condition_id})から引用コピー`}
+                    >
+                      引用
+                    </span>
+                  )}
                   <input
                     type="text"
                     value={c.condition_name || ""}

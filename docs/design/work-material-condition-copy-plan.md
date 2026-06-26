@@ -124,7 +124,7 @@
 
 ### デプロイ / 検証メモ
 - WMC-1 は `services/api`(release/api)。WMC-2 はフロント(main)。
-- O4(L1→コピー先のトレース `source_condition_id` 永続化)は未実装(API は候補に `source_condition_id` を返すが保存時の痕跡付与は今後)。
+- O4(コピー痕跡の永続化)【済 2026-06-26】: `capability_financial_conditions.copied_from_condition_id`(自己参照FK, `0083`)を追加。コピー時にコピー元 cfc.id を保持し、`upsertCapabilityFinancialConditions` で永続化(再保存で消えないよう `COALESCE` で保護)。`condition_line → cfc(source_condition_id) → copied_from_condition_id` で辿れるため condition_lines への列追加は不要。フォームのコピー行に「引用」バッジ表示。デプロイ: migration は `release/worker`(migrate)、worker server.ts も `release/worker`、フロントは main。
 - 実データ検証(ledger選択→素材選択→候補表示→コピー→保存)は要バックエンド+シードのため未実施。
 
 ## 9. 結論
