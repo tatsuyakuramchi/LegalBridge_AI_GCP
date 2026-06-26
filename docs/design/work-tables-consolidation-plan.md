@@ -56,6 +56,32 @@ works: NewIto (own)
 2. **`condition_lines.material_id`(→台帳) のレガシー化**: 現役の書き込みは `source_material_id`(→work_materials) のみ。`material_id`(台帳) は mapper でも設定されず**事実上デッド**。残置が混乱を招く。
 3. **UI/導線が束ねを十分表現していない**: 個別利用許諾条件書フォームは「1原作・1軸素材」中心。WMC でコピー導線は足したが、「**複数の構成素材（原作由来＋委託制作イラスト）を並べ、各々に条件束を付ける**」という NewIto 型の導線が未整備。
 
+## 4.5 Category（マテリアルを束ねる分類）の検討【決定保留・2026-06-26 追記】
+
+「原作の定義として、マテリアルを束ねる **Category**（オリジナルゲームデザイン / イラスト / グラフィックデザイン …）を設けては」という提起。
+
+### 現状（既に分類軸は存在）
+- `work_materials.material_type` / `materials.material_type`（VARCHAR(50)・自由運用）が**実質の分類軸**。
+- 既存語彙（UI `MATERIAL_TYPES` @ WorkModelPanel）: 翻訳 / イラスト / シナリオ / デザイン / 音楽 / テキスト / データ / その他。
+- → ご提案は、この `material_type` を**業務に合う Category として正式化**する話に対応する。
+
+### 2案
+- **(1) Category＝`material_type` 属性（既存の正式化）**: 原作 →(group by material_type)→ 素材。新テーブル不要。権利者・条件は素材単位のまま。UI で Category 別グルーピング表示。低リスク。
+- **(2) Category＝実体テーブル `material_categories`(source_ip_id, name, sort, rights_holder?, …)**: `work_materials.category_id` で参照。Category 単位で **権利者 / 共有ライセンス条件 / 表示順** を持てる。属性→実体は後から昇格可。
+
+### 語彙案（正式化する場合）
+`game_design`(オリジナルゲームデザイン) / `illustration`(イラスト) / `graphic_design`(グラフィックデザイン) / `scenario`(シナリオ) / `music`(音楽) / `translation`(翻訳) / `text`(テキスト) / `data`(データ) / `other`(その他)
+- 既存 `design` は `game_design` / `graphic_design` に分割（移行は `design`→いずれかへ手当て or 当面併存）。
+
+### NewIto への効き方
+- 構成素材を **Category 別に束ねて**表示（オリジナルゲームデザイン＝原作Ito由来コピー、イラスト＝委託制作の新規条件）。WTC-1 のフォーム導線でそのまま使える。
+
+### 判断基準（=未決の核）
+**Category が自前データ（カテゴリ単位の権利者・共有条件・並び順）を持つ必要があるか？**
+- 持たない → (1) 属性で十分。
+- 持つ（例: 「イラストは絵師A、ゲームデザインは別ライセンサー」をカテゴリ単位で一括管理し条件も共有）→ (2) 実体テーブル。
+- 現時点では **(1) から入り、共有要件が明確化したら (2) へ昇格**が安全（WTC 方針＝大規模作り直し回避と整合）。
+
 ## 5. 方針の選択肢
 
 ### (A) モデル統合（すっきり化・構造変更）
@@ -89,6 +115,7 @@ works: NewIto (own)
 - O2. 委託制作イラストの素材は **どの作品配下に作るか**（NewIto 直下の work_material か、原作Ito 配下か）。NewIto 直下＝`acquisition_type='buyout_commission'` が素直。
 - O3. (A) の移行で台帳 `materials` を完全廃止するか、当面「表示名カタログ」として残すか。
 - O4. `condition_lines.material_id` を参照している箇所が本当に無いか（DROP 前に全棚卸し）。
+- O5. **Category（§4.5）**: 分類ラベル（属性案(1)）か、自前データを持つ実体（案(2)）か。語彙正式化（`game_design`/`graphic_design` 分割等）の要否。**決定保留**。
 
 ## 9. 結論
 
