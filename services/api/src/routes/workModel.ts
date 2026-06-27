@@ -948,6 +948,88 @@ export function registerWorkModelRoutes(
   //     相手方(license/joint) → license_condition_id(利用許諾条件明細)
   //     当社(owned/copyright_assignment) → service_line_item_id(業務委託明細)
   //   へ繋ぐ。
+  // PLW-D: 作品1:文書N:明細N の集約。ある作品に「明細単位で」帰属する
+  //   文書/明細/利用許諾条件を、文書(capability)ごとにまとめて返す。
+  //   帰属キーは capability_line_items.work_id / condition_lines.work_id(0084)。
+  app.get("/api/v3/works/:id/attributions", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const wk = await query(
+        `SELECT id, work_code, title, kind FROM works WHERE id = $1`,
+        [id]
+      );
+      if (wk.rows.length === 0) {
+        return res.status(404).json({ ok: false, error: "作品が見つかりません" });
+      }
+      // 明細(業務/発注)
+      const li = await query(
+        `SELECT cli.capability_id, cc.document_number, cc.contract_title, cc.record_type,
+                cli.line_no, cli.item_name, cli.amount_ex_tax,
+                cli.deliverable_ownership, cli.calc_method
+           FROM capability_line_items cli
+           JOIN contract_capabilities cc ON cc.id = cli.capability_id
+          WHERE cli.work_id = $1
+          ORDER BY cc.document_number NULLS LAST, cli.line_no`,
+        [id]
+      );
+      // 利用許諾条件(明細)
+      const cl = await query(
+        `SELECT cl.capability_id, cc.document_number, cc.contract_title, cc.record_type,
+                cl.line_no, cl.subject, cfc.condition_name, cfc.condition_no,
+                cl.payment_scheme, cl.rate_pct, cl.amount_ex_tax, cl.calc_method
+           FROM condition_lines cl
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+          WHERE cl.work_id = $1
+          ORDER BY cc.document_number NULLS LAST, cl.line_no`,
+        [id]
+      );
+      // capability_id ごとに文書へ束ねる。
+      const byCap = new Map<number, any>();
+      const ensure = (r: any) => {
+        const cid = Number(r.capability_id);
+        if (!byCap.has(cid)) {
+          byCap.set(cid, {
+            capability_id: cid,
+            document_number: r.document_number || null,
+            contract_title: r.contract_title || null,
+            record_type: r.record_type || null,
+            line_items: [],
+            conditions: [],
+          });
+        }
+        return byCap.get(cid);
+      };
+      for (const r of li.rows) {
+        ensure(r).line_items.push({
+          line_no: r.line_no,
+          item_name: r.item_name,
+          amount_ex_tax: r.amount_ex_tax,
+          deliverable_ownership: r.deliverable_ownership,
+          calc_method: r.calc_method,
+        });
+      }
+      for (const r of cl.rows) {
+        ensure(r).conditions.push({
+          line_no: r.line_no,
+          condition_no: r.condition_no,
+          label: r.condition_name || r.subject || null,
+          payment_scheme: r.payment_scheme,
+          rate_pct: r.rate_pct,
+          amount_ex_tax: r.amount_ex_tax,
+          calc_method: r.calc_method,
+        });
+      }
+      const documents = Array.from(byCap.values()).sort((a, b) =>
+        String(a.document_number || "").localeCompare(String(b.document_number || ""))
+      );
+      res.json({ ok: true, work: wk.rows[0], documents });
+    } catch (e) { fail(res, e); }
+  });
+
   app.get("/api/v3/works/:id/materials", ...requireRead, async (req, res) => {
     try {
       const id = Number(req.params.id);
@@ -1181,6 +1263,71 @@ export function registerWorkModelRoutes(
       res.json(r.rows);
     } catch (e) { fail(res, e); }
   });
+
+  // WMC-1: 原作素材(material_code)を跨いだ「条件コピー元候補」一覧。
+  //   既存 GET .../materials/:mid/condition-lines は work_materials.id(行スコープ)で絞るため、
+  //   同じ原作素材に登録した別作品の条件を引けない。ここでは安定キー material_code で
+  //   横断する。material_code は ledgers.materials / work_materials の双方でミラーされる
+  //   グローバル一意キー(=`<ledger_code>-NNN`)で、source_ip_material_id が未設定の
+  //   新規素材でも確実にマッチする。フォームは選択中素材の material_code をそのまま渡せる。
+  //   返却 shape はフォームの FinancialCondition にそのまま流し込める cfc 列で構成する。
+  //   - is_template: 原作登録器(MLC-, source_system='master_register')由来 = L1 テンプレ。
+  //     O6 によりコピー元は L1 を優先表示する(is_template DESC)。
+  //   - source_condition_id / source_condition_line_id: コピー痕跡(O4)用の参照。
+  //   query: ?exclude_capability_id= でコピー先(編集中の文書)自身の既存条件を除外できる。
+  app.get(
+    "/api/v3/materials/by-code/:materialCode/copy-source-conditions",
+    ...requireRead,
+    async (req, res) => {
+      try {
+        const materialCode = String(req.params.materialCode || "").trim();
+        if (!materialCode) {
+          return res.status(400).json({ ok: false, error: "invalid materialCode" });
+        }
+        const excludeCapId =
+          req.query.exclude_capability_id == null ||
+          req.query.exclude_capability_id === ""
+            ? null
+            : Number(req.query.exclude_capability_id);
+        const params: any[] = [materialCode];
+        let excludeClause = "";
+        if (excludeCapId != null && Number.isFinite(excludeCapId)) {
+          params.push(excludeCapId);
+          excludeClause = ` AND cl.capability_id <> $${params.length}`;
+        }
+        const r = await query(
+          `SELECT
+                  cl.id                          AS source_condition_line_id,
+                  cl.source_work_id,
+                  cl.capability_id,
+                  cfc.id                         AS source_condition_id,
+                  cc.document_number, cc.contract_title,
+                  (COALESCE(cc.source_system,'') = 'master_register') AS is_template,
+                  w.work_code                    AS origin_work_code,
+                  w.title                        AS origin_work_title,
+                  wm.id                          AS work_material_id,
+                  wm.material_code, wm.material_name,
+                  -- フォーム FinancialCondition へコピーする金銭条件フィールド
+                  cfc.condition_no, cfc.condition_name,
+                  cfc.region_territory, cfc.region_language, cfc.region_language_label,
+                  cfc.calc_method, cfc.calc_type, cfc.fixed_kind, cfc.subscription_cycle,
+                  cfc.unit_amount, cfc.guarantee_type, cfc.rate_pct, cfc.base_price_label,
+                  cfc.calc_period, cfc.calc_period_kind, cfc.calc_period_close_month,
+                  cfc.currency, cfc.formula_text, cfc.payment_terms,
+                  cfc.mg_amount, cfc.ag_amount, cfc.applies_scope
+             FROM condition_lines cl
+             JOIN work_materials wm ON wm.id = cl.source_material_id
+             JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+             LEFT JOIN works w ON w.id = wm.work_id
+            WHERE wm.material_code = $1${excludeClause}
+            ORDER BY is_template DESC, cc.id DESC, cfc.condition_no NULLS LAST, cl.id`,
+          params
+        );
+        res.json(r.rows);
+      } catch (e) { fail(res, e); }
+    }
+  );
 
   // 利用許諾条件書(契約マスター, license カテゴリ)の検索 — マテリアル条件登録の「文書を選んで補完」用。
   //   合成の MLC- 器(source_system='master_register')は候補から除外し、実在の条件書だけ返す。
