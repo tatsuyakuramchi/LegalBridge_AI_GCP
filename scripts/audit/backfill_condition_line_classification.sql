@@ -35,6 +35,8 @@ SELECT cl.id,
        cc.contract_category,
        cc.vendor_id AS capability_vendor_id,
        parent_cc.vendor_id AS parent_capability_vendor_id,
+       doc_vendor.id AS document_vendor_id,
+       doc_vendor.vendor_name AS document_vendor_name,
        CASE
          WHEN cc.record_type = 'purchase_order' THEN 'service'
          WHEN cc.contract_category = 'service' THEN 'service'
@@ -46,12 +48,30 @@ SELECT cl.id,
          ELSE NULL
        END AS suggested_transaction_kind,
        CASE
-         WHEN COALESCE(cc.vendor_id, parent_cc.vendor_id) IS NOT NULL THEN COALESCE(cc.vendor_id, parent_cc.vendor_id)
+         WHEN COALESCE(cc.vendor_id, parent_cc.vendor_id, doc_vendor.id) IS NOT NULL THEN COALESCE(cc.vendor_id, parent_cc.vendor_id, doc_vendor.id)
          ELSE NULL
        END AS suggested_counterparty_vendor_id
   FROM condition_lines cl
   LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
   LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
+  LEFT JOIN documents d ON d.document_number = cc.document_number
+  LEFT JOIN legal_requests lr ON lr.backlog_issue_key = COALESCE(cc.backlog_issue_key, d.issue_key)
+  LEFT JOIN LATERAL (
+    SELECT v.id, v.vendor_name
+      FROM vendors v
+     WHERE LOWER(BTRIM(v.vendor_name)) = LOWER(BTRIM(COALESCE(
+             NULLIF(d.form_data->>'vendor_name', ''),
+             NULLIF(d.form_data->>'vendorName', ''),
+             NULLIF(d.form_data->>'VENDOR_NAME', ''),
+             NULLIF(d.form_data->>'counterparty', ''),
+             NULLIF(d.form_data->>'licensor', ''),
+             NULLIF(d.form_data->>'licensor_name', ''),
+             NULLIF(d.form_data->>'Licensor_名称', ''),
+             NULLIF(lr.counterparty, '')
+           )))
+     ORDER BY v.id
+     LIMIT 1
+  ) doc_vendor ON TRUE
  WHERE cl.transaction_kind IS NULL
     OR cl.counterparty_vendor_id IS NULL;
 
@@ -82,7 +102,9 @@ SELECT id,
        record_type,
        contract_category,
        capability_vendor_id,
-       parent_capability_vendor_id
+       parent_capability_vendor_id,
+       document_vendor_id,
+       document_vendor_name
   FROM condition_line_classification_candidates
  WHERE current_transaction_kind IS NULL
    AND suggested_transaction_kind IS NULL
@@ -97,7 +119,9 @@ SELECT id,
        record_type,
        contract_category,
        capability_vendor_id,
-       parent_capability_vendor_id
+       parent_capability_vendor_id,
+       document_vendor_id,
+       document_vendor_name
   FROM condition_line_classification_candidates
  WHERE current_counterparty_vendor_id IS NULL
    AND suggested_counterparty_vendor_id IS NULL

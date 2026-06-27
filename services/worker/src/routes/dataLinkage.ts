@@ -252,14 +252,58 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
         `SELECT COUNT(*)::int AS n
            FROM condition_lines
           WHERE transaction_kind IS NULL OR counterparty_vendor_id IS NULL`,
-        `SELECT payment_scheme,
-                COUNT(*)::int AS n,
-                COUNT(*) FILTER (WHERE transaction_kind IS NULL)::int AS transaction_kind_null,
-                COUNT(*) FILTER (WHERE counterparty_vendor_id IS NULL)::int AS counterparty_vendor_id_null
-           FROM condition_lines
-          WHERE transaction_kind IS NULL OR counterparty_vendor_id IS NULL
-          GROUP BY payment_scheme
-          ORDER BY n DESC
+        `SELECT cl.id,
+                cl.line_code,
+                cl.payment_scheme,
+                cl.transaction_kind,
+                cl.counterparty_vendor_id,
+                cc.document_number,
+                cc.backlog_issue_key AS issue_key,
+                cc.record_type,
+                cc.contract_category,
+                cc.vendor_id AS capability_vendor_id,
+                cv.vendor_name AS capability_vendor_name,
+                cc.parent_capability_id,
+                parent_cc.vendor_id AS parent_vendor_id,
+                pv.vendor_name AS parent_vendor_name,
+                d.issue_key AS document_issue_key,
+                lr.counterparty AS legal_request_counterparty,
+                COALESCE(
+                  NULLIF(d.form_data->>'vendor_name', ''),
+                  NULLIF(d.form_data->>'vendorName', ''),
+                  NULLIF(d.form_data->>'VENDOR_NAME', ''),
+                  NULLIF(d.form_data->>'counterparty', ''),
+                  NULLIF(d.form_data->>'licensor', ''),
+                  NULLIF(d.form_data->>'licensor_name', ''),
+                  NULLIF(d.form_data->>'Licensor_名称', '')
+                ) AS document_counterparty,
+                doc_vendor.id AS document_vendor_id,
+                doc_vendor.vendor_name AS document_vendor_name
+           FROM condition_lines cl
+           LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
+           LEFT JOIN documents d ON d.document_number = cc.document_number
+           LEFT JOIN legal_requests lr ON lr.backlog_issue_key = COALESCE(cc.backlog_issue_key, d.issue_key)
+           LEFT JOIN vendors cv ON cv.id = cc.vendor_id
+           LEFT JOIN vendors pv ON pv.id = parent_cc.vendor_id
+           LEFT JOIN LATERAL (
+             SELECT v.id, v.vendor_name
+               FROM vendors v
+              WHERE LOWER(BTRIM(v.vendor_name)) = LOWER(BTRIM(COALESCE(
+                      NULLIF(d.form_data->>'vendor_name', ''),
+                      NULLIF(d.form_data->>'vendorName', ''),
+                      NULLIF(d.form_data->>'VENDOR_NAME', ''),
+                      NULLIF(d.form_data->>'counterparty', ''),
+                      NULLIF(d.form_data->>'licensor', ''),
+                      NULLIF(d.form_data->>'licensor_name', ''),
+                      NULLIF(d.form_data->>'Licensor_名称', ''),
+                      NULLIF(lr.counterparty, '')
+                    )))
+              ORDER BY v.id
+              LIMIT 1
+           ) doc_vendor ON TRUE
+          WHERE cl.transaction_kind IS NULL OR cl.counterparty_vendor_id IS NULL
+          ORDER BY cl.id
           LIMIT 8`
       ),
       probe(
@@ -738,12 +782,30 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
             const v = await client.query(
               `WITH candidates AS (
                  SELECT cl.id,
-                        COALESCE(cc.vendor_id, parent_cc.vendor_id) AS suggested_counterparty_vendor_id
+                        COALESCE(cc.vendor_id, parent_cc.vendor_id, doc_vendor.id) AS suggested_counterparty_vendor_id
                    FROM condition_lines cl
                    LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
                    LEFT JOIN contract_capabilities parent_cc ON parent_cc.id = cc.parent_capability_id
+                   LEFT JOIN documents d ON d.document_number = cc.document_number
+                   LEFT JOIN legal_requests lr ON lr.backlog_issue_key = COALESCE(cc.backlog_issue_key, d.issue_key)
+                   LEFT JOIN LATERAL (
+                     SELECT v.id
+                       FROM vendors v
+                      WHERE LOWER(BTRIM(v.vendor_name)) = LOWER(BTRIM(COALESCE(
+                              NULLIF(d.form_data->>'vendor_name', ''),
+                              NULLIF(d.form_data->>'vendorName', ''),
+                              NULLIF(d.form_data->>'VENDOR_NAME', ''),
+                              NULLIF(d.form_data->>'counterparty', ''),
+                              NULLIF(d.form_data->>'licensor', ''),
+                              NULLIF(d.form_data->>'licensor_name', ''),
+                              NULLIF(d.form_data->>'Licensor_名称', ''),
+                              NULLIF(lr.counterparty, '')
+                            )))
+                      ORDER BY v.id
+                      LIMIT 1
+                   ) doc_vendor ON TRUE
                   WHERE cl.counterparty_vendor_id IS NULL
-                    AND COALESCE(cc.vendor_id, parent_cc.vendor_id) IS NOT NULL
+                    AND COALESCE(cc.vendor_id, parent_cc.vendor_id, doc_vendor.id) IS NOT NULL
                   ORDER BY cl.id
                   LIMIT $1
                )
