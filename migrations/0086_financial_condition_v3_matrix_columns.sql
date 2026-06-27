@@ -1,4 +1,4 @@
--- 0083_financial_condition_v3_matrix_columns.sql
+-- 0086_financial_condition_v3_matrix_columns.sql
 -- 個別利用許諾条件 v3(マトリクス構造) Stage A: 取引形態(capability_financial_conditions)へ列追加。
 --   設計: docs/design/individual-license-terms-v3-migration-plan.md §3
 --
