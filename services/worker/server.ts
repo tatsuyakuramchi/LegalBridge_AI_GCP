@@ -5745,6 +5745,18 @@ ${details}
     }
     if (!materialId) return false;
 
+    // 引用した既存マテリアルがロイヤリティ対象セルを得たら、材料フラグを true へ昇格。
+    //   (買切由来Bが利用許諾セルを持つ等)。昇格のみ・降格はしない
+    //   (他作品でロイヤリティを持つ材料のフラグを巻き戻さないため)。
+    if (o.isRoyaltyBearing) {
+      await query(
+        `UPDATE work_materials
+            SET is_royalty_bearing = TRUE, updated_at = now()
+          WHERE id = $1 AND COALESCE(is_royalty_bearing, FALSE) = FALSE`,
+        [materialId]
+      );
+    }
+
     await query(
       `UPDATE condition_lines
           SET source_work_id = $2,
