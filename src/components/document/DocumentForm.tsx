@@ -1462,12 +1462,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         </FormSection>
         )}
 
-        {/* 3-2. 金銭条件（条件明細）＋ 原作マテリアルへの紐づけ。
-            入力順「作品 → 原作 → 軸マテリアル → 金銭条件 → 紐づけ」に沿わせ、条件入力の直後に
-            紐づけを置く（旧 §6 から移設）。金銭条件は作品連動 OFF(NDA等)でも必要なので常時表示。
-            紐づけのみ作品連動 ON で表示。 */}
+        {/* 旧・金銭条件（フラット）＋ 原作マテリアルへの紐づけ。
+            個別利用許諾の入力は v3 マトリクス（下の「金銭条件（v3）」）へ一本化したため、
+            新規作成では非表示。既存データ(financial_conditions)を持つレガシー文書の編集時のみ
+            表示し、過去データの閲覧・修正を可能にする。 */}
+        {Array.isArray(formData.financial_conditions) &&
+          (formData.financial_conditions as any[]).length > 0 && (
         <FormSection
-          title="3-2. 金銭条件（条件明細）— 対価・支払条件"
+          title="（旧）金銭条件（フラット・レガシー編集用）"
           variant="indigo"
           icon={<Coins className="w-4 h-4" />}
           headerActions={
@@ -1614,13 +1616,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             </div>
           )}
         </FormSection>
+        )}
 
-        {/* Stage B(v3移植): 個別利用許諾条件 v3 のマトリクス入力（取引形態 × 構成要素LC）。
-            formData.v3_conds / v3_lcs を produce（worker context builder の入力契約）。
-            現状は新構造の入力を捕捉するのみ（生成・登録の v3 切替は Stage C）。 */}
+        {/* 3-2. 個別利用許諾の金銭条件は v3 マトリクス（取引形態 × 構成要素LC）に一本化。
+            formData.v3_conds / v3_lcs を produce（worker context builder の入力契約）。 */}
         {(templateId === 'individual_license_terms' || templateId === 'lic_individual') && (
           <FormSection
-            title="3-3. v3 マトリクス入力（取引形態 × 構成要素）"
+            title="3-2. 金銭条件（v3 マトリクス：取引形態 × 構成要素）"
             variant="indigo"
             icon={<Coins className="w-4 h-4" />}
             headerActions={
