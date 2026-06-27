@@ -77,6 +77,8 @@ import {
   conditionLineInsertValues,
   CONDITION_LINE_COLUMNS,
 } from "./src/lib/conditionLineMapper.ts";
+// 雛形プレビュー用 v3 サンプルデータ（個別利用許諾 v3 テンプレの sample-preview に使う）。
+import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
@@ -16714,6 +16716,20 @@ ${details}
   };
 
   function buildSampleDocumentData(type: string) {
+    // v3 マトリクステンプレのプレビューは専用サンプル（取引形態×構成要素LC、跨ぎ原作）。
+    //   renderHtml が type=individual_license_terms_v3 で v3 context を適用するため、
+    //   top-level に v3_conds/v3_lcs ＋ ヘッダ日本語キーを持たせる。
+    if (type === "individual_license_terms_v3") {
+      return {
+        issueKey: "SAMPLE-1",
+        documentNumber: "LIC-LO-2026-0015-ILT-0001",
+        summary: "個別利用許諾条件書 v3（マトリクス）サンプル",
+        requester: "LegalBridge Sample",
+        date: new Date().toLocaleDateString("ja-JP"),
+        ...v3SampleFormData(),
+        details: {},
+      };
+    }
     const metadata = loadTemplateMetadata();
     const vars = metadata[type]?.vars || {};
     const templateVars = documentService.getTemplateVariables(type as any);
