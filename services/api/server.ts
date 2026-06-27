@@ -749,6 +749,16 @@ async function startServer() {
     requireIapUser({ renderErrorPage }),
     async (_req, res) => {
       try {
+        // 雛形プレビューで非表示にするテンプレ（旧版を隠し v3 へ寄せる等）。
+        //   個別利用許諾の旧フラット版は v3（individual_license_terms_v3）に置換するため
+        //   一覧から除外する。生成（後方互換）には影響しない（disk フォールバックで継続）。
+        const HIDDEN_PREVIEW_TYPES = new Set(["individual_license_terms"]);
+        // config(metadata) に載せない DB-only テンプレの表示名（proxy モードで型名直出しを防ぐ）。
+        //   v3 は作成可能フォーム型として誤出現させないため config 非掲載 → ここで表示名を補う。
+        const LABEL_OVERRIDES: Record<string, { label: string; category: string }> = {
+          individual_license_terms_v3: { label: "個別利用許諾条件書（v3 マトリクス）", category: "License" },
+        };
+
         // Phase 2 / B2: TEMPLATE_SOURCE=db で worker proxy を撤去し
         //   document_templates を DB 直読(Search 独立)。既定は従来 proxy=可逆。
         if (process.env.TEMPLATE_SOURCE === "db") {
@@ -758,11 +768,13 @@ async function startServer() {
               WHERE kind = 'document' AND is_active = true
               ORDER BY template_key`
           );
-          const templates = result.rows.map((r: any) => ({
-            type: r.type,
-            label: r.label || "",
-            category: r.category || "",
-          }));
+          const templates = result.rows
+            .map((r: any) => ({
+              type: r.type,
+              label: r.label || "",
+              category: r.category || "",
+            }))
+            .filter((t: any) => !HIDDEN_PREVIEW_TYPES.has(t.type));
           res.json({ ok: true, templates });
           return;
         }
@@ -776,11 +788,12 @@ async function startServer() {
         const metadata = metadataRes.ok ? ((await metadataRes.json()) as Record<string, any>) : {};
         const templates = templateTypes
           .filter((type) => !type.includes("/") && !type.startsWith("partials"))
+          .filter((type) => !HIDDEN_PREVIEW_TYPES.has(type))
           .sort((a, b) => a.localeCompare(b))
           .map((type) => ({
             type,
-            label: metadata[type]?.label || "",
-            category: metadata[type]?.category || "",
+            label: metadata[type]?.label || LABEL_OVERRIDES[type]?.label || "",
+            category: metadata[type]?.category || LABEL_OVERRIDES[type]?.category || "",
           }));
         res.json({ ok: true, templates });
       } catch (error) {
