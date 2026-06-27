@@ -183,19 +183,28 @@ async function getRoyaltyConditionEconomics(
   cfcId: number
 ): Promise<{ rate_pct: number; mg_amount: number; ag_amount: number; currency: string } | null> {
   try {
+    // Stage C-3 (加算型): 1取引形態(cfc)が複数の condition_line(LC別セル)に分解される。
+    //   適用料率 = Σ(セル rate_pct)。mg/ag/currency は代表行(最小 line_no)から取得
+    //   (分解時、mg/ag は代表行のみが保持し他行は 0 のため二重計上しない)。
+    //   非加算型 / 旧データは1行のため、Σ=その行の rate / 代表=その行 で挙動不変。
     const cl = await query(
       `SELECT rate_pct, mg_amount, COALESCE(ag_amount, 0) AS ag_amount, currency
          FROM condition_lines
         WHERE source_condition_id = $1
-        LIMIT 1`,
+        ORDER BY line_no, id`,
       [cfcId]
     );
     if (cl.rows.length) {
+      const rateSum = cl.rows.reduce(
+        (s: number, r: any) => s + (Number(r.rate_pct) || 0),
+        0
+      );
+      const primary = cl.rows[0];
       return {
-        rate_pct: Number(cl.rows[0].rate_pct) || 0,
-        mg_amount: Number(cl.rows[0].mg_amount) || 0,
-        ag_amount: Number(cl.rows[0].ag_amount) || 0,
-        currency: cl.rows[0].currency || "JPY",
+        rate_pct: rateSum,
+        mg_amount: Number(primary.mg_amount) || 0,
+        ag_amount: Number(primary.ag_amount) || 0,
+        currency: primary.currency || "JPY",
       };
     }
   } catch (err: any) {
