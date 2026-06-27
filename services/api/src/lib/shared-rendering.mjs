@@ -240,6 +240,23 @@ export function buildSampleData(fieldSchema, html, label) {
     other_fees: [
       { line_no: 1, fee_name: "サンプル手数料", amount: 10000, remarks: "任意手数料" },
     ],
+    // 個別利用許諾条件書ほか financial_conditions[] を描画するテンプレ用の金銭条件サンプル。
+    financial_conditions: [
+      {
+        condition_no: 1, condition_name: "自社製造・直接販売",
+        region_territory: "日本国内", region_language: "日本語", region_language_label: "日本国内・日本語",
+        calc_type: "BASE_QTY_RATE", calc_method: "基準価格 × 個数 × 料率",
+        base_price_label: "上代（MSRP）", rate_pct: 5, mg_amount: 100000, ag_amount: 0, currency: "JPY",
+        payment_terms: "毎四半期末締め翌月末日払い", formula_text: "基準価格 × 個数 × 5%",
+      },
+      {
+        condition_no: 2, condition_name: "国内・海外展開（ライセンスアウト型）",
+        region_territory: "全世界", region_language: "全言語", region_language_label: "全世界・全言語",
+        calc_type: "BASE_RATE", calc_method: "受領ライセンス料 × 料率",
+        base_price_label: "受領サブライセンス料", rate_pct: 50, mg_amount: 0, ag_amount: 0, currency: "JPY",
+        payment_terms: "毎半期末締め翌月末日払い", formula_text: "受領サブライセンス料 × 50%",
+      },
+    ],
     CHANGE_RECORDS: details.CHANGE_RECORDS || "2026-05-24|検収金額|100000|80000|一部不合格のため減額",
   });
 
