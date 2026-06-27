@@ -610,10 +610,14 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
   const [busy, setBusy] = React.useState(false)
   const [svc, setSvc] = React.useState<Row[]>([])
   const [svcq, setSvcq] = React.useState("")
+  // Category(2): ジャンル単位カテゴリ(権利者/表示名/並び順を一元管理)。
+  const [cats, setCats] = React.useState<Row[]>([])
+  const [catForm, setCatForm] = React.useState<Row | null>(null)
 
   const load = React.useCallback(async () => {
     try { setRows(await getJson(`/api/v3/works/${workId}/materials`)) } catch { setRows([]) }
     try { setConds(await getJson(`/api/v3/works/${workId}/conditions`)) } catch { setConds([]) }
+    try { setCats(await getJson(`/api/v3/works/${workId}/material-categories`)) } catch { setCats([]) }
   }, [workId])
   React.useEffect(() => { load() }, [load])
 
@@ -660,6 +664,40 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
     try { await sendJson("DELETE", `/api/v3/work-materials/${mid}`, {}); await load() }
     catch (e: any) { showNotification(`削除に失敗: ${e?.message || e}`, "error") }
   }
+  const saveCat = async () => {
+    if (!catForm?.id) return
+    setBusy(true)
+    try {
+      await sendJson("PUT", `/api/v3/material-categories/${catForm.id}`, {
+        name: catForm.name || null,
+        rights_holder_vendor_id: catForm.rights_holder_vendor_id ? Number(catForm.rights_holder_vendor_id) : null,
+        rights_holder_label: catForm.rights_holder_label || null,
+        sort_order: catForm.sort_order != null && catForm.sort_order !== "" ? Number(catForm.sort_order) : null,
+      })
+      showNotification("カテゴリを更新しました", "success")
+      setCatForm(null); await load()
+    } catch (e: any) {
+      showNotification(`保存に失敗: ${e?.message || e}`, "error")
+    } finally { setBusy(false) }
+  }
+  // category_id ごとに素材をグループ化(カテゴリは sort_order 順、未分類は末尾)。
+  const grouped = React.useMemo(() => {
+    const byCat = new Map<number | string, Row[]>()
+    for (const m of rows || []) {
+      const k = m.category_id ?? "__none__"
+      if (!byCat.has(k)) byCat.set(k, [])
+      byCat.get(k)!.push(m)
+    }
+    const ordered: { cat: Row | null; items: Row[] }[] = []
+    for (const c of cats) {
+      const items = byCat.get(c.id) || []
+      ordered.push({ cat: c, items })
+      byCat.delete(c.id)
+    }
+    const none = byCat.get("__none__")
+    if (none && none.length) ordered.push({ cat: null, items: none })
+    return ordered.filter((g) => g.items.length > 0 || g.cat)
+  }, [rows, cats])
   const condLabel = (c: Row) => `#${c.condition_no} ${c.source_work_title ? c.source_work_title : ""}${c.rate_pct != null ? ` (${c.rate_pct}%)` : ""}`
   const rtLabel = (rt: string) => RIGHTS_TYPES.find(([v]) => v === rt)?.[1] || rt || "—"
   const mtLabel = (mt: string) => genreLabel(mt)
@@ -679,34 +717,86 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
             </tr>
           </thead>
           <tbody>
-            {rows.map((m) => (
-              <tr key={m.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
-                <td className="min-w-[100px]">{matDisplay(m.material_code, srcTitle, m.material_name)}</td>
-                <td>
-                  {mtLabel(m.material_type)}
-                  {m.material_role ? <span className="ml-1 text-[9px] text-muted-foreground">({roleLabel(m.material_role)})</span> : null}
-                </td>
-                <td>{rtLabel(m.rights_type)}</td>
-                <td className="min-w-[100px]">{m.rights_holder_name || (m.rights_holder_vendor_id ? `#${m.rights_holder_vendor_id}` : "—")}</td>
-                <td className="text-[10px]">
-                  {m.license_condition_id
-                    ? `利用許諾 #${m.license_condition_no ?? m.license_condition_id}`
-                    : m.service_line_item_id
-                      ? <>
-                          {`業務委託 ${m.service_doc_number || ""}${m.service_line_name ? "/" + m.service_line_name : ""}`}
-                          {m.service_inspection_status ? <span className="ml-1">{inspLabel(m.service_inspection_status)}</span> : null}
-                        </>
-                      : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "(業務委託未設定)"}
-                </td>
-                <td className="whitespace-nowrap text-right">
-                  <button className="text-[10px] underline mr-2" onClick={() => setForm({ id: m.id, material_name: m.material_name || "", material_type: m.material_type || "", material_role: m.material_role || "", rights_type: m.rights_type || "", rights_holder_vendor_id: m.rights_holder_vendor_id || "", is_royalty_bearing: !!m.is_royalty_bearing, license_condition_id: m.license_condition_id || "", service_line_item_id: m.service_line_item_id || "" })}>編集</button>
-                  <button className="text-[10px] underline text-destructive" onClick={() => del(Number(m.id))}>削除</button>
-                </td>
-              </tr>
-            ))}
+            {grouped.map((g) => {
+              const cat = g.cat
+              const catLabel = cat ? (cat.name || genreLabel(cat.genre)) : "未分類"
+              const catHolder = cat?.rights_holder_name || cat?.rights_holder_label || ""
+              return (
+                <React.Fragment key={cat ? `c${cat.id}` : "none"}>
+                  {cat ? (
+                    <tr className="bg-muted/30 border-t border-border/60">
+                      <td colSpan={6} className="py-1 pr-2">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[10px] font-bold">{catLabel}</span>
+                          <span className="text-[9px] text-muted-foreground">権利者: {catHolder || "（素材ごと）"}</span>
+                          <button className="text-[9px] underline text-muted-foreground" onClick={() => setCatForm({ id: cat.id, genre: cat.genre, name: cat.name || "", rights_holder_vendor_id: cat.rights_holder_vendor_id || "", rights_holder_label: cat.rights_holder_label || "", sort_order: cat.sort_order ?? "" })}>カテゴリ編集</button>
+                        </div>
+                      </td>
+                    </tr>
+                  ) : null}
+                  {g.items.map((m) => {
+                    const ownRH = m.rights_holder_vendor_id || (m.rights_holder_label && String(m.rights_holder_label).trim())
+                    const effName = m.effective_rights_holder_name || m.rights_holder_name || m.effective_rights_holder_label
+                    return (
+                      <tr key={m.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
+                        <td className="min-w-[100px]">{matDisplay(m.material_code, srcTitle, m.material_name)}</td>
+                        <td>
+                          {mtLabel(m.material_type)}
+                          {m.material_role ? <span className="ml-1 text-[9px] text-muted-foreground">({roleLabel(m.material_role)})</span> : null}
+                        </td>
+                        <td>{rtLabel(m.rights_type)}</td>
+                        <td className="min-w-[100px]">
+                          {effName || "—"}
+                          {!ownRH && effName ? <span className="ml-1 text-[9px] text-muted-foreground">(カテゴリ)</span> : null}
+                        </td>
+                        <td className="text-[10px]">
+                          {m.license_condition_id
+                            ? `利用許諾 #${m.license_condition_no ?? m.license_condition_id}`
+                            : m.service_line_item_id
+                              ? <>
+                                  {`業務委託 ${m.service_doc_number || ""}${m.service_line_name ? "/" + m.service_line_name : ""}`}
+                                  {m.service_inspection_status ? <span className="ml-1">{inspLabel(m.service_inspection_status)}</span> : null}
+                                </>
+                              : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "(業務委託未設定)"}
+                        </td>
+                        <td className="whitespace-nowrap text-right">
+                          <button className="text-[10px] underline mr-2" onClick={() => setForm({ id: m.id, material_name: m.material_name || "", material_type: m.material_type || "", material_role: m.material_role || "", rights_type: m.rights_type || "", rights_holder_vendor_id: m.rights_holder_vendor_id || "", is_royalty_bearing: !!m.is_royalty_bearing, license_condition_id: m.license_condition_id || "", service_line_item_id: m.service_line_item_id || "" })}>編集</button>
+                          <button className="text-[10px] underline text-destructive" onClick={() => del(Number(m.id))}>削除</button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </React.Fragment>
+              )
+            })}
           </tbody>
         </table>
       )}
+      {catForm ? (
+        <div className="rounded-sm border border-indigo-300 bg-indigo-50/40 p-2 space-y-2">
+          <div className="text-[10px] font-mono uppercase tracking-wider text-indigo-700">
+            カテゴリ「{genreLabel(catForm.genre)}」を編集 — この権利者は配下素材に既定で適用
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">表示名（任意）</span>
+              <Input value={catForm.name || ""} onChange={(e) => setCatForm((f) => f && { ...f, name: e.target.value })} placeholder={genreLabel(catForm.genre)} className="h-7 text-xs" />
+            </label>
+            <label className="space-y-0.5">
+              <span className="text-[10px] text-muted-foreground">並び順</span>
+              <Input type="number" value={catForm.sort_order ?? ""} onChange={(e) => setCatForm((f) => f && { ...f, sort_order: e.target.value })} className="h-7 text-xs" />
+            </label>
+            <label className="space-y-0.5 col-span-2">
+              <span className="text-[10px] text-muted-foreground">カテゴリ権利者（取引先）</span>
+              <VendorSelectField value={catForm.rights_holder_vendor_id} onChange={(v) => setCatForm((f) => f && { ...f, rights_holder_vendor_id: v })} />
+            </label>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" size="sm" onClick={() => setCatForm(null)} disabled={busy}>キャンセル</Button>
+            <Button size="sm" onClick={saveCat} disabled={busy}>{busy ? "保存中…" : "カテゴリ更新"}</Button>
+          </div>
+        </div>
+      ) : null}
       <div className="rounded-sm border border-input bg-muted/20 p-2 space-y-2">
         <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
           {form.id ? `マテリアル #${form.id} を編集` : "マテリアルを追加"}
@@ -735,7 +825,7 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
             </NativeSelect>
           </label>
           <label className="space-y-0.5">
-            <span className="text-[10px] text-muted-foreground">権利者(取引先)</span>
+            <span className="text-[10px] text-muted-foreground">権利者(取引先・空=カテゴリ継承)</span>
             <VendorSelectField value={form.rights_holder_vendor_id} onChange={(v) => set("rights_holder_vendor_id", v)} />
           </label>
         </div>
