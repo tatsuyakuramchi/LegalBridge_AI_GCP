@@ -6173,12 +6173,33 @@ ${details}
         lineId = Number(ins.rows[0].id);
       }
 
-      // セルを該当LCの原作マテリアルへ結線＋作品構成へ組み込む。
+      // 跨ぎ原作対応: セルの material_code から所属原作を全体検索で解決する。
+      //   material_code は {原作code}-{NNN} でグローバル一意のため、コードから所属原作を
+      //   逆引きできる。既存材料が見つかればその原作配下で引用(別原作のB等)。無ければ
+      //   文書の原作へ新規作成(件名のみの新規LC)。これにより作品Cが複数原作の構成要素を
+      //   束ねられる(work_components は ownWorkId=作品C へ原作を跨いで組み込む)。
+      let cellOrigWorkId = o.origWorkId;
+      let cellLedgerCode: string = o.ledgerCode;
+      if (matCode) {
+        const owner = await query(
+          `SELECT wm.work_id, w.work_code
+             FROM work_materials wm
+             JOIN works w ON w.id = wm.work_id
+            WHERE wm.material_code = $1 LIMIT 1`,
+          [matCode]
+        );
+        if (owner.rows[0]?.work_id) {
+          cellOrigWorkId = Number(owner.rows[0].work_id);
+          cellLedgerCode = String(owner.rows[0].work_code || o.ledgerCode);
+        }
+      }
+
+      // セルを該当LCの原作マテリアルへ結線＋作品構成(作品C)へ組み込む。
       await ensureMaterialAndCompose({
         lineId,
-        origWorkId: o.origWorkId,
+        origWorkId: cellOrigWorkId,
         ownWorkId: o.ownWorkId,
-        ledgerCode: o.ledgerCode,
+        ledgerCode: cellLedgerCode,
         name: matName,
         rightsType: "license",
         acquisitionType: "license",

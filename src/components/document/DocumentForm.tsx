@@ -1636,6 +1636,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               onChangeLcs={(next) => setFormData({ ...formData, v3_lcs: next })}
               materials={selectedLedger?.materials || []}
               ledgerTitle={selectedLedger?.title}
+              ledgers={Array.isArray(allLedgers) ? allLedgers : []}
+              defaultLedgerId={selectedLedger?.id ?? formData.ledger_ref_id}
             />
           </FormSection>
         )}
