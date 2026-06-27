@@ -3164,12 +3164,17 @@ async function startServer() {
       const ids = ledgers.rows.map((l: any) => Number(l.id));
       const matsMap = new Map<number, any[]>();
       if (ids.length > 0) {
+        // マテリアル一本化(0089/0090): 子素材は正準表 work_materials から取得。
+        //   台帳(ledgers.id) ← works(licensed_in, work_code=ledger_code) ← work_materials。
         const mats = await query(
-          `SELECT id, ledger_id, material_no, material_code, material_name,
-                  material_type, rights_holder, remarks, is_default, is_active
-             FROM materials
-            WHERE ledger_id = ANY($1::int[])
-            ORDER BY ledger_id, material_no ASC`,
+          `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
+                  wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
+                  wm.is_default, TRUE AS is_active, wm.material_role
+             FROM work_materials wm
+             JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
+             JOIN ledgers l ON l.ledger_code = w.work_code
+            WHERE l.id = ANY($1::int[])
+            ORDER BY l.id, wm.material_no ASC NULLS LAST`,
           [ids]
         );
         mats.rows.forEach((m: any) => {
