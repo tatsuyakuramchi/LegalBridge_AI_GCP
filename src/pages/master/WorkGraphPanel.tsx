@@ -23,6 +23,7 @@ import {
   type FinancialCondition,
   type CalcType,
 } from "@/src/components/document/FinancialConditionTable"
+import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
 
 // 条件明細(condition_lines) → FinancialCondition(利用許諾明細入力の行)へ逆マップ。
 //   __clid に condition_line.id を退避し保存時の upsert キーにする(FinancialCondition には無い項目)。
@@ -122,6 +123,15 @@ const KindBadge = ({ kind }: { kind: string | null }) => {
   return m ? <Badge variant="outline" className={m.cls}>{m.label}</Badge> : null
 }
 const yen = (v: any) => (v == null || v === "" ? "" : `¥${Number(v).toLocaleString("ja-JP")}`)
+
+// マテリアル表示名: 「{コード} {原作名}　{マテリアル名}」。原作名が無い文脈では「{コード} {マテリアル名}」。
+//   例: LO-2026-0015-001 ＜原作名＞　原作ゲームデザイン
+const matDisplay = (code?: string | null, srcTitle?: string | null, name?: string | null) =>
+  (srcTitle
+    ? `${code || "—"} ${srcTitle}　${name || ""}`
+    : `${code || "—"} ${name || ""}`
+  ).trimEnd()
+
 
 // 増分⑤: 中カードの作品(own)基本情報インライン編集の選択肢(WorkModelPanel と同一)。
 const WORK_TYPES = ["board_game", "trpg_book", "supplement", "digital"]
@@ -477,13 +487,13 @@ export function WorkGraphPanel() {
   //   作品G が 原作A のマテリアルC・D を使う → C・D の条件が履行義務、という連鎖を一目で示すための再表示。
   //   元データ(upstream)は壊さず、マテリアル単位にグルーピングするだけの読み取り専用ビュー。
   const consumedGroups = React.useMemo(() => {
-    const groups = new Map<string, { workCode?: string | null; workTitle?: string | null; matCode?: string | null; matName?: string | null; edges: Edge[] }>()
+    const groups = new Map<string, { workId?: number | null; workCode?: string | null; workTitle?: string | null; matCode?: string | null; matName?: string | null; edges: Edge[] }>()
     for (const e of upstream) {
       if (e.source_work_id == null && e.source_material_id == null) continue
       const key = `${e.source_work_id ?? "?"}::${e.source_material_id ?? "?"}`
       const g = groups.get(key)
       if (g) g.edges.push(e)
-      else groups.set(key, { workCode: e.source_work_code, workTitle: e.source_work_title, matCode: e.source_material_code, matName: e.source_material_name, edges: [e] })
+      else groups.set(key, { workId: e.source_work_id, workCode: e.source_work_code, workTitle: e.source_work_title, matCode: e.source_material_code, matName: e.source_material_name, edges: [e] })
     }
     return Array.from(groups.values())
   }, [upstream])
@@ -538,6 +548,12 @@ export function WorkGraphPanel() {
     }
     return Array.from(byMat.values()).sort((a, b) => (a.mat ? 0 : 1) - (b.mat ? 0 : 1))
   }, [pickerLines, pickerMaterials])
+
+  // ピッカーで選択中の原作の名称(マテリアル表示名「コード 原作名　マテリアル名」用)。
+  const pickerSrcTitle = React.useMemo(
+    () => sourceWorks.find((s: any) => String(s.id) === String(pickerSource))?.title || null,
+    [sourceWorks, pickerSource]
+  )
 
   // 増分⑥(§3.4): 原作中心ビューから自社作品を新規作成 → そのエディタへ遷移。
   //   原作→作品の実リンク(支払エッジの source_work_id)は、作成後その作品の
@@ -995,6 +1011,8 @@ export function WorkGraphPanel() {
         <div className="text-xs font-mono text-muted-foreground py-8 text-center">作品を選択してください。</div>
       ) : (
         <>
+        {/* PLW-D: 作品1:文書N:明細N — この作品に明細単位で帰属する文書/明細/条件を集約。 */}
+        <WorkAttributionsPanel workId={workId} />
         {/* 関係の明確化: 作品(own)が「どの原作のどのマテリアルを利用し、何を履行するか」をマテリアル単位でまとめて先頭に表示。
             これがこの作品の利用許諾条件書に載る条件（=支払う利用料）の実体であることを明示する。 */}
         {!isSource && consumedGroups.length > 0 && (
@@ -1013,10 +1031,22 @@ export function WorkGraphPanel() {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
               {consumedGroups.map((g, gi) => (
                 <div key={gi} className="rounded border border-border bg-card px-2.5 py-2 text-[11px] font-mono space-y-1">
-                  <div className="text-[10px] text-muted-foreground truncate">
-                    <span className="text-sky-700 font-bold">原作</span>{" "}
-                    {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
-                  </div>
+                  {g.workId != null ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/works/${g.workId}`)}
+                      className="block w-full text-left text-[10px] text-sky-700 truncate hover:underline"
+                      title="この原作を開く"
+                    >
+                      <span className="font-bold">原作 ↗</span>{" "}
+                      {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
+                    </button>
+                  ) : (
+                    <div className="text-[10px] text-muted-foreground truncate">
+                      <span className="text-sky-700 font-bold">原作</span>{" "}
+                      {g.workCode || ""} {g.workTitle || (g.workCode ? "" : "—")}
+                    </div>
+                  )}
                   <div className="font-semibold truncate">
                     <span className="text-emerald-700">◦ マテリアル</span>{" "}
                     {g.matCode || ""} {g.matName || (g.matCode ? "" : "（未設定）")}
@@ -1059,6 +1089,25 @@ export function WorkGraphPanel() {
             <p className="text-[10px] font-mono text-muted-foreground">
               原作は複数の原作マテリアルで構成され（権利者が異なる場合あり）、各マテリアルに複数の条件明細（直販／サブライセンス等の算定）がぶら下がります（1原作 : N材料 : N条件）。
             </p>
+            {/* 原作⇄作品の往復: この原作を利用している自社作品へのクイックリンク（原作→作品）。 */}
+            <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-mono">
+              <span className="text-muted-foreground">この原作を利用する作品:</span>
+              {uses.length === 0 ? (
+                <span className="text-muted-foreground/70">まだありません</span>
+              ) : (
+                uses.map((u: any) => (
+                  <button
+                    key={u.id}
+                    type="button"
+                    onClick={() => navigate(`/works/${u.id}`)}
+                    className="text-violet-700 hover:underline"
+                    title="この作品を開く"
+                  >
+                    {u.work_code || `#${u.id}`} {u.title} ↗
+                  </button>
+                ))
+              )}
+            </div>
             {materials.length === 0 ? (
               <p className="text-[11px] font-mono text-muted-foreground">
                 まだマテリアルがありません。下の中カードの「素材を追加」から登録してください。
@@ -1072,7 +1121,7 @@ export function WorkGraphPanel() {
                       <div className="flex items-start justify-between gap-2">
                         <div className="font-semibold truncate">
                           <span className="text-emerald-700">◦ マテリアル</span>{" "}
-                          {m.material_code || "—"} {m.material_name}
+                          {matDisplay(m.material_code, work?.title, m.material_name)}
                           {m.is_default && (
                             <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>
                           )}
@@ -1330,7 +1379,7 @@ export function WorkGraphPanel() {
                           className="w-full text-left px-2 py-1 hover:bg-muted/40 flex items-center justify-between gap-2"
                         >
                           <span className="truncate">
-                            <span className="font-semibold">{m.material_code || "—"}</span> {m.material_name}
+                            <span className="font-semibold">{m.material_code || "—"}</span>{work?.title ? ` ${work.title}　` : " "}{m.material_name}
                             {m.is_default && <Badge variant="outline" className="ml-1 border-emerald-300 text-emerald-700">本体</Badge>}
                             {m.rights_holder && <span className="text-[10px] text-amber-700"> · 権利者: {m.rights_holder}</span>}
                           </span>
@@ -1347,48 +1396,15 @@ export function WorkGraphPanel() {
                       )}
                       {isSource && matCondOpen === m.id && (
                         <div className="border-t border-border/60 p-2 space-y-2 bg-muted/20">
-                          {/* 文書番号から既存の金銭条件を呼び出してこのマテリアルへ紐づけ(複数可) */}
-                          <div className="space-y-1.5 border border-sky-200 rounded p-1.5">
-                            <div className="text-[10px] uppercase tracking-[0.14em] text-sky-700">文書番号から金銭条件を呼び出す</div>
-                            <div className="flex items-center gap-1.5">
-                              <input
-                                value={matRecallDoc}
-                                onChange={(e) => setMatRecallDoc(e.target.value)}
-                                onKeyDown={(e) => { if (e.key === "Enter") void recallByDoc() }}
-                                placeholder="文書番号 (例: LIC-... / ARC-...)"
-                                className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
-                              />
-                              <button type="button" onClick={() => void recallByDoc()} disabled={matRecallLoading || !matRecallDoc.trim()} className="text-[10px] font-mono px-2 py-1 rounded border border-border hover:border-foreground/40 disabled:opacity-50">
-                                {matRecallLoading ? "呼出中…" : "呼び出す"}
-                              </button>
-                            </div>
-                            {matRecallLines.map((l) => {
-                              const here = String(l.source_material_id ?? "") === String(m.id)
-                              return (
-                                <div key={l.id} className="flex items-center justify-between gap-2 text-[10px] border border-border/50 rounded px-1.5 py-1">
-                                  <div className="min-w-0">
-                                    <span className="font-semibold">金銭条件{l.source_seq_no ?? "—"}</span>{" · "}
-                                    {l.subject || l.line_code}{" · "}
-                                    {l.payment_scheme === "royalty"
-                                      ? `${l.rate_pct ?? "—"}%${l.mg_amount ? ` MG${yen(l.mg_amount)}` : ""}${l.ag_amount ? ` AG${yen(l.ag_amount)}` : ""}`
-                                      : yen(l.amount_ex_tax) || l.payment_scheme}
-                                    {l.region_language_label && <span className="text-muted-foreground">{" · 🌐 "}{l.region_language_label}</span>}
-                                    {!here && l.source_material_id != null && <span className="text-amber-600">{" · 他素材に紐付け済"}</span>}
-                                  </div>
-                                  {here ? (
-                                    <button type="button" onClick={() => void assignRecalled(m.id, l, false)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">外す</button>
-                                  ) : (
-                                    <button type="button" onClick={() => void assignRecalled(m.id, l, true)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50">紐づける</button>
-                                  )}
-                                </div>
-                              )
-                            })}
-                            {matRecallLines.length > 0 && (
-                              <p className="text-[9px] text-muted-foreground/70">複数の金銭条件(n, n+1, …)をそれぞれこのマテリアルに紐づけられます。</p>
-                            )}
-                          </div>
-                          {/* 利用許諾明細入力(FinancialConditionTable) → 条件明細(condition_lines)へ一括保存 */}
+                          {/* 主操作: この素材の利用許諾条件を表で追加/編集 → 条件明細へ一括保存。
+                              表は現在の条件をプリフィル。直販・サブライセンス等は行を分けて入力(1材料:N条件)。 */}
                           <div className="space-y-1.5">
+                            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-sky-700">
+                              この素材の利用許諾条件（追加・編集）
+                            </div>
+                            <p className="text-[9px] text-muted-foreground/70">
+                              表は現在の条件をプリフィルしています。表内の「条件追加」で行を足し、編集して保存すると条件明細へ反映（直販・サブライセンス等で算定が違う場合は行を分けて入力＝1材料:N条件）。
+                            </p>
                             <div className="flex items-center gap-1.5 flex-wrap">
                               <span className="text-[10px] text-muted-foreground shrink-0">利用許諾条件書:</span>
                               <NativeSelect
@@ -1411,15 +1427,69 @@ export function WorkGraphPanel() {
                               division={Array.isArray(work?.division) && work.division.includes("PUB") ? "PUB" : "BDG"}
                             />
                             {matFcErr && <p className="text-[10px] text-red-600">{matFcErr}</p>}
-                            <button
-                              type="button"
-                              onClick={() => void saveMatFc(m.id)}
-                              disabled={matFcSaving}
-                              className="text-[10px] font-mono px-2 py-1 rounded border border-sky-400 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
-                            >
-                              {matFcSaving ? "保存中…" : "利用許諾条件を保存（条件明細へ）"}
-                            </button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setMatCondOpen(null)}
+                                className="text-[10px] font-mono px-2 py-1 rounded border border-border text-muted-foreground hover:text-foreground"
+                              >
+                                閉じる
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void saveMatFc(m.id)}
+                                disabled={matFcSaving}
+                                className="text-[10px] font-mono px-2 py-1 rounded border border-sky-500 bg-sky-50 text-sky-700 font-bold hover:bg-sky-100 disabled:opacity-50"
+                              >
+                                {matFcSaving ? "保存中…" : "保存（条件明細へ）"}
+                              </button>
+                            </div>
                           </div>
+
+                          {/* 上級(任意): 既存の金銭条件を文書番号で呼び出してこのマテリアルへ紐づける(複数可) */}
+                          <details className="rounded border border-sky-200">
+                            <summary className="cursor-pointer px-1.5 py-1 text-[10px] font-mono uppercase tracking-[0.14em] text-sky-700 select-none">
+                              ▶ 既存の金銭条件を文書番号から呼び出して紐づける（任意）
+                            </summary>
+                            <div className="p-1.5 space-y-1.5 border-t border-sky-200">
+                              <div className="flex items-center gap-1.5">
+                                <input
+                                  value={matRecallDoc}
+                                  onChange={(e) => setMatRecallDoc(e.target.value)}
+                                  onKeyDown={(e) => { if (e.key === "Enter") void recallByDoc() }}
+                                  placeholder="文書番号 (例: LIC-... / ARC-...)"
+                                  className="flex-1 text-[10px] font-mono border-b border-input bg-transparent py-1 focus:outline-none focus:border-foreground"
+                                />
+                                <button type="button" onClick={() => void recallByDoc()} disabled={matRecallLoading || !matRecallDoc.trim()} className="text-[10px] font-mono px-2 py-1 rounded border border-border hover:border-foreground/40 disabled:opacity-50">
+                                  {matRecallLoading ? "呼出中…" : "呼び出す"}
+                                </button>
+                              </div>
+                              {matRecallLines.map((l) => {
+                                const here = String(l.source_material_id ?? "") === String(m.id)
+                                return (
+                                  <div key={l.id} className="flex items-center justify-between gap-2 text-[10px] border border-border/50 rounded px-1.5 py-1">
+                                    <div className="min-w-0">
+                                      <span className="font-semibold">金銭条件{l.source_seq_no ?? "—"}</span>{" · "}
+                                      {l.subject || l.line_code}{" · "}
+                                      {l.payment_scheme === "royalty"
+                                        ? `${l.rate_pct ?? "—"}%${l.mg_amount ? ` MG${yen(l.mg_amount)}` : ""}${l.ag_amount ? ` AG${yen(l.ag_amount)}` : ""}`
+                                        : yen(l.amount_ex_tax) || l.payment_scheme}
+                                      {l.region_language_label && <span className="text-muted-foreground">{" · 🌐 "}{l.region_language_label}</span>}
+                                      {!here && l.source_material_id != null && <span className="text-amber-600">{" · 他素材に紐付け済"}</span>}
+                                    </div>
+                                    {here ? (
+                                      <button type="button" onClick={() => void assignRecalled(m.id, l, false)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-border text-muted-foreground hover:text-foreground">外す</button>
+                                    ) : (
+                                      <button type="button" onClick={() => void assignRecalled(m.id, l, true)} className="shrink-0 text-[10px] px-1.5 py-0.5 rounded border border-sky-400 text-sky-700 hover:bg-sky-50">紐づける</button>
+                                    )}
+                                  </div>
+                                )
+                              })}
+                              {matRecallLines.length > 0 && (
+                                <p className="text-[9px] text-muted-foreground/70">複数の金銭条件(n, n+1, …)をそれぞれこのマテリアルに紐づけられます。</p>
+                              )}
+                            </div>
+                          </details>
                         </div>
                       )}
                     </div>
@@ -1569,7 +1639,7 @@ export function WorkGraphPanel() {
                   {g.mat ? (
                     <>
                       <span className="text-emerald-700">◦ マテリアル</span>
-                      <span>{g.mat.material_code || "—"} {g.mat.material_name || ""}</span>
+                      <span>{matDisplay(g.mat.material_code, pickerSrcTitle, g.mat.material_name)}</span>
                       {g.mat.rights_holder_name && (
                         <span className="text-amber-700">（権利者: {g.mat.rights_holder_name}）</span>
                       )}
@@ -1607,7 +1677,7 @@ export function WorkGraphPanel() {
                               <option value="">— マテリアルを選択 —</option>
                               {pickerMaterials.map((m) => (
                                 <option key={m.id} value={m.id}>
-                                  {m.material_code || "—"} {m.material_name || ""}{m.rights_holder_name ? `（権利者: ${m.rights_holder_name}）` : ""}
+                                  {matDisplay(m.material_code, pickerSrcTitle, m.material_name)}{m.rights_holder_name ? `（権利者: ${m.rights_holder_name}）` : ""}
                                 </option>
                               ))}
                             </NativeSelect>
