@@ -27,6 +27,7 @@ import {
   calcMethodFromType,
   type FinancialCondition,
 } from './FinancialConditionTable';
+import { V3LicenseMatrix } from './V3LicenseMatrix';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
 // Phase 23: ParentPoPicker は UnifiedContractPicker に統合済み。
 import {
@@ -1566,6 +1567,31 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             </div>
           )}
         </FormSection>
+
+        {/* Stage B(v3移植): 個別利用許諾条件 v3 のマトリクス入力（取引形態 × 構成要素LC）。
+            formData.v3_conds / v3_lcs を produce（worker context builder の入力契約）。
+            現状は新構造の入力を捕捉するのみ（生成・登録の v3 切替は Stage C）。 */}
+        {(templateId === 'individual_license_terms' || templateId === 'lic_individual') && (
+          <FormSection
+            title="3-3. v3 マトリクス入力（取引形態 × 構成要素）"
+            variant="indigo"
+            icon={<Coins className="w-4 h-4" />}
+            headerActions={
+              <span className="text-[11px] font-mono text-muted-foreground italic">
+                加算型＝LC料率の合算 / 非加算型＝実効料率
+              </span>
+            }
+          >
+            <V3LicenseMatrix
+              conds={Array.isArray(formData.v3_conds) ? formData.v3_conds : []}
+              lcs={Array.isArray(formData.v3_lcs) ? formData.v3_lcs : []}
+              onChangeConds={(next) => setFormData({ ...formData, v3_conds: next })}
+              onChangeLcs={(next) => setFormData({ ...formData, v3_lcs: next })}
+              materials={selectedLedger?.materials || []}
+              ledgerTitle={selectedLedger?.title}
+            />
+          </FormSection>
+        )}
 
         {/* 4. 当事者 (Licensor / Licensee) — 取引先・当社は各セクションの [自社]/[取引先] で充填 */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
