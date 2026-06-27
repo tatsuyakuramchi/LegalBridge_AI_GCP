@@ -5899,6 +5899,118 @@ ${details}
     return linked;
   }
 
+  // ── Stage C-2: 個別利用許諾 v3(マトリクス）条件の登録 ──────────────────────
+  //   v3 フォーム(formData.v3_conds / v3_lcs)→ 既存スキーマへ永続化する。
+  //   - 取引形態(列) を capability_financial_conditions の1条件(condition_no=列index+1)へ。
+  //     rate_pct = 適用料率(加算型=各LCの当該料率Σ / 非加算型=実効料率(fixedRate))。
+  //   - v3 固有メタ(製造者/販売者/最大地域/最大言語/加算型/個数)は migration 0086 で
+  //     追加した6列へ condition_no で UPDATE(冪等・best-effort)。
+  //   - condition_line は upsert 内の syncConditionLinesForCapability が生成 →
+  //     linkWorkMaterialsForCapability で本体マテリアルへアンカー＋作品構成へ組み込む。
+  //   加算型の LC別セル分解(按分)は次段(最もリスクが高く要精査のため分離)。
+  //   設計: docs/design/individual-license-terms-v3-migration-plan.md §5 Stage C-2
+  async function registerV3MatrixConditions(opts: {
+    capabilityId: number;
+    ledgerCode: string | null | undefined;
+    ownWorkId: number | null;
+    conds: any[];
+    lcs: any[];
+    anchorMaterialCode?: string | null;
+    conditionMaterialCodes?: Record<string, string>;
+  }): Promise<number> {
+    const { capabilityId, ledgerCode, ownWorkId } = opts;
+    const conds = Array.isArray(opts.conds) ? opts.conds : [];
+    const lcs = Array.isArray(opts.lcs) ? opts.lcs : [];
+    if (!capabilityId || conds.length === 0) return 0;
+
+    const toNum = (v: any): number | null => {
+      if (v == null || String(v).trim() === "") return null;
+      const n = parseFloat(String(v).replace(/[^0-9.\-]/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    // 適用料率: 加算型=各LCの当該取引形態料率を合算(Σ)/ 非加算型=実効料率(fixedRate)。
+    //   個別利用許諾 v3 テンプレ context ビルダー(computeAppliedRate)と同一ロジック。
+    const appliedRate = (c: any): number | null => {
+      if (!c?.addon) return toNum(c?.fixedRate);
+      const key = String(c?.id ?? "");
+      let sum = 0;
+      let any = false;
+      for (const l of lcs) {
+        const r = toNum(l?.rates?.[key]);
+        if (r != null) {
+          sum += r;
+          any = true;
+        }
+      }
+      return any ? sum : null;
+    };
+
+    // v3_conds(取引形態) → financial_conditions 互換配列(既存 upsert 経路を流用)。
+    const mapped = conds.map((c: any, i: number) => {
+      const rate = appliedRate(c);
+      return {
+        condition_no: i + 1,
+        condition_name: (c?.name && String(c.name).trim()) || `条件${i + 1}`,
+        // 料率があれば royalty 計算対象(ROYALTY)、無ければ固定額扱い(FIXED)。
+        calc_type: rate != null ? "ROYALTY" : "FIXED",
+        rate_pct: rate,
+        base_price_label: c?.basePrice || null,
+        region_territory: c?.reg || null,
+        region_language: c?.lang || null,
+        mg_amount: toNum(c?.mg) ?? 0,
+        ag_amount: toNum(c?.ag) ?? 0,
+        currency: c?.cur || "JPY",
+        work_id: ownWorkId ?? null,
+      };
+    });
+
+    // capability_financial_conditions へ upsert(内部で condition_lines も同期)。
+    await upsertCapabilityFinancialConditions(capabilityId, mapped);
+
+    // v3 固有メタ(migration 0086 の6列)を condition_no で補完 UPDATE。
+    for (let i = 0; i < conds.length; i++) {
+      const c = conds[i] as any;
+      try {
+        await query(
+          `UPDATE capability_financial_conditions
+              SET manufacturer = $3, seller = $4, max_region = $5,
+                  max_language = $6, is_addon = $7, quantity = $8,
+                  updated_at = CURRENT_TIMESTAMP
+            WHERE capability_id = $1 AND condition_no = $2`,
+          [
+            capabilityId,
+            i + 1,
+            c?.manufacturer || null,
+            c?.seller || null,
+            c?.maxReg || null,
+            c?.maxLang || null,
+            !!c?.addon,
+            c?.qty != null && String(c.qty).trim() !== "" ? String(c.qty) : null,
+          ]
+        );
+      } catch (e: any) {
+        console.warn(
+          `[v3-matrix] meta update skipped cond#${i + 1}:`,
+          e?.message || e
+        );
+      }
+    }
+
+    // 本体マテリアルへアンカー＋作品構成へ組み込む(既存ヘルパ流用)。
+    //   取引形態は素材横断の概念のため、既定では本体(is_default)へ束ねる。
+    //   anchorMaterialCode 未指定なら linkWorkMaterialsForCapability が is_default に
+    //   フォールバックする。加算型の LC別按分は次段。
+    if (!ledgerCode) return 0;
+    return await linkWorkMaterialsForCapability({
+      capabilityId,
+      ledgerCode,
+      ownWorkId,
+      conditionMaterialCodes: opts.conditionMaterialCodes || {},
+      financialConditions: mapped,
+      defaultMaterialCode: opts.anchorMaterialCode || null,
+    });
+  }
+
   /**
    * Phase 22.21.112: 契約マスタの業務明細 (capability_line_items) を
    *   配列で受け取って upsert する。upsertCapabilityFinancialConditions と
@@ -15702,6 +15814,35 @@ ${details}
                 ? formData.financial_conditions
                 : [],
               defaultMaterialCode: formData.素材番号 || null,
+            })
+          );
+        }
+
+        // Stage C-2: 個別利用許諾 v3(マトリクス）条件の登録。
+        //   v3 フォームは financial_conditions ではなく v3_conds/v3_lcs を送る。
+        //   取引形態を金銭条件(rate_pct=適用料率)へ upsert し、本体マテリアルへ
+        //   アンカーして作品構成へ組み込む。標準パス(financial_conditions)とは
+        //   入力が排他のため二重登録は起きない。best-effort・非致命。
+        if (
+          lcId &&
+          Array.isArray(formData.v3_conds) &&
+          formData.v3_conds.length > 0
+        ) {
+          await safeSync("v3-matrix(license)", () =>
+            registerV3MatrixConditions({
+              capabilityId: lcId,
+              ledgerCode: ledgerCodeForWork,
+              ownWorkId:
+                formData.linked_work_id != null &&
+                String(formData.linked_work_id).trim() !== "" &&
+                Number.isFinite(Number(formData.linked_work_id))
+                  ? Number(formData.linked_work_id)
+                  : null,
+              conds: formData.v3_conds,
+              lcs: Array.isArray(formData.v3_lcs) ? formData.v3_lcs : [],
+              anchorMaterialCode: formData.素材番号 || null,
+              conditionMaterialCodes: (formData.condition_material_codes ||
+                {}) as Record<string, string>,
             })
           );
         }
