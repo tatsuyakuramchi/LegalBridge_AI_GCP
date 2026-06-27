@@ -7,6 +7,8 @@ import { sanitizeForFilename, query } from "../lib/db.ts";
 // renderTemplate は date auto-expand + context マージ + compile を担う。
 // helper 群は当面 registerHelpers()(下記インライン)と共有版が同一内容。
 import { renderTemplate as sharedRenderTemplate } from "../lib/shared-rendering.mjs";
+// v3移植: 個別利用許諾条件 v3(マトリクス)の context ビルダー。
+import { buildIndividualLicenseV3Context } from "../lib/individualLicenseV3Context.ts";
 
 export interface DocumentData {
   issueKey: string;
@@ -359,6 +361,16 @@ export class DocumentService {
     // B5: レンダリングは共有モジュールに委譲(date auto-expand + context マージ
     //   + Handlebars.compile)。worker の Handlebars インスタンス(helper/partial
     //   登録済み)を渡すため出力は従来と同一。
+    // v3移植(Stage C-1): 個別利用許諾でマトリクス入力(v3_conds)があれば、v3 テンプレ＋
+    //   v3 context で描画する。v3 データが無ければ従来テンプレ・従来描画(挙動不変)。
+    const dv3: any = data;
+    const isLicense = type === "individual_license_terms";
+    if (isLicense && Array.isArray(dv3?.v3_conds) && dv3.v3_conds.length > 0) {
+      const v3Source = this.loadTemplate("individual_license_terms_v3" as DocumentType);
+      const v3Data = { ...dv3, ...buildIndividualLicenseV3Context(dv3) };
+      return sharedRenderTemplate(Handlebars, v3Source, v3Data);
+    }
+
     const templateSource = this.loadTemplate(type);
     // 検収書: delivery_line_items に item_name が無い(旧データ/フォーム未保持)場合、
     //   order_lines_for_inspection(親PO明細)から品目名/仕様を補完する。これが無いと

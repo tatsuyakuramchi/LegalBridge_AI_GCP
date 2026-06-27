@@ -45,19 +45,13 @@ export interface V3Sublicensee {
 export interface V3SpecialExtra { seId?: string; seText?: string }
 
 export interface V3FormData {
-  // 頭書・許諾概要・署名（テンプレのプレースホルダと同名）
-  issueDate?: string; contractNo?: string; workId?: string; masterAgreement?: string;
-  licensorName?: string; licenseeName?: string; startDate?: string;
-  licensorContact?: string; licenseeContact?: string;
-  productDefinition?: string; productName?: string; exclusivity?: string;
-  maxRegion?: string; maxLanguage?: string; scope?: string;
-  supervisor?: string;
-  licensorAddress?: string; licensorRep?: string; licenseeAddress?: string; licenseeRep?: string;
-  // マトリクス・台帳
+  // マトリクス・台帳（v3 フォームが produce）
   v3_conds?: V3Cond[];
   v3_lcs?: V3Lc[];
   v3_sublicensees?: V3Sublicensee[];
   v3_special_extras?: V3SpecialExtra[];
+  // ヘッダ等は既存フォームの日本語キー（契約書番号 / Licensor_名称 …）も読むため index 許容。
+  [k: string]: any;
 }
 
 // ── 出力（テンプレ individual_license_terms_v3.hbs.html が要求）────────────
@@ -144,31 +138,45 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     }),
   }));
 
+  // ヘッダ等は既存フォームの日本語キーを優先し、英語キーへフォールバック。
+  //   v3 固有(対象製品の定義/許諾範囲/許諾地域・言語の上限)は現フォームに項目が無いので
+  //   v3_* 任意項目 → 既存 → 空 の順で解決する。
+  const pick = (...keys: string[]) => {
+    for (const k of keys) {
+      const v = fd[k];
+      if (v != null && String(v).trim() !== "") return String(v);
+    }
+    return "";
+  };
+  const licensorContact = [fd["Licensor_担当者"], fd["Licensor_電話"], fd["Licensor_メール"]]
+    .filter((x) => x != null && String(x).trim() !== "")
+    .join(" ／ ");
+
   return {
-    issueDate: s(fd.issueDate),
-    contractNo: s(fd.contractNo),
-    workId: s(fd.workId),
-    masterAgreement: s(fd.masterAgreement),
-    licensorName: s(fd.licensorName),
-    licenseeName: s(fd.licenseeName),
-    startDate: s(fd.startDate),
-    licensorContact: s(fd.licensorContact),
-    licenseeContact: s(fd.licenseeContact),
-    productDefinition: s(fd.productDefinition),
-    productName: s(fd.productName),
-    exclusivity: s(fd.exclusivity),
-    maxRegion: s(fd.maxRegion),
-    maxLanguage: s(fd.maxLanguage),
-    scope: s(fd.scope),
+    issueDate: pick("発行日", "issueDate"),
+    contractNo: pick("契約書番号", "contractNo"),
+    workId: pick("work_id", "台帳ID", "workId"),
+    masterAgreement: pick("基本契約名", "masterAgreement"),
+    licensorName: pick("Licensor_氏名会社名", "Licensor_名称", "licensorName"),
+    licenseeName: pick("Licensee_氏名会社名", "Licensee_名称", "licenseeName"),
+    startDate: pick("許諾開始日", "startDate"),
+    licensorContact: licensorContact || pick("licensorContact"),
+    licenseeContact: pick("Licensee_連絡先", "licenseeContact"),
+    productDefinition: pick("v3_productDefinition", "対象製品の定義", "productDefinition"),
+    productName: pick("対象製品予定名", "productName"),
+    exclusivity: pick("独占性", "exclusivity"),
+    maxRegion: pick("v3_maxRegion", "許諾地域", "maxRegion"),
+    maxLanguage: pick("v3_maxLanguage", "許諾言語", "maxLanguage"),
+    scope: pick("v3_scope", "許諾範囲", "scope"),
     condCount: conds.length,
     conds,
     lcs,
     sublicensees: Array.isArray(fd.v3_sublicensees) ? fd.v3_sublicensees : [],
-    supervisor: s(fd.supervisor),
+    supervisor: pick("監修者", "supervisor"),
     specialExtras: Array.isArray(fd.v3_special_extras) ? fd.v3_special_extras : [],
-    licensorAddress: s(fd.licensorAddress),
-    licensorRep: s(fd.licensorRep),
-    licenseeAddress: s(fd.licenseeAddress),
-    licenseeRep: s(fd.licenseeRep),
+    licensorAddress: pick("Licensor_住所", "licensorAddress"),
+    licensorRep: pick("Licensor_代表者名", "licensorRep"),
+    licenseeAddress: pick("Licensee_住所", "licenseeAddress"),
+    licenseeRep: pick("Licensee_代表者名", "licenseeRep"),
   };
 }
