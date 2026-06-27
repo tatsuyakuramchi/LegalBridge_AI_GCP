@@ -85,12 +85,24 @@
   - 適用料率プレビュー（加算型は自動合算）。
 - 作品連動（§1.3〜）と整合: LC＝原作マテリアル（work_materials）。LC を既存マテリアルから選ぶ/件名で新規（材料ファースト）。
 
-### 4.5 条件明細の登録ロジック（server.ts）★要精査
-保存時:
-1. 取引形態ごとに `capability_financial_conditions`（新列含む）を upsert。
-2. LC×取引形態の各セルを `condition_lines` として生成（source_material_id=LC, source_condition_id=取引形態, rate_pct=cell, payment_scheme=royalty）。
-3. 加算型の適用料率は導出（保存するか都度計算かは §6 決定）。
-4. 作品連動 ON のとき、LC を原作マテリアルへ紐付け（既存 `linkWorkMaterialsForCapability` 系を cell 構造へ拡張）。
+### 4.5 条件明細の登録ロジック（server.ts）★核心・要精査
+
+LC（マテリアル）ごとに **2モード** を取る。フォームは LC 行ごとにモードを選ぶ（材料ファーストの「件名で新規 / 既存選択」の延長）。
+
+**モード1：従前のマテリアルを使う → 既存の条件明細を引用（参照のみ・新規作成しない）**
+- condition_lines は **金銭条件（取引形態）ごと** に存在する。**同一マテリアルの条件明細を複数の作品で引用**できる必要がある。
+- → 既存の **N:N 中間表**（`work_components` / `work_component_lines`）で「**作品ごとに引用**」を担保。`attach-work` / `component-lines` 経路を使い、condition_line は複製せず共有。
+- 文書の 2-1（金銭条件）は、引用した既存 condition_lines を表示。1-1 の枠は当該マテリアルの原作マスター（既存）に由来。
+
+**モード2：従前を使わない（＝新しい条件の作品）→ 条件明細そのものを新規作成**
+- この文書が条件の真実源。LC×取引形態の各セルを `condition_lines` として **新規生成**（source_material_id=LC, source_condition_id=取引形態, rate_pct=cell, payment_scheme=royalty）。
+- このとき **template 1-1 ＝ 2-1**：許諾の枠（1-1 の地域/言語上限）と実際の金銭条件（2-1）が一致する（新規単一条件は枠＝実値）。1-1 と 2-1 を文書で同時に確定。
+- 既存の document-first 登録（`linkWorkMaterialsForCapability`）を **cell（材料×取引形態）構造へ拡張**して流用。
+
+**共通**
+- 取引形態ごとに `capability_financial_conditions`（新列含む）を upsert。
+- 加算型の適用料率は導出（§6: 都度計算 推奨）。
+- 「引用できる整理」= condition_line は work に重複させず、N:N junction で多作品から参照する（フラット `work_id` 単独ではなく `work_component_lines` を正準に）。
 
 ---
 
@@ -114,3 +126,4 @@
 5. **基準価格・個数・AG・MG** は取引形態（列）単位で確定。マテリアル単位の差は想定するか（v3 は列単位）。
 6. **後方互換**: 既存の旧 `financial_conditions` で作られた individual_license_terms 文書・条件明細との両立（読み替え or 併存）。
 7. **下流**: royalty_statement / 利用許諾料計算 が新マトリクスをどう参照するか（適用料率の供給点）。
+8. ~~登録モード~~ → **確定（ユーザー 2026-06）**: LC ごとに「**引用（従前マテリアルの既存条件明細を N:N で参照）**」/「**新規作成（条件明細を生成・1-1=2-1）**」の2モード（§4.5）。引用時は condition_line を複製せず `work_component_lines` で作品ごとに参照する。
