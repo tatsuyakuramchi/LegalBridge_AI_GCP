@@ -1,6 +1,8 @@
 import pg from 'pg';
 import { createHash } from 'node:crypto';
 
+import { normalizeGenre, normalizeRole, coreGenreForDivision } from './materialVocab.ts';
+
 /**
  * 文書の「内容ハッシュ」。重複保存の検出に使う。
  * __ で始まる制御フィールド(__reopen_doc_number 等)は除外し、キーを
@@ -2181,13 +2183,15 @@ export async function createLedgerWithDefaultMaterial(payload: {
   const workId = Number(wk.rows[0].id);
 
   // 原作本体素材 (-001) = メイン作品(core_logic)。material_code で冪等。
+  // O5: ジャンルは事業部(division)で確定(PUB→執筆文書 / それ以外→ゲームデザイン)。
   // Phase 22.20: 素材権利者を ledger.default_rights_holder で初期化
   const defaultMaterialCode = `${ledgerCode}-001`;
+  const coreGenre = coreGenreForDivision(division);
   const matRes = await query(
     `INSERT INTO work_materials (
        work_id, material_no, material_code, material_name,
        material_type, rights_holder_label, is_default, material_role, acquisition_type
-     ) VALUES ($1, 1, $2, $3, 'original', $4, TRUE, 'core_logic', 'license')
+     ) VALUES ($1, 1, $2, $3, $5, $4, TRUE, 'core_logic', 'license')
      ON CONFLICT (material_code) WHERE material_code IS NOT NULL DO UPDATE SET
        material_name = EXCLUDED.material_name, updated_at = now()
      RETURNING id, material_code`,
@@ -2196,6 +2200,7 @@ export async function createLedgerWithDefaultMaterial(payload: {
       defaultMaterialCode,
       payload.title,
       payload.default_rights_holder || null,
+      coreGenre,
     ]
   );
 
@@ -2235,11 +2240,9 @@ export async function addMaterialToLedger(payload: {
   const workId = Number(ledgerRes.rows[0].work_id);
   const nextNo = await getNextMaterialNo(payload.ledger_id);
   const materialCode = `${ledgerCode}-${nextNo.toString().padStart(3, "0")}`;
-  const matType = payload.material_type || "derivative";
-  // 役割2層: 本体系ジャンルは core_logic、それ以外(派生素材)は sub_component。
-  const role = ["original", "game_design", "manuscript"].includes(matType)
-    ? "core_logic"
-    : "sub_component";
+  // O5: ジャンルを正準化し、役割(本体/サブ)を推定。
+  const matType = normalizeGenre(payload.material_type);
+  const role = normalizeRole(undefined, matType, false);
   const res = await query(
     `INSERT INTO work_materials (
        work_id, material_no, material_code, material_name,
