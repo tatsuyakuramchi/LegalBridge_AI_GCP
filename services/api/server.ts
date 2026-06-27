@@ -43,6 +43,11 @@ import {
   buildSampleData,
   renderTemplate as renderSharedTemplate,
 } from "./src/lib/shared-rendering.mjs";
+// 個別利用許諾 v3 マトリクスの雛形プレビュー用（worker と同一の純関数・サンプル）。
+import {
+  buildIndividualLicenseV3Context,
+  v3SampleFormData,
+} from "./src/lib/individualLicenseV3Context.ts";
 // B5b: プレビュー PDF をローカル生成(worker proxy 撤去)。chromium 同梱(Dockerfile)。
 import { renderHtmlToPdf } from "./src/services/pdfRenderer.ts";
 
@@ -181,6 +186,13 @@ async function renderSamplePreviewFromDb(type: string): Promise<string | null> {
   if (r.rows.length === 0) return null;
   await ensurePreviewPartials();
   const row = r.rows[0] as any;
+  // v3 マトリクステンプレは専用サンプル＋ context builder で描画（worker と同一出力）。
+  //   汎用 buildSampleData は conds/lcs を生成できないため、跨ぎ原作の取引形態×LC を明示。
+  if (type === "individual_license_terms_v3") {
+    const sample = v3SampleFormData();
+    const v3Data = { ...sample, ...buildIndividualLicenseV3Context(sample) };
+    return renderSharedTemplate(previewHb, row.html_source, v3Data);
+  }
   const data = buildSampleData(row.field_schema || [], row.html_source, row.label || type);
   return renderSharedTemplate(previewHb, row.html_source, data);
 }
