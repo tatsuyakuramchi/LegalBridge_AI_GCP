@@ -29,6 +29,7 @@ import {
 } from './FinancialConditionTable';
 import { V3LicenseMatrix } from './V3LicenseMatrix';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
+import { ConditionCopyPanel } from './ConditionCopyPanel';
 // Phase 23: ParentPoPicker は UnifiedContractPicker に統合済み。
 import {
   UnifiedContractPicker,
@@ -257,6 +258,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 対象作品(own)の一覧。Stage 1(文書ファースト紐付け)で「対象作品」セレクタにも使うため、
   //   作品連動しうるテンプレート(利用許諾・出版・発注書)で /api/v3/works を取得する。
   const [worksList, setWorksList] = React.useState<any[]>([]);
+  // 明細/条件ごとの作品割当(作品1:文書N:明細N)用の作品候補。worksList(GET /api/v3/works)
+  //   を {id, work_code, title} に整形。WORK_LINKED_TEMPLATES 以外は空 → セレクタ非表示。
+  const workOptions = useMemo(
+    () =>
+      (Array.isArray(worksList) ? worksList : []).map((w: any) => ({
+        id: Number(w.id),
+        work_code: w.work_code || undefined,
+        title: w.title || undefined,
+      })),
+    [worksList]
+  );
   useEffect(() => {
     if (!WORK_LINKED_TEMPLATES.includes(templateId)) return;
     let cancelled = false;
@@ -1479,7 +1491,42 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 ? "PUB"
                 : "BDG"
             }
+            works={workOptions}
           />
+
+          {/* WMC-2: 同一原作素材に登録済みの条件を引用してコピー(値コピー = テンプレ→インスタンス)。
+              選択中の軸素材(formData.素材番号 = material_code)をキーに WMC-1 API を引く。 */}
+          {(() => {
+            const anchorCode = formData.素材番号 || '';
+            const anchorMat = (selectedLedger?.materials || []).find(
+              (m: any) => m.material_code === anchorCode
+            );
+            const label = anchorMat
+              ? `[${anchorMat.material_code}] ${selectedLedger?.title ? selectedLedger.title + '　' : ''}${anchorMat.material_name || ''}`
+              : anchorCode;
+            return (
+              <ConditionCopyPanel
+                materialCode={anchorCode}
+                materialLabel={label}
+                existing={
+                  Array.isArray(formData.financial_conditions)
+                    ? (formData.financial_conditions as FinancialCondition[])
+                    : []
+                }
+                onCopy={(cond) =>
+                  setFormData({
+                    ...formData,
+                    financial_conditions: [
+                      ...(Array.isArray(formData.financial_conditions)
+                        ? formData.financial_conditions
+                        : []),
+                      cond,
+                    ],
+                  })
+                }
+              />
+            );
+          })()}
 
           {/* 原作マテリアルへの紐づけ(1材料 : N条件) — 条件入力の直後。作品連動 ON のみ。
               既定で軸マテリアル(上の素材／原作本体)へ束ね、行で別マテリアルに上書き可。 */}
@@ -2100,6 +2147,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               });
             }}
             showPaymentColumns={true}
+            works={workOptions}
           />
         </FormSection>
 
@@ -2138,6 +2186,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 onChange={(conditions: FinancialCondition[]) =>
                   setFormData({ ...formData, financial_conditions: conditions })
                 }
+                works={workOptions}
               />
             </FormSection>
           )}

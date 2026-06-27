@@ -58,6 +58,10 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/issues\/[^/]+\/cloudsign(?:\/|\?|$)/,
   // ラインIDでの明細 lookup は worker のみ実装。
   /^\/api\/line-items(?:\/|\?|$)/,
+  // 課題詳細の条件明細サマリは worker のみ実装。
+  /^\/api\/issues\/[^/]+\/condition-line-summary(?:\?|$)/,
+  // 個別課題→所属する新課題(統一課題)リゾルバも worker のみ実装。
+  /^\/api\/issues\/[^/]+\/unified(?:\?|$)/,
   // CloudSign の接続テスト(/api/cloudsign/health)等の GET も worker のみ実装。
   /^\/api\/cloudsign(?:\/|\?|$)/,
   // メール送信の接続テスト(/api/email/health)も worker のみ実装。
@@ -73,6 +77,10 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/imports\/v2\/templates(?:\/|\?|$)/,
   // データモデル整理: 連結チェック(整合性点検)は worker のみ実装。
   /^\/api\/admin\/data-linkage\/check(?:\?|$)/,
+  // 課題コントロール整合性監査(読み取り専用)も worker のみ実装。
+  /^\/api\/audit\/issue-consistency(?:\?|$)/,
+  // 新課題(統一課題)導出API(一覧/詳細・読み取り専用)も worker のみ実装。
+  /^\/api\/unified-issues(?:\/[^/]+)?(?:\?|$)/,
   // 統合 Phase2 ドライラン(読み取り専用集計)は worker のみ実装。
   /^\/api\/admin\/unify\/phase2-dryrun(?:\?|$)/,
   // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ

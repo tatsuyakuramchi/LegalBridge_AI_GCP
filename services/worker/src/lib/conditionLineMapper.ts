@@ -65,6 +65,8 @@ export interface LineItemLike {
   status_flags?: any;
   is_inbound?: any;
   flow_direction?: any;
+  // 明細ごとの成果物作品(作品1:文書N:明細N)。NULL は文書単位 work へフォールバック。
+  work_id?: any;
 }
 
 export function determineLineItemScheme(li: LineItemLike): PaymentScheme {
@@ -136,6 +138,8 @@ export function mapLineItemToConditionLine(
     status_flags: li.status_flags != null ? JSON.stringify(li.status_flags) : "{}",
     is_inbound: li.is_inbound === true,
     flow_direction: isPresent(li.flow_direction) ? String(li.flow_direction) : null,
+    // 明細ごとの作品(NULL は後段 linkage で文書 work へ COALESCE)。
+    work_id: num(li.work_id),
     source_line_item_id: li.id ?? null,
     source_condition_id: null,
   };
@@ -158,6 +162,8 @@ export interface FinancialConditionLike {
   payment_terms?: any;
   mg_amount?: any;
   ag_amount?: any;
+  // 利用許諾条件(明細)ごとの作品。受注者帰属明細から継承(D2)。
+  work_id?: any;
 }
 
 export interface ParentCapTerms {
@@ -188,6 +194,9 @@ export function mapFinancialConditionToConditionLine(
 ): Record<string, any> {
   const scheme = determineFinancialScheme(fc);
   const royalty = scheme === "royalty";
+  // 取引区分: calc_type='SUPPLY_QTY'(供給価格×個数)= プロダクトイン(完成品の仕入)。
+  //   それ以外の金銭条件はライセンスイン。プロダクトインは inbound(仕入=in)。
+  const isProductIn = String((fc as any).calc_type ?? "").trim().toUpperCase() === "SUPPLY_QTY";
   return {
     capability_id: capabilityId,
     line_no: lineNo,
@@ -241,8 +250,11 @@ export function mapFinancialConditionToConditionLine(
     master_contract_id: null,
     ringi_id: null,
     status_flags: "{}",
-    is_inbound: false,
-    flow_direction: null,
+    is_inbound: isProductIn ? true : false,
+    flow_direction: isProductIn ? "in" : null,
+    transaction_kind: isProductIn ? "product" : "license",
+    // 明細ごとの作品(NULL は後段 linkage で文書 work へ COALESCE)。
+    work_id: num(fc.work_id),
     source_line_item_id: null,
     source_condition_id: fc.id ?? null,
   };
@@ -291,6 +303,8 @@ export const CONDITION_LINE_COLUMNS = [
   "status_flags",
   "is_inbound",
   "flow_direction",
+  "transaction_kind",
+  "work_id",
   "source_line_item_id",
   "source_condition_id",
 ] as const;

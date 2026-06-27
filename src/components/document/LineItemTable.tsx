@@ -29,6 +29,9 @@ export type LineItem = {
   quantity: number;
   // amount_ex_tax is derived in render — kept in state for round-trips
   amount_ex_tax?: number;
+  // 明細ごとの成果物作品(作品1:文書N:明細N)。NULL/未設定は文書単位の作品にフォールバック。
+  //   受注者帰属(利用許諾)の場合、対応する利用許諾条件へ work_id が自動継承される(D2)。
+  work_id?: number;
   /**
    * 成果物の帰属先(当事者は発注書表現)。
    *   '発注者' = 当社がIP取得(work-for-hire/著作権譲渡) → 業務委託明細(確定額)。
@@ -235,6 +238,9 @@ function formatTermRange(start?: string, end?: string): string {
   return `${startStr || "—"} 〜 ${endStr}`;
 }
 
+// 明細ごとの作品割当(作品1:文書N:明細N)用の作品候補。
+export type WorkOption = { id: number; work_code?: string; title?: string };
+
 interface Props {
   items: LineItem[];
   onChange: (items: LineItem[]) => void;
@@ -242,6 +248,11 @@ interface Props {
   readOnly?: boolean;
   /** Override the column set if the document doesn't have payment columns. */
   showPaymentColumns?: boolean;
+  /**
+   * 明細ごとに割り当て可能な作品候補(既存作品のみ)。発注書が複数タイトル混在のとき、
+   * 行ごとに成果物作品を選べる。未指定の行は文書単位の作品にフォールバックする。
+   */
+  works?: WorkOption[];
 }
 
 const ceilProduct = (a: number, b: number) =>
@@ -282,6 +293,7 @@ export const LineItemTable: React.FC<Props> = ({
   onChange,
   readOnly = false,
   showPaymentColumns = true,
+  works = [],
 }) => {
   // Phase 22.7: 仕様詳細編集モーダル。長文の仕様を別ウィンドウで快適に編集するため。
   // インライン textarea は高さキャップ + 内部スクロール (= 行高は固定) に変更し、
@@ -528,6 +540,39 @@ export const LineItemTable: React.FC<Props> = ({
     </div>
   );
 
+  // 明細ごとの作品セレクト(作品1:文書N:明細N)。両ビュー共通。works が無ければ非表示。
+  //   未選択(空)= 文書単位の作品にフォールバック。
+  const workSelect = (it: LineItem, idx: number) => {
+    if (!Array.isArray(works) || works.length === 0) return null;
+    return (
+      <select
+        value={it.work_id != null ? String(it.work_id) : ""}
+        onChange={(e) =>
+          update(idx, {
+            work_id: e.target.value ? Number(e.target.value) : undefined,
+          })
+        }
+        disabled={readOnly}
+        className={cn(
+          "w-full text-[11px] font-mono rounded-sm border px-2 py-1.5 cursor-pointer",
+          "focus:outline-none focus:ring-1 focus:ring-foreground/40 disabled:opacity-60",
+          it.work_id != null
+            ? "border-sky-400 bg-sky-50 text-sky-800"
+            : "border-input bg-muted/50 text-muted-foreground"
+        )}
+        title="この明細の成果物作品。未選択なら文書の作品に従います。複数タイトル混在の発注書で行ごとに指定。"
+      >
+        <option value="">（文書の作品に従う）</option>
+        {works.map((w) => (
+          <option key={w.id} value={String(w.id)}>
+            {w.work_code ? `[${w.work_code}] ` : ""}
+            {w.title || `作品#${w.id}`}
+          </option>
+        ))}
+      </select>
+    );
+  };
+
   // Phase 23.0.4: カード型レンダラ (lg 未満で使う)。
   //   <table> は狭幅で列が潰れて読めなくなるため、モバイル/タブレット用に
   //   1 行 = 1 カードで縦並び。spec のモーダル / サブスク詳細モーダルは共通利用。
@@ -583,6 +628,14 @@ export const LineItemTable: React.FC<Props> = ({
           </span>
           {ownershipSelect(it, idx)}
         </label>
+        {works.length > 0 && (
+          <label className="block">
+            <span className="text-[10px] font-mono text-muted-foreground block mb-1">
+              作品（この明細）
+            </span>
+            {workSelect(it, idx)}
+          </label>
+        )}
         {/* 仕様ロック: 帰属で分岐しない。全行で 単価/数量/確定額/支払方法 を表示。 */}
         <>
         <div className="grid grid-cols-3 gap-3 items-end">
@@ -863,6 +916,9 @@ export const LineItemTable: React.FC<Props> = ({
                     </td>
                     <td className="p-2 align-top">
                       {ownershipSelect(it, idx)}
+                      {works.length > 0 && (
+                        <div className="mt-1">{workSelect(it, idx)}</div>
+                      )}
                     </td>
                     {/* 仕様ロック: 帰属で行を分岐しない。全行で 単価/数量/確定額/支払方法/計算式方法 を表示。 */}
                     <>
