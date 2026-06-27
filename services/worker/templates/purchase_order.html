@@ -1,866 +1,464 @@
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-  <meta charset="UTF-8">
-  <title>発注書</title>
-  <style>
-    @page { size: A4; margin: 12mm 15mm; }
-
-    * { box-sizing: border-box; }
-    body {
-      font-family: "Noto Sans CJK JP", "Noto Sans JP", "IPAexGothic", "IPAGothic", sans-serif;
-      font-size: 10pt;
-      line-height: 1.5;
-      color: #111;
-      margin: 0;
-      word-break: break-word;
-      overflow-wrap: anywhere;
-    }
-
-    .header-row {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-end;
-      border-bottom: 2px solid #111;
-      padding-bottom: 6px;
-      margin-bottom: 14px;
-    }
-
-    .title-box h1 {
-      font-size: 20pt;
-      margin: 0;
-      letter-spacing: 1.5px;
-    }
-
-    .doc-info {
-      text-align: right;
-      font-size: 9pt;
-      line-height: 1.6;
-      color: #555;
-      white-space: nowrap;
-    }
-
-    .party-grid {
-      display: table;
-      width: 100%;
-      table-layout: fixed;
-      margin-bottom: 10px;
-    }
-
-    .vendor-section {
-      display: table-cell;
-      vertical-align: top;
-      font-size: 10pt;
-      min-width: 0;
-      padding-right: 12px;
-    }
-
-    .vendor-name {
-      font-size: 13pt;
-      font-weight: 800;
-      border-bottom: 1px solid #111;
-      display: inline-block;
-      min-width: 0;
-      width: 100%;
-      max-width: 100%;
-      padding-bottom: 2px;
-    }
-
-    .company-section {
-      display: table-cell;
-      vertical-align: top;
-      font-size: 9pt;
-      background: #fafafa;
-      padding: 10px;
-      border: 1px solid #cfcfcf;
-      overflow-wrap: anywhere;
-      width: 300px;
-      margin-top: 2px;
-    }
-
-    .section-mark {
-      color: #111;
-      padding: 2px 0 2px 10px;
-      font-weight: 800;
-      font-size: 10pt;
-      margin-top: 12px;
-      margin-bottom: 6px;
-      display: inline-block;
-      border-left: 4px solid #111;
-    }
-
-    table.summary,
-    table.items,
-    table.sign-table {
-      width: 100%;
-      border-collapse: collapse;
-    }
-
-    table.summary {
-      margin-bottom: 12px;
-      font-size: 10pt;
-    }
-
-    table.summary th,
-    table.summary td,
-    table.items th,
-    table.items td,
-    table.sign-table th,
-    table.sign-table td {
-      border: 1px solid #cfcfcf;
-      padding: 7px 8px;
-      vertical-align: top;
-    }
-
-    table.summary th,
-    table.sign-table th,
-    table.items th {
-      background: #f3f3f3;
-      text-align: left;
-    }
-
-    table.summary th {
-      width: 26%;
-    }
-
-    table.items {
-      margin-top: 4px;
-      font-size: 9pt;
-    }
-
-    table.items th {
-      text-align: center;
-      font-weight: 800;
-    }
-
-    .right { text-align: right; }
-    .center { text-align: center; }
-
-    .item-name-block {
-      font-weight: 800;
-      font-size: 10pt;
-      margin-bottom: 3px;
-      display: inline-block;
-    }
-
-    .item-spec-block {
-      font-size: 8.5pt;
-      color: #555;
-      white-space: pre-wrap;
-      line-height: 1.4;
-    }
-
-    /* 3b: ROYALTY 行の利用許諾サマリ（計算式方法・料率・別途注記）。
-       狭い支払方法列ではなく最も広い業務内容列に出すことで、折返しの
-       みっともなさを避ける。 */
-    .royalty-summary {
-      margin-top: 4px;
-      font-size: 8pt;
-      line-height: 1.45;
-      color: #444;
-    }
-    .royalty-tag {
-      display: inline-block;
-      font-size: 7pt;
-      font-weight: 800;
-      color: #92400e;
-      border: 1px solid #d9a441;
-      background: #fff8ec;
-      border-radius: 2px;
-      padding: 0 4px;
-      margin-right: 4px;
-      white-space: nowrap;
-    }
-    .royalty-aside {
-      color: #92400e;
-      white-space: nowrap;
-    }
-    /* 権利帰属先(成果物のIP帰属)の行内ラベル。 */
-    .ownership-line {
-      margin-top: 3px;
-      font-size: 8pt;
-      color: #333;
-    }
-    .ownership-tag {
-      display: inline-block;
-      font-size: 7pt;
-      font-weight: 800;
-      color: #1f3a8a;
-      border: 1px solid #9bb0e0;
-      background: #eef2fb;
-      border-radius: 2px;
-      padding: 0 4px;
-      margin-right: 4px;
-      white-space: nowrap;
-    }
-    /* 金額列「報酬は利用許諾料に含む」: 中央寄せ・改行位置を固定して
-       「許 / 諾」のような途中折返しを防ぐ。 */
-    .incl-note {
-      font-size: 8pt;
-      color: #92400e;
-      font-weight: 700;
-      text-align: center;
-      line-height: 1.4;
-    }
-
-    /* Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様を独立した「明細詳細行」
-       として描画。これにより仕様の文章量が多くても narrow 列 (数量・単価等)
-       が縦方向に間延びしない。
-       Phase 22.21.58: 旧 <td></td><td colspan="7"> の 2 セル構成では No 列下に
-       空の小さなセルが残って境界線が「切れて」見えていた問題を解消するため、
-       template 側を <td colspan="8"> の単一セルに統一。CSS で左パディングを
-       業務内容列の開始位置に揃える。 */
-    /* 3b/修正: 仕様詳細行は本行と「独立した枠線付きの行」として描画する。
-       旧実装は border-top:0 + 本行 border-bottom:0 で両者をマージしていたが、
-       本行のカラム縦線が下端で閉じず、仕様欄がグリッドから外れて見える不具合が
-       あった。上に細い区切り線を入れ、本行カラムの下端を閉じて明確に囲む。 */
-    table.items tr.detail-row > td {
-      border-top: 1px solid #cfcfcf;   /* 本行カラムの下端を閉じる区切り線 */
-      border-left: 1px solid #cfcfcf;
-      border-right: 1px solid #cfcfcf;
-      border-bottom: 1px solid #cfcfcf;
-      padding-top: 4px;
-      padding-bottom: 6px;
-      /* 左パディングを No 列幅 (6mm) + 業務内容列の通常パディング (8px) に
-         合わせて、品目名の文字位置から自然につながるよう揃える。 */
-      padding-left: calc(6mm + 8px);
-      padding-right: 8px;
-    }
-    table.items tr.detail-row .detail-cell {
-      background: transparent;
-      border-left: none;
-      padding: 0;
-      font-size: 8.5pt;
-      color: #333;
-      white-space: pre-wrap;
-      line-height: 1.35;
-    }
-    /* 修正: 本行は自身の枠線(下端含む)を保持する。詳細行は border-top で
-       区切られた独立ブロックとして直下に続く。border-collapse によって
-       本行下端と詳細行上端は1本の線に統合される。 */
-    table.items tr.detail-row .item-spec-block {
-      font-size: 8.5pt;
-      color: #333;
-      line-height: 1.35;
-      white-space: pre-wrap;
-    }
-
-    .pay-method-badge {
-      display: inline-block;
-      font-size: 7.5pt;
-      padding: 2px 6px;
-      border-radius: 2px;
-      font-weight: 800;
-      border: 1px solid #111;
-      background: #fff;
-      color: #111;
-      white-space: nowrap;
-    }
-
-    .category-label {
-      display: inline-block;
-      font-size: 7.5pt;
-      padding: 1px 5px;
-      border: 1px solid #cfcfcf;
-      background: #fff;
-      border-radius: 2px;
-      color: #111;
-      white-space: nowrap;
-      margin-right: 4px;
-      margin-bottom: 4px;
-    }
-
-    .amount-note,
-    .small-muted {
-      font-size: 8.5pt;
-      color: #555;
-    }
-
-    .total-amount {
-      font-size: 13pt;
-      font-weight: 900;
-      letter-spacing: 0.2px;
-    }
-
-    .terms-section,
-    .callout {
-      margin-top: 12px;
-      font-size: 9pt;
-      border: 1px solid #cfcfcf;
-      background: #fff;
-    }
-
-    .terms-section {
-      padding: 10px;
-    }
-
-    .terms-title {
-      font-weight: 900;
-      margin-bottom: 6px;
-      border-bottom: 1px solid #111;
-      padding-bottom: 3px;
-    }
-
-    .callout {
-      border-left: 4px solid #111;
-      padding: 8px 10px;
-    }
-
-    .sign-box {
-      height: 22mm;
-      border: 1px dashed #cfcfcf;
-      margin-top: 4px;
-    }
-  </style>
+<meta charset="UTF-8">
+<title>発注書</title>
+<style>
+  body { font-family:'Noto Sans CJK JP','Meiryo',sans-serif; font-size:10pt; line-height:1.5; color:#111; margin:0; padding:16px; }
+  h1.doc-title { font-size:22pt; margin:0 0 4px; letter-spacing:2px; }
+  .doc-head { text-align:center; margin-bottom:8px; }
+  .doc-sub { font-size:9pt; color:#555; }
+  hr.rule { border:none; border-top:2px solid #111; margin:0 0 14px; }
+  table { border-collapse:collapse; }
+  .party { width:100%; margin-bottom:14px; }
+  .party td { vertical-align:top; }
+  .party .vlabel { font-size:8pt; font-weight:700; color:#555; margin-bottom:3px; }
+  .vendor-name { font-size:13pt; font-weight:800; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; }
+  .muted { font-size:9pt; color:#555; }
+  .section-mark { font-size:10pt; font-weight:800; margin:12px 0 6px; border-left:4px solid #111; padding-left:8px; }
+  table.summary { width:100%; margin-bottom:12px; font-size:10pt; }
+  table.summary th { width:30%; background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; text-align:left; }
+  table.summary td { border:1px solid #cfcfcf; padding:7px 8px; }
+  .total-amount { font-size:13pt; font-weight:800; }
+  .amount-note { font-size:8.5pt; color:#555; }
+  table.items { width:100%; font-size:9pt; margin-top:4px; table-layout:fixed; }
+  table.items th { background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; }
+  table.items td { border:1px solid #cfcfcf; padding:7px 8px; vertical-align:top; }
+  table.items th.l, table.items td.l { text-align:left; }
+  .center { text-align:center; }
+  .right { text-align:right; }
+  .item-main td { border-bottom:none; padding:8px 8px 4px; }
+  .item-detail td { border-top:1px dashed #cfcfcf; padding:3px 8px 8px; font-size:8.5pt; color:#555; }
+  .item-detail ul { margin:4px 0 0; padding-left:16px; color:#333; line-height:1.55; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:800; background:#eef; color:#334; border-radius:3px; padding:1px 5px; margin-right:4px; }
+  .royalty-tag { background:#fef3c7; color:#92400e; }
+  .royalty-aside { color:#92400e; font-size:8pt; }
+  .callout { border:1px solid #cfcfcf; border-left:4px solid #111; padding:8px 10px; font-size:9pt; margin-top:12px; }
+  .terms-box { border:1px solid #cfcfcf; padding:10px; margin-top:12px; }
+  .terms-title { display:block; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; font-weight:800; }
+  .sign-box { height:22mm; border:1px solid #cfcfcf; margin-top:4px; }
+  .incl-note { font-size:7.5pt; color:#92400e; }
+</style>
 </head>
 <body>
-  <div class="header-row">
-    <div class="title-box">
-      <h1>発 注 書</h1>
-      {{!-- Phase 22.10: 再発行版バナー。
-           Phase 22.11.2: showReissueBanner=false なら表示しない (社内修正版を
-           対外的には初版に見せたい場合)。default は表示。
-           Phase 23.1: 条件を isReissue (生成瞬間のみ true) から (gt REVISION 0)
-           に変更。再発行版 PDF を後日再生成しても Rev. N が継続表示される。 --}}
-      {{#if (gt REVISION 0)}}
-      {{#unless (eq showReissueBanner false)}}
-      <div style="display:inline-block; margin-top:4px; padding:2px 8px; background:#fff3cd; border:1px solid #ffc107; color:#856404; font-size:9pt; font-weight:bold;">
-        修正版 Rev. {{REVISION}} — 元発注書: {{BASE_DOC_NO}}
-      </div>
-      {{/unless}}
-      {{/if}}
-    </div>
-    <div class="doc-info">
-      発注番号: <strong>{{ORDER_NO}}</strong><br>
-      {{#if isReissue}}
-      {{#unless (eq showReissueBanner false)}}
-      <span style="font-size:8pt; color:#666;">(元: {{BASE_DOC_NO}})</span><br>
-      {{/unless}}
-      {{/if}}
-      発行日: {{formatDate (or ORDER_DATE (concat ORDER_DATE_YEAR "-" ORDER_DATE_MONTH "-" ORDER_DATE_DAY))}}
-    </div>
+
+<!-- ===== ヘッダ ===== -->
+<div class="doc-head">
+  <h1 class="doc-title">発注書</h1>
+  <div class="doc-sub">
+    発注日: {{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{formatDate (or ORDER_DATE (concat ORDER_DATE_YEAR "-" ORDER_DATE_MONTH "-" ORDER_DATE_DAY))}}{{/if}}{{/if}}
+    　／　書類番号: {{ORDER_NO}}{{#if isReissue}}{{#unless (eq showReissueBanner false)}}　（元: {{BASE_DOC_NO}}）{{/unless}}{{/if}}
   </div>
+</div>
+<hr class="rule">
 
-  <div class="party-grid">
-    <div class="vendor-section">
-      <div class="vendor-name">{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}} {{VENDOR_SUFFIX}}{{/if}}</div>
-      {{#if VENDOR_REPRESENTATIVE_SAMA}}
-      <div style="margin-top:6px; font-size:9pt;">{{VENDOR_REPRESENTATIVE_SAMA}}</div>
-      {{/if}}
-      {{#if VENDOR_ADDRESS}}
-      <div style="margin-top:8px; font-size:9pt; color:#555;">{{VENDOR_ADDRESS}}</div>
-      {{/if}}
-      {{#if VENDOR_EMAIL}}
-      <div style="margin-top:4px; font-size:9pt; color:#555;">E-mail: {{VENDOR_EMAIL}}</div>
-      {{/if}}
+<!-- ===== 宛先 ＋ 発注者 ===== -->
+<table class="party">
+  <tr>
+    <td style="width:50%; padding-right:12px;">
+      <div class="vlabel">発注先（受注者）</div>
+      <div class="vendor-name">{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}}　{{VENDOR_SUFFIX}}{{else}}　御中{{/if}}</div>
+      {{#if VENDOR_ADDRESS}}<div class="muted">{{VENDOR_ADDRESS}}</div>{{/if}}
+      {{#if VENDOR_EMAIL}}<div class="muted" style="margin-top:2px;">E-mail: {{VENDOR_EMAIL}}</div>{{/if}}
       {{#if VENDOR_CONTACT_NAME}}
-      <div style="margin-top:6px; font-size:9pt;">
-        {{#if VENDOR_CONTACT_DEPARTMENT}}{{VENDOR_CONTACT_DEPARTMENT}} {{/if}}{{VENDOR_CONTACT_NAME}} 様
-      </div>
+      <div style="margin-top:4px; font-size:9pt;">{{#if VENDOR_CONTACT_DEPARTMENT}}{{VENDOR_CONTACT_DEPARTMENT}}　{{/if}}{{VENDOR_CONTACT_NAME}} 様</div>
       {{/if}}
-      <div style="margin-top:10px;">下記内容にて発注いたします。ご確認をお願いいたします。</div>
-      <div style="margin-top:14px; font-size:10pt;">件名: <strong>{{PROJECT_TITLE}}</strong></div>
-    </div>
-
-    <div class="company-section">
-      <div style="font-size:8pt; font-weight:800; color:#555; margin-bottom:4px;">発注者</div>
-      <div style="font-weight:900; font-size:12pt; margin-bottom:5px;">{{PARTY_A_NAME}}</div>
-      <div style="white-space: pre-wrap;">{{PARTY_A_ADDRESS}}</div>
-      <div style="margin-top:2px;">{{PARTY_A_REP}}</div>
+      <div style="margin-top:10px; font-size:9pt;">下記内容にて発注いたします。ご確認をお願いいたします。</div>
+      {{#if PROJECT_TITLE}}<div style="margin-top:8px; font-size:10pt;">件名: <strong>{{PROJECT_TITLE}}</strong></div>{{/if}}
+    </td>
+    <td style="width:50%; padding-left:12px; border-left:1px solid #cfcfcf;">
+      <div class="vlabel">発注者</div>
+      <div style="font-weight:900; font-size:12pt; margin-bottom:4px;">{{PARTY_A_NAME}}</div>
+      <div style="white-space:pre-wrap;">{{PARTY_A_ADDRESS}}</div>
+      {{#if PARTY_A_REP}}<div style="margin-top:2px;">{{PARTY_A_REP}}</div>{{/if}}
       {{#if STAFF_NAME}}
-      <div style="margin-top:8px; padding-top:6px; border-top:1px dashed #cfcfcf; font-size:9pt;">
+      <div style="margin-top:8px; padding-top:6px; border-top:1px solid #cfcfcf; font-size:9pt;">
         {{#if STAFF_DEPARTMENT}}<strong>部署:</strong> {{STAFF_DEPARTMENT}}<br>{{/if}}
         <strong>担当:</strong> {{STAFF_NAME}}<br>
         {{#if STAFF_PHONE}}TEL: {{STAFF_PHONE}}<br>{{/if}}
         {{#if STAFF_EMAIL}}E-mail: {{STAFF_EMAIL}}{{/if}}
       </div>
       {{/if}}
-    </div>
-  </div>
+    </td>
+  </tr>
+</table>
 
-  <div class="section-mark">■ 発注概要</div>
-  <table class="summary">
+<!-- ===== 発注概要 ===== -->
+<div class="section-mark">■ 発注概要</div>
+<table class="summary">
+  <tr>
+    <th>確定額 小計（税抜）</th>
+    <td>
+      {{#if (gt grandTotalExTax 0)}}
+      <strong class="total-amount">¥ {{formatCurrency grandTotalExTax}}</strong><br>
+      <span class="amount-note">※ 消費税等の精算は、支払通知または請求処理にて行います。</span>
+      {{else}}
+      <strong style="color:#92400e;">報酬は利用許諾料に含む</strong>
+      <span class="amount-note">／ 算定方法は明細記載の計算方法の通り</span>
+      {{/if}}
+    </td>
+  </tr>
+  <tr>
+    <th>利用許諾料</th>
+    <td>
+      {{#if has_seller_owned_license}}
+      <strong style="color:#92400e;">別途算定</strong>
+      <span style="font-size:8pt; color:#666;">／ 利用許諾計算書による（明細の ROYALTY 各行・計算式方法のとおり）</span>
+      {{else}}
+      <span style="color:#888;">—</span>
+      {{/if}}
+    </td>
+  </tr>
+  <tr>
+    <th>発注日</th>
+    <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
+  </tr>
+  <tr>
+    <th>納期<br><span style="font-size:8pt;color:#888;font-weight:400;">(または役務提供期間)</span></th>
+    <td>明細のとおり</td>
+  </tr>
+  <tr>
+    <th>支払日</th>
+    <td>明細のとおり</td>
+  </tr>
+</table>
+
+<!-- ===== 業務明細（2行レイアウト） ===== -->
+<div class="section-mark">■ 業務明細</div>
+<table class="items">
+  <thead>
     <tr>
-      <th>確定額 小計（税抜）</th>
-      <td>
-        {{#if (gt grandTotalExTax 0)}}
-        <div class="total-amount">¥ {{formatCurrency grandTotalExTax}}</div>
-        <div class="amount-note">※ 消費税等の精算は、支払通知または請求処理にて行います。</div>
-        {{else}}
-        <div style="font-weight:800; color:#92400e;">報酬は利用許諾料に含む</div>
-        <div class="amount-note">算定方法は明細記載の計算方法の通り</div>
+      <th style="width:5%;">No</th>
+      <th class="l" style="width:47%;">品目名・成果物</th>
+      <th class="center" style="width:10%;">数量</th>
+      <th class="right" style="width:18%;">単価</th>
+      <th class="right" style="width:20%;">金額（税抜）</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#if items}}
+    {{#each items}}
+    <!-- 1行目：核心情報 -->
+    <tr class="item-main">
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">
+        {{#if category}}<span class="tag">{{category}}</span>{{/if}}
+        <strong style="font-size:10pt;">{{item_name}}</strong>
+      </td>
+      <td class="right">{{or quantity qty}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}<strong>{{formatYen (or amount_ex_tax amount)}}</strong><div class="incl-note">執筆料（利用許諾料は別途）</div>{{else}}<div class="incl-note">報酬は<br>利用許諾料に含む</div>{{/if}}{{else}}<strong>{{formatYen (or amount_ex_tax amount)}}</strong>{{/if}}</td>
+    </tr>
+    <!-- 2行目：詳細情報 -->
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        【IP帰属】{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}
+        　／　支払方法：{{or calc_method payment_method_display payment_method "FIXED"}}{{#if payment_terms}}（{{payment_terms}}）{{else}}{{#if payment_method}}（{{payment_method}}）{{/if}}{{/if}}
+        　／　納期：{{#if (eq calc_method "SUBSCRIPTION")}}{{billingDayLabel billing_day cycle}}{{else}}{{formatDate delivery_date}}{{/if}}
+        　／　支払日：{{#if (eq calc_method "SUBSCRIPTION")}}{{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDateCompact term_end}}{{else}}継続中{{/if}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}利用許諾料計算書の通り{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}{{/if}}
+        {{#if (eq calc_method "ROYALTY")}}
+        <div style="margin-top:4px;"><span class="tag royalty-tag">利用許諾</span>{{#if (eq royalty_calc_basis "manufacturing")}}個数 × 基準価格 × 料率{{else}}{{#if (eq royalty_calc_basis "sales")}}売上高 × 料率{{else}}{{#if (eq royalty_calc_basis "sublicense")}}受領額 × 料率{{else}}{{#if (eq royalty_calc_basis "fixed")}}固定額{{else}}個数 × 基準価格 × 料率{{/if}}{{/if}}{{/if}}{{/if}}{{#if rate_pct}} ・料率 {{rate_pct}}%{{/if}}<span class="royalty-aside">／ 利用許諾料は別途（利用許諾計算書による算定）</span></div>
+        {{/if}}
+        {{#if (or spec detailText)}}
+        <ul>
+          {{#if spec}}<li>{{spec}}</li>{{/if}}
+          {{#if detailText}}<li>{{detailText}}</li>{{/if}}
+        </ul>
+        {{/if}}
+        {{#if payment_schedule}}
+        <div style="margin-top:4px; font-weight:700;">支払スケジュール</div>
+        <table style="width:100%; border-collapse:collapse; font-size:8.5pt;">
+          <tr><th class="l" style="width:8%;">回</th><th class="l">支払予定日</th><th class="right" style="width:30%;">金額</th></tr>
+          {{#each payment_schedule}}
+          <tr>
+            <td class="center">{{index1 @index}}</td>
+            <td>{{date}}</td>
+            <td class="right">{{#if amount}}{{formatYen amount}}{{/if}}</td>
+          </tr>
+          {{/each}}
+        </table>
         {{/if}}
       </td>
     </tr>
-    <tr>
-      <th>利用許諾料</th>
-      {{!-- 受注者帰属(利用許諾型=IP留保して許諾)が1つでもあるときだけ「別途算定」。
-           発注者帰属(譲渡型)のみのときは利用許諾料は対象外なので「—」。
-           ※発注者×ROYALTYは業績連動報酬であって利用許諾料ではない。 --}}
-      <td>
-        {{#if has_seller_owned_license}}
-        <span style="font-weight:800; color:#92400e;">別途算定</span>
-        <span style="font-size:8pt; color:#666;">／ 利用許諾計算書による（明細の ROYALTY 各行・計算式方法のとおり）</span>
-        {{else}}
-        <span style="color:#888;">—</span>
-        {{/if}}
+    {{/each}}
+    {{else}}
+    <!-- 単一明細フォールバック (items[] が空のとき) -->
+    <tr class="item-main">
+      <td class="center">1</td>
+      <td class="l"><strong style="font-size:10pt;">{{ITEM_NAME}}</strong></td>
+      <td class="right">1</td>
+      <td class="right">-</td>
+      <td class="right"><strong>¥ {{formatCurrency grandTotalExTax}}</strong></td>
+    </tr>
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        支払方法：{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}{{#if PAYMENT_TERMS}}（{{PAYMENT_TERMS}}）{{else}}{{#if PAYMENT_METHOD}}（{{PAYMENT_METHOD}}）{{/if}}{{/if}}
+        　／　納期：{{formatDate DELIVERY_DATE}}
+        　／　支払日：{{summaryPaymentTerms}}
       </td>
     </tr>
-    {{!-- Phase 22.21.30: 発注日 行を追加。
-         formData.発注日 / order_date が空のときは「発行日」へ fallback、
-         それも空なら "—" 表示。 --}}
-    <tr>
-      <th>発注日</th>
-      <td>{{#if 発注日}}{{発注日}}{{else}}{{#if order_date}}{{order_date}}{{else}}{{#if 発行日}}{{発行日}}{{else}}—{{/if}}{{/if}}{{/if}}</td>
-    </tr>
-    <tr>
-      <th>納期<br><span style="font-size:8pt;color:#888;font-weight:400;">(または役務提供期間)</span></th>
-      <td>明細のとおり</td>
-    </tr>
-    <tr>
-      <th>支払日</th>
-      {{!-- 仕様ロック: 明細ごとに異なるため概要は明細参照。ROYALTY固定報酬なしは「利用許諾料計算書の通り」。 --}}
-      <td>明細のとおり</td>
-    </tr>
-  </table>
-
-  <div class="section-mark">■ 業務明細</div>
-  <table class="items">
-    <thead>
-      <tr>
-        <th style="width:6mm;">No</th>
-        <th>業務内容・成果物</th>
-        <th style="width:15mm;">支払方法</th>
-        <th style="width:20mm;">納期</th>
-        <th style="width:20mm;">支払日</th>
-        <th style="width:12mm;">数量</th>
-        <th style="width:18mm;">単価</th>
-        <th style="width:24mm;">金額（税抜）</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{#if items}}
-      {{#each items}}
-      {{!-- 受注者帰属(利用許諾料)の行も業務明細に出すが、金額は出さず「利用許諾料に含む」とし
-           下段の「利用許諾条件」へ誘導する。 --}}
-      {{!-- Phase 17n: 仕様の文章量に影響されず narrow 列が間延びしないよう、
-           本行（数値・日付など）と仕様詳細行を分けて描画。 --}}
-      {{!-- Phase 17n: spec か detailText があるときだけ detail-row を表示 --}}
-      <tr class="{{#if (or spec detailText)}}has-detail{{/if}}">
-        <td class="center">{{or line_no (index1 @index)}}</td>
-        <td>
-          {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
-          <div class="item-name-block">{{item_name}}</div>
-          {{!-- 権利帰属先(成果物のIP帰属)。約款第7条の譲渡型/利用許諾型に対応。
-               受注者帰属=利用許諾型(IPは受注者に留保)、発注者帰属=譲渡型(IPは発注者へ移転)。 --}}
-          <div class="ownership-line"><span class="ownership-tag">IP帰属</span>{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}</div>
-          {{!-- 仕様ロック: 利用許諾(ROYALTY)の計算式方法・料率・別途注記は、折返しが
-               汚くなる狭い「支払方法」列ではなく、最も広いこの業務内容列に出す。 --}}
-          {{#if (eq calc_method "ROYALTY")}}
-          <div class="royalty-summary">
-            <span class="royalty-tag">利用許諾</span>{{#if (eq royalty_calc_basis "manufacturing")}}個数 × 基準価格 × 料率{{else}}{{#if (eq royalty_calc_basis "sales")}}売上高 × 料率{{else}}{{#if (eq royalty_calc_basis "sublicense")}}受領額 × 料率{{else}}{{#if (eq royalty_calc_basis "fixed")}}固定額{{else}}個数 × 基準価格 × 料率{{/if}}{{/if}}{{/if}}{{/if}}{{#if rate_pct}} ・料率 {{rate_pct}}%{{/if}}
-            <span class="royalty-aside">／ 利用許諾料は別途（利用許諾計算書による算定）</span>
-          </div>
-          {{/if}}
-        </td>
-        <td class="center">
-          {{!-- Phase 13: 計算方式バッジ + 支払条件。Phase 22.8: SUBSCRIPTION は周期ラベル。
-               3b: ROYALTY の計算式方法・料率は業務内容列へ移動し、ここはバッジ＋支払条件のみ。 --}}
-          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
-          {{#if (eq calc_method "SUBSCRIPTION")}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{cycleLabel cycle}}</div>
-          {{else}}
-          {{#if payment_terms}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_terms}}</div>
-          {{else}}
-          {{#if payment_method}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_method}}</div>
-          {{/if}}
-          {{/if}}
-          {{/if}}
-        </td>
-        {{!-- Phase 17h: 業務明細ごとの納期 (delivery_date) と支払日 (payment_date) を別列で
-             Phase 22.8: SUBSCRIPTION のときは納期=支払日サマリ ("毎月25日") /
-                         支払日=期間サマリ ("2026/01/01 〜 2026/12/31") に切替 --}}
-        <td class="center">
-          {{#if (eq calc_method "SUBSCRIPTION")}}
-            {{billingDayLabel billing_day cycle}}
-          {{else}}
-            {{formatDate delivery_date}}
-          {{/if}}
-        </td>
-        <td class="center">
-          {{#if (eq calc_method "SUBSCRIPTION")}}
-            {{!-- Phase 22.8.1: 期間はコンパクト日付 (2026/04/01) で 1 行ずつ。
-                 折返し時も "〜" を独立行に出さないよう nowrap で各端日付を確保。 --}}
-            <div style="font-size:8pt; line-height:1.4; white-space:nowrap;">
-              {{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}}
-            </div>
-            <div style="font-size:7pt; color:#999; line-height:1; margin:1px 0;">〜</div>
-            <div style="font-size:8pt; line-height:1.4; white-space:nowrap;">
-              {{#if term_end}}{{formatDateCompact term_end}}{{else}}<span style="color:#666;">継続中</span>{{/if}}
-            </div>
-          {{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}<span style="color:#92400e; font-size:7.5pt;">利用許諾料計算書の通り</span>{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}
-          {{/if}}
-        </td>
-        {{!-- 数量は確定額に関わらず常に表示。利用許諾料(ROYALTY)0円でも数量は
-             仕様で確定しているため(フォーム入力値)反映する。 --}}
-        <td class="right">{{or quantity qty}}</td>
-        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatYen (or unit_price unitPrice)}}{{/if}}</td>
-        <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatYen (or amount_ex_tax amount)}}<div style="font-size:7pt;color:#92400e;">執筆料（利用許諾料は別途）</div>{{else}}<div class="incl-note">報酬は<br>利用許諾料に含む</div>{{/if}}{{else}}{{formatYen (or amount_ex_tax amount)}}{{/if}}</td>
-      </tr>
-      {{#if (or spec detailText)}}
-      {{!-- Phase 17n / 22.8.1 / 22.21.53 / 22.21.58: 仕様 / 詳細行。
-           本行 (.has-detail) と border を共有して同じ明細の一部に見せる。
-           Phase 22.21.58: 旧 2-cell 構成 (空 td + colspan=7) では No 列下に
-           空セルが残って境界線が分断されていた問題を解消するため、
-           colspan=8 の単一セルに統一。CSS の padding-left で業務内容列の
-           開始位置に文字を揃える。 --}}
-      <tr class="detail-row">
-        <td colspan="8">
-          <div class="detail-cell">
-            {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
-            {{#if detailText}}<div class="item-spec-block"{{#if spec}} style="margin-top:2px;"{{/if}}>{{detailText}}</div>{{/if}}
-          </div>
-        </td>
-      </tr>
-      {{/if}}
-      {{#if payment_schedule}}
-      <tr class="detail-row">
-        <td colspan="8">
-          <div class="detail-cell">
-            <div style="font-weight:700;margin-bottom:2px;">支払スケジュール</div>
-            <table style="width:100%;border-collapse:collapse;font-size:8.5pt;">
-              <tr><th style="text-align:left;width:8%;">回</th><th style="text-align:left;">支払予定日</th><th style="text-align:right;width:30%;">金額</th></tr>
-              {{#each payment_schedule}}
-              <tr>
-                <td style="text-align:center;">{{index1 @index}}</td>
-                <td>{{date}}</td>
-                <td style="text-align:right;">{{#if amount}}{{formatYen amount}}{{/if}}</td>
-              </tr>
-              {{/each}}
-            </table>
-          </div>
-        </td>
-      </tr>
-      {{/if}}
-      {{/each}}
-      {{else}}
-      {{!-- 単一明細フォールバック (items[] が空のとき) — Phase 13: CALC_METHOD + PAYMENT_TERMS 統一 --}}
-      <tr>
-        <td class="center">1</td>
-        <td><div class="item-name-block">{{ITEM_NAME}}</div></td>
-        <td class="center">
-          <span class="pay-method-badge">{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}</span>
-          {{#if PAYMENT_TERMS}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_TERMS}}</div>
-          {{else}}
-          {{#if PAYMENT_METHOD}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_METHOD}}</div>
-          {{/if}}
-          {{/if}}
-        </td>
-        <td class="center">{{formatDate DELIVERY_DATE}}</td>
-        <td class="center">{{summaryPaymentTerms}}</td>
-        <td class="right">1</td>
-        <td class="right">-</td>
-        <td class="right">¥ {{formatCurrency grandTotalExTax}}</td>
-      </tr>
-      {{/if}}
-      <tr>
-        <td colspan="7" class="right"><strong>確定額 小計（税抜)</strong></td>
-        {{!-- 文言重複の割愛: 確定額0のとき「報酬は利用許諾料に含む」は概要(確定額小計)と
-             明細の金額列で既に明示しているため、小計セルは「—」に留める。 --}}
-        <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalExTax) 0)}}<strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong>{{else}}<span style="color:#888;">—</span>{{/if}}</td>
-      </tr>
-    </tbody>
-  </table>
-
-  {{!-- 利用許諾料(ROYALTY)明細の条件。確定額には含めず、利用許諾料計算書・分配に連動。
-       3b: 表示駆動を帰属ではなく支払方法(ROYALTY)へ統一(②発注者×ROYALTYも対象)。 --}}
-  {{#if has_license_conditions}}
-  <div class="section-mark">■ 利用許諾条件（利用許諾料・確定額外）</div>
-  <table class="items">
-    <thead>
-      <tr>
-        <th style="width:4%;">#</th>
-        <th style="width:26%;">条件名称 / 区分</th>
-        <th style="width:34%;">計算式</th>
-        <th style="width:18%;">料率 / 基準</th>
-        <th style="width:18%;">MG / AG</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{#if financial_conditions.length}}
-      {{!-- 共通利用許諾条件: 受注者帰属の成果物に一括適用。適用範囲を併記。 --}}
-      {{#each financial_conditions}}
-      <tr>
-        <td class="center">{{or condition_no (index1 @index)}}</td>
-        <td>{{#if condition_name}}{{condition_name}}{{else}}利用許諾条件{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
-        <td>{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
-        <td>{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
-        <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
-      </tr>
-      {{#if applies_scope}}
-      <tr><td style="border-top:0;"></td><td colspan="4" style="border-top:0; font-size:7.5pt; color:#444;"><strong>適用範囲:</strong> {{applies_scope}}</td></tr>
-      {{/if}}
-      {{/each}}
-      {{else}}
-      {{!-- 後方互換: 旧 per-line 条件(ROYALTY明細ごと)。共通条件が無い既存発注書向け。
-           3b: 受注者帰属ゲート→ROYALTYゲート(②発注者×ROYALTYも明細に出す)。 --}}
-      {{#each items}}
-      {{#if (eq calc_method "ROYALTY")}}
-      <tr>
-        <td class="center">{{or line_no (index1 @index)}}</td>
-        <td>{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
-        <td>{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
-        <td>{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
-        <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
-      </tr>
-      {{/if}}
-      {{/each}}
-      {{/if}}
-    </tbody>
-  </table>
-  <div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の利用許諾料（ROYALTY）明細に適用される条件です。発注の確定額（小計）には含まれず、別途、利用許諾料計算書により算定・支払われます。</div>
-  {{/if}}
-
-  {{!-- Phase 22.21.56: その他手数料 (税抜・合計に加算)。コーディネート費・
-       振込手数料 等、業務委託報酬とは別の手数料項目。経費 (税込・別精算) とは
-       明確に区別され、本表の合計 grandTotalExTax に加算済み。 --}}
-  {{#if other_fees}}
-  {{#if (gt (length other_fees) 0)}}
-  <div class="section-mark">■ その他手数料（税抜・合計に加算）</div>
-  <table class="items">
-    <thead>
-      <tr>
-        <th style="width:6mm;">No</th>
-        <th>項目名</th>
-        <th style="width:30mm;">金額（税抜）</th>
-        <th>摘要</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{#each other_fees}}
-      <tr>
-        <td class="center">{{or line_no (index1 @index)}}</td>
-        <td><div class="item-name-block">{{fee_name}}</div></td>
-        <td class="right">{{formatYen amount}}</td>
-        <td>{{remarks}}</td>
-      </tr>
-      {{/each}}
-      <tr>
-        <td colspan="2" class="right"><strong>手数料 小計（税抜)</strong></td>
-        <td class="right"><strong>¥ {{formatCurrency otherFeesTotal}}</strong></td>
-        <td></td>
-      </tr>
-    </tbody>
-  </table>
-
-  {{!-- 合計 (業務委託 + その他手数料) を再掲。上部「発注概要」テーブルの
-       合計とも一致するが、明細表 + 手数料表 の直後に再表示することで読み手が
-       支払総額をすぐ把握できる。 --}}
-  <table class="summary" style="margin-top:6px;">
-    <tr>
-      <th>発注合計（税抜・業務委託 + 手数料）</th>
-      <td>
-        <div class="total-amount">¥ {{formatCurrency grandTotalExTax}}</div>
-        <div class="amount-note">
-          ※ 業務委託 ¥{{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}
-          ＋ 手数料 ¥{{formatCurrency otherFeesTotal}}
-        </div>
-      </td>
-    </tr>
-  </table>
-  {{/if}}
-  {{/if}}
-
-  {{!-- Phase 17i: 経費 (交通費等・税込み額表示) --}}
-  {{#if expenses}}
-  {{#if (gt (length expenses) 0)}}
-  <div class="section-mark">■ 経費（交通費等／税込み額）</div>
-  <table class="items">
-    <thead>
-      <tr>
-        <th style="width:6mm;">No</th>
-        <th>費目</th>
-        <th style="width:24mm;">発生日</th>
-        <th style="width:26mm;">金額（税込）</th>
-        <th>摘要</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{#each expenses}}
-      <tr>
-        <td class="center">{{or line_no (index1 @index)}}</td>
-        <td>
-          <div class="item-name-block">{{expense_name}}</div>
-          {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
-        </td>
-        <td class="center">{{formatDate spent_date}}</td>
-        <td class="right">{{formatYen amount_inc_tax}}</td>
-        <td>{{remarks}}</td>
-      </tr>
-      {{/each}}
-      <tr>
-        <td colspan="3" class="right"><strong>経費合計（税込)</strong></td>
-        <td class="right"><strong>¥ {{formatCurrency expensesTotalIncTax}}</strong></td>
-        <td></td>
-      </tr>
-    </tbody>
-  </table>
-  <div class="small-muted" style="margin-top:4px;">※ 経費は税込み額にて精算します。本発注書に記載の各項目の領収書原本またはそのコピーを添付してください。</div>
-  {{/if}}
-  {{/if}}
-
-  {{#if SPECIAL_TERMS}}
-  <div class="terms-section">
-    <div class="terms-title">特約事項</div>
-    <div style="white-space: pre-wrap;">{{SPECIAL_TERMS}}</div>
-  </div>
-  {{/if}}
-
-  {{#if REMARKS}}
-  <div class="terms-section">
-    <div class="terms-title">備考</div>
-    {{#if REMARKS_FIXED}}
-    <div style="white-space: pre-wrap;">{{REMARKS_FIXED}}</div>
     {{/if}}
-    {{#if REMARKS_FREE}}
-    <div style="white-space: pre-wrap; margin-top:{{#if REMARKS_FIXED}}8px{{else}}0{{/if}};">{{REMARKS_FREE}}</div>
+    <!-- 合計 -->
+    <tr>
+      <td colspan="4" class="right"><strong>確定額 小計（税抜）</strong></td>
+      <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalExTax) 0)}}<strong>¥ {{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}}</strong>{{else}}<span style="color:#888;">—</span>{{/if}}</td>
+    </tr>
+  </tbody>
+</table>
+
+<p style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の利用許諾料（ROYALTY）明細に適用される条件です。発注の確定額（小計）には含まれず、別途、利用許諾料計算書により算定・支払われます。</p>
+
+<!-- ===== 利用許諾条件（利用許諾料・確定額外） ===== -->
+{{#if has_license_conditions}}
+<div class="section-mark">■ 利用許諾条件（利用許諾料・確定額外）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:4%;">#</th>
+      <th class="l" style="width:26%;">条件名称 / 区分</th>
+      <th class="l" style="width:34%;">計算式</th>
+      <th class="l" style="width:18%;">料率 / 基準</th>
+      <th class="right" style="width:18%;">MG / AG</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#if financial_conditions.length}}
+    {{#each financial_conditions}}
+    <tr>
+      <td class="center">{{or condition_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}利用許諾条件{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
+    </tr>
+    {{#if applies_scope}}
+    <tr><td style="border-top:0;"></td><td colspan="4" class="l" style="border-top:0; font-size:7.5pt; color:#444;"><strong>適用範囲:</strong> {{applies_scope}}</td></tr>
     {{/if}}
-  </div>
-  {{/if}}
-
-  {{#if HAS_BASE_CONTRACT}}
-  <div class="callout">
-    <strong>準拠契約:</strong> 本発注書は、甲乙間で締結済みの基本契約（{{MASTER_CONTRACT_REF}}）に基づき発行されるものであり、
-    本発注書に定めのない事項については当該基本契約の定めによるものとします。
-  </div>
-  {{else}}
-  <div class="callout">
-    <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用・2026年改正法対応版）」が適用されます。
-    受注者は本発注書を承諾することにより、当該約款にも同意したものとみなします。
-  </div>
-  {{/if}}
-
-  {{#if BANK_NAME}}
-  <div class="terms-section">
-    <div class="terms-title">支払先情報</div>
-    <table class="summary" style="margin-bottom:6px;">
-      <tr><th>金融機関</th><td>{{BANK_NAME}} {{BRANCH_NAME}}</td></tr>
-      <tr><th>口座</th><td>{{ACCOUNT_TYPE}} {{ACCOUNT_NUMBER}}</td></tr>
-      <tr><th>口座名義</th><td>{{ACCOUNT_HOLDER_KANA}}</td></tr>
-      {{#if INVOICE_REGISTRATION_NUMBER}}
-      <tr><th>適格請求書発行事業者</th><td>登録番号: T{{INVOICE_REGISTRATION_NUMBER}}</td></tr>
-      {{/if}}
-    </table>
-    {{#if TRANSFER_FEE_PAYER}}
-    <div class="small-muted">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</div>
-    {{/if}}
-  </div>
-  {{else}}
-  {{#if BANK_INFO}}
-  <div class="terms-section">
-    <div class="terms-title">支払先情報</div>
-    <div style="white-space: pre-wrap;">{{BANK_INFO}}</div>
-    {{#if TRANSFER_FEE_PAYER}}
-    <div class="small-muted" style="margin-top:4px;">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</div>
-    {{/if}}
-  </div>
-  {{/if}}
-  {{/if}}
-
-  {{#if SHOW_ORDER_SIGN_SECTION}}
-  <div class="section-mark">■ 通知先</div>
-  <table class="summary">
+    {{/each}}
+    {{else}}
+    {{#each items}}
+    {{#if (eq calc_method "ROYALTY")}}
     <tr>
-      <th style="width:30%;">発注先（受注者）</th>
-      <td>担当：{{VENDOR_CONTACT_NAME}}　／　TEL：{{VENDOR_CONTACT_PHONE}}　／　E-mail：{{VENDOR_EMAIL}}</td>
-    </tr>
-    <tr>
-      <th>発注元（当社）</th>
-      <td>担当：{{STAFF_NAME}}　／　TEL：{{STAFF_PHONE}}　／　E-mail：{{STAFF_EMAIL}}</td>
-    </tr>
-  </table>
-  <div style="margin-top:6px; font-size:9pt; color:#555;">本発注に関する通知その他の連絡は、上記の通知先に対して行うものとします。基本契約がある場合は、その通知条項に従います。</div>
-
-  <div class="section-mark">■ 署名欄</div>
-  <table class="sign-table" style="margin-top: 6px;">
-    <tr>
-      <th style="width:50%;">発注者（甲）</th>
-      <th style="width:50%;">受注者（乙）</th>
-    </tr>
-    <tr>
-      <td>
-        <div>{{PARTY_A_NAME}}</div>
-        <div class="small-muted">{{PARTY_A_ADDRESS}}</div>
-        <div style="margin-top:4px;">{{PARTY_A_REP}}</div>
-        <div class="sign-box"></div>
-      </td>
-      <td>
-        <div>{{VENDOR_NAME}}</div>
-        <div class="small-muted">{{VENDOR_ADDRESS}}</div>
-        <div style="margin-top:4px;">{{#if VENDOR_REPRESENTATIVE_SAMA}}{{VENDOR_REPRESENTATIVE_SAMA}}{{else}}{{VENDOR_CONTACT_NAME}}{{/if}}</div>
-        <div class="sign-box"></div>
-      </td>
-    </tr>
-  </table>
-  {{/if}}
-
-  {{!-- Phase 17l: 承諾セクションは ACCEPT_METHOD と SHOW_SIGN_SECTION を
-       それぞれ独立に評価する。これまでは SHOW_SIGN_SECTION が ACCEPT_METHOD
-       の {{#if}} 配下にネストされていたため、ユーザーが「承諾署名欄を表示」
-       を TRUE にしても、承諾方法が空だと署名欄ごと消えてしまっていた。 --}}
-  {{#if (or ACCEPT_METHOD SHOW_SIGN_SECTION)}}
-  <div class="section-mark">■ 受領確認（承諾）</div>
-  {{#if ACCEPT_METHOD}}
-  <div class="callout">
-    <div style="font-weight:900;">承諾方法</div>
-    <div class="small-muted">
-      {{ACCEPT_METHOD}}
-      {{#if ACCEPT_REPLY_DUE_DATE}}<br>返信期限: {{ACCEPT_REPLY_DUE_DATE}}{{/if}}
-    </div>
-    {{#if ACCEPT_BY_PERFORMANCE}}
-    <div class="small-muted" style="margin-top:6px;">
-      なお、受注者が本発注に基づく業務へ着手した場合、その時点で本発注内容に承諾したものとして取り扱うことがあります。
-    </div>
-    {{/if}}
-  </div>
-  {{/if}}
-  {{#if SHOW_SIGN_SECTION}}
-  <table class="sign-table" style="margin-top: 6px;">
-    <tr>
-      <th style="width:30%;">受領日（承諾日）</th>
-      <td>{{formatDate VENDOR_ACCEPT_DATE}}</td>
-    </tr>
-    {{!-- Phase 22.21.44: 取引先が法人 (VENDOR_IS_CORPORATION='法人') のときは
-         会社名を 受領者署名行の前に自動表示する。VENDOR_NAME はフォームの
-         [取引先] ボタンで vendor マスタから自動補完される。
-         個人事業主の場合はこの行を省略し、氏名のみで完結させる。 --}}
-    {{#if (eq VENDOR_IS_CORPORATION "法人")}}
-    <tr>
-      <th>会社名（受注者）</th>
-      <td>{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}} {{VENDOR_SUFFIX}}{{/if}}</td>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}基準価格 × 個数 × 料率{{/if}}{{#if (eq calc_type "BASE_RATE")}}基準価格 × 料率{{/if}}{{#if (eq calc_type "FIXED")}}固定値（{{#if (eq fixed_kind "INSTALLMENT")}}分割{{else}}一括{{/if}}）{{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}サブスク（{{#if (eq subscription_cycle "ANNUAL")}}年払い{{else}}月払い{{/if}}）{{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>料率：{{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">基準価格：{{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{formatYen mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{formatYen ag_amount}}{{/if}}</td>
     </tr>
     {{/if}}
-    <tr>
-      <th>受領者（承諾者）</th>
-      <td>
-        {{VENDOR_ACCEPT_NAME}}
-        <div class="sign-box"></div>
-        <div class="small-muted">
-          ※ 記名押印（または署名）欄{{#if (eq VENDOR_IS_CORPORATION "法人")}} — 受注者の権限ある代表者または担当者の記名押印をお願いします{{/if}}
-        </div>
-      </td>
-    </tr>
-  </table>
-  {{/if}}
-  {{/if}}
+    {{/each}}
+    {{/if}}
+  </tbody>
+</table>
+<div style="margin-top:4px; font-size:8.5pt; color:#555;">※ 上記は本発注の利用許諾料（ROYALTY）明細に適用される条件です。発注の確定額（小計）には含まれず、別途、利用許諾料計算書により算定・支払われます。</div>
+{{/if}}
 
-  {{!-- Phase 17i: 基本契約なしの場合は標準約款（terms_spot_2026）を別紙としてPDF末尾に添付 --}}
-  {{#unless HAS_BASE_CONTRACT}}
-  {{> terms_spot_2026}}
-  {{/unless}}
+<!-- ===== その他手数料 ===== -->
+{{#if other_fees}}
+{{#if (gt (length other_fees) 0)}}
+<div class="section-mark">■ その他手数料（税抜・合計に加算）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:6mm;">No</th>
+      <th class="l">項目名</th>
+      <th class="right" style="width:30mm;">金額（税抜）</th>
+      <th class="l">摘要</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each other_fees}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l"><strong>{{fee_name}}</strong></td>
+      <td class="right">{{formatYen amount}}</td>
+      <td class="l">{{remarks}}</td>
+    </tr>
+    {{/each}}
+    <tr>
+      <td colspan="2" class="right"><strong>手数料 小計（税抜）</strong></td>
+      <td class="right"><strong>¥ {{formatCurrency otherFeesTotal}}</strong></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th style="width:40%;">発注合計（税抜・業務委託 + 手数料）</th>
+    <td>
+      <strong class="total-amount">¥ {{formatCurrency grandTotalExTax}}</strong><br>
+      <span class="amount-note">※ 業務委託 ¥{{formatCurrency (or itemsSubtotalExTax grandTotalExTax)}} ＋ 手数料 ¥{{formatCurrency otherFeesTotal}}</span>
+    </td>
+  </tr>
+</table>
+{{/if}}
+{{/if}}
+
+<!-- ===== 経費 ===== -->
+{{#if expenses}}
+{{#if (gt (length expenses) 0)}}
+<div class="section-mark">■ 経費（交通費等／税込み額）</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:6mm;">No</th>
+      <th class="l">費目</th>
+      <th class="center" style="width:24mm;">発生日</th>
+      <th class="right" style="width:26mm;">金額（税込）</th>
+      <th class="l">摘要</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#each expenses}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l"><strong>{{expense_name}}</strong>{{#if spec}}<div style="font-size:8pt;color:#666;">{{spec}}</div>{{/if}}</td>
+      <td class="center">{{formatDate spent_date}}</td>
+      <td class="right">{{formatYen amount_inc_tax}}</td>
+      <td class="l">{{remarks}}</td>
+    </tr>
+    {{/each}}
+    <tr>
+      <td colspan="3" class="right"><strong>経費合計（税込）</strong></td>
+      <td class="right"><strong>¥ {{formatCurrency expensesTotalIncTax}}</strong></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
+<p style="margin-top:4px; font-size:8.5pt; color:#555;">※ 経費は税込み額にて精算します。本発注書に記載の各項目の領収書原本またはそのコピーを添付してください。</p>
+{{/if}}
+{{/if}}
+
+<!-- ===== 特約事項 ===== -->
+{{#if SPECIAL_TERMS}}
+<div class="terms-box">
+  <strong class="terms-title">特約事項</strong>
+  <div style="white-space:pre-wrap;">{{SPECIAL_TERMS}}</div>
+</div>
+{{/if}}
+
+<!-- ===== 備考 ===== -->
+{{#if REMARKS}}
+<div class="terms-box">
+  <strong class="terms-title">備考</strong>
+  {{#if REMARKS_FIXED}}<div style="white-space:pre-wrap;">{{REMARKS_FIXED}}</div>{{/if}}
+  {{#if REMARKS_FREE}}<div style="white-space:pre-wrap; margin-top:{{#if REMARKS_FIXED}}8px{{else}}0{{/if}};">{{REMARKS_FREE}}</div>{{/if}}
+</div>
+{{/if}}
+
+<!-- ===== 準拠契約 / 適用約款 ===== -->
+{{#if HAS_BASE_CONTRACT}}
+<div class="callout">
+  <strong>準拠契約:</strong> 本発注書は、甲乙間で締結済みの基本契約（{{MASTER_CONTRACT_REF}}）に基づき発行されるものであり、本発注書に定めのない事項については当該基本契約の定めによるものとします。
+</div>
+{{else}}
+<div class="callout">
+  <strong>適用約款:</strong> 本発注書には別紙「業務委託基本契約約款（スポット契約用・2026年改正法対応版）」が適用されます。受注者は本発注書を承諾することにより、当該約款にも同意したものとみなします。
+</div>
+{{/if}}
+
+<!-- ===== 支払先情報 ===== -->
+{{#if BANK_NAME}}
+<div class="terms-box">
+  <strong class="terms-title">支払先情報</strong>
+  <table class="summary" style="margin-bottom:6px;">
+    <tr><th>金融機関</th><td>{{BANK_NAME}} {{BRANCH_NAME}}</td></tr>
+    <tr><th>口座</th><td>{{ACCOUNT_TYPE}} {{ACCOUNT_NUMBER}}</td></tr>
+    <tr><th>口座名義</th><td>{{ACCOUNT_HOLDER_KANA}}</td></tr>
+    {{#if INVOICE_REGISTRATION_NUMBER}}
+    <tr><th>適格請求書発行事業者</th><td>登録番号: T{{INVOICE_REGISTRATION_NUMBER}}</td></tr>
+    {{/if}}
+  </table>
+  {{#if TRANSFER_FEE_PAYER}}<span style="font-size:8.5pt; color:#555;">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</span>{{/if}}
+</div>
+{{else}}
+{{#if BANK_INFO}}
+<div class="terms-box">
+  <strong class="terms-title">支払先情報</strong>
+  <div style="white-space:pre-wrap;">{{BANK_INFO}}</div>
+  {{#if TRANSFER_FEE_PAYER}}<div style="font-size:8.5pt; color:#555; margin-top:4px;">※ 振込手数料: {{TRANSFER_FEE_PAYER}}負担</div>{{/if}}
+</div>
+{{/if}}
+{{/if}}
+
+<!-- ===== 通知先 ＋ 署名欄 ===== -->
+{{#if SHOW_ORDER_SIGN_SECTION}}
+<div class="section-mark">■ 通知先</div>
+<table class="summary">
+  <tr>
+    <th>発注先（受注者）</th>
+    <td>担当：{{VENDOR_CONTACT_NAME}}　／　TEL：{{VENDOR_CONTACT_PHONE}}　／　E-mail：{{VENDOR_EMAIL}}</td>
+  </tr>
+  <tr>
+    <th>発注元（当社）</th>
+    <td>担当：{{STAFF_NAME}}　／　TEL：{{STAFF_PHONE}}　／　E-mail：{{STAFF_EMAIL}}</td>
+  </tr>
+</table>
+<p style="font-size:9pt; color:#555;">本発注に関する通知その他の連絡は、上記の通知先に対して行うものとします。基本契約がある場合は、その通知条項に従います。</p>
+
+<div class="section-mark">■ 署名欄</div>
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th style="width:50%;">発注者（甲）</th>
+    <th style="width:50%;">受注者（乙）</th>
+  </tr>
+  <tr>
+    <td>
+      <div>{{PARTY_A_NAME}}</div>
+      <div style="font-size:8.5pt; color:#555;">{{PARTY_A_ADDRESS}}</div>
+      <div style="margin-top:4px;">{{PARTY_A_REP}}</div>
+      <div class="sign-box"></div>
+    </td>
+    <td>
+      <div>{{VENDOR_NAME}}</div>
+      <div style="font-size:8.5pt; color:#555;">{{VENDOR_ADDRESS}}</div>
+      <div style="margin-top:4px;">{{#if VENDOR_REPRESENTATIVE_SAMA}}{{VENDOR_REPRESENTATIVE_SAMA}}{{else}}{{VENDOR_CONTACT_NAME}}{{/if}}</div>
+      <div class="sign-box"></div>
+    </td>
+  </tr>
+</table>
+{{/if}}
+
+<!-- ===== 受領確認（承諾） ===== -->
+{{#if (or ACCEPT_METHOD SHOW_SIGN_SECTION)}}
+<div class="section-mark">■ 受領確認（承諾）</div>
+{{#if ACCEPT_METHOD}}
+<div class="callout">
+  <strong>承諾方法</strong><br>
+  <span style="color:#555;">{{ACCEPT_METHOD}}{{#if ACCEPT_REPLY_DUE_DATE}}<br>返信期限: {{ACCEPT_REPLY_DUE_DATE}}{{/if}}</span>
+  {{#if ACCEPT_BY_PERFORMANCE}}<span style="color:#555; margin-top:6px; display:block;">なお、受注者が本発注に基づく業務へ着手した場合、その時点で本発注内容に承諾したものとして取り扱うことがあります。</span>{{/if}}
+</div>
+{{/if}}
+{{#if SHOW_SIGN_SECTION}}
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th>受領日（承諾日）</th>
+    <td>{{formatDate VENDOR_ACCEPT_DATE}}</td>
+  </tr>
+  {{#if (eq VENDOR_IS_CORPORATION "法人")}}
+  <tr>
+    <th>会社名（受注者）</th>
+    <td>{{VENDOR_NAME}}{{#if VENDOR_SUFFIX}} {{VENDOR_SUFFIX}}{{/if}}</td>
+  </tr>
+  {{/if}}
+  <tr>
+    <th style="vertical-align:top;">受領者（承諾者）</th>
+    <td>
+      {{VENDOR_ACCEPT_NAME}}
+      <div class="sign-box"></div>
+      <div style="font-size:8.5pt; color:#555; margin-top:4px;">※ 記名押印（または署名）欄{{#if (eq VENDOR_IS_CORPORATION "法人")}} — 受注者の権限ある代表者または担当者の記名押印をお願いします{{/if}}</div>
+    </td>
+  </tr>
+</table>
+{{/if}}
+{{/if}}
+
+{{!-- 基本契約なしの場合は標準約款（terms_spot_2026）を別紙としてPDF末尾に添付 --}}
+{{#unless HAS_BASE_CONTRACT}}
+{{> terms_spot_2026}}
+{{/unless}}
 </body>
 </html>
