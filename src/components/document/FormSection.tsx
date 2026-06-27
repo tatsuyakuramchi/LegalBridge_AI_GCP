@@ -9,6 +9,8 @@ interface FormSectionProps {
   variant?: 'blue' | 'amber' | 'emerald' | 'indigo' | 'cyan' | 'red' | 'default';
   className?: string;
   headerActions?: React.ReactNode;
+  /** アンカー用 id（誘導ウィザードのステップ・ジャンプ先）。 */
+  id?: string;
 }
 
 const ACCENTS: Record<NonNullable<FormSectionProps['variant']>, string> = {
@@ -28,9 +30,11 @@ export const FormSection: React.FC<FormSectionProps> = ({
   variant = 'default',
   className = '',
   headerActions,
+  id,
 }) => {
   return (
     <section
+      id={id}
       className={cn(
         'relative bg-card border border-border rounded-md overflow-hidden',
         // Left accent bar via ::before

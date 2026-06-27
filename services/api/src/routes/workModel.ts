@@ -467,24 +467,18 @@ export function registerWorkModelRoutes(
            RETURNING *, work_code AS source_code
          ),
          ins_ledger AS (
+           -- ledgers 親は残置(原作一覧 /api/master/ledgers の親)。素材は work_materials に一本化。
            INSERT INTO ledgers (ledger_code, title, is_active)
            SELECT (SELECT c FROM newcode), $2, true
            ON CONFLICT (ledger_code) DO NOTHING
            RETURNING id
          ),
-         ins_mat AS (
-           INSERT INTO materials (ledger_id, material_no, material_code, material_name, is_default, is_active)
-           SELECT (SELECT id FROM ins_ledger), 1, (SELECT c FROM newcode) || '-001', $2, true, true
-           WHERE EXISTS (SELECT 1 FROM ins_ledger)
-           RETURNING id
-         ),
          ins_work_mat AS (
-           -- works 系の素材も同時に作る(新規原作がピッカー/条件登録の素材候補に出るように)。
-           --   従来は materials(台帳)のみで work_materials が無く、新規原作の素材が空になっていた。
+           -- マテリアル一本化(0089/0090): 原作本体素材(-001)=メイン作品(core_logic)を正準表へ。
            INSERT INTO work_materials (work_id, material_no, material_code, material_name,
-               material_type, is_default, acquisition_type, rights_holder_vendor_id)
+               material_type, is_default, material_role, acquisition_type, rights_holder_vendor_id)
            SELECT (SELECT id FROM ins_work), 1, (SELECT c FROM newcode) || '-001', $2,
-                  'original', true, 'license', $6
+                  'original', true, 'core_logic', 'license', $6
            RETURNING id
          )
          SELECT * FROM ins_work`,
@@ -1717,7 +1711,7 @@ export function registerWorkModelRoutes(
   // ── CSV 一括取込 ───────────────────────────────────────────
   //   POST /api/v3/import/:entity  body: { csv, dry_run, duplicate_mode }
   //   GET  /api/v3/import/:entity/template.csv
-  const ENTITIES = new Set<V3Entity>(["source-ips", "works", "contracts"]);
+  const ENTITIES = new Set<V3Entity>(["source-ips", "works", "contracts", "work-materials"]);
 
   app.post("/api/v3/import/:entity", ...requireWrite, express.json({ limit: "12mb" }), async (req, res) => {
     try {

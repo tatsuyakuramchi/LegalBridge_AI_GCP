@@ -37,6 +37,7 @@ import {
 } from './UnifiedContractPicker';
 import { FinancialConditionPicker } from './FinancialConditionPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
+import { LicenseWizardRail, type WizardStep } from './LicenseWizardRail';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -994,6 +995,31 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         )
       : null;
 
+    // WTC-1 誘導フロー: 既存入力部品を「作品→原作→マテリアル→条件→当事者→完成」の
+    //   1本の流れとして可視化する。達成判定は formData から算出(真実源は formData)。
+    //   作品連動 OFF(NDA・一般業務委託)のときは作品連動ステップを省く。
+    const isWorkLinked = formData.is_work_linked !== false;
+    const hasConditions =
+      (Array.isArray(formData.v3_conds) && formData.v3_conds.length > 0 &&
+        Array.isArray(formData.v3_lcs) && formData.v3_lcs.length > 0) ||
+      (Array.isArray(formData.financial_conditions) && formData.financial_conditions.length > 0);
+    const partiesDone =
+      Object.entries(formData).some(([k, v]) => /^Licensor/i.test(k) && String(v ?? '').trim() !== '') &&
+      Object.entries(formData).some(([k, v]) => /^Licensee/i.test(k) && String(v ?? '').trim() !== '');
+    const wizardSteps: WizardStep[] = isWorkLinked
+      ? [
+          { key: 'work', label: '作品', hint: '対象の自社作品を選択（なければその場で作成）', anchorId: 'wiz-source', done: !!formData.linked_work_id },
+          { key: 'source', label: '原作', hint: '帰属先の原作を選択（なければ作成。自社原作も可）', anchorId: 'wiz-source', done: !!formData.ledger_ref_id },
+          { key: 'material', label: 'マテリアル', hint: '既存の原作マテリアルを選択、または件名で新規', anchorId: 'wiz-source', done: !!(formData.material_ref_id || (formData.素材番号 && String(formData.素材番号).trim())) },
+          { key: 'conditions', label: '条件', hint: '従前条件を採用（コピー）または新規入力', anchorId: 'wiz-conditions', done: hasConditions },
+          { key: 'parties', label: '当事者', hint: '許諾者・被許諾者を設定（[自社]/[取引先]で充填）', anchorId: 'wiz-parties', done: partiesDone },
+          { key: 'done', label: '完成', hint: '内容を確認して文書を生成', done: false },
+        ]
+      : [
+          { key: 'parties', label: '当事者', hint: '許諾者・被許諾者を設定（[自社]/[取引先]で充填）', anchorId: 'wiz-parties', done: partiesDone },
+          { key: 'done', label: '完成', hint: '内容を確認して文書を生成', done: false },
+        ];
+
     // Phase 22.21.2: 素材権利者 / クレジット表示 の fallback チェーンを充実化。
     //   デフォルト値が原作マスターに未入力でも、できる限り意味のある値を埋める。
     const resolveRightsHolder = (material: any, ledger: any): string => {
@@ -1243,6 +1269,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </div>
 
+        {/* WTC-1 誘導フロー: 作品→原作→マテリアル→条件→当事者→完成 を上部に常時表示。 */}
+        <LicenseWizardRail steps={wizardSteps} />
+
         {/* 1. 前提条件 */}
         <FormSection
           title="1. 前提条件"
@@ -1319,6 +1348,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             作品連動スイッチ OFF のときは非表示(作品連動フローをスキップ)。 */}
         {formData.is_work_linked !== false && (
         <FormSection
+          id="wiz-source"
           title="3. マスター条件 — 原作・素材"
           variant="emerald"
           icon={<Briefcase className="w-4 h-4" />}
@@ -1622,6 +1652,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             formData.v3_conds / v3_lcs を produce（worker context builder の入力契約）。 */}
         {(templateId === 'individual_license_terms' || templateId === 'lic_individual') && (
           <FormSection
+            id="wiz-conditions"
             title="3-2. 金銭条件（v3 マトリクス：取引形態 × 構成要素）"
             variant="indigo"
             icon={<Coins className="w-4 h-4" />}
@@ -1645,7 +1676,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         )}
 
         {/* 4. 当事者 (Licensor / Licensee) — 取引先・当社は各セクションの [自社]/[取引先] で充填 */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+        <div id="wiz-parties" className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           <FormSection
             title="4. 当事者 — II. Licensor (許諾者)"
             variant="blue"

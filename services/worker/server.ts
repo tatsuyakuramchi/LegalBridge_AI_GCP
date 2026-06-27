@@ -832,8 +832,8 @@ async function startServer() {
       report.ledgers = {
         total: await scalar(`SELECT COUNT(*)::int n FROM ledgers`),
         active: await scalar(`SELECT COUNT(*)::int n FROM ledgers WHERE COALESCE(is_active,true)=true`),
-        materials: await scalar(`SELECT COUNT(*)::int n FROM materials`),
-        materials_default: await scalar(`SELECT COUNT(*)::int n FROM materials WHERE is_default=true`),
+        materials: await scalar(`SELECT COUNT(*)::int n FROM work_materials`),
+        materials_default: await scalar(`SELECT COUNT(*)::int n FROM work_materials WHERE is_default=true`),
       };
 
       // B) works(原作=licensed_in, IP-) と名寄せ候補
@@ -5723,27 +5723,13 @@ ${details}
       const ins = await query(
         `INSERT INTO work_materials (
            work_id, material_no, material_code, material_name,
-           material_type, rights_type, is_royalty_bearing, acquisition_type
-         ) VALUES ($1, $2, $3, $4, 'derivative', $5, $6, $7)
+           material_type, rights_type, is_royalty_bearing, acquisition_type, material_role
+         ) VALUES ($1, $2, $3, $4, 'derivative', $5, $6, $7, 'sub_component')
          RETURNING id`,
         [origWorkId, nextNo, matCode, o.name, o.rightsType, o.isRoyaltyBearing, o.acquisitionType]
       );
       materialId = ins.rows[0]?.id ? Number(ins.rows[0].id) : null;
-      // 台帳(materials)へも逆ミラー(フォームの素材ドロップダウン候補に出すため)。
-      //   Stage 0 は台帳→work_materials の片方向。ここは work_materials→台帳 を同コードで補完。
-      //   ledger_code で台帳を解決し material_code で冪等。best-effort(失敗は無視)。
-      try {
-        await query(
-          `INSERT INTO materials (ledger_id, material_no, material_code, material_name, material_type, is_default)
-             SELECT l.id, $2, $3, $4, 'derivative', FALSE
-               FROM ledgers l
-              WHERE l.ledger_code = $1
-                AND NOT EXISTS (SELECT 1 FROM materials m WHERE m.material_code = $3)`,
-          [ledgerCode, nextNo, matCode, o.name]
-        );
-      } catch (e: any) {
-        console.warn(`[work-linkage] ledger materials mirror skipped for ${matCode}:`, e?.message || e);
-      }
+      // マテリアル一本化(0089/0090): work_materials が唯一の正準。台帳(materials)への逆ミラーは廃止。
     }
     if (!materialId) return false;
 
@@ -7155,13 +7141,18 @@ ${details}
       const ids = ledgers.rows.map((l: any) => Number(l.id));
       const matsMap = new Map<number, any[]>();
       if (ids.length > 0) {
+        // マテリアル一本化(0089/0090): 子素材は正準表 work_materials から取得。
+        //   台帳(ledgers.id) ← works(licensed_in, work_code=ledger_code) ← work_materials。
         const mats = await query(
-          `SELECT id, ledger_id, material_no, material_code, material_name,
-                  material_type, rights_holder, remarks, is_default, is_active,
-                  created_at, updated_at
-             FROM materials
-            WHERE ledger_id = ANY($1::int[])
-            ORDER BY ledger_id, material_no ASC`,
+          `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
+                  wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
+                  wm.is_default, TRUE AS is_active, wm.material_role,
+                  wm.created_at, wm.updated_at
+             FROM work_materials wm
+             JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
+             JOIN ledgers l ON l.ledger_code = w.work_code
+            WHERE l.id = ANY($1::int[])
+            ORDER BY l.id, wm.material_no ASC NULLS LAST`,
           [ids]
         );
         mats.rows.forEach((m: any) => {
@@ -7355,21 +7346,20 @@ ${details}
     const { id } = req.params;
     const body = req.body || {};
     try {
+      // マテリアル一本化(0089/0090): 正準表 work_materials を更新(rights_holder_label に統一)。
       await query(
-        `UPDATE materials SET
-           material_name = $1,
-           material_type = $2,
-           rights_holder = $3,
-           remarks       = $4,
-           is_active     = $5,
-           updated_at    = CURRENT_TIMESTAMP
-         WHERE id = $6`,
+        `UPDATE work_materials SET
+           material_name      = $1,
+           material_type      = $2,
+           rights_holder_label = $3,
+           remarks            = $4,
+           updated_at         = CURRENT_TIMESTAMP
+         WHERE id = $5`,
         [
           body.material_name,
           body.material_type || null,
           body.rights_holder || null,
           body.remarks || null,
-          body.is_active === false ? false : true,
           id,
         ]
       );
@@ -7385,7 +7375,7 @@ ${details}
     try {
       // 原作本体 (-001) は削除不可
       const check = await query(
-        `SELECT is_default FROM materials WHERE id = $1`,
+        `SELECT is_default FROM work_materials WHERE id = $1`,
         [id]
       );
       if (check.rows.length === 0) {
@@ -7411,7 +7401,7 @@ ${details}
           error: `この素材には ${refs.rows[0].c} 件の契約が紐付いているため削除できません`,
         });
       }
-      await query("DELETE FROM materials WHERE id = $1", [id]);
+      await query("DELETE FROM work_materials WHERE id = $1", [id]);
       res.json({ ok: true });
     } catch (error) {
       console.error("DELETE /api/master/materials/:id failed:", error);
@@ -15967,8 +15957,8 @@ ${details}
         }
         if (resolvedMaterialRefId) {
           const mr = await query(
-            `SELECT material_code, material_name, rights_holder, is_default
-               FROM materials WHERE id = $1`,
+            `SELECT material_code, material_name, rights_holder_label AS rights_holder, is_default
+               FROM work_materials WHERE id = $1`,
             [resolvedMaterialRefId]
           );
           if (mr.rows[0]) {
