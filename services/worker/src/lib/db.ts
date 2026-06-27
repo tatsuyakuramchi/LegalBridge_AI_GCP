@@ -2081,6 +2081,27 @@ export async function getNewIltNumberForLedger(
  * 原作マスター登録時に最初に -001 (原作本体) を立てるので、
  * 派生素材は -002, -003, ... と進む。
  */
+// Category 昇格(2): (work_id, genre) のカテゴリを get-or-create し id を返す。
+//   素材→カテゴリは genre から自動導出。genre 空なら null。
+const GENRE_SORT: Record<string, number> = {
+  game_design: 0, manuscript: 1, illustration: 2, graphic_design: 3, scenario: 4,
+  music: 5, translation: 6, editing: 7, text: 8, data: 9, other: 99,
+};
+export async function ensureMaterialCategory(
+  workId: number, genre: string | null | undefined
+): Promise<number | null> {
+  const g = String(genre ?? "").trim();
+  if (!workId || !g) return null;
+  const r = await query(
+    `INSERT INTO material_categories (work_id, genre, sort_order)
+       VALUES ($1, $2, $3)
+     ON CONFLICT (work_id, genre) DO UPDATE SET updated_at = now()
+     RETURNING id`,
+    [workId, g, GENRE_SORT[g.toLowerCase()] ?? 99]
+  );
+  return r.rows[0]?.id ? Number(r.rows[0].id) : null;
+}
+
 export async function getNextMaterialNo(ledgerId: number): Promise<number> {
   // マテリアル一本化(0089/0090): 正準表 work_materials の枝番を採番。
   //   台帳(ledgers.id) → works(licensed_in, work_code=ledger_code) → work_materials で解決。
@@ -2187,13 +2208,15 @@ export async function createLedgerWithDefaultMaterial(payload: {
   // Phase 22.20: 素材権利者を ledger.default_rights_holder で初期化
   const defaultMaterialCode = `${ledgerCode}-001`;
   const coreGenre = coreGenreForDivision(division);
+  // Category(2): 本体ジャンルのカテゴリを get-or-create し -001 に紐付け。
+  const coreCategoryId = await ensureMaterialCategory(workId, coreGenre);
   const matRes = await query(
     `INSERT INTO work_materials (
        work_id, material_no, material_code, material_name,
-       material_type, rights_holder_label, is_default, material_role, acquisition_type
-     ) VALUES ($1, 1, $2, $3, $5, $4, TRUE, 'core_logic', 'license')
+       material_type, rights_holder_label, is_default, material_role, acquisition_type, category_id
+     ) VALUES ($1, 1, $2, $3, $5, $4, TRUE, 'core_logic', 'license', $6)
      ON CONFLICT (material_code) WHERE material_code IS NOT NULL DO UPDATE SET
-       material_name = EXCLUDED.material_name, updated_at = now()
+       material_name = EXCLUDED.material_name, category_id = EXCLUDED.category_id, updated_at = now()
      RETURNING id, material_code`,
     [
       workId,
@@ -2201,6 +2224,7 @@ export async function createLedgerWithDefaultMaterial(payload: {
       payload.title,
       payload.default_rights_holder || null,
       coreGenre,
+      coreCategoryId,
     ]
   );
 
@@ -2243,13 +2267,15 @@ export async function addMaterialToLedger(payload: {
   // O5: ジャンルを正準化し、役割(本体/サブ)を推定。
   const matType = normalizeGenre(payload.material_type);
   const role = normalizeRole(undefined, matType, false);
+  // Category(2): genre のカテゴリを get-or-create し紐付け。
+  const categoryId = await ensureMaterialCategory(workId, matType);
   const res = await query(
     `INSERT INTO work_materials (
        work_id, material_no, material_code, material_name,
        material_type, rights_holder_label, remarks, is_default, material_role,
-       acquisition_type
+       acquisition_type, category_id
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8,
-       CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END)
+       CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END, $9)
      RETURNING id, material_code, material_no`,
     [
       workId,
@@ -2260,6 +2286,7 @@ export async function addMaterialToLedger(payload: {
       payload.rights_holder || null,
       payload.remarks || null,
       role,
+      categoryId,
     ]
   );
   return {

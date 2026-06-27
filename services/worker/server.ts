@@ -60,6 +60,7 @@ import {
   sanitizeForFilename,
   createLedgerWithDefaultMaterial,
   addMaterialToLedger,
+  ensureMaterialCategory,
   markPrimaryDocument,
 } from "./src/lib/db.ts";
 import { normalizeGenre, normalizeRole } from "./src/lib/materialVocab.ts";
@@ -5721,13 +5722,15 @@ ${details}
       );
       const nextNo = Number(noRes.rows[0]?.n || 1);
       const matCode = `${ledgerCode}-${String(nextNo).padStart(3, "0")}`;
+      // Category(2): 自動生成素材はジャンル不明 → 'other' カテゴリへ紐付け。
+      const autoCategoryId = await ensureMaterialCategory(origWorkId, "other");
       const ins = await query(
         `INSERT INTO work_materials (
            work_id, material_no, material_code, material_name,
-           material_type, rights_type, is_royalty_bearing, acquisition_type, material_role
-         ) VALUES ($1, $2, $3, $4, 'other', $5, $6, $7, 'sub_component')
+           material_type, rights_type, is_royalty_bearing, acquisition_type, material_role, category_id
+         ) VALUES ($1, $2, $3, $4, 'other', $5, $6, $7, 'sub_component', $8)
          RETURNING id`,
-        [origWorkId, nextNo, matCode, o.name, o.rightsType, o.isRoyaltyBearing, o.acquisitionType]
+        [origWorkId, nextNo, matCode, o.name, o.rightsType, o.isRoyaltyBearing, o.acquisitionType, autoCategoryId]
       );
       materialId = ins.rows[0]?.id ? Number(ins.rows[0].id) : null;
       // マテリアル一本化(0089/0090): work_materials が唯一の正準。台帳(materials)への逆ミラーは廃止。
@@ -7147,13 +7150,16 @@ ${details}
         const mats = await query(
           `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
                   wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
-                  wm.is_default, TRUE AS is_active, wm.material_role,
+                  wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
+                  mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
+                  COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder,
                   wm.created_at, wm.updated_at
              FROM work_materials wm
              JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
              JOIN ledgers l ON l.ledger_code = w.work_code
+             LEFT JOIN material_categories mc ON mc.id = wm.category_id
             WHERE l.id = ANY($1::int[])
-            ORDER BY l.id, wm.material_no ASC NULLS LAST`,
+            ORDER BY l.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
           [ids]
         );
         mats.rows.forEach((m: any) => {
@@ -7348,14 +7354,18 @@ ${details}
     const body = req.body || {};
     try {
       // マテリアル一本化(0089/0090): 正準表 work_materials を更新(rights_holder_label に統一)。
-      // O5: ジャンル正規化 + 役割確定。
+      // O5: ジャンル正規化 + 役割確定。 Category(2): genre に対応するカテゴリへ付け替え。
       const mt = normalizeGenre(body.material_type);
       const role = normalizeRole(body.material_role, mt, undefined);
+      const wmRow = await query(`SELECT work_id FROM work_materials WHERE id = $1`, [id]);
+      const wmWorkId = wmRow.rows[0]?.work_id ? Number(wmRow.rows[0].work_id) : null;
+      const categoryId = wmWorkId ? await ensureMaterialCategory(wmWorkId, mt) : null;
       await query(
         `UPDATE work_materials SET
            material_name      = $1,
            material_type      = $2,
            material_role      = $6,
+           category_id        = $7,
            rights_holder_label = $3,
            remarks            = $4,
            updated_at         = CURRENT_TIMESTAMP
@@ -7367,6 +7377,7 @@ ${details}
           body.remarks || null,
           id,
           role,
+          categoryId,
         ]
       );
       res.json({ ok: true });

@@ -56,6 +56,11 @@ type Material = {
   remarks?: string
   is_default?: boolean
   is_active?: boolean
+  // Category(2): カテゴリ情報(/api/master/ledgers が付与)。
+  category_id?: number
+  category_genre?: string
+  category_name?: string
+  effective_rights_holder?: string
 }
 
 type Ledger = {
@@ -567,9 +572,15 @@ export function LedgersPanel() {
 
                 {Array.isArray(data.materials) && data.materials.length > 0 && (
                   <div className="space-y-1.5">
-                    {data.materials.map((m: Material) => (
+                    {data.materials.map((m: Material, i: number) => (
+                      <React.Fragment key={m.id}>
+                      {/* Category(2): ジャンル(カテゴリ)が変わったら見出しを挿入(軽量グルーピング)。 */}
+                      {(i === 0 || data.materials[i - 1].category_genre !== m.category_genre) && (m.category_genre || m.material_type) && (
+                        <div className="pt-1 text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground/80">
+                          {m.category_name || genreLabel(m.category_genre || m.material_type)}
+                        </div>
+                      )}
                       <div
-                        key={m.id}
                         className={cn(
                           "rounded-sm border p-2 flex items-center gap-3",
                           m.is_default
@@ -592,7 +603,7 @@ export function LedgersPanel() {
                           </div>
                           <div className="text-[11px] font-mono text-muted-foreground/70">
                             {genreLabel(m.material_type)}
-                            {m.rights_holder && ` / ${m.rights_holder}`}
+                            {(m.effective_rights_holder || m.rights_holder) && ` / ${m.effective_rights_holder || m.rights_holder}`}
                           </div>
                         </div>
                         {!m.is_default && (
@@ -607,6 +618,7 @@ export function LedgersPanel() {
                           </Button>
                         )}
                       </div>
+                      </React.Fragment>
                     ))}
                   </div>
                 )}

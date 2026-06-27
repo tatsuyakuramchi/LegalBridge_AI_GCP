@@ -24,6 +24,27 @@ async function nextMasterSeq(query: Query, kind: string, year: number): Promise<
   );
   return r.rows[0].current_value as number;
 }
+
+// Category 昇格(2): (work_id, genre) のカテゴリを get-or-create し id を返す。
+//   素材→カテゴリは genre から自動導出(手動割当しない)。genre 空なら null。
+const GENRE_SORT: Record<string, number> = {
+  game_design: 0, manuscript: 1, illustration: 2, graphic_design: 3, scenario: 4,
+  music: 5, translation: 6, editing: 7, text: 8, data: 9, other: 99,
+};
+async function ensureMaterialCategory(
+  query: Query, workId: number, genre: string | null | undefined
+): Promise<number | null> {
+  const g = String(genre ?? "").trim();
+  if (!workId || !g) return null;
+  const r = await query(
+    `INSERT INTO material_categories (work_id, genre, sort_order)
+       VALUES ($1, $2, $3)
+     ON CONFLICT (work_id, genre) DO UPDATE SET updated_at = now()
+     RETURNING id`,
+    [workId, g, GENRE_SORT[g.toLowerCase()] ?? 99]
+  );
+  return r.rows[0]?.id ? Number(r.rows[0].id) : null;
+}
 const pad4 = (n: number) => String(n).padStart(4, "0");
 
 // N:N 中間表 活性化 Stage 1: condition_line の (work_id, source_material_id) から
@@ -197,10 +218,17 @@ export function registerWorkModelRoutes(
       // 権利者(取引先)名を併せて返す。原作=複数マテリアル(権利者が異なりうる)を
       //   作品エディタのピッカーで「誰の権利か」と分かるようにするため。
       const mats = await query(
-        `SELECT wm.*, v.vendor_name AS rights_holder_name
+        `SELECT wm.*, v.vendor_name AS rights_holder_name,
+                mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
+                COALESCE(wm.rights_holder_vendor_id, mc.rights_holder_vendor_id) AS effective_rights_holder_vendor_id,
+                COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder_label,
+                COALESCE(v.vendor_name, cv.vendor_name) AS effective_rights_holder_name
            FROM work_materials wm
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
-          WHERE wm.work_id = $1 ORDER BY wm.id ASC`,
+           LEFT JOIN material_categories mc ON mc.id = wm.category_id
+           LEFT JOIN vendors cv ON cv.id = mc.rights_holder_vendor_id
+          WHERE wm.work_id = $1
+          ORDER BY COALESCE(mc.sort_order, 99), wm.material_no NULLS LAST, wm.id ASC`,
         [id]
       );
       res.json({ ...s.rows[0], materials: mats.rows });
@@ -474,16 +502,27 @@ export function registerWorkModelRoutes(
            ON CONFLICT (ledger_code) DO NOTHING
            RETURNING id
          ),
+         genre AS (
+           -- O5: 本体ジャンルを事業部で確定(PUB→執筆文書 / それ以外→ゲームデザイン)。
+           SELECT CASE WHEN ('PUB' = ANY(COALESCE($5::text[],'{}'))
+                            AND NOT ('BDG' = ANY(COALESCE($5::text[],'{}'))))
+                       THEN 'manuscript' ELSE 'game_design' END AS g
+         ),
+         ins_cat AS (
+           -- Category(2): 本体ジャンルのカテゴリを同時生成(新規 work なので常に新規)。
+           INSERT INTO material_categories (work_id, genre, sort_order)
+           SELECT (SELECT id FROM ins_work), (SELECT g FROM genre),
+                  CASE (SELECT g FROM genre) WHEN 'manuscript' THEN 1 ELSE 0 END
+           ON CONFLICT (work_id, genre) DO NOTHING
+           RETURNING id
+         ),
          ins_work_mat AS (
            -- マテリアル一本化(0089/0090) + O5: 原作本体素材(-001)=メイン作品(core_logic)を正準表へ。
-           --   ジャンルは事業部(division)で確定: PUB→執筆文書 / それ以外→ゲームデザイン。
            INSERT INTO work_materials (work_id, material_no, material_code, material_name,
-               material_type, is_default, material_role, acquisition_type, rights_holder_vendor_id)
+               material_type, is_default, material_role, acquisition_type, rights_holder_vendor_id, category_id)
            SELECT (SELECT id FROM ins_work), 1, (SELECT c FROM newcode) || '-001', $2,
-                  CASE WHEN ('PUB' = ANY(COALESCE($5::text[],'{}'))
-                            AND NOT ('BDG' = ANY(COALESCE($5::text[],'{}'))))
-                       THEN 'manuscript' ELSE 'game_design' END,
-                  true, 'core_logic', 'license', $6
+                  (SELECT g FROM genre),
+                  true, 'core_logic', 'license', $6, (SELECT id FROM ins_cat)
            RETURNING id
          )
          SELECT * FROM ins_work`,
@@ -1035,6 +1074,14 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(
         `SELECT wm.*, v.vendor_name AS rights_holder_name,
+                mc.genre AS category_genre, mc.name AS category_name,
+                mc.sort_order AS category_sort, mc.rights_holder_vendor_id AS category_rights_holder_vendor_id,
+                mc.rights_holder_label AS category_rights_holder_label,
+                cv.vendor_name AS category_rights_holder_name,
+                -- 実効権利者: 素材自身が override、無ければカテゴリから継承。
+                COALESCE(wm.rights_holder_vendor_id, mc.rights_holder_vendor_id) AS effective_rights_holder_vendor_id,
+                COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder_label,
+                COALESCE(v.vendor_name, cv.vendor_name) AS effective_rights_holder_name,
                 c.condition_no AS license_condition_no,
                 sli.item_name AS service_line_name,
                 sli.amount_ex_tax AS service_line_amount,
@@ -1050,6 +1097,8 @@ export function registerWorkModelRoutes(
                 END AS service_inspection_status
            FROM work_materials wm
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
+           LEFT JOIN material_categories mc ON mc.id = wm.category_id
+           LEFT JOIN vendors cv ON cv.id = mc.rights_holder_vendor_id
            LEFT JOIN capability_financial_conditions c ON c.id = wm.license_condition_id
            LEFT JOIN capability_line_items sli ON sli.id = wm.service_line_item_id
            LEFT JOIN contract_capabilities scc ON scc.id = sli.capability_id
@@ -1059,10 +1108,74 @@ export function registerWorkModelRoutes(
               WHERE d.capability_line_item_id = sli.id
            ) sli_dli ON TRUE
           WHERE wm.work_id = $1
-          ORDER BY wm.id ASC`,
+          ORDER BY COALESCE(mc.sort_order, 99), wm.material_no NULLS LAST, wm.id ASC`,
         [id]
       );
       res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // ── マテリアルカテゴリ(Category 昇格(2)) ───────────────────────────────────
+  //   カテゴリ = (work_id, genre)。素材は genre から自動紐付け。ここでは属性
+  //   (権利者/表示名/並び順)を管理する。
+  app.get("/api/v3/works/:id/material-categories", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT mc.*, v.vendor_name AS rights_holder_name,
+                COALESCE(cnt.n, 0) AS material_count
+           FROM material_categories mc
+           LEFT JOIN vendors v ON v.id = mc.rights_holder_vendor_id
+           LEFT JOIN LATERAL (
+             SELECT COUNT(*)::int AS n FROM work_materials wm WHERE wm.category_id = mc.id
+           ) cnt ON TRUE
+          WHERE mc.work_id = $1
+          ORDER BY mc.sort_order, mc.genre`,
+        [id]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  app.post("/api/v3/works/:id/material-categories", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const genre = normalizeGenre(b.genre ?? b.material_type);
+      if (!genre) return res.status(400).json({ ok: false, error: "genre は必須" });
+      const r = await query(
+        `INSERT INTO material_categories
+           (work_id, genre, name, rights_holder_vendor_id, rights_holder_label, sort_order)
+         VALUES ($1,$2,$3,$4,$5,COALESCE($6, 99))
+         ON CONFLICT (work_id, genre) DO UPDATE SET
+           name = COALESCE(EXCLUDED.name, material_categories.name),
+           updated_at = now()
+         RETURNING *`,
+        [id, genre, b.name ?? null, b.rights_holder_vendor_id ?? null,
+         b.rights_holder_label ?? null, b.sort_order ?? null]
+      );
+      res.status(201).json(r.rows[0]);
+    } catch (e) { fail(res, e); }
+  });
+
+  app.put("/api/v3/material-categories/:cid", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const cid = Number(req.params.cid);
+      if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const r = await query(
+        `UPDATE material_categories SET
+            name = $2, rights_holder_vendor_id = $3, rights_holder_label = $4,
+            sort_order = COALESCE($5, sort_order), is_active = COALESCE($6, is_active),
+            updated_at = now()
+          WHERE id = $1 RETURNING *`,
+        [cid, b.name ?? null, b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
+         b.sort_order ?? null, b.is_active ?? null]
+      );
+      if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
+      res.json(r.rows[0]);
     } catch (e) { fail(res, e); }
   });
 
@@ -1078,14 +1191,16 @@ export function registerWorkModelRoutes(
       // O5: ジャンル正規化 + 役割(本体/サブ)確定。
       const mt = normalizeGenre(b.material_type);
       const role = normalizeRole(b.material_role, mt, b.is_default);
+      // Category(2): genre から (work_id, genre) カテゴリを get-or-create し紐付け。
+      const categoryId = await ensureMaterialCategory(query, id, mt);
       // material_no / material_code({work_code}-NNN) を採番して挿入。
       const r = await query(
         `INSERT INTO work_materials (
            work_id, material_name, material_type, material_role, rights_type, rights_holder_vendor_id,
            rights_holder_label, is_royalty_bearing, license_condition_id, service_line_item_id,
-           scope, remarks, acquisition_type, material_no, material_code, is_default
+           scope, remarks, acquisition_type, category_id, material_no, material_code, is_default
          )
-         SELECT $1,$2,$3,$13,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11,$12,
+         SELECT $1,$2,$3,$13,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11,$12,$14,
                 nextno.n,
                 w.work_code || '-' || lpad(nextno.n::text, 3, '0'),
                 FALSE
@@ -1099,7 +1214,7 @@ export function registerWorkModelRoutes(
           id, b.material_name ?? null, mt, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, acq, role,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, acq, role, categoryId,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -1652,18 +1767,22 @@ export function registerWorkModelRoutes(
       // O5: ジャンル正規化 + 役割確定。
       const mt = normalizeGenre(b.material_type);
       const role = normalizeRole(b.material_role, mt, b.is_default);
+      // Category(2): 更新後 genre に対応するカテゴリへ付け替え(work_id は素材から解決)。
+      const wr = await query(`SELECT work_id FROM work_materials WHERE id = $1`, [mid]);
+      const wmWorkId = wr.rows[0]?.work_id ? Number(wr.rows[0].work_id) : null;
+      const categoryId = wmWorkId ? await ensureMaterialCategory(query, wmWorkId, mt) : null;
       const r = await query(
         `UPDATE work_materials SET
             material_name = $2, material_type = $3, material_role = $12, rights_type = $4,
             rights_holder_vendor_id = $5, rights_holder_label = $6,
             is_royalty_bearing = COALESCE($7,FALSE), license_condition_id = $8,
-            service_line_item_id = $9, scope = $10, remarks = $11, updated_at = now()
+            service_line_item_id = $9, scope = $10, remarks = $11, category_id = $13, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
           mid, b.material_name ?? null, mt, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, role,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, role, categoryId,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
