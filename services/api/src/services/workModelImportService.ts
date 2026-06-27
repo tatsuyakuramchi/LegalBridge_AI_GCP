@@ -14,6 +14,8 @@
 
 import Papa from "papaparse";
 
+import { normalizeGenre, normalizeRole } from "../lib/materialVocab";
+
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 
 export type V3Entity = "source-ips" | "works" | "contracts" | "work-materials";
@@ -158,36 +160,7 @@ const CONFIGS: Record<V3Entity, EntityConfig> = {
   },
 };
 
-// ── マテリアル分類の正準化(0089 のジャンル語彙と一致) ─────────────────────────
-const GENRE_SYNONYMS: Record<string, string> = {
-  "ゲームデザイン": "game_design", "コアデザイン": "game_design", "gamedesign": "game_design",
-  "執筆": "manuscript", "執筆文書": "manuscript", "原稿": "manuscript",
-  "イラスト": "illustration", "illust": "illustration",
-  "グラフィック": "graphic_design", "グラフィックデザイン": "graphic_design", "graphic": "graphic_design",
-  "シナリオ": "scenario", "音楽": "music", "翻訳": "translation",
-  "編集": "editing", "校閲": "editing", "編集校閲": "editing",
-  "テキスト": "text", "データ": "data", "その他": "other",
-};
-const GENRE_CANON = new Set([
-  "game_design", "manuscript", "illustration", "graphic_design", "scenario",
-  "music", "translation", "editing", "text", "data", "other", "original", "derivative",
-]);
-function normalizeGenre(v: unknown): string | null {
-  const raw = String(v ?? "").trim();
-  if (!raw) return null;
-  const k = raw.toLowerCase();
-  if (GENRE_SYNONYMS[k]) return GENRE_SYNONYMS[k];
-  return GENRE_CANON.has(k) ? k : raw;
-}
-function normalizeRole(v: unknown, materialType: unknown, isDefault: unknown): string {
-  const k = String(v ?? "").trim().toLowerCase();
-  if (["core_logic", "core", "メイン", "コアロジック", "本体"].includes(k)) return "core_logic";
-  if (["sub_component", "sub", "サブ", "サブコンポーネント"].includes(k)) return "sub_component";
-  // 推定: 本体ジャンル or is_default → core_logic、それ以外 → sub_component。
-  const mt = String(materialType ?? "");
-  if (isDefault === true || ["original", "game_design", "manuscript"].includes(mt)) return "core_logic";
-  return "sub_component";
-}
+// ── マテリアル分類の正準化(O5: 正準語彙は lib/materialVocab に集約) ─────────────
 function normalizeAcquisition(v: unknown): string | null {
   const k = String(v ?? "").trim().toLowerCase();
   if (["license", "ライセンス", "許諾"].includes(k)) return "license";

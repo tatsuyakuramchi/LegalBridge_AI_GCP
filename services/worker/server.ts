@@ -62,6 +62,7 @@ import {
   addMaterialToLedger,
   markPrimaryDocument,
 } from "./src/lib/db.ts";
+import { normalizeGenre, normalizeRole } from "./src/lib/materialVocab.ts";
 // データ構造刷新 Phase C-5: 新スキーマへの二重書き込み (冪等・非致命)
 import {
   syncConditionLinesForCapability,
@@ -5724,7 +5725,7 @@ ${details}
         `INSERT INTO work_materials (
            work_id, material_no, material_code, material_name,
            material_type, rights_type, is_royalty_bearing, acquisition_type, material_role
-         ) VALUES ($1, $2, $3, $4, 'derivative', $5, $6, $7, 'sub_component')
+         ) VALUES ($1, $2, $3, $4, 'other', $5, $6, $7, 'sub_component')
          RETURNING id`,
         [origWorkId, nextNo, matCode, o.name, o.rightsType, o.isRoyaltyBearing, o.acquisitionType]
       );
@@ -7347,20 +7348,25 @@ ${details}
     const body = req.body || {};
     try {
       // マテリアル一本化(0089/0090): 正準表 work_materials を更新(rights_holder_label に統一)。
+      // O5: ジャンル正規化 + 役割確定。
+      const mt = normalizeGenre(body.material_type);
+      const role = normalizeRole(body.material_role, mt, undefined);
       await query(
         `UPDATE work_materials SET
            material_name      = $1,
            material_type      = $2,
+           material_role      = $6,
            rights_holder_label = $3,
            remarks            = $4,
            updated_at         = CURRENT_TIMESTAMP
          WHERE id = $5`,
         [
           body.material_name,
-          body.material_type || null,
+          mt,
           body.rights_holder || null,
           body.remarks || null,
           id,
+          role,
         ]
       );
       res.json({ ok: true });

@@ -9,6 +9,7 @@ import {
   getWorkModelSampleCsv,
   type V3Entity,
 } from "../services/workModelImportService.ts";
+import { normalizeGenre, normalizeRole } from "../lib/materialVocab.ts";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 type Middleware = (req: any, res: any, next: any) => void;
@@ -474,11 +475,15 @@ export function registerWorkModelRoutes(
            RETURNING id
          ),
          ins_work_mat AS (
-           -- マテリアル一本化(0089/0090): 原作本体素材(-001)=メイン作品(core_logic)を正準表へ。
+           -- マテリアル一本化(0089/0090) + O5: 原作本体素材(-001)=メイン作品(core_logic)を正準表へ。
+           --   ジャンルは事業部(division)で確定: PUB→執筆文書 / それ以外→ゲームデザイン。
            INSERT INTO work_materials (work_id, material_no, material_code, material_name,
                material_type, is_default, material_role, acquisition_type, rights_holder_vendor_id)
            SELECT (SELECT id FROM ins_work), 1, (SELECT c FROM newcode) || '-001', $2,
-                  'original', true, 'core_logic', 'license', $6
+                  CASE WHEN ('PUB' = ANY(COALESCE($5::text[],'{}'))
+                            AND NOT ('BDG' = ANY(COALESCE($5::text[],'{}'))))
+                       THEN 'manuscript' ELSE 'game_design' END,
+                  true, 'core_logic', 'license', $6
            RETURNING id
          )
          SELECT * FROM ins_work`,
@@ -1070,14 +1075,17 @@ export function registerWorkModelRoutes(
       const acq =
         b.acquisition_type ??
         (b.service_line_item_id ? "buyout_commission" : b.rights_type === "license" ? "license" : "in_house");
+      // O5: ジャンル正規化 + 役割(本体/サブ)確定。
+      const mt = normalizeGenre(b.material_type);
+      const role = normalizeRole(b.material_role, mt, b.is_default);
       // material_no / material_code({work_code}-NNN) を採番して挿入。
       const r = await query(
         `INSERT INTO work_materials (
-           work_id, material_name, material_type, rights_type, rights_holder_vendor_id,
+           work_id, material_name, material_type, material_role, rights_type, rights_holder_vendor_id,
            rights_holder_label, is_royalty_bearing, license_condition_id, service_line_item_id,
            scope, remarks, acquisition_type, material_no, material_code, is_default
          )
-         SELECT $1,$2,$3,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11,$12,
+         SELECT $1,$2,$3,$13,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11,$12,
                 nextno.n,
                 w.work_code || '-' || lpad(nextno.n::text, 3, '0'),
                 FALSE
@@ -1088,10 +1096,10 @@ export function registerWorkModelRoutes(
           WHERE w.id = $1
          RETURNING *`,
         [
-          id, b.material_name ?? null, b.material_type ?? null, b.rights_type ?? null,
+          id, b.material_name ?? null, mt, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, acq,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, acq, role,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -1641,18 +1649,21 @@ export function registerWorkModelRoutes(
       const mid = Number(req.params.mid);
       if (!Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
+      // O5: ジャンル正規化 + 役割確定。
+      const mt = normalizeGenre(b.material_type);
+      const role = normalizeRole(b.material_role, mt, b.is_default);
       const r = await query(
         `UPDATE work_materials SET
-            material_name = $2, material_type = $3, rights_type = $4,
+            material_name = $2, material_type = $3, material_role = $12, rights_type = $4,
             rights_holder_vendor_id = $5, rights_holder_label = $6,
             is_royalty_bearing = COALESCE($7,FALSE), license_condition_id = $8,
             service_line_item_id = $9, scope = $10, remarks = $11, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
-          mid, b.material_name ?? null, b.material_type ?? null, b.rights_type ?? null,
+          mid, b.material_name ?? null, mt, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null,
+          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, role,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });

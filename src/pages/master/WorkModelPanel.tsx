@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { NativeSelect } from "@/components/ui/native-select"
+import { MATERIAL_GENRES, MATERIAL_ROLES, genreLabel, roleLabel } from "@/lib/materialVocab"
 import {
   Dialog,
   DialogContent,
@@ -582,10 +583,14 @@ function DetailModal({ type, id, sourceIps, onClose, onEdit }: { type: EntityTyp
 
 // モデル(あ): 作品のマテリアル(翻訳/イラスト/原作素材…)。帰属(rights_type)で
 //   相手方(license/joint)=利用許諾条件にリンク、当社(owned/譲渡)=業務委託(後続)。
+// O5(Category 正式化): ジャンル語彙は正準 MATERIAL_GENRES に一本化。空(未選択)を先頭に。
 const MATERIAL_TYPES: [string, string][] = [
-  ["", "(種別)"], ["translation", "翻訳"], ["illustration", "イラスト"],
-  ["scenario", "シナリオ"], ["design", "デザイン"], ["music", "音楽"],
-  ["text", "テキスト"], ["data", "データ"], ["other", "その他"],
+  ["", "(ジャンル)"],
+  ...MATERIAL_GENRES.map((g) => [g.value, g.label] as [string, string]),
+]
+const MATERIAL_ROLE_OPTS: [string, string][] = [
+  ["", "(自動)"],
+  ...MATERIAL_ROLES.map((r) => [r.value, r.label] as [string, string]),
 ]
 const RIGHTS_TYPES: [string, string][] = [
   ["", "(帰属)"], ["license", "相手方(許諾)"], ["joint", "共有"],
@@ -600,7 +605,7 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
   const { showNotification } = useAppData()
   const [rows, setRows] = React.useState<Row[] | null>(null)
   const [conds, setConds] = React.useState<Row[]>([])
-  const blank = { id: 0, material_name: "", material_type: "", rights_type: "", rights_holder_vendor_id: "", is_royalty_bearing: false, license_condition_id: "", service_line_item_id: "" }
+  const blank = { id: 0, material_name: "", material_type: "", material_role: "", rights_type: "", rights_holder_vendor_id: "", is_royalty_bearing: false, license_condition_id: "", service_line_item_id: "" }
   const [form, setForm] = React.useState<Row>(blank)
   const [busy, setBusy] = React.useState(false)
   const [svc, setSvc] = React.useState<Row[]>([])
@@ -635,6 +640,7 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
       const body = {
         material_name: form.material_name || null,
         material_type: form.material_type || null,
+        material_role: form.material_role || null,
         rights_type: form.rights_type || null,
         rights_holder_vendor_id: form.rights_holder_vendor_id ? Number(form.rights_holder_vendor_id) : null,
         is_royalty_bearing: !!form.is_royalty_bearing,
@@ -656,7 +662,7 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
   }
   const condLabel = (c: Row) => `#${c.condition_no} ${c.source_work_title ? c.source_work_title : ""}${c.rate_pct != null ? ` (${c.rate_pct}%)` : ""}`
   const rtLabel = (rt: string) => RIGHTS_TYPES.find(([v]) => v === rt)?.[1] || rt || "—"
-  const mtLabel = (mt: string) => MATERIAL_TYPES.find(([v]) => v === mt)?.[1] || mt || "—"
+  const mtLabel = (mt: string) => genreLabel(mt)
 
   return (
     <div className="mt-4 border-t pt-3 space-y-2">
@@ -669,14 +675,17 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
         <table className="w-full text-[11px] border-collapse">
           <thead>
             <tr className="text-muted-foreground text-left [&>th]:py-1 [&>th]:pr-2">
-              <th>名称</th><th>種別</th><th>帰属</th><th>権利者</th><th>つなぎ</th><th></th>
+              <th>名称</th><th>ジャンル / 役割</th><th>帰属</th><th>権利者</th><th>つなぎ</th><th></th>
             </tr>
           </thead>
           <tbody>
             {rows.map((m) => (
               <tr key={m.id} className="border-t border-border/40 [&>td]:py-1 [&>td]:pr-2 align-top">
                 <td className="min-w-[100px]">{matDisplay(m.material_code, srcTitle, m.material_name)}</td>
-                <td>{mtLabel(m.material_type)}</td>
+                <td>
+                  {mtLabel(m.material_type)}
+                  {m.material_role ? <span className="ml-1 text-[9px] text-muted-foreground">({roleLabel(m.material_role)})</span> : null}
+                </td>
                 <td>{rtLabel(m.rights_type)}</td>
                 <td className="min-w-[100px]">{m.rights_holder_name || (m.rights_holder_vendor_id ? `#${m.rights_holder_vendor_id}` : "—")}</td>
                 <td className="text-[10px]">
@@ -690,7 +699,7 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
                       : isCounterpartyRights(m.rights_type) ? "(条件未設定)" : "(業務委託未設定)"}
                 </td>
                 <td className="whitespace-nowrap text-right">
-                  <button className="text-[10px] underline mr-2" onClick={() => setForm({ id: m.id, material_name: m.material_name || "", material_type: m.material_type || "", rights_type: m.rights_type || "", rights_holder_vendor_id: m.rights_holder_vendor_id || "", is_royalty_bearing: !!m.is_royalty_bearing, license_condition_id: m.license_condition_id || "", service_line_item_id: m.service_line_item_id || "" })}>編集</button>
+                  <button className="text-[10px] underline mr-2" onClick={() => setForm({ id: m.id, material_name: m.material_name || "", material_type: m.material_type || "", material_role: m.material_role || "", rights_type: m.rights_type || "", rights_holder_vendor_id: m.rights_holder_vendor_id || "", is_royalty_bearing: !!m.is_royalty_bearing, license_condition_id: m.license_condition_id || "", service_line_item_id: m.service_line_item_id || "" })}>編集</button>
                   <button className="text-[10px] underline text-destructive" onClick={() => del(Number(m.id))}>削除</button>
                 </td>
               </tr>
@@ -708,9 +717,15 @@ function MaterialsEditor({ workId, srcTitle }: { workId: number; srcTitle?: stri
             <Input value={form.material_name} onChange={(e) => set("material_name", e.target.value)} placeholder="例: 日本語翻訳 / 表紙イラスト" className="h-7 text-xs" />
           </label>
           <label className="space-y-0.5">
-            <span className="text-[10px] text-muted-foreground">種別</span>
+            <span className="text-[10px] text-muted-foreground">ジャンル</span>
             <NativeSelect value={form.material_type} onChange={(e) => set("material_type", e.target.value)} className="h-7 text-xs">
               {MATERIAL_TYPES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+            </NativeSelect>
+          </label>
+          <label className="space-y-0.5">
+            <span className="text-[10px] text-muted-foreground">役割（本体/サブ）</span>
+            <NativeSelect value={form.material_role} onChange={(e) => set("material_role", e.target.value)} className="h-7 text-xs">
+              {MATERIAL_ROLE_OPTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
             </NativeSelect>
           </label>
           <label className="space-y-0.5">

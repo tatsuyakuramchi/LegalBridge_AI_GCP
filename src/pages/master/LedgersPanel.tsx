@@ -31,6 +31,7 @@ import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
 import { NativeSelect } from "@/components/ui/native-select"
 import { Switch } from "@/components/ui/switch"
+import { MATERIAL_GENRES, genreLabel } from "@/lib/materialVocab"
 import {
   Dialog,
   DialogContent,
@@ -102,7 +103,7 @@ const emptyLedger: Ledger = {
 
 const emptyMaterial: Material = {
   material_name: "",
-  material_type: "derivative",
+  material_type: "", // O5: ジャンル未選択(ユーザー選択)。空はバックエンドで正規化。
   rights_holder: "",
   remarks: "",
 }
@@ -590,7 +591,7 @@ export function LedgersPanel() {
                             {m.material_name}
                           </div>
                           <div className="text-[11px] font-mono text-muted-foreground/70">
-                            {m.material_type || "—"}
+                            {genreLabel(m.material_type)}
                             {m.rights_holder && ` / ${m.rights_holder}`}
                           </div>
                         </div>
@@ -630,7 +631,7 @@ export function LedgersPanel() {
                       </Field>
                       <Field label="種別">
                         <NativeSelect
-                          value={newMaterial.material_type || "derivative"}
+                          value={newMaterial.material_type || ""}
                           onChange={(e) =>
                             setNewMaterial({
                               ...newMaterial,
@@ -638,11 +639,12 @@ export function LedgersPanel() {
                             })
                           }
                         >
-                          <option value="derivative">派生作品</option>
-                          <option value="character">キャラクター</option>
-                          <option value="asset">関連アセット</option>
-                          <option value="setting">設定資料</option>
-                          <option value="other">その他</option>
+                          <option value="">(ジャンル)</option>
+                          {MATERIAL_GENRES.map((g) => (
+                            <option key={g.value} value={g.value}>
+                              {g.label}
+                            </option>
+                          ))}
                         </NativeSelect>
                       </Field>
                       <Field label="権利者">
