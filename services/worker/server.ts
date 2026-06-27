@@ -5953,6 +5953,10 @@ ${details}
         condition_name: (c?.name && String(c.name).trim()) || `条件${i + 1}`,
         // 料率があれば royalty 計算対象(ROYALTY)、無ければ固定額扱い(FIXED)。
         calc_type: rate != null ? "ROYALTY" : "FIXED",
+        // condition_lines の payment_scheme 判定は calc_method を見る
+        //   (determineFinancialScheme: 'FIXED'＋rate空→lump_sum / 他→royalty)。
+        //   料率付き=royalty、料率なし=lump_sum に確定させるため明示。
+        calc_method: rate != null ? null : "FIXED",
         rate_pct: rate,
         base_price_label: c?.basePrice || null,
         region_territory: c?.reg || null,
@@ -7919,13 +7923,16 @@ ${details}
           Array.isArray(fd.financial_conditions) && fd.financial_conditions.length
             ? fd.financial_conditions
             : null;
+        // Stage D: v3(マトリクス)文書は financial_conditions ではなく v3_conds を持つ。
+        const v3Conds =
+          Array.isArray(fd.v3_conds) && fd.v3_conds.length ? fd.v3_conds : null;
 
-        if (!lineItems && !finConds) {
+        if (!lineItems && !finConds && !v3Conds) {
           skipped.push({
             document_number: d.document_number,
             issue_key: d.issue_key,
             template_type: d.template_type,
-            reason: "form_data に line_items/financial_conditions が無い",
+            reason: "form_data に line_items/financial_conditions/v3_conds が無い",
           });
           continue;
         }
@@ -7938,6 +7945,7 @@ ${details}
             will_create_capability: !d.capability_id,
             line_items: lineItems?.length || 0,
             financial_conditions: finConds?.length || 0,
+            v3_conds: v3Conds?.length || 0,
           });
           continue;
         }
@@ -8013,7 +8021,41 @@ ${details}
 
           if (lineItems) await upsertCapabilityLineItems(capId!, lineItems);
           if (finConds) await upsertCapabilityFinancialConditions(capId!, finConds);
-          // 念のため condition_lines 同期(両 upsert 内で呼ばれるが冪等)。
+          // Stage D: v3(マトリクス)文書は登録ロジック(C-2)と同じ経路で
+          //   cfc + condition_lines + 作品連動を復元する。ledger_code は capability の
+          //   ledger_ref_id から best-effort(取れなくても cfc/condition_lines は作る)。
+          if (v3Conds) {
+            let ledgerCodeForV3: string | null = null;
+            try {
+              const lc = await query(
+                `SELECT l.ledger_code FROM contract_capabilities cc
+                   JOIN ledgers l ON l.id = cc.ledger_ref_id
+                  WHERE cc.id = $1 LIMIT 1`,
+                [capId]
+              );
+              ledgerCodeForV3 = lc.rows[0]?.ledger_code || null;
+            } catch (e: any) {
+              console.warn(`[F1b v3] ledger_code lookup skipped:`, e?.message || e);
+            }
+            await registerV3MatrixConditions({
+              capabilityId: capId!,
+              ledgerCode: ledgerCodeForV3,
+              ownWorkId:
+                fd.linked_work_id != null &&
+                String(fd.linked_work_id).trim() !== "" &&
+                Number.isFinite(Number(fd.linked_work_id))
+                  ? Number(fd.linked_work_id)
+                  : null,
+              conds: v3Conds,
+              lcs: Array.isArray(fd.v3_lcs) ? fd.v3_lcs : [],
+              anchorMaterialCode: fd.素材番号 || null,
+              conditionMaterialCodes: (fd.condition_material_codes || {}) as Record<
+                string,
+                string
+              >,
+            });
+          }
+          // 念のため condition_lines 同期(各 upsert 内で呼ばれるが冪等)。
           await safeSync("F1b CL", () =>
             syncConditionLinesForCapability({ query }, capId!)
           );
