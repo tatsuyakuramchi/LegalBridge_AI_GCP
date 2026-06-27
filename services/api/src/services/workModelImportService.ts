@@ -9,14 +9,14 @@
  *   - コード列(source_code / work_code / document_number)を UNIQUE キーに upsert
  *     未指定なら master_sequences で自動採番
  *
- * 対応エンティティ: source-ips / works / contracts。
+ * 対応エンティティ: source-ips / works / contracts / work-materials。
  */
 
 import Papa from "papaparse";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 
-export type V3Entity = "source-ips" | "works" | "contracts";
+export type V3Entity = "source-ips" | "works" | "contracts" | "work-materials";
 export type V3ImportOptions = {
   dry_run?: boolean;
   duplicate_mode?: "overwrite" | "skip" | "fill_only";
@@ -133,7 +133,69 @@ const CONFIGS: Record<V3Entity, EntityConfig> = {
       { field: "source_code", aliases: ["source_code", "ipコード"] },
     ],
   },
+  // マテリアル一本化(0089/0090): 統合マテリアル表 work_materials への一括取込。
+  //   親 = work_code(原作/自社作品どちらでも) → work_id。code = material_code(<work_code>-NNN)。
+  //   material_type/material_role/acquisition_type は正準語彙へ正規化(下の normalize* 参照)。
+  "work-materials": {
+    table: "work_materials",
+    codeColumn: "material_code",
+    seqKind: "WM",       // material_code は work スコープで導出するため通常未使用
+    codePrefix: "WM",
+    titleField: "material_name",
+    cols: [
+      { field: "work_id", aliases: ["work_code", "作品コード", "原作コード", "コード"], type: "work" },
+      { field: "material_no", aliases: ["material_no", "素材番号", "枝番"], type: "int" },
+      { field: "material_code", aliases: ["material_code", "素材コード", "マテリアルコード"] },
+      { field: "material_name", aliases: ["material_name", "素材名", "マテリアル名", "名称"] },
+      { field: "material_type", aliases: ["material_type", "ジャンル", "種別", "素材種別"] },
+      { field: "material_role", aliases: ["material_role", "役割", "区分"] },
+      { field: "acquisition_type", aliases: ["acquisition_type", "取得経路", "取得区分"] },
+      { field: "rights_holder_label", aliases: ["rights_holder_label", "権利者", "素材権利者"] },
+      { field: "rights_holder_vendor_id", aliases: ["rights_holder_vendor_code", "権利者取引先コード"], type: "vendor" },
+      { field: "is_default", aliases: ["is_default", "本体", "デフォルト", "原作本体"], type: "bool" },
+      { field: "remarks", aliases: ["remarks", "備考"] },
+    ],
+  },
 };
+
+// ── マテリアル分類の正準化(0089 のジャンル語彙と一致) ─────────────────────────
+const GENRE_SYNONYMS: Record<string, string> = {
+  "ゲームデザイン": "game_design", "コアデザイン": "game_design", "gamedesign": "game_design",
+  "執筆": "manuscript", "執筆文書": "manuscript", "原稿": "manuscript",
+  "イラスト": "illustration", "illust": "illustration",
+  "グラフィック": "graphic_design", "グラフィックデザイン": "graphic_design", "graphic": "graphic_design",
+  "シナリオ": "scenario", "音楽": "music", "翻訳": "translation",
+  "編集": "editing", "校閲": "editing", "編集校閲": "editing",
+  "テキスト": "text", "データ": "data", "その他": "other",
+};
+const GENRE_CANON = new Set([
+  "game_design", "manuscript", "illustration", "graphic_design", "scenario",
+  "music", "translation", "editing", "text", "data", "other", "original", "derivative",
+]);
+function normalizeGenre(v: unknown): string | null {
+  const raw = String(v ?? "").trim();
+  if (!raw) return null;
+  const k = raw.toLowerCase();
+  if (GENRE_SYNONYMS[k]) return GENRE_SYNONYMS[k];
+  return GENRE_CANON.has(k) ? k : raw;
+}
+function normalizeRole(v: unknown, materialType: unknown, isDefault: unknown): string {
+  const k = String(v ?? "").trim().toLowerCase();
+  if (["core_logic", "core", "メイン", "コアロジック", "本体"].includes(k)) return "core_logic";
+  if (["sub_component", "sub", "サブ", "サブコンポーネント"].includes(k)) return "sub_component";
+  // 推定: 本体ジャンル or is_default → core_logic、それ以外 → sub_component。
+  const mt = String(materialType ?? "");
+  if (isDefault === true || ["original", "game_design", "manuscript"].includes(mt)) return "core_logic";
+  return "sub_component";
+}
+function normalizeAcquisition(v: unknown): string | null {
+  const k = String(v ?? "").trim().toLowerCase();
+  if (["license", "ライセンス", "許諾"].includes(k)) return "license";
+  if (["buyout_commission", "buyout", "委託", "買い切り", "買取", "業務委託"].includes(k)) return "buyout_commission";
+  if (["in_house", "inhouse", "自社", "自社制作"].includes(k)) return "in_house";
+  const raw = String(v ?? "").trim();
+  return raw || null;
+}
 
 const pad4 = (n: number) => String(n).padStart(4, "0");
 async function nextSeq(query: Query, kind: string, year: number): Promise<number> {
@@ -259,6 +321,7 @@ export async function importWorkModelCsv(
       let parentRaw = ""; // parent_work_code / parent_work_title の入力値
       let parentResolved: boolean | null = null; // true=解決 / false=未解決 / null=指定なし
       let parentNote = "";
+      let workRefRaw = ""; // work-materials: 親 work_code の入力値
       for (const [header, field] of headerIdx) {
         const spec = [...cfg.cols, ...(cfg.links || [])].find((c) => c.field === field)!;
         if (cfg.links?.some((l) => l.field === field)) {
@@ -274,6 +337,7 @@ export async function importWorkModelCsv(
             parentRaw = codeRaw;
             parentResolved = codeRaw ? rec[field] != null : null;
           }
+          if (field === "work_id") workRefRaw = codeRaw;
         } else {
           rec[field] = coerce(spec.type, raw[header]);
         }
@@ -286,6 +350,25 @@ export async function importWorkModelCsv(
         if (!parentRaw) parentRaw = virtuals.parent_work_title;
         parentResolved = byTitle.id != null;
         if (byTitle.count > 1) parentNote = "(同名複数)";
+      }
+
+      // work-materials: 親作品の必須化 + 分類正規化 + material_code(<work_code>-NNN)導出。
+      if (entity === "work-materials") {
+        if (rec.work_id == null) {
+          throw new Error(`work_code が解決できません: ${workRefRaw || "(空)"}`);
+        }
+        rec.material_type = normalizeGenre(rec.material_type);
+        rec.acquisition_type = normalizeAcquisition(rec.acquisition_type);
+        rec.material_role = normalizeRole(rec.material_role, rec.material_type, rec.is_default);
+        if (!String(rec.material_code ?? "").trim()) {
+          const noRes = await query(
+            `SELECT COALESCE(MAX(material_no), 0) + 1 AS n FROM work_materials WHERE work_id = $1`,
+            [rec.work_id]
+          );
+          const nextNo = Number(noRes.rows[0]?.n) || 1;
+          if (rec.material_no == null) rec.material_no = nextNo;
+          rec.material_code = `${workRefRaw}-${String(rec.material_no).padStart(3, "0")}`;
+        }
       }
 
       const title = String(rec[cfg.titleField] ?? "").trim();
@@ -411,6 +494,12 @@ export function getWorkModelSampleCsv(entity: V3Entity): string {
     contracts:
       "document_number,contract_title,contract_level,contract_category,contract_type,lifecycle_stage,effective_date,expiration_date,auto_renewal,primary_vendor_code,work_code,source_code\n" +
       ",サンプル業務委託契約,standalone,service,service_master,requested,2026-04-01,2027-03-31,false,,,\n",
+    "work-materials":
+      "work_code,material_code,material_name,material_type,material_role,acquisition_type,rights_holder,rights_holder_vendor_code,is_default,remarks\n" +
+      // メイン作品(コアロジック): material_code 空欄なら <work_code>-NNN を自動採番。
+      "W-2026-0001,,サンプルゲームコアデザイン,ゲームデザイン,core_logic,license,サンプル原作者,,true,原作本体(メイン作品)\n" +
+      // サブコンポーネント(業務委託で取得したイラスト)。
+      "W-2026-0001,,サンプルイラスト,イラスト,sub_component,業務委託,サンプル絵師,,false,委託制作イラスト\n",
   };
   return "﻿" + samples[entity];
 }

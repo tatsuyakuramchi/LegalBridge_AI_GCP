@@ -829,22 +829,8 @@ export async function initDb() {
     `ALTER TABLE ledgers ADD COLUMN IF NOT EXISTS division TEXT[];`,
     `UPDATE ledgers SET division = ARRAY['BDG'] WHERE division IS NULL;`,
     `CREATE INDEX IF NOT EXISTS idx_ledgers_division ON ledgers USING GIN (division);`,
-    `CREATE TABLE IF NOT EXISTS materials (
-      id SERIAL PRIMARY KEY,
-      ledger_id INTEGER NOT NULL REFERENCES ledgers(id) ON DELETE CASCADE,
-      material_no INTEGER NOT NULL,
-      material_code VARCHAR(80) UNIQUE NOT NULL,
-      material_name TEXT NOT NULL,
-      material_type VARCHAR(50),
-      rights_holder TEXT,
-      remarks TEXT,
-      is_default BOOLEAN DEFAULT FALSE,
-      is_active BOOLEAN DEFAULT TRUE,
-      created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      UNIQUE(ledger_id, material_no)
-    );`,
-    `CREATE INDEX IF NOT EXISTS idx_materials_ledger ON materials(ledger_id);`,
+    // マテリアル一本化(0089/0090): 旧 materials 表は廃止。素材は正準表 work_materials に一本化。
+    //   起動時 DDL での materials 再作成は撤去(DROP 後の復活を防ぐ)。
     // Phase 23.6.5: license_contracts の ALTER は廃止 (テーブル自体が新規 DB には存在しない)。
 
     // Phase 23.6.5: license_financial_conditions の CREATE / ALTER / Backfill は廃止
@@ -2094,8 +2080,14 @@ export async function getNewIltNumberForLedger(
  * 派生素材は -002, -003, ... と進む。
  */
 export async function getNextMaterialNo(ledgerId: number): Promise<number> {
+  // マテリアル一本化(0089/0090): 正準表 work_materials の枝番を採番。
+  //   台帳(ledgers.id) → works(licensed_in, work_code=ledger_code) → work_materials で解決。
   const res = await query(
-    "SELECT COALESCE(MAX(material_no), 0) + 1 AS next FROM materials WHERE ledger_id = $1",
+    `SELECT COALESCE(MAX(wm.material_no), 0) + 1 AS next
+       FROM work_materials wm
+       JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
+       JOIN ledgers l ON l.ledger_code = w.work_code
+      WHERE l.id = $1`,
     [ledgerId]
   );
   return Number(res.rows[0].next) || 1;
@@ -2161,60 +2153,51 @@ export async function createLedgerWithDefaultMaterial(payload: {
   );
   const ledgerId = Number(ledgerRes.rows[0].id);
 
-  // 原作本体素材 (-001) を自動作成
+  // マテリアル一本化(0089/0090): 原作の正本 works(licensed_in) を作成/更新し、
+  //   原作本体素材(-001)は正準表 work_materials に立てる(materials 表は廃止)。
+  //   work_code = ledger_code で ledgers と紐付く。works/素材作成は必須経路(best-effort では無い)。
+  const wk = await query(
+    `INSERT INTO works (work_code, title, title_kana, alternative_titles, kind, is_original,
+        original_publisher, default_rights_holder, default_credit_display, default_work_supplement,
+        default_approval_target, default_approval_timing, remarks, division, is_active)
+     VALUES ($1,$2,$3,$4,'licensed_in',FALSE,$5,$6,$7,$8,$9,$10,$11,$12,TRUE)
+     ON CONFLICT (work_code) DO UPDATE SET
+        title=EXCLUDED.title, title_kana=EXCLUDED.title_kana,
+        default_rights_holder=EXCLUDED.default_rights_holder,
+        default_credit_display=EXCLUDED.default_credit_display,
+        default_work_supplement=EXCLUDED.default_work_supplement,
+        default_approval_target=EXCLUDED.default_approval_target,
+        default_approval_timing=EXCLUDED.default_approval_timing,
+        updated_at=now()
+     RETURNING id`,
+    [
+      ledgerCode, payload.title, payload.title_kana || null, payload.alternative_titles || [],
+      payload.publisher_name || null, payload.default_rights_holder || null,
+      payload.default_credit_display || null, payload.default_work_supplement || null,
+      payload.default_approval_target || null, payload.default_approval_timing || null,
+      payload.remarks || null, division,
+    ]
+  );
+  const workId = Number(wk.rows[0].id);
+
+  // 原作本体素材 (-001) = メイン作品(core_logic)。material_code で冪等。
   // Phase 22.20: 素材権利者を ledger.default_rights_holder で初期化
   const defaultMaterialCode = `${ledgerCode}-001`;
   const matRes = await query(
-    `INSERT INTO materials (
-       ledger_id, material_no, material_code, material_name,
-       material_type, rights_holder, is_default
-     ) VALUES ($1, 1, $2, $3, 'original', $4, TRUE)
+    `INSERT INTO work_materials (
+       work_id, material_no, material_code, material_name,
+       material_type, rights_holder_label, is_default, material_role, acquisition_type
+     ) VALUES ($1, 1, $2, $3, 'original', $4, TRUE, 'core_logic', 'license')
+     ON CONFLICT (material_code) WHERE material_code IS NOT NULL DO UPDATE SET
+       material_name = EXCLUDED.material_name, updated_at = now()
      RETURNING id, material_code`,
     [
-      ledgerId,
+      workId,
       defaultMaterialCode,
       payload.title,
       payload.default_rights_holder || null,
     ]
   );
-  // 統合Phase3b: 原作の正本 works(source=licensed_in) へ同コードでミラー。
-  //   Ledger と works が乖離しないよう常に同期する(form は当面 ledgers を読むが、
-  //   条件明細/受取マップ/将来の3カードエディタは works を正本として参照できる)。
-  //   ミラー失敗は Ledger 作成を妨げない(best-effort・ログのみ)。
-  try {
-    const wk = await query(
-      `INSERT INTO works (work_code, title, title_kana, alternative_titles, kind, is_original,
-          original_publisher, default_rights_holder, default_credit_display, default_work_supplement,
-          default_approval_target, default_approval_timing, remarks, division, is_active)
-       VALUES ($1,$2,$3,$4,'licensed_in',FALSE,$5,$6,$7,$8,$9,$10,$11,$12,TRUE)
-       ON CONFLICT (work_code) DO UPDATE SET
-          title=EXCLUDED.title, title_kana=EXCLUDED.title_kana,
-          default_rights_holder=EXCLUDED.default_rights_holder,
-          default_credit_display=EXCLUDED.default_credit_display,
-          default_work_supplement=EXCLUDED.default_work_supplement,
-          default_approval_target=EXCLUDED.default_approval_target,
-          default_approval_timing=EXCLUDED.default_approval_timing,
-          updated_at=now()
-       RETURNING id`,
-      [
-        ledgerCode, payload.title, payload.title_kana || null, payload.alternative_titles || [],
-        payload.publisher_name || null, payload.default_rights_holder || null,
-        payload.default_credit_display || null, payload.default_work_supplement || null,
-        payload.default_approval_target || null, payload.default_approval_timing || null,
-        payload.remarks || null, division,
-      ]
-    );
-    const workId = Number(wk.rows[0].id);
-    await query(
-      `INSERT INTO work_materials (work_id, material_name, material_type, rights_holder_label,
-          is_default, material_no, material_code, acquisition_type)
-       VALUES ($1,$2,'original',$3,TRUE,1,$4,'license')
-       ON CONFLICT DO NOTHING`,
-      [workId, payload.title, payload.default_rights_holder || null, defaultMaterialCode]
-    );
-  } catch (e: any) {
-    console.warn(`[ledger] works(source) mirror failed for ${ledgerCode}:`, e?.message || e);
-  }
 
   return {
     id: ledgerId,
@@ -2236,59 +2219,46 @@ export async function addMaterialToLedger(payload: {
   rights_holder?: string;
   remarks?: string;
 }): Promise<{ id: number; material_code: string; material_no: number }> {
+  // マテリアル一本化(0089/0090): 台帳(ledgers.id) → 正本 works(licensed_in) を解決し、
+  //   派生素材は正準表 work_materials に直接追加する(materials 表は廃止)。
   const ledgerRes = await query(
-    "SELECT ledger_code FROM ledgers WHERE id = $1",
+    `SELECT l.ledger_code, w.id AS work_id
+       FROM ledgers l
+       JOIN works w ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
+      WHERE l.id = $1`,
     [payload.ledger_id]
   );
   if (ledgerRes.rows.length === 0) {
-    throw new Error(`ledger ${payload.ledger_id} not found`);
+    throw new Error(`ledger ${payload.ledger_id} (works licensed_in) not found`);
   }
   const ledgerCode = ledgerRes.rows[0].ledger_code;
+  const workId = Number(ledgerRes.rows[0].work_id);
   const nextNo = await getNextMaterialNo(payload.ledger_id);
   const materialCode = `${ledgerCode}-${nextNo.toString().padStart(3, "0")}`;
+  const matType = payload.material_type || "derivative";
+  // 役割2層: 本体系ジャンルは core_logic、それ以外(派生素材)は sub_component。
+  const role = ["original", "game_design", "manuscript"].includes(matType)
+    ? "core_logic"
+    : "sub_component";
   const res = await query(
-    `INSERT INTO materials (
-       ledger_id, material_no, material_code, material_name,
-       material_type, rights_holder, remarks, is_default
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE)
+    `INSERT INTO work_materials (
+       work_id, material_no, material_code, material_name,
+       material_type, rights_holder_label, remarks, is_default, material_role,
+       acquisition_type
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8,
+       CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END)
      RETURNING id, material_code, material_no`,
     [
-      payload.ledger_id,
+      workId,
       nextNo,
       materialCode,
       payload.material_name,
-      payload.material_type || "derivative",
+      matType,
       payload.rights_holder || null,
       payload.remarks || null,
+      role,
     ]
   );
-  // Stage 0(文書ファースト紐付けプラン 決定3): 正準表 work_materials へミラーし表の再二重化を防ぐ。
-  //   work_id は work_code = ledger_code(kind='licensed_in')で解決。material_code で冪等。
-  //   acquisition_type は 0076/移行0082 と同基準(original のみ license, それ以外 NULL)。
-  //   ミラー失敗は素材作成を妨げない(best-effort・ログのみ)。
-  try {
-    await query(
-      `INSERT INTO work_materials (
-         work_id, material_no, material_code, material_name, material_type,
-         rights_holder_label, is_default, remarks, acquisition_type
-       )
-       SELECT w.id, $2, $3, $4, $5, $6, FALSE, $7,
-              CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END
-         FROM works w WHERE w.work_code = $1 AND w.kind = 'licensed_in'
-       ON CONFLICT DO NOTHING`,
-      [
-        ledgerCode,
-        nextNo,
-        materialCode,
-        payload.material_name,
-        payload.material_type || "derivative",
-        payload.rights_holder || null,
-        payload.remarks || null,
-      ]
-    );
-  } catch (e: any) {
-    console.warn(`[ledger] work_materials mirror failed for ${materialCode}:`, e?.message || e);
-  }
   return {
     id: Number(res.rows[0].id),
     material_code: res.rows[0].material_code,
