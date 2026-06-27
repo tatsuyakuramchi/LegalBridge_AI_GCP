@@ -38,7 +38,7 @@
 
 | v3 | 既存テーブル | 備考 |
 |---|---|---|
-| 構成要素 LC | `work_materials`（material_name, rights_holder） | 権利元＝rights_holder。既存。 |
+| 構成要素 LC | `work_materials`（material_name, rights_holder） | 権利元＝rights_holder。既存。**LC の ID/区分は現行 `material_code`（例: `LO-2026-0015-001`）を使い、合成の "LC-NN" は使わない**（決定）。 |
 | 取引形態（条件） | `capability_financial_conditions`（1行=1取引形態） | 列メタ。**新列が必要**（下記） |
 | セル（LC×取引形態 料率） | `condition_lines`（`source_material_id`=LC × `source_condition_id`=取引形態 × `rate_pct`） | **既存スキーマで表現可**。1cell=1明細。 |
 | 適用料率 | 加算型: Σ condition_lines.rate_pct（その取引形態）／非加算型: 取引形態の実効料率 | 計算で導出 |
@@ -64,7 +64,7 @@
 - v3 テンプレ（`d2cfd5b0…v3.html`）を Handlebars へ翻訳:
   - `<!-- REPEAT:cond -->` → `{{#each conds}}`（1-3(A) 基準価格表）
   - `<!-- REPEAT:condHeader -->` → `{{#each conds}}`（1-3(B) 列ヘッダ）
-  - `<!-- REPEAT:lc -->` / `<!-- REPEAT:lcRate -->` → `{{#each lcs}}` / 入れ子 `{{#each rates}}`（料率表）
+  - `<!-- REPEAT:lc -->` / `<!-- REPEAT:lcRate -->` → `{{#each lcs}}` / 入れ子 `{{#each rates}}`（料率表）。`{{lcId}}`（v3 の "LC-01" 区分）は **`material_code`（現行形式 `LO-…-NNN`）に置換**。
   - `<!-- REPEAT:cond2 -->` → `{{#each conds}}`（2-1 金銭条件マスタ）
   - `<!-- REPEAT:sublicense -->` ＋ `EMPTY` → `{{#each sublicensees}}{{else}}…{{/each}}`
   - `{{condCount}}` 等 → context で供給
@@ -107,9 +107,9 @@
 
 ## 6. 要確認の決定事項
 
-1. **LC = work_materials** で確定か（権利元＝rights_holder）。LC は原作マテリアルそのものという理解でよいか。
-2. **セル = condition_lines**（source_material_id × source_condition_id × rate_pct）で表現してよいか。別テーブル案（`capability_lc_rates`）と比較。
-3. **適用料率（加算型の合算結果）** は保存（冗長・下流が楽）か、都度計算か。
+1. ~~LC = work_materials か~~ → **確定**。LC＝原作マテリアル（work_materials）。**ID/区分は現行 `material_code`（`LO-…-NNN`）を使い "LC-NN" は廃止**（ユーザー決定 2026-06）。
+2. **セル = condition_lines**（source_material_id × source_condition_id × rate_pct）で表現 → 承認。別テーブル案は不採用。
+3. **適用料率（加算型の合算結果）** は保存（冗長・下流が楽）か、都度計算か。（推奨: 都度計算＋表示。要確認）
 4. **非加算型**（例: サブライセンス 50%）は LC 行を持たず取引形態の実効料率のみ。この扱い（cell 無し／代表 cell）をどうするか。
 5. **基準価格・個数・AG・MG** は取引形態（列）単位で確定。マテリアル単位の差は想定するか（v3 は列単位）。
 6. **後方互換**: 既存の旧 `financial_conditions` で作られた individual_license_terms 文書・条件明細との両立（読み替え or 併存）。
