@@ -159,6 +159,11 @@ async function readCapabilityFinancialRowsForDisplay(
   }
 }
 
+// 雛形プレビューで非表示にするテンプレ（一覧・直リンク描画ともに遮断）。
+//   個別利用許諾の旧フラット版は v3（individual_license_terms_v3）へ置換。
+//   ※ 生成（後方互換）には影響しない（worker は disk フォールバックで継続）。
+const HIDDEN_PREVIEW_TYPES = new Set<string>(["individual_license_terms"]);
+
 // helper は起動時 1 回、partial は DB から遅延ロードして専用インスタンスに登録。
 const previewHb = Handlebars.create();
 registerRenderHelpers(previewHb);
@@ -749,10 +754,7 @@ async function startServer() {
     requireIapUser({ renderErrorPage }),
     async (_req, res) => {
       try {
-        // 雛形プレビューで非表示にするテンプレ（旧版を隠し v3 へ寄せる等）。
-        //   個別利用許諾の旧フラット版は v3（individual_license_terms_v3）に置換するため
-        //   一覧から除外する。生成（後方互換）には影響しない（disk フォールバックで継続）。
-        const HIDDEN_PREVIEW_TYPES = new Set(["individual_license_terms"]);
+        // 非表示テンプレ（HIDDEN_PREVIEW_TYPES）はモジュール先頭で定義（一覧・直リンク共用）。
         // config(metadata) に載せない DB-only テンプレの表示名（proxy モードで型名直出しを防ぐ）。
         //   v3 は作成可能フォーム型として誤出現させないため config 非掲載 → ここで表示名を補う。
         const LABEL_OVERRIDES: Record<string, { label: string; category: string }> = {
@@ -812,6 +814,11 @@ async function startServer() {
     async (req, res) => {
       try {
         const typeRaw = String(req.params.type || "");
+        // 非表示テンプレは直リンクでも描画しない（一覧非表示と整合）。
+        if (HIDDEN_PREVIEW_TYPES.has(typeRaw)) {
+          res.status(404).type("text/plain").send(`Template not available: ${typeRaw}`);
+          return;
+        }
 
         if (process.env.TEMPLATE_SOURCE === "db") {
           const html = await renderSamplePreviewFromDb(typeRaw);
@@ -855,6 +862,11 @@ async function startServer() {
     async (req, res) => {
       try {
         const typeRaw = String(req.params.type || "");
+        // 非表示テンプレは直リンクでも PDF 化しない（一覧非表示と整合）。
+        if (HIDDEN_PREVIEW_TYPES.has(typeRaw)) {
+          res.status(404).type("text/plain").send(`Template not available: ${typeRaw}`);
+          return;
+        }
 
         // B5b: TEMPLATE_SOURCE=db のとき、html プレビューと同じローカルレンダリングで
         //   HTML を作り、chromium(puppeteer-core)で PDF 化。worker proxy を使わない。
