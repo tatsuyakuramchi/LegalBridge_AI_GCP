@@ -83,16 +83,9 @@ export function MaterialSearchSelect({
       )}
 
       {open && (
-        // 注: テーマの bg-card/bg-popover は HSL triplet 定義で background-color が
-        //   不正値(透明)になるため、オーバーレイは hsl() で明示的に不透明背景にする。
-        <div
-          className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border shadow-md"
-          style={{
-            backgroundColor: 'hsl(var(--popover))',
-            color: 'hsl(var(--popover-foreground))',
-            borderColor: 'hsl(var(--border))',
-          }}
-        >
+        // lb-overlay = 不透明サーフェス(テーマの bg-card/bg-popover が triplet 定義で
+        //   透明になる問題の対策。index.css 参照)。
+        <div className="lb-overlay absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border shadow-md">
           {matches.length === 0 ? (
             <div className="px-2.5 py-1.5 text-[10px] font-mono opacity-70">
               {q.trim() ? '該当するマテリアルがありません' : 'マテリアルがありません'}
