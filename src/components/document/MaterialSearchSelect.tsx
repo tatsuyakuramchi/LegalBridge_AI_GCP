@@ -83,9 +83,11 @@ export function MaterialSearchSelect({
       )}
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border border-border bg-card shadow-md">
+        // lb-overlay = 不透明サーフェス(テーマの bg-card/bg-popover が triplet 定義で
+        //   透明になる問題の対策。index.css 参照)。
+        <div className="lb-overlay absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border shadow-md">
           {matches.length === 0 ? (
-            <div className="px-2.5 py-1.5 text-[10px] font-mono text-muted-foreground">
+            <div className="px-2.5 py-1.5 text-[10px] font-mono opacity-70">
               {q.trim() ? '該当するマテリアルがありません' : 'マテリアルがありません'}
             </div>
           ) : (
@@ -93,7 +95,7 @@ export function MaterialSearchSelect({
               <button
                 key={m.id ?? m.material_code}
                 type="button"
-                className="block w-full text-left px-2.5 py-1.5 text-[11px] font-mono hover:bg-muted"
+                className="block w-full text-left px-2.5 py-1.5 text-[11px] font-mono hover:bg-black/5 dark:hover:bg-white/10"
                 onMouseDown={(e) => {
                   e.preventDefault(); // onBlur より先に確定
                   onPick(m.material_code);

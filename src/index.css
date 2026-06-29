@@ -393,3 +393,16 @@
     height: 1px;
   }
 }
+
+/* Opaque overlay surface.
+   テーマの色変数は HSL triplet 定義(--card: 40 30% 99% 等)で、@theme inline の
+   --color-card: var(--card) を経由すると background-color が不正値となり透明
+   (rgba(0,0,0,0))になる。そのため bg-card/bg-popover を使うドロップダウン/モーダル等の
+   浮遊オーバーレイは後ろが透けて読めなくなる。ここで hsl() を明示した不透明サーフェスを
+   定義し、各オーバーレイに付与する。非レイヤー(unlayered)なので Tailwind の
+   bg-card/bg-popover/border-border ユーティリティより優先される。 */
+.lb-overlay {
+  background-color: hsl(var(--popover));
+  color: hsl(var(--popover-foreground));
+  border-color: hsl(var(--border));
+}

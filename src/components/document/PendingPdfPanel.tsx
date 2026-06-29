@@ -1038,7 +1038,7 @@ export const PendingPdfPanel: React.FC = () => {
           onClick={() => !savingEdit && setBulkEditOpen(false)}
         >
           <div
-            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+            className="lb-overlay bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">
@@ -1133,7 +1133,7 @@ export const PendingPdfPanel: React.FC = () => {
                     className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
                   />
                   {staffDropdownOpen && staffOptions.length > 0 && (
-                    <div className="absolute z-10 mt-1 w-full max-h-56 overflow-y-auto border border-border rounded-sm bg-card shadow-lg">
+                    <div className="lb-overlay absolute z-10 mt-1 w-full max-h-56 overflow-y-auto border border-border rounded-sm bg-card shadow-lg">
                       {filteredStaff.length === 0 ? (
                         <div className="px-2 py-2 text-[10px] font-mono text-muted-foreground">
                           該当する担当者がいません
@@ -1256,7 +1256,7 @@ export const PendingPdfPanel: React.FC = () => {
           onClick={() => !merging && setMergeOpen(false)}
         >
           <div
-            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
+            className="lb-overlay bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full max-h-[90vh] overflow-hidden flex flex-col"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-muted/30 border-b border-border px-5 py-3 flex items-center gap-2">

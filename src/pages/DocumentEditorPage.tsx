@@ -2674,7 +2674,7 @@ export function DocumentEditorPage() {
           onClick={() => setCompletionResult(null)}
         >
           <div
-            className="bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+            className="lb-overlay bg-card border border-border rounded-sm shadow-2xl max-w-lg w-full mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
