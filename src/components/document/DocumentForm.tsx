@@ -988,12 +988,6 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           (l: any) => Number(l.id) === Number(formData.ledger_ref_id)
         )
       : null;
-    const materialOptions: any[] = selectedLedger?.materials || [];
-    const selectedMaterial = formData.material_ref_id
-      ? materialOptions.find(
-          (m: any) => Number(m.id) === Number(formData.material_ref_id)
-        )
-      : null;
 
     // WTC-1 誘導フロー: 既存入力部品を「作品→原作→マテリアル→条件→当事者→完成」の
     //   1本の流れとして可視化する。達成判定は formData から算出(真実源は formData)。
@@ -1098,32 +1092,6 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       });
     };
 
-    const onMaterialChange = (materialId: string) => {
-      const mid = Number(materialId);
-      const material = materialOptions.find((m: any) => Number(m.id) === mid);
-      if (!material) {
-        setFormData({
-          ...formData,
-          material_ref_id: undefined,
-          素材番号: '',
-          素材名: '',
-          素材権利者: '',
-        });
-        return;
-      }
-      setFormData({
-        ...formData,
-        material_ref_id: mid,
-        素材番号: material.material_code || '',
-        素材名: material.material_name || '',
-        素材権利者: resolveRightsHolder(material, selectedLedger),
-        // 原作本体 (is_default) を選んだ場合は 原著作物名 を ledger.title で上書き
-        原著作物名: material.is_default
-          ? selectedLedger?.title || formData.原著作物名 || ''
-          : formData.原著作物名 || material.material_name || '',
-      });
-    };
-
     // Stage 1: 「どの作品のための契約か」を指定する作品(own)を、なければその場で作成する。
     //   WorksListPanel と同じ POST /api/v3/works(title のみ)を使い、作成後に一覧を再取得して選択。
     //   構造リンクは linked_work_id(works.id, kind='own')に保持。保存経路(Stage 2)が参照する。
@@ -1148,7 +1116,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         }
         setNewWorkTitle('');
         if (created?.id != null) {
-          setFormData({ ...formData, linked_work_id: String(created.id) });
+          setFormData({
+            ...formData,
+            linked_work_id: String(created.id),
+            対象製品予定名: title || formData.対象製品予定名 || '',
+          });
         }
       } catch (e) {
         console.error('createOwnWork failed', e);
@@ -1244,6 +1216,124 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     const renderGroup = (groupName: string) =>
       (groupedVars[groupName] || []).map((fid) => renderField(fid));
 
+    // ---------------------------------------------------------------
+    // マスター条件: 複数原作マテリアル選択 ＋ 過去条件コピー
+    //   ユーザーが選んだマテリアル(formData.master_materials)を正準とし、
+    //   そこから v3 マトリクスの構成要素LC(formData.v3_lcs)を導出する。
+    //   1-3(B) の LC 手入力は廃止し、ここで選んだマテリアル＝LC行とする。
+    //   加算型の料率はコピーした条件の rate_pct を初期値として seed し、
+    //   金銭条件マトリクス側でインライン修正できる(編集値は保持)。
+    // ---------------------------------------------------------------
+    const masterMaterials: any[] = Array.isArray(formData.master_materials)
+      ? (formData.master_materials as any[])
+      : [];
+    // 跨ぎ原作対応: 全原作のマテリアルをプール(原作タイトル付き)。
+    const masterMaterialGroups = ledgerList.map((l: any) => ({
+      id: l.id,
+      title: l.title,
+      code: l.ledger_code,
+      materials: Array.isArray(l.materials) ? l.materials : [],
+    }));
+    const materialPool: any[] = masterMaterialGroups.flatMap((g: any) =>
+      (g.materials as any[]).map((m: any) => ({
+        ...m,
+        _ledger_title: g.title,
+        _ledger_code: g.code,
+      }))
+    );
+
+    // 1 マテリアル(＋コピー条件) → LC 行。prevLc があれば編集済み rates を保持。
+    const lcFromMaterial = (m: any, prevLc: any, conds: any[]) => {
+      const rates: Record<string, any> = { ...(prevLc?.rates || {}) };
+      const copiedRate = m?.copied?.rate_pct;
+      if (copiedRate != null && copiedRate !== '') {
+        (Array.isArray(conds) ? conds : [])
+          .filter((c: any) => c?.addon)
+          .forEach((c: any) => {
+            const k = String(c.id);
+            if (rates[k] == null || rates[k] === '') rates[k] = String(copiedRate);
+          });
+      }
+      return {
+        material_code: m?.material_code || '',
+        name: m?.name || '',
+        holder: m?.holder || '',
+        rates,
+        copied_from_condition_id: m?.copied?.copied_from_condition_id,
+      };
+    };
+    // 選択マテリアル群 → v3_lcs(編集済み rates は material_code で突合し保持)。
+    const rebuildV3Lcs = (materials: any[], prevLcs: any[], conds: any[]) => {
+      const byCode = new Map(
+        (Array.isArray(prevLcs) ? prevLcs : []).map((l: any) => [l.material_code, l])
+      );
+      return (Array.isArray(materials) ? materials : [])
+        .filter((m: any) => m?.material_code)
+        .map((m: any) => lcFromMaterial(m, byCode.get(m.material_code), conds));
+    };
+
+    // master_materials を更新し、派生する v3_lcs / アンカー素材の補完値も同時に書く。
+    const commitMaterials = (next: any[]) => {
+      const conds = Array.isArray(formData.v3_conds) ? (formData.v3_conds as any[]) : [];
+      const lcs = rebuildV3Lcs(
+        next,
+        Array.isArray(formData.v3_lcs) ? (formData.v3_lcs as any[]) : [],
+        conds
+      );
+      const anchor = next.find((m: any) => m?.material_code) || null;
+      const anchorMat = anchor
+        ? materialPool.find((x: any) => x.material_code === anchor.material_code)
+        : null;
+      setFormData({
+        ...formData,
+        master_materials: next,
+        v3_lcs: lcs,
+        ...(anchor
+          ? {
+              // テンプレ用・Stage2 保存用のアンカー素材(先頭)を維持。
+              material_ref_id: anchorMat?.id ?? formData.material_ref_id,
+              素材番号: anchor.material_code || formData.素材番号,
+              素材名: anchor.name || formData.素材名,
+              素材権利者: anchor.holder || formData.素材権利者,
+            }
+          : {}),
+      });
+    };
+    const addMaterialRow = () =>
+      commitMaterials([
+        ...masterMaterials,
+        { material_code: '', name: '', holder: '', copied: null },
+      ]);
+    const removeMaterialRow = (i: number) =>
+      commitMaterials(masterMaterials.filter((_: any, idx: number) => idx !== i));
+    const setRowMaterial = (i: number, code: string) => {
+      const m = materialPool.find((x: any) => x.material_code === code) || null;
+      const next = masterMaterials.map((row: any, idx: number) =>
+        idx === i
+          ? {
+              ...row,
+              material_code: code,
+              name: m?.material_name || '',
+              holder: resolveRightsHolder(m, null) || row.holder || '',
+            }
+          : row
+      );
+      commitMaterials(next);
+    };
+    const setRowCopied = (i: number, cond: any) => {
+      const next = masterMaterials.map((row: any, idx: number) =>
+        idx === i ? { ...row, copied: cond } : row
+      );
+      commitMaterials(next);
+    };
+    // 金銭条件側で取引形態(conds)が変わった時、LC の rates(新規 addon 列の seed)を再同期。
+    const syncLcsForConds = (conds: any[]) =>
+      rebuildV3Lcs(
+        masterMaterials,
+        Array.isArray(formData.v3_lcs) ? (formData.v3_lcs as any[]) : [],
+        conds
+      );
+
     return (
       <div className="space-y-10">
         {/* Required-progress banner */}
@@ -1272,7 +1362,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {/* WTC-1 誘導フロー: 作品→原作→マテリアル→条件→当事者→完成 を上部に常時表示。 */}
         <LicenseWizardRail steps={wizardSteps} />
 
-        {/* 1. 前提条件 */}
+        {/* 1. 前提条件 — 誰と / どの基本契約 / 作品連動の有無 / どの作品 を一括設定。
+            旧 §1(前提)・§2(基本契約)・作品連動スイッチ・対象作品(own) を縦串に統合。 */}
         <FormSection
           title="1. 前提条件"
           variant="default"
@@ -1281,15 +1372,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           {renderField('発行日')}
           {renderField('台帳ID')}
           {renderField('契約書番号')}
-        </FormSection>
 
-        {/* 2. 取引先・基本契約設定 — 基本契約の紐づけ(唯一の入力点) */}
-        <FormSection
-          title="2. 取引先・基本契約設定"
-          variant="default"
-          icon={<Briefcase className="w-4 h-4" />}
-        >
-          <div className="col-span-full mb-2">
+          {/* 基本契約設定 — 基本契約の紐づけ(唯一の入力点) */}
+          <div className="col-span-full mt-2 pt-3 border-t border-border/60">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+              基本契約設定
+            </div>
             <DocumentNumberLookup
               label="基本契約をマスタ・アーカイブから検索 (部分一致 / 空欄で最新一覧)"
               placeholder="例: 株式会社X / GCT / ARC-LIC-2026-0001"
@@ -1314,60 +1402,54 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             />
           </div>
           {renderField('基本契約名')}
-        </FormSection>
 
-        {/* 作品連動スイッチ — この契約が作品に連動するか(原作・素材を紐付けるか)。
-            全契約が作品に関わるわけではない(NDA・一般業務委託 等)ため、OFF で
-            原作・素材の紐付け(作品連動フロー)をスキップする。既定は ON(未設定=ON)。
-            設計: docs/design/document-first-material-linkage-plan.md */}
-        <div className="flex items-start justify-between gap-4 rounded-md border border-border bg-muted/20 px-4 py-3">
-          <div className="space-y-0.5">
-            <label
-              htmlFor="is_work_linked"
-              className="text-xs font-mono font-bold uppercase tracking-[0.14em] text-foreground cursor-pointer"
-            >
-              作品連動する契約
-            </label>
-            <p className="text-[11px] font-mono text-muted-foreground">
-              ON: 原作・原作マテリアルを紐付け、作品の構成・条件明細に連動させます。
-              OFF: 作品に関わらない契約（NDA・一般業務委託 等）として原作・素材の紐付けを行いません。
-            </p>
+          {/* 作品連動契約の有無 — OFF で原作・素材の紐付け(作品連動フロー)をスキップ。
+              既定は ON。設計: docs/design/document-first-material-linkage-plan.md */}
+          <div className="col-span-full mt-2 flex items-start justify-between gap-4 rounded-md border border-border bg-muted/20 px-4 py-3">
+            <div className="space-y-0.5">
+              <label
+                htmlFor="is_work_linked"
+                className="text-xs font-mono font-bold uppercase tracking-[0.14em] text-foreground cursor-pointer"
+              >
+                作品連動する契約
+              </label>
+              <p className="text-[11px] font-mono text-muted-foreground">
+                ON: 原作・原作マテリアルを紐付け、作品の構成・条件明細に連動させます。
+                OFF: 作品に関わらない契約（NDA・一般業務委託 等）として原作・素材の紐付けを行いません。
+              </p>
+            </div>
+            <Switch
+              id="is_work_linked"
+              checked={formData.is_work_linked !== false}
+              onCheckedChange={(checked: boolean) =>
+                setFormData({ ...formData, is_work_linked: checked })
+              }
+            />
           </div>
-          <Switch
-            id="is_work_linked"
-            checked={formData.is_work_linked !== false}
-            onCheckedChange={(checked: boolean) =>
-              setFormData({ ...formData, is_work_linked: checked })
-            }
-          />
-        </div>
 
-        {/* 3. マスター条件 — 原作 / 素材 セレクタ
-            原作 (ledger) を選ぶと配下の素材一覧が表示され、選択した素材の
-            material_code が 素材番号 に自動入力される。work_id は生成時に採番。
-            作品連動スイッチ OFF のときは非表示(作品連動フローをスキップ)。 */}
-        {formData.is_work_linked !== false && (
-        <FormSection
-          id="wiz-source"
-          title="3. マスター条件 — 原作・素材"
-          variant="emerald"
-          icon={<Briefcase className="w-4 h-4" />}
-        >
-          <div className="col-span-full grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* Stage 1: 「どの作品のための契約か」= 対象作品(own)。なければその場で作成。
-                構造リンクは linked_work_id に保持(works.id, kind='own')。 */}
-            <div className="space-y-1 md:col-span-2">
+          {/* 作品設定 — 対象作品(own)。作品連動 ON のみ。なければその場で作成。
+              構造リンクは linked_work_id(works.id, kind='own')。選択時に対象製品予定名も補完。 */}
+          {formData.is_work_linked !== false && (
+            <div className="col-span-full space-y-1">
               <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                対象作品（自社作品）
+                作品設定 — 対象作品（自社作品）
               </label>
               <select
                 value={formData.linked_work_id || ''}
-                onChange={(e) =>
-                  setFormData({ ...formData, linked_work_id: e.target.value || undefined })
-                }
+                onChange={(e) => {
+                  const id = e.target.value || undefined;
+                  const w = worksList.find(
+                    (x: any) => String(x.id) === e.target.value
+                  );
+                  setFormData({
+                    ...formData,
+                    linked_work_id: id,
+                    対象製品予定名: w?.title || formData.対象製品予定名 || '',
+                  });
+                }}
                 className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
               >
-                <option value="">— この契約の対象作品を選択（任意）—</option>
+                <option value="">— この契約の対象作品を選択 —</option>
                 {worksList
                   .filter((w: any) => w.title)
                   .map((w: any) => (
@@ -1400,253 +1482,165 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 </button>
               </div>
               <p className="text-[10px] font-mono text-muted-foreground/70">
-                「どの作品のための契約か」を指定します。一覧に無ければ作品タイトルを入力して作成。
+                「どの作品のための契約か」を指定します。一覧に無ければ作品タイトルを入力して作成。選択すると「対象製品（予定）名」へ反映します。
               </p>
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                原作 (Ledger)
-              </label>
-              <select
-                value={formData.ledger_ref_id || ''}
-                onChange={(e) => onLedgerChange(e.target.value)}
-                className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-              >
-                <option value="">— 原作を選択 —</option>
-                {ledgerList
-                  .filter((l: any) => l.is_active !== false)
-                  .map((l: any) => (
-                    <option key={l.id} value={l.id}>
-                      [{l.ledger_code}] {l.title}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-[10px] font-mono text-muted-foreground/70">
-                マスター &gt; Ledgers で登録した原作 (LO-YYYY-NNNN) から選択
-              </p>
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                素材 (Material)
-              </label>
-              <select
-                value={formData.material_ref_id || ''}
-                onChange={(e) => onMaterialChange(e.target.value)}
-                disabled={!formData.ledger_ref_id || materialOptions.length === 0}
-                className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground disabled:opacity-50"
-              >
-                <option value="">— 素材を選択 —</option>
-                {materialOptions
-                  .filter((m: any) => m.is_active !== false)
-                  .map((m: any) => (
-                    <option key={m.id} value={m.id}>
-                      [{m.material_code}]{m.is_default ? ' ★' : ''}{' '}
-                      {selectedLedger?.title ? `${selectedLedger.title}　` : ''}{m.material_name}
-                    </option>
-                  ))}
-              </select>
-              <p className="text-[10px] font-mono text-muted-foreground/70">
-                ★ = 原作本体 (デフォルト)。派生作品/キャラ等を選択
-              </p>
-            </div>
-
-            {selectedLedger && selectedMaterial && (
-              <div className="md:col-span-2 rounded-sm border border-emerald-200 bg-emerald-50/40 px-3 py-2">
-                <div className="text-[10px] font-mono uppercase tracking-wider text-emerald-700 mb-1">
-                  選択中 — 生成時に Work ID が採番されます
-                </div>
-                <div className="text-[11px] font-mono space-y-0.5">
-                  <div>
-                    <span className="text-muted-foreground">原作 :</span>{' '}
-                    <span className="font-bold">{selectedLedger.ledger_code}</span> ·{' '}
-                    {selectedLedger.title}
-                  </div>
-                  <div>
-                    <span className="text-muted-foreground">素材 :</span>{' '}
-                    <span className="font-bold">
-                      {selectedMaterial.material_code}
-                    </span>{' '}
-                    · {selectedMaterial.material_name}
-                  </div>
-                  <div className="text-[10px] text-muted-foreground/70 mt-1">
-                    予定 Work ID: LIC-{selectedLedger.ledger_code}-W-
-                    {new Date().getFullYear()}-NNNN
-                    {formData.work_id && (
-                      <>
-                        {' '}
-                        / 既存: <strong>{formData.work_id}</strong>
-                      </>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* 紐づけ(原作マテリアル←条件明細)は、入力順(原作→マテリアル→条件)に沿わせるため
-              下の「金銭条件」セクションの直後へ移設。ここでは骨格(作品・原作・軸マテリアル)まで。 */}
-          <p className="col-span-full text-[10px] font-mono text-muted-foreground/70 mt-2">
-            ↓ 利用許諾の<strong>金銭条件（条件明細）</strong>と<strong>原作マテリアルへの紐づけ</strong>は、すぐ下のセクションで入力します（既定でこの素材に束ねます）。
-          </p>
-        </FormSection>
-        )}
-
-        {/* 旧・金銭条件（フラット）＋ 原作マテリアルへの紐づけ。
-            個別利用許諾の入力は v3 マトリクス（下の「金銭条件（v3）」）へ一本化したため、
-            新規作成では非表示。既存データ(financial_conditions)を持つレガシー文書の編集時のみ
-            表示し、過去データの閲覧・修正を可能にする。 */}
-        {Array.isArray(formData.financial_conditions) &&
-          (formData.financial_conditions as any[]).length > 0 && (
-        <FormSection
-          title="（旧）金銭条件（フラット・レガシー編集用）"
-          variant="indigo"
-          icon={<Coins className="w-4 h-4" />}
-          headerActions={
-            <span className="text-[11px] font-mono text-muted-foreground italic">
-              条件 1=自社製造 / 2=サブライセンス / 3=プロダクトアウト (任意で追加可)
-            </span>
-          }
-        >
-          <FinancialConditionTable
-            conditions={
-              Array.isArray(formData.financial_conditions)
-                ? (formData.financial_conditions as FinancialCondition[])
-                : []
-            }
-            onChange={(conditions: FinancialCondition[]) =>
-              setFormData({ ...formData, financial_conditions: conditions })
-            }
-            division={
-              String(templateId || "").startsWith("pub_") ||
-              String(templateId || "").includes("publication")
-                ? "PUB"
-                : "BDG"
-            }
-            works={workOptions}
-          />
-
-          {/* WMC-2: 同一原作素材に登録済みの条件を引用してコピー(値コピー = テンプレ→インスタンス)。
-              選択中の軸素材(formData.素材番号 = material_code)をキーに WMC-1 API を引く。 */}
-          {(() => {
-            const anchorCode = formData.素材番号 || '';
-            const anchorMat = (selectedLedger?.materials || []).find(
-              (m: any) => m.material_code === anchorCode
-            );
-            const label = anchorMat
-              ? `[${anchorMat.material_code}] ${selectedLedger?.title ? selectedLedger.title + '　' : ''}${anchorMat.material_name || ''}`
-              : anchorCode;
-            return (
-              <ConditionCopyPanel
-                materialCode={anchorCode}
-                materialLabel={label}
-                existing={
-                  Array.isArray(formData.financial_conditions)
-                    ? (formData.financial_conditions as FinancialCondition[])
-                    : []
-                }
-                onCopy={(cond) =>
-                  setFormData({
-                    ...formData,
-                    financial_conditions: [
-                      ...(Array.isArray(formData.financial_conditions)
-                        ? formData.financial_conditions
-                        : []),
-                      cond,
-                    ],
-                  })
-                }
-              />
-            );
-          })()}
-
-          {/* 原作マテリアルへの紐づけ(1材料 : N条件) — 条件入力の直後。作品連動 ON のみ。
-              既定で軸マテリアル(上の素材／原作本体)へ束ね、行で別マテリアルに上書き可。 */}
-          {formData.is_work_linked !== false && (
-            <div className="col-span-full mt-4 pt-3 border-t border-border/60 rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-2.5">
-              <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700 mb-1.5">
-                原作マテリアルへの紐づけ（1材料 : N条件）
-              </div>
-              {!selectedLedger ? (
-                <p className="text-[10px] font-mono text-muted-foreground">
-                  先に上の「3. マスター条件」で原作 (Ledger) を選択してください。
-                </p>
-              ) : !Array.isArray(formData.financial_conditions) ||
-                formData.financial_conditions.length === 0 ? (
-                <p className="text-[10px] font-mono text-muted-foreground">
-                  上の表に条件を追加すると、各条件の原作マテリアルを指定できます（既定はこの素材に束ねます）。
-                </p>
-              ) : (
-                (() => {
-                  const mats: any[] = selectedLedger.materials || [];
-                  const anchor =
-                    mats.find((m: any) => m.material_code === formData.素材番号) ||
-                    mats.find((m: any) => m.is_default) ||
-                    null;
-                  return (
-                    <div className="space-y-1.5">
-                      <p className="text-[10px] font-mono text-emerald-800">
-                        既定の軸マテリアル：
-                        <span className="font-bold">
-                          {anchor
-                            ? `[${anchor.material_code}] ${selectedLedger?.title ? selectedLedger.title + '　' : ''}${anchor.material_name}`
-                            : '（原作本体。上の「素材」で変更可）'}
-                        </span>
-                        {' '}— 各条件は既定でここへ束ねます。
-                      </p>
-                      {formData.financial_conditions.map((c: any, idx: number) => {
-                        const key = String(c.condition_no ?? idx + 1);
-                        const cmCodes = (formData.condition_material_codes || {}) as Record<string, string>;
-                        const cur = cmCodes[key] ?? '';
-                        const schemeLabel =
-                          c.calc_type === 'FIXED'
-                            ? '買切/固定額'
-                            : c.calc_type === 'SUBSCRIPTION'
-                              ? 'サブスク'
-                              : 'ロイヤリティ';
-                        return (
-                          <div key={key} className="flex items-center gap-2 flex-wrap">
-                            <span className="text-[11px] font-mono min-w-[8rem] truncate">
-                              <span className="font-bold">条件{c.condition_no ?? idx + 1}</span>{' '}
-                              {c.condition_name || ''}
-                            </span>
-                            <span className="text-[9px] font-mono px-1.5 py-0.5 rounded-sm bg-muted text-muted-foreground">
-                              {schemeLabel}
-                            </span>
-                            <select
-                              value={cur}
-                              onChange={(e) =>
-                                setFormData({
-                                  ...formData,
-                                  condition_material_codes: { ...cmCodes, [key]: e.target.value },
-                                })
-                              }
-                              className="flex-1 min-w-[12rem] text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
-                            >
-                              <option value="">
-                                （軸マテリアルに束ねる＝既定
-                                {anchor ? `：${anchor.material_name}` : ''}）
-                              </option>
-                              {mats.map((m: any) => (
-                                <option key={m.id} value={m.material_code}>
-                                  [{m.material_code}]{m.is_default ? ' ★' : ''} {selectedLedger?.title ? `${selectedLedger.title}　` : ''}{m.material_name}
-                                </option>
-                              ))}
-                            </select>
-                          </div>
-                        );
-                      })}
-                      <p className="text-[10px] font-mono text-muted-foreground/70">
-                        空欄＝軸マテリアルへ束ねる（1材料に複数条件）。別マテリアルにしたい行だけ選択。保存時に作品構成・条件明細へ連動します。
-                      </p>
-                    </div>
-                  );
-                })()
-              )}
             </div>
           )}
         </FormSection>
+
+        {/* 3. マスター条件 — 原作 ＋ 原作マテリアル(複数) ＋ 過去条件のコピー/新規。
+            ここで選んだマテリアルが金銭条件(3-2)の構成要素LCになる(1材料:N条件可)。
+            作品連動スイッチ OFF のときは非表示(作品連動フローをスキップ)。 */}
+        {formData.is_work_linked !== false && (
+        <FormSection
+          id="wiz-source"
+          title="3. マスター条件 — 原作・原作マテリアル"
+          variant="emerald"
+          icon={<Briefcase className="w-4 h-4" />}
+        >
+          {/* 原作(Ledger): マテリアル候補のコンテキスト。原著作物名・クレジット等を補完。 */}
+          <div className="col-span-full space-y-1">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              原作 (Ledger)
+            </label>
+            <select
+              value={formData.ledger_ref_id || ''}
+              onChange={(e) => onLedgerChange(e.target.value)}
+              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+            >
+              <option value="">— 原作を選択 —</option>
+              {ledgerList
+                .filter((l: any) => l.is_active !== false)
+                .map((l: any) => (
+                  <option key={l.id} value={l.id}>
+                    [{l.ledger_code}] {l.title}
+                  </option>
+                ))}
+            </select>
+            <p className="text-[10px] font-mono text-muted-foreground/70">
+              マスター &gt; Ledgers で登録した原作 (LO-YYYY-NNNN)。原著作物名・クレジット表示の既定値を補完します。
+            </p>
+          </div>
+
+          {/* 原作マテリアル(複数) ＋ 過去の利用許諾条件コピー/新規。
+              ここで選んだマテリアル＝金銭条件(3-2)の構成要素LC。 */}
+          <div className="col-span-full mt-3 rounded-md border border-emerald-200 bg-emerald-50/30 px-3 py-3 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-emerald-700">
+                原作マテリアル検索（複数可）＋ 過去条件の再利用
+              </div>
+              <button
+                type="button"
+                onClick={addMaterialRow}
+                className="text-[11px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-100"
+              >
+                ＋マテリアルを追加
+              </button>
+            </div>
+
+            {materialPool.length === 0 && (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                原作マスター(Ledgers)にマテリアルがありません。マスター &gt; Ledgers で素材を登録してください。
+              </p>
+            )}
+
+            {masterMaterials.length === 0 ? (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                「＋マテリアルを追加」で、この契約が利用する原作マテリアルを選択します。各マテリアルに過去条件があればコピーして再利用、無ければ新規として金銭条件で入力します。
+              </p>
+            ) : (
+              <div className="space-y-2.5">
+                {masterMaterials.map((row: any, i: number) => {
+                  const picked =
+                    materialPool.find(
+                      (x: any) => x.material_code === row.material_code
+                    ) || null;
+                  const label = picked
+                    ? `[${picked.material_code}]${picked.is_default ? ' ★' : ''} ${picked._ledger_title ? picked._ledger_title + '　' : ''}${picked.material_name || ''}`
+                    : row.material_code || '';
+                  return (
+                    <div
+                      key={i}
+                      className="rounded-md border border-emerald-200 bg-white/70 px-2.5 py-2 space-y-1.5"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono font-bold text-emerald-700 shrink-0">
+                          #{i + 1}
+                        </span>
+                        <select
+                          value={row.material_code || ''}
+                          onChange={(e) => setRowMaterial(i, e.target.value)}
+                          className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+                        >
+                          <option value="">— 原作マテリアルを選択 —</option>
+                          {masterMaterialGroups.map((g: any) => (
+                            <optgroup
+                              key={String(g.id)}
+                              label={`${g.title}${g.code ? ' [' + g.code + ']' : ''}`}
+                            >
+                              {(g.materials as any[])
+                                .filter((m: any) => m.is_active !== false)
+                                .map((m: any) => (
+                                  <option
+                                    key={m.id ?? m.material_code}
+                                    value={m.material_code}
+                                  >
+                                    [{m.material_code}]{m.is_default ? ' ★' : ''}{' '}
+                                    {m.material_name}
+                                  </option>
+                                ))}
+                            </optgroup>
+                          ))}
+                        </select>
+                        <button
+                          type="button"
+                          onClick={() => removeMaterialRow(i)}
+                          className="shrink-0 text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50"
+                        >
+                          削除
+                        </button>
+                      </div>
+                      {row.copied && (
+                        <div className="text-[10px] font-mono text-emerald-800 pl-6">
+                          コピー済み条件: {row.copied.condition_name || '(無題)'}{' '}
+                          {row.copied.rate_pct != null
+                            ? `料率 ${row.copied.rate_pct}%`
+                            : ''}
+                          <button
+                            type="button"
+                            onClick={() => setRowCopied(i, null)}
+                            className="ml-2 text-[9px] underline text-muted-foreground hover:text-red-600"
+                          >
+                            解除
+                          </button>
+                        </div>
+                      )}
+                      {row.material_code ? (
+                        <ConditionCopyPanel
+                          materialCode={row.material_code}
+                          materialLabel={label}
+                          existing={row.copied ? [row.copied] : []}
+                          onCopy={(cond) => setRowCopied(i, cond)}
+                        />
+                      ) : (
+                        <p className="pl-6 text-[10px] font-mono text-muted-foreground/70">
+                          マテリアルを選ぶと、その原作素材の過去条件を引用(コピー)できます。新規条件はそのまま金銭条件で入力します。
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            <p className="text-[10px] font-mono text-muted-foreground/70">
+              選択したマテリアルは下の「金銭条件」の構成要素(LC)になります。コピーした条件の料率は加算型取引形態の初期値に反映されます（金銭条件側で修正可）。
+            </p>
+          </div>
+        </FormSection>
         )}
+
+        {/* レガシー金銭条件（フラット financial_conditions）UI は撤去。
+            金銭条件は「3-2. 金銭条件（v3 マトリクス）」へ完全一本化。 */}
 
         {/* 3-2. 個別利用許諾の金銭条件は v3 マトリクス（取引形態 × 構成要素LC）に一本化。
             formData.v3_conds / v3_lcs を produce（worker context builder の入力契約）。 */}
@@ -1665,12 +1659,16 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             <V3LicenseMatrix
               conds={Array.isArray(formData.v3_conds) ? formData.v3_conds : []}
               lcs={Array.isArray(formData.v3_lcs) ? formData.v3_lcs : []}
-              onChangeConds={(next) => setFormData({ ...formData, v3_conds: next })}
+              onChangeConds={(next) =>
+                setFormData({
+                  ...formData,
+                  v3_conds: next,
+                  // 取引形態の追加/変更時、選択マテリアル由来の LC を再同期
+                  // (新しい加算型列にコピー条件の料率を seed)。
+                  v3_lcs: syncLcsForConds(next),
+                })
+              }
               onChangeLcs={(next) => setFormData({ ...formData, v3_lcs: next })}
-              materials={selectedLedger?.materials || []}
-              ledgerTitle={selectedLedger?.title}
-              ledgers={Array.isArray(allLedgers) ? allLedgers : []}
-              defaultLedgerId={selectedLedger?.id ?? formData.ledger_ref_id}
             />
           </FormSection>
         )}
@@ -1706,50 +1704,16 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         </div>
 
-        {/* IV. 対象作品・期間 */}
-        <FormSection title="5. 共通入力事項 — 対象作品・期間" variant="emerald" icon={<Scale className="w-4 h-4" />}>
-          {/* 自社作品マスタ(works)から作品名を引用し「対象製品（予定）名」へ反映するセレクタ。
-              原著作物名はセクション3の原作(ledger)セレクタが原作名を反映する役割なので、
-              ここでは作品テーブルの作品名 → 対象製品予定名 に入れる。 */}
-          <div className="col-span-full mb-3">
-            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground block mb-1">
-              対象作品（製品）を自社作品マスタから引用
-            </label>
-            <select
-              value=""
-              onChange={(e) => {
-                const w = worksList.find(
-                  (x: any) => String(x.id) === e.target.value
-                );
-                if (!w) return;
-                setFormData({
-                  ...formData,
-                  対象製品予定名: w.title || formData.対象製品予定名 || '',
-                });
-              }}
-              disabled={worksList.length === 0}
-              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground disabled:opacity-50"
-            >
-              <option value="">
-                {worksList.length === 0
-                  ? '— 自社作品が登録されていません —'
-                  : '— 作品を選択して対象製品（予定）名に反映 —'}
-              </option>
-              {worksList
-                .filter((w: any) => w.title)
-                .map((w: any) => (
-                  <option key={w.id} value={String(w.id)}>
-                    {w.work_code ? `[${w.work_code}] ` : ''}
-                    {w.title}
-                  </option>
-                ))}
-            </select>
-            <p className="text-[10px] font-mono text-muted-foreground/70 mt-1">
-              マスター &gt; 作品（自社作品）から選択すると、下の「対象製品（予定）名」に作品名を反映します。
-              原著作物名はセクション3の原作（Ledger）選択から原作名が入ります。
-            </p>
-          </div>
-          {renderGroup('IV. 対象作品・期間')}
+        {/* 5. 共通入力事項 — 期間・独占性(間引き)。
+            対象作品・原著作物名・対象製品予定名は §1/§3 の選択から自動補完するため非表示。
+            ここでは許諾の期間・独占性のみ入力する。 */}
+        <FormSection title="5. 共通入力事項 — 期間・独占性" variant="emerald" icon={<Scale className="w-4 h-4" />}>
+          {renderField('許諾開始日')}
+          {renderField('許諾期間注記')}
+          {renderField('独占性')}
+          <p className="col-span-full text-[10px] font-mono text-muted-foreground/70">
+            対象作品・原著作物名・対象製品（予定）名は「1. 前提条件」「3. マスター条件」での選択から自動反映されます。
+          </p>
         </FormSection>
 
         {/* V. 素材・監修
@@ -1760,7 +1724,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             renderGroup の出力は変えず、その下にプリセット行を挿入することで
             既存の generic Field renderer の振る舞いに影響しない。 */}
         <FormSection
-          title="6. 専用入力事項 — 素材・監修"
+          title="6. 専用入力事項 — 監修"
           variant="default"
           icon={<ShieldCheck className="w-4 h-4" />}
           headerActions={sideButton(
@@ -1769,7 +1733,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             !selectedStaff
           )}
         >
-          {renderGroup('V. 素材・監修')}
+          {/* 素材番号/素材名/素材権利者・承認対象は「3. マスター条件」の選択から
+              自動補完するため非表示。ここは監修者・クレジット表示・承認時期のみ。 */}
+          {renderField('監修者')}
+          {renderField('クレジット表示')}
+          {renderField('承認時期')}
           <div className="col-span-full mt-1 pt-2 border-t border-dashed border-input">
             <div className="flex items-center flex-wrap gap-2">
               <span className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
@@ -1824,37 +1792,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </div>
         </FormSection>
 
-        {/* 金銭条件（FinancialConditionTable）は入力順整理のため §3 直後の「3-2. 金銭条件」へ移設。
-            ここには下位互換のレガシー自由入力のみ残す。 */}
-
-        {/* 旧 VI/VII/VIII の自由入力グループは下位互換のため
-            details で温存。新しい FinancialConditionTable が優先され、
-            こちらは個別微調整 (例: 計算式テキストだけ書きたい等) 用。 */}
-        <details className="group rounded-sm border border-input">
-          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ 金銭条件 — レガシー自由入力 (任意, 上の表で書ききれない場合のみ) — クリックして展開
-          </summary>
-          <div className="p-4 border-t border-input space-y-6">
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
-                条件 1 (自社製造)
-              </div>
-              {renderGroup('VI. 金銭条件 1 (自社製造)')}
-            </div>
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
-                条件 2 (サブライセンス)
-              </div>
-              {renderGroup('VII. 金銭条件 2 (サブライセンス, 任意)')}
-            </div>
-            <div>
-              <div className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground mb-2">
-                条件 3 (プロダクトアウト)
-              </div>
-              {renderGroup('VIII. 金銭条件 3 (プロダクトアウト, 任意)')}
-            </div>
-          </div>
-        </details>
+        {/* 金銭条件は「3-2. 金銭条件（v3 マトリクス）」へ一本化。
+            旧 VI/VII/VIII のレガシー自由入力 details は撤去した。 */}
 
         <details className="group rounded-sm border border-input">
           <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
