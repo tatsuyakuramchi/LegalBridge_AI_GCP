@@ -128,6 +128,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   const [creatingWork, setCreatingWork] = useState(false);
   // 発注書: 利用許諾条件ごとの原作マテリアル新規登録の進行中フラグ(condition_no)。
   const [poMaterialBusy, setPoMaterialBusy] = useState<string | null>(null);
+  // 発注書: 「＋原作を新規作成」用のタイトル入力と進行中フラグ。
+  const [poNewSourceTitle, setPoNewSourceTitle] = useState('');
+  const [poCreatingSource, setPoCreatingSource] = useState(false);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -2185,6 +2188,46 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                     ledger_code: lg?.ledger_code || undefined,
                   });
                 };
+                // 完全に新しいIP(イラスト等)用に原作(Ledger)を新規作成。
+                //   POST /api/v3/source-ips が works(licensed_in)+ledgers+素材-001 を原子生成。
+                //   作成後その原作を登録先(ledger_code/ledger_ref_id)に設定する。
+                const createSourceIp = async () => {
+                  const title = poNewSourceTitle.trim();
+                  if (!title) return;
+                  setPoCreatingSource(true);
+                  try {
+                    const r = await fetch('/api/v3/source-ips', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ title }),
+                    });
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    const j = await r.json();
+                    const code = j.work_code || j.source_code || '';
+                    await refreshLedgers().catch(() => {});
+                    // 新原作の ledger id を取得(素材新規登録APIが台帳idを要求するため)。
+                    let lid: number | undefined;
+                    try {
+                      const lr = await fetch('/api/master/ledgers');
+                      const ls = await lr.json();
+                      lid = (Array.isArray(ls) ? ls : []).find(
+                        (l: any) => l.ledger_code === code
+                      )?.id;
+                    } catch {
+                      /* 取得失敗時は ledger_code だけで保存経路は通る */
+                    }
+                    setPoNewSourceTitle('');
+                    setFormData({
+                      ...formData,
+                      ledger_ref_id: lid ?? formData.ledger_ref_id,
+                      ledger_code: code || formData.ledger_code,
+                    });
+                  } catch (e) {
+                    console.error('createSourceIp failed', e);
+                  } finally {
+                    setPoCreatingSource(false);
+                  }
+                };
                 const createMat = async (key: string, name: string) => {
                   if (!formData.ledger_ref_id) return;
                   setPoMaterialBusy(key);
@@ -2231,14 +2274,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                     </div>
                     <div className="space-y-1">
                       <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                        登録先の原作（台帳）
+                        登録先の原作（台帳）— 既存を選択 or 新規作成
                       </label>
                       <select
                         value={formData.ledger_ref_id || ''}
                         onChange={(e) => onLedger(e.target.value)}
                         className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
                       >
-                        <option value="">— 原作を選択（成果物の登録先）—</option>
+                        <option value="">— 既存の原作を選択（成果物の登録先）—</option>
                         {ledgerList
                           .filter((l: any) => l.is_active !== false)
                           .map((l: any) => (
@@ -2247,6 +2290,35 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                             </option>
                           ))}
                       </select>
+                      {/* 完全に新しいIP(イラスト等)は原作ごと新規作成。 */}
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                          または新規:
+                        </span>
+                        <input
+                          value={poNewSourceTitle}
+                          onChange={(e) => setPoNewSourceTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void createSourceIp();
+                            }
+                          }}
+                          placeholder="新しい原作のタイトル（例: 〇〇用イラスト）"
+                          className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void createSourceIp()}
+                          disabled={poCreatingSource || !poNewSourceTitle.trim()}
+                          className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                        >
+                          {poCreatingSource ? '作成中…' : '＋原作を新規作成'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] font-mono text-muted-foreground/70">
+                        完全に新しいIP（イラスト等）は原作を新規作成（原作本体素材 -001 も同時生成）。既存の作品/IPの成果物なら既存を選択。1発注書につき1原作（その配下に成果物を素材として登録）。
+                      </p>
                     </div>
                     {conds.length === 0 ? (
                       <p className="text-[10px] font-mono text-muted-foreground">
