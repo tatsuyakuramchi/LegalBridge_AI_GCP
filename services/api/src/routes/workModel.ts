@@ -1368,7 +1368,7 @@ export function registerWorkModelRoutes(
                 cl.term_start, cl.term_end, cl.notes, cl.source_seq_no,
                 cl.base_price_label, cl.calc_method, cl.calc_period, cl.calc_period_kind,
                 cl.calc_period_close_month, cl.currency, cl.formula_text, cl.payment_terms,
-                cc.document_number, cc.contract_title,
+                cc.document_number, cc.contract_title, cc.source_system,
                 cfc.region_territory, cfc.region_language, cfc.region_language_label
            FROM condition_lines cl
            JOIN contract_capabilities cc ON cc.id = cl.capability_id
@@ -1378,6 +1378,69 @@ export function registerWorkModelRoutes(
         [id, mid]
       );
       res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // 条件明細レコードの削除(作品管理のデータ整理用)。
+  //   既定(safe): 支払実績(condition_events)/作品構成リンク(work_component_lines)が
+  //     あるときは 409 を返し削除しない(blocker件数を添える)。
+  //   ?force=true: 関連 condition_events / work_component_lines を先に削除→ condition_line を削除。
+  //   さらに MLC マスター器(source_system='master_register')配下で、親 cfc を他の
+  //   condition_line が参照していなければ親 capability_financial_conditions も削除。
+  app.delete("/api/v3/condition-lines/:id", ...requireWrite, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) {
+        return res.status(400).json({ ok: false, error: "invalid id" });
+      }
+      const force = String(req.query.force || "") === "true";
+      const clr = await query(
+        `SELECT cl.id, cl.source_condition_id, cl.capability_id, cc.source_system
+           FROM condition_lines cl
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+          WHERE cl.id = $1`,
+        [id]
+      );
+      const cl = clr.rows[0];
+      if (!cl) return res.status(404).json({ ok: false, error: "not found" });
+      const ev = await query(
+        `SELECT COUNT(*)::int AS n FROM condition_events WHERE condition_line_id = $1`,
+        [id]
+      );
+      const wc = await query(
+        `SELECT COUNT(*)::int AS n FROM work_component_lines WHERE condition_line_id = $1`,
+        [id]
+      );
+      const events = Number(ev.rows[0]?.n || 0);
+      const links = Number(wc.rows[0]?.n || 0);
+      if ((events > 0 || links > 0) && !force) {
+        return res.status(409).json({
+          ok: false,
+          error: "has downstream references",
+          blockers: events + links,
+          events,
+          links,
+        });
+      }
+      if (force) {
+        await query(`DELETE FROM condition_events WHERE condition_line_id = $1`, [id]);
+        await query(`DELETE FROM work_component_lines WHERE condition_line_id = $1`, [id]);
+      }
+      await query(`DELETE FROM condition_lines WHERE id = $1`, [id]);
+      // MLC マスター器: 親 cfc を他に参照する condition_line が無ければ親も削除。
+      if (cl.source_condition_id && cl.source_system === "master_register") {
+        const others = await query(
+          `SELECT 1 FROM condition_lines WHERE source_condition_id = $1 LIMIT 1`,
+          [cl.source_condition_id]
+        );
+        if (others.rows.length === 0) {
+          await query(
+            `DELETE FROM capability_financial_conditions WHERE id = $1`,
+            [cl.source_condition_id]
+          );
+        }
+      }
+      res.json({ ok: true, deleted: id, events, links, forced: force });
     } catch (e) { fail(res, e); }
   });
 

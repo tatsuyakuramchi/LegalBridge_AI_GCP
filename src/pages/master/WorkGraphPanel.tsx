@@ -872,6 +872,30 @@ export function WorkGraphPanel() {
     }
   }
 
+  // 条件明細レコードの削除(データ整理用)。既定は safe(実績/構成リンクがあれば 409→強制確認)。
+  const deleteCond = async (c: any, mid: number) => {
+    const label = c.subject || c.line_code || `#${c.id}`
+    if (!window.confirm(`条件「${label}」を削除しますか？`)) return
+    try {
+      let r = await fetch(`/api/v3/condition-lines/${c.id}`, { method: "DELETE" })
+      if (r.status === 409) {
+        const info = await r.json().catch(() => ({} as any))
+        const msg =
+          `この条件には支払実績 ${info.events ?? 0} 件・作品構成リンク ${info.links ?? 0} 件があります。\n` +
+          `強制削除（関連レコードも一緒に削除＝不可逆）しますか？`
+        if (!window.confirm(msg)) return
+        r = await fetch(`/api/v3/condition-lines/${c.id}?force=true`, { method: "DELETE" })
+      }
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({} as any))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      await Promise.all([loadMatConds(mid), loadGraph(workId)])
+    } catch (e: any) {
+      window.alert(`削除に失敗: ${String(e?.message || e)}`)
+    }
+  }
+
   // 利用許諾条件を登録(原作の器 capability 配下に condition_line 生成)。
   const saveMatCond = async (mid: number) => {
     setMatSaving(true)
@@ -1194,16 +1218,81 @@ export function WorkGraphPanel() {
                         {conds.length === 0 ? (
                           <div className="text-[10px] text-muted-foreground">条件明細なし</div>
                         ) : (
-                          conds.map((c: any) => (
-                            <div key={c.id} className="flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-                              <span className="truncate">{c.subject || c.line_code || `条件#${c.id}`}</span>
-                              <span className="shrink-0 font-semibold text-foreground/80">
-                                {c.payment_scheme === "royalty"
-                                  ? c.rate_pct != null ? `${c.rate_pct}%` : "—"
-                                  : c.amount_ex_tax != null ? yen(c.amount_ex_tax) : (c.payment_scheme || "—")}
-                              </span>
-                            </div>
-                          ))
+                          conds.map((c: any) => {
+                            const isMlc =
+                              c.source_system === "master_register" ||
+                              String(c.document_number || "").startsWith("MLC-")
+                            const editing = matEditId === c.id
+                            const ecls =
+                              "w-full text-[10px] font-mono bg-transparent border-b border-input py-0.5 focus:outline-none focus:border-foreground"
+                            return (
+                              <div key={c.id} className="space-y-1 border-b border-border/30 last:border-0 pb-1 last:pb-0">
+                                <div className="flex items-center justify-between gap-1.5 text-[10px] text-muted-foreground">
+                                  <span className="truncate flex items-center gap-1 min-w-0">
+                                    <span
+                                      className={`shrink-0 text-[8px] font-mono px-1 py-0.5 rounded-sm border ${
+                                        isMlc
+                                          ? "border-emerald-300 bg-emerald-50 text-emerald-700"
+                                          : "border-sky-300 bg-sky-50 text-sky-700"
+                                      }`}
+                                      title={isMlc ? "原作マスター(MLC)登録条件" : `文書由来: ${c.document_number || ""}`}
+                                    >
+                                      {isMlc ? "MLC" : (c.document_number || "文書")}
+                                    </span>
+                                    <span className="truncate">{c.subject || c.line_code || `条件#${c.id}`}</span>
+                                  </span>
+                                  <span className="shrink-0 flex items-center gap-1">
+                                    <span className="font-semibold text-foreground/80">
+                                      {c.payment_scheme === "royalty"
+                                        ? c.rate_pct != null ? `${c.rate_pct}%` : "—"
+                                        : c.amount_ex_tax != null ? yen(c.amount_ex_tax) : (c.payment_scheme || "—")}
+                                    </span>
+                                    <button type="button" onClick={() => startEditCond(c)}
+                                      className="text-[9px] font-mono px-1 py-0.5 rounded border border-border hover:border-foreground/40" title="編集">編集</button>
+                                    <button type="button" onClick={() => void deleteCond(c, m.id)}
+                                      className="text-[9px] font-mono px-1 py-0.5 rounded border border-red-300 text-red-600 hover:bg-red-50" title="削除">削除</button>
+                                  </span>
+                                </div>
+                                {editing && (
+                                  <div className="rounded border border-sky-200 bg-sky-50/40 p-1.5 space-y-1 text-[10px]">
+                                    {!isMlc && (
+                                      <p className="text-[9px] text-amber-700">⚠ 文書由来の条件です。編集は文書側の表示と差異が出る場合があります。</p>
+                                    )}
+                                    <div className="grid grid-cols-2 gap-1">
+                                      <label className="space-y-0.5"><span className="text-muted-foreground">名称</span>
+                                        <input className={ecls} value={matEditForm.subject || ""} onChange={(e) => setMatEditForm({ ...matEditForm, subject: e.target.value })} /></label>
+                                      <label className="space-y-0.5"><span className="text-muted-foreground">支払方式</span>
+                                        <select className={ecls} value={matEditForm.payment_scheme || "royalty"} onChange={(e) => setMatEditForm({ ...matEditForm, payment_scheme: e.target.value })}>
+                                          <option value="royalty">royalty(料率)</option>
+                                          <option value="lump_sum">lump_sum(固定)</option>
+                                          <option value="per_unit">per_unit</option>
+                                          <option value="installment">installment</option>
+                                          <option value="subscription">subscription</option>
+                                        </select></label>
+                                    </div>
+                                    {matEditForm.payment_scheme === "royalty" ? (
+                                      <div className="grid grid-cols-3 gap-1">
+                                        <label className="space-y-0.5"><span className="text-muted-foreground">料率%</span><input className={ecls} value={matEditForm.rate_pct || ""} onChange={(e) => setMatEditForm({ ...matEditForm, rate_pct: e.target.value })} /></label>
+                                        <label className="space-y-0.5"><span className="text-muted-foreground">MG</span><input className={ecls} value={matEditForm.mg_amount || ""} onChange={(e) => setMatEditForm({ ...matEditForm, mg_amount: e.target.value })} /></label>
+                                        <label className="space-y-0.5"><span className="text-muted-foreground">AG</span><input className={ecls} value={matEditForm.ag_amount || ""} onChange={(e) => setMatEditForm({ ...matEditForm, ag_amount: e.target.value })} /></label>
+                                      </div>
+                                    ) : matEditForm.payment_scheme !== "subscription" ? (
+                                      <label className="block space-y-0.5"><span className="text-muted-foreground">金額(税抜)</span><input className={ecls} value={matEditForm.amount_ex_tax || ""} onChange={(e) => setMatEditForm({ ...matEditForm, amount_ex_tax: e.target.value })} /></label>
+                                    ) : null}
+                                    <div className="grid grid-cols-2 gap-1">
+                                      <label className="space-y-0.5"><span className="text-muted-foreground">地域</span><input className={ecls} value={matEditForm.region_territory || ""} onChange={(e) => setMatEditForm({ ...matEditForm, region_territory: e.target.value })} /></label>
+                                      <label className="space-y-0.5"><span className="text-muted-foreground">言語</span><input className={ecls} value={matEditForm.region_language || ""} onChange={(e) => setMatEditForm({ ...matEditForm, region_language: e.target.value })} /></label>
+                                    </div>
+                                    {matEditErr && <p className="text-[9px] text-red-600">{matEditErr}</p>}
+                                    <div className="flex justify-end gap-1">
+                                      <button type="button" onClick={() => setMatEditId(null)} className="text-[9px] px-1.5 py-0.5 rounded border border-border text-muted-foreground">取消</button>
+                                      <button type="button" onClick={() => void saveEditCond(m.id)} disabled={matEditSaving} className="text-[9px] px-1.5 py-0.5 rounded border border-sky-500 bg-sky-50 text-sky-700 font-bold disabled:opacity-50">{matEditSaving ? "保存中…" : "保存"}</button>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )
+                          })
                         )}
                         <div className="text-[9px] text-muted-foreground/60">条件 {conds.length}件</div>
                       </div>
@@ -1428,6 +1517,8 @@ export function WorkGraphPanel() {
                   </div>
                   <p className="text-[9px] text-muted-foreground/70">
                     この原作の素材を構成要素LCとして、取引形態ごとに料率を設定します。加算型ONで適用料率＝各LC料率の合算。保存すると原作マスター(MLC)の条件明細へ登録され、利用許諾条件書フォームのコピー候補にもなります。
+                    <br />
+                    <span className="text-amber-700">⚠ このマトリクスは「新規登録（上書き）」用です。既にMLC条件がある原作で保存すると、ここに無い条件は消える可能性があります。既存条件の修正・削除は下の各マテリアルの「編集／削除」ボタンで行ってください。</span>
                   </p>
                   <V3LicenseMatrix
                     conds={v3Conds}
