@@ -5680,26 +5680,35 @@ ${details}
   //   - 対象作品があれば work_components + work_component_lines を ensure(N:N)。
   async function ensureMaterialAndCompose(o: {
     lineId: number;
-    origWorkId: number;
+    origWorkId: number | null;
     ownWorkId: number | null;
-    ledgerCode: string;
+    ledgerCode: string | null;
     name: string;
     rightsType: string;
     acquisitionType: string;
     isRoyaltyBearing: boolean;
     pickedCode?: string;
   }): Promise<boolean> {
-    const { lineId, origWorkId, ownWorkId, ledgerCode } = o;
+    const { lineId, ownWorkId, ledgerCode } = o;
+    const origWorkId = o.origWorkId ?? null;
     let materialId: number | null = null;
+    // material_code が指す実際の原作(work)。クロス原作対応の正準＝この値で source_work_id を束ねる。
+    let effSrcWorkId: number | null = null;
     const pickedCode = String(o.pickedCode || "").trim();
     if (pickedCode) {
+      // material_code はグローバル UNIQUE(migrations/0004)。所属 work を一意解決し、
+      //   単一 origWork に縛らない(1発注書で複数の別原作の素材に紐付け可能)。
       const mr = await query(
-        `SELECT id FROM work_materials WHERE work_id = $1 AND material_code = $2 LIMIT 1`,
-        [origWorkId, pickedCode]
+        `SELECT id, work_id FROM work_materials WHERE material_code = $1 LIMIT 1`,
+        [pickedCode]
       );
-      materialId = mr.rows[0]?.id ? Number(mr.rows[0].id) : null;
+      if (mr.rows[0]) {
+        materialId = Number(mr.rows[0].id);
+        effSrcWorkId = mr.rows[0].work_id ? Number(mr.rows[0].work_id) : null;
+      }
     }
-    if (!materialId) {
+    if (!materialId && origWorkId) {
+      // 行に既存の素材紐付けがあり、それが origWork 配下なら再利用(フォールバック)。
       const cur = await query(
         `SELECT source_material_id FROM condition_lines WHERE id = $1`,
         [lineId]
@@ -5712,10 +5721,14 @@ ${details}
           `SELECT id FROM work_materials WHERE id = $1 AND work_id = $2 LIMIT 1`,
           [exMat, origWorkId]
         );
-        if (chk.rows[0]) materialId = exMat;
+        if (chk.rows[0]) {
+          materialId = exMat;
+          effSrcWorkId = origWorkId;
+        }
       }
     }
-    if (!materialId) {
+    if (!materialId && origWorkId && ledgerCode) {
+      // 軸/上書きコードが解決できないときだけ origWork 配下に件名で新規作成。
       const noRes = await query(
         `SELECT COALESCE(MAX(material_no), 0) + 1 AS n FROM work_materials WHERE work_id = $1`,
         [origWorkId]
@@ -5733,9 +5746,11 @@ ${details}
         [origWorkId, nextNo, matCode, o.name, o.rightsType, o.isRoyaltyBearing, o.acquisitionType, autoCategoryId]
       );
       materialId = ins.rows[0]?.id ? Number(ins.rows[0].id) : null;
+      effSrcWorkId = origWorkId;
       // マテリアル一本化(0089/0090): work_materials が唯一の正準。台帳(materials)への逆ミラーは廃止。
     }
     if (!materialId) return false;
+    if (effSrcWorkId == null) effSrcWorkId = origWorkId;
 
     // 引用した既存マテリアルがロイヤリティ対象セルを得たら、材料フラグを true へ昇格。
     //   (買切由来Bが利用許諾セルを持つ等)。昇格のみ・降格はしない
@@ -5751,12 +5766,12 @@ ${details}
 
     await query(
       `UPDATE condition_lines
-          SET source_work_id = $2,
+          SET source_work_id = COALESCE($2, source_work_id),
               source_material_id = $3,
               work_id = COALESCE($4, work_id),
               updated_at = now()
         WHERE id = $1`,
-      [lineId, origWorkId, materialId, ownWorkId]
+      [lineId, effSrcWorkId, materialId, ownWorkId]
     );
 
     if (ownWorkId) {
@@ -5793,28 +5808,37 @@ ${details}
     defaultMaterialCode?: string | null;
   }): Promise<number> {
     const { capabilityId, ledgerCode, ownWorkId, conditionMaterialCodes, financialConditions } = opts;
-    if (!capabilityId || !ledgerCode || !Array.isArray(financialConditions)) return 0;
-    let linked = 0;
-    const srcRes = await query(
-      `SELECT id FROM works WHERE work_code = $1 AND kind = 'licensed_in' LIMIT 1`,
-      [ledgerCode]
+    if (!capabilityId || !Array.isArray(financialConditions)) return 0;
+    const cmCodesAll = conditionMaterialCodes || {};
+    const hasPerCondCodes = Object.values(cmCodesAll).some((v) =>
+      String(v || "").trim()
     );
-    const origWorkId = srcRes.rows[0]?.id ? Number(srcRes.rows[0].id) : null;
-    if (!origWorkId) return 0;
+    // 単一原作(ledgerCode)が無くても、条件ごとの material_code 指定があれば続行(クロス原作)。
+    //   各 material_code は ensureMaterialAndCompose がグローバル解決して実際の原作へ紐付ける。
+    if (!ledgerCode && !hasPerCondCodes) return 0;
+    let linked = 0;
 
-    // 材料ファースト(1材料:N条件): この文書の利用許諾条件は既定で「軸マテリアル」へ束ねる。
-    //   軸 = 呼び出し側指定(素材番号) → 無ければ原作本体(is_default)。行ごとの上書き(condition
-    //   _material_codes)があればそれを優先。これにより「条件ごとに材料を選ぶ」割当漏れを無くし、
-    //   直販/サブライセンス等の算定違いを同一材料配下の複数条件として表現できる。
-    let anchorCode = String(opts.defaultMaterialCode || "").trim();
-    if (!anchorCode) {
-      const dm = await query(
-        `SELECT material_code FROM work_materials
-          WHERE work_id = $1 AND is_default = TRUE
-          ORDER BY material_no NULLS LAST, id LIMIT 1`,
-        [origWorkId]
+    // 軸マテリアル/自動生成フォールバックは ledgerCode(単一原作)がある時だけ解決する。
+    //   軸 = 呼び出し側指定(素材番号) → 無ければ原作本体(is_default)。行ごとの上書き
+    //   (condition_material_codes)があればそれを優先。
+    let origWorkId: number | null = null;
+    let anchorCode = "";
+    if (ledgerCode) {
+      const srcRes = await query(
+        `SELECT id FROM works WHERE work_code = $1 AND kind = 'licensed_in' LIMIT 1`,
+        [ledgerCode]
       );
-      anchorCode = dm.rows[0]?.material_code || "";
+      origWorkId = srcRes.rows[0]?.id ? Number(srcRes.rows[0].id) : null;
+      anchorCode = String(opts.defaultMaterialCode || "").trim();
+      if (!anchorCode && origWorkId) {
+        const dm = await query(
+          `SELECT material_code FROM work_materials
+            WHERE work_id = $1 AND is_default = TRUE
+            ORDER BY material_no NULLS LAST, id LIMIT 1`,
+          [origWorkId]
+        );
+        anchorCode = dm.rows[0]?.material_code || "";
+      }
     }
 
     // この文書の各金銭条件 → 生成された condition_line を condition_no で対応付け。
@@ -5850,7 +5874,7 @@ ${details}
         lineId,
         origWorkId,
         ownWorkId: condWorkId,
-        ledgerCode,
+        ledgerCode: ledgerCode ?? null,
         name,
         rightsType: "license",
         acquisitionType: "license",
