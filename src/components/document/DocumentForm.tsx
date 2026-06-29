@@ -2156,17 +2156,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   formData.ledger_code + condition_material_codes を読んで実施する。 */}
               {(() => {
                 const ledgerList: any[] = Array.isArray(allLedgers) ? allLedgers : [];
-                const selLedger = formData.ledger_ref_id
-                  ? ledgerList.find(
-                      (l: any) => Number(l.id) === Number(formData.ledger_ref_id)
-                    )
-                  : null;
-                const ledgerMats: any[] = (selLedger?.materials || []).map(
-                  (m: any) => ({
+                // 全原作の素材をプール化(クロス原作: 各条件は任意の原作の既存素材を選べる)。
+                //   material_code は UNIQUE で原作を内包するため、別原作の素材を混在で割当可能。
+                const allMats: any[] = ledgerList.flatMap((l: any) =>
+                  (Array.isArray(l.materials) ? l.materials : []).map((m: any) => ({
                     ...m,
-                    _ledger_title: selLedger?.title,
-                    _ledger_code: selLedger?.ledger_code,
-                  })
+                    _ledger_title: l.title,
+                    _ledger_code: l.ledger_code,
+                  }))
                 );
                 const conds: any[] = Array.isArray(formData.financial_conditions)
                   ? formData.financial_conditions
@@ -2317,16 +2314,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                         </button>
                       </div>
                       <p className="text-[10px] font-mono text-muted-foreground/70">
-                        完全に新しいIP（イラスト等）は原作を新規作成（原作本体素材 -001 も同時生成）。既存の作品/IPの成果物なら既存を選択。1発注書につき1原作（その配下に成果物を素材として登録）。
+                        この原作は<strong>新規素材を作成するときの登録先</strong>です（完全に新しいIPは「＋原作を新規作成」、原作本体素材 -001 も同時生成）。<strong>既存素材は下の検索で全原作から選べる</strong>ため、1発注書で複数の別原作にまたがる成果物も割り当てられます。
                       </p>
                     </div>
                     {conds.length === 0 ? (
                       <p className="text-[10px] font-mono text-muted-foreground">
                         上の表に利用許諾条件を追加すると、各条件に原作マテリアルを割り当てられます（成果物ごとに条件を1本ずつ作ると 成果物:素材=1:1 になります）。
-                      </p>
-                    ) : !formData.ledger_ref_id ? (
-                      <p className="text-[10px] font-mono text-muted-foreground">
-                        先に「登録先の原作」を選択してください。
                       </p>
                     ) : (
                       <div className="space-y-1.5">
@@ -2334,7 +2327,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                           const key = String(c.condition_no ?? idx + 1);
                           const cur = cmCodes[key] || '';
                           const curMat = cur
-                            ? ledgerMats.find(
+                            ? allMats.find(
                                 (m: any) => m.material_code === cur
                               )
                             : null;
@@ -2368,20 +2361,28 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                               ) : (
                                 <>
                                   <MaterialSearchSelect
-                                    materials={ledgerMats}
+                                    materials={allMats}
                                     value={cur}
                                     onPick={(code) => setCmCode(key, code)}
-                                    placeholder="既存の原作マテリアルを検索"
+                                    placeholder="既存の原作マテリアルを検索（全原作）"
                                   />
                                   <button
                                     type="button"
-                                    disabled={poMaterialBusy === key}
+                                    disabled={
+                                      poMaterialBusy === key ||
+                                      !formData.ledger_ref_id
+                                    }
                                     onClick={() => void createMat(key, defName)}
+                                    title={
+                                      !formData.ledger_ref_id
+                                        ? '新規素材の登録には上で「登録先の原作」を選択/作成してください'
+                                        : undefined
+                                    }
                                     className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
                                   >
                                     {poMaterialBusy === key
                                       ? '登録中…'
-                                      : '＋新規登録'}
+                                      : '＋登録先原作に新規素材'}
                                   </button>
                                 </>
                               )}
