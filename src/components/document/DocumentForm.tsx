@@ -126,6 +126,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   作品連動スイッチ ON のセクション3で使用。作成後は worksList を再取得し linked_work_id に選択。
   const [newWorkTitle, setNewWorkTitle] = useState('');
   const [creatingWork, setCreatingWork] = useState(false);
+  // 発注書: 利用許諾条件ごとの原作マテリアル新規登録の進行中フラグ(condition_no)。
+  const [poMaterialBusy, setPoMaterialBusy] = useState<string | null>(null);
+  // 発注書: 「＋原作を新規作成」用のタイトル入力と進行中フラグ。
+  const [poNewSourceTitle, setPoNewSourceTitle] = useState('');
+  const [poCreatingSource, setPoCreatingSource] = useState(false);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -254,7 +259,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 同じ vendor で再評価が走り続けないよう ref で last 状態を持つ。
   //
   // ★ 注意: この useEffect はコンポーネント最上部に置く (Rules of Hooks)。
-  const { contracts: allContracts, ledgers: allLedgers } = useAppData();
+  const { contracts: allContracts, ledgers: allLedgers, refreshLedgers } = useAppData();
   const lastAutoFilledRef = React.useRef<string>('');
 
   // 対象作品(own)の一覧。Stage 1(文書ファースト紐付け)で「対象作品」セレクタにも使うため、
@@ -2143,6 +2148,255 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 }
                 works={workOptions}
               />
+
+              {/* 原作マテリアル登録 — 発注した成果物を原作素材として登録し、利用許諾条件を
+                  その素材へ紐付ける。保存時に condition_lines.source_material_id が立ち、
+                  後で利用許諾条件書(ILT)の「原作素材の既存条件コピー」候補に出る。
+                  バインドは既存の保存経路 linkWorkMaterialsForCapability が
+                  formData.ledger_code + condition_material_codes を読んで実施する。 */}
+              {(() => {
+                const ledgerList: any[] = Array.isArray(allLedgers) ? allLedgers : [];
+                // 全原作の素材をプール化(クロス原作: 各条件は任意の原作の既存素材を選べる)。
+                //   material_code は UNIQUE で原作を内包するため、別原作の素材を混在で割当可能。
+                const allMats: any[] = ledgerList.flatMap((l: any) =>
+                  (Array.isArray(l.materials) ? l.materials : []).map((m: any) => ({
+                    ...m,
+                    _ledger_title: l.title,
+                    _ledger_code: l.ledger_code,
+                  }))
+                );
+                const conds: any[] = Array.isArray(formData.financial_conditions)
+                  ? formData.financial_conditions
+                  : [];
+                const cmCodes = (formData.condition_material_codes ||
+                  {}) as Record<string, string>;
+                const setCmCode = (key: string, code: string | undefined) => {
+                  const next = { ...cmCodes };
+                  if (code) next[key] = code;
+                  else delete next[key];
+                  setFormData({ ...formData, condition_material_codes: next });
+                };
+                const onLedger = (id: string) => {
+                  const lid = Number(id);
+                  const lg = ledgerList.find((l: any) => Number(l.id) === lid);
+                  setFormData({
+                    ...formData,
+                    ledger_ref_id: lid || undefined,
+                    ledger_code: lg?.ledger_code || undefined,
+                  });
+                };
+                // 完全に新しいIP(イラスト等)用に原作(Ledger)を新規作成。
+                //   POST /api/v3/source-ips が works(licensed_in)+ledgers+素材-001 を原子生成。
+                //   作成後その原作を登録先(ledger_code/ledger_ref_id)に設定する。
+                const createSourceIp = async () => {
+                  const title = poNewSourceTitle.trim();
+                  if (!title) return;
+                  setPoCreatingSource(true);
+                  try {
+                    const r = await fetch('/api/v3/source-ips', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ title }),
+                    });
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    const j = await r.json();
+                    const code = j.work_code || j.source_code || '';
+                    await refreshLedgers().catch(() => {});
+                    // 新原作の ledger id を取得(素材新規登録APIが台帳idを要求するため)。
+                    let lid: number | undefined;
+                    try {
+                      const lr = await fetch('/api/master/ledgers');
+                      const ls = await lr.json();
+                      lid = (Array.isArray(ls) ? ls : []).find(
+                        (l: any) => l.ledger_code === code
+                      )?.id;
+                    } catch {
+                      /* 取得失敗時は ledger_code だけで保存経路は通る */
+                    }
+                    setPoNewSourceTitle('');
+                    setFormData({
+                      ...formData,
+                      ledger_ref_id: lid ?? formData.ledger_ref_id,
+                      ledger_code: code || formData.ledger_code,
+                    });
+                  } catch (e) {
+                    console.error('createSourceIp failed', e);
+                  } finally {
+                    setPoCreatingSource(false);
+                  }
+                };
+                const createMat = async (key: string, name: string) => {
+                  if (!formData.ledger_ref_id) return;
+                  setPoMaterialBusy(key);
+                  try {
+                    const r = await fetch(
+                      `/api/master/ledgers/${formData.ledger_ref_id}/materials`,
+                      {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          material_name: name,
+                          remarks: `発注書: ${formData.契約書番号 || ''}`,
+                        }),
+                      }
+                    );
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    const j = await r.json();
+                    await refreshLedgers().catch(() => {});
+                    if (j?.material_code) {
+                      setFormData({
+                        ...formData,
+                        condition_material_codes: {
+                          ...cmCodes,
+                          [key]: j.material_code,
+                        },
+                      });
+                    }
+                  } catch (e) {
+                    console.error('createMat failed', e);
+                  } finally {
+                    setPoMaterialBusy(null);
+                  }
+                };
+                const royaltyNames = (
+                  Array.isArray(formData.items) ? formData.items : []
+                )
+                  .filter((it: any) => it?.calc_method === 'ROYALTY')
+                  .map((it: any) => it.condition_name || it.item_name)
+                  .filter(Boolean);
+                return (
+                  <div className="col-span-full mt-4 pt-3 border-t border-amber-200/60 space-y-3">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-amber-800">
+                      原作マテリアル登録 — 成果物を原作素材として登録し、条件を紐付け（後で利用許諾条件書のコピー候補に出ます）
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                        登録先の原作（台帳）— 既存を選択 or 新規作成
+                      </label>
+                      <select
+                        value={formData.ledger_ref_id || ''}
+                        onChange={(e) => onLedger(e.target.value)}
+                        className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+                      >
+                        <option value="">— 既存の原作を選択（成果物の登録先）—</option>
+                        {ledgerList
+                          .filter((l: any) => l.is_active !== false)
+                          .map((l: any) => (
+                            <option key={l.id} value={l.id}>
+                              [{l.ledger_code}] {l.title}
+                            </option>
+                          ))}
+                      </select>
+                      {/* 完全に新しいIP(イラスト等)は原作ごと新規作成。 */}
+                      <div className="flex items-center gap-1.5 pt-1">
+                        <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                          または新規:
+                        </span>
+                        <input
+                          value={poNewSourceTitle}
+                          onChange={(e) => setPoNewSourceTitle(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              void createSourceIp();
+                            }
+                          }}
+                          placeholder="新しい原作のタイトル（例: 〇〇用イラスト）"
+                          className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => void createSourceIp()}
+                          disabled={poCreatingSource || !poNewSourceTitle.trim()}
+                          className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                        >
+                          {poCreatingSource ? '作成中…' : '＋原作を新規作成'}
+                        </button>
+                      </div>
+                      <p className="text-[10px] font-mono text-muted-foreground/70">
+                        この原作は<strong>新規素材を作成するときの登録先</strong>です（完全に新しいIPは「＋原作を新規作成」、原作本体素材 -001 も同時生成）。<strong>既存素材は下の検索で全原作から選べる</strong>ため、1発注書で複数の別原作にまたがる成果物も割り当てられます。
+                      </p>
+                    </div>
+                    {conds.length === 0 ? (
+                      <p className="text-[10px] font-mono text-muted-foreground">
+                        上の表に利用許諾条件を追加すると、各条件に原作マテリアルを割り当てられます（成果物ごとに条件を1本ずつ作ると 成果物:素材=1:1 になります）。
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {conds.map((c: any, idx: number) => {
+                          const key = String(c.condition_no ?? idx + 1);
+                          const cur = cmCodes[key] || '';
+                          const curMat = cur
+                            ? allMats.find(
+                                (m: any) => m.material_code === cur
+                              )
+                            : null;
+                          const defName =
+                            c.condition_name ||
+                            royaltyNames[idx] ||
+                            royaltyNames[0] ||
+                            `成果物${idx + 1}`;
+                          return (
+                            <div
+                              key={key}
+                              className="flex items-center gap-2 flex-wrap"
+                            >
+                              <span className="text-[11px] font-mono min-w-[8rem] truncate">
+                                <span className="font-bold">
+                                  条件{c.condition_no ?? idx + 1}
+                                </span>{' '}
+                                {c.condition_name || ''}
+                              </span>
+                              {cur ? (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-800">
+                                  [{cur}] {curMat?.material_name || ''}
+                                  <button
+                                    type="button"
+                                    onClick={() => setCmCode(key, undefined)}
+                                    className="ml-1.5 text-[9px] underline text-muted-foreground hover:text-red-600"
+                                  >
+                                    解除
+                                  </button>
+                                </span>
+                              ) : (
+                                <>
+                                  <MaterialSearchSelect
+                                    materials={allMats}
+                                    value={cur}
+                                    onPick={(code) => setCmCode(key, code)}
+                                    placeholder="既存の原作マテリアルを検索（全原作）"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={
+                                      poMaterialBusy === key ||
+                                      !formData.ledger_ref_id
+                                    }
+                                    onClick={() => void createMat(key, defName)}
+                                    title={
+                                      !formData.ledger_ref_id
+                                        ? '新規素材の登録には上で「登録先の原作」を選択/作成してください'
+                                        : undefined
+                                    }
+                                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                                  >
+                                    {poMaterialBusy === key
+                                      ? '登録中…'
+                                      : '＋登録先原作に新規素材'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <p className="text-[10px] font-mono text-muted-foreground/70">
+                          「＋新規登録」で成果物を選択中の原作に新しいマテリアルとして登録し、この条件を紐付けます。既存素材は検索で選択。保存時に condition_lines へ反映されます。
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </FormSection>
           )}
 
