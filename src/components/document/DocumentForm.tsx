@@ -126,6 +126,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   //   作品連動スイッチ ON のセクション3で使用。作成後は worksList を再取得し linked_work_id に選択。
   const [newWorkTitle, setNewWorkTitle] = useState('');
   const [creatingWork, setCreatingWork] = useState(false);
+  // 発注書: 利用許諾条件ごとの原作マテリアル新規登録の進行中フラグ(condition_no)。
+  const [poMaterialBusy, setPoMaterialBusy] = useState<string | null>(null);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -254,7 +256,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 同じ vendor で再評価が走り続けないよう ref で last 状態を持つ。
   //
   // ★ 注意: この useEffect はコンポーネント最上部に置く (Rules of Hooks)。
-  const { contracts: allContracts, ledgers: allLedgers } = useAppData();
+  const { contracts: allContracts, ledgers: allLedgers, refreshLedgers } = useAppData();
   const lastAutoFilledRef = React.useRef<string>('');
 
   // 対象作品(own)の一覧。Stage 1(文書ファースト紐付け)で「対象作品」セレクタにも使うため、
@@ -2143,6 +2145,185 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 }
                 works={workOptions}
               />
+
+              {/* 原作マテリアル登録 — 発注した成果物を原作素材として登録し、利用許諾条件を
+                  その素材へ紐付ける。保存時に condition_lines.source_material_id が立ち、
+                  後で利用許諾条件書(ILT)の「原作素材の既存条件コピー」候補に出る。
+                  バインドは既存の保存経路 linkWorkMaterialsForCapability が
+                  formData.ledger_code + condition_material_codes を読んで実施する。 */}
+              {(() => {
+                const ledgerList: any[] = Array.isArray(allLedgers) ? allLedgers : [];
+                const selLedger = formData.ledger_ref_id
+                  ? ledgerList.find(
+                      (l: any) => Number(l.id) === Number(formData.ledger_ref_id)
+                    )
+                  : null;
+                const ledgerMats: any[] = (selLedger?.materials || []).map(
+                  (m: any) => ({
+                    ...m,
+                    _ledger_title: selLedger?.title,
+                    _ledger_code: selLedger?.ledger_code,
+                  })
+                );
+                const conds: any[] = Array.isArray(formData.financial_conditions)
+                  ? formData.financial_conditions
+                  : [];
+                const cmCodes = (formData.condition_material_codes ||
+                  {}) as Record<string, string>;
+                const setCmCode = (key: string, code: string | undefined) => {
+                  const next = { ...cmCodes };
+                  if (code) next[key] = code;
+                  else delete next[key];
+                  setFormData({ ...formData, condition_material_codes: next });
+                };
+                const onLedger = (id: string) => {
+                  const lid = Number(id);
+                  const lg = ledgerList.find((l: any) => Number(l.id) === lid);
+                  setFormData({
+                    ...formData,
+                    ledger_ref_id: lid || undefined,
+                    ledger_code: lg?.ledger_code || undefined,
+                  });
+                };
+                const createMat = async (key: string, name: string) => {
+                  if (!formData.ledger_ref_id) return;
+                  setPoMaterialBusy(key);
+                  try {
+                    const r = await fetch(
+                      `/api/master/ledgers/${formData.ledger_ref_id}/materials`,
+                      {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          material_name: name,
+                          remarks: `発注書: ${formData.契約書番号 || ''}`,
+                        }),
+                      }
+                    );
+                    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+                    const j = await r.json();
+                    await refreshLedgers().catch(() => {});
+                    if (j?.material_code) {
+                      setFormData({
+                        ...formData,
+                        condition_material_codes: {
+                          ...cmCodes,
+                          [key]: j.material_code,
+                        },
+                      });
+                    }
+                  } catch (e) {
+                    console.error('createMat failed', e);
+                  } finally {
+                    setPoMaterialBusy(null);
+                  }
+                };
+                const royaltyNames = (
+                  Array.isArray(formData.items) ? formData.items : []
+                )
+                  .filter((it: any) => it?.calc_method === 'ROYALTY')
+                  .map((it: any) => it.condition_name || it.item_name)
+                  .filter(Boolean);
+                return (
+                  <div className="col-span-full mt-4 pt-3 border-t border-amber-200/60 space-y-3">
+                    <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-amber-800">
+                      原作マテリアル登録 — 成果物を原作素材として登録し、条件を紐付け（後で利用許諾条件書のコピー候補に出ます）
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                        登録先の原作（台帳）
+                      </label>
+                      <select
+                        value={formData.ledger_ref_id || ''}
+                        onChange={(e) => onLedger(e.target.value)}
+                        className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+                      >
+                        <option value="">— 原作を選択（成果物の登録先）—</option>
+                        {ledgerList
+                          .filter((l: any) => l.is_active !== false)
+                          .map((l: any) => (
+                            <option key={l.id} value={l.id}>
+                              [{l.ledger_code}] {l.title}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                    {conds.length === 0 ? (
+                      <p className="text-[10px] font-mono text-muted-foreground">
+                        上の表に利用許諾条件を追加すると、各条件に原作マテリアルを割り当てられます（成果物ごとに条件を1本ずつ作ると 成果物:素材=1:1 になります）。
+                      </p>
+                    ) : !formData.ledger_ref_id ? (
+                      <p className="text-[10px] font-mono text-muted-foreground">
+                        先に「登録先の原作」を選択してください。
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5">
+                        {conds.map((c: any, idx: number) => {
+                          const key = String(c.condition_no ?? idx + 1);
+                          const cur = cmCodes[key] || '';
+                          const curMat = cur
+                            ? ledgerMats.find(
+                                (m: any) => m.material_code === cur
+                              )
+                            : null;
+                          const defName =
+                            c.condition_name ||
+                            royaltyNames[idx] ||
+                            royaltyNames[0] ||
+                            `成果物${idx + 1}`;
+                          return (
+                            <div
+                              key={key}
+                              className="flex items-center gap-2 flex-wrap"
+                            >
+                              <span className="text-[11px] font-mono min-w-[8rem] truncate">
+                                <span className="font-bold">
+                                  条件{c.condition_no ?? idx + 1}
+                                </span>{' '}
+                                {c.condition_name || ''}
+                              </span>
+                              {cur ? (
+                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-800">
+                                  [{cur}] {curMat?.material_name || ''}
+                                  <button
+                                    type="button"
+                                    onClick={() => setCmCode(key, undefined)}
+                                    className="ml-1.5 text-[9px] underline text-muted-foreground hover:text-red-600"
+                                  >
+                                    解除
+                                  </button>
+                                </span>
+                              ) : (
+                                <>
+                                  <MaterialSearchSelect
+                                    materials={ledgerMats}
+                                    value={cur}
+                                    onPick={(code) => setCmCode(key, code)}
+                                    placeholder="既存の原作マテリアルを検索"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={poMaterialBusy === key}
+                                    onClick={() => void createMat(key, defName)}
+                                    className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-amber-400 text-amber-700 hover:bg-amber-50 disabled:opacity-50"
+                                  >
+                                    {poMaterialBusy === key
+                                      ? '登録中…'
+                                      : '＋新規登録'}
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          );
+                        })}
+                        <p className="text-[10px] font-mono text-muted-foreground/70">
+                          「＋新規登録」で成果物を選択中の原作に新しいマテリアルとして登録し、この条件を紐付けます。既存素材は検索で選択。保存時に condition_lines へ反映されます。
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </FormSection>
           )}
 
