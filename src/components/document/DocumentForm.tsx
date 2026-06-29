@@ -30,6 +30,7 @@ import {
 import { V3LicenseMatrix } from './V3LicenseMatrix';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
 import { ConditionCopyPanel } from './ConditionCopyPanel';
+import { MaterialSearchSelect } from './MaterialSearchSelect';
 // Phase 23: ParentPoPicker は UnifiedContractPicker に統合済み。
 import {
   UnifiedContractPicker,
@@ -1567,31 +1568,11 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                         <span className="text-[10px] font-mono font-bold text-emerald-700 shrink-0">
                           #{i + 1}
                         </span>
-                        <select
-                          value={row.material_code || ''}
-                          onChange={(e) => setRowMaterial(i, e.target.value)}
-                          className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
-                        >
-                          <option value="">— 原作マテリアルを選択 —</option>
-                          {masterMaterialGroups.map((g: any) => (
-                            <optgroup
-                              key={String(g.id)}
-                              label={`${g.title}${g.code ? ' [' + g.code + ']' : ''}`}
-                            >
-                              {(g.materials as any[])
-                                .filter((m: any) => m.is_active !== false)
-                                .map((m: any) => (
-                                  <option
-                                    key={m.id ?? m.material_code}
-                                    value={m.material_code}
-                                  >
-                                    [{m.material_code}]{m.is_default ? ' ★' : ''}{' '}
-                                    {m.material_name}
-                                  </option>
-                                ))}
-                            </optgroup>
-                          ))}
-                        </select>
+                        <MaterialSearchSelect
+                          materials={materialPool}
+                          value={row.material_code}
+                          onPick={(code) => setRowMaterial(i, code)}
+                        />
                         <button
                           type="button"
                           onClick={() => removeMaterialRow(i)}
