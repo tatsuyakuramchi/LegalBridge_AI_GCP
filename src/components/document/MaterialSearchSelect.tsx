@@ -83,9 +83,18 @@ export function MaterialSearchSelect({
       )}
 
       {open && (
-        <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border border-border bg-card shadow-md">
+        // 注: テーマの bg-card/bg-popover は HSL triplet 定義で background-color が
+        //   不正値(透明)になるため、オーバーレイは hsl() で明示的に不透明背景にする。
+        <div
+          className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto rounded-md border shadow-md"
+          style={{
+            backgroundColor: 'hsl(var(--popover))',
+            color: 'hsl(var(--popover-foreground))',
+            borderColor: 'hsl(var(--border))',
+          }}
+        >
           {matches.length === 0 ? (
-            <div className="px-2.5 py-1.5 text-[10px] font-mono text-muted-foreground">
+            <div className="px-2.5 py-1.5 text-[10px] font-mono opacity-70">
               {q.trim() ? '該当するマテリアルがありません' : 'マテリアルがありません'}
             </div>
           ) : (
@@ -93,7 +102,7 @@ export function MaterialSearchSelect({
               <button
                 key={m.id ?? m.material_code}
                 type="button"
-                className="block w-full text-left px-2.5 py-1.5 text-[11px] font-mono hover:bg-muted"
+                className="block w-full text-left px-2.5 py-1.5 text-[11px] font-mono hover:bg-black/5 dark:hover:bg-white/10"
                 onMouseDown={(e) => {
                   e.preventDefault(); // onBlur より先に確定
                   onPick(m.material_code);
