@@ -6251,6 +6251,81 @@ ${details}
     return count;
   }
 
+  // 作品管理(WorkGraphPanel)から原作の利用許諾条件を v3 マトリクスで登録する。
+  //   文書を介さず、原作の MLC マスター器(MLC-<work_code>)へ v3_conds/v3_lcs を登録。
+  //   既存の registerV3MatrixConditions(加算型分解・グローバル素材解決込み)を再利用。
+  //   apiRouter は POST /api/v3/* を search-api へ振るため、ここは /api/v3/ を避けた
+  //   /api/works/:workId/license-matrix(=worker)に置く。
+  app.post(
+    "/api/works/:workId/license-matrix",
+    express.json(),
+    async (req, res) => {
+      try {
+        const workId = Number(req.params.workId);
+        const body = req.body || {};
+        const conds = Array.isArray(body.conds) ? body.conds : [];
+        const lcs = Array.isArray(body.lcs) ? body.lcs : [];
+        if (!Number.isFinite(workId) || workId <= 0) {
+          return res.status(400).json({ ok: false, error: "invalid workId" });
+        }
+        if (conds.length === 0) {
+          return res.status(400).json({ ok: false, error: "conds is empty" });
+        }
+        const wr = await query(
+          `SELECT work_code, title, kind FROM works WHERE id = $1 LIMIT 1`,
+          [workId]
+        );
+        const w = wr.rows[0];
+        if (!w) return res.status(404).json({ ok: false, error: "work not found" });
+        if (w.kind !== "licensed_in") {
+          return res
+            .status(400)
+            .json({ ok: false, error: "原作(licensed_in)のみ対応" });
+        }
+        const workCode = String(w.work_code);
+        const docNo = `MLC-${workCode}`;
+        // MLC マスター器を ensure(ensureMasterLicenseCapability 相当のインライン upsert)。
+        await query(
+          `INSERT INTO contract_capabilities (
+             record_type, contract_category, contract_type, contract_title,
+             document_number, original_work, work_name, contract_status, source_system
+           ) VALUES (
+             'license_condition', 'license', 'registered_master', $1,
+             $2, $3, $3, 'executed', 'master_register'
+           )
+           ON CONFLICT (document_number) DO NOTHING`,
+          [
+            `原作利用許諾条件(マスター登録): ${w.title || workCode}`,
+            docNo,
+            w.title || workCode,
+          ]
+        );
+        const capRes = await query(
+          `SELECT id FROM contract_capabilities WHERE document_number = $1 LIMIT 1`,
+          [docNo]
+        );
+        const capId = capRes.rows[0]?.id ? Number(capRes.rows[0].id) : null;
+        if (!capId) {
+          return res
+            .status(500)
+            .json({ ok: false, error: "MLC capability の取得に失敗" });
+        }
+        const linked = await registerV3MatrixConditions({
+          capabilityId: capId,
+          ledgerCode: workCode, // 原作コード=licensed_in work_code(=ledger_code)
+          ownWorkId: null,
+          conds,
+          lcs,
+          anchorMaterialCode: null, // 非加算型は原作本体素材(is_default)へアンカー
+        });
+        res.json({ ok: true, capability_id: capId, document_number: docNo, linked });
+      } catch (error: any) {
+        console.error("POST /api/works/:workId/license-matrix failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
   /**
    * Phase 22.21.112: 契約マスタの業務明細 (capability_line_items) を
    *   配列で受け取って upsert する。upsertCapabilityFinancialConditions と
