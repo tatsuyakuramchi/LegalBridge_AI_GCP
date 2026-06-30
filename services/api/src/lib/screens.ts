@@ -37,6 +37,8 @@ export type ScreenKey =
   | "staff"
   | "work-model"
   | "receivable-map"
+  | "guides"
+  | "guide-portal"
   | "admin";
 
 export type Screen = {
@@ -70,10 +72,14 @@ export const SCREENS: Screen[] = [
   { key: "work-model",     path: "/work-model",            label: "作品モデル",        icon: "🎬", section: "console", minRole: "admin", nav: true },
   { key: "receivable-map", path: "/master/receivable-map", label: "分配構造マップ",    icon: "🔀", section: "console", minRole: "admin", nav: true },
   { key: "conditions",     path: "/master/conditions",     label: "条件明細",          icon: "🧾", section: "console", minRole: "admin", nav: true },
+  // ポータル & ガイド: 法務ポータル(GAS 移植)のガイド差し替え・公開管理。
+  { key: "guides",         path: "/admin/guides",          label: "ガイド管理",        icon: "📚", section: "console", minRole: "admin", nav: true },
   { key: "admin",          path: "/admin",                 label: "管理",              icon: "⚙️", section: "console", minRole: "admin", nav: true },
 
   // ── Search & Browse (viewer 可) ───────────────────────────
   { key: "search-vendor",    path: "/search/vendor",     label: "取引先・契約検索", icon: "⌕",  section: "browse", minRole: "viewer", nav: true },
+  // 法務ガイドポータル(viewer 可)。各ガイド /g/:key・カテゴリ /c/:cat は動的(nav 非表示)。
+  { key: "guide-portal",     path: "/portal",            label: "法務ガイド",       icon: "📖", section: "browse", minRole: "viewer", nav: true },
   { key: "template-preview", path: "/templates/preview", label: "ひな型プレビュー", icon: "📄", section: "browse", minRole: "viewer", nav: true },
   // 条件明細(閲覧専用)。FIN 部署の viewer のみサイドバー表示・閲覧可(admin は console 側)。
   { key: "conditions-fin",   path: "/view/conditions",   label: "条件明細",         icon: "🧾", section: "browse", minRole: "viewer", departments: ["FIN"], nav: true },

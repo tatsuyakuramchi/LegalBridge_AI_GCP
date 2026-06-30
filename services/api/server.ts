@@ -235,6 +235,23 @@ import { adminDashboardPage } from "./src/views/adminDashboardHtml.ts";
 import { adminStaffPage } from "./src/views/adminStaffHtml.ts";
 // Phase 22.21.37: viewer 用ルート案内ページ。
 import { loginPage, viewerHomePage } from "./src/views/landingHtml.ts";
+// 法務ポータル(GAS 移植・DB 化): ガイド配信ビュー + 管理一覧 + 読取サービス。
+//   設計: legalbridge-portal-migration。書込(差し替え)は worker(release/worker)。
+import {
+  portalPage as renderPortalPage,
+  categoryPage as renderCategoryPage,
+  notReadyPage as renderNotReadyPage,
+  guideNotFoundPage,
+} from "./src/views/guidePortalHtml.ts";
+import { adminGuidesPage } from "./src/views/adminGuidesHtml.ts";
+import {
+  listCategories as listGuideCategories,
+  listGuides as listPortalGuides,
+  guidesInCategory as guidesInGuideCategory,
+  getGuideByKey as getPortalGuideByKey,
+  renderGuideHtml as renderPortalGuideHtml,
+  listGuidesForAdmin as listPortalGuidesForAdmin,
+} from "./src/services/portalGuideService.ts";
 import {
   listVendors,
   getVendor,
@@ -652,6 +669,7 @@ async function startServer() {
             currentEmail: user?.email || null,
             currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
             deptCode,
+            isAdmin: role === "admin",
           })
         );
       } catch (error) {
@@ -3607,6 +3625,151 @@ async function startServer() {
       res.status(500).json({ error: String(error) });
     }
   });
+
+  // ===================================================================
+  // 法務ポータル(GAS 移植・DB 化)
+  //   viewer 可: /portal /guide /c/:cat /g/:key /exec(browse)
+  //   admin   : /admin/guides /api/portal/*(console)
+  //   各ガイド本文(/g/:key)は DB の現行版を portalRender で変換して配信。
+  //   差し替え(版追加・公開切替)は worker(release/worker)が所有(pass2)。
+  // ===================================================================
+
+  // ポータルトップ(カテゴリ一覧 + 入口)
+  app.get(
+    "/portal",
+    requireIapUser({ renderErrorPage }),
+    requireScreen({ key: "guide-portal", renderErrorPage }),
+    async (req, res) => {
+      try {
+        const [cats, guides] = await Promise.all([
+          listGuideCategories(),
+          listPortalGuides(),
+        ]);
+        const countByCat: Record<string, number> = {};
+        for (const g of guides) {
+          if (g.isOverview || !g.categoryKey) continue;
+          countByCat[g.categoryKey] = (countByCat[g.categoryKey] || 0) + 1;
+        }
+        const isAdmin = (req as any).userRole === "admin";
+        res.type("html").send(renderPortalPage(cats, countByCat, isAdmin));
+      } catch (error) {
+        console.error("/portal failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // ご利用案内(overview)
+  app.get(
+    "/guide",
+    requireIapUser({ renderErrorPage }),
+    requireScreen({ key: "guide-portal", renderErrorPage }),
+    async (req, res) => {
+      try {
+        const html = await renderPortalGuideHtml("guide");
+        if (html) return res.type("html").send(html);
+        const g = await getPortalGuideByKey("guide");
+        if (!g) return res.status(404).type("html").send(guideNotFoundPage());
+        const isAdmin = (req as any).userRole === "admin";
+        return res.status(404).type("html").send(renderNotReadyPage(g, null, isAdmin));
+      } catch (error) {
+        console.error("/guide failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // カテゴリページ
+  app.get(
+    "/c/:cat",
+    requireIapUser({ renderErrorPage }),
+    requireScreen({ key: "guide-portal", renderErrorPage }),
+    async (req, res) => {
+      try {
+        const cats = await listGuideCategories();
+        const cat = cats.find((c) => c.catKey === req.params.cat);
+        if (!cat) return res.status(404).type("html").send(guideNotFoundPage());
+        const guides = await guidesInGuideCategory(cat.catKey);
+        const isAdmin = (req as any).userRole === "admin";
+        res.type("html").send(renderCategoryPage(cat, guides, isAdmin));
+      } catch (error) {
+        console.error("/c/:cat failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // 各ガイド(本文)
+  app.get(
+    "/g/:key",
+    requireIapUser({ renderErrorPage }),
+    requireScreen({ key: "guide-portal", renderErrorPage }),
+    async (req, res) => {
+      try {
+        const key = String(req.params.key);
+        const html = await renderPortalGuideHtml(key);
+        if (html) return res.type("html").send(html);
+        const g = await getPortalGuideByKey(key);
+        if (!g) return res.status(404).type("html").send(guideNotFoundPage());
+        const cats = await listGuideCategories();
+        const cat = cats.find((c) => c.catKey === g.categoryKey) || null;
+        const isAdmin = (req as any).userRole === "admin";
+        return res.status(404).type("html").send(renderNotReadyPage(g, cat, isAdmin));
+      } catch (error) {
+        console.error("/g/:key failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // 旧 GAS 互換: /exec?page=KEY → /g/KEY(page=portal/未指定は /portal)
+  app.get("/exec", (req, res) => {
+    const key = String(req.query.page || "").trim();
+    if (!key || key === "portal") return res.redirect(302, "/portal");
+    return res.redirect(302, `/g/${encodeURIComponent(key)}`);
+  });
+
+  // 管理: ガイド一覧(read)。差し替えは pass2(worker)で本画面を編集可能化。
+  app.get(
+    "/admin/guides",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "admin:guides", allowedRoles: ["admin"], renderErrorPage }),
+    async (_req, res) => {
+      try {
+        const rows = await listPortalGuidesForAdmin();
+        res.type("html").send(adminGuidesPage({ rows }));
+      } catch (error) {
+        console.error("/admin/guides failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // 管理読取 API(将来の編集 UI / admin-ui 連携用)
+  app.get(
+    "/api/portal/categories",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:categories", allowedRoles: ["admin"], renderErrorPage }),
+    async (_req, res) => {
+      try {
+        res.json(await listGuideCategories());
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    }
+  );
+  app.get(
+    "/api/portal/guides",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:guides", allowedRoles: ["admin"], renderErrorPage }),
+    async (_req, res) => {
+      try {
+        res.json(await listPortalGuidesForAdmin());
+      } catch (error) {
+        res.status(500).json({ error: String(error) });
+      }
+    }
+  );
 
   app.listen(PORT, () => {
     console.log(`[search-api] listening on :${PORT}`);

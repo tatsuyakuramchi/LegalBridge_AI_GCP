@@ -18,9 +18,15 @@
 
 import type { Role, ScreenKey } from "../lib/screens.ts";
 import { navScreensForRole, SECTION_TITLES } from "../lib/screens.ts";
+import { viewSwitchHtml } from "./viewSwitch.ts";
 
 // 後方互換: 各 view が active 指定で使う型。画面レジストリの ScreenKey に統一。
 export type PopNavKey = ScreenKey;
+
+// 管理 ID(admin)向け「通常画面 ⇄ 管理画面」切替スイッチ。管理コンソール側なので admin がアクティブ。
+function viewSwitchForRole(role?: string): string {
+  return role === "admin" ? viewSwitchHtml("admin", "#6c5ce7") : "";
+}
 
 const esc = (s: string) =>
   String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -377,6 +383,7 @@ ${navHtml(opts.active, opts.role || "viewer", opts.deptCode)}
       <h1>${esc(opts.title)}</h1>
       ${opts.subtitle ? `<span class="sub">${esc(opts.subtitle)}</span>` : ""}
       <span class="sp"></span>
+      ${viewSwitchForRole(opts.role)}
       ${adminLinkHtml(opts.role)}
       ${opts.toolbar || ""}
     </div>
@@ -432,6 +439,7 @@ ${navHtml(opts.active, opts.role || "viewer", opts.deptCode)}
       <h1>${esc(opts.title)}</h1>
       ${opts.subtitle ? `<span class="sub">${esc(opts.subtitle)}</span>` : ""}
       <span class="sp"></span>
+      ${viewSwitchForRole(opts.role)}
       ${adminLinkHtml(opts.role)}
       ${opts.toolbar || ""}
     </div>
