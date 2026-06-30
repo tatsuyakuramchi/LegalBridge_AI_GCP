@@ -81,6 +81,8 @@ import {
 } from "./src/lib/conditionLineMapper.ts";
 // 雛形プレビュー用 v3 サンプルデータ（個別利用許諾 v3 テンプレの sample-preview に使う）。
 import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
+// スキーマ単純化 Phase 2: Master(契約マスタ)保存を documents 統合＋CL直接書き込みで行う。
+import { upsertMasterContract, mapV3MatrixToConditions } from "./src/lib/documentSave.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
@@ -5585,36 +5587,7 @@ ${details}
            region_territory, region_language, applies_scope,
            copied_from_condition_id, work_id,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, condition_no) DO UPDATE SET
-           region_language_label   = EXCLUDED.region_language_label,
-           calc_method             = EXCLUDED.calc_method,
-           rate_pct                = EXCLUDED.rate_pct,
-           base_price_label        = EXCLUDED.base_price_label,
-           calc_period             = EXCLUDED.calc_period,
-           calc_period_kind        = EXCLUDED.calc_period_kind,
-           calc_period_close_month = EXCLUDED.calc_period_close_month,
-           currency                = EXCLUDED.currency,
-           formula_text            = EXCLUDED.formula_text,
-           payment_terms           = EXCLUDED.payment_terms,
-           mg_amount               = EXCLUDED.mg_amount,
-           ag_amount               = EXCLUDED.ag_amount,
-           condition_name          = EXCLUDED.condition_name,
-           calc_type               = EXCLUDED.calc_type,
-           fixed_kind              = EXCLUDED.fixed_kind,
-           subscription_cycle      = EXCLUDED.subscription_cycle,
-           unit_amount             = EXCLUDED.unit_amount,
-           guarantee_type          = EXCLUDED.guarantee_type,
-           region_territory        = EXCLUDED.region_territory,
-           region_language         = EXCLUDED.region_language,
-           applies_scope           = EXCLUDED.applies_scope,
-           -- O4: 痕跡は一度付いたら消さない(後続保存が値を運ばなくても保持)。
-           copied_from_condition_id = COALESCE(
-             EXCLUDED.copied_from_condition_id,
-             capability_financial_conditions.copied_from_condition_id
-           ),
-           work_id                 = EXCLUDED.work_id,
-           updated_at              = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, CURRENT_TIMESTAMP)`,
         [
           capabilityId,
           condNo,
@@ -6292,8 +6265,7 @@ ${details}
            ) VALUES (
              'license_condition', 'license', 'registered_master', $1,
              $2, $3, $3, 'executed', 'master_register'
-           )
-           ON CONFLICT (document_number) DO NOTHING`,
+           )`,
           [
             `原作利用許諾条件(マスター登録): ${w.title || workCode}`,
             docNo,
@@ -6402,28 +6374,7 @@ ${details}
            cycle, billing_day, term_start, term_end,
            fee_type, royalty_calc_basis, work_id,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, line_no) DO UPDATE SET
-           category       = EXCLUDED.category,
-           item_name      = EXCLUDED.item_name,
-           spec           = EXCLUDED.spec,
-           calc_method    = EXCLUDED.calc_method,
-           payment_method = EXCLUDED.payment_method,
-           payment_terms  = EXCLUDED.payment_terms,
-           quantity       = EXCLUDED.quantity,
-           unit_price     = EXCLUDED.unit_price,
-           amount_ex_tax  = EXCLUDED.amount_ex_tax,
-           rate_pct       = EXCLUDED.rate_pct,
-           delivery_date  = EXCLUDED.delivery_date,
-           payment_date   = EXCLUDED.payment_date,
-           cycle          = EXCLUDED.cycle,
-           billing_day    = EXCLUDED.billing_day,
-           term_start     = EXCLUDED.term_start,
-           term_end       = EXCLUDED.term_end,
-           fee_type       = EXCLUDED.fee_type,
-           royalty_calc_basis = EXCLUDED.royalty_calc_basis,
-           work_id        = EXCLUDED.work_id,
-           updated_at     = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP)`,
         [
           capabilityId,
           lineNo,
@@ -6505,14 +6456,7 @@ ${details}
         `INSERT INTO capability_expenses (
            capability_id, line_no, expense_name, spec,
            spent_date, amount_inc_tax, remarks, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, line_no) DO UPDATE SET
-           expense_name   = EXCLUDED.expense_name,
-           spec           = EXCLUDED.spec,
-           spent_date     = EXCLUDED.spent_date,
-           amount_inc_tax = EXCLUDED.amount_inc_tax,
-           remarks        = EXCLUDED.remarks,
-           updated_at     = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
         [
           capabilityId,
           e.line_no,
@@ -6566,12 +6510,7 @@ ${details}
       await query(
         `INSERT INTO capability_other_fees (
            capability_id, line_no, fee_name, amount, remarks, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, line_no) DO UPDATE SET
-           fee_name   = EXCLUDED.fee_name,
-           amount     = EXCLUDED.amount,
-           remarks    = EXCLUDED.remarks,
-           updated_at = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
         [capabilityId, f.line_no, f.fee_name, f.amount, f.remarks]
       );
     }
@@ -6699,90 +6638,54 @@ ${details}
         ledger,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
-      const result = await query(
-        `INSERT INTO contract_capabilities (
-          vendor_id, record_type, contract_category, contract_type, contract_title,
-          document_number, contract_status, effective_date, expiration_date, auto_renewal,
-          original_work, product_name, work_name, media, territory, language, document_url, condition_number,
-          renewal_notice_months, alert_lead_months,
-          is_active,
-          alert_slack_channels, alert_slack_mentions,
-          ledger_code, flow_direction, deliverable_ownership
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25, $26)
-        RETURNING id, document_number`,
-        [
-          vendor_id || null, record_type || "master_contract", contract_category || "service",
-          contract_type || "service_basic", contract_title, finalDocNumber,
-          contract_status || "executed", effective_date || null, expiration_date || null,
-          // Boolean 正規化 — 't' / 'f' / 1 / 0 / 文字列 'true' なども受け取れるように
-          auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
-          original_work || "", product_name || "", work_name || "",
-          media || "", territory || "", language || "", document_url || "", condition_number || "",
-          renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
-          alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
-          // is_active 省略時は TRUE (有効)
-          is_active === undefined || is_active === null ? true : Boolean(is_active),
-          JSON.stringify(channels),
-          JSON.stringify(mentions),
-          ledger,
-          flowDir,
-          deliverable_ownership || null,
-        ]
+      // スキーマ単純化 Phase 2: documents 統合＋CL直接書き込み（contract_capabilities 廃止）。
+      //   金銭条件/業務明細/経費/手数料を全て CL へ、材料は行指定→既定→原作本体へアンカー。
+      const saved = await upsertMasterContract(
+        { query },
+        {
+          document_number: finalDocNumber,
+          record_type: record_type || "master_contract",
+          contract_category: contract_category || "service",
+          contract_type: contract_type || "service_basic",
+          contract_title,
+          contract_status: contract_status || "executed",
+          vendor_id: vendor_id || null,
+          effective_date: effective_date || null,
+          expiration_date: expiration_date || null,
+          flow_direction: flowDir,
+          deliverable_ownership: deliverable_ownership || null,
+          ledger_code: ledger,
+          template_family,
+          is_active: is_active === undefined || is_active === null ? true : Boolean(is_active),
+          auto_renewal:
+            auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
+          renewal_notice_months:
+            renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
+          alert_lead_months:
+            alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
+          alert_slack_channels: channels,
+          alert_slack_mentions: mentions,
+          original_work: original_work || null,
+          product_name: product_name || null,
+          work_name: work_name || null,
+          media: media || null,
+          territory: territory || null,
+          language: language || null,
+          condition_number: condition_number || null,
+          document_url: document_url || null,
+          default_material_code: req.body?.素材番号 || null,
+          condition_material_codes: req.body?.condition_material_codes || {},
+          financial_conditions,
+          line_items: req.body?.line_items,
+          expenses: req.body?.expenses,
+          other_fees: req.body?.other_fees,
+        }
       );
-      const newId = Number(result.rows[0].id);
-      // Phase 22.21.91: 金銭条件 (条件 1..3) を子テーブルに upsert。
-      //   ライセンス系の単独/個別契約のみで意味を持つが、ここでは
-      //   contract_category に依らず req.body.financial_conditions が
-      //   配列で来たらそのまま書く (フロントが gating を担当)。
-      await upsertCapabilityFinancialConditions(newId, financial_conditions);
-      // Phase 22.21.112: 業務明細 (検収書 自動補完用) を子テーブルに upsert。
-      //   業務委託 (service) カテゴリの単独/個別契約で意味を持つ。
-      await upsertCapabilityLineItems(newId, req.body?.line_items);
-      // Phase 23.6.14: 経費 / その他手数料 (検収書の経費精算 / 手数料精算 自動補完用)。
-      //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
-      await upsertCapabilityExpenses(newId, req.body?.expenses);
-      await upsertCapabilityOtherFees(newId, req.body?.other_fees);
-      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
-      await upsertContractScopes(newId, scopes, contract_category, template_family);
+      const newId = saved.documentId;
+      // 契約スコープは Phase 後段で documents へ付替え予定（現状スキップ）。
 
-      // Phase 22.21.115: 稟議番号 N:N リンク + documents 行同期。
-      //   稟議リンクは ringi_documents.document_id 経由なので documents 行が必須。
-      //   bulk import と同じパターンで documents を upsert する。
-      //   template_type は record_type + category から導出:
-      //     license + master_contract → 'license_master'
-      //     license + individual/standalone → 'individual_license_terms'
-      //     service + (any) → 'service_master'
+      // 稟議番号 N:N リンク（documents 行は upsertMasterContract が作成済み）。
       try {
-        const ttForDoc =
-          record_type === "master_contract"
-            ? contract_category === "license"
-              ? "license_master"
-              : "service_master"
-            : contract_category === "license"
-              ? "individual_license_terms"
-              : "service_master";
-        await query(
-          `INSERT INTO documents (
-             document_number, issue_key, template_type, form_data,
-             drive_link, created_by
-           ) VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (document_number) DO UPDATE SET
-             form_data = COALESCE(documents.form_data, '{}'::jsonb) || EXCLUDED.form_data,
-             drive_link = COALESCE(NULLIF(EXCLUDED.drive_link, ''), documents.drive_link)`,
-          [
-            finalDocNumber,
-            `MASTER-${finalDocNumber}`,
-            ttForDoc,
-            JSON.stringify({
-              __master_form: true,
-              ringi_numbers: Array.isArray(req.body?.ringi_numbers)
-                ? req.body.ringi_numbers
-                : [],
-            }),
-            document_url || "",
-            "master-form",
-          ]
-        );
         await linkRingiByDocNumber(
           finalDocNumber,
           Array.isArray(req.body?.ringi_numbers)
@@ -6791,7 +6694,7 @@ ${details}
         );
       } catch (ringiErr: any) {
         console.warn(
-          `[contract_capabilities] ringi link failed for ${finalDocNumber}:`,
+          `[master-contract] ringi link failed for ${finalDocNumber}:`,
           ringiErr?.message || ringiErr
         );
       }
@@ -6799,7 +6702,7 @@ ${details}
       res.json({
         success: true,
         id: newId,
-        document_number: result.rows[0].document_number,
+        document_number: finalDocNumber,
         document_number_auto:
           !String(document_number || "").trim() ||
           regenerate_document_number === true ||
@@ -6836,7 +6739,7 @@ ${details}
     }
     try {
       const r = await query(
-        `UPDATE contract_capabilities
+        `UPDATE documents
             SET contract_status = $2, updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         RETURNING id, contract_status`,
@@ -6896,7 +6799,7 @@ ${details}
       // 番号を保持しておき、変更後に documents テーブル側にも伝播させる。
       //   contract_capabilities が UPDATE される前に DB 上の旧番号を取得。
       const existingRow = await query(
-        `SELECT document_number FROM contract_capabilities WHERE id = $1`,
+        `SELECT document_number FROM documents WHERE id = $1`,
         [id]
       );
       const previousDocNumber = String(
@@ -6911,89 +6814,61 @@ ${details}
         ledger,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
-      await query(
-        `UPDATE contract_capabilities SET
-          vendor_id = $1, record_type = $2, contract_category = $3, contract_type = $4,
-          contract_title = $5, document_number = $6, contract_status = $7,
-          effective_date = $8, expiration_date = $9, auto_renewal = $10,
-          original_work = $11, product_name = $12, work_name = $13, media = $14,
-          territory = $15, language = $16, document_url = $17, condition_number = $18,
-          renewal_notice_months = $19, alert_lead_months = $20,
-          is_active = $21,
-          alert_slack_channels = $22::jsonb,
-          alert_slack_mentions = $23::jsonb,
-          ledger_code = $24,
-          -- null のときは既存値を保持(レガシー編集で方向を誤って消さない)
-          flow_direction = COALESCE($25, flow_direction),
-          deliverable_ownership = $26,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $27`,
-        [
-          vendor_id || null, record_type, contract_category, contract_type, contract_title,
-          finalDocNumber, contract_status, effective_date || null, expiration_date || null,
-          // Boolean 正規化
-          auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
-          original_work || "", product_name || "", work_name || "",
-          media || "", territory || "", language || "", document_url || "", condition_number || "",
-          renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
-          alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
-          is_active === undefined || is_active === null ? true : Boolean(is_active),
-          JSON.stringify(channels),
-          JSON.stringify(mentions),
-          ledger,
-          flowDir,
-          deliverable_ownership || null,
-          id,
-        ]
-      );
+      // 番号変更時は既存 documents 行の番号を先に合わせる（upsert キー一致のため）。
+      if (previousDocNumber && previousDocNumber !== finalDocNumber) {
+        await query(`UPDATE documents SET document_number = $2 WHERE id = $1`, [id, finalDocNumber]);
+      }
 
-      // Phase 22.21.91: 金銭条件 (条件 1..3) を子テーブルに upsert。
-      //   送られてこなければ (= undefined) 既存条件は触らない。明示的に [] が
-      //   来た場合は全件削除する。
-      await upsertCapabilityFinancialConditions(Number(id), financial_conditions);
-      // Phase 22.21.112: 業務明細 (検収書 自動補完用) を upsert。
-      //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
-      await upsertCapabilityLineItems(Number(id), req.body?.line_items);
-      // Phase 23.6.14: 経費 / その他手数料 (検収書 自動補完用)。同 semantics。
-      await upsertCapabilityExpenses(Number(id), req.body?.expenses);
-      await upsertCapabilityOtherFees(Number(id), req.body?.other_fees);
-      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
-      await upsertContractScopes(Number(id), scopes, contract_category, template_family);
+      // スキーマ単純化 Phase 2: documents 統合＋CL直接書き込みで更新。
+      //   明細系が全 undefined のときは既存CLを保持（PUT 既存挙動を踏襲）。
+      const saved = await upsertMasterContract(
+        { query },
+        {
+          document_number: finalDocNumber,
+          record_type,
+          contract_category,
+          contract_type,
+          contract_title,
+          contract_status,
+          vendor_id: vendor_id || null,
+          effective_date: effective_date || null,
+          expiration_date: expiration_date || null,
+          flow_direction: flowDir,
+          deliverable_ownership: deliverable_ownership || null,
+          ledger_code: ledger,
+          template_family,
+          is_active: is_active === undefined || is_active === null ? true : Boolean(is_active),
+          auto_renewal:
+            auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
+          renewal_notice_months:
+            renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
+          alert_lead_months:
+            alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
+          alert_slack_channels: channels,
+          alert_slack_mentions: mentions,
+          original_work: original_work || null,
+          product_name: product_name || null,
+          work_name: work_name || null,
+          media: media || null,
+          territory: territory || null,
+          language: language || null,
+          condition_number: condition_number || null,
+          document_url: document_url || null,
+          default_material_code: req.body?.素材番号 || null,
+          condition_material_codes: req.body?.condition_material_codes || {},
+          financial_conditions,
+          line_items: req.body?.line_items,
+          expenses: req.body?.expenses,
+          other_fees: req.body?.other_fees,
+        }
+      );
+      void saved;
 
       // Phase 22.21.115: 稟議番号リンクを更新 (POST と同じパターン)。
       //   ringi_numbers が undefined なら触らない。[] なら全削除。
       if (req.body?.ringi_numbers !== undefined) {
         try {
-          const ttForDoc =
-            record_type === "master_contract"
-              ? contract_category === "license"
-                ? "license_master"
-                : "service_master"
-              : contract_category === "license"
-                ? "individual_license_terms"
-                : "service_master";
-          await query(
-            `INSERT INTO documents (
-               document_number, issue_key, template_type, form_data,
-               drive_link, created_by
-             ) VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (document_number) DO UPDATE SET
-               form_data = COALESCE(documents.form_data, '{}'::jsonb) || EXCLUDED.form_data,
-               drive_link = COALESCE(NULLIF(EXCLUDED.drive_link, ''), documents.drive_link)`,
-            [
-              finalDocNumber,
-              `MASTER-${finalDocNumber}`,
-              ttForDoc,
-              JSON.stringify({
-                __master_form: true,
-                ringi_numbers: Array.isArray(req.body.ringi_numbers)
-                  ? req.body.ringi_numbers
-                  : [],
-              }),
-              document_url || "",
-              "master-form",
-            ]
-          );
+          // documents 行は upsertMasterContract が作成/更新済み。稟議リンクのみ更新。
           await linkRingiByDocNumber(
             finalDocNumber,
             Array.isArray(req.body.ringi_numbers)
@@ -7002,7 +6877,7 @@ ${details}
           );
         } catch (ringiErr: any) {
           console.warn(
-            `[contract_capabilities PUT] ringi link failed for ${finalDocNumber}:`,
+            `[master-contract PUT] ringi link failed for ${finalDocNumber}:`,
             ringiErr?.message || ringiErr
           );
         }
@@ -8147,14 +8022,7 @@ ${details}
               vendor_id, record_type, contract_category, contract_type, contract_title,
               document_number, contract_status, effective_date, expiration_date, auto_renewal,
               original_work, product_name, work_name, media, territory, language, document_url, source_system
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-            ON CONFLICT (document_number) DO UPDATE SET
-              vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-              record_type    = EXCLUDED.record_type,
-              contract_type  = EXCLUDED.contract_type,
-              contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-              document_url   = COALESCE(NULLIF(EXCLUDED.document_url, ''), contract_capabilities.document_url),
-              updated_at     = CURRENT_TIMESTAMP`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
             [
               vendorId,
               recordType,
@@ -8327,9 +8195,7 @@ ${details}
                  (vendor_id, record_type, contract_category, contract_type, contract_title,
                   document_number, base_document_number, backlog_issue_key, contract_status,
                   effective_date, expiration_date, document_url, source_system)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')
-               ON CONFLICT (document_number) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-               RETURNING id`,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')`,
               [
                 vendorId,
                 recordType,
@@ -8924,18 +8790,7 @@ ${details}
            vendor_id, record_type, contract_category, contract_type, contract_title,
            document_number, contract_status, effective_date, expiration_date,
            auto_renewal, document_url, source_system
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         ON CONFLICT (document_number) DO UPDATE SET
-           vendor_id        = EXCLUDED.vendor_id,
-           record_type      = EXCLUDED.record_type,
-           contract_category = EXCLUDED.contract_category,
-           contract_type    = EXCLUDED.contract_type,
-           contract_title   = EXCLUDED.contract_title,
-           effective_date   = EXCLUDED.effective_date,
-           expiration_date  = EXCLUDED.expiration_date,
-           auto_renewal     = EXCLUDED.auto_renewal,
-           document_url     = EXCLUDED.document_url,
-           updated_at       = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           vendorId,
           "master_contract",
@@ -9412,13 +9267,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id = EXCLUDED.vendor_id,
-                 contract_title = EXCLUDED.contract_title,
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
               [
                 vendorId,
                 "master_contract",
@@ -9558,16 +9407,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-                 record_type    = EXCLUDED.record_type,
-                 contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 auto_renewal   = EXCLUDED.auto_renewal,
-                 updated_at     = CURRENT_TIMESTAMP
-               RETURNING id`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
               [
                 vendorId,
                 recordType,
@@ -9759,13 +9599,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-                 contract_title = EXCLUDED.contract_title,
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
               [
                 ndaVendorId,
                 "master_contract",
@@ -9911,13 +9745,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id = EXCLUDED.vendor_id,
-                 contract_title = EXCLUDED.contract_title,
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
               [
                 vendorId,
                 "master_contract",
@@ -14981,33 +14809,7 @@ ${details}
             original_work, product_name, work_name, media, territory, language, document_url, source_system,
             base_document_number, revision, is_primary,
             ledger_ref_id, ledger_code
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE, $21, $22)
-          ON CONFLICT (document_number) DO UPDATE SET
-            vendor_id = EXCLUDED.vendor_id,
-            record_type = EXCLUDED.record_type,
-            contract_category = EXCLUDED.contract_category,
-            contract_type = EXCLUDED.contract_type,
-            contract_title = EXCLUDED.contract_title,
-            contract_status = EXCLUDED.contract_status,
-            effective_date = EXCLUDED.effective_date,
-            expiration_date = EXCLUDED.expiration_date,
-            auto_renewal = EXCLUDED.auto_renewal,
-            original_work = EXCLUDED.original_work,
-            product_name = EXCLUDED.product_name,
-            work_name = EXCLUDED.work_name,
-            media = EXCLUDED.media,
-            territory = EXCLUDED.territory,
-            language = EXCLUDED.language,
-            document_url = EXCLUDED.document_url,
-            base_document_number = EXCLUDED.base_document_number,
-            revision = EXCLUDED.revision,
-            is_primary = TRUE,
-            ledger_ref_id = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
-            ledger_code = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
-            superseded_by = NULL,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE contract_capabilities.record_type = 'delivery_record'
-             OR EXCLUDED.record_type <> 'delivery_record'`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE, $21, $22)`,
           [
             vendorId,
             recordType,
@@ -15328,14 +15130,7 @@ ${details}
               due_date, backlog_issue_key, record_type, contract_category,
               contract_type, document_number)
            VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
-                   'purchase_order', $7)
-           ON CONFLICT (document_number) DO UPDATE SET
-             amount_ex_tax  = EXCLUDED.amount_ex_tax,
-             due_date       = EXCLUDED.due_date,
-             contract_title = EXCLUDED.contract_title,
-             vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-             updated_at     = CURRENT_TIMESTAMP
-           RETURNING id`,
+                   'purchase_order', $7)`,
           [
             lrId,
             vendorIdForPo,
@@ -15460,23 +15255,7 @@ ${details}
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date,
                  deliverable_ownership, royalty_calc_basis, work_id, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
-               ON CONFLICT (capability_id, line_no) DO UPDATE SET
-                 item_name      = EXCLUDED.item_name,
-                 spec           = EXCLUDED.spec,
-                 unit_price     = EXCLUDED.unit_price,
-                 quantity       = EXCLUDED.quantity,
-                 amount_ex_tax  = EXCLUDED.amount_ex_tax,
-                 rate_pct       = EXCLUDED.rate_pct,
-                 calc_method    = EXCLUDED.calc_method,
-                 payment_terms  = EXCLUDED.payment_terms,
-                 payment_method = EXCLUDED.payment_method,
-                 payment_date   = EXCLUDED.payment_date,
-                 delivery_date  = EXCLUDED.delivery_date,
-                 deliverable_ownership = EXCLUDED.deliverable_ownership,
-                 royalty_calc_basis = EXCLUDED.royalty_calc_basis,
-                 work_id        = EXCLUDED.work_id,
-                 updated_at     = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)`,
               [
                 orderItemId,
                 lineNo,
@@ -15696,14 +15475,7 @@ ${details}
               `INSERT INTO capability_expenses (
                  capability_id, line_no, expense_name, spec,
                  spent_date, amount_inc_tax, remarks, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-               ON CONFLICT (capability_id, line_no) DO UPDATE SET
-                 expense_name   = EXCLUDED.expense_name,
-                 spec           = EXCLUDED.spec,
-                 spent_date     = EXCLUDED.spent_date,
-                 amount_inc_tax = EXCLUDED.amount_inc_tax,
-                 remarks        = EXCLUDED.remarks,
-                 updated_at     = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
               [
                 orderItemId,
                 e.line_no,
@@ -15752,12 +15524,7 @@ ${details}
             await query(
               `INSERT INTO capability_other_fees (
                  capability_id, line_no, fee_name, amount, remarks, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-               ON CONFLICT (capability_id, line_no) DO UPDATE SET
-                 fee_name   = EXCLUDED.fee_name,
-                 amount     = EXCLUDED.amount,
-                 remarks    = EXCLUDED.remarks,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
               [orderItemId, f.line_no, f.fee_name, f.amount, f.remarks]
             );
           }
@@ -15976,11 +15743,7 @@ ${details}
           `INSERT INTO contract_capabilities
              (backlog_issue_key, original_work,
               document_number, record_type, contract_category, contract_type, contract_title)
-           VALUES ($1, $2, $3, 'master_contract', 'license', 'license_basic', $4)
-           ON CONFLICT (document_number) DO UPDATE SET
-             original_work  = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
-             contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-             updated_at     = CURRENT_TIMESTAMP`,
+           VALUES ($1, $2, $3, 'master_contract', 'license', 'license_basic', $4)`,
           [
             issueKey,
             formData.WORK_TITLE || "",
@@ -16116,106 +15879,45 @@ ${details}
         //   クレジット/許諾期間注記/work_id 等の license 固有値は列が無く、
         //   documents.form_data(JSON) に保持されPDFはそこから描画される。
         //   ここでは実在列のみ登録(原作名/対象製品/許諾開始日/原作・素材参照/種別/タイトル/文書番号)。
-        const lcUpsert = await query(
-          `INSERT INTO contract_capabilities (
-             backlog_issue_key, original_work, product_name, effective_date,
-             ledger_ref_id, material_ref_id,
-             record_type, contract_category, contract_type, contract_title, document_number
-           )
-           VALUES (
-             $1, $2, $3, $4,
-             $5, $6,
-             'individual_contract', 'license', 'license_basic', COALESCE(NULLIF($2, ''), $7), $7
-           )
-           ON CONFLICT (document_number) DO UPDATE SET
-             original_work   = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
-             product_name    = COALESCE(NULLIF(EXCLUDED.product_name, ''), contract_capabilities.product_name),
-             effective_date  = COALESCE(EXCLUDED.effective_date, contract_capabilities.effective_date),
-             ledger_ref_id   = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
-             material_ref_id = COALESCE(EXCLUDED.material_ref_id, contract_capabilities.material_ref_id),
-             contract_title  = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-             updated_at      = CURRENT_TIMESTAMP
-           RETURNING id`,
-          [
-            issueKey,
-            formData.原著作物名 || "",
-            formData.対象製品予定名 || "",
-            formData.許諾開始日 || null,
-            resolvedLedgerRefId,
-            resolvedMaterialRefId,
-            docNumber,
-          ]
+        // スキーマ単純化 Phase 2: documents 統合＋CL直接書き込み（contract_capabilities 廃止）。
+        //   金銭条件(flat) と v3 マトリクスの双方を CL へ。材料は行指定→既定→原作本体。
+        //   ※ documents 行(生成文書)は別途 INSERT 済のため、ここでは契約メタを upsert し
+        //     form_data/drive_link は温存（upsertMasterContract が ON CONFLICT で除外）。
+        const v3CondInputs =
+          Array.isArray(formData.v3_conds) && formData.v3_conds.length > 0
+            ? mapV3MatrixToConditions(
+                formData.v3_conds,
+                Array.isArray(formData.v3_lcs) ? formData.v3_lcs : [],
+                formData.素材番号 || null
+              )
+            : undefined;
+        const lcSaved = await upsertMasterContract(
+          { query },
+          {
+            document_number: docNumber,
+            issue_key: issueKey,
+            template_type: "individual_license_terms",
+            record_type: "individual_contract",
+            contract_category: "license",
+            contract_type: "license_basic",
+            contract_title: formData.原著作物名 || formData.基本契約名 || null,
+            original_work: formData.原著作物名 || null,
+            product_name: formData.対象製品予定名 || null,
+            effective_date: formData.許諾開始日 || null,
+            ledger_code: ledgerCodeForWork || null,
+            ledger_ref_id: resolvedLedgerRefId || null,
+            material_ref_id: resolvedMaterialRefId || null,
+            default_material_code: formData.素材番号 || null,
+            condition_material_codes: (formData.condition_material_codes ||
+              {}) as Record<string, string>,
+            financial_conditions: Array.isArray(formData.financial_conditions)
+              ? formData.financial_conditions
+              : undefined,
+            extra_conditions: v3CondInputs,
+          }
         );
-        const lcId = Number(lcUpsert.rows[0]?.id);
-
-        // Phase 7d: financial_conditions[] を capability_financial_conditions
-        // に upsert (condition_no をキーに一意)。FinancialConditionTable
-        // で削除された condition は DB からも削除する。
-        // Phase 23: license_financial_conditions → capability_financial_conditions
-        //   (license_contract_id → capability_id)
-        // 金銭条件は実績ある共通ルートで保存。capability_financial_conditions への
-        //   upsert + 不要 condition_no の prune に加え、condition_lines(CL台帳)への
-        //   同期も内包する(発注書・出版条件書と同経路に統一し、個別利用許諾の CL 未連動も解消)。
-        if (lcId && Array.isArray(formData.financial_conditions)) {
-          await upsertCapabilityFinancialConditions(
-            lcId,
-            formData.financial_conditions
-          );
-        }
-
-        // Stage 2(文書ファースト 原作マテリアル紐付けプラン): 作品連動 ON のとき、各利用許諾条件を
-        //   原作マテリアルへ結線し対象作品(own)の構成へ組み込む(共通ヘルパ)。best-effort・非致命。
-        if (formData.is_work_linked !== false && lcId) {
-          await safeSync("work-linkage(license)", () =>
-            linkWorkMaterialsForCapability({
-              capabilityId: lcId,
-              ledgerCode: ledgerCodeForWork,
-              ownWorkId:
-                formData.linked_work_id != null &&
-                String(formData.linked_work_id).trim() !== "" &&
-                Number.isFinite(Number(formData.linked_work_id))
-                  ? Number(formData.linked_work_id)
-                  : null,
-              conditionMaterialCodes: (formData.condition_material_codes || {}) as Record<
-                string,
-                string
-              >,
-              financialConditions: Array.isArray(formData.financial_conditions)
-                ? formData.financial_conditions
-                : [],
-              defaultMaterialCode: formData.素材番号 || null,
-            })
-          );
-        }
-
-        // Stage C-2: 個別利用許諾 v3(マトリクス）条件の登録。
-        //   v3 フォームは financial_conditions ではなく v3_conds/v3_lcs を送る。
-        //   取引形態を金銭条件(rate_pct=適用料率)へ upsert し、本体マテリアルへ
-        //   アンカーして作品構成へ組み込む。標準パス(financial_conditions)とは
-        //   入力が排他のため二重登録は起きない。best-effort・非致命。
-        if (
-          lcId &&
-          Array.isArray(formData.v3_conds) &&
-          formData.v3_conds.length > 0
-        ) {
-          await safeSync("v3-matrix(license)", () =>
-            registerV3MatrixConditions({
-              capabilityId: lcId,
-              ledgerCode: ledgerCodeForWork,
-              ownWorkId:
-                formData.linked_work_id != null &&
-                String(formData.linked_work_id).trim() !== "" &&
-                Number.isFinite(Number(formData.linked_work_id))
-                  ? Number(formData.linked_work_id)
-                  : null,
-              conds: formData.v3_conds,
-              lcs: Array.isArray(formData.v3_lcs) ? formData.v3_lcs : [],
-              anchorMaterialCode: formData.素材番号 || null,
-              conditionMaterialCodes: (formData.condition_material_codes ||
-                {}) as Record<string, string>,
-            })
-          );
-        }
+        const lcId = lcSaved.documentId;
+        // 作品連動(work_material_uses への組み込み)は Phase 後段で対応（CLの原作結線は済）。
 
         // Phase 22.20-D: work_sublicensees (Work × サブライセンシー) を永続化
         //   formData.サブライセンシー一覧 [] が UI から渡された場合のみ反映。

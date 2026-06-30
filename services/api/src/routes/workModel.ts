@@ -167,8 +167,7 @@ async function ensureMasterLicenseCapability(query: Query, sw: any): Promise<num
     `INSERT INTO contract_capabilities
        (record_type, contract_category, contract_type, contract_title, document_number,
         vendor_id, original_work, work_name, contract_status, source_system)
-     VALUES ('license_condition', 'license', 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register')
-     ON CONFLICT (document_number) DO NOTHING`,
+     VALUES ('license_condition', 'license', 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register')`,
     [`原作利用許諾条件(マスター登録): ${sw.title}`, docNo, sw.rights_holder_vendor_id ?? null, sw.title ?? null]
   );
   const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [docNo]);
