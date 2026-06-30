@@ -86,8 +86,10 @@ steps:
       #   先に誤って設定した ADMIN_UI_URL(=ポータル全体が admin-ui へ移行する副作用)は除去する。
       # 条文解説ガイド(clause)等の DL バナーURL: portalRender が <?= serviceGuideUrl ?> /
       #   <?= licenseGuideUrl ?> / {{GDRIVE_URL_SERVICE}} / {{GDRIVE_URL_LICENSE}} を置換。
+      # LB_ROLE_ALLOWLIST_EMAILS: staff 未登録でも通す明示メール許可リスト(外部アドレス許可)。
+      #   ※ これはアプリ側のロール審査用。IAP(GCP エッジ)のドメイン制限は別途 IAM で許可が必要。
       - --update-env-vars
-      - "WORK_MODEL_UI_URL=${_ADMIN_UI_URL},SERVICE_GUIDE_URL=https://docs.google.com/presentation/d/1n0PwoWQJYbsPdzzoC2DYfaLeL5hIFuvoq_PoI9q4kcE/export/pptx,LICENSE_GUIDE_URL=https://docs.google.com/presentation/d/1K0LB62rTYYXgKApMN1YwCgp_L9BRcgLoHDqRilaxhLc/export/pptx,GDRIVE_URL_SERVICE=https://docs.google.com/presentation/d/1n0PwoWQJYbsPdzzoC2DYfaLeL5hIFuvoq_PoI9q4kcE/export/pptx,GDRIVE_URL_LICENSE=https://docs.google.com/presentation/d/1K0LB62rTYYXgKApMN1YwCgp_L9BRcgLoHDqRilaxhLc/export/pptx"
+      - "WORK_MODEL_UI_URL=${_ADMIN_UI_URL},SERVICE_GUIDE_URL=https://docs.google.com/presentation/d/1n0PwoWQJYbsPdzzoC2DYfaLeL5hIFuvoq_PoI9q4kcE/export/pptx,LICENSE_GUIDE_URL=https://docs.google.com/presentation/d/1K0LB62rTYYXgKApMN1YwCgp_L9BRcgLoHDqRilaxhLc/export/pptx,GDRIVE_URL_SERVICE=https://docs.google.com/presentation/d/1n0PwoWQJYbsPdzzoC2DYfaLeL5hIFuvoq_PoI9q4kcE/export/pptx,GDRIVE_URL_LICENSE=https://docs.google.com/presentation/d/1K0LB62rTYYXgKApMN1YwCgp_L9BRcgLoHDqRilaxhLc/export/pptx,LB_ROLE_ALLOWLIST_EMAILS=koktaa-s@kadokawa.jp"
       - --remove-env-vars
       - "ADMIN_UI_URL"
       - --quiet
