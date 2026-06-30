@@ -158,3 +158,126 @@ export async function listGuidesForAdmin(): Promise<GuideAdminRow[]> {
     updatedAt: r.updated_at ? new Date(r.updated_at).toISOString() : null,
   }));
 }
+
+// ───────────────────────────────────────────────────────────────────
+// カテゴリ管理(admin 書込)。サイトのカテゴリ(A〜D 等)の追加・編集・削除。
+//   search-api は同一プールで書込する(vendor 取込等と同様)。認可は呼び出し側
+//   (server.ts requireAppRole admin)が担保する。
+// ───────────────────────────────────────────────────────────────────
+
+export interface CategoryAdminRow extends GuideCategory {
+  isActive: boolean;
+  guideCount: number;
+}
+
+const CAT_KEY_RE = /^[a-z0-9][a-z0-9_-]{0,39}$/;
+
+/** 管理用: 全カテゴリ(非activeも含む)＋所属ガイド数。 */
+export async function listCategoriesForAdmin(): Promise<CategoryAdminRow[]> {
+  const { rows } = await query(
+    `SELECT c.cat_key, c.label, c.color, c.description, c.sort_order, c.is_active,
+            (SELECT COUNT(*) FROM portal_guides g WHERE g.category_id = c.id) AS guide_count
+       FROM portal_guide_categories c
+      ORDER BY c.sort_order, c.id`
+  );
+  return rows.map((r) => ({
+    catKey: r.cat_key,
+    label: r.label,
+    color: r.color,
+    description: r.description,
+    sortOrder: Number(r.sort_order ?? 0),
+    isActive: !!r.is_active,
+    guideCount: Number(r.guide_count ?? 0),
+  }));
+}
+
+/** カテゴリ作成。cat_key は URL スラッグ(/c/:cat)。 */
+export async function createCategory(input: {
+  catKey: string;
+  label: string;
+  color?: string | null;
+  description?: string | null;
+  sortOrder?: number | null;
+}): Promise<void> {
+  const catKey = String(input.catKey || "").trim();
+  const label = String(input.label || "").trim();
+  if (!CAT_KEY_RE.test(catKey)) {
+    throw new Error("cat_key は英小文字/数字/_/- の40文字以内で指定してください");
+  }
+  if (!label) throw new Error("label は必須です");
+  const dup = await query(`SELECT 1 FROM portal_guide_categories WHERE cat_key = $1`, [catKey]);
+  if (dup.rowCount) throw new Error(`cat_key '${catKey}' は既に存在します`);
+  // sort_order 未指定なら末尾。
+  const so =
+    input.sortOrder != null
+      ? Number(input.sortOrder)
+      : Number(
+          (await query(`SELECT COALESCE(MAX(sort_order),0)+1 AS n FROM portal_guide_categories`)).rows[0].n
+        );
+  await query(
+    `INSERT INTO portal_guide_categories (cat_key, label, color, description, sort_order, is_active)
+     VALUES ($1,$2,$3,$4,$5, TRUE)`,
+    [catKey, label, input.color ?? null, input.description ?? null, so]
+  );
+}
+
+/** カテゴリ更新(label/color/description/sort_order/is_active)。cat_key は不変。 */
+export async function updateCategory(
+  catKey: string,
+  patch: {
+    label?: string;
+    color?: string | null;
+    description?: string | null;
+    sortOrder?: number;
+    isActive?: boolean;
+  }
+): Promise<void> {
+  const sets: string[] = [];
+  const vals: any[] = [];
+  let i = 1;
+  if (patch.label !== undefined) {
+    const v = String(patch.label).trim();
+    if (!v) throw new Error("label は空にできません");
+    sets.push(`label = $${i++}`);
+    vals.push(v);
+  }
+  if (patch.color !== undefined) {
+    sets.push(`color = $${i++}`);
+    vals.push(patch.color || null);
+  }
+  if (patch.description !== undefined) {
+    sets.push(`description = $${i++}`);
+    vals.push(patch.description || null);
+  }
+  if (patch.sortOrder !== undefined) {
+    sets.push(`sort_order = $${i++}`);
+    vals.push(Number(patch.sortOrder));
+  }
+  if (patch.isActive !== undefined) {
+    sets.push(`is_active = $${i++}`);
+    vals.push(!!patch.isActive);
+  }
+  if (sets.length === 0) return;
+  sets.push(`updated_at = now()`);
+  vals.push(catKey);
+  const res = await query(
+    `UPDATE portal_guide_categories SET ${sets.join(", ")} WHERE cat_key = $${i}`,
+    vals
+  );
+  if (res.rowCount === 0) throw new Error(`cat_key '${catKey}' が見つかりません`);
+}
+
+/** カテゴリ削除。所属ガイドがある場合はブロック(先に付け替えが必要)。 */
+export async function deleteCategory(catKey: string): Promise<void> {
+  const c = await query(`SELECT id FROM portal_guide_categories WHERE cat_key = $1`, [catKey]);
+  if (c.rowCount === 0) throw new Error(`cat_key '${catKey}' が見つかりません`);
+  const cnt = await query(`SELECT COUNT(*) AS n FROM portal_guides WHERE category_id = $1`, [
+    c.rows[0].id,
+  ]);
+  if (Number(cnt.rows[0].n) > 0) {
+    throw new Error(
+      `このカテゴリには ${cnt.rows[0].n} 件のガイドが属しています。先に別カテゴリへ付け替えてください。`
+    );
+  }
+  await query(`DELETE FROM portal_guide_categories WHERE cat_key = $1`, [catKey]);
+}
