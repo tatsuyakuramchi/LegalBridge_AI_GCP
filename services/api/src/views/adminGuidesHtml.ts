@@ -98,6 +98,7 @@ export function adminGuidesPage(opts: { rows: GuideAdminRow[] }): string {
   const body = `
   <div class="gd-banner">
     <span>📚 ガイド本文の<strong>差し替え</strong>（新版アップロード・公開切替・並べ替え）は worker 連携（pass2）で本画面に実装予定です。現在は<strong>公開状況の確認</strong>と<strong>配信プレビュー</strong>に対応しています。</span>
+    <a href="/admin/guides/categories" style="color:#6c5ce7;font-weight:800;text-decoration:none;white-space:nowrap">🗂️ カテゴリ管理 →</a>
   </div>
   <div class="gd-sec" style="margin-bottom:14px">
     <div class="muted">公開中 <strong>${published}</strong> / 全 <strong>${total}</strong> ガイド。準備中はガイド本文(<code>services/api/guides/&lt;key&gt;.html</code>)を配置し同期すると公開中になります。</div>

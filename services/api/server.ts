@@ -244,6 +244,7 @@ import {
   guideNotFoundPage,
 } from "./src/views/guidePortalHtml.ts";
 import { adminGuidesPage } from "./src/views/adminGuidesHtml.ts";
+import { adminCategoriesPage } from "./src/views/adminCategoriesHtml.ts";
 import {
   listCategories as listGuideCategories,
   listGuides as listPortalGuides,
@@ -251,6 +252,10 @@ import {
   getGuideByKey as getPortalGuideByKey,
   renderGuideHtml as renderPortalGuideHtml,
   listGuidesForAdmin as listPortalGuidesForAdmin,
+  listCategoriesForAdmin as listPortalCategoriesForAdmin,
+  createCategory as createPortalCategory,
+  updateCategory as updatePortalCategory,
+  deleteCategory as deletePortalCategory,
 } from "./src/services/portalGuideService.ts";
 import {
   listVendors,
@@ -3771,6 +3776,65 @@ async function startServer() {
         res.json(await listPortalGuidesForAdmin());
       } catch (error) {
         res.status(500).json({ error: String(error) });
+      }
+    }
+  );
+
+  // 管理: カテゴリ管理ページ(admin)
+  app.get(
+    "/admin/guides/categories",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "admin:guide-categories", allowedRoles: ["admin"], renderErrorPage }),
+    async (_req, res) => {
+      try {
+        const categories = await listPortalCategoriesForAdmin();
+        res.type("html").send(adminCategoriesPage({ categories }));
+      } catch (error) {
+        console.error("/admin/guides/categories failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // カテゴリ 書込 API(admin)。search-api 内で直接 DB 書込(vendor 取込等と同様)。
+  app.post(
+    "/api/portal/categories",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:categories:create", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await createPortalCategory(req.body || {});
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+  app.patch(
+    "/api/portal/categories/:catKey",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:categories:update", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await updatePortalCategory(String(req.params.catKey), req.body || {});
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+  app.delete(
+    "/api/portal/categories/:catKey",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:categories:delete", allowedRoles: ["admin"], renderErrorPage }),
+    async (req, res) => {
+      try {
+        await deletePortalCategory(String(req.params.catKey));
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
       }
     }
   );
