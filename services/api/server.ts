@@ -661,17 +661,20 @@ async function startServer() {
           return res.redirect(302, adminUi || "/admin");
         }
 
-        // viewer or unregistered(or admin の preview) → 美しい検索ポータルホーム。
-        //   FIN 部署のみ「条件明細」タイルを出すため部署コードを解決して渡す。
-        const deptCode = await resolveDepartmentCode(req);
-        res.type("html").send(
-          viewerHomePage({
-            currentEmail: user?.email || null,
-            currentRole: previewViewer ? "viewer (preview)" : role || "viewer",
-            deptCode,
-            isAdmin: role === "admin",
-          })
-        );
+        // viewer or unregistered(or admin の preview) → 法務ガイドポータルをトップに。
+        //   (旧: 検索ポータルホーム viewerHomePage。検索は guide portal の「調べる」
+        //    カテゴリ → 法務データ検索ガイド(/search/vendor リンク)からも辿れる。)
+        const isAdmin = role === "admin";
+        const [cats, pguides] = await Promise.all([
+          listGuideCategories(),
+          listPortalGuides(),
+        ]);
+        const countByCat: Record<string, number> = {};
+        for (const pg of pguides) {
+          if (pg.isOverview || !pg.categoryKey) continue;
+          countByCat[pg.categoryKey] = (countByCat[pg.categoryKey] || 0) + 1;
+        }
+        res.type("html").send(renderPortalPage(cats, countByCat, isAdmin));
       } catch (error) {
         console.error("/ failed:", error);
         res
@@ -3711,6 +3714,7 @@ async function startServer() {
         if (html) return res.type("html").send(html);
         const g = await getPortalGuideByKey(key);
         if (!g) return res.status(404).type("html").send(guideNotFoundPage());
+        if (g.linkPath) return res.redirect(302, g.linkPath); // リンク型ガイド(検索等)
         const cats = await listGuideCategories();
         const cat = cats.find((c) => c.catKey === g.categoryKey) || null;
         const isAdmin = (req as any).userRole === "admin";

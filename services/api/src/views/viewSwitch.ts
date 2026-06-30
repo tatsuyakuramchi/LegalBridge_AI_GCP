@@ -10,7 +10,8 @@
  * accent = アクティブ側の塗り色(管理=インディゴ、ポータル/閲覧=ネイビー等、文脈に合わせる)。
  */
 
-const VIEWER_HREF = "/?preview=viewer";
+// 通常画面 = 法務ガイドポータル(トップ)。admin はリダイレクトされない /portal を直接指す。
+const VIEWER_HREF = "/portal";
 const ADMIN_HREF = "/admin";
 
 export function viewSwitchHtml(active: "viewer" | "admin", accent = "#6c5ce7"): string {
