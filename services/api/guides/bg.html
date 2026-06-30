@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+
+<html lang="ja"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width,initial-scale=1" name="viewport"/>
+<title>BG事業部 契約スキーム実務ガイド（契約別確認事項追加版）</title>
+<style>
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;--sw:248px}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+#sidebar{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--navy);overflow-y:auto;display:flex;flex-direction:column;z-index:100}
+#sh{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
+#sh h1{font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.08em;text-transform:uppercase}
+#sh p{font-size:12px;color:rgba(255,255,255,.9);font-weight:600;margin-top:4px;line-height:1.4}
+nav{padding:8px 0 20px}
+.ns{display:block;padding:5px 16px;font-size:10px;font-weight:700;color:rgba(255,255,255,.35);letter-spacing:.07em;text-transform:uppercase;margin-top:10px}
+.nl{display:block;padding:5px 16px;font-size:12px;color:rgba(255,255,255,.72);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nl:hover,.nl.active{color:#fff;background:rgba(255,255,255,.1);border-left-color:#e63946}
+.nsub{display:block;padding:3px 16px 3px 26px;font-size:11px;color:rgba(255,255,255,.48);text-decoration:none;transition:color .15s}
+.nsub:hover{color:rgba(255,255,255,.85)}
+.bdg{display:inline-block;font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;margin-right:4px;vertical-align:middle}
+.b-in{background:#e1f5ee;color:#085041}.b-out{background:#faeeda;color:#633806}
+#main{margin-left:var(--sw);padding:40px 48px 80px;max-width:calc(var(--sw) + 880px)}
+h1.dt{font-size:22px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:10px;margin-bottom:6px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:32px}
+h2.sec{font-size:17px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:36px 0 14px;scroll-margin-top:20px}
+h3.sub{font-size:14px;font-weight:700;color:var(--navy-l);margin:22px 0 10px;padding-bottom:4px;border-bottom:1px solid var(--g3);scroll-margin-top:20px}
+h4.sh4{font-size:13px;font-weight:700;color:var(--tx2);margin:14px 0 8px}
+p{margin-bottom:10px;color:var(--tx2)}strong{color:var(--tx)}.tgh strong{color:inherit}
+ul,ol{padding-left:20px;margin-bottom:10px;color:var(--tx2)}li{margin-bottom:4px}
+.shb{background:var(--navy);color:#fff;border-radius:8px;padding:14px 20px;margin-bottom:18px;scroll-margin-top:16px}
+.shb .sn{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:3px}
+.shb h2{font-size:15px;font-weight:700;color:#fff;border:none;padding:0;margin:0}
+.cl{border-left:3px solid;padding:9px 13px;border-radius:0 5px 5px 0;margin:10px 0;font-size:13px}
+.cl-w{border-color:var(--red);background:var(--red-s)}.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-t{border-color:var(--green);background:var(--green-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}
+.tw{overflow-x:auto;margin:10px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{background:var(--navy);color:#fff;padding:7px 10px;text-align:left;font-weight:600;font-size:12px;white-space:nowrap}
+tbody tr:nth-child(even){background:var(--g1)}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:hover{background:#f0f4ff}
+td.tc{font-weight:600;white-space:nowrap;color:var(--navy);font-size:12px;min-width:150px}
+td.tcr{font-weight:700;color:var(--red)}
+.tg{display:grid;grid-template-columns:74px 1fr 1fr;gap:1px;background:var(--g3);border:1px solid var(--g3);border-radius:6px;overflow:hidden;margin:10px 0}
+.tgh{background:var(--navy);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;padding:12px 14px}
+.tgh.r{background:var(--navy-l)}
+.tgc{background:#fff;padding:12px 14px}
+.tgt{font-size:12.5px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.tgb{font-size:12px;color:var(--tx2);line-height:1.6}
+.tgn{font-size:10px;color:var(--g5);margin-top:4px}
+.sl{display:grid;gap:7px;margin:10px 0}
+.tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;margin-right:3px}
+.ts1{background:#e6f1fb;color:#0c447c}.ts2{background:#eaf3de;color:#27500a}.ts3{background:#e1f5ee;color:#085041}.ts4{background:#faece7;color:#712b13}.ts5{background:#fbeaf0;color:#72243e}.ts6{background:#faeeda;color:#633806}.ts7{background:#eeedfe;color:#3c3489}
+.pl{list-style:none;padding:0;margin:7px 0}
+.pl li{padding:6px 10px 6px 28px;position:relative;border-bottom:1px solid var(--g2);font-size:12.5px;color:var(--tx2)}
+.pl li::before{content:"⚠";position:absolute;left:7px;font-size:11px}
+.pl li:last-child{border-bottom:none}
+.ap{background:var(--g1);border-radius:8px;padding:18px 22px;margin-bottom:18px}
+.pb{display:inline-block;font-size:10px;font-weight:700;background:#fde8ea;color:#a32d2d;padding:1px 6px;border-radius:3px;margin-left:5px}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:36px 0}
+.dw{background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:14px 14px 10px;margin:10px 0}
+.dtitle{font-size:10px;font-weight:700;color:var(--g5);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px}
+.dleg{display:flex;gap:16px;margin-top:8px;padding-top:7px;border-top:1px solid var(--g3);flex-wrap:wrap}
+.dleg span{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--g5)}
+/* ===== 再編集版 追加クラス ===== */
+.scode{display:inline-block;font-size:11px;font-weight:700;background:var(--navy);color:#fff;padding:1px 8px;border-radius:4px;margin-right:7px;font-family:'SFMono-Regular',Consolas,monospace;letter-spacing:.02em}
+.plain{background:var(--green-s);border-left:4px solid var(--green);border-radius:0 6px 6px 0;padding:11px 15px;margin:12px 0;font-size:14px;line-height:1.65}
+.plain b{color:#0d6b4e;font-weight:700}
+.plain .pll{display:block;font-size:10px;font-weight:700;color:#0d6b4e;letter-spacing:.08em;margin-bottom:3px}
+.qbox{border:2px solid var(--navy);border-radius:9px;padding:15px 17px;margin:14px 0;background:#fff}
+.qbox .qn{display:inline-block;background:var(--navy);color:#fff;font-size:11px;font-weight:700;padding:3px 11px;border-radius:14px;margin-bottom:9px}
+.qbox .qq{font-size:15.5px;font-weight:700;color:var(--navy);margin-bottom:11px;line-height:1.5}
+.qopts{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+@media(max-width:640px){.qopts{grid-template-columns:1fr}}
+.qopt{border:1px solid var(--g3);border-radius:7px;padding:11px 13px;font-size:12.5px;color:var(--tx2);line-height:1.55}
+.qopt b{display:block;color:var(--navy);font-size:13.5px;margin-bottom:3px}
+.qopt .qr{display:block;font-size:11px;color:var(--g5);margin-top:5px}
+.mapwrap{margin:12px 0}
+.mapt{width:100%;border-collapse:separate;border-spacing:6px}
+.mapt th{background:var(--navy);color:#fff;font-size:12px;font-weight:700;padding:9px;border-radius:6px;text-align:center}
+.mapt td.rh{background:var(--navy-l);color:#fff;font-size:12px;font-weight:700;padding:9px 11px;border-radius:6px;text-align:left;min-width:150px;white-space:nowrap}
+.cell{border-radius:7px;padding:11px 12px;text-decoration:none;display:block;border:1px solid transparent;transition:transform .12s}
+.cell:hover{transform:translateY(-1px)}
+.cell .cc{font-family:'SFMono-Regular',Consolas,monospace;font-size:11px;font-weight:700}
+.cell .cn{font-size:13px;font-weight:700;margin-top:2px}
+.cell .cd{font-size:11px;margin-top:3px;line-height:1.45;opacity:.85}
+.cell.in{background:var(--green-s);color:#0d6b4e;border-color:#bfe6d8}
+.cell.out{background:var(--gold-s);color:#7a4d09;border-color:#f0d9ad}
+.cell.gap{background:repeating-linear-gradient(45deg,#fff,#fff 7px,#f3f3f3 7px,#f3f3f3 14px);color:#9aa0a6;border:1px dashed #c8ccd1}
+.grp{font-size:12px;font-weight:700;color:#fff;background:var(--navy);border-radius:6px;padding:7px 13px;margin:22px 0 4px;display:flex;align-items:center;gap:8px}
+.grp.ingrp{background:#1d9e75}.grp.outgrp{background:#c47d1a}
+.legcard{display:flex;gap:18px;flex-wrap:wrap;background:var(--g1);border:1px solid var(--g3);border-radius:8px;padding:12px 16px;margin:10px 0}
+.legcard div{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--tx2)}
+.legcard .sw{width:22px;height:0;border-top-width:2.5px;border-top-style:solid}
+.box{display:inline-block;width:13px;height:13px;border-radius:3px;vertical-align:middle}
+
+/* ===== インタラクティブ検索UI ===== */
+.finder{background:linear-gradient(145deg,#f5f8fc 0%,#fff 55%,#f5fbf8 100%);border:1px solid #d8e1eb;border-radius:14px;padding:24px;margin:8px 0 22px;scroll-margin-top:18px;box-shadow:0 6px 22px rgba(29,53,87,.07)}
+.finder-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;margin-bottom:18px}.finder-head h2{font-size:21px;color:var(--navy);line-height:1.35;margin:3px 0 6px}.finder-head p{max-width:680px;margin:0}.finder-kicker{font-size:10px;font-weight:800;letter-spacing:.14em;color:var(--green)}
+.btn-reset,.link-button{border:0;background:none;font:inherit;cursor:pointer}.btn-reset{white-space:nowrap;border:1px solid var(--g3);background:#fff;color:var(--tx2);border-radius:7px;padding:7px 11px;font-size:11.5px}.btn-reset:hover{border-color:var(--navy);color:var(--navy)}
+.finder-progress{display:grid;grid-template-columns:repeat(5,1fr);gap:4px;margin:16px 0 22px}.prog{display:flex;align-items:center;justify-content:center;gap:6px;background:#e8edf3;color:#7a8490;padding:7px 5px;font-size:10.5px;font-weight:700}.prog:first-child{border-radius:7px 0 0 7px}.prog:last-child{border-radius:0 7px 7px 0}.prog b{display:inline-flex;width:19px;height:19px;align-items:center;justify-content:center;border-radius:50%;background:#fff;font-size:10px}.prog.active{background:var(--navy);color:#fff}.prog.done{background:#dff3ec;color:#0d6b4e}
+.selected-bar{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid #d7e2ec;background:#fff;border-radius:8px;padding:8px 11px;margin-bottom:15px}.selected-label{font-size:10px;font-weight:700;color:var(--g5);margin-right:7px}.sel-chip{display:inline-block;background:#eef3f8;color:var(--navy);border-radius:999px;padding:2px 8px;font-size:10.5px;font-weight:700;margin:2px 3px}.link-button{color:var(--blue);font-size:11.5px;text-decoration:underline;white-space:nowrap}
+.finder-step{animation:fadein .18s ease}@keyframes fadein{from{opacity:.2;transform:translateY(3px)}to{opacity:1;transform:none}}.step-title{display:flex;gap:10px;align-items:flex-start;margin:8px 0 13px}.step-title>span{display:inline-flex;background:var(--navy);color:#fff;border-radius:14px;font-size:10.5px;font-weight:800;padding:3px 9px}.step-title b{display:block;color:var(--navy);font-size:15.5px;line-height:1.45}.step-title small{display:block;color:var(--g5);font-size:11.5px;margin-top:2px}
+.choice-grid{display:grid;grid-template-columns:1fr 1fr;gap:11px}.choice-grid-4{grid-template-columns:1fr 1fr}.choice-card{appearance:none;text-align:left;width:100%;border:1px solid #d5dde5;background:#fff;border-radius:10px;padding:15px;cursor:pointer;transition:border-color .14s,box-shadow .14s,transform .14s;font-family:inherit;color:var(--tx2)}.choice-card:hover,.choice-card:focus-visible{border-color:var(--navy);box-shadow:0 5px 14px rgba(29,53,87,.09);transform:translateY(-1px);outline:none}.choice-card.selected{border:2px solid var(--green);padding:14px;background:#f5fcf9}.choice-card b{display:block;color:var(--navy);font-size:13.5px;line-height:1.45;margin:4px 0}.choice-card small{display:block;font-size:11.5px;line-height:1.55;color:var(--tx2)}.choice-card em{display:inline-block;font-style:normal;font-size:9.5px;font-weight:700;color:#0d6b4e;background:var(--green-s);border-radius:4px;padding:2px 6px;margin-top:8px}.choice-icon{font-size:9.5px;font-weight:800;letter-spacing:.05em;color:var(--gold)}.choice-card.compact{min-height:92px}
+.finder-result{border:2px solid var(--navy);background:#fff;border-radius:12px;overflow:hidden;animation:fadein .2s ease}.result-head{background:var(--navy);color:#fff;padding:17px 20px}.result-eyebrow{font-size:10px;font-weight:700;color:rgba(255,255,255,.6);letter-spacing:.1em}.result-head h3{font-size:19px;margin:2px 0 3px}.result-head p{color:rgba(255,255,255,.82);margin:0}.result-body{padding:19px 20px}.result-grid{display:grid;grid-template-columns:1fr 1fr;gap:15px;margin:14px 0}.result-panel{background:var(--g1);border-radius:8px;padding:13px 15px}.result-panel.full{grid-column:1/-1}.result-panel h4{color:var(--navy);font-size:12px;margin-bottom:6px}.result-panel ul{margin:0;padding-left:18px;font-size:12px}.result-reason{border-left:4px solid var(--green);background:var(--green-s);padding:10px 13px;margin-bottom:13px}.result-alert{border-left:4px solid var(--red);background:var(--red-s);padding:10px 13px;margin:12px 0}.result-note{border-left:4px solid var(--gold);background:var(--gold-s);padding:10px 13px;margin:12px 0}.result-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:16px}.result-actions a,.result-actions button{display:inline-flex;align-items:center;justify-content:center;border-radius:7px;padding:8px 13px;font-size:11.5px;font-weight:700;text-decoration:none;cursor:pointer;font-family:inherit}.primary-action{background:var(--navy);color:#fff;border:1px solid var(--navy)}.secondary-action{background:#fff;color:var(--navy);border:1px solid #b7c4d1}.result-memo{margin-top:13px;border-top:1px solid var(--g3);padding-top:12px}.result-memo pre{display:none;white-space:pre-wrap;background:#f7f8fa;border:1px solid var(--g3);border-radius:7px;padding:11px;font:11px/1.6 'SFMono-Regular',Consolas,monospace;color:var(--tx2);margin-top:9px}.result-memo.open pre{display:block}
+.result-contract-table{font-size:11.5px;margin-top:4px}.result-contract-table th,.result-contract-table td{padding:7px 8px}.result-contract-table td:first-child{font-weight:700;color:var(--navy);white-space:nowrap}.contract-intro{font-size:12px;color:var(--tx2);margin:5px 0 8px}.contract-kind{display:inline-block;font-size:9px;font-weight:700;padding:2px 6px;border-radius:4px;white-space:nowrap}.ck-main{background:var(--navy);color:#fff}.ck-pre{background:var(--red-s);color:#8d2630}.ck-exec{background:var(--green-s);color:#0d6b4e}.ck-cond{background:var(--gold-s);color:#7a4d09}.contract-table td:nth-child(1){width:70px}.contract-table td:nth-child(2){min-width:175px;font-weight:700;color:var(--navy)}.contract-table td:nth-child(3){min-width:205px}
+.example-search{border-top:1px solid var(--g3);margin-top:20px;padding-top:14px}.example-search summary{cursor:pointer;color:var(--navy);font-weight:700}.example-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:11px}.example-grid button,.example-grid a{text-align:left;border:1px solid var(--g3);background:#fff;color:var(--tx2);border-radius:7px;padding:8px 10px;font:11.5px/1.45 inherit;text-decoration:none;cursor:pointer}.example-grid button:hover,.example-grid a:hover{border-color:var(--navy);color:var(--navy)}.finder-links{display:flex;gap:14px;flex-wrap:wrap;margin-top:17px}.finder-links a{font-size:11.5px;color:var(--blue)}.nav-code{float:right;font-size:9px;color:rgba(255,255,255,.35)}
+@media(max-width:760px){:root{--sw:0px}#sidebar{position:static;width:100%;height:auto;max-height:none}#sidebar nav{display:none}#main{margin-left:0;padding:22px 16px 60px;max-width:none}.finder{padding:17px}.finder-head{display:block}.btn-reset{margin-top:10px}.finder-progress{grid-template-columns:1fr 1fr}.prog:first-child,.prog:last-child{border-radius:5px}.choice-grid,.choice-grid-4,.result-grid,.example-grid{grid-template-columns:1fr}.selected-bar{align-items:flex-start}.mapt td.rh{min-width:118px}.dm{margin-bottom:20px}}
+@media print{#sidebar,.finder-progress,.btn-reset,.finder-links,.example-search,.result-actions,.selected-bar{display:none!important}#main{margin:0;padding:20px;max-width:none}.finder{box-shadow:none}}
+
+.contract-table td:nth-child(4){min-width:210px}.contract-table td:nth-child(5){min-width:285px}.contract-checks{margin:0;padding-left:16px;font-size:11.5px;line-height:1.5;color:var(--tx2)}.contract-checks li{margin-bottom:3px}.contract-checks li:last-child{margin-bottom:0}.result-contract-table td:nth-child(4){min-width:190px}.result-contract-table td:nth-child(5){min-width:270px}.result-contract-table .contract-checks{font-size:11px}.result-panel.full .tw{max-height:520px;overflow:auto}
+</style>
+<style id="gas-portal-back-style">
+.portal-back-button{position:fixed;right:16px;bottom:16px;z-index:3000;display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:#1d3557;color:#fff;text-decoration:none;font-size:12px;font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,.22);opacity:.92;transition:opacity .15s,transform .15s}
+.portal-back-button:hover{opacity:1;transform:translateY(-1px)}
+@media print{.portal-back-button{display:none}}
+</style>
+</head>
+<body>
+<?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<aside id="sidebar">
+<div id="sh"><h1>法務部</h1><p>BG事業部<br/>契約スキーム実務ガイド<br/><span style="font-size:10px;color:rgba(255,255,255,.55);font-weight:400">インタラクティブ版</span></p></div>
+<nav>
+<span class="ns">スキームを探す</span>
+<a class="nl" href="#finder">取引内容から検索</a>
+<a class="nsub" href="#examples">具体例から検索</a>
+<a class="nl" href="#map">全スキーム一覧</a>
+<span class="ns">スキーム詳細</span>
+<a class="nl" href="#in"><span class="bdg b-in">IN</span>受け取る・仕入れる</a>
+<a class="nsub" href="#s1">国内ライセンスイン <span class="nav-code">S1</span></a>
+<a class="nsub" href="#s5">海外ライセンスイン <span class="nav-code">S5</span></a>
+<a class="nsub" href="#s4">海外プロダクトイン <span class="nav-code">S4</span></a>
+<a class="nsub" href="#sPin">国内プロダクトイン（未整備）</a>
+<a class="nl" href="#out"><span class="bdg b-out">OUT</span>渡す・供給する</a>
+<a class="nsub" href="#s7">国内ライセンスアウト <span class="nav-code">S7</span></a>
+<a class="nsub" href="#s2">海外ライセンスアウト <span class="nav-code">S2</span></a>
+<a class="nsub" href="#s6">国内プロダクトアウト <span class="nav-code">S6</span></a>
+<a class="nsub" href="#s3">海外プロダクトアウト <span class="nav-code">S3</span></a>
+<a class="nl" href="#combo">複合取引・コラボ</a>
+<span class="ns">資料</span>
+<a class="nl" href="#terms">用語集</a>
+<a class="nsub" href="#terms-acr">略語のはやわかり</a>
+<a class="nl" href="#appa">A 新旧・スキーム対応表</a>
+<a class="nl" href="#appb">B 補助契約</a>
+<a class="nl" href="#appc">C 共通の必須6項目</a>
+</nav>
+</aside>
+<main id="main">
+<h1 class="dt">BG事業部 契約スキーム実務ガイド（契約別確認事項追加版）</h1>
+<p class="dm">作成日：2026年4月／再編集：2026年6月　法務部次長 倉持達也　｜　対象：BG事業部担当者（法務相談前の社内検討用）</p>
+<section aria-labelledby="finder-title" class="finder" id="finder">
+<div class="finder-head">
+<div>
+<span class="finder-kicker">SCHEME FINDER</span>
+<h2 id="finder-title">今回の取引に合う契約スキームを探す</h2>
+<p>専門用語を覚える前に、まず「誰が製造または製造委託を管理するか」を選んでください。製造主体とIPの利用関係から、推奨スキーム、確認事項、類似スキームを表示します。</p>
+</div>
+<button class="btn-reset" id="finder-reset" type="button">選択をリセット</button>
+</div>
+<div aria-label="検索の進行状況" class="finder-progress">
+<span class="prog active" data-prog="1"><b>1</b>製造主体</span>
+<span class="prog" data-prog="2"><b>2</b>取引関係</span>
+<span class="prog" data-prog="3"><b>3</b>相手所在地</span>
+<span class="prog" data-prog="4"><b>4</b>追加確認</span>
+<span class="prog" data-prog="5"><b>✓</b>検索結果</span>
+</div>
+<div class="selected-bar" hidden="" id="selected-bar">
+<div><span class="selected-label">現在の選択</span><span id="selected-chips"></span></div>
+<button class="link-button" id="finder-back" type="button">1つ前に戻る</button>
+</div>
+<div class="finder-step" id="finder-step1">
+<div class="step-title"><span>Q1</span><div><b>商品の製造または製造委託を管理するのはどちらですか？</b><small>実際の工場ではなく、仕様・発注先・製造費・品質・納期を管理する主体で選んでください。</small></div></div>
+<div class="choice-grid choice-grid-4">
+<button class="choice-card" data-maker="company" type="button">
+<span class="choice-icon">当社が製造主体</span><b>当社が製造または製造委託を行う</b><small>当社が工場等へ発注し、製造費・品質・納期・余剰在庫の責任を負う</small>
+</button>
+<button class="choice-card" data-maker="counterparty" type="button">
+<span class="choice-icon">相手方が製造主体</span><b>相手方が製造または製造委託を行う</b><small>相手方または相手方指定の供給者が完成品を準備し、製造責任を負う</small>
+</button>
+<button class="choice-card" data-maker="mixed" type="button">
+<span class="choice-icon">共同・未確定</span><b>双方が分担する／まだ決まっていない</b><small>共同商品化、費用分担、指定工場などにより製造責任が一方に定まらない</small>
+</button>
+</div>
+</div>
+<div class="finder-step" hidden="" id="finder-step2"></div>
+<div class="finder-step" hidden="" id="finder-step3">
+<div class="step-title"><span>Q3</span><div><b>契約相手はどこに所在しますか？</b><small>商品の販売地域ではなく、原則として契約当事者の所在地で選びます。</small></div></div>
+<div class="choice-grid">
+<button class="choice-card compact" data-region="domestic" type="button"><b>日本国内</b><small>日本法人または国内の個人・団体との契約</small></button>
+<button class="choice-card compact" data-region="overseas" type="button"><b>海外</b><small>外国法人または海外の個人・団体とのクロスボーダー契約</small></button>
+</div>
+</div>
+<div class="finder-step" hidden="" id="finder-step4"></div>
+<div aria-live="polite" class="finder-result" hidden="" id="finder-result"></div>
+<details class="example-search" id="examples">
+<summary>具体例から探す</summary>
+<div class="example-grid">
+<button data-example="s5" type="button">海外ゲームの日本語版を当社が作る</button>
+<button data-example="s4" type="button">海外側が製造した完成品を輸入する</button>
+<button data-example="s7" type="button">当社IPを国内企業の商品に使わせる</button>
+<button data-example="s2" type="button">当社IPを海外企業に現地語化させる</button>
+<button data-example="s6" type="button">当社が製造した商品を国内企業へ卸す</button>
+<button data-example="s3" type="button">海外企業の注文に基づき当社が製造する</button>
+<a href="#combo">複数IPを組み合わせたコラボ製品</a>
+</div>
+</details>
+<div class="finder-links">
+<a href="#map">全スキーム一覧から探す</a>
+<a href="#terms">用語集から探す</a>
+<a href="#combo">複合取引・コラボを確認する</a>
+</div>
+</section>
+<div class="cl cl-i"><strong>このガイドの使い方：</strong>検索結果で型を選び、該当スキームの詳細で「事業部が決めておく条件」と「よくある落とし穴」を確認してください。既存のS番号はテンプレートや他資料との互換のため維持しています。</div><div class="cl cl-n"><strong>契約別確認事項の見方：</strong>検索結果と各スキーム詳細には、契約ごとに「契約前の確認事項」を表示します。取引全体の条件だけでなく、主契約・前提契約・実行契約ごとに当事者、権限、対象範囲、対価、責任分担を確認してください。</div>
+<hr class="sd"/>
+<!-- ===== 全体マップ ===== -->
+<h2 class="sec" id="map">全スキーム一覧から探す</h2>
+<p>基本となる取引を「IPを誰が利用するか」「誰が製造・製造委託を管理するか」「国内／海外」で一覧化しています。売主・買主はスキームの出発点ではなく、完成品を供給した結果として整理します。各マスをクリックすると詳細に移動します。</p>
+<div class="cl cl-t"><strong>判定の中心は製造主体です。</strong> ライセンス型では利用許諾を受ける側が製造主体となり、プロダクト型では供給側が製造主体となります。製造主体とは、仕様・製造委託先・製造費・品質・納期・在庫を管理する当事者をいいます。</div>
+<div class="mapwrap"><table class="mapt">
+<thead><tr><th style="background:transparent"></th><th>国内</th><th>海外</th></tr></thead>
+<tbody>
+<tr>
+<td class="rh" style="background:#1d9e75">当社がIPを利用・製造<br/><span style="font-weight:400;font-size:10px">ライセンス・イン</span></td>
+<td><a class="cell in" href="#s1"><span class="cc">S1</span><span class="cn">国内ライセンスイン</span><span class="cd">国内権利者のIPを当社が利用し、当社が製造・販売する</span></a></td>
+<td><a class="cell in" href="#s5"><span class="cc">S5</span><span class="cn">海外ライセンスイン</span><span class="cd">海外版元のIPを当社が利用し、当社が日本語版を製造する</span></a></td>
+</tr>
+<tr>
+<td class="rh" style="background:#1d9e75">相手方が製造・当社が仕入れ<br/><span style="font-weight:400;font-size:10px">プロダクト・イン</span></td>
+<td><a class="cell gap" href="#sPin"><span class="cc">（空白）</span><span class="cn">国内プロダクトイン</span><span class="cd">国内相手が製造した完成品を当社が仕入れる／未整備</span></a></td>
+<td><a class="cell in" href="#s4"><span class="cc">S4</span><span class="cn">海外プロダクトイン</span><span class="cd">海外相手が製造した完成品を当社が輸入・販売する</span></a></td>
+</tr>
+<tr>
+<td class="rh" style="background:#c47d1a">相手方がIPを利用・製造<br/><span style="font-weight:400;font-size:10px">ライセンス・アウト</span></td>
+<td><a class="cell out" href="#s7"><span class="cc">S7</span><span class="cn">国内ライセンスアウト</span><span class="cd">国内相手にIPを利用させ、相手が製造・販売する</span></a></td>
+<td><a class="cell out" href="#s2"><span class="cc">S2</span><span class="cn">海外ライセンスアウト</span><span class="cd">海外相手にIPを利用させ、相手が現地で製造・販売する</span></a></td>
+</tr>
+<tr>
+<td class="rh" style="background:#c47d1a">当社が製造・相手方へ供給<br/><span style="font-weight:400;font-size:10px">プロダクト・アウト</span></td>
+<td><a class="cell out" href="#s6"><span class="cc">S6</span><span class="cn">国内プロダクトアウト/OEM</span><span class="cd">当社が製造・製造委託した完成品を国内相手へ供給する</span></a></td>
+<td><a class="cell out" href="#s3"><span class="cc">S3</span><span class="cn">海外プロダクトアウト/受託</span><span class="cd">当社が製造・製造委託した完成品を海外相手へ供給する</span></a></td>
+</tr>
+</tbody>
+</table></div>
+<div class="cl cl-w"><strong>所在地と製造形態は別に確認します。</strong>プロダクトアウトは、国内・海外を問わず「自主製造・卸売型」と「受注製造型」があります。検索では両者を追加質問で区別し、現行S番号に完全一致しない場合は個別設計へ誘導します。</div>
+<div class="legcard">
+<div><span class="box" style="background:#4B8BDB"></span>青の点線＝権利（ライセンス）の許可</div>
+<div><span class="box" style="background:#1D9E75"></span>緑の実線＝製品・モノの流れ</div>
+<div><span class="box" style="background:#C47D1A"></span>金＝お金（代金・ロイヤルティ）</div>
+<div><span class="box" style="background:#1d3557"></span>紺の★＝当社（アークライト）</div>
+</div>
+<hr class="sd"/>
+<!-- ===================== IN ===================== -->
+<div class="grp ingrp" id="in" style="scroll-margin-top:16px">▼ イン ── 当社が相手方IPを利用して製造する／相手方製造品を仕入れる</div>
+<!-- S1 -->
+<div class="shb" id="s1"><div class="sn">イン × ライセンス × 国内</div><h2><span class="scode">S1</span>国内ライセンスイン</h2></div>
+<div class="plain"><span class="pll">ひとことで言うと</span><b>日本のクリエイターや会社からIPの利用許諾を受け、当社が作って売る。</b></div>
+<div class="cl cl-i"><strong>製造・製造委託の主体：</strong><strong>当社</strong>。当社が仕様・製造委託先・品質・納期を管理します。<br/><strong>利用許諾上の立場：</strong>ライセンサー＝相手（国内クリエイター・会社）／ライセンシー＝<strong>当社</strong>。</div>
+<h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4>
+<p class="contract-intro">主契約でIPの利用許諾を確保し、当社が外部へ制作・製造を委託する場合は実行契約を別途締結します。 右欄は、担当者が法務相談前に確認・整理する事項です。</p>
+<div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国内IP利用許諾契約</td><td>国内の権利者と締結<br/>当社＝ライセンシー</td><td>対象IP、利用方法、商品、地域・販路、独占性、ロイヤルティ、監修等を定める</td><td><ul class="contract-checks"><li>許諾者が対象IPを単独で許諾できるか</li><li>対象IP・商品／媒体・販路・地域・期間・独占性</li><li>ロイヤルティ／MG・計算基礎・報告／監査方法</li><li>監修・改変・成果物の権利・終了後在庫の取扱い</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-pre">前提</span></td><td>権利確認書・共同権利者同意書</td><td>共同著作者、所属会社、権利管理会社等から取得</td><td>契約相手が単独で許諾できない場合、必要な同意・権限を確保する</td><td><ul class="contract-checks"><li>著作権・商標権等の原始帰属と譲渡履歴</li><li>共同著作者・所属会社・権利管理会社の同意範囲</li><li>第三者素材・肖像・名称等が含まれていないか</li><li>権限保証、紛争発生時の協力・補償</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-exec">実行</span></td><td>制作・翻訳・製造委託契約／発注書</td><td>翻訳者、デザイナー、製造会社等と締結<br/>当社＝委託者</td><td>当社がローカライズ、デザイン、製造を外部委託する場合</td><td><ul class="contract-checks"><li>成果物・仕様・納期・修正回数・変更手続</li><li>請負／準委任の区分、検収・再実施・支払条件</li><li>著作権帰属・二次利用・著作者人格権不行使</li><li>再委託、秘密保持、支給素材、品質・不良対応</li></ul></td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">商流：S1 国内ライセンスイン</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 560 92">
+<defs><marker id="alic" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#4B8BDB" points="0 0,7 3,0 6"></polygon></marker><marker id="aprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="amny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#fff" height="42" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="150" x="10" y="26"></rect><text fill="#374151" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="85" y="44">ライセンサー</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="85" y="58">国内クリエイター・会社</text>
+<rect fill="#1d3557" height="50" rx="8" width="150" x="205" y="22"></rect><text fill="#fff" font-family="sans-serif" font-size="13" font-weight="600" text-anchor="middle" x="280" y="44">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="280" y="58">製造・販売</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="150" x="400" y="32"></rect><text fill="#6B7280" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="475" y="51">国内市場</text>
+<line marker-end="url(#alic)" stroke="#4B8BDB" stroke-dasharray="5,3" stroke-width="1.5" x1="162" x2="203" y1="38" y2="38"></line><text fill="#4B8BDB" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="33">許可</text>
+<line marker-end="url(#amny)" stroke="#C47D1A" stroke-width="1.5" x1="203" x2="162" y1="56" y2="56"></line><text fill="#C47D1A" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="68">ロイヤルティ</text>
+<line marker-end="url(#aprd)" stroke="#1D9E75" stroke-width="1.5" x1="357" x2="398" y1="47" y2="47"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="378" y="42">製造・販売</text>
+</svg></div>
+<div class="cl cl-t"><strong>海外展開が見込まれるなら、S1の時点で海外許諾の範囲まで上流と合意</strong>しておくと、後の追加交渉（→S2/S3）が不要になります。</div>
+<h4 class="sh4">ライセンサーが個人クリエイターの場合の固有論点</h4>
+<div class="tw"><table><thead><tr><th>論点</th><th>内容</th></tr></thead><tbody>
+<tr><td class="tc">職務著作の確認</td><td>ライセンサーに所属会社・団体があれば、著作権が個人に帰属するか事前確認</td></tr>
+<tr><td class="tc">活動継続性</td><td>専業か副業か・他社との交渉状況・活動休止リスクを把握</td></tr>
+<tr><td class="tc">権利継承</td><td>契約期間中に活動停止（病気・廃業等）した場合の対応を決めておく</td></tr>
+</tbody></table></div>
+<h4 class="sh4">事業部が決めておく条件</h4>
+<div class="tw"><table><thead><tr><th>項目</th><th>決める内容</th><th>目安・注意点</th></tr></thead><tbody>
+<tr><td class="tc">ロイヤルティ計算基礎</td><td>定価ベース（国内慣行）</td><td>実売ベースはライセンサー有利だが管理コスト増</td></tr>
+<tr><td class="tc">MG金額・支払時期</td><td>契約時/製造確定時/発売時の分割比率</td><td>分割払いは当社有利。一括を求めるライセンサーも多い</td></tr>
+<tr><td class="tc">重版時のMG</td><td>重版ごとにMGが追加発生するか</td><td>「初版MGのみ、以降はロイヤルティ」が多い</td></tr>
+<tr><td class="tc">監修ターンアラウンド</td><td>ライセンサーが何営業日以内に返答するか</td><td>10〜15営業日。沈黙承認ルールとセットで</td></tr>
+<tr><td class="tc">監修フローの段階・回数</td><td>ラフ/試作/最終の段階数と修正回数上限</td><td>無制限修正は工数が読めない</td></tr>
+<tr><td class="tc">販売テリトリー</td><td>国内のみで締結（海外はS2/S3で別途）</td><td>将来の海外展開が見込まれるなら拡張条件を覚書で先に合意</td></tr>
+<tr><td class="tc">在庫消化期間</td><td>契約終了後に在庫を売れる期間</td><td>通常6ヶ月〜1年</td></tr>
+</tbody></table></div>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>国内で締結後に海外展開の話が出て、上流ライセンサーへ追加許諾の交渉が発生した（→S1時点で海外範囲も合意しておく）</li>
+<li>個人ライセンサーの監修が遅く、ゲームマーケットの発売が崩れた（沈黙承認ルール未設定）</li>
+<li>独占を付与したのにMRGを設けず、他社にも展開できない「塩漬け」状態が続いた</li>
+<li>重版時のMG発生有無を決めず、重版のたびに交渉が発生した</li>
+</ul>
+<hr class="sd"/>
+<!-- S5 -->
+<div class="shb" id="s5"><div class="sn">イン × ライセンス × 海外</div><h2><span class="scode">S5</span>海外ライセンスイン</h2></div>
+<div class="plain"><span class="pll">ひとことで言うと</span><b>海外の版元からIPの利用許諾を受け、当社が日本語版を作って売る。</b></div>
+<div class="cl cl-i"><strong>製造・製造委託の主体：</strong><strong>当社</strong>。当社が日本語版の仕様・製造委託先・品質・納期を管理します。<br/><strong>利用許諾上の立場：</strong>ライセンサー＝相手（海外版元）／ライセンシー＝<strong>当社</strong>。</div>
+<h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4>
+<p class="contract-intro">海外版元との利用許諾契約が中心です。開示・交渉段階と、国内での制作・製造段階を分けて契約します。 右欄は、担当者が法務相談前に確認・整理する事項です。</p>
+<div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国際IP利用許諾契約<br/>（Master＋個別条件書）</td><td>海外版元・権利者と締結<br/>当社＝ライセンシー</td><td>言語、地域、商品、独占性、MG・ロイヤルティ、監修、製造、準拠法等を定める</td><td><ul class="contract-checks"><li>契約主体・署名権限・対象IPの許諾権限</li><li>言語・地域・商品・媒体・製造権・再許諾の範囲</li><li>MG／ロイヤルティ、通貨・税・送金、報告／監査</li><li>ローカライズ・改変・監修期限・承認手続</li><li>期間・更新・sell-off・準拠法・紛争解決</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>NDA</td><td>海外版元・権利者と締結</td><td>未発表作品、販売計画、原価、翻訳データ等を本契約前に開示する場合</td><td><ul class="contract-checks"><li>検討目的と秘密情報の定義・除外情報</li><li>グループ会社・翻訳者・製造先への共有可否</li><li>秘密保持期間、返還・消去、複製物の管理</li><li>準拠法、差止め、既存NDAとの優先関係</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-exec">実行</span></td><td>翻訳・制作・製造委託契約／発注書</td><td>翻訳者、制作会社、製造会社等と締結<br/>当社＝委託者</td><td>日本語版の翻訳、組版、デザイン、製造を外部委託する場合</td><td><ul class="contract-checks"><li>上流契約上の仕様・監修・秘密保持条件を反映したか</li><li>成果物・版管理・納期・修正・検収手続</li><li>翻訳・デザイン等の権利帰属と人格権不行使</li><li>再委託先、支給データ、製造品質・不良時の責任</li></ul></td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">商流：S5 海外ライセンスイン</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 560 92">
+<defs><marker id="blic" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#4B8BDB" points="0 0,7 3,0 6"></polygon></marker><marker id="bprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="bmny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#fff" height="42" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="150" x="10" y="26"></rect><text fill="#374151" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="85" y="44">ライセンサー</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="85" y="58">海外版元</text>
+<rect fill="#1d3557" height="50" rx="8" width="150" x="205" y="22"></rect><text fill="#fff" font-family="sans-serif" font-size="13" font-weight="600" text-anchor="middle" x="280" y="44">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="280" y="58">日本語版を製造・販売</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="150" x="400" y="32"></rect><text fill="#6B7280" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="475" y="51">国内市場</text>
+<line marker-end="url(#blic)" stroke="#4B8BDB" stroke-dasharray="5,3" stroke-width="1.5" x1="162" x2="203" y1="38" y2="38"></line><text fill="#4B8BDB" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="33">許可</text>
+<line marker-end="url(#bmny)" stroke="#C47D1A" stroke-width="1.5" x1="203" x2="162" y1="56" y2="56"></line><text fill="#C47D1A" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="68">ロイヤルティ/MG</text>
+<line marker-end="url(#bprd)" stroke="#1D9E75" stroke-width="1.5" x1="357" x2="398" y1="47" y2="47"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="378" y="42">製造・販売</text>
+</svg></div>
+<div class="cl cl-w"><strong>S4（仕入れ）との違いに注意。</strong>S5は当社が日本語版を「作る」型。製造コスト・ローカライズ・リードタイムを当社がコントロールできる代わりに、製造責任を負います。日本語化が不要・小ロットならS4の方が向く場合があります。</div>
+<h4 class="sh4">事業部が決めておく条件</h4>
+<div class="tw"><table><thead><tr><th>項目</th><th>決める内容</th><th>目安・注意点</th></tr></thead><tbody>
+<tr><td class="tc">ロイヤルティ計算基礎</td><td>定価ベース or 実売ベース</td><td>ライセンサーは定価ベースを好む。「希望小売価格×〇%」が起点</td></tr>
+<tr><td class="tc tcr">MG金額</td><td>悲観ケース（最低限売れた場合）で回収できる水準か</td><td><strong>過大MGは後で重荷。「最低限売れた場合」で検証</strong></td></tr>
+<tr><td class="tc">MG支払スケジュール</td><td>署名時/サンプル承認時/発売時の分割比率</td><td>発売後払いを増やすほど当社有利</td></tr>
+<tr><td class="tc">承認ターンアラウンド</td><td>ライセンサーが何営業日以内に返答するか</td><td>15〜20営業日を明記。沈黙承認も交渉</td></tr>
+<tr><td class="tc">ローカライズ自由度</td><td>テキスト変更・アート修正・コンポーネント削除の許容範囲</td><td>国内向け変更をライセンサーが認めるか事前確認</td></tr>
+<tr><td class="tc">デジタル版・サブライセンス</td><td>デジタル版・他媒体展開の可否</td><td>後から再交渉にならないよう先に押さえる</td></tr>
+<tr><td class="tc">sell-off期間</td><td>契約終了後の在庫消化期間</td><td>6〜12ヶ月。追加製造禁止・既存在庫のみ可を明確化</td></tr>
+</tbody></table></div>
+<h4 class="sh4">属地的特約（海外イン共通：S4・S5）</h4>
+<div class="tw"><table><thead><tr><th>論点</th><th>内容</th></tr></thead><tbody>
+<tr><td class="tc">国際消尽（BBS事件・最高裁1997年）</td><td>海外でライセンサーが適法に売った正規品の日本への並行輸入は、原則差し止められない（正規品の並行輸入は適法）</td></tr>
+<tr><td class="tc">実務への影響</td><td>ライセンサーの英語版が日本に並行輸入されても原則止められない。「独占インポート権」を契約に書いても法的保護には限界がある</td></tr>
+<tr><td class="tc">対応策</td><td>①日本語版限定の特典・専用素材で差別化、②ライセンサーに海外販売チャネルの管理協力を求める、が現実的</td></tr>
+<tr><td class="tc">準拠法・紛争解決</td><td>当社は日本法が望ましいが欧米のライセンサーは自国法を主張しがち。外国法人相手は仲裁（JCAA・ICC）の方が執行力が高く有利な場合が多い</td></tr>
+</tbody></table></div>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>独占インポート権を明記したが並行輸入品が流通し、法的に止められなかった（国際消尽）</li>
+<li>ライセンサーの承認が遅延しゲームマーケットの発売に間に合わなかった</li>
+<li>MGを強気に設定したら初版で回収できず、以降の取引に影響した</li>
+<li>準拠法を相手国法のまま締結し、紛争時に日本での権利行使が困難になった</li>
+</ul>
+<hr class="sd"/>
+<!-- S4 -->
+<div class="shb" id="s4"><div class="sn">イン × プロダクト × 海外</div><h2><span class="scode">S4</span>海外プロダクトイン</h2></div>
+<div class="plain"><span class="pll">ひとことで言うと</span><b>海外版元またはその指定供給者が製造・製造委託した完成品を、当社が輸入し、日本で販売する。</b></div>
+<div class="cl cl-i"><strong>製造・製造委託の主体：</strong>相手（海外版元・製造元または指定供給者）。<br/><strong>売買上の立場（製品供給の結果）：</strong>相手＝売主・供給者／<strong>当社＝買主・輸入者</strong>。<br/><strong>IP面（販売ライセンスを伴う場合）：</strong>ライセンサー＝相手／ライセンシー＝<strong>当社</strong>。</div>
+<h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4>
+<p class="contract-intro">完成品の継続供給を受ける契約が中心です。独占販売や販促素材の利用は、完成品の購入とは別に明示します。 右欄は、担当者が法務相談前に確認・整理する事項です。</p>
+<div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国際売買・継続供給契約<br/>またはディストリビューション契約</td><td>海外の製造・供給者と締結<br/>当社＝買主・輸入者・販売者</td><td>商品、価格、MOQ、納期、貿易条件、検収、不良品、供給継続等を定める</td><td><ul class="contract-checks"><li>供給者の販売権限・製造主体・サプライチェーン</li><li>商品仕様、MOQ・予測、価格・通貨・税・関税</li><li>Incoterms、所有権・危険移転、保険・通関書類</li><li>納期、到着後検収、潜在欠陥、不良補充・リコール</li><li>供給継続、価格改定、終売・部品／交換品の確保</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>独占販売契約／独占条項</td><td>海外版元または正当な販売権限を持つ供給者と締結<br/>当社＝独占販売者</td><td>日本または特定チャネルで独占販売する場合。直販・並行流通・最低購入数量も定める</td><td><ul class="contract-checks"><li>独占権の付与権限と既存代理店・販売店の有無</li><li>地域・言語・販路・顧客・オンライン販売の範囲</li><li>直販・他社供給・最低購入量・販売開始期限</li><li>競争法上の制約、受動的販売・並行流通の扱い</li><li>期間、非独占化・解除、終了後在庫の販売</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>商標・販促素材利用許諾</td><td>IP・商標権者と締結<br/>当社＝利用者</td><td>商品再販売を超えて、ロゴ、画像、動画、翻訳販促物等を広告に利用する場合</td><td><ul class="contract-checks"><li>権利者・許諾権限と対象商標／素材の特定</li><li>媒体・地域・期間・翻訳／編集・広告出稿の範囲</li><li>ブランドガイド、事前承認、クレジット表示</li><li>広告代理店・EC・SNS事業者への共有可否</li><li>終了後の掲載停止・データ削除・在庫販促物の扱い</li></ul></td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">商流：S4 海外プロダクトイン</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 560 92">
+<defs><marker id="cprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="cmny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#fff" height="42" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="150" x="10" y="26"></rect><text fill="#374151" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="85" y="44">製造・供給者</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="85" y="58">海外版元・指定供給者</text>
+<rect fill="#1d3557" height="50" rx="8" width="150" x="205" y="22"></rect><text fill="#fff" font-family="sans-serif" font-size="13" font-weight="600" text-anchor="middle" x="280" y="44">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="280" y="58">輸入・国内販売</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="150" x="400" y="32"></rect><text fill="#6B7280" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="475" y="51">国内市場</text>
+<line marker-end="url(#cprd)" stroke="#1D9E75" stroke-width="1.5" x1="162" x2="203" y1="38" y2="38"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="33">完成品を供給</text>
+<line marker-end="url(#cmny)" stroke="#C47D1A" stroke-width="1.5" x1="203" x2="162" y1="56" y2="56"></line><text fill="#C47D1A" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="68">製品代金</text>
+<line marker-end="url(#cprd)" stroke="#1D9E75" stroke-width="1.5" x1="357" x2="398" y1="47" y2="47"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="378" y="42">輸入・販売</text>
+</svg></div>
+<div class="cl cl-w"><strong>製品を買っただけでは日本の販売権は付いてこない。</strong>独占販売したいならS5（ライセンス）と組み合わせる必要があります。</div>
+<h4 class="sh4">事業部が決めておく条件</h4>
+<div class="tw"><table><thead><tr><th>項目</th><th>決める内容</th><th>目安・注意点</th></tr></thead><tbody>
+<tr><td class="tc">販売権の確認</td><td>製品購入に日本での独占販売権が含まれるか</td><td>含まれなければS5との組み合わせを検討</td></tr>
+<tr><td class="tc">貿易条件</td><td>FOB / CIF等・支払条件</td><td>FOBで輸送を当社管理するか、CIFで簡略化するか</td></tr>
+<tr><td class="tc">MOQ・リードタイム</td><td>最低発注数量・製造確定〜納品の期間</td><td>通常3〜5ヶ月。発売日から逆算して発注時期を決める</td></tr>
+<tr><td class="tc">価格改定通知</td><td>売主からの値上げ通知期間</td><td>最低3ヶ月前通知を求める</td></tr>
+<tr><td class="tc">ローカライズ費用</td><td>翻訳・印刷・ルール再構成の負担者</td><td>通常当社負担。売主が日本語素材提供なら圧縮可</td></tr>
+<tr><td class="tc">不良品処理</td><td>定義・許容不良率・検品期間・返品条件</td><td>到着後30日以内・ex-factory起算排除が当社標準</td></tr>
+<tr><td class="tc">並行輸入リスク</td><td>売主が別ルートで日本に直販するリスク</td><td>独占購入権がなければ並行輸入は防げない</td></tr>
+</tbody></table></div>
+<p style="font-size:12px;color:var(--g5)">※属地的特約（国際消尽・準拠法・仲裁）は<a href="#s5" style="color:var(--blue)">S5の同項</a>と共通。</p>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>製品を仕入れたが日本での販売権が別途必要だった（販売権は自動では付かない）</li>
+<li>独占インポート権を明記したが並行輸入を止められなかった（国際消尽）</li>
+</ul>
+<hr class="sd"/>
+<!-- 空白マス -->
+<div class="shb" id="sPin" style="background:#6c757d"><div class="sn">イン × プロダクト × 国内</div><h2>（空白）国内プロダクトイン</h2></div>
+<div class="cl cl-w"><strong>このマスは現状このガイドでは未整備です。</strong>「日本の相手方が製造または製造委託した完成品を当社が仕入れ、自社で（ホビーステーション等を通じて）販売する」ケースが該当します。製造主体は相手方であり、売主・買主は完成品供給の結果として生じる立場です。<br/>
+8マスのうちここだけ詳細がありません。<strong>この取引が出てきたら、型としては存在することを認識のうえ法務へ相談</strong>してください。論点はS4（海外PO-IN）から国際論点を除いたもの＝主に「独占販売権の有無・MOQ・不良品処理・並行品リスク・卸価格と改定条件」になります。需要があれば正式に詳細を追加します。</div>
+<h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4>
+<div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国内売買基本契約／継続供給契約</td><td>国内の製造・供給者と締結<br/>当社＝買主・販売者</td><td>商品、価格、発注、納期、検収、不良品、返品、価格改定等を定める</td><td><ul class="contract-checks"><li>供給者の販売権限・製造主体・正規流通品か</li><li>商品仕様、価格・税、発注方法、最低発注数量</li><li>納期・引渡場所・危険負担・所有権・検収</li><li>契約不適合、不良品、返品、リコール・費用負担</li><li>価格改定、供給停止、終売通知、在庫・部品対応</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-exec">実行</span></td><td>個別発注書・注文請書</td><td>国内の供給者との個別取引</td><td>品名、数量、単価、納期等を個別に確定する</td><td><ul class="contract-checks"><li>適用する基本契約・文書間の優先順位</li><li>品名・仕様／版・数量・単価・消費税</li><li>納期・納品場所・検収期限・請求／支払日</li><li>変更・キャンセル・不足／過納時の処理</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>独占販売契約／ブランド利用許諾</td><td>販売権限・ブランド権限を持つ相手と締結</td><td>独占販売または販促物・商標の利用を伴う場合</td><td><ul class="contract-checks"><li>付与者が独占販売権・ブランド利用権を付与できるか</li><li>対象地域・販路・顧客・商品・独占期間</li><li>直販・他社供給・最低購入数量・販売開始期限</li><li>利用可能な商標・素材、承認手続、終了後の削除</li></ul></td></tr>
+</tbody></table></div>
+<hr class="sd"/>
+<!-- ===================== OUT ===================== -->
+<div class="grp outgrp" id="out" style="scroll-margin-top:16px">▼ アウト ── 相手方が当社管理IPを利用して製造する／当社製造品を供給する</div>
+<!-- S7 -->
+<div class="shb" id="s7"><div class="sn">アウト × ライセンス × 国内</div><h2><span class="scode">S7</span>国内ライセンスアウト</h2></div>
+<div class="plain"><span class="pll">ひとことで言うと</span><b>当社が保有する、または利用許諾を受けたIPについて、日本の他社に利用を許諾し、相手が作って売る。</b></div>
+<div class="cl cl-i"><strong>製造・製造委託の主体：</strong>相手。相手が商品仕様・製造委託先・品質・納期を管理します。<br/><strong>利用許諾上の立場：</strong>自社IPなら ライセンサー＝<strong>当社</strong>／ライセンシー＝相手。<u>S1・S5で利用許諾を受けたIPを再許諾する場合</u> <strong>当社＝ライセンシー（サブライセンサー）</strong>／相手＝サブライセンシー／大もと＝ライセンサー。</div>
+<h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4>
+<p class="contract-intro">相手方との利用許諾契約に加え、当社が上流から許諾を受けたIPを再許諾する場合は、上流権利者との権限確保が先に必要です。 右欄は、担当者が法務相談前に確認・整理する事項です。 右欄は、担当者が法務相談前に確認・整理する事項です。</p>
+<div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国内IP利用許諾契約</td><td>国内の利用者・商品化事業者と締結<br/>当社＝ライセンサーまたはサブライセンサー</td><td>商品、販路、独占性、ロイヤルティ、監修、品質、報告、終了後処理等を定める</td><td><ul class="contract-checks"><li>当社の権利保有・管理権限または転許諾権限</li><li>対象IP・商品・媒体・販路・地域・期間</li><li>独占性、MRG、販売開始期限、競合許諾との重複</li><li>ロイヤルティ、報告・証憑・監査、税の扱い</li><li>監修・品質・回収、再許諾・製造委託、sell-off</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-pre">前提</span></td><td>転許諾同意書／上流契約の変更覚書</td><td>元のライセンサーと締結<br/>当社＝ライセンシー</td><td>当社保有IPではなく、利用許諾を受けたIPを第三者へ再許諾する場合</td><td><ul class="contract-checks"><li>再許諾先・商品・販路・地域・期間を特定したか</li><li>上流への追加ロイヤルティ・報告・承認条件</li><li>監修・品質・表示等を下流契約へ転嫁できるか</li><li>下流違反時の当社責任と上流への補償</li><li>上流契約終了時の下流契約・在庫の処理</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>NDA</td><td>許諾先候補と締結</td><td>未発表商品、監修資料、販売計画等を契約前に開示する場合</td><td><ul class="contract-checks"><li>検討目的・秘密情報・開示範囲</li><li>役職員・委託先への共有と管理義務</li><li>秘密保持期間・返還／廃棄・公表可否</li><li>本契約不成立時の企画・サンプル利用禁止</li></ul></td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">商流：S7 国内ライセンスアウト</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 560 92">
+<defs><marker id="dlic" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#4B8BDB" points="0 0,7 3,0 6"></polygon></marker><marker id="dprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="dmny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#1d3557" height="50" rx="8" width="150" x="10" y="22"></rect><text fill="#fff" font-family="sans-serif" font-size="13" font-weight="600" text-anchor="middle" x="85" y="44">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="85" y="58">許可する側</text>
+<rect fill="#fff" height="42" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="150" x="205" y="26"></rect><text fill="#374151" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="280" y="44">ライセンシー</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="280" y="58">国内他社（製造・販売）</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="150" x="400" y="32"></rect><text fill="#6B7280" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="475" y="51">国内市場</text>
+<line marker-end="url(#dlic)" stroke="#4B8BDB" stroke-dasharray="5,3" stroke-width="1.5" x1="162" x2="203" y1="38" y2="38"></line><text fill="#4B8BDB" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="33">許可</text>
+<line marker-end="url(#dmny)" stroke="#C47D1A" stroke-width="1.5" x1="203" x2="162" y1="56" y2="56"></line><text fill="#C47D1A" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="68">ロイヤルティ</text>
+<line marker-end="url(#dprd)" stroke="#1D9E75" stroke-width="1.5" x1="357" x2="398" y1="47" y2="47"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="378" y="42">製造・販売</text>
+</svg></div>
+<div class="cl cl-w"><strong>カニバリ（食い合い）と転許諾に注意。</strong>S6（OEM供給）や自社直販と販路がぶつかると価格・ブランド管理が崩れます。また<strong>S1/S5由来のIPを第三者に利用させる場合は、上流ライセンサーの転許諾OKを必ず確認</strong>。</div>
+<h4 class="sh4">事業部が決めておく条件</h4>
+<div class="tw"><table><thead><tr><th>項目</th><th>決める内容</th><th>目安・注意点</th></tr></thead><tbody>
+<tr><td class="tc tcr">すでに渡した範囲との重複チェック</td><td>今回の販路が既存ライセンシーに許可済みの範囲と重ならないか</td><td>S6との兼ね合いも確認。同一商品が複数ルートで流れると管理不能に</td></tr>
+<tr><td class="tc">ロイヤルティ計算基礎</td><td>定価ベース（当社有利）</td><td>実売ベースを求められたら返品・値引きの対象範囲を明確化</td></tr>
+<tr><td class="tc">MRG（独占維持基準）</td><td>金額・評価時期（年次）・非独占転換条件</td><td>販売計画の50〜70%が目安。低すぎると独占の価値がない</td></tr>
+<tr><td class="tc">監修費の別途請求</td><td>ロイヤルティと分けて監修費を取るか</td><td>当社のIP管理工数を回収できる</td></tr>
+<tr><td class="tc">上流対応コストの負担</td><td>版権者への承認申請費・サンプル送付費の負担者</td><td>S1/S5由来IPの再許諾は、上流対応コストをライセンシー負担で設計</td></tr>
+<tr><td class="tc">クレジット・デザインガイド</td><td>表示フォーマット・掲載場所を事前提示</td><td>品質の低い製品にIPが付くとブランド棄損</td></tr>
+<tr><td class="tc">粗悪品への対応フロー</td><td>回収要請・許可取消しの条件</td><td>事前に決めないと即時対応できない</td></tr>
+<tr><td class="tc">sell-off期間</td><td>契約終了後の在庫消化期間</td><td>通常3〜6ヶ月。独占終了後は非独占扱いと明記</td></tr>
+</tbody></table></div>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>MRGを設けず、ライセンシーが製造しても売らない「死に体ライセンス」になった</li>
+<li>上流（S1/S5）の転許諾可否を確認せずに再許諾を進めてしまった</li>
+</ul>
+<hr class="sd"/>
+<!-- S2 -->
+<div class="shb" id="s2"><div class="sn">アウト × ライセンス × 海外</div><h2><span class="scode">S2</span>海外ライセンスアウト</h2></div>
+<div class="plain"><span class="pll">ひとことで言うと</span><b>当社が保有する、または利用許諾を受けたIPについて、海外企業に利用を許諾し、相手が現地で作って売る。</b></div>
+<div class="cl cl-i"><strong>製造・製造委託の主体：</strong>相手。相手が商品仕様・製造委託先・品質・納期を管理します。<br/><strong>利用許諾上の立場：</strong>自社IPなら ライセンサー＝<strong>当社</strong>／ライセンシー＝相手。<u>S1・S5で利用許諾を受けたIPを再許諾する場合</u> <strong>当社＝ライセンシー（サブライセンサー）</strong>／相手＝サブライセンシー／大もと＝ライセンサー。</div><h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4><p class="contract-intro">海外の利用者との国際ライセンス契約が中心です。再許諾案件では、海外契約を締結する前に上流権利者から権限を確保します。 右欄は、担当者が法務相談前に確認・整理する事項です。</p><div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国際IP利用許諾契約<br/>（Master＋個別条件書）</td><td>海外の利用者・現地版元と締結<br/>当社＝ライセンサーまたはサブライセンサー</td><td>地域・言語、商品、独占性、MG・ロイヤルティ、監修、報告、準拠法等を定める</td><td><ul class="contract-checks"><li>当社の権利・転許諾権限と相手方の契約主体／信用</li><li>地域・言語・商品・媒体・販路・製造／再許諾範囲</li><li>独占性、発売期限、MG・ロイヤルティ、Net Sales定義</li><li>報告・監査、源泉税・送金・通貨／為替の扱い</li><li>監修・品質・現地規制、競争法・制裁／輸出管理</li><li>期間・sell-off・準拠法・仲裁・判決／仲裁判断の執行</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-pre">前提</span></td><td>転許諾同意書／上流契約の変更覚書</td><td>元のライセンサーと締結<br/>当社＝ライセンシー</td><td>当社が利用許諾を受けたIPを海外へ再許諾する場合</td><td><ul class="contract-checks"><li>対象国・言語・再許諾先・商品・販売経路</li><li>追加対価、為替・税、上流への報告・監査</li><li>現地版の監修・品質・クレジット条件</li><li>下流契約への必須条項・責任転嫁</li><li>上流終了時の下流契約・在庫・素材の処理</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>NDA</td><td>海外候補先と締結</td><td>秘密情報を開示して交渉する場合</td><td><ul class="contract-checks"><li>検討目的・秘密情報・許可された利用</li><li>関連会社・専門家・製造候補への共有範囲</li><li>秘密保持期間、返還／削除、残存情報の扱い</li><li>準拠法・差止め・公表／プレスリリース</li></ul></td></tr><tr><td><span class="contract-kind ck-cond">条件付</span></td><td>交渉代理・エージェント契約</td><td>現地エージェントと締結<br/>当社＝委託者</td><td>第三者に候補先探索・交渉・契約事務を委ねる場合</td><td><ul class="contract-checks"><li>権限範囲（紹介・交渉・署名権限の有無）</li><li>対象地域・案件、独占性、競業・利益相反</li><li>報酬・成功報酬の算定基礎と支払時期</li><li>秘密保持、法令遵守、再委託、活動報告</li><li>契約終了後のテール報酬・顧客帰属</li></ul></td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">商流：S2 海外ライセンスアウト</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 560 92">
+<defs><marker id="elic" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#4B8BDB" points="0 0,7 3,0 6"></polygon></marker><marker id="eprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="emny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#1d3557" height="50" rx="8" width="150" x="10" y="22"></rect><text fill="#fff" font-family="sans-serif" font-size="13" font-weight="600" text-anchor="middle" x="85" y="44">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="85" y="58">ライセンサー</text>
+<rect fill="#fff" height="42" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="150" x="205" y="26"></rect><text fill="#374151" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="280" y="44">ライセンシー</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="280" y="58">海外（自ら製造・販売）</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="150" x="400" y="32"></rect><text fill="#6B7280" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="475" y="51">海外市場</text>
+<line marker-end="url(#elic)" stroke="#4B8BDB" stroke-dasharray="5,3" stroke-width="1.5" x1="162" x2="203" y1="38" y2="38"></line><text fill="#4B8BDB" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="33">許可</text>
+<line marker-end="url(#emny)" stroke="#C47D1A" stroke-width="1.5" x1="203" x2="162" y1="56" y2="56"></line><text fill="#C47D1A" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="68">ロイヤルティ/MG</text>
+<line marker-end="url(#eprd)" stroke="#1D9E75" stroke-width="1.5" x1="357" x2="398" y1="47" y2="47"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="378" y="42">製造・販売</text>
+</svg></div>
+<div class="cl cl-w"><strong>S3（受託製造）と最初に必ず仕分ける。</strong>S2は<u>相手が作る</u>。S3は<u>当社が作る</u>。ここを取り違えたまま交渉を進めるのが最大の事故です。</div>
+<div class="cl cl-n"><strong>上流確認（必須）：</strong>S1/S5でライセンスインしたタイトルを海外展開する場合、上流ライセンサーから海外展開・製品供給の追加許諾を得ているか確認。</div>
+<h4 class="sh4">事業部が決めておく条件</h4>
+<div class="tw"><table><thead><tr><th>項目</th><th>決める内容</th><th>目安・注意点</th></tr></thead><tbody>
+<tr><td class="tc tcr">すでに渡した範囲との重複チェック</td><td>今回付与する地域・言語が既存ライセンシーの範囲と重ならないか</td><td>BG事業部の先行契約を必ず照会してから交渉に入る</td></tr>
+<tr><td class="tc">ロイヤルティ計算基礎</td><td>卸価格ベース（Net Sales）が海外慣行</td><td>定価ベースは管理は簡単だが実額が小さくなる場合がある</td></tr>
+<tr><td class="tc">MG/Advance</td><td>金額・支払スケジュール（署名時/サンプル承認時/初回出荷時）</td><td>署名時50%＋出荷時50%が起点。早期回収が当社有利</td></tr>
+<tr><td class="tc">MRG（独占維持基準）</td><td>金額・評価時期（年次）・非独占転換条件</td><td>ライセンシーの販売計画の50〜70%が目安</td></tr>
+<tr><td class="tc">独占の地域・言語範囲</td><td>EU加盟国・英国・スイス等を列記。「英語版のみ」か「英語権全域」か</td><td>「ヨーロッパ」では曖昧すぎる</td></tr>
+<tr><td class="tc">オンライン販売の扱い</td><td>Amazon越境・Kickstarter・独自ECの許可範囲</td><td>越境販売による他地域ライセンシーとの競合を明確化</td></tr>
+<tr><td class="tc">承認ターンアラウンド</td><td>当社が何営業日以内に返答するか</td><td>15営業日以内が目安。沈黙承認ルールとセット</td></tr>
+<tr><td class="tc">sell-off期間</td><td>契約終了後の在庫消化期間</td><td>6〜12ヶ月。独占終了後は非独占扱いと明記</td></tr>
+<tr><td class="tc">翻訳・アートの帰属</td><td>ライセンシー作成素材の当社流用権</td><td>後続ライセンシーに流用できる権利を留保する交渉も可能</td></tr>
+</tbody></table></div>
+<h4 class="sh4">属地的特約（海外アウト：S2で特に重要）</h4>
+<div class="cl cl-i">海外向けは、日本にはない「域内ルール」が条件に直結します。特にEU・英国向けは下記を事前整理。</div>
+<div class="tw"><table><thead><tr><th>論点</th><th>内容</th></tr></thead><tbody>
+<tr><td class="tc">テリトリーの定義</td><td><strong>EU27</strong>≠<strong>EEA</strong>（EU27＋ノルウェー・アイスランド・リヒテンシュタイン）≠<strong>英国</strong>（Brexitで離脱）≠<strong>スイス</strong>（どちらも非加盟）。「ヨーロッパ」「北米」と曖昧に書かず国・言語で指定する</td></tr>
+<tr><td class="tc">EEA権利消尽</td><td>EEA域内のどこかで適法販売された製品はEEA全域で再販を止められない。「ドイツのみ独占」でも域内に流通するリスクがあるため、EEAを一括テリトリーとして設計するのが安全</td></tr>
+<tr><td class="tcr">EU競争法（受動的販売）</td><td>指定地域外への積極営業の禁止は原則OK。だが<strong>顧客から来た注文を断らせる（受動的販売の禁止）は原則違反</strong>。ECの地理ブロッキングも要注意（EU規則2018/302）。制限を設けるなら専門家確認</td></tr>
+<tr><td class="tc">製品安全・認証</td><td>EU/EEA＝CEマーキング（玩具安全指令2009/48/EC、14歳以下・小部品は厳格）。英国＝UKCA（CEと原則別申請）。両方供給ならコスト倍</td></tr>
+<tr><td class="tc">関税（日EU・EPA）</td><td>日本原産品に特恵関税。<strong>中国工場製造は原産地規則を満たさず適用不可</strong>。採算前提に注意</td></tr>
+</tbody></table></div>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>「EU展開」と書いたが英国・スイスが含まれるか曖昧で後でトラブルに（EU≠EEA≠UK）</li>
+<li>EEA域内を国別に分割したが、EEA消尽でテリトリー保護が機能しなかった</li>
+<li>「地域外への販売禁止」が受動的販売まで禁じる表現になりEU競争法上問題に</li>
+<li>EUとUK両方に納品したがCEのみ取得、UKCAが別途必要だった</li>
+<li>日EU・EPA税率前提で採算を組んだが、中国工場製造で原産地規則を満たさず適用できなかった</li>
+<li>S2をS3と混同し「当社が作る」前提で交渉してしまった（製造主体の確認が最初の一歩）</li>
+</ul>
+<hr class="sd"/>
+<!-- S6 -->
+<div class="shb" id="s6"><div class="sn">アウト × プロダクト × 国内（売買型）</div><h2><span class="scode">S6</span>国内プロダクトアウト/OEM</h2></div>
+<div class="plain"><span class="pll">ひとことで言うと</span><b>当社が製造または製造委託した完成品を、日本の他社へ供給する。S6は当社起点の自主製造・卸売型が典型。</b></div>
+<div class="cl cl-i"><strong>製造・製造委託の主体：</strong><strong>当社</strong>。当社が製造仕様・委託先・製造費・品質・納期・在庫を管理します。<br/><strong>売買上の立場（製品供給の結果）：</strong><strong>当社＝売主・供給者</strong>／相手＝買主・販売先。<br/><strong>IP面（S1/S5由来IPを載せる場合）：</strong>大もと＝ライセンサー／<strong>当社＝ライセンシー（サブライセンサー）</strong>／相手＝サブライセンシー。自社IPなら 当社＝ライセンサー／相手＝ライセンシー。</div>
+<h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4>
+<p class="contract-intro">自主製造品の卸売では売買・供給契約を中心とし、相手方の注文・仕様に基づく場合はOEM・製造受託契約へ切り替えます。 右欄は、担当者が法務相談前に確認・整理する事項です。</p>
+<div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国内売買基本契約／継続供給・販売店契約</td><td>国内の販売先・卸先と締結<br/>当社＝売主・供給者</td><td>商品、卸価格、発注、納期、検収、返品、販路、販売終了等を定める</td><td><ul class="contract-checks"><li>商品・卸価格・発注単位・支払条件・与信</li><li>引渡し、危険負担・所有権、検収・不良品・返品</li><li>販売地域・販路・再卸・EC／マーケットプレイスの可否</li><li>販促・価格表示の運用は独禁法上の制約を法務確認</li><li>終売・契約終了・残存在庫・リコール時の協力</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-exec">実行</span></td><td>個別発注書・注文請書</td><td>国内の販売先との個別取引</td><td>商品、数量、単価、納期等を個別に確定する</td><td><ul class="contract-checks"><li>基本契約の特定と個別条件の優先順位</li><li>商品・仕様／版・数量・単価・消費税</li><li>納期・納品場所・請求／支払日</li><li>変更・キャンセル・分納・欠品時の処理</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>OEM・製造受託契約</td><td>仕様・数量を指定する国内委託者と締結<br/>当社＝受託製造者</td><td>相手方起点の商品を当社が製造する場合。仕様変更、検収、知財、製造物責任等を定める</td><td><ul class="contract-checks"><li>仕様決定、設計・材料・金型・支給品の責任分担</li><li>発注数量・予測・キャンセル・仕様変更の手続</li><li>委託料・材料費・価格改定、検収・契約不適合</li><li>知財・金型／データの帰属、再委託・秘密保持</li><li>製造物責任・表示規制・リコール・保険</li><li>取適法・フリーランス法等の適用と書面／支払条件</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-cond">条件付</span></td><td>商標・販促素材利用許諾</td><td>販売先と締結<br/>当社＝ライセンサーまたは権限付与者</td><td>販売先が当社ロゴ・画像等を広告、EC、店舗表示に利用する場合</td><td><ul class="contract-checks"><li>当社が許諾できる商標・画像・商品情報の範囲</li><li>利用媒体・店舗／EC・期間・改変可否</li><li>ブランドガイド・事前承認・表示義務</li><li>第三者制作会社への共有と素材管理</li><li>終了・違反時の掲載停止・データ削除</li></ul></td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">商流：S6 国内プロダクトアウト/OEM</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 560 92">
+<defs><marker id="fprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="fmny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#1d3557" height="50" rx="8" width="150" x="10" y="22"></rect><text fill="#fff" font-family="sans-serif" font-size="13" font-weight="600" text-anchor="middle" x="85" y="44">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="85" y="58">製造して卸す</text>
+<rect fill="#fff" height="42" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="150" x="205" y="26"></rect><text fill="#374151" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="280" y="44">供給先</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="280" y="58">国内OEM先・販売先</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="150" x="400" y="32"></rect><text fill="#6B7280" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="475" y="51">国内市場</text>
+<line marker-end="url(#fprd)" stroke="#1D9E75" stroke-width="1.5" x1="162" x2="203" y1="38" y2="38"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="33">製品を供給</text>
+<line marker-end="url(#fmny)" stroke="#C47D1A" stroke-width="1.5" x1="203" x2="162" y1="56" y2="56"></line><text fill="#C47D1A" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="68">製品代金</text>
+<line marker-end="url(#fprd)" stroke="#1D9E75" stroke-width="1.5" x1="357" x2="398" y1="47" y2="47"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="378" y="42">販売</text>
+</svg></div>
+<div class="cl cl-w"><strong>カニバリと上流ロイヤルティの転嫁に注意。</strong>当社直販（ホビーステーション等）と同じ客層に安く流れると食い合います。また<strong>S1/S5由来のIPなら、OEM先の販売数量分も当社が上流に支払う義務</strong>があるため卸価格に必ず転嫁を。</div>
+<h4 class="sh4">事業部が決めておく条件</h4>
+<div class="tw"><table><thead><tr><th>項目</th><th>決める内容</th><th>目安・注意点</th></tr></thead><tbody>
+<tr><td class="tc tcr">すでに渡した範囲との重複チェック</td><td>今回のOEM販路・地域が既存取引先の範囲と重ならないか</td><td>国内は地域より販路（EC・量販・専門店等）の重複が問題になりやすい</td></tr>
+<tr><td class="tc">卸価格・改定条件</td><td>単価・改定条件（原材料費上昇時の転嫁）</td><td>改定権を留保しないと製造コスト上昇を当社が全額被る</td></tr>
+<tr><td class="tc">MOQ・発注単位</td><td>最低発注数量・製造確定〜納品のリードタイム</td><td>MOQ未達の発注は製造効率が落ちる</td></tr>
+<tr><td class="tc tcr">上流ロイヤルティの転嫁</td><td>S1/S5取得IPの場合、OEM先販売分のロイヤルティを卸価格に転嫁しているか</td><td>OEM先の販売数量分も当社が上流に支払う義務あり</td></tr>
+<tr><td class="tc">チャネル制限</td><td>OEM先が販売できる範囲（販路・地域）</td><td>ホビーステーション同一商圏への販売禁止等を設ける</td></tr>
+<tr><td class="tc">再卸の可否</td><td>OEM先が別の流通業者に再卸できる範囲</td><td>無制限再卸は価格・チャネル管理が不能に</td></tr>
+<tr><td class="tc">MAP設定</td><td>最低小売価格の設定・当社事前通知義務</td><td>OEM先の安売りが直販価格を下回るとブランド棄損</td></tr>
+<tr><td class="tc">在庫処分</td><td>契約終了後の在庫処分方法</td><td>買戻し / 市中販売継続 / 廃棄のいずれかを先に決める</td></tr>
+</tbody></table></div>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>OEM先が自社直販と同じ客層に低価格で売り、カニバリが発生した</li>
+<li>S1/S5由来IPで、OEM先販売分のロイヤルティを卸価格に乗せ忘れて逆ザヤになった</li>
+</ul>
+<hr class="sd"/>
+<!-- S3 -->
+<div class="shb" id="s3"><div class="sn">アウト × プロダクト × 海外（受託製造型）</div><h2><span class="scode">S3</span>海外プロダクトアウト/受託製造</h2></div>
+<div class="plain"><span class="pll">ひとことで言うと</span><b>海外の相手から仕様・数量の指定を受け、当社が製造または製造委託して完成品を納品する受注製造型。</b></div>
+<div class="cl cl-i"><strong>製造・製造委託の主体：</strong><strong>当社</strong>。ただし商品化の起点・仕様・数量は相手の発注に基づきます。<br/><strong>製造委託上の立場：</strong>相手＝委託者／<strong>当社＝受託製造者</strong>。完成品売買を伴う場合は、その結果として当社＝売主・供給者／相手＝買主となります。<br/><strong>IP面（S1/S5由来IPを載せる場合）：</strong>大もと＝ライセンサー／<strong>当社＝ライセンシー（サブライセンサー）</strong>／相手＝サブライセンシー。</div>
+<h4 class="sh4">必要な契約・締結相手・契約前の確認事項</h4>
+<p class="contract-intro">受注製造では、製造条件と完成品供給条件を一体化した国際OEM・製造供給契約を中心にします。 右欄は、担当者が法務相談前に確認・整理する事項です。</p>
+<div class="tw"><table class="contract-table"><thead><tr><th>区分</th><th>必要な契約</th><th>締結相手・当社の立場</th><th>目的・必要となる場合</th><th>契約前の確認事項</th></tr></thead><tbody>
+<tr><td><span class="contract-kind ck-main">主契約</span></td><td>国際OEM・製造供給契約<br/>または製造業務委託契約</td><td>海外の発注者・委託者と締結<br/>当社＝受託製造者・供給者</td><td>仕様、数量、製造費、納期、変更、検収、不良品、貿易条件、責任分担等を定める</td><td><ul class="contract-checks"><li>売買／製造委託の性質と当社・相手方の責任範囲</li><li>仕様・サンプル・変更管理、材料・金型・支給品</li><li>予測・MOQ・確定発注・キャンセル・余剰在庫</li><li>価格・前払金・通貨／税、Incoterms・危険／所有権移転</li><li>検収・潜在欠陥・補充、製造物責任・リコール</li><li>IP・再委託・認証／表示規制・制裁／輸出管理</li><li>準拠法・仲裁・責任制限・保険</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-exec">実行</span></td><td>個別仕様書・発注書・注文請書</td><td>海外の委託者との個別案件</td><td>製品仕様、数量、価格、納期、梱包、認証等を個別に確定する</td><td><ul class="contract-checks"><li>適用するMaster契約と文書間の優先順位</li><li>仕様書番号・版、数量、単価・通貨・税</li><li>製造／出荷日、Incoterms、梱包・表示・必要書類</li><li>検収基準・サンプル承認・変更／キャンセル手続</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-pre">前提</span></td><td>製造目的のIP利用許諾</td><td>相手方またはIP権利者から取得<br/>当社＝製造目的の利用者</td><td>相手方保有IP・データ・商標を当社が製造のため利用する場合。主契約に内包可能</td><td><ul class="contract-checks"><li>許諾者の権限と製造対象IP・データの特定</li><li>製造目的・工場／再委託先・地域・期間の限定</li><li>複製・保管・データセキュリティ・監修／承認</li><li>製造以外の利用禁止、余剰品・データの返還／廃棄</li></ul></td></tr>
+<tr><td><span class="contract-kind ck-pre">前提</span></td><td>転許諾同意書／上流契約の変更覚書</td><td>元のライセンサーと締結</td><td>当社が上流から許諾を受けたIPを載せた完成品を供給し、相手方に販売・利用させる場合</td><td><ul class="contract-checks"><li>供給先・販売地域・商品・数量・販売権限の範囲</li><li>追加ロイヤルティ、販売報告、サンプル・監修</li><li>下流への品質・表示・禁止事項の転嫁</li><li>上流契約終了時の供給・在庫・下流販売の処理</li></ul></td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">商流：S3 海外プロダクトアウト/受託製造</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 560 110">
+<defs><marker id="glic" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#4B8BDB" points="0 0,7 3,0 6"></polygon></marker><marker id="gprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="gmny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#1d3557" height="50" rx="8" width="150" x="10" y="32"></rect><text fill="#fff" font-family="sans-serif" font-size="13" font-weight="600" text-anchor="middle" x="85" y="54">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="85" y="68">受託製造者</text>
+<rect fill="#fff" height="42" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="150" x="205" y="36"></rect><text fill="#374151" font-family="sans-serif" font-size="12" font-weight="600" text-anchor="middle" x="280" y="54">委託者</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="280" y="68">海外（委託者・販売）</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="150" x="400" y="42"></rect><text fill="#6B7280" font-family="sans-serif" font-size="11" font-weight="600" text-anchor="middle" x="475" y="61">海外市場</text>
+<line marker-end="url(#gprd)" stroke="#1D9E75" stroke-width="1.5" x1="203" x2="162" y1="44" y2="44"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="39">製造委託（依頼）</text>
+<line marker-end="url(#gprd)" stroke="#1D9E75" stroke-width="1.5" x1="162" x2="203" y1="60" y2="60"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="72">製品納品</text>
+<line marker-end="url(#gmny)" stroke="#C47D1A" stroke-width="1.5" x1="203" x2="162" y1="76" y2="76"></line><text fill="#C47D1A" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="182" y="88">製造費</text>
+<line marker-end="url(#gprd)" stroke="#1D9E75" stroke-width="1.5" x1="357" x2="398" y1="57" y2="57"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8.5" text-anchor="middle" x="378" y="52">販売</text>
+</svg></div>
+<div class="cl cl-w"><strong>S2との比較は必ず収益で行う。</strong>S3は当社が製造する分コストとリスクを負います。上流のライセンサーへのロイヤルティ支払い後の手残りを、S2（ロイヤルティのみ）と比較してから選ぶこと。<strong>製造キャパ（工場・製造枠）の確保が前提</strong>です。</div>
+<div class="cl cl-n"><strong>上流確認（必須）：</strong>S1/S5由来IPなら、海外への製品供給の追加許諾を上流から得ているか。</div>
+<h4 class="sh4">事業部が決めておく条件</h4>
+<div class="tw"><table><thead><tr><th>項目</th><th>決める内容</th><th>目安・注意点</th></tr></thead><tbody>
+<tr><td class="tc tcr">すでに渡した範囲との重複チェック</td><td>今回供給する地域が既存の供給先の範囲と重ならないか</td><td>同一地域にS2のライセンシーがいる場合、PO供給はその独占権を侵害しうる</td></tr>
+<tr><td class="tc">製造委託の範囲</td><td>製造仕様（言語・コンポーネント・仕上がり基準）を事前合意</td><td>仕様が曖昧なまま製造すると後の変更対応が高コスト</td></tr>
+<tr><td class="tc tcr">製造費（委託費）の設定</td><td>製造原価＋上流ロイヤルティ＋物流費を回収できる単価か</td><td><strong>上流ロイヤルティ分を必ず製造費に転嫁する</strong></td></tr>
+<tr><td class="tc">貿易条件</td><td>FOB / CIF / EXW</td><td>FOBが当社有利（出荷後リスクは委託者＝海外の相手）</td></tr>
+<tr><td class="tc">MPR（最低発注数量）</td><td>数量・評価期間（年次）・未達時の対応</td><td>未達時は「引き下げ交渉」か「解除権発生」かを先に決める</td></tr>
+<tr><td class="tc">支払条件</td><td>前払い比率 / T/T〇日後 / L/C</td><td>新規取引先は前払い30〜50%が望ましい</td></tr>
+<tr><td class="tc">不良品基準</td><td>AQL基準・検品タイミング・補充リードタイム</td><td>製造責任が当社にあるため、曖昧だと全額補填リスクを負う</td></tr>
+<tr><td class="tc">現地規制対応費</td><td>CE・ASTM等の認証取得費の負担者</td><td>製品改修が必要な場合のコストは大きい</td></tr>
+</tbody></table></div>
+<p style="font-size:12px;color:var(--g5)">※認証・関税の属地論点（CE/UKCA、日EU・EPA原産地規則）は<a href="#s2" style="color:var(--blue)">S2の属地的特約</a>と共通。</p>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>仕様を曖昧にしたまま製造を始め、後からの変更で高コストになった</li>
+<li>製造費を製造原価だけで設定し、上流ロイヤルティを乗せ忘れて逆ザヤになった</li>
+<li>同一地域にS2のライセンシーがいるのにPO供給し、独占権を侵害した</li>
+</ul>
+<hr class="sd"/>
+<!-- ===================== 応用 ===================== -->
+<div class="shb" id="combo" style="background:linear-gradient(90deg,#1d3557,#3c3489)"><div class="sn">応用編 ── 新しい型ではなく「型の組み合わせ」</div><h2>複数IPを組み合わせたコラボ製品</h2></div>
+<p>コラボは<strong>独立した新しい型ではありません</strong>。<span class="scode">S1/S5</span>（ライセンスイン）を<strong>2本</strong>取得したうえで、最後の出口を「自社販売」か「受託製造」かで選ぶ組み合わせです。だから8マスとは別の「応用」に置いています。</p>
+<div class="cl cl-i"><strong>登場人物：</strong>ライセンサー＝相手①・②（2つのIPの大もと）／ライセンシー＝<strong>当社</strong>（2本のライセンスを取得）。パターンBでは当社がライセンサー名義の製造を受託（受託製造者）。</div>
+<div class="tw"><table><thead><tr><th>パターン</th><th>構成</th><th>当社の立場</th><th>販売名義</th><th>当社の収益</th><th>在庫・販売リスク</th></tr></thead><tbody>
+<tr><td class="tc">パターンA<br/>当社名義で販売</td><td>S1/S5 ×2本 ＋ 自社販売</td><td>ライセンシー＋販売者</td><td>当社</td><td>販売利益（ロイヤルティ×2控除後）</td><td><strong>当社が負う</strong></td></tr>
+<tr><td class="tc">パターンB<br/>ライセンサー名義で販売</td><td>S1/S5 ×2本 ＋ 製造委託（＝S3類似）</td><td>ライセンシー＋受託製造者</td><td>ライセンサー（①or②）</td><td>製造費（受託料）</td><td>原則ライセンサー側</td></tr>
+</tbody></table></div>
+<div class="dw"><div class="dtitle">パターンB：当社が両ライセンスを取得し、ライセンサーの製造委託を受けて、ライセンサー名義で販売する</div>
+<svg aria-hidden="true" style="width:100%;display:block" viewbox="0 0 660 150">
+<defs><marker id="hlic" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#4B8BDB" points="0 0,7 3,0 6"></polygon></marker><marker id="hprd" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#1D9E75" points="0 0,7 3,0 6"></polygon></marker><marker id="hmny" markerheight="6" markerwidth="8" orient="auto" refx="6" refy="3"><polygon fill="#C47D1A" points="0 0,7 3,0 6"></polygon></marker></defs>
+<rect fill="#fff" height="34" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="128" x="8" y="22"></rect><text fill="#374151" font-family="sans-serif" font-size="11.5" font-weight="600" text-anchor="middle" x="72" y="36">ライセンサー①</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="72" y="49">S1/S5取得済み</text>
+<rect fill="#fff" height="34" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="128" x="8" y="90"></rect><text fill="#374151" font-family="sans-serif" font-size="11.5" font-weight="600" text-anchor="middle" x="72" y="104">ライセンサー②</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="72" y="117">S1別途締結</text>
+<rect fill="#1d3557" height="46" rx="8" width="140" x="195" y="50"></rect><text fill="#fff" font-family="sans-serif" font-size="12.5" font-weight="600" text-anchor="middle" x="265" y="71">当社 ★</text><text fill="rgba(255,255,255,.6)" font-family="sans-serif" font-size="9" text-anchor="middle" x="265" y="85">受託製造</text>
+<rect fill="#fff" height="62" rx="6" stroke="#9CA3AF" stroke-width="1.2" width="146" x="400" y="42"></rect><text fill="#374151" font-family="sans-serif" font-size="11.5" font-weight="600" text-anchor="middle" x="473" y="68">ライセンサー①or②</text><text fill="#9CA3AF" font-family="sans-serif" font-size="9" text-anchor="middle" x="473" y="82">委託者・名義販売</text>
+<rect fill="rgba(0,0,0,.02)" height="30" rx="6" stroke="#B5C6D4" stroke-dasharray="4,2" stroke-width="1.2" width="80" x="572" y="58"></rect><text fill="#6B7280" font-family="sans-serif" font-size="10.5" font-weight="600" text-anchor="middle" x="612" y="77">市場</text>
+<line marker-end="url(#hlic)" stroke="#4B8BDB" stroke-dasharray="5,3" stroke-width="1.5" x1="138" x2="193" y1="40" y2="58"></line><text fill="#4B8BDB" font-family="sans-serif" font-size="8" text-anchor="middle" x="160" y="40">許可①</text>
+<line marker-end="url(#hlic)" stroke="#4B8BDB" stroke-dasharray="5,3" stroke-width="1.5" x1="138" x2="193" y1="106" y2="88"></line><text fill="#4B8BDB" font-family="sans-serif" font-size="8" text-anchor="middle" x="160" y="108">許可②</text>
+<line marker-end="url(#hprd)" stroke="#1D9E75" stroke-width="1.5" x1="398" x2="337" y1="64" y2="64"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8" text-anchor="middle" x="367" y="59">製造委託</text>
+<line marker-end="url(#hprd)" stroke="#1D9E75" stroke-width="1.5" x1="337" x2="398" y1="78" y2="78"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8" text-anchor="middle" x="367" y="90">納品/製造費</text>
+<line marker-end="url(#hprd)" stroke="#1D9E75" stroke-width="1.5" x1="548" x2="570" y1="73" y2="73"></line><text fill="#1D9E75" font-family="sans-serif" font-size="8" text-anchor="middle" x="559" y="68">販売</text>
+</svg></div>
+<h4 class="sh4">パターン共通の確認事項</h4>
+<div class="tw"><table><thead><tr><th>確認事項</th><th>内容</th></tr></thead><tbody>
+<tr><td class="tcr">すでに渡した範囲との重複チェック</td><td>コラボ製品を売る地域・販路が、①②いずれかのIPで既に他社に許可済みの範囲と重ならないか</td></tr>
+<tr><td class="tc">コラボ許諾の有無（上流①）</td><td>既存のS1/S5契約が「他社IPとのコラボ製品」を許可範囲に含むか。含まなければ追加許諾（覚書）が必要</td></tr>
+<tr><td class="tc">②の組み合わせ承認</td><td>ライセンサー①が、②の他社IPと自社タイトルの組み合わせを承認するか</td></tr>
+<tr><td class="tcr">ロイヤルティ設計</td><td>①と②のロイヤルティ合計を製品価格に転嫁できているか試算</td></tr>
+<tr><td class="tcr">パターンBの製造費</td><td>製造費に①②両方のロイヤルティ相当を転嫁できているか（製造費＜ロイヤルティ合計なら逆ザヤ）</td></tr>
+<tr><td class="tcr">監修の直列リスク</td><td>①②が別々に監修すると承認待ちが直列に積み上がり、スケジュールが倍になる</td></tr>
+<tr><td class="tc">PL責任の所在（B）</td><td>当社は製造者として責任を問われうる。製造委託契約で責任分担を明確化</td></tr>
+</tbody></table></div>
+<h4 class="sh4">よくある落とし穴</h4>
+<ul class="pl">
+<li>①の既存ライセンスにコラボ許諾が含まれていなかったが、確認せず進めた</li>
+<li>①と②の監修が直列になりゲームマーケットに間に合わなかった</li>
+<li>パターンBで製造費を原価だけで設定し、①②のロイヤルティを考慮せず逆ザヤに</li>
+<li>パターンBで販売名義はライセンサーなのに、消費者クレームの一次窓口を当社に設定していた</li>
+</ul>
+<hr class="sd"/>
+<!-- ===================== 用語集 ===================== -->
+<hr class="sd"/>
+<h2 class="sec" id="terms">用語集：検索結果を詳しく読むために</h2>
+<p>検索結果で表示されたスキームを詳しく確認するときに参照してください。最初からすべてを読む必要はありません。</p>
+<p>このガイドでは、スキームを<strong>①IPを誰が利用するか、②誰が製造または製造委託を管理するか</strong>で判定します。製造主体とは、実際の工場ではなく、仕様・製造委託先・製造費・品質・納期・在庫を管理する当事者です。<strong>売主／買主はスキームの判定軸ではなく、完成品を供給した結果として生じる契約上の立場</strong>として整理します。</p>
+<h3 class="sub">基本の4類型 ── IPの利用関係と製造主体</h3>
+<div class="tw"><table><thead><tr><th>スキーム</th><th>IPの利用関係</th><th>製造・製造委託の主体</th><th>完成品の流れ</th><th>結果としての主な立場</th></tr></thead><tbody>
+<tr><td class="tc">ライセンスイン</td><td>当社が相手方IPを利用する</td><td><strong>当社</strong></td><td>当社が製造し、市場へ販売</td><td>当社＝ライセンシー</td></tr>
+<tr><td class="tc">プロダクトイン</td><td>利用許諾は必須ではない</td><td><strong>相手方または指定供給者</strong></td><td>相手方の完成品を当社が仕入れる</td><td>結果として相手方＝売主・供給者／当社＝買主</td></tr>
+<tr><td class="tc">ライセンスアウト</td><td>相手方が当社管理IPを利用する</td><td><strong>相手方</strong></td><td>相手方が製造し、市場へ販売</td><td>当社＝ライセンサーまたはサブライセンサー</td></tr>
+<tr><td class="tc">プロダクトアウト</td><td>利用許諾は取引内容により併存する</td><td><strong>当社</strong></td><td>当社の完成品を相手方へ供給</td><td>結果として当社＝売主・供給者／相手方＝買主</td></tr>
+</tbody></table></div>
+<div class="cl cl-n"><strong>製造主体の見分け方：</strong>「誰が実際に工場を持っているか」ではなく、誰が製造仕様を決め、工場等へ発注し、製造費・品質・納期・余剰在庫の責任を負うかで判断します。ライセンサーが指定工場を紹介するだけで、当社が発注・費用負担・品質管理を行う場合は、原則として当社が製造主体です。</div>
+<div class="cl cl-n"><strong>プロダクトアウトの下位類型：</strong><br/>
+  <strong>(a) 自主製造・卸売型</strong>＝当社が商品化を決定し、製造数量・在庫リスクを負って完成品を供給する（S6が典型）。<br/>
+  <strong>(b) 受注製造型</strong>＝相手方の注文・仕様・数量に基づき、当社が製造または製造委託して納品する（S3が典型）。<br/>
+いずれも<strong>製造主体は当社</strong>であり、違いは商品化の起点、仕様決定、数量決定、在庫リスクの所在です。</div>
+<h3 class="sub">用語定義 ── 登場人物（契約上の呼び名で統一）</h3>
+<p style="font-size:13px;color:#555">当事者は<strong>権利を「利用させる／利用する」関係</strong>で呼びます。ライセンス系の型は、つねに次の4語のどれかです。</p>
+<div class="tw"><table><thead><tr><th>呼び名</th><th>意味</th></tr></thead><tbody>
+<tr><td class="tc">ライセンサー</td><td>権利の利用を<strong>許諾する</strong>大もとの側。ロイヤルティを受け取る</td></tr>
+<tr><td class="tc">ライセンシー</td><td>ライセンサーから権利の<strong>利用許諾を受ける</strong>側。ロイヤルティを支払う</td></tr>
+<tr><td class="tc">サブライセンサー</td><td>利用許諾を受けた権利を<strong>第三者へ再許諾する</strong>側。ライセンサーから転許諾を認められていることが前提</td></tr>
+<tr><td class="tc">サブライセンシー</td><td>その<strong>再許諾を受けて利用する</strong>側</td></tr>
+</tbody></table></div>
+<div class="cl cl-n"><strong>重要ルール ── 当社が「イン→当社→アウト」の真ん中に立つ場合：</strong><br/>
+当社が大もと（ライセンサー）からIPの利用許諾を受け、さらに相手へ再許諾するときは、当社は<u>利用する側であり、かつ利用させる側</u>の二役になります。このとき当社は<strong>「ライセンシー（サブライセンサー）」</strong>と表記し、その相手は<strong>サブライセンシー</strong>になります。<br/>
+逆に、当社の<strong>自社IP</strong>を相手に利用させる場合（再許諾ではない場合）は、当社は単に<strong>ライセンサー</strong>、相手は<strong>ライセンシー</strong>です。</div>
+<h4 class="sh4">型ごとの役割対応（だれがどの呼び名か）</h4>
+<div class="tw"><table><thead><tr><th>型</th><th>ライセンサー</th><th>ライセンシー</th><th>サブライセンシー</th></tr></thead><tbody>
+<tr><td class="tc">S1 国内ライセンスイン</td><td>権利者（国内クリエイター・会社）</td><td><strong>当社</strong></td><td>—</td></tr>
+<tr><td class="tc">S5 海外ライセンスイン</td><td>権利者（海外版元）</td><td><strong>当社</strong></td><td>—</td></tr>
+<tr><td class="tc">S7 国内ライセンスアウト（自社IP）</td><td><strong>当社</strong></td><td>相手（国内他社）</td><td>—</td></tr>
+<tr><td class="tc">S7 国内ライセンスアウト（S1/S5で利用許諾を受けたIPの再許諾）</td><td>大もとの権利者</td><td colspan="1"><strong>当社＝ライセンシー（サブライセンサー）</strong></td><td>相手（国内他社）</td></tr>
+<tr><td class="tc">S2 海外ライセンスアウト（自社IP）</td><td><strong>当社</strong></td><td>相手（海外）</td><td>—</td></tr>
+<tr><td class="tc">S2 海外ライセンスアウト（利用許諾を受けたIPの再許諾）</td><td>大もとの権利者</td><td><strong>当社＝ライセンシー（サブライセンサー）</strong></td><td>相手（海外）</td></tr>
+<tr><td class="tc">コラボ（S1/S5×2）</td><td>権利者①・②</td><td><strong>当社</strong>（2本のライセンシー）</td><td>—</td></tr>
+</tbody></table></div>
+<p style="font-size:12px;color:#555">※「当社」はアークライト（図では紺の★）。会社の実体名は当社のまま、上の<strong>役割（呼び名）</strong>を併記して読む。</p>
+<h4 class="sh4">プロダクト（モノ）系の型の呼び名</h4>
+<p style="font-size:13px;color:#555">プロダクト系では、最初に<strong>製造・製造委託の主体</strong>を確認し、その後に売買・製造委託上の立場を整理します。売主／買主だけからスキームを判定しません。</p>
+<div class="tw"><table><thead><tr><th>呼び名</th><th>意味</th></tr></thead><tbody>
+<tr><td class="tc">製造主体／製造委託発注主体</td><td>仕様を決定し、工場等へ発注し、製造費・品質・納期・在庫を管理する側。プロダクトインは相手方、プロダクトアウトは当社</td></tr>
+<tr><td class="tc">委託者／受託製造者</td><td>相手方の注文に基づく受注製造では、発注する側が委託者、製造または製造委託して納品する側が受託製造者。S3では相手方＝委託者、当社＝受託製造者</td></tr>
+<tr><td class="tc">売主／買主</td><td>完成品を供給した結果として生じる売買上の立場。S4では相手方＝売主・当社＝買主、S6では当社＝売主・相手方＝買主。スキーム判定の出発点ではない</td></tr>
+<tr><td class="tc">（IP面の併記）</td><td>製品にS1/S5由来や自社のIPが乗る場合は、製造・売買上の立場に加えて<strong>IP面の利用許諾関係</strong>も併記する。利用許諾を受けたIPを載せて供給するときは <strong>当社＝ライセンシー（サブライセンサー）／相手＝サブライセンシー／大もと＝ライセンサー</strong>。自社IPなら 当社＝ライセンサー／相手＝ライセンシー</td></tr>
+</tbody></table></div>
+<h4 class="sh4">テリトリー（範囲）</h4>
+<div class="tw"><table><thead><tr><th>言葉</th><th>意味</th></tr></thead><tbody>
+<tr><td class="tc">テリトリー</td><td>許可・供給が及ぶ<strong>範囲</strong>の総称。<strong>海外案件＝地域・言語</strong>、<strong>国内案件＝販路・チャネル（EC・量販・専門店など）</strong>を指す。本ガイドの「すでに渡した範囲との重複チェック」も、この読み替えで判断する</td></tr>
+</tbody></table></div>
+<h3 class="sub" id="terms-acr">用語定義 ── お金・数量のことば（略語）</h3>
+<div class="tw"><table><thead><tr><th>言葉</th><th>読み・正式</th><th>意味</th></tr></thead><tbody>
+<tr><td class="tc">ロイヤルティ</td><td>使用料</td><td>権利を利用する（利用させる）対価。売れた数や金額に応じて払う／もらう</td></tr>
+<tr><td class="tc">計算基礎</td><td>—</td><td>ロイヤルティを何に掛けて計算するかの土台。<strong>定価ベース</strong>＝希望小売価格基準（国内慣行）／<strong>卸価格ベース（Net Sales）</strong>＝実際の出荷価格基準（海外アウト慣行）</td></tr>
+<tr><td class="tc">MG／Advance</td><td>ミニマムギャランティ／前払金</td><td>「最低これだけは払う／もらう」と先に約束する保証金。前払い的なもの</td></tr>
+<tr><td class="tc">MRG</td><td>最低保証ロイヤルティ</td><td>独占を続けるなら「年間これだけは売って納めてね」という最低ライン。下回ったら独占を外せる</td></tr>
+<tr><td class="tc">MOQ／MPR</td><td>最低発注数量</td><td>1回（または1年）で最低これだけは発注する約束</td></tr>
+<tr><td class="tc">MAP</td><td>最低小売価格</td><td>「これより安く売ってはダメ」という売価の下限。安売りでブランドが傷むのを防ぐ</td></tr>
+<tr><td class="tc">AQL</td><td>合格品質水準</td><td>抜き取り検査で「不良がここまでならOK」という許容ライン</td></tr>
+<tr><td class="tc">FOB／CIF／EXW</td><td>貿易条件（インコタームズ）</td><td>送料と「途中で壊れた時の責任」をどちらがどこまで負うかの取り決め。FOB＝船に積むまでが売主</td></tr>
+</tbody></table></div>
+<h3 class="sub">用語定義 ── 契約運用のことば</h3>
+<div class="tw"><table><thead><tr><th>言葉</th><th>意味</th></tr></thead><tbody>
+<tr><td class="tc">上流</td><td>当社より前の段階。当社にIPの利用を許諾する権利者の側を指す</td></tr>
+<tr><td class="tc">転許諾（再許諾）</td><td>当社がライセンサーから利用許諾を受けたIPを、さらに相手（サブライセンシー）に利用させること。ライセンサーから転許諾を認められていることが必須</td></tr>
+<tr><td class="tc">監修ターンアラウンド</td><td>監修（中身チェック）の返答にかかる日数。「何営業日以内に返す」と決めておく</td></tr>
+<tr><td class="tc">沈黙承認</td><td>期限内に相手から返事が来なければ「承認した」とみなすルール。承認待ちの遅延を防ぐ</td></tr>
+<tr><td class="tc">sell-off期間（在庫消化期間）</td><td>契約終了後、残った在庫を売りきってよい猶予期間</td></tr>
+<tr><td class="tc">カニバリ（食い合い）</td><td>同じ商品が複数のルートで同じ客層に流れ、価格やブランドが崩れること</td></tr>
+<tr><td class="tc">直販</td><td>当社が自社のチャネル（ホビーステーション等）で消費者へ直接売ること</td></tr>
+</tbody></table></div>
+<h3 class="sub">用語定義 ── 属地（海外案件）のことば</h3>
+<div class="tw"><table><thead><tr><th>言葉</th><th>意味</th></tr></thead><tbody>
+<tr><td class="tc">国際消尽／並行輸入</td><td>海外で権利者が適法に売った正規品は、日本に流れてきても原則として差し止められない（BBS事件・最高裁1997年）。この正規品の流入が並行輸入</td></tr>
+<tr><td class="tc">EU27／EEA／英国／スイス</td><td>同じ「ヨーロッパ」でも別物。<strong>EU27</strong>≠<strong>EEA</strong>（EU27＋ノルウェー・アイスランド・リヒテンシュタイン）≠<strong>英国</strong>（離脱済）≠<strong>スイス</strong>（非加盟）。地域指定は国・言語で書く</td></tr>
+<tr><td class="tc">EEA権利消尽</td><td>EEA域内のどこかで適法販売された製品は、EEA全域で再販を止められない。域内は一括テリトリーで設計するのが安全</td></tr>
+<tr><td class="tc">CEマーキング／UKCA</td><td>製品安全の認証。EU/EEA＝CE、英国＝UKCA。原則別申請で、両方売るならコストが倍</td></tr>
+<tr><td class="tc">EPA原産地規則</td><td>日EU・EPAの特恵関税は日本原産品が対象。中国工場製造は原産地規則を満たさず適用不可</td></tr>
+</tbody></table></div>
+<!-- ===================== 付録 ===================== -->
+<h2 class="sec" id="appa">付録A：新旧・スキーム対応表</h2>
+<p>旧版の「場面」番号・S番号と、本再編集版の8マスの対応です。<strong>S番号は変えていない</strong>ので、既存のテンプレートや他資料の参照はそのまま使えます。</p>
+<div class="ap"><div class="tw"><table><thead><tr><th>8マス（本版）</th><th>S番号</th><th>旧・場面</th><th>主テンプレート</th></tr></thead><tbody>
+<tr><td><span class="tag ts1">IN・ライセンス・国内</span></td><td>S1</td><td>場面3</td><td>license_master + individual_license_terms</td></tr>
+<tr><td><span class="tag ts5">IN・ライセンス・海外</span></td><td>S5</td><td>場面2</td><td>相手方案 + Additional Terms X.1〜X.22</td></tr>
+<tr><td><span class="tag ts4">IN・プロダクト・海外</span></td><td>S4</td><td>場面2</td><td>相手方案 + Additional Terms X.1〜X.22</td></tr>
+<tr><td style="color:#9aa0a6">IN・プロダクト・国内</td><td>—</td><td>（旧版になし）</td><td><span class="pb">空白マス</span></td></tr>
+<tr><td><span class="tag ts7">OUT・ライセンス・国内</span></td><td>S7</td><td>場面4</td><td><span class="pb">未整備</span></td></tr>
+<tr><td><span class="tag ts2">OUT・ライセンス・海外</span></td><td>S2</td><td>場面1</td><td>intl_master（IGLA Schedule 1）</td></tr>
+<tr><td><span class="tag ts6">OUT・プロダクト・国内</span></td><td>S6</td><td>場面4</td><td><span class="pb">未整備</span></td></tr>
+<tr><td><span class="tag ts3">OUT・プロダクト・海外</span></td><td>S3</td><td>場面1</td><td>intl_master + Supply Terms Addendum</td></tr>
+<tr><td colspan="4" style="background:#eef1f6;font-weight:700;color:var(--navy)">応用：コラボ（型の組み合わせ）</td></tr>
+<tr><td>パターンA：当社名義販売</td><td>S1/S5×2</td><td>場面5A</td><td>license_master×2 + 自社販売</td></tr>
+<tr><td>パターンB：製造受託</td><td>S1/S5×2 + 受託</td><td>場面5B</td><td>license_master×2 + 製造委託契約<span class="pb">未整備</span></td></tr>
+</tbody></table></div></div>
+<h2 class="sec" id="appb">付録B：補助契約・実行契約</h2>
+<div class="ap"><p>主契約だけでは取引を実行できない場合があります。次の契約は、各スキームの前提または実行段階で追加します。</p><div class="tw"><table><thead><tr><th>契約</th><th>主な締結相手</th><th>使用場面・主な論点</th></tr></thead><tbody>
+<tr><td class="tc">NDA</td><td>契約候補先・版元・製造先</td><td>未発表作品、原価、販売計画、仕様等を本契約前に開示する場合。国内は東京地裁、海外は本契約との整合を確認</td></tr>
+<tr><td class="tc">転許諾同意書・変更覚書</td><td>元のライセンサー</td><td>当社が利用許諾を受けたIPを第三者へ再許諾し、または完成品供給を通じて第三者に利用させる場合</td></tr>
+<tr><td class="tc">権利確認書・共同権利者同意書</td><td>共同著作者・所属会社・権利管理会社</td><td>契約相手が単独で利用許諾できるか不明な場合。職務著作、共同著作、代理権を確認</td></tr>
+<tr><td class="tc">国内制作・製造委託</td><td>翻訳者・制作会社・製造会社</td><td>service_master + PO + 検収書 + 支払通知書。フリーランス法、検収、知財帰属、再委託等を確認</td></tr>
+<tr><td class="tc">個別仕様書・発注書</td><td>売買先・供給先・製造委託先</td><td>基本契約の下で、商品、仕様、数量、単価、納期、検収条件等を案件ごとに確定</td></tr>
+<tr><td class="tc">商標・販促素材利用許諾</td><td>ブランド権者または販売先</td><td>完成品の売買を超えて、ロゴ、画像、動画、販促文言等を広告・EC・店舗表示に利用させる場合</td></tr>
+</tbody></table></div></div>
+<h2 class="sec" id="appc">付録C：共通の必須6項目（全マス）</h2>
+<div class="ap"><p style="margin-bottom:12px">法務に渡す前に、どのマスでも以下6項目を社内で決めておくこと。</p>
+<div class="tw"><table><thead><tr><th>#</th><th>項目</th><th>業界慣行・目安</th></tr></thead><tbody>
+<tr><td>1</td><td><strong>ロイヤルティの計算基礎</strong></td><td>国内：定価ベース。海外アウト：卸価格ベース（Net Sales）</td></tr>
+<tr><td>2</td><td><strong>MG/代金の支払タイミング</strong></td><td>早期払いは支払う側に不利。資金繰りを踏まえ社内で統一</td></tr>
+<tr><td>3</td><td><strong>費用負担の原則</strong></td><td>ローカライズ費・サンプル送付費・検査費の負担者を先に決める</td></tr>
+<tr><td>4</td><td><strong>監修ターンアラウンド</strong></td><td>10〜15営業日が目安。沈黙承認ルールとセット</td></tr>
+<tr><td>5</td><td><strong>報告・精算サイクル</strong></td><td>半期が慣行。支払期日まで決めてから法務に渡す</td></tr>
+<tr><td>6</td><td><strong>終了後の在庫消化期間</strong></td><td>国内：3〜6ヶ月、海外：6〜12ヶ月が目安</td></tr>
+</tbody></table></div></div>
+</main>
+<script>
+(function(){
+'use strict';
+const state={maker:null,flow:null,region:null,extra:null};
+const historyStack=[];
+const labels={
+ company:'当社が製造・製造委託',counterparty:'相手方が製造・製造委託',mixed:'製造主体が共同・未確定',
+ 'license-in':'相手方IPを当社が利用','product-in':'相手方製造品を仕入れる','license-out':'当社管理IPを相手方が利用','product-out':'当社製造品を供給','mixed-manufacturing':'共同・未確定の製造体制',
+ domestic:'国内の相手',overseas:'海外の相手',own:'自社・管理IP',licensed:'他社から利用許諾を受けたIP',borrowed:'他社から利用許諾を受けたIP',unknown:'未確認',
+ wholesale:'自主製造・卸売型',commissioned:'受注製造型',mixedProduct:'共同商品化・複合型',exclusive:'独占販売を希望',nonexclusive:'非独占',undecided:'未定'
+};
+const el={
+ step1:document.getElementById('finder-step1'),step2:document.getElementById('finder-step2'),step3:document.getElementById('finder-step3'),step4:document.getElementById('finder-step4'),result:document.getElementById('finder-result'),
+ bar:document.getElementById('selected-bar'),chips:document.getElementById('selected-chips'),reset:document.getElementById('finder-reset'),back:document.getElementById('finder-back')
+};
+function cloneState(){return {maker:state.maker,flow:state.flow,region:state.region,extra:state.extra};}
+function pushHistory(){historyStack.push(cloneState());}
+function setProgress(n){document.querySelectorAll('.prog').forEach((p,i)=>{p.classList.toggle('active',i===n-1);p.classList.toggle('done',i<n-1);});}
+function renderChips(){const vals=[state.maker,state.flow,state.region,state.extra].filter(Boolean);el.bar.hidden=!vals.length;el.chips.innerHTML=vals.map(v=>'<span class="sel-chip">'+(labels[v]||v)+'</span>').join('');}
+function markSelected(){document.querySelectorAll('[data-maker],[data-flow],[data-region],[data-extra]').forEach(b=>{const v=b.dataset.maker||b.dataset.flow||b.dataset.region||b.dataset.extra;b.classList.toggle('selected',v===state.maker||v===state.flow||v===state.region||v===state.extra);b.setAttribute('aria-pressed',b.classList.contains('selected')?'true':'false');});}
+function updateUrl(){const p=new URLSearchParams();if(state.maker)p.set('maker',state.maker);if(state.flow)p.set('flow',state.flow);if(state.region)p.set('region',state.region);if(state.extra)p.set('extra',state.extra);const q=p.toString();history.replaceState(null,'',location.pathname+(q?'?'+q:'')+location.hash);}
+function showStep(step){el.step1.hidden=step!==1;el.step2.hidden=step!==2;el.step3.hidden=step!==3;el.step4.hidden=step!==4;el.result.hidden=step!==5;setProgress(step);renderChips();markSelected();updateUrl();document.getElementById('finder').scrollIntoView({behavior:'smooth',block:'start'});}
+function secondQuestion(){
+ let title='',help='',opts=[];
+ if(state.maker==='company'){
+  title='当社が製造主体となる理由はどちらですか？';help='IPの利用許諾を受けて当社が商品化するか、当社製造品を相手方へ供給するかで区別します。';
+  opts=[['license-in','相手方IPの利用許諾を受け、当社が商品化する','ライセンスイン：利用許諾を受ける側である当社が製造主体'],['product-out','当社が製造した完成品を相手方へ供給する','プロダクトアウト：当社が製造主体・供給主体']];
+ }else if(state.maker==='counterparty'){
+  title='相手方が製造主体となる理由はどちらですか？';help='当社管理IPを相手方が利用して商品化するか、相手方製造品を当社が仕入れるかで区別します。';
+  opts=[['license-out','当社管理IPを相手方に利用させ、相手方が商品化する','ライセンスアウト：利用許諾を受ける相手方が製造主体'],['product-in','相手方が製造した完成品を当社が仕入れる','プロダクトイン：供給者側が製造主体']];
+ }else{return false;}
+ el.step2.innerHTML='<div class="step-title"><span>Q2</span><div><b>'+title+'</b><small>'+help+'</small></div></div><div class="choice-grid">'+opts.map(o=>'<button type="button" class="choice-card compact" data-flow="'+o[0]+'"><b>'+o[1]+'</b><small>'+o[2]+'</small></button>').join('')+'</div>';
+ el.step2.querySelectorAll('[data-flow]').forEach(b=>b.addEventListener('click',()=>selectFlow(b.dataset.flow)));
+ return true;
+}
+function fourthQuestion(){
+ let title='',help='',opts=[];
+ if(state.flow==='license-out'){
+  title='相手方に利用させるIPはどちらですか？';help='他社から利用許諾を受けたIPの場合、元の契約で転許諾が認められている必要があります。';
+  opts=[['own','当社が権利を保有・管理するIP','当社が直接ライセンサーになる'],['licensed','他社から利用許諾を受けたIP','当社はサブライセンサーになる'],['unknown','分からない／未確認','検索結果で上流確認を案内する']];
+ }else if(state.flow==='product-out'){
+  title='商品化の起点と在庫リスクはどちらにありますか？';help='いずれも製造主体は当社ですが、卸売型と受注製造型では契約条件が異なります。';
+  opts=[['wholesale','当社が商品化を決定し、製造数量・在庫リスクを負う','自主製造・卸売型'],['commissioned','相手方の注文・仕様・数量に基づき当社が製造する','受注製造型'],['mixedProduct','双方で企画・費用・在庫を分担する／分からない','共同商品化・複合型として法務確認']];
+ }else if(state.flow==='product-in'){
+  title='日本国内で独占的に販売する予定ですか？';help='独占販売権は、完成品の購入だけでは当然には付与されません。';
+  opts=[['exclusive','独占販売を希望する','販売地域・チャネルの独占条件を追加検討'],['nonexclusive','非独占で仕入れる','通常の売買・継続供給条件を検討'],['undecided','未定','検索結果で決定事項として表示']];
+ }else{return false;}
+ el.step4.innerHTML='<div class="step-title"><span>Q4</span><div><b>'+title+'</b><small>'+help+'</small></div></div><div class="choice-grid">'+opts.map(o=>'<button type="button" class="choice-card compact" data-extra="'+o[0]+'"><b>'+o[1]+'</b><small>'+o[2]+'</small></button>').join('')+'</div>';
+ el.step4.querySelectorAll('[data-extra]').forEach(b=>b.addEventListener('click',()=>{pushHistory();state.extra=b.dataset.extra;renderResult();}));
+ return true;
+}
+const baseResults={
+ s1:{code:'S1',title:'国内ライセンスイン',phrase:'国内の権利者からIPの利用許諾を受け、当社が製造または製造委託して商品を販売する取引です。',maker:'当社。仕様・製造委託先・製造費・品質・納期を当社が管理します。',role:'利用許諾上：相手方＝ライセンサー／当社＝ライセンシー',conditions:['対象作品・利用方法・販売チャネル','ロイヤルティ計算基礎、MG、支払時期','製造仕様、監修段階、回答期限','契約期間、独占性、終了後の在庫販売'],detail:'#s1',compare:'#s5'},
+ s5:{code:'S5',title:'海外ライセンスイン',phrase:'海外版元からIPの利用許諾を受け、当社が日本語版を製造または製造委託して販売する取引です。',maker:'当社。日本語版の仕様・製造委託先・品質・納期を当社が管理します。',role:'利用許諾上：相手方＝海外ライセンサー／当社＝ライセンシー',conditions:['対象作品、言語、販売地域','ロイヤルティ、MG、支払スケジュール','製造・ローカライズ範囲と承認期限','準拠法、紛争解決、終了後の在庫販売'],detail:'#s5',compare:'#s4'},
+ spin:{code:'未整備',title:'国内プロダクトイン',phrase:'国内の相手方または指定供給者が製造した完成品を、当社が仕入れて販売する取引です。',maker:'相手方または相手方指定の供給者。製造責任・品質・納期の管理は供給者側です。',role:'完成品供給の結果として：相手方＝売主・供給者／当社＝買主・仕入主体',conditions:['商品、数量、単価、納期','検収・不良品・返品条件','販売地域・チャネル・独占性','継続供給、価格改定、終了条件'],detail:'#sPin',compare:'#s4',gap:true},
+ s4:{code:'S4',title:'海外プロダクトイン',phrase:'海外の相手方または指定供給者が製造した完成品を、当社が輸入して日本で販売する取引です。',maker:'相手方または相手方指定の供給者。製造責任・品質・納期の管理は供給者側です。',role:'完成品供給の結果として：相手方＝売主・供給者／当社＝買主・輸入者',conditions:['商品仕様、MOQ、価格、貿易条件','納期、検収、不良品処理','日本での販売権・独占性','輸入規制、表示、安全性、並行輸入対応'],detail:'#s4',compare:'#s5'},
+ s7:{code:'S7',title:'国内ライセンスアウト',phrase:'国内の相手方にIPの利用を許諾し、相手方が製造または製造委託して商品を販売する取引です。',maker:'相手方。相手方が商品仕様・製造委託先・製造費・品質・納期を管理します。',role:'利用許諾上：当社＝ライセンサーまたはサブライセンサー／相手方＝ライセンシーまたはサブライセンシー',conditions:['対象IP、商品、販路・チャネル','独占性、競合・既存許諾との重複','ロイヤルティ、MG、報告・監査','監修、品質管理、契約終了後の処理'],detail:'#s7',compare:'#s2'},
+ s2:{code:'S2',title:'海外ライセンスアウト',phrase:'海外の相手方にIPの利用を許諾し、相手方が現地語版を製造または製造委託して販売する取引です。',maker:'相手方。相手方が現地版の仕様・製造委託先・製造費・品質・納期を管理します。',role:'利用許諾上：当社＝ライセンサーまたはサブライセンサー／相手方＝ライセンシーまたはサブライセンシー',conditions:['地域・言語・商品・販売チャネル','独占性、最低保証、販売開始期限','ロイヤルティ、Net Sales、税・送金','競争法、準拠法、仲裁、監修'],detail:'#s2',compare:'#s3'},
+ s6:{code:'S6',title:'国内プロダクトアウト／自主製造・卸売型',phrase:'当社が商品化を決定し、製造または製造委託した完成品を国内企業へ供給する取引です。',maker:'当社。製造仕様・委託先・製造費・品質・納期・在庫を当社が管理します。',role:'完成品供給の結果として：当社＝売主・供給者／相手方＝買主・販売先',conditions:['商品仕様、数量、卸価格、発注方法','納期、引渡し、検収、不良品処理','販路・販売地域・価格政策','在庫リスク、返品、販売終了条件'],detail:'#s6',compare:'#s3'},
+ s3:{code:'S3',title:'海外プロダクトアウト／受注製造型',phrase:'海外企業の注文・仕様・数量に基づき、当社が製造または製造委託して完成品を納品する取引です。',maker:'当社。ただし商品化の起点・仕様・数量は相手方の発注に基づきます。',role:'製造委託上：相手方＝委託者／当社＝受託製造者。完成品売買を伴う場合は、結果として当社＝売主・供給者／相手方＝買主',conditions:['製造仕様、数量、変更管理','製造費、前払金、貿易条件','検収、不良品、補充、責任分担','現地規制、認証、上流IPの許諾'],detail:'#s3',compare:'#s2'},
+ domesticCommission:{code:'未整備',title:'国内プロダクトアウト／受注製造型',phrase:'国内企業の注文・仕様・数量に基づき、当社が製造または製造委託して完成品を納品する取引です。',maker:'当社。ただし商品化の起点・仕様・数量は相手方の発注に基づきます。',role:'製造委託上：相手方＝委託者／当社＝受託製造者。完成品売買を伴う場合は売主・買主の立場も併存します。',conditions:['成果物・仕様・変更手続','委託料、材料費、支払条件','納期、検収、契約不適合責任','知的財産、製造物責任、再委託'],detail:'#s6',compare:'#s3',gap:true},
+ overseasWholesale:{code:'未整備',title:'海外プロダクトアウト／自主製造・卸売型',phrase:'当社が商品化を決定し、製造または製造委託した完成品を海外企業へ卸し、相手方が現地で再販売する取引です。',maker:'当社。製造仕様・委託先・製造費・品質・納期・在庫を当社が管理します。',role:'完成品供給の結果として：当社＝売主・供給者／相手方＝買主・販売店',conditions:['商品、地域、販路、独占性','価格、MOQ、発注、貿易条件','検収、保証、返品、リコール','現地規制、商標使用、販売店管理'],detail:'#s3',compare:'#s2',gap:true},
+ mixedProduct:{code:'要個別設計',title:'共同商品化・複合型プロダクトアウト',phrase:'当社が製造主体である一方、企画・費用・在庫リスクを双方が分担するため、売買・製造委託・ライセンスの構成を個別に整理します。',maker:'当社を中心としつつ、相手方も仕様・費用・在庫リスクの一部を負担します。',role:'製造委託・共同事業・売買・利用許諾の複数の立場が併存する可能性があります。',conditions:['誰が企画・仕様を決定するか','製造費・在庫・販売リスクの分担','知的財産と商標使用の関係','代金の性質と検収・責任分担'],detail:'#appc',compare:'#map',gap:true},
+ mixedManufacturing:{code:'要個別設計',title:'製造主体が共同・未確定の取引',phrase:'製造・製造委託の管理主体が一方に定まらないため、スキーム選別の前に製造責任と費用負担を整理する必要があります。',maker:'未確定または双方分担。仕様、発注先、製造費、品質、納期、余剰在庫の責任を項目別に確定してください。',role:'売買・製造委託・共同事業・利用許諾のいずれを中心契約とするか個別設計します。',conditions:['製造仕様の最終決定者','工場等への発注名義と製造費負担','品質・納期・不良品・在庫の責任','IP利用、販売名義、収益配分'],detail:'#appc',compare:'#map',gap:true}
+ };
+const contractSets={"s1":[{"kind":"主契約","name":"国内IP利用許諾契約","party":"国内の権利者／当社＝ライセンシー","note":"対象IP、商品、地域・販路、ロイヤルティ、監修等を定める","checks":["許諾者が対象IPを単独で許諾できるか","対象IP・商品／媒体・販路・地域・期間・独占性","ロイヤルティ／MG・計算基礎・報告／監査方法","監修・改変・成果物の権利・終了後在庫の取扱い"]},{"kind":"前提","name":"権利確認書・共同権利者同意書","party":"共同著作者、所属会社、権利管理会社等","note":"契約相手が単独で許諾できない場合","checks":["著作権・商標権等の原始帰属と譲渡履歴","共同著作者・所属会社・権利管理会社の同意範囲","第三者素材・肖像・名称等が含まれていないか","権限保証、紛争発生時の協力・補償"]},{"kind":"実行","name":"制作・翻訳・製造委託契約／発注書","party":"翻訳者、制作会社、製造会社／当社＝委託者","note":"当社が制作・製造を外部委託する場合","checks":["成果物・仕様・納期・修正回数・変更手続","請負／準委任の区分、検収・再実施・支払条件","著作権帰属・二次利用・著作者人格権不行使","再委託、秘密保持、支給素材、品質・不良対応"]}],"s5":[{"kind":"主契約","name":"国際IP利用許諾契約（Master＋個別条件書）","party":"海外版元・権利者／当社＝ライセンシー","note":"言語、地域、商品、MG・ロイヤルティ、監修、準拠法等を定める","checks":["契約主体・署名権限・対象IPの許諾権限","言語・地域・商品・媒体・製造権・再許諾の範囲","MG／ロイヤルティ、通貨・税・送金、報告／監査","ローカライズ・改変・監修期限・承認手続","期間・更新・sell-off・準拠法・紛争解決"]},{"kind":"条件付","name":"NDA","party":"海外版元・権利者","note":"本契約前に未発表情報等を開示する場合","checks":["検討目的と秘密情報の定義・除外情報","グループ会社・翻訳者・製造先への共有可否","秘密保持期間、返還・消去、複製物の管理","準拠法、差止め、既存NDAとの優先関係"]},{"kind":"実行","name":"翻訳・制作・製造委託契約／発注書","party":"翻訳者、制作会社、製造会社／当社＝委託者","note":"日本語版の制作・製造を外部委託する場合","checks":["上流契約上の仕様・監修・秘密保持条件を反映したか","成果物・版管理・納期・修正・検収手続","翻訳・デザイン等の権利帰属と人格権不行使","再委託先、支給データ、製造品質・不良時の責任"]}],"spin":[{"kind":"主契約","name":"国内売買基本契約／継続供給契約","party":"国内の製造・供給者／当社＝買主・販売者","note":"商品、価格、納期、検収、不良品、返品等を定める","checks":["供給者の販売権限・製造主体・正規流通品か","商品仕様、価格・税、発注方法、最低発注数量","納期・引渡場所・危険負担・所有権・検収","契約不適合、不良品、返品、リコール・費用負担","価格改定、供給停止、終売通知、在庫・部品対応"]},{"kind":"実行","name":"個別発注書・注文請書","party":"国内の供給者","note":"商品、数量、単価、納期を個別に確定する","checks":["適用する基本契約・文書間の優先順位","品名・仕様／版・数量・単価・消費税","納期・納品場所・検収期限・請求／支払日","変更・キャンセル・不足／過納時の処理"]},{"kind":"条件付","name":"独占販売契約／ブランド利用許諾","party":"販売権限・ブランド権限を持つ相手","note":"独占販売または販促素材の利用を伴う場合","checks":["付与者が独占販売権・ブランド利用権を付与できるか","対象地域・販路・顧客・商品・独占期間","直販・他社供給・最低購入数量・販売開始期限","利用可能な商標・素材、承認手続、終了後の削除"]}],"s4":[{"kind":"主契約","name":"国際売買・継続供給契約／ディストリビューション契約","party":"海外の製造・供給者／当社＝買主・輸入者・販売者","note":"商品、価格、MOQ、貿易条件、検収、不良品等を定める","checks":["供給者の販売権限・製造主体・サプライチェーン","商品仕様、MOQ・予測、価格・通貨・税・関税","Incoterms、所有権・危険移転、保険・通関書類","納期、到着後検収、潜在欠陥、不良補充・リコール","供給継続、価格改定、終売・部品／交換品の確保"]},{"kind":"条件付","name":"独占販売契約／独占条項","party":"海外版元または正当な販売権限を持つ供給者","note":"日本・特定チャネルで独占販売する場合","checks":["独占権の付与権限と既存代理店・販売店の有無","地域・言語・販路・顧客・オンライン販売の範囲","直販・他社供給・最低購入量・販売開始期限","競争法上の制約、受動的販売・並行流通の扱い","期間、非独占化・解除、終了後在庫の販売"]},{"kind":"条件付","name":"商標・販促素材利用許諾","party":"IP・商標権者／当社＝利用者","note":"ロゴ・画像等を広告に利用する場合","checks":["権利者・許諾権限と対象商標／素材の特定","媒体・地域・期間・翻訳／編集・広告出稿の範囲","ブランドガイド、事前承認、クレジット表示","広告代理店・EC・SNS事業者への共有可否","終了後の掲載停止・データ削除・在庫販促物の扱い"]}],"s7":[{"kind":"主契約","name":"国内IP利用許諾契約","party":"国内の利用者・商品化事業者／当社＝ライセンサーまたはサブライセンサー","note":"商品、販路、ロイヤルティ、監修、報告等を定める","checks":["当社の権利保有・管理権限または転許諾権限","対象IP・商品・媒体・販路・地域・期間","独占性、MRG、販売開始期限、競合許諾との重複","ロイヤルティ、報告・証憑・監査、税の扱い","監修・品質・回収、再許諾・製造委託、sell-off"]},{"kind":"前提","name":"転許諾同意書／上流契約の変更覚書","party":"元のライセンサー／当社＝ライセンシー","note":"上流から利用許諾を受けたIPを再許諾する場合","checks":["再許諾先・商品・販路・地域・期間を特定したか","上流への追加ロイヤルティ・報告・承認条件","監修・品質・表示等を下流契約へ転嫁できるか","下流違反時の当社責任と上流への補償","上流契約終了時の下流契約・在庫の処理"]},{"kind":"条件付","name":"NDA","party":"許諾先候補","note":"未発表商品・販売計画等を契約前に開示する場合","checks":["検討目的・秘密情報・開示範囲","役職員・委託先への共有と管理義務","秘密保持期間・返還／廃棄・公表可否","本契約不成立時の企画・サンプル利用禁止"]}],"s2":[{"kind":"主契約","name":"国際IP利用許諾契約（Master＋個別条件書）","party":"海外の利用者・現地版元／当社＝ライセンサーまたはサブライセンサー","note":"地域・言語、商品、MG・ロイヤルティ、監修、準拠法等を定める","checks":["当社の権利・転許諾権限と相手方の契約主体／信用","地域・言語・商品・媒体・販路・製造／再許諾範囲","独占性、発売期限、MG・ロイヤルティ、Net Sales定義","報告・監査、源泉税・送金・通貨／為替の扱い","監修・品質・現地規制、競争法・制裁／輸出管理","期間・sell-off・準拠法・仲裁・判決／仲裁判断の執行"]},{"kind":"前提","name":"転許諾同意書／上流契約の変更覚書","party":"元のライセンサー／当社＝ライセンシー","note":"上流から利用許諾を受けたIPを海外へ再許諾する場合","checks":["対象国・言語・再許諾先・商品・販売経路","追加対価、為替・税、上流への報告・監査","現地版の監修・品質・クレジット条件","下流契約への必須条項・責任転嫁","上流終了時の下流契約・在庫・素材の処理"]},{"kind":"条件付","name":"NDA","party":"海外候補先","note":"秘密情報を開示して交渉する場合","checks":["検討目的・秘密情報・許可された利用","関連会社・専門家・製造候補への共有範囲","秘密保持期間、返還／削除、残存情報の扱い","準拠法・差止め・公表／プレスリリース"]},{"kind":"条件付","name":"交渉代理・エージェント契約","party":"現地エージェント／当社＝委託者","note":"第三者に候補先探索・交渉・契約事務を委ねる場合","checks":["権限範囲（紹介・交渉・署名権限の有無）","対象地域・案件、独占性、競業・利益相反","報酬・成功報酬の算定基礎と支払時期","秘密保持、法令遵守、再委託、活動報告","契約終了後のテール報酬・顧客帰属"]}],"s6":[{"kind":"主契約","name":"国内売買基本契約／継続供給・販売店契約","party":"国内の販売先・卸先／当社＝売主・供給者","note":"商品、卸価格、発注、検収、返品、販路等を定める","checks":["商品・卸価格・発注単位・支払条件・与信","引渡し、危険負担・所有権、検収・不良品・返品","販売地域・販路・再卸・EC／マーケットプレイスの可否","販促・価格表示の運用は独禁法上の制約を法務確認","終売・契約終了・残存在庫・リコール時の協力"]},{"kind":"実行","name":"個別発注書・注文請書","party":"国内の販売先","note":"商品、数量、単価、納期を個別に確定する","checks":["基本契約の特定と個別条件の優先順位","商品・仕様／版・数量・単価・消費税","納期・納品場所・請求／支払日","変更・キャンセル・分納・欠品時の処理"]},{"kind":"条件付","name":"OEM・製造受託契約","party":"仕様・数量を指定する国内委託者／当社＝受託製造者","note":"相手方起点の商品を当社が製造する場合","checks":["仕様決定、設計・材料・金型・支給品の責任分担","発注数量・予測・キャンセル・仕様変更の手続","委託料・材料費・価格改定、検収・契約不適合","知財・金型／データの帰属、再委託・秘密保持","製造物責任・表示規制・リコール・保険","取適法・フリーランス法等の適用と書面／支払条件"]},{"kind":"条件付","name":"商標・販促素材利用許諾","party":"販売先／当社＝ライセンサーまたは権限付与者","note":"販売先が当社ブランド素材を利用する場合","checks":["当社が許諾できる商標・画像・商品情報の範囲","利用媒体・店舗／EC・期間・改変可否","ブランドガイド・事前承認・表示義務","第三者制作会社への共有と素材管理","終了・違反時の掲載停止・データ削除"]}],"s3":[{"kind":"主契約","name":"国際OEM・製造供給契約／製造業務委託契約","party":"海外の発注者・委託者／当社＝受託製造者・供給者","note":"仕様、数量、製造費、納期、検収、貿易条件等を定める","checks":["売買／製造委託の性質と当社・相手方の責任範囲","仕様・サンプル・変更管理、材料・金型・支給品","予測・MOQ・確定発注・キャンセル・余剰在庫","価格・前払金・通貨／税、Incoterms・危険／所有権移転","検収・潜在欠陥・補充、製造物責任・リコール","IP・再委託・認証／表示規制・制裁／輸出管理","準拠法・仲裁・責任制限・保険"]},{"kind":"実行","name":"個別仕様書・発注書・注文請書","party":"海外の委託者","note":"仕様、数量、価格、納期、認証等を個別に確定する","checks":["適用するMaster契約と文書間の優先順位","仕様書番号・版、数量、単価・通貨・税","製造／出荷日、Incoterms、梱包・表示・必要書類","検収基準・サンプル承認・変更／キャンセル手続"]},{"kind":"前提","name":"製造目的のIP利用許諾","party":"相手方またはIP権利者／当社＝製造目的の利用者","note":"相手方IP・データ・商標を製造に利用する場合","checks":["許諾者の権限と製造対象IP・データの特定","製造目的・工場／再委託先・地域・期間の限定","複製・保管・データセキュリティ・監修／承認","製造以外の利用禁止、余剰品・データの返還／廃棄"]},{"kind":"前提","name":"転許諾同意書／上流契約の変更覚書","party":"元のライセンサー","note":"当社が上流IPを載せた完成品を供給する場合","checks":["供給先・販売地域・商品・数量・販売権限の範囲","追加ロイヤルティ、販売報告、サンプル・監修","下流への品質・表示・禁止事項の転嫁","上流契約終了時の供給・在庫・下流販売の処理"]}],"domesticCommission":[{"kind":"主契約","name":"国内OEM・製造受託契約","party":"国内の発注者・委託者／当社＝受託製造者","note":"仕様、数量、委託料、検収、知財、製造物責任等を定める","checks":["成果物・仕様・材料／金型・支給品の責任分担","数量・納期・仕様変更・キャンセル・余剰在庫","委託料・材料費・支払期日・価格改定","検収・契約不適合・製造物責任・リコール","知財・データ・金型の帰属、再委託・秘密保持","取適法・フリーランス法等の適用と書面交付"]},{"kind":"実行","name":"個別仕様書・発注書・注文請書","party":"国内の委託者","note":"案件ごとの仕様・数量・価格・納期を確定する","checks":["基本契約・仕様書の版と優先順位","品名・仕様・数量・単価・材料費・消費税","納期・納品場所・検収期限・支払日","変更・キャンセル・追加費用の承認方法"]},{"kind":"前提","name":"製造目的のIP利用許諾","party":"相手方またはIP権利者","note":"相手方IPを製造に利用する場合","checks":["権利者・許諾権限と対象素材の特定","製造目的・委託工場・期間・数量の範囲","複製・保管・秘密保持・承認手続","余剰品・データ・版下の返還／廃棄"]}],"overseasWholesale":[{"kind":"主契約","name":"国際売買・ディストリビューション契約","party":"海外の販売店・ディストリビューター／当社＝売主・供給者","note":"地域、販路、価格、MOQ、貿易条件、検収等を定める","checks":["販売店の信用・輸入資格・地域／販路・独占性","商品、価格・通貨・税、MOQ・予測・発注確定","Incoterms・危険／所有権移転・保険・通関","検収・保証・返品・リコール・現地顧客対応","再販売先・オンライン販売・商標使用・販売報告","競争法・制裁／輸出管理、準拠法・紛争解決"]},{"kind":"実行","name":"個別発注書・注文請書","party":"海外の販売店","note":"商品、数量、価格、納期を個別に確定する","checks":["Master契約・価格表・仕様版の特定","商品・数量・単価・通貨・税","出荷日、Incoterms、納品先・梱包／書類","変更・キャンセル・欠品・分納の処理"]},{"kind":"条件付","name":"商標・販促素材利用許諾","party":"海外の販売店","note":"当社ブランド素材を現地販促に利用する場合","checks":["対象商標・画像・商品情報と当社の許諾権限","現地言語化・編集、媒体・地域・期間","ブランドガイド、事前承認、法定表示","代理店・小売店・広告会社への再提供範囲","終了後の掲載停止・素材削除・ドメイン／SNS処理"]}],"mixedProduct":[{"kind":"主契約","name":"共同商品化・共同開発契約","party":"共同事業者／当社＝共同事業当事者","note":"企画、費用、製造、在庫、知財、収益、撤退条件を定める","checks":["当事者・意思決定権・承認事項・プロジェクト責任者","企画・開発・製造・販売の役割と費用超過の負担","既存IP・新規成果物・商標・データの帰属／利用権","品質・検収・不良品・在庫・製造物責任","売上計上・収益配分・経費・監査・税務処理","デッドロック、撤退・終了、残在庫・成果物の処理"]},{"kind":"実行","name":"個別条件書・製造供給契約・利用許諾契約","party":"役割に応じた各当事者","note":"主契約で整理した役割ごとに個別条件を確定する","checks":["共同事業基本契約との整合・文書間の優先順位","案件ごとの当事者・役割・対象商品／IP","仕様・数量・価格・納期・承認／検収","変更・中止・追加費用・責任の連動条件"]}],"mixedManufacturing":[{"kind":"主契約","name":"取引基本合意書／共同事業基本契約","party":"製造・販売・権利関係に関与する当事者","note":"製造主体、費用、品質、在庫、IP、販売名義を先に整理する","checks":["仕様・工場選定・発注名義・最終決定者の責任表","製造費・追加費用・在庫・物流・保険の負担","品質・納期・不良品・リコール・第三者責任","IP利用・成果物・商標・販売名義・顧客対応","収益配分・会計・税、意思決定・デッドロック","確定契約への移行条件・終了時の処理"]},{"kind":"実行","name":"利用許諾・売買・製造委託の各契約","party":"整理後の各担当当事者","note":"確定した役割に応じて必要契約を分割または一体化する","checks":["確定した役割ごとに契約類型を選択したか","当事者・対象・対価・履行内容の漏れ／重複がないか","各契約の優先順位・相互条件・クロスデフォルト","主契約の終了が他契約・在庫・許諾に与える影響"]}]};
+function determine(){
+ if(state.flow==='mixed-manufacturing')return 'mixedManufacturing';
+ if(state.flow==='license-in')return state.region==='domestic'?'s1':'s5';
+ if(state.flow==='product-in')return state.region==='domestic'?'spin':'s4';
+ if(state.flow==='license-out')return state.region==='domestic'?'s7':'s2';
+ if(state.flow==='product-out'){
+  if(state.extra==='mixedProduct')return 'mixedProduct';
+  if(state.region==='domestic')return state.extra==='commissioned'?'domesticCommission':'s6';
+  return state.extra==='wholesale'?'overseasWholesale':'s3';
+ }
+ return null;
+}
+function extraWarnings(key){const w=[];
+ if(state.flow==='license-out'&&(state.extra==='licensed'||state.extra==='borrowed'))w.push('<strong>転許諾の確認が必須です。</strong> 元のライセンサーとの契約で、第三者へのサブライセンスが許可されているか確認してください。');
+ if(state.flow==='license-out'&&state.extra==='unknown')w.push('<strong>IPの権利関係が未確認です。</strong> 自社IPか、他社から利用許諾を受けたIPかを確定し、後者の場合は転許諾権限を確認してください。');
+ if(state.flow==='product-in'&&state.extra==='exclusive')w.push('<strong>独占販売権は製品購入だけでは付いてきません。</strong> 販売地域・チャネル、直販、並行輸入、最低購入数量を別途合意してください。');
+ if(state.flow==='product-in'&&state.extra==='undecided')w.push('<strong>独占性が未定です。</strong> 法務相談前に、非独占仕入れか独占販売かを決めてください。');
+ if(baseResults[key].gap)w.push('<strong>現行テンプレート・S番号に完全一致しない取引です。</strong> 製造責任、費用負担、IP利用、完成品供給の関係を法務で個別に設計してください。');
+ return w;
+}
+function reasonText(){return [labels[state.maker],labels[state.flow],labels[state.region],labels[state.extra]].filter(Boolean).join(' × ');}
+function memoText(r,key){const cs=contractSets[key]||[];return ['法務相談用メモ','・想定スキーム：'+r.code+' '+r.title,'・取引分類：'+reasonText(),'・製造・製造委託の主体：'+r.maker,'・契約上の立場：'+r.role,'・必要契約：'+cs.map(c=>c.name+'（'+c.party+'）').join('／'),'・契約別確認事項：'+cs.map(c=>c.name+'：'+c.checks.join('、')).join('／'),'・対象商品・IP：未入力','・契約相手：未入力','・主な条件：未入力','・発売・納品予定：未入力'].join('\n');}
+function renderResult(){
+ const key=determine(),r=baseResults[key];if(!r)return;
+ const warnings=extraWarnings(key);
+ el.result.innerHTML='<div class="result-head"><div class="result-eyebrow">推奨スキーム</div><h3><span class="scode">'+r.code+'</span>'+r.title+'</h3><p>'+r.phrase+'</p></div><div class="result-body">'+
+ '<div class="result-reason"><strong>この結果になった理由：</strong> '+reasonText()+'</div>'+
+ '<div class="result-grid"><div class="result-panel"><h4>製造・製造委託の主体</h4><p>'+r.maker+'</p></div><div class="result-panel"><h4>契約上の立場</h4><p>'+r.role+'</p></div><div class="result-panel full"><h4>必要な契約と締結相手</h4><div class="tw"><table class="result-contract-table"><thead><tr><th>区分</th><th>契約</th><th>締結相手・当社の立場</th><th>目的</th><th>契約前の確認事項</th></tr></thead><tbody>'+(contractSets[key]||[]).map(c=>'<tr><td>'+c.kind+'</td><td><strong>'+c.name+'</strong></td><td>'+c.party+'</td><td>'+c.note+'</td><td><ul class="contract-checks">'+c.checks.map(x=>'<li>'+x+'</li>').join('')+'</ul></td></tr>').join('')+'</tbody></table></div></div><div class="result-panel full"><h4>法務相談前に決めること</h4><ul>'+r.conditions.map(x=>'<li>'+x+'</li>').join('')+'</ul></div></div>'+
+ warnings.map(x=>'<div class="result-alert">'+x+'</div>').join('')+
+ '<div class="result-note"><strong>売主・買主は結果として確認：</strong> まず製造主体とIPの利用関係を確定し、その後に完成品供給に伴う売買上の立場を整理してください。</div>'+
+ '<div class="result-actions"><a class="primary-action" href="'+r.detail+'">'+r.title+'の詳細を見る</a><a class="secondary-action" href="'+r.compare+'">類似スキームと比較</a><button type="button" class="secondary-action" id="memo-toggle">法務相談用メモ</button><button type="button" class="secondary-action" id="result-reset">選び直す</button></div>'+
+ '<div class="result-memo" id="result-memo"><pre id="memo-text">'+memoText(r,key)+'</pre><div class="result-actions"><button type="button" class="secondary-action" id="memo-copy">メモをコピー</button></div></div></div>';
+ el.result.querySelector('#result-reset').addEventListener('click',reset);
+ el.result.querySelector('#memo-toggle').addEventListener('click',()=>document.getElementById('result-memo').classList.toggle('open'));
+ el.result.querySelector('#memo-copy').addEventListener('click',async e=>{try{await navigator.clipboard.writeText(document.getElementById('memo-text').textContent);e.currentTarget.textContent='コピーしました';}catch(_){document.getElementById('result-memo').classList.add('open');e.currentTarget.textContent='上のメモを選択してコピー';}});
+ showStep(5);
+}
+function selectMaker(v){pushHistory();state.maker=v;state.flow=state.region=state.extra=null;if(v==='mixed'){state.flow='mixed-manufacturing';showStep(3);}else{secondQuestion();showStep(2);}}
+function selectFlow(v){pushHistory();state.flow=v;state.region=state.extra=null;showStep(3);}
+function selectRegion(v){pushHistory();state.region=v;state.extra=null;if(fourthQuestion())showStep(4);else renderResult();}
+function reset(){state.maker=state.flow=state.region=state.extra=null;historyStack.length=0;showStep(1);}
+function back(){if(!historyStack.length){reset();return;}const prev=historyStack.pop();Object.assign(state,prev);if(!state.maker)showStep(1);else if(!state.flow){secondQuestion();showStep(2);}else if(!state.region)showStep(3);else if(!state.extra&&fourthQuestion())showStep(4);else renderResult();}
+document.querySelectorAll('[data-maker]').forEach(b=>b.addEventListener('click',()=>selectMaker(b.dataset.maker)));
+document.querySelectorAll('[data-region]').forEach(b=>b.addEventListener('click',()=>selectRegion(b.dataset.region)));
+el.reset.addEventListener('click',reset);el.back.addEventListener('click',back);
+const examples={s5:['company','license-in','overseas',null],s4:['counterparty','product-in','overseas','nonexclusive'],s7:['counterparty','license-out','domestic','own'],s2:['counterparty','license-out','overseas','own'],s6:['company','product-out','domestic','wholesale'],s3:['company','product-out','overseas','commissioned']};
+document.querySelectorAll('[data-example]').forEach(b=>b.addEventListener('click',()=>{const x=examples[b.dataset.example];state.maker=x[0];state.flow=x[1];state.region=x[2];state.extra=x[3];historyStack.length=0;renderResult();}));
+const p=new URLSearchParams(location.search),f=p.get('flow'),r=p.get('region'),rawX=p.get('extra'),x=rawX==='borrowed'?'licensed':rawX;
+let m=p.get('maker');
+if(!m&&f){if(f==='license-in'||f==='product-out')m='company';else if(f==='license-out'||f==='product-in')m='counterparty';else if(f==='mixed-manufacturing')m='mixed';}
+if(['company','counterparty','mixed'].includes(m))state.maker=m;
+if(['license-in','product-in','license-out','product-out','mixed-manufacturing'].includes(f))state.flow=f;
+if(['domestic','overseas'].includes(r))state.region=r;
+if(x)state.extra=x;
+if(state.maker&&state.flow&&state.region){if(['license-out','product-in','product-out'].includes(state.flow)&&!state.extra){fourthQuestion();showStep(4);}else renderResult();}
+else if(state.maker&&state.flow)showStep(3);
+else if(state.maker){if(state.maker==='mixed'){state.flow='mixed-manufacturing';showStep(3);}else{secondQuestion();showStep(2);}}
+else showStep(1);
+const links=[...document.querySelectorAll('#sidebar a[href^="#"]')];
+const sections=links.map(a=>document.querySelector(a.getAttribute('href'))).filter(Boolean);
+const obs=new IntersectionObserver(entries=>{entries.forEach(en=>{if(en.isIntersecting){links.forEach(a=>a.classList.toggle('active',a.getAttribute('href')==='#'+en.target.id));}});},{rootMargin:'-20% 0px -70% 0px'});sections.forEach(s=>obs.observe(s));
+})();
+</script>
+</body></html>

@@ -1,0 +1,319 @@
+<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>新規取引先登録手続きガイド</title>
+<style>
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;--sw:220px;
+--c1:#27500a;--c2:#0c447c;--c3:#633806;--c4:#085041}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+/* SIDEBAR */
+#sidebar{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--navy);overflow-y:auto;display:flex;flex-direction:column;z-index:100}
+#sh{padding:18px 16px 14px;border-bottom:1px solid rgba(255,255,255,.1)}
+#sh h1{font-size:10px;font-weight:700;color:rgba(255,255,255,.5);letter-spacing:.08em;text-transform:uppercase}
+#sh p{font-size:12px;color:rgba(255,255,255,.9);font-weight:600;margin-top:4px;line-height:1.4}
+nav{padding:8px 0 20px}
+.ns{display:block;padding:5px 16px;font-size:10px;font-weight:700;color:rgba(255,255,255,.35);letter-spacing:.07em;text-transform:uppercase;margin-top:10px}
+.nl{display:block;padding:5px 16px;font-size:12px;color:rgba(255,255,255,.72);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nl:hover,.nl.active{color:#fff;background:rgba(255,255,255,.1);border-left-color:#e63946}
+.nsub{display:block;padding:3px 16px 3px 26px;font-size:11px;color:rgba(255,255,255,.48);text-decoration:none;transition:color .15s}
+.nsub:hover{color:rgba(255,255,255,.85)}
+.sbdg{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;margin-right:5px;vertical-align:middle}
+.sb1{background:#eaf3de;color:var(--c1)}.sb2{background:#e8f1fb;color:var(--c2)}.sb3{background:#faeeda;color:var(--c3)}.sb4{background:#e1f5ee;color:var(--c4)}
+/* MAIN */
+#main{margin-left:var(--sw);padding:40px 48px 80px;max-width:calc(var(--sw) + 820px)}
+h1.dt{font-size:22px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:10px;margin-bottom:6px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:32px}
+h2.sec{font-size:17px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:36px 0 14px;scroll-margin-top:20px}
+h3.sub{font-size:14px;font-weight:700;color:var(--navy-l);margin:22px 0 10px;padding-bottom:4px;border-bottom:1px solid var(--g3);scroll-margin-top:20px}
+h4.sh4{font-size:13px;font-weight:700;color:var(--tx2);margin:14px 0 8px}
+p{margin-bottom:10px;color:var(--tx2)}strong{color:var(--tx)}
+ul,ol{padding-left:20px;margin-bottom:10px;color:var(--tx2)}li{margin-bottom:4px}
+/* STEP HEADER */
+.shb{border-radius:8px;padding:14px 20px;margin-bottom:18px;scroll-margin-top:16px}
+.shb.s1{background:var(--c1)}.shb.s2{background:var(--c2)}.shb.s3{background:var(--c3)}.shb.s4{background:var(--c4)}
+.shb .sn{font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.5);margin-bottom:3px}
+.shb h2{font-size:15px;font-weight:700;color:#fff;border:none;padding:0;margin:0}
+.shb .sdesc{font-size:12px;color:rgba(255,255,255,.7);margin-top:5px}
+/* CALLOUT */
+.cl{border-left:3px solid;padding:9px 13px;border-radius:0 5px 5px 0;margin:10px 0;font-size:13px}
+.cl-w{border-color:var(--red);background:var(--red-s)}.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-t{border-color:var(--green);background:var(--green-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}
+/* TABLE */
+.tw{overflow-x:auto;margin:10px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{background:var(--navy);color:#fff;padding:7px 10px;text-align:left;font-weight:600;font-size:12px;white-space:nowrap}
+tbody tr:nth-child(even){background:var(--g1)}
+tbody td{padding:7px 10px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:hover{background:#f0f4ff}
+td.tc{font-weight:600;white-space:nowrap;color:var(--navy);font-size:12px}
+td.tcr{font-weight:700;color:var(--red)}
+/* BADGES */
+.badge{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;padding:3px 10px;border-radius:4px}
+.biz{background:#eaf3de;color:var(--c1)}.leg{background:#faeeda;color:var(--c3)}.acc{background:#e8f1fb;color:var(--c2)}.ctr{background:#f3f3f3;color:#374151;border:1px solid var(--g3)}
+.tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;margin-right:3px}
+.t-biz{background:#eaf3de;color:var(--c1)}.t-leg{background:#faeeda;color:var(--c3)}.t-acc{background:#e8f1fb;color:var(--c2)}.t-ctr{background:#f3f3f3;color:#374151}
+/* CHECKLIST */
+.check-list{list-style:none;padding:0;margin:8px 0}
+.check-list li{padding:8px 10px 8px 32px;position:relative;border-bottom:1px solid var(--g2);font-size:12.5px;color:var(--tx2)}
+.check-list li::before{content:"☐";position:absolute;left:8px;font-size:14px;color:var(--navy);line-height:1.5}
+.check-list li:last-child{border-bottom:none}
+/* PITFALL */
+.pl{list-style:none;padding:0;margin:7px 0}
+.pl li{padding:6px 10px 6px 28px;position:relative;border-bottom:1px solid var(--g2);font-size:12.5px;color:var(--tx2)}
+.pl li::before{content:"⚠";position:absolute;left:7px;font-size:11px}
+.pl li:last-child{border-bottom:none}
+/* OVERVIEW GRID */
+.ov-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:16px 0}
+.ov-card{border-radius:8px;padding:14px 12px;text-decoration:none;display:block;transition:transform .15s,box-shadow .15s}
+.ov-card:hover{transform:translateY(-2px);box-shadow:0 4px 12px rgba(0,0,0,.12)}
+.ov-card.s1{background:var(--c1)}.ov-card.s2{background:var(--c2)}.ov-card.s3{background:var(--c3)}.ov-card.s4{background:var(--c4)}
+.ov-num{font-size:22px;font-weight:700;opacity:.35;margin-bottom:4px;color:#fff}
+.ov-title{font-size:12px;font-weight:700;line-height:1.4;color:#fff}
+.ov-sub{font-size:10px;color:rgba(255,255,255,.65);margin-top:4px;line-height:1.4}
+/* BADGE ROW */
+.bdg-row{display:flex;gap:10px;margin-bottom:12px;flex-wrap:wrap}
+/* FLOW DIAGRAM WRAPPER */
+.dw{background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:14px 14px 10px;margin:10px 0}
+.dtitle{font-size:10px;font-weight:700;color:var(--g5);letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px}
+/* MISC */
+.ap{background:var(--g1);border-radius:8px;padding:16px 20px;margin-bottom:18px;font-size:12.5px;line-height:1.8}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:36px 0}
+</style>
+
+<style id="gas-portal-back-style">
+.portal-back-button{position:fixed;right:16px;bottom:16px;z-index:3000;display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:#1d3557;color:#fff;text-decoration:none;font-size:12px;font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,.22);opacity:.92;transition:opacity .15s,transform .15s}
+.portal-back-button:hover{opacity:1;transform:translateY(-1px)}
+@media print{.portal-back-button{display:none}}
+</style>
+
+</head>
+<body>
+<?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<!-- SIDEBAR -->
+<aside id="sidebar">
+<div id="sh"><h1>法務部</h1><p>新規取引先登録<br>手続きガイド</p></div>
+<nav>
+<a class="nl" href="#overview">手続き概要</a>
+<a class="nl" href="#roles">担当者と凡例</a>
+<a class="nl" href="#flowcomp">新旧フロー比較</a>
+<span class="ns">手続きステップ</span>
+<a class="nl" href="#step1"><span class="sbdg sb1">1</span>取引先の検索</a>
+<a class="nl" href="#step2"><span class="sbdg sb2">2</span>情報提供と契約確認</a>
+<a class="nsub" href="#checklist">事業部チェックリスト</a>
+<a class="nl" href="#step3"><span class="sbdg sb3">3</span>締結と情報連携</a>
+<a class="nl" href="#step4"><span class="sbdg sb4">4</span>締結完了の共有</a>
+<span class="ns">参考</span>
+<a class="nl" href="#target">対象契約と取得情報</a>
+<a class="nl" href="#change">登録情報の変更</a>
+<a class="nl" href="#notes">注意事項</a>
+</nav>
+</aside>
+
+<!-- MAIN -->
+<main id="main">
+<h1 class="dt">新規取引先登録手続きガイド</h1>
+<p class="dm">作成日：2026年4月　法務部次長 倉持達也　｜　対象：BG事業部担当者　｜　適用：2026年5月〜</p>
+
+<!-- 概要 -->
+<h2 class="sec" id="overview">手続き概要</h2>
+<p><strong>登録情報欄付き契約書</strong>を活用することで、従来の「執筆者登録ファイル」の別途送付・回収を廃止し、契約確認と取引先登録を同時に完結します。</p>
+<div class="ov-grid">
+  <a class="ov-card s1" href="#step1"><div class="ov-num">01</div><div class="ov-title">取引先の検索</div><div class="ov-sub">既存登録の有無を確認</div></a>
+  <a class="ov-card s2" href="#step2"><div class="ov-num">02</div><div class="ov-title">情報提供と<br>契約内容の確認</div><div class="ov-sub">取引先へ契約書送付・返送確認</div></a>
+  <a class="ov-card s3" href="#step3"><div class="ov-num">03</div><div class="ov-title">基本契約の締結と<br>取引先情報連携</div><div class="ov-sub">法務→取引先・経理</div></a>
+  <a class="ov-card s4" href="#step4"><div class="ov-num">04</div><div class="ov-title">締結完了情報の共有</div><div class="ov-sub">法務→事業部 Slack連携</div></a>
+</div>
+<div class="cl cl-t"><strong>効果：</strong> ファイルやり取りの削減・登録漏れ／遅延の防止・クラウドサイン送信の簡素化</div>
+
+<!-- 担当者凡例 -->
+<h2 class="sec" id="roles">担当者と凡例</h2>
+<div class="bdg-row">
+  <span class="badge biz">事業部</span>
+  <span class="badge leg">法務部</span>
+  <span class="badge acc">経理部</span>
+  <span class="badge ctr">取引先</span>
+</div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>役割</th></tr></thead>
+<tbody>
+<tr><td><span class="badge biz">事業部</span></td><td>取引先の発掘・連絡窓口・内容確認・法務への橋渡し</td></tr>
+<tr><td><span class="badge leg">法務部</span></td><td>契約書の最終確認・クラウドサインによる送信・経理部への情報連携・締結完了の事業部通知</td></tr>
+<tr><td><span class="badge acc">経理部</span></td><td>登録情報入り契約書（写し）を受領し、取引先マスタへ登録</td></tr>
+<tr><td><span class="badge ctr">取引先</span></td><td>契約条件の確認・登録情報欄への記入・返送・クラウドサインで署名</td></tr>
+</tbody></table></div>
+
+<!-- 新旧フロー比較 -->
+<h2 class="sec" id="flowcomp">新旧フロー比較</h2>
+<div class="tw"><table>
+<thead><tr><th style="width:50%">❌ 従来のフロー（廃止）</th><th style="width:50%">✅ 新しいフロー（2026年5月〜）</th></tr></thead>
+<tbody><tr>
+<td style="vertical-align:top;font-size:12px;line-height:2">
+① <span class="tag t-biz">事業部</span>「執筆者登録」ファイルを取引先へ送付<br>
+② <span class="tag t-ctr">取引先</span>ファイルを編集・記入して返送<br>
+③ <span class="tag t-biz">事業部</span>登録ファイルを経理部へ提出<br>
+④ <span class="tag t-biz">事業部</span>法務部へ契約書作成を依頼<br>
+⑤ <span class="tag t-leg">法務部</span>契約書を作成<br>
+⑥ <span class="tag t-biz">事業部</span>法務作成の契約書を取引先へ確認依頼<br>
+⑦ <span class="tag t-ctr">取引先</span>内容を確認・OKを返答<br>
+⑧ <span class="tag t-biz">事業部</span>法務部へOKの旨を連絡<br>
+⑨ <span class="tag t-leg">法務部</span>クラウドサイン（または郵送）で送信
+</td>
+<td style="vertical-align:top;font-size:12px;line-height:2">
+① <span class="tag t-biz">事業部</span>登録情報欄付き契約書ドラフトを取引先へ送付（記入も依頼）<br>
+② <span class="tag t-ctr">取引先</span>契約条件の確認＋登録情報欄に記入して返送<br>
+③ <span class="tag t-biz">事業部</span>返送内容を確認（契約条件＋登録情報の不備）<br>
+④ <span class="tag t-biz">事業部</span>確認済み契約書を法務部へ送付<br>
+⑤ <span class="tag t-leg">法務部</span>クラウドサインで取引先へ送信（締結完了）<br>
+⑥ <span class="tag t-leg">法務部</span>登録情報入り契約書（写し）を経理部へ連携<br>
+⑦ <span class="tag t-leg">法務部</span>締結完了を事業部へSlack通知
+</td>
+</tr></tbody></table></div>
+
+<hr class="sd">
+
+<!-- ===== STEP 1 ===== -->
+<div class="shb s1" id="step1">
+  <div class="sn">Step 01</div>
+  <h2>取引先の検索</h2>
+  <div class="sdesc">担当：<strong style="color:#fff">事業部</strong></div>
+</div>
+<h4 class="sh4">フロー</h4>
+<div class="dw"><div id="dg-s1"><svg viewBox="0 0 700 150" style="width: 100%; display: block;"><defs><marker id="v0grn" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d9e75"></polygon></marker><marker id="v0nvy" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d3557"></polygon></marker><marker id="v0gld" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#c47d1a"></polygon></marker><marker id="v0red" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#e63946"></polygon></marker><marker id="v0blu" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#378add"></polygon></marker><marker id="v0gry" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9CA3AF"></polygon></marker></defs><rect x="10" y="52" width="88" height="40" rx="6" fill="#27500a"></rect><text x="54" y="76" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">事業部</text><rect x="148" y="40" width="136" height="56" rx="6" fill="#fff" stroke="#9CA3AF" stroke-width="1.2"></rect><text x="216" y="64" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11.5" font-weight="600" fill="#374151">社内システムで検索</text><text x="216" y="78" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#9CA3AF">Slack: /法務検索 を実行</text><polygon points="394,26 448,68 394,110 340,68" fill="#fff" stroke="#374151" stroke-width="1.4"></polygon><text x="394" y="72" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="600" fill="#374151">登録あり？</text><rect x="504" y="16" width="178" height="36" rx="6" fill="rgba(0,0,0,.02)" stroke="#B5C6D4" stroke-width="1.2" stroke-dasharray="4,2"></rect><text x="593" y="30" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11.5" font-weight="600" fill="#374151">登録あり</text><text x="593" y="44" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#9CA3AF">案件番号を確認</text><rect x="504" y="92" width="178" height="38" rx="6" fill="#0c447c"></rect><text x="593" y="115" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">登録なし → Step 2</text><line x1="100" y1="72" x2="146" y2="72" stroke="#1d9e75" stroke-width="1.5" marker-end="url(#v0grn)"></line><text x="123" y="67" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d9e75">検索実行</text><line x1="286" y1="68" x2="338" y2="68" stroke="#1d3557" stroke-width="1.5" marker-end="url(#v0nvy)"></line><polyline points="448,60 480,60 480,34 502,34" stroke="#1d9e75" stroke-width="1.5" fill="none" marker-end="url(#v0grn)"></polyline><text x="460" y="50" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d9e75">あり</text><polyline points="448,76 480,76 480,111 502,111" stroke="#378add" stroke-width="1.5" fill="none" marker-end="url(#v0blu)"></polyline><text x="460" y="96" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#378add">なし</text></svg></div></div>
+<h3 class="sub">実施内容</h3>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>確認ポイント</th></tr></thead>
+<tbody>
+<tr><td><span class="badge biz">事業部</span></td><td>社内システムで取引先名・屋号等を検索する<br><span style="font-size:11px;color:var(--g5);">💬 Slackで <code>/法務検索</code> を実行</span></td><td>正式商号・屋号・旧社名の複数パターンで検索する</td></tr>
+<tr><td colspan="3" style="background:#f0f7ee;font-size:12px;line-height:1.8">
+  <strong>✅ 検索結果あり：</strong> 既存の契約番号・案件番号を確認する。追加取引の場合はStep 2〜4が不要になる場合がある<br>
+  <strong>➡ 検索結果なし：</strong> 新規登録が必要。Step 2 へ進む
+</td></tr>
+</tbody></table></div>
+<div class="cl cl-n"><strong>注意：</strong> 個人事業主は屋号だけでなく本名でも検索すること。法人は「株式会社」等の法人格を含む正式名称で検索する。</div>
+
+<hr class="sd">
+
+<!-- ===== STEP 2 ===== -->
+<div class="shb s2" id="step2">
+  <div class="sn">Step 02</div>
+  <h2>情報提供と契約内容の確認</h2>
+  <div class="sdesc">担当：<strong style="color:#fff">事業部 ⇔ 取引先</strong></div>
+</div>
+<h4 class="sh4">フロー</h4>
+<div class="dw"><div id="dg-s2"><svg viewBox="0 0 680 210" style="width: 100%; display: block;"><defs><marker id="v1grn" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d9e75"></polygon></marker><marker id="v1nvy" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d3557"></polygon></marker><marker id="v1gld" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#c47d1a"></polygon></marker><marker id="v1red" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#e63946"></polygon></marker><marker id="v1blu" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#378add"></polygon></marker><marker id="v1gry" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9CA3AF"></polygon></marker></defs><rect x="10" y="62" width="88" height="44" rx="6" fill="#27500a"></rect><text x="54" y="88" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">事業部</text><rect x="150" y="62" width="100" height="44" rx="6" fill="#fff" stroke="#9CA3AF" stroke-width="1.2"></rect><text x="200" y="80" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11.5" font-weight="600" fill="#374151">取引先</text><text x="200" y="94" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#9CA3AF">記入・返送</text><polygon points="358,40 412,84 358,128 304,84" fill="#fff" stroke="#374151" stroke-width="1.4"></polygon><text x="358" y="88" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="600" fill="#374151">不備確認</text><rect x="474" y="44" width="116" height="40" rx="6" fill="#1d9e75"></rect><text x="532" y="60" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">不備なし</text><text x="532" y="74" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="rgba(255,255,255,.55)">Step 3 へ</text><rect x="304" y="158" width="108" height="38" rx="6" fill="#fff" stroke="#9CA3AF" stroke-width="1.2"></rect><text x="358" y="173" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11.5" font-weight="600" fill="#374151">不備あり</text><text x="358" y="187" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#9CA3AF">取引先へ確認依頼</text><line x1="98" y1="80" x2="148" y2="80" stroke="#c47d1a" stroke-width="1.5" marker-end="url(#v1gld)"></line><text x="123" y="74" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#c47d1a">送付</text><line x1="148" y1="88" x2="98" y2="88" stroke="#1d3557" stroke-width="1.5" marker-end="url(#v1nvy)"></line><text x="123" y="101" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d3557">返送</text><line x1="252" y1="84" x2="302" y2="84" stroke="#1d3557" stroke-width="1.5" marker-end="url(#v1nvy)"></line><polyline points="412,70 444,70 444,64 472,64" stroke="#1d9e75" stroke-width="1.5" fill="none" marker-end="url(#v1grn)"></polyline><text x="420" y="61" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d9e75">不備なし</text><line x1="358" y1="128" x2="358" y2="156" stroke="#e63946" stroke-width="1.5" marker-end="url(#v1red)"></line><text x="368" y="143" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#e63946">不備あり</text><polyline points="302,177 120,177 120,84 148,84" stroke="#9CA3AF" stroke-width="1.5" fill="none" marker-end="url(#v1gry)" stroke-dasharray="5,3"></polyline><text x="208" y="185" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#9CA3AF">修正依頼・再確認</text></svg></div></div>
+<h3 class="sub">実施内容</h3>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>ポイント</th></tr></thead>
+<tbody>
+<tr><td><span class="badge biz">事業部</span></td><td>登録情報欄付き契約書ドラフトを取引先へ送付。契約条件の確認と登録情報欄の記入を依頼</td><td>送付時は下記の依頼文例を添える</td></tr>
+<tr><td><span class="badge ctr">取引先</span></td><td>契約条件を確認 ＋ 登録情報欄に記入して返送</td><td>基本情報・振込先口座・インボイス情報の3点を記入</td></tr>
+<tr><td><span class="badge biz">事業部</span></td><td>返送内容の確認（契約条件 ＋ 登録情報の不備）</td><td>下記チェックリスト参照</td></tr>
+<tr><td><span class="badge biz">事業部</span></td><td><strong>不備なし：</strong> 確認済み契約書を法務部へ送付 → Step 3 へ</td><td></td></tr>
+<tr><td><span class="badge biz">事業部</span></td><td><strong>不備あり：</strong> 不備内容を取引先へ確認・修正依頼。修正完了後に再確認</td><td>修正依頼は具体的に（例：「口座番号の桁数不足」「T+13桁の登録番号未記載」など）</td></tr>
+</tbody></table></div>
+
+<h4 class="sh4">取引先への送付時の依頼文例</h4>
+<div class="ap">
+本契約書は、契約条件の確認とあわせて取引先登録にも使用します。<br>
+冒頭の「相手方情報」「振込先銀行口座」「インボイス制度関連情報」をご確認いただき、必要事項のご記入・修正をお願いいたします。<br>
+ご確認後、本ファイルをご返送いただければ幸いです。
+</div>
+
+<div class="cl cl-w">
+<strong>役割の違いに注意：</strong><br>
+・業務委託契約：相手方は「<strong>乙（受託者）</strong>」欄<br>
+・ライセンス契約：相手方は「<strong>甲（ライセンサー）</strong>」欄<br>
+送付前に登録対象がどちらの欄に入るか必ず確認すること。
+</div>
+
+<h3 class="sub" id="checklist">事業部チェックリスト（法務送付前に確認）</h3>
+<ul class="check-list">
+<li><strong>相手方基本情報：</strong> 会社名（正式名称）・住所・代表者名・電話番号・メールアドレスが記載されているか</li>
+<li><strong>銀行口座情報：</strong> 銀行名・支店名・口座種別・口座番号・口座名義（カナ）がすべて揃っているか。口座名義と契約当事者名が一致しているか</li>
+<li><strong>インボイス情報：</strong> 適格請求書発行事業者か否かが明確か。登録事業者の場合は登録番号（T＋13桁）が記載されているか</li>
+<li><strong>当事者表示の一致：</strong> 契約本文の当事者欄と登録情報欄の名称が一致しているか（業務委託＝乙欄 / ライセンス＝甲欄）</li>
+</ul>
+
+<hr class="sd">
+
+<!-- ===== STEP 3 ===== -->
+<div class="shb s3" id="step3">
+  <div class="sn">Step 03</div>
+  <h2>基本契約の締結と取引先情報連携</h2>
+  <div class="sdesc">担当：<strong style="color:#fff">法務部</strong></div>
+</div>
+<h4 class="sh4">フロー</h4>
+<div class="dw"><div id="dg-s3"><svg viewBox="0 0 700 190" style="width: 100%; display: block;"><defs><marker id="v2grn" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d9e75"></polygon></marker><marker id="v2nvy" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d3557"></polygon></marker><marker id="v2gld" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#c47d1a"></polygon></marker><marker id="v2red" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#e63946"></polygon></marker><marker id="v2blu" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#378add"></polygon></marker><marker id="v2gry" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9CA3AF"></polygon></marker></defs><rect x="10" y="66" width="90" height="44" rx="6" fill="#633806"></rect><text x="55" y="92" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">法務部</text><rect x="152" y="50" width="130" height="64" rx="6" fill="#fff" stroke="#9CA3AF" stroke-width="1.2"></rect><text x="217" y="78" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11.5" font-weight="600" fill="#374151">クラウドサインで</text><text x="217" y="92" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#9CA3AF">電子契約送信（案内資料付き）</text><rect x="340" y="66" width="100" height="44" rx="6" fill="rgba(0,0,0,.02)" stroke="#B5C6D4" stroke-width="1.2" stroke-dasharray="4,2"></rect><text x="390" y="84" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11.5" font-weight="600" fill="#374151">取引先</text><text x="390" y="98" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#9CA3AF">署名・締結</text><rect x="494" y="18" width="130" height="38" rx="6" fill="#1d9e75"></rect><text x="559" y="41" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">締結完了</text><rect x="494" y="134" width="130" height="38" rx="6" fill="#0c447c"></rect><text x="559" y="149" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">経理部</text><text x="559" y="163" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="rgba(255,255,255,.55)">取引先登録</text><line x1="102" y1="88" x2="150" y2="88" stroke="#c47d1a" stroke-width="1.5" marker-end="url(#v2gld)"></line><line x1="282" y1="80" x2="338" y2="80" stroke="#1d3557" stroke-width="1.5" marker-end="url(#v2nvy)"></line><text x="310" y="74" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d3557">署名依頼</text><line x1="338" y1="90" x2="282" y2="90" stroke="#1d9e75" stroke-width="1.5" marker-end="url(#v2grn)"></line><text x="310" y="103" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d9e75">締結完了</text><polyline points="390,64 390,37 492,37" stroke="#1d9e75" stroke-width="1.5" fill="none" marker-end="url(#v2grn)"></polyline><text x="438" y="30" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d9e75">締結完了通知</text><polyline points="390,112 390,153 492,153" stroke="#c47d1a" stroke-width="1.5" fill="none" marker-end="url(#v2gld)"></polyline><text x="438" y="163" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#c47d1a">契約書写しを連携</text></svg></div></div>
+<h3 class="sub">実施内容</h3>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>ポイント</th></tr></thead>
+<tbody>
+<tr><td><span class="badge leg">法務部</span></td><td>事業部から受領した確認済み契約書の内容を最終確認</td><td>不備があれば事業部へ差し戻し</td></tr>
+<tr><td><span class="badge leg">法務部</span></td><td><strong>クラウドサインで取引先へ電子契約を送信</strong>（クラウドサイン利用案内を添付）</td><td>取引先が電子契約に不慣れな場合は事前に電話等でフォローする</td></tr>
+<tr><td><span class="badge ctr">取引先</span></td><td>クラウドサインで契約書に署名・締結完了</td><td></td></tr>
+<tr><td><span class="badge leg">法務部</span></td><td><strong>登録情報入り契約書（写し）を経理部へ連携</strong></td><td>旧「執筆者登録」ファイルは使用しない。契約書写しで一本化</td></tr>
+<tr><td><span class="badge acc">経理部</span></td><td>契約書写しをもとに取引先マスタへ登録</td><td></td></tr>
+</tbody></table></div>
+<div class="cl cl-t"><strong>クラウドサイン送信時は「クラウドサイン利用案内」を必ず添付すること。</strong></div>
+
+<hr class="sd">
+
+<!-- ===== STEP 4 ===== -->
+<div class="shb s4" id="step4">
+  <div class="sn">Step 04</div>
+  <h2>締結完了情報の共有</h2>
+  <div class="sdesc">担当：<strong style="color:#fff">法務部 → 事業部</strong></div>
+</div>
+<h4 class="sh4">フロー</h4>
+<div class="dw"><div id="dg-s4"><svg viewBox="0 0 560 108" style="width: 100%; display: block;"><defs><marker id="v3grn" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d9e75"></polygon></marker><marker id="v3nvy" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#1d3557"></polygon></marker><marker id="v3gld" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#c47d1a"></polygon></marker><marker id="v3red" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#e63946"></polygon></marker><marker id="v3blu" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#378add"></polygon></marker><marker id="v3gry" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9CA3AF"></polygon></marker></defs><rect x="8" y="32" width="96" height="40" rx="6" fill="#085041"></rect><text x="56" y="56" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">法務部</text><rect x="160" y="26" width="148" height="52" rx="6" fill="#fff" stroke="#9CA3AF" stroke-width="1.2"></rect><text x="234" y="48" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11.5" font-weight="600" fill="#374151">Slack通知</text><text x="234" y="62" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#9CA3AF">取引先名・契約番号・締結日等</text><rect x="368" y="32" width="120" height="40" rx="6" fill="#27500a"></rect><text x="428" y="48" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12" font-weight="600" fill="#fff">事業部</text><text x="428" y="62" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="rgba(255,255,255,.55)">確認・業務開始</text><line x1="106" y1="52" x2="158" y2="52" stroke="#1d9e75" stroke-width="1.5" marker-end="url(#v3grn)"></line><text x="132" y="47" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d9e75">通知送信</text><line x1="310" y1="52" x2="366" y2="52" stroke="#1d9e75" stroke-width="1.5" marker-end="url(#v3grn)"></line><text x="338" y="47" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="#1d9e75">通知受信</text></svg></div></div>
+<h3 class="sub">実施内容</h3>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>通知内容</th></tr></thead>
+<tbody>
+<tr><td><span class="badge leg">法務部</span></td><td>締結完了を事業部へ <strong>Slack で通知</strong></td><td>取引先名・契約種別・契約番号・締結日・経理部連携済みの旨</td></tr>
+<tr><td><span class="badge biz">事業部</span></td><td>Slack通知を確認し、発注・業務開始の手続きへ移行</td><td>Slack通知受信前の発注・業務開始は不可</td></tr>
+</tbody></table></div>
+<div class="cl cl-w"><strong>注意：</strong> 締結完了のSlack通知を受け取るまで、発注書の発行・業務の開始・報酬の支払いを行わないこと。</div>
+
+<hr class="sd">
+
+<!-- 対象契約と取得情報 -->
+<h2 class="sec" id="target">対象契約と取得する登録情報</h2>
+<div class="cl cl-i">対象は<strong>業務委託契約書・ライセンス利用許諾基本契約書のみ</strong>。他の契約種別は従来の手続きによる。</div>
+<div class="tw"><table>
+<thead><tr><th>区分</th><th>業務委託基本契約書（乙欄）</th><th>ライセンス利用許諾基本契約書（甲欄）</th><th>確認ポイント</th></tr></thead>
+<tbody>
+<tr><td class="tc">基本情報</td><td>住所・商号・代表者<br>電話番号・メール</td><td>住所・商号・代表者<br>電話番号・メール</td><td>正式名称・住所表記・代表者肩書を契約本文と一致させる</td></tr>
+<tr><td class="tc">振込先口座</td><td>銀行名・支店名・口座種別<br>口座番号・口座名義（カナ）</td><td>銀行名・支店名・口座種別<br>口座番号・口座名義（カナ）</td><td>桁数・カナ漏れ・法人/個人の受取名義違いを確認</td></tr>
+<tr><td class="tc">インボイス</td><td>適格事業者か否か・登録番号</td><td>適格事業者か否か・登録番号</td><td>未登録の場合もその旨を明確に。登録番号（T＋13桁）の記載漏れに注意</td></tr>
+</tbody></table></div>
+
+<!-- 登録情報の変更 -->
+<h2 class="sec" id="change">登録情報の変更が生じた場合</h2>
+<div class="tw"><table>
+<thead><tr><th>Step</th><th>対応</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><strong>既存情報の確認</strong></td><td>既存の契約番号・案件番号を確認する</td></tr>
+<tr><td>2</td><td><strong>変更内容の分類</strong></td><td>当事者情報 ／ 口座情報 ／ インボイス情報のいずれかを確認する</td></tr>
+<tr><td>3</td><td><strong>社内共有</strong></td><td>経理部・法務部に変更内容を共有する</td></tr>
+<tr><td>4</td><td><strong>書類対応</strong></td><td>必要に応じて契約書差替え・覚書・登録情報更新を行う</td></tr>
+<tr><td>5</td><td class="tcr"><strong>旧情報での処理禁止</strong></td><td>口座変更・インボイス変更は優先確認。旧情報のまま支払処理を進めない</td></tr>
+</tbody></table></div>
+
+<!-- 注意事項 -->
+<h2 class="sec" id="notes">注意事項</h2>
+<ul class="pl">
+<li>本手続きは<strong>業務委託契約書・ライセンス契約書のみ対象</strong>。売買契約等の他の契約種別は従来の手続きによる</li>
+<li>取引先からの変更連絡は必ず経理部・法務部の双方へ共有すること。片方のみへの連絡は登録情報のずれを招く</li>
+<li>登録番号（T＋13桁）の確認は国税庁の<strong>インボイス制度適格請求書発行事業者公表サイト</strong>で必ず照合すること</li>
+<li>口座情報の変更は詐欺被害の対象になりやすい。電話等で取引先本人に確認してから処理すること</li>
+<li>ご不明点は<strong>法務部（倉持）</strong>まで</li>
+</ul>
+
+</main>
+
+
+
+
+</body></html>
