@@ -40,6 +40,7 @@ const EXTRA_CSS = `<style>
 </style>`;
 
 function statusPill(row: GuideAdminRow): string {
+  if (row.linkPath) return '<span class="pill p-pub">検索へ</span>';
   if (row.ready) return '<span class="pill p-pub">公開中</span>';
   return '<span class="pill p-soon">準備中</span>';
 }
@@ -58,12 +59,17 @@ export function adminGuidesPage(opts: { rows: GuideAdminRow[] }): string {
   }
 
   const renderRow = (r: GuideAdminRow): string => {
-    const previewHref = r.ready ? `/g/${esc(r.guideKey)}` : "javascript:void(0)";
+    const previewHref = r.linkPath
+      ? esc(r.linkPath)
+      : r.ready
+      ? `/g/${esc(r.guideKey)}`
+      : "javascript:void(0)";
     const catHref = r.categoryKey ? `/c/${esc(r.categoryKey)}` : "/portal";
-    const ver =
-      r.currentVersionNo != null
-        ? `v${r.currentVersionNo} / 全${r.versionCount}版`
-        : `— / 全${r.versionCount}版`;
+    const ver = r.linkPath
+      ? `リンク → ${esc(r.linkPath)}`
+      : r.currentVersionNo != null
+      ? `v${r.currentVersionNo} / 全${r.versionCount}版`
+      : `— / 全${r.versionCount}版`;
     const rt = r.needsRuntime ? ' <span class="pill p-rt" title="GAS ランタイム依存。配信は可だが対話部分は要改修">要改修</span>' : "";
     return `<tr>
       <td><div class="gd-title">${esc(r.title)}${rt}</div><div class="gd-key">${esc(r.guideKey)}・GUIDE ${esc(r.guideNum)}</div></td>

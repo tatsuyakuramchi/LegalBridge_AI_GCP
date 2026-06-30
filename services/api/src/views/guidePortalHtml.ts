@@ -111,10 +111,16 @@ export function categoryPage(category: GuideCategory, guides: GuideMeta[], isAdm
   const color = category.color || "#1d3557";
   const items = guides
     .map((g) => {
-      const badge = g.ready
+      const badge = g.linkPath
+        ? '<span class="badge b-ready">検索へ</span>'
+        : g.ready
         ? '<span class="badge b-ready">公開中</span>'
         : '<span class="badge b-soon">準備中</span>';
-      const href = g.ready ? `/g/${esc(g.guideKey)}` : "javascript:void(0)";
+      const href = g.linkPath
+        ? esc(g.linkPath)
+        : g.ready
+        ? `/g/${esc(g.guideKey)}`
+        : "javascript:void(0)";
       return `<a class="card" href="${href}" style="border-left-color:${esc(color)}">
       <div class="tag">GUIDE ${esc(g.guideNum)}</div>
       <div class="body"><div class="ct">${esc(g.title)}${badge}</div><div class="cd">${esc(g.summary)}</div></div>

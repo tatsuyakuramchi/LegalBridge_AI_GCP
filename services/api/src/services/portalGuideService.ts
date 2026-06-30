@@ -32,6 +32,8 @@ export interface GuideMeta {
   status: string;
   needsRuntime: boolean;
   sortOrder: number;
+  /** リンク型ガイド: 設定時はカードがこのパスへ遷移(本文版は不要)。例: /search/vendor。 */
+  linkPath: string | null;
   ready: boolean;
 }
 
@@ -53,7 +55,10 @@ function toMeta(r: any): GuideMeta {
     status: r.status,
     needsRuntime: !!r.needs_runtime,
     sortOrder: Number(r.sort_order ?? 0),
-    ready: r.status === "published" && r.current_version_id != null,
+    linkPath: r.link_path ?? null,
+    ready:
+      r.status === "published" &&
+      (r.current_version_id != null || r.link_path != null),
   };
 }
 
@@ -78,7 +83,7 @@ export async function listCategories(): Promise<GuideCategory[]> {
 export async function listGuides(): Promise<GuideMeta[]> {
   const { rows } = await query(
     `SELECT g.guide_key, c.cat_key AS category_key, g.guide_num, g.title, g.summary,
-            g.is_overview, g.status, g.needs_runtime, g.sort_order, g.current_version_id
+            g.is_overview, g.status, g.needs_runtime, g.sort_order, g.current_version_id, g.link_path
        FROM portal_guides g
        LEFT JOIN portal_guide_categories c ON c.id = g.category_id
       WHERE g.is_active = TRUE
@@ -91,7 +96,7 @@ export async function listGuides(): Promise<GuideMeta[]> {
 export async function guidesInCategory(catKey: string): Promise<GuideMeta[]> {
   const { rows } = await query(
     `SELECT g.guide_key, c.cat_key AS category_key, g.guide_num, g.title, g.summary,
-            g.is_overview, g.status, g.needs_runtime, g.sort_order, g.current_version_id
+            g.is_overview, g.status, g.needs_runtime, g.sort_order, g.current_version_id, g.link_path
        FROM portal_guides g
        JOIN portal_guide_categories c ON c.id = g.category_id
       WHERE g.is_active = TRUE AND c.cat_key = $1
@@ -105,7 +110,7 @@ export async function guidesInCategory(catKey: string): Promise<GuideMeta[]> {
 export async function getGuideByKey(key: string): Promise<GuideMeta | null> {
   const { rows } = await query(
     `SELECT g.guide_key, c.cat_key AS category_key, g.guide_num, g.title, g.summary,
-            g.is_overview, g.status, g.needs_runtime, g.sort_order, g.current_version_id
+            g.is_overview, g.status, g.needs_runtime, g.sort_order, g.current_version_id, g.link_path
        FROM portal_guides g
        LEFT JOIN portal_guide_categories c ON c.id = g.category_id
       WHERE g.guide_key = $1 AND g.is_active = TRUE
@@ -137,7 +142,7 @@ export async function listGuidesForAdmin(): Promise<GuideAdminRow[]> {
   const { rows } = await query(
     `SELECT g.guide_key, c.cat_key AS category_key, c.label AS category_label,
             g.guide_num, g.title, g.summary, g.is_overview, g.status, g.needs_runtime,
-            g.sort_order, g.current_version_id, g.updated_at,
+            g.sort_order, g.current_version_id, g.link_path, g.updated_at,
             (SELECT COUNT(*) FROM portal_guide_versions v WHERE v.guide_id = g.id) AS version_count,
             (SELECT version_no FROM portal_guide_versions v WHERE v.id = g.current_version_id) AS current_version_no
        FROM portal_guides g
