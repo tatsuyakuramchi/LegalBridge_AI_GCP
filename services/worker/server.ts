@@ -80,7 +80,7 @@ import {
 // 雛形プレビュー用 v3 サンプルデータ（個別利用許諾 v3 テンプレの sample-preview に使う）。
 import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
 // スキーマ単純化 Phase 2: Master(契約マスタ)保存を documents 統合＋CL直接書き込みで行う。
-import { upsertMasterContract } from "./src/lib/documentSave.ts";
+import { upsertMasterContract, mapV3MatrixToConditions } from "./src/lib/documentSave.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
@@ -15948,106 +15948,45 @@ ${details}
         //   クレジット/許諾期間注記/work_id 等の license 固有値は列が無く、
         //   documents.form_data(JSON) に保持されPDFはそこから描画される。
         //   ここでは実在列のみ登録(原作名/対象製品/許諾開始日/原作・素材参照/種別/タイトル/文書番号)。
-        const lcUpsert = await query(
-          `INSERT INTO contract_capabilities (
-             backlog_issue_key, original_work, product_name, effective_date,
-             ledger_ref_id, material_ref_id,
-             record_type, contract_category, contract_type, contract_title, document_number
-           )
-           VALUES (
-             $1, $2, $3, $4,
-             $5, $6,
-             'individual_contract', 'license', 'license_basic', COALESCE(NULLIF($2, ''), $7), $7
-           )
-           ON CONFLICT (document_number) DO UPDATE SET
-             original_work   = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
-             product_name    = COALESCE(NULLIF(EXCLUDED.product_name, ''), contract_capabilities.product_name),
-             effective_date  = COALESCE(EXCLUDED.effective_date, contract_capabilities.effective_date),
-             ledger_ref_id   = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
-             material_ref_id = COALESCE(EXCLUDED.material_ref_id, contract_capabilities.material_ref_id),
-             contract_title  = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-             updated_at      = CURRENT_TIMESTAMP
-           RETURNING id`,
-          [
-            issueKey,
-            formData.原著作物名 || "",
-            formData.対象製品予定名 || "",
-            formData.許諾開始日 || null,
-            resolvedLedgerRefId,
-            resolvedMaterialRefId,
-            docNumber,
-          ]
+        // スキーマ単純化 Phase 2: documents 統合＋CL直接書き込み（contract_capabilities 廃止）。
+        //   金銭条件(flat) と v3 マトリクスの双方を CL へ。材料は行指定→既定→原作本体。
+        //   ※ documents 行(生成文書)は別途 INSERT 済のため、ここでは契約メタを upsert し
+        //     form_data/drive_link は温存（upsertMasterContract が ON CONFLICT で除外）。
+        const v3CondInputs =
+          Array.isArray(formData.v3_conds) && formData.v3_conds.length > 0
+            ? mapV3MatrixToConditions(
+                formData.v3_conds,
+                Array.isArray(formData.v3_lcs) ? formData.v3_lcs : [],
+                formData.素材番号 || null
+              )
+            : undefined;
+        const lcSaved = await upsertMasterContract(
+          { query },
+          {
+            document_number: docNumber,
+            issue_key: issueKey,
+            template_type: "individual_license_terms",
+            record_type: "individual_contract",
+            contract_category: "license",
+            contract_type: "license_basic",
+            contract_title: formData.原著作物名 || formData.基本契約名 || null,
+            original_work: formData.原著作物名 || null,
+            product_name: formData.対象製品予定名 || null,
+            effective_date: formData.許諾開始日 || null,
+            ledger_code: ledgerCodeForWork || null,
+            ledger_ref_id: resolvedLedgerRefId || null,
+            material_ref_id: resolvedMaterialRefId || null,
+            default_material_code: formData.素材番号 || null,
+            condition_material_codes: (formData.condition_material_codes ||
+              {}) as Record<string, string>,
+            financial_conditions: Array.isArray(formData.financial_conditions)
+              ? formData.financial_conditions
+              : undefined,
+            extra_conditions: v3CondInputs,
+          }
         );
-        const lcId = Number(lcUpsert.rows[0]?.id);
-
-        // Phase 7d: financial_conditions[] を capability_financial_conditions
-        // に upsert (condition_no をキーに一意)。FinancialConditionTable
-        // で削除された condition は DB からも削除する。
-        // Phase 23: license_financial_conditions → capability_financial_conditions
-        //   (license_contract_id → capability_id)
-        // 金銭条件は実績ある共通ルートで保存。capability_financial_conditions への
-        //   upsert + 不要 condition_no の prune に加え、condition_lines(CL台帳)への
-        //   同期も内包する(発注書・出版条件書と同経路に統一し、個別利用許諾の CL 未連動も解消)。
-        if (lcId && Array.isArray(formData.financial_conditions)) {
-          await upsertCapabilityFinancialConditions(
-            lcId,
-            formData.financial_conditions
-          );
-        }
-
-        // Stage 2(文書ファースト 原作マテリアル紐付けプラン): 作品連動 ON のとき、各利用許諾条件を
-        //   原作マテリアルへ結線し対象作品(own)の構成へ組み込む(共通ヘルパ)。best-effort・非致命。
-        if (formData.is_work_linked !== false && lcId) {
-          await safeSync("work-linkage(license)", () =>
-            linkWorkMaterialsForCapability({
-              capabilityId: lcId,
-              ledgerCode: ledgerCodeForWork,
-              ownWorkId:
-                formData.linked_work_id != null &&
-                String(formData.linked_work_id).trim() !== "" &&
-                Number.isFinite(Number(formData.linked_work_id))
-                  ? Number(formData.linked_work_id)
-                  : null,
-              conditionMaterialCodes: (formData.condition_material_codes || {}) as Record<
-                string,
-                string
-              >,
-              financialConditions: Array.isArray(formData.financial_conditions)
-                ? formData.financial_conditions
-                : [],
-              defaultMaterialCode: formData.素材番号 || null,
-            })
-          );
-        }
-
-        // Stage C-2: 個別利用許諾 v3(マトリクス）条件の登録。
-        //   v3 フォームは financial_conditions ではなく v3_conds/v3_lcs を送る。
-        //   取引形態を金銭条件(rate_pct=適用料率)へ upsert し、本体マテリアルへ
-        //   アンカーして作品構成へ組み込む。標準パス(financial_conditions)とは
-        //   入力が排他のため二重登録は起きない。best-effort・非致命。
-        if (
-          lcId &&
-          Array.isArray(formData.v3_conds) &&
-          formData.v3_conds.length > 0
-        ) {
-          await safeSync("v3-matrix(license)", () =>
-            registerV3MatrixConditions({
-              capabilityId: lcId,
-              ledgerCode: ledgerCodeForWork,
-              ownWorkId:
-                formData.linked_work_id != null &&
-                String(formData.linked_work_id).trim() !== "" &&
-                Number.isFinite(Number(formData.linked_work_id))
-                  ? Number(formData.linked_work_id)
-                  : null,
-              conds: formData.v3_conds,
-              lcs: Array.isArray(formData.v3_lcs) ? formData.v3_lcs : [],
-              anchorMaterialCode: formData.素材番号 || null,
-              conditionMaterialCodes: (formData.condition_material_codes ||
-                {}) as Record<string, string>,
-            })
-          );
-        }
+        const lcId = lcSaved.documentId;
+        // 作品連動(work_material_uses への組み込み)は Phase 後段で対応（CLの原作結線は済）。
 
         // Phase 22.20-D: work_sublicensees (Work × サブライセンシー) を永続化
         //   formData.サブライセンシー一覧 [] が UI から渡された場合のみ反映。

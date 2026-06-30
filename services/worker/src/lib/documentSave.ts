@@ -83,12 +83,80 @@ export interface MasterContractInput {
   default_material_code?: string | null;
   // 行ごとの材料上書き（condition_no → material_code）
   condition_material_codes?: Record<string, string>;
+  material_ref_id?: number | null;     // 軸マテリアル
   // 利用許諾/金銭条件（→CL）
   financial_conditions?: FinancialConditionLike[];
   // 業務明細 / 経費 / その他手数料（すべて CL へ。①一本化）
   line_items?: any[];
   expenses?: any[];
   other_fees?: any[];
+  // 変換済みの追加 CL（v3マトリクス等、呼び出し側で ConditionInput を組み立てた分）。
+  extra_conditions?: ConditionInput[];
+}
+
+/**
+ * v3 マトリクス(取引形態×構成要素LC)を ConditionInput[] へ変換。
+ *   - 加算型: 取引形態(group)ごとに、料率を持つ各LCを1セル(CL)へ。group_no で束ねる。
+ *     mg/ag は代表(先頭LC)のみ保持。material_code=LCコード。
+ *   - 非加算型: 取引形態ごとに1本（実効料率 fixedRate）。material_code=本体(anchor)。
+ *   line_no は 4000+ レンジ（他タイプと非衝突）。
+ */
+export function mapV3MatrixToConditions(
+  v3Conds: any[],
+  v3Lcs: any[],
+  anchorMaterialCode?: string | null
+): ConditionInput[] {
+  const conds = Array.isArray(v3Conds) ? v3Conds : [];
+  const lcs = Array.isArray(v3Lcs) ? v3Lcs : [];
+  const out: ConditionInput[] = [];
+  let lineSeq = 4000;
+  conds.forEach((c: any, gi: number) => {
+    const groupNo = gi + 1;
+    const key = String(c?.id ?? "");
+    const header = {
+      group_no: groupNo,
+      transaction_kind: "license" as const,
+      direction: "payable" as const,
+      condition_name: s(c?.name),
+      base_price_label: s(c?.basePrice),
+      region_territory: s(c?.reg),
+      region_language: s(c?.lang),
+      currency: s(c?.cur) || "JPY",
+      manufacturer: s(c?.manufacturer),
+      seller: s(c?.seller),
+      max_region: s(c?.maxReg),
+      max_language: s(c?.maxLang),
+    };
+    if (c?.addon) {
+      const cells = lcs
+        .map((l: any) => ({ lc: l, rate: l?.rates?.[key] }))
+        .filter((x: any) => x.rate != null && String(x.rate).trim() !== "");
+      cells.forEach((cell: any, k: number) => {
+        out.push({
+          ...header,
+          line_no: ++lineSeq,
+          is_addon: true,
+          payment_scheme: "royalty",
+          material_code: s(cell.lc?.material_code),
+          rate_pct: cell.rate,
+          mg_amount: k === 0 ? c?.mg : null, // 代表のみ
+          ag_amount: k === 0 ? c?.ag : null,
+        });
+      });
+    } else {
+      out.push({
+        ...header,
+        line_no: ++lineSeq,
+        is_addon: false,
+        payment_scheme: "royalty",
+        material_code: anchorMaterialCode || null, // 本体アンカー
+        rate_pct: c?.fixedRate,
+        mg_amount: c?.mg,
+        ag_amount: c?.ag,
+      });
+    }
+  });
+  return out;
 }
 
 const s = (v: any): string | null =>
@@ -191,6 +259,7 @@ export async function upsertMasterContract(
     backlog_issue_key: s(input.backlog_issue_key),
     ledger_code: ledger,
     ledger_ref_id: input.ledger_ref_id ?? origWorkId,
+    material_ref_id: input.material_ref_id ?? null,
     template_family: s(input.template_family),
     is_active: input.is_active == null ? true : !!input.is_active,
     auto_renewal: !!input.auto_renewal,
@@ -234,7 +303,8 @@ export async function upsertMasterContract(
     input.financial_conditions !== undefined ||
     input.line_items !== undefined ||
     input.expenses !== undefined ||
-    input.other_fees !== undefined;
+    input.other_fees !== undefined ||
+    input.extra_conditions !== undefined;
   if (!anyProvided) {
     return { documentId, conditionLineIds: [] };
   }
@@ -289,6 +359,9 @@ export async function upsertMasterContract(
       payment_date: s(e?.spent_date), notes: s(e?.remarks), category: "expense",
     });
   });
+
+  // 変換済み追加 CL（v3 等）を末尾に追加。
+  if (Array.isArray(input.extra_conditions)) conditions.push(...input.extra_conditions);
 
   const { lineIds } = await upsertDocumentConditions(db, documentId, conditions);
   return { documentId, conditionLineIds: lineIds };
