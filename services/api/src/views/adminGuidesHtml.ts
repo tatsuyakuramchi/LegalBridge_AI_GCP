@@ -98,8 +98,8 @@ export function adminGuidesPage(opts: {
       <td>${esc(ver)}</td>
       <td class="gd-actions" style="white-space:nowrap">
         <button class="gd-save" onclick="saveGuide('${esc(r.guideKey)}')">保存</button>
+        <a href="/admin/guides/${esc(r.guideKey)}">編集</a>
         <a href="${previewHref}"${r.ready ? "" : ' class="disabled"'} ${r.ready ? 'target="_blank" rel="noopener"' : ""}>プレビュー ↗</a>
-        <a href="${catHref}" target="_blank" rel="noopener">表示</a>
       </td>
     </tr>`;
   };
@@ -119,7 +119,7 @@ export function adminGuidesPage(opts: {
 
   const body = `
   <div class="gd-banner">
-    <span>📚 ガイド本文の<strong>差し替え</strong>（新版アップロード・公開切替・並べ替え）は worker 連携（pass2）で本画面に実装予定です。現在は<strong>公開状況の確認</strong>と<strong>配信プレビュー</strong>に対応しています。</span>
+    <span>📚 各行の<strong>カテゴリ／並び順</strong>を変更して「保存」。本文の<strong>差し替え（新版アップロード・公開切替・版ロールバック）</strong>は「<strong>編集</strong>」から。</span>
     <a href="/admin/guides/categories" style="color:#6c5ce7;font-weight:800;text-decoration:none;white-space:nowrap">🗂️ カテゴリ管理 →</a>
   </div>
   <div id="gd-msg"></div>
