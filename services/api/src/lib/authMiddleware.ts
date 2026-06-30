@@ -20,6 +20,8 @@ import type { Request, Response, NextFunction, RequestHandler } from "express";
 import { verify as verifySig, hasSigningSecret } from "./signedUrl.ts";
 import { verifyIap, isIapEnforced } from "./iap.ts";
 import { query } from "./db.ts";
+// 外部アドレス許可リスト(DB, 管理画面で編集)。env LB_ROLE_ALLOWLIST_EMAILS と併用。
+import { isEmailAllowlisted } from "../services/accessAllowlistService.ts";
 import type { Role, ScreenKey } from "./screens.ts";
 import { screenByKey, roleAtLeast } from "./screens.ts";
 
@@ -411,12 +413,18 @@ export function requireDepartmentRole(opts: {
       return next();
     }
 
-    // 1) Explicit email allowlist (env or opts)
+    // 1) Explicit email allowlist (opts / env / DB)。
+    //    DB(portal_access_allowlist)は管理画面 /admin/access で編集、TTLキャッシュ参照。
     const envEmails = (process.env.LB_ROLE_ALLOWLIST_EMAILS || "")
       .split(",")
       .map((s) => s.trim().toLowerCase())
       .filter(Boolean);
-    if (email && (allowedEmails.includes(email) || envEmails.includes(email))) {
+    if (
+      email &&
+      (allowedEmails.includes(email) ||
+        envEmails.includes(email) ||
+        (await isEmailAllowlisted(email)))
+    ) {
       logAccess(req, "allow_signed", {
         layer: "role",
         resource: opts.resourceLabel,
