@@ -256,6 +256,7 @@ import {
   createCategory as createPortalCategory,
   updateCategory as updatePortalCategory,
   deleteCategory as deletePortalCategory,
+  updateGuide as updatePortalGuide,
 } from "./src/services/portalGuideService.ts";
 import {
   listVendors,
@@ -3745,8 +3746,11 @@ async function startServer() {
     requireAppRole({ resourceLabel: "admin:guides", allowedRoles: ["admin"], renderErrorPage }),
     async (_req, res) => {
       try {
-        const rows = await listPortalGuidesForAdmin();
-        res.type("html").send(adminGuidesPage({ rows }));
+        const [rows, categories] = await Promise.all([
+          listPortalGuidesForAdmin(),
+          listGuideCategories(),
+        ]);
+        res.type("html").send(adminGuidesPage({ rows, categories }));
       } catch (error) {
         console.error("/admin/guides failed:", error);
         res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -3776,6 +3780,22 @@ async function startServer() {
         res.json(await listPortalGuidesForAdmin());
       } catch (error) {
         res.status(500).json({ error: String(error) });
+      }
+    }
+  );
+
+  // ガイドのメタ更新(admin): カテゴリ付け替え・並び順。
+  app.patch(
+    "/api/portal/guides/:key",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:guides:update", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await updatePortalGuide(String(req.params.key), req.body || {});
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
       }
     }
   );
