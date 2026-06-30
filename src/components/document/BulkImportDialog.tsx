@@ -302,7 +302,7 @@ export const BulkImportDialog: React.FC<Props> = ({
       onClick={closeAll}
     >
       <div
-        className="bg-card border border-border rounded-sm shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
+        className="lb-overlay bg-card border border-border rounded-sm shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col animate-in fade-in zoom-in-95 duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

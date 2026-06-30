@@ -10,6 +10,8 @@
  * 表示される。デザインは popChrome(macOS×pop・インディゴ→バイオレット)と統一。
  */
 
+import { viewSwitchHtml } from "./viewSwitch.ts";
+
 const esc = (s: any) =>
   String(s == null ? "" : s)
     .replace(/&/g, "&amp;")
@@ -149,6 +151,7 @@ export function viewerHomePage(opts: {
   currentEmail: string | null;
   currentRole?: string | null;
   deptCode?: string | null;
+  isAdmin?: boolean; // admin が preview=viewer 等で閲覧中なら「管理画面へ」切替を出す。
 }): string {
   const email = opts.currentEmail || "(不明)";
   const role = opts.currentRole || "viewer";
@@ -158,6 +161,12 @@ export function viewerHomePage(opts: {
       icon: "🔎",
       title: "取引先・契約 検索",
       desc: "取引先名や契約類型から、契約・文書の状況を横断検索します。",
+    },
+    {
+      href: "/portal",
+      icon: "📖",
+      title: "法務ガイド",
+      desc: "契約スキーム・社内手続き・個人情報など実務ガイドのポータル。",
     },
     {
       href: "/templates/preview",
@@ -182,7 +191,10 @@ export function viewerHomePage(opts: {
       <p class="eyebrow" style="margin-top:8px">Search Portal</p>
       <h1 style="font-size:27px;font-weight:800;letter-spacing:-.01em;margin:10px 0 6px">検索ポータル</h1>
       <p style="color:var(--muted);font-size:13.5px">必要な契約・文書をすばやく探せます。</p>
-      <div style="margin-top:14px"><span class="role-pill viewer"><span class="dot"></span>${esc(role)}</span></div>
+      <div style="margin-top:14px;display:inline-flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center">
+        <span class="role-pill viewer"><span class="dot"></span>${esc(role)}</span>
+        ${opts.isAdmin ? viewSwitchHtml("viewer", "#1d3557") : ""}
+      </div>
     </div>
 
     <div class="tiles rise d1">

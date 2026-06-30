@@ -43,7 +43,7 @@ export function StaffPicker({
         placeholder={placeholder}
       />
       {open && matches.length > 0 && (
-        <div className="absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-md border border-border bg-card shadow-md">
+        <div className="lb-overlay absolute z-50 mt-1 w-full max-h-56 overflow-y-auto rounded-md border border-border bg-card shadow-md">
           {matches.map((s) => (
             <button
               key={s.email}

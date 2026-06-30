@@ -139,7 +139,7 @@ export function ReceivableMapPanel() {
             onChange={(e) => setResolveQ(e.target.value)}
           />
           {resolveRows && (
-            <div className="absolute z-30 top-10 left-0 min-w-[300px] max-h-[280px] overflow-auto bg-popover border border-border rounded-lg shadow-lg">
+            <div className="lb-overlay absolute z-30 top-10 left-0 min-w-[300px] max-h-[280px] overflow-auto bg-popover border border-border rounded-lg shadow-lg">
               {resolveRows.length === 0 ? (
                 <div className="px-3 py-2 text-sm text-muted-foreground">該当作品なし</div>
               ) : (

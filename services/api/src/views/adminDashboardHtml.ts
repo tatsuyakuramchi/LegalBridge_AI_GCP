@@ -63,10 +63,12 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
       : ""
   }
 
-  <!-- ==== 1. ユーザー権限管理 ==== -->
+  <!-- MECE: 管理対象軸で 人 / データ / ひな形 / ガイド / 検索 の5束に再編。 -->
+
+  <!-- ==== A. アクセス & 権限 ==== -->
   <section class="dash-sec">
-    <h2>👥 ユーザー権限管理</h2>
-    <p class="muted">staff の admin / viewer ロールを切り替えます。誤操作防止のため昇格・降格は専用サブページに集約しています。</p>
+    <h2>👥 アクセス & 権限</h2>
+    <p class="muted">誰が何を操作できるか。staff の admin / viewer ロールを管理します。</p>
     <div class="tiles">
       <a class="tile users" href="/admin/staff">
         <div class="title">スタッフ権限管理 <span class="arrow">→</span></div>
@@ -75,26 +77,10 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
     </div>
   </section>
 
-  <!-- ==== 2. データ取り込み (Imports) ==== -->
+  <!-- ==== B. 業務データ（DB制御） ==== -->
   <section class="dash-sec">
-    <h2>📥 データ取り込み</h2>
-    <p class="muted">大量データを CSV で一括登録します。すべて Dry Run プレビュー付き。</p>
-    <div class="tiles">
-      <a class="tile import" href="/imports/legalon">
-        <div class="title">📋 LegalOn 契約台帳 <span class="arrow">→</span></div>
-        <div class="desc">過去の契約 (CloudSign / Drive / 紙) を contract_capabilities へ一括登録</div>
-      </a>
-      <a class="tile import" href="/imports/vendor">
-        <div class="title">🏢 取引先マスタ <span class="arrow">→</span></div>
-        <div class="desc">vendor_code をキーに upsert。3 種の重複モードに対応</div>
-      </a>
-    </div>
-  </section>
-
-  <!-- ==== 3. マスター管理 (search-api 内 CRUD) ==== -->
-  <section class="dash-sec">
-    <h2>🗂️ マスター CRUD</h2>
-    <p class="muted">個別レコードの追加・編集・削除。一括登録は上記「データ取り込み」を利用。</p>
+    <h2>🗂️ 業務データ（マスター・取込）</h2>
+    <p class="muted">取引先・契約・作品・条件明細などの DB。個別 CRUD と CSV 一括取込（Dry Run 付き）。</p>
     <div class="tiles">
       <a class="tile master" href="${masterHref("/master/staff", "/master/staff")}"${ADMIN_UI ? ' target="_blank" rel="noopener"' : ""}>
         <div class="title">👤 スタッフマスタ ${ADMIN_UI ? '<span class="arrow">↗</span>' : '<span class="arrow">→</span>'}</div>
@@ -108,10 +94,6 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
         <div class="title">📜 契約マスタ ${ADMIN_UI ? '<span class="arrow">↗</span>' : '<span class="arrow">→</span>'}</div>
         <div class="desc">contract_capabilities 詳細・編集${ADMIN_UI ? "（admin-ui）" : "・LegalOn 統合"}</div>
       </a>
-      <a class="tile preview" href="/templates/preview">
-        <div class="title">Template Preview <span class="arrow">→</span></div>
-        <div class="desc">現行テンプレートをサンプル情報で HTML 表示 / PDF ダウンロード</div>
-      </a>
       <a class="tile master" href="/work-model">
         <div class="title">🎲 作品モデル <span class="arrow">→</span></div>
         <div class="desc">原作IP・自社作品・契約を作品軸で閲覧 (新プラットフォーム /api/v3)</div>
@@ -124,13 +106,49 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
         <div class="title">🔀 分配構造マップ <span class="arrow">→</span></div>
         <div class="desc">作品中心に 上流(分配)←当社←下流(受領) のフローを可視化</div>
       </a>
+      <a class="tile import" href="/imports/legalon">
+        <div class="title">📥 LegalOn 契約台帳 取込 <span class="arrow">→</span></div>
+        <div class="desc">過去の契約 (CloudSign / Drive / 紙) を contract_capabilities へ一括登録</div>
+      </a>
+      <a class="tile import" href="/imports/vendor">
+        <div class="title">📥 取引先マスタ 取込 <span class="arrow">→</span></div>
+        <div class="desc">vendor_code をキーに upsert。3 種の重複モードに対応</div>
+      </a>
     </div>
   </section>
 
-  <!-- ==== 4. 検索ポータル (admin/viewer 共通) ==== -->
+  <!-- ==== C. ひな形（文書テンプレート） ==== -->
   <section class="dash-sec">
-    <h2>🔍 検索ポータル (admin / viewer 共通)</h2>
-    <p class="muted">viewer ユーザーが利用する検索機能。admin もここから直接 検索可能です。viewer 用案内ページは「Viewer 用ポータルを開く」で確認できます。</p>
+    <h2>📄 ひな形（文書テンプレート）</h2>
+    <p class="muted">発注書・契約書等のテンプレート。現行版のプレビュー / PDF 確認。編集・版管理は ${ADMIN_UI ? "admin-ui" : "admin-ui / worker"} 側。</p>
+    <div class="tiles">
+      <a class="tile preview" href="/templates/preview">
+        <div class="title">ひな型プレビュー <span class="arrow">→</span></div>
+        <div class="desc">現行テンプレートをサンプル情報で HTML 表示 / PDF ダウンロード</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- ==== D. ポータル & ガイド ==== -->
+  <section class="dash-sec">
+    <h2>📚 ポータル & ガイド</h2>
+    <p class="muted">法務ポータル(GAS 移植)の実務ガイド。公開状況の確認・配信プレビュー。差し替えは順次対応。</p>
+    <div class="tiles">
+      <a class="tile master" href="/admin/guides">
+        <div class="title">📚 ガイド管理 <span class="arrow">→</span></div>
+        <div class="desc">各ガイドの公開中/準備中・版・配信プレビュー（差し替えは pass2）</div>
+      </a>
+      <a class="tile preview" href="/portal" target="_blank" rel="noopener">
+        <div class="title">📖 ポータルを開く <span class="arrow">↗</span></div>
+        <div class="desc">別タブで法務ガイドポータル(/portal)を確認</div>
+      </a>
+    </div>
+  </section>
+
+  <!-- ==== E. 検索・閲覧 (admin/viewer 共通) ==== -->
+  <section class="dash-sec">
+    <h2>🔍 検索・閲覧 (admin / viewer 共通)</h2>
+    <p class="muted">viewer ユーザーが利用する検索機能。admin もここから直接 検索可能です。</p>
     <div class="tiles">
       <a class="tile search" href="/search/vendor">
         <div class="title">🔎 取引先・契約検索 <span class="arrow">→</span></div>
@@ -141,7 +159,7 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
         <div class="desc"><code>/search/ringi/00001</code> — 5 桁の稟議番号で詳細表示</div>
       </a>
       <a class="tile preview" href="/?preview=viewer" target="_blank" rel="noopener">
-        <div class="title">👁️ Viewer 用ポータルを開く <span class="arrow">↗</span></div>
+        <div class="title">👁️ Viewer 用ホームを開く <span class="arrow">↗</span></div>
         <div class="desc">別タブで開く — viewer ロールのユーザーが見るランディングページを確認</div>
       </a>
     </div>
@@ -166,7 +184,7 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
     role: "admin",
     mode: "admin",
     title: "管理ダッシュボード",
-    subtitle: "Master Console ハブ",
+    subtitle: "管理対象軸 — 人 / データ / ひな形 / ガイド / 検索",
     body,
     headExtra: EXTRA_CSS,
     pageTitle: "LegalBridge 管理ダッシュボード",

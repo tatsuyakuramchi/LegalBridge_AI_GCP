@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>法務ポータル移植 モック — LegalBridge</title>
+<!--
+  法務ポータル(GAS 移植・DB 化)pass1 の UI モック(静的・自己完結)。
+  実装: services/api の guidePortalHtml / adminGuidesHtml / adminDashboardHtml,
+        screens.ts, server.ts(/portal /c/:cat /g/:key /admin/guides ...)
+  上部タブで各画面を切替。ブラウザで開くだけで確認できます(DB/IAP 不要)。
+-->
+<style>
+  *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,'Hiragino Sans','Noto Sans JP',sans-serif;background:#e9ecf3;color:#212529}
+  /* ===== モック用 上部タブ ===== */
+  .mock-bar{position:sticky;top:0;z-index:5000;display:flex;gap:6px;flex-wrap:wrap;align-items:center;
+    background:#11151c;color:#fff;padding:9px 14px;box-shadow:0 2px 10px rgba(0,0,0,.25)}
+  .mock-bar .mb-brand{font-size:11px;font-weight:800;letter-spacing:.12em;text-transform:uppercase;color:#8a93a6;margin-right:8px}
+  .mock-bar button{border:0;background:rgba(255,255,255,.08);color:#cdd3df;font:inherit;font-size:12px;font-weight:700;
+    padding:6px 12px;border-radius:8px;cursor:pointer;transition:.15s}
+  .mock-bar button:hover{background:rgba(255,255,255,.16);color:#fff}
+  .mock-bar button.on{background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff}
+  .mock-bar .mb-note{margin-left:auto;font-size:10.5px;color:#6b7384}
+  .view{display:none}
+  .view.on{display:block}
+
+  /* ===== ① ポータル(ネイビー基調 = guidePortalHtml) ===== */
+  .nv{--navy:#1d3557;--navy-l:#2a4a6e;--g1:#f8f9fa;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;
+    background:var(--g1);min-height:calc(100vh - 42px);font-size:14px;line-height:1.7;color:var(--tx)}
+  .nv a{color:inherit;cursor:pointer}
+  .nv .topbar{background:var(--navy);color:#fff;height:48px;display:flex;align-items:center;gap:14px;padding:0 18px}
+  .nv .topbar .brand{font-size:11px;font-weight:700;letter-spacing:.08em;color:rgba(255,255,255,.55);text-transform:uppercase}
+  .nv .topbar a{color:rgba(255,255,255,.8);text-decoration:none;font-size:12px;font-weight:600;padding:4px 10px;border-radius:5px}
+  .nv .topbar a:hover{background:rgba(255,255,255,.12);color:#fff}
+  .nv .wrap{max-width:880px;margin:0 auto;padding:34px 22px 60px}
+  .nv .crumb{font-size:12px;color:var(--g5);margin-bottom:14px}
+  .nv .crumb a{color:var(--navy);text-decoration:none}
+  .nv h1.pt{font-size:23px;font-weight:700;color:var(--navy);margin-bottom:6px}
+  .nv .sub{font-size:13px;color:var(--g5);margin-bottom:26px}
+  .nv .hero{background:linear-gradient(135deg,#1d3557,#2a4a6e);border-radius:12px;padding:22px 26px;color:#fff;margin-bottom:22px;display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+  .nv .hero .ht{font-size:15px;font-weight:700;margin-bottom:3px}
+  .nv .hero .hd{font-size:12.5px;color:rgba(255,255,255,.78);flex:1;min-width:200px}
+  .nv .hero a.go{background:#fff;color:var(--navy);font-weight:700;font-size:13px;text-decoration:none;padding:10px 18px;border-radius:8px;white-space:nowrap}
+  .nv .entry{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:0 0 26px}
+  .nv .entry .e{border:1px solid var(--g3);border-radius:9px;padding:13px 16px;background:#fff}
+  .nv .entry .e b{color:var(--navy);font-size:13px}
+  .nv .entry .e code{background:var(--navy);color:#fff;font-size:12px;font-weight:700;padding:2px 9px;border-radius:5px;font-family:Consolas,monospace;display:inline-block;margin:5px 0}
+  .nv .entry .e p{font-size:11.5px;color:var(--tx2);margin:0}
+  .nv .sec{font-size:13px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:9px;margin:24px 0 12px}
+  .nv .cards{display:grid;gap:12px}
+  .nv .card{display:flex;align-items:center;gap:16px;background:#fff;border:1px solid var(--g3);border-radius:10px;padding:16px 20px;text-decoration:none;transition:.14s;border-left:5px solid var(--navy)}
+  .nv .card:hover{background:#f0f4ff;box-shadow:0 2px 10px rgba(29,53,87,.1);transform:translateY(-1px)}
+  .nv .card .tag{font-size:10px;font-weight:700;color:var(--g5);letter-spacing:.05em;white-space:nowrap;min-width:64px}
+  .nv .card .body{flex:1}
+  .nv .card .ct{font-size:15px;font-weight:700;color:var(--navy);margin-bottom:2px}
+  .nv .card .cd{font-size:12px;color:var(--tx2);line-height:1.5}
+  .nv .card .arr{font-size:20px;color:var(--g3)}
+  .nv .badge{display:inline-block;font-size:10px;font-weight:700;border-radius:4px;padding:1px 7px;margin-left:6px}
+  .nv .b-ready{background:#e4f7f1;color:#0d6b4e}.nv .b-soon{background:#fef3e2;color:#7a4d09}
+  .nv .tip{background:#fff;border:1px solid var(--g3);border-left:4px solid #c47d1a;border-radius:0 6px 6px 0;padding:11px 15px;font-size:12px;color:var(--tx2);margin:18px 0}
+  .nv .foot{margin-top:34px;padding-top:16px;border-top:1px solid var(--g3);font-size:11px;color:var(--g5);text-align:center}
+
+  /* ===== ②③ 管理(インディゴ基調 = popChrome 近似) ===== */
+  .pop{--accent:#6c5ce7;--accent2:#a29bfe;--bg:#f4f1fb;--ink:#241f3a;--muted:#8a86a3;--line:#ece8f6;--radius:18px;--radius-sm:12px;
+    --shadow:0 2px 6px rgba(90,70,180,.08),0 14px 34px rgba(90,70,180,.12);
+    display:grid;grid-template-columns:230px 1fr;min-height:calc(100vh - 42px);
+    background:radial-gradient(1200px 500px at 85% -10%,#ffe9f2 0,transparent 60%),radial-gradient(1000px 480px at -10% 0,#e7f7ff 0,transparent 55%),var(--bg);
+    color:var(--ink);font-size:13.5px;line-height:1.55}
+  .pop a{color:inherit;text-decoration:none;cursor:pointer}
+  .pop .side{background:rgba(255,255,255,.72);backdrop-filter:blur(20px);border-right:1px solid var(--line);padding:0 0 16px;position:sticky;top:42px;height:calc(100vh - 42px);overflow:auto}
+  .pop .brand{padding:16px 18px 6px;font-weight:300;font-size:19px}.pop .brand b{font-weight:800}
+  .pop .side-title{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.06em;padding:14px 18px 4px}
+  .pop nav{list-style:none}
+  .pop nav a{display:flex;align-items:center;gap:10px;padding:9px 13px;margin:3px 10px;border-radius:14px;font-weight:600}
+  .pop nav a:hover{background:#f6f3ff}
+  .pop nav a.on{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;box-shadow:0 6px 16px rgba(108,92,231,.32)}
+  .pop nav a .ic{width:20px;text-align:center;font-size:15px}
+  .pop .main{display:flex;flex-direction:column;min-width:0}
+  .pop .toolbar{display:flex;align-items:center;gap:10px;padding:14px 22px;border-bottom:1px solid var(--line);background:rgba(255,255,255,.75);backdrop-filter:blur(20px);position:sticky;top:42px;z-index:20}
+  .pop .toolbar h1{font-size:17px;font-weight:800}
+  .pop .toolbar .sub{color:var(--muted);font-size:12px}
+  .pop .content{padding:20px 22px 60px}
+  /* dashboard tiles */
+  .dash-sec{margin-bottom:22px}
+  .dash-sec h2{font-size:14px;font-weight:800;margin:0 0 4px;color:var(--ink);display:flex;align-items:center;gap:8px}
+  .dash-sec .muted{font-size:12px;margin-bottom:10px;color:var(--muted)}
+  .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:12px}
+  .tile{display:block;background:#fff;border:1px solid var(--line);border-radius:var(--radius-sm);padding:15px 17px;box-shadow:0 2px 8px rgba(90,70,180,.05);transition:.15s;position:relative;overflow:hidden}
+  .tile::before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:var(--accent)}
+  .tile:hover{box-shadow:var(--shadow);transform:translateY(-2px)}
+  .tile .title{font-weight:800;font-size:13.5px;display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .tile .desc{color:var(--muted);font-size:11.5px;margin-top:5px;line-height:1.5}
+  .tile .arrow{color:var(--accent);font-weight:800}
+  .tile.users::before{background:linear-gradient(180deg,#a55eea,#8854d0)}
+  .tile.import::before,.tile.master::before{background:linear-gradient(180deg,#1dd1a1,#10ac84)}
+  .tile.preview::before{background:linear-gradient(180deg,#ff9a9e,#ff6b81)}
+  .tile.search::before{background:linear-gradient(180deg,#feca57,#ff9f43)}
+  .tile code{background:#f4f1fb;border-radius:6px;padding:1px 5px;font-size:11px}
+  /* guides table */
+  .gd-banner{display:flex;gap:10px;align-items:center;background:linear-gradient(135deg,#efeaff,#f6f3ff);border:1px solid #e2dbfb;border-radius:14px;padding:11px 15px;margin-bottom:16px;font-size:12.5px;font-weight:600}
+  .gd-sec{margin-bottom:22px}
+  .gd-sec h2{font-size:14px;font-weight:800;margin:0 0 8px;color:var(--ink)}
+  .gd-table{width:100%;border-collapse:collapse;font-size:12.5px;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  .gd-table th{background:#f4f1fb;color:var(--ink);text-align:left;font-weight:800;padding:8px 11px;font-size:11.5px;white-space:nowrap}
+  .gd-table td{padding:8px 11px;border-top:1px solid var(--line);vertical-align:middle}
+  .gd-table tr:hover td{background:#faf8ff}
+  .gd-key{font-family:ui-monospace,Menlo,monospace;font-size:11px;color:var(--muted)}
+  .gd-title{font-weight:700}
+  .pill{display:inline-block;font-size:10.5px;font-weight:800;border-radius:999px;padding:2px 9px;white-space:nowrap}
+  .p-pub{background:#e4f7f1;color:#0d6b4e}.p-soon{background:#fef3e2;color:#7a4d09}
+  .gd-actions a{font-size:11.5px;font-weight:700;color:#6c5ce7;margin-right:10px}
+  .gd-actions a.disabled{color:var(--muted);pointer-events:none}
+</style>
+</head>
+<body>
+
+<div class="mock-bar">
+  <span class="mb-brand">Mock</span>
+  <button class="on" data-view="portal">① ポータル /portal</button>
+  <button data-view="category">② カテゴリ /c/contracts</button>
+  <button data-view="notready">③ 準備中 /g/search</button>
+  <button data-view="guides">④ ガイド管理 /admin/guides</button>
+  <button data-view="dash">⑤ 管理(MECE) /admin</button>
+  <span class="mb-note">法務ポータル移植 pass1 · 静的モック(DB/IAP 不要)</span>
+</div>
+
+<!-- ① ポータルトップ -->
+<div class="view on nv" id="v-portal">
+  <nav class="topbar"><span class="brand">法務部</span><a>ポータル</a><a>ご利用案内</a>
+    <span style="margin-left:auto;display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.35);border-radius:999px;overflow:hidden;background:#fff" title="管理IDログイン時のみ表示">
+      <span style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#1d3557;color:#fff">通常画面</span>
+      <span style="width:1px;align-self:stretch;background:#dde"></span>
+      <a onclick="showView('dash')" style="padding:5px 12px;font-size:11.5px;font-weight:700;color:#6c757d;cursor:pointer">管理画面</a>
+    </span>
+  </nav>
+  <div class="wrap">
+    <h1 class="pt">法務部 実務ガイド ポータル</h1>
+    <p class="sub">LegalBridge｜契約・取引・個人情報まわりの社内手続きと判断材料の入口</p>
+    <div class="hero">
+      <div class="hd"><div class="ht">はじめての方・どれを見ればいいか迷う方へ</div>「やりたいこと」から適切なガイドにたどり着ける案内ページです。</div>
+      <a class="go">ご利用案内を開く →</a>
+    </div>
+    <div class="sec">2つの入口</div>
+    <div class="entry">
+      <div class="e"><b>調べる</b><br><code>/法務検索 [取引先名]</code><p>取引先・契約・文書を検索。検索ポータルからも検索できます。</p></div>
+      <div class="e"><b>依頼する</b><br><code>/法務依頼</code><p>文書作成（自社）／他社契約のレビュー（法務相談）を依頼。</p></div>
+    </div>
+    <div class="sec">目的から探す</div>
+    <div class="cards">
+      <a class="card" style="border-left-color:#27500a"><div class="tag" style="color:#27500a">3 ガイド</div><div class="body"><div class="ct" style="color:#27500a">A. 取引を進める</div><div class="cd">取引が決まってからの社内手続き・取引先登録・出版フロー</div></div><div class="arr">›</div></a>
+      <a class="card" style="border-left-color:#0c447c"><div class="tag" style="color:#0c447c">3 ガイド</div><div class="body"><div class="ct" style="color:#0c447c">B. 契約を設計・理解する</div><div class="cd">スキーム選択・条文の意味・契約実務の基準</div></div><div class="arr">›</div></a>
+      <a class="card" style="border-left-color:#085041"><div class="tag" style="color:#085041">1 ガイド</div><div class="body"><div class="ct" style="color:#085041">C. 調べる・判定する</div><div class="cd">取引先・契約・文書・稟議・条件明細の検索</div></div><div class="arr">›</div></a>
+      <a class="card" style="border-left-color:#c47d1a"><div class="tag" style="color:#c47d1a">3 ガイド</div><div class="body"><div class="ct" style="color:#c47d1a">D. 法律・コンプライアンス</div><div class="cd">取適法・フリーランス法／個人情報／試遊インストラクション</div></div><div class="arr">›</div></a>
+    </div>
+    <div class="foot">株式会社アークライト 経営管理本部 法務部　｜　社内業務用</div>
+  </div>
+</div>
+
+<!-- ② カテゴリ(B. 契約を設計・理解する) -->
+<div class="view nv" id="v-category">
+  <nav class="topbar"><span class="brand">法務部</span><a>ポータル</a><a>ご利用案内</a>
+    <span style="margin-left:auto;display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.35);border-radius:999px;overflow:hidden;background:#fff" title="管理IDログイン時のみ表示">
+      <span style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#1d3557;color:#fff">通常画面</span>
+      <span style="width:1px;align-self:stretch;background:#dde"></span>
+      <a onclick="showView('dash')" style="padding:5px 12px;font-size:11.5px;font-weight:700;color:#6c757d;cursor:pointer">管理画面</a>
+    </span>
+  </nav>
+  <div class="wrap">
+    <div class="crumb"><a>ポータル</a> ／ B. 契約を設計・理解する</div>
+    <h1 class="pt" style="color:#0c447c">B. 契約を設計・理解する</h1>
+    <p class="sub">スキーム選択・条文の意味・契約実務の基準</p>
+    <div class="cards">
+      <a class="card" style="border-left-color:#0c447c"><div class="tag">GUIDE 01</div><div class="body"><div class="ct">BG事業部 契約スキーム実務ガイド<span class="badge b-ready">公開中</span></div><div class="cd">「誰が製造を管理するか」から推奨スキーム（S1〜S7）・必要契約・落とし穴を表示。</div></div><div class="arr">›</div></a>
+      <a class="card" style="border-left-color:#0c447c"><div class="tag">GUIDE 06</div><div class="body"><div class="ct">契約書 条文解説ガイド<span class="badge b-ready">公開中</span></div><div class="cd">業務委託・ライセンス基本契約書を逐条解説。甲乙の立場の違いに注意。</div></div><div class="arr">›</div></a>
+      <a class="card" style="border-left-color:#0c447c"><div class="tag">GUIDE 09</div><div class="body"><div class="ct">法務ナレッジブック<span class="badge b-ready">公開中</span></div><div class="cd">契約類型・著作権・構成要素・条項ライブラリ・チェックリストの実務基準。</div></div><div class="arr">›</div></a>
+    </div>
+  </div>
+</div>
+
+<!-- ③ 準備中(C. search) -->
+<div class="view nv" id="v-notready">
+  <nav class="topbar"><span class="brand">法務部</span><a>ポータル</a><a>ご利用案内</a>
+    <span style="margin-left:auto;display:inline-flex;align-items:center;border:1px solid rgba(255,255,255,.35);border-radius:999px;overflow:hidden;background:#fff" title="管理IDログイン時のみ表示">
+      <span style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#1d3557;color:#fff">通常画面</span>
+      <span style="width:1px;align-self:stretch;background:#dde"></span>
+      <a onclick="showView('dash')" style="padding:5px 12px;font-size:11.5px;font-weight:700;color:#6c757d;cursor:pointer">管理画面</a>
+    </span>
+  </nav>
+  <div class="wrap">
+    <div class="crumb"><a>ポータル</a> ／ <a>C. 調べる・判定する</a> ／ 法務データ検索ガイド</div>
+    <h1 class="pt">法務データ検索ガイド</h1>
+    <p class="sub">GUIDE 07・準備中</p>
+    <div class="tip">このガイドの本文はまだ公開されていません。<br>
+      <code>services/api/guides/search.html</code> を配置し、ガイド同期(sync-guides-to-db.mjs)を実行すると、ここに自動で表示されます（GAS のテンプレートタグはそのままで OK）。</div>
+    <p><a style="color:#1d3557;font-weight:700">← C. 調べる・判定する に戻る</a></p>
+  </div>
+</div>
+
+<!-- ④ ガイド管理 /admin/guides -->
+<div class="view pop" id="v-guides">
+  <aside class="side">
+    <div class="brand">Legal <b>OS</b></div>
+    <div class="side-title">⚙ Master Console</div>
+    <nav>
+      <a><span class="ic">🏢</span>取引先</a>
+      <a><span class="ic">👥</span>スタッフ</a>
+      <a><span class="ic">🧾</span>条件明細</a>
+      <a class="on"><span class="ic">📚</span>ガイド管理</a>
+      <a><span class="ic">⚙️</span>管理</a>
+    </nav>
+    <div class="side-title">🔍 Search & Browse</div>
+    <nav>
+      <a><span class="ic">⌕</span>取引先・契約検索</a>
+      <a><span class="ic">📖</span>法務ガイド</a>
+      <a><span class="ic">📄</span>ひな型プレビュー</a>
+    </nav>
+  </aside>
+  <div class="main">
+    <div class="toolbar"><div><h1>ガイド管理</h1><div class="sub">法務ポータル — ポータル & ガイド</div></div>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;border:1px solid rgba(120,120,140,.35);border-radius:999px;overflow:hidden;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)" title="管理IDログイン時のみ表示">
+        <a onclick="showView('portal')" style="padding:5px 12px;font-size:11.5px;font-weight:700;color:#6c757d;cursor:pointer">通常画面</a>
+        <span style="width:1px;align-self:stretch;background:rgba(120,120,140,.25)"></span>
+        <span style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#6c5ce7;color:#fff">管理画面</span>
+      </span>
+    </div>
+    <div class="content">
+      <div class="gd-banner">📚 ガイド本文の<strong style="margin:0 3px">差し替え</strong>（新版アップロード・公開切替・並べ替え）は worker 連携（pass2）で本画面に実装予定です。現在は<strong style="margin:0 3px">公開状況の確認</strong>と<strong style="margin:0 3px">配信プレビュー</strong>に対応しています。</div>
+      <div class="dash-sec"><div class="muted">公開中 <strong>8</strong> / 全 <strong>11</strong> ガイド。準備中はガイド本文(<code>services/api/guides/&lt;key&gt;.html</code>)を配置し同期すると公開中になります。</div></div>
+
+      <section class="gd-sec"><h2>ご利用案内</h2>
+        <table class="gd-table"><thead><tr><th>ガイド</th><th>状態</th><th>版</th><th>操作</th></tr></thead><tbody>
+          <tr><td><div class="gd-title">法務部 実務ガイド ご利用案内</div><div class="gd-key">guide・GUIDE 00</div></td><td><span class="pill p-soon">準備中</span></td><td>— / 全0版</td><td class="gd-actions"><a class="disabled">配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+        </tbody></table></section>
+
+      <section class="gd-sec"><h2>A. 取引を進める</h2>
+        <table class="gd-table"><thead><tr><th>ガイド</th><th>状態</th><th>版</th><th>操作</th></tr></thead><tbody>
+          <tr><td><div class="gd-title">ライセンス・業務委託 取引社内手続きガイド</div><div class="gd-key">tetsuzuki・GUIDE 05</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+          <tr><td><div class="gd-title">新規取引先登録手続きガイド</div><div class="gd-key">vendor・GUIDE 03</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+          <tr><td><div class="gd-title">出版事業部 契約・書類発行フローガイド</div><div class="gd-key">pub・GUIDE 02</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+        </tbody></table></section>
+
+      <section class="gd-sec"><h2>B. 契約を設計・理解する</h2>
+        <table class="gd-table"><thead><tr><th>ガイド</th><th>状態</th><th>版</th><th>操作</th></tr></thead><tbody>
+          <tr><td><div class="gd-title">BG事業部 契約スキーム実務ガイド</div><div class="gd-key">bg・GUIDE 01</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+          <tr><td><div class="gd-title">契約書 条文解説ガイド</div><div class="gd-key">clause・GUIDE 06</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+          <tr><td><div class="gd-title">法務ナレッジブック</div><div class="gd-key">knowledge・GUIDE 09</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+        </tbody></table></section>
+
+      <section class="gd-sec"><h2>C. 調べる・判定する</h2>
+        <table class="gd-table"><thead><tr><th>ガイド</th><th>状態</th><th>版</th><th>操作</th></tr></thead><tbody>
+          <tr><td><div class="gd-title">法務データ検索ガイド</div><div class="gd-key">search・GUIDE 07</div></td><td><span class="pill p-soon">準備中</span></td><td>— / 全0版</td><td class="gd-actions"><a class="disabled">配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+        </tbody></table></section>
+
+      <section class="gd-sec"><h2>D. 法律・コンプライアンス</h2>
+        <table class="gd-table"><thead><tr><th>ガイド</th><th>状態</th><th>版</th><th>操作</th></tr></thead><tbody>
+          <tr><td><div class="gd-title">取引適正化・フリーランス法 実務ガイド</div><div class="gd-key">torihiki・GUIDE 04</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+          <tr><td><div class="gd-title">試遊インストラクション 業務委託ガイド</div><div class="gd-key">eventinst・GUIDE 12</div></td><td><span class="pill p-soon">準備中</span></td><td>— / 全0版</td><td class="gd-actions"><a class="disabled">配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+          <tr><td><div class="gd-title">個人情報 運用ガイド（事業部向け）</div><div class="gd-key">privacy・GUIDE 10</div></td><td><span class="pill p-pub">公開中</span></td><td>v1 / 全1版</td><td class="gd-actions"><a>配信プレビュー ↗</a><a>カテゴリ</a></td></tr>
+        </tbody></table></section>
+    </div>
+  </div>
+</div>
+
+<!-- ⑤ 管理ダッシュボード(MECE 5束) /admin -->
+<div class="view pop" id="v-dash">
+  <aside class="side">
+    <div class="brand">Legal <b>OS</b></div>
+    <div class="side-title">⚙ Master Console</div>
+    <nav>
+      <a><span class="ic">🏢</span>取引先</a>
+      <a><span class="ic">👥</span>スタッフ</a>
+      <a><span class="ic">📄</span>契約台帳</a>
+      <a><span class="ic">🎬</span>作品モデル</a>
+      <a><span class="ic">🔀</span>分配構造マップ</a>
+      <a><span class="ic">🧾</span>条件明細</a>
+      <a><span class="ic">📚</span>ガイド管理</a>
+      <a class="on"><span class="ic">⚙️</span>管理</a>
+    </nav>
+    <div class="side-title">🔍 Search & Browse</div>
+    <nav>
+      <a><span class="ic">⌕</span>取引先・契約検索</a>
+      <a><span class="ic">📖</span>法務ガイド</a>
+      <a><span class="ic">📄</span>ひな型プレビュー</a>
+    </nav>
+  </aside>
+  <div class="main">
+    <div class="toolbar"><div><h1>管理ダッシュボード</h1><div class="sub">管理対象軸 — 人 / データ / ひな形 / ガイド / 検索</div></div>
+      <span style="margin-left:auto;display:inline-flex;align-items:center;border:1px solid rgba(120,120,140,.35);border-radius:999px;overflow:hidden;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.08)" title="管理IDログイン時のみ表示">
+        <a onclick="showView('portal')" style="padding:5px 12px;font-size:11.5px;font-weight:700;color:#6c757d;cursor:pointer">通常画面</a>
+        <span style="width:1px;align-self:stretch;background:rgba(120,120,140,.25)"></span>
+        <span style="padding:5px 12px;font-size:11.5px;font-weight:700;background:#6c5ce7;color:#fff">管理画面</span>
+      </span>
+    </div>
+    <div class="content">
+      <section class="dash-sec">
+        <h2>👥 アクセス & 権限</h2>
+        <p class="muted">誰が何を操作できるか。staff の admin / viewer ロールを管理します。</p>
+        <div class="tiles">
+          <a class="tile users"><div class="title">スタッフ権限管理 <span class="arrow">→</span></div><div class="desc">staff 一覧と admin/viewer 切替ボタン</div></a>
+        </div>
+      </section>
+      <section class="dash-sec">
+        <h2>🗂️ 業務データ（マスター・取込）</h2>
+        <p class="muted">取引先・契約・作品・条件明細などの DB。個別 CRUD と CSV 一括取込（Dry Run 付き）。</p>
+        <div class="tiles">
+          <a class="tile master"><div class="title">👤 スタッフマスタ <span class="arrow">→</span></div><div class="desc">staff CRUD + 権限切替</div></a>
+          <a class="tile master"><div class="title">🏢 取引先マスタ <span class="arrow">→</span></div><div class="desc">vendors CRUD (個別 1 件単位)</div></a>
+          <a class="tile master"><div class="title">📜 契約マスタ <span class="arrow">→</span></div><div class="desc">contract_capabilities 詳細・編集・LegalOn 統合</div></a>
+          <a class="tile master"><div class="title">🎲 作品モデル <span class="arrow">→</span></div><div class="desc">原作IP・自社作品・契約を作品軸で閲覧</div></a>
+          <a class="tile master"><div class="title">🧾 条件明細 横断検索 <span class="arrow">→</span></div><div class="desc">支払日 / 納期 / 担当 / 種類 / 取引先で検索</div></a>
+          <a class="tile master"><div class="title">🔀 分配構造マップ <span class="arrow">→</span></div><div class="desc">上流(分配)←当社←下流(受領) を可視化</div></a>
+          <a class="tile import"><div class="title">📥 LegalOn 契約台帳 取込 <span class="arrow">→</span></div><div class="desc">過去契約を一括登録</div></a>
+          <a class="tile import"><div class="title">📥 取引先マスタ 取込 <span class="arrow">→</span></div><div class="desc">vendor_code をキーに upsert</div></a>
+        </div>
+      </section>
+      <section class="dash-sec">
+        <h2>📄 ひな形（文書テンプレート）</h2>
+        <p class="muted">発注書・契約書等のテンプレート。現行版のプレビュー / PDF 確認。編集・版管理は admin-ui 側。</p>
+        <div class="tiles">
+          <a class="tile preview"><div class="title">ひな型プレビュー <span class="arrow">→</span></div><div class="desc">現行テンプレートをサンプル情報で HTML 表示 / PDF</div></a>
+        </div>
+      </section>
+      <section class="dash-sec">
+        <h2>📚 ポータル & ガイド</h2>
+        <p class="muted">法務ポータル(GAS 移植)の実務ガイド。公開状況の確認・配信プレビュー。差し替えは順次対応。</p>
+        <div class="tiles">
+          <a class="tile master"><div class="title">📚 ガイド管理 <span class="arrow">→</span></div><div class="desc">公開中/準備中・版・配信プレビュー（差し替えは pass2）</div></a>
+          <a class="tile preview"><div class="title">📖 ポータルを開く <span class="arrow">↗</span></div><div class="desc">別タブで法務ガイドポータル(/portal)を確認</div></a>
+        </div>
+      </section>
+      <section class="dash-sec">
+        <h2>🔍 検索・閲覧 (admin / viewer 共通)</h2>
+        <p class="muted">viewer ユーザーが利用する検索機能。admin もここから直接 検索可能です。</p>
+        <div class="tiles">
+          <a class="tile search"><div class="title">🔎 取引先・契約検索 <span class="arrow">→</span></div><div class="desc"><code>/search/vendor?q=…</code></div></a>
+          <a class="tile search"><div class="title">📋 稟議番号検索 <span class="arrow">→</span></div><div class="desc"><code>/search/ringi/00001</code></div></a>
+          <a class="tile preview"><div class="title">👁️ Viewer 用ホームを開く <span class="arrow">↗</span></div><div class="desc">viewer ロールのランディングを確認</div></a>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<script>
+  const buttons = document.querySelectorAll('.mock-bar button');
+  const views = { portal:'v-portal', category:'v-category', notready:'v-notready', guides:'v-guides', dash:'v-dash' };
+  window.showView = function(name){
+    buttons.forEach(x => x.classList.toggle('on', x.dataset.view === name));
+    Object.values(views).forEach(id => document.getElementById(id).classList.remove('on'));
+    document.getElementById(views[name]).classList.add('on');
+    window.scrollTo(0, 0);
+  };
+  buttons.forEach(b => b.addEventListener('click', () => window.showView(b.dataset.view)));
+</script>
+</body>
+</html>
