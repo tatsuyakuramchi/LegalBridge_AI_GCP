@@ -637,4 +637,99 @@ CREATE TRIGGER tg_fee_ins INSTEAD OF INSERT ON capability_other_fees FOR EACH RO
 CREATE TRIGGER tg_fee_upd INSTEAD OF UPDATE ON capability_other_fees FOR EACH ROW EXECUTE FUNCTION fee_upd();
 CREATE TRIGGER tg_fee_del INSTEAD OF DELETE ON capability_other_fees FOR EACH ROW EXECUTE FUNCTION cl_view_del();
 
+
+-- ════════════════════════════════════════════════════════════════════════
+-- 8. 残高/状態/予定ビューを新 condition_lines 上に再作成（旧定義と同一。
+--    参照列は全て温存済み: capability_id(ミラー)/calc_period_kind/cancelled_at 等）。
+-- ════════════════════════════════════════════════════════════════════════
+CREATE VIEW condition_line_status_v AS
+ SELECT cl.id,
+    cl.line_code,
+    cl.capability_id,
+    cl.payment_scheme,
+    cl.direction,
+        CASE
+            WHEN cl.cancelled_at IS NOT NULL THEN 'cancelled'::text
+            WHEN cl.closed_at IS NOT NULL THEN 'closed_short'::text
+            WHEN cl.payment_scheme::text = ANY (ARRAY['lump_sum'::character varying, 'per_unit'::character varying, 'installment'::character varying]::text[]) THEN
+            CASE
+                WHEN COALESCE(e.sum_amount, 0::numeric) >= COALESCE(cl.amount_ex_tax, 0::numeric) THEN 'fulfilled'::text
+                WHEN COALESCE(e.sum_amount, 0::numeric) > 0::numeric THEN 'partially_fulfilled'::text
+                ELSE 'open'::text
+            END
+            ELSE
+            CASE
+                WHEN cl.term_start IS NOT NULL AND CURRENT_DATE < cl.term_start THEN 'pending'::text
+                WHEN cl.term_end IS NOT NULL AND CURRENT_DATE > cl.term_end THEN 'expired'::text
+                ELSE 'active'::text
+            END
+        END AS status,
+    COALESCE(e.sum_amount, 0::numeric) AS consumed_amount,
+        CASE
+            WHEN (cl.payment_scheme::text = ANY (ARRAY['lump_sum'::character varying, 'per_unit'::character varying, 'installment'::character varying]::text[])) AND cl.amount_ex_tax IS NOT NULL THEN cl.amount_ex_tax - COALESCE(e.sum_amount, 0::numeric)
+            ELSE NULL::numeric
+        END AS remaining_amount,
+    COALESCE(e.event_count, 0::bigint) AS event_count,
+    e.last_event_at
+   FROM condition_lines cl
+     LEFT JOIN ( SELECT condition_events.condition_line_id,
+            sum(condition_events.amount_ex_tax) AS sum_amount,
+            count(*) AS event_count,
+            max(condition_events.occurred_at) AS last_event_at
+           FROM condition_events
+          WHERE condition_events.voided_at IS NULL
+          GROUP BY condition_events.condition_line_id) e ON e.condition_line_id = cl.id;
+;
+
+CREATE VIEW condition_line_balance_v AS
+ SELECT cl.id AS condition_line_id,
+    cl.line_code,
+    cl.mg_amount,
+    cl.ag_amount,
+    COALESCE(d.mg_consumed, 0::numeric) AS mg_consumed,
+    GREATEST(0::numeric, COALESCE(cl.mg_amount, 0::numeric) - COALESCE(d.mg_consumed, 0::numeric)) AS mg_remaining,
+    COALESCE(d.ag_consumed, 0::numeric) AS ag_consumed,
+    GREATEST(0::numeric, COALESCE(cl.ag_amount, 0::numeric) - COALESCE(d.ag_consumed, 0::numeric)) AS ag_remaining
+   FROM condition_lines cl
+     LEFT JOIN ( SELECT ev.condition_line_id,
+            sum(COALESCE(ev.mg_consumed_this_time, 0::numeric)) AS mg_consumed,
+            sum(COALESCE(ev.ag_consumed_this_time, 0::numeric)) AS ag_consumed
+           FROM condition_events ev
+          WHERE ev.voided_at IS NULL AND ev.event_type::text = 'royalty_calc'::text
+          GROUP BY ev.condition_line_id) d ON d.condition_line_id = cl.id
+  WHERE cl.payment_scheme::text = 'royalty'::text;
+;
+
+CREATE VIEW condition_line_schedule_v AS
+ WITH sched AS (
+         SELECT cl.id AS condition_line_id,
+            cl.line_code,
+            cl.payment_scheme,
+            cl.term_start,
+            LEAST(COALESCE(cl.term_end, CURRENT_DATE), CURRENT_DATE) AS term_until,
+                CASE
+                    WHEN cl.payment_scheme::text = 'subscription'::text THEN '1 mon'::interval
+                    WHEN cl.calc_period_kind::text = 'MONTHLY'::text THEN '1 mon'::interval
+                    WHEN cl.calc_period_kind::text = 'QUARTERLY'::text THEN '3 mons'::interval
+                    WHEN cl.calc_period_kind::text = 'SEMIANNUAL'::text THEN '6 mons'::interval
+                    WHEN cl.calc_period_kind::text = 'ANNUAL'::text THEN '1 year'::interval
+                    ELSE NULL::interval
+                END AS step
+           FROM condition_lines cl
+          WHERE cl.term_start IS NOT NULL AND (cl.payment_scheme::text = 'subscription'::text OR cl.payment_scheme::text = 'royalty'::text AND (cl.calc_period_kind::text = ANY (ARRAY['MONTHLY'::character varying, 'QUARTERLY'::character varying, 'SEMIANNUAL'::character varying, 'ANNUAL'::character varying]::text[])))
+        )
+ SELECT s.condition_line_id,
+    s.line_code,
+    s.payment_scheme,
+    to_char(gs.gs, 'YYYY-MM'::text) AS expected_period,
+    (EXISTS ( SELECT 1
+           FROM condition_events e
+          WHERE e.condition_line_id = s.condition_line_id AND e.voided_at IS NULL AND e.period::text = to_char(gs.gs, 'YYYY-MM'::text))) AS issued,
+    gs.gs < date_trunc('month'::text, CURRENT_DATE::timestamp with time zone) AS overdue
+   FROM sched s
+     CROSS JOIN LATERAL generate_series(date_trunc('month'::text, s.term_start::timestamp with time zone), date_trunc('month'::text, s.term_until::timestamp with time zone), s.step) gs(gs)
+  WHERE s.step IS NOT NULL;
+;
+
+
 COMMIT;
