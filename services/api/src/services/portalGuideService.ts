@@ -317,3 +317,105 @@ export async function deleteCategory(catKey: string): Promise<void> {
   }
   await query(`DELETE FROM portal_guide_categories WHERE cat_key = $1`, [catKey]);
 }
+
+// ───────────────────────────────────────────────────────────────────
+// ガイド本文の差し替え(admin 書込): 新版アップロード・公開トグル・版ロールバック。
+//   GAS 原文をそのまま版として保存(配信時に portalRender が変換)。
+// ───────────────────────────────────────────────────────────────────
+
+export interface GuideVersionRow {
+  versionNo: number;
+  createdAt: string | null;
+  createdBy: string | null;
+  comment: string | null;
+  chars: number;
+  isCurrent: boolean;
+}
+
+/** ガイドの版一覧(新しい順)。現行版に印。 */
+export async function listGuideVersions(guideKey: string): Promise<GuideVersionRow[]> {
+  const { rows } = await query(
+    `SELECT v.version_no, v.created_at, v.created_by, v.comment,
+            length(v.html_source) AS chars,
+            (v.id = g.current_version_id) AS is_current
+       FROM portal_guide_versions v
+       JOIN portal_guides g ON g.id = v.guide_id
+      WHERE g.guide_key = $1
+      ORDER BY v.version_no DESC`,
+    [guideKey]
+  );
+  return rows.map((r) => ({
+    versionNo: Number(r.version_no),
+    createdAt: r.created_at ? new Date(r.created_at).toISOString() : null,
+    createdBy: r.created_by ?? null,
+    comment: r.comment ?? null,
+    chars: Number(r.chars ?? 0),
+    isCurrent: !!r.is_current,
+  }));
+}
+
+/** 新版アップロード: 版を1つ追加し current にして公開する。version_no を返す。 */
+export async function addGuideVersion(
+  guideKey: string,
+  html: string,
+  createdBy?: string | null,
+  comment?: string | null
+): Promise<number> {
+  const html2 = String(html ?? "");
+  if (!html2.trim()) throw new Error("HTML が空です");
+  const g = await query(`SELECT id FROM portal_guides WHERE guide_key = $1`, [guideKey]);
+  if (g.rowCount === 0) throw new Error(`guide '${guideKey}' が見つかりません`);
+  const gid = g.rows[0].id;
+  const mv = await query(
+    `SELECT COALESCE(MAX(version_no),0) AS m FROM portal_guide_versions WHERE guide_id = $1`,
+    [gid]
+  );
+  const next = Number(mv.rows[0].m) + 1;
+  const ins = await query(
+    `INSERT INTO portal_guide_versions (guide_id, version_no, html_source, comment, created_by)
+     VALUES ($1,$2,$3,$4,$5) RETURNING id`,
+    [gid, next, html2, comment || "admin upload", createdBy || "admin"]
+  );
+  await query(
+    `UPDATE portal_guides SET current_version_id = $1, status = 'published', updated_at = now() WHERE id = $2`,
+    [ins.rows[0].id, gid]
+  );
+  return next;
+}
+
+/** 公開トグル: published / draft。公開は現行版 or link_path が必要。 */
+export async function setGuideStatus(
+  guideKey: string,
+  status: "published" | "draft"
+): Promise<void> {
+  if (status !== "published" && status !== "draft") {
+    throw new Error("status は published / draft のいずれか");
+  }
+  const g = await query(
+    `SELECT id, current_version_id, link_path FROM portal_guides WHERE guide_key = $1`,
+    [guideKey]
+  );
+  if (g.rowCount === 0) throw new Error(`guide '${guideKey}' が見つかりません`);
+  if (status === "published" && g.rows[0].current_version_id == null && g.rows[0].link_path == null) {
+    throw new Error("公開するには現行版(本文)またはリンクが必要です");
+  }
+  await query(`UPDATE portal_guides SET status = $1, updated_at = now() WHERE id = $2`, [
+    status,
+    g.rows[0].id,
+  ]);
+}
+
+/** 版ロールバック: current_version_id を指定 version_no の版へ。公開状態にする。 */
+export async function rollbackGuideVersion(guideKey: string, versionNo: number): Promise<void> {
+  const g = await query(`SELECT id FROM portal_guides WHERE guide_key = $1`, [guideKey]);
+  if (g.rowCount === 0) throw new Error(`guide '${guideKey}' が見つかりません`);
+  const v = await query(
+    `SELECT id FROM portal_guide_versions WHERE guide_id = $1 AND version_no = $2`,
+    [g.rows[0].id, Number(versionNo)]
+  );
+  if (v.rowCount === 0) throw new Error(`版 v${versionNo} が見つかりません`);
+  await query(
+    `UPDATE portal_guides SET current_version_id = $1, status = 'published', updated_at = now() WHERE id = $2`,
+    [v.rows[0].id, g.rows[0].id]
+  );
+}
