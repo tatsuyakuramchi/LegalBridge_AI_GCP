@@ -25,13 +25,27 @@ import { fileURLToPath } from "url";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(here, "..");
 const guidesDir = path.join(root, "services/api/guides");
-const outFile = path.join(here, "0095_seed_portal_guide_html.sql");
 
 // 0094 seed に定義済みの key(メタが無い html はスキップ対象)。
 const KNOWN_KEYS = new Set([
   "guide", "tetsuzuki", "vendor", "pub", "bg", "clause",
   "knowledge", "search", "torihiki", "eventinst", "privacy",
 ]);
+
+// 増分方式: 既存 migrations の seed 済み key を検出し、未seed の key だけを
+//   次の連番 NNNN_seed_portal_guide_html.sql に出力する(適用済み 0095 等は不変)。
+const migFiles = readdirSync(here).filter((f) => /^\d{4}_.*\.sql$/.test(f));
+const seededKeys = new Set();
+let maxNum = 0;
+for (const f of migFiles) {
+  maxNum = Math.max(maxNum, Number(f.slice(0, 4)));
+  if (/seed_portal_guide_html/.test(f)) {
+    const sql = readFileSync(path.join(here, f), "utf8");
+    for (const m of sql.matchAll(/DO \$seed_([a-z_]+)\$/g)) seededKeys.add(m[1]);
+  }
+}
+const nextNum = String(maxNum + 1).padStart(4, "0");
+const outFile = path.join(here, `${nextNum}_seed_portal_guide_html.sql`);
 
 const files = readdirSync(guidesDir).filter((f) => f.endsWith(".html"));
 if (files.length === 0) {
@@ -60,6 +74,11 @@ for (const f of files.sort()) {
     skipped++;
     continue;
   }
+  if (seededKeys.has(key)) {
+    // 既存 seed 済み。更新は新版追加(sync-guides-to-db.mjs)で行う。
+    skipped++;
+    continue;
+  }
   const html = readFileSync(path.join(guidesDir, f), "utf8");
   const tag = dollarTag(key, html);
   blocks.push(`-- ── ${key} ──────────────────────────────────────────────
@@ -75,7 +94,7 @@ BEGIN
     RETURN; -- 既に版あり。再適用しない(冪等)。
   END IF;
   INSERT INTO portal_guide_versions (guide_id, version_no, html_source, comment, created_by)
-    VALUES (gid, 1, ${tag}${html}${tag}, 'seed 0095 (from services/api/guides)', 'seed')
+    VALUES (gid, 1, ${tag}${html}${tag}, 'seed ${nextNum} (from services/api/guides)', 'seed')
     RETURNING id INTO vid;
   UPDATE portal_guides
      SET current_version_id = vid, status = 'published', updated_at = now()
@@ -87,11 +106,16 @@ $seed_${key}$;
   console.log(`  + ${key} (${(html.length / 1024).toFixed(1)} KB)`);
 }
 
-const header = `-- 0095_seed_portal_guide_html.sql  (GENERATED — do not edit by hand)
+if (used === 0) {
+  console.log(`新規 seed 対象なし(既存 ${seededKeys.size} key 済み、skipped ${skipped})。出力なし。`);
+  process.exit(0);
+}
+
+const header = `-- ${nextNum}_seed_portal_guide_html.sql  (GENERATED — do not edit by hand)
 -- 生成: migrations/gen-portal-guide-seed.mjs <- services/api/guides/*.html
--- 各ガイドの現行版(version 1)を投入し status='published' にする。
+-- 未seed の各ガイドの現行版(version 1)を投入し status='published' にする。
 -- 既に版があるガイドはスキップ(冪等)。本文の更新は新版追加(sync-guides-to-db.mjs)で。
 `;
 
 writeFileSync(outFile, header + "\n" + blocks.join("\n") + "\n", "utf8");
-console.log(`\nWrote ${outFile} (${used} guides, skipped ${skipped}).`);
+console.log(`\nWrote ${outFile} (${used} new guides, skipped ${skipped} already-seeded).`);

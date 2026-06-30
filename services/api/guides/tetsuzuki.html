@@ -1,0 +1,449 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ライセンス契約・業務委託契約 取引社内手続きガイド</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:#212529;background:#fff}
+a{color:inherit}
+@media print{
+  .g-sidebar-torihiki{display:none!important}
+  .g-main-torihiki{margin-left:0!important;max-width:none!important;padding:20px!important}
+}
+
+/* == torihiki == */
+
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--teal:#085041;--teal-s:#e1f5ee;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;--sw:228px;
+--ph1:#27500a;--ph2:#0c447c;--ph3:#633806;--ph4:#1d9e75;--ph5:#6b1f7a;--ph6:#a32d2d}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+.g-sidebar-torihiki{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--navy);overflow-y:auto;display:flex;flex-direction:column;z-index:100}
+.g-sh-torihiki{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+.g-sh-torihiki h1{font-size:9px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-transform:uppercase}
+.g-sh-torihiki p{font-size:11.5px;color:rgba(255,255,255,.92);font-weight:600;margin-top:3px;line-height:1.4}
+nav{padding:6px 0 20px}
+.ns{display:block;padding:5px 14px;font-size:9px;font-weight:700;color:rgba(255,255,255,.32);letter-spacing:.07em;text-transform:uppercase;margin-top:9px}
+.nl{display:block;padding:4px 14px;font-size:11.5px;color:rgba(255,255,255,.7);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nl:hover,.nl.active{color:#fff;background:rgba(255,255,255,.09);border-left-color:#e63946}
+.nsub{display:block;padding:3px 14px 3px 24px;font-size:10.5px;color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
+.nsub:hover{color:rgba(255,255,255,.82)}
+.bdg{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;margin-right:4px;vertical-align:middle}
+.b1{background:#eaf3de;color:var(--ph1)}.b2{background:#e8f1fb;color:var(--ph2)}.b3{background:#faeeda;color:var(--ph3)}
+.g-main-torihiki{margin-left:var(--sw);padding:36px 46px 80px;max-width:calc(var(--sw) + 850px)}
+h1.dt{font-size:21px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:9px;margin-bottom:5px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:28px}
+/* CHAPTER HEADER */
+.chap{border-radius:8px;padding:16px 22px;margin:36px 0 16px;scroll-margin-top:16px}
+.chap.c1{background:var(--ph1)}.chap.c2{background:var(--ph2)}.chap.c3{background:var(--teal)}
+.chap .cn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px}
+.chap h2{font-size:16px;font-weight:700;color:#fff;margin:0}
+.chap .cdesc{font-size:12px;color:rgba(255,255,255,.65);margin-top:5px}
+/* SECTION */
+h2.sec{font-size:16px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:28px 0 11px;scroll-margin-top:20px}
+h3.sub{font-size:13.5px;font-weight:700;color:var(--navy-l);margin:18px 0 9px;padding-bottom:4px;border-bottom:1px solid var(--g3);scroll-margin-top:20px}
+h4.sh4{font-size:12.5px;font-weight:700;color:var(--tx2);margin:11px 0 7px}
+p{margin-bottom:9px;color:var(--tx2)}strong{color:var(--tx)}
+ul,ol{padding-left:20px;margin-bottom:9px;color:var(--tx2)}li{margin-bottom:3px}
+/* PHASE STEP HEADER */
+.shb{border-radius:7px;padding:12px 16px;margin-bottom:14px;scroll-margin-top:16px}
+.shb h3{font-size:13.5px;font-weight:700;color:#fff;margin:0}
+.shb .sn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:2px}
+.ph1s{background:var(--ph1)}.ph2s{background:var(--ph2)}.ph3s{background:var(--ph3)}.ph4s{background:var(--ph4)}.ph5s{background:var(--ph5)}.ph6s{background:var(--ph6)}
+/* CALLOUT */
+.cl{border-left:3px solid;padding:8px 12px;border-radius:0 5px 5px 0;margin:9px 0;font-size:12.5px}
+.cl-w{border-color:var(--red);background:var(--red-s)}.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-t{border-color:var(--green);background:var(--green-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}.cl-tl{border-color:var(--teal);background:var(--teal-s)}
+/* TABLE */
+.tw{overflow-x:auto;margin:9px 0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:var(--navy);color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:11.5px;white-space:nowrap}
+tbody tr:nth-child(even){background:var(--g1)}
+tbody td{padding:6px 9px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:hover{background:#f0f4ff}
+td.tc{font-weight:600;color:var(--navy);font-size:11.5px}
+td.tcr{font-weight:700;color:var(--red)}
+td.tcg{font-weight:700;color:var(--green)}
+td.tco{font-weight:700;color:var(--gold)}
+/* STEP BOX */
+.step-box{background:var(--g1);border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 15px;margin:8px 0}
+.step-num{display:inline-block;background:var(--navy);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;margin-bottom:6px;letter-spacing:.04em}
+/* COMPARE 2-COL */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.cmp-card{border-radius:6px;padding:14px 16px}
+.cmp-card.law{background:var(--navy);color:#fff}
+.cmp-card.fl{background:var(--teal);color:#fff}
+.cmp-card h4{font-size:12.5px;font-weight:700;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,.2)}
+.cmp-card ul{padding-left:16px;font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.88)}
+.cmp-card strong{color:#fff}.cmp-card li{color:rgba(255,255,255,.88)}
+.cmp-label{font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px}
+/* SELL/CONSIGN 2-COL */
+.sc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.sc-card{border-radius:6px;padding:14px 16px;border:1px solid}
+.sc-card.sell{background:var(--g1);border-color:var(--g3)}
+.sc-card.consign{background:var(--red-s);border-color:#f5c6cb}
+.sc-card h4{font-size:12.5px;font-weight:700;margin-bottom:8px}
+.sc-card ul{padding-left:16px;font-size:11.5px;line-height:1.75;color:var(--tx2)}
+/* PHASE FLOW BAR */
+.phase-flow{display:flex;gap:0;margin:12px 0;overflow-x:auto}
+.pf-item{flex:1;min-width:0;text-align:center}
+.pf-box{padding:8px 3px;font-size:10.5px;font-weight:700;color:#fff;border-radius:4px;margin:0 2px;line-height:1.35}
+.pf-box .pnum{font-size:13px;font-weight:700;opacity:.45;display:block}
+/* BADGE / TAG */
+.badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:3px}
+.b-law{background:#e6effa;color:var(--navy)}.b-fl{background:var(--teal-s);color:var(--teal)}.b-red{background:var(--red-s);color:var(--red)}
+.tag{display:inline-block;font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:3px;margin-right:2px}
+.t-law{background:#e6effa;color:var(--navy)}.t-fl{background:var(--teal-s);color:var(--teal)}.t-gold{background:#fef3e2;color:var(--gold)}.t-red{background:var(--red-s);color:var(--red)}
+/* TIMELINE */
+.timeline{display:flex;margin:12px 0;border:1px solid var(--g3);border-radius:6px;overflow:hidden}
+.tl-item{flex:1;padding:10px 8px;text-align:center;font-size:11px}
+.tl-item:not(:last-child){border-right:1px solid var(--g3)}
+.tl-item.ts{background:var(--navy);color:#fff}
+.tl-item.tm{background:#faeeda;color:#633806}
+.tl-item.te{background:var(--red-s);color:var(--red)}
+.tl-item .tll{font-size:9px;font-weight:700;opacity:.65;margin-bottom:3px}
+.tl-item .tlv{font-size:13px;font-weight:700}
+/* CHECK LIST */
+.ck{list-style:none;padding:0;margin:7px 0}
+.ck li{padding:7px 10px 7px 30px;position:relative;border-bottom:1px solid var(--g2);font-size:12px;color:var(--tx2)}
+.ck li::before{content:"☐";position:absolute;left:7px;font-size:13px;color:var(--navy);line-height:1.5}
+.ck li:last-child{border-bottom:none}
+.pl{list-style:none;padding:0;margin:7px 0}
+.pl li{padding:6px 10px 6px 26px;position:relative;border-bottom:1px solid var(--g2);font-size:12px;color:var(--tx2)}
+.pl li::before{content:"⚠";position:absolute;left:6px;font-size:11px}
+.pl li:last-child{border-bottom:none}
+.ap{background:var(--g1);border-radius:7px;padding:14px 18px;margin-bottom:14px}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
+.dw{background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:12px 12px 9px;margin:9px 0}
+.faq-item{margin-bottom:11px}
+.faq-q{font-weight:700;color:var(--navy);margin-bottom:4px;font-size:13px}
+.faq-a{padding:8px 12px;background:var(--g1);border-radius:4px;font-size:12.5px;color:var(--tx2)}
+.act{display:flex;align-items:stretch;border:1px solid var(--g3);border-radius:6px;overflow:hidden;margin:7px 0;background:#fff}
+.act-l{flex:0 0 78px;display:flex;align-items:center;justify-content:center;text-align:center;padding:9px 5px;font-weight:700;font-size:13px;line-height:1.3}
+.act-b{flex:1;padding:9px 13px;font-size:13.5px;line-height:1.65}
+.act-jg{background:#eaf3de;color:var(--ph1)}
+.act-kn{background:#faeeda;color:var(--ph3)}
+.act-tr{background:#eef0f2;color:#495057}
+.act-ar{text-align:center;color:#9aa1a8;font-size:14px;line-height:1;margin:-1px 0 4px}
+</style>
+</head>
+<body>
+ <?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<aside class="g-sidebar-torihiki">
+<div class="g-sh-torihiki"><h1>法務部</h1><p>ライセンス契約・業務委託契約<br>取引社内手続きガイド</p></div>
+<nav>
+<a class="nl" href="#top">概要</a>
+<a class="nsub" href="#access">アクセス・入口</a>
+<span class="ns">手続きステップ</span>
+<a class="nl" href="#s1"><span class="bdg b1">1</span>取引の決定</a>
+<a class="nl" href="#s2"><span class="bdg b2">2</span>取引先検索</a>
+<a class="nl" href="#s3"><span class="bdg b3">3</span>文書作成・審査依頼</a>
+<a class="nsub" href="#form">依頼フォームの記入</a>
+<a class="nl" href="#s4"><span class="bdg b1">4</span>締結手続き</a>
+<a class="nl" href="#s5"><span class="bdg b2">5</span>支払</a>
+<a class="nsub" href="#paydoc">支払文書の作成依頼</a>
+<a class="nsub" href="#payapply">支払申請</a>
+</nav>
+</aside>
+
+<main class="g-main-torihiki">
+<h1 class="dt" id="top">ライセンス契約・業務委託契約 取引社内手続きガイド</h1>
+<p class="dm">v2.5　Arclight Inc. 経営管理本部 法務部　2026年6月29日　｜　LegalBridge 運用編　｜　法的根拠は「業務委託取引 法解釈ガイド」を参照</p>
+
+<div class="cl cl-i">取引が決まったら、<strong>下の5ステップを上から順に進める</strong>だけです。各作業の頭に<strong>担当（<span class="tag" style="background:#eaf3de;color:var(--ph1);font-weight:700;margin-right:4px">事業部</span>/<span class="tag" style="background:#faeeda;color:var(--ph3);font-weight:700;margin-right:4px">管理部</span>）</strong>を付けています。「この取引は法律の対象か？」などの法的判断は別冊「<strong>業務委託取引 法解釈ガイド</strong>」を参照してください。</div>
+<div class="cl cl-n" style="font-size:11.5px"><strong>凡例：</strong><span class="tag" style="background:#eaf3de;color:var(--ph1);font-weight:700;margin-right:4px">事業部</span> 現場の作業　／　<span class="tag" style="background:#faeeda;color:var(--ph3);font-weight:700;margin-right:4px">管理部</span> 法務・経理等の作業　／　<span class="tag" style="background:#eef0f2;color:#495057;font-weight:700;margin-right:4px">取引先</span> 相手方の作業</div>
+
+<div class="cl cl-w"><strong>⚠ 売買取引について：</strong>売買取引は、本ガイドのうち <strong>基本契約書の作成</strong> と <strong>他社文書のレビュー依頼</strong> のみが対象です。<strong>支払申請の方法は従来どおり</strong>です（本ガイドの STEP 5「支払文書の作成・支払申請」は対象外）。</div>
+
+<h2 class="sec" id="access">アクセス・入口</h2>
+<div class="tw"><table>
+<thead><tr><th>用途</th><th>入口</th></tr></thead>
+<tbody>
+<tr><td class="tc">取引先・契約の検索</td><td>次のいずれかから検索する：<br>・Slack <code>/法務検索 [取引先名]</code><br>・ポータル <strong>https://legalbridge.arclight.co.jp/</strong> を開いて直接検索（Google Workspace でログイン）</td></tr>
+<tr><td class="tc">文書作成・審査依頼</td><td>Slack <code>/法務依頼</code></td></tr>
+</tbody></table></div>
+
+<hr class="sd">
+<h2 class="sec">取引から支払までのステップ</h2>
+<div class="phase-flow">
+  <div class="pf-item"><div class="pf-box" style="background:var(--ph1)"><span class="pnum">1</span>取引の決定</div></div>
+  <div class="pf-item"><div class="pf-box" style="background:var(--ph2)"><span class="pnum">2</span>取引先検索</div></div>
+  <div class="pf-item"><div class="pf-box" style="background:var(--ph3)"><span class="pnum">3</span>文書作成・審査依頼</div></div>
+  <div class="pf-item"><div class="pf-box" style="background:var(--ph4)"><span class="pnum">4</span>締結手続き</div></div>
+  <div class="pf-item"><div class="pf-box" style="background:var(--ph5)"><span class="pnum">5</span>支払</div></div>
+</div>
+
+
+<h3 class="sub" style="margin-top:18px">担当別レーン（全体の流れ）</h3>
+<p style="font-size:11.5px;color:var(--g5);margin-bottom:6px">矢印は受け渡しを示します。取引中は、<strong>取引先からの納品</strong>（→検収書）または<strong>ライセンス契約に基づく事業部の権利実施</strong>（→利用許諾計算書）が、支払文書作成の<strong>契機</strong>になります。</p>
+<div class="dw" style="overflow-x:auto"><svg viewBox="0 0 760 678" style="width:100%;display:block" xmlns="http://www.w3.org/2000/svg"><defs><marker id="lane-arrow" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9aa1a8"></polygon></marker></defs><rect x="0" y="30" width="253" height="648" fill="#faf2e6"></rect><rect x="253" y="30" width="254" height="648" fill="#f1f7e8"></rect><rect x="507" y="30" width="253" height="648" fill="#eef0f2"></rect><path d="M 380 90 V 104" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 134 V 148" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 178 V 185.0 H 126.5 V 192" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 222 V 229.0 H 380 V 236" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 266 V 273.0 H 633.5 V 280" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 310 V 317.0 H 380 V 324" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 354 V 361.0 H 126.5 V 368" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 398 V 405.0 H 633.5 V 412" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 442 V 486" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 442 V 480 H 380 V 486" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 526 V 536 H 380 V 546" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 526 V 546" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 576 V 583.0 H 126.5 V 590" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 620 V 627.0 H 380 V 634" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><rect x="0" y="0" width="253" height="28" rx="4" fill="#633806"></rect><text x="126.5" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">管理部</text><rect x="253" y="0" width="254" height="28" rx="4" fill="#27500a"></rect><text x="380.0" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">事業部</text><rect x="507" y="0" width="253" height="28" rx="4" fill="#495057"></rect><text x="633.5" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">取引先</text><rect x="0" y="32" width="760" height="22" rx="4" fill="#1d3557"></rect><text x="380.0" y="47.0" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="700" fill="#fff" letter-spacing="1">取引前 ― 締結フェーズ</text><rect x="0" y="452" width="760" height="22" rx="4" fill="#b06a1e"></rect><text x="380.0" y="467.0" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="700" fill="#fff" letter-spacing="1">取引中 ― 納品・利用の実施 〜 支払</text><rect x="270.0" y="60" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="78.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">① 取引の決定</text><rect x="270.0" y="104" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="122.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">② 取引先検索</text><rect x="270.0" y="148" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="166.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">③ 文書作成・審査依頼（/法務依頼）</text><rect x="16.5" y="192" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="210.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">④ 文書作成・審査 → 返却</text><rect x="270.0" y="236" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="254.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑤ 担当者（事業部）が内容確認</text><rect x="523.5" y="280" width="220" height="30" rx="6" fill="#495057"></rect><text x="633.5" y="298.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑥ 相手方確認</text><rect x="270.0" y="324" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="342.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑦ 押印申請</text><rect x="16.5" y="368" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="386.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑧ クラウドサイン送信</text><rect x="523.5" y="412" width="220" height="30" rx="6" fill="#495057"></rect><text x="633.5" y="430.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑨ 署名・締結完了</text><rect x="523.5" y="486" width="220" height="40" rx="6" fill="#ffffff" stroke="#495057" stroke-width="1.8"></rect><text x="633.5" y="503" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9.5" font-weight="700" fill="#495057">【契機】納品（取引先）</text><text x="633.5" y="517" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#666">→ 検収書を作成</text><rect x="270.0" y="486" width="220" height="40" rx="6" fill="#ffffff" stroke="#27500a" stroke-width="1.8"></rect><text x="380" y="503" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9.5" font-weight="700" fill="#27500a">【契機】権利実施（ライセンス）</text><text x="380" y="517" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#666">→ 利用許諾計算書を作成</text><rect x="270.0" y="546" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="564.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑩ 支払文書の作成依頼（/法務依頼）</text><rect x="16.5" y="590" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="608.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑪ 支払文書作成・Excel共有</text><rect x="270.0" y="634" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="652.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑫ サイボウズで支払申請</text></svg></div>
+
+<hr class="sd">
+
+<!-- STEP 1 -->
+<div class="shb ph1s" id="s1"><div class="sn">STEP 1</div><h3>取引の決定</h3></div>
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">どの取引先と、どんな取引（委託・利用許諾・売買・NDA 等）を行うかを決める</div></div>
+
+<!-- STEP 2 -->
+<div class="shb ph2s" id="s2" style="margin-top:24px"><div class="sn">STEP 2</div><h3>取引先検索</h3></div>
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">Slackの <code>/法務検索</code>、または <strong>LegalBridge 検索ポータル</strong>から直接、取引先を検索する</div></div>
+<div class="tw"><table>
+<thead><tr><th>検索結果</th><th>判定</th><th>次にやること</th></tr></thead>
+<tbody>
+<tr><td class="tc">結果がない</td><td><strong>新規取引先</strong></td><td><span class="tag" style="background:#eaf3de;color:var(--ph1);font-weight:700;margin-right:4px">事業部</span><strong>新規取引先申請フロー</strong>を実施する（<a href="<?= appUrl ?>?page=vendor" style="color:var(--blue)">取引先登録手続きガイド</a>）</td></tr>
+<tr><td class="tc">結果がある</td><td><strong>既存取引先</strong></td><td><span class="tag" style="background:#eaf3de;color:var(--ph1);font-weight:700;margin-right:4px">事業部</span>検索結果から<strong>取引先番号をコピー</strong>しておく（次の依頼フォームで使う）</td></tr>
+</tbody></table></div>
+
+<!-- STEP 3 -->
+<div class="shb ph3s" id="s3" style="margin-top:24px"><div class="sn">STEP 3</div><h3>文書作成・審査依頼</h3></div>
+<p>締結する文書について、<strong>自社文書のドラフト作成</strong>または<strong>他社文書のレビュー</strong>を、Slackの <code>/法務依頼</code> から依頼する。</p>
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">Slackで <code>/法務依頼</code> を実行し、依頼フォームに記入して送信する</div></div>
+<div class="act-ar">▼</div>
+<div class="act"><div class="act-l act-kn">管理部</div><div class="act-b">依頼を受けて文書を作成／審査し、Slackで返却する</div></div>
+
+<div style="border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--g1)">
+  <h4 class="sh4" style="margin-top:0">契約の基本構造と依頼のポイント</h4>
+  <p style="font-size:12px;margin:4px 0 8px">当社の契約は <strong>「基本契約 ＋ 個別契約」</strong> を基本としています。</p>
+  <div class="tw" style="margin:0 0 8px"><table>
+  <thead><tr><th>区分</th><th>内容</th></tr></thead>
+  <tbody>
+  <tr><td class="tc">基本契約</td><td>取引全体に共通するルール（取引先ごとに一度締結し、継続して使う土台）</td></tr>
+  <tr><td class="tc">個別契約</td><td>個々の取引の中身（＝今回取引したい内容そのもの）</td></tr>
+  </tbody></table></div>
+  <div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">基本契約か個別契約かの<strong>判断は不要</strong>。<strong>取引したい内容（＝個別契約の部分）</strong>を、そのまま依頼に記載すればOK</div></div>
+  <div class="act"><div class="act-l act-kn">管理部</div><div class="act-b">基本契約の要否は<strong>法務側で判断</strong>。必要な場合は、法務が<strong>基本契約締結の案内</strong>や<strong>個人情報取得同意などの付属書類</strong>を作成・手配する</div></div>
+  <div class="cl cl-i" style="margin-top:8px;font-size:11.5px">※ <strong>継続的な取引が見込まれる場合</strong>は、<strong>基本契約の締結が必要</strong>になります（要否の判断は法務が行います）。</div>
+</div>
+
+<div style="border:1px solid #c8d9f5;border-radius:6px;padding:12px 16px;margin:10px 0;background:#f3f7ff">
+  <h4 class="sh4" style="margin-top:0;color:var(--navy)">ひな形（テンプレート）一覧 ― Slack Canvas</h4>
+  <p style="font-size:12px;margin:4px 0 6px">各種ひな形は、Slackの <strong>「法務部 実務ポータル」Canvas</strong> に掲載しています。 → <a href="https://kadokawa.enterprise.slack.com/docs/TGE3Z137Y/F09180VHAE9" style="color:var(--blue)">ひな型ライブラリを開く</a></p>
+  <p style="font-size:11.5px;margin:0 0 6px;color:var(--g5)">分類：発注・検収／基本契約／個別契約・別紙／法務文書 など（各項目にプレビュー・PDFあり）</p>
+  <div class="cl cl-w" style="margin:0;font-size:11.5px">※ ひな形は Google ドライブで管理しています。<strong>ひな形を直接編集して使用することは禁止</strong>です。内容を確認のうえ、<code>/法務依頼</code> から作成を依頼してください。</div>
+</div>
+
+<h4 class="sh4" id="form">依頼フォームの記入事項</h4>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>記入内容</th></tr></thead>
+<tbody>
+<tr><td class="tc">部署名</td><td>自分の部署名を入力（店舗の場合は<strong>店舗名</strong>を入力）</td></tr>
+<tr><td class="tc">依頼種別</td><td><strong>自社文書</strong>を作る場合 → <strong>「文書作成」</strong>を選択<br><strong>他社文書</strong>を審査する場合 → <strong>「法務相談」</strong>を選択</td></tr>
+<tr><td class="tc">件名</td><td>取引の名称（例：「タイトル（イベント名）」イラスト制作業務依頼、審判業務依頼 等）</td></tr>
+<tr><td class="tc">希望納期</td><td>文書作成（審査）を終えてほしい日（<strong>最短3営業日</strong>。急ぎは法務まで直接問い合わせ）</td></tr>
+<tr><td class="tc">取引先情報</td><td>相手方の名称／区分（法人・個人）／<strong>取引番号</strong>（取引先検索で表示される番号）</td></tr>
+<tr><td class="tc">相談・依頼詳細</td><td>下記のとおり、文書の種類に応じて記入</td></tr>
+</tbody></table></div>
+
+<div style="border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--g1)">
+  <h4 class="sh4" style="margin-top:0">相談・依頼詳細 ―― a. 自社文書（＝作成依頼）</h4>
+  <div class="tw" style="margin:6px 0 0"><table>
+  <thead><tr><th>文書種別</th><th>記入内容</th></tr></thead>
+  <tbody>
+  <tr><td class="tc">発注書</td><td>依頼内容の概要的な名称（例：イラスト制作業務、審判業務 など）／詳細（仕様等を細かく）／支払方法（一括・分割・ロイヤリティ計算に基づく歩合・月/四半期/年払い）／支払期日（日付指定）／業務納期（日付指定）</td></tr>
+  <tr><td class="tc">ライセンス契約</td><td>法務ポータルの<strong>「BG事業部 契約スキーム実務ガイド」</strong>を参照 → <a href="https://script.google.com/a/macros/arclight.co.jp/s/AKfycbx3YGrrS18-qOZWKktu57IcThsD4QxgSH4-tWa15ui05gu6sNwd8i5ydw12ro_j_R6I4Q/exec" style="color:var(--blue)">ガイドを開く</a></td></tr>
+  <tr><td class="tc">出版契約</td><td>法務ポータルの<strong>「出版事業部 契約・書類発行フローガイド」</strong>を参照 → <a href="https://script.google.com/a/arclight.co.jp/macros/s/AKfycbx3YGrrS18-qOZWKktu57IcThsD4QxgSH4-tWa15ui05gu6sNwd8i5ydw12ro_j_R6I4Q/exec?page=pub" style="color:var(--blue)">ガイドを開く</a></td></tr>
+  <tr><td class="tc">売買契約</td><td>特約に入れたい固有の条件 等</td></tr>
+  <tr><td class="tc">NDA</td><td>特約に入れたい固有の条件 等</td></tr>
+  </tbody></table></div>
+</div>
+
+<div style="border:1px solid #d8b96a;border-left:4px solid var(--gold);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--gold-s)">
+  <h4 class="sh4" style="margin-top:0;color:var(--gold)">相談・依頼詳細 ―― b. 他社文書（＝レビュー依頼）</h4>
+  <div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">契約の概要を記入する</div></div>
+  <div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">任意の Google ドライブに <strong>フォルダを作成</strong>し、<strong>レビュー対象の文書</strong>と、<strong>レビューポイント（確認してほしい点）をまとめた文書</strong>を格納する</div></div>
+  <div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">フォームに <strong>フォルダリンク</strong> を記載する</div></div>
+  <div class="cl cl-w" style="margin-top:8px;font-size:11.5px">※ 必ず<strong>法務が閲覧できるようアクセス権限を付与</strong>してください。</div>
+  <details style="margin-top:10px;border:1px solid var(--g3);border-radius:6px;background:#fff">
+<summary style="cursor:pointer;padding:10px 14px;font-weight:700;color:var(--navy);font-size:12.5px">📄 サンプルを見る：レビューポイントをまとめた文書（例・マスキング済）</summary>
+<div style="padding:8px 16px 16px;border-top:1px solid var(--g3)">
+<div class="cl cl-n" style="font-size:11px;margin-top:0">記入例です。相手方名・タイトル・グループ名などの固有情報はマスキングしています。</div>
+<p style="font-weight:700;font-size:13px;color:var(--navy);margin:10px 0 2px">ARTICLE 24 – ADDITIONAL TERMS ／ 追加条項（第24条 新設）・修正案</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 4px">【取引先】共同生産契約 3件（基本ゲーム／【拡張①】／【拡張②】）共通の追加条項案</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.1　優先順位（Precedence）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">This Article 24 sets out additional terms agreed between the Parties. Notwithstanding Article 23.1, in the event of any conflict or inconsistency between this Article 24 and any other provision of the Agreement (including the Standard Terms and the Special Terms), this Article 24 shall prevail.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕本第24条は両当事者が合意する追加条項を定める。第23.1条にかかわらず、本第24条と本契約の他の規定（標準条項および特別条項を含む）との間に矛盾または不一致がある場合、本第24条が優先する。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.2　支払保全・不引渡し時の救済（Payment Security and Non-Delivery）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">The second installment under PAYMENT TERMS shall become payable only against [Supplier]'s documentary confirmation that the print run of THE WORK is completed and ready for collection.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕PAYMENT TERMS に定める第2回支払は、THE WORK の印刷が完了し引取り可能な状態にある旨の【取引先】による書面確認と引換えにのみ支払期限が到来する。</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">If [Supplier] fails to make the printed copies available for collection within thirty (30) days after its receipt of the full amount under PAYMENT TERMS, the Partner may terminate the Agreement by written notice, and [Supplier] shall refund to the Partner all sums paid within thirty (30) days of such notice.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕【取引先】が PAYMENT TERMS の全額を受領した後30日以内に印刷部数を引取り可能な状態にしない場合、Partner は書面通知により本契約を解除でき、【取引先】は当該通知後30日以内に既払金の全額を Partner に返金する。</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">Notwithstanding Articles 4.5 and 5.5, the aggregate of any storage charges and delay penalties charged to the Partner shall not exceed 10% of the value of the relevant order.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕第4.5条および第5.5条にかかわらず、Partner に課される倉庫費および遅延ペナルティの合計は、当該注文額の10%を超えないものとする。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.3　瑕疵・リコール費用分担（Defects and Recall）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">[Supplier] warrants that the copies of THE WORK supplied to the Partner conform to the validated Eproofs and the agreed specifications and are free from defects in materials and workmanship.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕【取引先】は、Partner に供給する THE WORK の各部数が、承認済み Eproof および合意仕様に適合し、材料および製造上の瑕疵がないことを保証する。</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">Where a defect, product recall, or regulatory action affecting THE WORK in the TERRITORIES arises from the manufacturing, the materials, or the original design originating with [Supplier], [Supplier] shall bear the reasonable costs directly associated therewith, including the cost of replacement copies and reasonable recall costs.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕TERRITORIES における THE WORK の瑕疵、製品リコールまたは行政措置が、【取引先】に起因する製造・材料・原デザインから生じた場合、【取引先】は、これに直接関連する合理的費用（交換部数の費用および合理的なリコール費用を含む）を負担する。</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">In such case, [Supplier] shall supply replacement copies beyond the one per cent (1%) allowance set out in Article 4.6 to the extent reasonably necessary to remedy the defect.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕この場合、【取引先】は、瑕疵の是正に合理的に必要な範囲で、第4.6条の1%枠を超えて交換部数を供給する。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.4　知的財産権侵害補償（Intellectual Property Indemnity）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">[Supplier] shall defend, indemnify and hold harmless the Partner from and against any third-party claim alleging that THE ORIGINAL WORK or the ILLUSTRATIONS, as supplied by [Supplier], infringe any intellectual property right, together with reasonable resulting damages, settlement amounts and legal costs. The limitations in Article 11.1 ("to its best knowledge" and "under Dutch law only") shall not apply to this indemnity.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕【取引先】は、【取引先】が供給する THE ORIGINAL WORK または ILLUSTRATIONS が知的財産権を侵害する旨の第三者の請求から Partner を防御・補償・免責し、これに起因する合理的な損害・和解額・弁護士費用を負担する。第11.1条の限定（「最善の知識の範囲で」「オランダ法に関してのみ」）は本補償には適用されない。</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">The Partner shall promptly notify [Supplier] of any such claim and shall have the right to participate in the defense with its own counsel at its own cost. Neither Party shall settle any such claim in a manner imposing any obligation or admission on the other Party without that Party's prior written consent, which shall not be unreasonably withheld.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕Partner は当該請求を速やかに【取引先】に通知し、自己の費用で自己の代理人により防御に参加する権利を有する。いずれの当事者も、相手方に義務または認諾を課す態様で当該請求を和解するには、相手方の事前の書面による同意（不合理に留保されない）を要する。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.5　責任の制限（Limitation of Liability）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">Except in respect of (a) the indemnity under Article 24.4, (b) breach of confidentiality, and (c) willful misconduct or gross negligence, neither Party shall be liable to the other for any indirect, incidental, special or consequential damages, or for loss of profit, arising under or in connection with the Agreement.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕(a) 第24.4条の補償、(b) 秘密保持義務違反、(c) 故意または重過失の場合を除き、いずれの当事者も、本契約に基づきまたは関連して生じる間接的・付随的・特別または結果的損害、および逸失利益について、相手方に対し責任を負わない。</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">Except for the matters listed in Article 24.5.1(a)-(c), the aggregate liability of each Party under the Agreement shall not exceed the total amounts paid by the Partner under the Agreement.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕第24.5.1条(a)〜(c)に掲げる事項を除き、本契約に基づく各当事者の責任の総額は、本契約に基づき Partner が実際に支払った金額の総額を超えない。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.6　秘密保持の双務化（Mutual Confidentiality）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">The confidentiality obligations set out in Article 23.2 shall apply mutually to both Parties on equivalent terms, such that each Party shall protect the Confidential Information of the other Party to the same standard set out therein.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕第23.2条に定める秘密保持義務は、同等の条件で両当事者に相互に適用され、各当事者は同条に定める基準と同一の基準で相手方の秘密情報を保護する。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.7　支配権変動の除外（Change of Control Exception）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">For the purposes of Article 16.2, a transfer of shares, a merger, or a corporate reorganization occurring within the Partner's corporate group (including the [Group] group), or any transfer to an affiliate of the Partner, shall not constitute a ground for termination, provided that the transferee assumes the Partner's obligations under the Agreement.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕第16.2条の適用上、Partner の企業グループ（【当社グループ】を含む）内で生じる株式譲渡・合併・組織再編、または Partner の関連会社への移転は、譲受人が本契約上の Partner の義務を承継することを条件として、解除事由を構成しない。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.8　売り切り・在庫処分（Sell-Off and Inventory）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">The sell-off period referred to in Article 17.2 shall be twelve (12) months from the effective date of termination.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕第17.2条にいう売り切り期間は、解除の効力発生日から12か月とする。</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">Notwithstanding Article 17.3, in lieu of destroying the remaining copies the Partner may, at its option, require [Supplier] to repurchase the remaining inventory at the Partner's cost price, or [Supplier] may permit non-commercial disposition of such copies. The Partner shall not be required to destroy paid-for inventory without compensation.</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕第17.3条にかかわらず、Partner は、残部の廃棄に代えて、自己の選択により、【取引先】に対し原価での残在庫の買戻しを求めることができ、または【取引先】は当該残部の非商業的処分を許諾することができる。Partner は、対価なくして既払いの在庫を廃棄することを要しない。</p>
+<p style="font-weight:700;font-size:12px;color:var(--navy);margin:12px 0 3px">24.9　Partner による解除権（Termination by the Partner）</p>
+<p style="font-size:11.5px;margin:0 0 2px;line-height:1.6">The Partner may terminate the Agreement for cause by written notice if [Supplier] (i) commits a material breach of the Agreement (including repeated failure to deliver THE WORK), (ii) becomes insolvent or subject to insolvency proceedings, or (iii) fails to cure a remediable breach within thirty (30) days after written notice from the Partner. Article 16.3 shall apply mutatis mutandis, save that sums paid by the Partner in respect of undelivered copies shall be refunded by [Supplier].</p>
+<p style="font-size:11px;color:var(--g5);margin:0 0 6px;line-height:1.6">〔参考訳〕Partner は、【取引先】が (i) 本契約の重大な違反（THE WORK の反復的な不引渡しを含む）を行ったとき、(ii) 支払不能となりまたは倒産手続の対象となったとき、または (iii) 是正可能な違反を Partner の書面通知後30日以内に是正しないときは、書面通知により本契約を解除できる。第16.3条を準用する。ただし、未引渡しの部数に関し Partner が支払った金額は【取引先】が返金する。</p>
+<div class="cl cl-w" style="font-size:11px;margin-top:10px">※ 本サンプルはマスキング済みの記入例です。実依頼では、相手方名・タイトル・数値等を記載し、<strong>確認してほしい点を明示</strong>してください。</div>
+</div>
+</details>
+</div>
+
+<!-- STEP 4 -->
+<div class="shb ph4s" id="s4" style="margin-top:24px"><div class="sn">STEP 4</div><h3>締結手続き</h3></div>
+<p>依頼の送信後は、Slack／クラウドサイン上で次の順に進みます。担当は各行のとおりです。</p>
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">担当者が内容を確認する</div></div>
+<div class="act-ar">▼</div>
+<div class="act"><div class="act-l act-tr">取引先</div><div class="act-b">送付された内容を確認し、合意する</div></div>
+<div class="act-ar">▼</div>
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">押印申請を行う</div></div>
+<div class="act-ar">▼</div>
+<div class="act"><div class="act-l act-kn">管理部</div><div class="act-b">クラウドサインで送信する</div></div>
+<div class="act-ar">▼</div>
+<div class="act"><div class="act-l act-tr">取引先</div><div class="act-b">署名し、締結完了</div></div>
+<div class="cl cl-w" style="font-size:11.5px"><strong>締結完了（相手方の署名・自社押印）まで、業務に着手しないこと。</strong></div>
+
+<!-- STEP 5 -->
+<div class="shb ph5s" id="s5" style="margin-top:24px"><div class="sn">STEP 5</div><h3>支払</h3></div>
+<p>支払は、サイボウズで支払申請を提出するために、<strong>① 支払文書の作成依頼</strong> と <strong>② 支払申請の提出</strong> の2フェーズに分かれます。</p>
+
+<h4 class="sh4" id="paydoc">① 支払文書の作成依頼</h4>
+<p style="font-size:12px;margin-bottom:6px">支払文書は次の2種類。それぞれ締結文書に対応し、作成の契機が異なります。</p>
+<div class="tw"><table>
+<thead><tr><th>支払文書</th><th>対応する締結文書</th><th>作成の契機</th></tr></thead>
+<tbody>
+<tr><td class="tc">検収書</td><td>発注書</td><td>納品を受けて検収が終わった</td></tr>
+<tr><td class="tc">利用許諾計算書</td><td>個別利用許諾条件書・出版等利用許諾条件書</td><td>ロイヤリティの支払が決まった</td></tr>
+</tbody></table></div>
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b"><code>/法務依頼</code> → 依頼種別の <strong>「支払書類作成」</strong> から <strong>「納品 / 検収書」</strong> または <strong>「利用許諾計算書」</strong> を選び、フォームに入力して送信する</div></div>
+<div class="act-ar">▼</div>
+<div class="act"><div class="act-l act-kn">管理部</div><div class="act-b">依頼を受けて支払文書を作成し、<strong>支払申請用Excel</strong> とあわせて事業部へ共有する</div></div>
+
+<div style="border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--g1)">
+  <h4 class="sh4" style="margin-top:0">「納品 / 検収書」を選んだとき ― 検収書作成用データ</h4>
+  <ul class="ck" style="margin:0">
+    <li>納品回数（第n回納品）― 分割納品でなければ <strong>「1」</strong> を記載。分割納品の場合は<strong>今回が第何回目か</strong>を記載</li>
+    <li>金額（税抜）</li>
+    <li>納品日（YYYY-MM-DD）</li>
+    <li>検収期限（YYYY-MM-DD）</li>
+  </ul>
+</div>
+
+<div style="border:1px solid #f5c6cb;border-left:4px solid var(--red);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--red-s)">
+  <h4 class="sh4" style="margin-top:0;color:var(--red)">「利用許諾計算書」を選んだとき ― 相談・依頼詳細欄に記載</h4>
+  <ul class="ck" style="margin:0">
+    <li>利用許諾条件に応じて、<strong>生産数・売上金額 等</strong>を相談・依頼詳細欄に記載する</li>
+    <li><strong>サブライセンス料の分配</strong>も同様に、詳細欄に記載する</li>
+  </ul>
+</div>
+
+<h4 class="sh4" id="payapply" style="margin-top:14px">② 支払申請の提出</h4>
+<p style="font-size:12px;margin-bottom:6px">法務から支払文書・Excelファイルを受け取ったら、サイボウズで支払申請を提出する。</p>
+
+<div style="border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--g1)">
+  <h4 class="sh4" style="margin-top:0">申請前の準備 ― 添付ファイル</h4>
+  <p style="font-size:11.5px;margin-bottom:4px">サイボウズの支払申請には、<strong>法務発行の次の2点</strong>を添付する。</p>
+  <ul class="ck" style="margin:0">
+    <li>法務発行の<strong>支払文書</strong>（検収書 または 利用許諾計算書）</li>
+    <li>法務発行の<strong>支払申請用Excelファイル</strong></li>
+  </ul>
+</div>
+
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">上記2点を添付し、<strong>サイボウズ</strong>で支払申請を提出する（<strong>受領日から60日以内</strong>）　<span class="badge b-fl">サイボウズ</span></div></div>
+
+<div class="cl cl-w">
+  <strong>⚠ 金額入力の注意（源泉徴収）：</strong>サイボウズの「<strong>支払総額（消費税込）</strong>」欄には、<strong>源泉所得税を差し引く前の税込合計金額</strong>を入力してください。法務発行の<strong>検収書・利用許諾計算書では「源泉徴収税計算前」</strong>と表示されている税込合計金額がこれにあたります（先方発行の請求書の場合は税込合計金額）。<strong>金額が相違すると差し戻し・再申請の対象</strong>になります。申請前に支払文書・請求書と必ず照合してください。
+  <div style="margin-top:4px;font-size:11px;color:var(--g5)">※ 金額の右側のボックスは通貨単位欄です。日本円以外のときは書き換えてください。</div>
+</div>
+
+<div class="cl cl-n" style="margin-top:10px"><strong>期日の鉄則：</strong>支払は<strong>受領日から60日以内</strong>。遅延すると年14.6%の損害金が自動発生します（計算例・免除可否などの詳細は「法解釈ガイド」へ）。</div>
+
+<!-- ▼▼ 参考資料：サイボウズ支払申請 入力ガイド 要約 ▼▼ -->
+<div style="border:1px solid #c8d9f5;border-radius:6px;padding:12px 16px;margin:14px 0;background:#f3f7ff">
+  <h4 class="sh4" style="margin-top:0;color:var(--navy)">📎 参考資料：サイボウズ支払申請 入力ガイド（要約）</h4>
+  <p style="font-size:11.5px;margin:0 0 8px;color:var(--g5)">サイボウズの入力項目・承認経路・申請後の保存までの要点。詳細は経営管理本部「サイボウズ支払申請 入力ガイド」を参照（※海外払いは整備中）。</p>
+
+  <h4 class="sh4">申請の開始</h4>
+  <p style="font-size:12px;margin:0 0 8px">サイボウズ トップ ＞ <strong>ワークフロー</strong> ＞「申請する」→ フォームを選択。<br>・<strong>支払申請（外注・仕入ほか）</strong>＝国内払い用（支払先が国内銀行）<br>・<strong>海外払：支払申請（外注・仕入ほか）</strong>＝海外払い用（支払先が海外銀行。<strong>円建てでも海外口座ならこちら</strong>）</p>
+
+  <h4 class="sh4">主な入力項目（国内払い）</h4>
+  <div class="tw" style="margin:0 0 8px"><table>
+  <thead><tr><th>項目</th><th>記入内容</th></tr></thead>
+  <tbody>
+  <tr><td class="tc">標題 <span class="tag t-red">必須</span></td><td>一覧に表示される。何の申請か分かる名称にする</td></tr>
+  <tr><td class="tc">部署 <span class="tag t-red">必須</span></td><td><strong>費用を計上する部署</strong>を選択（所属部署ではない）。ゲームマーケット・DMGP関係は<strong>イベント名</strong>を選択。店舗は「その他」に店名を入力</td></tr>
+  <tr><td class="tc">支払先 <span class="tag t-red">必須</span></td><td>手入力</td></tr>
+  <tr><td class="tc">支払総額（消費税込） <span class="tag t-red">必須</span></td><td><strong>源泉所得税を差し引く前</strong>の税込金額。<strong>法務発行の検収書・利用許諾計算書＝源泉徴収税計算前の税込合計金額</strong>／先方請求書＝税込合計金額。<strong>金額相違は差し戻し対象</strong></td></tr>
+  <tr><td class="tc">個人チェック</td><td>源泉徴収が必要な<strong>個人</strong>への支払（商品仕入を除く）はチェック。→支払は原則<strong>毎月20日</strong></td></tr>
+  <tr><td class="tc">支払日 <span class="tag t-red">必須</span></td><td>請求書・検収書の<strong>支払期日以前の定期支払日</strong>（法人＝月末／源泉個人＝20日）。定期支払日が非営業日なら<strong>前営業日</strong>を入力</td></tr>
+  <tr><td class="tc">振込手数料 <span class="tag t-red">必須</span></td><td>原則「<strong>当方負担</strong>」のまま。先方負担は店舗・営業物流の仕入で契約に明記がある場合のみ</td></tr>
+  <tr><td class="tc">添付資料 <span class="tag t-red">必須</span></td><td>下記「添付資料」参照（最大5件、超過はzip化／ドライブ格納＋経理権限付与）</td></tr>
+  <tr><td class="tc">備考</td><td>一部金額のみの申請・支払日の後ろ倒し（取適法非抵触）・期日外申請などは<strong>事前に記載</strong>すると差し戻しを防げる</td></tr>
+  <tr><td class="tc">稟議/商品企画番号</td><td>関連があれば入力。BDG・出版の商品原価は商品企画申請番号</td></tr>
+  <tr><td class="tc">PJコード・按分比</td><td>原価部門・PJ管理部門のみ。複数PJ按分は％合計100％／金額合計＝支払総額</td></tr>
+  </tbody></table></div>
+
+  <details style="border:1px solid var(--g3);border-radius:6px;background:#fff">
+  <summary style="cursor:pointer;padding:9px 14px;font-weight:700;color:var(--navy);font-size:12.5px">添付資料・承認経路・申請後の保存・期限（詳細）</summary>
+  <div style="padding:6px 16px 14px;border-top:1px solid var(--g3)">
+
+    <h4 class="sh4">添付資料（個人・法務発行案件）</h4>
+    <ul class="ck" style="margin:0 0 8px">
+      <li><strong>委託契約</strong>：検収書＋発注書＋支払申請用Excel（いずれも法務発行）</li>
+      <li><strong>利用許諾契約</strong>：利用許諾計算書＋発注書＋支払申請用Excel（いずれも法務発行）</li>
+      <li>先方作成の請求書を受領した場合は、それも添付</li>
+    </ul>
+
+    <h4 class="sh4">経路の決定（承認者）</h4>
+    <p style="font-size:12px;margin:0 0 8px">申請内容・<strong>金額に応じて承認者が変わる</strong>。決裁権限図表／承認・決裁ルートに従って設定する。<strong>決裁ルートに入っている人しか申請を参照できない</strong>ため、後から共有したい人は「経路の決定」＞決裁後確認者に追加（経理・役員は削除不要）。</p>
+
+    <h4 class="sh4">申請後の電子データ保存</h4>
+    <p style="font-size:12px;margin:0 0 4px">起票後に<strong>5桁の支払申請No</strong>が発番される（送信一覧で確認）。添付した請求書／検収書をリネームのうえ「請求書格納フォルダ」（部署別＞月別）に格納する。</p>
+    <div class="cl cl-tl" style="font-size:11.5px;margin:0 0 8px"><strong>リネーム：</strong>支払申請No5桁＿費用計上月の末日＿取引金額（税抜）＿取引先名＿（自由項目）<br><span style="color:var(--g5)">費用計上月＝役務提供・納品など費用の原因となる取引が発生した月（不明なら請求書日付に合わせる）</span></div>
+
+    <h4 class="sh4">定期支払タイミングと申請期限</h4>
+    <div class="tw" style="margin:0 0 6px"><table>
+    <thead><tr><th>支払対象</th><th>定期支払日</th><th>承認完了期限</th></tr></thead>
+    <tbody>
+    <tr><td class="tc">国内・法人／源泉なし個人</td><td>月末日</td><td>毎月 第5営業日</td></tr>
+    <tr><td class="tc">国内・源泉する個人</td><td>20日</td><td>毎月 第5営業日</td></tr>
+    <tr><td class="tc">海外・15日支払</td><td>15日</td><td>毎月 10日</td></tr>
+    <tr><td class="tc">海外・月末支払</td><td>月末日</td><td>毎月 25日</td></tr>
+    </tbody></table></div>
+    <p style="font-size:11.5px;margin:0 0 8px;color:var(--g5)">期限は「最終承認者の決裁完了」まで。最新の期日はSlack <strong>#all-通知_経営管理本部</strong> を参照。</p>
+
+    <h4 class="sh4">期日外申請（QA）</h4>
+    <p style="font-size:12px;margin:0">①期限超過 ②定期外支払 の場合は、承認フロー上の確認者・承認者・決裁者と<strong>経理部（keiri@arclight.co.jp）</strong>へメール連絡してから申請する（件名に【期限超過】／【定期外支払】）。支払まで<strong>5営業日を切る</strong>場合は事前に経理へ相談。</p>
+
+  </div>
+  </details>
+</div>
+<!-- ▲▲ 参考資料ここまで ▲▲ -->
+
+<div style="background:var(--navy);border-radius:8px;padding:18px 22px;margin-top:28px;text-align:center">
+<div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:5px">お問い合わせ先</div>
+<div style="font-size:17px;font-weight:700;color:#fff;margin-bottom:3px">Arclight Inc. 経営管理本部 法務部</div>
+<div style="font-size:12px;color:rgba(255,255,255,.65)">営業時間：平日 10:00〜18:00</div>
+<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px;font-style:italic">記録の管理を、現場の当たり前に。</div>
+</div>
+</main>
+</body>
+</html>
