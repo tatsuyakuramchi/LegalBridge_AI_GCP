@@ -74,6 +74,10 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
         <div class="title">スタッフ権限管理 <span class="arrow">→</span></div>
         <div class="desc">staff 一覧と admin/viewer 切替ボタン</div>
       </a>
+      <a class="tile users" href="/admin/access">
+        <div class="title">🌐 外部アドレス許可 <span class="arrow">→</span></div>
+        <div class="desc">外部メールの許可リスト（追加/削除）。※IAP のドメイン許可は別途 GCP 側</div>
+      </a>
     </div>
   </section>
 

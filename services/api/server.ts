@@ -246,6 +246,12 @@ import {
 import { adminGuidesPage } from "./src/views/adminGuidesHtml.ts";
 import { adminCategoriesPage } from "./src/views/adminCategoriesHtml.ts";
 import { adminGuideDetailPage } from "./src/views/adminGuideDetailHtml.ts";
+import { adminAccessPage } from "./src/views/adminAccessHtml.ts";
+import {
+  listAllowedEmails,
+  addAllowedEmail,
+  removeAllowedEmail,
+} from "./src/services/accessAllowlistService.ts";
 import {
   listCategories as listGuideCategories,
   listGuides as listPortalGuides,
@@ -3933,6 +3939,54 @@ async function startServer() {
       } catch (error) {
         console.error("/admin/guides/:key failed:", error);
         res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // ── 外部アドレス許可(管理者設定) ───────────────────────────────
+  app.get(
+    "/admin/access",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "admin:access", allowedRoles: ["admin"], renderErrorPage }),
+    async (_req, res) => {
+      try {
+        const rows = await listAllowedEmails();
+        res.type("html").send(adminAccessPage({ rows }));
+      } catch (error) {
+        console.error("/admin/access failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+  app.post(
+    "/api/portal/access",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:access:add", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        const user = (req as any).user as { email?: string | null } | undefined;
+        await addAllowedEmail(
+          String((req.body && req.body.email) || ""),
+          (req.body && req.body.note) || null,
+          user?.email || "admin"
+        );
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+  app.delete(
+    "/api/portal/access/:email",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:access:del", allowedRoles: ["admin"], renderErrorPage }),
+    async (req, res) => {
+      try {
+        await removeAllowedEmail(String(req.params.email));
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
       }
     }
   );
