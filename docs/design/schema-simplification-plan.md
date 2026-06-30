@@ -42,7 +42,8 @@
 
 ### 3.3 `documents`（文書 = Master 統合）
 現 `documents` ＋ `contract_capabilities` を統合した「束ね」レコード。
-- 識別: `id`, `document_number`(UNIQUE), `base_document_number`(親文書), `revision`,
+- 識別: `id`, `document_number`(UNIQUE), `base_document_number`(親文書=検収書/計算書→発注書),
+  `master_document_id`(自己参照=個別契約→基本契約。任意), `revision`,
   `is_primary`, `lifecycle_status`, `superseded_by`
 - 文書: `template_type`, `form_data`(JSONB), `issue_key`, `drive_link`/`excel_link`, `email_*`
 - 契約メタ(旧cap): `vendor_id`, `record_type`, `contract_category`, `contract_type`,
@@ -79,6 +80,26 @@
 ### 3.6 `condition_events`（実績）
 `condition_line_id → condition_lines`, `document_id → documents`（検収/利用許諾料計算）。
 既存を流用（CL/文書がハードFKになるので孤児が減る）。
+
+### 3.7 CL をもたない文書のケア（重要）
+FK は「CL → 文書」の片方向。**文書は 0 本の CL でも有効**。3類型を自然に表現する:
+
+| 類型 | 例 | 表現 |
+|---|---|---|
+| 枠組／基本契約 | 業務委託基本契約・包括ライセンス | `documents`(`record_type='master_contract'`)。CLゼロ。個別が親参照 |
+| 純テキスト契約 | NDA・覚書・通知書 | `documents`（メタ＋`form_data` のみ）。CLゼロ |
+| 参照型（実績） | 検収書・利用許諾料計算書 | CLを持たず、親CLを `condition_events.document_id` で参照 |
+
+- **基本契約↔個別契約**: `documents.master_document_id`（自己参照, 任意）で個別→基本を結ぶ。
+  これにより旧 `resolveTermsCapability` / `parent_capability_id` / `structural_role`
+  （master に付いた条件を暗黙の terms 子 capability へ逃がす仕組み）を**撤去**できる
+  ＝ master は CL なし文書、条件は個別文書の CL に乗る。
+- **検収書/計算書**: `base_document_number`（親=発注書/契約）＋ `condition_events` で親CLへ。
+- **material_id の扱い（要確認・サブ決定）**: CL は原則 `material_id` 必須（原作マテリアルに
+  属する）。買切成果物は owned な work_material 化で対応。**IP を伴わない純役務報酬**
+  （成果物・素材なしのコンサル費等）をどうするか:
+  - (i) `material_id` NOT NULL を貫き、役務にも owned 素材を立てる（モデル一貫・現行踏襲）
+  - (ii) `material_id` を NULL 許容にし、役務系 CL は素材なしを許す（柔軟だが原作ビュー非表示）
 
 ## 4. 未決定（要確認の1点）
 v3 取引形態ヘッダ（製造者/販売者/最大地域・言語/is_addon）の保持先:
