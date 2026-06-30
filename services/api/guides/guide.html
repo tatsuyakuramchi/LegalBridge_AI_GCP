@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>法務部 実務ガイド ご利用案内</title>
+<style>
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--teal:#085041;--teal-s:#e1f5ee;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+a{color:inherit}
+#main{max-width:880px;margin:0 auto;padding:40px 28px 80px}
+h1.dt{font-size:22px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:10px;margin-bottom:6px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:26px}
+h2.sec{font-size:16px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:34px 0 12px;display:flex;align-items:center;gap:9px}
+h2.sec .secn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:12px;font-weight:700;flex:0 0 24px}
+p{margin-bottom:9px;color:var(--tx2)}strong{color:var(--tx)}
+code{background:var(--g1);border:1px solid var(--g3);border-radius:4px;padding:1px 6px;font-size:12px;font-family:'SFMono-Regular',Consolas,monospace}
+.cl{border-left:3px solid;padding:9px 13px;border-radius:0 5px 5px 0;margin:10px 0;font-size:12.5px}
+.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-w{border-color:var(--red);background:var(--red-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}.cl-t{border-color:var(--green);background:var(--green-s)}
+.tw{overflow-x:auto;margin:10px 0}
+table{width:100%;border-collapse:collapse;font-size:12.5px}
+thead th{background:var(--navy);color:#fff;padding:7px 10px;text-align:left;font-weight:600;font-size:12px;white-space:nowrap}
+tbody td{padding:8px 10px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:nth-child(even){background:var(--g1)}
+td.tc{font-weight:700;color:var(--navy);white-space:nowrap}
+/* 入口2枚 */
+.entry-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:12px 0}
+.entry{border:1px solid var(--g3);border-top:4px solid var(--navy);border-radius:10px;padding:16px 18px;background:#fff}
+.entry h3{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:4px}
+.entry .cmd{display:inline-block;background:var(--navy);color:#fff;font-size:12px;font-weight:700;padding:3px 10px;border-radius:5px;font-family:'SFMono-Regular',Consolas,monospace;margin:4px 0 8px}
+.entry p{font-size:12px;margin:0}
+/* 5ステップ帯 */
+.flow{display:flex;gap:0;margin:12px 0;overflow-x:auto}
+.flow .f{flex:1;min-width:0;text-align:center;padding:9px 4px;font-size:11px;font-weight:700;color:#fff;border-radius:4px;margin:0 2px;line-height:1.35}
+.flow .f .n{display:block;font-size:13px;opacity:.45}
+/* 目的別カード */
+.grp{font-size:12px;font-weight:700;color:#fff;border-radius:7px;padding:9px 14px;margin:20px 0 4px}
+.grp.g1{background:var(--ph1,#27500a)}.grp.g2{background:#0c447c}.grp.g3{background:var(--teal)}.grp.g4{background:var(--gold)}
+.guide{display:flex;gap:14px;align-items:flex-start;border:1px solid var(--g3);border-radius:8px;padding:12px 15px;margin:7px 0;text-decoration:none;background:#fff;transition:all .14s}
+.guide:hover{background:#f0f4ff;border-color:var(--navy);box-shadow:0 2px 8px rgba(29,53,87,.1);transform:translateY(-1px)}
+.guide .gno{font-size:10px;font-weight:700;color:var(--g5);letter-spacing:.05em;white-space:nowrap;padding-top:2px;min-width:58px}
+.guide .gbody{flex:1}
+.guide .gt{font-size:13.5px;font-weight:700;color:var(--navy);margin-bottom:2px}
+.guide .gd{font-size:11.5px;color:var(--tx2);line-height:1.5}
+.guide .gq{display:block;font-size:11px;color:var(--green);font-weight:700;margin-bottom:3px}
+.guide .garr{font-size:18px;color:var(--g3);align-self:center}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
+.foot{background:var(--navy);border-radius:8px;padding:18px 22px;margin-top:30px;text-align:center}
+.foot .l{font-size:10px;color:rgba(255,255,255,.45);margin-bottom:5px}
+.foot .t{font-size:17px;font-weight:700;color:#fff;margin-bottom:3px}
+.foot .s{font-size:12px;color:rgba(255,255,255,.65)}
+@media print{.guide{break-inside:avoid}}
+@media (max-width:640px){.entry-grid{grid-template-columns:1fr}.flow{flex-wrap:wrap}.flow .f{flex:1 1 30%}}
+</style>
+</head>
+<body>
+ <?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<main id="main">
+<h1 class="dt">法務部 実務ガイド ご利用案内</h1>
+<p class="dm">作成：経営管理本部 法務部　｜　対象：全社　｜　このページの目的：知りたいこと・やりたいことから、適切なガイドにたどり着くための「ポータルの歩き方」</p>
+
+<div class="cl cl-i">このポータル（<strong>LegalBridge</strong>）は、契約・取引・個人情報まわりの<strong>社内手続きと判断材料</strong>を1か所にまとめた入口です。<strong>「まず検索、作ってほしい・見てほしいは依頼」</strong>が基本。どのガイドを読めばよいか迷ったら、下の<a href="#find" style="color:var(--blue)">「目的から探す」</a>から選んでください。</div>
+
+<!-- 1. 2つの入口 -->
+<h2 class="sec" id="entry"><span class="secn">1</span>まずこの2つの入口</h2>
+<p>日々の依頼・調べものは、Slackの2つのコマンドが起点です。</p>
+<div class="entry-grid">
+  <div class="entry">
+    <h3>調べる</h3>
+    <span class="cmd">/法務検索 [取引先名]</span>
+    <p>取引先・契約・文書を検索。ポータル <strong>https://legalbridge.arclight.co.jp/</strong> から直接検索もできます（Google Workspace でログイン）。</p>
+  </div>
+  <div class="entry">
+    <h3>依頼する</h3>
+    <span class="cmd">/法務依頼</span>
+    <p>文書を作ってほしい／他社の契約を見てほしいとき。依頼種別は <strong>自社文書＝「文書作成」</strong>、<strong>他社文書のレビュー＝「法務相談」</strong>。</p>
+  </div>
+</div>
+
+<!-- 2. 基本の流れ -->
+<h2 class="sec"><span class="secn">2</span>取引の基本の流れ（5ステップ）</h2>
+<p>取引が決まってから支払までは、次の5ステップで進みます。全体の進め方は <strong>GUIDE 05 取引社内手続きガイド</strong> が地図になります。</p>
+<div class="flow">
+  <div class="f" style="background:#27500a"><span class="n">1</span>取引の決定</div>
+  <div class="f" style="background:#0c447c"><span class="n">2</span>取引先検索</div>
+  <div class="f" style="background:#633806"><span class="n">3</span>文書作成・審査依頼</div>
+  <div class="f" style="background:#1d9e75"><span class="n">4</span>締結手続き</div>
+  <div class="f" style="background:#6b1f7a"><span class="n">5</span>支払</div>
+</div>
+<div class="cl cl-w" style="font-size:11.5px"><strong>鉄則：</strong>相手方の署名・自社押印による<strong>締結完了まで、業務着手・発注・支払をしない</strong>でください。</div>
+
+<!-- 3. 目的から探す -->
+<h2 class="sec" id="find"><span class="secn">3</span>目的から探す（こんなときはこのガイド）</h2>
+<p>やりたいことの種類で、4つに分かれています。タイトルをクリックすると各ガイドが開きます。</p>
+
+<div class="grp g1" style="background:#27500a">A. 取引を進める（手続き）</div>
+<a class="guide" href="<?= appUrl ?>?page=tetsuzuki">
+  <div class="gno">GUIDE 05</div>
+  <div class="gbody"><span class="gq">取引が決まった。何から動けばいい？</span><div class="gt">ライセンス契約・業務委託契約 取引社内手続きガイド</div><div class="gd">決定→検索→文書作成・審査→締結→支払の5ステップ。担当（事業部／管理部）と支払文書の出し方まで。<strong>まず全体像を掴むならここ。</strong></div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=vendor">
+  <div class="gno">GUIDE 03</div>
+  <div class="gbody"><span class="gq">新しい取引先と取引したい</span><div class="gt">新規取引先登録 実務ガイド</div><div class="gd">登録情報欄付き契約書で、契約確認と取引先登録を同時に完結。検索→情報提供→締結→共有の流れ。</div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=pub">
+  <div class="gno">GUIDE 02</div>
+  <div class="gbody"><span class="gq">著者・出版物の取引をしたい</span><div class="gt">出版事業部 契約・書類発行フローガイド</div><div class="gd">執筆依頼あり（ケースA＝業務委託＋利用許諾）／既成原稿のみ（ケースB＝利用許諾）で必要書類が変わる。</div></div>
+  <div class="garr">›</div>
+</a>
+
+<div class="grp g2" style="background:#0c447c">B. 契約を設計・理解する</div>
+<a class="guide" href="<?= appUrl ?>?page=bg">
+  <div class="gno">GUIDE 01</div>
+  <div class="gbody"><span class="gq">海外版権・OEM・ライセンスの「型」を選びたい</span><div class="gt">BG事業部 契約スキーム実務ガイド</div><div class="gd">「誰が製造を管理するか」から推奨スキーム（S1〜S7）・必要契約・落とし穴を表示する検索付き。法務相談前の社内検討用。</div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=clause">
+  <div class="gno">GUIDE 06</div>
+  <div class="gbody"><span class="gq">契約書のこの条文は何を意味する？</span><div class="gt">契約書 条文解説ガイド</div><div class="gd">業務委託基本契約書・ライセンス利用許諾基本契約書を逐条解説。甲乙の立場の違いや実務上の注意つき。</div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=knowledge">
+  <div class="gno">GUIDE 09</div>
+  <div class="gbody"><span class="gq">契約類型・著作権・条項の基準を確認したい</span><div class="gt">法務ナレッジブック</div><div class="gd">契約類型・著作権・構成要素・条項ライブラリ・チェックリストの実務基準をまとめた辞書的リファレンス。</div></div>
+  <div class="garr">›</div>
+</a>
+
+<div class="grp g3" style="background:#085041">C. 調べる・要否を判定する</div>
+<a class="guide" href="<?= appUrl ?>?page=search">
+  <div class="gno">GUIDE 07</div>
+  <div class="gbody"><span class="gq">取引先・契約・文書・条件明細を探したい</span><div class="gt">法務データ検索ガイド</div><div class="gd">事業部向けの検索の使い方。<code>/法務検索</code> やポータルから取引先番号・契約・稟議・条件を引く。</div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=contractcheck">
+  <div class="gno">GUIDE 08</div>
+  <div class="gbody"><span class="gq">この取引先に発注書／利用許諾条件書／出版契約は要る？</span><div class="gt">基本契約範囲確認・文書判定</div><div class="gd">取引先名から、必要な文書の要否（基本契約の範囲内かどうか）を確認する。</div></div>
+  <div class="garr">›</div>
+</a>
+
+<div class="grp g4" style="background:#c47d1a">D. 法律・コンプライアンスを確かめる</div>
+<a class="guide" href="<?= appUrl ?>?page=torihiki">
+  <div class="gno">GUIDE 04</div>
+  <div class="gbody"><span class="gq">この取引は法律（取適法・フリーランス法）の対象？ 根拠は？</span><div class="gt">取引適正化・フリーランス法 実務ガイド（法解釈）</div><div class="gd">「対象かどうかの選別」と「その根拠」を2段階で確認。手続きの“なぜ”を知りたいときの拠り所。</div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=eventinst">
+  <div class="gno">GUIDE 12</div>
+  <div class="gbody"><span class="gq">イベントの試遊インストラクションを個人にお願いしたい</span><div class="gt">試遊インストラクション 業務委託ガイド</div><div class="gd">偽装請負（無許可派遣）に転ばないための進め方・禁止事項・募集メール文例（運営部門向け）。</div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=related_party">
+  <div class="gno">GUIDE 11</div>
+  <div class="gbody"><span class="gq">グループ会社・役員との取引にあたる？</span><div class="gt">関連当事者取引 判定・決議 実務ガイド</div><div class="gd">開示（会計）と承認決議（会社法）の要否を判定。判定フォーム付き。</div></div>
+  <div class="garr">›</div>
+</a>
+<a class="guide" href="<?= appUrl ?>?page=privacy">
+  <div class="gno">GUIDE 10</div>
+  <div class="gbody"><span class="gq">お客様・参加者の個人情報を扱う</span><div class="gt">個人情報 運用ガイド（事業部向け）</div><div class="gd">イベント・キャンペーン・会員登録・中古買取の「取得同意→取得→保管→利用・廃棄」と漏えい時の即報。</div></div>
+  <div class="garr">›</div>
+</a>
+
+<hr class="sd">
+
+<!-- 4. 困ったとき -->
+<h2 class="sec"><span class="secn">4</span>困ったとき・覚えておく3つ</h2>
+<div class="tw"><table>
+<thead><tr><th>こんなとき</th><th>どうする</th></tr></thead>
+<tbody>
+<tr><td class="tc">何から手をつけるか分からない</td><td>まず <strong>GUIDE 05 取引社内手続きガイド</strong> で全体の流れを確認する</td></tr>
+<tr><td class="tc">「この取引は法律の対象か」を知りたい</td><td>法的判断は <strong>GUIDE 04（法解釈ガイド）</strong> へ。手続きガイドには書いていない</td></tr>
+<tr><td class="tc">文書を作ってほしい／他社契約を見てほしい</td><td>Slack <code>/法務依頼</code>（自社＝「文書作成」／他社＝「法務相談」）</td></tr>
+<tr><td class="tc">取引先・契約を調べたい</td><td>Slack <code>/法務検索</code> またはポータルから直接検索</td></tr>
+<tr><td class="tc">判断に迷う・上のどれにも当てはまらない</td><td>現場で自己判断せず、<code>/法務依頼</code> または <strong>#法務相談</strong> へ</td></tr>
+</tbody></table></div>
+<div class="cl cl-n" style="font-size:12px"><strong>3つの鉄則：</strong>①<strong>締結完了まで着手・発注・支払をしない</strong>　②<strong>ひな形は直接編集せず</strong> <code>/法務依頼</code> から作成を依頼　③<strong>個人情報・漏えいは止めて即報</strong>（GUIDE 10）。</div>
+
+<div class="foot">
+<div class="l">お問い合わせ先</div>
+<div class="t">株式会社アークライト 経営管理本部 法務部</div>
+<div class="s">迷う場面は自己判断せずご相談ください（Slack <code style="color:#cfe0f5">/法務依頼</code> ／ #法務相談）</div>
+</div>
+</main>
+</body>
+</html>
