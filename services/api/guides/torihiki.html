@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>取引適正化・フリーランス法 実務ガイド</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:#212529;background:#fff}
+a{color:inherit}
+@media print{
+  .g-sidebar-torihiki{display:none!important}
+  .g-main-torihiki{margin-left:0!important;max-width:none!important;padding:20px!important}
+}
+
+/* == torihiki == */
+
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--teal:#085041;--teal-s:#e1f5ee;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;--sw:228px;
+--ph1:#27500a;--ph2:#0c447c;--ph3:#633806;--ph4:#1d9e75;--ph5:#6b1f7a;--ph6:#a32d2d}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+.g-sidebar-torihiki{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--navy);overflow-y:auto;display:flex;flex-direction:column;z-index:100}
+.g-sh-torihiki{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+.g-sh-torihiki h1{font-size:9px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-transform:uppercase}
+.g-sh-torihiki p{font-size:11.5px;color:rgba(255,255,255,.92);font-weight:600;margin-top:3px;line-height:1.4}
+nav{padding:6px 0 20px}
+.ns{display:block;padding:5px 14px;font-size:9px;font-weight:700;color:rgba(255,255,255,.32);letter-spacing:.07em;text-transform:uppercase;margin-top:9px}
+.nl{display:block;padding:4px 14px;font-size:11.5px;color:rgba(255,255,255,.7);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nl:hover,.nl.active{color:#fff;background:rgba(255,255,255,.09);border-left-color:#e63946}
+.nsub{display:block;padding:3px 14px 3px 24px;font-size:10.5px;color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
+.nsub:hover{color:rgba(255,255,255,.82)}
+.bdg{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;margin-right:4px;vertical-align:middle}
+.b1{background:#eaf3de;color:var(--ph1)}.b2{background:#e8f1fb;color:var(--ph2)}.b3{background:#faeeda;color:var(--ph3)}
+.g-main-torihiki{margin-left:var(--sw);padding:36px 46px 80px;max-width:calc(var(--sw) + 850px)}
+h1.dt{font-size:21px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:9px;margin-bottom:5px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:28px}
+/* CHAPTER HEADER */
+.chap{border-radius:8px;padding:16px 22px;margin:36px 0 16px;scroll-margin-top:16px}
+.chap.c1{background:var(--ph1)}.chap.c2{background:var(--ph2)}.chap.c3{background:var(--teal)}
+.chap .cn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px}
+.chap h2{font-size:16px;font-weight:700;color:#fff;margin:0}
+.chap .cdesc{font-size:12px;color:rgba(255,255,255,.65);margin-top:5px}
+/* SECTION */
+h2.sec{font-size:16px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:28px 0 11px;scroll-margin-top:20px}
+h3.sub{font-size:13.5px;font-weight:700;color:var(--navy-l);margin:18px 0 9px;padding-bottom:4px;border-bottom:1px solid var(--g3);scroll-margin-top:20px}
+h4.sh4{font-size:12.5px;font-weight:700;color:var(--tx2);margin:11px 0 7px}
+p{margin-bottom:9px;color:var(--tx2)}strong{color:var(--tx)}
+ul,ol{padding-left:20px;margin-bottom:9px;color:var(--tx2)}li{margin-bottom:3px}
+/* PHASE STEP HEADER */
+.shb{border-radius:7px;padding:12px 16px;margin-bottom:14px;scroll-margin-top:16px}
+.shb h3{font-size:13.5px;font-weight:700;color:#fff;margin:0}
+.shb .sn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:2px}
+.ph1s{background:var(--ph1)}.ph2s{background:var(--ph2)}.ph3s{background:var(--ph3)}.ph4s{background:var(--ph4)}.ph5s{background:var(--ph5)}.ph6s{background:var(--ph6)}
+/* CALLOUT */
+.cl{border-left:3px solid;padding:8px 12px;border-radius:0 5px 5px 0;margin:9px 0;font-size:12.5px}
+.cl-w{border-color:var(--red);background:var(--red-s)}.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-t{border-color:var(--green);background:var(--green-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}.cl-tl{border-color:var(--teal);background:var(--teal-s)}
+/* TABLE */
+.tw{overflow-x:auto;margin:9px 0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:var(--navy);color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:11.5px;white-space:nowrap}
+tbody tr:nth-child(even){background:var(--g1)}
+tbody td{padding:6px 9px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:hover{background:#f0f4ff}
+td.tc{font-weight:600;color:var(--navy);font-size:11.5px}
+td.tcr{font-weight:700;color:var(--red)}
+td.tcg{font-weight:700;color:var(--green)}
+td.tco{font-weight:700;color:var(--gold)}
+/* STEP BOX */
+.step-box{background:var(--g1);border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 15px;margin:8px 0}
+.step-num{display:inline-block;background:var(--navy);color:#fff;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;margin-bottom:6px;letter-spacing:.04em}
+/* COMPARE 2-COL */
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.cmp-card{border-radius:6px;padding:14px 16px}
+.cmp-card.law{background:var(--navy);color:#fff}
+.cmp-card.fl{background:var(--teal);color:#fff}
+.cmp-card h4{font-size:12.5px;font-weight:700;margin-bottom:7px;padding-bottom:5px;border-bottom:1px solid rgba(255,255,255,.2)}
+.cmp-card ul{padding-left:16px;font-size:11.5px;line-height:1.75;color:rgba(255,255,255,.88)}
+.cmp-card strong{color:#fff}.cmp-card li{color:rgba(255,255,255,.88)}
+.cmp-label{font-size:9px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px}
+/* SELL/CONSIGN 2-COL */
+.sc-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:12px 0}
+.sc-card{border-radius:6px;padding:14px 16px;border:1px solid}
+.sc-card.sell{background:var(--g1);border-color:var(--g3)}
+.sc-card.consign{background:var(--red-s);border-color:#f5c6cb}
+.sc-card h4{font-size:12.5px;font-weight:700;margin-bottom:8px}
+.sc-card ul{padding-left:16px;font-size:11.5px;line-height:1.75;color:var(--tx2)}
+/* PHASE FLOW BAR */
+.phase-flow{display:flex;gap:0;margin:12px 0;overflow-x:auto}
+.pf-item{flex:1;min-width:0;text-align:center}
+.pf-box{padding:8px 3px;font-size:10.5px;font-weight:700;color:#fff;border-radius:4px;margin:0 2px;line-height:1.35}
+.pf-box .pnum{font-size:13px;font-weight:700;opacity:.45;display:block}
+/* BADGE / TAG */
+.badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:3px}
+.b-law{background:#e6effa;color:var(--navy)}.b-fl{background:var(--teal-s);color:var(--teal)}.b-red{background:var(--red-s);color:var(--red)}
+.tag{display:inline-block;font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:3px;margin-right:2px}
+.t-law{background:#e6effa;color:var(--navy)}.t-fl{background:var(--teal-s);color:var(--teal)}.t-gold{background:#fef3e2;color:var(--gold)}.t-red{background:var(--red-s);color:var(--red)}
+/* TIMELINE */
+.timeline{display:flex;margin:12px 0;border:1px solid var(--g3);border-radius:6px;overflow:hidden}
+.tl-item{flex:1;padding:10px 8px;text-align:center;font-size:11px}
+.tl-item:not(:last-child){border-right:1px solid var(--g3)}
+.tl-item.ts{background:var(--navy);color:#fff}
+.tl-item.tm{background:#faeeda;color:#633806}
+.tl-item.te{background:var(--red-s);color:var(--red)}
+.tl-item .tll{font-size:9px;font-weight:700;opacity:.65;margin-bottom:3px}
+.tl-item .tlv{font-size:13px;font-weight:700}
+/* CHECK LIST */
+.ck{list-style:none;padding:0;margin:7px 0}
+.ck li{padding:7px 10px 7px 30px;position:relative;border-bottom:1px solid var(--g2);font-size:12px;color:var(--tx2)}
+.ck li::before{content:"☐";position:absolute;left:7px;font-size:13px;color:var(--navy);line-height:1.5}
+.ck li:last-child{border-bottom:none}
+.pl{list-style:none;padding:0;margin:7px 0}
+.pl li{padding:6px 10px 6px 26px;position:relative;border-bottom:1px solid var(--g2);font-size:12px;color:var(--tx2)}
+.pl li::before{content:"⚠";position:absolute;left:6px;font-size:11px}
+.pl li:last-child{border-bottom:none}
+.ap{background:var(--g1);border-radius:7px;padding:14px 18px;margin-bottom:14px}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
+.dw{background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:12px 12px 9px;margin:9px 0}
+.faq-item{margin-bottom:11px}
+.faq-q{font-weight:700;color:var(--navy);margin-bottom:4px;font-size:13px}
+.faq-a{padding:8px 12px;background:var(--g1);border-radius:4px;font-size:12.5px;color:var(--tx2)}
+</style>
+</head>
+<body>
+ <?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<aside class="g-sidebar-torihiki">
+<div class="g-sh-torihiki"><h1>法務部</h1><p>業務委託取引<br>法解釈ガイド</p></div>
+<nav>
+<a class="nl" href="#top">概要</a>
+
+<span class="ns">1. 該当取引の選別</span>
+<a class="nl" href="#judge"><span class="bdg b1">1</span>取引種別の判断フロー</a>
+<a class="nsub" href="#type4">委託区分5類型</a>
+<a class="nsub" href="#sale-vs">売買 vs 委託</a>
+<a class="nsub" href="#selector">属性別 適用法律</a>
+
+<span class="ns">2. 法律の詳細</span>
+<a class="nl" href="#law"><span class="bdg b2">2</span>法律の基本構造</a>
+<a class="nsub" href="#law-comp">取適法 vs フリ法</a>
+<a class="nsub" href="#po">発注書8必須項目</a>
+<a class="nsub" href="#inspection">検収フェーズ詳細</a>
+<a class="nsub" href="#payment">支払フェーズ詳細</a>
+</nav>
+</aside>
+
+<main class="g-main-torihiki">
+<h1 class="dt" id="top">業務委託取引 法解釈ガイド</h1>
+<p class="dm">v2.0　Arclight Inc. 経営管理本部 法務部　2026年6月2日改訂　｜　取引適正化法（旧下請法）・フリーランス保護法 対応　｜　社内手続フローは LegalBridge に分離</p>
+
+<div class="cl cl-i">このガイドは、業務委託取引にかかる<strong>法解釈のナレッジ集</strong>です。<strong>「この取引は法律の対象か？」（第1章）</strong>と<strong>「その根拠はどこにあるか？」（第2章）</strong>の2段階で理解できるよう構成しています。<br>発注書交付・検収・支払などの<strong>実際の社内手続フローは LegalBridge に分離</strong>しました。「どう動けばいいか」は LegalBridge 側の取引手続ガイドを参照してください。</div>
+
+<hr class="sd">
+
+<!-- ========================================== -->
+<!-- 1. 該当取引の選別 -->
+<!-- ========================================== -->
+<div class="chap c1" id="judge">
+  <div class="cn">Chapter 1</div>
+  <h2>該当取引とはどのように選別されるか？</h2>
+  <div class="cdesc">まずここで「この取引が法律の対象かどうか」を判断する</div>
+</div>
+
+<h2 class="sec" id="type4">委託区分5類型と Arclight 業務の対応</h2>
+<div class="cl cl-i"><strong>2026年1月改正で「特定運送委託」が新設。</strong> 当社グッズ等の購入者への運送を中小運送事業者に委託している場合は該当し得る。対象取引の洗い出しと発注書交付の確認を実施すること。</div>
+<div class="tw"><table>
+<thead><tr><th>委託区分</th><th>Arclight での具体的な業務例</th><th>従業員数基準</th><th>適用法律</th></tr></thead>
+<tbody>
+<tr>
+  <td class="tc" style="color:var(--red);">情報成果物<br>作成委託<br><span style="font-size:9px;background:var(--red-s);color:var(--red);padding:1px 4px;border-radius:2px;">★最頻出</span></td>
+  <td>
+    <strong style="font-size:11px;color:var(--navy)">プログラム：</strong> ゲームアプリ・デジタル版の開発委託<br>
+    <strong style="font-size:11px;color:var(--navy)">プログラム以外：</strong> イラスト・カードアート・パッケージデザイン制作／ルールブック・カードテキストのライティング／翻訳・ローカライズ（英語版・多言語版）／グラフィックデザイン・DTPレイアウト／プロモーション映像・紹介動画制作／ウェブサイト・SNS用コンテンツ制作
+  </td>
+  <td style="font-size:11px;">プログラム：<strong>300人</strong><br>それ以外：<strong>100人</strong></td>
+  <td><span class="tag t-law">取適法</span><br><span class="tag t-fl">フリ法</span>（個人）</td>
+</tr>
+<tr>
+  <td class="tc">役務提供<br>委託</td>
+  <td>
+    <strong style="font-size:11px;color:var(--navy)">300人基準：</strong> 物流・発送業務委託（運送・倉庫保管・情報処理）<br>
+    <strong style="font-size:11px;color:var(--navy)">100人基準：</strong> Game Market等イベントの運営スタッフ・設営委託／ゲーム体験会ファシリテーター委託／カスタマーサポート委託／撮影・配信・実況委託
+  </td>
+  <td style="font-size:11px;">運送・倉庫・情報処理：<strong>300人</strong><br>それ以外：<strong>100人</strong></td>
+  <td><span class="tag t-law">取適法</span><br><span class="tag t-fl">フリ法</span>（個人）</td>
+</tr>
+<tr>
+  <td class="tc">製造委託</td>
+  <td>ボードゲームコンポーネントの製造委託（カード・ボード・コマ・トークン等）／パッケージ・化粧箱の製造・印刷委託／グッズ・販促物（アクリルスタンド・缶バッジ等）の製造委託／海外メーカーへのOEM製造委託<br><span style="font-size:10.5px;color:var(--g5)">※2026年改正で金型・木型・治具・特殊工具の製造委託も対象に追加</span></td>
+  <td style="font-size:11px;"><strong>300人</strong></td>
+  <td><span class="tag t-law">取適法</span></td>
+</tr>
+<tr>
+  <td class="tc tcr" style="font-size:11.5px;">特定運送委託<br><span style="font-size:9px;background:var(--red-s);color:var(--red);padding:1px 4px;border-radius:2px;">2026年1月 新設</span></td>
+  <td>当社グッズ・ゲーム等の購入者への運送を中小運送事業者に委託する場合（販売商品の最終消費者への配送）<br><span style="font-size:10.5px;color:var(--g5)">※景品・DM・サンプル品・取引書類の輸送は原則対象外</span></td>
+  <td style="font-size:11px;"><strong>300人</strong></td>
+  <td><span class="tag t-law">取適法</span></td>
+</tr>
+<tr>
+  <td class="tc" style="color:var(--g5)">修理委託<br><span style="font-size:9px">発生頻度低</span></td>
+  <td>展示用什器・備品の修理委託／イベント備品・機器の保守・修繕委託</td>
+  <td style="font-size:11px;"><strong>300人</strong></td>
+  <td><span class="tag t-law">取適法</span></td>
+</tr>
+</tbody></table></div>
+
+<h2 class="sec" id="sale-vs">「売買契約」と「委託契約」の判断基準</h2>
+<div class="sc-grid">
+  <div class="sc-card sell">
+    <h4 style="color:var(--navy)">✅ 売買契約（取適法の対象外）</h4>
+    <ul>
+      <li>既製品・カタログ品の単純購入</li>
+      <li>市販のボードゲームを仕入れて販売する場合</li>
+      <li>既存の汎用コンポーネント（サイコロ・コインチップ等）の購入</li>
+      <li>メーカーのカタログ品そのままの仕入れ</li>
+    </ul>
+    <div style="margin-top:8px;padding:6px 8px;background:#e9ecef;border-radius:4px;font-size:11px;color:var(--g5)">振込手数料：契約で合意すれば相手方負担も可</div>
+  </div>
+  <div class="sc-card consign">
+    <h4 style="color:var(--red)">⚠ 委託契約（取適法の対象）</h4>
+    <ul>
+      <li>自社の仕様・要件に基づく制作・製造</li>
+      <li>Arclightのゲームとして販売するコンポーネントの製造</li>
+      <li>仕様書・デザインデータを渡して作成させるイラスト</li>
+      <li>ルールブック・カードテキストのライティング</li>
+      <li>当社指定の翻訳仕様に基づくローカライズ</li>
+    </ul>
+    <div style="margin-top:8px;padding:6px 8px;background:#fde8ea;border-radius:4px;font-size:11px;color:var(--red);font-weight:600">振込手数料：必ず発注者（Arclight）負担。受注者に負担させると違反（2026年1月改正で明確化）</div>
+  </div>
+</div>
+
+<h2 class="sec" id="selector">発注先の属性と適用法律の組み合わせ</h2>
+<div class="tw"><table>
+<thead><tr><th>発注先の属性</th><th>取引適正化法（取適法）</th><th>フリーランス保護法</th><th>実務上の注意点</th></tr></thead>
+<tbody>
+<tr><td class="tc">フリーランス・個人事業主（一人で事業）</td><td>資本金基準または<strong style="color:var(--red)">従業員数基準（100人or300人）</strong>を満たす場合に適用</td><td class="tcr"><strong>必ず適用</strong>（資本金・従業員数不問）</td><td>両法が重複する場合は<strong>厳しい方を適用</strong>。育児・介護配慮義務（フリ法6条）も必要</td></tr>
+<tr><td class="tc">一人法人（実質一人で運営する法人）</td><td>資本金基準または従業員数基準を満たす場合に適用</td><td class="tco">フリーランスに準じて適用される可能性あり</td><td>判断が難しい場合は法務部に相談</td></tr>
+<tr><td class="tc">中小法人（常時従業員100人or300人以下）</td><td class="tcr"><strong>従業員数基準（新設）で新たに対象になった場合あり</strong></td><td>原則として適用外</td><td>資本金基準を満たさない場合でも<strong>従業員数基準で対象になるケースに注意</strong></td></tr>
+<tr><td class="tc">大手法人（資本金3億円超かつ従業員300人超）</td><td>当社が発注側の場合、取適法の対象外となる場合あり</td><td>適用外</td><td>ただし民法・商法上の一般的な義務は引き続き適用</td></tr>
+</tbody></table></div><h2 class="sec">取引種別の判断フロー（3STEP）</h2>
+<div class="cl cl-n"><strong>用語の改称（2026年1月施行）：</strong> 旧「親事業者」→ 新「<strong>委託事業者</strong>」（Arclightはこちら）／ 旧「下請事業者」→ 新「<strong>中小受託事業者</strong>」（発注先）</div>
+
+<div class="step-box">
+  <div class="step-num">STEP 1　まず相手方の属性を確認する</div>
+  <p><strong>相手方はフリーランス・個人事業主・一人法人か？</strong></p>
+  <p>
+    <span class="tag t-fl">YES →</span> <strong>フリーランス保護法が必ず適用</strong>される（資本金・従業員数不問）。取適法との重複適用も STEP 2 で確認する。<br>
+    <span class="tag" style="background:#f3f3f3;color:#374151">NO →</span> STEP 2 へ進む
+  </p>
+</div>
+
+<div class="step-box">
+  <div class="step-num">STEP 2　資本金基準 または 従業員数基準を確認する（2026年1月改正で従業員数基準が新設）</div>
+  <p><strong>Arclight（委託事業者）と発注先（中小受託事業者）が、下記のいずれかの基準を満たすか？</strong></p>
+  <p style="font-size:11.5px;color:var(--g5);margin-bottom:8px">※ まず資本金基準を確認する。資本金基準を満たさない場合に従業員数基準を補完的に適用。<br>　従業員数の判定タイミングは<strong>個別発注の都度</strong>（基本契約締結時の一度きりの確認では不十分）</p>
+  <div class="tw" style="margin:0 0 10px"><table>
+  <thead><tr>
+    <th>委託類型</th>
+    <th>Arclight側の基準<br><span style="font-weight:400;font-size:10px">（委託事業者）</span></th>
+    <th>発注先側の基準<br><span style="font-weight:400;font-size:10px">（中小受託事業者）</span></th>
+    <th>Arclight の主な業務例</th>
+  </tr></thead>
+  <tbody>
+  <tr>
+    <td style="font-size:11.5px;">製造委託・修理委託<br>情報成果物作成委託（<strong>プログラムのみ</strong>）<br>役務提供委託（<strong>運送・倉庫保管・情報処理のみ</strong>）<br><strong>特定運送委託（2026年1月 新設）</strong></td>
+    <td style="text-align:center;"><strong>資本金3億円超</strong><br><span style="color:var(--g5);font-size:10.5px">または</span><br><strong style="color:var(--red)">常時従業員 300人超</strong></td>
+    <td style="text-align:center;">資本金3億円以下<br><span style="color:var(--g5);font-size:10.5px">または</span><br><strong style="color:var(--red)">常時従業員 300人以下</strong><br><span style="font-size:10px;color:var(--g5)">（個人含む）</span></td>
+    <td style="font-size:11px;">コンポーネント製造委託<br>ゲームアプリ開発委託<br>物流・発送業務委託<br>購入者への運送委託</td>
+  </tr>
+  <tr>
+    <td style="font-size:11.5px;">情報成果物作成委託（上記<strong>プログラム以外</strong>）<br>役務提供委託（上記<strong>3類型以外</strong>）</td>
+    <td style="text-align:center;"><strong>資本金1,000万円超</strong><br><span style="color:var(--g5);font-size:10.5px">または</span><br><strong style="color:var(--red)">常時従業員 100人超</strong></td>
+    <td style="text-align:center;">資本金1,000万円以下<br><span style="color:var(--g5);font-size:10.5px">または</span><br><strong style="color:var(--red)">常時従業員 100人以下</strong><br><span style="font-size:10px;color:var(--g5)">（個人含む）</span></td>
+    <td style="font-size:11px;">イラスト・翻訳・デザイン<br>ライティング・DTP<br>イベントスタッフ委託</td>
+  </tr>
+  </tbody></table></div>
+  <p>
+    <span class="tag t-law">いずれかの基準に該当 →</span> <strong>取引適正化法（取適法）が適用</strong>。STEP 3 へ進む。<br>
+    <span class="tag" style="background:#f3f3f3;color:#374151">どちらも非該当 →</span> 取適法の対象外。ただし民法・商法上の義務は引き続き適用。
+  </p>
+  <div class="cl cl-n" style="margin-top:8px;font-size:11.5px;"><strong>従業員数の確認方法：</strong> ① 賃金台帳の調製対象となる労働者の人数（労基法108条・109条）を基準とする。② 受託者に回答義務はないが、見積依頼書等に「常時使用する従業員数は○○人以下です」のチェックボックスを設けて回答させることが実務上の推奨対応。</div>
+</div>
+
+<div class="step-box">
+  <div class="step-num">STEP 3　委託の内容を確認する（2026年1月改正で特定運送委託が追加）</div>
+  <p><strong>委託の内容が下記5類型のどれかに該当するか？</strong></p>
+  <p>
+    ① 情報成果物作成委託　② 役務提供委託　③ 製造委託　④ 修理委託　⑤ <strong style="color:var(--red)">特定運送委託（新設）</strong><br>
+    該当する → 取適法の対象取引として発注書交付等の法的義務が発生する。
+  </p>
+  <p style="font-size:11.5px;color:var(--g5);">※ 単なる「既製品の購入（売買契約）」は取適法の対象外。ただし仕様を指定した段階で委託契約になる場合あり（次項参照）</p>
+</div>
+<div class="cl cl-w"><strong>判断に迷う場合は必ず法務部に相談してください。</strong> 不明確なまま進めると書面交付義務違反のリスクがあります。</div>
+
+<hr class="sd">
+
+<!-- ========================================== -->
+<!-- 3. 法律の詳細 -->
+<!-- ========================================== -->
+<div class="chap c3" id="law">
+  <div class="cn">Chapter 2</div>
+  <h2>法律の詳細</h2>
+  <div class="cdesc">「なぜそのルールがあるか」を知りたいときに参照する</div>
+</div>
+
+<h2 class="sec" id="law-comp">取引適正化法 vs フリーランス保護法</h2>
+<div class="cmp">
+  <div class="cmp-card law">
+    <div class="cmp-label">取引適正化法（旧下請法）</div>
+    <h4>下請中小企業振興法に基づく取引適正化促進法<br><span style="font-size:10px;font-weight:400">2026年1月改正施行</span></h4>
+    <ul>
+      <li><strong>適用対象：</strong>資本金・従業員数基準により親事業者・下請事業者を規定。製造委託・修理委託・情報成果物委託・役務提供委託が対象</li>
+      <li>Arclightは<strong>「親事業者」</strong>として規制を受ける側</li>
+      <li><strong>主な義務・禁止行為：</strong>書面交付義務（3条書面）・支払期日設定義務・60日ルール・遅延損害金（年14.6%）・減額禁止・買いたたき禁止・返品禁止 ほか</li>
+      <li><strong>違反時：</strong>公正取引委員会・中小企業庁による勧告・公表・罰則（50万円以下の罰金）</li>
+    </ul>
+  </div>
+  <div class="cmp-card fl">
+    <div class="cmp-label">フリーランス保護法</div>
+    <h4>特定受託事業者に係る取引の適正化等に関する法律<br><span style="font-size:10px;font-weight:400">2024年11月施行</span></h4>
+    <ul>
+      <li><strong>適用対象：</strong>「特定受託事業者」＝業務委託を受ける個人・一人法人（フリーランス・個人事業主）。発注側の資本金規模は問わない</li>
+      <li><strong>Arclightからの発注すべてが対象</strong></li>
+      <li><strong>主な義務・禁止行為：</strong>書面・電磁的方法による条件明示義務（3条）・給付受領義務・60日以内支払・禁止行為（報酬減額・返品・買いたたき・不当な経済上の利益提供要請・育児介護配慮義務（6条））</li>
+      <li><strong>違反時：</strong>公正取引委員会・厚生労働省による勧告・公表・罰則</li>
+    </ul>
+  </div>
+</div>
+<div class="tw"><table>
+<thead><tr><th>区分</th><th>適用法律</th><th>Arclightの対応</th></tr></thead>
+<tbody>
+<tr><td class="tc">資本金基準を満たす法人への委託</td><td><span class="tag t-law">取引適正化法</span> が主に適用</td><td>発注書＋検収書テンプレートで対応（支払が業績連動・利用許諾の場合は利用許諾報告書テンプレートも併用）</td></tr>
+<tr><td class="tc">フリーランス・個人事業主への委託</td><td><span class="tag t-fl">フリーランス保護法</span> が追加的に適用</td><td>同テンプレート＋育児介護配慮義務に注意</td></tr>
+<tr><td class="tc">両方該当する場合</td><td>両法の<strong>厳しい方の義務が優先</strong></td><td><strong>より厳格な要件を採用すること</strong></td></tr>
+</tbody></table></div>
+
+<h2 class="sec" id="po">発注書（PO）8必須記載事項</h2>
+<div class="cl cl-i"><strong>取引適正化法3条・フリーランス法3条：</strong>発注時に書面または電磁的方法で必ず交付しなければならない</div>
+<div class="tw"><table>
+<thead><tr><th>No</th><th>記載欄</th><th>記載すべき内容</th><th>省略した場合のリスク</th></tr></thead>
+<tbody>
+<tr><td class="tc">① 給付内容</td><td>業務内容・成果物仕様</td><td>委託する業務の内容・成果物の仕様・品質基準を具体的に記載</td><td class="tcr">「一式」等の曖昧な記載は書面交付義務違反とみなされる可能性。後の仕様争いの元になる</td></tr>
+<tr><td class="tc">② 委託金額</td><td>金額（税抜・税率・税込）</td><td>税抜金額・税率・税込合計を明示。業績連動の場合は算式も記載</td><td class="tcr">金額未記載・「別途協議」は3条書面要件を充足しない</td></tr>
+<tr><td class="tc">③ 支払期日</td><td>支払条件</td><td>具体的な支払期日または「受領日から○日以内」の形で記載。60日超過禁止</td><td class="tcr">支払期日が60日を超える場合は法令違反。期日末記載は義務不履行</td></tr>
+<tr><td class="tc">④ 支払方法</td><td>振込・手形等</td><td>銀行振込か手形かを明記。手形の場合はサイト日数も記載</td><td class="tcr">割引困難な手形の交付は禁止行為。現金払いが原則</td></tr>
+<tr><td class="tc">⑤ 検収期間</td><td>異議期限</td><td>受領から検収完了までの期間を営業日数で明記</td><td>期間末記載の場合もみなし合格ルールは適用される可能性あり</td></tr>
+<tr><td class="tc">⑥ 瑕疵担保期間</td><td>瑕疵担保期間</td><td>成果物引渡後の瑕疵担保責任の期間を明記</td><td>未記載の場合、法定期間や民法規定が適用されトラブルの原因に</td></tr>
+<tr><td class="tc">⑦ 特約事項</td><td>業績連動・責任制限等</td><td>ロイヤルティ・承認例外・責任制限など標準条件と異なる事項</td><td class="tcr">特約を口頭で定めると後の争いになる。書面記載が必須</td></tr>
+<tr><td class="tc">⑧ 発注日・発注番号</td><td>ORDER_NO / PO-AL-xxxx等</td><td>発注書の発行日と発注番号を記載</td><td class="tcr">番号がないと関連文書（検収書・支払記録）と紐づけができない</td></tr>
+</tbody></table></div>
+
+<h2 class="sec" id="inspection">検収フェーズの法的ルール</h2>
+<h3 class="sub">60日ルールと検収の関係</h3>
+<div class="timeline">
+  <div class="tl-item ts"><div class="tll">受領日</div><div class="tlv">Day 0</div><div style="font-size:10px;margin-top:2px">起算点</div></div>
+  <div class="tl-item tm"><div class="tll">検収期間（例：10営業日）</div><div class="tlv">合否判断</div></div>
+  <div class="tl-item te"><div class="tll">支払期日（60日以内）</div><div class="tlv">法定上限</div></div>
+</div>
+<div class="cl cl-tl"><strong>【みなし合格ルール（フリーランス法4条2項）】</strong><br>・検収書に記載の異議期限内に不合格通知がない場合 → 給付（成果物）が完了したものとみなされる<br>・みなし合格後は支払拒否・減額はできない</div>
+<h3 class="sub">検収フェーズの禁止行為</h3>
+<div class="tw"><table>
+<thead><tr><th>禁止行為</th><th>根拠条文</th><th>違反した場合</th></tr></thead>
+<tbody>
+<tr><td class="tc">受領拒否（正当理由なし）</td><td>取適法4条1項1号 / フリ法5条</td><td class="tcr">勧告・公表。既払い報酬の返還請求の可能性</td></tr>
+<tr><td class="tc">検収期間の不当な引き延ばし</td><td>取適法2条の2 / フリ法4条1項</td><td class="tcr">60日ルール違反として遅延損害金（年14.6%）発生</td></tr>
+<tr><td class="tc">不合格通知の期限超過の拒否</td><td>フリ法4条2項（みなし完了）</td><td class="tcr">支払義務が確定しており、拒否・減額は減額禁止違反</td></tr>
+<tr><td class="tc">理由なき再提出要求・無償修正強要</td><td>取適法4条1項6号 / フリ法5条6号</td><td class="tcr">「不当なやり直しの要求」として禁止行為に該当</td></tr>
+<tr><td class="tc">検収後の減額・値引き要求</td><td>取適法4条1項3号 / フリ法5条2号</td><td class="tcr">減額禁止に違反。刑事罰（50万円以下の罰金）</td></tr>
+</tbody></table></div>
+
+<h2 class="sec" id="payment">支払フェーズの法的ルール</h2>
+<div class="tw"><table>
+<thead><tr><th>項目</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="tc">遅延損害金率</td><td><strong style="color:var(--red)">年14.6%</strong>（民法上の年3%より大幅に高い）</td></tr>
+<tr><td class="tc">起算日</td><td>支払期日の翌日から支払完了日まで</td></tr>
+<tr><td class="tc">計算方法</td><td>未払金額 × 14.6% ÷ 365 × 遅延日数</td></tr>
+<tr><td class="tc">免除の可否</td><td class="tcr"><strong>当事者間の合意があっても原則として免除不可</strong></td></tr>
+<tr><td class="tc">支払義務の発生</td><td><strong>遅延の理由（資金繰り等）を問わず自動的に発生</strong></td></tr>
+</tbody></table></div>
+<div class="cl cl-w" style="margin-top:12px;"><strong>受領日から60日以内に支払を完了することが法定義務。</strong> 遅延した場合は<strong>年14.6%の損害金が自動発生</strong>します（当事者間の合意があっても免除不可）。</div>
+<div class="ap" style="font-size:12px;">遅延損害金の計算例：未払金100万円、遅延30日の場合<br><strong style="color:var(--red);font-size:14px;">1,000,000円 × 14.6% ÷ 365日 × 30日 ≒ 12,000円</strong><br><span style="color:var(--g5);font-size:11px;">※ 遅延が長期化するほど損害金が膨らむ。期日管理が最重要</span></div>
+<h3 class="sub">支払フェーズの禁止行為一覧</h3>
+<div class="tw"><table>
+<thead><tr><th>禁止行為</th><th>根拠条文</th><th>実務上の注意点</th></tr></thead>
+<tbody>
+<tr><td class="tc">報酬の減額（合意なき値引き）</td><td>取適法4条1項3号 / フリ法5条2号</td><td class="tcr">「売上が下がったから減額」も違反。変更は書面で合意し直す</td></tr>
+<tr><td class="tc">事前合意のない費用控除（振込手数料等）</td><td>取適法4条1項3号（実質的減額）</td><td class="tcr">控除項目を発注書に明記しない場合、一方的控除は減額禁止に抵触</td></tr>
+<tr><td class="tc">支払の遅延</td><td>取適法4条1項2号 / フリ法4条（60日）</td><td class="tcr">資金繰りを理由にした支払遅延も違反。年14.6%の損害金が発生</td></tr>
+<tr><td class="tc">割引困難な手形の交付</td><td>取適法4条1項4号</td><td>現金払いが原則。手形サイトが長い場合は減額とみなされる場合あり</td></tr>
+<tr><td class="tc">不当な経済上の利益提供要請</td><td>フリ法5条4号</td><td class="tcr">「協賛金」「謝礼」「無償提供」等の名目での負担強制は禁止</td></tr>
+<tr><td class="tc">報復的な取引停止</td><td>フリ法16条 / フリ法5条5号</td><td class="tcr">権利行使（申告・相談）に対する報復的行為は明示的に禁止</td></tr>
+</tbody></table></div>
+
+<div style="background:var(--navy);border-radius:8px;padding:18px 22px;margin-top:28px;text-align:center">
+<div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:5px">お問い合わせ先</div>
+<div style="font-size:17px;font-weight:700;color:#fff;margin-bottom:3px">Arclight Inc. 経営管理本部 法務部</div>
+<div style="font-size:12px;color:rgba(255,255,255,.65)">営業時間：平日 10:00〜18:00</div>
+<div style="font-size:11px;color:rgba(255,255,255,.4);margin-top:4px;font-style:italic">正しい法解釈を、すべての取引判断の出発点に。</div>
+</div>
+</main>
+</body>
+</html>

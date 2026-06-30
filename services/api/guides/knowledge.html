@@ -1,0 +1,1102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>法務ナレッジブック｜契約・取引審査・文書管理の実務基準</title>
+  <style>
+    :root {
+      --bg: #f5f7fb;
+      --panel: #ffffff;
+      --panel-2: #f9fafb;
+      --text: #182033;
+      --muted: #64748b;
+      --line: #dbe3ef;
+      --navy: #183153;
+      --blue: #2563eb;
+      --teal: #0f766e;
+      --green: #15803d;
+      --amber: #b45309;
+      --red: #b91c1c;
+      --purple: #6d28d9;
+      --shadow: 0 14px 35px rgba(15, 23, 42, 0.09);
+      --radius: 16px;
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--text);
+      background: var(--bg);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Hiragino Sans", "Yu Gothic", "Yu Gothic UI", Meiryo, sans-serif;
+      line-height: 1.75;
+    }
+
+    a { color: inherit; text-decoration: none; }
+    .layout { display: grid; grid-template-columns: 290px minmax(0, 1fr); min-height: 100vh; }
+
+    .sidebar {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      overflow-y: auto;
+      background: #0f1f35;
+      color: #e5eefb;
+      padding: 24px 18px;
+      border-right: 1px solid rgba(255,255,255,0.08);
+    }
+    .brand { margin-bottom: 24px; }
+    .brand small { display:block; color:#93a4bc; font-size:12px; letter-spacing:.08em; margin-bottom: 8px; }
+    .brand h1 { margin:0; font-size:20px; line-height:1.35; }
+    .brand .version { display:inline-block; margin-top:10px; padding:3px 9px; border:1px solid rgba(255,255,255,.18); border-radius:999px; color:#bfd0e8; font-size:12px; }
+    .nav-group-title { color:#93a4bc; font-size:12px; text-transform:uppercase; letter-spacing:.08em; margin:24px 0 8px; }
+    .nav a { display:block; padding:8px 10px; border-radius:10px; color:#e5eefb; font-size:14px; }
+    .nav a:hover { background: rgba(255,255,255,0.08); }
+
+    main { min-width: 0; }
+    .hero {
+      background: linear-gradient(135deg, #10213a 0%, #193b63 55%, #0f766e 100%);
+      color: #fff;
+      padding: 44px 52px 34px;
+    }
+    .hero h2 { margin:0; font-size:34px; line-height:1.35; letter-spacing:.02em; }
+    .hero p { max-width: 980px; color:#dce9f8; margin: 14px 0 0; }
+    .hero-grid { display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap:14px; margin-top:28px; }
+    .hero-card { background:rgba(255,255,255,.11); border:1px solid rgba(255,255,255,.16); border-radius:16px; padding:16px; backdrop-filter: blur(6px); }
+    .hero-card strong { display:block; font-size:16px; margin-bottom:5px; }
+    .hero-card span { color:#cfe0f5; font-size:13px; }
+
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      background: rgba(245, 247, 251, .94);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--line);
+      padding: 18px 52px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 12px;
+      align-items: center;
+    }
+    .searchbox { position:relative; }
+    .searchbox input {
+      width: 100%;
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 13px 16px 13px 42px;
+      font-size: 15px;
+      background: #fff;
+      outline: none;
+      box-shadow: 0 6px 16px rgba(15,23,42,.04);
+    }
+    .searchbox:before { content:"🔎"; position:absolute; left:15px; top:10px; opacity:.65; }
+    .toolbar .meta { color: var(--muted); font-size: 13px; white-space: nowrap; }
+
+    .content { padding: 34px 52px 64px; max-width: 1500px; }
+    section { scroll-margin-top: 86px; }
+    .section-title { margin: 34px 0 18px; display:flex; align-items:flex-end; justify-content:space-between; gap:16px; }
+    .section-title h2 { margin:0; color:var(--navy); font-size:26px; line-height:1.35; }
+    .section-title p { margin: 6px 0 0; color:var(--muted); max-width:860px; }
+
+    .panel { background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); box-shadow:var(--shadow); padding:24px; margin-bottom:20px; }
+    .panel.tight { padding:18px; }
+
+    .grid { display:grid; gap:16px; }
+    .grid.cols-2 { grid-template-columns: repeat(2, minmax(0,1fr)); }
+    .grid.cols-3 { grid-template-columns: repeat(3, minmax(0,1fr)); }
+    .grid.cols-4 { grid-template-columns: repeat(4, minmax(0,1fr)); }
+
+    .card { background:#fff; border:1px solid var(--line); border-radius:16px; padding:18px; box-shadow: 0 8px 20px rgba(15,23,42,.05); }
+    .card h3 { margin:0 0 8px; color:#10213a; font-size:18px; }
+    .card p { margin:0; color:#475569; font-size:14px; }
+    .card ul { margin: 10px 0 0; padding-left: 1.2em; color:#334155; font-size:14px; }
+
+    .tag-row { display:flex; flex-wrap:wrap; gap:6px; margin:10px 0; }
+    .tag { display:inline-flex; align-items:center; gap:4px; padding:2px 8px; border-radius:999px; font-size:12px; border:1px solid transparent; background:#eef2ff; color:#3730a3; }
+    .tag.type { background:#e0f2fe; color:#075985; border-color:#bae6fd; }
+    .tag.law { background:#ecfdf5; color:#166534; border-color:#bbf7d0; }
+    .tag.risk { background:#fff7ed; color:#9a3412; border-color:#fed7aa; }
+    .tag.high { background:#fef2f2; color:#991b1b; border-color:#fecaca; }
+    .tag.ops { background:#f5f3ff; color:#5b21b6; border-color:#ddd6fe; }
+
+    table { width:100%; border-collapse: collapse; margin: 14px 0 4px; font-size:14px; }
+    th, td { border:1px solid var(--line); padding:10px 12px; vertical-align: top; }
+    th { background:#f1f5f9; color:#183153; text-align:left; font-weight:700; }
+    tr:nth-child(even) td { background:#fbfdff; }
+
+    .callout { border-left: 5px solid var(--blue); background:#eff6ff; border-radius:12px; padding:14px 16px; margin:14px 0; }
+    .callout strong { color:#1e3a8a; }
+    .callout.warn { border-left-color: var(--amber); background:#fffbeb; }
+    .callout.danger { border-left-color: var(--red); background:#fef2f2; }
+    .callout.good { border-left-color: var(--green); background:#f0fdf4; }
+
+    details { border:1px solid var(--line); border-radius:14px; background:#fff; margin:10px 0; overflow:hidden; }
+    summary { cursor:pointer; padding:14px 16px; font-weight:700; color:#183153; background:#f8fafc; }
+    details .detail-body { padding: 0 16px 16px; }
+
+    .decision-tree { display:grid; gap:10px; }
+    .decision-step { display:grid; grid-template-columns: 44px minmax(0,1fr); gap:12px; align-items:start; background:#fff; border:1px solid var(--line); border-radius:14px; padding:14px; }
+    .num { width:34px; height:34px; border-radius:50%; background:#183153; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; }
+    .decision-step h3 { margin:0 0 4px; font-size:16px; color:#183153; }
+    .decision-step p { margin:0; color:#475569; font-size:14px; }
+
+    .pill-list { display:flex; flex-wrap:wrap; gap:8px; padding:0; margin:0; list-style:none; }
+    .pill-list li { background:#f8fafc; border:1px solid var(--line); padding:8px 10px; border-radius:999px; font-size:13px; color:#334155; }
+
+    .risk-low { color:#166534; font-weight:700; }
+    .risk-mid { color:#b45309; font-weight:700; }
+    .risk-high { color:#b91c1c; font-weight:700; }
+
+    .footer { color:#64748b; font-size:13px; text-align:center; padding:30px 0 10px; }
+    .hidden-by-search { display:none !important; }
+    .no-results { display:none; background:#fff; border:1px dashed var(--line); border-radius:14px; padding:20px; color:#64748b; margin:20px 0; }
+
+    @media (max-width: 1100px) {
+      .layout { grid-template-columns: 1fr; }
+      .sidebar { position:relative; height:auto; }
+      .hero, .toolbar, .content { padding-left: 22px; padding-right: 22px; }
+      .hero-grid, .grid.cols-4, .grid.cols-3, .grid.cols-2 { grid-template-columns: 1fr; }
+      .toolbar { grid-template-columns: 1fr; }
+    }
+
+    @media print {
+      .sidebar, .toolbar { display:none; }
+      .layout { display:block; }
+      body { background:#fff; }
+      .hero { background:#fff; color:#111827; padding:20px 0; }
+      .hero p, .hero-card span { color:#334155; }
+      .hero-card { border:1px solid #ddd; background:#fff; }
+      .content { padding:0; }
+      .panel, .card { box-shadow:none; break-inside: avoid; }
+      a { text-decoration:none; }
+    }
+  
+    /* 上部タブ(common_top_tabs, position:fixed 48px)との結合用 */
+    body{ padding-top:48px; }
+    .sidebar{ top:48px !important; height:calc(100vh - 48px) !important; }
+  </style>
+</head>
+<body>
+<?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+  <div class="layout">
+    <aside class="sidebar">
+      <div class="brand">
+        <small>LEGAL KNOWLEDGE BOOK</small>
+        <h1>法務ナレッジブック</h1>
+        <span class="version">v0.3 / 著作権法基礎追加版</span>
+      </div>
+      <a class="sidebar-home" href="<?= appUrl ?>?page=portal" target="_top">← 法務ポータルへ戻る</a>
+      <nav class="nav">
+        <div class="nav-group-title">全体</div>
+        <a href="#purpose">目的と使い方</a>
+        <a href="#map">契約類型マップ</a>
+        <a href="#selection">契約選択フロー</a>
+        <div class="nav-group-title">基礎知識</div>
+        <a href="#civil-contracts">民法上の13典型契約</a>
+        <a href="#commercial-contracts">商法上の商事契約</a>
+        <a href="#atypical-license">非典型契約・ライセンス</a>
+        <a href="#copyright-rights">著作権法の権利一覧</a>
+        <a href="#ukeoi-inin">請負・委任／準委任</a>
+        <div class="nav-group-title">実務重点</div>
+        <a href="#practical-contracts">実務契約類型</a>
+        <a href="#components">契約の構成要素</a>
+        <a href="#component-matrix">構成要素マトリクス</a>
+        <a href="#clause-library">条項ライブラリ</a>
+        <div class="nav-group-title">運用</div>
+        <a href="#laws">法令・リスクマップ</a>
+        <a href="#workflow">標準業務フロー</a>
+        <a href="#checklists">チェックリスト</a>
+        <a href="#templates">テンプレート管理</a>
+        <a href="#references">参考法令</a>
+      </nav>
+    </aside>
+
+    <main>
+      <header class="hero">
+        <h2>契約・取引審査・文書管理の実務基準</h2>
+        <p>本ページは、社内で反復利用する法務判断を共通化するためのナレッジブックです。特に、民法上の13典型契約、商法上の商事契約、非典型契約としてのライセンス契約、著作権法上の権利一覧を基礎知識として整理したうえで、実務契約の構成要素を標準化し、申請フォーム・文書番号・台帳・CloudSign・Google Drive保管と接続することを目的とします。</p>
+        <div class="hero-grid">
+          <div class="hero-card"><strong>基礎契約類型</strong><span>民法13典型契約、商法上の商事契約、非典型契約の位置づけ</span></div>
+          <div class="hero-card"><strong>構成要素</strong><span>請負・委任／準委任、ライセンス、著作権処理、売買等の成立要素と条項構造</span></div>
+          <div class="hero-card"><strong>法令リスク</strong><span>取適法、フリーランス法、独禁法、景表法、個人情報、現地法等</span></div>
+          <div class="hero-card"><strong>業務接続</strong><span>取引申請、文書作成、押印、検収、支払通知、更新管理</span></div>
+        </div>
+      </header>
+
+      <div class="toolbar">
+        <div class="searchbox"><input id="searchInput" type="search" placeholder="キーワード検索：例）請負、準委任、著作権、著作者人格権、翻案権、二次的著作物、利用許諾、再許諾" /></div>
+        <div class="meta">最終更新：2026-06-01｜管理：法務担当</div>
+      </div>
+
+      <div class="content" id="contentRoot">
+        <div class="no-results" id="noResults">該当する項目が見つかりません。検索語を短くするか、契約類型・法令名・文書名で検索してください。</div>
+
+        <section id="purpose" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>1. 目的と使い方</h2>
+              <p>このナレッジブックは、法務判断を属人化させず、各部署が同じ前提で契約・取引・文書管理を進めるための社内基準です。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="grid cols-3">
+              <div class="card knowledge-card">
+                <h3>判断基準の共通化</h3>
+                <p>契約レビュー時に、どの論点を、どの順序で、どの深度で確認するかを明確にします。</p>
+                <div class="tag-row"><span class="tag ops">レビュー</span><span class="tag ops">一次確認</span></div>
+              </div>
+              <div class="card knowledge-card">
+                <h3>契約構成の標準化</h3>
+                <p>基本契約、個別契約、発注書、仕様書、覚書、別紙を使い分け、過不足のない文書構成にします。</p>
+                <div class="tag-row"><span class="tag type">典型契約</span><span class="tag type">条項設計</span></div>
+              </div>
+              <div class="card knowledge-card">
+                <h3>業務効率化</h3>
+                <p>契約番号・発注番号・検収番号・支払通知番号を連携させ、申請から保管までの追跡性を確保します。</p>
+                <div class="tag-row"><span class="tag ops">文書番号</span><span class="tag ops">台帳</span></div>
+              </div>
+            </div>
+            <div class="callout good"><strong>運用原則：</strong>契約書は「全文を毎回読む」だけでなく、「契約類型を選び、必要な構成要素を確認し、法令リスクを重ねる」形でレビューします。</div>
+          </div>
+        </section>
+
+        <section id="map" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>2. 契約類型マップ</h2>
+              <p>取引内容に応じて、使用する文書を選択します。迷う場合は、まず「何を渡すのか」「何をしてもらうのか」「どの権利を使わせるのか」を確認します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <table class="knowledge-card">
+              <thead>
+                <tr><th>取引・場面</th><th>主文書</th><th>補助文書</th><th>重点論点</th><th>法務確認目安</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>交渉前の情報開示</td><td>NDA</td><td>目的確認メモ</td><td>秘密情報、目的外利用、グループ共有、返還・廃棄</td><td><span class="risk-mid">通常</span></td></tr>
+                <tr><td>外部者への業務発注</td><td>業務委託基本契約＋発注書</td><td>仕様書、検収書、支払通知書</td><td>業務範囲、納期、検収、支払、権利帰属、偽装請負</td><td><span class="risk-high">重点</span></td></tr>
+                <tr><td>単発・軽量な業務発注</td><td>発注書</td><td>仕様書、特約条項</td><td>取適法・フリーランス法、支払期日、成果物権利</td><td><span class="risk-mid">通常</span></td></tr>
+                <tr><td>商品・物品の継続売買</td><td>売買基本契約</td><td>注文書、納品書、検収書</td><td>所有権移転、危険負担、品質保証、返品、支払</td><td><span class="risk-mid">通常</span></td></tr>
+                <tr><td>原作品・ゲーム・IPの利用</td><td>ライセンス基本契約</td><td>個別利用許諾条件書、追加作品合意書</td><td>許諾範囲、地域、言語、再許諾、ロイヤリティ、在庫販売</td><td><span class="risk-high">重点</span></td></tr>
+                <tr><td>出版・電子・翻訳利用</td><td>出版契約</td><td>個別条件書、商品化許諾条件書</td><td>出版権、二次利用、電子化、翻訳、印税、監修</td><td><span class="risk-high">重点</span></td></tr>
+                <tr><td>商品化・映像化・デジタルゲーム化</td><td>個別許諾契約／商品化契約</td><td>別紙仕様、承認フロー</td><td>通常許諾からの除外、個別許諾、監修、収益配分</td><td><span class="risk-high">重点</span></td></tr>
+                <tr><td>既存契約の変更・補足</td><td>覚書</td><td>変更対照表、別紙</td><td>変更範囲、優先順位、過去合意統合、清算</td><td><span class="risk-mid">通常〜重点</span></td></tr>
+                <tr><td>契約終了・在庫整理</td><td>解除合意書／終了覚書</td><td>在庫一覧、支払一覧</td><td>終了日、残存義務、在庫販売、未払金、素材返還</td><td><span class="risk-high">重点</span></td></tr>
+                <tr><td>海外企業・海外個人との取引</td><td>英文契約／英文発注書</td><td>現地法調査シート、税務確認シート</td><td>準拠法、現地強行法規、源泉税、租税条約、制裁、個人情報</td><td><span class="risk-high">重点</span></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="selection" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>3. 契約選択フロー</h2>
+              <p>文書選択を誤ると、契約書本文よりも運用上の不整合が起きます。以下の順で選択します。</p>
+            </div>
+          </div>
+          <div class="panel decision-tree">
+            <div class="decision-step knowledge-card"><div class="num">1</div><div><h3>秘密情報だけを渡すか</h3><p>検討・交渉段階で情報開示が中心ならNDA。個人情報や未公表IP資料を含む場合は、目的・管理方法・返還廃棄を厚くします。</p></div></div>
+            <div class="decision-step knowledge-card"><div class="num">2</div><div><h3>相手に作業・制作・運営を依頼するか</h3><p>作業依頼なら業務委託基本契約または発注書。成果物がある場合は仕様書、検収、権利帰属、修正対応を必須項目にします。</p></div></div>
+            <div class="decision-step knowledge-card"><div class="num">3</div><div><h3>当社または相手方のIPを使うか</h3><p>原作品、ゲーム、ロゴ、キャラクター、翻訳物、二次著作物を使う場合はライセンス契約・個別利用許諾条件書を検討します。</p></div></div>
+            <div class="decision-step knowledge-card"><div class="num">4</div><div><h3>商品を売買・供給するだけか</h3><p>物品の供給が中心なら売買契約。ただし、製造委託・ライセンス・品質監修・ローカライズが混在する場合は複合契約にします。</p></div></div>
+            <div class="decision-step knowledge-card"><div class="num">5</div><div><h3>既存契約を変えるだけか</h3><p>既存契約の一部変更、対象作品追加、過去合意の統合、清算であれば覚書・追加作品合意書・解除合意書で処理します。</p></div></div>
+          </div>
+        </section>
+
+
+        <section id="civil-contracts" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>4. 民法上の13典型契約</h2>
+              <p>民法に規定された典型契約（有名契約）は、契約書に明示されていない事項を補充する基礎ルールとして機能します。実務契約は、まず民法上どの契約に近いかを確認し、そのうえで不足する条項を設計します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="callout good"><strong>基礎ルール：</strong>「業務委託契約」「ライセンス契約」「NDA」などの実務名は、民法上の典型契約名とは限りません。実務名ではなく、契約の中身（財産を移転するのか、物を使わせるのか、仕事の完成を求めるのか、事務処理を委託するのか）から法的性質を判断します。</div>
+            <table class="knowledge-card">
+              <thead>
+                <tr><th>類型</th><th>条文目安</th><th>法律上の中核</th><th>実務上の例</th><th>契約構成で見るポイント</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>贈与</td><td>民法549条</td><td>一方が無償で財産を相手方に与える。</td><td>無償提供、協賛品提供、寄付的提供</td><td>無償性、撤回可否、目的外利用、税務処理。</td></tr>
+                <tr><td>売買</td><td>民法555条</td><td>財産権の移転と代金支払の交換。</td><td>商品の仕入・卸売、在庫販売、物品供給</td><td>目的物、代金、所有権移転、危険負担、検査、契約不適合。</td></tr>
+                <tr><td>交換</td><td>民法586条</td><td>金銭以外の財産権を相互に移転する。</td><td>物々交換、権利交換、相互提供</td><td>交換対象の特定、評価額、差額精算、権利保証。</td></tr>
+                <tr><td>消費貸借</td><td>民法587条</td><td>借主が同種・同等・同量の物を返還する。</td><td>金銭貸付、立替金の貸付整理</td><td>貸付額、利息、返済期限、期限の利益、遅延損害金。</td></tr>
+                <tr><td>使用貸借</td><td>民法593条</td><td>無償で物を使用収益させ、返還させる。</td><td>サンプル・機材・備品の無償貸与</td><td>無償性、使用目的、返還時期、破損・紛失、転貸禁止。</td></tr>
+                <tr><td>賃貸借</td><td>民法601条</td><td>有償で物を使用収益させる。</td><td>会場利用、倉庫、機材レンタル</td><td>賃料、期間、使用目的、原状回復、修繕、解約。</td></tr>
+                <tr><td>雇用</td><td>民法623条</td><td>労働に従事し、相手方が報酬を支払う。</td><td>従業員、アルバイト</td><td>労務管理・指揮命令が中心。業務委託・請負との混同に注意。</td></tr>
+                <tr><td>請負</td><td>民法632条</td><td>仕事の完成と、その結果に対する報酬支払。</td><td>イラスト制作、DTP、動画制作、ウェブ制作、内装工事</td><td>完成基準、成果物、納品、検収、契約不適合、修正範囲。</td></tr>
+                <tr><td>委任</td><td>民法643条</td><td>法律行為をすることを委託し、相手方が承諾する。</td><td>契約締結代理、申請代理、法律行為の代行</td><td>委任事務、代理権の有無、善管注意義務、報告、解除。</td></tr>
+                <tr><td>寄託</td><td>民法657条</td><td>物を預かり、保管する。</td><td>在庫保管、サンプル保管、イベント備品預かり</td><td>保管対象、保管方法、返還、滅失・毀損、費用負担。</td></tr>
+                <tr><td>組合</td><td>民法667条</td><td>各当事者が出資して共同事業を営む。</td><td>共同企画、共同事業、収益分配プロジェクト</td><td>出資、業務執行、損益分配、脱退、財産帰属、代表権。</td></tr>
+                <tr><td>終身定期金</td><td>民法689条</td><td>一方または第三者の終身まで定期に金銭等を給付する。</td><td>企業実務では稀</td><td>期間、給付内容、終了事由。通常の取引契約ではほぼ使わない。</td></tr>
+                <tr><td>和解</td><td>民法695条</td><td>互いに譲歩して争いをやめる。</td><td>紛争解決合意、清算合意、解除合意</td><td>紛争対象、譲歩内容、支払、免責、清算条項、秘密保持。</td></tr>
+              </tbody>
+            </table>
+            <div class="callout warn"><strong>実務メモ：</strong>「業務委託」は民法上の典型契約名ではなく、内容により請負・委任・準委任、またはそれらの混合契約として扱います。レビュー時は、契約タイトルではなく、報酬発生条件と責任の内容を確認します。</div>
+          </div>
+        </section>
+
+        <section id="commercial-contracts" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>5. 商法上の商事契約・営業類型</h2>
+              <p>商法上の契約類型は、商人間取引・営業取引の基礎知識として把握します。実務ではすべてを頻繁に使うわけではありませんが、商取引の構成を理解する補助線になります。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="callout"><strong>整理方針：</strong>本ナレッジブックでは、基礎として押さえるべき5類型を中心に、商事売買・運送営業・商事寄託・保険を関連類型として補足します。</div>
+            <table class="knowledge-card">
+              <thead><tr><th>重点5類型</th><th>条文目安</th><th>中核</th><th>実務上の見方</th></tr></thead>
+              <tbody>
+                <tr><td>交互計算</td><td>商法529条以下</td><td>継続取引から生じる債権債務を一定期間ごとに相殺し、残額を支払う。</td><td>継続的な相互取引・精算の法的構成を理解するための基礎。通常の請求・支払管理とは区別する。</td></tr>
+                <tr><td>匿名組合</td><td>商法535条以下</td><td>一方が営業者の営業のために出資し、その営業から生じる利益の分配を受ける。</td><td>投資・収益分配型スキームで問題になる。共同事業・ライセンス収益分配との違いを確認する。</td></tr>
+                <tr><td>仲立営業</td><td>商法543条以下</td><td>他人間の商行為の媒介を業とする。</td><td>ブローカー型。原則として契約当事者にはならず、媒介報酬・権限範囲を確認する。</td></tr>
+                <tr><td>問屋営業</td><td>商法551条以下</td><td>自己の名をもって、他人のために物品の販売または買入れをする。</td><td>委託販売・代理販売に近い場面で比較対象になる。誰の名で売るか、誰に権利義務が帰属するかを見る。</td></tr>
+                <tr><td>運送取扱営業</td><td>商法559条以下</td><td>物品運送の取次・手配を行う営業類型。</td><td>物流・輸出入・イベント搬入で、運送人との違い、責任範囲、保険、危険移転を確認する。</td></tr>
+              </tbody>
+            </table>
+            <details class="knowledge-card">
+              <summary>関連して押さえる商法上の類型</summary>
+              <div class="detail-body">
+                <table>
+                  <thead><tr><th>類型</th><th>位置づけ</th><th>実務メモ</th></tr></thead>
+                  <tbody>
+                    <tr><td>商事売買</td><td>商人間・商行為としての売買に関する特則。</td><td>民法上の売買に商事取引特有の規律が重なる。</td></tr>
+                    <tr><td>運送営業</td><td>物品または旅客の運送に関する営業類型。</td><td>配送事故、滅失・毀損、遅延、保険の確認で重要。</td></tr>
+                    <tr><td>商事寄託</td><td>商人が営業として物を預かる類型。</td><td>倉庫・保管委託・在庫管理で参照する。</td></tr>
+                    <tr><td>保険</td><td>商法上、広義の商事契約類型として整理される。</td><td>イベント・物流・製造物事故では、契約条項と保険付保をセットで確認する。</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section id="atypical-license" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>6. 非典型契約・ライセンス契約</h2>
+              <p>ライセンス契約、秘密保持契約、共同開発契約などは、民法上の13典型契約そのものではありません。契約自由の原則により有効に設計できますが、契約書内で権利義務を明確に定義する必要があります。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="grid cols-2">
+              <div class="card knowledge-card">
+                <h3>非典型契約の基本</h3>
+                <p>法律に名称・成立要件が直接定められていない契約です。条文上の補充ルールが明確でないため、契約書の設計品質がそのままリスク管理になります。</p>
+                <ul>
+                  <li>契約の目的を明確にする。</li>
+                  <li>当事者の権利義務を列挙する。</li>
+                  <li>報酬・対価・費用負担を明確にする。</li>
+                  <li>終了時の効果を明確にする。</li>
+                  <li>民法上のどの典型契約に近いかを補助的に把握する。</li>
+                </ul>
+              </div>
+              <div class="card knowledge-card">
+                <h3>ライセンス契約の法的性質</h3>
+                <p>著作権・商標・キャラクター・ゲームシステム・翻訳物等について、一定範囲で利用を許す契約です。売買のように権利を移転する場合と、利用許諾にとどめる場合を明確に区別します。</p>
+                <ul>
+                  <li>権利移転ではなく利用許諾か。</li>
+                  <li>独占か非独占か。</li>
+                  <li>再許諾・製造委託・販売委託を認めるか。</li>
+                  <li>翻訳・改変・商品化を含めるか。</li>
+                  <li>終了後の在庫販売を認めるか。</li>
+                </ul>
+              </div>
+            </div>
+            <table class="knowledge-card">
+              <thead><tr><th>ライセンス周辺契約</th><th>概要</th><th>重点構成要素</th><th>アークライト実務での注意</th></tr></thead>
+              <tbody>
+                <tr><td>利用許諾契約</td><td>特定の著作物・商標・素材等の利用を許す。</td><td>許諾対象、利用方法、地域、期間、媒体、対価、終了時処理。</td><td>「何を・どこで・どの媒体で・誰に売れるか」を条件書で変数管理する。</td></tr>
+                <tr><td>ライセンス基本契約</td><td>複数作品・複数商品に共通する許諾条件を定める。</td><td>共通条項、個別条件書、優先順位、報告、監査、品質管理。</td><td>個別利用許諾条件書で作品・料率・地域・言語を切り替える。</td></tr>
+                <tr><td>サブライセンス契約</td><td>許諾を受けた者が第三者に再許諾する。</td><td>再許諾可否、再許諾先、地域、報告、上流契約との整合。</td><td>上流ライセンスの許諾範囲を超えないことを必ず確認する。</td></tr>
+                <tr><td>商品化契約</td><td>IPを用いた商品の企画・製造・販売を許す。</td><td>対象商品、監修、品質基準、製造数、販売チャネル、ロイヤリティ。</td><td>通常の出版・ローカライズ許諾に商品化を不用意に含めない。</td></tr>
+                <tr><td>ローカライズ契約</td><td>翻訳版・現地語版の制作・販売を許す。</td><td>言語、地域、翻訳物の権利、監修、販売開始期限、在庫販売。</td><td>翻訳物・DTPデータ・ローカライズ素材の帰属を明確化する。</td></tr>
+                <tr><td>プロダクトアウト契約</td><td>権利許諾と商品供給が混在する契約。</td><td>License Schedule、Supply Terms、検査、危険移転、品質保証。</td><td>ライセンス許諾と売買・供給条件をScheduleで分離する。</td></tr>
+              </tbody>
+            </table>
+            <div class="callout warn"><strong>設計上の注意：</strong>ライセンス契約では、「許諾する権利」を広く書きすぎると、商品化・映像化・デジタルゲーム化・二次利用まで含むように読めるおそれがあります。通常許諾と特別許諾を分け、特別許諾は個別条件書または別契約で制御します。</div>
+          </div>
+        </section>
+
+
+        <section id="copyright-rights" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>7. 著作権法の基礎知識：権利の一覧</h2>
+              <p>ライセンス契約、出版契約、商品化契約、発注書、仕様書、成果物譲渡条項を読むための基礎知識です。著作権は一つの単体権利ではなく、利用行為ごとに分かれる「権利の束」として把握します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="callout good"><strong>実務上の基本：</strong>契約書では、「著作権を譲渡する」「利用を許諾する」とだけ書くのではなく、複製、翻訳・翻案、公衆送信、商品化、二次利用、再許諾、改変、表示の可否を分解して確認します。特に翻案権等・二次的著作物の利用権は明示的に扱います。</div>
+
+            <div class="grid cols-2">
+              <div class="card knowledge-card">
+                <h3>著作者の権利の二層構造</h3>
+                <p>著作者に関する権利は、大きく人格的利益を保護する著作者人格権と、財産的利益を保護する著作権（著作財産権）に分かれます。</p>
+                <ul>
+                  <li><strong>著作者人格権：</strong>譲渡できない。契約では不行使特約で処理する。</li>
+                  <li><strong>著作権（財産権）：</strong>全部または一部の譲渡・利用許諾の対象になる。</li>
+                  <li><strong>著作隣接権：</strong>実演家、レコード製作者、放送事業者、有線放送事業者に関する権利。</li>
+                  <li><strong>出版権：</strong>出版者に設定される権利。出版契約・電子出版で別途確認する。</li>
+                </ul>
+              </div>
+              <div class="card knowledge-card">
+                <h3>契約レビューでの最初の確認</h3>
+                <p>成果物やIPを扱う契約では、所有権・著作権・利用許諾・人格権処理を混同しないことが重要です。</p>
+                <ul>
+                  <li>物の所有権を取得しても、著作権を取得したとは限らない。</li>
+                  <li>「買取」「納品」「検収」だけでは、著作権譲渡の合意として不十分になり得る。</li>
+                  <li>翻訳・ローカライズ・改変・商品化を行う場合は、翻案権等を確認する。</li>
+                  <li>二次的著作物を利用する場合は、原著作物側の許諾も確認する。</li>
+                </ul>
+              </div>
+            </div>
+
+            <h3>1. 著作者人格権</h3>
+            <table class="knowledge-card">
+              <thead><tr><th>権利</th><th>条文</th><th>内容</th><th>契約実務での確認ポイント</th></tr></thead>
+              <tbody>
+                <tr><td>公表権</td><td>18条</td><td>未公表の著作物を公表するか、いつ・どの方法で公表するかを決める権利。</td><td>未公表原稿、未発表イラスト、開発中ゲーム、発売前情報を扱う場合に確認する。</td></tr>
+                <tr><td>氏名表示権</td><td>19条</td><td>著作者名を表示するか、実名・変名・無名のいずれにするかを決める権利。</td><td>クレジット表記、スタッフロール、商品パッケージ、Web掲載、SNS投稿で確認する。</td></tr>
+                <tr><td>同一性保持権</td><td>20条</td><td>著作物または題号を、著作者の意に反して改変されない権利。</td><td>編集、校正、翻訳、ローカライズ、トリミング、色変更、DTP調整、商品化で重要。</td></tr>
+              </tbody>
+            </table>
+            <div class="callout warn"><strong>契約処理：</strong>著作者人格権は譲渡できないため、「譲渡」ではなく、当社、当社グループ、再許諾先、販売先、委託先等に対して行使しない旨を定めます。ただし、不行使特約を広く置く場合でも、著作者の名誉・声望を害する改変まで当然に許されるわけではないため、実務上は監修・承認・改変範囲を併記します。</div>
+
+            <h3>2. 著作権（財産権・支分権）</h3>
+            <table class="knowledge-card">
+              <thead><tr><th>権利</th><th>条文</th><th>対象行為</th><th>アークライト実務での例</th><th>契約上の処理</th></tr></thead>
+              <tbody>
+                <tr><td>複製権</td><td>21条</td><td>印刷、複写、録音、録画、データ複製など。</td><td>カード、ルールブック、パッケージ、画像データ、PDF、販促物の複製。</td><td>製造数、部数、媒体、データ保管、バックアップ利用を定める。</td></tr>
+                <tr><td>上演権・演奏権</td><td>22条</td><td>著作物を公に上演・演奏する行為。</td><td>イベント、配信番組、ステージ企画、音楽利用。</td><td>イベント利用、収録、再配信、BGM利用の許諾範囲を確認する。</td></tr>
+                <tr><td>上映権</td><td>22条の2</td><td>著作物をスクリーン・ディスプレイ等に公に映写する行為。</td><td>PV、映像素材、イベント会場での動画上映。</td><td>会場上映、社内上映、Web公開を分ける。</td></tr>
+                <tr><td>公衆送信権・公の伝達権</td><td>23条</td><td>インターネット送信、放送、有線放送、送信可能化、受信装置による公の伝達。</td><td>公式サイト掲載、SNS投稿、EC掲載、YouTube、オンラインルール公開。</td><td>Web掲載、SNS利用、広告配信、配信期間、地域制限を定める。</td></tr>
+                <tr><td>口述権</td><td>24条</td><td>言語の著作物を朗読等で公に伝達する行為。</td><td>朗読イベント、読み上げ動画、音声コンテンツ。</td><td>収録・配信・アーカイブ化の有無を確認する。</td></tr>
+                <tr><td>展示権</td><td>25条</td><td>美術の著作物または未発行写真の原作品を公に展示する行為。</td><td>原画展示、イベント展示、展示会出展。</td><td>展示場所、期間、撮影可否、二次利用を定める。</td></tr>
+                <tr><td>頒布権</td><td>26条</td><td>映画の著作物の複製物を販売・貸与等により頒布する行為。</td><td>映像作品、映画素材、映像化案件。</td><td>映像化・動画コンテンツは別許諾として扱う。</td></tr>
+                <tr><td>譲渡権</td><td>26条の2</td><td>映画以外の著作物の原作品・複製物を公衆に譲渡する行為。</td><td>書籍、ゲーム商品、カード、販促物の販売。</td><td>販売地域、販売チャネル、在庫販売、サンプル配布を確認する。</td></tr>
+                <tr><td>貸与権</td><td>26条の3</td><td>映画以外の著作物の複製物を公衆に貸与する行為。</td><td>レンタル、貸出、体験用貸与、イベント用貸与。</td><td>販売ではなく貸与・レンタルがある場合に追加確認する。</td></tr>
+                <tr><td>翻訳権・翻案権等</td><td>27条</td><td>翻訳、編曲、変形、脚色、映画化、その他翻案により二次的著作物を創作する行為。</td><td>ローカライズ、翻訳版、拡張、キャラクター商品化、ゲーム化、映像化。</td><td><strong>必ず明示。</strong>通常利用と特別許諾を分ける。</td></tr>
+                <tr><td>二次的著作物の利用に関する原著作者の権利</td><td>28条</td><td>二次的著作物の利用について、原著作者が二次的著作物の著作者と同種の権利を持つ。</td><td>翻訳版、ローカライズ版、派生ゲーム、商品化デザインの販売・配信。</td><td><strong>必ず明示。</strong>翻訳物・派生物を販売・配信する場合に確認する。</td></tr>
+              </tbody>
+            </table>
+            <div class="callout danger"><strong>重要：</strong>著作権譲渡条項では、27条・28条の権利を譲渡対象として特掲する運用を標準にします。これを落とすと、翻訳・翻案・二次的著作物利用の権利が譲渡人側に残る方向で解釈されるリスクがあります。</div>
+
+            <h3>3. 著作隣接権・出版権</h3>
+            <table class="knowledge-card">
+              <thead><tr><th>区分</th><th>権利者</th><th>主な対象</th><th>契約実務での確認ポイント</th></tr></thead>
+              <tbody>
+                <tr><td>実演家の権利</td><td>俳優、声優、演奏者、歌手等</td><td>実演家人格権、録音・録画、放送、有線放送、送信可能化、譲渡、貸与等。</td><td>ボイス、登壇、配信、動画収録、イベント出演では、出演契約・肖像権・パブリシティ権とセットで確認する。</td></tr>
+                <tr><td>レコード製作者の権利</td><td>音源を最初に固定した者</td><td>レコードの複製、送信可能化、譲渡、貸与等。</td><td>BGM、音源、PV、配信動画に音楽を使う場合、著作権者と音源権利者の双方を確認する。</td></tr>
+                <tr><td>放送事業者・有線放送事業者の権利</td><td>放送・有線放送を行う事業者</td><td>複製、再放送、有線放送、送信可能化等。</td><td>放送番組・配信素材の二次利用、切り抜き、社内外利用で確認する。</td></tr>
+                <tr><td>出版権</td><td>出版者</td><td>著作物を文書・図画として出版する権利。電子出版・公衆送信を含む設計も確認。</td><td>出版契約では、紙、電子、オンデマンド、海外版、翻訳版を分けて設計する。</td></tr>
+              </tbody>
+            </table>
+
+            <h3>4. 契約書に落とすときの構成要素</h3>
+            <table class="knowledge-card">
+              <thead><tr><th>構成要素</th><th>確認内容</th><th>条項・別紙への落とし込み</th></tr></thead>
+              <tbody>
+                <tr><td>対象著作物</td><td>原作品、翻訳物、イラスト、ロゴ、写真、映像、ゲームデータ、ルール、テキスト等。</td><td>別紙で作品名・素材名・ファイル名・版数・管理番号を特定する。</td></tr>
+                <tr><td>権利処理の型</td><td>著作権譲渡、利用許諾、共同著作、職務著作、既存素材利用のいずれか。</td><td>「譲渡」か「許諾」かを明示し、既存素材・第三者素材を除外または個別許諾にする。</td></tr>
+                <tr><td>利用範囲</td><td>媒体、地域、言語、期間、販売チャネル、販売形態、プロモーション利用。</td><td>個別条件書・発注書・仕様書の変数として管理する。</td></tr>
+                <tr><td>翻訳・改変・二次利用</td><td>ローカライズ、編集、翻案、商品化、映像化、デジタルゲーム化、派生作品化。</td><td>通常利用と特別許諾を分け、27条・28条を明示する。</td></tr>
+                <tr><td>再許諾・委託先利用</td><td>グループ会社、製造委託先、販売先、翻訳者、デザイナー、海外パートナー。</td><td>再許諾の可否、範囲、再許諾先管理、上流契約との整合を定める。</td></tr>
+                <tr><td>人格権処理</td><td>公表、氏名表示、改変、監修、クレジット。</td><td>人格権不行使条項、クレジット表記、監修承認、改変範囲を定める。</td></tr>
+                <tr><td>対価</td><td>固定報酬、ロイヤリティ、MG、追加報酬、二次利用料。</td><td>支払条件、報告頻度、計算式、控除項目、監査権を定める。</td></tr>
+                <tr><td>終了時処理</td><td>在庫販売、データ廃棄、素材返還、Web掲載停止、販売終了後の記録保存。</td><td>Sell-off、販売停止、廃棄証明、報告義務を定める。</td></tr>
+              </tbody>
+            </table>
+
+            <h3>5. 実務類型別の著作権チェック</h3>
+            <table class="knowledge-card">
+              <thead><tr><th>実務類型</th><th>主な権利論点</th><th>標準対応</th></tr></thead>
+              <tbody>
+                <tr><td>イラスト制作・デザイン制作</td><td>複製、譲渡、公衆送信、改変、商品化、人格権。</td><td>成果物の著作権譲渡または広範な利用許諾、人格権不行使、既存素材除外を明記。</td></tr>
+                <tr><td>記事執筆・編集・校正</td><td>複製、公衆送信、改変、氏名表示、二次利用。</td><td>Web掲載、紙面掲載、転載、再編集、クレジット表記を定める。</td></tr>
+                <tr><td>翻訳・ローカライズ</td><td>翻案権、二次的著作物、原著作物の許諾、翻訳物の帰属。</td><td>上流権利の許諾範囲を確認し、翻訳物・DTPデータの帰属を明示。</td></tr>
+                <tr><td>アナログゲーム制作</td><td>ルール、テキスト、アート、図版、パッケージ、ロゴ、派生物。</td><td>素材ごとに権利者を分解し、商品化・拡張・再版・海外版の可否を管理。</td></tr>
+                <tr><td>動画・写真・イベント撮影</td><td>著作権、実演家の権利、肖像権、会場・第三者素材。</td><td>撮影範囲、使用範囲、公開媒体、出演者同意、許可外素材の不使用を定める。</td></tr>
+                <tr><td>インフルエンサー投稿</td><td>投稿コンテンツの著作権、広告利用、二次利用、ステマ表示。</td><td>投稿の保存・転載・広告利用・修正依頼・削除条件を定める。</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="ukeoi-inin" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>8. 請負・委任／準委任の契約上の構成要件</h2>
+              <p>業務委託契約の多くは、民法上は請負・委任・準委任、またはその混合契約として整理します。特に、報酬発生条件、成果物責任、検収、指揮命令の有無を確認します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="callout good"><strong>最初の分岐：</strong>「完成した成果物に対して支払う」なら請負寄り、「専門的な事務処理・助言・運営プロセスに対して支払う」なら準委任寄り、「法律行為そのものを委託する」なら委任です。</div>
+            <table class="knowledge-card">
+              <thead><tr><th>類型</th><th>成立・構成要件</th><th>債務の中心</th><th>報酬発生の考え方</th><th>契約書で必ず定める事項</th></tr></thead>
+              <tbody>
+                <tr><td>請負</td><td>①請負人が仕事を完成することを約する。②注文者が仕事の結果に対して報酬を支払うことを約する。</td><td>仕事の完成・成果物の完成責任。</td><td>原則として、完成した仕事の結果に対する報酬。検収・納品と連動させやすい。</td><td>成果物、完成基準、納期、納品方法、検収、契約不適合、修正対応、知財帰属。</td></tr>
+                <tr><td>委任</td><td>①法律行為をすることを相手方に委託する。②相手方がこれを承諾する。</td><td>法律行為の遂行。受任者は善管注意義務を負う。</td><td>報酬は当然には発生せず、報酬特約により定める。</td><td>委任事務、代理権の有無、報告義務、費用償還、報酬、解除、成果物・記録の引渡し。</td></tr>
+                <tr><td>準委任</td><td>法律行為ではない事務処理の委託に、委任の規定を準用する。</td><td>事務処理の遂行。結果保証ではなく、善管注意義務に基づく履行が中心。</td><td>履行割合型または成果完成型として設計可能。成果完成型でも請負と同一ではない。</td><td>業務範囲、遂行方法、報告、成果定義、報酬算定、途中終了時の精算、指示権限の限定。</td></tr>
+              </tbody>
+            </table>
+            <div class="grid cols-2">
+              <div class="card knowledge-card">
+                <h3>請負契約で厚くする条項</h3>
+                <ul>
+                  <li><strong>仕事の完成基準：</strong>完成とは何か、どの仕様を満たせばよいか。</li>
+                  <li><strong>成果物の特定：</strong>ファイル形式、数量、納品場所、納品方法。</li>
+                  <li><strong>検収：</strong>検収期間、不合格時の修補、再検収、みなし検収。</li>
+                  <li><strong>契約不適合：</strong>修補、代替物、減額、損害賠償、期間制限。</li>
+                  <li><strong>知財：</strong>著作権譲渡か利用許諾か、移転時期、人格権不行使。</li>
+                </ul>
+              </div>
+              <div class="card knowledge-card">
+                <h3>委任・準委任で厚くする条項</h3>
+                <ul>
+                  <li><strong>事務処理の範囲：</strong>何を行い、何は行わないか。</li>
+                  <li><strong>善管注意義務：</strong>専門性・役割に応じた注意義務。</li>
+                  <li><strong>報告義務：</strong>進捗報告、成果報告、記録提出。</li>
+                  <li><strong>報酬算定：</strong>月額、時間、マイルストーン、履行割合、成果完成型。</li>
+                  <li><strong>途中終了時精算：</strong>既履行部分、費用、未了タスクの扱い。</li>
+                </ul>
+              </div>
+            </div>
+            <details class="knowledge-card">
+              <summary>請負・準委任の判断表</summary>
+              <div class="detail-body">
+                <table>
+                  <thead><tr><th>判断項目</th><th>請負寄り</th><th>準委任寄り</th><th>契約書上の処理</th></tr></thead>
+                  <tbody>
+                    <tr><td>目的</td><td>成果物・完成物を得る。</td><td>専門的な作業・運営・助言を受ける。</td><td>目的条項と業務内容で明確にする。</td></tr>
+                    <tr><td>報酬</td><td>完成・検収後に支払う。</td><td>期間・作業・履行割合・成果定義に応じて支払う。</td><td>支払起算点を曖昧にしない。</td></tr>
+                    <tr><td>責任</td><td>完成責任・契約不適合責任が中心。</td><td>善管注意義務違反が中心。</td><td>修補責任と損害賠償の範囲を分ける。</td></tr>
+                    <tr><td>検収</td><td>必須。合格・不合格の判断基準が重要。</td><td>成果完成型では設定可能。履行割合型では報告確認が中心。</td><td>検収なのか、報告受領なのかを区別する。</td></tr>
+                    <tr><td>指示</td><td>仕様・品質・納期に関する指示。</td><td>目的・前提・必要情報の提示。</td><td>労務管理・勤務時間管理・人事評価指示は避ける。</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            <div class="callout danger"><strong>偽装請負回避：</strong>契約書上「請負」「準委任」と書いても、実態として発注者が作業者の勤怠・配置・作業手順を直接管理している場合はリスクが残ります。契約条項だけでなく、運用上の指示ルートも設計します。</div>
+          </div>
+        </section>
+
+        <section id="practical-contracts" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>9. 実務契約類型</h2>
+              <p>社内で反復利用する実務上の契約類型です。民法上の典型契約とは区別し、使用場面・文書構成・必須項目・注意点をセットで確認します。</p>
+            </div>
+          </div>
+          <div class="grid cols-2">
+            <article class="card knowledge-card">
+              <h3>秘密保持契約書（NDA）</h3>
+              <div class="tag-row"><span class="tag type">NDA</span><span class="tag risk">交渉前</span><span class="tag ops">情報管理</span></div>
+              <p><strong>使用場面：</strong>契約交渉、共同開発検討、ライセンス検討、未公表情報・企画資料の開示。</p>
+              <ul>
+                <li><strong>基本構成：</strong>目的、秘密情報、除外情報、利用制限、管理義務、第三者開示、返還・廃棄、期間。</li>
+                <li><strong>重点：</strong>当社グループ共有、外部専門家共有、目的外利用禁止、成果物への流用禁止。</li>
+                <li><strong>注意：</strong>個人情報を含む場合は、秘密保持だけでなく個人情報条項を追加する。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>業務委託基本契約書</h3>
+              <div class="tag-row"><span class="tag type">業務委託</span><span class="tag law">取適法</span><span class="tag law">フリーランス法</span><span class="tag high">重点</span></div>
+              <p><strong>使用場面：</strong>継続的な制作、編集、DTP、イベント運営、翻訳、デザイン、記事制作、テストプレイ等。</p>
+              <ul>
+                <li><strong>基本構成：</strong>基本契約＋個別発注書＋仕様書＋検収書＋支払通知書。</li>
+                <li><strong>重点：</strong>業務範囲、納期、成果物、検収、支払、知財、再委託、偽装請負回避。</li>
+                <li><strong>注意：</strong>労務管理指示を避け、業務目的・成果物・品質基準に関する指示に限定する。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>発注書・仕様書</h3>
+              <div class="tag-row"><span class="tag type">発注書</span><span class="tag ops">仕様書</span><span class="tag law">支払条件</span></div>
+              <p><strong>使用場面：</strong>個別業務の発注、単発業務、基本契約に基づく個別条件の確定。</p>
+              <ul>
+                <li><strong>基本構成：</strong>発注番号、相手方、業務内容、納期、報酬、支払日、成果物、権利帰属、特約。</li>
+                <li><strong>重点：</strong>業務内容を抽象化しすぎず、仕様書で「何を納品するか」を明確にする。</li>
+                <li><strong>注意：</strong>発注書のみの場合は、契約不適合、権利、秘密保持、個人情報、支払条件を必要に応じて補う。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>検収書・業務完了報告受領書</h3>
+              <div class="tag-row"><span class="tag ops">検収</span><span class="tag ops">支払通知</span><span class="tag law">取適法</span></div>
+              <p><strong>使用場面：</strong>成果物納品後、業務完了後、支払確定前。</p>
+              <ul>
+                <li><strong>基本構成：</strong>対象発注番号、納品日、検収日、対象成果物、金額、確認依頼、担当者情報。</li>
+                <li><strong>重点：</strong>検収日と支払期限を台帳上連携させる。</li>
+                <li><strong>注意：</strong>検収書は契約書ではないが、支払根拠として重要な証跡になる。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>売買基本契約書</h3>
+              <div class="tag-row"><span class="tag type">売買</span><span class="tag risk">品質保証</span><span class="tag ops">注文書</span></div>
+              <p><strong>使用場面：</strong>物品・商品の継続的な売買、仕入、卸売、販売先との取引。</p>
+              <ul>
+                <li><strong>基本構成：</strong>注文、引渡し、所有権移転、危険負担、検査、契約不適合、代金支払、返品。</li>
+                <li><strong>重点：</strong>製造委託が含まれるか、単なる売買かを明確に切り分ける。</li>
+                <li><strong>注意：</strong>EXW等のインコタームズがある場合、危険移転と検収時期を分けて設計する。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>ライセンス基本契約書</h3>
+              <div class="tag-row"><span class="tag type">ライセンス</span><span class="tag high">IP重点</span><span class="tag risk">ロイヤリティ</span></div>
+              <p><strong>使用場面：</strong>原作品、ゲーム、キャラクター、翻訳版、ローカライズ版、商品化に関する権利許諾。</p>
+              <ul>
+                <li><strong>基本構成：</strong>許諾対象、許諾範囲、地域、言語、期間、独占性、再許諾、報告、監査、終了後処理。</li>
+                <li><strong>重点：</strong>商品化・映像化・デジタルゲーム化は通常の個別条件書から除外し、別許諾で制御する。</li>
+                <li><strong>注意：</strong>翻訳物・ローカライズ素材・派生物の権利帰属を曖昧にしない。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>個別利用許諾条件書</h3>
+              <div class="tag-row"><span class="tag type">条件書</span><span class="tag ops">変数管理</span><span class="tag risk">許諾範囲</span></div>
+              <p><strong>使用場面：</strong>基本契約に基づき、作品・商品・地域・料率等を個別に指定する場合。</p>
+              <ul>
+                <li><strong>基本構成：</strong>原著作名、対象製品、地域、言語、期間、販売チャネル、料率、MG、報告条件。</li>
+                <li><strong>重点：</strong>基本契約と個別条件書の優先順位を明確にする。</li>
+                <li><strong>注意：</strong>再許諾先、海外プロダクトアウト、適用金銭条件を表形式で管理する。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>出版契約書</h3>
+              <div class="tag-row"><span class="tag type">出版</span><span class="tag risk">二次利用</span><span class="tag high">権利範囲</span></div>
+              <p><strong>使用場面：</strong>書籍、電子書籍、翻訳出版、原作利用、著作者との出版取引。</p>
+              <ul>
+                <li><strong>基本構成：</strong>出版対象、媒体、部数、印税、電子化、翻訳、監修、二次利用、契約期間。</li>
+                <li><strong>重点：</strong>通常出版と商品化・映像化・ゲーム化を分ける。</li>
+                <li><strong>注意：</strong>旧契約・口頭合意・メール合意を包括統合する場合は、覚書で別途処理する。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>追加作品合意書</h3>
+              <div class="tag-row"><span class="tag type">追加合意</span><span class="tag risk">作品追加</span><span class="tag ops">基本契約連動</span></div>
+              <p><strong>使用場面：</strong>既存の基本契約に新たな作品・商品を追加する場合。</p>
+              <ul>
+                <li><strong>基本構成：</strong>原契約、追加作品、許諾範囲、経済条件、適用開始日、優先順位。</li>
+                <li><strong>重点：</strong>基本契約のどの条項に基づく追加かを明示する。</li>
+                <li><strong>注意：</strong>追加作品だけでなく、最低保証額・独占性・地域も再確認する。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>覚書・変更合意書</h3>
+              <div class="tag-row"><span class="tag type">覚書</span><span class="tag risk">変更</span><span class="tag risk">過去合意</span></div>
+              <p><strong>使用場面：</strong>契約条件変更、過去取引の整理、口頭・メール合意の統合、清算、権利範囲の補正。</p>
+              <ul>
+                <li><strong>基本構成：</strong>原契約、変更条項、追加条項、適用開始日、清算、優先順位、その他条項の維持。</li>
+                <li><strong>重点：</strong>変更対象を限定し、原契約全体を不用意に改変しない。</li>
+                <li><strong>注意：</strong>過去分の支払は、遅延損害金・調整金・追加対価の法的性質を整理する。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>解除合意書・終了覚書</h3>
+              <div class="tag-row"><span class="tag type">終了</span><span class="tag risk">在庫販売</span><span class="tag high">残存義務</span></div>
+              <p><strong>使用場面：</strong>契約終了、途中解除、ライセンス終了後の在庫処理、未払金精算。</p>
+              <ul>
+                <li><strong>基本構成：</strong>終了日、終了対象、未履行債務、在庫販売、素材返還、秘密保持、権利消滅。</li>
+                <li><strong>重点：</strong>終了後も残る義務と、終了により消える権利を明確に分ける。</li>
+                <li><strong>注意：</strong>在庫販売を認める場合は、期間・地域・数量・報告を定める。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>誓約書</h3>
+              <div class="tag-row"><span class="tag type">誓約書</span><span class="tag risk">撮影素材</span><span class="tag risk">不使用</span></div>
+              <p><strong>使用場面：</strong>許可外撮影、素材不使用、秘密情報の削除、違反後の再発防止。</p>
+              <ul>
+                <li><strong>基本構成：</strong>事実確認、禁止事項、削除・不使用、報告義務、違反時対応、損害賠償。</li>
+                <li><strong>重点：</strong>何を使用してはならないかを、別紙または本文で具体化する。</li>
+                <li><strong>注意：</strong>謝罪文ではなく、将来の使用防止と証跡化を目的にする。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>個人情報取得同意書</h3>
+              <div class="tag-row"><span class="tag law">個人情報</span><span class="tag ops">同意書</span><span class="tag risk">取得目的</span></div>
+              <p><strong>使用場面：</strong>イベント、応募、出演、インタビュー、素材提供等で個人情報を取得する場合。</p>
+              <ul>
+                <li><strong>基本構成：</strong>取得者、取得項目、利用目的、第三者提供、委託、保存期間、問い合わせ先。</li>
+                <li><strong>重点：</strong>取得者名称と利用目的を明確にする。</li>
+                <li><strong>注意：</strong>社内共通文書として運用する場合、個別承認を不要とする運用も可能。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>インフルエンサー投稿業務委託契約</h3>
+              <div class="tag-row"><span class="tag type">販促</span><span class="tag law">景表法</span><span class="tag risk">ステマ規制</span></div>
+              <p><strong>使用場面：</strong>SNS投稿、レビュー記事、商品紹介、イベント告知、PR動画。</p>
+              <ul>
+                <li><strong>基本構成：</strong>投稿内容、公開日、媒体、表示義務、修正、削除、報酬、権利、禁止事項。</li>
+                <li><strong>重点：</strong>広告・PRであることの表示、投稿前確認、禁止表現を定める。</li>
+                <li><strong>注意：</strong>成果保証や不自然な表現強制は避ける。</li>
+              </ul>
+            </article>
+
+            <article class="card knowledge-card">
+              <h3>国際アナログゲーム契約</h3>
+              <div class="tag-row"><span class="tag type">海外契約</span><span class="tag risk">Product-Out</span><span class="tag high">現地法</span></div>
+              <p><strong>使用場面：</strong>海外向けローカライズ、ライセンスアウト、商品供給、製造・販売が混在する取引。</p>
+              <ul>
+                <li><strong>基本構成：</strong>Master Agreement、Detail Sheet、License Schedule、Product-Out Schedule、Additional Terms。</li>
+                <li><strong>重点：</strong>ライセンス許諾と商品供給を分離し、適用Scheduleを明示する。</li>
+                <li><strong>注意：</strong>準拠法だけでなく、現地強行法規、税務、制裁、輸出入規制を確認する。</li>
+              </ul>
+            </article>
+          </div>
+        </section>
+
+        <section id="components" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>10. 契約の構成要素</h2>
+              <p>契約書は、契約類型に応じて必要な構成要素を組み合わせます。以下は、社内標準として確認すべき構成要素です。</p>
+            </div>
+          </div>
+
+          <div class="panel">
+            <div class="grid cols-3">
+              <div class="card knowledge-card"><h3>1. 頭書・基本条件</h3><p>契約名、文書番号、契約締結日、当事者、担当部署、契約期間、対象取引を整理します。変動項目は本文ではなく頭書・別紙で制御します。</p><div class="tag-row"><span class="tag ops">文書番号</span><span class="tag ops">基本条件</span></div></div>
+              <div class="card knowledge-card"><h3>2. 前文・契約目的</h3><p>契約の背景、原契約、取引の目的、当事者の役割を簡潔に示します。覚書では、変更・補足・統合の目的を明示します。</p><div class="tag-row"><span class="tag type">前文</span><span class="tag risk">趣旨</span></div></div>
+              <div class="card knowledge-card"><h3>3. 定義</h3><p>対象作品、対象商品、成果物、秘密情報、許諾地域、純売上、製造数、販売開始日等を定義します。後続条項の解釈を安定させる中心要素です。</p><div class="tag-row"><span class="tag type">定義</span><span class="tag high">解釈</span></div></div>
+              <div class="card knowledge-card"><h3>4. 対象物・業務範囲</h3><p>何を売るのか、作るのか、使わせるのか、提供するのかを明確にします。曖昧な場合は仕様書・別紙で補完します。</p><div class="tag-row"><span class="tag risk">対象特定</span><span class="tag ops">仕様書</span></div></div>
+              <div class="card knowledge-card"><h3>5. 権利付与・発注・履行義務</h3><p>ライセンス契約では許諾範囲、業務委託では業務遂行義務、売買では引渡義務を定めます。契約類型ごとの差が最も出る部分です。</p><div class="tag-row"><span class="tag type">中核条項</span><span class="tag high">重点</span></div></div>
+              <div class="card knowledge-card"><h3>6. 金銭条件</h3><p>報酬、売買代金、ロイヤリティ、MG、実費、立替、調整金、支払期限、通貨、消費税、源泉税を整理します。</p><div class="tag-row"><span class="tag risk">支払</span><span class="tag law">税務</span></div></div>
+              <div class="card knowledge-card"><h3>7. 納品・検収・報告</h3><p>納品物、納品方法、検収期間、修正対応、業務完了報告、販売報告、ロイヤリティ報告を定めます。支払条件と必ず接続します。</p><div class="tag-row"><span class="tag ops">検収</span><span class="tag ops">報告</span></div></div>
+              <div class="card knowledge-card"><h3>8. 知的財産権</h3><p>著作権譲渡、利用許諾、既存素材、翻訳物、派生物、商標、ロゴ、著作者人格権不行使を整理します。</p><div class="tag-row"><span class="tag law">著作権</span><span class="tag law">商標</span></div></div>
+              <div class="card knowledge-card"><h3>9. 秘密保持・個人情報</h3><p>秘密情報の管理、目的外利用禁止、第三者開示、返還・廃棄、個人情報の取得・委託・第三者提供を定めます。</p><div class="tag-row"><span class="tag law">個人情報</span><span class="tag ops">情報管理</span></div></div>
+              <div class="card knowledge-card"><h3>10. 表明保証・コンプライアンス</h3><p>権利非侵害、権限、法令遵守、制裁、反贈収賄、反社会的勢力、製品安全、広告表示等を定めます。</p><div class="tag-row"><span class="tag risk">表明保証</span><span class="tag law">法令遵守</span></div></div>
+              <div class="card knowledge-card"><h3>11. 責任・補償・責任制限</h3><p>損害賠償、第三者請求、権利侵害、製品不具合、間接損害、責任上限を整理します。海外契約ではindemnityを重点確認します。</p><div class="tag-row"><span class="tag high">補償</span><span class="tag risk">責任制限</span></div></div>
+              <div class="card knowledge-card"><h3>12. 期間・解除・終了後処理</h3><p>契約期間、自動更新、解除事由、終了後在庫販売、未払金、素材返還、秘密保持残存、権利消滅を定めます。</p><div class="tag-row"><span class="tag risk">解除</span><span class="tag high">在庫販売</span></div></div>
+              <div class="card knowledge-card"><h3>13. 優先順位・完全合意</h3><p>基本契約、個別条件書、別紙、Additional Terms、注文書の優先順位を定めます。過去合意統合では特に重要です。</p><div class="tag-row"><span class="tag risk">優先順位</span><span class="tag type">完全合意</span></div></div>
+              <div class="card knowledge-card"><h3>14. 準拠法・紛争解決</h3><p>準拠法、裁判管轄、仲裁、言語、執行可能性を定めます。国際契約では、現地強行法規の確認を別途行います。</p><div class="tag-row"><span class="tag type">準拠法</span><span class="tag high">海外契約</span></div></div>
+              <div class="card knowledge-card"><h3>15. 署名欄・別紙</h3><p>署名者、法人・個人の区別、印欄、CloudSign送信、別紙の組み込み、添付資料の優先順位を整理します。</p><div class="tag-row"><span class="tag ops">CloudSign</span><span class="tag ops">別紙</span></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="component-matrix" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>11. 実務契約類型 × 構成要素マトリクス</h2>
+              <p>契約類型ごとに、どの構成要素を厚く書くべきかを示します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <table class="knowledge-card">
+              <thead>
+                <tr><th>構成要素</th><th>NDA</th><th>業務委託</th><th>発注書</th><th>売買</th><th>ライセンス</th><th>出版</th><th>覚書</th><th>海外契約</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>頭書・基本条件</td><td>中</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td></tr>
+                <tr><td>目的・前文</td><td>高</td><td>中</td><td>中</td><td>低</td><td>高</td><td>高</td><td>高</td><td>高</td></tr>
+                <tr><td>定義</td><td>中</td><td>中</td><td>低</td><td>中</td><td>高</td><td>高</td><td>中</td><td>高</td></tr>
+                <tr><td>対象物・業務範囲</td><td>中</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td></tr>
+                <tr><td>金銭条件</td><td>低</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td><td>中〜高</td><td>高</td></tr>
+                <tr><td>納品・検収・報告</td><td>低</td><td>高</td><td>高</td><td>高</td><td>高</td><td>高</td><td>中</td><td>高</td></tr>
+                <tr><td>知的財産権</td><td>中</td><td>高</td><td>高</td><td>中</td><td>最重要</td><td>最重要</td><td>高</td><td>高</td></tr>
+                <tr><td>秘密保持・個人情報</td><td>最重要</td><td>高</td><td>中</td><td>中</td><td>高</td><td>高</td><td>中</td><td>高</td></tr>
+                <tr><td>表明保証・法令遵守</td><td>中</td><td>高</td><td>中</td><td>高</td><td>高</td><td>高</td><td>中</td><td>最重要</td></tr>
+                <tr><td>責任・補償</td><td>中</td><td>高</td><td>中</td><td>高</td><td>高</td><td>高</td><td>中</td><td>高</td></tr>
+                <tr><td>解除・終了後処理</td><td>中</td><td>高</td><td>中</td><td>高</td><td>最重要</td><td>高</td><td>高</td><td>高</td></tr>
+                <tr><td>優先順位・完全合意</td><td>中</td><td>高</td><td>中</td><td>中</td><td>最重要</td><td>高</td><td>最重要</td><td>最重要</td></tr>
+                <tr><td>準拠法・紛争解決</td><td>中</td><td>中</td><td>低</td><td>中</td><td>高</td><td>高</td><td>中</td><td>最重要</td></tr>
+              </tbody>
+            </table>
+            <div class="callout warn"><strong>注意：</strong>「低」は不要という意味ではありません。契約類型上、簡略化できる場合が多いという意味です。相手方・金額・海外性・個人情報・知財の有無により、重点度は変動します。</div>
+          </div>
+        </section>
+
+        <section id="clause-library" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>12. 条項ライブラリの設計</h2>
+              <p>各契約書に共通して使う条項を、目的・使う場面・修正許容ラインとセットで管理します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <details class="knowledge-card" open>
+              <summary>知的財産条項</summary>
+              <div class="detail-body">
+                <table>
+                  <thead><tr><th>条項</th><th>使う場面</th><th>確認ポイント</th></tr></thead>
+                  <tbody>
+                    <tr><td>著作権譲渡</td><td>成果物制作、イラスト、DTP、記事、仕様書</td><td>支払完了時移転か、納品時移転か。既存素材は除外するか。</td></tr>
+                    <tr><td>利用許諾</td><td>成果物を譲渡しない場合、ライセンス取引</td><td>期間、地域、媒体、再許諾、改変、独占性を明示。</td></tr>
+                    <tr><td>著作者人格権不行使</td><td>編集・翻訳・改変・商品化</td><td>不行使の相手方範囲にグループ会社・再許諾先を含めるか。</td></tr>
+                    <tr><td>第三者権利非侵害</td><td>制作物、投稿、デザイン、商品化</td><td>素材の出所、AI利用、フリー素材、フォント、写真の権利確認。</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            <details class="knowledge-card">
+              <summary>支払・税務条項</summary>
+              <div class="detail-body">
+                <table>
+                  <thead><tr><th>条項</th><th>使う場面</th><th>確認ポイント</th></tr></thead>
+                  <tbody>
+                    <tr><td>支払条件</td><td>発注書、業務委託、売買、ライセンス</td><td>支払起算点、支払日、請求書要否、検収連動、60日制限。</td></tr>
+                    <tr><td>源泉徴収</td><td>個人、印税、講演、原稿、翻訳、海外個人</td><td>国内源泉所得、租税条約、税率、グロスアップの有無。</td></tr>
+                    <tr><td>消費税・VAT</td><td>国内外取引、役務提供、ライセンス</td><td>課税・非課税・不課税、インボイス番号、国外事業者。</td></tr>
+                    <tr><td>ロイヤリティ報告</td><td>ライセンス、出版、商品化</td><td>計算式、控除項目、報告頻度、監査、為替レート。</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            <details class="knowledge-card">
+              <summary>終了後処理条項</summary>
+              <div class="detail-body">
+                <table>
+                  <thead><tr><th>条項</th><th>使う場面</th><th>確認ポイント</th></tr></thead>
+                  <tbody>
+                    <tr><td>在庫販売</td><td>ライセンス終了、商品供給終了</td><td>期間、対象在庫、地域、報告、追加製造禁止。</td></tr>
+                    <tr><td>秘密情報返還・廃棄</td><td>NDA、業務委託、ライセンス</td><td>複製物、バックアップ、法令保存、証跡報告。</td></tr>
+                    <tr><td>素材・データ返還</td><td>制作委託、翻訳、DTP、撮影</td><td>原データ、編集データ、素材データ、第三者素材を区別。</td></tr>
+                    <tr><td>残存条項</td><td>全契約</td><td>秘密保持、支払、知財、損害賠償、紛争解決、監査。</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+            <details class="knowledge-card">
+              <summary>国際契約条項</summary>
+              <div class="detail-body">
+                <table>
+                  <thead><tr><th>条項</th><th>使う場面</th><th>確認ポイント</th></tr></thead>
+                  <tbody>
+                    <tr><td>準拠法</td><td>海外企業・海外個人</td><td>日本法、相手国法、第三国法。強行法規は別途確認。</td></tr>
+                    <tr><td>紛争解決</td><td>海外契約</td><td>東京地裁、東京仲裁、ICC/JCAA、執行可能性、言語。</td></tr>
+                    <tr><td>制裁・輸出管理</td><td>海外販売、海外送金、海外ライセンス</td><td>制裁対象者、輸出入規制、反贈収賄、資金決済。</td></tr>
+                    <tr><td>言語優先</td><td>日英契約、翻訳契約</td><td>英文優先か、日本文優先か、参考訳か。</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
+        </section>
+
+        <section id="laws" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>13. 法令・リスクマップ</h2>
+              <p>契約類型にかかわらず、以下の法令・リスクが重なる場合は確認深度を上げます。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <table class="knowledge-card">
+              <thead><tr><th>リスク・法令</th><th>問題になる場面</th><th>契約上の対応</th><th>社内運用</th></tr></thead>
+              <tbody>
+                <tr><td>取適法・フリーランス法</td><td>個人・小規模事業者への制作・役務委託</td><td>発注条件明示、支払期日、減額・キャンセル制限</td><td>発注書・検収・支払日を台帳連動</td></tr>
+                <tr><td>下請法</td><td>製造委託、情報成果物作成委託、役務提供委託</td><td>支払条件、発注書、返品・減額・やり直し条件</td><td>取引類型と資本金要件を確認</td></tr>
+                <tr><td>独占禁止法</td><td>販売制限、価格拘束、抱き合わせ、排他条件</td><td>販売地域・価格指定・併売制限を慎重に設計</td><td>高リスク案件は経営報告</td></tr>
+                <tr><td>景表法・ステマ規制</td><td>広告、PR投稿、商品紹介、キャンペーン</td><td>表示義務、禁止表現、投稿前確認、修正・削除</td><td>事業部一次確認＋法務確認</td></tr>
+                <tr><td>個人情報保護法</td><td>イベント、応募、業務委託、申請フォーム</td><td>利用目的、委託、第三者提供、安全管理</td><td>取得同意書・台帳・保存期間管理</td></tr>
+                <tr><td>著作権法・商標法</td><td>作品利用、ロゴ使用、翻訳、商品化</td><td>権利範囲、表示、監修、登録表示の確認</td><td>J-PlatPat等による商標確認</td></tr>
+                <tr><td>税務・源泉・租税条約</td><td>印税、海外送金、海外個人、ロイヤリティ</td><td>源泉負担、税率、租税条約、為替、消費税</td><td>経理・税務確認へエスカレーション</td></tr>
+                <tr><td>現地強行法規</td><td>海外販売、海外ライセンス、海外個人委託</td><td>準拠法条項だけでなく、現地法確認を別紙化</td><td>国・地域別チェックシートを作成</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section id="workflow" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>14. 標準業務フロー</h2>
+              <p>契約書だけで完結させず、取引申請・文書番号・押印・検収・支払通知・保管まで接続します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="decision-tree">
+              <div class="decision-step knowledge-card"><div class="num">1</div><div><h3>案件登録</h3><p>案件名、稟議番号、担当部署、取引目的を登録。案件IDを以後の文書に紐づける。</p></div></div>
+              <div class="decision-step knowledge-card"><div class="num">2</div><div><h3>取引先確認</h3><p>取引先マスタを検索し、未登録・変更ありの場合は登録／変更申請を行う。</p></div></div>
+              <div class="decision-step knowledge-card"><div class="num">3</div><div><h3>取引申請</h3><p>契約類型、金額、契約期間、海外性、個人情報、知財、支払条件を入力する。</p></div></div>
+              <div class="decision-step knowledge-card"><div class="num">4</div><div><h3>法務レビュー・文書作成</h3><p>契約類型に応じて、ひな形、発注書、条件書、覚書を選択し、文書番号を発番する。</p></div></div>
+              <div class="decision-step knowledge-card"><div class="num">5</div><div><h3>押印・電子署名</h3><p>CloudSign送信、署名完了、締結済ファイル保管、台帳更新を行う。</p></div></div>
+              <div class="decision-step knowledge-card"><div class="num">6</div><div><h3>納品・検収・支払通知</h3><p>発注番号と検収番号を紐づけ、支払通知書を作成。支払日を管理する。</p></div></div>
+              <div class="decision-step knowledge-card"><div class="num">7</div><div><h3>更新・終了管理</h3><p>契約終了日、更新期限、解除通知期限、在庫販売期間、報告期限をモニタリングする。</p></div></div>
+            </div>
+          </div>
+        </section>
+
+        <section id="checklists" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>15. チェックリスト</h2>
+              <p>事業部の一次確認と法務レビューを分け、確認漏れを防ぎます。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <div class="grid cols-2">
+              <div class="card knowledge-card">
+                <h3>契約レビュー共通チェック</h3>
+                <ul>
+                  <li>当事者は正しいか。法人・個人・海外事業者の区別はあるか。</li>
+                  <li>契約類型は実態に合っているか。</li>
+                  <li>対象物・業務内容・許諾範囲は特定されているか。</li>
+                  <li>金銭条件、支払日、税務処理は明確か。</li>
+                  <li>知的財産権と成果物の帰属は明確か。</li>
+                  <li>契約終了後の処理は定められているか。</li>
+                </ul>
+              </div>
+              <div class="card knowledge-card">
+                <h3>海外契約チェック</h3>
+                <ul>
+                  <li>準拠法・紛争解決・言語優先は妥当か。</li>
+                  <li>現地強行法規が問題にならないか。</li>
+                  <li>源泉税・租税条約・VAT等の確認が必要か。</li>
+                  <li>制裁・輸出管理・反贈収賄リスクはないか。</li>
+                  <li>個人情報・データ移転が含まれるか。</li>
+                  <li>海外個人への業務委託の場合、労務性・税務を確認したか。</li>
+                </ul>
+              </div>
+              <div class="card knowledge-card">
+                <h3>業務委託・発注チェック</h3>
+                <ul>
+                  <li>業務内容と成果物が仕様書で特定されているか。</li>
+                  <li>納期・検収・支払日が矛盾していないか。</li>
+                  <li>支払条件は取適法・フリーランス法上問題ないか。</li>
+                  <li>指揮命令・労務管理に見える記載がないか。</li>
+                  <li>権利譲渡・利用許諾のどちらか明確か。</li>
+                  <li>再委託、個人情報、秘密情報の取扱いは適切か。</li>
+                </ul>
+              </div>
+              <div class="card knowledge-card">
+                <h3>ライセンス契約チェック</h3>
+                <ul>
+                  <li>許諾対象、地域、言語、媒体、期間、独占性は明確か。</li>
+                  <li>再許諾・製造委託・販売委託の可否は定められているか。</li>
+                  <li>ロイヤリティ計算式、控除項目、報告時期は明確か。</li>
+                  <li>翻訳物・派生物の権利帰属は明確か。</li>
+                  <li>商品化・映像化・デジタルゲーム化が不用意に含まれていないか。</li>
+                  <li>終了後在庫販売・素材返還・販売停止が定められているか。</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="templates" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>16. テンプレート管理</h2>
+              <p>テンプレートは、単なるWord/HTMLファイルではなく、入力項目・生成文書・関連台帳をセットで管理します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <table class="knowledge-card">
+              <thead><tr><th>テンプレート</th><th>主な入力項目</th><th>関連台帳</th><th>関連文書</th></tr></thead>
+              <tbody>
+                <tr><td>NDA</td><td>相手方、目的、開示範囲、期間</td><td>契約台帳</td><td>秘密保持契約書</td></tr>
+                <tr><td>業務委託基本契約</td><td>相手方、業務類型、支払条件、権利帰属</td><td>契約台帳、取引先台帳</td><td>発注書、仕様書、検収書</td></tr>
+                <tr><td>発注書</td><td>発注番号、業務内容、納期、報酬、支払日</td><td>文書番号台帳、支払予定台帳</td><td>仕様書、検収書、支払通知書</td></tr>
+                <tr><td>ライセンス基本契約</td><td>対象作品、地域、言語、期間、料率</td><td>契約台帳、作品台帳</td><td>個別利用許諾条件書、追加作品合意書</td></tr>
+                <tr><td>個別利用許諾条件書</td><td>原著作名、対象製品、再許諾先、金銭条件</td><td>作品台帳、ライセンス台帳</td><td>報告書、利用許諾計算書</td></tr>
+                <tr><td>覚書</td><td>原契約、変更内容、適用開始日、清算条件</td><td>契約台帳、版管理台帳</td><td>原契約、変更対照表、別紙</td></tr>
+                <tr><td>支払通知書</td><td>対象発注番号、検収番号、支払種別、支払額、支払日</td><td>支払予定台帳、経理連携台帳</td><td>検収書、利用許諾計算書</td></tr>
+              </tbody>
+            </table>
+            <div class="callout"><strong>テンプレート化の方針：</strong>契約本文の変数だけでなく、「どの台帳に、どの文書番号で、どの関連文書と紐づくか」までテンプレート定義に含めます。</div>
+          </div>
+        </section>
+
+        <section id="next" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>17. 次回以降の拡張候補</h2>
+              <p>v0.3では基礎契約類型、請負・委任／準委任、ライセンス契約、著作権法上の権利一覧と構成要素を中心にしています。次回以降、以下を追加すると実務ポータルとして完成度が上がります。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <ul class="pill-list knowledge-card">
+              <li>契約類型別の詳細ページ分割</li>
+              <li>条文例の折りたたみ表示</li>
+              <li>Google Drive上のひな形リンク接続</li>
+              <li>CloudSign送信手順</li>
+              <li>Slackワークフローへのリンク</li>
+              <li>国別の現地法調査ページ</li>
+              <li>リスクレベル別の経営報告基準</li>
+              <li>改訂履歴・更新承認フロー</li>
+              <li>用語集</li>
+              <li>契約レビューFAQ</li>
+            </ul>
+          </div>
+        </section>
+
+
+        <section id="references" class="knowledge-section">
+          <div class="section-title">
+            <div>
+              <h2>参考法令・確認先</h2>
+              <p>法令改正があり得るため、条文番号・内容は運用時点の最新版で確認します。</p>
+            </div>
+          </div>
+          <div class="panel">
+            <ul class="knowledge-card">
+              <li>民法（e-Gov法令検索）：契約総則、13典型契約、請負、委任、準委任等</li>
+              <li>商法（e-Gov法令検索）：商行為、交互計算、匿名組合、仲立営業、問屋営業、運送取扱営業等</li>
+              <li>著作権法（e-Gov法令検索）：著作者人格権、著作権、著作隣接権、出版権、譲渡・利用許諾</li>
+              <li>著作権情報センター（CRIC）：著作者の権利、著作権Q&A、著作物利用の基礎解説</li>
+              <li>商標法：ライセンス、商標使用、登録表示、権利侵害対応</li>
+              <li>取適法・フリーランス法・下請法：業務委託、発注書、支払条件</li>
+            </ul>
+          </div>
+        </section>
+
+        <div class="footer">© Internal Legal Knowledge Book. This page is for internal operational reference and does not constitute legal advice to third parties.</div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    const input = document.getElementById('searchInput');
+    const cards = Array.from(document.querySelectorAll('.knowledge-card'));
+    const sections = Array.from(document.querySelectorAll('.knowledge-section'));
+    const noResults = document.getElementById('noResults');
+
+    function normalize(text) {
+      return (text || '').toLowerCase().replace(/\s+/g, '');
+    }
+
+    input.addEventListener('input', function () {
+      const q = normalize(input.value);
+      let visibleCount = 0;
+
+      if (!q) {
+        cards.forEach(card => card.classList.remove('hidden-by-search'));
+        sections.forEach(section => section.classList.remove('hidden-by-search'));
+        noResults.style.display = 'none';
+        return;
+      }
+
+      cards.forEach(card => {
+        const hit = normalize(card.innerText).includes(q);
+        card.classList.toggle('hidden-by-search', !hit);
+        if (hit) visibleCount++;
+      });
+
+      sections.forEach(section => {
+        const hasVisibleCard = Array.from(section.querySelectorAll('.knowledge-card')).some(card => !card.classList.contains('hidden-by-search'));
+        const sectionTitleHit = normalize(section.querySelector('.section-title')?.innerText || '').includes(q);
+        section.classList.toggle('hidden-by-search', !(hasVisibleCard || sectionTitleHit));
+      });
+
+      noResults.style.display = visibleCount === 0 ? 'block' : 'none';
+    });
+  </script>
+</body>
+</html>

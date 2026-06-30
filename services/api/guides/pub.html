@@ -1,0 +1,516 @@
+<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>出版契約・書類発行フローガイド</title>
+<style>
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--teal:#085041;--teal-s:#e1f5ee;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;--sw:228px;
+--ca:#27500a;--cb:#085041}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+#sidebar{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--navy);overflow-y:auto;display:flex;flex-direction:column;z-index:100}
+#sh{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+#sh h1{font-size:9px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-transform:uppercase}
+#sh p{font-size:11.5px;color:rgba(255,255,255,.92);font-weight:600;margin-top:3px;line-height:1.4}
+nav{padding:6px 0 20px}
+.ns{display:block;padding:5px 14px;font-size:9px;font-weight:700;color:rgba(255,255,255,.32);letter-spacing:.07em;text-transform:uppercase;margin-top:9px}
+.nl{display:block;padding:4px 14px;font-size:11.5px;color:rgba(255,255,255,.7);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nl:hover,.nl.active{color:#fff;background:rgba(255,255,255,.09);border-left-color:#e63946}
+.nsub{display:block;padding:3px 14px 3px 24px;font-size:10.5px;color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
+.nsub:hover{color:rgba(255,255,255,.82)}
+.bdg{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;margin-right:4px;vertical-align:middle}
+.bA{background:#eaf3de;color:var(--ca)}.bB{background:var(--teal-s);color:var(--cb)}.b3{background:#faeeda;color:var(--gold)}
+#main{margin-left:var(--sw);padding:36px 46px 80px;max-width:calc(var(--sw) + 850px)}
+h1.dt{font-size:21px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:9px;margin-bottom:5px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:28px}
+.chap{border-radius:8px;padding:16px 22px;margin:32px 0 14px;scroll-margin-top:16px}
+.chap.cA{background:var(--ca)}.chap.cB{background:var(--cb)}.chap.c3{background:var(--navy)}
+.chap .cn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px}
+.chap h2{font-size:16px;font-weight:700;color:#fff;margin:0}
+.chap .cdesc{font-size:12px;color:rgba(255,255,255,.65);margin-top:5px}
+h2.sec{font-size:16px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:28px 0 11px;scroll-margin-top:20px}
+h3.sub{font-size:13.5px;font-weight:700;color:var(--navy-l);margin:18px 0 9px;padding-bottom:4px;border-bottom:1px solid var(--g3);scroll-margin-top:20px}
+h4.sh4{font-size:12.5px;font-weight:700;color:var(--tx2);margin:11px 0 7px}
+p{margin-bottom:9px;color:var(--tx2)}strong{color:var(--tx)}
+ul,ol{padding-left:20px;margin-bottom:9px;color:var(--tx2)}li{margin-bottom:3px}
+/* STEP HEADER */
+.shb{border-radius:7px;padding:12px 16px;margin-bottom:14px;scroll-margin-top:16px}
+.shb h3{font-size:13.5px;font-weight:700;color:#fff;margin:0}
+.shb .sn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:2px}
+.sA{background:var(--ca)}.sB{background:var(--cb)}
+/* CALLOUT */
+.cl{border-left:3px solid;padding:8px 12px;border-radius:0 5px 5px 0;margin:9px 0;font-size:12.5px}
+.cl-w{border-color:var(--red);background:var(--red-s)}.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-t{border-color:var(--green);background:var(--green-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}
+/* TABLE */
+.tw{overflow-x:auto;margin:9px 0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:var(--navy);color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:11.5px;white-space:nowrap}
+tbody tr:nth-child(even){background:var(--g1)}
+tbody td{padding:6px 9px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:hover{background:#f0f4ff}
+td.tc{font-weight:600;color:var(--navy);font-size:11.5px;white-space:nowrap}
+td.tcr{font-weight:700;color:var(--red)}
+td.tcg{font-weight:700;color:var(--green)}
+td.law{font-size:11px;color:var(--g5)}
+/* CASE COMPARE */
+.case-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+.case-card{border-radius:7px;padding:16px 18px;border:2px solid}
+.case-card.A{border-color:var(--ca);background:#f4f9f0}
+.case-card.B{border-color:var(--cb);background:var(--teal-s)}
+.case-card h4{font-size:13px;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid}
+.case-card.A h4{color:var(--ca);border-color:var(--ca)}
+.case-card.B h4{color:var(--cb);border-color:var(--cb)}
+.case-card ul{padding-left:16px;font-size:12px;color:var(--tx2)}
+/* STEP TABLE */
+.step-tbl thead th{white-space:normal}
+.step-num-cell{font-weight:700;color:#fff;text-align:center;font-size:12px;padding:6px 8px;white-space:nowrap}
+.step-A{background:var(--ca)}.step-B{background:var(--cb)}
+/* CHECKLIST */
+.ck{list-style:none;padding:0;margin:7px 0}
+.ck li{padding:7px 10px 7px 30px;position:relative;border-bottom:1px solid var(--g2);font-size:12px;color:var(--tx2)}
+.ck li::before{content:"☐";position:absolute;left:7px;font-size:13px;color:var(--navy);line-height:1.5}
+.ck li:last-child{border-bottom:none}
+/* BADGE */
+.badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:3px}
+.b-biz{background:#eaf3de;color:var(--ca)}.b-leg{background:#faeeda;color:var(--gold)}.b-au{background:var(--g2);color:#374151;border:1px solid var(--g3)}
+.tag{display:inline-block;font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:3px;margin-right:2px}
+.t-A{background:#eaf3de;color:var(--ca)}.t-B{background:var(--teal-s);color:var(--cb)}.t-red{background:var(--red-s);color:var(--red)}.t-law{background:#e6effa;color:var(--navy)}
+/* DOC BADGE */
+.doc-badge{display:inline-block;font-size:10px;font-weight:700;padding:2px 8px;border-radius:3px;border:1px solid;margin-right:3px;white-space:nowrap}
+.doc-A{background:#eaf3de;color:var(--ca);border-color:var(--ca)}.doc-B{background:var(--teal-s);color:var(--cb);border-color:var(--cb)}.doc-both{background:#fef3e2;color:var(--gold);border-color:var(--gold)}
+/* MISC */
+.ap{background:var(--g1);border-radius:7px;padding:14px 18px;margin-bottom:14px;font-size:12.5px}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
+.faq-item{margin-bottom:12px}
+.faq-q{font-weight:700;color:var(--navy);margin-bottom:4px;font-size:13px}
+.faq-a{padding:9px 13px;background:var(--g1);border-radius:4px;font-size:12.5px;color:var(--tx2);border-left:3px solid var(--g3)}
+</style>
+
+<style id="gas-portal-back-style">
+.portal-back-button{position:fixed;right:16px;bottom:16px;z-index:3000;display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:#1d3557;color:#fff;text-decoration:none;font-size:12px;font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,.22);opacity:.92;transition:opacity .15s,transform .15s}
+.portal-back-button:hover{opacity:1;transform:translateY(-1px)}
+@media print{.portal-back-button{display:none}}
+</style>
+
+</head>
+<body>
+  <?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<aside id="sidebar">
+<div id="sh"><h1>法務部</h1><p>出版事業部<br>契約・書類発行フローガイド</p></div>
+<nav>
+<a class="nl" href="#top">概要</a>
+<a class="nl" href="#classify">ケース分類の考え方</a>
+<span class="ns">ケースA：執筆依頼あり</span>
+<a class="nl" href="#caseA"><span class="bdg bA">A</span>フロー概要</a>
+<a class="nsub" href="#A1">Step 1 条件検討・合意形成</a>
+<a class="nsub" href="#A2">Step 2 発注書交付</a>
+<a class="nsub" href="#A3">Step 3 執筆着手・作業中</a>
+<a class="nsub" href="#A4">Step 4 納品・受領</a>
+<a class="nsub" href="#A5">Step 5 検収</a>
+<a class="nsub" href="#A6">Step 6 支払</a>
+<a class="nsub" href="#A-check">書類チェックリスト</a>
+<span class="ns">ケースB：既成原稿あり</span>
+<a class="nl" href="#caseB"><span class="bdg bB">B</span>フロー概要</a>
+<a class="nsub" href="#B1">Step 1 条件検討・合意形成</a>
+<a class="nsub" href="#B2">Step 2 出版契約書の締結</a>
+<a class="nsub" href="#B3">Step 3 納品・原稿受領</a>
+<a class="nsub" href="#B4">Step 4 支払</a>
+<a class="nsub" href="#B-check">書類チェックリスト</a>
+<span class="ns">参考</span>
+<a class="nl" href="#docs">各書類の記載事項</a>
+<a class="nl" href="#faq">Q&amp;A</a>
+<a class="nl" href="#laws">関連法令</a>
+</nav>
+</aside>
+
+<main id="main">
+<h1 class="dt" id="top">出版事業部 契約・書類発行フローガイド</h1>
+<p class="dm">作成：法務部　｜　著者への執筆依頼から支払いまでの整理</p>
+
+<div class="cl cl-i">このガイドは、出版事業部における<strong>著者との取引を2ケースに分類</strong>し、それぞれの書類発行フローと法令上の義務を整理したものです。まず<a href="#classify" style="color:var(--blue)">ケース分類</a>で自分の取引がどちらかを確認してからフローに進んでください。</div>
+
+<hr class="sd">
+
+<!-- ケース分類 -->
+<h2 class="sec" id="classify">ケース分類の考え方</h2>
+<p>著者（作家）との取引は、<strong>「執筆を依頼するかどうか」</strong>によって、法的性質・必要書類・支払構造が大きく異なります。</p>
+
+<div class="case-grid">
+  <div class="case-card A">
+    <h4>ケースA：執筆依頼あり（業務委託）</h4>
+    <ul>
+      <li><strong>執筆の有無：</strong>当社の依頼に基づいて著者が新たに執筆する</li>
+      <li><strong>支払の構造：</strong>①委託報酬（執筆料）＋②利用許諾料（出版契約）の両方が発生</li>
+      <li><strong>フリーランス法：</strong>業務委託に該当するため、<strong>発注書交付義務あり</strong></li>
+      <li><strong>必要書類：</strong>発注書・検収書・出版契約書・支払通知書</li>
+    </ul>
+  </div>
+  <div class="case-card B">
+    <h4>ケースB：既成原稿あり（利用許諾のみ）</h4>
+    <ul>
+      <li><strong>執筆の有無：</strong>原稿はすでに存在し、当社は出版権・利用許諾のみを得る</li>
+      <li><strong>支払の構造：</strong>②利用許諾料のみが発生</li>
+      <li><strong>フリーランス法：</strong>業務委託ではないため、発注書交付義務は<strong>原則なし</strong></li>
+      <li><strong>必要書類：</strong>出版契約書・支払通知書</li>
+    </ul>
+  </div>
+</div>
+
+<div class="cl cl-w"><strong>加筆修正が生じた場合はケースAとして別処理：</strong> 既成原稿であっても、編集・加筆修正等の作業を当社が依頼する場合、その作業部分は業務委託（ケースA）に該当します。加筆修正が発生した時点でその作業について<strong>発注書（→検収書）を別途発行</strong>し、ケースAのフローで処理してください。</div>
+
+<div class="tw"><table>
+<thead><tr><th></th><th>ケース区分</th><th>執筆（制作）の有無</th><th>支払の構造</th></tr></thead>
+<tbody>
+<tr><td class="tc"><span class="tag t-A">A</span></td><td><strong>執筆依頼あり（業務委託）</strong></td><td>当社の依頼に基づいて著者が新たに執筆する</td><td>①委託報酬（執筆料）＋②利用許諾料（出版契約）</td></tr>
+<tr><td class="tc"><span class="tag t-B">B</span></td><td><strong>既成原稿あり（利用許諾のみ）</strong></td><td>原稿はすでに存在し、当社は出版権・利用許諾のみを得る</td><td>②利用許諾料のみ（出版契約）</td></tr>
+</tbody></table></div>
+
+<hr class="sd">
+
+<!-- ========== ケースA ========== -->
+<div class="chap cA" id="caseA">
+  <div class="cn">Case A</div>
+  <h2>執筆依頼あり（業務委託）のフロー</h2>
+  <div class="cdesc">著者に執筆を依頼する場合。業務委託契約（準委任または請負）と出版利用許諾契約の二層構造。</div>
+</div>
+
+<div class="cl cl-n"><strong>支払は：</strong>①執筆料（委託報酬）＋②利用許諾料の<strong>両方</strong>が発生します。</div>
+
+<h3 class="sub">ケースA フロー概要</h3>
+<div class="dw" style="background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:12px 12px 9px;margin:9px 0"><div id="dg-caseA"><svg viewBox="0 0 740 64" style="width: 100%; display: block;"><defs><marker id="fl0a" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#9CA3AF"></polygon></marker></defs><rect x="0" y="1" width="111" height="62" rx="5" fill="#27500a"></rect><text x="55.5" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 1</text><text x="55.5" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">条件検討・合意形成</text><line x1="113" y1="32" x2="125" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl0a)"></line><rect x="125" y="1" width="111" height="62" rx="5" fill="#27500a"></rect><text x="180.5" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 2</text><text x="180.5" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">発注書交付</text><text x="180.5" y="47" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="rgba(255,255,255,.7)">★発注書</text><line x1="238" y1="32" x2="250" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl0a)"></line><rect x="250" y="1" width="111" height="62" rx="5" fill="#27500a"></rect><text x="305.5" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 3</text><text x="305.5" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">執筆着手・作業中</text><line x1="363" y1="32" x2="375" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl0a)"></line><rect x="375" y="1" width="111" height="62" rx="5" fill="#27500a"></rect><text x="430.5" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 4</text><text x="430.5" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">納品・受領</text><line x1="488" y1="32" x2="500" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl0a)"></line><rect x="500" y="1" width="111" height="62" rx="5" fill="#27500a"></rect><text x="555.5" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 5</text><text x="555.5" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">検収</text><text x="555.5" y="47" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="rgba(255,255,255,.7)">★検収書・出版契約書</text><line x1="613" y1="32" x2="625" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl0a)"></line><rect x="625" y="1" width="111" height="62" rx="5" fill="#27500a"></rect><text x="680.5" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 6</text><text x="680.5" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">支払</text><text x="680.5" y="47" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="rgba(255,255,255,.7)">★支払通知書</text></svg></div></div>
+
+<div class="tw"><table>
+<thead><tr><th style="width:60px">Step</th><th>フェーズ</th><th>発行書類</th><th>担当</th></tr></thead>
+<tbody>
+<tr><td class="step-num-cell step-A">1</td><td>条件検討・合意形成</td><td>（書類なし）</td><td><span class="badge b-biz">事業部</span></td></tr>
+<tr><td class="step-num-cell step-A">2</td><td>発注書交付 <span class="t-red tag">必須</span></td><td><span class="doc-badge doc-A">★ 発注書</span></td><td><span class="badge b-biz">事業部</span> / <span class="badge b-leg">法務</span></td></tr>
+<tr><td class="step-num-cell step-A">3</td><td>執筆着手・作業中</td><td>変更が生じた場合：変更合意書</td><td><span class="badge b-biz">事業部</span></td></tr>
+<tr><td class="step-num-cell step-A">4</td><td>納品（成果物受領）</td><td>（書類なし）</td><td><span class="badge b-biz">事業部</span></td></tr>
+<tr><td class="step-num-cell step-A">5</td><td>検収 <span class="t-red tag">必須</span></td><td><span class="doc-badge doc-A">★ 検収書</span> <span class="doc-badge doc-both">★ 出版契約書</span></td><td><span class="badge b-biz">事業部</span> / <span class="badge b-leg">法務</span></td></tr>
+<tr><td class="step-num-cell step-A">6</td><td>支払 <span class="t-red tag">必須</span></td><td><span class="doc-badge doc-A">★ 支払通知書</span></td><td><span class="badge b-biz">事業部</span> / <span class="badge b-leg">法務</span></td></tr>
+</tbody></table></div>
+
+<!-- A Step 1 -->
+<div class="shb sA" id="A1"><div class="sn">Case A / Step 1</div><h3>条件検討・合意形成</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge b-biz">事業部</span></td>
+  <td>執筆内容・分量・納期・報酬額（執筆料・利用許諾料）を協議する。<strong>口頭のみで進めない</strong>（書面化必須）</td>
+  <td class="law">フリーランス法第3条：発注前に条件を書面で明示する義務あり。口頭合意後に書面化は法令違反になりうる</td>
+</tr>
+</tbody></table></div>
+<div class="cl cl-w"><strong>口頭のみで条件を決めて進めることは禁止。</strong> 発注書交付（Step 2）まで、発注行為を行わないこと。</div>
+
+<!-- A Step 2 -->
+<div class="shb sA" id="A2"><div class="sn">Case A / Step 2</div><h3>発注書交付【必須】</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th></tr></thead>
+<tbody>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-biz">事業部</span></td>
+  <td>
+    Slackにて <strong><code>/法務依頼</code></strong> から <strong>「発注書（purchase_order）」</strong> を選択し作成依頼を申請する<br>
+    <div style="background:#fff;border:1px solid var(--g3);border-radius:5px;padding:10px 14px;margin-top:8px;font-size:11.5px;">
+      <strong style="font-size:11px;color:var(--g5)">📝 入力フォームの記入項目</strong>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:6px;">
+        <div>・依頼種別：<strong>発注書 (purchase_order)</strong></div>
+        <div>・件名：案件名（著作物タイトル等）</div>
+        <div>・希望納期（文書作成等）：発注書が必要な日</div>
+        <div>・相手方名称：著者の氏名（正式名称）</div>
+        <div>・区分：個人 / 法人を選択</div>
+        <div>・法人番号 / 社内個人コード：13桁の番号または社内コード</div>
+        <div style="grid-column:1/-1">・相談・依頼詳細：執筆内容・分量・納期・報酬額（執筆料）・支払条件・検収期間等を記載</div>
+      </div>
+    </div>
+  </td>
+</tr>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-leg">法務部</span></td>
+  <td>依頼内容に応じて発注書を作成。事業部が著者に内容確認後、<strong>クラウドサインで著者へ送信</strong>（正式な書面交付）</td>
+</tr>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-au">著者</span></td>
+  <td>クラウドサインで発注書を確認・署名（受領・承諾）</td>
+</tr>
+</tbody></table></div>
+<div class="cl cl-w"><strong>発注書の交付は発注前または発注と同時に行うこと。</strong> 受領後の一方的変更は原則禁止。変更時は変更合意書が必要。</div>
+<div class="cl cl-i"><strong>【フリーランス法第3条】発注書の必須記載事項：</strong> ①業務内容・②報酬額（執筆料）・③支払期日（受領日から60日以内）・④納期/納品方法・⑤検収期間</div>
+
+<!-- A Step 3 -->
+<div class="shb sA" id="A3"><div class="sn">Case A / Step 3</div><h3>執筆着手・作業中</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge b-au">著者</span></td>
+  <td>執筆を開始する</td>
+  <td class="law">フリーランス法第4条：受託後の不当な変更・キャンセル禁止</td>
+</tr>
+<tr>
+  <td><span class="badge b-biz">事業部</span></td>
+  <td>途中変更が必要な場合は<strong>変更合意書を発行</strong>する。条件の一方的変更は禁止</td>
+  <td class="law">やむを得ない場合も著者の同意が必要</td>
+</tr>
+</tbody></table></div>
+
+<!-- A Step 4 -->
+<div class="shb sA" id="A4"><div class="sn">Case A / Step 4</div><h3>納品（成果物受領）</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge b-au">著者</span></td>
+  <td>原稿・成果物を納品する</td>
+  <td class="law">—</td>
+</tr>
+<tr>
+  <td><span class="badge b-biz">事業部</span></td>
+  <td>成果物を受領し、<strong>受領日を必ず記録する</strong>（60日ルールの起算日）</td>
+  <td class="law">フリーランス法第3条・第5条：受領日が支払期限の起算日。検収期間内に合否通知がない場合は「みなし合格」</td>
+</tr>
+</tbody></table></div>
+<div class="cl cl-n"><strong>受領日の記録は必須。</strong> 受領日から60日以内に支払を完了する義務が発生します。</div>
+
+<!-- A Step 5 -->
+<div class="shb sA" id="A5"><div class="sn">Case A / Step 5</div><h3>検収【必須】</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th></tr></thead>
+<tbody>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-biz">事業部</span></td>
+  <td>
+    発注書の仕様と成果物を照合し、合否を判断する<br>
+    <div style="display:flex;gap:12px;margin-top:8px;flex-wrap:wrap">
+      <div style="flex:1;min-width:200px;background:var(--green-s);border-left:3px solid var(--green);padding:8px 12px;border-radius:0 4px 4px 0;font-size:12px;">
+        <strong style="color:var(--green)">合格の場合</strong><br>
+        Slackの <code>/法務依頼</code> から<strong>「納品 / 検収書（delivery_inspec）」</strong>作成依頼を送信する
+        <div style="background:#fff;border:1px solid var(--g3);border-radius:5px;padding:8px 12px;margin-top:6px;font-size:11px;">
+          <strong style="color:var(--g5)">📝 入力フォームの記入項目</strong><br>
+          ・依頼種別：<strong>納品 / 検収書 (delivery_inspec)</strong><br>
+          ・件名：案件名（著作物タイトル等）<br>
+          ・相手方名称・区分・法人番号<br>
+          ・相談・依頼詳細：発注番号・納品内容・合格日等
+        </div>
+      </div>
+      <div style="flex:1;min-width:200px;background:var(--red-s);border-left:3px solid var(--red);padding:8px 12px;border-radius:0 4px 4px 0;font-size:12px;">
+        <strong style="color:var(--red)">不合格の場合</strong><br>
+        理由と是正指示を<strong>書面（メール等）</strong>で著者へ通知し再納品を求める<br>
+        <span style="font-size:10.5px;color:var(--g5)">※ 期限内に通知がない場合はみなし合格（フリ法第5条第2項）</span>
+      </div>
+    </div>
+  </td>
+</tr>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-leg">法務部</span></td>
+  <td>検収書を作成し、<strong>支払申請用Excelファイルを添付して</strong>事業部へ共有する。あわせて<strong>出版契約書</strong>を作成・クラウドサインで送信する</td>
+</tr>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-biz">事業部</span></td>
+  <td>共有された検収書を著者へ送信する</td>
+</tr>
+</tbody></table></div>
+<div class="cl cl-i"><strong>出版契約書の締結タイミング：</strong> 原則として検収完了後が最も安全。ただし条件が確定しているなら「検収完了を停止条件とした出版契約書の締結」として検収前に締結することも可能（→ <a href="#faq" style="color:var(--blue)">Q&amp;A Q2</a> 参照）。</div>
+
+<!-- A Step 6 -->
+<div class="shb sA" id="A6"><div class="sn">Case A / Step 6</div><h3>支払【必須】</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge b-biz">事業部</span></td>
+  <td>①執筆料（委託報酬）と②利用許諾料をそれぞれ支払申請する。受領日から原則<strong>60日以内</strong>に完了</td>
+  <td class="law">フリーランス法第6条：支払期日は受領日から60日以内。超える期日は無効。遅延損害金は年14.6%</td>
+</tr>
+<tr>
+  <td><span class="badge b-leg">法務部</span></td>
+  <td>支払通知書（利用許諾料報告書）を発行し著者へ交付する<br>
+  <span style="font-size:11.5px;color:var(--g5)">※ 著者から請求書が届いていなくても支払通知書を根拠に支払可能</span></td>
+  <td class="law">インボイス制度：著者が適格請求書発行事業者か確認要。源泉徴収義務（10.21%）に注意</td>
+</tr>
+</tbody></table></div>
+
+<!-- A チェックリスト -->
+<h3 class="sub" id="A-check">ケースA 書類チェックリスト</h3>
+<ul class="ck">
+<li><span class="doc-badge doc-A">発注書（業務委託発注書）</span> → 発注前または発注時にクラウドサインで交付</li>
+<li><span class="doc-badge doc-A">検収書</span> → 納品受領・検収完了時に <code>/法務依頼</code> から依頼</li>
+<li><span class="doc-badge doc-both">出版契約書（利用許諾契約）</span> → 検収完了時（または条件確定後）にクラウドサインで締結</li>
+<li><span class="doc-badge doc-A">支払通知書（利用許諾料報告書）</span> → 支払時に発行・著者へ交付</li>
+</ul>
+
+<hr class="sd">
+
+<!-- ========== ケースB ========== -->
+<div class="chap cB" id="caseB">
+  <div class="cn">Case B</div>
+  <h2>既成原稿あり（利用許諾のみ）のフロー</h2>
+  <div class="cdesc">著者がすでに執筆を完了している原稿について、当社が出版権・利用許諾を得るケース。</div>
+</div>
+
+<div class="cl cl-t"><strong>支払は：</strong>②利用許諾料<strong>のみ</strong>が発生します。発注書交付義務は原則なし。</div>
+
+<h3 class="sub">ケースB フロー概要</h3>
+<div class="dw" style="background:var(--g1);border:1px solid var(--g3);border-radius:6px;padding:12px 12px 9px;margin:9px 0"><div id="dg-caseB"><svg viewBox="0 0 740 64" style="width: 100%; display: block;"><defs><marker id="fl1a" markerWidth="7" markerHeight="5" refX="5" refY="2.5" orient="auto"><polygon points="0 0,6 2.5,0 5" fill="#9CA3AF"></polygon></marker></defs><rect x="0" y="1" width="174" height="62" rx="5" fill="#085041"></rect><text x="87" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 1</text><text x="87" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">条件検討・合意形成</text><line x1="176" y1="32" x2="188" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl1a)"></line><rect x="188" y="1" width="174" height="62" rx="5" fill="#085041"></rect><text x="275" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 2</text><text x="275" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">出版契約書の締結</text><text x="275" y="47" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="rgba(255,255,255,.7)">★出版契約書</text><line x1="364" y1="32" x2="376" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl1a)"></line><rect x="376" y="1" width="174" height="62" rx="5" fill="#085041"></rect><text x="463" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 3</text><text x="463" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">納品（原稿受領）</text><line x1="552" y1="32" x2="564" y2="32" stroke="#9CA3AF" stroke-width="1.5" marker-end="url(#fl1a)"></line><rect x="564" y="1" width="174" height="62" rx="5" fill="#085041"></rect><text x="651" y="20" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" font-weight="700" fill="rgba(255,255,255,.4)">Step 4</text><text x="651" y="33" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="700" fill="#fff">支払</text><text x="651" y="47" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="8.5" fill="rgba(255,255,255,.7)">★支払通知書</text></svg></div></div>
+
+<div class="tw"><table>
+<thead><tr><th style="width:60px">Step</th><th>フェーズ</th><th>発行書類</th><th>担当</th></tr></thead>
+<tbody>
+<tr><td class="step-num-cell step-B">1</td><td>条件検討・合意形成</td><td>（書類なし）</td><td><span class="badge b-biz">事業部</span></td></tr>
+<tr><td class="step-num-cell step-B">2</td><td>出版契約書の締結 <span class="t-red tag">必須</span></td><td><span class="doc-badge doc-both">★ 出版契約書</span></td><td><span class="badge b-biz">事業部</span> / <span class="badge b-leg">法務</span></td></tr>
+<tr><td class="step-num-cell step-B">3</td><td>納品（原稿・データ受領）</td><td>（受領記録のみ・社内管理）</td><td><span class="badge b-biz">事業部</span></td></tr>
+<tr><td class="step-num-cell step-B">4</td><td>支払</td><td><span class="doc-badge doc-B">★ 支払通知書</span></td><td><span class="badge b-biz">事業部</span> / <span class="badge b-leg">法務</span></td></tr>
+</tbody></table></div>
+
+<!-- B Step 1 -->
+<div class="shb sB" id="B1"><div class="sn">Case B / Step 1</div><h3>条件検討・合意形成</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge b-biz">事業部</span></td>
+  <td>出版条件（利用許諾の範囲・印税率・利用許諾料等）を著者と協議する</td>
+  <td class="law">ケースBは業務委託ではなく利用許諾契約のため、フリーランス法の「発注書交付義務」は原則として適用されない。ただし加筆修正等の作業依頼が含まれる場合は発注書が必要</td>
+</tr>
+</tbody></table></div>
+<div class="cl cl-w"><strong>加筆修正の依頼が発生した瞬間に、その作業部分は業務委託（ケースA）に該当します。</strong> ケースBのままでは処理できないため、即座に発注書（→検収書）の発行へ切り替えること。</div>
+
+<!-- B Step 2 -->
+<div class="shb sB" id="B2"><div class="sn">Case B / Step 2</div><h3>出版契約書（利用許諾契約）の締結</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-biz">事業部</span></td>
+  <td>条件が確定したら法務部へ出版契約書の作成を依頼する（<code>/法務依頼</code>）</td>
+  <td class="law">著作権法第63条：利用許諾は書面で行うことが望ましい（口頭でも有効だが証明困難）</td>
+</tr>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-leg">法務部</span></td>
+  <td>出版契約書を作成し、<strong>クラウドサインで著者へ送信</strong>する</td>
+  <td class="law">発注書がないため、<strong>本契約書が取引条件の唯一の根拠</strong>となる。許諾範囲（電子書籍・翻訳・二次利用等）を明示すること</td>
+</tr>
+<tr>
+  <td style="white-space:nowrap"><span class="badge b-au">著者</span></td>
+  <td>クラウドサインで出版契約書を確認・署名（締結完了）</td>
+  <td class="law">著作権の譲渡と利用許諾は異なる。著作権者が著者のまま残る（許諾）ことを確認</td>
+</tr>
+</tbody></table></div>
+
+<!-- B Step 3 -->
+<div class="shb sB" id="B3"><div class="sn">Case B / Step 3</div><h3>納品（原稿・データ受領）</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge b-au">著者</span></td>
+  <td>原稿データを納品する</td>
+  <td class="law">—</td>
+</tr>
+<tr>
+  <td><span class="badge b-biz">事業部</span></td>
+  <td>著者から原稿データを受領し、<strong>受領日を必ず記録する</strong>（社内記録で足りる）</td>
+  <td class="law">ケースBは利用許諾のみのため、フリーランス法上の検収義務は発生しない。<strong>検収書は不要</strong></td>
+</tr>
+</tbody></table></div>
+<div class="cl cl-w"><strong>この段階で加筆修正依頼が生じた場合は、その作業部分についてケースAのフロー（発注書→検収書）を別途実施すること。</strong></div>
+
+<!-- B Step 4 -->
+<div class="shb sB" id="B4"><div class="sn">Case B / Step 4</div><h3>支払</h3></div>
+<div class="tw"><table>
+<thead><tr><th>担当</th><th>作業</th><th>法令上のポイント</th></tr></thead>
+<tbody>
+<tr>
+  <td><span class="badge b-biz">事業部</span></td>
+  <td>利用許諾料（印税等）を支払申請する。支払サイクルは出版契約書の定めに従う</td>
+  <td class="law">フリーランス法の60日ルールは業務委託のみに適用されるが、遅延は信頼関係を損なうため適切に管理すること</td>
+</tr>
+<tr>
+  <td><span class="badge b-leg">法務部</span></td>
+  <td>支払通知書（利用許諾料報告書）を発行し著者へ交付する</td>
+  <td class="law">インボイス制度：著者が適格請求書発行事業者か確認要。源泉徴収義務（10.21%）に注意</td>
+</tr>
+</tbody></table></div>
+
+<!-- B チェックリスト -->
+<h3 class="sub" id="B-check">ケースB 書類チェックリスト</h3>
+<ul class="ck">
+<li><span class="doc-badge doc-both">出版契約書（利用許諾契約）</span> → 条件確定・合意時にクラウドサインで締結</li>
+<li><span class="doc-badge doc-B">支払通知書（利用許諾料報告書）</span> → 支払時に発行・著者へ交付</li>
+</ul>
+<div class="cl cl-w"><strong>加筆修正依頼が生じた場合は、その作業分についてケースAのフロー（発注書・検収書）を別途実施すること。</strong></div>
+
+<hr class="sd">
+
+<!-- 各書類の記載事項 -->
+<h2 class="sec" id="docs">各書類の主な記載事項</h2>
+<div class="tw"><table>
+<thead><tr><th>書類名</th><th>主な必須記載事項</th><th>法令根拠・備考</th></tr></thead>
+<tbody>
+<tr>
+  <td class="tc"><span class="doc-badge doc-A">発注書</span><br>業務委託発注書</td>
+  <td>①業務内容（執筆テーマ・仕様・分量）②報酬額（執筆料）および消費税額③納期・納品方法④支払期日（受領日から60日以内）⑤検収期間と検収方法⑥契約不適合時の対応⑦再委託の可否⑧キャンセル・変更条件</td>
+  <td class="law">フリーランス法第3条に基づく書面交付義務。電磁的方法（PDFメール等）での交付も可。発注前または発注と同時に交付</td>
+</tr>
+<tr>
+  <td class="tc"><span class="doc-badge doc-A">検収書</span></td>
+  <td>①発注書番号との紐付け②成果物の内容・数量③受領日④検収結果（合格/不合格）⑤合格の場合：確定した委託報酬額⑥不合格の場合：理由と是正要求内容</td>
+  <td class="law">フリーランス法第5条：受領日から60日以内に検収完了・合否通知。通知なき場合はみなし合格（著者に有利）</td>
+</tr>
+<tr>
+  <td class="tc"><span class="doc-badge doc-both">出版契約書</span><br>利用許諾契約</td>
+  <td>①著作物の特定（タイトル・内容等）②利用許諾の範囲（紙・電子・翻訳等）③許諾期間・地域④利用許諾料の算定方法（印税率・部数連動等）⑤支払時期・方法⑥著作者人格権の扱い⑦改訂・絶版の条件⑧著作権侵害時の対応</td>
+  <td class="law">著作権法第63条。著作権の「譲渡」と「利用許諾」を明確に区別すること。本契約が利用許諾料支払の根拠</td>
+</tr>
+<tr>
+  <td class="tc"><span class="doc-badge doc-A">支払通知書</span><span class="doc-badge doc-B" style="margin-top:3px;display:inline-block">利用許諾料報告書</span></td>
+  <td>①支払対象期間・対象著作物②販売部数・販売金額（部数連動の場合）③利用許諾料算定内訳④支払金額（税込・税抜）⑤源泉徴収額（10.21%）⑥実際の振込額⑦支払予定日</td>
+  <td class="law">請求書なしでも支払い可能な根拠書類。インボイス制度対応：著者が適格請求書発行事業者か確認要</td>
+</tr>
+</tbody></table></div>
+
+<hr class="sd">
+
+<!-- FAQ -->
+<h2 class="sec" id="faq">よくある疑問（Q&amp;A）</h2>
+<div class="faq-item">
+<div class="faq-q">Q1. 納期の記載を拒む著者や、納期が事前から不明確な場合の対応は？</div>
+<div class="faq-a">納期はフリーランス法の必須記載事項ではありませんが、業務内容・報酬額・支払期日は必須です。納期を明示できない場合は「別途協議の上定める」と記載し、合意した時点で変更合意書を発行する方法が現実的です。支払期日は受領日から起算するため、納品が遅れても支払期日はその受領日から60日以内となります。可能な限り目安を記載することを推奨します。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q2. 出版契約書を締結するタイミングはいつが適切か？</div>
+<div class="faq-a">原則として「検収完了後」が最も安全です。検収前に出版契約書を締結すると、成果物が発注内容を満たさない場合でも利用許諾が先行して成立するリスクがあります。ただし著者が早期に契約確保を希望する場合は、「検収または原稿受領を停止条件とした出版契約書の締結」として対応することが可能です。ケースBであれば発注書がないため、出版契約書が主要な合意書類となり、条件確定後に速やかに締結することが推奨されます。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q3. 支払通知書は、著者から請求書が届いている場合も発行が必要か？</div>
+<div class="faq-a">請求書と支払通知書は目的が異なります。請求書は著者側からの支払請求であり、支払通知書は当社側からの支払内容の通知・明細です。特に部数連動の印税計算がある場合は報告書の発行が実務上の標準です。請求書が届いていない著者への支払も、支払通知書を根拠に行うことができます。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q4. 既成原稿でも加筆修正がある場合、発注書は必要か？</div>
+<div class="faq-a">加筆修正作業を当社が依頼する場合、その作業部分はフリーランス法上の「業務委託」に該当し、発注書の交付義務が生じます。実務上は「出版契約書＋修正作業に関する発注書」の二本立てで対応するか、修正作業が軽微な場合は出版契約書の中に修正作業の条件（報酬・期限・仕様）を明記するかたちで対応してください。不明な場合は法務部に相談してください。</div>
+</div>
+
+<hr class="sd">
+
+<!-- 関連法令 -->
+<h2 class="sec" id="laws">主な関連法令</h2>
+<div class="tw"><table>
+<thead><tr><th>法令名</th><th>本フローに関連する主な規制内容</th></tr></thead>
+<tbody>
+<tr><td class="tc">フリーランス保護法<br><span style="font-size:10px;font-weight:400">2024年11月施行</span></td><td>業務委託時の書面交付義務（第3条）、報酬の支払期日（受領日から60日以内、第6条）、一方的な業務内容変更・キャンセルの禁止（第4条）、みなし合格（第5条）、遅延損害金（年14.6%、第10条）</td></tr>
+<tr><td class="tc">著作権法</td><td>著作権の利用許諾（第63条）、著作者人格権（第18〜20条）、職務著作（第15条）。著作権の譲渡と利用許諾の区別が重要</td></tr>
+<tr><td class="tc">所得税法・<br>インボイス制度</td><td>著者への支払時、源泉徴収義務（10.21%）が発生する場合がある。インボイス制度（2023年10月〜）：著者が適格請求書発行事業者でない場合、仕入税額控除に影響</td></tr>
+</tbody></table></div>
+
+<div style="background:var(--navy);border-radius:8px;padding:18px 22px;margin-top:28px;text-align:center">
+<div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:5px">お問い合わせ先</div>
+<div style="font-size:17px;font-weight:700;color:#fff;margin-bottom:3px">Arclight Inc. 経営管理本部 法務部</div>
+<div style="font-size:12px;color:rgba(255,255,255,.65)">個別事案についてはお気軽にご相談ください</div>
+</div>
+</main>
+
+
+
+
+</body></html>

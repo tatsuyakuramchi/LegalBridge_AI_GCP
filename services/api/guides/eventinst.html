@@ -1,0 +1,312 @@
+<!DOCTYPE html><html lang="ja"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>試遊インストラクション 業務委託 実務ガイド</title>
+<style>
+:root{--navy:#1d3557;--navy-l:#2a4a6e;--red:#e63946;--red-s:#fde8ea;--gold:#c47d1a;--gold-s:#fef3e2;--green:#1d9e75;--green-s:#e4f7f1;--blue:#378add;--blue-s:#e8f1fb;--teal:#085041;--teal-s:#e1f5ee;--g1:#f8f9fa;--g2:#e9ecef;--g3:#dee2e6;--g5:#6c757d;--tx:#212529;--tx2:#495057;--sw:228px;
+--ca:#27500a;--cb:#085041}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Hiragino Kaku Gothic ProN','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:var(--tx);background:#fff}
+#sidebar{position:fixed;top:0;left:0;width:var(--sw);height:100vh;background:var(--navy);overflow-y:auto;display:flex;flex-direction:column;z-index:100}
+#sh{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+#sh h1{font-size:9px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-transform:uppercase}
+#sh p{font-size:11.5px;color:rgba(255,255,255,.92);font-weight:600;margin-top:3px;line-height:1.4}
+nav{padding:6px 0 20px}
+.ns{display:block;padding:5px 14px;font-size:9px;font-weight:700;color:rgba(255,255,255,.32);letter-spacing:.07em;text-transform:uppercase;margin-top:9px}
+.nl{display:block;padding:4px 14px;font-size:11.5px;color:rgba(255,255,255,.7);text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.nl:hover,.nl.active{color:#fff;background:rgba(255,255,255,.09);border-left-color:#e63946}
+.nsub{display:block;padding:3px 14px 3px 24px;font-size:10.5px;color:rgba(255,255,255,.45);text-decoration:none;transition:color .15s}
+.nsub:hover{color:rgba(255,255,255,.82)}
+.bdg{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;font-size:9px;font-weight:700;margin-right:4px;vertical-align:middle}
+.bA{background:#eaf3de;color:var(--ca)}.bB{background:var(--teal-s);color:var(--cb)}.b3{background:#faeeda;color:var(--gold)}
+#main{margin-left:var(--sw);padding:36px 46px 80px;max-width:calc(var(--sw) + 850px)}
+h1.dt{font-size:21px;font-weight:700;color:var(--navy);border-bottom:3px solid var(--navy);padding-bottom:9px;margin-bottom:5px}
+.dm{font-size:12px;color:var(--g5);margin-bottom:28px}
+.chap{border-radius:8px;padding:16px 22px;margin:32px 0 14px;scroll-margin-top:16px}
+.chap.cA{background:var(--ca)}.chap.cB{background:var(--cb)}.chap.c3{background:var(--navy)}
+.chap .cn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:3px}
+.chap h2{font-size:16px;font-weight:700;color:#fff;margin:0}
+.chap .cdesc{font-size:12px;color:rgba(255,255,255,.65);margin-top:5px}
+h2.sec{font-size:16px;font-weight:700;color:var(--navy);border-left:4px solid var(--navy);padding-left:10px;margin:28px 0 11px;scroll-margin-top:20px}
+h3.sub{font-size:13.5px;font-weight:700;color:var(--navy-l);margin:18px 0 9px;padding-bottom:4px;border-bottom:1px solid var(--g3);scroll-margin-top:20px}
+h4.sh4{font-size:12.5px;font-weight:700;color:var(--tx2);margin:11px 0 7px}
+p{margin-bottom:9px;color:var(--tx2)}strong{color:var(--tx)}
+ul,ol{padding-left:20px;margin-bottom:9px;color:var(--tx2)}li{margin-bottom:3px}
+.shb{border-radius:7px;padding:12px 16px;margin-bottom:14px;scroll-margin-top:16px}
+.shb h3{font-size:13.5px;font-weight:700;color:#fff;margin:0}
+.shb .sn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:rgba(255,255,255,.45);margin-bottom:2px}
+.sA{background:var(--ca)}.sB{background:var(--cb)}.s3{background:var(--navy)}
+.cl{border-left:3px solid;padding:8px 12px;border-radius:0 5px 5px 0;margin:9px 0;font-size:12.5px}
+.cl-w{border-color:var(--red);background:var(--red-s)}.cl-i{border-color:var(--blue);background:var(--blue-s)}.cl-t{border-color:var(--green);background:var(--green-s)}.cl-n{border-color:var(--gold);background:var(--gold-s)}
+.tw{overflow-x:auto;margin:9px 0}
+table{width:100%;border-collapse:collapse;font-size:12px}
+thead th{background:var(--navy);color:#fff;padding:7px 9px;text-align:left;font-weight:600;font-size:11.5px;white-space:nowrap}
+tbody tr:nth-child(even){background:var(--g1)}
+tbody td{padding:6px 9px;border-bottom:1px solid var(--g3);vertical-align:top;line-height:1.55}
+tbody tr:hover{background:#f0f4ff}
+td.tc{font-weight:600;color:var(--navy);font-size:11.5px;white-space:nowrap}
+td.tcr{font-weight:700;color:var(--red)}
+td.tcg{font-weight:700;color:var(--green)}
+td.law{font-size:11px;color:var(--g5)}
+.case-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin:14px 0}
+.case-card{border-radius:7px;padding:16px 18px;border:2px solid}
+.case-card.A{border-color:var(--ca);background:#f4f9f0}
+.case-card.B{border-color:var(--cb);background:var(--teal-s)}
+.case-card h4{font-size:13px;font-weight:700;margin-bottom:10px;padding-bottom:6px;border-bottom:2px solid}
+.case-card.A h4{color:var(--ca);border-color:var(--ca)}
+.case-card.B h4{color:var(--cb);border-color:var(--cb)}
+.case-card ul{padding-left:16px;font-size:12px;color:var(--tx2)}
+.step-tbl thead th{white-space:normal}
+.step-num-cell{font-weight:700;color:#fff;text-align:center;font-size:12px;padding:6px 8px;white-space:nowrap}
+.step-A{background:var(--ca)}.step-B{background:var(--cb)}.step-3{background:var(--navy)}
+.ck{list-style:none;padding:0;margin:7px 0}
+.ck li{padding:7px 10px 7px 30px;position:relative;border-bottom:1px solid var(--g2);font-size:12px;color:var(--tx2)}
+.ck li::before{content:"\2610";position:absolute;left:7px;font-size:13px;color:var(--navy);line-height:1.5}
+.ck li:last-child{border-bottom:none}
+.ck li .why{display:block;color:var(--red);font-weight:700;font-size:10.5px;margin-top:2px}
+.badge{display:inline-flex;align-items:center;font-size:10.5px;font-weight:600;padding:2px 8px;border-radius:3px}
+.b-biz{background:#eaf3de;color:var(--ca)}.b-leg{background:#faeeda;color:var(--gold)}.b-au{background:var(--g2);color:#374151;border:1px solid var(--g3)}
+.tag{display:inline-block;font-size:9.5px;font-weight:600;padding:1px 5px;border-radius:3px;margin-right:2px}
+.t-A{background:#eaf3de;color:var(--ca)}.t-B{background:var(--teal-s);color:var(--cb)}.t-red{background:var(--red-s);color:var(--red)}.t-law{background:#e6effa;color:var(--navy)}
+.ap{background:var(--g1);border-radius:7px;padding:14px 18px;margin-bottom:14px;font-size:12.5px}
+hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
+.faq-item{margin-bottom:12px}
+.faq-q{font-weight:700;color:var(--navy);margin-bottom:4px;font-size:13px}
+.faq-a{padding:9px 13px;background:var(--g1);border-radius:4px;font-size:12.5px;color:var(--tx2);border-left:3px solid var(--g3)}
+.cta{display:inline-flex;align-items:center;gap:8px;background:var(--navy);color:#fff;text-decoration:none;font-weight:700;font-size:13px;padding:11px 20px;border-radius:8px;margin:6px 0;transition:all .15s}
+.cta:hover{background:var(--navy-l);transform:translateY(-1px);box-shadow:0 3px 10px rgba(29,53,87,.25)}
+/* メール文例ブロック */
+.mail{background:#fff;border:1px solid var(--g3);border-radius:7px;overflow:hidden;margin:12px 0}
+.mail .mh{background:var(--g1);padding:9px 16px;border-bottom:1px solid var(--g3);font-size:11.5px;color:var(--tx2)}
+.mail .mh strong{color:var(--navy)}
+.mail .mb{padding:14px 18px;font-size:12.5px;color:var(--tx2)}
+.mail .mb ol{padding-left:18px}
+.mail .mb ol li{margin-bottom:6px}
+</style>
+
+<style id="gas-portal-back-style">
+.portal-back-button{position:fixed;right:16px;bottom:16px;z-index:3000;display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:#1d3557;color:#fff;text-decoration:none;font-size:12px;font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,.22);opacity:.92;transition:opacity .15s,transform .15s}
+.portal-back-button:hover{opacity:1;transform:translateY(-1px)}
+@media print{.portal-back-button{display:none}}
+</style>
+
+</head>
+<body>
+  <?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<aside id="sidebar">
+<div id="sh"><h1>法務部</h1><p>試遊インストラクション<br>業務委託 実務ガイド</p></div>
+<nav>
+<a class="nl" href="#top">概要</a>
+<a class="nl" href="#principle">大原則（実態判断）</a>
+<span class="ns">手順</span>
+<a class="nl" href="#flow"><span class="bdg b3">順</span>進め方（フロー）</a>
+<a class="nl" href="#prohibit"><span class="bdg bA">禁</span>やってはいけないこと</a>
+<a class="nl" href="#shiyu"><span class="bdg bB">試</span>試遊特有の対策</a>
+<span class="ns">理解</span>
+<a class="nl" href="#compare">アルバイトとの違い</a>
+<a class="nl" href="#freelance">フリーランス新法</a>
+<span class="ns">募集</span>
+<a class="nl" href="#mail">募集メール文例</a>
+<a class="nsub" href="#mail-words">言い換えの基本</a>
+<span class="ns">参考</span>
+<a class="nl" href="#faq">Q&amp;A</a>
+</nav>
+</aside>
+
+<main id="main">
+<h1 class="dt" id="top">試遊インストラクション 業務委託 実務ガイド</h1>
+<p class="dm">作成：法務部　｜　来場者へのボードゲーム試遊インストラクションを、個人へ直接 業務委託で依頼する場合の運営部門向けガイド</p>
+
+<div class="cl cl-i">このガイドは、ゲームマーケット等のイベントで<strong>試遊インストラクション</strong>（来場者に遊び方を説明・進行する役務）を<strong>個人へ直接 業務委託</strong>するときに、偽装請負（無許可派遣）に転ばないための実務ルールです。試遊インストラクションは物を完成させる「請負」ではなく<strong>役務の提供（準委任）</strong>で、時間と結びつきやすいぶん、設計を誤ると最も偽装請負に転びやすい類型です。迷ったら現場で判断せず法務へ。</div>
+
+<div class="cl cl-n"><strong>本ガイドは例外運用です。</strong> 本来おすすめは運営業者へ一括委託し、業者が自社スタッフを指揮する形です。個人に直接お願いする本ガイドの形は、以下のルールを<strong>すべて</strong>守れる場合に限って採用してください。</div>
+
+<hr class="sd">
+
+<!-- 大原則 -->
+<h2 class="sec" id="principle">押さえるべき大原則</h2>
+<p>業務委託は<strong>「人を働かせる」契約ではなく、「業務をお願いする」契約</strong>です。現場でスタッフに直接あれこれ指示したり、勤務時間を管理した瞬間に、契約書が業務委託でも法律上は<strong>雇用</strong>と扱われ、偽装請負になります。</p>
+<div class="cl cl-w"><strong>判断は名称ではなく実態で行われます。</strong> 「呼び方」を整えても、現場の運用が雇用なら評価は変わりません。是正指導・労働契約申込みみなし等のリスクがある重い違反です。<strong>「誰がその時間・作業を支配しているか」</strong>が分かれ目です。</div>
+
+<hr class="sd">
+
+<!-- フロー -->
+<div class="chap c3" id="flow">
+  <div class="cn">Step Flow</div>
+  <h2>進め方（フロー）</h2>
+  <div class="cdesc">担当の事前割当 → 条件明示 → 契約 → 資料提供 → 当日 → 支払（60日以内）。</div>
+</div>
+<div class="tw"><table>
+<thead><tr><th style="width:140px">ステップ</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="step-num-cell step-3">① 事前割当</td><td>担当ゲーム・担当卓・担当時間帯（目安）を事前に決める。<strong>時間で拘束しない</strong>。</td></tr>
+<tr><td class="step-num-cell step-3">② 条件明示</td><td>委託内容・委託料・支払期日などを書面／メールで明示（フリーランス新法の義務）。</td></tr>
+<tr><td class="step-num-cell step-3">③ 募集・打診</td><td>後掲のメール文例を使用。</td></tr>
+<tr><td class="step-num-cell step-3">④ 契約</td><td>業務委託契約書＋取引条件明示書面を取り交わし（法務確認）。</td></tr>
+<tr><td class="step-num-cell step-3">⑤ 資料提供</td><td>インストラクション資料・ルールマニュアルを事前提供（＝仕様の提供）。当日逐一直すのはNG。</td></tr>
+<tr><td class="step-num-cell step-3">⑥ 当日</td><td>仕様どおり各自で遂行。<strong>個別指示・差配・時間管理はしない</strong>。</td></tr>
+<tr><td class="step-num-cell step-3">⑦ 支払</td><td>全日程の業務完了日から<strong>60日以内</strong>に支払（フリーランス新法の義務）。</td></tr>
+</tbody></table></div>
+
+<hr class="sd">
+
+<!-- 禁止チェックリスト -->
+<div class="chap cA" id="prohibit">
+  <div class="cn">Checklist</div>
+  <h2>やってはいけないこと</h2>
+  <div class="cdesc">1つでも当てはまると「雇用」と判断されやすくなる。総合判断なので積み重なるほど黒に近づく。</div>
+</div>
+<ul class="ck">
+<li>当社担当が当日「次あの人に説明して」「ここ立ってて」と個別に差配している<span class="why">⚠ 指揮命令 ── 最も危険</span></li>
+<li>「◯時〜◯時拘束」「出勤・退勤」「シフト」で時間を管理している<span class="why">⚠ 時間的拘束</span></li>
+<li>当社が「12〜13時は休憩」と休憩を一律指定している<span class="why">⚠ 時間管理</span></li>
+<li>報酬を「時給」「拘束時間×単価」で決めている<span class="why">⚠ 労務対償性</span></li>
+<li>依頼を断れない・他社の仕事を受けられない建付けにしている<span class="why">⚠ 諾否の自由なし／専属性</span></li>
+<li>当社の勤怠システムに打刻させている／指揮系統図に組み込んでいる<span class="why">⚠ 労務管理への組込み</span></li>
+<li>イベントTシャツ等の着用を強制している<span class="why">⚠ 労働者性を補強</span></li>
+<li>募集や契約に「採用」「勤務」「残業代」「有給」「通勤手当」と書いている<span class="why">⚠ 雇用用語</span></li>
+</ul>
+
+<hr class="sd">
+
+<!-- 試遊特有 -->
+<div class="chap cB" id="shiyu">
+  <div class="cn">Game Demo Specific</div>
+  <h2>試遊インストラクション特有の対策</h2>
+  <div class="cdesc">役務（準委任）ゆえの労働者性リスクを、設計で消す。</div>
+</div>
+<h3 class="sub">① 当日の差配を当社がしない</h3>
+<p>担当ゲーム・担当卓・担当時間帯（目安）を事前に割り当て、当日は各自が仕様どおり遂行する形にします。当日その場で「次はこのゲーム」と振るのは指揮命令になります。</p>
+<h3 class="sub">② 品質確保は「事前の資料提供」で行う</h3>
+<p>正しいルールで説明してほしいという要請は、<strong>インストラクション資料・ルールマニュアルを事前に渡す（＝仕様の提供）</strong>ことでクリアできます。これは指揮命令ではありません（翻訳者に原文を渡すのと同じ理屈）。当日横について逐一直すのはNGです。</p>
+<h3 class="sub">③ 休憩・離席は受託者の裁量</h3>
+<div class="cl cl-t">稼働／非稼働の線引きはしません。<strong>休憩・離席は受託者の裁量で、委託料は一式のため取得の有無で増減しません。</strong>手すきの際の離席も自由（場所的拘束をかけない）。複数名の場合は受託者間で調整してもらいます。</div>
+<h3 class="sub">④ 服装・名札</h3>
+<p>来場者対応上、当社用意の名札を配るのは可。ただしイベントTシャツ等の<strong>着用強制は労働者性を補強</strong>するため「貸与・着用は任意」に留めます。</p>
+
+<hr class="sd">
+
+<!-- アルバイトとの違い -->
+<h2 class="sec" id="compare">アルバイト（雇用）との違い</h2>
+<div class="case-grid">
+  <div class="case-card A">
+    <h4>業務委託（今回）</h4>
+    <ul>
+      <li>当社からの<strong>個別の指揮命令なし</strong>（仕様で伝える）</li>
+      <li>休憩は本人裁量／時間管理しない</li>
+      <li>報酬は<strong>業務単位の委託料</strong>（本イベント一式）</li>
+      <li>労働時間・残業・最低賃金の概念なし</li>
+    </ul>
+  </div>
+  <div class="case-card B">
+    <h4>アルバイト（雇用）</h4>
+    <ul>
+      <li>当社が<strong>直接指示できる</strong></li>
+      <li>休憩付与義務あり／時間管理する</li>
+      <li>報酬は<strong>時給・日給</strong>（時間対価）</li>
+      <li>労働時間・残業・最低賃金の規制あり</li>
+    </ul>
+  </div>
+</div>
+<div class="tw"><table>
+<thead><tr><th>論点</th><th>アルバイト</th><th>業務委託</th></tr></thead>
+<tbody>
+<tr><td class="tc">指揮命令</td><td>当社が直接指示できる</td><td>不可（成果・仕様で伝える）</td></tr>
+<tr><td class="tc">労働時間・残業</td><td>上限・割増あり</td><td>なし。委託料で完結</td></tr>
+<tr><td class="tc">休憩</td><td>付与義務あり</td><td>義務なし。本人裁量</td></tr>
+<tr><td class="tc">最低賃金</td><td>適用あり</td><td>適用なし</td></tr>
+<tr><td class="tc">報酬</td><td>時給・日給（時間対価）</td><td>業務単位の委託料</td></tr>
+<tr><td class="tc">交通費</td><td>通勤手当として支給可</td><td>経費の取決め（実費精算／委託料込み）</td></tr>
+<tr><td class="tc">社会保険・労災</td><td>要件該当で加入</td><td>原則なし</td></tr>
+<tr><td class="tc">中途解約</td><td>解雇規制</td><td>契約条項に従う</td></tr>
+</tbody></table></div>
+<div class="cl cl-i"><strong>ポイント：</strong> 休憩も交通費も「会社の義務」ではなく「契約でどう決めるか」の話です。<strong>払ってはいけないのではなく</strong>、雇用の言葉を使わず取引条件として書くだけです。</div>
+
+<hr class="sd">
+
+<!-- フリーランス新法 -->
+<h2 class="sec" id="freelance">フリーランス新法（個人に頼むなら必須）</h2>
+<p>個人へ委託する場合、以下は単発・複数日イベントでもかかります。</p>
+<div class="tw"><table>
+<thead><tr><th style="width:170px">義務</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="tc">取引条件の明示</td><td>委託内容・報酬額・支払期日などを書面／メールで明示</td></tr>
+<tr><td class="tc">支払期日</td><td>役務提供を受けた日（全日程の業務完了日）から<strong>60日以内</strong></td></tr>
+<tr><td class="tc">募集情報の的確表示</td><td>募集文に嘘・誤解を与える表示をしない（実際の条件と揃える）</td></tr>
+</tbody></table></div>
+<div class="cl cl-n">「買いたたき・報酬減額の禁止」等は<strong>継続的な委託</strong>向けの規制で、単発・スポットのイベントは基本対象外。ただし不当に安い値決めはトラブルの元なので避けてください。</div>
+
+<hr class="sd">
+
+<!-- 募集メール -->
+<h2 class="sec" id="mail">募集案内（条件案内）メール文例 ── 個人宛</h2>
+
+<h3 class="sub" id="mail-words">言い換えの基本</h3>
+<div class="tw"><table>
+<thead><tr><th>✕ 雇用を推認させる語</th><th>○ 業務委託の表現</th></tr></thead>
+<tbody>
+<tr><td class="tcr">時給／日給</td><td class="tcg">委託料（本イベント一式 ◯円）</td></tr>
+<tr><td class="tcr">勤務時間／シフト／出勤</td><td class="tcg">稼働日・作業時間の目安</td></tr>
+<tr><td class="tcr">休憩◯分付与</td><td class="tcg">受託者の判断で適宜休憩</td></tr>
+<tr><td class="tcr">交通費支給／通勤手当</td><td class="tcg">旅費は実費別途精算／委託料に含む</td></tr>
+<tr><td class="tcr">残業代／有給</td><td class="tcg">（記載しない）</td></tr>
+<tr><td class="tcr">採用／面接</td><td class="tcg">受託者の選定／顔合わせ</td></tr>
+<tr><td class="tcr">当社スタッフの指示のもと</td><td class="tcg">インストラクション資料に基づき遂行</td></tr>
+</tbody></table></div>
+
+<h3 class="sub">メール文例</h3>
+<div class="mail">
+<div class="mh"><strong>件名：</strong>【業務委託】ゲームマーケット◯◯ 試遊インストラクション業務の受託者募集のご案内</div>
+<div class="mb">
+<p>◯◯様</p>
+<p>平素お世話になっております。株式会社アークライト◯◯部です。<br>標記イベントにおける試遊インストラクション業務につき、業務委託にて受託いただける方を募集しております。下記をご確認のうえご検討ください。</p>
+<ol>
+<li><strong>委託業務の内容</strong>：来場者へのボードゲーム試遊インストラクション（遊び方の説明・進行補助）。担当ゲーム・担当卓は事前に割り当て、別途お渡しするインストラクション資料に基づき遂行いただきます。</li>
+<li><strong>契約形態</strong>：業務委託（雇用ではありません。当社からの個別の指揮命令は行いません）</li>
+<li><strong>稼働日・時間帯の目安</strong>：2026年◯月◯日〜◯日／各日 9:00頃〜18:00頃（拘束ではなく作業の目安）</li>
+<li><strong>委託料</strong>：本イベント（◯月◯日〜◯日）の試遊インストラクション業務一式 ◯◯円（税込／別）</li>
+<li><strong>報酬支払期日</strong>：全日程の業務完了日から60日以内に指定口座へお振込</li>
+<li><strong>休憩・離席</strong>：受託者の判断で適宜お取りいただけます。委託料は一式のため取得の有無で増減しません（複数名の場合は受託者間でご調整ください）</li>
+<li><strong>旅費</strong>：会場までの交通費は実費を委託料とは別に精算します（または委託料に含みます）</li>
+<li><strong>服装・持ち物</strong>：動きやすい服装。名札は当社にて用意します（イベントTシャツは貸与・着用は任意）</li>
+<li><strong>再委託</strong>：事前の書面承諾があれば可（守秘・品質基準の遵守が条件）</li>
+<li><strong>その他</strong>：源泉徴収・保険の取扱い 等</li>
+</ol>
+<p>ご受託いただける場合は、別途「業務委託契約書」および「取引条件明示書面」を取り交わします。<br>ご不明点はお問い合わせください。</p>
+</div>
+</div>
+
+<hr class="sd">
+
+<!-- FAQ -->
+<h2 class="sec" id="faq">よくある疑問（Q&amp;A）</h2>
+<div class="faq-item">
+<div class="faq-q">Q1. 交通費は払ってはいけないのか？</div>
+<div class="faq-a">払って構いません。禁止されているのは「通勤手当」「交通費支給」といった雇用用語と、それを当然の手当として制度化することです。業務委託では経費の取決めとして「会場までの交通費は実費を委託料とは別に精算する」または「委託料に含む」と取引条件として書きます。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q2. 休憩を「12〜13時」と会社で決めてよいか？ 「非稼働時間」と呼べば大丈夫？</div>
+<div class="faq-a">どちらもNGです。当社が時間帯を一律に決める＝時間管理で、労働者性に働きます。判断は実態で行われるため、「非稼働時間」と呼び替えても、当社が時間を支配していれば評価は同じです。委託料が一式である以上そもそも稼働／非稼働を区別する実益がなく、区別を持ち込むとかえって時間管理的な色がつきます。休憩・離席は受託者裁量とし、委託料は一式で増減しない、と書いてください。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q3. 正しいルールで説明してほしい。これは「指示」にならないか？</div>
+<div class="faq-a">なりません。インストラクション資料・ルールマニュアルを事前に渡すのは「仕様の提供」であって指揮命令ではありません（翻訳者に原文を渡すのと同じ）。NGになるのは、当日横について一つひとつのやり方を逐次指示することです。品質は事前の資料と顔合わせで担保してください。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q4. 当日、現場で「次はこのゲームを説明して」と頼むのは？</div>
+<div class="faq-a">NGです。当日の差配（誰が何をいつやるか）を当社が指示するのは指揮命令にあたります。担当ゲーム・担当卓・担当時間帯を事前に割り当て、当日は各自が仕様どおり遂行する形にしてください。</div>
+</div>
+<div class="faq-item">
+<div class="faq-q">Q5. 報酬は「1日◯円」でよいか？</div>
+<div class="faq-a">複数日イベントは「本イベント一式 ◯円」が安全です。「時給」「拘束時間×単価」という見せ方は時間対価＝労働者性につながるため避けます。業務（イベント）単位の委託料として書いてください。</div>
+</div>
+
+<div style="background:var(--navy);border-radius:8px;padding:18px 22px;margin-top:28px;text-align:center">
+<div style="font-size:10px;color:rgba(255,255,255,.45);margin-bottom:5px">お問い合わせ先</div>
+<div style="font-size:17px;font-weight:700;color:#fff;margin-bottom:3px">Arclight Inc. 経営管理本部 法務部</div>
+<div style="font-size:12px;color:rgba(255,255,255,.65)">当日どこまで声をかけてよいか・報酬の決め方・トラブル対応など、迷う場面は現場で判断せずご相談ください</div>
+</div>
+</main>
+
+</body></html>

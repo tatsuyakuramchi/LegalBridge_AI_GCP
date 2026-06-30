@@ -1,0 +1,909 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>法務部 実務ガイド</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:'Hiragino Sans','Noto Sans JP',sans-serif;font-size:13.5px;line-height:1.7;color:#212529;background:#fff}
+#topnav{position:fixed;top:0;left:0;right:0;height:48px;background:#1d3557;z-index:2000;display:flex;align-items:center;gap:2px;padding:0 14px;box-shadow:0 2px 6px rgba(0,0,0,.25)}
+#topnav .tn-brand{font-size:11px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-transform:uppercase;padding-right:14px;border-right:1px solid rgba(255,255,255,.15);margin-right:6px;white-space:nowrap}
+#topnav .tn-btn{padding:5px 13px;border-radius:5px;font-size:12px;font-weight:600;color:rgba(255,255,255,.65);cursor:pointer;border:none;background:none;transition:all .15s;white-space:nowrap;text-decoration:none;display:inline-flex;align-items:center}
+#topnav .tn-back:hover{background:rgba(255,255,255,.1);color:#fff}
+#topnav .tn-btn:hover{background:rgba(255,255,255,.1);color:#fff}
+#topnav .tn-btn.active{background:rgba(255,255,255,.18);color:#fff}
+.guide-wrap{display:block}
+#guide-portal{display:none;padding-top:48px;min-height:100vh;background:#f8f9fa}
+#guide-portal.active{display:block}
+.portal-inner{max-width:620px;margin:0 auto;padding:48px 20px 60px;display:flex;flex-direction:column;align-items:center}
+.portal-header{text-align:center;margin-bottom:36px}
+.portal-label{font-size:11px;font-weight:700;color:#6c757d;letter-spacing:.1em;text-transform:uppercase;margin-bottom:8px}
+.portal-title{font-size:22px;font-weight:700;color:#1d3557}
+.portal-sub{font-size:13px;color:#6c757d;margin-top:6px}
+.portal-cards{width:100%;display:grid;gap:12px}
+.portal-card{display:flex;align-items:center;gap:16px;background:#fff;border:1px solid #dee2e6;border-left:4px solid #1d3557;border-radius:10px;padding:18px 22px;cursor:pointer;transition:all .15s}
+.portal-card:hover{background:#f0f4ff;box-shadow:0 2px 8px rgba(29,53,87,.1)}
+.portal-card-num{font-size:11px;font-weight:700;color:#6c757d;letter-spacing:.06em;white-space:nowrap}
+.portal-card-body{flex:1}
+.portal-card-title{font-size:15px;font-weight:700;color:#1d3557;margin-bottom:3px}
+.portal-card-desc{font-size:12px;color:#6c757d}
+.portal-card-arrow{font-size:20px;color:#adb5bd}
+.portal-footer{margin-top:36px;font-size:11px;color:#adb5bd;text-align:center}
+h1.dt{font-size:22px;font-weight:700;color:#1d3557;border-bottom:3px solid #1d3557;padding-bottom:10px;margin-bottom:6px}
+.dm{font-size:12px;color:#6c757d;margin-bottom:32px}
+
+/* ── CLAUSE GUIDE (guide-clause) ───────────────────── */
+:root{--cv:#2f4d8a;--cv-l:#4265a8;--cv-d:#1e3462;--cv-s:#eaf0fb;--cv-m:#c5d4f0;
+  --ls:#0a5e4a;--ls-l:#0d7a61;--ls-d:#07402f;--ls-s:#e0f5ef;--ls-m:#a8dfd2;
+  --sw-c:230px}
+.g-sidebar-clause{position:fixed;top:48px;left:0;width:var(--sw-c);
+  height:calc(100vh - 48px);background:var(--cv-d);overflow-y:auto;
+  display:flex;flex-direction:column;z-index:100}
+.g-sh-clause{padding:16px 14px 12px;border-bottom:1px solid rgba(255,255,255,.1)}
+.g-sh-clause h1{font-size:9px;font-weight:700;color:rgba(255,255,255,.45);letter-spacing:.08em;text-transform:uppercase}
+.g-sh-clause p{font-size:11.5px;color:rgba(255,255,255,.92);font-weight:600;margin-top:3px;line-height:1.4}
+.cv-switcher{display:flex;margin:10px 12px 4px;gap:6px}
+.cv-sw-btn{flex:1;padding:5px 4px;border-radius:5px;font-size:10px;font-weight:700;
+  cursor:pointer;border:none;text-align:center;transition:all .15s;line-height:1.3}
+.cv-sw-btn.sv{background:#eaf0fb;color:var(--cv-d)}
+.cv-sw-btn.lc{background:#e0f5ef;color:var(--ls-d)}
+.cv-sw-btn.active-sv{background:var(--cv-l);color:#fff}
+.cv-sw-btn.active-lc{background:var(--ls-l);color:#fff}
+.cv-nl{display:block;padding:3px 14px;font-size:11px;color:rgba(255,255,255,.7);
+  text-decoration:none;border-left:2px solid transparent;transition:all .15s;line-height:1.4}
+.cv-nl:hover,.cv-nl.active{color:#fff;background:rgba(255,255,255,.09);border-left-color:#e63946}
+.cv-ns{display:block;padding:4px 14px 2px;font-size:9px;font-weight:700;
+  color:rgba(255,255,255,.32);letter-spacing:.07em;text-transform:uppercase;margin-top:8px}
+.g-main-clause{margin-left:var(--sw-c);padding:32px 46px 80px;
+  max-width:calc(var(--sw-c) + 860px);background:#fff}
+/* contract panel */
+.clause-panel{display:none}
+.clause-panel.active{display:block}
+/* article block */
+.art{border-left:4px solid;border-radius:0 8px 8px 0;
+  border:1px solid #ddd;border-left-width:4px;
+  padding:16px 20px 12px;margin-bottom:16px;
+  background:#fff;scroll-margin-top:22px}
+.art.sv{border-left-color:var(--cv)}
+.art.lc{border-left-color:var(--ls)}
+.art-no{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+.art.sv .art-no{color:var(--cv)}
+.art.lc .art-no{color:var(--ls)}
+.art-ttl{font-size:14px;font-weight:700;padding-bottom:8px;margin-bottom:10px;border-bottom:1px solid #e5e5e5}
+.art.sv .art-ttl{color:var(--cv-d)}
+.art.lc .art-ttl{color:var(--ls-d)}
+.art-lead{font-size:12.5px;color:#333;line-height:1.8;margin-bottom:10px}
+.art dt{font-size:11.5px;font-weight:700;padding:4px 10px;margin:8px 0 3px;border-radius:0 3px 3px 0}
+.art.sv dt{background:var(--cv-s);color:var(--cv-d);border-left:3px solid var(--cv)}
+.art.lc dt{background:var(--ls-s);color:var(--ls-d);border-left:3px solid var(--ls)}
+.art dd{font-size:12px;color:#444;padding:4px 10px 4px 14px;margin:0 0 3px;line-height:1.75}
+.art dd li{margin-bottom:2px}
+/* group header */
+.art-grp{border-radius:7px;padding:11px 18px;margin:24px 0 12px;scroll-margin-top:16px}
+.art-grp.sv{background:var(--cv-d)}
+.art-grp.lc{background:var(--ls-d)}
+.art-grp .gn{font-size:9px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+  color:rgba(255,255,255,.4);margin-bottom:2px}
+.art-grp h2{font-size:14px;font-weight:700;color:#fff;margin:0;border:none;padding:0}
+.art-grp .gd{font-size:11px;color:rgba(255,255,255,.6);margin-top:3px}
+/* callouts */
+.cl-w{border-left:3px solid #e63946;background:#fde8ea;padding:7px 11px;border-radius:0 4px 4px 0;margin:8px 0;font-size:12px}
+.cl-i{border-left:3px solid #378add;background:#e8f1fb;padding:7px 11px;border-radius:0 4px 4px 0;margin:8px 0;font-size:12px}
+.cl-t{border-left:3px solid #1d9e75;background:#e4f7f1;padding:7px 11px;border-radius:0 4px 4px 0;margin:8px 0;font-size:12px}
+.cl-n{border-left:3px solid #c47d1a;background:#fef3e2;padding:7px 11px;border-radius:0 4px 4px 0;margin:8px 0;font-size:12px}
+/* index table */
+.art-idx{width:100%;border-collapse:collapse;font-size:12px;margin:10px 0 22px}
+.art-idx thead th{padding:6px 10px;text-align:left;font-size:11px;color:#fff}
+.art-idx.sv thead th{background:var(--cv-d)}
+.art-idx.lc thead th{background:var(--ls-d)}
+.art-idx tbody td{padding:5px 10px;border-bottom:1px solid #eee;vertical-align:middle}
+.art-idx tbody tr:nth-child(even){background:#f8f8f8}
+.art-idx a{text-decoration:none;font-weight:600}
+.art-idx.sv a{color:var(--cv)}
+.art-idx.lc a{color:var(--ls)}
+/* tag */
+.law-tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;
+  background:#e6effa;color:#0c447c;margin:2px 3px 2px 0}
+.rel-tag{display:inline-block;font-size:10px;font-weight:600;padding:1px 6px;border-radius:3px;
+  background:#f3f3f3;color:#374151;margin:2px 3px 2px 0}
+
+
+/* ── DOWNLOAD BANNER ───────────────────────────── */
+.dl-banner{
+  background:linear-gradient(135deg,#1e3462 0%,#2f4d8a 50%,#085041 100%);
+  border-radius:10px;padding:22px 28px;margin-bottom:28px;
+  display:flex;align-items:center;gap:20px;flex-wrap:wrap;
+}
+.dl-banner-text{flex:1;min-width:200px;}
+.dl-banner-title{font-size:14px;font-weight:700;color:#fff;margin-bottom:4px;font-family:Arial,sans-serif;}
+.dl-banner-sub{font-size:12px;color:rgba(255,255,255,.7);font-family:Arial,sans-serif;}
+.dl-btns{display:flex;gap:10px;flex-wrap:wrap;}
+.dl-btn{
+  display:inline-flex;align-items:center;gap:7px;
+  padding:9px 16px;border-radius:7px;text-decoration:none;
+  font-size:12px;font-weight:700;white-space:nowrap;
+  transition:opacity .15s;cursor:pointer;border:none;
+}
+.dl-btn:hover{opacity:.85;}
+.dl-btn-sv{background:#fff;color:#2f4d8a;}
+.dl-btn-lc{background:#a8dfd2;color:#07402f;}
+.dl-icon{font-size:14px;}
+
+
+/* === Ver badge ====================================== */
+.art{position:relative}
+.art-ver{
+  position:absolute;top:12px;right:14px;
+  display:inline-block;font-size:9px;font-weight:700;
+  letter-spacing:.06em;padding:2px 7px;border-radius:10px;
+  font-family:'SF Mono',Consolas,Menlo,monospace;
+  border:1px solid;
+}
+.art.sv .art-ver{background:#eaf0fb;color:var(--cv-d);border-color:var(--cv-m)}
+.art.lc .art-ver{background:#e0f5ef;color:var(--ls-d);border-color:var(--ls-m)}
+/* === Panel version bar ============================== */
+.panel-ver-bar{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  background:#f8f9fa;border:1px solid #dee2e6;
+  padding:10px 14px;border-radius:7px;
+  font-size:11.5px;color:#495057;
+  margin:14px 0 22px;
+}
+.panel-ver-bar strong{font-weight:700;font-size:12.5px}
+.panel-ver-bar.sv strong{color:var(--cv-d)}
+.panel-ver-bar.lc strong{color:var(--ls-d)}
+.panel-ver-pill{
+  display:inline-block;padding:3px 11px;border-radius:11px;
+  font-family:'SF Mono',Consolas,Menlo,monospace;
+  font-weight:700;font-size:11.5px;letter-spacing:.04em;
+  border:1px solid;
+}
+.panel-ver-bar.sv .panel-ver-pill{background:#eaf0fb;color:var(--cv-d);border-color:var(--cv-m)}
+.panel-ver-bar.lc .panel-ver-pill{background:#e0f5ef;color:var(--ls-d);border-color:var(--ls-m)}
+.panel-ver-meta{color:#6c757d;font-size:10.5px;margin-left:auto}
+
+</style>
+
+<style id="gas-portal-back-style">
+.portal-back-button{position:fixed;right:16px;bottom:16px;z-index:3000;display:inline-flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;background:#1d3557;color:#fff;text-decoration:none;font-size:12px;font-weight:700;box-shadow:0 3px 12px rgba(0,0,0,.22);opacity:.92;transition:opacity .15s,transform .15s}
+.portal-back-button:hover{opacity:1;transform:translateY(-1px)}
+@media print{.portal-back-button{display:none}}
+</style>
+
+</head>
+<body>
+  <?!= include('common_top_tabs', { appUrl: appUrl, currentPage: currentPage }); ?>
+<nav id="topnav">
+  <span class="tn-brand">法務部</span>
+  <a class="tn-btn tn-back" href="./">← ポータルへ戻る</a>
+  <span class="tn-btn active">GUIDE 04 ｜ 契約書 条文解説</span>
+</nav>
+
+<div id="guide-clause">
+<aside class="g-sidebar-clause">
+  <div class="g-sh-clause">
+    <h1>法務部</h1>
+    <p>契約書<br>条文解説ガイド</p>
+  </div>
+  <div class="cv-switcher">
+    <button class="cv-sw-btn sv active-sv" onclick="switchContract('sv')">業務委託</button>
+    <button class="cv-sw-btn lc" onclick="switchContract('lc')">ライセンス</button>
+  </div>
+  <nav id="sv-nav" style="padding:4px 0 20px;">
+<span class="cv-ns">基本構造</span>
+<a class="cv-nl" href="#sv-1">第1条 目的</a>
+<a class="cv-nl" href="#sv-2">第2条 契約形態</a>
+<a class="cv-nl" href="#sv-3">第3条 業務の委託</a>
+<a class="cv-nl" href="#sv-4">第4条 発注書の記載事項</a>
+<a class="cv-nl" href="#sv-5">第5条 業務の遂行</a>
+<span class="cv-ns">履行・検収・支払</span>
+<a class="cv-nl" href="#sv-6">第6条 成果物の納品</a>
+<a class="cv-nl" href="#sv-7">第7条 契約不適合・修正</a>
+<a class="cv-nl" href="#sv-8">第8条 報酬の支払</a>
+<span class="cv-ns">知的財産・情報管理</span>
+<a class="cv-nl" href="#sv-9">第9条 知的財産権</a>
+<a class="cv-nl" href="#sv-10">第10条 資料の取扱い</a>
+<a class="cv-nl" href="#sv-11">第11条 秘密保持</a>
+<a class="cv-nl" href="#sv-12">第12条 個人情報</a>
+<span class="cv-ns">変更・終了・解除</span>
+<a class="cv-nl" href="#sv-13">第13条 届出事項の変更</a>
+<a class="cv-nl" href="#sv-14">第14条 契約期間・解約</a>
+<a class="cv-nl" href="#sv-15">第15条 契約の解除</a>
+<span class="cv-ns">責任・雑則</span>
+<a class="cv-nl" href="#sv-16">第16条 損害賠償</a>
+<a class="cv-nl" href="#sv-17">第17条 権利義務の譲渡禁止</a>
+<a class="cv-nl" href="#sv-18">第18条 取適法・フリーランス法</a>
+<a class="cv-nl" href="#sv-19">第19条 反社会的勢力</a>
+<a class="cv-nl" href="#sv-20">第20条 準拠法・合意管轄</a>
+<a class="cv-nl" href="#sv-21">第21条 協議解決</a>
+<a class="cv-nl" href="#sv-22">第22条 従前契約の包括</a>
+</nav>
+  <nav id="lc-nav" style="padding:4px 0 20px;display:none;">
+<span class="cv-ns">基本構造</span>
+<a class="cv-nl" href="#lc-1">第1条 目的</a>
+<a class="cv-nl" href="#lc-2">第2条 定義</a>
+<a class="cv-nl" href="#lc-3">第3条 個別条件の成立</a>
+<a class="cv-nl" href="#lc-4">第4条 権利の許諾</a>
+<a class="cv-nl" href="#lc-5">第5条 サブライセンス</a>
+<span class="cv-ns">履行・対価</span>
+<a class="cv-nl" href="#lc-6">第6条 開発・製造・販売</a>
+<a class="cv-nl" href="#lc-7">第7条 対価</a>
+<span class="cv-ns">期間・IP・追加</span>
+<a class="cv-nl" href="#lc-8">第8条 契約期間</a>
+<a class="cv-nl" href="#lc-9">第9条 知的財産の帰属</a>
+<a class="cv-nl" href="#lc-10">第10条 追加作品</a>
+<a class="cv-nl" href="#lc-11">第11条 契約終了後の措置</a>
+<span class="cv-ns">責任・雑則</span>
+<a class="cv-nl" href="#lc-12">第12条 解除</a>
+<a class="cv-nl" href="#lc-13">第13条 機密保持</a>
+<a class="cv-nl" href="#lc-14">第14条 個人情報</a>
+<a class="cv-nl" href="#lc-15">第15条 権利義務の譲渡禁止</a>
+<a class="cv-nl" href="#lc-16">第16条 表明保証</a>
+<a class="cv-nl" href="#lc-17">第17条 損害賠償</a>
+<a class="cv-nl" href="#lc-18">第18条 反社会的勢力</a>
+<a class="cv-nl" href="#lc-19">第19条 協議事項</a>
+<a class="cv-nl" href="#lc-20">第20条 旧契約の包括統合</a>
+<a class="cv-nl" href="#lc-21">第21条 準拠法・合意管轄</a>
+<a class="cv-nl" href="#lc-22">第22条 存続</a>
+</nav>
+</aside>
+<main class="g-main-clause">
+  
+<div class="clause-panel active" id="panel-sv">
+  <h1 class="dt" style="color:#1e3462;border-bottom-color:#2f4d8a">業務委託基本契約書 条文解説</h1>
+  <p class="dm">作成：法務部　｜　各条項の法的趣旨・要点・実務上の注意を整理した担当者向け解説</p>
+  <div class="cl-i">本ガイドは業務委託基本契約書（<code>template_service_basic</code>）の各条項を解説します。発注書の作成フロー・取引先登録手続きは<strong>取引適正化ガイド</strong>および<strong>取引先登録ガイド</strong>を参照してください。</div>
+
+  <div class="panel-ver-bar sv">
+    <span>📑 適用契約書テンプレート：</span>
+    <strong>業務委託基本契約書</strong>
+    <span class="panel-ver-pill">Ver001</span>
+    <span class="panel-ver-meta">本ガイドの解説対象バージョン</span>
+  </div>
+
+ <div class="dl-banner">
+  <div class="dl-banner-text">
+    <div class="dl-banner-title">📄 読み方ガイド（要約資料）をダウンロード</div>
+    <div class="dl-banner-sub">各契約書の主要条項・実務ポイントをまとめた資料です</div>
+  </div>
+
+  <div class="dl-btns">
+    <a class="dl-btn dl-btn-sv"
+       href="<?= serviceGuideUrl ?>"
+       target="_blank"
+       rel="noopener">
+      <span class="dl-icon">⬇</span> 業務委託基本契約書
+    </a>
+
+    <a class="dl-btn dl-btn-lc"
+       href="<?= licenseGuideUrl ?>"
+       target="_blank"
+       rel="noopener">
+      <span class="dl-icon">⬇</span> ライセンス利用許諾基本契約書
+    </a>
+  </div>
+</div>
+
+  <div class="art-grp sv"><div class="gn">Chapter 1</div><h2>基本構造（第1条〜第5条）</h2><div class="gd">契約の骨格・取引の開始方法・個別業務の発注手続き</div></div>
+<div class="art sv" id="sv-1">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第1条</div>
+<div class="art-ttl">第1条（目的）</div>
+<p class="art-lead">本契約書は「共通ルールを定める基本契約」と「個別業務の条件を定める発注書」の<strong>二層構造</strong>をとることを宣言する条文です。基本契約を一度締結すれば、以後は発注書を発行するだけで個別の業務委託契約が成立します。</p>
+<dl>
+<dt>発注書優先の原則（2項）</dt><dd>発注書の内容が本契約書と矛盾・抵触する場合は<strong>発注書が優先</strong>します。特殊な支払条件・成果物仕様など、基本契約と異なる条件は発注書に明記することで対応できます。</dd>
+<dt>実務上のポイント</dt><dd>発注書優先を活用するには、変更したい条件を発注書に明示的に記載する必要があります。「別途協議」のような記載は後日のトラブルになります。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 第3条（発注書の発行）</span><span class="rel-tag">→ 第4条（記載事項）</span></div>
+</div>
+<div class="art sv" id="sv-2">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第2条</div>
+<div class="art-ttl">第2条（契約形態）</div>
+<p class="art-lead">個別業務ごとに<strong>請負・準委任・委任</strong>のいずれの形態で取引するかを定める条文です。形態によって義務の内容・報酬の発生条件・瑕疵担保の有無が大きく異なるため、<strong>発注書への明示が必須</strong>です。</p>
+<dl>
+<dt>請負契約（2項）</dt><dd>乙は<strong>成果物の完成義務</strong>を負います。完成・引渡しをもって報酬が発生し、不合格時は無償修正義務が生じます。損害賠償の上限は原則として実際に支払った報酬額（第16条）。</dd>
+<dt>準委任契約（3項）</dt><dd>乙は<strong>善管注意義務をもって誠実に遂行</strong>する義務を負いますが、成果物の完成義務はありません。業務提供の期間に応じた報酬が発生します。</dd>
+<dt>明示なき場合の自動分類（1項ただし書き）</dt><dd>発注書に記載がない場合、「成果物の完成を目的とする」→請負、「それ以外」→準委任 として自動的に分類されます。意図と異なる分類にならないよう<strong>必ず発注書に明示</strong>してください。</dd>
+</dl>
+<div class="cl-w">契約形態の違いは「やり直し義務の有無」に直結します。請負では乙に完成義務があるため不合格時は無償修正が原則ですが、準委任では重大な義務違反がある場合でも協議を経ての減額となります（第7条）。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ 第6条（納品・完了の区別）</span><span class="rel-tag">→ 第7条（契約不適合）</span><span class="rel-tag">→ 第16条（損害賠償の上限）</span></div>
+</div>
+<div class="art sv" id="sv-3">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第3条</div>
+<div class="art-ttl">第3条（業務の委託）</div>
+<p class="art-lead">個別業務を発注する手続き（発注書の交付→受託者の承諾→契約成立）を規定します。<strong>「発注書の送付だけでは契約は成立しない」</strong>点が重要で、受託者の承諾または着手があって初めて成立します。</p>
+<dl>
+<dt>契約成立の3つのルート（2項）</dt><dd>①書面または電磁的記録による承諾通知　②業務の着手（作業開始の事実）　③その他明確な承諾の意思表示　―のいずれかで成立します。</dd>
+<dt>「着手が承諾」のリスク</dt><dd>発注書送付前に受託者が作業を始めた場合でも発注書記載の条件で契約が成立したとみなされます。条件未合意のまま着手させないよう、<strong>発注書は事前に交付</strong>してください。</dd>
+<dt>電磁的方法での交付</dt><dd>メール・クラウドストレージ等でも発注書を交付できます。クラウドサインによる電子交付が推奨運用です。</dd>
+</dl>
+<div class="cl-w">口頭のみで発注・着手させることは厳禁です。条件の証拠がなければ、報酬額・納期・仕様をめぐるトラブル発生時に当社を守れません。</div>
+<div style="margin-top:8px"><span class="law-tag">取適法3条 書面交付義務</span><span class="law-tag">フリーランス法3条</span></div>
+</div>
+<div class="art sv" id="sv-4">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第4条</div>
+<div class="art-ttl">第4条（発注書の記載事項）</div>
+<p class="art-lead">発注書に何を記載しなければならないかを定めます。取適法・フリーランス法の法定明示事項を網羅した設計であり、<strong>記載漏れは法令違反</strong>になる可能性があります。</p>
+<dl>
+<dt>基本的な必須記載事項</dt><dd>業務の内容（具体的な作業・仕様）／報酬額・算定方法（税別・税込の別も）／納期／成果物の仕様・納品場所</dd>
+<dt>取適法・フリ法適用時の追加必須事項</dt><dd>支払期日（受領日から60日以内）／検収期間・方法／再委託の可否／経費負担の有無・内容／業務遂行場所・就業時間（該当する場合）</dd>
+<dt>保存義務（2項）</dt><dd>発注書の記載内容は<strong>作成日から3年間保存</strong>する義務があります。電磁的保存も可。</dd>
+</dl>
+<div class="cl-n">発注書の記載内容が後の検収・支払・瑕疵担保の基準になります。「一式」「詳細は別途」のような記載は避け、できる限り具体的に記載してください。</div>
+<div style="margin-top:8px"><span class="law-tag">取適法3条</span><span class="law-tag">フリーランス法3条</span></div>
+</div>
+<div class="art sv" id="sv-5">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第5条</div>
+<div class="art-ttl">第5条（業務の遂行）</div>
+<p class="art-lead">受託者が<strong>独立した事業者</strong>として業務を遂行することを確認し、指揮命令関係・再委託・設備利用等のルールを定めます。雇用契約との区別を法的に明確にする重要な規定です。</p>
+<dl>
+<dt>独立性の確認（1項）</dt><dd>本契約の締結により、当社と受託者の間に<strong>雇用・代理・合弁等の特別な法律関係は生じない</strong>ことを明示しています。偽装請負リスクを回避するための宣言条項です。</dd>
+<dt>指揮命令の制限（2項）</dt><dd>準委任業務では、当社は業務遂行の「手順等」について具体的な指示を行いません。ただし<strong>仕様・品質・納期についての協議は妨げない</strong>とされており、品質管理は可能です。</dd>
+<dt>再委託の制限（5項）</dt><dd>受託者が業務を第三者に再委託する場合は<strong>当社の書面による事前承諾</strong>が必要です。無断再委託は契約違反。再委託先の行為への責任は受託者が全面的に負います。</dd>
+</dl>
+<div class="cl-w">偽装請負リスク：「毎日〇時から作業開始」「当社の指示通りに動く」等の指揮命令は雇用関係とみなされる可能性があります。発注書の作業内容・場所・時間拘束の有無を定期的に確認してください。</div>
+</div>
+<div class="art-grp sv"><div class="gn">Chapter 2</div><h2>履行・検収・支払（第6条〜第8条）</h2><div class="gd">成果物の引渡し・不適合への対応・報酬の支払条件</div></div>
+<div class="art sv" id="sv-6">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第6条</div>
+<div class="art-ttl">第6条（成果物の納品および業務の完了）</div>
+<p class="art-lead">業務の「完了」をどう確認するかを、請負契約と準委任契約のそれぞれについて定めます。<strong>「検収合格＝引渡し完了＝所有権移転」</strong>という一連のプロセスが規定されています。</p>
+<dl>
+<dt>請負契約の場合（2項）</dt><dd>①乙が発注書の納期・形式で成果物を納入　②当社が検収し、不合格なら修正・追完を要求　③検収合格通知の時点で<strong>引渡し完了・所有権移転</strong>　④納入時点で危険負担が乙から当社に移転します。</dd>
+<dt>準委任契約の場合（3項）</dt><dd>「業務提供が完了した時点」で完了。完了の確認方法（報告書提出・当社承認等）は発注書で定めます。</dd>
+<dt>「納入」の意味</dt><dd>甲が指定する場所または方法により成果物が甲に到達したこと。データ納品なら「受信完了」、郵送なら「到着」が起点です。</dd>
+<dt>検収期間の設定</dt><dd>取適法・フリーランス法対象の取引では受領後<strong>20日以内</strong>の通知が義務（第18条1項②）。通知がない場合は「検収済みとみなし」となります。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 第7条（不合格時の対応）</span><span class="rel-tag">→ 第8条（報酬支払のタイミング）</span></div>
+</div>
+<div class="art sv" id="sv-7">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第7条</div>
+<div class="art-ttl">第7条（契約不適合および修正対応）</div>
+<p class="art-lead">成果物や業務の結果が発注内容を満たさない場合（「契約不適合」）の処理手順と当社が選択できる対応手段を定めます。<strong>「まず協議」という段階的アプローチ</strong>が特徴です。</p>
+<dl>
+<dt>対応の手順（1〜2項）</dt><dd>①乙に対し<strong>書面で具体的な不適合内容を通知</strong>し、合理的な期間を定めて協議を求める　②協議で解決しない場合に：成果物の修正または業務の再実施 ／ 報酬の減額 ／ 契約の解除 ／ 報酬の支払拒否　から選択できます。</dd>
+<dt>請負契約の通知期限（3項①）</dt><dd><strong>成果物の納品後1年以内</strong>に不適合内容を乙に通知しなければなりません。1年を過ぎると原則として追及できなくなります。</dd>
+<dt>準委任契約の対応（3項②）</dt><dd>「重大な義務違反」がある場合に協議のうえで報酬の全部または一部の支払拒否・減額が可能。「重大」かどうかは客観的に判断する必要があります。</dd>
+</dl>
+<div class="cl-i">不適合の通知は口頭ではなく<strong>書面またはメール</strong>で行い、具体的にどの部分がどの仕様を満たしていないかを明記してください。漠然とした「クオリティが低い」という通知は根拠として不十分です。</div>
+</div>
+<div class="art sv" id="sv-8">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第8条</div>
+<div class="art-ttl">第8条（報酬の支払）</div>
+<p class="art-lead">報酬の支払方法・支払期日・インボイス対応・遅延ペナルティを規定します。取適法・フリーランス法が適用される場合は<strong>法定の60日以内支払が優先</strong>されます。</p>
+<dl>
+<dt>請負契約の支払タイミング（2項）</dt><dd>原則：検収完了後、請求書受領月の翌月末日まで　｜　取適法・フリ法適用時：成果物受領日から起算して<strong>60日以内</strong>の、発注書に定める支払期日まで</dd>
+<dt>準委任・委任契約の支払（3項）</dt><dd>原則：毎月末日締め翌月末日払い　｜　取適法・フリ法適用時：給付受領日から<strong>60日以内</strong></dd>
+<dt>振込手数料（3項後段）</dt><dd>振込手数料は<strong>当社（甲）負担</strong>です。受託者に負担させることは取適法上の「不当な利益の強制」に該当する可能性があります。</dd>
+<dt>遅延損害金（4項）</dt><dd>支払期日翌日から支払済まで<strong>年14.6%</strong>の遅延損害金が発生します（民法年3%より大幅に高い）。当事者間の合意があっても原則として免除不可です。</dd>
+<dt>不可抗力時の注意（5項）</dt><dd>天災等の不可抗力による遅延でも、取適法・フリーランス法適用時は<strong>不可抗力を理由とする免責は認められません</strong>。60日ルールは絶対的義務です。</dd>
+</dl>
+<div class="cl-w">支払期日の超過は自動的に年14.6%の損害金を発生させます。社内カレンダーで支払期日を管理し、超過が起きない体制を整えてください。</div>
+<div style="margin-top:8px"><span class="law-tag">取適法4条1項2号（支払遅延の禁止）</span><span class="law-tag">フリーランス法6条</span></div>
+</div>
+<div class="art-grp sv"><div class="gn">Chapter 3</div><h2>知的財産・情報管理（第9条〜第12条）</h2><div class="gd">成果物IP・資料・秘密・個人情報の管理</div></div>
+<div class="art sv" id="sv-9">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第9条</div>
+<div class="art-ttl">第9条（知的財産権）</div>
+<p class="art-lead">業務の成果物に関する<strong>著作権・特許権等のIP帰属・譲渡・著作者人格権の不行使</strong>・第三者権利侵害への対処を定めます。当社が委託したコンテンツを自由に活用できるよう設計されています。</p>
+<dl>
+<dt>成果物のIPは原則として当社帰属（1項）</dt><dd>著作権（著作権法27条・28条の翻訳権・二次的著作物利用権を含む）、特許権、意匠権、商標権その他一切のIPが成果物完成と同時に当社に帰属します。受託者は完成と同時に当社に権利を譲渡したものとなります。</dd>
+<dt>受託者の既存IPの留保（2項）</dt><dd>受託者が本件業務以前から保有していた技術・ノウハウ・著作物等（「乙既存知的財産」）は受託者に留保されます。ただし成果物の一部として使用された場合は当社に<strong>非独占的な使用許諾</strong>が付与されます。</dd>
+<dt>著作者人格権の不行使（3項）</dt><dd>受託者は成果物に関する著作者人格権を原則として行使しません。これにより当社は成果物を<strong>修正・改変・他商品への転用等を受託者の許諾なしに行える</strong>ようになります。ただし「乙の名誉または声望を害する態様での使用」の場合はこの限りではありません。</dd>
+<dt>第三者IP侵害への対処（4項）</dt><dd>成果物が第三者のIPを侵害することが判明した場合、受託者が自己責任・費用負担で処理します。ただし<strong>当社の指示に基づく部分については当社が責任を負います</strong>。</dd>
+</dl>
+<div class="cl-i">成果物に受託者の既存ツール・フォント・フォトライブラリ等が含まれる場合は、発注書の特記事項に明記してもらってください。</div>
+</div>
+<div class="art sv" id="sv-10">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第10条</div>
+<div class="art-ttl">第10条（資料の取扱い）</div>
+<p class="art-lead">業務遂行のために当社が受託者に提供した資料（データ・書類・素材等）の<strong>管理義務・使用範囲・返却義務</strong>を定めます。情報漏洩や目的外流用を防ぐための規定です。</p>
+<dl>
+<dt>善管注意義務での管理（2項）</dt><dd>受託者は提供資料を「善良なる管理者の注意義務」（同種業務の通常の専門家として要求される注意の程度）をもって取り扱わなければなりません。</dd>
+<dt>複製・第三者提供の制限（2項）</dt><dd>当社の書面による事前承諾なしに、提供資料を複製または第三者に提供することはできません。</dd>
+<dt>目的外使用の禁止（3項）</dt><dd>提供資料は本件業務の遂行のみに使用できます。<strong>他の業務・他のクライアントへの流用は明示的に禁止</strong>されています。</dd>
+<dt>返却・破棄義務（4項）</dt><dd>契約終了時または当社の指示があった場合、受託者は速やかに資料を返却または破棄しなければなりません。電子データの場合は「完全消去」が返却に相当します。</dd>
+</dl>
+<div class="cl-i">個人情報を含む資料を提供する場合は第12条（個人情報）も併せて適用されます。</div>
+</div>
+<div class="art sv" id="sv-11">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第11条</div>
+<div class="art-ttl">第11条（秘密保持）</div>
+<p class="art-lead">契約に関連して知り得た相手方の秘密情報の保持義務を定めます。<strong>双方向の義務</strong>であり、当社側も受託者の秘密情報を守る義務を負います。</p>
+<dl>
+<dt>秘密情報の定義と範囲（1項）</dt><dd>書面・口頭・電磁的記録を問わず、表示の有無にかかわらず「秘匿性を有する一切の情報」が対象です。</dd>
+<dt>秘密情報の例外（1項各号）</dt><dd>①開示を受けた時点で既に公知な情報　②開示後に受領者の責によらず公知となった情報　③開示前から受領者が適法に保有していた情報　④正当な第三者から適法に入手した情報　⑤受領者が独自に開発した情報</dd>
+<dt>5年間の存続（3項）</dt><dd>秘密保持義務は<strong>契約終了後も5年間継続</strong>します。契約が終了・解除されても5年間は相手方の秘密情報を守り続ける義務があります。</dd>
+<dt>法令による開示（2項）</dt><dd>法令・裁判所・行政機関からの命令による開示が必要な場合は、可能な限り事前に相手方に通知し、意向を尊重するよう努めます。</dd>
+</dl>
+<div class="cl-t">別途NDAを締結している場合でも本条の義務は重複して適用されます。NDAと本条の内容が矛盾する場合は発注書優先の原則（第1条2項）または別途の合意で整理してください。</div>
+</div>
+<div class="art sv" id="sv-12">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第12条</div>
+<div class="art-ttl">第12条（個人情報の取扱い）</div>
+<p class="art-lead">業務上取り扱う個人情報（顧客情報・従業員情報等）の管理義務を<strong>個人情報保護法に基づいて</strong>定めます。</p>
+<dl>
+<dt>目的外利用の禁止（2項）</dt><dd>個人情報は本件業務の範囲内のみに使用しなければなりません。受託者が取得した顧客情報を他の営業活動に使用することは禁止されます。</dd>
+<dt>安全管理措置の義務（3項）</dt><dd>漏洩・滅失・毀損の防止のため、個情法・個情保護委員会のガイドラインに従った「必要かつ適切な措置」を講じる義務があります。</dd>
+<dt>事故発生時の通知義務（4項）</dt><dd>個人情報漏洩等の事故が発生した場合は<strong>直ちに相手方に通知</strong>し、原因調査と再発防止措置を講じなければなりません。</dd>
+<dt>再委託の制限（5項）</dt><dd>個人情報の取扱いを第三者に委託することは<strong>相手方の書面による事前承諾がある場合を除き禁止</strong>されています。</dd>
+</dl>
+<div class="cl-w">個人情報漏洩が発生した場合、個人情報保護委員会への報告義務（個情法26条）が生じる可能性があります。事故発生時は法務部に即報してください。</div>
+<div style="margin-top:8px"><span class="law-tag">個人情報保護法2条1項・26条</span></div>
+</div>
+<div class="art-grp sv"><div class="gn">Chapter 4</div><h2>変更・終了・解除（第13条〜第15条）</h2><div class="gd">受託者情報の変更・契約の終了方法・解除の条件</div></div>
+<div class="art sv" id="sv-13">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第13条</div>
+<div class="art-ttl">第13条（届出事項の変更）</div>
+<p class="art-lead">受託者が当社に届け出た情報（住所・口座・インボイス登録状況等）に変更が生じた場合の<strong>通知義務</strong>を定めます。特にインボイス登録番号の変更は消費税処理に直結するため即時通知が求められます。</p>
+<dl>
+<dt>通知が必要な届出事項（1項）</dt><dd>商号（氏名）・代表者　／　住所（居所）・連絡先　／　振込先銀行口座　／　事業者区分（法人・個人の別）　／　インボイス登録番号の取得または廃止</dd>
+<dt>未通知の不利益は受託者の責任（2〜3項）</dt><dd>通知を怠ったことにより当社からの通知・書類・報酬の支払いが延着・不能となっても当社は遅滞の責任を負いません。また、未通知に起因して生じた損害も当社は一切の責任を負いません。</dd>
+</dl>
+<div class="cl-n">口座変更・インボイス廃止の通知を受けた場合は経理部・法務部の双方に即時共有し、支払処理を一時停止してから確認・更新作業を行ってください。</div>
+</div>
+<div class="art sv" id="sv-14">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第14条</div>
+<div class="art-ttl">第14条（契約期間および中途解約）</div>
+<p class="art-lead">基本契約の有効期間・自動更新ルール・中途解約の手続き、および<strong>基本契約終了後の個別業務の継続</strong>について定めます。基本契約が終了しても進行中の個別業務は継続する点が重要です。</p>
+<dl>
+<dt>契約期間と自動更新（1項）</dt><dd>期間：締結日から<strong>1年間</strong>。期間満了1か月前までに書面による解約の意思表示がない限り<strong>同一条件で1年間自動延長</strong>。以後も同様。</dd>
+<dt>中途解約（2項）</dt><dd>やむを得ない事由がある場合、<strong>30日前までに書面で通知</strong>することで解約できます。</dd>
+<dt>基本契約終了後の個別業務の継続（3項）</dt><dd>基本契約が終了しても、終了時点で進行中または未着手の個別業務は完了・終了まで本契約の関連条項が適用され続けます。基本契約の終了を理由に業務を中断することはできません。</dd>
+<dt>長期個別業務の中途解約（4項）</dt><dd>個別業務の履行期間が基本契約終了日から6か月以上ある場合は<strong>1か月前に書面通知</strong>することで当該個別業務を中途解約できます。</dd>
+<dt>存続条項（5項）</dt><dd>秘密保持義務・知的財産権・損害賠償等は契約終了後も継続して有効です。</dd>
+</dl>
+<div class="cl-n">自動更新を止める場合は<strong>期間満了1か月前</strong>に書面で解約通知を送る必要があります。契約管理台帳で更新期日を管理してください。</div>
+</div>
+<div class="art sv" id="sv-15">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第15条</div>
+<div class="art-ttl">第15条（契約の解除）</div>
+<p class="art-lead">契約違反や相手方の信用不安等を理由として契約を解除する条件・手続きを定めます。<strong>「催告を要する解除」と「催告不要の即時解除」</strong>を使い分ける設計です。</p>
+<dl>
+<dt>催告後の解除（1項）</dt><dd>相手方が契約に違反した場合、<strong>相当の期間を定めて書面で是正を催告</strong>し、期間内に是正されない場合に解除できます。違反があれば即解除ではなく、是正の機会を与えるのが原則です。</dd>
+<dt>催告不要の即時解除事由（2項）</dt><dd>①履行不能または履行拒否　②差押え・仮差押え等の処分　③不渡り・支払停止・破産等の申立て　④解散または事業の重要部分の譲渡　⑤信用不安が生じたと認められるとき</dd>
+<dt>解除権と損害賠償の関係（3〜4項）</dt><dd>解除権の行使自体は損害賠償責任を生じさせません（3項）。ただし解除によって相手方に生じた損害を請求することはできます（4項）。</dd>
+</dl>
+<div class="cl-w">即時解除事由（財産差押え・破産申立て等）を把握した場合は速やかに法務部に報告してください。解除通知は書面で行い、証拠を保全することを推奨します。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ 第19条（反社会的勢力による即時解除）</span></div>
+</div>
+<div class="art-grp sv"><div class="gn">Chapter 5</div><h2>責任・雑則（第16条〜第22条）</h2><div class="gd">損害賠償・権利譲渡・法令対応・反社・管轄・雑則</div></div>
+<div class="art sv" id="sv-16">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第16条</div>
+<div class="art-ttl">第16条（損害賠償）</div>
+<p class="art-lead">相手方の故意または過失により損害が生じた場合の賠償責任と、請負契約における<strong>損害賠償の上限額</strong>を定めます。</p>
+<dl>
+<dt>賠償の範囲</dt><dd>弁護士費用・人件費・逸失利益等を含む損害を賠償する責任を負います（故意または過失が前提）。</dd>
+<dt>請負契約における上限（1項ただし書き）</dt><dd>請負契約の場合、乙（受託者）の責任は<strong>原則として甲が実際に支払った業務委託料が上限</strong>となります。これは受託者の過大なリスク負担を防ぐための規定です。</dd>
+<dt>注意点</dt><dd>準委任契約には上限の明示的な定めがありません。また、甲（当社）が損害を与えた場合の賠償責任にも上限の規定はありません。</dd>
+</dl>
+<div class="cl-i">大型案件で想定損害が報酬額を大幅に超える場合は、発注書の特記事項で別途損害賠償の上限額を設定することを検討してください。</div>
+</div>
+<div class="art sv" id="sv-17">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第17条</div>
+<div class="art-ttl">第17条（権利義務の譲渡禁止）</div>
+<p class="art-lead">甲乙双方が、相手方の<strong>書面による事前承諾なく</strong>、本契約に基づく地位・権利義務を第三者に譲渡・承継・担保設定することを禁止します。</p>
+<dl>
+<dt>譲渡禁止の対象</dt><dd>契約上の地位の全部譲渡（会社売却等）／個別の権利の譲渡（報酬請求権の担保への供出等）／義務の引受けによる承継</dd>
+<dt>M&A時の注意</dt><dd>M&Aや事業承継により受託者の経営主体が変わる場合、当社の書面承諾が必要です。受託者から吸収合併等の情報を得た場合は法務部に報告してください。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 第14条（契約期間・解約）</span></div>
+</div>
+<div class="art sv" id="sv-18">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第18条</div>
+<div class="art-ttl">第18条（中小受託取引適正化法および特定受託事業者法等の適用）</div>
+<p class="art-lead">取適法（中小受託取引適正化法）およびフリーランス法（特定受託事業者に係る取引の適正化等に関する法律）が適用される場合に、当社（甲）が履行すべき<strong>6項目の義務</strong>を明記した条文です。<strong>他条項に優先して適用</strong>されます（3項）。</p>
+<dl>
+<dt>対象者の判断（2項）</dt><dd>取適法：資本金・従業員数基準により中小受託事業者に該当する場合。フリーランス法：個人として業務委託を受ける特定受託事業者（主にフリーランス・個人事業主）。判断が難しい場合は法務部に確認してください。</dd>
+<dt>当社が履行すべき6項目の義務（1項①〜⑥）</dt><dd><ol style='margin:4px 0 0;padding-left:18px'><li>①業務内容・報酬・納期・仕様・再委託可否等の書面明示</li><li>②受領後20日以内の検収結果通知（通知なしで検収済みとみなし）</li><li>③給付受領日から60日以内の報酬支払</li><li>④ハラスメント防止措置・相談窓口の設置・通知（KADOKAWAグループホットライン）</li><li>⑤取引記録の3年間保存</li><li>⑥価格の一方的決定・報酬不当減額・買いたたき・手形払い強制等の禁止行為の遵守</li></ol></dd>
+<dt>他条項への優先（3項）</dt><dd>本条の内容は他条項に<strong>優先して適用</strong>されます。他条項と矛盾・重複が生じた場合は本条が優先します。</dd>
+<dt>ハラスメント相談窓口</dt><dd>名称：KADOKAWAグループホットライン　｜　電話：0120-996-206（平日8:30〜19:00、土曜8:30〜17:00）　｜　相談を理由とした不利益取扱いは禁止です。</dd>
+</dl>
+<div style="margin-top:8px"><span class="law-tag">取適法（旧下請法）</span><span class="law-tag">フリーランス法（2024年11月施行）</span></div>
+</div>
+<div class="art sv" id="sv-19">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第19条</div>
+<div class="art-ttl">第19条（反社会的勢力の排除）</div>
+<p class="art-lead">甲乙双方が反社会的勢力ではないこと・関係を持たないことを<strong>表明・確約</strong>し、違反した場合の即時解除権および損害賠償権を定めます。</p>
+<dl>
+<dt>表明保証の内容（1項①〜⑤）</dt><dd>自らが暴力団等でないこと／役員が反社会的勢力でないこと／反社会的勢力に名義を利用させないこと／脅迫・暴力を用いないこと／偽計・威力を用いて業務を妨害しないこと</dd>
+<dt>即時解除権（2項）</dt><dd>相手方が反社会的勢力に該当した場合、<strong>催告なしに直ちに解除</strong>できます。</dd>
+<dt>解除による損害賠償（3項）</dt><dd>解除により相手方に生じた損害の賠償責任を負いません。逆に、解除により自らに生じた損害は相手方に請求できます。</dd>
+<dt>報告義務（4項）</dt><dd>自らまたは役員が反社会的勢力との関係を有することが判明した場合には直ちに相手方に報告しなければなりません。</dd>
+</dl>
+<div class="cl-w">受託者選定前に社内の反社チェックフローを実施してください。チェックを怠って問題が発覚した場合のリスクは当社にも及びます。</div>
+</div>
+<div class="art sv" id="sv-20">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第20条</div>
+<div class="art-ttl">第20条（準拠法および合意管轄）</div>
+<p class="art-lead">本契約に関する紛争が生じた場合の<strong>適用法律と専属管轄裁判所</strong>を定めます。</p>
+<dl>
+<dt>準拠法（1項）</dt><dd>本契約は<strong>日本法</strong>に準拠して解釈されます。</dd>
+<dt>専属的合意管轄（2項）</dt><dd>訴訟・調停その他の法的手続きが必要な場合は<strong>東京地方裁判所を第一審の専属的合意管轄裁判所</strong>とします。「専属的」とは、他の裁判所に提起することができないことを意味します。</dd>
+</dl>
+</div>
+<div class="art sv" id="sv-21">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第21条</div>
+<div class="art-ttl">第21条（協議解決）</div>
+<p class="art-lead">本契約に定めのない事項や解釈に疑義が生じた事項については、<strong>甲乙誠意をもって協議</strong>のうえ円満に解決することを定めます。</p>
+<dl>
+<dt>実務上の意義</dt><dd>本条は「白紙」になっている事態に対する一般的なフォールバック条項です。第20条（専属的合意管轄）の前段として、まず訴訟ではなく協議で解決することを原則としています。</dd>
+</dl>
+</div>
+<div class="art sv" id="sv-22">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第22条</div>
+<div class="art-ttl">第22条（従前契約の包括および解除）</div>
+<p class="art-lead">本契約書の締結以前に甲乙間で締結されていたすべての業務委託に関する契約を<strong>本契約書に統合し解除</strong>する条文です。過去の個別契約が点在する状態を整理・一本化する機能を持ちます。</p>
+<dl>
+<dt>包括統合の仕組み（1〜2項）</dt><dd>本契約締結日以前の業務委託に関する契約・合意書・覚書等（「従前契約」）をすべて本契約に統合し、締結と同時に合意により解除します。</dd>
+<dt>進行中業務の継続（3項）</dt><dd>締結時点で従前契約に基づき履行中または未着手の個別業務は、<strong>新たな発注書なしで本契約に基づく業務として継続</strong>します。業務内容・報酬・納期等は従前契約の定めによります。</dd>
+<dt>債権債務の承継（4項）</dt><dd>従前契約に基づく未払い報酬・損害賠償債務等の債権債務は本契約に承継されます。</dd>
+<dt>存続する義務（5項）</dt><dd>秘密保持義務・知的財産権に関する義務・資料の返却義務等は本契約の対応条項に基づき引き続き有効です。</dd>
+<dt>「従前契約」の一覧表（8項）</dt><dd>「従前契約」の範囲は別途作成する一覧表に記載される契約です。一覧表は本契約の一部を構成します。ただし、一覧表に記載がない契約も本条第1項により包括されます。</dd>
+</dl>
+<div class="cl-n">従前契約がある受託者と本契約書を締結する場合は、事前に過去の契約・覚書の一覧を作成してください。見落としがあると想定外の権利義務関係が残ります。</div>
+</div>
+
+</div>
+
+  
+<div class="clause-panel" id="panel-lc">
+  <h1 class="dt" style="color:#07402f;border-bottom-color:#0a5e4a">ライセンス利用許諾基本契約書 条文解説</h1>
+  <p class="dm">作成：法務部　｜　各条項の法的趣旨・要点・実務上の注意を整理した担当者向け解説</p>
+  <div class="cl-i" style="border-color:#0a5e4a;background:#e0f5ef">本ガイドはライセンス利用許諾基本契約書（<code>template_license_basic</code>）の各条項を解説します。本契約では甲＝ライセンサー（権利者）、乙＝アークライト（ライセンシー）です。業務委託基本契約書とは甲乙の立場が逆である点に注意してください。</div>
+
+  <div class="panel-ver-bar lc">
+    <span>📑 適用契約書テンプレート：</span>
+    <strong>ライセンス利用許諾基本契約書</strong>
+    <span class="panel-ver-pill">Ver001</span>
+    <span class="panel-ver-meta">本ガイドの解説対象バージョン</span>
+  </div>
+
+<div class="dl-banner">
+  <div class="dl-banner-text">
+    <div class="dl-banner-title">📄 読み方ガイド（要約資料）をダウンロード</div>
+    <div class="dl-banner-sub">各契約書の主要条項・実務ポイントを4スライドにまとめたPPTX資料です</div>
+  </div>
+  <div class="dl-btns">
+    <a class="dl-btn dl-btn-sv"
+       href="{{GDRIVE_URL_SERVICE}}"
+       download="業務委託基本契約書_読み方ガイド.pptx">
+      <span class="dl-icon">⬇</span> 業務委託基本契約書
+    </a>
+    <a class="dl-btn dl-btn-lc"
+       href="{{GDRIVE_URL_LICENSE}}"
+       download="ライセンス利用許諾基本契約書_読み方ガイド.pptx">
+      <span class="dl-icon">⬇</span> ライセンス利用許諾基本契約書
+    </a>
+  </div>
+</div>
+
+  <div class="art-grp lc"><div class="gn">Chapter 1</div><h2>基本構造（第1条〜第5条）</h2><div class="gd">契約の目的・定義・個別条件・権利の許諾・サブライセンス</div></div>
+<div class="art lc" id="lc-1">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第1条</div>
+<div class="art-ttl">第1条（目的）</div>
+<p class="art-lead">甲（ライセンサー）が保有する原著作物に係る知的財産権について、乙（アークライト）による<strong>アナログゲームとしての商業的利用を許諾</strong>するにあたり、その利用条件および権利義務関係を定めることを目的とします。</p>
+<dl>
+<dt>ライセンス契約の基本構造</dt><dd>本契約は<strong>「基本契約＋個別利用許諾条件（別紙）」</strong>の二層構造をとります。基本契約が共通ルールを定め、タイトルごとの個別条件（ロイヤルティ率・許諾地域・許諾期間等）は別紙に記載します。</dd>
+<dt>業務委託との違い</dt><dd>ライセンス契約では当社が「ライセンシー（権利を使用する側）」として<strong>ロイヤルティを支払います</strong>。業務委託基本契約書とは甲乙の立場が逆です（本契約では甲＝ライセンサー、乙＝アークライト）。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 第3条（個別条件の成立）</span><span class="rel-tag">→ 第7条（対価・ロイヤルティ）</span></div>
+</div>
+<div class="art lc" id="lc-2">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第2条</div>
+<div class="art-ttl">第2条（定義）</div>
+<p class="art-lead">本契約で使用する9つの重要用語を定義する条文です。<strong>「原著作物」「アナログゲーム」「対象アナログゲーム」</strong>等の定義は契約の適用範囲に直接影響するため、正確に把握してください。</p>
+<dl>
+<dt>原著作物（1号）</dt><dd>甲が著作権・意匠権・商標権等を有する、アニメーション・ゲーム・イラスト・キャラクター・世界観・ルール説明書・カードデザイン等の創作物。甲が<strong>将来において正当に権利を保有する関連作品・関連素材を含む</strong>。</dd>
+<dt>アナログゲーム（2号）</dt><dd>カードゲーム・ボードゲーム・TRPG等の非デジタル形式のゲーム製品。さらに<strong>デジタル実装（スマホアプリ・PCソフト等）も派生物として含まれる</strong>。デジタルゲームの権利も本契約に含まれる点に注意。</dd>
+<dt>対象アナログゲーム（3号）</dt><dd>甲の原著作物を基にして乙が企画・開発・製造・販売または<strong>デジタル実装</strong>を行う製品であって、甲が本契約に基づき許諾するもの。</dd>
+<dt>二次著作物（4号）</dt><dd>原著作物を素材として乙が創作した翻案・翻訳・イラスト・ルール記載等。著作権法上の保護対象となるものを含む。→ 第9条（帰属は乙）</dd>
+<dt>乙制作素材（5号）</dt><dd>乙が独自に制作または第三者に委託して制作した情報・データ・部品・素材等のうち、二次著作物に該当しないもの。</dd>
+<dt>ライセンス種別（6号）</dt><dd><strong>非独占的・専属的・独占的</strong>のいずれかを別紙個別条件に定めます。種別により転ライセンス（サブライセンス）の可否等が変わります。</dd>
+<dt>許諾地域（7号）</dt><dd>乙による利用が認められる国または地域。別紙個別条件に明記されます。地域外での販売は許諾違反となります（越境EC例外は第6条8項参照）。</dd>
+<dt>甲の監修（8号）</dt><dd>製造または販促に際し、甲が原著作物の表現内容・外装・ルール記載等について確認・指摘を行う権利。監修手続きは第6条4項参照。</dd>
+</dl>
+</div>
+<div class="art lc" id="lc-3">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第3条</div>
+<div class="art-ttl">第3条（個別条件の成立）</div>
+<p class="art-lead">タイトルごとの具体的な利用許諾条件（ロイヤルティ率・許諾地域・許諾期間等）を記載する<strong>「別紙個別利用許諾条件」</strong>の成立・運用方法を定めます。</p>
+<dl>
+<dt>個別条件の成立要件（1項）</dt><dd>甲乙の合意のうえ、当該内容が<strong>別紙に記載された時点</strong>で効力が生じます。書面・電磁的記録（両当事者の確認が取れたもの）が有効な個別条件として認められます。</dd>
+<dt>暫定的利用許諾（2〜3項）</dt><dd>商業条件が未確定な段階でも、「本件は暫定的利用許諾に基づく」旨を明記することで<strong>暫定的な許諾が成立</strong>します。解除条件・解除期限を明記することで条件確定前のリスクを管理できます。</dd>
+</dl>
+<div class="cl-n">実務上、発売スケジュールが先行してロイヤルティ率が未確定のケースがあります。そのような場合は暫定許諾を活用しつつ、解除期限を設定して交渉を完了させてください。</div>
+</div>
+<div class="art lc" id="lc-4">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第4条</div>
+<div class="art-ttl">第4条（権利の許諾）</div>
+<p class="art-lead">本契約の核心となる<strong>利用許諾（ライセンス）の内容</strong>を定めます。甲が乙に許諾する権利の範囲は、著作権法上の権利行為（複製・公衆送信・展示・頒布・翻案等）を含む広範なものです。</p>
+<dl>
+<dt>許諾の内容（1項）</dt><dd>本許諾の目的は「対象アナログゲームの<strong>製造・販売・販促</strong>」です。この目的の範囲を超えた使用は許諾の対象外となります。</dd>
+<dt>許諾の具体的範囲（2項）</dt><dd>著作権法21条〜28条に基づく：複製権・公衆送信権・展示権・頒布権・<strong>翻案権および二次的著作物の利用権</strong>（27条・28条）を含みます。具体的条件は別紙個別条件に定めます。</dd>
+<dt>独占的・非独占的の区別</dt><dd>許諾の種別（第2条6号「ライセンス種別」）により、乙が独占的な権利を持つか非独占的な権利にとどまるかが決まります。独占的許諾を受けている場合、甲は第三者に同一権利を許諾できません。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 第2条6号（ライセンス種別の定義）</span><span class="rel-tag">→ 第5条（サブライセンス）</span></div>
+</div>
+<div class="art lc" id="lc-5">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第5条</div>
+<div class="art-ttl">第5条（サブライセンス）</div>
+<p class="art-lead">乙（アークライト）が許諾された利用行為の全部または一部を<strong>第三者に再許諾（サブライセンス）</strong>できる条件と手続きを定めます。甲の書面による事前承諾が必須です。</p>
+<dl>
+<dt>サブライセンスの2種類（1項）</dt><dd>①<strong>国内・海外パブリッシャーへの再許諾</strong>：海外での販売・流通を目的として第三者に再許諾するケース（例：海外展開先への転ライセンス）　②<strong>OEM委託者への再許諾</strong>：製品の製造・供給を委託する際に行う再許諾（例：OEM製造パートナーへの権利付与）</dd>
+<dt>サブライセンス先への義務の流下（2項）</dt><dd>サブライセンス先に対して<strong>本契約と同等以上の義務</strong>を課さなければなりません。乙はサブライセンス先の行為について甲に対して責任を負います。</dd>
+<dt>サブライセンス料（2項後段・3項）</dt><dd>サブライセンスにより乙が受領する対価（サブライセンス料）の料率・支払方法・条件は別紙個別条件に定めます。</dd>
+</dl>
+<div class="cl-w">甲の書面による事前承諾なしのサブライセンスは本契約違反です。海外展開・OEM委託を行う前に必ず法務部で甲への承諾申請手続きを確認してください。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ BG事業部契約スキームガイド（場面1・場面4）</span></div>
+</div>
+<div class="art-grp lc"><div class="gn">Chapter 2</div><h2>履行・対価（第6条〜第7条）</h2><div class="gd">製造・販売・監修・越境EC・ロイヤルティ・帳簿監査</div></div>
+<div class="art lc" id="lc-6">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第6条</div>
+<div class="art-ttl">第6条（開発、製造および販売）</div>
+<p class="art-lead">乙（アークライト）が対象アナログゲームを開発・製造・販売するにあたっての<strong>権利・義務・手続き・監修ルール</strong>を包括的に定める条文です。ライセンス契約の中でも最も実務と直結する条項群です。</p>
+<dl>
+<dt>開発行為は乙の責任・費用（1項）</dt><dd>企画・設計・翻案・ルール構築・ローカライズ等の開発行為は<strong>乙の責任および費用</strong>で行います。甲の協力・監修が必要な場合は別途協議します。</dd>
+<dt>甲への業務委託（2項）</dt><dd>乙は甲に対してイラスト制作・グラフィック素材作成・販促イベント登壇等（「受託業務」）を委託することができます。受託業務の内容・報酬等は<strong>発注書・電子メール等による合意</strong>で定めます。<br>＊甲が業務委託を受ける立場になる特殊な規定です。</dd>
+<dt>委託成果物のIP帰属（3項）</dt><dd>甲が受託業務で制作した成果物のIP：甲の従前IPは甲に帰属。<strong>新たに創作された部分は原則として乙に譲渡</strong>されます。従前IPが本質的要素を構成する場合は乙に非独占的ライセンスが付与されます。</dd>
+<dt>製造前の通知・サンプル提供（4項）</dt><dd>製造に先立ち予定製造数量・製造開始予定日等を甲に通知し、<strong>試作サンプルを提供</strong>します。個別条件に甲の監修が求められている場合は監修を受ける義務があります。</dd>
+<dt>品質基準・クレジット表示（5項）</dt><dd>印刷品質・資材仕様・製品安全性については甲が別途指定する基準を遵守し、<strong>著作権表示・ライセンス表記・クレジット情報を適切に表示</strong>しなければなりません。</dd>
+<dt>製造・販売の再委託（6〜7項）</dt><dd>製造の第三者再委託は乙の責任において可能。販売方法・チャネル・価格設定は乙の裁量で決定できます。</dd>
+<dt>越境ECの例外（8項）</dt><dd>許諾地域で販売した製品が越境ECを通じて地域外に流通しても、<strong>乙が直接意図・助長していない場合は許諾地域の制限違反とはみなしません</strong>（越境EC例外）。</dd>
+<dt>販売開始前の通知（9項）</dt><dd>販売開始に先立ち、甲に対して販売予定日・対象地域・販売方法の概要を通知しなければなりません。甲が調整を求めた場合は誠意をもって協議します。</dd>
+<dt>クレーム・紛争への一次対応（10項）</dt><dd>製造または販売に関連して第三者との間に発生する瑕疵・クレーム・紛争は<strong>乙が第一次的に対応</strong>します。</dd>
+</dl>
+<div class="cl-i">越境EC例外（8項）は、日本国内向けに販売した製品が海外の消費者にAmazon等を通じて渡った場合に乙が責任を問われないための重要な規定です。ただし「積極的に海外販売を促進した場合」は例外の対象外となります。</div>
+</div>
+<div class="art lc" id="lc-7">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第7条</div>
+<div class="art-ttl">第7条（対価）</div>
+<p class="art-lead">乙が甲に支払う<strong>ロイヤルティの算定方法・支払条件・帳簿監査権</strong>を定めます。算定方式は「製造数量ベース」または「売上高ベース」のいずれかが別紙個別条件で指定されます。</p>
+<dl>
+<dt>ロイヤルティの算定基準（1項）</dt><dd>別紙個別利用許諾条件に定める基準価格・ロイヤルティ料率・算定方法・地域別条件に基づいて算定します。</dd>
+<dt>業務委託報酬との区別（1項後段）</dt><dd>甲に対して業務を委託した場合（第6条2項の受託業務）の報酬は、ロイヤルティとは別に、合意した金額・支払条件に従って支払われます。この部分に取適法・フリーランス法が適用される場合は<strong>年14.6%の遅延損害金</strong>（非適用時は年3%）が生じます。</dd>
+<dt>算定方式の2類型（2項）</dt><dd><strong>①製造数量ベース：</strong>製造完了時点または第三者への引渡し時点のいずれか早い時点で支払。<strong>②売上高ベース：</strong>実際の売上数量に応じて計算期間・支払時期に従って支払。</dd>
+<dt>明細書の提出義務（3項）</dt><dd>支払時に対象期間における<strong>数量・価格・地域別売上・控除項目・算定基準等を記載した明細書</strong>を甲に提出しなければなりません。</dd>
+<dt>帳簿監査権（4項）</dt><dd>甲は<strong>年1回を限度として</strong>乙の帳簿および関連書類の監査を行うことができます。監査費用は原則甲負担ですが、<strong>過少支払いが判明した場合は乙が負担</strong>します。</dd>
+<dt>支払方法（5項）</dt><dd>契約書冒頭の特約・特記事項欄に記載された甲の銀行口座への振込で行います。</dd>
+</dl>
+<div class="cl-n">製造数量ベースと売上高ベースでは資金管理の負荷が大きく異なります。製造数量ベースは製造時に確定するため管理が簡易ですが、在庫が多く残った場合の負担が大きくなります。別紙個別条件での算定方式の選択は事業計画に合わせて慎重に行ってください。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ 第6条2項（甲への業務委託・報酬）</span></div>
+</div>
+<div class="art-grp lc"><div class="gn">Chapter 3</div><h2>期間・IP・追加（第8条〜第11条）</h2><div class="gd">契約期間・IP帰属・追加作品・契約終了後の措置</div></div>
+<div class="art lc" id="lc-8">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第8条</div>
+<div class="art-ttl">第8条（契約期間）</div>
+<p class="art-lead">本契約の有効期間と自動更新ルールを定めます。業務委託基本契約書の1年更新とは異なり、<strong>5年間の長期契約</strong>を基本としています。</p>
+<dl>
+<dt>契約期間（1項）</dt><dd>契約締結日から起算して<strong>5年間</strong>。</dd>
+<dt>自動更新（2項）</dt><dd>期間満了の<strong>1か月前</strong>までにいずれかの当事者から書面による更新拒絶の通知がない場合、同一条件で<strong>5年間自動更新</strong>されます。</dd>
+<dt>業務委託契約書との比較</dt><dd>業務委託基本契約書は1年更新（第14条）。ライセンス契約の5年更新はタイトルの長期運用を前提とした設計です。</dd>
+</dl>
+<div class="cl-n">自動更新を止める場合は期間満了の<strong>1か月前</strong>に書面で通知が必要です。タイトルごとに更新期日が異なるため、個別条件と合わせて契約管理台帳で管理してください。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ 第10条（追加作品の許諾期間）</span></div>
+</div>
+<div class="art lc" id="lc-9">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第9条</div>
+<div class="art-ttl">第9条（知的財産の帰属）</div>
+<p class="art-lead">本契約に基づき乙が創作した<strong>二次著作物・乙制作素材のIP帰属</strong>を定めます。業務委託基本契約書(成果物IPは当社帰属)とは逆に、<strong>二次著作物のIPは乙(アークライト)に帰属</strong>します。</p>
+<dl>
+<dt>二次著作物は乙に帰属（1項）</dt><dd>乙が甲の原著作物を利用して創作した翻案物・翻訳テキスト・デザイン・ルール等の著作物（「二次著作物」）に係る著作権は<strong>乙に帰属</strong>します。</dd>
+<dt>二次著作物の使用制限（2項）</dt><dd>二次著作物は本契約に定める<strong>目的および範囲に限り</strong>使用されます。甲の原著作物に係る権利を不当に侵害することはできません。</dd>
+<dt>乙制作素材は乙に帰属（3項）</dt><dd>乙が製造・販売・翻訳・ローカライズ等に関連して制作した素材・部品・印刷物・仕様書・プレイシート等（「乙制作素材」）は<strong>乙に帰属</strong>します（当該素材が乙に権利帰属する場合に限る）。</dd>
+<dt>業務委託基本契約書との違い</dt><dd>業務委託基本契約書では成果物のIPは当社に帰属しますが（第9条1項）、ライセンス基本契約書では乙が創作した二次著作物・素材は乙に帰属します。これはライセンス契約の本質（原著作物の利用許諾）を反映した規定です。</dd>
+</dl>
+<div class="cl-i">契約終了後に乙が制作した二次著作物・乙制作素材を再利用する場合で、甲の原著作物・原作アートと一体的に構成されていたときは<strong>甲の書面による事前承諾が必要</strong>です（第11条2項）。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ 第11条（契約終了後の措置）</span><span class="rel-tag">→ 第6条3項（委託成果物のIP）</span></div>
+</div>
+<div class="art lc" id="lc-10">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第10条</div>
+<div class="art-ttl">第10条（追加作品に関する合意）</div>
+<p class="art-lead">本契約の枠組みを既存タイトル以外の<strong>新たな原著作物に拡張・追加適用</strong>する手続きを定めます。タイトルが増えるたびに新しい契約書を締結するのではなく、追加合意書と別紙の更新で対応できます。</p>
+<dl>
+<dt>追加合意書の手続き（1〜2項）</dt><dd>新たな原著作物を追加する場合、<strong>追加合意書を締結</strong>し別紙個別利用許諾条件を追加・差替えします。追加合意書には対象原著作物名・ライセンス種別・利用範囲・許諾地域・ロイヤルティ条件・許諾期間等を明記します。</dd>
+<dt>追加タイトルの許諾期間（3項）</dt><dd>原則として本契約の有効期間と同一。ただし追加時点で本契約の残存期間が<strong>2年未満の場合は、自動更新後の期間全体を含めた期間</strong>を許諾期間とすることができます。</dd>
+<dt>追加条件の扱い（4項）</dt><dd>追加された原著作物の利用条件は本契約の各条項に従って取り扱われます。</dd>
+</dl>
+<div class="cl-t">タイトルを追加するたびに基本契約書を締結し直す手間を省けます。ただし、追加合意書の内容（特にロイヤルティ率・許諾地域・許諾期間）が基本契約と矛盾しないよう法務部で内容を確認してください。</div>
+</div>
+<div class="art lc" id="lc-11">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第11条</div>
+<div class="art-ttl">第11条（契約終了後の措置）</div>
+<p class="art-lead">契約が終了した場合に乙が講じるべき措置（製造中止・在庫処分・資料返還）と、甲の素材買取交渉権・サブライセンス契約の終了義務を定めます。</p>
+<dl>
+<dt>乙が講じるべき措置（1項①〜③）</dt><dd>①対象アナログゲームの<strong>新規製造を直ちに中止</strong>　②契約終了前に製造された在庫品は消尽するまで販売継続可（甲提供の原作アート等と一体的部分は甲の許諾が必要）　③原著作物・原作アート・甲提供素材等は甲の指示に従い<strong>返還または処分</strong></dd>
+<dt>二次著作物・乙制作素材の再利用制限（2項）</dt><dd>契約終了後に甲の原著作物と一体的に構成されていた二次著作物・乙制作素材を再利用する場合は<strong>甲の書面による事前承諾が必要</strong>。</dd>
+<dt>甲の買取交渉権（3項）</dt><dd>甲は終了時に乙が制作した主要な二次著作物・乙制作素材について<strong>相当額の対価で譲り受ける交渉を行うことができます</strong>。乙はこれに誠実に応じる義務があります。</dd>
+<dt>サブライセンス契約の終了（4項）</dt><dd>乙が締結していたサブライセンス契約は<strong>乙の責任と費用で適切に終了</strong>させなければなりません。</dd>
+<dt>未払金等の存続（5項）</dt><dd>契約終了時点までに発生した権利義務（未払金の支払等）は契約終了後もなお存続します。</dd>
+</dl>
+<div class="cl-n">契約終了が近づいたら、在庫数量・サブライセンス契約の有無・乙制作素材の一覧を整理し、終了後の措置を法務部と事前に確認してください。</div>
+</div>
+<div class="art-grp lc"><div class="gn">Chapter 4</div><h2>責任・雑則（第12条〜第22条）</h2><div class="gd">解除・機密・個人情報・権利義務・表明保証・損害賠償</div></div>
+<div class="art lc" id="lc-12">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第12条</div>
+<div class="art-ttl">第12条（解除）</div>
+<p class="art-lead">契約違反や財務上の問題等を理由として契約を解除する条件・手続きを定めます。業務委託基本契約書の第15条に対応しますが、<strong>反社会的勢力（第18条）による即時解除は本条に含まれていない</strong>点が異なります。</p>
+<dl>
+<dt>催告後の解除（1項）</dt><dd>相手方が契約に違反し、<strong>書面により相当期間を定めて是正を催告</strong>したにもかかわらず是正されないときに解除できます。</dd>
+<dt>催告不要の即時解除事由（2項①〜⑦）</dt><dd>①支払停止・不渡り　②破産・民事再生・会社更生等の申立て（または自ら申立て）　③営業の全部譲渡・合併・清算への着手　④仮差押え・差押え・競売の申立て　⑤信用状態の著しい悪化　⑥反社会的勢力への該当・関係　⑦契約目的の達成が不可能または著しく困難な重大事由</dd>
+<dt>解除と損害賠償の関係（3項）</dt><dd>解除により当事者に生じた損害について、<strong>解除権を行使した当事者がその責任を負うものではありません</strong>（解除権の行使自体は損害賠償責任を生じさせない）。ただし解除の原因が解除権者に帰責すべき場合はこの限りではありません。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 第18条（反社会的勢力の排除による即時解除）</span></div>
+</div>
+<div class="art lc" id="lc-13">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第13条</div>
+<div class="art-ttl">第13条（機密保持）</div>
+<p class="art-lead">契約の締結・履行に関連して相手方から開示された<strong>秘密情報の保持義務</strong>を定めます。業務委託基本契約書の第11条（5年存続）と比較して、本条は<strong>3年間の存続</strong>という違いがあります。</p>
+<dl>
+<dt>秘密情報の定義（1項）</dt><dd>「秘密である旨を明示された技術上または営業上の情報」が対象です（業務委託基本契約書では<strong>表示の有無を問わない</strong>点が異なります）。</dd>
+<dt>存続期間（2項）</dt><dd>本契約期間中および<strong>契約終了後3年間</strong>有効に存続します（業務委託基本契約書は5年間）。</dd>
+<dt>例外情報（3項①〜⑤）</dt><dd>①開示時点で公知　②開示後に自己の責によらず公知　③開示前から保有を証明できる情報　④正当な第三者から適法に入手　⑤独自に開発した情報</dd>
+<dt>法令による開示（4項）</dt><dd>法令・裁判所・公的機関からの命令による開示が必要な場合は可能な限り<strong>事前に相手方に通知し協議</strong>します。</dd>
+<dt>善管注意義務での管理（5項）</dt><dd>秘密情報の取扱いについて善管注意義務をもって厳重に管理し、漏洩・紛失・盗難等が発生した場合は直ちに相手方に通知します。</dd>
+<dt>返還・廃棄義務（6項）</dt><dd>契約終了時または相手方からの要請があった場合、受領した秘密情報およびその<strong>複製物を返還または廃棄</strong>しなければなりません。</dd>
+</dl>
+<div class="cl-i">業務委託基本契約書では秘密情報の範囲が「表示の有無を問わず」広い一方、本条では「秘密である旨を明示された」情報が対象です。ライセンス交渉段階で重要な情報を開示する際は「CONFIDENTIAL」等の明示を徹底してください。</div>
+</div>
+<div class="art lc" id="lc-14">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第14条</div>
+<div class="art-ttl">第14条（個人情報の取扱い）</div>
+<p class="art-lead">契約の履行に関連して取り扱う個人情報の管理義務を<strong>個人情報保護法</strong>に基づいて定めます。業務委託基本契約書の第12条に対応しますが、<strong>再委託制限の明示的な規定がない</strong>点が異なります。</p>
+<dl>
+<dt>目的外利用の禁止（2項）</dt><dd>取得した個人情報は本契約の履行に必要な範囲を超えて利用せず、第三者に提供・開示してはなりません。</dd>
+<dt>安全管理措置と事故時の対応（3項）</dt><dd>漏洩・滅失・毀損の防止のための安全管理措置を講じ、事故発生時は<strong>速やかに相手方に報告</strong>し必要な措置を講じます。</dd>
+</dl>
+<div style="margin-top:8px"><span class="law-tag">個人情報保護法</span></div>
+</div>
+<div class="art lc" id="lc-15">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第15条</div>
+<div class="art-ttl">第15条（権利義務の譲渡禁止）</div>
+<p class="art-lead">甲乙双方が、相手方の<strong>書面による事前の承諾なく</strong>、本契約に基づく一切の権利・義務を第三者に譲渡・担保設定・承継させることを禁止します。</p>
+<dl>
+<dt>譲渡禁止の徹底（1項）</dt><dd>「一切の権利および義務」を対象としており、個別の権利（ロイヤルティ請求権等）の譲渡・担保設定も禁止されます。</dd>
+<dt>違反時の効果（2項）</dt><dd>前項に違反してなされた譲渡等は<strong>無効</strong>とします（業務委託基本契約書では違反時の効果の明示がありませんが、本条では明確に無効と規定）。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 業務委託基本契約書 第17条（同趣旨）</span></div>
+</div>
+<div class="art lc" id="lc-16">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第16条</div>
+<div class="art-ttl">第16条（表明保証）</div>
+<p class="art-lead">本契約を締結・履行するにあたって、甲乙双方が相手方に対し<strong>重要な事実の真実性・正確性を保証</strong>する条文です。特に<strong>甲による著作権の正当な保有を保証</strong>する点がライセンス契約特有の重要な規定です。</p>
+<dl>
+<dt>甲（ライセンサー）の表明保証（1項①〜④）</dt><dd>①<strong>原著作物の著作権等を正当に保有し第三者の権利を侵害していないこと</strong>　②原著作物について第三者からの知的財産権侵害の主張・係争が存在せずおそれもないこと（＊正当利用による紛争・損害は甲の責任と費用で解決し乙に生じた損害を補償）　③本契約の締結・履行に自己の権限があり第三者の承諾を要しないこと　④法令に違反していないこと</dd>
+<dt>乙（アークライト）の表明保証（2項①〜③）</dt><dd>①本契約の締結・履行に自己の権限があり第三者の承諾を要しないこと　②法令に違反していないこと　③契約の履行にあたり誠実に対応する意志と能力を有していること</dd>
+<dt>甲の著作権保証の重要性</dt><dd>甲が実際には著作権を有していない原著作物についてライセンスを受けた場合、第三者からの差止・損害賠償請求を受けるリスクがあります。<strong>甲の著作権保有の確認（権利調査）は契約締結前に行う必要があります</strong>。</dd>
+</dl>
+<div class="cl-w">表明保証違反（特に①の著作権非保有）があった場合、甲は乙に生じた損害を補償する義務を負います（第17条の損害賠償制限の例外）。著作権の帰属が複雑な案件では事前に詳細な権利調査を実施してください。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ 第17条（損害賠償・表明保証違反は制限の例外）</span></div>
+</div>
+<div class="art lc" id="lc-17">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第17条</div>
+<div class="art-ttl">第17条（損害賠償）</div>
+<p class="art-lead">本契約に違反し、または本契約に関連して相手方に損害を与えた場合の賠償責任を定めます。<strong>「通常損害のみ賠償」という原則</strong>と、<strong>支払遅延・表明保証違反・故意重過失については無制限賠償</strong>という例外の二本立てです。</p>
+<dl>
+<dt>原則：通常損害の範囲に限定（1項）</dt><dd>「現実に発生した直接かつ通常の範囲に属する損害」（通常損害）のみを賠償します。</dd>
+<dt>原則：特別損害等は免責（2項）</dt><dd><strong>特別損害・間接損害・逸失利益・営業機会の喪失等</strong>は賠償責任の対象外とします（通常損害を超える損害は免責）。</dd>
+<dt>例外：制限が適用されない場合（3項①〜③）</dt><dd>①<strong>金銭債務の不履行</strong>（支払遅延を含む）　②<strong>表明保証条項の違反</strong>（第16条）　③<strong>故意または重大な過失</strong>による契約違反または不法行為　―これらの場合は一切の損害について全額賠償責任を負います。</dd>
+<dt>業務委託基本契約書との比較</dt><dd>業務委託基本契約書（第16条）では請負の場合の損害賠償上限（支払済み報酬額）が明記されていますが、本ライセンス契約では金額上限の定めはありません。</dd>
+</dl>
+<div class="cl-i">支払遅延（第7条のロイヤルティ遅延を含む）は「金銭債務の不履行」として損害賠償制限の例外に該当します。支払期日の管理を徹底し、遅延が生じた場合は速やかに法務部に相談してください。</div>
+</div>
+<div class="art lc" id="lc-18">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第18条</div>
+<div class="art-ttl">第18条（反社会的勢力の排除）</div>
+<p class="art-lead">甲乙双方が現在および将来にわたり<strong>反社会的勢力ではないこと・関係を持たないこと</strong>を表明・保証し、違反した場合の即時解除権を定めます。</p>
+<dl>
+<dt>表明・保証の内容（1項①〜⑤）</dt><dd>①暴力団等（反社会的勢力）でないこと　②反社会的勢力と関係を有していないこと　③反社会的勢力を利用しないこと　④反社会的勢力に資金等を提供しないこと　⑤自らまたは第三者を通じて不当な要求行為を行わないこと</dd>
+<dt>即時解除と損害賠償の不請求（2項）</dt><dd>前項に違反した場合、相手方は<strong>催告なしに直ちに解除</strong>できます。解除により生じた損害について、<strong>解除された当事者は何ら賠償を請求できません</strong>（業務委託基本契約書と同様）。</dd>
+</dl>
+<div style="margin-top:8px"><span class="rel-tag">→ 第12条（解除の一般規定）</span></div>
+</div>
+<div class="art lc" id="lc-19">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第19条</div>
+<div class="art-ttl">第19条（協議事項）</div>
+<p class="art-lead">本契約に定めのない事項や解釈に疑義が生じた場合には、<strong>甲乙協議のうえ誠意をもって解決</strong>を図る旨を定めます（業務委託基本契約書の第21条に対応）。</p>
+<dl>
+<dt>実務上の意義</dt><dd>契約書で予定していなかった事態が生じた場合のフォールバック条項です。「本契約に定めがないから何もできない」という状況を防ぐための規定です。</dd>
+</dl>
+</div>
+<div class="art lc" id="lc-20">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第20条</div>
+<div class="art-ttl">第20条（旧契約の包括統合及び解除）</div>
+<p class="art-lead">本契約の発効日をもって、同一の原著作物に関して甲乙間で従前に成立していた<strong>一切の利用許諾契約を本契約に包括統合し解除</strong>する条文です。</p>
+<dl>
+<dt>包括統合の仕組み（1項）</dt><dd>別紙個別利用許諾条件に記載された原著作物に関する旧契約（書面・口頭その他の形式を問わない）は本契約に包括統合され、包括統合完了と同時に旧契約は解除されます。以後は<strong>本契約のみが当該原著作物に関する唯一の有効な契約</strong>として適用されます。</dd>
+<dt>空白期間ゼロの保証（2項）</dt><dd>旧契約の解除は本契約への包括統合を条件として行われるため、当該原著作物に関する<strong>利用条件に空白期間が生じません</strong>。</dd>
+<dt>既確定権利義務の存続（3項）</dt><dd>発効日前に旧契約に基づいて既に確定した権利義務は、本契約の枠組みの中で有効のまま引き継がれます。</dd>
+</dl>
+<div class="cl-i">既存の口頭合意や個別メール合意も「旧契約」として本契約に統合・解除されます。重要な口頭合意がある場合は本契約締結前に内容を明確化し、別紙個別条件に反映させてください。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ 業務委託基本契約書 第22条（同趣旨）</span></div>
+</div>
+<div class="art lc" id="lc-21">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第21条</div>
+<div class="art-ttl">第21条（準拠法および合意管轄）</div>
+<p class="art-lead">本契約に関する紛争が生じた場合の<strong>適用法律と管轄裁判所</strong>を定めます。管轄裁判所は変数（{{JURISDICTION}}）で設定可能です。</p>
+<dl>
+<dt>準拠法（1項）</dt><dd>本契約の準拠法は<strong>日本法</strong>です。</dd>
+<dt>合意管轄（2項）</dt><dd>変数 <code>{{JURISDICTION}}</code> で指定された裁判所を第一審の専属的合意管轄裁判所とします。国内取引では東京地方裁判所、海外取引では別途検討が必要な場合があります。</dd>
+</dl>
+<div class="cl-i">海外のライセンサー（甲）と契約する場合、甲が自国法・自国裁判所を要求することがあります。実務上は<strong>仲裁（JCAA・ICC等）</strong>がお互いにとって執行しやすい場合があります。詳細は法務部に相談してください。</div>
+<div style="margin-top:8px"><span class="rel-tag">→ BG事業部契約スキームガイド（場面1・場面2の準拠法・紛争解決）</span></div>
+</div>
+<div class="art lc" id="lc-22">
+<span class="art-ver">Ver001</span>
+<div class="art-no">第22条</div>
+<div class="art-ttl">第22条（存続）</div>
+<p class="art-lead">本契約が終了した場合であっても、<strong>一定の条項が引き続き有効に存続</strong>することを定めます。業務委託基本契約書が「性質上存続すべき条項は存続」という包括的な規定（第14条5項）をとるのに対し、本条は<strong>存続条項を列挙</strong>しています。</p>
+<dl>
+<dt>存続する条項（1項）</dt><dd>本条（第22条）自身　／　第7条（対価）　／　第9条〜第11条（知的財産の帰属・追加作品・契約終了後の措置）　／　第13条（機密保持）　／　第21条（準拠法および合意管轄）</dd>
+<dt>実務上の意義</dt><dd>契約終了後も在庫の売上ロイヤルティ精算・二次著作物の帰属・秘密保持義務・管轄は有効です。特に<strong>第7条（対価）が存続</strong>することで、終了後の在庫販売分のロイヤルティ精算義務が明確になります。</dd>
+</dl>
+</div>
+
+</div>
+
+</main>
+</div>
+
+<script>
+function switchContract(type) {
+  document.getElementById('panel-sv').classList.toggle('active', type === 'sv');
+  document.getElementById('panel-lc').classList.toggle('active', type === 'lc');
+  document.getElementById('sv-nav').style.display = type === 'sv' ? 'block' : 'none';
+  document.getElementById('lc-nav').style.display = type === 'lc' ? 'block' : 'none';
+  document.querySelectorAll('.cv-sw-btn').forEach(b => b.classList.remove('active-sv','active-lc'));
+  if (type === 'sv') document.querySelector('.cv-sw-btn.sv').classList.add('active-sv');
+  else document.querySelector('.cv-sw-btn.lc').classList.add('active-lc');
+}
+</script>
+
+
+
+</body>
+</html>
