@@ -170,7 +170,7 @@ export const FinancialConditionPicker: React.FC<Props> = ({
           onClick={() => setOpen(false)}
         >
           <div
-            className="bg-card w-full max-w-3xl rounded-md border border-border shadow-2xl"
+            className="lb-overlay bg-card w-full max-w-3xl rounded-md border border-border shadow-2xl"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between px-4 py-3 border-b border-border">

@@ -250,7 +250,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
             className="w-full text-[11px] font-mono bg-transparent focus:outline-none placeholder:text-muted-foreground/40 placeholder:text-[10px]"
           />
           {showDropdown && hints.length > 0 && (
-            <div className="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-sm shadow-lg z-20 max-h-[280px] overflow-y-auto">
+            <div className="lb-overlay absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-sm shadow-lg z-20 max-h-[280px] overflow-y-auto">
               {hints.map((h) => (
                 <button
                   key={h.id}
@@ -314,7 +314,7 @@ export const RingiSelector: React.FC<Props> = ({ value, onChange, disabled }) =>
           onClick={() => !creating && setCreateOpen(false)}
         >
           <div
-            className="bg-card border border-border rounded-sm shadow-2xl max-w-md w-full mx-4 overflow-hidden"
+            className="lb-overlay bg-card border border-border rounded-sm shadow-2xl max-w-md w-full mx-4 overflow-hidden"
             onClick={(e) => e.stopPropagation()}
           >
             <div className="bg-muted/30 border-b border-border px-4 py-2 flex items-center justify-between">
