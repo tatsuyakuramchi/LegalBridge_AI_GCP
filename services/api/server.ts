@@ -22,6 +22,7 @@
 
 import express from "express";
 import dotenv from "dotenv";
+import crypto from "node:crypto";
 import { BacklogService } from "./src/services/backlogService.ts";
 import { query } from "./src/lib/db.ts";
 import { registerContractsV2 } from "./src/routes/contractsV2.ts";
@@ -476,6 +477,208 @@ async function startServer() {
         .send(renderErrorPage("Server Error", String(error), 500));
     }
   });
+
+  // ───────────────────────────────────────────────────────────────────────
+  // Slack `/法務検索` slash command (modal-less, served by Cloud Run).
+  //   旧 admin-ui モノリス(root server.ts/Bolt)の view モーダル実装は main の
+  //   リファクタで撤去された。検索ロジック(contractCheckService)はこの api
+  //   サービスにあるため、スラッシュコマンドの Request URL をこの口に向ける。
+  //   Bolt を使わず生の Express で実装: Slack 署名検証 → 3秒以内に ack →
+  //   response_url へ結果ブロックを非同期 POST。block_actions を出す URL ボタンは
+  //   使わず mrkdwn リンクのみ(アプリ全体の interactivity URL は GAS のまま)。
+  // ───────────────────────────────────────────────────────────────────────
+  const masterStatusLabel = (m: any): string => {
+    if (!m || !m.exists) return "— 未締結";
+    const num = m.documentNumber ? ` (${m.documentNumber})` : "";
+    return `✅ 締結済${num}`;
+  };
+  const buildSingleContractBlocks = (payload: any): any[] => {
+    const out: any[] = [];
+    const cp = payload.counterparty || {};
+    const masters = payload.masterContracts || {};
+    const name = cp.vendorName || cp.counterpartyName || "-";
+    const code = cp.vendorCode || "-";
+    out.push({ type: "section", text: { type: "mrkdwn", text: `*${name}* (\`${code}\`)` } });
+    const pillLines = [
+      `業務委託基本契約: ${masterStatusLabel(masters.service)}`,
+      `ライセンス基本契約: ${masterStatusLabel(masters.license)}`,
+      `出版基本契約: ${masterStatusLabel(masters.publication)}`,
+    ];
+    out.push({ type: "section", text: { type: "mrkdwn", text: ">" + pillLines.join("\n>") } });
+    const licCount = Array.isArray(payload.licenseConditions) ? payload.licenseConditions.length : 0;
+    const pubCount = Array.isArray(payload.publicationConditions) ? payload.publicationConditions.length : 0;
+    if (licCount || pubCount) {
+      out.push({
+        type: "context",
+        elements: [{ type: "mrkdwn", text: `ライセンス個別条件: ${licCount} 件 · 出版個別条件: ${pubCount} 件` }],
+      });
+    }
+    return out;
+  };
+  const buildMultiContractBlocks = (payload: any): any[] => {
+    const out: any[] = [];
+    const candidates: any[] = Array.isArray(payload.results) ? payload.results : [];
+    out.push({
+      type: "section",
+      text: { type: "mrkdwn", text: `複数の候補が見つかりました (${candidates.length} 件)。詳細は Web で確認してください。` },
+    });
+    const LIMIT = 5;
+    candidates.slice(0, LIMIT).forEach((c: any) => {
+      const cp = c.counterparty || {};
+      const masters = c.masterContracts || {};
+      const name = cp.vendorName || "-";
+      const code = cp.vendorCode || "-";
+      const pills = [
+        `業務委託 ${masters.service && masters.service.exists ? "✅" : "—"}`,
+        `ライセンス ${masters.license && masters.license.exists ? "✅" : "—"}`,
+        `出版 ${masters.publication && masters.publication.exists ? "✅" : "—"}`,
+      ];
+      out.push({ type: "section", text: { type: "mrkdwn", text: `• *${name}* (\`${code}\`)\n>${pills.join(" · ")}` } });
+    });
+    if (candidates.length > LIMIT) {
+      out.push({ type: "context", elements: [{ type: "mrkdwn", text: `他 ${candidates.length - LIMIT} 件あります。` }] });
+    }
+    return out;
+  };
+  const buildSearchResultBlocks = (
+    keyword: string,
+    payload: any,
+    links: { webDetailUrl?: string; backlogUrl: string }
+  ): any[] => {
+    const blocks: any[] = [
+      { type: "section", text: { type: "mrkdwn", text: `*🔎 検索結果: \`${keyword}\`*` } },
+      { type: "divider" },
+      { type: "section", text: { type: "mrkdwn", text: "*📑 契約状況*" } },
+    ];
+    if (payload && Array.isArray(payload.results)) {
+      buildMultiContractBlocks(payload).forEach((b) => blocks.push(b));
+    } else if (payload && payload.counterparty) {
+      buildSingleContractBlocks(payload).forEach((b) => blocks.push(b));
+    } else {
+      const msg =
+        (payload && payload.suggestedAction && payload.suggestedAction.message) ||
+        "取引先マスタに登録された契約が見つかりませんでした。";
+      blocks.push({ type: "section", text: { type: "mrkdwn", text: msg } });
+    }
+    blocks.push({ type: "divider" });
+    const linkParts: string[] = [];
+    if (links.webDetailUrl) linkParts.push(`<${links.webDetailUrl}|🌐 Web で詳細を見る>`);
+    linkParts.push(`<${links.backlogUrl}|🔗 Backlog で関連課題を検索>`);
+    blocks.push({ type: "context", elements: [{ type: "mrkdwn", text: linkParts.join("  ·  ") }] });
+    blocks.push({
+      type: "context",
+      elements: [{ type: "mrkdwn", text: "🔁 別のキーワードで検索: `/法務検索 <キーワード>`" }],
+    });
+    return blocks;
+  };
+
+  // Slack 署名検証 (v0)。signing secret 未設定時は検証スキップ(ローカル/未配線)。
+  const verifySlackSignature = (req: any): boolean => {
+    const secret = dbSettings.SLACK_SIGNING_SECRET || process.env.SLACK_SIGNING_SECRET || "";
+    if (!secret) return true;
+    const ts = String(req.header("x-slack-request-timestamp") || "");
+    const sig = String(req.header("x-slack-signature") || "");
+    if (!ts || !sig) return false;
+    // リプレイ防止: 5 分以上古いリクエストは拒否。
+    if (Math.abs(Date.now() / 1000 - Number(ts)) > 60 * 5) return false;
+    const base = `v0:${ts}:${req.rawBody || ""}`;
+    const mine = "v0=" + crypto.createHmac("sha256", secret).update(base).digest("hex");
+    try {
+      return crypto.timingSafeEqual(Buffer.from(mine), Buffer.from(sig));
+    } catch {
+      return false;
+    }
+  };
+
+  app.post(
+    "/slack/commands/legal-search",
+    express.urlencoded({
+      extended: false,
+      verify: (req: any, _res, buf) => {
+        req.rawBody = buf.toString("utf8");
+      },
+    }),
+    async (req, res) => {
+      if (!verifySlackSignature(req)) {
+        return res.status(401).send("invalid signature");
+      }
+      const body = req.body || {};
+      const channelId = String(body.channel_id || "");
+      const responseUrl = String(body.response_url || "");
+      const keyword = String(body.text || "").trim();
+
+      // チャンネル許可リスト (カンマ区切り。未設定なら全許可)。
+      const allowListRaw = String(
+        dbSettings.ALLOWED_SEARCH_CHANNEL_IDS || process.env.ALLOWED_SEARCH_CHANNEL_IDS || ""
+      );
+      if (allowListRaw.trim() !== "") {
+        const allowedIds = allowListRaw.split(",").map((s) => s.trim()).filter((s) => s.length > 0);
+        if (allowedIds.indexOf(channelId) === -1) {
+          return res.json({
+            response_type: "ephemeral",
+            text: "❌ `/法務検索` はこのチャンネルでは利用できません。\n指定の法務専用チャンネルでお試しください。",
+          });
+        }
+      }
+      if (!keyword) {
+        return res.json({
+          response_type: "ephemeral",
+          text: "🔎 キーワードを指定してください。例: `/法務検索 株式会社〇〇`",
+        });
+      }
+
+      // 3 秒以内に ack。結果は response_url へ後追い POST。
+      res.json({ response_type: "ephemeral", text: `🔎 検索中: ${keyword} …` });
+
+      (async () => {
+        try {
+          const result: any = await contractCheckService.searchContractStatus({
+            counterpartyName: keyword,
+            purposeCode: "",
+          } as any);
+
+          const backlogHost = dbSettings.BACKLOG_HOST || process.env.BACKLOG_HOST || "arclight.backlog.com";
+          const backlogProject = dbSettings.BACKLOG_PROJECT_KEY || process.env.BACKLOG_PROJECT_KEY || "LEGAL";
+          const backlogUrl = `https://${backlogHost}/find/${encodeURIComponent(backlogProject)}?simpleSearch=${encodeURIComponent(keyword)}`;
+
+          const portalBase = String(
+            dbSettings.SEARCH_PORTAL_BASE_URL ||
+              process.env.SEARCH_PORTAL_BASE_URL ||
+              process.env.CLOUD_RUN_BASE_URL ||
+              ""
+          ).replace(/\/+$/, "");
+          const portalSecret = process.env.LB_PORTAL_SECRET || "";
+          const webDetailUrl = portalBase
+            ? `${portalBase}/search/vendor?q=${encodeURIComponent(keyword)}${portalSecret ? `&token=${encodeURIComponent(portalSecret)}` : ""}`
+            : "";
+
+          if (responseUrl) {
+            await fetch(responseUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                response_type: "ephemeral",
+                text: `🔎 検索結果: ${keyword}`,
+                blocks: buildSearchResultBlocks(keyword, result, { webDetailUrl, backlogUrl }),
+              }),
+            });
+          }
+        } catch (error) {
+          console.error("/slack/commands/legal-search failed:", error);
+          if (responseUrl) {
+            await fetch(responseUrl, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                response_type: "ephemeral",
+                text: "⚠️ 検索中にエラーが発生しました。時間をおいて再度お試しください。",
+              }),
+            }).catch(() => {});
+          }
+        }
+      })();
+    }
+  );
 
   // Phase 17d: documentsByCategory に Backlog status を埋め込む共通 helper。
   async function enrichWithBacklogStatus(payload: any) {
