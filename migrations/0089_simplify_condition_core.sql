@@ -72,6 +72,8 @@ ALTER TABLE condition_lines
 
 CREATE INDEX IF NOT EXISTS idx_cl_document  ON condition_lines(document_id) WHERE document_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_cl_group     ON condition_lines(document_id, group_no);
+-- 文書内で line_no 一意（upsert キー）。document_id NULL 行は互いに非衝突。
+ALTER TABLE condition_lines ADD CONSTRAINT cl_document_line_no_uq UNIQUE (document_id, line_no);
 
 -- 旧 capability 結合は廃止。document_id へ移行するため NOT NULL を一旦外す（Phase2 で必須化）。
 ALTER TABLE condition_lines ALTER COLUMN capability_id DROP NOT NULL;
