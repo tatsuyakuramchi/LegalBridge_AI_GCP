@@ -64,6 +64,12 @@ export async function syncConditionLinesForCapability(
   db: Db,
   capabilityId: number
 ): Promise<number> {
+  // スキーマ単純化(0089): capability_financial_conditions / capability_line_items は
+  //   condition_lines 上の互換ビュー(INSTEAD OF トリガ)になった。書き込みは既に
+  //   condition_lines へ直接着地しているため、ミラー同期は不要（循環/二重化を避ける）。
+  return 0;
+
+  // eslint-disable-next-line no-unreachable
   const year = new Date().getFullYear();
   let added = 0;
 
