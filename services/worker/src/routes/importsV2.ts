@@ -274,25 +274,7 @@ async function upsertContract(
          backlog_issue_key, effective_date, expiration_date, auto_renewal,
          tax_rate, due_date, issue_date_po, original_work, ledger_code,
          drive_url
-       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
-       ON CONFLICT (document_number) DO UPDATE SET
-         vendor_id         = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-         record_type       = EXCLUDED.record_type,
-         contract_category = EXCLUDED.contract_category,
-         contract_type     = EXCLUDED.contract_type,
-         contract_title    = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-         backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, contract_capabilities.backlog_issue_key),
-         effective_date    = COALESCE(EXCLUDED.effective_date, contract_capabilities.effective_date),
-         expiration_date   = COALESCE(EXCLUDED.expiration_date, contract_capabilities.expiration_date),
-         auto_renewal      = EXCLUDED.auto_renewal,
-         tax_rate          = COALESCE(EXCLUDED.tax_rate, contract_capabilities.tax_rate),
-         due_date          = COALESCE(EXCLUDED.due_date, contract_capabilities.due_date),
-         issue_date_po     = COALESCE(EXCLUDED.issue_date_po, contract_capabilities.issue_date_po),
-         original_work     = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
-         ledger_code       = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
-         drive_url         = COALESCE(NULLIF(EXCLUDED.drive_url, ''), contract_capabilities.drive_url),
-         updated_at        = CURRENT_TIMESTAMP
-       RETURNING id`,
+       ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)`,
       [
         vendorId,
         p.record_type,
@@ -387,21 +369,7 @@ async function upsertContract(
            capability_id, condition_no, region_language_label, calc_method,
            rate_pct, base_price_label, calc_period, calc_period_kind, calc_period_close_month,
            currency, formula_text, payment_terms, mg_amount, ag_amount
-         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-         ON CONFLICT (capability_id, condition_no) DO UPDATE SET
-           region_language_label  = EXCLUDED.region_language_label,
-           calc_method            = EXCLUDED.calc_method,
-           rate_pct               = EXCLUDED.rate_pct,
-           base_price_label       = EXCLUDED.base_price_label,
-           calc_period            = EXCLUDED.calc_period,
-           calc_period_kind       = EXCLUDED.calc_period_kind,
-           calc_period_close_month= EXCLUDED.calc_period_close_month,
-           currency               = EXCLUDED.currency,
-           formula_text           = EXCLUDED.formula_text,
-           payment_terms          = EXCLUDED.payment_terms,
-           mg_amount              = EXCLUDED.mg_amount,
-           ag_amount              = EXCLUDED.ag_amount,
-           updated_at             = CURRENT_TIMESTAMP`,
+         ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
         [
           capabilityId,
           Number(c.condition_no) || 1,

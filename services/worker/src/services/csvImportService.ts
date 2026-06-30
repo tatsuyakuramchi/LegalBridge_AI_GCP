@@ -320,8 +320,7 @@ export class CsvImportService {
               backlog_issue_key, record_type, contract_category, contract_type,
               document_number)
            VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
-                   'purchase_order', $7)
-           ON CONFLICT (document_number) DO NOTHING`,
+                   'purchase_order', $7)`,
           [
             reqResult.rows[0].id,
             vendorIdForBulk,
