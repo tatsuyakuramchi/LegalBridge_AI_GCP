@@ -267,6 +267,42 @@ export async function updateCategory(
   if (res.rowCount === 0) throw new Error(`cat_key '${catKey}' が見つかりません`);
 }
 
+/**
+ * ガイドのメタ更新(admin)。category(付け替え)・sort_order(並び順)を更新。
+ *   categoryKey: cat_key を渡すとそのカテゴリへ付け替え。空/null は未分類(category_id=null)。
+ */
+export async function updateGuide(
+  guideKey: string,
+  patch: { categoryKey?: string | null; sortOrder?: number }
+): Promise<void> {
+  const sets: string[] = [];
+  const vals: any[] = [];
+  let i = 1;
+  if (patch.categoryKey !== undefined) {
+    let catId: number | null = null;
+    const ck = (patch.categoryKey || "").trim();
+    if (ck) {
+      const c = await query(`SELECT id FROM portal_guide_categories WHERE cat_key = $1`, [ck]);
+      if (c.rowCount === 0) throw new Error(`カテゴリ '${ck}' が見つかりません`);
+      catId = c.rows[0].id;
+    }
+    sets.push(`category_id = $${i++}`);
+    vals.push(catId);
+  }
+  if (patch.sortOrder !== undefined) {
+    sets.push(`sort_order = $${i++}`);
+    vals.push(Number(patch.sortOrder));
+  }
+  if (sets.length === 0) return;
+  sets.push(`updated_at = now()`);
+  vals.push(guideKey);
+  const res = await query(
+    `UPDATE portal_guides SET ${sets.join(", ")} WHERE guide_key = $${i}`,
+    vals
+  );
+  if (res.rowCount === 0) throw new Error(`guide '${guideKey}' が見つかりません`);
+}
+
 /** カテゴリ削除。所属ガイドがある場合はブロック(先に付け替えが必要)。 */
 export async function deleteCategory(catKey: string): Promise<void> {
   const c = await query(`SELECT id FROM portal_guide_categories WHERE cat_key = $1`, [catKey]);
