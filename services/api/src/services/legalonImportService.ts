@@ -593,20 +593,7 @@ export async function importLegalOnRows(
            contract_title, document_number, contract_status,
            effective_date, expiration_date, auto_renewal,
            legalon_url, source_system
-         ) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-         ON CONFLICT (document_number) DO UPDATE SET
-           vendor_id          = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-           additional_parties = EXCLUDED.additional_parties,
-           record_type        = EXCLUDED.record_type,
-           contract_category  = EXCLUDED.contract_category,
-           contract_type      = EXCLUDED.contract_type,
-           contract_title     = EXCLUDED.contract_title,
-           contract_status    = COALESCE(NULLIF(EXCLUDED.contract_status, ''), contract_capabilities.contract_status),
-           effective_date     = COALESCE(EXCLUDED.effective_date, contract_capabilities.effective_date),
-           expiration_date    = COALESCE(EXCLUDED.expiration_date, contract_capabilities.expiration_date),
-           auto_renewal       = EXCLUDED.auto_renewal,
-           legalon_url        = EXCLUDED.legalon_url,
-           updated_at         = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2::jsonb, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           primary.vendor_id,
           JSON.stringify(additional),
