@@ -69,6 +69,10 @@
   `direction`('payable'|'receivable'), `transaction_kind`('license'|'product'|'service'),
   `deliverable_ownership`('発注者'|'受注者'), `created_at`, `updated_at`
 - 作品結線はフラット列を持たず **§3.5 の中間表で表現**（D の重複解消）。
+- **請求の向き**: `direction`（'payable'=当社支払 / 'receivable'=当社受取）が**最終真実**。
+  文書既定 `documents.flow_direction` は初期値の供給のみ。CL一本化で向きが1列に集約され、
+  cfc/cli/文書間のズレが消える。1文書内で支払・受取の混在も CL 単位で表現可能。
+  `transaction_kind`（license/product/service）と併用しロイヤリティ in/out を一貫表現。
 
 ### 3.5 `work_material_uses`（作品 N:N 原作マテリアル）
 `work_components`/`work_component_lines` を 1 表へ統合。
