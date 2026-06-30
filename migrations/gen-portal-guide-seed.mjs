@@ -30,6 +30,7 @@ const guidesDir = path.join(root, "services/api/guides");
 const KNOWN_KEYS = new Set([
   "guide", "tetsuzuki", "vendor", "pub", "bg", "clause",
   "knowledge", "search", "torihiki", "eventinst", "privacy",
+  "template_preview",
 ]);
 
 // 増分方式: 既存 migrations の seed 済み key を検出し、未seed の key だけを

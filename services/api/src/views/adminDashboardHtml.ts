@@ -138,6 +138,10 @@ export function adminDashboardPage(opts: AdminPageOpts): string {
         <div class="title">📚 ガイド管理 <span class="arrow">→</span></div>
         <div class="desc">各ガイドの公開中/準備中・版・配信プレビュー（差し替えは pass2）</div>
       </a>
+      <a class="tile master" href="/admin/guides/categories">
+        <div class="title">🗂️ カテゴリ管理 <span class="arrow">→</span></div>
+        <div class="desc">サイトのカテゴリ（A〜D 等）の追加・編集・並び替え・削除</div>
+      </a>
       <a class="tile preview" href="/portal" target="_blank" rel="noopener">
         <div class="title">📖 ポータルを開く <span class="arrow">↗</span></div>
         <div class="desc">別タブで法務ガイドポータル(/portal)を確認</div>

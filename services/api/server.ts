@@ -244,6 +244,8 @@ import {
   guideNotFoundPage,
 } from "./src/views/guidePortalHtml.ts";
 import { adminGuidesPage } from "./src/views/adminGuidesHtml.ts";
+import { adminCategoriesPage } from "./src/views/adminCategoriesHtml.ts";
+import { adminGuideDetailPage } from "./src/views/adminGuideDetailHtml.ts";
 import {
   listCategories as listGuideCategories,
   listGuides as listPortalGuides,
@@ -251,6 +253,15 @@ import {
   getGuideByKey as getPortalGuideByKey,
   renderGuideHtml as renderPortalGuideHtml,
   listGuidesForAdmin as listPortalGuidesForAdmin,
+  listCategoriesForAdmin as listPortalCategoriesForAdmin,
+  createCategory as createPortalCategory,
+  updateCategory as updatePortalCategory,
+  deleteCategory as deletePortalCategory,
+  updateGuide as updatePortalGuide,
+  listGuideVersions as listPortalGuideVersions,
+  addGuideVersion as addPortalGuideVersion,
+  setGuideStatus as setPortalGuideStatus,
+  rollbackGuideVersion as rollbackPortalGuideVersion,
 } from "./src/services/portalGuideService.ts";
 import {
   listVendors,
@@ -3740,8 +3751,11 @@ async function startServer() {
     requireAppRole({ resourceLabel: "admin:guides", allowedRoles: ["admin"], renderErrorPage }),
     async (_req, res) => {
       try {
-        const rows = await listPortalGuidesForAdmin();
-        res.type("html").send(adminGuidesPage({ rows }));
+        const [rows, categories] = await Promise.all([
+          listPortalGuidesForAdmin(),
+          listGuideCategories(),
+        ]);
+        res.type("html").send(adminGuidesPage({ rows, categories }));
       } catch (error) {
         console.error("/admin/guides failed:", error);
         res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
@@ -3771,6 +3785,154 @@ async function startServer() {
         res.json(await listPortalGuidesForAdmin());
       } catch (error) {
         res.status(500).json({ error: String(error) });
+      }
+    }
+  );
+
+  // ガイドのメタ更新(admin): カテゴリ付け替え・並び順。
+  app.patch(
+    "/api/portal/guides/:key",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:guides:update", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await updatePortalGuide(String(req.params.key), req.body || {});
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+
+  // 管理: カテゴリ管理ページ(admin)
+  app.get(
+    "/admin/guides/categories",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "admin:guide-categories", allowedRoles: ["admin"], renderErrorPage }),
+    async (_req, res) => {
+      try {
+        const categories = await listPortalCategoriesForAdmin();
+        res.type("html").send(adminCategoriesPage({ categories }));
+      } catch (error) {
+        console.error("/admin/guides/categories failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  // カテゴリ 書込 API(admin)。search-api 内で直接 DB 書込(vendor 取込等と同様)。
+  app.post(
+    "/api/portal/categories",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:categories:create", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await createPortalCategory(req.body || {});
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+  app.patch(
+    "/api/portal/categories/:catKey",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:categories:update", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await updatePortalCategory(String(req.params.catKey), req.body || {});
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+  app.delete(
+    "/api/portal/categories/:catKey",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:categories:delete", allowedRoles: ["admin"], renderErrorPage }),
+    async (req, res) => {
+      try {
+        await deletePortalCategory(String(req.params.catKey));
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+
+  // ── ガイド本文の差し替え(pass2, admin) ──────────────────────────
+  // 新版アップロード(HTML は最大 ~165KB のガイドがあるため json limit を拡大)。
+  app.post(
+    "/api/portal/guides/:key/versions",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:guides:version", allowedRoles: ["admin"], renderErrorPage }),
+    express.json({ limit: "8mb" }),
+    async (req, res) => {
+      try {
+        const user = (req as any).user as { email?: string | null } | undefined;
+        const versionNo = await addPortalGuideVersion(
+          String(req.params.key),
+          String((req.body && req.body.html) || ""),
+          user?.email || "admin",
+          (req.body && req.body.comment) || null
+        );
+        res.json({ ok: true, versionNo });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+  // 公開トグル
+  app.post(
+    "/api/portal/guides/:key/status",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:guides:status", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await setPortalGuideStatus(String(req.params.key), (req.body && req.body.status) === "published" ? "published" : "draft");
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+  // 版ロールバック
+  app.post(
+    "/api/portal/guides/:key/rollback",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:guides:rollback", allowedRoles: ["admin"], renderErrorPage }),
+    express.json(),
+    async (req, res) => {
+      try {
+        await rollbackPortalGuideVersion(String(req.params.key), Number(req.body && req.body.versionNo));
+        res.json({ ok: true });
+      } catch (error: any) {
+        res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+
+  // 管理: ガイド詳細(差し替え・版管理)ページ。
+  //   /admin/guides/categories より後に登録(:key が "categories" を拾わないように)。
+  app.get(
+    "/admin/guides/:key",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "admin:guide-detail", allowedRoles: ["admin"], renderErrorPage }),
+    async (req, res) => {
+      try {
+        const key = String(req.params.key);
+        const guide = await getPortalGuideByKey(key);
+        if (!guide) return res.status(404).type("html").send(renderErrorPage("Not Found", `guide '${key}' が見つかりません`, 404));
+        const versions = await listPortalGuideVersions(key);
+        res.type("html").send(adminGuideDetailPage({ guide, versions }));
+      } catch (error) {
+        console.error("/admin/guides/:key failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
       }
     }
   );
