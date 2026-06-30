@@ -84,8 +84,10 @@ steps:
       - "60"
       # 既存 env/secret は維持したまま、work-model 埋め込み専用の WORK_MODEL_UI_URL を設定。
       #   先に誤って設定した ADMIN_UI_URL(=ポータル全体が admin-ui へ移行する副作用)は除去する。
+      # 条文解説ガイド(clause)等の DL バナーURL: portalRender が <?= serviceGuideUrl ?> /
+      #   <?= licenseGuideUrl ?> / {{GDRIVE_URL_SERVICE}} / {{GDRIVE_URL_LICENSE}} を置換。
       - --update-env-vars
-      - "WORK_MODEL_UI_URL=${_ADMIN_UI_URL}"
+      - "WORK_MODEL_UI_URL=${_ADMIN_UI_URL},SERVICE_GUIDE_URL=https://docs.google.com/presentation/d/1n0PwoWQJYbsPdzzoC2DYfaLeL5hIFuvoq_PoI9q4kcE/export/pptx,LICENSE_GUIDE_URL=https://docs.google.com/presentation/d/1K0LB62rTYYXgKApMN1YwCgp_L9BRcgLoHDqRilaxhLc/export/pptx,GDRIVE_URL_SERVICE=https://docs.google.com/presentation/d/1n0PwoWQJYbsPdzzoC2DYfaLeL5hIFuvoq_PoI9q4kcE/export/pptx,GDRIVE_URL_LICENSE=https://docs.google.com/presentation/d/1K0LB62rTYYXgKApMN1YwCgp_L9BRcgLoHDqRilaxhLc/export/pptx"
       - --remove-env-vars
       - "ADMIN_UI_URL"
       - --quiet
