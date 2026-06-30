@@ -5585,36 +5585,7 @@ ${details}
            region_territory, region_language, applies_scope,
            copied_from_condition_id, work_id,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, condition_no) DO UPDATE SET
-           region_language_label   = EXCLUDED.region_language_label,
-           calc_method             = EXCLUDED.calc_method,
-           rate_pct                = EXCLUDED.rate_pct,
-           base_price_label        = EXCLUDED.base_price_label,
-           calc_period             = EXCLUDED.calc_period,
-           calc_period_kind        = EXCLUDED.calc_period_kind,
-           calc_period_close_month = EXCLUDED.calc_period_close_month,
-           currency                = EXCLUDED.currency,
-           formula_text            = EXCLUDED.formula_text,
-           payment_terms           = EXCLUDED.payment_terms,
-           mg_amount               = EXCLUDED.mg_amount,
-           ag_amount               = EXCLUDED.ag_amount,
-           condition_name          = EXCLUDED.condition_name,
-           calc_type               = EXCLUDED.calc_type,
-           fixed_kind              = EXCLUDED.fixed_kind,
-           subscription_cycle      = EXCLUDED.subscription_cycle,
-           unit_amount             = EXCLUDED.unit_amount,
-           guarantee_type          = EXCLUDED.guarantee_type,
-           region_territory        = EXCLUDED.region_territory,
-           region_language         = EXCLUDED.region_language,
-           applies_scope           = EXCLUDED.applies_scope,
-           -- O4: 痕跡は一度付いたら消さない(後続保存が値を運ばなくても保持)。
-           copied_from_condition_id = COALESCE(
-             EXCLUDED.copied_from_condition_id,
-             capability_financial_conditions.copied_from_condition_id
-           ),
-           work_id                 = EXCLUDED.work_id,
-           updated_at              = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, CURRENT_TIMESTAMP)`,
         [
           capabilityId,
           condNo,
@@ -6315,28 +6286,7 @@ ${details}
            cycle, billing_day, term_start, term_end,
            fee_type, royalty_calc_basis, work_id,
            updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, line_no) DO UPDATE SET
-           category       = EXCLUDED.category,
-           item_name      = EXCLUDED.item_name,
-           spec           = EXCLUDED.spec,
-           calc_method    = EXCLUDED.calc_method,
-           payment_method = EXCLUDED.payment_method,
-           payment_terms  = EXCLUDED.payment_terms,
-           quantity       = EXCLUDED.quantity,
-           unit_price     = EXCLUDED.unit_price,
-           amount_ex_tax  = EXCLUDED.amount_ex_tax,
-           rate_pct       = EXCLUDED.rate_pct,
-           delivery_date  = EXCLUDED.delivery_date,
-           payment_date   = EXCLUDED.payment_date,
-           cycle          = EXCLUDED.cycle,
-           billing_day    = EXCLUDED.billing_day,
-           term_start     = EXCLUDED.term_start,
-           term_end       = EXCLUDED.term_end,
-           fee_type       = EXCLUDED.fee_type,
-           royalty_calc_basis = EXCLUDED.royalty_calc_basis,
-           work_id        = EXCLUDED.work_id,
-           updated_at     = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP)`,
         [
           capabilityId,
           lineNo,
@@ -6418,14 +6368,7 @@ ${details}
         `INSERT INTO capability_expenses (
            capability_id, line_no, expense_name, spec,
            spent_date, amount_inc_tax, remarks, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, line_no) DO UPDATE SET
-           expense_name   = EXCLUDED.expense_name,
-           spec           = EXCLUDED.spec,
-           spent_date     = EXCLUDED.spent_date,
-           amount_inc_tax = EXCLUDED.amount_inc_tax,
-           remarks        = EXCLUDED.remarks,
-           updated_at     = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
         [
           capabilityId,
           e.line_no,
@@ -6479,12 +6422,7 @@ ${details}
       await query(
         `INSERT INTO capability_other_fees (
            capability_id, line_no, fee_name, amount, remarks, updated_at
-         ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-         ON CONFLICT (capability_id, line_no) DO UPDATE SET
-           fee_name   = EXCLUDED.fee_name,
-           amount     = EXCLUDED.amount,
-           remarks    = EXCLUDED.remarks,
-           updated_at = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
         [capabilityId, f.line_no, f.fee_name, f.amount, f.remarks]
       );
     }
@@ -7979,14 +7917,7 @@ ${details}
               vendor_id, record_type, contract_category, contract_type, contract_title,
               document_number, contract_status, effective_date, expiration_date, auto_renewal,
               original_work, product_name, work_name, media, territory, language, document_url, source_system
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
-            ON CONFLICT (document_number) DO UPDATE SET
-              vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-              record_type    = EXCLUDED.record_type,
-              contract_type  = EXCLUDED.contract_type,
-              contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-              document_url   = COALESCE(NULLIF(EXCLUDED.document_url, ''), contract_capabilities.document_url),
-              updated_at     = CURRENT_TIMESTAMP`,
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
             [
               vendorId,
               recordType,
@@ -8159,9 +8090,7 @@ ${details}
                  (vendor_id, record_type, contract_category, contract_type, contract_title,
                   document_number, base_document_number, backlog_issue_key, contract_status,
                   effective_date, expiration_date, document_url, source_system)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')
-               ON CONFLICT (document_number) DO UPDATE SET updated_at = CURRENT_TIMESTAMP
-               RETURNING id`,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')`,
               [
                 vendorId,
                 recordType,
@@ -8756,18 +8685,7 @@ ${details}
            vendor_id, record_type, contract_category, contract_type, contract_title,
            document_number, contract_status, effective_date, expiration_date,
            auto_renewal, document_url, source_system
-         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-         ON CONFLICT (document_number) DO UPDATE SET
-           vendor_id        = EXCLUDED.vendor_id,
-           record_type      = EXCLUDED.record_type,
-           contract_category = EXCLUDED.contract_category,
-           contract_type    = EXCLUDED.contract_type,
-           contract_title   = EXCLUDED.contract_title,
-           effective_date   = EXCLUDED.effective_date,
-           expiration_date  = EXCLUDED.expiration_date,
-           auto_renewal     = EXCLUDED.auto_renewal,
-           document_url     = EXCLUDED.document_url,
-           updated_at       = CURRENT_TIMESTAMP`,
+         ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
         [
           vendorId,
           "master_contract",
@@ -9244,13 +9162,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id = EXCLUDED.vendor_id,
-                 contract_title = EXCLUDED.contract_title,
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
               [
                 vendorId,
                 "master_contract",
@@ -9390,16 +9302,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-                 record_type    = EXCLUDED.record_type,
-                 contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 auto_renewal   = EXCLUDED.auto_renewal,
-                 updated_at     = CURRENT_TIMESTAMP
-               RETURNING id`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
               [
                 vendorId,
                 recordType,
@@ -9591,13 +9494,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-                 contract_title = EXCLUDED.contract_title,
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
               [
                 ndaVendorId,
                 "master_contract",
@@ -9743,13 +9640,7 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, document_url, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
-               ON CONFLICT (document_number) DO UPDATE SET
-                 vendor_id = EXCLUDED.vendor_id,
-                 contract_title = EXCLUDED.contract_title,
-                 effective_date = EXCLUDED.effective_date,
-                 expiration_date = EXCLUDED.expiration_date,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
               [
                 vendorId,
                 "master_contract",
@@ -14813,33 +14704,7 @@ ${details}
             original_work, product_name, work_name, media, territory, language, document_url, source_system,
             base_document_number, revision, is_primary,
             ledger_ref_id, ledger_code
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE, $21, $22)
-          ON CONFLICT (document_number) DO UPDATE SET
-            vendor_id = EXCLUDED.vendor_id,
-            record_type = EXCLUDED.record_type,
-            contract_category = EXCLUDED.contract_category,
-            contract_type = EXCLUDED.contract_type,
-            contract_title = EXCLUDED.contract_title,
-            contract_status = EXCLUDED.contract_status,
-            effective_date = EXCLUDED.effective_date,
-            expiration_date = EXCLUDED.expiration_date,
-            auto_renewal = EXCLUDED.auto_renewal,
-            original_work = EXCLUDED.original_work,
-            product_name = EXCLUDED.product_name,
-            work_name = EXCLUDED.work_name,
-            media = EXCLUDED.media,
-            territory = EXCLUDED.territory,
-            language = EXCLUDED.language,
-            document_url = EXCLUDED.document_url,
-            base_document_number = EXCLUDED.base_document_number,
-            revision = EXCLUDED.revision,
-            is_primary = TRUE,
-            ledger_ref_id = COALESCE(EXCLUDED.ledger_ref_id, contract_capabilities.ledger_ref_id),
-            ledger_code = COALESCE(NULLIF(EXCLUDED.ledger_code, ''), contract_capabilities.ledger_code),
-            superseded_by = NULL,
-            updated_at = CURRENT_TIMESTAMP
-          WHERE contract_capabilities.record_type = 'delivery_record'
-             OR EXCLUDED.record_type <> 'delivery_record'`,
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, TRUE, $21, $22)`,
           [
             vendorId,
             recordType,
@@ -15160,14 +15025,7 @@ ${details}
               due_date, backlog_issue_key, record_type, contract_category,
               contract_type, document_number)
            VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
-                   'purchase_order', $7)
-           ON CONFLICT (document_number) DO UPDATE SET
-             amount_ex_tax  = EXCLUDED.amount_ex_tax,
-             due_date       = EXCLUDED.due_date,
-             contract_title = EXCLUDED.contract_title,
-             vendor_id      = COALESCE(EXCLUDED.vendor_id, contract_capabilities.vendor_id),
-             updated_at     = CURRENT_TIMESTAMP
-           RETURNING id`,
+                   'purchase_order', $7)`,
           [
             lrId,
             vendorIdForPo,
@@ -15292,23 +15150,7 @@ ${details}
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date,
                  deliverable_ownership, royalty_calc_basis, work_id, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)
-               ON CONFLICT (capability_id, line_no) DO UPDATE SET
-                 item_name      = EXCLUDED.item_name,
-                 spec           = EXCLUDED.spec,
-                 unit_price     = EXCLUDED.unit_price,
-                 quantity       = EXCLUDED.quantity,
-                 amount_ex_tax  = EXCLUDED.amount_ex_tax,
-                 rate_pct       = EXCLUDED.rate_pct,
-                 calc_method    = EXCLUDED.calc_method,
-                 payment_terms  = EXCLUDED.payment_terms,
-                 payment_method = EXCLUDED.payment_method,
-                 payment_date   = EXCLUDED.payment_date,
-                 delivery_date  = EXCLUDED.delivery_date,
-                 deliverable_ownership = EXCLUDED.deliverable_ownership,
-                 royalty_calc_basis = EXCLUDED.royalty_calc_basis,
-                 work_id        = EXCLUDED.work_id,
-                 updated_at     = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)`,
               [
                 orderItemId,
                 lineNo,
@@ -15528,14 +15370,7 @@ ${details}
               `INSERT INTO capability_expenses (
                  capability_id, line_no, expense_name, spec,
                  spent_date, amount_inc_tax, remarks, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)
-               ON CONFLICT (capability_id, line_no) DO UPDATE SET
-                 expense_name   = EXCLUDED.expense_name,
-                 spec           = EXCLUDED.spec,
-                 spent_date     = EXCLUDED.spent_date,
-                 amount_inc_tax = EXCLUDED.amount_inc_tax,
-                 remarks        = EXCLUDED.remarks,
-                 updated_at     = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, CURRENT_TIMESTAMP)`,
               [
                 orderItemId,
                 e.line_no,
@@ -15584,12 +15419,7 @@ ${details}
             await query(
               `INSERT INTO capability_other_fees (
                  capability_id, line_no, fee_name, amount, remarks, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)
-               ON CONFLICT (capability_id, line_no) DO UPDATE SET
-                 fee_name   = EXCLUDED.fee_name,
-                 amount     = EXCLUDED.amount,
-                 remarks    = EXCLUDED.remarks,
-                 updated_at = CURRENT_TIMESTAMP`,
+               ) VALUES ($1, $2, $3, $4, $5, CURRENT_TIMESTAMP)`,
               [orderItemId, f.line_no, f.fee_name, f.amount, f.remarks]
             );
           }
@@ -15808,11 +15638,7 @@ ${details}
           `INSERT INTO contract_capabilities
              (backlog_issue_key, original_work,
               document_number, record_type, contract_category, contract_type, contract_title)
-           VALUES ($1, $2, $3, 'master_contract', 'license', 'license_basic', $4)
-           ON CONFLICT (document_number) DO UPDATE SET
-             original_work  = COALESCE(NULLIF(EXCLUDED.original_work, ''), contract_capabilities.original_work),
-             contract_title = COALESCE(NULLIF(EXCLUDED.contract_title, ''), contract_capabilities.contract_title),
-             updated_at     = CURRENT_TIMESTAMP`,
+           VALUES ($1, $2, $3, 'master_contract', 'license', 'license_basic', $4)`,
           [
             issueKey,
             formData.WORK_TITLE || "",

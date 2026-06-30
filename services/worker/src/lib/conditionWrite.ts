@@ -42,6 +42,8 @@ export interface ConditionInput {
   // 属性
   condition_name?: string | null; subject?: string | null; spec?: string | null;
   category?: string | null; notes?: string | null; applies_scope?: string | null;
+  // 互換ビュー振分け（cfc/cli/expense/other_fee）。未指定なら category から導出。
+  legacy_role?: string | null;
 }
 
 const num = (v: any): number | null => {
@@ -125,9 +127,22 @@ export async function upsertDocumentConditions(
       lineCode = `CL-${year}-${String(Number(seq.rows[0].current_value)).padStart(5, "0")}`;
     }
 
+    // 互換ビュー振分け: 明示 legacy_role 優先、無ければ category から導出（既定 cfc）。
+    const legacyRole =
+      str(c.legacy_role) ||
+      (c.category === "line_item"
+        ? "cli"
+        : c.category === "expense"
+          ? "expense"
+          : c.category === "other_fee"
+            ? "other_fee"
+            : "cfc");
+
     // 列→値マップ（列ズレ防止のため動的に INSERT/UPDATE を組み立て）。
     const row: Record<string, any> = {
       document_id: documentId,
+      capability_id: documentId, // 旧 cl.capability_id 参照の互換ミラー
+      legacy_role: legacyRole,
       line_no: lineNo,
       line_code: lineCode,
       group_no: c.group_no ?? null,
