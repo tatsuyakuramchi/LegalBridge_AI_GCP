@@ -60,14 +60,35 @@ export interface MasterContractInput {
   deliverable_ownership?: string | null;
   backlog_issue_key?: string | null;
   ledger_code?: string | null;          // 原作（licensed_in works.work_code）
+  ledger_ref_id?: number | null;
   template_type?: string | null;
+  template_family?: string | null;
   issue_key?: string | null;
+  document_url?: string | null;
+  // 契約マスタ メタ（documents へ統合）
+  is_active?: boolean | null;
+  auto_renewal?: boolean | null;
+  renewal_notice_months?: number | null;
+  alert_lead_months?: number | null;
+  alert_slack_channels?: any;
+  alert_slack_mentions?: any;
+  original_work?: string | null;
+  product_name?: string | null;
+  work_name?: string | null;
+  media?: string | null;
+  territory?: string | null;
+  language?: string | null;
+  condition_number?: string | null;
   // 材料の既定（軸マテリアル）。行で未指定の条件をここへ束ねる。空なら本体(is_default)。
   default_material_code?: string | null;
   // 行ごとの材料上書き（condition_no → material_code）
   condition_material_codes?: Record<string, string>;
   // 利用許諾/金銭条件（→CL）
   financial_conditions?: FinancialConditionLike[];
+  // 業務明細 / 経費 / その他手数料（すべて CL へ。①一本化）
+  line_items?: any[];
+  expenses?: any[];
+  other_fees?: any[];
 }
 
 const s = (v: any): string | null =>
@@ -150,69 +171,125 @@ export async function upsertMasterContract(
     }
   }
 
-  // ledger_ref_id を原作 id で補完。
-  const ledgerRefId = origWorkId;
-
-  // documents を upsert（②）。NOT NULL 列は Master 既定で埋める。
+  // documents を upsert（②）。列→値マップで構築（列ズレ防止）。NOT NULL は Master 既定。
+  const row: Record<string, any> = {
+    document_number: input.document_number,
+    issue_key: s(input.issue_key) || "",
+    template_type: s(input.template_type) || s(input.record_type) || "contract",
+    form_data: "{}",
+    drive_link: "",
+    record_type: s(input.record_type) || "individual_contract",
+    contract_category: s(input.contract_category) || "license",
+    contract_type: s(input.contract_type),
+    contract_title: s(input.contract_title),
+    contract_status: s(input.contract_status) || "executed",
+    vendor_id: input.vendor_id ?? null,
+    effective_date: s(input.effective_date),
+    expiration_date: s(input.expiration_date),
+    flow_direction: s(input.flow_direction),
+    deliverable_ownership: s(input.deliverable_ownership),
+    backlog_issue_key: s(input.backlog_issue_key),
+    ledger_code: ledger,
+    ledger_ref_id: input.ledger_ref_id ?? origWorkId,
+    template_family: s(input.template_family),
+    is_active: input.is_active == null ? true : !!input.is_active,
+    auto_renewal: !!input.auto_renewal,
+    renewal_notice_months: input.renewal_notice_months ?? null,
+    alert_lead_months: input.alert_lead_months ?? null,
+    alert_slack_channels: input.alert_slack_channels != null ? JSON.stringify(input.alert_slack_channels) : null,
+    alert_slack_mentions: input.alert_slack_mentions != null ? JSON.stringify(input.alert_slack_mentions) : null,
+    original_work: s(input.original_work),
+    product_name: s(input.product_name),
+    work_name: s(input.work_name),
+    media: s(input.media),
+    territory: s(input.territory),
+    language: s(input.language),
+    condition_number: s(input.condition_number),
+    document_url: s(input.document_url),
+  };
+  const cols = Object.keys(row);
+  const placeholders = cols.map((_, i) => `$${i + 1}`);
+  // ON CONFLICT 更新は document_number / form_data / drive_link / issue_key を除く。
+  const skip = new Set(["document_number", "form_data", "drive_link", "issue_key"]);
+  const updates = cols
+    .filter((k) => !skip.has(k))
+    .map((k) =>
+      k === "contract_title"
+        ? `contract_title = COALESCE(NULLIF(EXCLUDED.contract_title,''), documents.contract_title)`
+        : `${k} = EXCLUDED.${k}`
+    )
+    .concat(["updated_at = CURRENT_TIMESTAMP"])
+    .join(", ");
   const up = await db.query(
-    `INSERT INTO documents (
-       document_number, issue_key, template_type, form_data, drive_link,
-       record_type, contract_category, contract_type, contract_title, contract_status,
-       vendor_id, effective_date, expiration_date, flow_direction, deliverable_ownership,
-       backlog_issue_key, ledger_code, ledger_ref_id
-     ) VALUES (
-       $1, $2, $3, '{}'::jsonb, '',
-       $4, $5, $6, $7, $8,
-       $9, $10, $11, $12, $13,
-       $14, $15, $16
-     )
-     ON CONFLICT (document_number) DO UPDATE SET
-       record_type = EXCLUDED.record_type,
-       contract_category = EXCLUDED.contract_category,
-       contract_type = EXCLUDED.contract_type,
-       contract_title = COALESCE(NULLIF(EXCLUDED.contract_title,''), documents.contract_title),
-       contract_status = EXCLUDED.contract_status,
-       vendor_id = EXCLUDED.vendor_id,
-       effective_date = EXCLUDED.effective_date,
-       expiration_date = EXCLUDED.expiration_date,
-       flow_direction = EXCLUDED.flow_direction,
-       deliverable_ownership = EXCLUDED.deliverable_ownership,
-       backlog_issue_key = COALESCE(EXCLUDED.backlog_issue_key, documents.backlog_issue_key),
-       ledger_code = EXCLUDED.ledger_code,
-       ledger_ref_id = EXCLUDED.ledger_ref_id
+    `INSERT INTO documents (${cols.join(", ")})
+       VALUES (${placeholders.join(", ")})
+     ON CONFLICT (document_number) DO UPDATE SET ${updates}
      RETURNING id`,
-    [
-      input.document_number,
-      s(input.issue_key) || "",
-      s(input.template_type) || s(input.record_type) || "contract",
-      s(input.record_type) || "individual_contract",
-      s(input.contract_category) || "license",
-      s(input.contract_type),
-      s(input.contract_title),
-      s(input.contract_status) || "executed",
-      input.vendor_id ?? null,
-      s(input.effective_date),
-      s(input.expiration_date),
-      s(input.flow_direction),
-      s(input.deliverable_ownership),
-      s(input.backlog_issue_key),
-      ledger,
-      ledgerRefId,
-    ]
+    cols.map((k) => row[k])
   );
   const documentId = Number(up.rows[0].id);
 
-  // 金銭条件 → CL（①）。材料は行指定→既定→本体。
-  const fcs = Array.isArray(input.financial_conditions) ? input.financial_conditions : [];
-  const direction = dirFromFlow(input.flow_direction);
-  const conditions: ConditionInput[] = fcs.map((fc, i) =>
-    toConditionInput(fc, i, {
-      direction,
-      materialCode: anchorMaterialCode,
-      overrides: input.condition_material_codes || {},
-    })
-  );
-  const { lineIds } = await upsertDocumentConditions(db, documentId, conditions);
+  // PUT 等で明細系が一切未指定（全 undefined）なら既存CLを保持（触らない）。
+  const anyProvided =
+    input.financial_conditions !== undefined ||
+    input.line_items !== undefined ||
+    input.expenses !== undefined ||
+    input.other_fees !== undefined;
+  if (!anyProvided) {
+    return { documentId, conditionLineIds: [] };
+  }
 
+  // 全明細を CL へ（①一本化）。line_no をタイプ別レンジで分離（再保存安定）。
+  const direction = dirFromFlow(input.flow_direction);
+  const conditions: ConditionInput[] = [];
+  // 金銭条件: line_no = condition_no
+  for (let i = 0; i < (input.financial_conditions || []).length; i++) {
+    conditions.push(
+      toConditionInput(input.financial_conditions![i], i, {
+        direction,
+        materialCode: anchorMaterialCode,
+        overrides: input.condition_material_codes || {},
+      })
+    );
+  }
+  // 業務明細: 1000+ / その他手数料: 2000+ / 経費: 3000+
+  (input.line_items || []).forEach((li: any, i: number) => {
+    const cm = String(li?.calc_method || "").toUpperCase();
+    conditions.push({
+      line_no: 1000 + Number(li?.line_no ?? i + 1),
+      transaction_kind: "service",
+      payment_scheme: cm === "SUBSCRIPTION" ? "subscription" : "lump_sum",
+      direction,
+      amount_ex_tax: li?.amount_ex_tax ?? li?.amount ?? 0,
+      quantity: li?.quantity,
+      unit_price: li?.unit_price,
+      condition_name: s(li?.item_name),
+      spec: s(li?.spec),
+      category: s(li?.category) || "line_item",
+      deliverable_ownership: s(li?.deliverable_ownership),
+      payment_terms: s(li?.payment_terms),
+      delivery_date: s(li?.delivery_date),
+      material_code: s(li?.material_code),
+    });
+  });
+  (input.other_fees || []).forEach((f: any, i: number) => {
+    conditions.push({
+      line_no: 2000 + Number(f?.line_no ?? i + 1),
+      transaction_kind: "service", payment_scheme: "lump_sum", direction,
+      amount_ex_tax: f?.amount ?? 0,
+      condition_name: s(f?.fee_name), notes: s(f?.remarks), category: "other_fee",
+    });
+  });
+  (input.expenses || []).forEach((e: any, i: number) => {
+    conditions.push({
+      line_no: 3000 + Number(e?.line_no ?? i + 1),
+      transaction_kind: "service", payment_scheme: "lump_sum", direction,
+      amount_ex_tax: e?.amount_inc_tax ?? e?.amount ?? 0,
+      condition_name: s(e?.expense_name), spec: s(e?.spec),
+      payment_date: s(e?.spent_date), notes: s(e?.remarks), category: "expense",
+    });
+  });
+
+  const { lineIds } = await upsertDocumentConditions(db, documentId, conditions);
   return { documentId, conditionLineIds: lineIds };
 }

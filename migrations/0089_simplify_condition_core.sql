@@ -40,7 +40,24 @@ ALTER TABLE documents
   ADD COLUMN IF NOT EXISTS ledger_ref_id          INTEGER REFERENCES works(id),
   ADD COLUMN IF NOT EXISTS ledger_code            VARCHAR(40),
   ADD COLUMN IF NOT EXISTS material_ref_id        INTEGER REFERENCES work_materials(id),
-  ADD COLUMN IF NOT EXISTS master_document_id     INTEGER REFERENCES documents(id);
+  ADD COLUMN IF NOT EXISTS master_document_id     INTEGER REFERENCES documents(id),
+  -- 契約マスタ(旧 contract_capabilities)の残り列も documents へ統合（完全スーパーセット化）
+  ADD COLUMN IF NOT EXISTS is_active              BOOLEAN DEFAULT TRUE,
+  ADD COLUMN IF NOT EXISTS auto_renewal           BOOLEAN DEFAULT FALSE,
+  ADD COLUMN IF NOT EXISTS renewal_notice_months  INTEGER,
+  ADD COLUMN IF NOT EXISTS alert_lead_months      INTEGER,
+  ADD COLUMN IF NOT EXISTS alert_slack_channels   JSONB,
+  ADD COLUMN IF NOT EXISTS alert_slack_mentions   JSONB,
+  ADD COLUMN IF NOT EXISTS original_work          TEXT,
+  ADD COLUMN IF NOT EXISTS product_name           TEXT,
+  ADD COLUMN IF NOT EXISTS work_name              TEXT,
+  ADD COLUMN IF NOT EXISTS media                  TEXT,
+  ADD COLUMN IF NOT EXISTS territory              TEXT,
+  ADD COLUMN IF NOT EXISTS language               TEXT,
+  ADD COLUMN IF NOT EXISTS condition_number       TEXT,
+  ADD COLUMN IF NOT EXISTS document_url           TEXT,
+  ADD COLUMN IF NOT EXISTS template_family        VARCHAR(30),
+  ADD COLUMN IF NOT EXISTS updated_at             TIMESTAMPTZ NOT NULL DEFAULT now();
 
 CREATE INDEX IF NOT EXISTS idx_documents_ledger   ON documents(ledger_code) WHERE ledger_code IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_documents_vendor   ON documents(vendor_id)   WHERE vendor_id IS NOT NULL;

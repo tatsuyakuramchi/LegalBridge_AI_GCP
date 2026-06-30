@@ -79,6 +79,8 @@ import {
 } from "./src/lib/conditionLineMapper.ts";
 // 雛形プレビュー用 v3 サンプルデータ（個別利用許諾 v3 テンプレの sample-preview に使う）。
 import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
+// スキーマ単純化 Phase 2: Master(契約マスタ)保存を documents 統合＋CL直接書き込みで行う。
+import { upsertMasterContract } from "./src/lib/documentSave.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
@@ -6610,90 +6612,54 @@ ${details}
         ledger,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
-      const result = await query(
-        `INSERT INTO contract_capabilities (
-          vendor_id, record_type, contract_category, contract_type, contract_title,
-          document_number, contract_status, effective_date, expiration_date, auto_renewal,
-          original_work, product_name, work_name, media, territory, language, document_url, condition_number,
-          renewal_notice_months, alert_lead_months,
-          is_active,
-          alert_slack_channels, alert_slack_mentions,
-          ledger_code, flow_direction, deliverable_ownership
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22::jsonb, $23::jsonb, $24, $25, $26)
-        RETURNING id, document_number`,
-        [
-          vendor_id || null, record_type || "master_contract", contract_category || "service",
-          contract_type || "service_basic", contract_title, finalDocNumber,
-          contract_status || "executed", effective_date || null, expiration_date || null,
-          // Boolean 正規化 — 't' / 'f' / 1 / 0 / 文字列 'true' なども受け取れるように
-          auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
-          original_work || "", product_name || "", work_name || "",
-          media || "", territory || "", language || "", document_url || "", condition_number || "",
-          renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
-          alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
-          // is_active 省略時は TRUE (有効)
-          is_active === undefined || is_active === null ? true : Boolean(is_active),
-          JSON.stringify(channels),
-          JSON.stringify(mentions),
-          ledger,
-          flowDir,
-          deliverable_ownership || null,
-        ]
+      // スキーマ単純化 Phase 2: documents 統合＋CL直接書き込み（contract_capabilities 廃止）。
+      //   金銭条件/業務明細/経費/手数料を全て CL へ、材料は行指定→既定→原作本体へアンカー。
+      const saved = await upsertMasterContract(
+        { query },
+        {
+          document_number: finalDocNumber,
+          record_type: record_type || "master_contract",
+          contract_category: contract_category || "service",
+          contract_type: contract_type || "service_basic",
+          contract_title,
+          contract_status: contract_status || "executed",
+          vendor_id: vendor_id || null,
+          effective_date: effective_date || null,
+          expiration_date: expiration_date || null,
+          flow_direction: flowDir,
+          deliverable_ownership: deliverable_ownership || null,
+          ledger_code: ledger,
+          template_family,
+          is_active: is_active === undefined || is_active === null ? true : Boolean(is_active),
+          auto_renewal:
+            auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
+          renewal_notice_months:
+            renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
+          alert_lead_months:
+            alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
+          alert_slack_channels: channels,
+          alert_slack_mentions: mentions,
+          original_work: original_work || null,
+          product_name: product_name || null,
+          work_name: work_name || null,
+          media: media || null,
+          territory: territory || null,
+          language: language || null,
+          condition_number: condition_number || null,
+          document_url: document_url || null,
+          default_material_code: req.body?.素材番号 || null,
+          condition_material_codes: req.body?.condition_material_codes || {},
+          financial_conditions,
+          line_items: req.body?.line_items,
+          expenses: req.body?.expenses,
+          other_fees: req.body?.other_fees,
+        }
       );
-      const newId = Number(result.rows[0].id);
-      // Phase 22.21.91: 金銭条件 (条件 1..3) を子テーブルに upsert。
-      //   ライセンス系の単独/個別契約のみで意味を持つが、ここでは
-      //   contract_category に依らず req.body.financial_conditions が
-      //   配列で来たらそのまま書く (フロントが gating を担当)。
-      await upsertCapabilityFinancialConditions(newId, financial_conditions);
-      // Phase 22.21.112: 業務明細 (検収書 自動補完用) を子テーブルに upsert。
-      //   業務委託 (service) カテゴリの単独/個別契約で意味を持つ。
-      await upsertCapabilityLineItems(newId, req.body?.line_items);
-      // Phase 23.6.14: 経費 / その他手数料 (検収書の経費精算 / 手数料精算 自動補完用)。
-      //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
-      await upsertCapabilityExpenses(newId, req.body?.expenses);
-      await upsertCapabilityOtherFees(newId, req.body?.other_fees);
-      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
-      await upsertContractScopes(newId, scopes, contract_category, template_family);
+      const newId = saved.documentId;
+      // 契約スコープは Phase 後段で documents へ付替え予定（現状スキップ）。
 
-      // Phase 22.21.115: 稟議番号 N:N リンク + documents 行同期。
-      //   稟議リンクは ringi_documents.document_id 経由なので documents 行が必須。
-      //   bulk import と同じパターンで documents を upsert する。
-      //   template_type は record_type + category から導出:
-      //     license + master_contract → 'license_master'
-      //     license + individual/standalone → 'individual_license_terms'
-      //     service + (any) → 'service_master'
+      // 稟議番号 N:N リンク（documents 行は upsertMasterContract が作成済み）。
       try {
-        const ttForDoc =
-          record_type === "master_contract"
-            ? contract_category === "license"
-              ? "license_master"
-              : "service_master"
-            : contract_category === "license"
-              ? "individual_license_terms"
-              : "service_master";
-        await query(
-          `INSERT INTO documents (
-             document_number, issue_key, template_type, form_data,
-             drive_link, created_by
-           ) VALUES ($1, $2, $3, $4, $5, $6)
-           ON CONFLICT (document_number) DO UPDATE SET
-             form_data = COALESCE(documents.form_data, '{}'::jsonb) || EXCLUDED.form_data,
-             drive_link = COALESCE(NULLIF(EXCLUDED.drive_link, ''), documents.drive_link)`,
-          [
-            finalDocNumber,
-            `MASTER-${finalDocNumber}`,
-            ttForDoc,
-            JSON.stringify({
-              __master_form: true,
-              ringi_numbers: Array.isArray(req.body?.ringi_numbers)
-                ? req.body.ringi_numbers
-                : [],
-            }),
-            document_url || "",
-            "master-form",
-          ]
-        );
         await linkRingiByDocNumber(
           finalDocNumber,
           Array.isArray(req.body?.ringi_numbers)
@@ -6702,7 +6668,7 @@ ${details}
         );
       } catch (ringiErr: any) {
         console.warn(
-          `[contract_capabilities] ringi link failed for ${finalDocNumber}:`,
+          `[master-contract] ringi link failed for ${finalDocNumber}:`,
           ringiErr?.message || ringiErr
         );
       }
@@ -6710,7 +6676,7 @@ ${details}
       res.json({
         success: true,
         id: newId,
-        document_number: result.rows[0].document_number,
+        document_number: finalDocNumber,
         document_number_auto:
           !String(document_number || "").trim() ||
           regenerate_document_number === true ||
@@ -6747,7 +6713,7 @@ ${details}
     }
     try {
       const r = await query(
-        `UPDATE contract_capabilities
+        `UPDATE documents
             SET contract_status = $2, updated_at = CURRENT_TIMESTAMP
           WHERE id = $1
         RETURNING id, contract_status`,
@@ -6807,7 +6773,7 @@ ${details}
       // 番号を保持しておき、変更後に documents テーブル側にも伝播させる。
       //   contract_capabilities が UPDATE される前に DB 上の旧番号を取得。
       const existingRow = await query(
-        `SELECT document_number FROM contract_capabilities WHERE id = $1`,
+        `SELECT document_number FROM documents WHERE id = $1`,
         [id]
       );
       const previousDocNumber = String(
@@ -6822,89 +6788,61 @@ ${details}
         ledger,
         regenerate_document_number === true || regenerate_document_number === "true"
       );
-      await query(
-        `UPDATE contract_capabilities SET
-          vendor_id = $1, record_type = $2, contract_category = $3, contract_type = $4,
-          contract_title = $5, document_number = $6, contract_status = $7,
-          effective_date = $8, expiration_date = $9, auto_renewal = $10,
-          original_work = $11, product_name = $12, work_name = $13, media = $14,
-          territory = $15, language = $16, document_url = $17, condition_number = $18,
-          renewal_notice_months = $19, alert_lead_months = $20,
-          is_active = $21,
-          alert_slack_channels = $22::jsonb,
-          alert_slack_mentions = $23::jsonb,
-          ledger_code = $24,
-          -- null のときは既存値を保持(レガシー編集で方向を誤って消さない)
-          flow_direction = COALESCE($25, flow_direction),
-          deliverable_ownership = $26,
-          updated_at = CURRENT_TIMESTAMP
-        WHERE id = $27`,
-        [
-          vendor_id || null, record_type, contract_category, contract_type, contract_title,
-          finalDocNumber, contract_status, effective_date || null, expiration_date || null,
-          // Boolean 正規化
-          auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
-          original_work || "", product_name || "", work_name || "",
-          media || "", territory || "", language || "", document_url || "", condition_number || "",
-          renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
-          alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
-          is_active === undefined || is_active === null ? true : Boolean(is_active),
-          JSON.stringify(channels),
-          JSON.stringify(mentions),
-          ledger,
-          flowDir,
-          deliverable_ownership || null,
-          id,
-        ]
-      );
+      // 番号変更時は既存 documents 行の番号を先に合わせる（upsert キー一致のため）。
+      if (previousDocNumber && previousDocNumber !== finalDocNumber) {
+        await query(`UPDATE documents SET document_number = $2 WHERE id = $1`, [id, finalDocNumber]);
+      }
 
-      // Phase 22.21.91: 金銭条件 (条件 1..3) を子テーブルに upsert。
-      //   送られてこなければ (= undefined) 既存条件は触らない。明示的に [] が
-      //   来た場合は全件削除する。
-      await upsertCapabilityFinancialConditions(Number(id), financial_conditions);
-      // Phase 22.21.112: 業務明細 (検収書 自動補完用) を upsert。
-      //   undefined → 既存維持、[] → 全件削除、それ以外 → upsert。
-      await upsertCapabilityLineItems(Number(id), req.body?.line_items);
-      // Phase 23.6.14: 経費 / その他手数料 (検収書 自動補完用)。同 semantics。
-      await upsertCapabilityExpenses(Number(id), req.body?.expenses);
-      await upsertCapabilityOtherFees(Number(id), req.body?.other_fees);
-      // データ構造刷新: 契約スコープ(複数可)+ template_family を upsert。
-      await upsertContractScopes(Number(id), scopes, contract_category, template_family);
+      // スキーマ単純化 Phase 2: documents 統合＋CL直接書き込みで更新。
+      //   明細系が全 undefined のときは既存CLを保持（PUT 既存挙動を踏襲）。
+      const saved = await upsertMasterContract(
+        { query },
+        {
+          document_number: finalDocNumber,
+          record_type,
+          contract_category,
+          contract_type,
+          contract_title,
+          contract_status,
+          vendor_id: vendor_id || null,
+          effective_date: effective_date || null,
+          expiration_date: expiration_date || null,
+          flow_direction: flowDir,
+          deliverable_ownership: deliverable_ownership || null,
+          ledger_code: ledger,
+          template_family,
+          is_active: is_active === undefined || is_active === null ? true : Boolean(is_active),
+          auto_renewal:
+            auto_renewal === true || auto_renewal === "t" || auto_renewal === "true" || auto_renewal === 1,
+          renewal_notice_months:
+            renewal_notice_months != null && renewal_notice_months !== "" ? Number(renewal_notice_months) : null,
+          alert_lead_months:
+            alert_lead_months != null && alert_lead_months !== "" ? Number(alert_lead_months) : null,
+          alert_slack_channels: channels,
+          alert_slack_mentions: mentions,
+          original_work: original_work || null,
+          product_name: product_name || null,
+          work_name: work_name || null,
+          media: media || null,
+          territory: territory || null,
+          language: language || null,
+          condition_number: condition_number || null,
+          document_url: document_url || null,
+          default_material_code: req.body?.素材番号 || null,
+          condition_material_codes: req.body?.condition_material_codes || {},
+          financial_conditions,
+          line_items: req.body?.line_items,
+          expenses: req.body?.expenses,
+          other_fees: req.body?.other_fees,
+        }
+      );
+      void saved;
 
       // Phase 22.21.115: 稟議番号リンクを更新 (POST と同じパターン)。
       //   ringi_numbers が undefined なら触らない。[] なら全削除。
       if (req.body?.ringi_numbers !== undefined) {
         try {
-          const ttForDoc =
-            record_type === "master_contract"
-              ? contract_category === "license"
-                ? "license_master"
-                : "service_master"
-              : contract_category === "license"
-                ? "individual_license_terms"
-                : "service_master";
-          await query(
-            `INSERT INTO documents (
-               document_number, issue_key, template_type, form_data,
-               drive_link, created_by
-             ) VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (document_number) DO UPDATE SET
-               form_data = COALESCE(documents.form_data, '{}'::jsonb) || EXCLUDED.form_data,
-               drive_link = COALESCE(NULLIF(EXCLUDED.drive_link, ''), documents.drive_link)`,
-            [
-              finalDocNumber,
-              `MASTER-${finalDocNumber}`,
-              ttForDoc,
-              JSON.stringify({
-                __master_form: true,
-                ringi_numbers: Array.isArray(req.body.ringi_numbers)
-                  ? req.body.ringi_numbers
-                  : [],
-              }),
-              document_url || "",
-              "master-form",
-            ]
-          );
+          // documents 行は upsertMasterContract が作成/更新済み。稟議リンクのみ更新。
           await linkRingiByDocNumber(
             finalDocNumber,
             Array.isArray(req.body.ringi_numbers)
@@ -6913,7 +6851,7 @@ ${details}
           );
         } catch (ringiErr: any) {
           console.warn(
-            `[contract_capabilities PUT] ringi link failed for ${finalDocNumber}:`,
+            `[master-contract PUT] ringi link failed for ${finalDocNumber}:`,
             ringiErr?.message || ringiErr
           );
         }
