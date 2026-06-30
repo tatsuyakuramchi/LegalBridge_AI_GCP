@@ -60,6 +60,7 @@ const groups: NavGroup[] = [
     items: [
       { to: "/documents/new", label: "New Document", icon: FilePlus2, description: "Generate" },
       { to: "/imports", label: "Imports", icon: Database, description: "Past docs → DB" },
+      { to: "/data-import", label: "CSV 取込 (全テーブル)", icon: Database, description: "Schema-driven CSV" },
     ],
   },
   {

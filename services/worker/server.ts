@@ -84,6 +84,7 @@ import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
 // スキーマ単純化 Phase 2: Master(契約マスタ)保存を documents 統合＋CL直接書き込みで行う。
 import { upsertMasterContract, mapV3MatrixToConditions } from "./src/lib/documentSave.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
+import { registerGenericImport } from "./src/routes/genericImport.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
 import { registerRelatedParty } from "./src/routes/relatedParty.ts";
 import { registerUnifiedIssues } from "./src/routes/unifiedIssues.ts";
@@ -9208,6 +9209,9 @@ ${details}
     linkRingiByDocNumber,
     requirePortalSecret,
   });
+
+  // 汎用スキーマ駆動 CSV 取込（全テーブル＋互換ビュー）。/api/imports/tables*
+  registerGenericImport(app, { query, requirePortalSecret });
 
   // データモデル整理: 連結チェック＆修復ツール (整合性点検 / 安全な修復)
   registerDataLinkage(app, { query, pool });

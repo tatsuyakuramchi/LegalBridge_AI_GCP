@@ -27,6 +27,7 @@ import { WorkGraphPanel } from "./pages/master/WorkGraphPanel" // 統合 Phase3c
 import { WorksListPanel } from "./pages/works/WorksListPanel" // 作品統合 増分④: 統一一覧
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
 import { ImportPage } from "./pages/ImportPage"
+import { GenericImportPage } from "./pages/GenericImportPage"
 import { ExcelBatchPage } from "./pages/ExcelBatchPage"
 import { DataLinkagePanel } from "./pages/DataLinkagePanel"
 import { SettingsPage } from "./pages/SettingsPage"
@@ -42,6 +43,7 @@ export default function App() {
                 <Route index element={<DashboardPage />} />
                 <Route path="documents/new" element={<DocumentEditorPage />} />
                 <Route path="imports" element={<ImportPage />} />
+                <Route path="data-import" element={<GenericImportPage />} />
                 <Route path="excel-batches" element={<ExcelBatchPage />} />
                 {/* データ構造刷新: 検収待ちは条件明細ハブの検収待ちタブへ集約(旧URL温存) */}
                 <Route path="pending-inspections" element={<Navigate to="/condition-lines?tab=inspections" replace />} />

@@ -75,6 +75,9 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   // 統合修正: v2 一括取込のテンプレ DL も worker のみが提供する(GET)。
   //   これが無いと READ(search-api)へ振られて 404(発注書等のサンプルCSVが落ちない)。
   /^\/api\/imports\/v2\/templates(?:\/|\?|$)/,
+  // 汎用スキーマ駆動 CSV 取込（一覧・テンプレ DL の GET）は worker のみ実装。
+  //   一覧 /api/imports/tables、テンプレ /api/imports/tables/:name/template.csv。
+  /^\/api\/imports\/tables(?:\/|\?|$)/,
   // データモデル整理: 連結チェック(整合性点検)は worker のみ実装。
   /^\/api\/admin\/data-linkage\/check(?:\?|$)/,
   // 課題コントロール整合性監査(読み取り専用)も worker のみ実装。
