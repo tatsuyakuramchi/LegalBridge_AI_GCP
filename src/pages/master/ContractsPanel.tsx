@@ -1021,7 +1021,7 @@ export function ContractsPanel() {
                 上部に移動。ライセンス系の単独/個別契約ではメイン情報なので、
                 Slack 設定や原作紐付けより前に表示する。 */}
             {["license", "mixed"].includes(
-              String(data?.contract_category || "").toLowerCase()
+              String(data?.contract_category || "service").toLowerCase()
             ) && (
               <Field
                 label="▍ 個別利用許諾条件 (金銭条件)"
@@ -1051,7 +1051,7 @@ export function ContractsPanel() {
                 「業務委託マスタから読み込む」で order_lines_for_inspection に
                 自動補完される。発注書 (purchase_order) フォームの items[] と同 shape。 */}
             {["service", "mixed"].includes(
-              String(data?.contract_category || "").toLowerCase()
+              String(data?.contract_category || "service").toLowerCase()
             ) && (
               <Field
                 label="▍ 業務明細 (検収書 自動補完用)"
@@ -1077,7 +1077,7 @@ export function ContractsPanel() {
             {/* Phase 23.6.14: 経費 (capability_expenses) — 発注書フォーム IV-b と同 shape。
                 検収書フォームの「ステップ2-b 経費精算」で親契約連動として参照される。 */}
             {["service", "mixed"].includes(
-              String(data?.contract_category || "").toLowerCase()
+              String(data?.contract_category || "service").toLowerCase()
             ) && (
               <Field
                 label="▍ 経費（交通費等・税込み / 検収書 自動補完用）"
@@ -1099,7 +1099,7 @@ export function ContractsPanel() {
             {/* Phase 23.6.14: その他手数料 (capability_other_fees) — 発注書フォーム IV-a と同 shape。
                 検収書フォームの「ステップ2-c その他手数料」で参照される (税抜)。 */}
             {["service", "mixed"].includes(
-              String(data?.contract_category || "").toLowerCase()
+              String(data?.contract_category || "service").toLowerCase()
             ) && (
               <Field
                 label="▍ その他手数料（税抜 / 検収書 自動補完用）"
