@@ -97,6 +97,7 @@ type UnifiedDetail = {
   issues: UIssue[]
   documents: UDoc[]
   lines: ULine[]
+  matters?: { id: number; matter_code: string | null; title: string; status: string }[]
 }
 
 const CONTRACTING_TEMPLATES = new Set([
@@ -341,6 +342,22 @@ export function UnifiedIssuePage() {
                   </button>
                 )}
               </div>
+              {(data?.matters?.length ?? 0) > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[11px] text-muted-foreground">所属案件:</span>
+                  {data!.matters!.map((mt) => (
+                    <button
+                      key={mt.id}
+                      onClick={() => navigate(`/matters/${mt.id}`)}
+                      className="inline-flex items-center gap-1 rounded-sm border border-border px-1.5 py-0.5 text-[11px] hover:bg-muted/60"
+                      title={mt.title}
+                    >
+                      <span className="font-mono text-sky-700">{mt.matter_code || `#${mt.id}`}</span>
+                      <span className="text-muted-foreground truncate max-w-[160px]">{mt.title}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
               <div className="pt-1"><StageLane documents={documents} /></div>
             </CardContent>
           </Card>

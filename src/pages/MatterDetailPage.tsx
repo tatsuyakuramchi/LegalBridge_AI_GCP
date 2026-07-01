@@ -23,6 +23,10 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useToast } from "@/components/ui/toast"
+import { useAppData } from "@/src/context/AppDataContext"
+import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
+import { IssuePicker } from "@/src/components/IssuePicker"
+import { ChevronDown, ChevronRight as ChevronRightIcon } from "lucide-react"
 
 const RELATION_LABEL: Record<string, string> = {
   primary: "代表",
@@ -57,6 +61,7 @@ export function MatterDetailPage() {
   const { matterId } = useParams()
   const navigate = useNavigate()
   const { push } = useToast()
+  const { vendors, issues } = useAppData()
 
   const [data, setData] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(true)
@@ -67,6 +72,16 @@ export function MatterDetailPage() {
   const [newIssue, setNewIssue] = React.useState({ backlog_issue_key: "", relation: "related" })
   const [attachDoc, setAttachDoc] = React.useState("")
   const [absorbId, setAbsorbId] = React.useState("")
+  const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
+
+  // issueKey → Backlog課題(件名/本文) 参照（Request 一覧から）
+  const issueByKey = React.useMemo(() => {
+    const map: Record<string, any> = {}
+    for (const i of (issues as any[]) || []) map[i.issueKey] = i
+    return map
+  }, [issues])
+  const vendorCodeById = (vid: any) =>
+    (vendors as any[])?.find((v) => v.id === vid)?.vendor_code || ""
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -79,6 +94,7 @@ export function MatterDetailPage() {
         title: json.matter.title || "",
         status: json.matter.status || "open",
         counterparty: json.matter.counterparty || "",
+        vendor_id: json.matter.vendor_id ?? null,
         primary_issue_key: json.matter.primary_issue_key || "",
         remarks: json.matter.remarks || "",
       })
@@ -118,12 +134,15 @@ export function MatterDetailPage() {
   }
 
   async function addIssue() {
-    if (!newIssue.backlog_issue_key.trim()) return push("課題キーを入力してください", "error")
+    if (!newIssue.backlog_issue_key.trim()) return push("Request を選択してください", "error")
     try {
       await call(`/api/matters/${matterId}/issues`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(newIssue),
+        body: JSON.stringify({
+          ...newIssue,
+          summary_snapshot: issueByKey[newIssue.backlog_issue_key]?.summary || null,
+        }),
       }, "課題を束ねました")
       setNewIssue({ backlog_issue_key: "", relation: "related" })
       await load()
@@ -229,12 +248,25 @@ export function MatterDetailPage() {
               </NativeSelect>
             </div>
             <div className="space-y-1">
-              <Label className="text-[12px]">相手方</Label>
-              <Input value={edit.counterparty} onChange={(e) => setEdit({ ...edit, counterparty: e.target.value })} className="h-8 text-[12px]" />
+              <Label className="text-[12px]">相手方（取引先マスタから検索）</Label>
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode={vendorCodeById(edit.vendor_id)}
+                onSelect={(v: any) =>
+                  setEdit({ ...edit, vendor_id: v?.id ?? null, counterparty: v?.vendor_name ?? "" })
+                }
+              />
+              {edit.counterparty && (
+                <p className="text-[11px] text-muted-foreground">選択中: {edit.counterparty}</p>
+              )}
             </div>
             <div className="space-y-1">
-              <Label className="text-[12px]">代表 Backlog 課題</Label>
-              <Input value={edit.primary_issue_key} onChange={(e) => setEdit({ ...edit, primary_issue_key: e.target.value })} className="h-8 text-[12px]" />
+              <Label className="text-[12px]">代表 Backlog 課題（Request から検索）</Label>
+              <IssuePicker
+                issues={issues as any}
+                value={edit.primary_issue_key || undefined}
+                onSelect={(i) => setEdit({ ...edit, primary_issue_key: i?.issueKey ?? "" })}
+              />
             </div>
             <div className="space-y-1 md:col-span-2">
               <Label className="text-[12px]">備考</Label>
@@ -258,27 +290,50 @@ export function MatterDetailPage() {
           <SectionHead icon={Layers} label="束ねた Backlog 課題" count={data.issues.length} />
           <div className="space-y-1.5 mb-3">
             {data.issues.length === 0 && <p className="text-[12px] text-muted-foreground">課題が紐付いていません。</p>}
-            {data.issues.map((iss: any) => (
-              <div key={iss.id} className="flex items-center gap-2 text-[12px] border border-border/60 rounded-sm px-2.5 py-1.5">
-                <Badge variant={RELATION_VARIANT[iss.relation] || "secondary"} className="text-[10px]">
-                  {RELATION_LABEL[iss.relation] || iss.relation}
-                </Badge>
-                <button className="font-mono text-sky-700 hover:underline" onClick={() => navigate(`/issues/${encodeURIComponent(iss.backlog_issue_key)}`)}>
-                  {iss.backlog_issue_key}
-                </button>
-                {iss.summary_snapshot && <span className="text-muted-foreground truncate">{iss.summary_snapshot}</span>}
-                <button className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => removeIssue(iss.backlog_issue_key)}>
-                  <X className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+            {data.issues.map((iss: any) => {
+              const bl = issueByKey[iss.backlog_issue_key]
+              const body = bl?.description
+              const isOpen = !!expanded[iss.backlog_issue_key]
+              return (
+                <div key={iss.id} className="border border-border/60 rounded-sm">
+                  <div className="flex items-center gap-2 text-[12px] px-2.5 py-1.5">
+                    <button
+                      className="text-muted-foreground hover:text-foreground disabled:opacity-30"
+                      disabled={!body}
+                      onClick={() => setExpanded((p) => ({ ...p, [iss.backlog_issue_key]: !isOpen }))}
+                      title={body ? "Backlog 内容を表示" : "Backlog 本文なし"}
+                    >
+                      {isOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRightIcon className="h-3.5 w-3.5" />}
+                    </button>
+                    <Badge variant={RELATION_VARIANT[iss.relation] || "secondary"} className="text-[10px]">
+                      {RELATION_LABEL[iss.relation] || iss.relation}
+                    </Badge>
+                    <button className="font-mono text-sky-700 hover:underline" onClick={() => navigate(`/issues/${encodeURIComponent(iss.backlog_issue_key)}`)}>
+                      {iss.backlog_issue_key}
+                    </button>
+                    <span className="text-muted-foreground truncate">{iss.summary_snapshot || bl?.summary || ""}</span>
+                    {bl?.status?.name && <Badge variant="outline" className="text-[10px]">{bl.status.name}</Badge>}
+                    <button className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => removeIssue(iss.backlog_issue_key)}>
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                  {isOpen && body && (
+                    <div className="border-t border-border/50 bg-muted/30 px-3 py-2">
+                      <p className="text-[11px] font-mono leading-relaxed whitespace-pre-wrap break-words text-muted-foreground">
+                        {body}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
           <div className="flex items-center gap-2">
-            <Input
-              value={newIssue.backlog_issue_key}
-              onChange={(e) => setNewIssue({ ...newIssue, backlog_issue_key: e.target.value })}
-              placeholder="LEGAL-123"
-              className="h-8 text-[12px] max-w-[200px]"
+            <IssuePicker
+              issues={issues as any}
+              value={newIssue.backlog_issue_key || undefined}
+              onSelect={(i) => setNewIssue({ ...newIssue, backlog_issue_key: i?.issueKey ?? "" })}
+              className="flex-1 max-w-[280px]"
             />
             <NativeSelect value={newIssue.relation} onChange={(e: any) => setNewIssue({ ...newIssue, relation: e.target.value })} className="h-8 text-[12px] w-28">
               <option value="related">関連</option>

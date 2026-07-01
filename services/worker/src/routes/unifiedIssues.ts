@@ -296,9 +296,29 @@ export function registerUnifiedIssues(app: Express, deps: UnifiedIssuesDeps) {
       );
 
       const lines = linesRes.rows;
+
+      // 所属案件(matter): この契約の文書が束ねられている案件を横断表示（新課題→案件の相互リンク）。
+      //   matters 未導入(0102 前)環境では黙って空にする。
+      let matters: any[] = [];
+      try {
+        const docIds = docsRes.rows.map((d: any) => d.id).filter(Boolean);
+        if (docIds.length) {
+          const mr = await query(
+            `SELECT DISTINCT m.id, m.matter_code, m.title, m.status
+               FROM matters m JOIN documents d ON d.matter_id = m.id
+              WHERE d.id = ANY($1::int[])`,
+            [docIds]
+          );
+          matters = mr.rows;
+        }
+      } catch {
+        matters = [];
+      }
+
       res.json({
         ok: true,
         header,
+        matters,
         summary: {
           line_count: lines.length,
           open: lines.filter((r: any) => !["fulfilled", "expired", "cancelled"].includes(String(r.status || ""))).length,

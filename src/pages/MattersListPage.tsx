@@ -27,6 +27,9 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog"
+import { useAppData } from "@/src/context/AppDataContext"
+import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
+import { IssuePicker } from "@/src/components/IssuePicker"
 
 // 案件管理 一覧。1行 = 1案件。Backlog課題(重複/部分)・文書・送信・条件明細を束ねる。
 //   API: GET /api/matters (matter_overview_v)。詳細は /matters/:id。
@@ -60,6 +63,7 @@ const STATUS_VARIANT: Record<string, any> = {
 export function MattersListPage() {
   const navigate = useNavigate()
   const { push } = useToast()
+  const { vendors, issues } = useAppData()
   const [rows, setRows] = React.useState<MatterRow[]>([])
   const [loading, setLoading] = React.useState(true)
   const [q, setQ] = React.useState("")
@@ -69,6 +73,8 @@ export function MattersListPage() {
   const [form, setForm] = React.useState({
     title: "",
     counterparty: "",
+    vendor_id: null as number | null,
+    vendor_code: "",
     primary_issue_key: "",
     status: "open",
   })
@@ -109,7 +115,7 @@ export function MattersListPage() {
       if (!json?.ok) throw new Error(json?.error || "作成に失敗しました")
       push("案件を作成しました", "success")
       setOpenCreate(false)
-      setForm({ title: "", counterparty: "", primary_issue_key: "", status: "open" })
+      setForm({ title: "", counterparty: "", vendor_id: null, vendor_code: "", primary_issue_key: "", status: "open" })
       navigate(`/matters/${json.matter.id}`)
     } catch (e: any) {
       push(String(e?.message || e), "error")
@@ -242,20 +248,26 @@ export function MattersListPage() {
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-[12px]">相手方</Label>
-              <Input
-                value={form.counterparty}
-                onChange={(e) => setForm({ ...form, counterparty: e.target.value })}
-                className="h-8 text-[12px]"
+              <Label className="text-[12px]">相手方（取引先マスタから検索）</Label>
+              <VendorSearchSelect
+                vendors={vendors}
+                selectedCode={form.vendor_code}
+                onSelect={(v: any) =>
+                  setForm({
+                    ...form,
+                    vendor_id: v?.id ?? null,
+                    vendor_code: v?.vendor_code ?? "",
+                    counterparty: v?.vendor_name ?? "",
+                  })
+                }
               />
             </div>
             <div className="space-y-1">
-              <Label className="text-[12px]">代表 Backlog 課題キー</Label>
-              <Input
-                value={form.primary_issue_key}
-                onChange={(e) => setForm({ ...form, primary_issue_key: e.target.value })}
-                placeholder="例: LEGAL-123"
-                className="h-8 text-[12px]"
+              <Label className="text-[12px]">代表 Backlog 課題（Request から検索）</Label>
+              <IssuePicker
+                issues={issues as any}
+                value={form.primary_issue_key || undefined}
+                onSelect={(i) => setForm({ ...form, primary_issue_key: i?.issueKey ?? "" })}
               />
             </div>
             <div className="space-y-1">
