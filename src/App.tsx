@@ -9,6 +9,8 @@ import { RequestsPage } from "./pages/RequestsPage"
 import { IssueDetailPage } from "./pages/IssueDetailPage" // データ構造刷新 Phase A
 import { UnifiedIssuePage } from "./pages/UnifiedIssuePage" // 新課題(統一課題)UI
 import { UnifiedIssuesListPage } from "./pages/UnifiedIssuesListPage" // 新課題 一覧
+import { MattersListPage } from "./pages/MattersListPage" // 案件管理 一覧
+import { MatterDetailPage } from "./pages/MatterDetailPage" // 案件管理 詳細
 import { ConditionsHubPage } from "./pages/ConditionsHubPage" // データ構造刷新: 条件明細 統合ハブ
 import { ConditionLineDetailPage } from "./pages/ConditionLineDetailPage" // データ構造刷新 Phase F
 import { ArchivePage } from "./pages/ArchivePage"
@@ -51,6 +53,8 @@ export default function App() {
                 <Route path="issues/:issueKey" element={<IssueDetailPage />} />{/* データ構造刷新 Phase A */}
                 <Route path="unified" element={<UnifiedIssuesListPage />} />{/* 新課題 一覧 */}
                 <Route path="unified/:capabilityId" element={<UnifiedIssuePage />} />{/* 新課題(統一課題)UI */}
+                <Route path="matters" element={<MattersListPage />} />{/* 案件管理 一覧 */}
+                <Route path="matters/:matterId" element={<MatterDetailPage />} />{/* 案件管理 詳細 */}
                 <Route path="condition-lines" element={<ConditionsHubPage />} />{/* データ構造刷新: 統合ハブ(Cockpit/検収待ち/横断検索) */}
                 <Route path="condition-lines/:lineCode" element={<ConditionLineDetailPage />} />{/* データ構造刷新 Phase F */}
                 <Route path="archive" element={<ArchivePage />} />

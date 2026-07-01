@@ -18,6 +18,7 @@ import {
   ListChecks,
   Network,
   Layers,
+  FolderKanban,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -50,6 +51,7 @@ const groups: NavGroup[] = [
     items: [
       { to: "/requests", label: "Requests", icon: Inbox, description: "Backlog" },
       { to: "/unified", label: "新課題", icon: Layers, description: "契約単位で締結+支払を束ねる" },
+      { to: "/matters", label: "案件", icon: FolderKanban, description: "課題(重複/部分)・文書・送信・条件を1案件で総合管理" },
       { to: "/condition-lines", label: "条件明細", icon: ListChecks, description: "消化・残高 / 検収待ち / 検索" },
       { to: "/excel-batches", label: "Excel Export", icon: FileSpreadsheet, description: "未発行 検収/許諾" },
       { to: "/archive", label: "Archive", icon: Archive, description: "Concluded" },

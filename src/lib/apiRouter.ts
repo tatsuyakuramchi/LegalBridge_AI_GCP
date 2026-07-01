@@ -84,6 +84,8 @@ const WRITE_PATHS_ON_GET: RegExp[] = [
   /^\/api\/audit\/issue-consistency(?:\?|$)/,
   // 新課題(統一課題)導出API(一覧/詳細・読み取り専用)も worker のみ実装。
   /^\/api\/unified-issues(?:\/[^/]+)?(?:\?|$)/,
+  // 案件(matter)管理API(一覧/詳細/CRUD)は worker のみ実装。GET も worker へ。
+  /^\/api\/matters(?:\/.*)?(?:\?|$)/,
   // 統合 Phase2 ドライラン(読み取り専用集計)は worker のみ実装。
   /^\/api\/admin\/unify\/phase2-dryrun(?:\?|$)/,
   // Phase 15/16: 個別ドキュメント取得 + PDF 未作成キューは worker のみ
