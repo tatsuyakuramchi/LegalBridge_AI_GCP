@@ -1158,8 +1158,8 @@ async function startServer() {
 
       // 文書 + 取引先を解決。
       const dr = await query(
-        `SELECT d.document_number, d.template_type, d.form_data, d.drive_link, d.issue_key,
-                cc.vendor_id, v.vendor_name
+        `SELECT d.id, d.document_number, d.template_type, d.form_data, d.drive_link, d.issue_key,
+                d.matter_id, cc.vendor_id, v.vendor_name
            FROM documents d
            LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
            LEFT JOIN vendors v ON v.id = cc.vendor_id
@@ -1247,6 +1247,20 @@ async function startServer() {
           WHERE document_number = $1`,
         [doc.document_number, to.join(", "), messageId || null]
       );
+
+      // 案件の送信履歴(document_sends)にも記録する(best-effort。送信自体は成功扱い)。
+      try {
+        await query(
+          `INSERT INTO document_sends (document_id, matter_id, channel, recipient, status, subject, message_id, remarks)
+           VALUES ($1,$2,'email',$3,'sent',$4,$5,$6)`,
+          [
+            doc.id, doc.matter_id ?? null, to.join(", "), subject, messageId || null,
+            cc.length ? `CC: ${cc.join(", ")}` : null,
+          ]
+        );
+      } catch (e: any) {
+        console.warn("[email send] document_sends の記録に失敗:", e?.message || e);
+      }
 
       res.json({
         ok: true,
@@ -3240,6 +3254,63 @@ ${details}
         [source]
       );
       moved.issue_workflows = wf.rowCount || 0;
+
+      // 案件(matter)の整合: Request 側の統合を案件へも反映する。
+      //   - target が案件を持つ → source 側の案件を丸ごと吸収(課題/文書/送信を移し、空案件を削除)
+      //   - source だけ案件を持つ → その案件を本件の案件として残し、代表を target へ切替
+      //   - どちらも無い → 何もしない
+      //   いずれも target 案件内に source を relation='duplicate' で残し、統合の履歴とする。
+      {
+        const tm = await client.query(
+          `SELECT matter_id FROM matter_issues WHERE backlog_issue_key = $1 ORDER BY id LIMIT 1`,
+          [target]
+        );
+        let caseMid: number | null = tm.rows[0]?.matter_id ?? null;
+        const sm = await client.query(
+          `SELECT DISTINCT matter_id FROM matter_issues WHERE backlog_issue_key = $1`,
+          [source]
+        );
+        const sourceMids = sm.rows
+          .map((r: any) => Number(r.matter_id))
+          .filter((mid: number) => mid !== caseMid);
+
+        if (caseMid == null && sourceMids.length > 0) {
+          // target が案件未所属なら source の案件を引き継ぎ、target を代表として登録。
+          caseMid = sourceMids.shift()!;
+          await client.query(
+            `INSERT INTO matter_issues (matter_id, backlog_issue_key, relation)
+             VALUES ($1,$2,'primary')
+             ON CONFLICT (matter_id, backlog_issue_key) DO UPDATE SET relation = 'primary'`,
+            [caseMid, target]
+          );
+        }
+        if (caseMid != null) {
+          for (const mid of sourceMids) {
+            await client.query(
+              `UPDATE matter_issues mi SET matter_id = $1
+                WHERE mi.matter_id = $2
+                  AND NOT EXISTS (SELECT 1 FROM matter_issues x
+                                   WHERE x.matter_id = $1 AND x.backlog_issue_key = mi.backlog_issue_key)`,
+              [caseMid, mid]
+            );
+            await client.query(`UPDATE documents SET matter_id = $1 WHERE matter_id = $2`, [caseMid, mid]);
+            await client.query(`UPDATE document_sends SET matter_id = $1 WHERE matter_id = $2`, [caseMid, mid]);
+            await client.query(`DELETE FROM matters WHERE id = $1`, [mid]);
+            moved.matters_absorbed = (moved.matters_absorbed || 0) + 1;
+          }
+          await client.query(
+            `INSERT INTO matter_issues (matter_id, backlog_issue_key, relation, note)
+             VALUES ($1,$2,'duplicate',$3)
+             ON CONFLICT (matter_id, backlog_issue_key)
+               DO UPDATE SET relation = 'duplicate',
+                             note = COALESCE(matter_issues.note, EXCLUDED.note)`,
+            [caseMid, source, `${target} へ統合(${mode === "delete" ? "削除" : "終結"})`]
+          );
+          await client.query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [caseMid]);
+        }
+        // 代表課題が source を指したままの案件はすべて target へ付け替える。
+        await client.query(`UPDATE matters SET primary_issue_key = $1 WHERE primary_issue_key = $2`, [target, source]);
+      }
 
       await client.query("COMMIT");
     } catch (e: any) {

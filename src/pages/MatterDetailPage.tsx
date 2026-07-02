@@ -13,6 +13,7 @@ import {
   ListChecks,
   ExternalLink,
   GitMerge,
+  Mail,
 } from "lucide-react"
 
 import { Card, CardContent } from "@/components/ui/card"
@@ -23,6 +24,14 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { NativeSelect } from "@/components/ui/native-select"
 import { useToast } from "@/components/ui/toast"
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogBody,
+  DialogFooter,
+} from "@/components/ui/dialog"
 import { useAppData } from "@/src/context/AppDataContext"
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { IssuePicker } from "@/src/components/IssuePicker"
@@ -61,7 +70,7 @@ export function MatterDetailPage() {
   const { matterId } = useParams()
   const navigate = useNavigate()
   const { push } = useToast()
-  const { vendors, issues } = useAppData()
+  const { vendors, issues, refreshIssues } = useAppData()
 
   const [data, setData] = React.useState<any>(null)
   const [loading, setLoading] = React.useState(true)
@@ -73,6 +82,19 @@ export function MatterDetailPage() {
   const [attachDoc, setAttachDoc] = React.useState("")
   const [absorbId, setAbsorbId] = React.useState("")
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
+  // Backlog統合: 束ねた課題(重複/誤起票)を Request 側でも実際に統合する。
+  const [mergeSel, setMergeSel] = React.useState<string[]>([])
+  const [mergeOpen, setMergeOpen] = React.useState(false)
+  const [mergeTarget, setMergeTarget] = React.useState("")
+  const [mergeMode, setMergeMode] = React.useState<"child" | "delete">("child")
+  const [mergeMoveData, setMergeMoveData] = React.useState(true)
+  const [mergeReason, setMergeReason] = React.useState("")
+  const [merging, setMerging] = React.useState(false)
+  // 文書のメール送信(案件ページから直接送る)
+  const [emailDoc, setEmailDoc] = React.useState<any>(null)
+  const [emailTo, setEmailTo] = React.useState("")
+  const [emailCc, setEmailCc] = React.useState("")
+  const [emailSending, setEmailSending] = React.useState(false)
 
   // issueKey → Backlog課題(件名/本文) 参照（Request 一覧から）
   const issueByKey = React.useMemo(() => {
@@ -201,6 +223,92 @@ export function MatterDetailPage() {
     }
   }
 
+  // Backlog統合: 選択した課題を統合先(既定=代表課題)へ実統合する。
+  //   worker 側で matters/matter_issues も同期されるため、完了後に再読込するだけでよい。
+  function openMerge() {
+    const primary =
+      data?.matter?.primary_issue_key ||
+      data?.issues?.find((i: any) => i.relation === "primary")?.backlog_issue_key ||
+      ""
+    setMergeTarget(primary)
+    setMergeMode("child")
+    setMergeMoveData(true)
+    setMergeReason("")
+    setMergeOpen(true)
+  }
+
+  async function doMerge() {
+    const target = mergeTarget.trim().toUpperCase()
+    if (!target) return push("統合先の課題を選択してください", "error")
+    const sources = mergeSel.filter((k) => k.toUpperCase() !== target)
+    if (sources.length === 0) return push("統合元がありません(統合先と同じものは除外されます)", "error")
+    if (
+      mergeMode === "delete" &&
+      !window.confirm(`選択した ${sources.length} 件を Backlog から削除して ${target} に統合します。\nこの操作は元に戻せません。よろしいですか？`)
+    )
+      return
+    setMerging(true)
+    try {
+      const json = await call(`/api/backlog/issues/merge-bulk`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_key: target,
+          source_keys: sources,
+          mode: mergeMode,
+          move_data: mergeMoveData,
+          reason: mergeReason.trim() || undefined,
+        }),
+      })
+      push(
+        `${json.merged}/${json.total} 件を ${target} へ統合しました${json.failed ? `（失敗 ${json.failed} 件）` : ""}`,
+        json.failed ? "error" : "success"
+      )
+      setMergeOpen(false)
+      setMergeSel([])
+      await Promise.all([load(), refreshIssues?.()])
+    } catch (e: any) {
+      push(`統合に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setMerging(false)
+    }
+  }
+
+  // メール送信: 文書を取引先へ送る(宛先空欄なら取引先の主担当)。送信履歴にも自動記録される。
+  function openEmail(d: any) {
+    setEmailDoc(d)
+    setEmailTo("")
+    setEmailCc("")
+  }
+
+  async function sendEmailNow() {
+    if (!emailDoc?.document_number) return
+    setEmailSending(true)
+    try {
+      const body: any = {}
+      const to = emailTo.split(",").map((s) => s.trim()).filter(Boolean)
+      const cc = emailCc.split(",").map((s) => s.trim()).filter(Boolean)
+      if (to.length) body.to = to
+      if (cc.length) body.cc = cc
+      const json = await call(
+        `/api/documents/${encodeURIComponent(emailDoc.document_number)}/email/send`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }
+      )
+      push(
+        `メール送信しました: ${(json.to || []).join(", ")}` +
+          (json.cc?.length ? ` / CC: ${json.cc.join(", ")}` : "") +
+          (json.attached ? "（PDF添付）" : "（本文リンクのみ）"),
+        "success"
+      )
+      setEmailDoc(null)
+      await load()
+    } catch (e: any) {
+      push(`メール送信に失敗: ${e?.message || e}`, "error")
+    } finally {
+      setEmailSending(false)
+    }
+  }
+
   async function deleteMatter() {
     if (!window.confirm("この案件を削除します（課題の束ねは解除、文書は案件から外れます）。よろしいですか？")) return
     try {
@@ -297,6 +405,19 @@ export function MatterDetailPage() {
               return (
                 <div key={iss.id} className="border border-border/60 rounded-sm">
                   <div className="flex items-center gap-2 text-[12px] px-2.5 py-1.5">
+                    <input
+                      type="checkbox"
+                      className="h-3.5 w-3.5 accent-foreground cursor-pointer"
+                      checked={mergeSel.includes(iss.backlog_issue_key)}
+                      onChange={() =>
+                        setMergeSel((prev) =>
+                          prev.includes(iss.backlog_issue_key)
+                            ? prev.filter((k) => k !== iss.backlog_issue_key)
+                            : [...prev, iss.backlog_issue_key]
+                        )
+                      }
+                      title="Backlog統合の対象に選択"
+                    />
                     <button
                       className="text-muted-foreground hover:text-foreground disabled:opacity-30"
                       disabled={!body}
@@ -344,9 +465,71 @@ export function MatterDetailPage() {
             <Button size="sm" variant="outline" onClick={addIssue}>
               <Plus className="h-3.5 w-3.5 mr-1" /> 束ねる
             </Button>
+            {mergeSel.length > 0 && (
+              <Button size="sm" variant="outline" onClick={openMerge} className="gap-1.5" title="選択した課題を Backlog 上でも1つに統合する">
+                <GitMerge className="h-3.5 w-3.5" />
+                Backlog統合（{mergeSel.length}件）
+              </Button>
+            )}
           </div>
         </CardContent>
       </Card>
+
+      {/* Backlog統合ダイアログ: 選択課題を統合先へ実統合(案件側も自動同期) */}
+      <Dialog open={mergeOpen} onOpenChange={(v) => !v && setMergeOpen(false)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Backlog課題を統合（{mergeSel.length}件選択中）</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <p className="text-[11px] text-muted-foreground">
+              重複/誤起票の課題を Backlog 上でも1つへ統合します。案件の束ね・文書・送信履歴も自動で統合先へ同期されます。
+            </p>
+            <div className="text-[10px] font-mono text-muted-foreground break-all">
+              対象: {mergeSel.join(", ")}
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">統合先の課題（残す側）</Label>
+              <NativeSelect value={mergeTarget} onChange={(e: any) => setMergeTarget(e.target.value)} className="h-8 text-[12px]">
+                <option value="">選択してください</option>
+                {(data?.issues || []).map((iss: any) => (
+                  <option key={iss.backlog_issue_key} value={iss.backlog_issue_key}>
+                    {iss.backlog_issue_key}
+                    {iss.relation === "primary" ? "（代表）" : ""} {iss.summary_snapshot || ""}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">選択課題の処理</Label>
+              <NativeSelect value={mergeMode} onChange={(e: any) => setMergeMode(e.target.value as "child" | "delete")} className="h-8 text-[12px]">
+                <option value="child">子課題化＋終結（非破壊・推奨）</option>
+                <option value="delete">Backlog から削除（不可逆）</option>
+              </NativeSelect>
+              <p className="text-[10px] text-muted-foreground">
+                {mergeMode === "delete"
+                  ? "選択課題は完全に削除されます。統合先にコメントのみ残ります。"
+                  : "選択課題を統合先の子課題にし「終結」にします。履歴が残ります。"}
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-[11px]">
+              <input type="checkbox" checked={mergeMoveData} onChange={(e) => setMergeMoveData(e.target.checked)} />
+              紐づく文書・明細も統合先へ付け替える（中身がある場合）
+            </label>
+            <div className="space-y-1">
+              <Label className="text-[11px]">理由（任意）</Label>
+              <Input value={mergeReason} onChange={(e) => setMergeReason(e.target.value)} placeholder="重複起票のため 等" className="h-8 text-[12px]" />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setMergeOpen(false)} disabled={merging}>キャンセル</Button>
+            <Button size="sm" onClick={doMerge} disabled={merging} className="gap-1.5">
+              <GitMerge className="h-3.5 w-3.5" />
+              {merging ? "統合中…" : "統合を実行"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 文書 */}
       <Card>
@@ -366,7 +549,17 @@ export function MatterDetailPage() {
                 )}
                 {d.issue_key && (
                   <button className="text-sky-700 hover:underline" onClick={() => navigate(`/issues/${encodeURIComponent(d.issue_key)}`)}>
-                    送信/編集
+                    編集
+                  </button>
+                )}
+                {d.document_number && (
+                  <button
+                    className="text-sky-700 hover:underline inline-flex items-center gap-0.5"
+                    onClick={() => openEmail(d)}
+                    title="取引先へメール送信（送信履歴に自動記録）"
+                  >
+                    <Mail className="h-3 w-3" />
+                    メール送信
                   </button>
                 )}
                 <button className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => detachDocument(d.id)}>
@@ -383,6 +576,35 @@ export function MatterDetailPage() {
           </div>
         </CardContent>
       </Card>
+
+      {/* メール送信ダイアログ */}
+      <Dialog open={!!emailDoc} onOpenChange={(v) => !v && setEmailDoc(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>メール送信: {emailDoc?.document_number}</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-3">
+            <p className="text-[11px] text-muted-foreground">
+              文書を取引先へメール送信します（PDF添付・失敗時は本文リンクのみ）。送信結果はこの案件の送信履歴に記録されます。
+            </p>
+            <div className="space-y-1">
+              <Label className="text-[11px]">宛先（空欄なら取引先の主担当。複数はカンマ区切り）</Label>
+              <Input value={emailTo} onChange={(e) => setEmailTo(e.target.value)} placeholder="a@example.com, b@example.com" className="h-8 text-[12px]" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[11px]">CC（任意。複数はカンマ区切り）</Label>
+              <Input value={emailCc} onChange={(e) => setEmailCc(e.target.value)} placeholder="cc@example.com" className="h-8 text-[12px]" />
+            </div>
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" size="sm" onClick={() => setEmailDoc(null)} disabled={emailSending}>キャンセル</Button>
+            <Button size="sm" onClick={sendEmailNow} disabled={emailSending} className="gap-1.5">
+              <Send className="h-3.5 w-3.5" />
+              {emailSending ? "送信中…" : "送信する"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* 条件明細 */}
       <Card>
