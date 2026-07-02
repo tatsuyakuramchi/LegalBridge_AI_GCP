@@ -37,6 +37,7 @@ export type ScreenKey =
   | "staff"
   | "work-model"
   | "receivable-map"
+  | "payment-exports"
   | "guides"
   | "guide-portal"
   | "admin";
@@ -81,6 +82,8 @@ export const SCREENS: Screen[] = [
   // 法務ガイドポータル(viewer 可)。各ガイド /g/:key・カテゴリ /c/:cat は動的(nav 非表示)。
   { key: "guide-portal",     path: "/portal",            label: "法務ガイド",       icon: "📖", section: "browse", minRole: "viewer", nav: true },
   { key: "template-preview", path: "/templates/preview", label: "ひな型プレビュー", icon: "📄", section: "browse", minRole: "viewer", nav: true },
+  // 支払Excel発行: ログイン担当者が自分の検収書/計算書を期間指定で ZIP 出力。
+  { key: "payment-exports",  path: "/payments/excel-export", label: "支払Excel発行", icon: "📥", section: "browse", minRole: "viewer", nav: true },
   // 条件明細(閲覧専用)。FIN 部署の viewer のみサイドバー表示・閲覧可(admin は console 側)。
   { key: "conditions-fin",   path: "/view/conditions",   label: "条件明細",         icon: "🧾", section: "browse", minRole: "viewer", departments: ["FIN"], nav: true },
   { key: "ringi",            path: "/search/ringi",      label: "稟議番号検索",     icon: "📋", section: "browse", minRole: "viewer", nav: false },

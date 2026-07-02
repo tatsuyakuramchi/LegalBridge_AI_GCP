@@ -25,6 +25,7 @@
 | 受領予定(サブライセンス) | <https://legalbridge.arclight.co.jp/master/sublicense> |
 | 作品モデル(原作IP・作品・契約) | <https://legalbridge.arclight.co.jp/work-model> |
 | 分配構造マップ(作品検索 / 系譜) | <https://legalbridge.arclight.co.jp/master/receivable-map> |
+| 支払Excel発行(検収書・計算書 ZIP) | <https://legalbridge.arclight.co.jp/payments/excel-export> |
 
 > `*.run.app` 直 URL ではなく必ず `legalbridge.arclight.co.jp` を使ってください。
 > `*.run.app` は IAP の手前で 401 になるよう構成されています。
@@ -318,6 +319,33 @@ CSV 取込では、`address` と口座系の列は代表値として扱われま
 
 - 画面下部の別名カードから、その作品の **改題タイトル・他社呼称** を登録できます（`POST /api/works/:id/aliases` / 削除 `DELETE /api/work-aliases/:id`）。
 - 別名を登録しておくと、利用報告 CSV 取込時のタイトル自動名寄せ（`/api/sublicense/reports/import-csv`）や上記の作品検索でその名称ヒット率が上がります。
+
+### 3.15 `/payments/excel-export` 支払Excel発行（検収書・利用許諾料計算書）
+
+ログイン担当者が**自分の担当する検収書 / 利用許諾料計算書**を支払期日の期間で絞り込み、
+チェックした文書を **ZIP（検収書PDF × 選択件数 + 支払申請用 Excel）** としてローカルにダウンロードする画面です（view デザイン / viewer 可）。
+
+- **一覧**: `GET /api/payment-exports/list?from&to&staff` — 支払期日（`form_data.paymentDueDate` 等）で絞込。
+  列: 種別 / 検収書番号 / 発注書番号 / 取引先名 / 件名 / 支払期日 / 前回Excel発行日 / PDF リンク。
+- **Excel の中身**: worker の会計用バッチ（`/api/excel-batches/*`）と同一の列構成（1 行 = 1 文書、
+  支払スロット 8・源泉税・差引振込額・インボイス登録番号）。実装は
+  `services/api/src/services/excelService.ts`（worker からの移植。**変更時は両方を同時更新**）。
+- **個人/法人でファイル分割**: ZIP 内の Excel は **種別 × 個人/法人** ごとに 1 ファイル
+  （例: `検収書_個人_….xlsx` / `検収書_法人_….xlsx`）。区分は取引先マスター `vendors.entity_type`
+  で判定（「個人」/`individual` → 個人、それ以外の設定あり → 法人）。取引先が解決できない・
+  `entity_type` 未設定の場合は `…_区分不明_….xlsx` に分かれるので、取引先マスターを整備すること。
+  源泉税の自動計算（個人は源泉強制 ON）も同じ判定を使う。
+- **再出力可（参照用）**: `excel_issued_at` 済みの文書も期間内なら再出力できます。
+  出力のたびに `excel_issued_at = NOW()` に更新され「前回発行日」として表示されます
+  （worker 側の「Excel 未発行」一覧からは消えます）。
+- **権限**: viewer は自分（`form_data.inspectorEmail`）の担当分のみ。
+  **admin は全担当者 + 担当者未設定**を閲覧でき、担当者未設定の文書には
+  行内の「設定」ボタンで担当者を設定できます（`POST /api/payment-exports/assign`、staff マスター登録者のみ）。
+- **PDF 同梱の前提**: 検収書 PDF は Drive（`documents.drive_link`）から
+  `drive.readonly` スコープで取得します。**search-api のサービスアカウントに
+  検収書 PDF フォルダ（共有ドライブ）の閲覧権限が必要**です
+  （`GOOGLE_SERVICE_ACCOUNT_KEY_PATH` → ADC の順で解決。worker と同じ SA キーを共有すれば追加設定不要）。
+  取得できなかった PDF は ZIP 内の `PDF未取得一覧.txt` に列挙され、Excel は通常どおり出力されます。
 
 ---
 
