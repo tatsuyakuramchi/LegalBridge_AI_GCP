@@ -3098,7 +3098,8 @@ ${details}
 
         const result = await mergeIssueInto(key, mergedInto, {
           mode: "child",
-          moveData: false,
+          // 終結=統合の一種なので、文書・明細も統合先へ引き継ぐ。
+          moveData: true,
           reason: reason || "",
           shuketsuStatusId: statusId,
           targetId: null,
@@ -3351,12 +3352,16 @@ ${details}
 
   const ISSUE_KEY_RE = /^[A-Z][A-Z0-9_]*-\d+$/;
   // 終結ステータスID + 統合先課題IDを解決(子課題化/終結用)。
+  //   統合元は必ず終了させたいので、「終結」が無い環境では キャンセル → 完了 の順で代替する。
   async function resolveMergeTargets(target: string) {
     let shuketsuStatusId: number | null = null;
     let targetId: number | null = null;
     try {
       const statuses = await backlogService.getStatuses();
-      shuketsuStatusId = statuses.find((s: any) => s?.name === "終結")?.id ?? null;
+      for (const name of ["終結", "キャンセル", "完了"]) {
+        const hit = statuses.find((s: any) => s?.name === name);
+        if (hit?.id) { shuketsuStatusId = hit.id; break; }
+      }
     } catch { /* noop */ }
     try { targetId = (await backlogService.getIssue(target))?.id ?? null; } catch { /* noop */ }
     return { shuketsuStatusId, targetId };
@@ -3367,7 +3372,8 @@ ${details}
       const source = String(req.params.key || "").trim().toUpperCase();
       const target = String(req.body?.target_key || "").trim().toUpperCase();
       const mode = req.body?.mode === "delete" ? "delete" : "child";
-      const moveData = req.body?.move_data === true;
+      // 統合元の文書・明細は既定で統合先へ引き継ぐ(明示的に false のときだけ残す)。
+      const moveData = req.body?.move_data !== false;
       const reason = req.body?.reason ? String(req.body.reason).slice(0, 500) : "";
       if (!ISSUE_KEY_RE.test(source)) return res.status(400).json({ ok: false, error: "source キー不正" });
       if (!ISSUE_KEY_RE.test(target)) return res.status(400).json({ ok: false, error: "統合先(target)のキーが不正です (例: LEGAL-100)" });
@@ -3390,7 +3396,8 @@ ${details}
     try {
       const target = String(req.body?.target_key || "").trim().toUpperCase();
       const mode = req.body?.mode === "delete" ? "delete" : "child";
-      const moveData = req.body?.move_data === true;
+      // 統合元の文書・明細は既定で統合先へ引き継ぐ(明示的に false のときだけ残す)。
+      const moveData = req.body?.move_data !== false;
       const reason = req.body?.reason ? String(req.body.reason).slice(0, 500) : "";
       if (!ISSUE_KEY_RE.test(target)) return res.status(400).json({ ok: false, error: "統合先(target)のキーが不正です (例: LEGAL-100)" });
       const sources: string[] = Array.from(new Set(
