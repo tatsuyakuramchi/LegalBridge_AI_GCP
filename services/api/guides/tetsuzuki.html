@@ -144,6 +144,7 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 <a class="nl" href="#s4"><span class="bdg b1">4</span>締結手続き</a>
 <a class="nl" href="#s5"><span class="bdg b2">5</span>支払</a>
 <a class="nsub" href="#paydoc">支払文書の作成依頼</a>
+<a class="nsub" href="#payget">検収書PDF・Excelの取得 🆕</a>
 <a class="nsub" href="#payapply">支払申請</a>
 </nav>
 </aside>
@@ -161,7 +162,7 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 <div class="tw"><table>
 <thead><tr><th>用途</th><th>入口</th></tr></thead>
 <tbody>
-<tr><td class="tc">取引先・契約の検索</td><td>次のいずれかから検索する：<br>・Slack <code>/法務検索 [取引先名]</code><br>・ポータル <strong>https://legalbridge.arclight.co.jp/</strong> を開いて直接検索（Google Workspace でログイン）</td></tr>
+<tr><td class="tc">取引先・契約の検索</td><td>次のいずれかから検索する：<br>・Slack <code>/法務検索 [取引先名]</code>（<strong>入力後にメッセージとして送信</strong>が必要。結果は自分にだけ表示 🆕）<br>・ポータル <strong>https://legalbridge.arclight.co.jp/</strong> を開いて直接検索（Google Workspace でログイン）</td></tr>
 <tr><td class="tc">文書作成・審査依頼</td><td>Slack <code>/法務依頼</code></td></tr>
 </tbody></table></div>
 
@@ -178,7 +179,8 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 
 <h3 class="sub" style="margin-top:18px">担当別レーン（全体の流れ）</h3>
 <p style="font-size:11.5px;color:var(--g5);margin-bottom:6px">矢印は受け渡しを示します。取引中は、<strong>取引先からの納品</strong>（→検収書）または<strong>ライセンス契約に基づく事業部の権利実施</strong>（→利用許諾計算書）が、支払文書作成の<strong>契機</strong>になります。</p>
-<div class="dw" style="overflow-x:auto"><svg viewBox="0 0 760 678" style="width:100%;display:block" xmlns="http://www.w3.org/2000/svg"><defs><marker id="lane-arrow" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9aa1a8"></polygon></marker></defs><rect x="0" y="30" width="253" height="648" fill="#faf2e6"></rect><rect x="253" y="30" width="254" height="648" fill="#f1f7e8"></rect><rect x="507" y="30" width="253" height="648" fill="#eef0f2"></rect><path d="M 380 90 V 104" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 134 V 148" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 178 V 185.0 H 126.5 V 192" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 222 V 229.0 H 380 V 236" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 266 V 273.0 H 633.5 V 280" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 310 V 317.0 H 380 V 324" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 354 V 361.0 H 126.5 V 368" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 398 V 405.0 H 633.5 V 412" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 442 V 486" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 442 V 480 H 380 V 486" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 526 V 536 H 380 V 546" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 526 V 546" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 576 V 583.0 H 126.5 V 590" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 620 V 627.0 H 380 V 634" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><rect x="0" y="0" width="253" height="28" rx="4" fill="#633806"></rect><text x="126.5" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">管理部</text><rect x="253" y="0" width="254" height="28" rx="4" fill="#27500a"></rect><text x="380.0" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">事業部</text><rect x="507" y="0" width="253" height="28" rx="4" fill="#495057"></rect><text x="633.5" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">取引先</text><rect x="0" y="32" width="760" height="22" rx="4" fill="#1d3557"></rect><text x="380.0" y="47.0" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="700" fill="#fff" letter-spacing="1">取引前 ― 締結フェーズ</text><rect x="0" y="452" width="760" height="22" rx="4" fill="#b06a1e"></rect><text x="380.0" y="467.0" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="700" fill="#fff" letter-spacing="1">取引中 ― 納品・利用の実施 〜 支払</text><rect x="270.0" y="60" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="78.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">① 取引の決定</text><rect x="270.0" y="104" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="122.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">② 取引先検索</text><rect x="270.0" y="148" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="166.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">③ 文書作成・審査依頼（/法務依頼）</text><rect x="16.5" y="192" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="210.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">④ 文書作成・審査 → 返却</text><rect x="270.0" y="236" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="254.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑤ 担当者（事業部）が内容確認</text><rect x="523.5" y="280" width="220" height="30" rx="6" fill="#495057"></rect><text x="633.5" y="298.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑥ 相手方確認</text><rect x="270.0" y="324" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="342.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑦ 押印申請</text><rect x="16.5" y="368" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="386.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑧ クラウドサイン送信</text><rect x="523.5" y="412" width="220" height="30" rx="6" fill="#495057"></rect><text x="633.5" y="430.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑨ 署名・締結完了</text><rect x="523.5" y="486" width="220" height="40" rx="6" fill="#ffffff" stroke="#495057" stroke-width="1.8"></rect><text x="633.5" y="503" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9.5" font-weight="700" fill="#495057">【契機】納品（取引先）</text><text x="633.5" y="517" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#666">→ 検収書を作成</text><rect x="270.0" y="486" width="220" height="40" rx="6" fill="#ffffff" stroke="#27500a" stroke-width="1.8"></rect><text x="380" y="503" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9.5" font-weight="700" fill="#27500a">【契機】権利実施（ライセンス）</text><text x="380" y="517" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#666">→ 利用許諾計算書を作成</text><rect x="270.0" y="546" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="564.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑩ 支払文書の作成依頼（/法務依頼）</text><rect x="16.5" y="590" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="608.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑪ 支払文書作成・Excel共有</text><rect x="270.0" y="634" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="652.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑫ サイボウズで支払申請</text></svg></div>
+<div class="dw" style="overflow-x:auto"><svg viewBox="0 0 760 678" style="width:100%;display:block" xmlns="http://www.w3.org/2000/svg"><defs><marker id="lane-arrow" markerWidth="8" markerHeight="6" refX="6" refY="3" orient="auto"><polygon points="0 0,7 3,0 6" fill="#9aa1a8"></polygon></marker></defs><rect x="0" y="30" width="253" height="648" fill="#faf2e6"></rect><rect x="253" y="30" width="254" height="648" fill="#f1f7e8"></rect><rect x="507" y="30" width="253" height="648" fill="#eef0f2"></rect><path d="M 380 90 V 104" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 134 V 148" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 178 V 185.0 H 126.5 V 192" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 222 V 229.0 H 380 V 236" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 266 V 273.0 H 633.5 V 280" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 310 V 317.0 H 380 V 324" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 354 V 361.0 H 126.5 V 368" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 398 V 405.0 H 633.5 V 412" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 442 V 486" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 442 V 480 H 380 V 486" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 633.5 526 V 536 H 380 V 546" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 526 V 546" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 380 576 V 583.0 H 126.5 V 590" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><path d="M 126.5 620 V 627.0 H 380 V 634" fill="none" stroke="#9aa1a8" stroke-width="1.5" marker-end="url(#lane-arrow)"></path><rect x="0" y="0" width="253" height="28" rx="4" fill="#633806"></rect><text x="126.5" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">管理部</text><rect x="253" y="0" width="254" height="28" rx="4" fill="#27500a"></rect><text x="380.0" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">事業部</text><rect x="507" y="0" width="253" height="28" rx="4" fill="#495057"></rect><text x="633.5" y="19" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="12.5" font-weight="700" fill="#fff">取引先</text><rect x="0" y="32" width="760" height="22" rx="4" fill="#1d3557"></rect><text x="380.0" y="47.0" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="700" fill="#fff" letter-spacing="1">取引前 ― 締結フェーズ</text><rect x="0" y="452" width="760" height="22" rx="4" fill="#b06a1e"></rect><text x="380.0" y="467.0" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="11" font-weight="700" fill="#fff" letter-spacing="1">取引中 ― 納品・利用の実施 〜 支払</text><rect x="270.0" y="60" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="78.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">① 取引の決定</text><rect x="270.0" y="104" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="122.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">② 取引先検索</text><rect x="270.0" y="148" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="166.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">③ 文書作成・審査依頼（/法務依頼）</text><rect x="16.5" y="192" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="210.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">④ 文書作成・審査 → 返却</text><rect x="270.0" y="236" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="254.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑤ 担当者（事業部）が内容確認</text><rect x="523.5" y="280" width="220" height="30" rx="6" fill="#495057"></rect><text x="633.5" y="298.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑥ 相手方確認</text><rect x="270.0" y="324" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="342.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑦ 押印申請</text><rect x="16.5" y="368" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="386.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑧ クラウドサイン送信</text><rect x="523.5" y="412" width="220" height="30" rx="6" fill="#495057"></rect><text x="633.5" y="430.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑨ 署名・締結完了</text><rect x="523.5" y="486" width="220" height="40" rx="6" fill="#ffffff" stroke="#495057" stroke-width="1.8"></rect><text x="633.5" y="503" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9.5" font-weight="700" fill="#495057">【契機】納品（取引先）</text><text x="633.5" y="517" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#666">→ 検収書を作成</text><rect x="270.0" y="486" width="220" height="40" rx="6" fill="#ffffff" stroke="#27500a" stroke-width="1.8"></rect><text x="380" y="503" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9.5" font-weight="700" fill="#27500a">【契機】権利実施（ライセンス）</text><text x="380" y="517" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="9" fill="#666">→ 利用許諾計算書を作成</text><rect x="270.0" y="546" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="564.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑩ 支払文書の作成依頼（/法務依頼）</text><rect x="16.5" y="590" width="220" height="30" rx="6" fill="#633806"></rect><text x="126.5" y="608.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑪ 支払文書を作成 → ポータルに発行</text><rect x="270.0" y="634" width="220" height="30" rx="6" fill="#27500a"></rect><text x="380" y="652.5" text-anchor="middle" font-family="'Hiragino Sans','Noto Sans JP',sans-serif" font-size="10" font-weight="600" fill="#fff">⑫ ポータルでPDF+Excel取得→サイボウズ申請</text></svg></div>
+<div class="cl cl-i" style="margin-top:8px"><strong>💡 ⑦押印申請の例外 ― 当社ひな形の発注書は押印申請不要 <span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700">🆕</span>：</strong><strong>当社ひな形（法務発行テンプレート）の発注書に限り</strong>、相手方の署名のみで締結でき、当社の押印は不要です。この場合は ⑥相手方確認 のあと<strong>押印申請（⑦）を飛ばし</strong>、事業部から法務へ連絡すれば、そのまま ⑧クラウドサイン送信 に進みます。<strong>当社ひな形の発注書以外</strong>（契約書等、および他社様式の発注書）は従来どおり ⑦押印申請 が必要です。</div>
 
 <hr class="sd">
 
@@ -189,6 +191,10 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 <!-- STEP 2 -->
 <div class="shb ph2s" id="s2" style="margin-top:24px"><div class="sn">STEP 2</div><h3>取引先検索</h3></div>
 <div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">Slackの <code>/法務検索</code>、または <strong>LegalBridge 検索ポータル</strong>から直接、取引先を検索する</div></div>
+<div class="cl cl-n" style="font-size:12px"><strong>⚠ Slack の仕様上の注意 ―「/法務検索」は“メッセージとして送信”が必要です <span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700">🆕</span></strong><br>
+Slack のスラッシュコマンドは、メッセージ入力欄に <code>/法務検索 取引先名</code> と入力して <strong>Enter で送信するまで実行されません</strong>（入力・候補選択だけでは動きません）。<br>
+例：<code>/法務検索 山田太郎</code> と入力 → <strong>送信</strong><br>
+※ 送信してもチャンネルには投稿されず、<strong>検索結果は自分にだけ表示</strong>されます。どのチャンネル・DM から実行しても問題ありません。</div>
 <div class="tw"><table>
 <thead><tr><th>検索結果</th><th>判定</th><th>次にやること</th></tr></thead>
 <tbody>
@@ -314,16 +320,33 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 <div class="act-ar">▼</div>
 <div class="act"><div class="act-l act-tr">取引先</div><div class="act-b">送付された内容を確認し、合意する</div></div>
 <div class="act-ar">▼</div>
-<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">押印申請を行う</div></div>
+<div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">押印申請を行う<div style="font-size:11.5px;color:var(--g5);margin-top:3px">※ <strong>当社ひな形の発注書のみ押印申請は不要</strong>（下記の補足参照）<span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700;margin-left:2px">🆕</span></div></div></div>
 <div class="act-ar">▼</div>
 <div class="act"><div class="act-l act-kn">管理部</div><div class="act-b">クラウドサインで送信する</div></div>
 <div class="act-ar">▼</div>
 <div class="act"><div class="act-l act-tr">取引先</div><div class="act-b">署名し、締結完了</div></div>
-<div class="cl cl-w" style="font-size:11.5px"><strong>締結完了（相手方の署名・自社押印）まで、業務に着手しないこと。</strong></div>
+
+<div class="cl cl-i" style="margin-top:10px"><strong>💡 補足：当社ひな形の発注書は押印申請が不要です <span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700">🆕</span></strong><br>
+<strong>当社ひな形（法務発行テンプレート）の発注書に限り</strong>、相手方の署名のみで締結でき、当社の押印は不要です。相手方の確認が取れたら、事業部は<strong>押印申請を行わずに法務へ連絡</strong>してください。法務がそのままクラウドサインの送信手続きに進みます。<strong>当社ひな形の発注書以外</strong>（契約書等、および他社様式の発注書）は従来どおり押印申請が必要です。</div>
+
+<div style="border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--g1)">
+  <h4 class="sh4" style="margin-top:0">クラウドサインの送信・署名の順番 <span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700">🆕</span></h4>
+  <p style="font-size:11.5px;margin:0 0 8px;color:var(--g5)">クラウドサインは次の順番でリレーされます。自分の順番が来るとメールが届くので、届いたら速やかに確認・承認してください。</p>
+  <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:11.5px;font-weight:700">
+    <span style="background:#faeeda;color:var(--ph3);border-radius:6px;padding:6px 12px">① 法務担当者<br><span style="font-weight:400;font-size:10px">送信</span></span>
+    <span style="color:#9aa1a8">→</span>
+    <span style="background:#eaf3de;color:var(--ph1);border-radius:6px;padding:6px 12px">② 事業部責任者<br><span style="font-weight:400;font-size:10px">複数名のリレーになる場合あり</span></span>
+    <span style="color:#9aa1a8">→</span>
+    <span style="background:#eef0f2;color:#495057;border-radius:6px;padding:6px 12px">③ 相手方<br><span style="font-weight:400;font-size:10px">署名して締結完了</span></span>
+    <span style="border:1px dashed #9aa1a8;color:var(--g5);border-radius:6px;padding:6px 12px;font-weight:600">CC：担当者（事業部）</span>
+  </div>
+</div>
+
+<div class="cl cl-w" style="font-size:11.5px"><strong>締結完了（相手方の署名・自社押印）まで、業務に着手しないこと。</strong>（当社ひな形の発注書の場合は相手方の署名をもって締結完了）</div>
 
 <!-- STEP 5 -->
 <div class="shb ph5s" id="s5" style="margin-top:24px"><div class="sn">STEP 5</div><h3>支払</h3></div>
-<p>支払は、サイボウズで支払申請を提出するために、<strong>① 支払文書の作成依頼</strong> と <strong>② 支払申請の提出</strong> の2フェーズに分かれます。</p>
+<p>支払は、<strong>① 支払文書の作成依頼</strong> → <strong>② 検収書PDF・Excelの取得（法務ポータル）</strong><span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700;margin-left:2px">🆕</span> → <strong>③ 支払申請の提出（サイボウズ）</strong> の3ステップです。</p>
 
 <h4 class="sh4" id="paydoc">① 支払文書の作成依頼</h4>
 <p style="font-size:12px;margin-bottom:6px">支払文書は次の2種類。それぞれ締結文書に対応し、作成の契機が異なります。</p>
@@ -335,7 +358,7 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 </tbody></table></div>
 <div class="act"><div class="act-l act-jg">事業部</div><div class="act-b"><code>/法務依頼</code> → 依頼種別の <strong>「支払書類作成」</strong> から <strong>「納品 / 検収書」</strong> または <strong>「利用許諾計算書」</strong> を選び、フォームに入力して送信する</div></div>
 <div class="act-ar">▼</div>
-<div class="act"><div class="act-l act-kn">管理部</div><div class="act-b">依頼を受けて支払文書を作成し、<strong>支払申請用Excel</strong> とあわせて事業部へ共有する</div></div>
+<div class="act"><div class="act-l act-kn">管理部</div><div class="act-b">依頼を受けて支払文書（検収書 / 利用許諾計算書の PDF）を作成・発行する。発行された文書は<strong>法務ポータル「支払Excel発行」ページに自動で掲載</strong>され、支払申請用Excel とあわせて事業部が自分で取得できる（下記②）<span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700;margin-left:4px">🆕 共有待ち不要</span></div></div>
 
 <div style="border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--g1)">
   <h4 class="sh4" style="margin-top:0">「納品 / 検収書」を選んだとき ― 検収書作成用データ</h4>
@@ -355,15 +378,69 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
   </ul>
 </div>
 
-<h4 class="sh4" id="payapply" style="margin-top:14px">② 支払申請の提出</h4>
-<p style="font-size:12px;margin-bottom:6px">法務から支払文書・Excelファイルを受け取ったら、サイボウズで支払申請を提出する。</p>
+<h4 class="sh4" id="payget" style="margin-top:18px">② 検収書PDF・支払申請用Excelの取得（法務ポータル）<span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700;margin-left:4px">🆕 新機能</span></h4>
+<p style="font-size:12px;margin-bottom:6px">法務が発行した<strong>検収書PDF</strong>と<strong>支払申請用Excel</strong>は、法務ポータルの<strong>「支払Excel発行」ページ</strong>から自分でまとめてダウンロードできます（共有連絡を待つ必要はありません）。操作は次の4ステップです。</p>
+
+<div class="step-box">
+  <span class="step-num">STEP 1</span>　<strong>ページを開く</strong>
+  <p style="font-size:12px;margin:4px 0 0">法務ポータル <a href="https://legalbridge.arclight.co.jp/payments/excel-export" style="color:var(--blue);font-weight:600">https://legalbridge.arclight.co.jp/payments/excel-export</a> を開く（サイドバー「📥 <strong>支払Excel発行</strong>」からも入れます）。ログインは普段の Google アカウント（社内SSO）です。</p>
+</div>
+<div class="step-box">
+  <span class="step-num">STEP 2</span>　<strong>支払期日の期間で絞り込む</strong>
+  <p style="font-size:12px;margin:4px 0 0">「支払期日（自）（至）」に期間を入れて「🔄 再読込」。<strong>自分が検収担当者になっている</strong>検収書・利用許諾計算書だけが一覧に表示されます（初期表示は当月）。</p>
+</div>
+<div class="step-box">
+  <span class="step-num">STEP 3</span>　<strong>対象の文書にチェックを付ける</strong>
+  <p style="font-size:12px;margin:4px 0 0"><strong>発注書番号・検収書番号・取引先名</strong>で対象を確認してチェック。まとめて申請する分は複数チェックでき、ヘッダの ☑ で全選択もできます。</p>
+</div>
+<div class="step-box">
+  <span class="step-num">STEP 4</span>　<strong>「Excel 発行 (ZIP)」ボタンを押す</strong>
+  <p style="font-size:12px;margin:4px 0 0">「📥 チェックした文書を Excel 発行 (ZIP)」を押すと、<strong>ZIPファイルが1つ、お使いのPCにダウンロード</strong>されます。</p>
+</div>
+
+<p style="font-size:11.5px;color:var(--g5);margin:10px 0 3px">▼ 画面イメージ（支払Excel発行ページ）</p>
+<div class="dw" style="padding:0;overflow:hidden">
+  <div style="background:linear-gradient(135deg,#6c5ce7,#a29bfe);color:#fff;padding:8px 14px;font-size:12px;font-weight:700">支払Excel発行 <span style="font-weight:400;opacity:.8;font-size:10.5px">検収書・利用許諾料計算書 → 支払申請用 Excel + PDF (ZIP)</span></div>
+  <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:9px 14px;border-bottom:1px solid var(--g3);font-size:11px">
+    <span style="border:1px solid var(--g3);border-radius:8px;padding:3px 8px;background:#fff">支払期日(自) <strong>2026-07-01</strong></span>
+    <span style="border:1px solid var(--g3);border-radius:8px;padding:3px 8px;background:#fff">支払期日(至) <strong>2026-07-31</strong></span>
+    <span style="border:1px solid var(--g3);border-radius:8px;padding:3px 8px;background:#fff">🔄 再読込</span>
+    <span style="flex:1"></span>
+    <span style="background:#6c5ce7;color:#fff;border-radius:8px;padding:4px 10px;font-weight:700">📥 チェックした文書を Excel 発行 (ZIP)</span>
+  </div>
+  <table style="font-size:10.5px;margin:0">
+    <thead><tr><th style="padding:5px 8px">☑</th><th style="padding:5px 8px">種別</th><th style="padding:5px 8px">検収書番号</th><th style="padding:5px 8px">発注書番号</th><th style="padding:5px 8px">取引先名</th><th style="padding:5px 8px">支払期日</th><th style="padding:5px 8px">前回Excel発行日</th><th style="padding:5px 8px">PDF</th></tr></thead>
+    <tbody>
+      <tr><td style="padding:4px 8px">☑</td><td style="padding:4px 8px">検収書</td><td style="padding:4px 8px">ARC-INS-26-0012</td><td style="padding:4px 8px">ARC-PO-26-0034</td><td style="padding:4px 8px">山田 太郎</td><td style="padding:4px 8px">2026-07-20</td><td style="padding:4px 8px;color:#1a9c6b;font-weight:700">未発行</td><td style="padding:4px 8px;color:var(--blue)">開く ↗</td></tr>
+      <tr><td style="padding:4px 8px">☑</td><td style="padding:4px 8px">検収書</td><td style="padding:4px 8px">ARC-INS-26-0015</td><td style="padding:4px 8px">ARC-PO-26-0041</td><td style="padding:4px 8px">株式会社〇〇デザイン</td><td style="padding:4px 8px">2026-07-31</td><td style="padding:4px 8px;color:var(--g5)">2026-07-02 10:15</td><td style="padding:4px 8px;color:var(--blue)">開く ↗</td></tr>
+      <tr><td style="padding:4px 8px">☐</td><td style="padding:4px 8px">利用許諾料計算書</td><td style="padding:4px 8px">ARC-RS-26-0003</td><td style="padding:4px 8px">ARC-ILT-26-0008</td><td style="padding:4px 8px">△△クリエイト</td><td style="padding:4px 8px">2026-07-31</td><td style="padding:4px 8px;color:#1a9c6b;font-weight:700">未発行</td><td style="padding:4px 8px;color:var(--blue)">開く ↗</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<h4 class="sh4" style="margin-top:12px">ダウンロードされる ZIP の中身</h4>
+<div class="tw"><table>
+<thead><tr><th>ファイル</th><th>内容</th></tr></thead>
+<tbody>
+<tr><td class="tc">検収書PDF × チェック件数</td><td>ファイル名は「<strong>検収書番号_発注書番号.pdf</strong>」。サイボウズ申請の添付にそのまま使う</td></tr>
+<tr><td class="tc">支払申請用Excel（個人）<br>例: 検収書_個人_2026-07-01_2026-07-31.xlsx</td><td><strong>個人の取引先</strong>の分だけをまとめたExcel（1行＝検収書1件）。源泉徴収の計算済み</td></tr>
+<tr><td class="tc">支払申請用Excel（法人）<br>例: 検収書_法人_2026-07-01_2026-07-31.xlsx</td><td><strong>法人の取引先</strong>の分だけをまとめたExcel（1行＝検収書1件）</td></tr>
+<tr><td class="tc">PDF未取得一覧.txt</td><td>PDF を取得できなかった文書がある場合のみ入っています。<strong>入っていたら法務へ連絡</strong>してください</td></tr>
+</tbody></table></div>
+
+<div class="cl cl-i"><strong>💡 Excel が「個人」「法人」で分かれている理由：</strong>サイボウズの定期支払日が<strong>個人（源泉あり）＝毎月20日／法人＝月末</strong>と異なるためです。区分ごとのExcelをそのまま各申請に添付できます。「<strong>区分不明</strong>」というファイルが入っていた場合は、取引先の登録が不完全なので法務へ連絡してください。</div>
+<div class="cl cl-t"><strong>✅ 何度でも取得できます：</strong>ダウンロードし直しはいつでも可能です。一覧の「<strong>前回Excel発行日</strong>」列で、既にダウンロード済みか（＝申請済みの可能性があるか）を確認できます。</div>
+<div class="cl cl-n"><strong>⚠ 一覧に出てこない・PDF列が「なし」のとき：</strong>検収書がまだ発行されていないか、担当者の登録が異なっている可能性があります。<code>/法務依頼</code> または法務部へ確認してください。</div>
+
+<h4 class="sh4" id="payapply" style="margin-top:18px">③ 支払申請の提出</h4>
+<p style="font-size:12px;margin-bottom:6px">②で取得した検収書PDF・Excelファイルを添付して、サイボウズで支払申請を提出する。</p>
 
 <div style="border:1px solid var(--g3);border-left:4px solid var(--navy);border-radius:0 6px 6px 0;padding:12px 16px;margin:10px 0;background:var(--g1)">
   <h4 class="sh4" style="margin-top:0">申請前の準備 ― 添付ファイル</h4>
-  <p style="font-size:11.5px;margin-bottom:4px">サイボウズの支払申請には、<strong>法務発行の次の2点</strong>を添付する。</p>
+  <p style="font-size:11.5px;margin-bottom:4px">サイボウズの支払申請には、<strong>法務発行の次の2点</strong>（②のZIPに両方入っています）を添付する。</p>
   <ul class="ck" style="margin:0">
-    <li>法務発行の<strong>支払文書</strong>（検収書 または 利用許諾計算書）</li>
-    <li>法務発行の<strong>支払申請用Excelファイル</strong></li>
+    <li>法務発行の<strong>支払文書</strong>（検収書 または 利用許諾計算書）― ZIP内のPDF</li>
+    <li>法務発行の<strong>支払申請用Excelファイル</strong> ― ZIP内の「個人」「法人」のうち、その取引先の区分のもの</li>
   </ul>
 </div>
 
@@ -407,8 +484,8 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 
     <h4 class="sh4">添付資料（個人・法務発行案件）</h4>
     <ul class="ck" style="margin:0 0 8px">
-      <li><strong>委託契約</strong>：検収書＋発注書＋支払申請用Excel（いずれも法務発行）</li>
-      <li><strong>利用許諾契約</strong>：利用許諾計算書＋発注書＋支払申請用Excel（いずれも法務発行）</li>
+      <li><strong>委託契約</strong>：検収書＋発注書＋支払申請用Excel（いずれも法務発行。<strong>検収書とExcelは②のZIPに同梱</strong> 🆕）</li>
+      <li><strong>利用許諾契約</strong>：利用許諾計算書＋発注書＋支払申請用Excel（いずれも法務発行。<strong>計算書とExcelは②のZIPに同梱</strong> 🆕）</li>
       <li>先方作成の請求書を受領した場合は、それも添付</li>
     </ul>
 
