@@ -165,7 +165,7 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 <div class="tw"><table>
 <thead><tr><th>用途</th><th>入口</th></tr></thead>
 <tbody>
-<tr><td class="tc">取引先・契約の検索</td><td>次のいずれかから検索する：<br>・Slack <code>/法務検索 [取引先名]</code><br>・ポータル <strong>https://legalbridge.arclight.co.jp/</strong> を開いて直接検索（Google Workspace でログイン）</td></tr>
+<tr><td class="tc">取引先・契約の検索</td><td>次のいずれかから検索する：<br>・Slack <code>/法務検索 [取引先名]</code>（<strong>入力後にメッセージとして送信</strong>が必要。結果は自分にだけ表示 🆕）<br>・ポータル <strong>https://legalbridge.arclight.co.jp/</strong> を開いて直接検索（Google Workspace でログイン）</td></tr>
 <tr><td class="tc">文書作成・審査依頼</td><td>Slack <code>/法務依頼</code></td></tr>
 </tbody></table></div>
 
@@ -194,6 +194,10 @@ hr.sd{border:none;border-top:2px solid var(--g2);margin:30px 0}
 <!-- STEP 2 -->
 <div class="shb ph2s" id="s2" style="margin-top:24px"><div class="sn">STEP 2</div><h3>取引先検索</h3></div>
 <div class="act"><div class="act-l act-jg">事業部</div><div class="act-b">Slackの <code>/法務検索</code>、または <strong>LegalBridge 検索ポータル</strong>から直接、取引先を検索する</div></div>
+<div class="cl cl-n" style="font-size:12px"><strong>⚠ Slack の仕様上の注意 ―「/法務検索」は“メッセージとして送信”が必要です <span class="tag" style="background:#e4f7f1;color:#1d9e75;font-weight:700">🆕</span></strong><br>
+Slack のスラッシュコマンドは、メッセージ入力欄に <code>/法務検索 取引先名</code> と入力して <strong>Enter で送信するまで実行されません</strong>（入力・候補選択だけでは動きません）。<br>
+例：<code>/法務検索 山田太郎</code> と入力 → <strong>送信</strong><br>
+※ 送信してもチャンネルには投稿されず、<strong>検索結果は自分にだけ表示</strong>されます。どのチャンネル・DM から実行しても問題ありません。</div>
 <div class="tw"><table>
 <thead><tr><th>検索結果</th><th>判定</th><th>次にやること</th></tr></thead>
 <tbody>
