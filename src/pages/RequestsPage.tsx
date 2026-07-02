@@ -36,7 +36,8 @@ export function RequestsPage() {
   const [mergeOpen, setMergeOpen] = React.useState(false)
   const [mergeTarget, setMergeTarget] = React.useState("")
   const [mergeMode, setMergeMode] = React.useState<"child" | "delete">("child")
-  const [mergeMoveData, setMergeMoveData] = React.useState(false)
+  // 文書・明細の引き継ぎは既定ON(統合先が情報を引き継ぐのが原則)。
+  const [mergeMoveData, setMergeMoveData] = React.useState(true)
   const [mergeReason, setMergeReason] = React.useState("")
   const [merging, setMerging] = React.useState(false)
   const doBulkMerge = async () => {
@@ -251,7 +252,7 @@ export function RequestsPage() {
             </div>
             <label className="flex items-center gap-2 text-[11px]">
               <input type="checkbox" checked={mergeMoveData} onChange={(e) => setMergeMoveData(e.target.checked)} />
-              紐づく文書・明細も統合先へ付け替える（中身がある場合）
+              紐づく文書・明細を統合先へ引き継ぐ（推奨。外すと統合元に残ります）
             </label>
             <div className="space-y-1">
               <Label className="text-[11px]">理由（任意）</Label>
