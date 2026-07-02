@@ -214,6 +214,7 @@ import {
   requireScreen,
   requireAdminOrDepartment,
   resolveDepartmentCode,
+  resolveAppRole,
 } from "./src/lib/authMiddleware.ts";
 import type { Role } from "./src/lib/screens.ts";
 import { signLinkQs, hasSigningSecret } from "./src/lib/signedUrl.ts";
@@ -298,6 +299,16 @@ import {
   resolveWorksByTitle,
 } from "./src/services/receivableMapService.ts";
 import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
+// 支払Excel発行: 検収書/利用許諾料計算書を支払期日で絞って ZIP(PDF+Excel) 出力。
+import archiver from "archiver";
+import { paymentExportPage } from "./src/views/paymentExportHtml.ts";
+import {
+  listPaymentDocuments,
+  buildExportBundle,
+  markExcelIssued,
+  assignInspector,
+  listStaffOptions as listPaymentStaffOptions,
+} from "./src/services/paymentExportService.ts";
 import {
   listConditions,
   updateConditionLinks,
@@ -3572,6 +3583,179 @@ async function startServer() {
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });
+  // -------------------------------------------------------------------
+  // 支払Excel発行 — 検収書/利用許諾料計算書を支払期日の期間で絞り、
+  //   選択文書を ZIP(検収書PDF×N + 種別ごと Excel 1ファイル) でローカル DL。
+  //   viewer は自分の担当分のみ / admin は全担当者・担当者未設定も扱える。
+  // -------------------------------------------------------------------
+  app.get(
+    "/payments/excel-export",
+    requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "payment-exports", renderErrorPage }),
+    (req, res) => {
+      try {
+        res.type("html").send(
+          paymentExportPage(
+            (req as any).userRole as Role,
+            String((req as any).user?.email || "")
+          )
+        );
+      } catch (error) {
+        console.error("/payments/excel-export failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  app.get(
+    "/api/payment-exports/list",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const role = await resolveAppRole(req);
+        const rows = await listPaymentDocuments({
+          from: String(req.query.from || ""),
+          to: String(req.query.to || ""),
+          requesterEmail: String((req as any).user?.email || ""),
+          isAdmin: role === "admin",
+          staff: String(req.query.staff || ""),
+        });
+        res.json({ ok: true, rows });
+      } catch (error: any) {
+        console.error("GET /api/payment-exports/list failed:", error);
+        const msg = String(error?.message || error);
+        res.status(/YYYY-MM-DD|期間|特定できません/.test(msg) ? 400 : 500).json({ ok: false, error: msg });
+      }
+    }
+  );
+
+  // admin の担当者フィルタ / 担当者設定用のスタッフ選択肢。
+  app.get(
+    "/api/payment-exports/staff-options",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "payment-exports:staff-options",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    async (_req, res) => {
+      try {
+        res.json({ ok: true, rows: await listPaymentStaffOptions() });
+      } catch (error: any) {
+        console.error("GET /api/payment-exports/staff-options failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  // 担当者未設定の文書へ担当者を設定 (admin のみ)。
+  app.post(
+    "/api/payment-exports/assign",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({
+      resourceLabel: "payment-exports:assign",
+      allowedRoles: ["admin"],
+      renderErrorPage,
+    }),
+    express.json({ limit: "64kb" }),
+    async (req, res) => {
+      try {
+        const documentNumbers: string[] = Array.isArray(req.body?.documentNumbers)
+          ? req.body.documentNumbers
+          : [];
+        const result = await assignInspector(
+          documentNumbers,
+          String(req.body?.staff_email || "")
+        );
+        console.log(
+          JSON.stringify({
+            evt: "payment_export_assign",
+            updated: result.updated,
+            skipped: result.skipped,
+            staff_email: String(req.body?.staff_email || ""),
+            user: (req as any).user?.email || null,
+            ts: new Date().toISOString(),
+          })
+        );
+        res.json({ ok: true, ...result });
+      } catch (error: any) {
+        console.error("POST /api/payment-exports/assign failed:", error);
+        const msg = String(error?.message || error);
+        res.status(/必須|見つかりません/.test(msg) ? 400 : 500).json({ ok: false, error: msg });
+      }
+    }
+  );
+
+  // 選択文書を ZIP(検収書PDF×N + Excel) でダウンロード。
+  //   出力のたびに excel_issued_at = NOW() へ更新 (前回発行日として表示)。
+  app.post(
+    "/api/payment-exports/export",
+    requireIapUser({ renderErrorPage }),
+    express.json({ limit: "256kb" }),
+    async (req, res) => {
+      try {
+        const role = await resolveAppRole(req);
+        const documentNumbers: string[] = Array.isArray(req.body?.documentNumbers)
+          ? req.body.documentNumbers
+          : [];
+        const bundle = await buildExportBundle(documentNumbers, {
+          requesterEmail: String((req as any).user?.email || ""),
+          isAdmin: role === "admin",
+        });
+
+        // ZIP を組み立てる前に発行済みマーク (前回発行日)。ストリーミング中の
+        // 中断でもマークは残るが、参照用フラグなので許容する。
+        await markExcelIssued(bundle.issuedNumbers);
+
+        console.log(
+          JSON.stringify({
+            evt: "payment_export_zip",
+            count: bundle.issuedNumbers.length,
+            pdf_ok: bundle.pdfFiles.length,
+            pdf_failed: bundle.pdfFailures.length,
+            user: (req as any).user?.email || null,
+            ts: new Date().toISOString(),
+          })
+        );
+
+        res.setHeader("Content-Type", "application/zip");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="payment_export.zip"; filename*=UTF-8''${encodeURIComponent(bundle.zipName)}`
+        );
+        res.setHeader("X-Pdf-Failures", String(bundle.pdfFailures.length));
+
+        const archive = archiver("zip", { zlib: { level: 6 } });
+        archive.on("error", (err: any) => {
+          console.error("[payment-exports/export] archive error:", err);
+          try { res.destroy(err); } catch {}
+        });
+        archive.pipe(res);
+        for (const f of bundle.excelFiles) archive.append(f.buffer, { name: f.name });
+        for (const f of bundle.pdfFiles) archive.append(f.buffer, { name: f.name });
+        if (bundle.pdfFailures.length > 0) {
+          const lines = bundle.pdfFailures
+            .map((f) => `${f.document_number}\t${f.reason}`)
+            .join("\n");
+          archive.append(Buffer.from("文書番号\t理由\n" + lines, "utf8"), {
+            name: "PDF未取得一覧.txt",
+          });
+        }
+        await archive.finalize();
+      } catch (error: any) {
+        console.error("POST /api/payment-exports/export failed:", error);
+        if (!res.headersSent) {
+          const msg = String(error?.message || error);
+          const status = Number(error?.status) || (/必須|見つかりません|生成できません|200 件/.test(msg) ? 400 : 500);
+          res.status(status).json({ ok: false, error: msg });
+        } else {
+          try { res.destroy(); } catch {}
+        }
+      }
+    }
+  );
+
   // 作品タイトル別名(名寄せ)CRUD
   app.get("/api/works/:id/aliases", requireIapUser({ renderErrorPage }), async (req, res) => {
     try {
