@@ -27,7 +27,7 @@ import {
   calcMethodFromType,
   type FinancialCondition,
 } from './FinancialConditionTable';
-import { V3LicenseMatrix } from './V3LicenseMatrix';
+import { V3LicenseMatrix, V3CalcBaseEditor } from './V3LicenseMatrix';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
 import { ConditionCopyPanel } from './ConditionCopyPanel';
 import { MaterialSearchSelect } from './MaterialSearchSelect';
@@ -1655,6 +1655,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 })
               }
               onChangeLcs={(next) => setFormData({ ...formData, v3_lcs: next })}
+            />
+            {/* 2-3(A) 計算基準日 — 版ごとに支払期日の起点事由を定める(v3_calc_base_rows)。
+                未編集なら既定2行(初版=発売日/2版以降=製造日)でテンプレ描画される。 */}
+            <V3CalcBaseEditor
+              rows={Array.isArray(formData.v3_calc_base_rows) ? formData.v3_calc_base_rows : []}
+              onChange={(next) => setFormData({ ...formData, v3_calc_base_rows: next })}
             />
           </FormSection>
         )}
