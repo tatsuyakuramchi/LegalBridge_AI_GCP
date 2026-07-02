@@ -8197,7 +8197,8 @@ ${details}
                  (vendor_id, record_type, contract_category, contract_type, contract_title,
                   document_number, base_document_number, backlog_issue_key, contract_status,
                   effective_date, expiration_date, document_url, source_system)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')`,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')
+               RETURNING id`,
               [
                 vendorId,
                 recordType,
@@ -9413,7 +9414,8 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               RETURNING id`,
               [
                 vendorId,
                 recordType,
@@ -15136,7 +15138,8 @@ ${details}
               due_date, backlog_issue_key, record_type, contract_category,
               contract_type, document_number)
            VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
-                   'purchase_order', $7)`,
+                   'purchase_order', $7)
+           RETURNING id`,
           [
             lrId,
             vendorIdForPo,
