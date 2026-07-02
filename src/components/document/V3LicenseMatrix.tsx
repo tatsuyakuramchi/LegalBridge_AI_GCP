@@ -35,6 +35,18 @@ export interface V3Lc {
   holder?: string;
   rates?: Record<string, string>;
 }
+/** 2-3(A) 計算基準日の1行。formData.v3_calc_base_rows（context builder の入力契約）。 */
+export interface V3CalcBaseRow {
+  edition?: string;
+  trigger?: string;
+  note?: string;
+}
+
+/** 2-3(A) の既定行。未編集のフォーム・既存文書はこの標準2行で描画される。 */
+export const DEFAULT_CALC_BASE_ROWS: V3CalcBaseRow[] = [
+  { edition: '初版', trigger: '発売日', note: '' },
+  { edition: '2版以降', trigger: '製造日', note: '' },
+];
 
 const CURRENCIES = ['JPY', 'USD', 'EUR', 'GBP', 'CNY', 'その他'];
 
@@ -212,6 +224,60 @@ export function V3LicenseMatrix({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * V3CalcBaseEditor — 2-3(A) 計算基準日の版別テーブル入力。
+ * formData.v3_calc_base_rows を produce する。空のまま保存しても
+ * context builder 側の既定行（初版=発売日 / 2版以降=製造日）で描画される。
+ */
+export function V3CalcBaseEditor({
+  rows,
+  onChange,
+}: {
+  rows: V3CalcBaseRow[];
+  onChange: (next: V3CalcBaseRow[]) => void;
+}) {
+  const effective = rows.length > 0 ? rows : DEFAULT_CALC_BASE_ROWS;
+  const upd = (i: number, k: keyof V3CalcBaseRow, v: string) =>
+    onChange(effective.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)));
+  const addRow = () => onChange([...effective, { edition: '', trigger: '', note: '' }]);
+  const delRow = (i: number) => onChange(effective.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="col-span-full space-y-2">
+      <div className="text-[10px] font-mono font-bold text-muted-foreground">
+        2-3(A) 計算基準日（支払期日の起点）
+        <span className="ml-2 font-normal text-muted-foreground/70">
+          — 支払期日は個人=翌月20日 / 法人=翌月末日（固定文）
+        </span>
+      </div>
+      <div className="grid grid-cols-[90px_1fr_1fr_auto] gap-x-2 gap-y-1 items-center">
+        <span className="text-[10px] text-muted-foreground">版</span>
+        <span className="text-[10px] text-muted-foreground">計算基準日となる事由</span>
+        <span className="text-[10px] text-muted-foreground">備考</span>
+        <span />
+        {effective.map((r, i) => (
+          <React.Fragment key={i}>
+            <input className={inputCls} value={r.edition || ''} onChange={(e) => upd(i, 'edition', e.target.value)} placeholder="初版 / 2版以降" />
+            <input className={inputCls} value={r.trigger || ''} onChange={(e) => upd(i, 'trigger', e.target.value)} placeholder="発売日 / 製造日" />
+            <input className={inputCls} value={r.note || ''} onChange={(e) => upd(i, 'note', e.target.value)} placeholder="" />
+            <button
+              type="button"
+              onClick={() => delRow(i)}
+              disabled={effective.length <= 1}
+              className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50 disabled:opacity-40 disabled:hover:bg-transparent"
+            >
+              削除
+            </button>
+          </React.Fragment>
+        ))}
+      </div>
+      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+        ＋ 版の行を追加（版・取引形態で事由を分ける場合）
+      </button>
     </div>
   );
 }
