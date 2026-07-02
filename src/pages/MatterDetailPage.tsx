@@ -514,7 +514,7 @@ export function MatterDetailPage() {
             </div>
             <label className="flex items-center gap-2 text-[11px]">
               <input type="checkbox" checked={mergeMoveData} onChange={(e) => setMergeMoveData(e.target.checked)} />
-              紐づく文書・明細も統合先へ付け替える（中身がある場合）
+              紐づく文書・明細を統合先へ引き継ぐ（推奨。外すと統合元に残ります）
             </label>
             <div className="space-y-1">
               <Label className="text-[11px]">理由（任意）</Label>
