@@ -380,6 +380,19 @@ export type ExportBundle = {
   issuedNumbers: string[];
 };
 
+/**
+ * 個人/法人の区分ラベル。vendors.entity_type から判定する
+ * (個人の判定は worker resolveVendorForExcel の源泉強制 ON と同じ規約)。
+ *   - "個人" / "individual"          → 個人
+ *   - それ以外の entity_type 設定あり → 法人
+ *   - vendor 未解決 / entity_type 空  → 区分不明 (別ファイルに分けて経理側で確認)
+ */
+function entityClassLabel(vendorRow: any): "個人" | "法人" | "区分不明" {
+  const et = String(vendorRow?.entity_type || "").trim().toLowerCase();
+  if (!et) return "区分不明";
+  return et === "個人" || et === "individual" ? "個人" : "法人";
+}
+
 function sanitizeFileName(s: string): string {
   return String(s || "").replace(/[\\/:*?"<>|]/g, "_").trim() || "_";
 }
@@ -428,7 +441,7 @@ export async function buildExportBundle(
     }
   }
 
-  // 種別ごとに Excel 化 (行順は支払期日 → 文書番号)。
+  // 種別 × 個人/法人 ごとに Excel 化 (行順は支払期日 → 文書番号)。
   const sorted = [...r.rows].sort((a: any, b: any) => {
     const pa = derivePaymentDate(String(a.template_type || ""), a.form_data || {});
     const pb = derivePaymentDate(String(b.template_type || ""), b.form_data || {});
@@ -438,7 +451,15 @@ export async function buildExportBundle(
     );
   });
 
-  const byCategory = new Map<PaymentDocRow["category"], InspectionExcelData[]>();
+  // key: `${category}||${entityLabel}` → その区分の Excel 行群。
+  const byGroup = new Map<
+    string,
+    {
+      category: PaymentDocRow["category"];
+      entityLabel: string;
+      dataList: InspectionExcelData[];
+    }
+  >();
   const issuedNumbers: string[] = [];
   const pdfFiles: ExportBundle["pdfFiles"] = [];
   const pdfFailures: ExportBundle["pdfFailures"] = [];
@@ -459,8 +480,12 @@ export async function buildExportBundle(
       continue;
     }
     const category = categoryOf(templateType);
-    if (!byCategory.has(category)) byCategory.set(category, []);
-    byCategory.get(category)!.push(xl);
+    const entityLabel = entityClassLabel(vendorRow);
+    const groupKey = `${category}||${entityLabel}`;
+    if (!byGroup.has(groupKey)) {
+      byGroup.set(groupKey, { category, entityLabel, dataList: [] });
+    }
+    byGroup.get(groupKey)!.dataList.push(xl);
     issuedNumbers.push(String(row.document_number));
 
     const pd = derivePaymentDate(templateType, fd);
@@ -505,16 +530,23 @@ export async function buildExportBundle(
   }
 
   const excelFiles: ExportBundle["excelFiles"] = [];
-  for (const [category, dataList] of byCategory) {
-    const label = CATEGORY_LABELS[category];
-    const buffer = excelService.generateInspectionExcelBatch(dataList, label);
-    const range =
-      minDate && maxDate
-        ? minDate === maxDate
-          ? `_${minDate}`
-          : `_${minDate}_${maxDate}`
-        : "";
-    excelFiles.push({ name: sanitizeFileName(`${label}${range}.xlsx`), buffer });
+  const range =
+    minDate && maxDate
+      ? minDate === maxDate
+        ? `_${minDate}`
+        : `_${minDate}_${maxDate}`
+      : "";
+  for (const group of byGroup.values()) {
+    const label = CATEGORY_LABELS[group.category];
+    // シート名は「検収書(個人)」等 (31 文字上限は generateInspectionExcelBatch 側で切詰め)。
+    const buffer = excelService.generateInspectionExcelBatch(
+      group.dataList,
+      `${label}(${group.entityLabel})`
+    );
+    excelFiles.push({
+      name: sanitizeFileName(`${label}_${group.entityLabel}${range}.xlsx`),
+      buffer,
+    });
   }
 
   const zipRange =

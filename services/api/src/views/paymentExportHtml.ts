@@ -71,7 +71,7 @@ export function paymentExportPage(
   <div class="pex-summary">
     <span>表示 <b id="pex-count">0</b> 件</span>
     <span>選択 <b id="pex-checked">0</b> 件</span>
-    <span class="muted">ZIP には 検収書PDF ×選択件数 と、1行=1文書の Excel(種別ごと1ファイル) が入ります。発行のたびに「前回発行日」が更新されます。</span>
+    <span class="muted">ZIP には 検収書PDF ×選択件数 と、1行=1文書の Excel(種別 × 個人/法人ごとに1ファイル) が入ります。発行のたびに「前回発行日」が更新されます。</span>
   </div>
 
   <div id="pex-wrap"><div class="pex-empty">期間を指定して読み込んでください。</div></div>
