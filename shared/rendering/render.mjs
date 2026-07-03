@@ -114,6 +114,25 @@ export function registerHelpers(Handlebars) {
     return s;
   });
 
+  Handlebars.registerHelper("cycleLabelEn", (cycle, intervalUnit, intervalCount) => {
+    // 海外発注書用の英語サイクルラベル。プレビュー(生値 "QUARTERLY")と
+    // 最終生成(worker 英語化後 "Quarterly")の両方を正規化して受ける。
+    const c = String(cycle || "").toUpperCase().replace(/[^A-Z]/g, "");
+    if (c === "CUSTOM") {
+      const n = Number(intervalCount);
+      if (Number.isFinite(n) && n > 0) {
+        const u = String(intervalUnit || "").toUpperCase() === "DAY" ? "day" : "month";
+        return `Every ${n} ${u}${n > 1 ? "s" : ""}`;
+      }
+      return "Custom cycle";
+    }
+    if (c === "QUARTERLY") return "Quarterly";
+    if (c === "SEMIANNUAL") return "Semi-annual";
+    if (c === "ANNUAL") return "Annual";
+    if (c === "MONTHLY") return "Monthly";
+    return cycle ? String(cycle) : "Periodic";
+  });
+
   Handlebars.registerHelper("billingDayLabel", (day, cycle) => {
     if (day === null || day === undefined || day === "") return "";
     const n = Number(day);

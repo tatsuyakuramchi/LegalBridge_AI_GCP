@@ -332,6 +332,26 @@ export class DocumentService {
     //     {{billingDayLabel 25 "MONTHLY"}} → "毎月25日"
     //     {{billingDayLabel 0  "MONTHLY"}} → "毎月末日" (0 or >30 で末日)
     //     {{billingDayLabel 15 "QUARTERLY"}} → "毎四半期15日"
+    // 海外発注書用の英語サイクルラベル。プレビュー(生値 "QUARTERLY")と
+    // 最終生成(intl英語化後 "Quarterly")の両方を正規化して受ける。
+    // CUSTOM は interval_unit/interval_count から "Every 2 months" 等を生成。
+    Handlebars.registerHelper("cycleLabelEn", (cycle: any, intervalUnit: any, intervalCount: any) => {
+      const c = String(cycle || "").toUpperCase().replace(/[^A-Z]/g, "");
+      if (c === "CUSTOM") {
+        const n = Number(intervalCount);
+        if (Number.isFinite(n) && n > 0) {
+          const u = String(intervalUnit || "").toUpperCase() === "DAY" ? "day" : "month";
+          return `Every ${n} ${u}${n > 1 ? "s" : ""}`;
+        }
+        return "Custom cycle";
+      }
+      if (c === "QUARTERLY") return "Quarterly";
+      if (c === "SEMIANNUAL") return "Semi-annual";
+      if (c === "ANNUAL") return "Annual";
+      if (c === "MONTHLY") return "Monthly";
+      return cycle ? String(cycle) : "Periodic";
+    });
+
     Handlebars.registerHelper("billingDayLabel", (day: any, cycle: any) => {
       if (day === null || day === undefined || day === "") return "";
       const n = Number(day);
