@@ -252,6 +252,21 @@ export class DocumentService {
       return "¥ " + new Intl.NumberFormat("ja-JP").format(Math.floor(num));
     });
 
+    // 9b. Foreign-currency amount (decimal-aware, no ¥ / no floor).
+    //     Integers render plain ("1,234"), fractional values keep 2 decimals
+    //     ("1,234.50"). The currency code is prepended template-side
+    //     ({{CURRENCY}} {{formatMoney x}}) — used by intl_purchase_order.
+    Handlebars.registerHelper("formatMoney", (value) => {
+      if (value === null || value === undefined || value === "") return "0";
+      const num = typeof value === "number" ? value : parseFloat(String(value).replace(/[^0-9.-]+/g, ""));
+      if (!Number.isFinite(num)) return "0";
+      const hasFraction = Math.abs(num % 1) > 1e-9;
+      return new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: hasFraction ? 2 : 0,
+        maximumFractionDigits: 2,
+      }).format(num);
+    });
+
     // 10. Default value (e.g. {{or value "—"}} renders "—" when falsy)
     Handlebars.registerHelper("or", (a, b) => (a ? a : b));
 
@@ -317,6 +332,26 @@ export class DocumentService {
     //     {{billingDayLabel 25 "MONTHLY"}} → "毎月25日"
     //     {{billingDayLabel 0  "MONTHLY"}} → "毎月末日" (0 or >30 で末日)
     //     {{billingDayLabel 15 "QUARTERLY"}} → "毎四半期15日"
+    // 海外発注書用の英語サイクルラベル。プレビュー(生値 "QUARTERLY")と
+    // 最終生成(intl英語化後 "Quarterly")の両方を正規化して受ける。
+    // CUSTOM は interval_unit/interval_count から "Every 2 months" 等を生成。
+    Handlebars.registerHelper("cycleLabelEn", (cycle: any, intervalUnit: any, intervalCount: any) => {
+      const c = String(cycle || "").toUpperCase().replace(/[^A-Z]/g, "");
+      if (c === "CUSTOM") {
+        const n = Number(intervalCount);
+        if (Number.isFinite(n) && n > 0) {
+          const u = String(intervalUnit || "").toUpperCase() === "DAY" ? "day" : "month";
+          return `Every ${n} ${u}${n > 1 ? "s" : ""}`;
+        }
+        return "Custom cycle";
+      }
+      if (c === "QUARTERLY") return "Quarterly";
+      if (c === "SEMIANNUAL") return "Semi-annual";
+      if (c === "ANNUAL") return "Annual";
+      if (c === "MONTHLY") return "Monthly";
+      return cycle ? String(cycle) : "Periodic";
+    });
+
     Handlebars.registerHelper("billingDayLabel", (day: any, cycle: any) => {
       if (day === null || day === undefined || day === "") return "";
       const n = Number(day);

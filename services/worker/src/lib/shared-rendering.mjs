@@ -70,6 +70,17 @@ export function registerHelpers(Handlebars) {
     return "¥ " + new Intl.NumberFormat("ja-JP").format(Math.floor(num));
   });
 
+  Handlebars.registerHelper("formatMoney", (value) => {
+    if (value === null || value === undefined || value === "") return "0";
+    const num = typeof value === "number" ? value : parseFloat(String(value).replace(/[^0-9.-]+/g, ""));
+    if (!Number.isFinite(num)) return "0";
+    const hasFraction = Math.abs(num % 1) > 1e-9;
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: hasFraction ? 2 : 0,
+      maximumFractionDigits: 2,
+    }).format(num);
+  });
+
   Handlebars.registerHelper("or", (a, b) => (a ? a : b));
   Handlebars.registerHelper("gt", (a, b) => Number(a) > Number(b));
   Handlebars.registerHelper("lt", (a, b) => Number(a) < Number(b));
@@ -104,6 +115,25 @@ export function registerHelpers(Handlebars) {
     if (["true", "yes", "y", "1", "○", "✓"].includes(lower)) return "該当";
     if (["false", "no", "n", "0", "×"].includes(lower)) return "非該当";
     return s;
+  });
+
+  Handlebars.registerHelper("cycleLabelEn", (cycle, intervalUnit, intervalCount) => {
+    // 海外発注書用の英語サイクルラベル。プレビュー(生値 "QUARTERLY")と
+    // 最終生成(worker 英語化後 "Quarterly")の両方を正規化して受ける。
+    const c = String(cycle || "").toUpperCase().replace(/[^A-Z]/g, "");
+    if (c === "CUSTOM") {
+      const n = Number(intervalCount);
+      if (Number.isFinite(n) && n > 0) {
+        const u = String(intervalUnit || "").toUpperCase() === "DAY" ? "day" : "month";
+        return `Every ${n} ${u}${n > 1 ? "s" : ""}`;
+      }
+      return "Custom cycle";
+    }
+    if (c === "QUARTERLY") return "Quarterly";
+    if (c === "SEMIANNUAL") return "Semi-annual";
+    if (c === "ANNUAL") return "Annual";
+    if (c === "MONTHLY") return "Monthly";
+    return cycle ? String(cycle) : "Periodic";
   });
 
   Handlebars.registerHelper("billingDayLabel", (day, cycle) => {
