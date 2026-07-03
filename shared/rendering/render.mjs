@@ -67,6 +67,17 @@ export function registerHelpers(Handlebars) {
     return "¥ " + new Intl.NumberFormat("ja-JP").format(Math.floor(num));
   });
 
+  Handlebars.registerHelper("formatMoney", (value) => {
+    if (value === null || value === undefined || value === "") return "0";
+    const num = typeof value === "number" ? value : parseFloat(String(value).replace(/[^0-9.-]+/g, ""));
+    if (!Number.isFinite(num)) return "0";
+    const hasFraction = Math.abs(num % 1) > 1e-9;
+    return new Intl.NumberFormat("en-US", {
+      minimumFractionDigits: hasFraction ? 2 : 0,
+      maximumFractionDigits: 2,
+    }).format(num);
+  });
+
   Handlebars.registerHelper("or", (a, b) => (a ? a : b));
   Handlebars.registerHelper("gt", (a, b) => Number(a) > Number(b));
   Handlebars.registerHelper("lt", (a, b) => Number(a) < Number(b));

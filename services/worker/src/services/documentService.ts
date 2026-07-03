@@ -252,6 +252,21 @@ export class DocumentService {
       return "¥ " + new Intl.NumberFormat("ja-JP").format(Math.floor(num));
     });
 
+    // 9b. Foreign-currency amount (decimal-aware, no ¥ / no floor).
+    //     Integers render plain ("1,234"), fractional values keep 2 decimals
+    //     ("1,234.50"). The currency code is prepended template-side
+    //     ({{CURRENCY}} {{formatMoney x}}) — used by intl_purchase_order.
+    Handlebars.registerHelper("formatMoney", (value) => {
+      if (value === null || value === undefined || value === "") return "0";
+      const num = typeof value === "number" ? value : parseFloat(String(value).replace(/[^0-9.-]+/g, ""));
+      if (!Number.isFinite(num)) return "0";
+      const hasFraction = Math.abs(num % 1) > 1e-9;
+      return new Intl.NumberFormat("en-US", {
+        minimumFractionDigits: hasFraction ? 2 : 0,
+        maximumFractionDigits: 2,
+      }).format(num);
+    });
+
     // 10. Default value (e.g. {{or value "—"}} renders "—" when falsy)
     Handlebars.registerHelper("or", (a, b) => (a ? a : b));
 
