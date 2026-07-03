@@ -1222,11 +1222,30 @@ async function startServer() {
 
       // 件名/本文(テンプレ + トークン置換)。
       const fd = doc.form_data || {};
-      const amount = String(
-        fd.grandTotalPayable || fd.totalAmount || fd.GRAND_TOTAL || fd.TOTAL_AMOUNT || ""
-      );
+      // 金額: 整形済み(…Str)を優先し、生値しか無ければ桁区切りに整形。
+      const amountRaw =
+        fd.grandTotalPayableStr || fd.totalPaymentStr || fd.totalAmountStr ||
+        fd.grandTotalPayable || fd.totalAmount || fd.GRAND_TOTAL || fd.TOTAL_AMOUNT || "";
+      const amountNum = Number(amountRaw);
+      const amount =
+        String(amountRaw).trim() && Number.isFinite(amountNum)
+          ? `¥${amountNum.toLocaleString("ja-JP")}`
+          : String(amountRaw);
+      // 宛名: 取引先マスタ(capability 経由)が引けない文書(検収書等は capability を
+      //   持たない)は form_data から救済する。検収書=counterparty / 計算書=licensor。
+      const vendorName = String(
+        doc.vendor_name ||
+          fd.counterparty ||
+          fd.licensor ||
+          fd.VENDOR_NAME ||
+          fd["Licensor_名称"] ||
+          fd["Licensor_氏名会社名"] ||
+          fd.PARTY_B_NAME ||
+          fd.partyBName ||
+          ""
+      ).trim();
       const vars = {
-        vendorName: String(doc.vendor_name || ""),
+        vendorName,
         documentNumber: String(doc.document_number || ""),
         amount,
         date: new Date().toLocaleDateString("ja-JP"),
@@ -1236,12 +1255,16 @@ async function startServer() {
       const subject = applyEmailTokens(t.subject, vars);
       const html = emailTextToHtml(applyEmailTokens(t.body, vars));
 
-      // 添付: Drive 上の文書(HTML)を取得し PDF 化(best-effort)。
+      // 添付: Drive 上の正本を取得して添付(best-effort)。正本は生成時に PDF で
+      //   保存されているのでそのまま添付する。PDF バイナリを文字列化して
+      //   renderHtmlToPdf に通すと壊れる(文字化けPDFになる)ため、旧形式の
+      //   HTML ファイルだった場合のみ PDF 化する。
       let attachments: any[] = [];
       let attached = false;
       try {
         const buf = await googleDriveService.downloadPdf(doc.drive_link);
-        const pdf = await renderHtmlToPdf(buf.toString("utf8"));
+        const isPdf = buf.subarray(0, 5).toString("latin1").startsWith("%PDF");
+        const pdf = isPdf ? buf : await renderHtmlToPdf(buf.toString("utf8"));
         attachments = [{ filename: `${doc.document_number}.pdf`, content: pdf, mimeType: "application/pdf" }];
         attached = true;
       } catch (e: any) {
