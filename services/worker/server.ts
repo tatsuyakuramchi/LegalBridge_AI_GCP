@@ -13917,7 +13917,11 @@ ${details}
     // skipPdf=true (DB登録のみ): PDF 生成 / Drive アップロードを行わず、
     //   採番 + documents/condition_lines 等の DB 登録だけを実行する。
     //   マスター登録と同じ「文書を発行しない登録」を通常フォームから行うモード。
-    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber, reissue, skipPdf } = req.body;
+    //   fileLink: skipPdf=true のときのみ有効。既存の締結済み PDF 等の URL を
+    //   drive_link として保存する (紙契約のスキャン等を一覧から開けるように)。
+    //   recordType: skipPdf=true のときのみ有効。単独契約(親なし)を発注書/ILT
+    //   テンプレで代用登録するケース用に、テンプレ由来の record_type を上書きする。
+    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber, reissue, skipPdf, fileLink, recordType: recordTypeOverride } = req.body;
 
     try {
       // Admin UI が「Backlog 課題なし」で発行する仮キー (MANUAL-<ts>) は
@@ -14474,14 +14478,23 @@ ${details}
       const dbOnly = skipPdf === true || skipPdf === "true";
       let driveLink: string;
       if (dbOnly) {
+        // 優先順: ① フォームで指定されたファイルリンク (既存の締結済み PDF 等)
+        //         ② 既存 row の drive_link 温存
+        //         ③ 空 (= __pdf_pending で PDF 未作成キューへ)
+        const manualFileLink =
+          typeof fileLink === "string" ? fileLink.trim() : "";
         const existingRow = await query(
           `SELECT drive_link FROM documents WHERE document_number = $1 LIMIT 1`,
           [docNumber]
         );
-        driveLink = existingRow.rows[0]?.drive_link || "";
+        driveLink = manualFileLink || existingRow.rows[0]?.drive_link || "";
         console.log(
           `📝 [db-only] ${issueKey} ${templateType}: docNumber=${docNumber} PDF生成スキップ${
-            driveLink ? " (既存 Drive リンク温存)" : " (未発行 → PDF未作成キューへ)"
+            manualFileLink
+              ? " (ファイルリンク指定あり)"
+              : driveLink
+                ? " (既存 Drive リンク温存)"
+                : " (未発行 → PDF未作成キューへ)"
           }`
         );
       } else {
@@ -14922,6 +14935,27 @@ ${details}
         } else if (templateType.includes("inspection")) {
           // 検収書は契約ではなく delivery event。picker から除外したい。
           recordType = "delivery_record";
+        }
+
+        // DB登録のみ (dbOnly) のときはリクエストで record_type を明示指定できる。
+        //   単独契約(親なし)を発注書 / ILT テンプレで代用登録するケース用。
+        //   値域は契約系の区分のみ許可 (delivery_record 等の内部区分は不可)。
+        //   cc 互換ビューの INSTEAD OF トリガが COALESCE 更新するため、
+        //   既存 row の再保存でも上書きされる。
+        const RECORD_TYPE_OVERRIDABLE = new Set([
+          "standalone_contract",
+          "individual_contract",
+          "master_contract",
+        ]);
+        if (
+          dbOnly &&
+          typeof recordTypeOverride === "string" &&
+          RECORD_TYPE_OVERRIDABLE.has(recordTypeOverride)
+        ) {
+          console.log(
+            `📝 [db-only] record_type override: ${recordType} → ${recordTypeOverride} (${docNumber})`
+          );
+          recordType = recordTypeOverride;
         }
 
         await query(
