@@ -1,298 +1,366 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Independent Contractor Agreement — Order Form</title>
-  <style>
-    @page { size: A4; margin: 12mm 15mm; }
-    * { box-sizing: border-box; }
-    body { font-family: "Noto Sans","Helvetica Neue",Arial,sans-serif; font-size: 10pt; line-height: 1.5; color: #111; margin: 0; word-break: break-word; overflow-wrap: anywhere; }
-    .header-row { display: flex; justify-content: space-between; align-items: flex-end; border-bottom: 2px solid #111; padding-bottom: 6px; margin-bottom: 14px; }
-    .title-box h1 { font-size: 18pt; margin: 0; letter-spacing: 1px; }
-    .title-box .subtitle { font-size: 9pt; color: #555; margin-top: 2px; }
-    .doc-info { text-align: right; font-size: 9pt; line-height: 1.6; color: #555; white-space: nowrap; }
-    .party-grid { display: table; width: 100%; table-layout: fixed; margin-bottom: 10px; }
-    .contractor-section { display: table-cell; vertical-align: top; font-size: 10pt; min-width: 0; padding-right: 12px; }
-    .contractor-name { font-size: 13pt; font-weight: 800; border-bottom: 1px solid #111; display: inline-block; width: 100%; padding-bottom: 2px; }
-    .company-section { display: table-cell; vertical-align: top; font-size: 9pt; background: #fafafa; padding: 10px; border: 1px solid #cfcfcf; overflow-wrap: anywhere; width: 300px; }
-    .section-mark { color: #111; padding: 2px 0 2px 10px; font-weight: 800; font-size: 10pt; margin-top: 12px; margin-bottom: 6px; display: inline-block; border-left: 4px solid #111; }
-    table.summary, table.items, table.sign-table { width: 100%; border-collapse: collapse; }
-    table.summary { margin-bottom: 12px; font-size: 10pt; }
-    table.summary th, table.summary td, table.items th, table.items td, table.sign-table th, table.sign-table td { border: 1px solid #cfcfcf; padding: 7px 8px; vertical-align: top; }
-    table.summary th, table.sign-table th, table.items th { background: #f3f3f3; text-align: left; }
-    table.summary th { width: 26%; }
-    table.items { margin-top: 4px; font-size: 9pt; }
-    table.items th { text-align: center; font-weight: 800; }
-    .right { text-align: right; } .center { text-align: center; }
-    .item-name-block { font-weight: 800; font-size: 10pt; margin-bottom: 3px; display: inline-block; }
-    .item-spec-block { font-size: 8.5pt; color: #555; white-space: pre-wrap; line-height: 1.4; }
-    .item-accept-block { font-size: 8.5pt; color: #333; white-space: pre-wrap; border-top: 1px dashed #9ab; padding-top: 4px; margin-top: 4px; }
-    /* Phase 17n: detail-row pattern — split spec into its own full-width row
-       so narrow columns don't get vertically stretched. */
-    table.items tr.detail-row > td { border-top: 0; padding-top: 0; padding-bottom: 8px; }
-    table.items tr.detail-row .detail-cell { background: #fafafa; border-left: 3px solid #cfcfcf; padding: 6px 10px; font-size: 8.5pt; color: #444; white-space: pre-wrap; line-height: 1.5; }
-    table.items tr.detail-row .detail-cell .detail-label { font-size: 7.5pt; color: #888; font-weight: 800; letter-spacing: 0.05em; margin-bottom: 2px; text-transform: uppercase; }
-    table.items tr.has-detail > td { border-bottom: 1px dashed #e3e3e3; }
-    .item-accept-label { display: inline-block; font-size: 7pt; font-weight: 800; padding: 1px 4px; border: 1px solid #888; border-radius: 2px; background: #f3f3f3; color: #444; margin-right: 4px; white-space: nowrap; vertical-align: middle; }
-    .pay-method-badge { display: inline-block; font-size: 7.5pt; padding: 2px 6px; border-radius: 2px; font-weight: 800; border: 1px solid #111; background: #fff; color: #111; white-space: nowrap; }
-    .category-label { display: inline-block; font-size: 7.5pt; padding: 1px 5px; border: 1px solid #cfcfcf; background: #fff; border-radius: 2px; color: #111; white-space: nowrap; margin-right: 4px; margin-bottom: 4px; }
-    .amount-note, .small-muted { font-size: 8.5pt; color: #555; }
-    .total-amount { font-size: 13pt; font-weight: 900; }
-    .po-box, .callout { margin-top: 12px; font-size: 9pt; border: 1px solid #cfcfcf; background: #fff; }
-    .po-box { padding: 10px; }
-    .po-box-title { font-weight: 900; margin-bottom: 6px; border-bottom: 1px solid #111; padding-bottom: 3px; }
-    .callout { border-left: 4px solid #111; padding: 8px 10px; }
-    .sign-box { height: 22mm; border: 1px dashed #cfcfcf; margin-top: 4px; }
-    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-    .terms-wrap { line-height: 1.7; font-size: 10pt; page-break-before: always; }
-    .terms-doc-title { text-align: center; font-size: 14pt; font-weight: 700; letter-spacing: 0.05em; margin: 0 0 2mm 0; }
-    .terms-ver { text-align: right; font-size: 9pt; color: #444; margin: 0 0 5mm 0; }
-    .terms-lead { margin: 0 0 5mm 0; }
-    .terms-h { font-size: 10.5pt; font-weight: 700; background: #f2f2f2; padding: 4px 9px; border-left: 4px solid #111; margin: 6mm 0 2.5mm 0; break-after: avoid; page-break-after: avoid; }
-    .terms-ol { margin: 0 0 1.5mm 0; padding-left: 18px; }
-    .terms-ol > li { margin: 0 0 1.8mm 0; }
-    .terms-sub { list-style: none; padding-left: 0; margin: 1mm 0 0 0; }
-    .terms-sub li { padding-left: 1.5em; text-indent: -1.5em; margin: 0 0 1.2mm 0; }
-    ol, li { break-inside: avoid; page-break-inside: avoid; }
-    .prec-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-top: 4px; }
-    .prec-table td { border: 1px solid #cfcfcf; padding: 4px 8px; }
-    .prec-table td:first-child { width: 8%; text-align: center; font-weight: 700; background: #f3f3f3; }
-  </style>
+<meta charset="UTF-8">
+<title>Independent Contractor Agreement — Order Form</title>
+<style>
+  /* Part 1 は国内発注書 (purchase_order.html 新デザイン) と同一構造。
+     外貨対応: 金額は formatYen を使わず CURRENCY コード + formatMoney (小数2桁対応)。 */
+  body { font-family:'Noto Sans','Helvetica Neue',Arial,'Noto Sans CJK JP','Meiryo',sans-serif; font-size:10pt; line-height:1.5; color:#111; margin:0; padding:16px; word-break:break-word; overflow-wrap:anywhere; }
+  h1.doc-title { font-size:22pt; margin:0 0 4px; letter-spacing:2px; }
+  .doc-head { text-align:center; margin-bottom:8px; }
+  .doc-sub { font-size:9pt; color:#555; }
+  hr.rule { border:none; border-top:2px solid #111; margin:0 0 14px; }
+  table { border-collapse:collapse; }
+  .party { width:100%; margin-bottom:14px; }
+  .party td { vertical-align:top; }
+  .party .vlabel { font-size:8pt; font-weight:700; color:#555; margin-bottom:3px; }
+  .vendor-name { font-size:13pt; font-weight:800; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; }
+  .muted { font-size:9pt; color:#555; }
+  .section-mark { font-size:10pt; font-weight:800; margin:12px 0 6px; border-left:4px solid #111; padding-left:8px; }
+  table.summary { width:100%; margin-bottom:12px; font-size:10pt; }
+  table.summary th { width:30%; background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; text-align:left; }
+  table.summary td { border:1px solid #cfcfcf; padding:7px 8px; }
+  .total-amount { font-size:13pt; font-weight:800; }
+  .amount-note { font-size:8.5pt; color:#555; }
+  table.items { width:100%; font-size:9pt; margin-top:4px; table-layout:fixed; }
+  table.items th { background:#f3f3f3; border:1px solid #cfcfcf; padding:7px 8px; }
+  table.items td { border:1px solid #cfcfcf; padding:7px 8px; vertical-align:top; }
+  table.items th.l, table.items td.l { text-align:left; }
+  .center { text-align:center; }
+  .right { text-align:right; }
+  .item-main td { border-bottom:none; padding:8px 8px 4px; }
+  .item-detail td { border-top:1px dashed #cfcfcf; padding:3px 8px 8px; font-size:8.5pt; color:#555; }
+  .item-detail ul { margin:4px 0 0; padding-left:16px; color:#333; line-height:1.55; }
+  .tag { display:inline-block; font-size:7.5pt; font-weight:800; background:#eef; color:#334; border-radius:3px; padding:1px 5px; margin-right:4px; }
+  .royalty-tag { background:#fef3c7; color:#92400e; }
+  .royalty-aside { color:#92400e; font-size:8pt; }
+  .callout { border:1px solid #cfcfcf; border-left:4px solid #111; padding:8px 10px; font-size:9pt; margin-top:12px; }
+  .terms-box { border:1px solid #cfcfcf; padding:10px; margin-top:12px; }
+  .terms-title { display:block; border-bottom:1px solid #111; padding-bottom:3px; margin-bottom:6px; font-weight:800; }
+  .sign-box { height:22mm; border:1px solid #cfcfcf; margin-top:4px; }
+  .incl-note { font-size:7.5pt; color:#92400e; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+  /* ── Part 2 (Schedule A) 用 ── */
+  .terms-wrap { line-height: 1.7; font-size: 10pt; page-break-before: always; }
+  .terms-doc-title { text-align: center; font-size: 14pt; font-weight: 700; letter-spacing: 0.05em; margin: 0 0 2mm 0; }
+  .terms-ver { text-align: right; font-size: 9pt; color: #444; margin: 0 0 5mm 0; }
+  .terms-lead { margin: 0 0 5mm 0; }
+  .terms-h { font-size: 10.5pt; font-weight: 700; background: #f2f2f2; padding: 4px 9px; border-left: 4px solid #111; margin: 6mm 0 2.5mm 0; break-after: avoid; page-break-after: avoid; }
+  .terms-ol { margin: 0 0 1.5mm 0; padding-left: 18px; }
+  .terms-ol > li { margin: 0 0 1.8mm 0; }
+  .terms-sub { list-style: none; padding-left: 0; margin: 1mm 0 0 0; }
+  .terms-sub li { padding-left: 1.5em; text-indent: -1.5em; margin: 0 0 1.2mm 0; }
+  ol, li { break-inside: avoid; page-break-inside: avoid; }
+  .prec-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin-top: 4px; }
+  .prec-table td { border: 1px solid #cfcfcf; padding: 4px 8px; }
+  .prec-table td:first-child { width: 8%; text-align: center; font-weight: 700; background: #f3f3f3; }
+</style>
 </head>
 <body>
 
 <!-- ════════ PART 1 — ORDER FORM ════════ -->
 
-  <div class="header-row">
-    <div class="title-box">
-      <h1>ORDER FORM</h1>
-      <div class="subtitle">Independent Contractor Agreement</div>
-    </div>
-    <div class="doc-info">
-      OF No.: <strong>{{OF_NO}}</strong><br>
-      Issue Date: {{OF_DATE}}<br>
-      Currency: <strong>{{CURRENCY}}</strong>
-    </div>
+<!-- ===== ヘッダ ===== -->
+<div class="doc-head">
+  <h1 class="doc-title">ORDER FORM</h1>
+  <div class="doc-sub">Independent Contractor Agreement</div>
+  <div class="doc-sub">
+    Issue Date: {{or OF_DATE "—"}}
+    　／　Order Form No.: {{or OF_NO ORDER_NO}}{{#if isReissue}}{{#unless (eq showReissueBanner false)}}　(Orig.: {{BASE_DOC_NO}}){{/unless}}{{/if}}
+    　／　Currency: <strong>{{or CURRENCY "—"}}</strong>
   </div>
+</div>
+<hr class="rule">
 
-  <div class="party-grid">
-    <div class="contractor-section">
-      <div class="contractor-name">{{CONTRACTOR_NAME}}</div>
-      {{#if CONTRACTOR_ADDRESS}}<div style="margin-top:8px;font-size:9pt;color:#555;white-space:pre-wrap;">{{CONTRACTOR_ADDRESS}}</div>{{/if}}
-      {{#if CONTRACTOR_COUNTRY}}<div style="font-size:9pt;color:#555;">{{CONTRACTOR_COUNTRY}}</div>{{/if}}
-      {{#if CONTRACTOR_EMAIL}}<div style="margin-top:4px;font-size:9pt;color:#555;">E-mail: {{CONTRACTOR_EMAIL}}</div>{{/if}}
-      <div style="margin-top:10px;">This Order Form, together with <strong>Schedule A</strong> attached hereto, constitutes a binding agreement. Please review and confirm.</div>
-      <div style="margin-top:14px;font-size:10pt;">Project: <strong>{{PROJECT_TITLE}}</strong></div>
-    </div>
-    <div class="company-section">
-      <div style="font-size:8pt;font-weight:800;color:#555;margin-bottom:4px;">COMPANY / CLIENT</div>
-      <div style="font-weight:900;font-size:12pt;margin-bottom:5px;">{{COMPANY_NAME}}</div>
+<!-- ===== 宛先 ＋ 発注者 ===== -->
+<table class="party">
+  <tr>
+    <td style="width:50%; padding-right:12px;">
+      <div class="vlabel">CONTRACTOR</div>
+      <div class="vendor-name">{{CONTRACTOR_NAME}}</div>
+      {{#if CONTRACTOR_ADDRESS}}<div class="muted" style="white-space:pre-wrap;">{{CONTRACTOR_ADDRESS}}</div>{{/if}}
+      {{#if CONTRACTOR_COUNTRY}}<div class="muted">{{CONTRACTOR_COUNTRY}}</div>{{/if}}
+      {{#if CONTRACTOR_EMAIL}}<div class="muted" style="margin-top:2px;">E-mail: {{CONTRACTOR_EMAIL}}</div>{{/if}}
+      <div style="margin-top:10px; font-size:9pt;">This Order Form, together with <strong>Schedule A</strong> attached hereto, constitutes a binding agreement. Please review and confirm.</div>
+      {{#if PROJECT_TITLE}}<div style="margin-top:8px; font-size:10pt;">Project: <strong>{{PROJECT_TITLE}}</strong></div>{{/if}}
+    </td>
+    <td style="width:50%; padding-left:12px; border-left:1px solid #cfcfcf;">
+      <div class="vlabel">COMPANY / CLIENT</div>
+      <div style="font-weight:900; font-size:12pt; margin-bottom:4px;">{{COMPANY_NAME}}</div>
       <div style="white-space:pre-wrap;">{{COMPANY_ADDRESS}}</div>
-      <div style="margin-top:2px;">{{COMPANY_REP}}</div>
+      {{#if COMPANY_REP}}<div style="margin-top:2px;">{{COMPANY_REP}}</div>{{/if}}
       {{#if STAFF_NAME}}
-      <div style="margin-top:8px;padding-top:6px;border-top:1px dashed #cfcfcf;font-size:9pt;">
+      <div style="margin-top:8px; padding-top:6px; border-top:1px solid #cfcfcf; font-size:9pt;">
         {{#if STAFF_DEPARTMENT}}<strong>Dept.:</strong> {{STAFF_DEPARTMENT}}<br>{{/if}}
         <strong>Contact:</strong> {{STAFF_NAME}}<br>
         {{#if STAFF_PHONE}}Tel: {{STAFF_PHONE}}<br>{{/if}}
         {{#if STAFF_EMAIL}}E-mail: {{STAFF_EMAIL}}{{/if}}
       </div>
       {{/if}}
-    </div>
-  </div>
+    </td>
+  </tr>
+</table>
 
-  <div class="section-mark">■ ORDER SUMMARY</div>
-  <table class="summary">
-    <tr>
-      <th>Total Fees (Excl. Tax / Withholding)</th>
-      <td>
-        <div class="total-amount">{{CURRENCY}} {{formatCurrency grandTotalFees}}</div>
-        <div class="amount-note">* Taxes and withholding are governed by Article 7 of Schedule A.</div>
-      </td>
-    </tr>
-    <tr><th>Completion / Delivery Date<br><span class="small-muted">(or Service Period)</span></th><td>{{summaryCompletionDate}}</td></tr>
-    <tr><th>Payment Due Date</th><td>{{summaryPaymentDate}}</td></tr>
-  </table>
-
-  <div class="section-mark">■ SERVICES &amp; DELIVERABLES</div>
-  <table class="items">
-    <thead>
-      <tr>
-        <th style="width:10mm;">No.</th>
-        <th>Service / Deliverable</th>
-        <th style="width:20mm;">Payment Method</th>
-        <th style="width:24mm;">Payment Date</th>
-        <th style="width:12mm;">Qty</th>
-        <th style="width:24mm;">Unit Fee</th>
-        <th style="width:26mm;">Amount (Excl. Tax)</th>
-      </tr>
-    </thead>
-    <tbody>
-      {{#if items}}
-      {{#each items}}
-      {{!-- Phase 17n: split spec/detail into their own full-width row --}}
-      <tr class="{{#if (or spec detailText acceptance_cond)}}has-detail{{/if}}">
-        <td class="center">{{or line_no (index1 @index)}}</td>
-        <td>
-          {{#if category}}<span class="category-label">{{category}}</span>{{/if}}
-          <div class="item-name-block">{{item_name}}</div>
-        </td>
-        <td class="center">
-          {{!-- Phase 13: calc_method 優先、payment_terms 副表示 (legacy 互換) --}}
-          <span class="pay-method-badge">{{or calc_method payment_method_display payment_method "FIXED"}}</span>
-          {{#if payment_terms}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_terms}}</div>
-          {{else}}
-          {{#if payment_method}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{payment_method}}</div>
-          {{/if}}
-          {{/if}}
-        </td>
-        <td class="center">{{payment_date}}</td>
-        <td class="right">{{or quantity qty}}</td>
-        <td class="right">{{../CURRENCY}} {{formatCurrency (or unit_price unitPrice)}}</td>
-        <td class="right">{{../CURRENCY}} {{formatCurrency (or amount_ex_tax amount)}}</td>
-      </tr>
-      {{#if (or spec detailText acceptance_cond)}}
-      <tr class="detail-row">
-        <td></td>
-        <td colspan="6">
-          <div class="detail-cell">
-            {{#if (or spec detailText)}}
-            <div class="detail-label">Specification / Details</div>
-            {{#if spec}}<div class="item-spec-block">{{spec}}</div>{{/if}}
-            {{#if detailText}}<div class="item-spec-block" style="margin-top:{{#if spec}}4px{{else}}0{{/if}};">{{detailText}}</div>{{/if}}
-            {{/if}}
-            {{#if acceptance_cond}}
-            <div class="item-accept-block" style="margin-top:{{#if (or spec detailText)}}8px{{else}}0{{/if}};"><span class="item-accept-label">Acceptance</span>{{acceptance_cond}}</div>
-            {{/if}}
-          </div>
-        </td>
-      </tr>
-      {{/if}}
-      {{#if payment_schedule}}
-      <tr class="detail-row">
-        <td></td>
-        <td colspan="6">
-          <div class="detail-cell">
-            <div class="detail-label">Payment Schedule</div>
-            <table class="prec-table" style="margin-top:2px;">
-              <tr><td style="width:8%;">No.</td><td>Payment Date</td><td style="text-align:right;width:30%;">Amount</td></tr>
-              {{#each payment_schedule}}
-              <tr>
-                <td style="text-align:center;">{{index1 @index}}</td>
-                <td>{{date}}</td>
-                <td style="text-align:right;">{{#if amount}}{{../../CURRENCY}} {{formatCurrency amount}}{{/if}}</td>
-              </tr>
-              {{/each}}
-            </table>
-          </div>
-        </td>
-      </tr>
-      {{/if}}
-      {{/each}}
+<!-- ===== 発注概要 ===== -->
+<div class="section-mark">■ ORDER SUMMARY</div>
+<table class="summary">
+  <tr>
+    <th>Fixed Fees — Subtotal<br><span style="font-size:8pt;color:#888;font-weight:400;">(Excl. Tax / Withholding)</span></th>
+    <td>
+      {{#if (gt grandTotalFees 0)}}
+      <strong class="total-amount">{{CURRENCY}} {{formatMoney grandTotalFees}}</strong><br>
+      <span class="amount-note">* Taxes and withholding are governed by Article 7 of Schedule A.</span>
       {{else}}
-      {{!-- 単一明細フォールバック — Phase 13 統一 --}}
-      <tr>
-        <td class="center">1</td>
-        <td><div class="item-name-block">{{ITEM_NAME}}</div></td>
-        <td class="center">
-          <span class="pay-method-badge">{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}</span>
-          {{#if PAYMENT_TERMS}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_TERMS}}</div>
-          {{else}}
-          {{#if PAYMENT_METHOD}}
-          <div style="font-size:7pt; color:#666; margin-top:2px;">{{PAYMENT_METHOD}}</div>
-          {{/if}}
-          {{/if}}
-        </td>
-        <td class="center">{{summaryPaymentDate}}</td>
-        <td class="right">1</td><td class="right">—</td>
-        <td class="right">{{CURRENCY}} {{formatCurrency grandTotalFees}}</td>
-      </tr>
+      <strong style="color:#92400e;">Fees are included in the license royalties</strong>
+      <span class="amount-note">/ calculated as stated in the line items below</span>
       {{/if}}
-      <tr>
-        <td colspan="6" class="right"><strong>Subtotal (Excl. Tax / Withholding)</strong></td>
-        <td class="right"><strong>{{CURRENCY}} {{formatCurrency grandTotalFees}}</strong></td>
-      </tr>
-    </tbody>
-  </table>
+    </td>
+  </tr>
+  <tr>
+    <th>License Royalties</th>
+    <td>
+      {{#if has_seller_owned_license}}
+      <strong style="color:#92400e;">Calculated separately</strong>
+      <span style="font-size:8pt; color:#666;">/ per Royalty Statement (see ROYALTY line items and License Conditions below)</span>
+      {{else}}
+      <span style="color:#888;">—</span>
+      {{/if}}
+    </td>
+  </tr>
+  <tr>
+    <th>Currency</th>
+    <td><strong>{{or CURRENCY "—"}}</strong>{{#if CURRENCY}} <span class="amount-note">— all amounts in this Order Form are stated in {{CURRENCY}} unless noted otherwise.</span>{{/if}}</td>
+  </tr>
+  <tr>
+    <th>Order Date</th>
+    <td>{{or OF_DATE "—"}}</td>
+  </tr>
+  <tr>
+    <th>Completion / Delivery<br><span style="font-size:8pt;color:#888;font-weight:400;">(or Service Period)</span></th>
+    <td>{{or summaryCompletionDate "As per line items"}}</td>
+  </tr>
+  <tr>
+    <th>Payment Due Date</th>
+    <td>{{or summaryPaymentDate "As per line items"}}</td>
+  </tr>
+</table>
 
-  <div class="callout" style="margin-top:12px;">
-    <strong>Personal Data:</strong>
-    No processing of customer, visitor, lead, inquiry, end-user, or other third-party personal data is permitted unless expressly authorized in writing by the Company. Ordinary communications, payment administration, personnel coordination, performance of services, and delivery of deliverables are permitted to the extent necessary for the applicable Order Form.
-  </div>
-
-  {{#if SPECIAL_TERMS}}
-  <div class="po-box">
-    <div class="po-box-title">Special Terms</div>
-    <div style="white-space:pre-wrap;">{{SPECIAL_TERMS}}</div>
-  </div>
-  {{/if}}
-
-  {{#if REMARKS}}
-  <div class="po-box">
-    <div class="po-box-title">Remarks / Notes</div>
-    {{#if REMARKS_FIXED}}<div style="white-space:pre-wrap;">{{REMARKS_FIXED}}</div>{{/if}}
-    {{#if REMARKS_FREE}}<div style="white-space:pre-wrap;margin-top:{{#if REMARKS_FIXED}}8px{{else}}0{{/if}};">{{REMARKS_FREE}}</div>{{/if}}
-  </div>
-  {{/if}}
-
-  <div class="callout">
-    <strong>Applicable Terms:</strong>
-    This Order Form is subject to the Independent Contractor Standard Terms set out in <strong>Schedule A</strong>. In the event of any conflict, the order of precedence in Article 1 of Schedule A applies. By signing, electronically accepting, or commencing performance, the Contractor agrees to all terms herein.
-  </div>
-
-  {{#if GOVERNING_LAW}}
-  <div class="callout" style="margin-top:6px;">
-    <strong>Governing Law:</strong> {{GOVERNING_LAW}}
-    {{#if DISPUTE_RESOLUTION}}<br><strong>Dispute Resolution:</strong> {{DISPUTE_RESOLUTION}}{{/if}}
-  </div>
-  {{/if}}
-
-  {{#if BANK_NAME}}
-  <div class="po-box">
-    <div class="po-box-title">Payment Details</div>
-    <table class="summary" style="margin-bottom:6px;">
-      <tr><th>Beneficiary Bank</th><td>{{BANK_NAME}}{{#if BRANCH_NAME}}, {{BRANCH_NAME}}{{/if}}</td></tr>
-      {{#if SWIFT_BIC}}<tr><th>SWIFT / BIC</th><td><strong>{{SWIFT_BIC}}</strong></td></tr>{{/if}}
-      {{#if IBAN}}<tr><th>IBAN</th><td>{{IBAN}}</td></tr>{{/if}}
-      {{#if INTERMEDIARY_BANK}}<tr><th>Intermediary Bank</th><td>{{INTERMEDIARY_BANK}}</td></tr>{{/if}}
-      <tr><th>Account Type</th><td>{{ACCOUNT_TYPE}}</td></tr>
-      <tr><th>Account No.</th><td>{{ACCOUNT_NUMBER}}</td></tr>
-      <tr><th>Account Holder</th><td>{{ACCOUNT_HOLDER}}{{#if ACCOUNT_HOLDER_LOCAL}}<br><span class="small-muted">({{ACCOUNT_HOLDER_LOCAL}})</span>{{/if}}</td></tr>
-      {{#if TAX_REGISTRATION_NO}}<tr><th>Tax Reg. No.</th><td>{{TAX_REGISTRATION_NO}}</td></tr>{{/if}}
-    </table>
-    {{#if TRANSFER_FEE_CODE}}<div class="small-muted">* Bank charges: <strong>{{TRANSFER_FEE_CODE}}</strong></div>{{/if}}
-  </div>
-  {{/if}}
-
-  {{#if ACCEPT_METHOD}}
-  <div class="section-mark">■ ACCEPTANCE &amp; SIGNATURE</div>
-  <div class="callout">
-    <div style="font-weight:900;">Acceptance Procedure</div>
-    <div class="small-muted">{{ACCEPT_METHOD}}{{#if ACCEPT_REPLY_DUE_DATE}}<br>Reply deadline: {{ACCEPT_REPLY_DUE_DATE}}{{/if}}</div>
-  </div>
-  {{/if}}
-
-  {{#if SHOW_SIGN_SECTION}}
-  <table class="sign-table" style="margin-top:6px;">
+<!-- ===== 業務明細（2行レイアウト） ===== -->
+<div class="section-mark">■ SERVICES &amp; DELIVERABLES</div>
+<table class="items">
+  <thead>
     <tr>
-      <th>Contractor — Acceptance</th>
+      <th style="width:5%;">No.</th>
+      <th class="l" style="width:45%;">Service / Deliverable</th>
+      <th class="center" style="width:10%;">Qty</th>
+      <th class="right" style="width:19%;">Unit Fee{{#if CURRENCY}} ({{CURRENCY}}){{/if}}</th>
+      <th class="right" style="width:21%;">Amount{{#if CURRENCY}} ({{CURRENCY}}){{/if}}</th>
     </tr>
-    <tr>
-      <td>
-        <div>{{CONTRACTOR_NAME}}</div>
-        <div class="small-muted" style="white-space:pre-wrap;">{{CONTRACTOR_ADDRESS}}, {{CONTRACTOR_COUNTRY}}</div>
-        <div class="sign-box"></div>
-        <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
-          <span class="small-muted" style="white-space:nowrap;">Date:</span>
-          <span style="flex:1; border-bottom:1px solid #aaa; min-width:80px; display:inline-block;">&nbsp;</span>
-        </div>
-        <div class="small-muted" style="margin-top:3px; font-size:7.5pt; color:#aaa;">* Write date or enter: {{CONTRACTOR_ACCEPT_DATE}}</div>
+  </thead>
+  <tbody>
+    {{#if items}}
+    {{#each items}}
+    <!-- 1行目：核心情報 -->
+    <tr class="item-main">
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">
+        {{#if category}}<span class="tag">{{category}}</span>{{/if}}
+        <strong style="font-size:10pt;">{{item_name}}</strong>
+      </td>
+      <td class="right">{{or quantity qty}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}{{formatMoney (or unit_price unitPrice)}}{{else}}<span style="color:#888;">-</span>{{/if}}{{else}}{{formatMoney (or unit_price unitPrice)}}{{/if}}</td>
+      <td class="right">{{#if (eq calc_method "ROYALTY")}}{{#if (gt (or amount_ex_tax amount) 0)}}<strong>{{formatMoney (or amount_ex_tax amount)}}</strong><div class="incl-note">Fixed fee (royalties separate)</div>{{else}}<div class="incl-note">Fees included in<br>license royalties</div>{{/if}}{{else}}<strong>{{formatMoney (or amount_ex_tax amount)}}</strong>{{/if}}</td>
+    </tr>
+    <!-- 2行目：詳細情報 -->
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        [IP Ownership] {{#if (eq deliverable_ownership "受注者")}}Contractor (license model){{else}}Company (assignment){{/if}}
+        　／　Payment: {{or calc_method payment_method_display payment_method "FIXED"}}{{#if payment_terms}} ({{payment_terms}}){{else}}{{#if payment_method}} ({{payment_method}}){{/if}}{{/if}}
+        　／　Delivery: {{#if (eq calc_method "SUBSCRIPTION")}}{{or cycle "Periodic"}}{{#if billing_day}}{{#if (gt billing_day 30)}} / last day of each period{{else}} / day {{billing_day}} of each period{{/if}}{{/if}}{{else}}{{#if delivery_date}}{{formatDateCompact delivery_date}}{{else}}—{{/if}}{{/if}}
+        　／　Payment Date: {{#if (eq calc_method "SUBSCRIPTION")}}{{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}} – {{#if term_end}}{{formatDateCompact term_end}}{{else}}ongoing{{/if}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}Per Royalty Statement{{else}}{{#if payment_date}}{{formatDateCompact payment_date}}{{else}}—{{/if}}{{/unless}}{{else}}{{#if payment_date}}{{formatDateCompact payment_date}}{{else}}—{{/if}}{{/if}}{{/if}}
+        {{#if (eq calc_method "ROYALTY")}}
+        <div style="margin-top:4px;"><span class="tag royalty-tag">ROYALTY</span>{{#if (eq royalty_calc_basis "manufacturing")}}Qty × Base Price × Rate{{else}}{{#if (eq royalty_calc_basis "sales")}}Net Sales × Rate{{else}}{{#if (eq royalty_calc_basis "sublicense")}}Amounts Received × Rate{{else}}{{#if (eq royalty_calc_basis "fixed")}}Fixed amount{{else}}Qty × Base Price × Rate{{/if}}{{/if}}{{/if}}{{/if}}{{#if rate_pct}} ・Rate {{rate_pct}}%{{/if}}<span class="royalty-aside"> / royalties are invoiced and paid separately per Royalty Statement</span></div>
+        {{/if}}
+        {{#if (or spec detailText)}}
+        <ul>
+          {{#if spec}}<li>{{spec}}</li>{{/if}}
+          {{#if detailText}}<li>{{detailText}}</li>{{/if}}
+        </ul>
+        {{/if}}
+        {{#if acceptance_cond}}
+        <div style="margin-top:4px;"><strong>Acceptance:</strong> {{acceptance_cond}}</div>
+        {{/if}}
+        {{#if payment_schedule}}
+        <div style="margin-top:4px; font-weight:700;">Payment Schedule</div>
+        <table style="width:100%; border-collapse:collapse; font-size:8.5pt;">
+          <tr><th class="l" style="width:8%;">No.</th><th class="l">Payment Date</th><th class="right" style="width:30%;">Amount</th></tr>
+          {{#each payment_schedule}}
+          <tr>
+            <td class="center">{{index1 @index}}</td>
+            <td>{{date}}</td>
+            <td class="right">{{#if amount}}{{../../CURRENCY}} {{formatMoney amount}}{{/if}}</td>
+          </tr>
+          {{/each}}
+        </table>
+        {{/if}}
       </td>
     </tr>
+    {{/each}}
+    {{else}}
+    <!-- 単一明細フォールバック (items[] が空のとき) -->
+    <tr class="item-main">
+      <td class="center">1</td>
+      <td class="l"><strong style="font-size:10pt;">{{ITEM_NAME}}</strong></td>
+      <td class="right">1</td>
+      <td class="right">-</td>
+      <td class="right"><strong>{{formatMoney grandTotalFees}}</strong></td>
+    </tr>
+    <tr class="item-detail">
+      <td></td>
+      <td colspan="4">
+        Payment: {{or CALC_METHOD PAYMENT_METHOD "FIXED"}}{{#if PAYMENT_TERMS}} ({{PAYMENT_TERMS}}){{else}}{{#if PAYMENT_METHOD}} ({{PAYMENT_METHOD}}){{/if}}{{/if}}
+        　／　Delivery: {{or summaryCompletionDate "—"}}
+        　／　Payment Date: {{or summaryPaymentDate "—"}}
+      </td>
+    </tr>
+    {{/if}}
+    <!-- 合計 -->
+    <tr>
+      <td colspan="4" class="right"><strong>Subtotal — Fixed Fees (Excl. Tax / Withholding)</strong></td>
+      <td class="right">{{#if (gt (or itemsSubtotalExTax grandTotalFees) 0)}}<strong>{{CURRENCY}} {{formatMoney (or itemsSubtotalExTax grandTotalFees)}}</strong>{{else}}<span style="color:#888;">—</span>{{/if}}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ===== 利用許諾条件（利用許諾料・確定額外） ===== -->
+{{#if has_license_conditions}}
+<div class="section-mark">■ LICENSE CONDITIONS (Royalties — outside Fixed Fees)</div>
+<table class="items">
+  <thead>
+    <tr>
+      <th style="width:4%;">#</th>
+      <th class="l" style="width:26%;">Condition / Scope</th>
+      <th class="l" style="width:34%;">Formula</th>
+      <th class="l" style="width:16%;">Rate / Basis</th>
+      <th class="right" style="width:20%;">MG / AG</th>
+    </tr>
+  </thead>
+  <tbody>
+    {{#if financial_conditions.length}}
+    {{#each financial_conditions}}
+    <tr>
+      <td class="center">{{or condition_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}License condition{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}Base Price × Qty × Rate{{/if}}{{#if (eq calc_type "BASE_RATE")}}Base Price × Rate{{/if}}{{#if (eq calc_type "FIXED")}}Fixed ({{#if (eq fixed_kind "INSTALLMENT")}}installments{{else}}lump sum{{/if}}){{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}Subscription ({{#if (eq subscription_cycle "ANNUAL")}}annual{{else}}monthly{{/if}}){{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>Rate: {{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">Base price: {{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{../CURRENCY}} {{formatMoney mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{../CURRENCY}} {{formatMoney ag_amount}}{{/if}}</td>
+    </tr>
+    {{#if applies_scope}}
+    <tr><td style="border-top:0;"></td><td colspan="4" class="l" style="border-top:0; font-size:7.5pt; color:#444;"><strong>Applies to:</strong> {{applies_scope}}</td></tr>
+    {{/if}}
+    {{/each}}
+    {{else}}
+    {{#each items}}
+    {{#if (eq calc_method "ROYALTY")}}
+    <tr>
+      <td class="center">{{or line_no (index1 @index)}}</td>
+      <td class="l">{{#if condition_name}}{{condition_name}}{{else}}{{item_name}}{{/if}}{{#if region_language_label}}<div style="font-size:7.5pt;color:#666;">{{region_language_label}}</div>{{/if}}</td>
+      <td class="l">{{#if (eq calc_type "BASE_QTY_RATE")}}Base Price × Qty × Rate{{/if}}{{#if (eq calc_type "BASE_RATE")}}Base Price × Rate{{/if}}{{#if (eq calc_type "FIXED")}}Fixed ({{#if (eq fixed_kind "INSTALLMENT")}}installments{{else}}lump sum{{/if}}){{/if}}{{#if (eq calc_type "SUBSCRIPTION")}}Subscription ({{#if (eq subscription_cycle "ANNUAL")}}annual{{else}}monthly{{/if}}){{/if}}{{#if formula_text}}<div style="font-size:7.5pt;color:#666;">{{formula_text}}</div>{{/if}}</td>
+      <td class="l">{{#if rate_pct}}<div>Rate: {{rate_pct}}%</div>{{/if}}{{#if base_price_label}}<div style="font-size:7.5pt;color:#666;">Base price: {{base_price_label}}</div>{{/if}}</td>
+      <td class="right">{{#if (eq guarantee_type "MG")}}MG {{../CURRENCY}} {{formatMoney mg_amount}}{{/if}}{{#if (eq guarantee_type "AG")}}AG {{../CURRENCY}} {{formatMoney ag_amount}}{{/if}}</td>
+    </tr>
+    {{/if}}
+    {{/each}}
+    {{/if}}
+  </tbody>
+</table>
+<div style="margin-top:4px; font-size:8.5pt; color:#555;">* The above conditions apply to the ROYALTY line items of this Order Form. Royalties are not included in the Fixed Fees subtotal and are calculated and paid separately per Royalty Statement.</div>
+{{/if}}
+
+<!-- ===== 個人データ ===== -->
+<div class="callout">
+  <strong>Personal Data:</strong>
+  No processing of customer, visitor, lead, inquiry, end-user, or other third-party personal data is permitted unless expressly authorized in writing by the Company. Ordinary communications, payment administration, personnel coordination, performance of services, and delivery of deliverables are permitted to the extent necessary for the applicable Order Form.
+</div>
+
+<!-- ===== 特約事項 ===== -->
+{{#if SPECIAL_TERMS}}
+<div class="terms-box">
+  <strong class="terms-title">Special Terms</strong>
+  <div style="white-space:pre-wrap;">{{SPECIAL_TERMS}}</div>
+</div>
+{{/if}}
+
+<!-- ===== 備考 ===== -->
+{{#if REMARKS}}
+<div class="terms-box">
+  <strong class="terms-title">Remarks / Notes</strong>
+  {{#if REMARKS_FIXED}}<div style="white-space:pre-wrap;">{{REMARKS_FIXED}}</div>{{/if}}
+  {{#if REMARKS_FREE}}<div style="white-space:pre-wrap; margin-top:{{#if REMARKS_FIXED}}8px{{else}}0{{/if}};">{{REMARKS_FREE}}</div>{{/if}}
+</div>
+{{/if}}
+
+<!-- ===== 適用約款 ===== -->
+<div class="callout">
+  <strong>Applicable Terms:</strong>
+  This Order Form is subject to the Independent Contractor Standard Terms set out in <strong>Schedule A</strong>. In the event of any conflict, the order of precedence in Article 1 of Schedule A applies. By signing, electronically accepting, or commencing performance, the Contractor agrees to all terms herein.
+</div>
+
+<!-- ===== 準拠法 ===== -->
+{{#if GOVERNING_LAW}}
+<div class="callout" style="margin-top:6px;">
+  <strong>Governing Law:</strong> {{GOVERNING_LAW}}
+  {{#if DISPUTE_RESOLUTION}}<br><strong>Dispute Resolution:</strong> {{DISPUTE_RESOLUTION}}{{/if}}
+</div>
+{{/if}}
+
+<!-- ===== 支払先情報（海外送金） ===== -->
+{{#if BANK_NAME}}
+<div class="terms-box">
+  <strong class="terms-title">Payment Details (Wire Transfer)</strong>
+  <table class="summary" style="margin-bottom:6px;">
+    <tr><th>Beneficiary Bank</th><td>{{BANK_NAME}}{{#if BRANCH_NAME}}, {{BRANCH_NAME}}{{/if}}</td></tr>
+    {{#if SWIFT_BIC}}<tr><th>SWIFT / BIC</th><td><strong>{{SWIFT_BIC}}</strong></td></tr>{{/if}}
+    {{#if IBAN}}<tr><th>IBAN</th><td>{{IBAN}}</td></tr>{{/if}}
+    {{#if INTERMEDIARY_BANK}}<tr><th>Intermediary Bank</th><td>{{INTERMEDIARY_BANK}}</td></tr>{{/if}}
+    {{#if ACCOUNT_TYPE}}<tr><th>Account Type</th><td>{{ACCOUNT_TYPE}}</td></tr>{{/if}}
+    {{#if ACCOUNT_NUMBER}}<tr><th>Account No.</th><td>{{ACCOUNT_NUMBER}}</td></tr>{{/if}}
+    <tr><th>Account Holder</th><td>{{ACCOUNT_HOLDER}}{{#if ACCOUNT_HOLDER_LOCAL}}<br><span class="amount-note">({{ACCOUNT_HOLDER_LOCAL}})</span>{{/if}}</td></tr>
+    {{#if TAX_REGISTRATION_NO}}<tr><th>Tax Reg. No.</th><td>{{TAX_REGISTRATION_NO}}</td></tr>{{/if}}
   </table>
-  {{/if}}
+  {{#if TRANSFER_FEE_CODE}}<span style="font-size:8.5pt; color:#555;">* Bank charges: <strong>{{TRANSFER_FEE_CODE}}</strong></span>{{/if}}
+</div>
+{{/if}}
+
+<!-- ===== 受領確認（承諾） ===== -->
+{{#if (or ACCEPT_METHOD SHOW_SIGN_SECTION)}}
+<div class="section-mark">■ ACCEPTANCE &amp; SIGNATURE</div>
+{{#if ACCEPT_METHOD}}
+<div class="callout">
+  <strong>Acceptance Procedure</strong><br>
+  <span style="color:#555;">{{ACCEPT_METHOD}}{{#if ACCEPT_REPLY_DUE_DATE}}<br>Reply deadline: {{ACCEPT_REPLY_DUE_DATE}}{{/if}}</span>
+</div>
+{{/if}}
+{{#if SHOW_SIGN_SECTION}}
+<table class="summary" style="margin-top:6px;">
+  <tr>
+    <th>Contractor — Acceptance</th>
+    <td>
+      <div>{{CONTRACTOR_NAME}}</div>
+      <div style="font-size:8.5pt; color:#555; white-space:pre-wrap;">{{CONTRACTOR_ADDRESS}}{{#if CONTRACTOR_COUNTRY}}, {{CONTRACTOR_COUNTRY}}{{/if}}</div>
+      <div class="sign-box"></div>
+      <div style="display:flex; align-items:flex-end; gap:8px; margin-top:8px;">
+        <span style="font-size:8.5pt; color:#555; white-space:nowrap;">Date:</span>
+        <span style="flex:1; border-bottom:1px solid #aaa; min-width:80px; display:inline-block;">&nbsp;</span>
+      </div>
+      {{#if CONTRACTOR_ACCEPT_DATE}}<div style="margin-top:3px; font-size:7.5pt; color:#aaa;">* Write date or enter: {{CONTRACTOR_ACCEPT_DATE}}</div>{{/if}}
+    </td>
+  </tr>
+</table>
+{{/if}}
+{{/if}}
 
 
 <!-- ════════ PART 2 — SCHEDULE A: INDEPENDENT CONTRACTOR STANDARD TERMS ════════ -->

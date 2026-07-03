@@ -5269,7 +5269,20 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 (sum, it) => sum + (Number(it.amount_ex_tax) || 0),
                 0
               );
-              setFormData({ ...formData, items, grandTotalFees: itemsTotal });
+              setFormData({
+                ...formData,
+                items,
+                grandTotalFees: itemsTotal,
+                itemsSubtotalExTax: itemsTotal,
+                // 国内発注書と同じ表示フラグ (テンプレの LICENSE CONDITIONS /
+                // 概要「License Royalties」行が参照)。
+                has_license_conditions: items.some(
+                  (it) => it.calc_method === 'ROYALTY'
+                ),
+                has_seller_owned_license: items.some(
+                  (it) => it.deliverable_ownership === '受注者'
+                ),
+              });
             }}
             showPaymentColumns={true}
           />
