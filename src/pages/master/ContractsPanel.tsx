@@ -1,5 +1,6 @@
 import * as React from "react"
-import { Plus, Search, Edit2, Trash2, ExternalLink, RefreshCw, Send } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Plus, Search, Edit2, Trash2, ExternalLink, RefreshCw, Send, FileText } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -202,12 +203,53 @@ const PERIOD_KIND_OPTIONS = [
   { value: "ANNUAL", label: "年次" },
 ] as const
 
+// フォーム統一 (段階移行): 新規登録は通常の文書作成フォーム (/documents/new) に
+//   寄せる。カテゴリ別にマスター登録で使うテンプレを提示し、選択すると
+//   ?template=<key> 付きでエディタへ遷移する。ラベルは templateMetadata
+//   (templates_config.json) から解決し、未ロード時は fallback を使う。
+//   締結済み契約の登録は文書エディタの「DB登録のみ」、新規発行は
+//   「Finalize & Sync」を使う。
+const DOC_FORM_TEMPLATE_GROUPS: {
+  group: string
+  note: string
+  keys: { key: string; fallbackLabel: string }[]
+}[] = [
+  {
+    group: "基本契約 (親)",
+    note: "レコード区分「基本契約」に相当。発注書・条件書の参照元になる親契約。",
+    keys: [
+      { key: "service_master", fallbackLabel: "業務委託基本契約書" },
+      { key: "license_master", fallbackLabel: "ライセンス利用許諾基本契約書" },
+      { key: "sales_master_standard", fallbackLabel: "売買基本契約書（当社売手・前払/代引版）" },
+      { key: "sales_master_credit", fallbackLabel: "売買基本契約書（当社売手・保証金掛け売り版）" },
+      { key: "sales_master_buyer", fallbackLabel: "売買基本契約書（当社買手版）" },
+      { key: "pub_master_corporate", fallbackLabel: "出版等許諾基本契約書（法人版）" },
+      { key: "pub_master_individual", fallbackLabel: "出版等許諾基本契約書（個人版）" },
+      { key: "nda", fallbackLabel: "秘密保持契約書 (NDA)" },
+    ],
+  },
+  {
+    group: "個別契約・条件書 (子 / 単独)",
+    note: "レコード区分「個別契約 / 単独契約」に相当。金銭条件・業務明細はこちらで入力。単独契約 (親なし) はこのグループのフォームで「単独契約として登録」チェックを ON にして DB登録のみで保存。",
+    keys: [
+      { key: "individual_license_terms", fallbackLabel: "個別利用許諾条件書" },
+      { key: "pub_license_terms", fallbackLabel: "出版等利用許諾条件書" },
+      { key: "pub_additional_terms", fallbackLabel: "追加利用許諾条件書（商品化・映像化・ゲーム化）" },
+      { key: "purchase_order", fallbackLabel: "発注書 (国内)" },
+      { key: "intl_purchase_order", fallbackLabel: "海外発注書 (Overseas PO)" },
+    ],
+  },
+]
+
 export function ContractsPanel() {
-  const { contracts, vendors, ledgers, staffList, refreshContracts, showNotification } = useAppData()
+  const { contracts, vendors, ledgers, staffList, templateMetadata, refreshContracts, showNotification } = useAppData()
+  const navigate = useNavigate()
   const [search, setSearch] = React.useState("")
   const [editing, setEditing] = React.useState<any>(null)
   const [creating, setCreating] = React.useState(false)
   const [draft, setDraft] = React.useState<any>(empty)
+  // フォーム統一 (段階移行): 通常の文書作成フォームへ遷移するためのテンプレ選択ダイアログ
+  const [templatePickOpen, setTemplatePickOpen] = React.useState(false)
 
 
   const filtered = contracts.filter((c) => {
@@ -472,7 +514,17 @@ export function ContractsPanel() {
             className="pl-8"
           />
         </div>
+        {/* フォーム統一 (段階移行): 新規登録の主導線は通常の文書作成フォーム。
+            テンプレを選んで /documents/new?template=… へ遷移し、締結済み契約は
+            「DB登録のみ」・新規発行は「Finalize & Sync」で保存する。
+            旧ダイアログは移行期間中「簡易登録」として残す。 */}
+        <Button onClick={() => setTemplatePickOpen(true)}>
+          <FileText />
+          文書フォームで登録
+        </Button>
         <Button
+          variant="outline"
+          title="旧マスター登録ダイアログ (段階移行中のため残置)。基本情報だけを手早く登録したい場合に。"
           onClick={() => {
             setDraft({ ...empty, vendor_id: vendors[0]?.id || "" })
             setCreating(true)
@@ -480,7 +532,7 @@ export function ContractsPanel() {
           }}
         >
           <Plus />
-          契約情報を追加
+          簡易登録 (旧フォーム)
         </Button>
       </div>
 
@@ -601,9 +653,24 @@ export function ContractsPanel() {
                     >
                       <Send />
                     </Button>
+                    {/* フォーム統一: 通常の文書作成フォーム由来の行 (template_type が
+                        templates_config に存在) は、文書エディタの再編集 (reopen) で
+                        開ける。保存は「DB登録のみ」(発行なし) / 「Finalize & Sync」。
+                        旧フォーム登録の行は form_data が空のため対象外。 */}
+                    {c.template_type && templateMetadata?.[c.template_type] && (
+                      <Button
+                        size="icon-sm"
+                        variant="outline"
+                        title={`文書フォームで編集 (${templateMetadata[c.template_type]?.label || c.template_type})`}
+                        onClick={() => navigate(`/documents/new?reopen=${c.id}`)}
+                      >
+                        <FileText />
+                      </Button>
+                    )}
                     <Button
                       size="icon-sm"
                       variant="outline"
+                      title="基本情報を編集 (旧フォーム)"
                       onClick={() => {
                         setEditing(c)
                         setCreating(false)
@@ -1237,6 +1304,61 @@ export function ContractsPanel() {
             </Button>
             <Button onClick={save} disabled={saving}>
               {saving ? "保存中…" : "保存して同期"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* フォーム統一 (段階移行): 通常の文書作成フォームで登録するテンプレを選ぶ。
+          選択すると /documents/new?template=<key> へ遷移する。 */}
+      <Dialog open={templatePickOpen} onOpenChange={setTemplatePickOpen}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>文書フォームで登録 — テンプレートを選択</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-4 max-h-[70vh] overflow-y-auto">
+            <p className="text-[11px] font-mono text-muted-foreground leading-relaxed border-l-2 border-emerald-500 pl-2">
+              通常の文書作成フォームが開きます。入力後、
+              <strong>締結済み（紙・既存）契約の登録は「DB登録のみ」</strong>、
+              <strong>新規に文書を発行する場合は「Finalize &amp; Sync」</strong>
+              で保存してください。どちらもこの契約マスタ一覧に反映されます
+              （DB登録のみの場合は PDF 未作成キューから後で発行も可能）。
+            </p>
+            {DOC_FORM_TEMPLATE_GROUPS.map((g) => (
+              <div key={g.group} className="space-y-1.5">
+                <p className="text-[10px] font-mono font-bold uppercase tracking-[0.18em] text-muted-foreground">
+                  ▍ {g.group}
+                </p>
+                <p className="text-[10px] font-mono text-muted-foreground">{g.note}</p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-1.5">
+                  {g.keys.map(({ key, fallbackLabel }) => (
+                    <button
+                      key={key}
+                      type="button"
+                      className="flex items-center gap-2 border border-border rounded-sm px-2.5 py-2 text-left text-xs hover:bg-muted transition-colors"
+                      onClick={() => {
+                        setTemplatePickOpen(false)
+                        navigate(`/documents/new?template=${encodeURIComponent(key)}`)
+                      }}
+                    >
+                      <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                      <span className="min-w-0">
+                        <span className="block font-bold truncate">
+                          {templateMetadata?.[key]?.label || fallbackLabel}
+                        </span>
+                        <span className="block text-[10px] font-mono text-muted-foreground">
+                          {key}
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </DialogBody>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setTemplatePickOpen(false)}>
+              キャンセル
             </Button>
           </DialogFooter>
         </DialogContent>

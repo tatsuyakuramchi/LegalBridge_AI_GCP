@@ -1222,11 +1222,30 @@ async function startServer() {
 
       // 件名/本文(テンプレ + トークン置換)。
       const fd = doc.form_data || {};
-      const amount = String(
-        fd.grandTotalPayable || fd.totalAmount || fd.GRAND_TOTAL || fd.TOTAL_AMOUNT || ""
-      );
+      // 金額: 整形済み(…Str)を優先し、生値しか無ければ桁区切りに整形。
+      const amountRaw =
+        fd.grandTotalPayableStr || fd.totalPaymentStr || fd.totalAmountStr ||
+        fd.grandTotalPayable || fd.totalAmount || fd.GRAND_TOTAL || fd.TOTAL_AMOUNT || "";
+      const amountNum = Number(amountRaw);
+      const amount =
+        String(amountRaw).trim() && Number.isFinite(amountNum)
+          ? `¥${amountNum.toLocaleString("ja-JP")}`
+          : String(amountRaw);
+      // 宛名: 取引先マスタ(capability 経由)が引けない文書(検収書等は capability を
+      //   持たない)は form_data から救済する。検収書=counterparty / 計算書=licensor。
+      const vendorName = String(
+        doc.vendor_name ||
+          fd.counterparty ||
+          fd.licensor ||
+          fd.VENDOR_NAME ||
+          fd["Licensor_名称"] ||
+          fd["Licensor_氏名会社名"] ||
+          fd.PARTY_B_NAME ||
+          fd.partyBName ||
+          ""
+      ).trim();
       const vars = {
-        vendorName: String(doc.vendor_name || ""),
+        vendorName,
         documentNumber: String(doc.document_number || ""),
         amount,
         date: new Date().toLocaleDateString("ja-JP"),
@@ -1236,12 +1255,16 @@ async function startServer() {
       const subject = applyEmailTokens(t.subject, vars);
       const html = emailTextToHtml(applyEmailTokens(t.body, vars));
 
-      // 添付: Drive 上の文書(HTML)を取得し PDF 化(best-effort)。
+      // 添付: Drive 上の正本を取得して添付(best-effort)。正本は生成時に PDF で
+      //   保存されているのでそのまま添付する。PDF バイナリを文字列化して
+      //   renderHtmlToPdf に通すと壊れる(文字化けPDFになる)ため、旧形式の
+      //   HTML ファイルだった場合のみ PDF 化する。
       let attachments: any[] = [];
       let attached = false;
       try {
         const buf = await googleDriveService.downloadPdf(doc.drive_link);
-        const pdf = await renderHtmlToPdf(buf.toString("utf8"));
+        const isPdf = buf.subarray(0, 5).toString("latin1").startsWith("%PDF");
+        const pdf = isPdf ? buf : await renderHtmlToPdf(buf.toString("utf8"));
         attachments = [{ filename: `${doc.document_number}.pdf`, content: pdf, mimeType: "application/pdf" }];
         attached = true;
       } catch (e: any) {
@@ -13914,7 +13937,14 @@ ${details}
     //   - reissue=false: 同 row UPDATE + Drive PDF 上書き (overwrite=true)
     //   - reissue=true:  revision+1 で新 row + Drive 新規アップロード、
     //                    過去 row は lifecycle_status='reissued' に倒す
-    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber, reissue } = req.body;
+    // skipPdf=true (DB登録のみ): PDF 生成 / Drive アップロードを行わず、
+    //   採番 + documents/condition_lines 等の DB 登録だけを実行する。
+    //   マスター登録と同じ「文書を発行しない登録」を通常フォームから行うモード。
+    //   fileLink: skipPdf=true のときのみ有効。既存の締結済み PDF 等の URL を
+    //   drive_link として保存する (紙契約のスキャン等を一覧から開けるように)。
+    //   recordType: skipPdf=true のときのみ有効。単独契約(親なし)を発注書/ILT
+    //   テンプレで代用登録するケース用に、テンプレ由来の record_type を上書きする。
+    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber, reissue, skipPdf, fileLink, recordType: recordTypeOverride } = req.body;
 
     try {
       // Admin UI が「Backlog 課題なし」で発行する仮キー (MANUAL-<ts>) は
@@ -14461,70 +14491,100 @@ ${details}
         Object.assign(renderDetails, computeInspectionItemNo(formData) || {});
       }
 
-      const { html, fileName } = await documentService.generateDocument(
-        {
-          issueKey,
-          documentNumber: docNumber,
-          summary: issue.summary,
-          requester: requesterEmail || "Legal Department",
-          date: new Date().toLocaleDateString("ja-JP"),
-          details: renderDetails,
-        },
-        templateType,
-        {
-          vendorName: vendorNameForFile,
-          // 親文書番号でファイル名を作るグループ(検収書 / 利用許諾料計算書)。
-          //   検収書: 検収書番号_発注書番号_作成日 / 計算書: 計算書番号_親契約番号_作成日。
-          parentDocNumber:
-            String(templateType || "").includes("inspection") ||
-            templateType === "royalty_statement"
-              ? String(
-                  (formData as any)?.linked_contract_number || parentOrderNumber || ""
-                ).trim() || undefined
-              : undefined,
-        }
-      );
-
-      // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
-      // 変換させていたが、CSS が大幅に潰れて template と程遠い見栄えに
-      // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
-      //
-      // Phase 23.1: 内部修正 (overwrite=true) のときは既存 fileId に PDF を
-      //   上書きアップロードして webViewLink を維持する。Drive 上の URL が
-      //   変わらないので、Backlog コメントや Slack 共有 link がそのまま生きる。
-      //   - 既存 row の drive_link を取得して overwritePdf を呼ぶ
-      //   - 既存 link が無い (DB 不整合) 場合は uploadPdf にフォールバック
+      // DB登録のみ (skipPdf=true): PDF 生成 / Drive アップロードを丸ごと
+      //   スキップする。
+      //   - 既存 row に drive_link があれば温存 (内容だけ DB 更新)
+      //   - 無ければ drive_link 空 + __pdf_pending=true で保存され、
+      //     PDF 未作成キューから後日「同じ文書番号のまま」発行できる
+      //     (getDocumentNumberForGenerate が drive_link 空 + 同番号を
+      //      draft 完成として overwrite 扱いにするため)。
+      const dbOnly = skipPdf === true || skipPdf === "true";
       let driveLink: string;
-      if (overwrite) {
+      if (dbOnly) {
+        // 優先順: ① フォームで指定されたファイルリンク (既存の締結済み PDF 等)
+        //         ② 既存 row の drive_link 温存
+        //         ③ 空 (= __pdf_pending で PDF 未作成キューへ)
+        const manualFileLink =
+          typeof fileLink === "string" ? fileLink.trim() : "";
         const existingRow = await query(
           `SELECT drive_link FROM documents WHERE document_number = $1 LIMIT 1`,
           [docNumber]
         );
-        const existingLink = existingRow.rows[0]?.drive_link || "";
-        if (existingLink) {
-          try {
-            driveLink = await googleDriveService.overwritePdf(
-              existingLink,
-              html,
-              fileName
-            );
-            console.log(
-              `[overwrite] reused fileId for ${docNumber}: ${driveLink}`
-            );
-          } catch (overwriteErr: any) {
-            console.warn(
-              `[overwrite] failed for ${docNumber} (${existingLink}), fallback to upload:`,
-              overwriteErr?.message || overwriteErr
-            );
+        driveLink = manualFileLink || existingRow.rows[0]?.drive_link || "";
+        console.log(
+          `📝 [db-only] ${issueKey} ${templateType}: docNumber=${docNumber} PDF生成スキップ${
+            manualFileLink
+              ? " (ファイルリンク指定あり)"
+              : driveLink
+                ? " (既存 Drive リンク温存)"
+                : " (未発行 → PDF未作成キューへ)"
+          }`
+        );
+      } else {
+        const { html, fileName } = await documentService.generateDocument(
+          {
+            issueKey,
+            documentNumber: docNumber,
+            summary: issue.summary,
+            requester: requesterEmail || "Legal Department",
+            date: new Date().toLocaleDateString("ja-JP"),
+            details: renderDetails,
+          },
+          templateType,
+          {
+            vendorName: vendorNameForFile,
+            // 親文書番号でファイル名を作るグループ(検収書 / 利用許諾料計算書)。
+            //   検収書: 検収書番号_発注書番号_作成日 / 計算書: 計算書番号_親契約番号_作成日。
+            parentDocNumber:
+              String(templateType || "").includes("inspection") ||
+              templateType === "royalty_statement"
+                ? String(
+                    (formData as any)?.linked_contract_number || parentOrderNumber || ""
+                  ).trim() || undefined
+                : undefined,
+          }
+        );
+
+        // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
+        // 変換させていたが、CSS が大幅に潰れて template と程遠い見栄えに
+        // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
+        //
+        // Phase 23.1: 内部修正 (overwrite=true) のときは既存 fileId に PDF を
+        //   上書きアップロードして webViewLink を維持する。Drive 上の URL が
+        //   変わらないので、Backlog コメントや Slack 共有 link がそのまま生きる。
+        //   - 既存 row の drive_link を取得して overwritePdf を呼ぶ
+        //   - 既存 link が無い (DB 不整合) 場合は uploadPdf にフォールバック
+        if (overwrite) {
+          const existingRow = await query(
+            `SELECT drive_link FROM documents WHERE document_number = $1 LIMIT 1`,
+            [docNumber]
+          );
+          const existingLink = existingRow.rows[0]?.drive_link || "";
+          if (existingLink) {
+            try {
+              driveLink = await googleDriveService.overwritePdf(
+                existingLink,
+                html,
+                fileName
+              );
+              console.log(
+                `[overwrite] reused fileId for ${docNumber}: ${driveLink}`
+              );
+            } catch (overwriteErr: any) {
+              console.warn(
+                `[overwrite] failed for ${docNumber} (${existingLink}), fallback to upload:`,
+                overwriteErr?.message || overwriteErr
+              );
+              driveLink = await googleDriveService.uploadPdf(html, fileName);
+            }
+          } else {
+            // 既存 link が DB に無い (= 過去の生成失敗で row だけ残った等)。
+            // 新規アップロードで補完する。
             driveLink = await googleDriveService.uploadPdf(html, fileName);
           }
         } else {
-          // 既存 link が DB に無い (= 過去の生成失敗で row だけ残った等)。
-          // 新規アップロードで補完する。
           driveLink = await googleDriveService.uploadPdf(html, fileName);
         }
-      } else {
-        driveLink = await googleDriveService.uploadPdf(html, fileName);
       }
 
       // Phase 24: 会計用 Excel は PDF 発行と同時生成しない。検収書 / 利用許諾料
@@ -14542,9 +14602,11 @@ ${details}
       //   isReissue=true のとき markPrimaryDocument 後に別途実行。
       // Step1(SSOT): 別名キーを揃えて保存し、通常作成でも line_items/件名/発注日 が
       //   インポート由来と同じ形で入るようにする(読み手の経路差をなくす)。
+      // DB登録のみで PDF 未発行 (drive_link 空) の場合は __pdf_pending=true で
+      //   保存して PDF 未作成キューに載せる (バルクインポートと同じ状態)。
       const mergedFormData = normalizeDocumentFormData(templateType, {
         ...(formData || {}),
-        __pdf_pending: false,
+        __pdf_pending: dbOnly ? !driveLink : false,
       });
       const docContentHash = computeFormContentHash(formData, templateType);
       let docInsert: any;
@@ -14896,6 +14958,27 @@ ${details}
         } else if (templateType.includes("inspection")) {
           // 検収書は契約ではなく delivery event。picker から除外したい。
           recordType = "delivery_record";
+        }
+
+        // DB登録のみ (dbOnly) のときはリクエストで record_type を明示指定できる。
+        //   単独契約(親なし)を発注書 / ILT テンプレで代用登録するケース用。
+        //   値域は契約系の区分のみ許可 (delivery_record 等の内部区分は不可)。
+        //   cc 互換ビューの INSTEAD OF トリガが COALESCE 更新するため、
+        //   既存 row の再保存でも上書きされる。
+        const RECORD_TYPE_OVERRIDABLE = new Set([
+          "standalone_contract",
+          "individual_contract",
+          "master_contract",
+        ]);
+        if (
+          dbOnly &&
+          typeof recordTypeOverride === "string" &&
+          RECORD_TYPE_OVERRIDABLE.has(recordTypeOverride)
+        ) {
+          console.log(
+            `📝 [db-only] record_type override: ${recordType} → ${recordTypeOverride} (${docNumber})`
+          );
+          recordType = recordTypeOverride;
         }
 
         await query(
@@ -16201,7 +16284,8 @@ ${details}
       }
 
       // Slack notification with the Drive link.
-      if (slackWebClient) {
+      //   DB登録のみ (dbOnly) のときは文書を発行していないので通知しない。
+      if (slackWebClient && !dbOnly) {
         try {
           const settingsResult = await query(
             "SELECT value FROM app_settings WHERE key = 'slack_document_generated'"
@@ -16281,6 +16365,8 @@ ${details}
         excelLink,
         documentNumber: docNumber,
         templateType,
+        // DB登録のみモードで処理した場合 true (フロントの完了表示切替用)
+        dbOnly,
         warnings: syncWarnings,
       });
     } catch (error) {

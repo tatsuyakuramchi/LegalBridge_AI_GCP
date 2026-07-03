@@ -167,6 +167,20 @@ export function DocumentEditorPage() {
   const [previewError, setPreviewError] = React.useState<string | null>(null)
   const [isPreviewing, setIsPreviewing] = React.useState(false)
   const [isGenerating, setIsGenerating] = React.useState(false)
+  // 実行中の保存モード。"issue"=文書発行(PDF), "dbOnly"=DB登録のみ。
+  //   どちらのボタンにスピナーを出すかの判定に使う。
+  const [generateMode, setGenerateMode] = React.useState<
+    "issue" | "dbOnly" | null
+  >(null)
+  // DB登録のみ用の任意ファイルリンク (既存の締結済み PDF 等の URL)。
+  //   指定すると worker が drive_link として保存し、一覧/アーカイブから開ける。
+  //   空なら PDF 未作成キューに入り、後から発行できる。
+  const [dbOnlyFileLink, setDbOnlyFileLink] = React.useState("")
+  // DB登録のみ時に「単独契約 (親なし)」として登録するフラグ。
+  //   単独契約専用テンプレは無いため、発注書 / ILT 等のフォームで代用登録する
+  //   ケースで record_type をテンプレ由来 (purchase_order 等) から
+  //   standalone_contract に上書きする。
+  const [dbOnlyStandalone, setDbOnlyStandalone] = React.useState(false)
   // 過去文書/下書きを番号で呼び出すフォーム(Sheet)の開閉。
   const [recallOpen, setRecallOpen] = React.useState(false)
   // 明示的な「保存」(= 初回保存で採番) の進行状態。
@@ -1021,7 +1035,22 @@ export function DocumentEditorPage() {
   // Phase 23.2: 旧 Live preview (formData 変更で自動再描画) は撤去。
   //   別タブで開く方式なのでクリック都度の発火だけ。
 
-  const handleGenerate = async () => {
+  // opts.dbOnly=true: 文書(PDF)を発行せず DB 登録のみ行う。
+  //   マスター登録と同じ「登録だけ」を通常フォームから実行するモード。
+  //   worker 側は skipPdf フラグで PDF 生成 / Drive アップロードをスキップし、
+  //   documents / condition_lines 等への登録は通常発行と同一経路で行う。
+  //   未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。
+  const handleGenerate = async (opts?: { dbOnly?: boolean }) => {
+    const dbOnly = opts?.dbOnly === true
+    // DB登録のみ時の任意ファイルリンク。入れる場合は http(s) URL のみ許可。
+    const fileLink = dbOnly ? dbOnlyFileLink.trim() : ""
+    if (fileLink && !/^https?:\/\//i.test(fileLink)) {
+      showNotification(
+        "ファイルリンクは http(s):// で始まる URL を入力してください。",
+        "error"
+      )
+      return
+    }
     // 請求の向きは必須。未選択なら送信を止める。
     if (!selectedDirection) {
       showNotification(
@@ -1136,6 +1165,7 @@ export function DocumentEditorPage() {
     }
 
     setIsGenerating(true)
+    setGenerateMode(dbOnly ? "dbOnly" : "issue")
     try {
       // Phase 23.1: 再編集 (reopen) かつ saveMode='reissue' のときだけ reissue=true。
       //   その他 (新規発行 / 内部修正 / PDF 未作成キュー再生成) は reissue=false。
@@ -1165,6 +1195,13 @@ export function DocumentEditorPage() {
             formData?.__reopen_doc_number ||
             formData?.__draft_doc_number,
           reissue: reissueFlag,
+          // DB登録のみ: PDF 生成 / Drive アップロードをスキップ
+          skipPdf: dbOnly,
+          // DB登録のみ時の任意ファイルリンク (既存の締結済み PDF 等の URL)
+          fileLink: fileLink || undefined,
+          // DB登録のみ時のレコード区分上書き (単独契約として登録)
+          recordType:
+            dbOnly && dbOnlyStandalone ? "standalone_contract" : undefined,
         }),
       })
 
@@ -1191,7 +1228,25 @@ export function DocumentEditorPage() {
         return
       }
 
-      if (data?.driveLink) {
+      if (dbOnly) {
+        // DB登録のみ: PDF は作っていないのでサクセスモーダル (driveLink 前提)
+        //   ではなく通知で完了を伝える。未発行分は PDF 未作成キューから
+        //   同じ番号のまま後日発行できる。
+        showNotification(
+          `DB登録が完了しました (${data?.documentNumber || "番号未取得"})${
+            dbOnlyStandalone ? "・区分: 単独契約" : ""
+          }。文書は発行していません${
+            fileLink
+              ? " — 指定されたファイルリンクを登録しました"
+              : data?.driveLink
+                ? ""
+                : " — 後から「PDF未作成」キューで発行できます"
+          }。`,
+          "success"
+        )
+        setDbOnlyFileLink("")
+        setDbOnlyStandalone(false)
+      } else if (data?.driveLink) {
         // Phase 9g: 達成感サクセス画面 — toast だけだと「できたかどうか」が
         // 不明確というフィードバックを受け、明示的なモーダルで完了表示。
         setCompletionResult({
@@ -1212,7 +1267,8 @@ export function DocumentEditorPage() {
 
       // 個人情報取得同意書の同時作成(個人取引先・スイッチON時)。
       //   本文書の生成成功後に、同意書を 2 通目として生成し、取引先の同意フラグを ON にする。
-      if (createConsent && consentInfo?.is_individual && activeVendor?.vendor_code) {
+      //   DB登録のみのときは文書を発行していないので同意書も作らない。
+      if (!dbOnly && createConsent && consentInfo?.is_individual && activeVendor?.vendor_code) {
         try {
           const today = new Date().toISOString().slice(0, 10)
           const cRes = await fetch("/api/documents/generate", {
@@ -1278,6 +1334,14 @@ export function DocumentEditorPage() {
       } catch (refErr) {
         console.warn("[generate] refreshAssets failed:", refErr)
       }
+      // フォーム統一: 生成/DB登録した文書は契約マスタ一覧 (contract_capabilities
+      //   = documents ビュー) にも現れるため、マスタ側キャッシュも更新する。
+      //   これが無いと /master/contracts に戻っても新規行が見えない。
+      try {
+        await refreshContracts?.()
+      } catch (refErr) {
+        console.warn("[generate] refreshContracts failed:", refErr)
+      }
     } catch (e: any) {
       console.error("Generation failed", e)
       showNotification(
@@ -1286,6 +1350,7 @@ export function DocumentEditorPage() {
       )
     } finally {
       setIsGenerating(false)
+      setGenerateMode(null)
     }
   }
 
@@ -1297,6 +1362,8 @@ export function DocumentEditorPage() {
   //   担当者 (selectedStaff) は操作者として継続利用するため意図的に残す。
   const handleStartNew = () => {
     setFormData({})
+    setDbOnlyFileLink("")
+    setDbOnlyStandalone(false)
     setSelectedIssue("")
     setSelectedTemplate("")
     setSelectedDirection("")
@@ -2144,8 +2211,49 @@ export function DocumentEditorPage() {
                     </span>
                   </label>
                 )}
+                {/* DB登録のみ: 文書(PDF)を発行せず documents/条件明細へ登録する。
+                    マスター登録と同じ「登録だけ」を通常フォームから行うモード。
+                    未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。
+                    ファイルリンク: 既存の締結済み PDF 等の URL を任意で添付。
+                    指定すると drive_link として保存され一覧から開ける。 */}
+                <label
+                  className="flex items-center gap-1.5 cursor-pointer text-[12px] whitespace-nowrap"
+                  title="単独契約 (親の基本契約を持たない契約) 専用テンプレは無いため、発注書 / 個別利用許諾条件書などのフォームで代用登録するときに ON にすると、レコード区分が「単独契約」で保存されます (DB登録のみ時のみ有効)。"
+                >
+                  <input
+                    type="checkbox"
+                    checked={dbOnlyStandalone}
+                    onChange={(e) => setDbOnlyStandalone(e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  <span>単独契約として登録</span>
+                </label>
+                <Input
+                  value={dbOnlyFileLink}
+                  onChange={(e) => setDbOnlyFileLink(e.target.value)}
+                  placeholder="ファイルリンク (DB登録のみ・任意)"
+                  title="DB登録のみで保存するとき、既存の締結済みPDF等のURLを文書リンクとして登録できます (http(s)://…)。空欄ならPDF未作成キューに入ります。"
+                  className="w-56 font-mono text-[11px]"
+                />
                 <Button
-                  onClick={handleGenerate}
+                  variant="outline"
+                  onClick={() => handleGenerate({ dbOnly: true })}
+                  disabled={isGenerating || !selectedDirection}
+                  title={
+                    !selectedDirection
+                      ? "請求の向きを選択すると登録できます"
+                      : "文書(PDF)を発行せずにDBへ登録のみ行います。後から「PDF未作成」キューで同じ番号のまま発行できます。"
+                  }
+                >
+                  {isGenerating && generateMode === "dbOnly" ? (
+                    <Loader2 className="animate-spin" />
+                  ) : (
+                    <Database />
+                  )}
+                  DB登録のみ
+                </Button>
+                <Button
+                  onClick={() => handleGenerate()}
                   disabled={isGenerating || !selectedDirection}
                   title={
                     !selectedDirection
@@ -2153,7 +2261,7 @@ export function DocumentEditorPage() {
                       : undefined
                   }
                 >
-                  {isGenerating ? (
+                  {isGenerating && generateMode !== "dbOnly" ? (
                     <Loader2 className="animate-spin" />
                   ) : (
                     <Download />
