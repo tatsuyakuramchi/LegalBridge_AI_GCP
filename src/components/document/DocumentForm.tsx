@@ -137,6 +137,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 出版等利用許諾条件書(セクション1): 「＋原作を新規作成」用のタイトル入力と進行中フラグ。
   const [pubNewSourceTitle, setPubNewSourceTitle] = useState('');
   const [pubCreatingSource, setPubCreatingSource] = useState(false);
+  // 出版等利用許諾条件書(セクション1): 対象作品(own)をその場で作成する入力と進行中フラグ。
+  const [pubNewWorkTitle, setPubNewWorkTitle] = useState('');
+  const [pubCreatingWork, setPubCreatingWork] = useState(false);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -5620,6 +5623,39 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     }
   };
 
+  // 出版等利用許諾条件書: 対象作品(own)をその場で作成する。個別利用許諾の createOwnWork と
+  //   同じ POST /api/v3/works(title のみ)。保存経路(work-linkage(pub))が linked_work_id を
+  //   読んで原作マテリアルを対象作品の構成・条件明細へ連動させる。
+  const createPubOwnWork = async () => {
+    const title = pubNewWorkTitle.trim();
+    if (!title) return;
+    setPubCreatingWork(true);
+    try {
+      const r = await fetch('/api/v3/works', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const created = await r.json();
+      try {
+        const listRes = await fetch('/api/v3/works');
+        const list = await listRes.json();
+        setWorksList(Array.isArray(list) ? list : []);
+      } catch {
+        /* 一覧再取得失敗は致命的でない */
+      }
+      setPubNewWorkTitle('');
+      if (created?.id != null) {
+        setFormData({ ...formData, linked_work_id: String(created.id) });
+      }
+    } catch (e) {
+      console.error('createPubOwnWork failed', e);
+    } finally {
+      setPubCreatingWork(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 rounded-sm border border-input bg-muted/30 px-3 py-2">
@@ -5642,7 +5678,63 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           原作の正式名称で自動入力する (config 側で 原著作物名 は readonly)。
           ※ 事業部の絞り込みは行わず全原作を表示 (運用判断)。 */}
       {templateId === 'pub_license_terms' && (
-        <FormSection title="1. 原作・基本契約 (マスタ検索)" variant="default">
+        <FormSection title="1. 作品・原作・基本契約 (マスタ検索)" variant="default">
+          {/* 対象作品(own): 保存経路(work-linkage(pub))が formData.linked_work_id を読み、
+              原作マテリアルを対象作品の構成・条件明細へ連動させる。ここが唯一の入力点。 */}
+          <div className="col-span-full space-y-1">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              作品設定 — 対象作品（自社作品）
+            </label>
+            <select
+              value={formData.linked_work_id || ''}
+              onChange={(e) =>
+                setFormData({
+                  ...formData,
+                  linked_work_id: e.target.value || undefined,
+                })
+              }
+              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
+            >
+              <option value="">— この契約の対象作品を選択 —</option>
+              {worksList
+                .filter((w: any) => w.title)
+                .map((w: any) => (
+                  <option key={w.id} value={String(w.id)}>
+                    {w.work_code ? `[${w.work_code}] ` : ''}
+                    {w.title}
+                  </option>
+                ))}
+            </select>
+            <div className="flex items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                または新規:
+              </span>
+              <input
+                value={pubNewWorkTitle}
+                onChange={(e) => setPubNewWorkTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void createPubOwnWork();
+                  }
+                }}
+                placeholder="なければ作成: 作品タイトル"
+                className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => void createPubOwnWork()}
+                disabled={pubCreatingWork || !pubNewWorkTitle.trim()}
+                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {pubCreatingWork ? '作成中…' : '＋作成'}
+              </button>
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground/70">
+              「どの作品のための契約か」を指定します。一覧に無ければ作品タイトルを入力して作成。保存時に原作マテリアルを対象作品の構成・条件明細へ連動させます。
+            </p>
+          </div>
+
           <div className="col-span-full space-y-1">
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
               原作 (Ledger) — 選択で「原著作物名」を自動入力（なければ新規作成）
