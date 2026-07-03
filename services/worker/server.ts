@@ -393,21 +393,31 @@ async function startServer() {
   //   設定は app_settings or env。EMAIL_ENABLED=true のときだけ送信可(誤起動防止)。
   //   EMAIL_ALLOWED_RECIPIENTS(カンマ区切り)で宛先を社内に限定するテストガード。
   //   本文/件名テンプレは設定画面で編集可(email_subject_* / email_body_*)。
+  // 署名は会社名義(送信元が固定の会社アドレスのため、個人名でなく法務部として送る)。
+  const EMAIL_SIGNATURE =
+    "──────────────────────\n" +
+    "株式会社アークライト\n" +
+    "東京都千代田区神田小川町1-2　風雲堂ビル２階\n" +
+    "経営管理本部　法務部　倉持\n" +
+    "──────────────────────";
   const DEFAULT_EMAIL_TPL = {
     inspection: {
-      subject: "【検収書送付】{{documentNumber}}（{{vendorName}} 御中）",
+      subject: "【株式会社アークライト】検収書のご送付（{{documentNumber}}）",
       body:
-        "{{vendorName}} 御中\n\nいつもお世話になっております。\n検収書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n株式会社アークライトでございます。\n\nこのたび納品いただきました内容につきまして検収が完了いたしましたので、\n検収書を添付のとおりお送りいたします。\n\n■ 文書番号：{{documentNumber}}\n■ 検収金額：{{amount}}\n■ 発行日　：{{date}}\n\n内容をご確認のうえ、相違等がございましたら、お手数ですが\n本メールへのご返信にてご連絡ください。\nお支払いは、契約に定める支払条件に基づきお手続きいたします。\n\n今後ともどうぞよろしくお願い申し上げます。\n\n" +
+        EMAIL_SIGNATURE,
     },
     royalty: {
-      subject: "【利用許諾料計算書送付】{{documentNumber}}（{{vendorName}} 御中）",
+      subject: "【株式会社アークライト】利用許諾料計算書のご送付（{{documentNumber}}）",
       body:
-        "{{vendorName}} 御中\n\nいつもお世話になっております。\n利用許諾料計算書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n株式会社アークライトでございます。\n\n利用許諾契約に基づく利用許諾料の計算書を、添付のとおりお送りいたします。\n\n■ 文書番号　　：{{documentNumber}}\n■ 利用許諾料額：{{amount}}\n■ 発行日　　　：{{date}}\n\n計算内容をご確認のうえ、ご不明な点や相違がございましたら、\nお手数ですが本メールへのご返信にてお知らせください。\nお支払いは、契約に定める支払条件に基づきお手続きいたします。\n\n今後ともどうぞよろしくお願い申し上げます。\n\n" +
+        EMAIL_SIGNATURE,
     },
     general: {
-      subject: "【書類送付】{{documentNumber}}（{{vendorName}} 御中）",
+      subject: "【株式会社アークライト】書類のご送付（{{documentNumber}}）",
       body:
-        "{{vendorName}} 御中\n\nいつもお世話になっております。\n書類（文書番号: {{documentNumber}}）を送付いたします。\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n株式会社アークライトでございます。\n\n書類を添付のとおりお送りいたします。\n\n■ 文書番号：{{documentNumber}}\n■ 発行日　：{{date}}\n\n内容をご確認のうえ、ご不明な点がございましたら、お手数ですが\n本メールへのご返信にてご連絡ください。\n\n今後ともどうぞよろしくお願い申し上げます。\n\n" +
+        EMAIL_SIGNATURE,
     },
   };
   const loadEmailCfg = async () => {

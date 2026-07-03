@@ -120,11 +120,23 @@ export function MatterDetailPage() {
   const [mergeMoveData, setMergeMoveData] = React.useState(true)
   const [mergeReason, setMergeReason] = React.useState("")
   const [merging, setMerging] = React.useState(false)
+  // 文書の送信: 送信方法の選択(メール/クラウドサイン) → 各フォーム。課題詳細と同じ二択に統一。
+  const [chooserDoc, setChooserDoc] = React.useState<any>(null)
   // 文書のメール送信(案件ページから直接送る)
   const [emailDoc, setEmailDoc] = React.useState<any>(null)
   const [emailTo, setEmailTo] = React.useState("")
   const [emailCc, setEmailCc] = React.useState("")
   const [emailSending, setEmailSending] = React.useState(false)
+  // クラウドサインは署名者ルート等の課題コンテキストが必要なため、課題詳細の
+  // 送信モーダルをディープリンク(?cloudsign=文書番号)で開く。Drive 上のPDFがある正本のみ。
+  const isDrivePdf = (link?: string | null) => {
+    const dl = String(link || "")
+    return /\/file\/d\/[a-zA-Z0-9_-]+/.test(dl) || /(drive|docs)\.google\.com/.test(dl)
+  }
+  const openCloudSignFor = (d: any) => {
+    if (!d?.issue_key || !d?.document_number) return
+    navigate(`/issues/${encodeURIComponent(d.issue_key)}?cloudsign=${encodeURIComponent(d.document_number)}`)
+  }
 
   // issueKey → Backlog課題(件名/本文/ステータス) 参照（Request 一覧から）
   const issueByKey = React.useMemo(() => {
@@ -715,10 +727,10 @@ export function MatterDetailPage() {
                           {d.document_number && (
                             <button
                               className="inline-flex items-center gap-1 text-[11px] text-sky-700 hover:underline"
-                              onClick={() => openEmail(d)}
-                              title="取引先へメール送信（送信履歴に自動記録）"
+                              onClick={() => setChooserDoc(d)}
+                              title="取引先へ送信（メール / クラウドサイン。送信履歴に自動記録）"
                             >
-                              <Mail className="h-3 w-3" /> 送信
+                              <Send className="h-3 w-3" /> 送信
                             </button>
                           )}
                           {d.drive_link && (
@@ -917,6 +929,48 @@ export function MatterDetailPage() {
               {merging ? "統合中…" : "統合を実行"}
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* 送信方法の選択(メール / クラウドサイン) — 課題詳細と同じ二択 */}
+      <Dialog open={!!chooserDoc} onOpenChange={(v) => !v && setChooserDoc(null)}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>送信方法を選択</DialogTitle>
+          </DialogHeader>
+          <DialogBody className="space-y-2.5">
+            <div className="text-xs font-mono text-muted-foreground">
+              {chooserDoc?.template_type} {chooserDoc?.document_number}
+            </div>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              onClick={() => {
+                const d = chooserDoc
+                setChooserDoc(null)
+                openEmail(d)
+              }}
+            >
+              ✉ メールで送信
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start gap-2"
+              disabled={!chooserDoc?.issue_key || !isDrivePdf(chooserDoc?.drive_link)}
+              onClick={() => {
+                const d = chooserDoc
+                setChooserDoc(null)
+                openCloudSignFor(d)
+              }}
+            >
+              ✍ クラウドサインで送信
+            </Button>
+            {(!chooserDoc?.issue_key || !isDrivePdf(chooserDoc?.drive_link)) && (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                ※ クラウドサインは課題に紐付き、Drive 上に PDF がある正本のみ送信できます（課題画面の送信フォームが開きます）。
+              </p>
+            )}
+          </DialogBody>
         </DialogContent>
       </Dialog>
 
