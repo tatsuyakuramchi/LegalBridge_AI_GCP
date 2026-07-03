@@ -1,5 +1,5 @@
 import * as React from "react"
-import { useParams, useNavigate } from "react-router-dom"
+import { useParams, useNavigate, useSearchParams } from "react-router-dom"
 import {
   ArrowLeft,
   Check,
@@ -259,6 +259,31 @@ export function IssueDetailPage() {
   }
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
+
+  // 案件詳細などからのディープリンク(?cloudsign=文書番号): 文書一覧の読込後に
+  // 対象文書を選択してクラウドサイン送信フォームを自動で開く(初回のみ)。
+  const [searchParams, setSearchParams] = useSearchParams()
+  const csDeepLinkDone = React.useRef(false)
+  React.useEffect(() => {
+    if (csDeepLinkDone.current || loading) return
+    const dn = searchParams.get("cloudsign")
+    if (!dn) return
+    csDeepLinkDone.current = true
+    setSearchParams((prev) => {
+      prev.delete("cloudsign")
+      return prev
+    }, { replace: true })
+    const d = docs.find((x) => x.document_number === dn)
+    if (d && isDrivePdf(d.drive_link)) {
+      openCloudSignFor(d)
+    } else {
+      showNotification?.(
+        `クラウドサイン送信を開けません: ${dn}（Drive 上のPDFがある正本のみ送信できます）`,
+        "error"
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, docs, searchParams])
 
   React.useEffect(() => {
     if (!issueKey) return
