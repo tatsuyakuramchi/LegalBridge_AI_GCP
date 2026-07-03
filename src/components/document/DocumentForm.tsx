@@ -590,7 +590,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               ? 'half-year'
               : cycle === 'ANNUAL'
                 ? 'year'
-                : 'month';
+                : cycle === 'CUSTOM'
+                  ? 'period'
+                  : 'month';
         return n === 0 || n > 30 ? `end of each ${pw}` : `day ${n} of each ${pw}`;
       }
       const prefix =
@@ -613,7 +615,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         const billing = billingDayDisplay(it.billing_day, it.cycle);
         const range =
           (it.term_start ? it.term_start : '—') + sep + (it.term_end ? it.term_end : ongoing);
-        const cyc = cycleShort(it.cycle);
+        // 海外発注書のカスタム周期は間隔値から "Every 2 months" 等を組む
+        // (テンプレ側 cycleLabelEn と同じ表記)。
+        const customN = Number(it.interval_count);
+        const cyc =
+          isIntl && it.cycle === 'CUSTOM' && Number.isFinite(customN) && customN > 0
+            ? `Every ${customN} ${it.interval_unit === 'DAY' ? 'day' : 'month'}${customN > 1 ? 's' : ''}`
+            : cycleShort(it.cycle);
         return `${cyc}${dot}${billing || noBilling} (${range})`;
       })
       .filter((s) => s && s.trim() !== '');
