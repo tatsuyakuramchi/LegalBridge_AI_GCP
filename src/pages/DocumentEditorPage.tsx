@@ -172,6 +172,10 @@ export function DocumentEditorPage() {
   const [generateMode, setGenerateMode] = React.useState<
     "issue" | "dbOnly" | null
   >(null)
+  // DB登録のみ用の任意ファイルリンク (既存の締結済み PDF 等の URL)。
+  //   指定すると worker が drive_link として保存し、一覧/アーカイブから開ける。
+  //   空なら PDF 未作成キューに入り、後から発行できる。
+  const [dbOnlyFileLink, setDbOnlyFileLink] = React.useState("")
   // 過去文書/下書きを番号で呼び出すフォーム(Sheet)の開閉。
   const [recallOpen, setRecallOpen] = React.useState(false)
   // 明示的な「保存」(= 初回保存で採番) の進行状態。
@@ -1033,6 +1037,15 @@ export function DocumentEditorPage() {
   //   未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。
   const handleGenerate = async (opts?: { dbOnly?: boolean }) => {
     const dbOnly = opts?.dbOnly === true
+    // DB登録のみ時の任意ファイルリンク。入れる場合は http(s) URL のみ許可。
+    const fileLink = dbOnly ? dbOnlyFileLink.trim() : ""
+    if (fileLink && !/^https?:\/\//i.test(fileLink)) {
+      showNotification(
+        "ファイルリンクは http(s):// で始まる URL を入力してください。",
+        "error"
+      )
+      return
+    }
     // 請求の向きは必須。未選択なら送信を止める。
     if (!selectedDirection) {
       showNotification(
@@ -1179,6 +1192,8 @@ export function DocumentEditorPage() {
           reissue: reissueFlag,
           // DB登録のみ: PDF 生成 / Drive アップロードをスキップ
           skipPdf: dbOnly,
+          // DB登録のみ時の任意ファイルリンク (既存の締結済み PDF 等の URL)
+          fileLink: fileLink || undefined,
         }),
       })
 
@@ -1211,10 +1226,15 @@ export function DocumentEditorPage() {
         //   同じ番号のまま後日発行できる。
         showNotification(
           `DB登録が完了しました (${data?.documentNumber || "番号未取得"})。文書は発行していません${
-            data?.driveLink ? "" : " — 後から「PDF未作成」キューで発行できます"
+            fileLink
+              ? " — 指定されたファイルリンクを登録しました"
+              : data?.driveLink
+                ? ""
+                : " — 後から「PDF未作成」キューで発行できます"
           }。`,
           "success"
         )
+        setDbOnlyFileLink("")
       } else if (data?.driveLink) {
         // Phase 9g: 達成感サクセス画面 — toast だけだと「できたかどうか」が
         // 不明確というフィードバックを受け、明示的なモーダルで完了表示。
@@ -1303,6 +1323,14 @@ export function DocumentEditorPage() {
       } catch (refErr) {
         console.warn("[generate] refreshAssets failed:", refErr)
       }
+      // フォーム統一: 生成/DB登録した文書は契約マスタ一覧 (contract_capabilities
+      //   = documents ビュー) にも現れるため、マスタ側キャッシュも更新する。
+      //   これが無いと /master/contracts に戻っても新規行が見えない。
+      try {
+        await refreshContracts?.()
+      } catch (refErr) {
+        console.warn("[generate] refreshContracts failed:", refErr)
+      }
     } catch (e: any) {
       console.error("Generation failed", e)
       showNotification(
@@ -1323,6 +1351,7 @@ export function DocumentEditorPage() {
   //   担当者 (selectedStaff) は操作者として継続利用するため意図的に残す。
   const handleStartNew = () => {
     setFormData({})
+    setDbOnlyFileLink("")
     setSelectedIssue("")
     setSelectedTemplate("")
     setSelectedDirection("")
@@ -2172,7 +2201,16 @@ export function DocumentEditorPage() {
                 )}
                 {/* DB登録のみ: 文書(PDF)を発行せず documents/条件明細へ登録する。
                     マスター登録と同じ「登録だけ」を通常フォームから行うモード。
-                    未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。 */}
+                    未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。
+                    ファイルリンク: 既存の締結済み PDF 等の URL を任意で添付。
+                    指定すると drive_link として保存され一覧から開ける。 */}
+                <Input
+                  value={dbOnlyFileLink}
+                  onChange={(e) => setDbOnlyFileLink(e.target.value)}
+                  placeholder="ファイルリンク (DB登録のみ・任意)"
+                  title="DB登録のみで保存するとき、既存の締結済みPDF等のURLを文書リンクとして登録できます (http(s)://…)。空欄ならPDF未作成キューに入ります。"
+                  className="w-56 font-mono text-[11px]"
+                />
                 <Button
                   variant="outline"
                   onClick={() => handleGenerate({ dbOnly: true })}

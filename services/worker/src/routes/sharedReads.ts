@@ -262,6 +262,12 @@ export function registerSharedReads(
       try {
         result = await query(
           `SELECT cc.*, v.vendor_name,
+                  -- フォーム統一: 通常の文書作成フォーム由来の行かどうかを FE が
+                  --   判定できるよう template_type を同梱 (cc は documents の互換
+                  --   ビューで id が一致する)。テンプレ由来なら「文書フォームで
+                  --   編集」導線 (reopen) を出せる。
+                  (SELECT d.template_type FROM documents d WHERE d.id = cc.id)
+                    AS template_type,
                   v.vendor_code AS vendor_code,
                   v.entity_type AS vendor_entity_type,
                   v.bank_name AS vendor_bank_name,
@@ -449,6 +455,9 @@ export function registerSharedReads(
         if (err && (err.code === "42P01" || err.code === "42703")) {
           result = await query(
             `SELECT cc.*, v.vendor_name,
+                    -- 旧環境 (cc が実テーブルで documents と id が一致しない) では
+                    --   template_type は解決できないので NULL 固定。
+                    NULL AS template_type,
                     v.vendor_code AS vendor_code,
                     v.entity_type AS vendor_entity_type,
                     v.bank_name AS vendor_bank_name,
