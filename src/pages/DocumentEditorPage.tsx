@@ -176,6 +176,11 @@ export function DocumentEditorPage() {
   //   指定すると worker が drive_link として保存し、一覧/アーカイブから開ける。
   //   空なら PDF 未作成キューに入り、後から発行できる。
   const [dbOnlyFileLink, setDbOnlyFileLink] = React.useState("")
+  // DB登録のみ時に「単独契約 (親なし)」として登録するフラグ。
+  //   単独契約専用テンプレは無いため、発注書 / ILT 等のフォームで代用登録する
+  //   ケースで record_type をテンプレ由来 (purchase_order 等) から
+  //   standalone_contract に上書きする。
+  const [dbOnlyStandalone, setDbOnlyStandalone] = React.useState(false)
   // 過去文書/下書きを番号で呼び出すフォーム(Sheet)の開閉。
   const [recallOpen, setRecallOpen] = React.useState(false)
   // 明示的な「保存」(= 初回保存で採番) の進行状態。
@@ -1194,6 +1199,9 @@ export function DocumentEditorPage() {
           skipPdf: dbOnly,
           // DB登録のみ時の任意ファイルリンク (既存の締結済み PDF 等の URL)
           fileLink: fileLink || undefined,
+          // DB登録のみ時のレコード区分上書き (単独契約として登録)
+          recordType:
+            dbOnly && dbOnlyStandalone ? "standalone_contract" : undefined,
         }),
       })
 
@@ -1225,7 +1233,9 @@ export function DocumentEditorPage() {
         //   ではなく通知で完了を伝える。未発行分は PDF 未作成キューから
         //   同じ番号のまま後日発行できる。
         showNotification(
-          `DB登録が完了しました (${data?.documentNumber || "番号未取得"})。文書は発行していません${
+          `DB登録が完了しました (${data?.documentNumber || "番号未取得"})${
+            dbOnlyStandalone ? "・区分: 単独契約" : ""
+          }。文書は発行していません${
             fileLink
               ? " — 指定されたファイルリンクを登録しました"
               : data?.driveLink
@@ -1235,6 +1245,7 @@ export function DocumentEditorPage() {
           "success"
         )
         setDbOnlyFileLink("")
+        setDbOnlyStandalone(false)
       } else if (data?.driveLink) {
         // Phase 9g: 達成感サクセス画面 — toast だけだと「できたかどうか」が
         // 不明確というフィードバックを受け、明示的なモーダルで完了表示。
@@ -1352,6 +1363,7 @@ export function DocumentEditorPage() {
   const handleStartNew = () => {
     setFormData({})
     setDbOnlyFileLink("")
+    setDbOnlyStandalone(false)
     setSelectedIssue("")
     setSelectedTemplate("")
     setSelectedDirection("")
@@ -2204,6 +2216,18 @@ export function DocumentEditorPage() {
                     未発行分は PDF 未作成キューに載り、後から同じ番号で発行できる。
                     ファイルリンク: 既存の締結済み PDF 等の URL を任意で添付。
                     指定すると drive_link として保存され一覧から開ける。 */}
+                <label
+                  className="flex items-center gap-1.5 cursor-pointer text-[12px] whitespace-nowrap"
+                  title="単独契約 (親の基本契約を持たない契約) 専用テンプレは無いため、発注書 / 個別利用許諾条件書などのフォームで代用登録するときに ON にすると、レコード区分が「単独契約」で保存されます (DB登録のみ時のみ有効)。"
+                >
+                  <input
+                    type="checkbox"
+                    checked={dbOnlyStandalone}
+                    onChange={(e) => setDbOnlyStandalone(e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  <span>単独契約として登録</span>
+                </label>
                 <Input
                   value={dbOnlyFileLink}
                   onChange={(e) => setDbOnlyFileLink(e.target.value)}

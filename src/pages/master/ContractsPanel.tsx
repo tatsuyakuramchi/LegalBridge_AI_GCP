@@ -230,7 +230,7 @@ const DOC_FORM_TEMPLATE_GROUPS: {
   },
   {
     group: "個別契約・条件書 (子 / 単独)",
-    note: "レコード区分「個別契約 / 単独契約」に相当。金銭条件・業務明細はこちらで入力。",
+    note: "レコード区分「個別契約 / 単独契約」に相当。金銭条件・業務明細はこちらで入力。単独契約 (親なし) はこのグループのフォームで「単独契約として登録」チェックを ON にして DB登録のみで保存。",
     keys: [
       { key: "individual_license_terms", fallbackLabel: "個別利用許諾条件書" },
       { key: "pub_license_terms", fallbackLabel: "出版等利用許諾条件書" },
