@@ -43,6 +43,8 @@ export interface V3Sublicensee {
   slRate?: string; slDate?: string; slNote?: string;
 }
 export interface V3SpecialExtra { seId?: string; seText?: string }
+/** 2-3(A) 計算基準日の1行（版ごとに支払期日の起点事由を定める）。 */
+export interface V3CalcBaseRow { edition?: string; trigger?: string; note?: string }
 
 export interface V3FormData {
   // マトリクス・台帳（v3 フォームが produce）
@@ -50,6 +52,7 @@ export interface V3FormData {
   v3_lcs?: V3Lc[];
   v3_sublicensees?: V3Sublicensee[];
   v3_special_extras?: V3SpecialExtra[];
+  v3_calc_base_rows?: V3CalcBaseRow[];
   // ヘッダ等は既存フォームの日本語キー（契約書番号 / Licensor_名称 …）も読むため index 許容。
   [k: string]: any;
 }
@@ -69,6 +72,7 @@ export interface V3TemplateContext {
     appliedRate: string; quantity: string; ag: string; mg: string; currency: string;
   }>;
   lcs: Array<{ lcId: string; lcName: string; lcHolder: string; rates: string[] }>;
+  calcBaseRows: Array<{ edition: string; trigger: string; note: string }>;
   sublicensees: V3Sublicensee[];
   supervisor: string;
   specialExtras: V3SpecialExtra[];
@@ -84,6 +88,12 @@ const toNum = (v: any): number | null => {
 };
 const fmtPct = (n: number | null): string =>
   n == null ? "—" : `${+n.toFixed(2)}%`;
+
+/** 2-3(A) 計算基準日の既定行。フォーム未設定・既存保存データでもこの標準2行で描画する。 */
+export const DEFAULT_CALC_BASE_ROWS: Array<{ edition: string; trigger: string; note: string }> = [
+  { edition: "初版", trigger: "発売日", note: "" },
+  { edition: "2版以降", trigger: "製造日", note: "" },
+];
 
 /** 取引形態 c の適用料率: 加算型=各LCの当該料率を合算 / 非加算型=実効料率。 */
 export function computeAppliedRate(cond: V3Cond, lcs: V3Lc[]): string {
@@ -136,6 +146,10 @@ export function v3SampleFormData(): V3FormData {
     v3_sublicensees: [
       { slPartner: "サブA社", slRegion: "北米", slLang: "英語", slCond: "サブライセンス", slRate: "50", slDate: "2026-08-01", slNote: "サンプル" },
     ],
+    v3_calc_base_rows: [
+      { edition: "初版", trigger: "発売日", note: "" },
+      { edition: "2版以降", trigger: "製造日", note: "" },
+    ],
   };
 }
 
@@ -173,6 +187,14 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     }),
   }));
 
+  // 2-3(A) 計算基準日。空行を除き、実質未設定なら既定2行（初版=発売日/2版以降=製造日）。
+  const calcBaseInput: V3CalcBaseRow[] = Array.isArray(fd.v3_calc_base_rows)
+    ? fd.v3_calc_base_rows
+    : [];
+  const calcBaseRows = calcBaseInput
+    .map((r) => ({ edition: s(r?.edition), trigger: s(r?.trigger), note: s(r?.note) }))
+    .filter((r) => r.edition !== "" || r.trigger !== "" || r.note !== "");
+
   // ヘッダ等は既存フォームの日本語キーを優先し、英語キーへフォールバック。
   //   v3 固有(対象製品の定義/許諾範囲/許諾地域・言語の上限)は現フォームに項目が無いので
   //   v3_* 任意項目 → 既存 → 空 の順で解決する。
@@ -206,6 +228,7 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     condCount: conds.length,
     conds,
     lcs,
+    calcBaseRows: calcBaseRows.length > 0 ? calcBaseRows : DEFAULT_CALC_BASE_ROWS,
     sublicensees: Array.isArray(fd.v3_sublicensees) ? fd.v3_sublicensees : [],
     supervisor: pick("監修者", "supervisor"),
     specialExtras: Array.isArray(fd.v3_special_extras) ? fd.v3_special_extras : [],

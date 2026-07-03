@@ -393,21 +393,31 @@ async function startServer() {
   //   設定は app_settings or env。EMAIL_ENABLED=true のときだけ送信可(誤起動防止)。
   //   EMAIL_ALLOWED_RECIPIENTS(カンマ区切り)で宛先を社内に限定するテストガード。
   //   本文/件名テンプレは設定画面で編集可(email_subject_* / email_body_*)。
+  // 署名は会社名義(送信元が固定の会社アドレスのため、個人名でなく法務部として送る)。
+  const EMAIL_SIGNATURE =
+    "──────────────────────\n" +
+    "株式会社アークライト\n" +
+    "東京都千代田区神田小川町1-2　風雲堂ビル２階\n" +
+    "経営管理本部　法務部　倉持\n" +
+    "──────────────────────";
   const DEFAULT_EMAIL_TPL = {
     inspection: {
-      subject: "【検収書送付】{{documentNumber}}（{{vendorName}} 御中）",
+      subject: "【株式会社アークライト】検収書のご送付（{{documentNumber}}）",
       body:
-        "{{vendorName}} 御中\n\nいつもお世話になっております。\n検収書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n株式会社アークライトでございます。\n\nこのたび納品いただきました内容につきまして検収が完了いたしましたので、\n検収書を添付のとおりお送りいたします。\n\n■ 文書番号：{{documentNumber}}\n■ 検収金額：{{amount}}\n■ 発行日　：{{date}}\n\n内容をご確認のうえ、相違等がございましたら、お手数ですが\n本メールへのご返信にてご連絡ください。\nお支払いは、契約に定める支払条件に基づきお手続きいたします。\n\n今後ともどうぞよろしくお願い申し上げます。\n\n" +
+        EMAIL_SIGNATURE,
     },
     royalty: {
-      subject: "【利用許諾料計算書送付】{{documentNumber}}（{{vendorName}} 御中）",
+      subject: "【株式会社アークライト】利用許諾料計算書のご送付（{{documentNumber}}）",
       body:
-        "{{vendorName}} 御中\n\nいつもお世話になっております。\n利用許諾料計算書（文書番号: {{documentNumber}}）を送付いたします。\n金額: {{amount}}\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n株式会社アークライトでございます。\n\n利用許諾契約に基づく利用許諾料の計算書を、添付のとおりお送りいたします。\n\n■ 文書番号　　：{{documentNumber}}\n■ 利用許諾料額：{{amount}}\n■ 発行日　　　：{{date}}\n\n計算内容をご確認のうえ、ご不明な点や相違がございましたら、\nお手数ですが本メールへのご返信にてお知らせください。\nお支払いは、契約に定める支払条件に基づきお手続きいたします。\n\n今後ともどうぞよろしくお願い申し上げます。\n\n" +
+        EMAIL_SIGNATURE,
     },
     general: {
-      subject: "【書類送付】{{documentNumber}}（{{vendorName}} 御中）",
+      subject: "【株式会社アークライト】書類のご送付（{{documentNumber}}）",
       body:
-        "{{vendorName}} 御中\n\nいつもお世話になっております。\n書類（文書番号: {{documentNumber}}）を送付いたします。\n発行日: {{date}}\n\n添付の PDF をご確認ください。\n\n何卒よろしくお願いいたします。",
+        "{{vendorName}} 御中\n\nいつもお世話になっております。\n株式会社アークライトでございます。\n\n書類を添付のとおりお送りいたします。\n\n■ 文書番号：{{documentNumber}}\n■ 発行日　：{{date}}\n\n内容をご確認のうえ、ご不明な点がございましたら、お手数ですが\n本メールへのご返信にてご連絡ください。\n\n今後ともどうぞよろしくお願い申し上げます。\n\n" +
+        EMAIL_SIGNATURE,
     },
   };
   const loadEmailCfg = async () => {
@@ -1158,8 +1168,8 @@ async function startServer() {
 
       // 文書 + 取引先を解決。
       const dr = await query(
-        `SELECT d.document_number, d.template_type, d.form_data, d.drive_link, d.issue_key,
-                cc.vendor_id, v.vendor_name
+        `SELECT d.id, d.document_number, d.template_type, d.form_data, d.drive_link, d.issue_key,
+                d.matter_id, cc.vendor_id, v.vendor_name
            FROM documents d
            LEFT JOIN contract_capabilities cc ON cc.document_number = d.document_number
            LEFT JOIN vendors v ON v.id = cc.vendor_id
@@ -1212,11 +1222,30 @@ async function startServer() {
 
       // 件名/本文(テンプレ + トークン置換)。
       const fd = doc.form_data || {};
-      const amount = String(
-        fd.grandTotalPayable || fd.totalAmount || fd.GRAND_TOTAL || fd.TOTAL_AMOUNT || ""
-      );
+      // 金額: 整形済み(…Str)を優先し、生値しか無ければ桁区切りに整形。
+      const amountRaw =
+        fd.grandTotalPayableStr || fd.totalPaymentStr || fd.totalAmountStr ||
+        fd.grandTotalPayable || fd.totalAmount || fd.GRAND_TOTAL || fd.TOTAL_AMOUNT || "";
+      const amountNum = Number(amountRaw);
+      const amount =
+        String(amountRaw).trim() && Number.isFinite(amountNum)
+          ? `¥${amountNum.toLocaleString("ja-JP")}`
+          : String(amountRaw);
+      // 宛名: 取引先マスタ(capability 経由)が引けない文書(検収書等は capability を
+      //   持たない)は form_data から救済する。検収書=counterparty / 計算書=licensor。
+      const vendorName = String(
+        doc.vendor_name ||
+          fd.counterparty ||
+          fd.licensor ||
+          fd.VENDOR_NAME ||
+          fd["Licensor_名称"] ||
+          fd["Licensor_氏名会社名"] ||
+          fd.PARTY_B_NAME ||
+          fd.partyBName ||
+          ""
+      ).trim();
       const vars = {
-        vendorName: String(doc.vendor_name || ""),
+        vendorName,
         documentNumber: String(doc.document_number || ""),
         amount,
         date: new Date().toLocaleDateString("ja-JP"),
@@ -1226,12 +1255,16 @@ async function startServer() {
       const subject = applyEmailTokens(t.subject, vars);
       const html = emailTextToHtml(applyEmailTokens(t.body, vars));
 
-      // 添付: Drive 上の文書(HTML)を取得し PDF 化(best-effort)。
+      // 添付: Drive 上の正本を取得して添付(best-effort)。正本は生成時に PDF で
+      //   保存されているのでそのまま添付する。PDF バイナリを文字列化して
+      //   renderHtmlToPdf に通すと壊れる(文字化けPDFになる)ため、旧形式の
+      //   HTML ファイルだった場合のみ PDF 化する。
       let attachments: any[] = [];
       let attached = false;
       try {
         const buf = await googleDriveService.downloadPdf(doc.drive_link);
-        const pdf = await renderHtmlToPdf(buf.toString("utf8"));
+        const isPdf = buf.subarray(0, 5).toString("latin1").startsWith("%PDF");
+        const pdf = isPdf ? buf : await renderHtmlToPdf(buf.toString("utf8"));
         attachments = [{ filename: `${doc.document_number}.pdf`, content: pdf, mimeType: "application/pdf" }];
         attached = true;
       } catch (e: any) {
@@ -1247,6 +1280,20 @@ async function startServer() {
           WHERE document_number = $1`,
         [doc.document_number, to.join(", "), messageId || null]
       );
+
+      // 案件の送信履歴(document_sends)にも記録する(best-effort。送信自体は成功扱い)。
+      try {
+        await query(
+          `INSERT INTO document_sends (document_id, matter_id, channel, recipient, status, subject, message_id, remarks)
+           VALUES ($1,$2,'email',$3,'sent',$4,$5,$6)`,
+          [
+            doc.id, doc.matter_id ?? null, to.join(", "), subject, messageId || null,
+            cc.length ? `CC: ${cc.join(", ")}` : null,
+          ]
+        );
+      } catch (e: any) {
+        console.warn("[email send] document_sends の記録に失敗:", e?.message || e);
+      }
 
       res.json({
         ok: true,
@@ -3084,7 +3131,8 @@ ${details}
 
         const result = await mergeIssueInto(key, mergedInto, {
           mode: "child",
-          moveData: false,
+          // 終結=統合の一種なので、文書・明細も統合先へ引き継ぐ。
+          moveData: true,
           reason: reason || "",
           shuketsuStatusId: statusId,
           targetId: null,
@@ -3241,6 +3289,63 @@ ${details}
       );
       moved.issue_workflows = wf.rowCount || 0;
 
+      // 案件(matter)の整合: Request 側の統合を案件へも反映する。
+      //   - target が案件を持つ → source 側の案件を丸ごと吸収(課題/文書/送信を移し、空案件を削除)
+      //   - source だけ案件を持つ → その案件を本件の案件として残し、代表を target へ切替
+      //   - どちらも無い → 何もしない
+      //   いずれも target 案件内に source を relation='duplicate' で残し、統合の履歴とする。
+      {
+        const tm = await client.query(
+          `SELECT matter_id FROM matter_issues WHERE backlog_issue_key = $1 ORDER BY id LIMIT 1`,
+          [target]
+        );
+        let caseMid: number | null = tm.rows[0]?.matter_id ?? null;
+        const sm = await client.query(
+          `SELECT DISTINCT matter_id FROM matter_issues WHERE backlog_issue_key = $1`,
+          [source]
+        );
+        const sourceMids = sm.rows
+          .map((r: any) => Number(r.matter_id))
+          .filter((mid: number) => mid !== caseMid);
+
+        if (caseMid == null && sourceMids.length > 0) {
+          // target が案件未所属なら source の案件を引き継ぎ、target を代表として登録。
+          caseMid = sourceMids.shift()!;
+          await client.query(
+            `INSERT INTO matter_issues (matter_id, backlog_issue_key, relation)
+             VALUES ($1,$2,'primary')
+             ON CONFLICT (matter_id, backlog_issue_key) DO UPDATE SET relation = 'primary'`,
+            [caseMid, target]
+          );
+        }
+        if (caseMid != null) {
+          for (const mid of sourceMids) {
+            await client.query(
+              `UPDATE matter_issues mi SET matter_id = $1
+                WHERE mi.matter_id = $2
+                  AND NOT EXISTS (SELECT 1 FROM matter_issues x
+                                   WHERE x.matter_id = $1 AND x.backlog_issue_key = mi.backlog_issue_key)`,
+              [caseMid, mid]
+            );
+            await client.query(`UPDATE documents SET matter_id = $1 WHERE matter_id = $2`, [caseMid, mid]);
+            await client.query(`UPDATE document_sends SET matter_id = $1 WHERE matter_id = $2`, [caseMid, mid]);
+            await client.query(`DELETE FROM matters WHERE id = $1`, [mid]);
+            moved.matters_absorbed = (moved.matters_absorbed || 0) + 1;
+          }
+          await client.query(
+            `INSERT INTO matter_issues (matter_id, backlog_issue_key, relation, note)
+             VALUES ($1,$2,'duplicate',$3)
+             ON CONFLICT (matter_id, backlog_issue_key)
+               DO UPDATE SET relation = 'duplicate',
+                             note = COALESCE(matter_issues.note, EXCLUDED.note)`,
+            [caseMid, source, `${target} へ統合(${mode === "delete" ? "削除" : "終結"})`]
+          );
+          await client.query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [caseMid]);
+        }
+        // 代表課題が source を指したままの案件はすべて target へ付け替える。
+        await client.query(`UPDATE matters SET primary_issue_key = $1 WHERE primary_issue_key = $2`, [target, source]);
+      }
+
       await client.query("COMMIT");
     } catch (e: any) {
       await client.query("ROLLBACK");
@@ -3280,12 +3385,16 @@ ${details}
 
   const ISSUE_KEY_RE = /^[A-Z][A-Z0-9_]*-\d+$/;
   // 終結ステータスID + 統合先課題IDを解決(子課題化/終結用)。
+  //   統合元は必ず終了させたいので、「終結」が無い環境では キャンセル → 完了 の順で代替する。
   async function resolveMergeTargets(target: string) {
     let shuketsuStatusId: number | null = null;
     let targetId: number | null = null;
     try {
       const statuses = await backlogService.getStatuses();
-      shuketsuStatusId = statuses.find((s: any) => s?.name === "終結")?.id ?? null;
+      for (const name of ["終結", "キャンセル", "完了"]) {
+        const hit = statuses.find((s: any) => s?.name === name);
+        if (hit?.id) { shuketsuStatusId = hit.id; break; }
+      }
     } catch { /* noop */ }
     try { targetId = (await backlogService.getIssue(target))?.id ?? null; } catch { /* noop */ }
     return { shuketsuStatusId, targetId };
@@ -3296,7 +3405,8 @@ ${details}
       const source = String(req.params.key || "").trim().toUpperCase();
       const target = String(req.body?.target_key || "").trim().toUpperCase();
       const mode = req.body?.mode === "delete" ? "delete" : "child";
-      const moveData = req.body?.move_data === true;
+      // 統合元の文書・明細は既定で統合先へ引き継ぐ(明示的に false のときだけ残す)。
+      const moveData = req.body?.move_data !== false;
       const reason = req.body?.reason ? String(req.body.reason).slice(0, 500) : "";
       if (!ISSUE_KEY_RE.test(source)) return res.status(400).json({ ok: false, error: "source キー不正" });
       if (!ISSUE_KEY_RE.test(target)) return res.status(400).json({ ok: false, error: "統合先(target)のキーが不正です (例: LEGAL-100)" });
@@ -3319,7 +3429,8 @@ ${details}
     try {
       const target = String(req.body?.target_key || "").trim().toUpperCase();
       const mode = req.body?.mode === "delete" ? "delete" : "child";
-      const moveData = req.body?.move_data === true;
+      // 統合元の文書・明細は既定で統合先へ引き継ぐ(明示的に false のときだけ残す)。
+      const moveData = req.body?.move_data !== false;
       const reason = req.body?.reason ? String(req.body.reason).slice(0, 500) : "";
       if (!ISSUE_KEY_RE.test(target)) return res.status(400).json({ ok: false, error: "統合先(target)のキーが不正です (例: LEGAL-100)" });
       const sources: string[] = Array.from(new Set(
@@ -8197,7 +8308,8 @@ ${details}
                  (vendor_id, record_type, contract_category, contract_type, contract_title,
                   document_number, base_document_number, backlog_issue_key, contract_status,
                   effective_date, expiration_date, document_url, source_system)
-               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')`,
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'executed',$9,$10,$11,'f1b-backfill')
+               RETURNING id`,
               [
                 vendorId,
                 recordType,
@@ -9413,7 +9525,8 @@ ${details}
                  vendor_id, record_type, contract_category, contract_type, contract_title,
                  document_number, contract_status, effective_date, expiration_date,
                  auto_renewal, source_system
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+               RETURNING id`,
               [
                 vendorId,
                 recordType,
@@ -12918,26 +13031,34 @@ ${details}
       if (req.query.q) {
         params.push(`%${String(req.query.q)}%`);
         where.push(
-          `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length})`
+          `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length} OR cl.condition_name ILIKE $${params.length})`
         );
       }
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
       try {
+        // 件名は subject 未設定の明細(Master/文書保存経路は condition_name にのみ
+        // 書く)へフォールバック。取引先は 契約の vendor → 明細の相手方
+        // (counterparty_vendor_id) → 文書の取引先名スナップショット の順で解決。
         const result = await query(
-          `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.direction,
+          `SELECT cl.id, cl.line_code,
+                  COALESCE(NULLIF(cl.subject, ''), cl.condition_name) AS subject,
+                  cl.payment_scheme, cl.direction,
                   cl.transaction_kind,
                   cl.rights_attribution, cl.capability_id, cl.amount_ex_tax, cl.currency,
                   cl.delivery_date, cl.term_start, cl.term_end,
                   s.status, s.consumed_amount, s.remaining_amount, s.event_count,
                   b.mg_remaining, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
-                  v.vendor_name, v.vendor_code,
+                  COALESCE(v.vendor_name, vcp.vendor_name, cd.vendor_name_snapshot) AS vendor_name,
+                  COALESCE(v.vendor_code, vcp.vendor_code) AS vendor_code,
                   sch.has_overdue
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
+             LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
              LEFT JOIN (
                SELECT condition_line_id, bool_or(overdue AND NOT issued) AS has_overdue
                  FROM condition_line_schedule_v GROUP BY condition_line_id
@@ -13052,19 +13173,26 @@ ${details}
       const lineCode = String(req.params.lineCode || "").trim();
       if (!lineCode) return res.status(400).json({ ok: false, error: "lineCode required" });
       try {
+        // 件名/取引先は一覧と同じフォールバック(subject→condition_name、
+        // 契約vendor→明細相手方→文書スナップショット)。cl.* の subject より
+        // 後に置いた別名が行オブジェクトで優先される。
         const main = await query(
           `SELECT cl.*, s.status, s.consumed_amount, s.remaining_amount,
                   s.event_count, s.last_event_at,
                   b.mg_consumed, b.mg_remaining, b.ag_consumed, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
                   cc.structural_role, cc.parent_capability_id,
-                  v.vendor_name, v.vendor_code,
+                  COALESCE(NULLIF(cl.subject, ''), cl.condition_name) AS subject,
+                  COALESCE(v.vendor_name, vcp.vendor_name, cd.vendor_name_snapshot) AS vendor_name,
+                  COALESCE(v.vendor_code, vcp.vendor_code) AS vendor_code,
                   w.work_code, w.title AS work_title
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
+             LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
              LEFT JOIN works w ON w.id = cl.work_id
             WHERE cl.line_code = $1
             LIMIT 1`,
@@ -13824,7 +13952,14 @@ ${details}
     //   - reissue=false: 同 row UPDATE + Drive PDF 上書き (overwrite=true)
     //   - reissue=true:  revision+1 で新 row + Drive 新規アップロード、
     //                    過去 row は lifecycle_status='reissued' に倒す
-    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber, reissue } = req.body;
+    // skipPdf=true (DB登録のみ): PDF 生成 / Drive アップロードを行わず、
+    //   採番 + documents/condition_lines 等の DB 登録だけを実行する。
+    //   マスター登録と同じ「文書を発行しない登録」を通常フォームから行うモード。
+    //   fileLink: skipPdf=true のときのみ有効。既存の締結済み PDF 等の URL を
+    //   drive_link として保存する (紙契約のスキャン等を一覧から開けるように)。
+    //   recordType: skipPdf=true のときのみ有効。単独契約(親なし)を発注書/ILT
+    //   テンプレで代用登録するケース用に、テンプレ由来の record_type を上書きする。
+    let { issueKey, templateType, formData, requesterEmail, nextStatusId, existingDocumentNumber, reissue, skipPdf, fileLink, recordType: recordTypeOverride } = req.body;
 
     try {
       // Admin UI が「Backlog 課題なし」で発行する仮キー (MANUAL-<ts>) は
@@ -14371,70 +14506,100 @@ ${details}
         Object.assign(renderDetails, computeInspectionItemNo(formData) || {});
       }
 
-      const { html, fileName } = await documentService.generateDocument(
-        {
-          issueKey,
-          documentNumber: docNumber,
-          summary: issue.summary,
-          requester: requesterEmail || "Legal Department",
-          date: new Date().toLocaleDateString("ja-JP"),
-          details: renderDetails,
-        },
-        templateType,
-        {
-          vendorName: vendorNameForFile,
-          // 親文書番号でファイル名を作るグループ(検収書 / 利用許諾料計算書)。
-          //   検収書: 検収書番号_発注書番号_作成日 / 計算書: 計算書番号_親契約番号_作成日。
-          parentDocNumber:
-            String(templateType || "").includes("inspection") ||
-            templateType === "royalty_statement"
-              ? String(
-                  (formData as any)?.linked_contract_number || parentOrderNumber || ""
-                ).trim() || undefined
-              : undefined,
-        }
-      );
-
-      // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
-      // 変換させていたが、CSS が大幅に潰れて template と程遠い見栄えに
-      // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
-      //
-      // Phase 23.1: 内部修正 (overwrite=true) のときは既存 fileId に PDF を
-      //   上書きアップロードして webViewLink を維持する。Drive 上の URL が
-      //   変わらないので、Backlog コメントや Slack 共有 link がそのまま生きる。
-      //   - 既存 row の drive_link を取得して overwritePdf を呼ぶ
-      //   - 既存 link が無い (DB 不整合) 場合は uploadPdf にフォールバック
+      // DB登録のみ (skipPdf=true): PDF 生成 / Drive アップロードを丸ごと
+      //   スキップする。
+      //   - 既存 row に drive_link があれば温存 (内容だけ DB 更新)
+      //   - 無ければ drive_link 空 + __pdf_pending=true で保存され、
+      //     PDF 未作成キューから後日「同じ文書番号のまま」発行できる
+      //     (getDocumentNumberForGenerate が drive_link 空 + 同番号を
+      //      draft 完成として overwrite 扱いにするため)。
+      const dbOnly = skipPdf === true || skipPdf === "true";
       let driveLink: string;
-      if (overwrite) {
+      if (dbOnly) {
+        // 優先順: ① フォームで指定されたファイルリンク (既存の締結済み PDF 等)
+        //         ② 既存 row の drive_link 温存
+        //         ③ 空 (= __pdf_pending で PDF 未作成キューへ)
+        const manualFileLink =
+          typeof fileLink === "string" ? fileLink.trim() : "";
         const existingRow = await query(
           `SELECT drive_link FROM documents WHERE document_number = $1 LIMIT 1`,
           [docNumber]
         );
-        const existingLink = existingRow.rows[0]?.drive_link || "";
-        if (existingLink) {
-          try {
-            driveLink = await googleDriveService.overwritePdf(
-              existingLink,
-              html,
-              fileName
-            );
-            console.log(
-              `[overwrite] reused fileId for ${docNumber}: ${driveLink}`
-            );
-          } catch (overwriteErr: any) {
-            console.warn(
-              `[overwrite] failed for ${docNumber} (${existingLink}), fallback to upload:`,
-              overwriteErr?.message || overwriteErr
-            );
+        driveLink = manualFileLink || existingRow.rows[0]?.drive_link || "";
+        console.log(
+          `📝 [db-only] ${issueKey} ${templateType}: docNumber=${docNumber} PDF生成スキップ${
+            manualFileLink
+              ? " (ファイルリンク指定あり)"
+              : driveLink
+                ? " (既存 Drive リンク温存)"
+                : " (未発行 → PDF未作成キューへ)"
+          }`
+        );
+      } else {
+        const { html, fileName } = await documentService.generateDocument(
+          {
+            issueKey,
+            documentNumber: docNumber,
+            summary: issue.summary,
+            requester: requesterEmail || "Legal Department",
+            date: new Date().toLocaleDateString("ja-JP"),
+            details: renderDetails,
+          },
+          templateType,
+          {
+            vendorName: vendorNameForFile,
+            // 親文書番号でファイル名を作るグループ(検収書 / 利用許諾料計算書)。
+            //   検収書: 検収書番号_発注書番号_作成日 / 計算書: 計算書番号_親契約番号_作成日。
+            parentDocNumber:
+              String(templateType || "").includes("inspection") ||
+              templateType === "royalty_statement"
+                ? String(
+                    (formData as any)?.linked_contract_number || parentOrderNumber || ""
+                  ).trim() || undefined
+                : undefined,
+          }
+        );
+
+        // Phase 9: PDF に切り替え。従来は uploadHtml で Google Docs に
+        // 変換させていたが、CSS が大幅に潰れて template と程遠い見栄えに
+        // なるため、Puppeteer で PDF をレンダリングしてそのまま upload する。
+        //
+        // Phase 23.1: 内部修正 (overwrite=true) のときは既存 fileId に PDF を
+        //   上書きアップロードして webViewLink を維持する。Drive 上の URL が
+        //   変わらないので、Backlog コメントや Slack 共有 link がそのまま生きる。
+        //   - 既存 row の drive_link を取得して overwritePdf を呼ぶ
+        //   - 既存 link が無い (DB 不整合) 場合は uploadPdf にフォールバック
+        if (overwrite) {
+          const existingRow = await query(
+            `SELECT drive_link FROM documents WHERE document_number = $1 LIMIT 1`,
+            [docNumber]
+          );
+          const existingLink = existingRow.rows[0]?.drive_link || "";
+          if (existingLink) {
+            try {
+              driveLink = await googleDriveService.overwritePdf(
+                existingLink,
+                html,
+                fileName
+              );
+              console.log(
+                `[overwrite] reused fileId for ${docNumber}: ${driveLink}`
+              );
+            } catch (overwriteErr: any) {
+              console.warn(
+                `[overwrite] failed for ${docNumber} (${existingLink}), fallback to upload:`,
+                overwriteErr?.message || overwriteErr
+              );
+              driveLink = await googleDriveService.uploadPdf(html, fileName);
+            }
+          } else {
+            // 既存 link が DB に無い (= 過去の生成失敗で row だけ残った等)。
+            // 新規アップロードで補完する。
             driveLink = await googleDriveService.uploadPdf(html, fileName);
           }
         } else {
-          // 既存 link が DB に無い (= 過去の生成失敗で row だけ残った等)。
-          // 新規アップロードで補完する。
           driveLink = await googleDriveService.uploadPdf(html, fileName);
         }
-      } else {
-        driveLink = await googleDriveService.uploadPdf(html, fileName);
       }
 
       // Phase 24: 会計用 Excel は PDF 発行と同時生成しない。検収書 / 利用許諾料
@@ -14452,9 +14617,11 @@ ${details}
       //   isReissue=true のとき markPrimaryDocument 後に別途実行。
       // Step1(SSOT): 別名キーを揃えて保存し、通常作成でも line_items/件名/発注日 が
       //   インポート由来と同じ形で入るようにする(読み手の経路差をなくす)。
+      // DB登録のみで PDF 未発行 (drive_link 空) の場合は __pdf_pending=true で
+      //   保存して PDF 未作成キューに載せる (バルクインポートと同じ状態)。
       const mergedFormData = normalizeDocumentFormData(templateType, {
         ...(formData || {}),
-        __pdf_pending: false,
+        __pdf_pending: dbOnly ? !driveLink : false,
       });
       const docContentHash = computeFormContentHash(formData, templateType);
       let docInsert: any;
@@ -14808,6 +14975,27 @@ ${details}
           recordType = "delivery_record";
         }
 
+        // DB登録のみ (dbOnly) のときはリクエストで record_type を明示指定できる。
+        //   単独契約(親なし)を発注書 / ILT テンプレで代用登録するケース用。
+        //   値域は契約系の区分のみ許可 (delivery_record 等の内部区分は不可)。
+        //   cc 互換ビューの INSTEAD OF トリガが COALESCE 更新するため、
+        //   既存 row の再保存でも上書きされる。
+        const RECORD_TYPE_OVERRIDABLE = new Set([
+          "standalone_contract",
+          "individual_contract",
+          "master_contract",
+        ]);
+        if (
+          dbOnly &&
+          typeof recordTypeOverride === "string" &&
+          RECORD_TYPE_OVERRIDABLE.has(recordTypeOverride)
+        ) {
+          console.log(
+            `📝 [db-only] record_type override: ${recordType} → ${recordTypeOverride} (${docNumber})`
+          );
+          recordType = recordTypeOverride;
+        }
+
         await query(
           `INSERT INTO contract_capabilities (
             vendor_id, record_type, contract_category, contract_type, contract_title,
@@ -15136,7 +15324,8 @@ ${details}
               due_date, backlog_issue_key, record_type, contract_category,
               contract_type, document_number)
            VALUES ($1, $2, $3, $4, $5, $6, 'purchase_order', 'service',
-                   'purchase_order', $7)`,
+                   'purchase_order', $7)
+           RETURNING id`,
           [
             lrId,
             vendorIdForPo,
@@ -16110,7 +16299,8 @@ ${details}
       }
 
       // Slack notification with the Drive link.
-      if (slackWebClient) {
+      //   DB登録のみ (dbOnly) のときは文書を発行していないので通知しない。
+      if (slackWebClient && !dbOnly) {
         try {
           const settingsResult = await query(
             "SELECT value FROM app_settings WHERE key = 'slack_document_generated'"
@@ -16190,6 +16380,8 @@ ${details}
         excelLink,
         documentNumber: docNumber,
         templateType,
+        // DB登録のみモードで処理した場合 true (フロントの完了表示切替用)
+        dbOnly,
         warnings: syncWarnings,
       });
     } catch (error) {

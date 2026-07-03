@@ -206,6 +206,27 @@
   <tr><td class="k">報告</td><td>運用条件 3-2 に定める製造ベース報告に従う。</td></tr>
 </table>
 
+<!-- 2-3 固定ルール＋版別台帳差込 -->
+<h3 class="sec">2-3　支払期日（利用許諾計算基準日）</h3>
+<p class="lead">本契約に基づくロイヤリティ等の支払期日は、下記(A)に定める利用許諾計算基準日（以下「計算基準日」という。）を基準として、下記(B)により定める。ロイヤリティの金額は 1-2 の算定式および 2-1 により製造時点で確定し 3-2 に従い報告するものとし（算定）、その支払期日は本項の計算基準日を起点として定める（支払）。両者はレイヤーを異にする。</p>
+
+<p class="sub-title">(A)　計算基準日</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr><th style="width:80pt;">版</th><th style="width:110pt;">計算基準日となる事由</th><th>備考</th></tr>
+  {{#each calcBaseRows}}
+  <tr><td class="c">{{edition}}</td><td class="c">{{trigger}}</td><td>{{note}}</td></tr>
+  {{/each}}
+</table>
+<p class="leg">計算基準日は、各版につき本表に定める事由の生じた日とする。版・取引形態により事由を異にする場合は行を追加し、又は取引形態別の列を設ける。同一版内で対象製品が複数回にわたり製造・発売される場合、各回につき当該事由の生じた日を計算基準日とする。</p>
+
+<p class="sub-title">(B)　支払期日</p>
+<table class="avoid-break">
+  <tr><td class="k">Licensor が個人</td><td>計算基準日の属する月の翌月20日</td></tr>
+  <tr><td class="k">Licensor が法人</td><td>計算基準日の属する月の翌月末日</td></tr>
+  <tr><td class="k">休業日の扱い</td><td>支払期日が金融機関の休業日にあたるときは、その翌営業日とする。</td></tr>
+</table>
+<p class="leg">Licensor の個人・法人の別は頭書「当事者」欄の Licensor により定まる。源泉徴収・支払方法その他の支払条件は 2-2 及び基本契約による。</p>
+
 <!-- 3. 運用条件（監修者のみ差込） -->
 <h2 class="block">3.　運用条件（監修・承認・報告・納品）</h2>
 <table class="avoid-break"><tr><td class="k">監修者</td><td>{{supervisor}}</td></tr></table>
