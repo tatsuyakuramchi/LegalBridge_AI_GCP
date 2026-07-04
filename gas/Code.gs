@@ -1866,23 +1866,41 @@ var LINE_ITEM_FIELDS = {
       { key: 'remarks', label: '特約・備考', kind: 'text', optional: true, placeholder: '無ければ「無し」' },
     ],
   },
+  // 個別利用許諾条件書 (ボードゲーム = individual_license_terms /
+  // 出版 = pub_license_terms) のオリジナル帳票に沿ったフォーム。
+  // 項目はテンプレート (templates_config.json) の依頼者記入セクションに対応:
+  //   IV. 対象作品・期間 → 原著作物名 / 対象製品予定名 / 独占性 / 許諾開始日 / 許諾期間注記
+  //   VI. 金銭条件 1     → 地域言語ラベル / 計算方式・料率・基準価格 / 支払条件
+  //   V.  素材・監修      → 監修者・クレジット表示
+  //   IX. 特記事項        → 特記事項_本文
+  // (Licensor/Licensee はモーダル共通の取引先情報、番号類は自動採番のため省略)
   lic_individual: {
     label: '許諾明細',
     fields: [
-      { key: 'original_work', label: '対象作品（原著作物）', kind: 'text', placeholder: '例: 『〇〇』' },
+      { key: 'original_work', label: '原著作物名（対象作品）', kind: 'text', placeholder: '例: 『〇〇』（原作および派生作品を含む 等の補記も可）' },
       {
-        key: 'usage_type', label: '展開区分', kind: 'radio',
+        key: 'usage_type', label: '展開区分（条件書の種類）', kind: 'radio',
         options: [
-          { value: 'boardgame', text: 'ボードゲーム' },
-          { value: 'publication', text: '出版' },
+          { value: 'boardgame', text: 'ボードゲーム（個別利用許諾条件書）' },
+          { value: 'publication', text: '出版（出版等利用許諾条件書）' },
           { value: 'other', text: 'その他' },
         ],
       },
-      { key: 'product_name', label: '対象製品・媒体名', kind: 'text', placeholder: '例: ボードゲーム「〇〇」/ 書籍『〇〇』' },
-      { key: 'territory_language', label: '地域・言語', kind: 'text', placeholder: '例: 日本 / 日本語' },
-      { key: 'royalty_terms', label: '料率・基準価格・MG/AG', kind: 'text', placeholder: '例: 料率5% / 基準価格1,650円 / MG 100,000円' },
-      { key: 'term', label: '許諾期間', kind: 'text', placeholder: '例: 発売日から3年間' },
-      { key: 'remarks', label: '特約・備考', kind: 'text', optional: true, placeholder: '無ければ「無し」' },
+      { key: 'product_name', label: '対象製品（予定）名', kind: 'text', placeholder: '例: ボードゲーム「〇〇」/ 書籍『〇〇』' },
+      {
+        key: 'exclusivity', label: '独占性', kind: 'radio',
+        options: [
+          { value: 'exclusive', text: '独占' },
+          { value: 'non_exclusive', text: '非独占' },
+        ],
+      },
+      { key: 'license_start', label: '許諾開始日', kind: 'date', initialDays: 30 },
+      { key: 'license_term', label: '許諾期間', kind: 'text', placeholder: '例: 基本契約の満了日まで / 発売日から3年間' },
+      { key: 'territory_language', label: '許諾地域・言語', kind: 'text', placeholder: '例: 国内・日本語 / 北米・英語' },
+      { key: 'royalty_terms', label: '対価条件（計算方式・料率・基準価格）', kind: 'text', placeholder: '例: ロイヤリティ 5% × 上代(MSRP) / 固定額 100,000円' },
+      { key: 'mg_payment', label: 'MG・AG / 支払条件', kind: 'text', optional: true, placeholder: '例: MG 100,000円 / 四半期締め翌月末払い' },
+      { key: 'supervision_credit', label: '監修・クレジット表示', kind: 'text', optional: true, placeholder: '例: 要監修（発売前確認） / © 表記「〇〇」' },
+      { key: 'remarks', label: '特記事項', kind: 'text', optional: true, placeholder: '無ければ「無し」' },
     ],
   },
   delivery_inspec: {
