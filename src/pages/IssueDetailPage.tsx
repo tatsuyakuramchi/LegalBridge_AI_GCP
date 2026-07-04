@@ -19,6 +19,12 @@ import {
 import { cn } from "@/lib/utils"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
+import {
+  extractRequesterSlackId,
+  findStaffBySlackId,
+  formatStaffLabel,
+  resolveSlackMentions,
+} from "@/src/lib/slackRequester"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -370,8 +376,20 @@ export function IssueDetailPage() {
     const hit = cfs.find((cf) => names.includes(cf?.name))
     return hit ? formatCfValue(hit.value) : ""
   }
+  // Slack 起案の課題本文に埋まる「依頼者: <@U…>」をスタッフマスタで
+  // 名前・メールアドレスに解決する (未登録 ID はそのまま表示)。
+  const requesterSlackId = extractRequesterSlackId(issue?.description)
+  const requesterLabel = requesterSlackId
+    ? formatStaffLabel(findStaffBySlackId(staffList, requesterSlackId), requesterSlackId)
+    : ""
+  const resolvedDescription = React.useMemo(
+    () => resolveSlackMentions(issue?.description, staffList),
+    [issue?.description, staffList]
+  )
+
   // ラベルと Backlog 上のフィールド名候補の対応。
   const overviewFields = [
+    { label: "依頼者", value: requesterLabel },
     { label: "取引先名称", value: getCustomField("取引先名称", "取引先") },
     { label: "依頼部署", value: getCustomField("依頼部署", "部署") },
     { label: "締結方法", value: getCustomField("締結方法") },
@@ -784,7 +802,7 @@ export function IssueDetailPage() {
                     overviewFields.length > 0 && "pt-3 border-t border-border"
                   )}
                 >
-                  {issue.description}
+                  {resolvedDescription}
                 </p>
               ) : null}
             </CardContent>
