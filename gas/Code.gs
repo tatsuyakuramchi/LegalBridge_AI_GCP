@@ -1896,9 +1896,21 @@ var LINE_ITEM_FIELDS = {
       },
       { key: 'license_start', label: '許諾開始日', kind: 'date', initialDays: 30 },
       { key: 'license_term', label: '許諾期間', kind: 'text', placeholder: '例: 基本契約の満了日まで / 発売日から3年間' },
-      { key: 'territory_language', label: '許諾地域・言語', kind: 'text', placeholder: '例: 国内・日本語 / 北米・英語' },
-      { key: 'royalty_terms', label: '対価条件（計算方式・料率・基準価格）', kind: 'text', placeholder: '例: ロイヤリティ 5% × 上代(MSRP) / 固定額 100,000円' },
-      { key: 'mg_payment', label: 'MG・AG / 支払条件', kind: 'text', optional: true, placeholder: '例: MG 100,000円 / 四半期締め翌月末払い' },
+      // 金銭条件はテンプレートの 金銭条件1〜3 と同じ 3 枠をあらかじめ用意する。
+      // 各枠に 地域・言語 / 計算方式・料率・基準価格 / MG・AG / 支払条件 を
+      // まとめて記入 (該当しない枠は空欄のまま送信可)。
+      {
+        key: 'money_own', label: '金銭条件① 自社製造・自社販売', kind: 'multiline', optional: true,
+        placeholder: '例: 国内・日本語 / ロイヤリティ5% × 上代(MSRP) / MG 100,000円 / 四半期締め翌月末払い',
+      },
+      {
+        key: 'money_sublicense', label: '金銭条件② サブライセンス（ライセンスアウト）', kind: 'multiline', optional: true,
+        placeholder: '例: 北米・英語 / サブライセンス収入の50% / 半期締め翌月末払い',
+      },
+      {
+        key: 'money_product_out', label: '金銭条件③ 自社製造・他社販売（プロダクトアウト）', kind: 'multiline', optional: true,
+        placeholder: '例: 国内・日本語 / 卸価格 × 5% × 出荷数 / 四半期締め翌月末払い',
+      },
       { key: 'supervision_credit', label: '監修・クレジット表示', kind: 'text', optional: true, placeholder: '例: 要監修（発売前確認） / © 表記「〇〇」' },
       { key: 'remarks', label: '特記事項', kind: 'text', optional: true, placeholder: '無ければ「無し」' },
     ],
