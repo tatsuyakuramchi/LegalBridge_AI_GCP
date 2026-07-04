@@ -68,8 +68,9 @@ export const IssuePicker: React.FC<Props> = ({
             placeholder={placeholder}
             className="pl-8 h-8 text-[12px]"
           />
+          {/* bg-popover はこのテーマで透過になるため hsl() を明示(重なった要素が透けるのを防ぐ) */}
           {open && filtered.length > 0 && (
-            <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-md border border-border bg-popover shadow-md">
+            <div className="absolute z-50 mt-1 w-full max-h-60 overflow-auto rounded-md border border-border bg-[hsl(var(--popover))] shadow-md">
               {filtered.map((i) => (
                 <button
                   key={i.issueKey}

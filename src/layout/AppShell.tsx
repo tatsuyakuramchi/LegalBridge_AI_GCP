@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom"
 import { Sidebar } from "./Sidebar"
 import { Topbar } from "./Topbar"
 import { SkinProvider } from "@/src/lib/skin"
+import { MergeCartPanel } from "@/src/components/backlog/MergeCartPanel"
 
 export function AppShell() {
   return (
@@ -15,6 +16,8 @@ export function AppShell() {
             <Outlet />
           </main>
         </div>
+        {/* 課題統合カート: どの画面からでも籠の中身を見ながら統合できる常駐パネル */}
+        <MergeCartPanel />
       </div>
     </SkinProvider>
   )
