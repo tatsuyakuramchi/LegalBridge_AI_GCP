@@ -253,6 +253,51 @@ function handleInteractivity_(payload) {
       });
     }
 
+    // Phase 27: 複数明細フォームの「➕ 明細を追加 / ➖ 明細を削除」ボタン。
+    //   行数は view.private_metadata の li_count に保持しており、増減して
+    //   モーダル全体を views.update で再構築する。block_id が変わらない
+    //   input の入力値は Slack 側で保持されるため、行を増やしても入力済みの
+    //   内容は消えない (減らした行の値だけ破棄される)。
+    if (action && (action.action_id === 'li_add' || action.action_id === 'li_remove')) {
+      var liMeta = {};
+      try {
+        liMeta = JSON.parse(payload.view.private_metadata || '{}');
+      } catch (e) {
+        liMeta = {};
+      }
+      var liCount = Number(liMeta.li_count) || 1;
+      liCount =
+        action.action_id === 'li_add'
+          ? Math.min(liCount + 1, LINE_ITEM_MAX)
+          : Math.max(liCount - 1, 1);
+
+      // 現在選択中の依頼種別は view state から読む (再描画に必要)。
+      var liState = payload.view.state && payload.view.state.values;
+      var liType =
+        (liState &&
+          liState.request_type_block &&
+          liState.request_type_block.request_type_input &&
+          liState.request_type_block.request_type_input.selected_option &&
+          liState.request_type_block.request_type_input.selected_option.value) ||
+        'legal_consult';
+
+      // delivery_inspec / license_calc は候補セレクトを維持するため再取得。
+      var liCandidates = [];
+      if (liType === 'delivery_inspec' || liType === 'license_calc') {
+        liCandidates = fetchUserCandidates_(payload.user.id, liType);
+      }
+
+      slackPost_('views.update', {
+        view_id: payload.view.id,
+        hash: payload.view.hash,
+        view: getLegalRequestModal_(liType, {
+          candidates: liCandidates,
+          slackUserId: payload.user.id,
+          liCount: liCount,
+        }),
+      });
+    }
+
     // "もう一度検索" button inside the results modal → swap back to the
     // empty search modal so the user can refine the keyword.
     if (action && action.action_id === 'legal_search_again') {
@@ -486,6 +531,13 @@ function createBacklogIssue_(submission) {
       '番号/コード: ' + (submission.entity_id || '') + '\n\n' +
       '【詳細】\n' +
       (submission.details || '');
+
+    // Phase 27: 複数明細フォームの内容を description 末尾に整形して追記。
+    // (DB への構造化保存はせず Backlog に書くだけ。)
+    var lineItemsText = formatLineItemsText_(submission);
+    if (lineItemsText) {
+      description += '\n\n' + lineItemsText;
+    }
 
     var body = [
       'projectId=' + encodeURIComponent(projectId),
@@ -1136,7 +1188,7 @@ function parseLegalRequestSubmission_(payload) {
     '';
 
   const deliveryNoRaw = safeText('delivery_no_block', 'delivery_no_input');
-  return {
+  const submission = {
     slack_user_id: payload.user.id,
     slack_user_name: payload.user.name || payload.user.username || '',
     dept: safeText('dept_block', 'dept_input'),
@@ -1163,6 +1215,56 @@ function parseLegalRequestSubmission_(payload) {
       'target_issue_key_select_input'
     ),
   };
+
+  // Phase 27: 複数明細 (line_items) の収集。
+  //   行数は modal の private_metadata (li_count) から取り、
+  //   li_<行>_<フィールド>_block を種別定義 (LINE_ITEM_FIELDS) に従って読む。
+  submission.line_items = [];
+  var liConf = LINE_ITEM_FIELDS[submission.request_type];
+  if (liConf) {
+    var liMeta = {};
+    try {
+      liMeta = JSON.parse((payload.view && payload.view.private_metadata) || '{}');
+    } catch (e) {
+      liMeta = {};
+    }
+    var liCount = Math.min(Number(liMeta.li_count) || 0, LINE_ITEM_MAX);
+    for (var i = 1; i <= liCount; i++) {
+      var item = {};
+      var hasValue = false;
+      liConf.fields.forEach(function (f) {
+        var block = 'li_' + i + '_' + f.key + '_block';
+        var actionId = 'li_' + i + '_' + f.key + '_input';
+        var value;
+        if (f.kind === 'date') {
+          value = safeDate(block, actionId);
+        } else if (f.kind === 'select' || f.kind === 'radio') {
+          value = safeOption(block, actionId);
+        } else {
+          value = safeText(block, actionId);
+        }
+        item[f.key] = value;
+        if (value) hasValue = true;
+      });
+      if (hasValue) submission.line_items.push(item);
+    }
+  }
+
+  // 検収書は旧・単一「検収書作成用データ」フォームを明細フォームへ置き換えた。
+  // worker (link-trigger / webhook パイプライン) との互換のため、明細 1 行目を
+  // 従来の submission フィールドへ埋め戻す。
+  if (submission.request_type === 'delivery_inspec' && submission.line_items.length > 0) {
+    var firstItem = submission.line_items[0];
+    if (firstItem.delivery_no) {
+      submission.delivery_no = parseInt(firstItem.delivery_no, 10) || null;
+    }
+    submission.order_amount = firstItem.order_amount || submission.order_amount;
+    submission.delivery_date = firstItem.delivery_date || submission.delivery_date;
+    submission.inspection_deadline =
+      firstItem.inspection_deadline || submission.inspection_deadline;
+  }
+
+  return submission;
 }
 
 // -----------------------------------------------------------------------
@@ -1710,6 +1812,234 @@ function masterStatusLabel_(master) {
   return '✅ 締結済' + num;
 }
 
+// -----------------------------------------------------------------------
+//  Phase 27: 複数明細フォーム (発注書・個別利用許諾条件・検収書・計算書)
+//
+//  Slack Block Kit にはリピーター部品が無いため、「➕ 明細を追加」ボタン
+//  (block_actions) → views.update でモーダルを再構築する方式で実現する。
+//    - 行数は modal の private_metadata (JSON {li_count: N}) に保持
+//    - 各行の block_id は li_<行番号>_<フィールド>_block で固定 →
+//      views.update を跨いでも入力値が保持される
+//    - 送信時は parseLegalRequestSubmission_ が line_items 配列に集約し、
+//      createBacklogIssue_ が Backlog description に整形して書き込む
+//      (DB への構造化保存はしない)
+//
+//  モーダルは 100 ブロック上限があるため、明細は LINE_ITEM_MAX 件まで。
+//  (最重量の発注書: 共通 12 + 明細 11 × 5 + ボタン類 2 ≒ 69 ブロック)
+// -----------------------------------------------------------------------
+
+var LINE_ITEM_MAX = 5;
+
+// request_type → 明細フォーム定義。kind: text | multiline | date | select | radio
+//   optional: true で入力任意。initialDays: datepicker の初期値 (今日+n日)。
+var LINE_ITEM_FIELDS = {
+  purchase_order: {
+    label: '発注明細',
+    fields: [
+      { key: 'name', label: '発注の概要名称', kind: 'text', placeholder: '例: 〇〇制作業務' },
+      {
+        key: 'ip_ownership', label: 'IP帰属', kind: 'radio',
+        options: [
+          { value: 'transfer', text: '当社へ譲渡（譲渡型）' },
+          { value: 'license', text: '利用許諾（ロイヤリティ有）' },
+        ],
+      },
+      { key: 'work_spec', label: '業務内容・仕様（できるだけ具体的に）', kind: 'multiline', placeholder: '箇条書きで記入してください' },
+      { key: 'work_deadline', label: '業務納期', kind: 'date', initialDays: 30 },
+      {
+        key: 'payment_method', label: '支払方法', kind: 'select',
+        options: [
+          { value: 'lump_sum', text: '一括' },
+          { value: 'installments', text: '分割' },
+          { value: 'royalty', text: 'ロイヤリティ歩合' },
+          { value: 'monthly', text: '月払い' },
+          { value: 'quarterly', text: '四半期払い' },
+          { value: 'yearly', text: '年払い' },
+        ],
+      },
+      { key: 'payment_due', label: '支払期日', kind: 'date', initialDays: 60 },
+      { key: 'amount', label: '金額（税抜）', kind: 'text', placeholder: '例: 100000（分割・歩合の場合は算定方法を記載）' },
+      { key: 'royalty_terms', label: '料率・基準価格・MG/AG〔利用許諾ありのときのみ〕', kind: 'text', optional: true, placeholder: '例: 料率5% / 基準価格1,650円 / MG 100,000円' },
+      { key: 'remarks', label: '特約・備考', kind: 'text', optional: true, placeholder: '無ければ「無し」' },
+    ],
+  },
+  lic_individual: {
+    label: '許諾明細',
+    fields: [
+      { key: 'original_work', label: '対象作品（原著作物）', kind: 'text', placeholder: '例: 『〇〇』' },
+      {
+        key: 'usage_type', label: '展開区分', kind: 'radio',
+        options: [
+          { value: 'boardgame', text: 'ボードゲーム' },
+          { value: 'publication', text: '出版' },
+          { value: 'other', text: 'その他' },
+        ],
+      },
+      { key: 'product_name', label: '対象製品・媒体名', kind: 'text', placeholder: '例: ボードゲーム「〇〇」/ 書籍『〇〇』' },
+      { key: 'territory_language', label: '地域・言語', kind: 'text', placeholder: '例: 日本 / 日本語' },
+      { key: 'royalty_terms', label: '料率・基準価格・MG/AG', kind: 'text', placeholder: '例: 料率5% / 基準価格1,650円 / MG 100,000円' },
+      { key: 'term', label: '許諾期間', kind: 'text', placeholder: '例: 発売日から3年間' },
+      { key: 'remarks', label: '特約・備考', kind: 'text', optional: true, placeholder: '無ければ「無し」' },
+    ],
+  },
+  delivery_inspec: {
+    label: '納品明細',
+    fields: [
+      // key 名は旧フォーム互換 (parseLegalRequestSubmission_ が明細 1 行目を
+      // 従来の submission.delivery_no 等へ埋め戻して worker 連携を維持する)。
+      { key: 'item_name', label: '品名・業務内容', kind: 'text', placeholder: '例: 〇〇イラスト制作 一式' },
+      { key: 'delivery_no', label: '納品回数 (第 n 回納品)', kind: 'text', placeholder: '1', initialValue: '1' },
+      { key: 'order_amount', label: '金額（税抜）', kind: 'text', placeholder: '100000' },
+      { key: 'delivery_date', label: '納品日 (YYYY-MM-DD)', kind: 'date', initialDays: 0 },
+      { key: 'inspection_deadline', label: '検収期限 (YYYY-MM-DD)', kind: 'date', initialDays: 14 },
+    ],
+  },
+  license_calc: {
+    label: '計算明細',
+    fields: [
+      { key: 'product_name', label: '対象製品・作品', kind: 'text', placeholder: '例: ボードゲーム「〇〇」' },
+      { key: 'period', label: '対象期間', kind: 'text', placeholder: '例: 2026年4月〜2026年6月' },
+      { key: 'sales', label: '販売数・売上高', kind: 'text', placeholder: '例: 1,200個 / ¥1,980,000' },
+      { key: 'royalty_terms', label: '料率・単価', kind: 'text', placeholder: '例: 料率5% / 単価100円' },
+      { key: 'remarks', label: '備考', kind: 'text', optional: true },
+    ],
+  },
+};
+
+/** 明細 1 行分の input ブロック群を組み立てる (index は 1 始まり)。 */
+function buildLineItemBlocks_(type, index) {
+  var conf = LINE_ITEM_FIELDS[type];
+  if (!conf) return [];
+
+  var blocks = [
+    { type: 'divider' },
+    {
+      type: 'section',
+      block_id: 'li_' + index + '_head_block',
+      text: { type: 'mrkdwn', text: '*📄 ' + conf.label + ' ' + index + '*' },
+    },
+  ];
+
+  conf.fields.forEach(function (f) {
+    var actionId = 'li_' + index + '_' + f.key + '_input';
+    var element;
+    if (f.kind === 'date') {
+      element = { type: 'datepicker', action_id: actionId };
+      if (typeof f.initialDays === 'number') {
+        element.initial_date = new Date(Date.now() + f.initialDays * 24 * 60 * 60 * 1000)
+          .toISOString()
+          .split('T')[0];
+      }
+    } else if (f.kind === 'select') {
+      element = {
+        type: 'static_select',
+        action_id: actionId,
+        placeholder: { type: 'plain_text', text: '選択してください' },
+        options: f.options.map(function (o) {
+          return { text: { type: 'plain_text', text: o.text }, value: o.value };
+        }),
+      };
+    } else if (f.kind === 'radio') {
+      element = {
+        type: 'radio_buttons',
+        action_id: actionId,
+        options: f.options.map(function (o) {
+          return { text: { type: 'plain_text', text: o.text }, value: o.value };
+        }),
+      };
+    } else {
+      element = { type: 'plain_text_input', action_id: actionId };
+      if (f.kind === 'multiline') element.multiline = true;
+      if (f.placeholder) element.placeholder = { type: 'plain_text', text: f.placeholder };
+      if (f.initialValue) element.initial_value = f.initialValue;
+    }
+
+    blocks.push({
+      type: 'input',
+      block_id: 'li_' + index + '_' + f.key + '_block',
+      optional: !!f.optional,
+      label: { type: 'plain_text', text: f.label },
+      element: element,
+    });
+  });
+
+  return blocks;
+}
+
+/** 明細セクション全体 (明細 × count + 追加/削除ボタン) を組み立てる。 */
+function getLineItemSectionBlocks_(type, count) {
+  var conf = LINE_ITEM_FIELDS[type];
+  if (!conf) return [];
+  var n = Math.max(1, Math.min(Number(count) || 1, LINE_ITEM_MAX));
+
+  var blocks = [];
+  for (var i = 1; i <= n; i++) {
+    blocks = blocks.concat(buildLineItemBlocks_(type, i));
+  }
+
+  var buttons = [];
+  if (n < LINE_ITEM_MAX) {
+    buttons.push({
+      type: 'button',
+      action_id: 'li_add',
+      text: { type: 'plain_text', text: '➕ 明細を追加' },
+    });
+  }
+  if (n > 1) {
+    buttons.push({
+      type: 'button',
+      action_id: 'li_remove',
+      text: { type: 'plain_text', text: '➖ 最後の明細を削除' },
+    });
+  }
+  if (buttons.length > 0) {
+    blocks.push({ type: 'actions', block_id: 'li_actions_block', elements: buttons });
+  }
+  blocks.push({
+    type: 'context',
+    elements: [
+      {
+        type: 'mrkdwn',
+        text: '明細は最大 ' + LINE_ITEM_MAX + ' 件まで追加できます (現在 ' + n + ' 件)。',
+      },
+    ],
+  });
+  return blocks;
+}
+
+/**
+ * 送信された明細を Backlog description 用のテキストに整形する。
+ * radio / select は value → 表示ラベルに解決する。明細が無ければ空文字。
+ */
+function formatLineItemsText_(submission) {
+  var conf = LINE_ITEM_FIELDS[submission.request_type];
+  var items = submission.line_items || [];
+  if (!conf || items.length === 0) return '';
+
+  var out = ['【' + conf.label + '】(' + items.length + ' 件)'];
+  items.forEach(function (item, idx) {
+    out.push('■ ' + conf.label + ' ' + (idx + 1));
+    conf.fields.forEach(function (f) {
+      var raw = item[f.key];
+      if (raw === null || raw === undefined || raw === '') return;
+      var display = raw;
+      if ((f.kind === 'radio' || f.kind === 'select') && f.options) {
+        f.options.forEach(function (o) {
+          if (o.value === raw) display = o.text;
+        });
+      }
+      if (f.kind === 'multiline') {
+        out.push(f.label + ':');
+        out.push(String(display));
+      } else {
+        out.push(f.label + ': ' + display);
+      }
+    });
+    out.push('');
+  });
+  return out.join('\n');
+}
+
 /**
  * Phase 22.2 で第 2 引数 `opts` を追加:
  *   opts.candidates  : worker から取得した申請者の未完了候補配列
@@ -1717,11 +2047,16 @@ function masterStatusLabel_(master) {
  *
  * delivery_inspec / license_calc / deadline_change のときは候補 static_select
  * を表示し、ユーザーが既存子課題を選択できるようにする (V2 select)。
+ *
+ * Phase 27 で `opts.liCount` を追加:
+ *   複数明細フォーム対象種別 (LINE_ITEM_FIELDS) の明細行数。
+ *   省略時 1。li_add / li_remove ボタンの views.update 再描画時に渡される。
  */
 function getLegalRequestModal_(selectedType, opts) {
   selectedType = selectedType || 'legal_consult';
   opts = opts || {};
   var candidates = opts.candidates || [];
+  var liCount = Math.max(1, Math.min(Number(opts.liCount) || 1, LINE_ITEM_MAX));
 
   // Three top-level intake categories. Each category groups one or more
   // concrete request types so the user picks "what kind of work do I
@@ -2020,62 +2355,26 @@ function getLegalRequestModal_(selectedType, opts) {
     },
   ]);
 
-  if (selectedType === 'delivery_inspec') {
-    blocks.push(
-      { type: 'divider' },
-      {
-        type: 'section',
-        text: { type: 'mrkdwn', text: '*検収書作成用データ*' },
-      },
-      {
-        type: 'input',
-        block_id: 'delivery_no_block',
-        label: { type: 'plain_text', text: '納品回数 (第 n 回納品)' },
-        element: {
-          type: 'plain_text_input',
-          action_id: 'delivery_no_input',
-          placeholder: { type: 'plain_text', text: '1' },
-          initial_value: '1',
-        },
-      },
-      {
-        type: 'input',
-        block_id: 'order_amount_block',
-        label: { type: 'plain_text', text: '金額（税抜）' },
-        element: {
-          type: 'plain_text_input',
-          action_id: 'order_amount_input',
-          placeholder: { type: 'plain_text', text: '100000' },
-        },
-      },
-      {
-        type: 'input',
-        block_id: 'delivery_date_block',
-        label: { type: 'plain_text', text: '納品日 (YYYY-MM-DD)' },
-        element: {
-          type: 'datepicker',
-          action_id: 'delivery_date_input',
-          initial_date: new Date().toISOString().split('T')[0],
-        },
-      },
-      {
-        type: 'input',
-        block_id: 'inspection_deadline_block',
-        label: { type: 'plain_text', text: '検収期限 (YYYY-MM-DD)' },
-        element: {
-          type: 'datepicker',
-          action_id: 'inspection_deadline_input',
-          initial_date: new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        },
-      }
-    );
+  // Phase 27: 発注書・個別利用許諾条件・検収書・利用許諾計算書には
+  // 「➕ 明細を追加」で増減できる複数明細フォームを付ける。
+  // (旧 delivery_inspec 専用の単一「検収書作成用データ」ブロックはこの
+  //  明細フォームに置き換えた。明細 1 行目が従来フィールドとして worker へ
+  //  埋め戻される — parseLegalRequestSubmission_ 参照。)
+  var finalBlocks = blocks;
+  if (LINE_ITEM_FIELDS[selectedType]) {
+    finalBlocks = blocks.concat(getLineItemSectionBlocks_(selectedType, liCount));
   }
 
   return {
     type: 'modal',
     callback_id: 'legal_request_modal',
     title: { type: 'plain_text', text: '法務相談・契約審査' },
-    blocks: blocks,
+    // 明細行数を保持。li_add / li_remove の block_actions で読み出して
+    // views.update に使う (明細フォームの無い種別は 0)。
+    private_metadata: JSON.stringify({
+      li_count: LINE_ITEM_FIELDS[selectedType] ? liCount : 0,
+    }),
+    blocks: finalBlocks,
     submit: { type: 'plain_text', text: '送信' },
   };
 }

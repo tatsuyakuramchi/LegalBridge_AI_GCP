@@ -69,6 +69,16 @@ add:
 > (observed: 7.5s end-to-end). The Slack Gateway now calls Cloud Run's
 > `/api/contract-check/search` directly, eliminating one GAS-to-GAS hop.
 
+> **複数明細フォーム (Phase 27)**: 発注書 / 個別利用許諾条件 / 納品・検収書 /
+> 利用許諾計算書 の 4 種別は、モーダル内の「➕ 明細を追加」ボタンで明細行を
+> 最大 5 件まで増やせる (`LINE_ITEM_FIELDS` / `LINE_ITEM_MAX` in `Code.gs`)。
+> 行数は modal の `private_metadata` に保持し、ボタン押下の `block_actions` で
+> `views.update` 再描画する (block_id 固定のため入力値は保持される)。
+> 送信された明細は Backlog 課題の description に整形して追記されるだけで、
+> DB への構造化保存はしない。検収書は明細 1 行目が従来の
+> `delivery_no` / `order_amount` / `delivery_date` / `inspection_deadline`
+> に埋め戻され、worker 連携 (link-trigger 等) の互換を保つ。
+
 > **`/法務依頼` runs entirely in GAS.** The legal-request modal submit
 > creates the Backlog issue directly via the Backlog REST API (no Cloud
 > Run dependency). Downstream document generation is triggered by
