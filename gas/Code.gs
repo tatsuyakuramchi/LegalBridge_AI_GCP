@@ -1376,27 +1376,8 @@ function getSearchResultsModal_(keyword, data) {
   appendContractStatusBlocks_(blocks, contractPayload);
 
   // Phase 12 / 17s / 17t: search-api の Web 詳細ページへの URL を組み立て。
-  //   優先: LB_SIGNING_SECRET があれば HMAC 短期署名 URL を発行
-  //   フォールバック: 旧 LB_PORTAL_SECRET の ?token=
-  // 移行期間中は両方 ScriptProperty にあって良い。
-  // base URL は CLOUD_RUN_BASE_URL / LB_API_BASE_URL のいずれでも引ける
-  // (getApiConfig_ が dual-read する)。
-  var cloudRunBase = (getApiConfig_().baseUrl || '').replace(/\/+$/, '');
-  var webDetailUrl = '';
-  if (cloudRunBase) {
-    var signedQs = signListResourceQs_();
-    if (signedQs) {
-      webDetailUrl =
-        cloudRunBase + '/search/vendor?q=' + encodeURIComponent(keyword) +
-        '&' + signedQs;
-    } else {
-      // legacy fallback
-      var portalSecret = scriptProperty_('LB_PORTAL_SECRET') || '';
-      webDetailUrl =
-        cloudRunBase + '/search/vendor?q=' + encodeURIComponent(keyword) +
-        (portalSecret ? '&token=' + encodeURIComponent(portalSecret) : '');
-    }
-  }
+  //   (署名/token の付与ロジックは buildVendorSearchUrl_ に共通化)
+  var webDetailUrl = buildVendorSearchUrl_(keyword);
 
   // ── Footer actions ────────────────────────────────────────────
   blocks.push({ type: 'divider' });
@@ -1812,6 +1793,28 @@ function masterStatusLabel_(master) {
   return '✅ 締結済' + num;
 }
 
+/**
+ * search-api (Cloud Run) の取引先検索ページ /search/vendor への URL を作る。
+ *
+ * Phase 12 / 17s / 17t の仕様:
+ *   優先: LB_SIGNING_SECRET があれば HMAC 短期署名 URL (resourceId='list')
+ *   フォールバック: 旧 LB_PORTAL_SECRET の ?token=
+ *   base URL は CLOUD_RUN_BASE_URL / LB_API_BASE_URL のいずれでも引ける
+ *   (getApiConfig_ が dual-read する)。base 未設定なら '' を返す。
+ *
+ * @param {string} [keyword] 初期検索キーワード。空なら検索ボックスだけの
+ *   一覧ページが開く (/search/vendor は q 無しでも表示できる)。
+ */
+function buildVendorSearchUrl_(keyword) {
+  var base = (getApiConfig_().baseUrl || '').replace(/\/+$/, '');
+  if (!base) return '';
+  var url = base + '/search/vendor?q=' + encodeURIComponent(keyword || '');
+  var signedQs = signListResourceQs_();
+  if (signedQs) return url + '&' + signedQs;
+  var portalSecret = scriptProperty_('LB_PORTAL_SECRET') || '';
+  return url + (portalSecret ? '&token=' + encodeURIComponent(portalSecret) : '');
+}
+
 // -----------------------------------------------------------------------
 //  Phase 27: 複数明細フォーム (発注書・個別利用許諾条件・検収書・計算書)
 //
@@ -2116,17 +2119,11 @@ function getLegalRequestModal_(selectedType, opts) {
     };
   });
 
+  // 依頼部署の入力は廃止 (Phase 27.1)。submission.dept は '' のまま
+  // worker へ渡る。部署チャンネル通知はスタッフマスタ (staff.department →
+  // department_workflow_rules) で解決されるため入力は不要 (worker の
+  // notifyIssueEvent は COALESCE(s.department, lr.dept) で staff 優先)。
   const baseBlocks = [
-    {
-      type: 'input',
-      block_id: 'dept_block',
-      label: { type: 'plain_text', text: '依頼部署' },
-      element: {
-        type: 'plain_text_input',
-        action_id: 'dept_input',
-        placeholder: { type: 'plain_text', text: '〇〇事業部' },
-      },
-    },
     {
       type: 'input',
       block_id: 'request_type_block',
@@ -2236,6 +2233,23 @@ function getLegalRequestModal_(selectedType, opts) {
 
   // 通常 (新規依頼) の form
 
+  // Phase 27.1: 取引先コード欄の下に search-api の取引先マスタ検索ページへの
+  // リンクを出す (コードが分からないまま起票されるのを減らす)。
+  // URL は署名付き (LB_SIGNING_SECRET, TTL 10 分) または legacy token。
+  var vendorSearchUrl = buildVendorSearchUrl_('');
+  var entityIdHelpBlock = {
+    type: 'context',
+    block_id: 'entity_id_help_block',
+    elements: [
+      {
+        type: 'mrkdwn',
+        text: vendorSearchUrl
+          ? '🔎 取引先コードが分からない場合は <' + vendorSearchUrl + '|取引先マスタを検索> (法務検索ポータル)'
+          : '🔎 取引先コードは法務検索ポータル (取引先マスタ) で確認できます。',
+      },
+    ],
+  };
+
   // Phase 22.2 V2: 検収書 / 利用許諾料計算書 のときは候補 select を表示
   // (発注書完了で自動作成された納品報告子課題等への紐付け用)
   var candidateBlocks = [];
@@ -2342,6 +2356,7 @@ function getLegalRequestModal_(selectedType, opts) {
         placeholder: { type: 'plain_text', text: '13桁の番号、または社内コード' },
       },
     },
+    entityIdHelpBlock,
     { type: 'divider' },
     {
       type: 'input',
