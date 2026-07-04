@@ -38,6 +38,7 @@ import {
 } from './UnifiedContractPicker';
 import { FinancialConditionPicker } from './FinancialConditionPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
+import { WorkPicker, toWorkPickerItem } from '@/src/components/work/WorkPicker';
 import { LicenseWizardRail, type WizardStep } from './LicenseWizardRail';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
@@ -1531,31 +1532,19 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
                 作品設定 — 対象作品（自社作品）
               </label>
-              <select
-                value={formData.linked_work_id || ''}
-                onChange={(e) => {
-                  const id = e.target.value || undefined;
-                  const w = worksList.find(
-                    (x: any) => String(x.id) === e.target.value
-                  );
+              {/* 作品数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+              <WorkPicker
+                items={worksList.filter((w: any) => w.title).map((w: any) => toWorkPickerItem(w))}
+                value={formData.linked_work_id ? String(formData.linked_work_id) : undefined}
+                onSelect={(w) =>
                   setFormData({
                     ...formData,
-                    linked_work_id: id,
+                    linked_work_id: w?.id,
                     対象製品予定名: w?.title || formData.対象製品予定名 || '',
-                  });
-                }}
-                className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-              >
-                <option value="">— この契約の対象作品を選択 —</option>
-                {worksList
-                  .filter((w: any) => w.title)
-                  .map((w: any) => (
-                    <option key={w.id} value={String(w.id)}>
-                      {w.work_code ? `[${w.work_code}] ` : ''}
-                      {w.title}
-                    </option>
-                  ))}
-              </select>
+                  })
+                }
+                placeholder="この契約の対象作品を検索 (コード / タイトル / 別名)"
+              />
               <div className="flex items-center gap-1.5 pt-1">
                 <input
                   value={newWorkTitle}
@@ -1601,20 +1590,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
               原作 (Ledger) — 既存を選択 or 新規作成
             </label>
-            <select
-              value={formData.ledger_ref_id || ''}
-              onChange={(e) => onLedgerChange(e.target.value)}
-              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-            >
-              <option value="">— 原作を選択 —</option>
-              {ledgerList
+            {/* 原作数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+            <WorkPicker
+              items={ledgerList
                 .filter((l: any) => l.is_active !== false)
-                .map((l: any) => (
-                  <option key={l.id} value={l.id}>
-                    [{l.ledger_code}] {l.title}
-                  </option>
-                ))}
-            </select>
+                .map((l: any) => toWorkPickerItem(l))}
+              value={formData.ledger_ref_id ? String(formData.ledger_ref_id) : undefined}
+              onSelect={(l) => onLedgerChange(l?.id || '')}
+              placeholder="原作を検索 (LO-コード / タイトル / 別名)"
+            />
             <div className="flex items-center gap-1.5 pt-1">
               <span className="text-[10px] font-mono text-muted-foreground shrink-0">
                 または新規:
@@ -5685,26 +5669,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
               作品設定 — 対象作品（自社作品）
             </label>
-            <select
-              value={formData.linked_work_id || ''}
-              onChange={(e) =>
+            {/* 作品数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+            <WorkPicker
+              items={worksList.filter((w: any) => w.title).map((w: any) => toWorkPickerItem(w))}
+              value={formData.linked_work_id ? String(formData.linked_work_id) : undefined}
+              onSelect={(w) =>
                 setFormData({
                   ...formData,
-                  linked_work_id: e.target.value || undefined,
+                  linked_work_id: w?.id,
                 })
               }
-              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-            >
-              <option value="">— この契約の対象作品を選択 —</option>
-              {worksList
-                .filter((w: any) => w.title)
-                .map((w: any) => (
-                  <option key={w.id} value={String(w.id)}>
-                    {w.work_code ? `[${w.work_code}] ` : ''}
-                    {w.title}
-                  </option>
-                ))}
-            </select>
+              placeholder="この契約の対象作品を検索 (コード / タイトル / 別名)"
+            />
             <div className="flex items-center gap-1.5 pt-1">
               <span className="text-[10px] font-mono text-muted-foreground shrink-0">
                 または新規:
@@ -5739,10 +5715,21 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
               原作 (Ledger) — 選択で「原著作物名」を自動入力（なければ新規作成）
             </label>
-            <select
-              value={formData.ledger_ref_id || ''}
-              onChange={(e) => {
-                const lid = Number(e.target.value);
+            {/* 原作数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+            <WorkPicker
+              items={(Array.isArray(allLedgers) ? allLedgers : [])
+                .filter((l: any) => l.is_active !== false)
+                .map((l: any) =>
+                  toWorkPickerItem(l, {
+                    sub:
+                      Array.isArray(l.division) && l.division.length
+                        ? `〔${l.division.join('/')}〕`
+                        : undefined,
+                  })
+                )}
+              value={formData.ledger_ref_id ? String(formData.ledger_ref_id) : undefined}
+              onSelect={(sel) => {
+                const lid = Number(sel?.id);
                 const list = Array.isArray(allLedgers) ? allLedgers : [];
                 const ledger = list.find((l: any) => Number(l.id) === lid);
                 if (!lid || !ledger) {
@@ -5761,20 +5748,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   原著作物名: ledger.title || '',
                 });
               }}
-              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-            >
-              <option value="">— 原作マスタから選択 —</option>
-              {(Array.isArray(allLedgers) ? allLedgers : [])
-                .filter((l: any) => l.is_active !== false)
-                .map((l: any) => (
-                  <option key={l.id} value={l.id}>
-                    [{l.ledger_code}] {l.title}
-                    {Array.isArray(l.division) && l.division.length
-                      ? ` 〔${l.division.join('/')}〕`
-                      : ''}
-                  </option>
-                ))}
-            </select>
+              placeholder="原作マスタを検索 (LO-コード / タイトル / 別名)"
+            />
             <div className="flex items-center gap-1.5 pt-1">
               <span className="text-[10px] font-mono text-muted-foreground shrink-0">
                 または新規:
