@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom"
 
 import { ToastProvider } from "@/components/ui/toast"
 import { AppDataProvider, DocumentSessionProvider } from "./context/AppDataContext"
+import { MergeCartProvider } from "./context/MergeCartContext" // 課題統合カート
 import { AppShell } from "./layout/AppShell"
 import { DashboardPage } from "./pages/DashboardPage"
 import { DocumentEditorPage } from "./pages/DocumentEditorPage"
@@ -40,6 +41,7 @@ export default function App() {
       <ToastProvider>
         <AppDataProvider>
           <DocumentSessionProvider>
+            <MergeCartProvider>
             <Routes>
               <Route element={<AppShell />}>
                 <Route index element={<DashboardPage />} />
@@ -90,6 +92,7 @@ export default function App() {
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Route>
             </Routes>
+            </MergeCartProvider>
           </DocumentSessionProvider>
         </AppDataProvider>
       </ToastProvider>
