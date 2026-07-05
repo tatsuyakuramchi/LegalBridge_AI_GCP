@@ -350,10 +350,9 @@ function handleInteractivity_(payload) {
       // lookup-number で番号を検証し、取引先 (vendor) を自動解決して従来の
       // Backlog 起票パイプラインへ流す。番号が無い/見つからない場合は
       // モーダル内バリデーションエラーで差し戻す。
-      if (
-        submission.request_type === 'delivery_inspec' ||
-        submission.request_type === 'license_calc'
-      ) {
+
+      // 利用許諾計算書: 単一の契約番号。
+      if (submission.request_type === 'license_calc') {
         var targetDocNo = String(submission.target_doc_number || '').trim();
         if (!targetDocNo) {
           return jsonResponse_({
@@ -389,6 +388,99 @@ function handleInteractivity_(payload) {
         submission.counterparty = looked.vendorName || '';
         if (looked.vendorCode) submission.entity_id = looked.vendorCode;
         if (looked.entityType === 'individual') submission.entity_type = 'individual';
+      }
+
+      // 検収書 (Phase 28.1): 明細ごとの契約番号に対応。空欄の明細は共通番号
+      // (target_doc_number_block) にフォールバック。全番号を fetchAll で並列
+      // 検証し、複数契約 (=複数取引先) に跨る場合は counterparty を集約表記、
+      // description に「対象契約番号: 複数」を書いて worker の自動 PDF を
+      // スキップさせる (発行は admin-ui 検収待ちページの一括作成)。
+      if (submission.request_type === 'delivery_inspec') {
+        var defaultDocNo = String(submission.target_doc_number || '').trim();
+        var diItems = submission.line_items || [];
+
+        // 1. 明細ごとの番号を確定 (空欄は共通番号へフォールバック)。
+        var diErrors = {};
+        var itemDocNos = [];
+        for (var di = 0; di < diItems.length; di++) {
+          var ownNo = String(diItems[di].target_doc_number || '').trim();
+          var effNo = ownNo || defaultDocNo;
+          if (!effNo) {
+            diErrors[ownNo ? 'li_' + (di + 1) + '_target_doc_number_block' : 'target_doc_number_block'] =
+              '対象の発注書番号 / 契約書番号を入力してください（明細ごとに違う場合は各明細の「対象契約番号」へ）。';
+          }
+          itemDocNos.push(effNo);
+        }
+        if (diItems.length === 0 && !defaultDocNo) {
+          diErrors['target_doc_number_block'] =
+            '対象の発注書番号 / 契約書番号を入力してください（上の候補から選択した場合は不要です）。';
+        }
+        if (Object.keys(diErrors).length > 0) {
+          return jsonResponse_({ response_action: 'errors', errors: diErrors });
+        }
+
+        // 2. 全番号を並列 lookup。
+        var nosToCheck = itemDocNos.length > 0 ? itemDocNos : [defaultDocNo];
+        var lookups = lookupContractNumbersBulk_(nosToCheck);
+
+        // 3. 検証: エラー/未登録はその明細 (共通番号使用時は共通欄) に差し戻す。
+        var diErrors2 = {};
+        for (var dj = 0; dj < nosToCheck.length; dj++) {
+          var lr = lookups[nosToCheck[dj]];
+          if (lr && lr.found === true) continue;
+          var isOwn =
+            diItems.length > 0 &&
+            String(diItems[dj].target_doc_number || '').trim() !== '';
+          var errBlock = isOwn
+            ? 'li_' + (dj + 1) + '_target_doc_number_block'
+            : 'target_doc_number_block';
+          diErrors2[errBlock] =
+            (lr && lr.__error
+              ? '番号の確認中にエラーが発生しました。時間をおいて再度お試しください。'
+              : 'この番号の契約が見つかりません。「支払対象契約検索」ページで番号をご確認ください。') +
+            ' [' + nosToCheck[dj] + ']';
+        }
+        if (Object.keys(diErrors2).length > 0) {
+          return jsonResponse_({ response_action: 'errors', errors: diErrors2 });
+        }
+
+        // 4. 解決結果を明細へ反映 (description の明細に 番号+取引先名 が出る)。
+        var uniqueNos = [];
+        var uniqueVendors = [];
+        for (var dk = 0; dk < nosToCheck.length; dk++) {
+          var hit = lookups[nosToCheck[dk]];
+          var normNo = hit.documentNumber || nosToCheck[dk];
+          if (uniqueNos.indexOf(normNo) === -1) uniqueNos.push(normNo);
+          var vn = hit.vendorName || '';
+          if (vn && uniqueVendors.indexOf(vn) === -1) uniqueVendors.push(vn);
+          if (diItems[dk]) {
+            diItems[dk].target_doc_number = normNo + (vn ? '（' + vn + '）' : '');
+          }
+        }
+
+        var firstHit = lookups[nosToCheck[0]];
+        if (uniqueNos.length === 1) {
+          // 単一契約: 従来どおり取引先を自動解決して worker の自動生成に乗せる。
+          submission.target_doc_number = uniqueNos[0];
+          submission.target_contract_title = firstHit.contractTitle || '';
+          submission.counterparty = firstHit.vendorName || '';
+          if (firstHit.vendorCode) submission.entity_id = firstHit.vendorCode;
+          if (firstHit.entityType === 'individual') submission.entity_type = 'individual';
+        } else {
+          // 複数契約: counterparty は集約表記。「対象契約番号: 複数」が
+          // description に載り、worker が自動 PDF をスキップする。
+          submission.multi_contract = true;
+          submission.target_doc_number =
+            '複数 (' + uniqueNos.length + '件 — 明細参照)';
+          submission.target_contract_title = '';
+          submission.counterparty =
+            uniqueVendors.length === 0
+              ? ''
+              : uniqueVendors.length === 1
+                ? uniqueVendors[0]
+                : uniqueVendors[0] + ' ほか' + (uniqueVendors.length - 1) + '社';
+          submission.entity_id = '';
+        }
       }
 
       // Phase 19: GAS 側 intake ack DM (sendIntakeAckDm_) は削除した。
@@ -693,6 +785,66 @@ function lookupContractNumber_(documentNumber) {
     console.error('lookupContractNumber_ failed:', err);
     return { __error: String(err && err.message ? err.message : err) };
   }
+}
+
+/**
+ * Phase 28.1: 複数の契約番号を UrlFetchApp.fetchAll で並列に逆引きする。
+ * 検収書の明細ごと契約番号 (最大 5 件) を Slack の 3 秒 ack 制約内で
+ * 検証するために使う。戻り値は { <番号>: <lookup 結果 or {__error}> } の map。
+ */
+function lookupContractNumbersBulk_(numbers) {
+  var out = {};
+  var unique = [];
+  (numbers || []).forEach(function (n) {
+    var key = String(n || '').trim();
+    if (key && unique.indexOf(key) === -1) unique.push(key);
+  });
+  if (unique.length === 0) return out;
+
+  var config = getApiConfig_();
+  if (!config.baseUrl) {
+    unique.forEach(function (n) {
+      out[n] = { __error: 'CLOUD_RUN_BASE_URL (旧 LB_API_BASE_URL) が未設定です。' };
+    });
+    return out;
+  }
+  var base = String(config.baseUrl).replace(/\/+$/, '');
+  var headers = {};
+  if (config.secret) headers['X-LB-PORTAL-SECRET'] = config.secret;
+
+  var requests = unique.map(function (n) {
+    return {
+      url: base + '/api/contract-check/lookup-number',
+      method: 'post',
+      contentType: 'application/json',
+      headers: headers,
+      muteHttpExceptions: true,
+      payload: JSON.stringify({ documentNumber: n }),
+    };
+  });
+
+  try {
+    var responses = UrlFetchApp.fetchAll(requests);
+    responses.forEach(function (res, i) {
+      var n = unique[i];
+      try {
+        var code = res.getResponseCode();
+        if (code >= 300) {
+          out[n] = { __error: 'lookup-number HTTP ' + code };
+        } else {
+          out[n] = JSON.parse(res.getContentText());
+        }
+      } catch (parseErr) {
+        out[n] = { __error: String(parseErr) };
+      }
+    });
+  } catch (err) {
+    console.error('lookupContractNumbersBulk_ failed:', err);
+    unique.forEach(function (n) {
+      if (!out[n]) out[n] = { __error: String(err && err.message ? err.message : err) };
+    });
+  }
+  return out;
 }
 
 // -----------------------------------------------------------------------
@@ -2006,6 +2158,15 @@ var LINE_ITEM_FIELDS = {
   delivery_inspec: {
     label: '納品明細',
     fields: [
+      // Phase 28.1: 明細ごとに対象契約 (発注書) を指定できる。空欄なら
+      // フォーム上部の共通「対象の発注書番号 / 契約書番号」を使用。
+      // 複数の契約 (=複数取引先) に跨った場合、Backlog チケットのみ作成し、
+      // 検収書の発行は admin-ui 検収待ちページの一括作成で法務が行う。
+      {
+        key: 'target_doc_number',
+        label: '対象契約番号（この明細の発注書番号。空欄なら共通の番号を使用）',
+        kind: 'text', optional: true, placeholder: '例: ARC-PO-2026-0002',
+      },
       // key 名は旧フォーム互換 (parseLegalRequestSubmission_ が明細 1 行目を
       // 従来の submission.delivery_no 等へ埋め戻して worker 連携を維持する)。
       { key: 'item_name', label: '品名・業務内容', kind: 'text', placeholder: '例: 〇〇イラスト制作 一式' },
@@ -2453,7 +2614,10 @@ function getLegalRequestModal_(selectedType, opts) {
               (paymentContractsUrl
                 ? '🔎 番号が分からない場合は <' + paymentContractsUrl + '|支払対象契約検索> で確認できます（自部署の契約のみ表示）。'
                 : '🔎 番号は支払対象契約検索ページで確認できます。') +
-              ' 取引先は契約から自動で特定されます。上の候補から選択した場合、番号の入力は不要です。',
+              ' 取引先は契約から自動で特定されます。上の候補から選択した場合、番号の入力は不要です。' +
+              (selectedType === 'delivery_inspec'
+                ? ' 明細ごとに契約が異なる場合は、各明細の「対象契約番号」に入力してください（空欄の明細はこの共通番号を使用。複数契約の検収書は法務が一括発行します）。'
+                : ''),
           },
         ],
       },

@@ -129,6 +129,10 @@ interface LegalRequestSubmission {
   inspection_deadline?: string | null;
   existing_issue_key?: string;
   existing_issue_id?: number;
+  // Phase 28.1: 複数契約(=複数取引先)に跨る検収依頼は自動 PDF 生成を
+  // スキップし、admin-ui 検収待ちページの一括作成 (/api/imports/bulk/inspection)
+  // で法務が取引先ごとに発行する。
+  skip_pdf?: boolean;
 }
 
 const ISSUE_TYPE_TO_REQUEST_TYPE: Record<string, string> = {
@@ -2286,6 +2290,9 @@ async function startServer() {
     //     - 戻り値の docNumber / driveLink は空文字
     let templateType: DocumentType | null = null;
     let skipPdf = false;
+    // Phase 28.1: 複数契約に跨る検収依頼 (Slack 側で skip_pdf 判定済み) は
+    // チケットだけ作り、検収書の発行は admin-ui の一括作成に委ねる。
+    if (input.skip_pdf) skipPdf = true;
     if (requestType === "delivery_inspec") templateType = "inspection_certificate";
     else if (requestType === "purchase_order") templateType = "purchase_order";
     else if (requestType === "nda") templateType = "nda";
@@ -2557,6 +2564,13 @@ ${details}
                 entity_id: "",
                 existing_issue_key: issueKey,
                 existing_issue_id: content.id,
+                // Phase 28.1: 複数契約(=複数取引先)に跨る検収依頼は GAS が
+                // description に「対象契約番号: 複数」を書く。この場合は自動
+                // PDF を作らず、admin-ui 検収待ちページの一括作成で法務が
+                // 取引先ごとに検収書を発行する。
+                skip_pdf:
+                  requestType === "delivery_inspec" &&
+                  /対象契約番号:\s*複数/.test(description),
               };
 
               try {

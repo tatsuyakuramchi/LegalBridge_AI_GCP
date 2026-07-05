@@ -88,6 +88,14 @@ add:
 > search-api の「支払対象契約検索」ページ (`/payments/contracts`, IAP +
 > 部署スコープ, 読み取り専用) へのリンクをフォームに表示する。
 
+> **複数取引先の検収 (Phase 28.1, A+D 方式)**: 検収書の納品明細は明細ごとに
+> 「対象契約番号」を持てる (空欄の明細は共通番号にフォールバック)。全番号を
+> `UrlFetchApp.fetchAll` で並列検証し、複数契約に跨る場合は counterparty を
+> 「〇〇 ほかN社」に集約、description に `対象契約番号: 複数` と書く。
+> worker はこのマーカーを検知して自動 PDF 生成をスキップし (skip_pdf)、
+> 検収書は admin-ui「検収待ち」ページの一括作成
+> (`/api/imports/bulk/inspection`) で法務が取引先ごとに発行する。
+
 > **`/法務依頼` runs entirely in GAS.** The legal-request modal submit
 > creates the Backlog issue directly via the Backlog REST API (no Cloud
 > Run dependency). Downstream document generation is triggered by
