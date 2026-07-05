@@ -212,6 +212,42 @@ export class GoogleDriveService {
     return null;
   }
 
+  /**
+   * 指定メールアドレスに閲覧 (reader) 権限を付与する。
+   *
+   * Slack へ Drive リンクを送る際、受信者が共有ドライブのメンバーで
+   * なくてもリンクを開けるようにするために呼ぶ。Drive 側の共有通知
+   * メールは送らない (通知は Slack が担うため)。
+   *
+   * 失敗は throw せず { ok:false, error } を返す (通知処理を止めない)。
+   */
+  async grantViewPermission(
+    driveLink: string,
+    email: string
+  ): Promise<{ ok: boolean; error?: string }> {
+    if (!driveLink || !email) {
+      return { ok: false, error: "empty driveLink/email" };
+    }
+    const fileId = this.fileIdFromLink(driveLink);
+    if (!fileId) {
+      return { ok: false, error: `cannot extract fileId from: ${driveLink}` };
+    }
+    try {
+      await this.drive.permissions.create({
+        fileId,
+        requestBody: { type: "user", role: "reader", emailAddress: email },
+        supportsAllDrives: true,
+        sendNotificationEmail: false,
+      });
+      return { ok: true };
+    } catch (error: any) {
+      return {
+        ok: false,
+        error: `fileId=${fileId} email=${email}: ${error?.message || String(error)}`,
+      };
+    }
+  }
+
   /** CloudSign 送信用に、既存 Drive ファイル(PDF)の中身を取得する。 */
   async downloadPdf(driveLink: string): Promise<Buffer> {
     const fileId = this.fileIdFromLink(driveLink);

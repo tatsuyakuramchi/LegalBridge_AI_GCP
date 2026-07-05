@@ -1675,6 +1675,7 @@ async function startServer() {
            iw.current_status_name,
            iw.issue_type_name,
            s.department      AS staff_department,
+           s.email           AS staff_email,
            dwr.slack_channel_id,
            (SELECT drive_link
               FROM documents
@@ -1743,8 +1744,28 @@ async function startServer() {
         : ctx.current_status_name || "受付済み";
     lines.push(`*ステータス:* ${currentStatus}`);
 
-    // ステータス変更時に最新文書リンクがあれば添える
+    // ステータス変更時に最新文書リンクがあれば添える。
+    // リンクを Slack に貼る前に申請者へ Drive の閲覧権限を付与する
+    // (共有ドライブ非メンバーだと「アクセス権をリクエスト」になるため)。
+    // 付与失敗は warn ログのみで通知自体は続行する。
     if (event.type === "status_changed" && ctx.latest_drive_link) {
+      const staffEmail = String(ctx.staff_email || "").trim();
+      if (staffEmail) {
+        const grant = await googleDriveService.grantViewPermission(
+          ctx.latest_drive_link,
+          staffEmail
+        );
+        if (!grant.ok) {
+          console.warn(
+            `[notify] drive view-permission grant failed (${issueKey} → ${staffEmail}): ${grant.error}`
+          );
+        }
+      } else {
+        console.warn(
+          `[notify] staff.email not set for ${slackUserId} (${issueKey}); ` +
+            `drive link may not be viewable by the requester`
+        );
+      }
       lines.push(`*最新文書:* ${ctx.latest_drive_link}`);
     }
 
