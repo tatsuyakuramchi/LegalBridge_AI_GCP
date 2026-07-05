@@ -69,6 +69,33 @@ add:
 > (observed: 7.5s end-to-end). The Slack Gateway now calls Cloud Run's
 > `/api/contract-check/search` directly, eliminating one GAS-to-GAS hop.
 
+> **複数明細フォーム (Phase 27)**: 発注書 / 個別利用許諾条件 / 納品・検収書 /
+> 利用許諾計算書 の 4 種別は、モーダル内の「➕ 明細を追加」ボタンで明細行を
+> 最大 5 件まで増やせる (`LINE_ITEM_FIELDS` / `LINE_ITEM_MAX` in `Code.gs`)。
+> 行数は modal の `private_metadata` に保持し、ボタン押下の `block_actions` で
+> `views.update` 再描画する (block_id 固定のため入力値は保持される)。
+> 送信された明細は Backlog 課題の description に整形して追記されるだけで、
+> DB への構造化保存はしない。検収書は明細 1 行目が従来の
+> `delivery_no` / `order_amount` / `delivery_date` / `inspection_deadline`
+> に埋め戻され、worker 連携 (link-trigger 等) の互換を保つ。
+
+> **契約番号制御 (Phase 28)**: 検収書 (`delivery_inspec`) と利用許諾計算書
+> (`license_calc`) は取引先の手入力を廃止し、「対象の発注書番号 / 契約書番号」
+> で対象契約を特定する。送信時に search-api の
+> `POST /api/contract-check/lookup-number` (portal secret) で番号を検証し、
+> 取引先 (vendor) を自動解決して従来の Backlog 起票へ流す。番号が見つから
+> なければモーダル内バリデーションエラーで差し戻す。番号の確認導線として
+> search-api の「支払対象契約検索」ページ (`/payments/contracts`, IAP +
+> 部署スコープ, 読み取り専用) へのリンクをフォームに表示する。
+
+> **複数取引先の検収 (Phase 28.1, A+D 方式)**: 検収書の納品明細は明細ごとに
+> 「対象契約番号」を持てる (空欄の明細は共通番号にフォールバック)。全番号を
+> `UrlFetchApp.fetchAll` で並列検証し、複数契約に跨る場合は counterparty を
+> 「〇〇 ほかN社」に集約、description に `対象契約番号: 複数` と書く。
+> worker はこのマーカーを検知して自動 PDF 生成をスキップし (skip_pdf)、
+> 検収書は admin-ui「検収待ち」ページの一括作成
+> (`/api/imports/bulk/inspection`) で法務が取引先ごとに発行する。
+
 > **`/法務依頼` runs entirely in GAS.** The legal-request modal submit
 > creates the Backlog issue directly via the Backlog REST API (no Cloud
 > Run dependency). Downstream document generation is triggered by

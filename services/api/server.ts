@@ -303,6 +303,9 @@ import { receivableMapPage } from "./src/views/receivableMapHtml.ts";
 // 支払Excel発行: 検収書/利用許諾料計算書を支払期日で絞って ZIP(PDF+Excel) 出力。
 import archiver from "archiver";
 import { paymentExportPage } from "./src/views/paymentExportHtml.ts";
+// 支払対象契約検索 (Phase 28): 発注書・単独契約書・利用許諾条件書の
+// 部署スコープ付き read-only 検索ページ。
+import { paymentContractsPage } from "./src/views/paymentContractsHtml.ts";
 import {
   listPaymentDocuments,
   buildExportBundle,
@@ -1847,6 +1850,68 @@ async function startServer() {
         res.json(result);
       } catch (error) {
         console.error("Error searching contract status:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // POST /api/contract-check/lookup-number — 契約番号 → 取引先の逆引き
+  //   (Phase 28: Slack Gateway GAS 用。portal secret ゲート)
+  //
+  // /法務依頼 の検収書・利用許諾計算書フォームは取引先入力を廃止し、
+  // 発注書番号 / 契約書番号で対象を特定する。GAS が view_submission の
+  // 同期処理中にこの API で番号を検証し、取引先 (vendor) を自動解決して
+  // Backlog 起票へ流す。見つからなければ found:false を返し、GAS 側は
+  // モーダル内バリデーションエラーにする。
+  // -------------------------------------------------------------------
+  app.post(
+    "/api/contract-check/lookup-number",
+    requirePortalSecret,
+    express.json(),
+    async (req, res) => {
+      try {
+        const documentNumber = String(req.body?.documentNumber || "").trim();
+        if (!documentNumber) {
+          return res
+            .status(400)
+            .json({ ok: false, error: "Missing documentNumber in request body" });
+        }
+        const r = await query(
+          `SELECT cc.id, cc.record_type, cc.contract_title, cc.document_number,
+                  cc.contract_status,
+                  v.vendor_name, v.vendor_code, v.entity_type,
+                  d.issue_key
+             FROM contract_capabilities cc
+             LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN LATERAL (
+               SELECT dd.issue_key FROM documents dd
+                WHERE dd.document_number = cc.document_number
+                ORDER BY dd.created_at DESC LIMIT 1
+             ) d ON TRUE
+            WHERE UPPER(cc.document_number) = UPPER($1)
+              AND COALESCE(cc.is_primary, TRUE) = TRUE
+              AND COALESCE(cc.lifecycle_status, 'final') = 'final'
+            ORDER BY cc.updated_at DESC NULLS LAST
+            LIMIT 1`,
+          [documentNumber]
+        );
+        const row = r.rows[0];
+        if (!row) return res.json({ ok: true, found: false });
+        res.json({
+          ok: true,
+          found: true,
+          documentNumber: row.document_number,
+          recordType: row.record_type,
+          contractTitle: row.contract_title,
+          contractStatus: row.contract_status,
+          vendorName: row.vendor_name || "",
+          vendorCode: row.vendor_code || "",
+          entityType: row.entity_type || "",
+          issueKey: row.issue_key || "",
+        });
+      } catch (error) {
+        console.error("/api/contract-check/lookup-number failed:", error);
         res.status(500).json({ ok: false, error: String(error) });
       }
     }
@@ -3955,6 +4020,190 @@ async function startServer() {
         } else {
           try { res.destroy(); } catch {}
         }
+      }
+    }
+  );
+
+  // -------------------------------------------------------------------
+  // 支払対象契約検索 (Phase 28) — 発注書 / 単独契約書 / 利用許諾条件書を
+  //   検索し、検収書・計算書の発行状況を確認する read-only ページ。
+  //   スコープ: admin=全件 / viewer=依頼者(legal_requests→staff)の
+  //   department_code が自分と一致する契約のみ。部署未解決の契約は
+  //   admin にしか見えない。手続き(起票)は Slack 側 — ここには置かない。
+  // -------------------------------------------------------------------
+  const PAYMENT_CONTRACT_TYPES = [
+    "purchase_order",
+    "master_contract",
+    "license_condition",
+    "publication_condition",
+  ];
+
+  async function listPaymentContracts(opts: {
+    q: string;
+    type: string;
+    pendingOnly: boolean;
+    isAdmin: boolean;
+    deptCode: string | null;
+  }): Promise<any[]> {
+    // viewer で部署コード未設定なら何も見せない (スタッフマスタ整備を促す)。
+    if (!opts.isAdmin && !opts.deptCode) return [];
+
+    const params: any[] = [];
+    const where: string[] = [
+      `cc.record_type = ANY('{${PAYMENT_CONTRACT_TYPES.join(",")}}')`,
+      `COALESCE(cc.is_primary, TRUE) = TRUE`,
+      `COALESCE(cc.lifecycle_status, 'final') = 'final'`,
+      `cc.document_number IS NOT NULL AND cc.document_number <> ''`,
+    ];
+    if (opts.type && PAYMENT_CONTRACT_TYPES.includes(opts.type)) {
+      params.push(opts.type);
+      where.push(`cc.record_type = $${params.length}`);
+    }
+    if (opts.q) {
+      params.push(`%${opts.q}%`);
+      const p = `$${params.length}`;
+      where.push(
+        `(cc.document_number ILIKE ${p} OR cc.contract_title ILIKE ${p}` +
+          ` OR v.vendor_name ILIKE ${p} OR v.vendor_code ILIKE ${p})`
+      );
+    }
+    if (!opts.isAdmin) {
+      params.push(opts.deptCode);
+      where.push(`st.department_code = $${params.length}`);
+    }
+
+    const r = await query(
+      `SELECT * FROM (
+         SELECT cc.record_type, cc.document_number, cc.contract_title,
+                cc.contract_status, cc.effective_date, cc.expiration_date,
+                v.vendor_name, v.vendor_code,
+                d.issue_key,
+                st.staff_name AS requester_name,
+                st.department_code AS requester_dept,
+                (SELECT COUNT(*)::int FROM condition_lines cl
+                  WHERE cl.capability_id = cc.id) AS line_count,
+                (SELECT COUNT(*)::int FROM condition_lines cl
+                  WHERE cl.capability_id = cc.id
+                    AND EXISTS (
+                      SELECT 1 FROM condition_events ce
+                       WHERE ce.condition_line_id = cl.id
+                         AND ce.voided_at IS NULL
+                         AND ce.event_type = 'inspection')) AS inspected_count,
+                (SELECT COUNT(*)::int FROM documents dx
+                  WHERE dx.issue_key = d.issue_key
+                    AND dx.template_type = 'inspection_certificate'
+                    AND COALESCE(dx.lifecycle_status, 'final') = 'final') AS inspection_doc_count,
+                (SELECT COUNT(*)::int FROM documents dx
+                  WHERE dx.issue_key = d.issue_key
+                    AND dx.template_type IN ('royalty_statement', 'license_calculation_sheet')
+                    AND COALESCE(dx.lifecycle_status, 'final') = 'final') AS calc_doc_count,
+                cc.updated_at
+           FROM contract_capabilities cc
+           LEFT JOIN vendors v ON v.id = cc.vendor_id
+           LEFT JOIN LATERAL (
+             SELECT dd.issue_key FROM documents dd
+              WHERE dd.document_number = cc.document_number
+              ORDER BY dd.created_at DESC LIMIT 1
+           ) d ON TRUE
+           LEFT JOIN legal_requests lr ON lr.backlog_issue_key = d.issue_key
+           LEFT JOIN staff st ON st.slack_user_id = lr.slack_user_id
+          WHERE ${where.join(" AND ")}
+       ) t
+       ${opts.pendingOnly ? "WHERE t.line_count > t.inspected_count" : ""}
+       ORDER BY t.updated_at DESC NULLS LAST
+       LIMIT 300`,
+      params
+    );
+    return r.rows;
+  }
+
+  app.get(
+    "/payments/contracts",
+    requireIapUser({ renderErrorPage }),
+    attachAppRole(),
+    requireScreen({ key: "payment-contracts", renderErrorPage }),
+    async (req, res) => {
+      try {
+        const deptCode = await resolveDepartmentCode(req);
+        res
+          .type("html")
+          .send(paymentContractsPage((req as any).userRole as Role, deptCode));
+      } catch (error) {
+        console.error("/payments/contracts failed:", error);
+        res.status(500).type("html").send(renderErrorPage("Server Error", String(error), 500));
+      }
+    }
+  );
+
+  app.get(
+    "/api/payment-contracts/list",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const role = await resolveAppRole(req);
+        const rows = await listPaymentContracts({
+          q: String(req.query.q || "").trim(),
+          type: String(req.query.type || "").trim(),
+          pendingOnly: String(req.query.pending || "") === "1",
+          isAdmin: role === "admin",
+          deptCode: await resolveDepartmentCode(req),
+        });
+        res.json({ ok: true, rows });
+      } catch (error: any) {
+        console.error("GET /api/payment-contracts/list failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
+      }
+    }
+  );
+
+  app.get(
+    "/api/payment-contracts/export.csv",
+    requireIapUser({ renderErrorPage }),
+    async (req, res) => {
+      try {
+        const role = await resolveAppRole(req);
+        const rows = await listPaymentContracts({
+          q: String(req.query.q || "").trim(),
+          type: String(req.query.type || "").trim(),
+          pendingOnly: String(req.query.pending || "") === "1",
+          isAdmin: role === "admin",
+          deptCode: await resolveDepartmentCode(req),
+        });
+        const TYPE_JP: Record<string, string> = {
+          purchase_order: "発注書",
+          master_contract: "単独契約書",
+          license_condition: "利用許諾条件書",
+          publication_condition: "出版等利用許諾条件書",
+        };
+        const escCsv = (v: any) => {
+          const s = String(v == null ? "" : v);
+          return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+        };
+        const header = [
+          "種別", "契約番号", "件名", "取引先", "取引先コード",
+          "明細数", "検収済明細数", "検収書発行数", "計算書発行数",
+          "依頼者", "依頼部署", "課題キー", "契約ステータス",
+        ];
+        const lines = [header.join(",")];
+        for (const r of rows) {
+          lines.push(
+            [
+              TYPE_JP[r.record_type] || r.record_type,
+              r.document_number, r.contract_title, r.vendor_name, r.vendor_code,
+              r.line_count, r.inspected_count, r.inspection_doc_count, r.calc_doc_count,
+              r.requester_name, r.requester_dept, r.issue_key, r.contract_status,
+            ].map(escCsv).join(",")
+          );
+        }
+        res.setHeader("Content-Type", "text/csv; charset=utf-8");
+        res.setHeader(
+          "Content-Disposition",
+          'attachment; filename="payment_contracts.csv"'
+        );
+        res.send("﻿" + lines.join("\n"));
+      } catch (error: any) {
+        console.error("GET /api/payment-contracts/export.csv failed:", error);
+        res.status(500).json({ ok: false, error: String(error?.message || error) });
       }
     }
   );

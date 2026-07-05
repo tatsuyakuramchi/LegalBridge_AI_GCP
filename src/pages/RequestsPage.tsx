@@ -3,6 +3,10 @@ import { useNavigate } from "react-router-dom"
 import { Search, ArrowRight, User, Calendar, Inbox, Plus, GitBranch, FileText, GitMerge, ShoppingCart } from "lucide-react"
 
 import { useAppData, useDocumentSession } from "@/src/context/AppDataContext"
+import {
+  extractRequesterSlackId,
+  findStaffBySlackId,
+} from "@/src/lib/slackRequester"
 import { useMergeCart } from "@/src/context/MergeCartContext"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -19,7 +23,7 @@ const statusNameOf = (i: any) =>
 
 export function RequestsPage() {
   const navigate = useNavigate()
-  const { issues } = useAppData()
+  const { issues, staffList } = useAppData()
   const { setSelectedIssue, selectedTemplate } = useDocumentSession()
   // 課題統合カート(籠に集めて統合先を選ぶ)。実行は MergeCartPanel 側。
   const mergeCart = useMergeCart()
@@ -248,6 +252,15 @@ export function RequestsPage() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((issue, idx) => {
             const isBatched = batch.includes(issue.issueKey)
+            // Slack 起案課題は本文の「依頼者: <@U…>」をスタッフマスタで
+            // 名前に解決して表示する (Slack ID のままでは誰か分からないため)。
+            const requesterSlackId = extractRequesterSlackId(issue.description)
+            const requesterStaff = findStaffBySlackId(staffList, requesterSlackId)
+            const requesterName =
+              requesterStaff?.staff_name ||
+              requesterSlackId ||
+              issue.registeredUser ||
+              "system"
             return (
               <Card
                 key={`req-${issue.issueKey || idx}`}
@@ -277,9 +290,11 @@ export function RequestsPage() {
                     {issue.summary}
                   </h3>
                   <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
-                    <span className="flex items-center gap-1">
-                      <User className="h-3 w-3" />{" "}
-                      {issue.registeredUser || "system"}
+                    <span
+                      className="flex items-center gap-1"
+                      title={requesterStaff?.email || requesterSlackId || undefined}
+                    >
+                      <User className="h-3 w-3" /> {requesterName}
                     </span>
                     <span className="flex items-center gap-1">
                       <Calendar className="h-3 w-3" />{" "}
