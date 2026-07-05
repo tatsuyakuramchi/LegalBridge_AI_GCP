@@ -38,6 +38,7 @@ export type ScreenKey =
   | "work-model"
   | "receivable-map"
   | "payment-exports"
+  | "payment-contracts"
   | "guides"
   | "guide-portal"
   | "admin";
@@ -84,6 +85,11 @@ export const SCREENS: Screen[] = [
   { key: "template-preview", path: "/templates/preview", label: "ひな型プレビュー", icon: "📄", section: "browse", minRole: "viewer", nav: true },
   // 支払Excel発行: ログイン担当者が自分の検収書/計算書を期間指定で ZIP 出力。
   { key: "payment-exports",  path: "/payments/excel-export", label: "支払Excel発行", icon: "📥", section: "browse", minRole: "viewer", nav: true },
+  // 支払対象契約検索 (Phase 28): 発注書・単独契約書・利用許諾条件書を検索し、
+  // 検収書/計算書の発行状況を確認する読み取り専用ページ。viewer は自部署
+  // (依頼者の staff.department_code) の契約のみ、admin は全件。起票などの
+  // 手続きは Slack /法務依頼 側 — このページは検索と情報 DL に特化する。
+  { key: "payment-contracts", path: "/payments/contracts", label: "支払対象契約検索", icon: "📑", section: "browse", minRole: "viewer", nav: true },
   // 条件明細(閲覧専用)。FIN 部署の viewer のみサイドバー表示・閲覧可(admin は console 側)。
   { key: "conditions-fin",   path: "/view/conditions",   label: "条件明細",         icon: "🧾", section: "browse", minRole: "viewer", departments: ["FIN"], nav: true },
   { key: "ringi",            path: "/search/ringi",      label: "稟議番号検索",     icon: "📋", section: "browse", minRole: "viewer", nav: false },

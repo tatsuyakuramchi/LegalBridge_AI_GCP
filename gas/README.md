@@ -79,6 +79,15 @@ add:
 > `delivery_no` / `order_amount` / `delivery_date` / `inspection_deadline`
 > に埋め戻され、worker 連携 (link-trigger 等) の互換を保つ。
 
+> **契約番号制御 (Phase 28)**: 検収書 (`delivery_inspec`) と利用許諾計算書
+> (`license_calc`) は取引先の手入力を廃止し、「対象の発注書番号 / 契約書番号」
+> で対象契約を特定する。送信時に search-api の
+> `POST /api/contract-check/lookup-number` (portal secret) で番号を検証し、
+> 取引先 (vendor) を自動解決して従来の Backlog 起票へ流す。番号が見つから
+> なければモーダル内バリデーションエラーで差し戻す。番号の確認導線として
+> search-api の「支払対象契約検索」ページ (`/payments/contracts`, IAP +
+> 部署スコープ, 読み取り専用) へのリンクをフォームに表示する。
+
 > **`/法務依頼` runs entirely in GAS.** The legal-request modal submit
 > creates the Backlog issue directly via the Backlog REST API (no Cloud
 > Run dependency). Downstream document generation is triggered by

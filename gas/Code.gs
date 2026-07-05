@@ -345,6 +345,52 @@ function handleInteractivity_(payload) {
         return jsonResponse_({ response_action: 'clear' });
       }
 
+      // Phase 28: 検収書・利用許諾計算書の新規起票は、取引先入力の代わりに
+      // 発注書番号 / 契約書番号で対象契約を特定する。search-api の
+      // lookup-number で番号を検証し、取引先 (vendor) を自動解決して従来の
+      // Backlog 起票パイプラインへ流す。番号が無い/見つからない場合は
+      // モーダル内バリデーションエラーで差し戻す。
+      if (
+        submission.request_type === 'delivery_inspec' ||
+        submission.request_type === 'license_calc'
+      ) {
+        var targetDocNo = String(submission.target_doc_number || '').trim();
+        if (!targetDocNo) {
+          return jsonResponse_({
+            response_action: 'errors',
+            errors: {
+              target_doc_number_block:
+                '対象の発注書番号 / 契約書番号を入力してください（上の候補から選択した場合は不要です）。',
+            },
+          });
+        }
+        var looked = lookupContractNumber_(targetDocNo);
+        if (!looked || looked.__error) {
+          return jsonResponse_({
+            response_action: 'errors',
+            errors: {
+              target_doc_number_block:
+                '番号の確認中にエラーが発生しました。時間をおいて再度お試しください。',
+            },
+          });
+        }
+        if (looked.found !== true) {
+          return jsonResponse_({
+            response_action: 'errors',
+            errors: {
+              target_doc_number_block:
+                'この番号の契約が見つかりません。「支払対象契約検索」ページで番号をご確認ください。',
+            },
+          });
+        }
+        // 取引先を契約から自動解決 (description / Backlog カスタムフィールドに載る)。
+        submission.target_doc_number = looked.documentNumber || targetDocNo;
+        submission.target_contract_title = looked.contractTitle || '';
+        submission.counterparty = looked.vendorName || '';
+        if (looked.vendorCode) submission.entity_id = looked.vendorCode;
+        if (looked.entityType === 'individual') submission.entity_type = 'individual';
+      }
+
       // Phase 19: GAS 側 intake ack DM (sendIntakeAckDm_) は削除した。
       // 課題作成完了の通知は Cloud Run worker 側で webhook type=1
       // 受信時に notifyIssueEvent("created") で発信される
@@ -524,7 +570,15 @@ function createBacklogIssue_(submission) {
     var description =
       '依頼タイプ: ' + submission.request_type + '\n' +
       '希望納期: ' + (submission.deadline || '') + '\n' +
-      '依頼者: <@' + submission.slack_user_id + '>\n\n' +
+      '依頼者: <@' + submission.slack_user_id + '>\n' +
+      // Phase 28: 検収書・計算書は対象契約番号で起票される。
+      (submission.target_doc_number
+        ? '対象契約番号: ' + submission.target_doc_number +
+          (submission.target_contract_title
+            ? ' (' + submission.target_contract_title + ')'
+            : '') + '\n'
+        : '') +
+      '\n' +
       '【相手方情報】\n' +
       '名称: ' + (submission.counterparty || '') + '\n' +
       '区分: ' + (submission.entity_type === 'individual' ? '個人' : '法人') + '\n' +
@@ -616,6 +670,27 @@ function queryContractStatusOnly_(keyword) {
     );
   } catch (err) {
     console.error('queryContractStatusOnly_ failed:', err);
+    return { __error: String(err && err.message ? err.message : err) };
+  }
+}
+
+/**
+ * Phase 28: 発注書番号 / 契約書番号から契約と取引先を逆引きする。
+ * 検収書・利用許諾計算書の view_submission で番号を検証し、取引先を
+ * 自動解決するために使う (search-api /api/contract-check/lookup-number)。
+ *
+ * 戻り値: { ok, found, vendorName, vendorCode, entityType, contractTitle,
+ *          documentNumber, recordType, issueKey } または { __error }。
+ */
+function lookupContractNumber_(documentNumber) {
+  try {
+    return callLegalBridgeApi_(
+      '/api/contract-check/lookup-number',
+      'post',
+      { documentNumber: documentNumber }
+    );
+  } catch (err) {
+    console.error('lookupContractNumber_ failed:', err);
     return { __error: String(err && err.message ? err.message : err) };
   }
 }
@@ -1214,6 +1289,9 @@ function parseLegalRequestSubmission_(payload) {
       'target_issue_key_select_block',
       'target_issue_key_select_input'
     ),
+    // Phase 28: 検収書・計算書の対象契約番号 (発注書番号 / 契約書番号)。
+    //   取引先は view_submission 時に lookupContractNumber_ で自動解決する。
+    target_doc_number: safeText('target_doc_number_block', 'target_doc_number_input'),
   };
 
   // Phase 27: 複数明細 (line_items) の収集。
@@ -1815,6 +1893,16 @@ function buildVendorSearchUrl_(keyword) {
   return url + (portalSecret ? '&token=' + encodeURIComponent(portalSecret) : '');
 }
 
+/**
+ * Phase 28: search-api の「支払対象契約検索」ページ URL。
+ * IAP 保護 (要ログイン) のページなので署名や token は付けない。
+ * 検収書・計算書フォームから発注書番号 / 契約書番号を調べる導線に使う。
+ */
+function buildPaymentContractsUrl_() {
+  var base = (getApiConfig_().baseUrl || '').replace(/\/+$/, '');
+  return base ? base + '/payments/contracts' : '';
+}
+
 // -----------------------------------------------------------------------
 //  Phase 27: 複数明細フォーム (発注書・個別利用許諾条件・検収書・計算書)
 //
@@ -2326,6 +2414,95 @@ function getLegalRequestModal_(selectedType, opts) {
     });
   }
 
+  // Phase 28: 検収書・利用許諾計算書は取引先の手入力を廃止し、発注書番号 /
+  // 契約書番号で対象契約を特定する (取引先は契約から自動解決 —
+  // handleInteractivity_ の lookupContractNumber_ 呼び出し参照)。
+  // それ以外の種別は従来どおり取引先情報を入力する。
+  var isDocNumberControlled =
+    selectedType === 'delivery_inspec' || selectedType === 'license_calc';
+
+  var counterpartyBlocks;
+  if (isDocNumberControlled) {
+    var paymentContractsUrl = buildPaymentContractsUrl_();
+    counterpartyBlocks = [
+      { type: 'divider' },
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*対象契約 (Target Contract)*' },
+      },
+      {
+        type: 'input',
+        block_id: 'target_doc_number_block',
+        // 上の候補セレクトで既存子課題を選んだ場合は不要なので optional。
+        // 「新規作成」時の必須チェックは view_submission 側で行う。
+        optional: true,
+        label: { type: 'plain_text', text: '対象の発注書番号 / 契約書番号' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'target_doc_number_input',
+          placeholder: { type: 'plain_text', text: '例: ARC-PO-2026-0001' },
+        },
+      },
+      {
+        type: 'context',
+        block_id: 'target_doc_number_help_block',
+        elements: [
+          {
+            type: 'mrkdwn',
+            text:
+              (paymentContractsUrl
+                ? '🔎 番号が分からない場合は <' + paymentContractsUrl + '|支払対象契約検索> で確認できます（自部署の契約のみ表示）。'
+                : '🔎 番号は支払対象契約検索ページで確認できます。') +
+              ' 取引先は契約から自動で特定されます。上の候補から選択した場合、番号の入力は不要です。',
+          },
+        ],
+      },
+    ];
+  } else {
+    counterpartyBlocks = [
+      { type: 'divider' },
+      {
+        type: 'section',
+        text: { type: 'mrkdwn', text: '*取引先情報 (Counterparty Info)*' },
+      },
+      {
+        type: 'input',
+        block_id: 'counterparty_block',
+        label: { type: 'plain_text', text: '相手方名称' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'counterparty_input',
+          placeholder: { type: 'plain_text', text: '株式会社〇〇' },
+        },
+      },
+      {
+        type: 'input',
+        block_id: 'entity_type_block',
+        label: { type: 'plain_text', text: '区分' },
+        element: {
+          type: 'radio_buttons',
+          action_id: 'entity_type_input',
+          initial_option: { text: { type: 'plain_text', text: '法人' }, value: 'corporate' },
+          options: [
+            { text: { type: 'plain_text', text: '法人' }, value: 'corporate' },
+            { text: { type: 'plain_text', text: '個人' }, value: 'individual' },
+          ],
+        },
+      },
+      {
+        type: 'input',
+        block_id: 'entity_id_block',
+        label: { type: 'plain_text', text: '法人番号 / 社内個人コード' },
+        element: {
+          type: 'plain_text_input',
+          action_id: 'entity_id_input',
+          placeholder: { type: 'plain_text', text: '13桁の番号、または社内コード' },
+        },
+      },
+      entityIdHelpBlock,
+    ];
+  }
+
   const blocks = baseBlocks.concat(candidateBlocks).concat([
     {
       type: 'input',
@@ -2347,46 +2524,7 @@ function getLegalRequestModal_(selectedType, opts) {
         initial_date: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       },
     },
-    { type: 'divider' },
-    {
-      type: 'section',
-      text: { type: 'mrkdwn', text: '*取引先情報 (Counterparty Info)*' },
-    },
-    {
-      type: 'input',
-      block_id: 'counterparty_block',
-      label: { type: 'plain_text', text: '相手方名称' },
-      element: {
-        type: 'plain_text_input',
-        action_id: 'counterparty_input',
-        placeholder: { type: 'plain_text', text: '株式会社〇〇' },
-      },
-    },
-    {
-      type: 'input',
-      block_id: 'entity_type_block',
-      label: { type: 'plain_text', text: '区分' },
-      element: {
-        type: 'radio_buttons',
-        action_id: 'entity_type_input',
-        initial_option: { text: { type: 'plain_text', text: '法人' }, value: 'corporate' },
-        options: [
-          { text: { type: 'plain_text', text: '法人' }, value: 'corporate' },
-          { text: { type: 'plain_text', text: '個人' }, value: 'individual' },
-        ],
-      },
-    },
-    {
-      type: 'input',
-      block_id: 'entity_id_block',
-      label: { type: 'plain_text', text: '法人番号 / 社内個人コード' },
-      element: {
-        type: 'plain_text_input',
-        action_id: 'entity_id_input',
-        placeholder: { type: 'plain_text', text: '13桁の番号、または社内コード' },
-      },
-    },
-    entityIdHelpBlock,
+  ]).concat(counterpartyBlocks).concat([
     { type: 'divider' },
     {
       type: 'input',
