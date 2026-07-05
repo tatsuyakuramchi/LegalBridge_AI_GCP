@@ -38,6 +38,7 @@ import {
 } from './UnifiedContractPicker';
 import { FinancialConditionPicker } from './FinancialConditionPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
+import { WorkPicker, toWorkPickerItem } from '@/src/components/work/WorkPicker';
 import { LicenseWizardRail, type WizardStep } from './LicenseWizardRail';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
@@ -131,6 +132,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // 発注書: 「＋原作を新規作成」用のタイトル入力と進行中フラグ。
   const [poNewSourceTitle, setPoNewSourceTitle] = useState('');
   const [poCreatingSource, setPoCreatingSource] = useState(false);
+  // 個別利用許諾条件書(セクション3): 「＋原作を新規作成」用のタイトル入力と進行中フラグ。
+  const [iltNewSourceTitle, setIltNewSourceTitle] = useState('');
+  const [iltCreatingSource, setIltCreatingSource] = useState(false);
+  // 出版等利用許諾条件書(セクション1): 「＋原作を新規作成」用のタイトル入力と進行中フラグ。
+  const [pubNewSourceTitle, setPubNewSourceTitle] = useState('');
+  const [pubCreatingSource, setPubCreatingSource] = useState(false);
+  // 出版等利用許諾条件書(セクション1): 対象作品(own)をその場で作成する入力と進行中フラグ。
+  const [pubNewWorkTitle, setPubNewWorkTitle] = useState('');
+  const [pubCreatingWork, setPubCreatingWork] = useState(false);
   // ContractDetail (UnifiedContractPicker のレスポンス形) を licenseMasters の各要素と
   // 同形に整形する。`selectMasterContract` / `selectedContract` の lookup で使う。
   const detailToLicenseMaster = (d: any) => {
@@ -1055,23 +1065,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       return '';
     };
 
-    const onLedgerChange = (ledgerId: string) => {
-      const lid = Number(ledgerId);
-      if (!lid) {
-        setFormData({
-          ...formData,
-          ledger_ref_id: undefined,
-          material_ref_id: undefined,
-          素材番号: '',
-          素材名: '',
-          素材権利者: '',
-          原著作物名: '',
-        });
-        return;
-      }
-      const ledger = (Array.isArray(allLedgers) ? allLedgers : []).find(
-        (l: any) => Number(l.id) === lid
-      );
+    // 原作(Ledger)を選択状態にして既定値を補完する本体。onLedgerChange(セレクト選択)と
+    //   createIltSourceIp(その場で新規作成 → 引き直した台帳を渡す)の両方から使う。
+    const applyLedger = (lid: number, ledger: any) => {
       // 原作選択時、デフォルトで -001 (原作本体素材) を auto-pick
       const defaultMaterial =
         ledger?.materials?.find((m: any) => m.is_default) ||
@@ -1104,6 +1100,65 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         承認時期:
           ledger?.default_approval_timing || formData.承認時期 || '',
       });
+    };
+
+    const onLedgerChange = (ledgerId: string) => {
+      const lid = Number(ledgerId);
+      if (!lid) {
+        setFormData({
+          ...formData,
+          ledger_ref_id: undefined,
+          material_ref_id: undefined,
+          素材番号: '',
+          素材名: '',
+          素材権利者: '',
+          原著作物名: '',
+        });
+        return;
+      }
+      const ledger = (Array.isArray(allLedgers) ? allLedgers : []).find(
+        (l: any) => Number(l.id) === lid
+      );
+      applyLedger(lid, ledger);
+    };
+
+    // 完全に新しい原作IPをその場で作成する(案A: 文書起点の作品・原作・素材作成動線)。
+    //   発注書フローと同じ POST /api/v3/source-ips が works(licensed_in)+ledgers+
+    //   原作本体素材 -001 を原子生成する。allLedgers の再取得は非同期で本レンダーには
+    //   届かないため、/api/master/ledgers を直接引き直して素材込みの台帳を取得し、
+    //   セレクト選択と同じ applyLedger で既定値(素材-001・クレジット等)まで補完する。
+    const createIltSourceIp = async () => {
+      const title = iltNewSourceTitle.trim();
+      if (!title) return;
+      setIltCreatingSource(true);
+      try {
+        const r = await fetch('/api/v3/source-ips', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ title }),
+        });
+        if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        const j = await r.json();
+        const code = j.work_code || j.source_code || '';
+        await refreshLedgers().catch(() => {});
+        let created: any = null;
+        try {
+          const lr = await fetch('/api/master/ledgers');
+          const ls = await lr.json();
+          created =
+            (Array.isArray(ls) ? ls : []).find(
+              (l: any) => l.ledger_code === code
+            ) || null;
+        } catch {
+          /* 引き直し失敗時は選択なしで続行(refreshLedgers 済みなので一覧には出る) */
+        }
+        setIltNewSourceTitle('');
+        if (created?.id != null) applyLedger(Number(created.id), created);
+      } catch (e) {
+        console.error('createIltSourceIp failed', e);
+      } finally {
+        setIltCreatingSource(false);
+      }
     };
 
     // Stage 1: 「どの作品のための契約か」を指定する作品(own)を、なければその場で作成する。
@@ -1334,6 +1389,35 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       );
       commitMaterials(next);
     };
+    // 検索でヒットしない素材をその場で新規登録して行に確定する(MaterialSearchSelect の onCreate)。
+    //   登録先は上で選択中の原作(ledger_ref_id)。materialPool は allLedgers 由来で
+    //   再取得完了前のため、API レスポンスの material_code / material_name で直接確定する。
+    //   失敗時の throw は MaterialSearchSelect 側の runCreate が捕捉してログする。
+    const createRowMaterial = async (i: number, name: string) => {
+      const lid = formData.ledger_ref_id;
+      if (!lid) return;
+      const r = await fetch(`/api/master/ledgers/${lid}/materials`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ material_name: name }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      await refreshLedgers().catch(() => {});
+      if (!j?.material_code) return;
+      const next = masterMaterials.map((row: any, idx: number) =>
+        idx === i
+          ? {
+              ...row,
+              material_code: j.material_code,
+              name: j.material_name || name,
+              holder:
+                resolveRightsHolder(j, selectedLedger) || row.holder || '',
+            }
+          : row
+      );
+      commitMaterials(next);
+    };
     const setRowCopied = (i: number, cond: any) => {
       const next = masterMaterials.map((row: any, idx: number) =>
         idx === i ? { ...row, copied: cond } : row
@@ -1448,31 +1532,19 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
                 作品設定 — 対象作品（自社作品）
               </label>
-              <select
-                value={formData.linked_work_id || ''}
-                onChange={(e) => {
-                  const id = e.target.value || undefined;
-                  const w = worksList.find(
-                    (x: any) => String(x.id) === e.target.value
-                  );
+              {/* 作品数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+              <WorkPicker
+                items={worksList.filter((w: any) => w.title).map((w: any) => toWorkPickerItem(w))}
+                value={formData.linked_work_id ? String(formData.linked_work_id) : undefined}
+                onSelect={(w) =>
                   setFormData({
                     ...formData,
-                    linked_work_id: id,
+                    linked_work_id: w?.id,
                     対象製品予定名: w?.title || formData.対象製品予定名 || '',
-                  });
-                }}
-                className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-              >
-                <option value="">— この契約の対象作品を選択 —</option>
-                {worksList
-                  .filter((w: any) => w.title)
-                  .map((w: any) => (
-                    <option key={w.id} value={String(w.id)}>
-                      {w.work_code ? `[${w.work_code}] ` : ''}
-                      {w.title}
-                    </option>
-                  ))}
-              </select>
+                  })
+                }
+                placeholder="この契約の対象作品を検索 (コード / タイトル / 別名)"
+              />
               <div className="flex items-center gap-1.5 pt-1">
                 <input
                   value={newWorkTitle}
@@ -1512,27 +1584,48 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           variant="emerald"
           icon={<Briefcase className="w-4 h-4" />}
         >
-          {/* 原作(Ledger): マテリアル候補のコンテキスト。原著作物名・クレジット等を補完。 */}
+          {/* 原作(Ledger): マテリアル候補のコンテキスト。原著作物名・クレジット等を補完。
+              未登録の原作はその場で新規作成できる(発注書フローと同じ source-ips API)。 */}
           <div className="col-span-full space-y-1">
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-              原作 (Ledger)
+              原作 (Ledger) — 既存を選択 or 新規作成
             </label>
-            <select
-              value={formData.ledger_ref_id || ''}
-              onChange={(e) => onLedgerChange(e.target.value)}
-              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-            >
-              <option value="">— 原作を選択 —</option>
-              {ledgerList
+            {/* 原作数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+            <WorkPicker
+              items={ledgerList
                 .filter((l: any) => l.is_active !== false)
-                .map((l: any) => (
-                  <option key={l.id} value={l.id}>
-                    [{l.ledger_code}] {l.title}
-                  </option>
-                ))}
-            </select>
+                .map((l: any) => toWorkPickerItem(l))}
+              value={formData.ledger_ref_id ? String(formData.ledger_ref_id) : undefined}
+              onSelect={(l) => onLedgerChange(l?.id || '')}
+              placeholder="原作を検索 (LO-コード / タイトル / 別名)"
+            />
+            <div className="flex items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                または新規:
+              </span>
+              <input
+                value={iltNewSourceTitle}
+                onChange={(e) => setIltNewSourceTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void createIltSourceIp();
+                  }
+                }}
+                placeholder="なければ作成: 原作タイトル"
+                className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => void createIltSourceIp()}
+                disabled={iltCreatingSource || !iltNewSourceTitle.trim()}
+                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {iltCreatingSource ? '作成中…' : '＋原作を新規作成'}
+              </button>
+            </div>
             <p className="text-[10px] font-mono text-muted-foreground/70">
-              マスター &gt; Ledgers で登録した原作 (LO-YYYY-NNNN)。原著作物名・クレジット表示の既定値を補完します。
+              マスター &gt; Ledgers で登録した原作 (LO-YYYY-NNNN)。原著作物名・クレジット表示の既定値を補完します。未登録の原作はタイトル入力で作成でき、原作本体素材 -001 も同時生成されます。
             </p>
           </div>
 
@@ -1554,13 +1647,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
 
             {materialPool.length === 0 && (
               <p className="text-[10px] font-mono text-muted-foreground">
-                原作マスター(Ledgers)にマテリアルがありません。マスター &gt; Ledgers で素材を登録してください。
+                原作マスター(Ledgers)にマテリアルがありません。上で原作を選択/作成し、「＋マテリアルを追加」の検索欄に素材名を入力するとその場で新規登録できます。
               </p>
             )}
 
             {masterMaterials.length === 0 ? (
               <p className="text-[10px] font-mono text-muted-foreground">
-                「＋マテリアルを追加」で、この契約が利用する原作マテリアルを選択します。各マテリアルに過去条件があればコピーして再利用、無ければ新規として金銭条件で入力します。
+                「＋マテリアルを追加」で、この契約が利用する原作マテリアルを選択します。検索でヒットしなければ入力した素材名のままその場で新規登録できます（登録先は上の原作）。各マテリアルに過去条件があればコピーして再利用、無ければ新規として金銭条件で入力します。
               </p>
             ) : (
               <div className="space-y-2.5">
@@ -1585,6 +1678,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                           materials={materialPool}
                           value={row.material_code}
                           onPick={(code) => setRowMaterial(i, code)}
+                          onCreate={(name) => createRowMaterial(i, name)}
+                          createDisabledReason={
+                            formData.ledger_ref_id
+                              ? undefined
+                              : '新規登録には上で「原作 (Ledger)」を選択/作成してください'
+                          }
                         />
                         <button
                           type="button"
@@ -5465,6 +5564,82 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     </button>
   );
 
+  // 出版等利用許諾条件書(pub_license_terms): 未登録の原作をその場で新規作成する
+  //   (案A: 文書起点の作品・原作・素材作成動線)。POST /api/v3/source-ips が
+  //   works(licensed_in)+ledgers+原作本体素材 -001 を原子生成。allLedgers の再取得は
+  //   非同期のため /api/master/ledgers を引き直し、選択時と同じフィールドを補完する。
+  const createPubSourceIp = async () => {
+    const title = pubNewSourceTitle.trim();
+    if (!title) return;
+    setPubCreatingSource(true);
+    try {
+      const r = await fetch('/api/v3/source-ips', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const j = await r.json();
+      const code = j.work_code || j.source_code || '';
+      await refreshLedgers().catch(() => {});
+      let created: any = null;
+      try {
+        const lr = await fetch('/api/master/ledgers');
+        const ls = await lr.json();
+        created =
+          (Array.isArray(ls) ? ls : []).find(
+            (l: any) => l.ledger_code === code
+          ) || null;
+      } catch {
+        /* 引き直し失敗時は ledger_code だけ保持して続行 */
+      }
+      setPubNewSourceTitle('');
+      setFormData({
+        ...formData,
+        ...(created?.id != null ? { ledger_ref_id: Number(created.id) } : {}),
+        ledger_code: created?.ledger_code || code || formData.ledger_code || '',
+        原著作物名: created?.title || title,
+      });
+    } catch (e) {
+      console.error('createPubSourceIp failed', e);
+    } finally {
+      setPubCreatingSource(false);
+    }
+  };
+
+  // 出版等利用許諾条件書: 対象作品(own)をその場で作成する。個別利用許諾の createOwnWork と
+  //   同じ POST /api/v3/works(title のみ)。保存経路(work-linkage(pub))が linked_work_id を
+  //   読んで原作マテリアルを対象作品の構成・条件明細へ連動させる。
+  const createPubOwnWork = async () => {
+    const title = pubNewWorkTitle.trim();
+    if (!title) return;
+    setPubCreatingWork(true);
+    try {
+      const r = await fetch('/api/v3/works', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title }),
+      });
+      if (!r.ok) throw new Error(`HTTP ${r.status}`);
+      const created = await r.json();
+      try {
+        const listRes = await fetch('/api/v3/works');
+        const list = await listRes.json();
+        setWorksList(Array.isArray(list) ? list : []);
+      } catch {
+        /* 一覧再取得失敗は致命的でない */
+      }
+      setPubNewWorkTitle('');
+      if (created?.id != null) {
+        setFormData({ ...formData, linked_work_id: String(created.id) });
+      }
+    } catch (e) {
+      console.error('createPubOwnWork failed', e);
+    } finally {
+      setPubCreatingWork(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center gap-2 rounded-sm border border-input bg-muted/30 px-3 py-2">
@@ -5487,15 +5662,74 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           原作の正式名称で自動入力する (config 側で 原著作物名 は readonly)。
           ※ 事業部の絞り込みは行わず全原作を表示 (運用判断)。 */}
       {templateId === 'pub_license_terms' && (
-        <FormSection title="1. 原作・基本契約 (マスタ検索)" variant="default">
+        <FormSection title="1. 作品・原作・基本契約 (マスタ検索)" variant="default">
+          {/* 対象作品(own): 保存経路(work-linkage(pub))が formData.linked_work_id を読み、
+              原作マテリアルを対象作品の構成・条件明細へ連動させる。ここが唯一の入力点。 */}
           <div className="col-span-full space-y-1">
             <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-              原作 (Ledger) — 選択で「原著作物名」を自動入力
+              作品設定 — 対象作品（自社作品）
             </label>
-            <select
-              value={formData.ledger_ref_id || ''}
-              onChange={(e) => {
-                const lid = Number(e.target.value);
+            {/* 作品数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+            <WorkPicker
+              items={worksList.filter((w: any) => w.title).map((w: any) => toWorkPickerItem(w))}
+              value={formData.linked_work_id ? String(formData.linked_work_id) : undefined}
+              onSelect={(w) =>
+                setFormData({
+                  ...formData,
+                  linked_work_id: w?.id,
+                })
+              }
+              placeholder="この契約の対象作品を検索 (コード / タイトル / 別名)"
+            />
+            <div className="flex items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                または新規:
+              </span>
+              <input
+                value={pubNewWorkTitle}
+                onChange={(e) => setPubNewWorkTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void createPubOwnWork();
+                  }
+                }}
+                placeholder="なければ作成: 作品タイトル"
+                className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => void createPubOwnWork()}
+                disabled={pubCreatingWork || !pubNewWorkTitle.trim()}
+                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {pubCreatingWork ? '作成中…' : '＋作成'}
+              </button>
+            </div>
+            <p className="text-[10px] font-mono text-muted-foreground/70">
+              「どの作品のための契約か」を指定します。一覧に無ければ作品タイトルを入力して作成。保存時に原作マテリアルを対象作品の構成・条件明細へ連動させます。
+            </p>
+          </div>
+
+          <div className="col-span-full space-y-1">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              原作 (Ledger) — 選択で「原著作物名」を自動入力（なければ新規作成）
+            </label>
+            {/* 原作数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+            <WorkPicker
+              items={(Array.isArray(allLedgers) ? allLedgers : [])
+                .filter((l: any) => l.is_active !== false)
+                .map((l: any) =>
+                  toWorkPickerItem(l, {
+                    sub:
+                      Array.isArray(l.division) && l.division.length
+                        ? `〔${l.division.join('/')}〕`
+                        : undefined,
+                  })
+                )}
+              value={formData.ledger_ref_id ? String(formData.ledger_ref_id) : undefined}
+              onSelect={(sel) => {
+                const lid = Number(sel?.id);
                 const list = Array.isArray(allLedgers) ? allLedgers : [];
                 const ledger = list.find((l: any) => Number(l.id) === lid);
                 if (!lid || !ledger) {
@@ -5514,22 +5748,35 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   原著作物名: ledger.title || '',
                 });
               }}
-              className="w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground"
-            >
-              <option value="">— 原作マスタから選択 —</option>
-              {(Array.isArray(allLedgers) ? allLedgers : [])
-                .filter((l: any) => l.is_active !== false)
-                .map((l: any) => (
-                  <option key={l.id} value={l.id}>
-                    [{l.ledger_code}] {l.title}
-                    {Array.isArray(l.division) && l.division.length
-                      ? ` 〔${l.division.join('/')}〕`
-                      : ''}
-                  </option>
-                ))}
-            </select>
+              placeholder="原作マスタを検索 (LO-コード / タイトル / 別名)"
+            />
+            <div className="flex items-center gap-1.5 pt-1">
+              <span className="text-[10px] font-mono text-muted-foreground shrink-0">
+                または新規:
+              </span>
+              <input
+                value={pubNewSourceTitle}
+                onChange={(e) => setPubNewSourceTitle(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void createPubSourceIp();
+                  }
+                }}
+                placeholder="なければ作成: 原作タイトル"
+                className="flex-1 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+              />
+              <button
+                type="button"
+                onClick={() => void createPubSourceIp()}
+                disabled={pubCreatingSource || !pubNewSourceTitle.trim()}
+                className="shrink-0 text-[10px] font-mono px-2 py-1 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+              >
+                {pubCreatingSource ? '作成中…' : '＋原作を新規作成'}
+              </button>
+            </div>
             <p className="text-[10px] font-mono text-muted-foreground/70">
-              マスター &gt; 原作 (Ledgers) で登録した原作から選択。「原著作物名」は正式名称で自動入力されます（手入力不可）。
+              マスター &gt; 原作 (Ledgers) で登録した原作から選択。「原著作物名」は正式名称で自動入力されます（手入力不可）。未登録の原作はタイトル入力で作成でき、原作本体素材 -001 も同時生成されます。
             </p>
           </div>
 

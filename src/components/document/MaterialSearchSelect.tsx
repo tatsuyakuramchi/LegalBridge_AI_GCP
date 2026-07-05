@@ -4,6 +4,8 @@ import * as React from 'react';
 //   コード(material_code) / 素材名 / 原作名(_ledger_title) / 原作コード で部分一致。
 //   未選択時はテキスト入力(フォーカスで全件、入力で絞り込み)、選択後はラベル表示＋「変更」。
 //   候補は materialPool(全原作のマテリアルを _ledger_title 付きで平坦化したもの)を受け取る。
+//   onCreate を渡すと、検索語をそのまま素材名として新規登録するボタンを候補末尾に出す
+//   (文書フォームから離脱せずマテリアルを作成する動線。登録先の解決は呼び出し側の責務)。
 export type MaterialOption = {
   id?: any;
   material_code: string;
@@ -22,14 +24,36 @@ export function MaterialSearchSelect({
   value,
   onPick,
   placeholder = '原作マテリアルを検索（コード / 素材名 / 原作名）',
+  onCreate,
+  createDisabledReason,
 }: {
   materials: MaterialOption[];
   value?: string;
   onPick: (code: string) => void;
   placeholder?: string;
+  /** 検索語を素材名として新規登録する。成功時は呼び出し側で選択状態まで確定すること。 */
+  onCreate?: (name: string) => Promise<void> | void;
+  /** 新規登録できない理由(例: 登録先の原作が未選択)。指定時はボタンを無効化して表示。 */
+  createDisabledReason?: string;
 }) {
   const [q, setQ] = React.useState('');
   const [open, setOpen] = React.useState(false);
+  const [creating, setCreating] = React.useState(false);
+
+  const runCreate = async () => {
+    const name = q.trim();
+    if (!name || !onCreate || createDisabledReason || creating) return;
+    setCreating(true);
+    try {
+      await onCreate(name);
+      setQ('');
+      setOpen(false);
+    } catch (e) {
+      console.error('MaterialSearchSelect: onCreate failed', e);
+    } finally {
+      setCreating(false);
+    }
+  };
 
   const selected = value
     ? (materials || []).find((m) => m.material_code === value) || null
@@ -106,6 +130,29 @@ export function MaterialSearchSelect({
                 {labelOf(m)}
               </button>
             ))
+          )}
+          {onCreate && q.trim() !== '' && (
+            <>
+              <button
+                type="button"
+                disabled={creating || !!createDisabledReason}
+                title={createDisabledReason}
+                className="block w-full text-left px-2.5 py-1.5 text-[11px] font-mono border-t border-input text-emerald-700 hover:bg-emerald-50 dark:hover:bg-white/10 disabled:opacity-50"
+                onMouseDown={(e) => {
+                  e.preventDefault(); // onBlur より先に確定
+                  void runCreate();
+                }}
+              >
+                {creating
+                  ? '登録中…'
+                  : `＋「${q.trim()}」を新規マテリアルとして登録`}
+              </button>
+              {createDisabledReason && (
+                <div className="px-2.5 pb-1.5 text-[9px] font-mono text-muted-foreground">
+                  {createDisabledReason}
+                </div>
+              )}
+            </>
           )}
         </div>
       )}

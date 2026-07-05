@@ -24,6 +24,7 @@ import {
   type CalcType,
 } from "@/src/components/document/FinancialConditionTable"
 import { WorkAttributionsPanel } from "@/src/components/work/WorkAttributionsPanel"
+import { WorkPicker, toWorkPickerItem } from "@/src/components/work/WorkPicker"
 import { V3LicenseMatrix } from "@/src/components/document/V3LicenseMatrix"
 
 // 条件明細(condition_lines) → FinancialCondition(利用許諾明細入力の行)へ逆マップ。
@@ -1070,14 +1071,13 @@ export function WorkGraphPanel() {
           </div>
         </details>
         <div className="mt-3 max-w-md">
-          <NativeSelect value={workId} onChange={(e) => setWorkId(e.target.value)}>
-            <option value="">— 作品を選択 —</option>
-            {works.map((w) => (
-              <option key={w.id} value={w.id}>
-                {w.work_code} · {w.title}
-              </option>
-            ))}
-          </NativeSelect>
+          {/* 作品数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+          <WorkPicker
+            items={works.map((w: any) => toWorkPickerItem(w))}
+            value={workId || undefined}
+            onSelect={(w) => setWorkId(w ? String(w.id) : "")}
+            placeholder="作品を検索 (コード / タイトル / 別名)"
+          />
         </div>
       </header>
 
@@ -1758,18 +1758,18 @@ export function WorkGraphPanel() {
             </p>
             <div className="flex items-center gap-1.5 flex-wrap">
               <span className="text-[10px] text-muted-foreground">原作:</span>
-              <NativeSelect
-                value={pickerSource}
-                onChange={(e) => { setPickerSource(e.target.value); void loadPicker(e.target.value, workId) }}
-                className="h-7 text-[11px] min-w-[14rem]"
-              >
-                <option value="">— 原作を選択 —</option>
-                {sourceWorks.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.source_code || s.work_code || "—"} {s.title}
-                  </option>
-                ))}
-              </NativeSelect>
+              {/* 原作数の増加に耐えるよう検索型ピッカー(かな・別名でもヒット)。 */}
+              <WorkPicker
+                items={sourceWorks.map((s: any) => toWorkPickerItem(s))}
+                value={pickerSource || undefined}
+                onSelect={(s) => {
+                  const id = s ? String(s.id) : ""
+                  setPickerSource(id)
+                  void loadPicker(id, workId)
+                }}
+                placeholder="原作を検索 (コード / タイトル / 別名)"
+                className="min-w-[16rem] flex-1 max-w-md"
+              />
               {pickerLoading && <span className="text-[10px] text-muted-foreground">読込中…</span>}
             </div>
             {pickerSource && !pickerLoading && pickerLines.length === 0 && (
