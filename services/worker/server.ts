@@ -13066,26 +13066,34 @@ ${details}
       if (req.query.q) {
         params.push(`%${String(req.query.q)}%`);
         where.push(
-          `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length})`
+          `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length} OR cl.condition_name ILIKE $${params.length})`
         );
       }
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
       try {
+        // 件名は subject 未設定の明細(Master/文書保存経路は condition_name にのみ
+        // 書く)へフォールバック。取引先は 契約の vendor → 明細の相手方
+        // (counterparty_vendor_id) → 文書の取引先名スナップショット の順で解決。
         const result = await query(
-          `SELECT cl.id, cl.line_code, cl.subject, cl.payment_scheme, cl.direction,
+          `SELECT cl.id, cl.line_code,
+                  COALESCE(NULLIF(cl.subject, ''), cl.condition_name) AS subject,
+                  cl.payment_scheme, cl.direction,
                   cl.transaction_kind,
                   cl.rights_attribution, cl.capability_id, cl.amount_ex_tax, cl.currency,
                   cl.delivery_date, cl.term_start, cl.term_end,
                   s.status, s.consumed_amount, s.remaining_amount, s.event_count,
                   b.mg_remaining, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
-                  v.vendor_name, v.vendor_code,
+                  COALESCE(v.vendor_name, vcp.vendor_name, cd.vendor_name_snapshot) AS vendor_name,
+                  COALESCE(v.vendor_code, vcp.vendor_code) AS vendor_code,
                   sch.has_overdue
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
+             LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
              LEFT JOIN (
                SELECT condition_line_id, bool_or(overdue AND NOT issued) AS has_overdue
                  FROM condition_line_schedule_v GROUP BY condition_line_id
@@ -13200,19 +13208,26 @@ ${details}
       const lineCode = String(req.params.lineCode || "").trim();
       if (!lineCode) return res.status(400).json({ ok: false, error: "lineCode required" });
       try {
+        // 件名/取引先は一覧と同じフォールバック(subject→condition_name、
+        // 契約vendor→明細相手方→文書スナップショット)。cl.* の subject より
+        // 後に置いた別名が行オブジェクトで優先される。
         const main = await query(
           `SELECT cl.*, s.status, s.consumed_amount, s.remaining_amount,
                   s.event_count, s.last_event_at,
                   b.mg_consumed, b.mg_remaining, b.ag_consumed, b.ag_remaining,
                   cc.contract_title, cc.document_number AS contract_number,
                   cc.structural_role, cc.parent_capability_id,
-                  v.vendor_name, v.vendor_code,
+                  COALESCE(NULLIF(cl.subject, ''), cl.condition_name) AS subject,
+                  COALESCE(v.vendor_name, vcp.vendor_name, cd.vendor_name_snapshot) AS vendor_name,
+                  COALESCE(v.vendor_code, vcp.vendor_code) AS vendor_code,
                   w.work_code, w.title AS work_title
              FROM condition_lines cl
              LEFT JOIN condition_line_status_v  s ON s.id = cl.id
              LEFT JOIN condition_line_balance_v b ON b.condition_line_id = cl.id
              LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
              LEFT JOIN vendors v ON v.id = cc.vendor_id
+             LEFT JOIN vendors vcp ON vcp.id = cl.counterparty_vendor_id
+             LEFT JOIN documents cd ON cd.id = COALESCE(cl.document_id, cl.capability_id)
              LEFT JOIN works w ON w.id = cl.work_id
             WHERE cl.line_code = $1
             LIMIT 1`,
