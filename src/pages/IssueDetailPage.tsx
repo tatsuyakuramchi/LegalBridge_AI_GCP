@@ -14,6 +14,7 @@ import {
   Calendar,
   ListChecks,
   GitMerge,
+  ShoppingCart,
 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -25,6 +26,7 @@ import {
   formatStaffLabel,
   resolveSlackMentions,
 } from "@/src/lib/slackRequester"
+import { useMergeCart } from "@/src/context/MergeCartContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -145,45 +147,13 @@ export function IssueDetailPage() {
     [issues, issueKey]
   )
 
-  // 課題統合(重複/誤起票の整理)。
-  const [mergeOpen, setMergeOpen] = React.useState(false)
-  const [mergeTarget, setMergeTarget] = React.useState("")
-  const [mergeMode, setMergeMode] = React.useState<"child" | "delete">("child")
-  const [mergeMoveData, setMergeMoveData] = React.useState(false)
-  const [mergeReason, setMergeReason] = React.useState("")
-  const [merging, setMerging] = React.useState(false)
+  // 課題統合(重複/誤起票の整理)。籠に集めて統合先を選ぶ方式(MergeCartPanel)。
+  const mergeCart = useMergeCart()
 
   // この課題が属する新課題(統一課題=契約)。U3: 個別課題から統一課題への導線。
   const [unifiedLinks, setUnifiedLinks] = React.useState<
     Array<{ capability_id: number; document_number: string | null; contract_title: string | null; vendor_name: string | null; record_type: string | null }>
   >([])
-
-  const doMerge = async () => {
-    const target = mergeTarget.trim().toUpperCase()
-    if (!/^[A-Z][A-Z0-9_]*-\d+$/.test(target)) {
-      showNotification?.("統合先の課題キーを入力してください (例: LEGAL-100)", "error")
-      return
-    }
-    if (mergeMode === "delete" && !window.confirm(`${issueKey} を Backlog から削除して ${target} に統合します。\nこの操作は元に戻せません。よろしいですか？`)) return
-    setMerging(true)
-    try {
-      const res = await fetch(`/api/backlog/issues/${encodeURIComponent(issueKey)}/merge`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ target_key: target, mode: mergeMode, move_data: mergeMoveData, reason: mergeReason.trim() || undefined }),
-      })
-      const d = await res.json().catch(() => ({}))
-      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
-      const warn = Array.isArray(d.warnings) && d.warnings.length ? `（注意: ${d.warnings.join(" / ")}）` : ""
-      showNotification?.(`${issueKey} を ${target} へ統合しました${mergeMode === "delete" ? "(削除)" : "(終結)"}${warn}`, "success")
-      setMergeOpen(false)
-      navigate(-1)
-    } catch (e: any) {
-      showNotification?.(`統合に失敗しました: ${e?.message || e}`, "error")
-    } finally {
-      setMerging(false)
-    }
-  }
 
   const [docs, setDocs] = React.useState<IssueDocument[]>([])
   const [lineSummary, setLineSummary] = React.useState<IssueConditionLineSummary | null>(null)
@@ -760,12 +730,19 @@ export function IssueDetailPage() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setMergeOpen(true)}
-            className="gap-1.5"
-            title="重複/誤起票の課題を別の課題へ統合する"
+            onClick={() =>
+              mergeCart.has(issueKey)
+                ? mergeCart.setOpen(true)
+                : mergeCart.add(
+                    { issueKey, summary: issue?.summary, statusName: issue?.status?.name },
+                    { openPanel: true }
+                  )
+            }
+            className={cn("gap-1.5", mergeCart.has(issueKey) && "border-emerald-600 text-emerald-700")}
+            title="この課題を統合カートに入れる。籠に集めた課題から統合先を選んで統合する"
           >
-            <GitMerge className="h-3.5 w-3.5" />
-            課題を統合
+            <ShoppingCart className="h-3.5 w-3.5" />
+            {mergeCart.has(issueKey) ? "統合カート済" : "統合カートへ"}
           </Button>
         </div>
       </header>
@@ -1475,56 +1452,6 @@ export function IssueDetailPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 課題統合ダイアログ */}
-      <Dialog open={mergeOpen} onOpenChange={(v) => !v && setMergeOpen(false)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>課題を統合 — {issueKey}</DialogTitle>
-          </DialogHeader>
-          <DialogBody className="space-y-3">
-            <p className="text-[11px] text-muted-foreground">
-              重複/誤起票のこの課題を、別の課題へ統合します。両課題に統合コメントを残します。
-            </p>
-            <div className="space-y-1">
-              <Label className="text-[11px]">統合先の課題キー（残す側）</Label>
-              <Input
-                value={mergeTarget}
-                onChange={(e) => setMergeTarget(e.target.value)}
-                placeholder="例: LEGAL-100"
-              />
-            </div>
-            <div className="space-y-1">
-              <Label className="text-[11px]">この課題の処理</Label>
-              <NativeSelect value={mergeMode} onChange={(e) => setMergeMode(e.target.value as "child" | "delete")}>
-                <option value="child">子課題化＋終結（非破壊・推奨）</option>
-                <option value="delete">Backlog から削除（不可逆）</option>
-              </NativeSelect>
-              <p className="text-[10px] text-muted-foreground">
-                {mergeMode === "delete"
-                  ? "この課題は完全に削除されます。統合先にコメントのみ残ります。"
-                  : "この課題を統合先の子課題にし、ステータスを「終結」にします。履歴が残ります。"}
-              </p>
-            </div>
-            <label className="flex items-center gap-2 text-[11px]">
-              <input type="checkbox" checked={mergeMoveData} onChange={(e) => setMergeMoveData(e.target.checked)} />
-              この課題に紐づく文書・明細も統合先へ付け替える（中身がある場合）
-            </label>
-            <div className="space-y-1">
-              <Label className="text-[11px]">理由（任意）</Label>
-              <Input value={mergeReason} onChange={(e) => setMergeReason(e.target.value)} placeholder="重複起票のため 等" />
-            </div>
-          </DialogBody>
-          <DialogFooter>
-            <Button variant="outline" size="sm" onClick={() => setMergeOpen(false)} disabled={merging}>
-              キャンセル
-            </Button>
-            <Button size="sm" onClick={doMerge} disabled={merging} className="gap-1.5">
-              <GitMerge className="h-3.5 w-3.5" />
-              {merging ? "統合中…" : "統合を実行"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   )
 }
