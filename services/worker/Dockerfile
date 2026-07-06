@@ -14,11 +14,18 @@ WORKDIR /app
 
 # -----------------------------------------------------------------------
 # PDF rendering deps:
-#   - chromium: headless browser used by puppeteer-core to print HTML→PDF
+#   - chromium (apt): 実行に使うのは下の chrome-headless-shell だが、
+#     必要な共有ライブラリ一式を確実に揃えるために入れておく (依存 .so
+#     だけを手で列挙すると Debian 側の変化で漏れが出るため)。
 #   - fonts-noto-cjk / fonts-ipafont-*: Japanese fonts. Without these,
 #     all 日本語 in the rendered PDF is replaced by tofu (□).
-# We use puppeteer-core (not puppeteer) and point it at /usr/bin/chromium
-# so we don't double-download the bundled Chromium binary.
+#
+# 2026-07-06 障害の教訓: apt の chromium はビルド時期で版が変わり、新しい
+# 版は Cloud Run 上で puppeteer.launch が「Failed to launch the browser
+# process!」で起動不能になった。実行バイナリは puppeteer-core 23.11.1 が
+# 公式サポートする chrome-headless-shell 131.0.6778.204 をピン留めして
+# 入れ、ビルドを再現可能にする (puppeteer-core を上げるときは同梱の
+# revisions.js の chrome-headless-shell 版に合わせてここも上げること)。
 # -----------------------------------------------------------------------
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium \
@@ -29,9 +36,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
+RUN npx --yes @puppeteer/browsers install chrome-headless-shell@131.0.6778.204 --path /opt/chrome
+
 ENV PUPPETEER_SKIP_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-ENV CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
+ENV PUPPETEER_EXECUTABLE_PATH=/opt/chrome/chrome-headless-shell/linux-131.0.6778.204/chrome-headless-shell-linux64/chrome-headless-shell
 
 # Install dependencies first so they're cached across code changes.
 COPY package*.json ./
