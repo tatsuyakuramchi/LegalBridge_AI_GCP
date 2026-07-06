@@ -83,6 +83,8 @@ import {
 import { v3SampleFormData } from "./src/lib/individualLicenseV3Context.ts";
 // スキーマ単純化 Phase 2: Master(契約マスタ)保存を documents 統合＋CL直接書き込みで行う。
 import { upsertMasterContract, mapV3MatrixToConditions } from "./src/lib/documentSave.ts";
+// 再発行時に旧版明細の実績を新版明細へ引き継ぐ(一意対応できる場合のみ)。
+import { carryOverReissueConsumption } from "./src/lib/reissueCarryover.ts";
 import { registerImportsV2 } from "./src/routes/importsV2.ts";
 import { registerGenericImport } from "./src/routes/genericImport.ts";
 import { registerDataLinkage } from "./src/routes/dataLinkage.ts";
@@ -13076,10 +13078,15 @@ ${details}
       //   (発注書を修正=再発行すると旧明細が残って見える症状の原因)。
       //   親は capability を優先し、無ければ document のライフサイクルを見る。
       //   どちらも解決できない明細(横断検索の未リンク行)は 'final' 扱いで残す。
-      //   ?include_superseded=1 で旧版も含める(監査/履歴用の明示オプトイン)。
+      //   例外: 旧版でも有効な実績(condition_events)が残る明細は表示を維持する。
+      //     再発行時の引き継ぎ(carryOverReissueConsumption)で一意対応できず実績が
+      //     旧明細に残ったケースを隠すと残額が消えて見えるため、手動確認できるよう出す。
+      //   ?include_superseded=1 で旧版を無条件に含める(監査/履歴用の明示オプトイン)。
       if (String(req.query.include_superseded || "") !== "1") {
         where.push(
-          "COALESCE(cc.lifecycle_status, cd.lifecycle_status, 'final') = 'final'"
+          `(COALESCE(cc.lifecycle_status, cd.lifecycle_status, 'final') = 'final'
+            OR EXISTS (SELECT 1 FROM condition_events ce
+                        WHERE ce.condition_line_id = cl.id AND ce.voided_at IS NULL))`
         );
       }
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
@@ -16344,6 +16351,35 @@ ${details}
             "calculated",
           ]
         );
+      }
+
+      // 再発行(isReissue)時: 旧版明細に紐づく実績(検収/計算)を新版明細へ引き継ぐ。
+      //   全 condition_lines を書き終えた後に実行する。一意に対応付けできる明細
+      //   だけを付け替え、内容編集で曖昧になった明細は触らず警告に留める
+      //   (取り違えるくらいなら何もしない)。非致命: 失敗しても発行自体は止めない。
+      if (isReissue) {
+        try {
+          const co = await carryOverReissueConsumption(
+            { query },
+            baseDocumentNumber,
+            docNumber
+          );
+          if (co.carried > 0) {
+            console.log(
+              `[reissue-carryover] ${docNumber}: ${co.carried} 明細 / ${co.movedEvents} 実績を新版へ引き継ぎ`
+            );
+          }
+          if (co.skipped.length > 0) {
+            console.warn(
+              `[reissue-carryover] ${docNumber}: 一意対応できず未引き継ぎ ${co.skipped.length} 明細 ` +
+                `(要手動確認: ${co.skipped
+                  .map((s) => `${s.lineCode || s.oldLineId}[${s.reason}]`)
+                  .join(", ")})`
+            );
+          }
+        } catch (coErr) {
+          console.warn("[reissue-carryover] skipped (non-fatal):", coErr);
+        }
       }
 
       // Slack notification with the Drive link.
