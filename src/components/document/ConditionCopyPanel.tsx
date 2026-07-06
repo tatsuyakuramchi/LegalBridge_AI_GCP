@@ -112,6 +112,8 @@ function candidateToCondition(
   };
   // 計算式テキストは構造化値から再生成(無ければ元の formula_text を踏襲)。
   c.formula_text = buildFormulaText(c) || cand.formula_text || undefined;
+  // コピー元の根拠文書番号を引き回す(マテリアル行の「根拠文書」表示に使う)。
+  (c as any).source_document_number = cand.document_number ?? undefined;
   return c;
 }
 

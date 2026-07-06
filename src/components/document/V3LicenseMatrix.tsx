@@ -34,6 +34,8 @@ export interface V3Lc {
   name?: string;
   holder?: string;
   rates?: Record<string, string>;
+  /** マテリアルの根拠文書番号(利用許諾条件書/発注書、または「この条件書(新規)」)。フォーム表示用。 */
+  source_doc?: string;
 }
 /** 2-3(A) 計算基準日の1行。formData.v3_calc_base_rows（context builder の入力契約）。 */
 export interface V3CalcBaseRow {
@@ -213,7 +215,7 @@ export function V3LicenseMatrix({
             <table className="w-full text-[11px] font-mono border-collapse">
               <thead className="bg-muted/40 text-muted-foreground">
                 <tr>
-                  <th className={`${thCls} min-w-[110px]`}>区分</th>
+                  <th className={`${thCls} min-w-[130px]`}>区分 / 根拠文書</th>
                   <th className={`${thCls} min-w-[120px]`}>構成要素</th>
                   <th className={`${thCls} min-w-[100px]`}>権利元</th>
                   {conds.map((c, i) => (
@@ -227,7 +229,10 @@ export function V3LicenseMatrix({
               <tbody>
                 {lcs.map((l, i) => (
                   <tr key={i}>
-                    <td className={`${tdCls} font-mono`}>{l.material_code || '(未設定)'}</td>
+                    <td className={`${tdCls} font-mono`}>
+                      <div className="font-bold text-indigo-700">{l.source_doc || 'この条件書(新規)'}</div>
+                      <div className="text-[9px] text-muted-foreground/70">{l.material_code || '(未設定)'}</div>
+                    </td>
                     <td className={`${tdCls} font-bold`}>{l.name || '(構成要素)'}</td>
                     <td className={`${tdCls} text-muted-foreground`}>{l.holder || '—'}</td>
                     {conds.map((c) =>

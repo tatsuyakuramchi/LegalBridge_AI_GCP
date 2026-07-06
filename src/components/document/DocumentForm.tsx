@@ -1335,6 +1335,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         holder: m?.holder || '',
         rates,
         copied_from_condition_id: m?.copied?.copied_from_condition_id,
+        // マテリアルの根拠文書番号(1-3B 料率表の「区分/根拠文書」表示用)。
+        source_doc: m?.source_doc || '',
       };
     };
     // 選択マテリアル群 → v3_lcs(編集済み rates は material_code で突合し保持)。
@@ -1390,6 +1392,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               material_code: code,
               name: m?.material_name || '',
               holder: resolveRightsHolder(m, null) || row.holder || '',
+              // マスターから選んだ素材の根拠文書(登録元/発注書)を最善努力で拾う。
+              source_doc:
+                m?.service_doc_number ||
+                m?.source_doc_number ||
+                m?.source_document_number ||
+                row.source_doc ||
+                '',
             }
           : row
       );
@@ -1419,6 +1428,8 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               name: j.material_name || name,
               holder:
                 resolveRightsHolder(j, selectedLedger) || row.holder || '',
+              // その場で新規登録した素材は、この条件書自身が根拠。
+              source_doc: 'この条件書(新規)',
             }
           : row
       );
@@ -1426,7 +1437,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     };
     const setRowCopied = (i: number, cond: any) => {
       const next = masterMaterials.map((row: any, idx: number) =>
-        idx === i ? { ...row, copied: cond } : row
+        idx === i
+          ? {
+              ...row,
+              copied: cond,
+              // コピー元条件の根拠文書番号を引き継ぐ(あれば上書き)。
+              source_doc: cond?.source_document_number || row.source_doc || '',
+            }
+          : row
       );
       commitMaterials(next);
     };
@@ -1484,7 +1502,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 condition_name: c.condition_name ?? undefined,
               }
             : null;
-        additions.push({ material_code: code, name, holder, copied });
+        additions.push({
+          material_code: code,
+          name,
+          holder,
+          copied,
+          // 取り込み元の文書番号を根拠として保持(利用許諾条件書 / 発注書)。
+          source_doc: c.document_number || '',
+        });
       }
       if (additions.length > 0) {
         await refreshLedgers().catch(() => {});
@@ -1762,6 +1787,26 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                           削除
                         </button>
                       </div>
+                      {row.material_code && (
+                        <div className="flex items-center gap-2 pl-6 flex-wrap">
+                          <span className="text-[9px] font-mono text-muted-foreground">
+                            根拠文書:{' '}
+                            <span className="font-bold text-indigo-700">
+                              {row.source_doc || 'この条件書(新規)'}
+                            </span>
+                          </span>
+                          <span
+                            className={cn(
+                              'text-[8px] font-mono font-bold px-1.5 py-0.5 rounded border',
+                              row.copied
+                                ? 'text-teal-700 border-teal-300 bg-teal-50'
+                                : 'text-amber-700 border-amber-300 bg-amber-50'
+                            )}
+                          >
+                            {row.copied ? 'A 過去条件を引用' : 'B この条件書で新規登録'}
+                          </span>
+                        </div>
+                      )}
                       {row.copied && (
                         <div className="text-[10px] font-mono text-emerald-800 pl-6">
                           コピー済み条件: {row.copied.condition_name || '(無題)'}{' '}
