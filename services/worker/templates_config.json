@@ -446,6 +446,7 @@
       "Licensee_氏名会社名": { "label": "Licensee 氏名/会社名 (PDF表示用)", "group": "III. Licensee (被許諾者)", "required": true },
       "Licensee_代表者名": { "label": "Licensee 代表者名", "group": "III. Licensee (被許諾者)", "helpText": "法人の場合のみ" },
       "LICENSEE_IS_CORPORATION": { "label": "Licensee は法人", "group": "III. Licensee (被許諾者)", "type": "boolean" },
+      "Licensee_連絡先": { "label": "Licensee 連絡先 (通知先)", "group": "III. Licensee (被許諾者)", "helpText": "頭書「通知先」に表示。担当者・電話・メール等" },
 
       "許諾開始日": { "label": "許諾開始日", "group": "IV. 対象作品・期間", "type": "date", "required": true },
       "許諾期間注記": { "label": "許諾期間 注記", "group": "IV. 対象作品・期間", "type": "textarea", "placeholder": "例: 基本契約の満了日まで" },
@@ -453,6 +454,11 @@
       "原著作物補記": { "label": "原著作物 補記", "group": "IV. 対象作品・期間", "helpText": "例: 原作および派生作品を含む" },
       "対象製品予定名": { "label": "対象製品（予定）名", "group": "IV. 対象作品・期間", "required": true },
       "独占性": { "label": "独占性", "group": "IV. 対象作品・期間", "type": "select", "options": ["独占", "非独占"], "required": true },
+
+      "対象製品の定義": { "label": "対象製品の定義 (1-1)", "group": "IV. 対象作品・期間", "type": "textarea", "placeholder": "例: 対象作品を利用したボードゲーム製品", "helpText": "テンプレ 1-1 許諾概要「対象製品」に表示" },
+      "許諾地域": { "label": "許諾地域 (最大・1-1)", "group": "IV. 対象作品・期間", "placeholder": "例: 全世界", "helpText": "テンプレ 1-1 の許諾地域(最大スコープ)。各取引形態の地域は金銭条件で個別指定" },
+      "許諾言語": { "label": "許諾言語 (最大・1-1)", "group": "IV. 対象作品・期間", "placeholder": "例: 全言語", "helpText": "テンプレ 1-1 の許諾言語(最大スコープ)" },
+      "許諾範囲": { "label": "許諾範囲 (1-1)", "group": "IV. 対象作品・期間", "type": "textarea", "placeholder": "例: 対象製品の製造・販売に必要な範囲", "helpText": "テンプレ 1-1 許諾概要「許諾範囲」に表示" },
 
       "素材番号": { "label": "素材番号", "group": "V. 素材・監修", "placeholder": "LIC-01" },
       "素材名": { "label": "素材名", "group": "V. 素材・監修" },

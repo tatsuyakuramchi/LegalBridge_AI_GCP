@@ -60,6 +60,12 @@ const STATUS_OPTS = [
   ["closed", "完了"],
   ["archived", "アーカイブ"],
 ]
+// 格納した契約書ファイル(添付)の種別ラベル。documents.template_type に格納した値の表示名。
+const ATTACH_KIND_LABEL: Record<string, string> = {
+  counterparty_draft: "相手方ドラフト",
+  own_draft: "自社ドラフト",
+  reference: "参考資料",
+}
 
 const fmtDate = (s: any) =>
   s ? new Date(s).toLocaleDateString("ja-JP", { month: "numeric", day: "numeric" }) : "—"
@@ -109,6 +115,12 @@ export function MatterDetailPage() {
   // sub-forms
   const [newIssue, setNewIssue] = React.useState({ backlog_issue_key: "", relation: "related" })
   const [attachDoc, setAttachDoc] = React.useState("")
+  // 契約書ファイルの格納(アップロード): 相手方原案/自社案/参考資料を Drive へ保管し案件に紐付け。
+  const [attachFile, setAttachFile] = React.useState<File | null>(null)
+  const [attachKind, setAttachKind] = React.useState("counterparty_draft")
+  const [attachTitle, setAttachTitle] = React.useState("")
+  const [uploading, setUploading] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [absorbId, setAbsorbId] = React.useState("")
   const [expanded, setExpanded] = React.useState<Record<string, boolean>>({})
   const [showLines, setShowLines] = React.useState(false)
@@ -251,6 +263,28 @@ export function MatterDetailPage() {
       await load()
     } catch (e: any) {
       push(String(e?.message || e), "error")
+    }
+  }
+
+  async function uploadAttachment() {
+    if (!attachFile) return push("ファイルを選択してください", "error")
+    setUploading(true)
+    try {
+      const fd = new FormData()
+      fd.append("file", attachFile)
+      fd.append("docKind", attachKind)
+      if (attachTitle.trim()) fd.append("title", attachTitle.trim())
+      // call() は fetch をそのまま呼ぶだけなので、Content-Type は付けず FormData を渡す
+      // (ブラウザが multipart boundary を設定する)。
+      await call(`/api/matters/${matterId}/attachments`, { method: "POST", body: fd }, "契約書を格納しました")
+      setAttachFile(null)
+      setAttachTitle("")
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      await load()
+    } catch (e: any) {
+      push(String(e?.message || e), "error")
+    } finally {
+      setUploading(false)
     }
   }
 
@@ -718,7 +752,7 @@ export function MatterDetailPage() {
                     <div key={d.id} className="border border-border/60 rounded-sm px-2.5 py-2">
                       <div className="flex items-center gap-2 text-[12px]">
                         <span className="font-mono font-medium">{d.document_number || `#${d.id}`}</span>
-                        <Badge variant="outline" className="text-[10px]">{d.template_type}</Badge>
+                        <Badge variant="outline" className="text-[10px]">{ATTACH_KIND_LABEL[d.template_type] || d.template_type}</Badge>
                         <Badge variant={sent ? "success" : "secondary"} className="text-[10px]">
                           {sent ? "送信済" : "未送信"}
                         </Badge>
@@ -762,6 +796,30 @@ export function MatterDetailPage() {
                 <Button size="sm" variant="outline" onClick={attachDocument}>
                   <Plus className="h-3.5 w-3.5 mr-1" /> 紐付け
                 </Button>
+              </div>
+              {/* 契約書ファイルを格納: 生ファイル(Word/PDF)を Drive へ保管し ATT 番号で案件に紐付け。 */}
+              <div className="mt-2 pt-2 border-t border-border/50">
+                <p className="text-[10px] text-muted-foreground mb-1.5">
+                  契約書ファイルを格納（相手方原案 / 自社案 / 参考資料を Drive に保管し案件へ紐付け）
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    onChange={(e) => setAttachFile(e.target.files?.[0] || null)}
+                    className="text-[11px] max-w-[220px] file:mr-2 file:rounded-sm file:border file:border-border file:bg-muted file:px-2 file:py-1 file:text-[11px]"
+                  />
+                  <NativeSelect value={attachKind} onChange={(e) => setAttachKind(e.target.value)} className="h-8 text-[12px] w-[132px]">
+                    <option value="counterparty_draft">相手方ドラフト</option>
+                    <option value="own_draft">自社ドラフト</option>
+                    <option value="reference">参考資料</option>
+                  </NativeSelect>
+                  <Input value={attachTitle} onChange={(e) => setAttachTitle(e.target.value)} placeholder="表示名(任意)" className="h-8 text-[12px] max-w-[160px]" />
+                  <Button size="sm" variant="outline" onClick={uploadAttachment} disabled={uploading || !attachFile}>
+                    {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" /> : <FilePlus className="h-3.5 w-3.5 mr-1" />}
+                    格納
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
