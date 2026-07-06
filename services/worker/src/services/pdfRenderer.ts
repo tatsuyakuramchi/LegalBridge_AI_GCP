@@ -26,12 +26,11 @@ const DEFAULT_ARGS = [
   "--disable-dev-shm-usage", // Cloud Run の /dev/shm が小さいことの回避
   "--disable-gpu",
   "--font-render-hinting=none",
-  // Cloud Run (gVisor) では zygote プロセスの fork に必要なカーネル機能が
-  // 使えず、新しめの Chromium は "Failed to launch the browser process!"
-  // で即死する (2026-07-05 のイメージ再ビルドで Debian の Chromium が
-  // 更新されて顕在化)。zygote を使わない単一プロセス起動にして回避する。
-  "--no-zygote",
-  "--single-process",
+  // 注意: --single-process / --no-zygote を足してはいけない。新しめの
+  // Chromium は --single-process だと "Cannot use V8 Proxy resolver in
+  // single process mode" で起動に失敗する (2026-07-06 の障害で確認)。
+  // 新 Chromium は第1世代 Cloud Run (gVisor) 自体で起動不能のため、
+  // 実行環境は cloudbuild-worker.yaml で gen2 に固定してある。
 ];
 
 export interface RenderPdfOptions {
