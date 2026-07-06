@@ -27,8 +27,12 @@ WORKDIR /app
 # 入れ、ビルドを再現可能にする (puppeteer-core を上げるときは同梱の
 # revisions.js の chrome-headless-shell 版に合わせてここも上げること)。
 # -----------------------------------------------------------------------
+# unzip: @puppeteer/browsers はダウンロードした zip の展開に unzip か
+#   yauzl を要求する。node:22-slim にはどちらも無く、これが無いと
+#   「no zip archiver is available」でビルドが失敗する (2026-07-06 実証)。
 RUN apt-get update && apt-get install -y --no-install-recommends \
       chromium \
+      unzip \
       fonts-noto-cjk \
       fonts-noto-cjk-extra \
       fonts-ipafont-gothic \
@@ -36,10 +40,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
       ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-RUN npx --yes @puppeteer/browsers install chrome-headless-shell@131.0.6778.204 --path /opt/chrome
+# chrome-headless-shell を /opt/chrome に取得し、展開先を find で特定して
+# 安定パス /usr/local/bin/chrome-headless-shell へ symlink する
+# (バージョン依存のディレクトリ名を実行時パスに直書きしないため)。
+# 併せて --version を叩き、バイナリが実際に起動できることをビルド時に検証
+# する (起動不能ならここで build を失敗させ、本番へ壊れた image を出さない)。
+RUN npx --yes @puppeteer/browsers install chrome-headless-shell@131.0.6778.204 --path /opt/chrome \
+    && ln -s "$(find /opt/chrome -type f -name chrome-headless-shell | head -n1)" /usr/local/bin/chrome-headless-shell \
+    && /usr/local/bin/chrome-headless-shell --version
 
 ENV PUPPETEER_SKIP_DOWNLOAD=true
-ENV PUPPETEER_EXECUTABLE_PATH=/opt/chrome/chrome-headless-shell/linux-131.0.6778.204/chrome-headless-shell-linux64/chrome-headless-shell
+ENV PUPPETEER_EXECUTABLE_PATH=/usr/local/bin/chrome-headless-shell
 
 # Install dependencies first so they're cached across code changes.
 COPY package*.json ./
