@@ -149,6 +149,12 @@ steps:
       # 1Gi だと OOMKilled で 503 を返すケースがあるため 2Gi に。
       - --memory
       - 2Gi
+      # 2026-07-05 の再ビルドで入った新しめの Debian Chromium は第1世代
+      # 実行環境 (gVisor) だと起動できない (inotify/NETLINK/crashpad が
+      # カーネルレベルで塞がれており "Failed to launch the browser
+      # process!" で即死)。フルカーネルの第2世代に固定する。
+      - --execution-environment
+      - gen2
       - --cpu
       - "2"
       - --min-instances
