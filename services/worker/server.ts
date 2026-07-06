@@ -13069,6 +13069,19 @@ ${details}
           `(cl.line_code ILIKE $${params.length} OR cl.subject ILIKE $${params.length} OR cl.condition_name ILIKE $${params.length})`
         );
       }
+      // 再発行 (reissue) や差し替えで旧版になった契約/文書は
+      //   lifecycle_status が 'reissued' / 'superseded' / 'voided' に倒れる。
+      //   condition_lines はバージョン(=capability/document)ごとに作られるため、
+      //   旧版の明細を除外しないと、現行版(final)の明細と重複して一覧に出る
+      //   (発注書を修正=再発行すると旧明細が残って見える症状の原因)。
+      //   親は capability を優先し、無ければ document のライフサイクルを見る。
+      //   どちらも解決できない明細(横断検索の未リンク行)は 'final' 扱いで残す。
+      //   ?include_superseded=1 で旧版も含める(監査/履歴用の明示オプトイン)。
+      if (String(req.query.include_superseded || "") !== "1") {
+        where.push(
+          "COALESCE(cc.lifecycle_status, cd.lifecycle_status, 'final') = 'final'"
+        );
+      }
       const whereSql = where.length ? `WHERE ${where.join(" AND ")}` : "";
       try {
         // 件名は subject 未設定の明細(Master/文書保存経路は condition_name にのみ
