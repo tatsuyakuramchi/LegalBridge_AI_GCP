@@ -5328,6 +5328,98 @@ ${details}
     }
   );
 
+  // ── 案件へ契約書ファイルを格納 ───────────────────────────────────────────────
+  //   法務相談(=案件)で受け取った/作成した契約書の生ファイル(Word/PDF 等)を
+  //   Drive にアップロードし、documents 行(ATT-YYYY-NNNNN 採番)として案件に紐付ける。
+  //   通常の文書生成(HTML→PDF レンダリング)とは別経路。既存ファイルをそのまま保管し、
+  //   後段の Cowork 1 次レビューの入力にする。is_primary=false(正本契約版ではない)。
+  const ATTACHMENT_KINDS: Record<string, string> = {
+    counterparty_draft: "相手方ドラフト",
+    own_draft: "自社ドラフト",
+    reference: "参考資料",
+  };
+  app.post(
+    "/api/matters/:id/attachments",
+    upload.single("file"),
+    async (req, res) => {
+      try {
+        const matterId = Number(req.params.id);
+        if (!Number.isFinite(matterId)) {
+          return res.status(400).json({ ok: false, error: "matter id が不正です" });
+        }
+        if (!req.file) {
+          return res.status(400).json({ ok: false, error: "ファイルが指定されていません" });
+        }
+        const kind = String(req.body.docKind || "").trim();
+        const templateType = ATTACHMENT_KINDS[kind] ? kind : "reference";
+        const title = (req.body.title ? String(req.body.title) : "").trim();
+        const createdBy =
+          (req.body.createdBy ? String(req.body.createdBy) : "").trim() || null;
+
+        // 案件と代表課題キーを引く(documents.issue_key に使い autolink とも整合)。
+        const m = await query(
+          `SELECT id, matter_code, primary_issue_key FROM matters WHERE id = $1`,
+          [matterId]
+        );
+        if (!m.rows[0]) {
+          return res.status(404).json({ ok: false, error: "案件が見つかりません" });
+        }
+        const issueKey = String(m.rows[0].primary_issue_key || "").trim();
+
+        // 生ファイルを Drive へアップロード。
+        const safeName = String(req.file.originalname).replace(/[\r\n]/g, "_");
+        const fileName = `${ATTACHMENT_KINDS[templateType]}_${m.rows[0].matter_code}_${Date.now()}_${safeName}`;
+        const stream = Readable.from(req.file.buffer);
+        const driveLink = await googleDriveService.uploadFile(
+          stream,
+          fileName,
+          req.file.mimetype
+        );
+
+        // ATT-YYYY-NNNNN 採番(matter_code と同じ document_sequences を使用)。
+        const year = new Date().getFullYear();
+        const seq = await query(
+          `INSERT INTO document_sequences (kind, year, current_value) VALUES ('attachment', $1, 1)
+             ON CONFLICT (kind, year) DO UPDATE SET current_value = document_sequences.current_value + 1
+           RETURNING current_value`,
+          [year]
+        );
+        const docNumber = `ATT-${year}-${String(
+          Number(seq.rows[0].current_value)
+        ).padStart(5, "0")}`;
+
+        // documents 行として登録。matter_id は明示設定(autolink トリガは NULL 時のみ発火)。
+        const ins = await query(
+          `INSERT INTO documents
+             (document_number, issue_key, template_type, form_data, drive_link,
+              matter_id, is_primary, lifecycle_status, contract_title, created_by)
+           VALUES ($1,$2,$3,$4,$5,$6,FALSE,'final',$7,$8)
+           RETURNING id, document_number, template_type, drive_link, matter_id, contract_title, created_at`,
+          [
+            docNumber,
+            issueKey,
+            templateType,
+            JSON.stringify({
+              title,
+              original_file_name: req.file.originalname,
+              source_mime_type: req.file.mimetype,
+              kind: templateType,
+            }),
+            driveLink,
+            matterId,
+            title || null,
+            createdBy,
+          ]
+        );
+        await query(`UPDATE matters SET updated_at = now() WHERE id = $1`, [matterId]);
+        res.json({ ok: true, document: ins.rows[0] });
+      } catch (error) {
+        console.error("[matters] attachment upload failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
+      }
+    }
+  );
+
   app.post("/api/master/staff", express.json(), async (req, res) => {
     // Phase 22.21.120: 編集時は body.id を尊重して UPDATE。新規時は slack_user_id
     //   での upsert。slack_user_id が空のまま新規登録すると UNIQUE/NOT NULL で
