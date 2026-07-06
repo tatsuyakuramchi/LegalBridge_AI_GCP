@@ -26,6 +26,12 @@ const DEFAULT_ARGS = [
   "--disable-dev-shm-usage", // Cloud Run の /dev/shm が小さいことの回避
   "--disable-gpu",
   "--font-render-hinting=none",
+  // Cloud Run (gVisor) では zygote プロセスの fork に必要なカーネル機能が
+  // 使えず、新しめの Chromium は "Failed to launch the browser process!"
+  // で即死する (2026-07-05 のイメージ再ビルドで Debian の Chromium が
+  // 更新されて顕在化)。zygote を使わない単一プロセス起動にして回避する。
+  "--no-zygote",
+  "--single-process",
 ];
 
 export interface RenderPdfOptions {
