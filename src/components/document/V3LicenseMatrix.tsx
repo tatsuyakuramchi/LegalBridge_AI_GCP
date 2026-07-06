@@ -41,6 +41,21 @@ export interface V3CalcBaseRow {
   trigger?: string;
   note?: string;
 }
+/** 1-4 再許諾台帳の1行。formData.v3_sublicensees（context builder の入力契約）。 */
+export interface V3Sublicensee {
+  slPartner?: string;
+  slRegion?: string;
+  slLang?: string;
+  slCond?: string;
+  slRate?: string;
+  slDate?: string;
+  slNote?: string;
+}
+/** 4. 特約事項の追加1行。formData.v3_special_extras（context builder の入力契約）。 */
+export interface V3SpecialExtra {
+  seId?: string;
+  seText?: string;
+}
 
 /** 2-3(A) の既定行。未編集のフォーム・既存文書はこの標準2行で描画される。 */
 export const DEFAULT_CALC_BASE_ROWS: V3CalcBaseRow[] = [
@@ -277,6 +292,129 @@ export function V3CalcBaseEditor({
       </div>
       <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
         ＋ 版の行を追加（版・取引形態で事由を分ける場合）
+      </button>
+    </div>
+  );
+}
+
+/**
+ * SublicenseeEditor — 1-4 再許諾（Sub-license）台帳。
+ * formData.v3_sublicensees を produce する。空なら未出力（テンプレは「登録なし」表示）。
+ */
+export function SublicenseeEditor({
+  rows,
+  onChange,
+}: {
+  rows: V3Sublicensee[];
+  onChange: (next: V3Sublicensee[]) => void;
+}) {
+  const upd = (i: number, k: keyof V3Sublicensee, v: string) =>
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)));
+  const addRow = () =>
+    onChange([...rows, { slPartner: '', slRegion: '', slLang: '', slCond: '', slRate: '', slDate: '', slNote: '' }]);
+  const delRow = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="col-span-full space-y-2">
+      <div className="text-[10px] font-mono font-bold text-muted-foreground">
+        1-4 再許諾台帳（Sub-license）
+        <span className="ml-2 font-normal text-muted-foreground/70">
+          — Licensor の事前書面承認を得た再許諾先を登録
+        </span>
+      </div>
+      {rows.length === 0 && (
+        <p className="text-[10px] font-mono text-muted-foreground">
+          再許諾先がある場合は「＋再許諾先を追加」。未登録ならテンプレには「（現時点で登録なし）」と表示されます。
+        </p>
+      )}
+      {rows.map((r, i) => (
+        <div key={i} className="rounded-md border border-border bg-card px-3 py-2 space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-mono font-bold text-muted-foreground">#{i + 1}</span>
+            <button
+              type="button"
+              onClick={() => delRow(i)}
+              className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50"
+            >
+              削除
+            </button>
+          </div>
+          <div className="grid grid-cols-2 gap-2">
+            <label className="space-y-0.5"><span className="text-[10px] text-muted-foreground">相手先</span><input className={inputCls} value={r.slPartner || ''} onChange={(e) => upd(i, 'slPartner', e.target.value)} placeholder="例：サブA社" /></label>
+            <label className="space-y-0.5"><span className="text-[10px] text-muted-foreground">適用条件</span><input className={inputCls} value={r.slCond || ''} onChange={(e) => upd(i, 'slCond', e.target.value)} placeholder="例：サブライセンス" /></label>
+            <label className="space-y-0.5"><span className="text-[10px] text-muted-foreground">地域</span><input className={inputCls} value={r.slRegion || ''} onChange={(e) => upd(i, 'slRegion', e.target.value)} placeholder="例：北米" /></label>
+            <label className="space-y-0.5"><span className="text-[10px] text-muted-foreground">言語</span><input className={inputCls} value={r.slLang || ''} onChange={(e) => upd(i, 'slLang', e.target.value)} placeholder="例：英語" /></label>
+            <label className="space-y-0.5"><span className="text-[10px] text-muted-foreground">個別料率</span><input className={inputCls} value={r.slRate || ''} onChange={(e) => upd(i, 'slRate', e.target.value)} placeholder="例：50" /></label>
+            <label className="space-y-0.5"><span className="text-[10px] text-muted-foreground">締結日</span><input className={inputCls} value={r.slDate || ''} onChange={(e) => upd(i, 'slDate', e.target.value)} placeholder="YYYY-MM-DD" /></label>
+          </div>
+          <label className="block space-y-0.5"><span className="text-[10px] text-muted-foreground">備考</span><input className={inputCls} value={r.slNote || ''} onChange={(e) => upd(i, 'slNote', e.target.value)} placeholder="" /></label>
+        </div>
+      ))}
+      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+        ＋ 再許諾先を追加
+      </button>
+    </div>
+  );
+}
+
+/**
+ * SpecialExtrasEditor — 4. 特約事項の追加条項。
+ * formData.v3_special_extras を produce する。固定の 4-1 / 4-2 はテンプレ側の固定文で、
+ * ここでは 4-3 以降の追加特約のみを入力する。空なら未出力。
+ */
+export function SpecialExtrasEditor({
+  rows,
+  onChange,
+}: {
+  rows: V3SpecialExtra[];
+  onChange: (next: V3SpecialExtra[]) => void;
+}) {
+  const upd = (i: number, k: keyof V3SpecialExtra, v: string) =>
+    onChange(rows.map((r, idx) => (idx === i ? { ...r, [k]: v } : r)));
+  const addRow = () => onChange([...rows, { seId: '', seText: '' }]);
+  const delRow = (i: number) => onChange(rows.filter((_, idx) => idx !== i));
+
+  return (
+    <div className="col-span-full space-y-2">
+      <div className="text-[10px] font-mono font-bold text-muted-foreground">
+        追加特約（4-3 以降）
+        <span className="ml-2 font-normal text-muted-foreground/70">
+          — 4-1（一体効力）・4-2（複数対象作品の料率）はテンプレ固定文
+        </span>
+      </div>
+      {rows.length === 0 && (
+        <p className="text-[10px] font-mono text-muted-foreground">
+          追加の特約がある場合は「＋特約を追加」。無ければ固定文（4-1 / 4-2）のみ出力されます。
+        </p>
+      )}
+      {rows.map((r, i) => (
+        <div key={i} className="rounded-md border border-border bg-card px-3 py-2 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <input
+              className="w-24 text-[11px] font-mono bg-transparent border-b border-input py-1 focus:outline-none focus:border-foreground"
+              value={r.seId || ''}
+              onChange={(e) => upd(i, 'seId', e.target.value)}
+              placeholder="例：4-3"
+            />
+            <button
+              type="button"
+              onClick={() => delRow(i)}
+              className="ml-auto text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50"
+            >
+              削除
+            </button>
+          </div>
+          <textarea
+            className="w-full text-[11px] font-mono bg-transparent border border-input rounded px-2 py-1 focus:outline-none focus:border-foreground"
+            rows={2}
+            value={r.seText || ''}
+            onChange={(e) => upd(i, 'seText', e.target.value)}
+            placeholder="特約の本文"
+          />
+        </div>
+      ))}
+      <button type="button" onClick={addRow} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
+        ＋ 特約を追加
       </button>
     </div>
   );

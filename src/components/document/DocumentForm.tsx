@@ -27,7 +27,13 @@ import {
   calcMethodFromType,
   type FinancialCondition,
 } from './FinancialConditionTable';
-import { V3LicenseMatrix, V3CalcBaseEditor } from './V3LicenseMatrix';
+import {
+  V3LicenseMatrix,
+  V3CalcBaseEditor,
+  SublicenseeEditor,
+  SpecialExtrasEditor,
+} from './V3LicenseMatrix';
+import { LcImportPanel, type LcCandidate } from './LcImportPanel';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
 import { ConditionCopyPanel } from './ConditionCopyPanel';
 import { MaterialSearchSelect } from './MaterialSearchSelect';
@@ -1432,6 +1438,60 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         conds
       );
 
+    // 過去の契約・発注書から選んだ構成要素候補(LcImportPanel)を master_materials 行に取り込む。
+    //   material_code が無い(発注者帰属の未登録成果物)場合は、選択中の原作(ledger_ref_id)配下に
+    //   その場でマテリアルを新規作成してから行化する。条件(rate_pct)があれば copied として引用し、
+    //   加算型取引形態の初期料率へ seed する(commitMaterials → rebuildV3Lcs)。
+    const importLcCandidates = async (cands: LcCandidate[]) => {
+      const additions: any[] = [];
+      const seen = new Set(
+        masterMaterials.map((m: any) => m.material_code).filter(Boolean)
+      );
+      for (const c of cands) {
+        let code = c.material_code || '';
+        let name = c.material_name || c.item_name || '';
+        let holder = c.rights_holder || '';
+        if (!code) {
+          const lid = formData.ledger_ref_id;
+          if (!lid) {
+            window.alert(
+              '未登録の成果物を取り込むには、先に上で「原作 (Ledger)」を選択してください。'
+            );
+            continue;
+          }
+          try {
+            const r = await fetch(`/api/master/ledgers/${lid}/materials`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ material_name: name || '成果物' }),
+            });
+            if (!r.ok) throw new Error(`HTTP ${r.status}`);
+            const j = await r.json();
+            code = j?.material_code || '';
+            name = j?.material_name || name;
+            if (!holder) holder = resolveRightsHolder(j, selectedLedger) || '';
+          } catch {
+            continue;
+          }
+        }
+        if (!code || seen.has(code)) continue;
+        seen.add(code);
+        const copied =
+          c.source_condition_id != null || c.rate_pct != null
+            ? {
+                rate_pct: c.rate_pct ?? undefined,
+                copied_from_condition_id: c.source_condition_id ?? undefined,
+                condition_name: c.condition_name ?? undefined,
+              }
+            : null;
+        additions.push({ material_code: code, name, holder, copied });
+      }
+      if (additions.length > 0) {
+        await refreshLedgers().catch(() => {});
+        commitMaterials([...masterMaterials, ...additions]);
+      }
+    };
+
     return (
       <div className="space-y-10">
         {/* Required-progress banner */}
@@ -1572,6 +1632,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               </p>
             </div>
           )}
+
+          {/* 許諾期間（テンプレ頭書「期間」）。開始日は頭書の契約開始日に反映。 */}
+          <div className="col-span-full mt-2 pt-3 border-t border-border/60">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+              許諾期間（頭書）
+            </div>
+          </div>
+          {renderField('許諾開始日')}
+          {renderField('許諾期間注記')}
         </FormSection>
 
         {/* 3. マスター条件 — 原作 ＋ 原作マテリアル(複数) ＋ 過去条件のコピー/新規。
@@ -1580,7 +1649,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {formData.is_work_linked !== false && (
         <FormSection
           id="wiz-source"
-          title="3. マスター条件 — 原作・原作マテリアル"
+          title="2. 許諾の内容 — 原作・原作マテリアル（構成要素LC）"
           variant="emerald"
           icon={<Briefcase className="w-4 h-4" />}
         >
@@ -1728,7 +1797,34 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             <p className="text-[10px] font-mono text-muted-foreground/70">
               選択したマテリアルは下の「金銭条件」の構成要素(LC)になります。コピーした条件の料率は加算型取引形態の初期値に反映されます（金銭条件側で修正可）。
             </p>
+
+            {/* 過去の利用許諾条件書・発注書から構成要素を取り込む(New ito の例:
+                ito のゲームデザイン＝過去の利用許諾条件 / New ito 用イラスト＝発注書成果物)。 */}
+            <LcImportPanel
+              existingCodes={
+                new Set(
+                  masterMaterials
+                    .map((m: any) => m.material_code)
+                    .filter(Boolean) as string[]
+                )
+              }
+              onImport={importLcCandidates}
+            />
           </div>
+
+          {/* 1-1 許諾概要(テンプレ 1-1)。対象作品は構成要素LCの総体として自動。
+              ここでは対象製品・独占性・許諾地域/言語/範囲を入力する。 */}
+          <div className="col-span-full mt-3 pt-3 border-t border-border/60">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+              1-1 許諾概要
+            </div>
+          </div>
+          {renderField('対象製品予定名')}
+          {renderField('独占性')}
+          {renderField('対象製品の定義')}
+          {renderField('許諾地域')}
+          {renderField('許諾言語')}
+          {renderField('許諾範囲')}
         </FormSection>
         )}
 
@@ -1740,7 +1836,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {(templateId === 'individual_license_terms' || templateId === 'lic_individual') && (
           <FormSection
             id="wiz-conditions"
-            title="3-2. 金銭条件（v3 マトリクス：取引形態 × 構成要素）"
+            title="3. 許諾対象台帳・対価（1-3 基準価格表 / 1-3(B) 料率表 / 2-1 金銭条件マスタ）"
             variant="indigo"
             icon={<Coins className="w-4 h-4" />}
             headerActions={
@@ -1772,10 +1868,23 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         )}
 
-        {/* 4. 当事者 (Licensor / Licensee) — 取引先・当社は各セクションの [自社]/[取引先] で充填 */}
+        {/* 4. 再許諾（テンプレ 1-4 Sub-license 台帳）。formData.v3_sublicensees を produce。 */}
+        <FormSection
+          title="4. 再許諾（1-4 Sub-license 台帳）"
+          variant="indigo"
+          icon={<Coins className="w-4 h-4" />}
+        >
+          <SublicenseeEditor
+            rows={Array.isArray(formData.v3_sublicensees) ? formData.v3_sublicensees : []}
+            onChange={(next) => setFormData({ ...formData, v3_sublicensees: next })}
+          />
+        </FormSection>
+
+        {/* 5. 当事者 (Licensor / Licensee) — テンプレ頭書「当事者・通知先」/ 5.署名 に反映。
+            取引先・当社は各セクションの [自社]/[取引先] で充填 */}
         <div id="wiz-parties" className="grid grid-cols-1 lg:grid-cols-2 gap-10">
           <FormSection
-            title="4. 当事者 — II. Licensor (許諾者)"
+            title="5. 当事者 — II. Licensor (許諾者)"
             variant="blue"
             icon={<Building2 className="w-4 h-4" />}
             headerActions={
@@ -1789,7 +1898,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
 
           <FormSection
-            title="4. 当事者 — III. Licensee (被許諾者)"
+            title="5. 当事者 — III. Licensee (被許諾者)"
             variant="amber"
             icon={<User className="w-4 h-4" />}
             headerActions={
@@ -1803,18 +1912,6 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
           </FormSection>
         </div>
 
-        {/* 5. 共通入力事項 — 期間・独占性(間引き)。
-            対象作品・原著作物名・対象製品予定名は §1/§3 の選択から自動補完するため非表示。
-            ここでは許諾の期間・独占性のみ入力する。 */}
-        <FormSection title="5. 共通入力事項 — 期間・独占性" variant="emerald" icon={<Scale className="w-4 h-4" />}>
-          {renderField('許諾開始日')}
-          {renderField('許諾期間注記')}
-          {renderField('独占性')}
-          <p className="col-span-full text-[10px] font-mono text-muted-foreground/70">
-            対象作品・原著作物名・対象製品（予定）名は「1. 前提条件」「3. マスター条件」での選択から自動反映されます。
-          </p>
-        </FormSection>
-
         {/* V. 素材・監修
             Phase 22.21.4: クレジット表示にクイック選択チップ群を追加。
               - 別途協議 : 商談中で確定していないケース
@@ -1823,7 +1920,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             renderGroup の出力は変えず、その下にプリセット行を挿入することで
             既存の generic Field renderer の振る舞いに影響しない。 */}
         <FormSection
-          title="6. 専用入力事項 — 監修"
+          title="6. 運用条件 — 監修（テンプレ 3.）"
           variant="default"
           icon={<ShieldCheck className="w-4 h-4" />}
           headerActions={sideButton(
@@ -1894,17 +1991,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         {/* 金銭条件は「3-2. 金銭条件（v3 マトリクス）」へ一本化。
             旧 VI/VII/VIII のレガシー自由入力 details は撤去した。 */}
 
-        <details className="group rounded-sm border border-input">
-          <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-            ▶ サブライセンシー一覧 (任意) — クリックして展開
-          </summary>
-          <div className="p-4 border-t border-input">
-            <SubLicenseeTable formData={formData} setFormData={setFormData} />
+        {/* 7. 特約事項（テンプレ 4.）。4-1/4-2 は固定文、4-3 以降を追加特約として入力。
+            ＋自由記述の特記事項(IX)。再許諾は「4. 再許諾」へ集約(旧サブライセンシー一覧UIは廃止)。 */}
+        <FormSection title="7. 特約事項（テンプレ 4.）" variant="red" icon={<AlertCircle className="w-4 h-4" />}>
+          <SpecialExtrasEditor
+            rows={Array.isArray(formData.v3_special_extras) ? formData.v3_special_extras : []}
+            onChange={(next) => setFormData({ ...formData, v3_special_extras: next })}
+          />
+          <div className="col-span-full mt-3 pt-3 border-t border-border/60">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground mb-1.5">
+              特記事項（自由記述）
+            </div>
           </div>
-        </details>
-
-        {/* IX. 特記事項 */}
-        <FormSection title="7. その他の設定 — 特記事項" variant="red" icon={<AlertCircle className="w-4 h-4" />}>
           <div className="col-span-full">{renderGroup('IX. 特記事項')}</div>
         </FormSection>
       </div>

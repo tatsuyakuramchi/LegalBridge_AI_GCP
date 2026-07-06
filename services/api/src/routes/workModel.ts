@@ -1508,6 +1508,87 @@ export function registerWorkModelRoutes(
     }
   );
 
+  // 個別利用許諾条件書フォームの「過去の契約・発注書から構成要素(LC)を取り込む」導線用。
+  //   指定文書(利用許諾条件書 or 発注書)から、構成要素LC 候補を材料コード単位で返す。
+  //   2ソースを統合する:
+  //   (1) 受注者帰属/ライセンス条件 = condition_lines(source_material_id + source_condition_id)。
+  //       material_code + 金銭条件(cfc)を持つ。発注書の受注者帰属条件もここに含まれる。
+  //   (2) 発注者帰属の業務委託成果物 = capability_line_items(発注書)。work_materials への
+  //       リンク(service_line_item_id)があれば material_code を持つが金銭条件は無い(＝新規入力)。
+  //   フロントは material_code があればそのまま LC 行に、無ければ item_name を種にその場で
+  //   マテリアル登録してから LC 行に加える。条件(rate_pct 等)があれば copied として引用する。
+  app.get(
+    "/api/v3/documents/:documentNumber/lc-candidates",
+    ...requireRead,
+    async (req, res) => {
+      try {
+        const doc = String(req.params.documentNumber || "").trim();
+        if (!doc) {
+          return res.status(400).json({ ok: false, error: "invalid documentNumber" });
+        }
+        // (1) 受注者帰属 / ライセンス条件（material_code + 金銭条件）
+        const licenseRows = await query(
+          `SELECT DISTINCT ON (wm.material_code, cfc.id)
+                  'license_condition'            AS source,
+                  wm.material_code, wm.material_name,
+                  vh.vendor_name                 AS rights_holder,
+                  cfc.id                         AS source_condition_id,
+                  cfc.condition_name, cfc.rate_pct, cfc.mg_amount, cfc.ag_amount,
+                  cfc.calc_method, cfc.calc_type, cfc.region_language_label, cfc.currency,
+                  NULL::text AS item_name, NULL::text AS deliverable_ownership,
+                  cc.document_number, cc.contract_title, cc.record_type
+             FROM condition_lines cl
+             JOIN contract_capabilities cc ON cc.id = cl.capability_id
+             JOIN work_materials wm ON wm.id = cl.source_material_id
+             LEFT JOIN capability_financial_conditions cfc ON cfc.id = cl.source_condition_id
+             LEFT JOIN vendors vh ON vh.id = wm.rights_holder_vendor_id
+            WHERE cc.document_number ILIKE '%' || $1 || '%'
+              AND wm.material_code IS NOT NULL
+            ORDER BY wm.material_code, cfc.id NULLS LAST, cl.id`,
+          [doc]
+        );
+        // (2) 発注者帰属の業務委託成果物（発注書明細）。work_materials リンクがあれば
+        //     material_code を補完。金銭条件は持たない(＝取り込み後に新規入力)。
+        const deliverableRows = await query(
+          `SELECT 'po_deliverable'              AS source,
+                  wm.material_code,
+                  COALESCE(wm.material_name, cli.item_name) AS material_name,
+                  vh.vendor_name                 AS rights_holder,
+                  NULL::int AS source_condition_id,
+                  NULL::text AS condition_name,
+                  cli.rate_pct, NULL::numeric AS mg_amount, NULL::numeric AS ag_amount,
+                  cli.calc_method, NULL::text AS calc_type,
+                  NULL::text AS region_language_label, NULL::text AS currency,
+                  cli.item_name,
+                  COALESCE(cli.deliverable_ownership, '発注者') AS deliverable_ownership,
+                  cc.document_number, cc.contract_title, cc.record_type
+             FROM capability_line_items cli
+             JOIN contract_capabilities cc
+               ON cc.id = cli.capability_id AND cc.record_type = 'purchase_order'
+             LEFT JOIN work_materials wm ON wm.service_line_item_id = cli.id
+             LEFT JOIN vendors vh ON vh.id = wm.rights_holder_vendor_id
+            WHERE cc.document_number ILIKE '%' || $1 || '%'
+            ORDER BY cli.line_no, cli.id`,
+          [doc]
+        );
+        // material_code をキーに重複排除。ライセンス条件(条件付き)を優先。
+        const seen = new Set<string>();
+        const out: any[] = [];
+        for (const r of [...licenseRows.rows, ...deliverableRows.rows]) {
+          // 条件付きライセンス行は material_code+condition で一意、成果物は material_code か item_name で一意。
+          const key =
+            r.source === "license_condition"
+              ? `L:${r.material_code}:${r.source_condition_id ?? ""}`
+              : `D:${r.material_code ?? r.item_name ?? Math.random()}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push(r);
+        }
+        res.json(out);
+      } catch (e) { fail(res, e); }
+    }
+  );
+
   // 利用許諾条件書(契約マスター, license カテゴリ)の検索 — マテリアル条件登録の「文書を選んで補完」用。
   //   合成の MLC- 器(source_system='master_register')は候補から除外し、実在の条件書だけ返す。
   app.get("/api/v3/license-capabilities", ...requireRead, async (req, res) => {
