@@ -53,7 +53,9 @@ export async function renderHtmlToPdf(
   options: RenderPdfOptions = {}
 ): Promise<Buffer> {
   const browser = await puppeteer.launch({
-    headless: true,
+    // Dockerfile で入れている chrome-headless-shell 用のモード。
+    // "shell" 以外だとフル Chrome 前提の引数が渡り起動できない。
+    headless: "shell",
     executablePath: EXECUTABLE_PATH,
     args: DEFAULT_ARGS,
   });
