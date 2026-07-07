@@ -67,7 +67,7 @@ export interface V3TemplateContext {
   maxRegion: string; maxLanguage: string; scope: string;
   condCount: number;
   conds: Array<{
-    condLabel: string; manufacturer: string; seller: string;
+    condLabel: string; condName: string; manufacturer: string; seller: string;
     maxCondRegion: string; maxCondLang: string; basePrice: string;
     condType: string; calcModel: string; condRegion: string; condLang: string;
     appliedRate: string; quantity: string; ag: string; mg: string; currency: string;
@@ -171,6 +171,7 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
 
   const conds = v3Conds.map((c, i) => ({
     condLabel: `条件${i + 1}`,
+    condName: s(c.name),
     manufacturer: s(c.manufacturer),
     seller: s(c.seller),
     maxCondRegion: s(c.maxReg),

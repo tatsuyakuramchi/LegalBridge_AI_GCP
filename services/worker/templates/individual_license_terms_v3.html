@@ -116,7 +116,7 @@
   </tr>
   {{#each conds}}
   <tr>
-    <td class="c">{{condLabel}}</td>
+    <td class="c">{{condLabel}}{{#if condName}}<br><span style="font-weight:400;font-size:6.6pt;">{{condName}}</span>{{/if}}</td>
     <td>{{manufacturer}}</td>
     <td>{{seller}}</td>
     <td class="c">{{maxCondRegion}}</td>
@@ -185,7 +185,7 @@
   </tr>
   {{#each conds}}
   <tr>
-    <td class="c">{{condLabel}}</td>
+    <td class="c">{{condLabel}}{{#if condName}}<br><span style="font-weight:400;font-size:6.6pt;">{{condName}}</span>{{/if}}</td>
     <td class="c"><b>{{condType}}</b>{{#if calcModel}}<br><span style="font-size:6.6pt;font-weight:400;color:#555;">{{calcModel}}</span>{{/if}}</td>
     <td class="c">{{condRegion}}</td>
     <td class="c">{{condLang}}</td>
