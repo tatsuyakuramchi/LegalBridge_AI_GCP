@@ -1,7 +1,9 @@
 /**
- * MaterialEntryPanel — 原作マテリアル(work_materials)の登録・管理フォーム。
+ * MaterialEntryPanel — 原作マテリアル(work_materials)の登録・編集・管理。
  *
- * 設計(モック master_forms_mock.html ③④)に沿った「解説付き・外部キーは ID 検索」の入力欄。
+ * 入口は「検索が先」: 原作を選ぶ → その配下の既存素材を一覧/検索して選ぶ(→編集・削除) か、
+ * 無ければ「新規マテリアルを作成」(→登録)。試験作成の空データ掃除もこの一覧から行う。
+ *
  * 原作マテリアルは金銭条件を付帯必須とし、取引形態は利用許諾条件書と同じ固定3種
  * (V3_FIXED_DEALS)から選ぶ(＝軸を揃える→過去条件の引用・A+B 合算が成立)。
  *
@@ -10,18 +12,15 @@
  *   ③ 文書リンク(従前の締結済み契約 URL)        → ARC-ILT を発番し document_url に保存
  *   ② 発番トグル                                → ARC-ILT を発番(DB登録のみ・PDFなし)
  *   ④ いずれも空                                → 原作ごとの MLC- 器(マスター登録)
- * ①〜③は任意。空入力でも ④ に落ちて必ず登録できる。
+ * ①〜③は任意。空入力でも ④ に落ちて必ず登録できる。先頭の金銭条件で器を確定し、
+ * 残り行は返却 capability_id を再利用して「1マテリアル=1文書」を守る。
  *
- * 金銭条件は先頭行の POST 応答で capability_id を受け取り、残り行は同 capability_id で
- * 送って「1マテリアル=1文書」を守る(発番の重複を防ぐ)。
- *
- * 管理モード(mode='manage'): 原作配下の素材を一覧し、完成度・参照(文書/条件明細)を表示。
- *   編集(PUT で属性更新・金銭条件を追記) / 安全削除(参照ありは 409→強制確認)で
- *   試験作成の空データを掃除する。コード(material_code)は不変。
+ * 安全削除: 文書(form_data スナップショット)/条件明細(condition_lines)から参照中は 409 でブロック
+ * →強制確認。コード(material_code)は不変。
  */
 
 import * as React from "react"
-import { Loader2, Plus, Trash2, FileText, Pencil, X } from "lucide-react"
+import { Loader2, Plus, Trash2, FileText, Pencil, X, Search } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -31,7 +30,6 @@ import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect
 import { DocumentNumberLookup, type LookedUpDocument } from "@/src/components/document/DocumentNumberLookup"
 import { V3_FIXED_DEALS, V3_CALC_MODELS } from "@/src/components/document/V3LicenseMatrix"
 
-// ── 選択肢(モック③に準拠) ──────────────────────────────────────────────
 const MATERIAL_TYPES = ["illustration", "scenario", "design", "music", "text"]
 const MATERIAL_ROLES: Array<{ v: string; label: string }> = [
   { v: "core_logic", label: "core_logic（中核）" },
@@ -42,10 +40,9 @@ const ACQUISITION_TYPES = ["", "license", "buyout_commission", "in_house"]
 
 const calcLabel = (t?: string) => V3_CALC_MODELS.find((m) => m.value === t)?.label || t || ""
 
-// 金銭条件1行(固定3種のいずれかを選び、料率/MG/AG/通貨/地域/言語を持つ)。
 type CondRow = {
   key: string
-  dealId: number // V3_FIXED_DEALS.id (1/2/3)
+  dealId: number
   rate_pct: string
   mg_amount: string
   ag_amount: string
@@ -67,7 +64,6 @@ const newCondRow = (dealId = 1): CondRow => ({
 
 type Refs = { condition_lines: number; documents: number }
 
-// 小さなラベル+解説の共通ラッパ。
 function Field(props: { label: string; col?: string; help?: string; req?: boolean; auto?: boolean; children: React.ReactNode }) {
   return (
     <div className="space-y-1">
@@ -91,9 +87,9 @@ const selCls =
 export function MaterialEntryPanel() {
   const { vendors, showNotification } = useAppData() as any
 
-  const [mode, setMode] = React.useState<"create" | "manage">("create")
+  // 検索ゲート: 原作選択 → 一覧(既存を選ぶ) / 新規作成。
+  const [view, setView] = React.useState<"gate" | "form">("gate")
 
-  // 原作(source-ips = works kind='licensed_in')。金銭条件の器は原作配下に作るため原作限定。
   const [sources, setSources] = React.useState<any[]>([])
   const [workId, setWorkId] = React.useState<string>("")
 
@@ -112,17 +108,15 @@ export function MaterialEntryPanel() {
   const [scope, setScope] = React.useState("")
   const [remarks, setRemarks] = React.useState("")
 
-  // 金銭条件(固定3種)。新規は付帯必須で1行、編集は既存があれば追記のみ(0行スタート)。
   const [conds, setConds] = React.useState<CondRow[]>([newCondRow(1)])
 
-  // 文書欄(①検索 / ②発番 / ③リンク / ④空)
   const [pickedDoc, setPickedDoc] = React.useState<LookedUpDocument | null>(null)
   const [issueToggle, setIssueToggle] = React.useState(false)
   const [fileLink, setFileLink] = React.useState("")
 
   const [saving, setSaving] = React.useState(false)
 
-  // 管理モード
+  // 一覧
   const [materials, setMaterials] = React.useState<any[]>([])
   const [refsById, setRefsById] = React.useState<Record<number, Refs>>({})
   const [listLoading, setListLoading] = React.useState(false)
@@ -145,40 +139,24 @@ export function MaterialEntryPanel() {
   const patchCond = (key: string, patch: Partial<CondRow>) =>
     setConds((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)))
 
-  const resetForm = () => {
-    setEditingId(null)
-    setEditingCode("")
-    setMaterialName("")
-    setMaterialType("illustration")
-    setMaterialRole("sub_component")
-    setRightsType("license")
-    setAcquisitionType("")
-    setRightsVendorCode("")
-    setRightsVendorId(null)
-    setRightsHolderLabel("")
-    setIsRoyaltyBearing(true)
-    setScope("")
-    setRemarks("")
+  const clearFields = () => {
+    setEditingId(null); setEditingCode("")
+    setMaterialName(""); setMaterialType("illustration"); setMaterialRole("sub_component")
+    setRightsType("license"); setAcquisitionType("")
+    setRightsVendorCode(""); setRightsVendorId(null); setRightsHolderLabel("")
+    setIsRoyaltyBearing(true); setScope(""); setRemarks("")
     setConds([newCondRow(1)])
-    setPickedDoc(null)
-    setIssueToggle(false)
-    setFileLink("")
+    setPickedDoc(null); setIssueToggle(false); setFileLink("")
   }
 
-  // ── 管理モード: 一覧 + 参照読み込み ──────────────────────────────────
   const loadMaterials = React.useCallback(async (wid: string) => {
-    if (!wid) {
-      setMaterials([])
-      setRefsById({})
-      return
-    }
+    if (!wid) { setMaterials([]); setRefsById({}); return }
     setListLoading(true)
     try {
       const r = await fetch(`/api/v3/works/${encodeURIComponent(wid)}/materials`)
       const rows = await r.json()
       const list = Array.isArray(rows) ? rows : []
       setMaterials(list)
-      // 参照件数(文書/条件明細)を並列取得。件数は掃除対象を見極める補助表示。
       const entries = await Promise.all(
         list.map(async (m: any) => {
           try {
@@ -192,18 +170,22 @@ export function MaterialEntryPanel() {
       )
       setRefsById(Object.fromEntries(entries))
     } catch {
-      setMaterials([])
-      setRefsById({})
+      setMaterials([]); setRefsById({})
     } finally {
       setListLoading(false)
     }
   }, [])
 
+  // 原作を選んだら一覧を読み込み、ゲートに戻す。
   React.useEffect(() => {
-    if (mode === "manage") loadMaterials(workId)
-  }, [mode, workId, loadMaterials])
+    setView("gate")
+    clearFields()
+    loadMaterials(workId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workId, loadMaterials])
 
-  // 編集開始: 属性を prefill。金銭条件は「追記のみ」(既存は一覧/参照で確認)。
+  const startNew = () => { clearFields(); setView("form") }
+
   const startEdit = (m: any) => {
     setEditingId(m.id)
     setEditingCode(m.material_code || "")
@@ -218,13 +200,12 @@ export function MaterialEntryPanel() {
     setIsRoyaltyBearing(!!m.is_royalty_bearing)
     setScope(m.scope || "")
     setRemarks(m.remarks || "")
-    setConds([]) // 編集では金銭条件は追記のみ。必要なら「追加」で足す。
-    setPickedDoc(null)
-    setIssueToggle(false)
-    setFileLink("")
-    setMode("create")
-    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" })
+    setConds([]) // 編集では金銭条件は追記のみ。
+    setPickedDoc(null); setIssueToggle(false); setFileLink("")
+    setView("form")
   }
+
+  const backToGate = () => { clearFields(); setView("gate") }
 
   const deleteMaterial = async (m: any, force = false) => {
     try {
@@ -255,16 +236,14 @@ export function MaterialEntryPanel() {
     }
   }
 
-  // 文書欄→condition-lines の器指定 payload(先頭行のみ渡す)。
   const docPayload = (): Record<string, any> => {
     if (pickedDoc?.document_number) return { document_number: pickedDoc.document_number }
     const link = fileLink.trim()
     if (link) return { issue_document: true, file_link: link }
     if (issueToggle) return { issue_document: true }
-    return {} // ④ MLC フォールバック
+    return {}
   }
 
-  // 金銭条件を順に登録(先頭で器を確定し残りは capability_id 再利用)。mid 宛。
   const postConditions = async (mid: number): Promise<string> => {
     let capabilityId: number | null = null
     let docNumber = ""
@@ -294,10 +273,7 @@ export function MaterialEntryPanel() {
         throw new Error(e?.error || `金銭条件 #${i + 1} の登録に失敗 (HTTP ${r.status})`)
       }
       const j = await r.json()
-      if (i === 0) {
-        capabilityId = j.capability_id ?? null
-        docNumber = j.document_number || ""
-      }
+      if (i === 0) { capabilityId = j.capability_id ?? null; docNumber = j.document_number || "" }
     }
     return docNumber
   }
@@ -309,7 +285,6 @@ export function MaterialEntryPanel() {
     if (link && !/^https:\/\//i.test(link)) {
       return showNotification?.("文書リンクは https:// で始まる URL を入力してください。", "error")
     }
-    // 新規は金銭条件を付帯必須。編集は追記のみ(0行可)。
     if (!editingId && conds.length === 0) {
       return showNotification?.("原作マテリアルには金銭条件が付帯必須です(1件以上)。", "error")
     }
@@ -329,7 +304,6 @@ export function MaterialEntryPanel() {
       }
 
       if (editingId) {
-        // 編集: 属性を PUT(コード不変)。金銭条件は追記行があれば POST。
         const uRes = await fetch(`/api/v3/work-materials/${editingId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
@@ -345,11 +319,7 @@ export function MaterialEntryPanel() {
           `更新しました: ${editingCode}${conds.length ? `（金銭条件 ${conds.length} 件を追記 / 文書: ${docNumber || "MLC"}）` : ""}`,
           "success"
         )
-        resetForm()
-        setMode("manage")
-        await loadMaterials(workId)
       } else {
-        // 新規: マテリアル作成 → 金銭条件登録。
         const mRes = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/materials`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -365,8 +335,9 @@ export function MaterialEntryPanel() {
           `マテリアルを登録しました: ${material.material_code}（金銭条件 ${conds.length} 件 / 文書: ${docNumber || "MLC マスター登録"}）`,
           "success"
         )
-        resetForm()
       }
+      await loadMaterials(workId)
+      backToGate()
     } catch (e: any) {
       showNotification?.(String(e?.message || e), "error")
     } finally {
@@ -374,7 +345,6 @@ export function MaterialEntryPanel() {
     }
   }
 
-  // 完成度バッジ。名称なし=空 / 金銭条件0=金銭条件なし / それ以外=完成。
   const completeness = (m: any) => {
     const refs = refsById[m.id]
     if (!m.material_name || !String(m.material_name).trim()) return { label: "⛔ 空", cls: "text-rose-600 border-rose-500 bg-rose-500/10" }
@@ -386,31 +356,13 @@ export function MaterialEntryPanel() {
     <div className="max-w-3xl space-y-6">
       <div>
         <p className="retro-tag mb-1.5">MST · MATERIAL ENTRY</p>
-        <h3 className="text-lg font-mono font-bold">原作マテリアル 登録・管理（work_materials）</h3>
+        <h3 className="text-lg font-mono font-bold">原作マテリアル 登録・編集（work_materials）</h3>
         <p className="text-xs font-mono text-muted-foreground mt-1">
-          原作にぶら下がる素材。金銭条件を付帯必須で登録し、結合キー material_code は自動採番。
+          原作を選ぶ → 既存素材を検索して編集/削除、無ければ新規作成。金銭条件を付帯必須で登録し、結合キー material_code は自動採番・不変。
         </p>
-        <div className="flex gap-2 mt-3">
-          <Button
-            variant={mode === "create" ? "default" : "outline"}
-            size="sm"
-            className="font-mono text-[11px]"
-            onClick={() => { setMode("create"); if (editingId) resetForm() }}
-          >
-            {editingId ? "編集中" : "新規登録"}
-          </Button>
-          <Button
-            variant={mode === "manage" ? "default" : "outline"}
-            size="sm"
-            className="font-mono text-[11px]"
-            onClick={() => setMode("manage")}
-          >
-            管理・編集
-          </Button>
-        </div>
       </div>
 
-      {/* 原作セレクタ(両モード共通) */}
+      {/* 原作セレクタ(入口の検索) */}
       <div className="rounded-xl border border-border bg-card p-4">
         <Field
           label="所属する原作"
@@ -423,29 +375,36 @@ export function MaterialEntryPanel() {
             value={workId}
             onSelect={(it) => setWorkId(it?.id || "")}
             placeholder="原作コード / タイトル / 別名 で検索"
-            disabled={!!editingId}
+            disabled={view === "form" && !!editingId}
           />
         </Field>
       </div>
 
-      {mode === "manage" ? (
-        <div className="rounded-xl border border-border border-t-[3px] border-t-rose-500 bg-card p-5 space-y-3">
-          <h4 className="font-mono text-[13px] font-bold text-rose-600">管理・編集（空データのクリーンアップ）</h4>
+      {!workId ? (
+        <p className="font-mono text-[11px] text-muted-foreground py-4">まず原作を選択してください。</p>
+      ) : view === "gate" ? (
+        /* 検索ゲート: 既存素材の一覧(選んで編集/削除) + 新規作成 */
+        <div className="rounded-xl border border-border border-t-[3px] border-t-violet-500 bg-card p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <h4 className="font-mono text-[13px] font-bold text-violet-600">既存の原作マテリアル</h4>
+            <Button size="sm" onClick={startNew} className="font-mono text-[11px]">
+              <Plus className="h-3.5 w-3.5" />
+              新規マテリアルを作成
+            </Button>
+          </div>
           <p className="font-mono text-[9.5px] text-muted-foreground leading-snug">
-            既存レコードを一覧→編集(属性更新・金銭条件追記) / 安全削除。コード(material_code)は不変=結合キー。
-            削除は参照(文書 form_data / 条件明細)をチェックし、参照ありは強制確認。文書スナップショットは残る。
+            まず既存を確認。完成度(空/金銭条件なし/完成)と参照(文書/条件明細)を表示。編集は属性 PUT＋金銭条件 追記、
+            削除は参照チェック付き(参照ありは強制確認・文書スナップショットは残す)。コードは不変。
           </p>
-          {!workId ? (
-            <p className="font-mono text-[11px] text-muted-foreground py-4">原作を選択してください。</p>
-          ) : listLoading ? (
+          {listLoading ? (
             <div className="flex items-center gap-2 font-mono text-[11px] text-muted-foreground py-4">
               <Loader2 className="h-3.5 w-3.5 animate-spin" /> 読み込み中…
             </div>
           ) : materials.length === 0 ? (
-            <p className="font-mono text-[11px] text-muted-foreground py-4">この原作に素材はありません。</p>
+            <p className="font-mono text-[11px] text-muted-foreground py-4">この原作に素材はありません。「新規マテリアルを作成」から登録してください。</p>
           ) : (
             <div className="overflow-x-auto border border-border rounded-lg">
-              <table className="w-full font-mono text-[10.5px]">
+              <table className="w-full font-mono text-[10.5px]" style={{ fontVariantNumeric: "tabular-nums" }}>
                 <thead>
                   <tr className="bg-muted/40 text-muted-foreground">
                     <th className="text-left px-2 py-1.5 font-semibold">コード</th>
@@ -463,29 +422,17 @@ export function MaterialEntryPanel() {
                     return (
                       <tr key={m.id} className="border-t border-border">
                         <td className="px-2 py-1.5 text-sky-700">{m.material_code || `#${m.id}`}</td>
-                        <td className={`px-2 py-1.5 ${!m.material_name ? "text-rose-600" : ""}`}>
-                          {m.material_name || "（名称なし）"}
-                        </td>
+                        <td className={`px-2 py-1.5 ${!m.material_name ? "text-rose-600" : ""}`}>{m.material_name || "（名称なし）"}</td>
                         <td className="px-2 py-1.5">{refs ? `${refs.condition_lines} 件` : "…"}</td>
                         <td className="px-2 py-1.5">
                           <span className={`inline-block border rounded px-1.5 py-0.5 text-[8.5px] font-bold ${comp.cls}`}>{comp.label}</span>
                         </td>
-                        <td className="px-2 py-1.5 text-muted-foreground">
-                          {refs ? `文書 ${refs.documents} / 条件 ${refs.condition_lines}` : "…"}
-                        </td>
+                        <td className="px-2 py-1.5 text-muted-foreground">{refs ? `文書 ${refs.documents} / 条件 ${refs.condition_lines}` : "…"}</td>
                         <td className="px-2 py-1.5 text-right whitespace-nowrap">
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 border border-sky-500 text-sky-600 rounded px-1.5 py-0.5 mr-1 hover:bg-sky-500/10"
-                            onClick={() => startEdit(m)}
-                          >
+                          <button type="button" className="inline-flex items-center gap-1 border border-sky-500 text-sky-600 rounded px-1.5 py-0.5 mr-1 hover:bg-sky-500/10" onClick={() => startEdit(m)}>
                             <Pencil className="h-3 w-3" /> 編集
                           </button>
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1 border border-rose-500 text-rose-600 rounded px-1.5 py-0.5 hover:bg-rose-500/10"
-                            onClick={() => deleteMaterial(m)}
-                          >
+                          <button type="button" className="inline-flex items-center gap-1 border border-rose-500 text-rose-600 rounded px-1.5 py-0.5 hover:bg-rose-500/10" onClick={() => deleteMaterial(m)}>
                             <Trash2 className="h-3 w-3" /> 削除
                           </button>
                         </td>
@@ -499,15 +446,13 @@ export function MaterialEntryPanel() {
         </div>
       ) : (
         <>
-          {editingId && (
-            <div className="flex items-center gap-2 rounded-lg border border-sky-500 bg-sky-500/10 px-3 py-2 font-mono text-[11px]">
-              <Pencil className="h-3.5 w-3.5 text-sky-600" />
-              編集中: <b>{editingCode}</b>（コードは不変。金銭条件は下で追記できます）
-              <button type="button" className="ml-auto text-muted-foreground hover:text-destructive inline-flex items-center gap-1" onClick={() => { resetForm(); setMode("manage") }}>
-                <X className="h-3.5 w-3.5" /> 編集をやめる
-              </button>
-            </div>
-          )}
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-[11px]">
+            {editingId ? <Pencil className="h-3.5 w-3.5 text-sky-600" /> : <Plus className="h-3.5 w-3.5 text-emerald-600" />}
+            {editingId ? <>編集中: <b>{editingCode}</b>（コードは不変。金銭条件は下で追記できます）</> : <>新規マテリアルを作成</>}
+            <button type="button" className="ml-auto text-muted-foreground hover:text-destructive inline-flex items-center gap-1" onClick={backToGate}>
+              <Search className="h-3.5 w-3.5" /> 一覧に戻る
+            </button>
+          </div>
 
           {/* 属性 */}
           <div className="rounded-xl border border-border border-t-[3px] border-t-violet-500 bg-card p-5 space-y-4">
@@ -592,12 +537,11 @@ export function MaterialEntryPanel() {
               </h4>
               <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
                 {editingId
-                  ? "編集モードでは金銭条件は追記のみ(既存は管理一覧の「条件」件数で確認)。追加不要なら空でも保存できます。"
+                  ? "編集モードでは金銭条件は追記のみ(既存は一覧の「条件」件数で確認)。追加不要なら空でも保存できます。"
                   : "素材には金銭条件を付帯必須。取引形態は利用許諾条件書と同じ固定3種から選ぶ(＝軸を揃える)。取引形態ごとに1行。"}
               </p>
             </div>
 
-            {/* 文書欄 */}
             {conds.length > 0 && (
               <div className="rounded-lg border border-dashed border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
                 <Field
@@ -634,7 +578,6 @@ export function MaterialEntryPanel() {
               </div>
             )}
 
-            {/* 条件行 */}
             {conds.map((c, idx) => {
               const deal = V3_FIXED_DEALS.find((d) => d.id === c.dealId) || V3_FIXED_DEALS[0]
               return (
@@ -690,9 +633,7 @@ export function MaterialEntryPanel() {
           </div>
 
           <div className="flex justify-end gap-2">
-            <Button variant="outline" size="sm" onClick={resetForm} disabled={saving} className="font-mono text-[11px]">
-              クリア
-            </Button>
+            <Button variant="outline" size="sm" onClick={backToGate} disabled={saving} className="font-mono text-[11px]">キャンセル</Button>
             <Button size="sm" onClick={submit} disabled={saving} className="font-mono text-[11px]">
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
               {editingId ? "変更を保存" : "マテリアルを登録"}
