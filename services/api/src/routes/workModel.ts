@@ -10,7 +10,7 @@ import {
   type V3Entity,
 } from "../services/workModelImportService.ts";
 import { normalizeGenre, normalizeRole } from "../lib/materialVocab.ts";
-import { getNewDocumentNumber } from "../lib/db.ts";
+import { getNewDocumentNumber, pool } from "../lib/db.ts";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 type Middleware = (req: any, res: any, next: any) => void;
@@ -2073,6 +2073,92 @@ export function registerWorkModelRoutes(
         deleted: r.rowCount || 0,
         deleted_condition_lines: force ? refs.condition_lines : 0,
       });
+    } catch (e) { fail(res, e); }
+  });
+
+  // 原作(source_ips = works kind='licensed_in')の参照件数(削除前チェック)。
+  //   マテリアル / 条件明細(source_work_id・work_id・素材経由) / 文書(form_data スナップショット)。
+  async function sourceIpReferences(id: number): Promise<{
+    work_code: string | null; title: string | null;
+    materials: number; condition_lines: number; documents: number;
+  } | null> {
+    const w = await query(`SELECT id, work_code, title FROM works WHERE id = $1 AND kind = 'licensed_in'`, [id]);
+    if (w.rows.length === 0) return null;
+    const workCode = (w.rows[0].work_code as string) || null;
+    const mats = await query(`SELECT COUNT(*)::int AS n FROM work_materials WHERE work_id = $1`, [id]);
+    const cls = await query(
+      `SELECT COUNT(*)::int AS n FROM condition_lines
+        WHERE source_work_id = $1 OR work_id = $1
+           OR source_material_id IN (SELECT id FROM work_materials WHERE work_id = $1)`,
+      [id]
+    );
+    let docs = 0;
+    if (workCode) {
+      const d = await query(
+        `SELECT COUNT(*)::int AS n FROM documents WHERE form_data::text ILIKE '%' || $1 || '%'`,
+        [workCode]
+      );
+      docs = d.rows[0].n;
+    }
+    return {
+      work_code: workCode, title: w.rows[0].title ?? null,
+      materials: mats.rows[0].n, condition_lines: cls.rows[0].n, documents: docs,
+    };
+  }
+
+  app.get("/api/v3/source-ips/:id/references", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const refs = await sourceIpReferences(id);
+      if (!refs) return res.status(404).json({ ok: false, error: "原作が見つかりません" });
+      res.json({ ok: true, ...refs });
+    } catch (e) { fail(res, e); }
+  });
+
+  // 原作の安全削除。参照(条件明細/文書)ありは 409 でブロック。?force=true で強制削除。
+  //   強制時はトランザクションで: 条件明細 → contract_works → works(CASCADE で素材/カテゴリ/構成) →
+  //   ledger の順に削除。文書(form_data スナップショット)は履歴として残す。
+  app.delete("/api/v3/source-ips/:id", ...requireWrite, async (req, res) => {
+    const id = Number(req.params.id);
+    if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+    const force = req.query.force === "true" || req.query.force === "1";
+    try {
+      const refs = await sourceIpReferences(id);
+      if (!refs) return res.status(404).json({ ok: false, error: "原作が見つかりません" });
+      if (!force && (refs.condition_lines > 0 || refs.documents > 0)) {
+        return res.status(409).json({
+          ok: false, error: "この原作は参照中のため削除できません",
+          materials: refs.materials, condition_lines: refs.condition_lines, documents: refs.documents,
+        });
+      }
+      const client = await pool.connect();
+      try {
+        await client.query("BEGIN");
+        await client.query(
+          `DELETE FROM condition_lines
+            WHERE source_work_id = $1 OR work_id = $1
+               OR source_material_id IN (SELECT id FROM work_materials WHERE work_id = $1)`,
+          [id]
+        );
+        await client.query(`DELETE FROM contract_works WHERE work_id = $1 OR source_ip_id = $1`, [id]);
+        const delWork = await client.query(
+          `DELETE FROM works WHERE id = $1 AND kind = 'licensed_in' RETURNING id`, [id]
+        );
+        if (refs.work_code) {
+          await client.query(`DELETE FROM ledgers WHERE ledger_code = $1`, [refs.work_code]);
+        }
+        await client.query("COMMIT");
+        res.json({
+          ok: true, deleted: delWork.rowCount || 0,
+          deleted_condition_lines: refs.condition_lines, deleted_materials: refs.materials,
+        });
+      } catch (e) {
+        await client.query("ROLLBACK").catch(() => {});
+        throw e;
+      } finally {
+        client.release();
+      }
     } catch (e) { fail(res, e); }
   });
 

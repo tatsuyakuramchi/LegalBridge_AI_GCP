@@ -9,7 +9,7 @@
  */
 
 import * as React from "react"
-import { Loader2, Plus, Pencil, X, Search } from "lucide-react"
+import { Loader2, Plus, Pencil, X, Search, Trash2 } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -117,6 +117,39 @@ export function WorkEntryPanel() {
 
   const backToGate = () => {
     setView("gate"); setEditingId(null); setEditingCode(""); setPickerVal(""); clearFields()
+  }
+
+  // 原作の安全削除。参照(条件明細/文書)ありは 409 → 強制確認。成功後は一覧(gate)へ戻る。
+  const deleteSource = async (force = false) => {
+    if (!editingId) return
+    try {
+      const url = `/api/v3/source-ips/${editingId}${force ? "?force=true" : ""}`
+      const r = await fetch(url, { method: "DELETE" })
+      if (r.status === 409) {
+        const info = await r.json().catch(() => ({} as any))
+        const msg =
+          `原作「${editingCode}」は参照中です:\n` +
+          `・マテリアル: ${info.materials ?? 0} 件\n` +
+          `・条件明細: ${info.condition_lines ?? 0} 件\n` +
+          `・文書(スナップショット): ${info.documents ?? 0} 件\n\n` +
+          `強制削除しますか？（マテリアル・条件明細・カテゴリ・台帳も一緒に削除＝不可逆。文書スナップショットは残ります）`
+        if (!window.confirm(msg)) return
+        return deleteSource(true)
+      }
+      if (!r.ok) {
+        const e = await r.json().catch(() => ({}))
+        throw new Error(e?.error || `HTTP ${r.status}`)
+      }
+      const j = await r.json()
+      showNotification?.(
+        `原作を削除しました: ${editingCode}${j.deleted_materials ? `（マテリアル ${j.deleted_materials} / 条件明細 ${j.deleted_condition_lines} も削除）` : ""}`,
+        "success"
+      )
+      await loadList("source")
+      backToGate()
+    } catch (e: any) {
+      showNotification?.(`削除に失敗: ${String(e?.message || e)}`, "error")
+    }
   }
 
   const switchMode = (m: "own" | "source") => {
@@ -384,7 +417,19 @@ export function WorkEntryPanel() {
             </Field>
           </div>
 
-          <div className="flex justify-end gap-2">
+          <div className="flex justify-end gap-2 items-center">
+            {editingId && mode === "source" && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => deleteSource(false)}
+                disabled={saving}
+                className="font-mono text-[11px] mr-auto border-rose-500 text-rose-600 hover:bg-rose-500/10"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                この原作を削除
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={backToGate} disabled={saving} className="font-mono text-[11px]">キャンセル</Button>
             <Button size="sm" onClick={submit} disabled={saving} className="font-mono text-[11px]">
               {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
