@@ -26,6 +26,7 @@ import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ReceivableMapPanel } from "./pages/master/ReceivableMapPanel" // 統合 P3-4
 import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
+import { MaterialEntryPanel } from "./pages/master/MaterialEntryPanel" // 原作マテリアル登録
 import { WorkGraphPanel } from "./pages/master/WorkGraphPanel" // 統合 Phase3c → /works/:id へ移設
 import { WorksListPanel } from "./pages/works/WorksListPanel" // 作品統合 増分④: 統一一覧
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
@@ -65,6 +66,7 @@ export default function App() {
                   <Route index element={<Navigate to="contracts" replace />} />
                   <Route path="contracts" element={<ContractsPanel />} />
                   <Route path="vendors" element={<VendorsPanel />} />
+                  <Route path="materials" element={<MaterialEntryPanel />} />{/* 原作マテリアル登録 */}
                   <Route path="ledgers" element={<LedgersPanel />} />{/* Phase 22.18 */}
                   <Route path="sublicensees" element={<SubLicenseesPanel />} />{/* Phase 22.20-C */}
                   <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}

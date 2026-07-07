@@ -10,6 +10,7 @@ import {
   type V3Entity,
 } from "../services/workModelImportService.ts";
 import { normalizeGenre, normalizeRole } from "../lib/materialVocab.ts";
+import { getNewDocumentNumber } from "../lib/db.ts";
 
 type Query = (text: string, params?: any[]) => Promise<{ rows: any[]; rowCount?: number }>;
 type Middleware = (req: any, res: any, next: any) => void;
@@ -1649,11 +1650,20 @@ export function registerWorkModelRoutes(
       const mat = await query(`SELECT id FROM work_materials WHERE id = $1 AND work_id = $2`, [mid, id]);
       if (mat.rows.length === 0) return res.status(404).json({ ok: false, error: "原作マテリアルが見つかりません" });
 
-      // 器(capability)の決定: body.capability_id で既存の利用許諾条件書を選んだらその配下に作り、
-      //   文書番号が紐づく(マスター契約から補完)。未指定なら原作ごとの MLC- 器にフォールバック。
+      // 器(capability)の決定。優先順位(マテリアル登録フォームの「文書」欄①〜④に対応):
+      //   ① capability_id 明示           → その器
+      //   ① document_number 明示         → その文書番号の既存 license 器を解決
+      //   ②③ issue_document / file_link  → マテリアルごとに1文書=ARC-ILT を発番して器を新規作成
+      //                                     (DB登録のみ・PDFなし。file_link は document_url に保存)
+      //   ④ いずれも空                   → 原作ごとの MLC- 器にフォールバック(マスター登録)
+      //   ※ フォームは1マテリアル=1文書のため、②③は先頭の金銭条件で発番し、
+      //     返却された capability_id を残りの金銭条件で再利用する(発番の重複を防ぐ)。
       let capabilityId: number;
       let lineCodePrefix: string;
       const chosenCap = b.capability_id == null || b.capability_id === "" ? null : Number(b.capability_id);
+      const docNum = b.document_number == null ? "" : String(b.document_number).trim();
+      const fileLink = b.file_link == null ? "" : String(b.file_link).trim();
+      const issueDoc = b.issue_document === true || b.issue_document === "true";
       if (chosenCap != null) {
         if (!Number.isFinite(chosenCap)) {
           return res.status(400).json({ ok: false, error: "invalid capability_id" });
@@ -1668,6 +1678,38 @@ export function registerWorkModelRoutes(
         }
         capabilityId = cap.rows[0].id as number;
         lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
+      } else if (docNum) {
+        // ① 既存文書を文書番号で解決(DocumentNumberLookup で選択したケース)。
+        const cap = await query(
+          `SELECT id, document_number FROM contract_capabilities
+            WHERE document_number = $1 AND contract_category = 'license'`,
+          [docNum]
+        );
+        if (cap.rows.length === 0) {
+          return res.status(400).json({ ok: false, error: `文書番号「${docNum}」の利用許諾条件書(器)が見つかりません` });
+        }
+        capabilityId = cap.rows[0].id as number;
+        lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
+      } else if (issueDoc || fileLink) {
+        // ②③ マテリアルごとに1文書 = ARC-ILT を発番して器を新規作成(DB登録のみ)。
+        //   file_link は従前の締結済み契約PDF/Drive URL を document_url に保存する。
+        const newNo = await getNewDocumentNumber("individual_license_terms");
+        await query(
+          `INSERT INTO contract_capabilities
+             (record_type, contract_category, contract_type, contract_title, document_number,
+              vendor_id, original_work, work_name, contract_status, source_system, document_url)
+           VALUES ('license_condition', 'license', 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register', $5)`,
+          [
+            `個別利用許諾条件(マテリアル登録): ${sw.rows[0].title ?? ""}`,
+            newNo,
+            sw.rows[0].rights_holder_vendor_id ?? null,
+            sw.rows[0].title ?? null,
+            fileLink || null,
+          ]
+        );
+        const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [newNo]);
+        capabilityId = r.rows[0].id as number;
+        lineCodePrefix = newNo;
       } else {
         capabilityId = await ensureMasterLicenseCapability(query, sw.rows[0]);
         lineCodePrefix = `MLC-${sw.rows[0].work_code}`;
@@ -1707,7 +1749,15 @@ export function registerWorkModelRoutes(
           id, mid, sourceConditionId,
         ]
       );
-      res.status(201).json({ ok: true, id: ins.rows[0].id, line_code: ins.rows[0].line_code });
+      // capability_id / document_number も返す。フォームは先頭の金銭条件でこれを受け取り、
+      //   残りの金銭条件を同一 capability_id で送って器・発番を共有する(1マテリアル=1文書)。
+      res.status(201).json({
+        ok: true,
+        id: ins.rows[0].id,
+        line_code: ins.rows[0].line_code,
+        capability_id: capabilityId,
+        document_number: lineCodePrefix,
+      });
     } catch (e) { fail(res, e); }
   });
 
