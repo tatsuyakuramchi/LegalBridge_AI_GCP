@@ -404,7 +404,7 @@
         <div class="party-label">許　諾　者</div>
         <div>{{許諾者住所}}</div>
         <div class="sig-name-row">
-          <span>{{許諾者}}</span>
+          <span>{{#if (eq 許諾者種別 "法人")}}{{許諾者}}<br>{{許諾者代表者}}{{else}}{{許諾者}}{{/if}}</span>
           <span class="stamp-box">印</span>
         </div>
       </div>

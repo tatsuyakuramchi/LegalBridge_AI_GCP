@@ -667,6 +667,7 @@
       "許諾者": { "label": "許諾者 名称 (氏名/法人名)", "group": "I. 基本情報", "required": true , "dbField": "vendor.vendor_name" },
       "許諾者住所": { "label": "許諾者 住所", "group": "I. 基本情報", "type": "textarea" , "dbField": "vendor.address" },
       "許諾者種別": { "label": "許諾者 種別 (支払日: 法人=末日 / 個人=20日)", "group": "I. 基本情報", "type": "select", "options": ["法人", "個人"], "helpText": "支払時期の支払日 (個人=20日 / 法人=末日) を固定文言に反映します" },
+      "許諾者代表者": { "label": "許諾者 代表者 (法人時)", "group": "I. 基本情報", "placeholder": "例: 代表取締役 山田 太郎", "helpText": "許諾者種別=法人 のとき署名欄に「法人名＋代表者」を表示。個人時は空欄でOK" },
 
       "許諾開始日": { "label": "許諾開始日", "group": "II. 許諾期間", "type": "date" },
       "許諾終了日": { "label": "許諾終了日", "group": "II. 許諾期間", "type": "date" },
