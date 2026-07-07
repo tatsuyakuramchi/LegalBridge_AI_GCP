@@ -28,6 +28,8 @@ export interface V3Cond {
   ag?: string;
   mg?: string;
   cur?: string;
+  /** 計算モデル(calc_type)。取引形態に紐づく(固定3種で既定を持つ)。 */
+  calc_type?: string;
 }
 export interface V3Lc {
   material_code?: string;
@@ -37,6 +39,30 @@ export interface V3Lc {
   /** マテリアルの根拠文書番号(利用許諾条件書/発注書、または「この条件書(新規)」)。フォーム表示用。 */
   source_doc?: string;
 }
+
+/** 計算モデル(calc_type)の選択肢。取引形態(1-3A/2-1)の計算モデル選択で共用。 */
+export const V3_CALC_MODELS: Array<{ value: string; label: string; short: string }> = [
+  { value: 'BASE_QTY_RATE', label: '基準価格 × 個数 × 料率', short: '価格×個数×料率' },
+  { value: 'BASE_RATE', label: '実効料率（基準価格 × 料率）', short: '実効料率' },
+  { value: 'FIXED', label: '固定額（一括/分割）', short: '固定額' },
+  { value: 'SUBSCRIPTION', label: 'サブスク（月/年）', short: 'サブスク' },
+  { value: 'SUPPLY_QTY', label: '供給価格 × 個数 × 料率', short: '供給×個数×料率' },
+];
+const calcModelShort = (t?: string) =>
+  V3_CALC_MODELS.find((m) => m.value === t)?.short || '';
+
+/**
+ * 取引形態の固定3種プリセット。個別利用許諾条件書は取引形態を共通固定軸にすることで
+ * 加算(構成要素の料率合算)を成立させる。id は v3_lcs.rates のキーとして安定させる。
+ *   ① 自社製造・自社販売  = 基準価格(上代)×個数×料率, 加算型
+ *   ② 権利許諾(サブライセンス) = 実効料率, 非加算
+ *   ③ 自社製造・他社販売  = 供給価格×個数×料率, 加算型
+ */
+export const V3_FIXED_DEALS: V3Cond[] = [
+  { id: 1, name: '自社製造・自社販売', calc_type: 'BASE_QTY_RATE', addon: true,  manufacturer: 'Licensee', seller: 'Licensee', maxReg: '全世界', maxLang: '全言語', basePrice: '上代（MSRP）× 数量', qty: '数量', ag: '0', mg: '0', cur: 'JPY' },
+  { id: 2, name: '権利許諾（サブライセンス）', calc_type: 'BASE_RATE', addon: false, manufacturer: 'Licensee', seller: 'Sublicensee', maxReg: '全世界', maxLang: '全言語', basePrice: '許諾収入', qty: '1', ag: '0', mg: '0', cur: 'JPY' },
+  { id: 3, name: '自社製造・他社販売', calc_type: 'SUPPLY_QTY', addon: true, manufacturer: 'Licensee', seller: '販売店', maxReg: '全世界', maxLang: '全言語', basePrice: '供給価格 × 数量', qty: '数量', ag: '0', mg: '0', cur: 'JPY' },
+];
 /** 2-3(A) 計算基準日の1行。formData.v3_calc_base_rows（context builder の入力契約）。 */
 export interface V3CalcBaseRow {
   edition?: string;
@@ -104,20 +130,9 @@ export function V3LicenseMatrix({
   onChangeConds: (next: V3Cond[]) => void;
   onChangeLcs: (next: V3Lc[]) => void;
 }) {
-  const nextCondId = React.useMemo(
-    () => (conds.length ? Math.max(...conds.map((c) => c.id)) + 1 : 1),
-    [conds]
-  );
-
-  const addCond = () =>
-    onChangeConds([
-      ...conds,
-      { id: nextCondId, name: '', addon: true, qty: '数量', ag: '0', mg: '0', cur: 'JPY' },
-    ]);
+  // 取引形態は固定3種のため追加/削除はしない。値の更新のみ。
   const updCond = (id: number, k: keyof V3Cond, v: any) =>
     onChangeConds(conds.map((c) => (c.id === id ? { ...c, [k]: v } : c)));
-  // 取引形態の削除は親(DocumentForm)側で v3_lcs を再同期する。
-  const delCond = (id: number) => onChangeConds(conds.filter((c) => c.id !== id));
 
   // 構成要素LC(=原作マテリアル)は「3. マスター条件」で選択する。ここでは
   //   その LC 行に対し加算型取引形態ごとの料率のみインライン編集する。
@@ -152,28 +167,33 @@ export function V3LicenseMatrix({
           </span>
         </div>
         {conds.length === 0 ? (
-          <p className="text-[10px] font-mono text-muted-foreground">取引形態を追加してください。</p>
+          <p className="text-[10px] font-mono text-muted-foreground">取引形態(固定3種)を初期化中…</p>
         ) : (
           <div className="overflow-x-auto rounded-md border border-border">
             <table className="w-full text-[11px] font-mono border-collapse">
               <thead className="bg-muted/40 text-muted-foreground">
                 <tr>
                   <th className={`${thCls} w-12 text-center`}>条件</th>
-                  <th className={`${thCls} min-w-[120px]`}>取引形態名</th>
+                  <th className={`${thCls} min-w-[130px]`}>取引形態名</th>
+                  <th className={`${thCls} min-w-[150px]`}>計算モデル</th>
                   <th className={`${thCls} min-w-[90px]`}>製造者</th>
                   <th className={`${thCls} min-w-[90px]`}>販売者</th>
                   <th className={`${thCls} min-w-[80px]`}>地域(最大)</th>
                   <th className={`${thCls} min-w-[80px]`}>言語(最大)</th>
                   <th className={`${thCls} min-w-[120px]`}>基準価格</th>
                   <th className={`${thCls} w-16 text-center`}>加算型</th>
-                  <th className={`${thCls} w-10`} />
                 </tr>
               </thead>
               <tbody>
                 {conds.map((c, i) => (
                   <tr key={c.id}>
                     <td className={`${tdCls} text-center font-bold`}>条件{i + 1}</td>
-                    <td className={tdCls}><input className={cellInput} value={c.name || ''} onChange={(e) => updCond(c.id, 'name', e.target.value)} placeholder="製造・販売 / サブライセンス" /></td>
+                    <td className={tdCls}><input className={cellInput} value={c.name || ''} onChange={(e) => updCond(c.id, 'name', e.target.value)} placeholder="自社製造・自社販売 等" /></td>
+                    <td className={tdCls}>
+                      <select className={cellInput} value={c.calc_type || 'BASE_QTY_RATE'} onChange={(e) => updCond(c.id, 'calc_type', e.target.value)}>
+                        {V3_CALC_MODELS.map((m) => <option key={m.value} value={m.value}>{m.label}</option>)}
+                      </select>
+                    </td>
                     <td className={tdCls}><input className={cellInput} value={c.manufacturer || ''} onChange={(e) => updCond(c.id, 'manufacturer', e.target.value)} placeholder="Licensee / —" /></td>
                     <td className={tdCls}><input className={cellInput} value={c.seller || ''} onChange={(e) => updCond(c.id, 'seller', e.target.value)} placeholder="Licensee" /></td>
                     <td className={tdCls}><input className={cellInput} value={c.maxReg || ''} onChange={(e) => updCond(c.id, 'maxReg', e.target.value)} placeholder="全世界" /></td>
@@ -182,18 +202,15 @@ export function V3LicenseMatrix({
                     <td className={`${tdCls} text-center`}>
                       <input type="checkbox" className="h-3.5 w-3.5" checked={!!c.addon} onChange={(e) => updCond(c.id, 'addon', e.target.checked)} title="加算型（構成要素LCの料率を合算する）" />
                     </td>
-                    <td className={`${tdCls} text-center`}>
-                      <button type="button" onClick={() => delCond(c.id)} className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-border text-red-600 hover:bg-red-50">削除</button>
-                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
         )}
-        <button type="button" onClick={addCond} className="w-full text-[11px] font-mono px-2 py-1.5 rounded border border-dashed border-indigo-300 text-indigo-700 hover:bg-indigo-50">
-          ＋ 取引形態を追加（1-3A の行 ＝ 1-3B / 2-1 の列）
-        </button>
+        <p className="text-[9px] font-mono text-muted-foreground/70">
+          取引形態は固定3種（① 自社製造・自社販売 / ② 権利許諾 / ③ 自社製造・他社販売）。計算モデルは各取引形態に紐づき、加算型は構成要素の料率を合算します。
+        </p>
       </div>
 
       {/* ── 1-3(B) 料率表: 構成要素(行) × 取引条件(列) のグリッド。 ── */}
@@ -219,9 +236,9 @@ export function V3LicenseMatrix({
                   <th className={`${thCls} min-w-[120px]`}>構成要素</th>
                   <th className={`${thCls} min-w-[100px]`}>権利元</th>
                   {conds.map((c, i) => (
-                    <th key={c.id} className={`${thCls} min-w-[72px] text-center`}>
-                      条件{i + 1}
-                      <div className="text-[8px] font-normal">{c.addon ? '【加算型】' : '【非加算型】'}</div>
+                    <th key={c.id} className={`${thCls} min-w-[80px] text-center`}>
+                      {c.name || `条件${i + 1}`}
+                      <div className="text-[8px] font-normal">{calcModelShort(c.calc_type)}／{c.addon ? '加算' : '非加算'}</div>
                     </th>
                   ))}
                 </tr>
@@ -294,6 +311,7 @@ export function V3LicenseMatrix({
                     <td className={`${tdCls} text-center font-bold`}>条件{i + 1}</td>
                     <td className={`${tdCls} text-center`}>
                       <span className="text-[9px] font-bold">{c.addon ? '加算型' : '非加算型'}</span>
+                      <div className="text-[8px] text-emerald-700">{calcModelShort(c.calc_type)}</div>
                     </td>
                     <td className={tdCls}><input className={cellInput} value={c.reg || ''} onChange={(e) => updCond(c.id, 'reg', e.target.value)} placeholder="全世界" /></td>
                     <td className={tdCls}><input className={cellInput} value={c.lang || ''} onChange={(e) => updCond(c.id, 'lang', e.target.value)} placeholder="全言語" /></td>

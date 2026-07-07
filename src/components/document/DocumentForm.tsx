@@ -32,6 +32,7 @@ import {
   V3CalcBaseEditor,
   SublicenseeEditor,
   SpecialExtrasEditor,
+  V3_FIXED_DEALS,
 } from './V3LicenseMatrix';
 import { LcImportPanel, type LcCandidate } from './LcImportPanel';
 import { RoyaltyPreviewPanel } from './RoyaltyPreviewPanel';
@@ -230,6 +231,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     if (!formData.documentDate)
       patch.documentDate = new Date().toISOString().slice(0, 10);
     if (Object.keys(patch).length > 0) setFormData({ ...formData, ...patch });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [templateId]);
+
+  // 個別利用許諾条件書: 取引形態は固定3種(自社製造自社販売/権利許諾/自社製造他社販売)。
+  //   共通の固定軸にすることで構成要素の料率合算(加算)が成立する。v3_conds 未設定なら
+  //   既定プリセットで初期化する(既存文書は保存済みの v3_conds を尊重)。
+  useEffect(() => {
+    if (templateId !== 'individual_license_terms') return;
+    const cur = Array.isArray(formData.v3_conds) ? formData.v3_conds : [];
+    if (cur.length > 0) return;
+    setFormData({ ...formData, v3_conds: V3_FIXED_DEALS.map((c) => ({ ...c })) });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateId]);
 
@@ -1320,6 +1332,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     // 1 マテリアル(＋コピー条件) → LC 行。prevLc があれば編集済み rates を保持。
     const lcFromMaterial = (m: any, prevLc: any, conds: any[]) => {
       const rates: Record<string, any> = { ...(prevLc?.rates || {}) };
+      // コピーした過去条件の料率を、加算型の取引形態の初期値として seed(未入力セルのみ)。
       const copiedRate = m?.copied?.rate_pct;
       if (copiedRate != null && copiedRate !== '') {
         (Array.isArray(conds) ? conds : [])
