@@ -5874,6 +5874,57 @@ ${details}
     );
   }
 
+  // 出版利用許諾条件書(pub_license_terms)の印税条件配列を form_data から組み立てる。
+  //   紙媒体=condition_no 1(常に), 電子書籍=2(「許諾する」時のみ)。
+  //   condition_name も明示して条件明細の件名(subject フォールバック)を確実にする。
+  //   生成本経路と、後段の自己修復ブロックの両方から呼ぶ(単一の真実)。
+  function buildPubLicenseConditions(formData: any): any[] {
+    const toPct = (v: any) => {
+      const n = parseFloat(String(v ?? "").replace(/[^0-9.]/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    const payDay = formData["許諾者種別"] === "法人" ? "末日" : "20日";
+    const conds: any[] = [
+      {
+        // 紙媒体出版 (常に独占的に許諾)
+        condition_no: 1,
+        region_language_label: "紙書籍出版",
+        condition_name: "紙書籍出版",
+        calc_method: "ROYALTY",
+        calc_type: "BASE_QTY_RATE",
+        guarantee_type: "NONE",
+        rate_pct: toPct(formData["紙書籍印税率"]),
+        base_price_label: "税抜定価",
+        formula_text: formData["紙媒体計算式"] || "税抜定価 × 印税対象部数 × 印税率",
+        calc_period: formData["紙媒体印税対象部数区分"] || "",
+        currency: "JPY",
+        payment_terms: `都度払い（刊行日を含む月の翌々月${payDay}払い）`,
+        mg_amount: 0,
+        ag_amount: 0,
+      },
+    ];
+    if (formData["電子書籍配信許諾有無"] === "許諾する") {
+      conds.push({
+        condition_no: 2,
+        region_language_label: "電子書籍配信",
+        condition_name: "電子書籍配信",
+        calc_method: "ROYALTY",
+        calc_type: "BASE_QTY_RATE",
+        guarantee_type: "NONE",
+        rate_pct: toPct(formData["電子書籍印税率"]),
+        base_price_label: "被許諾者受領額",
+        formula_text: formData["電子書籍計算式"] || "被許諾者の受領額 × 料率",
+        calc_period: "毎年4月1日〜翌3月末日",
+        currency: "JPY",
+        payment_terms: `年1回・6月${payDay}払い`,
+        mg_amount: 0,
+        ag_amount: 0,
+      });
+    }
+    // 翻訳版・海外版は二次的著作物として本条件書の対象外(別途)。海外はテリトリー(許諾地域)で制御。
+    return conds;
+  }
+
   /**
    * Stage 2(文書ファースト 原作マテリアル紐付けプラン): 作品連動 ON の文書保存で、
    *   各利用許諾条件 → 原作マテリアル を結線し、対象作品(own)の構成へ組み込む共通ヘルパ。
@@ -15238,50 +15289,7 @@ ${details}
             );
             const capId = Number(capRes.rows[0]?.id);
             if (capId) {
-              const toPct = (v: any) => {
-                const n = parseFloat(String(v ?? "").replace(/[^0-9.]/g, ""));
-                return Number.isFinite(n) ? n : null;
-              };
-              const payDay =
-                formData["許諾者種別"] === "法人" ? "末日" : "20日";
-              const pubConditions: any[] = [
-                {
-                  // 紙媒体出版 (常に独占的に許諾)
-                  condition_no: 1,
-                  region_language_label: "紙書籍出版",
-                  calc_method: "ROYALTY",
-                  calc_type: "BASE_QTY_RATE",
-                  guarantee_type: "NONE",
-                  rate_pct: toPct(formData["紙書籍印税率"]),
-                  base_price_label: "税抜定価",
-                  formula_text:
-                    formData["紙媒体計算式"] || "税抜定価 × 印税対象部数 × 印税率",
-                  calc_period: formData["紙媒体印税対象部数区分"] || "",
-                  currency: "JPY",
-                  payment_terms: `都度払い（刊行日を含む月の翌々月${payDay}払い）`,
-                  mg_amount: 0,
-                  ag_amount: 0,
-                },
-              ];
-              if (formData["電子書籍配信許諾有無"] === "許諾する") {
-                pubConditions.push({
-                  condition_no: 2,
-                  region_language_label: "電子書籍配信",
-                  calc_method: "ROYALTY",
-                  calc_type: "BASE_QTY_RATE",
-                  guarantee_type: "NONE",
-                  rate_pct: toPct(formData["電子書籍印税率"]),
-                  base_price_label: "被許諾者受領額",
-                  formula_text:
-                    formData["電子書籍計算式"] || "被許諾者の受領額 × 料率",
-                  calc_period: "毎年4月1日〜翌3月末日",
-                  currency: "JPY",
-                  payment_terms: `年1回・6月${payDay}払い`,
-                  mg_amount: 0,
-                  ag_amount: 0,
-                });
-              }
-              // 翻訳版・海外版は二次的著作物として本条件書の対象外(別途)。海外はテリトリー(許諾地域)で制御。
+              const pubConditions = buildPubLicenseConditions(formData);
               await upsertCapabilityFinancialConditions(capId, pubConditions);
               console.log(
                 `✅ Saved ${pubConditions.length} publication royalty condition(s) for: ${docNumber}`
@@ -16500,6 +16508,80 @@ ${details}
         syncWarnings.push({
           step: "post_document_sync",
           error: String(syncErr?.message || syncErr),
+        });
+      }
+
+      // 自己修復(冪等): 上の post-document sync が途中で例外を投げると、
+      //   contract_capabilities 同期(record_type/contract_category 付与)や
+      //   出版印税条件(cfc)の作成がスキップされ、documents 行だけが残って
+      //   「条件明細に出ない・ピッカーに載らない」半端な状態になる
+      //   (ユーザーには success を返すため気付けない)。ここで独立の try に
+      //   分離し、契約系文書は最低限の属性と条件を必ず確定させる。
+      //   COALESCE / NOT EXISTS でガードするため、正常同期済みの文書には無害。
+      try {
+        if (documentId) {
+          // (1) record_type / contract_category / source_system を確定。
+          const rt = templateType.startsWith("pub_master_")
+            ? "master_contract"
+            : templateType.startsWith("pub_")
+            ? "publication_condition"
+            : templateType.includes("license") || templateType.includes("royalty")
+            ? "license_condition"
+            : templateType.includes("purchase_order")
+            ? "purchase_order"
+            : templateType.includes("inspection")
+            ? "delivery_record"
+            : "master_contract";
+          const cat = templateType.startsWith("pub_")
+            ? "publication"
+            : templateType.includes("license")
+            ? "license"
+            : "service";
+          await query(
+            `UPDATE documents SET
+               record_type       = COALESCE(NULLIF(record_type, ''), $2),
+               contract_category = COALESCE(NULLIF(contract_category, ''), $3),
+               source_system     = COALESCE(NULLIF(source_system, ''), 'App Document Generator'),
+               contract_title    = COALESCE(NULLIF(contract_title, ''), NULLIF($4, '')),
+               is_active         = COALESCE(is_active, TRUE)
+             WHERE id = $1`,
+            [
+              documentId,
+              rt,
+              cat,
+              String(
+                formData.CONTRACT_TITLE ||
+                  formData.contract_title ||
+                  formData["対象出版物名"] ||
+                  formData["原著作物名"] ||
+                  ""
+              ),
+            ]
+          );
+
+          // (2) 出版利用許諾条件書で cfc 条件が1件も無ければ form_data から作成。
+          if (templateType === "pub_license_terms") {
+            const hasCfc = await query(
+              `SELECT 1 FROM condition_lines
+                WHERE document_id = $1 AND legacy_role = 'cfc' LIMIT 1`,
+              [documentId]
+            );
+            if (hasCfc.rows.length === 0) {
+              await upsertCapabilityFinancialConditions(
+                documentId,
+                buildPubLicenseConditions(formData)
+              );
+              console.log(
+                `🔧 [self-heal] ${docNumber}: 出版印税条件を form_data から復元`
+              );
+            }
+          }
+        }
+      } catch (healErr: any) {
+        console.warn("[self-heal] capability/condition ensure failed (non-fatal):", healErr);
+        syncWarnings.push({
+          step: "self_heal",
+          error: String(healErr?.message || healErr),
         });
       }
 
