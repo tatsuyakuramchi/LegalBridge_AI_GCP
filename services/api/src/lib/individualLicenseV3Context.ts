@@ -31,6 +31,7 @@ export interface V3Cond {
   ag?: string | number;       // AG
   mg?: string | number;       // MG
   cur?: string;               // 通貨
+  calc_type?: string;         // 計算モデル（取引形態に紐づく: BASE_QTY_RATE / BASE_RATE / FIXED / SUBSCRIPTION / SUPPLY_QTY）
 }
 export interface V3Lc {
   material_code?: string;     // 区分（=LC ID, LO-…-NNN）
@@ -68,7 +69,7 @@ export interface V3TemplateContext {
   conds: Array<{
     condLabel: string; manufacturer: string; seller: string;
     maxCondRegion: string; maxCondLang: string; basePrice: string;
-    condType: string; condRegion: string; condLang: string;
+    condType: string; calcModel: string; condRegion: string; condLang: string;
     appliedRate: string; quantity: string; ag: string; mg: string; currency: string;
   }>;
   lcs: Array<{ lcId: string; lcName: string; lcHolder: string; rates: string[] }>;
@@ -88,6 +89,16 @@ const toNum = (v: any): number | null => {
 };
 const fmtPct = (n: number | null): string =>
   n == null ? "—" : `${+n.toFixed(2)}%`;
+
+/** 計算モデル(calc_type)の表示ラベル。取引形態(1-3A/2-1)に紐づく。 */
+const CALC_MODEL_LABEL: Record<string, string> = {
+  BASE_QTY_RATE: "基準価格×個数×料率",
+  BASE_RATE: "実効料率",
+  FIXED: "固定額",
+  SUBSCRIPTION: "サブスク",
+  SUPPLY_QTY: "供給価格×個数×料率",
+};
+const calcModelLabel = (t?: string): string => (t ? CALC_MODEL_LABEL[t] || "" : "");
 
 /** 2-3(A) 計算基準日の既定行。フォーム未設定・既存保存データでもこの標準2行で描画する。 */
 export const DEFAULT_CALC_BASE_ROWS: Array<{ edition: string; trigger: string; note: string }> = [
@@ -166,6 +177,7 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     maxCondLang: s(c.maxLang),
     basePrice: s(c.basePrice),
     condType: c.addon ? "【加算型】" : "【非加算型】",
+    calcModel: calcModelLabel(c.calc_type),
     condRegion: s(c.reg),
     condLang: s(c.lang),
     appliedRate: computeAppliedRate(c, v3Lcs),

@@ -186,7 +186,7 @@
   {{#each conds}}
   <tr>
     <td class="c">{{condLabel}}</td>
-    <td class="c"><b>{{condType}}</b></td>
+    <td class="c"><b>{{condType}}</b>{{#if calcModel}}<br><span style="font-size:6.6pt;font-weight:400;color:#555;">{{calcModel}}</span>{{/if}}</td>
     <td class="c">{{condRegion}}</td>
     <td class="c">{{condLang}}</td>
     <td class="num">{{appliedRate}}</td>
