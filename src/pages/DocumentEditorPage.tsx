@@ -438,6 +438,32 @@ export function DocumentEditorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [templateParam, parentPoParam])
 
+  // マテリアル登録フォーム(/master/materials)由来の prefill。
+  //   ?prefill_material=1 で来たとき、sessionStorage('lb_material_prefill') に退避された
+  //   { template, formData } を読み、テンプレ選択 + formData マージする(既存文書は汚さない)。
+  const prefillMaterialRef = React.useRef(searchParams.get("prefill_material") === "1")
+  React.useEffect(() => {
+    if (!prefillMaterialRef.current) return
+    prefillMaterialRef.current = false
+    try {
+      const raw = sessionStorage.getItem("lb_material_prefill")
+      if (raw) {
+        const p = JSON.parse(raw)
+        if (p?.template) setSelectedTemplate(p.template)
+        if (p?.formData && typeof p.formData === "object") {
+          setFormData((prev: any) => ({ ...(prev || {}), ...p.formData }))
+        }
+      }
+    } catch {
+      /* noop: prefill 失敗時は空フォームで続行 */
+    }
+    sessionStorage.removeItem("lb_material_prefill")
+    const sp = searchParams
+    sp.delete("prefill_material")
+    setSearchParams(sp, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // ---- Helpers --------------------------------------------------------
 
   /**

@@ -20,7 +20,8 @@
  */
 
 import * as React from "react"
-import { Loader2, Plus, Trash2, FileText, Pencil, X, Search } from "lucide-react"
+import { useNavigate } from "react-router-dom"
+import { Loader2, Plus, Trash2, FileText, Pencil, X, Search, FileOutput } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -95,6 +96,7 @@ const selCls =
 
 export function MaterialEntryPanel() {
   const { vendors, showNotification } = useAppData() as any
+  const navigate = useNavigate()
 
   // 検索ゲート: 原作選択 → 一覧(既存を選ぶ) / 新規作成。
   const [view, setView] = React.useState<"gate" | "form">("gate")
@@ -125,6 +127,8 @@ export function MaterialEntryPanel() {
   // 文書種別: license=個別利用許諾条件書(ARC-ILT) / publication=出版等利用許諾条件書(ARC-PUBT)。
   //   固定3種の取引形態は出版にも流用(紙自社出版=①/電子出版=②/紙他社出版=③)。器のカテゴリと採番だけ切替。
   const [docKind, setDocKind] = React.useState<"license" | "publication">("license")
+  // PDF出力あり: DB登録のみ(condition-lines)ではなく、文書作成フォームへ prefill して遷移し PDF を出力。
+  const [pdfOutput, setPdfOutput] = React.useState(false)
 
   const [saving, setSaving] = React.useState(false)
 
@@ -158,7 +162,7 @@ export function MaterialEntryPanel() {
     setRightsVendorCode(""); setRightsVendorId(null); setRightsHolderLabel("")
     setIsRoyaltyBearing(true); setScope(""); setRemarks("")
     setConds([newCondRow(1)])
-    setPickedDoc(null); setIssueToggle(false); setFileLink(""); setDocKind("license")
+    setPickedDoc(null); setIssueToggle(false); setFileLink(""); setDocKind("license"); setPdfOutput(false)
   }
 
   const loadMaterials = React.useCallback(async (wid: string) => {
@@ -290,7 +294,129 @@ export function MaterialEntryPanel() {
     return docNumber
   }
 
+  // PDF出力: 素材＋金銭条件を文書フォームの formData へ写像し、sessionStorage 経由で受け渡す。
+  //   ILT  = v3_conds(固定3種)/v3_lcs(構成要素×料率)、PUBT = 紙/電子の印税率フラット項目。
+  //   翻訳は別権利(発注書由来)のため PUBT では常に「許諾しない」。言語/地域は許諾範囲・許諾言語で制御。
+  const buildPrefill = (material: any): { template: string; formData: Record<string, any> } => {
+    const src = selectedSource || {}
+    const srcTitle = src.title || ""
+    const ledgerCode = src.source_code || src.work_code || ""
+    const region = conds[0]?.region_territory || ""
+    const lang = conds[0]?.region_language || ""
+    const common: Record<string, any> = {
+      原著作物名: srcTitle,
+      素材番号: material.material_code,
+      ledger_code: ledgerCode,
+      is_work_linked: true,
+      許諾地域: region,
+      許諾言語: lang,
+    }
+    if (docKind === "publication") {
+      const paper = conds.find((c) => c.dealId === 1 || c.dealId === 3)
+      const digital = conds.find((c) => c.dealId === 2)
+      return {
+        template: "pub_license_terms",
+        formData: {
+          ...common,
+          対象出版物名: material.material_name || srcTitle,
+          紙書籍印税率: paper?.rate_pct || "",
+          電子書籍配信許諾有無: digital ? "許諾する" : "許諾しない",
+          電子書籍印税率: digital?.rate_pct || "",
+          翻訳海外版許諾有無: "許諾しない",
+        },
+      }
+    }
+    // ILT: 固定3種を v3_conds に、素材を v3_lcs に。加算(①③)は LC の rates、非加算(②)は cond.fixedRate。
+    const v3conds = V3_FIXED_DEALS.map((d) => {
+      const row = conds.find((c) => c.dealId === d.id)
+      const copy: any = { ...d }
+      if (row && !d.addon) copy.fixedRate = row.rate_pct || ""
+      return copy
+    })
+    const rates: Record<string, string> = {}
+    conds.forEach((c) => {
+      const d = V3_FIXED_DEALS.find((x) => x.id === c.dealId)
+      if (d && d.addon) rates[String(d.id)] = c.rate_pct || ""
+    })
+    return {
+      template: "individual_license_terms",
+      formData: {
+        ...common,
+        許諾範囲: scope || "",
+        対象製品予定名: material.material_name || "",
+        v3_conds: v3conds,
+        v3_lcs: [
+          {
+            material_code: material.material_code,
+            name: material.material_name || "",
+            holder: rightsHolderLabel.trim() || "",
+            rates,
+            source_doc: "（この条件書・新規）",
+          },
+        ],
+      },
+    }
+  }
+
+  // PDF出力: 素材を作成/更新 → prefill を退避 → 文書フォームへ遷移。condition-lines は生成しない
+  //   (文書フォームの generate が capability/明細/PDF を作り、material_code で素材へ連動)。
+  const handoffToDocForm = async () => {
+    if (!workId) return showNotification?.("所属する原作を選択してください。", "error")
+    if (!materialName.trim()) return showNotification?.("素材名を入力してください。", "error")
+    if (conds.length === 0) return showNotification?.("PDF出力には金銭条件が1件以上必要です。", "error")
+    setSaving(true)
+    try {
+      const attrs = {
+        material_name: materialName.trim(),
+        material_type: materialType,
+        material_role: materialRole,
+        rights_type: rightsType,
+        acquisition_type: acquisitionType || undefined,
+        rights_holder_vendor_id: rightsVendorId ?? undefined,
+        rights_holder_label: rightsHolderLabel.trim() || undefined,
+        is_royalty_bearing: isRoyaltyBearing,
+        scope: scope.trim() || undefined,
+        remarks: remarks.trim() || undefined,
+      }
+      let material: any
+      if (editingId) {
+        const uRes = await fetch(`/api/v3/work-materials/${editingId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(attrs),
+        })
+        if (!uRes.ok) {
+          const e = await uRes.json().catch(() => ({}))
+          throw new Error(e?.error || `マテリアル更新に失敗 (HTTP ${uRes.status})`)
+        }
+        material = { id: editingId, material_code: editingCode, material_name: materialName.trim() }
+      } else {
+        const mRes = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/materials`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(attrs),
+        })
+        if (!mRes.ok) {
+          const e = await mRes.json().catch(() => ({}))
+          throw new Error(e?.error || `マテリアル作成に失敗 (HTTP ${mRes.status})`)
+        }
+        material = await mRes.json()
+      }
+      const prefill = buildPrefill(material)
+      sessionStorage.setItem("lb_material_prefill", JSON.stringify(prefill))
+      showNotification?.(
+        `マテリアル ${material.material_code} を登録しました。文書フォームで内容を確認し PDF を作成してください。`,
+        "success"
+      )
+      navigate(`/documents/new?template=${encodeURIComponent(prefill.template)}&prefill_material=1`)
+    } catch (e: any) {
+      showNotification?.(String(e?.message || e), "error")
+      setSaving(false)
+    }
+  }
+
   const submit = async () => {
+    if (pdfOutput) return handoffToDocForm()
     if (!workId) return showNotification?.("所属する原作を選択してください。", "error")
     if (!materialName.trim()) return showNotification?.("素材名を入力してください。", "error")
     const link = fileLink.trim()
@@ -566,35 +692,57 @@ export function MaterialEntryPanel() {
                     <option value="publication">出版等利用許諾条件書（ARC-PUBT）</option>
                   </select>
                 </Field>
-                <Field
-                  label={`文書（この素材の${docKind === "publication" ? "出版等利用許諾条件書" : "利用許諾条件書"}）`}
-                  col="capability_id / document_number"
-                  help={`マテリアル登録＝文書作成。既存があれば検索して紐づけ、無ければ ${docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して新規登録(DB登録のみ・PDFなし)。空なら原作ごとの MLC- 器に登録。`}
-                >
-                  <DocumentNumberLookup
-                    filterTemplateTypes={docKind === "publication" ? ["pub_license_terms"] : ["individual_license_terms"]}
-                    onApply={(d) => setPickedDoc(d)}
-                    placeholder={docKind === "publication" ? "ARC-PUBT / 件名 で検索" : "ARC-ILT / 件名 で検索"}
-                    includeMaster
-                  />
-                </Field>
-                {pickedDoc && (
-                  <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
-                    <FileText className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                    <span className="font-bold">{pickedDoc.document_number}</span>
-                    <span className="text-muted-foreground truncate">{pickedDoc.derived_title}</span>
-                    <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPickedDoc(null)}>解除</button>
+
+                {/* 出力モード: DB登録のみ / PDF出力あり(文書フォームへ) */}
+                <label className="flex items-center gap-2 font-mono text-[10.5px] rounded-md border border-emerald-500 bg-emerald-500/10 px-2.5 py-2">
+                  <input type="checkbox" checked={pdfOutput} onChange={(e) => setPdfOutput(e.target.checked)} />
+                  <b className="text-emerald-700">PDF出力あり</b>
+                  <span className="text-muted-foreground">— 文書作成フォームへ遷移し、ここの内容を反映して PDF を生成（オフ＝DB登録のみ）</span>
+                </label>
+
+                {pdfOutput ? (
+                  <div className="flex items-start gap-2 font-mono text-[10px] text-muted-foreground bg-background border border-border rounded px-2.5 py-2 leading-snug">
+                    <FileOutput className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                    <span>
+                      「マテリアルを登録して文書へ」を押すと、素材を登録してから
+                      <b>{docKind === "publication" ? "出版等利用許諾条件書" : "個別利用許諾条件書"}</b>
+                      の作成フォームへ移動します。属性・金銭条件（取引形態→料率）・原作/素材が prefill され、
+                      内容を確認して PDF を生成できます（番号は生成時に採番）。
+                    </span>
                   </div>
-                )}
-                {!pickedDoc && (
+                ) : (
                   <>
-                    <label className="flex items-center gap-2 font-mono text-[10px]">
-                      <input type="checkbox" checked={issueToggle} onChange={(e) => setIssueToggle(e.target.checked)} />
-                      見つからなければ <b>{docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して登録</b>（documents 器 + condition_lines を作成）
-                    </label>
-                    <Field label="文書リンク（従前の締結済み契約 PDF・任意）" col="file_link → document_url" help="従前に契約がある場合、締結済み PDF/Drive の URL を貼ると新規 PDF を作らずそのリンクで登録(https:// 始まり)。">
-                      <Input value={fileLink} onChange={(e) => setFileLink(e.target.value)} placeholder="https://drive.google.com/…（任意）" className="h-8 text-[12px]" />
+                    <Field
+                      label={`文書（この素材の${docKind === "publication" ? "出版等利用許諾条件書" : "利用許諾条件書"}）`}
+                      col="capability_id / document_number"
+                      help={`マテリアル登録＝文書作成。既存があれば検索して紐づけ、無ければ ${docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して新規登録(DB登録のみ・PDFなし)。空なら原作ごとの MLC- 器に登録。`}
+                    >
+                      <DocumentNumberLookup
+                        filterTemplateTypes={docKind === "publication" ? ["pub_license_terms"] : ["individual_license_terms"]}
+                        onApply={(d) => setPickedDoc(d)}
+                        placeholder={docKind === "publication" ? "ARC-PUBT / 件名 で検索" : "ARC-ILT / 件名 で検索"}
+                        includeMaster
+                      />
                     </Field>
+                    {pickedDoc && (
+                      <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
+                        <FileText className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+                        <span className="font-bold">{pickedDoc.document_number}</span>
+                        <span className="text-muted-foreground truncate">{pickedDoc.derived_title}</span>
+                        <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPickedDoc(null)}>解除</button>
+                      </div>
+                    )}
+                    {!pickedDoc && (
+                      <>
+                        <label className="flex items-center gap-2 font-mono text-[10px]">
+                          <input type="checkbox" checked={issueToggle} onChange={(e) => setIssueToggle(e.target.checked)} />
+                          見つからなければ <b>{docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して登録</b>（documents 器 + condition_lines を作成）
+                        </label>
+                        <Field label="文書リンク（従前の締結済み契約 PDF・任意）" col="file_link → document_url" help="従前に契約がある場合、締結済み PDF/Drive の URL を貼ると新規 PDF を作らずそのリンクで登録(https:// 始まり)。">
+                          <Input value={fileLink} onChange={(e) => setFileLink(e.target.value)} placeholder="https://drive.google.com/…（任意）" className="h-8 text-[12px]" />
+                        </Field>
+                      </>
+                    )}
                   </>
                 )}
               </div>
@@ -657,8 +805,8 @@ export function MaterialEntryPanel() {
           <div className="flex justify-end gap-2">
             <Button variant="outline" size="sm" onClick={backToGate} disabled={saving} className="font-mono text-[11px]">キャンセル</Button>
             <Button size="sm" onClick={submit} disabled={saving} className="font-mono text-[11px]">
-              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-              {editingId ? "変更を保存" : "マテリアルを登録"}
+              {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : pdfOutput ? <FileOutput className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
+              {pdfOutput ? "登録して文書フォームへ（PDF作成）" : editingId ? "変更を保存" : "マテリアルを登録"}
             </Button>
           </div>
         </>
