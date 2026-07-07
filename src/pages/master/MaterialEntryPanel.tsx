@@ -129,6 +129,9 @@ export function MaterialEntryPanel() {
   const [docKind, setDocKind] = React.useState<"license" | "publication">("license")
   // PDF出力あり: DB登録のみ(condition-lines)ではなく、文書作成フォームへ prefill して遷移し PDF を出力。
   const [pdfOutput, setPdfOutput] = React.useState(false)
+  // 出版の基本契約書(ARC-PUB): 条件書は基本契約番号を参照する。既存を検索して紐づけるか、無ければ先に作成。
+  const [pubBaseDoc, setPubBaseDoc] = React.useState<LookedUpDocument | null>(null)
+  const [pubBaseType, setPubBaseType] = React.useState<"individual" | "corporate">("individual")
 
   const [saving, setSaving] = React.useState(false)
 
@@ -163,6 +166,7 @@ export function MaterialEntryPanel() {
     setIsRoyaltyBearing(true); setScope(""); setRemarks("")
     setConds([newCondRow(1)])
     setPickedDoc(null); setIssueToggle(false); setFileLink(""); setDocKind("license"); setPdfOutput(false)
+    setPubBaseDoc(null); setPubBaseType("individual")
   }
 
   const loadMaterials = React.useCallback(async (wid: string) => {
@@ -294,6 +298,30 @@ export function MaterialEntryPanel() {
     return docNumber
   }
 
+  const jpToday = () => {
+    const d = new Date()
+    return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`
+  }
+
+  // 出版基本契約書(ARC-PUB)を先に作成する導線。許諾者(vendor)/締結日を prefill して pub_master フォームへ。
+  //   基本契約は許諾者↔アークライトの契約(素材非依存)なので、素材作成は伴わない。
+  const handoffToBaseContract = () => {
+    if (!rightsVendorCode) {
+      return showNotification?.("基本契約書の作成には、先に権利元(許諾者)を取引先マスタから選択してください。", "error")
+    }
+    const template = pubBaseType === "corporate" ? "pub_master_corporate" : "pub_master_individual"
+    const prefill = {
+      template,
+      formData: {
+        vendor_code: rightsVendorCode,
+        契約締結日: jpToday(),
+      },
+    }
+    sessionStorage.setItem("lb_material_prefill", JSON.stringify(prefill))
+    showNotification?.("出版等許諾基本契約書の作成フォームへ移動します。生成後、その番号で条件書を作成してください。", "success")
+    navigate(`/documents/new?template=${encodeURIComponent(template)}&prefill_material=1`)
+  }
+
   // PDF出力: 素材＋金銭条件を文書フォームの formData へ写像し、sessionStorage 経由で受け渡す。
   //   ILT  = v3_conds(固定3種)/v3_lcs(構成要素×料率)、PUBT = 紙/電子の印税率フラット項目。
   //   翻訳は別権利(発注書由来)のため PUBT では常に「許諾しない」。言語/地域は許諾範囲・許諾言語で制御。
@@ -310,6 +338,8 @@ export function MaterialEntryPanel() {
       is_work_linked: true,
       許諾地域: region,
       許諾言語: lang,
+      // 許諾者(取引先)を vendor_code で渡すと、フォームが dbField(vendor.*)で氏名/住所/口座を解決。
+      vendor_code: rightsVendorCode || undefined,
     }
     if (docKind === "publication") {
       const paper = conds.find((c) => c.dealId === 1 || c.dealId === 3)
@@ -319,6 +349,9 @@ export function MaterialEntryPanel() {
         formData: {
           ...common,
           対象出版物名: material.material_name || srcTitle,
+          締結日: jpToday(),
+          著作者名: rightsHolderLabel.trim() || "",
+          基本契約番号: pubBaseDoc?.document_number || "",
           紙書籍印税率: paper?.rate_pct || "",
           電子書籍配信許諾有無: digital ? "許諾する" : "許諾しない",
           電子書籍印税率: digital?.rate_pct || "",
@@ -701,15 +734,56 @@ export function MaterialEntryPanel() {
                 </label>
 
                 {pdfOutput ? (
-                  <div className="flex items-start gap-2 font-mono text-[10px] text-muted-foreground bg-background border border-border rounded px-2.5 py-2 leading-snug">
-                    <FileOutput className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
-                    <span>
-                      「マテリアルを登録して文書へ」を押すと、素材を登録してから
-                      <b>{docKind === "publication" ? "出版等利用許諾条件書" : "個別利用許諾条件書"}</b>
-                      の作成フォームへ移動します。属性・金銭条件（取引形態→料率）・原作/素材が prefill され、
-                      内容を確認して PDF を生成できます（番号は生成時に採番）。
-                    </span>
-                  </div>
+                  <>
+                    <div className="flex items-start gap-2 font-mono text-[10px] text-muted-foreground bg-background border border-border rounded px-2.5 py-2 leading-snug">
+                      <FileOutput className="h-3.5 w-3.5 text-emerald-600 shrink-0 mt-0.5" />
+                      <span>
+                        「登録して文書フォームへ」を押すと、素材を登録してから
+                        <b>{docKind === "publication" ? "出版等利用許諾条件書" : "個別利用許諾条件書"}</b>
+                        の作成フォームへ移動します。属性・金銭条件（取引形態→料率）・原作/素材・締結日/著作者/許諾者が
+                        prefill され、内容を確認して PDF を生成できます（番号は生成時に採番）。
+                      </span>
+                    </div>
+
+                    {/* 出版: 基本契約書(ARC-PUB)。条件書は基本契約番号を参照する */}
+                    {docKind === "publication" && (
+                      <div className="rounded-md border border-sky-500 bg-sky-500/10 p-2.5 space-y-2">
+                        <div className="font-mono text-[10px] font-bold text-sky-700">出版等許諾基本契約書（ARC-PUB）</div>
+                        <p className="font-mono text-[9px] text-muted-foreground leading-snug">
+                          条件書は基本契約に紐づきます。既存の基本契約書を検索して番号を引き継ぐか、無ければ先に作成してください。
+                        </p>
+                        <DocumentNumberLookup
+                          filterTemplateTypes={["pub_master_individual", "pub_master_corporate"]}
+                          onApply={(d) => setPubBaseDoc(d)}
+                          placeholder="ARC-PUB / 件名 で基本契約を検索"
+                          includeMaster
+                        />
+                        {pubBaseDoc ? (
+                          <div className="flex items-center gap-2 font-mono text-[11px] bg-background border border-border rounded px-2 py-1">
+                            <FileText className="h-3.5 w-3.5 text-sky-600 shrink-0" />
+                            <span className="font-bold">{pubBaseDoc.document_number}</span>
+                            <span className="text-muted-foreground truncate">{pubBaseDoc.derived_title}</span>
+                            <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPubBaseDoc(null)}>解除</button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-[9px] text-muted-foreground">基本契約書が無い場合:</span>
+                            <select className="h-7 rounded border border-border bg-background px-1.5 text-[10px] font-mono" value={pubBaseType} onChange={(e) => setPubBaseType(e.target.value as any)}>
+                              <option value="individual">個人版</option>
+                              <option value="corporate">法人版</option>
+                            </select>
+                            <button
+                              type="button"
+                              className="inline-flex items-center gap-1 border border-sky-500 text-sky-600 rounded px-2 py-1 font-mono text-[10px] hover:bg-sky-500/10"
+                              onClick={handoffToBaseContract}
+                            >
+                              <FileOutput className="h-3 w-3" /> 基本契約書を先に作成
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </>
                 ) : (
                   <>
                     <Field
