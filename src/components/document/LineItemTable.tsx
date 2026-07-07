@@ -208,24 +208,50 @@ const PAYMENT_TERMS_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "準委任", label: "準委任" },
 ];
 
+// 周期に応じた支払日の接頭辞 ("毎月" / "毎四半期" / ...)。
+function cyclePrefixLabel(cycle?: LineItem["cycle"]): string {
+  return cycle === "QUARTERLY"
+    ? "毎四半期"
+    : cycle === "SEMIANNUAL"
+      ? "毎半期"
+      : cycle === "ANNUAL"
+        ? "毎年"
+        : cycle === "CUSTOM"
+          ? "毎回"
+          : "毎月";
+}
+
 // サブスクの「支払日 表示」を組み立てる。
 //   月次: "毎月25日" / 月末: "毎月末日"
 //   四半期/半年/年次: "毎期25日" (or 月末)
 function formatBillingDay(day?: number, cycle?: LineItem["cycle"]): string {
   if (!day && day !== 0) return "";
-  const cycleLabel =
-    cycle === "QUARTERLY"
-      ? "毎四半期"
-      : cycle === "SEMIANNUAL"
-        ? "毎半期"
-        : cycle === "ANNUAL"
-          ? "毎年"
-          : cycle === "CUSTOM"
-            ? "毎回"
-            : "毎月";
+  const cycleLabel = cyclePrefixLabel(cycle);
   if (day === 0 || day > 30) return `${cycleLabel}末日`;
   return `${cycleLabel}${day}日`;
 }
+
+// billing_day (undefined / 0=末日 / 1-30) ⇄ セレクト値 ("" / "EOM" / "1".."30")。
+//   DB・PDF 側の既存規約 (0 または 31 以上 = 末日) はそのまま維持し、
+//   入力 UI だけを「末日 / N日」の自然な選択肢に置き換える。
+function billingDayToSelectValue(day?: number | null): string {
+  if (day === undefined || day === null) return "";
+  if (day === 0 || day > 30) return "EOM";
+  return String(day);
+}
+function selectValueToBillingDay(v: string): number | undefined {
+  if (v === "") return undefined;
+  if (v === "EOM") return 0;
+  return Number(v);
+}
+const BILLING_DAY_SELECT_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "— 未設定 —" },
+  { value: "EOM", label: "末日" },
+  ...Array.from({ length: 30 }, (_, i) => ({
+    value: String(i + 1),
+    label: `${i + 1}日`,
+  })),
+];
 
 // サブスクの「期間 表示」を組み立てる。
 //   start のみ:           "2026/01/01 〜 継続中"
@@ -511,6 +537,80 @@ export const LineItemTable: React.FC<Props> = ({
     );
   };
 
+  // ── サブスク行の 周期 / 支払日 インライン編集 (カード/テーブル共通) ──
+  //   従来は ⚙ モーダルでしか編集できず、表上は read-only 表示だったため
+  //   支払日が未設定のまま (= PDF に「支払日未設定」) になりやすかった。
+  //   周期・支払日をその場で選べるようにして記載のあいまいさを解消する。
+  const subCycleSelect = (it: LineItem, idx: number) =>
+    readOnly ? (
+      <span className="text-xs font-mono py-1 inline-block">
+        {CYCLE_OPTIONS.find((o) => o.value === (it.cycle || "MONTHLY"))?.short ||
+          "月次"}
+      </span>
+    ) : (
+      <select
+        value={it.cycle || "MONTHLY"}
+        onChange={(e) =>
+          update(idx, { cycle: e.target.value as LineItem["cycle"] })
+        }
+        title="サブスクの周期。カスタム (Nヶ月/N日ごと) の間隔は ⚙ から設定。"
+        className={cn(
+          "w-full text-xs font-mono bg-transparent",
+          "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+        )}
+      >
+        {CYCLE_OPTIONS.map((opt) => (
+          <option key={opt.value} value={opt.value}>
+            {opt.label}
+          </option>
+        ))}
+      </select>
+    );
+
+  const subBillingDaySelect = (it: LineItem, idx: number) => {
+    if (isDayBasedCycle(it)) {
+      // N日ごとのカスタム周期は暦日ベースではないため支払日(毎期X日)は使わない。
+      return (
+        <span className="text-[10px] font-mono text-muted-foreground/70 py-1 inline-block">
+          開始日からの経過日で計算
+        </span>
+      );
+    }
+    if (readOnly) {
+      return (
+        <span className="text-xs font-mono py-1 inline-block">
+          {formatBillingDay(it.billing_day, it.cycle) || (
+            <span className="text-muted-foreground/60 italic">未設定</span>
+          )}
+        </span>
+      );
+    }
+    return (
+      <div className="flex items-center gap-1">
+        <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
+          {cyclePrefixLabel(it.cycle)}
+        </span>
+        <select
+          value={billingDayToSelectValue(it.billing_day)}
+          onChange={(e) =>
+            update(idx, { billing_day: selectValueToBillingDay(e.target.value) })
+          }
+          title="毎周期の支払日。末日 (月末) または 1〜30日を選択。"
+          className={cn(
+            "flex-1 min-w-0 text-xs font-mono bg-transparent",
+            "border-b border-input py-1 px-1 focus:outline-none focus:border-foreground"
+          )}
+        >
+          {BILLING_DAY_SELECT_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  };
+
   // 成果物帰属セレクト(発注者/受注者)。両ビュー共通。
   const ownershipSelect = (it: LineItem, idx: number) => (
     <div className="flex flex-col gap-0.5">
@@ -691,6 +791,12 @@ export const LineItemTable: React.FC<Props> = ({
                       ...(e.target.value === "SUBSCRIPTION" && !it.cycle
                         ? { cycle: "MONTHLY" as const }
                         : {}),
+                      // 支払日未設定のまま PDF に「支払日未設定」と出るのを防ぐため、
+                      // SUBSCRIPTION 切替時は「末日」(=0) を既定にする。
+                      ...(e.target.value === "SUBSCRIPTION" &&
+                      it.billing_day == null
+                        ? { billing_day: 0 }
+                        : {}),
                       // ROYALTY 切替時、計算式方法が未設定なら表示デフォルト(製造)を
                       // 明示的に永続化する。未設定のまま送信されると PDF が
                       // フォールバック表示になり、フォーム表示と食い違うため。
@@ -753,13 +859,9 @@ export const LineItemTable: React.FC<Props> = ({
                   {it.calc_method === "SUBSCRIPTION" ? "周期" : "契約種別"}
                 </span>
                 {it.calc_method === "SUBSCRIPTION" ? (
-                  <div className="flex items-center gap-1 text-xs font-mono py-1">
-                    <Repeat className="w-3 h-3 text-muted-foreground" />
-                    <span>
-                      {CYCLE_OPTIONS.find(
-                        (o) => o.value === (it.cycle || "MONTHLY")
-                      )?.short || "月次"}
-                    </span>
+                  <div className="flex items-center gap-1">
+                    <Repeat className="w-3 h-3 text-muted-foreground flex-shrink-0" />
+                    {subCycleSelect(it, idx)}
                   </div>
                 ) : (
                   <select
@@ -794,13 +896,7 @@ export const LineItemTable: React.FC<Props> = ({
                   {it.calc_method === "SUBSCRIPTION" ? "支払日" : "納期"}
                 </span>
                 {it.calc_method === "SUBSCRIPTION" ? (
-                  <span className="text-xs font-mono py-1 block">
-                    {formatBillingDay(it.billing_day, it.cycle) || (
-                      <span className="text-muted-foreground/60 italic">
-                        未設定
-                      </span>
-                    )}
-                  </span>
+                  subBillingDaySelect(it, idx)
                 ) : (
                   cellInput(
                     it.delivery_date,
@@ -965,6 +1061,11 @@ export const LineItemTable: React.FC<Props> = ({
                                   !it.cycle
                                     ? { cycle: "MONTHLY" as const }
                                     : {}),
+                                  // 支払日は「末日」(=0) を既定に (未設定のまま PDF に出るのを防ぐ)
+                                  ...(e.target.value === "SUBSCRIPTION" &&
+                                  it.billing_day == null
+                                    ? { billing_day: 0 }
+                                    : {}),
                                 })
                               }
                               disabled={readOnly}
@@ -1026,13 +1127,9 @@ export const LineItemTable: React.FC<Props> = ({
                             Phase 22.21.44: それ以外は 請負/準委任 のプルダウン (旧自由テキスト廃止) */}
                         <td className="p-2 align-top">
                           {it.calc_method === "SUBSCRIPTION" ? (
-                            <div className="flex items-center gap-1 text-[11px] font-mono">
+                            <div className="flex items-center gap-1">
                               <Repeat className="w-3 h-3 text-muted-foreground flex-shrink-0" />
-                              <span className="text-foreground/80">
-                                {CYCLE_OPTIONS.find(
-                                  (o) => o.value === (it.cycle || "MONTHLY")
-                                )?.short || "月次"}
-                              </span>
+                              {subCycleSelect(it, idx)}
                             </div>
                           ) : (
                             <select
@@ -1072,13 +1169,7 @@ export const LineItemTable: React.FC<Props> = ({
                         {/* Phase 22.8: SUBSCRIPTION なら 支払日サマリ (毎月N日)、それ以外なら delivery_date */}
                         <td className="p-2 align-top">
                           {it.calc_method === "SUBSCRIPTION" ? (
-                            <span className="text-[11px] font-mono text-foreground/80">
-                              {formatBillingDay(it.billing_day, it.cycle) || (
-                                <span className="text-muted-foreground/60 italic text-[10px]">
-                                  支払日未設定
-                                </span>
-                              )}
-                            </span>
+                            subBillingDaySelect(it, idx)
                           ) : (
                             cellInput(
                               it.delivery_date,
@@ -1301,28 +1392,24 @@ export const LineItemTable: React.FC<Props> = ({
                   支払日 (毎周期の何日に支払うか)
                 </label>
                 <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min={0}
-                    max={31}
-                    value={
-                      subEditItem.billing_day === undefined ||
-                      subEditItem.billing_day === null
-                        ? ""
-                        : subEditItem.billing_day
-                    }
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      update(subEditIdx, {
-                        billing_day: raw === "" ? undefined : Number(raw),
-                      });
-                    }}
-                    placeholder="25"
-                    className="w-24 text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
-                  />
-                  <span className="text-[11px] font-mono text-muted-foreground">
-                    日 (0 または 31 以上で「末日」扱い)
+                  <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
+                    {cyclePrefixLabel(subEditItem.cycle)}
                   </span>
+                  <select
+                    value={billingDayToSelectValue(subEditItem.billing_day)}
+                    onChange={(e) =>
+                      update(subEditIdx, {
+                        billing_day: selectValueToBillingDay(e.target.value),
+                      })
+                    }
+                    className="w-40 text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  >
+                    {BILLING_DAY_SELECT_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <p className="text-[10px] font-mono text-muted-foreground/70 italic">
                   プレビュー:{" "}
