@@ -1983,12 +1983,86 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // マテリアルの参照件数(削除前チェック用)。文書(form_data スナップショット)と
+  //   条件明細(live FK)から、この素材がどれだけ参照されているかを返す。
+  //   - condition_lines: source_material_id = mid の live リンク(金銭条件)。
+  //   - documents: form_data に material_code を含む文書(v3_lcs 等のスナップショット)。
+  //     material_code は一意で特徴的な文字列のため form_data::text の部分一致で拾う。
+  async function materialReferences(mid: number): Promise<{
+    material_code: string | null;
+    condition_lines: number;
+    documents: number;
+    condition_line_rows: any[];
+    document_rows: any[];
+  }> {
+    const m = await query(`SELECT id, material_code FROM work_materials WHERE id = $1`, [mid]);
+    const materialCode = (m.rows[0]?.material_code as string) || null;
+    const cl = await query(
+      `SELECT cl.id, cl.line_code, cl.subject, cc.document_number
+         FROM condition_lines cl
+         JOIN contract_capabilities cc ON cc.id = cl.capability_id
+        WHERE cl.source_material_id = $1
+        ORDER BY cl.id`,
+      [mid]
+    );
+    let docRows: any[] = [];
+    if (materialCode) {
+      const d = await query(
+        `SELECT id, document_number, template_type
+           FROM documents
+          WHERE form_data::text ILIKE '%' || $1 || '%'
+          ORDER BY id DESC
+          LIMIT 50`,
+        [materialCode]
+      );
+      docRows = d.rows;
+    }
+    return {
+      material_code: materialCode,
+      condition_lines: cl.rows.length,
+      documents: docRows.length,
+      condition_line_rows: cl.rows,
+      document_rows: docRows,
+    };
+  }
+
+  app.get("/api/v3/work-materials/:mid/references", ...requireRead, async (req, res) => {
+    try {
+      const mid = Number(req.params.mid);
+      if (!Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const refs = await materialReferences(mid);
+      res.json({ ok: true, ...refs });
+    } catch (e) { fail(res, e); }
+  });
+
+  // 安全削除: 文書/条件明細から参照中なら 409 でブロック(件数を返す)。
+  //   ?force=true で強制削除 — この素材の condition_lines も一緒に削除する(不可逆)。
+  //   文書(form_data)は履歴スナップショットのため触らない(コード不変の原則)。
   app.delete("/api/v3/work-materials/:mid", ...requireWrite, async (req, res) => {
     try {
       const mid = Number(req.params.mid);
       if (!Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const force = req.query.force === "true" || req.query.force === "1";
+      const refs = await materialReferences(mid);
+      if (!force && (refs.condition_lines > 0 || refs.documents > 0)) {
+        return res.status(409).json({
+          ok: false,
+          error: "この素材は参照中のため削除できません",
+          condition_lines: refs.condition_lines,
+          documents: refs.documents,
+          condition_line_rows: refs.condition_line_rows,
+          document_rows: refs.document_rows,
+        });
+      }
+      if (force && refs.condition_lines > 0) {
+        await query(`DELETE FROM condition_lines WHERE source_material_id = $1`, [mid]);
+      }
       const r = await query(`DELETE FROM work_materials WHERE id = $1`, [mid]);
-      res.json({ ok: true, deleted: r.rowCount || 0 });
+      res.json({
+        ok: true,
+        deleted: r.rowCount || 0,
+        deleted_condition_lines: force ? refs.condition_lines : 0,
+      });
     } catch (e) { fail(res, e); }
   });
 
