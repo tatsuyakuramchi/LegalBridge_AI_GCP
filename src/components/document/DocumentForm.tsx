@@ -431,17 +431,6 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         formula_text: formData['電子書籍計算式'] || '',
         currency: 'JPY',
       },
-      {
-        condition_no: 3,
-        region_language_label: formData['翻訳海外版対象地域言語'] || '翻訳・海外版',
-        calc_method: 'ROYALTY',
-        calc_type: 'BASE_QTY_RATE',
-        guarantee_type: 'NONE',
-        rate_pct: toNum(formData['翻訳海外版料率']),
-        base_price_label: '被許諾者受取ライセンス収益',
-        formula_text: formData['翻訳海外版計算式'] || '',
-        currency: 'JPY',
-      },
     ];
     pubCondSeededRef.current = true;
     setFormData({ ...formData, financial_conditions: seed });
@@ -5997,7 +5986,6 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         const PUB_TABLE_OWNED = new Set([
           '紙媒体計算式', '紙書籍印税率',
           '電子書籍計算式', '電子書籍印税率',
-          '翻訳海外版計算式', '翻訳海外版料率',
         ]);
         return (Object.entries(groupedVars) as [string, string[]][])
           .sort((a, b) => {

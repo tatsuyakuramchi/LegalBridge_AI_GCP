@@ -15281,24 +15281,7 @@ ${details}
                   ag_amount: 0,
                 });
               }
-              if (formData["翻訳海外版許諾有無"] === "許諾する") {
-                pubConditions.push({
-                  condition_no: 3,
-                  region_language_label:
-                    formData["翻訳海外版対象地域言語"] || "翻訳・海外版",
-                  calc_method: "ROYALTY",
-                  calc_type: "BASE_QTY_RATE",
-                  guarantee_type: "NONE",
-                  rate_pct: toPct(formData["翻訳海外版料率"]),
-                  base_price_label: "被許諾者受取ライセンス収益",
-                  formula_text:
-                    formData["翻訳海外版計算式"] ||
-                    "被許諾者受取ライセンス収益 × 料率",
-                  currency: "JPY",
-                  mg_amount: 0,
-                  ag_amount: 0,
-                });
-              }
+              // 翻訳版・海外版は二次的著作物として本条件書の対象外(別途)。海外はテリトリー(許諾地域)で制御。
               await upsertCapabilityFinancialConditions(capId, pubConditions);
               console.log(
                 `✅ Saved ${pubConditions.length} publication royalty condition(s) for: ${docNumber}`
