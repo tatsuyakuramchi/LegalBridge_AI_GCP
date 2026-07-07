@@ -398,7 +398,10 @@ export class DocumentService {
     //   登録済み)を渡すため出力は従来と同一。
     // v3移植(Stage C-1): 個別利用許諾でマトリクス入力(v3_conds)があれば、v3 テンプレ＋
     //   v3 context で描画する。v3 データが無ければ従来テンプレ・従来描画(挙動不変)。
-    const dv3: any = data;
+    //   生成/プレビュー経路は formData(v3_conds/v3_lcs・ヘッダ日本語キー含む)を data.details に
+    //   ネストして渡すため、v3 判定と v3 context 入力は details をトップレベルへ畳んで参照する
+    //   (共有レンダラの details 平坦化は compile 時なので、ここでは自前で畳む)。
+    const dv3: any = { ...(data as any), ...((data as any)?.details || {}) };
     const hasV3Data = Array.isArray(dv3?.v3_conds) && dv3.v3_conds.length > 0;
     // v3 で描画する条件: (a) 個別利用許諾でマトリクス入力がある実生成、または
     //   (b) v3 テンプレ自体のプレビュー(type=individual_license_terms_v3)。
