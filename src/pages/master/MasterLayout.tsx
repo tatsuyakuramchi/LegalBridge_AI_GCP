@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,8 @@ import { cn } from "@/lib/utils"
 const tabs = [
   { to: "/master/contracts", label: "Contracts", icon: FileText },
   { to: "/master/vendors", label: "Vendors", icon: Building2 },
+  // 作品/原作 登録(works own / source_ips licensed_in)
+  { to: "/master/work-entry", label: "Works (作品/原作)", icon: BookMarked },
   // 原作マテリアル登録(work_materials + 固定3種 金銭条件 + 文書欄)
   { to: "/master/materials", label: "Materials (原作素材)", icon: Boxes },
   // 統合 増分⑨: 原作台帳(Ledgers)/作品モデル(work-model) はサイドバー「作品管理」(/works)へ統合。
