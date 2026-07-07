@@ -1664,17 +1664,24 @@ export function registerWorkModelRoutes(
       const docNum = b.document_number == null ? "" : String(b.document_number).trim();
       const fileLink = b.file_link == null ? "" : String(b.file_link).trim();
       const issueDoc = b.issue_document === true || b.issue_document === "true";
+      // 文書種別: 'publication' = 出版等利用許諾条件書(ARC-PUBT, category=publication)、
+      //           それ以外 = 個別利用許諾条件書(ARC-ILT, category=license)。
+      //   固定3種の取引形態(自社製造自社販売/権利許諾/自社製造他社販売)は出版にも流用でき
+      //   (紙自社出版=①/電子出版=②/紙他社出版=③)、変わるのは器のカテゴリと採番だけ。
+      const isPub = b.doc_kind === "publication" || b.doc_kind === "pub";
+      const CAT = isPub ? "publication" : "license";
+      // ①既存 器(capability_id / document_number)は license/publication 両方を受け付ける。
       if (chosenCap != null) {
         if (!Number.isFinite(chosenCap)) {
           return res.status(400).json({ ok: false, error: "invalid capability_id" });
         }
         const cap = await query(
           `SELECT id, document_number FROM contract_capabilities
-            WHERE id = $1 AND contract_category = 'license'`,
+            WHERE id = $1 AND contract_category IN ('license','publication')`,
           [chosenCap]
         );
         if (cap.rows.length === 0) {
-          return res.status(400).json({ ok: false, error: "選択した利用許諾条件書が見つかりません(license カテゴリ)" });
+          return res.status(400).json({ ok: false, error: "選択した条件書(器)が見つかりません(license/publication カテゴリ)" });
         }
         capabilityId = cap.rows[0].id as number;
         lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
@@ -1682,7 +1689,7 @@ export function registerWorkModelRoutes(
         // ① 既存文書を文書番号で解決(DocumentNumberLookup で選択したケース)。
         const cap = await query(
           `SELECT id, document_number FROM contract_capabilities
-            WHERE document_number = $1 AND contract_category = 'license'`,
+            WHERE document_number = $1 AND contract_category IN ('license','publication')`,
           [docNum]
         );
         if (cap.rows.length === 0) {
@@ -1691,20 +1698,26 @@ export function registerWorkModelRoutes(
         capabilityId = cap.rows[0].id as number;
         lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
       } else if (issueDoc || fileLink) {
-        // ②③ マテリアルごとに1文書 = ARC-ILT を発番して器を新規作成(DB登録のみ)。
+        // ②③ マテリアルごとに1文書を発番して器を新規作成(DB登録のみ)。
+        //   出版=ARC-PUBT(publication) / それ以外=ARC-ILT(license)。
         //   file_link は従前の締結済み契約PDF/Drive URL を document_url に保存する。
-        const newNo = await getNewDocumentNumber("individual_license_terms");
+        const numberingType = isPub ? "pub_license_terms" : "individual_license_terms";
+        const recordType = isPub ? "publication_condition" : "license_condition";
+        const titlePrefix = isPub ? "出版等利用許諾条件(マテリアル登録)" : "個別利用許諾条件(マテリアル登録)";
+        const newNo = await getNewDocumentNumber(numberingType);
         await query(
           `INSERT INTO contract_capabilities
              (record_type, contract_category, contract_type, contract_title, document_number,
               vendor_id, original_work, work_name, contract_status, source_system, document_url)
-           VALUES ('license_condition', 'license', 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register', $5)`,
+           VALUES ($6, $7, 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register', $5)`,
           [
-            `個別利用許諾条件(マテリアル登録): ${sw.rows[0].title ?? ""}`,
+            `${titlePrefix}: ${sw.rows[0].title ?? ""}`,
             newNo,
             sw.rows[0].rights_holder_vendor_id ?? null,
             sw.rows[0].title ?? null,
             fileLink || null,
+            recordType,
+            CAT,
           ]
         );
         const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [newNo]);

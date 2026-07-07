@@ -40,6 +40,15 @@ const ACQUISITION_TYPES = ["", "license", "buyout_commission", "in_house"]
 
 const calcLabel = (t?: string) => V3_CALC_MODELS.find((m) => m.value === t)?.label || t || ""
 
+// 出版文脈での取引形態の別名(紙自社出版=①/電子出版=②/紙他社出版=③)。
+const PUB_DEAL_HINT: Record<number, string> = {
+  1: "紙・自社出版",
+  2: "電子出版",
+  3: "紙・他社出版",
+}
+const dealOptionLabel = (dealId: number, i: number, name: string, isPub: boolean) =>
+  `${["①", "②", "③"][i] || ""} ${isPub && PUB_DEAL_HINT[dealId] ? `${PUB_DEAL_HINT[dealId]}（${name}）` : name}`
+
 type CondRow = {
   key: string
   dealId: number
@@ -113,6 +122,9 @@ export function MaterialEntryPanel() {
   const [pickedDoc, setPickedDoc] = React.useState<LookedUpDocument | null>(null)
   const [issueToggle, setIssueToggle] = React.useState(false)
   const [fileLink, setFileLink] = React.useState("")
+  // 文書種別: license=個別利用許諾条件書(ARC-ILT) / publication=出版等利用許諾条件書(ARC-PUBT)。
+  //   固定3種の取引形態は出版にも流用(紙自社出版=①/電子出版=②/紙他社出版=③)。器のカテゴリと採番だけ切替。
+  const [docKind, setDocKind] = React.useState<"license" | "publication">("license")
 
   const [saving, setSaving] = React.useState(false)
 
@@ -146,7 +158,7 @@ export function MaterialEntryPanel() {
     setRightsVendorCode(""); setRightsVendorId(null); setRightsHolderLabel("")
     setIsRoyaltyBearing(true); setScope(""); setRemarks("")
     setConds([newCondRow(1)])
-    setPickedDoc(null); setIssueToggle(false); setFileLink("")
+    setPickedDoc(null); setIssueToggle(false); setFileLink(""); setDocKind("license")
   }
 
   const loadMaterials = React.useCallback(async (wid: string) => {
@@ -239,8 +251,8 @@ export function MaterialEntryPanel() {
   const docPayload = (): Record<string, any> => {
     if (pickedDoc?.document_number) return { document_number: pickedDoc.document_number }
     const link = fileLink.trim()
-    if (link) return { issue_document: true, file_link: link }
-    if (issueToggle) return { issue_document: true }
+    if (link) return { issue_document: true, file_link: link, doc_kind: docKind }
+    if (issueToggle) return { issue_document: true, doc_kind: docKind }
     return {}
   }
 
@@ -545,14 +557,24 @@ export function MaterialEntryPanel() {
             {conds.length > 0 && (
               <div className="rounded-lg border border-dashed border-indigo-400 bg-indigo-50/40 dark:bg-indigo-950/20 p-3 space-y-2">
                 <Field
-                  label="文書（この素材の利用許諾条件書）"
+                  label="文書種別"
+                  col="doc_kind"
+                  help="この素材の金銭条件をどの条件書に紐づけるか。出版作品は出版側を選ぶ(取引形態=紙自社出版①/電子出版②/紙他社出版③ に対応)。"
+                >
+                  <select className={selCls} value={docKind} onChange={(e) => { setDocKind(e.target.value as any); setPickedDoc(null) }}>
+                    <option value="license">個別利用許諾条件書（ARC-ILT）</option>
+                    <option value="publication">出版等利用許諾条件書（ARC-PUBT）</option>
+                  </select>
+                </Field>
+                <Field
+                  label={`文書（この素材の${docKind === "publication" ? "出版等利用許諾条件書" : "利用許諾条件書"}）`}
                   col="capability_id / document_number"
-                  help="マテリアル登録＝文書作成。既存があれば検索して紐づけ、無ければ ARC-ILT を発番して新規登録(DB登録のみ・PDFなし)。空なら原作ごとの MLC- 器に登録。"
+                  help={`マテリアル登録＝文書作成。既存があれば検索して紐づけ、無ければ ${docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して新規登録(DB登録のみ・PDFなし)。空なら原作ごとの MLC- 器に登録。`}
                 >
                   <DocumentNumberLookup
-                    filterTemplateTypes={["individual_license_terms"]}
+                    filterTemplateTypes={docKind === "publication" ? ["pub_license_terms"] : ["individual_license_terms"]}
                     onApply={(d) => setPickedDoc(d)}
-                    placeholder="ARC-ILT / 件名 で検索"
+                    placeholder={docKind === "publication" ? "ARC-PUBT / 件名 で検索" : "ARC-ILT / 件名 で検索"}
                     includeMaster
                   />
                 </Field>
@@ -568,7 +590,7 @@ export function MaterialEntryPanel() {
                   <>
                     <label className="flex items-center gap-2 font-mono text-[10px]">
                       <input type="checkbox" checked={issueToggle} onChange={(e) => setIssueToggle(e.target.checked)} />
-                      見つからなければ <b>ARC-ILT を発番して登録</b>（documents 器 + condition_lines を作成）
+                      見つからなければ <b>{docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して登録</b>（documents 器 + condition_lines を作成）
                     </label>
                     <Field label="文書リンク（従前の締結済み契約 PDF・任意）" col="file_link → document_url" help="従前に契約がある場合、締結済み PDF/Drive の URL を貼ると新規 PDF を作らずそのリンクで登録(https:// 始まり)。">
                       <Input value={fileLink} onChange={(e) => setFileLink(e.target.value)} placeholder="https://drive.google.com/…（任意）" className="h-8 text-[12px]" />
@@ -592,7 +614,7 @@ export function MaterialEntryPanel() {
                     <Field label="取引形態" col="固定3種">
                       <select className={selCls} value={c.dealId} onChange={(e) => patchCond(c.key, { dealId: Number(e.target.value) })}>
                         {V3_FIXED_DEALS.map((d, i) => (
-                          <option key={d.id} value={d.id}>{["①", "②", "③"][i] || ""} {d.name}</option>
+                          <option key={d.id} value={d.id}>{dealOptionLabel(d.id, i, d.name, docKind === "publication")}</option>
                         ))}
                       </select>
                     </Field>
