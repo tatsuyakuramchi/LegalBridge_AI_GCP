@@ -2144,7 +2144,7 @@ export function DocumentEditorPage() {
             </div>
 
             {/* Footer */}
-            <div className="flex items-center justify-between gap-4 px-5 py-3 border-t border-border bg-muted/40">
+            <div className="flex flex-wrap items-center justify-between gap-y-2 gap-x-4 px-5 py-3 border-t border-border bg-muted/40">
               <div className="flex items-center gap-5">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
@@ -2170,7 +2170,7 @@ export function DocumentEditorPage() {
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-end gap-2 min-w-0">
                 {/* Phase 23.2: Footer のプレビューも別タブで開く */}
                 <Button
                   variant="outline"
