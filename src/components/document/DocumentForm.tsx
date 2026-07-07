@@ -4115,6 +4115,9 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 acceptableRecordTypes={[
                   "individual_contract",
                   "standalone_contract",
+                  // 利用許諾条件書(個別/マスター登録=MLC・ARC-ILT)は record_type='license_condition'。
+                  //   これが無いと計算書フォームの検索に出てこないため含める(型・コメントは対応済みだが配列に欠落していた)。
+                  "license_condition",
                   "publication_condition",
                   // 受注者帰属の利用許諾(印税)を持つ発注書も計算対象にできるよう含める。
                   "purchase_order",
