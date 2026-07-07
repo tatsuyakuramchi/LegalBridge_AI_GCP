@@ -155,8 +155,8 @@
       <td colspan="4">
         【IP帰属】{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}
         　／　支払方法：{{or calc_method payment_method_display payment_method "FIXED"}}{{#if payment_terms}}（{{payment_terms}}）{{else}}{{#if payment_method}}（{{payment_method}}）{{/if}}{{/if}}
-        　／　納期：{{#if (eq calc_method "SUBSCRIPTION")}}{{billingDayLabel billing_day cycle}}{{else}}{{formatDate delivery_date}}{{/if}}
-        　／　支払日：{{#if (eq calc_method "SUBSCRIPTION")}}{{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDateCompact term_end}}{{else}}継続中{{/if}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}利用許諾料計算書の通り{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}{{/if}}
+        　／　{{#if (eq calc_method "SUBSCRIPTION")}}役務提供期間{{else}}納期{{/if}}：{{#if (eq calc_method "SUBSCRIPTION")}}{{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDateCompact term_end}}{{else}}継続中{{/if}}{{else}}{{formatDate delivery_date}}{{/if}}
+        　／　支払日：{{#if (eq calc_method "SUBSCRIPTION")}}{{or (billingDayLabel billing_day cycle billing_timing) "支払日未設定"}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}利用許諾料計算書の通り{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}{{/if}}
         {{#if (eq calc_method "ROYALTY")}}
         <div style="margin-top:4px;"><span class="tag royalty-tag">利用許諾</span>{{#if (eq royalty_calc_basis "manufacturing")}}個数 × 基準価格 × 料率{{else}}{{#if (eq royalty_calc_basis "sales")}}売上高 × 料率{{else}}{{#if (eq royalty_calc_basis "sublicense")}}受領額 × 料率{{else}}{{#if (eq royalty_calc_basis "fixed")}}固定額{{else}}個数 × 基準価格 × 料率{{/if}}{{/if}}{{/if}}{{/if}}{{#if rate_pct}} ・料率 {{rate_pct}}%{{/if}}<span class="royalty-aside">／ 利用許諾料は別途（利用許諾計算書による算定）</span></div>
         {{/if}}

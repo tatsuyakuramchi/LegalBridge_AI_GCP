@@ -107,6 +107,12 @@ export type LineItem = {
   /** 毎周期の支払日 (例: 月次なら 1-31 の日。月末なら 31 or 0)。 */
   billing_day?: number;
   /**
+   * 支払月。周期末で締めた各期の支払をどの月に行うか (当月/翌月/翌々月)。
+   * 例: MONTHLY + NEXT_MONTH + billing_day=0 → 「翌月末日払い」(月末締め翌月末払い)。
+   * 未設定は従来表示 (毎月末日 等) にフォールバックし、支払予定日生成は当月扱い。
+   */
+  billing_timing?: "SAME_MONTH" | "NEXT_MONTH" | "MONTH_AFTER_NEXT";
+  /**
    * 個別の支払予定日リスト。自動生成(周期から展開)または手入力で列挙する。
    * これがあると PDF・条件明細に各回の支払予定日として展開される。
    */
@@ -188,8 +194,22 @@ function generatePaymentSchedule(
   let cursor = new Date(start);
   const hardCap = 600; // 暴走防止
   for (let i = 0; i < hardCap; i++) {
-    const payDate = dayBased ? cursor : applyBillingDay(cursor, it.billing_day);
-    if (end && payDate.getTime() > end.getTime()) break;
+    // 打ち切りは役務提供期間 (cursor) ベース。支払日ベースにすると翌月払いの
+    // 最終回 (支払だけが term_end より後ろに落ちる) が欠けてしまう。
+    if (end && cursor.getTime() > end.getTime()) break;
+    let payDate: Date;
+    if (dayBased) {
+      payDate = cursor;
+    } else {
+      // 支払月 (当月/翌月/翌々月) 分だけ月をずらしてから支払日を適用する。
+      // 月初 1 日を基点にして setMonth の月跨ぎ (1/31 + 1ヶ月 → 3/3) を防ぐ。
+      const offset = timingOffsetMonths(it.billing_timing);
+      const base =
+        offset > 0
+          ? new Date(cursor.getFullYear(), cursor.getMonth() + offset, 1)
+          : new Date(cursor);
+      payDate = applyBillingDay(base, it.billing_day);
+    }
     out.push({ date: toISODate(payDate), amount });
     if (!end && out.length >= Math.max(1, periods)) break;
     cursor = stepDate(cursor, it);
@@ -221,14 +241,43 @@ function cyclePrefixLabel(cycle?: LineItem["cycle"]): string {
           : "毎月";
 }
 
+// 支払月 (当月/翌月/翌々月) の表示語と、支払予定日生成用の月オフセット。
+function timingWord(timing?: LineItem["billing_timing"]): string {
+  return timing === "SAME_MONTH"
+    ? "当月"
+    : timing === "NEXT_MONTH"
+      ? "翌月"
+      : timing === "MONTH_AFTER_NEXT"
+        ? "翌々月"
+        : "";
+}
+function timingOffsetMonths(timing?: LineItem["billing_timing"]): number {
+  return timing === "NEXT_MONTH" ? 1 : timing === "MONTH_AFTER_NEXT" ? 2 : 0;
+}
+const BILLING_TIMING_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "— 払月 —" },
+  { value: "SAME_MONTH", label: "当月" },
+  { value: "NEXT_MONTH", label: "翌月" },
+  { value: "MONTH_AFTER_NEXT", label: "翌々月" },
+];
+
 // サブスクの「支払日 表示」を組み立てる。
-//   月次: "毎月25日" / 月末: "毎月末日"
-//   四半期/半年/年次: "毎期25日" (or 月末)
-function formatBillingDay(day?: number, cycle?: LineItem["cycle"]): string {
+//   支払月あり — 月次: "翌月末日払い" / 他周期: "毎四半期・翌月末日払い"
+//   支払月なし (従来) — 月次: "毎月25日" / 月末: "毎月末日" / "毎四半期15日"
+function formatBillingDay(
+  day?: number,
+  cycle?: LineItem["cycle"],
+  timing?: LineItem["billing_timing"]
+): string {
   if (!day && day !== 0) return "";
-  const cycleLabel = cyclePrefixLabel(cycle);
-  if (day === 0 || day > 30) return `${cycleLabel}末日`;
-  return `${cycleLabel}${day}日`;
+  const dayLabel = day === 0 || day > 30 ? "末日" : `${day}日`;
+  const tw = timingWord(timing);
+  if (tw) {
+    // 当月払い/翌月払いを明示して「月末払い」のあいまいさを解消する。
+    const prefix = !cycle || cycle === "MONTHLY" ? "" : `${cyclePrefixLabel(cycle)}・`;
+    return `${prefix}${tw}${dayLabel}払い`;
+  }
+  return `${cyclePrefixLabel(cycle)}${dayLabel}`;
 }
 
 // billing_day (undefined / 0=末日 / 1-30) ⇄ セレクト値 ("" / "EOM" / "1".."30")。
@@ -579,7 +628,7 @@ export const LineItemTable: React.FC<Props> = ({
     if (readOnly) {
       return (
         <span className="text-xs font-mono py-1 inline-block">
-          {formatBillingDay(it.billing_day, it.cycle) || (
+          {formatBillingDay(it.billing_day, it.cycle, it.billing_timing) || (
             <span className="text-muted-foreground/60 italic">未設定</span>
           )}
         </span>
@@ -587,9 +636,31 @@ export const LineItemTable: React.FC<Props> = ({
     }
     return (
       <div className="flex items-center gap-1">
-        <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
-          {cyclePrefixLabel(it.cycle)}
-        </span>
+        {it.cycle && it.cycle !== "MONTHLY" && (
+          <span className="text-[10px] font-mono text-muted-foreground whitespace-nowrap">
+            {cyclePrefixLabel(it.cycle)}
+          </span>
+        )}
+        <select
+          value={it.billing_timing || ""}
+          onChange={(e) =>
+            update(idx, {
+              billing_timing: (e.target.value ||
+                undefined) as LineItem["billing_timing"],
+            })
+          }
+          title="支払月。締めた期の分を当月/翌月/翌々月のどの月に支払うか。"
+          className={cn(
+            "w-16 flex-shrink-0 text-xs font-mono bg-transparent",
+            "border-b border-input py-1 px-0.5 focus:outline-none focus:border-foreground"
+          )}
+        >
+          {BILLING_TIMING_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
         <select
           value={billingDayToSelectValue(it.billing_day)}
           onChange={(e) =>
@@ -792,10 +863,14 @@ export const LineItemTable: React.FC<Props> = ({
                         ? { cycle: "MONTHLY" as const }
                         : {}),
                       // 支払日未設定のまま PDF に「支払日未設定」と出るのを防ぐため、
-                      // SUBSCRIPTION 切替時は「末日」(=0) を既定にする。
+                      // SUBSCRIPTION 切替時は「翌月末日払い」(月末締め翌月末払い) を既定にする。
                       ...(e.target.value === "SUBSCRIPTION" &&
                       it.billing_day == null
                         ? { billing_day: 0 }
+                        : {}),
+                      ...(e.target.value === "SUBSCRIPTION" &&
+                      !it.billing_timing
+                        ? { billing_timing: "NEXT_MONTH" as const }
                         : {}),
                       // ROYALTY 切替時、計算式方法が未設定なら表示デフォルト(製造)を
                       // 明示的に永続化する。未設定のまま送信されると PDF が
@@ -1061,10 +1136,14 @@ export const LineItemTable: React.FC<Props> = ({
                                   !it.cycle
                                     ? { cycle: "MONTHLY" as const }
                                     : {}),
-                                  // 支払日は「末日」(=0) を既定に (未設定のまま PDF に出るのを防ぐ)
+                                  // 支払日は「翌月末日払い」を既定に (未設定のまま PDF に出るのを防ぐ)
                                   ...(e.target.value === "SUBSCRIPTION" &&
                                   it.billing_day == null
                                     ? { billing_day: 0 }
+                                    : {}),
+                                  ...(e.target.value === "SUBSCRIPTION" &&
+                                  !it.billing_timing
+                                    ? { billing_timing: "NEXT_MONTH" as const }
                                     : {}),
                                 })
                               }
@@ -1166,10 +1245,21 @@ export const LineItemTable: React.FC<Props> = ({
                             </select>
                           )}
                         </td>
-                        {/* Phase 22.8: SUBSCRIPTION なら 支払日サマリ (毎月N日)、それ以外なら delivery_date */}
+                        {/* 納期: SUBSCRIPTION=役務提供期間 (契約期間・⚙で編集)、それ以外=delivery_date。
+                            旧実装は納期列に支払日サマリ・支払日列に期間を出しており PDF 上で
+                            「支払日が期間に見える」逆転が起きていた。 */}
                         <td className="p-2 align-top">
                           {it.calc_method === "SUBSCRIPTION" ? (
-                            subBillingDaySelect(it, idx)
+                            <span
+                              className="text-[10px] font-mono text-foreground/70 whitespace-nowrap"
+                              title="役務提供期間 (契約期間)。⚙ から編集。"
+                            >
+                              {formatTermRange(it.term_start, it.term_end) || (
+                                <span className="text-muted-foreground/60 italic">
+                                  期間未設定
+                                </span>
+                              )}
+                            </span>
                           ) : (
                             cellInput(
                               it.delivery_date,
@@ -1178,16 +1268,10 @@ export const LineItemTable: React.FC<Props> = ({
                             )
                           )}
                         </td>
-                        {/* 支払日: SUBSCRIPTION=期間 / ROYALTY固定報酬なし=利用許諾料計算書の通り / それ以外=日付 */}
+                        {/* 支払日: SUBSCRIPTION=払月+支払日セレクト / ROYALTY固定報酬なし=利用許諾料計算書の通り / それ以外=日付 */}
                         <td className="p-2 align-top">
                           {it.calc_method === "SUBSCRIPTION" ? (
-                            <span className="text-[10px] font-mono text-foreground/70 whitespace-nowrap">
-                              {formatTermRange(it.term_start, it.term_end) || (
-                                <span className="text-muted-foreground/60 italic">
-                                  期間未設定
-                                </span>
-                              )}
-                            </span>
+                            subBillingDaySelect(it, idx)
                           ) : it.calc_method === "ROYALTY" && computeAmount(it) <= 0 ? (
                             <span className="text-[10px] font-mono text-amber-700 whitespace-nowrap">
                               利用許諾料計算書の通り
@@ -1389,12 +1473,25 @@ export const LineItemTable: React.FC<Props> = ({
               {/* 支払日 */}
               <div className="space-y-1.5">
                 <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
-                  支払日 (毎周期の何日に支払うか)
+                  支払日 (締めた期の分を いつ・何日に支払うか)
                 </label>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-mono text-muted-foreground whitespace-nowrap">
-                    {cyclePrefixLabel(subEditItem.cycle)}
-                  </span>
+                  <select
+                    value={subEditItem.billing_timing || ""}
+                    onChange={(e) =>
+                      update(subEditIdx, {
+                        billing_timing: (e.target.value ||
+                          undefined) as LineItem["billing_timing"],
+                      })
+                    }
+                    title="支払月。締めた期の分を当月/翌月/翌々月のどの月に支払うか。"
+                    className="w-28 text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                  >
+                    <option value="">— 払月 未指定 —</option>
+                    <option value="SAME_MONTH">当月払い</option>
+                    <option value="NEXT_MONTH">翌月払い</option>
+                    <option value="MONTH_AFTER_NEXT">翌々月払い</option>
+                  </select>
                   <select
                     value={billingDayToSelectValue(subEditItem.billing_day)}
                     onChange={(e) =>
@@ -1402,7 +1499,7 @@ export const LineItemTable: React.FC<Props> = ({
                         billing_day: selectValueToBillingDay(e.target.value),
                       })
                     }
-                    className="w-40 text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
+                    className="w-32 text-xs font-mono bg-transparent border-b border-input py-1.5 px-1 focus:outline-none focus:border-foreground"
                   >
                     {BILLING_DAY_SELECT_OPTIONS.map((opt) => (
                       <option key={opt.value} value={opt.value}>
@@ -1416,9 +1513,11 @@ export const LineItemTable: React.FC<Props> = ({
                   <strong>
                     {formatBillingDay(
                       subEditItem.billing_day,
-                      subEditItem.cycle
+                      subEditItem.cycle,
+                      subEditItem.billing_timing
                     ) || "(未設定)"}
                   </strong>
+                  {" "}— 例: 月次で「翌月払い・末日」= 月末締め翌月末払い
                 </p>
               </div>
               {/* 支払予定日(任意の日に個別指定 / 周期から自動生成) */}

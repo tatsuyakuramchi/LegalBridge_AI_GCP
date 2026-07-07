@@ -596,9 +596,13 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               : c === 'CUSTOM'
                 ? 'カスタム'
                 : '月次';
-    const billingDayDisplay = (day?: number, cycle?: string) => {
+    // timing = billing_timing (SAME_MONTH/NEXT_MONTH/MONTH_AFTER_NEXT)。
+    //   締めた期の分をどの月に支払うかを明示し「月末払い」の当月/翌月あいまいさを解消。
+    //   未設定は従来表示にフォールバック (LineItemTable.formatBillingDay と同一仕様)。
+    const billingDayDisplay = (day?: number, cycle?: string, timing?: string) => {
       if (day === undefined || day === null || Number.isNaN(Number(day))) return '';
       const n = Number(day);
+      const t = String(timing || '').toUpperCase();
       if (isIntl) {
         const pw =
           cycle === 'QUARTERLY'
@@ -610,6 +614,15 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 : cycle === 'CUSTOM'
                   ? 'period'
                   : 'month';
+        const dayPhrase = n === 0 || n > 30 ? 'end' : `day ${n}`;
+        if (t === 'NEXT_MONTH')
+          return pw === 'month'
+            ? `${dayPhrase} of the following month`
+            : `${dayPhrase} of the month following each ${pw}`;
+        if (t === 'MONTH_AFTER_NEXT')
+          return pw === 'month'
+            ? `${dayPhrase} of the second following month`
+            : `${dayPhrase} of the second month following each ${pw}`;
         return n === 0 || n > 30 ? `end of each ${pw}` : `day ${n} of each ${pw}`;
       }
       const prefix =
@@ -620,8 +633,14 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             : cycle === 'ANNUAL'
               ? '毎年'
               : '毎月';
-      if (n === 0 || n > 30) return `${prefix}末日`;
-      return `${prefix}${n}日`;
+      const dayLabel = n === 0 || n > 30 ? '末日' : `${n}日`;
+      const tw =
+        t === 'SAME_MONTH' ? '当月' : t === 'NEXT_MONTH' ? '翌月' : t === 'MONTH_AFTER_NEXT' ? '翌々月' : '';
+      if (tw) {
+        const cyclePrefix = !cycle || cycle === 'MONTHLY' ? '' : `${prefix}・`;
+        return `${cyclePrefix}${tw}${dayLabel}払い`;
+      }
+      return `${prefix}${dayLabel}`;
     };
     const dot = isIntl ? ' · ' : '・';
     const sep = isIntl ? ' – ' : ' 〜 ';
@@ -629,7 +648,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
     const noBilling = isIntl ? '(payment day TBD)' : '(支払日未設定)';
     const subSummaryLines = subItems
       .map((it) => {
-        const billing = billingDayDisplay(it.billing_day, it.cycle);
+        const billing = billingDayDisplay(it.billing_day, it.cycle, it.billing_timing);
         const range =
           (it.term_start ? it.term_start : '—') + sep + (it.term_end ? it.term_end : ongoing);
         // 海外発注書のカスタム周期は間隔値から "Every 2 months" 等を組む

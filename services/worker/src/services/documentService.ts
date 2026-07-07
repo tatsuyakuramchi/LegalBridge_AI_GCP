@@ -352,7 +352,11 @@ export class DocumentService {
       return cycle ? String(cycle) : "Periodic";
     });
 
-    Handlebars.registerHelper("billingDayLabel", (day: any, cycle: any) => {
+    //     第3引数 timing (billing_timing: SAME_MONTH/NEXT_MONTH/MONTH_AFTER_NEXT) で
+    //     締めた期の分をどの月に支払うかを明示できる。
+    //     {{billingDayLabel 0 "MONTHLY" "NEXT_MONTH"}} → "翌月末日払い" (月末締め翌月末払い)
+    //     timing 未指定 (または 2 引数呼び) は従来表示のまま。
+    Handlebars.registerHelper("billingDayLabel", (day: any, cycle: any, timing?: any) => {
       if (day === null || day === undefined || day === "") return "";
       const n = Number(day);
       if (Number.isNaN(n)) return "";
@@ -365,8 +369,46 @@ export class DocumentService {
             : c === "ANNUAL"
               ? "毎年"
               : "毎月";
-      if (n === 0 || n > 30) return `${prefix}末日`;
-      return `${prefix}${n}日`;
+      const dayLabel = n === 0 || n > 30 ? "末日" : `${n}日`;
+      // 2引数呼びでは timing に Handlebars options が入るため string のみ採用。
+      const t = typeof timing === "string" ? timing.toUpperCase() : "";
+      const tw =
+        t === "SAME_MONTH" ? "当月" : t === "NEXT_MONTH" ? "翌月" : t === "MONTH_AFTER_NEXT" ? "翌々月" : "";
+      if (tw) {
+        const cyclePrefix = !c || c === "MONTHLY" ? "" : `${prefix}・`;
+        return `${cyclePrefix}${tw}${dayLabel}払い`;
+      }
+      return `${prefix}${dayLabel}`;
+    });
+
+    // 海外発注書用の英語版。billingDayLabel と同仕様 (timing 対応)。
+    //   {{billingDayLabelEn 0 "MONTHLY" "NEXT_MONTH"}} → "end of the following month"
+    Handlebars.registerHelper("billingDayLabelEn", (day: any, cycle: any, timing?: any) => {
+      if (day === null || day === undefined || day === "") return "";
+      const n = Number(day);
+      if (Number.isNaN(n)) return "";
+      const c = String(cycle || "").toUpperCase().replace(/[^A-Z]/g, "");
+      const pw =
+        c === "QUARTERLY"
+          ? "quarter"
+          : c === "SEMIANNUAL"
+            ? "half-year"
+            : c === "ANNUAL"
+              ? "year"
+              : c === "CUSTOM"
+                ? "period"
+                : "month";
+      const dayPhrase = n === 0 || n > 30 ? "end" : `day ${n}`;
+      const t = typeof timing === "string" ? timing.toUpperCase() : "";
+      if (t === "NEXT_MONTH")
+        return pw === "month"
+          ? `${dayPhrase} of the following month`
+          : `${dayPhrase} of the month following each ${pw}`;
+      if (t === "MONTH_AFTER_NEXT")
+        return pw === "month"
+          ? `${dayPhrase} of the second following month`
+          : `${dayPhrase} of the second month following each ${pw}`;
+      return n === 0 || n > 30 ? `end of each ${pw}` : `day ${n} of each ${pw}`;
     });
   }
 
