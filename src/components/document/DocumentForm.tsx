@@ -389,7 +389,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   }, [activeVendor?.vendor_code, templateId, allContracts.length]);
 
   // Part1(共通化): 出版等利用許諾の「対価・支払条件」を共通 FinancialConditionTable に統一。
-  //   個別利用許諾と同じ条件表 UI を使い、紙書籍/電子書籍/翻訳・海外版 を 3 行で表現。
+  //   個別利用許諾と同じ条件表 UI を使い、紙書籍/電子書籍 を表現(翻訳・海外版は二次的著作物として対象外)。
   //   既存doc(旧フラットfield)/新規いずれも、フラットfieldから条件表を一度だけ初期化する。
   //   ※ financial_conditions が既にあれば尊重 (再編集での二重初期化を防止)。
   //   生成時に worker が条件表→flat field {{紙書籍印税率}} 等へ逆展開し PDF テンプレは不変。
@@ -6006,7 +6006,7 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                   variant="default"
                   headerActions={
                     <span className="text-[11px] font-mono text-muted-foreground italic">
-                      条件 1=紙書籍 / 2=電子書籍 / 3=翻訳・海外版 (許諾有無は「許諾内容」で制御)
+                      条件 1=紙書籍 / 2=電子書籍 (許諾有無は「許諾内容」で制御・翻訳は二次的著作物として対象外)
                     </span>
                   }
                 >

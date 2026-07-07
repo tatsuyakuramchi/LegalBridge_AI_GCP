@@ -358,7 +358,6 @@ export function MaterialEntryPanel() {
           紙書籍印税率: paper?.rate_pct || "",
           電子書籍配信許諾有無: digital ? "許諾する" : "許諾しない",
           電子書籍印税率: digital?.rate_pct || "",
-          翻訳海外版許諾有無: "許諾しない",
         },
       }
     }

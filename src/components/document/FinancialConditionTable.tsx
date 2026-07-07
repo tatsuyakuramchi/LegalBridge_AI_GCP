@@ -270,10 +270,10 @@ const DIVISION_PRESETS: Record<"PUB" | "BDG", DivPreset> = {
     periodKindDefault: "MANUFACTURING",
   },
   PUB: {
+    // 翻訳・海外版は二次的著作物として本条件書の対象外(別途)。海外は許諾地域で制御。紙/電子のみ。
     conditions: [
       { no: 1, label: "紙書籍" },
       { no: 2, label: "電子書籍" },
-      { no: 3, label: "翻訳・海外版" },
     ],
     rateLabel: "印税率 (%)",
     basePricePlaceholder: "税抜定価",
