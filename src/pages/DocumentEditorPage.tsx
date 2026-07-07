@@ -395,7 +395,12 @@ export function DocumentEditorPage() {
     }
     if (
       selectedTemplate === "purchase_order" ||
-      (selectedTemplate || "").startsWith("inspection_certificate")
+      (selectedTemplate || "").startsWith("inspection_certificate") ||
+      // 利用許諾条件書(個別/出版)は当社が許諾を受け許諾料を払う = ライセンスイン(in)。
+      //   これらは従来 auto-default 対象外で、請求の向き未選択のため生成ボタンが押せなかった。
+      selectedTemplate === "individual_license_terms" ||
+      selectedTemplate === "pub_license_terms" ||
+      selectedTemplate === "pub_additional_terms"
     ) {
       setSelectedDirection("in")
     }
