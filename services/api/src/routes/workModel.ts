@@ -1683,10 +1683,13 @@ export function registerWorkModelRoutes(
         }
         capabilityId = cap.rows[0].id as number;
         lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
-      } else if (issueDoc || fileLink) {
-        // ②③ マテリアルごとに1文書を発番して器を新規作成(DB登録のみ)。
-        //   出版=ARC-PUBT(publication) / それ以外=ARC-ILT(license)。
-        //   file_link は従前の締結済み契約PDF/Drive URL を document_url に保存する。
+      } else {
+        // ②③④統合: capability_id も document_number も無ければ、常に「実在の条件書」を発番して器を作る。
+        //   旧 MLC 合成器(source_system='master_register')は廃止。MLC は「実在の条件書だけ返す」候補
+        //   リスト(lc-candidates)から除外され is_template 扱いされるため、条件明細・計算書に出なかった。
+        //   ここで発番する器は source_system=NULL / contract_type=NULL / is_active=TRUE / lifecycle_status='final'
+        //   の実条件書として作り、各ビュー・ピッカーに正しく載るようにする。
+        //   出版=ARC-PUBT(publication) / それ以外=ARC-ILT(license)。file_link は従前契約 URL を document_url に保存。
         const numberingType = isPub ? "pub_license_terms" : "individual_license_terms";
         const recordType = isPub ? "publication_condition" : "license_condition";
         const titlePrefix = isPub ? "出版等利用許諾条件(マテリアル登録)" : "個別利用許諾条件(マテリアル登録)";
@@ -1694,8 +1697,9 @@ export function registerWorkModelRoutes(
         await query(
           `INSERT INTO contract_capabilities
              (record_type, contract_category, contract_type, contract_title, document_number,
-              vendor_id, original_work, work_name, contract_status, source_system, document_url)
-           VALUES ($6, $7, 'registered_master', $1, $2, $3, $4, $4, 'executed', 'master_register', $5)`,
+              vendor_id, original_work, work_name, contract_status, source_system, document_url,
+              is_active, lifecycle_status)
+           VALUES ($6, $7, NULL, $1, $2, $3, $4, $4, 'executed', NULL, $5, TRUE, 'final')`,
           [
             `${titlePrefix}: ${sw.rows[0].title ?? ""}`,
             newNo,
@@ -1709,9 +1713,6 @@ export function registerWorkModelRoutes(
         const r = await query(`SELECT id FROM contract_capabilities WHERE document_number = $1`, [newNo]);
         capabilityId = r.rows[0].id as number;
         lineCodePrefix = newNo;
-      } else {
-        capabilityId = await ensureMasterLicenseCapability(query, sw.rows[0]);
-        lineCodePrefix = `MLC-${sw.rows[0].work_code}`;
       }
 
       // 金銭条件は capability_financial_conditions(cfc) VIEW 経由で書く。

@@ -11,7 +11,7 @@
  *   ① 既存文書を検索(DocumentNumberLookup)     → その文書番号の器へ
  *   ③ 文書リンク(従前の締結済み契約 URL)        → ARC-ILT を発番し document_url に保存
  *   ② 発番トグル                                → ARC-ILT を発番(DB登録のみ・PDFなし)
- *   ④ いずれも空                                → 原作ごとの MLC- 器(マスター登録)
+ *   ④ いずれも空                                → 実在の条件書(ARC-ILT/PUBT)を自動発番(合成MLC器は廃止)
  * ①〜③は任意。空入力でも ④ に落ちて必ず登録できる。先頭の金銭条件で器を確定し、
  * 残り行は返却 capability_id を再利用して「1マテリアル=1文書」を守る。
  *
@@ -122,7 +122,6 @@ export function MaterialEntryPanel() {
   const [conds, setConds] = React.useState<CondRow[]>([newCondRow(1)])
 
   const [pickedDoc, setPickedDoc] = React.useState<LookedUpDocument | null>(null)
-  const [issueToggle, setIssueToggle] = React.useState(false)
   const [fileLink, setFileLink] = React.useState("")
   // 文書種別: license=個別利用許諾条件書(ARC-ILT) / publication=出版等利用許諾条件書(ARC-PUBT)。
   //   固定3種の取引形態は出版にも流用(紙自社出版=①/電子出版=②/紙他社出版=③)。器のカテゴリと採番だけ切替。
@@ -165,7 +164,7 @@ export function MaterialEntryPanel() {
     setRightsVendorCode(""); setRightsVendorId(null); setRightsHolderLabel("")
     setIsRoyaltyBearing(true); setScope(""); setRemarks("")
     setConds([newCondRow(1)])
-    setPickedDoc(null); setIssueToggle(false); setFileLink(""); setDocKind("license"); setPdfOutput(false)
+    setPickedDoc(null); setFileLink(""); setDocKind("license"); setPdfOutput(false)
     setPubBaseDoc(null); setPubBaseType("individual")
   }
 
@@ -221,7 +220,7 @@ export function MaterialEntryPanel() {
     setScope(m.scope || "")
     setRemarks(m.remarks || "")
     setConds([]) // 編集では金銭条件は追記のみ。
-    setPickedDoc(null); setIssueToggle(false); setFileLink("")
+    setPickedDoc(null); setFileLink("")
     setView("form")
   }
 
@@ -260,8 +259,8 @@ export function MaterialEntryPanel() {
     if (pickedDoc?.document_number) return { document_number: pickedDoc.document_number }
     const link = fileLink.trim()
     if (link) return { issue_document: true, file_link: link, doc_kind: docKind }
-    if (issueToggle) return { issue_document: true, doc_kind: docKind }
-    return {}
+    // 既存文書なし → 常に実在の条件書を発番(出版=ARC-PUBT / その他=ARC-ILT)。doc_kind で種別を渡す。
+    return { doc_kind: docKind }
   }
 
   const postConditions = async (mid: number): Promise<string> => {
@@ -489,7 +488,7 @@ export function MaterialEntryPanel() {
         let docNumber = ""
         if (conds.length > 0) docNumber = await postConditions(editingId)
         showNotification?.(
-          `更新しました: ${editingCode}${conds.length ? `（金銭条件 ${conds.length} 件を追記 / 文書: ${docNumber || "MLC"}）` : ""}`,
+          `更新しました: ${editingCode}${conds.length ? `（金銭条件 ${conds.length} 件を追記 / 文書: ${docNumber || "発番"}）` : ""}`,
           "success"
         )
       } else {
@@ -505,7 +504,7 @@ export function MaterialEntryPanel() {
         const material = await mRes.json()
         const docNumber = await postConditions(material.id)
         showNotification?.(
-          `マテリアルを登録しました: ${material.material_code}（金銭条件 ${conds.length} 件 / 文書: ${docNumber || "MLC マスター登録"}）`,
+          `マテリアルを登録しました: ${material.material_code}（金銭条件 ${conds.length} 件 / 文書: ${docNumber || "自動発番"}）`,
           "success"
         )
       }
@@ -791,7 +790,7 @@ export function MaterialEntryPanel() {
                     <Field
                       label={`文書（この素材の${docKind === "publication" ? "出版等利用許諾条件書" : "利用許諾条件書"}）`}
                       col="capability_id / document_number"
-                      help={`マテリアル登録＝文書作成。既存があれば検索して紐づけ、無ければ ${docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して新規登録(DB登録のみ・PDFなし)。空なら原作ごとの MLC- 器に登録。`}
+                      help={`マテリアル登録＝文書作成。既存があれば検索して紐づけ、無ければ ${docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を自動発番して実在の条件書として登録(DB登録のみ・PDFなし)。合成MLC器は廃止。`}
                     >
                       <DocumentNumberLookup
                         filterTemplateTypes={docKind === "publication" ? ["pub_license_terms"] : ["individual_license_terms"]}
@@ -810,10 +809,9 @@ export function MaterialEntryPanel() {
                     )}
                     {!pickedDoc && (
                       <>
-                        <label className="flex items-center gap-2 font-mono text-[10px]">
-                          <input type="checkbox" checked={issueToggle} onChange={(e) => setIssueToggle(e.target.checked)} />
-                          見つからなければ <b>{docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を発番して登録</b>（documents 器 + condition_lines を作成）
-                        </label>
+                        <p className="font-mono text-[10px] text-muted-foreground leading-snug">
+                          既存文書を選ばない場合は <b>{docKind === "publication" ? "ARC-PUBT" : "ARC-ILT"} を自動発番</b>して実在の条件書として登録します（条件明細・計算書に反映）。従前契約があれば下に文書リンクを。
+                        </p>
                         <Field label="文書リンク（従前の締結済み契約 PDF・任意）" col="file_link → document_url" help="従前に契約がある場合、締結済み PDF/Drive の URL を貼ると新規 PDF を作らずそのリンクで登録(https:// 始まり)。">
                           <Input value={fileLink} onChange={(e) => setFileLink(e.target.value)} placeholder="https://drive.google.com/…（任意）" className="h-8 text-[12px]" />
                         </Field>
