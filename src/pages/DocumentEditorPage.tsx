@@ -558,6 +558,21 @@ export function DocumentEditorPage() {
         showNotification("Please select a Backlog ticket first.", "error")
         return
       }
+      // バックログ課題の紐づけで、既にプリフィル/入力済みの内容を消さない。
+      //   skipRestore(新規/ハブ由来)は従来どおり base で完全置換。それ以外(課題を後から
+      //   選択・テンプレ紐づけ)は prev の非空値を優先して残し、空欄だけ backlog 補完で埋める。
+      //   ※ 現状バックログ側に自動補完依存が無いため、置換すると入力がリセットされてしまう。
+      const applyForm = (baseObj: Record<string, any>) => {
+        if (skipRestore) { setFormData(baseObj); return }
+        setFormData((prev: any) => {
+          const merged: Record<string, any> = { ...baseObj }
+          for (const [k, v] of Object.entries(prev || {})) {
+            const empty = v == null || v === "" || (Array.isArray(v) && v.length === 0)
+            if (!empty) merged[k] = v
+          }
+          return merged
+        })
+      }
       const issue = issues.find((i) => i.issueKey === key)
 
       // Phase 22.21.79: まず document_drafts (一時保存) を確認。
@@ -625,7 +640,7 @@ export function DocumentEditorPage() {
         //   プリフィルしていたが、新しい文書を作るつもりでも過去内容が黙って
         //   入り込み危ういため撤去。代わりに previousDocument バナーの
         //   「前回内容を引き継ぐ」/「再編集モードで開く」ボタンで明示的に選ぶ。
-        setFormData(base)
+        applyForm(base)
       } catch (e) {
         setPreviousDocument(null)
         if (draft?.form_data && typeof draft.form_data === "object") {
@@ -633,11 +648,11 @@ export function DocumentEditorPage() {
           setFormData(draft.form_data)
           showNotification(`📄 Draft restored (form-context 取得失敗)`, "success")
         } else if (issue) {
-          setFormData({
+          applyForm({
             基本契約名: issue.summary || "",
             remarks: issue.description || "",
           })
-        } else {
+        } else if (skipRestore) {
           setFormData({})
         }
       }
