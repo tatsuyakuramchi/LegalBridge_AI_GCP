@@ -1714,38 +1714,48 @@ export function registerWorkModelRoutes(
         lineCodePrefix = `MLC-${sw.rows[0].work_code}`;
       }
 
-      // 地域・言語: 指定があれば cfc を作り source_condition_id に使う(グラフの territory 引用元)。
-      let sourceConditionId: number | null = null;
+      // 金銭条件は capability_financial_conditions(cfc) VIEW 経由で書く。
+      //   0101 のスキーマ単純化で cfc は condition_lines(WHERE legacy_role='cfc') の互換 VIEW になり、
+      //   INSERT は cfc_ins トリガが legacy_role='cfc' 付きの正準 condition_line を作る。これにより
+      //   金銭条件検索(/api/financial-conditions/search)・条件明細ビュー・利用許諾料計算に載る。
+      //   ※ 直接 condition_lines へ書くと legacy_role が付かず cfc VIEW に映らないため不可(旧実装のバグ)。
+      //   素材連動は source_material_id で保持(トリガが source_work_id を素材から解決)。
       const territory = b.region_territory ? String(b.region_territory) : null;
       const language = b.region_language ? String(b.region_language) : null;
-      if (territory || language) {
-        const label = [territory, language].filter(Boolean).join("・");
-        const cfc = await query(
-          `INSERT INTO capability_financial_conditions
-             (capability_id, condition_no, region_territory, region_language, region_language_label)
-           SELECT $1,
-                  COALESCE((SELECT MAX(condition_no) + 1 FROM capability_financial_conditions WHERE capability_id = $1), 1),
-                  $2, $3, $4
-           RETURNING id`,
-          [capabilityId, territory, language, label || null]
-        );
-        sourceConditionId = cfc.rows[0].id as number;
-      }
-
-      // line_no = 器内 max+1(現行採番)。line_code = '<文書番号>-L<line_no>'。
+      const regionLabel = [territory, language].filter(Boolean).join("・") || null;
+      const calcMethod =
+        scheme === "royalty" ? "ROYALTY"
+        : scheme === "subscription" ? "SUBSCRIPTION"
+        : scheme === "per_unit" ? "PER_UNIT"
+        : scheme === "installment" ? "INSTALLMENT"
+        : "FIXED";
+      const isRoyaltyLike = scheme === "royalty" || scheme === "subscription";
       const ins = await query(
-        `INSERT INTO condition_lines
-           (capability_id, line_no, line_code, subject, direction, transaction_kind,
-            payment_scheme, amount_ex_tax, rate_pct, mg_amount, ag_amount, rights_attribution,
-            term_start, term_end, notes, source_work_id, source_material_id, source_condition_id, work_id)
-         SELECT $1, ln, $2 || '-L' || ln, $3, 'payable', 'license',
-                $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULL
-           FROM (SELECT COALESCE(MAX(line_no), 0) + 1 AS ln FROM condition_lines WHERE capability_id = $1) q
-         RETURNING id, line_code`,
+        `INSERT INTO capability_financial_conditions (
+           capability_id, condition_no, condition_name, region_language_label,
+           calc_method, calc_type, rate_pct, mg_amount, ag_amount, unit_amount,
+           currency, base_price_label, region_territory, region_language,
+           source_material_id, updated_at
+         )
+         SELECT $1,
+                COALESCE((SELECT MAX(condition_no) + 1 FROM capability_financial_conditions WHERE capability_id = $1), 1),
+                $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP
+         RETURNING id, condition_no`,
         [
-          capabilityId, lineCodePrefix, b.subject ?? null, scheme, amount, rate, mg, ag,
-          b.rights_attribution ?? null, b.term_start ?? null, b.term_end ?? null, b.notes ?? null,
-          id, mid, sourceConditionId,
+          capabilityId,
+          b.subject ?? b.condition_name ?? null,
+          regionLabel,
+          calcMethod,
+          b.calc_type ? String(b.calc_type) : null,
+          isRoyaltyLike ? rate : null,
+          isRoyaltyLike ? mg : null,
+          isRoyaltyLike ? ag : null,
+          isRoyaltyLike ? null : amount, // 固定額は unit_amount へ(cfc_ins が amount_ex_tax を導出)
+          b.currency ?? "JPY",
+          b.base_price_label ?? null,
+          territory,
+          language,
+          mid,
         ]
       );
       // capability_id / document_number も返す。フォームは先頭の金銭条件でこれを受け取り、
@@ -1753,7 +1763,8 @@ export function registerWorkModelRoutes(
       res.status(201).json({
         ok: true,
         id: ins.rows[0].id,
-        line_code: ins.rows[0].line_code,
+        condition_no: ins.rows[0].condition_no,
+        line_code: `${lineCodePrefix}-L${ins.rows[0].condition_no}`,
         capability_id: capabilityId,
         document_number: lineCodePrefix,
       });

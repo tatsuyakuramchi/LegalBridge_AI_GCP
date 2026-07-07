@@ -272,7 +272,10 @@ export function MaterialEntryPanel() {
       const deal = V3_FIXED_DEALS.find((d) => d.id === c.dealId) || V3_FIXED_DEALS[0]
       const body: Record<string, any> = {
         payment_scheme: "royalty",
-        subject: deal.name,
+        subject: deal.name, // condition_name = 取引形態名
+        calc_type: deal.calc_type, // 計算モデル(BASE_QTY_RATE 等)を cfc に保持
+        base_price_label: deal.basePrice || null,
+        currency: c.currency || "JPY",
         rate_pct: c.rate_pct || null,
         mg_amount: c.mg_amount || null,
         ag_amount: c.ag_amount || null,
