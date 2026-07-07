@@ -1082,31 +1082,19 @@ export function registerWorkModelRoutes(
                 COALESCE(wm.rights_holder_vendor_id, mc.rights_holder_vendor_id) AS effective_rights_holder_vendor_id,
                 COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder_label,
                 COALESCE(v.vendor_name, cv.vendor_name) AS effective_rights_holder_name,
-                c.condition_no AS license_condition_no,
-                sli.item_name AS service_line_name,
-                sli.amount_ex_tax AS service_line_amount,
-                scc.document_number AS service_doc_number,
-                COALESCE(sli.status_flags->>'inspection_issued','') = 'true' AS service_inspection_issued,
-                COALESCE(sli_dli.inspected_amount, 0) AS service_inspected_amount,
-                CASE
-                  WHEN sli.id IS NULL THEN NULL
-                  WHEN COALESCE(sli_dli.inspected_amount,0) <= 0 THEN 'pending'
-                  WHEN COALESCE(sli.amount_ex_tax,0) > 0
-                       AND COALESCE(sli_dli.inspected_amount,0) >= COALESCE(sli.amount_ex_tax,0) THEN 'accepted'
-                  ELSE 'partial'
-                END AS service_inspection_status
+                -- スキーマ単純化(0101)で work_materials.license_condition_id / service_line_item_id は
+                --   廃止済み。由来リンク由来の派生フィールドはレスポンス形状維持のため NULL 固定にする。
+                NULL::int AS license_condition_no,
+                NULL::text AS service_line_name,
+                NULL::numeric AS service_line_amount,
+                NULL::text AS service_doc_number,
+                NULL::boolean AS service_inspection_issued,
+                0 AS service_inspected_amount,
+                NULL::text AS service_inspection_status
            FROM work_materials wm
            LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
            LEFT JOIN material_categories mc ON mc.id = wm.category_id
            LEFT JOIN vendors cv ON cv.id = mc.rights_holder_vendor_id
-           LEFT JOIN capability_financial_conditions c ON c.id = wm.license_condition_id
-           LEFT JOIN capability_line_items sli ON sli.id = wm.service_line_item_id
-           LEFT JOIN contract_capabilities scc ON scc.id = sli.capability_id
-           LEFT JOIN LATERAL (
-             SELECT SUM(d.inspected_amount_ex_tax) AS inspected_amount
-               FROM delivery_line_items d
-              WHERE d.capability_line_item_id = sli.id
-           ) sli_dli ON TRUE
           WHERE wm.work_id = $1
           ORDER BY COALESCE(mc.sort_order, 99), wm.material_no NULLS LAST, wm.id ASC`,
         [id]
@@ -1194,13 +1182,14 @@ export function registerWorkModelRoutes(
       // Category(2): genre から (work_id, genre) カテゴリを get-or-create し紐付け。
       const categoryId = await ensureMaterialCategory(query, id, mt);
       // material_no / material_code({work_code}-NNN) を採番して挿入。
+      // 0101 で license_condition_id / service_line_item_id は廃止。列参照を外す。
       const r = await query(
         `INSERT INTO work_materials (
            work_id, material_name, material_type, material_role, rights_type, rights_holder_vendor_id,
-           rights_holder_label, is_royalty_bearing, license_condition_id, service_line_item_id,
-           scope, remarks, acquisition_type, category_id, material_no, material_code, is_default
+           rights_holder_label, is_royalty_bearing, scope, remarks, acquisition_type, category_id,
+           material_no, material_code, is_default
          )
-         SELECT $1,$2,$3,$13,$4,$5,$6,COALESCE($7,FALSE),$8,$9,$10,$11,$12,$14,
+         SELECT $1,$2,$3,$4,$5,$6,$7,COALESCE($8,FALSE),$9,$10,$11,$12,
                 nextno.n,
                 w.work_code || '-' || lpad(nextno.n::text, 3, '0'),
                 FALSE
@@ -1211,10 +1200,9 @@ export function registerWorkModelRoutes(
           WHERE w.id = $1
          RETURNING *`,
         [
-          id, b.material_name ?? null, mt, b.rights_type ?? null,
+          id, b.material_name ?? null, mt, role, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
-          b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, acq, role, categoryId,
+          b.is_royalty_bearing ?? null, b.scope ?? null, b.remarks ?? null, acq, categoryId,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -1552,9 +1540,9 @@ export function registerWorkModelRoutes(
         //     material_code を補完。金銭条件は持たない(＝取り込み後に新規入力)。
         const deliverableRows = await query(
           `SELECT 'po_deliverable'              AS source,
-                  wm.material_code,
-                  COALESCE(wm.material_name, cli.item_name) AS material_name,
-                  vh.vendor_name                 AS rights_holder,
+                  NULL::text                     AS material_code,
+                  cli.item_name                  AS material_name,
+                  NULL::text                     AS rights_holder,
                   NULL::int AS source_condition_id,
                   NULL::text AS condition_name,
                   cli.rate_pct, NULL::numeric AS mg_amount, NULL::numeric AS ag_amount,
@@ -1566,8 +1554,6 @@ export function registerWorkModelRoutes(
              FROM capability_line_items cli
              JOIN contract_capabilities cc
                ON cc.id = cli.capability_id AND cc.record_type = 'purchase_order'
-             LEFT JOIN work_materials wm ON wm.service_line_item_id = cli.id
-             LEFT JOIN vendors vh ON vh.id = wm.rights_holder_vendor_id
             WHERE cc.document_number ILIKE '%' || $1 || '%'
             ORDER BY cli.line_no, cli.id`,
           [doc]
@@ -1977,18 +1963,18 @@ export function registerWorkModelRoutes(
       const wr = await query(`SELECT work_id FROM work_materials WHERE id = $1`, [mid]);
       const wmWorkId = wr.rows[0]?.work_id ? Number(wr.rows[0].work_id) : null;
       const categoryId = wmWorkId ? await ensureMaterialCategory(query, wmWorkId, mt) : null;
+      // 0101 で license_condition_id / service_line_item_id は廃止。列参照を外す。
       const r = await query(
         `UPDATE work_materials SET
-            material_name = $2, material_type = $3, material_role = $12, rights_type = $4,
+            material_name = $2, material_type = $3, material_role = $10, rights_type = $4,
             rights_holder_vendor_id = $5, rights_holder_label = $6,
-            is_royalty_bearing = COALESCE($7,FALSE), license_condition_id = $8,
-            service_line_item_id = $9, scope = $10, remarks = $11, category_id = $13, updated_at = now()
+            is_royalty_bearing = COALESCE($7,FALSE), scope = $8, remarks = $9,
+            category_id = $11, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
           mid, b.material_name ?? null, mt, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
-          b.is_royalty_bearing ?? null, b.license_condition_id ?? null,
-          b.service_line_item_id ?? null, b.scope ?? null, b.remarks ?? null, role, categoryId,
+          b.is_royalty_bearing ?? null, b.scope ?? null, b.remarks ?? null, role, categoryId,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
