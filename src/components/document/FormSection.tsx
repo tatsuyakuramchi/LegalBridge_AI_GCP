@@ -13,14 +13,26 @@ interface FormSectionProps {
   id?: string;
 }
 
-const ACCENTS: Record<NonNullable<FormSectionProps['variant']>, string> = {
-  blue: 'before:bg-cyan-600',
-  amber: 'before:bg-amber-600',
-  emerald: 'before:bg-emerald-600',
-  indigo: 'before:bg-indigo-600',
-  cyan: 'before:bg-cyan-500',
-  red: 'before:bg-red-600',
-  default: 'before:bg-foreground',
+// 新デザイン: 色付き上ボーダーのカード(SchemaDocumentForm の FkSection と統一)。
+//   ※ ボディは従来と同じ 3 カラムグリッドを維持し、既存の col-span-full(明細表・
+//     注記など)がそのまま全幅で効くようにする(レイアウト非破壊)。
+const TOP: Record<NonNullable<FormSectionProps['variant']>, string> = {
+  blue: 'border-t-sky-500',
+  amber: 'border-t-amber-500',
+  emerald: 'border-t-emerald-500',
+  indigo: 'border-t-indigo-500',
+  cyan: 'border-t-cyan-500',
+  red: 'border-t-rose-500',
+  default: 'border-t-foreground/40',
+};
+const TITLE: Record<NonNullable<FormSectionProps['variant']>, string> = {
+  blue: 'text-sky-600',
+  amber: 'text-amber-600',
+  emerald: 'text-emerald-600',
+  indigo: 'text-indigo-600',
+  cyan: 'text-cyan-600',
+  red: 'text-rose-600',
+  default: 'text-foreground',
 };
 
 export const FormSection: React.FC<FormSectionProps> = ({
@@ -36,17 +48,15 @@ export const FormSection: React.FC<FormSectionProps> = ({
     <section
       id={id}
       className={cn(
-        'relative bg-card border border-border rounded-md overflow-hidden',
-        // Left accent bar via ::before
-        'before:absolute before:left-0 before:top-0 before:h-full before:w-0.5',
-        ACCENTS[variant],
+        'rounded-xl border border-border border-t-[3px] bg-card overflow-hidden',
+        TOP[variant],
         className
       )}
     >
-      <header className="flex items-center justify-between gap-2 px-5 py-3 border-b border-border bg-muted/40">
+      <header className="flex items-center justify-between gap-2 px-5 py-3 border-b border-border">
         <div className="flex items-center gap-2.5 min-w-0">
-          {icon && <span className="text-muted-foreground shrink-0">{icon}</span>}
-          <h3 className="text-[11px] font-mono font-bold uppercase tracking-[0.18em] truncate">
+          {icon && <span className={cn('shrink-0', TITLE[variant])}>{icon}</span>}
+          <h3 className={cn('text-[12px] font-mono font-bold tracking-[0.08em] truncate', TITLE[variant])}>
             {title}
           </h3>
         </div>
