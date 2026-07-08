@@ -1,6 +1,6 @@
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { ShoppingCart, X, GitMerge, Loader2, Crown, Trash2, ExternalLink } from "lucide-react"
+import { ShoppingCart, X, GitMerge, Loader2, Crown, Trash2, ExternalLink, FolderPlus, Link2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { NativeSelect } from "@/components/ui/native-select"
 import { IssuePicker } from "@/src/components/IssuePicker"
+import { EntitySearchSelect } from "@/src/components/search/EntitySearch"
 import { useAppData } from "@/src/context/AppDataContext"
 import { useMergeCart } from "@/src/context/MergeCartContext"
 
@@ -22,10 +23,15 @@ export function MergeCartPanel() {
   const { issues, refreshIssues, showNotification } = useAppData()
   const cart = useMergeCart()
 
+  // パネルの用途: 統合(重複整理) / 案件へ紐づけ(束ねて案件化)。
+  const [panelMode, setPanelMode] = React.useState<"merge" | "matter">("merge")
   const [mode, setMode] = React.useState<"child" | "delete">("child")
   const [moveData, setMoveData] = React.useState(true)
   const [reason, setReason] = React.useState("")
   const [merging, setMerging] = React.useState(false)
+  // 案件モード: 新規案件名 と 実行中フラグ。
+  const [matterTitle, setMatterTitle] = React.useState("")
+  const [linking, setLinking] = React.useState(false)
 
   // 表示はカート投入時のスナップショットより最新の issues を優先する。
   const enriched = cart.items.map((item) => {
@@ -92,6 +98,109 @@ export function MergeCartPanel() {
     }
   }
 
+  // 案件モード: 👑(target)= 新規案件の「主要課題」。未選択なら先頭を主要課題にする。
+  const primaryKey = target ?? enriched[0]?.issueKey ?? null
+  const canLinkMatter = !linking && enriched.length >= 1
+
+  // 案件モードに入ったら、主要課題の件名を新規案件名の初期値にする(未入力時のみ)。
+  React.useEffect(() => {
+    if (panelMode !== "matter") return
+    if (matterTitle.trim()) return
+    const primarySummary = enriched.find((i) => i.issueKey === primaryKey)?.summary || ""
+    if (primarySummary) setMatterTitle(primarySummary)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelMode, primaryKey])
+
+  // カートの1課題を案件へ紐づける(POST /api/matters/:id/issues)。失敗した issueKey を返す。
+  const linkIssueToMatter = async (
+    matterId: number,
+    it: { issueKey: string; summary: string },
+    relation: "primary" | "related"
+  ): Promise<string | null> => {
+    try {
+      const res = await fetch(`/api/matters/${matterId}/issues`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          backlog_issue_key: it.issueKey,
+          relation,
+          summary_snapshot: it.summary || null,
+        }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d?.ok === false) throw new Error(d?.error || `HTTP ${res.status}`)
+      return null
+    } catch {
+      return it.issueKey
+    }
+  }
+
+  // 新規案件を作成し、カートの全課題を束ねる(主要課題=👑、他=関連)。
+  const createMatterFromCart = async () => {
+    const title = matterTitle.trim()
+    if (!title) {
+      showNotification?.("案件名を入力してください", "error")
+      return
+    }
+    if (!primaryKey) return
+    setLinking(true)
+    try {
+      const res = await fetch("/api/matters", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title, primary_issue_key: primaryKey, status: "open" }),
+      })
+      const d = await res.json()
+      if (!res.ok || !d?.ok) throw new Error(d?.error || "案件の作成に失敗しました")
+      const matterId = Number(d.matter.id)
+      // 主要課題以外を関連課題として紐づけ。
+      const others = enriched.filter((i) => i.issueKey !== primaryKey)
+      const failed: string[] = []
+      for (const it of others) {
+        const f = await linkIssueToMatter(matterId, it, "related")
+        if (f) failed.push(f)
+      }
+      showNotification?.(
+        `案件を作成し ${others.length - failed.length + 1}/${enriched.length} 件を束ねました${failed.length ? `（紐づけ失敗 ${failed.length} 件: ${failed.join(", ")}）` : ""}`,
+        failed.length ? "error" : "success"
+      )
+      cart.clear()
+      cart.setOpen(false)
+      setMatterTitle("")
+      navigate(`/matters/${matterId}`)
+    } catch (e: any) {
+      showNotification?.(`案件の作成に失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setLinking(false)
+    }
+  }
+
+  // 既存案件へカートの全課題を関連課題として紐づける。
+  const linkExistingFromCart = async (matterId: number) => {
+    if (!matterId || enriched.length === 0) return
+    setLinking(true)
+    try {
+      const failed: string[] = []
+      for (const it of enriched) {
+        const f = await linkIssueToMatter(matterId, it, "related")
+        if (f) failed.push(f)
+      }
+      showNotification?.(
+        `${enriched.length - failed.length}/${enriched.length} 件を既存案件へ紐づけました${failed.length ? `（失敗 ${failed.length} 件: ${failed.join(", ")}）` : ""}`,
+        failed.length ? "error" : "success"
+      )
+      if (failed.length === 0) {
+        cart.clear()
+        cart.setOpen(false)
+      }
+      navigate(`/matters/${matterId}`)
+    } catch (e: any) {
+      showNotification?.(`紐づけに失敗しました: ${e?.message || e}`, "error")
+    } finally {
+      setLinking(false)
+    }
+  }
+
   // カートが空でパネルも閉じているときは何も出さない。
   if (cart.items.length === 0 && !cart.open) return null
 
@@ -149,8 +258,43 @@ export function MergeCartPanel() {
           </div>
 
           <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3">
+            {/* 用途トグル: 統合(重複整理) / 案件へ紐づけ(束ねて案件化)。 */}
+            <div className="grid grid-cols-2 gap-1 rounded-md border border-border p-0.5 bg-muted/30">
+              {([
+                { k: "merge", label: "統合", icon: GitMerge },
+                { k: "matter", label: "案件へ紐づけ", icon: FolderPlus },
+              ] as const).map((t) => {
+                const Icon = t.icon
+                const active = panelMode === t.k
+                return (
+                  <button
+                    key={t.k}
+                    type="button"
+                    onClick={() => setPanelMode(t.k)}
+                    className={cn(
+                      "inline-flex items-center justify-center gap-1.5 rounded-[5px] py-1.5 text-[11px] font-mono font-bold transition-colors",
+                      active
+                        ? "bg-foreground text-background"
+                        : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Icon className="h-3.5 w-3.5" />
+                    {t.label}
+                  </button>
+                )
+              })}
+            </div>
+
             <p className="text-[10px] font-mono text-muted-foreground leading-relaxed">
-              重複/誤起票の課題を籠に集め、<Crown className="inline h-3 w-3 text-amber-600" /> で「残す課題(統合先)」を選ぶと、他の課題がそこへ統合されます。
+              {panelMode === "merge" ? (
+                <>
+                  重複/誤起票の課題を籠に集め、<Crown className="inline h-3 w-3 text-amber-600" /> で「残す課題(統合先)」を選ぶと、他の課題がそこへ統合されます。
+                </>
+              ) : (
+                <>
+                  籠に集めた課題を1つの案件に束ねます。<Crown className="inline h-3 w-3 text-amber-600" /> は新規作成時の「主要課題」になります（既存案件へはすべて関連課題として紐づきます）。
+                </>
+              )}
             </p>
 
             {/* パネル内からの追加 (キー手入力ではなく検索で) */}
@@ -208,7 +352,13 @@ export function MergeCartPanel() {
                               {item.statusName}
                             </Badge>
                           )}
-                          {isTarget ? (
+                          {panelMode === "matter" ? (
+                            isTarget ? (
+                              <span className="text-[9px] font-mono text-amber-700 font-bold">主要課題</span>
+                            ) : (
+                              <span className="text-[9px] font-mono text-muted-foreground">関連課題として紐づけ</span>
+                            )
+                          ) : isTarget ? (
                             <span className="text-[9px] font-mono text-amber-700 font-bold">残す(統合先)</span>
                           ) : (
                             <span className="text-[9px] font-mono text-muted-foreground">統合されて{mode === "delete" ? "削除" : "終結"}</span>
@@ -230,48 +380,102 @@ export function MergeCartPanel() {
               </div>
             )}
 
-            {enriched.length === 1 && (
+            {panelMode === "merge" && enriched.length === 1 && (
               <p className="text-[10px] font-mono text-amber-700">
                 統合にはもう1件以上必要です。統合相手の課題を追加してください。
               </p>
             )}
 
-            {/* オプション */}
-            <div className="space-y-2 border-t border-dashed border-border pt-3">
-              <div className="space-y-1">
-                <Label className="text-[11px]">統合元(残さない側)の処理</Label>
-                <NativeSelect value={mode} onChange={(e) => setMode(e.target.value as "child" | "delete")}>
-                  <option value="child">子課題化＋終結（非破壊・推奨）</option>
-                  <option value="delete">Backlog から削除（不可逆）</option>
-                </NativeSelect>
-                <p className="text-[10px] text-muted-foreground">
-                  {mode === "delete"
-                    ? "統合元は完全に削除されます。統合先にコメントのみ残ります。"
-                    : "統合元を統合先の子課題にし「終結」にします。履歴が残ります。"}
-                </p>
+            {/* 統合オプション (統合モードのみ) */}
+            {panelMode === "merge" && (
+              <div className="space-y-2 border-t border-dashed border-border pt-3">
+                <div className="space-y-1">
+                  <Label className="text-[11px]">統合元(残さない側)の処理</Label>
+                  <NativeSelect value={mode} onChange={(e) => setMode(e.target.value as "child" | "delete")}>
+                    <option value="child">子課題化＋終結（非破壊・推奨）</option>
+                    <option value="delete">Backlog から削除（不可逆）</option>
+                  </NativeSelect>
+                  <p className="text-[10px] text-muted-foreground">
+                    {mode === "delete"
+                      ? "統合元は完全に削除されます。統合先にコメントのみ残ります。"
+                      : "統合元を統合先の子課題にし「終結」にします。履歴が残ります。"}
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-[11px]">
+                  <input type="checkbox" checked={moveData} onChange={(e) => setMoveData(e.target.checked)} />
+                  紐づく文書・明細を統合先へ引き継ぐ（推奨）
+                </label>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">理由（任意）</Label>
+                  <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="重複起票のため 等" />
+                </div>
               </div>
-              <label className="flex items-center gap-2 text-[11px]">
-                <input type="checkbox" checked={moveData} onChange={(e) => setMoveData(e.target.checked)} />
-                紐づく文書・明細を統合先へ引き継ぐ（推奨）
-              </label>
-              <div className="space-y-1">
-                <Label className="text-[11px]">理由（任意）</Label>
-                <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="重複起票のため 等" />
+            )}
+
+            {/* 案件へ紐づけ (案件モードのみ): 既存案件検索。新規作成はフッタで。 */}
+            {panelMode === "matter" && (
+              <div className="space-y-2 border-t border-dashed border-border pt-3">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-1.5 text-[11px] font-mono font-bold">
+                    <Link2 className="h-3.5 w-3.5 text-sky-600" />
+                    既存案件へ紐づけ
+                  </div>
+                  <EntitySearchSelect
+                    entity="matter"
+                    onSelect={(o) => {
+                      if (o && canLinkMatter) void linkExistingFromCart(Number(o.id))
+                    }}
+                    placeholder="案件を検索して選ぶと即紐づけ"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    選択すると、カートの {enriched.length} 件すべてを関連課題としてその案件に束ねます。
+                  </p>
+                </div>
               </div>
-            </div>
+            )}
           </div>
 
-          {/* フッタ: 実行プレビュー + 実行 */}
+          {/* フッタ: モード別の実行 */}
           <div className="border-t border-border px-3 py-2.5 space-y-2">
-            {canMerge && (
-              <p className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed">
-                {sources.map((s) => s.issueKey).join(", ")} → <span className="font-bold text-amber-700">{target}</span> へ統合
-              </p>
+            {panelMode === "merge" ? (
+              <>
+                {canMerge && (
+                  <p className="text-[10px] font-mono text-muted-foreground break-all leading-relaxed">
+                    {sources.map((s) => s.issueKey).join(", ")} → <span className="font-bold text-amber-700">{target}</span> へ統合
+                  </p>
+                )}
+                <Button size="sm" className="w-full gap-1.5" disabled={!canMerge} onClick={doMerge}>
+                  {merging ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitMerge className="h-3.5 w-3.5" />}
+                  {merging ? "統合中…" : `統合を実行（${sources.length} 件 → ${target || "未選択"}）`}
+                </Button>
+              </>
+            ) : (
+              <>
+                <div className="space-y-1">
+                  <Label className="text-[11px]">新規案件名（主要課題: {primaryKey || "—"}）</Label>
+                  <Input
+                    value={matterTitle}
+                    onChange={(e) => setMatterTitle(e.target.value)}
+                    placeholder="例: 株式会社〇〇 ライセンス案件"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && canLinkMatter) {
+                        e.preventDefault()
+                        void createMatterFromCart()
+                      }
+                    }}
+                  />
+                </div>
+                <Button
+                  size="sm"
+                  className="w-full gap-1.5"
+                  disabled={!canLinkMatter || !matterTitle.trim()}
+                  onClick={() => void createMatterFromCart()}
+                >
+                  {linking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FolderPlus className="h-3.5 w-3.5" />}
+                  {linking ? "処理中…" : `新規案件を作成して束ねる（${enriched.length} 件）`}
+                </Button>
+              </>
             )}
-            <Button size="sm" className="w-full gap-1.5" disabled={!canMerge} onClick={doMerge}>
-              {merging ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <GitMerge className="h-3.5 w-3.5" />}
-              {merging ? "統合中…" : `統合を実行（${sources.length} 件 → ${target || "未選択"}）`}
-            </Button>
           </div>
         </div>
       )}
