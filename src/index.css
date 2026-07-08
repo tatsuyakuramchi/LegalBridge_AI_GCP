@@ -65,7 +65,8 @@
   --secondary: 36 25% 92%;
   --secondary-foreground: 30 20% 18%;
   --muted: 36 20% 94%;
-  --muted-foreground: 30 8% 42%;
+  /* ユニバーサルデザイン: 補助テキストのコントラストを引き上げ(42%→34%)。 */
+  --muted-foreground: 30 10% 34%;
   --accent: 36 25% 88%;
   --accent-foreground: 30 20% 18%;
   --destructive: 8 70% 45%;
@@ -97,7 +98,8 @@
   --secondary: 220 14% 14%;
   --secondary-foreground: 130 25% 85%;
   --muted: 220 14% 12%;
-  --muted-foreground: 130 12% 62%;
+  /* ユニバーサルデザイン: 暗色時の補助テキストを明るく(62%→72%)。 */
+  --muted-foreground: 130 12% 72%;
   --accent: 220 14% 16%;
   --accent-foreground: 130 30% 88%;
   --destructive: 0 75% 55%;
@@ -405,4 +407,28 @@
   background-color: hsl(var(--popover));
   color: hsl(var(--popover-foreground));
   border-color: hsl(var(--border));
+}
+
+/* ============================================================================
+   ユニバーサルデザイン(全画面一括): 視認性の底上げ。
+   - 極小文字の下限を引き上げ(8〜11px の任意サイズを 11.5〜12.5px に floor)。
+   - 全角ALLCAPS見出しの過剰トラッキングを緩和して和文を読みやすく。
+   非レイヤー(unlayered)＋ !important で Tailwind 任意値ユーティリティより優先。
+   フォント指定のみ変更し、余白・高さ・色は各コンポーネントのまま(レイアウト非破壊寄り)。
+   ============================================================================ */
+:where(.text-\[8px\], .text-\[8\.5px\], .text-\[9px\], .text-\[9\.5px\]) {
+  font-size: 11.5px !important;
+}
+:where(.text-\[10px\], .text-\[10\.5px\], .text-\[11px\]) {
+  font-size: 12px !important;
+}
+:where(.text-\[11\.5px\], .text-\[12px\]) {
+  font-size: 12.5px !important;
+}
+/* 過剰な字間(≥0.14em)を 0.06em に抑えて可読性を確保(特に日本語混在の見出し)。 */
+:where(
+  .tracking-\[0\.14em\], .tracking-\[0\.16em\], .tracking-\[0\.18em\],
+  .tracking-\[0\.2em\], .tracking-\[0\.22em\], .tracking-\[0\.24em\]
+) {
+  letter-spacing: 0.06em !important;
 }
