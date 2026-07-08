@@ -28,6 +28,7 @@ import { query } from "./src/lib/db.ts";
 import { registerContractsV2 } from "./src/routes/contractsV2.ts";
 // 新スキーマ(work-centric)read API。/api/v3/*。
 import { registerWorkModelRoutes } from "./src/routes/workModel.ts";
+import { registerEntityMergeRoutes } from "./src/routes/entityMerge.ts";
 import { registerRelatedPartyReads } from "./src/routes/relatedPartyReads.ts";
 import * as contractCheckService from "./src/services/contractCheckService.ts";
 import {
@@ -3611,6 +3612,16 @@ async function startServer() {
       requireAppRole({ resourceLabel: "v3:write", allowedRoles: ["admin"], renderErrorPage }),
     ],
     // B1: read は IAP 認証で固める(全社参照だが要ログイン)。
+    requireRead: [requireIapUser({ renderErrorPage })],
+  });
+  // ID統合(マージ)モジュール。/api/v3/merge/*。重複統合で外部キーを付替え孤立を防ぐ。
+  //   書込(付替え/削除)は v3 と同じ admin 必須。preview も安全のため write 認証に揃える。
+  registerEntityMergeRoutes(app, {
+    query,
+    requireWrite: [
+      requireIapUser({ renderErrorPage }),
+      requireAppRole({ resourceLabel: "merge:write", allowedRoles: ["admin"], renderErrorPage }),
+    ],
     requireRead: [requireIapUser({ renderErrorPage })],
   });
 
