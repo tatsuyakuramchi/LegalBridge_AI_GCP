@@ -38,40 +38,41 @@ interface NavGroup {
 
 // データ構造刷新: タスク指向に再編。日次フロー(Operate)を業務順に並べ、
 //   検収待ちは「条件明細」ハブの検収待ちタブへ集約したのでトップから除去。
+// メニューは日本語で統一(英日混在を解消)。
 const groups: NavGroup[] = [
   {
-    label: "Overview",
+    label: "概要",
     items: [
-      { to: "/", label: "Dashboard", icon: LayoutDashboard, description: "Overview", end: true },
+      { to: "/", label: "ダッシュボード", icon: LayoutDashboard, description: "全体の概況", end: true },
     ],
   },
   {
-    label: "Operate",
+    label: "業務",
     items: [
-      { to: "/requests", label: "Requests", icon: Inbox, description: "Backlog" },
-      { to: "/matters", label: "案件", icon: FolderKanban, description: "課題(重複/部分)・文書・送信・条件を1案件で総合管理" },
+      { to: "/requests", label: "依頼", icon: Inbox, description: "Backlog 連携の依頼" },
+      { to: "/matters", label: "案件", icon: FolderKanban, description: "課題・文書・送信・条件を1案件で管理" },
       { to: "/condition-lines", label: "条件明細", icon: ListChecks, description: "消化・残高 / 検収待ち / 検索" },
-      { to: "/excel-batches", label: "Excel Export", icon: FileSpreadsheet, description: "未発行 検収/許諾" },
-      { to: "/archive", label: "Archive", icon: Archive, description: "Concluded" },
+      { to: "/excel-batches", label: "Excel出力", icon: FileSpreadsheet, description: "未発行 検収 / 許諾" },
+      { to: "/archive", label: "アーカイブ", icon: Archive, description: "完了分" },
     ],
   },
   {
-    label: "Create",
+    label: "作成",
     items: [
-      { to: "/documents/new", label: "New Document", icon: FilePlus2, description: "Generate" },
-      { to: "/imports", label: "Imports", icon: Database, description: "Past docs → DB" },
-      { to: "/data-import", label: "CSV 取込 (全テーブル)", icon: Database, description: "Schema-driven CSV" },
+      { to: "/documents/new", label: "文書作成", icon: FilePlus2, description: "文書・法務レビューの作成" },
+      { to: "/imports", label: "過去文書取込", icon: Database, description: "過去文書 → DB" },
+      { to: "/data-import", label: "CSV取込（全テーブル）", icon: Database, description: "スキーマ駆動 CSV" },
     ],
   },
   {
-    label: "Configuration",
+    label: "設定",
     items: [
       // 作品統合: 原作 / 自社作品 / 派生 を 3カードで一元管理 (work-3card-unified-editor-spec)
       { to: "/works", label: "作品管理", icon: Network, description: "原作 / 作品 / 派生" },
-      { to: "/master", label: "Masters", icon: Building2, description: "Vendors / Staff / Contracts" },
-      { to: "/templates", label: "Templates", icon: FileCode2, description: "Blueprint studio" },
-      { to: "/data-linkage", label: "連結チェック", icon: Link2, description: "データ整合性 点検/修復" },
-      { to: "/settings", label: "Settings", icon: SettingsIcon, description: "System" },
+      { to: "/master", label: "マスタ", icon: Building2, description: "取引先 / 担当者 / 契約" },
+      { to: "/templates", label: "テンプレート", icon: FileCode2, description: "ひな型スタジオ" },
+      { to: "/data-linkage", label: "連結チェック", icon: Link2, description: "データ整合性 点検 / 修復" },
+      { to: "/settings", label: "設定", icon: SettingsIcon, description: "システム" },
     ],
   },
 ]
@@ -81,8 +82,8 @@ const groups: NavGroup[] = [
 //   が設定されているときだけ表示する。
 const PORTAL_BASE = String((import.meta as any).env?.VITE_API_READ_URL || "").replace(/\/+$/, "")
 const portalLinks = [
-  { href: "/search/vendor", label: "Search Portal", description: "取引先・契約 検索" },
-  { href: "/templates/preview", label: "Template Preview", description: "ひな型プレビュー" },
+  { href: "/search/vendor", label: "検索ポータル", description: "取引先・契約 検索" },
+  { href: "/templates/preview", label: "ひな型プレビュー", description: "テンプレート確認" },
 ]
 
 export function Sidebar() {
@@ -111,7 +112,7 @@ export function Sidebar() {
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 custom-scrollbar">
         {groups.map((group) => (
           <div key={group.label} className="space-y-1.5">
-            <p className="px-2 text-xs font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="px-2 text-[11px] font-mono font-bold tracking-[0.08em] text-muted-foreground">
               ░ {group.label}
             </p>
             <ul className="space-y-0.5">
@@ -135,7 +136,7 @@ export function Sidebar() {
                       }
                     >
                       <Icon className="h-4 w-4 shrink-0" />
-                      <span className="flex-1 font-bold uppercase tracking-[0.1em]">
+                      <span className="flex-1 font-bold tracking-[0.02em]">
                         {item.label}
                       </span>
                       {(isActive) && (
@@ -143,7 +144,7 @@ export function Sidebar() {
                       )}
                     </NavLink>
                     {item.description && (
-                      <p className="ml-9 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground/60">
+                      <p className="ml-9 text-[10px] font-mono tracking-[0.02em] text-muted-foreground/60">
                         {item.description}
                       </p>
                     )}
@@ -157,8 +158,8 @@ export function Sidebar() {
         {/* 統合 Phase 1: search-api 検索ポータルへの外部リンク */}
         {PORTAL_BASE && (
           <div className="space-y-1.5">
-            <p className="px-2 text-xs font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground">
-              ░ Search Portal
+            <p className="px-2 text-[11px] font-mono font-bold tracking-[0.08em] text-muted-foreground">
+              ░ 検索ポータル
             </p>
             <ul className="space-y-0.5">
               {portalLinks.map((item) => (
@@ -170,12 +171,12 @@ export function Sidebar() {
                     className="group relative flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-mono text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
                   >
                     <Search className="h-4 w-4 shrink-0" />
-                    <span className="flex-1 font-bold uppercase tracking-[0.1em]">
+                    <span className="flex-1 font-bold tracking-[0.02em]">
                       {item.label}
                     </span>
                     <ExternalLink className="h-3 w-3 opacity-60" />
                   </a>
-                  <p className="ml-9 text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground/60">
+                  <p className="ml-9 text-[10px] font-mono tracking-[0.02em] text-muted-foreground/60">
                     {item.description}
                   </p>
                 </li>
@@ -187,17 +188,17 @@ export function Sidebar() {
 
       {/* Footer status */}
       <div className="border-t border-border p-3 space-y-1.5">
-        <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.16em]">
+        <div className="flex items-center justify-between text-[11px] font-mono tracking-[0.04em]">
           <span className="text-muted-foreground">▍ Backlog</span>
-          <span className="text-emerald-600 font-bold">Online</span>
+          <span className="text-emerald-600 font-bold">稼働中</span>
         </div>
-        <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.16em]">
+        <div className="flex items-center justify-between text-[11px] font-mono tracking-[0.04em]">
           <span className="text-muted-foreground">▍ Drive</span>
-          <span className="text-emerald-600 font-bold">Active</span>
+          <span className="text-emerald-600 font-bold">有効</span>
         </div>
-        <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-[0.16em]">
+        <div className="flex items-center justify-between text-[11px] font-mono tracking-[0.04em]">
           <span className="text-muted-foreground">▍ Identity</span>
-          <span className="text-amber-600 font-bold">Sync</span>
+          <span className="text-amber-600 font-bold">同期中</span>
         </div>
       </div>
     </aside>

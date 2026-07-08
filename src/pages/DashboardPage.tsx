@@ -84,11 +84,11 @@ export function DashboardPage() {
             </p>
           </div>
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={() => navigate("/documents/new")}>
+            <Button size="sm" onClick={() => navigate("/documents/new")}>
               <FilePlus2 /> 文書を作成
             </Button>
             <Button variant="outline" size="sm" onClick={refreshDashboardStats} disabled={isRefreshingStats}>
-              <RefreshCw className={isRefreshingStats ? "animate-spin" : ""} /> Sync
+              <RefreshCw className={isRefreshingStats ? "animate-spin" : ""} /> 更新
             </Button>
           </div>
         </header>
@@ -105,7 +105,7 @@ export function DashboardPage() {
                 <button
                   key={f.en}
                   onClick={() => navigate(f.to)}
-                  className={`group text-left rounded-xl border border-border border-t-[3px] ${TOP[f.accent]} bg-card p-4 hover:shadow-sm hover:border-foreground/30 transition-all`}
+                  className={`group text-left rounded-xl border border-border border-t-[3px] ${TOP[f.accent]} bg-card p-4 hover:bg-muted/40 hover:border-foreground/30 transition-colors`}
                 >
                   <div className="flex items-center justify-between">
                     <span className={`font-mono text-[11px] font-bold ${TXT[f.accent]}`}>{f.n} {f.label}</span>
@@ -159,7 +159,7 @@ export function DashboardPage() {
                   <button
                     key={`stats-${issue.issueKey || idx}-${idx}`}
                     onClick={() => openIssue(issue.issueKey)}
-                    className="group w-full text-left flex items-center justify-between gap-4 px-4 py-3 bg-card border border-border rounded-xl hover:border-foreground hover:shadow-sm transition-all"
+                    className="group w-full text-left flex items-center justify-between gap-4 px-4 py-3 bg-card border border-border rounded-xl hover:border-foreground/50 hover:bg-muted/40 transition-colors"
                   >
                     <div className="flex items-center gap-4 min-w-0">
                       <span
