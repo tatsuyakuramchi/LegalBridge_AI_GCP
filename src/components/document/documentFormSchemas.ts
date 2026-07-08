@@ -13,6 +13,7 @@ import { maintenanceSpecBuilder } from "./schemas/maintenanceSpec";
 import { inspectionCertificateBuilder } from "./schemas/inspectionCertificate";
 import { royaltyStatementBuilder } from "./schemas/royaltyStatement";
 import { purchaseOrderBuilder } from "./schemas/purchaseOrder";
+import { individualLicenseTermsBuilder } from "./schemas/individualLicenseTerms";
 
 // group メタから順序付きの {group→fieldIds} を得る(hidden 除外)。
 function groupList(metadata: any): { order: string[]; groups: Record<string, string[]> } {
@@ -290,6 +291,9 @@ const REGISTRY: Record<string, SchemaBuilder> = {
   // バッチ8: 発注書。独自レイアウトを bare セクションへ移設(明細サマリ集計 effect は
   //   intl 発注書と共有のため DocumentForm に残す)。
   purchase_order: (metadata) => purchaseOrderBuilder(metadata),
+  // バッチ9: 個別利用許諾条件書。ウィザード/マテリアルプール/v3マトリクスを bare セクションへ移設
+  //   (v3_conds 初期化 effect・worksList fetch は DocumentForm に残す)。
+  individual_license_terms: (metadata) => individualLicenseTermsBuilder(metadata),
 };
 
 export function isSchemaMigrated(templateId: string): boolean {

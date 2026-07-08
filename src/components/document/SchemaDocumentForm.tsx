@@ -27,6 +27,10 @@ export type FkCtx = {
   combineVendorAlias?: boolean;
   /** 明細/条件の作品割当セレクタ用の作品候補(発注書で使用)。DocumentForm が worksList から整形。 */
   workOptions?: Array<{ id: number; work_code?: string | undefined; title?: string | undefined }>;
+  /** 作品一覧(個別利用許諾条件書の対象作品ピッカーで使用)。DocumentForm が保持・fetch。 */
+  worksList?: any[];
+  /** 作品一覧の更新(個別利用許諾でその場作成した作品を即時反映)。 */
+  setWorksList?: (list: any[]) => void;
 };
 
 export type FkSectionSchema = {
