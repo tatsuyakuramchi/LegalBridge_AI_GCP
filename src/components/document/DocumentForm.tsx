@@ -1255,17 +1255,19 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         LICENSOR_IS_CORPORATION: true,
       });
 
-    const fillLicensorFromPartner = () => {
-      if (!activeVendor) return;
+    // 任意の取引先 v から Licensor を充填。[取引先]ボタンとフォーム内検索補完で共用。
+    const fillLicensorFrom = (v: any) => {
+      if (!v) return;
       setFormData({
         ...formData,
-        Licensor_名称: activeVendor.vendor_name || '',
-        Licensor_住所: activeVendor.address || '',
-        Licensor_氏名会社名: activeVendor.trade_name || activeVendor.vendor_name || '',
-        Licensor_代表者名: activeVendor.vendor_rep || activeVendor.contact_name || '',
-        LICENSOR_IS_CORPORATION: isCorporation(activeVendor),
+        Licensor_名称: v.vendor_name || '',
+        Licensor_住所: v.address || '',
+        Licensor_氏名会社名: v.trade_name || v.vendor_name || '',
+        Licensor_代表者名: v.vendor_rep || v.contact_name || '',
+        LICENSOR_IS_CORPORATION: isCorporation(v),
       });
     };
+    const fillLicensorFromPartner = () => fillLicensorFrom(activeVendor);
 
     const fillLicenseeFromSelf = () =>
       setFormData({
@@ -1277,17 +1279,18 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         LICENSEE_IS_CORPORATION: true,
       });
 
-    const fillLicenseeFromPartner = () => {
-      if (!activeVendor) return;
+    const fillLicenseeFrom = (v: any) => {
+      if (!v) return;
       setFormData({
         ...formData,
-        Licensee_名称: activeVendor.vendor_name || '',
-        Licensee_住所: activeVendor.address || '',
-        Licensee_氏名会社名: activeVendor.trade_name || activeVendor.vendor_name || '',
-        Licensee_代表者名: activeVendor.vendor_rep || activeVendor.contact_name || '',
-        LICENSEE_IS_CORPORATION: isCorporation(activeVendor),
+        Licensee_名称: v.vendor_name || '',
+        Licensee_住所: v.address || '',
+        Licensee_氏名会社名: v.trade_name || v.vendor_name || '',
+        Licensee_代表者名: v.vendor_rep || v.contact_name || '',
+        LICENSEE_IS_CORPORATION: isCorporation(v),
       });
     };
+    const fillLicenseeFromPartner = () => fillLicenseeFrom(activeVendor);
 
     const fillStaffAsSupervisor = () => {
       if (!selectedStaff) return;
@@ -1981,6 +1984,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               </>
             }
           >
+            <div className="col-span-full space-y-1">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                取引先を検索して許諾者を充填（DB検索補完）
+              </label>
+              <EntitySearchSelect entity="vendor" onSelect={(o) => o && fillLicensorFrom(o.raw)} placeholder="取引先を検索（名称 / コード）" />
+            </div>
             {renderGroup('II. Licensor (許諾者)')}
           </FormSection>
 
@@ -1995,6 +2004,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
               </>
             }
           >
+            <div className="col-span-full space-y-1">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                取引先を検索して被許諾者を充填（DB検索補完）
+              </label>
+              <EntitySearchSelect entity="vendor" onSelect={(o) => o && fillLicenseeFrom(o.raw)} placeholder="取引先を検索（名称 / コード）" />
+            </div>
             {renderGroup('III. Licensee (被許諾者)')}
           </FormSection>
         </div>
@@ -5285,19 +5300,20 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
         PARTY_A_NAME: companyProfile.name || formData.PARTY_A_NAME || '',
       });
     };
-    const fillVendorFromPartner = () => {
-      if (!activeVendor) return;
+    const fillVendorFrom = (v: any) => {
+      if (!v) return;
       const isCorp =
-        (activeVendor.entity_type || '').toLowerCase() === 'corporate' ||
-        activeVendor.entity_type === '法人';
+        (v.entity_type || '').toLowerCase() === 'corporate' ||
+        v.entity_type === '法人';
       setFormData({
         ...formData,
         // 法人なら正式商号、個人なら屋号/筆名/氏名の優先順
         VENDOR_NAME: isCorp
-          ? activeVendor.vendor_name || ''
-          : individualVendorName(activeVendor, combineVendorAlias),
+          ? v.vendor_name || ''
+          : individualVendorName(v, combineVendorAlias),
       });
     };
+    const fillVendorFromPartner = () => fillVendorFrom(activeVendor);
     const sideButton = (label: string, onClick: () => void, disabled: boolean) => (
       <button
         type="button"
@@ -5357,6 +5373,12 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 });
               }}
             />
+          </div>
+          <div className="col-span-full space-y-1">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              取引先を検索して受託者名を充填（DB検索補完）
+            </label>
+            <EntitySearchSelect entity="vendor" onSelect={(o) => o && fillVendorFrom(o.raw)} placeholder="取引先を検索（名称 / コード）" />
           </div>
           {renderGroup('I. ヘッダ')}
         </FormSection>
@@ -6021,6 +6043,32 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 選択中の基本契約番号: {formData['基本契約番号']}
               </p>
             )}
+          </div>
+
+          {/* 統一検索モジュール: 許諾者(取引先)を検索して名称/住所/代表者/コードを充填。 */}
+          <div className="col-span-full space-y-1 mt-3">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              許諾者(取引先)を検索して充填（DB検索補完）
+            </label>
+            <EntitySearchSelect
+              entity="vendor"
+              placeholder="取引先を検索（名称 / コード）"
+              onSelect={(o) => {
+                if (!o) return;
+                const v = o.raw || {};
+                const isCorp = (v.entity_type || '').toLowerCase() === 'corporate' || v.entity_type === '法人';
+                const rep = v.vendor_rep || v.contact_name || '';
+                setFormData({
+                  ...formData,
+                  vendor_code: v.vendor_code || formData.vendor_code || '',
+                  許諾者: v.vendor_name || '',
+                  許諾者住所: v.address || '',
+                  許諾者代表者: rep,
+                  許諾者種別: isCorp ? '法人' : '個人',
+                  ...(isCorp ? { 許諾者法人名: v.vendor_name || '' } : { 許諾者氏名: v.vendor_name || '' }),
+                });
+              }}
+            />
           </div>
         </FormSection>
       )}
