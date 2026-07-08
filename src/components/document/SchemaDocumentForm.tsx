@@ -31,6 +31,8 @@ export type FkSectionSchema = {
   actions?: React.ReactNode;
   /** マスタDB検索補完(担当者/取引先/原作/原作マテリアル/作品)。fieldIds より前に描画。 */
   searches?: FkSearch[];
+  /** 自社(companyProfile)からの充填ボタン。map: 充填先formDataキー → companyProfile のキー。 */
+  selfFills?: Array<{ label?: string; map: Record<string, string> }>;
   /** このセクションに載せるフィールド(templates_config の変数キー)。 */
   fieldIds?: string[];
   /** 特殊 UI を差し込む(条件表・マスタ検索 等)。searches の後・fieldIds の前に描画。 */
@@ -82,13 +84,40 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
       )}
       {schema.sections.map((sec, i) => {
         const fields = (sec.fieldIds || []).filter((id) => (ctx.metadata?.vars || {})[id] != null || true);
+        const selfBtns = (sec.selfFills || []).length > 0 && (
+          <span className="flex flex-wrap gap-1.5">
+            {sec.selfFills!.map((sf, si) => (
+              <button
+                key={si}
+                type="button"
+                disabled={!ctx.companyProfile}
+                onClick={() => {
+                  const cp = ctx.companyProfile || {};
+                  const patch: Record<string, any> = {};
+                  Object.entries(sf.map).forEach(([k, src]) => {
+                    const v = cp[src];
+                    if (v !== undefined && v !== null && v !== "") patch[k] = v;
+                  });
+                  if (Object.keys(patch).length) ctx.setFormData({ ...ctx.formData, ...patch });
+                }}
+                title={ctx.companyProfile ? "自社(企業プロフィール)から充填" : "企業プロフィール未設定"}
+                className="text-[10px] font-mono border border-border px-2 py-0.5 uppercase rounded disabled:opacity-40 hover:bg-muted"
+              >
+                {sf.label || "自社を充填"}
+              </button>
+            ))}
+          </span>
+        );
+        const actions = sec.actions || selfBtns ? (
+          <span className="flex items-center gap-2">{sec.actions}{selfBtns}</span>
+        ) : undefined;
         return (
           <FkSection
             key={sec.title || i}
             title={sec.title || `セクション ${i + 1}`}
             accent={sec.accent || FK_ACCENTS[i % FK_ACCENTS.length]}
             subtitle={sec.subtitle}
-            actions={sec.actions}
+            actions={actions}
           >
             {sec.searches && sec.searches.length > 0 && (
               <div className="space-y-3">
