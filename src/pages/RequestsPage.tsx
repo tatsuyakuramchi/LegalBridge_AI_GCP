@@ -99,27 +99,27 @@ export function RequestsPage() {
     <div className="px-6 py-6 max-w-[1400px] mx-auto space-y-6">
       <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
         <div>
-          <p className="retro-tag mb-1.5">REQ · INDEX</p>
+          <p className="retro-tag mb-1.5">REQ · 一覧</p>
           <h2 className="text-2xl font-mono font-bold tracking-tight">
-            Backlog Requests
+            依頼一覧（Backlog）
           </h2>
-          <p className="text-xs font-mono text-muted-foreground mt-1.5">
-            Real-time index of project-management tickets requiring legal output.
+          <p className="text-[13px] font-mono text-muted-foreground mt-1.5">
+            法務対応が必要な依頼をリアルタイムに一覧表示します。
           </p>
           {batch.length > 0 && (
-            <div className="mt-3 flex items-center gap-3">
-              <Badge variant="default" className="h-5">
-                {batch.length} selected
+            <div className="mt-3 flex items-center gap-3 flex-wrap">
+              <Badge variant="default" className="h-6 px-2.5">
+                {batch.length} 件選択
               </Badge>
               <Button
                 size="sm"
                 variant="outline"
                 onClick={() => {
-                  // Light-weight batch start: open editor for the first
+                  // 先頭の課題を開く(簡易一括)
                   open(batch[0])
                 }}
               >
-                Open with {selectedTemplate}
+                先頭を開く
               </Button>
               <Button
                 size="sm"
@@ -141,7 +141,7 @@ export function RequestsPage() {
                 統合カートへ
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setBatch([])}>
-                Clear
+                クリア
               </Button>
             </div>
           )}
@@ -162,7 +162,7 @@ export function RequestsPage() {
             <Search className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               type="search"
-              placeholder="Filter by key or title…"
+              placeholder="キー / 件名 で検索…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="pl-8"
@@ -170,7 +170,7 @@ export function RequestsPage() {
           </div>
           {/* 完了/終結/キャンセル の表示切替 (デフォルト: 非表示) */}
           <label
-            className="flex items-center gap-1.5 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground cursor-pointer select-none"
+            className="flex items-center gap-1.5 text-[12px] font-mono text-muted-foreground hover:text-foreground cursor-pointer select-none"
             title="完了・終結・キャンセルの課題を一覧に含めるか"
           >
             <input
@@ -197,8 +197,8 @@ export function RequestsPage() {
           ALL + 各ステータス名(件数) をクリックで絞り込み。選択中は緑塗り。
           0 件のステータスは出さない (= statusBuckets で既に集計済み)。 */}
       {statusBuckets.length > 0 && (
-        <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono uppercase tracking-[0.16em]">
-          <span className="text-muted-foreground">Status:</span>
+        <div className="flex items-center gap-2 flex-wrap text-[12px] font-mono">
+          <span className="text-muted-foreground">ステータス:</span>
           <button
             type="button"
             onClick={() => setStatusFilter(null)}
@@ -242,10 +242,10 @@ export function RequestsPage() {
       )}
 
       {filtered.length === 0 ? (
-        <div className="p-16 text-center border border-dashed border-border rounded-md">
+        <div className="p-16 text-center border border-dashed border-border rounded-xl">
           <Inbox className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
-            No tickets match.
+          <p className="text-[13px] font-mono text-muted-foreground">
+            該当する依頼はありません。
           </p>
         </div>
       ) : (
@@ -264,7 +264,7 @@ export function RequestsPage() {
             return (
               <Card
                 key={`req-${issue.issueKey || idx}`}
-                className={`group cursor-pointer transition-all hover:border-foreground hover:shadow-md ${
+                className={`group cursor-pointer transition-colors hover:border-foreground/50 hover:bg-muted/30 ${
                   isBatched ? "ring-2 ring-foreground" : ""
                 }`}
                 onClick={() => open(issue.issueKey)}
@@ -282,14 +282,14 @@ export function RequestsPage() {
                           ? "bg-foreground border-foreground"
                           : "border-border hover:border-foreground"
                       } transition-colors`}
-                      aria-label="Add to batch"
-                      title="Add to batch"
+                      aria-label="一括選択に追加"
+                      title="一括選択に追加"
                     />
                   </div>
                   <h3 className="text-sm font-mono font-bold leading-snug line-clamp-2">
                     {issue.summary}
                   </h3>
-                  <div className="flex items-center gap-3 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+                  <div className="flex items-center gap-3 text-[11px] font-mono text-muted-foreground">
                     <span
                       className="flex items-center gap-1"
                       title={requesterStaff?.email || requesterSlackId || undefined}
@@ -334,7 +334,7 @@ export function RequestsPage() {
                             ? mergeCart.remove(issue.issueKey)
                             : mergeCart.add(cartItemOf(issue))
                         }
-                        className={`inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] transition-colors border px-1.5 py-0.5 rounded-sm ${
+                        className={`inline-flex items-center gap-1 text-[11px] font-mono transition-colors border px-2 py-1 rounded-md ${
                           mergeCart.has(issue.issueKey)
                             ? "border-emerald-600 text-emerald-700 bg-emerald-500/10 hover:bg-emerald-500/20"
                             : "border-border text-muted-foreground hover:text-foreground hover:border-foreground"
@@ -351,7 +351,7 @@ export function RequestsPage() {
                       <button
                         type="button"
                         onClick={() => openQuickCreate(issue.issueKey)}
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-1.5 py-0.5 rounded-sm"
+                        className="inline-flex items-center gap-1 text-[11px] font-mono text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                         title={`${issue.issueKey} の子課題を起案`}
                       >
                         <GitBranch className="h-3 w-3" />
@@ -360,9 +360,9 @@ export function RequestsPage() {
                       <button
                         type="button"
                         onClick={() => open(issue.issueKey)}
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+                        className="inline-flex items-center gap-1 text-[11px] font-mono font-semibold text-foreground/80 hover:text-foreground transition-colors"
                       >
-                        Open in editor
+                        開く
                         <ArrowRight className="h-3.5 w-3.5" />
                       </button>
                     </div>
