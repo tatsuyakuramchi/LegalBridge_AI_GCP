@@ -369,32 +369,32 @@ export function ConditionLinesPage() {
       </header>
 
       {/* フィルタチップ */}
-      <div className="flex items-center gap-2 flex-wrap text-[10px] font-mono uppercase tracking-[0.16em]">
-        <span className="text-muted-foreground">Status:</span>
+      <div className="flex items-center gap-2 flex-wrap text-[12px] font-mono">
+        <span className="text-muted-foreground">ステータス:</span>
         <button
           type="button"
           onClick={() => setStatusFilter(null)}
-          className={`px-2 py-1 rounded-sm border ${statusFilter === null ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground"}`}
+          className={`px-2.5 py-1 rounded-md border ${statusFilter === null ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground"}`}
         >
-          ALL ({rows.length})
+          すべて ({rows.length})
         </button>
         {statusBuckets.map((b) => (
           <button
             key={b.name}
             type="button"
             onClick={() => setStatusFilter(statusFilter === b.name ? null : b.name)}
-            className={`px-2 py-1 rounded-sm border ${statusFilter === b.name ? "bg-emerald-600 text-white border-emerald-700" : "border-border text-muted-foreground hover:border-foreground"}`}
+            className={`px-2.5 py-1 rounded-md border ${statusFilter === b.name ? "bg-emerald-600 text-white border-emerald-700" : "border-border text-muted-foreground hover:border-foreground"}`}
           >
             {STATUS_LABEL[b.name] || b.name} ({b.count})
           </button>
         ))}
-        <span className="text-muted-foreground ml-3">Dir:</span>
+        <span className="text-muted-foreground ml-3">方向:</span>
         {["payable", "receivable"].map((d) => (
           <button
             key={d}
             type="button"
             onClick={() => setDirFilter(dirFilter === d ? null : d)}
-            className={`px-2 py-1 rounded-sm border ${dirFilter === d ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground"}`}
+            className={`px-2.5 py-1 rounded-md border ${dirFilter === d ? "bg-foreground text-background border-foreground" : "border-border text-muted-foreground hover:border-foreground"}`}
           >
             {d === "payable" ? "支払" : "受取"}
           </button>
@@ -403,14 +403,14 @@ export function ConditionLinesPage() {
         <button
           type="button"
           onClick={() => setInspectionFilter(inspectionFilter === "pending" ? "all" : "pending")}
-          className={`px-2 py-1 rounded-sm border ${inspectionFilter === "pending" ? "bg-amber-500 text-white border-amber-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "pending" ? "bg-amber-500 text-white border-amber-600" : "border-border text-muted-foreground hover:border-foreground"}`}
         >
           検収待ち ({inspectionCounts.pending})
         </button>
         <button
           type="button"
           onClick={() => setInspectionFilter(inspectionFilter === "overdue" ? "all" : "overdue")}
-          className={`px-2 py-1 rounded-sm border ${inspectionFilter === "overdue" ? "bg-red-600 text-white border-red-700" : inspectionCounts.overdue > 0 ? "border-red-400 text-red-600 hover:border-red-600" : "border-border text-muted-foreground hover:border-foreground"}`}
+          className={`px-2.5 py-1 rounded-md border ${inspectionFilter === "overdue" ? "bg-red-600 text-white border-red-700" : inspectionCounts.overdue > 0 ? "border-red-400 text-red-600 hover:border-red-600" : "border-border text-muted-foreground hover:border-foreground"}`}
         >
           期限超過 ({inspectionCounts.overdue})
         </button>
@@ -421,16 +421,16 @@ export function ConditionLinesPage() {
           <Loader2 className="h-5 w-5 mx-auto animate-spin text-muted-foreground" />
         </div>
       ) : filtered.length === 0 ? (
-        <div className="p-16 text-center border border-dashed border-border rounded-md">
+        <div className="p-16 text-center border border-dashed border-border rounded-xl">
           <Inbox className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-          <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
+          <p className="text-[13px] font-mono text-muted-foreground">
             条件明細がありません（新スキーマ未適用の可能性）。
           </p>
         </div>
       ) : (
         <div className="border border-border rounded-md overflow-hidden">
           <table className="w-full text-xs font-mono">
-            <thead className="bg-muted/50 text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
+            <thead className="bg-muted/50 text-[11px] font-bold text-muted-foreground">
               <tr>
                 <Th sk="line_code" label="line_code" />
                 <Th sk="subject" label="件名" />

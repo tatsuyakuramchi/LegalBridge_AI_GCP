@@ -15,7 +15,7 @@ import { ConditionTreePage } from "./ConditionTreePage"
 //   旧ルート(/pending-inspections, /master/conditions)からのリダイレクト先に使う。
 
 const TABS = [
-  { key: "cockpit", label: "Cockpit", sub: "消化・残高", icon: ListChecks },
+  { key: "cockpit", label: "コックピット", sub: "消化・残高", icon: ListChecks },
   { key: "inspections", label: "検収待ち", sub: "発注書→検収書 一括", icon: ClipboardCheck },
   { key: "search", label: "横断検索・編集", sub: "検索 / CSV / 紐付け", icon: Search },
   { key: "tree", label: "ツリー", sub: "作品/原作/取引先/部署 で分類", icon: Network },
@@ -48,15 +48,15 @@ export function ConditionsHubPage() {
                 onClick={() => select(t.key)}
                 aria-selected={isActive}
                 className={cn(
-                  "inline-flex items-center gap-2 px-4 py-2.5 text-[11px] font-mono font-bold uppercase tracking-[0.16em] border-b-2 -mb-px transition-colors whitespace-nowrap",
+                  "inline-flex items-center gap-2 px-4 py-3 text-[13px] font-mono font-bold border-b-2 -mb-px transition-colors whitespace-nowrap",
                   isActive
                     ? "border-foreground text-foreground"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 )}
               >
-                <Icon className="h-3.5 w-3.5" />
+                <Icon className="h-4 w-4" />
                 {t.label}
-                <span className="hidden md:inline text-[10px] font-normal tracking-[0.1em] text-muted-foreground/70 normal-case">
+                <span className="hidden md:inline text-[11px] font-normal text-muted-foreground">
                   {t.sub}
                 </span>
               </button>
