@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
 import { QuickCreateIssueModal } from "@/src/components/backlog/QuickCreateIssueModal"
+import { MatterLinkButton, type LinkedMatter } from "@/src/components/matter/MatterLinkButton"
 import { TERMINAL_OFF_FLOW } from "@/src/lib/statusFlow"
 
 // 完了/終結/キャンセル を「クローズ済み」とみなす。デフォルトで一覧から隠す。
@@ -45,6 +46,36 @@ export function RequestsPage() {
   // 完了/終結/キャンセル をデフォルトで非表示にする。
   //   ステータスチップで明示選択したときは、その絞り込みを優先して表示する。
   const [hideDone, setHideDone] = React.useState(true)
+
+  // 依頼 → 案件の紐づけ状況。案件一覧(GET /api/matters)を1回読み、
+  //   primary_issue_key で「この依頼が主要課題の案件」を引けるマップにする。
+  //   これにより案件化済みの依頼カードは「案件を開く」ピルを表示できる。
+  const [matterByIssue, setMatterByIssue] = React.useState<Map<string, LinkedMatter>>(new Map())
+  const refreshMatters = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/matters")
+      const json = await res.json()
+      const rows: any[] = Array.isArray(json)
+        ? json
+        : json?.matters || json?.rows || json?.items || json?.data || []
+      const map = new Map<string, LinkedMatter>()
+      for (const m of rows) {
+        if (m?.primary_issue_key) {
+          map.set(String(m.primary_issue_key), {
+            id: Number(m.id),
+            matter_code: m.matter_code ?? null,
+            title: m.title ?? null,
+          })
+        }
+      }
+      setMatterByIssue(map)
+    } catch {
+      /* 案件一覧の取得失敗は致命的でない(ボタンは新規作成モードで動作) */
+    }
+  }, [])
+  React.useEffect(() => {
+    void refreshMatters()
+  }, [refreshMatters])
 
   const openQuickCreate = (parentKey?: string) => {
     setQuickCreateParent(parentKey)
@@ -348,6 +379,14 @@ export function RequestsPage() {
                         <ShoppingCart className="h-3 w-3" />
                         {mergeCart.has(issue.issueKey) ? "カート済" : "カート"}
                       </button>
+                      {/* 依頼 → 案件: この依頼から案件を作成 / 既存案件へ紐づけ。
+                          既に主要課題の案件があれば「案件を開く」ピルになる。 */}
+                      <MatterLinkButton
+                        issueKey={issue.issueKey}
+                        summary={issue.summary}
+                        linkedMatter={matterByIssue.get(issue.issueKey) ?? null}
+                        onChanged={() => void refreshMatters()}
+                      />
                       <button
                         type="button"
                         onClick={() => openQuickCreate(issue.issueKey)}

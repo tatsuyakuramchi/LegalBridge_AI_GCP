@@ -44,6 +44,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { WorkflowPanel } from "@/src/components/workflow/WorkflowPanel"
+import { MatterLinkButton, type LinkedMatter } from "@/src/components/matter/MatterLinkButton"
 
 // データ構造刷新 Phase A: 課題詳細ページ。
 //   課題 1 件に紐づく「文書一覧」のみを扱う (進捗・消化状況は条件明細単位の
@@ -148,6 +149,29 @@ export function IssueDetailPage() {
     () => issues.find((i) => i.issueKey === issueKey),
     [issues, issueKey]
   )
+
+  // この課題が主要課題として紐づく案件(あれば「案件を開く」ピルを表示)。
+  //   無ければ MatterLinkButton は「案件へ」(新規作成/既存紐づけ)モードで動く。
+  const [linkedMatter, setLinkedMatter] = React.useState<LinkedMatter>(null)
+  const refreshLinkedMatter = React.useCallback(async () => {
+    if (!issueKey) return
+    try {
+      const res = await fetch("/api/matters")
+      const json = await res.json()
+      const rows: any[] = Array.isArray(json)
+        ? json
+        : json?.matters || json?.rows || json?.items || json?.data || []
+      const m = rows.find((x: any) => String(x?.primary_issue_key || "") === issueKey)
+      setLinkedMatter(
+        m ? { id: Number(m.id), matter_code: m.matter_code ?? null, title: m.title ?? null } : null
+      )
+    } catch {
+      /* 取得失敗は致命的でない */
+    }
+  }, [issueKey])
+  React.useEffect(() => {
+    void refreshLinkedMatter()
+  }, [refreshLinkedMatter])
 
   // 課題統合(重複/誤起票の整理)。籠に集めて統合先を選ぶ方式(MergeCartPanel)。
   const mergeCart = useMergeCart()
@@ -746,6 +770,14 @@ export function IssueDetailPage() {
             <ShoppingCart className="h-3.5 w-3.5" />
             {mergeCart.has(issueKey) ? "統合カート済" : "統合カートへ"}
           </Button>
+          {/* 依頼 → 案件: この依頼から案件を作成 / 既存案件へ紐づけ。
+              既に主要課題の案件があれば「案件を開く」ピルになる。 */}
+          <MatterLinkButton
+            issueKey={issueKey}
+            summary={issue?.summary || issueKey}
+            linkedMatter={linkedMatter}
+            onChanged={() => void refreshLinkedMatter()}
+          />
         </div>
       </header>
 
