@@ -33,6 +33,8 @@ export type FkSectionSchema = {
   searches?: FkSearch[];
   /** 自社(companyProfile)からの充填ボタン。map: 充填先formDataキー → companyProfile のキー。 */
   selfFills?: Array<{ label?: string; map: Record<string, string> }>;
+  /** 任意セクション: <details> で折りたたむ(既定は閉じた状態)。 */
+  collapsible?: boolean;
   /** このセクションに載せるフィールド(templates_config の変数キー)。 */
   fieldIds?: string[];
   /** 特殊 UI を差し込む(条件表・マスタ検索 等)。searches の後・fieldIds の前に描画。 */
@@ -111,14 +113,8 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
         const actions = sec.actions || selfBtns ? (
           <span className="flex items-center gap-2">{sec.actions}{selfBtns}</span>
         ) : undefined;
-        return (
-          <FkSection
-            key={sec.title || i}
-            title={sec.title || `セクション ${i + 1}`}
-            accent={sec.accent || FK_ACCENTS[i % FK_ACCENTS.length]}
-            subtitle={sec.subtitle}
-            actions={actions}
-          >
+        const inner = (
+          <>
             {sec.searches && sec.searches.length > 0 && (
               <div className="space-y-3">
                 {sec.searches.map((sr, si) => (
@@ -140,6 +136,28 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
                 ))}
               </FkGrid>
             )}
+          </>
+        );
+        const accent = sec.accent || FK_ACCENTS[i % FK_ACCENTS.length];
+        if (sec.collapsible) {
+          return (
+            <details key={sec.title || i} className="rounded-xl border border-border border-t-[3px] border-t-border bg-card overflow-hidden">
+              <summary className="cursor-pointer select-none px-5 py-3 font-mono text-[12px] font-bold text-muted-foreground hover:text-foreground">
+                ▶ {sec.title || `セクション ${i + 1}`}（任意）
+              </summary>
+              <div className="px-5 pb-5 pt-1 space-y-4">{inner}</div>
+            </details>
+          );
+        }
+        return (
+          <FkSection
+            key={sec.title || i}
+            title={sec.title || `セクション ${i + 1}`}
+            accent={accent}
+            subtitle={sec.subtitle}
+            actions={actions}
+          >
+            {inner}
           </FkSection>
         );
       })}

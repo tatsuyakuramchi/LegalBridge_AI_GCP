@@ -9,6 +9,7 @@
  * (templates_config.json の変数キーをそのまま並べるだけ)。
  */
 import { autoSectionsFromMetadata, type DocFormSchema, type FkCtx, type FkSectionSchema } from "./SchemaDocumentForm";
+import { maintenanceSpecBuilder } from "./schemas/maintenanceSpec";
 
 // group メタから順序付きの {group→fieldIds} を得る(hidden 除外)。
 function groupList(metadata: any): { order: string[]; groups: Record<string, string[]> } {
@@ -277,6 +278,8 @@ const REGISTRY: Record<string, SchemaBuilder> = {
   sales_master_credit: salesMaster,
   // バッチ3(先行): 海外発注書。国内発注書/検収書は明細連動が重いため別途 custom で移行。
   intl_purchase_order: intlPurchaseOrder,
+  // バッチ5: 保守仕様書(別紙)。動的配列エディタは custom section で再利用。
+  maintenance_spec: (metadata) => maintenanceSpecBuilder(metadata),
 };
 
 export function isSchemaMigrated(templateId: string): boolean {
