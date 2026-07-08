@@ -125,12 +125,14 @@ function LifecycleBadge({ status }: { status?: string }) {
   )
 }
 
-// VendorsPanel の SectionHead を踏襲 (Dialog ではなくページ用)。
+// セクション見出し。可読性重視(11.5px・uppercase排)。端末風の "SEC · NN / " 接頭辞は
+//   視認性のため表示から除去し、日本語ラベルのみをはっきり見せる。
 function SectionHead({ label }: { label: string }) {
+  const clean = label.replace(/^\s*SEC\s*·\s*\d+\s*\/\s*/i, "")
   return (
-    <div className="mt-1 pt-2 border-t border-border">
-      <span className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-foreground/70">
-        {label}
+    <div className="mt-1 pt-2.5 border-t border-border">
+      <span className="text-[11.5px] font-mono font-bold text-foreground/80">
+        {clean}
       </span>
     </div>
   )
@@ -597,10 +599,10 @@ export function IssueDetailPage() {
       <button
         type="button"
         onClick={() => navigate("/requests")}
-        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.18em] text-muted-foreground hover:text-foreground transition-colors"
+        className="inline-flex items-center gap-1.5 text-[12px] font-mono text-muted-foreground hover:text-foreground transition-colors"
       >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Requests に戻る
+        <ArrowLeft className="h-4 w-4" />
+        依頼一覧に戻る
       </button>
 
       {/* ── 統一課題(契約)への導線。この課題が属する新課題へジャンプ ───── */}
@@ -1007,9 +1009,9 @@ export function IssueDetailPage() {
             </p>
           </div>
         ) : docs.length === 0 ? (
-          <div className="p-12 text-center border border-dashed border-border rounded-md">
+          <div className="p-12 text-center border border-dashed border-border rounded-xl">
             <Inbox className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-            <p className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground">
+            <p className="text-[13px] font-mono text-muted-foreground">
               この課題に紐づく文書はまだありません。
             </p>
           </div>
@@ -1057,7 +1059,7 @@ export function IssueDetailPage() {
                         onClick={() =>
                           navigate(`/condition-lines/${encodeURIComponent(d.line_code!)}`)
                         }
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-1.5 py-1 rounded-sm"
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                         title="対応する条件明細を見る"
                       >
                         <ListChecks className="h-3 w-3" />
@@ -1069,7 +1071,7 @@ export function IssueDetailPage() {
                         href={d.drive_link}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-1.5 py-1 rounded-sm"
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                         title="Drive で開く"
                       >
                         <ExternalLink className="h-3 w-3" />
@@ -1080,7 +1082,7 @@ export function IssueDetailPage() {
                       <button
                         type="button"
                         onClick={() => setChooserDoc(d)}
-                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-1.5 py-1 rounded-sm"
+                        className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-emerald-700 dark:text-emerald-300 hover:text-emerald-800 transition-colors border border-emerald-300 hover:border-emerald-500 px-2 py-1 rounded-md"
                         title="この文書を送信（クラウドサイン / メール）"
                       >
                         ✉ 送信
@@ -1089,7 +1091,7 @@ export function IssueDetailPage() {
                     <button
                       type="button"
                       onClick={() => reopen(d.id)}
-                      className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-1.5 py-1 rounded-sm"
+                      className="inline-flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.16em] text-muted-foreground hover:text-foreground transition-colors border border-border hover:border-foreground px-2 py-1 rounded-md"
                       title="この文書を再編集"
                     >
                       <Pencil className="h-3 w-3" />
