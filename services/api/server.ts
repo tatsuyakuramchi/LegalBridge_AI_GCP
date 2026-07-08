@@ -260,6 +260,7 @@ import {
   guidesInCategory as guidesInGuideCategory,
   getGuideByKey as getPortalGuideByKey,
   renderGuideHtml as renderPortalGuideHtml,
+  getGuideRawHtml as getPortalGuideRawHtml,
   listGuidesForAdmin as listPortalGuidesForAdmin,
   listCategoriesForAdmin as listPortalCategoriesForAdmin,
   createCategory as createPortalCategory,
@@ -4570,6 +4571,34 @@ async function startServer() {
         res.json({ ok: true });
       } catch (error: any) {
         res.status(400).json({ ok: false, error: error?.message || String(error) });
+      }
+    }
+  );
+
+  // 現行版の HTML ダウンロード(admin)。原文(GAS 由来・変換前)をそのまま返し、
+  //   ブラウザに添付ファイルとして保存させる(<a href download> で取得)。
+  app.get(
+    "/api/portal/guides/:key/download",
+    requireIapUser({ renderErrorPage }),
+    requireAppRole({ resourceLabel: "api:portal:guides:download", allowedRoles: ["admin"], renderErrorPage }),
+    async (req, res) => {
+      try {
+        const key = String(req.params.key);
+        const raw = await getPortalGuideRawHtml(key);
+        if (!raw) {
+          return res.status(404).json({ ok: false, error: "現行版(本文)がありません" });
+        }
+        const safeKey = key.replace(/[^A-Za-z0-9_-]/g, "_");
+        const filename = `${safeKey}_v${raw.versionNo}.html`;
+        res.setHeader("Content-Type", "text/html; charset=utf-8");
+        res.setHeader(
+          "Content-Disposition",
+          `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+        );
+        res.send(raw.html);
+      } catch (error) {
+        console.error("/api/portal/guides/:key/download failed:", error);
+        res.status(500).json({ ok: false, error: String(error) });
       }
     }
   );

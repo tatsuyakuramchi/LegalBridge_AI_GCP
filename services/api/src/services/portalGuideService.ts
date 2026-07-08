@@ -137,6 +137,31 @@ export async function renderGuideHtml(key: string): Promise<string | null> {
   return renderGuide(rows[0].html_source as string);
 }
 
+/**
+ * 現行版の原文 HTML(html_source)をダウンロード用に返す。
+ *   status に関わらず(準備中でも)current_version があれば取得できる。
+ *   原文は GAS 由来のまま(portalRender 変換前)なので、そのまま再アップロードで往復できる。
+ *   current_version が無い(=まだ本文未投入)なら null。
+ */
+export async function getGuideRawHtml(
+  key: string
+): Promise<{ html: string; versionNo: number; title: string } | null> {
+  const { rows } = await query(
+    `SELECT v.html_source, v.version_no, g.title
+       FROM portal_guides g
+       JOIN portal_guide_versions v ON v.id = g.current_version_id
+      WHERE g.guide_key = $1 AND g.is_active = TRUE
+      LIMIT 1`,
+    [key]
+  );
+  if (!rows[0]) return null;
+  return {
+    html: rows[0].html_source as string,
+    versionNo: Number(rows[0].version_no),
+    title: rows[0].title as string,
+  };
+}
+
 /** 管理画面用の一覧(カテゴリ・版数・現行版・更新日つき)。 */
 export async function listGuidesForAdmin(): Promise<GuideAdminRow[]> {
   const { rows } = await query(
