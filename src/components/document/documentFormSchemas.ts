@@ -10,6 +10,7 @@
  */
 import { autoSectionsFromMetadata, type DocFormSchema, type FkCtx, type FkSectionSchema } from "./SchemaDocumentForm";
 import { maintenanceSpecBuilder } from "./schemas/maintenanceSpec";
+import { inspectionCertificateBuilder } from "./schemas/inspectionCertificate";
 
 // group メタから順序付きの {group→fieldIds} を得る(hidden 除外)。
 function groupList(metadata: any): { order: string[]; groups: Record<string, string[]> } {
@@ -280,6 +281,8 @@ const REGISTRY: Record<string, SchemaBuilder> = {
   intl_purchase_order: intlPurchaseOrder,
   // バッチ5: 保守仕様書(別紙)。動的配列エディタは custom section で再利用。
   maintenance_spec: (metadata) => maintenanceSpecBuilder(metadata),
+  // バッチ6: 検収書。独自レイアウト全体を bare セクションで移設(旧 per-template 分岐と等価)。
+  inspection_certificate: (metadata) => inspectionCertificateBuilder(metadata),
 };
 
 export function isSchemaMigrated(templateId: string): boolean {

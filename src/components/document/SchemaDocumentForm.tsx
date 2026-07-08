@@ -21,6 +21,8 @@ export type FkCtx = {
   companyProfile?: any;
   selectedStaff?: any;
   onSync?: () => void;
+  /** 資産(PO 等)リンク用コールバック(検収書の自由入力フォールバックで使用)。 */
+  onLinkAsset?: (callback: (asset: any) => void) => void;
 };
 
 export type FkSectionSchema = {
@@ -35,6 +37,9 @@ export type FkSectionSchema = {
   selfFills?: Array<{ label?: string; map: Record<string, string> }>;
   /** 任意セクション: <details> で折りたたむ(既定は閉じた状態)。 */
   collapsible?: boolean;
+  /** chrome(FkSection カード/グリッド)を被せず custom をそのまま描画する。
+   *  独自レイアウトを持つ移設フォーム(検収書 等)を丸ごと差し込むための脱出口。 */
+  bare?: boolean;
   /** このセクションに載せるフィールド(templates_config の変数キー)。 */
   fieldIds?: string[];
   /** 特殊 UI を差し込む(条件表・マスタ検索 等)。searches の後・fieldIds の前に描画。 */
@@ -139,6 +144,10 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
           </>
         );
         const accent = sec.accent || FK_ACCENTS[i % FK_ACCENTS.length];
+        if (sec.bare) {
+          // chrome を被せず本体をそのまま描画(独自レイアウトの移設フォーム用)。
+          return <React.Fragment key={sec.title || i}>{sec.custom ? sec.custom(ctx) : inner}</React.Fragment>;
+        }
         if (sec.collapsible) {
           return (
             <details key={sec.title || i} className="rounded-xl border border-border border-t-[3px] border-t-border bg-card overflow-hidden">
