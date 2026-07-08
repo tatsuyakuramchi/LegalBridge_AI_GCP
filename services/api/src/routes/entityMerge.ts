@@ -210,21 +210,40 @@ export function registerEntityMergeRoutes(
       return res.status(400).json({ ok: false, error: "survivor と loser が同一です" });
     }
 
+    const actor =
+      String(
+        (req as any).get?.("x-goog-authenticated-user-email") ||
+          (req as any).user?.email ||
+          b.actor ||
+          ""
+      ).replace(/^accounts\.google\.com:/, "") || null;
+
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       const targets = await buildTargets(cfg, survivorId, loserId);
       const moved: Array<{ table: string; column: string; updated: number }> = [];
       const conflicts: Array<{ table: string; column: string; error: string }> = [];
+      // undo 用: 付け替えた行の PK(id) を記録(id 列を持つ表のみ)。
+      const changes: Array<{ table: string; column: string; pks: any[] | null; loseVal: any; survVal: any; keyType: string }> = [];
 
       for (const t of targets) {
         await client.query("SAVEPOINT s");
         try {
+          // 付け替え前に対象行の id を控える(取消し用)。id 列が無い表は pks=null。
+          let pks: any[] | null = null;
+          try {
+            const sel = await client.query(`SELECT id FROM ${qi(t.table)} WHERE ${qi(t.column)} = $1`, [t.loseVal]);
+            pks = sel.rows.map((x: any) => x.id);
+          } catch {
+            pks = null;
+          }
           const r = await client.query(
             `UPDATE ${qi(t.table)} SET ${qi(t.column)} = $1 WHERE ${qi(t.column)} = $2`,
             [t.survVal, t.loseVal]
           );
           moved.push({ table: t.table, column: t.column, updated: r.rowCount || 0 });
+          if ((r.rowCount || 0) > 0) changes.push({ table: t.table, column: t.column, pks, loseVal: t.loseVal, survVal: t.survVal, keyType: t.keyType });
           await client.query("RELEASE SAVEPOINT s");
         } catch (e: any) {
           // UNIQUE 衝突等: この列だけロールバックして継続(loser 側の衝突行は本体削除まで残置)。
@@ -278,8 +297,14 @@ export function registerEntityMergeRoutes(
       }
 
       // loser 本体を削除(id 基盤の実体のみ。issue は Backlog 側のためローカル削除なし)。
+      //   削除前に loser 行のスナップショットを控える(取消し時の復元用)。
       let deletedLoser = false;
+      let loserSnapshot: any = null;
       if (cfg.table && cfg.pk) {
+        try {
+          const snap = await client.query(`SELECT to_jsonb(t) AS row FROM ${qi(cfg.table)} t WHERE ${qi(cfg.pk)} = $1`, [loserId]);
+          loserSnapshot = snap.rows[0]?.row ?? null;
+        } catch { loserSnapshot = null; }
         await client.query("SAVEPOINT del");
         try {
           const d = await client.query(`DELETE FROM ${qi(cfg.table)} WHERE ${qi(cfg.pk)} = $1`, [loserId]);
@@ -291,6 +316,34 @@ export function registerEntityMergeRoutes(
         }
       }
 
+      // 監査ログを記録(merge_audit 未整備の環境でも失敗させない)。
+      let auditId: number | null = null;
+      try {
+        const ins = await client.query(
+          `INSERT INTO merge_audit
+             (actor, entity, survivor_id, loser_id, survivor_label, loser_label,
+              moved, changes, conflicts, loser_snapshot, deleted_loser)
+           VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8::jsonb,$9::jsonb,$10::jsonb,$11)
+           RETURNING id`,
+          [
+            actor,
+            String(b.entity),
+            String(survivorId),
+            String(loserId),
+            b.survivorLabel ?? null,
+            b.loserLabel ?? null,
+            JSON.stringify(moved.filter((m) => m.updated > 0)),
+            JSON.stringify(changes),
+            JSON.stringify(conflicts),
+            loserSnapshot ? JSON.stringify(loserSnapshot) : null,
+            deletedLoser,
+          ]
+        );
+        auditId = ins.rows[0]?.id ?? null;
+      } catch (auErr) {
+        console.warn("[merge] audit 記録スキップ(merge_audit 未整備?):", auErr);
+      }
+
       await client.query("COMMIT");
       res.json({
         ok: true,
@@ -300,7 +353,85 @@ export function registerEntityMergeRoutes(
         moved: moved.filter((m) => m.updated > 0),
         conflicts,
         deletedLoser,
+        auditId,
       });
+    } catch (e) {
+      await client.query("ROLLBACK").catch(() => {});
+      fail(res, e);
+    } finally {
+      client.release();
+    }
+  });
+
+  // 監査ログ一覧(最新順)。
+  app.get("/api/v3/merge/audit", ...requireRead, async (req, res) => {
+    try {
+      const limit = Math.min(200, Math.max(1, Number(req.query.limit) || 50));
+      const r = await query(
+        `SELECT id, created_at, actor, entity, survivor_id, loser_id, survivor_label, loser_label,
+                moved, conflicts, deleted_loser, undone_at, undo_note
+           FROM merge_audit ORDER BY created_at DESC LIMIT $1`,
+        [limit]
+      );
+      res.json({ ok: true, rows: r.rows });
+    } catch (e) {
+      // テーブル未整備なら空で返す(UI を壊さない)。
+      res.json({ ok: true, rows: [], note: "merge_audit 未整備の可能性: " + String(e) });
+    }
+  });
+
+  // 取消し(best-effort): 記録した pks で参照を loser へ戻し、削除した loser 本体を復元。
+  //   ledger 付替え・pks 未記録(id 列なし)の表・削除された loser 側の衝突行は戻せない場合がある。
+  app.post("/api/v3/merge/undo", ...requireWrite, express.json(), async (req, res) => {
+    const auditId = Number(req.body?.audit_id);
+    if (!Number.isFinite(auditId)) return res.status(400).json({ ok: false, error: "audit_id が必要です" });
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      const a = await client.query(`SELECT * FROM merge_audit WHERE id = $1 FOR UPDATE`, [auditId]);
+      const row = a.rows[0];
+      if (!row) { await client.query("ROLLBACK"); return res.status(404).json({ ok: false, error: "監査ログが見つかりません" }); }
+      if (row.undone_at) { await client.query("ROLLBACK"); return res.status(400).json({ ok: false, error: "既に取消し済みです" }); }
+      const cfg = ENTITIES[String(row.entity)];
+      if (!cfg) { await client.query("ROLLBACK"); return res.status(400).json({ ok: false, error: "unknown entity" }); }
+
+      const notes: string[] = [];
+      // 1) loser 本体を復元(削除していた場合)。jsonb → 行に復元。
+      if (cfg.table && row.deleted_loser && row.loser_snapshot) {
+        await client.query("SAVEPOINT r");
+        try {
+          await client.query(
+            `INSERT INTO ${qi(cfg.table)} SELECT * FROM jsonb_populate_record(NULL::${qi(cfg.table)}, $1::jsonb) ON CONFLICT DO NOTHING`,
+            [JSON.stringify(row.loser_snapshot)]
+          );
+          await client.query("RELEASE SAVEPOINT r");
+        } catch (e: any) {
+          await client.query("ROLLBACK TO SAVEPOINT r");
+          notes.push(`loser 本体の復元に失敗: ${String(e?.message || e)}`);
+        }
+      }
+      // 2) 参照を loser へ戻す(pks が記録されている表のみ)。
+      const changes: any[] = Array.isArray(row.changes) ? row.changes : [];
+      const reverted: Array<{ table: string; column: string; updated: number }> = [];
+      for (const c of changes) {
+        if (!Array.isArray(c.pks) || c.pks.length === 0) { notes.push(`${c.table}.${c.column}: pks 未記録のため戻せません`); continue; }
+        await client.query("SAVEPOINT u");
+        try {
+          const u = await client.query(
+            `UPDATE ${qi(c.table)} SET ${qi(c.column)} = $1 WHERE id = ANY($2)`,
+            [c.loseVal, c.pks]
+          );
+          reverted.push({ table: c.table, column: c.column, updated: u.rowCount || 0 });
+          await client.query("RELEASE SAVEPOINT u");
+        } catch (e: any) {
+          await client.query("ROLLBACK TO SAVEPOINT u");
+          notes.push(`${c.table}.${c.column}: 差し戻し失敗 ${String(e?.message || e)}`);
+        }
+      }
+      const note = notes.join(" / ") || null;
+      await client.query(`UPDATE merge_audit SET undone_at = now(), undo_note = $2 WHERE id = $1`, [auditId, note]);
+      await client.query("COMMIT");
+      res.json({ ok: true, auditId, reverted, note });
     } catch (e) {
       await client.query("ROLLBACK").catch(() => {});
       fail(res, e);
