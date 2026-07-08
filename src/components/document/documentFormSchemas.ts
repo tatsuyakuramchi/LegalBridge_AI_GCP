@@ -12,6 +12,7 @@ import { autoSectionsFromMetadata, type DocFormSchema, type FkCtx, type FkSectio
 import { maintenanceSpecBuilder } from "./schemas/maintenanceSpec";
 import { inspectionCertificateBuilder } from "./schemas/inspectionCertificate";
 import { royaltyStatementBuilder } from "./schemas/royaltyStatement";
+import { purchaseOrderBuilder } from "./schemas/purchaseOrder";
 
 // group メタから順序付きの {group→fieldIds} を得る(hidden 除外)。
 function groupList(metadata: any): { order: string[]; groups: Record<string, string[]> } {
@@ -286,6 +287,9 @@ const REGISTRY: Record<string, SchemaBuilder> = {
   inspection_certificate: (metadata) => inspectionCertificateBuilder(metadata),
   // バッチ7: 利用許諾料計算書。独自レイアウト＋3 effects を bare セクション/モジュールへ移設。
   royalty_statement: (metadata) => royaltyStatementBuilder(metadata),
+  // バッチ8: 発注書。独自レイアウトを bare セクションへ移設(明細サマリ集計 effect は
+  //   intl 発注書と共有のため DocumentForm に残す)。
+  purchase_order: (metadata) => purchaseOrderBuilder(metadata),
 };
 
 export function isSchemaMigrated(templateId: string): boolean {

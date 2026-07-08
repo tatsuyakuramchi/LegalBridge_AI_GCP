@@ -23,6 +23,10 @@ export type FkCtx = {
   onSync?: () => void;
   /** 資産(PO 等)リンク用コールバック(検収書の自由入力フォールバックで使用)。 */
   onLinkAsset?: (callback: (asset: any) => void) => void;
+  /** 個人取引先の宛名に「ペンネーム/屋号 こと 正式名称」を併記するか(発注書で使用)。 */
+  combineVendorAlias?: boolean;
+  /** 明細/条件の作品割当セレクタ用の作品候補(発注書で使用)。DocumentForm が worksList から整形。 */
+  workOptions?: Array<{ id: number; work_code?: string | undefined; title?: string | undefined }>;
 };
 
 export type FkSectionSchema = {
