@@ -49,6 +49,7 @@ import { WorkPicker, toWorkPickerItem } from '@/src/components/work/WorkPicker';
 import { LicenseWizardRail, type WizardStep } from './LicenseWizardRail';
 import { SchemaDocumentForm } from './SchemaDocumentForm';
 import { isSchemaMigrated, buildDocFormSchema } from './documentFormSchemas';
+import { EntitySearchSelect } from '../search/EntitySearch';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -2123,44 +2124,47 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       );
     };
 
-    const fillVendorFromPartner = () => {
-      if (!activeVendor) return;
+    // Phase(統一検索): 任意の取引先 v から発注先を充填する。[取引先]ボタンと
+    //   フォーム内の取引先検索補完(EntitySearch)の双方から使う(同一挙動)。
+    const fillVendorFrom = (v: any) => {
+      if (!v) return;
       // Phase 17h: 法人/個人 を判定して VENDOR_IS_CORPORATION も同期
-      const isCorp = isCorporation(activeVendor);
+      const isCorp = isCorporation(v);
       // 代表者名: vendor_rep を優先し、未設定なら legacy の contact_name に
       //   フォールバック(ライセンサー取込と同方針)。
-      const repName = activeVendor.vendor_rep || activeVendor.contact_name || '';
+      const repName = v.vendor_rep || v.contact_name || '';
       setFormData({
         ...formData,
         // Phase 17o: VENDOR_CODE を必ず同期する。
         //   これが無いと worker 側の contract_capabilities ミラー時に
         //   vendor_id が解決できず、法務検索（個別契約）に PO が
         //   表示されない原因になっていた。
-        VENDOR_CODE: activeVendor.vendor_code || '',
+        VENDOR_CODE: v.vendor_code || '',
         // 法人=正式名称、個人=ペンネーム/屋号優先。代表者「様」は法人のみ。
         VENDOR_NAME: isCorp
-          ? activeVendor.vendor_name || ''
-          : individualVendorName(activeVendor, combineVendorAlias),
-        VENDOR_ADDRESS: activeVendor.address || '',
+          ? v.vendor_name || ''
+          : individualVendorName(v, combineVendorAlias),
+        VENDOR_ADDRESS: v.address || '',
         VENDOR_REPRESENTATIVE_SAMA: isCorp && repName
           ? `${repName} 様`
           : '',
         // 担当者・部署は法人の概念。個人取引先では宛名(VENDOR_NAME=本人)と
         //   二重になり「○○様」が二人並ぶため、個人では空にする(代表者様と同方針)。
-        VENDOR_CONTACT_DEPARTMENT: isCorp ? activeVendor.contact_department || '' : '',
-        VENDOR_CONTACT_NAME: isCorp ? activeVendor.contact_name || '' : '',
-        VENDOR_EMAIL: activeVendor.email || '',
+        VENDOR_CONTACT_DEPARTMENT: isCorp ? v.contact_department || '' : '',
+        VENDOR_CONTACT_NAME: isCorp ? v.contact_name || '' : '',
+        VENDOR_EMAIL: v.email || '',
         VENDOR_IS_CORPORATION: isCorp ? '法人' : '個人',
         VENDOR_SUFFIX: isCorp ? '御中' : '様',
         // Bank info — common ask, pulled at the same time
-        BANK_NAME: activeVendor.bank_name || '',
-        BRANCH_NAME: activeVendor.branch_name || '',
-        ACCOUNT_TYPE: activeVendor.account_type || '',
-        ACCOUNT_NUMBER: activeVendor.account_number || '',
-        ACCOUNT_HOLDER_KANA: activeVendor.account_holder_kana || '',
-        INVOICE_REGISTRATION_NUMBER: stripLeadingT(activeVendor.invoice_registration_number),
+        BANK_NAME: v.bank_name || '',
+        BRANCH_NAME: v.branch_name || '',
+        ACCOUNT_TYPE: v.account_type || '',
+        ACCOUNT_NUMBER: v.account_number || '',
+        ACCOUNT_HOLDER_KANA: v.account_holder_kana || '',
+        INVOICE_REGISTRATION_NUMBER: stripLeadingT(v.invoice_registration_number),
       });
     };
+    const fillVendorFromPartner = () => fillVendorFrom(activeVendor);
 
     const fillVendorFromSelf = () =>
       setFormData({
@@ -2294,6 +2298,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
             </>
           }
         >
+          {/* 統一検索モジュール: 取引先を検索して発注先を一括充填([取引先]ボタンと同一)。 */}
+          <div className="col-span-full space-y-1">
+            <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+              取引先を検索して発注先を充填（DB検索補完）
+            </label>
+            <EntitySearchSelect
+              entity="vendor"
+              onSelect={(o) => o && fillVendorFrom(o.raw)}
+              placeholder="取引先を検索（名称 / コード）"
+            />
+          </div>
           {renderGroup('II. 発注先 (取引先)')}
           <div className="col-span-full mt-4 pt-3 border-t border-dashed border-input">
             <p className="text-[10px] font-mono text-muted-foreground leading-relaxed mb-2 border-l-2 border-emerald-500 pl-2">
@@ -3267,32 +3282,33 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
   // is keyed to the main inspection_certificate template; _v2 / _detailed
   // share the same field IDs where they overlap.
   if (templateId.startsWith('inspection_certificate')) {
-    const fillCounterpartyFromPartner = () => {
-      if (!activeVendor) return;
+    // 任意の取引先 v から受託者を充填。[取引先]ボタンとフォーム内検索補完で共用。
+    const fillCounterpartyFrom = (v: any) => {
+      if (!v) return;
       // Phase 9d: 法人/個人を select 「法人」/「個人」 文字列で保存。
       //   - 法人: 会社名「御中」 + 棒線 + 代表者「様」
       //   - 個人: 名前「様」のみ
       const isCorporation =
-        (activeVendor.entity_type || '').toLowerCase() === 'corporate' ||
-        activeVendor.entity_type === '法人';
-      const repName =
-        activeVendor.vendor_rep || activeVendor.contact_name || '';
+        (v.entity_type || '').toLowerCase() === 'corporate' ||
+        v.entity_type === '法人';
+      const repName = v.vendor_rep || v.contact_name || '';
       setFormData({
         ...formData,
-        counterparty: activeVendor.vendor_name || '',
+        counterparty: v.vendor_name || '',
         COUNTERPARTY_IS_CORPORATION: isCorporation ? '法人' : '個人',
         counterpartyRep: repName,
         // Legacy フィールドも残しておく (旧テンプレ・既存生成済み doc の form_data 互換)
         counterpartyRepresentativeSama: repName ? `${repName} 様` : '',
-        counterpartyTni: activeVendor.invoice_registration_number || '',
+        counterpartyTni: v.invoice_registration_number || '',
         // Bank info commonly populated at the same time
-        bankName: activeVendor.bank_name || '',
-        branchName: activeVendor.branch_name || '',
-        accountType: activeVendor.account_type || '',
-        accountNo: activeVendor.account_number || '',
-        accountHolder: activeVendor.account_holder_kana || '',
+        bankName: v.bank_name || '',
+        branchName: v.branch_name || '',
+        accountType: v.account_type || '',
+        accountNo: v.account_number || '',
+        accountHolder: v.account_holder_kana || '',
       });
     };
+    const fillCounterpartyFromPartner = () => fillCounterpartyFrom(activeVendor);
 
     const fillInspectorFromStaff = () => {
       if (!selectedStaff) return;
@@ -3807,6 +3823,17 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
                 ✓ 親 PO から自動入力済み。必要なら下のフィールドで編集してください。
               </p>
             )}
+            {/* 統一検索モジュール: 親PO非依存で受託者を直接検索補完(取引先ボタンと同一)。 */}
+            <div className="col-span-full space-y-1">
+              <label className="text-[10px] font-mono font-bold uppercase tracking-[0.16em] text-muted-foreground">
+                取引先を検索して受託者を充填（DB検索補完）
+              </label>
+              <EntitySearchSelect
+                entity="vendor"
+                onSelect={(o) => o && fillCounterpartyFrom(o.raw)}
+                placeholder="取引先を検索（名称 / コード）"
+              />
+            </div>
             {renderGroup('II. 受託者 (取引先)')}
           </FormSection>
         </div>
