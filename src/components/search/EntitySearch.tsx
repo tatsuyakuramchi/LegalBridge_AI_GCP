@@ -16,7 +16,7 @@ import * as React from "react";
 import { Search, X, Loader2 } from "lucide-react";
 import { useAppData } from "@/src/context/AppDataContext";
 
-export type EntityKind = "vendor" | "staff" | "source_ip" | "work" | "work_material" | "ledger" | "matter";
+export type EntityKind = "vendor" | "staff" | "source_ip" | "work" | "work_material" | "ledger" | "matter" | "issue";
 
 export interface EntityOption {
   id: string;
@@ -34,13 +34,15 @@ export const ENTITY_LABEL: Record<EntityKind, string> = {
   work_material: "原作マテリアル",
   ledger: "原作(台帳)",
   matter: "案件",
+  issue: "依頼",
 };
 
 // AppData 由来(fetch 不要)の種別。remote 取得が要る種別と分ける。
-const FROM_CONTEXT: Record<EntityKind, "vendors" | "staff" | "ledgers" | null> = {
+const FROM_CONTEXT: Record<EntityKind, "vendors" | "staff" | "ledgers" | "issues" | null> = {
   vendor: "vendors",
   staff: "staff",
   ledger: "ledgers",
+  issue: "issues",
   source_ip: null,
   work: null,
   work_material: null,
@@ -65,6 +67,8 @@ function mapOption(entity: EntityKind, r: any): EntityOption {
       return { id: s(r.id), code: s(r.ledger_code), label: s(r.title), sub: s(r.ledger_code), raw: r };
     case "matter":
       return { id: s(r.id), code: s(r.matter_code || r.code), label: s(r.title || r.name) || `案件 #${s(r.id)}`, sub: s(r.status || r.matter_status || ""), raw: r };
+    case "issue":
+      return { id: s(r.issueKey || r.issue_key), code: s(r.issueKey || r.issue_key), label: s(r.summary) || s(r.issueKey), sub: s(r.status?.name || r.statusName || r.issueKey), raw: r };
   }
 }
 
@@ -131,7 +135,8 @@ export const EntitySearchSelect: React.FC<EntitySearchSelectProps> = ({
     return () => { alive = false; };
   }, [entity, ctxKey, parentId]);
 
-  const rows: any[] = ctxKey ? (Array.isArray(app?.[ctxKey === "staff" ? "staffList" : ctxKey]) ? app[ctxKey === "staff" ? "staffList" : ctxKey] : []) : remote;
+  const ctxField = ctxKey === "staff" ? "staffList" : ctxKey; // AppData の実フィールド名(staff→staffList)
+  const rows: any[] = ctxKey ? (Array.isArray(app?.[ctxField as string]) ? app[ctxField as string] : []) : remote;
   const options = React.useMemo(() => rows.map((r) => mapOption(entity, r)), [rows, entity]);
 
   const selected = React.useMemo(() => {

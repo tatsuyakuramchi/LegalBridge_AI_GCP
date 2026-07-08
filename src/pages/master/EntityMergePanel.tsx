@@ -15,18 +15,24 @@ import { Button } from "@/components/ui/button"
 import { useAppData } from "@/src/context/AppDataContext"
 import { EntitySearchSelect, ENTITY_LABEL, type EntityKind, type EntityOption } from "@/src/components/search/EntitySearch"
 
+type MergeKind = "work" | "source_ip" | "matter" | "issue"
+
 // このカートで統合できる実体(EntitySearch で検索できるもの)。
-const MERGE_KINDS: Array<{ key: "work" | "source_ip" | "matter"; label: string; accent: string }> = [
+const MERGE_KINDS: Array<{ key: MergeKind; label: string; accent: string }> = [
   { key: "source_ip", label: "原作", accent: "border-t-sky-500 text-sky-600" },
   { key: "work", label: "作品", accent: "border-t-emerald-500 text-emerald-600" },
   { key: "matter", label: "案件", accent: "border-t-violet-500 text-violet-600" },
+  { key: "issue", label: "依頼", accent: "border-t-amber-500 text-amber-600" },
 ]
+
+// issue はローカル本体を持たず、参照(backlog_issue_key/issue_key)を付け替えるのみ。
+const isKeyBased = (k: MergeKind) => k === "issue"
 
 type PreviewRef = { table: string; column: string; count: number; keyType: string }
 
 export function EntityMergePanel() {
   const { showNotification } = useAppData() as any
-  const [kind, setKind] = React.useState<"work" | "source_ip" | "matter">("source_ip")
+  const [kind, setKind] = React.useState<MergeKind>("source_ip")
   const [items, setItems] = React.useState<EntityOption[]>([])
   const [survivorId, setSurvivorId] = React.useState<string | null>(null)
   const [preview, setPreview] = React.useState<{ loser: EntityOption; refs: PreviewRef[]; total: number }[] | null>(null)
@@ -34,7 +40,7 @@ export function EntityMergePanel() {
   const [merging, setMerging] = React.useState(false)
 
   // 実体種別を変えたらカートを空にする(異種は混ぜられない)。
-  const switchKind = (k: "work" | "source_ip" | "matter") => {
+  const switchKind = (k: MergeKind) => {
     setKind(k); setItems([]); setSurvivorId(null); setPreview(null)
   }
 
@@ -82,9 +88,11 @@ export function EntityMergePanel() {
   const doMerge = async () => {
     if (!survivor || losers.length === 0) return
     const total = (preview || []).reduce((s, p) => s + p.total, 0)
+    const tail = isKeyBased(kind)
+      ? `関連する外部キー ${total} 件を付け替えます（Backlog課題自体は残ります）。`
+      : `関連する外部キー ${total} 件を付け替えてから、統合元を削除します（不可逆）。`
     if (!window.confirm(
-      `${losers.map((l) => l.label).join(", ")} を「${survivor.label}」へ統合します。\n` +
-      `関連する外部キー ${total} 件を付け替えてから、統合元を削除します（不可逆）。\nよろしいですか？`
+      `${losers.map((l) => l.label).join(", ")} を「${survivor.label}」へ統合します。\n${tail}\nよろしいですか？`
     )) return
     setMerging(true)
     try {
@@ -123,7 +131,6 @@ export function EntityMergePanel() {
         <h3 className="text-lg font-mono font-bold">ID統合（マージ）カート</h3>
         <p className="text-xs font-mono text-muted-foreground mt-1">
           重複登録した実体をカートに集め、👑 で残す方を選んで統合します。関連する外部キー（文書番号・条件明細など）を付け替えてから統合元を削除するので、孤立しません。
-          <span className="text-muted-foreground/80">（依頼の統合は右下の「統合カート」を使用）</span>
         </p>
       </div>
 
@@ -149,6 +156,11 @@ export function EntityMergePanel() {
           <Search className="h-3.5 w-3.5" /> {ENTITY_LABEL[kind as EntityKind]}を検索してカートに追加
         </div>
         <EntitySearchSelect entity={kind as EntityKind} onSelect={add} placeholder={`${ENTITY_LABEL[kind as EntityKind]}を検索（名称 / コード）`} />
+        {isKeyBased(kind) && (
+          <p className="font-mono text-[9.5px] text-muted-foreground leading-snug">
+            依頼はDB参照（backlog_issue_key / issue_key）を統合先へ付け替えます。Backlog課題自体の子課題化・削除は右下の「統合カート」で行ってください。
+          </p>
+        )}
       </div>
 
       {/* カート */}
@@ -186,7 +198,7 @@ export function EntityMergePanel() {
                       {isSurv ? (
                         <span className="font-mono text-[9px] text-amber-700 font-bold">残す(統合先)</span>
                       ) : (
-                        <span className="font-mono text-[9px] text-muted-foreground">統合されて削除</span>
+                        <span className="font-mono text-[9px] text-muted-foreground">{isKeyBased(kind) ? "参照を付替え" : "統合されて削除"}</span>
                       )}
                     </div>
                   </div>
