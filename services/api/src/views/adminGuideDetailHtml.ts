@@ -107,6 +107,11 @@ export function adminGuideDetailPage(opts: {
              </button>`
       }
       <a class="btn btn-sec" href="${g.linkPath ? esc(g.linkPath) : "/g/" + esc(g.guideKey)}" target="_blank" rel="noopener" style="text-decoration:none">配信プレビュー ↗</a>
+      ${
+        !g.linkPath && opts.versions.length > 0
+          ? `<a class="btn btn-sec" href="/api/portal/guides/${encodeURIComponent(g.guideKey)}/download" download="${esc(g.guideKey)}.html" style="text-decoration:none">現行版を HTML でダウンロード ⬇</a>`
+          : ""
+      }
     </div>
     ${
       !g.linkPath && g.status === "published" && opts.versions.length === 0
