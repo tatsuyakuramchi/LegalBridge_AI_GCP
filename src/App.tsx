@@ -29,6 +29,7 @@ import { WorkModelPanel } from "./pages/master/WorkModelPanel" // 統合 P3-5
 import { MaterialEntryPanel } from "./pages/master/MaterialEntryPanel" // 原作マテリアル登録
 import { WorkEntryPanel } from "./pages/master/WorkEntryPanel" // 作品/原作 登録
 import { PubLicenseEntryPanel } from "./pages/master/PubLicenseEntryPanel" // 出版利用許諾条件 登録
+import { EntityMergePanel } from "./pages/master/EntityMergePanel" // ID統合(マージ)カート
 import { WorkGraphPanel } from "./pages/master/WorkGraphPanel" // 統合 Phase3c → /works/:id へ移設
 import { WorksListPanel } from "./pages/works/WorksListPanel" // 作品統合 増分④: 統一一覧
 import { TemplatesPage, TemplateEditorPage } from "./pages/TemplatesPage"
@@ -71,6 +72,7 @@ export default function App() {
                   <Route path="work-entry" element={<WorkEntryPanel />} />{/* 作品/原作 登録 */}
                   <Route path="materials" element={<MaterialEntryPanel />} />{/* 原作マテリアル登録 */}
                   <Route path="pub-license" element={<PubLicenseEntryPanel />} />{/* 出版利用許諾条件 登録 */}
+                  <Route path="merge" element={<EntityMergePanel />} />{/* ID統合(マージ)カート */}
                   <Route path="ledgers" element={<LedgersPanel />} />{/* Phase 22.18 */}
                   <Route path="sublicensees" element={<SubLicenseesPanel />} />{/* Phase 22.20-C */}
                   <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}

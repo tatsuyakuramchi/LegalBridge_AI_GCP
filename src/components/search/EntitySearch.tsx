@@ -16,7 +16,7 @@ import * as React from "react";
 import { Search, X, Loader2 } from "lucide-react";
 import { useAppData } from "@/src/context/AppDataContext";
 
-export type EntityKind = "vendor" | "staff" | "source_ip" | "work" | "work_material" | "ledger";
+export type EntityKind = "vendor" | "staff" | "source_ip" | "work" | "work_material" | "ledger" | "matter";
 
 export interface EntityOption {
   id: string;
@@ -33,6 +33,7 @@ export const ENTITY_LABEL: Record<EntityKind, string> = {
   work: "作品",
   work_material: "原作マテリアル",
   ledger: "原作(台帳)",
+  matter: "案件",
 };
 
 // AppData 由来(fetch 不要)の種別。remote 取得が要る種別と分ける。
@@ -43,6 +44,7 @@ const FROM_CONTEXT: Record<EntityKind, "vendors" | "staff" | "ledgers" | null> =
   source_ip: null,
   work: null,
   work_material: null,
+  matter: null,
 };
 
 const s = (v: any) => (v == null ? "" : String(v));
@@ -61,6 +63,8 @@ function mapOption(entity: EntityKind, r: any): EntityOption {
       return { id: s(r.id), code: s(r.material_code), label: s(r.material_name) || s(r.material_code), sub: s(r.material_code), raw: r };
     case "ledger":
       return { id: s(r.id), code: s(r.ledger_code), label: s(r.title), sub: s(r.ledger_code), raw: r };
+    case "matter":
+      return { id: s(r.id), code: s(r.matter_code || r.code), label: s(r.title || r.name) || `案件 #${s(r.id)}`, sub: s(r.status || r.matter_status || ""), raw: r };
   }
 }
 
@@ -68,8 +72,19 @@ function mapOption(entity: EntityKind, r: any): EntityOption {
 function remoteUrl(entity: EntityKind, parentId?: string | number | null): string | null {
   if (entity === "source_ip") return "/api/v3/source-ips";
   if (entity === "work") return "/api/v3/works";
+  if (entity === "matter") return "/api/matters";
   if (entity === "work_material") return parentId ? `/api/v3/works/${encodeURIComponent(String(parentId))}/materials` : null;
   return null;
+}
+
+// API の応答ゆらぎ(配列 / {matters} / {rows} / {items} / {data})を吸収して配列化。
+function unwrapList(d: any): any[] {
+  if (Array.isArray(d)) return d;
+  if (!d || typeof d !== "object") return [];
+  for (const k of ["matters", "rows", "items", "data", "results", "list"]) {
+    if (Array.isArray(d[k])) return d[k];
+  }
+  return [];
 }
 
 export interface EntitySearchSelectProps {
@@ -110,7 +125,7 @@ export const EntitySearchSelect: React.FC<EntitySearchSelectProps> = ({
     setLoading(true);
     fetch(url)
       .then((r) => r.json())
-      .then((d) => { if (alive) setRemote(Array.isArray(d) ? d : []); })
+      .then((d) => { if (alive) setRemote(unwrapList(d)); })
       .catch(() => { if (alive) setRemote([]); })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };

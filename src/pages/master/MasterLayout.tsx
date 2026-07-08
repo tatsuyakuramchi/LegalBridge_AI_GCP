@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -15,6 +15,8 @@ const tabs = [
   { to: "/master/materials", label: "Materials (原作素材)", icon: Boxes },
   // 出版利用許諾条件 登録(ARC-PUBT: 原作/対象出版物/許諾者/紙・電子印税率 → 条件明細)
   { to: "/master/pub-license", label: "出版条件 (ARC-PUBT)", icon: BookOpen },
+  // ID統合(マージ)カート: 重複した 原作/作品/案件 を外部キー付替えで統合(孤立防止)
+  { to: "/master/merge", label: "ID統合", icon: GitMerge },
   // 統合 増分⑨: 原作台帳(Ledgers)/作品モデル(work-model) はサイドバー「作品管理」(/works)へ統合。
   //   ルートは温存(レガシー画面に移行バナー)。データ移行(§8 #4)完了後に物理廃止予定。
   // Phase 22.20-C: サブライセンシー マスター
