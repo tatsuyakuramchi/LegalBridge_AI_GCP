@@ -10,7 +10,7 @@
  *   - 特殊 UI(マスタ検索・条件表・v3マトリクス 等)は custom セクションで差し込む。
  */
 import * as React from "react";
-import { DbFillBar, FkSection, FkGrid, FkField, FK_ACCENTS, type FkAccent } from "./formkit/DocFormKit";
+import { DbFillBar, FkSection, FkGrid, FkField, FkSearchRow, FK_ACCENTS, type FkAccent, type FkSearch } from "./formkit/DocFormKit";
 
 export type FkCtx = {
   templateId: string;
@@ -29,9 +29,11 @@ export type FkSectionSchema = {
   accent?: FkAccent;
   subtitle?: string;
   actions?: React.ReactNode;
+  /** マスタDB検索補完(担当者/取引先/原作/原作マテリアル/作品)。fieldIds より前に描画。 */
+  searches?: FkSearch[];
   /** このセクションに載せるフィールド(templates_config の変数キー)。 */
   fieldIds?: string[];
-  /** 特殊 UI を差し込む(条件表・マスタ検索 等)。指定時 fieldIds より前に描画。 */
+  /** 特殊 UI を差し込む(条件表・マスタ検索 等)。searches の後・fieldIds の前に描画。 */
   custom?: (ctx: FkCtx) => React.ReactNode;
 };
 
@@ -88,6 +90,19 @@ export function SchemaDocumentForm(props: FkCtx & { schema: DocFormSchema }) {
             subtitle={sec.subtitle}
             actions={sec.actions}
           >
+            {sec.searches && sec.searches.length > 0 && (
+              <div className="space-y-3">
+                {sec.searches.map((sr, si) => (
+                  <FkSearchRow
+                    key={`${sr.entity}:${si}`}
+                    search={sr}
+                    metadata={ctx.metadata}
+                    formData={ctx.formData}
+                    setFormData={ctx.setFormData}
+                  />
+                ))}
+              </div>
+            )}
             {sec.custom && sec.custom(ctx)}
             {fields.length > 0 && (
               <FkGrid>

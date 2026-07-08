@@ -17,13 +17,52 @@ type SchemaBuilder = (metadata: any, ctx: FkCtx) => DocFormSchema;
 //   (これまで DocumentForm の汎用フォールバックで描画されていたもの)
 const AUTO: SchemaBuilder = (metadata) => ({ sections: autoSectionsFromMetadata(metadata) });
 
+// 出版 基本契約(個人/法人): 冒頭に許諾者(取引先)の DB検索補完を置き、
+//   選択で vendor.* にひも付く全フィールド(氏名/法人名/住所/代表者 等)を一括充填。
+const pubMaster: SchemaBuilder = (metadata) => ({
+  sections: [
+    {
+      title: "当事者 — 許諾者(取引先マスタ)",
+      accent: "sky",
+      searches: [
+        {
+          entity: "vendor",
+          label: "許諾者を検索して充填",
+          help: "取引先マスタから選ぶと、氏名/法人名・住所・代表者など(vendor.*)を自動入力します。",
+          fillDbPrefix: "vendor.",
+        },
+      ],
+    },
+    ...autoSectionsFromMetadata(metadata),
+  ],
+});
+
+// 法務相談 回答書: 担当者(法務)を DB検索補完で充填できるようにする。
+const legalResponse: SchemaBuilder = (metadata) => ({
+  sections: [
+    {
+      title: "担当者(法務)",
+      accent: "sky",
+      searches: [
+        {
+          entity: "staff",
+          label: "担当者を検索して充填",
+          help: "担当者マスタから選ぶと、担当者名など(staff.*)を自動入力します。",
+          fillDbPrefix: "staff.",
+        },
+      ],
+    },
+    ...autoSectionsFromMetadata(metadata),
+  ],
+});
+
 const REGISTRY: Record<string, SchemaBuilder> = {
   // 単票・同意書系
-  legal_response: AUTO,
+  legal_response: legalResponse,
   notice_consent_personal_info_freelance: AUTO,
-  // 出版 基本契約(個人/法人): 当事者=許諾者↔アークライト。DB補完(取引先/自社)で充填。
-  pub_master_individual: AUTO,
-  pub_master_corporate: AUTO,
+  // 出版 基本契約(個人/法人): 当事者=許諾者↔アークライト。取引先を検索補完で充填。
+  pub_master_individual: pubMaster,
+  pub_master_corporate: pubMaster,
 };
 
 export function isSchemaMigrated(templateId: string): boolean {

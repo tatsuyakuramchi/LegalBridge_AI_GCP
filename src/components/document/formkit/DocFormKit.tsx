@@ -11,6 +11,25 @@
 import * as React from "react";
 import { Database } from "lucide-react";
 import { FormField } from "../FormField";
+import { EntitySearchSelect, ENTITY_LABEL, type EntityKind, type EntityOption } from "../../search/EntitySearch";
+
+/**
+ * 選択したエンティティ(取引先/担当者 等)の生データから、metadata の dbField が
+ *   指定プレフィックス(例 "vendor.")で始まるフィールドへ一括で値を写す patch を作る。
+ *   これでフォーム内検索補完が DbFillBar と同じ充填を「その場の選択」で実現する。
+ */
+export function patchFromEntityDbPrefix(raw: any, prefix: string, metadata: any): Record<string, any> {
+  const vars: Record<string, any> = metadata?.vars || {};
+  const patch: Record<string, any> = {};
+  Object.keys(vars).forEach((id) => {
+    const f = String(vars[id]?.dbField || "");
+    if (!f.startsWith(prefix)) return;
+    const key = f.slice(prefix.length);
+    const v = raw?.[key];
+    if (v !== undefined && v !== null && v !== "") patch[id] = v;
+  });
+  return patch;
+}
 
 // セクションのアクセント色(上ボーダー/見出し)。順に循環させて視覚的リズムを作る。
 export const FK_ACCENTS = ["sky", "violet", "emerald", "indigo", "amber", "rose"] as const;
@@ -157,5 +176,59 @@ export const FkField: React.FC<FkFieldProps> = (props) => {
       value={props.formData[props.id]}
       onChange={(v) => props.setFormData({ ...props.formData, [props.id]: v })}
     />
+  );
+};
+
+/** スキーマ宣言される「マスタDB検索補完」1件。 */
+export interface FkSearch {
+  entity: EntityKind;
+  label?: string | undefined;
+  help?: string | undefined;
+  /** work_material の親原作 id を持つ formData キー(例 "ledger_ref_id")。 */
+  parentField?: string | undefined;
+  /** 現在の選択を表示するために参照する formData キー(code もしくは id)。 */
+  valueField?: string | undefined;
+  /** 選択エンティティの生データから、この dbField プレフィックスの全フィールドを充填。 */
+  fillDbPrefix?: string | undefined;
+  /** 追加/明示の充填(valueField/fillDbPrefix に加えてマージ)。 */
+  onPick?: ((opt: EntityOption, formData: any, metadata: any) => Record<string, any>) | undefined;
+}
+
+/** 統一検索モジュール(EntitySearchSelect)をラベル付きで描画し、選択時に formData を充填。 */
+export const FkSearchRow: React.FC<{
+  search: FkSearch;
+  metadata: any;
+  formData: any;
+  setFormData: (d: any) => void;
+}> = ({ search, metadata, formData, setFormData }) => {
+  const parentId = search.parentField ? formData?.[search.parentField] : undefined;
+  const value = search.valueField ? formData?.[search.valueField] : undefined;
+  const apply = (opt: EntityOption | null) => {
+    if (!opt) {
+      const clear: Record<string, any> = {};
+      if (search.valueField) clear[search.valueField] = "";
+      setFormData({ ...formData, ...clear });
+      return;
+    }
+    const patch: Record<string, any> = {};
+    if (search.fillDbPrefix) Object.assign(patch, patchFromEntityDbPrefix(opt.raw, search.fillDbPrefix, metadata));
+    if (search.valueField) patch[search.valueField] = opt.code || opt.id;
+    if (search.onPick) Object.assign(patch, search.onPick(opt, formData, metadata));
+    setFormData({ ...formData, ...patch });
+  };
+  return (
+    <div className="space-y-1">
+      <div className="flex items-baseline gap-2 flex-wrap">
+        <label className="font-mono text-[11px] font-bold">{search.label || `${ENTITY_LABEL[search.entity]}を検索`}</label>
+        <span className="font-mono text-[8.5px] text-muted-foreground border border-border rounded px-1 bg-muted/40">DB検索補完</span>
+      </div>
+      {search.help && <p className="font-mono text-[9.5px] text-muted-foreground leading-snug">{search.help}</p>}
+      <EntitySearchSelect
+        entity={search.entity}
+        parentId={parentId}
+        value={value != null ? String(value) : null}
+        onSelect={apply}
+      />
+    </div>
   );
 };
