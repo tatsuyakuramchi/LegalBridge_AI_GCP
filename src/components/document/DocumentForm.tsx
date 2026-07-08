@@ -47,6 +47,8 @@ import { FinancialConditionPicker } from './FinancialConditionPicker';
 import { DocumentNumberLookup } from './DocumentNumberLookup';
 import { WorkPicker, toWorkPickerItem } from '@/src/components/work/WorkPicker';
 import { LicenseWizardRail, type WizardStep } from './LicenseWizardRail';
+import { SchemaDocumentForm } from './SchemaDocumentForm';
+import { isSchemaMigrated, buildDocFormSchema } from './documentFormSchemas';
 import { TemplateMetadata } from './types';
 import { Database, Building2, User, ShieldCheck, Scale, AlertCircle, Link, GitBranch, Briefcase, List, Coins, FileText, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -1017,6 +1019,24 @@ export const DocumentForm: React.FC<DocumentFormProps> = ({
       />
     );
   };
+
+  // 新デザインへの段階移行: スキーマ登録済みテンプレは SchemaDocumentForm へ委譲。
+  //   未登録テンプレは従来の per-template 分岐(下)にフォールバックする。
+  //   PDF テンプレは不変(フィールドのキー名は据え置き)。
+  if (isSchemaMigrated(templateId)) {
+    const fkCtx = {
+      templateId,
+      metadata,
+      formData,
+      setFormData,
+      activeVendor,
+      companyProfile,
+      selectedStaff,
+      onSync,
+    };
+    const schema = buildDocFormSchema(templateId, metadata, fkCtx);
+    if (schema) return <SchemaDocumentForm {...fkCtx} schema={schema} />;
+  }
 
   // Logic for individual license terms specialized UI.
   //
