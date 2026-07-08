@@ -125,27 +125,28 @@ export function MattersListPage() {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="px-6 py-6 max-w-[1400px] mx-auto space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <FolderKanban className="h-5 w-5 text-muted-foreground" />
-          <div>
-            <h1 className="text-[15px] font-semibold leading-none">案件管理</h1>
-            <p className="text-[11px] text-muted-foreground mt-1">
-              重複・部分発生した Backlog 課題を1案件に束ね、文書・送信履歴・条件明細を総合管理
-            </p>
-          </div>
+      <header className="flex items-end justify-between gap-6 border-b border-border pb-5">
+        <div>
+          <p className="retro-tag mb-1.5">MAT · 一覧</p>
+          <h2 className="text-2xl font-mono font-bold tracking-tight flex items-center gap-2">
+            <FolderKanban className="h-6 w-6 text-muted-foreground" /> 案件管理
+          </h2>
+          <p className="text-[13px] font-mono text-muted-foreground mt-1.5">
+            重複・部分発生した Backlog 課題を1案件に束ね、文書・送信履歴・条件明細を総合管理します。
+          </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="outline" size="sm" onClick={refresh} disabled={loading}>
+          <Button variant="outline" size="sm" onClick={refresh} disabled={loading} title="更新">
             {loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            <span className="ml-1">更新</span>
           </Button>
           <Button size="sm" onClick={() => setOpenCreate(true)}>
             <Plus className="h-3.5 w-3.5 mr-1" /> 新規案件
           </Button>
         </div>
-      </div>
+      </header>
 
       {/* Filter bar */}
       <div className="flex items-center gap-2">
@@ -176,7 +177,7 @@ export function MattersListPage() {
       {/* Table */}
       <Card>
         <CardContent className="p-0">
-          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 px-3 py-2 border-b border-border text-[10px] uppercase tracking-wide text-muted-foreground">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto_auto] gap-2 px-3 py-2.5 border-b border-border text-[11px] font-mono font-bold text-muted-foreground">
             <span>案件 / 相手方</span>
             <span className="text-center">課題</span>
             <span className="text-center">文書</span>
