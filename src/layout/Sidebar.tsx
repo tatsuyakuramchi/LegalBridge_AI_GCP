@@ -111,9 +111,9 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-6 custom-scrollbar">
         {groups.map((group) => (
-          <div key={group.label} className="space-y-1.5">
-            <p className="px-2 text-[11px] font-mono font-bold tracking-[0.08em] text-muted-foreground">
-              ░ {group.label}
+          <div key={group.label} className="space-y-1">
+            <p className="px-3 pb-0.5 text-[11px] font-mono font-bold tracking-[0.04em] text-muted-foreground/90">
+              {group.label}
             </p>
             <ul className="space-y-0.5">
               {group.items.map((item) => {
@@ -126,25 +126,24 @@ export function Sidebar() {
                     <NavLink
                       to={item.to}
                       end={item.end}
+                      title={item.description}
                       className={({ isActive: navActive }) =>
                         cn(
-                          "group relative flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-mono transition-colors",
+                          // ユニバーサルデザイン: 十分な文字サイズ・クリック領域・コントラスト。
+                          "group relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] font-mono transition-colors",
                           (navActive || isActive)
-                            ? "bg-foreground text-background"
-                            : "text-foreground/80 hover:bg-muted hover:text-foreground"
+                            ? "bg-foreground text-background font-semibold"
+                            : "text-foreground/85 hover:bg-muted hover:text-foreground"
                         )
                       }
                     >
-                      <Icon className="h-4 w-4 shrink-0" />
-                      <span className="flex-1 font-bold tracking-[0.02em]">
-                        {item.label}
-                      </span>
-                      {(isActive) && (
-                        <ChevronRight className="h-3 w-3 opacity-70" />
-                      )}
+                      <Icon className="h-[18px] w-[18px] shrink-0" />
+                      <span className="flex-1 font-semibold">{item.label}</span>
+                      {isActive && <ChevronRight className="h-3.5 w-3.5 opacity-70" />}
                     </NavLink>
-                    {item.description && (
-                      <p className="ml-9 text-[10px] font-mono tracking-[0.02em] text-muted-foreground/60">
+                    {/* 情報整理: 説明は現在地のみ表示(他はホバーの title で補助)。 */}
+                    {isActive && item.description && (
+                      <p className="ml-[42px] mt-0.5 text-[11px] font-mono leading-snug text-muted-foreground">
                         {item.description}
                       </p>
                     )}
@@ -157,9 +156,9 @@ export function Sidebar() {
 
         {/* 統合 Phase 1: search-api 検索ポータルへの外部リンク */}
         {PORTAL_BASE && (
-          <div className="space-y-1.5">
-            <p className="px-2 text-[11px] font-mono font-bold tracking-[0.08em] text-muted-foreground">
-              ░ 検索ポータル
+          <div className="space-y-1">
+            <p className="px-3 pb-0.5 text-[11px] font-mono font-bold tracking-[0.04em] text-muted-foreground/90">
+              検索ポータル
             </p>
             <ul className="space-y-0.5">
               {portalLinks.map((item) => (
@@ -168,17 +167,13 @@ export function Sidebar() {
                     href={PORTAL_BASE + item.href}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="group relative flex items-center gap-3 rounded-sm px-2.5 py-2 text-[13px] font-mono text-foreground/80 transition-colors hover:bg-muted hover:text-foreground"
+                    title={item.description}
+                    className="group relative flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[13.5px] font-mono text-foreground/85 transition-colors hover:bg-muted hover:text-foreground"
                   >
-                    <Search className="h-4 w-4 shrink-0" />
-                    <span className="flex-1 font-bold tracking-[0.02em]">
-                      {item.label}
-                    </span>
-                    <ExternalLink className="h-3 w-3 opacity-60" />
+                    <Search className="h-[18px] w-[18px] shrink-0" />
+                    <span className="flex-1 font-semibold">{item.label}</span>
+                    <ExternalLink className="h-3.5 w-3.5 opacity-60" />
                   </a>
-                  <p className="ml-9 text-[10px] font-mono tracking-[0.02em] text-muted-foreground/60">
-                    {item.description}
-                  </p>
                 </li>
               ))}
             </ul>
