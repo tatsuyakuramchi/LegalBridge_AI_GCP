@@ -248,7 +248,7 @@ export function ConditionsPanel() {
   const pick = pickRef.current
 
   return (
-    <div className="space-y-4">
+    <div className="px-6 py-6 max-w-[1500px] mx-auto space-y-4">
       {/* フィルタ */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 p-4 border border-border rounded-lg bg-card/50">
         <Field label="支払日">
@@ -301,7 +301,7 @@ export function ConditionsPanel() {
 
       {/* ツールバー */}
       <div className="flex items-center gap-3 flex-wrap">
-        <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+        <span className="text-[12px] font-mono text-muted-foreground">
           {loading ? "検索中…" : `${rows.length} 件${total && total > rows.length ? ` / 全 ${total} 件` : ""}`}
         </span>
         <span className="text-xs text-muted-foreground">行をクリックで紐付けを編集</span>
@@ -348,12 +348,12 @@ export function ConditionsPanel() {
         {error ? (
           <div className="p-8 text-center text-sm text-destructive">読み込みに失敗しました: {error}</div>
         ) : rows.length === 0 && !loading ? (
-          <div className="p-12 text-center text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="p-12 text-center text-[13px] font-mono text-muted-foreground">
             該当する条件明細がありません
           </div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="bg-muted/40 text-[10px] font-mono uppercase tracking-[0.1em] text-muted-foreground">
+            <thead className="bg-muted/40 text-[11px] font-mono font-bold text-muted-foreground">
               <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left [&>th]:whitespace-nowrap">
                 <th className="w-8">
                   <input type="checkbox" checked={rows.length > 0 && selected.size === rows.length} onChange={toggleAll} />
