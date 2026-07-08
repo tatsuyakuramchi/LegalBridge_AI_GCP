@@ -133,19 +133,21 @@ export function PendingInspectionsPage() {
   }
 
   return (
-    <div className="p-6 space-y-4 max-w-[1400px] mx-auto">
-      <div className="flex items-center gap-3 flex-wrap">
-        <ClipboardCheck className="h-5 w-5 text-muted-foreground" />
-        <h1 className="text-sm font-mono font-bold uppercase tracking-[0.14em]">検収タスク 発注書</h1>
-        <span className="text-[11px] font-mono text-muted-foreground">
-          納品報告に応じた検収書作成 / 納期超過・未報告の督促コントロール
-        </span>
-        <div className="flex-1" />
+    <div className="px-6 py-6 space-y-5 max-w-[1400px] mx-auto">
+      <header className="flex items-end justify-between gap-6 border-b border-border pb-4">
+        <div>
+          <h2 className="text-xl font-mono font-bold tracking-tight flex items-center gap-2">
+            <ClipboardCheck className="h-5 w-5 text-muted-foreground" /> 検収タスク（発注書）
+          </h2>
+          <p className="text-[13px] font-mono text-muted-foreground mt-1.5">
+            納品報告に応じた検収書作成 / 納期超過・未報告の督促を管理します。
+          </p>
+        </div>
         <Button variant="outline" size="sm" onClick={load} disabled={loading}>
           <RefreshCw />
           更新
         </Button>
-      </div>
+      </header>
 
       <div className="flex items-center gap-3 flex-wrap">
         <div className="relative flex-1 max-w-md">
@@ -166,7 +168,7 @@ export function PendingInspectionsPage() {
           <Layers />
           選択をまとめて検収 ({selected.size})
         </Button>
-        <span className="text-[11px] font-mono uppercase tracking-[0.16em] text-muted-foreground">
+        <span className="text-[12px] font-mono text-muted-foreground">
           {loading ? "読み込み中…" : `${pending.length} 件 / 残額合計 ${yen(totalRemaining)}`}
         </span>
       </div>
@@ -198,12 +200,12 @@ export function PendingInspectionsPage() {
         {error ? (
           <div className="p-8 text-center text-sm text-destructive">読み込み失敗: {error}</div>
         ) : pending.length === 0 && !loading ? (
-          <div className="p-12 text-center text-xs font-mono uppercase tracking-[0.18em] text-muted-foreground">
+          <div className="p-12 text-center text-[13px] font-mono text-muted-foreground">
             検収待ちの発注書はありません 🎉
           </div>
         ) : (
           <table className="w-full text-xs">
-            <thead className="bg-muted/40 text-[10px] font-mono uppercase tracking-[0.1em] text-muted-foreground">
+            <thead className="bg-muted/40 text-[11px] font-mono font-bold text-muted-foreground">
               <tr className="[&>th]:px-2 [&>th]:py-2 [&>th]:text-left [&>th]:whitespace-nowrap">
                 <th className="w-8">
                   <input
