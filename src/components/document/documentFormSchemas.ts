@@ -223,6 +223,44 @@ const salesMaster: SchemaBuilder = (metadata) => {
   };
 };
 
+// バッチ3(先行): 海外発注書。CONTRACTOR(委託先=取引先)/担当者を検索補完、自社は selfFill。
+//   ※ 明細は単一フィールド(ITEM_NAME/PAYMENT_METHOD)のため多行テーブルの custom は不要。
+const intlPurchaseOrder: SchemaBuilder = (metadata) => ({
+  sections: [
+    {
+      title: "Basic Context (基本情報)",
+      accent: "sky",
+      searches: [
+        {
+          entity: "vendor",
+          label: "委託先(Contractor)を検索して充填",
+          onPick: (opt) => {
+            const isCorp = String(opt.raw?.entity_type || "").toLowerCase() === "corporate" || opt.raw?.entity_type === "法人";
+            return {
+              CONTRACTOR_NAME: isCorp ? (opt.raw?.vendor_name || "") : (opt.raw?.vendor_name || opt.raw?.pen_name || opt.raw?.trade_name || ""),
+              CONTRACTOR_ADDRESS: opt.raw?.address || "",
+              CONTRACTOR_EMAIL: opt.raw?.email || "",
+            };
+          },
+        },
+        {
+          entity: "staff",
+          label: "担当者を検索して充填",
+          onPick: (opt) => ({
+            STAFF_NAME: opt.raw?.staff_name || "",
+            STAFF_DEPARTMENT: opt.raw?.department || "",
+            STAFF_PHONE: opt.raw?.phone || "",
+            STAFF_EMAIL: opt.raw?.email || "",
+          }),
+        },
+      ],
+      selfFills: [{ label: "自社を充填", map: { COMPANY_NAME: "name", COMPANY_ADDRESS: "address", COMPANY_REP: "representative" } }],
+      ...groupFields(metadata, "Basic Context (基本情報)"),
+    },
+    ...restSections(metadata, ["Basic Context (基本情報)"]),
+  ],
+});
+
 const REGISTRY: Record<string, SchemaBuilder> = {
   // 単票・同意書系
   legal_response: legalResponse,
@@ -237,6 +275,8 @@ const REGISTRY: Record<string, SchemaBuilder> = {
   sales_master_buyer: salesMaster,
   sales_master_standard: salesMaster,
   sales_master_credit: salesMaster,
+  // バッチ3(先行): 海外発注書。国内発注書/検収書は明細連動が重いため別途 custom で移行。
+  intl_purchase_order: intlPurchaseOrder,
 };
 
 export function isSchemaMigrated(templateId: string): boolean {
