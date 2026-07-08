@@ -137,10 +137,37 @@ export function EntityMergePanel() {
       // 成功した loser はカートから除去(survivor は残す)。
       setItems((prev) => prev.filter((x) => x.id === survivor.id || failed.includes(x.label)))
       setPreview(null)
+      loadHistory()
     } catch (e: any) {
       showNotification?.(`統合に失敗: ${String(e?.message || e)}`, "error")
     } finally {
       setMerging(false)
+    }
+  }
+
+  // 監査ログ(履歴)
+  const [history, setHistory] = React.useState<any[]>([])
+  const loadHistory = React.useCallback(async () => {
+    try {
+      const res = await fetch("/api/v3/merge/audit?limit=20")
+      const d = await res.json().catch(() => ({}))
+      setHistory(Array.isArray(d.rows) ? d.rows : [])
+    } catch { setHistory([]) }
+  }, [])
+  React.useEffect(() => { loadHistory() }, [loadHistory])
+
+  const undo = async (id: number) => {
+    if (!window.confirm("この統合を取り消します（best-effort: 参照を戻し、削除した本体を復元）。よろしいですか？")) return
+    try {
+      const res = await fetch("/api/v3/merge/undo", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ audit_id: id }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok || d.ok === false) throw new Error(d.error || `HTTP ${res.status}`)
+      showNotification?.(`取り消しました${d.note ? `（注意: ${d.note}）` : ""}`, d.note ? "error" : "success")
+      loadHistory()
+    } catch (e: any) {
+      showNotification?.(`取り消しに失敗: ${String(e?.message || e)}`, "error")
     }
   }
 
@@ -291,6 +318,42 @@ export function EntityMergePanel() {
           {merging ? "統合中…" : `統合を実行（${losers.length} 件 → ${survivor?.label || "未選択"}）`}
         </Button>
       </div>
+
+      {/* 監査ログ(統合履歴) + 取消し */}
+      {history.length > 0 && (
+        <div className="rounded-xl border border-border bg-card p-4 space-y-2">
+          <div className="font-mono text-[12px] font-bold text-muted-foreground">統合履歴（監査ログ）</div>
+          <div className="overflow-x-auto border border-border rounded-lg">
+            <table className="w-full font-mono text-[10px]" style={{ fontVariantNumeric: "tabular-nums" }}>
+              <thead><tr className="bg-muted/40 text-muted-foreground">
+                <th className="text-left px-2 py-1">日時</th><th className="text-left px-2 py-1">種別</th>
+                <th className="text-left px-2 py-1">統合元 → 統合先</th><th className="text-right px-2 py-1">付替</th><th className="text-right px-2 py-1">操作</th>
+              </tr></thead>
+              <tbody>
+                {history.map((h) => {
+                  const moved = Array.isArray(h.moved) ? h.moved.reduce((s: number, m: any) => s + (m.updated || 0), 0) : 0
+                  return (
+                    <tr key={h.id} className="border-t border-border">
+                      <td className="px-2 py-1 text-muted-foreground">{h.created_at ? new Date(h.created_at).toLocaleString("ja-JP") : "—"}</td>
+                      <td className="px-2 py-1">{h.entity}</td>
+                      <td className="px-2 py-1 truncate">{h.loser_label || h.loser_id} → <b>{h.survivor_label || h.survivor_id}</b></td>
+                      <td className="px-2 py-1 text-right">{moved}</td>
+                      <td className="px-2 py-1 text-right">
+                        {h.undone_at ? (
+                          <span className="text-muted-foreground">取消済</span>
+                        ) : (
+                          <button type="button" onClick={() => undo(h.id)} className="border border-rose-500 text-rose-600 rounded px-1.5 py-0.5 hover:bg-rose-500/10">取消し</button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+          <p className="font-mono text-[9px] text-muted-foreground">取消しは best-effort（記録した参照を戻し、削除した本体を復元）。ledger 付替えや id 列の無い表は戻せない場合があります。</p>
+        </div>
+      )}
     </div>
   )
 }
