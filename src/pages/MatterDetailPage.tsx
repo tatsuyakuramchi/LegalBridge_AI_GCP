@@ -75,10 +75,10 @@ const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
 
 function SectionHead({ icon: Icon, label, count, right }: { icon: any; label: string; count?: number; right?: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 mb-2">
-      <Icon className="h-4 w-4 text-muted-foreground" />
-      <span className="text-[12px] font-semibold uppercase tracking-wide">{label}</span>
-      {count != null && <span className="text-[11px] text-muted-foreground">({count})</span>}
+    <div className="flex items-center gap-2 mb-2.5">
+      <Icon className="h-[18px] w-[18px] text-muted-foreground" />
+      <span className="text-[13.5px] font-mono font-bold">{label}</span>
+      {count != null && <span className="text-[12px] text-muted-foreground">({count})</span>}
       {right && <div className="ml-auto">{right}</div>}
     </div>
   )
@@ -89,7 +89,7 @@ function Metric({ label, value, sub, subClass }: { label: string; value: React.R
   return (
     <Card>
       <CardContent className="px-3 py-2.5">
-        <p className="text-[10px] font-mono uppercase tracking-[0.14em] text-muted-foreground">{label}</p>
+        <p className="text-[11px] font-mono text-muted-foreground">{label}</p>
         <p className="text-lg font-mono font-bold leading-tight">
           {value}
           {sub && <span className={`ml-1.5 text-[10px] font-normal ${subClass || "text-muted-foreground"}`}>{sub}</span>}
@@ -494,9 +494,9 @@ export function MatterDetailPage() {
   )
 
   return (
-    <div className="space-y-4 max-w-5xl">
+    <div className="px-6 py-6 max-w-[1100px] mx-auto space-y-5">
       <Button variant="ghost" size="sm" onClick={() => navigate("/matters")}>
-        <ArrowLeft className="h-3.5 w-3.5 mr-1" /> 案件一覧
+        <ArrowLeft className="h-4 w-4 mr-1" /> 案件一覧に戻る
       </Button>
 
       {/* ヘッダー: 閲覧主体。ステータスは即保存、その他の編集は鉛筆で編集パネルを開く。 */}
