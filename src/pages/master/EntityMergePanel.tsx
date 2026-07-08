@@ -9,6 +9,7 @@
  * ※ 依頼(Backlog課題)の統合は既存の「統合カート」を使用。
  */
 import * as React from "react"
+import { useSearchParams } from "react-router-dom"
 import { GitMerge, Crown, X, Loader2, ShoppingCart, Trash2, AlertTriangle, Search } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -38,6 +39,27 @@ export function EntityMergePanel() {
   const [preview, setPreview] = React.useState<{ loser: EntityOption; refs: PreviewRef[]; total: number }[] | null>(null)
   const [loading, setLoading] = React.useState(false)
   const [merging, setMerging] = React.useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // 連結チェック(DuplicateFinder)からの prefill: sessionStorage の候補群でカートを初期化。
+  React.useEffect(() => {
+    if (searchParams.get("prefill") !== "1") return
+    try {
+      const raw = sessionStorage.getItem("lb_merge_prefill")
+      if (raw) {
+        const p = JSON.parse(raw)
+        if (p && p.kind && Array.isArray(p.items) && p.items.length) {
+          setKind(p.kind)
+          setItems(p.items)
+          setSurvivorId(p.items[0]?.id ?? null)
+          setPreview(null)
+        }
+      }
+    } catch { /* noop */ }
+    sessionStorage.removeItem("lb_merge_prefill")
+    const sp = new URLSearchParams(searchParams); sp.delete("prefill"); setSearchParams(sp, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // 実体種別を変えたらカートを空にする(異種は混ぜられない)。
   const switchKind = (k: MergeKind) => {

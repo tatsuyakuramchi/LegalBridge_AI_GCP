@@ -18,6 +18,7 @@ import {
   Link2,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { DuplicateFinder } from "@/src/components/master/DuplicateFinder"
 
 type Check = {
   key: string
@@ -225,6 +226,9 @@ export const DataLinkagePanel: React.FC = () => {
         同じ発注条件が複数テーブルに分散している箇所の不整合を点検します。
         修復は安全側（正規化・孤児削除・孤児参照のNULL化）のみで、発行済の正本は変更しません。
       </p>
+
+      {/* 重複候補の検出 → ID統合カート(外部キーを付替えて孤立を防ぐ) */}
+      <DuplicateFinder />
 
       <div className="border border-border rounded-sm p-3 space-y-3">
         <div className="flex items-center gap-2 flex-wrap">
