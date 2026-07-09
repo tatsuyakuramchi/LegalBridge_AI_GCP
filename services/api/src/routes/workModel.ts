@@ -1765,7 +1765,7 @@ export function registerWorkModelRoutes(
            source_material_id, updated_at
          )
          SELECT $1,
-                COALESCE((SELECT MAX(condition_no) + 1 FROM capability_financial_conditions WHERE capability_id = $1), 1),
+                COALESCE((SELECT MAX(line_no) + 1 FROM condition_lines WHERE capability_id = $1), 1),
                 $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, CURRENT_TIMESTAMP
          RETURNING id, condition_no`,
         [
@@ -1842,7 +1842,7 @@ export function registerWorkModelRoutes(
         const cfc = await query(
           `INSERT INTO capability_financial_conditions
              (capability_id, condition_no, region_territory, region_language, region_language_label)
-           SELECT $1, COALESCE((SELECT MAX(condition_no) + 1 FROM capability_financial_conditions WHERE capability_id = $1), 1),
+           SELECT $1, COALESCE((SELECT MAX(line_no) + 1 FROM condition_lines WHERE capability_id = $1), 1),
                   $2, $3, $4 RETURNING id`,
           [capabilityId, territory, language, label]
         );
@@ -1901,7 +1901,11 @@ export function registerWorkModelRoutes(
           if (scid != null) {
             await query(`UPDATE capability_financial_conditions SET region_territory = $2, region_language = $3, region_language_label = $4 WHERE id = $1`, [scid, territory, language, label]);
           } else {
-            const cfc = await query(`INSERT INTO capability_financial_conditions (capability_id, condition_no, region_territory, region_language, region_language_label) SELECT $1, COALESCE((SELECT MAX(condition_no)+1 FROM capability_financial_conditions WHERE capability_id=$1),1), $2,$3,$4 RETURNING id`, [capabilityId, territory, language, label]);
+            // 採番は condition_lines 全体(=line_no)の MAX+1 で行う。cfc ビュー
+            //   (legacy_role='cfc' のみ)の MAX で採番すると、地域ホルダ行と本体行が
+            //   別系列で番号採番され (capability_id, line_no) UNIQUE 制約に衝突する
+            //   (地域付き条件が2件以上で duplicate key)。実体テーブル基準に統一。
+            const cfc = await query(`INSERT INTO capability_financial_conditions (capability_id, condition_no, region_territory, region_language, region_language_label) SELECT $1, COALESCE((SELECT MAX(line_no)+1 FROM condition_lines WHERE capability_id=$1),1), $2,$3,$4 RETURNING id`, [capabilityId, territory, language, label]);
             scid = cfc.rows[0].id as number;
           }
         }
