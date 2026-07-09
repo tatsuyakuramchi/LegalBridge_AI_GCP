@@ -555,6 +555,31 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                       この原作は<strong>新規素材を作成するときの登録先</strong>です（完全に新しいIPは「＋原作を新規作成」、原作本体素材 -001 も同時生成）。<strong>既存素材は下の検索で全原作から選べる</strong>ため、1発注書で複数の別原作にまたがる成果物も割り当てられます。
                     </p>
                   </div>
+                  {/* ③ 未リンクCL 予防: 素材未割当の利用許諾条件を作成前に警告。
+                      割当を捕捉させ、素材未リンクのCLが発生するのを防ぐ(発生しても②の棚卸しで回収可)。 */}
+                  {conds.length > 0 && (() => {
+                    const unassigned = conds.filter(
+                      (c: any, idx: number) => !cmCodes[String(c.condition_no ?? idx + 1)]
+                    )
+                    if (unassigned.length === 0) {
+                      return (
+                        <p className="text-[10px] font-mono px-2.5 py-1.5 rounded-sm bg-emerald-50 border border-emerald-200 text-emerald-800">
+                          ✓ すべての利用許諾条件に原作素材が割当済み（作成時に素材リンクされます）。
+                        </p>
+                      )
+                    }
+                    return (
+                      <div className="text-[10px] font-mono px-2.5 py-1.5 rounded-sm bg-red-50 border border-red-300 text-red-800 leading-relaxed">
+                        ⚠ <strong>{unassigned.length} 件</strong>の利用許諾条件に原作素材が未割当です
+                        （{unassigned
+                          .map((c: any, i: number) => c.condition_name || `条件${c.condition_no ?? i + 1}`)
+                          .join("、")}）。
+                        <br />
+                        このまま作成すると<strong>素材未リンクのCL</strong>になります（後で「未リンクCL 棚卸し」画面で紐づけ可能ですが、
+                        ここで素材を割り当てるのが確実です）。下の各条件に原作マテリアルを割り当ててください。
+                      </div>
+                    )
+                  })()}
                   {conds.length === 0 ? (
                     <p className="text-[10px] font-mono text-muted-foreground">
                       上の表に利用許諾条件を追加すると、各条件に原作マテリアルを割り当てられます（成果物ごとに条件を1本ずつ作ると 成果物:素材=1:1 になります）。
