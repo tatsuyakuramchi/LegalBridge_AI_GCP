@@ -21,7 +21,7 @@
 
 import * as React from "react"
 import { useNavigate } from "react-router-dom"
-import { Loader2, Plus, Trash2, FileText, Pencil, X, Search, FileOutput } from "lucide-react"
+import { Loader2, Plus, Trash2, FileText, Pencil, X, Search, FileOutput, Link2 } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -132,11 +132,11 @@ export function MaterialEntryPanel() {
 
   const [pickedDoc, setPickedDoc] = React.useState<LookedUpDocument | null>(null)
   const [fileLink, setFileLink] = React.useState("")
-  // CL引用: 選んだ文書(発注書=受託者帰属の利用許諾条件を含む / 契約)の既存 CL 候補。
-  //   GET /api/v3/documents/:num/lc-candidates。lump 系(発注者帰属成果物)は条件なしなので、
-  //   ここでは条件付き(source='license_condition')＝そのまま金銭条件へ引用できる行だけ扱う。
-  const [lcCands, setLcCands] = React.useState<any[]>([])
-  const [lcLoading, setLcLoading] = React.useState(false)
+  // CL引用(リンク方式): 選んだ文書(発注書等)配下の「未リンクの利用許諾CL」=素材未割当の
+  //   license 条件明細。値コピー(=二重作成)ではなく、既存CLをこの素材へ後付けリンクする。
+  //   GET /api/v3/documents/:num/unlinked-license-conditions。
+  const [unlinkedCLs, setUnlinkedCLs] = React.useState<any[]>([])
+  const [unlinkedLoading, setUnlinkedLoading] = React.useState(false)
   // 文書種別: license=個別利用許諾条件書(ARC-ILT) / publication=出版等利用許諾条件書(ARC-PUBT)。
   //   固定3種の取引形態は出版にも流用(紙自社出版=①/電子出版=②/紙他社出版=③)。器のカテゴリと採番だけ切替。
   const [docKind, setDocKind] = React.useState<"license" | "publication">("license")
@@ -171,48 +171,39 @@ export function MaterialEntryPanel() {
   const patchCond = (key: string, patch: Partial<CondRow>) =>
     setConds((cs) => cs.map((c) => (c.key === key ? { ...c, ...patch } : c)))
 
-  // CL引用: 選んだ文書の既存 CL(条件付き)を取得。発注書の受託者帰属条件もここに載る。
+  // CL引用: 選んだ文書配下の「未リンクの利用許諾CL」を取得(発注書の受託者帰属条件など)。
   React.useEffect(() => {
     const num = pickedDoc?.document_number
-    if (!num) { setLcCands([]); return }
+    if (!num) { setUnlinkedCLs([]); return }
     let alive = true
-    setLcLoading(true)
-    fetch(`/api/v3/documents/${encodeURIComponent(num)}/lc-candidates`)
+    setUnlinkedLoading(true)
+    fetch(`/api/v3/documents/${encodeURIComponent(num)}/unlinked-license-conditions`)
       .then((r) => (r.ok ? r.json() : []))
-      .then((rows: any) => {
-        if (!alive) return
-        const arr: any[] = Array.isArray(rows) ? rows : []
-        // 条件付き(source='license_condition')＝料率等を引用できる行だけ。発注者帰属成果物(po_deliverable)は除外。
-        setLcCands(arr.filter((c) => c.source === "license_condition"))
-      })
-      .catch(() => { if (alive) setLcCands([]) })
-      .finally(() => { if (alive) setLcLoading(false) })
+      .then((rows: any) => { if (alive) setUnlinkedCLs(Array.isArray(rows) ? rows : []) })
+      .catch(() => { if (alive) setUnlinkedCLs([]) })
+      .finally(() => { if (alive) setUnlinkedLoading(false) })
     return () => { alive = false }
   }, [pickedDoc?.document_number])
 
-  // CL引用: 候補1件を金銭条件フォーム行へ写像して追加(固定3種へ calc_type/method で逆引き)。
-  const quoteLcCandidate = (c: any) => {
-    const deal =
-      V3_FIXED_DEALS.find((d) => d.calc_type === c.calc_type) ||
-      V3_FIXED_DEALS.find((d) => d.calc_type === c.calc_method) ||
-      V3_FIXED_DEALS[0]
-    const label = c.region_language_label ? String(c.region_language_label) : ""
-    const [terr, lang] = label.includes("・") ? label.split("・") : ["", ""]
-    const row: CondRow = {
-      ...newCondRow(deal.id),
-      rate_pct: c.rate_pct != null ? String(c.rate_pct) : "",
-      mg_amount: c.mg_amount != null && Number(c.mg_amount) > 0 ? String(c.mg_amount) : "",
-      ag_amount: c.ag_amount != null && Number(c.ag_amount) > 0 ? String(c.ag_amount) : "",
-      currency: c.currency || "JPY",
-      region_territory: terr || "",
-      region_language: lang || "",
+  // CL引用(リンク): 既存の未リンクCLをこの素材へ後付けリンク(source_material_id セット)。新規作成しない。
+  const linkExistingCL = async (cl: any) => {
+    if (!editingId) {
+      showNotification?.("先に「マテリアルを登録」で素材を保存してから紐づけてください（既存CLのリンクには保存済みの素材が必要です）。", "error")
+      return
     }
-    // 先頭が空の初期行なら置換、そうでなければ追加。
-    setConds((cs) => {
-      const onlyEmptyInitial = cs.length === 1 && !cs[0].__clid && !cs[0].rate_pct && !cs[0].mg_amount && !cs[0].ag_amount
-      return onlyEmptyInitial ? [row] : [...cs, row]
-    })
-    showNotification?.(`「${c.material_name || c.condition_name || "CL"}」の条件を引用しました`, "success")
+    try {
+      const r = await fetch(
+        `/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${editingId}/link-conditions`,
+        { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ condition_line_ids: [cl.id] }) }
+      )
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok || !j.ok || !(Number(j.linked) > 0)) throw new Error(j.error || `HTTP ${r.status}`)
+      setUnlinkedCLs((cs) => cs.filter((x) => x.id !== cl.id))
+      showNotification?.(`既存の利用許諾条件(CL #${cl.id})をこの素材に紐づけました（新規作成なし＝二重化なし）。`, "success")
+      await loadMaterials(workId)
+    } catch (e: any) {
+      showNotification?.(`リンクに失敗しました: ${String(e?.message || e)}`, "error")
+    }
   }
 
   const clearFields = () => {
@@ -981,34 +972,44 @@ export function MaterialEntryPanel() {
                         <button type="button" className="ml-auto text-muted-foreground hover:text-destructive" onClick={() => setPickedDoc(null)}>解除</button>
                       </div>
                     )}
-                    {/* CL引用: 発注書(受託者帰属)・契約が持つ既存の利用許諾条件を、外部キー参照で金銭条件へ引用。
-                        再入力せず料率等をそのまま取り込む(重複入力を防ぐ)。 */}
-                    {pickedDoc && lcLoading && (
+                    {/* CL引用(リンク方式): この文書が既に持つ未リンクの利用許諾CLを、値コピーせず
+                        この素材へ後付けリンク(source_material_id)。発注書の受託者帰属条件の二重化を防ぐ。 */}
+                    {pickedDoc && unlinkedLoading && (
                       <div className="flex items-center gap-1.5 font-mono text-[10px] text-muted-foreground py-1">
-                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> この文書の利用許諾条件(CL)を確認中…
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" /> この文書の未リンク利用許諾条件(CL)を確認中…
                       </div>
                     )}
-                    {pickedDoc && !lcLoading && lcCands.length > 0 && (
-                      <div className="rounded-md border border-violet-300 bg-violet-50/50 dark:bg-violet-950/20 px-2.5 py-2 space-y-1.5">
-                        <p className="font-mono text-[10px] font-bold text-violet-700 dark:text-violet-300">
-                          この文書の利用許諾条件を引用（{lcCands.length}件）— 発注書の受託者帰属条件など。押すと金銭条件に取り込みます。
+                    {pickedDoc && !unlinkedLoading && unlinkedCLs.length > 0 && (
+                      <div className="rounded-md border border-amber-400 bg-amber-50/60 dark:bg-amber-950/20 px-2.5 py-2 space-y-2">
+                        <p className="font-mono text-[10px] font-bold text-amber-700 dark:text-amber-300">
+                          この文書は素材未割当の利用許諾条件（CL）を {unlinkedCLs.length} 件持っています（発注書の受託者帰属条件など）。
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          {lcCands.map((c, i) => (
-                            <button
-                              key={`${c.material_code ?? ""}:${c.source_condition_id ?? i}`}
-                              type="button"
-                              onClick={() => quoteLcCandidate(c)}
-                              className="inline-flex items-center gap-1 border border-violet-400 text-violet-700 dark:text-violet-300 rounded px-2 py-1 font-mono text-[10px] hover:bg-violet-500/10"
-                              title="この条件を金銭条件フォームに引用"
-                            >
-                              <Plus className="h-3 w-3" />
-                              {c.material_name || c.condition_name || c.material_code || "CL"}
-                              {c.rate_pct != null ? ` / 料率${c.rate_pct}%` : ""}
-                              {c.region_language_label ? ` / ${c.region_language_label}` : ""}
-                            </button>
+                        <p className="font-mono text-[9.5px] text-amber-800/80 dark:text-amber-200/70 leading-snug">
+                          下で新規入力せず、<b>既存CLをこの素材にリンク</b>してください（新規作成しない＝二重化なし）。
+                          {!editingId && <span className="text-rose-600"> ※ リンクには保存済みの素材が必要です。先に「マテリアルを登録」で保存してから紐づけてください。</span>}
+                        </p>
+                        <ul className="space-y-1">
+                          {unlinkedCLs.map((cl) => (
+                            <li key={cl.id} className="flex items-center gap-2 rounded-sm border border-amber-200 bg-white/70 dark:bg-black/20 px-2 py-1">
+                              <div className="min-w-0 flex-1 font-mono text-[10px]">
+                                <span className="font-bold">CL #{cl.id}</span>
+                                {cl.subject ? ` / ${cl.subject}` : ""}
+                                {cl.rate_pct != null ? ` / 料率${cl.rate_pct}%` : ""}
+                                {cl.region_language_label ? ` / ${cl.region_language_label}` : ""}
+                                {cl.payment_scheme && cl.payment_scheme !== "royalty" ? ` / ${cl.payment_scheme}` : ""}
+                              </div>
+                              <button
+                                type="button"
+                                disabled={!editingId}
+                                onClick={() => linkExistingCL(cl)}
+                                className="inline-flex items-center gap-1 border border-amber-500 text-amber-700 dark:text-amber-300 rounded px-2 py-1 font-mono text-[10px] hover:bg-amber-500/10 disabled:opacity-40 disabled:cursor-not-allowed"
+                                title="この既存CLをこの素材にリンク(新規作成しない)"
+                              >
+                                <Link2 className="h-3 w-3" /> この素材に紐づける
+                              </button>
+                            </li>
                           ))}
-                        </div>
+                        </ul>
                       </div>
                     )}
                     {!pickedDoc && (

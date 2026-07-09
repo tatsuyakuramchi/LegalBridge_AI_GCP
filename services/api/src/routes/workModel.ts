@@ -1625,6 +1625,60 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 文書(発注書等)配下の「未リンクの利用許諾CL」= 素材未割当の license 条件明細。
+  //   発注書作成時に原作台帳/素材番号が無いと source_material_id が付かないため、CL は
+  //   実在するが原作素材に紐づかない(lc-candidates に出ない)。これを素材登録側で拾って
+  //   「値コピー(=二重作成)」ではなく「既存CLを素材にリンク(source_material_id を後付け)」する。
+  app.get("/api/v3/documents/:documentNumber/unlinked-license-conditions", ...requireRead, async (req, res) => {
+    try {
+      const doc = String(req.params.documentNumber || "").trim();
+      if (!doc) return res.status(400).json({ ok: false, error: "invalid documentNumber" });
+      const r = await query(
+        `SELECT cl.id, cl.subject, cl.payment_scheme, cl.rate_pct, cl.mg_amount, cl.ag_amount,
+                cl.amount_ex_tax, cl.base_price_label, cl.calc_method, cl.currency,
+                cl.region_territory, cl.region_language, cl.condition_name AS region_language_label,
+                cc.document_number, cc.contract_title, cc.record_type
+           FROM condition_lines cl
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+          WHERE cc.document_number ILIKE '%' || $1 || '%'
+            AND cl.transaction_kind = 'license'
+            AND cl.source_material_id IS NULL
+          ORDER BY cl.line_no, cl.id`,
+        [doc]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
+  // 既存の未リンク利用許諾CLを、この原作マテリアルへ後付けリンク(source_material_id/source_work_id)。
+  //   新規 condition_line は作らない(=二重CLを防ぐ)。安全のため未リンクの license CL のみ対象。
+  app.post("/api/v3/source-ips/:id/materials/:mid/link-conditions", ...requireWrite, express.json(), async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      const mid = Number(req.params.mid);
+      if (!Number.isFinite(id) || !Number.isFinite(mid)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const b = req.body || {};
+      const ids: number[] = Array.isArray(b.condition_line_ids)
+        ? b.condition_line_ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n))
+        : [];
+      if (ids.length === 0) return res.status(400).json({ ok: false, error: "condition_line_ids が空です" });
+      const sw = await query(`SELECT id FROM works WHERE id = $1 AND kind = 'licensed_in'`, [id]);
+      if (sw.rows.length === 0) return res.status(404).json({ ok: false, error: "原作が見つかりません" });
+      const mat = await query(`SELECT id FROM work_materials WHERE id = $1 AND work_id = $2`, [mid, id]);
+      if (mat.rows.length === 0) return res.status(404).json({ ok: false, error: "原作マテリアルが見つかりません" });
+      const r = await query(
+        `UPDATE condition_lines
+            SET source_material_id = $2, source_work_id = $3, updated_at = now()
+          WHERE id = ANY($1::int[])
+            AND source_material_id IS NULL
+            AND transaction_kind = 'license'
+          RETURNING id`,
+        [ids, mid, id]
+      );
+      res.json({ ok: true, linked: r.rowCount || 0, ids: r.rows.map((x: any) => x.id) });
+    } catch (e) { fail(res, e); }
+  });
+
   // マテリアル単位の利用許諾条件 登録 (過去分登録の単一ルート)。原作の器(capability)配下に
   //   condition_line を作る。direction='payable'/transaction_kind='license'/work_id=NULL(割当はピッカー)。
   //   地域・言語は per-行の capability_financial_conditions を作り source_condition_id で紐付け。
