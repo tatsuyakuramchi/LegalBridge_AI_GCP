@@ -4371,6 +4371,8 @@ ${details}
         payment_date: x.payment_date || "",
         delivery_date: x.delivery_date || "",
         cycle: x.cycle || "",
+        // 継続(SUBSCRIPTION)の課金周期。cycle に MONTHLY/ANNUAL を保存しているため復元。
+        subscription_cycle: x.cycle === "MONTHLY" || x.cycle === "ANNUAL" ? x.cycle : undefined,
         term_start: x.term_start || "",
         term_end: x.term_end || "",
         billing_day: x.billing_day ?? "",
@@ -15491,8 +15493,9 @@ ${details}
                  unit_price, quantity, amount_ex_tax, rate_pct,
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date,
-                 deliverable_ownership, royalty_calc_basis, work_id, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, CURRENT_TIMESTAMP)`,
+                 deliverable_ownership, royalty_calc_basis, work_id,
+                 cycle, billing_day, term_start, term_end, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP)`,
               [
                 orderItemId,
                 lineNo,
@@ -15513,6 +15516,14 @@ ${details}
                 l.work_id != null && String(l.work_id).trim() !== ""
                   ? Number(l.work_id)
                   : null,
+                // 継続(SUBSCRIPTION)の役務提供期間を構造化保存。form_data には既に入るが、
+                //   納期/期間を capability_line_items から直読みするレポート系にも載せる。
+                l.cycle || l.subscription_cycle || null,
+                l.billing_day != null && String(l.billing_day).trim() !== ""
+                  ? Number(l.billing_day)
+                  : null,
+                l.term_start || null,
+                l.term_end || null,
               ]
             );
           }
