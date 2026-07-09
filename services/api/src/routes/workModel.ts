@@ -731,9 +731,10 @@ export function registerWorkModelRoutes(
            formula_text, payment_terms, mg_amount, ag_amount, condition_kind,
            counterparty_vendor_id, basis, unit_price, cycle, billing_day,
            term_start, term_end, advance_amount, forecast_amount,
-           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type
+           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
+           parent_license_condition_id
          ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-           $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
+           $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
          RETURNING *`,
         [
           id, b.source_work_id ?? null, b.source_material_id ?? null, condNo,
@@ -752,6 +753,8 @@ export function registerWorkModelRoutes(
           b.subscription_cycle ?? null,
           b.unit_amount != null && b.unit_amount !== "" ? Number(b.unit_amount) : null,
           b.guarantee_type ?? null,
+          // 0114: 分配計算の源泉となる親ライセンスイン条件へのリンク
+          b.parent_license_condition_id ?? null,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -777,6 +780,7 @@ export function registerWorkModelRoutes(
             advance_amount = $25, forecast_amount = $26,
             condition_name = $27, calc_type = $28, fixed_kind = $29,
             subscription_cycle = $30, unit_amount = $31, guarantee_type = $32,
+            parent_license_condition_id = $33,
             updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
@@ -794,6 +798,8 @@ export function registerWorkModelRoutes(
           b.subscription_cycle ?? null,
           b.unit_amount != null && b.unit_amount !== "" ? Number(b.unit_amount) : null,
           b.guarantee_type ?? null,
+          // 0114: 分配計算の源泉となる親ライセンスイン条件へのリンク
+          b.parent_license_condition_id ?? null,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });

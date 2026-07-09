@@ -27,6 +27,8 @@ import { V3_CALC_MODELS } from "@/src/components/document/V3LicenseMatrix"
 type CondDraft = {
   key: string
   id?: number
+  /** 分配計算の源泉となる親ライセンスイン条件(capability_financial_conditions.id)。 */
+  parent_license_condition_id?: number
   calc_type: string
   condition_name: string
   base_price_label: string
@@ -79,6 +81,22 @@ export function SublicenseConditionPanel() {
   const [loading, setLoading] = React.useState(false)
   const [busyKey, setBusyKey] = React.useState<string | null>(null)
 
+  // 分配の料率元: 源泉ライセンスイン原作 と その license_in 条件(親候補)。
+  const [sourceIp, setSourceIp] = React.useState<EntityOption | null>(null)
+  const [licenseInConds, setLicenseInConds] = React.useState<any[]>([])
+  const loadLicenseIn = React.useCallback(async (sid: string) => {
+    if (!sid) { setLicenseInConds([]); return }
+    try {
+      const r = await fetch(`/api/v3/works/${encodeURIComponent(sid)}/conditions`)
+      const rows = await r.json()
+      setLicenseInConds((Array.isArray(rows) ? rows : []).filter((c) => c.condition_kind === "license_in"))
+    } catch {
+      setLicenseInConds([])
+    }
+  }, [])
+  const licenseInLabel = (c: any) =>
+    `${c.condition_name || c.calc_type || `条件#${c.id}`}${c.rate_pct != null ? ` ・ ${c.rate_pct}%` : ""}${c.region_language_label ? ` ・ ${c.region_language_label}` : ""}`
+
   // 選択中の作品×再許諾先の sublicense_out 条件を読み込む。
   const load = React.useCallback(async (wid: string, vid: string) => {
     if (!wid || !vid) { setDrafts([]); return }
@@ -94,6 +112,7 @@ export function SublicenseConditionPanel() {
         mine.map((c) => ({
           key: `c${++_seq}`,
           id: Number(c.id),
+          parent_license_condition_id: c.parent_license_condition_id != null ? Number(c.parent_license_condition_id) : undefined,
           calc_type: c.calc_type || "BASE_QTY_RATE",
           condition_name: c.condition_name || "",
           base_price_label: c.base_price_label || "",
@@ -124,6 +143,7 @@ export function SublicenseConditionPanel() {
   const bodyOf = (d: CondDraft) => ({
     condition_kind: "sublicense_out",
     counterparty_vendor_id: Number(vendorId),
+    parent_license_condition_id: d.parent_license_condition_id ?? null,
     calc_type: d.calc_type,
     calc_method: "ROYALTY",
     basis: basisForCalc(d.calc_type),
@@ -228,6 +248,23 @@ export function SublicenseConditionPanel() {
             </button>
           </div>
 
+          {/* 分配の料率元(任意): 源泉ライセンスイン原作を選ぶと、その license_in 条件を各行の親に紐づけできる。 */}
+          <div className="rounded-md border border-border bg-muted/20 px-3 py-2.5 space-y-1.5">
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">
+              分配の料率元 — 源泉ライセンスイン原作（任意）
+            </div>
+            <EntitySearchSelect
+              entity="source_ip"
+              value={sourceIp?.id ?? null}
+              onSelect={(o) => { setSourceIp(o); void loadLicenseIn(o?.id || "") }}
+              placeholder="源泉のライセンスイン原作を検索（LO-コード / タイトル）"
+            />
+            <p className="text-[10px] font-mono text-muted-foreground/70">
+              選ぶと各条件の「親ライセンスイン条件」で料率元を指定できます（分配＝基準×個数×ライセンスイン料率の源泉）。未指定でも条件は登録可。
+              {licenseInConds.length > 0 && <>（license_in 条件 {licenseInConds.length} 件）</>}
+            </p>
+          </div>
+
           {drafts.length === 0 ? (
             <p className="text-[12px] font-mono text-muted-foreground border border-dashed border-border rounded-md px-3 py-6 text-center">
               この作品 × 再許諾先の再許諾条件はまだありません。「条件を追加」で登録してください。
@@ -297,6 +334,24 @@ export function SublicenseConditionPanel() {
                     <label className="space-y-1">
                       <span className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">適用終了</span>
                       <Input type="date" value={d.term_end} onChange={(e) => patch(d.key, { term_end: e.target.value })} className={inputCls} />
+                    </label>
+
+                    <label className="space-y-1 md:col-span-3">
+                      <span className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">親ライセンスイン条件（分配の料率元・任意）</span>
+                      <NativeSelect
+                        value={d.parent_license_condition_id != null ? String(d.parent_license_condition_id) : ""}
+                        onChange={(e) => patch(d.key, { parent_license_condition_id: e.target.value ? Number(e.target.value) : undefined })}
+                        className={selCls}
+                      >
+                        <option value="">— 未リンク（上で源泉ライセンスイン原作を選ぶと候補表示）—</option>
+                        {licenseInConds.map((c) => (
+                          <option key={c.id} value={c.id}>{licenseInLabel(c)}</option>
+                        ))}
+                        {d.parent_license_condition_id != null &&
+                          !licenseInConds.some((c) => Number(c.id) === d.parent_license_condition_id) && (
+                            <option value={d.parent_license_condition_id}>リンク済 条件 id:{d.parent_license_condition_id}</option>
+                          )}
+                      </NativeSelect>
                     </label>
                   </div>
 
