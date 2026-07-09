@@ -202,13 +202,35 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
 
             {/* 帰属駆動: 報酬 */}
             {isContractor ? (
-              <div className="rounded-sm border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2 space-y-1">
-                <div className="text-[11px] font-mono font-bold text-amber-800">
-                  報酬：<span className="underline">利用許諾料に含む</span>（成果物代金は確定額に不算入）
+              <div className="rounded-sm border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2 space-y-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className={labelCls}>執筆料など固定報酬（税抜・任意）</label>
+                    <input
+                      type="number"
+                      value={amount || ""}
+                      onChange={(e) => setAmount(idx, Number(e.target.value) || 0)}
+                      className={inputCls}
+                      placeholder="0 または空欄＝利用許諾料に含む"
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className={labelCls}>支払日（固定報酬がある場合）</label>
+                    <input
+                      type="date"
+                      value={it.payment_date || ""}
+                      onChange={(e) => patch(idx, { payment_date: e.target.value })}
+                      className={inputCls}
+                    />
+                  </div>
                 </div>
                 <p className="text-[10px] font-mono text-amber-800/80 leading-snug">
-                  支払日は「利用許諾料計算書の通り」。計算方法（料率）と原作素材は、下の
-                  <b>「利用許諾条件（共通）」</b>で登録してください（取適法の「計算方法の記載」を担保）。
+                  {amount > 0 ? (
+                    <>PDF表記：「<b>{yen(amount)} 執筆料（利用許諾料は別途）</b>」。この固定報酬は確定額に算入されます。</>
+                  ) : (
+                    <>固定報酬なし → PDF表記：「<b>報酬は利用許諾料に含む</b>」（支払日＝利用許諾料計算書の通り）。</>
+                  )}
+                  {" "}利用許諾料（料率）と原作素材は、下の<b>「利用許諾条件（共通）」</b>で登録してください（取適法の「計算方法の記載」を担保）。
                 </p>
               </div>
             ) : (
