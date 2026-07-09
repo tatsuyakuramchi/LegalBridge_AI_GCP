@@ -14,7 +14,7 @@
  *   受領削除 : DELETE /api/v3/condition-receipts/:rid
  */
 import * as React from "react"
-import { Loader2, Plus, Trash2, Coins, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, Pencil, Check, X } from "lucide-react"
+import { Loader2, Plus, Trash2, Coins, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, Pencil, Check, X, FileText } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/toast"
@@ -321,7 +321,18 @@ export function BillingTablePanel() {
       </div>
 
       <div className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
-        <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground mb-1">対象作品</div>
+        <div className="flex items-center justify-between gap-2 mb-1">
+          <div className="text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground">対象作品</div>
+          {workId && (
+            <a
+              href={`/billing-print/${encodeURIComponent(workId)}?title=${encodeURIComponent(work?.label || "")}`}
+              target="_blank" rel="noopener noreferrer"
+              className="inline-flex items-center gap-1.5 border border-border rounded px-2.5 py-1 font-mono text-[10px] hover:bg-muted"
+            >
+              <FileText className="h-3 w-3" /> 計算書を印刷 / PDF
+            </a>
+          )}
+        </div>
         <EntitySearchSelect entity="work" value={work?.id ?? null} onSelect={(o) => setWork(o)} placeholder="作品を検索（コード / タイトル）" />
       </div>
 

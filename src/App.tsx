@@ -31,6 +31,7 @@ import { SublicenseConditionPanel } from "./pages/master/SublicenseConditionPane
 import { UnlinkedConditionsPanel } from "./pages/master/UnlinkedConditionsPanel" // 未リンクCL 棚卸し
 import { BillingTablePanel } from "./pages/master/BillingTablePanel" // 請求・分配テーブル(再許諾)
 import { BillingDashboardPanel } from "./pages/master/BillingDashboardPanel" // 請求・分配 横断ダッシュボード
+import { BillingPrintPage } from "./pages/master/BillingPrintPage" // 再許諾料 受領・分配 計算書(印刷/PDF)
 import { WorkEntryPanel } from "./pages/master/WorkEntryPanel" // 作品/原作 登録
 import { PubLicenseEntryPanel } from "./pages/master/PubLicenseEntryPanel" // 出版利用許諾条件 登録
 import { EntityMergePanel } from "./pages/master/EntityMergePanel" // ID統合(マージ)カート
@@ -51,6 +52,8 @@ export default function App() {
           <DocumentSessionProvider>
             <MergeCartProvider>
             <Routes>
+              {/* 計算書の印刷/PDF出力は画面chromeを被せない(AppShell外) */}
+              <Route path="billing-print/:workId" element={<BillingPrintPage />} />
               <Route element={<AppShell />}>
                 <Route index element={<DashboardPage />} />
                 <Route path="documents/new" element={<DocumentEditorPage />} />
