@@ -180,7 +180,14 @@ export class GoogleDriveService {
         supportsAllDrives: true,
       });
 
-      return response.data.webViewLink || "";
+      // 共有ドライブ等では webViewLink が返らないことがある (uploadPdf でも既知)。
+      // その場合は fileId から /file/d/<id>/view を合成し、リンク欠落で
+      // 後続の fileId 抽出 (downloadFile/本文抽出) が壊れないようにする。
+      const id = response.data.id;
+      return (
+        response.data.webViewLink ||
+        (id ? `https://drive.google.com/file/d/${id}/view` : "")
+      );
     } catch (error) {
       console.error("Error uploading file to Google Drive:", error);
       throw error;

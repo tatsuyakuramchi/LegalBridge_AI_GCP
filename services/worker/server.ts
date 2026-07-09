@@ -5340,6 +5340,7 @@ ${details}
   };
   app.post(
     "/api/matters/:id/attachments",
+    requirePortalSecret,
     upload.single("file"),
     async (req, res) => {
       try {
@@ -5375,6 +5376,14 @@ ${details}
           fileName,
           req.file.mimetype
         );
+        // 空リンクは保存しない(後段の fileId 抽出/本文抽出が壊れるため)。
+        //   uploadFile 側で fileId からの合成を試みるので、ここに来るのは想定外。
+        if (!driveLink) {
+          return res.status(502).json({
+            ok: false,
+            error: "Drive へのアップロードに失敗しました (リンク未取得)",
+          });
+        }
 
         // ATT-YYYY-NNNNN 採番(matter_code と同じ document_sequences を使用)。
         const year = new Date().getFullYear();
