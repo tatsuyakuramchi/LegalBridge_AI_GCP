@@ -109,17 +109,21 @@ export function buildCalcPeriodLabel(
   return "";
 }
 
-// 計算式タイプの選択肢。ライセンスインは従来の4種、プロダクトインは供給価格×個数(新)＋従来型。
+// 計算式タイプの選択肢。ラベルは固定3種の取引形態(自社製造自社販売/権利許諾/自社製造他社販売)を
+//   先頭に出し、括弧内に計算式を併記する(利用許諾条件書の V3_FIXED_DEALS と語彙を揃える)。
+//     BASE_QTY_RATE = ①自社製造・自社販売 / BASE_RATE = ②権利許諾(サブライセンス)
+//     SUPPLY_QTY    = ③自社製造・他社販売 / FIXED = 固定額 / SUBSCRIPTION = サブスク
 const CALC_TYPE_OPTION_MAP: Record<CalcType, string> = {
-  BASE_QTY_RATE: "① 基準価格 × 個数 × 料率",
-  BASE_RATE: "② 基準価格 × 料率",
-  FIXED: "③ 固定値 (一括/分割)",
-  SUBSCRIPTION: "④ サブスクリプション (月/年)",
-  SUPPLY_QTY: "⑤ 供給価格 × 個数 (プロダクトイン)",
+  BASE_QTY_RATE: "① 自社製造・自社販売（基準価格 × 個数 × 料率）",
+  BASE_RATE: "② 権利許諾・サブライセンス（基準価格 × 料率）",
+  SUPPLY_QTY: "③ 自社製造・他社販売（供給価格 × 個数 × 料率）",
+  FIXED: "固定額（一括 / 分割）",
+  SUBSCRIPTION: "サブスクリプション（月 / 年）",
 };
 export const CALC_TYPE_OPTIONS: Array<{ value: CalcType; label: string }> = [
   { value: "BASE_QTY_RATE", label: CALC_TYPE_OPTION_MAP.BASE_QTY_RATE },
   { value: "BASE_RATE", label: CALC_TYPE_OPTION_MAP.BASE_RATE },
+  { value: "SUPPLY_QTY", label: CALC_TYPE_OPTION_MAP.SUPPLY_QTY },
   { value: "FIXED", label: CALC_TYPE_OPTION_MAP.FIXED },
   { value: "SUBSCRIPTION", label: CALC_TYPE_OPTION_MAP.SUBSCRIPTION },
 ];
@@ -159,8 +163,11 @@ export function buildFormulaText(c: Partial<FinancialCondition>): string {
       : "固定額";
   switch (c.calc_type) {
     case "SUPPLY_QTY":
-      // プロダクトイン: 供給価格 × 個数 (料率なし)。
-      return `${c.base_price_label || "供給価格"} × 個数`;
+      // プロダクトイン(仕入): 供給価格 × 個数 (料率なし)。
+      // 自社製造・他社販売(ライセンス): 供給価格 × 個数 × 料率。
+      return c.transaction_kind === "product"
+        ? `${c.base_price_label || "供給価格"} × 個数`
+        : `${c.base_price_label || "供給価格"} × 個数 × ${rate}`;
     case "BASE_QTY_RATE":
       return `${base} × 個数 × ${rate}`;
     case "BASE_RATE":
@@ -540,19 +547,36 @@ export const FinancialConditionTable: React.FC<Props> = ({
                   </select>
                 </div>
 
-                {/* ⑤ プロダクトイン: 供給価格 × 個数 (料率なし)。供給価格ラベルのみ */}
+                {/* ③ SUPPLY_QTY: 供給価格 × 個数。プロダクトイン(仕入)=料率なし /
+                    自社製造・他社販売(ライセンス)=料率あり(供給価格×個数×料率)。 */}
                 {c.calc_type === "SUPPLY_QTY" && (
-                  <div>
-                    <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
-                      供給価格
+                  <>
+                    <div>
+                      <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                        供給価格
+                      </div>
+                      {cellInput(
+                        c.base_price_label,
+                        (v) => recalc(idx, { base_price_label: v }),
+                        "text",
+                        "供給価格 (仕入単価)"
+                      )}
                     </div>
-                    {cellInput(
-                      c.base_price_label,
-                      (v) => recalc(idx, { base_price_label: v }),
-                      "text",
-                      "供給価格 (仕入単価)"
+                    {c.transaction_kind !== "product" && (
+                      <div>
+                        <div className="text-muted-foreground uppercase tracking-wider mb-0.5">
+                          料率 (%)
+                        </div>
+                        {cellInput(
+                          c.rate_pct,
+                          (v) => recalc(idx, { rate_pct: Number(v) || 0 }),
+                          "number",
+                          "5.0",
+                          "0.0001"
+                        )}
+                      </div>
                     )}
-                  </div>
+                  </>
                 )}
 
                 {/* ① ② 基準価格×(個数×)料率 系: 料率 + 基準価格 */}
