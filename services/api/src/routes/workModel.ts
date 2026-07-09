@@ -687,9 +687,13 @@ export function registerWorkModelRoutes(
       const id = Number(req.params.id);
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(
-        `SELECT cfc.*, sw.title AS source_work_title, sw.work_code AS source_work_code,
+        // 0114: parent_license_condition_id は cfc ビューに無い(実体は condition_lines)。
+        //   cfc.id = condition_lines.id の 1:1 なので JOIN して読み出す。
+        `SELECT cfc.*, cl.parent_license_condition_id,
+                sw.title AS source_work_title, sw.work_code AS source_work_code,
                 sm.material_name AS source_material_name
            FROM capability_financial_conditions cfc
+           LEFT JOIN condition_lines cl ON cl.id = cfc.id
            LEFT JOIN works sw ON sw.id = cfc.source_work_id
            LEFT JOIN work_materials sm ON sm.id = cfc.source_material_id
           WHERE cfc.work_id = $1
@@ -731,10 +735,9 @@ export function registerWorkModelRoutes(
            formula_text, payment_terms, mg_amount, ag_amount, condition_kind,
            counterparty_vendor_id, basis, unit_price, cycle, billing_day,
            term_start, term_end, advance_amount, forecast_amount,
-           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type,
-           parent_license_condition_id
+           condition_name, calc_type, fixed_kind, subscription_cycle, unit_amount, guarantee_type
          ) VALUES ($1, NULL, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-           $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33)
+           $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32)
          RETURNING *`,
         [
           id, b.source_work_id ?? null, b.source_material_id ?? null, condNo,
@@ -753,11 +756,21 @@ export function registerWorkModelRoutes(
           b.subscription_cycle ?? null,
           b.unit_amount != null && b.unit_amount !== "" ? Number(b.unit_amount) : null,
           b.guarantee_type ?? null,
-          // 0114: 分配計算の源泉となる親ライセンスイン条件へのリンク
-          b.parent_license_condition_id ?? null,
         ]
       );
-      res.status(201).json(r.rows[0]);
+      const row = r.rows[0];
+      // 0114: parent_license_condition_id は cfc ビューに無い(実体は condition_lines)。
+      //   INSTEAD OF INSERT トリガ後、cfc.id = condition_lines.id を使って直接更新する。
+      const parentLc = b.parent_license_condition_id != null && b.parent_license_condition_id !== ""
+        ? Number(b.parent_license_condition_id) : null;
+      if (parentLc != null && row?.id) {
+        await query(
+          `UPDATE condition_lines SET parent_license_condition_id = $2 WHERE id = $1`,
+          [row.id, parentLc]
+        );
+      }
+      if (row) row.parent_license_condition_id = parentLc;
+      res.status(201).json(row);
     } catch (e) { fail(res, e); }
   });
 
@@ -780,7 +793,6 @@ export function registerWorkModelRoutes(
             advance_amount = $25, forecast_amount = $26,
             condition_name = $27, calc_type = $28, fixed_kind = $29,
             subscription_cycle = $30, unit_amount = $31, guarantee_type = $32,
-            parent_license_condition_id = $33,
             updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
@@ -798,12 +810,20 @@ export function registerWorkModelRoutes(
           b.subscription_cycle ?? null,
           b.unit_amount != null && b.unit_amount !== "" ? Number(b.unit_amount) : null,
           b.guarantee_type ?? null,
-          // 0114: 分配計算の源泉となる親ライセンスイン条件へのリンク
-          b.parent_license_condition_id ?? null,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
-      res.json(r.rows[0]);
+      const row = r.rows[0];
+      // 0114: parent_license_condition_id は cfc ビューに無い(実体は condition_lines)。
+      //   cfc.id = condition_lines.id を使って直接更新(null で解除も可能)。
+      const parentLc = b.parent_license_condition_id != null && b.parent_license_condition_id !== ""
+        ? Number(b.parent_license_condition_id) : null;
+      await query(
+        `UPDATE condition_lines SET parent_license_condition_id = $2 WHERE id = $1`,
+        [cid, parentLc]
+      );
+      row.parent_license_condition_id = parentLc;
+      res.json(row);
     } catch (e) { fail(res, e); }
   });
 
