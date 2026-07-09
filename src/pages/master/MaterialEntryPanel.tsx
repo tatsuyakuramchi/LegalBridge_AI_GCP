@@ -52,6 +52,8 @@ const dealOptionLabel = (dealId: number, i: number, name: string, isPub: boolean
 
 type CondRow = {
   key: string
+  /** 既存条件明細の id(編集時の読み込み由来)。新規行は undefined。PUT で更新対象を突合する。 */
+  __clid?: number
   dealId: number
   rate_pct: string
   mg_amount: string
@@ -120,6 +122,11 @@ export function MaterialEntryPanel() {
   const [remarks, setRemarks] = React.useState("")
 
   const [conds, setConds] = React.useState<CondRow[]>([newCondRow(1)])
+  // 編集時: フォームで扱わない非 royalty 条件(一括/従量 等)は素通しで保持し、PUT でそのまま送り返して保全する。
+  const [passthroughConds, setPassthroughConds] = React.useState<any[]>([])
+  // 編集時: 既存条件の読み込みが成功したか。失敗/未完了のまま保存すると PUT が条件を消しかねないため、
+  //   true のときだけ PUT(全置換)を行う(false のときは条件を触らず属性のみ保存)。
+  const [condsLoaded, setCondsLoaded] = React.useState(true)
 
   const [pickedDoc, setPickedDoc] = React.useState<LookedUpDocument | null>(null)
   const [fileLink, setFileLink] = React.useState("")
@@ -164,6 +171,7 @@ export function MaterialEntryPanel() {
     setRightsVendorCode(""); setRightsVendorId(null); setRightsHolderLabel("")
     setIsRoyaltyBearing(true); setScope(""); setRemarks("")
     setConds([newCondRow(1)])
+    setPassthroughConds([]); setCondsLoaded(true)
     setPickedDoc(null); setFileLink(""); setDocKind("license"); setPdfOutput(false)
     setPubBaseDoc(null); setPubBaseType("individual")
   }
@@ -219,7 +227,9 @@ export function MaterialEntryPanel() {
     setIsRoyaltyBearing(!!m.is_royalty_bearing)
     setScope(m.scope || "")
     setRemarks(m.remarks || "")
-    setConds([]) // 編集では金銭条件は追記のみ。
+    // 既存の金銭条件を読み込んで編集可能にする(読み込み完了までは空 → 誤保存で条件を消さないよう condsLoaded=false)。
+    setConds([]); setPassthroughConds([]); setCondsLoaded(false)
+    void loadCondsForEdit(m.id)
     setPickedDoc(null); setFileLink("")
     setView("form")
   }
@@ -253,6 +263,101 @@ export function MaterialEntryPanel() {
     } catch (e: any) {
       showNotification?.(`削除に失敗: ${String(e?.message || e)}`, "error")
     }
+  }
+
+  // 編集: マテリアルの既存金銭条件を読み込み、フォーム(固定3種 royalty)へ写像する。
+  //   royalty は編集可能な CondRow に、その他スキーム(一括/従量 等)は passthrough として素通し保持。
+  //   dealId は subject(取引形態名) → calc_method の順で固定3種へ逆引き。読み込み成功時のみ PUT 全置換を許可。
+  const loadCondsForEdit = async (mid: number) => {
+    try {
+      const r = await fetch(
+        `/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/condition-lines`
+      )
+      if (!r.ok) throw new Error(`HTTP ${r.status}`)
+      const rows = await r.json()
+      const arr: any[] = Array.isArray(rows) ? rows : []
+      const editable: CondRow[] = []
+      const passthrough: any[] = []
+      for (const cl of arr) {
+        if ((cl.payment_scheme || "royalty") !== "royalty") { passthrough.push(cl); continue }
+        const deal =
+          V3_FIXED_DEALS.find((d) => d.name === cl.subject) ||
+          V3_FIXED_DEALS.find((d) => d.calc_type === cl.calc_method) ||
+          V3_FIXED_DEALS[0]
+        editable.push({
+          ...newCondRow(deal.id),
+          __clid: Number(cl.id),
+          rate_pct: cl.rate_pct != null ? String(cl.rate_pct) : "",
+          mg_amount: cl.mg_amount != null && Number(cl.mg_amount) > 0 ? String(cl.mg_amount) : "",
+          ag_amount: cl.ag_amount != null && Number(cl.ag_amount) > 0 ? String(cl.ag_amount) : "",
+          currency: cl.currency || "JPY",
+          region_territory: cl.region_territory || "",
+          region_language: cl.region_language || "",
+        })
+      }
+      setConds(editable)
+      setPassthroughConds(passthrough)
+      setCondsLoaded(true)
+    } catch {
+      // 読み込み失敗: 条件は触らない(PUT しない)。属性のみ編集可能な状態で継続。
+      setConds([]); setPassthroughConds([]); setCondsLoaded(false)
+    }
+  }
+
+  // 編集 CondRow → PUT 行(固定3種 royalty)。__clid 保持で既存行を in-place 更新。
+  const condRowToPutRow = (c: CondRow): Record<string, any> => {
+    const deal = V3_FIXED_DEALS.find((d) => d.id === c.dealId) || V3_FIXED_DEALS[0]
+    return {
+      __clid: c.__clid,
+      payment_scheme: "royalty",
+      subject: deal.name,
+      calc_method: deal.calc_type,
+      base_price_label: deal.basePrice || null,
+      rate_pct: c.rate_pct || null,
+      mg_amount: c.mg_amount || null,
+      ag_amount: c.ag_amount || null,
+      currency: c.currency || "JPY",
+      region_territory: c.region_territory || null,
+      region_language: c.region_language || null,
+      notes: `取引形態: ${deal.name} / 計算モデル: ${calcLabel(deal.calc_type)}`,
+    }
+  }
+  // 非 royalty 既存条件をそのまま送り返して保全(フォームでは編集しない)。
+  const passthroughToPutRow = (cl: any): Record<string, any> => ({
+    __clid: Number(cl.id),
+    payment_scheme: cl.payment_scheme,
+    amount_ex_tax: cl.amount_ex_tax ?? null,
+    rate_pct: cl.rate_pct ?? null,
+    mg_amount: cl.mg_amount ?? null,
+    ag_amount: cl.ag_amount ?? null,
+    subject: cl.subject ?? null,
+    calc_method: cl.calc_method ?? null,
+    base_price_label: cl.base_price_label ?? null,
+    currency: cl.currency ?? "JPY",
+    region_territory: cl.region_territory ?? null,
+    region_language: cl.region_language ?? null,
+    payment_terms: cl.payment_terms ?? null,
+    notes: cl.notes ?? null,
+  })
+
+  // 編集: 金銭条件を全置換 PUT(__clid で既存を更新 / 無い行は新規 / 送らない既存は解除・削除)。
+  //   保存 count を返す。読み込み済みでない(condsLoaded=false)ときは呼ばない。
+  const putConditions = async (mid: number): Promise<number> => {
+    const rows = [...conds.map(condRowToPutRow), ...passthroughConds.map(passthroughToPutRow)]
+    const r = await fetch(
+      `/api/v3/source-ips/${encodeURIComponent(workId)}/materials/${mid}/conditions`,
+      {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rows }),
+      }
+    )
+    if (!r.ok) {
+      const e = await r.json().catch(() => ({}))
+      throw new Error(e?.error || `金銭条件の保存に失敗 (HTTP ${r.status})`)
+    }
+    const j = await r.json().catch(() => ({}))
+    return Number(j?.count ?? rows.length)
   }
 
   const docPayload = (): Record<string, any> => {
@@ -485,12 +590,16 @@ export function MaterialEntryPanel() {
           const e = await uRes.json().catch(() => ({}))
           throw new Error(e?.error || `マテリアル更新に失敗 (HTTP ${uRes.status})`)
         }
-        let docNumber = ""
-        if (conds.length > 0) docNumber = await postConditions(editingId)
-        showNotification?.(
-          `更新しました: ${editingCode}${conds.length ? `（金銭条件 ${conds.length} 件を追記 / 文書: ${docNumber || "発番"}）` : ""}`,
-          "success"
-        )
+        // 金銭条件: 読み込み成功時のみ全置換 PUT(既存を編集/削除/追加)。読み込み失敗時は条件を触らない。
+        if (condsLoaded) {
+          const saved = await putConditions(editingId)
+          showNotification?.(`更新しました: ${editingCode}（金銭条件 ${saved} 件を保存）`, "success")
+        } else {
+          showNotification?.(
+            `属性を更新しました: ${editingCode}（金銭条件は読込未完了のため変更していません）`,
+            "success"
+          )
+        }
       } else {
         const mRes = await fetch(`/api/v3/works/${encodeURIComponent(workId)}/materials`, {
           method: "POST",
@@ -620,7 +729,7 @@ export function MaterialEntryPanel() {
         <>
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 font-mono text-[11px]">
             {editingId ? <Pencil className="h-3.5 w-3.5 text-sky-600" /> : <Plus className="h-3.5 w-3.5 text-emerald-600" />}
-            {editingId ? <>編集中: <b>{editingCode}</b>（コードは不変。金銭条件は下で追記できます）</> : <>新規マテリアルを作成</>}
+            {editingId ? <>編集中: <b>{editingCode}</b>（コードは不変。既存の金銭条件を読み込んで編集・追加・削除できます）</> : <>新規マテリアルを作成</>}
             <button type="button" className="ml-auto text-muted-foreground hover:text-destructive inline-flex items-center gap-1" onClick={backToGate}>
               <Search className="h-3.5 w-3.5" /> 一覧に戻る
             </button>
@@ -705,13 +814,23 @@ export function MaterialEntryPanel() {
           <div className="rounded-xl border border-border border-t-[3px] border-t-violet-500 bg-card p-5 space-y-4">
             <div>
               <h4 className="font-mono text-[13px] font-bold text-violet-600">
-                金銭条件{editingId ? "（追記）" : "（この素材の初回登録＝L1）"}
+                金銭条件{editingId ? "（編集）" : "（この素材の初回登録＝L1）"}
               </h4>
               <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
                 {editingId
-                  ? "編集モードでは金銭条件は追記のみ(既存は一覧の「条件」件数で確認)。追加不要なら空でも保存できます。"
+                  ? "既存の金銭条件を読み込んで編集できます(行の追加・削除も可)。保存するとここに表示中の内容で上書きします(消した行は解除・削除)。"
                   : "素材には金銭条件を付帯必須。取引形態は利用許諾条件書と同じ固定3種から選ぶ(＝軸を揃える)。取引形態ごとに1行。"}
               </p>
+              {editingId && !condsLoaded && (
+                <p className="font-mono text-[9.5px] text-amber-700 leading-snug mt-1">
+                  ⚠ 既存の金銭条件を読み込み中／読み込みに失敗しました。この状態で保存しても<strong>金銭条件は変更されません</strong>(属性のみ更新)。
+                </p>
+              )}
+              {editingId && passthroughConds.length > 0 && (
+                <p className="font-mono text-[9.5px] text-muted-foreground leading-snug mt-1">
+                  ※ 一括/従量など固定3種以外の条件 {passthroughConds.length} 件はこのフォームでは編集せず、そのまま保全します。
+                </p>
+              )}
             </div>
 
             {conds.length > 0 && (
