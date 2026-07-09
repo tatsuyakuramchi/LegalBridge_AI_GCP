@@ -13,7 +13,8 @@
 import * as React from "react"
 import { useAppData } from "@/src/context/AppDataContext"
 import { FormSection } from "../FormSection"
-import { LineItemTable, type LineItem } from "../LineItemTable"
+import { type LineItem } from "../LineItemTable"
+import { DeliverableCards } from "../DeliverableCards"
 import { ExpenseTable, type ExpenseItem } from "../ExpenseTable"
 import { OtherFeesTable, type OtherFee } from "../OtherFeesTable"
 import { FinancialConditionTable, type FinancialCondition } from "../FinancialConditionTable"
@@ -328,13 +329,16 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         {renderField("STAFF_EMAIL")}
       </FormSection>
 
-      {/* IV. 明細 — grandTotalExTax は自動集計(items 合計 + other_fees 合計) */}
+      {/* IV. 明細 — grandTotalExTax は自動集計(items 合計 + other_fees 合計)。
+          成果物カード(帰属駆動)で編集。帰属→報酬の型が自動で決まり、テンプレの分岐へ
+          正しい値だけが渡る(納期必須 / 発注者=金額 or 計算方法 / 受注者=利用許諾料に含む)。 */}
       <FormSection
-        title="5. 共通入力事項 — 明細"
+        title="5. 成果物（明細）— 帰属で報酬・表示が決まります"
         variant="indigo"
         icon={<List className="w-4 h-4" />}
       >
-        <LineItemTable
+        <DeliverableCards
+          works={workOptions}
           items={Array.isArray(formData.items) ? formData.items : []}
           onChange={(items: LineItem[]) => {
             const itemsTotal = items.reduce(
@@ -360,8 +364,6 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               ),
             })
           }}
-          showPaymentColumns={true}
-          works={workOptions}
         />
       </FormSection>
 
