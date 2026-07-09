@@ -21,7 +21,7 @@ export interface GenreDef {
 
 /** 正準ジャンル(value=DB 値, label=UI 表示)。 */
 export const MATERIAL_GENRES: GenreDef[] = [
-  { value: 'game_design', label: 'オリジナルゲームデザイン', role: 'core_logic' },
+  { value: 'game_design', label: 'ゲームデザイン', role: 'core_logic' },
   { value: 'manuscript', label: '執筆文書', role: 'core_logic' },
   { value: 'illustration', label: 'イラスト', role: 'sub_component' },
   { value: 'graphic_design', label: 'グラフィックデザイン', role: 'sub_component' },
