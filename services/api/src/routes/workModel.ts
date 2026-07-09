@@ -1650,6 +1650,33 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // 未リンクCL 棚卸し: 全文書横断で「素材未割当の利用許諾CL」を一覧(棚卸し画面用)。
+  //   発注書等で発生した素材未リンクの license 条件を、まとめて原作マテリアルへリンクするための元データ。
+  app.get("/api/v3/unlinked-license-conditions", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const params: any[] = [];
+      let where = `cl.transaction_kind = 'license' AND cl.source_material_id IS NULL`;
+      if (q) {
+        params.push(`%${q}%`);
+        where += ` AND (cc.document_number ILIKE $1 OR cc.contract_title ILIKE $1)`;
+      }
+      const r = await query(
+        `SELECT cl.id, cl.subject, cl.payment_scheme, cl.rate_pct, cl.mg_amount, cl.ag_amount,
+                cl.amount_ex_tax, cl.base_price_label, cl.calc_method, cl.currency,
+                cl.region_territory, cl.region_language, cl.condition_name AS region_language_label,
+                cc.id AS capability_id, cc.document_number, cc.contract_title, cc.record_type
+           FROM condition_lines cl
+           JOIN contract_capabilities cc ON cc.id = cl.capability_id
+          WHERE ${where}
+          ORDER BY cc.document_number NULLS LAST, cl.line_no, cl.id
+          LIMIT 500`,
+        params
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
   // 既存の未リンク利用許諾CLを、この原作マテリアルへ後付けリンク(source_material_id/source_work_id)。
   //   新規 condition_line は作らない(=二重CLを防ぐ)。安全のため未リンクの license CL のみ対象。
   app.post("/api/v3/source-ips/:id/materials/:mid/link-conditions", ...requireWrite, express.json(), async (req, res) => {
