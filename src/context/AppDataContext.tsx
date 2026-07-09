@@ -121,7 +121,6 @@ interface AppDataContextValue {
   assets: ExternalAsset[]
   contracts: any[]
   ledgers: any[]  // Phase 22.18: 原作マスター (素材 embedded)
-  sublicensees: any[]  // Phase 22.20-C: サブライセンシー マスター
   workflowRules: any[]
   statuses: any[]
   companyProfile: any
@@ -146,7 +145,6 @@ interface AppDataContextValue {
   refreshAll: () => Promise<void>
   refreshContracts: () => Promise<void>
   refreshLedgers: () => Promise<void>  // Phase 22.18
-  refreshSublicensees: () => Promise<void>  // Phase 22.20-C
   refreshIssues: () => Promise<void>
   refreshVendors: () => Promise<void>
   refreshStaff: () => Promise<void>
@@ -177,7 +175,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
   const [assets, setAssets] = React.useState<ExternalAsset[]>([])
   const [contracts, setContracts] = React.useState<any[]>([])
   const [ledgers, setLedgers] = React.useState<any[]>([])  // Phase 22.18
-  const [sublicensees, setSublicensees] = React.useState<any[]>([])  // Phase 22.20-C
   const [workflowRules, setWorkflowRules] = React.useState<any[]>([])
   const [statuses, setStatuses] = React.useState<any[]>([])
   const [companyProfile, setCompanyProfile] = React.useState<any>(null)
@@ -216,16 +213,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
-  // Phase 22.20-C: サブライセンシー マスター取得
-  const refreshSublicensees = React.useCallback(async () => {
-    try {
-      const res = await fetch("/api/master/sublicensees")
-      const data = await res.json()
-      setSublicensees(Array.isArray(data) ? data : [])
-    } catch (e) {
-      console.error("Failed to fetch sublicensees", e)
-    }
-  }, [])
 
   // Phase 17z 以降、search-api 側の /api/master/vendors と /api/master/staff
   // は { ok: true, rows: [...], total: N } 形式で返す (旧 worker 側は plain
@@ -330,7 +317,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       { key: "workflowRules", url: "/api/master/rules" },
       { key: "contracts", url: "/api/master/contracts" },
       { key: "ledgers", url: "/api/master/ledgers" }, // Phase 22.18
-      { key: "sublicensees", url: "/api/master/sublicensees" }, // Phase 22.20-C
     ]
 
     const results = await Promise.all(
@@ -361,7 +347,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       rulesRes,
       contractsRes,
       ledgersRes, // Phase 22.18
-      sublicenseesRes, // Phase 22.20-C
     ] = results
 
     setIssues(dedupe(issuesRes as Issue[], (i) => i.issueKey))
@@ -377,7 +362,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     setWorkflowRules(Array.isArray(rulesRes) ? rulesRes : [])
     setContracts(Array.isArray(contractsRes) ? contractsRes : [])
     setLedgers(Array.isArray(ledgersRes) ? ledgersRes : [])
-    setSublicensees(Array.isArray(sublicenseesRes) ? sublicenseesRes : [])
   }, [])
 
   React.useEffect(() => {
@@ -395,7 +379,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     assets,
     contracts,
     ledgers, // Phase 22.18
-    sublicensees, // Phase 22.20-C
     workflowRules,
     statuses,
     companyProfile,
@@ -416,7 +399,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refreshAll,
     refreshContracts,
     refreshLedgers, // Phase 22.18
-    refreshSublicensees, // Phase 22.20-C
     refreshIssues,
     refreshVendors,
     refreshStaff,

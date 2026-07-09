@@ -21,7 +21,6 @@ import { VendorsPanel } from "./pages/master/VendorsPanel"
 import { StaffPanel } from "./pages/master/StaffPanel"
 import { RulesPanel } from "./pages/master/RulesPanel"
 import { LedgersPanel } from "./pages/master/LedgersPanel" // Phase 22.18
-import { SubLicenseesPanel } from "./pages/master/SubLicenseesPanel" // Phase 22.20-C
 import { RingiPanel } from "./pages/master/RingiPanel" // Phase 22.21.116
 import { DraftsPanel } from "./pages/master/DraftsPanel" // Phase 22.21.81
 import { ReceivableMapPanel } from "./pages/master/ReceivableMapPanel" // 統合 P3-4
@@ -78,7 +77,6 @@ export default function App() {
                   <Route path="pub-license" element={<PubLicenseEntryPanel />} />{/* 出版利用許諾条件 登録 */}
                   <Route path="merge" element={<EntityMergePanel />} />{/* ID統合(マージ)カート */}
                   <Route path="ledgers" element={<LedgersPanel />} />{/* Phase 22.18 */}
-                  <Route path="sublicensees" element={<SubLicenseesPanel />} />{/* Phase 22.20-C */}
                   <Route path="ringi" element={<RingiPanel />} />{/* Phase 22.21.116 */}
                   <Route path="drafts" element={<DraftsPanel />} />{/* Phase 22.21.81 */}
                   {/* データ構造刷新: 条件明細 横断検索は条件明細ハブの検索タブへ集約(旧URL温存) */}

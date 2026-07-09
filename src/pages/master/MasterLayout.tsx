@@ -21,7 +21,6 @@ const tabs = [
   // 統合 増分⑨: 原作台帳(Ledgers)/作品モデル(work-model) はサイドバー「作品管理」(/works)へ統合。
   //   ルートは温存(レガシー画面に移行バナー)。データ移行(§8 #4)完了後に物理廃止予定。
   // Phase 22.20-C: サブライセンシー マスター
-  { to: "/master/sublicensees", label: "Sublicensees", icon: GitBranch },
   { to: "/master/sublicense-conditions", label: "再許諾条件登録", icon: Coins },
   // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
   { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },

@@ -71,10 +71,8 @@ export const SubLicenseeTable: React.FC<SubLicenseeTableProps> = ({
   setFormData,
 }) => {
   const list = formData.サブライセンシー一覧 || [];
-  // Phase 22.20-C: マスター連動。sublicensees から選ぶと
-  // 区分/名称/地域/言語/権利者表記が auto-fill。
-  const { sublicensees } = useAppData();
-  const masterList: any[] = Array.isArray(sublicensees) ? sublicensees : [];
+  // サブライセンシー マスター(sublicensees)は廃止。マスター連動なし(名称は手入力)。
+  const masterList: any[] = [];
 
   const addItem = () => {
     const newItem = {
