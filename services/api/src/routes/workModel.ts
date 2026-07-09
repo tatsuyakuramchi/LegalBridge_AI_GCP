@@ -759,17 +759,17 @@ export function registerWorkModelRoutes(
         ]
       );
       const row = r.rows[0];
-      // 0114: parent_license_condition_id は cfc ビューに無い(実体は condition_lines)。
-      //   INSTEAD OF INSERT トリガ後、cfc.id = condition_lines.id を使って直接更新する。
+      // 0114/0116: parent_license_condition_id・condition_kind は cfc ビューに無い(実体は
+      //   condition_lines)。INSTEAD OF INSERT トリガ後、cfc.id = condition_lines.id で直接更新。
       const parentLc = b.parent_license_condition_id != null && b.parent_license_condition_id !== ""
         ? Number(b.parent_license_condition_id) : null;
-      if (parentLc != null && row?.id) {
+      if (row?.id) {
         await query(
-          `UPDATE condition_lines SET parent_license_condition_id = $2 WHERE id = $1`,
-          [row.id, parentLc]
+          `UPDATE condition_lines SET parent_license_condition_id = $2, condition_kind = $3 WHERE id = $1`,
+          [row.id, parentLc, condKind]
         );
       }
-      if (row) row.parent_license_condition_id = parentLc;
+      if (row) { row.parent_license_condition_id = parentLc; row.condition_kind = condKind; }
       res.status(201).json(row);
     } catch (e) { fail(res, e); }
   });
@@ -814,15 +814,18 @@ export function registerWorkModelRoutes(
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });
       const row = r.rows[0];
-      // 0114: parent_license_condition_id は cfc ビューに無い(実体は condition_lines)。
-      //   cfc.id = condition_lines.id を使って直接更新(null で解除も可能)。
+      // 0114/0116: parent_license_condition_id・condition_kind は cfc ビューに無い(実体は
+      //   condition_lines)。cfc.id = condition_lines.id で直接更新(parent は null で解除可、
+      //   condition_kind は未指定なら現状維持)。
       const parentLc = b.parent_license_condition_id != null && b.parent_license_condition_id !== ""
         ? Number(b.parent_license_condition_id) : null;
       await query(
-        `UPDATE condition_lines SET parent_license_condition_id = $2 WHERE id = $1`,
-        [cid, parentLc]
+        `UPDATE condition_lines SET parent_license_condition_id = $2,
+                condition_kind = COALESCE($3, condition_kind) WHERE id = $1`,
+        [cid, parentLc, b.condition_kind ?? null]
       );
       row.parent_license_condition_id = parentLc;
+      if (b.condition_kind != null) row.condition_kind = b.condition_kind;
       res.json(row);
     } catch (e) { fail(res, e); }
   });
@@ -844,14 +847,16 @@ export function registerWorkModelRoutes(
   //   サブライセンス条件明細(OUT) → 受領記録(計算のみ・文書発行なし)。
   //   royalty = basis='manufacturing' ? 報告数量×単価×料率 : 報告売上×料率。
   //   サーバ側で computed_royalty_ex_tax を算出して保存(フロントの計算と二重化)。
+  // 数量ベース(プロダクトアウト)=個数×単価×料率 / それ以外(権利許諾)=売上×料率。
+  //   basis は cfc VIEW で NULL 固定のため、永続化される calc_type で判定する。
+  const isQtyBased = (cond: any) =>
+    ["BASE_QTY_RATE", "SUPPLY_QTY"].includes(String(cond?.calc_type || "").toUpperCase()) ||
+    cond?.basis === "manufacturing";
   const computeRoyalty = (cond: any, rep: { reported_sales?: any; reported_quantity?: any }) => {
     const rate = Number(cond?.rate_pct) || 0;
-    let base = 0;
-    if (cond?.basis === "manufacturing") {
-      base = (Number(rep.reported_quantity) || 0) * (Number(cond?.unit_price) || 0);
-    } else {
-      base = Number(rep.reported_sales) || 0;
-    }
+    const base = isQtyBased(cond)
+      ? (Number(rep.reported_quantity) || 0) * (Number(cond?.unit_price) || 0)
+      : Number(rep.reported_sales) || 0;
     return Math.round(base * (rate / 100) * 100) / 100;
   };
 
@@ -893,6 +898,120 @@ export function registerWorkModelRoutes(
     return null;
   };
 
+  // ── 分配(ライセンサーへの支払) ─────────────────────────────────
+  //   分配 = 基準額 × 個数 × 親ライセンスイン料率。親は condition_lines.parent_license_condition_id
+  //   (0114)で辿る。基準額/個数はスマート既定(プロダクトアウト=卸値×販売数 / 権利許諾=受領再許諾料×1)
+  //   ＋受領記録で手動上書き可。算出後 outbound payment(分配台帳)へ upsert。
+  const resolveDistribution = async (cid: number, cond: any, receipt: any, body: any) => {
+    const num = (v: any) => (v == null || v === "" ? null : Number(v));
+    const pl = await query(`SELECT parent_license_condition_id FROM condition_lines WHERE id = $1`, [cid]);
+    const parentId = pl.rows[0]?.parent_license_condition_id ?? null;
+    let parent: any = null;
+    if (parentId) {
+      const pr = await query(
+        `SELECT rate_pct, counterparty_vendor_id, currency, work_id
+           FROM capability_financial_conditions WHERE id = $1`,
+        [parentId]
+      );
+      parent = pr.rows[0] || null;
+    }
+    const parentRate = parent?.rate_pct != null ? Number(parent.rate_pct) : null;
+    // 基準額/個数: 明示値優先。無ければ basis からスマート既定。
+    let base = num(body?.distribution_base);
+    let qty = num(body?.distribution_qty);
+    if (base == null) {
+      if (isQtyBased(cond)) {
+        base = Number(cond?.unit_price) || 0;                       // 卸値(単価)
+        if (qty == null) qty = num(receipt?.reported_quantity) ?? 1; // 販売数
+      } else {
+        base = Number(receipt?.computed_royalty_ex_tax) || Number(receipt?.received_amount) || 0; // 受領再許諾料
+        if (qty == null) qty = 1;                                    // 権利許諾は個数1
+      }
+    }
+    if (qty == null) qty = 1;
+    const dist = parentRate != null ? Math.round(base * qty * (parentRate / 100) * 100) / 100 : null;
+    return { parentId, parent, parentRate, base, qty, dist };
+  };
+
+  // 分配 → 出金台帳(payments: outbound / royalty, counterparty=ライセンサー)同期。
+  const syncDistributionPayment = async (receipt: any, cond: any, parent: any, dist: number | null): Promise<number | null> => {
+    const has = dist != null && Number(dist) !== 0 && parent;
+    if (has) {
+      const cur = parent.currency || cond.currency || "JPY";
+      if (receipt.distribution_payment_id) {
+        await query(
+          `UPDATE payments SET amount_ex_tax = $2, total_amount = $2, paid_date = $3,
+                  period = $4, counterparty_vendor_id = $5, currency = $6 WHERE id = $1`,
+          [receipt.distribution_payment_id, dist, receipt.received_date ?? null, receipt.period ?? null,
+            parent.counterparty_vendor_id ?? null, cur]
+        );
+        return receipt.distribution_payment_id;
+      }
+      const p = await query(
+        `INSERT INTO payments (
+           payment_no, direction, payment_kind, work_id, counterparty_vendor_id,
+           period, amount_ex_tax, total_amount, currency, status, source_document_number
+         ) VALUES ($1, 'outbound', 'royalty', $2, $3, $4, $5, $5, $6, 'calculated', $7)
+         RETURNING id`,
+        [`DISTR-${receipt.id}`, cond.work_id ?? null, parent.counterparty_vendor_id ?? null,
+          receipt.period ?? null, dist, cur, `condition_receipt#${receipt.id}/distribution`]
+      );
+      const pid = Number(p.rows[0].id);
+      await query(`UPDATE condition_receipts SET distribution_payment_id = $2 WHERE id = $1`, [receipt.id, pid]);
+      return pid;
+    }
+    if (receipt.distribution_payment_id) {
+      await query(`DELETE FROM payments WHERE id = $1`, [receipt.distribution_payment_id]);
+      await query(`UPDATE condition_receipts SET distribution_payment_id = NULL WHERE id = $1`, [receipt.id]);
+    }
+    return null;
+  };
+
+  // 受領記録 1 行に対して 分配計算 → 列保存 → 出金台帳同期 をまとめて行う。
+  const applyDistribution = async (cid: number, cond: any, receipt: any, body: any) => {
+    const d = await resolveDistribution(cid, cond, receipt, body);
+    await query(
+      `UPDATE condition_receipts SET distribution_base = $2, distribution_qty = $3,
+              distribution_rate_pct = $4, distribution_parent_condition_id = $5,
+              computed_distribution_ex_tax = $6, updated_at = now() WHERE id = $1`,
+      [receipt.id, d.base, d.qty, d.parentRate, d.parentId, d.dist]
+    );
+    receipt.distribution_base = d.base;
+    receipt.distribution_qty = d.qty;
+    receipt.distribution_rate_pct = d.parentRate;
+    receipt.distribution_parent_condition_id = d.parentId;
+    receipt.computed_distribution_ex_tax = d.dist;
+    receipt.distribution_payment_id = await syncDistributionPayment(receipt, cond, d.parent, d.dist);
+    return receipt;
+  };
+
+  // GET: 作品配下の sublicense_out 条件 + 親ライセンスイン情報(分配の料率元)。受領が0件でも返す。
+  app.get("/api/v3/works/:id/sublicense-conditions", ...requireRead, async (req, res) => {
+    try {
+      const id = Number(req.params.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
+      const r = await query(
+        `SELECT cfc.id, cfc.condition_no, cfc.region_language_label, cfc.rate_pct, cfc.basis,
+                cfc.calc_type, cfc.unit_price, cfc.currency, cfc.counterparty_vendor_id,
+                v.vendor_name AS counterparty_name,
+                pcl.parent_license_condition_id,
+                pcfc.rate_pct AS parent_rate_pct, pcfc.currency AS parent_currency,
+                pcfc.counterparty_vendor_id AS licensor_vendor_id,
+                pv.vendor_name AS licensor_name, pw.title AS licensor_work_title
+           FROM capability_financial_conditions cfc
+           LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
+           LEFT JOIN condition_lines pcl ON pcl.id = cfc.id
+           LEFT JOIN capability_financial_conditions pcfc ON pcfc.id = pcl.parent_license_condition_id
+           LEFT JOIN vendors pv ON pv.id = pcfc.counterparty_vendor_id
+           LEFT JOIN works pw ON pw.id = pcfc.work_id
+          WHERE cfc.work_id = $1 AND pcl.condition_kind = 'sublicense_out'
+          ORDER BY cfc.condition_no ASC, cfc.id ASC`,
+        [id]
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
   // GET: 作品配下の OUT 条件 × 受領記録 を一覧(条件情報を同梱)
   app.get("/api/v3/works/:id/receipts", ...requireRead, async (req, res) => {
     try {
@@ -900,12 +1019,13 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "invalid id" });
       const r = await query(
         `SELECT cr.*, cfc.condition_no, cfc.region_language_label, cfc.rate_pct,
-                cfc.basis, cfc.unit_price, cfc.currency, cfc.counterparty_vendor_id,
+                cfc.basis, cfc.calc_type, cfc.unit_price, cfc.currency, cfc.counterparty_vendor_id,
                 v.vendor_name AS counterparty_name
            FROM condition_receipts cr
            JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
+           JOIN condition_lines clk ON clk.id = cfc.id
            LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
-          WHERE cfc.work_id = $1 AND cfc.condition_kind = 'sublicense_out'
+          WHERE cfc.work_id = $1 AND clk.condition_kind = 'sublicense_out'
           ORDER BY cr.condition_id ASC, cr.period_date ASC NULLS LAST, cr.id ASC`,
         [id]
       );
@@ -934,7 +1054,7 @@ export function registerWorkModelRoutes(
       if (!Number.isFinite(cid)) return res.status(400).json({ ok: false, error: "invalid id" });
       const b = req.body || {};
       const c = await query(
-        `SELECT work_id, counterparty_vendor_id, currency, rate_pct, basis, unit_price
+        `SELECT work_id, counterparty_vendor_id, currency, rate_pct, basis, unit_price, calc_type
            FROM capability_financial_conditions WHERE id = $1`,
         [cid]
       );
@@ -954,6 +1074,8 @@ export function registerWorkModelRoutes(
       );
       const receipt = r.rows[0];
       receipt.payment_id = await syncReceiptPayment(receipt, c.rows[0]);
+      // 0115: 分配(ライセンサーへ支払) = 基準額 × 個数 × 親ライセンスイン料率 を算出・台帳反映。
+      await applyDistribution(cid, c.rows[0], receipt, b);
       res.status(201).json(receipt);
     } catch (e) { fail(res, e); }
   });
@@ -966,7 +1088,7 @@ export function registerWorkModelRoutes(
       const b = req.body || {};
       const cur = await query(
         `SELECT cr.condition_id, cfc.work_id, cfc.counterparty_vendor_id, cfc.currency,
-                cfc.rate_pct, cfc.basis, cfc.unit_price
+                cfc.rate_pct, cfc.basis, cfc.unit_price, cfc.calc_type
            FROM condition_receipts cr
            JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
           WHERE cr.id = $1`,
@@ -989,6 +1111,8 @@ export function registerWorkModelRoutes(
       );
       const receipt = r.rows[0];
       receipt.payment_id = await syncReceiptPayment(receipt, cur.rows[0]);
+      // 0115: 分配を再計算・台帳反映(cid は受領記録の condition_id)。
+      await applyDistribution(cur.rows[0].condition_id, cur.rows[0], receipt, b);
       res.json(receipt);
     } catch (e) { fail(res, e); }
   });
@@ -998,11 +1122,13 @@ export function registerWorkModelRoutes(
     try {
       const rid = Number(req.params.rid);
       if (!Number.isFinite(rid)) return res.status(400).json({ ok: false, error: "invalid id" });
-      // 紐づく入金台帳(payments)も掃除してから削除。
-      const pr = await query(`SELECT payment_id FROM condition_receipts WHERE id = $1`, [rid]);
+      // 紐づく入金/出金台帳(payments: 受領・分配)も掃除してから削除。
+      const pr = await query(`SELECT payment_id, distribution_payment_id FROM condition_receipts WHERE id = $1`, [rid]);
       const pid = pr.rows[0]?.payment_id;
+      const dpid = pr.rows[0]?.distribution_payment_id;
       const r = await query(`DELETE FROM condition_receipts WHERE id = $1`, [rid]);
       if (pid) await query(`DELETE FROM payments WHERE id = $1`, [pid]);
+      if (dpid) await query(`DELETE FROM payments WHERE id = $1`, [dpid]);
       res.json({ ok: true, deleted: r.rowCount || 0 });
     } catch (e) { fail(res, e); }
   });

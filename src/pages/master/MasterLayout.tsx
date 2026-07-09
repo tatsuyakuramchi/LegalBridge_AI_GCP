@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins, Unlink } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins, Unlink, Receipt } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -24,6 +24,8 @@ const tabs = [
   { to: "/master/sublicense-conditions", label: "再許諾条件登録", icon: Coins },
   // 発注書等で発生した「素材未リンクの利用許諾CL」を棚卸し→原作マテリアルへ後付けリンク(二重化なし)。
   { to: "/master/unlinked-conditions", label: "未リンクCL 棚卸し", icon: Unlink },
+  // 再許諾の受領記録＋ライセンサーへの分配(基準額×個数×親ライセンスイン料率)を台帳同期。
+  { to: "/master/billing", label: "請求・分配", icon: Receipt },
   // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
   { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
   // データ構造刷新: 条件明細 横断検索は「条件明細」ハブの検索タブへ集約 (旧URLはリダイレクト)
