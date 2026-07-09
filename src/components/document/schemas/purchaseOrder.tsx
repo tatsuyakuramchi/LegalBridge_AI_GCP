@@ -655,7 +655,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
       {/* 5-a. その他手数料 — 業務委託報酬以外の手数料。税抜表示で grandTotalExTax に加算。 */}
       <FormSection
-        title="5-a. その他手数料（税抜・合計に加算）"
+        title="6. その他手数料（税抜・合計に加算）"
         variant="indigo"
         icon={<Coins className="w-4 h-4" />}
       >
@@ -680,7 +680,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
       {/* 5-b. 経費 — 交通費等・税込み額表示。order_expenses テーブルに保存。 */}
       <FormSection
-        title="5-b. 経費（交通費等・税込み）"
+        title="7. 経費（交通費等・税込み）"
         variant="indigo"
         icon={<List className="w-4 h-4" />}
       >
@@ -701,7 +701,7 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       </FormSection>
 
       {/* 5-c. 金額サマリ・納期 — 納期/支払日は明細から自動集計(read-only 表示)。 */}
-      <FormSection title="5-c. 金額サマリ・納期 (明細から自動集計)" variant="indigo" icon={<Scale className="w-4 h-4" />}>
+      <FormSection title="8. 金額サマリ・納期 (明細から自動集計)" variant="indigo" icon={<Scale className="w-4 h-4" />}>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-[11px] font-mono">
           <div className="space-y-1">
             <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -747,50 +747,42 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         </div>
       </FormSection>
 
-      {/* 6. 単一明細用 (任意) — 通常は明細表を使うので折り畳み。 */}
-      <details className="group rounded-sm border border-input">
-        <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-          ▶ 6. 専用入力事項 — 単一明細フォールバック (上級者向け・明細表が空のときだけ参照)
-        </summary>
-        <div className="p-4 border-t border-input space-y-3">
-          <p className="text-[10px] font-mono text-muted-foreground italic">
-            通常は <strong>IV. 明細</strong> 表を使ってください。以下は
-            旧テンプレートとの後方互換のための入力で、明細表が空の場合のみ PDF に反映されます。
-            明細表を使う場合は <code>合計金額</code> は自動集計されるのでここを触る必要はありません。
-          </p>
-          {renderField("grandTotalExTax", "合計金額 (税抜) — 手入力 (明細表を使わない場合のみ)")}
-          {renderGroup("IV-z. 単一明細用 (任意・上級者向け)")}
-        </div>
-      </details>
-
-      {/* 5-d. 振込先 */}
+      {/* 9. 振込先 — コア情報のため、上級者向けフォールバックより前に配置。 */}
       <FormSection
-        title="5-d. 振込先 (取引先口座)"
+        title="9. 振込先 (取引先口座)"
         variant="emerald"
         headerActions={sideButton("取引先", fillVendorFromPartner, !activeVendor)}
       >
         {renderGroup("V. 振込先 (取引先口座)")}
       </FormSection>
 
-      {/* 7. 特約・備考 — collapsed */}
+      {/* 10. その他の設定 — 特約・備考／契約・署名 を1つに統合(旧「7」重複を解消)。 */}
       <details className="group rounded-sm border border-input">
         <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-          ▶ 7. その他の設定 — 特約・備考 (任意)
+          ▶ 10. その他の設定 — 特約・備考／契約・署名 (任意)
         </summary>
-        <div className="p-4 border-t border-input">
+        <div className="p-4 border-t border-input space-y-4">
           {renderGroup("VI. 特約・備考 (任意)")}
-        </div>
-      </details>
-
-      {/* 7. 契約・署名 — collapsed */}
-      <details className="group rounded-sm border border-input">
-        <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
-          ▶ 7. その他の設定 — 契約・署名 (任意)
-        </summary>
-        <div className="p-4 border-t border-input space-y-3">
           {/* Phase 26: 基本契約の紐づけは「2. 取引先・基本契約設定」の
               UnifiedContractPicker に一本化。ここでの重複検索・手入力欄は撤去/hidden 化。 */}
           {renderGroup("VII. 契約・署名 (任意)")}
+        </div>
+      </details>
+
+      {/* 11. 単一明細フォールバック (上級者向け・レガシー) — 末尾の折り畳みへ移動。
+          通常は成果物(明細)を使うため、明細表が空のときだけ PDF に反映される。 */}
+      <details className="group rounded-sm border border-input">
+        <summary className="cursor-pointer px-4 py-2 text-[11px] font-mono uppercase tracking-wider hover:bg-muted/50 select-none">
+          ▶ 11. 単一明細フォールバック (上級者向け・明細が空のときだけ参照)
+        </summary>
+        <div className="p-4 border-t border-input space-y-3">
+          <p className="text-[10px] font-mono text-muted-foreground italic">
+            通常は <strong>5. 成果物（明細）</strong> を使ってください。以下は
+            旧テンプレートとの後方互換のための入力で、成果物が空の場合のみ PDF に反映されます。
+            成果物を使う場合は <code>合計金額</code> は自動集計されるのでここを触る必要はありません。
+          </p>
+          {renderField("grandTotalExTax", "合計金額 (税抜) — 手入力 (成果物を使わない場合のみ)")}
+          {renderGroup("IV-z. 単一明細用 (任意・上級者向け)")}
         </div>
       </details>
     </div>
