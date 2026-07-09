@@ -14,7 +14,7 @@
  *   受領削除 : DELETE /api/v3/condition-receipts/:rid
  */
 import * as React from "react"
-import { Loader2, Plus, Trash2, Coins, ArrowDownToLine, ArrowUpFromLine, AlertTriangle } from "lucide-react"
+import { Loader2, Plus, Trash2, Coins, ArrowDownToLine, ArrowUpFromLine, AlertTriangle, Pencil, Check, X } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { useToast } from "@/components/ui/toast"
@@ -59,6 +59,41 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
   const [loading, setLoading] = React.useState(false)
   const [draft, setDraft] = React.useState<any>(blankDraft())
   const [saving, setSaving] = React.useState(false)
+  const [editId, setEditId] = React.useState<number | null>(null)
+  const [editDraft, setEditDraft] = React.useState<any>(blankDraft())
+  const [savingEdit, setSavingEdit] = React.useState(false)
+
+  const startEdit = (x: any) => {
+    setEditId(x.id)
+    setEditDraft({
+      period: x.period || "", reported_sales: x.reported_sales ?? "", reported_quantity: x.reported_quantity ?? "",
+      received_amount: x.received_amount ?? "", received_date: x.received_date || "",
+      distribution_base: x.distribution_base ?? "", distribution_qty: x.distribution_qty ?? "", note: x.note || "",
+    })
+  }
+  const cancelEdit = () => { setEditId(null); setEditDraft(blankDraft()) }
+  const saveEdit = async () => {
+    if (editId == null) return
+    setSavingEdit(true)
+    try {
+      const body = {
+        period: editDraft.period || null,
+        period_date: editDraft.period ? `${editDraft.period}-01` : null,
+        reported_sales: num(editDraft.reported_sales), reported_quantity: num(editDraft.reported_quantity),
+        received_amount: num(editDraft.received_amount), received_date: editDraft.received_date || null,
+        distribution_base: num(editDraft.distribution_base), distribution_qty: num(editDraft.distribution_qty),
+        note: editDraft.note || null,
+      }
+      const r = await fetch(`/api/v3/condition-receipts/${editId}`, {
+        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      })
+      const j = await r.json().catch(() => ({}))
+      if (!r.ok) throw new Error(j.error || `HTTP ${r.status}`)
+      cancelEdit()
+      await load()
+      push("受領記録を更新しました（再計算・台帳同期）", "success")
+    } catch (e: any) { push(`更新に失敗: ${String(e?.message || e)}`, "error") } finally { setSavingEdit(false) }
+  }
 
   const load = React.useCallback(async () => {
     setLoading(true)
@@ -166,24 +201,50 @@ const ConditionCard: React.FC<{ cond: any; push: (m: string, v?: any) => void }>
               </tr>
             </thead>
             <tbody>
-              {receipts.map((x) => (
-                <tr key={x.id} className="border-b border-border/60">
-                  <td className="py-1 pr-2">{x.period || "—"}</td>
-                  <td className="text-right py-1 px-2">{yen(x.reported_sales, cond.currency)}</td>
-                  <td className="text-right py-1 px-2">{x.reported_quantity ?? "—"}</td>
-                  <td className="text-right py-1 px-2 font-bold text-sky-700">{yen(x.computed_royalty_ex_tax, cond.currency)}</td>
-                  <td className="text-right py-1 px-2">{yen(x.received_amount, cond.currency)}</td>
-                  <td className="py-1 px-2">{x.received_date || "—"}</td>
-                  <td className="text-right py-1 px-2">{yen(x.distribution_base, cond.currency)}</td>
-                  <td className="text-right py-1 px-2">{x.distribution_qty ?? "—"}</td>
-                  <td className="text-right py-1 px-2 font-bold text-rose-700">{yen(x.computed_distribution_ex_tax, cond.currency)}</td>
-                  <td className="py-1 pl-2 text-right">
-                    <button type="button" onClick={() => void del(x.id)} className="text-muted-foreground hover:text-destructive">
-                      <Trash2 className="h-3 w-3" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {receipts.map((x) => {
+                if (editId === x.id) {
+                  const eRoy = previewRoyalty(cond, editDraft.reported_sales, editDraft.reported_quantity)
+                  const eDist = previewDistribution(cond, eRoy, editDraft.reported_sales, editDraft.reported_quantity, editDraft.distribution_base, editDraft.distribution_qty)
+                  const ec = "w-full text-[10px] font-mono bg-background border border-input rounded px-1 py-0.5 focus:outline-none focus:border-foreground"
+                  const set = (k: string, v: any) => setEditDraft({ ...editDraft, [k]: v })
+                  return (
+                    <tr key={x.id} className="border-b border-border/60 bg-amber-50/50 dark:bg-amber-950/20">
+                      <td className="py-1 pr-2"><input className={ec} value={editDraft.period} onChange={(e) => set("period", e.target.value)} placeholder="YYYY-MM" /></td>
+                      <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.reported_sales} onChange={(e) => set("reported_sales", e.target.value)} disabled={isQtyBased(cond)} /></td>
+                      <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.reported_quantity} onChange={(e) => set("reported_quantity", e.target.value)} /></td>
+                      <td className="text-right py-1 px-2 font-bold text-sky-700">{yen(eRoy, cond.currency)}</td>
+                      <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.received_amount} onChange={(e) => set("received_amount", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className={ec} type="date" value={editDraft.received_date} onChange={(e) => set("received_date", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.distribution_base} onChange={(e) => set("distribution_base", e.target.value)} /></td>
+                      <td className="py-1 px-2"><input className={ec} type="number" value={editDraft.distribution_qty} onChange={(e) => set("distribution_qty", e.target.value)} /></td>
+                      <td className="text-right py-1 px-2 font-bold text-rose-700">{eDist == null ? "—" : yen(eDist, cond.parent_currency || cond.currency)}</td>
+                      <td className="py-1 pl-2 text-right whitespace-nowrap">
+                        <button type="button" onClick={() => void saveEdit()} disabled={savingEdit} className="text-emerald-600 hover:text-emerald-700 mr-1.5 disabled:opacity-40">
+                          {savingEdit ? <Loader2 className="h-3 w-3 animate-spin inline" /> : <Check className="h-3.5 w-3.5 inline" />}
+                        </button>
+                        <button type="button" onClick={cancelEdit} className="text-muted-foreground hover:text-foreground"><X className="h-3.5 w-3.5 inline" /></button>
+                      </td>
+                    </tr>
+                  )
+                }
+                return (
+                  <tr key={x.id} className="border-b border-border/60">
+                    <td className="py-1 pr-2">{x.period || "—"}</td>
+                    <td className="text-right py-1 px-2">{yen(x.reported_sales, cond.currency)}</td>
+                    <td className="text-right py-1 px-2">{x.reported_quantity ?? "—"}</td>
+                    <td className="text-right py-1 px-2 font-bold text-sky-700">{yen(x.computed_royalty_ex_tax, cond.currency)}</td>
+                    <td className="text-right py-1 px-2">{yen(x.received_amount, cond.currency)}</td>
+                    <td className="py-1 px-2">{x.received_date || "—"}</td>
+                    <td className="text-right py-1 px-2">{yen(x.distribution_base, cond.currency)}</td>
+                    <td className="text-right py-1 px-2">{x.distribution_qty ?? "—"}</td>
+                    <td className="text-right py-1 px-2 font-bold text-rose-700">{yen(x.computed_distribution_ex_tax, cond.currency)}</td>
+                    <td className="py-1 pl-2 text-right whitespace-nowrap">
+                      <button type="button" onClick={() => startEdit(x)} className="text-muted-foreground hover:text-sky-600 mr-1.5"><Pencil className="h-3 w-3 inline" /></button>
+                      <button type="button" onClick={() => void del(x.id)} className="text-muted-foreground hover:text-destructive"><Trash2 className="h-3 w-3 inline" /></button>
+                    </td>
+                  </tr>
+                )
+              })}
               {receipts.length === 0 && (
                 <tr><td colSpan={10} className="text-center text-muted-foreground py-2">受領記録なし</td></tr>
               )}
