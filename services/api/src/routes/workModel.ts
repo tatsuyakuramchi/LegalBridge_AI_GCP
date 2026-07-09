@@ -1689,23 +1689,29 @@ export function registerWorkModelRoutes(
         }
         const cap = await query(
           `SELECT id, document_number FROM contract_capabilities
-            WHERE id = $1 AND contract_category IN ('license','publication')`,
+            WHERE id = $1
+              AND (contract_category IN ('license','publication')
+                   OR record_type = 'purchase_order')`,
           [chosenCap]
         );
         if (cap.rows.length === 0) {
-          return res.status(400).json({ ok: false, error: "選択した条件書(器)が見つかりません(license/publication カテゴリ)" });
+          return res.status(400).json({ ok: false, error: "選択した条件書(器)が見つかりません(license/publication/発注書)" });
         }
         capabilityId = cap.rows[0].id as number;
         lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
       } else if (docNum) {
         // ① 既存文書を文書番号で解決(DocumentNumberLookup で選択したケース)。
+        // 発注書(受託者帰属の成果物には利用許諾条件が付く)も器として受け付ける。
+        //   受注者帰属条件は lc-candidates(CL引用)で参照でき、器＝発注書 capability に紐づく。
         const cap = await query(
           `SELECT id, document_number FROM contract_capabilities
-            WHERE document_number = $1 AND contract_category IN ('license','publication')`,
+            WHERE document_number = $1
+              AND (contract_category IN ('license','publication')
+                   OR record_type = 'purchase_order')`,
           [docNum]
         );
         if (cap.rows.length === 0) {
-          return res.status(400).json({ ok: false, error: `文書番号「${docNum}」の利用許諾条件書(器)が見つかりません` });
+          return res.status(400).json({ ok: false, error: `文書番号「${docNum}」の条件書(器)が見つかりません(利用許諾/出版/発注書)` });
         }
         capabilityId = cap.rows[0].id as number;
         lineCodePrefix = (cap.rows[0].document_number as string) || `CAP-${capabilityId}`;
@@ -1871,8 +1877,9 @@ export function registerWorkModelRoutes(
       const chosenCap = b.capability_id == null || b.capability_id === "" ? null : Number(b.capability_id);
       if (chosenCap != null) {
         if (!Number.isFinite(chosenCap)) return res.status(400).json({ ok: false, error: "invalid capability_id" });
-        const cap = await query(`SELECT id, document_number FROM contract_capabilities WHERE id = $1 AND contract_category = 'license'`, [chosenCap]);
-        if (cap.rows.length === 0) return res.status(400).json({ ok: false, error: "選択した利用許諾条件書が見つかりません" });
+        // 利用許諾/出版に加え、発注書(受託者帰属の利用許諾条件付き)も器として受け付ける。
+        const cap = await query(`SELECT id, document_number FROM contract_capabilities WHERE id = $1 AND (contract_category IN ('license','publication') OR record_type = 'purchase_order')`, [chosenCap]);
+        if (cap.rows.length === 0) return res.status(400).json({ ok: false, error: "選択した条件書(器)が見つかりません(利用許諾/出版/発注書)" });
         capabilityId = cap.rows[0].id; lineCodePrefix = cap.rows[0].document_number || `CAP-${capabilityId}`;
       } else {
         capabilityId = await ensureMasterLicenseCapability(query, sw.rows[0]);
