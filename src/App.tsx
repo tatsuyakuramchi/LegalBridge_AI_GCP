@@ -30,6 +30,7 @@ import { WorkMaterialLinkPanel } from "./pages/master/WorkMaterialLinkPanel" // 
 import { SublicenseConditionPanel } from "./pages/master/SublicenseConditionPanel" // 再許諾条件登録
 import { UnlinkedConditionsPanel } from "./pages/master/UnlinkedConditionsPanel" // 未リンクCL 棚卸し
 import { BillingTablePanel } from "./pages/master/BillingTablePanel" // 請求・分配テーブル(再許諾)
+import { BillingDashboardPanel } from "./pages/master/BillingDashboardPanel" // 請求・分配 横断ダッシュボード
 import { WorkEntryPanel } from "./pages/master/WorkEntryPanel" // 作品/原作 登録
 import { PubLicenseEntryPanel } from "./pages/master/PubLicenseEntryPanel" // 出版利用許諾条件 登録
 import { EntityMergePanel } from "./pages/master/EntityMergePanel" // ID統合(マージ)カート
@@ -78,6 +79,7 @@ export default function App() {
                   <Route path="sublicense-conditions" element={<SublicenseConditionPanel />} />{/* 再許諾条件登録 */}
                   <Route path="unlinked-conditions" element={<UnlinkedConditionsPanel />} />{/* 未リンクCL 棚卸し */}
                   <Route path="billing" element={<BillingTablePanel />} />{/* 請求・分配テーブル(再許諾) */}
+                  <Route path="billing-dashboard" element={<BillingDashboardPanel />} />{/* 請求・分配 横断ダッシュボード */}
                   <Route path="pub-license" element={<PubLicenseEntryPanel />} />{/* 出版利用許諾条件 登録 */}
                   <Route path="merge" element={<EntityMergePanel />} />{/* ID統合(マージ)カート */}
                   <Route path="ledgers" element={<LedgersPanel />} />{/* Phase 22.18 */}

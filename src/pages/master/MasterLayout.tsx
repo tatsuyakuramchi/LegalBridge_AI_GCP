@@ -26,6 +26,8 @@ const tabs = [
   { to: "/master/unlinked-conditions", label: "未リンクCL 棚卸し", icon: Unlink },
   // 再許諾の受領記録＋ライセンサーへの分配(基準額×個数×親ライセンスイン料率)を台帳同期。
   { to: "/master/billing", label: "請求・分配", icon: Receipt },
+  // 全作品の再許諾受領×分配を1画面で俯瞰(期間/未受領/未分配で絞込)。
+  { to: "/master/billing-dashboard", label: "請求ダッシュボード", icon: Network },
   // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
   { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
   // データ構造刷新: 条件明細 横断検索は「条件明細」ハブの検索タブへ集約 (旧URLはリダイレクト)

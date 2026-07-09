@@ -1033,6 +1033,50 @@ export function registerWorkModelRoutes(
     } catch (e) { fail(res, e); }
   });
 
+  // GET: 横断ダッシュボード — 全作品の再許諾受領×分配を一覧(期間/フリーワード/未受領/未分配 で絞込)。
+  app.get("/api/v3/receipts-dashboard", ...requireRead, async (req, res) => {
+    try {
+      const q = String(req.query.q || "").trim();
+      const period = String(req.query.period || "").trim();
+      const unreceived = String(req.query.unreceived || "") === "true";
+      const undistributed = String(req.query.undistributed || "") === "true";
+      const params: any[] = [];
+      const where: string[] = ["clk.condition_kind = 'sublicense_out'"];
+      if (period) { params.push(period); where.push(`cr.period = $${params.length}`); }
+      if (q) {
+        params.push(`%${q}%`);
+        const i = params.length;
+        where.push(`(w.title ILIKE $${i} OR w.work_code ILIKE $${i} OR v.vendor_name ILIKE $${i} OR pv.vendor_name ILIKE $${i})`);
+      }
+      if (unreceived) where.push(`cr.received_amount IS NULL`);
+      if (undistributed) where.push(`cr.distribution_payment_id IS NULL`);
+      const r = await query(
+        `SELECT cr.id, cr.condition_id, cr.period, cr.period_date, cr.reported_sales, cr.reported_quantity,
+                cr.computed_royalty_ex_tax, cr.received_amount, cr.received_date, cr.status,
+                cr.distribution_base, cr.distribution_qty, cr.computed_distribution_ex_tax,
+                cr.payment_id, cr.distribution_payment_id,
+                cfc.work_id, cfc.rate_pct, cfc.currency, cfc.region_language_label,
+                w.title AS work_title, w.work_code,
+                v.vendor_name AS counterparty_name,
+                pcl.parent_license_condition_id, pcfc.rate_pct AS parent_rate_pct,
+                pv.vendor_name AS licensor_name
+           FROM condition_receipts cr
+           JOIN capability_financial_conditions cfc ON cfc.id = cr.condition_id
+           JOIN condition_lines clk ON clk.id = cfc.id
+           LEFT JOIN works w ON w.id = cfc.work_id
+           LEFT JOIN vendors v ON v.id = cfc.counterparty_vendor_id
+           LEFT JOIN condition_lines pcl ON pcl.id = cfc.id
+           LEFT JOIN capability_financial_conditions pcfc ON pcfc.id = pcl.parent_license_condition_id
+           LEFT JOIN vendors pv ON pv.id = pcfc.counterparty_vendor_id
+          WHERE ${where.join(" AND ")}
+          ORDER BY cr.period_date DESC NULLS LAST, cr.id DESC
+          LIMIT 1000`,
+        params
+      );
+      res.json(r.rows);
+    } catch (e) { fail(res, e); }
+  });
+
   // GET: 条件単位の受領記録
   app.get("/api/v3/work-conditions/:cid/receipts", ...requireRead, async (req, res) => {
     try {
