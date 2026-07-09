@@ -68,7 +68,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
   const list = Array.isArray(items) ? items : []
 
   return (
-    <div className="space-y-3">
+    <div className="col-span-full space-y-3">
       {list.length === 0 && (
         <p className="text-center text-[11px] font-mono text-muted-foreground py-6">
           成果物がありません。「＋成果物を追加」から入力してください。
