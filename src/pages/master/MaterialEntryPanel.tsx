@@ -30,8 +30,10 @@ import { WorkPicker, toWorkPickerItem, type WorkPickerItem } from "@/src/compone
 import { VendorSearchSelect } from "@/src/components/document/VendorSearchSelect"
 import { DocumentNumberLookup, type LookedUpDocument } from "@/src/components/document/DocumentNumberLookup"
 import { V3_FIXED_DEALS, V3_CALC_MODELS } from "@/src/components/document/V3LicenseMatrix"
+import { MATERIAL_GENRES, normalizeGenre } from "@/lib/materialVocab"
 
-const MATERIAL_TYPES = ["illustration", "scenario", "design", "music", "text"]
+// 種別(ジャンル)は正準語彙 MATERIAL_GENRES(lib/materialVocab)を使う(ゲームデザイン等を含む)。
+//   旧来のローカル固定リストは廃止し、3ファイル同期の正準ジャンルへ一本化。
 const MATERIAL_ROLES: Array<{ v: string; label: string }> = [
   { v: "core_logic", label: "core_logic（中核）" },
   { v: "sub_component", label: "sub_component（構成要素）" },
@@ -217,7 +219,7 @@ export function MaterialEntryPanel() {
     setEditingId(m.id)
     setEditingCode(m.material_code || "")
     setMaterialName(m.material_name || "")
-    setMaterialType(m.material_type || "illustration")
+    setMaterialType(normalizeGenre(m.material_type) || "illustration")
     setMaterialRole(m.material_role || "sub_component")
     setRightsType(m.rights_type || "license")
     setAcquisitionType(m.acquisition_type || "")
@@ -754,7 +756,11 @@ export function MaterialEntryPanel() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <Field label="種別（ジャンル）" col="material_type">
                 <select className={selCls} value={materialType} onChange={(e) => setMaterialType(e.target.value)}>
-                  {MATERIAL_TYPES.map((t) => (<option key={t} value={t}>{t}</option>))}
+                  {/* 旧値(正準ジャンルに無い値)は選択表示できるよう先頭に退避表示 */}
+                  {materialType && !MATERIAL_GENRES.some((g) => g.value === materialType) && (
+                    <option value={materialType}>{materialType}（旧値）</option>
+                  )}
+                  {MATERIAL_GENRES.map((g) => (<option key={g.value} value={g.value}>{g.label}</option>))}
                 </select>
               </Field>
               <Field label="役割" col="material_role" help="core_logic=中核 / sub_component=構成要素">
