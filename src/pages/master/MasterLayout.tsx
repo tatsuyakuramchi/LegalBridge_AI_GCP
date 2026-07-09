@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2 } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,7 @@ const tabs = [
   //   ルートは温存(レガシー画面に移行バナー)。データ移行(§8 #4)完了後に物理廃止予定。
   // Phase 22.20-C: サブライセンシー マスター
   { to: "/master/sublicensees", label: "Sublicensees", icon: GitBranch },
+  { to: "/master/sublicense-conditions", label: "再許諾条件登録", icon: Coins },
   // Phase 22.21.116: 稟議マスタ管理 (一覧 + CRUD + CSV 一括取込)
   { to: "/master/ringi", label: "Ringi (稟議)", icon: ClipboardCheck },
   // データ構造刷新: 条件明細 横断検索は「条件明細」ハブの検索タブへ集約 (旧URLはリダイレクト)
