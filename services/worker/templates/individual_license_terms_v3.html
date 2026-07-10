@@ -130,9 +130,8 @@
 <p class="sub-title">(B)　料率表（構成要素 × 取引条件）</p>
 <table class="avoid-break">
   <tr>
-    <th rowspan="2" style="width:44pt;">区分</th>
     <th rowspan="2">構成要素</th>
-    <th rowspan="2" style="width:96pt;">権利元</th>
+    <th rowspan="2" style="width:110pt;">文書番号</th>
     <th colspan="{{condCount}}" class="c" style="background:#ececec;">取引条件別料率</th>
   </tr>
   <tr>
@@ -142,18 +141,17 @@
   </tr>
   {{#each lcs}}
   <tr>
-    <td>{{lcId}}</td>
     <td>{{lcName}}</td>
-    <td>{{lcHolder}}</td>
+    <td>{{lcSourceDoc}}</td>
     {{#each rates}}
     <td class="num">{{this}}</td>
     {{/each}}
   </tr>
   {{else}}
-  <tr><td colspan="{{add condCount 3}}" class="c" style="color:#aaa;">構成要素を追加してください</td></tr>
+  <tr><td colspan="{{add condCount 2}}" class="c" style="color:#aaa;">構成要素を追加してください</td></tr>
   {{/each}}
 </table>
-<p class="leg"><b>【加算型】</b> 1-2 で定める料率の算定方法。対象製品に含まれる LC の料率を合算して 2-1 の適用料率を算出する。<b>【非加算型】</b> 各 LC 料率を参照のうえ Licensor・Licensee 間で改めて定めた実効料率を 2-1 に明記する。構成要素が増える場合は行を追加する。取引形態が増える場合は列（条件4 以降）を追加する。権利元が異なる行が生じた場合は特約 4-2(2)（按分）の対象。</p>
+<p class="leg"><b>【加算型】</b> 1-2 で定める料率の算定方法。対象製品に含まれる LC の料率を合算して 2-1 の適用料率を算出する。<b>【非加算型】</b> 各 LC 料率を参照のうえ Licensor・Licensee 間で改めて定めた実効料率を 2-1 に明記する。「文書番号」は各構成要素の根拠文書（過去の利用許諾条件書番号または発注書番号。本条件書で新たに設定した構成要素は「この条件書(新規)」）。構成要素が増える場合は行を追加する。取引形態が増える場合は列（条件4 以降）を追加する。権利元を異にする構成要素が含まれる場合は特約 4-2(2)（按分）の対象。</p>
 
 <!-- 1-4 固定文＋台帳差込 -->
 <h3 class="sec">1-4　再許諾（Sub-license）</h3>
