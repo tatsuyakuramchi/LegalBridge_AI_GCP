@@ -38,6 +38,15 @@ const labelCls = "text-[10px] font-mono font-bold uppercase tracking-[0.14em] te
 const inputCls =
   "w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground transition-colors"
 
+// 業務委託の契約類型(請負/準委任)。payment_terms として保持し、PDF の
+//   「支払方法：FIXED（請負）」等（テンプレの payment_terms）に反映する。
+//   請負=仕事の完成が対価(民632条) / 準委任=事務処理の遂行が対価(民656条)。
+const CONTRACT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "— 契約種別 —" },
+  { value: "請負", label: "請負（成果物の完成）" },
+  { value: "準委任", label: "準委任（役務の遂行）" },
+]
+
 export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] }) => {
   const patch = (idx: number, p: Partial<LineItem>) =>
     onChange(items.map((it, i) => (i === idx ? { ...it, ...p } : it)))
@@ -80,7 +89,11 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
         const feeMode: "fixed" | "calc" | "subscription" =
           it.calc_method === "ROYALTY" ? "calc" : it.calc_method === "SUBSCRIPTION" ? "subscription" : "fixed"
         const amount = Number(it.amount_ex_tax) || 0
-        // 下請法(取適法)ガード: 品目・納期は必須。発注者帰属は 金額(>0) or 計算方法(料率+執筆料>0)。
+        // 固定報酬(確定額)の名称。既定「執筆料」。案件により制作報酬/監修報酬等へ自由入力。
+        const rewardLabel = (it.reward_label || "").trim() || "執筆料"
+        // 当社帰属(発注者)×ROYALTY は「インセンティブ報酬」、受注者帰属は「利用許諾料」。
+        const royaltyLabel = isContractor ? "利用許諾料" : "インセンティブ報酬"
+        // 下請法(取適法)ガード: 品目・納期は必須。発注者帰属は 金額(>0) or 計算方法(料率+固定報酬>0)。
         //   継続(サブスク)は納期の代わりに役務提供期間(term_start)を必須とする。
         const errs: string[] = []
         if (!String(it.item_name || "").trim()) errs.push("品目名")
@@ -89,7 +102,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
         } else if (!it.delivery_date) {
           errs.push("納期")
         }
-        if (!isContractor && amount <= 0) errs.push(feeMode === "calc" ? "執筆料の金額" : "金額")
+        if (!isContractor && amount <= 0) errs.push(feeMode === "calc" ? `${rewardLabel}の金額` : "金額")
 
         return (
           <div
@@ -205,7 +218,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
               <div className="rounded-sm border border-amber-200 bg-amber-50/60 dark:bg-amber-950/20 px-3 py-2 space-y-2">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <label className={labelCls}>執筆料など固定報酬（税抜・任意）</label>
+                    <label className={labelCls}>固定報酬（税抜・任意）</label>
                     <input
                       type="number"
                       value={amount || ""}
@@ -224,9 +237,21 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                     />
                   </div>
                 </div>
+                {amount > 0 && (
+                  <div className="space-y-1">
+                    <label className={labelCls}>固定報酬の名称（PDF表記・既定「執筆料」）</label>
+                    <input
+                      type="text"
+                      value={it.reward_label || ""}
+                      onChange={(e) => patch(idx, { reward_label: e.target.value })}
+                      className={inputCls}
+                      placeholder="執筆料（例: 制作報酬 / 監修報酬）"
+                    />
+                  </div>
+                )}
                 <p className="text-[10px] font-mono text-amber-800/80 leading-snug">
                   {amount > 0 ? (
-                    <>PDF表記：「<b>{yen(amount)} 執筆料（利用許諾料は別途）</b>」。この固定報酬は確定額に算入されます。</>
+                    <>PDF表記：「<b>{yen(amount)} {rewardLabel}（{royaltyLabel}は別途）</b>」。この固定報酬は確定額に算入されます。</>
                   ) : (
                     <>固定報酬なし → PDF表記：「<b>報酬は利用許諾料に含む</b>」（支払日＝利用許諾料計算書の通り）。</>
                   )}
@@ -274,6 +299,20 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                   </div>
                 </div>
 
+                {/* 契約種別（請負/準委任）— 業務委託の類型。payment_terms に保持し PDF に反映。 */}
+                <div className="space-y-1">
+                  <label className={labelCls}>契約種別（業務委託の類型）</label>
+                  <select
+                    value={it.payment_terms === "請負" || it.payment_terms === "準委任" ? it.payment_terms : ""}
+                    onChange={(e) => patch(idx, { payment_terms: e.target.value, payment_method: e.target.value })}
+                    className={inputCls}
+                  >
+                    {CONTRACT_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
+                </div>
+
                 {feeMode === "subscription" && (
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="space-y-1">
@@ -302,6 +341,18 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                   </div>
                 )}
 
+                {feeMode === "calc" && (
+                  <div className="space-y-1">
+                    <label className={labelCls}>固定報酬の名称（PDF表記・既定「執筆料」）</label>
+                    <input
+                      type="text"
+                      value={it.reward_label || ""}
+                      onChange={(e) => patch(idx, { reward_label: e.target.value })}
+                      className={inputCls}
+                      placeholder="執筆料（例: 制作報酬 / 監修報酬）"
+                    />
+                  </div>
+                )}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {feeMode === "calc" && (
                     <div className="space-y-1">
@@ -317,7 +368,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                   )}
                   <div className="space-y-1">
                     <label className={cn(labelCls, amount <= 0 && "text-red-600")}>
-                      {feeMode === "calc" ? "執筆料の金額(税抜) *" : "金額(税抜) *"}
+                      {feeMode === "calc" ? `${rewardLabel}の金額(税抜) *` : "金額(税抜) *"}
                     </label>
                     <input
                       type="number"
@@ -339,7 +390,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                 </div>
                 {feeMode === "calc" && (
                   <p className="text-[10px] font-mono text-muted-foreground/70">
-                    PDF表記：「{yen(amount)} 執筆料（利用許諾料は別途）」。料率は明細の計算方法として併記されます。
+                    PDF表記：「{yen(amount)} {rewardLabel}（{royaltyLabel}は別途）」。{royaltyLabel}（料率）の算定条件は下の<b>「利用許諾条件（共通）」</b>に記載されます。
                   </p>
                 )}
               </div>
