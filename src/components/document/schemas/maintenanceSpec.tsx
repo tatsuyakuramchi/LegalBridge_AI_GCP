@@ -51,6 +51,37 @@ const arrayEditor = (ctx: FkCtx, key: string, Comp: any, extra?: React.ReactNode
   </div>
 )
 
+// PDF(maintenance_spec)の第7〜9条の条番号を算出する。
+//   第1〜5条は固定。第6条(初月)以降は存在するセクションだけを連番。
+//   ※ services/worker/server.ts の computeMaintenanceArticleNos と同一ロジック。
+//     PDF と入力フォームで条番号が一致するよう両者を揃えること。
+function articleNos(fd: any): {
+  milestone?: number
+  responsibility?: number
+  scopeOut?: number
+} {
+  const nonEmpty = (v: any) => Array.isArray(v) && v.length > 0
+  let n = 5
+  if (fd?.firstMonthSection) n += 1 // 第6条 初月(任意)
+  const o: { milestone?: number; responsibility?: number; scopeOut?: number } = {}
+  if (nonEmpty(fd?.milestones)) o.milestone = n += 1
+  if (nonEmpty(fd?.responsibilityRows)) o.responsibility = n += 1
+  if (nonEmpty(fd?.scopeOutItems)) o.scopeOut = n += 1
+  return o
+}
+
+// 動的セクションの「第N条」バッジ。項目があれば採番結果、無ければ採番前の案内を出す。
+const ArticleBadge: React.FC<{ no?: number }> = ({ no }) =>
+  no ? (
+    <span className="inline-block text-[11px] font-mono font-bold px-2 py-0.5 rounded-sm bg-foreground text-background">
+      第{no}条
+    </span>
+  ) : (
+    <span className="text-[10px] font-mono text-muted-foreground">
+      ※ 項目を1つ以上追加すると、前のセクションからの続き番号で自動採番されます
+    </span>
+  )
+
 export function maintenanceSpecBuilder(metadata: any): DocFormSchema {
   const sec = (title: string, group: string, accent?: any): FkSectionSchema => ({
     title,
@@ -58,9 +89,12 @@ export function maintenanceSpecBuilder(metadata: any): DocFormSchema {
     fieldIds: gfields(metadata, group),
   })
   return {
+    // セクションの見出しは PDF の条番号(第N条)に揃える。旧版はローマ数字(I〜IX)で
+    //   PDF の条番号とずれており「今どの条を入力しているか」が分かりにくかった。
+    //   並び順も PDF に合わせ、第2条(保守スコープ)を第1条の直後へ移動。
     sections: [
       {
-        title: "I. ヘッダ",
+        title: "ヘッダ（対象案件・当事者）",
         accent: "sky",
         // 取引先を検索して受託者名(VENDOR_NAME)を充填。法人=正式商号 / 個人=屋号・筆名・氏名。
         searches: [
@@ -78,18 +112,23 @@ export function maintenanceSpecBuilder(metadata: any): DocFormSchema {
         custom: (ctx) => <ParentPoLookup ctx={ctx} />,
         fieldIds: gfields(metadata, "I. ヘッダ"),
       },
-      sec("II. 月額稼働の構成", "II. 月額稼働の構成", "violet"),
-      sec("III. 通常保守", "III. 通常保守", "emerald"),
-      sec("IV. 障害対応", "IV. 障害対応", "amber"),
-      sec("IV-2. SLA 重大度", "IV-2. SLA 重大度", "amber"),
-      sec("V. 時間外費用", "V. 時間外費用", "sky"),
+      sec("第1条　月額稼働の構成", "II. 月額稼働の構成", "violet"),
       {
-        title: "第2条 保守スコープ（動的）",
+        title: "第2条　月額保守に含まれる対応内容（スコープ）",
         accent: "indigo",
         custom: (ctx) => arrayEditor(ctx, "scopeItems", MaintenanceSpecParts.ScopeItemsTable),
       },
+      sec("第3条　通常保守の対応時間", "III. 通常保守", "emerald"),
+      sec("第4条　障害発生時の対応時間・連絡ルート", "IV. 障害対応", "amber"),
       {
-        title: "VI. 初月対応",
+        title: "第4条　SLA（重大度別 目標復旧時間）",
+        subtitle: "第4条の一部です",
+        accent: "amber",
+        fieldIds: gfields(metadata, "IV-2. SLA 重大度"),
+      },
+      sec("第5条　時間外の費用", "V. 時間外費用", "sky"),
+      {
+        title: "第6条　初月の対応範囲",
         collapsible: true,
         fieldIds: gfields(metadata, "VI. 初月対応 (任意)"),
         custom: (ctx) =>
@@ -101,22 +140,40 @@ export function maintenanceSpecBuilder(metadata: any): DocFormSchema {
           ),
       },
       {
-        title: "VII. マイルストーン",
+        title: "発注後の業務開始手順（マイルストーン）",
         collapsible: true,
         fieldIds: gfields(metadata, "VII. マイルストーン (任意)"),
-        custom: (ctx) => arrayEditor(ctx, "milestones", MaintenanceSpecParts.MilestonesTable),
+        custom: (ctx) =>
+          arrayEditor(
+            ctx,
+            "milestones",
+            MaintenanceSpecParts.MilestonesTable,
+            <ArticleBadge no={articleNos(ctx.formData).milestone} />
+          ),
       },
       {
-        title: "VIII. 責任分担",
+        title: "責任分担",
         collapsible: true,
         fieldIds: gfields(metadata, "VIII. 責任分担 (任意)"),
-        custom: (ctx) => arrayEditor(ctx, "responsibilityRows", MaintenanceSpecParts.ResponsibilityTable),
+        custom: (ctx) =>
+          arrayEditor(
+            ctx,
+            "responsibilityRows",
+            MaintenanceSpecParts.ResponsibilityTable,
+            <ArticleBadge no={articleNos(ctx.formData).responsibility} />
+          ),
       },
       {
-        title: "IX. スコープ外",
+        title: "月額保守スコープ外（別途見積）",
         collapsible: true,
         fieldIds: gfields(metadata, "IX. スコープ外 (任意)"),
-        custom: (ctx) => arrayEditor(ctx, "scopeOutItems", MaintenanceSpecParts.ScopeOutList),
+        custom: (ctx) =>
+          arrayEditor(
+            ctx,
+            "scopeOutItems",
+            MaintenanceSpecParts.ScopeOutList,
+            <ArticleBadge no={articleNos(ctx.formData).scopeOut} />
+          ),
       },
     ],
   }

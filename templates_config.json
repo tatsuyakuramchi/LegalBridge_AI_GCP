@@ -552,13 +552,13 @@
       "HANDOVER_HOURS":            { "label": "引継ぎ残課題 合計時間", "group": "VI. 初月対応 (任意)", "type": "number" },
       "FIRST_MONTH_COST_NOTE":     { "label": "費用への影響", "group": "VI. 初月対応 (任意)", "type": "textarea" },
 
-      "milestoneArticleNo":        { "label": "マイルストーン条 番号", "group": "VII. マイルストーン (任意)", "type": "number", "placeholder": "7", "helpText": "第N条として表示" },
+      "milestoneArticleNo":        { "label": "マイルストーン条 番号", "group": "VII. マイルストーン (任意)", "type": "number", "placeholder": "7", "helpText": "第N条として表示（サーバ側で自動採番）", "hidden": true },
       "MILESTONE_DELAY_NOTE":      { "label": "遅延時の注記", "group": "VII. マイルストーン (任意)", "type": "textarea" },
 
-      "responsibilityArticleNo":   { "label": "責任分担条 番号", "group": "VIII. 責任分担 (任意)", "type": "number", "placeholder": "8" },
+      "responsibilityArticleNo":   { "label": "責任分担条 番号", "group": "VIII. 責任分担 (任意)", "type": "number", "placeholder": "8", "hidden": true },
       "RESPONSIBILITY_NOTE":       { "label": "責任分担 注記", "group": "VIII. 責任分担 (任意)", "type": "textarea" },
 
-      "scopeOutArticleNo":         { "label": "スコープ外条 番号", "group": "IX. スコープ外 (任意)", "type": "number", "placeholder": "9" },
+      "scopeOutArticleNo":         { "label": "スコープ外条 番号", "group": "IX. スコープ外 (任意)", "type": "number", "placeholder": "9", "hidden": true },
 
       "scopeItems":          { "label": "保守対応内容 (動的配列)", "group": "_DYNAMIC", "type": "hidden", "helpText": "専用 UI から編集" },
       "handoverItems":       { "label": "引継ぎ残課題 (動的配列)", "group": "_DYNAMIC", "type": "hidden" },
