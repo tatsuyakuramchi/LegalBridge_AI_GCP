@@ -161,8 +161,8 @@
     <tr class="item-detail">
       <td></td>
       <td colspan="4">
-        【IP帰属】{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}
-        　／　支払方法：{{or calc_method payment_method_display payment_method "FIXED"}}{{#if payment_terms}}（{{payment_terms}}）{{else}}{{#if payment_method}}（{{payment_method}}）{{/if}}{{/if}}
+        {{#if payment_terms}}契約種別：{{payment_terms}}　／　{{/if}}成果物の帰属先：{{#if (eq deliverable_ownership "受注者")}}受注者（利用許諾型）{{else}}発注者（譲渡型）{{/if}}
+        　／　支払方法：{{or calc_method payment_method_display payment_method "FIXED"}}
         　／　{{#if (eq calc_method "SUBSCRIPTION")}}役務提供期間{{else}}納期{{/if}}：{{#if (eq calc_method "SUBSCRIPTION")}}{{#if term_start}}{{formatDateCompact term_start}}{{else}}—{{/if}} 〜 {{#if term_end}}{{formatDateCompact term_end}}{{else}}継続中{{/if}}{{else}}{{formatDate delivery_date}}{{/if}}
         　／　支払日：{{#if (eq calc_method "SUBSCRIPTION")}}{{or (billingDayLabel billing_day cycle billing_timing) "支払日未設定"}}{{else}}{{#if (eq calc_method "ROYALTY")}}{{#unless (gt (or amount_ex_tax amount) 0)}}{{#if (eq deliverable_ownership "受注者")}}利用許諾料計算書の通り{{else}}インセンティブ報酬の算定による{{/if}}{{else}}{{formatDate payment_date}}{{/unless}}{{else}}{{formatDate payment_date}}{{/if}}{{/if}}
         {{!-- Phase: 利用許諾料/インセンティブ報酬の計算式は下段の「利用許諾条件」表に集約。
@@ -201,7 +201,7 @@
     <tr class="item-detail">
       <td></td>
       <td colspan="4">
-        支払方法：{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}{{#if PAYMENT_TERMS}}（{{PAYMENT_TERMS}}）{{else}}{{#if PAYMENT_METHOD}}（{{PAYMENT_METHOD}}）{{/if}}{{/if}}
+        {{#if PAYMENT_TERMS}}契約種別：{{PAYMENT_TERMS}}　／　{{/if}}支払方法：{{or CALC_METHOD PAYMENT_METHOD "FIXED"}}
         　／　納期：{{formatDate DELIVERY_DATE}}
         　／　支払日：{{summaryPaymentTerms}}
       </td>
