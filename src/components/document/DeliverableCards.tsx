@@ -38,6 +38,15 @@ const labelCls = "text-[10px] font-mono font-bold uppercase tracking-[0.14em] te
 const inputCls =
   "w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground transition-colors"
 
+// 業務委託の契約類型(請負/準委任)。payment_terms として保持し、PDF の
+//   「支払方法：FIXED（請負）」等（テンプレの payment_terms）に反映する。
+//   請負=仕事の完成が対価(民632条) / 準委任=事務処理の遂行が対価(民656条)。
+const CONTRACT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: "", label: "— 契約種別 —" },
+  { value: "請負", label: "請負（成果物の完成）" },
+  { value: "準委任", label: "準委任（役務の遂行）" },
+]
+
 export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] }) => {
   const patch = (idx: number, p: Partial<LineItem>) =>
     onChange(items.map((it, i) => (i === idx ? { ...it, ...p } : it)))
@@ -288,6 +297,20 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                       継続（サブスク）
                     </button>
                   </div>
+                </div>
+
+                {/* 契約種別（請負/準委任）— 業務委託の類型。payment_terms に保持し PDF に反映。 */}
+                <div className="space-y-1">
+                  <label className={labelCls}>契約種別（業務委託の類型）</label>
+                  <select
+                    value={it.payment_terms === "請負" || it.payment_terms === "準委任" ? it.payment_terms : ""}
+                    onChange={(e) => patch(idx, { payment_terms: e.target.value, payment_method: e.target.value })}
+                    className={inputCls}
+                  >
+                    {CONTRACT_TYPE_OPTIONS.map((o) => (
+                      <option key={o.value} value={o.value}>{o.label}</option>
+                    ))}
+                  </select>
                 </div>
 
                 {feeMode === "subscription" && (
