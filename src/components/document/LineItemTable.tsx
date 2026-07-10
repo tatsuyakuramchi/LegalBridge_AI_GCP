@@ -58,6 +58,13 @@ export type LineItem = {
    *   sublicense=受領額×料率 / fixed=固定額。calc_method='ROYALTY' のとき意味を持つ。
    */
   royalty_calc_basis?: "manufacturing" | "sales" | "sublicense" | "fixed" | string;
+  /**
+   * ROYALTY 明細に付く固定報酬(確定額)の名称。既定は「執筆料」。
+   *   案件により「制作報酬」「監修報酬」等まちまちなので自由入力にする。
+   *   金額>0 のとき確定額セルに「{reward_label}（利用許諾料/インセンティブ報酬は別途）」と表示。
+   *   未設定/空はテンプレ・フォーム側で「執筆料」にフォールバック。
+   */
+  reward_label?: string;
   // ── 受注者帰属(利用許諾料)の行が持つ金銭条件フィールド ──────────
   //   deliverable_ownership='受注者' のときに使う。FinancialCondition と同じ語彙。
   calc_type?: CalcType;

@@ -4340,7 +4340,7 @@ ${details}
           `SELECT line_no, item_name, spec, unit_price, quantity, amount_ex_tax, rate_pct,
                   calc_method, payment_terms, payment_method, payment_date, delivery_date,
                   cycle, term_start, term_end, billing_day,
-                  deliverable_ownership, royalty_calc_basis
+                  deliverable_ownership, royalty_calc_basis, reward_label
              FROM capability_line_items WHERE capability_id = $1 ORDER BY line_no ASC`,
           [capId]
         );
@@ -4378,6 +4378,7 @@ ${details}
         billing_day: x.billing_day ?? "",
         deliverable_ownership: x.deliverable_ownership || "発注者",
         royalty_calc_basis: x.royalty_calc_basis || "",
+        reward_label: x.reward_label || "",
       }));
 
       const hdr = await query(
@@ -15494,8 +15495,8 @@ ${details}
                  calc_method, payment_terms,
                  payment_method, payment_date, delivery_date,
                  deliverable_ownership, royalty_calc_basis, work_id,
-                 cycle, billing_day, term_start, term_end, updated_at
-               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, CURRENT_TIMESTAMP)`,
+                 cycle, billing_day, term_start, term_end, reward_label, updated_at
+               ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, CURRENT_TIMESTAMP)`,
               [
                 orderItemId,
                 lineNo,
@@ -15524,6 +15525,10 @@ ${details}
                   : null,
                 l.term_start || null,
                 l.term_end || null,
+                // 固定報酬(確定額)の名称。既定は「執筆料」(空は NULL 保存)。
+                l.reward_label && String(l.reward_label).trim() !== ""
+                  ? String(l.reward_label).trim()
+                  : null,
               ]
             );
           }

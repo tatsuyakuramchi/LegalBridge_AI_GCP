@@ -360,6 +360,13 @@ const PurchaseOrderForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               has_seller_owned_license: items.some(
                 (it) => it.deliverable_ownership === "受注者"
               ),
+              // 当社帰属(発注者)×ROYALTY = 業績連動(インセンティブ)報酬。確定額に加算される旨の
+              //   注記表示・「利用許諾料→インセンティブ報酬」表記切替に使う。
+              has_performance_incentive: items.some(
+                (it) =>
+                  it.calc_method === "ROYALTY" &&
+                  (it.deliverable_ownership ?? "発注者") !== "受注者"
+              ),
             })
           }}
         />
