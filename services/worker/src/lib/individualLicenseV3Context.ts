@@ -72,7 +72,23 @@ export interface V3TemplateContext {
     condType: string; calcModel: string; condRegion: string; condLang: string;
     appliedRate: string; quantity: string; ag: string; mg: string; currency: string;
   }>;
-  lcs: Array<{ lcId: string; lcName: string; lcHolder: string; lcSourceDoc: string; rates: string[] }>;
+  lcs: Array<{
+    lcId: string;
+    lcName: string;
+    lcHolder: string;
+    lcSourceDoc: string;
+    rates: string[];
+    // 構成要素カード用: 取引形態ごとに 料率/基準価格/MG・AG/通貨 を束ねた明細。
+    conditions: Array<{
+      condLabel: string;
+      condName: string;
+      condType: string;
+      rate: string;
+      basePrice: string;
+      guarantee: string;
+      currency: string;
+    }>;
+  }>;
   calcBaseRows: Array<{ edition: string; trigger: string; note: string }>;
   sublicensees: V3Sublicensee[];
   supervisor: string;
@@ -200,6 +216,33 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
       if (!c.addon) return "—";
       const r = toNum(l.rates?.[String(c.id ?? "")]);
       return r == null ? "—" : fmtPct(r);
+    }),
+    // 構成要素カード: 取引形態(cond)ごとに 料率(LC別)＋基準価格/MG・AG/通貨(取引形態単位)を束ねる。
+    conditions: v3Conds.map((c, i) => {
+      const rate = c.addon
+        ? (() => {
+            const r = toNum(l.rates?.[String(c.id ?? "")]);
+            return r == null ? "—" : fmtPct(r);
+          })()
+        : "—";
+      const cc = conds[i];
+      const yen = (n: number) =>
+        "¥" + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+      const mgN = toNum(cc?.mg) || 0;
+      const agN = toNum(cc?.ag) || 0;
+      const guarantee =
+        mgN > 0 ? `MG ${yen(mgN)}` : agN > 0 ? `AG ${yen(agN)}` : "—";
+      return {
+        condLabel: cc?.condLabel ?? `条件${i + 1}`,
+        condName: cc?.condName ?? "",
+        // 計算の種類: 加算型(構成要素料率を合算) / 非加算型(実効料率を直接明記)。
+        //   取引形態(cond)の addon から導出。conds[i].condType = "【加算型】"/"【非加算型】"。
+        condType: cc?.condType ?? "",
+        rate,
+        basePrice: cc?.basePrice ?? "",
+        guarantee,
+        currency: cc?.currency ?? "JPY",
+      };
     }),
   }));
 
