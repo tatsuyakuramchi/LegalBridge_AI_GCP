@@ -242,6 +242,33 @@ async function startServer() {
     return null; // 単一明細 → 従来表示
   };
 
+  // maintenance_spec (別紙 業務仕様書) の動的条番号を算出する。
+  //   第1〜5条は常に固定。第6条(初月)以降は「存在するセクションだけ」を連番する:
+  //     firstMonthSection → 第6条 / milestones / responsibilityRows / scopeOutItems。
+  //   テンプレの {{milestoneArticleNo}} / {{responsibilityArticleNo}} /
+  //   {{scopeOutArticleNo}} はこの値で描画され、未算出だと「第　条」と空欄になる。
+  //   Handlebars の #if と同じく空配列は無しとみなす(preview/generate 両経路で共通)。
+  const computeMaintenanceArticleNos = (
+    formData: any
+  ): {
+    milestoneArticleNo?: number;
+    responsibilityArticleNo?: number;
+    scopeOutArticleNo?: number;
+  } => {
+    const nonEmpty = (v: any) => Array.isArray(v) && v.length > 0;
+    let n = 5; // 第1〜5条は固定
+    if (formData?.firstMonthSection) n += 1; // 第6条 初月(任意)
+    const out: {
+      milestoneArticleNo?: number;
+      responsibilityArticleNo?: number;
+      scopeOutArticleNo?: number;
+    } = {};
+    if (nonEmpty(formData?.milestones)) out.milestoneArticleNo = (n += 1);
+    if (nonEmpty(formData?.responsibilityRows)) out.responsibilityArticleNo = (n += 1);
+    if (nonEmpty(formData?.scopeOutItems)) out.scopeOutArticleNo = (n += 1);
+    return out;
+  };
+
   // schema は migrations/ ランナーが単一所有する(統合: worker デプロイ・パイプラインの
   //   migrate ステップ = cloudbuild-worker.yaml ① で適用)。worker は既定では起動時に
   //   DDL を触らない。boot-time DDL は複数インスタンス同時起動での競合・アプリロールへの
@@ -13728,6 +13755,10 @@ ${details}
             ...(String(templateType || "").includes("inspection")
               ? computeInspectionItemNo(formData) || {}
               : {}),
+            // 業務仕様書: 第7〜9条の動的条番号(generate と共通)。
+            ...(String(templateType || "") === "maintenance_spec"
+              ? computeMaintenanceArticleNos(formData)
+              : {}),
             isLivePreview: true,
           },
         },
@@ -14608,6 +14639,11 @@ ${details}
       // 検収書: 明細No を列挙表示(preview と共通の computeInspectionItemNo)。
       if (String(templateType || "").includes("inspection")) {
         Object.assign(renderDetails, computeInspectionItemNo(formData) || {});
+      }
+
+      // 業務仕様書: 第7〜9条の動的条番号(preview と共通の computeMaintenanceArticleNos)。
+      if (String(templateType || "") === "maintenance_spec") {
+        Object.assign(renderDetails, computeMaintenanceArticleNos(formData));
       }
 
       // DB登録のみ (skipPdf=true): PDF 生成 / Drive アップロードを丸ごと
