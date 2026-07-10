@@ -186,6 +186,7 @@
 
       "IS_INVOICE_ISSUER": { "label": "適格請求書発行事業者 (該当/非該当)", "group": "V. インボイス制度関連", "placeholder": "該当 / 非該当" },
       "invoiceRegistrationDisplay": { "label": "登録番号 (T-)", "group": "V. インボイス制度関連", "helpText": "[取引先] ボタンで自動入力 (T プレフィクス付与)" },
+      "LIABILITY_CLAUSE": { "label": "損害賠償条項の型 (第16条)", "group": "V-2. 損害賠償条項 (第16条)", "type": "select", "options": ["拡大条項", "限定条項"], "helpText": "拡大条項＝乙の責任総額を業務委託料総額で上限。ただし故意重過失・秘密保持違反・情報漏えい・知財侵害・第三者請求は上限不適用。／限定条項＝上限に『直近12か月の業務委託料額』の下限を設定し、同じ不適用事由を列挙。いずれも請負・準委任を問わず適用。未選択時は拡大条項。" },
       "CONTRACT_PERIOD_SUMMARY": { "label": "\u5951\u7d04\u671f\u9593", "group": "V. \u30a4\u30f3\u30dc\u30a4\u30b9\u5236\u5ea6\u95a2\u9023", "placeholder": "\u4f8b: \u5951\u7d04\u7de0\u7d50\u65e5\u304b\u30891\u5e74\u9593\uff08\u671f\u9593\u6e80\u4e861\u304b\u6708\u524d\u307e\u3067\u306e\u89e3\u7d04\u901a\u77e5\u304c\u306a\u3044\u5834\u5408\u306f\u540c\u4e00\u6761\u4ef6\u30671\u5e74\u9593\u66f4\u65b0\uff09" },
 
       "REMARKS": { "label": "特約・特記事項", "group": "VI. 特約 (任意)", "type": "textarea", "helpText": "未入力なら PDF に該当ブロックが表示されません" }
@@ -552,13 +553,13 @@
       "HANDOVER_HOURS":            { "label": "引継ぎ残課題 合計時間", "group": "VI. 初月対応 (任意)", "type": "number" },
       "FIRST_MONTH_COST_NOTE":     { "label": "費用への影響", "group": "VI. 初月対応 (任意)", "type": "textarea" },
 
-      "milestoneArticleNo":        { "label": "マイルストーン条 番号", "group": "VII. マイルストーン (任意)", "type": "number", "placeholder": "7", "helpText": "第N条として表示" },
+      "milestoneArticleNo":        { "label": "マイルストーン条 番号", "group": "VII. マイルストーン (任意)", "type": "number", "placeholder": "7", "helpText": "第N条として表示（サーバ側で自動採番）", "hidden": true },
       "MILESTONE_DELAY_NOTE":      { "label": "遅延時の注記", "group": "VII. マイルストーン (任意)", "type": "textarea" },
 
-      "responsibilityArticleNo":   { "label": "責任分担条 番号", "group": "VIII. 責任分担 (任意)", "type": "number", "placeholder": "8" },
+      "responsibilityArticleNo":   { "label": "責任分担条 番号", "group": "VIII. 責任分担 (任意)", "type": "number", "placeholder": "8", "hidden": true },
       "RESPONSIBILITY_NOTE":       { "label": "責任分担 注記", "group": "VIII. 責任分担 (任意)", "type": "textarea" },
 
-      "scopeOutArticleNo":         { "label": "スコープ外条 番号", "group": "IX. スコープ外 (任意)", "type": "number", "placeholder": "9" },
+      "scopeOutArticleNo":         { "label": "スコープ外条 番号", "group": "IX. スコープ外 (任意)", "type": "number", "placeholder": "9", "hidden": true },
 
       "scopeItems":          { "label": "保守対応内容 (動的配列)", "group": "_DYNAMIC", "type": "hidden", "helpText": "専用 UI から編集" },
       "handoverItems":       { "label": "引継ぎ残課題 (動的配列)", "group": "_DYNAMIC", "type": "hidden" },
