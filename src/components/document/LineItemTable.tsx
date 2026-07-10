@@ -63,6 +63,8 @@ export type LineItem = {
    *   案件により「制作報酬」「監修報酬」等まちまちなので自由入力にする。
    *   金額>0 のとき確定額セルに「{reward_label}（利用許諾料/インセンティブ報酬は別途）」と表示。
    *   未設定/空はテンプレ・フォーム側で「執筆料」にフォールバック。
+   *   ※ 表示専用ラベル。formData 経由で PDF へ渡す(rate_pct 同様、ビュー
+   *     capability_line_items＝condition_lines には永続化しない)。
    */
   reward_label?: string;
   // ── 受注者帰属(利用許諾料)の行が持つ金銭条件フィールド ──────────
