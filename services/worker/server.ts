@@ -269,6 +269,80 @@ async function startServer() {
     return out;
   };
 
+  // 発注書(purchase_order): 受注者帰属×ROYALTY の各成果物に、利用許諾条件明細(CL＝
+  //   financial_conditions)を「条件名称」で突合してぶら下げる(案A)。突合しない共通条件は
+  //   末尾の「本発注の全成果物に適用」ブロックへ回す。財務条件が空でも item 自身が条件
+  //   フィールドを持つ旧経路は、その値から明細を合成して 1:1 で付ける。
+  //   文書番号 = 当該明細が属する文書 = 本発注書番号(ORDER_NO)。
+  const computePoLicenseLayout = (
+    formData: any
+  ): {
+    items: any[];
+    po_common_license_conditions: any[];
+    has_common_license_conditions: boolean;
+    po_doc_number: string;
+  } => {
+    const items = Array.isArray(formData?.items) ? formData.items : [];
+    const fcs = Array.isArray(formData?.financial_conditions)
+      ? formData.financial_conditions
+      : [];
+    const docNo = String(
+      formData?.ORDER_NO || formData?.発注番号 || formData?.契約書番号 || ""
+    ).trim();
+    const norm = (v: any) => String(v == null ? "" : v).trim();
+    const withDoc = (c: any) => ({ ...c, doc_number: docNo });
+    const used = new Set<number>();
+    const augItems = items.map((it: any) => {
+      const isRoyaltyContractor =
+        it?.calc_method === "ROYALTY" &&
+        (it?.deliverable_ownership ?? "発注者") === "受注者";
+      if (!isRoyaltyContractor) return { ...it, license_conditions: [] };
+      const matched: any[] = [];
+      // 1) financial_conditions を条件名称(=item.condition_name or item_name)で突合
+      fcs.forEach((fc: any, i: number) => {
+        const fn = norm(fc?.condition_name);
+        if (
+          fn &&
+          (fn === norm(it?.condition_name) || fn === norm(it?.item_name))
+        ) {
+          used.add(i);
+          matched.push(withDoc(fc));
+        }
+      });
+      // 2) 突合ゼロで、item 自身が条件フィールドを持つ旧経路はそれを 1:1 明細化
+      if (
+        matched.length === 0 &&
+        (it?.calc_type || it?.rate_pct || it?.base_price_label || it?.guarantee_type)
+      ) {
+        matched.push(
+          withDoc({
+            condition_name: it?.condition_name || it?.item_name,
+            calc_type: it?.calc_type,
+            fixed_kind: it?.fixed_kind,
+            subscription_cycle: it?.subscription_cycle,
+            formula_text: it?.formula_text,
+            rate_pct: it?.rate_pct,
+            base_price_label: it?.base_price_label,
+            guarantee_type: it?.guarantee_type,
+            mg_amount: it?.mg_amount,
+            ag_amount: it?.ag_amount,
+            region_language_label: it?.region_language_label,
+          })
+        );
+      }
+      return { ...it, license_conditions: matched };
+    });
+    const common = fcs
+      .filter((_: any, i: number) => !used.has(i))
+      .map(withDoc);
+    return {
+      items: augItems,
+      po_common_license_conditions: common,
+      has_common_license_conditions: common.length > 0,
+      po_doc_number: docNo,
+    };
+  };
+
   // schema は migrations/ ランナーが単一所有する(統合: worker デプロイ・パイプラインの
   //   migrate ステップ = cloudbuild-worker.yaml ① で適用)。worker は既定では起動時に
   //   DDL を触らない。boot-time DDL は複数インスタンス同時起動での競合・アプリロールへの
@@ -13759,6 +13833,10 @@ ${details}
             ...(String(templateType || "") === "maintenance_spec"
               ? computeMaintenanceArticleNos(formData)
               : {}),
+            // 発注書: 受注者帰属×ROYALTY 成果物へ利用許諾条件明細をぶら下げ(generate と共通)。
+            ...(String(templateType || "") === "purchase_order"
+              ? computePoLicenseLayout(formData)
+              : {}),
             isLivePreview: true,
           },
         },
@@ -14644,6 +14722,11 @@ ${details}
       // 業務仕様書: 第7〜9条の動的条番号(preview と共通の computeMaintenanceArticleNos)。
       if (String(templateType || "") === "maintenance_spec") {
         Object.assign(renderDetails, computeMaintenanceArticleNos(formData));
+      }
+
+      // 発注書: 受注者帰属×ROYALTY 成果物へ利用許諾条件明細をぶら下げ(preview と共通)。
+      if (String(templateType || "") === "purchase_order") {
+        Object.assign(renderDetails, computePoLicenseLayout(formData));
       }
 
       // DB登録のみ (skipPdf=true): PDF 生成 / Drive アップロードを丸ごと
