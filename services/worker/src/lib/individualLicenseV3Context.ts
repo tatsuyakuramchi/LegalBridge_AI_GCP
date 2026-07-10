@@ -72,7 +72,7 @@ export interface V3TemplateContext {
     condType: string; calcModel: string; condRegion: string; condLang: string;
     appliedRate: string; quantity: string; ag: string; mg: string; currency: string;
   }>;
-  lcs: Array<{ lcId: string; lcName: string; lcHolder: string; rates: string[] }>;
+  lcs: Array<{ lcId: string; lcName: string; lcHolder: string; lcSourceDoc: string; rates: string[] }>;
   calcBaseRows: Array<{ edition: string; trigger: string; note: string }>;
   sublicensees: V3Sublicensee[];
   supervisor: string;
@@ -192,6 +192,9 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     lcId: s(l.material_code),
     lcName: s(l.name),
     lcHolder: s(l.holder),
+    // 文書番号: 各構成要素の取得元文書(過去の利用許諾条件書 or 発注書の番号、
+    //   新規追加は「この条件書(新規)」)。1-3(B) 台帳の「文書番号」列に表示。
+    lcSourceDoc: s(l.source_doc),
     // rates は conds と同順。非加算型列は "—"（LC料率を持たない）。
     rates: v3Conds.map((c) => {
       if (!c.addon) return "—";
