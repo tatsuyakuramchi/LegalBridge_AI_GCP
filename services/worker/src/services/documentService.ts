@@ -123,6 +123,11 @@ export class DocumentService {
    */
   async loadFromDb(): Promise<void> {
     if (this.templateSource !== "db") return;
+    // db モードでも disk の partial を先に基盤登録する。DB に未登録の partial
+    //   (例: purchase_order の terms_spot_2026 標準約款)でもレンダが "partial not
+    //   found" で 500 にならないための防御。DB に同名 partial があれば下の loop で
+    //   上書きされる(DB 編集が優先)。
+    this.registerPartials();
     try {
       const res = await query(
         `SELECT dt.template_key, dt.kind, v.html_source
