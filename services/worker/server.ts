@@ -15627,11 +15627,21 @@ ${details}
               const txn = TXN_LABEL[String(ct)] || (ct ? String(ct) : "");
               if (gyomuName && txn) return `${gyomuName}_${txn}`;
               if (gyomuName) return gyomuName;
-              return null;
+              return txn || null;
+            };
+            // condition_name が空、または region_language_label がそのまま流用された値の
+            //   ときは「業務名_取引形態」で作り直す。これにより再発行(既存 form_data に
+            //   流用件名が入っている場合)でも不正な件名を修正できる。ユーザーの正当な
+            //   手入力(region_language_label と異なる)はそのまま優先する。
+            const condNameOrDefault = (c: any): string | null => {
+              const name = String(c?.condition_name || "").trim();
+              const label = String(c?.region_language_label || "").trim();
+              if (name && name !== label) return name;
+              return defaultCondName(c?.calc_type);
             };
             const mappedCommon = commonConds.map((c: any, i: number) => ({
               condition_no: Number(c.condition_no) || i + 1,
-              condition_name: c.condition_name || defaultCondName(c.calc_type),
+              condition_name: condNameOrDefault(c),
               region_territory: c.region_territory || null,
               region_language: c.region_language || null,
               region_language_label: c.region_language_label || null,
