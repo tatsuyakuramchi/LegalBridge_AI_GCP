@@ -1383,9 +1383,10 @@ export function registerWorkModelRoutes(
         `INSERT INTO work_materials (
            work_id, material_name, material_type, material_role, rights_type, rights_holder_vendor_id,
            rights_holder_label, is_royalty_bearing, scope, remarks, acquisition_type, category_id,
+           territory, language,
            material_no, material_code, is_default
          )
-         SELECT $1,$2,$3,$4,$5,$6,$7,COALESCE($8,FALSE),$9,$10,$11,$12,
+         SELECT $1,$2,$3,$4,$5,$6,$7,COALESCE($8,FALSE),$9,$10,$11,$12,$13,$14,
                 nextno.n,
                 w.work_code || '-' || lpad(nextno.n::text, 3, '0'),
                 FALSE
@@ -1399,6 +1400,7 @@ export function registerWorkModelRoutes(
           id, b.material_name ?? null, mt, role, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.scope ?? null, b.remarks ?? null, acq, categoryId,
+          b.territory ?? null, b.language ?? null,
         ]
       );
       res.status(201).json(r.rows[0]);
@@ -2269,12 +2271,13 @@ export function registerWorkModelRoutes(
             material_name = $2, material_type = $3, material_role = $10, rights_type = $4,
             rights_holder_vendor_id = $5, rights_holder_label = $6,
             is_royalty_bearing = COALESCE($7,FALSE), scope = $8, remarks = $9,
-            category_id = $11, updated_at = now()
+            category_id = $11, territory = $12, language = $13, updated_at = now()
           WHERE id = $1 RETURNING *`,
         [
           mid, b.material_name ?? null, mt, b.rights_type ?? null,
           b.rights_holder_vendor_id ?? null, b.rights_holder_label ?? null,
           b.is_royalty_bearing ?? null, b.scope ?? null, b.remarks ?? null, role, categoryId,
+          b.territory ?? null, b.language ?? null,
         ]
       );
       if (r.rows.length === 0) return res.status(404).json({ ok: false, error: "not found" });

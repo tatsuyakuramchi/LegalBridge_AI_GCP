@@ -122,6 +122,9 @@ export function MaterialEntryPanel() {
   const [isRoyaltyBearing, setIsRoyaltyBearing] = React.useState(true)
   const [scope, setScope] = React.useState("")
   const [remarks, setRemarks] = React.useState("")
+  // 許諾地域・言語(枠)。work_materials.territory/language。1-3 で表示。
+  const [territory, setTerritory] = React.useState("")
+  const [language, setLanguage] = React.useState("")
 
   const [conds, setConds] = React.useState<CondRow[]>([newCondRow(1)])
   // 編集時: フォームで扱わない非 royalty 条件(一括/従量 等)は素通しで保持し、PUT でそのまま送り返して保全する。
@@ -212,6 +215,7 @@ export function MaterialEntryPanel() {
     setRightsType("license"); setAcquisitionType("")
     setRightsVendorCode(""); setRightsVendorId(null); setRightsHolderLabel("")
     setIsRoyaltyBearing(true); setScope(""); setRemarks("")
+    setTerritory(""); setLanguage("")
     setConds([newCondRow(1)])
     setPassthroughConds([]); setCondsLoaded(true)
     setPickedDoc(null); setFileLink(""); setDocKind("license"); setPdfOutput(false)
@@ -269,6 +273,8 @@ export function MaterialEntryPanel() {
     setIsRoyaltyBearing(!!m.is_royalty_bearing)
     setScope(m.scope || "")
     setRemarks(m.remarks || "")
+    setTerritory(m.territory || "")
+    setLanguage(m.language || "")
     // 既存の金銭条件を読み込んで編集可能にする(読み込み完了までは空 → 誤保存で条件を消さないよう condsLoaded=false)。
     setConds([]); setPassthroughConds([]); setCondsLoaded(false)
     void loadCondsForEdit(m.id)
@@ -558,6 +564,8 @@ export function MaterialEntryPanel() {
         is_royalty_bearing: isRoyaltyBearing,
         scope: scope.trim() || undefined,
         remarks: remarks.trim() || undefined,
+        territory: territory.trim() || undefined,
+        language: language.trim() || undefined,
       }
       let material: any
       if (editingId) {
@@ -620,6 +628,8 @@ export function MaterialEntryPanel() {
         is_royalty_bearing: isRoyaltyBearing,
         scope: scope.trim() || undefined,
         remarks: remarks.trim() || undefined,
+        territory: territory.trim() || undefined,
+        language: language.trim() || undefined,
       }
 
       if (editingId) {
@@ -852,6 +862,15 @@ export function MaterialEntryPanel() {
               </Field>
               <Field label="備考" col="remarks">
                 <Input value={remarks} onChange={(e) => setRemarks(e.target.value)} placeholder="（任意）" className="h-8 text-[12px]" />
+              </Field>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Field label="許諾地域" col="territory" help="この構成要素が上流権利で許諾できる地域の枠。空=1-1に準ずる。1-3(A)に表示。">
+                <Input value={territory} onChange={(e) => setTerritory(e.target.value)} placeholder="例: 全世界 / 日本国内" className="h-8 text-[12px]" />
+              </Field>
+              <Field label="許諾言語" col="language" help="この構成要素が上流権利で許諾できる言語の枠。空=1-1に準ずる。1-3(A)に表示。">
+                <Input value={language} onChange={(e) => setLanguage(e.target.value)} placeholder="例: 全言語 / 日本語" className="h-8 text-[12px]" />
               </Field>
             </div>
           </div>

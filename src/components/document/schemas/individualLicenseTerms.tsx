@@ -355,6 +355,9 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       rates,
       copied_from_condition_id: m?.copied?.copied_from_condition_id,
       source_doc: m?.source_doc || "",
+      // 構成要素マスタ(work_materials)由来の許諾地域・言語(枠)。1-3 に表示。
+      region: m?.region || "",
+      language: m?.language || "",
     }
   }
   // 選択マテリアル群 → v3_lcs(編集済み rates は material_code で突合し保持)。
@@ -412,6 +415,9 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
               m?.source_document_number ||
               row.source_doc ||
               "",
+            // 構成要素マスタの許諾地域・言語(枠)を行へ取り込む(work_materials.territory/language)。
+            region: m?.territory ?? row.region ?? "",
+            language: m?.language ?? row.language ?? "",
           }
         : row
     )

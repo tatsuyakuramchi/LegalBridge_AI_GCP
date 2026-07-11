@@ -1,0 +1,648 @@
+-- ==========================================================================
+-- ILT v3 デプロイ後マイグレーション (Cloud SQL 手動実行用)
+--   デプロイ完了後に本ファイルを Cloud SQL で1回流す。冪等・トランザクション。
+--   内容 = 0117(work_materials 許諾地域/言語) + 0118(v3 テンプレ最新版を DB へ)。
+--   ※ これらは migrations/0117_*, 0118_* と同一。runner を使う場合は自動適用されるため
+--     本ファイルは手動運用時の一括実行用(重複実行しても IF NOT EXISTS / 版比較で無害)。
+-- 実行: psql "$DATABASE_URL" -f apply_ilt_v3_post_deploy.sql
+-- ==========================================================================
+BEGIN;
+
+-- ---- 0117: 構成要素(work_materials)に 許諾地域(territory)・許諾言語(language) ----
+ALTER TABLE work_materials ADD COLUMN IF NOT EXISTS territory TEXT;
+ALTER TABLE work_materials ADD COLUMN IF NOT EXISTS language  TEXT;
+COMMENT ON COLUMN work_materials.territory IS '許諾地域(枠)。この構成要素が上流権利で許諾できる地域。空=1-1に準ずる。';
+COMMENT ON COLUMN work_materials.language  IS '許諾言語(枠)。この構成要素が上流権利で許諾できる言語。空=1-1に準ずる。';
+
+-- ---- 0118: individual_license_terms_v3 テンプレを最新(disk)へ更新 ----
+--   0087 で登録済。sync-templates-to-db.mjs は config キーのみ対象で v3 は非対象のため
+--   テンプレ変更は本 DO ブロックで新版を積む(0087 と同方式・現行版と同一なら no-op)。
+DO $mig$
+DECLARE
+  tid INTEGER;
+  vid INTEGER;
+BEGIN
+  SELECT id INTO tid FROM document_templates WHERE template_key = 'individual_license_terms_v3';
+  IF tid IS NULL THEN
+    INSERT INTO document_templates (template_key, kind, label, category, comment, engine, is_active)
+    VALUES ('individual_license_terms_v3', 'document', '個別利用許諾条件書 v3（取引形態×構成要素マトリクス）', 'License',
+            'v3 マトリクス。加算型=構成要素LCの料率合算 / 非加算型=実効料率。', 'handlebars', TRUE)
+    RETURNING id INTO tid;
+  END IF;
+
+  IF NOT EXISTS (
+    SELECT 1 FROM document_templates dt
+      JOIN document_template_versions v ON v.id = dt.current_version_id
+     WHERE dt.id = tid AND v.html_source = $ilt_v3${{!--
+  ============================================================
+  別紙 個別利用許諾条件 — テンプレート v3（Handlebars ドラフト）
+  設計: docs/design/individual-license-terms-v3-migration-plan.md
+  v3 リファレンス(<!-- REPEAT -->) を Handlebars 化したもの。
+  - REPEAT:xxx → {{#each xxx}} / EMPTY → {{else}}
+  - LC の区分 {{lcId}} は現行 material_code（LO-…-NNN）
+  固定文(1-2・2-2・3運用・4特約)は差込しない。
+  ★本番 templates/ への配置は context 構築(worker)完了後に実施。
+  ============================================================
+--}}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>別紙 個別利用許諾条件 — {{contractNo}}</title>
+<style>
+  @page{size:A4;margin:18mm 16mm 16mm 16mm;
+    @bottom-center{content:"{{contractNo}}　／　{{licensorName}}　／　別紙 個別利用許諾条件　—　" counter(page) " / " counter(pages);
+    font-family:"Noto Sans CJK JP";font-size:7.5pt;color:#777;}}
+  *{box-sizing:border-box;}
+  body{font-family:"Noto Serif CJK JP",serif;color:#111;font-size:9pt;line-height:1.55;margin:0;}
+  .dh{text-align:center;margin-bottom:10pt;}
+  .dh .t{font-size:15pt;font-weight:700;letter-spacing:.12em;}
+  .dh .s{font-size:8pt;color:#555;margin-top:3pt;font-family:"Noto Sans CJK JP";}
+  hr.rule{border:none;border-top:1.4pt solid #111;margin:6pt 0 12pt;}
+  table{width:100%;border-collapse:collapse;margin:4pt 0 8pt;}
+  th,td{border:.5pt solid #555;padding:3.2pt 5pt;vertical-align:top;font-size:8.4pt;}
+  th{background:#ececec;font-weight:600;text-align:left;font-family:"Noto Sans CJK JP";}
+  th.c{text-align:center;}
+  td.k{background:#f3f3f3;font-weight:600;white-space:nowrap;width:90pt;font-family:"Noto Sans CJK JP";}
+  td.c{text-align:center;} td.num{text-align:center;font-weight:700;}
+  h2.block{font-family:"Noto Sans CJK JP";font-size:10.5pt;font-weight:700;border-bottom:1pt solid #111;padding-bottom:2pt;margin:14pt 0 6pt;}
+  h3.sec{font-family:"Noto Sans CJK JP";font-size:9pt;font-weight:700;margin:9pt 0 3pt;padding-left:6pt;border-left:2.5pt solid #111;}
+  p{margin:3pt 0;} p.lead{font-size:8.4pt;}
+  .leg{font-size:7.6pt;color:#555;line-height:1.5;margin:3pt 0;}
+  ul{margin:3pt 0;padding-left:14pt;} li{margin:1.5pt 0;font-size:8.4pt;}
+  .sub-title{margin:6pt 0 3pt;font-weight:600;font-family:"Noto Sans CJK JP";font-size:8.4pt;}
+  .avoid-break{break-inside:avoid;}
+  /* 1-3 構成要素カード: 各構成要素に取引形態ごとの条件を束ねる */
+  .lc-card{border:.6pt solid #9fb4c6;border-radius:2pt;margin:5pt 0;overflow:hidden;}
+  .lc-head{display:flex;justify-content:space-between;align-items:baseline;gap:8pt;background:#eef2f6;padding:3pt 6pt;font-family:"Noto Sans CJK JP";}
+  .lc-head .lc-name{font-weight:700;font-size:8.4pt;color:#25506b;}
+  .lc-head .lc-doc{font-size:7pt;color:#666;}
+  table.lc-table{margin:0;} table.lc-table th{background:#f5f5f5;}
+  .formula-box{width:100%;border-collapse:collapse;margin:6pt 0;}
+  .formula-box td{text-align:center;font-weight:700;font-size:10pt;font-family:"Noto Sans CJK JP";border:.8pt solid #555;padding:8pt 12pt;letter-spacing:.04em;}
+  /* 契約書らしい算式の表示: 囲みでなく字下げした素の一行 */
+  .formula-line{margin:2pt 0 7pt 16pt;font-family:"Noto Sans CJK JP";font-weight:600;font-size:9.2pt;letter-spacing:.02em;}
+  .sign{display:table;width:100%;margin-top:8pt;}
+  .sigcol{display:table-cell;width:50%;border:.5pt solid #555;vertical-align:top;}
+  .sigcol .h{background:#ececec;padding:4pt 6pt;font-weight:600;font-size:8.4pt;border-bottom:.5pt solid #555;font-family:"Noto Sans CJK JP";}
+  .sigrow{display:flex;border-bottom:.4pt solid #bbb;font-size:8.2pt;} .sigrow:last-child{border-bottom:none;}
+  .sigrow .rk{width:52pt;background:#fafafa;padding:4pt 5pt;font-weight:600;border-right:.4pt solid #ccc;font-family:"Noto Sans CJK JP";}
+  .sigrow .rv{padding:4pt 5pt;flex:1;min-height:22pt;}
+  .sigrow.seal .rv{display:flex;justify-content:flex-end;align-items:center;}
+  .sealbox{width:44pt;height:44pt;border:.7pt solid #555;display:flex;align-items:center;justify-content:center;font-size:6.6pt;color:#999;text-align:center;line-height:1.3;font-family:"Noto Sans CJK JP";}
+</style>
+</head>
+<body>
+
+<div class="dh">
+  <div class="t">別紙　個別利用許諾条件</div>
+  <div class="s">発行日 {{issueDate}}　／　契約書番号 {{contractNo}}　／　ワークID {{workId}}</div>
+</div>
+<hr class="rule">
+
+<!-- 頭書 -->
+<table>
+  <tr><td class="k">基本契約</td><td>{{masterAgreement}}</td></tr>
+  <tr><td class="k">当事者</td><td>Licensor：{{licensorName}}　／　Licensee：{{licenseeName}}</td></tr>
+  <tr><td class="k">期間</td><td>契約開始日：{{startDate}}</td></tr>
+  <tr><td class="k">通知先</td><td>Licensor：{{licensorContact}}　／　Licensee：{{licenseeContact}}</td></tr>
+</table>
+<p class="leg">本別紙の定めと基本契約の定めが抵触する場合、本別紙の定めが優先する。</p>
+
+<!-- 1. 許諾の内容 -->
+<h2 class="block">1.　許諾の内容（Grant）</h2>
+
+<h3 class="sec">1-1　許諾概要</h3>
+<table class="avoid-break">
+  <tr><td class="k">対象作品</td><td>別表 1-3 に登録された構成要素（LC）の総体をいう（以下「対象作品」という。）。</td></tr>
+  <tr><td class="k">対象製品</td><td>{{productDefinition}}</td></tr>
+  <tr><td class="k">対象製品予定名</td><td>{{productName}}</td></tr>
+  <tr><td class="k">独占性</td><td>{{exclusivity}}</td></tr>
+  <tr><td class="k">許諾地域</td><td>{{maxRegion}}。なお、各金銭条件において実際に適用する許諾地域は、権利の行使態様（取引形態）に応じ、本項に定める範囲内で 2-1 金銭条件マスタに定める。</td></tr>
+  <tr><td class="k">許諾言語</td><td>{{maxLanguage}}。なお、各金銭条件において実際に適用する許諾言語は、権利の行使態様（取引形態）に応じ、本項に定める範囲内で 2-1 金銭条件マスタに定める。</td></tr>
+  <tr><td class="k">許諾範囲</td><td>{{scope}}</td></tr>
+  <tr><td class="k">許諾権利</td><td>
+    <ul>
+      <li><b>複製・翻案</b>：対象作品をボードゲーム構成物（パッケージ・カード・ボード・マニュアル等）に複製・翻案（デフォルメ化・トリミング等を含む）する権利</li>
+      <li><b>譲渡</b>：製造した製品を譲渡により公衆に提供する権利（全世界・全言語）</li>
+      <li><b>公衆送信・上映</b>：広告宣伝のため対象作品またはその複製物を公衆送信（送信可能化を含む）・上映する権利</li>
+      <li><b>著作者人格権の不行使</b>：Licensor は、本契約に定める場合または書面合意の場合を除き、契約期間中、著作者人格権を行使しない（被用者・使用人による行使を含む）</li>
+    </ul>
+  </td></tr>
+</table>
+
+<!-- 1-2 固定文 -->
+<h3 class="sec">1-2　ロイヤリティの算定</h3>
+<p class="lead">ロイヤリティは、取引形態ごとに、次の算式により算出する。</p>
+<p class="formula-line">ロイヤリティ ＝ 基準価格 × 料率 × 個数 ± 固定額</p>
+<p class="lead">前項の算式に用いる各語の定義および該当箇所は、次のとおりとする。</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr><th style="width:84pt;">用語</th><th>定義</th><th class="c" style="width:56pt;">参照</th></tr>
+  <tr><td class="k">基準価格</td><td>取引形態（製造者・販売者の組合せ）ごとに定まる価格。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">料率</td><td><b>【加算型】</b>は 1-3 に定める各構成要素の料率を合算した値、<b>【非加算型】</b>は 2-1 に定める実効料率。</td><td class="c">1-3 / 2-1</td></tr>
+  <tr><td class="k">個数</td><td>製造・販売の数量。個数の概念がない取引形態においては 1 とする。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">固定額</td><td>取引形態により、算定額に加減する定額（一括の許諾料等）。定額を用いない取引形態においては 0 とする。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">AG（前払保証）</td><td>契約時に Licensor へ支払い、以後のロイヤリティと順次相殺する。適用しない場合は 0 とする。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">MG（最低保証）</td><td>計算期間末に累積ロイヤリティが MG に満たないとき、Licensee が差額を支払う。適用しない場合は 0 とする。</td><td class="c">2-1</td></tr>
+</table>
+<p class="leg">※ 具体的な計算例は 2-1 金銭条件マスタの脚注に記載する。</p>
+
+<!-- 1-3 差込 -->
+<h3 class="sec">1-3　許諾対象</h3>
+<p class="lead">本契約が許諾する対象作品は、次の各構成要素の総体をいう。各構成要素の素性・許諾範囲を(A)に、<b>【加算型】</b>の取引形態における構成要素別料率を(B)に定める。</p>
+
+<p class="sub-title">(A)　構成要素の許諾範囲</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr>
+    <th style="width:18pt;" class="c">#</th>
+    <th>構成要素</th>
+    <th style="width:104pt;">文書番号</th>
+    {{#if showHolder}}<th style="width:74pt;">権利元</th>{{/if}}
+    <th style="width:68pt;">許諾地域</th>
+    <th style="width:68pt;">許諾言語</th>
+  </tr>
+  {{#each lcs}}
+  <tr>
+    <td class="c">{{index1 @index}}</td>
+    <td>{{lcName}}</td>
+    <td>{{lcSourceDoc}}</td>
+    {{#if @root.showHolder}}<td>{{#if lcHolder}}{{lcHolder}}{{else}}—{{/if}}</td>{{/if}}
+    <td>{{#if lcRegion}}{{lcRegion}}{{else}}1-1 に準ずる{{/if}}</td>
+    <td>{{#if lcLanguage}}{{lcLanguage}}{{else}}1-1 に準ずる{{/if}}</td>
+  </tr>
+  {{else}}
+  <tr><td colspan="{{scopeColCount}}" class="c" style="color:#aaa;">構成要素を追加してください</td></tr>
+  {{/each}}
+</table>
+<p class="leg">許諾地域・許諾言語は、各構成要素の上流権利が許す範囲（枠）を示す。「1-1 に準ずる」は個別の制限がなく 1-1 の許諾地域・許諾言語に従うことを意味する。本製品へ実際に適用するスコープは、当該枠および 1-1 の範囲内で 2-1 に定める。「文書番号」は各構成要素の根拠文書（過去の利用許諾条件書番号または発注書番号。初回作品など本条件書で新たに定めるものは「本条件書（新規）」）。{{#if showHolder}}<b>権利元を異にする構成要素</b>を含む製品は、特約 4-2(2)（按分）の対象。{{/if}}</p>
+
+{{#if addonConds.length}}
+<p class="sub-title">(B)　加算型料率</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr>
+    <th style="width:18pt;" class="c">#</th>
+    <th>構成要素</th>
+    {{#each addonConds}}
+    <th class="c" style="width:70pt;">{{condLabel}}<br><span style="font-size:6.8pt;font-weight:400;">{{#if condName}}{{condName}}<br>{{/if}}（加算型）</span></th>
+    {{/each}}
+  </tr>
+  {{#each lcs}}
+  <tr>
+    <td class="c">{{index1 @index}}</td>
+    <td>{{lcName}}</td>
+    {{#each addonRates}}
+    <td class="num">{{this}}</td>
+    {{/each}}
+  </tr>
+  {{else}}
+  <tr><td colspan="{{rateColCount}}" class="c" style="color:#aaa;">構成要素を追加してください</td></tr>
+  {{/each}}
+  <tr class="sum">
+    <td colspan="2" style="background:#eef4f8;font-weight:700;">適用料率（加算型＝構成要素料率の合算）</td>
+    {{#each addonConds}}
+    <td class="num" style="background:#eef4f8;">{{appliedRate}}</td>
+    {{/each}}
+  </tr>
+</table>
+<p class="leg"><b>【加算型】</b>の適用料率は、対象製品に含まれる各構成要素の料率（本表）を合算した値とし、個数・固定額とともに 2-1 金銭条件マスタで製品単位に定める。<b>【非加算型】</b>の取引形態は構成要素別の料率を持たず、実効料率を 2-1 に明記する。</p>
+{{/if}}
+
+<!-- 1-4 固定文＋台帳差込 -->
+<h3 class="sec">1-4　再許諾（Sub-license）</h3>
+<p class="lead">Licensor の事前書面承認を得た場合に限り、Licensee は第三者にサブライセンスできる。対価配分は 2-1 の非加算型条件（サブライセンス）による。再許諾先は下記台帳に登録し、追加は Licensor の事前書面承認を得たうえで台帳を更新する。</p>
+<table class="avoid-break">
+  <tr><th>相手先</th><th>地域</th><th>言語</th><th>適用条件</th><th>個別料率</th><th>締結日</th><th>備考</th></tr>
+  {{#each sublicensees}}
+  <tr><td>{{slPartner}}</td><td>{{slRegion}}</td><td>{{slLang}}</td><td>{{slCond}}</td><td>{{slRate}}</td><td>{{slDate}}</td><td>{{slNote}}</td></tr>
+  {{else}}
+  <tr><td colspan="7" class="c" style="color:#777;">（現時点で登録なし）</td></tr>
+  {{/each}}
+</table>
+
+<!-- 2. 対価 -->
+<h2 class="block">2.　対価（Payment）</h2>
+<h3 class="sec">2-1　金銭条件マスタ（取引形態の定義）</h3>
+<p class="lead">各取引形態について、1-2 の算式に用いる基準価格・適用料率・個数・AG・MG および通貨を定める。取引形態が増える場合は本表に行（条件4 以降）を追加する。</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr>
+    <th style="width:32pt;">条件</th>
+    <th style="width:44pt;" class="c">種別</th>
+    <th style="width:52pt;" class="c">地域<br><span style="font-size:6.8pt;font-weight:400;">1-1の範囲内</span></th>
+    <th style="width:52pt;" class="c">言語<br><span style="font-size:6.8pt;font-weight:400;">1-1の範囲内</span></th>
+    <th style="width:66pt;" class="c">基準価格</th>
+    <th style="width:70pt;" class="c">適用料率<br><span style="font-size:6.8pt;font-weight:400;">加算型＝1-3の合算</span></th>
+    <th style="width:34pt;" class="c">個数<br><span style="font-size:6.8pt;font-weight:400;">なし＝1</span></th>
+    <th style="width:50pt;" class="c">AG（前払保証）<br><span style="font-size:6.8pt;font-weight:400;">なし＝0</span></th>
+    <th style="width:50pt;" class="c">MG（最低保証）<br><span style="font-size:6.8pt;font-weight:400;">なし＝0</span></th>
+    <th style="width:30pt;" class="c">通貨</th>
+  </tr>
+  {{#each conds}}
+  <tr>
+    <td class="c">{{condLabel}}{{#if condName}}<br><span style="font-weight:400;font-size:6.6pt;">{{condName}}</span>{{/if}}</td>
+    <td class="c"><b>{{condType}}</b>{{#if calcModel}}<br><span style="font-size:6.6pt;font-weight:400;color:#555;">{{calcModel}}</span>{{/if}}</td>
+    <td class="c">{{condRegion}}</td>
+    <td class="c">{{condLang}}</td>
+    <td>{{#if basePrice}}{{basePrice}}{{else}}—{{/if}}</td>
+    <td class="num">{{appliedRate}}</td>
+    <td class="c">{{quantity}}</td>
+    <td class="c">{{ag}}</td>
+    <td class="c">{{mg}}</td>
+    <td class="c">{{currency}}</td>
+  </tr>
+  {{/each}}
+</table>
+<p class="leg">基準価格は取引形態（製造者・販売者の組み合わせ）により決まる。地域・言語は 1-1 に定める許諾地域・許諾言語の範囲内で各条件ごとに定める。共通条件：算定期間＝製造時。料率・固定額は選択通貨建て。</p>
+
+<!-- 2-2 固定文 -->
+<h3 class="sec">2-2　報告・税</h3>
+<table class="avoid-break">
+  <tr><td class="k">税・源泉徴収</td><td>源泉徴収税は基本契約の定めに準ずる（支払時に控除のうえ支払い、源泉徴収票を発行する）。</td></tr>
+  <tr><td class="k">報告</td><td>運用条件 3-2 に定める製造ベース報告に従う。</td></tr>
+</table>
+
+<!-- 2-3 固定ルール＋版別台帳差込 -->
+<h3 class="sec">2-3　支払期日（利用許諾計算基準日）</h3>
+<p class="lead">本契約に基づくロイヤリティ等の支払期日は、下記(A)に定める利用許諾計算基準日（以下「計算基準日」という。）を基準として、下記(B)により定める。ロイヤリティの金額は 1-2 の算定式および 2-1 により製造時点で確定し 3-2 に従い報告するものとし（算定）、その支払期日は本項の計算基準日を起点として定める（支払）。両者はレイヤーを異にする。</p>
+
+<p class="sub-title">(A)　計算基準日</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr><th style="width:80pt;">版</th><th style="width:110pt;">計算基準日となる事由</th><th>備考</th></tr>
+  {{#each calcBaseRows}}
+  <tr><td class="c">{{edition}}</td><td class="c">{{trigger}}</td><td>{{note}}</td></tr>
+  {{/each}}
+</table>
+<p class="leg">計算基準日は、各版につき本表に定める事由の生じた日とする。版・取引形態により事由を異にする場合は行を追加し、又は取引形態別の列を設ける。同一版内で対象製品が複数回にわたり製造・発売される場合、各回につき当該事由の生じた日を計算基準日とする。</p>
+
+<p class="sub-title">(B)　支払期日</p>
+<table class="avoid-break">
+  <tr><td class="k">支払日</td><td>計算基準日の属する月の翌月{{#if licensorIsCorp}}末日{{else}}20日{{/if}}</td></tr>
+  <tr><td class="k">休業日の扱い</td><td>支払期日が金融機関の休業日にあたるときは、その翌営業日とする。</td></tr>
+</table>
+<p class="leg">支払日は、Licensor が{{#if licensorIsCorp}}法人{{else}}個人{{/if}}であること（頭書「当事者」欄の Licensor）に基づく。源泉徴収・支払方法その他の支払条件は 2-2 及び基本契約による。</p>
+
+<!-- 3. 運用条件（監修者のみ差込） -->
+<h2 class="block">3.　運用条件（監修・承認・報告・納品）</h2>
+<table class="avoid-break"><tr><td class="k">監修者</td><td>{{supervisor}}</td></tr></table>
+<table class="avoid-break">
+  <tr><th style="width:82pt;">区分</th><th style="width:84pt;">時点</th><th>内容</th></tr>
+  <tr><td>3-1　承認・監修</td><td>製造前・変更前</td><td>ゲームルール・テーマ・文面・記号・名称の変更／追加／削除、商品仕様の変更、パッケージ・広告宣伝材料について、書面による事前承諾を要する。</td></tr>
+  <tr><td>3-2　報告</td><td>製造時（製造都度）／支払日まで</td><td>製造（印刷）ベースで初回・再生産ごとに報告する。報告内容＝言語別製造数、希望小売価格（MSRP）、ロイヤリティ計算明細（販促・サンプル等の除外数を含む）。各回の報告は、2-3 に定める当該支払日までに行う。</td></tr>
+  <tr><td>3-3　見本提供</td><td>製造後</td><td>初回生産時、生産完了後すみやかに見本3個を Licensor に提供する。クレジット表示は別途協議とする。</td></tr>
+  <tr><td>3-4　監査</td><td>—</td><td>監査権は基本契約の定めに従う（基本契約に監査条項がない場合は本項に追加する）。</td></tr>
+</table>
+
+<!-- 4. 特約事項（固定文） -->
+<h2 class="block">4.　特約事項</h2>
+<table class="avoid-break">
+  <tr><td class="k">4-1</td><td>本書は基本契約に基づく個別利用許諾条件であり、当該基本契約と一体的に効力を有する。本書に関する通知その他の連絡は、基本契約の通知条項に従い、頭書「通知先」の宛先に対して行う。</td></tr>
+  <tr><td class="k">4-2</td><td><b>対象製品に複数の対象作品が含まれる場合の料率</b>：対象製品に本契約の対象作品が複数含まれる場合、各対象作品につき 1-3 により算定した適用料率を、次の区分に従って取り扱う。<br>
+    (1) <b>ライセンサーが同一のとき（重畳）</b>：各対象作品の適用料率を合算する。<br>
+    (2) <b>ライセンサーを異にするものが含まれるとき（按分）</b>：(1)にかかわらず、各ライセンサーと Licensee が対象製品ごとに個別合意した当該ライセンサー作品の持分に応じて料率を按分する。個別合意がないときの持分は、当該対象製品に含まれる許諾対象著作物の総数を N として 1/N とする（Licensee が独自に追加した新規要素は N に含めない）。<br>
+    構成要素単位の料率算定（1-3）と対象作品単位の取扱い（本項）はレイヤーを異にする。対象作品の計数単位は別途定めることができる。</td></tr>
+  {{#each specialExtras}}
+  <tr><td class="k">{{seId}}</td><td>{{seText}}</td></tr>
+  {{/each}}
+</table>
+
+<!-- 5. 署名 -->
+<h2 class="block">5.　署名</h2>
+<p class="lead">ライセンサーおよびライセンシーは、上記のとおり利用許諾に関する個別条件を確認し、合意した。</p>
+<div class="sign">
+  <div class="sigcol">
+    <div class="h">Licensor（許諾者）</div>
+    <div class="sigrow"><div class="rk">住所</div><div class="rv">{{licensorAddress}}</div></div>
+    <div class="sigrow"><div class="rk">{{#if licensorIsCorp}}会社名{{else}}氏名{{/if}}</div><div class="rv">{{licensorName}}</div></div>
+    <div class="sigrow"><div class="rk">代表者</div><div class="rv">{{licensorRep}}</div></div>
+    <div class="sigrow seal"><div class="rk">署名または印章</div><div class="rv"><div class="sealbox">署名<br>または<br>印章</div></div></div>
+  </div>
+  <div class="sigcol">
+    <div class="h">Licensee（被許諾者）</div>
+    <div class="sigrow"><div class="rk">住所</div><div class="rv">{{licenseeAddress}}</div></div>
+    <div class="sigrow"><div class="rk">会社名</div><div class="rv">{{licenseeName}}</div></div>
+    <div class="sigrow"><div class="rk">代表者</div><div class="rv">{{licenseeRep}}</div></div>
+    <div class="sigrow seal"><div class="rk">署名または印章</div><div class="rv"><div class="sealbox">署名<br>または<br>印章</div></div></div>
+  </div>
+</div>
+
+</body>
+</html>
+$ilt_v3$
+  ) THEN
+    INSERT INTO document_template_versions (template_id, version_no, html_source, field_schema, comment, created_by)
+    VALUES (tid,
+            COALESCE((SELECT MAX(version_no) FROM document_template_versions WHERE template_id = tid), 0) + 1,
+            $ilt_v3${{!--
+  ============================================================
+  別紙 個別利用許諾条件 — テンプレート v3（Handlebars ドラフト）
+  設計: docs/design/individual-license-terms-v3-migration-plan.md
+  v3 リファレンス(<!-- REPEAT -->) を Handlebars 化したもの。
+  - REPEAT:xxx → {{#each xxx}} / EMPTY → {{else}}
+  - LC の区分 {{lcId}} は現行 material_code（LO-…-NNN）
+  固定文(1-2・2-2・3運用・4特約)は差込しない。
+  ★本番 templates/ への配置は context 構築(worker)完了後に実施。
+  ============================================================
+--}}
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>別紙 個別利用許諾条件 — {{contractNo}}</title>
+<style>
+  @page{size:A4;margin:18mm 16mm 16mm 16mm;
+    @bottom-center{content:"{{contractNo}}　／　{{licensorName}}　／　別紙 個別利用許諾条件　—　" counter(page) " / " counter(pages);
+    font-family:"Noto Sans CJK JP";font-size:7.5pt;color:#777;}}
+  *{box-sizing:border-box;}
+  body{font-family:"Noto Serif CJK JP",serif;color:#111;font-size:9pt;line-height:1.55;margin:0;}
+  .dh{text-align:center;margin-bottom:10pt;}
+  .dh .t{font-size:15pt;font-weight:700;letter-spacing:.12em;}
+  .dh .s{font-size:8pt;color:#555;margin-top:3pt;font-family:"Noto Sans CJK JP";}
+  hr.rule{border:none;border-top:1.4pt solid #111;margin:6pt 0 12pt;}
+  table{width:100%;border-collapse:collapse;margin:4pt 0 8pt;}
+  th,td{border:.5pt solid #555;padding:3.2pt 5pt;vertical-align:top;font-size:8.4pt;}
+  th{background:#ececec;font-weight:600;text-align:left;font-family:"Noto Sans CJK JP";}
+  th.c{text-align:center;}
+  td.k{background:#f3f3f3;font-weight:600;white-space:nowrap;width:90pt;font-family:"Noto Sans CJK JP";}
+  td.c{text-align:center;} td.num{text-align:center;font-weight:700;}
+  h2.block{font-family:"Noto Sans CJK JP";font-size:10.5pt;font-weight:700;border-bottom:1pt solid #111;padding-bottom:2pt;margin:14pt 0 6pt;}
+  h3.sec{font-family:"Noto Sans CJK JP";font-size:9pt;font-weight:700;margin:9pt 0 3pt;padding-left:6pt;border-left:2.5pt solid #111;}
+  p{margin:3pt 0;} p.lead{font-size:8.4pt;}
+  .leg{font-size:7.6pt;color:#555;line-height:1.5;margin:3pt 0;}
+  ul{margin:3pt 0;padding-left:14pt;} li{margin:1.5pt 0;font-size:8.4pt;}
+  .sub-title{margin:6pt 0 3pt;font-weight:600;font-family:"Noto Sans CJK JP";font-size:8.4pt;}
+  .avoid-break{break-inside:avoid;}
+  /* 1-3 構成要素カード: 各構成要素に取引形態ごとの条件を束ねる */
+  .lc-card{border:.6pt solid #9fb4c6;border-radius:2pt;margin:5pt 0;overflow:hidden;}
+  .lc-head{display:flex;justify-content:space-between;align-items:baseline;gap:8pt;background:#eef2f6;padding:3pt 6pt;font-family:"Noto Sans CJK JP";}
+  .lc-head .lc-name{font-weight:700;font-size:8.4pt;color:#25506b;}
+  .lc-head .lc-doc{font-size:7pt;color:#666;}
+  table.lc-table{margin:0;} table.lc-table th{background:#f5f5f5;}
+  .formula-box{width:100%;border-collapse:collapse;margin:6pt 0;}
+  .formula-box td{text-align:center;font-weight:700;font-size:10pt;font-family:"Noto Sans CJK JP";border:.8pt solid #555;padding:8pt 12pt;letter-spacing:.04em;}
+  /* 契約書らしい算式の表示: 囲みでなく字下げした素の一行 */
+  .formula-line{margin:2pt 0 7pt 16pt;font-family:"Noto Sans CJK JP";font-weight:600;font-size:9.2pt;letter-spacing:.02em;}
+  .sign{display:table;width:100%;margin-top:8pt;}
+  .sigcol{display:table-cell;width:50%;border:.5pt solid #555;vertical-align:top;}
+  .sigcol .h{background:#ececec;padding:4pt 6pt;font-weight:600;font-size:8.4pt;border-bottom:.5pt solid #555;font-family:"Noto Sans CJK JP";}
+  .sigrow{display:flex;border-bottom:.4pt solid #bbb;font-size:8.2pt;} .sigrow:last-child{border-bottom:none;}
+  .sigrow .rk{width:52pt;background:#fafafa;padding:4pt 5pt;font-weight:600;border-right:.4pt solid #ccc;font-family:"Noto Sans CJK JP";}
+  .sigrow .rv{padding:4pt 5pt;flex:1;min-height:22pt;}
+  .sigrow.seal .rv{display:flex;justify-content:flex-end;align-items:center;}
+  .sealbox{width:44pt;height:44pt;border:.7pt solid #555;display:flex;align-items:center;justify-content:center;font-size:6.6pt;color:#999;text-align:center;line-height:1.3;font-family:"Noto Sans CJK JP";}
+</style>
+</head>
+<body>
+
+<div class="dh">
+  <div class="t">別紙　個別利用許諾条件</div>
+  <div class="s">発行日 {{issueDate}}　／　契約書番号 {{contractNo}}　／　ワークID {{workId}}</div>
+</div>
+<hr class="rule">
+
+<!-- 頭書 -->
+<table>
+  <tr><td class="k">基本契約</td><td>{{masterAgreement}}</td></tr>
+  <tr><td class="k">当事者</td><td>Licensor：{{licensorName}}　／　Licensee：{{licenseeName}}</td></tr>
+  <tr><td class="k">期間</td><td>契約開始日：{{startDate}}</td></tr>
+  <tr><td class="k">通知先</td><td>Licensor：{{licensorContact}}　／　Licensee：{{licenseeContact}}</td></tr>
+</table>
+<p class="leg">本別紙の定めと基本契約の定めが抵触する場合、本別紙の定めが優先する。</p>
+
+<!-- 1. 許諾の内容 -->
+<h2 class="block">1.　許諾の内容（Grant）</h2>
+
+<h3 class="sec">1-1　許諾概要</h3>
+<table class="avoid-break">
+  <tr><td class="k">対象作品</td><td>別表 1-3 に登録された構成要素（LC）の総体をいう（以下「対象作品」という。）。</td></tr>
+  <tr><td class="k">対象製品</td><td>{{productDefinition}}</td></tr>
+  <tr><td class="k">対象製品予定名</td><td>{{productName}}</td></tr>
+  <tr><td class="k">独占性</td><td>{{exclusivity}}</td></tr>
+  <tr><td class="k">許諾地域</td><td>{{maxRegion}}。なお、各金銭条件において実際に適用する許諾地域は、権利の行使態様（取引形態）に応じ、本項に定める範囲内で 2-1 金銭条件マスタに定める。</td></tr>
+  <tr><td class="k">許諾言語</td><td>{{maxLanguage}}。なお、各金銭条件において実際に適用する許諾言語は、権利の行使態様（取引形態）に応じ、本項に定める範囲内で 2-1 金銭条件マスタに定める。</td></tr>
+  <tr><td class="k">許諾範囲</td><td>{{scope}}</td></tr>
+  <tr><td class="k">許諾権利</td><td>
+    <ul>
+      <li><b>複製・翻案</b>：対象作品をボードゲーム構成物（パッケージ・カード・ボード・マニュアル等）に複製・翻案（デフォルメ化・トリミング等を含む）する権利</li>
+      <li><b>譲渡</b>：製造した製品を譲渡により公衆に提供する権利（全世界・全言語）</li>
+      <li><b>公衆送信・上映</b>：広告宣伝のため対象作品またはその複製物を公衆送信（送信可能化を含む）・上映する権利</li>
+      <li><b>著作者人格権の不行使</b>：Licensor は、本契約に定める場合または書面合意の場合を除き、契約期間中、著作者人格権を行使しない（被用者・使用人による行使を含む）</li>
+    </ul>
+  </td></tr>
+</table>
+
+<!-- 1-2 固定文 -->
+<h3 class="sec">1-2　ロイヤリティの算定</h3>
+<p class="lead">ロイヤリティは、取引形態ごとに、次の算式により算出する。</p>
+<p class="formula-line">ロイヤリティ ＝ 基準価格 × 料率 × 個数 ± 固定額</p>
+<p class="lead">前項の算式に用いる各語の定義および該当箇所は、次のとおりとする。</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr><th style="width:84pt;">用語</th><th>定義</th><th class="c" style="width:56pt;">参照</th></tr>
+  <tr><td class="k">基準価格</td><td>取引形態（製造者・販売者の組合せ）ごとに定まる価格。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">料率</td><td><b>【加算型】</b>は 1-3 に定める各構成要素の料率を合算した値、<b>【非加算型】</b>は 2-1 に定める実効料率。</td><td class="c">1-3 / 2-1</td></tr>
+  <tr><td class="k">個数</td><td>製造・販売の数量。個数の概念がない取引形態においては 1 とする。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">固定額</td><td>取引形態により、算定額に加減する定額（一括の許諾料等）。定額を用いない取引形態においては 0 とする。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">AG（前払保証）</td><td>契約時に Licensor へ支払い、以後のロイヤリティと順次相殺する。適用しない場合は 0 とする。</td><td class="c">2-1</td></tr>
+  <tr><td class="k">MG（最低保証）</td><td>計算期間末に累積ロイヤリティが MG に満たないとき、Licensee が差額を支払う。適用しない場合は 0 とする。</td><td class="c">2-1</td></tr>
+</table>
+<p class="leg">※ 具体的な計算例は 2-1 金銭条件マスタの脚注に記載する。</p>
+
+<!-- 1-3 差込 -->
+<h3 class="sec">1-3　許諾対象</h3>
+<p class="lead">本契約が許諾する対象作品は、次の各構成要素の総体をいう。各構成要素の素性・許諾範囲を(A)に、<b>【加算型】</b>の取引形態における構成要素別料率を(B)に定める。</p>
+
+<p class="sub-title">(A)　構成要素の許諾範囲</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr>
+    <th style="width:18pt;" class="c">#</th>
+    <th>構成要素</th>
+    <th style="width:104pt;">文書番号</th>
+    {{#if showHolder}}<th style="width:74pt;">権利元</th>{{/if}}
+    <th style="width:68pt;">許諾地域</th>
+    <th style="width:68pt;">許諾言語</th>
+  </tr>
+  {{#each lcs}}
+  <tr>
+    <td class="c">{{index1 @index}}</td>
+    <td>{{lcName}}</td>
+    <td>{{lcSourceDoc}}</td>
+    {{#if @root.showHolder}}<td>{{#if lcHolder}}{{lcHolder}}{{else}}—{{/if}}</td>{{/if}}
+    <td>{{#if lcRegion}}{{lcRegion}}{{else}}1-1 に準ずる{{/if}}</td>
+    <td>{{#if lcLanguage}}{{lcLanguage}}{{else}}1-1 に準ずる{{/if}}</td>
+  </tr>
+  {{else}}
+  <tr><td colspan="{{scopeColCount}}" class="c" style="color:#aaa;">構成要素を追加してください</td></tr>
+  {{/each}}
+</table>
+<p class="leg">許諾地域・許諾言語は、各構成要素の上流権利が許す範囲（枠）を示す。「1-1 に準ずる」は個別の制限がなく 1-1 の許諾地域・許諾言語に従うことを意味する。本製品へ実際に適用するスコープは、当該枠および 1-1 の範囲内で 2-1 に定める。「文書番号」は各構成要素の根拠文書（過去の利用許諾条件書番号または発注書番号。初回作品など本条件書で新たに定めるものは「本条件書（新規）」）。{{#if showHolder}}<b>権利元を異にする構成要素</b>を含む製品は、特約 4-2(2)（按分）の対象。{{/if}}</p>
+
+{{#if addonConds.length}}
+<p class="sub-title">(B)　加算型料率</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr>
+    <th style="width:18pt;" class="c">#</th>
+    <th>構成要素</th>
+    {{#each addonConds}}
+    <th class="c" style="width:70pt;">{{condLabel}}<br><span style="font-size:6.8pt;font-weight:400;">{{#if condName}}{{condName}}<br>{{/if}}（加算型）</span></th>
+    {{/each}}
+  </tr>
+  {{#each lcs}}
+  <tr>
+    <td class="c">{{index1 @index}}</td>
+    <td>{{lcName}}</td>
+    {{#each addonRates}}
+    <td class="num">{{this}}</td>
+    {{/each}}
+  </tr>
+  {{else}}
+  <tr><td colspan="{{rateColCount}}" class="c" style="color:#aaa;">構成要素を追加してください</td></tr>
+  {{/each}}
+  <tr class="sum">
+    <td colspan="2" style="background:#eef4f8;font-weight:700;">適用料率（加算型＝構成要素料率の合算）</td>
+    {{#each addonConds}}
+    <td class="num" style="background:#eef4f8;">{{appliedRate}}</td>
+    {{/each}}
+  </tr>
+</table>
+<p class="leg"><b>【加算型】</b>の適用料率は、対象製品に含まれる各構成要素の料率（本表）を合算した値とし、個数・固定額とともに 2-1 金銭条件マスタで製品単位に定める。<b>【非加算型】</b>の取引形態は構成要素別の料率を持たず、実効料率を 2-1 に明記する。</p>
+{{/if}}
+
+<!-- 1-4 固定文＋台帳差込 -->
+<h3 class="sec">1-4　再許諾（Sub-license）</h3>
+<p class="lead">Licensor の事前書面承認を得た場合に限り、Licensee は第三者にサブライセンスできる。対価配分は 2-1 の非加算型条件（サブライセンス）による。再許諾先は下記台帳に登録し、追加は Licensor の事前書面承認を得たうえで台帳を更新する。</p>
+<table class="avoid-break">
+  <tr><th>相手先</th><th>地域</th><th>言語</th><th>適用条件</th><th>個別料率</th><th>締結日</th><th>備考</th></tr>
+  {{#each sublicensees}}
+  <tr><td>{{slPartner}}</td><td>{{slRegion}}</td><td>{{slLang}}</td><td>{{slCond}}</td><td>{{slRate}}</td><td>{{slDate}}</td><td>{{slNote}}</td></tr>
+  {{else}}
+  <tr><td colspan="7" class="c" style="color:#777;">（現時点で登録なし）</td></tr>
+  {{/each}}
+</table>
+
+<!-- 2. 対価 -->
+<h2 class="block">2.　対価（Payment）</h2>
+<h3 class="sec">2-1　金銭条件マスタ（取引形態の定義）</h3>
+<p class="lead">各取引形態について、1-2 の算式に用いる基準価格・適用料率・個数・AG・MG および通貨を定める。取引形態が増える場合は本表に行（条件4 以降）を追加する。</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr>
+    <th style="width:32pt;">条件</th>
+    <th style="width:44pt;" class="c">種別</th>
+    <th style="width:52pt;" class="c">地域<br><span style="font-size:6.8pt;font-weight:400;">1-1の範囲内</span></th>
+    <th style="width:52pt;" class="c">言語<br><span style="font-size:6.8pt;font-weight:400;">1-1の範囲内</span></th>
+    <th style="width:66pt;" class="c">基準価格</th>
+    <th style="width:70pt;" class="c">適用料率<br><span style="font-size:6.8pt;font-weight:400;">加算型＝1-3の合算</span></th>
+    <th style="width:34pt;" class="c">個数<br><span style="font-size:6.8pt;font-weight:400;">なし＝1</span></th>
+    <th style="width:50pt;" class="c">AG（前払保証）<br><span style="font-size:6.8pt;font-weight:400;">なし＝0</span></th>
+    <th style="width:50pt;" class="c">MG（最低保証）<br><span style="font-size:6.8pt;font-weight:400;">なし＝0</span></th>
+    <th style="width:30pt;" class="c">通貨</th>
+  </tr>
+  {{#each conds}}
+  <tr>
+    <td class="c">{{condLabel}}{{#if condName}}<br><span style="font-weight:400;font-size:6.6pt;">{{condName}}</span>{{/if}}</td>
+    <td class="c"><b>{{condType}}</b>{{#if calcModel}}<br><span style="font-size:6.6pt;font-weight:400;color:#555;">{{calcModel}}</span>{{/if}}</td>
+    <td class="c">{{condRegion}}</td>
+    <td class="c">{{condLang}}</td>
+    <td>{{#if basePrice}}{{basePrice}}{{else}}—{{/if}}</td>
+    <td class="num">{{appliedRate}}</td>
+    <td class="c">{{quantity}}</td>
+    <td class="c">{{ag}}</td>
+    <td class="c">{{mg}}</td>
+    <td class="c">{{currency}}</td>
+  </tr>
+  {{/each}}
+</table>
+<p class="leg">基準価格は取引形態（製造者・販売者の組み合わせ）により決まる。地域・言語は 1-1 に定める許諾地域・許諾言語の範囲内で各条件ごとに定める。共通条件：算定期間＝製造時。料率・固定額は選択通貨建て。</p>
+
+<!-- 2-2 固定文 -->
+<h3 class="sec">2-2　報告・税</h3>
+<table class="avoid-break">
+  <tr><td class="k">税・源泉徴収</td><td>源泉徴収税は基本契約の定めに準ずる（支払時に控除のうえ支払い、源泉徴収票を発行する）。</td></tr>
+  <tr><td class="k">報告</td><td>運用条件 3-2 に定める製造ベース報告に従う。</td></tr>
+</table>
+
+<!-- 2-3 固定ルール＋版別台帳差込 -->
+<h3 class="sec">2-3　支払期日（利用許諾計算基準日）</h3>
+<p class="lead">本契約に基づくロイヤリティ等の支払期日は、下記(A)に定める利用許諾計算基準日（以下「計算基準日」という。）を基準として、下記(B)により定める。ロイヤリティの金額は 1-2 の算定式および 2-1 により製造時点で確定し 3-2 に従い報告するものとし（算定）、その支払期日は本項の計算基準日を起点として定める（支払）。両者はレイヤーを異にする。</p>
+
+<p class="sub-title">(A)　計算基準日</p>
+<table class="avoid-break" style="font-size:8.4pt;">
+  <tr><th style="width:80pt;">版</th><th style="width:110pt;">計算基準日となる事由</th><th>備考</th></tr>
+  {{#each calcBaseRows}}
+  <tr><td class="c">{{edition}}</td><td class="c">{{trigger}}</td><td>{{note}}</td></tr>
+  {{/each}}
+</table>
+<p class="leg">計算基準日は、各版につき本表に定める事由の生じた日とする。版・取引形態により事由を異にする場合は行を追加し、又は取引形態別の列を設ける。同一版内で対象製品が複数回にわたり製造・発売される場合、各回につき当該事由の生じた日を計算基準日とする。</p>
+
+<p class="sub-title">(B)　支払期日</p>
+<table class="avoid-break">
+  <tr><td class="k">支払日</td><td>計算基準日の属する月の翌月{{#if licensorIsCorp}}末日{{else}}20日{{/if}}</td></tr>
+  <tr><td class="k">休業日の扱い</td><td>支払期日が金融機関の休業日にあたるときは、その翌営業日とする。</td></tr>
+</table>
+<p class="leg">支払日は、Licensor が{{#if licensorIsCorp}}法人{{else}}個人{{/if}}であること（頭書「当事者」欄の Licensor）に基づく。源泉徴収・支払方法その他の支払条件は 2-2 及び基本契約による。</p>
+
+<!-- 3. 運用条件（監修者のみ差込） -->
+<h2 class="block">3.　運用条件（監修・承認・報告・納品）</h2>
+<table class="avoid-break"><tr><td class="k">監修者</td><td>{{supervisor}}</td></tr></table>
+<table class="avoid-break">
+  <tr><th style="width:82pt;">区分</th><th style="width:84pt;">時点</th><th>内容</th></tr>
+  <tr><td>3-1　承認・監修</td><td>製造前・変更前</td><td>ゲームルール・テーマ・文面・記号・名称の変更／追加／削除、商品仕様の変更、パッケージ・広告宣伝材料について、書面による事前承諾を要する。</td></tr>
+  <tr><td>3-2　報告</td><td>製造時（製造都度）／支払日まで</td><td>製造（印刷）ベースで初回・再生産ごとに報告する。報告内容＝言語別製造数、希望小売価格（MSRP）、ロイヤリティ計算明細（販促・サンプル等の除外数を含む）。各回の報告は、2-3 に定める当該支払日までに行う。</td></tr>
+  <tr><td>3-3　見本提供</td><td>製造後</td><td>初回生産時、生産完了後すみやかに見本3個を Licensor に提供する。クレジット表示は別途協議とする。</td></tr>
+  <tr><td>3-4　監査</td><td>—</td><td>監査権は基本契約の定めに従う（基本契約に監査条項がない場合は本項に追加する）。</td></tr>
+</table>
+
+<!-- 4. 特約事項（固定文） -->
+<h2 class="block">4.　特約事項</h2>
+<table class="avoid-break">
+  <tr><td class="k">4-1</td><td>本書は基本契約に基づく個別利用許諾条件であり、当該基本契約と一体的に効力を有する。本書に関する通知その他の連絡は、基本契約の通知条項に従い、頭書「通知先」の宛先に対して行う。</td></tr>
+  <tr><td class="k">4-2</td><td><b>対象製品に複数の対象作品が含まれる場合の料率</b>：対象製品に本契約の対象作品が複数含まれる場合、各対象作品につき 1-3 により算定した適用料率を、次の区分に従って取り扱う。<br>
+    (1) <b>ライセンサーが同一のとき（重畳）</b>：各対象作品の適用料率を合算する。<br>
+    (2) <b>ライセンサーを異にするものが含まれるとき（按分）</b>：(1)にかかわらず、各ライセンサーと Licensee が対象製品ごとに個別合意した当該ライセンサー作品の持分に応じて料率を按分する。個別合意がないときの持分は、当該対象製品に含まれる許諾対象著作物の総数を N として 1/N とする（Licensee が独自に追加した新規要素は N に含めない）。<br>
+    構成要素単位の料率算定（1-3）と対象作品単位の取扱い（本項）はレイヤーを異にする。対象作品の計数単位は別途定めることができる。</td></tr>
+  {{#each specialExtras}}
+  <tr><td class="k">{{seId}}</td><td>{{seText}}</td></tr>
+  {{/each}}
+</table>
+
+<!-- 5. 署名 -->
+<h2 class="block">5.　署名</h2>
+<p class="lead">ライセンサーおよびライセンシーは、上記のとおり利用許諾に関する個別条件を確認し、合意した。</p>
+<div class="sign">
+  <div class="sigcol">
+    <div class="h">Licensor（許諾者）</div>
+    <div class="sigrow"><div class="rk">住所</div><div class="rv">{{licensorAddress}}</div></div>
+    <div class="sigrow"><div class="rk">{{#if licensorIsCorp}}会社名{{else}}氏名{{/if}}</div><div class="rv">{{licensorName}}</div></div>
+    <div class="sigrow"><div class="rk">代表者</div><div class="rv">{{licensorRep}}</div></div>
+    <div class="sigrow seal"><div class="rk">署名または印章</div><div class="rv"><div class="sealbox">署名<br>または<br>印章</div></div></div>
+  </div>
+  <div class="sigcol">
+    <div class="h">Licensee（被許諾者）</div>
+    <div class="sigrow"><div class="rk">住所</div><div class="rv">{{licenseeAddress}}</div></div>
+    <div class="sigrow"><div class="rk">会社名</div><div class="rv">{{licenseeName}}</div></div>
+    <div class="sigrow"><div class="rk">代表者</div><div class="rv">{{licenseeRep}}</div></div>
+    <div class="sigrow seal"><div class="rk">署名または印章</div><div class="rv"><div class="sealbox">署名<br>または<br>印章</div></div></div>
+  </div>
+</div>
+
+</body>
+</html>
+$ilt_v3$,
+            '[]'::jsonb,
+            'v3 更新: 1-3案3再設計/1-2文言/署名/支払日分岐/構成要素の許諾地域言語', 'cloudsql-manual')
+    RETURNING id INTO vid;
+    UPDATE document_templates SET current_version_id = vid, updated_at = now() WHERE id = tid;
+  END IF;
+END $mig$;
+
+COMMIT;
+
+-- ---- 検証 (任意・COMMIT 後に実行) ----
+-- \echo work_materials columns:
+-- SELECT column_name FROM information_schema.columns
+--  WHERE table_name='work_materials' AND column_name IN ('territory','language') ORDER BY 1;
+-- \echo v3 current version:
+-- SELECT dt.template_key, dt.current_version_id, v.version_no,
+--        left(v.html_source, 0) AS _, length(v.html_source) AS html_len,
+--        position('構成要素の許諾範囲' in v.html_source) > 0 AS has_scope_table,
+--        position('署名または印章'   in v.html_source) > 0 AS has_new_sign
+--   FROM document_templates dt
+--   JOIN document_template_versions v ON v.id = dt.current_version_id
+--  WHERE dt.template_key='individual_license_terms_v3';

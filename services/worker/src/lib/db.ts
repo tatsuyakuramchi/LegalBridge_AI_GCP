@@ -2174,6 +2174,8 @@ export async function addMaterialToLedger(payload: {
   material_type?: string;
   rights_holder?: string;
   remarks?: string;
+  territory?: string;
+  language?: string;
 }): Promise<{ id: number; material_code: string; material_no: number }> {
   // マテリアル一本化(0089/0090): 台帳(ledgers.id) → 正本 works(licensed_in) を解決し、
   //   派生素材は正準表 work_materials に直接追加する(materials 表は廃止)。
@@ -2200,9 +2202,9 @@ export async function addMaterialToLedger(payload: {
     `INSERT INTO work_materials (
        work_id, material_no, material_code, material_name,
        material_type, rights_holder_label, remarks, is_default, material_role,
-       acquisition_type, category_id
+       acquisition_type, category_id, territory, language
      ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8,
-       CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END, $9)
+       CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END, $9, $10, $11)
      RETURNING id, material_code, material_no`,
     [
       workId,
@@ -2214,6 +2216,8 @@ export async function addMaterialToLedger(payload: {
       payload.remarks || null,
       role,
       categoryId,
+      payload.territory || null,
+      payload.language || null,
     ]
   );
   return {

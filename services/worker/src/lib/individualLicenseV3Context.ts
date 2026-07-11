@@ -37,6 +37,9 @@ export interface V3Lc {
   material_code?: string;     // 区分（=LC ID, LO-…-NNN）
   name?: string;              // 構成要素名
   holder?: string;            // 権利元（rights_holder）
+  source_doc?: string;        // 根拠文書番号（利用許諾条件書/発注書、または「この条件書(新規)」）
+  region?: string;            // 許諾地域（この構成要素の上流権利が許す枠。空=1-1に準ずる）
+  language?: string;          // 許諾言語（同上）
   rates?: Record<string, string | number>; // { [condId]: 料率(%) }
 }
 export interface V3Sublicensee {
@@ -65,29 +68,30 @@ export interface V3TemplateContext {
   licensorContact: string; licenseeContact: string;
   productDefinition: string; productName: string; exclusivity: string;
   maxRegion: string; maxLanguage: string; scope: string;
-  condCount: number;
   conds: Array<{
-    condLabel: string; condName: string; manufacturer: string; seller: string;
-    maxCondRegion: string; maxCondLang: string; basePrice: string;
+    condLabel: string; condName: string; basePrice: string;
     condType: string; calcModel: string; condRegion: string; condLang: string;
     appliedRate: string; quantity: string; ag: string; mg: string; currency: string;
   }>;
+  // 1-3 構成要素マトリクスの料率列 = 加算型の取引形態のみ(appliedRate=構成要素料率の合算Σ)。
+  addonConds: Array<{ condLabel: string; condName: string; appliedRate: string }>;
+  // 権利元列を出すか(構成要素の権利元が複数に分かれる時のみ=按分ケース)。
+  showHolder: boolean;
+  // 1-3(A) 構成要素の許諾範囲 表の列数(空行 colspan 用)。
+  scopeColCount: number;
+  // 1-3(B) 加算型料率 表の列数(空行 colspan 用)。
+  rateColCount: number;
+  // Licensor が法人か(2-3(B) 支払期日の分岐)。
+  licensorIsCorp: boolean;
   lcs: Array<{
     lcId: string;
     lcName: string;
     lcHolder: string;
     lcSourceDoc: string;
-    rates: string[];
-    // 構成要素カード用: 取引形態ごとに 料率/基準価格/MG・AG/通貨 を束ねた明細。
-    conditions: Array<{
-      condLabel: string;
-      condName: string;
-      condType: string;
-      rate: string;
-      basePrice: string;
-      guarantee: string;
-      currency: string;
-    }>;
+    lcRegion: string;   // 許諾地域(枠)。空=1-1に準ずる。
+    lcLanguage: string; // 許諾言語(枠)。空=1-1に準ずる。
+    // 加算型の取引形態ごとの この構成要素の料率(addonConds と同順)。
+    addonRates: string[];
   }>;
   calcBaseRows: Array<{ edition: string; trigger: string; note: string }>;
   sublicensees: V3Sublicensee[];
@@ -167,8 +171,8 @@ export function v3SampleFormData(): V3FormData {
         reg: "全世界", lang: "全言語", qty: "1", ag: "0", mg: "0", cur: "JPY" },
     ],
     v3_lcs: [
-      { material_code: "LO-2026-0015-001", name: "原作ゲーム（A）", holder: "株式会社オリジナル", rates: { "1": "5" } },
-      { material_code: "LO-2026-0008-003", name: "過去成果物（B・別原作）", holder: "株式会社クリエイト", rates: { "1": "2" } },
+      { material_code: "LO-2026-0015-001", name: "原作ゲーム（A）", holder: "株式会社オリジナル", region: "全世界", language: "全言語", rates: { "1": "5" } },
+      { material_code: "LO-2026-0008-003", name: "過去成果物（B・別原作）", holder: "株式会社クリエイト", region: "日本国内", language: "日本語", rates: { "1": "2" } },
     ],
     v3_sublicensees: [
       { slPartner: "サブA社", slRegion: "北米", slLang: "英語", slCond: "サブライセンス", slRate: "50", slDate: "2026-08-01", slNote: "サンプル" },
@@ -188,10 +192,6 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
   const conds = v3Conds.map((c, i) => ({
     condLabel: `条件${i + 1}`,
     condName: s(c.name),
-    manufacturer: s(c.manufacturer),
-    seller: s(c.seller),
-    maxCondRegion: s(c.maxReg),
-    maxCondLang: s(c.maxLang),
     basePrice: s(c.basePrice),
     condType: c.addon ? "【加算型】" : "【非加算型】",
     calcModel: calcModelLabel(c.calc_type),
@@ -204,47 +204,63 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     currency: s(c.cur) || "JPY",
   }));
 
-  const lcs = v3Lcs.map((l) => ({
-    lcId: s(l.material_code),
-    lcName: s(l.name),
-    lcHolder: s(l.holder),
-    // 文書番号: 各構成要素の取得元文書(過去の利用許諾条件書 or 発注書の番号、
-    //   新規追加は「この条件書(新規)」)。1-3(B) 台帳の「文書番号」列に表示。
-    lcSourceDoc: s(l.source_doc),
-    // rates は conds と同順。非加算型列は "—"（LC料率を持たない）。
-    rates: v3Conds.map((c) => {
-      if (!c.addon) return "—";
-      const r = toNum(l.rates?.[String(c.id ?? "")]);
-      return r == null ? "—" : fmtPct(r);
-    }),
-    // 構成要素カード: 取引形態(cond)ごとに 料率(LC別)＋基準価格/MG・AG/通貨(取引形態単位)を束ねる。
-    conditions: v3Conds.map((c, i) => {
-      const rate = c.addon
-        ? (() => {
-            const r = toNum(l.rates?.[String(c.id ?? "")]);
-            return r == null ? "—" : fmtPct(r);
-          })()
-        : "—";
-      const cc = conds[i];
-      const yen = (n: number) =>
-        "¥" + String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
-      const mgN = toNum(cc?.mg) || 0;
-      const agN = toNum(cc?.ag) || 0;
-      const guarantee =
-        mgN > 0 ? `MG ${yen(mgN)}` : agN > 0 ? `AG ${yen(agN)}` : "—";
-      return {
-        condLabel: cc?.condLabel ?? `条件${i + 1}`,
-        condName: cc?.condName ?? "",
-        // 計算の種類: 加算型(構成要素料率を合算) / 非加算型(実効料率を直接明記)。
-        //   取引形態(cond)の addon から導出。conds[i].condType = "【加算型】"/"【非加算型】"。
-        condType: cc?.condType ?? "",
-        rate,
-        basePrice: cc?.basePrice ?? "",
-        guarantee,
-        currency: cc?.currency ?? "JPY",
-      };
-    }),
-  }));
+  // 1-3 マトリクスの料率列 = 加算型の取引形態のみ(非加算型は構成要素別料率を持たない)。
+  const addonConds = v3Conds
+    .map((c, i) => ({ c, i }))
+    .filter(({ c }) => !!c.addon)
+    .map(({ i }) => ({
+      condLabel: conds[i].condLabel,
+      condName: conds[i].condName,
+      appliedRate: conds[i].appliedRate, // 加算型の適用料率 = 構成要素料率の合算(Σ)
+    }));
+
+  const lcs = v3Lcs.map((l) => {
+    const raw = s(l.source_doc).trim();
+    // 文書番号: 各構成要素の根拠文書(過去の利用許諾条件書 or 発注書の番号)。
+    //   未設定 or FE の「(この|本)条件書…(新規)」= 初回作品で本条件書が根拠 ⇒ 統一表記。
+    const lcSourceDoc =
+      raw === "" || /^(この|本)条件書/.test(raw) ? "本条件書（新規）" : raw;
+    return {
+      lcId: s(l.material_code),
+      lcName: s(l.name),
+      lcHolder: s(l.holder),
+      lcSourceDoc,
+      lcRegion: s(l.region),
+      lcLanguage: s(l.language),
+      // 加算型の取引形態ごとの この構成要素の料率(addonConds と同順)。
+      addonRates: v3Conds
+        .filter((c) => !!c.addon)
+        .map((c) => {
+          const r = toNum(l.rates?.[String(c.id ?? "")]);
+          return r == null ? "—" : fmtPct(r);
+        }),
+    };
+  });
+
+  // 権利元は「非常時」表示: 構成要素の権利元が複数に分かれる時のみ列を出す(按分の透明性)。
+  const showHolder =
+    new Set(v3Lcs.map((l) => s(l.holder).trim()).filter((h) => h !== "")).size > 1;
+  // 1-3(A) 構成要素の許諾範囲: #/構成要素/文書番号 + 権利元? + 許諾地域 + 許諾言語。
+  const scopeColCount = 3 + (showHolder ? 1 : 0) + 2;
+  // 1-3(B) 加算型料率: #/構成要素 + 加算型料率列。
+  const rateColCount = 2 + addonConds.length;
+
+  // Licensor が法人か個人か(2-3(B) 支払期日の分岐用)。
+  //   優先: 許諾者種別("法人"/"個人") → licensor_is_corporation 系フラグ →
+  //   代表者名の有無(あれば法人とみなす)でフォールバック。
+  const licensorIsCorp = (() => {
+    const kind = s(fd["許諾者種別"]).trim();
+    if (kind) return kind === "法人";
+    for (const k of ["licensor_is_corporation", "LICENSOR_IS_CORPORATION", "Licensor_種別"]) {
+      const raw = fd[k];
+      if (raw != null && String(raw).trim() !== "") {
+        const t = String(raw).trim().toLowerCase();
+        if (t === "individual" || t === "個人" || t === "personal") return false;
+        return t === "true" || t === "1" || t === "yes" || t === "法人" || t === "corporate" || t === "corp";
+      }
+    }
+    return s(fd["Licensor_代表者名"] ?? fd["licensorRep"]).trim() !== "";
+  })();
 
   // 2-3(A) 計算基準日。空行を除き、実質未設定なら既定2行（初版=発売日/2版以降=製造日）。
   const calcBaseInput: V3CalcBaseRow[] = Array.isArray(fd.v3_calc_base_rows)
@@ -284,8 +300,12 @@ export function buildIndividualLicenseV3Context(fd: V3FormData): V3TemplateConte
     maxRegion: pick("v3_maxRegion", "許諾地域", "maxRegion"),
     maxLanguage: pick("v3_maxLanguage", "許諾言語", "maxLanguage"),
     scope: pick("v3_scope", "許諾範囲", "scope"),
-    condCount: conds.length,
     conds,
+    addonConds,
+    showHolder,
+    scopeColCount,
+    rateColCount,
+    licensorIsCorp,
     lcs,
     calcBaseRows: calcBaseRows.length > 0 ? calcBaseRows : DEFAULT_CALC_BASE_ROWS,
     sublicensees: Array.isArray(fd.v3_sublicensees) ? fd.v3_sublicensees : [],

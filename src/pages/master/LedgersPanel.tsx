@@ -54,6 +54,8 @@ type Material = {
   material_type?: string
   rights_holder?: string
   remarks?: string
+  territory?: string
+  language?: string
   is_default?: boolean
   is_active?: boolean
   // Category(2): カテゴリ情報(/api/master/ledgers が付与)。
@@ -111,6 +113,8 @@ const emptyMaterial: Material = {
   material_type: "", // O5: ジャンル未選択(ユーザー選択)。空はバックエンドで正規化。
   rights_holder: "",
   remarks: "",
+  territory: "",
+  language: "",
 }
 
 export function LedgersPanel() {
@@ -667,6 +671,30 @@ export function LedgersPanel() {
                             setNewMaterial({
                               ...newMaterial,
                               rights_holder: e.target.value,
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="許諾地域">
+                        <Input
+                          placeholder="上流権利の枠。例: 全世界 / 日本国内"
+                          value={newMaterial.territory || ""}
+                          onChange={(e) =>
+                            setNewMaterial({
+                              ...newMaterial,
+                              territory: e.target.value,
+                            })
+                          }
+                        />
+                      </Field>
+                      <Field label="許諾言語">
+                        <Input
+                          placeholder="上流権利の枠。例: 全言語 / 日本語"
+                          value={newMaterial.language || ""}
+                          onChange={(e) =>
+                            setNewMaterial({
+                              ...newMaterial,
+                              language: e.target.value,
                             })
                           }
                         />
