@@ -15641,7 +15641,11 @@ ${details}
             };
             const mappedCommon = commonConds.map((c: any, i: number) => ({
               condition_no: Number(c.condition_no) || i + 1,
-              condition_name: condNameOrDefault(c),
+              // 案A: 利用許諾条件の件名は系統的に「業務名_取引形態」へ統一する(フロントの
+              //   自動生成名「原作・素材名：取引形態利用」等も上書き)。業務名/取引形態が
+              //   無く生成不可のときのみ、region_language_label 流用を避ける condNameOrDefault
+              //   にフォールバックする。
+              condition_name: defaultCondName(c.calc_type) || condNameOrDefault(c),
               region_territory: c.region_territory || null,
               region_language: c.region_language || null,
               region_language_label: c.region_language_label || null,
