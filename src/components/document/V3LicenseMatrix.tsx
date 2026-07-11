@@ -181,7 +181,7 @@ export function V3LicenseMatrix({
                   <th className={`${thCls} min-w-[80px]`}>地域(最大)</th>
                   <th className={`${thCls} min-w-[80px]`}>言語(最大)</th>
                   <th className={`${thCls} min-w-[120px]`}>基準価格</th>
-                  <th className={`${thCls} w-16 text-center`}>加算型</th>
+                  <th className={`${thCls} w-24 text-center`}>計算の種類</th>
                 </tr>
               </thead>
               <tbody>
@@ -200,7 +200,11 @@ export function V3LicenseMatrix({
                     <td className={tdCls}><input className={cellInput} value={c.maxLang || ''} onChange={(e) => updCond(c.id, 'maxLang', e.target.value)} placeholder="全言語" /></td>
                     <td className={tdCls}><input className={cellInput} value={c.basePrice || ''} onChange={(e) => updCond(c.id, 'basePrice', e.target.value)} placeholder="上代（MSRP）× 数量" /></td>
                     <td className={`${tdCls} text-center`}>
-                      <input type="checkbox" className="h-3.5 w-3.5" checked={!!c.addon} onChange={(e) => updCond(c.id, 'addon', e.target.checked)} title="加算型（構成要素LCの料率を合算する）" />
+                      {/* 加算型/非加算型 のオン・オフ。加算型=構成要素LCの料率を合算 / 非加算型=実効料率を直接明記。 */}
+                      <select className={cellInput} value={c.addon ? 'addon' : 'nonaddon'} onChange={(e) => updCond(c.id, 'addon', e.target.value === 'addon')} title="加算型=構成要素LCの料率を合算 / 非加算型=実効料率を2-1に直接明記">
+                        <option value="addon">加算型</option>
+                        <option value="nonaddon">非加算型</option>
+                      </select>
                     </td>
                   </tr>
                 ))}

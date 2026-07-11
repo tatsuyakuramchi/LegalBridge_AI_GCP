@@ -37,6 +37,12 @@
   ul{margin:3pt 0;padding-left:14pt;} li{margin:1.5pt 0;font-size:8.4pt;}
   .sub-title{margin:6pt 0 3pt;font-weight:600;font-family:"Noto Sans CJK JP";font-size:8.4pt;}
   .avoid-break{break-inside:avoid;}
+  /* 1-3 構成要素カード: 各構成要素に取引形態ごとの条件を束ねる */
+  .lc-card{border:.6pt solid #9fb4c6;border-radius:2pt;margin:5pt 0;overflow:hidden;}
+  .lc-head{display:flex;justify-content:space-between;align-items:baseline;gap:8pt;background:#eef2f6;padding:3pt 6pt;font-family:"Noto Sans CJK JP";}
+  .lc-head .lc-name{font-weight:700;font-size:8.4pt;color:#25506b;}
+  .lc-head .lc-doc{font-size:7pt;color:#666;}
+  table.lc-table{margin:0;} table.lc-table th{background:#f5f5f5;}
   .formula-box{width:100%;border-collapse:collapse;margin:6pt 0;}
   .formula-box td{text-align:center;font-weight:700;font-size:10pt;font-family:"Noto Sans CJK JP";border:.8pt solid #555;padding:8pt 12pt;letter-spacing:.04em;}
   .sign{display:table;width:100%;margin-top:8pt;}
@@ -102,56 +108,39 @@
 
 <!-- 1-3 差込 -->
 <h3 class="sec">1-3　許諾対象（構成要素台帳）</h3>
-<p class="lead">本契約が許諾する対象作品は次表の構成要素（LC）の総体をいう。取引形態の個数・固定額・通貨は 2-1 金銭条件マスタによる。</p>
+<p class="lead">本契約が許諾する対象作品は、次の各構成要素（LC）の総体をいう。各構成要素について、取引形態ごとの基準価格・料率・最低保証等の条件を以下に定める。取引形態の個数・固定額および対象製品単位の適用料率は 2-1 金銭条件マスタによる。</p>
 
-<p class="sub-title">(A)　基準価格表</p>
-<table class="avoid-break" style="font-size:8.4pt;">
-  <tr>
-    <th style="width:34pt;">条件</th>
-    <th style="width:80pt;">製造者</th>
-    <th style="width:80pt;">販売者</th>
-    <th style="width:62pt;" class="c">地域<br><span style="font-size:6.8pt;font-weight:400;">（最大）</span></th>
-    <th style="width:62pt;" class="c">言語<br><span style="font-size:6.8pt;font-weight:400;">（最大）</span></th>
-    <th>基準価格</th>
-  </tr>
-  {{#each conds}}
-  <tr>
-    <td class="c">{{condLabel}}{{#if condName}}<br><span style="font-weight:400;font-size:6.6pt;">{{condName}}</span>{{/if}}</td>
-    <td>{{manufacturer}}</td>
-    <td>{{seller}}</td>
-    <td class="c">{{maxCondRegion}}</td>
-    <td class="c">{{maxCondLang}}</td>
-    <td>{{basePrice}}</td>
-  </tr>
-  {{/each}}
-</table>
-<p class="leg">製造者・販売者の組み合わせが基準価格を決定する。地域・言語は当該取引形態において許諾できる最大スコープ（過去の合意により決まっているフレーム）を示す。2-1 における地域・言語は、本表の範囲内で今回の製品に適用する実際のスコープを定める。取引形態が増える場合は行（条件4 以降）を追加する。</p>
-
-<p class="sub-title">(B)　料率表（構成要素 × 取引条件）</p>
-<table class="avoid-break">
-  <tr>
-    <th rowspan="2">構成要素</th>
-    <th rowspan="2" style="width:110pt;">文書番号</th>
-    <th colspan="{{condCount}}" class="c" style="background:#ececec;">取引条件別料率</th>
-  </tr>
-  <tr>
-    {{#each conds}}
-    <th style="width:54pt;" class="c">{{condLabel}}<br><span style="font-size:7pt;font-weight:400;">{{condType}}</span></th>
+{{#each lcs}}
+<div class="lc-card avoid-break">
+  <div class="lc-head">
+    <span class="lc-name">構成要素{{index1 @index}}　{{lcName}}</span>
+    <span class="lc-doc">文書番号：{{#if lcSourceDoc}}{{lcSourceDoc}}{{else}}—{{/if}}</span>
+  </div>
+  <table class="lc-table">
+    <tr>
+      <th style="width:28%;">取引形態</th>
+      <th class="c" style="width:15%;">計算の種類</th>
+      <th class="c" style="width:12%;">料率</th>
+      <th style="width:21%;">基準価格</th>
+      <th class="c" style="width:14%;">MG / AG</th>
+      <th class="c" style="width:10%;">通貨</th>
+    </tr>
+    {{#each conditions}}
+    <tr>
+      <td>{{condLabel}}{{#if condName}}<span style="font-weight:400;font-size:6.6pt;">（{{condName}}）</span>{{/if}}</td>
+      <td class="c">{{condType}}</td>
+      <td class="num">{{rate}}</td>
+      <td>{{basePrice}}</td>
+      <td class="c">{{guarantee}}</td>
+      <td class="c">{{currency}}</td>
+    </tr>
     {{/each}}
-  </tr>
-  {{#each lcs}}
-  <tr>
-    <td>{{lcName}}</td>
-    <td>{{lcSourceDoc}}</td>
-    {{#each rates}}
-    <td class="num">{{this}}</td>
-    {{/each}}
-  </tr>
-  {{else}}
-  <tr><td colspan="{{add condCount 2}}" class="c" style="color:#aaa;">構成要素を追加してください</td></tr>
-  {{/each}}
-</table>
-<p class="leg"><b>【加算型】</b> 1-2 で定める料率の算定方法。対象製品に含まれる LC の料率を合算して 2-1 の適用料率を算出する。<b>【非加算型】</b> 各 LC 料率を参照のうえ Licensor・Licensee 間で改めて定めた実効料率を 2-1 に明記する。「文書番号」は各構成要素の根拠文書（過去の利用許諾条件書番号または発注書番号。本条件書で新たに設定した構成要素は「この条件書(新規)」）。構成要素が増える場合は行を追加する。取引形態が増える場合は列（条件4 以降）を追加する。権利元を異にする構成要素が含まれる場合は特約 4-2(2)（按分）の対象。</p>
+  </table>
+</div>
+{{else}}
+<p class="leg" style="color:#aaa;">構成要素を追加してください。</p>
+{{/each}}
+<p class="leg">各構成要素につき、取引形態ごとの基準価格・料率・最低保証（MG）／保証金（AG）・通貨を一覧化した。「文書番号」は各構成要素の根拠文書（過去の利用許諾条件書番号または発注書番号。本条件書で新設した構成要素は「この条件書(新規)」）。<b>【加算型】</b>の適用料率（対象製品に含まれる構成要素の料率を合算した値）および個数・固定額は 2-1 金銭条件マスタで製品単位に定める。<b>【非加算型】</b>は各構成要素料率を参照のうえ 2-1 に実効料率を明記する。権利元を異にする構成要素が含まれる場合は特約 4-2(2)（按分）の対象。</p>
 
 <!-- 1-4 固定文＋台帳差込 -->
 <h3 class="sec">1-4　再許諾（Sub-license）</h3>
