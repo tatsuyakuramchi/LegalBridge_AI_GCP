@@ -15608,9 +15608,30 @@ ${details}
           // Stage 2: 作品連動で原作マテリアルへ結線する、実際に保存した利用許諾条件の集合。
           let poLinkConds: any[] = [];
           if (commonConds.length > 0 && licenseItems.length > 0) {
+            // 件名の既定: 業務明細の業務名(item_name)を結合 + 取引形態ラベル。
+            //   条件名が空だと cfc トリガが region_language_label(「日本国内を含む全世界・…」)を
+            //   件名に流用してしまうため、「業務名_取引形態」で明示的に埋める。
+            //   ユーザーが手入力した condition_name は優先する。
+            const TXN_LABEL: Record<string, string> = {
+              BASE_QTY_RATE: "自社製造自社販売",
+              BASE_RATE: "権利許諾",
+              SUPPLY_QTY: "自社製造他社販売",
+              FIXED: "固定額",
+              SUBSCRIPTION: "サブスク",
+            };
+            const gyomuName = licenseItems
+              .map((it: any) => String(it?.item_name || it?.condition_name || "").trim())
+              .filter(Boolean)
+              .join("・");
+            const defaultCondName = (ct: any): string | null => {
+              const txn = TXN_LABEL[String(ct)] || (ct ? String(ct) : "");
+              if (gyomuName && txn) return `${gyomuName}_${txn}`;
+              if (gyomuName) return gyomuName;
+              return null;
+            };
             const mappedCommon = commonConds.map((c: any, i: number) => ({
               condition_no: Number(c.condition_no) || i + 1,
-              condition_name: c.condition_name || null,
+              condition_name: c.condition_name || defaultCondName(c.calc_type),
               region_territory: c.region_territory || null,
               region_language: c.region_language || null,
               region_language_label: c.region_language_label || null,
