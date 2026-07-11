@@ -970,7 +970,7 @@ export function registerDataLinkage(app: Express, deps: DataLinkageDeps) {
                            WHERE ce.source_delivery_line_item_id = dli.id)
                     AND EXISTS (
                           SELECT 1 FROM condition_lines cl
-                           WHERE cl.source_line_item_id = dli.capability_line_item_id)
+                           WHERE cl.id = dli.capability_line_item_id)
                   ORDER BY de.id
                   LIMIT $1`,
                 [limit]
