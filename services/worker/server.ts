@@ -7455,6 +7455,7 @@ ${details}
         const mats = await query(
           `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
                   wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
+                  wm.territory, wm.language,
                   wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
                   mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
                   COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder,
@@ -7642,6 +7643,8 @@ ${details}
           material_type: body.material_type || "derivative",
           rights_holder: body.rights_holder,
           remarks: body.remarks,
+          territory: body.territory,
+          language: body.language,
         });
         console.log(
           `📚 [material] added ${m.material_code} (id=${m.id}) under ledger ${ledgerId}`
@@ -7673,6 +7676,8 @@ ${details}
            category_id        = $7,
            rights_holder_label = $3,
            remarks            = $4,
+           territory          = $8,
+           language           = $9,
            updated_at         = CURRENT_TIMESTAMP
          WHERE id = $5`,
         [
@@ -7683,6 +7688,8 @@ ${details}
           id,
           role,
           categoryId,
+          body.territory || null,
+          body.language || null,
         ]
       );
       res.json({ ok: true });
