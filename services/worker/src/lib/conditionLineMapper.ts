@@ -297,8 +297,8 @@ export const CONDITION_LINE_COLUMNS = [
   "base_price_label",
   "mg_amount",
   "ag_amount",
-  "source_ip_id",
-  "master_contract_id",
+  // 0101 で DROP 済み(source_ip_id / master_contract_id)。列配列から除去して
+  //   直INSERT経路(decompose 等)が 42703 で 500 にならないようにする(S4)。
   "ringi_id",
   "status_flags",
   "is_inbound",
