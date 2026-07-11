@@ -6146,10 +6146,12 @@ ${details}
     }
 
     // この文書の各金銭条件 → 生成された condition_line を condition_no で対応付け。
+    // 0101 以降 cfc は condition_lines の VIEW(cfc.id = cl.id)。旧 source_condition_id
+    //   経由の自己間接は文書経路で常に NULL(=0件)になるため、自己 id で結線する。
     const clRes = await query(
       `SELECT cl.id AS line_id, cfc.condition_no
          FROM capability_financial_conditions cfc
-         JOIN condition_lines cl ON cl.source_condition_id = cfc.id
+         JOIN condition_lines cl ON cl.id = cfc.id
         WHERE cfc.capability_id = $1`,
       [capabilityId]
     );

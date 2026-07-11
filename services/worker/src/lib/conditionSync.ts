@@ -211,7 +211,10 @@ export async function syncInspectionEventsForDelivery(
             cl.id AS condition_line_id
        FROM delivery_line_items dli
        JOIN delivery_events de ON de.id = dli.delivery_event_id
-       LEFT JOIN condition_lines cl ON cl.source_line_item_id = dli.capability_line_item_id
+       -- 0101 以降 cli は condition_lines の VIEW(cli.id = cl.id)。dli.capability_line_item_id は
+       --   cli(=CL) の id を指すため、旧 source_line_item_id 自己間接(文書経路で常にNULL=0件)を
+       --   自己 id 一致へ是正。これで検収明細→condition_events(inspection) が生成される(S3)。
+       LEFT JOIN condition_lines cl ON cl.id = dli.capability_line_item_id
       WHERE dli.delivery_event_id = $1
         AND NOT EXISTS (SELECT 1 FROM condition_events e WHERE e.source_delivery_line_item_id = dli.id)`,
     [deliveryEventId]
