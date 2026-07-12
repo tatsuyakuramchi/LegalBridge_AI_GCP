@@ -14911,6 +14911,22 @@ ${details}
       if (String(templateType || "").includes("inspection")) {
         try {
           const fd: any = mergedFormData || {};
+          // 案Y: 検収書フォームの明細別検収額(delivery_line_items = 単価×個数×歩留率)で
+          //   部分/分納検収を計上する。明細別検収額を持たない検収書(旧/簡易)のみ、従来の
+          //   満額成就にフォールバックする。
+          const dlis: any[] = Array.isArray(fd.delivery_line_items)
+            ? fd.delivery_line_items
+            : [];
+          const inspAmtByLine = new Map<number, number>();
+          for (const d of dlis) {
+            const lid = Number(
+              d?.capability_line_item_id ?? d?.order_line_item_id ?? d?.condition_line_id
+            );
+            const amt = Number(d?.inspected_amount_ex_tax) || 0;
+            if (Number.isFinite(lid) && lid > 0 && amt > 0)
+              inspAmtByLine.set(lid, (inspAmtByLine.get(lid) || 0) + amt);
+          }
+          const usePartial = dlis.length > 0;
           let poCapId: number | null =
             fd.parent_po_id && Number.isFinite(Number(fd.parent_po_id)) ? Number(fd.parent_po_id) : null;
           if (!poCapId) {
@@ -14939,11 +14955,18 @@ ${details}
               const remaining =
                 (Number(line.amount_ex_tax) || 0) - (Number(sq.rows[0].consumed) || 0);
               if (remaining <= 0) continue;
+              // 案Y: 明細別検収額があれば残額でcapして部分計上。明細別検収額を持つ検収書で
+              //   当該条件明細が明細に含まれない場合は成就しない(満額しない)。明細別検収額を
+              //   持たない検収書のみ従来の満額(remaining)にフォールバック。
+              const amount = usePartial
+                ? Math.min(inspAmtByLine.get(Number(line.id)) ?? 0, remaining)
+                : remaining;
+              if (amount <= 0) continue;
               await query(
                 `INSERT INTO condition_events
                    (condition_line_id, event_no, event_type, document_id, backlog_issue_key, occurred_at, amount_ex_tax)
                  VALUES ($1, $2, 'inspection', $3, $4, now(), $5)`,
-                [line.id, Number(sq.rows[0].maxno) + 1, documentId, issueKey || null, remaining]
+                [line.id, Number(sq.rows[0].maxno) + 1, documentId, issueKey || null, amount]
               );
               filled++;
             }
@@ -15641,7 +15664,11 @@ ${details}
             };
             const mappedCommon = commonConds.map((c: any, i: number) => ({
               condition_no: Number(c.condition_no) || i + 1,
-              condition_name: condNameOrDefault(c),
+              // 案A: 利用許諾条件の件名は系統的に「業務名_取引形態」へ統一する(フロントの
+              //   自動生成名「原作・素材名：取引形態利用」等も上書き)。業務名/取引形態が
+              //   無く生成不可のときのみ、region_language_label 流用を避ける condNameOrDefault
+              //   にフォールバックする。
+              condition_name: defaultCondName(c.calc_type) || condNameOrDefault(c),
               region_territory: c.region_territory || null,
               region_language: c.region_language || null,
               region_language_label: c.region_language_label || null,
