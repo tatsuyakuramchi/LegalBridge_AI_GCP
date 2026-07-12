@@ -54,8 +54,20 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
   const remove = (idx: number) => onChange(items.filter((_, i) => i !== idx))
 
   // 金額(税抜)を1本の値として扱う(unit_price=金額 / quantity=1 / amount_ex_tax=金額)。
+  //   確定額(FIXED)以外(計算方法/継続/利用許諾料)は単価=金額・個数1の従来挙動。
   const setAmount = (idx: number, v: number) =>
     patch(idx, { unit_price: v, quantity: 1, amount_ex_tax: v })
+
+  // 確定額(FIXED)は「単価 × 個数」で金額を算出する(検収は 単価×個数×歩留率 で消化)。
+  //   個数未設定は 1 とみなす。金額は四捨五入で整数化(税抜円)。
+  const setUnit = (idx: number, unit: number) => {
+    const q = Number(items[idx]?.quantity) || 1
+    patch(idx, { unit_price: unit, quantity: q, amount_ex_tax: Math.round(unit * q) })
+  }
+  const setQty = (idx: number, q: number) => {
+    const u = Number(items[idx]?.unit_price) || Number(items[idx]?.amount_ex_tax) || 0
+    patch(idx, { unit_price: u, quantity: q, amount_ex_tax: Math.round(u * q) })
+  }
 
   const setOwnership = (idx: number, owner: "発注者" | "受注者") => {
     if (owner === "受注者") {
@@ -366,18 +378,46 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                       />
                     </div>
                   )}
-                  <div className="space-y-1">
-                    <label className={cn(labelCls, amount <= 0 && "text-red-600")}>
-                      {feeMode === "calc" ? `${rewardLabel}の金額(税抜) *` : "金額(税抜) *"}
-                    </label>
-                    <input
-                      type="number"
-                      value={amount || ""}
-                      onChange={(e) => setAmount(idx, Number(e.target.value) || 0)}
-                      className={inputCls}
-                      placeholder="0 以外"
-                    />
-                  </div>
+                  {feeMode === "fixed" ? (
+                    <>
+                      {/* 確定額: 単価 × 個数。金額はその積(検収は 単価×個数×歩留率 で消化)。 */}
+                      <div className="space-y-1">
+                        <label className={cn(labelCls, amount <= 0 && "text-red-600")}>単価(税抜) *</label>
+                        <input
+                          type="number"
+                          value={(Number(it.unit_price) || amount) || ""}
+                          onChange={(e) => setUnit(idx, Number(e.target.value) || 0)}
+                          className={inputCls}
+                          placeholder="0 以外"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className={labelCls}>個数</label>
+                        <input
+                          type="number"
+                          value={Number(it.quantity) || 1}
+                          onChange={(e) => setQty(idx, Number(e.target.value) || 0)}
+                          className={inputCls}
+                          placeholder="1"
+                          step="1"
+                          min="0"
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="space-y-1">
+                      <label className={cn(labelCls, amount <= 0 && "text-red-600")}>
+                        {feeMode === "calc" ? `${rewardLabel}の金額(税抜) *` : "金額(税抜) *"}
+                      </label>
+                      <input
+                        type="number"
+                        value={amount || ""}
+                        onChange={(e) => setAmount(idx, Number(e.target.value) || 0)}
+                        className={inputCls}
+                        placeholder="0 以外"
+                      />
+                    </div>
+                  )}
                   <div className="space-y-1">
                     <label className={labelCls}>支払日</label>
                     <input
@@ -388,6 +428,11 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                     />
                   </div>
                 </div>
+                {feeMode === "fixed" && (Number(it.quantity) || 1) !== 1 && (
+                  <p className="text-[10px] font-mono text-muted-foreground/70">
+                    金額(税抜) = 単価 {yen(Number(it.unit_price) || 0)} × 個数 {Number(it.quantity) || 1} = <b>{yen(amount)}</b>
+                  </p>
+                )}
                 {feeMode === "calc" && (
                   <p className="text-[10px] font-mono text-muted-foreground/70">
                     PDF表記：「{yen(amount)} {rewardLabel}（{royaltyLabel}は別途）」。{royaltyLabel}（料率）の算定条件は下の<b>「利用許諾条件（共通）」</b>に記載されます。
