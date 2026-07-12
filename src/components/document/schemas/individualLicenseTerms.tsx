@@ -854,46 +854,86 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                           マテリアルを選ぶと、その原作素材の過去条件を引用(コピー)できます。新規条件はそのまま金銭条件で入力します。
                         </p>
                       )}
-                      {/* 案X: この構成要素の金銭条件(加算型 取引形態 × 料率)。行で直接入力し、
-                          section 3 の v3_lcs と同一データを編集する。各マテリアルが料率を持つので
-                          加算(合算)が常に成立する。取引形態未初期化のときは 3.金銭条件 で初期化を促す。 */}
+                      {/* 案X: この構成要素の金銭条件を「2-1と同じ表構成」で入力する。取引形態(行)×
+                          [種別 / 料率(このLC) / MG / AG / 通貨]。編集先は section 3 の v3_lcs と同一
+                          データ(rates[cond.id])。料率(このLC)＝加算の合算に効くこの構成要素の料率。
+                          MG/AG/通貨/計算モデルは取引形態共通(cond)のため読み取り表示(3.の2-1で編集)。 */}
                       {row.material_code && (() => {
-                        const addonConds = (
-                          Array.isArray(formData.v3_conds) ? (formData.v3_conds as any[]) : []
-                        ).filter((c: any) => c?.addon)
+                        const allConds = Array.isArray(formData.v3_conds)
+                          ? (formData.v3_conds as any[])
+                          : []
                         const lc = (
                           Array.isArray(formData.v3_lcs) ? (formData.v3_lcs as any[]) : []
                         ).find((l: any) => l.material_code === row.material_code)
-                        if (addonConds.length === 0) {
+                        if (allConds.length === 0) {
                           return (
                             <div className="pl-6 text-[10px] font-mono text-amber-700">
                               金銭条件（取引形態 × 料率）は、下の「3. 金銭条件」で取引形態を初期化後に入力できます。
                             </div>
                           )
                         }
+                        const calcShort = (t?: string) =>
+                          (({
+                            BASE_QTY_RATE: "価格×個数×料率",
+                            BASE_RATE: "実効料率",
+                            FIXED: "固定額",
+                            SUBSCRIPTION: "サブスク",
+                            SUPPLY_QTY: "供給×個数×料率",
+                          } as Record<string, string>)[String(t || "")] || "")
+                        const thc = "px-2 py-1 border-b border-indigo-200 whitespace-nowrap"
+                        const tdc = "px-2 py-1 border-b border-border/50 align-middle"
                         return (
                           <div className="pl-6 space-y-1">
                             <div className="text-[9px] font-mono font-bold text-indigo-700">
-                              金銭条件（加算型 取引形態 × 料率）
+                              金銭条件（取引形態 × 料率）— 2-1と同じ構成
                             </div>
-                            <div className="flex flex-wrap gap-x-4 gap-y-1">
-                              {addonConds.map((c: any) => (
-                                <label key={c.id} className="flex items-center gap-1 text-[10px] font-mono">
-                                  <span className="text-muted-foreground">{c.name || `取引形態${c.id}`}</span>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    value={lc?.rates?.[String(c.id)] ?? ""}
-                                    onChange={(e) => setRowRate(row.material_code, c.id, e.target.value)}
-                                    placeholder="料率"
-                                    className="w-16 text-[10px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground"
-                                  />
-                                  <span className="text-muted-foreground">%</span>
-                                </label>
-                              ))}
+                            <div className="overflow-x-auto rounded-md border border-indigo-200">
+                              <table className="w-full text-[10px] font-mono border-collapse">
+                                <thead className="bg-indigo-50/60 text-muted-foreground">
+                                  <tr>
+                                    <th className={`${thc} text-left`}>取引形態</th>
+                                    <th className={`${thc} text-center w-24`}>種別</th>
+                                    <th className={`${thc} text-center w-24`}>料率(このLC)</th>
+                                    <th className={`${thc} text-center w-12`}>MG</th>
+                                    <th className={`${thc} text-center w-12`}>AG</th>
+                                    <th className={`${thc} text-center w-14`}>通貨</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {allConds.map((c: any, ci: number) => (
+                                    <tr key={c.id}>
+                                      <td className={`${tdc} font-bold`}>{c.name || `取引形態${ci + 1}`}</td>
+                                      <td className={`${tdc} text-center`}>
+                                        <div className="text-[8px] font-bold">{c.addon ? "加算型" : "非加算型"}</div>
+                                        <div className="text-[8px] text-emerald-700">{calcShort(c.calc_type)}</div>
+                                      </td>
+                                      <td className={`${tdc} text-center`}>
+                                        {c.addon ? (
+                                          <span className="inline-flex items-center gap-0.5">
+                                            <input
+                                              type="number"
+                                              step="0.01"
+                                              value={lc?.rates?.[String(c.id)] ?? ""}
+                                              onChange={(e) => setRowRate(row.material_code, c.id, e.target.value)}
+                                              placeholder="料率"
+                                              className="w-14 text-[10px] font-mono bg-transparent border-b border-input py-0.5 text-right focus:outline-none focus:border-foreground"
+                                            />
+                                            <span className="text-muted-foreground">%</span>
+                                          </span>
+                                        ) : (
+                                          <span className="text-[9px] text-muted-foreground/70">実効料率は3.の2-1</span>
+                                        )}
+                                      </td>
+                                      <td className={`${tdc} text-center text-muted-foreground`}>{c.mg ?? "0"}</td>
+                                      <td className={`${tdc} text-center text-muted-foreground`}>{c.ag ?? "0"}</td>
+                                      <td className={`${tdc} text-center text-muted-foreground`}>{c.cur || "JPY"}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
                             </div>
                             <div className="text-[9px] font-mono text-muted-foreground/70">
-                              ※ 加算型は各構成要素の料率を合算して実効料率になります（非加算型の実効料率は 3. で直接記載）。同じ値は下の 3. マトリクスにも反映されます。
+                              料率(このLC)＝この構成要素の当該取引形態の料率。加算型は各構成要素の料率を合算して適用料率になります。MG/AG/通貨・計算モデルは取引形態共通（3. の 2-1 で編集）。ここの入力は 3. マトリクスにも反映されます。
                             </div>
                           </div>
                         )
