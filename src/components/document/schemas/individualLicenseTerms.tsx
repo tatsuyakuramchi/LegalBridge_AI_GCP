@@ -423,14 +423,25 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     )
     commitMaterials(next)
   }
-  // 検索でヒットしない素材をその場で新規登録して行に確定する(MaterialSearchSelect の onCreate)。
-  const createRowMaterial = async (i: number, name: string) => {
+  // 検索でヒットしない素材をその場でスコープ付き新規登録して行に確定する
+  //   (MaterialSearchSelect の onCreate)。素材名に加え 種別/権利者/許諾地域/許諾言語 を渡し、
+  //   1-3 許諾範囲表に穴が空かないようにする。
+  const createRowMaterial = async (
+    i: number,
+    payload: {
+      material_name: string
+      material_type?: string
+      rights_holder?: string
+      territory?: string
+      language?: string
+    }
+  ) => {
     const lid = formData.ledger_ref_id
     if (!lid) return
     const r = await fetch(`/api/master/ledgers/${lid}/materials`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ material_name: name }),
+      body: JSON.stringify(payload),
     })
     if (!r.ok) throw new Error(`HTTP ${r.status}`)
     const j = await r.json()
@@ -441,8 +452,10 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
         ? {
             ...row,
             material_code: j.material_code,
-            name: j.material_name || name,
-            holder: resolveRightsHolder(j, selectedLedger) || row.holder || "",
+            name: j.material_name || payload.material_name,
+            holder: resolveRightsHolder(j, selectedLedger) || payload.rights_holder || row.holder || "",
+            territory: j.territory ?? payload.territory ?? row.territory ?? "",
+            language: j.language ?? payload.language ?? row.language ?? "",
             source_doc: "この条件書(新規)",
           }
         : row
@@ -760,7 +773,7 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                           materials={materialPool}
                           value={row.material_code}
                           onPick={(code) => setRowMaterial(i, code)}
-                          onCreate={(name) => createRowMaterial(i, name)}
+                          onCreate={(payload) => createRowMaterial(i, payload)}
                           createDisabledReason={
                             formData.ledger_ref_id
                               ? undefined
