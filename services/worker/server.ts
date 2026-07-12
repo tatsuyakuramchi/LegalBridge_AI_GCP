@@ -14947,9 +14947,13 @@ ${details}
             );
             let filled = 0;
             for (const line of lines.rows) {
+              // consumed は有効行(void除外)のみ。event_no は UNIQUE(condition_line_id,
+              //   event_no) が void 行も含むため、void 含む全行の MAX+1 で採番する
+              //   (void→再発行で event_no が再利用され UNIQUE 衝突するのを防ぐ)。
               const sq = await query(
-                `SELECT COALESCE(SUM(amount_ex_tax),0) AS consumed, COALESCE(MAX(event_no),0) AS maxno
-                   FROM condition_events WHERE condition_line_id = $1 AND voided_at IS NULL`,
+                `SELECT COALESCE(SUM(amount_ex_tax) FILTER (WHERE voided_at IS NULL),0) AS consumed,
+                        COALESCE(MAX(event_no),0) AS maxno
+                   FROM condition_events WHERE condition_line_id = $1`,
                 [line.id]
               );
               const remaining =
