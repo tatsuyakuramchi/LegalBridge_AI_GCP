@@ -2198,13 +2198,17 @@ export async function addMaterialToLedger(payload: {
   const role = normalizeRole(undefined, matType, false);
   // Category(2): genre のカテゴリを get-or-create し紐付け。
   const categoryId = await ensureMaterialCategory(workId, matType);
+  // acquisition_type は JS 側で算出して別パラメータにする。以前は
+  //   CASE WHEN $5 = 'original' … で $5(material_type)を列値と比較の2文脈で使い回し、
+  //   PostgreSQL が $5 の型を別々に推論して "inconsistent types deduced for parameter $5"
+  //   で 500 になっていた。二重使用を解消する。
+  const acquisitionType = matType === "original" ? "license" : null;
   const res = await query(
     `INSERT INTO work_materials (
        work_id, material_no, material_code, material_name,
        material_type, rights_holder_label, remarks, is_default, material_role,
        acquisition_type, category_id, territory, language
-     ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8,
-       CASE WHEN $5 = 'original' THEN 'license' ELSE NULL END, $9, $10, $11)
+     ) VALUES ($1, $2, $3, $4, $5, $6, $7, FALSE, $8, $9, $10, $11, $12)
      RETURNING id, material_code, material_no`,
     [
       workId,
@@ -2215,6 +2219,7 @@ export async function addMaterialToLedger(payload: {
       payload.rights_holder || null,
       payload.remarks || null,
       role,
+      acquisitionType,
       categoryId,
       payload.territory || null,
       payload.language || null,
