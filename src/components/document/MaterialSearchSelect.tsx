@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { MATERIAL_GENRES } from '@/lib/materialVocab';
+import { MATERIAL_GENRES, defaultRoleForGenre, roleLabel } from '@/lib/materialVocab';
 
 // 原作マテリアルを「検索して選ぶ」ピッカー。プルダウンが長くて選びにくい問題の解消用。
 //   コード(material_code) / 素材名 / 原作名(_ledger_title) / 原作コード で部分一致。
@@ -215,6 +215,13 @@ export function MaterialSearchSelect({
                 <option key={g.value} value={g.value}>{g.label}</option>
               ))}
             </select>
+            {/* 種別から役割(role)を判定して表示。コアロジック=原作の本体 / サブ=構成要素。 */}
+            <span className="mt-0.5 block text-[9px] font-mono text-muted-foreground">
+              役割: <b>{roleLabel(defaultRoleForGenre(fGenre))}</b>
+              {defaultRoleForGenre(fGenre) === 'core_logic'
+                ? '（原作の本体。登録先は上で選択中の原作）'
+                : '（構成要素。登録先は上で選択中の原作の配下）'}
+            </span>
           </label>
           <label className="block">
             <span className="text-[9px] font-mono text-muted-foreground">権利者（ラベル・任意）</span>

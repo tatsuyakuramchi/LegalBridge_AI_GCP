@@ -481,6 +481,20 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
     )
     commitMaterials(next)
   }
+  // 案X: マテリアル行から「加算型取引形態ごとの料率(金銭条件)」を直接入力する。
+  //   v3_lcs(material_code × cond.id の rates)を更新。section 3 マトリクスと同一データ。
+  //   これで各マテリアルが自分の取引形態×料率を持ち、加算(構成要素の料率合算)が成立する。
+  const setRowRate = (materialCode: string, condId: any, value: string) => {
+    if (!materialCode) return
+    const lcs = Array.isArray(formData.v3_lcs) ? (formData.v3_lcs as any[]) : []
+    const next = lcs.map((lc: any) =>
+      lc.material_code === materialCode
+        ? { ...lc, rates: { ...(lc.rates || {}), [String(condId)]: value } }
+        : lc
+    )
+    setFormData({ ...formData, v3_lcs: next })
+  }
+
   // 金銭条件側で取引形態(conds)が変わった時、LC の rates(新規 addon 列の seed)を再同期。
   const syncLcsForConds = (conds: any[]) =>
     rebuildV3Lcs(
@@ -840,6 +854,50 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                           マテリアルを選ぶと、その原作素材の過去条件を引用(コピー)できます。新規条件はそのまま金銭条件で入力します。
                         </p>
                       )}
+                      {/* 案X: この構成要素の金銭条件(加算型 取引形態 × 料率)。行で直接入力し、
+                          section 3 の v3_lcs と同一データを編集する。各マテリアルが料率を持つので
+                          加算(合算)が常に成立する。取引形態未初期化のときは 3.金銭条件 で初期化を促す。 */}
+                      {row.material_code && (() => {
+                        const addonConds = (
+                          Array.isArray(formData.v3_conds) ? (formData.v3_conds as any[]) : []
+                        ).filter((c: any) => c?.addon)
+                        const lc = (
+                          Array.isArray(formData.v3_lcs) ? (formData.v3_lcs as any[]) : []
+                        ).find((l: any) => l.material_code === row.material_code)
+                        if (addonConds.length === 0) {
+                          return (
+                            <div className="pl-6 text-[10px] font-mono text-amber-700">
+                              金銭条件（取引形態 × 料率）は、下の「3. 金銭条件」で取引形態を初期化後に入力できます。
+                            </div>
+                          )
+                        }
+                        return (
+                          <div className="pl-6 space-y-1">
+                            <div className="text-[9px] font-mono font-bold text-indigo-700">
+                              金銭条件（加算型 取引形態 × 料率）
+                            </div>
+                            <div className="flex flex-wrap gap-x-4 gap-y-1">
+                              {addonConds.map((c: any) => (
+                                <label key={c.id} className="flex items-center gap-1 text-[10px] font-mono">
+                                  <span className="text-muted-foreground">{c.name || `取引形態${c.id}`}</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    value={lc?.rates?.[String(c.id)] ?? ""}
+                                    onChange={(e) => setRowRate(row.material_code, c.id, e.target.value)}
+                                    placeholder="料率"
+                                    className="w-16 text-[10px] font-mono bg-transparent border-b border-input py-0.5 px-1 focus:outline-none focus:border-foreground"
+                                  />
+                                  <span className="text-muted-foreground">%</span>
+                                </label>
+                              ))}
+                            </div>
+                            <div className="text-[9px] font-mono text-muted-foreground/70">
+                              ※ 加算型は各構成要素の料率を合算して実効料率になります（非加算型の実効料率は 3. で直接記載）。同じ値は下の 3. マトリクスにも反映されます。
+                            </div>
+                          </div>
+                        )
+                      })()}
                     </div>
                   )
                 })}
