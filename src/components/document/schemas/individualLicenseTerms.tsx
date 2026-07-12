@@ -443,7 +443,14 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     })
-    if (!r.ok) throw new Error(`HTTP ${r.status}`)
+    if (!r.ok) {
+      // サーバのエラー本文({ ok:false, error:"..." })をそのまま可視化する。
+      //   コンソール/Network を開かずに原因(列不整合/参照不整合/採番衝突 等)を確認できる。
+      const bodyText = await r.text().catch(() => "")
+      console.error("createRowMaterial failed:", r.status, bodyText)
+      window.alert(`マテリアル登録に失敗しました (HTTP ${r.status})\n\n${bodyText}`)
+      throw new Error(`HTTP ${r.status}: ${bodyText}`)
+    }
     const j = await r.json()
     await refreshLedgers().catch(() => {})
     if (!j?.material_code) return
