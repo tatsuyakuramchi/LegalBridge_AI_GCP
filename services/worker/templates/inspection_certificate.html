@@ -219,9 +219,8 @@
   <div class="doc-header">
     <div>
       <span class="doc-title">検　収　書</span>
-      {{#if (or (eq isPartial "分割") (eq isPartial true))}}
-      <span class="delivery-badge">分割納品 第{{deliveryNo}}回 / 全{{totalDeliveries}}回予定</span>
-      {{/if}}
+      {{!-- 分納バッジは廃止: 複数業務明細×分納で「第N回/全M回」の回数集計が不整合に
+           なるため削除。分納の内訳は「今回の納品内容」の 今回数量/歩留率 列で表現する。 --}}
       {{#if (gt REVISION 0)}}
       <span class="reissue-badge">修正版 Rev. {{REVISION}}</span>
       {{/if}}
