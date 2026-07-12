@@ -13704,6 +13704,45 @@ ${details}
     );
     const hasPerformanceRoyalty = performanceRoyaltyLines.length > 0;
 
+    // ④part A: 分納(分割)判定を「回数」ではなく「残額」ベースにする。
+    //   従来 isPartial=deliveryNo>1 のため、1回目の部分検収でも「完了」表示になり
+    //   分割バッジ・進捗バーが出なかった。ここで親PO総額・既検収額から今回検収後の
+    //   残額を求め、残額>0(=まだ検収が残る) or 2回目以降 なら「分割」に上書きする。
+    //   preview / generate 両経路で computeInspectionSummary が最後にスプレッドされ、
+    //   formData の(prefill由来・回数駆動)isPartial/進捗値を上書きする。
+    const parseYen = (v: any): number =>
+      Number(String(v ?? "0").replace(/[^0-9.-]+/g, "")) || 0;
+    const orderLines = Array.isArray(formData?.order_lines_for_inspection)
+      ? formData.order_lines_for_inspection
+      : [];
+    let orderTotalExTax = 0;
+    let priorInspectedExTax = 0;
+    if (orderLines.length > 0) {
+      for (const l of orderLines) {
+        const insp = l?.inspection || {};
+        orderTotalExTax +=
+          Number(insp.ordered_amount ?? l?.amount_ex_tax) || 0;
+        priorInspectedExTax += Number(insp.inspected_amount) || 0;
+      }
+    } else {
+      orderTotalExTax = parseYen(formData?.totalOrderAmountStr);
+      priorInspectedExTax = parseYen(formData?.inspectedAmountStr);
+    }
+    const cumInspectedExTax = priorInspectedExTax + deliveredExTax;
+    const remainingAfterExTax = orderTotalExTax - cumInspectedExTax;
+    const AMT_EPS = 0.5;
+    const splitByCount =
+      Number(formData?.deliveryNo || formData?.DELIVERY_NUMBER || 0) > 1;
+    // 総額不明(=0)のときは残額判定できないので従来の回数駆動にフォールバック。
+    const canComputeRemaining = orderTotalExTax > AMT_EPS;
+    const isPartialComputed =
+      splitByCount || (canComputeRemaining && remainingAfterExTax > AMT_EPS)
+        ? "分割"
+        : "完了";
+    const inspectedPctComputed = canComputeRemaining
+      ? Math.min(100, Math.max(0, Math.floor((cumInspectedExTax / orderTotalExTax) * 100)))
+      : 0;
+
     return {
       // 業績連動型報酬版フラグ・対象行
       hasPerformanceRoyalty,
@@ -13728,6 +13767,19 @@ ${details}
       // 総支払額
       grandTotalPayable,
       grandTotalPayableStr: yen(grandTotalPayable),
+      // ④part A: 残額ベースの分納判定・進捗(formData の回数駆動値を上書き)。
+      //   isPartial は常に上書き(総額不明時は回数駆動へフォールバック=従来同等)。
+      //   進捗系(検収済/残/率)は総額が取れるときだけ上書きし、取れないときは
+      //   formData の prefill を undefined で潰さないよう温存する。
+      isPartial: isPartialComputed,
+      ...(canComputeRemaining
+        ? {
+            inspectedPct: String(inspectedPctComputed),
+            inspectedAmountStr: yen(cumInspectedExTax),
+            pendingAmountStr: yen(Math.max(0, remainingAfterExTax)),
+            totalOrderAmountStr: yen(orderTotalExTax),
+          }
+        : {}),
     };
   }
 

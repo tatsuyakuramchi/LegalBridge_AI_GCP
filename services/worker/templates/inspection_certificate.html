@@ -306,9 +306,11 @@
   <table style="margin-bottom:4px;">
     <thead>
       <tr>
-        <th style="width:6%">No.</th>
-        <th style="width:64%">成果物・業務内容</th>
-        <th style="width:15%">納品日</th>
+        <th style="width:5%">No.</th>
+        <th style="width:45%">成果物・業務内容</th>
+        <th style="width:11%">今回数量</th>
+        <th style="width:10%">歩留率</th>
+        <th style="width:14%">納品日</th>
         <th style="width:15%">支払対価（税抜）</th>
       </tr>
     </thead>
@@ -327,6 +329,10 @@
               <div class="item-spec">{{or spec ../spec}}</div>
               {{/if}}
             </td>
+            {{!-- 分納の内訳: 今回検収した数量・歩留率(単価×数量×歩留率=支払対価)。
+                 数量/歩留率が無い(利用許諾料に含む等)行は「—」。 --}}
+            <td class="center">{{#if (gt inspected_quantity 0)}}{{inspected_quantity}}{{else}}—{{/if}}</td>
+            <td class="center">{{#if (gt acceptance_ratio 0)}}{{formatPct (multiply acceptance_ratio 100)}}{{else}}—{{/if}}</td>
             <td class="center">{{formatDate (or delivery_date ../deliveredAt)}}</td>
             {{!-- 固定報酬0の対価表示: 発注者×ROYALTY=業績連動報酬(別途算定)、それ以外(受注者)=
                  利用許諾料に含む。amount>0 は通常の金額表示。 --}}
@@ -342,6 +348,8 @@
             <div class="item-spec">{{spec}}</div>
             {{/if}}
           </td>
+          <td class="center">—</td>
+          <td class="center">—</td>
           <td class="center">{{formatDate deliveredAt}}</td>
           <td class="right">¥{{deliveredAmountStr}}</td>
         </tr>
@@ -351,18 +359,18 @@
            検収税抜＋手数料税抜を合算して 1 回だけ計算する (二重計上を避けるため、
            ここでは検収の税抜小計のみ表示)。 --}}
       <tr class="total-row">
-        <td colspan="3" class="right">検収 小計（税抜）</td>
+        <td colspan="5" class="right">検収 小計（税抜）</td>
         <td class="right">¥{{deliveredAmountStr}}</td>
       </tr>
       {{else}}
       <tr>
-        <td colspan="3" class="right">
+        <td colspan="5" class="right">
           消費税({{taxRate}}%{{#if isReducedTax}}・軽減税率対象{{/if}})
         </td>
         <td class="right">¥{{taxAmountStr}}</td>
       </tr>
       <tr class="total-row">
-        <td colspan="3" class="right">源泉徴収税計算前　検収金額(税込)</td>
+        <td colspan="5" class="right">源泉徴収税計算前　検収金額(税込)</td>
         <td class="right">¥{{totalAmountStr}}</td>
       </tr>
       {{/if}}
