@@ -37,6 +37,10 @@ const yen = (n: number) => `¥${(Number(n) || 0).toLocaleString("ja-JP")}`
 const labelCls = "text-[10px] font-mono font-bold uppercase tracking-[0.14em] text-muted-foreground"
 const inputCls =
   "w-full text-xs font-mono bg-transparent border-b border-input py-1.5 focus:outline-none focus:border-foreground transition-colors"
+// 仕様(複数行)入力。品目名の下に置き、規格・数量・納品形態など明細ごとの仕様を自由記述する。
+//   PDF は spec を <li>{{spec}}</li> で出力し、改行は各行の箇条書きとして展開される。
+const textareaCls =
+  "w-full text-xs font-mono bg-transparent border border-input rounded-sm px-2 py-1.5 leading-relaxed resize-y min-h-[64px] focus:outline-none focus:border-foreground transition-colors whitespace-pre-wrap"
 
 // 業務委託の契約類型(請負/準委任)。payment_terms として保持し、PDF の
 //   「支払方法：FIXED（請負）」等（テンプレの payment_terms）に反映する。
@@ -173,6 +177,18 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                   />
                 </div>
               )}
+            </div>
+
+            {/* 仕様（複数行）— この業務明細の規格・数量・納品形態などを自由記述。 */}
+            <div className="space-y-1">
+              <label className={labelCls}>仕様（任意・複数行可）</label>
+              <textarea
+                value={it.spec || ""}
+                onChange={(e) => patch(idx, { spec: e.target.value })}
+                className={textareaCls}
+                rows={3}
+                placeholder={"この成果物の仕様（規格・サイズ・数量・納品形態など）。\n改行で複数行の仕様を記載できます。"}
+              />
             </div>
 
             {works.length > 0 && (
