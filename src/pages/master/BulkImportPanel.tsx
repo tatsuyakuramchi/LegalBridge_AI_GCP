@@ -453,23 +453,43 @@ export function BulkImportPanel() {
     setPasteText("")
   }
 
-  const onFile = (file: File) => {
+  // 文字コード自動判定でファイルを文字列化する。UTF-8(BOM可)を優先し、無効なら
+  //   Shift-JIS(Windows Excel 日本語)にフォールバックする。→ ヘッダ文字化けを防ぐ。
+  const decodeFile = async (file: File): Promise<string> => {
+    const bytes = new Uint8Array(await file.arrayBuffer())
+    try {
+      return new TextDecoder("utf-8", { fatal: true }).decode(bytes)
+    } catch {
+      try {
+        return new TextDecoder("shift-jis").decode(bytes)
+      } catch {
+        return new TextDecoder("utf-8").decode(bytes)
+      }
+    }
+  }
+
+  const onFile = async (file: File) => {
     setParseError(null)
-    Papa.parse(file, {
-      header: true,
-      skipEmptyLines: "greedy",
-      transformHeader: (h) => h.replace(/^﻿/, "").trim(),
-      complete: (r) => {
-        const mapped = mapParsedRows(r.data as any[])
-        if (mapped.length === 0) {
-          setParseError("有効な行がありません。ヘッダ行を確認してください。")
-          return
-        }
-        setRows((prev) => [...prev, ...mapped])
-      },
-      error: (e) => setParseError(`CSV パース失敗: ${e.message}`),
-    })
-    if (fileRef.current) fileRef.current.value = ""
+    try {
+      const text = await decodeFile(file)
+      const parsed = Papa.parse(text, {
+        header: true,
+        skipEmptyLines: "greedy",
+        transformHeader: (h) => h.replace(/^﻿/, "").trim(),
+      })
+      const mapped = mapParsedRows(parsed.data as any[])
+      if (mapped.length === 0) {
+        setParseError(
+          "有効な行がありません。ヘッダ行の列名（原作コード 等）が一致しているか、文字コード(UTF-8/Shift-JIS)をご確認ください。"
+        )
+        return
+      }
+      setRows((prev) => [...prev, ...mapped])
+    } catch (e: any) {
+      setParseError(`CSV 読み込みに失敗しました: ${String(e?.message || e)}`)
+    } finally {
+      if (fileRef.current) fileRef.current.value = ""
+    }
   }
 
   // ── プレビュー編集 ───────────────────────────────
@@ -931,9 +951,11 @@ export function BulkImportPanel() {
             <input
               ref={fileRef}
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.txt,text/csv,text/plain"
               className="hidden"
-              onChange={(e) => e.target.files?.[0] && onFile(e.target.files[0])}
+              onChange={(e) => {
+                if (e.target.files?.[0]) void onFile(e.target.files[0])
+              }}
             />
             <a
               href={`data:text/csv;charset=utf-8,${encodeURIComponent("﻿" + CSV_TEMPLATE)}`}
