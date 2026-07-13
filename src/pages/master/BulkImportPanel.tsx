@@ -300,6 +300,40 @@ const CSV_TEMPLATE = [
   ",新規サンプル作品,,新製品B,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,当社支払,受注者,,利用許諾,単独契約,,,,いいえ,,",
 ].join("\n")
 
+// CSV入力マニュアル。列ごとに 必須 / 意味 / 入力値(固定語彙) / 例 を縦に並べて表示する。
+type GuideRow = { col: string; req: string; desc: string; values: string; example: string }
+const COLUMN_GUIDE: GuideRow[] = [
+  { col: "原作コード", req: "任意", desc: "原作(LO)の既存指定。優先キー", values: "LO-YYYY-NNNN", example: "LO-2026-0001" },
+  { col: "原作タイトル", req: "新規時必須", desc: "原作名。コードが無い/未登録時に新規作成", values: "自由記述", example: "サンプル作品" },
+  { col: "作品コード", req: "任意", desc: "自社作品(W)の既存指定。CLの対象作品", values: "W-YYYY-NNNN", example: "W-2026-0001" },
+  { col: "作品名", req: "任意", desc: "自社作品名。名称のみなら新規作成", values: "自由記述", example: "自社ボードゲームA" },
+  { col: "マテリアルコード", req: "任意", desc: "マテリアルの既存指定。一致でリネームも反映", values: "LO-…-NNN", example: "LO-2026-0001-002" },
+  { col: "マテリアル名", req: "任意", desc: "原作マテリアル名。空なら原作のみ登録", values: "自由記述", example: "ゲームデザイン" },
+  { col: "種別", req: "任意", desc: "マテリアルのジャンル（固定語彙）", values: "game_design / manuscript / illustration / graphic_design / scenario / music / translation / editing / text / data / other（日本語可: ゲームデザイン 等）", example: "game_design" },
+  { col: "取引先コード", req: "任意", desc: "権利者。取引先マスタのコード", values: "vendors.vendor_code", example: "V-2026-0001" },
+  { col: "許諾地域", req: "任意", desc: "マテリアルの許諾地域(枠)", values: "自由記述", example: "全世界" },
+  { col: "許諾言語", req: "任意", desc: "マテリアルの許諾言語(枠)", values: "自由記述", example: "全言語" },
+  { col: "根拠文書番号", req: "任意", desc: "CLの器(既存文書)。空なら新規ARC-ILT発番", values: "文書番号", example: "ARC-ILT-2026-0007" },
+  { col: "備考", req: "任意", desc: "マテリアル備考", values: "自由記述", example: "" },
+  { col: "取引形態", req: "任意", desc: "CLの計算方式（固定語彙）", values: "BASE_QTY_RATE(自社製造自社販売) / BASE_RATE(権利許諾) / SUPPLY_QTY(自社製造他社販売) / FIXED(固定額) / SUBSCRIPTION（日本語可）", example: "BASE_QTY_RATE" },
+  { col: "料率", req: "任意", desc: "%。値を入れるとCLを作成/更新", values: "数値", example: "5" },
+  { col: "MG", req: "任意", desc: "最低保証(royalty)", values: "数値", example: "0" },
+  { col: "AG", req: "任意", desc: "前払保証(royalty)", values: "数値", example: "0" },
+  { col: "通貨", req: "任意", desc: "CLの通貨", values: "通貨コード", example: "JPY" },
+  { col: "請求の向き", req: "任意", desc: "CLの向き（固定語彙）", values: "当社受領 / 当社支払", example: "当社受領" },
+  { col: "権利帰属", req: "任意", desc: "成果物の帰属（固定語彙）", values: "発注者 / 受注者", example: "発注者" },
+  { col: "CL-ID", req: "任意", desc: "既存CLの更新キー。空＝新規作成。DL時に取得", values: "数値", example: "12345" },
+  { col: "スコープ", req: "任意", desc: "器の契約スコープ（固定語彙）", values: "業務委託 / 利用許諾", example: "利用許諾" },
+  { col: "契約種類", req: "任意", desc: "レコード区分（固定語彙）", values: "基本契約(親) / 個別契約(子) / 単独契約(単体)", example: "個別契約" },
+  { col: "契約タイトル", req: "任意", desc: "器(文書)のタイトル。空なら自動生成", values: "自由記述", example: "X社 個別利用許諾" },
+  { col: "契約開始日", req: "任意", desc: "契約期間の開始(effective_date)", values: "YYYY-MM-DD", example: "2026-04-01" },
+  { col: "契約終了日", req: "任意", desc: "契約期間の終了(expiration_date)", values: "YYYY-MM-DD", example: "2027-03-31" },
+  { col: "自動更新", req: "任意", desc: "自動更新の有無（固定語彙）", values: "はい / いいえ", example: "はい" },
+  { col: "文書リンク", req: "任意", desc: "Drive等の文書URL", values: "URL", example: "https://drive.example/doc" },
+  { col: "基本契約番号", req: "任意", desc: "個別契約(子)が参照する親の基本契約文書番号", values: "文書番号", example: "ARC-LIC-2026-0001" },
+]
+const CSV_HEADER = COLUMN_GUIDE.map((g) => g.col).join(",")
+
 export function BulkImportPanel() {
   const { refreshAll } = useAppData()
   const [tab, setTab] = React.useState<"doc" | "table">("doc")
@@ -311,6 +345,19 @@ export function BulkImportPanel() {
   const [clResults, setClResults] = React.useState<Record<number, string>>({})
   // 器(文書)メタを更新した件数
   const [metaCount, setMetaCount] = React.useState(0)
+  // CSV入力マニュアルの開閉 / ヘッダコピー完了表示
+  const [showGuide, setShowGuide] = React.useState(false)
+  const [copied, setCopied] = React.useState(false)
+
+  const copyHeader = async () => {
+    try {
+      await navigator.clipboard.writeText(CSV_HEADER)
+      setCopied(true)
+      window.setTimeout(() => setCopied(false), 1500)
+    } catch {
+      window.prompt("ヘッダ行をコピーしてください", CSV_HEADER)
+    }
+  }
 
   // ── Tab ① 既存文書から ─────────────────────────────
   const [docNumber, setDocNumber] = React.useState<string>("")
@@ -727,6 +774,63 @@ export function BulkImportPanel() {
             現状を読み込んで修正
           </button>
         </div>
+      </div>
+
+      {/* CSV入力マニュアル（列一覧・固定語彙・例）— コピペ運用向けに縦並び */}
+      <div className="rounded-md border border-border bg-muted/20">
+        <div className="flex items-center justify-between px-3 py-2">
+          <button
+            type="button"
+            onClick={() => setShowGuide((v) => !v)}
+            className="inline-flex items-center gap-1.5 text-[11px] font-mono font-bold text-foreground"
+          >
+            <span className="text-muted-foreground">{showGuide ? "▼" : "▶"}</span>
+            CSV入力マニュアル（列一覧・入れる値）
+          </button>
+          <button
+            type="button"
+            onClick={copyHeader}
+            className="text-[10px] font-mono px-2 py-1 rounded border border-border hover:bg-muted inline-flex items-center gap-1"
+          >
+            {copied ? <Check className="w-3 h-3 text-emerald-600" /> : null}
+            {copied ? "コピーしました" : "ヘッダ行をコピー"}
+          </button>
+        </div>
+        {showGuide && (
+          <div className="border-t border-border px-3 py-2 space-y-1">
+            <p className="text-[10px] font-mono text-muted-foreground">
+              1行目にヘッダ（下の「列」を左から順に）を置き、2行目以降にデータを入れます。空欄は既存値を保持（新規は未設定）。
+              固定語彙の列は下記の値のいずれか（日本語/コードとも可）。コードキー（原作/作品/マテリアル/CL-ID/取引先/契約種類）が
+              揃っていれば重複なく更新されます。
+            </p>
+            <div className="divide-y divide-border/50">
+              {COLUMN_GUIDE.map((g) => (
+                <div key={g.col} className="grid grid-cols-[130px_1fr] gap-x-3 py-1.5 items-start">
+                  <div className="text-[11px] font-mono font-bold flex items-center gap-1.5">
+                    {g.col}
+                    <span
+                      className={cn(
+                        "text-[8px] px-1 py-0.5 rounded-sm border",
+                        g.req.includes("必須")
+                          ? "text-amber-700 border-amber-300 bg-amber-50"
+                          : "text-muted-foreground border-border"
+                      )}
+                    >
+                      {g.req}
+                    </span>
+                  </div>
+                  <div className="text-[10px] font-mono space-y-0.5">
+                    <div className="text-foreground/90">{g.desc}</div>
+                    <div className="text-muted-foreground">
+                      入力値: <span className="text-foreground/80">{g.values}</span>
+                      {g.example ? <span className="ml-2">例: <span className="text-indigo-700">{g.example}</span></span> : null}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* タブ */}
