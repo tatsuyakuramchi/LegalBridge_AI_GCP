@@ -239,15 +239,27 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
       LICENSOR_IS_CORPORATION: true,
     })
 
+  // 取引先マスタ(vendors)の担当者・電話・メールから通知先文字列を組み立てる。
+  //   担当者 = 部署 + 氏名、通知先(Licensee側1欄)は「担当 / 電話 / メール」を連結。
+  const vendorContactPerson = (v: any) =>
+    [v?.contact_department, v?.contact_name].filter((x) => x && String(x).trim() !== "").join(" ")
+  const vendorContactLine = (v: any) =>
+    [vendorContactPerson(v), v?.phone, v?.email].filter((x) => x && String(x).trim() !== "").join(" / ")
+
   // 任意の取引先 v から Licensor を充填([取引先]ボタンとフォーム内検索補完で共用)。
+  //   C案: 通知先(担当者/電話/メール)も取引先マスタから自動充填(空欄は既存値を保持=手入力で上書き可)。
   const fillLicensorFrom = (v: any) => {
     if (!v) return
+    const person = vendorContactPerson(v)
     setFormData({
       ...formData,
       Licensor_名称: v.vendor_name || "",
       Licensor_住所: v.address || "",
       Licensor_氏名会社名: v.trade_name || v.vendor_name || "",
       Licensor_代表者名: v.vendor_rep || v.contact_name || "",
+      Licensor_担当者: person || formData.Licensor_担当者 || "",
+      Licensor_電話: v.phone || formData.Licensor_電話 || "",
+      Licensor_メール: v.email || formData.Licensor_メール || "",
       LICENSOR_IS_CORPORATION: isCorporation(v),
     })
   }
@@ -265,12 +277,15 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
 
   const fillLicenseeFrom = (v: any) => {
     if (!v) return
+    // Licensee 側の通知先は1欄(連絡先)のため、担当/電話/メールを連結して充填。
+    const line = vendorContactLine(v)
     setFormData({
       ...formData,
       Licensee_名称: v.vendor_name || "",
       Licensee_住所: v.address || "",
       Licensee_氏名会社名: v.trade_name || v.vendor_name || "",
       Licensee_代表者名: v.vendor_rep || v.contact_name || "",
+      Licensee_連絡先: line || formData.Licensee_連絡先 || "",
       LICENSEE_IS_CORPORATION: isCorporation(v),
     })
   }
@@ -479,6 +494,16 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
           }
         : row
     )
+    commitMaterials(next)
+  }
+  // 取り込んだCL(引用条件)の料率を行レベルで編集する。ブランク(未入力)で取り込んだ
+  //   未リンクCLの料率をここで補える。commitMaterials 経由で加算型取引形態の seed に反映。
+  const setRowCopiedRate = (i: number, value: string) => {
+    const next = masterMaterials.map((row: any, idx: number) => {
+      if (idx !== i) return row
+      const base = row.copied || {}
+      return { ...row, copied: { ...base, rate_pct: value === "" ? undefined : value } }
+    })
     commitMaterials(next)
   }
   // 案X: マテリアル行から「加算型取引形態ごとの料率(金銭条件)」を直接入力する。
@@ -830,13 +855,29 @@ const IndividualLicenseTermsForm: React.FC<{ ctx: FkCtx }> = ({ ctx }) => {
                         </div>
                       )}
                       {row.copied && (
-                        <div className="text-[10px] font-mono text-emerald-800 pl-6">
-                          コピー済み条件: {row.copied.condition_name || "(無題)"}{" "}
-                          {row.copied.rate_pct != null ? `料率 ${row.copied.rate_pct}%` : ""}
+                        <div className="flex items-center gap-1.5 flex-wrap text-[10px] font-mono text-emerald-800 pl-6">
+                          <span>引用条件: {row.copied.condition_name || "(無題)"}</span>
+                          <span className="inline-flex items-center gap-0.5">
+                            料率
+                            <input
+                              type="number"
+                              step="0.01"
+                              value={row.copied.rate_pct ?? ""}
+                              onChange={(e) => setRowCopiedRate(i, e.target.value)}
+                              placeholder="未入力"
+                              className="w-16 text-[10px] font-mono bg-transparent border-b border-emerald-300 py-0.5 text-right focus:outline-none focus:border-foreground"
+                            />
+                            %
+                          </span>
+                          {(row.copied.rate_pct == null || row.copied.rate_pct === "") && (
+                            <span className="text-[9px] text-amber-600">
+                              ブランク条件 — 料率を入力してください
+                            </span>
+                          )}
                           <button
                             type="button"
                             onClick={() => setRowCopied(i, null)}
-                            className="ml-2 text-[9px] underline text-muted-foreground hover:text-red-600"
+                            className="ml-1 text-[9px] underline text-muted-foreground hover:text-red-600"
                           >
                             解除
                           </button>

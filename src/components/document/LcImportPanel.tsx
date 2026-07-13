@@ -37,6 +37,8 @@ export type LcCandidate = {
   document_number: string | null;
   contract_title: string | null;
   record_type: string | null;
+  /** 素材未リンクの利用許諾CL(source_material_id IS NULL)。取込後にフォームで編集可。 */
+  unlinked?: boolean;
 };
 
 interface Props {
@@ -54,6 +56,8 @@ const summarize = (c: LcCandidate): string => {
   if (c.region_language_label) parts.push(c.region_language_label);
   if (c.source === "po_deliverable" && !c.rate_pct)
     parts.push(c.material_code ? "条件未設定(要入力)" : "未登録素材(取込時に作成)");
+  if (c.unlinked)
+    parts.push(c.rate_pct != null ? "素材未リンク(取込可)" : "条件ブランク(取込後に編集)");
   return parts.join(" / ") || "(条件詳細なし)";
 };
 

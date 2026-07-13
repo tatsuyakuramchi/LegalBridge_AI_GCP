@@ -1734,6 +1734,31 @@ export function registerWorkModelRoutes(
             ORDER BY wm.material_code, cfc.id NULLS LAST, cl.id`,
           [doc]
         );
+        // (3) 素材未リンクの利用許諾CL（source_material_id IS NULL）。
+        //     文書に条件書(CL)が付いていても、原作マテリアルに紐づいていない条件は (1) の
+        //     INNER JOIN work_materials から漏れるため「文書を検索しても条件が出ない」。
+        //     ここで拾い、material_code=null(取込時に素材化 or 空欄で編集) の候補として返す。
+        //     条件値(料率/MG/AG/計算/地域言語/通貨)は保持し、ブランクならフォームで編集させる。
+        const unlinkedRows = await query(
+          `SELECT 'license_condition'          AS source,
+                  NULL::text                    AS material_code,
+                  COALESCE(NULLIF(cl.subject, ''), cl.condition_name) AS material_name,
+                  NULL::text                    AS rights_holder,
+                  cl.id                         AS source_condition_id,
+                  cl.condition_name, cl.rate_pct, cl.mg_amount, cl.ag_amount,
+                  cl.calc_method, NULL::text    AS calc_type,
+                  cl.condition_name             AS region_language_label, cl.currency,
+                  NULL::text AS item_name, NULL::text AS deliverable_ownership,
+                  cc.document_number, cc.contract_title, cc.record_type,
+                  TRUE                          AS unlinked
+             FROM condition_lines cl
+             JOIN contract_capabilities cc ON cc.id = cl.capability_id
+            WHERE cc.document_number ILIKE '%' || $1 || '%'
+              AND cl.transaction_kind = 'license'
+              AND cl.source_material_id IS NULL
+            ORDER BY cl.line_no, cl.id`,
+          [doc]
+        );
         // (2) 発注者帰属の業務委託成果物（発注書明細）。work_materials リンクがあれば
         //     material_code を補完。金銭条件は持たない(＝取り込み後に新規入力)。
         const deliverableRows = await query(
@@ -1757,13 +1782,27 @@ export function registerWorkModelRoutes(
           [doc]
         );
         // material_code をキーに重複排除。ライセンス条件(条件付き)を優先。
+        //   素材リンク済み(1)を先に積み、その source_condition_id を除いた未リンクCL(3)を足す
+        //   (同じ condition が両方に出た場合は素材リンク済みを優先)。
+        const linkedCondIds = new Set<number>(
+          licenseRows.rows
+            .map((r: any) => (r.source_condition_id == null ? null : Number(r.source_condition_id)))
+            .filter((n: number | null): n is number => n != null)
+        );
         const seen = new Set<string>();
         const out: any[] = [];
-        for (const r of [...licenseRows.rows, ...deliverableRows.rows]) {
+        const ordered = [
+          ...licenseRows.rows,
+          ...unlinkedRows.rows.filter(
+            (r: any) => !linkedCondIds.has(Number(r.source_condition_id))
+          ),
+          ...deliverableRows.rows,
+        ];
+        for (const r of ordered) {
           // 条件付きライセンス行は material_code+condition で一意、成果物は material_code か item_name で一意。
           const key =
             r.source === "license_condition"
-              ? `L:${r.material_code}:${r.source_condition_id ?? ""}`
+              ? `L:${r.material_code ?? ""}:${r.source_condition_id ?? ""}`
               : `D:${r.material_code ?? r.item_name ?? Math.random()}`;
           if (seen.has(key)) continue;
           seen.add(key);
