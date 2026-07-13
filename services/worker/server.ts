@@ -7776,16 +7776,28 @@ ${details}
         );
         const workId = wk.rows[0]?.id ? Number(wk.rows[0].id) : null;
 
-        // 2) マテリアル(任意)。material_name があれば upsert(原作内 material_name 一致で更新)。
+        // 2) マテリアル(任意)。マテリアルコード優先で解決(=リネーム安全)、無ければ
+        //    原作内 material_name 一致。見つかれば更新(名称含む)、無ければ新規作成。
         let materialCode: string | null = null;
         let materialId: number | null = null;
         let materialAction: "created" | "updated" | "none" = "none";
-        if (materialName && workId) {
-          const em = await query(
-            `SELECT id, material_code FROM work_materials
-              WHERE work_id = $1 AND material_name = $2 ORDER BY id LIMIT 1`,
-            [workId, materialName]
-          );
+        const matCodeGiven = s(r.material_code);
+        if ((materialName || matCodeGiven) && workId) {
+          let em: any = { rows: [] };
+          if (matCodeGiven) {
+            em = await query(
+              `SELECT id, material_code FROM work_materials
+                WHERE material_code = $1 AND work_id = $2 LIMIT 1`,
+              [matCodeGiven, workId]
+            );
+          }
+          if (em.rows.length === 0 && materialName) {
+            em = await query(
+              `SELECT id, material_code FROM work_materials
+                WHERE work_id = $1 AND material_name = $2 ORDER BY id LIMIT 1`,
+              [workId, materialName]
+            );
+          }
           if (em.rows.length > 0) {
             materialId = Number(em.rows[0].id);
             materialCode = em.rows[0].material_code;
@@ -7793,8 +7805,10 @@ ${details}
             const mt = normalizeGenre(r.material_type);
             const role = normalizeRole(r.material_role, mt, undefined);
             const categoryId = await ensureMaterialCategory(workId, mt);
+            // コード一致で解決した場合は material_name の変更(リネーム)も反映する。空なら保持。
             await query(
               `UPDATE work_materials SET
+                 material_name = COALESCE(NULLIF($10,''), material_name),
                  material_type = $2,
                  material_role = $3,
                  category_id = $4,
@@ -7805,8 +7819,11 @@ ${details}
                  remarks = COALESCE(NULLIF($8,''), remarks),
                  updated_at = now()
                WHERE id = $1`,
-              [materialId, mt, role, categoryId, rhLabel, s(r.territory), s(r.language), s(r.remarks), rhVendorId]
+              [materialId, mt, role, categoryId, rhLabel, s(r.territory), s(r.language), s(r.remarks), rhVendorId, materialName]
             );
+          } else if (!materialName) {
+            // コード指定だが該当なし・新規作成用の名称も無い → マテリアルはスキップ。
+            materialAction = "none";
           } else {
             const m = await addMaterialToLedger({
               ledger_id: ledgerId,

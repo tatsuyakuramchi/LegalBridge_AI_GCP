@@ -30,6 +30,7 @@ const CALC_TYPE_OPTIONS: { value: string; label: string }[] = [
 type Row = {
   ledger_title: string
   ledger_code: string
+  material_code: string
   material_name: string
   material_type: string
   rights_holder_code: string
@@ -65,6 +66,7 @@ type RowResult = {
 const emptyRow = (): Row => ({
   ledger_title: "",
   ledger_code: "",
+  material_code: "",
   material_name: "",
   material_type: "",
   rights_holder_code: "",
@@ -111,6 +113,8 @@ const HEADER_MAP: Record<string, keyof Row> = {
   title: "ledger_title",
   原作コード: "ledger_code",
   ledger_code: "ledger_code",
+  マテリアルコード: "material_code",
+  material_code: "material_code",
   マテリアル名: "material_name",
   素材名: "material_name",
   material_name: "material_name",
@@ -154,9 +158,9 @@ const HEADER_MAP: Record<string, keyof Row> = {
 }
 
 const CSV_TEMPLATE = [
-  "原作コード,原作タイトル,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,CL-ID",
-  "LO-2026-0001,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,",
-  ",新規サンプル作品,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,",
+  "原作コード,原作タイトル,マテリアルコード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,CL-ID",
+  "LO-2026-0001,,LO-2026-0001-002,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,",
+  ",新規サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -300,6 +304,7 @@ export function BulkImportPanel() {
       ...emptyRow(),
       ledger_code: d.ledger_code || "",
       ledger_title: d.ledger_title || "",
+      material_code: d.material_code || "",
       material_name: d.material_name || "",
       material_type: d.material_type || "",
       rights_holder_code: d.rights_holder_code || "",
@@ -323,6 +328,7 @@ export function BulkImportPanel() {
       const csvRows = rs.map((r) => ({
         原作コード: r.ledger_code,
         原作タイトル: r.ledger_title,
+        マテリアルコード: r.material_code,
         マテリアル名: r.material_name,
         種別: r.material_type,
         取引先コード: r.rights_holder_code,
@@ -607,8 +613,9 @@ export function BulkImportPanel() {
           </div>
           {parseError && <div className="text-[10px] font-mono text-red-600">{parseError}</div>}
           <p className="text-[10px] font-mono text-sky-800/70">
-            列: 原作コード / 原作タイトル / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考
-            / 取引形態 / 料率 / MG / AG / 通貨。原作は<b>原作コード（LO-…）で既存を指定</b>、
+            列: 原作コード / 原作タイトル / マテリアルコード / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 /
+            根拠文書番号(任意) / 備考 / 取引形態 / 料率 / MG / AG / 通貨 / CL-ID。原作は<b>原作コード（LO-…）で既存を指定</b>、
+            マテリアルは<b>マテリアルコード（LO-…-NNN）で既存を指定</b>（コード一致ならマテリアル名の変更＝リネームも反映）、
             新規作成する場合のみ原作タイトルを入れます。権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。
             種別・取引形態は固定語彙（貼付時に自動正規化。プレビューはドロップダウン選択）。
             <b>CL-IDのある行は既存CLを更新</b>（料率/取引形態/MG/AG/通貨を上書き）、
@@ -661,6 +668,7 @@ export function BulkImportPanel() {
                 <tr>
                   <th className={th}>原作コード*</th>
                   <th className={th}>原作タイトル</th>
+                  <th className={th}>マテリアルコード</th>
                   <th className={th}>マテリアル名</th>
                   <th className={th}>種別</th>
                   <th className={th}>取引先コード</th>
@@ -685,6 +693,7 @@ export function BulkImportPanel() {
                         <input className={inputCls} value={r.ledger_code} onChange={(e) => patch(i, "ledger_code", e.target.value)} placeholder="LO-… (既存)" />
                       </td>
                       <td className={td}><input className={inputCls} value={r.ledger_title} onChange={(e) => patch(i, "ledger_title", e.target.value)} placeholder="新規作成時に必須" /></td>
+                      <td className={td}><input className={inputCls} value={r.material_code} onChange={(e) => patch(i, "material_code", e.target.value)} placeholder="LO-…-NNN (既存)" /></td>
                       <td className={td}><input className={inputCls} value={r.material_name} onChange={(e) => patch(i, "material_name", e.target.value)} placeholder="任意" /></td>
                       <td className={td}>
                         <select className={inputCls} value={r.material_type} onChange={(e) => patch(i, "material_type", e.target.value)}>
