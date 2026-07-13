@@ -283,6 +283,94 @@ export function BulkImportPanel() {
     setClResults({})
   }
 
+  // ── 現状エクスポート（原作×マテリアル×CL を取込と同じスキーマで） ──────
+  const [exporting, setExporting] = React.useState(false)
+
+  const fetchState = async (): Promise<Row[]> => {
+    const res = await fetch("/api/master/bulk-export")
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = await res.json()
+    return (Array.isArray(data) ? data : []).map((d: any) => ({
+      ...emptyRow(),
+      ledger_code: d.ledger_code || "",
+      ledger_title: d.ledger_title || "",
+      material_name: d.material_name || "",
+      material_type: d.material_type || "",
+      rights_holder_code: d.rights_holder_code || "",
+      territory: d.territory || "",
+      language: d.language || "",
+      source_doc: d.source_doc || "",
+      remarks: d.remarks || "",
+      cl_calc_type: d.cl_calc_type || "",
+      cl_rate: d.cl_rate != null ? String(d.cl_rate) : "",
+      cl_mg: d.cl_mg != null ? String(d.cl_mg) : "",
+      cl_ag: d.cl_ag != null ? String(d.cl_ag) : "",
+      cl_currency: d.cl_currency || "",
+    }))
+  }
+
+  const downloadCsv = async () => {
+    setExporting(true)
+    try {
+      const rs = await fetchState()
+      const csvRows = rs.map((r) => ({
+        原作コード: r.ledger_code,
+        原作タイトル: r.ledger_title,
+        マテリアル名: r.material_name,
+        種別: r.material_type,
+        取引先コード: r.rights_holder_code,
+        許諾地域: r.territory,
+        許諾言語: r.language,
+        根拠文書番号: r.source_doc,
+        備考: r.remarks,
+        取引形態: r.cl_calc_type,
+        料率: r.cl_rate,
+        MG: r.cl_mg,
+        AG: r.cl_ag,
+        通貨: r.cl_currency,
+      }))
+      const csv = "﻿" + Papa.unparse(csvRows)
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      const stamp = new Date().toISOString().slice(0, 10)
+      a.download = `bulk_state_${stamp}.csv`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: any) {
+      window.alert(`エクスポートに失敗しました: ${String(e?.message || e)}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const loadStateIntoPreview = async () => {
+    setExporting(true)
+    try {
+      const rs = await fetchState()
+      // CL列(料率など)は空にして読み込む。料率が残っていると再登録で新規CLが作られ
+      //   重複するため、この導線は原作・マテリアル情報の修正(upsert)専用にする。
+      //   同一マテリアルが複数CLで重複する行は1行に集約。
+      const seen = new Set<string>()
+      const materialLevel: Row[] = []
+      for (const r of rs) {
+        const key = `${r.ledger_code}|${r.material_name}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        materialLevel.push({ ...r, cl_calc_type: "", cl_rate: "", cl_mg: "", cl_ag: "", cl_currency: "", source_doc: "" })
+      }
+      setRows(materialLevel)
+      setResults(null)
+      setSummary(null)
+      setClResults({})
+    } catch (e: any) {
+      window.alert(`読み込みに失敗しました: ${String(e?.message || e)}`)
+    } finally {
+      setExporting(false)
+    }
+  }
+
   // Tab ① の shared 原作を全空欄行へ適用。
   const applySharedLedger = () => {
     if (!sharedLedger.trim()) return
@@ -373,14 +461,37 @@ export function BulkImportPanel() {
 
   return (
     <div className="max-w-[1200px] space-y-6 p-1">
-      <div>
-        <h1 className="text-lg font-bold flex items-center gap-2">
-          <Upload className="w-5 h-5" /> 一括インポート（原作・原作マテリアル）
-        </h1>
-        <p className="text-[11px] font-mono text-muted-foreground mt-1">
-          既存文書からの抽出、または表(CSV/TSV)の貼り付けで、原作とその原作マテリアルをまとめてDB登録します。
-          既存(原作コード/タイトル一致・原作内の同名マテリアル)は更新(upsert)します。
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-lg font-bold flex items-center gap-2">
+            <Upload className="w-5 h-5" /> 一括インポート（原作・原作マテリアル）
+          </h1>
+          <p className="text-[11px] font-mono text-muted-foreground mt-1">
+            既存文書からの抽出、または表(CSV/TSV)の貼り付けで、原作とその原作マテリアルをまとめてDB登録します。
+            既存(原作コード/タイトル一致・原作内の同名マテリアル)は更新(upsert)します。
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={downloadCsv}
+            disabled={exporting}
+            className="text-[10px] font-mono px-2.5 py-1.5 rounded border border-border hover:bg-muted disabled:opacity-50 inline-flex items-center gap-1.5"
+            title="現状の 原作×マテリアル×CL を取込と同じ列でCSV出力"
+          >
+            {exporting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5 rotate-180" />}
+            現状をCSVダウンロード
+          </button>
+          <button
+            type="button"
+            onClick={loadStateIntoPreview}
+            disabled={exporting}
+            className="text-[10px] font-mono px-2.5 py-1.5 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 inline-flex items-center gap-1.5"
+            title="現状の原作・マテリアルをプレビューに読み込み、その場で修正して再登録(upsert)。CL列は重複作成を防ぐため空で読み込みます。"
+          >
+            現状を読み込んで修正（マテリアルのみ）
+          </button>
+        </div>
       </div>
 
       {/* タブ */}

@@ -7877,6 +7877,43 @@ ${details}
     });
   });
 
+  // 一括インポートと同じスキーマで現状(原作×マテリアル×利用許諾CL)をエクスポートする。
+  //   1行 = マテリアル × CL。CLの無いマテリアルはCL列が空の1行。修正→再取込(upsert)の往復用。
+  app.get("/api/master/bulk-export", async (_req, res) => {
+    try {
+      const r = await query(
+        `SELECT
+            l.ledger_code                                   AS ledger_code,
+            l.title                                         AS ledger_title,
+            wm.material_name                                AS material_name,
+            wm.material_type                                AS material_type,
+            v.vendor_code                                   AS rights_holder_code,
+            wm.territory                                    AS territory,
+            wm.language                                     AS language,
+            cc.document_number                              AS source_doc,
+            wm.remarks                                      AS remarks,
+            cl.calc_type                                    AS cl_calc_type,
+            cl.rate_pct                                     AS cl_rate,
+            cl.mg_amount                                    AS cl_mg,
+            cl.ag_amount                                    AS cl_ag,
+            cl.currency                                     AS cl_currency,
+            wm.material_code                                AS material_code
+           FROM ledgers l
+           JOIN works w  ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
+           JOIN work_materials wm ON wm.work_id = w.id
+           LEFT JOIN vendors v ON v.id = wm.rights_holder_vendor_id
+           LEFT JOIN condition_lines cl
+             ON cl.source_material_id = wm.id AND cl.transaction_kind = 'license'
+           LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+          ORDER BY l.ledger_code, wm.material_no NULLS LAST, cl.id NULLS LAST`
+      );
+      res.json(r.rows);
+    } catch (error: any) {
+      console.error("GET /api/master/bulk-export failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
   app.put("/api/master/materials/:id", express.json(), async (req, res) => {
     const { id } = req.params;
     const body = req.body || {};
