@@ -7848,6 +7848,41 @@ ${details}
           linkedConditions = lr.rowCount || 0;
         }
 
+        // 4) CL更新(任意): cl_id 指定行は既存の利用許諾CLの金銭条件を上書き(往復修正)。
+        //   condition_lines の金銭列(calc_type/rate_pct/mg/ag/currency/region)を直接更新。
+        //   料率(rate/mg/ag)は空で送られたら NULL に設定(明示クリア)、語彙系は空なら保持。
+        //   安全のため source_material_id が当該マテリアルの license CL のみ対象。
+        let clUpdated = 0;
+        const clId = r.cl_id == null || r.cl_id === "" ? null : Number(r.cl_id);
+        if (materialId && clId != null && Number.isFinite(clId)) {
+          const numOrNull = (v: any) => (v == null || v === "" ? null : Number(v));
+          const ur = await query(
+            `UPDATE condition_lines SET
+               calc_type = COALESCE(NULLIF($2,''), calc_type),
+               rate_pct = $3,
+               mg_amount = $4,
+               ag_amount = $5,
+               currency = COALESCE(NULLIF($6,''), currency),
+               region_territory = COALESCE(NULLIF($7,''), region_territory),
+               region_language = COALESCE(NULLIF($8,''), region_language),
+               updated_at = now()
+             WHERE id = $1 AND source_material_id = $9 AND transaction_kind = 'license'
+             RETURNING id`,
+            [
+              clId,
+              s(r.cl_calc_type),
+              numOrNull(r.cl_rate),
+              numOrNull(r.cl_mg),
+              numOrNull(r.cl_ag),
+              s(r.cl_currency),
+              s(r.territory),
+              s(r.language),
+              materialId,
+            ]
+          );
+          clUpdated = ur.rowCount || 0;
+        }
+
         results.push({
           index: i,
           ok: true,
@@ -7860,6 +7895,7 @@ ${details}
           material_code: materialCode,
           material_action: materialAction,
           linked_conditions: linkedConditions,
+          cl_updated: clUpdated,
           source_doc: s(r.source_doc) || null,
           warning: rhWarning || undefined,
         });
@@ -7892,6 +7928,7 @@ ${details}
             wm.language                                     AS language,
             cc.document_number                              AS source_doc,
             wm.remarks                                      AS remarks,
+            cl.id                                           AS cl_id,
             cl.calc_type                                    AS cl_calc_type,
             cl.rate_pct                                     AS cl_rate,
             cl.mg_amount                                    AS cl_mg,

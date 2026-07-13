@@ -38,7 +38,8 @@ type Row = {
   source_doc: string
   remarks: string
   link_condition_ids: number[]
-  // CL(金銭条件): 料率があればマテリアルごとに新規ARC-ILTを発番してCLを作成する。
+  // CL(金銭条件): cl_id 空=新規作成(料率があれば) / cl_id あり=既存CLを更新(往復修正)。
+  cl_id: string
   cl_calc_type: string
   cl_rate: string
   cl_mg: string
@@ -58,6 +59,7 @@ type RowResult = {
   material_code?: string | null
   material_action?: string
   linked_conditions?: number
+  cl_updated?: number
 }
 
 const emptyRow = (): Row => ({
@@ -71,6 +73,7 @@ const emptyRow = (): Row => ({
   source_doc: "",
   remarks: "",
   link_condition_ids: [],
+  cl_id: "",
   cl_calc_type: "",
   cl_rate: "",
   cl_mg: "",
@@ -145,12 +148,15 @@ const HEADER_MAP: Record<string, keyof Row> = {
   ag: "cl_ag",
   通貨: "cl_currency",
   currency: "cl_currency",
+  "CL-ID": "cl_id",
+  CLID: "cl_id",
+  cl_id: "cl_id",
 }
 
 const CSV_TEMPLATE = [
-  "原作コード,原作タイトル,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨",
-  "LO-2026-0001,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY",
-  ",新規サンプル作品,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY",
+  "原作コード,原作タイトル,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,CL-ID",
+  "LO-2026-0001,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,",
+  ",新規サンプル作品,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -301,6 +307,7 @@ export function BulkImportPanel() {
       language: d.language || "",
       source_doc: d.source_doc || "",
       remarks: d.remarks || "",
+      cl_id: d.cl_id != null ? String(d.cl_id) : "",
       cl_calc_type: d.cl_calc_type || "",
       cl_rate: d.cl_rate != null ? String(d.cl_rate) : "",
       cl_mg: d.cl_mg != null ? String(d.cl_mg) : "",
@@ -328,6 +335,7 @@ export function BulkImportPanel() {
         MG: r.cl_mg,
         AG: r.cl_ag,
         通貨: r.cl_currency,
+        "CL-ID": r.cl_id,
       }))
       const csv = "﻿" + Papa.unparse(csvRows)
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
@@ -348,19 +356,10 @@ export function BulkImportPanel() {
   const loadStateIntoPreview = async () => {
     setExporting(true)
     try {
+      // CL-ID 付きで読み込む。CL-IDのある行は再登録で既存CLを更新(往復修正)、
+      //   CL-IDが無く料率のある行は新規CL作成。原作/マテリアルは material_name 一致で upsert。
       const rs = await fetchState()
-      // CL列(料率など)は空にして読み込む。料率が残っていると再登録で新規CLが作られ
-      //   重複するため、この導線は原作・マテリアル情報の修正(upsert)専用にする。
-      //   同一マテリアルが複数CLで重複する行は1行に集約。
-      const seen = new Set<string>()
-      const materialLevel: Row[] = []
-      for (const r of rs) {
-        const key = `${r.ledger_code}|${r.material_name}`
-        if (seen.has(key)) continue
-        seen.add(key)
-        materialLevel.push({ ...r, cl_calc_type: "", cl_rate: "", cl_mg: "", cl_ag: "", cl_currency: "", source_doc: "" })
-      }
-      setRows(materialLevel)
+      setRows(rs)
       setResults(null)
       setSummary(null)
       setClResults({})
@@ -408,6 +407,8 @@ export function BulkImportPanel() {
         if (!r.ok || r.material_id == null || r.work_id == null) continue
         const row = rows[r.index]
         if (!row) continue
+        // CL-ID のある行は backend が既存CLを更新済み → 新規作成しない(重複防止)。
+        if (String(row.cl_id || "").trim()) continue
         const rate = String(row.cl_rate || "").trim()
         if (!rate) continue // 料率が無ければCLは作らない
         const srcDoc = String(row.source_doc || "").trim()
@@ -487,9 +488,9 @@ export function BulkImportPanel() {
             onClick={loadStateIntoPreview}
             disabled={exporting}
             className="text-[10px] font-mono px-2.5 py-1.5 rounded border border-emerald-400 text-emerald-700 hover:bg-emerald-50 disabled:opacity-50 inline-flex items-center gap-1.5"
-            title="現状の原作・マテリアルをプレビューに読み込み、その場で修正して再登録(upsert)。CL列は重複作成を防ぐため空で読み込みます。"
+            title="現状(原作・マテリアル・CL)をプレビューに読み込み、その場で修正して再登録(upsert)。CL-ID付き行は既存CLを更新します。"
           >
-            現状を読み込んで修正（マテリアルのみ）
+            現状を読み込んで修正
           </button>
         </div>
       </div>
@@ -610,10 +611,11 @@ export function BulkImportPanel() {
             / 取引形態 / 料率 / MG / AG / 通貨。原作は<b>原作コード（LO-…）で既存を指定</b>、
             新規作成する場合のみ原作タイトルを入れます。権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。
             種別・取引形態は固定語彙（貼付時に自動正規化。プレビューはドロップダウン選択）。
-            <b>料率</b>を入れた行は利用許諾CL（royalty）を作成します。器（文書）は
-            <b>根拠文書番号があればその既存文書に付け、空なら新規ARC-ILTを発番</b>します
-            （同一マテリアルで空欄が続く場合は先頭で発番した1つの器にまとめます）。
-            マテリアル名が空の行は原作だけを登録します。
+            <b>CL-IDのある行は既存CLを更新</b>（料率/取引形態/MG/AG/通貨を上書き）、
+            <b>CL-IDが空で料率のある行は新規CL（royalty）を作成</b>します。新規CLの器（文書）は
+            根拠文書番号があればその既存文書、空なら新規ARC-ILTを発番（同一マテリアルの空欄行は
+            先頭で発番した1つの器にまとめます）。マテリアル名が空の行は原作だけを登録します。
+            「現状をCSVダウンロード」→修正→再取込で、CL値のブレも往復修正できます。
           </p>
         </div>
       )}
@@ -721,6 +723,7 @@ export function BulkImportPanel() {
                           >
                             {rr.material_action === "created" ? "新規" : rr.material_action === "updated" ? "更新" : rr.ledger_action === "created" ? "原作新規" : "原作更新"}
                             {rr.linked_conditions ? ` +CL${rr.linked_conditions}` : ""}
+                            {rr.cl_updated ? " CL更新" : ""}
                             {clResults[i] ? (clResults[i].startsWith("CL失敗") ? " ⚠CL" : " +CL新規") : ""}
                             {rr.warning ? " ⚠取引先未解決" : ""}
                           </span>
