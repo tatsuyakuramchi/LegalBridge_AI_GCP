@@ -7461,6 +7461,13 @@ ${details}
                   wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
                   mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
                   COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder,
+                  (SELECT cc2.document_number
+                     FROM condition_lines cl2
+                     JOIN contract_capabilities cc2 ON cc2.id = cl2.capability_id
+                    WHERE cl2.source_material_id = wm.id
+                      AND cl2.transaction_kind = 'license'
+                      AND COALESCE(cc2.source_system,'') <> 'master_register'
+                    ORDER BY cl2.id DESC LIMIT 1) AS source_doc_number,
                   wm.created_at, wm.updated_at
              FROM work_materials wm
              JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
@@ -7658,6 +7665,173 @@ ${details}
       }
     }
   );
+
+  // ── 一括インポート ───────────────────────────────────────────────
+  // 原作(ledgers)＋原作マテリアル(work_materials)を upsert 登録する単一ルート。
+  //   入力ソースは2系統(どちらも rows[] に正規化して送る):
+  //     ① 既存文書から抽出(FEが lc-candidates を rows[] 化)
+  //     ② 表(CSV/Excel)貼付(FEがパースして rows[] 化)
+  //   既存判定: 原作 = ledger_code 一致 or title 一致 / マテリアル = 同一原作内の material_name 一致。
+  //   既存は更新(upsert)、無ければ新規作成。source_doc / link_condition_ids があれば、
+  //   その文書の未リンク利用許諾CLを当該マテリアルへ後付けリンク(source_material_id)。
+  app.post("/api/master/bulk-import", express.json(), async (req, res) => {
+    const rows: any[] = Array.isArray(req.body?.rows) ? req.body.rows : [];
+    if (rows.length === 0) {
+      return res.status(400).json({ ok: false, error: "rows[] が空です" });
+    }
+    if (rows.length > 500) {
+      return res.status(400).json({ ok: false, error: "一度に取り込めるのは500行までです" });
+    }
+    const s = (v: any) => (v == null ? "" : String(v).trim());
+    const results: any[] = [];
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i] || {};
+      const ledgerTitle = s(r.ledger_title);
+      const materialName = s(r.material_name);
+      try {
+        if (!ledgerTitle) {
+          results.push({ index: i, ok: false, error: "原作タイトル(ledger_title)が空です" });
+          continue;
+        }
+        // 1) 原作(ledger)を解決 or 作成 (ledger_code 優先、無ければ title 一致)。
+        const codeGiven = s(r.ledger_code);
+        let found: any = { rows: [] };
+        if (codeGiven) {
+          found = await query(`SELECT id, ledger_code FROM ledgers WHERE ledger_code = $1`, [codeGiven]);
+        }
+        if (found.rows.length === 0) {
+          found = await query(
+            `SELECT id, ledger_code FROM ledgers WHERE title = $1 ORDER BY id LIMIT 1`,
+            [ledgerTitle]
+          );
+        }
+        let ledgerId: number;
+        let ledgerCode: string;
+        let ledgerAction: "created" | "updated";
+        if (found.rows.length > 0) {
+          ledgerId = Number(found.rows[0].id);
+          ledgerCode = found.rows[0].ledger_code;
+          ledgerAction = "updated";
+          // 原作の任意フィールドを更新(既存内容を上書き)。空値は既存を保持。
+          await query(
+            `UPDATE ledgers SET
+               title = $2,
+               default_rights_holder = COALESCE(NULLIF($3,''), default_rights_holder),
+               updated_at = now()
+             WHERE id = $1`,
+            [ledgerId, ledgerTitle, s(r.rights_holder)]
+          );
+          // works(licensed_in) を保証(旧データで欠けている場合に備え get-or-create)。
+          await query(
+            `INSERT INTO works (work_code, title, kind, is_original, is_active)
+             VALUES ($1, $2, 'licensed_in', FALSE, TRUE)
+             ON CONFLICT (work_code) DO UPDATE SET title = EXCLUDED.title, updated_at = now()`,
+            [ledgerCode, ledgerTitle]
+          );
+        } else {
+          const created = await createLedgerWithDefaultMaterial({
+            title: ledgerTitle,
+            ledger_code: codeGiven || undefined,
+            default_rights_holder: s(r.rights_holder) || undefined,
+          });
+          ledgerId = created.id;
+          ledgerCode = created.ledger_code;
+          ledgerAction = "created";
+        }
+        // work_id を解決。
+        const wk = await query(
+          `SELECT id FROM works WHERE work_code = $1 AND kind = 'licensed_in'`,
+          [ledgerCode]
+        );
+        const workId = wk.rows[0]?.id ? Number(wk.rows[0].id) : null;
+
+        // 2) マテリアル(任意)。material_name があれば upsert(原作内 material_name 一致で更新)。
+        let materialCode: string | null = null;
+        let materialId: number | null = null;
+        let materialAction: "created" | "updated" | "none" = "none";
+        if (materialName && workId) {
+          const em = await query(
+            `SELECT id, material_code FROM work_materials
+              WHERE work_id = $1 AND material_name = $2 ORDER BY id LIMIT 1`,
+            [workId, materialName]
+          );
+          if (em.rows.length > 0) {
+            materialId = Number(em.rows[0].id);
+            materialCode = em.rows[0].material_code;
+            materialAction = "updated";
+            const mt = normalizeGenre(r.material_type);
+            const role = normalizeRole(r.material_role, mt, undefined);
+            const categoryId = await ensureMaterialCategory(workId, mt);
+            await query(
+              `UPDATE work_materials SET
+                 material_type = $2,
+                 material_role = $3,
+                 category_id = $4,
+                 rights_holder_label = COALESCE(NULLIF($5,''), rights_holder_label),
+                 territory = COALESCE(NULLIF($6,''), territory),
+                 language = COALESCE(NULLIF($7,''), language),
+                 remarks = COALESCE(NULLIF($8,''), remarks),
+                 updated_at = now()
+               WHERE id = $1`,
+              [materialId, mt, role, categoryId, s(r.rights_holder), s(r.territory), s(r.language), s(r.remarks)]
+            );
+          } else {
+            const m = await addMaterialToLedger({
+              ledger_id: ledgerId,
+              material_name: materialName,
+              material_type: r.material_type,
+              rights_holder: s(r.rights_holder) || undefined,
+              territory: s(r.territory) || undefined,
+              language: s(r.language) || undefined,
+              remarks: s(r.remarks) || undefined,
+            });
+            materialId = m.id;
+            materialCode = m.material_code;
+            materialAction = "created";
+          }
+        }
+
+        // 3) 文書リンク(任意): 指定CLを当該マテリアルへ後付けリンク(二重CL回避)。
+        let linkedConditions = 0;
+        const linkIds: number[] = Array.isArray(r.link_condition_ids)
+          ? r.link_condition_ids.map((x: any) => Number(x)).filter((n: number) => Number.isFinite(n))
+          : [];
+        if (materialId && workId && linkIds.length > 0) {
+          const lr = await query(
+            `UPDATE condition_lines
+                SET source_material_id = $2, source_work_id = $3, updated_at = now()
+              WHERE id = ANY($1::int[])
+                AND source_material_id IS NULL
+                AND transaction_kind = 'license'
+              RETURNING id`,
+            [linkIds, materialId, workId]
+          );
+          linkedConditions = lr.rowCount || 0;
+        }
+
+        results.push({
+          index: i,
+          ok: true,
+          ledger_code: ledgerCode,
+          ledger_action: ledgerAction,
+          material_code: materialCode,
+          material_action: materialAction,
+          linked_conditions: linkedConditions,
+          source_doc: s(r.source_doc) || null,
+        });
+      } catch (e: any) {
+        results.push({ index: i, ok: false, error: String(e?.message || e) });
+      }
+    }
+    const succeeded = results.filter((x) => x.ok).length;
+    res.json({
+      ok: true,
+      total: rows.length,
+      succeeded,
+      failed: rows.length - succeeded,
+      results,
+    });
+  });
 
   app.put("/api/master/materials/:id", express.json(), async (req, res) => {
     const { id } = req.params;

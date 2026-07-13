@@ -29,6 +29,7 @@ import { MaterialEntryPanel } from "./pages/master/MaterialEntryPanel" // 原作
 import { WorkMaterialLinkPanel } from "./pages/master/WorkMaterialLinkPanel" // 作品↔原作マテリアル 紐づけ
 import { SublicenseConditionPanel } from "./pages/master/SublicenseConditionPanel" // 再許諾条件登録
 import { UnlinkedConditionsPanel } from "./pages/master/UnlinkedConditionsPanel" // 未リンクCL 棚卸し
+import { BulkImportPanel } from "./pages/master/BulkImportPanel" // 原作・原作マテリアル 一括インポート
 import { BillingTablePanel } from "./pages/master/BillingTablePanel" // 請求・分配テーブル(再許諾)
 import { BillingDashboardPanel } from "./pages/master/BillingDashboardPanel" // 請求・分配 横断ダッシュボード
 import { BillingPrintPage } from "./pages/master/BillingPrintPage" // 再許諾料 受領・分配 計算書(印刷/PDF)
@@ -78,6 +79,7 @@ export default function App() {
                   <Route path="vendors" element={<VendorsPanel />} />
                   <Route path="work-entry" element={<WorkEntryPanel />} />{/* 作品/原作 登録 */}
                   <Route path="materials" element={<MaterialEntryPanel />} />{/* 原作マテリアル登録 */}
+                  <Route path="bulk-import" element={<BulkImportPanel />} />{/* 原作・原作マテリアル 一括インポート */}
                   <Route path="work-material-link" element={<WorkMaterialLinkPanel />} />{/* 作品↔原作マテリアル 紐づけ */}
                   <Route path="sublicense-conditions" element={<SublicenseConditionPanel />} />{/* 再許諾条件登録 */}
                   <Route path="unlinked-conditions" element={<UnlinkedConditionsPanel />} />{/* 未リンクCL 棚卸し */}

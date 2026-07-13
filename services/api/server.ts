@@ -3500,20 +3500,55 @@ async function startServer() {
       if (ids.length > 0) {
         // マテリアル一本化(0089/0090): 子素材は正準表 work_materials から取得。
         //   台帳(ledgers.id) ← works(licensed_in, work_code=ledger_code) ← work_materials。
-        const mats = await query(
-          `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
-                  wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
-                  wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
-                  mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
-                  COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder
-             FROM work_materials wm
-             JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
-             JOIN ledgers l ON l.ledger_code = w.work_code
-             LEFT JOIN material_categories mc ON mc.id = wm.category_id
-            WHERE l.id = ANY($1::int[])
-            ORDER BY l.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
-          [ids]
-        );
+        // territory/language(許諾地域・言語の枠。0117)と、当該マテリアルの根拠文書番号
+        //   (condition_lines.source_material_id 経由の最新 license 器の文書番号)も返す。
+        //   これが無いと個別利用許諾フォームで既存マテリアルを選んでも地域/言語/根拠文書が
+        //   既定値(「1-1に準ずる」「本条件書(新規)」)に化け、登録内容と食い違う。
+        let mats: any;
+        try {
+          mats = await query(
+            `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
+                    wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
+                    wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
+                    wm.territory, wm.language,
+                    mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
+                    COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder,
+                    (SELECT cc2.document_number
+                       FROM condition_lines cl2
+                       JOIN contract_capabilities cc2 ON cc2.id = cl2.capability_id
+                      WHERE cl2.source_material_id = wm.id
+                        AND cl2.transaction_kind = 'license'
+                        AND COALESCE(cc2.source_system,'') <> 'master_register'
+                      ORDER BY cl2.id DESC LIMIT 1) AS source_doc_number
+               FROM work_materials wm
+               JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
+               JOIN ledgers l ON l.ledger_code = w.work_code
+               LEFT JOIN material_categories mc ON mc.id = wm.category_id
+              WHERE l.id = ANY($1::int[])
+              ORDER BY l.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
+            [ids]
+          );
+        } catch (matErr: any) {
+          // territory/language 列が無い旧環境 → 従来 SELECT にフォールバック。
+          if (matErr && matErr.code === "42703") {
+            mats = await query(
+              `SELECT wm.id, l.id AS ledger_id, wm.material_no, wm.material_code, wm.material_name,
+                      wm.material_type, wm.rights_holder_label AS rights_holder, wm.remarks,
+                      wm.is_default, TRUE AS is_active, wm.material_role, wm.category_id,
+                      mc.genre AS category_genre, mc.name AS category_name, mc.sort_order AS category_sort,
+                      COALESCE(NULLIF(trim(wm.rights_holder_label), ''), mc.rights_holder_label) AS effective_rights_holder
+                 FROM work_materials wm
+                 JOIN works   w ON w.id = wm.work_id AND w.kind = 'licensed_in'
+                 JOIN ledgers l ON l.ledger_code = w.work_code
+                 LEFT JOIN material_categories mc ON mc.id = wm.category_id
+                WHERE l.id = ANY($1::int[])
+                ORDER BY l.id, COALESCE(mc.sort_order, 99), wm.material_no ASC NULLS LAST`,
+              [ids]
+            );
+          } else {
+            throw matErr;
+          }
+        }
         mats.rows.forEach((m: any) => {
           const lid = Number(m.ledger_id);
           if (!matsMap.has(lid)) matsMap.set(lid, []);

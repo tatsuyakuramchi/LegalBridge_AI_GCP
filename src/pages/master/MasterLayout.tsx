@@ -1,6 +1,6 @@
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom"
 import * as React from "react"
-import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins, Unlink, Receipt } from "lucide-react"
+import { Upload, RefreshCw, Building2, Users, GitBranch, FileText, FileEdit, ClipboardCheck, Network, Boxes, BookMarked, BookOpen, GitMerge, Link2, Coins, Unlink, Receipt, FileUp } from "lucide-react"
 
 import { useAppData } from "@/src/context/AppDataContext"
 import { Button } from "@/components/ui/button"
@@ -13,6 +13,8 @@ const tabs = [
   { to: "/master/work-entry", label: "Works (作品/原作)", icon: BookMarked },
   // 原作マテリアル登録(work_materials + 固定3種 金銭条件 + 文書欄)
   { to: "/master/materials", label: "Materials (原作素材)", icon: Boxes },
+  // 原作＋原作マテリアル＋文書を一括で DB 化(upsert)。①既存文書から抽出 ②表(CSV/TSV)貼付。
+  { to: "/master/bulk-import", label: "一括インポート", icon: FileUp },
   { to: "/master/work-material-link", label: "作品×原作素材 紐づけ", icon: Link2 },
   // 出版利用許諾条件 登録(ARC-PUBT: 原作/対象出版物/許諾者/紙・電子印税率 → 条件明細)
   { to: "/master/pub-license", label: "出版条件 (ARC-PUBT)", icon: BookOpen },
