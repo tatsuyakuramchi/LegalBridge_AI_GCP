@@ -30,6 +30,8 @@ const CALC_TYPE_OPTIONS: { value: string; label: string }[] = [
 type Row = {
   ledger_title: string
   ledger_code: string
+  work_code: string // 作品(own work) W-…
+  work_name: string
   material_code: string
   material_name: string
   material_type: string
@@ -148,6 +150,8 @@ type RowResult = {
   error?: string
   warning?: string
   work_id?: number | null
+  own_work_id?: number | null
+  own_work_code?: string | null
   material_id?: number | null
   ledger_code?: string
   ledger_action?: string
@@ -160,6 +164,8 @@ type RowResult = {
 const emptyRow = (): Row => ({
   ledger_title: "",
   ledger_code: "",
+  work_code: "",
+  work_name: "",
   material_code: "",
   material_name: "",
   material_type: "",
@@ -217,6 +223,10 @@ const HEADER_MAP: Record<string, keyof Row> = {
   title: "ledger_title",
   原作コード: "ledger_code",
   ledger_code: "ledger_code",
+  作品コード: "work_code",
+  work_code: "work_code",
+  作品名: "work_name",
+  work_name: "work_name",
   マテリアルコード: "material_code",
   material_code: "material_code",
   マテリアル名: "material_name",
@@ -285,9 +295,9 @@ const HEADER_MAP: Record<string, keyof Row> = {
 }
 
 const CSV_TEMPLATE = [
-  "原作コード,原作タイトル,マテリアルコード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,請求の向き,権利帰属,CL-ID,スコープ,契約種類,契約タイトル,契約開始日,契約終了日,自動更新,文書リンク,基本契約番号",
-  "LO-2026-0001,,LO-2026-0001-002,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,当社受領,発注者,,利用許諾,個別契約,X社 個別利用許諾,2026-04-01,2027-03-31,はい,https://drive.example/doc,ARC-LIC-2026-0001",
-  ",新規サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,当社支払,受注者,,利用許諾,単独契約,,,,いいえ,,",
+  "原作コード,原作タイトル,作品コード,作品名,マテリアルコード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,請求の向き,権利帰属,CL-ID,スコープ,契約種類,契約タイトル,契約開始日,契約終了日,自動更新,文書リンク,基本契約番号",
+  "LO-2026-0001,,W-2026-0001,自社ボードゲームA,LO-2026-0001-002,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,当社受領,発注者,,利用許諾,個別契約,X社 個別利用許諾,2026-04-01,2027-03-31,はい,https://drive.example/doc,ARC-LIC-2026-0001",
+  ",新規サンプル作品,,新製品B,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,当社支払,受注者,,利用許諾,単独契約,,,,いいえ,,",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -438,6 +448,8 @@ export function BulkImportPanel() {
       ...emptyRow(),
       ledger_code: d.ledger_code || "",
       ledger_title: d.ledger_title || "",
+      work_code: d.work_code || "",
+      work_name: d.work_name || "",
       material_code: d.material_code || "",
       material_name: d.material_name || "",
       material_type: d.material_type || "",
@@ -472,6 +484,8 @@ export function BulkImportPanel() {
       const csvRows = rs.map((r) => ({
         原作コード: r.ledger_code,
         原作タイトル: r.ledger_title,
+        作品コード: r.work_code,
+        作品名: r.work_name,
         マテリアルコード: r.material_code,
         マテリアル名: r.material_name,
         種別: r.material_type,
@@ -603,15 +617,16 @@ export function BulkImportPanel() {
           // 新規発番した器のみ material に紐付けて以降の空欄行で再利用(明示指定行は上書きしない)。
           if (!srcDoc && cj.capability_id != null) capByMaterial[r.material_id] = Number(cj.capability_id)
           if (cj.document_number) capDocByIndex[r.index] = String(cj.document_number)
-          // 新規CLに 請求の向き / 権利帰属 を後付け(cj.id が返る)。
+          // 新規CLに 請求の向き / 権利帰属 / 作品(work_id) を後付け(cj.id が返る)。
           const dir = normDirection(row.cl_direction)
           const own = normOwnership(row.cl_ownership)
-          if (cj.id != null && (dir || own)) {
+          const ownWork = r.own_work_id ?? undefined
+          if (cj.id != null && (dir || own || ownWork != null)) {
             try {
               await fetch("/api/master/condition-line-meta", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ id: cj.id, direction: dir || undefined, deliverable_ownership: own || undefined }),
+                body: JSON.stringify({ id: cj.id, direction: dir || undefined, deliverable_ownership: own || undefined, work_id: ownWork }),
               })
             } catch {
               /* CLメタ後付け失敗は致命的でない */
@@ -828,6 +843,7 @@ export function BulkImportPanel() {
           <p className="text-[10px] font-mono text-sky-800/70">
             列: 原作コード / 原作タイトル / マテリアルコード / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 /
             根拠文書番号(任意) / 備考 / 取引形態 / 料率 / MG / AG / 通貨 / CL-ID。原作は<b>原作コード（LO-…）で既存を指定</b>、
+            作品（自社作品）は<b>作品コード（W-…）で既存を指定</b>、作品名のみなら新規作成しCLの対象作品に紐づけます、
             マテリアルは<b>マテリアルコード（LO-…-NNN）で既存を指定</b>（コード一致ならマテリアル名の変更＝リネームも反映）、
             新規作成する場合のみ原作タイトルを入れます。権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。
             種別・取引形態は固定語彙（貼付時に自動正規化。プレビューはドロップダウン選択）。
@@ -885,6 +901,8 @@ export function BulkImportPanel() {
                 <tr>
                   <th className={th}>原作コード*</th>
                   <th className={th}>原作タイトル</th>
+                  <th className={cn(th, "bg-emerald-50/60")}>作品コード</th>
+                  <th className={cn(th, "bg-emerald-50/60")}>作品名</th>
                   <th className={th}>マテリアルコード</th>
                   <th className={th}>マテリアル名</th>
                   <th className={th}>種別</th>
@@ -920,6 +938,8 @@ export function BulkImportPanel() {
                         <input className={inputCls} value={r.ledger_code} onChange={(e) => patch(i, "ledger_code", e.target.value)} placeholder="LO-… (既存)" />
                       </td>
                       <td className={td}><input className={inputCls} value={r.ledger_title} onChange={(e) => patch(i, "ledger_title", e.target.value)} placeholder="新規作成時に必須" /></td>
+                      <td className={cn(td, "bg-emerald-50/30")}><input className={inputCls} value={r.work_code} onChange={(e) => patch(i, "work_code", e.target.value)} placeholder="W-… (既存)" /></td>
+                      <td className={cn(td, "bg-emerald-50/30")}><input className={inputCls} value={r.work_name} onChange={(e) => patch(i, "work_name", e.target.value)} placeholder="作品名(新規作成)" /></td>
                       <td className={td}><input className={inputCls} value={r.material_code} onChange={(e) => patch(i, "material_code", e.target.value)} placeholder="LO-…-NNN (既存)" /></td>
                       <td className={td}><input className={inputCls} value={r.material_name} onChange={(e) => patch(i, "material_name", e.target.value)} placeholder="任意" /></td>
                       <td className={td}>

@@ -7847,6 +7847,56 @@ ${details}
           }
         }
 
+        // 2.5) 作品(own work=作品)の解決/作成。CLの work_id に紐づける。
+        //   作品コード(W-…, kind='own')一致で解決、無ければ作品名で検索/新規作成。
+        //   名称が無くコードも未解決なら作らない(null=紐付けなし)。
+        let ownWorkId: number | null = null;
+        let ownWorkCode: string | null = null;
+        const workCodeGiven = s(r.work_code);
+        const workName = s(r.work_name);
+        if (workCodeGiven) {
+          const ow = await query(
+            `SELECT id, work_code FROM works WHERE work_code = $1 AND COALESCE(kind,'own') = 'own' LIMIT 1`,
+            [workCodeGiven]
+          );
+          if (ow.rows.length > 0) {
+            ownWorkId = Number(ow.rows[0].id);
+            ownWorkCode = ow.rows[0].work_code;
+          }
+        }
+        if (ownWorkId == null && workName) {
+          const ow = await query(
+            `SELECT id, work_code FROM works WHERE title = $1 AND COALESCE(kind,'own') = 'own' ORDER BY id LIMIT 1`,
+            [workName]
+          );
+          if (ow.rows.length > 0) {
+            ownWorkId = Number(ow.rows[0].id);
+            ownWorkCode = ow.rows[0].work_code;
+          }
+        }
+        if (ownWorkId == null && workName) {
+          // W-YYYY-NNNN を当年 works の最大+1 で採番(コード明示があればそれを使用)。
+          let codeToUse = workCodeGiven;
+          if (!codeToUse) {
+            const yr = new Date().getFullYear();
+            const seq = await query(
+              `SELECT COALESCE(MAX(CASE WHEN work_code ~ ('^W-'||$1||'-[0-9]+$')
+                       THEN split_part(work_code,'-',3)::int ELSE 0 END),0)+1 AS n FROM works`,
+              [String(yr)]
+            );
+            codeToUse = `W-${yr}-${String(seq.rows[0]?.n ?? 1).padStart(4, "0")}`;
+          }
+          const ins = await query(
+            `INSERT INTO works (work_code, title, kind, is_active)
+             VALUES ($1, $2, 'own', TRUE)
+             ON CONFLICT (work_code) DO UPDATE SET title = EXCLUDED.title, updated_at = now()
+             RETURNING id, work_code`,
+            [codeToUse, workName]
+          );
+          ownWorkId = Number(ins.rows[0].id);
+          ownWorkCode = ins.rows[0].work_code;
+        }
+
         // 3) 文書リンク(任意): 指定CLを当該マテリアルへ後付けリンク(二重CL回避)。
         let linkedConditions = 0;
         const linkIds: number[] = Array.isArray(r.link_condition_ids)
@@ -7884,6 +7934,7 @@ ${details}
                region_language = COALESCE(NULLIF($8,''), region_language),
                direction = COALESCE(NULLIF($10,''), direction),
                deliverable_ownership = COALESCE(NULLIF($11,''), deliverable_ownership),
+               work_id = COALESCE($12, work_id),
                updated_at = now()
              WHERE id = $1 AND source_material_id = $9 AND transaction_kind = 'license'
              RETURNING id`,
@@ -7899,6 +7950,7 @@ ${details}
               materialId,
               s(r.cl_direction),
               s(r.cl_ownership),
+              ownWorkId,
             ]
           );
           clUpdated = ur.rowCount || 0;
@@ -7915,6 +7967,9 @@ ${details}
           material_id: materialId,
           material_code: materialCode,
           material_action: materialAction,
+          // own_work_id/own_work_code = 作品(kind='own')。FE が新規CLの work_id 紐付けに使う。
+          own_work_id: ownWorkId,
+          own_work_code: ownWorkCode,
           linked_conditions: linkedConditions,
           cl_updated: clUpdated,
           source_doc: s(r.source_doc) || null,
@@ -7942,6 +7997,8 @@ ${details}
         `SELECT
             l.ledger_code                                   AS ledger_code,
             l.title                                         AS ledger_title,
+            ow.work_code                                    AS work_code,
+            ow.title                                        AS work_name,
             wm.material_name                                AS material_name,
             wm.material_type                                AS material_type,
             v.vendor_code                                   AS rights_holder_code,
@@ -7974,6 +8031,7 @@ ${details}
              ON cl.source_material_id = wm.id AND cl.transaction_kind = 'license'
            LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
            LEFT JOIN documents dcap ON dcap.id = cl.capability_id
+           LEFT JOIN works ow ON ow.id = cl.work_id AND COALESCE(ow.kind,'own') = 'own'
           ORDER BY l.ledger_code, wm.material_no NULLS LAST, cl.id NULLS LAST`
       );
       res.json(r.rows);
@@ -8052,14 +8110,16 @@ ${details}
       if (dir && !["payable", "receivable"].includes(dir)) {
         return res.status(400).json({ ok: false, error: "direction は payable/receivable" });
       }
+      const workId = b.work_id == null || b.work_id === "" ? null : Number(b.work_id);
       const r = await query(
         `UPDATE condition_lines SET
            direction = COALESCE(NULLIF($2,''), direction),
            deliverable_ownership = COALESCE(NULLIF($3,''), deliverable_ownership),
+           work_id = COALESCE($4, work_id),
            updated_at = now()
          WHERE id = $1
          RETURNING id`,
-        [id, dir, s(b.deliverable_ownership)]
+        [id, dir, s(b.deliverable_ownership), Number.isFinite(workId) ? workId : null]
       );
       res.json({ ok: true, updated: r.rowCount || 0 });
     } catch (error: any) {
