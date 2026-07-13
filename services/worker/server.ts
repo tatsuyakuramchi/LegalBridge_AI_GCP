@@ -7689,8 +7689,9 @@ ${details}
       const ledgerTitle = s(r.ledger_title);
       const materialName = s(r.material_name);
       try {
-        if (!ledgerTitle) {
-          results.push({ index: i, ok: false, error: "原作タイトル(ledger_title)が空です" });
+        const codeGiven0 = s(r.ledger_code);
+        if (!ledgerTitle && !codeGiven0) {
+          results.push({ index: i, ok: false, error: "原作コード(ledger_code)または原作タイトル(ledger_title)が必要です" });
           continue;
         }
         // 権利者は取引先コード(vendor_code)で受け取り、vendors を解決して
@@ -7713,15 +7714,15 @@ ${details}
             rhWarning = `取引先コード「${rhCode}」に一致する取引先が見つかりません`;
           }
         }
-        // 1) 原作(ledger)を解決 or 作成 (ledger_code 優先、無ければ title 一致)。
+        // 1) 原作(ledger)を解決 or 作成。原作コード優先(既存指定)、無ければ title 一致。
         const codeGiven = s(r.ledger_code);
         let found: any = { rows: [] };
         if (codeGiven) {
-          found = await query(`SELECT id, ledger_code FROM ledgers WHERE ledger_code = $1`, [codeGiven]);
+          found = await query(`SELECT id, ledger_code, title FROM ledgers WHERE ledger_code = $1`, [codeGiven]);
         }
-        if (found.rows.length === 0) {
+        if (found.rows.length === 0 && ledgerTitle) {
           found = await query(
-            `SELECT id, ledger_code FROM ledgers WHERE title = $1 ORDER BY id LIMIT 1`,
+            `SELECT id, ledger_code, title FROM ledgers WHERE title = $1 ORDER BY id LIMIT 1`,
             [ledgerTitle]
           );
         }
@@ -7732,23 +7733,33 @@ ${details}
           ledgerId = Number(found.rows[0].id);
           ledgerCode = found.rows[0].ledger_code;
           ledgerAction = "updated";
-          // 原作の任意フィールドを更新(既存内容を上書き)。空値は既存を保持。
+          // タイトルが空の行(コードのみ指定)は既存タイトルを保持する。
+          const effectiveTitle = ledgerTitle || String(found.rows[0].title || ledgerCode);
           await query(
             `UPDATE ledgers SET
-               title = $2,
+               title = COALESCE(NULLIF($2,''), title),
                default_rights_holder = COALESCE(NULLIF($3,''), default_rights_holder),
                updated_at = now()
              WHERE id = $1`,
             [ledgerId, ledgerTitle, rhLabel]
           );
-          // works(licensed_in) を保証(旧データで欠けている場合に備え get-or-create)。
+          // works(licensed_in) を保証(旧データで欠けている場合に備え get-or-create)。空タイトルにしない。
           await query(
             `INSERT INTO works (work_code, title, kind, is_original, is_active)
              VALUES ($1, $2, 'licensed_in', FALSE, TRUE)
-             ON CONFLICT (work_code) DO UPDATE SET title = EXCLUDED.title, updated_at = now()`,
-            [ledgerCode, ledgerTitle]
+             ON CONFLICT (work_code) DO UPDATE SET title = COALESCE(NULLIF(EXCLUDED.title,''), works.title), updated_at = now()`,
+            [ledgerCode, effectiveTitle]
           );
         } else {
+          // 新規作成にはタイトルが必要(コードが見つからず、作成用タイトルも無ければエラー)。
+          if (!ledgerTitle) {
+            results.push({
+              index: i,
+              ok: false,
+              error: `原作コード「${codeGiven}」が見つかりません(新規作成には原作タイトルが必要)`,
+            });
+            continue;
+          }
           const created = await createLedgerWithDefaultMaterial({
             title: ledgerTitle,
             ledger_code: codeGiven || undefined,

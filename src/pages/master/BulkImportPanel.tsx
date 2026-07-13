@@ -16,6 +16,16 @@ import { Upload, PackageSearch, Table2, Plus, Trash2, Loader2, Check, AlertCircl
 import { cn } from "@/lib/utils"
 import { UnifiedContractPicker, type ContractDetail } from "@/src/components/document/UnifiedContractPicker"
 import { useAppData } from "@/src/context/AppDataContext"
+import { MATERIAL_GENRES, normalizeGenre } from "@/lib/materialVocab"
+
+// 取引形態(calc_type)の固定選択肢。v3 の CALC_TYPE_OPTION_MAP と同じ語彙。
+const CALC_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "BASE_QTY_RATE", label: "① 自社製造・自社販売（価格×個数×料率）" },
+  { value: "BASE_RATE", label: "② 権利許諾・サブライセンス（価格×料率）" },
+  { value: "SUPPLY_QTY", label: "③ 自社製造・他社販売（供給価格×個数×料率）" },
+  { value: "FIXED", label: "固定額" },
+  { value: "SUBSCRIPTION", label: "サブスクリプション" },
+]
 
 type Row = {
   ledger_title: string
@@ -138,9 +148,9 @@ const HEADER_MAP: Record<string, keyof Row> = {
 }
 
 const CSV_TEMPLATE = [
-  "原作タイトル,原作コード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨",
-  "サンプル作品,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY",
-  "サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY",
+  "原作コード,原作タイトル,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨",
+  "LO-2026-0001,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY",
+  ",新規サンプル作品,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -216,9 +226,12 @@ export function BulkImportPanel() {
             ;(row as any)[key] = v == null ? "" : String(v).trim()
           }
         }
+        // 種別・取引形態は固定語彙へ正規化(貼付の表記ゆれをコードに寄せる)。
+        if (row.material_type) row.material_type = normalizeGenre(row.material_type) || ""
+        if (row.cl_calc_type) row.cl_calc_type = normCalcType(row.cl_calc_type)
         return row
       })
-      .filter((r) => r.ledger_title || r.material_name)
+      .filter((r) => r.ledger_title || r.ledger_code || r.material_name)
 
   const parsePaste = () => {
     setParseError(null)
@@ -276,7 +289,8 @@ export function BulkImportPanel() {
     setRows((prev) => prev.map((r) => (r.ledger_title.trim() ? r : { ...r, ledger_title: sharedLedger.trim() })))
   }
 
-  const missingLedger = rows.filter((r) => !r.ledger_title.trim()).length
+  // 原作はコード優先。コードもタイトルも無い行は未指定。
+  const missingLedger = rows.filter((r) => !r.ledger_code.trim() && !r.ledger_title.trim()).length
 
   const submit = async () => {
     if (rows.length === 0) return
@@ -481,12 +495,14 @@ export function BulkImportPanel() {
           </div>
           {parseError && <div className="text-[10px] font-mono text-red-600">{parseError}</div>}
           <p className="text-[10px] font-mono text-sky-800/70">
-            列: 原作タイトル / 原作コード(任意) / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考
-            / 取引形態 / 料率 / MG / AG / 通貨。権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。
+            列: 原作コード / 原作タイトル / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考
+            / 取引形態 / 料率 / MG / AG / 通貨。原作は<b>原作コード（LO-…）で既存を指定</b>、
+            新規作成する場合のみ原作タイトルを入れます。権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。
+            種別・取引形態は固定語彙（貼付時に自動正規化。プレビューはドロップダウン選択）。
             <b>料率</b>を入れた行は利用許諾CL（royalty）を作成します。器（文書）は
             <b>根拠文書番号があればその既存文書に付け、空なら新規ARC-ILTを発番</b>します
             （同一マテリアルで空欄が続く場合は先頭で発番した1つの器にまとめます）。
-            原作タイトルのみの行は原作だけを登録します。
+            マテリアル名が空の行は原作だけを登録します。
           </p>
         </div>
       )}
@@ -498,7 +514,7 @@ export function BulkImportPanel() {
             プレビュー（{rows.length} 行）
             {missingLedger > 0 && (
               <span className="ml-2 text-amber-600">
-                <AlertCircle className="inline w-3.5 h-3.5 -mt-0.5" /> 原作タイトル未入力 {missingLedger} 行
+                <AlertCircle className="inline w-3.5 h-3.5 -mt-0.5" /> 原作(コード/タイトル)未入力 {missingLedger} 行
               </span>
             )}
           </div>
@@ -530,8 +546,8 @@ export function BulkImportPanel() {
             <table className="w-full border-collapse">
               <thead className="bg-muted/40">
                 <tr>
-                  <th className={th}>原作タイトル*</th>
-                  <th className={th}>原作コード</th>
+                  <th className={th}>原作コード*</th>
+                  <th className={th}>原作タイトル</th>
                   <th className={th}>マテリアル名</th>
                   <th className={th}>種別</th>
                   <th className={th}>取引先コード</th>
@@ -553,16 +569,30 @@ export function BulkImportPanel() {
                   return (
                     <tr key={i} className={rr ? (rr.ok ? "bg-emerald-50/50" : "bg-red-50/50") : ""}>
                       <td className={td}>
-                        <input className={inputCls} value={r.ledger_title} onChange={(e) => patch(i, "ledger_title", e.target.value)} placeholder="必須" />
+                        <input className={inputCls} value={r.ledger_code} onChange={(e) => patch(i, "ledger_code", e.target.value)} placeholder="LO-… (既存)" />
                       </td>
-                      <td className={td}><input className={inputCls} value={r.ledger_code} onChange={(e) => patch(i, "ledger_code", e.target.value)} placeholder="任意" /></td>
+                      <td className={td}><input className={inputCls} value={r.ledger_title} onChange={(e) => patch(i, "ledger_title", e.target.value)} placeholder="新規作成時に必須" /></td>
                       <td className={td}><input className={inputCls} value={r.material_name} onChange={(e) => patch(i, "material_name", e.target.value)} placeholder="任意" /></td>
-                      <td className={td}><input className={inputCls} value={r.material_type} onChange={(e) => patch(i, "material_type", e.target.value)} /></td>
+                      <td className={td}>
+                        <select className={inputCls} value={r.material_type} onChange={(e) => patch(i, "material_type", e.target.value)}>
+                          <option value="">—</option>
+                          {MATERIAL_GENRES.map((g) => (
+                            <option key={g.value} value={g.value}>{g.label}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className={td}><input className={inputCls} value={r.rights_holder_code} onChange={(e) => patch(i, "rights_holder_code", e.target.value)} placeholder="取引先コード" /></td>
                       <td className={td}><input className={inputCls} value={r.territory} onChange={(e) => patch(i, "territory", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.language} onChange={(e) => patch(i, "language", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.source_doc} onChange={(e) => patch(i, "source_doc", e.target.value)} /></td>
-                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_calc_type} onChange={(e) => patch(i, "cl_calc_type", e.target.value)} placeholder="任意" /></td>
+                      <td className={cn(td, "bg-indigo-50/30")}>
+                        <select className={inputCls} value={r.cl_calc_type} onChange={(e) => patch(i, "cl_calc_type", e.target.value)}>
+                          <option value="">—</option>
+                          {CALC_TYPE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_rate} onChange={(e) => patch(i, "cl_rate", e.target.value)} placeholder="料率で発番" /></td>
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_mg} onChange={(e) => patch(i, "cl_mg", e.target.value)} /></td>
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_ag} onChange={(e) => patch(i, "cl_ag", e.target.value)} /></td>
