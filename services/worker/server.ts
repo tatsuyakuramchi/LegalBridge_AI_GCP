@@ -7882,6 +7882,8 @@ ${details}
                currency = COALESCE(NULLIF($6,''), currency),
                region_territory = COALESCE(NULLIF($7,''), region_territory),
                region_language = COALESCE(NULLIF($8,''), region_language),
+               direction = COALESCE(NULLIF($10,''), direction),
+               deliverable_ownership = COALESCE(NULLIF($11,''), deliverable_ownership),
                updated_at = now()
              WHERE id = $1 AND source_material_id = $9 AND transaction_kind = 'license'
              RETURNING id`,
@@ -7895,6 +7897,8 @@ ${details}
               s(r.territory),
               s(r.language),
               materialId,
+              s(r.cl_direction),
+              s(r.cl_ownership),
             ]
           );
           clUpdated = ur.rowCount || 0;
@@ -7951,6 +7955,9 @@ ${details}
             cl.mg_amount                                    AS cl_mg,
             cl.ag_amount                                    AS cl_ag,
             cl.currency                                     AS cl_currency,
+            cl.direction                                    AS cl_direction,
+            cl.deliverable_ownership                        AS cl_ownership,
+            cc.scope                                        AS cap_scope,
             cc.record_type                                  AS cap_record_type,
             cc.contract_title                               AS cap_title,
             cc.effective_date                               AS cap_effective,
@@ -8005,6 +8012,7 @@ ${details}
            document_url = COALESCE(NULLIF($8,''), document_url),
            drive_url = COALESCE(NULLIF($8,''), drive_url),
            master_document_number = COALESCE(NULLIF($9,''), master_document_number),
+           scope = COALESCE(NULLIF($10,''), scope),
            updated_at = now()
          WHERE document_number = $1
          RETURNING id`,
@@ -8018,11 +8026,41 @@ ${details}
           numOrNull(b.renewal_notice_months),
           s(b.document_url),
           s(b.master_document_number),
+          s(b.scope),
         ]
       );
       res.json({ ok: true, updated: r.rowCount || 0 });
     } catch (error: any) {
       console.error("POST /api/master/capability-meta failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // CL(condition_lines)の CLレベル項目を id で更新する。新規作成したCLに
+  //   請求の向き(direction=payable/receivable)・成果物帰属(deliverable_ownership=発注者/受注者)を
+  //   後付けする。空値は既存保持。direction は payable/receivable のみ受理。
+  app.post("/api/master/condition-line-meta", express.json(), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const id = Number(b.id);
+      if (!Number.isFinite(id)) return res.status(400).json({ ok: false, error: "id は必須" });
+      const s = (v: any) => (v == null ? "" : String(v).trim());
+      const dir = s(b.direction);
+      if (dir && !["payable", "receivable"].includes(dir)) {
+        return res.status(400).json({ ok: false, error: "direction は payable/receivable" });
+      }
+      const r = await query(
+        `UPDATE condition_lines SET
+           direction = COALESCE(NULLIF($2,''), direction),
+           deliverable_ownership = COALESCE(NULLIF($3,''), deliverable_ownership),
+           updated_at = now()
+         WHERE id = $1
+         RETURNING id`,
+        [id, dir, s(b.deliverable_ownership)]
+      );
+      res.json({ ok: true, updated: r.rowCount || 0 });
+    } catch (error: any) {
+      console.error("POST /api/master/condition-line-meta failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });

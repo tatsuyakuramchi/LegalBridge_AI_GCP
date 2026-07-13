@@ -46,7 +46,10 @@ type Row = {
   cl_mg: string
   cl_ag: string
   cl_currency: string
+  cl_direction: string // 請求の向き: receivable(当社受領) / payable(当社支払)
+  cl_ownership: string // 権利帰属(成果物帰属): 発注者 / 受注者
   // 器(文書=contract_capabilities)レベル項目。CLの器へ後付け更新する。
+  cap_scope: string // 契約スコープ: service(業務委託) / license_use(利用許諾)
   cap_record_type: string // 契約種類コード(master_contract/individual_contract/standalone_contract/license_condition)
   cap_title: string
   cap_effective: string
@@ -89,6 +92,56 @@ const recordTypeLabel = (v: string): string => {
   return RECORD_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || ""
 }
 
+// 契約スコープ(器 scope)。ContractsPanel と同じ 業務委託 / 利用許諾。
+const SCOPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "service", label: "業務委託" },
+  { value: "license_use", label: "利用許諾" },
+]
+const SCOPE_ALIAS: Record<string, string> = {
+  業務委託: "service",
+  サービス: "service",
+  利用許諾: "license_use",
+  ライセンス: "license_use",
+  license: "license_use",
+}
+const normScope = (v: string): string => {
+  const k = String(v || "").trim()
+  if (!k) return ""
+  if (SCOPE_OPTIONS.some((o) => o.value === k)) return k
+  return SCOPE_ALIAS[k] || ""
+}
+// 請求の向き(CL direction)。receivable=当社受領 / payable=当社支払。
+const DIRECTION_OPTIONS: { value: string; label: string }[] = [
+  { value: "receivable", label: "当社受領" },
+  { value: "payable", label: "当社支払" },
+]
+const DIR_ALIAS: Record<string, string> = {
+  当社受領: "receivable",
+  受領: "receivable",
+  receivable: "receivable",
+  out: "receivable",
+  当社支払: "payable",
+  支払: "payable",
+  payable: "payable",
+  in: "payable",
+}
+const normDirection = (v: string): string => {
+  const k = String(v || "").trim()
+  if (!k) return ""
+  return DIR_ALIAS[k] || (["receivable", "payable"].includes(k) ? k : "")
+}
+// 権利帰属(deliverable_ownership)。値は 発注者 / 受注者(DBそのまま)。
+const OWNERSHIP_OPTIONS: { value: string; label: string }[] = [
+  { value: "発注者", label: "発注者帰属" },
+  { value: "受注者", label: "受注者帰属" },
+]
+const normOwnership = (v: string): string => {
+  const k = String(v || "").trim()
+  if (k.includes("受注")) return "受注者"
+  if (k.includes("発注")) return "発注者"
+  return ""
+}
+
 type RowResult = {
   index: number
   ok: boolean
@@ -122,6 +175,9 @@ const emptyRow = (): Row => ({
   cl_mg: "",
   cl_ag: "",
   cl_currency: "",
+  cl_direction: "",
+  cl_ownership: "",
+  cap_scope: "",
   cap_record_type: "",
   cap_title: "",
   cap_effective: "",
@@ -200,6 +256,14 @@ const HEADER_MAP: Record<string, keyof Row> = {
   ag: "cl_ag",
   通貨: "cl_currency",
   currency: "cl_currency",
+  請求の向き: "cl_direction",
+  direction: "cl_direction",
+  権利帰属: "cl_ownership",
+  成果物帰属: "cl_ownership",
+  deliverable_ownership: "cl_ownership",
+  スコープ: "cap_scope",
+  契約スコープ: "cap_scope",
+  scope: "cap_scope",
   "CL-ID": "cl_id",
   CLID: "cl_id",
   cl_id: "cl_id",
@@ -221,9 +285,9 @@ const HEADER_MAP: Record<string, keyof Row> = {
 }
 
 const CSV_TEMPLATE = [
-  "原作コード,原作タイトル,マテリアルコード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,CL-ID,契約種類,契約タイトル,契約開始日,契約終了日,自動更新,文書リンク,基本契約番号",
-  "LO-2026-0001,,LO-2026-0001-002,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,,個別契約,X社 個別利用許諾,2026-04-01,2027-03-31,はい,https://drive.example/doc,ARC-LIC-2026-0001",
-  ",新規サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,,単独契約,,,,いいえ,,",
+  "原作コード,原作タイトル,マテリアルコード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,請求の向き,権利帰属,CL-ID,スコープ,契約種類,契約タイトル,契約開始日,契約終了日,自動更新,文書リンク,基本契約番号",
+  "LO-2026-0001,,LO-2026-0001-002,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,当社受領,発注者,,利用許諾,個別契約,X社 個別利用許諾,2026-04-01,2027-03-31,はい,https://drive.example/doc,ARC-LIC-2026-0001",
+  ",新規サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,当社支払,受注者,,利用許諾,単独契約,,,,いいえ,,",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -305,6 +369,9 @@ export function BulkImportPanel() {
         if (row.material_type) row.material_type = normalizeGenre(row.material_type) || ""
         if (row.cl_calc_type) row.cl_calc_type = normCalcType(row.cl_calc_type)
         if (row.cap_record_type) row.cap_record_type = normRecordType(row.cap_record_type)
+        if (row.cap_scope) row.cap_scope = normScope(row.cap_scope)
+        if (row.cl_direction) row.cl_direction = normDirection(row.cl_direction)
+        if (row.cl_ownership) row.cl_ownership = normOwnership(row.cl_ownership)
         return row
       })
       .filter((r) => r.ledger_title || r.ledger_code || r.material_name)
@@ -385,6 +452,9 @@ export function BulkImportPanel() {
       cl_mg: d.cl_mg != null ? String(d.cl_mg) : "",
       cl_ag: d.cl_ag != null ? String(d.cl_ag) : "",
       cl_currency: d.cl_currency || "",
+      cl_direction: d.cl_direction || "",
+      cl_ownership: d.cl_ownership || "",
+      cap_scope: d.cap_scope || "",
       cap_record_type: d.cap_record_type || "",
       cap_title: d.cap_title || "",
       cap_effective: d.cap_effective ? String(d.cap_effective).slice(0, 10) : "",
@@ -415,7 +485,10 @@ export function BulkImportPanel() {
         MG: r.cl_mg,
         AG: r.cl_ag,
         通貨: r.cl_currency,
+        請求の向き: r.cl_direction,
+        権利帰属: r.cl_ownership,
         "CL-ID": r.cl_id,
+        スコープ: r.cap_scope,
         契約種類: r.cap_record_type,
         契約タイトル: r.cap_title,
         契約開始日: r.cap_effective,
@@ -530,6 +603,20 @@ export function BulkImportPanel() {
           // 新規発番した器のみ material に紐付けて以降の空欄行で再利用(明示指定行は上書きしない)。
           if (!srcDoc && cj.capability_id != null) capByMaterial[r.material_id] = Number(cj.capability_id)
           if (cj.document_number) capDocByIndex[r.index] = String(cj.document_number)
+          // 新規CLに 請求の向き / 権利帰属 を後付け(cj.id が返る)。
+          const dir = normDirection(row.cl_direction)
+          const own = normOwnership(row.cl_ownership)
+          if (cj.id != null && (dir || own)) {
+            try {
+              await fetch("/api/master/condition-line-meta", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ id: cj.id, direction: dir || undefined, deliverable_ownership: own || undefined }),
+              })
+            } catch {
+              /* CLメタ後付け失敗は致命的でない */
+            }
+          }
           clOut[r.index] = `CL ${cj.document_number || "作成"}`
         } catch (e: any) {
           clOut[r.index] = `CL失敗: ${String(e?.message || e)}`
@@ -546,11 +633,12 @@ export function BulkImportPanel() {
         const docNum = capDocByIndex[r.index] || String(row.source_doc || "").trim()
         if (!docNum) continue
         const hasMeta =
-          row.cap_record_type || row.cap_title || row.cap_effective || row.cap_expiration ||
+          row.cap_scope || row.cap_record_type || row.cap_title || row.cap_effective || row.cap_expiration ||
           row.cap_auto_renewal || row.cap_doc_url || row.cap_master_doc
         if (!hasMeta || metaByDoc[docNum]) continue
         metaByDoc[docNum] = {
           document_number: docNum,
+          scope: normScope(row.cap_scope) || undefined,
           record_type: normRecordType(row.cap_record_type) || undefined,
           contract_title: row.cap_title || undefined,
           effective_date: row.cap_effective || undefined,
@@ -748,7 +836,8 @@ export function BulkImportPanel() {
             根拠文書番号があればその既存文書、空なら新規ARC-ILTを発番（同一マテリアルの空欄行は
             先頭で発番した1つの器にまとめます）。マテリアル名が空の行は原作だけを登録します。
             「現状をCSVダウンロード」→修正→再取込で、CL値のブレも往復修正できます。
-            <b>文書(器)項目</b>：契約種類＝<b>レコード区分</b>（基本契約=親 / 個別契約=子 / 単独契約=単体）/
+            <b>CL項目</b>：請求の向き（当社受領/当社支払）/ 権利帰属（発注者/受注者）も列で指定できます。
+            <b>文書(器)項目</b>：スコープ（業務委託/利用許諾）/ 契約種類＝<b>レコード区分</b>（基本契約=親 / 個別契約=子 / 単独契約=単体）/
             契約タイトル / 契約開始日・終了日 / 自動更新 / 文書リンク / 基本契約番号 を入れると、そのCLの器（文書）へ反映します。
             基本契約番号は「個別契約(子)」が参照する親の文書番号です。
           </p>
@@ -808,6 +897,9 @@ export function BulkImportPanel() {
                   <th className={cn(th, "bg-indigo-50/60")}>MG</th>
                   <th className={cn(th, "bg-indigo-50/60")}>AG</th>
                   <th className={cn(th, "bg-indigo-50/60")}>通貨</th>
+                  <th className={cn(th, "bg-indigo-50/60")}>請求の向き</th>
+                  <th className={cn(th, "bg-indigo-50/60")}>権利帰属</th>
+                  <th className={cn(th, "bg-slate-100/70")}>スコープ</th>
                   <th className={cn(th, "bg-slate-100/70")}>契約種類</th>
                   <th className={cn(th, "bg-slate-100/70")}>契約タイトル</th>
                   <th className={cn(th, "bg-slate-100/70")}>開始日</th>
@@ -854,6 +946,30 @@ export function BulkImportPanel() {
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_mg} onChange={(e) => patch(i, "cl_mg", e.target.value)} /></td>
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_ag} onChange={(e) => patch(i, "cl_ag", e.target.value)} /></td>
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_currency} onChange={(e) => patch(i, "cl_currency", e.target.value)} placeholder="JPY" /></td>
+                      <td className={cn(td, "bg-indigo-50/30")}>
+                        <select className={inputCls} value={r.cl_direction} onChange={(e) => patch(i, "cl_direction", e.target.value)}>
+                          <option value="">—</option>
+                          {DIRECTION_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className={cn(td, "bg-indigo-50/30")}>
+                        <select className={inputCls} value={r.cl_ownership} onChange={(e) => patch(i, "cl_ownership", e.target.value)}>
+                          <option value="">—</option>
+                          {OWNERSHIP_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className={cn(td, "bg-slate-50")}>
+                        <select className={inputCls} value={r.cap_scope} onChange={(e) => patch(i, "cap_scope", e.target.value)}>
+                          <option value="">—</option>
+                          {SCOPE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
                       <td className={cn(td, "bg-slate-50")}>
                         <select className={inputCls} value={r.cap_record_type} onChange={(e) => patch(i, "cap_record_type", e.target.value)}>
                           <option value="">—</option>
