@@ -7693,6 +7693,26 @@ ${details}
           results.push({ index: i, ok: false, error: "原作タイトル(ledger_title)が空です" });
           continue;
         }
+        // 権利者は取引先コード(vendor_code)で受け取り、vendors を解決して
+        //   rights_holder_vendor_id(FK)＋ rights_holder_label(名称) を確定する。
+        //   コードが未解決(該当なし)の場合はコード文字列をラベルにフォールバックし警告を返す。
+        const rhCode = s(r.rights_holder_code) || s(r.rights_holder);
+        let rhVendorId: number | null = null;
+        let rhLabel = "";
+        let rhWarning: string | null = null;
+        if (rhCode) {
+          const vr = await query(
+            `SELECT id, vendor_name FROM vendors WHERE vendor_code = $1 LIMIT 1`,
+            [rhCode]
+          );
+          if (vr.rows.length > 0) {
+            rhVendorId = Number(vr.rows[0].id);
+            rhLabel = String(vr.rows[0].vendor_name || "");
+          } else {
+            rhLabel = rhCode;
+            rhWarning = `取引先コード「${rhCode}」に一致する取引先が見つかりません`;
+          }
+        }
         // 1) 原作(ledger)を解決 or 作成 (ledger_code 優先、無ければ title 一致)。
         const codeGiven = s(r.ledger_code);
         let found: any = { rows: [] };
@@ -7719,7 +7739,7 @@ ${details}
                default_rights_holder = COALESCE(NULLIF($3,''), default_rights_holder),
                updated_at = now()
              WHERE id = $1`,
-            [ledgerId, ledgerTitle, s(r.rights_holder)]
+            [ledgerId, ledgerTitle, rhLabel]
           );
           // works(licensed_in) を保証(旧データで欠けている場合に備え get-or-create)。
           await query(
@@ -7732,7 +7752,7 @@ ${details}
           const created = await createLedgerWithDefaultMaterial({
             title: ledgerTitle,
             ledger_code: codeGiven || undefined,
-            default_rights_holder: s(r.rights_holder) || undefined,
+            default_rights_holder: rhLabel || undefined,
           });
           ledgerId = created.id;
           ledgerCode = created.ledger_code;
@@ -7768,19 +7788,20 @@ ${details}
                  material_role = $3,
                  category_id = $4,
                  rights_holder_label = COALESCE(NULLIF($5,''), rights_holder_label),
+                 rights_holder_vendor_id = COALESCE($9, rights_holder_vendor_id),
                  territory = COALESCE(NULLIF($6,''), territory),
                  language = COALESCE(NULLIF($7,''), language),
                  remarks = COALESCE(NULLIF($8,''), remarks),
                  updated_at = now()
                WHERE id = $1`,
-              [materialId, mt, role, categoryId, s(r.rights_holder), s(r.territory), s(r.language), s(r.remarks)]
+              [materialId, mt, role, categoryId, rhLabel, s(r.territory), s(r.language), s(r.remarks), rhVendorId]
             );
           } else {
             const m = await addMaterialToLedger({
               ledger_id: ledgerId,
               material_name: materialName,
               material_type: r.material_type,
-              rights_holder: s(r.rights_holder) || undefined,
+              rights_holder: rhLabel || undefined,
               territory: s(r.territory) || undefined,
               language: s(r.language) || undefined,
               remarks: s(r.remarks) || undefined,
@@ -7788,6 +7809,13 @@ ${details}
             materialId = m.id;
             materialCode = m.material_code;
             materialAction = "created";
+            // 取引先コードが解決できていれば FK(rights_holder_vendor_id)も付与。
+            if (rhVendorId) {
+              await query(
+                `UPDATE work_materials SET rights_holder_vendor_id = $2, updated_at = now() WHERE id = $1`,
+                [materialId, rhVendorId]
+              );
+            }
           }
         }
 
@@ -7818,6 +7846,7 @@ ${details}
           material_action: materialAction,
           linked_conditions: linkedConditions,
           source_doc: s(r.source_doc) || null,
+          warning: rhWarning || undefined,
         });
       } catch (e: any) {
         results.push({ index: i, ok: false, error: String(e?.message || e) });

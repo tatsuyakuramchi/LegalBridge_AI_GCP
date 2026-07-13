@@ -22,7 +22,7 @@ type Row = {
   ledger_code: string
   material_name: string
   material_type: string
-  rights_holder: string
+  rights_holder_code: string
   territory: string
   language: string
   source_doc: string
@@ -34,6 +34,7 @@ type RowResult = {
   index: number
   ok: boolean
   error?: string
+  warning?: string
   ledger_code?: string
   ledger_action?: string
   material_code?: string | null
@@ -46,7 +47,7 @@ const emptyRow = (): Row => ({
   ledger_code: "",
   material_name: "",
   material_type: "",
-  rights_holder: "",
+  rights_holder_code: "",
   territory: "",
   language: "",
   source_doc: "",
@@ -68,9 +69,13 @@ const HEADER_MAP: Record<string, keyof Row> = {
   種別: "material_type",
   ジャンル: "material_type",
   material_type: "material_type",
-  権利者: "rights_holder",
-  権利元: "rights_holder",
-  rights_holder: "rights_holder",
+  取引先コード: "rights_holder_code",
+  取引先: "rights_holder_code",
+  権利者コード: "rights_holder_code",
+  権利者: "rights_holder_code",
+  権利元: "rights_holder_code",
+  vendor_code: "rights_holder_code",
+  rights_holder_code: "rights_holder_code",
   許諾地域: "territory",
   地域: "territory",
   territory: "territory",
@@ -85,9 +90,9 @@ const HEADER_MAP: Record<string, keyof Row> = {
 }
 
 const CSV_TEMPLATE = [
-  "原作タイトル,原作コード,マテリアル名,種別,権利者,許諾地域,許諾言語,根拠文書番号,備考",
-  "サンプル作品,,ゲームデザイン,game_design,株式会社X,全世界,全言語,,",
-  "サンプル作品,,イラスト一式,illustration,個人Y,日本,日本語,ARC-PO-2026-0001,",
+  "原作タイトル,原作コード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考",
+  "サンプル作品,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,",
+  "サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,ARC-PO-2026-0001,",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -125,11 +130,14 @@ export function BulkImportPanel() {
         ledger_title: guessed || sharedLedger || "",
         material_name: c.material_name || c.item_name || "",
         material_type: "",
-        rights_holder: c.rights_holder || "",
+        // 文書の権利元は名称のため取引先コードには入れず、備考に控える(コードは手入力/検索)。
+        rights_holder_code: "",
         territory: "",
         language: "",
         source_doc: c.document_number || num,
-        remarks: c.condition_name || "",
+        remarks: [c.condition_name, c.rights_holder ? `権利元: ${c.rights_holder}` : ""]
+          .filter(Boolean)
+          .join(" / "),
         // 素材未リンクCL(unlinked)は取込時に当該マテリアルへ後付けリンクできる。
         link_condition_ids:
           c.unlinked && c.source_condition_id != null ? [Number(c.source_condition_id)] : [],
@@ -372,8 +380,8 @@ export function BulkImportPanel() {
           </div>
           {parseError && <div className="text-[10px] font-mono text-red-600">{parseError}</div>}
           <p className="text-[10px] font-mono text-sky-800/70">
-            列: 原作タイトル / 原作コード(任意) / マテリアル名 / 種別 / 権利者 / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考。
-            原作タイトルのみの行は原作だけを登録します。
+            列: 原作タイトル / 原作コード(任意) / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考。
+            権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。原作タイトルのみの行は原作だけを登録します。
           </p>
         </div>
       )}
@@ -421,7 +429,7 @@ export function BulkImportPanel() {
                   <th className={th}>原作コード</th>
                   <th className={th}>マテリアル名</th>
                   <th className={th}>種別</th>
-                  <th className={th}>権利者</th>
+                  <th className={th}>取引先コード</th>
                   <th className={th}>許諾地域</th>
                   <th className={th}>許諾言語</th>
                   <th className={th}>根拠文書</th>
@@ -440,7 +448,7 @@ export function BulkImportPanel() {
                       <td className={td}><input className={inputCls} value={r.ledger_code} onChange={(e) => patch(i, "ledger_code", e.target.value)} placeholder="任意" /></td>
                       <td className={td}><input className={inputCls} value={r.material_name} onChange={(e) => patch(i, "material_name", e.target.value)} placeholder="任意" /></td>
                       <td className={td}><input className={inputCls} value={r.material_type} onChange={(e) => patch(i, "material_type", e.target.value)} /></td>
-                      <td className={td}><input className={inputCls} value={r.rights_holder} onChange={(e) => patch(i, "rights_holder", e.target.value)} /></td>
+                      <td className={td}><input className={inputCls} value={r.rights_holder_code} onChange={(e) => patch(i, "rights_holder_code", e.target.value)} placeholder="取引先コード" /></td>
                       <td className={td}><input className={inputCls} value={r.territory} onChange={(e) => patch(i, "territory", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.language} onChange={(e) => patch(i, "language", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.source_doc} onChange={(e) => patch(i, "source_doc", e.target.value)} /></td>
@@ -451,9 +459,13 @@ export function BulkImportPanel() {
                         {rr && !rr.ok ? (
                           <span className="text-[9px] font-mono text-red-600" title={rr.error}>失敗</span>
                         ) : rr && rr.ok ? (
-                          <span className="text-[9px] font-mono text-emerald-700">
+                          <span
+                            className={cn("text-[9px] font-mono", rr.warning ? "text-amber-600" : "text-emerald-700")}
+                            title={rr.warning || undefined}
+                          >
                             {rr.material_action === "created" ? "新規" : rr.material_action === "updated" ? "更新" : rr.ledger_action === "created" ? "原作新規" : "原作更新"}
                             {rr.linked_conditions ? ` +CL${rr.linked_conditions}` : ""}
+                            {rr.warning ? " ⚠取引先未解決" : ""}
                           </span>
                         ) : (
                           <button type="button" onClick={() => removeRow(i)} className="text-muted-foreground hover:text-red-600">
