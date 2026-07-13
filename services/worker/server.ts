@@ -7951,6 +7951,13 @@ ${details}
             cl.mg_amount                                    AS cl_mg,
             cl.ag_amount                                    AS cl_ag,
             cl.currency                                     AS cl_currency,
+            cc.record_type                                  AS cap_record_type,
+            cc.contract_title                               AS cap_title,
+            cc.effective_date                               AS cap_effective,
+            cc.expiration_date                              AS cap_expiration,
+            cc.auto_renewal                                 AS cap_auto_renewal,
+            COALESCE(cc.document_url, cc.drive_url)          AS cap_doc_url,
+            cc.master_document_number                       AS cap_master_doc,
             wm.material_code                                AS material_code
            FROM ledgers l
            JOIN works w  ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
@@ -7964,6 +7971,58 @@ ${details}
       res.json(r.rows);
     } catch (error: any) {
       console.error("GET /api/master/bulk-export failed:", error);
+      res.status(500).json({ ok: false, error: String(error?.message || error) });
+    }
+  });
+
+  // 器(文書=contract_capabilities)の文書レベル項目を文書番号で更新する。
+  //   一括インポートのCL作成/参照で確定した器へ、契約種別・タイトル・期間・更新・
+  //   文書リンク・基本契約参照を後付けする。空値は既存を保持(明示クリアはしない)。
+  app.post("/api/master/capability-meta", express.json(), async (req, res) => {
+    try {
+      const b = req.body || {};
+      const doc = String(b.document_number || "").trim();
+      if (!doc) return res.status(400).json({ ok: false, error: "document_number は必須" });
+      const s = (v: any) => (v == null ? "" : String(v).trim());
+      const numOrNull = (v: any) => (v == null || v === "" ? null : Number(v));
+      const dateOrNull = (v: any) => (s(v) ? s(v) : null);
+      const boolOrNull = (v: any) => {
+        const t = s(v).toLowerCase();
+        if (["true", "1", "はい", "yes", "有", "自動更新"].includes(t)) return true;
+        if (["false", "0", "いいえ", "no", "無"].includes(t)) return false;
+        return null;
+      };
+      // record_type は FE 側で master_contract / individual_contract / standalone_contract に写像済み。
+      const recordType = s(b.record_type) || null;
+      const r = await query(
+        `UPDATE contract_capabilities SET
+           record_type = COALESCE(NULLIF($2,''), record_type),
+           contract_title = COALESCE(NULLIF($3,''), contract_title),
+           effective_date = COALESCE($4::date, effective_date),
+           expiration_date = COALESCE($5::date, expiration_date),
+           auto_renewal = COALESCE($6, auto_renewal),
+           renewal_notice_months = COALESCE($7, renewal_notice_months),
+           document_url = COALESCE(NULLIF($8,''), document_url),
+           drive_url = COALESCE(NULLIF($8,''), drive_url),
+           master_document_number = COALESCE(NULLIF($9,''), master_document_number),
+           updated_at = now()
+         WHERE document_number = $1
+         RETURNING id`,
+        [
+          doc,
+          recordType,
+          s(b.contract_title),
+          dateOrNull(b.effective_date),
+          dateOrNull(b.expiration_date),
+          boolOrNull(b.auto_renewal),
+          numOrNull(b.renewal_notice_months),
+          s(b.document_url),
+          s(b.master_document_number),
+        ]
+      );
+      res.json({ ok: true, updated: r.rowCount || 0 });
+    } catch (error: any) {
+      console.error("POST /api/master/capability-meta failed:", error);
       res.status(500).json({ ok: false, error: String(error?.message || error) });
     }
   });

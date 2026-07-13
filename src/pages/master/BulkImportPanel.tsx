@@ -46,7 +46,38 @@ type Row = {
   cl_mg: string
   cl_ag: string
   cl_currency: string
+  // 器(文書=contract_capabilities)レベル項目。CLの器へ後付け更新する。
+  cap_record_type: string // 契約種類コード(master_contract/individual_contract/standalone_contract/license_condition)
+  cap_title: string
+  cap_effective: string
+  cap_expiration: string
+  cap_auto_renewal: string // "はい" / "いいえ" / ""
+  cap_doc_url: string
+  cap_master_doc: string
 }
+
+// 契約種類の固定選択肢(器 record_type)。
+const RECORD_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: "master_contract", label: "基本契約" },
+  { value: "individual_contract", label: "個別契約" },
+  { value: "standalone_contract", label: "単独契約" },
+  { value: "license_condition", label: "利用許諾条件書" },
+]
+const RT_ALIAS: Record<string, string> = {
+  基本契約: "master_contract",
+  個別契約: "individual_contract",
+  単独契約: "standalone_contract",
+  利用許諾条件書: "license_condition",
+  利用許諾条件: "license_condition",
+}
+const normRecordType = (v: string): string => {
+  const k = String(v || "").trim()
+  if (!k) return ""
+  if (RECORD_TYPE_OPTIONS.some((o) => o.value === k)) return k
+  return RT_ALIAS[k] || ""
+}
+const recordTypeLabel = (v: string): string =>
+  RECORD_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || ""
 
 type RowResult = {
   index: number
@@ -81,6 +112,13 @@ const emptyRow = (): Row => ({
   cl_mg: "",
   cl_ag: "",
   cl_currency: "",
+  cap_record_type: "",
+  cap_title: "",
+  cap_effective: "",
+  cap_expiration: "",
+  cap_auto_renewal: "",
+  cap_doc_url: "",
+  cap_master_doc: "",
 })
 
 // 取引形態(calc_type)の別名 → コード。CSVで日本語も受け付ける。
@@ -155,12 +193,27 @@ const HEADER_MAP: Record<string, keyof Row> = {
   "CL-ID": "cl_id",
   CLID: "cl_id",
   cl_id: "cl_id",
+  契約種類: "cap_record_type",
+  契約種別: "cap_record_type",
+  record_type: "cap_record_type",
+  契約タイトル: "cap_title",
+  contract_title: "cap_title",
+  契約開始日: "cap_effective",
+  effective_date: "cap_effective",
+  契約終了日: "cap_expiration",
+  expiration_date: "cap_expiration",
+  自動更新: "cap_auto_renewal",
+  auto_renewal: "cap_auto_renewal",
+  文書リンク: "cap_doc_url",
+  document_url: "cap_doc_url",
+  基本契約番号: "cap_master_doc",
+  master_document_number: "cap_master_doc",
 }
 
 const CSV_TEMPLATE = [
-  "原作コード,原作タイトル,マテリアルコード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,CL-ID",
-  "LO-2026-0001,,LO-2026-0001-002,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,",
-  ",新規サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,",
+  "原作コード,原作タイトル,マテリアルコード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨,CL-ID,契約種類,契約タイトル,契約開始日,契約終了日,自動更新,文書リンク,基本契約番号",
+  "LO-2026-0001,,LO-2026-0001-002,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY,,個別契約,X社 個別利用許諾,2026-04-01,2027-03-31,はい,https://drive.example/doc,ARC-LIC-2026-0001",
+  ",新規サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY,,単独契約,,,,いいえ,,",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -172,6 +225,8 @@ export function BulkImportPanel() {
   const [summary, setSummary] = React.useState<{ total: number; succeeded: number; failed: number } | null>(null)
   // index → CL作成結果表示("CL ARC-ILT-..." / "CL失敗: ...")
   const [clResults, setClResults] = React.useState<Record<number, string>>({})
+  // 器(文書)メタを更新した件数
+  const [metaCount, setMetaCount] = React.useState(0)
 
   // ── Tab ① 既存文書から ─────────────────────────────
   const [docNumber, setDocNumber] = React.useState<string>("")
@@ -236,9 +291,10 @@ export function BulkImportPanel() {
             ;(row as any)[key] = v == null ? "" : String(v).trim()
           }
         }
-        // 種別・取引形態は固定語彙へ正規化(貼付の表記ゆれをコードに寄せる)。
+        // 種別・取引形態・契約種類は固定語彙へ正規化(貼付の表記ゆれをコードに寄せる)。
         if (row.material_type) row.material_type = normalizeGenre(row.material_type) || ""
         if (row.cl_calc_type) row.cl_calc_type = normCalcType(row.cl_calc_type)
+        if (row.cap_record_type) row.cap_record_type = normRecordType(row.cap_record_type)
         return row
       })
       .filter((r) => r.ledger_title || r.ledger_code || r.material_name)
@@ -291,6 +347,7 @@ export function BulkImportPanel() {
     setResults(null)
     setSummary(null)
     setClResults({})
+    setMetaCount(0)
   }
 
   // ── 現状エクスポート（原作×マテリアル×CL を取込と同じスキーマで） ──────
@@ -318,6 +375,13 @@ export function BulkImportPanel() {
       cl_mg: d.cl_mg != null ? String(d.cl_mg) : "",
       cl_ag: d.cl_ag != null ? String(d.cl_ag) : "",
       cl_currency: d.cl_currency || "",
+      cap_record_type: d.cap_record_type || "",
+      cap_title: d.cap_title || "",
+      cap_effective: d.cap_effective ? String(d.cap_effective).slice(0, 10) : "",
+      cap_expiration: d.cap_expiration ? String(d.cap_expiration).slice(0, 10) : "",
+      cap_auto_renewal: d.cap_auto_renewal === true ? "はい" : d.cap_auto_renewal === false ? "いいえ" : "",
+      cap_doc_url: d.cap_doc_url || "",
+      cap_master_doc: d.cap_master_doc || "",
     }))
   }
 
@@ -342,6 +406,13 @@ export function BulkImportPanel() {
         AG: r.cl_ag,
         通貨: r.cl_currency,
         "CL-ID": r.cl_id,
+        契約種類: recordTypeLabel(r.cap_record_type),
+        契約タイトル: r.cap_title,
+        契約開始日: r.cap_effective,
+        契約終了日: r.cap_expiration,
+        自動更新: r.cap_auto_renewal,
+        文書リンク: r.cap_doc_url,
+        基本契約番号: r.cap_master_doc,
       }))
       const csv = "﻿" + Papa.unparse(csvRows)
       const blob = new Blob([csv], { type: "text/csv;charset=utf-8" })
@@ -391,6 +462,7 @@ export function BulkImportPanel() {
     setResults(null)
     setSummary(null)
     setClResults({})
+    setMetaCount(0)
     try {
       const res = await fetch("/api/master/bulk-import", {
         method: "POST",
@@ -409,6 +481,7 @@ export function BulkImportPanel() {
       //                        返却 capability_id を以降の空欄行で再利用=1マテリアル1器)。
       const clOut: Record<number, string> = {}
       const capByMaterial: Record<number, number> = {} // material_id → 新規発番した capability_id
+      const capDocByIndex: Record<number, string> = {} // 行 index → 確定した器の文書番号
       for (const r of rr) {
         if (!r.ok || r.material_id == null || r.work_id == null) continue
         const row = rows[r.index]
@@ -446,12 +519,54 @@ export function BulkImportPanel() {
           if (!cr.ok || !cj?.ok) throw new Error(cj?.error || `HTTP ${cr.status}`)
           // 新規発番した器のみ material に紐付けて以降の空欄行で再利用(明示指定行は上書きしない)。
           if (!srcDoc && cj.capability_id != null) capByMaterial[r.material_id] = Number(cj.capability_id)
+          if (cj.document_number) capDocByIndex[r.index] = String(cj.document_number)
           clOut[r.index] = `CL ${cj.document_number || "作成"}`
         } catch (e: any) {
           clOut[r.index] = `CL失敗: ${String(e?.message || e)}`
         }
       }
+
+      // 器(文書)レベル項目の後付け更新。行の器文書番号(CL作成で確定 or 根拠文書番号)ごとに
+      //   契約種別/タイトル/期間/更新/文書リンク/基本契約参照を1回だけ反映する。
+      const metaByDoc: Record<string, any> = {}
+      for (const r of rr) {
+        if (!r.ok) continue
+        const row = rows[r.index]
+        if (!row) continue
+        const docNum = capDocByIndex[r.index] || String(row.source_doc || "").trim()
+        if (!docNum) continue
+        const hasMeta =
+          row.cap_record_type || row.cap_title || row.cap_effective || row.cap_expiration ||
+          row.cap_auto_renewal || row.cap_doc_url || row.cap_master_doc
+        if (!hasMeta || metaByDoc[docNum]) continue
+        metaByDoc[docNum] = {
+          document_number: docNum,
+          record_type: normRecordType(row.cap_record_type) || undefined,
+          contract_title: row.cap_title || undefined,
+          effective_date: row.cap_effective || undefined,
+          expiration_date: row.cap_expiration || undefined,
+          auto_renewal: row.cap_auto_renewal || undefined,
+          document_url: row.cap_doc_url || undefined,
+          master_document_number: row.cap_master_doc || undefined,
+        }
+      }
+      let metaUpdated = 0
+      for (const payload of Object.values(metaByDoc)) {
+        try {
+          const mr = await fetch("/api/master/capability-meta", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          })
+          const mj = await mr.json()
+          if (mr.ok && mj?.ok && mj.updated) metaUpdated += mj.updated
+        } catch {
+          /* 器メタ更新の失敗は致命的でないため握りつぶし、他を継続 */
+        }
+      }
+
       setClResults(clOut)
+      setMetaCount(metaUpdated)
       await refreshAll?.().catch(() => {})
     } catch (e: any) {
       setSummary({ total: rows.length, succeeded: 0, failed: rows.length })
@@ -623,6 +738,8 @@ export function BulkImportPanel() {
             根拠文書番号があればその既存文書、空なら新規ARC-ILTを発番（同一マテリアルの空欄行は
             先頭で発番した1つの器にまとめます）。マテリアル名が空の行は原作だけを登録します。
             「現状をCSVダウンロード」→修正→再取込で、CL値のブレも往復修正できます。
+            <b>文書(器)項目</b>：契約種類（基本契約/個別契約/単独契約）/ 契約タイトル / 契約開始日・終了日 /
+            自動更新 / 文書リンク / 基本契約番号 を入れると、そのCLの器（文書）へ反映します。
           </p>
         </div>
       )}
@@ -680,6 +797,13 @@ export function BulkImportPanel() {
                   <th className={cn(th, "bg-indigo-50/60")}>MG</th>
                   <th className={cn(th, "bg-indigo-50/60")}>AG</th>
                   <th className={cn(th, "bg-indigo-50/60")}>通貨</th>
+                  <th className={cn(th, "bg-slate-100/70")}>契約種類</th>
+                  <th className={cn(th, "bg-slate-100/70")}>契約タイトル</th>
+                  <th className={cn(th, "bg-slate-100/70")}>開始日</th>
+                  <th className={cn(th, "bg-slate-100/70")}>終了日</th>
+                  <th className={cn(th, "bg-slate-100/70")}>自動更新</th>
+                  <th className={cn(th, "bg-slate-100/70")}>文書リンク</th>
+                  <th className={cn(th, "bg-slate-100/70")}>基本契約番号</th>
                   <th className={th}>リンクCL</th>
                   <th className={th}></th>
                 </tr>
@@ -719,6 +843,26 @@ export function BulkImportPanel() {
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_mg} onChange={(e) => patch(i, "cl_mg", e.target.value)} /></td>
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_ag} onChange={(e) => patch(i, "cl_ag", e.target.value)} /></td>
                       <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_currency} onChange={(e) => patch(i, "cl_currency", e.target.value)} placeholder="JPY" /></td>
+                      <td className={cn(td, "bg-slate-50")}>
+                        <select className={inputCls} value={r.cap_record_type} onChange={(e) => patch(i, "cap_record_type", e.target.value)}>
+                          <option value="">—</option>
+                          {RECORD_TYPE_OPTIONS.map((o) => (
+                            <option key={o.value} value={o.value}>{o.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className={cn(td, "bg-slate-50")}><input className={inputCls} value={r.cap_title} onChange={(e) => patch(i, "cap_title", e.target.value)} placeholder="自動生成" /></td>
+                      <td className={cn(td, "bg-slate-50")}><input type="date" className={inputCls} value={r.cap_effective} onChange={(e) => patch(i, "cap_effective", e.target.value)} /></td>
+                      <td className={cn(td, "bg-slate-50")}><input type="date" className={inputCls} value={r.cap_expiration} onChange={(e) => patch(i, "cap_expiration", e.target.value)} /></td>
+                      <td className={cn(td, "bg-slate-50")}>
+                        <select className={inputCls} value={r.cap_auto_renewal} onChange={(e) => patch(i, "cap_auto_renewal", e.target.value)}>
+                          <option value="">—</option>
+                          <option value="はい">はい</option>
+                          <option value="いいえ">いいえ</option>
+                        </select>
+                      </td>
+                      <td className={cn(td, "bg-slate-50")}><input className={inputCls} value={r.cap_doc_url} onChange={(e) => patch(i, "cap_doc_url", e.target.value)} placeholder="https://…" /></td>
+                      <td className={cn(td, "bg-slate-50")}><input className={inputCls} value={r.cap_master_doc} onChange={(e) => patch(i, "cap_master_doc", e.target.value)} placeholder="ARC-LIC-… (基本契約)" /></td>
                       <td className={cn(td, "text-center text-[10px] font-mono text-muted-foreground")}>
                         {r.link_condition_ids.length > 0 ? `${r.link_condition_ids.length}件` : "—"}
                       </td>
@@ -760,6 +904,7 @@ export function BulkImportPanel() {
           )}
         >
           取込結果: 成功 {summary.succeeded} / 失敗 {summary.failed}（全 {summary.total} 行）
+          {metaCount > 0 ? ` ／ 文書メタ更新 ${metaCount} 件` : ""}
           {results && results.filter((r) => !r.ok).slice(0, 5).map((r) => (
             <div key={r.index} className="text-[10px] text-red-600 mt-0.5">
               #{r.index + 1}: {r.error}
