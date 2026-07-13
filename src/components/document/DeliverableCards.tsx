@@ -51,6 +51,30 @@ const CONTRACT_TYPE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "準委任", label: "準委任（役務の遂行）" },
 ]
 
+// ── サブスク型(継続課金)の課金周期数・支払期日を履行期間から算出する ──────
+// 期間内の月数(両端含む)。2026-01 〜 2026-12 → 12。term 未確定は 0。
+const monthsInclusive = (s?: string, e?: string): number => {
+  if (!s || !e) return 0
+  const [sY, sM] = s.split("-").map(Number)
+  const [eY, eM] = e.split("-").map(Number)
+  if (!sY || !sM || !eY || !eM) return 0
+  const n = (eY - sY) * 12 + (eM - sM) + 1
+  return n > 0 ? n : 0
+}
+// 課金周期数。月額=月数 / 年額=年数(切上げ)。1年契約なら 月額12・年額1。
+//   期間終了(term_end)未設定は 0 を返し、呼び出し側で「1周期分」にフォールバック。
+const subCycleCount = (
+  it: Pick<LineItem, "term_start" | "term_end" | "subscription_cycle">
+): number => {
+  const m = monthsInclusive(it.term_start, it.term_end)
+  if (!m) return 0
+  return it.subscription_cycle === "ANNUAL" ? Math.ceil(m / 12) : m
+}
+// フォーム表示用の支払期日ラベル。billing_day=末日(0)・billing_timing=翌月 固定なので、
+//   月額→「翌月末日払い」/ 年額→「毎年・翌月末日払い」。PDF(documentService.billingDayLabel)と一致。
+const subDueLabel = (cycle?: string): string =>
+  cycle === "ANNUAL" ? "毎年・翌月末日払い" : "翌月末日払い"
+
 export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] }) => {
   const patch = (idx: number, p: Partial<LineItem>) =>
     onChange(items.map((it, i) => (i === idx ? { ...it, ...p } : it)))
@@ -73,6 +97,18 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
     patch(idx, { unit_price: u, quantity: q, amount_ex_tax: Math.round(u * q) })
   }
 
+  // サブスク明細の周期/期間/金額を束ねて再計算する。
+  //   unit_price = 1周期の金額 / quantity = 周期数 / amount_ex_tax = 周期額 × 周期数(=履行期間の総額)。
+  //   期間未確定(term_end なし)は 1 周期分にフォールバック。
+  const patchSub = (idx: number, p: Partial<LineItem>) => {
+    const next = { ...items[idx], ...p }
+    const cycleAmt = Number(next.unit_price) || 0
+    const q = subCycleCount(next) || 1
+    next.quantity = q
+    next.amount_ex_tax = Math.round(cycleAmt * q)
+    onChange(items.map((it, i) => (i === idx ? next : it)))
+  }
+
   const setOwnership = (idx: number, owner: "発注者" | "受注者") => {
     if (owner === "受注者") {
       // 利用許諾型: 確定額外(0) / calc_method=ROYALTY 固定 →「利用許諾料に含む」。
@@ -85,9 +121,32 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
 
   // 発注者帰属の報酬の決め方: 確定額(FIXED) / 計算方法(ROYALTY=執筆料) / 継続(SUBSCRIPTION=役務提供)。
   const setFeeMode = (idx: number, mode: "fixed" | "calc" | "subscription") => {
-    if (mode === "fixed") patch(idx, { calc_method: "FIXED", rate_pct: undefined })
-    else if (mode === "calc") patch(idx, { calc_method: "ROYALTY" })
-    else patch(idx, { calc_method: "SUBSCRIPTION", rate_pct: undefined })
+    // サブスク離脱時は継続課金専用フィールド(cycle/支払期日規則)を除去し、集計/PDF への漏れを防ぐ。
+    if (mode === "fixed")
+      patch(idx, { calc_method: "FIXED", rate_pct: undefined, cycle: undefined, billing_day: undefined, billing_timing: undefined })
+    else if (mode === "calc")
+      patch(idx, { calc_method: "ROYALTY", cycle: undefined, billing_day: undefined, billing_timing: undefined })
+    else {
+      // 継続(サブスク)へ切替。課金周期は cycle と subscription_cycle の双方に持たせ、
+      //   集計/PDF(cycle)と利用許諾条件表(subscription_cycle)を揃える。支払期日は
+      //   「翌月末日払い」(billing_day=末日 / billing_timing=翌月)を既定にし、単一日付は使わない。
+      const base = items[idx] || ({} as LineItem)
+      const sc = base.subscription_cycle || "MONTHLY"
+      const cycleAmt = Number(base.unit_price) || 0
+      const q = subCycleCount({ ...base, subscription_cycle: sc }) || 1
+      patch(idx, {
+        calc_method: "SUBSCRIPTION",
+        rate_pct: undefined,
+        cycle: sc,
+        subscription_cycle: sc,
+        billing_day: 0,
+        billing_timing: "NEXT_MONTH",
+        delivery_date: undefined,
+        payment_date: undefined,
+        quantity: q,
+        amount_ex_tax: Math.round(cycleAmt * q),
+      })
+    }
   }
 
   const list = Array.isArray(items) ? items : []
@@ -342,31 +401,82 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                 </div>
 
                 {feeMode === "subscription" && (
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                    <div className="space-y-1">
-                      <label className={labelCls}>課金周期</label>
-                      <select
-                        value={it.subscription_cycle || "MONTHLY"}
-                        onChange={(e) => patch(idx, { subscription_cycle: e.target.value as "MONTHLY" | "ANNUAL" })}
-                        className={inputCls}
-                      >
-                        <option value="MONTHLY">月額</option>
-                        <option value="ANNUAL">年額</option>
-                      </select>
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className="space-y-1">
+                        <label className={labelCls}>課金周期</label>
+                        <select
+                          value={it.subscription_cycle || "MONTHLY"}
+                          onChange={(e) => {
+                            const v = e.target.value as "MONTHLY" | "ANNUAL"
+                            patchSub(idx, { subscription_cycle: v, cycle: v })
+                          }}
+                          className={inputCls}
+                        >
+                          <option value="MONTHLY">月額</option>
+                          <option value="ANNUAL">年額</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1">
+                        <label className={cn(labelCls, !it.term_start && "text-red-600")}>期間 開始 *</label>
+                        <input type="date" value={it.term_start || ""} onChange={(e) => patchSub(idx, { term_start: e.target.value })} className={inputCls} />
+                      </div>
+                      <div className="space-y-1">
+                        <label className={cn(labelCls, !it.term_end && "text-amber-600")}>期間 終了 *（総額算出に必要）</label>
+                        <input type="date" value={it.term_end || ""} onChange={(e) => patchSub(idx, { term_end: e.target.value })} className={inputCls} />
+                      </div>
+                      <div className="space-y-1">
+                        <label className={cn(labelCls, (Number(it.unit_price) || 0) <= 0 && "text-red-600")}>
+                          {it.subscription_cycle === "ANNUAL" ? "年額(税抜)" : "月額(税抜)"} *
+                        </label>
+                        <input
+                          type="number"
+                          value={Number(it.unit_price) || ""}
+                          onChange={(e) => patchSub(idx, { unit_price: Number(e.target.value) || 0 })}
+                          className={inputCls}
+                          placeholder="1周期の金額"
+                        />
+                      </div>
                     </div>
-                    <div className="space-y-1">
-                      <label className={cn(labelCls, !it.term_start && "text-red-600")}>期間 開始 *</label>
-                      <input type="date" value={it.term_start || ""} onChange={(e) => patch(idx, { term_start: e.target.value })} className={inputCls} />
+
+                    {/* 支払期日・確定額小計は履行期間から自動算出（単一の支払日ピッカーは持たない）。 */}
+                    <div className="rounded-sm border border-input bg-muted/20 px-3 py-2 space-y-1.5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <div className="space-y-0.5">
+                          <div className={labelCls}>支払期日（自動）</div>
+                          <div className="text-xs font-mono py-0.5">{subDueLabel(it.subscription_cycle)}</div>
+                        </div>
+                        <div className="space-y-0.5">
+                          <div className={labelCls}>確定額 小計（税抜・自動）</div>
+                          <div className="text-xs font-mono py-0.5">
+                            {(() => {
+                              const cnt = subCycleCount(it)
+                              const cyc = Number(it.unit_price) || 0
+                              const unitLabel = it.subscription_cycle === "ANNUAL" ? "年" : "ヶ月"
+                              if (!cnt)
+                                return (
+                                  <span className="text-amber-700">
+                                    {yen(amount)}{" "}
+                                    <span className="text-[10px] text-muted-foreground/70">（期間終了を入れると総額を自動計算）</span>
+                                  </span>
+                                )
+                              return (
+                                <span>
+                                  {yen(cyc)} × {cnt}
+                                  {unitLabel} = <b>{yen(cyc * cnt)}</b>
+                                </span>
+                              )
+                            })()}
+                          </div>
+                        </div>
+                      </div>
+                      <p className="text-[10px] font-mono text-muted-foreground/70 leading-snug">
+                        サブスク型は履行期間の課金単位総額を確定額 小計に計上します。支払期日は
+                        {it.subscription_cycle === "ANNUAL" ? "各年分を年末日を含む月の翌月末" : "各月分を翌月末"}
+                        に支払う想定です。
+                      </p>
                     </div>
-                    <div className="space-y-1">
-                      <label className={labelCls}>期間 終了</label>
-                      <input type="date" value={it.term_end || ""} onChange={(e) => patch(idx, { term_end: e.target.value })} className={inputCls} />
-                    </div>
-                    <div className="space-y-1">
-                      <label className={cn(labelCls, amount <= 0 && "text-red-600")}>1周期の金額(税抜) *</label>
-                      <input type="number" value={amount || ""} onChange={(e) => setAmount(idx, Number(e.target.value) || 0)} className={inputCls} placeholder="0 以外" />
-                    </div>
-                  </div>
+                  </>
                 )}
 
                 {feeMode === "calc" && (
@@ -381,6 +491,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                     />
                   </div>
                 )}
+                {feeMode !== "subscription" && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {feeMode === "calc" && (
                     <div className="space-y-1">
@@ -444,6 +555,7 @@ export const DeliverableCards: React.FC<Props> = ({ items, onChange, works = [] 
                     />
                   </div>
                 </div>
+                )}
                 {feeMode === "fixed" && (Number(it.quantity) || 1) !== 1 && (
                   <p className="text-[10px] font-mono text-muted-foreground/70">
                     金額(税抜) = 単価 {yen(Number(it.unit_price) || 0)} × 個数 {Number(it.quantity) || 1} = <b>{yen(amount)}</b>
