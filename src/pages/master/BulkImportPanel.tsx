@@ -296,18 +296,26 @@ export function BulkImportPanel() {
       setResults(rr)
       setSummary({ total: j.total, succeeded: j.succeeded, failed: j.failed })
 
-      // 料率が入っている行は、マテリアルごとにCL(royalty)を作成する。
-      //   1マテリアル:N CL に対応 — 同一マテリアルの先頭CLだけ新規ARC-ILTを発番し、
-      //   返却された capability_id を以降のCLで再利用する(器の重複発番を防ぐ)。
+      // 料率が入っている行は、マテリアルごとにCL(royalty)を作成する。器(文書)の決定:
+      //   ・根拠文書番号あり → その既存器にCLを付ける(発番しない)。
+      //   ・根拠文書番号なし → 新規ARC-ILTを発番(同一マテリアルの先頭のみ発番し、
+      //                        返却 capability_id を以降の空欄行で再利用=1マテリアル1器)。
       const clOut: Record<number, string> = {}
-      const capByMaterial: Record<number, number> = {} // material_id → capability_id
+      const capByMaterial: Record<number, number> = {} // material_id → 新規発番した capability_id
       for (const r of rr) {
         if (!r.ok || r.material_id == null || r.work_id == null) continue
         const row = rows[r.index]
         if (!row) continue
         const rate = String(row.cl_rate || "").trim()
         if (!rate) continue // 料率が無ければCLは作らない
+        const srcDoc = String(row.source_doc || "").trim()
         const existingCap = capByMaterial[r.material_id]
+        // 器の選択: ①根拠文書番号(明示) > ②同マテリアルで発番済み器の再利用 > ③新規発番。
+        const capSel: any = srcDoc
+          ? { document_number: srcDoc }
+          : existingCap
+            ? { capability_id: existingCap }
+            : { issue_document: true }
         const payload: any = {
           payment_scheme: "royalty",
           rate_pct: Number(rate),
@@ -318,8 +326,7 @@ export function BulkImportPanel() {
           condition_name: row.material_name || undefined,
           region_territory: row.territory || undefined,
           region_language: row.language || undefined,
-          // 同一マテリアルの2件目以降は既存器を再利用、先頭のみ新規ARC-ILTを発番。
-          ...(existingCap ? { capability_id: existingCap } : { issue_document: true }),
+          ...capSel,
         }
         try {
           const cr = await fetch(
@@ -328,7 +335,8 @@ export function BulkImportPanel() {
           )
           const cj = await cr.json()
           if (!cr.ok || !cj?.ok) throw new Error(cj?.error || `HTTP ${cr.status}`)
-          if (cj.capability_id != null) capByMaterial[r.material_id] = Number(cj.capability_id)
+          // 新規発番した器のみ material に紐付けて以降の空欄行で再利用(明示指定行は上書きしない)。
+          if (!srcDoc && cj.capability_id != null) capByMaterial[r.material_id] = Number(cj.capability_id)
           clOut[r.index] = `CL ${cj.document_number || "作成"}`
         } catch (e: any) {
           clOut[r.index] = `CL失敗: ${String(e?.message || e)}`
@@ -475,7 +483,9 @@ export function BulkImportPanel() {
           <p className="text-[10px] font-mono text-sky-800/70">
             列: 原作タイトル / 原作コード(任意) / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考
             / 取引形態 / 料率 / MG / AG / 通貨。権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。
-            <b>料率</b>を入れた行は、そのマテリアルに<b>新規ARC-ILTを発番して利用許諾CL（royalty）</b>を作成します。
+            <b>料率</b>を入れた行は利用許諾CL（royalty）を作成します。器（文書）は
+            <b>根拠文書番号があればその既存文書に付け、空なら新規ARC-ILTを発番</b>します
+            （同一マテリアルで空欄が続く場合は先頭で発番した1つの器にまとめます）。
             原作タイトルのみの行は原作だけを登録します。
           </p>
         </div>
