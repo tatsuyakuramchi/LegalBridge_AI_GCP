@@ -7964,7 +7964,7 @@ ${details}
             cc.expiration_date                              AS cap_expiration,
             cc.auto_renewal                                 AS cap_auto_renewal,
             COALESCE(cc.document_url, cc.drive_url)          AS cap_doc_url,
-            cc.master_document_number                       AS cap_master_doc,
+            dcap.master_document_number                     AS cap_master_doc,
             wm.material_code                                AS material_code
            FROM ledgers l
            JOIN works w  ON w.work_code = l.ledger_code AND w.kind = 'licensed_in'
@@ -7973,6 +7973,7 @@ ${details}
            LEFT JOIN condition_lines cl
              ON cl.source_material_id = wm.id AND cl.transaction_kind = 'license'
            LEFT JOIN contract_capabilities cc ON cc.id = cl.capability_id
+           LEFT JOIN documents dcap ON dcap.id = cl.capability_id
           ORDER BY l.ledger_code, wm.material_no NULLS LAST, cl.id NULLS LAST`
       );
       res.json(r.rows);
@@ -8001,8 +8002,10 @@ ${details}
       };
       // record_type は FE 側で master_contract / individual_contract / standalone_contract に写像済み。
       const recordType = s(b.record_type) || null;
+      // contract_capabilities は documents 上の VIEW(更新トリガー無し)のため、
+      //   実体テーブル documents を直接更新する(全列は documents に存在)。
       const r = await query(
-        `UPDATE contract_capabilities SET
+        `UPDATE documents SET
            record_type = COALESCE(NULLIF($2,''), record_type),
            contract_title = COALESCE(NULLIF($3,''), contract_title),
            effective_date = COALESCE($4::date, effective_date),
