@@ -28,6 +28,12 @@ type Row = {
   source_doc: string
   remarks: string
   link_condition_ids: number[]
+  // CL(金銭条件): 料率があればマテリアルごとに新規ARC-ILTを発番してCLを作成する。
+  cl_calc_type: string
+  cl_rate: string
+  cl_mg: string
+  cl_ag: string
+  cl_currency: string
 }
 
 type RowResult = {
@@ -35,6 +41,8 @@ type RowResult = {
   ok: boolean
   error?: string
   warning?: string
+  work_id?: number | null
+  material_id?: number | null
   ledger_code?: string
   ledger_action?: string
   material_code?: string | null
@@ -53,7 +61,34 @@ const emptyRow = (): Row => ({
   source_doc: "",
   remarks: "",
   link_condition_ids: [],
+  cl_calc_type: "",
+  cl_rate: "",
+  cl_mg: "",
+  cl_ag: "",
+  cl_currency: "",
 })
+
+// 取引形態(calc_type)の別名 → コード。CSVで日本語も受け付ける。
+const CALC_ALIAS: Record<string, string> = {
+  自社製造自社販売: "BASE_QTY_RATE",
+  "自社製造・自社販売": "BASE_QTY_RATE",
+  権利許諾: "BASE_RATE",
+  サブライセンス: "BASE_RATE",
+  "権利許諾（サブライセンス）": "BASE_RATE",
+  自社製造他社販売: "SUPPLY_QTY",
+  "自社製造・他社販売": "SUPPLY_QTY",
+  固定: "FIXED",
+  固定額: "FIXED",
+  サブスク: "SUBSCRIPTION",
+  サブスクリプション: "SUBSCRIPTION",
+}
+const normCalcType = (v: string): string => {
+  const k = String(v || "").trim()
+  if (!k) return ""
+  const up = k.toUpperCase()
+  if (["BASE_QTY_RATE", "BASE_RATE", "SUPPLY_QTY", "FIXED", "SUBSCRIPTION"].includes(up)) return up
+  return CALC_ALIAS[k] || ""
+}
 
 // CSV/TSV のヘッダ(日本語/英語)を Row のキーへ写像。
 const HEADER_MAP: Record<string, keyof Row> = {
@@ -87,12 +122,25 @@ const HEADER_MAP: Record<string, keyof Row> = {
   source_doc: "source_doc",
   備考: "remarks",
   remarks: "remarks",
+  取引形態: "cl_calc_type",
+  calc_type: "cl_calc_type",
+  料率: "cl_rate",
+  "料率(%)": "cl_rate",
+  rate_pct: "cl_rate",
+  MG: "cl_mg",
+  最低保証: "cl_mg",
+  mg: "cl_mg",
+  AG: "cl_ag",
+  前払保証: "cl_ag",
+  ag: "cl_ag",
+  通貨: "cl_currency",
+  currency: "cl_currency",
 }
 
 const CSV_TEMPLATE = [
-  "原作タイトル,原作コード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考",
-  "サンプル作品,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,",
-  "サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,ARC-PO-2026-0001,",
+  "原作タイトル,原作コード,マテリアル名,種別,取引先コード,許諾地域,許諾言語,根拠文書番号,備考,取引形態,料率,MG,AG,通貨",
+  "サンプル作品,,ゲームデザイン,game_design,V-2026-0001,全世界,全言語,,,BASE_QTY_RATE,5,0,0,JPY",
+  "サンプル作品,,イラスト一式,illustration,V-2026-0002,日本,日本語,,,権利許諾,8,,,JPY",
 ].join("\n")
 
 export function BulkImportPanel() {
@@ -102,6 +150,8 @@ export function BulkImportPanel() {
   const [submitting, setSubmitting] = React.useState(false)
   const [results, setResults] = React.useState<RowResult[] | null>(null)
   const [summary, setSummary] = React.useState<{ total: number; succeeded: number; failed: number } | null>(null)
+  // index → CL作成結果表示("CL ARC-ILT-..." / "CL失敗: ...")
+  const [clResults, setClResults] = React.useState<Record<number, string>>({})
 
   // ── Tab ① 既存文書から ─────────────────────────────
   const [docNumber, setDocNumber] = React.useState<string>("")
@@ -217,6 +267,7 @@ export function BulkImportPanel() {
     setRows([])
     setResults(null)
     setSummary(null)
+    setClResults({})
   }
 
   // Tab ① の shared 原作を全空欄行へ適用。
@@ -232,6 +283,7 @@ export function BulkImportPanel() {
     setSubmitting(true)
     setResults(null)
     setSummary(null)
+    setClResults({})
     try {
       const res = await fetch("/api/master/bulk-import", {
         method: "POST",
@@ -240,8 +292,43 @@ export function BulkImportPanel() {
       })
       const j = await res.json()
       if (!res.ok || !j?.ok) throw new Error(j?.error || `HTTP ${res.status}`)
-      setResults(j.results || [])
+      const rr: RowResult[] = j.results || []
+      setResults(rr)
       setSummary({ total: j.total, succeeded: j.succeeded, failed: j.failed })
+
+      // 料率が入っている行は、マテリアルごとに新規ARC-ILTを発番してCL(royalty)を作成する。
+      const clOut: Record<number, string> = {}
+      for (const r of rr) {
+        if (!r.ok || r.material_id == null || r.work_id == null) continue
+        const row = rows[r.index]
+        if (!row) continue
+        const rate = String(row.cl_rate || "").trim()
+        if (!rate) continue // 料率が無ければCLは作らない
+        const payload: any = {
+          payment_scheme: "royalty",
+          rate_pct: Number(rate),
+          mg_amount: row.cl_mg ? Number(row.cl_mg) : null,
+          ag_amount: row.cl_ag ? Number(row.cl_ag) : null,
+          currency: (row.cl_currency || "JPY").trim() || "JPY",
+          calc_type: normCalcType(row.cl_calc_type) || undefined,
+          issue_document: true, // マテリアルごとに新規ARC-ILT器を発番
+          condition_name: row.material_name || undefined,
+          region_territory: row.territory || undefined,
+          region_language: row.language || undefined,
+        }
+        try {
+          const cr = await fetch(
+            `/api/v3/source-ips/${r.work_id}/materials/${r.material_id}/condition-lines`,
+            { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }
+          )
+          const cj = await cr.json()
+          if (!cr.ok || !cj?.ok) throw new Error(cj?.error || `HTTP ${cr.status}`)
+          clOut[r.index] = `CL ${cj.document_number || "作成"}`
+        } catch (e: any) {
+          clOut[r.index] = `CL失敗: ${String(e?.message || e)}`
+        }
+      }
+      setClResults(clOut)
       await refreshAll?.().catch(() => {})
     } catch (e: any) {
       setSummary({ total: rows.length, succeeded: 0, failed: rows.length })
@@ -380,8 +467,10 @@ export function BulkImportPanel() {
           </div>
           {parseError && <div className="text-[10px] font-mono text-red-600">{parseError}</div>}
           <p className="text-[10px] font-mono text-sky-800/70">
-            列: 原作タイトル / 原作コード(任意) / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考。
-            権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。原作タイトルのみの行は原作だけを登録します。
+            列: 原作タイトル / 原作コード(任意) / マテリアル名 / 種別 / 取引先コード / 許諾地域 / 許諾言語 / 根拠文書番号(任意) / 備考
+            / 取引形態 / 料率 / MG / AG / 通貨。権利者は<b>取引先コード</b>（vendors.vendor_code）で指定してください。
+            <b>料率</b>を入れた行は、そのマテリアルに<b>新規ARC-ILTを発番して利用許諾CL（royalty）</b>を作成します。
+            原作タイトルのみの行は原作だけを登録します。
           </p>
         </div>
       )}
@@ -433,6 +522,11 @@ export function BulkImportPanel() {
                   <th className={th}>許諾地域</th>
                   <th className={th}>許諾言語</th>
                   <th className={th}>根拠文書</th>
+                  <th className={cn(th, "bg-indigo-50/60")}>取引形態</th>
+                  <th className={cn(th, "bg-indigo-50/60")}>料率%</th>
+                  <th className={cn(th, "bg-indigo-50/60")}>MG</th>
+                  <th className={cn(th, "bg-indigo-50/60")}>AG</th>
+                  <th className={cn(th, "bg-indigo-50/60")}>通貨</th>
                   <th className={th}>リンクCL</th>
                   <th className={th}></th>
                 </tr>
@@ -452,6 +546,11 @@ export function BulkImportPanel() {
                       <td className={td}><input className={inputCls} value={r.territory} onChange={(e) => patch(i, "territory", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.language} onChange={(e) => patch(i, "language", e.target.value)} /></td>
                       <td className={td}><input className={inputCls} value={r.source_doc} onChange={(e) => patch(i, "source_doc", e.target.value)} /></td>
+                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_calc_type} onChange={(e) => patch(i, "cl_calc_type", e.target.value)} placeholder="任意" /></td>
+                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_rate} onChange={(e) => patch(i, "cl_rate", e.target.value)} placeholder="料率で発番" /></td>
+                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_mg} onChange={(e) => patch(i, "cl_mg", e.target.value)} /></td>
+                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_ag} onChange={(e) => patch(i, "cl_ag", e.target.value)} /></td>
+                      <td className={cn(td, "bg-indigo-50/30")}><input className={inputCls} value={r.cl_currency} onChange={(e) => patch(i, "cl_currency", e.target.value)} placeholder="JPY" /></td>
                       <td className={cn(td, "text-center text-[10px] font-mono text-muted-foreground")}>
                         {r.link_condition_ids.length > 0 ? `${r.link_condition_ids.length}件` : "—"}
                       </td>
@@ -461,10 +560,11 @@ export function BulkImportPanel() {
                         ) : rr && rr.ok ? (
                           <span
                             className={cn("text-[9px] font-mono", rr.warning ? "text-amber-600" : "text-emerald-700")}
-                            title={rr.warning || undefined}
+                            title={rr.warning || clResults[i] || undefined}
                           >
                             {rr.material_action === "created" ? "新規" : rr.material_action === "updated" ? "更新" : rr.ledger_action === "created" ? "原作新規" : "原作更新"}
                             {rr.linked_conditions ? ` +CL${rr.linked_conditions}` : ""}
+                            {clResults[i] ? (clResults[i].startsWith("CL失敗") ? " ⚠CL" : " +CL新規") : ""}
                             {rr.warning ? " ⚠取引先未解決" : ""}
                           </span>
                         ) : (

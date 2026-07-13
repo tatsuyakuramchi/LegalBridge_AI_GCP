@@ -7842,6 +7842,10 @@ ${details}
           ok: true,
           ledger_code: ledgerCode,
           ledger_action: ledgerAction,
+          // work_id/material_id は FE が CL(金銭条件)を後続作成する導線で使う
+          //   (POST /api/v3/source-ips/:work_id/materials/:material_id/condition-lines)。
+          work_id: workId,
+          material_id: materialId,
           material_code: materialCode,
           material_action: materialAction,
           linked_conditions: linkedConditions,
