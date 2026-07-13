@@ -296,14 +296,18 @@ export function BulkImportPanel() {
       setResults(rr)
       setSummary({ total: j.total, succeeded: j.succeeded, failed: j.failed })
 
-      // 料率が入っている行は、マテリアルごとに新規ARC-ILTを発番してCL(royalty)を作成する。
+      // 料率が入っている行は、マテリアルごとにCL(royalty)を作成する。
+      //   1マテリアル:N CL に対応 — 同一マテリアルの先頭CLだけ新規ARC-ILTを発番し、
+      //   返却された capability_id を以降のCLで再利用する(器の重複発番を防ぐ)。
       const clOut: Record<number, string> = {}
+      const capByMaterial: Record<number, number> = {} // material_id → capability_id
       for (const r of rr) {
         if (!r.ok || r.material_id == null || r.work_id == null) continue
         const row = rows[r.index]
         if (!row) continue
         const rate = String(row.cl_rate || "").trim()
         if (!rate) continue // 料率が無ければCLは作らない
+        const existingCap = capByMaterial[r.material_id]
         const payload: any = {
           payment_scheme: "royalty",
           rate_pct: Number(rate),
@@ -311,10 +315,11 @@ export function BulkImportPanel() {
           ag_amount: row.cl_ag ? Number(row.cl_ag) : null,
           currency: (row.cl_currency || "JPY").trim() || "JPY",
           calc_type: normCalcType(row.cl_calc_type) || undefined,
-          issue_document: true, // マテリアルごとに新規ARC-ILT器を発番
           condition_name: row.material_name || undefined,
           region_territory: row.territory || undefined,
           region_language: row.language || undefined,
+          // 同一マテリアルの2件目以降は既存器を再利用、先頭のみ新規ARC-ILTを発番。
+          ...(existingCap ? { capability_id: existingCap } : { issue_document: true }),
         }
         try {
           const cr = await fetch(
@@ -323,6 +328,7 @@ export function BulkImportPanel() {
           )
           const cj = await cr.json()
           if (!cr.ok || !cj?.ok) throw new Error(cj?.error || `HTTP ${cr.status}`)
+          if (cj.capability_id != null) capByMaterial[r.material_id] = Number(cj.capability_id)
           clOut[r.index] = `CL ${cj.document_number || "作成"}`
         } catch (e: any) {
           clOut[r.index] = `CL失敗: ${String(e?.message || e)}`
