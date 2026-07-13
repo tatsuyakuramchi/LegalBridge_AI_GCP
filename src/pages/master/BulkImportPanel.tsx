@@ -56,28 +56,38 @@ type Row = {
   cap_master_doc: string
 }
 
-// 契約種類の固定選択肢(器 record_type)。
+// レコード区分(器 record_type)。既存 ContractsPanel の「レコード区分」に一致:
+//   基本契約=親 / 個別契約=子 / 単独契約=単体。license_condition は旧「個別契約」系。
 const RECORD_TYPE_OPTIONS: { value: string; label: string }[] = [
-  { value: "master_contract", label: "基本契約" },
-  { value: "individual_contract", label: "個別契約" },
-  { value: "standalone_contract", label: "単独契約" },
-  { value: "license_condition", label: "利用許諾条件書" },
+  { value: "master_contract", label: "基本契約 (親)" },
+  { value: "individual_contract", label: "個別契約 (子)" },
+  { value: "standalone_contract", label: "単独契約 (単体)" },
 ]
 const RT_ALIAS: Record<string, string> = {
   基本契約: "master_contract",
+  親: "master_contract",
   個別契約: "individual_contract",
+  子: "individual_contract",
   単独契約: "standalone_contract",
-  利用許諾条件書: "license_condition",
-  利用許諾条件: "license_condition",
+  単独: "standalone_contract",
+  単体: "standalone_contract",
+  // 旧値: 利用許諾条件書は個別契約(子)系。取り込み時は individual_contract に寄せる。
+  利用許諾条件書: "individual_contract",
+  利用許諾条件: "individual_contract",
+  license_condition: "individual_contract",
 }
 const normRecordType = (v: string): string => {
   const k = String(v || "").trim()
   if (!k) return ""
-  if (RECORD_TYPE_OPTIONS.some((o) => o.value === k)) return k
-  return RT_ALIAS[k] || ""
+  if (RECORD_TYPE_OPTIONS.some((o) => o.value === k) || k === "license_condition") return k
+  // "基本契約 (親)" のような括弧付きラベルも受ける(括弧内を除去して照合)。
+  const base = k.replace(/[（(].*?[）)]/g, "").trim()
+  return RT_ALIAS[base] || RT_ALIAS[k] || ""
 }
-const recordTypeLabel = (v: string): string =>
-  RECORD_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || ""
+const recordTypeLabel = (v: string): string => {
+  if (v === "license_condition") return "個別契約 (子/旧)"
+  return RECORD_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || ""
+}
 
 type RowResult = {
   index: number
@@ -406,7 +416,7 @@ export function BulkImportPanel() {
         AG: r.cl_ag,
         通貨: r.cl_currency,
         "CL-ID": r.cl_id,
-        契約種類: recordTypeLabel(r.cap_record_type),
+        契約種類: r.cap_record_type,
         契約タイトル: r.cap_title,
         契約開始日: r.cap_effective,
         契約終了日: r.cap_expiration,
@@ -738,8 +748,9 @@ export function BulkImportPanel() {
             根拠文書番号があればその既存文書、空なら新規ARC-ILTを発番（同一マテリアルの空欄行は
             先頭で発番した1つの器にまとめます）。マテリアル名が空の行は原作だけを登録します。
             「現状をCSVダウンロード」→修正→再取込で、CL値のブレも往復修正できます。
-            <b>文書(器)項目</b>：契約種類（基本契約/個別契約/単独契約）/ 契約タイトル / 契約開始日・終了日 /
-            自動更新 / 文書リンク / 基本契約番号 を入れると、そのCLの器（文書）へ反映します。
+            <b>文書(器)項目</b>：契約種類＝<b>レコード区分</b>（基本契約=親 / 個別契約=子 / 単独契約=単体）/
+            契約タイトル / 契約開始日・終了日 / 自動更新 / 文書リンク / 基本契約番号 を入れると、そのCLの器（文書）へ反映します。
+            基本契約番号は「個別契約(子)」が参照する親の文書番号です。
           </p>
         </div>
       )}
@@ -849,6 +860,10 @@ export function BulkImportPanel() {
                           {RECORD_TYPE_OPTIONS.map((o) => (
                             <option key={o.value} value={o.value}>{o.label}</option>
                           ))}
+                          {/* 旧値(利用許諾条件書等)は選択中のみ残す(上書き消去しない)。 */}
+                          {r.cap_record_type && !RECORD_TYPE_OPTIONS.some((o) => o.value === r.cap_record_type) && (
+                            <option value={r.cap_record_type}>{recordTypeLabel(r.cap_record_type)}</option>
+                          )}
                         </select>
                       </td>
                       <td className={cn(td, "bg-slate-50")}><input className={inputCls} value={r.cap_title} onChange={(e) => patch(i, "cap_title", e.target.value)} placeholder="自動生成" /></td>
